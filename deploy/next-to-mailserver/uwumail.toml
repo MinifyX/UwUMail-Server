@@ -2,10 +2,11 @@
 hostname = "uwumail.example.com"
 
 [listen]
-# Ports 80/443 belong to the reverse proxy; it forwards this host name to 8080.
+# Port 80 and the public 443 belong to the reverse proxy; it forwards this host name to 8080.
 http = ""
-https = ""
 proxy = "[::]:8080"
+# HTTPS straight from UwUMail for your own network, when local DNS points the host name here.
+https = "[::]:443"
 
 [tls]
 # The certificate challenge reaches us through the reverse proxy.
