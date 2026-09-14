@@ -20,6 +20,9 @@ pub struct SmtpConfig {
     pub enforce_dmarc_reject: bool,
     /// Put the client's IP address into the Received header of submitted mail.
     pub reveal_client_ip: bool,
+    /// IP addresses or networks (CIDR) of mail servers that receive mail for us and forward it,
+    /// like an existing mail server in front. Sender checks use the address those servers saw.
+    pub trusted_relays: Vec<String>,
 }
 
 impl Default for SmtpConfig {
@@ -33,6 +36,7 @@ impl Default for SmtpConfig {
             verify_senders: true,
             enforce_dmarc_reject: true,
             reveal_client_ip: false,
+            trusted_relays: Vec::new(),
         }
     }
 }

@@ -78,6 +78,33 @@ Point the proxy at port 8080 and mount the certificate your proxy manages
 (Traefik, Caddy and Nginx Proxy Manager can all export it) so STARTTLS and
 port 465 use the same certificate. It is reloaded when the files change.
 
+Alternatively keep `mode = "acme"` with only the proxy listener: Let's Encrypt
+follows the proxy's redirect to HTTPS, and the proxy forwards
+`/.well-known/acme-challenge/` to UwUMail like every other path.
+
+## Next to an existing mail server
+
+You can try UwUMail on a (sub)domain while an existing mail server such as
+Mailcow keeps port 25 and all other domains. Ready-made files:
+[`deploy/next-to-mailserver`](../deploy/next-to-mailserver).
+
+1. **Existing mail server:** add the test domain as a relay domain (Mailcow:
+   *Domains → Add domain → Relay this domain, relay all recipients*) and a
+   transport map `uwu.example.com → [192.0.2.30]:25` (Mailcow: *Routing →
+   Transport maps*).
+2. **UwUMail:** put the existing mail server's address into
+   `smtp.trusted_relays`. SPF and DMARC are then checked against the server
+   that delivered to it, read from its Received header.
+3. **Outgoing mail:** `[delivery.relay]` with the relay you already use; the
+   password goes into `.env` as `RELAY_PASSWORD`.
+4. **Web:** the reverse proxy forwards the UwUMail host name to port 8080.
+5. **DNS for the test domain:** MX to the existing mail server's host name,
+   SPF with the relay's IP address, the two DKIM keys from `domain add`, and a
+   DMARC record (start with `p=none`).
+
+Mail apps in your own network connect straight to the UwUMail machine on 465
+or 587; a local DNS entry for the host name keeps certificates valid.
+
 ## Updates
 
 ```bash

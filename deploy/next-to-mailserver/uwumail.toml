@@ -1,0 +1,28 @@
+# Public host name of this server: web, JMAP and the certificate for the mail ports.
+hostname = "uwumail.example.com"
+
+[listen]
+# Ports 80/443 belong to the reverse proxy; it forwards this host name to 8080.
+http = ""
+https = ""
+proxy = "[::]:8080"
+
+[tls]
+# The certificate challenge reaches us through the reverse proxy.
+mode = "acme"
+acme_email = "admin@example.com"
+
+[smtp]
+# The existing mail server that forwards our domain. Sender checks (SPF, DMARC)
+# then use the server that delivered to it, taken from its Received header.
+trusted_relays = ["192.0.2.16"]
+
+[delivery.relay]
+host = "relay.example.com"
+port = 587
+security = "starttls"
+username = "uwumail"
+# The password comes from RELAY_PASSWORD in .env.
+
+[tone]
+language = "de"

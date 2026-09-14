@@ -34,6 +34,7 @@ require_tls_for_auth = true
 timeout_secs = 300
 max_connections = 500
 verify_senders = true         # SPF, DKIM, DMARC for incoming mail
+trusted_relays = []           # servers in front that forward mail to us, e.g. ["192.168.70.16"]
 enforce_dmarc_reject = true   # otherwise p=reject failures go to Junk
 reveal_client_ip = false      # keep senders' IP and device name out of headers
 

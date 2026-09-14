@@ -19,7 +19,7 @@ use uwumail_store::{Account, IngestRequest, MailboxRole, MailboxTarget, NewQueue
 use crate::checks::{self, Action};
 use crate::dsn::{self, FailedRecipient};
 use crate::stream::Stream;
-use crate::{Smtp, dkim, headers, random_id};
+use crate::{Smtp, dkim, headers, random_id, relay};
 
 const MAX_HOPS: usize = 50;
 const MAX_ERRORS: u32 = 10;
@@ -88,7 +88,8 @@ async fn handle(smtp: Smtp, mut socket: TcpStream, peer: SocketAddr, kind: Liste
     } else {
         Stream::Plain(socket)
     };
-    let mut session = Session::new(smtp.clone(), stream, peer.ip(), kind);
+    // Dual-stack listeners report IPv4 clients as ::ffff:a.b.c.d; SPF needs the plain IPv4 address.
+    let mut session = Session::new(smtp.clone(), stream, peer.ip().to_canonical(), kind);
     session.run().await
 }
 
@@ -713,10 +714,22 @@ impl Session {
         let raw = headers::strip_forged_auth_results(&raw, &ctx.hostname);
         let helo = self.helo.clone().unwrap_or_default();
 
-        let verdict = if ctx.smtp.verify_senders {
-            Some(checks::verify(&ctx, self.peer, &helo, &envelope.address, &raw).await)
+        // Behind a trusted relay, check the server that talked to the relay.
+        let client = if ctx.trusted_relays.iter().any(|network| network.contains(self.peer)) {
+            let found = relay::original_client(&raw, &ctx.trusted_relays);
+            if found.is_none() {
+                tracing::warn!(%id, relay = %self.peer, "no readable Received header from the trusted relay, skipping sender checks");
+            }
+            found
         } else {
-            None
+            Some((self.peer, helo))
+        };
+
+        let verdict = match client {
+            Some((ip, helo)) if ctx.smtp.verify_senders => {
+                Some(checks::verify(&ctx, ip, &helo, &envelope.address, &raw).await)
+            }
+            _ => None,
         };
         if let Some(checks::Verdict { action: Action::Reject(reason), .. }) = &verdict {
             tracing::info!(%id, from = %envelope.address, %reason, "rejected by DMARC");

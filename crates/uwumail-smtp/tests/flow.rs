@@ -41,6 +41,10 @@ fn server_tls(names: &[&str]) -> Arc<rustls::ServerConfig> {
 }
 
 async fn start(domain: &str, users: &[&str], routes: &[(&str, SocketAddr)]) -> TestServer {
+    start_with(domain, users, routes, SmtpConfig::default()).await
+}
+
+async fn start_with(domain: &str, users: &[&str], routes: &[(&str, SocketAddr)], config: SmtpConfig) -> TestServer {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
     store.create_domain(domain).await.unwrap();
@@ -66,7 +70,7 @@ async fn start(domain: &str, users: &[&str], routes: &[(&str, SocketAddr)]) -> T
         store,
         SmtpSettings {
             hostname: hostname.clone(),
-            smtp: SmtpConfig::default(),
+            smtp: config,
             delivery,
             tone: ToneConfig::default(),
             server_tls: Some(server_tls(&["localhost", &hostname])),
@@ -292,4 +296,34 @@ impl RawSession {
         self.reader.get_mut().write_all(format!("{command}\r\n").as_bytes()).await.unwrap();
         self.read_reply().await
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sender_checks_behind_a_trusted_relay_use_the_original_client() {
+    let config = SmtpConfig { trusted_relays: vec!["127.0.0.1".into()], ..SmtpConfig::default() };
+    let a = start_with("a.test", &["mini"], &[], config).await;
+    a.smtp.dns_cache().pin_txt("sender.test", "v=spf1 ip4:203.0.113.7 -all").unwrap();
+    for name in ["mail.sender.test", "_dmarc.sender.test"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+
+    // The relay (us, from 127.0.0.1) received the message from 203.0.113.7 and forwards it.
+    let mut session = RawSession::connect(a.mx).await;
+    assert!(session.command("EHLO relay.local").await.starts_with("250"));
+    assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+    assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
+    assert!(session.command("DATA").await.starts_with("354"));
+    let reply = session
+        .command(
+            "Received: from mail.sender.test (mail.sender.test [203.0.113.7])\r\n\
+             \tby relay.local (Postfix) with ESMTPS id 4F1;\r\n\
+             \tMon, 14 Sep 2026 10:00:00 +0200\r\n\
+             From: news@sender.test\r\nSubject: Newsletter\r\n\r\nHallo\r\n.",
+        )
+        .await;
+    assert!(reply.starts_with("250"), "{reply}");
+
+    let inbox = a.wait_for_inbox("mini@a.test", 1).await;
+    let raw = a.raw(&inbox[0]).await;
+    assert!(raw.contains("spf=pass"), "SPF is checked against 203.0.113.7, not the relay: {raw}");
 }

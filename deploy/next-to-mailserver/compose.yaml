@@ -1,0 +1,33 @@
+# UwUMail Server next to an existing mail server (e.g. Mailcow) and web reverse proxy.
+#
+# The existing mail server keeps port 25 and forwards one (sub)domain here,
+# a reverse proxy (e.g. Caddy) forwards the web host name to port 8080,
+# and outgoing mail leaves through an existing relay.
+#
+#   1. Copy this folder to the server, e.g. /opt/uwumail
+#   2. Fill in uwumail.toml
+#   3. Create .env with:  RELAY_PASSWORD=...
+#   4. docker compose up -d
+#
+# See docs/deployment.md, section "Next to an existing mail server".
+
+services:
+  uwumail:
+    image: ghcr.io/minifyx/uwumail-server:${UWUMAIL_VERSION:-edge}
+    container_name: uwumail
+    restart: unless-stopped
+    environment:
+      UWUMAIL_CONFIG: /etc/uwumail/uwumail.toml
+      UWUMAIL_DELIVERY__RELAY__PASSWORD: ${RELAY_PASSWORD:?set RELAY_PASSWORD in .env}
+    ports:
+      - "25:25"       # mail forwarded by the existing mail server
+      - "465:465"     # mail apps, TLS
+      - "587:587"     # mail apps, STARTTLS
+      - "8080:8080"   # web, behind the reverse proxy
+    volumes:
+      - ./uwumail.toml:/etc/uwumail/uwumail.toml:ro
+      - data:/data
+    stop_grace_period: 20s
+
+volumes:
+  data:

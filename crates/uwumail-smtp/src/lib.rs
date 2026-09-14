@@ -15,6 +15,7 @@ mod headers;
 mod inbound;
 mod limiter;
 mod outbound;
+mod relay;
 mod stream;
 mod texts;
 mod tls;
@@ -43,6 +44,8 @@ pub enum SmtpError {
     Dkim(String),
     #[error("DNS resolver: {0}")]
     Dns(String),
+    #[error("configuration: {0}")]
+    Config(String),
 }
 
 /// Everything the SMTP services share. Cheap to clone.
@@ -62,6 +65,7 @@ pub(crate) struct Context {
     pub authenticator: MessageAuthenticator,
     pub dns: DnsCaches,
     pub auth_limiter: limiter::AuthLimiter,
+    pub trusted_relays: Vec<relay::IpNetwork>,
     pub connections: Arc<Semaphore>,
     pub delivery_permits: Arc<Semaphore>,
     pub inflight: Mutex<HashSet<i64>>,
@@ -85,6 +89,8 @@ impl Smtp {
             })
             .map_err(|err| SmtpError::Dns(err.to_string()))?;
         let SmtpSettings { hostname, smtp, delivery, tone, server_tls } = settings;
+        let trusted_relays = relay::parse_networks(&smtp.trusted_relays)
+            .map_err(|err| SmtpError::Config(format!("smtp.trusted_relays: {err}")))?;
         Ok(Smtp {
             inner: Arc::new(Context {
                 store,
@@ -99,6 +105,7 @@ impl Smtp {
                 authenticator,
                 dns: DnsCaches::default(),
                 auth_limiter: limiter::AuthLimiter::default(),
+                trusted_relays,
                 inflight: Mutex::new(HashSet::new()),
             }),
         })

@@ -150,8 +150,11 @@ impl Config {
         {
             bail!("TLS mode `files` needs `tls.cert_file` and `tls.key_file`");
         }
-        if self.tls.mode == TlsMode::Acme && self.listen.http.is_empty() {
-            bail!("TLS mode `acme` needs the HTTP listener on port 80 for the certificate challenge");
+        // Behind a reverse proxy the challenge arrives through the proxy listener instead of port 80.
+        if self.tls.mode == TlsMode::Acme && self.listen.http.is_empty() && self.listen.proxy.is_empty() {
+            bail!(
+                "TLS mode `acme` needs the HTTP listener on port 80 (or a proxy listener) for the certificate challenge"
+            );
         }
         Ok(())
     }
