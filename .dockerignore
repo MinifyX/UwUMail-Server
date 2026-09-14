@@ -1,0 +1,10 @@
+target
+dist
+data
+dev/data
+node_modules
+.git
+.github
+docs
+*.md
+!crates/**/*.md

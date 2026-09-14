@@ -1,0 +1,23 @@
+# Build output
+target/
+dist/
+node_modules/
+
+# Local data of a dev server
+/data/
+/dev/data/
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Editors and OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

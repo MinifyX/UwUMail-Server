@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="56 40 400 388" width="400" height="388" role="img" aria-label="UwUMail">
+  <g transform="translate(256 265) rotate(-6) translate(-256 -265)" stroke-linecap="round" stroke-linejoin="round">
+    <g fill="#FFFFFF" stroke="#FFFFFF" stroke-width="44">
+      <path d="M118 200 L132 100 Q135 82 151 91 L230 156 Z"/>
+      <path d="M394 200 L380 100 Q377 82 361 91 L282 156 Z"/>
+      <rect x="100" y="152" width="312" height="226" rx="50"/>
+    </g>
+    <g fill="#FF6FA6" stroke="#4B1D3F" stroke-width="14">
+      <path d="M118 200 L132 100 Q135 82 151 91 L230 156 Z"/>
+      <path d="M394 200 L380 100 Q377 82 361 91 L282 156 Z"/>
+    </g>
+    <g fill="#FFB8D3">
+      <path d="M146 150 L151 116 Q152 108 159 112 L196 144 Z"/>
+      <path d="M366 150 L361 116 Q360 108 353 112 L316 144 Z"/>
+    </g>
+    <rect x="100" y="152" width="312" height="226" rx="50" fill="#FF6FA6"/>
+    <path d="M100 202 A50 50 0 0 1 150 152 H362 A50 50 0 0 1 412 202 L276 290 Q256 304 236 290 Z" fill="#FFB8D3"/>
+    <g fill="none" stroke="#4B1D3F" stroke-width="14">
+      <rect x="100" y="152" width="312" height="226" rx="50"/>
+      <path d="M108 207 L236 290 Q256 304 276 290 L404 207"/>
+    </g>
+    <g transform="translate(256 216) scale(1.2) translate(-256 -216)">
+      <g fill="#FF7FB0">
+        <ellipse cx="194" cy="238" rx="15" ry="8.5"/>
+        <ellipse cx="318" cy="238" rx="15" ry="8.5"/>
+      </g>
+      <g fill="none" stroke="#4B1D3F" stroke-width="14">
+        <path d="M210 194 v4 a12 12 0 0 0 24 0 v-4"/>
+        <path d="M278 194 v4 a12 12 0 0 0 24 0 v-4"/>
+        <path d="M236 230 q10 13 20 0 q10 13 20 0"/>
+      </g>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="56 40 400 388" width="400" height="388" role="img" aria-label="UwUMail">
+  <g transform="translate(256 265) rotate(-6) translate(-256 -265)" fill="none" stroke="currentColor" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M124 160 L132 100 Q135 82 151 91 L225 152"/>
+    <path d="M388 160 L380 100 Q377 82 361 91 L287 152"/>
+    <rect x="100" y="152" width="312" height="226" rx="50"/>
+    <path d="M108 207 L236 290 Q256 304 276 290 L404 207"/>
+    <g transform="translate(256 216) scale(1.2) translate(-256 -216)" stroke-width="15">
+      <path d="M210 194 v4 a12 12 0 0 0 24 0 v-4"/>
+      <path d="M278 194 v4 a12 12 0 0 0 24 0 v-4"/>
+      <path d="M236 230 q10 13 20 0 q10 13 20 0"/>
+    </g>
+  </g>
+</svg>

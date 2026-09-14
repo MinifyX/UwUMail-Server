@@ -1,0 +1,55 @@
+[workspace]
+resolver = "3"
+members = ["crates/uwumail-store", "crates/uwumail-smtp", "crates/uwumail-server"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+repository = "https://github.com/MinifyX/UwUMail-Server"
+rust-version = "1.88"
+
+[workspace.dependencies]
+uwumail-smtp = { path = "crates/uwumail-smtp" }
+uwumail-store = { path = "crates/uwumail-store" }
+
+anyhow = "1"
+argon2 = { version = "0.6", features = ["getrandom"] }
+aws-lc-rs = "1"
+axum = { version = "0.8", default-features = false, features = ["http1", "http2", "json", "tokio", "query"] }
+base64 = "0.23"
+clap = { version = "4", features = ["derive", "env"] }
+figment = { version = "0.10", features = ["toml", "env"] }
+hex = "0.4"
+hyper = "1"
+hyper-util = { version = "0.1", features = ["tokio", "server-auto", "service"] }
+instant-acme = "0.8"
+mail-auth = "0.13"
+mail-builder = "1"
+mail-parser = "0.11"
+getrandom = "0.4"
+rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12", "logging"] }
+rustls-pki-types = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+smtp-proto = "0.2"
+tempfile = "3"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "io-util", "fs", "signal"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs", "logging", "tls12"] }
+tower = "0.5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Test-only helpers
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls", "aws-lc-rs"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
