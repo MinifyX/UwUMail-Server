@@ -45,6 +45,7 @@ async fn start(domain: &str, users: &[&str], routes: &[(&str, SocketAddr)]) -> T
 }
 
 async fn start_with(domain: &str, users: &[&str], routes: &[(&str, SocketAddr)], config: SmtpConfig) -> TestServer {
+    let _ = tracing_subscriber::fmt().with_env_filter("debug").with_test_writer().try_init();
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
     store.create_domain(domain).await.unwrap();

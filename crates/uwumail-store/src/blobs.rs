@@ -114,6 +114,7 @@ impl Store {
         let cutoff = now() - min_age_secs;
         let hashes: Vec<String> = self
             .write(move |tx| {
+                tx.execute("DELETE FROM uploads WHERE created_at <= ?1", [now() - crate::UPLOAD_LIFETIME_SECS])?;
                 let mut stmt = tx.prepare("DELETE FROM blobs WHERE refs <= 0 AND created_at <= ?1 RETURNING hash")?;
                 let rows = stmt.query_map([cutoff], |row| row.get(0))?.collect::<Result<Vec<String>, _>>()?;
                 Ok(rows)

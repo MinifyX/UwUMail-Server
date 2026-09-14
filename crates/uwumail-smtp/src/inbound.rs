@@ -6,7 +6,6 @@ use std::time::Duration;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use mail_builder::headers::date::Date;
-use mail_parser::MessageParser;
 use smtp_proto::request::receiver::{BdatReceiver, DataReceiver, DummyDataReceiver, LineReceiver, RequestReceiver};
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN, MailFrom, RcptTo, Request};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -14,12 +13,13 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 use tokio::time::timeout;
 use tokio_rustls::TlsAcceptor;
-use uwumail_store::{Account, IngestRequest, MailboxRole, MailboxTarget, NewQueueRecipient, StoreError};
+use uwumail_store::{Account, IngestRequest, MailboxRole, MailboxTarget, StoreError};
 
 use crate::checks::{self, Action};
 use crate::dsn::{self, FailedRecipient};
 use crate::stream::Stream;
-use crate::{Smtp, dkim, headers, random_id, relay};
+use crate::submission::{Submission, SubmissionRecipient, SubmitError};
+use crate::{Smtp, headers, random_id, relay};
 
 const MAX_HOPS: usize = 50;
 const MAX_ERRORS: u32 = 10;
@@ -754,9 +754,9 @@ impl Session {
                 continue;
             }
             seen_accounts.push(account_id);
-            let mailbox = MailboxTarget::Role(if junk { MailboxRole::Junk } else { MailboxRole::Inbox });
+            let mailboxes = vec![MailboxTarget::Role(if junk { MailboxRole::Junk } else { MailboxRole::Inbox })];
             let request =
-                IngestRequest { account_id, raw: message.clone(), mailbox, keywords: vec![], received_at: None };
+                IngestRequest { account_id, raw: message.clone(), mailboxes, keywords: vec![], received_at: None };
             match ctx.store.ingest(request).await {
                 Ok(_) => delivered += 1,
                 Err(StoreError::QuotaExceeded) => failed.push(FailedRecipient {
@@ -791,98 +791,33 @@ impl Session {
 
     /// Mail from one of our people, to anyone.
     async fn submit(&mut self, envelope: Envelope, recipients: Vec<Recipient>, raw: Vec<u8>) -> String {
-        let ctx = self.smtp.inner.clone();
         let account = self.account.clone().expect("MAIL requires authentication on submission ports");
-        let id = random_id();
-
-        let from: Vec<String> = MessageParser::new()
-            .parse_headers(&raw)
-            .and_then(|m| m.from().map(|f| f.iter().filter_map(|a| a.address.as_deref().map(str::to_owned)).collect()))
-            .unwrap_or_default();
-        if from.is_empty() {
-            return "550 5.6.0 The message has no From header\r\n".into();
-        }
-        for address in &from {
-            if !ctx.store.account_owns_address(account.id, address).await.unwrap_or(false) {
-                return format!("550 5.7.1 You are not allowed to send as <{address}>\r\n");
-            }
-        }
-        let from_domain = from[0].rsplit_once('@').map(|(_, d)| d.to_ascii_lowercase()).unwrap_or_default();
-
-        let mut prefix = String::new();
-        if headers::first_value(&raw, "Date").is_none() {
-            prefix.push_str(&format!("Date: {}\r\n", Date::now().to_rfc822()));
-        }
-        if headers::first_value(&raw, "Message-ID").is_none() {
-            prefix.push_str(&format!("Message-ID: <{}@{from_domain}>\r\n", random_id()));
-        }
-        let mut message = prefix.into_bytes();
-        message.extend_from_slice(&raw);
-
-        let signatures = match dkim::ensure_domain_keys(&ctx.store, &from_domain).await {
-            Ok(keys) => dkim::sign(&message, &keys).unwrap_or_else(|err| {
-                tracing::error!(%err, domain = %from_domain, "DKIM signing failed");
-                String::new()
-            }),
-            Err(err) => {
-                tracing::error!(%err, domain = %from_domain, "no DKIM keys");
-                String::new()
-            }
+        let trace = self.received_header(&random_id(), None);
+        let submission = Submission {
+            account,
+            mail_from: envelope.address,
+            recipients: recipients
+                .into_iter()
+                .map(|r| SubmissionRecipient { address: r.address, notify_flags: r.notify_flags, orcpt: r.orcpt })
+                .collect(),
+            raw,
+            env_id: envelope.env_id,
+            trace: Some(trace),
         };
-        let mut signed = signatures.into_bytes();
-        signed.extend_from_slice(self.received_header(&id, None).as_bytes());
-        signed.extend_from_slice(&message);
-
-        let mut failed: Vec<FailedRecipient> = Vec::new();
-        let mut local_delivered = 0;
-        let mut remote = Vec::new();
-        for recipient in &recipients {
-            match recipient.local_account {
-                Some(account_id) => {
-                    let request = IngestRequest {
-                        account_id,
-                        raw: signed.clone(),
-                        mailbox: MailboxTarget::Role(MailboxRole::Inbox),
-                        keywords: vec![],
-                        received_at: None,
-                    };
-                    match ctx.store.ingest(request).await {
-                        Ok(_) => local_delivered += 1,
-                        Err(err) => failed.push(FailedRecipient {
-                            address: recipient.address.clone(),
-                            error: match err {
-                                StoreError::QuotaExceeded => "552 5.2.2 Mailbox is full".into(),
-                                other => format!("451 4.3.0 {other}"),
-                            },
-                        }),
-                    }
-                }
-                None => remote.push(NewQueueRecipient {
-                    address: recipient.address.clone(),
-                    notify_flags: recipient.notify_flags,
-                    orcpt: recipient.orcpt.clone(),
-                }),
+        match self.smtp.submit(submission).await {
+            Ok(submitted) => format!("250 2.0.0 Message queued as {}\r\n", submitted.id),
+            Err(SubmitError::NoFrom) => "550 5.6.0 The message has no From header\r\n".into(),
+            Err(SubmitError::ForbiddenFrom(address)) => {
+                format!("550 5.7.1 You are not allowed to send as <{address}>\r\n")
+            }
+            Err(SubmitError::InvalidRecipient(address)) => format!("501 5.1.3 <{address}> is not a valid address\r\n"),
+            Err(SubmitError::NoRecipients) => "503 5.5.1 Send RCPT first\r\n".into(),
+            Err(SubmitError::NobodyAccepted) => "552 5.2.2 No recipient could take the message\r\n".into(),
+            Err(SubmitError::Queue(err)) => {
+                tracing::error!(%err, "queueing a message failed");
+                "451 4.3.0 Could not queue the message, please try again\r\n".into()
             }
         }
-
-        let remote_count = remote.len();
-        if !remote.is_empty() {
-            let lifetime = ctx.delivery.max_lifetime_hours as i64 * 3600;
-            if let Err(err) =
-                ctx.store.enqueue(&envelope.address, remote, &signed, Some(account.id), envelope.env_id, lifetime).await
-            {
-                tracing::error!(%id, %err, "queueing a message failed");
-                return "451 4.3.0 Could not queue the message, please try again\r\n".into();
-            }
-        }
-        if local_delivered == 0 && remote_count == 0 {
-            return "552 5.2.2 No recipient could take the message\r\n".into();
-        }
-        if !failed.is_empty() {
-            dsn::bounce(&ctx, &envelope.address, &signed, &failed).await;
-        }
-        tracing::info!(%id, login = %account.login, local = local_delivered, remote = remote_count, "submitted message");
-        format!("250 2.0.0 Message queued as {id}\r\n")
     }
 }
 

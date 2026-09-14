@@ -66,8 +66,11 @@ pub struct Mailbox {
     pub name: String,
     pub role: Option<MailboxRole>,
     pub sort_order: i64,
+    pub subscribed: bool,
     pub total_emails: i64,
     pub unread_emails: i64,
+    pub total_threads: i64,
+    pub unread_threads: i64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -80,7 +83,8 @@ pub enum MailboxTarget {
 pub struct IngestRequest {
     pub account_id: i64,
     pub raw: Vec<u8>,
-    pub mailbox: MailboxTarget,
+    /// At least one.
+    pub mailboxes: Vec<MailboxTarget>,
     pub keywords: Vec<String>,
     /// Defaults to now.
     pub received_at: Option<i64>,
@@ -90,7 +94,8 @@ pub struct IngestRequest {
 pub struct IngestedEmail {
     pub id: i64,
     pub thread_id: i64,
-    pub mailbox_id: i64,
+    pub mailbox_ids: Vec<i64>,
+    /// UID in the first mailbox.
     pub uid: i64,
     pub blob: BlobHash,
     pub size: i64,
@@ -161,6 +166,34 @@ fn thread_for(tx: &Transaction<'_>, account_id: i64, meta: &EmailMeta) -> Result
     Ok((tx.last_insert_rowid(), true))
 }
 
+/// Puts an email into a mailbox with the next UID of that mailbox.
+pub(crate) fn add_to_mailbox(tx: &Transaction<'_>, email_id: i64, mailbox_id: i64, modseq: i64) -> Result<i64> {
+    let uid: i64 = tx.query_row(
+        "UPDATE mailboxes SET uid_next = uid_next + 1, updated_modseq = ?2 WHERE id = ?1 RETURNING uid_next - 1",
+        params![mailbox_id, modseq],
+        |row| row.get(0),
+    )?;
+    tx.execute(
+        "INSERT INTO email_mailboxes (email_id, mailbox_id, uid, modseq) VALUES (?1, ?2, ?3, ?4)",
+        params![email_id, mailbox_id, uid, modseq],
+    )?;
+    Ok(uid)
+}
+
+pub(crate) fn resolve_mailboxes(conn: &Connection, account_id: i64, targets: &[MailboxTarget]) -> Result<Vec<i64>> {
+    let mut ids = Vec::with_capacity(targets.len());
+    for target in targets {
+        let id = resolve_mailbox(conn, account_id, *target)?;
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    if ids.is_empty() {
+        return Err(StoreError::Invalid("an email needs at least one mailbox".into()));
+    }
+    Ok(ids)
+}
+
 fn addresses_json(addresses: &[EmailAddress]) -> String {
     serde_json::to_string(addresses).unwrap_or_else(|_| "[]".into())
 }
@@ -169,7 +202,7 @@ impl Store {
     /// Stores a message in a mailbox of an account: blob, metadata, thread, search
     /// index and change log. Fails with [`StoreError::QuotaExceeded`] when the account is full.
     pub async fn ingest(&self, request: IngestRequest) -> Result<IngestedEmail> {
-        let IngestRequest { account_id, raw, mailbox, keywords, received_at } = request;
+        let IngestRequest { account_id, raw, mailboxes, keywords, received_at } = request;
         let size = raw.len() as i64;
 
         let quota_ok = self
@@ -211,7 +244,7 @@ impl Store {
                     return Err(StoreError::QuotaExceeded);
                 }
 
-                let mailbox_id = resolve_mailbox(tx, account_id, mailbox)?;
+                let mailbox_ids = resolve_mailboxes(tx, account_id, &mailboxes)?;
                 let modseq = next_modseq(tx, account_id)?;
                 let (thread_id, new_thread) = thread_for(tx, account_id, &meta)?;
 
@@ -244,15 +277,14 @@ impl Store {
                 )?;
                 let email_id = tx.last_insert_rowid();
 
-                let uid: i64 = tx.query_row(
-                    "UPDATE mailboxes SET uid_next = uid_next + 1, updated_modseq = ?2 WHERE id = ?1 RETURNING uid_next - 1",
-                    params![mailbox_id, modseq],
-                    |row| row.get(0),
-                )?;
-                tx.execute(
-                    "INSERT INTO email_mailboxes (email_id, mailbox_id, uid, modseq) VALUES (?1, ?2, ?3, ?4)",
-                    params![email_id, mailbox_id, uid, modseq],
-                )?;
+                let mut uid = 0;
+                for (index, mailbox_id) in mailbox_ids.iter().enumerate() {
+                    let assigned = add_to_mailbox(tx, email_id, *mailbox_id, modseq)?;
+                    if index == 0 {
+                        uid = assigned;
+                    }
+                    record_change(tx, account_id, modseq, "Mailbox", *mailbox_id, "updated")?;
+                }
                 for keyword in &keywords {
                     tx.execute(
                         "INSERT OR IGNORE INTO email_keywords (email_id, keyword) VALUES (?1, ?2)",
@@ -273,9 +305,8 @@ impl Store {
 
                 record_change(tx, account_id, modseq, "Email", email_id, "created")?;
                 record_change(tx, account_id, modseq, "Thread", thread_id, if new_thread { "created" } else { "updated" })?;
-                record_change(tx, account_id, modseq, "Mailbox", mailbox_id, "updated")?;
 
-                let email = IngestedEmail { id: email_id, thread_id, mailbox_id, uid, blob: BlobHash::parse(&blob_key)?, size };
+                let email = IngestedEmail { id: email_id, thread_id, mailbox_ids, uid, blob: BlobHash::parse(&blob_key)?, size };
                 Ok((email, modseq))
             })
             .await?;
@@ -287,11 +318,14 @@ impl Store {
     pub async fn mailboxes(&self, account_id: i64) -> Result<Vec<Mailbox>> {
         self.read(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT m.id, m.account_id, m.parent_id, m.name, m.role, m.sort_order,
+                "SELECT m.id, m.account_id, m.parent_id, m.name, m.role, m.sort_order, m.subscribed,
                         count(em.email_id),
-                        count(em.email_id) - count(k.email_id)
+                        count(em.email_id) - count(k.email_id),
+                        count(DISTINCT e.thread_id),
+                        count(DISTINCT CASE WHEN k.email_id IS NULL THEN e.thread_id END)
                  FROM mailboxes m
                  LEFT JOIN email_mailboxes em ON em.mailbox_id = m.id
+                 LEFT JOIN emails e ON e.id = em.email_id
                  LEFT JOIN email_keywords k ON k.email_id = em.email_id AND k.keyword = '$seen'
                  WHERE m.account_id = ?1
                  GROUP BY m.id ORDER BY m.sort_order, m.name",
@@ -304,8 +338,11 @@ impl Store {
                     name: row.get(3)?,
                     role: row.get::<_, Option<String>>(4)?.as_deref().and_then(MailboxRole::parse),
                     sort_order: row.get(5)?,
-                    total_emails: row.get(6)?,
-                    unread_emails: row.get(7)?,
+                    subscribed: row.get(6)?,
+                    total_emails: row.get(7)?,
+                    unread_emails: row.get(8)?,
+                    total_threads: row.get(9)?,
+                    unread_threads: row.get(10)?,
                 })
             })?;
             Ok(rows.collect::<Result<_, _>>()?)
@@ -408,7 +445,7 @@ mod tests {
         IngestRequest {
             account_id,
             raw,
-            mailbox: MailboxTarget::Role(MailboxRole::Inbox),
+            mailboxes: vec![MailboxTarget::Role(MailboxRole::Inbox)],
             keywords: vec![],
             received_at: None,
         }

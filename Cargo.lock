@@ -2728,6 +2728,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "uwumail-jmap"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.23.1",
+ "futures-util",
+ "hex",
+ "mail-builder",
+ "mail-parser",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "tower",
+ "tracing",
+ "uwumail-smtp",
+ "uwumail-store",
+]
+
+[[package]]
 name = "uwumail-server"
 version = "0.1.0"
 dependencies = [
@@ -2775,6 +2796,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tracing",
+ "tracing-subscriber",
  "uwumail-store",
  "webpki-roots",
 ]

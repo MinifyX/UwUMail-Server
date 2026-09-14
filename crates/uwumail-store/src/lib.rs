@@ -12,9 +12,13 @@ mod address;
 mod blobs;
 mod db;
 mod directory;
+mod extras;
 mod mail;
+mod mutate;
+mod objects;
 mod parse;
 mod password;
+mod query;
 mod queue;
 
 use std::path::{Path, PathBuf};
@@ -26,7 +30,11 @@ use tokio::sync::{Notify, broadcast};
 pub use address::{EmailAddress, normalize_address, normalize_domain};
 pub use blobs::BlobHash;
 pub use directory::{Account, DkimKey, DkimKeyAlgorithm, Domain, NewAccount, Role};
+pub use extras::{Identity, IdentityUpdate, SubmissionRecord, UPLOAD_LIFETIME_SECS, VacationResponse};
 pub use mail::{EmailSummary, IngestRequest, IngestedEmail, Mailbox, MailboxRole, MailboxTarget};
+pub use mutate::{EmailUpdate, KeywordsChange, MailboxUpdate, MailboxesChange};
+pub use objects::{Changes, EmailRecord};
+pub use query::{EmailFilter, EmailSort, EmailSortProperty};
 pub use queue::{NewQueueRecipient, QueueEntry, QueueRecipient, QueueRecipientStatus, QueuedMessage};
 
 #[derive(Debug, thiserror::Error)]
@@ -39,6 +47,9 @@ pub enum StoreError {
     Invalid(String),
     #[error("mailbox is full")]
     QuotaExceeded,
+    /// A rule of the data model was broken; `code` is a stable machine-readable name.
+    #[error("{message}")]
+    Rule { code: &'static str, message: String },
     #[error("database error: {0}")]
     Sqlite(#[from] rusqlite::Error),
     #[error("file error: {0}")]

@@ -36,7 +36,7 @@ pub async fn bounce(ctx: &Context, return_path: &str, original: &[u8], failed: &
             .ingest(IngestRequest {
                 account_id,
                 raw,
-                mailbox: MailboxTarget::Role(MailboxRole::Inbox),
+                mailboxes: vec![MailboxTarget::Role(MailboxRole::Inbox)],
                 keywords: vec![],
                 received_at: None,
             })

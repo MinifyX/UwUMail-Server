@@ -4,6 +4,8 @@ CREATE TABLE settings (
     value TEXT NOT NULL
 );
 
+-- Ids of mailboxes, threads and emails are never reused (AUTOINCREMENT), as JMAP requires.
+
 -- Mail domains hosted by this server. Names are stored as lowercase A-labels.
 CREATE TABLE domains (
     id                   INTEGER PRIMARY KEY,
@@ -60,7 +62,7 @@ CREATE TABLE blobs (
 CREATE INDEX blobs_unreferenced ON blobs (refs) WHERE refs <= 0;
 
 CREATE TABLE mailboxes (
-    id             INTEGER PRIMARY KEY,
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
     account_id     INTEGER NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
     parent_id      INTEGER REFERENCES mailboxes (id) ON DELETE CASCADE,
     name           TEXT NOT NULL,
@@ -76,12 +78,12 @@ CREATE UNIQUE INDEX mailboxes_name ON mailboxes (account_id, coalesce(parent_id,
 CREATE UNIQUE INDEX mailboxes_role ON mailboxes (account_id, role) WHERE role IS NOT NULL;
 
 CREATE TABLE threads (
-    id         INTEGER PRIMARY KEY,
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
     account_id INTEGER NOT NULL REFERENCES accounts (id) ON DELETE CASCADE
 );
 
 CREATE TABLE emails (
-    id             INTEGER PRIMARY KEY,
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
     account_id     INTEGER NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
     thread_id      INTEGER NOT NULL REFERENCES threads (id),
     blob_hash      TEXT NOT NULL REFERENCES blobs (hash),

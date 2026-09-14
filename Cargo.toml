@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/uwumail-store", "crates/uwumail-smtp", "crates/uwumail-server"]
+members = ["crates/uwumail-store", "crates/uwumail-smtp", "crates/uwumail-jmap", "crates/uwumail-server"]
 
 [workspace.package]
 version = "0.1.0"
@@ -10,6 +10,7 @@ repository = "https://github.com/MinifyX/UwUMail-Server"
 rust-version = "1.88"
 
 [workspace.dependencies]
+uwumail-jmap = { path = "crates/uwumail-jmap" }
 uwumail-smtp = { path = "crates/uwumail-smtp" }
 uwumail-store = { path = "crates/uwumail-store" }
 
@@ -19,6 +20,7 @@ aws-lc-rs = "1"
 axum = { version = "0.8", default-features = false, features = ["http1", "http2", "json", "tokio", "query"] }
 base64 = "0.23"
 clap = { version = "4", features = ["derive", "env"] }
+futures-util = "0.3"
 figment = { version = "0.10", features = ["toml", "env"] }
 hex = "0.4"
 hyper = "1"

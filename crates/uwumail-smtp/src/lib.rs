@@ -17,6 +17,7 @@ mod limiter;
 mod outbound;
 mod relay;
 mod stream;
+mod submission;
 mod texts;
 mod tls;
 
@@ -33,6 +34,8 @@ pub use config::{
 pub use dns::DnsCaches;
 pub use inbound::{ListenerKind, serve};
 pub use outbound::run_queue;
+pub use relay::IpNetwork;
+pub use submission::{Submission, SubmissionRecipient, SubmitError, Submitted};
 
 #[derive(Debug, thiserror::Error)]
 pub enum SmtpError {
