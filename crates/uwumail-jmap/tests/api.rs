@@ -233,6 +233,8 @@ Thunfisch;2\r\n--x--\r\n";
                 ["Mailbox/set", { "accountId": account, "create": { "k": { "name": "Katzen", "parentId": null } } }, "0"],
                 ["Mailbox/set", { "accountId": account, "create": { "n": { "name": "Nyu", "parentId": "#k" } } }, "1"],
                 ["Mailbox/set", { "accountId": account, "destroy": ["#k", inbox_id] }, "2"],
+                ["Mailbox/set", { "accountId": account, "create": {
+                    "child": { "name": "Bugs", "parentId": "#parent" }, "parent": { "name": "Projekte" } } }, "3"],
             ]),
         )
         .await;
@@ -240,6 +242,12 @@ Thunfisch;2\r\n--x--\r\n";
     assert!(args(&responses, 1, "Mailbox/set")["created"]["n"]["id"].is_string());
     let not_destroyed = &args(&responses, 2, "Mailbox/set")["notDestroyed"];
     assert_eq!(not_destroyed.as_object().unwrap().len(), 2, "{not_destroyed}");
+    let nested = &args(&responses, 3, "Mailbox/set")["created"];
+    assert!(
+        nested["child"]["id"].is_string() && nested["parent"]["id"].is_string(),
+        "parents are created first: {}",
+        responses[3]
+    );
     let _ = drafts_id;
 }
 

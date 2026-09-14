@@ -163,7 +163,22 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let mut response = SetResponse::default();
 
     if let Some(create) = args.get("create").and_then(Value::as_object) {
-        for (creation_id, object) in create {
+        // Parents first: a create may point at another create of this call ("parentId": "#k"),
+        // and JSON objects carry no order.
+        let mut pending: Vec<(&String, &Value)> = create.iter().collect();
+        let mut ordered = Vec::with_capacity(pending.len());
+        while !pending.is_empty() {
+            let waiting_on = |object: &Value, pending: &[(&String, &Value)]| {
+                object
+                    .get("parentId")
+                    .and_then(Value::as_str)
+                    .and_then(|p| p.strip_prefix('#'))
+                    .is_some_and(|parent| pending.iter().any(|(id, _)| id.as_str() == parent))
+            };
+            let ready = pending.iter().position(|(_, object)| !waiting_on(object, &pending)).unwrap_or(0);
+            ordered.push(pending.remove(ready));
+        }
+        for (creation_id, object) in ordered {
             let result: Result<i64, SetError> = async {
                 let name = object
                     .get("name")

@@ -29,7 +29,8 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Vacation auto-replies when mail arrives (once per sender per week, never to lists or machines)
 - [ ] App passwords and Bearer tokens
 - [ ] WebSocket push, delayed sending (undo window), `Email/copy`, query changes
-- [ ] Tested with the UwUMail app and other JMAP clients
+- [x] The UwUMail app's JMAP integration test passes against this server (`dev/client-compat.sh`)
+- [ ] Tested with other JMAP clients
 
 ## 3. Setup assistant and admin panel
 
