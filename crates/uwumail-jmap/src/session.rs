@@ -42,27 +42,6 @@ pub fn base_url(headers: &HeaderMap, client: ClientInfo) -> String {
     format!("{scheme}://{host}")
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use axum::http::HeaderValue;
-
-    #[test]
-    fn follows_the_scheme_the_client_used() {
-        let mut headers = HeaderMap::new();
-        headers.insert(header::HOST, HeaderValue::from_static("mail.example.de"));
-        assert_eq!(base_url(&headers, ClientInfo::default()), "http://mail.example.de");
-        assert_eq!(base_url(&headers, ClientInfo { https: true, ..ClientInfo::default() }), "https://mail.example.de");
-
-        headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
-        assert_eq!(base_url(&headers, ClientInfo::default()), "https://mail.example.de");
-
-        headers.remove("x-forwarded-proto");
-        headers.insert(header::FORWARDED, HeaderValue::from_static("for=192.0.2.1;proto=https;host=mail.example.de"));
-        assert_eq!(base_url(&headers, ClientInfo::default()), "https://mail.example.de");
-    }
-}
-
 pub fn session_state(account: &Account) -> String {
     // Changes whenever something in the session document would change.
     format!("{}-{}", account.id, account.login.len() + account.display_name.len())
@@ -127,5 +106,26 @@ pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInf
             ([(header::CACHE_CONTROL, "no-cache, no-store")], Json(document(&account, &base))).into_response()
         }
         Err(err) => err.into_response(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    #[test]
+    fn follows_the_scheme_the_client_used() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, HeaderValue::from_static("mail.example.de"));
+        assert_eq!(base_url(&headers, ClientInfo::default()), "http://mail.example.de");
+        assert_eq!(base_url(&headers, ClientInfo { https: true, ..ClientInfo::default() }), "https://mail.example.de");
+
+        headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+        assert_eq!(base_url(&headers, ClientInfo::default()), "https://mail.example.de");
+
+        headers.remove("x-forwarded-proto");
+        headers.insert(header::FORWARDED, HeaderValue::from_static("for=192.0.2.1;proto=https;host=mail.example.de"));
+        assert_eq!(base_url(&headers, ClientInfo::default()), "https://mail.example.de");
     }
 }
