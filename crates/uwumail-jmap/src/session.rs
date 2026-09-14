@@ -18,10 +18,49 @@ pub const SUBMISSION: &str = "urn:ietf:params:jmap:submission";
 pub const VACATION: &str = "urn:ietf:params:jmap:vacationresponse";
 
 /// Origin the client used, so every URL in the session works from where it is.
+///
+/// A reverse proxy's `X-Forwarded-Proto` (or `Forwarded: proto=`) is followed even when the
+/// proxy is not configured as trusted: it only decides the scheme of these URLs, and an
+/// https client must never be handed http endpoints.
 pub fn base_url(headers: &HeaderMap, client: ClientInfo) -> String {
     let host = headers.get(header::HOST).and_then(|h| h.to_str().ok()).unwrap_or("localhost");
-    let scheme = if client.https { "https" } else { "http" };
+    let forwarded_proto = headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .map(|v| v.trim().to_ascii_lowercase())
+        .or_else(|| {
+            let forwarded = headers.get(header::FORWARDED)?.to_str().ok()?;
+            forwarded
+                .split([';', ','])
+                .filter_map(|pair| pair.trim().split_once('='))
+                .find(|(key, _)| key.eq_ignore_ascii_case("proto"))
+                .map(|(_, value)| value.trim_matches('"').to_ascii_lowercase())
+        });
+    let https = client.https || forwarded_proto.as_deref() == Some("https");
+    let scheme = if https { "https" } else { "http" };
     format!("{scheme}://{host}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    #[test]
+    fn follows_the_scheme_the_client_used() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, HeaderValue::from_static("mail.example.de"));
+        assert_eq!(base_url(&headers, ClientInfo::default()), "http://mail.example.de");
+        assert_eq!(base_url(&headers, ClientInfo { https: true, ..ClientInfo::default() }), "https://mail.example.de");
+
+        headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+        assert_eq!(base_url(&headers, ClientInfo::default()), "https://mail.example.de");
+
+        headers.remove("x-forwarded-proto");
+        headers.insert(header::FORWARDED, HeaderValue::from_static("for=192.0.2.1;proto=https;host=mail.example.de"));
+        assert_eq!(base_url(&headers, ClientInfo::default()), "https://mail.example.de");
+    }
 }
 
 pub fn session_state(account: &Account) -> String {
