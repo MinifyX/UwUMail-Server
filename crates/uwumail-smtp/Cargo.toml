@@ -1,6 +1,32 @@
 [package]
 name = "uwumail-smtp"
+description = "SMTP for the UwUMail server: receiving, submission, the outbound queue and DKIM"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
 [dependencies]
+uwumail-store.workspace = true
+
+aws-lc-rs.workspace = true
+base64.workspace = true
+hex.workspace = true
+mail-auth.workspace = true
+mail-builder.workspace = true
+mail-parser.workspace = true
+rustls.workspace = true
+rustls-pki-types.workspace = true
+serde.workspace = true
+smtp-proto.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-rustls.workspace = true
+tracing.workspace = true
+webpki-roots.workspace = true
+
+[dev-dependencies]
+lettre.workspace = true
+rcgen.workspace = true
+tempfile.workspace = true
