@@ -20,6 +20,7 @@ mod stream;
 mod submission;
 mod texts;
 mod tls;
+mod vacation;
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};

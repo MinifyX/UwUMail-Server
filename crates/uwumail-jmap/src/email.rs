@@ -203,41 +203,40 @@ fn body_part(message: &Message<'_>, hash: &BlobHash, index: usize, properties: &
     };
     let mut object = Map::new();
     for property in properties {
-        let value =
-            match property.as_str() {
-                "partId" => match part.body {
-                    PartType::Multipart(_) => Value::Null,
-                    _ => json!(index.to_string()),
-                },
-                "blobId" => match part.body {
-                    PartType::Multipart(_) => Value::Null,
-                    _ => json!(ids::part_blob(hash, index)),
-                },
-                "size" => json!(part_size(part)),
-                "headers" => {
-                    json!(
-                        raw_headers(&message.raw_message, part)
-                            .iter()
-                            .map(|(n, v)| json!({ "name": n, "value": v }))
-                            .collect::<Vec<_>>()
-                    )
-                }
-                "name" => json!(part.attachment_name()),
-                "type" => json!(part_type(part)),
-                "charset" => {
-                    json!(part.content_type().and_then(|ct| ct.attribute("charset")).map(str::to_owned).or_else(|| {
-                        matches!(part.body, PartType::Text(_) | PartType::Html(_)).then(|| "utf-8".to_owned())
-                    }))
-                }
-                "disposition" => json!(part.content_disposition().map(|d| d.c_type.to_lowercase())),
-                "cid" => json!(part.content_id().map(|c| c.trim_matches(['<', '>']).to_owned())),
-                "language" => text_list(part.content_language()),
-                "location" => json!(part.content_location()),
-                other if other.starts_with("header:") => {
-                    header_property(other, &raw_headers(&message.raw_message, part)).unwrap_or(Value::Null)
-                }
-                _ => continue,
-            };
+        let value = match property.as_str() {
+            "partId" => match part.body {
+                PartType::Multipart(_) => Value::Null,
+                _ => json!(index.to_string()),
+            },
+            "blobId" => match part.body {
+                PartType::Multipart(_) => Value::Null,
+                _ => json!(ids::part_blob(hash, index)),
+            },
+            "size" => json!(part_size(part)),
+            "headers" => {
+                json!(
+                    raw_headers(&message.raw_message, part)
+                        .iter()
+                        .map(|(n, v)| json!({ "name": n, "value": v }))
+                        .collect::<Vec<_>>()
+                )
+            }
+            "name" => json!(part.attachment_name()),
+            "type" => json!(part_type(part)),
+            "charset" => {
+                json!(part.content_type().and_then(|ct| ct.attribute("charset")).map(str::to_owned).or_else(|| {
+                    matches!(part.body, PartType::Text(_) | PartType::Html(_)).then(|| "utf-8".to_owned())
+                }))
+            }
+            "disposition" => json!(part.content_disposition().map(|d| d.c_type.to_lowercase())),
+            "cid" => json!(part.content_id().map(|c| c.trim_matches(['<', '>']).to_owned())),
+            "language" => text_list(part.content_language()),
+            "location" => json!(part.content_location()),
+            other if other.starts_with("header:") => {
+                header_property(other, &raw_headers(&message.raw_message, part)).unwrap_or(Value::Null)
+            }
+            _ => continue,
+        };
         object.insert(property.clone(), value);
     }
     if let PartType::Multipart(children) = &part.body

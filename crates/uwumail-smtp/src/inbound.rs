@@ -19,7 +19,7 @@ use crate::checks::{self, Action};
 use crate::dsn::{self, FailedRecipient};
 use crate::stream::Stream;
 use crate::submission::{Submission, SubmissionRecipient, SubmitError};
-use crate::{Smtp, headers, random_id, relay};
+use crate::{Smtp, headers, random_id, relay, vacation};
 
 const MAX_HOPS: usize = 50;
 const MAX_ERRORS: u32 = 10;
@@ -745,6 +745,7 @@ impl Session {
         message.extend_from_slice(&raw);
 
         let mut delivered = 0;
+        let mut inbox_accounts = Vec::new();
         let mut failed: Vec<FailedRecipient> = Vec::new();
         let mut temporary = false;
         let mut seen_accounts = Vec::new();
@@ -758,7 +759,12 @@ impl Session {
             let request =
                 IngestRequest { account_id, raw: message.clone(), mailboxes, keywords: vec![], received_at: None };
             match ctx.store.ingest(request).await {
-                Ok(_) => delivered += 1,
+                Ok(_) => {
+                    delivered += 1;
+                    if !junk {
+                        inbox_accounts.push(account_id);
+                    }
+                }
                 Err(StoreError::QuotaExceeded) => failed.push(FailedRecipient {
                     address: recipient.address.clone(),
                     error: "552 5.2.2 Mailbox is full".into(),
@@ -781,6 +787,9 @@ impl Session {
             } else {
                 "552 5.2.2 Mailbox is full\r\n".into()
             };
+        }
+        for account_id in inbox_accounts {
+            vacation::maybe_reply(&ctx, account_id, &envelope.address, &message).await;
         }
         let sender_verified = verdict.as_ref().is_none_or(|v| v.sender_verified);
         if !failed.is_empty() && sender_verified {

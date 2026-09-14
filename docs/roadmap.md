@@ -26,7 +26,7 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Submission: `Identity/get|changes|set`, `EmailSubmission/get|changes|query|set` with `onSuccessUpdateEmail` / `onSuccessDestroyEmail`
 - [x] Push over EventSource
 - [x] `VacationResponse/get|set`
-- [ ] Vacation auto-replies when mail arrives
+- [x] Vacation auto-replies when mail arrives (once per sender per week, never to lists or machines)
 - [ ] App passwords and Bearer tokens
 - [ ] WebSocket push, delayed sending (undo window), `Email/copy`, query changes
 - [ ] Tested with the UwUMail app and other JMAP clients

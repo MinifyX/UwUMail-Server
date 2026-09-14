@@ -328,3 +328,33 @@ async fn sender_checks_behind_a_trusted_relay_use_the_original_client() {
     let raw = a.raw(&inbox[0]).await;
     assert!(raw.contains("spf=pass"), "SPF is checked against 203.0.113.7, not the relay: {raw}");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn vacation_replies_once_per_sender() {
+    let b = start("b.test", &["nyu", "mini"], &[]).await;
+    let nyu = b.smtp.store().account("nyu@b.test").await.unwrap().unwrap();
+    b.smtp
+        .store()
+        .set_vacation_response(
+            nyu.id,
+            uwumail_store::VacationResponse {
+                is_enabled: true,
+                subject: Some("Bin im Urlaub".into()),
+                text_body: Some("Ab Montag wieder da.".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+    for subject in ["Erste Mail", "Zweite Mail"] {
+        b.mailer("mini@b.test", PASSWORD, false).send(mail("mini@b.test", &["nyu@b.test"], subject)).await.unwrap();
+    }
+    b.wait_for_inbox("nyu@b.test", 2).await;
+    let replies = b.wait_for_inbox("mini@b.test", 1).await;
+    assert_eq!(replies[0].subject, "Bin im Urlaub");
+    let raw = b.raw(&replies[0]).await;
+    assert!(raw.contains("Auto-Submitted: auto-replied"), "{raw}");
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert_eq!(b.inbox("mini@b.test").await.len(), 1, "only one reply per sender");
+}

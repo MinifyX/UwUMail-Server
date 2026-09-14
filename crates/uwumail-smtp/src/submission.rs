@@ -5,7 +5,7 @@ use mail_parser::MessageParser;
 use uwumail_store::{Account, IngestRequest, MailboxRole, MailboxTarget, NewQueueRecipient, StoreError};
 
 use crate::dsn::{self, FailedRecipient};
-use crate::{Smtp, dkim, headers, random_id};
+use crate::{Smtp, dkim, headers, random_id, vacation};
 
 pub struct Submission {
     pub account: Account,
@@ -140,7 +140,10 @@ impl Smtp {
                         received_at: None,
                     };
                     match ctx.store.ingest(request).await {
-                        Ok(_) => local_deliveries += 1,
+                        Ok(_) => {
+                            local_deliveries += 1;
+                            vacation::maybe_reply(ctx, account_id, &mail_from, &signed).await;
+                        }
                         Err(err) => failed.push(FailedRecipient {
                             address,
                             error: match err {
