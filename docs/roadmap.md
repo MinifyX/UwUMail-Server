@@ -18,15 +18,18 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Container image (amd64 + arm64), compose file, local two-server test stack
 - [ ] Public test instance
 
-## 2. JMAP
+## 2. JMAP ✅ in progress
 
-- [ ] Session, authentication (Basic + Bearer app passwords)
-- [ ] Core: `Core/echo`, `Blob/upload`, `Blob/get`, downloads
-- [ ] Mail: `Mailbox/*`, `Email/*` (get, query, changes, set, import, parse), `Thread/*`, `SearchSnippet/get`
-- [ ] Submission: `Identity/*`, `EmailSubmission/*` with undo window
-- [ ] Push: EventSource and WebSocket
-- [ ] Vacation response
-- [ ] Tested with the UwUMail app, Fastmail's JMAP test suite and other clients
+- [x] Session resource at `/.well-known/jmap`, Basic authentication with login throttling, result references, creation ids
+- [x] Uploads and downloads (whole messages and single attachments), access limited to the owning account
+- [x] Mail: `Mailbox/get|changes|query|set`, `Email/get|changes|query|set|import|parse`, `Thread/get|changes`, `SearchSnippet/get`
+- [x] Submission: `Identity/get|changes|set`, `EmailSubmission/get|changes|query|set` with `onSuccessUpdateEmail` / `onSuccessDestroyEmail`
+- [x] Push over EventSource
+- [x] `VacationResponse/get|set`
+- [ ] Vacation auto-replies when mail arrives
+- [ ] App passwords and Bearer tokens
+- [ ] WebSocket push, delayed sending (undo window), `Email/copy`, query changes
+- [ ] Tested with the UwUMail app and other JMAP clients
 
 ## 3. Setup assistant and admin panel
 

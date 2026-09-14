@@ -1,11 +1,13 @@
-//! HTTP(S): health checks, ACME challenges and (soon) the admin panel, web mail and JMAP.
+//! HTTP(S): JMAP, health checks, ACME challenges and (soon) the admin panel and web mail.
 
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use axum::Router;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Request, State};
 use axum::http::{HeaderMap, StatusCode, Uri, header};
+use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Json, Redirect, Response};
 use axum::routing::get;
 use hyper_util::rt::{TokioExecutor, TokioIo};
@@ -14,6 +16,9 @@ use serde_json::json;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio_rustls::TlsAcceptor;
+use tower::ServiceExt;
+use uwumail_jmap::ClientInfo;
+use uwumail_smtp::IpNetwork;
 
 use crate::acme::Challenges;
 
@@ -24,14 +29,51 @@ pub struct HttpState {
     pub started: Instant,
 }
 
-/// The main site (HTTPS, or plain HTTP behind a reverse proxy).
-pub fn app(state: HttpState) -> Router {
+/// The main site (HTTPS, or plain HTTP behind a reverse proxy), with JMAP merged in.
+pub fn app(state: HttpState, jmap: Router, trusted_proxies: Arc<Vec<IpNetwork>>) -> Router {
     Router::new()
         .route("/", get(landing))
         .route("/healthz", get(health))
         .route("/.well-known/acme-challenge/{token}", get(acme_challenge))
         .fallback(not_found)
         .with_state(state)
+        .merge(jmap)
+        .layer(middleware::from_fn_with_state(trusted_proxies, client_info))
+}
+
+/// The TCP connection a request arrived on.
+#[derive(Debug, Clone, Copy)]
+struct Peer {
+    addr: SocketAddr,
+    tls: bool,
+}
+
+/// Works out who the client is; behind a trusted reverse proxy that is the address it forwarded.
+async fn client_info(State(trusted): State<Arc<Vec<IpNetwork>>>, mut request: Request, next: Next) -> Response {
+    let peer = request.extensions().get::<Peer>().copied();
+    let mut info =
+        peer.map_or_else(ClientInfo::default, |p| ClientInfo { ip: p.addr.ip().to_canonical(), https: p.tls });
+    let is_trusted = |ip: IpAddr| trusted.iter().any(|network| network.contains(ip));
+    if is_trusted(info.ip) {
+        let headers = request.headers();
+        if let Some(forwarded) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
+            // The last address that is not one of our proxies is the real client.
+            let client = forwarded
+                .split(',')
+                .rev()
+                .filter_map(|part| part.trim().parse::<IpAddr>().ok())
+                .map(|ip| ip.to_canonical())
+                .find(|ip| !is_trusted(*ip));
+            if let Some(client) = client {
+                info.ip = client;
+            }
+        }
+        if let Some(proto) = headers.get("x-forwarded-proto").and_then(|v| v.to_str().ok()) {
+            info.https = proto.eq_ignore_ascii_case("https");
+        }
+    }
+    request.extensions_mut().insert(info);
+    next.run(request).await
 }
 
 /// Port 80: answers ACME challenges and sends everyone else to HTTPS.
@@ -122,40 +164,41 @@ fn page(lang: &str, title: &str, text: &str, hostname: &str) -> String {
     )
 }
 
-pub async fn serve_plain(listener: TcpListener, app: Router, mut shutdown: watch::Receiver<bool>) {
-    let result = axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            let _ = shutdown.changed().await;
-        })
-        .await;
-    if let Err(err) = result {
-        tracing::error!(%err, "the HTTP listener stopped");
-    }
-}
-
-pub async fn serve_https(
+/// Serves HTTP/1 and HTTP/2 on a listener, with TLS when `tls` is given.
+pub async fn serve(
     listener: TcpListener,
-    tls: Arc<rustls::ServerConfig>,
+    tls: Option<Arc<rustls::ServerConfig>>,
     app: Router,
     mut shutdown: watch::Receiver<bool>,
 ) {
-    let acceptor = TlsAcceptor::from(tls);
+    let acceptor = tls.map(TlsAcceptor::from);
     loop {
         tokio::select! {
             accepted = listener.accept() => {
-                let Ok((socket, _peer)) = accepted else {
+                let Ok((socket, addr)) = accepted else {
                     tokio::time::sleep(Duration::from_millis(50)).await;
                     continue;
                 };
                 let (acceptor, app) = (acceptor.clone(), app.clone());
                 tokio::spawn(async move {
-                    let Ok(Ok(stream)) = tokio::time::timeout(Duration::from_secs(10), acceptor.accept(socket)).await else {
-                        return;
-                    };
-                    let service = TowerToHyperService::new(app);
-                    let _ = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
-                        .serve_connection_with_upgrades(TokioIo::new(stream), service)
-                        .await;
+                    let peer = Peer { addr, tls: acceptor.is_some() };
+                    let service = app.map_request(move |mut request: axum::http::Request<hyper::body::Incoming>| {
+                        request.extensions_mut().insert(peer);
+                        request
+                    });
+                    let service = TowerToHyperService::new(service);
+                    let builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
+                    match acceptor {
+                        Some(acceptor) => {
+                            let Ok(Ok(stream)) = tokio::time::timeout(Duration::from_secs(10), acceptor.accept(socket)).await else {
+                                return;
+                            };
+                            let _ = builder.serve_connection_with_upgrades(TokioIo::new(stream), service).await;
+                        }
+                        None => {
+                            let _ = builder.serve_connection_with_upgrades(TokioIo::new(socket), service).await;
+                        }
+                    }
                 });
             }
             _ = shutdown.changed() => break,
@@ -168,10 +211,13 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use axum::http::Request;
-    use tower::ServiceExt;
 
     fn state() -> HttpState {
         HttpState { hostname: "mail.example.de".into(), challenges: Arc::default(), started: Instant::now() }
+    }
+
+    fn app(state: HttpState) -> Router {
+        super::app(state, Router::new(), Arc::default())
     }
 
     #[tokio::test]

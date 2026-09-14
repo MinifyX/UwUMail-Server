@@ -113,6 +113,22 @@ async function waitFor(description, check) {
   throw new Error(`timed out waiting until ${description}`);
 }
 
+function jmapSession(port) {
+  const token = Buffer.from(`mini@a.test:${password}`).toString("base64");
+  return new Promise((resolve, reject) => {
+    https
+      .get(
+        { host: "127.0.0.1", port, path: "/.well-known/jmap", rejectUnauthorized: false, headers: { Authorization: `Basic ${token}` } },
+        (response) => {
+          let body = "";
+          response.on("data", (chunk) => (body += chunk));
+          response.on("end", () => resolve({ status: response.statusCode, body }));
+        },
+      )
+      .on("error", reject);
+  });
+}
+
 function health(port) {
   return new Promise((resolve, reject) => {
     https
@@ -131,6 +147,11 @@ for (const port of [8443, 9443]) {
   if (status.status !== "ok") throw new Error(`health on ${port}: ${JSON.stringify(status)}`);
 }
 console.log("  ✓ both servers answer on HTTPS");
+const session = await jmapSession(8443);
+if (session.status !== 200 || !JSON.parse(session.body).capabilities["urn:ietf:params:jmap:mail"]) {
+  throw new Error(`JMAP session: ${session.status} ${session.body}`);
+}
+console.log("  ✓ JMAP session for mini@a.test");
 
 console.log(`  ✓ submitted: ${(await submit()).trim()}`);
 const logLine = (service, ...parts) => logs(service).split(/\r?\n/).some((line) => parts.every((p) => line.includes(p)));

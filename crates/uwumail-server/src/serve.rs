@@ -68,18 +68,25 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     }
     tasks.spawn(uwumail_smtp::run_queue(smtp.clone(), shutdown_rx.clone()));
 
+    let jmap = uwumail_jmap::Jmap::new(smtp.clone()).router();
+    let trusted_proxies = Arc::new(
+        uwumail_smtp::IpNetwork::parse_list(&config.http.trusted_proxies)
+            .map_err(|err| anyhow::anyhow!("http.trusted_proxies: {err}"))?,
+    );
     let challenges = Arc::new(Challenges::default());
     let state =
         HttpState { hostname: config.hostname.clone(), challenges: challenges.clone(), started: Instant::now() };
     if let Some(listener) = bind(&config.listen.http, "HTTP (certificate challenges, redirect to HTTPS)").await? {
-        tasks.spawn(http::serve_plain(listener, http::redirect_app(state.clone()), shutdown_rx.clone()));
+        tasks.spawn(http::serve(listener, None, http::redirect_app(state.clone()), shutdown_rx.clone()));
     }
     if let Some(listener) = bind(&config.listen.https, "HTTPS").await? {
         let tls = tls::https_server_config(certs.clone())?;
-        tasks.spawn(http::serve_https(listener, tls, http::app(state.clone()), shutdown_rx.clone()));
+        let app = http::app(state.clone(), jmap.clone(), trusted_proxies.clone());
+        tasks.spawn(http::serve(listener, Some(tls), app, shutdown_rx.clone()));
     }
     if let Some(listener) = bind(&config.listen.proxy, "HTTP behind a reverse proxy").await? {
-        tasks.spawn(http::serve_plain(listener, http::app(state.clone()), shutdown_rx.clone()));
+        let app = http::app(state.clone(), jmap.clone(), trusted_proxies.clone());
+        tasks.spawn(http::serve(listener, None, app, shutdown_rx.clone()));
     }
 
     match config.tls.mode {

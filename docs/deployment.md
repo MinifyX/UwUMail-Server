@@ -55,8 +55,9 @@ Show them again any time with `uwumail-server domain dns example.com`.
 | Sending | `mail.example.com` | 465 | TLS |
 | Sending | `mail.example.com` | 587 | STARTTLS |
 
-Log in with the full address and password. IMAP and JMAP follow in the next
-steps (see the roadmap).
+Log in with the full address and password. JMAP apps (like UwUMail) only need
+`https://mail.example.com`; they find everything else at `/.well-known/jmap`.
+IMAP follows in a later step (see the roadmap).
 
 ## Behind a reverse proxy
 
@@ -97,7 +98,9 @@ Mailcow keeps port 25 and all other domains. Ready-made files:
    that delivered to it, read from its Received header.
 3. **Outgoing mail:** `[delivery.relay]` with the relay you already use; the
    password goes into `.env` as `RELAY_PASSWORD`.
-4. **Web:** the reverse proxy forwards the UwUMail host name to port 8080.
+4. **Web:** the reverse proxy forwards the UwUMail host name to port 8080;
+   put its address into `http.trusted_proxies` so login throttling sees the
+   real client addresses.
 5. **DNS for the test domain:** MX to the existing mail server's host name,
    SPF with the relay's IP address, the two DKIM keys from `domain add`, and a
    DMARC record (start with `p=none`).

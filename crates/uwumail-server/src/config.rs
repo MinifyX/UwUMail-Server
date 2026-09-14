@@ -19,6 +19,7 @@ pub struct Config {
     pub data_dir: PathBuf,
     pub listen: ListenConfig,
     pub tls: TlsConfig,
+    pub http: HttpConfig,
     pub smtp: SmtpConfig,
     pub delivery: DeliveryConfig,
     pub tone: ToneConfig,
@@ -32,6 +33,7 @@ impl Default for Config {
             data_dir: PathBuf::from("/data"),
             listen: ListenConfig::default(),
             tls: TlsConfig::default(),
+            http: HttpConfig::default(),
             smtp: SmtpConfig::default(),
             delivery: DeliveryConfig::default(),
             tone: ToneConfig::default(),
@@ -99,6 +101,13 @@ impl Default for TlsConfig {
             key_file: PathBuf::new(),
         }
     }
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct HttpConfig {
+    /// Reverse proxies whose X-Forwarded-For and X-Forwarded-Proto headers are believed.
+    pub trusted_proxies: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]

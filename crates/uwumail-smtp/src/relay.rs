@@ -35,6 +35,11 @@ impl FromStr for IpNetwork {
 }
 
 impl IpNetwork {
+    /// Parses addresses and CIDR networks, e.g. `["192.168.70.51", "10.0.0.0/8"]`.
+    pub fn parse_list(values: &[String]) -> Result<Vec<IpNetwork>, String> {
+        values.iter().map(|value| value.parse()).collect()
+    }
+
     pub fn contains(&self, ip: IpAddr) -> bool {
         match (self.address, ip.to_canonical()) {
             (IpAddr::V4(net), IpAddr::V4(ip)) => {
@@ -51,7 +56,7 @@ impl IpNetwork {
 }
 
 pub fn parse_networks(values: &[String]) -> Result<Vec<IpNetwork>, String> {
-    values.iter().map(|value| value.parse()).collect()
+    IpNetwork::parse_list(values)
 }
 
 /// Walks the Received headers from the newest down and returns the first hop that did not

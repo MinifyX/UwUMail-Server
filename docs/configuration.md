@@ -27,6 +27,9 @@ acme_directory = "https://acme-v02.api.letsencrypt.org/directory"
 cert_file = ""         # files mode: PEM chain, reloaded when it changes
 key_file = ""
 
+[http]
+trusted_proxies = []           # reverse proxies whose X-Forwarded-For/-Proto are believed, e.g. ["10.0.0.2"]
+
 [smtp]
 max_message_size = 52428800
 max_recipients = 100

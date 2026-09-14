@@ -13,6 +13,10 @@ https = "[::]:443"
 mode = "acme"
 acme_email = "admin@example.com"
 
+[http]
+# The reverse proxy, so login throttling and logs see the real client addresses.
+trusted_proxies = ["192.0.2.51"]
+
 [smtp]
 # The existing mail server that forwards our domain. Sender checks (SPF, DMARC)
 # then use the server that delivered to it, taken from its Received header.

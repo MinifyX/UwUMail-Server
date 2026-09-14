@@ -8,7 +8,7 @@
                          │                           ▼  │                                │
  other mail servers ◀─── │                    delivery queue                            │
                          │                                                              │
- browsers, JMAP     ───▶ │ :443  HTTPS  (health, soon JMAP, admin, web mail)            │
+ browsers, JMAP     ───▶ │ :443  HTTPS  JMAP, health (soon admin panel and web mail)    │
  Let's Encrypt      ───▶ │ :80   ACME challenges, redirect to HTTPS                     │
                          └──────────────────────────────────────────────────────────────┘
 ```
@@ -52,6 +52,16 @@ Design choices that matter later:
 - `dsn` + `texts`: bounces in German or English. Mail to our own people uses
   the internal tone (playful by default), mail to anyone else the external
   tone (neutral by default).
+
+### `uwumail-jmap`
+
+JMAP over HTTP with axum. Ids are a type letter plus the database id (`m12`,
+`e34`, `t56`); blob ids are content hashes (`b<sha256>` for whole messages
+and uploads, `p<sha256>_<part>` for single MIME parts). States are the
+account's change sequence number, so every `/changes` call reads straight
+from the store's change log, and push listens to the same broadcast channel.
+`EmailSubmission/set` goes through `Smtp::submit`, exactly like SMTP
+submission: sender checks, DKIM, local delivery and the queue.
 
 ### `uwumail-server`
 

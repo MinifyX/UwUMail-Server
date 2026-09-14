@@ -135,6 +135,16 @@ impl Store {
         .await
     }
 
+    /// Object kinds that changed after `since`.
+    pub async fn changed_kinds(&self, account_id: i64, since: i64) -> Result<Vec<String>> {
+        self.read(move |conn| {
+            let mut stmt = conn.prepare("SELECT DISTINCT kind FROM changes WHERE account_id = ?1 AND modseq > ?2")?;
+            let rows = stmt.query_map(params![account_id, since], |row| row.get(0))?;
+            Ok(rows.collect::<Result<_, _>>()?)
+        })
+        .await
+    }
+
     /// Changes of one kind (`Email`, `Mailbox`, `Thread`, ...) after `since`. Returns
     /// [`StoreError::Invalid`] for states this account never had.
     pub async fn changes(&self, account_id: i64, kind: &str, since: i64, max_changes: usize) -> Result<Changes> {
