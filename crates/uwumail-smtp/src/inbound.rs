@@ -49,8 +49,14 @@ pub async fn serve(smtp: Smtp, listener: TcpListener, kind: ListenerKind, mut sh
                 Ok((socket, peer)) => {
                     let smtp = smtp.clone();
                     tokio::spawn(async move {
-                        if let Err(err) = handle(smtp, socket, peer, kind).await {
-                            tracing::debug!(%peer, ?kind, %err, "smtp session ended with an error");
+                        match handle(smtp, socket, peer, kind).await {
+                            // Health checks and port scanners hang up without saying goodbye.
+                            Err(err) if matches!(
+                                err.kind(),
+                                std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::UnexpectedEof
+                            ) => {}
+                            Err(err) => tracing::debug!(%peer, ?kind, %err, "smtp session ended with an error"),
+                            Ok(()) => {}
                         }
                     });
                 }

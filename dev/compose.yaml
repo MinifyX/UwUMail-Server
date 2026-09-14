@@ -6,7 +6,7 @@
 #
 # Ports on this machine:
 #   a.test  SMTP 2525, submission 2587 (STARTTLS) / 2465 (TLS), HTTPS 8443
-#   b.test  SMTP 3525, submission 3587 (STARTTLS) / 3465 (TLS), HTTPS 9443
+#   b.test  SMTP 4525, submission 4587 (STARTTLS) / 4465 (TLS), HTTPS 9443
 
 name: uwumail-dev
 
@@ -39,9 +39,9 @@ services:
       - ./b.toml:/etc/uwumail.toml:ro
       - b-data:/data
     ports:
-      - "127.0.0.1:3525:25"
-      - "127.0.0.1:3587:587"
-      - "127.0.0.1:3465:465"
+      - "127.0.0.1:4525:25"
+      - "127.0.0.1:4587:587"
+      - "127.0.0.1:4465:465"
       - "127.0.0.1:9443:443"
 
 volumes:

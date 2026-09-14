@@ -39,7 +39,8 @@ fn init_logging(config: &Config, serving: bool) {
     // Management commands only print what matters; the server logs everything at the configured level.
     let level = if serving { config.log.level.as_str() } else { "warn" };
     let filter = EnvFilter::try_new(level).unwrap_or_else(|_| EnvFilter::new("info"));
-    let builder = tracing_subscriber::fmt().with_env_filter(filter).with_target(false);
+    let ansi = std::io::IsTerminal::is_terminal(&std::io::stdout());
+    let builder = tracing_subscriber::fmt().with_env_filter(filter).with_target(false).with_ansi(ansi);
     match config.log.format {
         LogFormat::Json => builder.json().init(),
         LogFormat::Text => builder.init(),

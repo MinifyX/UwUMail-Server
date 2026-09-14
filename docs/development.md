@@ -25,9 +25,9 @@ node dev/smoke.mjs   # submits a mail and checks delivery and bounce
 
 | | a.test | b.test |
 | --- | --- | --- |
-| SMTP | 127.0.0.1:2525 | 127.0.0.1:3525 |
-| Submission (STARTTLS) | 127.0.0.1:2587 | 127.0.0.1:3587 |
-| Submission (TLS) | 127.0.0.1:2465 | 127.0.0.1:3465 |
+| SMTP | 127.0.0.1:2525 | 127.0.0.1:4525 |
+| Submission (STARTTLS) | 127.0.0.1:2587 | 127.0.0.1:4587 |
+| Submission (TLS) | 127.0.0.1:2465 | 127.0.0.1:4465 |
 | HTTPS | https://127.0.0.1:8443 | https://127.0.0.1:9443 |
 
 Accounts use the password `katzenpfote-123`. Management commands:
