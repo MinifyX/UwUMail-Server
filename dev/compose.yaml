@@ -1,0 +1,49 @@
+# Local test stack: two UwUMail servers (a.test and b.test) that deliver to each other.
+#
+#   docker compose -f dev/compose.yaml up -d --build
+#   bash dev/seed.sh
+#   node dev/smoke.mjs
+#
+# Ports on this machine:
+#   a.test  SMTP 2525, submission 2587 (STARTTLS) / 2465 (TLS), HTTPS 8443
+#   b.test  SMTP 3525, submission 3587 (STARTTLS) / 3465 (TLS), HTTPS 9443
+
+name: uwumail-dev
+
+x-server: &server
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  image: uwumail-server:dev
+  restart: unless-stopped
+  environment:
+    UWUMAIL_CONFIG: /etc/uwumail.toml
+
+services:
+  a:
+    <<: *server
+    hostname: mx.a.test
+    volumes:
+      - ./a.toml:/etc/uwumail.toml:ro
+      - a-data:/data
+    ports:
+      - "127.0.0.1:2525:25"
+      - "127.0.0.1:2587:587"
+      - "127.0.0.1:2465:465"
+      - "127.0.0.1:8443:443"
+
+  b:
+    <<: *server
+    hostname: mx.b.test
+    volumes:
+      - ./b.toml:/etc/uwumail.toml:ro
+      - b-data:/data
+    ports:
+      - "127.0.0.1:3525:25"
+      - "127.0.0.1:3587:587"
+      - "127.0.0.1:3465:465"
+      - "127.0.0.1:9443:443"
+
+volumes:
+  a-data:
+  b-data:

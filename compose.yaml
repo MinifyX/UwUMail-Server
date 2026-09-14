@@ -1,0 +1,31 @@
+# UwUMail Server
+#
+#   1. cp .env.example .env   and fill in your host name
+#   2. docker compose up -d
+#   3. docker compose exec uwumail uwumail-server domain add example.com
+#   4. docker compose exec uwumail uwumail-server account add you@example.com --admin
+#
+# See docs/deployment.md for DNS records, firewalls and running behind a reverse proxy.
+
+services:
+  uwumail:
+    image: ghcr.io/minifyx/uwumail-server:${UWUMAIL_VERSION:-edge}
+    container_name: uwumail
+    restart: unless-stopped
+    hostname: ${UWUMAIL_HOSTNAME:?set UWUMAIL_HOSTNAME in .env}
+    environment:
+      UWUMAIL_HOSTNAME: ${UWUMAIL_HOSTNAME}
+      UWUMAIL_TLS__ACME_EMAIL: ${UWUMAIL_ACME_EMAIL:-}
+      UWUMAIL_TONE__LANGUAGE: ${UWUMAIL_LANGUAGE:-de}
+    ports:
+      - "25:25"     # mail from other servers
+      - "80:80"     # certificate challenges, redirects to HTTPS
+      - "443:443"   # web (admin panel and web mail, coming soon)
+      - "465:465"   # mail apps, TLS
+      - "587:587"   # mail apps, STARTTLS
+    volumes:
+      - uwumail-data:/data
+    stop_grace_period: 20s
+
+volumes:
+  uwumail-data:

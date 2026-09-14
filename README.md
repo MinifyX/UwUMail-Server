@@ -43,14 +43,16 @@ small team can run their own mail without being a mail admin:
 
 ## Development
 
-You need Rust (stable) and Docker.
+You need Rust (stable), Docker and Node.js (for the smoke test).
 
 ```bash
 cargo test --workspace
-cargo run -p uwumail-server -- --config dev/uwumail.toml serve
+docker compose -f dev/compose.yaml up -d --build   # two servers, a.test and b.test
+bash dev/seed.sh && node dev/smoke.mjs
 ```
 
-See [docs/development.md](docs/development.md) for the local test stack.
+More in [docs/development.md](docs/development.md). Running it for real:
+[docs/deployment.md](docs/deployment.md) and [docs/configuration.md](docs/configuration.md).
 
 ## License
 

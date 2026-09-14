@@ -1,6 +1,38 @@
 [package]
 name = "uwumail-server"
+description = "The UwUMail server: a cute, self-hosted mail server for everyone"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "uwumail-server"
+path = "src/main.rs"
+
 [dependencies]
+uwumail-smtp.workspace = true
+uwumail-store.workspace = true
+
+anyhow.workspace = true
+axum.workspace = true
+clap.workspace = true
+figment.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+instant-acme.workspace = true
+rcgen.workspace = true
+rustls.workspace = true
+rustls-pki-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-rustls.workspace = true
+tower.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+x509-parser.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

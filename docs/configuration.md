@@ -1,0 +1,68 @@
+# Configuration
+
+UwUMail Server reads an optional TOML file (`--config` or `UWUMAIL_CONFIG`)
+and then environment variables starting with `UWUMAIL_`. Nested keys use a
+double underscore, e.g. `UWUMAIL_TLS__MODE=files`. Everything has a default
+except `hostname`.
+
+Check a configuration with `uwumail-server check-config`.
+
+```toml
+# Public name of the server. Used in SMTP greetings, MX records and the certificate.
+hostname = "mail.example.com"
+data_dir = "/data"
+
+[listen]              # empty string = off
+smtp = "[::]:25"
+submission = "[::]:587"
+submissions = "[::]:465"
+http = "[::]:80"       # ACME challenges and redirect to HTTPS
+https = "[::]:443"
+proxy = ""             # plain HTTP for a reverse proxy, e.g. "[::]:8080"
+
+[tls]
+mode = "acme"          # acme | files | self-signed
+acme_email = ""
+acme_directory = "https://acme-v02.api.letsencrypt.org/directory"
+cert_file = ""         # files mode: PEM chain, reloaded when it changes
+key_file = ""
+
+[smtp]
+max_message_size = 52428800
+max_recipients = 100
+require_tls_for_auth = true
+timeout_secs = 300
+max_connections = 500
+verify_senders = true         # SPF, DKIM, DMARC for incoming mail
+enforce_dmarc_reject = true   # otherwise p=reject failures go to Junk
+reveal_client_ip = false      # keep senders' IP and device name out of headers
+
+[delivery]
+concurrency = 16
+max_lifetime_hours = 120
+connect_timeout_secs = 30
+command_timeout_secs = 300
+mx_port = 25
+require_tls = false
+
+# Send everything through another server, e.g. a VPS or a sending service.
+# [delivery.relay]
+# host = "smtp.example.net"
+# port = 587
+# security = "starttls"       # starttls | tls | none
+# username = "me"
+# password = "secret"
+
+# Fixed destinations per domain, checked before the relay and DNS.
+[delivery.routes]
+# "internal.example" = "10.0.0.5:25"
+
+[tone]
+language = "de"        # de | en
+internal = "playful"   # playful | neutral: mail to our own people
+external = "neutral"   # neutral | light: mail to everyone else
+
+[log]
+format = "text"        # text | json
+level = "info"
+```

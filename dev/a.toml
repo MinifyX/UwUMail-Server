@@ -1,0 +1,19 @@
+# Server "a" of the local test stack.
+hostname = "mx.a.test"
+data_dir = "/data"
+
+[listen]
+http = ""
+
+[tls]
+mode = "self-signed"
+
+[smtp]
+# The test domains have no DNS records.
+verify_senders = false
+
+[delivery]
+routes = { "b.test" = "b:25" }
+
+[log]
+level = "debug"

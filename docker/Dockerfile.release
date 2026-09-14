@@ -1,0 +1,22 @@
+# syntax=docker/dockerfile:1.7
+#
+# Packages binaries that CI built before: dist/amd64/uwumail-server and dist/arm64/uwumail-server.
+
+FROM debian:trixie-slim
+ARG TARGETARCH
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates tzdata libcap2-bin \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --system --uid 10001 --home-dir /data --shell /usr/sbin/nologin uwumail \
+ && mkdir -p /data \
+ && chown uwumail:uwumail /data
+COPY dist/${TARGETARCH}/uwumail-server /usr/local/bin/uwumail-server
+RUN chmod 755 /usr/local/bin/uwumail-server \
+ && setcap cap_net_bind_service=+ep /usr/local/bin/uwumail-server
+USER uwumail
+ENV UWUMAIL_DATA_DIR=/data
+VOLUME /data
+EXPOSE 25 80 443 465 587
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s CMD ["uwumail-server", "health"]
+ENTRYPOINT ["uwumail-server"]
+CMD ["serve"]

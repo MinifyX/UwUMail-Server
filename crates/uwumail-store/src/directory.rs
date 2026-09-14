@@ -242,7 +242,7 @@ impl Store {
             let in_use: i64 =
                 tx.query_row("SELECT count(*) FROM addresses WHERE domain_id = ?1", [id], |r| r.get(0))?;
             if in_use > 0 {
-                return Err(StoreError::Conflict(format!("{in_use} addresses still use {name}")));
+                return Err(StoreError::Invalid(format!("{in_use} addresses still use {name}, remove them first")));
             }
             tx.execute("DELETE FROM domains WHERE id = ?1", [id])?;
             Ok(())
@@ -589,7 +589,7 @@ mod tests {
         assert_eq!(mini.login, "mini@example.de");
         assert!(matches!(store.create_account(person("mini@example.de")).await, Err(StoreError::Conflict(_))));
         assert_eq!(store.accounts().await.unwrap().len(), 1);
-        assert!(matches!(store.delete_domain("example.de").await, Err(StoreError::Conflict(_))));
+        assert!(matches!(store.delete_domain("example.de").await, Err(StoreError::Invalid(_))));
 
         assert!(store.authenticate("MINI@example.de", "katzenpfote").await.unwrap().is_some());
         assert!(store.authenticate("mini@example.de", "wrong").await.unwrap().is_none());
