@@ -40,7 +40,7 @@ export function PageHeader({ title, intro, art }: { title: ReactNode; intro?: Re
   );
 }
 
-export function CopyButton({ value }: { value: string }) {
+export function CopyButton({ value, label }: { value: string; label?: string }) {
   const { t } = useT();
   const [copied, setCopied] = useState(false);
   useEffect(() => {
@@ -52,7 +52,7 @@ export function CopyButton({ value }: { value: string }) {
     <IconButton
       size="sm"
       icon={copied ? Check : Copy}
-      label={copied ? t("common.copied") : t("common.copy")}
+      label={copied ? t("common.copied") : (label ?? t("common.copy"))}
       active={copied}
       onClick={() => {
         void navigator.clipboard?.writeText(value).then(() => setCopied(true));

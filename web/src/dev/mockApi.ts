@@ -5,7 +5,19 @@
  * Production builds never include this file.
  */
 
-import type { AuditRecord, DomainSummary, Info, Overview, Person, Profile, Session } from "@/lib/api";
+import type {
+  AuditRecord,
+  DkimKeyInfo,
+  DomainDetail,
+  DomainReport,
+  DomainSummary,
+  Info,
+  Overview,
+  Person,
+  Profile,
+  RecordCheck,
+  Session,
+} from "@/lib/api";
 
 const now = Math.floor(Date.now() / 1000);
 const GB = 1024 ** 3;
@@ -64,10 +76,131 @@ const people: Person[] = [
   }),
 ];
 
-const domains: DomainSummary[] = [
-  { name: "uwu.example", catchAll: null, createdAt: now - 30 * 86_400 },
-  { name: "verein.example", catchAll: null, createdAt: now - 20 * 86_400 },
+interface MockDomain {
+  name: string;
+  catchAll: string | null;
+  createdAt: number;
+  keys: DkimKeyInfo[];
+  report: DomainReport | null;
+}
+
+const key = (domain: string, selector: string, state: DkimKeyInfo["state"], algorithm: DkimKeyInfo["algorithm"]) => ({
+  selector,
+  algorithm,
+  state,
+  createdAt: now - 30 * 86_400,
+  retiredAt: state === "retired" ? now - 86_400 : null,
+  dnsName: `${selector}._domainkey.${domain}`,
+  dnsValue: `v=DKIM1; k=${algorithm === "rsa-sha256" ? "rsa" : "ed25519"}; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAr${selector}`,
+});
+
+function record(
+  kind: RecordCheck["kind"],
+  name: string,
+  expected: string,
+  found: string[],
+  extra: Partial<RecordCheck> = {},
+): RecordCheck {
+  return {
+    kind,
+    name,
+    recordType: kind === "mx" ? "MX" : "TXT",
+    expected,
+    found,
+    status: "ok",
+    note: null,
+    selector: null,
+    keyState: null,
+    ...extra,
+  };
+}
+
+function report(domain: MockDomain, healthy: boolean): DomainReport {
+  const records: RecordCheck[] = [
+    record("mx", domain.name, "10 mail.uwu.example", ["10 mail.uwu.example"]),
+    record("spf", domain.name, "v=spf1 a:mail.uwu.example -all", healthy ? ["v=spf1 a:mail.uwu.example -all"] : [], {
+      status: healthy ? "ok" : "missing",
+    }),
+    record(
+      "dmarc",
+      `_dmarc.${domain.name}`,
+      `v=DMARC1; p=quarantine; adkim=s; aspf=s; rua=mailto:postmaster@${domain.name}`,
+      ["v=DMARC1; p=none"],
+      { note: "dmarcNone" },
+    ),
+    ...domain.keys
+      .filter((k) => k.state !== "retired")
+      .map((k) =>
+        record("dkim", k.dnsName, k.dnsValue, healthy || k.state === "active" ? [k.dnsValue] : [], {
+          selector: k.selector,
+          keyState: k.state,
+          status: healthy || k.state === "active" ? "ok" : "missing",
+        }),
+      ),
+  ];
+  const order = ["ok", "warning", "missing", "wrong", "error"];
+  const status = records
+    .filter((r) => r.keyState !== "pending")
+    .reduce<RecordCheck["status"]>(
+      (worst, r) => (order.indexOf(r.status) > order.indexOf(worst) ? r.status : worst),
+      "ok",
+    );
+  return {
+    domain: domain.name,
+    checkedAt: Math.floor(Date.now() / 1000),
+    source: "authoritative",
+    nameservers: ["ns1.dns.example", "ns2.dns.example"],
+    status,
+    records,
+  };
+}
+
+const domains: MockDomain[] = [
+  {
+    name: "uwu.example",
+    catchAll: null,
+    createdAt: now - 30 * 86_400,
+    keys: [
+      key("uwu.example", "uwu202609r", "active", "rsa-sha256"),
+      key("uwu.example", "uwu202609e", "active", "ed25519-sha256"),
+    ],
+    report: null,
+  },
+  {
+    name: "verein.example",
+    catchAll: "kassenwart@verein.example",
+    createdAt: now - 20 * 86_400,
+    keys: [
+      key("verein.example", "uwu202608r", "active", "rsa-sha256"),
+      key("verein.example", "uwu202608e", "active", "ed25519-sha256"),
+    ],
+    report: null,
+  },
 ];
+domains[0]!.report = report(domains[0]!, true);
+let rotationChecks = 0;
+
+const addressCount = (domain: string, kind: "primary" | "alias") =>
+  people
+    .filter((p) => p.status !== "deleted")
+    .flatMap((p) => p.addresses)
+    .filter((a) => a.kind === kind && a.address.endsWith(`@${domain}`)).length;
+
+const summary = (domain: MockDomain): DomainSummary => ({
+  name: domain.name,
+  catchAll: domain.catchAll,
+  createdAt: domain.createdAt,
+  people: addressCount(domain.name, "primary"),
+  aliases: addressCount(domain.name, "alias"),
+  dns: domain.report && { status: domain.report.status, checkedAt: domain.report.checkedAt },
+});
+
+const detail = (domain: MockDomain): DomainDetail => ({
+  ...summary(domain),
+  keys: domain.keys,
+  report: domain.report,
+  setup: { hostname: "mail.uwu.example", relayHost: null, upstreamMx: false },
+});
 
 let nextAuditId = 20;
 const audit: AuditRecord[] = [
@@ -192,7 +325,117 @@ const routes: [string, RegExp, Handler][] = [
       } satisfies Overview,
     ],
   ],
-  ["GET", /^\/api\/admin\/domains$/, () => [200, domains]],
+  ["GET", /^\/api\/admin\/domains$/, () => [200, domains.map(summary)]],
+  [
+    "POST",
+    /^\/api\/admin\/domains$/,
+    (body) => {
+      const name = (body as { name: string }).name.toLowerCase();
+      if (domains.some((d) => d.name === name)) return problem(409, "conflict");
+      const created: MockDomain = {
+        name,
+        catchAll: null,
+        createdAt: Math.floor(Date.now() / 1000),
+        keys: [key(name, "uwu202609r", "active", "rsa-sha256"), key(name, "uwu202609e", "active", "ed25519-sha256")],
+        report: null,
+      };
+      domains.push(created);
+      log("domain.create", name);
+      return [201, detail(created)];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/domains\/([^/]+)$/,
+    (_, [name]) => {
+      const found = domains.find((d) => d.name === name);
+      return found ? [200, detail(found)] : problem(404, "notFound");
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/admin\/domains\/([^/]+)$/,
+    (_, [name]) => {
+      const index = domains.findIndex((d) => d.name === name);
+      if (index < 0) return problem(404, "notFound");
+      if (addressCount(name!, "primary") + addressCount(name!, "alias") > 0) return problem(409, "domainInUse");
+      domains.splice(index, 1);
+      log("domain.remove", name!);
+      return [204, null];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/domains\/([^/]+)\/check$/,
+    (_, [name]) => {
+      const found = domains.find((d) => d.name === name);
+      if (!found) return problem(404, "notFound");
+      // The second check after a rotation sees the new keys, like after publishing them.
+      const pending = found.keys.some((k) => k.state === "pending");
+      if (pending) rotationChecks += 1;
+      found.report = report(found, !pending || rotationChecks > 1);
+      return [200, found.report];
+    },
+  ],
+  [
+    "PUT",
+    /^\/api\/admin\/domains\/([^/]+)\/catch-all$/,
+    (body, [name]) => {
+      const found = domains.find((d) => d.name === name);
+      if (!found) return problem(404, "notFound");
+      found.catchAll = (body as { login: string | null }).login;
+      log("domain.catchAll", name!, { account: found.catchAll });
+      return [200, detail(found)];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/domains\/([^/]+)\/dkim\/rotate$/,
+    (_, [name]) => {
+      const found = domains.find((d) => d.name === name);
+      if (!found) return problem(404, "notFound");
+      if (!found.keys.some((k) => k.state === "pending")) {
+        found.keys.push(
+          key(name!, "uwu202609br", "pending", "rsa-sha256"),
+          key(name!, "uwu202609be", "pending", "ed25519-sha256"),
+        );
+        rotationChecks = 0;
+      }
+      found.report = null;
+      log("domain.dkimPrepare", name!);
+      return [200, detail(found)];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/domains\/([^/]+)\/dkim\/activate$/,
+    (body, [name]) => {
+      const found = domains.find((d) => d.name === name);
+      if (!found) return problem(404, "notFound");
+      if (!(body as { force: boolean }).force && rotationChecks < 2) return problem(409, "keysNotPublished");
+      found.keys = found.keys.map((k) =>
+        k.state === "active"
+          ? { ...k, state: "retired", retiredAt: Math.floor(Date.now() / 1000) }
+          : k.state === "pending"
+            ? { ...k, state: "active" }
+            : k,
+      );
+      found.report = null;
+      log("domain.dkimActivate", name!);
+      return [200, detail(found)];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/admin\/domains\/([^/]+)\/dkim\/([^/]+)$/,
+    (_, [name, selector]) => {
+      const found = domains.find((d) => d.name === name);
+      if (!found) return problem(404, "notFound");
+      found.keys = found.keys.filter((k) => k.selector !== selector);
+      log("domain.dkimRemove", name!, { selector });
+      return [200, detail(found)];
+    },
+  ],
   ["GET", /^\/api\/admin\/audit$/, () => [200, audit]],
   ["GET", /^\/api\/admin\/people$/, () => [200, people]],
   [

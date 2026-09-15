@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import {
   ChevronsUpDown,
+  Globe,
   History,
   LayoutDashboard,
   LogOut,
@@ -129,6 +130,7 @@ export function PortalShell({ session, children }: { session: Session; children:
             items={[
               { to: "/admin", label: t("nav.overview"), icon: LayoutDashboard },
               { to: "/admin/people", label: t("nav.people"), icon: Users },
+              { to: "/admin/domains", label: t("nav.domains"), icon: Globe },
               { to: "/admin/log", label: t("nav.log"), icon: History },
             ]}
           />

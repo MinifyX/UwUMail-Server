@@ -51,5 +51,13 @@
     "invalid": {
       "title": "Dieser Link ist abgelaufen (・_・;)"
     }
+  },
+  "domains": {
+    "empty": {
+      "title": "Noch keine Domain (・_・;)"
+    },
+    "toasts": {
+      "checked": "DNS geprüft, ich hab überall nachgesehen ✉︎"
+    }
   }
 }

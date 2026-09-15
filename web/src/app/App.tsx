@@ -5,6 +5,8 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Toaster } from "@/components/ui/Toaster";
 import { AccountHome } from "@/features/account/AccountHome";
 import { AdminHome } from "@/features/admin/AdminHome";
+import { DomainPage } from "@/features/domains/DomainPage";
+import { DomainsPage } from "@/features/domains/DomainsPage";
 import { LogPage } from "@/features/log/LogPage";
 import { LoginPage } from "@/features/login/LoginPage";
 import { PasswordPage } from "@/features/password/PasswordPage";
@@ -41,6 +43,9 @@ function page(path: string, session: Session): ReactNode {
   if (matchPath("/admin/people", path)) return <PeoplePage session={session} />;
   const person = matchPath("/admin/people/:login", path);
   if (person?.login) return <PersonPage key={person.login} login={person.login} session={session} />;
+  if (matchPath("/admin/domains", path)) return <DomainsPage />;
+  const domain = matchPath("/admin/domains/:name", path);
+  if (domain?.name) return <DomainPage key={domain.name} name={domain.name} />;
   if (matchPath("/admin/log", path)) return <LogPage />;
   return <NotFound />;
 }

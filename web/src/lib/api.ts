@@ -117,10 +117,53 @@ export interface PasswordLinkInfo {
   expiresAt: number;
 }
 
+export type CheckStatus = "ok" | "warning" | "missing" | "wrong" | "error";
+export type DkimKeyState = "active" | "pending" | "retired";
+
 export interface DomainSummary {
   name: string;
   catchAll: string | null;
   createdAt: number;
+  people: number;
+  aliases: number;
+  dns: { status: CheckStatus; checkedAt: number } | null;
+}
+
+export interface RecordCheck {
+  kind: "mx" | "spf" | "dmarc" | "dkim";
+  name: string;
+  recordType: "MX" | "TXT";
+  expected: string;
+  found: string[];
+  status: CheckStatus;
+  note: string | null;
+  selector: string | null;
+  keyState: DkimKeyState | null;
+}
+
+export interface DomainReport {
+  domain: string;
+  checkedAt: number;
+  source: "authoritative" | "resolver";
+  nameservers: string[];
+  status: CheckStatus;
+  records: RecordCheck[];
+}
+
+export interface DkimKeyInfo {
+  selector: string;
+  algorithm: "rsa-sha256" | "ed25519-sha256";
+  state: DkimKeyState;
+  createdAt: number;
+  retiredAt: number | null;
+  dnsName: string;
+  dnsValue: string;
+}
+
+export interface DomainDetail extends Omit<DomainSummary, "dns"> {
+  keys: DkimKeyInfo[];
+  report: DomainReport | null;
+  setup: { hostname: string; relayHost: string | null; upstreamMx: boolean };
 }
 
 export interface AuditRecord {

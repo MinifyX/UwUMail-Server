@@ -40,7 +40,8 @@
     "openMenu": "Open menu",
     "closeMenu": "Close menu",
     "people": "People",
-    "log": "Change log"
+    "log": "Change log",
+    "domains": "Domains"
   },
   "mode": {
     "label": "View",
@@ -180,7 +181,12 @@
       "linkInvalid": "This link is not valid anymore.",
       "forbidden": "You are not allowed to do this.",
       "offline": "The server cannot be reached right now.",
-      "internal": "Something went wrong on the server."
+      "internal": "Something went wrong on the server.",
+      "domainInUse": "Addresses still use this domain. Remove them first.",
+      "keyActive": "This key signs mail right now and cannot be removed.",
+      "noPendingKeys": "There are no new keys to switch to.",
+      "keysNotPublished": "The DNS records of the new keys are not visible yet.",
+      "dnsUnavailable": "The server cannot look up DNS right now."
     }
   },
   "people": {
@@ -325,7 +331,10 @@
       "domainCreate": "{{actor}} added the domain {{target}}",
       "domainRemove": "{{actor}} removed the domain {{target}}",
       "domainCatchAll": "{{actor}} changed the catch-all of {{target}}",
-      "other": "{{actor}}: {{action}} {{target}}"
+      "other": "{{actor}}: {{action}} {{target}}",
+      "domainDkimPrepare": "{{actor}} created new DKIM keys for {{target}}",
+      "domainDkimActivate": "{{actor}} switched {{target}} to the new DKIM keys",
+      "domainDkimRemove": "{{actor}} removed an old DKIM key of {{target}}"
     },
     "details": {
       "adminOn": "is now an admin",
@@ -355,6 +364,111 @@
       "title": "This link is not valid anymore",
       "body": "Links to choose a password work only once and for 7 days. Ask your admin for a new one.",
       "login": "Go to login"
+    }
+  },
+  "domains": {
+    "title": "Domains",
+    "intro": "The domains this server accepts mail for.",
+    "add": "Add domain",
+    "people_one": "{{count}} person",
+    "people_other": "{{count}} people",
+    "aliases_one": "{{count}} additional address",
+    "aliases_other": "{{count}} additional addresses",
+    "notChecked": "Not checked yet",
+    "dnsStatus": {
+      "ok": "DNS is fine",
+      "warning": "DNS with hints",
+      "missing": "DNS incomplete",
+      "wrong": "DNS has errors",
+      "error": "DNS could not be checked"
+    },
+    "empty": {
+      "title": "No domain yet",
+      "body": "Add the domain this server should receive mail for."
+    },
+    "create": {
+      "title": "Add domain",
+      "name": "Domain",
+      "placeholder": "family-example.com",
+      "hint": "The domain must be yours. The DNS records it needs come in the next step.",
+      "submit": "Add"
+    },
+    "detail": {
+      "back": "Domains",
+      "dns": "DNS records",
+      "dnsIntro": "Your DNS provider needs these records. After a change, just check again.",
+      "check": "Check now",
+      "checking": "Checking",
+      "checkedAt": "Last checked {{time}}",
+      "neverChecked": "Not checked yet. The check takes a few seconds.",
+      "sourceAuthoritative": "Asked the responsible nameservers directly: {{servers}}",
+      "sourceResolver": "Outgoing DNS is blocked here, so the server's resolver answered. New records may show up a little later.",
+      "upstream": "Mail for this domain arrives through an upstream mail server, so the MX record may point to it.",
+      "relay": "Outgoing mail leaves through {{relay}}. SPF must allow that server.",
+      "type": "Type",
+      "name": "Name",
+      "value": "Value",
+      "found": "Found",
+      "foundNothing": "Nothing found",
+      "copyName": "Copy name",
+      "copyValue": "Copy value",
+      "nameHint": "Some DNS providers want only the part before {{domain}} as the name.",
+      "status": {
+        "ok": "Fine",
+        "warning": "Hint",
+        "missing": "Missing",
+        "wrong": "Wrong",
+        "error": "Not checkable"
+      },
+      "purpose": {
+        "mx": "Tells other mail servers where mail for this domain goes.",
+        "spf": "Says which servers may send on behalf of the domain.",
+        "dmarc": "Tells recipients what to do with forged mail.",
+        "dkim": "Public key recipients use to check the signature of your mail."
+      },
+      "notes": {
+        "mxUpstream": "Points to the upstream mail server. That's fine.",
+        "mxElsewhere": "Points to another server, so mail will not arrive here.",
+        "spfTooLoose": "Allows any server to send. Better end it with -all.",
+        "spfMultiple": "There are several SPF records. Only one is allowed.",
+        "spfNotAllowed": "Does not allow the sending server. Mail then often lands in spam.",
+        "spfUnverified": "The address of the sending server could not be found.",
+        "spfInvalid": "The SPF record is broken.",
+        "dmarcNone": "Policy “none”: good for testing. Later switch to quarantine or reject.",
+        "dmarcInvalid": "The policy (p=) is missing or invalid.",
+        "dmarcMultiple": "There are several DMARC records. Only one is allowed.",
+        "dkimMismatch": "Contains a different key.",
+        "lookupFailed": "The lookup failed. Try again in a moment."
+      },
+      "catchAll": "Catch-all",
+      "catchAllHint": "Mail to addresses that don't exist goes to this person. It also attracts more spam.",
+      "catchAllOff": "Off: unknown addresses are refused",
+      "keys": "DKIM keys",
+      "keysIntro": "The server signs every outgoing mail with these. Switching to new keys now and then is good practice.",
+      "keyState": {
+        "active": "Active",
+        "pending": "New",
+        "retired": "Retired"
+      },
+      "rotate": "Renew keys",
+      "rotateSteps": "Add the new records above at your DNS provider, check them, then switch over. The old keys keep working until then.",
+      "activate": "Switch to the new keys",
+      "activateForce": "Switch anyway",
+      "retiredHint": "Keep retired keys in DNS for a few days until all mail has been delivered, then remove them.",
+      "removeKey": "Remove {{selector}}",
+      "remove": "Remove domain",
+      "removeHint": "Only possible when no address uses the domain anymore.",
+      "removeConfirm": "Really remove {{domain}}?",
+      "catchAllTarget": "Unknown addresses go to"
+    },
+    "toasts": {
+      "created": "{{domain}} has been added",
+      "removed": "{{domain}} has been removed",
+      "checked": "DNS checked",
+      "catchAll": "Catch-all saved",
+      "rotated": "New keys are ready",
+      "activated": "The new keys are active",
+      "keyRemoved": "Key removed"
     }
   }
 }

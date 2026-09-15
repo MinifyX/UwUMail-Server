@@ -51,5 +51,13 @@
     "invalid": {
       "title": "This link has expired (・_・;)"
     }
+  },
+  "domains": {
+    "empty": {
+      "title": "No domain yet (・_・;)"
+    },
+    "toasts": {
+      "checked": "DNS checked, I looked everywhere ✉︎"
+    }
   }
 }

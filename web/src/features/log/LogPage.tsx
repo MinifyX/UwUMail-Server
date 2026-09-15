@@ -27,6 +27,9 @@ const KNOWN_ACTIONS = new Set([
   "domainCreate",
   "domainRemove",
   "domainCatchAll",
+  "domainDkimPrepare",
+  "domainDkimActivate",
+  "domainDkimRemove",
 ]);
 
 function actorName(actor: string, t: TFunction) {

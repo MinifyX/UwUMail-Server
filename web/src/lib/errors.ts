@@ -13,6 +13,11 @@ const KNOWN = [
   "forbidden",
   "offline",
   "internal",
+  "domainInUse",
+  "keyActive",
+  "noPendingKeys",
+  "keysNotPublished",
+  "dnsUnavailable",
 ];
 
 /** Turns an API error into a sentence for the person in front of the screen. */

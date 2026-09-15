@@ -40,7 +40,8 @@
     "openMenu": "Menü öffnen",
     "closeMenu": "Menü schließen",
     "people": "Personen",
-    "log": "Protokoll"
+    "log": "Protokoll",
+    "domains": "Domains"
   },
   "mode": {
     "label": "Ansicht",
@@ -180,7 +181,12 @@
       "linkInvalid": "Dieser Link gilt nicht mehr.",
       "forbidden": "Dafür fehlen dir die Rechte.",
       "offline": "Der Server ist gerade nicht erreichbar.",
-      "internal": "Auf dem Server ist etwas schiefgelaufen."
+      "internal": "Auf dem Server ist etwas schiefgelaufen.",
+      "domainInUse": "Diese Domain wird noch von Adressen genutzt. Entferne sie zuerst.",
+      "keyActive": "Dieser Schlüssel signiert gerade Mails und kann nicht entfernt werden.",
+      "noPendingKeys": "Es gibt keine neuen Schlüssel zum Umstellen.",
+      "keysNotPublished": "Die DNS-Einträge der neuen Schlüssel sind noch nicht zu sehen.",
+      "dnsUnavailable": "Der Server kann gerade kein DNS abfragen."
     }
   },
   "people": {
@@ -325,7 +331,10 @@
       "domainCreate": "{{actor}} hat die Domain {{target}} angelegt",
       "domainRemove": "{{actor}} hat die Domain {{target}} entfernt",
       "domainCatchAll": "{{actor}} hat die Sammeladresse von {{target}} geändert",
-      "other": "{{actor}}: {{action}} {{target}}"
+      "other": "{{actor}}: {{action}} {{target}}",
+      "domainDkimPrepare": "{{actor}} hat neue DKIM-Schlüssel für {{target}} erzeugt",
+      "domainDkimActivate": "{{actor}} hat {{target}} auf die neuen DKIM-Schlüssel umgestellt",
+      "domainDkimRemove": "{{actor}} hat einen alten DKIM-Schlüssel von {{target}} entfernt"
     },
     "details": {
       "adminOn": "ist jetzt Admin",
@@ -355,6 +364,111 @@
       "title": "Dieser Link gilt nicht mehr",
       "body": "Links zum Passwort-Setzen funktionieren nur einmal und 7 Tage lang. Bitte deinen Admin um einen neuen.",
       "login": "Zur Anmeldung"
+    }
+  },
+  "domains": {
+    "title": "Domains",
+    "intro": "Die Domains, für die dieser Server Mails annimmt.",
+    "add": "Domain hinzufügen",
+    "people_one": "{{count}} Person",
+    "people_other": "{{count}} Personen",
+    "aliases_one": "{{count}} zusätzliche Adresse",
+    "aliases_other": "{{count}} zusätzliche Adressen",
+    "notChecked": "Noch nicht geprüft",
+    "dnsStatus": {
+      "ok": "DNS passt",
+      "warning": "DNS mit Hinweisen",
+      "missing": "DNS unvollständig",
+      "wrong": "DNS fehlerhaft",
+      "error": "DNS nicht prüfbar"
+    },
+    "empty": {
+      "title": "Noch keine Domain",
+      "body": "Leg die Domain an, für die dieser Server Mails empfangen soll."
+    },
+    "create": {
+      "title": "Domain hinzufügen",
+      "name": "Domain",
+      "placeholder": "familie-beispiel.de",
+      "hint": "Die Domain muss dir gehören. Die nötigen DNS-Einträge zeigen wir dir im nächsten Schritt.",
+      "submit": "Hinzufügen"
+    },
+    "detail": {
+      "back": "Domains",
+      "dns": "DNS-Einträge",
+      "dnsIntro": "Diese Einträge brauchst du bei deinem DNS-Anbieter. Nach einer Änderung einfach neu prüfen.",
+      "check": "Jetzt prüfen",
+      "checking": "Wird geprüft",
+      "checkedAt": "Zuletzt geprüft {{time}}",
+      "neverChecked": "Noch nicht geprüft. Die Prüfung dauert ein paar Sekunden.",
+      "sourceAuthoritative": "Direkt bei den zuständigen Nameservern gefragt: {{servers}}",
+      "sourceResolver": "Ausgehendes DNS ist hier gesperrt, darum hat der Resolver des Servers geantwortet. Neue Einträge können dann etwas später erscheinen.",
+      "upstream": "Mails für diese Domain kommen über einen vorgeschalteten Mailserver. Der MX-Eintrag darf deshalb auf ihn zeigen.",
+      "relay": "Ausgehende Mails laufen über {{relay}}. SPF muss diesen Server erlauben.",
+      "type": "Typ",
+      "name": "Name",
+      "value": "Wert",
+      "found": "Gefunden",
+      "foundNothing": "Nichts gefunden",
+      "copyName": "Name kopieren",
+      "copyValue": "Wert kopieren",
+      "nameHint": "Manche DNS-Anbieter wollen als Name nur den Teil vor {{domain}}.",
+      "status": {
+        "ok": "Passt",
+        "warning": "Hinweis",
+        "missing": "Fehlt",
+        "wrong": "Stimmt nicht",
+        "error": "Nicht prüfbar"
+      },
+      "purpose": {
+        "mx": "Sagt anderen Mailservern, wohin Mails für diese Domain gehen.",
+        "spf": "Legt fest, welche Server im Namen der Domain senden dürfen.",
+        "dmarc": "Sagt Empfängern, was mit gefälschten Mails passieren soll.",
+        "dkim": "Öffentlicher Schlüssel, mit dem Empfänger die Signatur deiner Mails prüfen."
+      },
+      "notes": {
+        "mxUpstream": "Zeigt auf den vorgeschalteten Mailserver. Das passt so.",
+        "mxElsewhere": "Zeigt auf einen anderen Server. Mails kommen hier dann nicht an.",
+        "spfTooLoose": "Erlaubt jedem Server zu senden. Besser mit -all abschließen.",
+        "spfMultiple": "Es gibt mehrere SPF-Einträge. Erlaubt ist nur einer.",
+        "spfNotAllowed": "Erlaubt den sendenden Server nicht. Mails landen dann oft im Spam.",
+        "spfUnverified": "Die Adresse des sendenden Servers war nicht zu ermitteln.",
+        "spfInvalid": "Der SPF-Eintrag ist fehlerhaft.",
+        "dmarcNone": "Richtlinie „none“: Gut zum Testen. Später auf quarantine oder reject stellen.",
+        "dmarcInvalid": "Die Richtlinie (p=) fehlt oder ist ungültig.",
+        "dmarcMultiple": "Es gibt mehrere DMARC-Einträge. Erlaubt ist nur einer.",
+        "dkimMismatch": "Enthält einen anderen Schlüssel.",
+        "lookupFailed": "Die Abfrage ist fehlgeschlagen. Versuch es gleich noch einmal."
+      },
+      "catchAll": "Sammeladresse",
+      "catchAllHint": "Mails an Adressen, die es nicht gibt, gehen an diese Person. Das zieht auch mehr Spam an.",
+      "catchAllOff": "Aus: unbekannte Adressen werden abgelehnt",
+      "keys": "DKIM-Schlüssel",
+      "keysIntro": "Damit unterschreibt der Server jede ausgehende Mail. Ab und zu neue Schlüssel zu nehmen, ist gute Praxis.",
+      "keyState": {
+        "active": "Aktiv",
+        "pending": "Neu",
+        "retired": "Ausgemustert"
+      },
+      "rotate": "Schlüssel erneuern",
+      "rotateSteps": "Trag die neuen Einträge oben bei deinem DNS-Anbieter ein, prüf sie, und stell dann um. Die alten Schlüssel bleiben so lange gültig.",
+      "activate": "Auf neue Schlüssel umstellen",
+      "activateForce": "Trotzdem umstellen",
+      "retiredHint": "Ausgemusterte Schlüssel lass noch ein paar Tage im DNS stehen, bis alle Mails zugestellt sind. Dann kannst du sie entfernen.",
+      "removeKey": "{{selector}} entfernen",
+      "remove": "Domain entfernen",
+      "removeHint": "Geht nur, wenn keine Adresse mehr die Domain nutzt.",
+      "removeConfirm": "{{domain}} wirklich entfernen?",
+      "catchAllTarget": "Unbekannte Adressen gehen an"
+    },
+    "toasts": {
+      "created": "{{domain}} ist angelegt",
+      "removed": "{{domain}} ist entfernt",
+      "checked": "DNS geprüft",
+      "catchAll": "Sammeladresse gespeichert",
+      "rotated": "Neue Schlüssel sind bereit",
+      "activated": "Neue Schlüssel sind aktiv",
+      "keyRemoved": "Schlüssel entfernt"
     }
   }
 }
