@@ -1,6 +1,6 @@
 [package]
 name = "uwumail-server"
-description = "The UwUMail server: a cute, self-hosted mail server for everyone"
+description = "The UwUMail server: a cute, self-hosted mail server, built just for fun"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

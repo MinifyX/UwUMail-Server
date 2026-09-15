@@ -1,5 +1,9 @@
 # Roadmap
 
+This is my to-do and wish list, not a promise. There are no dates: things get
+built when I need them or feel like it, the order changes, and some of it may
+never happen. See [Why this exists](../README.md#why-this-exists).
+
 Each step ships as its own commits, container image and test deployment.
 
 ## 1. Mail core ✅ in progress
