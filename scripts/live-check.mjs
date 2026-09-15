@@ -1,5 +1,5 @@
 // Checks a running UwUMail server from the outside, the way the app uses it:
-// JMAP session, mailboxes, push, sending through JMAP and, optionally, a login
+// web portal, JMAP session, mailboxes, push, sending through JMAP and, optionally, a login
 // on the submission port and the reply of an outside mail server.
 //
 //   UWUMAIL_URL=https://mail.example.com UWUMAIL_LOGIN=test@example.com \
@@ -176,7 +176,39 @@ async function smtpLogin(target, servername) {
   return `${certificate.issuer?.O ?? "?"}, valid until ${certificate.valid_to}`;
 }
 
+/** The web portal: its page and headers, then a login, the account page's data and a logout. */
+async function checkPortal() {
+  const page = await fetch(`${base}/account`);
+  const html = await page.text();
+  if (page.status !== 200 || !html.includes('<div id="root">')) throw new Error(`portal page: HTTP ${page.status}`);
+  if (!page.headers.get("content-security-policy")?.includes("frame-ancestors 'none'")) {
+    throw new Error("the portal page has no Content-Security-Policy");
+  }
+  const loggedIn = await fetch(`${base}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ login, password }),
+  });
+  if (loggedIn.status !== 200) throw new Error(`portal login: HTTP ${loggedIn.status} ${await loggedIn.text()}`);
+  const setCookie = loggedIn.headers.get("set-cookie") ?? "";
+  if (base.startsWith("https:") && !(setCookie.startsWith("__Host-uwumail=") && setCookie.includes("Secure"))) {
+    throw new Error(`over HTTPS the session cookie must be __Host- and Secure: ${setCookie.split("=")[0]}`);
+  }
+  const cookie = setCookie.split(";")[0];
+  const { csrfToken } = await loggedIn.json();
+  const profile = await fetch(`${base}/api/account`, { headers: { Cookie: cookie } });
+  if (profile.status !== 200) throw new Error(`portal account: HTTP ${profile.status}`);
+  const logout = await fetch(`${base}/api/auth/logout`, {
+    method: "POST",
+    headers: { Cookie: cookie, "X-CSRF-Token": csrfToken, "Content-Type": "application/json" },
+    body: "{}",
+  });
+  if (logout.status !== 204) throw new Error(`portal logout: HTTP ${logout.status}`);
+  return (await profile.json()).addresses.length;
+}
+
 console.log(`UwUMail live check against ${base} as ${login}`);
+ok(`web portal: page with CSP, login with a secure cookie, ${await checkPortal()} address(es), logout`);
 const session = await getSession();
 const accountId = session.primaryAccounts["urn:ietf:params:jmap:mail"];
 ok(`JMAP session, endpoints ${new URL(session.apiUrl).protocol}//`);
