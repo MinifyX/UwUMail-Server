@@ -1,4 +1,4 @@
-//! The "Server" area for admins: overview and the change log.
+//! The "Server" area for admins: overview, health and the change log.
 
 use axum::Json;
 use axum::extract::{Query, State};
@@ -19,6 +19,16 @@ pub async fn overview(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<V
             "uptimeSeconds": web.settings().started.elapsed().as_secs(),
         },
     })))
+}
+
+pub async fn health(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<crate::health::Health>> {
+    Ok(Json(crate::health::health(&web).await?))
+}
+
+/// Checks DNS and whether mail can leave right now, then answers like [`health`].
+pub async fn check_health(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<crate::health::Health>> {
+    web.check_health_now().await;
+    Ok(Json(crate::health::health(&web).await?))
 }
 
 #[derive(Deserialize)]

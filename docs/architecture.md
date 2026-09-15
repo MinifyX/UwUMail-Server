@@ -75,6 +75,20 @@ Everyone logs in at the same place and lands in "My account" (`/account`);
 admins also get "Server" (`/admin`). Portal preferences (language, tone,
 Simple/Pro, theme) are stored per account.
 
+The server overview opens with a health check in four areas:
+
+- **DNS:** the latest DNS check of each domain.
+- **Certificate:** days left and whether the certificate matches the hostname.
+- **Sending:** failed logins or connections from the queue worker, a delivery
+  probe, stuck mail and a high share of bounces.
+- **Storage:** free disk space in the data directory and mailboxes near their limit.
+
+DNS checks run every six hours. The delivery probe runs hourly for a relay and
+every six hours for direct delivery, and only when no mail went out
+successfully in that time. For a relay, the probe logs in and quits. For direct
+delivery, it reads the greeting of Gmail's MX on port 25 and quits. It never
+sends mail. Admins can run all checks at once with "Check now".
+
 ### `uwumail-server`
 
 The binary: configuration (`figment`: TOML + `UWUMAIL_*` environment),

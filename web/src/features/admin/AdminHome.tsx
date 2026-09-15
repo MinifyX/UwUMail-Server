@@ -3,7 +3,6 @@ import clsx from "clsx";
 import { AtSign, Globe, HardDrive, Send, ShieldCheck, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { LogoSymbol } from "@/components/ui/Logo";
 import { NyuScene } from "@/components/nyu/scenes";
 import { Card, KeyValue, PageHeader } from "@/components/ui/Card";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -11,6 +10,7 @@ import { useT } from "@/i18n";
 import { api, type Overview } from "@/lib/api";
 import { formatBytes, formatDuration } from "@/lib/format";
 import { usePrefs } from "@/state/prefs";
+import { HealthCard, useHealth } from "./HealthCard";
 
 function Stat({
   icon: Icon,
@@ -55,6 +55,7 @@ export function AdminHome() {
     queryFn: () => api<Overview>("/api/admin/overview"),
     refetchInterval: 30_000,
   });
+  const health = useHealth();
 
   if (overview.isPending) return <Loading />;
   if (overview.isError) return <LoadError error={overview.error} onRetry={() => void overview.refetch()} />;
@@ -74,8 +75,10 @@ export function AdminHome() {
       <PageHeader
         title={t("admin.title")}
         intro={t("admin.intro")}
-        art={!compact && <NyuScene name="done" className="h-auto w-[150px]" />}
+        art={!compact && health.data?.level === "ok" && <NyuScene name="done" className="h-auto w-[150px]" />}
       />
+
+      <HealthCard />
 
       <div
         className={clsx(
@@ -111,20 +114,12 @@ export function AdminHome() {
         {compact && <Stat compact icon={ShieldCheck} label={t("admin.cards.admins")} value={counts.admins} />}
       </div>
 
-      <div className="grid gap-5 md:grid-cols-2">
-        <Card title={t("admin.server.title")}>
-          <KeyValue label={t("admin.server.hostname")} value={server.hostname} copy={server.hostname} />
-          <KeyValue label={t("admin.server.version")} value={server.version} />
-          <KeyValue label={t("admin.server.uptime")} value={formatDuration(server.uptimeSeconds, t)} />
-          {compact && <KeyValue label={t("admin.cards.queue")} value={queueNote} />}
-        </Card>
-        <Card title={t("admin.coming.title")}>
-          <div className="flex items-start gap-4">
-            {!compact && <LogoSymbol mood="sparkle" className="nyu-blink h-14 w-auto shrink-0" />}
-            <p className="text-sm text-muted">{t("admin.coming.body")}</p>
-          </div>
-        </Card>
-      </div>
+      <Card title={t("admin.server.title")}>
+        <KeyValue label={t("admin.server.hostname")} value={server.hostname} copy={server.hostname} />
+        <KeyValue label={t("admin.server.version")} value={server.version} />
+        <KeyValue label={t("admin.server.uptime")} value={formatDuration(server.uptimeSeconds, t)} />
+        {compact && <KeyValue label={t("admin.cards.queue")} value={queueNote} />}
+      </Card>
     </div>
   );
 }

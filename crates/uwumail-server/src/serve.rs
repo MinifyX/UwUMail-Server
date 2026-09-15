@@ -86,6 +86,17 @@ pub async fn run(
     tasks.spawn(uwumail_smtp::run_queue(smtp.clone(), shutdown_rx.clone()));
 
     let jmap = uwumail_jmap::Jmap::new(smtp.clone()).router();
+    let certificate: uwumail_web::CertificateSource = {
+        let (certs, automatic) = (certs.clone(), config.tls.mode == TlsMode::Acme);
+        Arc::new(move || {
+            certs.info().map(|info| uwumail_web::CertificateStatus {
+                not_after: info.not_after,
+                names: info.names,
+                self_signed: info.self_signed,
+                automatic,
+            })
+        })
+    };
     let web = uwumail_web::Web::new(
         smtp.clone(),
         uwumail_web::WebSettings {
@@ -93,9 +104,11 @@ pub async fn run(
             started: Instant::now(),
             logs: Some(logs),
             config: Some(Arc::new(crate::settings::ServerSettings { path: config_path, smtp: smtp.clone() })),
+            certificate: Some(certificate),
         },
-    )
-    .router();
+    );
+    tasks.spawn(web.clone().run_health_checks(shutdown_rx.clone()));
+    let web = web.router();
     let trusted_proxies = Arc::new(
         uwumail_smtp::IpNetwork::parse_list(&config.http.trusted_proxies)
             .map_err(|err| anyhow::anyhow!("http.trusted_proxies: {err}"))?,

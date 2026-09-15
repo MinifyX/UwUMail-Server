@@ -12,6 +12,7 @@ use uwumail_store::{QueueRecipient, QueuedMessage};
 use crate::client::{Client, Reply};
 use crate::config::{RelayConfig, RelaySecurity};
 use crate::dsn::{self, FailedRecipient};
+use crate::health::{DeliveryEvent, ProbeStage, Route};
 use crate::{Context, Smtp, now};
 
 /// How long claimed recipients stay reserved for one delivery attempt.
@@ -109,9 +110,11 @@ async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, re
         let result = match &outcome {
             Outcome::Delivered(reply) => {
                 tracing::info!(message = message.id, to = %recipient.address, %reply, "delivered");
+                ctx.stats.record(DeliveryEvent::Delivered);
                 ctx.store.mark_recipient_delivered(recipient.id, reply).await
             }
             Outcome::Deferred(error) => {
+                ctx.stats.record(DeliveryEvent::Deferred);
                 let next = now() + retry_delay(recipient.attempts + 1);
                 if next > message.expires_at {
                     tracing::warn!(message = message.id, to = %recipient.address, %error, "giving up after retries");
@@ -124,6 +127,7 @@ async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, re
             }
             Outcome::Failed(error) => {
                 tracing::warn!(message = message.id, to = %recipient.address, %error, "delivery failed");
+                ctx.stats.record(DeliveryEvent::Failed);
                 if recipient.notify_flags & RCPT_NOTIFY_NEVER == 0 {
                     failed.push(FailedRecipient { address: recipient.address.clone(), error: error.clone() });
                 }
@@ -254,6 +258,11 @@ async fn deliver_domain(
             }
         }
     }
+    let route = match targets.first().map(|target| &target.via) {
+        Some(Via::Relay(_)) => Route::Relay,
+        _ => Route::Direct,
+    };
+    ctx.stats.trouble(domain, route, ProbeStage::Connect, last_error.clone());
     everyone(Outcome::Deferred(last_error))
 }
 
@@ -331,7 +340,10 @@ async fn session(
         let reply = client.auth_plain(username, password).await.map_err(io)?;
         if !reply.is_positive() {
             client.quit().await;
-            return Ok(everyone(Outcome::Deferred(format!("the relay refused our login: {reply}"))));
+            let error = format!("the relay refused our login: {reply}");
+            let domain = recipients.first().map(|recipient| recipient.domain.as_str()).unwrap_or_default();
+            ctx.stats.trouble(domain, Route::Relay, ProbeStage::Login, error.clone());
+            return Ok(everyone(Outcome::Deferred(error)));
         }
     }
 

@@ -64,5 +64,17 @@
     "empty": {
       "title": "Nothing waiting, everything is on its way ✉︎"
     }
+  },
+  "health": {
+    "summary": {
+      "ok": "Everything purrs (=^･ω･^=)",
+      "unknown": "Still sniffing around",
+      "warning_one": "One thing needs a look (・_・;)",
+      "warning_other": "{{count}} things need a look (・_・;)",
+      "problem_one": "Something is stuck (╥﹏╥)",
+      "problem_other": "{{count}} things are stuck (╥﹏╥)"
+    },
+    "notChecked": "I'll check everything once right after the start.",
+    "checking": "Sniffing …"
   }
 }

@@ -68,6 +68,29 @@ export interface Profile {
   createdAt: number;
 }
 
+export type HealthLevel = "ok" | "unknown" | "warning" | "problem";
+export type HealthAreaName = "dns" | "certificate" | "delivery" | "storage";
+
+export interface HealthFinding {
+  code: string;
+  level: HealthLevel;
+  params?: Record<string, unknown>;
+  /** Portal page where it can be fixed. */
+  link?: string;
+}
+
+export interface HealthArea {
+  area: HealthAreaName;
+  level: HealthLevel;
+  findings: HealthFinding[];
+}
+
+export interface Health {
+  level: HealthLevel;
+  checkedAt: number | null;
+  areas: HealthArea[];
+}
+
 export interface Overview {
   counts: {
     domains: number;

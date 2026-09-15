@@ -145,10 +145,6 @@
       "hostname": "Hostname",
       "version": "Version",
       "uptime": "Läuft seit"
-    },
-    "coming": {
-      "title": "Als Nächstes",
-      "body": "Domains mit DNS-Prüfung, Warteschlange und Einstellungen ziehen hier in den nächsten Updates ein."
     }
   },
   "duration": {
@@ -592,6 +588,88 @@
       "requireTlsHint": "Passwörter gehen nie unverschlüsselt über die Leitung.",
       "revealIp": "IP-Adresse in gesendeten Mails zeigen",
       "revealIpHint": "Standardmäßig verrät UwUMail nicht, von wo aus jemand eine Mail geschickt hat."
+    }
+  },
+  "health": {
+    "loading": "Zustand wird geladen …",
+    "summary": {
+      "ok": "Alles in Ordnung",
+      "unknown": "Noch nicht alles geprüft",
+      "warning_one": "Eine Sache solltest du dir ansehen",
+      "warning_other": "{{count}} Dinge solltest du dir ansehen",
+      "problem_one": "Etwas funktioniert nicht",
+      "problem_other": "{{count}} Dinge brauchen deine Hilfe"
+    },
+    "level": {
+      "ok": "in Ordnung",
+      "unknown": "nicht geprüft",
+      "warning": "Hinweis",
+      "problem": "Problem"
+    },
+    "checkedAt": "Zuletzt geprüft {{time}}",
+    "notChecked": "Die erste Prüfung läuft kurz nach dem Start.",
+    "checkNow": "Jetzt prüfen",
+    "checking": "Prüfe …",
+    "open": "Ansehen",
+    "lastDelivered": "Zuletzt zugestellt {{time}}.",
+    "areas": {
+      "dns": "DNS",
+      "certificate": "Zertifikat",
+      "delivery": "Versand",
+      "storage": "Speicher"
+    },
+    "findings": {
+      "noDomains": "Noch keine Domain eingerichtet.",
+      "dnsOk_one": "Die Domain ist richtig eingetragen.",
+      "dnsOk_other": "Alle {{count}} Domains sind richtig eingetragen.",
+      "dnsPending_one": "Eine Domain wurde noch nicht geprüft.",
+      "dnsPending_other": "{{count}} Domains wurden noch nicht geprüft.",
+      "dnsUnavailable": "DNS kann nicht geprüft werden, weil der Server keine Namen auflösen kann.",
+      "dnsDomain": "{{domain}}: {{statusText}}",
+      "certOk": "Gültig bis {{date}}.",
+      "certOkAutomatic": "Gültig bis {{date}}, wird automatisch erneuert.",
+      "certWaiting": "Das Zertifikat von Let's Encrypt fehlt noch.",
+      "certSelfSigned": "Selbst ausgestelltes Zertifikat.",
+      "certWrongName": "Das Zertifikat passt nicht zu {{hostname}}.",
+      "certExpired": "Das Zertifikat ist abgelaufen.",
+      "certExpiresSoon_one": "Das Zertifikat läuft in {{count}} Tag ab.",
+      "certExpiresSoon_other": "Das Zertifikat läuft in {{count}} Tagen ab.",
+      "certMissing": "Es ist kein Zertifikat geladen.",
+      "relayOk": "Mails gehen über {{host}} hinaus.",
+      "directOk": "Mails gehen direkt hinaus.",
+      "deliveryNotChecked": "Noch nicht geprüft, ob Mails hinausgehen.",
+      "relayLogin": "{{host}} lehnt die Anmeldung ab.",
+      "relayTls": "Mit {{host}} klappt keine verschlüsselte Verbindung.",
+      "relayUnreachable": "{{host}} ist nicht erreichbar.",
+      "outboundBlocked": "Der Server erreicht keine anderen Mailserver ({{count}} Domains betroffen).",
+      "port25Blocked": "Port 25 nach außen scheint gesperrt zu sein.",
+      "probeDns": "Die Versand-Prüfung konnte keine Namen auflösen.",
+      "queueStuck_one": "Eine Mail hängt seit {{since}} fest.",
+      "queueStuck_other": "{{count}} Mails hängen fest, die älteste seit {{since}}.",
+      "manyBounces": "{{count}} von {{total}} Mails der letzten 24 Stunden wurden abgelehnt.",
+      "diskOk": "{{free}} von {{total}} frei.",
+      "diskLow": "Nur noch {{free}} von {{total}} frei.",
+      "mailboxesOk": "Alle Postfächer haben Platz.",
+      "mailboxesNearlyFull_one": "Das Postfach von {{login}} ist fast voll.",
+      "mailboxesNearlyFull_other": "{{count}} Postfächer sind fast voll."
+    },
+    "hints": {
+      "noDomains": "Ohne Domain kann der Server keine Mails annehmen.",
+      "dnsDomain": "Auf der Domain-Seite steht, welcher Eintrag fehlt oder falsch ist.",
+      "certWaiting": "Dafür muss der Server unter seinem Namen über Port 80 erreichbar sein. Bis dahin warnen Mail-Apps beim Verbinden.",
+      "certSelfSigned": "Mail-Apps warnen beim Verbinden. Für echten Betrieb Let's Encrypt oder eigene Zertifikatsdateien nutzen.",
+      "certWrongName": "Mail-Apps warnen beim Verbinden. Prüfe den Hostnamen in der Konfiguration.",
+      "certExpired": "Mail-Apps können sich nicht mehr sicher verbinden. Erneuere das Zertifikat.",
+      "certExpiresSoon": "Normalerweise wird es rechtzeitig erneuert. Das Log zeigt, warum es nicht klappt.",
+      "relayLogin": "Prüfe Benutzername und Passwort unter Einstellungen → Versand.",
+      "relayTls": "Prüfe Port und Verschlüsselung unter Einstellungen → Versand.",
+      "relayUnreachable": "Prüfe Adresse und Port des Relays. Mails bleiben so lange in der Warteschlange.",
+      "outboundBlocked": "Viele Internetanschlüsse sperren Port 25. Dann hilft ein Relay unter Einstellungen → Versand.",
+      "port25Blocked": "Viele Internetanschlüsse sperren Port 25. Dann hilft ein Relay unter Einstellungen → Versand.",
+      "queueStuck": "In der Warteschlange steht, woran es liegt.",
+      "manyBounces": "Andere Server lehnen Mails ab, zum Beispiel wegen SPF, DKIM oder dem Ruf der IP-Adresse.",
+      "diskLow": "Wenn der Speicher voll ist, kann der Server keine Mails mehr annehmen.",
+      "mailboxesNearlyFull": "Volle Postfächer nehmen keine Mails mehr an. Speicher erhöhen oder aufräumen lassen."
     }
   }
 }

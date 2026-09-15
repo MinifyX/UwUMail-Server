@@ -110,6 +110,7 @@ async fn settings_are_checked_locked_stored_and_logged() {
             started: Instant::now(),
             logs: None,
             config: Some(server.clone()),
+            certificate: None,
         },
     );
     let app = web.router();

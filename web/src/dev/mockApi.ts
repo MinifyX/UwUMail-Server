@@ -7,6 +7,9 @@
 
 import type {
   AuditRecord,
+  Health,
+  HealthArea,
+  HealthFinding,
   DkimKeyInfo,
   DomainDetail,
   DomainReport,
@@ -371,7 +374,89 @@ const settingsView = () => ({
   configFile: "/etc/uwumail/uwumail.toml",
 });
 
+let healthCheckedAt: number | null = null;
+
+function health(): Health {
+  const at = Math.floor(Date.now() / 1000);
+  const order = ["ok", "unknown", "warning", "problem"] as const;
+  const area = (name: HealthArea["area"], findings: HealthFinding[]): HealthArea => ({
+    area: name,
+    level: findings.reduce<HealthArea["level"]>(
+      (worst, f) => (order.indexOf(f.level) > order.indexOf(worst) ? f.level : worst),
+      "ok",
+    ),
+    findings,
+  });
+
+  const dns: HealthFinding[] = [];
+  const pending = domains.filter((d) => !d.report).length;
+  for (const domain of domains) {
+    const status = domain.report?.status;
+    if (!status || status === "ok") continue;
+    const level = status === "warning" ? "warning" : status === "error" ? "unknown" : "problem";
+    dns.push({
+      code: "dnsDomain",
+      level,
+      params: { domain: domain.name, status },
+      link: `/admin/domains/${domain.name}`,
+    });
+  }
+  if (pending > 0) dns.push({ code: "dnsPending", level: "unknown", params: { count: pending } });
+  if (dns.length === 0) dns.push({ code: "dnsOk", level: "ok", params: { count: domains.length } });
+
+  const delivery: HealthFinding[] = [
+    { code: "relayOk", level: "ok", params: { host: "relay.example.net", lastDeliveredAt: at - 1260 } },
+  ];
+  const stuck = queue.filter(
+    (m) => m.createdAt < at - 3600 && m.recipients.some((r) => r.status === "pending" && r.attempts > 0),
+  );
+  if (stuck.length > 0) {
+    const oldest = Math.min(...stuck.map((m) => m.createdAt));
+    delivery.push({
+      code: "queueStuck",
+      level: "warning",
+      params: { count: stuck.length, oldestAt: oldest, ageSecs: at - oldest },
+      link: "/admin/queue",
+    });
+  }
+
+  const storage: HealthFinding[] = [
+    { code: "diskOk", level: "ok", params: { freeBytes: 61 * GB, totalBytes: 80 * GB } },
+  ];
+  const full = people.filter((p) => p.status !== "deleted" && p.quotaBytes > 0 && p.usedBytes >= p.quotaBytes * 0.9);
+  if (full.length > 0) {
+    storage.push({
+      code: "mailboxesNearlyFull",
+      level: "warning",
+      params: { count: full.length, login: full[0]!.login },
+      link: full.length === 1 ? `/admin/people/${full[0]!.login}` : "/admin/people",
+    });
+  }
+
+  const areas = [
+    area("dns", dns),
+    area("certificate", [{ code: "certOkAutomatic", level: "ok", params: { days: 71, notAfter: at + 71 * 86_400 } }]),
+    area("delivery", delivery),
+    area("storage", storage),
+  ];
+  const level = areas.reduce<Health["level"]>(
+    (worst, a) => (order.indexOf(a.level) > order.indexOf(worst) ? a.level : worst),
+    "ok",
+  );
+  return { level, checkedAt: healthCheckedAt, areas };
+}
+
 const routes: [string, RegExp, Handler][] = [
+  ["GET", /^\/api\/admin\/health$/, () => [200, health()]],
+  [
+    "POST",
+    /^\/api\/admin\/health\/check$/,
+    () => {
+      for (const domain of domains) domain.report = report(domain, domain.name !== "verein.example");
+      healthCheckedAt = Math.floor(Date.now() / 1000);
+      return [200, health()];
+    },
+  ],
   ["GET", /^\/api\/admin\/settings$/, () => [200, settingsView()]],
   [
     "PATCH",

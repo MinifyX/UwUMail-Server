@@ -145,10 +145,6 @@
       "hostname": "Host name",
       "version": "Version",
       "uptime": "Running for"
-    },
-    "coming": {
-      "title": "Coming next",
-      "body": "Domains with DNS checks, the queue and settings move in here with the next updates."
     }
   },
   "duration": {
@@ -592,6 +588,88 @@
       "requireTlsHint": "Passwords never travel unencrypted.",
       "revealIp": "Show the IP address in sent mail",
       "revealIpHint": "By default UwUMail does not reveal where someone sent a message from."
+    }
+  },
+  "health": {
+    "loading": "Loading the server's health …",
+    "summary": {
+      "ok": "Everything is fine",
+      "unknown": "Not everything is checked yet",
+      "warning_one": "One thing needs a look",
+      "warning_other": "{{count}} things need a look",
+      "problem_one": "Something is not working",
+      "problem_other": "{{count}} things need your help"
+    },
+    "level": {
+      "ok": "fine",
+      "unknown": "not checked",
+      "warning": "hint",
+      "problem": "problem"
+    },
+    "checkedAt": "Last checked {{time}}",
+    "notChecked": "The first check runs shortly after the start.",
+    "checkNow": "Check now",
+    "checking": "Checking …",
+    "open": "Open",
+    "lastDelivered": "Last delivered {{time}}.",
+    "areas": {
+      "dns": "DNS",
+      "certificate": "Certificate",
+      "delivery": "Sending",
+      "storage": "Storage"
+    },
+    "findings": {
+      "noDomains": "No domain set up yet.",
+      "dnsOk_one": "The domain is set up correctly.",
+      "dnsOk_other": "All {{count}} domains are set up correctly.",
+      "dnsPending_one": "One domain has not been checked yet.",
+      "dnsPending_other": "{{count}} domains have not been checked yet.",
+      "dnsUnavailable": "DNS cannot be checked because the server cannot resolve names.",
+      "dnsDomain": "{{domain}}: {{statusText}}",
+      "certOk": "Valid until {{date}}.",
+      "certOkAutomatic": "Valid until {{date}}, renewed automatically.",
+      "certWaiting": "The Let's Encrypt certificate has not arrived yet.",
+      "certSelfSigned": "Self-signed certificate.",
+      "certWrongName": "The certificate does not match {{hostname}}.",
+      "certExpired": "The certificate has expired.",
+      "certExpiresSoon_one": "The certificate expires in {{count}} day.",
+      "certExpiresSoon_other": "The certificate expires in {{count}} days.",
+      "certMissing": "No certificate is loaded.",
+      "relayOk": "Mail leaves through {{host}}.",
+      "directOk": "Mail leaves directly.",
+      "deliveryNotChecked": "Not checked yet whether mail can leave.",
+      "relayLogin": "{{host}} refuses the login.",
+      "relayTls": "No encrypted connection to {{host}}.",
+      "relayUnreachable": "{{host}} cannot be reached.",
+      "outboundBlocked": "The server cannot reach other mail servers ({{count}} domains affected).",
+      "port25Blocked": "Outgoing port 25 seems to be blocked.",
+      "probeDns": "The sending check could not resolve names.",
+      "queueStuck_one": "One message has been stuck for {{since}}.",
+      "queueStuck_other": "{{count}} messages are stuck, the oldest for {{since}}.",
+      "manyBounces": "{{count}} of {{total}} messages in the last 24 hours were refused.",
+      "diskOk": "{{free}} of {{total}} free.",
+      "diskLow": "Only {{free}} of {{total}} free.",
+      "mailboxesOk": "Every mailbox has room.",
+      "mailboxesNearlyFull_one": "{{login}}'s mailbox is nearly full.",
+      "mailboxesNearlyFull_other": "{{count}} mailboxes are nearly full."
+    },
+    "hints": {
+      "noDomains": "Without a domain the server cannot receive mail.",
+      "dnsDomain": "The domain page shows which record is missing or wrong.",
+      "certWaiting": "The server must be reachable under its name on port 80. Until then mail apps warn when connecting.",
+      "certSelfSigned": "Mail apps warn when connecting. For real use, use Let's Encrypt or your own certificate files.",
+      "certWrongName": "Mail apps warn when connecting. Check the hostname in the configuration.",
+      "certExpired": "Mail apps can no longer connect securely. Renew the certificate.",
+      "certExpiresSoon": "It is usually renewed in time. The log shows why that fails.",
+      "relayLogin": "Check the username and password under Settings → Sending.",
+      "relayTls": "Check the port and encryption under Settings → Sending.",
+      "relayUnreachable": "Check the relay's address and port. Mail waits in the queue meanwhile.",
+      "outboundBlocked": "Many internet connections block port 25. A relay under Settings → Sending helps then.",
+      "port25Blocked": "Many internet connections block port 25. A relay under Settings → Sending helps then.",
+      "queueStuck": "The queue shows what is going wrong.",
+      "manyBounces": "Other servers refuse mail, e.g. because of SPF, DKIM or the IP address's reputation.",
+      "diskLow": "When storage is full, the server cannot accept mail any more.",
+      "mailboxesNearlyFull": "Full mailboxes stop accepting mail. Raise the limit or ask them to clean up."
     }
   }
 }

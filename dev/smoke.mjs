@@ -169,6 +169,14 @@ async function portal() {
   const cookie = login.headers["set-cookie"][0].split(";")[0];
   const overview = await request("GET", "/api/admin/overview", { cookie });
   if (overview.status !== 200 || overview.json.counts.accounts < 2) throw new Error(`admin overview: ${overview.text}`);
+  const status = await request("GET", "/api/admin/health", { cookie });
+  const areas = status.json?.areas?.map((area) => area.area).join(",");
+  if (status.status !== 200 || areas !== "dns,certificate,delivery,storage") {
+    throw new Error(`admin health: ${status.status} ${status.text}`);
+  }
+  const disk = status.json.areas[3].findings.find((finding) => finding.code === "diskOk" || finding.code === "diskLow");
+  if (!disk) throw new Error(`admin health shows no disk space: ${status.text}`);
+  console.log(`  ✓ health overview: ${status.json.level}, ${Math.round(disk.params.freeBytes / 2 ** 30)} GB free`);
   const logout = await request("POST", "/api/auth/logout", { body: {}, cookie, csrf: login.json.csrfToken });
   if (logout.status !== 204) throw new Error(`portal logout: ${logout.status}`);
   console.log(`  ✓ mini logged in to the portal and sees ${overview.json.counts.accounts} accounts`);

@@ -42,6 +42,7 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Domains: DNS check of MX, SPF, DMARC and DKIM from the root servers down, catch-all, DKIM key rotation
 - [x] Queue (senders, recipients, errors, never subjects) with retry and delete; live server log in Pro mode
 - [x] Server settings in the admin panel, applied without a restart; config file and environment take precedence
+- [x] Health overview: DNS, certificate, outgoing mail (relay/port 25 probe, stuck mail, bounces), disk and mailbox space
 - [ ] Web setup with a one-time code: domain, admin, certificate, DNS check, port 25 / rDNS / blocklist check
 - [ ] Admin panel, Simple and Pro mode, German and English, playful/neutral tone, Nyu
 - [ ] Self-service: password, 2FA, app passwords, forwarding, vacation, aliases, storage

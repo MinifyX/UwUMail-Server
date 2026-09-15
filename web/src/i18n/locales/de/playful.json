@@ -64,5 +64,17 @@
     "empty": {
       "title": "Nichts wartet, alles ist unterwegs ✉︎"
     }
+  },
+  "health": {
+    "summary": {
+      "ok": "Alles schnurrt (=^･ω･^=)",
+      "unknown": "Ich schnupper noch an allem herum",
+      "warning_one": "Schau dir eine Sache mal an (・_・;)",
+      "warning_other": "Schau dir {{count}} Dinge mal an (・_・;)",
+      "problem_one": "Hier klemmt was (╥﹏╥)",
+      "problem_other": "{{count}} Dinge klemmen (╥﹏╥)"
+    },
+    "notChecked": "Ich prüfe gleich nach dem Start alles einmal durch.",
+    "checking": "Schnupper …"
   }
 }

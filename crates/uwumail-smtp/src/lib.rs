@@ -13,6 +13,7 @@ mod dns;
 pub mod dnscheck;
 mod dsn;
 mod headers;
+pub mod health;
 mod inbound;
 mod limiter;
 mod outbound;
@@ -74,6 +75,7 @@ pub(crate) struct Context {
     pub connections: Arc<Semaphore>,
     pub delivery_permits: Arc<Semaphore>,
     pub inflight: Mutex<HashSet<i64>>,
+    pub stats: health::DeliveryStats,
 }
 
 /// The settings in effect right now. Take a snapshot per connection or delivery.
@@ -129,6 +131,7 @@ impl Smtp {
                 dns: DnsCaches::default(),
                 auth_limiter: limiter::AuthLimiter::default(),
                 inflight: Mutex::new(HashSet::new()),
+                stats: health::DeliveryStats::default(),
             }),
         })
     }

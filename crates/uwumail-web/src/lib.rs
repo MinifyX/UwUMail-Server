@@ -8,6 +8,7 @@
 
 mod assets;
 mod error;
+mod health;
 mod logs;
 mod routes;
 mod session;
@@ -24,6 +25,7 @@ use uwumail_smtp::{AuthLimiter, Smtp};
 use uwumail_store::Store;
 
 pub use error::{ApiError, ApiResult};
+pub use health::{CertificateSource, CertificateStatus};
 pub use logs::{LogBuffer, LogLine};
 pub use routes::settings::OVERLAY_KEY as SETTINGS_OVERLAY_KEY;
 pub use session::{Admin, CSRF_HEADER, SESSION_LIFETIME_SECS, Session};
@@ -35,6 +37,8 @@ pub struct WebSettings {
     pub logs: Option<Arc<LogBuffer>>,
     /// Changing server settings from the admin panel, when the server allows it.
     pub config: Option<Arc<dyn settings::SettingsBackend>>,
+    /// The certificate in use, for the health overview.
+    pub certificate: Option<CertificateSource>,
 }
 
 #[derive(Clone)]
@@ -49,6 +53,10 @@ struct Inner {
     dns: Option<DnsChecker>,
     /// The latest DNS check of each domain.
     reports: Mutex<HashMap<String, DomainReport>>,
+    /// When DNS checks and the delivery probe last ran.
+    last_health_check: Mutex<Option<i64>>,
+    /// Held while an admin-requested check runs, so clicks do not pile up.
+    health_check: tokio::sync::Mutex<()>,
 }
 
 impl Web {
@@ -56,7 +64,15 @@ impl Web {
         let dns =
             DnsChecker::new().inspect_err(|err| tracing::warn!(%err, "DNS checks of domains are not available")).ok();
         Web {
-            inner: Arc::new(Inner { smtp, settings, limiter: AuthLimiter::default(), dns, reports: Mutex::default() }),
+            inner: Arc::new(Inner {
+                smtp,
+                settings,
+                limiter: AuthLimiter::default(),
+                dns,
+                reports: Mutex::default(),
+                last_health_check: Mutex::default(),
+                health_check: tokio::sync::Mutex::default(),
+            }),
         }
     }
 
@@ -89,6 +105,14 @@ impl Web {
         self.inner.reports.lock().expect("reports poisoned").remove(domain);
     }
 
+    pub(crate) fn last_health_check(&self) -> Option<i64> {
+        *self.inner.last_health_check.lock().expect("health check time poisoned")
+    }
+
+    pub(crate) fn mark_health_checked(&self) {
+        *self.inner.last_health_check.lock().expect("health check time poisoned") = Some(health::unix_now());
+    }
+
     pub(crate) fn settings(&self) -> &WebSettings {
         &self.inner.settings
     }
@@ -107,6 +131,8 @@ impl Web {
             .route("/api/account/preferences", patch(routes::account::update_preferences))
             .route("/api/password-links/{token}", get(routes::links::show).post(routes::links::choose))
             .route("/api/admin/overview", get(routes::admin::overview))
+            .route("/api/admin/health", get(routes::admin::health))
+            .route("/api/admin/health/check", post(routes::admin::check_health))
             .route("/api/admin/domains", get(routes::domains::list).post(routes::domains::create))
             .route("/api/admin/domains/{name}", get(routes::domains::detail).delete(routes::domains::remove))
             .route("/api/admin/domains/{name}/catch-all", put(routes::domains::set_catch_all))

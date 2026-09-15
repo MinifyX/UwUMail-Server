@@ -25,7 +25,7 @@ export function formatDuration(seconds: number, t: TFunction): string {
   const parts: string[] = [];
   if (days > 0) parts.push(t("duration.days", { count: days }));
   if (hours > 0) parts.push(t("duration.hours", { count: hours }));
-  if (days === 0) parts.push(t("duration.minutes", { count: minutes }));
+  if (days === 0 && (minutes > 0 || hours === 0)) parts.push(t("duration.minutes", { count: minutes }));
   return parts.slice(0, 2).join(", ");
 }
 
