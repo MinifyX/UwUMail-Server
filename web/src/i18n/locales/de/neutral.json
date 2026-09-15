@@ -29,8 +29,7 @@
       "tooManyAttempts": "Zu viele Fehlversuche. Bitte warte ein paar Minuten.",
       "offline": "Der Server ist gerade nicht erreichbar.",
       "internal": "Auf dem Server ist etwas schiefgelaufen."
-    },
-    "setupRequired": "Dieser Server hat noch keine Verwaltung. Leg den ersten Admin auf dem Server mit der Kommandozeile an."
+    }
   },
   "nav": {
     "label": "Hauptmenü",
@@ -47,7 +46,8 @@
     "settings": "Einstellungen",
     "security": "Sicherheit",
     "mail": "Weiterleitung",
-    "addresses": "Adressen"
+    "addresses": "Adressen",
+    "setup": "Einrichtung"
   },
   "mode": {
     "label": "Ansicht",
@@ -217,7 +217,11 @@
       "aliasNotYours": "Diese Adresse hat der Admin angelegt, nur er kann sie löschen.",
       "addressReserved": "Diese Adresse wurde gerade erst gelöscht und ist noch reserviert.",
       "notEmptiable": "Dieser Ordner lässt sich nicht leeren.",
-      "forwardingThrottled": "Für diese Adresse oder heute wurden schon genug Bestätigungs-Mails verschickt. Versuch es später wieder."
+      "forwardingThrottled": "Für diese Adresse oder heute wurden schon genug Bestätigungs-Mails verschickt. Versuch es später wieder.",
+      "setupCodeInvalid": "Der Code stimmt nicht. Schau nochmal ins Log.",
+      "setupDone": "Dieser Server hat schon einen Admin.",
+      "testMailFailed": "Die Test-Mail konnte nicht verschickt werden.",
+      "cloudflareFailed": "Cloudflare: {{detail}}"
     }
   },
   "people": {
@@ -1009,6 +1013,175 @@
       "archive": "Archiv",
       "junk": "Spam",
       "trash": "Papierkorb"
+    }
+  },
+  "setup": {
+    "title": "Einrichtung",
+    "progress": "Schritt {{step}} von {{count}}",
+    "back": "Zurück",
+    "next": "Weiter",
+    "steps": {
+      "welcome": "Willkommen",
+      "admin": "Admin",
+      "dns": "DNS",
+      "sending": "Versand",
+      "checks": "Prüfungen",
+      "testMail": "Test-Mail",
+      "done": "Fertig"
+    },
+    "welcome": {
+      "title": "Willkommen bei UwUMail",
+      "body": "In ein paar Schritten richten wir deinen Mailserver ein: zuerst dein Admin-Konto und die Domain, dann die DNS-Einträge, den Versand und zum Schluss eine Test-Mail.",
+      "codeLabel": "Einmal-Code",
+      "codeHint": "Der Server schreibt ihn beim Start ins Log, solange es noch keinen Admin gibt.",
+      "whereSimple": "So findest du ihn: Führe auf dem Server im Ordner von UwUMail diesen Befehl aus. In der Zeile mit „/setup“ steht der Code.",
+      "wherePro": "Log-Zeile: „no admin yet: open https://…/setup and enter the one-time code …“",
+      "submit": "Code prüfen",
+      "hostname": "Server: {{hostname}}"
+    },
+    "closed": {
+      "title": "Dieser Server ist schon eingerichtet",
+      "body": "Melde dich mit deinem Admin-Konto an. Die Prüfungen findest du danach unter Server → Einrichtung.",
+      "login": "Zur Anmeldung"
+    },
+    "noCode": {
+      "title": "Gerade ist kein Einmal-Code aktiv",
+      "body": "Starte den Server neu. Solange es keinen Admin gibt, schreibt er dann einen neuen Code ins Log."
+    },
+    "admin": {
+      "title": "Dein Admin-Konto",
+      "body": "Du bekommst eine Mail-Adresse auf deiner Domain. Mit ihr meldest du dich hier an und verwaltest den Server.",
+      "domain": "Domain",
+      "domainHint": "Die Domain für deine Mail-Adressen, zum Beispiel example.com.",
+      "localPart": "Adresse (vor dem @)",
+      "name": "Name",
+      "nameHint": "So sehen andere dich als Absender.",
+      "password": "Passwort",
+      "repeat": "Passwort wiederholen",
+      "hostnameNote": "Der Server heißt {{hostname}}. Das steht in der .env.",
+      "submit": "Konto anlegen",
+      "newCode": "Code neu eingeben"
+    },
+    "dns": {
+      "title": "DNS-Einträge für {{domain}}",
+      "body": "Damit andere Server deine Mails annehmen und dir Mails schicken können, braucht die Domain ein paar Einträge bei deinem DNS-Anbieter. Trag die fehlenden ein und prüfe dann nochmal.",
+      "hostnameNote": "Außerdem muss {{hostname}} per A- oder AAAA-Eintrag auf deinen Server zeigen.",
+      "check": "Erneut prüfen",
+      "checking": "Prüfe …",
+      "allOk": "Alle Einträge passen.",
+      "later": "Neue DNS-Einträge brauchen manchmal etwas, bis sie überall ankommen. Du kannst trotzdem weitergehen und später unter Domains nachsehen."
+    },
+    "cloudflare": {
+      "open": "Bei Cloudflare eintragen",
+      "title": "Bei Cloudflare eintragen",
+      "body": "Liegt die Domain bei Cloudflare, trage ich die fehlenden Einträge für dich ein. Den Token brauche ich nur für diesen einen Vorgang, er wird nicht gespeichert.",
+      "token": "API-Token",
+      "tokenHint": "Erstelle bei Cloudflare unter „Profil → API-Token“ einen Token mit der Berechtigung „Zone → DNS → Bearbeiten“ für diese Domain.",
+      "replace": "Diese falschen Einträge ersetzen",
+      "replaceHint": "Ohne Haken lasse ich vorhandene Einträge in Ruhe.",
+      "submit": "Einträge eintragen",
+      "nothing": "Es gab nichts einzutragen.",
+      "outcome": {
+        "created": "angelegt",
+        "updated": "ersetzt",
+        "skipped": "nicht angefasst",
+        "failed": "fehlgeschlagen"
+      }
+    },
+    "sending": {
+      "title": "Versand und Empfang",
+      "body": "Ich schaue, ob Mails vom Server hinauskommen und ob andere Mailserver ihn erreichen.",
+      "run": "Erneut prüfen",
+      "running": "Prüfe, das kann bis zu einer Minute dauern …",
+      "outTitle": "Mails verschicken",
+      "inTitle": "Mails empfangen",
+      "honest": "Dafür ruft der Server sich selbst über seine öffentliche Adresse an. Ob Port 25 aus dem Internet wirklich offen ist, zeigt erst eine Antwort von außen im Schritt Test-Mail.",
+      "relayButton": "Relay einrichten",
+      "relayTitle": "Versand über ein Relay",
+      "relayBody": "Ein Relay ist ein Mailserver, der deine Mails weiterreicht, zum Beispiel von deinem Hoster oder einem Versanddienst. Die Zugangsdaten bekommst du dort."
+    },
+    "checks": {
+      "title": "Reverse-DNS und Blocklisten",
+      "body": "Viele Mailserver schauen, ob die Adresse deines Servers einen passenden Namen hat (PTR) und ob sie auf einer Spam-Liste steht.",
+      "ptrTitle": "Reverse-DNS (PTR)",
+      "blocklistsTitle": "Blocklisten",
+      "blocklistsBody": "Dabei frage ich Spamhaus, SpamCop und Barracuda nach der Adresse, die andere Server als Absender sehen. Das passiert nur, wenn du es willst.",
+      "blocklistsRun": "Blocklisten prüfen",
+      "blocklistsAgain": "Nochmal prüfen"
+    },
+    "testMail": {
+      "title": "Test-Mail",
+      "body": "Ich schicke eine Mail an dein neues Postfach. Mit einer zweiten Adresse bei einem anderen Anbieter testest du auch den Weg nach draußen und zurück.",
+      "ownTo": "An {{login}}",
+      "own": "Test-Mail senden",
+      "again": "Nochmal senden",
+      "waiting": "Warte auf die Mail …",
+      "arrived": "Angekommen! Dein Postfach nimmt Mails an.",
+      "slow": "Die Mail ist nach einer Minute noch nicht da. Schau nach, ob sie in der Warteschlange hängt:",
+      "externalTitle": "Weg nach draußen und zurück",
+      "externalBody": "Ich schicke die Mail auch an eine andere Adresse von dir. Antworte dort darauf: Kommt die Antwort hier an, erreichen dich Mails von außen.",
+      "external": "Andere Adresse",
+      "externalSend": "Senden",
+      "externalWaiting": "Gesendet an {{address}}. Antworte dort auf die Mail, ich warte …",
+      "replied": "Die Antwort von {{address}} ist angekommen. Mails von außen erreichen dich."
+    },
+    "done": {
+      "title": "Fertig!",
+      "body": "Dein Server ist eingerichtet.",
+      "summary": "Die Prüfungen findest du jederzeit wieder unter Server → Einrichtung.",
+      "next": "Als Nächstes: Personen anlegen und für dein Konto die Zwei-Faktor-Anmeldung einschalten.",
+      "open": "Zur Verwaltung"
+    },
+    "page": {
+      "title": "Einrichtung",
+      "intro": "Die Prüfungen aus dem Einrichtungs-Assistenten: Versand, Empfang, Reverse-DNS, Blocklisten und Test-Mail.",
+      "lastRun": "Geprüft {{time}}",
+      "neverRun": "Noch nicht geprüft.",
+      "domainsTitle": "DNS-Einträge",
+      "domainsBody": "Die Einträge prüfst du bei jeder Domain. Liegt sie bei Cloudflare, kann ich sie dort eintragen.",
+      "wizard": "Assistenten öffnen"
+    },
+    "lines": {
+      "directOk": "Der Server erreicht andere Mailserver direkt über Port 25 ({{target}}).",
+      "directDns": "Die Namensauflösung klappt nicht: {{error}}",
+      "port25Blocked": "Keine Verbindung zu anderen Mailservern über Port 25 ({{target}}).",
+      "relayOk": "Das Relay {{host}} nimmt Mails an.",
+      "relayLogin": "{{host}} lehnt die Anmeldung ab.",
+      "relayTls": "Mit {{host}} klappt keine verschlüsselte Verbindung.",
+      "relayUnreachable": "{{host}} ist nicht erreichbar.",
+      "upstream": "Ein anderer Mailserver nimmt die Mails zuerst an und reicht sie hierher weiter.",
+      "noAddress": "{{hostname}} zeigt auf keine Adresse.",
+      "privateOnly": "{{hostname}} zeigt nur auf private Adressen ({{ips}}).",
+      "inboundOk": "Port 25 auf {{ip}} antwortet, und zwar dieser Server.",
+      "inboundOther": "Auf {{ip}} antwortet ein anderer Server: {{greeting}}",
+      "inboundClosed": "Port 25 auf {{ip}} antwortet nicht.",
+      "ptrOk": "{{ip}} heißt {{name}}.",
+      "ptrMissing": "{{ip}} hat keinen Reverse-DNS-Namen.",
+      "ptrUnconfirmed": "{{ip}} heißt {{name}}, aber der Name zeigt nicht zurück auf die Adresse.",
+      "ptrOtherName": "{{ip}} heißt {{name}} und nicht {{hostname}}.",
+      "ptrPrivate": "Der Servername zeigt nur auf private Adressen. Die öffentliche Adresse und ihren Namen sehe ich von hier aus nicht.",
+      "ptrRelay": "Mails gehen über {{host}} hinaus. Um dessen Reverse-DNS kümmert sich der Relay-Anbieter.",
+      "clean": "{{ip}} steht nicht auf {{lists}}.",
+      "listed": "{{ip}} steht auf {{list}} ({{answer}}).",
+      "listUnknown": "{{list}} hat zu {{ip}} keine Auskunft gegeben.",
+      "noPublicAddress": "Es gibt keine öffentliche Adresse, die ich prüfen könnte."
+    },
+    "hints": {
+      "directDns": "Prüfe, ob der Server einen funktionierenden DNS-Resolver hat.",
+      "port25Blocked": "Viele Internetanschlüsse und manche Cloud-Anbieter sperren Port 25 nach außen. Frag deinen Anbieter, ob er ihn freigibt, oder verschick die Mails über ein Relay.",
+      "relayLogin": "Prüfe Benutzername und Passwort.",
+      "relayTls": "Prüfe Port und Verschlüsselung.",
+      "relayUnreachable": "Prüfe Adresse und Port des Relays. Bis dahin warten Mails in der Warteschlange.",
+      "noAddress": "Leg bei deinem DNS-Anbieter einen A-Eintrag (IPv4) und wenn möglich einen AAAA-Eintrag (IPv6) für den Servernamen an.",
+      "privateOnly": "Aus dem Internet ist der Server so nicht erreichbar. Hinter einem Router muss Port 25 zum Server weitergeleitet werden, und der öffentliche DNS-Eintrag muss auf die öffentliche Adresse zeigen.",
+      "inboundOther": "Vermutlich leitet der Router oder die Firewall Port 25 an ein anderes Gerät weiter.",
+      "inboundClosed": "Prüfe Firewall und Portweiterleitung. Manche Router können sich nicht selbst über die öffentliche Adresse erreichen, dann gibt erst die Test-Mail von außen Gewissheit.",
+      "ptrMissing": "Ohne passenden Namen lehnen viele Mailserver Mails ab. Den PTR-Eintrag setzt der Anbieter der IP-Adresse, oft im Kundenmenü. Er sollte {{hostname}} lauten.",
+      "ptrUnconfirmed": "Lass den PTR-Eintrag auf {{hostname}} ändern, oder leg für {{name}} einen A- oder AAAA-Eintrag mit {{ip}} an.",
+      "ptrOtherName": "Besser ist {{hostname}}. Den PTR-Eintrag ändert der Anbieter der IP-Adresse.",
+      "ptrPrivate": "Ist der Server von außen über eine andere Adresse erreichbar, prüfe deren PTR-Eintrag beim Anbieter.",
+      "listed": "Auf der Webseite der Liste steht, warum die Adresse dort steht und wie sie wieder herunterkommt.",
+      "listUnknown": "Manche Listen antworten nicht über öffentliche DNS-Resolver wie 8.8.8.8 oder 1.1.1.1."
     }
   }
 }

@@ -32,7 +32,7 @@ export function useStartSession() {
   return (session: Session, to = "/account") => {
     queryClient.setQueryData(["session"], adopt(session));
     const path = window.location.pathname;
-    if (path === "/" || path === "/login" || path === "/setup" || path.startsWith("/password/")) {
+    if (path === "/" || path === "/login" || path.startsWith("/password/")) {
       navigate(to, { replace: true });
     }
   };

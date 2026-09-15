@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   UserRound,
   Users,
+  WandSparkles,
   X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -146,6 +147,7 @@ export function PortalShell({ session, children }: { session: Session; children:
               { to: "/admin/domains", label: t("nav.domains"), icon: Globe },
               { to: "/admin/queue", label: t("nav.queue"), icon: Send },
               { to: "/admin/settings", label: t("nav.settings"), icon: Settings },
+              { to: "/admin/setup", label: t("nav.setup"), icon: WandSparkles },
               { to: "/admin/log", label: t("nav.log"), icon: History },
               // The raw server log is for Pro mode.
               ...(pro ? [{ to: "/admin/logs", label: t("nav.logs"), icon: ScrollText }] : []),

@@ -13,7 +13,8 @@
 - Docker with Compose.
 
 At home without a fixed IP or with a blocked port 25? The UwUMail Gateway
-(see the roadmap) will solve that; until then use `[delivery.relay]`.
+(see the roadmap) will solve that; until then send through a relay (the setup
+assistant offers it, or `[delivery.relay]`).
 
 ## Start
 
@@ -23,13 +24,38 @@ curl -O https://raw.githubusercontent.com/MinifyX/UwUMail-Server/main/compose.ya
 curl -o .env https://raw.githubusercontent.com/MinifyX/UwUMail-Server/main/.env.example
 # edit .env: UWUMAIL_HOSTNAME=mail.example.com
 docker compose up -d
-docker compose logs -f
+docker compose logs uwumail | grep setup
 ```
 
 The server gets a Let's Encrypt certificate as soon as `mail.example.com`
 points to it and port 80 is reachable. Until then it uses a self-signed one.
 
-## Domains and accounts
+## Setup assistant
+
+While there is no admin, the server writes a one-time code to its log on every
+start. Open `https://mail.example.com/setup` and enter it. The assistant
+
+1. creates the first domain (with DKIM keys) and your admin account,
+2. shows the DNS records and checks them; if the domain is at Cloudflare, it can
+   add them with an API token (permission *Zone → DNS → Edit*) that is used for
+   that one request and never stored,
+3. checks whether mail gets out (port 25 or the relay, which can be set up right
+   there) and whether port 25 answers on the public addresses,
+4. checks reverse DNS and, only when asked, the Spamhaus, SpamCop and Barracuda
+   blocklists,
+5. sends a test mail to your new mailbox and, optionally, to another address of
+   yours; your reply from there shows that mail from outside arrives.
+
+The code stops working once the admin exists. The checks stay in the portal
+under *Server → Setup*.
+
+The port 25 check calls the server on its own public address. It cannot see a
+provider blocking port 25 inbound, and some routers cannot reach themselves
+that way; the reply to the test mail is the reliable answer.
+
+## Domains and accounts on the command line
+
+Instead of the assistant, or for more domains and people:
 
 ```bash
 docker compose exec uwumail uwumail-server domain add example.com

@@ -1,11 +1,12 @@
-import { Eye, EyeOff, Info as InfoIcon } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { Eye, EyeOff } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
 import { Button, IconButton } from "@/components/ui/Button";
 import { Field, TextInput } from "@/components/ui/Field";
 import { Wordmark } from "@/components/ui/Logo";
 import { useT } from "@/i18n";
 import { ApiError, needsSecondFactor } from "@/lib/api";
+import { navigate } from "@/lib/router";
 import { useInfo, useLogin } from "@/features/session/session";
 import { SecondFactorStep } from "./SecondFactorStep";
 
@@ -18,6 +19,12 @@ export function LoginPage() {
   const [address, setAddress] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const setupRequired = info.data?.setupRequired;
+
+  // Without an admin nobody can log in yet: the setup assistant comes first.
+  useEffect(() => {
+    if (setupRequired) navigate("/setup", { replace: true });
+  }, [setupRequired]);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -50,13 +57,6 @@ export function LoginPage() {
               <NyuScene name="welcome" className="mx-auto h-auto w-[200px]" />
               <h1 className="mt-1 text-center text-[20px] font-bold">{t("login.title")}</h1>
               <p className="mt-1 text-center text-[13px] text-muted">{t("login.subtitle")}</p>
-
-              {info.data?.setupRequired && (
-                <p className="mt-4 flex gap-2 rounded-control bg-warning-tint px-3 py-2.5 text-[13px] text-warning">
-                  <InfoIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
-                  {t("login.setupRequired")}
-                </p>
-              )}
 
               <form className="mt-5 flex flex-col gap-4" onSubmit={submit}>
                 <Field label={t("login.address")}>

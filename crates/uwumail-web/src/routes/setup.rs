@@ -71,11 +71,12 @@ impl Web {
 pub async fn status(State(web): State<Web>) -> ApiResult<Json<Value>> {
     let counts = web.store().server_counts().await?;
     let open = counts.admins == 0 && web.inner.setup_code.lock().expect("setup code poisoned").is_some();
-    Ok(Json(json!({
-        "open": open,
-        "hostname": web.settings().hostname,
-        "domains": web.store().domains().await?.into_iter().map(|domain| domain.name).collect::<Vec<_>>(),
-    })))
+    // Domains added on the command line fill in the form; nobody else needs to see them.
+    let domains = match open {
+        true => web.store().domains().await?.into_iter().map(|domain| domain.name).collect(),
+        false => Vec::new(),
+    };
+    Ok(Json(json!({ "open": open, "hostname": web.settings().hostname, "domains": domains })))
 }
 
 #[derive(Deserialize)]

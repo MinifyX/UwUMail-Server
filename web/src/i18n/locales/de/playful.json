@@ -87,5 +87,20 @@
     "recovery": {
       "saved": "Sicher verstaut ✓"
     }
+  },
+  "setup": {
+    "welcome": {
+      "title": "Hi! Ich bin Nyu (=^･ω･^=)",
+      "body": "Ich helfe dir, deinen Mailserver einzurichten. Erst dein Admin-Konto und die Domain, dann DNS, Versand und zum Schluss eine Test-Mail. Das schaffen wir zusammen!"
+    },
+    "sending": {
+      "running": "Ich schnupper am Server herum, das kann bis zu einer Minute dauern …"
+    },
+    "testMail": {
+      "arrived": "Angekommen! Dein Postfach schnurrt ✉︎"
+    },
+    "done": {
+      "title": "Geschafft! (=^･ω･^=)"
+    }
   }
 }

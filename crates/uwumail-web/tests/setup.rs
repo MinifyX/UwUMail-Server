@@ -89,7 +89,7 @@ async fn a_fresh_server_is_set_up_with_the_code_from_the_log() {
     let (_, again, _) = call(&app, "POST", "/api/setup", Some(first_admin), None).await;
     assert_eq!(again["code"], "setupDone");
     let (_, status, _) = call(&app, "GET", "/api/setup", None, None).await;
-    assert_eq!(status["open"], false);
+    assert_eq!((status["open"].clone(), status["domains"].clone()), (json!(false), json!([])));
 
     // The test mail lands in the admin's own inbox; a reply to it is noticed.
     let (status, sent, _) = call(&app, "POST", "/api/admin/setup/test-mail", Some(json!({})), Some(&auth)).await;

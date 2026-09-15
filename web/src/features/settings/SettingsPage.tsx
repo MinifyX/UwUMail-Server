@@ -25,18 +25,20 @@ function LockedHint() {
 }
 
 /** A section of settings with its own draft and save button. */
-function Section({
+export function Section({
   title,
   intro,
   view,
   keys,
   children,
+  onSaved,
 }: {
   title: string;
   intro: string;
   view: SettingsView;
   keys: string[];
   children: (form: Form) => ReactNode;
+  onSaved?: () => void;
 }) {
   const { t } = useT();
   const queryClient = useQueryClient();
@@ -51,6 +53,7 @@ function Section({
       void queryClient.invalidateQueries({ queryKey: ["admin", "domains"] });
       setDraft({});
       toast(t("settings.saved"), "success");
+      onSaved?.();
     },
     onError: (error) => toast(errorText(error), "error"),
   });
@@ -87,7 +90,7 @@ function Section({
   );
 }
 
-interface Form {
+export interface Form {
   setting: (key: string) => SettingValue | undefined;
   value: (key: string) => unknown;
   locked: (key: string) => boolean;
@@ -389,38 +392,43 @@ export function SettingsPage() {
   );
 }
 
-function DeliveryFields({ form, pro }: { form: Form; pro: boolean }) {
+/** Sending settings; `relayOnly` shows just the relay fields, for the setup assistant. */
+export function DeliveryFields({ form, pro, relayOnly = false }: { form: Form; pro: boolean; relayOnly?: boolean }) {
   const { t } = useT();
   const hostLocked = form.locked("delivery.relay.host");
-  const [relayMode, setRelayMode] = useState(Boolean(form.setting("delivery.relay.host")?.value));
+  const [relayMode, setRelayMode] = useState(relayOnly || Boolean(form.setting("delivery.relay.host")?.value));
   const password = form.setting("delivery.relay.password");
   const passwordDraft = form.value("delivery.relay.password");
 
   return (
     <>
-      <Field label={t("settings.delivery.mode")} hint={hostLocked ? <LockedHint /> : undefined}>
-        {() =>
-          hostLocked ? (
-            <p className="text-sm font-semibold">{t("settings.delivery.relay")}</p>
-          ) : (
-            <Segmented<"direct" | "relay">
-              label={t("settings.delivery.mode")}
-              value={relayMode ? "relay" : "direct"}
-              onChange={(mode) => {
-                setRelayMode(mode === "relay");
-                if (mode === "direct") form.set("delivery.relay.host", null);
-              }}
-              options={[
-                { value: "direct", label: t("settings.delivery.direct") },
-                { value: "relay", label: t("settings.delivery.relay") },
-              ]}
-            />
-          )
-        }
-      </Field>
-      <p className="-mt-2 text-[13px] text-muted">
-        {relayMode || hostLocked ? t("settings.delivery.relayHint") : t("settings.delivery.directHint")}
-      </p>
+      {!relayOnly && (
+        <>
+          <Field label={t("settings.delivery.mode")} hint={hostLocked ? <LockedHint /> : undefined}>
+            {() =>
+              hostLocked ? (
+                <p className="text-sm font-semibold">{t("settings.delivery.relay")}</p>
+              ) : (
+                <Segmented<"direct" | "relay">
+                  label={t("settings.delivery.mode")}
+                  value={relayMode ? "relay" : "direct"}
+                  onChange={(mode) => {
+                    setRelayMode(mode === "relay");
+                    if (mode === "direct") form.set("delivery.relay.host", null);
+                  }}
+                  options={[
+                    { value: "direct", label: t("settings.delivery.direct") },
+                    { value: "relay", label: t("settings.delivery.relay") },
+                  ]}
+                />
+              )
+            }
+          </Field>
+          <p className="-mt-2 text-[13px] text-muted">
+            {relayMode || hostLocked ? t("settings.delivery.relayHint") : t("settings.delivery.directHint")}
+          </p>
+        </>
+      )}
       {(relayMode || hostLocked) && (
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField form={form} settingKey="delivery.relay.host" label={t("settings.delivery.host")} />
@@ -468,25 +476,29 @@ function DeliveryFields({ form, pro }: { form: Form; pro: boolean }) {
           </Field>
         </div>
       )}
-      <ToggleField
-        form={form}
-        settingKey="delivery.require_tls"
-        label={t("settings.delivery.requireTls")}
-        hint={t("settings.delivery.requireTlsHint")}
-      />
-      <ToggleField
-        form={form}
-        settingKey="smtp.allow_external_forwarding"
-        label={t("settings.delivery.allowForwarding")}
-        hint={t("settings.delivery.allowForwardingHint")}
-      />
-      {pro && (
-        <NumberField
-          form={form}
-          settingKey="delivery.max_lifetime_hours"
-          label={t("settings.delivery.lifetime")}
-          hint={t("settings.delivery.lifetimeHint")}
-        />
+      {!relayOnly && (
+        <>
+          <ToggleField
+            form={form}
+            settingKey="delivery.require_tls"
+            label={t("settings.delivery.requireTls")}
+            hint={t("settings.delivery.requireTlsHint")}
+          />
+          <ToggleField
+            form={form}
+            settingKey="smtp.allow_external_forwarding"
+            label={t("settings.delivery.allowForwarding")}
+            hint={t("settings.delivery.allowForwardingHint")}
+          />
+          {pro && (
+            <NumberField
+              form={form}
+              settingKey="delivery.max_lifetime_hours"
+              label={t("settings.delivery.lifetime")}
+              hint={t("settings.delivery.lifetimeHint")}
+            />
+          )}
+        </>
       )}
     </>
   );

@@ -47,8 +47,9 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Queue (senders, recipients, errors, never subjects) with retry and delete; live server log in Pro mode
 - [x] Server settings in the admin panel, applied without a restart; config file and environment take precedence
 - [x] Health overview: DNS, certificate, outgoing mail (relay/port 25 probe, stuck mail, bounces), disk and mailbox space
-- [ ] Web setup with a one-time code: domain, admin, certificate, DNS check, port 25 / rDNS / blocklist check
-- [ ] Admin panel, Simple and Pro mode, German and English, playful/neutral tone, Nyu
+- [x] Setup assistant with a one-time code from the log: first domain and admin, DNS records (optionally added at Cloudflare), sending route and port 25 both ways, reverse DNS, blocklists on request, test mail with a reply from outside; the checks stay under Server → Setup
+- [x] Admin panel, Simple and Pro mode, German and English, playful/neutral tone, Nyu
+- [x] HSTS on the server's own HTTPS once it has a real certificate
 - [x] Security in My account: password change, authenticator app with recovery codes, passkeys, app passwords with scopes and expiry, browser sessions, activity list and notice mails
 - [x] Forwarding in My account (people on this server at once, other servers after a confirmation link, SRS, admin locks) and away messages
 - [x] Own addresses (domains opened by an admin, limit per person, reserved for 30 days after deleting) and storage per folder with emptying Trash and Junk

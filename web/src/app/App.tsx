@@ -19,6 +19,8 @@ import { PersonPage } from "@/features/people/PersonPage";
 import { QueuePage } from "@/features/queue/QueuePage";
 import { SecurityPage } from "@/features/security/SecurityPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
+import { SetupPage } from "@/features/setup/SetupPage";
+import { SetupWizard } from "@/features/setup/SetupWizard";
 import { useSession } from "@/features/session/session";
 import { PortalShell } from "@/features/shell/PortalShell";
 import { useApplyLanguage, useT } from "@/i18n";
@@ -60,12 +62,13 @@ function page(path: string, session: Session): ReactNode {
   if (matchPath("/admin/log", path)) return <LogPage />;
   if (matchPath("/admin/logs", path)) return <LogsPage />;
   if (matchPath("/admin/settings", path)) return <SettingsPage />;
+  if (matchPath("/admin/setup", path)) return <SetupPage session={session} />;
   return <NotFound />;
 }
 
 function Portal({ session }: { session: Session }) {
   const path = usePath();
-  const entry = path === "/" || path === "/login" || path === "/setup";
+  const entry = path === "/" || path === "/login";
 
   useEffect(() => {
     if (entry) navigate("/account", { replace: true });
@@ -92,6 +95,8 @@ function Routes() {
       </main>
     );
   }
+  // The assistant stays on screen while its second step logs the new admin in.
+  if (path === "/setup") return <SetupWizard session={session.data} />;
   if (!session.data) return <LoginPage />;
   return <Portal session={session.data} />;
 }

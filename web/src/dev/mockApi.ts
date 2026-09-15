@@ -1,7 +1,8 @@
 /**
  * A pretend server for `pnpm dev --mode mock`: every page with sample data, no real server
  * and no password needed. Add `?loggedOut` to the URL to see the login page; the password
- * page works with any token except "expired".
+ * page works with any token except "expired". `?setup` starts on a server without an admin:
+ * every setup code except one starting with "wrong" works, and the Cloudflare token "wrong" fails.
  * Production builds never include this file.
  */
 
@@ -23,14 +24,18 @@ import type {
   Profile,
   RecordCheck,
   SecurityView,
+  ServerCheck,
   Session,
+  SetupStatus,
   StorageView,
   VacationView,
 } from "@/lib/api";
 
 const now = Math.floor(Date.now() / 1000);
 const GB = 1024 ** 3;
-let loggedIn = !new URLSearchParams(window.location.search).has("loggedOut");
+const startParams = new URLSearchParams(window.location.search);
+let setupOpen = startParams.has("setup");
+let loggedIn = !startParams.has("loggedOut") && !setupOpen;
 let preferences: Record<string, unknown> = {};
 
 const session = (): Session => ({
@@ -92,6 +97,8 @@ interface MockDomain {
   createdAt: number;
   keys: DkimKeyInfo[];
   report: DomainReport | null;
+  /** False for a domain from the setup assistant until its records are at Cloudflare. */
+  published?: boolean;
 }
 
 const key = (domain: string, selector: string, state: DkimKeyInfo["state"], algorithm: DkimKeyInfo["algorithm"]) => ({
@@ -628,6 +635,58 @@ function health(): Health {
   return { level, checkedAt: healthCheckedAt, areas };
 }
 
+let lastServerCheck: ServerCheck | null = null;
+const testMails = new Map<string, { sentAt: number; external: string | null }>();
+
+/** Direct sending without a relay fails, like on a connection that blocks port 25. */
+function serverCheck(blocklists: boolean): ServerCheck {
+  const relay = settings["delivery.relay.host"]?.value as string | null;
+  const listings = blocklists
+    ? [
+        { list: "Spamhaus ZEN", status: "unknown" as const, answer: "127.255.255.254" },
+        { list: "SpamCop", status: "clean" as const, answer: null },
+        { list: "Barracuda", status: "clean" as const, answer: null },
+      ]
+    : [];
+  const at = Math.floor(Date.now() / 1000);
+  return {
+    checkedAt: at,
+    hostname: "mail.uwu.example",
+    addresses: [
+      {
+        ip: "192.0.2.10",
+        private: false,
+        ptr: ["mail.uwu.example"],
+        ptrConfirmed: true,
+        ptrIsHostname: true,
+        listings: relay ? [] : listings,
+      },
+      { ip: "2001:db8::10", private: false, ptr: [], ptrConfirmed: false, ptrIsHostname: false, listings: [] },
+    ],
+    route: relay ? "relay" : "direct",
+    relayHost: relay,
+    relayAddresses: relay
+      ? [{ ip: "198.51.100.25", private: false, ptr: [relay], ptrConfirmed: true, ptrIsHostname: true, listings }]
+      : [],
+    outbound: relay
+      ? { at, route: "relay", target: `${relay}:587`, ok: true, stage: null, error: null }
+      : {
+          at,
+          route: "direct",
+          target: "gmail-smtp-in.l.google.com:25",
+          ok: false,
+          stage: "connect",
+          error: "timed out",
+        },
+    inbound: [
+      { ip: "192.0.2.10", reachable: true, ours: true, greeting: "220 mail.uwu.example ESMTP UwUMail", error: null },
+      { ip: "2001:db8::10", reachable: false, ours: false, greeting: null, error: "connection refused" },
+    ],
+    upstream: false,
+    blocklistsChecked: blocklists,
+  };
+}
+
 const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/api\/admin\/health$/, () => [200, health()]],
   [
@@ -702,7 +761,91 @@ const routes: [string, RegExp, Handler][] = [
       return [200, { lines, latest: logSeq }];
     },
   ],
-  ["GET", /^\/api\/info$/, () => [200, { hostname: "mail.uwu.example", setupRequired: false } satisfies Info]],
+  ["GET", /^\/api\/info$/, () => [200, { hostname: "mail.uwu.example", setupRequired: setupOpen } satisfies Info]],
+  [
+    "GET",
+    /^\/api\/setup$/,
+    () => [200, { open: setupOpen, hostname: "mail.uwu.example", domains: [] } satisfies SetupStatus],
+  ],
+  [
+    "POST",
+    /^\/api\/setup\/code$/,
+    (body) => {
+      if (!setupOpen) return problem(409, "setupDone");
+      return (body as { code: string }).code.startsWith("wrong")
+        ? problem(409, "setupCodeInvalid")
+        : [200, { ok: true }];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/setup$/,
+    (body) => {
+      const input = body as { domain: string; password: string };
+      if (!setupOpen) return problem(409, "setupDone");
+      if (input.password.length < 10) return problem(409, "weakPassword");
+      const name = input.domain.toLowerCase();
+      if (!domains.some((d) => d.name === name)) {
+        domains.push({
+          name,
+          catchAll: null,
+          createdAt: Math.floor(Date.now() / 1000),
+          keys: [key(name, "uwu202609r", "active", "rsa-sha256"), key(name, "uwu202609e", "active", "ed25519-sha256")],
+          report: null,
+          published: false,
+        });
+      }
+      setupOpen = false;
+      loggedIn = true;
+      log("setup.complete", name);
+      return [200, session()];
+    },
+  ],
+  ["GET", /^\/api\/admin\/setup\/check$/, () => [200, lastServerCheck]],
+  [
+    "POST",
+    /^\/api\/admin\/setup\/check$/,
+    (body) => {
+      lastServerCheck = serverCheck(Boolean((body as { blocklists?: boolean } | undefined)?.blocklists));
+      return [200, lastServerCheck];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/setup\/test-mail$/,
+    (body) => {
+      const external = (body as { external?: string }).external ?? null;
+      const messageId = `mock${testMails.size + 1}.test@uwu.example`;
+      testMails.set(messageId, { sentAt: Date.now(), external });
+      return [200, { messageId, external }];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/setup\/test-mail\/([^/]+)$/,
+    (_, [id]) => {
+      const sent = testMails.get(id!);
+      if (!sent) return [200, { arrived: false, replyFrom: null }];
+      const age = Date.now() - sent.sentAt;
+      return [200, { arrived: age > 3000, replyFrom: sent.external && age > 12_000 ? sent.external : null }];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/domains\/([^/]+)\/dns\/cloudflare$/,
+    (body, [name]) => {
+      const found = domains.find((d) => d.name === name);
+      if (!found) return problem(404, "notFound");
+      if ((body as { token: string }).token === "wrong") return problem(409, "cloudflareFailed");
+      const missing = (found.report ?? report(found, false)).records.filter((r) => r.status !== "ok");
+      found.published = true;
+      log("domain.cloudflare", found.name);
+      return [
+        200,
+        { results: missing.map((r) => ({ name: r.name, recordType: r.recordType, outcome: "created", error: null })) },
+      ];
+    },
+  ],
   ["GET", /^\/api\/session$/, () => [200, loggedIn ? session() : null]],
   [
     "POST",
@@ -1047,7 +1190,7 @@ const routes: [string, RegExp, Handler][] = [
       // The second check after a rotation sees the new keys, like after publishing them.
       const pending = found.keys.some((k) => k.state === "pending");
       if (pending) rotationChecks += 1;
-      found.report = report(found, !pending || rotationChecks > 1);
+      found.report = report(found, found.published !== false && (!pending || rotationChecks > 1));
       return [200, found.report];
     },
   ],

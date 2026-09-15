@@ -376,3 +376,75 @@ export interface StorageView {
     sizeBytes: number;
   }[];
 }
+
+/** The setup assistant before the first admin exists. */
+export interface SetupStatus {
+  open: boolean;
+  hostname: string;
+  /** Domains added on the command line, only while setup is open. */
+  domains: string[];
+}
+
+export type ProbeStage = "dns" | "connect" | "tls" | "login";
+
+export interface ProbeReport {
+  at: number;
+  route: "direct" | "relay";
+  target: string;
+  ok: boolean;
+  stage: ProbeStage | null;
+  error: string | null;
+}
+
+export interface Listing {
+  list: string;
+  status: "clean" | "listed" | "unknown";
+  answer: string | null;
+}
+
+export interface AddressReport {
+  ip: string;
+  private: boolean;
+  ptr: string[];
+  ptrConfirmed: boolean;
+  ptrIsHostname: boolean;
+  listings: Listing[];
+}
+
+export interface InboundReport {
+  ip: string;
+  reachable: boolean;
+  ours: boolean;
+  greeting: string | null;
+  error: string | null;
+}
+
+export interface ServerCheck {
+  checkedAt: number;
+  hostname: string;
+  addresses: AddressReport[];
+  route: "direct" | "relay";
+  relayHost: string | null;
+  relayAddresses: AddressReport[];
+  outbound: ProbeReport;
+  inbound: InboundReport[];
+  upstream: boolean;
+  blocklistsChecked: boolean;
+}
+
+export interface TestMailSent {
+  messageId: string;
+  external: string | null;
+}
+
+export interface TestMailStatus {
+  arrived: boolean;
+  replyFrom: string | null;
+}
+
+export interface CloudflareResult {
+  name: string;
+  recordType: "MX" | "TXT";
+  outcome: "created" | "updated" | "skipped" | "failed";
+  error: string | null;
+}

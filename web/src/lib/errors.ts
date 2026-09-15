@@ -47,6 +47,10 @@ const KNOWN = [
   "addressReserved",
   "notEmptiable",
   "forwardingThrottled",
+  "setupCodeInvalid",
+  "setupDone",
+  "testMailFailed",
+  "cloudflareFailed",
 ];
 
 /** Turns an API error into a sentence for the person in front of the screen. */

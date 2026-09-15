@@ -29,8 +29,7 @@
       "tooManyAttempts": "Too many failed attempts. Please wait a few minutes.",
       "offline": "The server cannot be reached right now.",
       "internal": "Something went wrong on the server."
-    },
-    "setupRequired": "This server has no admin yet. Create the first admin on the server with the command line."
+    }
   },
   "nav": {
     "label": "Main menu",
@@ -47,7 +46,8 @@
     "settings": "Settings",
     "security": "Security",
     "mail": "Forwarding",
-    "addresses": "Addresses"
+    "addresses": "Addresses",
+    "setup": "Setup"
   },
   "mode": {
     "label": "View",
@@ -217,7 +217,11 @@
       "aliasNotYours": "An admin created this address, only an admin can delete it.",
       "addressReserved": "This address was deleted just recently and is still reserved.",
       "notEmptiable": "This folder cannot be emptied.",
-      "forwardingThrottled": "Enough confirmation mails went out for this address or today. Please try again later."
+      "forwardingThrottled": "Enough confirmation mails went out for this address or today. Please try again later.",
+      "setupCodeInvalid": "The code is wrong. Have another look at the log.",
+      "setupDone": "This server already has an admin.",
+      "testMailFailed": "The test message could not be sent.",
+      "cloudflareFailed": "Cloudflare: {{detail}}"
     }
   },
   "people": {
@@ -1009,6 +1013,175 @@
       "archive": "Archive",
       "junk": "Junk",
       "trash": "Trash"
+    }
+  },
+  "setup": {
+    "title": "Setup",
+    "progress": "Step {{step}} of {{count}}",
+    "back": "Back",
+    "next": "Next",
+    "steps": {
+      "welcome": "Welcome",
+      "admin": "Admin",
+      "dns": "DNS",
+      "sending": "Sending",
+      "checks": "Checks",
+      "testMail": "Test message",
+      "done": "Done"
+    },
+    "welcome": {
+      "title": "Welcome to UwUMail",
+      "body": "A few steps and your mail server is ready: first your admin account and the domain, then the DNS records, sending, and a test message at the end.",
+      "codeLabel": "One-time code",
+      "codeHint": "The server writes it to its log on start while there is no admin yet.",
+      "whereSimple": "To find it, run this command on the server in the UwUMail folder. The line with “/setup” has the code.",
+      "wherePro": "Log line: “no admin yet: open https://…/setup and enter the one-time code …”",
+      "submit": "Check code",
+      "hostname": "Server: {{hostname}}"
+    },
+    "closed": {
+      "title": "This server is already set up",
+      "body": "Log in with your admin account. The checks are under Server → Setup afterwards.",
+      "login": "Go to login"
+    },
+    "noCode": {
+      "title": "No one-time code right now",
+      "body": "Restart the server. While there is no admin, it writes a new code to its log."
+    },
+    "admin": {
+      "title": "Your admin account",
+      "body": "You get a mail address on your domain. You use it to log in here and manage the server.",
+      "domain": "Domain",
+      "domainHint": "The domain for your mail addresses, for example example.com.",
+      "localPart": "Address (before the @)",
+      "name": "Name",
+      "nameHint": "This is the sender name others see.",
+      "password": "Password",
+      "repeat": "Repeat password",
+      "hostnameNote": "The server is called {{hostname}}. That is set in the .env file.",
+      "submit": "Create account",
+      "newCode": "Enter the code again"
+    },
+    "dns": {
+      "title": "DNS records for {{domain}}",
+      "body": "For other servers to accept your mail and send mail to you, the domain needs a few records at your DNS provider. Add the missing ones and check again.",
+      "hostnameNote": "{{hostname}} also needs an A or AAAA record pointing to your server.",
+      "check": "Check again",
+      "checking": "Checking …",
+      "allOk": "All records are fine.",
+      "later": "New DNS records sometimes take a while to show up everywhere. You can go on anyway and look again later under Domains."
+    },
+    "cloudflare": {
+      "open": "Add at Cloudflare",
+      "title": "Add at Cloudflare",
+      "body": "If the domain is at Cloudflare, I add the missing records for you. The token is only used for this one request and never stored.",
+      "token": "API token",
+      "tokenHint": "At Cloudflare, create a token under “Profile → API Tokens” with the permission “Zone → DNS → Edit” for this domain.",
+      "replace": "Replace these wrong records",
+      "replaceHint": "Unticked records stay as they are.",
+      "submit": "Add records",
+      "nothing": "There was nothing to add.",
+      "outcome": {
+        "created": "added",
+        "updated": "replaced",
+        "skipped": "left alone",
+        "failed": "failed"
+      }
+    },
+    "sending": {
+      "title": "Sending and receiving",
+      "body": "I check whether mail gets out of the server and whether other mail servers can reach it.",
+      "run": "Check again",
+      "running": "Checking, this can take up to a minute …",
+      "outTitle": "Sending mail",
+      "inTitle": "Receiving mail",
+      "honest": "For this the server calls itself on its public address. Whether port 25 is really open to the internet only shows once a reply from outside arrives in the test message step.",
+      "relayButton": "Set up a relay",
+      "relayTitle": "Sending through a relay",
+      "relayBody": "A relay is a mail server that passes your mail on, for example from your hosting provider or a sending service. You get the credentials there."
+    },
+    "checks": {
+      "title": "Reverse DNS and blocklists",
+      "body": "Many mail servers check whether your server's address has a matching name (PTR) and whether it is on a spam list.",
+      "ptrTitle": "Reverse DNS (PTR)",
+      "blocklistsTitle": "Blocklists",
+      "blocklistsBody": "This asks Spamhaus, SpamCop and Barracuda about the address other servers see as the sender. It only happens when you ask for it.",
+      "blocklistsRun": "Check blocklists",
+      "blocklistsAgain": "Check again"
+    },
+    "testMail": {
+      "title": "Test message",
+      "body": "I send a message to your new mailbox. With a second address at another provider you also test the way out and back.",
+      "ownTo": "To {{login}}",
+      "own": "Send test message",
+      "again": "Send again",
+      "waiting": "Waiting for the message …",
+      "arrived": "It arrived! Your mailbox accepts mail.",
+      "slow": "After a minute the message is still not there. See whether it is stuck in the queue:",
+      "externalTitle": "Out and back",
+      "externalBody": "I also send the message to another address of yours. Reply to it from there: when the reply arrives here, mail from outside reaches you.",
+      "external": "Other address",
+      "externalSend": "Send",
+      "externalWaiting": "Sent to {{address}}. Reply to it from there, I'm waiting …",
+      "replied": "The reply from {{address}} arrived. Mail from outside reaches you."
+    },
+    "done": {
+      "title": "Done!",
+      "body": "Your server is set up.",
+      "summary": "You can find the checks again at any time under Server → Setup.",
+      "next": "Next: add people and turn on two-factor login for your account.",
+      "open": "Go to the admin area"
+    },
+    "page": {
+      "title": "Setup",
+      "intro": "The checks from the setup assistant: sending, receiving, reverse DNS, blocklists and a test message.",
+      "lastRun": "Checked {{time}}",
+      "neverRun": "Not checked yet.",
+      "domainsTitle": "DNS records",
+      "domainsBody": "Records are checked per domain. If a domain is at Cloudflare, I can add them there.",
+      "wizard": "Open the assistant"
+    },
+    "lines": {
+      "directOk": "The server reaches other mail servers directly on port 25 ({{target}}).",
+      "directDns": "Name lookups fail: {{error}}",
+      "port25Blocked": "No connection to other mail servers on port 25 ({{target}}).",
+      "relayOk": "The relay {{host}} accepts mail.",
+      "relayLogin": "{{host}} refuses the login.",
+      "relayTls": "No encrypted connection to {{host}}.",
+      "relayUnreachable": "{{host}} cannot be reached.",
+      "upstream": "Another mail server receives the mail first and passes it on to this one.",
+      "noAddress": "{{hostname}} points to no address.",
+      "privateOnly": "{{hostname}} only points to private addresses ({{ips}}).",
+      "inboundOk": "Port 25 on {{ip}} answers, and it is this server.",
+      "inboundOther": "Another server answers on {{ip}}: {{greeting}}",
+      "inboundClosed": "Port 25 on {{ip}} does not answer.",
+      "ptrOk": "{{ip}} is called {{name}}.",
+      "ptrMissing": "{{ip}} has no reverse DNS name.",
+      "ptrUnconfirmed": "{{ip}} is called {{name}}, but that name does not point back to the address.",
+      "ptrOtherName": "{{ip}} is called {{name}}, not {{hostname}}.",
+      "ptrPrivate": "The server name only points to private addresses. The public address and its name cannot be seen from here.",
+      "ptrRelay": "Mail leaves through {{host}}. Its reverse DNS is up to the relay provider.",
+      "clean": "{{ip}} is not on {{lists}}.",
+      "listed": "{{ip}} is listed on {{list}} ({{answer}}).",
+      "listUnknown": "{{list}} gave no answer for {{ip}}.",
+      "noPublicAddress": "There is no public address to check."
+    },
+    "hints": {
+      "directDns": "Check that the server has a working DNS resolver.",
+      "port25Blocked": "Many internet connections and some cloud providers block outgoing port 25. Ask your provider to open it, or send mail through a relay.",
+      "relayLogin": "Check the user name and password.",
+      "relayTls": "Check the port and encryption.",
+      "relayUnreachable": "Check the relay's address and port. Until then, mail waits in the queue.",
+      "noAddress": "Add an A record (IPv4) and, if possible, an AAAA record (IPv6) for the server name at your DNS provider.",
+      "privateOnly": "The internet cannot reach the server like this. Behind a router, port 25 has to be forwarded to the server, and the public DNS record has to point to the public address.",
+      "inboundOther": "The router or firewall probably forwards port 25 to another device.",
+      "inboundClosed": "Check the firewall and port forwarding. Some routers cannot reach themselves on the public address; then only the test message from outside tells for sure.",
+      "ptrMissing": "Without a matching name, many mail servers reject mail. The PTR record is set by whoever provides the IP address, often in their customer panel. It should be {{hostname}}.",
+      "ptrUnconfirmed": "Have the PTR record changed to {{hostname}}, or add an A or AAAA record for {{name}} with {{ip}}.",
+      "ptrOtherName": "{{hostname}} is better. The PTR record is changed by whoever provides the IP address.",
+      "ptrPrivate": "If the server is reachable from outside on another address, check that address's PTR record with the provider.",
+      "listed": "The list's website explains why the address is listed and how to get it removed.",
+      "listUnknown": "Some lists do not answer through public DNS resolvers such as 8.8.8.8 or 1.1.1.1."
     }
   }
 }

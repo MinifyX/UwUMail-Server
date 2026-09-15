@@ -90,9 +90,11 @@ per hour and per day, recorded in the person's own activity list.
 
 ## Known limits (accepted for now)
 
-- **No HSTS header yet.** HTTPS responses do not send `Strict-Transport-Security`. Planned for the
-  HTTPS listener. Until then, put the server behind a reverse proxy that sets it, or rely on the
-  `__Host-` cookie and the redirect from port 80.
+- **HSTS only with a real certificate.** The server's own HTTPS listener sends
+  `Strict-Transport-Security: max-age=31536000` once it has a certificate that is not self-signed
+  (no `includeSubDomains`, no preload). Behind a reverse proxy, the proxy decides.
+- **The setup code** (about 59 bits) is printed to the log while no admin exists. Wrong guesses
+  count towards the login throttle per IP; the code stops working as soon as an admin exists.
 - **App passwords** are 16 characters from a 31-letter alphabet (~79 bits), stored as a SHA-256
   hash. Guessing them online is infeasible and the throttles apply; they are deliberately not
   argon2-hashed so mail apps stay fast.

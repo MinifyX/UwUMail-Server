@@ -10,6 +10,7 @@ import { Link, navigate } from "@/lib/router";
 import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 import { usePeople } from "@/features/people/queries";
+import { CloudflarePanel } from "@/features/setup/SetupBits";
 import { DnsStatusPill, RecordRow } from "./DnsBits";
 import {
   useActivateKeys,
@@ -65,6 +66,7 @@ function DnsCard({ domain }: { domain: DomainDetail }) {
                 <RecordRow key={`${record.kind}-${record.name}`} record={record} domain={domain.name} explain={!pro} />
               ))}
             </ul>
+            <CloudflarePanel domain={domain.name} report={report} explain={!pro} />
           </>
         ) : (
           <p className="rounded-control bg-pink-tint px-3 py-2.5 text-[13px] text-pink-ink">
