@@ -15,14 +15,14 @@ use tokio::time::timeout;
 use tokio_rustls::TlsAcceptor;
 use uwumail_store::{
     Account, AppScope, IngestRequest, MailAuth, MailAuthDenied, MailboxRole, MailboxTarget, NewQueueRecipient,
-    StoreError,
+    ReportKind, StoreError,
 };
 
 use crate::checks::{self, Action};
 use crate::dsn::{self, FailedRecipient};
 use crate::stream::Stream;
 use crate::submission::{Submission, SubmissionRecipient, SubmitError};
-use crate::{Smtp, forward, headers, random_id, relay, srs, vacation};
+use crate::{Smtp, forward, headers, random_id, relay, reports, srs, vacation};
 
 const MAX_HOPS: usize = 50;
 const MAX_ERRORS: u32 = 10;
@@ -107,6 +107,8 @@ struct Recipient {
     local_account: Option<i64>,
     /// A bounce for a forwarded message, to pass on to this original sender.
     srs_return: Option<String>,
+    /// DMARC or TLS reports for one of our domains, read by the server itself.
+    report: Option<ReportKind>,
     notify_flags: u64,
     orcpt: Option<String>,
 }
@@ -655,6 +657,7 @@ impl Session {
                             address,
                             local_account: None,
                             srs_return: Some(original),
+                            report: None,
                             notify_flags: to.flags,
                             orcpt: to.orcpt,
                         });
@@ -672,6 +675,26 @@ impl Session {
                     Ok(Next::Continue)
                 }
             };
+        }
+        if !self.kind.is_submission()
+            && let Ok(Some(kind)) = store.report_recipient(&address).await
+        {
+            if !self.recipients.iter().any(|r| r.address == address) {
+                self.recipients.push(Recipient {
+                    address,
+                    local_account: None,
+                    srs_return: None,
+                    report: Some(kind),
+                    notify_flags: to.flags,
+                    orcpt: to.orcpt,
+                });
+            }
+            self.reply(
+                "250 2.1.5 Recipient OK
+",
+            )
+            .await?;
+            return Ok(Next::Continue);
         }
         let local_account = match store.resolve_recipient(&address).await {
             Ok(found) => found,
@@ -706,6 +729,7 @@ impl Session {
                 address,
                 local_account,
                 srs_return: None,
+                report: None,
                 notify_flags: to.flags,
                 orcpt: to.orcpt,
             });
@@ -804,6 +828,18 @@ impl Session {
         for recipient in &recipients {
             if let Some(original) = &recipient.srs_return {
                 returned.push(NewQueueRecipient { address: original.clone(), notify_flags: 0, orcpt: None });
+                continue;
+            }
+            if let Some(kind) = recipient.report {
+                let authenticated = verdict.as_ref().is_some_and(|verdict| verdict.dmarc_passed);
+                tokio::spawn(reports::receive(
+                    ctx.clone(),
+                    kind,
+                    recipient.address.clone(),
+                    raw.clone(),
+                    authenticated,
+                ));
+                delivered += 1;
                 continue;
             }
             let Some(account_id) = recipient.local_account else { continue };

@@ -21,6 +21,7 @@ mod limiter;
 pub mod mta_sts;
 mod outbound;
 mod relay;
+mod reports;
 pub mod servercheck;
 mod srs;
 mod stream;

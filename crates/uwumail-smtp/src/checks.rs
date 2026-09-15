@@ -26,6 +26,8 @@ pub struct Verdict {
     pub action: Action,
     /// SPF or DKIM passed, so bouncing to the sender does not create backscatter.
     pub sender_verified: bool,
+    /// SPF or DKIM passed aligned with the From domain.
+    pub dmarc_passed: bool,
 }
 
 pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw: &[u8]) -> Verdict {
@@ -35,6 +37,7 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
             header: format!("Authentication-Results: {hostname}; none\r\n"),
             action: Action::Accept,
             sender_verified: false,
+            dmarc_passed: false,
         };
     };
 
@@ -65,5 +68,8 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
     let sender_verified =
         spf.result() == SpfResult::Pass || dkim.iter().any(|output| output.result() == &DkimResult::Pass);
 
-    Verdict { header, action, sender_verified }
+    let dmarc_passed =
+        matches!(dmarc.dkim_result(), DmarcResult::Pass) || matches!(dmarc.spf_result(), DmarcResult::Pass);
+
+    Verdict { header, action, sender_verified, dmarc_passed }
 }

@@ -415,3 +415,55 @@ async fn forwarded_mail_uses_srs_and_bounces_find_the_original_sender() {
     let bounces = sender.wait_for_inbox("news@sender.test", 1).await;
     assert_eq!(bounces[0].subject, "Undelivered Mail Returned to Sender");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reports_are_read_by_the_server_instead_of_landing_in_a_mailbox() {
+    let a = start("a.test", &["mini"], &[]).await;
+    let store = a.smtp.store().clone();
+    // Report addresses win over the catch-all.
+    store.set_catch_all("a.test", Some("mini@a.test")).await.unwrap();
+    for name in ["reporter.test", "mx.reporter.test", "_dmarc.reporter.test"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+
+    let dmarc = "<?xml version=\"1.0\"?><feedback><report_metadata><org_name>reporter.test</org_name>\
+        <email>dmarc@reporter.test</email><report_id>r-1</report_id>\
+        <date_range><begin>1757894400</begin><end>1757980799</end></date_range></report_metadata>\
+        <policy_published><domain>a.test</domain><p>quarantine</p></policy_published>\
+        <record><row><source_ip>192.0.2.10</source_ip><count>7</count><policy_evaluated>\
+        <disposition>none</disposition><dkim>pass</dkim><spf>pass</spf></policy_evaluated></row>\
+        <identifiers><header_from>a.test</header_from></identifiers><auth_results></auth_results></record></feedback>";
+    let tls = r#"{"organization-name":"reporter.test","date-range":{"start-datetime":"2026-09-14T00:00:00Z","end-datetime":"2026-09-14T23:59:59Z"},"report-id":"t-1","policies":[{"policy":{"policy-type":"sts","policy-domain":"a.test","mx-host":["mx.a.test"]},"summary":{"total-successful-session-count":9,"total-failure-session-count":1},"failure-details":[{"result-type":"certificate-not-trusted","failed-session-count":1}]}]}"#;
+    let messages = [
+        ("dmarc-reports@a.test", "text/xml; name=report.xml".to_owned(), dmarc.to_owned()),
+        ("tls-reports@a.test", "application/tlsrpt+json; name=report.json".to_owned(), tls.to_owned()),
+    ];
+    for (to, content_type, body) in messages {
+        let mut session = RawSession::connect(a.mx).await;
+        assert!(session.command("EHLO mx.reporter.test").await.starts_with("250"));
+        assert!(session.command("MAIL FROM:<reports@reporter.test>").await.starts_with("250"));
+        assert!(session.command(&format!("RCPT TO:<{to}>")).await.starts_with("250"));
+        assert!(session.command("DATA").await.starts_with("354"));
+        let message = format!(
+            "From: reports@reporter.test\r\nTo: {to}\r\nSubject: Report Domain: a.test\r\nMIME-Version: 1.0\r\n\
+             Content-Type: multipart/mixed; boundary=\"b\"\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\nA report.\r\n\
+             --b\r\nContent-Type: {content_type}\r\nContent-Disposition: attachment\r\n\r\n{body}\r\n--b--\r\n."
+        );
+        let reply = session.command(&message).await;
+        assert!(reply.starts_with("250"), "{reply}");
+    }
+
+    let started = Instant::now();
+    let summary = loop {
+        let summary = store.report_summary("a.test", 0).await.unwrap();
+        if summary.dmarc.reports == 1 && summary.tls.reports == 1 {
+            break summary;
+        }
+        assert!(started.elapsed() < Duration::from_secs(10), "reports were not stored: {summary:?}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+    assert_eq!((summary.dmarc.messages, summary.dmarc.passed), (7, 7));
+    assert_eq!((summary.tls.successful, summary.tls.failed), (9, 1));
+    assert_eq!(summary.tls.failures[0].result_type, "certificate-not-trusted");
+    assert!(a.inbox("mini@a.test").await.is_empty(), "nothing went to the catch-all");
+}
