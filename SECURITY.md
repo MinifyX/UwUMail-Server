@@ -13,3 +13,10 @@ details.
 
 Until the first release the project is in early development and not meant for
 production mail.
+
+## Audit
+
+A security sweep was done with Claude before the code and container image went
+public — findings, what was checked, the container hardening and the known
+limits are in [docs/security-audit.md](docs/security-audit.md). It is an honest
+review, not an independent certification.
