@@ -12,6 +12,18 @@ node_modules/
 .env.*
 !.env.example
 
+# Keys, certificates and passwords never belong in this public repository
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.password
+*.secret
+id_rsa*
+id_ed25519*
+
 # Editors and OS
 .vscode/*
 !.vscode/extensions.json
