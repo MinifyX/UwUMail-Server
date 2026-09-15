@@ -92,7 +92,8 @@ Mailcow keeps port 25 and all other domains. Ready-made files:
 1. **Existing mail server:** add the test domain as a relay domain (Mailcow:
    *Domains → Add domain → Relay this domain, relay all recipients*) and a
    transport map `uwu.example.com → [192.0.2.30]:25` (Mailcow: *Routing →
-   Transport maps*).
+   Transport maps*). Without *relay all recipients* Mailcow answers
+   `User unknown in relay recipient table` and nothing reaches UwUMail.
 2. **UwUMail:** put the existing mail server's address into
    `smtp.trusted_relays`. SPF and DMARC are then checked against the server
    that delivered to it, read from its Received header.
@@ -103,10 +104,28 @@ Mailcow keeps port 25 and all other domains. Ready-made files:
    real client addresses.
 5. **DNS for the test domain:** MX to the existing mail server's host name,
    SPF with the relay's IP address, the two DKIM keys from `domain add`, and a
-   DMARC record (start with `p=none`).
+   DMARC record (start with `p=none`). A subdomain needs its own DMARC record
+   when the parent domain says `sp=reject`, or its mail is rejected.
 
 Mail apps in your own network connect straight to the UwUMail machine on 465
 or 587; a local DNS entry for the host name keeps certificates valid.
+
+## Checking a live server
+
+`scripts/live-check.mjs` uses a server the way the app does: JMAP session over
+HTTPS, mailboxes, push and sending. Create a test account for it and keep its
+password in a file:
+
+```bash
+UWUMAIL_URL=https://mail.example.com UWUMAIL_LOGIN=test@example.com \
+UWUMAIL_PASSWORD_FILE=test.password node scripts/live-check.mjs \
+  --smtp 192.0.2.30:587 \
+  --to check-auth@verifier.port25.com --wait-reply-from port25.com
+```
+
+`--smtp` also logs in on the submission port and checks the certificate.
+Port25's verifier answers with SPF, DKIM and DMARC results as seen from the
+outside; that reply also proves that incoming mail reaches the server.
 
 ## Updates
 
