@@ -4,6 +4,7 @@ pub mod auth;
 pub mod domains;
 pub mod links;
 pub mod people;
+pub mod queue;
 
 use axum::extract::Path;
 use axum::response::{IntoResponse, Response};

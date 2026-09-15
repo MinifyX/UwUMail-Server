@@ -59,5 +59,10 @@
     "toasts": {
       "checked": "DNS checked, I looked everywhere ✉︎"
     }
+  },
+  "queue": {
+    "empty": {
+      "title": "Nothing waiting, everything is on its way ✉︎"
+    }
   }
 }

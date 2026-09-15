@@ -180,3 +180,31 @@ export interface AuditRecord {
 export function absoluteUrl(path: string): string {
   return new URL(path, window.location.origin).href;
 }
+
+export interface QueueRecipient {
+  address: string;
+  status: "pending" | "delivered" | "failed";
+  attempts: number;
+  nextAttemptAt: number;
+  lastError: string | null;
+}
+
+export interface QueuedMessage {
+  id: number;
+  /** Empty for notices (bounces) to a sender. */
+  from: string;
+  size: number;
+  createdAt: number;
+  expiresAt: number;
+  recipients: QueueRecipient[];
+}
+
+export interface LogLine {
+  seq: number;
+  /** Milliseconds since 1970. */
+  at: number;
+  level: "error" | "warn" | "info" | "debug" | "trace";
+  target: string;
+  message: string;
+  fields: [string, string][];
+}

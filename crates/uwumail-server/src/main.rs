@@ -8,8 +8,14 @@ mod http;
 mod serve;
 mod tls;
 
+use std::sync::Arc;
+
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::Layer as _;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use uwumail_web::LogBuffer;
 
 use crate::cli::{Cli, Command};
 use crate::config::{Config, LogFormat};
@@ -24,9 +30,9 @@ async fn main() -> std::process::ExitCode {
             return std::process::ExitCode::FAILURE;
         }
     };
-    init_logging(&config, matches!(cli.command, Command::Serve));
+    let logs = init_logging(&config, matches!(cli.command, Command::Serve));
 
-    match run(cli.command, config).await {
+    match run(cli.command, config, logs).await {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("(╥﹏╥) {err:#}");
@@ -35,21 +41,24 @@ async fn main() -> std::process::ExitCode {
     }
 }
 
-fn init_logging(config: &Config, serving: bool) {
+/// Logs to stdout and keeps the newest lines for the admin panel.
+fn init_logging(config: &Config, serving: bool) -> Arc<LogBuffer> {
     // Management commands only print what matters; the server logs everything at the configured level.
     let level = if serving { config.log.level.as_str() } else { "warn" };
     let filter = EnvFilter::try_new(level).unwrap_or_else(|_| EnvFilter::new("info"));
     let ansi = std::io::IsTerminal::is_terminal(&std::io::stdout());
-    let builder = tracing_subscriber::fmt().with_env_filter(filter).with_target(false).with_ansi(ansi);
-    match config.log.format {
-        LogFormat::Json => builder.json().init(),
-        LogFormat::Text => builder.init(),
-    }
+    let logs = LogBuffer::new(2000);
+    let output = match config.log.format {
+        LogFormat::Json => tracing_subscriber::fmt::layer().json().with_target(false).boxed(),
+        LogFormat::Text => tracing_subscriber::fmt::layer().with_target(false).with_ansi(ansi).boxed(),
+    };
+    tracing_subscriber::registry().with(filter).with(output).with(logs.layer()).init();
+    logs
 }
 
-async fn run(command: Command, config: Config) -> anyhow::Result<()> {
+async fn run(command: Command, config: Config, logs: Arc<LogBuffer>) -> anyhow::Result<()> {
     if matches!(command, Command::Serve) {
-        return serve::run(config).await;
+        return serve::run(config, logs).await;
     }
     if matches!(command, Command::CheckConfig) {
         config.validate()?;

@@ -48,3 +48,18 @@ export function dayKey(unixSeconds: number): number {
   const date = new Date(unixSeconds * 1000);
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 }
+
+/** "in 5 minutes", "3 hours ago": the largest unit that fits. */
+export function formatRelative(unixSeconds: number, language: string, now = Date.now() / 1000): string {
+  const diff = unixSeconds - now;
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [
+    ["day", 86_400],
+    ["hour", 3600],
+    ["minute", 60],
+  ];
+  const format = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
+  for (const [unit, seconds] of units) {
+    if (Math.abs(diff) >= seconds) return format.format(Math.round(diff / seconds), unit);
+  }
+  return format.format(Math.round(diff), "second");
+}

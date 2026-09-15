@@ -8,10 +8,12 @@ import { AdminHome } from "@/features/admin/AdminHome";
 import { DomainPage } from "@/features/domains/DomainPage";
 import { DomainsPage } from "@/features/domains/DomainsPage";
 import { LogPage } from "@/features/log/LogPage";
+import { LogsPage } from "@/features/logs/LogsPage";
 import { LoginPage } from "@/features/login/LoginPage";
 import { PasswordPage } from "@/features/password/PasswordPage";
 import { PeoplePage } from "@/features/people/PeoplePage";
 import { PersonPage } from "@/features/people/PersonPage";
+import { QueuePage } from "@/features/queue/QueuePage";
 import { useSession } from "@/features/session/session";
 import { PortalShell } from "@/features/shell/PortalShell";
 import { useApplyLanguage, useT } from "@/i18n";
@@ -46,7 +48,9 @@ function page(path: string, session: Session): ReactNode {
   if (matchPath("/admin/domains", path)) return <DomainsPage />;
   const domain = matchPath("/admin/domains/:name", path);
   if (domain?.name) return <DomainPage key={domain.name} name={domain.name} />;
+  if (matchPath("/admin/queue", path)) return <QueuePage />;
   if (matchPath("/admin/log", path)) return <LogPage />;
+  if (matchPath("/admin/logs", path)) return <LogsPage />;
   return <NotFound />;
 }
 

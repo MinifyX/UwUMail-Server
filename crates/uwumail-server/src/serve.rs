@@ -32,7 +32,7 @@ async fn bind(address: &str, what: &str) -> anyhow::Result<Option<TcpListener>> 
     Ok(Some(listener))
 }
 
-pub async fn run(config: Config) -> anyhow::Result<()> {
+pub async fn run(config: Config, logs: Arc<uwumail_web::LogBuffer>) -> anyhow::Result<()> {
     config.validate()?;
     tracing::info!(version = env!("CARGO_PKG_VERSION"), hostname = %config.hostname, "UwUMail Server is waking up (=^･ω･^=)");
 
@@ -71,7 +71,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     let jmap = uwumail_jmap::Jmap::new(smtp.clone()).router();
     let web = uwumail_web::Web::new(
         smtp.clone(),
-        uwumail_web::WebSettings { hostname: config.hostname.clone(), started: Instant::now() },
+        uwumail_web::WebSettings { hostname: config.hostname.clone(), started: Instant::now(), logs: Some(logs) },
     )
     .router();
     let trusted_proxies = Arc::new(

@@ -260,7 +260,120 @@ const link = () => ({ path: `/password/mock-${Math.random().toString(36).slice(2
 
 type Handler = (body: unknown, params: string[]) => [number, unknown];
 
+const queue = [
+  {
+    id: 41,
+    from: "leni@uwu.example",
+    size: 48_213,
+    createdAt: now - 3 * 3600,
+    expiresAt: now + 4 * 86_400,
+    recipients: [
+      {
+        address: "oma@web.example",
+        status: "pending",
+        attempts: 3,
+        nextAttemptAt: now + 1500,
+        lastError: "451 4.7.1 Greylisted, please try again later",
+      },
+      { address: "opa@web.example", status: "delivered", attempts: 1, nextAttemptAt: now, lastError: null },
+    ],
+  },
+  {
+    id: 42,
+    from: "",
+    size: 3_120,
+    createdAt: now - 600,
+    expiresAt: now + 5 * 86_400,
+    recipients: [
+      {
+        address: "spammer@bad.example",
+        status: "pending",
+        attempts: 1,
+        nextAttemptAt: now + 240,
+        lastError: "connection timed out",
+      },
+    ],
+  },
+];
+
+let logSeq = 0;
+const LOG_SAMPLES: [string, string, [string, string][]][] = [
+  [
+    "info",
+    "received message",
+    [
+      ["from", "news@shop.example"],
+      ["recipients", "1"],
+    ],
+  ],
+  [
+    "info",
+    "web login",
+    [
+      ["login", "lorin@uwu.example"],
+      ["ip", "192.0.2.10"],
+    ],
+  ],
+  [
+    "info",
+    "delivered",
+    [
+      ["to", "opa@web.example"],
+      ["reply", "250 2.0.0 Ok"],
+    ],
+  ],
+  [
+    "warn",
+    "failed web login",
+    [
+      ["login", "admin@uwu.example"],
+      ["ip", "203.0.113.9"],
+    ],
+  ],
+  [
+    "info",
+    "delivery deferred",
+    [
+      ["to", "oma@web.example"],
+      ["error", "451 4.7.1 Greylisted"],
+    ],
+  ],
+  ["error", "writing the change log failed", [["err", "database is locked"]]],
+];
+
 const routes: [string, RegExp, Handler][] = [
+  ["GET", /^\/api\/admin\/queue$/, () => [200, queue]],
+  [
+    "POST",
+    /^\/api\/admin\/queue\/(\d+)\/retry$/,
+    (_, [id]) => {
+      log("queue.retry", `#${id}`);
+      return [204, null];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/admin\/queue\/(\d+)$/,
+    (_, [id]) => {
+      const index = queue.findIndex((message) => String(message.id) === id);
+      if (index >= 0) queue.splice(index, 1);
+      log("queue.drop", `#${id}`);
+      return [204, null];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/logs$/,
+    () => {
+      // A few new lines on every poll, as if the server were busy.
+      const lines = Array.from({ length: logSeq === 0 ? 40 : 2 }, () => {
+        logSeq += 1;
+        const [level, message, fields] = LOG_SAMPLES[logSeq % LOG_SAMPLES.length]!;
+        return { seq: logSeq, at: Date.now() - (40 - logSeq) * 1000, level, target: "uwumail", message, fields };
+      });
+      return [200, { lines, latest: logSeq }];
+    },
+  ],
   ["GET", /^\/api\/info$/, () => [200, { hostname: "mail.uwu.example", setupRequired: false } satisfies Info]],
   ["GET", /^\/api\/session$/, () => [200, loggedIn ? session() : null]],
   [

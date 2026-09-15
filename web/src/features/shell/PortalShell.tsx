@@ -3,6 +3,8 @@ import {
   ChevronsUpDown,
   Globe,
   History,
+  ScrollText,
+  Send,
   LayoutDashboard,
   LogOut,
   Menu as MenuIcon,
@@ -97,6 +99,7 @@ export function PortalShell({ session, children }: { session: Session; children:
   const [drawer, setDrawer] = useState(false);
   const [appearance, setAppearance] = useState(false);
   const isAdmin = session.account.role === "admin";
+  const pro = usePrefs((s) => s.mode) === "pro";
 
   useEffect(() => {
     if (!drawer) return;
@@ -131,7 +134,10 @@ export function PortalShell({ session, children }: { session: Session; children:
               { to: "/admin", label: t("nav.overview"), icon: LayoutDashboard },
               { to: "/admin/people", label: t("nav.people"), icon: Users },
               { to: "/admin/domains", label: t("nav.domains"), icon: Globe },
+              { to: "/admin/queue", label: t("nav.queue"), icon: Send },
               { to: "/admin/log", label: t("nav.log"), icon: History },
+              // The raw server log is for Pro mode.
+              ...(pro ? [{ to: "/admin/logs", label: t("nav.logs"), icon: ScrollText }] : []),
             ]}
           />
         )}

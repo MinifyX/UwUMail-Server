@@ -8,6 +8,7 @@
 
 mod assets;
 mod error;
+mod logs;
 mod routes;
 mod session;
 
@@ -22,11 +23,14 @@ use uwumail_smtp::{AuthLimiter, Smtp};
 use uwumail_store::Store;
 
 pub use error::{ApiError, ApiResult};
+pub use logs::{LogBuffer, LogLine};
 pub use session::{Admin, CSRF_HEADER, SESSION_LIFETIME_SECS, Session};
 
 pub struct WebSettings {
     pub hostname: String,
     pub started: Instant,
+    /// The newest server log lines, when the server keeps them.
+    pub logs: Option<Arc<LogBuffer>>,
 }
 
 #[derive(Clone)]
@@ -107,6 +111,10 @@ impl Web {
             .route("/api/admin/domains/{name}/dkim/activate", post(routes::domains::activate_keys))
             .route("/api/admin/domains/{name}/dkim/{selector}", delete(routes::domains::remove_key))
             .route("/api/admin/audit", get(routes::admin::audit))
+            .route("/api/admin/queue", get(routes::queue::list))
+            .route("/api/admin/queue/{id}/retry", post(routes::queue::retry))
+            .route("/api/admin/queue/{id}", delete(routes::queue::drop))
+            .route("/api/admin/logs", get(routes::queue::logs))
             .route("/api/admin/people", get(routes::people::list).post(routes::people::create))
             .route(
                 "/api/admin/people/{login}",

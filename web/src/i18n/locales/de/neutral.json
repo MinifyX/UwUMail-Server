@@ -41,7 +41,9 @@
     "closeMenu": "Menü schließen",
     "people": "Personen",
     "log": "Protokoll",
-    "domains": "Domains"
+    "domains": "Domains",
+    "queue": "Warteschlange",
+    "logs": "Logs"
   },
   "mode": {
     "label": "Ansicht",
@@ -334,7 +336,9 @@
       "other": "{{actor}}: {{action}} {{target}}",
       "domainDkimPrepare": "{{actor}} hat neue DKIM-Schlüssel für {{target}} erzeugt",
       "domainDkimActivate": "{{actor}} hat {{target}} auf die neuen DKIM-Schlüssel umgestellt",
-      "domainDkimRemove": "{{actor}} hat einen alten DKIM-Schlüssel von {{target}} entfernt"
+      "domainDkimRemove": "{{actor}} hat einen alten DKIM-Schlüssel von {{target}} entfernt",
+      "queueRetry": "{{actor}} hat Mail {{target}} erneut versucht",
+      "queueDrop": "{{actor}} hat Mail {{target}} aus der Warteschlange gelöscht"
     },
     "details": {
       "adminOn": "ist jetzt Admin",
@@ -470,5 +474,49 @@
       "activated": "Neue Schlüssel sind aktiv",
       "keyRemoved": "Schlüssel entfernt"
     }
+  },
+  "queue": {
+    "title": "Warteschlange",
+    "intro": "Ausgehende Mails, die noch nicht bei allen Empfängern angekommen sind. Betreff und Inhalt siehst du hier nicht.",
+    "empty": {
+      "title": "Nichts wartet",
+      "body": "Alle Mails sind unterwegs oder zugestellt."
+    },
+    "bounce": "Rückmeldung an einen Absender",
+    "size": "{{size}}",
+    "created": "Eingereiht {{time}}",
+    "expires": "Gibt auf am {{time}}",
+    "status": {
+      "pending": "Wartet",
+      "delivered": "Zugestellt",
+      "failed": "Fehlgeschlagen"
+    },
+    "attempts_one": "{{count}} Versuch",
+    "attempts_other": "{{count}} Versuche",
+    "nextAttempt": "Nächster Versuch {{time}}",
+    "retry": "Jetzt erneut versuchen",
+    "drop": "Löschen",
+    "dropConfirm": "Mail #{{id}} ohne Rückmeldung an den Absender löschen?",
+    "toasts": {
+      "retry": "Wird gleich erneut versucht",
+      "dropped": "Mail #{{id}} gelöscht"
+    }
+  },
+  "logs": {
+    "title": "Logs",
+    "intro": "Die neuesten Zeilen aus dem Server-Log, live.",
+    "level": {
+      "label": "Stufe",
+      "all": "Alles",
+      "warn": "Warnungen",
+      "error": "Fehler"
+    },
+    "search": "Logs durchsuchen",
+    "live": "Live",
+    "paused": "Pausiert",
+    "pause": "Anhalten",
+    "resume": "Weiter",
+    "empty": "Keine passenden Zeilen.",
+    "unavailable": "Dieser Server hält keine Logs für die Verwaltung bereit."
   }
 }

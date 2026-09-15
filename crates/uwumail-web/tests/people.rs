@@ -52,8 +52,10 @@ impl Portal {
             })
             .await
             .unwrap();
-        let web =
-            Web::new(smtp(store.clone()), WebSettings { hostname: "mail.example.de".into(), started: Instant::now() });
+        let web = Web::new(
+            smtp(store.clone()),
+            WebSettings { hostname: "mail.example.de".into(), started: Instant::now(), logs: None },
+        );
         Portal { app: web.router(), store, _dir: dir }
     }
 

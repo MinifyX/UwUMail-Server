@@ -41,7 +41,9 @@
     "closeMenu": "Close menu",
     "people": "People",
     "log": "Change log",
-    "domains": "Domains"
+    "domains": "Domains",
+    "queue": "Queue",
+    "logs": "Logs"
   },
   "mode": {
     "label": "View",
@@ -334,7 +336,9 @@
       "other": "{{actor}}: {{action}} {{target}}",
       "domainDkimPrepare": "{{actor}} created new DKIM keys for {{target}}",
       "domainDkimActivate": "{{actor}} switched {{target}} to the new DKIM keys",
-      "domainDkimRemove": "{{actor}} removed an old DKIM key of {{target}}"
+      "domainDkimRemove": "{{actor}} removed an old DKIM key of {{target}}",
+      "queueRetry": "{{actor}} retried message {{target}}",
+      "queueDrop": "{{actor}} deleted message {{target}} from the queue"
     },
     "details": {
       "adminOn": "is now an admin",
@@ -470,5 +474,49 @@
       "activated": "The new keys are active",
       "keyRemoved": "Key removed"
     }
+  },
+  "queue": {
+    "title": "Queue",
+    "intro": "Outgoing mail that has not reached all recipients yet. Subjects and content are not shown here.",
+    "empty": {
+      "title": "Nothing is waiting",
+      "body": "All mail is on its way or delivered."
+    },
+    "bounce": "Notice to a sender",
+    "size": "{{size}}",
+    "created": "Queued {{time}}",
+    "expires": "Gives up on {{time}}",
+    "status": {
+      "pending": "Waiting",
+      "delivered": "Delivered",
+      "failed": "Failed"
+    },
+    "attempts_one": "{{count}} attempt",
+    "attempts_other": "{{count}} attempts",
+    "nextAttempt": "Next attempt {{time}}",
+    "retry": "Retry now",
+    "drop": "Delete",
+    "dropConfirm": "Delete message #{{id}} without notifying the sender?",
+    "toasts": {
+      "retry": "Will be retried in a moment",
+      "dropped": "Message #{{id}} deleted"
+    }
+  },
+  "logs": {
+    "title": "Logs",
+    "intro": "The newest lines of the server log, live.",
+    "level": {
+      "label": "Level",
+      "all": "Everything",
+      "warn": "Warnings",
+      "error": "Errors"
+    },
+    "search": "Search logs",
+    "live": "Live",
+    "paused": "Paused",
+    "pause": "Pause",
+    "resume": "Resume",
+    "empty": "No matching lines.",
+    "unavailable": "This server keeps no logs for the admin panel."
   }
 }
