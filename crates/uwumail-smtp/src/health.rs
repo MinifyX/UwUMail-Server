@@ -216,7 +216,7 @@ async fn probe_relay(ctx: &Context, relay: &RelayConfig) -> ProbeReport {
     let mut last_error = format!("{} has no address", relay.host);
     let mut connected = None;
     for addr in addrs {
-        match Client::connect(addr, PROBE_CONNECT_TIMEOUT, PROBE_COMMAND_TIMEOUT).await {
+        match Client::connect(ctx, addr, PROBE_CONNECT_TIMEOUT, PROBE_COMMAND_TIMEOUT).await {
             Ok(client) => {
                 connected = Some(client);
                 break;
@@ -305,7 +305,7 @@ async fn probe_direct(ctx: &Context, port: u16) -> ProbeReport {
     };
     let mut last_error = format!("{host} has no address");
     for ip in ips {
-        let client = Client::connect((ip, port).into(), PROBE_CONNECT_TIMEOUT, PROBE_COMMAND_TIMEOUT).await;
+        let client = Client::connect(ctx, (ip, port).into(), PROBE_CONNECT_TIMEOUT, PROBE_COMMAND_TIMEOUT).await;
         let mut client = match client {
             Ok(client) => client,
             Err(err) => {

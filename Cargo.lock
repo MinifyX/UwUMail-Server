@@ -2929,7 +2929,9 @@ dependencies = [
  "tokio-rustls",
  "tracing",
  "tracing-subscriber",
+ "uwumail-gateway",
  "uwumail-store",
+ "uwumail-tunnel",
  "webpki-roots",
 ]
 

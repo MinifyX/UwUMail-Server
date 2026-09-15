@@ -1,6 +1,8 @@
 //! A small SMTP client for delivering to other servers and relays.
 
+use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,7 +15,28 @@ use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_rustls::TlsConnector;
 
-use crate::stream::Stream;
+use crate::Context;
+use crate::stream::{BoxIo, Stream};
+
+/// Makes the connections to other servers, for delivery and for the checks. Without one, they
+/// start from this machine.
+pub trait Connector: Send + Sync {
+    /// Connects to `address`, giving up after `limit`.
+    fn connect(
+        &self,
+        address: SocketAddr,
+        limit: Duration,
+    ) -> Pin<Box<dyn Future<Output = std::io::Result<BoxIo>> + Send + '_>>;
+}
+
+/// A plain TCP connection from this machine.
+pub async fn connect_directly(address: SocketAddr, limit: Duration) -> std::io::Result<BoxIo> {
+    let socket = timeout(limit, TcpStream::connect(address)).await.map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::TimedOut, format!("connecting to {address} timed out"))
+    })??;
+    let _ = socket.set_nodelay(true);
+    Ok(Box::new(socket))
+}
 
 #[derive(Debug, Clone)]
 pub struct Reply {
@@ -54,16 +77,18 @@ pub struct Client {
 }
 
 impl Client {
+    /// Connects through the server's [`Connector`], if it has one.
     pub async fn connect(
+        ctx: &Context,
         addr: SocketAddr,
         connect_timeout: Duration,
         command_timeout: Duration,
     ) -> std::io::Result<Client> {
-        let socket = timeout(connect_timeout, TcpStream::connect(addr)).await.map_err(|_| {
-            std::io::Error::new(std::io::ErrorKind::TimedOut, format!("connecting to {addr} timed out"))
-        })??;
-        let _ = socket.set_nodelay(true);
-        Ok(Client { stream: Stream::Plain(socket), pending: Vec::new(), command_timeout })
+        let stream = match ctx.connector() {
+            Some(connector) => connector.connect(addr, connect_timeout).await?,
+            None => connect_directly(addr, connect_timeout).await?,
+        };
+        Ok(Client { stream: Stream::Plain(stream), pending: Vec::new(), command_timeout })
     }
 
     pub fn is_tls(&self) -> bool {

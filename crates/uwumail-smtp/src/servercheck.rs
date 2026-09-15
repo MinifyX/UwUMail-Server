@@ -10,7 +10,7 @@ use serde::Serialize;
 use crate::client::Client;
 use crate::dnscheck::{BLOCKLISTS, DnsChecker, Listing};
 use crate::health::{ProbeReport, Route};
-use crate::{Smtp, now};
+use crate::{Context, Smtp, now};
 
 const SELF_CALL_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -95,7 +95,7 @@ async fn address_report(dns: &DnsChecker, ip: IpAddr, hostname: &str, blocklists
     AddressReport { ip: ip.to_string(), private: is_private(ip), ptr, ptr_confirmed, ptr_is_hostname, listings }
 }
 
-async fn self_call(ip: IpAddr, port: u16, hostname: &str) -> InboundReport {
+async fn self_call(ctx: &Context, ip: IpAddr, port: u16, hostname: &str) -> InboundReport {
     let failed = |error: String| InboundReport {
         ip: ip.to_string(),
         reachable: false,
@@ -103,7 +103,7 @@ async fn self_call(ip: IpAddr, port: u16, hostname: &str) -> InboundReport {
         greeting: None,
         error: Some(error),
     };
-    let mut client = match Client::connect(SocketAddr::new(ip, port), SELF_CALL_TIMEOUT, SELF_CALL_TIMEOUT).await {
+    let mut client = match Client::connect(ctx, SocketAddr::new(ip, port), SELF_CALL_TIMEOUT, SELF_CALL_TIMEOUT).await {
         Ok(client) => client,
         Err(err) => return failed(err.to_string()),
     };
@@ -154,7 +154,7 @@ impl Smtp {
         let mut inbound = Vec::new();
         for report in addresses.iter().filter(|report| !report.private) {
             if let Ok(ip) = report.ip.parse() {
-                inbound.push(self_call(ip, 25, &hostname).await);
+                inbound.push(self_call(ctx, ip, 25, &hostname).await);
             }
         }
 

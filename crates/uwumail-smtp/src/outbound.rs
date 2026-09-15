@@ -308,6 +308,7 @@ async fn session(
     };
 
     let mut client = Client::connect(
+        ctx,
         addr,
         Duration::from_secs(settings.connect_timeout_secs),
         Duration::from_secs(settings.command_timeout_secs),

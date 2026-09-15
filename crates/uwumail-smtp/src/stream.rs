@@ -3,13 +3,20 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::net::TcpStream;
 
-/// A TCP connection that may be upgraded to TLS in the middle of a session.
+/// Anything that reads and writes like a TCP connection: a socket, or a connection carried
+/// through the UwUMail Gateway.
+pub trait Io: AsyncRead + AsyncWrite + Unpin + Send {}
+
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> Io for T {}
+
+pub type BoxIo = Box<dyn Io>;
+
+/// A connection that may be upgraded to TLS in the middle of a session.
 pub enum Stream {
-    Plain(TcpStream),
-    Server(Box<tokio_rustls::server::TlsStream<TcpStream>>),
-    Client(Box<tokio_rustls::client::TlsStream<TcpStream>>),
+    Plain(BoxIo),
+    Server(Box<tokio_rustls::server::TlsStream<BoxIo>>),
+    Client(Box<tokio_rustls::client::TlsStream<BoxIo>>),
 }
 
 impl Stream {

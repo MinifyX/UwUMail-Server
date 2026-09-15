@@ -37,14 +37,16 @@ use mail_auth::MessageAuthenticator;
 use tokio::sync::Semaphore;
 use uwumail_store::Store;
 
+pub use client::{Connector, connect_directly};
 pub use config::{
     DeliveryConfig, ExternalTone, InternalTone, Language, RelayConfig, RelaySecurity, SmtpConfig, ToneConfig,
 };
 pub use dns::DnsCaches;
-pub use inbound::{ListenerKind, serve};
+pub use inbound::{ListenerKind, serve, serve_stream};
 pub use limiter::AuthLimiter;
 pub use outbound::run_queue;
 pub use relay::IpNetwork;
+pub use stream::{BoxIo, Io};
 pub use submission::{Submission, SubmissionRecipient, SubmitError, Submitted};
 
 #[derive(Debug, thiserror::Error)]
@@ -84,6 +86,8 @@ pub(crate) struct Context {
     pub delivery_permits: Arc<Semaphore>,
     pub inflight: Mutex<HashSet<i64>>,
     pub stats: health::DeliveryStats,
+    /// Where connections to other servers start; `None` is this machine.
+    connector: RwLock<Option<Arc<dyn Connector>>>,
 }
 
 /// The settings in effect right now. Take a snapshot per connection or delivery.
@@ -105,6 +109,10 @@ impl Live {
 impl Context {
     pub fn live(&self) -> Arc<Live> {
         self.live.read().expect("settings poisoned").clone()
+    }
+
+    pub fn connector(&self) -> Option<Arc<dyn Connector>> {
+        self.connector.read().expect("connector poisoned").clone()
     }
 }
 
@@ -141,8 +149,20 @@ impl Smtp {
                 auth_limiter: limiter::AuthLimiter::default(),
                 inflight: Mutex::new(HashSet::new()),
                 stats: health::DeliveryStats::default(),
+                connector: RwLock::new(None),
             }),
         })
+    }
+
+    /// Lets `connector` make every connection to other servers from now on, e.g. through the
+    /// UwUMail Gateway. `None` connects from this machine again.
+    pub fn set_connector(&self, connector: Option<Arc<dyn Connector>>) {
+        *self.inner.connector.write().expect("connector poisoned") = connector;
+    }
+
+    /// Whether connections to other servers go through a [`Connector`].
+    pub fn has_connector(&self) -> bool {
+        self.inner.connector().is_some()
     }
 
     /// Switches to new settings at once: new connections and deliveries use them, running ones finish

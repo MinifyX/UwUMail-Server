@@ -9,7 +9,7 @@ use mail_builder::headers::date::Date;
 use smtp_proto::request::receiver::{BdatReceiver, DataReceiver, DummyDataReceiver, LineReceiver, RequestReceiver};
 use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN, MailFrom, RcptTo, Request};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio::time::timeout;
 use tokio_rustls::TlsAcceptor;
@@ -20,7 +20,7 @@ use uwumail_store::{
 
 use crate::checks::{self, Action};
 use crate::dsn::{self, FailedRecipient};
-use crate::stream::Stream;
+use crate::stream::{BoxIo, Stream};
 use crate::submission::{Submission, SubmissionRecipient, SubmitError};
 use crate::{Smtp, forward, headers, random_id, relay, reports, srs, vacation};
 
@@ -50,18 +50,8 @@ pub async fn serve(smtp: Smtp, listener: TcpListener, kind: ListenerKind, mut sh
         tokio::select! {
             accepted = listener.accept() => match accepted {
                 Ok((socket, peer)) => {
-                    let smtp = smtp.clone();
-                    tokio::spawn(async move {
-                        match handle(smtp, socket, peer, kind).await {
-                            // Health checks and port scanners hang up without saying goodbye.
-                            Err(err) if matches!(
-                                err.kind(),
-                                std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::UnexpectedEof
-                            ) => {}
-                            Err(err) => tracing::debug!(%peer, ?kind, %err, "smtp session ended with an error"),
-                            Ok(()) => {}
-                        }
-                    });
+                    let _ = socket.set_nodelay(true);
+                    tokio::spawn(serve_stream(smtp.clone(), Box::new(socket), peer, kind));
                 }
                 Err(err) => {
                     tracing::warn!(%err, "accepting an smtp connection failed");
@@ -73,13 +63,29 @@ pub async fn serve(smtp: Smtp, listener: TcpListener, kind: ListenerKind, mut sh
     }
 }
 
-async fn handle(smtp: Smtp, mut socket: TcpStream, peer: SocketAddr, kind: ListenerKind) -> std::io::Result<()> {
+/// Runs one session on a connection from `peer`, which arrived on a listener or through the
+/// UwUMail Gateway.
+pub async fn serve_stream(smtp: Smtp, stream: BoxIo, peer: SocketAddr, kind: ListenerKind) {
+    match handle(smtp, stream, peer, kind).await {
+        // Health checks and port scanners hang up without saying goodbye.
+        Err(err)
+            if matches!(
+                err.kind(),
+                std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::BrokenPipe
+                    | std::io::ErrorKind::UnexpectedEof
+            ) => {}
+        Err(err) => tracing::debug!(%peer, ?kind, %err, "smtp session ended with an error"),
+        Ok(()) => {}
+    }
+}
+
+async fn handle(smtp: Smtp, mut socket: BoxIo, peer: SocketAddr, kind: ListenerKind) -> std::io::Result<()> {
     let ctx = &smtp.inner;
     let Ok(_permit) = ctx.connections.clone().try_acquire_owned() else {
         let _ = socket.write_all(b"421 4.3.2 Too many connections, try again later\r\n").await;
         return Ok(());
     };
-    let _ = socket.set_nodelay(true);
     let stream = if kind == ListenerKind::SubmissionTls {
         let Some(tls) = ctx.server_tls.clone() else {
             return Ok(());
