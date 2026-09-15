@@ -28,5 +28,28 @@
       "title": "Nothing here (・_・;)",
       "body": "I looked everywhere, even under the sofa."
     }
+  },
+  "people": {
+    "empty": {
+      "title": "So far it's just you (˘ᵕ˘)",
+      "body": "Add the people who should move in. I'll make them a cozy mailbox."
+    },
+    "noResults": {
+      "title": "Nobody found (・_・;)"
+    },
+    "invite": {
+      "title": "{{name}} can move in!"
+    }
+  },
+  "log": {
+    "empty": {
+      "title": "All quiet so far (˘ᵕ˘)"
+    }
+  },
+  "password": {
+    "inviteTitle": "Hi {{name}}, so glad you're here!",
+    "invalid": {
+      "title": "This link has expired (・_・;)"
+    }
   }
 }

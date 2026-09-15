@@ -1,15 +1,20 @@
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
+import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { LoadError, Loading } from "@/components/StatusViews";
+import { Toaster } from "@/components/ui/Toaster";
 import { AccountHome } from "@/features/account/AccountHome";
 import { AdminHome } from "@/features/admin/AdminHome";
+import { LogPage } from "@/features/log/LogPage";
 import { LoginPage } from "@/features/login/LoginPage";
+import { PasswordPage } from "@/features/password/PasswordPage";
+import { PeoplePage } from "@/features/people/PeoplePage";
+import { PersonPage } from "@/features/people/PersonPage";
 import { useSession } from "@/features/session/session";
 import { PortalShell } from "@/features/shell/PortalShell";
 import { useApplyLanguage, useT } from "@/i18n";
 import type { Session } from "@/lib/api";
-import { navigate, usePath } from "@/lib/router";
+import { matchPath, navigate, usePath } from "@/lib/router";
 import { useApplyTheme } from "@/lib/theme";
 
 function NotFound() {
@@ -28,6 +33,18 @@ function NotFound() {
   );
 }
 
+/** Pages inside the portal; admin pages only exist for admins. */
+function page(path: string, session: Session): ReactNode {
+  if (path === "/account") return <AccountHome session={session} />;
+  if (session.account.role !== "admin") return <NotFound />;
+  if (path === "/admin") return <AdminHome />;
+  if (matchPath("/admin/people", path)) return <PeoplePage session={session} />;
+  const person = matchPath("/admin/people/:login", path);
+  if (person?.login) return <PersonPage key={person.login} login={person.login} session={session} />;
+  if (matchPath("/admin/log", path)) return <LogPage />;
+  return <NotFound />;
+}
+
 function Portal({ session }: { session: Session }) {
   const path = usePath();
   const entry = path === "/" || path === "/login" || path === "/setup";
@@ -36,19 +53,16 @@ function Portal({ session }: { session: Session }) {
     if (entry) navigate("/account", { replace: true });
   }, [entry]);
 
-  let page;
-  if (entry || path === "/account") page = <AccountHome session={session} />;
-  else if (path === "/admin" && session.account.role === "admin") page = <AdminHome />;
-  else page = <NotFound />;
-
-  return <PortalShell session={session}>{page}</PortalShell>;
+  return <PortalShell session={session}>{page(entry ? "/account" : path, session)}</PortalShell>;
 }
 
-export function App() {
-  useApplyTheme();
-  useApplyLanguage();
+function Routes() {
+  const path = usePath();
   const session = useSession();
+  const passwordLink = matchPath("/password/:token", path);
 
+  // Choosing a password works whether someone is logged in or not.
+  if (passwordLink?.token) return <PasswordPage token={passwordLink.token} />;
   if (session.isPending) return <Loading fullPage />;
   if (session.isError) {
     return (
@@ -59,4 +73,15 @@ export function App() {
   }
   if (!session.data) return <LoginPage />;
   return <Portal session={session.data} />;
+}
+
+export function App() {
+  useApplyTheme();
+  useApplyLanguage();
+  return (
+    <>
+      <Routes />
+      <Toaster />
+    </>
+  );
 }

@@ -5,7 +5,16 @@
     "retry": "Erneut versuchen",
     "copy": "Kopieren",
     "copied": "Kopiert",
-    "unlimited": "unbegrenzt"
+    "unlimited": "unbegrenzt",
+    "back": "Zurück",
+    "cancel": "Abbrechen",
+    "save": "Speichern",
+    "saved": "Gespeichert",
+    "done": "Fertig",
+    "loadMore": "Mehr laden",
+    "remove": "Entfernen",
+    "showPassword": "Passwort anzeigen",
+    "hidePassword": "Passwort verbergen"
   },
   "login": {
     "title": "Anmelden",
@@ -29,7 +38,9 @@
     "server": "Server",
     "overview": "Übersicht",
     "openMenu": "Menü öffnen",
-    "closeMenu": "Menü schließen"
+    "closeMenu": "Menü schließen",
+    "people": "Personen",
+    "log": "Protokoll"
   },
   "mode": {
     "label": "Ansicht",
@@ -133,7 +144,7 @@
     },
     "coming": {
       "title": "Als Nächstes",
-      "body": "Personen, Domains mit DNS-Prüfung, Warteschlange und Einstellungen ziehen hier in den nächsten Updates ein."
+      "body": "Domains mit DNS-Prüfung, Warteschlange und Einstellungen ziehen hier in den nächsten Updates ein."
     }
   },
   "duration": {
@@ -157,6 +168,193 @@
       "title": "Diese Seite gibt es nicht",
       "body": "Vielleicht ist der Link veraltet.",
       "home": "Zur Übersicht"
+    },
+    "codes": {
+      "lastAdmin": "Das ist der letzte Admin. Mach zuerst jemand anderen zum Admin.",
+      "notYourself": "Das geht nicht mit deinem eigenen Konto.",
+      "weakPassword": "Das Passwort braucht mindestens 10 Zeichen und darf nicht die Adresse sein.",
+      "confirmationMismatch": "Die eingetippte Adresse stimmt nicht.",
+      "conflict": "Diese Adresse ist schon vergeben.",
+      "invalid": "Das passt so nicht: {{detail}}",
+      "notFound": "Das gibt es nicht (mehr).",
+      "linkInvalid": "Dieser Link gilt nicht mehr.",
+      "forbidden": "Dafür fehlen dir die Rechte.",
+      "offline": "Der Server ist gerade nicht erreichbar.",
+      "internal": "Auf dem Server ist etwas schiefgelaufen."
+    }
+  },
+  "people": {
+    "title": "Personen",
+    "intro": "Alle, die auf diesem Server ein Postfach haben.",
+    "add": "Person hinzufügen",
+    "search": "Personen durchsuchen",
+    "filter": {
+      "all": "Alle",
+      "active": "Aktiv",
+      "invited": "Eingeladen",
+      "disabled": "Gesperrt",
+      "deleted": "Papierkorb"
+    },
+    "status": {
+      "active": "Aktiv",
+      "invited": "Eingeladen",
+      "disabled": "Gesperrt",
+      "deleted": "Im Papierkorb"
+    },
+    "admin": "Admin",
+    "you": "Du",
+    "storageOf": "{{used}} von {{quota}}",
+    "storageUsed": "{{used}}",
+    "addresses_one": "{{count}} Adresse",
+    "addresses_other": "{{count}} Adressen",
+    "empty": {
+      "title": "Hier bist bisher nur du",
+      "body": "Leg die Personen an, die auf diesem Server ein Postfach bekommen sollen."
+    },
+    "noResults": {
+      "title": "Niemand gefunden",
+      "body": "Versuch einen anderen Namen oder Filter."
+    },
+    "table": {
+      "person": "Person",
+      "status": "Status",
+      "storage": "Speicher",
+      "addresses": "Adressen",
+      "created": "Angelegt"
+    },
+    "create": {
+      "title": "Person hinzufügen",
+      "name": "Name",
+      "namePlaceholder": "Leni Wanders",
+      "address": "Adresse",
+      "localPart": "Name vor dem @",
+      "domain": "Domain",
+      "admin": "Admin",
+      "adminHint": "Darf den ganzen Server verwalten.",
+      "quota": "Speicherlimit",
+      "unlimited": "Unbegrenzt",
+      "gigabytes": "{{count}} GB",
+      "ownPassword": "Passwort selbst festlegen",
+      "ownPasswordHint": "Statt eines Einladungslinks. Die Person kann es später ändern.",
+      "password": "Passwort",
+      "submit": "Hinzufügen",
+      "noDomains": "Es gibt noch keine Domain. Leg zuerst eine an."
+    },
+    "invite": {
+      "title": "{{name}} ist angelegt",
+      "body": "Schick diesen Link an {{name}}. Darüber wird das eigene Passwort festgelegt. Der Link funktioniert nur einmal.",
+      "copy": "Link kopieren",
+      "open": "Zur Person"
+    },
+    "detail": {
+      "back": "Personen",
+      "general": "Allgemein",
+      "name": "Name",
+      "admin": "Admin",
+      "adminHint": "Darf den ganzen Server verwalten.",
+      "quota": "Speicherlimit",
+      "addresses": "Adressen",
+      "primary": "Hauptadresse",
+      "alias": "Zusätzliche Adresse",
+      "addAlias": "Adresse hinzufügen",
+      "removeAlias": "{{address}} entfernen",
+      "access": "Zugang",
+      "accessHint": "Für neue Personen oder vergessene Passwörter. Der Link funktioniert einmal und 7 Tage lang.",
+      "createLink": "Link zum Passwort-Setzen erzeugen",
+      "createInvite": "Neuen Einladungslink erzeugen",
+      "linkValid": "Gültig bis {{date}}",
+      "setPassword": "Passwort direkt setzen",
+      "setPasswordHint": "Die Person wird dabei überall abgemeldet.",
+      "danger": "Sperren und löschen",
+      "disable": "Sperren",
+      "disableHint": "Kann sich nicht mehr anmelden. Mails kommen weiter an.",
+      "enable": "Entsperren",
+      "trash": "In den Papierkorb",
+      "trashHint": "Sofort gesperrt und keine neuen Mails mehr. 30 Tage lang wiederherstellbar.",
+      "restore": "Wiederherstellen",
+      "purge": "Sofort endgültig löschen",
+      "banner": {
+        "invited": "Hat noch kein Passwort festgelegt.",
+        "disabled": "Gesperrt: kann sich nicht anmelden, Mails kommen weiter an.",
+        "deleted": "Im Papierkorb. Wird am {{date}} endgültig gelöscht."
+      }
+    },
+    "purge": {
+      "title": "{{login}} endgültig löschen?",
+      "body": "Alle Mails und Einstellungen sind danach für immer weg. Tippe zur Bestätigung die Adresse ein.",
+      "confirm": "Adresse",
+      "submit": "Endgültig löschen"
+    },
+    "toasts": {
+      "saved": "Gespeichert",
+      "linkCopied": "Link kopiert",
+      "passwordSet": "Passwort gesetzt",
+      "disabled": "{{login}} ist gesperrt",
+      "enabled": "{{login}} ist entsperrt",
+      "trashed": "{{login}} liegt im Papierkorb",
+      "restored": "{{login}} ist wiederhergestellt",
+      "purged": "{{login}} ist endgültig gelöscht",
+      "aliasAdded": "{{address}} hinzugefügt",
+      "aliasRemoved": "{{address}} entfernt"
+    }
+  },
+  "log": {
+    "title": "Änderungsprotokoll",
+    "intro": "Wer wann was geändert hat.",
+    "empty": {
+      "title": "Noch keine Änderungen",
+      "body": "Sobald jemand Personen, Adressen oder Einstellungen ändert, steht es hier."
+    },
+    "today": "Heute",
+    "yesterday": "Gestern",
+    "actors": {
+      "cli": "Kommandozeile",
+      "system": "Server"
+    },
+    "actions": {
+      "accountCreate": "{{actor}} hat {{target}} angelegt",
+      "accountUpdate": "{{actor}} hat {{target}} geändert",
+      "accountTrash": "{{actor}} hat {{target}} in den Papierkorb gelegt",
+      "accountRestore": "{{actor}} hat {{target}} wiederhergestellt",
+      "accountPurge": "{{actor}} hat {{target}} endgültig gelöscht",
+      "accountPasswordLink": "{{actor}} hat einen Passwort-Link für {{target}} erzeugt",
+      "accountPasswordSet": "{{actor}} hat das Passwort von {{target}} gesetzt",
+      "accountPasswordChosen": "{{target}} hat ein Passwort festgelegt",
+      "aliasAdd": "{{actor}} hat die Adresse {{target}} hinzugefügt",
+      "aliasRemove": "{{actor}} hat die Adresse {{target}} entfernt",
+      "domainCreate": "{{actor}} hat die Domain {{target}} angelegt",
+      "domainRemove": "{{actor}} hat die Domain {{target}} entfernt",
+      "domainCatchAll": "{{actor}} hat die Sammeladresse von {{target}} geändert",
+      "other": "{{actor}}: {{action}} {{target}}"
+    },
+    "details": {
+      "adminOn": "ist jetzt Admin",
+      "adminOff": "ist kein Admin mehr",
+      "disabledOn": "gesperrt",
+      "disabledOff": "entsperrt",
+      "quota": "Speicherlimit {{value}}",
+      "name": "Name „{{value}}“",
+      "invited": "mit Einladungslink",
+      "reasonTrash": "nach 30 Tagen im Papierkorb"
+    }
+  },
+  "password": {
+    "inviteTitle": "Willkommen, {{name}}!",
+    "resetTitle": "Neues Passwort",
+    "inviteBody": "Leg dein Passwort für {{login}} fest.",
+    "resetBody": "Wähle ein neues Passwort für {{login}}.",
+    "password": "Neues Passwort",
+    "repeat": "Passwort wiederholen",
+    "hint": "Mindestens 10 Zeichen. Ein Satz aus mehreren Wörtern ist leicht zu merken und schwer zu erraten.",
+    "missing_one": "Noch {{count}} Zeichen",
+    "missing_other": "Noch {{count}} Zeichen",
+    "mismatch": "Die beiden Passwörter stimmen nicht überein.",
+    "submit": "Passwort festlegen",
+    "validUntil": "Dieser Link ist bis {{date}} gültig.",
+    "invalid": {
+      "title": "Dieser Link gilt nicht mehr",
+      "body": "Links zum Passwort-Setzen funktionieren nur einmal und 7 Tage lang. Bitte deinen Admin um einen neuen.",
+      "login": "Zur Anmeldung"
     }
   }
 }

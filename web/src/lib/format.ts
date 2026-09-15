@@ -32,3 +32,19 @@ export function formatDuration(seconds: number, t: TFunction): string {
 export function formatDate(unixSeconds: number, language: string): string {
   return new Intl.DateTimeFormat(language, { dateStyle: "long" }).format(new Date(unixSeconds * 1000));
 }
+
+export function formatDateTime(unixSeconds: number, language: string): string {
+  return new Intl.DateTimeFormat(language, { dateStyle: "medium", timeStyle: "short" }).format(
+    new Date(unixSeconds * 1000),
+  );
+}
+
+export function formatTime(unixSeconds: number, language: string): string {
+  return new Intl.DateTimeFormat(language, { timeStyle: "short" }).format(new Date(unixSeconds * 1000));
+}
+
+/** Midnight of the day, in local time, as a key to group entries by day. */
+export function dayKey(unixSeconds: number): number {
+  const date = new Date(unixSeconds * 1000);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}

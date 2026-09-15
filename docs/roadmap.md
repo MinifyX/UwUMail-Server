@@ -37,6 +37,8 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Web portal: JSON API with session cookies and CSRF protection, React app embedded in the binary, one login for everyone
 - [x] Portal shell with Nyu, German and English, playful/neutral tone, Simple and Pro mode, light/dark theme, phone layout
 - [x] My account overview (addresses, storage, settings for mail apps) and a first server overview for admins
+- [x] People: invite with a one-time link, change role and storage limit, lock out (mail keeps arriving), 30-day trash, aliases
+- [x] Change log of admin changes (portal and command line)
 - [ ] Web setup with a one-time code: domain, admin, certificate, DNS check, port 25 / rDNS / blocklist check
 - [ ] Admin panel, Simple and Pro mode, German and English, playful/neutral tone, Nyu
 - [ ] Self-service: password, 2FA, app passwords, forwarding, vacation, aliases, storage

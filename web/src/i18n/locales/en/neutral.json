@@ -5,7 +5,16 @@
     "retry": "Try again",
     "copy": "Copy",
     "copied": "Copied",
-    "unlimited": "unlimited"
+    "unlimited": "unlimited",
+    "back": "Back",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saved": "Saved",
+    "done": "Done",
+    "loadMore": "Load more",
+    "remove": "Remove",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password"
   },
   "login": {
     "title": "Log in",
@@ -29,7 +38,9 @@
     "server": "Server",
     "overview": "Overview",
     "openMenu": "Open menu",
-    "closeMenu": "Close menu"
+    "closeMenu": "Close menu",
+    "people": "People",
+    "log": "Change log"
   },
   "mode": {
     "label": "View",
@@ -133,7 +144,7 @@
     },
     "coming": {
       "title": "Coming next",
-      "body": "People, domains with DNS checks, the queue and settings move in here with the next updates."
+      "body": "Domains with DNS checks, the queue and settings move in here with the next updates."
     }
   },
   "duration": {
@@ -157,6 +168,193 @@
       "title": "This page does not exist",
       "body": "Maybe the link is outdated.",
       "home": "Go to the overview"
+    },
+    "codes": {
+      "lastAdmin": "This is the last admin. Make someone else an admin first.",
+      "notYourself": "You cannot do this with your own account.",
+      "weakPassword": "The password needs at least 10 characters and must not be the address.",
+      "confirmationMismatch": "The address you typed does not match.",
+      "conflict": "This address is already taken.",
+      "invalid": "That does not work: {{detail}}",
+      "notFound": "This does not exist (anymore).",
+      "linkInvalid": "This link is not valid anymore.",
+      "forbidden": "You are not allowed to do this.",
+      "offline": "The server cannot be reached right now.",
+      "internal": "Something went wrong on the server."
+    }
+  },
+  "people": {
+    "title": "People",
+    "intro": "Everyone who has a mailbox on this server.",
+    "add": "Add person",
+    "search": "Search people",
+    "filter": {
+      "all": "All",
+      "active": "Active",
+      "invited": "Invited",
+      "disabled": "Locked",
+      "deleted": "Trash"
+    },
+    "status": {
+      "active": "Active",
+      "invited": "Invited",
+      "disabled": "Locked",
+      "deleted": "In the trash"
+    },
+    "admin": "Admin",
+    "you": "You",
+    "storageOf": "{{used}} of {{quota}}",
+    "storageUsed": "{{used}}",
+    "addresses_one": "{{count}} address",
+    "addresses_other": "{{count}} addresses",
+    "empty": {
+      "title": "So far it's just you",
+      "body": "Add the people who should get a mailbox on this server."
+    },
+    "noResults": {
+      "title": "Nobody found",
+      "body": "Try another name or filter."
+    },
+    "table": {
+      "person": "Person",
+      "status": "Status",
+      "storage": "Storage",
+      "addresses": "Addresses",
+      "created": "Created"
+    },
+    "create": {
+      "title": "Add person",
+      "name": "Name",
+      "namePlaceholder": "Leni Wanders",
+      "address": "Address",
+      "localPart": "Name before the @",
+      "domain": "Domain",
+      "admin": "Admin",
+      "adminHint": "May manage the whole server.",
+      "quota": "Storage limit",
+      "unlimited": "Unlimited",
+      "gigabytes": "{{count}} GB",
+      "ownPassword": "Set the password myself",
+      "ownPasswordHint": "Instead of an invitation link. The person can change it later.",
+      "password": "Password",
+      "submit": "Add",
+      "noDomains": "There is no domain yet. Add one first."
+    },
+    "invite": {
+      "title": "{{name}} has been added",
+      "body": "Send this link to {{name}} to choose their own password. It works only once.",
+      "copy": "Copy link",
+      "open": "Open person"
+    },
+    "detail": {
+      "back": "People",
+      "general": "General",
+      "name": "Name",
+      "admin": "Admin",
+      "adminHint": "May manage the whole server.",
+      "quota": "Storage limit",
+      "addresses": "Addresses",
+      "primary": "Main address",
+      "alias": "Additional address",
+      "addAlias": "Add address",
+      "removeAlias": "Remove {{address}}",
+      "access": "Access",
+      "accessHint": "For new people or forgotten passwords. The link works once and for 7 days.",
+      "createLink": "Create a link to choose a password",
+      "createInvite": "Create a new invitation link",
+      "linkValid": "Valid until {{date}}",
+      "setPassword": "Set a password directly",
+      "setPasswordHint": "This logs the person out everywhere.",
+      "danger": "Lock and delete",
+      "disable": "Lock",
+      "disableHint": "Can no longer log in. Mail keeps arriving.",
+      "enable": "Unlock",
+      "trash": "Move to trash",
+      "trashHint": "Locked at once and no new mail. Can be restored for 30 days.",
+      "restore": "Restore",
+      "purge": "Delete for good now",
+      "banner": {
+        "invited": "Has not chosen a password yet.",
+        "disabled": "Locked: cannot log in, mail keeps arriving.",
+        "deleted": "In the trash. Will be deleted for good on {{date}}."
+      }
+    },
+    "purge": {
+      "title": "Delete {{login}} for good?",
+      "body": "All mail and settings will be gone forever. Type the address to confirm.",
+      "confirm": "Address",
+      "submit": "Delete for good"
+    },
+    "toasts": {
+      "saved": "Saved",
+      "linkCopied": "Link copied",
+      "passwordSet": "Password set",
+      "disabled": "{{login}} is locked",
+      "enabled": "{{login}} is unlocked",
+      "trashed": "{{login}} is in the trash",
+      "restored": "{{login}} has been restored",
+      "purged": "{{login}} has been deleted for good",
+      "aliasAdded": "Added {{address}}",
+      "aliasRemoved": "Removed {{address}}"
+    }
+  },
+  "log": {
+    "title": "Change log",
+    "intro": "Who changed what, and when.",
+    "empty": {
+      "title": "No changes yet",
+      "body": "As soon as someone changes people, addresses or settings, it shows up here."
+    },
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "actors": {
+      "cli": "Command line",
+      "system": "Server"
+    },
+    "actions": {
+      "accountCreate": "{{actor}} added {{target}}",
+      "accountUpdate": "{{actor}} changed {{target}}",
+      "accountTrash": "{{actor}} moved {{target}} to the trash",
+      "accountRestore": "{{actor}} restored {{target}}",
+      "accountPurge": "{{actor}} deleted {{target}} for good",
+      "accountPasswordLink": "{{actor}} created a password link for {{target}}",
+      "accountPasswordSet": "{{actor}} set the password of {{target}}",
+      "accountPasswordChosen": "{{target}} chose a password",
+      "aliasAdd": "{{actor}} added the address {{target}}",
+      "aliasRemove": "{{actor}} removed the address {{target}}",
+      "domainCreate": "{{actor}} added the domain {{target}}",
+      "domainRemove": "{{actor}} removed the domain {{target}}",
+      "domainCatchAll": "{{actor}} changed the catch-all of {{target}}",
+      "other": "{{actor}}: {{action}} {{target}}"
+    },
+    "details": {
+      "adminOn": "is now an admin",
+      "adminOff": "is no longer an admin",
+      "disabledOn": "locked",
+      "disabledOff": "unlocked",
+      "quota": "storage limit {{value}}",
+      "name": "name “{{value}}”",
+      "invited": "with an invitation link",
+      "reasonTrash": "after 30 days in the trash"
+    }
+  },
+  "password": {
+    "inviteTitle": "Welcome, {{name}}!",
+    "resetTitle": "New password",
+    "inviteBody": "Choose your password for {{login}}.",
+    "resetBody": "Choose a new password for {{login}}.",
+    "password": "New password",
+    "repeat": "Repeat password",
+    "hint": "At least 10 characters. A sentence of a few words is easy to remember and hard to guess.",
+    "missing_one": "{{count}} more character",
+    "missing_other": "{{count}} more characters",
+    "mismatch": "The two passwords do not match.",
+    "submit": "Choose password",
+    "validUntil": "This link is valid until {{date}}.",
+    "invalid": {
+      "title": "This link is not valid anymore",
+      "body": "Links to choose a password work only once and for 7 days. Ask your admin for a new one.",
+      "login": "Go to login"
     }
   }
 }

@@ -28,5 +28,28 @@
       "title": "Hier ist nichts (・_・;)",
       "body": "Ich hab überall geschaut, sogar unterm Sofa."
     }
+  },
+  "people": {
+    "empty": {
+      "title": "Hier bist bisher nur du (˘ᵕ˘)",
+      "body": "Leg die Personen an, die hier einziehen sollen. Ich mach ihnen ein gemütliches Postfach."
+    },
+    "noResults": {
+      "title": "Niemand gefunden (・_・;)"
+    },
+    "invite": {
+      "title": "{{name}} kann einziehen!"
+    }
+  },
+  "log": {
+    "empty": {
+      "title": "Noch ganz ruhig hier (˘ᵕ˘)"
+    }
+  },
+  "password": {
+    "inviteTitle": "Hallo {{name}}, schön dass du da bist!",
+    "invalid": {
+      "title": "Dieser Link ist abgelaufen (・_・;)"
+    }
   }
 }

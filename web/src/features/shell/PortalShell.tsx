@@ -1,5 +1,16 @@
 import clsx from "clsx";
-import { ChevronsUpDown, LayoutDashboard, LogOut, Menu as MenuIcon, Palette, Server, UserRound, X } from "lucide-react";
+import {
+  ChevronsUpDown,
+  History,
+  LayoutDashboard,
+  LogOut,
+  Menu as MenuIcon,
+  Palette,
+  Server,
+  UserRound,
+  Users,
+  X,
+} from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { IconButton } from "@/components/ui/Button";
@@ -39,7 +50,8 @@ function NavSection({
         {title}
       </p>
       {items.map((item) => {
-        const active = path === item.to || path.startsWith(`${item.to}/`);
+        // The overview only lights up on its own page, sections also on their sub-pages.
+        const active = path === item.to || (item.to !== "/admin" && path.startsWith(`${item.to}/`));
         return (
           <Link
             key={item.to}
@@ -114,7 +126,11 @@ export function PortalShell({ session, children }: { session: Session; children:
             icon={Server}
             path={path}
             onNavigate={() => setDrawer(false)}
-            items={[{ to: "/admin", label: t("nav.overview"), icon: LayoutDashboard }]}
+            items={[
+              { to: "/admin", label: t("nav.overview"), icon: LayoutDashboard },
+              { to: "/admin/people", label: t("nav.people"), icon: Users },
+              { to: "/admin/log", label: t("nav.log"), icon: History },
+            ]}
           />
         )}
       </div>

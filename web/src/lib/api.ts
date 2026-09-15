@@ -82,3 +82,58 @@ export interface Overview {
   };
   server: { hostname: string; version: string; uptimeSeconds: number };
 }
+
+export type PersonStatus = "active" | "invited" | "disabled" | "deleted";
+
+export interface AddressInfo {
+  address: string;
+  kind: "primary" | "alias";
+  createdAt: number;
+}
+
+export interface Person {
+  login: string;
+  name: string;
+  role: Role;
+  status: PersonStatus;
+  quotaBytes: number;
+  usedBytes: number;
+  createdAt: number;
+  deletedAt: number | null;
+  purgeAt: number | null;
+  addresses: AddressInfo[];
+}
+
+/** A one-time link to choose a password; `path` is relative to the portal. */
+export interface PasswordLinkCreated {
+  path: string;
+  expiresAt: number;
+}
+
+export interface PasswordLinkInfo {
+  login: string;
+  name: string;
+  purpose: "invite" | "reset";
+  expiresAt: number;
+}
+
+export interface DomainSummary {
+  name: string;
+  catchAll: string | null;
+  createdAt: number;
+}
+
+export interface AuditRecord {
+  id: number;
+  at: number;
+  actor: string;
+  action: string;
+  target: string;
+  details: Record<string, unknown>;
+  ip: string;
+}
+
+/** Turns a link path from the API into a full URL for copying. */
+export function absoluteUrl(path: string): string {
+  return new URL(path, window.location.origin).href;
+}
