@@ -150,6 +150,12 @@ impl Store {
         self.write(move |tx| db::set_setting(tx, &key, &value)).await
     }
 
+    /// Returns whether the setting existed.
+    pub async fn delete_setting(&self, key: &str) -> Result<bool> {
+        let key = key.to_owned();
+        self.write(move |tx| db::delete_setting(tx, &key)).await
+    }
+
     async fn read<T, F>(&self, f: F) -> Result<T>
     where
         T: Send + 'static,

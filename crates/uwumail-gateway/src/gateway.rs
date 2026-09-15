@@ -373,7 +373,7 @@ async fn watch_pairing(shared: Arc<Shared>, tunnel_port: u16, mut shutdown: watc
                 {
                     match pairing_code(&shared.public_addresses, tunnel_port, &shared.identity, &token) {
                         Some(code) => tracing::warn!(
-                            "not paired yet: enter this pairing code in the setup assistant of your UwUMail server: {code}"
+                            "not paired yet: give this pairing code to your UwUMail server (gateway.code in its configuration): {code}"
                         ),
                         None => tracing::warn!(
                             "not paired yet, and no public address is known for the pairing code: set public_addresses"

@@ -12,6 +12,7 @@ use uwumail_store::Store;
 
 use crate::acme::{self, Challenges};
 use crate::config::{Config, TlsMode};
+use crate::gateway;
 use crate::http::{self, HttpState};
 use crate::tls::{self, CertStore};
 
@@ -116,19 +117,29 @@ pub async fn run(
     let challenges = Arc::new(Challenges::default());
     let state =
         HttpState { hostname: config.hostname.clone(), challenges: challenges.clone(), started: Instant::now() };
+    let redirect = http::redirect_app(state.clone());
+    let https_tls = tls::https_server_config(certs.clone())?;
+    let https = http::app(state.clone(), jmap.clone(), web.clone(), trusted_proxies.clone())
+        .layer(axum::middleware::from_fn_with_state(certs.clone(), http::strict_transport_security));
     if let Some(listener) = bind(&config.listen.http, "HTTP (certificate challenges, redirect to HTTPS)").await? {
-        tasks.spawn(http::serve(listener, None, http::redirect_app(state.clone()), shutdown_rx.clone()));
+        tasks.spawn(http::serve(listener, None, redirect.clone(), shutdown_rx.clone()));
     }
     if let Some(listener) = bind(&config.listen.https, "HTTPS").await? {
-        let tls = tls::https_server_config(certs.clone())?;
-        let app = http::app(state.clone(), jmap.clone(), web.clone(), trusted_proxies.clone())
-            .layer(axum::middleware::from_fn_with_state(certs.clone(), http::strict_transport_security));
-        tasks.spawn(http::serve(listener, Some(tls), app, shutdown_rx.clone()));
+        tasks.spawn(http::serve(listener, Some(https_tls.clone()), https.clone(), shutdown_rx.clone()));
     }
     if let Some(listener) = bind(&config.listen.proxy, "HTTP behind a reverse proxy").await? {
         let app = http::app(state.clone(), jmap.clone(), web.clone(), trusted_proxies.clone());
         tasks.spawn(http::serve(listener, None, app, shutdown_rx.clone()));
     }
+    // Connections that arrive through a UwUMail Gateway reach the same services.
+    let services = gateway::Services { smtp: smtp.clone(), https_tls, https, http: redirect };
+    tasks.spawn(gateway::run(
+        store.clone(),
+        config.gateway.clone(),
+        config.hostname.clone(),
+        services,
+        shutdown_rx.clone(),
+    ));
 
     match config.tls.mode {
         TlsMode::Acme => {

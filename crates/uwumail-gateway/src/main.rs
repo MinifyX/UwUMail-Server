@@ -31,7 +31,7 @@ struct Cli {
 enum Command {
     /// Run the gateway (the default).
     Serve,
-    /// Show the pairing code to enter on the UwUMail server.
+    /// Show the pairing code for the UwUMail server.
     Code,
     /// Forget the paired server so another one can pair. The running gateway disconnects it.
     Unpair,
@@ -104,7 +104,7 @@ fn show_code(config: &GatewayConfig) -> anyhow::Result<()> {
     let Some(code) = uwumail_gateway::pairing_code(&config.public_addresses(), port, &identity, &token) else {
         anyhow::bail!("found no public address for this gateway: set public_addresses in the configuration");
     };
-    println!("Enter this pairing code in the setup assistant of your UwUMail server:\n\n  {code}\n");
+    println!("Give this pairing code to your UwUMail server (gateway.code in its configuration):\n\n  {code}\n");
     Ok(())
 }
 

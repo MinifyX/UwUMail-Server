@@ -23,6 +23,7 @@ pub struct Config {
     pub smtp: SmtpConfig,
     pub delivery: DeliveryConfig,
     pub tone: ToneConfig,
+    pub gateway: GatewayConfig,
     pub log: LogConfig,
 }
 
@@ -37,9 +38,19 @@ impl Default for Config {
             smtp: SmtpConfig::default(),
             delivery: DeliveryConfig::default(),
             tone: ToneConfig::default(),
+            gateway: GatewayConfig::default(),
             log: LogConfig::default(),
         }
     }
+}
+
+/// A UwUMail Gateway in front of this server.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct GatewayConfig {
+    /// The pairing code from `uwumail-gateway code`. Used once; afterwards the pairing lives in the
+    /// database, so the code may stay here.
+    pub code: String,
 }
 
 /// Addresses to listen on. An empty string turns a listener off.
@@ -173,6 +184,10 @@ impl Config {
             && (self.tls.cert_file.as_os_str().is_empty() || self.tls.key_file.as_os_str().is_empty())
         {
             bail!("TLS mode `files` needs `tls.cert_file` and `tls.key_file`");
+        }
+        if !self.gateway.code.trim().is_empty() {
+            uwumail_tunnel::PairingCode::parse(&self.gateway.code)
+                .map_err(|err| anyhow::anyhow!("`gateway.code`: {err}"))?;
         }
         // Behind a reverse proxy the challenge arrives through the proxy listener instead of port 80.
         if self.tls.mode == TlsMode::Acme && self.listen.http.is_empty() && self.listen.proxy.is_empty() {

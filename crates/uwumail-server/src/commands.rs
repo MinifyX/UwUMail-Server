@@ -4,7 +4,7 @@ use anyhow::bail;
 use serde_json::{Value, json};
 use uwumail_store::{AccountUpdate, AuditEntry, NewAccount, PasswordLinkPurpose, Role, Store};
 
-use crate::cli::{AccountCommand, AliasCommand, DomainCommand, QueueCommand};
+use crate::cli::{AccountCommand, AliasCommand, DomainCommand, GatewayCommand, QueueCommand};
 use crate::config::Config;
 
 /// Password links from the command line work as long as those from the admin panel.
@@ -301,6 +301,40 @@ pub async fn queue(store: &Store, command: QueueCommand) -> anyhow::Result<()> {
         QueueCommand::Drop { id } => {
             store.delete_queue_message(id).await?;
             println!("Dropped message #{id}");
+        }
+    }
+    Ok(())
+}
+
+pub async fn gateway(config: &Config, store: &Store, command: GatewayCommand) -> anyhow::Result<()> {
+    let stored = match store.setting(crate::gateway::PAIRING_KEY).await? {
+        Some(raw) => Some(serde_json::from_str::<crate::gateway::StoredPairing>(&raw)?),
+        None => None,
+    };
+    match command {
+        GatewayCommand::Show => {
+            let Some(pairing) = stored else {
+                println!("No UwUMail Gateway: mail leaves from this machine.");
+                return Ok(());
+            };
+            let addresses = pairing.addresses.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
+            println!("UwUMail Gateway at {addresses}");
+            println!("  gateway certificate  {}", pairing.gateway);
+            println!("  this server's key    {}", pairing.identity.fingerprint());
+            let state = if pairing.confirmed { "paired" } else { "waiting for the gateway to accept the code" };
+            println!("  pairing              {state}");
+        }
+        GatewayCommand::Forget => {
+            if stored.is_none() {
+                println!("There is no gateway to forget.");
+                return Ok(());
+            }
+            store.delete_setting(crate::gateway::PAIRING_KEY).await?;
+            audit(store, "gateway.forget", "", json!({})).await;
+            println!("Forgot the gateway. Restart the server; mail then leaves from this machine again.");
+            if !config.gateway.code.trim().is_empty() {
+                println!("Also remove `gateway.code` from the configuration, or the server pairs again on start.");
+            }
         }
     }
     Ok(())

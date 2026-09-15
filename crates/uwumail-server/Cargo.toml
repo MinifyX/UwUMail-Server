@@ -15,6 +15,7 @@ path = "src/main.rs"
 uwumail-jmap.workspace = true
 uwumail-smtp.workspace = true
 uwumail-store.workspace = true
+uwumail-tunnel.workspace = true
 uwumail-web.workspace = true
 
 anyhow.workspace = true
@@ -37,4 +38,6 @@ tracing-subscriber.workspace = true
 x509-parser.workspace = true
 
 [dev-dependencies]
+uwumail-gateway.workspace = true
+
 tempfile.workspace = true

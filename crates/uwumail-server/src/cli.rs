@@ -33,6 +33,18 @@ pub enum Command {
     /// The outgoing mail queue.
     #[command(subcommand)]
     Queue(QueueCommand),
+    /// The UwUMail Gateway in front of this server.
+    #[command(subcommand)]
+    Gateway(GatewayCommand),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum GatewayCommand {
+    /// Show the pairing with the gateway.
+    Show,
+    /// Forget the gateway, so mail leaves from this machine again after a restart. Remove
+    /// `gateway.code` from the configuration too, or the server pairs again.
+    Forget,
 }
 
 #[derive(Debug, Subcommand)]

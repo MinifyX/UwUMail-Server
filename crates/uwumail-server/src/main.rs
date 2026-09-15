@@ -4,6 +4,7 @@ mod acme;
 mod cli;
 mod commands;
 mod config;
+mod gateway;
 mod http;
 mod serve;
 mod settings;
@@ -84,6 +85,7 @@ async fn run(
         Command::Account(command) => commands::account(&config, &store, command).await,
         Command::Alias(command) => commands::alias(&store, command).await,
         Command::Queue(command) => commands::queue(&store, command).await,
+        Command::Gateway(command) => commands::gateway(&config, &store, command).await,
         Command::Serve | Command::CheckConfig | Command::Health => unreachable!("handled above"),
     }
 }

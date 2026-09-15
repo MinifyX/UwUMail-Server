@@ -99,6 +99,10 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn delete_setting(conn: &Connection, key: &str) -> Result<bool> {
+    Ok(conn.execute("DELETE FROM settings WHERE key = ?1", [key])? > 0)
+}
+
 /// Increments and returns the account's change sequence number.
 pub fn next_modseq(conn: &Connection, account_id: i64) -> Result<i64> {
     conn.query_row("UPDATE accounts SET modseq = modseq + 1 WHERE id = ?1 RETURNING modseq", [account_id], |row| {

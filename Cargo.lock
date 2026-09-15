@@ -2892,9 +2892,11 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
+ "uwumail-gateway",
  "uwumail-jmap",
  "uwumail-smtp",
  "uwumail-store",
+ "uwumail-tunnel",
  "uwumail-web",
  "x509-parser",
 ]

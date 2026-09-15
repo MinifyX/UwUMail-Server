@@ -13,6 +13,7 @@ use axum::routing::get;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::service::TowerToHyperService;
 use serde_json::json;
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio_rustls::TlsAcceptor;
@@ -199,29 +200,34 @@ pub async fn serve(
                     tokio::time::sleep(Duration::from_millis(50)).await;
                     continue;
                 };
-                let (acceptor, app) = (acceptor.clone(), app.clone());
-                tokio::spawn(async move {
-                    let peer = Peer { addr, tls: acceptor.is_some() };
-                    let service = app.map_request(move |mut request: axum::http::Request<hyper::body::Incoming>| {
-                        request.extensions_mut().insert(peer);
-                        request
-                    });
-                    let service = TowerToHyperService::new(service);
-                    let builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
-                    match acceptor {
-                        Some(acceptor) => {
-                            let Ok(Ok(stream)) = tokio::time::timeout(Duration::from_secs(10), acceptor.accept(socket)).await else {
-                                return;
-                            };
-                            let _ = builder.serve_connection_with_upgrades(TokioIo::new(stream), service).await;
-                        }
-                        None => {
-                            let _ = builder.serve_connection_with_upgrades(TokioIo::new(socket), service).await;
-                        }
-                    }
-                });
+                tokio::spawn(serve_connection(socket, addr, acceptor.clone(), app.clone()));
             }
             _ = shutdown.changed() => break,
+        }
+    }
+}
+
+/// Serves one connection from `addr`, which arrived on a listener or through the UwUMail Gateway.
+pub async fn serve_connection<S>(stream: S, addr: SocketAddr, acceptor: Option<TlsAcceptor>, app: Router)
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    let peer = Peer { addr, tls: acceptor.is_some() };
+    let service = app.map_request(move |mut request: axum::http::Request<hyper::body::Incoming>| {
+        request.extensions_mut().insert(peer);
+        request
+    });
+    let service = TowerToHyperService::new(service);
+    let builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
+    match acceptor {
+        Some(acceptor) => {
+            let Ok(Ok(stream)) = tokio::time::timeout(Duration::from_secs(10), acceptor.accept(stream)).await else {
+                return;
+            };
+            let _ = builder.serve_connection_with_upgrades(TokioIo::new(stream), service).await;
+        }
+        None => {
+            let _ = builder.serve_connection_with_upgrades(TokioIo::new(stream), service).await;
         }
     }
 }
