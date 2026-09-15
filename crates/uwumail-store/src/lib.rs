@@ -14,6 +14,7 @@ mod blobs;
 mod db;
 mod directory;
 mod extras;
+mod forwarding;
 mod mail;
 mod mutate;
 mod objects;
@@ -38,6 +39,7 @@ pub use admin::{
 pub use blobs::BlobHash;
 pub use directory::{Account, DkimKey, DkimKeyAlgorithm, DkimKeyState, Domain, NewAccount, Role};
 pub use extras::{Identity, IdentityUpdate, SubmissionRecord, UPLOAD_LIFETIME_SECS, VacationResponse};
+pub use forwarding::{ActiveForwarding, FORWARD_LINK_LIFETIME_SECS, ForwardTarget, Forwarding, MAX_FORWARD_TARGETS};
 pub use mail::{EmailSummary, IngestRequest, IngestedEmail, Mailbox, MailboxRole, MailboxTarget};
 pub use mutate::{EmailUpdate, KeywordsChange, MailboxUpdate, MailboxesChange};
 pub use objects::{Changes, EmailRecord};

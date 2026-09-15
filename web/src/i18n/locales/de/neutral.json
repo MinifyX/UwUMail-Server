@@ -45,7 +45,8 @@
     "queue": "Warteschlange",
     "logs": "Logs",
     "settings": "Einstellungen",
-    "security": "Sicherheit"
+    "security": "Sicherheit",
+    "mail": "Weiterleitung"
   },
   "mode": {
     "label": "Ansicht",
@@ -201,7 +202,12 @@
       "tooManyAppPasswords": "Du hast schon sehr viele App-Passwörter. Widerrufe alte, die du nicht mehr brauchst.",
       "passkeyInvalid": "Der Passkey konnte nicht geprüft werden.",
       "passkeyExpired": "Das hat zu lange gedauert. Versuch es bitte noch einmal.",
-      "passkeyKnown": "Dieser Passkey ist schon eingetragen."
+      "passkeyKnown": "Dieser Passkey ist schon eingetragen.",
+      "forwardToSelf": "Das ist schon deine eigene Adresse.",
+      "forwardingBlocked": "Weiterleitung an andere Server ist hier nicht erlaubt.",
+      "tooManyForwardTargets": "Mehr Weiterleitungen gehen nicht. Entferne erst eine.",
+      "vacationDates": "Das Ende muss nach dem Anfang liegen.",
+      "vacationText": "Eine Abwesenheitsnotiz braucht einen Text."
     }
   },
   "people": {
@@ -334,6 +340,12 @@
       "resetTitle": "Zwei-Faktor-Anmeldung von {{login}} zurücksetzen?",
       "resetBody": "Authenticator-App, Passkeys und Wiederherstellungscodes werden entfernt. Die Person bekommt eine Hinweis-Mail. Tu das nur, wenn du sicher weißt, dass sie dich darum bittet.",
       "yours": "Deine Einstellungen unter Sicherheit"
+    },
+    "forwarding": {
+      "allowExternal": "Weiterleitung an andere Server erlauben",
+      "targets_one": "{{count}} Weiterleitung eingerichtet",
+      "targets_other": "{{count}} Weiterleitungen eingerichtet",
+      "none": "Keine Weiterleitung eingerichtet"
     }
   },
   "log": {
@@ -370,7 +382,8 @@
       "queueRetry": "{{actor}} hat Mail {{target}} erneut versucht",
       "queueDrop": "{{actor}} hat Mail {{target}} aus der Warteschlange gelöscht",
       "settingsUpdate": "{{actor}} hat Server-Einstellungen geändert",
-      "accountSecondFactorsReset": "{{actor}} hat die Zwei-Faktor-Anmeldung von {{target}} zurückgesetzt"
+      "accountSecondFactorsReset": "{{actor}} hat die Zwei-Faktor-Anmeldung von {{target}} zurückgesetzt",
+      "accountExternalForwarding": "{{actor}} hat die Weiterleitung nach außen für {{target}} geändert"
     },
     "details": {
       "adminOn": "ist jetzt Admin",
@@ -599,7 +612,9 @@
       "requireTls": "Nur verschlüsselt zustellen",
       "requireTlsHint": "Server ohne Verschlüsselung bekommen keine Mails. Sicherer, aber manche Empfänger sind dann nicht erreichbar.",
       "lifetime": "Aufgeben nach (Stunden)",
-      "lifetimeHint": "So lange versucht der Server es erneut, bevor der Absender eine Rückmeldung bekommt."
+      "lifetimeHint": "So lange versucht der Server es erneut, bevor der Absender eine Rückmeldung bekommt.",
+      "allowForwarding": "Weiterleitung an andere Server erlauben",
+      "allowForwardingHint": "Personen dürfen ihre Mails an Adressen anderswo weiterleiten, wenn die Adresse zustimmt. Weitergeleitete Mails bekommen einen umgeschriebenen Absender (SRS)."
     },
     "receiving": {
       "title": "Empfang",
@@ -875,7 +890,11 @@
       "sessionEnded": "Einen anderen Browser abgemeldet",
       "sessionsEnded_one": "{{count}} anderen Browser abgemeldet",
       "sessionsEnded_other": "{{count}} andere Browser abgemeldet",
-      "other": "Änderung an der Sicherheit"
+      "other": "Änderung an der Sicherheit",
+      "forwardingAdded": "Weiterleitung an {{address}} eingerichtet",
+      "forwardingRemoved": "Weiterleitung an {{address}} entfernt",
+      "forwardingConfirmed": "{{address}} hat die Weiterleitung bestätigt",
+      "forwardingDeclined": "{{address}} hat die Weiterleitung abgelehnt"
     },
     "loginMethods": {
       "password": "Passwort",
@@ -883,5 +902,54 @@
       "recoveryCode": "Passwort und Wiederherstellungscode",
       "passkey": "Passwort und Passkey"
     }
+  },
+  "mailbox": {
+    "title": "Weiterleitung und Abwesenheit",
+    "intro": "Wohin deine Mails noch gehen, und was Absender hören, wenn du nicht da bist.",
+    "forwarding": {
+      "title": "Weiterleitung",
+      "explain": "Mails an dich gehen zusätzlich an diese Adressen. Adressen auf anderen Servern bekommen erst eine Mail und müssen die Weiterleitung bestätigen.",
+      "onlyLocal": "Auf diesem Server darfst du nur an Personen auf demselben Server weiterleiten.",
+      "activeLocal": "Aktiv",
+      "active": "Bestätigt am {{date}}",
+      "pending": "Wartet auf Bestätigung durch die Adresse",
+      "remove": "Entfernen",
+      "full_one": "Mehr als {{count}} Weiterleitung geht nicht.",
+      "full_other": "Mehr als {{count}} Weiterleitungen gehen nicht.",
+      "address": "Weiterleiten an",
+      "add": "Hinzufügen",
+      "added": "Weiterleitung eingerichtet",
+      "pendingToast": "Bestätigungs-Mail an {{address}} verschickt",
+      "keepCopy": "Kopie in meinem Postfach behalten",
+      "keepCopyHint": "Aus: Weitergeleitete Mails landen nur noch bei den Adressen oben."
+    },
+    "vacation": {
+      "title": "Abwesenheitsnotiz",
+      "enabled": "Automatisch antworten",
+      "enabledHint": "Jeder Absender bekommt höchstens eine Antwort pro Woche. Newsletter und Maschinen bekommen keine.",
+      "from": "Ab",
+      "to": "Bis",
+      "optional": "Optional",
+      "subject": "Betreff",
+      "subjectPlaceholder": "Bin gerade nicht da",
+      "text": "Text",
+      "textPlaceholder": "Hallo, ich bin bis … nicht erreichbar und antworte danach.",
+      "save": "Speichern",
+      "savedOn": "Abwesenheitsnotiz ist an",
+      "savedOff": "Abwesenheitsnotiz gespeichert"
+    }
+  },
+  "forwardConfirm": {
+    "title": "Weiterleitung bestätigen",
+    "body": "{{from}} möchte Mails an {{address}} weiterleiten.",
+    "hint": "Ohne Bestätigung wird nichts weitergeleitet.",
+    "confirm": "Ja, Mails annehmen",
+    "decline": "Nein, das will ich nicht",
+    "confirmedTitle": "Weiterleitung bestätigt",
+    "confirmedBody": "Mails an {{from}} kommen ab jetzt auch bei {{address}} an.",
+    "declinedTitle": "Abgelehnt",
+    "declinedBody": "Du bekommst keine Mails von {{from}}. Die Weiterleitung wurde gelöscht.",
+    "invalidTitle": "Dieser Link gilt nicht mehr",
+    "invalidBody": "Er wurde schon benutzt oder ist älter als sieben Tage."
   }
 }

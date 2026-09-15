@@ -8,6 +8,8 @@ import { AdminHome } from "@/features/admin/AdminHome";
 import { DomainPage } from "@/features/domains/DomainPage";
 import { DomainsPage } from "@/features/domains/DomainsPage";
 import { LogPage } from "@/features/log/LogPage";
+import { ForwardConfirmPage } from "@/features/mailbox/ForwardConfirmPage";
+import { MailboxPage } from "@/features/mailbox/MailboxPage";
 import { LogsPage } from "@/features/logs/LogsPage";
 import { LoginPage } from "@/features/login/LoginPage";
 import { PasswordPage } from "@/features/password/PasswordPage";
@@ -43,6 +45,7 @@ function NotFound() {
 function page(path: string, session: Session): ReactNode {
   if (path === "/account") return <AccountHome session={session} />;
   if (path === "/account/security") return <SecurityPage session={session} />;
+  if (path === "/account/mail") return <MailboxPage />;
   if (session.account.role !== "admin") return <NotFound />;
   if (path === "/admin") return <AdminHome />;
   if (matchPath("/admin/people", path)) return <PeoplePage session={session} />;
@@ -73,9 +76,12 @@ function Routes() {
   const path = usePath();
   const session = useSession();
   const passwordLink = matchPath("/password/:token", path);
+  const forwardingLink = matchPath("/forwarding/:token", path);
 
   // Choosing a password works whether someone is logged in or not.
   if (passwordLink?.token) return <PasswordPage token={passwordLink.token} />;
+  // Whoever owns the forwarding address may have no account here at all.
+  if (forwardingLink?.token) return <ForwardConfirmPage token={forwardingLink.token} />;
   if (session.isPending) return <Loading fullPage />;
   if (session.isError) {
     return (

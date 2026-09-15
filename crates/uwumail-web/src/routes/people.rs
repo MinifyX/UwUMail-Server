@@ -58,6 +58,7 @@ pub async fn detail(State(web): State<Web>, _admin: Admin, Path(login): Path<Str
     let person = load(&web, &login).await?;
     let security = web.store().security_overview(person.account.id).await?;
     let app_passwords = web.store().app_passwords(person.account.id).await?.len();
+    let forwarding = web.store().forwarding(person.account.id).await?;
     let mut value = person_json(&person);
     value["security"] = json!({
         "secondFactor": security.second_factor,
@@ -65,6 +66,11 @@ pub async fn detail(State(web): State<Web>, _admin: Admin, Path(login): Path<Str
         "passkeys": security.passkeys,
         "appPasswords": app_passwords,
         "appPasswordsRequired": security.app_passwords_required(),
+    });
+    value["forwarding"] = json!({
+        "externalBlocked": forwarding.external_blocked,
+        "targets": forwarding.targets.len(),
+        "external": forwarding.targets.iter().filter(|target| !target.local).count(),
     });
     Ok(Json(value))
 }

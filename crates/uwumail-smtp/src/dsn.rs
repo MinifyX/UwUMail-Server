@@ -21,6 +21,15 @@ pub async fn bounce(ctx: &Context, return_path: &str, original: &[u8], failed: &
     if return_path.is_empty() || failed.is_empty() {
         return;
     }
+    // A forwarded message: the bounce belongs to the sender before the rewrite.
+    let unwrapped = match crate::srs::looks_like_srs(return_path) {
+        true => match crate::srs::secret(&ctx.store).await {
+            Some(secret) => crate::srs::reverse(&secret, return_path),
+            None => None,
+        },
+        false => None,
+    };
+    let return_path = unwrapped.as_deref().unwrap_or(return_path);
     let local_account = ctx.store.resolve_recipient(return_path).await.ok().flatten();
     let texts = texts::bounce(ctx.live().tone, local_account.is_some());
     let raw = match build(ctx, &texts, return_path, original, failed) {

@@ -130,6 +130,18 @@ export function useResetSecondFactors(login: string) {
   });
 }
 
+export function useSetExternalForwarding(login: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (blocked: boolean) =>
+      api<void>(`${personPath(login)}/external-forwarding`, { method: "PUT", body: { blocked } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "people", login] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
+    },
+  });
+}
+
 export function useSetPassword(login: string) {
   const updated = usePersonUpdated();
   return useMutation({

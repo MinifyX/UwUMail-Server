@@ -23,6 +23,8 @@ pub struct SmtpConfig {
     /// IP addresses or networks (CIDR) of mail servers that receive mail for us and forward it,
     /// like an existing mail server in front. Sender checks use the address those servers saw.
     pub trusted_relays: Vec<String>,
+    /// People may forward their mail to addresses on other servers (after the owner confirmed).
+    pub allow_external_forwarding: bool,
 }
 
 impl Default for SmtpConfig {
@@ -37,6 +39,7 @@ impl Default for SmtpConfig {
             enforce_dmarc_reject: true,
             reveal_client_ip: false,
             trusted_relays: Vec::new(),
+            allow_external_forwarding: true,
         }
     }
 }

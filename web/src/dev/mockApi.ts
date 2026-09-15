@@ -7,6 +7,7 @@
 
 import type {
   AppPasswordInfo,
+  ForwardingView,
   AuditRecord,
   Health,
   HealthArea,
@@ -22,6 +23,7 @@ import type {
   RecordCheck,
   SecurityView,
   Session,
+  VacationView,
 } from "@/lib/api";
 
 const now = Math.floor(Date.now() / 1000);
@@ -364,6 +366,7 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "smtp.require_tls_for_auth": { value: true, source: "default" },
   "smtp.reveal_client_ip": { value: false, source: "default" },
   "smtp.trusted_relays": { value: ["192.0.2.16"], source: "file" },
+  "smtp.allow_external_forwarding": { value: true, source: "default" },
 };
 
 const settingsView = () => ({
@@ -490,6 +493,29 @@ function fakeQr(size = 29) {
   }
   return { size, modules };
 }
+
+const mockForwarding: ForwardingView = {
+  keepCopy: true,
+  externalAllowed: true,
+  maxTargets: 5,
+  targets: [
+    {
+      id: 1,
+      address: "hallo@verein.example",
+      local: true,
+      createdAt: now - 20 * 86_400,
+      confirmedAt: now - 20 * 86_400,
+    },
+    { id: 2, address: "lorin@elsewhere.example", local: false, createdAt: now - 3600, confirmedAt: null },
+  ],
+};
+let mockVacation: VacationView = {
+  isEnabled: false,
+  fromDate: null,
+  toDate: null,
+  subject: "Bin im Urlaub",
+  textBody: "Hallo, ich bin bis Ende September unterwegs und antworte danach.",
+};
 
 let healthCheckedAt: number | null = null;
 
@@ -671,6 +697,67 @@ const routes: [string, RegExp, Handler][] = [
   ],
   ["POST", /^\/api\/auth\/passkey\/options$/, () => problem(409, "loginExpired")],
   ["GET", /^\/api\/account\/security$/, () => [200, mockSecurity]],
+  ["GET", /^\/api\/account\/forwarding$/, () => [200, mockForwarding]],
+  [
+    "POST",
+    /^\/api\/account\/forwarding\/targets$/,
+    (body) => {
+      const address = (body as { address: string }).address.trim().toLowerCase();
+      if (address === "lorin@uwu.example") return problem(409, "forwardToSelf");
+      if (mockForwarding.targets.some((target) => target.address === address)) return problem(409, "conflict");
+      const local = address.endsWith("@uwu.example") || address.endsWith("@verein.example");
+      const at = Math.floor(Date.now() / 1000);
+      mockForwarding.targets.push({
+        id: nextSecurityId++,
+        address,
+        local,
+        createdAt: at,
+        confirmedAt: local ? at : null,
+      });
+      securityEvent("forwardingAdded", { address });
+      return [201, mockForwarding];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/account\/forwarding\/targets\/(\d+)$/,
+    (_, [id]) => {
+      mockForwarding.targets = mockForwarding.targets.filter((target) => String(target.id) !== id);
+      return [200, mockForwarding];
+    },
+  ],
+  [
+    "PUT",
+    /^\/api\/account\/forwarding\/keep-copy$/,
+    (body) => {
+      mockForwarding.keepCopy = (body as { keep: boolean }).keep;
+      return [200, mockForwarding];
+    },
+  ],
+  ["GET", /^\/api\/account\/vacation$/, () => [200, mockVacation]],
+  [
+    "PUT",
+    /^\/api\/account\/vacation$/,
+    (body) => {
+      const next = body as VacationView;
+      if (next.isEnabled && !next.textBody?.trim()) return problem(409, "vacationText");
+      mockVacation = next;
+      return [200, mockVacation];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/forwarding-links\/([^/]+)$/,
+    (_, [token]) =>
+      token === "expired"
+        ? problem(409, "linkInvalid")
+        : [200, { address: "oma@elsewhere.example", from: "lorin@uwu.example", name: "Lorin" }],
+  ],
+  [
+    "POST",
+    /^\/api\/forwarding-links\/([^/]+)\/(confirm|decline)$/,
+    () => [200, { address: "oma@elsewhere.example", from: "lorin@uwu.example" }],
+  ],
   [
     "POST",
     /^\/api\/account\/password$/,
@@ -989,7 +1076,10 @@ const routes: [string, RegExp, Handler][] = [
         : found.login === "leni@uwu.example"
           ? { secondFactor: true, totp: true, passkeys: 1, appPasswords: 2, appPasswordsRequired: true }
           : { secondFactor: false, totp: false, passkeys: 0, appPasswords: 0, appPasswordsRequired: false };
-      return [200, { ...found, security }];
+      const forwarding = me
+        ? { externalBlocked: false, targets: mockForwarding.targets.length, external: 1 }
+        : { externalBlocked: found.login === "opa@verein.example", targets: 0, external: 0 };
+      return [200, { ...found, security, forwarding }];
     },
   ],
   [
@@ -1047,6 +1137,14 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["POST", /^\/api\/admin\/people\/([^/]+)\/password-link$/, () => [200, link()]],
+  [
+    "PUT",
+    /^\/api\/admin\/people\/([^/]+)\/external-forwarding$/,
+    (body, [login]) => {
+      log("account.externalForwarding", login ?? "", body as Record<string, unknown>);
+      return [204, null];
+    },
+  ],
   [
     "POST",
     /^\/api\/admin\/people\/([^/]+)\/reset-second-factors$/,

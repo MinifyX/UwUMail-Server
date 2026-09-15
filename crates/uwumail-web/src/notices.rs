@@ -24,6 +24,7 @@ pub enum Notice {
     AppPasswordCreated { name: String },
     AppsMayUseMainPassword,
     SecondFactorsReset,
+    ForwardingAdded { address: String },
 }
 
 impl Notice {
@@ -41,6 +42,7 @@ impl Notice {
             Notice::AppPasswordCreated { .. } => "appPasswordCreated",
             Notice::AppsMayUseMainPassword => "appsMayUseMainPassword",
             Notice::SecondFactorsReset => "secondFactorsReset",
+            Notice::ForwardingAdded { .. } => "forwardingAdded",
         }
     }
 
@@ -50,6 +52,7 @@ impl Notice {
                 serde_json::json!({ "name": name })
             }
             Notice::RecoveryCodeUsed { left } => serde_json::json!({ "left": left }),
+            Notice::ForwardingAdded { address } => serde_json::json!({ "address": address }),
             _ => Value::Object(Default::default()),
         }
     }
@@ -97,6 +100,10 @@ impl Notice {
                     "Mail-Apps dürfen das Hauptpasswort nutzen",
                     "Mail-Apps können sich wieder mit deinem Hauptpasswort anmelden, nicht nur mit App-Passwörtern.".into(),
                 ),
+                Notice::ForwardingAdded { address } => (
+                    "Neue Weiterleitung",
+                    format!("für dein Konto wurde eine Weiterleitung an {address} eingerichtet. Adressen auf anderen Servern müssen sie noch bestätigen."),
+                ),
                 Notice::SecondFactorsReset => (
                     "Zwei-Faktor-Anmeldung zurückgesetzt",
                     format!("{actor} hat die Zwei-Faktor-Anmeldung deines Kontos zurückgesetzt. Du meldest dich jetzt nur mit deinem Passwort an."),
@@ -138,6 +145,10 @@ impl Notice {
                 Notice::AppsMayUseMainPassword => (
                     "Mail apps may use the main password",
                     "mail apps can log in with your main password again, not only with app passwords.".into(),
+                ),
+                Notice::ForwardingAdded { address } => (
+                    "New forwarding",
+                    format!("forwarding to {address} was set up for your account. Addresses on other servers still have to confirm it."),
                 ),
                 Notice::SecondFactorsReset => (
                     "Two-factor login reset",

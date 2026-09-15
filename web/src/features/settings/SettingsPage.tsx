@@ -255,6 +255,7 @@ export function SettingsPage() {
           "delivery.relay.password",
           "delivery.require_tls",
           "delivery.max_lifetime_hours",
+          "smtp.allow_external_forwarding",
         ]}
       >
         {(form) => <DeliveryFields form={form} pro={pro} />}
@@ -472,6 +473,12 @@ function DeliveryFields({ form, pro }: { form: Form; pro: boolean }) {
         settingKey="delivery.require_tls"
         label={t("settings.delivery.requireTls")}
         hint={t("settings.delivery.requireTlsHint")}
+      />
+      <ToggleField
+        form={form}
+        settingKey="smtp.allow_external_forwarding"
+        label={t("settings.delivery.allowForwarding")}
+        hint={t("settings.delivery.allowForwardingHint")}
       />
       {pro && (
         <NumberField

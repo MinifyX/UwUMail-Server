@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import {
   ChevronsUpDown,
+  Forward,
   Globe,
   History,
   ScrollText,
@@ -127,6 +128,7 @@ export function PortalShell({ session, children }: { session: Session; children:
           onNavigate={() => setDrawer(false)}
           items={[
             { to: "/account", label: t("nav.overview"), icon: LayoutDashboard },
+            { to: "/account/mail", label: t("nav.mail"), icon: Forward },
             { to: "/account/security", label: t("nav.security"), icon: ShieldCheck },
           ]}
         />

@@ -152,6 +152,14 @@ impl Web {
             .route("/api/account/sessions/{id}", delete(routes::security::end_session))
             .route("/api/account/sessions/end-others", post(routes::security::end_other_sessions))
             .route("/api/account/passkeys/options", post(routes::security::passkey_options))
+            .route("/api/account/forwarding", get(routes::mailbox::forwarding))
+            .route("/api/account/forwarding/targets", post(routes::mailbox::add_target))
+            .route("/api/account/forwarding/targets/{id}", delete(routes::mailbox::remove_target))
+            .route("/api/account/forwarding/keep-copy", put(routes::mailbox::set_keep_copy))
+            .route("/api/account/vacation", get(routes::mailbox::vacation).put(routes::mailbox::set_vacation))
+            .route("/api/forwarding-links/{token}", get(routes::mailbox::show_link))
+            .route("/api/forwarding-links/{token}/confirm", post(routes::mailbox::confirm_link))
+            .route("/api/forwarding-links/{token}/decline", post(routes::mailbox::decline_link))
             .route("/api/account/passkeys", post(routes::security::add_passkey))
             .route("/api/account/passkeys/{id}", delete(routes::security::remove_passkey))
             .route("/api/password-links/{token}", get(routes::links::show).post(routes::links::choose))
@@ -181,6 +189,7 @@ impl Web {
             .route("/api/admin/people/{login}/password-link", post(routes::people::password_link))
             .route("/api/admin/people/{login}/password", put(routes::people::set_password))
             .route("/api/admin/people/{login}/reset-second-factors", post(routes::people::reset_second_factors))
+            .route("/api/admin/people/{login}/external-forwarding", put(routes::mailbox::set_external_forwarding))
             .route("/api/admin/people/{login}/aliases", post(routes::people::add_alias))
             .route("/api/admin/people/{login}/aliases/{address}", delete(routes::people::remove_alias))
             .route("/api", get(routes::not_found))
@@ -201,6 +210,7 @@ impl Web {
                 "/login",
                 "/setup",
                 "/password/{token}",
+                "/forwarding/{token}",
                 "/account",
                 "/account/{*rest}",
                 "/admin",

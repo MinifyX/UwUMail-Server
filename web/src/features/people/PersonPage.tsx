@@ -23,6 +23,7 @@ import {
   usePurgePerson,
   useRemoveAlias,
   useResetSecondFactors,
+  useSetExternalForwarding,
   useRestorePerson,
   useSetPassword,
   useTrashPerson,
@@ -227,6 +228,7 @@ function SecurityInfo({ person, isMe }: { person: Person; isMe: boolean }) {
   const { t } = useT();
   const errorText = useErrorText();
   const reset = useResetSecondFactors(person.login);
+  const externalForwarding = useSetExternalForwarding(person.login);
   const [asking, setAsking] = useState(false);
   const security = person.security;
   if (!security) return null;
@@ -260,6 +262,22 @@ function SecurityInfo({ person, isMe }: { person: Person; isMe: boolean }) {
             <Button icon={ShieldOff} onClick={() => setAsking(true)}>
               {t("people.security.reset")}
             </Button>
+          </div>
+        )}
+        {person.forwarding && (
+          <div className="flex flex-col gap-2 border-t border-hairline pt-3">
+            <Toggle
+              checked={!person.forwarding.externalBlocked}
+              onChange={(allowed) =>
+                externalForwarding.mutate(!allowed, { onError: (error) => toast(errorText(error), "error") })
+              }
+              label={t("people.forwarding.allowExternal")}
+              description={
+                person.forwarding.targets > 0
+                  ? t("people.forwarding.targets", { count: person.forwarding.targets })
+                  : t("people.forwarding.none")
+              }
+            />
           </div>
         )}
         {isMe && (

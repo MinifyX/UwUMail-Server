@@ -55,6 +55,7 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("smtp.require_tls_for_auth", SettingKind::Bool),
     spec("smtp.reveal_client_ip", SettingKind::Bool),
     spec("smtp.trusted_relays", SettingKind::List),
+    spec("smtp.allow_external_forwarding", SettingKind::Bool),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

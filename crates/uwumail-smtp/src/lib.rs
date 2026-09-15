@@ -12,12 +12,14 @@ pub mod dkim;
 mod dns;
 pub mod dnscheck;
 mod dsn;
+mod forward;
 mod headers;
 pub mod health;
 mod inbound;
 mod limiter;
 mod outbound;
 mod relay;
+mod srs;
 mod stream;
 mod submission;
 mod texts;
@@ -165,6 +167,11 @@ impl Smtp {
     /// Language and tone of mail the server writes itself, as currently set.
     pub fn tone(&self) -> ToneConfig {
         self.inner.live().tone
+    }
+
+    /// Whether people may forward mail to addresses on other servers.
+    pub fn allow_external_forwarding(&self) -> bool {
+        self.inner.live().smtp.allow_external_forwarding
     }
 
     /// The relay outgoing mail leaves through, if one is configured.

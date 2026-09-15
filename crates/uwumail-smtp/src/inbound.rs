@@ -14,14 +14,15 @@ use tokio::sync::watch;
 use tokio::time::timeout;
 use tokio_rustls::TlsAcceptor;
 use uwumail_store::{
-    Account, AppScope, IngestRequest, MailAuth, MailAuthDenied, MailboxRole, MailboxTarget, StoreError,
+    Account, AppScope, IngestRequest, MailAuth, MailAuthDenied, MailboxRole, MailboxTarget, NewQueueRecipient,
+    StoreError,
 };
 
 use crate::checks::{self, Action};
 use crate::dsn::{self, FailedRecipient};
 use crate::stream::Stream;
 use crate::submission::{Submission, SubmissionRecipient, SubmitError};
-use crate::{Smtp, headers, random_id, relay, vacation};
+use crate::{Smtp, forward, headers, random_id, relay, srs, vacation};
 
 const MAX_HOPS: usize = 50;
 const MAX_ERRORS: u32 = 10;
@@ -104,6 +105,8 @@ struct Envelope {
 struct Recipient {
     address: String,
     local_account: Option<i64>,
+    /// A bounce for a forwarded message, to pass on to this original sender.
+    srs_return: Option<String>,
     notify_flags: u64,
     orcpt: Option<String>,
 }
@@ -635,6 +638,41 @@ impl Session {
         };
         let address = format!("{local}@{domain}");
         let store = &ctx.store;
+        if !self.kind.is_submission()
+            && srs::looks_like_srs(&local)
+            && store.is_local_domain(&domain).await.unwrap_or(false)
+        {
+            let original = match srs::secret(store).await {
+                Some(secret) => srs::reverse(&secret, &address),
+                None => None,
+            };
+            let is_bounce = self.envelope.as_ref().is_some_and(|envelope| envelope.address.is_empty());
+            return match original {
+                // Rewritten senders of forwarded mail only take delivery notices.
+                Some(original) if is_bounce => {
+                    if !self.recipients.iter().any(|r| r.address == address) {
+                        self.recipients.push(Recipient {
+                            address,
+                            local_account: None,
+                            srs_return: Some(original),
+                            notify_flags: to.flags,
+                            orcpt: to.orcpt,
+                        });
+                    }
+                    self.reply("250 2.1.5 Recipient OK\r\n").await?;
+                    Ok(Next::Continue)
+                }
+                Some(_) => {
+                    self.error("550 5.7.1 This address only accepts delivery notices\r\n").await?;
+                    Ok(Next::Continue)
+                }
+                None => {
+                    let text = format!("550 5.1.1 <{address}>: No such mailbox here\r\n");
+                    self.error(&text).await?;
+                    Ok(Next::Continue)
+                }
+            };
+        }
         let local_account = match store.resolve_recipient(&address).await {
             Ok(found) => found,
             Err(err) => {
@@ -664,7 +702,13 @@ impl Session {
             return Ok(Next::Continue);
         }
         if !self.recipients.iter().any(|r| r.address == address) {
-            self.recipients.push(Recipient { address, local_account, notify_flags: to.flags, orcpt: to.orcpt });
+            self.recipients.push(Recipient {
+                address,
+                local_account,
+                srs_return: None,
+                notify_flags: to.flags,
+                orcpt: to.orcpt,
+            });
         }
         self.reply("250 2.1.5 Recipient OK\r\n").await?;
         Ok(Next::Continue)
@@ -756,12 +800,33 @@ impl Session {
         let mut failed: Vec<FailedRecipient> = Vec::new();
         let mut temporary = false;
         let mut seen_accounts = Vec::new();
+        let mut returned = Vec::new();
         for recipient in &recipients {
+            if let Some(original) = &recipient.srs_return {
+                returned.push(NewQueueRecipient { address: original.clone(), notify_flags: 0, orcpt: None });
+                continue;
+            }
             let Some(account_id) = recipient.local_account else { continue };
             if seen_accounts.contains(&account_id) {
                 continue;
             }
             seen_accounts.push(account_id);
+            // Suspicious mail is never forwarded; it stays in Junk.
+            let plan = if junk {
+                forward::Plan { keep_copy: true, targets: Vec::new() }
+            } else {
+                forward::plan(&ctx, account_id).await
+            };
+            if !plan.targets.is_empty()
+                && let Ok(Some(account)) = ctx.store.account_by_id(account_id).await
+            {
+                forward::send(&ctx, &account, &recipient.address, &envelope.address, &message, &plan.targets).await;
+            }
+            if !plan.keep_copy {
+                delivered += 1;
+                inbox_accounts.push(account_id);
+                continue;
+            }
             let mailboxes = vec![MailboxTarget::Role(if junk { MailboxRole::Junk } else { MailboxRole::Inbox })];
             let request =
                 IngestRequest { account_id, raw: message.clone(), mailboxes, keywords: vec![], received_at: None };
@@ -787,6 +852,17 @@ impl Session {
             }
         }
 
+        if !returned.is_empty() {
+            let lifetime = ctx.live().delivery.max_lifetime_hours as i64 * 3600;
+            let count = returned.len();
+            match ctx.store.enqueue("", returned, &message, None, None, lifetime).await {
+                Ok(_) => delivered += count,
+                Err(err) => {
+                    tracing::error!(%id, %err, "passing on a bounce for forwarded mail failed");
+                    temporary = true;
+                }
+            }
+        }
         tracing::info!(%id, from = %envelope.address, recipients = recipients.len(), delivered, junk, "received message");
         if delivered == 0 {
             return if temporary {

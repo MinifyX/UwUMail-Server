@@ -23,6 +23,7 @@ const KNOWN_ACTIONS = new Set([
   "accountPasswordSet",
   "accountPasswordChosen",
   "accountSecondFactorsReset",
+  "accountExternalForwarding",
   "aliasAdd",
   "aliasRemove",
   "domainCreate",

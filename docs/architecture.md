@@ -49,6 +49,12 @@ Design choices that matter later:
   lease, groups them by domain, resolves MX (or a relay / static route),
   delivers with opportunistic TLS, and records the outcome per recipient.
 - `dkim`: RSA-2048 and Ed25519 keys per domain; submitted mail is signed with both.
+- `forward` + `srs`: after local delivery, mail also goes to a person's confirmed
+  forwarding addresses. Mail to other servers gets an SRS envelope sender on
+  the person's domain (HMAC-SHA256, valid 21 days), so SPF passes there; DKIM
+  signatures stay intact. Suspicious mail (DMARC quarantine) is never
+  forwarded, and a `Delivered-To` header stops loops. Bounces to SRS addresses
+  are only accepted with an empty sender and go back to the original sender.
 - `dsn` + `texts`: bounces in German or English. Mail to our own people uses
   the internal tone (playful by default), mail to anyone else the external
   tone (neutral by default).

@@ -358,3 +358,60 @@ async fn vacation_replies_once_per_sender() {
     tokio::time::sleep(Duration::from_secs(2)).await;
     assert_eq!(b.inbox("mini@b.test").await.len(), 1, "only one reply per sender");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn forwarded_mail_uses_srs_and_bounces_find_the_original_sender() {
+    let sender = start("sender.test", &["news"], &[]).await;
+    // Nothing listens on port 9, so the forward to c.test waits in the queue where the test can see it.
+    let unreachable = SocketAddr::from(([127, 0, 0, 1], 9));
+    let a = start("a.test", &["mini", "leni"], &[("c.test", unreachable), ("sender.test", sender.mx)]).await;
+    for name in ["sender.test", "client.sender.test", "_dmarc.sender.test"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+    for name in ["a.test", "mx.a.test", "_dmarc.a.test", "c.test", "_dmarc.c.test"] {
+        sender.smtp.dns_cache().pin_no_txt(name);
+    }
+    let store = a.smtp.store();
+    let leni = store.account("leni@a.test").await.unwrap().unwrap();
+    let (_, token) = store.add_forward_target(leni.id, "oma@c.test", true).await.unwrap();
+    store.confirm_forward_link(&token.unwrap()).await.unwrap();
+
+    let mut session = RawSession::connect(a.mx).await;
+    assert!(session.command("EHLO client.sender.test").await.starts_with("250"));
+    assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+    assert!(session.command("RCPT TO:<leni@a.test>").await.starts_with("250"));
+    assert!(session.command("DATA").await.starts_with("354"));
+    let reply = session.command("From: news@sender.test\r\nSubject: Rabatt\r\n\r\nNur heute\r\n.").await;
+    assert!(reply.starts_with("250"), "{reply}");
+
+    assert_eq!(a.wait_for_inbox("leni@a.test", 1).await[0].subject, "Rabatt", "a copy stays by default");
+    let started = Instant::now();
+    let return_path = loop {
+        let entries = store.queue_entries().await.unwrap();
+        if let Some(entry) = entries.iter().find(|e| e.recipients.iter().any(|r| r.address == "oma@c.test")) {
+            break entry.message.return_path.clone();
+        }
+        assert!(started.elapsed() < Duration::from_secs(10), "the forward was not queued");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+    assert!(return_path.starts_with("SRS0=") && return_path.ends_with("=sender.test=news@a.test"), "{return_path}");
+
+    // The rewritten address takes delivery notices only, and only genuine ones.
+    let mut session = RawSession::connect(a.mx).await;
+    assert!(session.command("EHLO mx.c.test").await.starts_with("250"));
+    assert!(session.command("MAIL FROM:<spam@c.test>").await.starts_with("250"));
+    assert!(session.command(&format!("RCPT TO:<{return_path}>")).await.starts_with("550 5.7.1"));
+    assert!(session.command("RSET").await.starts_with("250"));
+    assert!(session.command("MAIL FROM:<>").await.starts_with("250"));
+    let forged = return_path.replacen("SRS0=", "SRS0=0", 1);
+    assert!(session.command(&format!("RCPT TO:<{forged}>")).await.starts_with("550 5.1.1"));
+    assert!(session.command(&format!("RCPT TO:<{return_path}>")).await.starts_with("250"));
+    assert!(session.command("DATA").await.starts_with("354"));
+    let reply = session
+        .command("From: MAILER-DAEMON@c.test\r\nSubject: Undelivered Mail Returned to Sender\r\n\r\nNo such user\r\n.")
+        .await;
+    assert!(reply.starts_with("250"), "{reply}");
+
+    let bounces = sender.wait_for_inbox("news@sender.test", 1).await;
+    assert_eq!(bounces[0].subject, "Undelivered Mail Returned to Sender");
+}

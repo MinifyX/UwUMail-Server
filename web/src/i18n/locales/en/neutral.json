@@ -45,7 +45,8 @@
     "queue": "Queue",
     "logs": "Logs",
     "settings": "Settings",
-    "security": "Security"
+    "security": "Security",
+    "mail": "Forwarding"
   },
   "mode": {
     "label": "View",
@@ -201,7 +202,12 @@
       "tooManyAppPasswords": "You already have a lot of app passwords. Revoke old ones you no longer need.",
       "passkeyInvalid": "The passkey could not be checked.",
       "passkeyExpired": "That took too long. Please try again.",
-      "passkeyKnown": "This passkey is already registered."
+      "passkeyKnown": "This passkey is already registered.",
+      "forwardToSelf": "That is already your own address.",
+      "forwardingBlocked": "Forwarding to other servers is not allowed here.",
+      "tooManyForwardTargets": "No more forwarding addresses. Remove one first.",
+      "vacationDates": "The end has to be after the start.",
+      "vacationText": "An away message needs a text."
     }
   },
   "people": {
@@ -334,6 +340,12 @@
       "resetTitle": "Reset the two-factor login of {{login}}?",
       "resetBody": "The authenticator app, passkeys and recovery codes are removed. The person gets a notice. Only do this when you know for sure they asked you to.",
       "yours": "Your settings under Security"
+    },
+    "forwarding": {
+      "allowExternal": "Allow forwarding to other servers",
+      "targets_one": "{{count}} forwarding address",
+      "targets_other": "{{count}} forwarding addresses",
+      "none": "No forwarding set up"
     }
   },
   "log": {
@@ -370,7 +382,8 @@
       "queueRetry": "{{actor}} retried message {{target}}",
       "queueDrop": "{{actor}} deleted message {{target}} from the queue",
       "settingsUpdate": "{{actor}} changed server settings",
-      "accountSecondFactorsReset": "{{actor}} reset the two-factor login of {{target}}"
+      "accountSecondFactorsReset": "{{actor}} reset the two-factor login of {{target}}",
+      "accountExternalForwarding": "{{actor}} changed forwarding to other servers for {{target}}"
     },
     "details": {
       "adminOn": "is now an admin",
@@ -599,7 +612,9 @@
       "requireTls": "Only deliver encrypted",
       "requireTlsHint": "Servers without encryption get no mail. Safer, but some recipients become unreachable.",
       "lifetime": "Give up after (hours)",
-      "lifetimeHint": "How long the server keeps retrying before the sender gets a notice."
+      "lifetimeHint": "How long the server keeps retrying before the sender gets a notice.",
+      "allowForwarding": "Allow forwarding to other servers",
+      "allowForwardingHint": "People may forward their mail to addresses elsewhere once the address agrees. Forwarded mail gets a rewritten sender (SRS)."
     },
     "receiving": {
       "title": "Receiving",
@@ -875,7 +890,11 @@
       "sessionEnded": "Logged out another browser",
       "sessionsEnded_one": "Logged out {{count}} other browser",
       "sessionsEnded_other": "Logged out {{count}} other browsers",
-      "other": "Security change"
+      "other": "Security change",
+      "forwardingAdded": "Forwarding to {{address}} set up",
+      "forwardingRemoved": "Forwarding to {{address}} removed",
+      "forwardingConfirmed": "{{address}} confirmed the forwarding",
+      "forwardingDeclined": "{{address}} declined the forwarding"
     },
     "loginMethods": {
       "password": "password",
@@ -883,5 +902,54 @@
       "recoveryCode": "password and recovery code",
       "passkey": "password and passkey"
     }
+  },
+  "mailbox": {
+    "title": "Forwarding and away",
+    "intro": "Where else your mail goes, and what senders hear while you are away.",
+    "forwarding": {
+      "title": "Forwarding",
+      "explain": "Mail to you also goes to these addresses. Addresses on other servers get a mail first and have to confirm the forwarding.",
+      "onlyLocal": "On this server you can only forward to people on the same server.",
+      "activeLocal": "Active",
+      "active": "Confirmed on {{date}}",
+      "pending": "Waiting for the address to confirm",
+      "remove": "Remove",
+      "full_one": "No more than {{count}} forwarding address.",
+      "full_other": "No more than {{count}} forwarding addresses.",
+      "address": "Forward to",
+      "add": "Add",
+      "added": "Forwarding set up",
+      "pendingToast": "Confirmation mail sent to {{address}}",
+      "keepCopy": "Keep a copy in my mailbox",
+      "keepCopyHint": "Off: forwarded mail only goes to the addresses above."
+    },
+    "vacation": {
+      "title": "Away message",
+      "enabled": "Reply automatically",
+      "enabledHint": "Each sender gets at most one reply a week. Newsletters and machines get none.",
+      "from": "From",
+      "to": "Until",
+      "optional": "Optional",
+      "subject": "Subject",
+      "subjectPlaceholder": "Away for now",
+      "text": "Text",
+      "textPlaceholder": "Hello, I'm away until … and will reply afterwards.",
+      "save": "Save",
+      "savedOn": "Away message is on",
+      "savedOff": "Away message saved"
+    }
+  },
+  "forwardConfirm": {
+    "title": "Confirm forwarding",
+    "body": "{{from}} would like to forward mail to {{address}}.",
+    "hint": "Nothing is forwarded without confirmation.",
+    "confirm": "Yes, accept the mail",
+    "decline": "No, I don't want this",
+    "confirmedTitle": "Forwarding confirmed",
+    "confirmedBody": "Mail to {{from}} now also arrives at {{address}}.",
+    "declinedTitle": "Declined",
+    "declinedBody": "You won't get mail from {{from}}. The forwarding was deleted.",
+    "invalidTitle": "This link no longer works",
+    "invalidBody": "It was used already or is older than seven days."
   }
 }

@@ -115,6 +115,10 @@ const KNOWN_EVENTS = [
   "secondFactorsReset",
   "sessionEnded",
   "sessionsEnded",
+  "forwardingAdded",
+  "forwardingRemoved",
+  "forwardingConfirmed",
+  "forwardingDeclined",
 ];
 
 export function useEventText() {
@@ -129,6 +133,7 @@ export function useEventText() {
       method: t(`security.loginMethods.${method}`),
       protocol: typeof details.protocol === "string" ? details.protocol.toUpperCase() : "",
       actor: event.actor,
+      address: typeof details.address === "string" ? details.address : "",
     });
   };
 }

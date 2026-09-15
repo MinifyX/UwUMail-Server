@@ -5,7 +5,7 @@ use mail_parser::MessageParser;
 use uwumail_store::{Account, IngestRequest, MailboxRole, MailboxTarget, NewQueueRecipient, StoreError};
 
 use crate::dsn::{self, FailedRecipient};
-use crate::{Smtp, dkim, headers, random_id, vacation};
+use crate::{Smtp, dkim, forward, headers, random_id, vacation};
 
 pub struct Submission {
     pub account: Account,
@@ -132,6 +132,16 @@ impl Smtp {
             let address = format!("{local}@{domain}");
             match ctx.store.resolve_recipient(&address).await.ok().flatten() {
                 Some(account_id) => {
+                    let plan = forward::plan(ctx, account_id).await;
+                    if !plan.targets.is_empty()
+                        && let Ok(Some(target)) = ctx.store.account_by_id(account_id).await
+                    {
+                        forward::send(ctx, &target, &address, &mail_from, &signed, &plan.targets).await;
+                    }
+                    if !plan.keep_copy {
+                        local_deliveries += 1;
+                        continue;
+                    }
                     let request = IngestRequest {
                         account_id,
                         raw: signed.clone(),

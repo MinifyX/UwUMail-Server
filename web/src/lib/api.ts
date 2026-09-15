@@ -127,6 +127,7 @@ export interface Person {
   addresses: AddressInfo[];
   /** Only in the detail view. */
   security?: PersonSecurity;
+  forwarding?: { externalBlocked: boolean; targets: number; external: number };
 }
 
 /** A one-time link to choose a password; `path` is relative to the portal. */
@@ -323,4 +324,33 @@ export interface PersonSecurity {
   passkeys: number;
   appPasswords: number;
   appPasswordsRequired: boolean;
+}
+
+export interface ForwardTargetInfo {
+  id: number;
+  address: string;
+  local: boolean;
+  createdAt: number;
+  confirmedAt: number | null;
+}
+
+export interface ForwardingView {
+  keepCopy: boolean;
+  externalAllowed: boolean;
+  targets: ForwardTargetInfo[];
+  maxTargets: number;
+}
+
+export interface VacationView {
+  isEnabled: boolean;
+  fromDate: number | null;
+  toDate: number | null;
+  subject: string | null;
+  textBody: string | null;
+}
+
+export interface ForwardLinkInfo {
+  address: string;
+  from: string;
+  name?: string;
 }
