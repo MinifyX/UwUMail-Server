@@ -22,7 +22,7 @@ pub async fn bounce(ctx: &Context, return_path: &str, original: &[u8], failed: &
         return;
     }
     let local_account = ctx.store.resolve_recipient(return_path).await.ok().flatten();
-    let texts = texts::bounce(ctx.tone, local_account.is_some());
+    let texts = texts::bounce(ctx.live().tone, local_account.is_some());
     let raw = match build(ctx, &texts, return_path, original, failed) {
         Ok(raw) => raw,
         Err(err) => {
@@ -44,7 +44,7 @@ pub async fn bounce(ctx: &Context, return_path: &str, original: &[u8], failed: &
             .map(|_| ()),
         None => {
             let recipient = NewQueueRecipient { address: return_path.to_owned(), notify_flags: 0, orcpt: None };
-            let lifetime = ctx.delivery.max_lifetime_hours as i64 * 3600;
+            let lifetime = ctx.live().delivery.max_lifetime_hours as i64 * 3600;
             ctx.store.enqueue("", vec![recipient], &raw, None, None, lifetime).await.map(|_| ())
         }
     };

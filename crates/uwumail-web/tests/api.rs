@@ -39,8 +39,10 @@ async fn setup() -> (Router, tempfile::TempDir) {
             .await
             .unwrap();
     }
-    let web =
-        Web::new(smtp(store), WebSettings { hostname: "mail.example.de".into(), started: Instant::now(), logs: None });
+    let web = Web::new(
+        smtp(store),
+        WebSettings { hostname: "mail.example.de".into(), started: Instant::now(), logs: None, config: None },
+    );
     (web.router(), dir)
 }
 

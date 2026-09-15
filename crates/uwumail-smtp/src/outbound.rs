@@ -150,16 +150,16 @@ async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, re
     }
 }
 
-enum Via<'a> {
+enum Via {
     Mx,
     Route,
-    Relay(&'a RelayConfig),
+    Relay(RelayConfig),
 }
 
-struct Target<'a> {
+struct Target {
     host: String,
     addrs: Vec<SocketAddr>,
-    via: Via<'a>,
+    via: Via,
 }
 
 async fn lookup(host: &str, port: u16) -> Vec<SocketAddr> {
@@ -172,8 +172,9 @@ async fn lookup(host: &str, port: u16) -> Vec<SocketAddr> {
     }
 }
 
-async fn resolve_targets<'a>(ctx: &'a Context, domain: &str) -> Result<Vec<Target<'a>>, Outcome> {
-    if let Some(route) = ctx.delivery.routes.get(domain) {
+async fn resolve_targets(ctx: &Context, domain: &str) -> Result<Vec<Target>, Outcome> {
+    let live = ctx.live();
+    if let Some(route) = live.delivery.routes.get(domain) {
         let (host, port) = route
             .rsplit_once(':')
             .and_then(|(host, port)| Some((host.trim_matches(['[', ']']).to_owned(), port.parse::<u16>().ok()?)))
@@ -181,9 +182,9 @@ async fn resolve_targets<'a>(ctx: &'a Context, domain: &str) -> Result<Vec<Targe
         let addrs = lookup(&host, port).await;
         return Ok(vec![Target { host, addrs, via: Via::Route }]);
     }
-    if let Some(relay) = &ctx.delivery.relay {
+    if let Some(relay) = &live.delivery.relay {
         let addrs = lookup(&relay.host, relay.port).await;
-        return Ok(vec![Target { host: relay.host.clone(), addrs, via: Via::Relay(relay) }]);
+        return Ok(vec![Target { host: relay.host.clone(), addrs, via: Via::Relay(relay.clone()) }]);
     }
 
     let auth = &ctx.authenticator;
@@ -217,7 +218,7 @@ async fn resolve_targets<'a>(ctx: &'a Context, domain: &str) -> Result<Vec<Targe
             .await
         {
             Ok(ips) => {
-                let addrs = ips.into_iter().map(|ip| SocketAddr::new(ip, ctx.delivery.mx_port)).collect();
+                let addrs = ips.into_iter().map(|ip| SocketAddr::new(ip, live.delivery.mx_port)).collect();
                 targets.push(Target { host, addrs, via: Via::Mx });
             }
             Err(mail_auth::Error::Dns(DnsError::RecordNotFound(_))) if implicit => {
@@ -259,16 +260,17 @@ async fn deliver_domain(
 /// One SMTP transaction. `Err` means nothing was accepted and another host may be tried.
 async fn session(
     ctx: &Context,
-    target: &Target<'_>,
+    target: &Target,
     addr: SocketAddr,
     message: &QueuedMessage,
     raw: &[u8],
     recipients: &[QueueRecipient],
 ) -> Result<Vec<Outcome>, String> {
-    let settings = &ctx.delivery;
+    let live = ctx.live();
+    let settings = &live.delivery;
     let io = |err: std::io::Error| err.to_string();
     let everyone = |outcome: Outcome| recipients.iter().map(|_| outcome.clone()).collect::<Vec<_>>();
-    let relay = match target.via {
+    let relay = match &target.via {
         Via::Relay(relay) => Some(relay),
         Via::Mx | Via::Route => None,
     };

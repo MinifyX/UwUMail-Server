@@ -34,7 +34,10 @@ async fn portal() -> (Router, Store, tempfile::TempDir) {
         server_tls: None,
     };
     let smtp = Smtp::new(store.clone(), settings).unwrap();
-    let web = Web::new(smtp, WebSettings { hostname: "mail.example.de".into(), started: Instant::now(), logs: None });
+    let web = Web::new(
+        smtp,
+        WebSettings { hostname: "mail.example.de".into(), started: Instant::now(), logs: None, config: None },
+    );
     (web.router(), store, dir)
 }
 

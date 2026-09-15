@@ -24,7 +24,7 @@ mod tls;
 mod vacation;
 
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use mail_auth::MessageAuthenticator;
 use tokio::sync::Semaphore;
@@ -63,18 +63,39 @@ pub struct Smtp {
 pub(crate) struct Context {
     pub store: Store,
     pub hostname: String,
-    pub smtp: SmtpConfig,
-    pub delivery: DeliveryConfig,
-    pub tone: ToneConfig,
+    /// Settings that can change while the server runs, e.g. from the admin panel.
+    live: RwLock<Arc<Live>>,
     pub server_tls: Option<Arc<rustls::ServerConfig>>,
     pub client_tls: tls::ClientTls,
     pub authenticator: MessageAuthenticator,
     pub dns: DnsCaches,
     pub auth_limiter: limiter::AuthLimiter,
-    pub trusted_relays: Vec<relay::IpNetwork>,
+    /// Sized at start; changing these limits takes a restart.
     pub connections: Arc<Semaphore>,
     pub delivery_permits: Arc<Semaphore>,
     pub inflight: Mutex<HashSet<i64>>,
+}
+
+/// The settings in effect right now. Take a snapshot per connection or delivery.
+pub(crate) struct Live {
+    pub smtp: SmtpConfig,
+    pub delivery: DeliveryConfig,
+    pub tone: ToneConfig,
+    pub trusted_relays: Vec<relay::IpNetwork>,
+}
+
+impl Live {
+    fn new(smtp: SmtpConfig, delivery: DeliveryConfig, tone: ToneConfig) -> Result<Live, SmtpError> {
+        let trusted_relays = relay::parse_networks(&smtp.trusted_relays)
+            .map_err(|err| SmtpError::Config(format!("smtp.trusted_relays: {err}")))?;
+        Ok(Live { smtp, delivery, tone, trusted_relays })
+    }
+}
+
+impl Context {
+    pub fn live(&self) -> Arc<Live> {
+        self.live.read().expect("settings poisoned").clone()
+    }
 }
 
 pub struct SmtpSettings {
@@ -95,26 +116,34 @@ impl Smtp {
             })
             .map_err(|err| SmtpError::Dns(err.to_string()))?;
         let SmtpSettings { hostname, smtp, delivery, tone, server_tls } = settings;
-        let trusted_relays = relay::parse_networks(&smtp.trusted_relays)
-            .map_err(|err| SmtpError::Config(format!("smtp.trusted_relays: {err}")))?;
         Ok(Smtp {
             inner: Arc::new(Context {
                 store,
                 hostname: hostname.to_ascii_lowercase(),
                 connections: Arc::new(Semaphore::new(smtp.max_connections.max(1))),
                 delivery_permits: Arc::new(Semaphore::new(delivery.concurrency.max(1))),
-                smtp,
-                delivery,
-                tone,
+                live: RwLock::new(Arc::new(Live::new(smtp, delivery, tone)?)),
                 server_tls,
                 client_tls: tls::ClientTls::new()?,
                 authenticator,
                 dns: DnsCaches::default(),
                 auth_limiter: limiter::AuthLimiter::default(),
-                trusted_relays,
                 inflight: Mutex::new(HashSet::new()),
             }),
         })
+    }
+
+    /// Switches to new settings at once: new connections and deliveries use them, running ones finish
+    /// with the old. Connection and delivery limits keep their size until a restart.
+    pub fn update_settings(
+        &self,
+        smtp: SmtpConfig,
+        delivery: DeliveryConfig,
+        tone: ToneConfig,
+    ) -> Result<(), SmtpError> {
+        let live = Live::new(smtp, delivery, tone)?;
+        *self.inner.live.write().expect("settings poisoned") = Arc::new(live);
+        Ok(())
     }
 
     pub fn store(&self) -> &Store {
@@ -131,13 +160,13 @@ impl Smtp {
     }
 
     /// The relay outgoing mail leaves through, if one is configured.
-    pub fn relay_host(&self) -> Option<&str> {
-        self.inner.delivery.relay.as_ref().map(|relay| relay.host.as_str())
+    pub fn relay_host(&self) -> Option<String> {
+        self.inner.live().delivery.relay.as_ref().map(|relay| relay.host.clone())
     }
 
     /// Whether another mail server receives mail first and hands it to us.
     pub fn behind_upstream_server(&self) -> bool {
-        !self.inner.trusted_relays.is_empty()
+        !self.inner.live().trusted_relays.is_empty()
     }
 }
 

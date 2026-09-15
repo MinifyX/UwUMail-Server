@@ -120,7 +120,7 @@ pub async fn maybe_reply(ctx: &Context, account_id: i64, envelope_from: &str, ra
         None => {
             // Auto-replies use the null sender so they can never bounce in a loop.
             let recipient = NewQueueRecipient { address: envelope_from.to_owned(), notify_flags: 0, orcpt: None };
-            let lifetime = ctx.delivery.max_lifetime_hours as i64 * 3600;
+            let lifetime = ctx.live().delivery.max_lifetime_hours as i64 * 3600;
             ctx.store.enqueue("", vec![recipient], &signed, Some(account_id), None, lifetime).await.map(|_| ())
         }
     };

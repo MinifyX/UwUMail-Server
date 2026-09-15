@@ -5,6 +5,7 @@ import {
   History,
   ScrollText,
   Send,
+  Settings,
   LayoutDashboard,
   LogOut,
   Menu as MenuIcon,
@@ -135,6 +136,7 @@ export function PortalShell({ session, children }: { session: Session; children:
               { to: "/admin/people", label: t("nav.people"), icon: Users },
               { to: "/admin/domains", label: t("nav.domains"), icon: Globe },
               { to: "/admin/queue", label: t("nav.queue"), icon: Send },
+              { to: "/admin/settings", label: t("nav.settings"), icon: Settings },
               { to: "/admin/log", label: t("nav.log"), icon: History },
               // The raw server log is for Pro mode.
               ...(pro ? [{ to: "/admin/logs", label: t("nav.logs"), icon: ScrollText }] : []),

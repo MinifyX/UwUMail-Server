@@ -32,7 +32,11 @@ async fn bind(address: &str, what: &str) -> anyhow::Result<Option<TcpListener>> 
     Ok(Some(listener))
 }
 
-pub async fn run(config: Config, logs: Arc<uwumail_web::LogBuffer>) -> anyhow::Result<()> {
+pub async fn run(
+    config: Config,
+    config_path: Option<std::path::PathBuf>,
+    logs: Arc<uwumail_web::LogBuffer>,
+) -> anyhow::Result<()> {
     config.validate()?;
     tracing::info!(version = env!("CARGO_PKG_VERSION"), hostname = %config.hostname, "UwUMail Server is waking up (=^･ω･^=)");
 
@@ -40,6 +44,19 @@ pub async fn run(config: Config, logs: Arc<uwumail_web::LogBuffer>) -> anyhow::R
     if store.domains().await?.is_empty() {
         tracing::warn!("no domains yet, add one with: uwumail-server domain add example.com");
     }
+    // Settings changed in the admin panel, underneath the config file and environment.
+    let overlay = store
+        .setting(uwumail_web::SETTINGS_OVERLAY_KEY)
+        .await?
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+        .unwrap_or_default();
+    let config = match Config::load_with_overlay(config_path.as_deref(), &overlay) {
+        Ok(merged) => merged,
+        Err(err) => {
+            tracing::warn!(error = %format!("{err:#}"), "ignoring the settings from the admin panel");
+            config
+        }
+    };
 
     let certs = Arc::new(CertStore::default());
     tls::load_initial(&config, &certs).await.context("loading the TLS certificate")?;
@@ -71,7 +88,12 @@ pub async fn run(config: Config, logs: Arc<uwumail_web::LogBuffer>) -> anyhow::R
     let jmap = uwumail_jmap::Jmap::new(smtp.clone()).router();
     let web = uwumail_web::Web::new(
         smtp.clone(),
-        uwumail_web::WebSettings { hostname: config.hostname.clone(), started: Instant::now(), logs: Some(logs) },
+        uwumail_web::WebSettings {
+            hostname: config.hostname.clone(),
+            started: Instant::now(),
+            logs: Some(logs),
+            config: Some(Arc::new(crate::settings::ServerSettings { path: config_path, smtp: smtp.clone() })),
+        },
     )
     .router();
     let trusted_proxies = Arc::new(

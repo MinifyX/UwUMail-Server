@@ -11,6 +11,7 @@ mod error;
 mod logs;
 mod routes;
 mod session;
+pub mod settings;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -24,6 +25,7 @@ use uwumail_store::Store;
 
 pub use error::{ApiError, ApiResult};
 pub use logs::{LogBuffer, LogLine};
+pub use routes::settings::OVERLAY_KEY as SETTINGS_OVERLAY_KEY;
 pub use session::{Admin, CSRF_HEADER, SESSION_LIFETIME_SECS, Session};
 
 pub struct WebSettings {
@@ -31,6 +33,8 @@ pub struct WebSettings {
     pub started: Instant,
     /// The newest server log lines, when the server keeps them.
     pub logs: Option<Arc<LogBuffer>>,
+    /// Changing server settings from the admin panel, when the server allows it.
+    pub config: Option<Arc<dyn settings::SettingsBackend>>,
 }
 
 #[derive(Clone)]
@@ -115,6 +119,7 @@ impl Web {
             .route("/api/admin/queue/{id}/retry", post(routes::queue::retry))
             .route("/api/admin/queue/{id}", delete(routes::queue::drop))
             .route("/api/admin/logs", get(routes::queue::logs))
+            .route("/api/admin/settings", get(routes::settings::show).patch(routes::settings::update))
             .route("/api/admin/people", get(routes::people::list).post(routes::people::create))
             .route(
                 "/api/admin/people/{login}",

@@ -182,8 +182,8 @@ impl Session {
         let greeting = format!("220 {} ESMTP UwUMail ready\r\n", self.smtp.inner.hostname);
         self.reply(&greeting).await?;
 
-        let idle = Duration::from_secs(self.smtp.inner.smtp.timeout_secs.max(10));
-        let max_size = self.smtp.inner.smtp.max_message_size;
+        let idle = Duration::from_secs(self.smtp.inner.live().smtp.timeout_secs.max(10));
+        let max_size = self.smtp.inner.live().smtp.max_message_size;
         let mut buf = vec![0u8; 16 * 1024];
         let mut state = State::Command(RequestReceiver::default());
 
@@ -399,7 +399,7 @@ impl Session {
     }
 
     fn auth_available(&self) -> bool {
-        self.kind.is_submission() && (self.is_tls() || !self.smtp.inner.smtp.require_tls_for_auth)
+        self.kind.is_submission() && (self.is_tls() || !self.smtp.inner.live().smtp.require_tls_for_auth)
     }
 
     async fn ehlo(&mut self, host: String, extended: bool) -> std::io::Result<Next> {
@@ -419,7 +419,7 @@ impl Session {
             "SMTPUTF8".into(),
             "ENHANCEDSTATUSCODES".into(),
             "CHUNKING".into(),
-            format!("SIZE {}", ctx.smtp.max_message_size),
+            format!("SIZE {}", ctx.live().smtp.max_message_size),
         ];
         if !self.is_tls() && ctx.server_tls.is_some() {
             lines.push("STARTTLS".into());
@@ -593,7 +593,7 @@ impl Session {
         }
         let smtp = self.smtp.clone();
         let ctx = &smtp.inner;
-        if from.size > ctx.smtp.max_message_size {
+        if from.size > ctx.live().smtp.max_message_size {
             self.error("552 5.3.4 Message too big\r\n").await?;
             return Ok(Next::Continue);
         }
@@ -619,7 +619,7 @@ impl Session {
         }
         let smtp = self.smtp.clone();
         let ctx = &smtp.inner;
-        if self.recipients.len() >= ctx.smtp.max_recipients {
+        if self.recipients.len() >= ctx.live().smtp.max_recipients {
             self.reply("452 4.5.3 Too many recipients\r\n").await?;
             return Ok(Next::Continue);
         }
@@ -684,7 +684,7 @@ impl Session {
 
     fn received_header(&self, id: &str, recipient: Option<&str>) -> String {
         let ctx = &self.smtp.inner;
-        let private = self.account.is_some() && !ctx.smtp.reveal_client_ip;
+        let private = self.account.is_some() && !ctx.live().smtp.reveal_client_ip;
         // The name a mail app announces often is the device name or a local IP, so it stays private too.
         let helo = if private { "localhost" } else { self.helo.as_deref().unwrap_or("unknown") };
         let tls = self.stream.as_ref().and_then(Stream::tls_description);
@@ -715,8 +715,9 @@ impl Session {
         let helo = self.helo.clone().unwrap_or_default();
 
         // Behind a trusted relay, check the server that talked to the relay.
-        let client = if ctx.trusted_relays.iter().any(|network| network.contains(self.peer)) {
-            let found = relay::original_client(&raw, &ctx.trusted_relays);
+        let live = ctx.live();
+        let client = if live.trusted_relays.iter().any(|network| network.contains(self.peer)) {
+            let found = relay::original_client(&raw, &live.trusted_relays);
             if found.is_none() {
                 tracing::warn!(%id, relay = %self.peer, "no readable Received header from the trusted relay, skipping sender checks");
             }
@@ -726,7 +727,7 @@ impl Session {
         };
 
         let verdict = match client {
-            Some((ip, helo)) if ctx.smtp.verify_senders => {
+            Some((ip, helo)) if ctx.live().smtp.verify_senders => {
                 Some(checks::verify(&ctx, ip, &helo, &envelope.address, &raw).await)
             }
             _ => None,

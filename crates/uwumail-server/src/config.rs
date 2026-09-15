@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, bail};
 use figment::Figment;
-use figment::providers::{Env, Format, Toml};
+use figment::providers::{Env, Format, Serialized, Toml};
 use serde::Deserialize;
 use uwumail_smtp::{DeliveryConfig, SmtpConfig, ToneConfig};
 
@@ -134,6 +134,24 @@ impl Default for LogConfig {
 
 impl Config {
     pub fn load(path: Option<&Path>) -> anyhow::Result<Config> {
+        Self::load_with_overlay(path, &serde_json::Value::Null)
+    }
+
+    /// Like [`Config::load`], with settings from the admin panel underneath: the file and the
+    /// environment still win.
+    pub fn load_with_overlay(path: Option<&Path>, overlay: &serde_json::Value) -> anyhow::Result<Config> {
+        let mut figment = Figment::new();
+        if overlay.is_object() {
+            figment = figment.merge(Serialized::defaults(overlay));
+        }
+        figment = figment.merge(Self::file_and_environment(path)?);
+        let mut config: Config = figment.extract().context("the configuration is invalid")?;
+        config.hostname = config.hostname.trim().trim_end_matches('.').to_ascii_lowercase();
+        Ok(config)
+    }
+
+    /// Only the config file and the `UWUMAIL_*` variables, to see which settings they fix.
+    pub fn file_and_environment(path: Option<&Path>) -> anyhow::Result<Figment> {
         let mut figment = Figment::new();
         if let Some(path) = path {
             if !path.exists() {
@@ -141,10 +159,7 @@ impl Config {
             }
             figment = figment.merge(Toml::file(path));
         }
-        figment = figment.merge(Env::prefixed("UWUMAIL_").split("__").ignore(&["config"]));
-        let mut config: Config = figment.extract().context("the configuration is invalid")?;
-        config.hostname = config.hostname.trim().trim_end_matches('.').to_ascii_lowercase();
-        Ok(config)
+        Ok(figment.merge(Env::prefixed("UWUMAIL_").split("__").ignore(&["config"])))
     }
 
     /// Checks what cannot be expressed in types.
@@ -188,6 +203,33 @@ mod tests {
         assert_eq!(config.delivery.routes["b.test"], "127.0.0.1:2525");
         assert_eq!(config.listen.smtp, "[::]:25");
         config.validate().unwrap();
+    }
+
+    #[test]
+    fn admin_panel_settings_sit_under_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("uwumail.toml");
+        std::fs::write(
+            &path,
+            "hostname = \"mail.example.de\"
+[tone]
+language = \"de\"
+",
+        )
+        .unwrap();
+        let overlay = serde_json::json!({
+            "tone": { "language": "en", "external": "light" },
+            "delivery": { "relay": { "host": "relay.example.net", "port": 465, "security": "tls" } },
+        });
+        let config = Config::load_with_overlay(Some(&path), &overlay).unwrap();
+        assert_eq!(config.tone.language, uwumail_smtp::Language::De, "the file wins");
+        assert_eq!(config.tone.external, uwumail_smtp::ExternalTone::Light);
+        let relay = config.delivery.relay.unwrap();
+        assert_eq!((relay.host.as_str(), relay.port), ("relay.example.net", 465));
+
+        let fixed = Config::file_and_environment(Some(&path)).unwrap();
+        assert!(fixed.contains("tone.language"));
+        assert!(!fixed.contains("tone.external"));
     }
 
     #[test]

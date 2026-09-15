@@ -43,7 +43,8 @@
     "log": "Change log",
     "domains": "Domains",
     "queue": "Queue",
-    "logs": "Logs"
+    "logs": "Logs",
+    "settings": "Settings"
   },
   "mode": {
     "label": "View",
@@ -188,7 +189,9 @@
       "keyActive": "This key signs mail right now and cannot be removed.",
       "noPendingKeys": "There are no new keys to switch to.",
       "keysNotPublished": "The DNS records of the new keys are not visible yet.",
-      "dnsUnavailable": "The server cannot look up DNS right now."
+      "dnsUnavailable": "The server cannot look up DNS right now.",
+      "settingLocked": "This setting is in the config file and cannot be changed here.",
+      "settingsInvalid": "The server cannot work like this: {{detail}}"
     }
   },
   "people": {
@@ -338,7 +341,8 @@
       "domainDkimActivate": "{{actor}} switched {{target}} to the new DKIM keys",
       "domainDkimRemove": "{{actor}} removed an old DKIM key of {{target}}",
       "queueRetry": "{{actor}} retried message {{target}}",
-      "queueDrop": "{{actor}} deleted message {{target}} from the queue"
+      "queueDrop": "{{actor}} deleted message {{target}} from the queue",
+      "settingsUpdate": "{{actor}} changed server settings"
     },
     "details": {
       "adminOn": "is now an admin",
@@ -518,5 +522,76 @@
     "resume": "Resume",
     "empty": "No matching lines.",
     "unavailable": "This server keeps no logs for the admin panel."
+  },
+  "settings": {
+    "title": "Settings",
+    "intro": "For the whole server. Changes take effect at once, without a restart.",
+    "fileNote": "Whatever {{file}} or UWUMAIL_* environment variables set takes precedence and is locked here.",
+    "envNote": "Whatever UWUMAIL_* environment variables set takes precedence and is locked here.",
+    "locked": "Set in the config file",
+    "save": "Save",
+    "saved": "Settings saved",
+    "unchanged": "No changes",
+    "tone": {
+      "title": "Mail from the server",
+      "intro": "Notices about undeliverable mail and automatic replies.",
+      "language": "Language",
+      "internal": "Tone for your own people",
+      "internalHint": "Mail to people on this server.",
+      "external": "Tone for everyone else",
+      "externalHint": "Mail to everyone else, e.g. when a message cannot be delivered.",
+      "options": {
+        "de": "Deutsch",
+        "en": "English",
+        "playful": "Playful",
+        "neutral": "Neutral",
+        "light": "A little playful"
+      }
+    },
+    "delivery": {
+      "title": "Sending",
+      "intro": "How mail leaves for other servers.",
+      "mode": "Route",
+      "direct": "Direct",
+      "relay": "Through a relay",
+      "directHint": "The server delivers to the recipients' mail servers itself. Port 25 must be open and the IP must have a good reputation.",
+      "relayHint": "Everything goes through another mail server, e.g. when your connection blocks port 25.",
+      "host": "Relay server",
+      "port": "Port",
+      "security": "Encryption",
+      "securityOptions": {
+        "starttls": "STARTTLS (usually port 587)",
+        "tls": "TLS (usually port 465)",
+        "none": "None (own network only)"
+      },
+      "username": "Username",
+      "password": "Password",
+      "passwordSet": "Saved. Leave empty to keep it.",
+      "passwordRemove": "Remove password",
+      "requireTls": "Only deliver encrypted",
+      "requireTlsHint": "Servers without encryption get no mail. Safer, but some recipients become unreachable.",
+      "lifetime": "Give up after (hours)",
+      "lifetimeHint": "How long the server keeps retrying before the sender gets a notice."
+    },
+    "receiving": {
+      "title": "Receiving",
+      "intro": "Limits and checks for incoming mail.",
+      "maxSize": "Largest message (MB)",
+      "maxRecipients": "Recipients per message",
+      "verifySenders": "Check senders (SPF, DKIM, DMARC)",
+      "verifySendersHint": "Only turn off for testing.",
+      "enforceDmarc": "Honor DMARC \"reject\"",
+      "enforceDmarcHint": "Mail that breaks the sender's policy is refused instead of going to spam.",
+      "trustedRelays": "Upstream mail servers",
+      "trustedRelaysHint": "IP addresses or networks, one per line. UwUMail does their sender checks."
+    },
+    "apps": {
+      "title": "Mail apps",
+      "intro": "Login and privacy when sending from apps.",
+      "requireTls": "Login only when encrypted",
+      "requireTlsHint": "Passwords never travel unencrypted.",
+      "revealIp": "Show the IP address in sent mail",
+      "revealIpHint": "By default UwUMail does not reveal where someone sent a message from."
+    }
   }
 }

@@ -168,7 +168,7 @@ impl Smtp {
         let remote_recipients = remote.len();
         let mut queue_message_id = None;
         if !remote.is_empty() {
-            let lifetime = ctx.delivery.max_lifetime_hours as i64 * 3600;
+            let lifetime = ctx.live().delivery.max_lifetime_hours as i64 * 3600;
             let queued = ctx
                 .store
                 .enqueue(&mail_from, remote, &signed, Some(account.id), env_id, lifetime)

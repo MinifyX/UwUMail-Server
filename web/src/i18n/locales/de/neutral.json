@@ -43,7 +43,8 @@
     "log": "Protokoll",
     "domains": "Domains",
     "queue": "Warteschlange",
-    "logs": "Logs"
+    "logs": "Logs",
+    "settings": "Einstellungen"
   },
   "mode": {
     "label": "Ansicht",
@@ -188,7 +189,9 @@
       "keyActive": "Dieser Schlüssel signiert gerade Mails und kann nicht entfernt werden.",
       "noPendingKeys": "Es gibt keine neuen Schlüssel zum Umstellen.",
       "keysNotPublished": "Die DNS-Einträge der neuen Schlüssel sind noch nicht zu sehen.",
-      "dnsUnavailable": "Der Server kann gerade kein DNS abfragen."
+      "dnsUnavailable": "Der Server kann gerade kein DNS abfragen.",
+      "settingLocked": "Diese Einstellung steht in der Konfigurationsdatei und kann hier nicht geändert werden.",
+      "settingsInvalid": "So kann der Server nicht arbeiten: {{detail}}"
     }
   },
   "people": {
@@ -338,7 +341,8 @@
       "domainDkimActivate": "{{actor}} hat {{target}} auf die neuen DKIM-Schlüssel umgestellt",
       "domainDkimRemove": "{{actor}} hat einen alten DKIM-Schlüssel von {{target}} entfernt",
       "queueRetry": "{{actor}} hat Mail {{target}} erneut versucht",
-      "queueDrop": "{{actor}} hat Mail {{target}} aus der Warteschlange gelöscht"
+      "queueDrop": "{{actor}} hat Mail {{target}} aus der Warteschlange gelöscht",
+      "settingsUpdate": "{{actor}} hat Server-Einstellungen geändert"
     },
     "details": {
       "adminOn": "ist jetzt Admin",
@@ -518,5 +522,76 @@
     "resume": "Weiter",
     "empty": "Keine passenden Zeilen.",
     "unavailable": "Dieser Server hält keine Logs für die Verwaltung bereit."
+  },
+  "settings": {
+    "title": "Einstellungen",
+    "intro": "Gilt für den ganzen Server. Änderungen wirken sofort, ohne Neustart.",
+    "fileNote": "Was in {{file}} oder in UWUMAIL_*-Umgebungsvariablen steht, hat Vorrang und ist hier gesperrt.",
+    "envNote": "Was in UWUMAIL_*-Umgebungsvariablen steht, hat Vorrang und ist hier gesperrt.",
+    "locked": "In der Konfigurationsdatei festgelegt",
+    "save": "Speichern",
+    "saved": "Einstellungen gespeichert",
+    "unchanged": "Keine Änderungen",
+    "tone": {
+      "title": "Mails vom Server",
+      "intro": "Rückmeldungen über nicht zustellbare Mails und automatische Antworten.",
+      "language": "Sprache",
+      "internal": "Ton für eigene Personen",
+      "internalHint": "Mails an Personen auf diesem Server.",
+      "external": "Ton nach außen",
+      "externalHint": "Mails an alle anderen, zum Beispiel wenn eine Mail nicht zugestellt werden kann.",
+      "options": {
+        "de": "Deutsch",
+        "en": "English",
+        "playful": "Verspielt",
+        "neutral": "Sachlich",
+        "light": "Leicht verspielt"
+      }
+    },
+    "delivery": {
+      "title": "Versand",
+      "intro": "Wie Mails an andere Server hinausgehen.",
+      "mode": "Versandweg",
+      "direct": "Direkt",
+      "relay": "Über einen Relay",
+      "directHint": "Der Server liefert selbst an die Mailserver der Empfänger. Dafür muss Port 25 nach außen offen sein und die IP einen guten Ruf haben.",
+      "relayHint": "Alles geht über einen anderen Mailserver, zum Beispiel wenn dein Anschluss Port 25 sperrt.",
+      "host": "Relay-Server",
+      "port": "Port",
+      "security": "Verschlüsselung",
+      "securityOptions": {
+        "starttls": "STARTTLS (meist Port 587)",
+        "tls": "TLS (meist Port 465)",
+        "none": "Keine (nur im eigenen Netz)"
+      },
+      "username": "Benutzername",
+      "password": "Passwort",
+      "passwordSet": "Gespeichert. Leer lassen, um es zu behalten.",
+      "passwordRemove": "Passwort entfernen",
+      "requireTls": "Nur verschlüsselt zustellen",
+      "requireTlsHint": "Server ohne Verschlüsselung bekommen keine Mails. Sicherer, aber manche Empfänger sind dann nicht erreichbar.",
+      "lifetime": "Aufgeben nach (Stunden)",
+      "lifetimeHint": "So lange versucht der Server es erneut, bevor der Absender eine Rückmeldung bekommt."
+    },
+    "receiving": {
+      "title": "Empfang",
+      "intro": "Grenzen und Prüfungen für eingehende Mails.",
+      "maxSize": "Größte Mail (MB)",
+      "maxRecipients": "Empfänger pro Mail",
+      "verifySenders": "Absender prüfen (SPF, DKIM, DMARC)",
+      "verifySendersHint": "Nur zum Testen ausschalten.",
+      "enforceDmarc": "DMARC „reject“ beachten",
+      "enforceDmarcHint": "Mails, die die Richtlinie des Absenders verletzen, werden abgelehnt statt in Spam gelegt.",
+      "trustedRelays": "Vorgeschaltete Mailserver",
+      "trustedRelaysHint": "IP-Adressen oder Netze, eine pro Zeile. Deren Absender-Prüfung übernimmt UwUMail."
+    },
+    "apps": {
+      "title": "Mail-Apps",
+      "intro": "Anmeldung und Datenschutz beim Senden aus Apps.",
+      "requireTls": "Anmeldung nur verschlüsselt",
+      "requireTlsHint": "Passwörter gehen nie unverschlüsselt über die Leitung.",
+      "revealIp": "IP-Adresse in gesendeten Mails zeigen",
+      "revealIpHint": "Standardmäßig verrät UwUMail nicht, von wo aus jemand eine Mail geschickt hat."
+    }
   }
 }

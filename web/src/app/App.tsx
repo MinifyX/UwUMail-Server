@@ -14,6 +14,7 @@ import { PasswordPage } from "@/features/password/PasswordPage";
 import { PeoplePage } from "@/features/people/PeoplePage";
 import { PersonPage } from "@/features/people/PersonPage";
 import { QueuePage } from "@/features/queue/QueuePage";
+import { SettingsPage } from "@/features/settings/SettingsPage";
 import { useSession } from "@/features/session/session";
 import { PortalShell } from "@/features/shell/PortalShell";
 import { useApplyLanguage, useT } from "@/i18n";
@@ -51,6 +52,7 @@ function page(path: string, session: Session): ReactNode {
   if (matchPath("/admin/queue", path)) return <QueuePage />;
   if (matchPath("/admin/log", path)) return <LogPage />;
   if (matchPath("/admin/logs", path)) return <LogsPage />;
+  if (matchPath("/admin/settings", path)) return <SettingsPage />;
   return <NotFound />;
 }
 

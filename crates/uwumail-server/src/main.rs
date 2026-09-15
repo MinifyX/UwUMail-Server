@@ -6,6 +6,7 @@ mod commands;
 mod config;
 mod http;
 mod serve;
+mod settings;
 mod tls;
 
 use std::sync::Arc;
@@ -32,7 +33,7 @@ async fn main() -> std::process::ExitCode {
     };
     let logs = init_logging(&config, matches!(cli.command, Command::Serve));
 
-    match run(cli.command, config, logs).await {
+    match run(cli.command, config, cli.config, logs).await {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("(╥﹏╥) {err:#}");
@@ -56,9 +57,14 @@ fn init_logging(config: &Config, serving: bool) -> Arc<LogBuffer> {
     logs
 }
 
-async fn run(command: Command, config: Config, logs: Arc<LogBuffer>) -> anyhow::Result<()> {
+async fn run(
+    command: Command,
+    config: Config,
+    config_path: Option<std::path::PathBuf>,
+    logs: Arc<LogBuffer>,
+) -> anyhow::Result<()> {
     if matches!(command, Command::Serve) {
-        return serve::run(config, logs).await;
+        return serve::run(config, config_path, logs).await;
     }
     if matches!(command, Command::CheckConfig) {
         config.validate()?;

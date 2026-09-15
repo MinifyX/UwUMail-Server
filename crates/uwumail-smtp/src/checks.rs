@@ -55,7 +55,7 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
     let dmarc_failed =
         matches!(dmarc.dkim_result(), DmarcResult::Fail(_)) && matches!(dmarc.spf_result(), DmarcResult::Fail(_));
     let action = match (dmarc_failed, dmarc.policy()) {
-        (true, Policy::Reject) if ctx.smtp.enforce_dmarc_reject => {
+        (true, Policy::Reject) if ctx.live().smtp.enforce_dmarc_reject => {
             Action::Reject(format!("the DMARC policy of {} rejects this message", dmarc.domain()))
         }
         (true, Policy::Reject | Policy::Quarantine) => Action::Quarantine,

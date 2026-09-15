@@ -32,6 +32,7 @@ const KNOWN_ACTIONS = new Set([
   "domainDkimRemove",
   "queueRetry",
   "queueDrop",
+  "settingsUpdate",
 ]);
 
 function actorName(actor: string, t: TFunction) {

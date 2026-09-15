@@ -147,11 +147,12 @@ pub async fn run_check(web: &Web, domain: &str) -> ApiResult<uwumail_smtp::dnsch
         return Err(ApiError::Rule("dnsUnavailable", "the server has no working DNS resolver".into()));
     };
     let keys = web.store().dkim_keys(domain).await?;
+    let relay_host = web.smtp().relay_host();
     let report = checker
         .check(DomainSetup {
             domain,
             hostname: &web.settings().hostname,
-            relay_host: web.smtp().relay_host(),
+            relay_host: relay_host.as_deref(),
             upstream_mx: web.smtp().behind_upstream_server(),
             dkim_keys: &keys,
         })

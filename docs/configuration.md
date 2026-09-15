@@ -7,6 +7,29 @@ except `hostname`.
 
 Check a configuration with `uwumail-server check-config`.
 
+## Settings in the admin panel
+
+Admins can change sending, receiving, mail-app and tone settings under
+*Einstellungen* / *Settings* in the web portal. The server checks them and
+applies them at once, without a restart. They are stored in the database
+(`config.overlay`), so they survive updates.
+
+The order, from weakest to strongest:
+
+1. built-in defaults
+2. settings from the admin panel
+3. the config file
+4. `UWUMAIL_*` environment variables
+
+Anything the config file or the environment sets is shown as locked in the
+panel. Remove it there to manage it from the panel instead. Listeners, TLS,
+the data directory and logging stay file-only because changing them needs a
+restart.
+
+The relay password is stored in the database like the rest (the portal never
+shows it again). If you would rather keep it out of the database, set
+`UWUMAIL_DELIVERY__RELAY__PASSWORD` in the environment.
+
 ```toml
 # Public name of the server. Used in SMTP greetings, MX records and the certificate.
 hostname = "mail.example.com"

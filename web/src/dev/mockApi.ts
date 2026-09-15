@@ -341,7 +341,68 @@ const LOG_SAMPLES: [string, string, [string, string][]][] = [
   ["error", "writing the change log failed", [["err", "database is locked"]]],
 ];
 
+const settings: Record<string, { value: unknown; source: "default" | "database" | "file"; set?: boolean }> = {
+  "tone.language": { value: "de", source: "file" },
+  "tone.internal": { value: "playful", source: "default" },
+  "tone.external": { value: "neutral", source: "default" },
+  "delivery.relay.host": { value: "relay.example.net", source: "database" },
+  "delivery.relay.port": { value: 587, source: "database" },
+  "delivery.relay.security": { value: "starttls", source: "database" },
+  "delivery.relay.username": { value: "uwumail", source: "database" },
+  "delivery.relay.password": { value: null, source: "database", set: true },
+  "delivery.require_tls": { value: false, source: "default" },
+  "delivery.max_lifetime_hours": { value: 120, source: "default" },
+  "smtp.max_message_size": { value: 52_428_800, source: "default" },
+  "smtp.max_recipients": { value: 100, source: "default" },
+  "smtp.verify_senders": { value: true, source: "default" },
+  "smtp.enforce_dmarc_reject": { value: true, source: "default" },
+  "smtp.require_tls_for_auth": { value: true, source: "default" },
+  "smtp.reveal_client_ip": { value: false, source: "default" },
+  "smtp.trusted_relays": { value: ["192.0.2.16"], source: "file" },
+};
+
+const settingsView = () => ({
+  settings: Object.entries(settings).map(([key, entry]) => ({
+    key,
+    value: entry.value,
+    set: entry.set ?? entry.value !== null,
+    source: entry.source,
+  })),
+  configFile: "/etc/uwumail/uwumail.toml",
+});
+
 const routes: [string, RegExp, Handler][] = [
+  ["GET", /^\/api\/admin\/settings$/, () => [200, settingsView()]],
+  [
+    "PATCH",
+    /^\/api\/admin\/settings$/,
+    (body) => {
+      const changes = (body as { changes: Record<string, unknown> }).changes;
+      for (const [key, value] of Object.entries(changes)) {
+        const entry = settings[key];
+        if (!entry) return problem(422, "invalid");
+        if (entry.source === "file") return problem(409, "settingLocked");
+        if (key.endsWith("password")) {
+          settings[key] = { value: null, source: value === null ? "default" : "database", set: value !== null };
+        } else {
+          settings[key] = { value, source: value === null ? "default" : "database" };
+        }
+      }
+      if (settings["delivery.relay.host"]?.value === null) {
+        for (const key of Object.keys(settings).filter((k) => k.startsWith("delivery.relay."))) {
+          settings[key] = { value: null, source: "default", set: false };
+        }
+      }
+      const logged = Object.fromEntries(
+        Object.entries(changes).map(([key, value]) => [
+          key,
+          key.endsWith("password") && value !== null ? "•••" : value,
+        ]),
+      );
+      log("settings.update", "", logged);
+      return [200, settingsView()];
+    },
+  ],
   ["GET", /^\/api\/admin\/queue$/, () => [200, queue]],
   [
     "POST",

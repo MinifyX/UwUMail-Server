@@ -208,3 +208,17 @@ export interface LogLine {
   message: string;
   fields: [string, string][];
 }
+
+export type SettingSource = "default" | "database" | "file";
+
+export interface SettingValue {
+  key: string;
+  value: unknown;
+  set: boolean;
+  source: SettingSource;
+}
+
+export interface SettingsView {
+  settings: SettingValue[];
+  configFile: string | null;
+}

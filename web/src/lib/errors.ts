@@ -18,6 +18,8 @@ const KNOWN = [
   "noPendingKeys",
   "keysNotPublished",
   "dnsUnavailable",
+  "settingLocked",
+  "settingsInvalid",
 ];
 
 /** Turns an API error into a sentence for the person in front of the screen. */

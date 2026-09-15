@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Receiving and submission.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SmtpConfig {
     /// Largest accepted message in bytes.
@@ -42,7 +42,7 @@ impl Default for SmtpConfig {
 }
 
 /// Delivery to other servers.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DeliveryConfig {
     /// Parallel outgoing deliveries.
@@ -76,7 +76,7 @@ impl Default for DeliveryConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RelayConfig {
     pub host: String,
@@ -94,7 +94,7 @@ impl RelayConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RelaySecurity {
     /// STARTTLS with a valid certificate.
@@ -106,7 +106,7 @@ pub enum RelaySecurity {
     None,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Language {
     #[default]
@@ -115,7 +115,7 @@ pub enum Language {
 }
 
 /// How mail to the server's own people sounds.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum InternalTone {
     #[default]
@@ -124,7 +124,7 @@ pub enum InternalTone {
 }
 
 /// How mail to everyone else sounds (bounces, later vacation replies).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ExternalTone {
     #[default]
@@ -133,7 +133,7 @@ pub enum ExternalTone {
     Light,
 }
 
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ToneConfig {
     pub language: Language,
