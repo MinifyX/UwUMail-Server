@@ -525,3 +525,41 @@ mod tests {
         assert!(matches!(store.blob(&email.blob).await, Err(StoreError::NotFound(_))));
     }
 }
+
+/// What happened to a test message: whether it arrived, and who answered it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestMessageStatus {
+    pub arrived: bool,
+    /// The sender of the first reply that referred to the test message.
+    pub reply_from: Option<String>,
+}
+
+impl Store {
+    /// Looks for a message by its Message-ID and for replies to it in an account.
+    pub async fn test_message_status(&self, account_id: i64, message_id: &str) -> Result<TestMessageStatus> {
+        let message_id = message_id.trim().trim_start_matches('<').trim_end_matches('>').to_owned();
+        self.read(move |conn| {
+            let arrived: bool = conn.query_row(
+                "SELECT EXISTS (SELECT 1 FROM emails WHERE account_id = ?1 AND message_id = ?2)",
+                rusqlite::params![account_id, message_id],
+                |row| row.get(0),
+            )?;
+            // in_reply_to is a JSON array of ids, so the quoted id matches a whole entry.
+            let quoted = serde_json::to_string(&message_id).unwrap_or_default();
+            let reply: Option<String> = conn
+                .query_row(
+                    "SELECT from_addr FROM emails WHERE account_id = ?1 AND instr(in_reply_to, ?2) > 0
+                     ORDER BY received_at LIMIT 1",
+                    rusqlite::params![account_id, quoted],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            let reply_from = reply.and_then(|json| {
+                serde_json::from_str::<Vec<crate::EmailAddress>>(&json).ok()?.into_iter().next().map(|a| a.email)
+            });
+            Ok(TestMessageStatus { arrived, reply_from })
+        })
+        .await
+    }
+}

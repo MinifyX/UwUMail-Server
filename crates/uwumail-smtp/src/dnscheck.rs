@@ -513,3 +513,130 @@ mod tests {
         assert_eq!((pending.status, pending.key_state), (CheckStatus::Missing, Some(DkimKeyState::Pending)));
     }
 }
+
+/// A blocklist that marks IP addresses known for sending spam.
+#[derive(Debug, Clone, Copy)]
+pub struct Blocklist {
+    pub name: &'static str,
+    pub zone: &'static str,
+    pub ipv6: bool,
+}
+
+pub const BLOCKLISTS: &[Blocklist] = &[
+    Blocklist { name: "Spamhaus ZEN", zone: "zen.spamhaus.org", ipv6: true },
+    Blocklist { name: "SpamCop", zone: "bl.spamcop.net", ipv6: false },
+    Blocklist { name: "Barracuda", zone: "b.barracudacentral.org", ipv6: false },
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ListingStatus {
+    Clean,
+    Listed,
+    /// The list did not answer usefully, e.g. because it refuses queries from this network.
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Listing {
+    pub list: &'static str,
+    pub status: ListingStatus,
+    /// The list's answer, e.g. `127.0.0.2`.
+    pub answer: Option<String>,
+}
+
+/// The name to look up for `ip` in a DNS blocklist: reversed octets (IPv4) or nibbles (IPv6).
+fn blocklist_name(ip: IpAddr, zone: &str) -> String {
+    match ip {
+        IpAddr::V4(v4) => {
+            let [a, b, c, d] = v4.octets();
+            format!("{d}.{c}.{b}.{a}.{zone}")
+        }
+        IpAddr::V6(v6) => {
+            let nibbles: Vec<String> =
+                v6.octets().iter().flat_map(|byte| [byte >> 4, byte & 0x0f]).rev().map(|n| format!("{n:x}")).collect();
+            format!("{}.{zone}", nibbles.join("."))
+        }
+    }
+}
+
+fn reverse_name(ip: IpAddr) -> String {
+    match ip {
+        IpAddr::V4(v4) => {
+            let [a, b, c, d] = v4.octets();
+            format!("{d}.{c}.{b}.{a}.in-addr.arpa")
+        }
+        IpAddr::V6(v6) => {
+            let nibbles: Vec<String> =
+                v6.octets().iter().flat_map(|byte| [byte >> 4, byte & 0x0f]).rev().map(|n| format!("{n:x}")).collect();
+            format!("{}.ip6.arpa", nibbles.join("."))
+        }
+    }
+}
+
+impl DnsChecker {
+    /// The addresses a host name points to, as the rest of the internet sees them.
+    pub async fn host_addresses(&self, host: &str) -> Vec<IpAddr> {
+        let (lookups, _) = self.lookups(host).await;
+        let (v4, v6) = lookups.addresses(host).await;
+        v4.into_iter().map(IpAddr::V4).chain(v6.into_iter().map(IpAddr::V6)).collect()
+    }
+
+    /// The names in the PTR records of an address.
+    pub async fn reverse_names(&self, ip: IpAddr) -> Result<Vec<String>, String> {
+        let name = reverse_name(ip);
+        let (lookups, _) = self.lookups(&name).await;
+        Ok(lookups
+            .records(&name, RecordType::PTR)
+            .await?
+            .into_iter()
+            .filter_map(|data| match data {
+                RData::PTR(ptr) => Some(ptr.0.to_ascii().trim_end_matches('.').to_ascii_lowercase()),
+                _ => None,
+            })
+            .collect())
+    }
+
+    /// Whether a blocklist lists `ip`. Answers outside 127.0.0.0/8, or 127.255.255.x (Spamhaus'
+    /// "you may not ask"), say nothing about the address.
+    pub async fn blocklist_status(&self, ip: IpAddr, list: &Blocklist) -> Listing {
+        let unknown = |answer: Option<String>| Listing { list: list.name, status: ListingStatus::Unknown, answer };
+        if ip.is_ipv6() && !list.ipv6 {
+            return unknown(None);
+        }
+        let name = blocklist_name(ip, list.zone);
+        let (lookups, _) = self.lookups(list.zone).await;
+        match lookups.records(&name, RecordType::A).await {
+            Ok(answers) => {
+                let addresses: Vec<Ipv4Addr> = answers
+                    .into_iter()
+                    .filter_map(|data| if let RData::A(a) = data { Some(a.0) } else { None })
+                    .collect();
+                match addresses.first() {
+                    None => Listing { list: list.name, status: ListingStatus::Clean, answer: None },
+                    Some(answer) if answer.octets()[0] == 127 && answer.octets()[1..3] != [255, 255] => {
+                        Listing { list: list.name, status: ListingStatus::Listed, answer: Some(answer.to_string()) }
+                    }
+                    Some(answer) => unknown(Some(answer.to_string())),
+                }
+            }
+            Err(error) => unknown(Some(error)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod lookup_name_tests {
+    use super::*;
+
+    #[test]
+    fn reversed_names_for_lists_and_ptr() {
+        let v4: IpAddr = "192.0.2.10".parse().unwrap();
+        assert_eq!(blocklist_name(v4, "zen.spamhaus.org"), "10.2.0.192.zen.spamhaus.org");
+        assert_eq!(reverse_name(v4), "10.2.0.192.in-addr.arpa");
+        let v6: IpAddr = "2001:db8::1".parse().unwrap();
+        assert!(reverse_name(v6).starts_with("1.0.0.0.0.0.0.0."));
+        assert!(reverse_name(v6).ends_with(".8.b.d.0.1.0.0.2.ip6.arpa"));
+    }
+}

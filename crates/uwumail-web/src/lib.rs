@@ -7,6 +7,7 @@
 //!   from `web/`, embedded into the binary at build time.
 
 mod assets;
+mod cloudflare;
 mod error;
 mod health;
 mod login;
@@ -61,6 +62,10 @@ struct Inner {
     /// Held while an admin-requested check runs, so clicks do not pile up.
     health_check: tokio::sync::Mutex<()>,
     login: login::LoginState,
+    /// The one-time code of the setup assistant while the server has no admin.
+    setup_code: Mutex<Option<String>>,
+    /// The latest run of the setup checks.
+    server_check: Mutex<Option<uwumail_smtp::servercheck::ServerCheck>>,
 }
 
 impl Web {
@@ -77,6 +82,8 @@ impl Web {
                 last_health_check: Mutex::default(),
                 health_check: tokio::sync::Mutex::default(),
                 login: login::LoginState::default(),
+                setup_code: Mutex::default(),
+                server_check: Mutex::default(),
             }),
         }
     }
@@ -137,6 +144,11 @@ impl Web {
             .route("/api/auth/login", post(routes::auth::login))
             .route("/api/auth/logout", post(routes::auth::logout))
             .route("/api/auth/second-factor", post(routes::auth::second_factor))
+            .route("/api/setup", get(routes::setup::status).post(routes::setup::complete))
+            .route("/api/setup/code", post(routes::setup::verify_code))
+            .route("/api/admin/setup/check", get(routes::setup::last_check).post(routes::setup::run_check))
+            .route("/api/admin/setup/test-mail", post(routes::setup::send_test_mail))
+            .route("/api/admin/setup/test-mail/{id}", get(routes::setup::test_mail_status))
             .route("/api/auth/passkey/options", post(routes::auth::passkey_options))
             .route("/api/auth/passkey", post(routes::auth::passkey_login))
             .route("/api/account", get(routes::account::profile))
@@ -176,6 +188,7 @@ impl Web {
             .route("/api/admin/domains/{name}/catch-all", put(routes::domains::set_catch_all))
             .route("/api/admin/domains/{name}/self-service", put(routes::own::set_domain_self_service))
             .route("/api/admin/domains/{name}/check", post(routes::domains::check))
+            .route("/api/admin/domains/{name}/dns/cloudflare", post(routes::domains::cloudflare))
             .route("/api/admin/domains/{name}/dkim/rotate", post(routes::domains::rotate_keys))
             .route("/api/admin/domains/{name}/dkim/activate", post(routes::domains::activate_keys))
             .route("/api/admin/domains/{name}/dkim/{selector}", delete(routes::domains::remove_key))

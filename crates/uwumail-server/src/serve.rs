@@ -41,9 +41,6 @@ pub async fn run(
     tracing::info!(version = env!("CARGO_PKG_VERSION"), hostname = %config.hostname, "UwUMail Server is waking up (=^･ω･^=)");
 
     let store = Store::open(&config.data_dir).await.context("opening the data directory")?;
-    if store.domains().await?.is_empty() {
-        tracing::warn!("no domains yet, add one with: uwumail-server domain add example.com");
-    }
     // Settings changed in the admin panel, underneath the config file and environment.
     let overlay = store
         .setting(uwumail_web::SETTINGS_OVERLAY_KEY)
@@ -108,6 +105,9 @@ pub async fn run(
         },
     );
     tasks.spawn(web.clone().run_health_checks(shutdown_rx.clone()));
+    if let Some(code) = web.open_setup().await {
+        tracing::warn!("no admin yet: open https://{}/setup and enter the one-time code {code}", config.hostname);
+    }
     let web = web.router();
     let trusted_proxies = Arc::new(
         uwumail_smtp::IpNetwork::parse_list(&config.http.trusted_proxies)

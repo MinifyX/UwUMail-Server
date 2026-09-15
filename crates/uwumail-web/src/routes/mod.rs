@@ -9,6 +9,7 @@ pub mod people;
 pub mod queue;
 pub mod security;
 pub mod settings;
+pub mod setup;
 
 use axum::extract::Path;
 use axum::response::{IntoResponse, Response};

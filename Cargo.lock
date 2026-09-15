@@ -2853,11 +2853,17 @@ version = "0.1.0"
 dependencies = [
  "aws-lc-rs",
  "axum",
+ "bytes",
  "data-encoding",
  "getrandom 0.4.3",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-util",
  "mail-builder",
  "qrcode",
  "rustix",
+ "rustls",
  "serde",
  "serde_json",
  "tempfile",
@@ -2868,6 +2874,7 @@ dependencies = [
  "uwumail-jmap",
  "uwumail-smtp",
  "uwumail-store",
+ "webpki-roots",
 ]
 
 [[package]]

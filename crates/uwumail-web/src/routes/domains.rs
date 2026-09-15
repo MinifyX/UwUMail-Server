@@ -224,3 +224,38 @@ pub async fn remove_key(
     web.forget_report(&domain.name);
     Ok(Json(detail_json(&web, &domain.name).await?))
 }
+
+#[derive(Deserialize)]
+pub struct CloudflareRequest {
+    token: String,
+    /// Kinds of wrong records to overwrite: mx, spf, dmarc, dkim.
+    #[serde(default)]
+    replace: Vec<String>,
+}
+
+/// Puts the missing records into Cloudflare with a token that is used once and forgotten.
+pub async fn cloudflare(
+    State(web): State<Web>,
+    Admin(session): Admin,
+    Path(name): Path<String>,
+    Json(request): Json<CloudflareRequest>,
+) -> ApiResult<Json<Value>> {
+    let domain = load(&web, &name).await?;
+    if request.token.trim().is_empty() {
+        return Err(ApiError::Invalid("a Cloudflare API token is needed".into()));
+    }
+    let report = run_check(&web, &domain.name).await?;
+    let wanted = crate::cloudflare::wanted_records(&report);
+    let results = crate::cloudflare::Cloudflare::new(&request.token)
+        .apply(&domain.name, &wanted, &request.replace)
+        .await
+        .map_err(|message| ApiError::Rule("cloudflareFailed", message))?;
+    let changed: Vec<String> = results
+        .iter()
+        .filter(|result| matches!(result.outcome, "created" | "updated"))
+        .map(|result| format!("{} {}", result.record_type, result.name))
+        .collect();
+    audit(&web, &session, "domain.cloudflare", &domain.name, json!({ "changed": changed })).await;
+    web.forget_report(&domain.name);
+    Ok(Json(json!({ "results": results })))
+}

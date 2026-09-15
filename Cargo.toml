@@ -29,7 +29,11 @@ hex = "0.4"
 # The same version mail-auth uses; "recursor" resolves from the root servers for DNS checks.
 hickory-resolver = { version = "0.26", default-features = false, features = ["tokio", "recursor"] }
 hyper = "1"
-hyper-util = { version = "0.1", features = ["tokio", "server-auto", "service"] }
+# HTTPS requests to DNS provider APIs (Cloudflare).
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "tls12", "aws-lc-rs"] }
+http-body-util = "0.1"
+bytes = "1"
+hyper-util = { version = "0.1", features = ["tokio", "server-auto", "service", "client-legacy", "http1"] }
 instant-acme = { version = "0.8", features = ["rcgen"] }
 mail-auth = "0.13"
 mail-builder = "1"
