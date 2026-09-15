@@ -109,6 +109,14 @@ pub async fn run(
     if let Some(code) = web.open_setup().await {
         tracing::warn!("no admin yet: open https://{}/setup and enter the one-time code {code}", config.hostname);
     }
+    let gateway = gateway::GatewayManager::new(
+        store.clone(),
+        smtp.clone(),
+        config.hostname.clone(),
+        &config.gateway,
+        shutdown_rx.clone(),
+    );
+    web.set_gateway(gateway.clone());
     let web = web.router();
     let trusted_proxies = Arc::new(
         uwumail_smtp::IpNetwork::parse_list(&config.http.trusted_proxies)
@@ -132,14 +140,7 @@ pub async fn run(
         tasks.spawn(http::serve(listener, None, app, shutdown_rx.clone()));
     }
     // Connections that arrive through a UwUMail Gateway reach the same services.
-    let services = gateway::Services { smtp: smtp.clone(), https_tls, https, http: redirect };
-    tasks.spawn(gateway::run(
-        store.clone(),
-        config.gateway.clone(),
-        config.hostname.clone(),
-        services,
-        shutdown_rx.clone(),
-    ));
+    gateway.start(gateway::Services { smtp: smtp.clone(), https_tls, https, http: redirect }, &config.gateway).await;
 
     match config.tls.mode {
         TlsMode::Acme => {

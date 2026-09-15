@@ -33,6 +33,8 @@ pub(crate) enum DeliveryEvent {
 pub enum Route {
     Direct,
     Relay,
+    /// Straight to other servers, but from the UwUMail Gateway.
+    Gateway,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -163,7 +165,7 @@ impl Smtp {
     pub fn delivery_summary(&self) -> DeliverySummary {
         let live = self.inner.live();
         let relay = live.delivery.relay.as_ref();
-        let route = if relay.is_some() { Route::Relay } else { Route::Direct };
+        let route = if relay.is_some() { Route::Relay } else { self.inner.direct_route() };
         self.inner.stats.summary(route, relay.map(|relay| relay.host.clone()))
     }
 
@@ -278,6 +280,7 @@ async fn probe_relay(ctx: &Context, relay: &RelayConfig) -> ProbeReport {
 }
 
 pub(crate) async fn probe_direct(ctx: &Context, port: u16) -> ProbeReport {
+    let route = ctx.direct_route();
     let auth = &ctx.authenticator;
     let host = match auth.mx_lookup(PROBE_DOMAIN, Some(&ctx.dns.mx)).await {
         Ok(records) => records
@@ -287,15 +290,14 @@ pub(crate) async fn probe_direct(ctx: &Context, port: u16) -> ProbeReport {
             .map(|host| host.trim_end_matches('.').to_owned())
             .find(|host| !host.is_empty()),
         Err(err) => {
-            return Probe { route: Route::Direct, target: format!("{PROBE_DOMAIN}:{port}") }
-                .failed(ProbeStage::Dns, err);
+            return Probe { route, target: format!("{PROBE_DOMAIN}:{port}") }.failed(ProbeStage::Dns, err);
         }
     };
     let Some(host) = host else {
-        return Probe { route: Route::Direct, target: format!("{PROBE_DOMAIN}:{port}") }
+        return Probe { route, target: format!("{PROBE_DOMAIN}:{port}") }
             .failed(ProbeStage::Dns, format!("{PROBE_DOMAIN} has no mail server"));
     };
-    let probe = Probe { route: Route::Direct, target: format!("{host}:{port}") };
+    let probe = Probe { route, target: format!("{host}:{port}") };
     let ips = match auth
         .ip_lookup(&host, IpLookupStrategy::Ipv4thenIpv6, 2, Some(&ctx.dns.ipv4), Some(&ctx.dns.ipv6))
         .await

@@ -16,6 +16,7 @@ use uwumail_store::QueueRecipientStatus;
 
 use crate::Web;
 use crate::error::ApiResult;
+use crate::gateway::{GatewayState, GatewayView};
 use crate::routes::domains::run_check;
 
 const MIB: u64 = 1024 * 1024;
@@ -26,6 +27,8 @@ const DNS_INTERVAL: i64 = 6 * HOUR;
 /// A relay is the admin's own server, so it is asked more often than a stranger's port 25.
 const RELAY_PROBE_INTERVAL: i64 = HOUR;
 const DIRECT_PROBE_INTERVAL: i64 = 6 * HOUR;
+/// How long the tunnel to the gateway may be down before the light turns red.
+const GATEWAY_GRACE: i64 = 300;
 
 pub(crate) fn unix_now() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or_default()
@@ -105,6 +108,9 @@ pub(crate) async fn health(web: &Web, viewer: &str) -> ApiResult<Health> {
     let mut areas = vec![dns_area(web).await?];
     if let Some(certificate) = &web.settings().certificate {
         areas.push(certificate_area(&web.settings().hostname, certificate(), now));
+    }
+    if let Some(area) = web.gateway().and_then(|gateway| gateway_area(&gateway.view(), now)) {
+        areas.push(area);
     }
     areas.push(delivery_area(web, now).await?);
     areas.push(storage_area(web).await?);
@@ -227,15 +233,18 @@ fn route_finding(summary: &DeliverySummary) -> Finding {
                 .link("/admin/settings");
             }
         }
-        Route::Direct => {
+        Route::Direct | Route::Gateway => {
+            let gateway = summary.route == Route::Gateway;
             if summary.unreachable_domains >= 3 {
                 let error = summary.last_trouble.as_ref().map(|trouble| trouble.error.clone());
                 let params = json!({ "count": summary.unreachable_domains, "error": error });
-                return Finding::new("outboundBlocked", Level::Problem, params).link("/admin/settings");
+                let code = if gateway { "gatewayOutboundBlocked" } else { "outboundBlocked" };
+                return Finding::new(code, Level::Problem, params).link("/admin/settings");
             }
             if let Some(probe) = failed_probe {
                 let (code, level) = match probe.stage {
                     Some(ProbeStage::Dns) => ("probeDns", Level::Warning),
+                    _ if gateway => ("gatewayPort25Blocked", Level::Problem),
                     _ => ("port25Blocked", Level::Problem),
                 };
                 let params = json!({ "target": probe.target, "error": probe.error, "at": probe.at });
@@ -249,7 +258,30 @@ fn route_finding(summary: &DeliverySummary) -> Finding {
         (_, None) => Finding::new("deliveryNotChecked", Level::Unknown, params),
         (Route::Relay, Some(_)) => Finding::new("relayOk", Level::Ok, params),
         (Route::Direct, Some(_)) => Finding::new("directOk", Level::Ok, params),
+        (Route::Gateway, Some(_)) => Finding::new("gatewayOk", Level::Ok, params),
     }
+}
+
+/// The tunnel to the UwUMail Gateway, when there is one.
+fn gateway_area(view: &GatewayView, now: i64) -> Option<Area> {
+    let params = json!({
+        "addresses": view.addresses,
+        "connectedSince": view.connected_since,
+        "downSince": view.down_since,
+        "error": view.error,
+        "refusal": view.refusal,
+    });
+    let finding = match view.state {
+        GatewayState::None => return None,
+        GatewayState::Connected => Finding::new("gatewayConnected", Level::Ok, params),
+        GatewayState::Refused => Finding::new("gatewayRefused", Level::Problem, params),
+        // Reconnecting after a new home address takes seconds; minutes mean something is wrong.
+        GatewayState::Connecting => {
+            let down_for = view.down_since.map_or(0, |since| now - since);
+            Finding::new("gatewayDown", if down_for > GATEWAY_GRACE { Level::Problem } else { Level::Warning }, params)
+        }
+    };
+    Some(Area::new("gateway", vec![finding.link("/admin/setup")]))
 }
 
 async fn delivery_area(web: &Web, now: i64) -> ApiResult<Area> {

@@ -162,7 +162,7 @@ impl Smtp {
             checked_at: now(),
             hostname,
             addresses,
-            route: if relay_host.is_some() { Route::Relay } else { Route::Direct },
+            route: if relay_host.is_some() { Route::Relay } else { ctx.direct_route() },
             relay_host,
             relay_addresses,
             outbound,

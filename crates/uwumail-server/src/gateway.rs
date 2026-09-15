@@ -4,8 +4,8 @@
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Context as _;
 use axum::Router;
@@ -18,6 +18,7 @@ use uwumail_tunnel::{
     ClientSettings, Fingerprint, Identity, Inbound, Open, PairingCode, Service, Status, Token, TunnelClient,
     TunnelStream,
 };
+use uwumail_web::gateway::{GatewayBackend, GatewayFuture, GatewayState, GatewayView};
 
 use crate::config::GatewayConfig;
 use crate::http;
@@ -40,6 +41,7 @@ pub struct StoredPairing {
 }
 
 /// What connections that arrive through the gateway are served with.
+#[derive(Clone)]
 pub struct Services {
     pub smtp: Smtp,
     pub https_tls: Arc<rustls::ServerConfig>,
@@ -95,66 +97,213 @@ fn through_gateway(address: SocketAddr) -> bool {
     uwumail_tunnel::net::is_global(address.ip())
 }
 
-/// Pairs from the configured code if there is a new one, then keeps the tunnel up until
-/// `shutdown`. Without a pairing it does nothing.
-pub async fn run(
-    store: Store,
-    config: GatewayConfig,
-    hostname: String,
-    services: Services,
-    mut shutdown: watch::Receiver<bool>,
-) {
-    let pairing = match prepare(&store, &config).await {
-        Ok(Some(pairing)) => pairing,
-        Ok(None) => return,
-        Err(err) => {
-            tracing::error!(error = %format!("{err:#}"), "the UwUMail Gateway pairing could not be used");
-            return;
-        }
-    };
-    let smtp = services.smtp.clone();
-    let settings = ClientSettings {
-        addresses: pairing.addresses.clone(),
-        gateway: pairing.gateway,
-        identity: pairing.identity.clone(),
-        hostname,
-        software: format!("uwumail-server {}", env!("CARGO_PKG_VERSION")),
-        token: if pairing.confirmed { None } else { Token::from_text(&pairing.token) },
-    };
-    let client = TunnelClient::start(settings, Arc::new(services), shutdown.clone());
-    // From now on mail to other servers only leaves through the gateway, also while it is away:
-    // it waits in the queue instead of going out from here.
-    smtp.set_connector(Some(Arc::new(ThroughGateway { client: client.clone() })));
-    tracing::info!(gateway = %pairing.gateway, "mail to other servers goes through the UwUMail Gateway");
+/// The tunnel in use.
+struct Current {
+    client: TunnelClient,
+    pairing: StoredPairing,
+    /// Since when the tunnel is down, while it is.
+    down_since: Arc<Mutex<Option<i64>>>,
+}
 
-    if pairing.confirmed {
-        return;
+/// Keeps the tunnel to the paired gateway up, and pairs or forgets while the server runs.
+pub struct GatewayManager {
+    store: Store,
+    smtp: Smtp,
+    hostname: String,
+    from_config: bool,
+    shutdown: watch::Receiver<bool>,
+    services: OnceLock<Services>,
+    current: Arc<Mutex<Option<Current>>>,
+}
+
+impl GatewayManager {
+    pub fn new(
+        store: Store,
+        smtp: Smtp,
+        hostname: String,
+        config: &GatewayConfig,
+        shutdown: watch::Receiver<bool>,
+    ) -> Arc<GatewayManager> {
+        Arc::new(GatewayManager {
+            store,
+            smtp,
+            hostname,
+            from_config: !config.code.trim().is_empty(),
+            shutdown,
+            services: OnceLock::new(),
+            current: Arc::default(),
+        })
     }
+
+    /// Connects with the stored pairing, or pairs with the configured code, once the services
+    /// for arriving connections exist.
+    pub async fn start(&self, services: Services, config: &GatewayConfig) {
+        let _ = self.services.set(services);
+        match prepare(&self.store, config).await {
+            Ok(Some(pairing)) => self.connect(pairing),
+            Ok(None) => {}
+            Err(err) => tracing::error!(error = %format!("{err:#}"), "the UwUMail Gateway pairing could not be used"),
+        }
+    }
+
+    fn connect(&self, pairing: StoredPairing) {
+        let Some(services) = self.services.get() else {
+            return;
+        };
+        let settings = ClientSettings {
+            addresses: pairing.addresses.clone(),
+            gateway: pairing.gateway,
+            identity: pairing.identity.clone(),
+            hostname: self.hostname.clone(),
+            software: format!("uwumail-server {}", env!("CARGO_PKG_VERSION")),
+            token: if pairing.confirmed { None } else { Token::from_text(&pairing.token) },
+        };
+        let client = TunnelClient::start(settings, Arc::new(services.clone()), self.shutdown.clone());
+        // From now on mail to other servers only leaves through the gateway, also while it is away:
+        // it waits in the queue instead of going out from here.
+        self.smtp.set_connector(Some(Arc::new(ThroughGateway { client: client.clone() })));
+        tracing::info!(gateway = %pairing.gateway, "mail to other servers goes through the UwUMail Gateway");
+
+        let down_since = Arc::new(Mutex::new(Some(unix_now())));
+        let current = Current { client: client.clone(), pairing: pairing.clone(), down_since: down_since.clone() };
+        if let Some(previous) = self.current.lock().expect("gateway poisoned").replace(current) {
+            previous.client.stop();
+        }
+        tokio::spawn(follow(self.store.clone(), self.current.clone(), client, pairing, down_since));
+    }
+
+    async fn pair_with(&self, code: &str) -> Result<(), String> {
+        let code = PairingCode::parse(code).map_err(|err| err.to_string())?;
+        if self.services.get().is_none() {
+            return Err("the server is still starting, try again in a moment".into());
+        }
+        // Keeping this server's key does no harm and lets a gateway that still knows it take it back.
+        let identity = match load(&self.store).await.map_err(|err| format!("{err:#}"))? {
+            Some(stored) => stored.identity,
+            None => Identity::generate().map_err(|err| err.to_string())?,
+        };
+        let pairing = StoredPairing {
+            addresses: code.addresses,
+            gateway: code.fingerprint,
+            identity,
+            token: code.token.to_text(),
+            confirmed: false,
+        };
+        save(&self.store, &pairing).await.map_err(|err| format!("{err:#}"))?;
+        tracing::info!(gateway = %pairing.gateway, "pairing with a UwUMail Gateway from the portal");
+        self.connect(pairing);
+        Ok(())
+    }
+
+    async fn forget_gateway(&self) -> Result<(), String> {
+        if let Some(previous) = self.current.lock().expect("gateway poisoned").take() {
+            previous.client.stop();
+        }
+        self.smtp.set_connector(None);
+        self.store.delete_setting(PAIRING_KEY).await.map_err(|err| err.to_string())?;
+        tracing::warn!("forgot the UwUMail Gateway: mail leaves from this server again");
+        Ok(())
+    }
+}
+
+impl GatewayBackend for GatewayManager {
+    fn view(&self) -> GatewayView {
+        let current = self.current.lock().expect("gateway poisoned");
+        let Some(current) = current.as_ref() else {
+            return GatewayView { from_config: self.from_config, ..GatewayView::default() };
+        };
+        let mut view = GatewayView {
+            state: GatewayState::Connecting,
+            tunnel: current.pairing.addresses.iter().map(ToString::to_string).collect(),
+            fingerprint: Some(current.pairing.gateway.to_string()),
+            down_since: *current.down_since.lock().expect("gateway poisoned"),
+            from_config: self.from_config,
+            ..GatewayView::default()
+        };
+        match current.client.status() {
+            Status::Connecting { error } => view.error = error,
+            Status::Connected { welcome, since, .. } => {
+                view.state = GatewayState::Connected;
+                view.addresses = welcome.addresses.iter().map(ToString::to_string).collect();
+                view.services = welcome.services.iter().map(|service| service.as_str().to_owned()).collect();
+                view.outbound_ports = welcome.outbound_ports;
+                view.software = Some(welcome.software);
+                view.connected_since = Some(since);
+                view.down_since = None;
+            }
+            Status::Refused { reason, message } => {
+                view.state = GatewayState::Refused;
+                view.refusal = serde_json::to_value(reason).ok().and_then(|value| value.as_str().map(str::to_owned));
+                view.error = Some(message);
+            }
+            Status::Stopped => {}
+        }
+        view
+    }
+
+    fn pair<'a>(&'a self, code: &'a str) -> GatewayFuture<'a> {
+        Box::pin(self.pair_with(code))
+    }
+
+    fn forget(&self) -> GatewayFuture<'_> {
+        Box::pin(self.forget_gateway())
+    }
+}
+
+/// Notes when the tunnel goes down and comes back, and confirms a new pairing once it is up.
+async fn follow(
+    store: Store,
+    current: Arc<Mutex<Option<Current>>>,
+    client: TunnelClient,
+    pairing: StoredPairing,
+    down_since: Arc<Mutex<Option<i64>>>,
+) {
     let mut status = client.subscribe();
+    let mut confirmed = pairing.confirmed;
     loop {
-        if matches!(*status.borrow_and_update(), Status::Connected { .. }) {
-            let confirmed = StoredPairing { confirmed: true, ..pairing };
-            if let Err(err) = save(&store, &confirmed).await {
+        let connected = match *status.borrow_and_update() {
+            Status::Stopped => return,
+            Status::Connected { .. } => true,
+            _ => false,
+        };
+        {
+            let mut down = down_since.lock().expect("gateway poisoned");
+            *down = if connected { None } else { down.or(Some(unix_now())) };
+        }
+        if connected && !confirmed {
+            confirmed = true;
+            // A pairing that was replaced in the meantime stays replaced.
+            let still_current = current
+                .lock()
+                .expect("gateway poisoned")
+                .as_ref()
+                .is_some_and(|now| now.pairing.token == pairing.token && now.pairing.gateway == pairing.gateway);
+            if still_current && let Err(err) = save(&store, &StoredPairing { confirmed: true, ..pairing.clone() }).await
+            {
                 tracing::error!(error = %format!("{err:#}"), "saving the gateway pairing failed");
             }
+        }
+        if status.changed().await.is_err() {
             return;
         }
-        tokio::select! {
-            changed = status.changed() => if changed.is_err() { return },
-            _ = shutdown.changed() => return,
-        }
+    }
+}
+
+fn unix_now() -> i64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or_default()
+}
+
+async fn load(store: &Store) -> anyhow::Result<Option<StoredPairing>> {
+    match store.setting(PAIRING_KEY).await? {
+        Some(raw) => Ok(Some(serde_json::from_str(&raw).context("the stored gateway pairing is damaged")?)),
+        None => Ok(None),
     }
 }
 
 /// The pairing to use: the stored one, or a new one when the configuration has a code that was
 /// not used yet.
 async fn prepare(store: &Store, config: &GatewayConfig) -> anyhow::Result<Option<StoredPairing>> {
-    let stored = match store.setting(PAIRING_KEY).await? {
-        Some(raw) => {
-            Some(serde_json::from_str::<StoredPairing>(&raw).context("the stored gateway pairing is damaged")?)
-        }
-        None => None,
-    };
+    let stored = load(store).await?;
     let code = config.code.trim();
     if code.is_empty() {
         return Ok(stored);
@@ -224,13 +373,10 @@ mod tests {
         assert_eq!(repaired.identity.fingerprint(), pairing.identity.fingerprint());
     }
 
-    /// A gateway with web ports, and this server's services behind it.
-    async fn web_behind_gateway(
-        dir: &std::path::Path,
-    ) -> (uwumail_gateway::Running, TunnelClient, Vec<u8>, watch::Sender<bool>) {
+    /// A gateway with web ports on this machine and its pairing code. Dropping the sender stops it.
+    async fn test_gateway(dir: &std::path::Path) -> (uwumail_gateway::Running, PairingCode, watch::Sender<bool>) {
         use uwumail_gateway::config::{ListenConfig, OutboundConfig};
 
-        // Dropping the sender would stop the gateway and the tunnel right away.
         let (running_until, never) = watch::channel(false);
         let config = uwumail_gateway::GatewayConfig {
             tunnel: "127.0.0.1:0".into(),
@@ -246,7 +392,7 @@ mod tests {
             outbound: OutboundConfig { ports: vec![25], allow_private: true },
             ..uwumail_gateway::GatewayConfig::default()
         };
-        let running = uwumail_gateway::start(config, never.clone()).await.unwrap();
+        let running = uwumail_gateway::start(config, never).await.unwrap();
         let state = uwumail_gateway::state::State::open(&dir.join("gateway")).unwrap();
         let token = loop {
             if let Some(token) = state.token().unwrap() {
@@ -254,8 +400,13 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         };
-        let gateway = state.identity().unwrap().unwrap().fingerprint();
+        let fingerprint = state.identity().unwrap().unwrap().fingerprint();
+        let code = PairingCode { addresses: vec![running.tunnel], fingerprint, token };
+        (running, code, running_until)
+    }
 
+    /// This server's services with a self-signed certificate for `localhost`.
+    async fn test_services(dir: &std::path::Path) -> (Services, Vec<u8>) {
         let store = Store::open(&dir.join("server")).await.unwrap();
         let smtp = Smtp::new(
             store,
@@ -296,21 +447,76 @@ mod tests {
             https: http::app(state.clone(), Router::new(), who, Arc::default()),
             http: http::redirect_app(state),
         };
+        (services, certificate.cert.der().to_vec())
+    }
+
+    /// A gateway with web ports, and this server's services behind it.
+    async fn web_behind_gateway(
+        dir: &std::path::Path,
+    ) -> (uwumail_gateway::Running, TunnelClient, Vec<u8>, watch::Sender<bool>) {
+        let (running, code, running_until) = test_gateway(dir).await;
+        let (services, certificate) = test_services(dir).await;
         let settings = ClientSettings {
-            addresses: vec![running.tunnel],
-            gateway,
+            addresses: code.addresses.clone(),
+            gateway: code.fingerprint,
             identity: Identity::generate().unwrap(),
             hostname: "mail.example.com".into(),
             software: "test".into(),
-            token: Some(token),
+            token: Some(code.token.clone()),
         };
-        let client = TunnelClient::start(settings, Arc::new(services), never);
+        let client = TunnelClient::start(settings, Arc::new(services), running_until.subscribe());
         let mut status = client.subscribe();
         tokio::time::timeout(Duration::from_secs(20), status.wait_for(|s| matches!(s, Status::Connected { .. })))
             .await
             .expect("the tunnel comes up")
             .unwrap();
-        (running, client, certificate.cert.der().to_vec(), running_until)
+        (running, client, certificate, running_until)
+    }
+
+    #[tokio::test]
+    async fn the_portal_pairs_and_forgets_a_gateway() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_gateway, code, running_until) = test_gateway(dir.path()).await;
+        let (services, _) = test_services(dir.path()).await;
+        let (store, smtp) = (services.smtp.store().clone(), services.smtp.clone());
+        let manager = GatewayManager::new(
+            store.clone(),
+            smtp.clone(),
+            "mail.example.com".into(),
+            &GatewayConfig::default(),
+            running_until.subscribe(),
+        );
+        manager.start(services, &GatewayConfig::default()).await;
+        assert_eq!(manager.view().state, GatewayState::None);
+        assert!(manager.pair("uwugw1broken").await.is_err());
+
+        manager.pair(&code.encode()).await.unwrap();
+        assert!(smtp.has_connector(), "mail goes through the gateway from the moment of pairing");
+        let started = std::time::Instant::now();
+        let view = loop {
+            let view = manager.view();
+            if view.state == GatewayState::Connected {
+                break view;
+            }
+            assert!(started.elapsed() < Duration::from_secs(20), "still {:?}", view.state);
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        };
+        assert_eq!(view.addresses, ["127.0.0.1"]);
+        assert!(view.down_since.is_none() && view.connected_since.is_some());
+        // Confirmed in the database, so a restart does not send the used token again.
+        let confirmed = loop {
+            if load(&store).await.unwrap().unwrap().confirmed {
+                break true;
+            }
+            assert!(started.elapsed() < Duration::from_secs(20));
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        };
+        assert!(confirmed);
+
+        manager.forget().await.unwrap();
+        assert_eq!(manager.view().state, GatewayState::None);
+        assert!(!smtp.has_connector(), "mail leaves from here again");
+        assert!(load(&store).await.unwrap().is_none());
     }
 
     async fn http_get<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(mut stream: S, path: &str) -> String {

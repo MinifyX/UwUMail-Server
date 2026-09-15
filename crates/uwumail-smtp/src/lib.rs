@@ -115,6 +115,11 @@ impl Context {
     pub fn connector(&self) -> Option<Arc<dyn Connector>> {
         self.connector.read().expect("connector poisoned").clone()
     }
+
+    /// The route of mail that does not go through a relay.
+    pub fn direct_route(&self) -> health::Route {
+        if self.connector().is_some() { health::Route::Gateway } else { health::Route::Direct }
+    }
 }
 
 pub struct SmtpSettings {

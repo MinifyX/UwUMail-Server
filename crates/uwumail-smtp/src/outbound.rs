@@ -283,7 +283,7 @@ async fn deliver_domain(
     }
     let route = match targets.first().map(|target| &target.via) {
         Some(Via::Relay(_)) => Route::Relay,
-        _ => Route::Direct,
+        _ => ctx.direct_route(),
     };
     ctx.stats.trouble(domain, route, ProbeStage::Connect, last_error.clone());
     everyone(Outcome::Deferred(last_error))

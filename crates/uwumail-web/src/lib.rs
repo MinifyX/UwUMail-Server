@@ -9,6 +9,7 @@
 mod assets;
 mod cloudflare;
 mod error;
+pub mod gateway;
 mod health;
 mod login;
 mod logs;
@@ -66,6 +67,8 @@ struct Inner {
     setup_code: Mutex<Option<String>>,
     /// The latest run of the setup checks.
     server_check: Mutex<Option<uwumail_smtp::servercheck::ServerCheck>>,
+    /// The UwUMail Gateway, once the server plugged it in.
+    gateway: std::sync::OnceLock<Arc<dyn gateway::GatewayBackend>>,
 }
 
 impl Web {
@@ -84,6 +87,7 @@ impl Web {
                 login: login::LoginState::default(),
                 setup_code: Mutex::default(),
                 server_check: Mutex::default(),
+                gateway: std::sync::OnceLock::new(),
             }),
         }
     }
@@ -125,6 +129,15 @@ impl Web {
         *self.inner.last_health_check.lock().expect("health check time poisoned") = Some(health::unix_now());
     }
 
+    /// Lets the portal show and pair the UwUMail Gateway. Only the first call counts.
+    pub fn set_gateway(&self, gateway: Arc<dyn gateway::GatewayBackend>) {
+        let _ = self.inner.gateway.set(gateway);
+    }
+
+    pub(crate) fn gateway(&self) -> Option<&Arc<dyn gateway::GatewayBackend>> {
+        self.inner.gateway.get()
+    }
+
     pub(crate) fn settings(&self) -> &WebSettings {
         &self.inner.settings
     }
@@ -147,6 +160,11 @@ impl Web {
             .route("/api/setup", get(routes::setup::status).post(routes::setup::complete))
             .route("/api/setup/code", post(routes::setup::verify_code))
             .route("/api/admin/setup/check", get(routes::setup::last_check).post(routes::setup::run_check))
+            .route("/api/admin/setup/reachability", post(routes::gateway::reachability))
+            .route(
+                "/api/admin/gateway",
+                get(routes::gateway::show).post(routes::gateway::pair).delete(routes::gateway::forget),
+            )
             .route("/api/admin/setup/test-mail", post(routes::setup::send_test_mail))
             .route("/api/admin/setup/test-mail/{id}", get(routes::setup::test_mail_status))
             .route("/api/auth/passkey/options", post(routes::auth::passkey_options))
