@@ -69,6 +69,11 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     tasks.spawn(uwumail_smtp::run_queue(smtp.clone(), shutdown_rx.clone()));
 
     let jmap = uwumail_jmap::Jmap::new(smtp.clone()).router();
+    let web = uwumail_web::Web::new(
+        store.clone(),
+        uwumail_web::WebSettings { hostname: config.hostname.clone(), started: Instant::now() },
+    )
+    .router();
     let trusted_proxies = Arc::new(
         uwumail_smtp::IpNetwork::parse_list(&config.http.trusted_proxies)
             .map_err(|err| anyhow::anyhow!("http.trusted_proxies: {err}"))?,
@@ -81,11 +86,11 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     }
     if let Some(listener) = bind(&config.listen.https, "HTTPS").await? {
         let tls = tls::https_server_config(certs.clone())?;
-        let app = http::app(state.clone(), jmap.clone(), trusted_proxies.clone());
+        let app = http::app(state.clone(), jmap.clone(), web.clone(), trusted_proxies.clone());
         tasks.spawn(http::serve(listener, Some(tls), app, shutdown_rx.clone()));
     }
     if let Some(listener) = bind(&config.listen.proxy, "HTTP behind a reverse proxy").await? {
-        let app = http::app(state.clone(), jmap.clone(), trusted_proxies.clone());
+        let app = http::app(state.clone(), jmap.clone(), web.clone(), trusted_proxies.clone());
         tasks.spawn(http::serve(listener, None, app, shutdown_rx.clone()));
     }
 

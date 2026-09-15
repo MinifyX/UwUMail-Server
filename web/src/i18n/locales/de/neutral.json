@@ -1,0 +1,162 @@
+{
+  "common": {
+    "close": "Schließen",
+    "loading": "Wird geladen",
+    "retry": "Erneut versuchen",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "unlimited": "unbegrenzt"
+  },
+  "login": {
+    "title": "Anmelden",
+    "subtitle": "Melde dich mit deiner Mail-Adresse und deinem Passwort an.",
+    "address": "Mail-Adresse",
+    "password": "Passwort",
+    "submit": "Anmelden",
+    "showPassword": "Passwort anzeigen",
+    "hidePassword": "Passwort verbergen",
+    "errors": {
+      "invalidCredentials": "Adresse oder Passwort ist falsch.",
+      "tooManyAttempts": "Zu viele Fehlversuche. Bitte warte ein paar Minuten.",
+      "offline": "Der Server ist gerade nicht erreichbar.",
+      "internal": "Auf dem Server ist etwas schiefgelaufen."
+    },
+    "setupRequired": "Dieser Server hat noch keine Verwaltung. Leg den ersten Admin auf dem Server mit der Kommandozeile an."
+  },
+  "nav": {
+    "label": "Hauptmenü",
+    "account": "Mein Konto",
+    "server": "Server",
+    "overview": "Übersicht",
+    "openMenu": "Menü öffnen",
+    "closeMenu": "Menü schließen"
+  },
+  "mode": {
+    "label": "Ansicht",
+    "simple": "Einfach",
+    "pro": "Profi"
+  },
+  "userMenu": {
+    "open": "Kontomenü öffnen",
+    "appearance": "Darstellung und Sprache",
+    "logout": "Abmelden",
+    "role": {
+      "admin": "Admin",
+      "user": "Mitglied"
+    }
+  },
+  "appearance": {
+    "title": "Darstellung und Sprache",
+    "mode": {
+      "label": "Ansicht",
+      "hint": "Einfach zeigt das Wichtigste mit Erklärungen, Profi zeigt alle Details kompakt."
+    },
+    "language": {
+      "label": "Sprache",
+      "system": "Wie der Browser",
+      "de": "Deutsch",
+      "en": "English"
+    },
+    "tone": {
+      "label": "Ton",
+      "playful": "Verspielt",
+      "neutral": "Sachlich",
+      "hint": "Ändert nur die Texte, nicht die Farben oder Bilder."
+    },
+    "theme": {
+      "label": "Farbschema",
+      "system": "Wie das System",
+      "light": "Hell",
+      "dark": "Dunkel"
+    },
+    "motion": {
+      "label": "Animationen",
+      "system": "Wie das System",
+      "on": "An",
+      "off": "Aus"
+    },
+    "saveFailed": "Die Einstellung konnte nicht gespeichert werden."
+  },
+  "account": {
+    "greeting": "Willkommen, {{name}}",
+    "intro": "Hier findest du alles zu deinem Postfach.",
+    "addresses": {
+      "title": "Deine Adressen",
+      "primary": "Hauptadresse",
+      "alias": "Zusätzliche Adresse"
+    },
+    "storage": {
+      "title": "Speicher",
+      "usedOf": "{{used}} von {{quota}} belegt",
+      "used": "{{used}} belegt, kein Limit"
+    },
+    "apps": {
+      "title": "Mail-Apps verbinden",
+      "intro": "Die UwUMail-App braucht nur die Server-Adresse. Andere Apps nutzen diese Angaben:",
+      "server": "Server",
+      "jmap": "JMAP",
+      "submission": "Senden (SMTP)",
+      "submissionValue": "{{hostname}}, Port 465 (TLS) oder 587 (STARTTLS)",
+      "username": "Benutzername",
+      "imapSoon": "IMAP kommt in einem späteren Update."
+    },
+    "details": {
+      "title": "Details",
+      "login": "Anmeldename",
+      "role": "Rolle",
+      "created": "Angelegt am"
+    }
+  },
+  "admin": {
+    "title": "Server",
+    "intro": "So geht es deinem Server.",
+    "cards": {
+      "accounts": "Personen",
+      "domains": "Domains",
+      "aliases": "Zusätzliche Adressen",
+      "queue": "Warteschlange",
+      "storage": "Belegter Speicher",
+      "admins": "Admins"
+    },
+    "accountsDisabled_one": "davon {{count}} gesperrt",
+    "accountsDisabled_other": "davon {{count}} gesperrt",
+    "queueEmpty": "Keine Mail wartet auf den Versand.",
+    "queueWaiting_one": "{{count}} Mail wird gerade versendet.",
+    "queueWaiting_other": "{{count}} Mails werden gerade versendet.",
+    "queueDeferred_one": "{{count}} Empfänger wartet auf einen neuen Versuch.",
+    "queueDeferred_other": "{{count}} Empfänger warten auf einen neuen Versuch.",
+    "server": {
+      "title": "Server",
+      "hostname": "Hostname",
+      "version": "Version",
+      "uptime": "Läuft seit"
+    },
+    "coming": {
+      "title": "Als Nächstes",
+      "body": "Personen, Domains mit DNS-Prüfung, Warteschlange und Einstellungen ziehen hier in den nächsten Updates ein."
+    }
+  },
+  "duration": {
+    "days_one": "{{count}} Tag",
+    "days_other": "{{count}} Tagen",
+    "hours_one": "{{count}} Stunde",
+    "hours_other": "{{count}} Stunden",
+    "minutes_one": "{{count}} Minute",
+    "minutes_other": "{{count}} Minuten"
+  },
+  "errors": {
+    "loadFailed": {
+      "title": "Das konnte nicht geladen werden",
+      "body": "Versuch es gleich noch einmal."
+    },
+    "offline": {
+      "title": "Der Server antwortet nicht",
+      "body": "Prüfe deine Verbindung oder versuch es später noch einmal."
+    },
+    "notFound": {
+      "title": "Diese Seite gibt es nicht",
+      "body": "Vielleicht ist der Link veraltet.",
+      "home": "Zur Übersicht"
+    }
+  }
+}

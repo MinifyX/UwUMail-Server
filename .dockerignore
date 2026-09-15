@@ -1,7 +1,8 @@
 target
 data
 dev/data
-node_modules
+**/node_modules
+web/dist
 .git
 .github
 docs

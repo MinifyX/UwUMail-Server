@@ -1,0 +1,32 @@
+{
+  "login": {
+    "title": "Hi! Schön, dass du da bist",
+    "subtitle": "Ich bin Nyu. Melde dich mit deiner Mail-Adresse und deinem Passwort an.",
+    "errors": {
+      "invalidCredentials": "Adresse oder Passwort stimmt nicht (・_・;)",
+      "tooManyAttempts": "Das waren zu viele Versuche. Kurz durchatmen und in ein paar Minuten nochmal (˘ᵕ˘)",
+      "offline": "Ich erreiche den Server gerade nicht (・_・;)"
+    }
+  },
+  "account": {
+    "greeting": "Hallo {{name}}!",
+    "intro": "Hier ist alles rund um dein Postfach (｡･ω･｡)"
+  },
+  "admin": {
+    "intro": "So geht es deinem Server. Ich passe mit auf (=^･ω･^=)",
+    "queueEmpty": "Nichts wartet, alles ist unterwegs ✉︎"
+  },
+  "errors": {
+    "loadFailed": {
+      "title": "Hoppla, das hat nicht geklappt (╥﹏╥)"
+    },
+    "offline": {
+      "title": "Der Server antwortet nicht (・_・;)",
+      "body": "Ich warte kurz und versuch es gleich nochmal."
+    },
+    "notFound": {
+      "title": "Hier ist nichts (・_・;)",
+      "body": "Ich hab überall geschaut, sogar unterm Sofa."
+    }
+  }
+}

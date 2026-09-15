@@ -8,7 +8,7 @@
                          │                           ▼  │                                │
  other mail servers ◀─── │                    delivery queue                            │
                          │                                                              │
- browsers, JMAP     ───▶ │ :443  HTTPS  JMAP, health (soon admin panel and web mail)    │
+ browsers, JMAP     ───▶ │ :443  HTTPS  JMAP, web portal (uwumail-web), health          │
  Let's Encrypt      ───▶ │ :80   ACME challenges, redirect to HTTPS                     │
                          └──────────────────────────────────────────────────────────────┘
 ```
@@ -63,6 +63,18 @@ from the store's change log, and push listens to the same broadcast channel.
 `EmailSubmission/set` goes through `Smtp::submit`, exactly like SMTP
 submission: sender checks, DKIM, local delivery and the queue.
 
+### `uwumail-web`
+
+The web portal: a JSON API under `/api` and the React app from `web/`
+(Vite, Tailwind, i18next; Nyu and the design tokens come from the UwUMail
+app). `build.rs` embeds `web/dist` into the binary, so the server stays one
+file; a build without `web/dist` shows a simple landing page instead. The
+app serves every page from one `index.html` and picks the page from the URL.
+
+Everyone logs in at the same place and lands in "My account" (`/account`);
+admins also get "Server" (`/admin`). Portal preferences (language, tone,
+Simple/Pro, theme) are stored per account.
+
 ### `uwumail-server`
 
 The binary: configuration (`figment`: TOML + `UWUMAIL_*` environment),
@@ -78,5 +90,10 @@ listeners and graceful shutdown, and management commands.
   incoming mail before we add our own.
 - Received headers of submitted mail contain neither the client's IP address
   nor its HELO name (opt-in via `smtp.reveal_client_ip`).
+- Web portal sessions: a random token in an `HttpOnly`, `SameSite=Strict`
+  cookie (`__Host-` prefixed and `Secure` over HTTPS); only its SHA-256 is
+  stored. Requests that change something need the session's CSRF token in
+  `X-CSRF-Token`; logins share the per-network failure limit. The app is
+  served with a strict Content-Security-Policy and `frame-ancestors 'none'`.
 - Private keys and the ACME account are written with mode 0600; the container
   runs as an unprivileged user with only `CAP_NET_BIND_SERVICE`.

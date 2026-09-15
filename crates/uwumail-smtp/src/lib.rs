@@ -34,6 +34,7 @@ pub use config::{
 };
 pub use dns::DnsCaches;
 pub use inbound::{ListenerKind, serve};
+pub use limiter::AuthLimiter;
 pub use outbound::run_queue;
 pub use relay::IpNetwork;
 pub use submission::{Submission, SubmissionRecipient, SubmitError, Submitted};

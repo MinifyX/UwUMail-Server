@@ -2774,6 +2774,7 @@ dependencies = [
  "uwumail-jmap",
  "uwumail-smtp",
  "uwumail-store",
+ "uwumail-web",
  "x509-parser",
 ]
 
@@ -2820,6 +2821,22 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "uwumail-web"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tower",
+ "tracing",
+ "uwumail-jmap",
+ "uwumail-smtp",
+ "uwumail-store",
 ]
 
 [[package]]

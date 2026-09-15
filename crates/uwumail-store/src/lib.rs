@@ -20,6 +20,7 @@ mod parse;
 mod password;
 mod query;
 mod queue;
+mod web;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -36,6 +37,7 @@ pub use mutate::{EmailUpdate, KeywordsChange, MailboxUpdate, MailboxesChange};
 pub use objects::{Changes, EmailRecord};
 pub use query::{EmailFilter, EmailSort, EmailSortProperty};
 pub use queue::{NewQueueRecipient, QueueEntry, QueueRecipient, QueueRecipientStatus, QueuedMessage};
+pub use web::{NewWebSession, ServerCounts, WebSession};
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {

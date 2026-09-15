@@ -15,6 +15,7 @@ path = "src/main.rs"
 uwumail-jmap.workspace = true
 uwumail-smtp.workspace = true
 uwumail-store.workspace = true
+uwumail-web.workspace = true
 
 anyhow.workspace = true
 axum.workspace = true

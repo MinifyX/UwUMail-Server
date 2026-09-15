@@ -121,9 +121,9 @@ pub struct NewAccount {
     pub quota_bytes: i64,
 }
 
-const ACCOUNT_COLUMNS: &str = "id, login, display_name, role, quota_bytes, used_bytes, disabled, created_at";
+pub(crate) const ACCOUNT_COLUMNS: &str = "id, login, display_name, role, quota_bytes, used_bytes, disabled, created_at";
 
-fn account_from_row(row: &Row<'_>) -> rusqlite::Result<Account> {
+pub(crate) fn account_from_row(row: &Row<'_>) -> rusqlite::Result<Account> {
     Ok(Account {
         id: row.get(0)?,
         login: row.get(1)?,

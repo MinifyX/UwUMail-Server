@@ -1,0 +1,70 @@
+/* UwUMail design tokens, kept identical to the UwUMail app (apps/desktop/src/styles/tokens.css). */
+
+:root {
+  --uwu-canvas: #f8f4f6;
+  --uwu-surface: #ffffff;
+  --uwu-elevated: #fcf8fa;
+  --uwu-ink: #1c1420;
+  --uwu-muted: #716672;
+  --uwu-faint: #a69ba5;
+  --uwu-hairline: #f2e8ee;
+  --uwu-border: #e9dde4;
+
+  --uwu-pink: #ff4d8d;
+  --uwu-pink-solid: #e11d74;
+  --uwu-pink-solid-hover: #c8165f;
+  --uwu-on-pink: #ffffff;
+  --uwu-pink-ink: #a3154f;
+  --uwu-pink-tint: #ffe4ef;
+  --uwu-pink-tint-strong: #ffd0e2;
+
+  --uwu-danger: #d92d44;
+  --uwu-danger-tint: #fde4e7;
+  --uwu-success: #12a06d;
+  --uwu-success-tint: #d8f5e8;
+  --uwu-warning: #b86e00;
+  --uwu-warning-tint: #fdf0d6;
+
+  --uwu-account-pink: #ff4d8d;
+  --uwu-account-violet: #8b5cf6;
+  --uwu-account-sky: #0ea5e9;
+  --uwu-account-mint: #10b981;
+  --uwu-account-amber: #f59e0b;
+  --uwu-account-coral: #f97360;
+
+  --uwu-shadow-float: 0 12px 32px rgb(28 20 32 / 0.12), 0 2px 8px rgb(28 20 32 / 0.06);
+  --uwu-focus: 0 0 0 3px rgb(255 77 141 / 0.35);
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --uwu-canvas: #141016;
+  --uwu-surface: #1c171f;
+  --uwu-elevated: #241e28;
+  --uwu-ink: #f8f2f6;
+  --uwu-muted: #b3a8b3;
+  --uwu-faint: #7d717d;
+  --uwu-hairline: #2c2430;
+  --uwu-border: #3a3040;
+
+  --uwu-pink: #ff7fac;
+  --uwu-pink-solid: #ff7fac;
+  --uwu-pink-solid-hover: #ff9dbf;
+  --uwu-on-pink: #1c1420;
+  --uwu-pink-ink: #ffa3c4;
+  --uwu-pink-tint: #3a1a2a;
+  --uwu-pink-tint-strong: #4d2338;
+
+  --uwu-danger: #ff6b7e;
+  --uwu-danger-tint: #3d1a20;
+  --uwu-success: #3ddc97;
+  --uwu-success-tint: #123a2a;
+  --uwu-warning: #f5b94a;
+  --uwu-warning-tint: #3a2a0c;
+
+  --uwu-shadow-float: 0 12px 32px rgb(0 0 0 / 0.45), 0 2px 8px rgb(0 0 0 / 0.3);
+  --uwu-focus: 0 0 0 3px rgb(255 127 172 / 0.4);
+
+  color-scheme: dark;
+}

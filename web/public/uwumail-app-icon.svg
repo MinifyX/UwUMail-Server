@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="UwUMail">
+  <defs>
+    <linearGradient id="uwu-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFF3F8"/>
+      <stop offset="1" stop-color="#FFD3E5"/>
+    </linearGradient>
+    <filter id="uwu-shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#C2306F" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#uwu-bg)"/>
+  <g transform="translate(256 290) rotate(-8) scale(0.9) translate(-256 -265)" stroke-linecap="round" stroke-linejoin="round">
+    <g fill="#FFFFFF" stroke="#FFFFFF" stroke-width="44" filter="url(#uwu-shadow)">
+      <path d="M118 200 L132 100 Q135 82 151 91 L230 156 Z"/>
+      <path d="M394 200 L380 100 Q377 82 361 91 L282 156 Z"/>
+      <rect x="100" y="152" width="312" height="226" rx="50"/>
+    </g>
+    <g fill="#FF6FA6" stroke="#4B1D3F" stroke-width="14">
+      <path d="M118 200 L132 100 Q135 82 151 91 L230 156 Z"/>
+      <path d="M394 200 L380 100 Q377 82 361 91 L282 156 Z"/>
+    </g>
+    <g fill="#FFB8D3">
+      <path d="M146 150 L151 116 Q152 108 159 112 L196 144 Z"/>
+      <path d="M366 150 L361 116 Q360 108 353 112 L316 144 Z"/>
+    </g>
+    <rect x="100" y="152" width="312" height="226" rx="50" fill="#FF6FA6"/>
+    <path d="M100 202 A50 50 0 0 1 150 152 H362 A50 50 0 0 1 412 202 L276 290 Q256 304 236 290 Z" fill="#FFB8D3"/>
+    <g fill="none" stroke="#4B1D3F" stroke-width="14">
+      <rect x="100" y="152" width="312" height="226" rx="50"/>
+      <path d="M108 207 L236 290 Q256 304 276 290 L404 207"/>
+    </g>
+    <g transform="translate(256 216) scale(1.2) translate(-256 -216)">
+      <g fill="#FF7FB0">
+        <ellipse cx="194" cy="238" rx="15" ry="8.5"/>
+        <ellipse cx="318" cy="238" rx="15" ry="8.5"/>
+      </g>
+      <g fill="none" stroke="#4B1D3F" stroke-width="14">
+        <path d="M210 194 v4 a12 12 0 0 0 24 0 v-4"/>
+        <path d="M278 194 v4 a12 12 0 0 0 24 0 v-4"/>
+        <path d="M236 230 q10 13 20 0 q10 13 20 0"/>
+      </g>
+    </g>
+  </g>
+  <g stroke="#4B1D3F" stroke-linejoin="round">
+    <path d="M436 62 Q441 94 472 99 Q441 104 436 136 Q431 104 400 99 Q431 94 436 62Z" fill="#FFD66E" stroke-width="8"/>
+    <path d="M434 462 C410 446 403 433 406 423 C409 412 423 409 430 418 L434 424 L438 418 C445 409 459 412 462 423 C465 433 458 446 434 462Z" fill="#FF6FA6" stroke-width="8"/>
+    <path d="M70 400 Q74 420 94 424 Q74 428 70 448 Q66 428 46 424 Q66 420 70 400Z" fill="#FFD66E" stroke-width="7"/>
+  </g>
+</svg>

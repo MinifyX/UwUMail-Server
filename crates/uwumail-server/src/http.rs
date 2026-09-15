@@ -1,4 +1,4 @@
-//! HTTP(S): JMAP, health checks, ACME challenges and (soon) the admin panel and web mail.
+//! HTTP(S): JMAP, the web portal, health checks and ACME challenges.
 
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
@@ -29,15 +29,19 @@ pub struct HttpState {
     pub started: Instant,
 }
 
-/// The main site (HTTPS, or plain HTTP behind a reverse proxy), with JMAP merged in.
-pub fn app(state: HttpState, jmap: Router, trusted_proxies: Arc<Vec<IpNetwork>>) -> Router {
-    Router::new()
-        .route("/", get(landing))
-        .route("/healthz", get(health))
-        .route("/.well-known/acme-challenge/{token}", get(acme_challenge))
+/// The main site (HTTPS, or plain HTTP behind a reverse proxy), with JMAP and the web portal merged in.
+pub fn app(state: HttpState, jmap: Router, web: Router, trusted_proxies: Arc<Vec<IpNetwork>>) -> Router {
+    let mut router =
+        Router::new().route("/healthz", get(health)).route("/.well-known/acme-challenge/{token}", get(acme_challenge));
+    if !uwumail_web::Web::has_app() {
+        // A build without the web app still greets visitors.
+        router = router.route("/", get(landing));
+    }
+    router
         .fallback(not_found)
         .with_state(state)
         .merge(jmap)
+        .merge(web)
         .layer(middleware::from_fn_with_state(trusted_proxies, client_info))
 }
 
@@ -217,7 +221,7 @@ mod tests {
     }
 
     fn app(state: HttpState) -> Router {
-        super::app(state, Router::new(), Arc::default())
+        super::app(state, Router::new(), Router::new(), Arc::default())
     }
 
     #[tokio::test]

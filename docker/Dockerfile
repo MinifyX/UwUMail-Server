@@ -3,12 +3,22 @@
 # Builds UwUMail Server from source. CI uses docker/Dockerfile.release with
 # binaries it cross-compiled before, which is much faster for arm64.
 
+FROM node:24-slim AS web
+WORKDIR /web
+RUN corepack enable
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store pnpm install --frozen-lockfile
+COPY web/ ./
+RUN pnpm build
+
 FROM rust:1-slim-trixie AS build
 RUN apt-get update \
  && apt-get install -y --no-install-recommends cmake clang \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY . .
+# The web app is embedded into the binary (crates/uwumail-web/build.rs).
+COPY --from=web /web/dist /src/web/dist
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
     cargo build --release --locked -p uwumail-server \

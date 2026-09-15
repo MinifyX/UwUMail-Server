@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/uwumail-store", "crates/uwumail-smtp", "crates/uwumail-jmap", "crates/uwumail-server"]
+members = ["crates/uwumail-store", "crates/uwumail-smtp", "crates/uwumail-jmap", "crates/uwumail-web", "crates/uwumail-server"]
 
 [workspace.package]
 version = "0.1.0"
@@ -13,6 +13,7 @@ rust-version = "1.88"
 uwumail-jmap = { path = "crates/uwumail-jmap" }
 uwumail-smtp = { path = "crates/uwumail-smtp" }
 uwumail-store = { path = "crates/uwumail-store" }
+uwumail-web = { path = "crates/uwumail-web" }
 
 anyhow = "1"
 argon2 = { version = "0.6", features = ["getrandom"] }

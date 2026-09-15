@@ -13,6 +13,23 @@ cargo test --workspace
 and checks submission, DKIM verification across servers, bounces, relay
 protection and forged Authentication-Results.
 
+## Web portal
+
+The React app lives in `web/` (pnpm, Node 24):
+
+```bash
+cd web
+pnpm install
+pnpm dev:mock   # every page with sample data, no server needed
+pnpm dev        # against a local server's reverse-proxy port (UWUMAIL_DEV_SERVER, default http://127.0.0.1:18080)
+pnpm typecheck && pnpm lint && pnpm test
+pnpm build      # web/dist, embedded by the next cargo build
+```
+
+After the very first `pnpm build`, run `touch crates/uwumail-web/build.rs` so
+Cargo notices the new folder; later builds are picked up automatically. With
+`pnpm dev:mock`, add `?loggedOut` to the URL to see the login page.
+
 ## Local stack
 
 Two containers built from the working tree that deliver to each other:
@@ -20,7 +37,7 @@ Two containers built from the working tree that deliver to each other:
 ```bash
 docker compose -f dev/compose.yaml up -d --build
 bash dev/seed.sh     # domains a.test / b.test, accounts mini, ami, nyu
-node dev/smoke.mjs   # submits a mail and checks delivery and bounce
+node dev/smoke.mjs   # portal login, then a mail: delivery and bounce
 ```
 
 | | a.test | b.test |

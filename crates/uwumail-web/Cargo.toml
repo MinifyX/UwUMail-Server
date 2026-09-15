@@ -1,0 +1,24 @@
+[package]
+name = "uwumail-web"
+description = "The web portal of the UwUMail server: JSON API and the embedded admin and account app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+build = "build.rs"
+
+[dependencies]
+uwumail-jmap.workspace = true
+uwumail-smtp.workspace = true
+uwumail-store.workspace = true
+
+axum.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tower.workspace = true

@@ -32,8 +32,11 @@ Each step ships as its own commits, container image and test deployment.
 - [x] The UwUMail app's JMAP integration test passes against this server (`dev/client-compat.sh`)
 - [ ] Tested with other JMAP clients
 
-## 3. Setup assistant and admin panel
+## 3. Setup assistant and admin panel ✅ in progress
 
+- [x] Web portal: JSON API with session cookies and CSRF protection, React app embedded in the binary, one login for everyone
+- [x] Portal shell with Nyu, German and English, playful/neutral tone, Simple and Pro mode, light/dark theme, phone layout
+- [x] My account overview (addresses, storage, settings for mail apps) and a first server overview for admins
 - [ ] Web setup with a one-time code: domain, admin, certificate, DNS check, port 25 / rDNS / blocklist check
 - [ ] Admin panel, Simple and Pro mode, German and English, playful/neutral tone, Nyu
 - [ ] Self-service: password, 2FA, app passwords, forwarding, vacation, aliases, storage

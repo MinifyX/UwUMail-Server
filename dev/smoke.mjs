@@ -1,5 +1,6 @@
-// Smoke test for the local stack: submits a mail on a.test and checks that it
-// arrives locally, on b.test, and that an unknown recipient bounces.
+// Smoke test for the local stack: the web portal answers and lets mini log in,
+// then a mail submitted on a.test arrives locally, on b.test, and an unknown
+// recipient bounces.
 //
 //   node dev/smoke.mjs
 
@@ -129,6 +130,50 @@ function jmapSession(port) {
   });
 }
 
+/** One HTTPS request to a.test; returns status, headers and the body (parsed when it is JSON). */
+function request(method, path, { body, cookie, csrf } = {}) {
+  const headers = {};
+  if (body) headers["Content-Type"] = "application/json";
+  if (cookie) headers.Cookie = cookie;
+  if (csrf) headers["X-CSRF-Token"] = csrf;
+  return new Promise((resolve, reject) => {
+    const req = https.request({ host: "127.0.0.1", port: 8443, method, path, headers, rejectUnauthorized: false }, (response) => {
+      let text = "";
+      response.on("data", (chunk) => (text += chunk));
+      response.on("end", () => {
+        let json = null;
+        try {
+          json = JSON.parse(text);
+        } catch {}
+        resolve({ status: response.statusCode, headers: response.headers, text, json });
+      });
+    });
+    req.on("error", reject);
+    req.end(body ? JSON.stringify(body) : undefined);
+  });
+}
+
+async function portal() {
+  const page = await request("GET", "/admin");
+  if (page.status !== 200 || !page.text.includes('<div id="root">')) throw new Error(`portal page: ${page.status}`);
+  if (!page.headers["content-security-policy"]?.includes("frame-ancestors 'none'")) throw new Error("portal page without CSP");
+  const script = page.text.match(/src="(\/assets\/[^"]+\.js)"/)?.[1];
+  const asset = script && (await request("GET", script));
+  if (!asset || asset.status !== 200 || !asset.headers["cache-control"]?.includes("immutable")) {
+    throw new Error(`portal script ${script}: ${asset?.status}`);
+  }
+  console.log("  ✓ the web portal is embedded and served with its security headers");
+
+  const login = await request("POST", "/api/auth/login", { body: { login: "mini@a.test", password } });
+  if (login.status !== 200) throw new Error(`portal login: ${login.status} ${login.text}`);
+  const cookie = login.headers["set-cookie"][0].split(";")[0];
+  const overview = await request("GET", "/api/admin/overview", { cookie });
+  if (overview.status !== 200 || overview.json.counts.accounts < 2) throw new Error(`admin overview: ${overview.text}`);
+  const logout = await request("POST", "/api/auth/logout", { body: {}, cookie, csrf: login.json.csrfToken });
+  if (logout.status !== 204) throw new Error(`portal logout: ${logout.status}`);
+  console.log(`  ✓ mini logged in to the portal and sees ${overview.json.counts.accounts} accounts`);
+}
+
 function health(port) {
   return new Promise((resolve, reject) => {
     https
@@ -152,6 +197,7 @@ if (session.status !== 200 || !JSON.parse(session.body).capabilities["urn:ietf:p
   throw new Error(`JMAP session: ${session.status} ${session.body}`);
 }
 console.log("  ✓ JMAP session for mini@a.test");
+await portal();
 
 console.log(`  ✓ submitted: ${(await submit()).trim()}`);
 const logLine = (service, ...parts) => logs(service).split(/\r?\n/).some((line) => parts.every((p) => line.includes(p)));

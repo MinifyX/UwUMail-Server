@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "uwumail-portal-mock",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "web", "dev:mock", "--port", "5174", "--strictPort"],
+      "port": 5174
+    }
+  ]
+}

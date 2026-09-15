@@ -1,0 +1,162 @@
+{
+  "common": {
+    "close": "Close",
+    "loading": "Loading",
+    "retry": "Try again",
+    "copy": "Copy",
+    "copied": "Copied",
+    "unlimited": "unlimited"
+  },
+  "login": {
+    "title": "Log in",
+    "subtitle": "Log in with your email address and password.",
+    "address": "Email address",
+    "password": "Password",
+    "submit": "Log in",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "errors": {
+      "invalidCredentials": "The address or password is wrong.",
+      "tooManyAttempts": "Too many failed attempts. Please wait a few minutes.",
+      "offline": "The server cannot be reached right now.",
+      "internal": "Something went wrong on the server."
+    },
+    "setupRequired": "This server has no admin yet. Create the first admin on the server with the command line."
+  },
+  "nav": {
+    "label": "Main menu",
+    "account": "My account",
+    "server": "Server",
+    "overview": "Overview",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu"
+  },
+  "mode": {
+    "label": "View",
+    "simple": "Simple",
+    "pro": "Pro"
+  },
+  "userMenu": {
+    "open": "Open account menu",
+    "appearance": "Appearance and language",
+    "logout": "Log out",
+    "role": {
+      "admin": "Admin",
+      "user": "Member"
+    }
+  },
+  "appearance": {
+    "title": "Appearance and language",
+    "mode": {
+      "label": "View",
+      "hint": "Simple shows what matters with explanations, Pro shows every detail compactly."
+    },
+    "language": {
+      "label": "Language",
+      "system": "Same as the browser",
+      "de": "Deutsch",
+      "en": "English"
+    },
+    "tone": {
+      "label": "Tone",
+      "playful": "Playful",
+      "neutral": "Neutral",
+      "hint": "Changes only the words, not the colors or pictures."
+    },
+    "theme": {
+      "label": "Color scheme",
+      "system": "Same as the system",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "motion": {
+      "label": "Animations",
+      "system": "Same as the system",
+      "on": "On",
+      "off": "Off"
+    },
+    "saveFailed": "The setting could not be saved."
+  },
+  "account": {
+    "greeting": "Welcome, {{name}}",
+    "intro": "Everything about your mailbox in one place.",
+    "addresses": {
+      "title": "Your addresses",
+      "primary": "Main address",
+      "alias": "Additional address"
+    },
+    "storage": {
+      "title": "Storage",
+      "usedOf": "{{used}} of {{quota}} used",
+      "used": "{{used}} used, no limit"
+    },
+    "apps": {
+      "title": "Connect mail apps",
+      "intro": "The UwUMail app only needs the server address. Other apps use these settings:",
+      "server": "Server",
+      "jmap": "JMAP",
+      "submission": "Sending (SMTP)",
+      "submissionValue": "{{hostname}}, port 465 (TLS) or 587 (STARTTLS)",
+      "username": "Username",
+      "imapSoon": "IMAP comes in a later update."
+    },
+    "details": {
+      "title": "Details",
+      "login": "Login",
+      "role": "Role",
+      "created": "Created on"
+    }
+  },
+  "admin": {
+    "title": "Server",
+    "intro": "How your server is doing.",
+    "cards": {
+      "accounts": "People",
+      "domains": "Domains",
+      "aliases": "Additional addresses",
+      "queue": "Queue",
+      "storage": "Storage used",
+      "admins": "Admins"
+    },
+    "accountsDisabled_one": "{{count}} of them disabled",
+    "accountsDisabled_other": "{{count}} of them disabled",
+    "queueEmpty": "No mail is waiting to be sent.",
+    "queueWaiting_one": "{{count}} message is being sent.",
+    "queueWaiting_other": "{{count}} messages are being sent.",
+    "queueDeferred_one": "{{count}} recipient is waiting for another attempt.",
+    "queueDeferred_other": "{{count}} recipients are waiting for another attempt.",
+    "server": {
+      "title": "Server",
+      "hostname": "Host name",
+      "version": "Version",
+      "uptime": "Running for"
+    },
+    "coming": {
+      "title": "Coming next",
+      "body": "People, domains with DNS checks, the queue and settings move in here with the next updates."
+    }
+  },
+  "duration": {
+    "days_one": "{{count}} day",
+    "days_other": "{{count}} days",
+    "hours_one": "{{count}} hour",
+    "hours_other": "{{count}} hours",
+    "minutes_one": "{{count}} minute",
+    "minutes_other": "{{count}} minutes"
+  },
+  "errors": {
+    "loadFailed": {
+      "title": "This could not be loaded",
+      "body": "Please try again in a moment."
+    },
+    "offline": {
+      "title": "The server is not answering",
+      "body": "Check your connection or try again later."
+    },
+    "notFound": {
+      "title": "This page does not exist",
+      "body": "Maybe the link is outdated.",
+      "home": "Go to the overview"
+    }
+  }
+}

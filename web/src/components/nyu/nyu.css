@@ -1,0 +1,133 @@
+/* Nyu, the mascot, copied from the UwUMail app (apps/desktop/src/components/nyu). See its docs/design.md. */
+
+.nyu-edge,
+.nyu-edge * {
+  fill: #fff;
+  stroke: #fff;
+}
+
+.nyu-edge * {
+  stroke-width: inherit;
+}
+
+.nyu-edge [fill="none"],
+.nyu-edge [fill="none"] * {
+  fill: none;
+}
+
+.nyu-edge .no-edge {
+  display: none;
+}
+
+.nyu-ear,
+.nyu-eyes,
+.nyu-wave {
+  transform-box: fill-box;
+}
+
+.nyu-ear {
+  transform-origin: 50% 100%;
+}
+
+.nyu-host:hover .nyu-ear-l {
+  animation: nyu-ear-l 480ms ease-in-out;
+}
+
+.nyu-host:hover .nyu-ear-r {
+  animation: nyu-ear-r 480ms ease-in-out;
+}
+
+.nyu-blink .nyu-eyes {
+  transform-origin: center;
+  animation: nyu-blink 5s ease-in-out infinite;
+}
+
+.nyu-wave {
+  transform-origin: 30% 90%;
+  animation: nyu-wave 2.4s ease-in-out infinite;
+}
+
+@keyframes nyu-ear-l {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  30% {
+    transform: rotate(-14deg);
+  }
+  65% {
+    transform: rotate(6deg);
+  }
+}
+
+@keyframes nyu-ear-r {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  30% {
+    transform: rotate(14deg);
+  }
+  65% {
+    transform: rotate(-6deg);
+  }
+}
+
+@keyframes nyu-blink {
+  0%,
+  90%,
+  100% {
+    transform: scaleY(1);
+  }
+  94% {
+    transform: scaleY(0.1);
+  }
+}
+
+@keyframes nyu-wave {
+  0%,
+  45%,
+  100% {
+    transform: rotate(0);
+  }
+  12%,
+  32% {
+    transform: rotate(-18deg);
+  }
+  22% {
+    transform: rotate(10deg);
+  }
+}
+
+@keyframes nyu-hop {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  18% {
+    transform: translateY(0) scale(1.1, 0.88);
+  }
+  50% {
+    transform: translateY(-38%) scale(0.94, 1.08);
+  }
+  82% {
+    transform: translateY(0) scale(1.06, 0.94);
+  }
+}
+
+@keyframes nyu-fly {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0) scale(1);
+  }
+  25% {
+    transform: translate(18px, -26px) rotate(-10deg) scale(1.15);
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(170px, -120px) rotate(24deg) scale(0.7);
+  }
+}

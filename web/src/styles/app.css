@@ -1,0 +1,141 @@
+@import "tailwindcss";
+@import "./tokens.css";
+@import "../components/nyu/nyu.css";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  --font-sans: "Manrope Variable", ui-sans-serif, system-ui, sans-serif;
+
+  --color-canvas: var(--uwu-canvas);
+  --color-surface: var(--uwu-surface);
+  --color-elevated: var(--uwu-elevated);
+  --color-ink: var(--uwu-ink);
+  --color-muted: var(--uwu-muted);
+  --color-faint: var(--uwu-faint);
+  --color-hairline: var(--uwu-hairline);
+  --color-line: var(--uwu-border);
+
+  --color-pink: var(--uwu-pink);
+  --color-pink-solid: var(--uwu-pink-solid);
+  --color-pink-solid-hover: var(--uwu-pink-solid-hover);
+  --color-on-pink: var(--uwu-on-pink);
+  --color-pink-ink: var(--uwu-pink-ink);
+  --color-pink-tint: var(--uwu-pink-tint);
+  --color-pink-tint-strong: var(--uwu-pink-tint-strong);
+
+  --color-danger: var(--uwu-danger);
+  --color-danger-tint: var(--uwu-danger-tint);
+  --color-success: var(--uwu-success);
+  --color-success-tint: var(--uwu-success-tint);
+  --color-warning: var(--uwu-warning);
+  --color-warning-tint: var(--uwu-warning-tint);
+
+  --shadow-float: var(--uwu-shadow-float);
+  --shadow-focus: var(--uwu-focus);
+
+  --radius-control: 10px;
+  --radius-card: 16px;
+
+  --animate-pop: uwu-pop 180ms cubic-bezier(0.2, 0.9, 0.3, 1.3);
+  --animate-fade: uwu-fade 160ms ease-out;
+  --animate-slide-up: uwu-slide-up 220ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  --animate-drawer: uwu-drawer 220ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  --animate-wiggle: uwu-wiggle 600ms ease-in-out;
+  --animate-nyu-hop: nyu-hop 560ms cubic-bezier(0.3, 0.7, 0.4, 1);
+}
+
+@keyframes uwu-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes uwu-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes uwu-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes uwu-drawer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes uwu-wiggle {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  25% {
+    transform: rotate(-6deg);
+  }
+  75% {
+    transform: rotate(6deg);
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    @apply bg-canvas font-sans text-ink antialiased;
+    font-size: 14px;
+    overflow-wrap: break-word;
+  }
+
+  :focus-visible {
+    outline: none;
+    box-shadow: var(--uwu-focus);
+  }
+
+  ::selection {
+    background: var(--uwu-pink-tint-strong);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--uwu-border) transparent;
+  }
+
+  [data-motion="reduced"] {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 1ms !important;
+      transition-duration: 1ms !important;
+    }
+
+    .nyu-host,
+    .nyu-host * {
+      animation: none !important;
+    }
+  }
+}
