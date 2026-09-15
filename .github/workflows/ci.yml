@@ -1,7 +1,7 @@
 name: CI
 
-# Tests run on every push that changes code. The container image, the expensive part, is built
-# only for release tags or when started by hand; test servers get theirs from scripts/deploy-local.sh.
+# Tests and the container image run on every push that changes code. Documentation-only pushes
+# skip CI. scripts/deploy-local.sh stays for trying changes on a test server before pushing.
 on:
   push:
     branches: [main]
@@ -88,7 +88,7 @@ jobs:
 
   image:
     name: Container image
-    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    if: github.event_name != 'pull_request'
     needs: [test, web]
     runs-on: ubuntu-latest
     permissions:

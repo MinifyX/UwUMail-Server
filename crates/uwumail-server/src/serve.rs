@@ -121,7 +121,8 @@ pub async fn run(
     }
     if let Some(listener) = bind(&config.listen.https, "HTTPS").await? {
         let tls = tls::https_server_config(certs.clone())?;
-        let app = http::app(state.clone(), jmap.clone(), web.clone(), trusted_proxies.clone());
+        let app = http::app(state.clone(), jmap.clone(), web.clone(), trusted_proxies.clone())
+            .layer(axum::middleware::from_fn_with_state(certs.clone(), http::strict_transport_security));
         tasks.spawn(http::serve(listener, Some(tls), app, shutdown_rx.clone()));
     }
     if let Some(listener) = bind(&config.listen.proxy, "HTTP behind a reverse proxy").await? {

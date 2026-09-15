@@ -56,12 +56,11 @@ docker compose -f dev/compose.yaml logs -f a
 
 ## Test server and CI
 
-GitHub Actions runs the tests and web checks on pushes that change code. It
-builds the container image (amd64 + arm64) only for `v*` tags or when started
-by hand, because that job uses most of the CI minutes.
+GitHub Actions runs the tests, the web checks and the container image build
+(amd64 + arm64) on every push that changes code; `:edge` follows `main`.
 
-To put the current code on a test server that runs the compose setup, build
-the image locally and copy it over SSH:
+To try the current code on a test server before pushing, build the image
+locally and copy it over SSH:
 
 ```bash
 UWUMAIL_DEPLOY_HOST=user@host scripts/deploy-local.sh

@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use axum::Router;
 use axum::extract::{Path, Request, State};
-use axum::http::{HeaderMap, StatusCode, Uri, header};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri, header};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Json, Redirect, Response};
 use axum::routing::get;
@@ -21,6 +21,7 @@ use uwumail_jmap::ClientInfo;
 use uwumail_smtp::IpNetwork;
 
 use crate::acme::Challenges;
+use crate::tls::{CertStore, CertificateInfo};
 
 #[derive(Clone)]
 pub struct HttpState {
@@ -43,6 +44,21 @@ pub fn app(state: HttpState, jmap: Router, web: Router, trusted_proxies: Arc<Vec
         .merge(jmap)
         .merge(web)
         .layer(middleware::from_fn_with_state(trusted_proxies, client_info))
+}
+
+/// HSTS only makes sense with a certificate browsers trust. With a self-signed one (or none yet)
+/// the header would lock people out of the portal for a year.
+fn hsts_allowed(certificate: Option<CertificateInfo>) -> bool {
+    certificate.is_some_and(|info| !info.self_signed)
+}
+
+/// Tells browsers to use HTTPS only, for requests the server answered over its own TLS.
+pub async fn strict_transport_security(State(certs): State<Arc<CertStore>>, request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    if hsts_allowed(certs.info()) {
+        response.headers_mut().insert(header::STRICT_TRANSPORT_SECURITY, HeaderValue::from_static("max-age=31536000"));
+    }
+    response
 }
 
 /// The TCP connection a request arrived on.
@@ -213,6 +229,14 @@ pub async fn serve(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hsts_needs_a_trusted_certificate() {
+        let info = |self_signed| Some(CertificateInfo { not_after: 0, names: vec![], self_signed });
+        assert!(hsts_allowed(info(false)));
+        assert!(!hsts_allowed(info(true)));
+        assert!(!hsts_allowed(None));
+    }
     use axum::body::Body;
     use axum::http::Request;
 

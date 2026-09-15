@@ -130,5 +130,7 @@ listeners and graceful shutdown, and management commands.
   stored. Requests that change something need the session's CSRF token in
   `X-CSRF-Token`; logins share the per-network failure limit. The app is
   served with a strict Content-Security-Policy and `frame-ancestors 'none'`.
+  Over the server's own HTTPS with a trusted certificate, responses carry
+  `Strict-Transport-Security: max-age=31536000` (not with a self-signed one).
 - Private keys and the ACME account are written with mode 0600; the container
   runs as an unprivileged user with only `CAP_NET_BIND_SERVICE`.
