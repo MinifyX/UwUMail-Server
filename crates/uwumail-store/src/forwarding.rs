@@ -287,6 +287,8 @@ mod tests {
         let leni = account(&store, "leni@example.de").await;
         let ami = account(&store, "ami@example.de").await;
 
+        let injected = store.add_forward_target(leni.id, "oma@elsewhere.example\r\nBcc: x@example.org", true).await;
+        assert!(matches!(injected, Err(StoreError::Invalid(_))), "no header injection through the address");
         let self_target = store.add_forward_target(leni.id, "LENI@example.de", true).await;
         assert!(matches!(self_target, Err(StoreError::Rule { code: "forwardToSelf", .. })));
         let (local, token) = store.add_forward_target(leni.id, "ami@example.de", true).await.unwrap();

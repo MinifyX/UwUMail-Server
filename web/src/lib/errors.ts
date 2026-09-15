@@ -46,6 +46,7 @@ const KNOWN = [
   "aliasNotYours",
   "addressReserved",
   "notEmptiable",
+  "forwardingThrottled",
 ];
 
 /** Turns an API error into a sentence for the person in front of the screen. */

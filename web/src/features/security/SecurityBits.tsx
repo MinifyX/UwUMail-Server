@@ -119,6 +119,7 @@ const KNOWN_EVENTS = [
   "forwardingRemoved",
   "forwardingConfirmed",
   "forwardingDeclined",
+  "forwardingConfirmationSent",
 ];
 
 export function useEventText() {

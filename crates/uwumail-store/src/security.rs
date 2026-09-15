@@ -856,6 +856,28 @@ impl Store {
         .await
     }
 
+    /// How often something happened to a person since a point in time, optionally only for one
+    /// address in the details. For throttling.
+    pub async fn count_security_events(
+        &self,
+        account_id: i64,
+        kind: &str,
+        since: i64,
+        address: Option<&str>,
+    ) -> Result<i64> {
+        let (kind, address) = (kind.to_owned(), address.map(str::to_owned));
+        self.read(move |conn| {
+            Ok(conn.query_row(
+                "SELECT COUNT(*) FROM security_events
+                 WHERE account_id = ?1 AND kind = ?2 AND at >= ?3
+                   AND (?4 IS NULL OR json_extract(details, '$.address') = ?4)",
+                params![account_id, kind, since, address],
+                |row| row.get(0),
+            )?)
+        })
+        .await
+    }
+
     pub async fn security_events(&self, account_id: i64, limit: usize) -> Result<Vec<SecurityEventRecord>> {
         self.read(move |conn| {
             let mut stmt = conn.prepare(

@@ -17,6 +17,28 @@ use crate::health::unix_now;
 use crate::notices::{Notice, Origin, notify};
 use crate::session::{Admin, Session};
 
+/// Confirmation mails go to addresses a person typed in, so they must never turn into a way to
+/// flood strangers: each address gets at most one an hour, each person sends a few an hour.
+const CONFIRMATIONS_PER_HOUR: i64 = 5;
+const CONFIRMATIONS_PER_DAY: i64 = 20;
+const CONFIRMATION_EVENT: &str = "forwardingConfirmationSent";
+
+async fn check_confirmation_allowed(web: &Web, account_id: i64, address: &str) -> ApiResult<()> {
+    let now = unix_now();
+    let store = web.store();
+    let throttled = || ApiError::Rule("forwardingThrottled", "too many confirmation mails, try again later".into());
+    if store.count_security_events(account_id, CONFIRMATION_EVENT, now - 3600, Some(address)).await? > 0 {
+        return Err(throttled());
+    }
+    if store.count_security_events(account_id, CONFIRMATION_EVENT, now - 3600, None).await? >= CONFIRMATIONS_PER_HOUR
+        || store.count_security_events(account_id, CONFIRMATION_EVENT, now - 24 * 3600, None).await?
+            >= CONFIRMATIONS_PER_DAY
+    {
+        return Err(throttled());
+    }
+    Ok(())
+}
+
 async fn forwarding_json(web: &Web, account_id: i64) -> ApiResult<Value> {
     let forwarding = web.store().forwarding(account_id).await?;
     Ok(json!({
@@ -41,10 +63,24 @@ pub async fn add_target(
     session: Session,
     Json(new): Json<NewTarget>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
+    let (local, domain) = uwumail_store::normalize_address(&new.address)?;
+    let address = format!("{local}@{domain}");
+    if web.store().resolve_recipient(&address).await?.is_none() {
+        check_confirmation_allowed(&web, session.account.id, &address).await?;
+    }
     let allowed = web.smtp().allow_external_forwarding();
-    let (target, token) = web.store().add_forward_target(session.account.id, new.address.trim(), allowed).await?;
+    let (target, token) = web.store().add_forward_target(session.account.id, &address, allowed).await?;
     if let Some(token) = &token {
         send_confirmation(&web, &session.account, &target.address, token).await?;
+        let event = SecurityEvent {
+            kind: CONFIRMATION_EVENT.into(),
+            actor: String::new(),
+            ip: session.client.ip.to_string(),
+            details: json!({ "address": target.address }),
+        };
+        if let Err(err) = web.store().record_security_event(session.account.id, event).await {
+            tracing::error!(%err, "writing the security activity failed");
+        }
     }
     let ip = session.client.ip.to_string();
     let notice = Notice::ForwardingAdded { address: target.address.clone() };

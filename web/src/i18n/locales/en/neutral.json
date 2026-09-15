@@ -216,7 +216,8 @@
       "aliasLimit": "You already have as many own addresses as you may.",
       "aliasNotYours": "An admin created this address, only an admin can delete it.",
       "addressReserved": "This address was deleted just recently and is still reserved.",
-      "notEmptiable": "This folder cannot be emptied."
+      "notEmptiable": "This folder cannot be emptied.",
+      "forwardingThrottled": "Enough confirmation mails went out for this address or today. Please try again later."
     }
   },
   "people": {
@@ -912,7 +913,8 @@
       "forwardingAdded": "Forwarding to {{address}} set up",
       "forwardingRemoved": "Forwarding to {{address}} removed",
       "forwardingConfirmed": "{{address}} confirmed the forwarding",
-      "forwardingDeclined": "{{address}} declined the forwarding"
+      "forwardingDeclined": "{{address}} declined the forwarding",
+      "forwardingConfirmationSent": "Confirmation mail sent to {{address}}"
     },
     "loginMethods": {
       "password": "password",

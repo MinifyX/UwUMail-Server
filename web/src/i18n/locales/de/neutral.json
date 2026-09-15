@@ -216,7 +216,8 @@
       "aliasLimit": "Du hast schon so viele eigene Adressen, wie du darfst.",
       "aliasNotYours": "Diese Adresse hat der Admin angelegt, nur er kann sie löschen.",
       "addressReserved": "Diese Adresse wurde gerade erst gelöscht und ist noch reserviert.",
-      "notEmptiable": "Dieser Ordner lässt sich nicht leeren."
+      "notEmptiable": "Dieser Ordner lässt sich nicht leeren.",
+      "forwardingThrottled": "Für diese Adresse oder heute wurden schon genug Bestätigungs-Mails verschickt. Versuch es später wieder."
     }
   },
   "people": {
@@ -912,7 +913,8 @@
       "forwardingAdded": "Weiterleitung an {{address}} eingerichtet",
       "forwardingRemoved": "Weiterleitung an {{address}} entfernt",
       "forwardingConfirmed": "{{address}} hat die Weiterleitung bestätigt",
-      "forwardingDeclined": "{{address}} hat die Weiterleitung abgelehnt"
+      "forwardingDeclined": "{{address}} hat die Weiterleitung abgelehnt",
+      "forwardingConfirmationSent": "Bestätigungs-Mail an {{address}} verschickt"
     },
     "loginMethods": {
       "password": "Passwort",
