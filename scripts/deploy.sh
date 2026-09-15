@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Updates a server that runs UwUMail with Docker Compose to the newest image and
-# waits until it is healthy.
+# Updates a server that runs UwUMail with Docker Compose to an image from the registry and waits
+# until it is healthy. CI publishes images for release tags and manual runs; to try the current
+# code on a test server, use scripts/deploy-local.sh instead.
 #
 #   UWUMAIL_DEPLOY_HOST=user@host [UWUMAIL_DEPLOY_DIR=/opt/uwumail] scripts/deploy.sh [tag]
 set -euo pipefail

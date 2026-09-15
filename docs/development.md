@@ -54,6 +54,20 @@ docker compose -f dev/compose.yaml exec a uwumail-server queue list
 docker compose -f dev/compose.yaml logs -f a
 ```
 
+## Test server and CI
+
+GitHub Actions runs the tests and web checks on pushes that change code. It
+builds the container image (amd64 + arm64) only for `v*` tags or when started
+by hand, because that job uses most of the CI minutes.
+
+To put the current code on a test server that runs the compose setup, build
+the image locally and copy it over SSH:
+
+```bash
+UWUMAIL_DEPLOY_HOST=user@host scripts/deploy-local.sh
+UWUMAIL_URL=https://mail.example.com UWUMAIL_LOGIN=… UWUMAIL_PASSWORD_FILE=… node scripts/live-check.mjs
+```
+
 ## Without Docker
 
 ```bash
