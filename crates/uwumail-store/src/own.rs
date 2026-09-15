@@ -27,7 +27,9 @@ const RESERVED: &[&str] = &[
     "noreply",
     "no-reply",
     "dmarc",
+    "dmarc-reports",
     "tls-rpt",
+    "tls-reports",
 ];
 
 #[derive(Debug, Clone, Serialize)]

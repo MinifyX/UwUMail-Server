@@ -23,6 +23,7 @@ mod parse;
 mod password;
 mod query;
 mod queue;
+mod reports;
 mod security;
 mod web;
 
@@ -47,6 +48,11 @@ pub use objects::{Changes, EmailRecord};
 pub use own::{MailboxUsage, OwnAddress, OwnAddresses, RELEASED_ADDRESS_SECS, ReleasedAddress};
 pub use query::{EmailFilter, EmailSort, EmailSortProperty};
 pub use queue::{NewQueueRecipient, QueueEntry, QueueRecipient, QueueRecipientStatus, QueuedMessage};
+pub use reports::{
+    CachedStsPolicy, DMARC_REPORT_ADDRESS, DmarcRow, DmarcSource, DmarcSummary, MtaStsMode, MtaStsSettings,
+    NewDmarcReport, NewTlsReport, REPORT_RETENTION_SECS, ReportKind, ReportStored, ReportSummary, Reporter,
+    TLS_REPORT_ADDRESS, TlsFailure, TlsFailureSummary, TlsSummary,
+};
 pub use security::{
     AppPassword, AppScope, CodeCheck, CreatedAppPassword, MailAuth, MailAuthDenied, NewAppPassword, Passkey,
     SecurityEvent, SecurityEventRecord, SecurityOverview, TotpSetup, WebSessionInfo,
