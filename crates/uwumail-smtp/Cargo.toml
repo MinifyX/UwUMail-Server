@@ -12,9 +12,14 @@ uwumail-store.workspace = true
 
 aws-lc-rs.workspace = true
 base64.workspace = true
+bytes.workspace = true
 getrandom.workspace = true
 hex.workspace = true
 hickory-resolver.workspace = true
+http-body-util.workspace = true
+hyper.workspace = true
+hyper-rustls.workspace = true
+hyper-util.workspace = true
 mail-auth.workspace = true
 mail-builder.workspace = true
 mail-parser.workspace = true

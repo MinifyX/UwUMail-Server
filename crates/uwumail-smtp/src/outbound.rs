@@ -13,6 +13,7 @@ use crate::client::{Client, Reply};
 use crate::config::{RelayConfig, RelaySecurity};
 use crate::dsn::{self, FailedRecipient};
 use crate::health::{DeliveryEvent, ProbeStage, Route};
+use crate::mta_sts;
 use crate::{Context, Smtp, now};
 
 /// How long claimed recipients stay reserved for one delivery attempt.
@@ -164,6 +165,8 @@ struct Target {
     host: String,
     addrs: Vec<SocketAddr>,
     via: Via,
+    /// The domain's MTA-STS policy is enforced: TLS with a valid certificate for `host`, or nothing.
+    verified_tls: bool,
 }
 
 async fn lookup(host: &str, port: u16) -> Vec<SocketAddr> {
@@ -184,11 +187,16 @@ async fn resolve_targets(ctx: &Context, domain: &str) -> Result<Vec<Target>, Out
             .and_then(|(host, port)| Some((host.trim_matches(['[', ']']).to_owned(), port.parse::<u16>().ok()?)))
             .ok_or_else(|| Outcome::Deferred(format!("the route for {domain} is not host:port")))?;
         let addrs = lookup(&host, port).await;
-        return Ok(vec![Target { host, addrs, via: Via::Route }]);
+        return Ok(vec![Target { host, addrs, via: Via::Route, verified_tls: false }]);
     }
     if let Some(relay) = &live.delivery.relay {
         let addrs = lookup(&relay.host, relay.port).await;
-        return Ok(vec![Target { host: relay.host.clone(), addrs, via: Via::Relay(relay.clone()) }]);
+        return Ok(vec![Target {
+            host: relay.host.clone(),
+            addrs,
+            via: Via::Relay(relay.clone()),
+            verified_tls: false,
+        }]);
     }
 
     let auth = &ctx.authenticator;
@@ -209,6 +217,21 @@ async fn resolve_targets(ctx: &Context, domain: &str) -> Result<Vec<Target>, Out
         Err(err) => return Err(Outcome::Deferred(format!("DNS lookup for {domain} failed: {err}"))),
     };
 
+    // An enforced MTA-STS policy limits the hosts and requires TLS with a valid certificate.
+    let enforced = mta_sts::policy_for(ctx, domain).await.filter(|policy| policy.mode == mta_sts::Mode::Enforce);
+    let hosts: Vec<String> = match &enforced {
+        Some(policy) => {
+            let allowed: Vec<String> = hosts.into_iter().filter(|host| policy.allows(host)).collect();
+            if allowed.is_empty() {
+                return Err(Outcome::Deferred(format!(
+                    "MTA-STS: the policy of {domain} allows none of its mail servers"
+                )));
+            }
+            allowed
+        }
+        None => hosts,
+    };
+
     let mut targets = Vec::new();
     for host in hosts.into_iter().take(MAX_HOSTS) {
         match auth
@@ -223,7 +246,7 @@ async fn resolve_targets(ctx: &Context, domain: &str) -> Result<Vec<Target>, Out
         {
             Ok(ips) => {
                 let addrs = ips.into_iter().map(|ip| SocketAddr::new(ip, live.delivery.mx_port)).collect();
-                targets.push(Target { host, addrs, via: Via::Mx });
+                targets.push(Target { host, addrs, via: Via::Mx, verified_tls: enforced.is_some() });
             }
             Err(mail_auth::Error::Dns(DnsError::RecordNotFound(_))) if implicit => {
                 return Err(Outcome::Failed(format!("550 5.1.2 The domain {domain} does not exist")));
@@ -309,13 +332,13 @@ async fn session(
 
     let (want_tls, must_tls) = match relay {
         Some(relay) => (relay.security == RelaySecurity::Starttls, relay.security == RelaySecurity::Starttls),
-        None => (true, settings.require_tls),
+        None => (true, settings.require_tls || target.verified_tls),
     };
     if want_tls && !client.is_tls() {
         if caps.starttls {
             let reply = client.send("STARTTLS\r\n").await.map_err(io)?;
             if reply.code == 220 {
-                let config = if relay.is_some() {
+                let config = if relay.is_some() || target.verified_tls {
                     ctx.client_tls.verified.clone()
                 } else {
                     ctx.client_tls.opportunistic.clone()

@@ -15,8 +15,10 @@ mod dsn;
 mod forward;
 mod headers;
 pub mod health;
+pub mod https;
 mod inbound;
 mod limiter;
+pub mod mta_sts;
 mod outbound;
 mod relay;
 pub mod servercheck;
@@ -71,6 +73,8 @@ pub(crate) struct Context {
     live: RwLock<Arc<Live>>,
     pub server_tls: Option<Arc<rustls::ServerConfig>>,
     pub client_tls: tls::ClientTls,
+    /// For MTA-STS policies of other domains.
+    pub https: https::Https,
     pub authenticator: MessageAuthenticator,
     pub dns: DnsCaches,
     pub auth_limiter: limiter::AuthLimiter,
@@ -130,6 +134,7 @@ impl Smtp {
                 live: RwLock::new(Arc::new(Live::new(smtp, delivery, tone)?)),
                 server_tls,
                 client_tls: tls::ClientTls::new()?,
+                https: https::Https::new(),
                 authenticator,
                 dns: DnsCaches::default(),
                 auth_limiter: limiter::AuthLimiter::default(),
