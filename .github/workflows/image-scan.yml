@@ -1,0 +1,32 @@
+name: Image scan
+
+# Re-scans the published container image for newly disclosed vulnerabilities. New CVEs appear
+# against images that never change, so this runs on a schedule as well as on demand.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  trivy:
+    name: Trivy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Trivy
+        env:
+          VERSION: "0.74.0"
+          SHA256: 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/trivy.tar.gz" \
+            "https://github.com/aquasecurity/trivy/releases/download/v$VERSION/trivy_${VERSION}_Linux-64bit.tar.gz"
+          echo "$SHA256  $RUNNER_TEMP/trivy.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
+      - name: Scan the published image
+        run: |
+          # A fixable HIGH or CRITICAL in the newest build means it is time to rebuild the base.
+          "$RUNNER_TEMP/trivy" image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            --exit-code 1 --no-progress ghcr.io/minifyx/uwumail-server:edge

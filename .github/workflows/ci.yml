@@ -45,6 +45,17 @@ jobs:
       - name: Script syntax
         run: node --check dev/smoke.mjs && node --check scripts/live-check.mjs
 
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # Known vulnerabilities fail the job; "unmaintained" notices only show up in the log.
+      - run: cargo audit --version || cargo install cargo-audit --locked
+      - run: cargo audit
+
   web:
     name: Web app
     runs-on: ubuntu-latest
@@ -130,7 +141,34 @@ jobs:
             type=sha,prefix=sha-
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      # Build the amd64 image into the local daemon first and scan it, so a known-vulnerable image
+      # is never pushed. The multi-arch push below reuses the same build cache.
+      - name: Build for scanning
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: docker/Dockerfile.release
+          platforms: linux/amd64
+          load: true
+          tags: uwumail-server:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Install Trivy
+        env:
+          VERSION: "0.74.0"
+          SHA256: 2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/trivy.tar.gz" \
+            "https://github.com/aquasecurity/trivy/releases/download/v$VERSION/trivy_${VERSION}_Linux-64bit.tar.gz"
+          echo "$SHA256  $RUNNER_TEMP/trivy.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP" trivy
+      - name: Scan the image
+        run: |
+          # Fail only on vulnerabilities that have a fix available; log the rest.
+          "$RUNNER_TEMP/trivy" image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            --exit-code 1 --no-progress uwumail-server:scan
+      - name: Push the image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: docker/Dockerfile.release

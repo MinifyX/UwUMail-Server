@@ -29,6 +29,16 @@ services:
       - ./uwumail.toml:/etc/uwumail/uwumail.toml:ro
       - data:/data
     stop_grace_period: 20s
+    # Hardening: the server runs as an unprivileged user (uid 10001) on a read-only root file
+    # system; only the data volume and a small /tmp are writable. Every Linux capability is
+    # dropped except NET_BIND_SERVICE, which the binary needs to bind the low mail and web ports.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
 
 volumes:
   data:
