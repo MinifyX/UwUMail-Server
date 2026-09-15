@@ -198,6 +198,10 @@ async function checkPortal() {
   const { csrfToken } = await loggedIn.json();
   const profile = await fetch(`${base}/api/account`, { headers: { Cookie: cookie } });
   if (profile.status !== 200) throw new Error(`portal account: HTTP ${profile.status}`);
+  const { role } = (await (await fetch(`${base}/api/session`, { headers: { Cookie: cookie } })).json()).account;
+  const health = await fetch(`${base}/api/admin/health`, { headers: { Cookie: cookie } });
+  if (role !== "admin" && health.status !== 403) throw new Error(`a non-admin got HTTP ${health.status} for the health overview`);
+  if (role === "admin" && health.status !== 200) throw new Error(`health overview: HTTP ${health.status}`);
   const logout = await fetch(`${base}/api/auth/logout`, {
     method: "POST",
     headers: { Cookie: cookie, "X-CSRF-Token": csrfToken, "Content-Type": "application/json" },
