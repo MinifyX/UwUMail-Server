@@ -1,4 +1,4 @@
-//! The "Server" area for admins: overview, domains for pickers, and the change log.
+//! The "Server" area for admins: overview and the change log.
 
 use axum::Json;
 use axum::extract::{Query, State};
@@ -19,13 +19,6 @@ pub async fn overview(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<V
             "uptimeSeconds": web.settings().started.elapsed().as_secs(),
         },
     })))
-}
-
-pub async fn domains(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Value>> {
-    let domains = web.store().domains().await?;
-    Ok(Json(Value::Array(
-        domains.iter().map(|d| json!({ "name": d.name, "catchAll": d.catch_all, "createdAt": d.created_at })).collect(),
-    )))
 }
 
 #[derive(Deserialize)]

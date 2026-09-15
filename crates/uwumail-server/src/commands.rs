@@ -99,7 +99,8 @@ async fn print_dns(config: &Config, store: &Store, name: &str) -> anyhow::Result
     println!("  {domain}.  MX  10 {host}.");
     println!("  {domain}.  TXT \"v=spf1 mx -all\"");
     println!("  _dmarc.{domain}.  TXT \"v=DMARC1; p=quarantine; adkim=s; aspf=s; rua=mailto:postmaster@{domain}\"");
-    for key in keys.iter().filter(|k| k.active) {
+    // New keys of a rotation are published before they sign.
+    for key in keys.iter().filter(|k| k.state() != uwumail_store::DkimKeyState::Retired) {
         let (record_name, value) = key.dns_record();
         println!("  {record_name}.  TXT {}", zone_quoted(&value));
     }

@@ -70,7 +70,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
 
     let jmap = uwumail_jmap::Jmap::new(smtp.clone()).router();
     let web = uwumail_web::Web::new(
-        store.clone(),
+        smtp.clone(),
         uwumail_web::WebSettings { hostname: config.hostname.clone(), started: Instant::now() },
     )
     .router();

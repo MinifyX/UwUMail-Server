@@ -79,9 +79,38 @@ pub async fn ensure_domain_keys(store: &Store, domain: &str) -> Result<Vec<DkimK
         .await
         .map_err(|err| SmtpError::Dkim(err.to_string()))??;
     for key in keys {
-        store.add_dkim_key(domain, &key.selector, key.algorithm, key.private_key, key.public_key).await?;
+        store.add_dkim_key(domain, &key.selector, key.algorithm, key.private_key, key.public_key, true).await?;
     }
     Ok(store.dkim_keys(domain).await?)
+}
+
+/// Starts a rotation: new keys that only sign after `Store::activate_dkim_keys`, once their
+/// DNS records are published. Selectors carry the month, plus a letter for another rotation
+/// in the same month.
+pub async fn prepare_rotation(store: &Store, domain: &str) -> Result<Vec<DkimKey>, SmtpError> {
+    let existing = store.dkim_keys(domain).await?;
+    if existing.iter().any(|key| key.state() == uwumail_store::DkimKeyState::Pending) {
+        return Ok(existing);
+    }
+    let tag = rotation_tag(&current_tag(), &existing)?;
+    let keys = tokio::task::spawn_blocking(move || generate_keys(&tag))
+        .await
+        .map_err(|err| SmtpError::Dkim(err.to_string()))??;
+    for key in keys {
+        store.add_dkim_key(domain, &key.selector, key.algorithm, key.private_key, key.public_key, false).await?;
+    }
+    Ok(store.dkim_keys(domain).await?)
+}
+
+/// The first of "202609", "202609b", "202609c", ... that no existing selector uses.
+fn rotation_tag(month: &str, existing: &[DkimKey]) -> Result<String, SmtpError> {
+    std::iter::once(month.to_owned())
+        .chain(('b'..='z').map(|letter| format!("{month}{letter}")))
+        .find(|tag| {
+            let taken = [format!("uwu{tag}r"), format!("uwu{tag}e")];
+            !existing.iter().any(|key| taken.contains(&key.selector))
+        })
+        .ok_or_else(|| SmtpError::Dkim("too many key rotations this month".into()))
 }
 
 /// Year and month, used in selectors.
@@ -157,6 +186,7 @@ mod tests {
                 public_key: k.public_key,
                 active: true,
                 created_at: 0,
+                retired_at: None,
             })
             .collect();
         let headers = sign(b"From: mini@example.de\r\nSubject: hi\r\n\r\nhi\r\n", &keys).unwrap();

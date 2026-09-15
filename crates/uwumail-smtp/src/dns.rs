@@ -135,6 +135,15 @@ impl DnsCaches {
         );
     }
 
+    pub fn pin_ipv6(&self, host: &str, addresses: &[Ipv6Addr]) {
+        let records: Arc<[Ipv6Addr]> = addresses.iter().copied().collect();
+        self.ipv6.insert(
+            fqdn(host),
+            RecordSet { rrset: records, dnssec_status: DnssecStatus::Indeterminate },
+            far_future(),
+        );
+    }
+
     pub fn pin_ipv4(&self, host: &str, addresses: &[Ipv4Addr]) {
         let records: Arc<[Ipv4Addr]> = addresses.iter().copied().collect();
         self.ipv4.insert(

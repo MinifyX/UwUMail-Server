@@ -11,12 +11,14 @@ mod error;
 mod routes;
 mod session;
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use axum::Router;
 use axum::routing::{delete, get, patch, post, put};
-use uwumail_smtp::AuthLimiter;
+use uwumail_smtp::dnscheck::{DnsChecker, DomainReport};
+use uwumail_smtp::{AuthLimiter, Smtp};
 use uwumail_store::Store;
 
 pub use error::{ApiError, ApiResult};
@@ -33,14 +35,21 @@ pub struct Web {
 }
 
 struct Inner {
-    store: Store,
+    smtp: Smtp,
     settings: WebSettings,
     limiter: AuthLimiter,
+    dns: Option<DnsChecker>,
+    /// The latest DNS check of each domain.
+    reports: Mutex<HashMap<String, DomainReport>>,
 }
 
 impl Web {
-    pub fn new(store: Store, settings: WebSettings) -> Web {
-        Web { inner: Arc::new(Inner { store, settings, limiter: AuthLimiter::default() }) }
+    pub fn new(smtp: Smtp, settings: WebSettings) -> Web {
+        let dns =
+            DnsChecker::new().inspect_err(|err| tracing::warn!(%err, "DNS checks of domains are not available")).ok();
+        Web {
+            inner: Arc::new(Inner { smtp, settings, limiter: AuthLimiter::default(), dns, reports: Mutex::default() }),
+        }
     }
 
     /// Whether this build contains the web app. Without it the server shows a simple landing page.
@@ -49,7 +58,27 @@ impl Web {
     }
 
     pub(crate) fn store(&self) -> &Store {
-        &self.inner.store
+        self.inner.smtp.store()
+    }
+
+    pub(crate) fn smtp(&self) -> &Smtp {
+        &self.inner.smtp
+    }
+
+    pub(crate) fn dns(&self) -> Option<&DnsChecker> {
+        self.inner.dns.as_ref()
+    }
+
+    pub(crate) fn report(&self, domain: &str) -> Option<DomainReport> {
+        self.inner.reports.lock().expect("reports poisoned").get(domain).cloned()
+    }
+
+    pub(crate) fn keep_report(&self, report: DomainReport) {
+        self.inner.reports.lock().expect("reports poisoned").insert(report.domain.clone(), report);
+    }
+
+    pub(crate) fn forget_report(&self, domain: &str) {
+        self.inner.reports.lock().expect("reports poisoned").remove(domain);
     }
 
     pub(crate) fn settings(&self) -> &WebSettings {
@@ -70,7 +99,13 @@ impl Web {
             .route("/api/account/preferences", patch(routes::account::update_preferences))
             .route("/api/password-links/{token}", get(routes::links::show).post(routes::links::choose))
             .route("/api/admin/overview", get(routes::admin::overview))
-            .route("/api/admin/domains", get(routes::admin::domains))
+            .route("/api/admin/domains", get(routes::domains::list).post(routes::domains::create))
+            .route("/api/admin/domains/{name}", get(routes::domains::detail).delete(routes::domains::remove))
+            .route("/api/admin/domains/{name}/catch-all", put(routes::domains::set_catch_all))
+            .route("/api/admin/domains/{name}/check", post(routes::domains::check))
+            .route("/api/admin/domains/{name}/dkim/rotate", post(routes::domains::rotate_keys))
+            .route("/api/admin/domains/{name}/dkim/activate", post(routes::domains::activate_keys))
+            .route("/api/admin/domains/{name}/dkim/{selector}", delete(routes::domains::remove_key))
             .route("/api/admin/audit", get(routes::admin::audit))
             .route("/api/admin/people", get(routes::people::list).post(routes::people::create))
             .route(

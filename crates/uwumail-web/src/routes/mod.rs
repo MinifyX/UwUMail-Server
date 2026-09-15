@@ -1,6 +1,7 @@
 pub mod account;
 pub mod admin;
 pub mod auth;
+pub mod domains;
 pub mod links;
 pub mod people;
 

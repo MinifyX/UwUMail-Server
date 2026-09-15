@@ -8,8 +8,20 @@ use axum::http::{Request, Response, StatusCode, header};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 use uwumail_jmap::ClientInfo;
+use uwumail_smtp::{Smtp, SmtpSettings};
 use uwumail_store::{NewAccount, Role, Store};
 use uwumail_web::{CSRF_HEADER, Web, WebSettings};
+
+fn smtp(store: Store) -> Smtp {
+    let settings = SmtpSettings {
+        hostname: "mail.example.de".into(),
+        smtp: Default::default(),
+        delivery: Default::default(),
+        tone: Default::default(),
+        server_tls: None,
+    };
+    Smtp::new(store, settings).unwrap()
+}
 
 async fn setup() -> (Router, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
@@ -27,7 +39,7 @@ async fn setup() -> (Router, tempfile::TempDir) {
             .await
             .unwrap();
     }
-    let web = Web::new(store, WebSettings { hostname: "mail.example.de".into(), started: Instant::now() });
+    let web = Web::new(smtp(store), WebSettings { hostname: "mail.example.de".into(), started: Instant::now() });
     (web.router(), dir)
 }
 

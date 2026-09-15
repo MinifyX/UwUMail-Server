@@ -10,6 +10,7 @@ mod client;
 pub mod config;
 pub mod dkim;
 mod dns;
+pub mod dnscheck;
 mod dsn;
 mod headers;
 mod inbound;
@@ -127,6 +128,16 @@ impl Smtp {
     /// DNS answers used for SPF, DKIM, DMARC and MX lookups. Tests pre-fill it.
     pub fn dns_cache(&self) -> &DnsCaches {
         &self.inner.dns
+    }
+
+    /// The relay outgoing mail leaves through, if one is configured.
+    pub fn relay_host(&self) -> Option<&str> {
+        self.inner.delivery.relay.as_ref().map(|relay| relay.host.as_str())
+    }
+
+    /// Whether another mail server receives mail first and hands it to us.
+    pub fn behind_upstream_server(&self) -> bool {
+        !self.inner.trusted_relays.is_empty()
     }
 }
 

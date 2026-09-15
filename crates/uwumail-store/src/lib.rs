@@ -35,7 +35,7 @@ pub use admin::{
     TRASH_RETENTION_SECS,
 };
 pub use blobs::BlobHash;
-pub use directory::{Account, DkimKey, DkimKeyAlgorithm, Domain, NewAccount, Role};
+pub use directory::{Account, DkimKey, DkimKeyAlgorithm, DkimKeyState, Domain, NewAccount, Role};
 pub use extras::{Identity, IdentityUpdate, SubmissionRecord, UPLOAD_LIFETIME_SECS, VacationResponse};
 pub use mail::{EmailSummary, IngestRequest, IngestedEmail, Mailbox, MailboxRole, MailboxTarget};
 pub use mutate::{EmailUpdate, KeywordsChange, MailboxUpdate, MailboxesChange};

@@ -340,6 +340,19 @@ impl Store {
         Ok(self.people().await?.into_iter().find(|person| person.account.login == login))
     }
 
+    /// Per domain: how many people have their main address there, and how many aliases it has.
+    pub async fn domain_address_counts(&self) -> Result<std::collections::HashMap<String, (i64, i64)>> {
+        self.read(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT d.name, SUM(a.kind = 'primary'), SUM(a.kind = 'alias') FROM domains d
+                 JOIN addresses a ON a.domain_id = d.id GROUP BY d.name",
+            )?;
+            let rows = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, (row.get(1)?, row.get(2)?))))?;
+            Ok(rows.collect::<Result<_, _>>()?)
+        })
+        .await
+    }
+
     /// Addresses of an account with their kind, primary address first.
     pub async fn account_addresses(&self, login: &str) -> Result<Vec<AddressInfo>> {
         let login = login_key(login)?;

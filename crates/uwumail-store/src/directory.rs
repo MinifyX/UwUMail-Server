@@ -74,11 +74,33 @@ pub struct DkimKey {
     #[serde(skip)]
     pub private_key: Vec<u8>,
     pub public_key: String,
+    /// Signs outgoing mail.
     pub active: bool,
     pub created_at: i64,
+    /// No longer signs; its DNS record should stay a few days for mail still on its way.
+    pub retired_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DkimKeyState {
+    /// Created for a rotation, waiting for its DNS record before it signs.
+    Pending,
+    Active,
+    Retired,
 }
 
 impl DkimKey {
+    pub fn state(&self) -> DkimKeyState {
+        if self.active {
+            DkimKeyState::Active
+        } else if self.retired_at.is_some() {
+            DkimKeyState::Retired
+        } else {
+            DkimKeyState::Pending
+        }
+    }
+
     /// Name and value of the TXT record that publishes this key.
     pub fn dns_record(&self) -> (String, String) {
         (
@@ -94,7 +116,7 @@ impl std::fmt::Debug for DkimKey {
             .field("domain", &self.domain)
             .field("selector", &self.selector)
             .field("algorithm", &self.algorithm)
-            .field("active", &self.active)
+            .field("state", &self.state())
             .finish_non_exhaustive()
     }
 }
@@ -271,6 +293,68 @@ impl Store {
         .await
     }
 
+    /// Finishes a rotation: the pending keys sign from now on, the keys they replace are retired.
+    pub async fn activate_dkim_keys(&self, domain: &str) -> Result<()> {
+        let domain = normalize_domain(domain)?;
+        self.write(move |tx| {
+            let domain_id = domain_id(tx, &domain)?;
+            let pending: Vec<String> = tx
+                .prepare("SELECT algorithm FROM dkim_keys WHERE domain_id = ?1 AND active = 0 AND retired_at IS NULL")?
+                .query_map([domain_id], |row| row.get(0))?
+                .collect::<Result<_, _>>()?;
+            if pending.is_empty() {
+                return Err(StoreError::Rule {
+                    code: "noPendingKeys",
+                    message: format!("{domain} has no new keys to switch to"),
+                });
+            }
+            let now = now();
+            for algorithm in pending {
+                tx.execute(
+                    "UPDATE dkim_keys SET active = 0, retired_at = ?1 WHERE domain_id = ?2 AND algorithm = ?3 AND active = 1",
+                    params![now, domain_id, algorithm],
+                )?;
+                tx.execute(
+                    "UPDATE dkim_keys SET active = 1 WHERE domain_id = ?1 AND algorithm = ?2 AND active = 0 AND retired_at IS NULL",
+                    params![domain_id, algorithm],
+                )?;
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    /// Removes a pending or retired key. Active keys cannot be removed.
+    pub async fn remove_dkim_key(&self, domain: &str, selector: &str) -> Result<()> {
+        let domain = normalize_domain(domain)?;
+        let selector = selector.to_owned();
+        self.write(move |tx| {
+            let domain_id = domain_id(tx, &domain)?;
+            let active: Option<bool> = tx
+                .query_row(
+                    "SELECT active FROM dkim_keys WHERE domain_id = ?1 AND selector = ?2",
+                    params![domain_id, selector],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            match active {
+                None => Err(StoreError::NotFound(format!("DKIM key {selector} of {domain}"))),
+                Some(true) => Err(StoreError::Rule {
+                    code: "keyActive",
+                    message: format!("{selector} still signs mail for {domain}"),
+                }),
+                Some(false) => {
+                    tx.execute(
+                        "DELETE FROM dkim_keys WHERE domain_id = ?1 AND selector = ?2",
+                        params![domain_id, selector],
+                    )?;
+                    Ok(())
+                }
+            }
+        })
+        .await
+    }
+
     pub async fn set_catch_all(&self, domain: &str, login: Option<&str>) -> Result<()> {
         let domain = normalize_domain(domain)?;
         let login = login.map(login_key).transpose()?;
@@ -293,6 +377,7 @@ impl Store {
         .await
     }
 
+    /// Adds a signing key; `active: false` prepares it for a rotation.
     pub async fn add_dkim_key(
         &self,
         domain: &str,
@@ -300,6 +385,7 @@ impl Store {
         algorithm: DkimKeyAlgorithm,
         private_key: Vec<u8>,
         public_key: String,
+        active: bool,
     ) -> Result<DkimKey> {
         let domain = normalize_domain(domain)?;
         let selector = selector.to_owned();
@@ -307,9 +393,9 @@ impl Store {
             let domain_id = domain_id(tx, &domain)?;
             let created_at = now();
             tx.execute(
-                "INSERT INTO dkim_keys (domain_id, selector, algorithm, private_key, public_key, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![domain_id, selector, algorithm.as_str(), private_key, public_key, created_at],
+                "INSERT INTO dkim_keys (domain_id, selector, algorithm, private_key, public_key, active, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![domain_id, selector, algorithm.as_str(), private_key, public_key, active, created_at],
             )
             .map_err(|err| match err {
                 rusqlite::Error::SqliteFailure(e, _) if e.code == rusqlite::ErrorCode::ConstraintViolation => {
@@ -324,8 +410,9 @@ impl Store {
                 algorithm,
                 private_key,
                 public_key,
-                active: true,
+                active,
                 created_at,
+                retired_at: None,
             })
         })
         .await
@@ -336,7 +423,7 @@ impl Store {
         let domain = normalize_domain(domain)?;
         self.read(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT k.id, d.name, k.selector, k.algorithm, k.private_key, k.public_key, k.active, k.created_at
+                "SELECT k.id, d.name, k.selector, k.algorithm, k.private_key, k.public_key, k.active, k.created_at, k.retired_at
                  FROM dkim_keys k JOIN domains d ON d.id = k.domain_id
                  WHERE d.name = ?1 ORDER BY k.created_at DESC, k.id DESC",
             )?;
@@ -350,6 +437,7 @@ impl Store {
                     public_key: row.get(5)?,
                     active: row.get(6)?,
                     created_at: row.get(7)?,
+                    retired_at: row.get(8)?,
                 })
             })?;
             Ok(rows.collect::<Result<_, _>>()?)
@@ -660,12 +748,42 @@ mod tests {
         let (store, _dir) = store().await;
         store.create_domain("example.de").await.unwrap();
         let key = store
-            .add_dkim_key("example.de", "uwu1", DkimKeyAlgorithm::Ed25519Sha256, vec![1, 2, 3], "cHVibGlj".into())
+            .add_dkim_key("example.de", "uwu1", DkimKeyAlgorithm::Ed25519Sha256, vec![1, 2, 3], "cHVibGlj".into(), true)
             .await
             .unwrap();
         assert_eq!(key.dns_record(), ("uwu1._domainkey.example.de".into(), "v=DKIM1; k=ed25519; p=cHVibGlj".into()));
         let keys = store.dkim_keys("example.de").await.unwrap();
         assert_eq!(keys.len(), 1);
         assert_eq!(keys[0].private_key, vec![1, 2, 3]);
+    }
+
+    #[tokio::test]
+    async fn dkim_rotation() {
+        let (store, _dir) = store().await;
+        store.create_domain("example.de").await.unwrap();
+        let add = |selector: &'static str, active| {
+            let store = store.clone();
+            async move {
+                store
+                    .add_dkim_key("example.de", selector, DkimKeyAlgorithm::RsaSha256, vec![1], "a2V5".into(), active)
+                    .await
+                    .unwrap()
+            }
+        };
+        add("old", true).await;
+        let refused = store.activate_dkim_keys("example.de").await;
+        assert!(matches!(refused, Err(StoreError::Rule { code: "noPendingKeys", .. })));
+        assert_eq!(add("new", false).await.state(), DkimKeyState::Pending);
+
+        store.activate_dkim_keys("example.de").await.unwrap();
+        let keys = store.dkim_keys("example.de").await.unwrap();
+        let states: Vec<_> = keys.iter().map(|k| (k.selector.as_str(), k.state())).collect();
+        assert!(states.contains(&("new", DkimKeyState::Active)));
+        assert!(states.contains(&("old", DkimKeyState::Retired)));
+
+        let refused = store.remove_dkim_key("example.de", "new").await;
+        assert!(matches!(refused, Err(StoreError::Rule { code: "keyActive", .. })));
+        store.remove_dkim_key("example.de", "old").await.unwrap();
+        assert_eq!(store.dkim_keys("example.de").await.unwrap().len(), 1);
     }
 }
