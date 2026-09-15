@@ -870,6 +870,13 @@ impl DnsChecker {
             .collect())
     }
 
+    /// Where blocklists and Team Cymru are asked: the system resolver. Resolving from the root
+    /// servers finds nothing in these zones (even the test entry 127.0.0.2 came back as not
+    /// listed), and Spamhaus answers big public resolvers with 127.255.255.x, which counts as unknown.
+    fn list_lookups(&self) -> Lookups<'_> {
+        Lookups::System(self.system.resolver())
+    }
+
     /// Whether a blocklist lists `ip`. Answers outside 127.0.0.0/8, or 127.255.255.x (Spamhaus'
     /// "you may not ask"), say nothing about the address.
     pub async fn blocklist_status(&self, ip: IpAddr, list: &Blocklist) -> Listing {
@@ -878,8 +885,7 @@ impl DnsChecker {
             return unknown(None);
         }
         let name = blocklist_name(ip, list.zone);
-        let (lookups, _) = self.lookups(list.zone).await;
-        match lookups.records(&name, RecordType::A).await {
+        match self.list_lookups().records(&name, RecordType::A).await {
             Ok(answers) => {
                 let addresses: Vec<Ipv4Addr> = answers
                     .into_iter()
@@ -894,6 +900,24 @@ impl DnsChecker {
                 }
             }
             Err(error) => unknown(Some(error)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod blocklist_tests {
+    use super::*;
+
+    /// Every list has 127.0.0.2 as a test entry; run with
+    /// `cargo test -p uwumail-smtp blocklist_test_entries -- --ignored`.
+    #[tokio::test]
+    #[ignore = "needs the internet"]
+    async fn blocklist_test_entries() {
+        let dns = DnsChecker::new().unwrap();
+        let test_entry: IpAddr = "127.0.0.2".parse().unwrap();
+        for list in BLOCKLISTS {
+            let listing = dns.blocklist_status(test_entry, list).await;
+            assert_ne!(listing.status, ListingStatus::Clean, "{} knows its test entry", list.name);
         }
     }
 }
