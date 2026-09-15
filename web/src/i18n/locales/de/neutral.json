@@ -221,7 +221,8 @@
       "setupCodeInvalid": "Der Code stimmt nicht. Schau nochmal ins Log.",
       "setupDone": "Dieser Server hat schon einen Admin.",
       "testMailFailed": "Die Test-Mail konnte nicht verschickt werden.",
-      "cloudflareFailed": "Cloudflare: {{detail}}"
+      "cloudflareFailed": "Cloudflare: {{detail}}",
+      "mtaStsCertificate": "Für den strengen Modus braucht der Server erst ein gültiges Zertifikat."
     }
   },
   "people": {
@@ -488,13 +489,21 @@
         "warning": "Hinweis",
         "missing": "Fehlt",
         "wrong": "Stimmt nicht",
-        "error": "Nicht prüfbar"
+        "error": "Nicht prüfbar",
+        "recommended": "Empfohlen"
       },
       "purpose": {
         "mx": "Sagt anderen Mailservern, wohin Mails für diese Domain gehen.",
         "spf": "Legt fest, welche Server im Namen der Domain senden dürfen.",
         "dmarc": "Sagt Empfängern, was mit gefälschten Mails passieren soll.",
-        "dkim": "Öffentlicher Schlüssel, mit dem Empfänger die Signatur deiner Mails prüfen."
+        "dkim": "Öffentlicher Schlüssel, mit dem Empfänger die Signatur deiner Mails prüfen.",
+        "tlsrpt": "Andere Mailserver schicken hierhin Berichte, ob verschlüsselte Verbindungen zu deinem Server klappen.",
+        "mtasts": "Kündigt die MTA-STS-Richtlinie an. Die ID ändert sich, sobald sich die Richtlinie ändert.",
+        "mtastsHost": "Unter diesem Namen holen andere Server die Richtlinie ab. Er muss auf diesen Server zeigen.",
+        "mtastsPolicy": "So sehen andere Server die Richtlinie. UwUMail liefert sie selbst aus.",
+        "jmap": "Damit finden Apps wie UwUMail den Server, wenn du nur deine Mail-Adresse eingibst.",
+        "submissions": "Sagt Mail-Apps, wo sie Mails verschlüsselt verschicken (Port 465).",
+        "submission": "Sagt Mail-Apps, wo sie Mails mit STARTTLS verschicken (Port 587)."
       },
       "notes": {
         "mxUpstream": "Zeigt auf den vorgeschalteten Mailserver. Das passt so.",
@@ -508,7 +517,16 @@
         "dmarcInvalid": "Die Richtlinie (p=) fehlt oder ist ungültig.",
         "dmarcMultiple": "Es gibt mehrere DMARC-Einträge. Erlaubt ist nur einer.",
         "dkimMismatch": "Enthält einen anderen Schlüssel.",
-        "lookupFailed": "Die Abfrage ist fehlgeschlagen. Versuch es gleich noch einmal."
+        "lookupFailed": "Die Abfrage ist fehlgeschlagen. Versuch es gleich noch einmal.",
+        "dmarcReportsElsewhere": "Berichte gehen an eine andere Adresse. Mit rua=mailto:dmarc-reports@… wertet UwUMail sie selbst aus.",
+        "srvElsewhere": "Zeigt auf einen anderen Server oder Port.",
+        "tlsRptElsewhere": "Berichte gehen an eine andere Adresse. UwUMail sieht sie dann nicht.",
+        "tlsRptMultiple": "Es gibt mehrere Einträge für TLS-Berichte. Erlaubt ist nur einer.",
+        "mtaStsOldId": "Enthält eine alte ID. Andere Server holen die neue Richtlinie erst, wenn die ID stimmt.",
+        "mtaStsMultiple": "Es gibt mehrere MTA-STS-Einträge. Erlaubt ist nur einer.",
+        "mtaStsFetchFailed": "Die Richtlinie ließ sich nicht abholen. Prüfe den Namen mta-sts und das Zertifikat.",
+        "mtaStsPolicyDiffers": "Dort steht eine andere Richtlinie. Vielleicht antwortet unter dem Namen ein anderer Server.",
+        "mtaStsPolicyInvalid": "Dort steht keine gültige Richtlinie."
       },
       "catchAll": "Sammeladresse",
       "catchAllHint": "Mails an Adressen, die es nicht gibt, gehen an diese Person. Das zieht auch mehr Spam an.",
@@ -531,7 +549,24 @@
       "removeConfirm": "{{domain}} wirklich entfernen?",
       "catchAllTarget": "Unbekannte Adressen gehen an",
       "selfService": "Eigene Adressen erlauben",
-      "selfServiceHint": "Personen dürfen auf dieser Domain selbst zusätzliche Adressen anlegen, bis zu ihrem Limit."
+      "selfServiceHint": "Personen dürfen auf dieser Domain selbst zusätzliche Adressen anlegen, bis zu ihrem Limit.",
+      "address": "Adresse",
+      "content": "Inhalt",
+      "recommendedTitle": "Empfohlen",
+      "recommendedIntro": "Mail funktioniert auch ohne diese Einträge. Mit ihnen finden Apps den Server von selbst, und du bekommst Berichte, wenn etwas nicht klappt.",
+      "kinds": {
+        "mx": "MX",
+        "spf": "SPF",
+        "dmarc": "DMARC",
+        "dkim": "DKIM",
+        "tlsrpt": "TLS-Berichte",
+        "mtasts": "MTA-STS",
+        "mtastsHost": "MTA-STS-Adresse",
+        "mtastsPolicy": "MTA-STS-Richtlinie",
+        "jmap": "App-Suche (JMAP)",
+        "submissions": "Versand für Mail-Apps (TLS)",
+        "submission": "Versand für Mail-Apps (STARTTLS)"
+      }
     },
     "toasts": {
       "created": "{{domain}} ist angelegt",
@@ -541,6 +576,70 @@
       "rotated": "Neue Schlüssel sind bereit",
       "activated": "Neue Schlüssel sind aktiv",
       "keyRemoved": "Schlüssel entfernt"
+    },
+    "mtaSts": {
+      "title": "MTA-STS",
+      "intro": "Mit MTA-STS sagt deine Domain anderen Mailservern: Mails an mich nur verschlüsselt und nur an meinen echten Server. So kann unterwegs niemand mitlesen oder Mails umleiten.",
+      "modes": {
+        "off": "Aus",
+        "testing": "Test",
+        "enforce": "Streng"
+      },
+      "explain": {
+        "off": "Andere Server verschlüsseln, wenn es geht, müssen es aber nicht.",
+        "testing": "Andere Server melden Probleme per TLS-Bericht, stellen aber trotzdem zu. Gut, um erst mal zu schauen.",
+        "enforce": "Andere Server stellen nur noch verschlüsselt an einen Server mit gültigem Zertifikat zu. Klappt das nicht, warten die Mails bei ihnen."
+      },
+      "mx": "Erlaubte Mailserver: {{names}}",
+      "since": "seit {{date}}",
+      "records": "Trag die neuen Einträge in der DNS-Liste oben ein: _mta-sts, mta-sts und _smtp._tls.",
+      "enforceConfirm": "Im strengen Modus stellen andere Server nur noch zu, wenn Verschlüsselung und Zertifikat stimmen. Jetzt umstellen?",
+      "enforceNow": "Auf streng stellen",
+      "ready": "Seit 14 Tagen melden andere Server keine TLS-Probleme. Du kannst MTA-STS auf streng stellen.",
+      "toasts": {
+        "off": "MTA-STS ist aus",
+        "testing": "MTA-STS läuft im Testmodus",
+        "enforce": "MTA-STS ist jetzt streng"
+      }
+    },
+    "reports": {
+      "title": "Berichte",
+      "period": "Zeitraum",
+      "days_one": "{{count}} Tag",
+      "days_other": "{{count}} Tage",
+      "empty": "In den letzten {{days}} Tagen kamen keine Berichte an.",
+      "emptyHint": "Große Anbieter wie Google oder Microsoft schicken einmal am Tag Berichte an dmarc-reports@{{domain}} und tls-reports@{{domain}}, sobald die DNS-Einträge stimmen.",
+      "dmarcTitle": "DMARC: Mails in deinem Namen",
+      "dmarcIntro": "Empfänger berichten, wie viele Mails mit deiner Domain als Absender bei ihnen ankamen und ob SPF oder DKIM gepasst hat.",
+      "noneOfKind": "Noch keine Berichte dieser Art.",
+      "messages": "Mails",
+      "passed": "Bestanden",
+      "reports": "Berichte",
+      "reporters": "Von",
+      "source": "Absender-Adresse",
+      "ours": "Dieser Server",
+      "ownFailing_one": "Von einer Adresse dieses Servers kamen Mails, die DMARC nicht bestanden haben. Prüfe SPF und DKIM.",
+      "ownFailing_other": "Von {{count}} Adressen dieses Servers kamen Mails, die DMARC nicht bestanden haben. Prüfe SPF und DKIM.",
+      "stricter": "Seit 14 Tagen bestehen alle Mails von diesem Server DMARC. Du kannst die Richtlinie von {{from}} auf {{to}} stellen:",
+      "strangers": "Fremde Adressen, die nicht bestehen, sind meist Spam in deinem Namen. Genau davor schützt DMARC.",
+      "tlsTitle": "TLS: Verbindungen zu deinem Server",
+      "tlsIntro": "Andere Mailserver berichten, ob verschlüsselte Verbindungen zu deinem Server geklappt haben.",
+      "sessionsOk": "Verbindungen ok",
+      "sessionsFailed": "Gescheitert",
+      "sessions_one": "{{count}} Verbindung",
+      "sessions_other": "{{count}} Verbindungen",
+      "results": {
+        "starttls-not-supported": "Keine Verschlüsselung angeboten",
+        "certificate-host-mismatch": "Zertifikat passt nicht zum Namen",
+        "certificate-expired": "Zertifikat abgelaufen",
+        "certificate-not-trusted": "Zertifikat nicht vertrauenswürdig",
+        "validation-failure": "Prüfung fehlgeschlagen",
+        "sts-policy-fetch-error": "Richtlinie nicht abrufbar",
+        "sts-policy-invalid": "Richtlinie ungültig",
+        "sts-webpki-invalid": "Zertifikat der Richtlinie ungültig"
+      },
+      "unauthenticated_one": "Ein Bericht kam von einem Absender, der sich nicht ausweisen konnte. Seine Zahlen könnten erfunden sein.",
+      "unauthenticated_other": "{{count}} Berichte kamen von Absendern, die sich nicht ausweisen konnten. Ihre Zahlen könnten erfunden sein."
     }
   },
   "queue": {
@@ -726,7 +825,11 @@
       "adminsSecure": "Alle Admins nutzen eine Zwei-Faktor-Anmeldung.",
       "adminsWithoutSecondFactor_one": "{{login}} ist Admin ohne Zwei-Faktor-Anmeldung.",
       "adminsWithoutSecondFactor_other": "{{count}} Admins haben keine Zwei-Faktor-Anmeldung.",
-      "youWithoutSecondFactor": "Dein Admin-Konto hat noch keine Zwei-Faktor-Anmeldung."
+      "youWithoutSecondFactor": "Dein Admin-Konto hat noch keine Zwei-Faktor-Anmeldung.",
+      "tlsFailures_one": "{{domain}}: Eine verschlüsselte Verbindung ist in der letzten Woche gescheitert.",
+      "tlsFailures_other": "{{domain}}: {{count}} verschlüsselte Verbindungen sind in der letzten Woche gescheitert.",
+      "dmarcOwnFailures_one": "{{domain}}: Eine Mail von diesem Server hat DMARC nicht bestanden.",
+      "dmarcOwnFailures_other": "{{domain}}: {{count}} Mails von diesem Server haben DMARC nicht bestanden."
     },
     "hints": {
       "noDomains": "Ohne Domain kann der Server keine Mails annehmen.",
@@ -746,7 +849,9 @@
       "diskLow": "Wenn der Speicher voll ist, kann der Server keine Mails mehr annehmen.",
       "mailboxesNearlyFull": "Volle Postfächer nehmen keine Mails mehr an. Speicher erhöhen oder aufräumen lassen.",
       "adminsWithoutSecondFactor": "Wer das Passwort eines Admins errät, kann den ganzen Server verwalten.",
-      "youWithoutSecondFactor": "Unter Sicherheit richtest du in zwei Minuten eine Authenticator-App oder einen Passkey ein."
+      "youWithoutSecondFactor": "Unter Sicherheit richtest du in zwei Minuten eine Authenticator-App oder einen Passkey ein.",
+      "tlsFailures": "Unter Berichte auf der Domain-Seite steht, was schiefging, zum Beispiel ein abgelaufenes Zertifikat.",
+      "dmarcOwnFailures": "Meist fehlt der Server im SPF-Eintrag oder DKIM passt nicht. Die Domain-Seite zeigt die Einträge."
     }
   },
   "secondFactor": {

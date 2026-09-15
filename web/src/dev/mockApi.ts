@@ -18,11 +18,13 @@ import type {
   DomainReport,
   DomainSummary,
   Info,
+  MtaStsView,
   OwnAddressesView,
   Overview,
   Person,
   Profile,
   RecordCheck,
+  ReportsView,
   SecurityView,
   ServerCheck,
   Session,
@@ -99,6 +101,18 @@ interface MockDomain {
   report: DomainReport | null;
   /** False for a domain from the setup assistant until its records are at Cloudflare. */
   published?: boolean;
+  mtaSts?: MtaStsView | null;
+}
+
+function mtaStsView(mode: MtaStsView["mode"], changedAt: number): MtaStsView {
+  const policy = `version: STSv1\r\nmode: ${mode}\r\nmx: mail.uwu.example\r\nmax_age: ${mode === "testing" ? 86400 : 604800}\r\n`;
+  return {
+    mode,
+    mx: ["mail.uwu.example"],
+    changedAt,
+    policy,
+    id: mode === "testing" ? "3f9a1c0b7d2e4a6f8b1c" : "a7c2e9d14b6f0a3e5d8c",
+  };
 }
 
 const key = (domain: string, selector: string, state: DkimKeyInfo["state"], algorithm: DkimKeyInfo["algorithm"]) => ({
@@ -128,6 +142,7 @@ function record(
     note: null,
     selector: null,
     keyState: null,
+    optional: false,
     ...extra,
   };
 }
@@ -141,7 +156,7 @@ function report(domain: MockDomain, healthy: boolean): DomainReport {
     record(
       "dmarc",
       `_dmarc.${domain.name}`,
-      `v=DMARC1; p=quarantine; adkim=s; aspf=s; rua=mailto:postmaster@${domain.name}`,
+      `v=DMARC1; p=quarantine; adkim=s; aspf=s; rua=mailto:dmarc-reports@${domain.name}`,
       ["v=DMARC1; p=none"],
       { note: "dmarcNone" },
     ),
@@ -155,8 +170,45 @@ function report(domain: MockDomain, healthy: boolean): DomainReport {
         }),
       ),
   ];
+  const tlsRpt = `v=TLSRPTv1; rua=mailto:tls-reports@${domain.name}`;
+  records.push(
+    record("tlsrpt", `_smtp._tls.${domain.name}`, tlsRpt, healthy ? [tlsRpt] : [], {
+      status: healthy ? "ok" : "missing",
+      optional: !domain.mtaSts,
+    }),
+  );
+  if (domain.mtaSts) {
+    const txt = `v=STSv1; id=${domain.mtaSts.id}`;
+    records.push(
+      record("mtasts", `_mta-sts.${domain.name}`, txt, [txt]),
+      record("mtastsHost", `mta-sts.${domain.name}`, "mail.uwu.example", ["mail.uwu.example"], { recordType: "CNAME" }),
+      record(
+        "mtastsPolicy",
+        `https://mta-sts.${domain.name}/.well-known/mta-sts.txt`,
+        domain.mtaSts.policy,
+        [domain.mtaSts.policy],
+        { recordType: "HTTPS" },
+      ),
+    );
+  }
+  for (const [kind, service, port] of [
+    ["jmap", "_jmap._tcp", 443],
+    ["submissions", "_submissions._tcp", 465],
+    ["submission", "_submission._tcp", 587],
+  ] as const) {
+    const value = `0 1 ${port} mail.uwu.example`;
+    const present = healthy && kind !== "submissions";
+    records.push(
+      record(kind, `${service}.${domain.name}`, value, present ? [value] : [], {
+        recordType: "SRV",
+        status: present ? "ok" : "missing",
+        optional: true,
+      }),
+    );
+  }
   const order = ["ok", "warning", "missing", "wrong", "error"];
   const status = records
+    .filter((r) => !r.optional)
     .filter((r) => r.keyState !== "pending")
     .reduce<RecordCheck["status"]>(
       (worst, r) => (order.indexOf(r.status) > order.indexOf(worst) ? r.status : worst),
@@ -182,6 +234,7 @@ const domains: MockDomain[] = [
       key("uwu.example", "uwu202609e", "active", "ed25519-sha256"),
     ],
     report: null,
+    mtaSts: mtaStsView("testing", now - 20 * 86_400),
   },
   {
     name: "verein.example",
@@ -217,6 +270,7 @@ const detail = (domain: MockDomain): DomainDetail => ({
   selfServiceAliases: domain.selfServiceAliases ?? domain.name === "uwu.example",
   keys: domain.keys,
   report: domain.report,
+  mtaSts: domain.mtaSts ?? null,
   setup: { hostname: "mail.uwu.example", relayHost: null, upstreamMx: false },
 });
 
@@ -584,6 +638,12 @@ function health(): Health {
       link: `/admin/domains/${domain.name}`,
     });
   }
+  dns.push({
+    code: "tlsFailures",
+    level: "warning",
+    params: { domain: "uwu.example", count: 3 },
+    link: "/admin/domains/uwu.example",
+  });
   if (pending > 0) dns.push({ code: "dnsPending", level: "unknown", params: { count: pending } });
   if (dns.length === 0) dns.push({ code: "dnsOk", level: "ok", params: { count: domains.length } });
 
@@ -1192,6 +1252,82 @@ const routes: [string, RegExp, Handler][] = [
       if (pending) rotationChecks += 1;
       found.report = report(found, found.published !== false && (!pending || rotationChecks > 1));
       return [200, found.report];
+    },
+  ],
+  [
+    "PUT",
+    /^\/api\/admin\/domains\/([^/]+)\/mta-sts$/,
+    (body, [name]) => {
+      const found = domains.find((d) => d.name === name);
+      if (!found) return problem(404, "notFound");
+      const mode = (body as { mode: "off" | "testing" | "enforce" }).mode;
+      // Log in as the mock admin and pick enforce on verein.example to see the certificate error.
+      if (mode === "enforce" && found.name === "verein.example") return problem(409, "mtaStsCertificate");
+      found.mtaSts = mode === "off" ? null : mtaStsView(mode, Math.floor(Date.now() / 1000));
+      found.report = report(found, found.name !== "verein.example");
+      log("domain.mtaSts", found.name, { mode });
+      return [200, detail(found)];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/domains\/([^/]+)\/reports$/,
+    (_, [name]) => {
+      const empty = { reports: 0, unauthenticated: 0, firstBegin: null, lastEnd: null, reporters: [] };
+      if (name !== "uwu.example") {
+        return [
+          200,
+          {
+            days: 30,
+            dmarc: { ...empty, messages: 0, passed: 0, sources: [] },
+            tls: { ...empty, successful: 0, failed: 0, failures: [] },
+            suggestions: [],
+          } satisfies ReportsView,
+        ];
+      }
+      const view: ReportsView = {
+        days: 30,
+        dmarc: {
+          reports: 41,
+          unauthenticated: 1,
+          messages: 1287,
+          passed: 1241,
+          firstBegin: now - 30 * 86_400,
+          lastEnd: now - 3600,
+          reporters: [
+            { organization: "google.com", reports: 29, count: 1102 },
+            { organization: "Yahoo", reports: 8, count: 131 },
+            { organization: "Enterprise Outlook", reports: 4, count: 54 },
+          ],
+          sources: [
+            { ip: "192.0.2.10", messages: 1198, passed: 1198, headerFrom: ["uwu.example"], ours: true },
+            { ip: "2001:db8::10", messages: 43, passed: 43, headerFrom: ["uwu.example"], ours: true },
+            { ip: "198.51.100.77", messages: 39, passed: 0, headerFrom: ["uwu.example"], ours: false },
+            { ip: "203.0.113.9", messages: 7, passed: 0, headerFrom: ["uwu.example"], ours: false },
+          ],
+        },
+        tls: {
+          reports: 22,
+          unauthenticated: 0,
+          successful: 4803,
+          failed: 3,
+          firstBegin: now - 30 * 86_400,
+          lastEnd: now - 3600,
+          reporters: [
+            { organization: "Google Inc.", reports: 20, count: 4790 },
+            { organization: "Microsoft Corporation", reports: 2, count: 16 },
+          ],
+          failures: [
+            { resultType: "certificate-expired", policyType: "sts", mxHost: "mail.uwu.example", sessions: 2 },
+            { resultType: "starttls-not-supported", policyType: "sts", mxHost: "mail.uwu.example", sessions: 1 },
+          ],
+        },
+        suggestions: [
+          { code: "mtaStsEnforce" },
+          { code: "dmarcStricter", params: { from: "quarantine", to: "reject" } },
+        ],
+      };
+      return [200, view];
     },
   ],
   [

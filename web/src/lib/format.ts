@@ -29,6 +29,10 @@ export function formatDuration(seconds: number, t: TFunction): string {
   return parts.slice(0, 2).join(", ");
 }
 
+export function formatNumber(value: number, language: string): string {
+  return new Intl.NumberFormat(language).format(value);
+}
+
 export function formatDate(unixSeconds: number, language: string): string {
   return new Intl.DateTimeFormat(language, { dateStyle: "long" }).format(new Date(unixSeconds * 1000));
 }

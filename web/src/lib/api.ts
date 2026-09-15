@@ -156,16 +156,32 @@ export interface DomainSummary {
   dns: { status: CheckStatus; checkedAt: number } | null;
 }
 
+export type RecordKind =
+  | "mx"
+  | "spf"
+  | "dmarc"
+  | "dkim"
+  | "tlsrpt"
+  | "mtasts"
+  | "mtastsHost"
+  | "mtastsPolicy"
+  | "jmap"
+  | "submissions"
+  | "submission";
+
 export interface RecordCheck {
-  kind: "mx" | "spf" | "dmarc" | "dkim";
+  kind: RecordKind;
   name: string;
-  recordType: "MX" | "TXT";
+  /** HTTPS is the MTA-STS policy file, not a DNS record. */
+  recordType: "MX" | "TXT" | "SRV" | "CNAME" | "HTTPS";
   expected: string;
   found: string[];
   status: CheckStatus;
   note: string | null;
   selector: string | null;
   keyState: DkimKeyState | null;
+  /** Recommended; it does not count for the domain's status. */
+  optional: boolean;
 }
 
 export interface DomainReport {
@@ -191,7 +207,55 @@ export interface DomainDetail extends Omit<DomainSummary, "dns"> {
   selfServiceAliases?: boolean;
   keys: DkimKeyInfo[];
   report: DomainReport | null;
+  mtaSts: MtaStsView | null;
   setup: { hostname: string; relayHost: string | null; upstreamMx: boolean };
+}
+
+export type MtaStsMode = "testing" | "enforce";
+
+export interface MtaStsView {
+  mode: MtaStsMode;
+  /** The MX names the policy lists. */
+  mx: string[];
+  changedAt: number;
+  policy: string;
+  id: string;
+}
+
+export interface Reporter {
+  organization: string;
+  reports: number;
+  /** Messages (DMARC) or TLS sessions. */
+  count: number;
+}
+
+export interface DmarcSource {
+  ip: string;
+  messages: number;
+  passed: number;
+  headerFrom: string[];
+  /** One of the addresses this server sends from. */
+  ours: boolean;
+}
+
+export interface ReportPeriod {
+  reports: number;
+  /** Report mails that did not pass DMARC themselves. */
+  unauthenticated: number;
+  firstBegin: number | null;
+  lastEnd: number | null;
+  reporters: Reporter[];
+}
+
+export interface ReportsView {
+  days: number;
+  dmarc: ReportPeriod & { messages: number; passed: number; sources: DmarcSource[] };
+  tls: ReportPeriod & {
+    successful: number;
+    failed: number;
+    failures: { resultType: string; policyType: string; mxHost: string; sessions: number }[];
+  };
+  suggestions: ({ code: "mtaStsEnforce" } | { code: "dmarcStricter"; params: { from: string; to: string } })[];
 }
 
 export interface AuditRecord {

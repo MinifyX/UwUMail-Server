@@ -221,7 +221,8 @@
       "setupCodeInvalid": "The code is wrong. Have another look at the log.",
       "setupDone": "This server already has an admin.",
       "testMailFailed": "The test message could not be sent.",
-      "cloudflareFailed": "Cloudflare: {{detail}}"
+      "cloudflareFailed": "Cloudflare: {{detail}}",
+      "mtaStsCertificate": "Enforce mode needs a valid certificate on the server first."
     }
   },
   "people": {
@@ -488,13 +489,21 @@
         "warning": "Hint",
         "missing": "Missing",
         "wrong": "Wrong",
-        "error": "Not checkable"
+        "error": "Not checkable",
+        "recommended": "Recommended"
       },
       "purpose": {
         "mx": "Tells other mail servers where mail for this domain goes.",
         "spf": "Says which servers may send on behalf of the domain.",
         "dmarc": "Tells recipients what to do with forged mail.",
-        "dkim": "Public key recipients use to check the signature of your mail."
+        "dkim": "Public key recipients use to check the signature of your mail.",
+        "tlsrpt": "Other mail servers send reports here about whether encrypted connections to your server work.",
+        "mtasts": "Announces the MTA-STS policy. The id changes whenever the policy does.",
+        "mtastsHost": "Other servers fetch the policy from this name. It has to point to this server.",
+        "mtastsPolicy": "This is the policy as other servers see it. UwUMail serves it itself.",
+        "jmap": "Lets apps like UwUMail find the server when you only enter your mail address.",
+        "submissions": "Tells mail apps where to send mail with TLS (port 465).",
+        "submission": "Tells mail apps where to send mail with STARTTLS (port 587)."
       },
       "notes": {
         "mxUpstream": "Points to the upstream mail server. That's fine.",
@@ -508,7 +517,16 @@
         "dmarcInvalid": "The policy (p=) is missing or invalid.",
         "dmarcMultiple": "There are several DMARC records. Only one is allowed.",
         "dkimMismatch": "Contains a different key.",
-        "lookupFailed": "The lookup failed. Try again in a moment."
+        "lookupFailed": "The lookup failed. Try again in a moment.",
+        "dmarcReportsElsewhere": "Reports go to another address. With rua=mailto:dmarc-reports@… UwUMail reads them itself.",
+        "srvElsewhere": "Points to another server or port.",
+        "tlsRptElsewhere": "Reports go to another address, so UwUMail does not see them.",
+        "tlsRptMultiple": "There are several TLS reporting records. Only one is allowed.",
+        "mtaStsOldId": "Has an old id. Other servers only fetch the new policy once the id matches.",
+        "mtaStsMultiple": "There are several MTA-STS records. Only one is allowed.",
+        "mtaStsFetchFailed": "The policy could not be fetched. Check the mta-sts name and the certificate.",
+        "mtaStsPolicyDiffers": "A different policy is served there. Maybe another server answers for that name.",
+        "mtaStsPolicyInvalid": "No valid policy is served there."
       },
       "catchAll": "Catch-all",
       "catchAllHint": "Mail to addresses that don't exist goes to this person. It also attracts more spam.",
@@ -531,7 +549,24 @@
       "removeConfirm": "Really remove {{domain}}?",
       "catchAllTarget": "Unknown addresses go to",
       "selfService": "Allow own addresses",
-      "selfServiceHint": "People may create extra addresses on this domain themselves, up to their limit."
+      "selfServiceHint": "People may create extra addresses on this domain themselves, up to their limit.",
+      "address": "Address",
+      "content": "Content",
+      "recommendedTitle": "Recommended",
+      "recommendedIntro": "Mail works without these records. With them, apps find the server on their own and you get reports when something goes wrong.",
+      "kinds": {
+        "mx": "MX",
+        "spf": "SPF",
+        "dmarc": "DMARC",
+        "dkim": "DKIM",
+        "tlsrpt": "TLS reports",
+        "mtasts": "MTA-STS",
+        "mtastsHost": "MTA-STS address",
+        "mtastsPolicy": "MTA-STS policy",
+        "jmap": "App discovery (JMAP)",
+        "submissions": "Sending for mail apps (TLS)",
+        "submission": "Sending for mail apps (STARTTLS)"
+      }
     },
     "toasts": {
       "created": "{{domain}} has been added",
@@ -541,6 +576,70 @@
       "rotated": "New keys are ready",
       "activated": "The new keys are active",
       "keyRemoved": "Key removed"
+    },
+    "mtaSts": {
+      "title": "MTA-STS",
+      "intro": "With MTA-STS your domain tells other mail servers: mail for me only encrypted, and only to my real server. That way nobody can read along or divert mail on the way.",
+      "modes": {
+        "off": "Off",
+        "testing": "Testing",
+        "enforce": "Enforce"
+      },
+      "explain": {
+        "off": "Other servers encrypt when they can, but they do not have to.",
+        "testing": "Other servers report problems through TLS reports but still deliver. Good for having a look first.",
+        "enforce": "Other servers only deliver encrypted, to a server with a valid certificate. If that fails, the mail waits on their side."
+      },
+      "mx": "Allowed mail servers: {{names}}",
+      "since": "since {{date}}",
+      "records": "Add the new records from the DNS list above: _mta-sts, mta-sts and _smtp._tls.",
+      "enforceConfirm": "In enforce mode, other servers only deliver when encryption and certificate are right. Switch now?",
+      "enforceNow": "Switch to enforce",
+      "ready": "Other servers have reported no TLS problems for 14 days. You can switch MTA-STS to enforce.",
+      "toasts": {
+        "off": "MTA-STS is off",
+        "testing": "MTA-STS is in testing mode",
+        "enforce": "MTA-STS is now enforced"
+      }
+    },
+    "reports": {
+      "title": "Reports",
+      "period": "Period",
+      "days_one": "{{count}} day",
+      "days_other": "{{count}} days",
+      "empty": "No reports arrived in the last {{days}} days.",
+      "emptyHint": "Big providers like Google or Microsoft send reports to dmarc-reports@{{domain}} and tls-reports@{{domain}} once a day, as soon as the DNS records are right.",
+      "dmarcTitle": "DMARC: mail in your name",
+      "dmarcIntro": "Receivers report how many messages with your domain as the sender reached them and whether SPF or DKIM matched.",
+      "noneOfKind": "No reports of this kind yet.",
+      "messages": "Messages",
+      "passed": "Passed",
+      "reports": "Reports",
+      "reporters": "From",
+      "source": "Sending address",
+      "ours": "This server",
+      "ownFailing_one": "Messages from one address of this server failed DMARC. Check SPF and DKIM.",
+      "ownFailing_other": "Messages from {{count}} addresses of this server failed DMARC. Check SPF and DKIM.",
+      "stricter": "For 14 days, all mail from this server has passed DMARC. You can change the policy from {{from}} to {{to}}:",
+      "strangers": "Unknown addresses that fail are usually spam in your name. That is exactly what DMARC protects against.",
+      "tlsTitle": "TLS: connections to your server",
+      "tlsIntro": "Other mail servers report whether encrypted connections to your server worked.",
+      "sessionsOk": "Connections ok",
+      "sessionsFailed": "Failed",
+      "sessions_one": "{{count}} connection",
+      "sessions_other": "{{count}} connections",
+      "results": {
+        "starttls-not-supported": "No encryption offered",
+        "certificate-host-mismatch": "Certificate does not match the name",
+        "certificate-expired": "Certificate expired",
+        "certificate-not-trusted": "Certificate not trusted",
+        "validation-failure": "Validation failed",
+        "sts-policy-fetch-error": "Policy could not be fetched",
+        "sts-policy-invalid": "Policy invalid",
+        "sts-webpki-invalid": "Policy certificate invalid"
+      },
+      "unauthenticated_one": "One report came from a sender that could not prove who it is. Its numbers could be made up.",
+      "unauthenticated_other": "{{count}} reports came from senders that could not prove who they are. Their numbers could be made up."
     }
   },
   "queue": {
@@ -726,7 +825,11 @@
       "adminsSecure": "Every admin uses a two-factor login.",
       "adminsWithoutSecondFactor_one": "{{login}} is an admin without two-factor login.",
       "adminsWithoutSecondFactor_other": "{{count}} admins have no two-factor login.",
-      "youWithoutSecondFactor": "Your admin account has no two-factor login yet."
+      "youWithoutSecondFactor": "Your admin account has no two-factor login yet.",
+      "tlsFailures_one": "{{domain}}: one encrypted connection failed in the last week.",
+      "tlsFailures_other": "{{domain}}: {{count}} encrypted connections failed in the last week.",
+      "dmarcOwnFailures_one": "{{domain}}: one message from this server failed DMARC.",
+      "dmarcOwnFailures_other": "{{domain}}: {{count}} messages from this server failed DMARC."
     },
     "hints": {
       "noDomains": "Without a domain the server cannot receive mail.",
@@ -746,7 +849,9 @@
       "diskLow": "When storage is full, the server cannot accept mail any more.",
       "mailboxesNearlyFull": "Full mailboxes stop accepting mail. Raise the limit or ask them to clean up.",
       "adminsWithoutSecondFactor": "Whoever guesses an admin's password can manage the whole server.",
-      "youWithoutSecondFactor": "Under Security you set up an authenticator app or a passkey in two minutes."
+      "youWithoutSecondFactor": "Under Security you set up an authenticator app or a passkey in two minutes.",
+      "tlsFailures": "Reports on the domain page show what went wrong, for example an expired certificate.",
+      "dmarcOwnFailures": "Usually the server is missing from the SPF record or DKIM does not match. The domain page shows the records."
     }
   },
   "secondFactor": {

@@ -11,7 +11,8 @@ import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 import { usePeople } from "@/features/people/queries";
 import { CloudflarePanel } from "@/features/setup/SetupBits";
-import { DnsStatusPill, RecordRow } from "./DnsBits";
+import { DnsStatusPill, RecordList } from "./DnsBits";
+import { MtaStsCard, ReportsCard } from "./MtaStsCards";
 import {
   useActivateKeys,
   useCheckDomain,
@@ -61,11 +62,9 @@ function DnsCard({ domain }: { domain: DomainDetail }) {
                 ? t("domains.detail.sourceAuthoritative", { servers: report.nameservers.join(", ") || "—" })
                 : t("domains.detail.sourceResolver")}
             </p>
-            <ul className="mt-1 flex flex-col">
-              {report.records.map((record) => (
-                <RecordRow key={`${record.kind}-${record.name}`} record={record} domain={domain.name} explain={!pro} />
-              ))}
-            </ul>
+            <div className="mt-1">
+              <RecordList records={report.records} domain={domain.name} explain={!pro} />
+            </div>
             <CloudflarePanel domain={domain.name} report={report} explain={!pro} />
           </>
         ) : (
@@ -222,8 +221,12 @@ export function DomainPage({ name }: { name: string }) {
       </header>
 
       <DnsCard domain={domain} />
+      <ReportsCard domain={domain} />
       <div className="grid gap-5 md:grid-cols-2">
-        <KeysCard domain={domain} />
+        <div className="flex flex-col gap-5">
+          <MtaStsCard domain={domain} />
+          <KeysCard domain={domain} />
+        </div>
         <div className="flex flex-col gap-5">
           <CatchAllCard domain={domain} />
           <Card title={t("domains.detail.remove")}>

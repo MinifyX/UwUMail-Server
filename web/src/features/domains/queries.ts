@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type DomainDetail, type DomainReport } from "@/lib/api";
+import { api, type DomainDetail, type DomainReport, type MtaStsMode, type ReportsView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { toast } from "@/state/toasts";
 
@@ -71,6 +71,24 @@ export function useSetCatchAll(name: string, success: string) {
     (login: string | null) => api<DomainDetail>(`${domainPath(name)}/catch-all`, { method: "PUT", body: { login } }),
     success,
   );
+}
+
+export function useSetMtaSts(name: string) {
+  const changed = useDomainChanged();
+  const errorText = useErrorText();
+  return useMutation({
+    mutationFn: (mode: MtaStsMode | "off") =>
+      api<DomainDetail>(`${domainPath(name)}/mta-sts`, { method: "PUT", body: { mode } }),
+    onSuccess: (detail) => changed(detail),
+    onError: (error) => toast(errorText(error), "error"),
+  });
+}
+
+export function useDomainReports(name: string, days: number) {
+  return useQuery({
+    queryKey: ["admin", "domains", name, "reports", days],
+    queryFn: () => api<ReportsView>(`${domainPath(name)}/reports?days=${days}`),
+  });
 }
 
 export function useSetSelfService(name: string) {

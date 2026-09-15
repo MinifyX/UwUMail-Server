@@ -14,7 +14,7 @@ import { api, ApiError, type DomainSummary, type Session } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { navigate } from "@/lib/router";
 import { usePrefs, type Mode } from "@/state/prefs";
-import { RecordRow } from "@/features/domains/DnsBits";
+import { RecordList } from "@/features/domains/DnsBits";
 import { useCheckDomain, useDomain } from "@/features/domains/queries";
 import { useInfo, useSavePrefs, useStartSession } from "@/features/session/session";
 import { AddressChecks, CheckedAt, Checking, CloudflarePanel, DeliveryChecks, TestMailPanel } from "./SetupBits";
@@ -403,7 +403,9 @@ function DnsStep({ domain, hostname, onNext }: { domain: string; hostname: strin
   }, [query.data, check]);
 
   const report = query.data?.report ?? null;
-  const allOk = report?.records.every((record) => record.status === "ok" || record.keyState === "pending");
+  const allOk = report?.records.every(
+    (record) => record.optional || record.status === "ok" || record.keyState === "pending",
+  );
 
   return (
     <Frame
@@ -435,11 +437,7 @@ function DnsStep({ domain, hostname, onNext }: { domain: string; hostname: strin
                   {t("setup.dns.allOk")}
                 </p>
               )}
-              <ul className="flex flex-col">
-                {report.records.map((record) => (
-                  <RecordRow key={`${record.kind}-${record.name}`} record={record} domain={domain} explain={explain} />
-                ))}
-              </ul>
+              <RecordList records={report.records} domain={domain} explain={explain} />
               <CloudflarePanel domain={domain} report={report} explain={explain} />
               {!allOk && <p className="text-[13px] text-muted">{t("setup.dns.later")}</p>}
             </>

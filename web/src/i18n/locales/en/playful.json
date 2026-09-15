@@ -58,6 +58,9 @@
     },
     "toasts": {
       "checked": "DNS checked, I looked everywhere ✉︎"
+    },
+    "mtaSts": {
+      "ready": "No TLS problems for 14 days, everything purrs (=^･ω･^=) You can switch MTA-STS to enforce."
     }
   },
   "queue": {

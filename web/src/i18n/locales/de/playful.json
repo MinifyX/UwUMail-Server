@@ -58,6 +58,9 @@
     },
     "toasts": {
       "checked": "DNS geprüft, ich hab überall nachgesehen ✉︎"
+    },
+    "mtaSts": {
+      "ready": "Seit 14 Tagen keine TLS-Probleme, alles schnurrt (=^･ω･^=) Du kannst MTA-STS auf streng stellen."
     }
   },
   "queue": {

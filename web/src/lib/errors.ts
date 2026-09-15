@@ -51,6 +51,7 @@ const KNOWN = [
   "setupDone",
   "testMailFailed",
   "cloudflareFailed",
+  "mtaStsCertificate",
 ];
 
 /** Turns an API error into a sentence for the person in front of the screen. */

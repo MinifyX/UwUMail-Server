@@ -40,6 +40,8 @@ const HINTS = new Set([
   "mailboxesNearlyFull",
   "adminsWithoutSecondFactor",
   "youWithoutSecondFactor",
+  "tlsFailures",
+  "dmarcOwnFailures",
 ]);
 
 function useFindingText() {

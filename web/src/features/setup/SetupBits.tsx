@@ -295,7 +295,8 @@ export function TestMailPanel({ login, explain }: { login: string; explain: bool
   );
 }
 
-const KINDS = ["mx", "spf", "dmarc", "dkim"] as const;
+/** Kinds of records that can be replaced when they hold another value. */
+const KINDS = ["mx", "spf", "dmarc", "dkim", "tlsrpt", "mtasts", "jmap", "submissions", "submission"] as const;
 
 /** Puts missing records into Cloudflare with a token that is used once. */
 export function CloudflarePanel({
@@ -312,7 +313,10 @@ export function CloudflarePanel({
   const [open, setOpen] = useState(false);
   const [token, setToken] = useState("");
   const [replace, setReplace] = useState<string[]>([]);
-  const missing = report.records.filter((record) => record.status === "missing" && record.keyState !== "pending");
+  // The MTA-STS policy is a file this server serves, not a DNS record.
+  const missing = report.records.filter(
+    (record) => record.status === "missing" && record.keyState !== "pending" && record.recordType !== "HTTPS",
+  );
   const wrongKinds = KINDS.filter((kind) =>
     report.records.some((record) => record.kind === kind && record.status === "wrong"),
   );
@@ -370,7 +374,7 @@ export function CloudflarePanel({
                   )
                 }
               />
-              <span className="font-semibold uppercase">{kind}</span>
+              <span className="font-semibold">{t(`domains.detail.kinds.${kind}`)}</span>
             </label>
           ))}
           <p className="text-[12px] text-muted">{t("setup.cloudflare.replaceHint")}</p>
