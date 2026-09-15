@@ -2832,6 +2832,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "uwumail-gateway"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "figment",
+ "quinn",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uwumail-tunnel",
+]
+
+[[package]]
 name = "uwumail-jmap"
 version = "0.1.0"
 dependencies = [

@@ -7,6 +7,7 @@ members = [
     "crates/uwumail-web",
     "crates/uwumail-server",
     "crates/uwumail-tunnel",
+    "crates/uwumail-gateway",
 ]
 
 [workspace.package]
@@ -17,6 +18,7 @@ repository = "https://github.com/MinifyX/UwUMail-Server"
 rust-version = "1.88"
 
 [workspace.dependencies]
+uwumail-gateway = { path = "crates/uwumail-gateway" }
 uwumail-jmap = { path = "crates/uwumail-jmap" }
 uwumail-smtp = { path = "crates/uwumail-smtp" }
 uwumail-store = { path = "crates/uwumail-store" }
