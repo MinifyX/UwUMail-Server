@@ -123,7 +123,19 @@ async fn dns_area(web: &Web) -> ApiResult<Area> {
     }
     let mut findings = Vec::new();
     let mut pending = 0;
+    let own = crate::routes::reports::own_sending_addresses(web).await;
     for domain in &domains {
+        // What other servers reported about the last week.
+        let (tls_failed, dmarc_failed) = crate::routes::reports::problems(web, &domain.name, &own).await?;
+        let link = format!("/admin/domains/{}", domain.name);
+        if tls_failed > 0 {
+            let params = json!({ "domain": domain.name, "count": tls_failed });
+            findings.push(Finding::new("tlsFailures", Level::Warning, params).link(link.clone()));
+        }
+        if dmarc_failed > 0 {
+            let params = json!({ "domain": domain.name, "count": dmarc_failed });
+            findings.push(Finding::new("dmarcOwnFailures", Level::Warning, params).link(link));
+        }
         let Some(report) = web.report(&domain.name) else {
             pending += 1;
             continue;
@@ -147,7 +159,7 @@ async fn dns_area(web: &Web) -> ApiResult<Area> {
     Ok(Area::new("dns", findings))
 }
 
-fn covers(names: &[String], hostname: &str) -> bool {
+pub(crate) fn covers(names: &[String], hostname: &str) -> bool {
     names.iter().any(|name| {
         name.eq_ignore_ascii_case(hostname)
             || name.strip_prefix("*.").is_some_and(|parent| {

@@ -181,3 +181,72 @@ async fn domains_with_catch_all_and_key_rotation() {
         ]
     );
 }
+
+#[tokio::test]
+async fn mta_sts_policy_and_reports() {
+    let (app, store, _dir) = portal().await;
+    let (_, login) = call(
+        &app,
+        "POST",
+        "/api/auth/login",
+        Some(json!({ "login": "nyu@example.de", "password": "katzenpfote-123" })),
+        None,
+    )
+    .await;
+    let auth = (login["_cookie"].as_str().unwrap().to_owned(), login["csrfToken"].as_str().unwrap().to_owned());
+
+    let fetch_policy = |host: &'static str| {
+        let app = app.clone();
+        async move {
+            let request =
+                Request::get("/.well-known/mta-sts.txt").header(header::HOST, host).body(Body::empty()).unwrap();
+            let response = app.oneshot(request).await.unwrap();
+            let status = response.status();
+            let bytes = axum::body::to_bytes(response.into_body(), 1 << 16).await.unwrap();
+            (status, String::from_utf8(bytes.to_vec()).unwrap())
+        }
+    };
+    assert_eq!(fetch_policy("mta-sts.example.de").await.0, StatusCode::NOT_FOUND, "off by default");
+
+    let path = "/api/admin/domains/example.de/mta-sts";
+    let (status, detail) = call(&app, "PUT", path, Some(json!({ "mode": "testing" })), Some(&auth)).await;
+    assert_eq!(status, StatusCode::OK, "{detail}");
+    assert_eq!(
+        (detail["mtaSts"]["mode"].clone(), detail["mtaSts"]["mx"].clone()),
+        (json!("testing"), json!(["mail.example.de"]))
+    );
+    let (status, policy) = fetch_policy("MTA-STS.example.de:443").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(policy, "version: STSv1\r\nmode: testing\r\nmx: mail.example.de\r\nmax_age: 86400\r\n");
+    assert_eq!(policy, detail["mtaSts"]["policy"]);
+    assert_eq!(fetch_policy("mta-sts.elsewhere.example").await.0, StatusCode::NOT_FOUND);
+
+    // Senders would insist on a valid certificate, and this server has none.
+    let (_, refused) = call(&app, "PUT", path, Some(json!({ "mode": "enforce" })), Some(&auth)).await;
+    assert_eq!(refused["code"], "mtaStsCertificate");
+    let (_, off) = call(&app, "PUT", path, Some(json!({ "mode": "off" })), Some(&auth)).await;
+    assert_eq!(off["mtaSts"], Value::Null);
+
+    store
+        .add_tls_report(uwumail_store::NewTlsReport {
+            domain: "example.de".into(),
+            organization: "reporter.example".into(),
+            report_id: "t1".into(),
+            begin_at: 0,
+            end_at: i64::MAX / 2,
+            authenticated: true,
+            successful: 5,
+            failed: 1,
+            failures: vec![],
+        })
+        .await
+        .unwrap();
+    let (status, reports) = call(&app, "GET", "/api/admin/domains/example.de/reports?days=7", None, Some(&auth)).await;
+    assert_eq!(status, StatusCode::OK, "{reports}");
+    assert_eq!((reports["tls"]["successful"].clone(), reports["tls"]["failed"].clone()), (json!(5), json!(1)));
+    assert_eq!((reports["days"].clone(), reports["suggestions"].clone()), (json!(7), json!([])));
+
+    let (_, health) = call(&app, "GET", "/api/admin/health", None, Some(&auth)).await;
+    let dns = health["areas"].as_array().unwrap().iter().find(|area| area["area"] == "dns").unwrap();
+    assert!(dns["findings"].as_array().unwrap().iter().any(|f| f["code"] == "tlsFailures"), "{dns}");
+}

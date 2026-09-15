@@ -7,6 +7,7 @@ pub mod mailbox;
 pub mod own;
 pub mod people;
 pub mod queue;
+pub mod reports;
 pub mod security;
 pub mod settings;
 pub mod setup;

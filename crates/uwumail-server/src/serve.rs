@@ -132,7 +132,7 @@ pub async fn run(
 
     match config.tls.mode {
         TlsMode::Acme => {
-            tasks.spawn(acme::run(config.clone(), certs.clone(), challenges, shutdown_rx.clone()));
+            tasks.spawn(acme::run(config.clone(), certs.clone(), challenges, store.clone(), shutdown_rx.clone()));
         }
         TlsMode::Files => {
             tasks.spawn(tls::watch_files(config.clone(), certs.clone(), shutdown_rx.clone()));
@@ -175,6 +175,11 @@ async fn collect_garbage(store: Store, mut shutdown: watch::Receiver<bool>) {
                 }
             }
             Err(err) => tracing::warn!(%err, "emptying the trash failed"),
+        }
+        match store.purge_reports(uwumail_store::REPORT_RETENTION_SECS).await {
+            Ok(0) => {}
+            Ok(removed) => tracing::info!(removed, "removed old DMARC and TLS reports"),
+            Err(err) => tracing::warn!(%err, "removing old reports failed"),
         }
         match store.collect_garbage(3600).await {
             Ok(0) => {}

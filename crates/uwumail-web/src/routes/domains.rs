@@ -14,7 +14,7 @@ use crate::Web;
 use crate::error::{ApiError, ApiResult};
 use crate::session::Admin;
 
-async fn load(web: &Web, name: &str) -> ApiResult<Domain> {
+pub(crate) async fn load(web: &Web, name: &str) -> ApiResult<Domain> {
     web.store().domain(name).await?.ok_or_else(|| ApiError::NotFound(format!("domain {name}")))
 }
 
@@ -46,7 +46,7 @@ pub async fn list(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Value
     )))
 }
 
-async fn detail_json(web: &Web, name: &str) -> ApiResult<Value> {
+pub(crate) async fn detail_json(web: &Web, name: &str) -> ApiResult<Value> {
     let domain = load(web, name).await?;
     let keys = web.store().dkim_keys(&domain.name).await?;
     let (people, aliases) = web.store().domain_address_counts().await?.get(&domain.name).copied().unwrap_or_default();
@@ -70,6 +70,7 @@ async fn detail_json(web: &Web, name: &str) -> ApiResult<Value> {
         }).collect::<Vec<_>>(),
         "report": web.report(&domain.name),
         "selfServiceAliases": web.store().domain_self_service(&domain.name).await?,
+        "mtaSts": super::reports::mta_sts_json(web.store().mta_sts(&domain.name).await?),
         "setup": {
             "hostname": web.settings().hostname,
             "relayHost": web.smtp().relay_host(),
