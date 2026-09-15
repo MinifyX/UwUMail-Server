@@ -6,6 +6,7 @@ use axum::http::StatusCode;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uwumail_smtp::dnscheck::DomainSetup;
+use uwumail_smtp::mta_sts::Policy;
 use uwumail_store::{DkimKeyState, Domain};
 
 use super::audit;
@@ -149,6 +150,7 @@ pub async fn run_check(web: &Web, domain: &str) -> ApiResult<uwumail_smtp::dnsch
     };
     let keys = web.store().dkim_keys(domain).await?;
     let relay_host = web.smtp().relay_host();
+    let policy = web.store().mta_sts(domain).await?.map(|settings| Policy::ours(settings.mode, &settings.mx));
     let report = checker
         .check(DomainSetup {
             domain,
@@ -156,6 +158,7 @@ pub async fn run_check(web: &Web, domain: &str) -> ApiResult<uwumail_smtp::dnsch
             relay_host: relay_host.as_deref(),
             upstream_mx: web.smtp().behind_upstream_server(),
             dkim_keys: &keys,
+            mta_sts: policy.as_ref(),
         })
         .await;
     web.keep_report(report.clone());

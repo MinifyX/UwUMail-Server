@@ -24,6 +24,8 @@ pub struct WantedRecord {
     pub name: String,
     pub content: String,
     pub priority: Option<u16>,
+    /// Structured data instead of `content`, for SRV records.
+    pub data: Option<Value>,
     /// It exists with another value; only replaced when the admin says so.
     pub wrong: bool,
 }
@@ -55,6 +57,7 @@ pub fn wanted_records(report: &DomainReport) -> Vec<WantedRecord> {
                         name: record.name.clone(),
                         content: host.trim_end_matches('.').to_owned(),
                         priority: priority.parse().ok(),
+                        data: None,
                         wrong,
                     })
                 }
@@ -64,8 +67,37 @@ pub fn wanted_records(report: &DomainReport) -> Vec<WantedRecord> {
                     name: record.name.clone(),
                     content: record.expected.clone(),
                     priority: None,
+                    data: None,
                     wrong,
                 }),
+                "CNAME" => Some(WantedRecord {
+                    kind: record.kind,
+                    record_type: "CNAME",
+                    name: record.name.clone(),
+                    content: record.expected.clone(),
+                    priority: None,
+                    data: None,
+                    wrong,
+                }),
+                "SRV" => {
+                    let parts: Vec<&str> = record.expected.split_whitespace().collect();
+                    let [priority, weight, port, target] = parts.as_slice() else { return None };
+                    Some(WantedRecord {
+                        kind: record.kind,
+                        record_type: "SRV",
+                        name: record.name.clone(),
+                        content: String::new(),
+                        priority: None,
+                        data: Some(json!({
+                            "priority": priority.parse::<u16>().ok()?,
+                            "weight": weight.parse::<u16>().ok()?,
+                            "port": port.parse::<u16>().ok()?,
+                            "target": target,
+                        })),
+                        wrong,
+                    })
+                }
+                // The MTA-STS policy file is not a DNS record.
                 _ => None,
             }
         })
@@ -154,7 +186,7 @@ impl Cloudflare {
         Ok(found["result"].as_array().cloned().unwrap_or_default())
     }
 
-    /// Creates what is missing; replaces wrong records only when `replace` lists their kind (mx, spf, dmarc, dkim).
+    /// Creates what is missing; replaces wrong records only when `replace` lists their kind (e.g. mx, spf, mtasts).
     pub async fn apply(
         &self,
         domain: &str,
@@ -179,6 +211,13 @@ impl Cloudflare {
             if let Some(priority) = record.priority {
                 body["priority"] = json!(priority);
             }
+            if let Some(data) = &record.data {
+                body["data"] = data.clone();
+            }
+            if record.record_type == "CNAME" {
+                // Senders must reach this server itself, not a Cloudflare proxy.
+                body["proxied"] = json!(false);
+            }
             let outcome = async {
                 let existing = self.existing(&zone, record.record_type, &record.name).await?;
                 // The record of the same kind that is in the way: another MX, SPF, DMARC or DKIM value.
@@ -190,6 +229,8 @@ impl Cloudflare {
                             "spf" => content.starts_with("v=spf1"),
                             "dmarc" => content.starts_with("v=DMARC1"),
                             "dkim" => content.starts_with("v=DKIM1"),
+                            "tlsrpt" => content.starts_with("v=TLSRPTv1"),
+                            "mtasts" => content.starts_with("v=STSv1"),
                             _ => true,
                         }
                     })
@@ -298,6 +339,7 @@ mod tests {
             note: None,
             selector: None,
             key_state: None,
+            optional: false,
         }
     }
 

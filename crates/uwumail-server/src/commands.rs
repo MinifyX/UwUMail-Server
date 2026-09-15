@@ -98,11 +98,24 @@ async fn print_dns(config: &Config, store: &Store, name: &str) -> anyhow::Result
     println!();
     println!("  {domain}.  MX  10 {host}.");
     println!("  {domain}.  TXT \"v=spf1 mx -all\"");
-    println!("  _dmarc.{domain}.  TXT \"v=DMARC1; p=quarantine; adkim=s; aspf=s; rua=mailto:postmaster@{domain}\"");
+    println!("  _dmarc.{domain}.  TXT \"v=DMARC1; p=quarantine; adkim=s; aspf=s; rua=mailto:dmarc-reports@{domain}\"");
     // New keys of a rotation are published before they sign.
     for key in keys.iter().filter(|k| k.state() != uwumail_store::DkimKeyState::Retired) {
         let (record_name, value) = key.dns_record();
         println!("  {record_name}.  TXT {}", zone_quoted(&value));
+    }
+    println!();
+    println!("Recommended:");
+    println!("  _smtp._tls.{domain}.  TXT \"v=TLSRPTv1; rua=mailto:tls-reports@{domain}\"");
+    for (_, record_name, port) in uwumail_smtp::dnscheck::service_records(&domain) {
+        println!("  {record_name}.  SRV 0 1 {port} {host}.");
+    }
+    if let Some(settings) = store.mta_sts(&domain).await? {
+        let policy = uwumail_smtp::mta_sts::Policy::ours(settings.mode, &settings.mx);
+        println!();
+        println!("MTA-STS ({}):", policy.mode.as_str());
+        println!("  _mta-sts.{domain}.  TXT \"{}\"", uwumail_smtp::mta_sts::txt_record(&policy));
+        println!("  mta-sts.{domain}.  CNAME {host}.");
     }
     println!();
     println!("And for the server itself:");

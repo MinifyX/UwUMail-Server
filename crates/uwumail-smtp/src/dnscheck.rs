@@ -1,4 +1,6 @@
-//! Checks the DNS records a hosted domain needs: MX, SPF, DMARC and DKIM.
+//! Checks the DNS records a hosted domain needs: MX, SPF, DMARC and DKIM, plus the
+//! recommended ones: TLS reports, MTA-STS when it is on, and SRV records that let apps find
+//! the server.
 //!
 //! Records are resolved from the root servers down to the domain's own
 //! nameservers, without the system resolver. A freshly published record shows
@@ -8,7 +10,7 @@
 //! says so.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use hickory_resolver::TokioResolver;
 use hickory_resolver::net::runtime::TokioRuntimeProvider;
@@ -18,9 +20,11 @@ use hickory_resolver::recursor::{Recursor, RecursorOptions};
 use mail_auth::spf::verify::SpfParameters;
 use mail_auth::{MessageAuthenticator, SpfResult};
 use serde::Serialize;
-use uwumail_store::{DkimKey, DkimKeyState};
+use uwumail_store::{DMARC_REPORT_ADDRESS, DkimKey, DkimKeyState, TLS_REPORT_ADDRESS};
 
 use crate::dns::DnsCaches;
+use crate::https::{Fetched, Https};
+use crate::mta_sts::{self, Policy};
 
 /// The IPv4 addresses of a.root-servers.net to m.root-servers.net.
 const ROOT_SERVERS: [IpAddr; 13] = [
@@ -54,7 +58,8 @@ pub enum CheckStatus {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecordCheck {
-    /// "mx", "spf", "dmarc" or "dkim".
+    /// "mx", "spf", "dmarc", "dkim", "tlsrpt", "mtasts", "mtastsHost", "mtastsPolicy", "jmap",
+    /// "submissions" or "submission".
     pub kind: &'static str,
     pub name: String,
     pub record_type: &'static str,
@@ -66,6 +71,8 @@ pub struct RecordCheck {
     pub note: Option<&'static str>,
     pub selector: Option<String>,
     pub key_state: Option<DkimKeyState>,
+    /// Recommended, but mail works without it, so it does not count for the domain's status.
+    pub optional: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -90,10 +97,13 @@ pub struct DomainSetup<'a> {
     /// Another mail server receives first (`smtp.trusted_relays`), so MX may point there.
     pub upstream_mx: bool,
     pub dkim_keys: &'a [DkimKey],
+    /// The domain's MTA-STS policy, when MTA-STS is on.
+    pub mta_sts: Option<&'a Policy>,
 }
 
 pub struct DnsChecker {
     system: MessageAuthenticator,
+    https: Https,
 }
 
 fn fqdn(name: &str) -> String {
@@ -155,6 +165,35 @@ impl Lookups<'_> {
             .collect())
     }
 
+    async fn srv(&self, name: &str) -> Answer<(u16, u16, u16, String)> {
+        Ok(self
+            .records(name, RecordType::SRV)
+            .await?
+            .into_iter()
+            .filter_map(|data| match data {
+                RData::SRV(srv) => Some((
+                    srv.priority,
+                    srv.weight,
+                    srv.port,
+                    srv.target.to_ascii().trim_end_matches('.').to_ascii_lowercase(),
+                )),
+                _ => None,
+            })
+            .collect())
+    }
+
+    async fn cname(&self, name: &str) -> Answer<String> {
+        Ok(self
+            .records(name, RecordType::CNAME)
+            .await?
+            .into_iter()
+            .filter_map(|data| match data {
+                RData::CNAME(cname) => Some(cname.0.to_ascii().trim_end_matches('.').to_ascii_lowercase()),
+                _ => None,
+            })
+            .collect())
+    }
+
     async fn addresses(&self, host: &str) -> (Vec<Ipv4Addr>, Vec<Ipv6Addr>) {
         let v4 = self.records(host, RecordType::A).await.unwrap_or_default();
         let v6 = self.records(host, RecordType::AAAA).await.unwrap_or_default();
@@ -192,7 +231,7 @@ impl DnsChecker {
         let system = MessageAuthenticator::new_system_conf()
             .or_else(|_| MessageAuthenticator::new_quad9_tls())
             .map_err(|err| crate::SmtpError::Dns(err.to_string()))?;
-        Ok(DnsChecker { system })
+        Ok(DnsChecker { system, https: Https::new() })
     }
 
     /// Resolving from the root servers, if outgoing DNS works here; otherwise the system resolver.
@@ -235,8 +274,33 @@ impl DnsChecker {
             records.push(evaluate_dkim(key, lookups.txt(&name).await));
         }
 
+        let tls_rpt_name = format!("_smtp._tls.{domain}");
+        records.push(evaluate_tls_rpt(&domain, setup.mta_sts.is_some(), lookups.txt(&tls_rpt_name).await));
+        if let Some(policy) = setup.mta_sts {
+            let txt_name = format!("_mta-sts.{domain}");
+            records.push(evaluate_mta_sts_record(&domain, policy, lookups.txt(&txt_name).await));
+            let host = format!("mta-sts.{domain}");
+            let host_record = evaluate_mta_sts_host(
+                &domain,
+                setup.hostname,
+                lookups.cname(&host).await,
+                lookups.addresses(&host).await,
+            );
+            let fetched = if host_record.status == CheckStatus::Ok {
+                self.https.get(&mta_sts::policy_url(&domain), 64 * 1024, Duration::from_secs(15)).await
+            } else {
+                Err(format!("{host} has no address yet"))
+            };
+            records.push(host_record);
+            records.push(evaluate_mta_sts_policy(&domain, policy, fetched));
+        }
+        for (kind, name, port) in service_records(&domain) {
+            records.push(evaluate_srv(kind, &name, setup.hostname, port, lookups.srv(&name).await));
+        }
+
         let status = records
             .iter()
+            .filter(|record| !record.optional)
             .filter(|record| record.key_state != Some(DkimKeyState::Pending))
             .map(|record| record.status)
             .max()
@@ -292,6 +356,7 @@ fn check(kind: &'static str, name: &str, record_type: &'static str, expected: St
         note: None,
         selector: None,
         key_state: None,
+        optional: false,
     }
 }
 
@@ -360,7 +425,7 @@ pub fn evaluate_dmarc(domain: &str, answer: Answer<String>) -> RecordCheck {
         "dmarc",
         &name,
         "TXT",
-        format!("v=DMARC1; p=quarantine; adkim=s; aspf=s; rua=mailto:postmaster@{domain}"),
+        format!("v=DMARC1; p=quarantine; adkim=s; aspf=s; rua=mailto:{DMARC_REPORT_ADDRESS}@{domain}"),
     );
     let texts = match answer {
         Ok(texts) => texts,
@@ -384,6 +449,11 @@ pub fn evaluate_dmarc(domain: &str, answer: Answer<String>) -> RecordCheck {
                     record.status = CheckStatus::Wrong;
                     record.note = Some("dmarcInvalid");
                 }
+            }
+            // Reports that go somewhere else still work, the portal just cannot show them.
+            let reports = format!("mailto:{DMARC_REPORT_ADDRESS}@{domain}");
+            if record.note.is_none() && !policy.to_ascii_lowercase().contains(&reports) {
+                record.note = Some("dmarcReportsElsewhere");
             }
         }
         _ => {
@@ -421,9 +491,151 @@ pub fn evaluate_dkim(key: &DkimKey, answer: Answer<String>) -> RecordCheck {
     record
 }
 
+/// The SRV records that let apps find the server: JMAP (RFC 8620) and submission (RFC 6186, 8314).
+pub fn service_records(domain: &str) -> [(&'static str, String, u16); 3] {
+    [
+        ("jmap", format!("_jmap._tcp.{domain}"), 443),
+        ("submissions", format!("_submissions._tcp.{domain}"), 465),
+        ("submission", format!("_submission._tcp.{domain}"), 587),
+    ]
+}
+
+pub fn evaluate_srv(
+    kind: &'static str,
+    name: &str,
+    hostname: &str,
+    port: u16,
+    answer: Answer<(u16, u16, u16, String)>,
+) -> RecordCheck {
+    let hostname = hostname.trim_end_matches('.').to_ascii_lowercase();
+    let mut record = check(kind, name, "SRV", format!("0 1 {port} {hostname}"));
+    record.optional = true;
+    let found = match answer {
+        Ok(found) => found,
+        Err(error) => return failed(record, &error),
+    };
+    record.found =
+        found.iter().map(|(priority, weight, port, target)| format!("{priority} {weight} {port} {target}")).collect();
+    if found.is_empty() {
+        record.status = CheckStatus::Missing;
+    } else if !found.iter().any(|(_, _, found_port, target)| *found_port == port && *target == hostname) {
+        record.status = CheckStatus::Wrong;
+        record.note = Some("srvElsewhere");
+    }
+    record
+}
+
+/// Where other servers send reports about TLS connections to us. Required once MTA-STS is on.
+pub fn evaluate_tls_rpt(domain: &str, required: bool, answer: Answer<String>) -> RecordCheck {
+    let address = format!("{TLS_REPORT_ADDRESS}@{domain}");
+    let mut record =
+        check("tlsrpt", &format!("_smtp._tls.{domain}"), "TXT", format!("v=TLSRPTv1; rua=mailto:{address}"));
+    record.optional = !required;
+    let texts = match answer {
+        Ok(texts) => texts,
+        Err(error) => return failed(record, &error),
+    };
+    let policies: Vec<String> =
+        texts.into_iter().filter(|text| text.trim().to_ascii_uppercase().starts_with("V=TLSRPTV1")).collect();
+    record.found = policies.clone();
+    match policies.as_slice() {
+        [] => record.status = CheckStatus::Missing,
+        [policy] => {
+            if !policy.to_ascii_lowercase().contains(&format!("mailto:{address}")) {
+                record.note = Some("tlsRptElsewhere");
+            }
+        }
+        _ => {
+            record.status = CheckStatus::Wrong;
+            record.note = Some("tlsRptMultiple");
+        }
+    }
+    record
+}
+
+fn tag_value<'a>(record: &'a str, tag: &str) -> Option<&'a str> {
+    record
+        .split(';')
+        .filter_map(|part| part.trim().split_once('='))
+        .find(|(key, _)| key.trim().eq_ignore_ascii_case(tag))
+        .map(|(_, value)| value.trim())
+}
+
+/// The TXT record that tells senders there is a policy, and which version.
+pub fn evaluate_mta_sts_record(domain: &str, policy: &Policy, answer: Answer<String>) -> RecordCheck {
+    let mut record = check("mtasts", &format!("_mta-sts.{domain}"), "TXT", mta_sts::txt_record(policy));
+    let texts = match answer {
+        Ok(texts) => texts,
+        Err(error) => return failed(record, &error),
+    };
+    let found: Vec<String> =
+        texts.into_iter().filter(|text| text.trim().to_ascii_uppercase().starts_with("V=STSV1")).collect();
+    record.found = found.clone();
+    match found.as_slice() {
+        [] => record.status = CheckStatus::Missing,
+        [text] if tag_value(text, "id") == Some(policy.id().as_str()) => {}
+        [_] => {
+            // Senders keep using the policy they have until it expires, then fetch the new one.
+            record.status = CheckStatus::Wrong;
+            record.note = Some("mtaStsOldId");
+        }
+        _ => {
+            record.status = CheckStatus::Wrong;
+            record.note = Some("mtaStsMultiple");
+        }
+    }
+    record
+}
+
+/// `mta-sts.<domain>` has to reach this server (or the proxy in front of it).
+pub fn evaluate_mta_sts_host(
+    domain: &str,
+    hostname: &str,
+    cname: Answer<String>,
+    (v4, v6): (Vec<Ipv4Addr>, Vec<Ipv6Addr>),
+) -> RecordCheck {
+    let hostname = hostname.trim_end_matches('.').to_ascii_lowercase();
+    let mut record = check("mtastsHost", &format!("mta-sts.{domain}"), "CNAME", hostname);
+    let targets = cname.unwrap_or_default();
+    let addresses: Vec<String> = v4.iter().map(ToString::to_string).chain(v6.iter().map(ToString::to_string)).collect();
+    record.found = if targets.is_empty() { addresses.clone() } else { targets };
+    if addresses.is_empty() {
+        record.status = CheckStatus::Missing;
+    }
+    record
+}
+
+/// The policy file as senders fetch it.
+pub fn evaluate_mta_sts_policy(domain: &str, policy: &Policy, fetched: Result<Fetched, String>) -> RecordCheck {
+    let mut record = check("mtastsPolicy", &mta_sts::policy_url(domain), "HTTPS", policy.to_text());
+    match fetched {
+        Err(error) => {
+            record.status = CheckStatus::Missing;
+            record.note = Some("mtaStsFetchFailed");
+            record.found = vec![error];
+        }
+        Ok(fetched) => {
+            record.found = vec![fetched.body.clone()];
+            match mta_sts::read_fetched(&fetched) {
+                Ok(published) if published == *policy => {}
+                Ok(_) => {
+                    record.status = CheckStatus::Wrong;
+                    record.note = Some("mtaStsPolicyDiffers");
+                }
+                Err(error) => {
+                    record.status = CheckStatus::Wrong;
+                    record.note = Some("mtaStsPolicyInvalid");
+                    record.found = vec![error];
+                }
+            }
+        }
+    }
+    record
+}
+
 #[cfg(test)]
 mod tests {
-    use uwumail_store::DkimKeyAlgorithm;
+    use uwumail_store::{DkimKeyAlgorithm, MtaStsMode};
 
     use super::*;
 
@@ -462,6 +674,7 @@ mod tests {
             relay_host: Some("relay.example.net"),
             upstream_mx: false,
             dkim_keys: &keys,
+            mta_sts: None,
         };
         let spf = |texts: &[&str]| {
             evaluate_spf_record("example.de", &setup, Ok(texts.iter().map(|t| t.to_string()).collect()))
@@ -481,6 +694,64 @@ mod tests {
         assert_eq!(dmarc(&["v=DMARC1; p=none"]).status, CheckStatus::Ok);
         assert_eq!(dmarc(&["v=DMARC1;p=reject"]).status, CheckStatus::Ok);
         assert_eq!(dmarc(&["v=DMARC1; p=maybe"]).status, CheckStatus::Wrong);
+        let elsewhere = dmarc(&["v=DMARC1; p=reject; rua=mailto:postmaster@example.de"]);
+        assert_eq!((elsewhere.status, elsewhere.note), (CheckStatus::Ok, Some("dmarcReportsElsewhere")));
+        let ours = dmarc(&["v=DMARC1; p=reject; rua=mailto:dmarc-reports@example.de"]);
+        assert_eq!((ours.status, ours.note), (CheckStatus::Ok, None));
+    }
+
+    #[test]
+    fn recommended_records() {
+        let srv = |found: Vec<(u16, u16, u16, String)>| {
+            evaluate_srv("jmap", "_jmap._tcp.example.de", "Mail.Example.de", 443, Ok(found))
+        };
+        let fine = srv(vec![(0, 1, 443, "mail.example.de".into())]);
+        assert_eq!(
+            (fine.status, fine.optional, fine.expected.as_str()),
+            (CheckStatus::Ok, true, "0 1 443 mail.example.de")
+        );
+        assert_eq!(srv(vec![(0, 1, 8443, "mail.example.de".into())]).note, Some("srvElsewhere"));
+        assert_eq!(srv(vec![]).status, CheckStatus::Missing);
+
+        let tls = |required: bool, texts: &[&str]| {
+            evaluate_tls_rpt("example.de", required, Ok(texts.iter().map(|t| t.to_string()).collect()))
+        };
+        assert!(tls(false, &[]).optional && !tls(true, &[]).optional);
+        assert_eq!(tls(false, &["v=TLSRPTv1; rua=mailto:tls-reports@example.de"]).status, CheckStatus::Ok);
+        assert_eq!(tls(false, &["v=TLSRPTv1; rua=mailto:x@other.example"]).note, Some("tlsRptElsewhere"));
+        assert_eq!(tls(false, &["v=TLSRPTv1; rua=a", "v=TLSRPTv1; rua=b"]).note, Some("tlsRptMultiple"));
+    }
+
+    #[test]
+    fn mta_sts_records_follow_the_policy() {
+        let policy = Policy::ours(MtaStsMode::Testing, &["mail.example.de".into()]);
+        let txt = |texts: Vec<String>| evaluate_mta_sts_record("example.de", &policy, Ok(texts));
+        assert_eq!(txt(vec![mta_sts::txt_record(&policy)]).status, CheckStatus::Ok);
+        assert_eq!(txt(vec!["v=STSv1; id=old".into()]).note, Some("mtaStsOldId"));
+        assert_eq!(txt(vec![]).status, CheckStatus::Missing);
+
+        let host = evaluate_mta_sts_host("example.de", "mail.example.de", Ok(vec![]), (vec![], vec![]));
+        assert_eq!(host.status, CheckStatus::Missing);
+        let host = evaluate_mta_sts_host(
+            "example.de",
+            "mail.example.de",
+            Ok(vec!["mail.example.de".into()]),
+            (vec![Ipv4Addr::new(192, 0, 2, 10)], vec![]),
+        );
+        assert_eq!((host.status, host.found.clone()), (CheckStatus::Ok, vec!["mail.example.de".to_owned()]));
+
+        let served = |body: String| Fetched { content_type: "text/plain".into(), body };
+        let ok = evaluate_mta_sts_policy("example.de", &policy, Ok(served(policy.to_text())));
+        assert_eq!((ok.status, ok.record_type), (CheckStatus::Ok, "HTTPS"));
+        let enforce = Policy::ours(MtaStsMode::Enforce, &["mail.example.de".into()]);
+        assert_eq!(
+            evaluate_mta_sts_policy("example.de", &policy, Ok(served(enforce.to_text()))).note,
+            Some("mtaStsPolicyDiffers")
+        );
+        assert_eq!(
+            evaluate_mta_sts_policy("example.de", &policy, Err("connection refused".into())).note,
+            Some("mtaStsFetchFailed")
+        );
     }
 
     /// Asks real DNS; run with `UWUMAIL_DNSCHECK_DOMAIN=example.org cargo test -p uwumail-smtp live_check -- --ignored --nocapture`.
@@ -498,10 +769,11 @@ mod tests {
                 relay_host: relay.as_deref(),
                 upstream_mx: std::env::var("UWUMAIL_DNSCHECK_UPSTREAM").is_ok(),
                 dkim_keys: &[],
+                mta_sts: None,
             })
             .await;
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
-        assert_eq!(report.records.len(), 3);
+        assert_eq!(report.records.len(), 7, "MX, SPF, DMARC, TLS reports and three SRV records");
     }
 
     #[test]
