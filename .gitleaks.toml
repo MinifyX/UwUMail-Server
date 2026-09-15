@@ -1,0 +1,16 @@
+# Configuration for the secret scan workflow (.github/workflows/secret-scan.yml).
+# The default gitleaks rules stay on; only the made-up passwords of the test
+# servers and test fixtures are allowed, each spelled out. Never add a real
+# secret here: a leaked secret has to be replaced, not allowed.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Made-up passwords of test servers and test fixtures"
+regexes = [
+  '''^katzenpfote-123$''',
+  '''^Kirschbluete-Tastatur(-42!?)?$''',
+  '''^Seifenblase-Wanderweg(-17!?)?$''',
+  '''^geheim-und-lang$''',
+]
