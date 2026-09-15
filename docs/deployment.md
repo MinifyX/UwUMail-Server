@@ -69,10 +69,50 @@ docker compose exec uwumail uwumail-server account add you@example.com --name "Y
 | `example.com MX 10 mail.example.com.` | Where mail for the domain goes |
 | `example.com TXT "v=spf1 mx -all"` | Only this server may send for the domain |
 | `uwu…r._domainkey` and `uwu…e._domainkey` TXT | DKIM keys (RSA and Ed25519) |
-| `_dmarc.example.com TXT "v=DMARC1; p=quarantine; …"` | What receivers do with forged mail |
+| `_dmarc.example.com TXT "v=DMARC1; p=quarantine; …; rua=mailto:dmarc-reports@example.com"` | What receivers do with forged mail, and where they send reports |
 | `mail.example.com A/AAAA` and PTR | The server itself |
 
-Show them again any time with `uwumail-server domain dns example.com`.
+Recommended, mail works without them:
+
+| Record | Purpose |
+| --- | --- |
+| `_smtp._tls.example.com TXT "v=TLSRPTv1; rua=mailto:tls-reports@example.com"` | Reports about TLS connections to the server |
+| `_jmap._tcp.example.com SRV 0 1 443 mail.example.com.` | Apps like UwUMail find the server from the address alone |
+| `_submissions._tcp` (465) and `_submission._tcp` (587) SRV | Mail apps find where to send |
+
+Show them again any time with `uwumail-server domain dns example.com`. The
+portal checks all of them and, for domains at Cloudflare, can add them.
+
+## MTA-STS and reports
+
+MTA-STS tells other mail servers to deliver to your domain only over TLS with
+a valid certificate. Switch it on per domain in the portal (*Domains → the
+domain → MTA-STS*). It starts in testing mode, where senders only report
+problems; after 14 days without failures the portal suggests enforce.
+
+With MTA-STS on, the domain needs three more records, which the DNS check
+lists:
+
+- `_mta-sts.example.com TXT "v=STSv1; id=…"`: the id changes with the policy.
+- `mta-sts.example.com CNAME mail.example.com.`: senders fetch the policy from
+  `https://mta-sts.example.com/.well-known/mta-sts.txt`, which UwUMail serves.
+  With Let's Encrypt, the server adds this name to its certificate once it
+  points here. Behind a reverse proxy, route the name to UwUMail like the
+  hostname and let the proxy handle its certificate.
+- `_smtp._tls.example.com`, as above.
+
+If another mail server receives first (`smtp.trusted_relays`), the policy lists
+its MX hosts too, and their certificates are what senders check.
+
+The server reads DMARC aggregate reports sent to `dmarc-reports@` and TLS
+reports sent to `tls-reports@` each domain itself, unless you gave someone
+that address. The domain page shows how much mail in the domain's name passed
+DMARC, from which addresses, and which TLS connections failed. Only the numbers
+are kept, for 180 days.
+
+When delivering, UwUMail follows other domains' MTA-STS policies: with an
+enforced policy it only delivers to the MX hosts listed and only with a valid
+certificate, and otherwise tries again later.
 
 ## Mail apps
 
@@ -111,6 +151,9 @@ port 465 use the same certificate. It is reloaded when the files change.
 Alternatively keep `mode = "acme"` with only the proxy listener: Let's Encrypt
 follows the proxy's redirect to HTTPS, and the proxy forwards
 `/.well-known/acme-challenge/` to UwUMail like every other path.
+
+For MTA-STS, also route `mta-sts.<domain>` of each domain to port 8080; UwUMail
+picks the domain from the host name.
 
 ## Next to an existing mail server
 

@@ -48,6 +48,16 @@ Design choices that matter later:
 - `outbound` + `client`: the delivery worker claims due recipients with a
   lease, groups them by domain, resolves MX (or a relay / static route),
   delivers with opportunistic TLS, and records the outcome per recipient.
+- `mta_sts` + `https`: our domains' policies, and the policies of domains we
+  deliver to. Those are fetched over HTTPS with a valid certificate and cached
+  until they expire; an enforced policy limits delivery to the MX hosts it lists
+  and requires a certificate valid for the host.
+- `reports`: DMARC aggregate and TLS reports addressed to `dmarc-reports@` and
+  `tls-reports@` a hosted domain are unpacked (capped), checked to be about the
+  domain and stored as numbers instead of landing in a mailbox.
+- `dnscheck`: the records a domain needs (MX, SPF, DMARC, DKIM) and the
+  recommended ones (TLS reporting, SRV, MTA-STS including the policy file),
+  resolved from the root servers down.
 - `dkim`: RSA-2048 and Ed25519 keys per domain; submitted mail is signed with both.
 - `forward` + `srs`: after local delivery, mail also goes to a person's confirmed
   forwarding addresses. Mail to other servers gets an SRS envelope sender on
@@ -83,7 +93,8 @@ Simple/Pro, theme) are stored per account.
 
 The server overview opens with a health check in five areas:
 
-- **DNS:** the latest DNS check of each domain.
+- **DNS:** the latest DNS check of each domain, TLS failures and our own mail
+  failing DMARC according to last week's reports.
 - **Certificate:** days left and whether the certificate matches the hostname.
 - **Sending:** failed logins or connections from the queue worker, a delivery
   probe, stuck mail and a high share of bounces.

@@ -53,7 +53,9 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Security in My account: password change, authenticator app with recovery codes, passkeys, app passwords with scopes and expiry, browser sessions, activity list and notice mails
 - [x] Forwarding in My account (people on this server at once, other servers after a confirmation link, SRS, admin locks) and away messages
 - [x] Own addresses (domains opened by an admin, limit per person, reserved for 30 days after deleting) and storage per folder with emptying Trash and Junk
-- [ ] Autoconfig, Autodiscover, Apple configuration profiles, MTA-STS, TLS-RPT
+- [x] MTA-STS per domain (testing, then enforce with a suggestion after 14 clean days), policy served on `mta-sts.<domain>` with its certificate, and followed when delivering to other domains
+- [x] DMARC and TLS reports read by the server and shown per domain, with suggestions for a stricter DMARC policy
+- [x] Recommended records in the DNS check: TLS reporting, SRV for JMAP and submission
 - [ ] Update notices with changelog
 
 ## 4. Spam filter
@@ -66,6 +68,7 @@ Each step ships as its own commits, container image and test deployment.
 ## 5. IMAP
 
 - [ ] IMAP4rev2 with CONDSTORE/QRESYNC, IDLE, MOVE, SPECIAL-USE, QUOTA, ACL
+- [ ] Autoconfig, Autodiscover and Apple configuration profiles (they need IMAP)
 
 ## 6. Web mail and external mailboxes
 
@@ -78,10 +81,10 @@ Each step ships as its own commits, container image and test deployment.
 - [ ] CalDAV, CardDAV, JMAP Calendars and Contacts
 - [ ] UwUMail Gateway: WireGuard tunnel from a VPS, PROXY protocol, buffering, outbound via fixed IP
 - [ ] OAuth 2 / OpenID Connect provider for mail apps; login via external OIDC or LDAP
-- [ ] Passkeys
 - [ ] Migration assistant (IMAP import from the old provider)
 - [ ] Groups, shared mailboxes, masked addresses
 - [ ] Settings sync for the UwUMail apps, send later and snooze on the server
 - [ ] Web Push / UnifiedPush, sender pictures from the server
 - [ ] Scheduled backups (folder, S3, SFTP) with restore per mailbox
-- [ ] Admin alerts, statistics, Prometheus metrics, DMARC and TLS report analysis
+- [ ] Admin alerts, statistics, Prometheus metrics
+- [ ] Sending TLS reports to other domains, DANE
