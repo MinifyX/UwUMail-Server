@@ -120,6 +120,30 @@ async fn forwarding_needs_confirmation_elsewhere_and_away_messages_need_text() {
     let (_, forwarding) = call(&app, "GET", "/api/account/forwarding", None, Some(&auth)).await;
     assert!(forwarding["targets"][1]["confirmedAt"].is_number());
 
+    // Removing and adding again must not send the same address another confirmation right away.
+    let id = forwarding["targets"][1]["id"].as_i64().unwrap();
+    call(&app, "DELETE", &format!("/api/account/forwarding/targets/{id}"), None, Some(&auth)).await;
+    let (status, error) =
+        call(&app, "POST", "/api/account/forwarding/targets", target("oma@elsewhere.example"), Some(&auth)).await;
+    assert_eq!((status, error["code"].as_str()), (StatusCode::CONFLICT, Some("forwardingThrottled")));
+    for n in 0..4 {
+        let (status, _) = call(
+            &app,
+            "POST",
+            "/api/account/forwarding/targets",
+            target(&format!("n{n}@elsewhere.example")),
+            Some(&auth),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let (_, list) = call(&app, "GET", "/api/account/forwarding", None, Some(&auth)).await;
+        let last = list["targets"].as_array().unwrap().last().unwrap()["id"].as_i64().unwrap();
+        call(&app, "DELETE", &format!("/api/account/forwarding/targets/{last}"), None, Some(&auth)).await;
+    }
+    let (_, error) =
+        call(&app, "POST", "/api/account/forwarding/targets", target("sixth@elsewhere.example"), Some(&auth)).await;
+    assert_eq!(error["code"], "forwardingThrottled", "five confirmations an hour per person");
+
     let (_, forwarding) =
         call(&app, "PUT", "/api/account/forwarding/keep-copy", Some(json!({ "keep": false })), Some(&auth)).await;
     assert_eq!(forwarding["keepCopy"], false);
