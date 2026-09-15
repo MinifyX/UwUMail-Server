@@ -68,6 +68,7 @@ async fn detail_json(web: &Web, name: &str) -> ApiResult<Value> {
             })
         }).collect::<Vec<_>>(),
         "report": web.report(&domain.name),
+        "selfServiceAliases": web.store().domain_self_service(&domain.name).await?,
         "setup": {
             "hostname": web.settings().hostname,
             "relayHost": web.smtp().relay_host(),

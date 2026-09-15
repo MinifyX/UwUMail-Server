@@ -18,6 +18,7 @@ mod forwarding;
 mod mail;
 mod mutate;
 mod objects;
+mod own;
 mod parse;
 mod password;
 mod query;
@@ -43,6 +44,7 @@ pub use forwarding::{ActiveForwarding, FORWARD_LINK_LIFETIME_SECS, ForwardTarget
 pub use mail::{EmailSummary, IngestRequest, IngestedEmail, Mailbox, MailboxRole, MailboxTarget};
 pub use mutate::{EmailUpdate, KeywordsChange, MailboxUpdate, MailboxesChange};
 pub use objects::{Changes, EmailRecord};
+pub use own::{MailboxUsage, OwnAddress, OwnAddresses, RELEASED_ADDRESS_SECS, ReleasedAddress};
 pub use query::{EmailFilter, EmailSort, EmailSortProperty};
 pub use queue::{NewQueueRecipient, QueueEntry, QueueRecipient, QueueRecipientStatus, QueuedMessage};
 pub use security::{

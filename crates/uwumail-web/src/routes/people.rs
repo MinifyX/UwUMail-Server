@@ -67,6 +67,7 @@ pub async fn detail(State(web): State<Web>, _admin: Admin, Path(login): Path<Str
         "appPasswords": app_passwords,
         "appPasswordsRequired": security.app_passwords_required(),
     });
+    value["aliasLimit"] = json!(web.store().own_addresses(person.account.id).await?.limit);
     value["forwarding"] = json!({
         "externalBlocked": forwarding.external_blocked,
         "targets": forwarding.targets.len(),

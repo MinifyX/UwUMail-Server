@@ -1,5 +1,6 @@
 import clsx from "clsx";
 import {
+  AtSign,
   ChevronsUpDown,
   Forward,
   Globe,
@@ -128,6 +129,7 @@ export function PortalShell({ session, children }: { session: Session; children:
           onNavigate={() => setDrawer(false)}
           items={[
             { to: "/account", label: t("nav.overview"), icon: LayoutDashboard },
+            { to: "/account/addresses", label: t("nav.addresses"), icon: AtSign },
             { to: "/account/mail", label: t("nav.mail"), icon: Forward },
             { to: "/account/security", label: t("nav.security"), icon: ShieldCheck },
           ]}

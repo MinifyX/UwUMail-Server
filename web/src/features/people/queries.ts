@@ -142,6 +142,17 @@ export function useSetExternalForwarding(login: string) {
   });
 }
 
+export function useSetAliasLimit(login: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (limit: number) => api<void>(`${personPath(login)}/alias-limit`, { method: "PUT", body: { limit } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "people", login] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
+    },
+  });
+}
+
 export function useSetPassword(login: string) {
   const updated = usePersonUpdated();
   return useMutation({

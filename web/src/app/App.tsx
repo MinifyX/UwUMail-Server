@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Toaster } from "@/components/ui/Toaster";
 import { AccountHome } from "@/features/account/AccountHome";
+import { AddressesPage } from "@/features/addresses/AddressesPage";
 import { AdminHome } from "@/features/admin/AdminHome";
 import { DomainPage } from "@/features/domains/DomainPage";
 import { DomainsPage } from "@/features/domains/DomainsPage";
@@ -46,6 +47,7 @@ function page(path: string, session: Session): ReactNode {
   if (path === "/account") return <AccountHome session={session} />;
   if (path === "/account/security") return <SecurityPage session={session} />;
   if (path === "/account/mail") return <MailboxPage />;
+  if (path === "/account/addresses") return <AddressesPage />;
   if (session.account.role !== "admin") return <NotFound />;
   if (path === "/admin") return <AdminHome />;
   if (matchPath("/admin/people", path)) return <PeoplePage session={session} />;

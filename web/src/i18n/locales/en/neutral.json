@@ -46,7 +46,8 @@
     "logs": "Logs",
     "settings": "Settings",
     "security": "Security",
-    "mail": "Forwarding"
+    "mail": "Forwarding",
+    "addresses": "Addresses"
   },
   "mode": {
     "label": "View",
@@ -207,7 +208,15 @@
       "forwardingBlocked": "Forwarding to other servers is not allowed here.",
       "tooManyForwardTargets": "No more forwarding addresses. Remove one first.",
       "vacationDates": "The end has to be after the start.",
-      "vacationText": "An away message needs a text."
+      "vacationText": "An away message needs a text.",
+      "aliasInvalid": "That address doesn't work. A + is not allowed.",
+      "aliasReserved": "This address is reserved for the server.",
+      "aliasDomain": "Own addresses are not allowed on this domain.",
+      "addressTaken": "This address is already taken.",
+      "aliasLimit": "You already have as many own addresses as you may.",
+      "aliasNotYours": "An admin created this address, only an admin can delete it.",
+      "addressReserved": "This address was deleted just recently and is still reserved.",
+      "notEmptiable": "This folder cannot be emptied."
     }
   },
   "people": {
@@ -304,7 +313,12 @@
         "invited": "Has not chosen a password yet.",
         "disabled": "Locked: cannot log in, mail keeps arriving.",
         "deleted": "In the trash. Will be deleted for good on {{date}}."
-      }
+      },
+      "aliasLimit": "Own addresses",
+      "aliasLimitHint": "How many addresses this person may create on open domains.",
+      "aliasLimitNone": "None",
+      "aliasLimitCount_one": "Up to {{count}}",
+      "aliasLimitCount_other": "Up to {{count}}"
     },
     "purge": {
       "title": "Delete {{login}} for good?",
@@ -383,7 +397,9 @@
       "queueDrop": "{{actor}} deleted message {{target}} from the queue",
       "settingsUpdate": "{{actor}} changed server settings",
       "accountSecondFactorsReset": "{{actor}} reset the two-factor login of {{target}}",
-      "accountExternalForwarding": "{{actor}} changed forwarding to other servers for {{target}}"
+      "accountExternalForwarding": "{{actor}} changed forwarding to other servers for {{target}}",
+      "domainSelfServiceAliases": "{{actor}} changed own addresses on {{target}}",
+      "accountAliasLimit": "{{actor}} changed the address limit of {{target}}"
     },
     "details": {
       "adminOn": "is now an admin",
@@ -508,7 +524,9 @@
       "remove": "Remove domain",
       "removeHint": "Only possible when no address uses the domain anymore.",
       "removeConfirm": "Really remove {{domain}}?",
-      "catchAllTarget": "Unknown addresses go to"
+      "catchAllTarget": "Unknown addresses go to",
+      "selfService": "Allow own addresses",
+      "selfServiceHint": "People may create extra addresses on this domain themselves, up to their limit."
     },
     "toasts": {
       "created": "{{domain}} has been added",
@@ -951,5 +969,44 @@
     "declinedBody": "You won't get mail from {{from}}. The forwarding was deleted.",
     "invalidTitle": "This link no longer works",
     "invalidBody": "It was used already or is older than seven days."
+  },
+  "addresses": {
+    "pageTitle": "Addresses and storage",
+    "intro": "The addresses you get mail at and how much space it takes.",
+    "title": "Your addresses",
+    "own": "Created by you",
+    "fromAdmin": "Created by an admin",
+    "delete": "Delete",
+    "closed": "Creating your own addresses is not open on this server right now. Ask the admin.",
+    "explain": "Extra addresses arrive in the same mailbox. Handy for signing up at shops or clubs. A deleted address stays reserved for you for 30 days.",
+    "new": "New address",
+    "used": "{{used}} of {{limit}} own addresses used",
+    "localPlaceholder": "for example shop",
+    "domain": "Domain",
+    "create": "Create",
+    "created": "{{address}} created",
+    "deleted": "{{address}} deleted, reserved for you for 30 days",
+    "releasedTitle": "Recently deleted",
+    "releasedHint": "Mail to these addresses is refused until you take them back or the time runs out.",
+    "reservedUntil": "Reserved until {{date}}",
+    "restore": "Take back"
+  },
+  "storage": {
+    "title": "Storage",
+    "folderSize_one": "{{count}} message · {{size}}",
+    "folderSize_other": "{{count}} messages · {{size}}",
+    "empty": "Empty",
+    "emptyTitle": "Empty {{folder}}?",
+    "emptyBody": "The messages in it are deleted for good. Messages that are in another folder too stay there.",
+    "emptied_one": "{{count}} message deleted",
+    "emptied_other": "{{count}} messages deleted",
+    "roles": {
+      "inbox": "Inbox",
+      "drafts": "Drafts",
+      "sent": "Sent",
+      "archive": "Archive",
+      "junk": "Junk",
+      "trash": "Trash"
+    }
   }
 }

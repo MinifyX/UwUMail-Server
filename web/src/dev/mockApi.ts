@@ -17,12 +17,14 @@ import type {
   DomainReport,
   DomainSummary,
   Info,
+  OwnAddressesView,
   Overview,
   Person,
   Profile,
   RecordCheck,
   SecurityView,
   Session,
+  StorageView,
   VacationView,
 } from "@/lib/api";
 
@@ -85,6 +87,7 @@ const people: Person[] = [
 
 interface MockDomain {
   name: string;
+  selfServiceAliases?: boolean;
   catchAll: string | null;
   createdAt: number;
   keys: DkimKeyInfo[];
@@ -204,6 +207,7 @@ const summary = (domain: MockDomain): DomainSummary => ({
 
 const detail = (domain: MockDomain): DomainDetail => ({
   ...summary(domain),
+  selfServiceAliases: domain.selfServiceAliases ?? domain.name === "uwu.example",
   keys: domain.keys,
   report: domain.report,
   setup: { hostname: "mail.uwu.example", relayHost: null, upstreamMx: false },
@@ -517,6 +521,35 @@ let mockVacation: VacationView = {
   textBody: "Hallo, ich bin bis Ende September unterwegs und antworte danach.",
 };
 
+const mockAddresses: OwnAddressesView = {
+  addresses: [
+    { address: "lorin@uwu.example", kind: "primary", own: false, createdAt: now - 30 * 86_400 },
+    { address: "hallo@uwu.example", kind: "alias", own: false, createdAt: now - 20 * 86_400 },
+    { address: "shop@uwu.example", kind: "alias", own: true, createdAt: now - 4 * 86_400 },
+  ],
+  domains: ["uwu.example", "verein.example"],
+  limit: 10,
+  used: 1,
+  released: [{ address: "alt-shop@uwu.example", releasedAt: now - 2 * 86_400, reservedUntil: now + 28 * 86_400 }],
+};
+const mockStorage: StorageView = {
+  usedBytes: 1.3 * GB,
+  quotaBytes: 5 * GB,
+  mailboxes: [
+    { id: 1, name: "Inbox", role: "inbox", emails: 1840, sizeBytes: 0.8 * GB },
+    { id: 2, name: "Drafts", role: "drafts", emails: 3, sizeBytes: 42_000 },
+    { id: 3, name: "Sent", role: "sent", emails: 620, sizeBytes: 0.3 * GB },
+    { id: 4, name: "Archive", role: "archive", emails: 210, sizeBytes: 0.15 * GB },
+    { id: 5, name: "Junk", role: "junk", emails: 57, sizeBytes: 12_000_000 },
+    { id: 6, name: "Trash", role: "trash", emails: 133, sizeBytes: 38_000_000 },
+    { id: 7, name: "Verein", role: null, emails: 44, sizeBytes: 9_500_000 },
+  ],
+};
+
+function refreshAddresses() {
+  mockAddresses.used = mockAddresses.addresses.filter((entry) => entry.own).length;
+}
+
 let healthCheckedAt: number | null = null;
 
 function health(): Health {
@@ -735,6 +768,47 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["GET", /^\/api\/account\/vacation$/, () => [200, mockVacation]],
+  ["GET", /^\/api\/account\/addresses$/, () => [200, mockAddresses]],
+  [
+    "POST",
+    /^\/api\/account\/aliases$/,
+    (body) => {
+      const address = (body as { address: string }).address.trim().toLowerCase();
+      if (address.startsWith("postmaster@")) return problem(409, "aliasReserved");
+      if (mockAddresses.addresses.some((entry) => entry.address === address)) return problem(409, "addressTaken");
+      if (mockAddresses.used >= mockAddresses.limit) return problem(409, "aliasLimit");
+      mockAddresses.addresses.push({ address, kind: "alias", own: true, createdAt: Math.floor(Date.now() / 1000) });
+      mockAddresses.released = mockAddresses.released.filter((entry) => entry.address !== address);
+      refreshAddresses();
+      return [201, mockAddresses];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/account\/aliases\/([^/]+)$/,
+    (_, [address]) => {
+      const at = Math.floor(Date.now() / 1000);
+      mockAddresses.addresses = mockAddresses.addresses.filter((entry) => entry.address !== address);
+      mockAddresses.released.unshift({ address: address ?? "", releasedAt: at, reservedUntil: at + 30 * 86_400 });
+      refreshAddresses();
+      return [200, mockAddresses];
+    },
+  ],
+  ["GET", /^\/api\/account\/storage$/, () => [200, mockStorage]],
+  [
+    "POST",
+    /^\/api\/account\/mailboxes\/(trash|junk)\/empty$/,
+    (_, [role]) => {
+      const mailbox = mockStorage.mailboxes.find((entry) => entry.role === role);
+      const removed = mailbox?.emails ?? 0;
+      if (mailbox) {
+        mockStorage.usedBytes -= mailbox.sizeBytes;
+        mailbox.emails = 0;
+        mailbox.sizeBytes = 0;
+      }
+      return [200, { removed }];
+    },
+  ],
   [
     "PUT",
     /^\/api\/account\/vacation$/,
@@ -1079,7 +1153,7 @@ const routes: [string, RegExp, Handler][] = [
       const forwarding = me
         ? { externalBlocked: false, targets: mockForwarding.targets.length, external: 1 }
         : { externalBlocked: found.login === "opa@verein.example", targets: 0, external: 0 };
-      return [200, { ...found, security, forwarding }];
+      return [200, { ...found, security, forwarding, aliasLimit: me ? mockAddresses.limit : 10 }];
     },
   ],
   [
@@ -1137,6 +1211,25 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["POST", /^\/api\/admin\/people\/([^/]+)\/password-link$/, () => [200, link()]],
+  [
+    "PUT",
+    /^\/api\/admin\/people\/([^/]+)\/alias-limit$/,
+    (body, [login]) => {
+      if (login === "lorin@uwu.example") mockAddresses.limit = (body as { limit: number }).limit;
+      log("account.aliasLimit", login ?? "", body as Record<string, unknown>);
+      return [204, null];
+    },
+  ],
+  [
+    "PUT",
+    /^\/api\/admin\/domains\/([^/]+)\/self-service$/,
+    (body, [name]) => {
+      const domain = domains.find((entry) => entry.name === name);
+      if (domain) domain.selfServiceAliases = (body as { on: boolean }).on;
+      log("domain.selfServiceAliases", name ?? "", body as Record<string, unknown>);
+      return [204, null];
+    },
+  ],
   [
     "PUT",
     /^\/api\/admin\/people\/([^/]+)\/external-forwarding$/,

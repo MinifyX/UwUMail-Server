@@ -2,7 +2,7 @@ import { ArrowLeft, Globe, Info, KeyRound, RefreshCw, Trash2, X } from "lucide-r
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button, IconButton } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Field, Select } from "@/components/ui/Field";
+import { Field, Select, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { ApiError, type DomainDetail } from "@/lib/api";
 import { formatDate, formatDateTime } from "@/lib/format";
@@ -19,6 +19,7 @@ import {
   useRemoveKey,
   useRotateKeys,
   useSetCatchAll,
+  useSetSelfService,
 } from "./queries";
 
 function DnsCard({ domain }: { domain: DomainDetail }) {
@@ -79,6 +80,7 @@ function CatchAllCard({ domain }: { domain: DomainDetail }) {
   const { t } = useT();
   const people = usePeople();
   const save = useSetCatchAll(domain.name, t("domains.toasts.catchAll"));
+  const selfService = useSetSelfService(domain.name);
   const choices = (people.data ?? []).filter((person) => person.status !== "deleted");
   return (
     <Card title={t("domains.detail.catchAll")}>
@@ -99,6 +101,14 @@ function CatchAllCard({ domain }: { domain: DomainDetail }) {
           </Select>
         )}
       </Field>
+      <div className="mt-4 border-t border-hairline pt-4">
+        <Toggle
+          checked={Boolean(domain.selfServiceAliases)}
+          onChange={(on) => selfService.mutate(on)}
+          label={t("domains.detail.selfService")}
+          description={t("domains.detail.selfServiceHint")}
+        />
+      </div>
     </Card>
   );
 }

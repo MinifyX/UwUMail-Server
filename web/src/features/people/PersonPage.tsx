@@ -23,6 +23,7 @@ import {
   usePurgePerson,
   useRemoveAlias,
   useResetSecondFactors,
+  useSetAliasLimit,
   useSetExternalForwarding,
   useRestorePerson,
   useSetPassword,
@@ -76,6 +77,38 @@ function NameField({ person }: { person: Person }) {
         </Button>
       )}
     </form>
+  );
+}
+
+const ALIAS_LIMITS = [0, 3, 5, 10, 25, 50];
+
+function AliasLimit({ person }: { person: Person }) {
+  const { t } = useT();
+  const errorText = useErrorText();
+  const save = useSetAliasLimit(person.login);
+  if (person.aliasLimit === undefined) return null;
+  const options = ALIAS_LIMITS.includes(person.aliasLimit)
+    ? ALIAS_LIMITS
+    : [...ALIAS_LIMITS, person.aliasLimit].sort((a, b) => a - b);
+  return (
+    <Field label={t("people.detail.aliasLimit")} hint={t("people.detail.aliasLimitHint")} className="mt-3">
+      {(id) => (
+        <Select
+          id={id}
+          value={person.aliasLimit}
+          disabled={save.isPending}
+          onChange={(event) =>
+            save.mutate(Number(event.target.value), { onError: (error) => toast(errorText(error), "error") })
+          }
+        >
+          {options.map((limit) => (
+            <option key={limit} value={limit}>
+              {limit === 0 ? t("people.detail.aliasLimitNone") : t("people.detail.aliasLimitCount", { count: limit })}
+            </option>
+          ))}
+        </Select>
+      )}
+    </Field>
   );
 }
 
@@ -155,6 +188,7 @@ function Addresses({ person, editable }: { person: Person; editable: boolean }) 
           </Button>
         </form>
       )}
+      {editable && <AliasLimit person={person} />}
     </Card>
   );
 }

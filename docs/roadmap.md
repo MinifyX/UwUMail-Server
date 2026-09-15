@@ -51,7 +51,7 @@ Each step ships as its own commits, container image and test deployment.
 - [ ] Admin panel, Simple and Pro mode, German and English, playful/neutral tone, Nyu
 - [x] Security in My account: password change, authenticator app with recovery codes, passkeys, app passwords with scopes and expiry, browser sessions, activity list and notice mails
 - [x] Forwarding in My account (people on this server at once, other servers after a confirmation link, SRS, admin locks) and away messages
-- [ ] Self-service: own aliases, storage per folder
+- [x] Own addresses (domains opened by an admin, limit per person, reserved for 30 days after deleting) and storage per folder with emptying Trash and Junk
 - [ ] Autoconfig, Autodiscover, Apple configuration profiles, MTA-STS, TLS-RPT
 - [ ] Update notices with changelog
 

@@ -128,6 +128,7 @@ export interface Person {
   /** Only in the detail view. */
   security?: PersonSecurity;
   forwarding?: { externalBlocked: boolean; targets: number; external: number };
+  aliasLimit?: number;
 }
 
 /** A one-time link to choose a password; `path` is relative to the portal. */
@@ -187,6 +188,7 @@ export interface DkimKeyInfo {
 }
 
 export interface DomainDetail extends Omit<DomainSummary, "dns"> {
+  selfServiceAliases?: boolean;
   keys: DkimKeyInfo[];
   report: DomainReport | null;
   setup: { hostname: string; relayHost: string | null; upstreamMx: boolean };
@@ -353,4 +355,24 @@ export interface ForwardLinkInfo {
   address: string;
   from: string;
   name?: string;
+}
+
+export interface OwnAddressesView {
+  addresses: { address: string; kind: "primary" | "alias"; own: boolean; createdAt: number }[];
+  domains: string[];
+  limit: number;
+  used: number;
+  released: { address: string; releasedAt: number; reservedUntil: number }[];
+}
+
+export interface StorageView {
+  usedBytes: number;
+  quotaBytes: number;
+  mailboxes: {
+    id: number;
+    name: string;
+    role: "inbox" | "drafts" | "sent" | "archive" | "junk" | "trash" | null;
+    emails: number;
+    sizeBytes: number;
+  }[];
 }

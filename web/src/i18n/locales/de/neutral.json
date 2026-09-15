@@ -46,7 +46,8 @@
     "logs": "Logs",
     "settings": "Einstellungen",
     "security": "Sicherheit",
-    "mail": "Weiterleitung"
+    "mail": "Weiterleitung",
+    "addresses": "Adressen"
   },
   "mode": {
     "label": "Ansicht",
@@ -207,7 +208,15 @@
       "forwardingBlocked": "Weiterleitung an andere Server ist hier nicht erlaubt.",
       "tooManyForwardTargets": "Mehr Weiterleitungen gehen nicht. Entferne erst eine.",
       "vacationDates": "Das Ende muss nach dem Anfang liegen.",
-      "vacationText": "Eine Abwesenheitsnotiz braucht einen Text."
+      "vacationText": "Eine Abwesenheitsnotiz braucht einen Text.",
+      "aliasInvalid": "Diese Adresse geht so nicht. Ein + ist nicht erlaubt.",
+      "aliasReserved": "Diese Adresse ist für den Server reserviert.",
+      "aliasDomain": "Auf dieser Domain dürfen keine eigenen Adressen angelegt werden.",
+      "addressTaken": "Diese Adresse ist schon vergeben.",
+      "aliasLimit": "Du hast schon so viele eigene Adressen, wie du darfst.",
+      "aliasNotYours": "Diese Adresse hat der Admin angelegt, nur er kann sie löschen.",
+      "addressReserved": "Diese Adresse wurde gerade erst gelöscht und ist noch reserviert.",
+      "notEmptiable": "Dieser Ordner lässt sich nicht leeren."
     }
   },
   "people": {
@@ -304,7 +313,12 @@
         "invited": "Hat noch kein Passwort festgelegt.",
         "disabled": "Gesperrt: kann sich nicht anmelden, Mails kommen weiter an.",
         "deleted": "Im Papierkorb. Wird am {{date}} endgültig gelöscht."
-      }
+      },
+      "aliasLimit": "Eigene Adressen",
+      "aliasLimitHint": "So viele Adressen darf die Person auf freigegebenen Domains selbst anlegen.",
+      "aliasLimitNone": "Keine",
+      "aliasLimitCount_one": "Bis zu {{count}}",
+      "aliasLimitCount_other": "Bis zu {{count}}"
     },
     "purge": {
       "title": "{{login}} endgültig löschen?",
@@ -383,7 +397,9 @@
       "queueDrop": "{{actor}} hat Mail {{target}} aus der Warteschlange gelöscht",
       "settingsUpdate": "{{actor}} hat Server-Einstellungen geändert",
       "accountSecondFactorsReset": "{{actor}} hat die Zwei-Faktor-Anmeldung von {{target}} zurückgesetzt",
-      "accountExternalForwarding": "{{actor}} hat die Weiterleitung nach außen für {{target}} geändert"
+      "accountExternalForwarding": "{{actor}} hat die Weiterleitung nach außen für {{target}} geändert",
+      "domainSelfServiceAliases": "{{actor}} hat eigene Adressen auf {{target}} geändert",
+      "accountAliasLimit": "{{actor}} hat das Adress-Limit von {{target}} geändert"
     },
     "details": {
       "adminOn": "ist jetzt Admin",
@@ -508,7 +524,9 @@
       "remove": "Domain entfernen",
       "removeHint": "Geht nur, wenn keine Adresse mehr die Domain nutzt.",
       "removeConfirm": "{{domain}} wirklich entfernen?",
-      "catchAllTarget": "Unbekannte Adressen gehen an"
+      "catchAllTarget": "Unbekannte Adressen gehen an",
+      "selfService": "Eigene Adressen erlauben",
+      "selfServiceHint": "Personen dürfen auf dieser Domain selbst zusätzliche Adressen anlegen, bis zu ihrem Limit."
     },
     "toasts": {
       "created": "{{domain}} ist angelegt",
@@ -951,5 +969,44 @@
     "declinedBody": "Du bekommst keine Mails von {{from}}. Die Weiterleitung wurde gelöscht.",
     "invalidTitle": "Dieser Link gilt nicht mehr",
     "invalidBody": "Er wurde schon benutzt oder ist älter als sieben Tage."
+  },
+  "addresses": {
+    "pageTitle": "Adressen und Speicher",
+    "intro": "Unter welchen Adressen du Mails bekommst und wie viel Platz sie brauchen.",
+    "title": "Deine Adressen",
+    "own": "Von dir angelegt",
+    "fromAdmin": "Vom Admin angelegt",
+    "delete": "Löschen",
+    "closed": "Eigene Adressen anlegen ist auf diesem Server gerade nicht freigegeben. Frag den Admin.",
+    "explain": "Zusätzliche Adressen landen im selben Postfach. Praktisch für Anmeldungen bei Shops oder Vereinen. Eine gelöschte Adresse bleibt 30 Tage für dich reserviert.",
+    "new": "Neue Adresse",
+    "used": "{{used}} von {{limit}} eigenen Adressen benutzt",
+    "localPlaceholder": "zum Beispiel shop",
+    "domain": "Domain",
+    "create": "Anlegen",
+    "created": "{{address}} angelegt",
+    "deleted": "{{address}} gelöscht, 30 Tage für dich reserviert",
+    "releasedTitle": "Kürzlich gelöscht",
+    "releasedHint": "Mails an diese Adressen werden abgelehnt, bis du sie zurückholst oder die Frist abläuft.",
+    "reservedUntil": "Reserviert bis {{date}}",
+    "restore": "Zurückholen"
+  },
+  "storage": {
+    "title": "Speicher",
+    "folderSize_one": "{{count}} Mail · {{size}}",
+    "folderSize_other": "{{count}} Mails · {{size}}",
+    "empty": "Leeren",
+    "emptyTitle": "{{folder}} leeren?",
+    "emptyBody": "Die Mails darin werden endgültig gelöscht. Mails, die auch in einem anderen Ordner liegen, bleiben dort.",
+    "emptied_one": "{{count}} Mail gelöscht",
+    "emptied_other": "{{count}} Mails gelöscht",
+    "roles": {
+      "inbox": "Posteingang",
+      "drafts": "Entwürfe",
+      "sent": "Gesendet",
+      "archive": "Archiv",
+      "junk": "Spam",
+      "trash": "Papierkorb"
+    }
   }
 }

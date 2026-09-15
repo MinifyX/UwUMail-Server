@@ -174,7 +174,7 @@ pub(crate) fn account_from_row(row: &Row<'_>) -> rusqlite::Result<Account> {
     })
 }
 
-fn domain_id(conn: &Connection, name: &str) -> Result<i64> {
+pub(crate) fn domain_id(conn: &Connection, name: &str) -> Result<i64> {
     conn.query_row("SELECT id FROM domains WHERE name = ?1", [name], |row| row.get(0))
         .optional()?
         .ok_or_else(|| StoreError::NotFound(format!("domain {name}")))
@@ -609,6 +609,21 @@ impl Store {
         self.write(move |tx| {
             let domain_id = domain_id(tx, &domain)?;
             let account_id = account_id(tx, &login)?;
+            // Someone who deleted this alias themselves keeps it for a while.
+            let reserved_for: Option<i64> = tx
+                .query_row(
+                    "SELECT account_id FROM released_addresses WHERE local_part = ?1 AND domain_id = ?2 AND released_at >= ?3",
+                    params![local, domain_id, now() - crate::RELEASED_ADDRESS_SECS],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if reserved_for.is_some_and(|owner| owner != account_id) {
+                return Err(StoreError::Rule {
+                    code: "addressReserved",
+                    message: format!("{local}@{domain} was deleted recently and is still reserved"),
+                });
+            }
+            tx.execute("DELETE FROM released_addresses WHERE local_part = ?1 AND domain_id = ?2", params![local, domain_id])?;
             tx.execute(
                 "INSERT INTO addresses (local_part, domain_id, account_id, kind, created_at) VALUES (?1, ?2, ?3, 'alias', ?4)",
                 params![local, domain_id, account_id, now()],

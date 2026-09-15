@@ -73,6 +73,19 @@ export function useSetCatchAll(name: string, success: string) {
   );
 }
 
+export function useSetSelfService(name: string) {
+  const queryClient = useQueryClient();
+  const errorText = useErrorText();
+  return useMutation({
+    mutationFn: (on: boolean) => api<void>(`${domainPath(name)}/self-service`, { method: "PUT", body: { on } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "domains", name] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
+    },
+    onError: (error) => toast(errorText(error), "error"),
+  });
+}
+
 export function useRotateKeys(name: string, success: string) {
   return useDomainAction(
     () => api<DomainDetail>(`${domainPath(name)}/dkim/rotate`, { method: "POST", body: {} }),

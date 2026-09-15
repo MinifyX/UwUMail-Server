@@ -38,6 +38,14 @@ const KNOWN = [
   "tooManyForwardTargets",
   "vacationDates",
   "vacationText",
+  "aliasInvalid",
+  "aliasReserved",
+  "aliasDomain",
+  "addressTaken",
+  "aliasLimit",
+  "aliasNotYours",
+  "addressReserved",
+  "notEmptiable",
 ];
 
 /** Turns an API error into a sentence for the person in front of the screen. */
