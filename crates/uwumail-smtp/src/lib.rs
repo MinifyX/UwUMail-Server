@@ -20,6 +20,7 @@ mod inbound;
 mod limiter;
 pub mod mta_sts;
 mod outbound;
+pub mod reachability;
 mod relay;
 mod reports;
 pub mod servercheck;

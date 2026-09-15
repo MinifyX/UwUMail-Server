@@ -95,7 +95,7 @@ async fn address_report(dns: &DnsChecker, ip: IpAddr, hostname: &str, blocklists
     AddressReport { ip: ip.to_string(), private: is_private(ip), ptr, ptr_confirmed, ptr_is_hostname, listings }
 }
 
-async fn self_call(ctx: &Context, ip: IpAddr, port: u16, hostname: &str) -> InboundReport {
+pub(crate) async fn self_call(ctx: &Context, ip: IpAddr, port: u16, hostname: &str) -> InboundReport {
     let failed = |error: String| InboundReport {
         ip: ip.to_string(),
         reachable: false,

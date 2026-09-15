@@ -13,6 +13,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::time::{Duration, Instant};
 
 use hickory_resolver::TokioResolver;
+use hickory_resolver::config::{NameServerConfig, ResolverConfig};
 use hickory_resolver::net::runtime::TokioRuntimeProvider;
 use hickory_resolver::proto::op::Query;
 use hickory_resolver::proto::rr::{Name, RData, RecordType};
@@ -902,10 +903,84 @@ impl DnsChecker {
             Err(error) => unknown(Some(error)),
         }
     }
+
+    /// The address this machine reaches the internet from, as Google's name servers see it: they
+    /// answer `o-o.myaddr.l.google.com` with the address the question came from.
+    pub async fn public_address(&self, ipv6: bool) -> Option<IpAddr> {
+        // ns1.google.com
+        let server = if ipv6 {
+            IpAddr::V6(Ipv6Addr::new(0x2001, 0x4860, 0x4802, 0x32, 0, 0, 0, 0xa))
+        } else {
+            IpAddr::V4(Ipv4Addr::new(216, 239, 32, 10))
+        };
+        let config = ResolverConfig::from_name_servers(vec![NameServerConfig::udp_and_tcp(server)]);
+        let resolver = TokioResolver::builder_with_config(config, TokioRuntimeProvider::default()).build().ok()?;
+        let name = Name::from_ascii("o-o.myaddr.l.google.com.").ok()?;
+        let lookup =
+            tokio::time::timeout(Duration::from_secs(5), resolver.lookup(name, RecordType::TXT)).await.ok()?.ok()?;
+        lookup
+            .answers()
+            .iter()
+            .filter_map(|record| match &record.data {
+                RData::TXT(txt) => {
+                    Some(txt.txt_data.iter().map(|part| String::from_utf8_lossy(part)).collect::<String>())
+                }
+                _ => None,
+            })
+            .find_map(|text| text.trim().parse::<IpAddr>().ok())
+            .filter(|ip| ip.is_ipv6() == ipv6)
+    }
+
+    /// The network `ip` belongs to: its AS number and the operator's name, from Team Cymru's
+    /// IP-to-ASN service in the DNS.
+    pub async fn network(&self, ip: IpAddr) -> Option<(u32, String)> {
+        let origin = match ip {
+            IpAddr::V4(_) => blocklist_name(ip, "origin.asn.cymru.com"),
+            IpAddr::V6(_) => blocklist_name(ip, "origin6.asn.cymru.com"),
+        };
+        let lookups = self.list_lookups();
+        let asn = lookups.txt(&origin).await.ok()?.iter().find_map(|text| origin_asn(text))?;
+        let name = lookups
+            .txt(&format!("AS{asn}.asn.cymru.com"))
+            .await
+            .unwrap_or_default()
+            .iter()
+            .find_map(|text| as_name(text))
+            .unwrap_or_default();
+        Some((asn, name))
+    }
+
+    /// Every answer Spamhaus ZEN gives for `ip`, one per dataset that lists it. `None` when ZEN did
+    /// not answer usefully, e.g. because it refuses questions from this network.
+    pub async fn spamhaus_codes(&self, ip: IpAddr) -> Option<Vec<Ipv4Addr>> {
+        let name = blocklist_name(ip, "zen.spamhaus.org");
+        let codes: Vec<Ipv4Addr> = self
+            .list_lookups()
+            .records(&name, RecordType::A)
+            .await
+            .ok()?
+            .into_iter()
+            .filter_map(|data| if let RData::A(a) = data { Some(a.0) } else { None })
+            .collect();
+        // 127.255.255.x means "you may not ask"; anything outside 127/8 is not an answer at all.
+        let useful = codes.iter().all(|code| code.octets()[0] == 127 && code.octets()[1..3] != [255, 255]);
+        useful.then_some(codes)
+    }
+}
+
+/// The first AS number of a Team Cymru origin answer like `"24940 | 49.12.0.0/14 | DE | ripencc | 2008-04-04"`.
+fn origin_asn(text: &str) -> Option<u32> {
+    text.split('|').next()?.split_whitespace().next()?.parse().ok()
+}
+
+/// The operator of a Team Cymru AS answer like `"24940 | DE | ripencc | 2002-06-03 | HETZNER-AS - Hetzner Online GmbH, DE"`.
+fn as_name(text: &str) -> Option<String> {
+    let name = text.split('|').nth(4)?.trim();
+    Some(name.split_once(" - ").map_or(name, |(_, operator)| operator).trim().to_owned())
 }
 
 #[cfg(test)]
-mod blocklist_tests {
+mod network_tests {
     use super::*;
 
     /// Every list has 127.0.0.2 as a test entry; run with
@@ -919,6 +994,22 @@ mod blocklist_tests {
             let listing = dns.blocklist_status(test_entry, list).await;
             assert_ne!(listing.status, ListingStatus::Clean, "{} knows its test entry", list.name);
         }
+    }
+
+    #[test]
+    fn team_cymru_answers() {
+        assert_eq!(origin_asn("24940 | 49.12.0.0/14 | DE | ripencc | 2008-04-04"), Some(24940));
+        assert_eq!(origin_asn("15169 36040 | 8.8.8.0/24 | US | arin | 2023-12-28"), Some(15169));
+        assert_eq!(origin_asn("nonsense"), None);
+        assert_eq!(
+            as_name("24940 | DE | ripencc | 2002-06-03 | HETZNER-AS - Hetzner Online GmbH, DE").as_deref(),
+            Some("Hetzner Online GmbH, DE")
+        );
+        assert_eq!(as_name("6724 | DE | ripencc | 2002-11-20 | STRATO").as_deref(), Some("STRATO"));
+        assert_eq!(
+            blocklist_name("192.0.2.10".parse().unwrap(), "origin.asn.cymru.com"),
+            "10.2.0.192.origin.asn.cymru.com"
+        );
     }
 }
 

@@ -277,7 +277,7 @@ async fn probe_relay(ctx: &Context, relay: &RelayConfig) -> ProbeReport {
     probe.ok()
 }
 
-async fn probe_direct(ctx: &Context, port: u16) -> ProbeReport {
+pub(crate) async fn probe_direct(ctx: &Context, port: u16) -> ProbeReport {
     let auth = &ctx.authenticator;
     let host = match auth.mx_lookup(PROBE_DOMAIN, Some(&ctx.dns.mx)).await {
         Ok(records) => records
