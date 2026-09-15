@@ -4,6 +4,8 @@ import {
   type CloudflareResult,
   type DomainDetail,
   type DomainReport,
+  type GatewayView,
+  type Reachability,
   type ServerCheck,
   type Session,
   type SetupStatus,
@@ -106,5 +108,61 @@ export function useCloudflare(domain: string) {
       void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
     },
     onError: (error) => toast(errorText(error), "error"),
+  });
+}
+
+const REACH_KEY = ["admin", "setup", "reachability"];
+const GATEWAY_KEY = ["admin", "gateway"];
+
+/** Where the server stands on the internet: `null` until the check ran in this browser. */
+export function useLastReachability() {
+  return useQuery<Reachability | null>({ queryKey: REACH_KEY, queryFn: () => null, staleTime: Infinity });
+}
+
+export function useRunReachability() {
+  const queryClient = useQueryClient();
+  const errorText = useErrorText();
+  return useMutation({
+    mutationFn: () => api<Reachability>("/api/admin/setup/reachability", { method: "POST", body: {} }),
+    onSuccess: (result) => queryClient.setQueryData(REACH_KEY, result),
+    onError: (error) => toast(errorText(error), "error"),
+  });
+}
+
+/** The UwUMail Gateway, watched closely while the tunnel is on its way. */
+export function useGateway() {
+  return useQuery({
+    queryKey: GATEWAY_KEY,
+    queryFn: () => api<GatewayView>("/api/admin/gateway"),
+    refetchInterval: (query) => (query.state.data?.state === "connecting" ? 2000 : 15_000),
+  });
+}
+
+function useGatewayChanged() {
+  const queryClient = useQueryClient();
+  return (view?: GatewayView) => {
+    if (view) queryClient.setQueryData(GATEWAY_KEY, view);
+    else void queryClient.invalidateQueries({ queryKey: GATEWAY_KEY });
+    void queryClient.invalidateQueries({ queryKey: ["admin", "health"] });
+    void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
+    void queryClient.invalidateQueries({ queryKey: CHECK_KEY });
+  };
+}
+
+export function usePairGateway() {
+  const changed = useGatewayChanged();
+  return useMutation({
+    mutationFn: ({ code, password }: { code: string; password?: string }) =>
+      api<GatewayView>("/api/admin/gateway", { method: "POST", body: password ? { code, password } : { code } }),
+    onSuccess: (view) => changed(view),
+  });
+}
+
+export function useForgetGateway() {
+  const changed = useGatewayChanged();
+  return useMutation({
+    mutationFn: (password?: string) =>
+      api<void>("/api/admin/gateway", { method: "DELETE", body: password ? { password } : {} }),
+    onSuccess: () => changed(),
   });
 }

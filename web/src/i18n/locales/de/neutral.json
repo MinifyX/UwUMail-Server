@@ -222,7 +222,9 @@
       "setupDone": "Dieser Server hat schon einen Admin.",
       "testMailFailed": "Die Test-Mail konnte nicht verschickt werden.",
       "cloudflareFailed": "Cloudflare: {{detail}}",
-      "mtaStsCertificate": "Für den strengen Modus braucht der Server erst ein gültiges Zertifikat."
+      "mtaStsCertificate": "Für den strengen Modus braucht der Server erst ein gültiges Zertifikat.",
+      "gatewayCodeInvalid": "Der Kopplungs-Code stimmt nicht. Kopier ihn nochmal vollständig vom Gateway.",
+      "gatewayForgetFailed": "Das Gateway ließ sich nicht vergessen."
     }
   },
   "people": {
@@ -786,7 +788,8 @@
       "certificate": "Zertifikat",
       "delivery": "Versand",
       "storage": "Speicher",
-      "security": "Anmeldung"
+      "security": "Anmeldung",
+      "gateway": "Gateway"
     },
     "findings": {
       "noDomains": "Noch keine Domain eingerichtet.",
@@ -829,7 +832,13 @@
       "tlsFailures_one": "{{domain}}: Eine verschlüsselte Verbindung ist in der letzten Woche gescheitert.",
       "tlsFailures_other": "{{domain}}: {{count}} verschlüsselte Verbindungen sind in der letzten Woche gescheitert.",
       "dmarcOwnFailures_one": "{{domain}}: Eine Mail von diesem Server hat DMARC nicht bestanden.",
-      "dmarcOwnFailures_other": "{{domain}}: {{count}} Mails von diesem Server haben DMARC nicht bestanden."
+      "dmarcOwnFailures_other": "{{domain}}: {{count}} Mails von diesem Server haben DMARC nicht bestanden.",
+      "gatewayConnected": "Verbunden mit dem UwUMail Gateway ({{addresses}}).",
+      "gatewayDown": "Keine Verbindung zum UwUMail Gateway seit {{since}}.",
+      "gatewayRefused": "Das UwUMail Gateway nimmt diesen Server nicht an.",
+      "gatewayOk": "Mails gehen über das Gateway hinaus.",
+      "gatewayPort25Blocked": "Das Gateway erreicht andere Mailserver nicht über Port 25.",
+      "gatewayOutboundBlocked": "Über das Gateway sind andere Mailserver nicht erreichbar ({{count}} Domains betroffen)."
     },
     "hints": {
       "noDomains": "Ohne Domain kann der Server keine Mails annehmen.",
@@ -851,7 +860,11 @@
       "adminsWithoutSecondFactor": "Wer das Passwort eines Admins errät, kann den ganzen Server verwalten.",
       "youWithoutSecondFactor": "Unter Sicherheit richtest du in zwei Minuten eine Authenticator-App oder einen Passkey ein.",
       "tlsFailures": "Unter Berichte auf der Domain-Seite steht, was schiefging, zum Beispiel ein abgelaufenes Zertifikat.",
-      "dmarcOwnFailures": "Meist fehlt der Server im SPF-Eintrag oder DKIM passt nicht. Die Domain-Seite zeigt die Einträge."
+      "dmarcOwnFailures": "Meist fehlt der Server im SPF-Eintrag oder DKIM passt nicht. Die Domain-Seite zeigt die Einträge.",
+      "gatewayDown": "Mails warten so lange in der Warteschlange. Prüfe, ob das Gateway läuft und ob dein Server UDP zum Gateway senden darf.",
+      "gatewayRefused": "Koppel das Gateway unter Server → Einrichtung neu.",
+      "gatewayPort25Blocked": "Viele VPS-Anbieter sperren Port 25 ausgehend. Frag den Support, ob er ihn freischaltet; bis dahin hilft ein Relay.",
+      "gatewayOutboundBlocked": "Viele VPS-Anbieter sperren Port 25 ausgehend. Frag den Support, ob er ihn freischaltet; bis dahin hilft ein Relay."
     }
   },
   "secondFactor": {
@@ -1132,7 +1145,8 @@
       "sending": "Versand",
       "checks": "Prüfungen",
       "testMail": "Test-Mail",
-      "done": "Fertig"
+      "done": "Fertig",
+      "reach": "Erreichbarkeit"
     },
     "welcome": {
       "title": "Willkommen bei UwUMail",
@@ -1174,7 +1188,8 @@
       "check": "Erneut prüfen",
       "checking": "Prüfe …",
       "allOk": "Alle Einträge passen.",
-      "later": "Neue DNS-Einträge brauchen manchmal etwas, bis sie überall ankommen. Du kannst trotzdem weitergehen und später unter Domains nachsehen."
+      "later": "Neue DNS-Einträge brauchen manchmal etwas, bis sie überall ankommen. Du kannst trotzdem weitergehen und später unter Domains nachsehen.",
+      "gatewayHost": "Mit Gateway: {{hostname}} (A/AAAA) muss auf {{addresses}} zeigen, und beim VPS-Anbieter gehört der PTR dieser Adressen auf {{hostname}}."
     },
     "cloudflare": {
       "open": "Bei Cloudflare eintragen",
@@ -1269,7 +1284,29 @@
       "clean": "{{ip}} steht nicht auf {{lists}}.",
       "listed": "{{ip}} steht auf {{list}} ({{answer}}).",
       "listUnknown": "{{list}} hat zu {{ip}} keine Auskunft gegeben.",
-      "noPublicAddress": "Es gibt keine öffentliche Adresse, die ich prüfen könnte."
+      "noPublicAddress": "Es gibt keine öffentliche Adresse, die ich prüfen könnte.",
+      "publicAddress": "Öffentliche Adresse {{ip}} ({{network}}).",
+      "publicAddressNoNetwork": "Öffentliche Adresse {{ip}}.",
+      "publicAddressUnknown": "Die öffentliche Adresse ließ sich nicht herausfinden.",
+      "homeConnection": "{{ip}} ist laut Spamhaus ein Heim- oder dynamischer Anschluss.",
+      "spamhausListed": "{{ip}} steht bei Spamhaus auf einer Blocklist.",
+      "spamhausUnknown": "Spamhaus hat zu {{ip}} nicht geantwortet.",
+      "spamhausClean": "{{ip}} steht bei Spamhaus auf keiner Liste.",
+      "ptrGeneric": "Der PTR von {{ip}} ist kein eigener Name ({{name}}).",
+      "providerHetzner": "Hetzner Cloud sperrt ausgehend Port 25 und 465.",
+      "providerStrato": "STRATO sperrt ausgehend Port 25.",
+      "providerIonos": "IONOS sperrt ausgehend Port 25.",
+      "gatewayOk": "Das Gateway erreicht andere Mailserver über Port 25 ({{target}}).",
+      "gatewayPort25Blocked": "Das Gateway erreicht andere Mailserver nicht über Port 25 ({{target}}).",
+      "inboundSelfCall": "Port 25 auf {{ip}} antwortet von hier aus nicht.",
+      "gatewayNone": "Noch kein Gateway gekoppelt.",
+      "gatewayConnecting": "Verbinde mit dem Gateway ({{tunnel}}) …",
+      "gatewayConnected": "Verbunden mit dem UwUMail Gateway. Andere Server sehen {{addresses}}.",
+      "gatewayDns": "{{hostname}} muss auf {{addresses}} zeigen, der PTR dieser Adressen auf {{hostname}}.",
+      "gatewayRefusedNotPaired": "Das Gateway kennt diesen Server nicht.",
+      "gatewayRefusedWrongToken": "Der Kopplungs-Code gilt nicht oder nicht mehr.",
+      "gatewayRefusedOtherServer": "Das Gateway gehört schon zu einem anderen Server.",
+      "gatewayRefusedVersion": "Gateway und Server sprechen verschiedene Tunnel-Versionen."
     },
     "hints": {
       "directDns": "Prüfe, ob der Server einen funktionierenden DNS-Resolver hat.",
@@ -1286,7 +1323,62 @@
       "ptrOtherName": "Besser ist {{hostname}}. Den PTR-Eintrag ändert der Anbieter der IP-Adresse.",
       "ptrPrivate": "Ist der Server von außen über eine andere Adresse erreichbar, prüfe deren PTR-Eintrag beim Anbieter.",
       "listed": "Auf der Webseite der Liste steht, warum die Adresse dort steht und wie sie wieder herunterkommt.",
-      "listUnknown": "Manche Listen antworten nicht über öffentliche DNS-Resolver wie 8.8.8.8 oder 1.1.1.1."
+      "listUnknown": "Manche Listen antworten nicht über öffentliche DNS-Resolver wie 8.8.8.8 oder 1.1.1.1.",
+      "homeConnection": "Große Mailanbieter nehmen von solchen Adressen keine Mails direkt an, und den PTR kannst du dort meist nicht setzen. Ein UwUMail Gateway auf einem kleinen VPS löst beides.",
+      "spamhausListed": "Bei einer festen Adresse: Ursache finden (z. B. ein befallenes Gerät) und bei Spamhaus austragen lassen. Sonst hilft ein Gateway.",
+      "spamhausUnknown": "Spamhaus beantwortet keine Fragen über große öffentliche DNS-Resolver. Mit einem eigenen Resolver klappt die Prüfung.",
+      "ptrGeneric": "Setz beim Anbieter der Adresse den PTR auf den Namen deines Servers. Bei Heimanschlüssen geht das meist nicht.",
+      "providerHetzner": "Freischalten lässt sich das erst nach einem Monat und der ersten bezahlten Rechnung, per Antrag und im Einzelfall. Für Mailserver und Gateways ist Hetzner Cloud deshalb keine gute Wahl.",
+      "providerStrato": "Der STRATO-Support schaltet Port 25 auf Nachfrage frei.",
+      "providerIonos": "Der IONOS-Kundenservice schaltet Port 25 telefonisch frei, wenn PTR und SPF schon gesetzt sind.",
+      "gatewayPort25Blocked": "Frag den Anbieter des VPS, ob er Port 25 freischaltet. Bis dahin kannst du über ein Relay senden, auch das läuft dann durchs Gateway.",
+      "inboundSelfCall": "Viele Router können sich nicht selbst anrufen. Ob Mails von außen ankommen, zeigt die Test-Mail.",
+      "gatewayConnecting": "Läuft das Gateway (systemctl status uwumail-gateway), und darf dein Server UDP zum Gateway senden?",
+      "gatewayDns": "Beides stellst du bei deinem DNS-Anbieter und beim Anbieter des VPS ein.",
+      "gatewayRefusedNotPaired": "Hol dir auf dem VPS mit uwumail-gateway code einen Kopplungs-Code.",
+      "gatewayRefusedWrongToken": "Hol dir auf dem VPS mit uwumail-gateway code einen neuen Kopplungs-Code.",
+      "gatewayRefusedOtherServer": "Löse die alte Kopplung auf dem VPS mit uwumail-gateway unpair und koppel dann neu.",
+      "gatewayRefusedVersion": "Bring Gateway und Server auf dieselbe Version."
+    },
+    "reach": {
+      "title": "Wie ist dein Server erreichbar?",
+      "cardTitle": "Erreichbarkeit",
+      "body": "Nyu schaut, wie andere Mailserver deinen Server sehen: öffentliche Adresse, Spamhaus, Netzbetreiber und Port 25. Danach entscheidest du, ob Mails direkt oder über ein UwUMail Gateway laufen.",
+      "start": "Prüfen",
+      "run": "Erneut prüfen",
+      "addressTitle": "Deine Verbindung",
+      "wayTitle": "Versandweg",
+      "direct": "Direkt",
+      "gateway": "Über ein Gateway",
+      "directNote": "Dein Server empfängt und sendet selbst. Dafür braucht er eine feste öffentliche Adresse, Port 25 in beide Richtungen und einen PTR mit seinem Namen.",
+      "docs": "Anleitung zum Gateway",
+      "source": "Quellen:",
+      "recommend": {
+        "gateway": "Nyu empfiehlt ein UwUMail Gateway: Von dieser Verbindung aus würden viele Mailserver deine Mails nicht annehmen.",
+        "direct": "Sieht gut aus: Dein Server kann Mails selbst senden und empfangen.",
+        "unknown": "Deine öffentliche Adresse ließ sich nicht herausfinden. Prüfe die Verbindung und versuch es nochmal.",
+        "paired": "Dein Server sendet und empfängt über das UwUMail Gateway."
+      },
+      "providers": {
+        "hetzner": "Hetzner",
+        "strato": "STRATO",
+        "ionos": "IONOS"
+      }
+    },
+    "gateway": {
+      "title": "UwUMail Gateway",
+      "howTo": "Miete einen kleinen VPS mit fester Adresse, bei dem Port 25 frei ist, installiere dort das Gateway und kopiere den Kopplungs-Code aus seinem Log oder von uwumail-gateway code.",
+      "codeLabel": "Kopplungs-Code",
+      "codeHint": "Beginnt mit uwugw1 und gilt nur einmal.",
+      "pair": "Koppeln",
+      "pairOther": "Anderes Gateway koppeln",
+      "forget": "Gateway vergessen",
+      "forgetTitle": "Gateway vergessen?",
+      "forgetBody": "Danach sendet und empfängt dein Server wieder selbst. Stell auch die DNS-Einträge zurück, sonst kommen keine Mails mehr an.",
+      "forgetConfirm": "Vergessen",
+      "fromConfig": "Diese Kopplung steht als gateway.code in der Konfiguration. Wenn du das Gateway hier vergisst, entferne auch den Code, sonst koppelt der Server beim nächsten Start neu.",
+      "paired": "Gekoppelt, der Tunnel baut sich auf.",
+      "forgotten": "Gateway vergessen."
     }
   }
 }

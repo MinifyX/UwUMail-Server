@@ -69,7 +69,7 @@ export interface Profile {
 }
 
 export type HealthLevel = "ok" | "unknown" | "warning" | "problem";
-export type HealthAreaName = "dns" | "certificate" | "delivery" | "storage" | "security";
+export type HealthAreaName = "dns" | "certificate" | "gateway" | "delivery" | "storage" | "security";
 
 export interface HealthFinding {
   code: string;
@@ -451,9 +451,12 @@ export interface SetupStatus {
 
 export type ProbeStage = "dns" | "connect" | "tls" | "login";
 
+/** How mail leaves: straight to other servers, through a relay, or straight but from the UwUMail Gateway. */
+export type DeliveryRoute = "direct" | "relay" | "gateway";
+
 export interface ProbeReport {
   at: number;
-  route: "direct" | "relay";
+  route: DeliveryRoute;
   target: string;
   ok: boolean;
   stage: ProbeStage | null;
@@ -487,13 +490,61 @@ export interface ServerCheck {
   checkedAt: number;
   hostname: string;
   addresses: AddressReport[];
-  route: "direct" | "relay";
+  route: DeliveryRoute;
   relayHost: string | null;
   relayAddresses: AddressReport[];
   outbound: ProbeReport;
   inbound: InboundReport[];
   upstream: boolean;
   blocklistsChecked: boolean;
+}
+
+/** A network whose operator blocks or restricts outgoing port 25. */
+export interface ReachabilityProvider {
+  key: "hetzner" | "strato" | "ionos";
+  advice: "avoid" | "askSupport";
+  source: string;
+}
+
+export interface PublicAddress {
+  ip: string;
+  ptr: string[];
+  genericPtr: boolean;
+  /** Spamhaus PBL: a home or dynamic connection. */
+  homeConnection: boolean;
+  listed: boolean;
+  spamhausUnknown: boolean;
+  asn: number | null;
+  network: string | null;
+  provider: ReachabilityProvider | null;
+}
+
+export interface Reachability {
+  checkedAt: number;
+  addresses: PublicAddress[];
+  outbound: ProbeReport;
+  inbound: InboundReport | null;
+  throughGateway: boolean;
+  recommendation: "direct" | "gateway" | "unknown";
+  reasons: string[];
+}
+
+export type GatewayState = "none" | "connecting" | "connected" | "refused";
+
+export interface GatewayView {
+  state: GatewayState;
+  tunnel: string[];
+  fingerprint: string | null;
+  /** Where the host name has to point. */
+  addresses: string[];
+  services: string[];
+  outboundPorts: number[];
+  software: string | null;
+  connectedSince: number | null;
+  downSince: number | null;
+  error: string | null;
+  refusal: "notPaired" | "wrongToken" | "otherServer" | "version" | null;
+  fromConfig: boolean;
 }
 
 export interface TestMailSent {

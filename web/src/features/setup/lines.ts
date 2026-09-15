@@ -27,9 +27,12 @@ export function sendingLines(check: ServerCheck): CheckLineData[] {
     const code = outbound.stage === "login" ? "relayLogin" : outbound.stage === "tls" ? "relayTls" : "relayUnreachable";
     return [line(code, "problem", { host }, { relay: true })];
   }
-  if (outbound.ok) return [line("directOk", "ok", { target: outbound.target })];
+  const gateway = check.route === "gateway";
+  if (outbound.ok) return [line(gateway ? "gatewayOk" : "directOk", "ok", { target: outbound.target })];
   if (outbound.stage === "dns") return [line("directDns", "warning", { error: outbound.error ?? "" })];
-  return [line("port25Blocked", "problem", { target: outbound.target }, { relay: true })];
+  return [
+    line(gateway ? "gatewayPort25Blocked" : "port25Blocked", "problem", { target: outbound.target }, { relay: true }),
+  ];
 }
 
 /** Whether other servers can reach port 25, as far as it can be seen from the server itself. */

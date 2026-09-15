@@ -34,6 +34,10 @@ const HINTS = new Set([
   "relayUnreachable",
   "outboundBlocked",
   "port25Blocked",
+  "gatewayDown",
+  "gatewayRefused",
+  "gatewayPort25Blocked",
+  "gatewayOutboundBlocked",
   "queueStuck",
   "manyBounces",
   "diskLow",
@@ -65,6 +69,12 @@ function useFindingText() {
         break;
       case "queueStuck":
         values.since = formatDuration(num("ageSecs"), t);
+        break;
+      case "gatewayConnected":
+        values.addresses = Array.isArray(p.addresses) ? (p.addresses as string[]).join(", ") : "";
+        break;
+      case "gatewayDown":
+        values.since = formatDuration(Math.max(Math.floor(Date.now() / 1000) - num("downSince"), 0), t);
         break;
       case "diskOk":
       case "diskLow":

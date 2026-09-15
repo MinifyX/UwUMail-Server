@@ -222,7 +222,9 @@
       "setupDone": "This server already has an admin.",
       "testMailFailed": "The test message could not be sent.",
       "cloudflareFailed": "Cloudflare: {{detail}}",
-      "mtaStsCertificate": "Enforce mode needs a valid certificate on the server first."
+      "mtaStsCertificate": "Enforce mode needs a valid certificate on the server first.",
+      "gatewayCodeInvalid": "The pairing code is not right. Copy it again, all of it, from the gateway.",
+      "gatewayForgetFailed": "The gateway could not be forgotten."
     }
   },
   "people": {
@@ -786,7 +788,8 @@
       "certificate": "Certificate",
       "delivery": "Sending",
       "storage": "Storage",
-      "security": "Login"
+      "security": "Login",
+      "gateway": "Gateway"
     },
     "findings": {
       "noDomains": "No domain set up yet.",
@@ -829,7 +832,13 @@
       "tlsFailures_one": "{{domain}}: one encrypted connection failed in the last week.",
       "tlsFailures_other": "{{domain}}: {{count}} encrypted connections failed in the last week.",
       "dmarcOwnFailures_one": "{{domain}}: one message from this server failed DMARC.",
-      "dmarcOwnFailures_other": "{{domain}}: {{count}} messages from this server failed DMARC."
+      "dmarcOwnFailures_other": "{{domain}}: {{count}} messages from this server failed DMARC.",
+      "gatewayConnected": "Connected to the UwUMail Gateway ({{addresses}}).",
+      "gatewayDown": "No connection to the UwUMail Gateway for {{since}}.",
+      "gatewayRefused": "The UwUMail Gateway does not accept this server.",
+      "gatewayOk": "Mail leaves through the gateway.",
+      "gatewayPort25Blocked": "The gateway cannot reach other mail servers on port 25.",
+      "gatewayOutboundBlocked": "Other mail servers cannot be reached through the gateway ({{count}} domains affected)."
     },
     "hints": {
       "noDomains": "Without a domain the server cannot receive mail.",
@@ -851,7 +860,11 @@
       "adminsWithoutSecondFactor": "Whoever guesses an admin's password can manage the whole server.",
       "youWithoutSecondFactor": "Under Security you set up an authenticator app or a passkey in two minutes.",
       "tlsFailures": "Reports on the domain page show what went wrong, for example an expired certificate.",
-      "dmarcOwnFailures": "Usually the server is missing from the SPF record or DKIM does not match. The domain page shows the records."
+      "dmarcOwnFailures": "Usually the server is missing from the SPF record or DKIM does not match. The domain page shows the records.",
+      "gatewayDown": "Mail waits in the queue meanwhile. Check that the gateway is running and that your server may send UDP to it.",
+      "gatewayRefused": "Pair the gateway again under Server → Setup.",
+      "gatewayPort25Blocked": "Many VPS providers block outgoing port 25. Ask their support to open it; a relay helps until then.",
+      "gatewayOutboundBlocked": "Many VPS providers block outgoing port 25. Ask their support to open it; a relay helps until then."
     }
   },
   "secondFactor": {
@@ -1132,7 +1145,8 @@
       "sending": "Sending",
       "checks": "Checks",
       "testMail": "Test message",
-      "done": "Done"
+      "done": "Done",
+      "reach": "Reachability"
     },
     "welcome": {
       "title": "Welcome to UwUMail",
@@ -1174,7 +1188,8 @@
       "check": "Check again",
       "checking": "Checking …",
       "allOk": "All records are fine.",
-      "later": "New DNS records sometimes take a while to show up everywhere. You can go on anyway and look again later under Domains."
+      "later": "New DNS records sometimes take a while to show up everywhere. You can go on anyway and look again later under Domains.",
+      "gatewayHost": "With a gateway: {{hostname}} (A/AAAA) has to point to {{addresses}}, and the reverse DNS of those addresses to {{hostname}}, set at the VPS provider."
     },
     "cloudflare": {
       "open": "Add at Cloudflare",
@@ -1269,7 +1284,29 @@
       "clean": "{{ip}} is not on {{lists}}.",
       "listed": "{{ip}} is listed on {{list}} ({{answer}}).",
       "listUnknown": "{{list}} gave no answer for {{ip}}.",
-      "noPublicAddress": "There is no public address to check."
+      "noPublicAddress": "There is no public address to check.",
+      "publicAddress": "Public address {{ip}} ({{network}}).",
+      "publicAddressNoNetwork": "Public address {{ip}}.",
+      "publicAddressUnknown": "The public address could not be found.",
+      "homeConnection": "According to Spamhaus, {{ip}} is a home or dynamic connection.",
+      "spamhausListed": "{{ip}} is on a Spamhaus blocklist.",
+      "spamhausUnknown": "Spamhaus did not answer for {{ip}}.",
+      "spamhausClean": "{{ip}} is on no Spamhaus list.",
+      "ptrGeneric": "The reverse DNS of {{ip}} is not a name of its own ({{name}}).",
+      "providerHetzner": "Hetzner Cloud blocks outgoing ports 25 and 465.",
+      "providerStrato": "STRATO blocks outgoing port 25.",
+      "providerIonos": "IONOS blocks outgoing port 25.",
+      "gatewayOk": "The gateway reaches other mail servers on port 25 ({{target}}).",
+      "gatewayPort25Blocked": "The gateway cannot reach other mail servers on port 25 ({{target}}).",
+      "inboundSelfCall": "Port 25 on {{ip}} does not answer from here.",
+      "gatewayNone": "No gateway paired yet.",
+      "gatewayConnecting": "Connecting to the gateway ({{tunnel}}) …",
+      "gatewayConnected": "Connected to the UwUMail Gateway. Other servers see {{addresses}}.",
+      "gatewayDns": "{{hostname}} has to point to {{addresses}}, and the reverse DNS of those addresses to {{hostname}}.",
+      "gatewayRefusedNotPaired": "The gateway does not know this server.",
+      "gatewayRefusedWrongToken": "The pairing code is not valid, or not any more.",
+      "gatewayRefusedOtherServer": "The gateway already belongs to another server.",
+      "gatewayRefusedVersion": "Gateway and server speak different tunnel versions."
     },
     "hints": {
       "directDns": "Check that the server has a working DNS resolver.",
@@ -1286,7 +1323,62 @@
       "ptrOtherName": "{{hostname}} is better. The PTR record is changed by whoever provides the IP address.",
       "ptrPrivate": "If the server is reachable from outside on another address, check that address's PTR record with the provider.",
       "listed": "The list's website explains why the address is listed and how to get it removed.",
-      "listUnknown": "Some lists do not answer through public DNS resolvers such as 8.8.8.8 or 1.1.1.1."
+      "listUnknown": "Some lists do not answer through public DNS resolvers such as 8.8.8.8 or 1.1.1.1.",
+      "homeConnection": "Big mail providers do not accept mail straight from such addresses, and you usually cannot set reverse DNS there. A UwUMail Gateway on a small VPS solves both.",
+      "spamhausListed": "For a fixed address: find the cause (such as an infected device) and ask Spamhaus to remove it. Otherwise a gateway helps.",
+      "spamhausUnknown": "Spamhaus does not answer questions through big public DNS resolvers. With a resolver of your own the check works.",
+      "ptrGeneric": "Set the reverse DNS to your server's name at the provider of the address. On home connections that is usually not possible.",
+      "providerHetzner": "Unblocking is only possible after a month and the first paid invoice, on request and case by case. That makes Hetzner Cloud a poor choice for mail servers and gateways.",
+      "providerStrato": "STRATO support opens port 25 when you ask.",
+      "providerIonos": "IONOS customer service opens port 25 by phone once reverse DNS and SPF are in place.",
+      "gatewayPort25Blocked": "Ask the VPS provider to open port 25. Until then you can send through a relay; that also goes through the gateway.",
+      "inboundSelfCall": "Many routers cannot call themselves. The test mail shows whether mail from outside arrives.",
+      "gatewayConnecting": "Is the gateway running (systemctl status uwumail-gateway), and may your server send UDP to the gateway?",
+      "gatewayDns": "You set both at your DNS provider and at the VPS provider.",
+      "gatewayRefusedNotPaired": "Get a pairing code on the VPS with uwumail-gateway code.",
+      "gatewayRefusedWrongToken": "Get a new pairing code on the VPS with uwumail-gateway code.",
+      "gatewayRefusedOtherServer": "Undo the old pairing on the VPS with uwumail-gateway unpair, then pair again.",
+      "gatewayRefusedVersion": "Update the gateway and the server to the same version."
+    },
+    "reach": {
+      "title": "How can your server be reached?",
+      "cardTitle": "Reachability",
+      "body": "Nyu looks at how other mail servers see your server: public address, Spamhaus, network and port 25. Then you decide whether mail goes directly or through a UwUMail Gateway.",
+      "start": "Check",
+      "run": "Check again",
+      "addressTitle": "Your connection",
+      "wayTitle": "Sending route",
+      "direct": "Directly",
+      "gateway": "Through a gateway",
+      "directNote": "Your server receives and sends mail itself. That needs a fixed public address, port 25 in both directions and reverse DNS with its name.",
+      "docs": "Gateway guide",
+      "source": "Sources:",
+      "recommend": {
+        "gateway": "Nyu recommends a UwUMail Gateway: many mail servers would not accept mail from this connection.",
+        "direct": "Looks good: your server can send and receive mail itself.",
+        "unknown": "Your public address could not be found. Check the connection and try again.",
+        "paired": "Your server sends and receives through the UwUMail Gateway."
+      },
+      "providers": {
+        "hetzner": "Hetzner",
+        "strato": "STRATO",
+        "ionos": "IONOS"
+      }
+    },
+    "gateway": {
+      "title": "UwUMail Gateway",
+      "howTo": "Rent a small VPS with a fixed address and an open port 25, install the gateway there and copy the pairing code from its log or from uwumail-gateway code.",
+      "codeLabel": "Pairing code",
+      "codeHint": "Starts with uwugw1 and works once.",
+      "pair": "Pair",
+      "pairOther": "Pair another gateway",
+      "forget": "Forget gateway",
+      "forgetTitle": "Forget the gateway?",
+      "forgetBody": "Your server then sends and receives mail itself again. Change the DNS records back too, or mail stops arriving.",
+      "forgetConfirm": "Forget",
+      "fromConfig": "This pairing is set as gateway.code in the configuration. If you forget the gateway here, remove the code as well, or the server pairs again on the next start.",
+      "paired": "Paired, the tunnel is coming up.",
+      "forgotten": "Gateway forgotten."
     }
   }
 }

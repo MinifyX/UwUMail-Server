@@ -66,7 +66,7 @@ export function CheckLines({
   );
 }
 
-export function CheckedAt({ check }: { check: ServerCheck }) {
+export function CheckedAt({ check }: { check: { checkedAt: number } }) {
   const { t, i18n } = useT();
   return (
     <p className="text-[12px] text-faint">

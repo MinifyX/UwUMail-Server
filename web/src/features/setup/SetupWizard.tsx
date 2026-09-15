@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
-import { ArrowLeft, ArrowRight, Eye, EyeOff, RefreshCw } from "lucide-react";
+import { ArrowLeft, ArrowRight, Eye, EyeOff, RefreshCw, Route } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { NyuScene, type SceneName } from "@/components/nyu/scenes";
 import { LoadError, Loading } from "@/components/StatusViews";
@@ -17,15 +17,34 @@ import { usePrefs, type Mode } from "@/state/prefs";
 import { RecordList } from "@/features/domains/DnsBits";
 import { useCheckDomain, useDomain } from "@/features/domains/queries";
 import { useInfo, useSavePrefs, useStartSession } from "@/features/session/session";
-import { AddressChecks, CheckedAt, Checking, CloudflarePanel, DeliveryChecks, TestMailPanel } from "./SetupBits";
-import { useCompleteSetup, useLastServerCheck, useRunServerCheck, useSetupStatus, useVerifySetupCode } from "./queries";
+import { GatewayPanel, ReachabilityChecks } from "./GatewayBits";
+import {
+  AddressChecks,
+  CheckedAt,
+  Checking,
+  CloudflarePanel,
+  DeliveryChecks,
+  SubHeading,
+  TestMailPanel,
+} from "./SetupBits";
+import {
+  useCompleteSetup,
+  useGateway,
+  useLastReachability,
+  useLastServerCheck,
+  useRunReachability,
+  useRunServerCheck,
+  useSetupStatus,
+  useVerifySetupCode,
+} from "./queries";
 
-const STEPS = ["welcome", "admin", "dns", "sending", "checks", "testMail", "done"] as const;
+const STEPS = ["welcome", "admin", "reach", "dns", "sending", "checks", "testMail", "done"] as const;
 type Step = (typeof STEPS)[number];
 
 const SCENES: Record<Step, SceneName> = {
   welcome: "welcome",
   admin: "pick",
+  reach: "search",
   dns: "search",
   sending: "inbox",
   checks: "search",
@@ -387,9 +406,83 @@ function AdminStep({
   );
 }
 
-function DnsStep({ domain, hostname, onNext }: { domain: string; hostname: string; onNext: () => void }) {
+function ReachStep({ hostname, onNext }: { hostname: string; onNext: () => void }) {
   const { t } = useT();
   const explain = usePrefs((s) => s.mode) === "simple";
+  const last = useLastReachability();
+  const run = useRunReachability();
+  const gateway = useGateway();
+  const started = useRef(false);
+  const [choice, setChoice] = useState<"direct" | "gateway" | null>(null);
+  const reach = last.data ?? null;
+
+  useEffect(() => {
+    // The check asks DNS and one big mail provider; once per visit is enough.
+    if (last.isPending || reach || started.current) return;
+    started.current = true;
+    run.mutate();
+  }, [last.isPending, reach, run]);
+
+  const paired = gateway.data !== undefined && gateway.data.state !== "none";
+  const way = choice ?? (paired || reach?.recommendation === "gateway" ? "gateway" : "direct");
+
+  return (
+    <Frame
+      step="reach"
+      loggedIn
+      title={t("setup.reach.title")}
+      body={t("setup.reach.body")}
+      footer={<Nav onNext={onNext} />}
+    >
+      <div className="flex flex-col gap-5">
+        {run.isPending && <Checking />}
+        {reach && !run.isPending && (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <CheckedAt check={reach} />
+              <Button size="sm" icon={RefreshCw} onClick={() => run.mutate()}>
+                {t("setup.reach.run")}
+              </Button>
+            </div>
+            <ReachabilityChecks reach={reach} explain={explain} />
+          </>
+        )}
+        <div className="flex flex-col gap-3">
+          <SubHeading icon={Route}>{t("setup.reach.wayTitle")}</SubHeading>
+          <Segmented<"direct" | "gateway">
+            label={t("setup.reach.wayTitle")}
+            value={way}
+            onChange={setChoice}
+            options={[
+              { value: "direct", label: t("setup.reach.direct") },
+              { value: "gateway", label: t("setup.reach.gateway") },
+            ]}
+          />
+          {way === "gateway" ? (
+            <GatewayPanel hostname={hostname} explain={explain} />
+          ) : (
+            <p className="text-[13px] text-muted">{t("setup.reach.directNote")}</p>
+          )}
+        </div>
+      </div>
+    </Frame>
+  );
+}
+
+function DnsStep({
+  domain,
+  hostname,
+  onBack,
+  onNext,
+}: {
+  domain: string;
+  hostname: string;
+  onBack: () => void;
+  onNext: () => void;
+}) {
+  const { t } = useT();
+  const explain = usePrefs((s) => s.mode) === "simple";
+  const gateway = useGateway();
   const query = useDomain(domain);
   const check = useCheckDomain(domain, t("domains.toasts.checked"));
   const checked = useRef(false);
@@ -413,7 +506,7 @@ function DnsStep({ domain, hostname, onNext }: { domain: string; hostname: strin
       loggedIn
       title={t("setup.dns.title", { domain })}
       body={t("setup.dns.body")}
-      footer={<Nav onNext={onNext} />}
+      footer={<Nav onBack={onBack} onNext={onNext} />}
     >
       {query.isPending ? (
         <Loading />
@@ -427,6 +520,11 @@ function DnsStep({ domain, hostname, onNext }: { domain: string; hostname: strin
               {check.isPending ? t("setup.dns.checking") : t("setup.dns.check")}
             </Button>
           </div>
+          {gateway.data?.state === "connected" && (
+            <p className="rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
+              {t("setup.dns.gatewayHost", { hostname, addresses: gateway.data.addresses.join(", ") })}
+            </p>
+          )}
           {query.data.setup.upstreamMx && (
             <p className="rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">{t("domains.detail.upstream")}</p>
           )}
@@ -632,7 +730,7 @@ export function SetupWizard({ session }: { session: Session | null }) {
           domains={status.data.domains}
           onBack={() => go("welcome")}
           onDone={(created, domain) => {
-            go("dns", domain);
+            go("reach", domain);
             start(created, "/setup");
           }}
         />
@@ -651,9 +749,11 @@ export function SetupWizard({ session }: { session: Session | null }) {
 
   const hostname = session.server.hostname;
   const domain = progress.domain || domains.data?.[0]?.name || "";
-  const step: Step = STEPS.indexOf(progress.step) < STEPS.indexOf("dns") ? "dns" : progress.step;
+  const step: Step = STEPS.indexOf(progress.step) < STEPS.indexOf("reach") ? "reach" : progress.step;
 
   switch (step) {
+    case "reach":
+      return <ReachStep hostname={hostname} onNext={() => go("dns", domain)} />;
     case "sending":
       return <SendingStep onBack={() => go("dns", domain)} onNext={() => go("checks", domain)} />;
     case "checks":
@@ -670,6 +770,13 @@ export function SetupWizard({ session }: { session: Session | null }) {
       return <DoneStep onBack={() => go("testMail", domain)} />;
     default:
       if (!domain) return domains.isPending ? <Loading fullPage /> : <DoneStep onBack={() => go("testMail")} />;
-      return <DnsStep domain={domain} hostname={hostname} onNext={() => go("sending", domain)} />;
+      return (
+        <DnsStep
+          domain={domain}
+          hostname={hostname}
+          onBack={() => go("reach", domain)}
+          onNext={() => go("sending", domain)}
+        />
+      );
   }
 }

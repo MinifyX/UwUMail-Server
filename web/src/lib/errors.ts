@@ -23,6 +23,8 @@ const KNOWN = [
   "codeInvalid",
   "loginExpired",
   "confirmPassword",
+  "gatewayCodeInvalid",
+  "gatewayForgetFailed",
   "wrongPassword",
   "samePassword",
   "tooManyAttempts",

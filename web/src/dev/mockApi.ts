@@ -17,12 +17,14 @@ import type {
   DomainDetail,
   DomainReport,
   DomainSummary,
+  GatewayView,
   Info,
   MtaStsView,
   OwnAddressesView,
   Overview,
   Person,
   Profile,
+  Reachability,
   RecordCheck,
   ReportsView,
   SecurityView,
@@ -679,6 +681,7 @@ function health(): Health {
   const areas = [
     area("dns", dns),
     area("certificate", [{ code: "certOkAutomatic", level: "ok", params: { days: 71, notAfter: at + 71 * 86_400 } }]),
+    ...gatewayArea(area),
     area("delivery", delivery),
     area("storage", storage),
     area(
@@ -695,8 +698,107 @@ function health(): Health {
   return { level, checkedAt: healthCheckedAt, areas };
 }
 
+function gatewayArea(area: (name: HealthArea["area"], findings: HealthFinding[]) => HealthArea): HealthArea[] {
+  const view = gatewayView();
+  const link = "/admin/setup";
+  switch (view.state) {
+    case "none":
+      return [];
+    case "connected":
+      return [
+        area("gateway", [{ code: "gatewayConnected", level: "ok", params: { addresses: view.addresses }, link }]),
+      ];
+    case "connecting":
+      return [
+        area("gateway", [{ code: "gatewayDown", level: "warning", params: { downSince: view.downSince }, link }]),
+      ];
+    case "refused":
+      return [area("gateway", [{ code: "gatewayRefused", level: "problem", params: { refusal: view.refusal }, link }])];
+  }
+}
+
 let lastServerCheck: ServerCheck | null = null;
 const testMails = new Map<string, { sentAt: number; external: string | null }>();
+
+/** The gateway goes from pairing to connected after a few seconds; a code with "wrong" is refused. */
+const noGateway: GatewayView = {
+  state: "none",
+  tunnel: [],
+  fingerprint: null,
+  addresses: [],
+  services: [],
+  outboundPorts: [],
+  software: null,
+  connectedSince: null,
+  downSince: null,
+  error: null,
+  refusal: null,
+  fromConfig: false,
+};
+let gateway: GatewayView = noGateway;
+let gatewayPairedAt = 0;
+
+function gatewayView(): GatewayView {
+  const at = Math.floor(Date.now() / 1000);
+  if (gateway.state === "connecting" && Date.now() - gatewayPairedAt > 4000) {
+    gateway = {
+      ...gateway,
+      state: "connected",
+      addresses: ["203.0.113.10", "2001:db8::10"],
+      services: ["smtp", "submission", "submissions", "http", "https"],
+      outboundPorts: [25, 465, 587],
+      software: "uwumail-gateway 0.1.0",
+      connectedSince: at,
+      downSince: null,
+    };
+  }
+  return gateway;
+}
+
+/** A home connection: on the PBL, a made-up reverse name and a closed port 25. */
+function reachability(): Reachability {
+  const at = Math.floor(Date.now() / 1000);
+  const throughGateway = gatewayView().state !== "none";
+  return {
+    checkedAt: at,
+    addresses: [
+      {
+        ip: "192.0.2.44",
+        ptr: ["pc000022c.dip0.isp.example"],
+        genericPtr: true,
+        homeConnection: true,
+        listed: false,
+        spamhausUnknown: false,
+        asn: 64500,
+        network: "Example Broadband AG, DE",
+        provider: null,
+      },
+    ],
+    outbound: throughGateway
+      ? {
+          at,
+          route: "gateway",
+          target: "gmail-smtp-in.l.google.com:25",
+          ok: false,
+          stage: "connect",
+          error: "timed out",
+        }
+      : {
+          at,
+          route: "direct",
+          target: "gmail-smtp-in.l.google.com:25",
+          ok: false,
+          stage: "connect",
+          error: "timed out",
+        },
+    inbound: throughGateway
+      ? null
+      : { ip: "192.0.2.44", reachable: false, ours: false, greeting: null, error: "timed out" },
+    throughGateway,
+    recommendation: "gateway",
+    reasons: ["homeConnection", "port25Blocked"],
+  };
+}
 
 /** Direct sending without a relay fails, like on a connection that blocks port 25. */
 function serverCheck(blocklists: boolean): ServerCheck {
@@ -862,6 +964,38 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["GET", /^\/api\/admin\/setup\/check$/, () => [200, lastServerCheck]],
+  ["POST", /^\/api\/admin\/setup\/reachability$/, () => [200, reachability()]],
+  ["GET", /^\/api\/admin\/gateway$/, () => [200, gatewayView()]],
+  [
+    "POST",
+    /^\/api\/admin\/gateway$/,
+    (body) => {
+      const { code = "", password } = body as { code?: string; password?: string };
+      if (!code.startsWith("uwugw1") || code.includes("wrong")) {
+        return problem(409, "gatewayCodeInvalid");
+      }
+      if (!password) return problem(409, "confirmPassword");
+      gateway = {
+        ...noGateway,
+        state: "connecting",
+        tunnel: ["203.0.113.10:443"],
+        fingerprint: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+        downSince: Math.floor(Date.now() / 1000),
+      };
+      gatewayPairedAt = Date.now();
+      log("gateway.pair", "");
+      return [200, gateway];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/admin\/gateway$/,
+    () => {
+      gateway = noGateway;
+      log("gateway.forget", "");
+      return [204, null];
+    },
+  ],
   [
     "POST",
     /^\/api\/admin\/setup\/check$/,

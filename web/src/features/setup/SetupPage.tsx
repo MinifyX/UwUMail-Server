@@ -9,8 +9,9 @@ import { Link, navigate } from "@/lib/router";
 import { usePrefs } from "@/state/prefs";
 import { DnsStatusPill } from "@/features/domains/DnsBits";
 import { useDomains } from "@/features/people/queries";
+import { GatewayPanel, ReachabilityChecks } from "./GatewayBits";
 import { AddressChecks, CheckedAt, Checking, DeliveryChecks, TestMailPanel } from "./SetupBits";
-import { useLastServerCheck, useRunServerCheck } from "./queries";
+import { useLastReachability, useLastServerCheck, useRunReachability, useRunServerCheck } from "./queries";
 
 /** Server → Setup: the checks of the setup assistant, whenever they are needed again. */
 export function SetupPage({ session }: { session: Session }) {
@@ -19,6 +20,8 @@ export function SetupPage({ session }: { session: Session }) {
   const last = useLastServerCheck();
   const run = useRunServerCheck();
   const domains = useDomains();
+  const reach = useLastReachability().data ?? null;
+  const runReach = useRunReachability();
   const started = useRef(false);
   const check = last.data ?? null;
 
@@ -41,6 +44,31 @@ export function SetupPage({ session }: { session: Session }) {
         <Button icon={WandSparkles} onClick={() => navigate("/setup")}>
           {t("setup.page.wizard")}
         </Button>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card
+          title={t("setup.reach.cardTitle")}
+          action={
+            <Button size="sm" icon={RefreshCw} busy={runReach.isPending} onClick={() => runReach.mutate()}>
+              {t(reach ? "setup.reach.run" : "setup.reach.start")}
+            </Button>
+          }
+        >
+          <div className="flex flex-col gap-4">
+            {explain && <p className="-mt-1 text-[13px] text-muted">{t("setup.reach.body")}</p>}
+            {runReach.isPending && <Checking />}
+            {reach && !runReach.isPending && (
+              <>
+                <CheckedAt check={reach} />
+                <ReachabilityChecks reach={reach} explain={explain} />
+              </>
+            )}
+          </div>
+        </Card>
+        <Card title={t("setup.gateway.title")}>
+          <GatewayPanel hostname={session.server.hostname} explain={explain} />
+        </Card>
       </div>
 
       <Card
