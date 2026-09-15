@@ -104,7 +104,7 @@ fn show_code(config: &GatewayConfig) -> anyhow::Result<()> {
     let Some(code) = uwumail_gateway::pairing_code(&config.public_addresses(), port, &identity, &token) else {
         anyhow::bail!("found no public address for this gateway: set public_addresses in the configuration");
     };
-    println!("Give this pairing code to your UwUMail server (gateway.code in its configuration):\n\n  {code}\n");
+    println!("Enter this pairing code on your UwUMail server under Server → Setup:\n\n  {code}\n");
     Ok(())
 }
 
