@@ -247,8 +247,14 @@ mod tests {
     #[test]
     fn a_hidden_second_from_header_is_refused() {
         // Only the last From is parsed, but the first is delivered and shown: refuse the message.
-        assert!(matches!(err(b"From: ami@a.test\r\nFrom: mini@a.test\r\nSubject: hi\r\n\r\nhi\r\n"), Some(SubmitError::NoFrom)));
-        assert!(matches!(err(b"From: mini@a.test\r\nFrom: ami@a.test\r\nSubject: hi\r\n\r\nhi\r\n"), Some(SubmitError::NoFrom)));
+        assert!(matches!(
+            err(b"From: ami@a.test\r\nFrom: mini@a.test\r\nSubject: hi\r\n\r\nhi\r\n"),
+            Some(SubmitError::NoFrom)
+        ));
+        assert!(matches!(
+            err(b"From: mini@a.test\r\nFrom: ami@a.test\r\nSubject: hi\r\n\r\nhi\r\n"),
+            Some(SubmitError::NoFrom)
+        ));
         assert!(matches!(err(b"Subject: no from\r\n\r\nhi\r\n"), Some(SubmitError::NoFrom)));
     }
 }
