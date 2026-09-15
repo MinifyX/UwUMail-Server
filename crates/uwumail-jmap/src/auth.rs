@@ -128,7 +128,7 @@ impl Authenticator {
             && since.elapsed() < CACHE_LIFETIME
         {
             match self.store.account_by_id(account_id).await {
-                Ok(Some(account)) if !account.disabled => return Ok(account),
+                Ok(Some(account)) if account.can_log_in() => return Ok(account),
                 Ok(_) => {}
                 Err(_) => return Err(AuthError::Internal),
             }

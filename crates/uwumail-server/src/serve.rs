@@ -120,6 +120,26 @@ async fn collect_garbage(store: Store, mut shutdown: watch::Receiver<bool>) {
             _ = tokio::time::sleep(Duration::from_secs(3600)) => {}
             _ = shutdown.changed() => return,
         }
+        // People in the trash for 30 days go first, so their message files are cleaned up right after.
+        match store.purge_trash(uwumail_store::TRASH_RETENTION_SECS).await {
+            Ok(purged) => {
+                for login in purged {
+                    tracing::info!(%login, "removed a person from the trash for good");
+                    let entry = uwumail_store::AuditEntry {
+                        actor_id: None,
+                        actor: "system".into(),
+                        action: "account.purge".into(),
+                        target: login,
+                        details: serde_json::json!({ "reason": "trash" }),
+                        ip: String::new(),
+                    };
+                    if let Err(err) = store.record_audit(entry).await {
+                        tracing::warn!(%err, "writing the change log failed");
+                    }
+                }
+            }
+            Err(err) => tracing::warn!(%err, "emptying the trash failed"),
+        }
         match store.collect_garbage(3600).await {
             Ok(0) => {}
             Ok(removed) => tracing::info!(removed, "removed unused message files"),

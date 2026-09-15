@@ -107,8 +107,17 @@ pub struct Account {
     pub role: Role,
     pub quota_bytes: i64,
     pub used_bytes: i64,
+    /// Locked out: cannot log in, but mail still arrives.
     pub disabled: bool,
     pub created_at: i64,
+    /// In the trash since then: cannot log in and receives no mail.
+    pub deleted_at: Option<i64>,
+}
+
+impl Account {
+    pub fn can_log_in(&self) -> bool {
+        !self.disabled && self.deleted_at.is_none()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -121,7 +130,10 @@ pub struct NewAccount {
     pub quota_bytes: i64,
 }
 
-pub(crate) const ACCOUNT_COLUMNS: &str = "id, login, display_name, role, quota_bytes, used_bytes, disabled, created_at";
+pub(crate) const ACCOUNT_COLUMNS: &str =
+    "id, login, display_name, role, quota_bytes, used_bytes, disabled, created_at, deleted_at";
+/// Number of columns in [`ACCOUNT_COLUMNS`]; extra columns of a query start here.
+pub(crate) const ACCOUNT_COLUMN_COUNT: usize = 9;
 
 pub(crate) fn account_from_row(row: &Row<'_>) -> rusqlite::Result<Account> {
     Ok(Account {
@@ -133,6 +145,7 @@ pub(crate) fn account_from_row(row: &Row<'_>) -> rusqlite::Result<Account> {
         used_bytes: row.get(5)?,
         disabled: row.get(6)?,
         created_at: row.get(7)?,
+        deleted_at: row.get(8)?,
     })
 }
 
@@ -142,26 +155,32 @@ fn domain_id(conn: &Connection, name: &str) -> Result<i64> {
         .ok_or_else(|| StoreError::NotFound(format!("domain {name}")))
 }
 
-fn account_id(conn: &Connection, login: &str) -> Result<i64> {
+pub(crate) fn account_id(conn: &Connection, login: &str) -> Result<i64> {
     conn.query_row("SELECT id FROM accounts WHERE login = ?1", [login], |row| row.get(0))
         .optional()?
         .ok_or_else(|| StoreError::NotFound(format!("account {login}")))
 }
 
-fn login_key(address: &str) -> Result<String> {
+pub(crate) fn login_key(address: &str) -> Result<String> {
     let (local, domain) = normalize_address(address)?;
     Ok(format!("{local}@{domain}"))
 }
 
 /// Looks up the account an address delivers to, following sub-addresses and catch-alls.
+///
+/// Disabled accounts still receive mail; accounts in the trash do not.
 pub(crate) fn resolve(conn: &Connection, address: &str) -> Result<Option<i64>> {
     let Ok((local, domain)) = normalize_address(address) else {
         return Ok(None);
     };
     let Some((domain_id, catch_all)) = conn
-        .query_row("SELECT id, catch_all_account_id FROM domains WHERE name = ?1", [&domain], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?))
-        })
+        .query_row(
+            "SELECT d.id, a.id FROM domains d
+             LEFT JOIN accounts a ON a.id = d.catch_all_account_id AND a.deleted_at IS NULL
+             WHERE d.name = ?1",
+            [&domain],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?)),
+        )
         .optional()?
     else {
         return Ok(None);
@@ -170,7 +189,7 @@ pub(crate) fn resolve(conn: &Connection, address: &str) -> Result<Option<i64>> {
         Ok(conn
             .query_row(
                 "SELECT a.account_id FROM addresses a JOIN accounts acc ON acc.id = a.account_id
-                 WHERE a.local_part = ?1 AND a.domain_id = ?2 AND acc.disabled = 0",
+                 WHERE a.local_part = ?1 AND a.domain_id = ?2 AND acc.deleted_at IS NULL",
                 params![local, domain_id],
                 |row| row.get(0),
             )
@@ -191,9 +210,11 @@ pub(crate) fn resolve(conn: &Connection, address: &str) -> Result<Option<i64>> {
     // RFC 5321 requires postmaster; abuse is expected by blocklist operators.
     if matches!(base, "postmaster" | "abuse") {
         return Ok(conn
-            .query_row("SELECT id FROM accounts WHERE role = 'admin' AND disabled = 0 ORDER BY id LIMIT 1", [], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT id FROM accounts WHERE role = 'admin' AND disabled = 0 AND deleted_at IS NULL ORDER BY id LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
             .optional()?);
     }
     Ok(None)
@@ -382,6 +403,7 @@ impl Store {
                 used_bytes: 0,
                 disabled: false,
                 created_at,
+                deleted_at: None,
             })
         })
         .await
@@ -469,7 +491,7 @@ impl Store {
                     .query_row(
                         &format!("SELECT {ACCOUNT_COLUMNS}, password_hash FROM accounts WHERE login = ?1"),
                         [login],
-                        |row| Ok((account_from_row(row)?, row.get::<_, Option<String>>(8)?)),
+                        |row| Ok((account_from_row(row)?, row.get::<_, Option<String>>(ACCOUNT_COLUMN_COUNT)?)),
                     )
                     .optional()?)
             })
@@ -481,7 +503,7 @@ impl Store {
                 None => (None, None),
             };
             let valid = password::verify(&password, hash.as_deref());
-            Ok(account.filter(|account| valid && !account.disabled))
+            Ok(account.filter(|account| valid && account.can_log_in()))
         })
         .await
         .map_err(|err| StoreError::Internal(err.to_string()))?
@@ -600,7 +622,11 @@ mod tests {
 
         store.set_account_disabled("mini@example.de", true).await.unwrap();
         assert!(store.authenticate("mini@example.de", "neues-passwort").await.unwrap().is_none());
-        assert_eq!(store.resolve_recipient("mini@example.de").await.unwrap(), None);
+        assert_eq!(
+            store.resolve_recipient("mini@example.de").await.unwrap(),
+            Some(mini.id),
+            "disabled people still get mail"
+        );
     }
 
     #[tokio::test]

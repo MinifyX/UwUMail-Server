@@ -18,6 +18,8 @@ pub enum ApiError {
     NotFound(String),
     Invalid(String),
     Conflict(String),
+    /// A rule of the data model, with a stable code the app knows (e.g. `lastAdmin`).
+    Rule(&'static str, String),
     Internal,
 }
 
@@ -38,6 +40,7 @@ impl ApiError {
             ApiError::NotFound(what) => (StatusCode::NOT_FOUND, "notFound", format!("Not found: {what}")),
             ApiError::Invalid(detail) => (StatusCode::UNPROCESSABLE_ENTITY, "invalid", detail.clone()),
             ApiError::Conflict(detail) => (StatusCode::CONFLICT, "conflict", detail.clone()),
+            ApiError::Rule(code, detail) => (StatusCode::CONFLICT, code, detail.clone()),
             ApiError::Internal => {
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal", "Something went wrong on the server.".into())
             }
@@ -60,7 +63,7 @@ impl From<StoreError> for ApiError {
             StoreError::NotFound(what) => ApiError::NotFound(what),
             StoreError::Invalid(detail) => ApiError::Invalid(detail),
             StoreError::Conflict(what) => ApiError::Conflict(format!("already exists: {what}")),
-            StoreError::Rule { message, .. } => ApiError::Invalid(message),
+            StoreError::Rule { code, message } => ApiError::Rule(code, message),
             other => {
                 tracing::error!(error = %other, "web API request failed");
                 ApiError::Internal

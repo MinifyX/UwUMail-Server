@@ -10,6 +10,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0001_initial.sql"),
     include_str!("migrations/0002_jmap.sql"),
     include_str!("migrations/0003_web.sql"),
+    include_str!("migrations/0004_admin.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 

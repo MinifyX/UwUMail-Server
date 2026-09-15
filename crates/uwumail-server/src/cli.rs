@@ -84,6 +84,11 @@ pub enum AccountCommand {
     Password {
         address: String,
     },
+    /// Print a one-time link (valid 7 days) to choose a new password in the browser.
+    Link {
+        address: String,
+    },
+    /// Lock someone out; mail to them still arrives.
     Disable {
         address: String,
     },

@@ -5,7 +5,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
-use crate::directory::{ACCOUNT_COLUMNS, account_from_row};
+use crate::directory::{ACCOUNT_COLUMN_COUNT, ACCOUNT_COLUMNS, account_from_row};
 use crate::{Account, Result, Store, StoreError, now, random_bytes};
 
 /// A session is only written back when it was last seen longer ago than this.
@@ -35,6 +35,8 @@ pub struct ServerCounts {
     pub accounts: i64,
     pub admins: i64,
     pub disabled_accounts: i64,
+    /// People in the trash.
+    pub deleted_accounts: i64,
     pub aliases: i64,
     pub used_bytes: i64,
     pub queued_messages: i64,
@@ -77,7 +79,7 @@ impl Store {
     }
 
     /// Looks up a session by its cookie token and extends it. Expired sessions and
-    /// sessions of disabled accounts count as missing.
+    /// sessions of accounts that may not log in count as missing.
     pub async fn web_session(&self, token: &str, lifetime_secs: i64) -> Result<Option<WebSession>> {
         let hash = token_hash(token);
         let lookup_hash = hash.clone();
@@ -95,10 +97,10 @@ impl Store {
                         |row| {
                             Ok((
                                 account_from_row(row)?,
-                                row.get::<_, String>(8)?,
-                                row.get::<_, i64>(9)?,
-                                row.get::<_, i64>(10)?,
-                                row.get::<_, i64>(11)?,
+                                row.get::<_, String>(ACCOUNT_COLUMN_COUNT)?,
+                                row.get::<_, i64>(ACCOUNT_COLUMN_COUNT + 1)?,
+                                row.get::<_, i64>(ACCOUNT_COLUMN_COUNT + 2)?,
+                                row.get::<_, i64>(ACCOUNT_COLUMN_COUNT + 3)?,
                             ))
                         },
                     )
@@ -109,7 +111,7 @@ impl Store {
             return Ok(None);
         };
         let now = now();
-        if expires_at <= now || account.disabled {
+        if expires_at <= now || !account.can_log_in() {
             return Ok(None);
         }
         let mut session = WebSession { account, csrf_token, created_at, expires_at };
@@ -185,9 +187,12 @@ impl Store {
             let count = |sql: &str| -> rusqlite::Result<i64> { conn.query_row(sql, [], |row| row.get(0)) };
             Ok(ServerCounts {
                 domains: count("SELECT COUNT(*) FROM domains")?,
-                accounts: count("SELECT COUNT(*) FROM accounts")?,
-                admins: count("SELECT COUNT(*) FROM accounts WHERE role = 'admin' AND disabled = 0")?,
-                disabled_accounts: count("SELECT COUNT(*) FROM accounts WHERE disabled = 1")?,
+                accounts: count("SELECT COUNT(*) FROM accounts WHERE deleted_at IS NULL")?,
+                admins: count(
+                    "SELECT COUNT(*) FROM accounts WHERE role = 'admin' AND disabled = 0 AND deleted_at IS NULL",
+                )?,
+                disabled_accounts: count("SELECT COUNT(*) FROM accounts WHERE disabled = 1 AND deleted_at IS NULL")?,
+                deleted_accounts: count("SELECT COUNT(*) FROM accounts WHERE deleted_at IS NOT NULL")?,
                 aliases: count(
                     "SELECT COUNT(*) FROM addresses ad JOIN accounts a ON a.id = ad.account_id
                      JOIN domains d ON d.id = ad.domain_id

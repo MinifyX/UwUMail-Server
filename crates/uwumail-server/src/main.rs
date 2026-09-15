@@ -62,7 +62,7 @@ async fn run(command: Command, config: Config) -> anyhow::Result<()> {
     let store = uwumail_store::Store::open(&config.data_dir).await?;
     match command {
         Command::Domain(command) => commands::domain(&config, &store, command).await,
-        Command::Account(command) => commands::account(&store, command).await,
+        Command::Account(command) => commands::account(&config, &store, command).await,
         Command::Alias(command) => commands::alias(&store, command).await,
         Command::Queue(command) => commands::queue(&store, command).await,
         Command::Serve | Command::CheckConfig | Command::Health => unreachable!("handled above"),

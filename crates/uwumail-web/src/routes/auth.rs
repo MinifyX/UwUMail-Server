@@ -23,7 +23,7 @@ pub async fn info(State(web): State<Web>) -> ApiResult<Json<Value>> {
     })))
 }
 
-fn session_body(web: &Web, account: &Account, csrf_token: &str, preferences: Value) -> Value {
+pub(crate) fn session_body(web: &Web, account: &Account, csrf_token: &str, preferences: Value) -> Value {
     json!({
         "account": {
             "id": account.id,

@@ -9,6 +9,7 @@
 //! pool of read-only connections.
 
 mod address;
+mod admin;
 mod blobs;
 mod db;
 mod directory;
@@ -29,6 +30,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{Notify, broadcast};
 
 pub use address::{EmailAddress, normalize_address, normalize_domain};
+pub use admin::{
+    AccountUpdate, AddressInfo, AuditEntry, AuditRecord, PasswordLink, PasswordLinkPurpose, Person,
+    TRASH_RETENTION_SECS,
+};
 pub use blobs::BlobHash;
 pub use directory::{Account, DkimKey, DkimKeyAlgorithm, Domain, NewAccount, Role};
 pub use extras::{Identity, IdentityUpdate, SubmissionRecord, UPLOAD_LIFETIME_SECS, VacationResponse};

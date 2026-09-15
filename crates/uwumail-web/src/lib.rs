@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use axum::Router;
-use axum::routing::{get, patch, post};
+use axum::routing::{delete, get, patch, post, put};
 use uwumail_smtp::AuthLimiter;
 use uwumail_store::Store;
 
@@ -68,14 +68,44 @@ impl Web {
             .route("/api/auth/logout", post(routes::auth::logout))
             .route("/api/account", get(routes::account::profile))
             .route("/api/account/preferences", patch(routes::account::update_preferences))
+            .route("/api/password-links/{token}", get(routes::links::show).post(routes::links::choose))
             .route("/api/admin/overview", get(routes::admin::overview))
+            .route("/api/admin/domains", get(routes::admin::domains))
+            .route("/api/admin/audit", get(routes::admin::audit))
+            .route("/api/admin/people", get(routes::people::list).post(routes::people::create))
+            .route(
+                "/api/admin/people/{login}",
+                get(routes::people::detail).patch(routes::people::update).delete(routes::people::trash),
+            )
+            .route("/api/admin/people/{login}/restore", post(routes::people::restore))
+            .route("/api/admin/people/{login}/purge", post(routes::people::purge))
+            .route("/api/admin/people/{login}/password-link", post(routes::people::password_link))
+            .route("/api/admin/people/{login}/password", put(routes::people::set_password))
+            .route("/api/admin/people/{login}/aliases", post(routes::people::add_alias))
+            .route("/api/admin/people/{login}/aliases/{address}", delete(routes::people::remove_alias))
             .route("/api", get(routes::not_found))
-            .route("/api/{*rest}", get(routes::not_found).post(routes::not_found).patch(routes::not_found))
+            .route(
+                "/api/{*rest}",
+                get(routes::not_found)
+                    .post(routes::not_found)
+                    .patch(routes::not_found)
+                    .put(routes::not_found)
+                    .delete(routes::not_found),
+            )
             .with_state(self.clone());
 
         let mut app = Router::new();
         if Web::has_app() {
-            for path in ["/", "/login", "/setup", "/account", "/account/{*rest}", "/admin", "/admin/{*rest}"] {
+            for path in [
+                "/",
+                "/login",
+                "/setup",
+                "/password/{token}",
+                "/account",
+                "/account/{*rest}",
+                "/admin",
+                "/admin/{*rest}",
+            ] {
                 app = app.route(path, get(routes::app_page));
             }
             app = app.route("/assets/{*path}", get(routes::asset));
