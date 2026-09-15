@@ -262,9 +262,17 @@ if (args.waitReplyFrom) {
   for (const header of reply["header:Authentication-Results:asText:all"] ?? []) {
     console.log(`    Authentication-Results: ${header.replace(/\s+/g, " ")}`);
   }
+  // A verifier report lists "<name> check details:" blocks, each with a "Result:" line.
   const body = Object.values(reply.bodyValues ?? {})[0]?.value ?? "";
-  const summary = body.split(/\r?\n/).filter((line) => /^(SPF|DKIM|DMARC|iprev|Sender-ID|SpamAssassin) check:|^(Summary of Results|=+)/i.test(line.trim()));
-  if (summary.length > 0) console.log(summary.map((line) => `    ${line.trim()}`).join("\n"));
+  let check = null;
+  for (const line of body.split(/\r?\n/).map((l) => l.trim())) {
+    const heading = /^"?([\w-]+)"? check details:$/i.exec(line);
+    if (heading) check = heading[1];
+    else if (check && line.startsWith("Result:")) {
+      console.log(`    ${check}: ${line.slice(7).trim()}`);
+      check = null;
+    }
+  }
 }
 
 const pushErrors = push.events.filter((event) => event.error);
