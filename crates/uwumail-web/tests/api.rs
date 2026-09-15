@@ -97,6 +97,8 @@ async fn login_session_and_logout() {
     assert_eq!(info, json!({ "hostname": "mail.example.de", "setupRequired": false }));
 
     let (status, _, body) = call(&app, Call::get("/api/session")).await;
+    assert_eq!((status, body), (StatusCode::OK, Value::Null), "not logged in is a normal answer");
+    let (status, _, body) = call(&app, Call::get("/api/account")).await;
     assert_eq!((status, body["code"].as_str()), (StatusCode::UNAUTHORIZED, Some("notLoggedIn")));
 
     let wrong = json!({ "login": "nyu@example.de", "password": "falsch" });
@@ -125,8 +127,8 @@ async fn login_session_and_logout() {
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert!(response.headers()[header::SET_COOKIE].to_str().unwrap().contains("Max-Age=0"));
-    let (status, _, _) = call(&app, Call { cookie: Some(&cookie), ..Call::get("/api/session") }).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, _, body) = call(&app, Call { cookie: Some(&cookie), ..Call::get("/api/session") }).await;
+    assert_eq!((status, body), (StatusCode::OK, Value::Null));
 }
 
 #[tokio::test]

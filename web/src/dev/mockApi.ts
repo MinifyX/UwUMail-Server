@@ -19,7 +19,7 @@ const session = (): Session => ({
 
 const routes: Record<string, (body: unknown) => [number, unknown]> = {
   "GET /api/info": () => [200, { hostname: "mail.uwu.example", setupRequired: false } satisfies Info],
-  "GET /api/session": () => (loggedIn ? [200, session()] : [401, { code: "notLoggedIn", detail: "" }]),
+  "GET /api/session": () => [200, loggedIn ? session() : null],
   "POST /api/auth/login": (body) => {
     const { login } = body as { login: string };
     if (login.startsWith("wrong")) return [401, { code: "invalidCredentials", detail: "" }];

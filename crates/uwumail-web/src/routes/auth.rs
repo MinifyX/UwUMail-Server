@@ -45,8 +45,15 @@ fn no_store(mut response: Response) -> Response {
     response
 }
 
-/// Who is logged in. Also renews the cookie, so an active session never runs out.
-pub async fn session(State(web): State<Web>, session: Session) -> ApiResult<Response> {
+/// Who is logged in, or `null`. Also renews the cookie, so an active session never runs out.
+///
+/// Not being logged in is an ordinary answer here (the app asks on every start), not an error.
+pub async fn session(State(web): State<Web>, session: Result<Session, ApiError>) -> ApiResult<Response> {
+    let session = match session {
+        Ok(session) => session,
+        Err(ApiError::NotLoggedIn) => return Ok(no_store(Json(Value::Null).into_response())),
+        Err(err) => return Err(err),
+    };
     let preferences = web.store().preferences(session.account.id).await?;
     let body = session_body(&web, &session.account, &session.csrf_token, Value::Object(preferences));
     let mut response = Json(body).into_response();

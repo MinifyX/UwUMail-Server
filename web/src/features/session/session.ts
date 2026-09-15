@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError, setCsrfToken, type Info, type Session } from "@/lib/api";
+import { api, setCsrfToken, type Info, type Session } from "@/lib/api";
 import { navigate } from "@/lib/router";
 import { usePrefs, type Prefs } from "@/state/prefs";
 
@@ -10,15 +10,10 @@ function adopt(session: Session): Session {
 }
 
 async function loadSession(): Promise<Session | null> {
-  try {
-    return adopt(await api<Session>("/api/session"));
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 401) {
-      setCsrfToken(null);
-      return null;
-    }
-    throw error;
-  }
+  const session = await api<Session | null>("/api/session");
+  if (session) return adopt(session);
+  setCsrfToken(null);
+  return null;
 }
 
 /** The logged-in person, or `null` on the login page. */
