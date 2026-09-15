@@ -76,5 +76,16 @@
     },
     "notChecked": "I'll check everything once right after the start.",
     "checking": "Sniffing …"
+  },
+  "secondFactor": {
+    "title": "One more little step (・ω・)"
+  },
+  "security": {
+    "twoFactor": {
+      "on": "On. Your account is locked twice now (=^･ω･^=)"
+    },
+    "recovery": {
+      "saved": "Safely tucked away ✓"
+    }
   }
 }

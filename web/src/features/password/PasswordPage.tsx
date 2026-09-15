@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Eye, EyeOff } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
@@ -8,18 +8,19 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Field, TextInput } from "@/components/ui/Field";
 import { Wordmark } from "@/components/ui/Logo";
 import { useT } from "@/i18n";
-import { api, ApiError, setCsrfToken, type PasswordLinkInfo, type Session } from "@/lib/api";
+import { api, ApiError, needsSecondFactor, type LoginResult, type PasswordLinkInfo } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatDateTime } from "@/lib/format";
 import { navigate } from "@/lib/router";
-import { usePrefs } from "@/state/prefs";
+import { useStartSession } from "@/features/session/session";
+import { SecondFactorStep } from "@/features/login/SecondFactorStep";
 
 const MIN_CHARS = 10;
 
 /** Where invited people and people with a reset link choose their password. Works logged in or out. */
 export function PasswordPage({ token }: { token: string }) {
   const { t, i18n } = useT();
-  const queryClient = useQueryClient();
+  const start = useStartSession();
   const errorText = useErrorText();
   const [password, setPassword] = useState("");
   const [repeat, setRepeat] = useState("");
@@ -33,12 +34,9 @@ export function PasswordPage({ token }: { token: string }) {
   });
   const choose = useMutation({
     mutationFn: () =>
-      api<Session>(`/api/password-links/${encodeURIComponent(token)}`, { method: "POST", body: { password } }),
-    onSuccess: (session) => {
-      setCsrfToken(session.csrfToken);
-      usePrefs.getState().apply(session.preferences);
-      queryClient.setQueryData(["session"], session);
-      navigate("/account", { replace: true });
+      api<LoginResult>(`/api/password-links/${encodeURIComponent(token)}`, { method: "POST", body: { password } }),
+    onSuccess: (result) => {
+      if (!needsSecondFactor(result)) start(result);
     },
   });
 
@@ -74,6 +72,18 @@ export function PasswordPage({ token }: { token: string }) {
   if (link.isError) return <LoadError error={link.error} onRetry={() => void link.refetch()} />;
 
   const info = link.data;
+  if (choose.data && needsSecondFactor(choose.data)) {
+    // The password is saved; the second factor still guards the login.
+    return wrapper(
+      <div className="rounded-[22px] border border-hairline bg-surface px-6 pt-4 pb-7 shadow-float sm:px-8">
+        <SecondFactorStep
+          challenge={choose.data.secondFactor}
+          hostname={window.location.hostname}
+          onRestart={() => navigate("/login", { replace: true })}
+        />
+      </div>,
+    );
+  }
   const missing = Math.max(0, MIN_CHARS - [...password].length);
   const mismatch = touched && repeat.length > 0 && repeat !== password;
   const submit = (event: FormEvent) => {

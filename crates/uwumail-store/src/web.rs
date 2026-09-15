@@ -45,7 +45,7 @@ pub struct ServerCounts {
     pub deferred_recipients: i64,
 }
 
-fn token_hash(token: &str) -> Vec<u8> {
+pub(crate) fn token_hash(token: &str) -> Vec<u8> {
     Sha256::digest(token.as_bytes()).to_vec()
 }
 

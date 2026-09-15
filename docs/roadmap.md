@@ -49,7 +49,8 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Health overview: DNS, certificate, outgoing mail (relay/port 25 probe, stuck mail, bounces), disk and mailbox space
 - [ ] Web setup with a one-time code: domain, admin, certificate, DNS check, port 25 / rDNS / blocklist check
 - [ ] Admin panel, Simple and Pro mode, German and English, playful/neutral tone, Nyu
-- [ ] Self-service: password, 2FA, app passwords, forwarding, vacation, aliases, storage
+- [x] Security in My account: password change, authenticator app with recovery codes, passkeys, app passwords with scopes and expiry, browser sessions, activity list and notice mails
+- [ ] Self-service: forwarding, vacation, aliases, storage
 - [ ] Autoconfig, Autodiscover, Apple configuration profiles, MTA-STS, TLS-RPT
 - [ ] Update notices with changelog
 

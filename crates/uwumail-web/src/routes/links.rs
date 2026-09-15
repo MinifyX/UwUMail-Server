@@ -1,18 +1,19 @@
-//! The public page behind invitation and reset links: choose a password, then you are logged in.
+//! The public page behind invitation and reset links: choose a password, then log in (with the
+//! second factor, if the person has one).
 
 use axum::extract::{Path, State};
-use axum::http::{HeaderMap, header};
-use axum::response::{IntoResponse, Response};
+use axum::http::HeaderMap;
+use axum::response::Response;
 use axum::{Extension, Json};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uwumail_jmap::ClientInfo;
-use uwumail_store::{AuditEntry, PasswordLink};
+use uwumail_store::{AuditEntry, PasswordLink, PasswordLinkPurpose};
 
 use super::check_password;
 use crate::Web;
 use crate::error::{ApiError, ApiResult};
-use crate::session::{self, SESSION_LIFETIME_SECS};
+use crate::notices::{Notice, Origin, notify};
 
 async fn valid_link(web: &Web, token: &str) -> ApiResult<PasswordLink> {
     if token.len() > 128 {
@@ -62,14 +63,10 @@ pub async fn choose(
         })
         .await;
     tracing::info!(login = %account.login, purpose = ?link.purpose, "password chosen through a link");
-
-    let user_agent = headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or_default();
-    let created =
-        web.store().create_web_session(account.id, SESSION_LIFETIME_SECS, &client.ip.to_string(), user_agent).await?;
-    let preferences = web.store().preferences(account.id).await?;
-    let body = super::auth::session_body(&web, &account, &created.csrf_token, Value::Object(preferences));
-    let mut response = Json(body).into_response();
-    response.headers_mut().insert(header::SET_COOKIE, session::set_cookie(&created.token, client));
-    response.headers_mut().insert(header::CACHE_CONTROL, header::HeaderValue::from_static("no-store"));
-    Ok(response)
+    if link.purpose == PasswordLinkPurpose::Reset {
+        let ip = client.ip.to_string();
+        notify(&web, &account, Notice::PasswordChosenWithLink, Origin { actor: "", ip: &ip }).await;
+    }
+    // A link replaces the password, not the second factor.
+    super::auth::begin_login(&web, account, client, &headers).await
 }

@@ -9,10 +9,13 @@
 mod assets;
 mod error;
 mod health;
+mod login;
 mod logs;
+mod notices;
 mod routes;
 mod session;
 pub mod settings;
+mod webauthn;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -57,6 +60,7 @@ struct Inner {
     last_health_check: Mutex<Option<i64>>,
     /// Held while an admin-requested check runs, so clicks do not pile up.
     health_check: tokio::sync::Mutex<()>,
+    login: login::LoginState,
 }
 
 impl Web {
@@ -72,6 +76,7 @@ impl Web {
                 reports: Mutex::default(),
                 last_health_check: Mutex::default(),
                 health_check: tokio::sync::Mutex::default(),
+                login: login::LoginState::default(),
             }),
         }
     }
@@ -117,6 +122,10 @@ impl Web {
         &self.inner.settings
     }
 
+    pub(crate) fn login_state(&self) -> &login::LoginState {
+        &self.inner.login
+    }
+
     pub(crate) fn limiter(&self) -> &AuthLimiter {
         &self.inner.limiter
     }
@@ -127,8 +136,24 @@ impl Web {
             .route("/api/session", get(routes::auth::session))
             .route("/api/auth/login", post(routes::auth::login))
             .route("/api/auth/logout", post(routes::auth::logout))
+            .route("/api/auth/second-factor", post(routes::auth::second_factor))
+            .route("/api/auth/passkey/options", post(routes::auth::passkey_options))
+            .route("/api/auth/passkey", post(routes::auth::passkey_login))
             .route("/api/account", get(routes::account::profile))
             .route("/api/account/preferences", patch(routes::account::update_preferences))
+            .route("/api/account/security", get(routes::security::overview))
+            .route("/api/account/password", post(routes::security::change_password))
+            .route("/api/account/totp", post(routes::security::start_totp).delete(routes::security::disable_totp))
+            .route("/api/account/totp/confirm", post(routes::security::confirm_totp))
+            .route("/api/account/recovery-codes", post(routes::security::new_recovery_codes))
+            .route("/api/account/apps-need-app-password", put(routes::security::set_apps_need_app_password))
+            .route("/api/account/app-passwords", post(routes::security::create_app_password))
+            .route("/api/account/app-passwords/{id}", delete(routes::security::revoke_app_password))
+            .route("/api/account/sessions/{id}", delete(routes::security::end_session))
+            .route("/api/account/sessions/end-others", post(routes::security::end_other_sessions))
+            .route("/api/account/passkeys/options", post(routes::security::passkey_options))
+            .route("/api/account/passkeys", post(routes::security::add_passkey))
+            .route("/api/account/passkeys/{id}", delete(routes::security::remove_passkey))
             .route("/api/password-links/{token}", get(routes::links::show).post(routes::links::choose))
             .route("/api/admin/overview", get(routes::admin::overview))
             .route("/api/admin/health", get(routes::admin::health))
@@ -155,6 +180,7 @@ impl Web {
             .route("/api/admin/people/{login}/purge", post(routes::people::purge))
             .route("/api/admin/people/{login}/password-link", post(routes::people::password_link))
             .route("/api/admin/people/{login}/password", put(routes::people::set_password))
+            .route("/api/admin/people/{login}/reset-second-factors", post(routes::people::reset_second_factors))
             .route("/api/admin/people/{login}/aliases", post(routes::people::add_alias))
             .route("/api/admin/people/{login}/aliases/{address}", delete(routes::people::remove_alias))
             .route("/api", get(routes::not_found))

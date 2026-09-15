@@ -171,7 +171,7 @@ async function portal() {
   if (overview.status !== 200 || overview.json.counts.accounts < 2) throw new Error(`admin overview: ${overview.text}`);
   const status = await request("GET", "/api/admin/health", { cookie });
   const areas = status.json?.areas?.map((area) => area.area).join(",");
-  if (status.status !== 200 || areas !== "dns,certificate,delivery,storage") {
+  if (status.status !== 200 || areas !== "dns,certificate,delivery,storage,security") {
     throw new Error(`admin health: ${status.status} ${status.text}`);
   }
   const disk = status.json.areas[3].findings.find((finding) => finding.code === "diskOk" || finding.code === "diskLow");

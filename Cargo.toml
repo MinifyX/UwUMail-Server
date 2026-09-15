@@ -17,10 +17,12 @@ uwumail-web = { path = "crates/uwumail-web" }
 
 anyhow = "1"
 argon2 = { version = "0.6", features = ["getrandom"] }
-aws-lc-rs = "1"
+# prebuilt-nasm: Windows builds need no NASM, like rustls already arranges when it is part of the build.
+aws-lc-rs = { version = "1", features = ["prebuilt-nasm"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "http2", "json", "tokio", "query"] }
 base64 = "0.23"
 clap = { version = "4", features = ["derive", "env"] }
+data-encoding = "2"
 futures-util = "0.3"
 figment = { version = "0.10", features = ["toml", "env"] }
 hex = "0.4"
@@ -32,6 +34,8 @@ instant-acme = { version = "0.8", features = ["rcgen"] }
 mail-auth = "0.13"
 mail-builder = "1"
 mail-parser = "0.11"
+# QR codes for setting up authenticator apps, as plain modules the portal draws itself.
+qrcode = { version = "0.14", default-features = false }
 getrandom = "0.4"
 rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem"] }
 rusqlite = { version = "0.40", features = ["bundled"] }

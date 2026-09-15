@@ -162,6 +162,11 @@ impl Smtp {
         &self.inner.dns
     }
 
+    /// Language and tone of mail the server writes itself, as currently set.
+    pub fn tone(&self) -> ToneConfig {
+        self.inner.live().tone
+    }
+
     /// The relay outgoing mail leaves through, if one is configured.
     pub fn relay_host(&self) -> Option<String> {
         self.inner.live().delivery.relay.as_ref().map(|relay| relay.host.clone())

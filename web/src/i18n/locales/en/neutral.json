@@ -44,7 +44,8 @@
     "domains": "Domains",
     "queue": "Queue",
     "logs": "Logs",
-    "settings": "Settings"
+    "settings": "Settings",
+    "security": "Security"
   },
   "mode": {
     "label": "View",
@@ -187,7 +188,20 @@
       "keysNotPublished": "The DNS records of the new keys are not visible yet.",
       "dnsUnavailable": "The server cannot look up DNS right now.",
       "settingLocked": "This setting is in the config file and cannot be changed here.",
-      "settingsInvalid": "The server cannot work like this: {{detail}}"
+      "settingsInvalid": "The server cannot work like this: {{detail}}",
+      "codeInvalid": "The code is wrong or was used before.",
+      "loginExpired": "The login took too long. Please log in again.",
+      "confirmPassword": "Please confirm this with your password.",
+      "wrongPassword": "The password is wrong.",
+      "samePassword": "The new password is the same as the old one.",
+      "tooManyAttempts": "Too many failed attempts. Wait a few minutes.",
+      "totpActive": "An authenticator app is already set up.",
+      "totpNotStarted": "The setup has expired. Please start it again.",
+      "noSecondFactor": "This needs a two-factor login first.",
+      "tooManyAppPasswords": "You already have a lot of app passwords. Revoke old ones you no longer need.",
+      "passkeyInvalid": "The passkey could not be checked.",
+      "passkeyExpired": "That took too long. Please try again.",
+      "passkeyKnown": "This passkey is already registered."
     }
   },
   "people": {
@@ -302,7 +316,24 @@
       "restored": "{{login}} has been restored",
       "purged": "{{login}} has been deleted for good",
       "aliasAdded": "Added {{address}}",
-      "aliasRemoved": "Removed {{address}}"
+      "aliasRemoved": "Removed {{address}}",
+      "secondFactorsReset": "Two-factor login of {{login}} reset"
+    },
+    "security": {
+      "title": "Login",
+      "totp": "authenticator app",
+      "passkeys_one": "{{count}} passkey",
+      "passkeys_other": "{{count}} passkeys",
+      "on": "Two-factor login on: {{methods}}",
+      "off": "No two-factor login",
+      "appPasswords_one": "{{count}} app password",
+      "appPasswords_other": "{{count}} app passwords",
+      "appsOnly": "mail apps only with app passwords",
+      "resetHint": "Lost the phone and the recovery codes? After a reset, the password is enough again.",
+      "reset": "Reset two-factor",
+      "resetTitle": "Reset the two-factor login of {{login}}?",
+      "resetBody": "The authenticator app, passkeys and recovery codes are removed. The person gets a notice. Only do this when you know for sure they asked you to.",
+      "yours": "Your settings under Security"
     }
   },
   "log": {
@@ -338,7 +369,8 @@
       "domainDkimRemove": "{{actor}} removed an old DKIM key of {{target}}",
       "queueRetry": "{{actor}} retried message {{target}}",
       "queueDrop": "{{actor}} deleted message {{target}} from the queue",
-      "settingsUpdate": "{{actor}} changed server settings"
+      "settingsUpdate": "{{actor}} changed server settings",
+      "accountSecondFactorsReset": "{{actor}} reset the two-factor login of {{target}}"
     },
     "details": {
       "adminOn": "is now an admin",
@@ -616,7 +648,8 @@
       "dns": "DNS",
       "certificate": "Certificate",
       "delivery": "Sending",
-      "storage": "Storage"
+      "storage": "Storage",
+      "security": "Login"
     },
     "findings": {
       "noDomains": "No domain set up yet.",
@@ -651,7 +684,11 @@
       "diskLow": "Only {{free}} of {{total}} free.",
       "mailboxesOk": "Every mailbox has room.",
       "mailboxesNearlyFull_one": "{{login}}'s mailbox is nearly full.",
-      "mailboxesNearlyFull_other": "{{count}} mailboxes are nearly full."
+      "mailboxesNearlyFull_other": "{{count}} mailboxes are nearly full.",
+      "adminsSecure": "Every admin uses a two-factor login.",
+      "adminsWithoutSecondFactor_one": "{{login}} is an admin without two-factor login.",
+      "adminsWithoutSecondFactor_other": "{{count}} admins have no two-factor login.",
+      "youWithoutSecondFactor": "Your admin account has no two-factor login yet."
     },
     "hints": {
       "noDomains": "Without a domain the server cannot receive mail.",
@@ -669,7 +706,182 @@
       "queueStuck": "The queue shows what is going wrong.",
       "manyBounces": "Other servers refuse mail, e.g. because of SPF, DKIM or the IP address's reputation.",
       "diskLow": "When storage is full, the server cannot accept mail any more.",
-      "mailboxesNearlyFull": "Full mailboxes stop accepting mail. Raise the limit or ask them to clean up."
+      "mailboxesNearlyFull": "Full mailboxes stop accepting mail. Raise the limit or ask them to clean up.",
+      "adminsWithoutSecondFactor": "Whoever guesses an admin's password can manage the whole server.",
+      "youWithoutSecondFactor": "Under Security you set up an authenticator app or a passkey in two minutes."
+    }
+  },
+  "secondFactor": {
+    "title": "One more step",
+    "totpIntro": "Enter the six-digit code from your authenticator app.",
+    "passkeyIntro": "Confirm the login with your passkey.",
+    "recoveryIntro": "Enter one of your recovery codes. Each code works only once.",
+    "code": "Code from the app",
+    "recoveryCode": "Recovery code",
+    "submit": "Log in",
+    "usePasskey": "Log in with a passkey",
+    "passkeyHere": "Passkeys only work on {{hostname}}.",
+    "back": "Back",
+    "useRecovery": "Use a recovery code",
+    "useApp": "Use a code from the app",
+    "usePasskeyInstead": "Use a passkey",
+    "restart": "Log in again"
+  },
+  "security": {
+    "title": "Security",
+    "intro": "Password, two-factor login, app passwords and where you are logged in.",
+    "adminReminder": "You are an admin, but your account has no two-factor login yet. Whoever guesses your password can manage the whole server.",
+    "confirm": {
+      "title": "Confirm your password",
+      "body": "For safety, this change needs your password once more. After that you won't be asked again for ten minutes.",
+      "password": "Password",
+      "submit": "Confirm"
+    },
+    "twoFactor": {
+      "title": "Two-factor login",
+      "on": "On. Logging in to the portal also needs your app or a passkey.",
+      "off": "Off. Your password alone is enough to log in.",
+      "explain": "With a second factor, nobody gets into your account with just your password. Mail apps then log in with app passwords."
+    },
+    "totp": {
+      "title": "Authenticator app",
+      "active": "Set up.",
+      "inactive": "For example Aegis, 2FAS, Proton Pass or Google Authenticator.",
+      "setUp": "Set up",
+      "setUpTitle": "Set up an authenticator app",
+      "disable": "Turn off",
+      "disabled": "Authenticator app turned off",
+      "enabled": "Authenticator app turned on",
+      "step1": "Open your authenticator app and add a new account.",
+      "step2": "Scan the QR code or type in the key.",
+      "step3": "Enter the code the app shows.",
+      "qrLabel": "QR code for the authenticator app",
+      "manual": "Can't scan? This key works too:",
+      "copySecret": "Copy key",
+      "code": "Code from the app",
+      "activate": "Turn on"
+    },
+    "passkeys": {
+      "title": "Passkeys",
+      "explain": "Fingerprint, face recognition, Windows Hello or a security key. No code to type.",
+      "lastUsed": "Last used {{time}}",
+      "added": "Added on {{date}}",
+      "remove": "Remove",
+      "removed": "Passkey “{{name}}” removed",
+      "add": "Add a passkey",
+      "addTitle": "Add a passkey",
+      "addBody": "Your browser will ask for the passkey in a moment. Give it a name first so you recognise it later.",
+      "name": "Name",
+      "nameHint": "For example “Laptop” or “Security key”.",
+      "create": "Continue",
+      "addedToast": "Passkey added",
+      "unavailable": "Passkeys can only be added when you open the portal on {{hostname}}."
+    },
+    "recovery": {
+      "title": "Recovery codes",
+      "left_one": "{{count}} code left.",
+      "left_other": "{{count}} codes left.",
+      "renew": "Create new codes",
+      "shownOnce": "Keep these codes safe, for example printed or in a password manager. They are only shown now and help you when your phone or passkey is gone.",
+      "copy": "Copy codes",
+      "saved": "I saved them"
+    },
+    "appPasswords": {
+      "title": "App passwords",
+      "new": "New",
+      "newTitle": "Create an app password",
+      "explain": "For mail apps on your phone or computer. Each app gets its own password that you can revoke any time without changing your main password.",
+      "requiredBySecondFactor": "With two-factor login, mail apps log in with app passwords only.",
+      "requireLabel": "Mail apps only with app passwords",
+      "requireHint": "Your main password then only works here in the portal.",
+      "none": "No app passwords yet.",
+      "name": "What for?",
+      "nameHint": "For example “Phone” or “Thunderbird”.",
+      "scopes": "Allowed",
+      "scopeMail": "Read and manage mail",
+      "scopeMailHint": "For mail apps using JMAP. Such apps can send with it too.",
+      "scopeSmtp": "Send mail (SMTP)",
+      "scopeSmtpHint": "For apps, printers or scripts that only send.",
+      "expiry": "Valid",
+      "never": "No expiry",
+      "days_one": "{{count}} day",
+      "days_other": "{{count}} days",
+      "create": "Create",
+      "createdTitle": "App password created",
+      "createdBody": "Enter this in the app “{{name}}”. The password is only shown now.",
+      "login": "Username",
+      "password": "Password",
+      "copy": "Copy password",
+      "done": "Done",
+      "scopeShort": {
+        "mail": "Mail",
+        "smtp": "Send"
+      },
+      "expired": "Expired",
+      "lastUsed": "Last used {{time}} via {{protocol}} from {{ip}}",
+      "neverUsed": "Never used",
+      "created": "Created on {{date}}",
+      "expires": "valid until {{date}}",
+      "revoke": "Revoke",
+      "revokeTitle": "Revoke “{{name}}”?",
+      "revokeBody": "The app can no longer log in until you enter a new app password.",
+      "revoked": "“{{name}}” revoked"
+    },
+    "password": {
+      "title": "Change password",
+      "current": "Current password",
+      "new": "New password",
+      "repeat": "Repeat new password",
+      "hint": "At least 10 characters. A sentence of several words is easy to remember.",
+      "submit": "Change password",
+      "changed": "Password changed. Other browsers were logged out."
+    },
+    "sessions": {
+      "title": "Logged-in browsers",
+      "endOthers": "Log out everywhere else",
+      "endedOthers_one": "Logged out {{count}} other browser",
+      "endedOthers_other": "Logged out {{count}} other browsers",
+      "device": "{{browser}} on {{system}}",
+      "unknownDevice": "Unknown device",
+      "thisDevice": "This device",
+      "seen": "Last active {{time}} · {{ip}}",
+      "end": "Log out",
+      "ended": "Browser logged out"
+    },
+    "activity": {
+      "title": "Recent activity",
+      "none": "Nothing has happened yet.",
+      "more_one": "{{count}} more entry",
+      "more_other": "{{count}} more entries"
+    },
+    "events": {
+      "login": "Logged in with {{method}}",
+      "passwordChanged": "Password changed",
+      "passwordChosenWithLink": "New password chosen through a link",
+      "passwordSetByAdmin": "{{actor}} set a new password",
+      "totpEnabled": "Authenticator app turned on",
+      "totpDisabled": "Authenticator app turned off",
+      "passkeyAdded": "Passkey “{{name}}” added",
+      "passkeyRemoved": "Passkey “{{name}}” removed",
+      "recoveryCodesCreated": "New recovery codes created",
+      "recoveryCodeUsed_one": "Recovery code used, {{count}} left",
+      "recoveryCodeUsed_other": "Recovery code used, {{count}} left",
+      "appPasswordCreated": "App password “{{name}}” created",
+      "appPasswordRevoked": "App password “{{name}}” revoked",
+      "appsNeedAppPassword": "Mail apps now need app passwords",
+      "appsMayUseMainPassword": "Mail apps may use the main password again",
+      "mainPasswordRefused": "A mail app used the main password ({{protocol}}) and was refused",
+      "secondFactorsReset": "{{actor}} reset the two-factor login",
+      "sessionEnded": "Logged out another browser",
+      "sessionsEnded_one": "Logged out {{count}} other browser",
+      "sessionsEnded_other": "Logged out {{count}} other browsers",
+      "other": "Security change"
+    },
+    "loginMethods": {
+      "password": "password",
+      "totp": "password and app",
+      "recoveryCode": "password and recovery code",
+      "passkey": "password and passkey"
     }
   }
 }

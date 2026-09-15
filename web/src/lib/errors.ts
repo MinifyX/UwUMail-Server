@@ -20,6 +20,19 @@ const KNOWN = [
   "dnsUnavailable",
   "settingLocked",
   "settingsInvalid",
+  "codeInvalid",
+  "loginExpired",
+  "confirmPassword",
+  "wrongPassword",
+  "samePassword",
+  "tooManyAttempts",
+  "totpActive",
+  "totpNotStarted",
+  "noSecondFactor",
+  "tooManyAppPasswords",
+  "passkeyInvalid",
+  "passkeyExpired",
+  "passkeyKnown",
 ];
 
 /** Turns an API error into a sentence for the person in front of the screen. */

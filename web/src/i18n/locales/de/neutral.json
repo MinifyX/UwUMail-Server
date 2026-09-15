@@ -44,7 +44,8 @@
     "domains": "Domains",
     "queue": "Warteschlange",
     "logs": "Logs",
-    "settings": "Einstellungen"
+    "settings": "Einstellungen",
+    "security": "Sicherheit"
   },
   "mode": {
     "label": "Ansicht",
@@ -187,7 +188,20 @@
       "keysNotPublished": "Die DNS-Einträge der neuen Schlüssel sind noch nicht zu sehen.",
       "dnsUnavailable": "Der Server kann gerade kein DNS abfragen.",
       "settingLocked": "Diese Einstellung steht in der Konfigurationsdatei und kann hier nicht geändert werden.",
-      "settingsInvalid": "So kann der Server nicht arbeiten: {{detail}}"
+      "settingsInvalid": "So kann der Server nicht arbeiten: {{detail}}",
+      "codeInvalid": "Der Code stimmt nicht oder wurde schon benutzt.",
+      "loginExpired": "Die Anmeldung hat zu lange gedauert. Bitte melde dich neu an.",
+      "confirmPassword": "Bitte bestätige das mit deinem Passwort.",
+      "wrongPassword": "Das Passwort stimmt nicht.",
+      "samePassword": "Das neue Passwort ist dasselbe wie das alte.",
+      "tooManyAttempts": "Zu viele Fehlversuche. Warte ein paar Minuten.",
+      "totpActive": "Eine Authenticator-App ist schon eingerichtet.",
+      "totpNotStarted": "Die Einrichtung ist abgelaufen. Starte sie bitte neu.",
+      "noSecondFactor": "Dafür muss eine Zwei-Faktor-Anmeldung eingerichtet sein.",
+      "tooManyAppPasswords": "Du hast schon sehr viele App-Passwörter. Widerrufe alte, die du nicht mehr brauchst.",
+      "passkeyInvalid": "Der Passkey konnte nicht geprüft werden.",
+      "passkeyExpired": "Das hat zu lange gedauert. Versuch es bitte noch einmal.",
+      "passkeyKnown": "Dieser Passkey ist schon eingetragen."
     }
   },
   "people": {
@@ -302,7 +316,24 @@
       "restored": "{{login}} ist wiederhergestellt",
       "purged": "{{login}} ist endgültig gelöscht",
       "aliasAdded": "{{address}} hinzugefügt",
-      "aliasRemoved": "{{address}} entfernt"
+      "aliasRemoved": "{{address}} entfernt",
+      "secondFactorsReset": "Zwei-Faktor-Anmeldung von {{login}} zurückgesetzt"
+    },
+    "security": {
+      "title": "Anmeldung",
+      "totp": "Authenticator-App",
+      "passkeys_one": "{{count}} Passkey",
+      "passkeys_other": "{{count}} Passkeys",
+      "on": "Zwei-Faktor-Anmeldung an: {{methods}}",
+      "off": "Keine Zwei-Faktor-Anmeldung",
+      "appPasswords_one": "{{count}} App-Passwort",
+      "appPasswords_other": "{{count}} App-Passwörter",
+      "appsOnly": "Mail-Apps nur mit App-Passwörtern",
+      "resetHint": "Handy und Wiederherstellungscodes verloren? Nach dem Zurücksetzen reicht wieder das Passwort.",
+      "reset": "Zwei-Faktor zurücksetzen",
+      "resetTitle": "Zwei-Faktor-Anmeldung von {{login}} zurücksetzen?",
+      "resetBody": "Authenticator-App, Passkeys und Wiederherstellungscodes werden entfernt. Die Person bekommt eine Hinweis-Mail. Tu das nur, wenn du sicher weißt, dass sie dich darum bittet.",
+      "yours": "Deine Einstellungen unter Sicherheit"
     }
   },
   "log": {
@@ -338,7 +369,8 @@
       "domainDkimRemove": "{{actor}} hat einen alten DKIM-Schlüssel von {{target}} entfernt",
       "queueRetry": "{{actor}} hat Mail {{target}} erneut versucht",
       "queueDrop": "{{actor}} hat Mail {{target}} aus der Warteschlange gelöscht",
-      "settingsUpdate": "{{actor}} hat Server-Einstellungen geändert"
+      "settingsUpdate": "{{actor}} hat Server-Einstellungen geändert",
+      "accountSecondFactorsReset": "{{actor}} hat die Zwei-Faktor-Anmeldung von {{target}} zurückgesetzt"
     },
     "details": {
       "adminOn": "ist jetzt Admin",
@@ -616,7 +648,8 @@
       "dns": "DNS",
       "certificate": "Zertifikat",
       "delivery": "Versand",
-      "storage": "Speicher"
+      "storage": "Speicher",
+      "security": "Anmeldung"
     },
     "findings": {
       "noDomains": "Noch keine Domain eingerichtet.",
@@ -651,7 +684,11 @@
       "diskLow": "Nur noch {{free}} von {{total}} frei.",
       "mailboxesOk": "Alle Postfächer haben Platz.",
       "mailboxesNearlyFull_one": "Das Postfach von {{login}} ist fast voll.",
-      "mailboxesNearlyFull_other": "{{count}} Postfächer sind fast voll."
+      "mailboxesNearlyFull_other": "{{count}} Postfächer sind fast voll.",
+      "adminsSecure": "Alle Admins nutzen eine Zwei-Faktor-Anmeldung.",
+      "adminsWithoutSecondFactor_one": "{{login}} ist Admin ohne Zwei-Faktor-Anmeldung.",
+      "adminsWithoutSecondFactor_other": "{{count}} Admins haben keine Zwei-Faktor-Anmeldung.",
+      "youWithoutSecondFactor": "Dein Admin-Konto hat noch keine Zwei-Faktor-Anmeldung."
     },
     "hints": {
       "noDomains": "Ohne Domain kann der Server keine Mails annehmen.",
@@ -669,7 +706,182 @@
       "queueStuck": "In der Warteschlange steht, woran es liegt.",
       "manyBounces": "Andere Server lehnen Mails ab, zum Beispiel wegen SPF, DKIM oder dem Ruf der IP-Adresse.",
       "diskLow": "Wenn der Speicher voll ist, kann der Server keine Mails mehr annehmen.",
-      "mailboxesNearlyFull": "Volle Postfächer nehmen keine Mails mehr an. Speicher erhöhen oder aufräumen lassen."
+      "mailboxesNearlyFull": "Volle Postfächer nehmen keine Mails mehr an. Speicher erhöhen oder aufräumen lassen.",
+      "adminsWithoutSecondFactor": "Wer das Passwort eines Admins errät, kann den ganzen Server verwalten.",
+      "youWithoutSecondFactor": "Unter Sicherheit richtest du in zwei Minuten eine Authenticator-App oder einen Passkey ein."
+    }
+  },
+  "secondFactor": {
+    "title": "Noch ein Schritt",
+    "totpIntro": "Gib den sechsstelligen Code aus deiner Authenticator-App ein.",
+    "passkeyIntro": "Bestätige die Anmeldung mit deinem Passkey.",
+    "recoveryIntro": "Gib einen deiner Wiederherstellungscodes ein. Jeder Code funktioniert nur einmal.",
+    "code": "Code aus der App",
+    "recoveryCode": "Wiederherstellungscode",
+    "submit": "Anmelden",
+    "usePasskey": "Mit Passkey anmelden",
+    "passkeyHere": "Passkeys funktionieren nur unter {{hostname}}.",
+    "back": "Zurück",
+    "useRecovery": "Wiederherstellungscode verwenden",
+    "useApp": "Code aus der App verwenden",
+    "usePasskeyInstead": "Passkey verwenden",
+    "restart": "Neu anmelden"
+  },
+  "security": {
+    "title": "Sicherheit",
+    "intro": "Passwort, Zwei-Faktor-Anmeldung, App-Passwörter und wo du angemeldet bist.",
+    "adminReminder": "Du bist Admin, aber dein Konto hat noch keine Zwei-Faktor-Anmeldung. Wer dein Passwort errät, kann den ganzen Server verwalten.",
+    "confirm": {
+      "title": "Passwort bestätigen",
+      "body": "Diese Änderung braucht zur Sicherheit noch einmal dein Passwort. Danach hast du zehn Minuten Ruhe.",
+      "password": "Passwort",
+      "submit": "Bestätigen"
+    },
+    "twoFactor": {
+      "title": "Zwei-Faktor-Anmeldung",
+      "on": "Eingeschaltet. Beim Anmelden im Portal brauchst du zusätzlich deine App oder einen Passkey.",
+      "off": "Ausgeschaltet. Dein Passwort allein reicht zum Anmelden.",
+      "explain": "Mit einem zweiten Faktor kommt niemand in dein Konto, der nur dein Passwort kennt. Mail-Apps melden sich dann mit App-Passwörtern an."
+    },
+    "totp": {
+      "title": "Authenticator-App",
+      "active": "Eingerichtet.",
+      "inactive": "Zum Beispiel Aegis, 2FAS, Proton Pass oder Google Authenticator.",
+      "setUp": "Einrichten",
+      "setUpTitle": "Authenticator-App einrichten",
+      "disable": "Ausschalten",
+      "disabled": "Authenticator-App ausgeschaltet",
+      "enabled": "Authenticator-App eingeschaltet",
+      "step1": "Öffne deine Authenticator-App und füge ein neues Konto hinzu.",
+      "step2": "Scanne den QR-Code oder tippe den Schlüssel ab.",
+      "step3": "Gib den Code ein, den die App anzeigt.",
+      "qrLabel": "QR-Code für die Authenticator-App",
+      "manual": "Kein Scannen möglich? Dieser Schlüssel geht auch:",
+      "copySecret": "Schlüssel kopieren",
+      "code": "Code aus der App",
+      "activate": "Einschalten"
+    },
+    "passkeys": {
+      "title": "Passkeys",
+      "explain": "Fingerabdruck, Gesichtserkennung, Windows Hello oder ein Sicherheitsschlüssel. Kein Code zum Abtippen.",
+      "lastUsed": "Zuletzt benutzt {{time}}",
+      "added": "Hinzugefügt am {{date}}",
+      "remove": "Entfernen",
+      "removed": "Passkey „{{name}}“ entfernt",
+      "add": "Passkey hinzufügen",
+      "addTitle": "Passkey hinzufügen",
+      "addBody": "Gleich fragt dein Browser nach dem Passkey. Gib ihm vorher einen Namen, damit du ihn später wiedererkennst.",
+      "name": "Name",
+      "nameHint": "Zum Beispiel „Laptop“ oder „Sicherheitsschlüssel“.",
+      "create": "Weiter",
+      "addedToast": "Passkey hinzugefügt",
+      "unavailable": "Passkeys lassen sich nur hinzufügen, wenn du das Portal unter {{hostname}} öffnest."
+    },
+    "recovery": {
+      "title": "Wiederherstellungscodes",
+      "left_one": "Noch {{count}} Code übrig.",
+      "left_other": "Noch {{count}} Codes übrig.",
+      "renew": "Neue Codes erstellen",
+      "shownOnce": "Hebe diese Codes gut auf, zum Beispiel ausgedruckt oder im Passwortmanager. Sie werden nur jetzt angezeigt und helfen dir, wenn dein Handy oder Passkey weg ist.",
+      "copy": "Codes kopieren",
+      "saved": "Ich habe sie gespeichert"
+    },
+    "appPasswords": {
+      "title": "App-Passwörter",
+      "new": "Neu",
+      "newTitle": "App-Passwort erstellen",
+      "explain": "Für Mail-Apps auf Handy oder Computer. Jede App bekommt ihr eigenes Passwort, das du jederzeit widerrufen kannst, ohne dein Hauptpasswort zu ändern.",
+      "requiredBySecondFactor": "Mit Zwei-Faktor-Anmeldung melden sich Mail-Apps nur mit App-Passwörtern an.",
+      "requireLabel": "Mail-Apps nur mit App-Passwörtern",
+      "requireHint": "Dein Hauptpasswort funktioniert dann nur noch hier im Portal.",
+      "none": "Noch keine App-Passwörter.",
+      "name": "Wofür?",
+      "nameHint": "Zum Beispiel „Handy“ oder „Thunderbird“.",
+      "scopes": "Erlaubt",
+      "scopeMail": "Mails lesen und verwalten",
+      "scopeMailHint": "Für Mail-Apps mit JMAP. Solche Apps können damit auch senden.",
+      "scopeSmtp": "Mails senden (SMTP)",
+      "scopeSmtpHint": "Für Apps, Drucker oder Skripte, die nur senden.",
+      "expiry": "Gültig",
+      "never": "Ohne Ablauf",
+      "days_one": "{{count}} Tag",
+      "days_other": "{{count}} Tage",
+      "create": "Erstellen",
+      "createdTitle": "App-Passwort erstellt",
+      "createdBody": "Trag das in die App „{{name}}“ ein. Das Passwort wird nur jetzt angezeigt.",
+      "login": "Benutzername",
+      "password": "Passwort",
+      "copy": "Passwort kopieren",
+      "done": "Fertig",
+      "scopeShort": {
+        "mail": "Mails",
+        "smtp": "Senden"
+      },
+      "expired": "Abgelaufen",
+      "lastUsed": "Zuletzt {{time}} über {{protocol}} von {{ip}}",
+      "neverUsed": "Noch nie benutzt",
+      "created": "Erstellt am {{date}}",
+      "expires": "gültig bis {{date}}",
+      "revoke": "Widerrufen",
+      "revokeTitle": "„{{name}}“ widerrufen?",
+      "revokeBody": "Die App kann sich danach nicht mehr anmelden, bis du ein neues App-Passwort einträgst.",
+      "revoked": "„{{name}}“ widerrufen"
+    },
+    "password": {
+      "title": "Passwort ändern",
+      "current": "Aktuelles Passwort",
+      "new": "Neues Passwort",
+      "repeat": "Neues Passwort wiederholen",
+      "hint": "Mindestens 10 Zeichen. Ein Satz aus mehreren Wörtern ist gut zu merken.",
+      "submit": "Passwort ändern",
+      "changed": "Passwort geändert. Andere Browser wurden abgemeldet."
+    },
+    "sessions": {
+      "title": "Angemeldete Browser",
+      "endOthers": "Überall sonst abmelden",
+      "endedOthers_one": "{{count}} anderer Browser abgemeldet",
+      "endedOthers_other": "{{count}} andere Browser abgemeldet",
+      "device": "{{browser}} auf {{system}}",
+      "unknownDevice": "Unbekanntes Gerät",
+      "thisDevice": "Dieses Gerät",
+      "seen": "Zuletzt aktiv {{time}} · {{ip}}",
+      "end": "Abmelden",
+      "ended": "Browser abgemeldet"
+    },
+    "activity": {
+      "title": "Letzte Aktivität",
+      "none": "Noch nichts passiert.",
+      "more_one": "{{count}} weiterer Eintrag",
+      "more_other": "{{count}} weitere Einträge"
+    },
+    "events": {
+      "login": "Angemeldet mit {{method}}",
+      "passwordChanged": "Passwort geändert",
+      "passwordChosenWithLink": "Neues Passwort über einen Link gewählt",
+      "passwordSetByAdmin": "{{actor}} hat ein neues Passwort gesetzt",
+      "totpEnabled": "Authenticator-App eingeschaltet",
+      "totpDisabled": "Authenticator-App ausgeschaltet",
+      "passkeyAdded": "Passkey „{{name}}“ hinzugefügt",
+      "passkeyRemoved": "Passkey „{{name}}“ entfernt",
+      "recoveryCodesCreated": "Neue Wiederherstellungscodes erstellt",
+      "recoveryCodeUsed_one": "Wiederherstellungscode benutzt, noch {{count}} übrig",
+      "recoveryCodeUsed_other": "Wiederherstellungscode benutzt, noch {{count}} übrig",
+      "appPasswordCreated": "App-Passwort „{{name}}“ erstellt",
+      "appPasswordRevoked": "App-Passwort „{{name}}“ widerrufen",
+      "appsNeedAppPassword": "Mail-Apps brauchen jetzt App-Passwörter",
+      "appsMayUseMainPassword": "Mail-Apps dürfen wieder das Hauptpasswort nutzen",
+      "mainPasswordRefused": "Eine Mail-App hat das Hauptpasswort benutzt ({{protocol}}) und wurde abgewiesen",
+      "secondFactorsReset": "{{actor}} hat die Zwei-Faktor-Anmeldung zurückgesetzt",
+      "sessionEnded": "Einen anderen Browser abgemeldet",
+      "sessionsEnded_one": "{{count}} anderen Browser abgemeldet",
+      "sessionsEnded_other": "{{count}} andere Browser abgemeldet",
+      "other": "Änderung an der Sicherheit"
+    },
+    "loginMethods": {
+      "password": "Passwort",
+      "totp": "Passwort und App",
+      "recoveryCode": "Passwort und Wiederherstellungscode",
+      "passkey": "Passwort und Passkey"
     }
   }
 }

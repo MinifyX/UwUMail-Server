@@ -11,6 +11,7 @@ import {
   Menu as MenuIcon,
   Palette,
   Server,
+  ShieldCheck,
   UserRound,
   Users,
   X,
@@ -55,7 +56,8 @@ function NavSection({
       </p>
       {items.map((item) => {
         // The overview only lights up on its own page, sections also on their sub-pages.
-        const active = path === item.to || (item.to !== "/admin" && path.startsWith(`${item.to}/`));
+        const overview = item.to === "/admin" || item.to === "/account";
+        const active = path === item.to || (!overview && path.startsWith(`${item.to}/`));
         return (
           <Link
             key={item.to}
@@ -123,7 +125,10 @@ export function PortalShell({ session, children }: { session: Session; children:
           icon={UserRound}
           path={path}
           onNavigate={() => setDrawer(false)}
-          items={[{ to: "/account", label: t("nav.overview"), icon: LayoutDashboard }]}
+          items={[
+            { to: "/account", label: t("nav.overview"), icon: LayoutDashboard },
+            { to: "/account/security", label: t("nav.security"), icon: ShieldCheck },
+          ]}
         />
         {isAdmin && (
           <NavSection

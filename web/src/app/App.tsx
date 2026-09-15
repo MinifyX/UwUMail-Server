@@ -14,6 +14,7 @@ import { PasswordPage } from "@/features/password/PasswordPage";
 import { PeoplePage } from "@/features/people/PeoplePage";
 import { PersonPage } from "@/features/people/PersonPage";
 import { QueuePage } from "@/features/queue/QueuePage";
+import { SecurityPage } from "@/features/security/SecurityPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { useSession } from "@/features/session/session";
 import { PortalShell } from "@/features/shell/PortalShell";
@@ -41,6 +42,7 @@ function NotFound() {
 /** Pages inside the portal; admin pages only exist for admins. */
 function page(path: string, session: Session): ReactNode {
   if (path === "/account") return <AccountHome session={session} />;
+  if (path === "/account/security") return <SecurityPage session={session} />;
   if (session.account.role !== "admin") return <NotFound />;
   if (path === "/admin") return <AdminHome />;
   if (matchPath("/admin/people", path)) return <PeoplePage session={session} />;

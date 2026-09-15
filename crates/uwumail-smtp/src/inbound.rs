@@ -13,7 +13,9 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 use tokio::time::timeout;
 use tokio_rustls::TlsAcceptor;
-use uwumail_store::{Account, IngestRequest, MailboxRole, MailboxTarget, StoreError};
+use uwumail_store::{
+    Account, AppScope, IngestRequest, MailAuth, MailAuthDenied, MailboxRole, MailboxTarget, StoreError,
+};
 
 use crate::checks::{self, Action};
 use crate::dsn::{self, FailedRecipient};
@@ -550,18 +552,22 @@ impl Session {
     async fn check_credentials(&mut self, login: &str, password: &str) -> std::io::Result<Next> {
         let smtp = self.smtp.clone();
         let ctx = &smtp.inner;
-        match ctx.store.authenticate(login, password).await {
-            Ok(Some(account)) => {
+        let peer = self.peer.to_string();
+        match ctx.store.authenticate_mail(login, password, AppScope::Smtp, "smtp", &peer).await {
+            Ok(MailAuth::Ok { account, app_password }) => {
                 ctx.auth_limiter.record_success(self.peer);
-                tracing::info!(login = %account.login, peer = %self.peer, "smtp login");
+                tracing::info!(login = %account.login, peer = %self.peer, app_password = app_password.is_some(), "smtp login");
                 self.account = Some(account);
                 self.reply("235 2.7.0 Authentication succeeded\r\n").await?;
                 Ok(Next::Continue)
             }
-            Ok(None) => {
-                ctx.auth_limiter.record_failure(self.peer);
+            Ok(MailAuth::Denied(reason)) => {
+                // A phone still using the right account password should not lock out its network.
+                if reason != MailAuthDenied::AppPasswordRequired {
+                    ctx.auth_limiter.record_failure(self.peer);
+                }
                 self.auth_failures += 1;
-                tracing::warn!(%login, peer = %self.peer, "failed smtp login");
+                tracing::warn!(%login, peer = %self.peer, %reason, "failed smtp login");
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 if self.auth_failures >= MAX_AUTH_FAILURES {
                     self.reply("421 4.7.0 Too many failed logins, closing connection\r\n").await?;

@@ -21,14 +21,14 @@ pub async fn overview(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<V
     })))
 }
 
-pub async fn health(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<crate::health::Health>> {
-    Ok(Json(crate::health::health(&web).await?))
+pub async fn health(State(web): State<Web>, Admin(session): Admin) -> ApiResult<Json<crate::health::Health>> {
+    Ok(Json(crate::health::health(&web, &session.account.login).await?))
 }
 
 /// Checks DNS and whether mail can leave right now, then answers like [`health`].
-pub async fn check_health(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<crate::health::Health>> {
+pub async fn check_health(State(web): State<Web>, Admin(session): Admin) -> ApiResult<Json<crate::health::Health>> {
     web.check_health_now().await;
-    Ok(Json(crate::health::health(&web).await?))
+    Ok(Json(crate::health::health(&web, &session.account.login).await?))
 }
 
 #[derive(Deserialize)]

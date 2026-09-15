@@ -21,7 +21,8 @@ export function useDomains() {
 function usePersonUpdated() {
   const queryClient = useQueryClient();
   return (person?: Person) => {
-    if (person) queryClient.setQueryData(["admin", "people", person.login], person);
+    // Change answers leave out the security summary of the detail view, so keep the one we have.
+    if (person) queryClient.setQueryData<Person>(["admin", "people", person.login], (old) => ({ ...old, ...person }));
     void queryClient.invalidateQueries({ queryKey: ["admin", "people"], exact: true });
     void queryClient.invalidateQueries({ queryKey: ["admin", "overview"] });
     void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
@@ -114,6 +115,18 @@ export function useCreatePasswordLink(login: string) {
     mutationFn: () => api<PasswordLinkCreated>(`${personPath(login)}/password-link`, { method: "POST", body: {} }),
     onSuccess: () => updated(),
     onError: (error) => toast(errorText(error), "error"),
+  });
+}
+
+export function useResetSecondFactors(login: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<void>(`${personPath(login)}/reset-second-factors`, { method: "POST", body: {} }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "people", login] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "health"] });
+    },
   });
 }
 

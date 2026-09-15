@@ -55,7 +55,10 @@ Show them again any time with `uwumail-server domain dns example.com`.
 | Sending | `mail.example.com` | 465 | TLS |
 | Sending | `mail.example.com` | 587 | STARTTLS |
 
-Log in with the full address and password. JMAP apps (like UwUMail) only need
+Log in with the full address and password. With a second factor (authenticator
+app or passkey), or when switched on under *Security* in the portal, mail apps
+need an app password instead; the main password then only works in the portal.
+JMAP apps (like UwUMail) only need
 `https://mail.example.com`; they find everything else at `/.well-known/jmap`.
 IMAP follows in a later step (see the roadmap).
 

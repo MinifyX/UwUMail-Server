@@ -88,6 +88,10 @@ pub enum AccountCommand {
     Link {
         address: String,
     },
+    /// Remove the authenticator app, passkeys and recovery codes, e.g. after a lost phone.
+    Reset2fa {
+        address: String,
+    },
     /// Lock someone out; mail to them still arrives.
     Disable {
         address: String,

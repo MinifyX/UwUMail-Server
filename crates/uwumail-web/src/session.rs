@@ -60,6 +60,8 @@ pub struct Session {
     pub csrf_token: String,
     pub token: String,
     pub client: ClientInfo,
+    /// When the person logged in with this session.
+    pub created_at: i64,
 }
 
 impl FromRequestParts<Web> for Session {
@@ -74,7 +76,13 @@ impl FromRequestParts<Web> for Session {
                 return Err(ApiError::CsrfMismatch);
             }
         }
-        Ok(Session { account: session.account, csrf_token: session.csrf_token, token, client: client(parts) })
+        Ok(Session {
+            account: session.account,
+            csrf_token: session.csrf_token,
+            token,
+            client: client(parts),
+            created_at: session.created_at,
+        })
     }
 }
 

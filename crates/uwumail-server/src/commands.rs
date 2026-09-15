@@ -206,6 +206,25 @@ pub async fn account(config: &Config, store: &Store, command: AccountCommand) ->
             println!("Open this link within 7 days to choose a new password for {}:", account.login);
             println!("https://{host}/password/{token}");
         }
+        AccountCommand::Reset2fa { address } => {
+            let Some(account) = store.account(&address).await? else {
+                bail!("there is no account {address}");
+            };
+            if !store.security_overview(account.id).await?.second_factor {
+                println!("{} has no second factor", account.login);
+                return Ok(());
+            }
+            store.reset_second_factors(account.id).await?;
+            audit(store, "account.secondFactorsReset", &account.login, json!({})).await;
+            let event = uwumail_store::SecurityEvent {
+                kind: "secondFactorsReset".into(),
+                actor: "cli".into(),
+                ip: String::new(),
+                details: json!({}),
+            };
+            store.record_security_event(account.id, event).await?;
+            println!("{} logs in with the password only now", account.login);
+        }
         AccountCommand::Disable { address } => {
             store.update_account(&address, AccountUpdate { disabled: Some(true), ..Default::default() }).await?;
             audit(store, "account.update", &address, json!({ "disabled": true })).await;

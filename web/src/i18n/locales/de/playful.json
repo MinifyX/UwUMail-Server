@@ -76,5 +76,16 @@
     },
     "notChecked": "Ich prüfe gleich nach dem Start alles einmal durch.",
     "checking": "Schnupper …"
+  },
+  "secondFactor": {
+    "title": "Noch ein kleiner Schritt (・ω・)"
+  },
+  "security": {
+    "twoFactor": {
+      "on": "Eingeschaltet. Dein Konto ist jetzt doppelt abgeschlossen (=^･ω･^=)"
+    },
+    "recovery": {
+      "saved": "Sicher verstaut ✓"
+    }
   }
 }

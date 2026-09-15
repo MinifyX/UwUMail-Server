@@ -46,7 +46,11 @@ async fn main() -> std::process::ExitCode {
 fn init_logging(config: &Config, serving: bool) -> Arc<LogBuffer> {
     // Management commands only print what matters; the server logs everything at the configured level.
     let level = if serving { config.log.level.as_str() } else { "warn" };
-    let filter = EnvFilter::try_new(level).unwrap_or_else(|_| EnvFilter::new("info"));
+    // While resolving from the root servers, the recursor warns about every missing NS record on the way,
+    // which is normal for names below a zone cut. DNS problems show up in the check results instead.
+    let quiet = "hickory_resolver::recursor=error";
+    let filter =
+        EnvFilter::try_new(format!("{level},{quiet}")).unwrap_or_else(|_| EnvFilter::new(format!("info,{quiet}")));
     let ansi = std::io::IsTerminal::is_terminal(&std::io::stdout());
     let logs = LogBuffer::new(2000);
     let output = match config.log.format {

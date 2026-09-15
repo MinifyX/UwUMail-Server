@@ -21,6 +21,7 @@ mod parse;
 mod password;
 mod query;
 mod queue;
+mod security;
 mod web;
 
 use std::path::{Path, PathBuf};
@@ -42,6 +43,10 @@ pub use mutate::{EmailUpdate, KeywordsChange, MailboxUpdate, MailboxesChange};
 pub use objects::{Changes, EmailRecord};
 pub use query::{EmailFilter, EmailSort, EmailSortProperty};
 pub use queue::{NewQueueRecipient, QueueEntry, QueueRecipient, QueueRecipientStatus, QueuedMessage};
+pub use security::{
+    AppPassword, AppScope, CodeCheck, CreatedAppPassword, MailAuth, MailAuthDenied, NewAppPassword, Passkey,
+    SecurityEvent, SecurityEventRecord, SecurityOverview, TotpSetup, WebSessionInfo,
+};
 pub use web::{NewWebSession, ServerCounts, WebSession};
 
 #[derive(Debug, thiserror::Error)]

@@ -75,13 +75,14 @@ Everyone logs in at the same place and lands in "My account" (`/account`);
 admins also get "Server" (`/admin`). Portal preferences (language, tone,
 Simple/Pro, theme) are stored per account.
 
-The server overview opens with a health check in four areas:
+The server overview opens with a health check in five areas:
 
 - **DNS:** the latest DNS check of each domain.
 - **Certificate:** days left and whether the certificate matches the hostname.
 - **Sending:** failed logins or connections from the queue worker, a delivery
   probe, stuck mail and a high share of bounces.
 - **Storage:** free disk space in the data directory and mailboxes near their limit.
+- **Login:** admins without a second factor.
 
 DNS checks run every six hours. The delivery probe runs hourly for a relay and
 every six hours for direct delivery, and only when no mail went out
@@ -104,6 +105,20 @@ listeners and graceful shutdown, and management commands.
   incoming mail before we add our own.
 - Received headers of submitted mail contain neither the client's IP address
   nor its HELO name (opt-in via `smtp.reveal_client_ip`).
+- Logins from mail apps (JMAP, SMTP) go through one check. App passwords are
+  16 random characters (about 79 bits), so a SHA-256 lookup is enough; they
+  carry scopes ("mail", "smtp"), an optional expiry and when they were last
+  used. The main password is checked with Argon2id and only accepted while the
+  person has no second factor and has not asked for app passwords only. A
+  refused main password shows up in the person's activity list.
+- Second factors: authenticator apps (RFC 6238, SHA-1, 6 digits, ±30 s, each
+  code once) and passkeys (WebAuthn without attestation; ES256, EdDSA, RS256,
+  verified with aws-lc-rs). The first one brings ten recovery codes, stored as
+  SHA-256. Password links replace the password, never the second factor.
+  Sensitive changes (second factors, app passwords) need the password again
+  unless the login or the last confirmation is younger than ten minutes.
+- Changes to someone's login are written to their activity list and put into
+  their inbox as a short notice, so a takeover does not go unnoticed.
 - Web portal sessions: a random token in an `HttpOnly`, `SameSite=Strict`
   cookie (`__Host-` prefixed and `Secure` over HTTPS); only its SHA-256 is
   stored. Requests that change something need the session's CSRF token in

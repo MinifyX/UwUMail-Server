@@ -14,7 +14,7 @@
 mod api;
 mod auth;
 mod blob;
-mod dates;
+pub mod dates;
 mod email;
 mod error;
 mod ids;

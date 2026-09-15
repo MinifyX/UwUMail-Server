@@ -69,7 +69,7 @@ export interface Profile {
 }
 
 export type HealthLevel = "ok" | "unknown" | "warning" | "problem";
-export type HealthAreaName = "dns" | "certificate" | "delivery" | "storage";
+export type HealthAreaName = "dns" | "certificate" | "delivery" | "storage" | "security";
 
 export interface HealthFinding {
   code: string;
@@ -125,6 +125,8 @@ export interface Person {
   deletedAt: number | null;
   purgeAt: number | null;
   addresses: AddressInfo[];
+  /** Only in the detail view. */
+  security?: PersonSecurity;
 }
 
 /** A one-time link to choose a password; `path` is relative to the portal. */
@@ -244,4 +246,81 @@ export interface SettingValue {
 export interface SettingsView {
   settings: SettingValue[];
   configFile: string | null;
+}
+
+/** The first login step when the account has a second factor: no session yet. */
+export interface SecondFactorChallenge {
+  token: string;
+  totp: boolean;
+  passkey: boolean;
+  recoveryCodes: boolean;
+}
+
+export type LoginResult = Session | { secondFactor: SecondFactorChallenge };
+
+export const needsSecondFactor = (result: LoginResult): result is { secondFactor: SecondFactorChallenge } =>
+  "secondFactor" in result;
+
+export type AppScope = "mail" | "smtp";
+
+export interface AppPasswordInfo {
+  id: number;
+  name: string;
+  scopes: AppScope[];
+  createdAt: number;
+  expiresAt: number | null;
+  lastUsedAt: number | null;
+  lastUsedProtocol: string | null;
+  lastUsedIp: string | null;
+}
+
+export interface PasskeyInfo {
+  id: number;
+  name: string;
+  createdAt: number;
+  lastUsedAt: number | null;
+}
+
+export interface WebSessionInfo {
+  id: string;
+  createdAt: number;
+  lastSeenAt: number;
+  ip: string;
+  userAgent: string;
+  current: boolean;
+}
+
+export interface SecurityEventInfo {
+  id: number;
+  at: number;
+  kind: string;
+  actor: string;
+  ip: string;
+  details: Record<string, unknown>;
+}
+
+export interface SecurityView {
+  totp: boolean;
+  passkeys: PasskeyInfo[];
+  recoveryCodesLeft: number;
+  secondFactor: boolean;
+  appsNeedAppPassword: boolean;
+  appPasswordsRequired: boolean;
+  appPasswords: AppPasswordInfo[];
+  sessions: WebSessionInfo[];
+  events: SecurityEventInfo[];
+}
+
+export interface TotpSetup {
+  secret: string;
+  uri: string;
+  qr: { size: number; modules: string } | null;
+}
+
+export interface PersonSecurity {
+  secondFactor: boolean;
+  totp: boolean;
+  passkeys: number;
+  appPasswords: number;
+  appPasswordsRequired: boolean;
 }

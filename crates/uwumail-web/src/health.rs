@@ -99,7 +99,8 @@ pub struct Health {
     pub areas: Vec<Area>,
 }
 
-pub(crate) async fn health(web: &Web) -> ApiResult<Health> {
+/// `viewer` is the admin looking at it, so their own findings can link to their own settings.
+pub(crate) async fn health(web: &Web, viewer: &str) -> ApiResult<Health> {
     let now = unix_now();
     let mut areas = vec![dns_area(web).await?];
     if let Some(certificate) = &web.settings().certificate {
@@ -107,6 +108,7 @@ pub(crate) async fn health(web: &Web) -> ApiResult<Health> {
     }
     areas.push(delivery_area(web, now).await?);
     areas.push(storage_area(web).await?);
+    areas.push(security_area(web, viewer).await?);
     let level = areas.iter().map(|area| area.level).max().unwrap_or(Level::Ok);
     Ok(Health { level, checked_at: web.last_health_check(), areas })
 }
@@ -316,6 +318,25 @@ async fn storage_area(web: &Web) -> ApiResult<Area> {
         ),
     }
     Ok(Area::new("storage", findings))
+}
+
+async fn security_area(web: &Web, viewer: &str) -> ApiResult<Area> {
+    let without = web.store().admins_without_second_factor().await?;
+    let finding = match without.as_slice() {
+        [] => Finding::new("adminsSecure", Level::Ok, Value::Null),
+        [only] if only == viewer => {
+            Finding::new("youWithoutSecondFactor", Level::Warning, Value::Null).link("/account/security")
+        }
+        [only] => Finding::new("adminsWithoutSecondFactor", Level::Warning, json!({ "count": 1, "login": only }))
+            .link(format!("/admin/people/{only}")),
+        [first, ..] => {
+            let link = if without.iter().any(|login| login == viewer) { "/account/security" } else { "/admin/people" };
+            let params =
+                json!({ "count": without.len(), "login": first, "includesYou": without.iter().any(|l| l == viewer) });
+            Finding::new("adminsWithoutSecondFactor", Level::Warning, params).link(link)
+        }
+    };
+    Ok(Area::new("security", vec![finding]))
 }
 
 impl Web {

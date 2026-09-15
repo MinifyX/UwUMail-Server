@@ -292,7 +292,10 @@ impl Store {
             if removed == 0 {
                 return Err(StoreError::NotFound("password link".into()));
             }
-            tx.execute("UPDATE accounts SET password_hash = ?1 WHERE id = ?2", params![hash, link.account.id])?;
+            tx.execute(
+                "UPDATE accounts SET password_hash = ?1, credentials_changed_at = ?2 WHERE id = ?3",
+                params![hash, now(), link.account.id],
+            )?;
             tx.execute("DELETE FROM password_links WHERE account_id = ?1", [link.account.id])?;
             tx.execute("DELETE FROM web_sessions WHERE account_id = ?1", [link.account.id])?;
             Ok(link.account)

@@ -134,6 +134,8 @@ pub struct Account {
     pub created_at: i64,
     /// In the trash since then: cannot log in and receives no mail.
     pub deleted_at: Option<i64>,
+    /// When a password, app password or second factor last changed. Cached logins from before end.
+    pub credentials_changed_at: i64,
 }
 
 impl Account {
@@ -153,9 +155,9 @@ pub struct NewAccount {
 }
 
 pub(crate) const ACCOUNT_COLUMNS: &str =
-    "id, login, display_name, role, quota_bytes, used_bytes, disabled, created_at, deleted_at";
+    "id, login, display_name, role, quota_bytes, used_bytes, disabled, created_at, deleted_at, credentials_changed_at";
 /// Number of columns in [`ACCOUNT_COLUMNS`]; extra columns of a query start here.
-pub(crate) const ACCOUNT_COLUMN_COUNT: usize = 9;
+pub(crate) const ACCOUNT_COLUMN_COUNT: usize = 10;
 
 pub(crate) fn account_from_row(row: &Row<'_>) -> rusqlite::Result<Account> {
     Ok(Account {
@@ -168,6 +170,7 @@ pub(crate) fn account_from_row(row: &Row<'_>) -> rusqlite::Result<Account> {
         disabled: row.get(6)?,
         created_at: row.get(7)?,
         deleted_at: row.get(8)?,
+        credentials_changed_at: row.get(9)?,
     })
 }
 
@@ -492,6 +495,7 @@ impl Store {
                 disabled: false,
                 created_at,
                 deleted_at: None,
+                credentials_changed_at: 0,
             })
         })
         .await
@@ -548,8 +552,10 @@ impl Store {
             .await
             .map_err(|err| StoreError::Internal(err.to_string()))??;
         self.write(move |tx| {
-            let changed =
-                tx.execute("UPDATE accounts SET password_hash = ?1 WHERE login = ?2", params![hash, login])?;
+            let changed = tx.execute(
+                "UPDATE accounts SET password_hash = ?1, credentials_changed_at = ?2 WHERE login = ?3",
+                params![hash, now(), login],
+            )?;
             if changed == 0 {
                 return Err(StoreError::NotFound(format!("account {login}")));
             }

@@ -38,6 +38,8 @@ const HINTS = new Set([
   "manyBounces",
   "diskLow",
   "mailboxesNearlyFull",
+  "adminsWithoutSecondFactor",
+  "youWithoutSecondFactor",
 ]);
 
 function useFindingText() {

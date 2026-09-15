@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, setCsrfToken, type Info, type Session } from "@/lib/api";
+import { api, needsSecondFactor, setCsrfToken, type Info, type LoginResult, type Session } from "@/lib/api";
+import { assertPasskey, type RequestOptionsJson } from "@/lib/webauthn";
 import { navigate } from "@/lib/router";
 import { usePrefs, type Prefs } from "@/state/prefs";
 
@@ -25,16 +26,50 @@ export function useInfo() {
   return useQuery({ queryKey: ["info"], queryFn: () => api<Info>("/api/info"), staleTime: Infinity });
 }
 
-export function useLogin() {
+/** Takes over a fresh session and leaves the login page. */
+export function useStartSession() {
   const queryClient = useQueryClient();
+  return (session: Session, to = "/account") => {
+    queryClient.setQueryData(["session"], adopt(session));
+    const path = window.location.pathname;
+    if (path === "/" || path === "/login" || path === "/setup" || path.startsWith("/password/")) {
+      navigate(to, { replace: true });
+    }
+  };
+}
+
+/** The password step. Accounts with a second factor get a challenge instead of a session. */
+export function useLogin() {
+  const start = useStartSession();
   return useMutation({
     mutationFn: (credentials: { login: string; password: string }) =>
-      api<Session>("/api/auth/login", { method: "POST", body: credentials }),
-    onSuccess: (session) => {
-      queryClient.setQueryData(["session"], adopt(session));
-      const path = window.location.pathname;
-      if (path === "/" || path === "/login" || path === "/setup") navigate("/account", { replace: true });
+      api<LoginResult>("/api/auth/login", { method: "POST", body: credentials }),
+    onSuccess: (result) => {
+      if (!needsSecondFactor(result)) start(result);
     },
+  });
+}
+
+/** The second step with a code from the authenticator app or a recovery code. */
+export function useSecondFactorCode() {
+  const start = useStartSession();
+  return useMutation({
+    mutationFn: (request: { token: string; code: string }) =>
+      api<Session>("/api/auth/second-factor", { method: "POST", body: request }),
+    onSuccess: (session) => start(session),
+  });
+}
+
+/** The second step with a passkey: the browser asks for it, the server checks the signature. */
+export function usePasskeyLogin() {
+  const start = useStartSession();
+  return useMutation({
+    mutationFn: async (token: string) => {
+      const options = await api<RequestOptionsJson>("/api/auth/passkey/options", { method: "POST", body: { token } });
+      const credential = await assertPasskey(options);
+      return api<Session>("/api/auth/passkey", { method: "POST", body: { token, credential } });
+    },
+    onSuccess: (session) => start(session),
   });
 }
 

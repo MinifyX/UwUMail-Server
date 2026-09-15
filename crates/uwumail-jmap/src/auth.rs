@@ -1,9 +1,10 @@
-//! HTTP authentication for JMAP: Basic with the account password, cached briefly.
+//! HTTP authentication for JMAP: Basic with an app password or the account password. Logins with
+//! the account password are cached briefly, because checking it is slow on purpose.
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -11,7 +12,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use uwumail_store::{Account, Store};
+use uwumail_store::{Account, AppScope, MailAuth, MailAuthDenied, Store};
 
 const CACHE_LIFETIME: Duration = Duration::from_secs(300);
 const FAILURE_WINDOW: Duration = Duration::from_secs(15 * 60);
@@ -62,7 +63,8 @@ impl IntoResponse for AuthError {
 pub struct Authenticator {
     store: Store,
     secret: [u8; 32],
-    cache: Mutex<HashMap<[u8; 32], (i64, Instant)>>,
+    /// Account id, when it was cached, and the same as a Unix time to compare with password changes.
+    cache: Mutex<HashMap<[u8; 32], (i64, Instant, i64)>>,
     failures: Mutex<HashMap<IpAddr, (u32, Instant)>>,
 }
 
@@ -124,12 +126,17 @@ impl Authenticator {
 
         let key = self.cache_key(login, password);
         let cached = self.cache.lock().expect("auth cache poisoned").get(&key).copied();
-        if let Some((account_id, since)) = cached
+        if let Some((account_id, since, cached_at)) = cached
             && since.elapsed() < CACHE_LIFETIME
         {
             match self.store.account_by_id(account_id).await {
-                Ok(Some(account)) if account.can_log_in() => return Ok(account),
-                Ok(_) => {}
+                // A new password, app password rule or second factor since then ends the cached login.
+                Ok(Some(account)) if account.can_log_in() && account.credentials_changed_at < cached_at => {
+                    return Ok(account);
+                }
+                Ok(_) => {
+                    self.cache.lock().expect("auth cache poisoned").remove(&key);
+                }
                 Err(_) => return Err(AuthError::Internal),
             }
         }
@@ -137,18 +144,26 @@ impl Authenticator {
         if self.blocked(client.ip) {
             return Err(AuthError::Blocked);
         }
-        match self.store.authenticate(login, password).await {
-            Ok(Some(account)) => {
-                let mut cache = self.cache.lock().expect("auth cache poisoned");
-                if cache.len() > 10_000 {
-                    cache.retain(|_, (_, since)| since.elapsed() < CACHE_LIFETIME);
+        let ip = client.ip.to_string();
+        match self.store.authenticate_mail(login, password, AppScope::Mail, "jmap", &ip).await {
+            Ok(MailAuth::Ok { account, app_password }) => {
+                // App passwords are a quick lookup; only the slow account password is worth caching.
+                if app_password.is_none() {
+                    let mut cache = self.cache.lock().expect("auth cache poisoned");
+                    if cache.len() > 10_000 {
+                        cache.retain(|_, (_, since, _)| since.elapsed() < CACHE_LIFETIME);
+                    }
+                    let unix = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+                    cache.insert(key, (account.id, Instant::now(), unix));
                 }
-                cache.insert(key, (account.id, Instant::now()));
                 Ok(account)
             }
-            Ok(None) => {
-                self.record_failure(client.ip);
-                tracing::warn!(%login, ip = %client.ip, "failed JMAP login");
+            Ok(MailAuth::Denied(reason)) => {
+                // A phone still using the right account password should not lock out its network.
+                if reason != MailAuthDenied::AppPasswordRequired {
+                    self.record_failure(client.ip);
+                }
+                tracing::warn!(%login, ip = %client.ip, %reason, "failed JMAP login");
                 Err(AuthError::Invalid)
             }
             Err(err) => {

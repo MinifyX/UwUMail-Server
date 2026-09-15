@@ -13,7 +13,12 @@ uwumail-jmap.workspace = true
 uwumail-smtp.workspace = true
 uwumail-store.workspace = true
 
+aws-lc-rs.workspace = true
 axum.workspace = true
+data-encoding.workspace = true
+getrandom.workspace = true
+mail-builder.workspace = true
+qrcode.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

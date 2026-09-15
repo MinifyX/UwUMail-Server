@@ -10,6 +10,7 @@ use uwumail_store::{AccountUpdate, NewAccount, PasswordLinkPurpose, Person, Role
 use super::{audit, check_password};
 use crate::Web;
 use crate::error::{ApiError, ApiResult};
+use crate::notices::{Notice, Origin, notify};
 use crate::session::Admin;
 
 /// Invitation and reset links work this long.
@@ -54,7 +55,35 @@ pub async fn list(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Value
 }
 
 pub async fn detail(State(web): State<Web>, _admin: Admin, Path(login): Path<String>) -> ApiResult<Json<Value>> {
-    Ok(Json(person_json(&load(&web, &login).await?)))
+    let person = load(&web, &login).await?;
+    let security = web.store().security_overview(person.account.id).await?;
+    let app_passwords = web.store().app_passwords(person.account.id).await?.len();
+    let mut value = person_json(&person);
+    value["security"] = json!({
+        "secondFactor": security.second_factor,
+        "totp": security.totp,
+        "passkeys": security.passkeys,
+        "appPasswords": app_passwords,
+        "appPasswordsRequired": security.app_passwords_required(),
+    });
+    Ok(Json(value))
+}
+
+/// For someone who lost their phone and their recovery codes: they log in with the password again.
+pub async fn reset_second_factors(
+    State(web): State<Web>,
+    Admin(session): Admin,
+    Path(login): Path<String>,
+) -> ApiResult<StatusCode> {
+    let person = load(&web, &login).await?;
+    if !web.store().security_overview(person.account.id).await?.second_factor {
+        return Err(ApiError::Rule("noSecondFactor", format!("{} has no second factor", person.account.login)));
+    }
+    web.store().reset_second_factors(person.account.id).await?;
+    audit(&web, &session, "account.secondFactorsReset", &person.account.login, json!({})).await;
+    let ip = session.client.ip.to_string();
+    notify(&web, &person.account, Notice::SecondFactorsReset, Origin { actor: &session.account.login, ip: &ip }).await;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]
@@ -240,6 +269,8 @@ pub async fn set_password(
     web.store().set_password(&person.account.login, &new.password).await?;
     web.store().delete_web_sessions(person.account.id).await?;
     audit(&web, &session, "account.passwordSet", &person.account.login, json!({})).await;
+    let ip = session.client.ip.to_string();
+    notify(&web, &person.account, Notice::PasswordSetByAdmin, Origin { actor: &session.account.login, ip: &ip }).await;
     Ok(StatusCode::NO_CONTENT)
 }
 

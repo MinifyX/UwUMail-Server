@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { ArrowLeft, KeyRound, Lock, LockOpen, Plus, RotateCcw, Trash2, X } from "lucide-react";
+import { ArrowLeft, KeyRound, Lock, LockOpen, Plus, RotateCcw, ShieldCheck, ShieldOff, Trash2, X } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button, IconButton } from "@/components/ui/Button";
@@ -22,6 +22,7 @@ import {
   usePerson,
   usePurgePerson,
   useRemoveAlias,
+  useResetSecondFactors,
   useRestorePerson,
   useSetPassword,
   useTrashPerson,
@@ -221,6 +222,89 @@ function Access({ person }: { person: Person }) {
   );
 }
 
+/** What protects the login, and a way out for someone who lost their second factor. */
+function SecurityInfo({ person, isMe }: { person: Person; isMe: boolean }) {
+  const { t } = useT();
+  const errorText = useErrorText();
+  const reset = useResetSecondFactors(person.login);
+  const [asking, setAsking] = useState(false);
+  const security = person.security;
+  if (!security) return null;
+  const methods = [
+    security.totp && t("people.security.totp"),
+    security.passkeys > 0 && t("people.security.passkeys", { count: security.passkeys }),
+  ].filter(Boolean);
+
+  return (
+    <Card title={t("people.security.title")}>
+      <div className="flex flex-col gap-3">
+        <p className="flex items-start gap-2 text-sm">
+          {security.secondFactor ? (
+            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+          ) : (
+            <ShieldOff className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
+          )}
+          <span>
+            {security.secondFactor
+              ? t("people.security.on", { methods: methods.join(", ") })
+              : t("people.security.off")}
+          </span>
+        </p>
+        <p className="text-[13px] text-muted">
+          {t("people.security.appPasswords", { count: security.appPasswords })}
+          {security.appPasswordsRequired && ` · ${t("people.security.appsOnly")}`}
+        </p>
+        {security.secondFactor && !isMe && (
+          <div className="flex flex-col items-start gap-2 border-t border-hairline pt-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <p className="min-w-0 flex-1 text-[13px] text-muted">{t("people.security.resetHint")}</p>
+            <Button icon={ShieldOff} onClick={() => setAsking(true)}>
+              {t("people.security.reset")}
+            </Button>
+          </div>
+        )}
+        {isMe && (
+          <Link to="/account/security" className="self-start text-[13px] font-semibold text-pink-ink hover:underline">
+            {t("people.security.yours")}
+          </Link>
+        )}
+      </div>
+      <Dialog
+        open={asking}
+        onClose={() => setAsking(false)}
+        title={t("people.security.resetTitle", { login: person.login })}
+        width="sm"
+      >
+        <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
+          <p className="text-sm text-muted">{t("people.security.resetBody")}</p>
+          {reset.isError && (
+            <p role="alert" className="text-[13px] text-danger">
+              {errorText(reset.error)}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setAsking(false)}>{t("common.cancel")}</Button>
+            <Button
+              variant="danger"
+              icon={ShieldOff}
+              busy={reset.isPending}
+              onClick={() =>
+                reset.mutate(undefined, {
+                  onSuccess: () => {
+                    toast(t("people.toasts.secondFactorsReset", { login: person.login }), "success");
+                    setAsking(false);
+                  },
+                })
+              }
+            >
+              {t("people.security.reset")}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    </Card>
+  );
+}
+
 function PurgeDialog({ person, open, onClose }: { person: Person; open: boolean; onClose: () => void }) {
   const { t } = useT();
   const errorText = useErrorText();
@@ -380,6 +464,8 @@ export function PersonPage({ login, session }: { login: string; session: Session
         <Addresses person={person} editable={!deleted} />
 
         {!deleted && <Access person={person} />}
+
+        {!deleted && <SecurityInfo person={person} isMe={isMe} />}
 
         {!isMe && (
           <Card title={t("people.detail.danger")}>
