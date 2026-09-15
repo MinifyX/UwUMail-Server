@@ -55,6 +55,29 @@ pub enum SubmitError {
     Queue(StoreError),
 }
 
+/// The author (`From`) and submitter (`Sender`) addresses a message claims, which all have to
+/// belong to the sending account. RFC 5322 §3.6.2 allows exactly one `From`; a hidden second
+/// `From` header, or a forged `Sender`, must never let a login send mail that displays as
+/// another person, so more than one `From` is refused here and the `Sender` is returned for the
+/// same ownership check as the `From`.
+fn claimed_addresses(raw: &[u8]) -> Result<(Vec<String>, Vec<String>), SubmitError> {
+    if headers::count(raw, "From") > 1 {
+        return Err(SubmitError::NoFrom);
+    }
+    let parsed = MessageParser::new().parse_headers(raw);
+    let addresses = |value: Option<&mail_parser::Address<'_>>| -> Vec<String> {
+        value
+            .map(|list| list.iter().filter_map(|a| a.address.as_deref().map(str::to_owned)).collect())
+            .unwrap_or_default()
+    };
+    let from = parsed.as_ref().map(|m| addresses(m.from())).unwrap_or_default();
+    if from.is_empty() {
+        return Err(SubmitError::NoFrom);
+    }
+    let sender = parsed.as_ref().map(|m| addresses(m.sender())).unwrap_or_default();
+    Ok((from, sender))
+}
+
 /// Removes Bcc headers: blind copies must not show up for anyone.
 fn strip_bcc(raw: &[u8]) -> Vec<u8> {
     let (fields, _) = headers::split(raw);
@@ -82,14 +105,10 @@ impl Smtp {
             return Err(SubmitError::ForbiddenFrom(mail_from));
         }
         let raw = headers::normalize_line_endings(&raw);
-        let from: Vec<String> = MessageParser::new()
-            .parse_headers(&raw)
-            .and_then(|m| m.from().map(|f| f.iter().filter_map(|a| a.address.as_deref().map(str::to_owned)).collect()))
-            .unwrap_or_default();
-        if from.is_empty() {
-            return Err(SubmitError::NoFrom);
-        }
-        for address in &from {
+        let (from, sender) = claimed_addresses(&raw)?;
+        // Every address the message shows as its author or submitter must belong to this account,
+        // so a login cannot send mail that displays as someone else.
+        for address in from.iter().chain(&sender) {
             if !ctx.store.account_owns_address(account.id, address).await.unwrap_or(false) {
                 return Err(SubmitError::ForbiddenFrom(address.clone()));
             }
@@ -205,5 +224,31 @@ mod tests {
     fn strips_bcc_headers() {
         let raw = b"From: a@x\r\nBcc: secret@x,\r\n other@x\r\nSubject: hi\r\n\r\nBcc: stays in the body\r\n";
         assert_eq!(strip_bcc(raw), b"From: a@x\r\nSubject: hi\r\n\r\nBcc: stays in the body\r\n");
+    }
+
+    fn err(raw: &[u8]) -> Option<SubmitError> {
+        claimed_addresses(raw).err()
+    }
+
+    #[test]
+    fn every_from_and_sender_address_is_returned_for_checking() {
+        let (from, sender) =
+            claimed_addresses(b"From: Mini <mini@a.test>\r\nTo: x@y\r\nSubject: hi\r\n\r\nhi\r\n").unwrap();
+        assert_eq!(from, ["mini@a.test"]);
+        assert!(sender.is_empty());
+
+        // A Sender header naming someone else is returned, so the caller refuses it.
+        let (from, sender) =
+            claimed_addresses(b"From: mini@a.test\r\nSender: ami@a.test\r\nSubject: hi\r\n\r\nhi\r\n").unwrap();
+        assert_eq!(from, ["mini@a.test"]);
+        assert_eq!(sender, ["ami@a.test"]);
+    }
+
+    #[test]
+    fn a_hidden_second_from_header_is_refused() {
+        // Only the last From is parsed, but the first is delivered and shown: refuse the message.
+        assert!(matches!(err(b"From: ami@a.test\r\nFrom: mini@a.test\r\nSubject: hi\r\n\r\nhi\r\n"), Some(SubmitError::NoFrom)));
+        assert!(matches!(err(b"From: mini@a.test\r\nFrom: ami@a.test\r\nSubject: hi\r\n\r\nhi\r\n"), Some(SubmitError::NoFrom)));
+        assert!(matches!(err(b"Subject: no from\r\n\r\nhi\r\n"), Some(SubmitError::NoFrom)));
     }
 }
