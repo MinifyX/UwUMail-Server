@@ -452,7 +452,9 @@ async fn reports_are_read_by_the_server_instead_of_landing_in_a_mailbox() {
         let mut session = RawSession::connect(a.mx).await;
         assert!(session.command("EHLO mx.reporter.test").await.starts_with("250"));
         assert!(session.command("MAIL FROM:<reports@reporter.test>").await.starts_with("250"));
-        assert!(session.command(&format!("RCPT TO:<{to}>")).await.starts_with("250"));
+        // Every reply line ends with CRLF, report addresses included (audit finding S-3).
+        let accepted = session.command(&format!("RCPT TO:<{to}>")).await;
+        assert!(accepted.starts_with("250") && accepted.ends_with("\r\n"), "{accepted:?}");
         assert!(session.command("DATA").await.starts_with("354"));
         let message = format!(
             "From: reports@reporter.test\r\nTo: {to}\r\nSubject: Report Domain: a.test\r\nMIME-Version: 1.0\r\n\
