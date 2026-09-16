@@ -194,6 +194,16 @@ async fn collect_garbage(store: Store, mut shutdown: watch::Receiver<bool>) {
             Ok(removed) => tracing::info!(removed, "removed old DMARC and TLS reports"),
             Err(err) => tracing::warn!(%err, "removing old reports failed"),
         }
+        let spam_history = store.prune_spam_history(
+            uwumail_store::GREYLIST_WAITING_SECS,
+            uwumail_store::GREYLIST_PASSED_SECS,
+            uwumail_store::REPUTATION_RETENTION_SECS,
+        );
+        match spam_history.await {
+            Ok(0) => {}
+            Ok(removed) => tracing::info!(removed, "forgot old greylisting and sender reputation entries"),
+            Err(err) => tracing::warn!(%err, "cleaning up greylisting and sender reputation failed"),
+        }
         match store.collect_garbage(3600).await {
             Ok(0) => {}
             Ok(removed) => tracing::info!(removed, "removed unused message files"),

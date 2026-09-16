@@ -5,6 +5,14 @@ use serde::Serialize;
 
 use crate::{Result, Store, now};
 
+/// Greylisted senders that never came back are forgotten after two days.
+pub const GREYLIST_WAITING_SECS: i64 = 2 * 24 * 3600;
+/// Senders that passed greylisting stay known while they keep sending, and are forgotten after
+/// 35 quiet days, like postgrey does.
+pub const GREYLIST_PASSED_SECS: i64 = 35 * 24 * 3600;
+/// What a sender delivered is forgotten after 180 days without mail from it.
+pub const REPUTATION_RETENTION_SECS: i64 = 180 * 24 * 3600;
+
 /// What should happen with a message whose sender is being greylisted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Greylist {
@@ -88,15 +96,23 @@ impl Store {
         .await
     }
 
-    /// Forgets greylist entries nobody came back for, and passed ones that stopped sending.
-    pub async fn prune_greylist(&self, waiting_secs: i64, passed_secs: i64) -> Result<usize> {
+    /// Forgets greylist entries nobody came back for, passed ones that stopped sending, and the
+    /// reputation of senders that have been quiet for long. Returns how many rows went.
+    pub async fn prune_spam_history(
+        &self,
+        greylist_waiting_secs: i64,
+        greylist_passed_secs: i64,
+        reputation_secs: i64,
+    ) -> Result<usize> {
         self.write(move |tx| {
             let now = now();
-            let removed = tx.execute(
+            let mut removed = tx.execute(
                 "DELETE FROM spam_greylist
                  WHERE (passed_at IS NULL AND last_seen < ?1) OR (passed_at IS NOT NULL AND last_seen < ?2)",
-                params![now - waiting_secs, now - passed_secs],
+                params![now - greylist_waiting_secs, now - greylist_passed_secs],
             )?;
+            removed +=
+                tx.execute("DELETE FROM spam_reputation WHERE updated_at < ?1", params![now - reputation_secs])?;
             Ok(removed)
         })
         .await
@@ -151,6 +167,26 @@ mod tests {
         assert_eq!(store.greylist(network, sender, recipient, 0).await.unwrap(), Greylist::Pass);
         let (network, sender, recipient) = triplet();
         assert_eq!(store.greylist(network, sender, recipient, 300).await.unwrap(), Greylist::Pass);
+    }
+
+    #[tokio::test]
+    async fn old_greylist_entries_and_reputation_are_forgotten() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).await.unwrap();
+        let (network, sender) = ("192.0.2.0/24".to_owned(), "news@example.com".to_owned());
+        // One sender still waiting, one that came back and passed, and a reputation entry.
+        store.greylist(network.clone(), sender.clone(), "a@uwu.test".into(), 300).await.unwrap();
+        store.greylist(network.clone(), sender.clone(), "b@uwu.test".into(), 300).await.unwrap();
+        store.greylist(network, sender, "b@uwu.test".into(), 0).await.unwrap();
+        store.record_reputation("domain:example.com".into(), false).await.unwrap();
+
+        let long = 365 * 24 * 3600;
+        assert_eq!(store.prune_spam_history(long, long, long).await.unwrap(), 0, "nothing is old yet");
+        // A negative age puts the cut-off in the future, so it catches everything of that kind.
+        assert_eq!(store.prune_spam_history(-1, long, long).await.unwrap(), 1, "only the waiting entry");
+        assert_eq!(store.prune_spam_history(long, -1, long).await.unwrap(), 1, "then the passed one");
+        assert_eq!(store.prune_spam_history(long, long, -1).await.unwrap(), 1, "then the reputation");
+        assert_eq!(store.reputation("domain:example.com".into()).await.unwrap().good, 0);
     }
 
     #[tokio::test]

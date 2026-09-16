@@ -58,7 +58,7 @@ pub use security::{
     AppPassword, AppScope, CodeCheck, CreatedAppPassword, MailAuth, MailAuthDenied, NewAppPassword, Passkey,
     SecurityEvent, SecurityEventRecord, SecurityOverview, TotpSetup, WebSessionInfo,
 };
-pub use spam::{Greylist, Reputation};
+pub use spam::{GREYLIST_PASSED_SECS, GREYLIST_WAITING_SECS, Greylist, REPUTATION_RETENTION_SECS, Reputation};
 pub use web::{NewWebSession, ServerCounts, WebSession};
 
 #[derive(Debug, thiserror::Error)]
