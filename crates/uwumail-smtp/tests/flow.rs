@@ -13,7 +13,7 @@ use rustls_pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
-use uwumail_smtp::{DeliveryConfig, ListenerKind, Smtp, SmtpConfig, SmtpSettings, ToneConfig};
+use uwumail_smtp::{DeliveryConfig, ListenerKind, Smtp, SmtpConfig, SmtpSettings, SpamConfig, ToneConfig};
 use uwumail_store::{EmailSummary, MailboxRole, NewAccount, Role, Store};
 
 const PASSWORD: &str = "katzenpfote-123";
@@ -45,6 +45,17 @@ async fn start(domain: &str, users: &[&str], routes: &[(&str, SocketAddr)]) -> T
 }
 
 async fn start_with(domain: &str, users: &[&str], routes: &[(&str, SocketAddr)], config: SmtpConfig) -> TestServer {
+    let spam = SpamConfig { enabled: false, ..SpamConfig::default() };
+    start_with_spam(domain, users, routes, config, spam).await
+}
+
+async fn start_with_spam(
+    domain: &str,
+    users: &[&str],
+    routes: &[(&str, SocketAddr)],
+    config: SmtpConfig,
+    spam: SpamConfig,
+) -> TestServer {
     let _ = tracing_subscriber::fmt().with_env_filter("debug").with_test_writer().try_init();
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
@@ -72,6 +83,7 @@ async fn start_with(domain: &str, users: &[&str], routes: &[(&str, SocketAddr)],
         SmtpSettings {
             hostname: hostname.clone(),
             smtp: config,
+            spam,
             delivery,
             tone: ToneConfig::default(),
             server_tls: Some(server_tls(&["localhost", &hostname])),
@@ -496,4 +508,110 @@ async fn forged_mail_from_a_domain_that_quarantines_it_goes_to_junk() {
     assert!(reply.starts_with("250"), "{reply}");
     assert!(a.inbox("mini@a.test").await.is_empty(), "a quarantined forgery stays out of the inbox");
     assert_eq!(a.mailbox("mini@a.test", MailboxRole::Junk).await.len(), 1);
+}
+
+/// A server behind a trusted relay on 127.0.0.1. The sender's SPF record does not allow the
+/// address the relay got the message from, so the filter has something to count without asking
+/// blocklists. The reverse name of that address may or may not resolve here; the thresholds in the
+/// tests hold either way.
+async fn spam_test_server(spam: SpamConfig, dmarc: Option<&str>) -> TestServer {
+    let config = SmtpConfig { trusted_relays: vec!["127.0.0.1".into()], ..SmtpConfig::default() };
+    let spam = SpamConfig { blocklists: false, greylist_delay_secs: 0, ..spam };
+    let a = start_with_spam("a.test", &["mini"], &[], config, spam).await;
+    a.smtp.dns_cache().pin_txt("sender.test", "v=spf1 ip4:198.51.100.1 -all").unwrap();
+    a.smtp.dns_cache().pin_no_txt("mail.sender.test");
+    match dmarc {
+        Some(record) => a.smtp.dns_cache().pin_txt("_dmarc.sender.test", record).unwrap(),
+        None => a.smtp.dns_cache().pin_no_txt("_dmarc.sender.test"),
+    }
+    a
+}
+
+/// Hands in a message that the relay received from 203.0.113.7; returns the reply to the data.
+async fn relay_from_outside(server: &TestServer) -> String {
+    let mut session = RawSession::connect(server.mx).await;
+    assert!(session.command("EHLO relay.local").await.starts_with("250"));
+    assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+    assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
+    assert!(session.command("DATA").await.starts_with("354"));
+    session
+        .command(
+            "Received: from mail.sender.test (mail.sender.test [203.0.113.7])\r\n\
+             \tby relay.local (Postfix) with ESMTPS id 4F2;\r\n\
+             \tMon, 14 Sep 2026 10:00:00 +0200\r\n\
+             X-Spam-Status: No, score=-99.0\r\n\
+             From: news@sender.test\r\nSubject: Nur heute\r\n\r\nAngebot\r\n.",
+        )
+        .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn suspicious_mail_is_greylisted_once_and_then_delivered_with_its_score() {
+    let a = spam_test_server(SpamConfig::default(), None).await;
+
+    let first = relay_from_outside(&a).await;
+    assert!(first.starts_with("451 4.7.1"), "a suspicious first attempt has to wait: {first}");
+    assert!(a.inbox("mini@a.test").await.is_empty());
+
+    let retry = relay_from_outside(&a).await;
+    assert!(retry.starts_with("250"), "the retry is let through: {retry}");
+    let inbox = a.inbox("mini@a.test").await;
+    assert_eq!(inbox.len(), 1);
+    let raw = a.raw(&inbox[0]).await;
+    assert!(raw.contains("X-Spam-Status: No, score="), "{raw}");
+    assert!(raw.contains("tests=SPF_FAIL,NO_AUTH"), "{raw}");
+    assert_eq!(raw.matches("X-Spam-Status:").count(), 1, "the sender's own verdict is gone: {raw}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn mail_over_the_junk_score_is_filed_as_junk_and_counts_against_the_sender() {
+    // A published DMARC policy that both alignments fail adds enough for Junk; p=none alone
+    // would let it into the inbox.
+    let a = spam_test_server(SpamConfig::default(), Some("v=DMARC1; p=none")).await;
+
+    let reply = relay_from_outside(&a).await;
+    assert!(reply.starts_with("250"), "junk is accepted, not refused: {reply}");
+    assert!(a.inbox("mini@a.test").await.is_empty());
+    let junk = a.mailbox("mini@a.test", MailboxRole::Junk).await;
+    assert_eq!(junk.len(), 1);
+    let raw = a.raw(&junk[0]).await;
+    assert!(raw.contains("X-Spam-Status: Yes, score="), "{raw}");
+    assert!(raw.contains("DMARC_FAIL"), "{raw}");
+
+    // The sender is not vouched for by DMARC, so its network carries the count.
+    let reputation = a.smtp.store().reputation("network:203.0.113.0/24".into()).await.unwrap();
+    assert_eq!((reputation.good, reputation.junk), (0, 1));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn mail_is_only_refused_once_a_reject_score_is_set() {
+    let spam = SpamConfig { reject_score: Some(5.0), ..SpamConfig::default() };
+    let a = spam_test_server(spam, Some("v=DMARC1; p=none")).await;
+
+    let reply = relay_from_outside(&a).await;
+    assert!(reply.starts_with("550 5.7.1"), "{reply}");
+    assert!(a.mailbox("mini@a.test", MailboxRole::Junk).await.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn mail_from_our_own_network_is_not_judged() {
+    // Every judged message would be junk with these numbers.
+    let spam = SpamConfig { greylist_score: 0.0, junk_score: 0.0, ..SpamConfig::default() };
+    let a = start_with_spam("a.test", &["mini"], &[], SmtpConfig::default(), spam).await;
+    a.smtp.dns_cache().pin_txt("sender.test", "v=spf1 ip4:198.51.100.1 -all").unwrap();
+    for name in ["mail.sender.test", "_dmarc.sender.test"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+
+    let mut session = RawSession::connect(a.mx).await;
+    assert!(session.command("EHLO mail.sender.test").await.starts_with("250"));
+    assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+    assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
+    assert!(session.command("DATA").await.starts_with("354"));
+    let reply = session.command("From: news@sender.test\r\nSubject: Scan\r\n\r\nPDF\r\n.").await;
+    assert!(reply.starts_with("250"), "{reply}");
+
+    let inbox = a.inbox("mini@a.test").await;
+    assert_eq!(inbox.len(), 1, "127.0.0.1 is in our own network");
+    assert!(!a.raw(&inbox[0]).await.contains("X-Spam-"));
 }

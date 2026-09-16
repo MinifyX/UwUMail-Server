@@ -63,6 +63,7 @@ pub async fn run(
         SmtpSettings {
             hostname: config.hostname.clone(),
             smtp: config.smtp.clone(),
+            spam: config.spam.clone(),
             delivery: config.delivery.clone(),
             tone: config.tone,
             server_tls: Some(tls::mail_server_config(certs.clone())?),

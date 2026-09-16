@@ -17,7 +17,8 @@ impl SettingsBackend for ServerSettings {
     fn view(&self, overlay: &Value) -> Result<Vec<SettingValue>, String> {
         let config = Config::load_with_overlay(self.path.as_deref(), overlay).map_err(|err| format!("{err:#}"))?;
         let fixed = Config::file_and_environment(self.path.as_deref()).map_err(|err| format!("{err:#}"))?;
-        let effective = json!({ "smtp": config.smtp, "delivery": config.delivery, "tone": config.tone });
+        let effective =
+            json!({ "smtp": config.smtp, "spam": config.spam, "delivery": config.delivery, "tone": config.tone });
         Ok(SETTINGS
             .iter()
             .map(|spec| {
@@ -39,7 +40,9 @@ impl SettingsBackend for ServerSettings {
     fn apply(&self, overlay: &Value) -> Result<(), String> {
         let config = Config::load_with_overlay(self.path.as_deref(), overlay).map_err(|err| format!("{err:#}"))?;
         config.validate().map_err(|err| format!("{err:#}"))?;
-        self.smtp.update_settings(config.smtp, config.delivery, config.tone).map_err(|err| err.to_string())?;
+        self.smtp
+            .update_settings(config.smtp, config.spam, config.delivery, config.tone)
+            .map_err(|err| err.to_string())?;
         tracing::info!("settings from the admin panel are in effect");
         Ok(())
     }

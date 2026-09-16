@@ -60,7 +60,7 @@ pub struct ServerCheck {
     pub blocklists_checked: bool,
 }
 
-fn is_private(ip: IpAddr) -> bool {
+pub(crate) fn is_private(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
             v4.is_private()

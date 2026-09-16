@@ -819,6 +819,49 @@ pub struct Listing {
     pub answer: Option<String>,
 }
 
+/// Whether a blocklist lists `ip`, asked through `resolver`. Answers outside 127.0.0.0/8, or
+/// 127.255.255.x (Spamhaus' "you may not ask", which big public resolvers get), say nothing about
+/// the address and must never count as listed.
+///
+/// Blocklists are asked through the system resolver on purpose: resolving these zones from the
+/// root servers finds nothing at all, not even their test entries.
+pub async fn blocklist_status_with(resolver: &TokioResolver, ip: IpAddr, list: &Blocklist) -> Listing {
+    let unknown = |answer: Option<String>| Listing { list: list.name, status: ListingStatus::Unknown, answer };
+    if ip.is_ipv6() && !list.ipv6 {
+        return unknown(None);
+    }
+    let name = blocklist_name(ip, list.zone);
+    match Lookups::System(resolver).records(&name, RecordType::A).await {
+        Ok(answers) => {
+            let addresses: Vec<Ipv4Addr> =
+                answers.into_iter().filter_map(|data| if let RData::A(a) = data { Some(a.0) } else { None }).collect();
+            match addresses.first() {
+                None => Listing { list: list.name, status: ListingStatus::Clean, answer: None },
+                Some(answer) if answer.octets()[0] == 127 && answer.octets()[1..3] != [255, 255] => {
+                    Listing { list: list.name, status: ListingStatus::Listed, answer: Some(answer.to_string()) }
+                }
+                Some(answer) => unknown(Some(answer.to_string())),
+            }
+        }
+        Err(error) => unknown(Some(error)),
+    }
+}
+
+/// The names `ip` points back to, asked through `resolver`. Empty when it points nowhere.
+pub async fn reverse_names_with(resolver: &TokioResolver, ip: IpAddr) -> Vec<String> {
+    let name = reverse_name(ip);
+    Lookups::System(resolver)
+        .records(&name, RecordType::PTR)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|data| match data {
+            RData::PTR(ptr) => Some(ptr.0.to_ascii().trim_end_matches('.').to_ascii_lowercase()),
+            _ => None,
+        })
+        .collect()
+}
+
 /// The name to look up for `ip` in a DNS blocklist: reversed octets (IPv4) or nibbles (IPv6).
 fn blocklist_name(ip: IpAddr, zone: &str) -> String {
     match ip {
@@ -878,30 +921,9 @@ impl DnsChecker {
         Lookups::System(self.system.resolver())
     }
 
-    /// Whether a blocklist lists `ip`. Answers outside 127.0.0.0/8, or 127.255.255.x (Spamhaus'
-    /// "you may not ask"), say nothing about the address.
+    /// Whether a blocklist lists `ip`, through the system resolver.
     pub async fn blocklist_status(&self, ip: IpAddr, list: &Blocklist) -> Listing {
-        let unknown = |answer: Option<String>| Listing { list: list.name, status: ListingStatus::Unknown, answer };
-        if ip.is_ipv6() && !list.ipv6 {
-            return unknown(None);
-        }
-        let name = blocklist_name(ip, list.zone);
-        match self.list_lookups().records(&name, RecordType::A).await {
-            Ok(answers) => {
-                let addresses: Vec<Ipv4Addr> = answers
-                    .into_iter()
-                    .filter_map(|data| if let RData::A(a) = data { Some(a.0) } else { None })
-                    .collect();
-                match addresses.first() {
-                    None => Listing { list: list.name, status: ListingStatus::Clean, answer: None },
-                    Some(answer) if answer.octets()[0] == 127 && answer.octets()[1..3] != [255, 255] => {
-                        Listing { list: list.name, status: ListingStatus::Listed, answer: Some(answer.to_string()) }
-                    }
-                    Some(answer) => unknown(Some(answer.to_string())),
-                }
-            }
-            Err(error) => unknown(Some(error)),
-        }
+        blocklist_status_with(self.system.resolver(), ip, list).await
     }
 
     /// The address this machine reaches the internet from, as Google's name servers see it: they

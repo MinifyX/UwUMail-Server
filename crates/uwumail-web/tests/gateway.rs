@@ -93,6 +93,7 @@ async fn portal(gateway: Arc<FakeGateway>) -> Portal {
     let settings = SmtpSettings {
         hostname: "mail.example.de".into(),
         smtp: Default::default(),
+        spam: Default::default(),
         delivery: Default::default(),
         tone: Default::default(),
         server_tls: None,

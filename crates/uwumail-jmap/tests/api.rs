@@ -46,6 +46,7 @@ async fn server() -> Server {
         SmtpSettings {
             hostname: "mail.example.de".into(),
             smtp: SmtpConfig::default(),
+            spam: Default::default(),
             delivery: DeliveryConfig::default(),
             tone: ToneConfig::default(),
             server_tls: None,

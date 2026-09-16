@@ -8,7 +8,7 @@ use anyhow::{Context as _, bail};
 use figment::Figment;
 use figment::providers::{Env, Format, Serialized, Toml};
 use serde::Deserialize;
-use uwumail_smtp::{DeliveryConfig, SmtpConfig, ToneConfig};
+use uwumail_smtp::{DeliveryConfig, SmtpConfig, SpamConfig, ToneConfig};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
@@ -21,6 +21,7 @@ pub struct Config {
     pub tls: TlsConfig,
     pub http: HttpConfig,
     pub smtp: SmtpConfig,
+    pub spam: SpamConfig,
     pub delivery: DeliveryConfig,
     pub tone: ToneConfig,
     pub gateway: GatewayConfig,
@@ -36,6 +37,7 @@ impl Default for Config {
             tls: TlsConfig::default(),
             http: HttpConfig::default(),
             smtp: SmtpConfig::default(),
+            spam: SpamConfig::default(),
             delivery: DeliveryConfig::default(),
             tone: ToneConfig::default(),
             gateway: GatewayConfig::default(),
@@ -185,6 +187,25 @@ impl Config {
         {
             bail!("TLS mode `files` needs `tls.cert_file` and `tls.key_file`");
         }
+        // The spam thresholds only make sense in this order: greylisting below Junk, refusing above it.
+        if !(self.spam.junk_score.is_finite() && self.spam.greylist_score.is_finite()) {
+            bail!("`spam.junk_score` and `spam.greylist_score` have to be numbers");
+        }
+        if self.spam.greylist_score > self.spam.junk_score {
+            bail!(
+                "`spam.greylist_score` ({}) is above `spam.junk_score` ({}), so nothing would ever be greylisted",
+                self.spam.greylist_score,
+                self.spam.junk_score
+            );
+        }
+        if let Some(reject) = self.spam.reject_score
+            && !(reject.is_finite() && reject >= self.spam.junk_score)
+        {
+            bail!(
+                "`spam.reject_score` ({reject}) is below `spam.junk_score` ({}): mail meant for Junk would be refused",
+                self.spam.junk_score
+            );
+        }
         if !self.gateway.code.trim().is_empty() {
             uwumail_tunnel::PairingCode::parse(&self.gateway.code)
                 .map_err(|err| anyhow::anyhow!("`gateway.code`: {err}"))?;
@@ -251,5 +272,27 @@ language = \"de\"
     fn missing_hostname_is_explained() {
         let error = Config::default().validate().unwrap_err().to_string();
         assert!(error.contains("hostname"));
+    }
+
+    #[test]
+    fn spam_thresholds_from_the_panel_have_to_stay_in_order() {
+        let with = |spam: serde_json::Value| {
+            let overlay = serde_json::json!({ "hostname": "mail.example.de", "spam": spam });
+            Config::load_with_overlay(None, &overlay).unwrap()
+        };
+        let config = with(serde_json::json!({}));
+        assert!(config.validate().is_ok(), "the defaults are in order");
+        assert_eq!(config.spam.reject_score, None, "refusing is off by default");
+
+        let config = with(serde_json::json!({ "junk_score": 6.5, "reject_score": 12.0 }));
+        assert!(config.validate().is_ok());
+        assert_eq!((config.spam.junk_score, config.spam.reject_score), (6.5, Some(12.0)));
+        // Greylisting at the junk score is how it is turned off.
+        assert!(with(serde_json::json!({ "greylist_score": 5.0 })).validate().is_ok());
+
+        let error = with(serde_json::json!({ "greylist_score": 6.0 })).validate().unwrap_err().to_string();
+        assert!(error.contains("spam.greylist_score"), "{error}");
+        let error = with(serde_json::json!({ "reject_score": 4.0 })).validate().unwrap_err().to_string();
+        assert!(error.contains("spam.reject_score"), "{error}");
     }
 }

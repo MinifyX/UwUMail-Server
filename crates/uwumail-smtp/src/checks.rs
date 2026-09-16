@@ -28,6 +28,14 @@ pub struct Verdict {
     pub sender_verified: bool,
     /// SPF or DKIM passed aligned with the From domain.
     pub dmarc_passed: bool,
+    /// SPF says this server may not send for the envelope sender.
+    pub spf_failed: bool,
+    /// A DKIM signature was there and did not hold.
+    pub dkim_failed: bool,
+    /// The From domain publishes DMARC and neither SPF nor DKIM passed aligned with it.
+    pub dmarc_failed: bool,
+    /// The domain in the From header, lowercase.
+    pub from_domain: Option<String>,
 }
 
 pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw: &[u8]) -> Verdict {
@@ -38,6 +46,10 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
             action: Action::Accept,
             sender_verified: false,
             dmarc_passed: false,
+            spf_failed: false,
+            dkim_failed: false,
+            dmarc_failed: false,
+            from_domain: None,
         };
     };
 
@@ -72,5 +84,9 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
     let dmarc_passed =
         matches!(dmarc.dkim_result(), DmarcResult::Pass) || matches!(dmarc.spf_result(), DmarcResult::Pass);
 
-    Verdict { header, action, sender_verified, dmarc_passed }
+    let spf_failed = spf.result() == SpfResult::Fail;
+    let dkim_failed = dkim.iter().any(|output| matches!(output.result(), DkimResult::Fail(_)));
+    let from_domain = header_from.rsplit_once('@').map(|(_, domain)| domain.trim().to_ascii_lowercase());
+
+    Verdict { header, action, sender_verified, dmarc_passed, spf_failed, dkim_failed, dmarc_failed, from_domain }
 }

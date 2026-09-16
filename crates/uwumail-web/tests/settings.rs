@@ -98,6 +98,7 @@ async fn settings_are_checked_locked_stored_and_logged() {
     let smtp_settings = SmtpSettings {
         hostname: "mail.example.de".into(),
         smtp: Default::default(),
+        spam: Default::default(),
         delivery: Default::default(),
         tone: Default::default(),
         server_tls: None,

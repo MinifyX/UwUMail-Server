@@ -64,6 +64,7 @@ async fn forwarding_needs_confirmation_elsewhere_and_away_messages_need_text() {
     let settings = SmtpSettings {
         hostname: "mail.example.de".into(),
         smtp: Default::default(),
+        spam: Default::default(),
         delivery: Default::default(),
         tone: Default::default(),
         server_tls: None,

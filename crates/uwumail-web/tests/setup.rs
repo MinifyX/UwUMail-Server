@@ -47,6 +47,7 @@ async fn a_fresh_server_is_set_up_with_the_code_from_the_log() {
     let settings = SmtpSettings {
         hostname: "mail.example.de".into(),
         smtp: Default::default(),
+        spam: Default::default(),
         delivery: Default::default(),
         tone: Default::default(),
         server_tls: None,

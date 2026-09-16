@@ -29,6 +29,7 @@ async fn portal() -> (Router, Store, tempfile::TempDir) {
     let settings = SmtpSettings {
         hostname: "mail.example.de".into(),
         smtp: Default::default(),
+        spam: Default::default(),
         delivery: Default::default(),
         tone: Default::default(),
         server_tls: None,

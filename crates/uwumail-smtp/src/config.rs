@@ -44,6 +44,40 @@ impl Default for SmtpConfig {
     }
 }
 
+/// The spam filter for mail from other servers.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SpamConfig {
+    /// Score incoming mail at all. Off means only the DMARC verdict decides.
+    pub enabled: bool,
+    /// Ask DNS blocklists about the sending server.
+    pub blocklists: bool,
+    /// From this score on, a message goes into Junk instead of the inbox.
+    pub junk_score: f32,
+    /// Senders scoring at least this much, but below `junk_score`, are asked to come back later.
+    /// Mail that is filed as junk anyway is not delayed, and neither is anything that looks fine,
+    /// so confirmation codes from well-behaved servers arrive at once.
+    pub greylist_score: f32,
+    /// How long a greylisted sender has to wait before a retry is let through.
+    pub greylist_delay_secs: u64,
+    /// From this score on, mail is refused in the SMTP dialogue. Off unless set: a young filter
+    /// is wrong now and then, and Junk loses nothing while a refusal does.
+    pub reject_score: Option<f32>,
+}
+
+impl Default for SpamConfig {
+    fn default() -> Self {
+        SpamConfig {
+            enabled: true,
+            blocklists: true,
+            junk_score: 5.0,
+            greylist_score: 2.0,
+            greylist_delay_secs: 300,
+            reject_score: None,
+        }
+    }
+}
+
 /// Delivery to other servers.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]

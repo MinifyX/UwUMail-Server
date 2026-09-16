@@ -22,7 +22,7 @@ use crate::checks::{self, Action};
 use crate::dsn::{self, FailedRecipient};
 use crate::stream::{BoxIo, Stream};
 use crate::submission::{Submission, SubmissionRecipient, SubmitError};
-use crate::{Smtp, forward, headers, random_id, relay, reports, srs, vacation};
+use crate::{Smtp, forward, headers, random_id, relay, reports, spam, srs, vacation};
 
 const MAX_HOPS: usize = 50;
 const MAX_ERRORS: u32 = 10;
@@ -802,9 +802,9 @@ impl Session {
             Some((self.peer, helo))
         };
 
-        let verdict = match client {
-            Some((ip, helo)) if ctx.live().smtp.verify_senders => {
-                Some(checks::verify(&ctx, ip, &helo, &envelope.address, &raw).await)
+        let verdict = match &client {
+            Some((ip, helo)) if live.smtp.verify_senders => {
+                Some(checks::verify(&ctx, *ip, helo, &envelope.address, &raw).await)
             }
             _ => None,
         };
@@ -812,12 +812,68 @@ impl Session {
             tracing::info!(%id, from = %envelope.address, %reason, "rejected by DMARC");
             return format!("550 5.7.1 {reason}\r\n");
         }
-        let junk = matches!(&verdict, Some(v) if v.action == Action::Quarantine);
+
+        // Only mail we can attribute to a sending server is scored; behind a relay that means the
+        // server the relay talked to.
+        let score = match &client {
+            Some((ip, helo)) if live.spam.enabled => spam::score(&ctx, &live.spam, *ip, helo, verdict.as_ref()).await,
+            _ => None,
+        };
+        let outcome = score.as_ref().map_or(spam::Outcome::Deliver, |score| spam::outcome(&live.spam, score.points));
+        // What the filter saw, for the log: the score and the rules behind it.
+        let spam_score = score.as_ref().map(|score| score.points);
+        let spam_tests = score.as_ref().map(spam::Score::tests);
+        if outcome == spam::Outcome::Reject {
+            tracing::info!(
+                %id,
+                from = %envelope.address,
+                score = spam_score,
+                tests = spam_tests.as_deref(),
+                "refused as spam"
+            );
+            return "550 5.7.1 This message looks like spam\r\n".into();
+        }
+        if outcome == spam::Outcome::Suspicious
+            && let Some((ip, _)) = &client
+        {
+            let mut waiting = Vec::new();
+            for recipient in &recipients {
+                let wait = spam::greylist_wait(&ctx, &live.spam, *ip, &envelope.address, &recipient.address).await;
+                if let Some(seconds) = wait {
+                    waiting.push(seconds);
+                }
+            }
+            // Hold the message only while every recipient is still waiting. Once one of them may
+            // have it, delivering to all of them keeps the retry from arriving twice.
+            if !recipients.is_empty()
+                && waiting.len() == recipients.len()
+                && let Some(seconds) = waiting.into_iter().min()
+            {
+                let minutes = ((seconds + 59) / 60).max(1);
+                tracing::info!(
+                    %id,
+                    from = %envelope.address,
+                    %seconds,
+                    score = spam_score,
+                    tests = spam_tests.as_deref(),
+                    "greylisted"
+                );
+                return format!("451 4.7.1 Please try again in {minutes} minutes\r\n");
+            }
+        }
+
+        let quarantined = matches!(&verdict, Some(v) if v.action == Action::Quarantine);
+        let junk = quarantined || outcome == spam::Outcome::Junk;
+        // Our verdict replaces whatever the message brought along.
+        let raw = if score.is_some() { headers::strip_spam_verdicts(&raw) } else { raw };
 
         let single = (recipients.len() == 1).then(|| recipients[0].address.as_str());
         let mut message = self.received_header(&id, single).into_bytes();
         if let Some(verdict) = &verdict {
             message.extend_from_slice(verdict.header.as_bytes());
+        }
+        if let Some(score) = &score {
+            message.extend_from_slice(spam::headers(score, junk, live.spam.junk_score).as_bytes());
         }
         message.extend_from_slice(&raw);
 
@@ -901,7 +957,29 @@ impl Session {
                 }
             }
         }
-        tracing::info!(%id, from = %envelope.address, recipients = recipients.len(), delivered, junk, "received message");
+        tracing::info!(
+            %id,
+            from = %envelope.address,
+            recipients = recipients.len(),
+            delivered,
+            junk,
+            score = spam_score,
+            tests = spam_tests.as_deref(),
+            "received message"
+        );
+        // Count the message for whoever sent it, so a sender that keeps behaving gets the benefit
+        // of the doubt next time, and one that keeps ending up in Junk stops getting it.
+        if let (Some(score), Some((ip, _))) = (&score, &client)
+            && delivered > 0
+        {
+            let subject = spam::reputation_subject(*ip, verdict.as_ref());
+            let on_its_own = spam::outcome(&live.spam, score.points_without_reputation());
+            let counts_as_junk = quarantined || matches!(on_its_own, spam::Outcome::Junk | spam::Outcome::Reject);
+            if let Err(err) = ctx.store.record_reputation(subject, counts_as_junk).await {
+                tracing::warn!(%id, %err, "counting a message for the sender reputation failed");
+            }
+        }
+
         if delivered == 0 {
             return if temporary {
                 "451 4.3.0 Temporary storage failure, please try again later\r\n".into()

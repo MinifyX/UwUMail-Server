@@ -64,20 +64,16 @@ pub fn header_block(raw: &[u8]) -> &[u8] {
     &raw[..body_start]
 }
 
-/// Removes Authentication-Results headers that claim to come from `hostname`, so senders
-/// cannot fake our own verdicts (RFC 8601, section 5).
-pub fn strip_forged_auth_results(raw: &[u8], hostname: &str) -> Vec<u8> {
+/// `raw` without the headers `unwanted` picks.
+fn without(raw: &[u8], unwanted: impl Fn(&RawHeader<'_>) -> bool) -> Vec<u8> {
     let (headers, _) = split(raw);
-    let forged: Vec<&RawHeader<'_>> = headers
-        .iter()
-        .filter(|h| h.name.eq_ignore_ascii_case("Authentication-Results") && claims_to_be(&h.value(), hostname))
-        .collect();
-    if forged.is_empty() {
+    let removed: Vec<&RawHeader<'_>> = headers.iter().filter(|header| unwanted(header)).collect();
+    if removed.is_empty() {
         return raw.to_vec();
     }
     let mut out = Vec::with_capacity(raw.len());
     let mut pos = 0;
-    for header in forged {
+    for header in removed {
         let start = header.raw.as_ptr() as usize - raw.as_ptr() as usize;
         out.extend_from_slice(&raw[pos..start]);
         pos = start + header.raw.len();
@@ -86,9 +82,18 @@ pub fn strip_forged_auth_results(raw: &[u8], hostname: &str) -> Vec<u8> {
     out
 }
 
-/// Whether an `Authentication-Results` value names `hostname` as its authserv-id. RFC 8601 allows
-/// an optional version number after the id (`example.com 1; ...`), so only the first token before
-/// the `;` is compared — otherwise a sender could dodge the check by appending a version.
+/// Removes Authentication-Results headers that claim to come from `hostname`, so senders
+/// cannot fake our own verdicts (RFC 8601, section 5).
+pub fn strip_forged_auth_results(raw: &[u8], hostname: &str) -> Vec<u8> {
+    without(raw, |h| h.name.eq_ignore_ascii_case("Authentication-Results") && claims_to_be(&h.value(), hostname))
+}
+
+/// Removes spam verdicts that came with the message, so a sender cannot vouch for itself with
+/// `X-Spam-Status: No` and the only verdict left is the one this server adds.
+pub fn strip_spam_verdicts(raw: &[u8]) -> Vec<u8> {
+    without(raw, |h| h.name.eq_ignore_ascii_case("X-Spam-Score") || h.name.eq_ignore_ascii_case("X-Spam-Status"))
+}
+
 fn claims_to_be(value: &str, hostname: &str) -> bool {
     value
         .split(';')
@@ -125,6 +130,13 @@ mod tests {
         assert_eq!(&MESSAGE[body..], b"body\r\n");
         assert_eq!(count(MESSAGE, "authentication-results"), 2);
         assert_eq!(first_value(MESSAGE, "subject").as_deref(), Some("Hi"));
+    }
+
+    #[test]
+    fn strips_spam_verdicts_the_sender_brought_along() {
+        let raw = b"X-Spam-Status: No, score=-10\r\nSubject: Hi\r\nx-spam-score: -10.0\r\nX-Rspamd-Score: 1.2\r\n\r\nX-Spam-Status: body\r\n";
+        let stripped = String::from_utf8(strip_spam_verdicts(raw)).unwrap();
+        assert_eq!(stripped, "Subject: Hi\r\nX-Rspamd-Score: 1.2\r\n\r\nX-Spam-Status: body\r\n");
     }
 
     #[test]

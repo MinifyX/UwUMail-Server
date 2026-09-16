@@ -413,6 +413,7 @@ mod tests {
             uwumail_smtp::SmtpSettings {
                 hostname: "mail.example.com".into(),
                 smtp: Default::default(),
+                spam: Default::default(),
                 delivery: Default::default(),
                 tone: Default::default(),
                 server_tls: None,

@@ -24,6 +24,7 @@ pub mod reachability;
 mod relay;
 mod reports;
 pub mod servercheck;
+mod spam;
 mod srs;
 mod stream;
 mod submission;
@@ -40,7 +41,8 @@ use uwumail_store::Store;
 
 pub use client::{Connector, connect_directly};
 pub use config::{
-    DeliveryConfig, ExternalTone, InternalTone, Language, RelayConfig, RelaySecurity, SmtpConfig, ToneConfig,
+    DeliveryConfig, ExternalTone, InternalTone, Language, RelayConfig, RelaySecurity, SmtpConfig, SpamConfig,
+    ToneConfig,
 };
 pub use dns::DnsCaches;
 pub use inbound::{ListenerKind, serve, serve_stream};
@@ -82,6 +84,8 @@ pub(crate) struct Context {
     pub authenticator: MessageAuthenticator,
     pub dns: DnsCaches,
     pub auth_limiter: limiter::AuthLimiter,
+    /// Recent blocklist answers about sending servers.
+    pub blocklist_cache: spam::BlocklistCache,
     /// Sized at start; changing these limits takes a restart.
     pub connections: Arc<Semaphore>,
     pub delivery_permits: Arc<Semaphore>,
@@ -94,16 +98,17 @@ pub(crate) struct Context {
 /// The settings in effect right now. Take a snapshot per connection or delivery.
 pub(crate) struct Live {
     pub smtp: SmtpConfig,
+    pub spam: SpamConfig,
     pub delivery: DeliveryConfig,
     pub tone: ToneConfig,
     pub trusted_relays: Vec<relay::IpNetwork>,
 }
 
 impl Live {
-    fn new(smtp: SmtpConfig, delivery: DeliveryConfig, tone: ToneConfig) -> Result<Live, SmtpError> {
+    fn new(smtp: SmtpConfig, spam: SpamConfig, delivery: DeliveryConfig, tone: ToneConfig) -> Result<Live, SmtpError> {
         let trusted_relays = relay::parse_networks(&smtp.trusted_relays)
             .map_err(|err| SmtpError::Config(format!("smtp.trusted_relays: {err}")))?;
-        Ok(Live { smtp, delivery, tone, trusted_relays })
+        Ok(Live { smtp, spam, delivery, tone, trusted_relays })
     }
 }
 
@@ -125,6 +130,7 @@ impl Context {
 pub struct SmtpSettings {
     pub hostname: String,
     pub smtp: SmtpConfig,
+    pub spam: SpamConfig,
     pub delivery: DeliveryConfig,
     pub tone: ToneConfig,
     /// Certificates for STARTTLS and implicit TLS. Without it, no TLS is offered.
@@ -139,20 +145,21 @@ impl Smtp {
                 MessageAuthenticator::new_quad9_tls()
             })
             .map_err(|err| SmtpError::Dns(err.to_string()))?;
-        let SmtpSettings { hostname, smtp, delivery, tone, server_tls } = settings;
+        let SmtpSettings { hostname, smtp, spam, delivery, tone, server_tls } = settings;
         Ok(Smtp {
             inner: Arc::new(Context {
                 store,
                 hostname: hostname.to_ascii_lowercase(),
                 connections: Arc::new(Semaphore::new(smtp.max_connections.max(1))),
                 delivery_permits: Arc::new(Semaphore::new(delivery.concurrency.max(1))),
-                live: RwLock::new(Arc::new(Live::new(smtp, delivery, tone)?)),
+                live: RwLock::new(Arc::new(Live::new(smtp, spam, delivery, tone)?)),
                 server_tls,
                 client_tls: tls::ClientTls::new()?,
                 https: https::Https::new(),
                 authenticator,
                 dns: DnsCaches::default(),
                 auth_limiter: limiter::AuthLimiter::default(),
+                blocklist_cache: spam::BlocklistCache::default(),
                 inflight: Mutex::new(HashSet::new()),
                 stats: health::DeliveryStats::default(),
                 connector: RwLock::new(None),
@@ -176,10 +183,11 @@ impl Smtp {
     pub fn update_settings(
         &self,
         smtp: SmtpConfig,
+        spam: SpamConfig,
         delivery: DeliveryConfig,
         tone: ToneConfig,
     ) -> Result<(), SmtpError> {
-        let live = Live::new(smtp, delivery, tone)?;
+        let live = Live::new(smtp, spam, delivery, tone)?;
         *self.inner.live.write().expect("settings poisoned") = Arc::new(live);
         Ok(())
     }

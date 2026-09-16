@@ -55,6 +55,7 @@ async fn start_server(domain: &str, user: &str, routes: &[(&str, SocketAddr)]) -
     let settings = SmtpSettings {
         hostname: format!("mx.{domain}"),
         smtp: smtp_config,
+        spam: Default::default(),
         delivery,
         tone: ToneConfig::default(),
         server_tls: None,
