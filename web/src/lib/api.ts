@@ -323,6 +323,36 @@ export interface AdminSpamView {
   bayes: { enabled: boolean; minimum: number; server: BayesTotals; queued: number };
 }
 
+export type SenderListName = "allow" | "block";
+export type SenderKind = "ip" | "host" | "address" | "domain";
+
+export interface SenderListEntry {
+  id: number;
+  list: SenderListName;
+  kind: SenderKind;
+  value: string;
+  note: string;
+  /** The domain of a domain-wide entry; null for the whole server and for one's own. */
+  domain: string | null;
+  createdAt: number;
+  createdBy: string;
+}
+
+export interface SendersView {
+  entries: SenderListEntry[];
+  limit: number;
+  /** Admins only: the domains an entry can be for. */
+  domains?: string[];
+}
+
+export interface NewSender {
+  list: SenderListName;
+  value: string;
+  kind?: SenderKind;
+  note?: string;
+  domain?: string;
+}
+
 export interface LearnedFromFolders {
   spam: number;
   ham: number;

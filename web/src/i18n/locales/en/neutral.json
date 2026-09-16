@@ -227,7 +227,10 @@
       "mtaStsCertificate": "Enforce mode needs a valid certificate on the server first.",
       "gatewayCodeInvalid": "The pairing code is not right. Copy it again, all of it, from the gateway.",
       "gatewayForgetFailed": "The gateway could not be forgotten.",
-      "learningBusy": "The filter still has a lot of mail to learn. Please try again later."
+      "learningBusy": "The filter still has a lot of mail to learn. Please try again later.",
+      "senderInvalid": "That does not look like an address, domain, IP address or host name. Networks may be at most /8 (IPv4) or /16 (IPv6) wide, and domains need at least one dot.",
+      "senderListed": "This sender is already on the list. To switch it, remove it first.",
+      "senderListFull": "The list is full. Remove old entries first."
     }
   },
   "people": {
@@ -411,7 +414,9 @@
       "accountExternalForwarding": "{{actor}} changed forwarding to other servers for {{target}}",
       "domainSelfServiceAliases": "{{actor}} changed own addresses on {{target}}",
       "accountAliasLimit": "{{actor}} changed the address limit of {{target}}",
-      "spamLearnFromFolders": "{{actor}} had the spam filter learn from existing mail"
+      "spamLearnFromFolders": "{{actor}} had the spam filter learn from existing mail",
+      "spamSenderAdd": "{{actor}} put {{target}} on a sender list",
+      "spamSenderRemove": "{{actor}} took {{target}} off a sender list"
     },
     "details": {
       "adminOn": "is now an admin",
@@ -421,7 +426,11 @@
       "quota": "storage limit {{value}}",
       "name": "name “{{value}}”",
       "invited": "with an invitation link",
-      "reasonTrash": "after 30 days in the trash"
+      "reasonTrash": "after 30 days in the trash",
+      "senderAllow": "allowed",
+      "senderBlock": "blocked",
+      "senderDomain": "for {{domain}}",
+      "senderServer": "for the whole server"
     }
   },
   "password": {
@@ -1407,11 +1416,11 @@
   "spam": {
     "account": {
       "title": "Spam",
-      "intro": "What the spam filter learned from your marks."
+      "intro": "Senders you always let through or sort out, and what the spam filter learned from you."
     },
     "admin": {
       "title": "Spam filter",
-      "intro": "What the spam filter learned from the mail on this server.",
+      "intro": "Senders the server or a domain always lets through or turns away, and what the spam filter learned.",
       "settingsLink": "Settings"
     },
     "bayes": {
@@ -1437,6 +1446,41 @@
       "learnAll": "Learn from everyone's mail",
       "learnQueued": "{{spam}} spam mails and {{ham}} wanted mails are up for learning.",
       "learnNothing": "No suitable mail to learn from found."
+    },
+    "senders": {
+      "title": "Allowed and blocked senders",
+      "titleAdmin": "Senders for the server and domains",
+      "explain": "Mail from allowed senders always goes to the inbox, mail from blocked ones to the spam folder. An address or domain only counts as allowed when SPF or DKIM confirm it, because anyone could fake a sender otherwise. What an admin blocks for the whole server or your domain still does not arrive.",
+      "explainAdmin": "Blocked senders are turned away while they hand in their mail. Allowed ones go to the inbox and never wait for greylisting; an address or domain only counts when SPF or DKIM confirm it. A block for the server or the domain always comes first, then a person's own list decides, then the domain's, and the server's last.",
+      "list": "List",
+      "block": "Block",
+      "allow": "Allow",
+      "value": "Sender",
+      "valueHint": "Email address, domain, IP address or network, or a host name like *.mail.example.com",
+      "valuePlaceholder": "e.g. newsletter@example.com or example.com",
+      "guessed": "Will be added as: {{kind}}",
+      "scope": "Applies to",
+      "wholeServer": "Whole server",
+      "kind": "Kind",
+      "kindAuto": "Detect automatically",
+      "kinds": {
+        "address": "Email address",
+        "domain": "Domain with subdomains",
+        "ip": "IP address or network",
+        "host": "Host name of the server"
+      },
+      "note": "Note",
+      "notePlaceholder": "What for? (optional)",
+      "addAllow": "Allow",
+      "addBlock": "Block",
+      "addedAllow": "{{value}} is allowed now.",
+      "addedBlock": "{{value}} is blocked now.",
+      "removed": "{{value}} is off the list.",
+      "remove": "Remove",
+      "full": "The list is full ({{limit}} entries).",
+      "empty": "No senders listed yet.",
+      "allowedTitle": "Allowed ({{count}})",
+      "blockedTitle": "Blocked ({{count}})"
     }
   }
 }

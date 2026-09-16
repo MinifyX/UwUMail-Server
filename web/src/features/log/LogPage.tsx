@@ -38,6 +38,8 @@ const KNOWN_ACTIONS = new Set([
   "queueDrop",
   "settingsUpdate",
   "spamLearnFromFolders",
+  "spamSenderAdd",
+  "spamSenderRemove",
 ]);
 
 function actorName(actor: string, t: TFunction) {
@@ -65,6 +67,16 @@ export function detailText(record: AuditRecord, t: TFunction, language: string):
   if (typeof details.name === "string") parts.push(t("log.details.name", { value: details.name }));
   if (details.invited === true) parts.push(t("log.details.invited"));
   if (details.reason === "trash") parts.push(t("log.details.reasonTrash"));
+  if (record.action.startsWith("spam.sender")) {
+    if (details.list === "allow" || details.list === "block") {
+      parts.push(t(details.list === "allow" ? "log.details.senderAllow" : "log.details.senderBlock"));
+    }
+    parts.push(
+      typeof details.domain === "string"
+        ? t("log.details.senderDomain", { domain: details.domain })
+        : t("log.details.senderServer"),
+    );
+  }
   return parts.join(" · ");
 }
 

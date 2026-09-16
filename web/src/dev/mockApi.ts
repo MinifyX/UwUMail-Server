@@ -20,6 +20,9 @@ import type {
   DomainReport,
   DomainSummary,
   LearnedFromFolders,
+  NewSender,
+  SenderListEntry,
+  SendersView,
   GatewayView,
   Info,
   MtaStsView,
@@ -37,6 +40,7 @@ import type {
   StorageView,
   VacationView,
 } from "@/lib/api";
+import { guessSenderKind } from "@/features/spam/senders";
 
 const now = Math.floor(Date.now() / 1000);
 const GB = 1024 ** 3;
@@ -455,6 +459,51 @@ const settingsView = () => ({
   })),
   configFile: "/etc/uwumail/uwumail.toml",
 });
+
+const senderEntry = (
+  id: number,
+  list: SenderListEntry["list"],
+  value: string,
+  note = "",
+  domain: string | null = null,
+): SenderListEntry => ({
+  id,
+  list,
+  kind: guessSenderKind(value),
+  value,
+  note,
+  domain,
+  createdAt: now - id * 86_400,
+  createdBy: "mini@uwu.example",
+});
+const mockSenders: Record<"own" | "admin", SenderListEntry[]> = {
+  own: [senderEntry(1, "allow", "oma@example.net"), senderEntry(2, "block", "werbung.example", "Newsletter")],
+  admin: [
+    senderEntry(10, "block", "198.51.100.0/24", "Hat nur Spam geschickt"),
+    senderEntry(11, "allow", "*.mail.partner.example", "Partner", "uwu.example"),
+  ],
+};
+let nextSenderId = 100;
+const sendersView = (scope: "own" | "admin"): SendersView => ({
+  entries: [...mockSenders[scope]].sort((a, b) => a.list.localeCompare(b.list) || a.value.localeCompare(b.value)),
+  limit: scope === "own" ? 1000 : 10_000,
+  ...(scope === "admin" ? { domains: ["uwu.example", "verein.example"] } : {}),
+});
+const addSender = (scope: "own" | "admin", body: unknown): [number, unknown] => {
+  const { list, value, kind, note, domain } = body as NewSender;
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed.includes(".") && !trimmed.includes(":")) return problem(409, "senderInvalid");
+  if (mockSenders[scope].some((entry) => entry.value === trimmed && (entry.domain ?? "") === (domain ?? ""))) {
+    return problem(409, "senderListed");
+  }
+  const entry = { ...senderEntry(nextSenderId++, list, trimmed, note ?? "", domain ?? null), createdAt: now };
+  mockSenders[scope].push(kind ? { ...entry, kind } : entry);
+  return [201, sendersView(scope)];
+};
+const removeSender = (scope: "own" | "admin", id: string | undefined): [number, unknown] => {
+  mockSenders[scope] = mockSenders[scope].filter((entry) => String(entry.id) !== id);
+  return [200, sendersView(scope)];
+};
 
 const mockBayes = { own: { spam: 18, ham: 41 }, server: { spam: 264, ham: 1310 } };
 
@@ -1087,6 +1136,12 @@ const routes: [string, RegExp, Handler][] = [
       { bayes: { enabled: true, minimum: 50, own: mockBayes.own, server: mockBayes.server } } satisfies AccountSpamView,
     ],
   ],
+  ["GET", /^\/api\/account\/spam\/senders$/, () => [200, sendersView("own")]],
+  ["POST", /^\/api\/account\/spam\/senders$/, (body) => addSender("own", body)],
+  ["DELETE", /^\/api\/account\/spam\/senders\/(\d+)$/, (_, [id]) => removeSender("own", id)],
+  ["GET", /^\/api\/admin\/spam\/senders$/, () => [200, sendersView("admin")]],
+  ["POST", /^\/api\/admin\/spam\/senders$/, (body) => addSender("admin", body)],
+  ["DELETE", /^\/api\/admin\/spam\/senders\/(\d+)$/, (_, [id]) => removeSender("admin", id)],
   ["POST", /^\/api\/account\/spam\/learn-folders$/, () => [200, { spam: 12, ham: 87 } satisfies LearnedFromFolders]],
   [
     "GET",

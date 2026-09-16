@@ -227,7 +227,10 @@
       "mtaStsCertificate": "Für den strengen Modus braucht der Server erst ein gültiges Zertifikat.",
       "gatewayCodeInvalid": "Der Kopplungs-Code stimmt nicht. Kopier ihn nochmal vollständig vom Gateway.",
       "gatewayForgetFailed": "Das Gateway ließ sich nicht vergessen.",
-      "learningBusy": "Der Filter hat gerade noch sehr viele Mails zu lernen. Versuch es später wieder."
+      "learningBusy": "Der Filter hat gerade noch sehr viele Mails zu lernen. Versuch es später wieder.",
+      "senderInvalid": "Das sieht nicht nach Adresse, Domain, IP-Adresse oder Hostname aus. Netze dürfen höchstens /8 (IPv4) oder /16 (IPv6) groß sein, Domains brauchen mindestens einen Punkt.",
+      "senderListed": "Dieser Absender steht schon auf der Liste. Um ihn umzustellen, entferne ihn zuerst.",
+      "senderListFull": "Die Liste ist voll. Entferne zuerst alte Einträge."
     }
   },
   "people": {
@@ -411,7 +414,9 @@
       "accountExternalForwarding": "{{actor}} hat die Weiterleitung nach außen für {{target}} geändert",
       "domainSelfServiceAliases": "{{actor}} hat eigene Adressen auf {{target}} geändert",
       "accountAliasLimit": "{{actor}} hat das Adress-Limit von {{target}} geändert",
-      "spamLearnFromFolders": "{{actor}} hat den Spamfilter aus vorhandener Post lernen lassen"
+      "spamLearnFromFolders": "{{actor}} hat den Spamfilter aus vorhandener Post lernen lassen",
+      "spamSenderAdd": "{{actor}} hat {{target}} auf eine Absenderliste gesetzt",
+      "spamSenderRemove": "{{actor}} hat {{target}} von einer Absenderliste genommen"
     },
     "details": {
       "adminOn": "ist jetzt Admin",
@@ -421,7 +426,11 @@
       "quota": "Speicherlimit {{value}}",
       "name": "Name „{{value}}“",
       "invited": "mit Einladungslink",
-      "reasonTrash": "nach 30 Tagen im Papierkorb"
+      "reasonTrash": "nach 30 Tagen im Papierkorb",
+      "senderAllow": "erlaubt",
+      "senderBlock": "blockiert",
+      "senderDomain": "für {{domain}}",
+      "senderServer": "für den ganzen Server"
     }
   },
   "password": {
@@ -1407,11 +1416,11 @@
   "spam": {
     "account": {
       "title": "Spam",
-      "intro": "Was der Spamfilter aus deinen Markierungen gelernt hat."
+      "intro": "Absender, die du immer durchlässt oder aussortierst, und was der Spamfilter von dir gelernt hat."
     },
     "admin": {
       "title": "Spamfilter",
-      "intro": "Was der Spamfilter aus der Post auf diesem Server gelernt hat.",
+      "intro": "Absender, die der Server oder eine Domain immer durchlässt oder abweist, und was der Spamfilter gelernt hat.",
       "settingsLink": "Einstellungen"
     },
     "bayes": {
@@ -1437,6 +1446,41 @@
       "learnAll": "Aus der Post aller lernen",
       "learnQueued": "{{spam}} Spam-Mails und {{ham}} erwünschte Mails kommen zum Lernen dran.",
       "learnNothing": "Keine passenden Mails zum Lernen gefunden."
+    },
+    "senders": {
+      "title": "Erlaubte und blockierte Absender",
+      "titleAdmin": "Absender für Server und Domains",
+      "explain": "Erlaubte Absender landen immer im Posteingang, blockierte im Spam-Ordner. Eine Adresse oder Domain gilt nur dann als erlaubt, wenn SPF oder DKIM sie bestätigen, denn einen Absender kann sonst jeder vortäuschen. Was ein Admin für den ganzen Server oder deine Domain blockiert, kommt trotzdem nicht an.",
+      "explainAdmin": "Blockierte Absender werden schon beim Einliefern abgewiesen. Erlaubte landen im Posteingang und müssen nie aufs Greylisting warten; eine Adresse oder Domain gilt dabei nur, wenn SPF oder DKIM sie bestätigen. Eine Blockade für den Server oder die Domain geht immer vor, danach entscheidet die eigene Liste einer Person, dann die der Domain, zuletzt die des Servers.",
+      "list": "Liste",
+      "block": "Blockieren",
+      "allow": "Erlauben",
+      "value": "Absender",
+      "valueHint": "E-Mail-Adresse, Domain, IP-Adresse oder Netz, oder Hostname wie *.mail.example.com",
+      "valuePlaceholder": "z. B. newsletter@example.com oder example.com",
+      "guessed": "Wird eingetragen als: {{kind}}",
+      "scope": "Gilt für",
+      "wholeServer": "Ganzer Server",
+      "kind": "Art",
+      "kindAuto": "Automatisch erkennen",
+      "kinds": {
+        "address": "E-Mail-Adresse",
+        "domain": "Domain mit Subdomains",
+        "ip": "IP-Adresse oder Netz",
+        "host": "Hostname des Servers"
+      },
+      "note": "Notiz",
+      "notePlaceholder": "Wofür? (optional)",
+      "addAllow": "Erlauben",
+      "addBlock": "Blockieren",
+      "addedAllow": "{{value}} ist jetzt erlaubt.",
+      "addedBlock": "{{value}} ist jetzt blockiert.",
+      "removed": "{{value}} steht nicht mehr auf der Liste.",
+      "remove": "Entfernen",
+      "full": "Die Liste ist voll ({{limit}} Einträge).",
+      "empty": "Noch keine Absender eingetragen.",
+      "allowedTitle": "Erlaubt ({{count}})",
+      "blockedTitle": "Blockiert ({{count}})"
     }
   }
 }

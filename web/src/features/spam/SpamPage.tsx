@@ -8,6 +8,7 @@ import { api, type AccountSpamView, type AdminSpamView, type BayesTotals, type L
 import { useErrorText } from "@/lib/errors";
 import { Link } from "@/lib/router";
 import { toast } from "@/state/toasts";
+import { SenderListCard } from "./SenderListCard";
 
 const accountKey = ["account", "spam"] as const;
 const adminKey = ["admin", "spam"] as const;
@@ -72,6 +73,7 @@ export function AccountSpamPage() {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title={t("spam.account.title")} intro={t("spam.account.intro")} />
+      <SenderListCard admin={false} />
       <Card title={t("spam.bayes.title")}>
         <div className="flex flex-col gap-4">
           <p className="-mt-1 text-[13px] text-muted">{t("spam.bayes.explain")}</p>
@@ -113,6 +115,7 @@ export function AdminSpamPage() {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title={t("spam.admin.title")} intro={t("spam.admin.intro")} />
+      <SenderListCard admin />
       <Card title={t("spam.bayes.title")} action={<Link to="/admin/settings">{t("spam.admin.settingsLink")}</Link>}>
         <div className="flex flex-col gap-4">
           <p className="-mt-1 text-[13px] text-muted">{t("spam.bayes.explainAdmin")}</p>
