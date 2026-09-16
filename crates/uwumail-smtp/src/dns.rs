@@ -144,6 +144,12 @@ impl DnsCaches {
         );
     }
 
+    /// Pins the names an address points back to, e.g. for tests.
+    pub fn pin_ptr(&self, ip: IpAddr, hosts: &[&str]) {
+        let records: Arc<[Box<str>]> = hosts.iter().map(|host| fqdn(host)).collect();
+        self.ptr.insert(ip, RecordSet { rrset: records, dnssec_status: DnssecStatus::Indeterminate }, far_future());
+    }
+
     pub fn pin_ipv4(&self, host: &str, addresses: &[Ipv4Addr]) {
         let records: Arc<[Ipv4Addr]> = addresses.iter().copied().collect();
         self.ipv4.insert(

@@ -15,8 +15,8 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 use uwumail_smtp::{DeliveryConfig, ListenerKind, Smtp, SmtpConfig, SmtpSettings, SpamConfig, ToneConfig};
 use uwumail_store::{
-    BayesTotals, EmailSummary, EmailUpdate, IngestRequest, KeywordsChange, MailboxRole, MailboxTarget, MailboxesChange,
-    NewAccount, Role, Store,
+    BayesTotals, EmailSummary, EmailUpdate, IngestRequest, KeywordsChange, ListScope, MailboxRole, MailboxTarget,
+    MailboxesChange, NewAccount, NewSenderListEntry, Role, SenderList, Store,
 };
 
 const PASSWORD: &str = "katzenpfote-123";
@@ -746,4 +746,49 @@ async fn the_bayes_filter_learns_and_a_person_can_see_it_differently() {
     let inbox = a.inbox("mini@a.test").await;
     let school_mail = inbox.iter().find(|email| email.subject.contains("998")).expect("in the inbox");
     assert!(a.raw(school_mail).await.contains("BAYES_HAM"));
+}
+
+fn list_entry(scope: ListScope, list: SenderList, value: &str) -> NewSenderListEntry {
+    NewSenderListEntry { scope, list, kind: None, value: value.into(), note: String::new(), created_by: String::new() }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn listed_senders_skip_the_filter_or_are_kept_out() {
+    let a = spam_test_server_for(&["mini", "leni"], SpamConfig::default(), None).await;
+    let store = a.smtp.store();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap().id;
+    let leni = store.account("leni@a.test").await.unwrap().unwrap().id;
+    let both = ["mini@a.test", "leni@a.test"];
+
+    // Leni allows the sending server's network: the suspicious message waits for nobody.
+    store
+        .add_sender_list_entry(list_entry(ListScope::Account(leni), SenderList::Allow, "203.0.113.0/24"))
+        .await
+        .unwrap();
+    let reply = relay_message_to(&a, &both, "From: news@sender.test\r\nSubject: Nur heute\r\n\r\nAngebot\r\n").await;
+    assert!(reply.starts_with("250"), "an allowed sender is not greylisted: {reply}");
+    assert_eq!(a.inbox("leni@a.test").await.len(), 1);
+    assert_eq!(a.inbox("mini@a.test").await.len(), 1, "the score alone is not enough for Junk");
+
+    // Mini blocks the From address: only her copy goes to Junk.
+    store
+        .add_sender_list_entry(list_entry(ListScope::Account(mini), SenderList::Block, "News@Sender.test"))
+        .await
+        .unwrap();
+    let reply = relay_message_to(&a, &both, "From: news@sender.test\r\nSubject: Noch einmal\r\n\r\nAngebot\r\n").await;
+    assert!(reply.starts_with("250"), "{reply}");
+    assert_eq!(a.inbox("leni@a.test").await.len(), 2);
+    assert_eq!(a.inbox("mini@a.test").await.len(), 1);
+    assert_eq!(a.mailbox("mini@a.test", MailboxRole::Junk).await.len(), 1);
+
+    // The server blocks every host under the sender's domain whose name is confirmed both ways, which
+    // outranks Leni's allowance: the message is refused.
+    let client = "203.0.113.7".parse().unwrap();
+    a.smtp.dns_cache().pin_ptr(client, &["mail.sender.test"]);
+    a.smtp.dns_cache().pin_ipv4("mail.sender.test", &["203.0.113.7".parse().unwrap()]);
+    store.add_sender_list_entry(list_entry(ListScope::Server, SenderList::Block, "*.sender.test")).await.unwrap();
+    let reply =
+        relay_message_to(&a, &both, "From: news@sender.test\r\nSubject: Letzte Chance\r\n\r\nAngebot\r\n").await;
+    assert!(reply.starts_with("550 5.7.1"), "{reply}");
+    assert_eq!(a.inbox("leni@a.test").await.len(), 2);
 }

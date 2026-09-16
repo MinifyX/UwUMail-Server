@@ -473,6 +473,8 @@ mod tests {
             dkim_failed: false,
             dmarc_failed: false,
             from_domain: domain.map(str::to_owned),
+            from_address: None,
+            from_verified: dmarc_passed,
         }
     }
 

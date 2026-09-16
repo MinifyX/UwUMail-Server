@@ -36,6 +36,11 @@ pub struct Verdict {
     pub dmarc_failed: bool,
     /// The domain in the From header, lowercase.
     pub from_domain: Option<String>,
+    /// The address in the From header, normalized like the addresses on sender lists.
+    pub from_address: Option<String>,
+    /// SPF or DKIM passed for the From domain or a domain related to it, with or without a published
+    /// DMARC policy. Only then does the From address say who really sent the message.
+    pub from_verified: bool,
 }
 
 pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw: &[u8]) -> Verdict {
@@ -50,6 +55,8 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
             dkim_failed: false,
             dmarc_failed: false,
             from_domain: None,
+            from_address: None,
+            from_verified: false,
         };
     };
 
@@ -87,6 +94,39 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
     let spf_failed = spf.result() == SpfResult::Fail;
     let dkim_failed = dkim.iter().any(|output| matches!(output.result(), DkimResult::Fail(_)));
     let from_domain = header_from.rsplit_once('@').map(|(_, domain)| domain.trim().to_ascii_lowercase());
+    let from_address = normalized_address(header_from);
 
-    Verdict { header, action, sender_verified, dmarc_passed, spf_failed, dkim_failed, dmarc_failed, from_domain }
+    // DMARC only judges domains that publish a policy. Without one, a signature or SPF pass for the
+    // From domain, a parent or a subdomain of it still shows who sent the message.
+    let related = |domain: &str| {
+        let from = from_address.as_deref().and_then(|address| address.rsplit_once('@')).map(|(_, domain)| domain);
+        let domain = domain.trim_end_matches('.').to_ascii_lowercase();
+        from.is_some_and(|from| {
+            domain.contains('.')
+                && (from == domain || from.ends_with(&format!(".{domain}")) || domain.ends_with(&format!(".{from}")))
+        })
+    };
+    let from_verified = dmarc_passed
+        || dkim.iter().any(|output| {
+            output.result() == &DkimResult::Pass && output.signature().is_some_and(|signature| related(&signature.d))
+        })
+        || (spf.result() == SpfResult::Pass && related(mail_from_domain));
+
+    Verdict {
+        header,
+        action,
+        sender_verified,
+        dmarc_passed,
+        spf_failed,
+        dkim_failed,
+        dmarc_failed,
+        from_domain,
+        from_address,
+        from_verified,
+    }
+}
+
+/// An address as sender lists store it, or `None` if it is not one.
+pub fn normalized_address(address: &str) -> Option<String> {
+    uwumail_store::normalize_address(address).ok().map(|(local, domain)| format!("{local}@{domain}"))
 }

@@ -20,6 +20,7 @@ use uwumail_store::{
 
 use crate::checks::{self, Action};
 use crate::dsn::{self, FailedRecipient};
+use crate::sender_lists::{self, Decision};
 use crate::stream::{BoxIo, Stream};
 use crate::submission::{Submission, SubmissionRecipient, SubmitError};
 use crate::{Smtp, forward, headers, random_id, relay, reports, spam, srs, vacation};
@@ -813,6 +814,35 @@ impl Session {
             return format!("550 5.7.1 {reason}\r\n");
         }
 
+        // Allowed and blocked senders decide for each recipient before the score does.
+        let sender =
+            sender_lists::Sender::new(client.as_ref().map(|(ip, _)| *ip), &envelope.address, verdict.as_ref(), &raw);
+        let targets: Vec<(i64, String)> = recipients
+            .iter()
+            .filter_map(|recipient| {
+                let (_, domain) = recipient.address.rsplit_once('@')?;
+                Some((recipient.local_account?, domain.to_owned()))
+            })
+            .collect();
+        let lists = if targets.is_empty() {
+            sender_lists::Lists::default()
+        } else {
+            sender_lists::load(&ctx, &sender, &targets).await
+        };
+        let decisions: Vec<Decision> = recipients
+            .iter()
+            .map(|recipient| match (recipient.local_account, recipient.address.rsplit_once('@')) {
+                (Some(account), Some((_, domain))) => lists.decide(&sender, account, domain),
+                _ => Decision::None,
+            })
+            .collect();
+        if !decisions.is_empty() && decisions.iter().all(|decision| matches!(decision, Decision::Reject(_))) {
+            let listed = decisions[0].entry().map(|entry| entry.value.as_str());
+            tracing::info!(%id, from = %envelope.address, listed, "refused by a sender list");
+            return "550 5.7.1 Mail from this sender is not accepted here\r\n".into();
+        }
+        let allowed = decisions.iter().any(|decision| matches!(decision, Decision::Allow(_)));
+
         // Only mail we can attribute to a sending server is scored; behind a relay that means the
         // server the relay talked to.
         let score = match &client {
@@ -825,7 +855,8 @@ impl Session {
         // What the filter saw, for the log: the score and the rules behind it.
         let spam_score = score.as_ref().map(|score| score.points);
         let spam_tests = score.as_ref().map(spam::Score::tests);
-        if outcome == spam::Outcome::Reject {
+        // A recipient who allowed the sender still gets it; everyone else finds it in Junk.
+        if outcome == spam::Outcome::Reject && !allowed {
             tracing::info!(
                 %id,
                 from = %envelope.address,
@@ -839,7 +870,11 @@ impl Session {
             && let Some((ip, _)) = &client
         {
             let mut waiting = Vec::new();
-            for recipient in &recipients {
+            for (recipient, decision) in recipients.iter().zip(&decisions) {
+                // An allowed sender never waits, and neither does the message for the others then.
+                if matches!(decision, Decision::Allow(_)) {
+                    continue;
+                }
                 let wait = spam::greylist_wait(&ctx, &live.spam, *ip, &envelope.address, &recipient.address).await;
                 if let Some(seconds) = wait {
                     waiting.push(seconds);
@@ -865,7 +900,7 @@ impl Session {
         }
 
         let quarantined = matches!(&verdict, Some(v) if v.action == Action::Quarantine);
-        let junk = quarantined || outcome == spam::Outcome::Junk;
+        let junk = quarantined || matches!(outcome, spam::Outcome::Junk | spam::Outcome::Reject);
         // Our verdict replaces whatever the message brought along.
         let raw = if score.is_some() { headers::strip_spam_verdicts(&raw) } else { raw };
 
@@ -885,7 +920,7 @@ impl Session {
         let mut temporary = false;
         let mut seen_accounts = Vec::new();
         let mut returned = Vec::new();
-        for recipient in &recipients {
+        for (recipient, decision) in recipients.iter().zip(&decisions) {
             if let Some(original) = &recipient.srs_return {
                 returned.push(NewQueueRecipient { address: original.clone(), notify_flags: 0, orcpt: None });
                 continue;
@@ -907,19 +942,29 @@ impl Session {
                 continue;
             }
             seen_accounts.push(account_id);
-            // What a person taught their own Bayes filter can move the message into or out of Junk for
-            // them. A DMARC quarantine stays a quarantine.
-            let junk = match &score {
-                Some(score) if !quarantined => {
-                    let own = spam::personal_bayes_points(&ctx, &live.spam, score, account_id).await;
-                    let theirs = spam::outcome(&live.spam, score.points + own);
-                    let moved = matches!(theirs, spam::Outcome::Junk | spam::Outcome::Reject);
-                    if own != 0.0 && moved != junk {
-                        tracing::info!(%id, account = account_id, junk = moved, points = own, "moved by a person's own filter");
+            // A listed sender goes where the list says, even out of a DMARC quarantine. Otherwise what a
+            // person taught their own Bayes filter can move the message into or out of Junk for them, and a
+            // DMARC quarantine stays a quarantine.
+            let junk = match decision {
+                Decision::Allow(entry) | Decision::Junk(entry) | Decision::Reject(entry) => {
+                    let listed = !matches!(decision, Decision::Allow(_));
+                    if listed != junk {
+                        tracing::info!(%id, account = account_id, junk = listed, listed = %entry.value, "moved by a sender list");
                     }
-                    moved
+                    listed
                 }
-                _ => junk,
+                Decision::None => match &score {
+                    Some(score) if !quarantined => {
+                        let own = spam::personal_bayes_points(&ctx, &live.spam, score, account_id).await;
+                        let theirs = spam::outcome(&live.spam, score.points + own);
+                        let moved = matches!(theirs, spam::Outcome::Junk | spam::Outcome::Reject);
+                        if own != 0.0 && moved != junk {
+                            tracing::info!(%id, account = account_id, junk = moved, points = own, "moved by a person's own filter");
+                        }
+                        moved
+                    }
+                    _ => junk,
+                },
             };
             // Suspicious mail is never forwarded; it stays in Junk.
             let plan = if junk {
@@ -1000,7 +1045,8 @@ impl Session {
             // Clear cases teach the whole server's Bayes filter without anyone marking them: very spammy
             // on the message's own merits, or vouched for by DMARC with nothing against it.
             let dmarc_passed = verdict.as_ref().is_some_and(|verdict| verdict.dmarc_passed);
-            let spam = points >= spam::AUTOLEARN_SPAM;
+            // Nobody allowed the sender for the server to learn their mail as spam.
+            let spam = points >= spam::AUTOLEARN_SPAM && !allowed;
             let wanted = !junk && dmarc_passed && points <= 0.0;
             if live.spam.bayes
                 && (spam || wanted)

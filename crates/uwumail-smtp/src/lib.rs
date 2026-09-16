@@ -23,6 +23,7 @@ mod outbound;
 pub mod reachability;
 mod relay;
 mod reports;
+mod sender_lists;
 pub mod servercheck;
 mod spam;
 mod srs;

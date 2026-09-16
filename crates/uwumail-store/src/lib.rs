@@ -26,6 +26,7 @@ mod query;
 mod queue;
 mod reports;
 mod security;
+mod sender_lists;
 mod spam;
 mod web;
 
@@ -62,6 +63,10 @@ pub use reports::{
 pub use security::{
     AppPassword, AppScope, CodeCheck, CreatedAppPassword, MailAuth, MailAuthDenied, NewAppPassword, Passkey,
     SecurityEvent, SecurityEventRecord, SecurityOverview, TotpSetup, WebSessionInfo,
+};
+pub use sender_lists::{
+    ListOwner, ListScope, NewSenderListEntry, SENDER_LIST_ADMIN_LIMIT, SENDER_LIST_PERSONAL_LIMIT, SenderKind,
+    SenderList, SenderListEntry, guess_sender_kind, normalize_sender,
 };
 pub use spam::{GREYLIST_PASSED_SECS, GREYLIST_WAITING_SECS, Greylist, REPUTATION_RETENTION_SECS, Reputation};
 pub use web::{NewWebSession, ServerCounts, WebSession};
