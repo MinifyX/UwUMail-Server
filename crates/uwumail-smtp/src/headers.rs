@@ -70,9 +70,7 @@ pub fn strip_forged_auth_results(raw: &[u8], hostname: &str) -> Vec<u8> {
     let (headers, _) = split(raw);
     let forged: Vec<&RawHeader<'_>> = headers
         .iter()
-        .filter(|h| {
-            h.name.eq_ignore_ascii_case("Authentication-Results") && claims_to_be(&h.value(), hostname)
-        })
+        .filter(|h| h.name.eq_ignore_ascii_case("Authentication-Results") && claims_to_be(&h.value(), hostname))
         .collect();
     if forged.is_empty() {
         return raw.to_vec();
