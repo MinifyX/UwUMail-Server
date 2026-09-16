@@ -10,6 +10,7 @@
 
 mod address;
 mod admin;
+mod bayes;
 mod blobs;
 mod db;
 mod directory;
@@ -39,6 +40,7 @@ pub use admin::{
     AccountUpdate, AddressInfo, AuditEntry, AuditRecord, PasswordLink, PasswordLinkPurpose, Person,
     TRASH_RETENTION_SECS,
 };
+pub use bayes::{BAYES_LEARNED_SECS, BAYES_RARE_TOKEN_SECS, BayesJob, BayesTotals};
 pub use blobs::BlobHash;
 pub use directory::{Account, DkimKey, DkimKeyAlgorithm, DkimKeyState, Domain, NewAccount, Role};
 pub use extras::{Identity, IdentityUpdate, SubmissionRecord, UPLOAD_LIFETIME_SECS, VacationResponse};

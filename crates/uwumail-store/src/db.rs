@@ -17,6 +17,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0008_mta_sts_reports.sql"),
     include_str!("migrations/0009_spam.sql"),
     include_str!("migrations/0010_spam_verdicts.sql"),
+    include_str!("migrations/0011_bayes.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 
