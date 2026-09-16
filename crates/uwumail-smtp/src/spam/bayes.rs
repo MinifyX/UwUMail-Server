@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use mail_parser::{Message, MimeHeaders};
 use tokio::sync::watch;
-use uwumail_store::{BayesJob, BayesTotals, Store};
+use uwumail_store::{BAYES_MIN_LEARNED as MIN_LEARNED, BayesJob, BayesTotals, Store};
 
 use crate::{Context, Smtp};
 
@@ -24,9 +24,6 @@ const MAX_TOKENS: usize = 2000;
 const MAX_TEXT: usize = 200 * 1024;
 
 const SECRET_KEY: &str = "bayes.secret";
-
-/// Each scope needs this many learned spam and this many learned wanted messages before it counts.
-pub(crate) const MIN_LEARNED: i64 = 50;
 
 fn words(text: &str) -> impl Iterator<Item = String> + '_ {
     text.split(|c: char| !c.is_alphanumeric())

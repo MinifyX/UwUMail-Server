@@ -12,6 +12,7 @@ pub mod reports;
 pub mod security;
 pub mod settings;
 pub mod setup;
+pub mod spam;
 
 use axum::extract::Path;
 use axum::response::{IntoResponse, Response};

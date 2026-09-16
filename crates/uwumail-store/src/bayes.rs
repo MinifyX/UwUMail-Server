@@ -13,6 +13,13 @@ use crate::{Result, Store, now};
 /// The scope of knowledge that belongs to the whole server rather than one person.
 const SERVER: i64 = 0;
 
+/// Each scope needs this many learned spam and this many learned wanted messages before it counts.
+pub const BAYES_MIN_LEARNED: i64 = 50;
+/// When learning from existing folders, read mail counts as wanted once it is this old, so fresh mail
+/// nobody judged yet stays out.
+pub const BAYES_WANTED_AFTER_SECS: i64 = 14 * 24 * 3600;
+/// At most this many messages of each kind per person are queued from existing folders at once.
+pub const BAYES_FOLDER_LIMIT: usize = 2000;
 /// Tokens seen only once and not for this long are forgotten; they would hardly ever count.
 pub const BAYES_RARE_TOKEN_SECS: i64 = 90 * 24 * 3600;
 /// What a message was learned as is forgotten after this long; marking it later then learns it anew.
@@ -153,6 +160,11 @@ impl Store {
             Ok(true)
         })
         .await
+    }
+
+    /// How many messages wait to be learned.
+    pub async fn bayes_queue_length(&self) -> Result<i64> {
+        self.read(|conn| Ok(conn.query_row("SELECT COUNT(*) FROM bayes_queue", [], |row| row.get(0))?)).await
     }
 
     /// How many messages the whole server (`None`) or one person learned.

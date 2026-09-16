@@ -203,6 +203,11 @@ impl Smtp {
         &self.inner.store
     }
 
+    /// The spam filter settings in effect right now.
+    pub fn spam_settings(&self) -> SpamConfig {
+        self.inner.live().spam.clone()
+    }
+
     pub fn hostname(&self) -> &str {
         &self.inner.hostname
     }

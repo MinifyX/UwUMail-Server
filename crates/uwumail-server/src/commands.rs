@@ -4,7 +4,7 @@ use anyhow::bail;
 use serde_json::{Value, json};
 use uwumail_store::{AccountUpdate, AuditEntry, NewAccount, PasswordLinkPurpose, Role, Store};
 
-use crate::cli::{AccountCommand, AliasCommand, DomainCommand, GatewayCommand, QueueCommand};
+use crate::cli::{AccountCommand, AliasCommand, DomainCommand, GatewayCommand, QueueCommand, SpamCommand};
 use crate::config::Config;
 
 /// Password links from the command line work as long as those from the admin panel.
@@ -268,6 +268,38 @@ pub async fn alias(store: &Store, command: AliasCommand) -> anyhow::Result<()> {
             for address in store.addresses(&account).await? {
                 println!("{address}");
             }
+        }
+    }
+    Ok(())
+}
+
+pub async fn spam(store: &Store, command: SpamCommand) -> anyhow::Result<()> {
+    match command {
+        SpamCommand::Learn { account } => {
+            let accounts = match account {
+                Some(login) => vec![store.account(&login).await?.ok_or_else(|| anyhow::anyhow!("no account {login}"))?],
+                None => store.accounts().await?,
+            };
+            let (mut spam, mut ham) = (0, 0);
+            for account in &accounts {
+                let (found_spam, found_ham) = store
+                    .queue_bayes_from_folders(
+                        account.id,
+                        uwumail_store::BAYES_WANTED_AFTER_SECS,
+                        uwumail_store::BAYES_FOLDER_LIMIT,
+                    )
+                    .await?;
+                spam += found_spam;
+                ham += found_ham;
+            }
+            audit(store, "spam.learnFromFolders", "server", json!({ "spam": spam, "ham": ham })).await;
+            println!("Queued {spam} spam and {ham} wanted messages; the running server learns them in the background.");
+        }
+        SpamCommand::Stats => {
+            let server = store.bayes_totals(None).await?;
+            let queued = store.bayes_queue_length().await?;
+            println!("Learned for the whole server: {} spam, {} wanted ({queued} waiting)", server.spam, server.ham);
+            println!("The Bayes filter counts once both reach {}.", uwumail_store::BAYES_MIN_LEARNED);
         }
     }
     Ok(())

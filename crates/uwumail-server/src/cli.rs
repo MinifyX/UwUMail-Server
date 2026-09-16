@@ -36,6 +36,21 @@ pub enum Command {
     /// The UwUMail Gateway in front of this server.
     #[command(subcommand)]
     Gateway(GatewayCommand),
+    /// The spam filter.
+    #[command(subcommand)]
+    Spam(SpamCommand),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SpamCommand {
+    /// Learn once from mail that is already sorted: what lies in Junk as spam, read mail older than two
+    /// weeks in the inbox and archive as wanted mail. The running server learns it in the background.
+    Learn {
+        /// Only this person's mail; everyone's when left out.
+        account: Option<String>,
+    },
+    /// What the Bayes filter has learned so far.
+    Stats,
 }
 
 #[derive(Debug, Subcommand)]

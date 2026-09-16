@@ -63,6 +63,7 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("smtp.allow_external_forwarding", SettingKind::Bool),
     spec("spam.enabled", SettingKind::Bool),
     spec("spam.blocklists", SettingKind::Bool),
+    spec("spam.bayes", SettingKind::Bool),
     spec("spam.junk_score", SettingKind::Decimal { min: 1, max: 100 }),
     spec("spam.greylist_score", SettingKind::Decimal { min: 1, max: 100 }),
     spec("spam.greylist_delay_secs", SettingKind::Integer { min: 60, max: 3600 }),
