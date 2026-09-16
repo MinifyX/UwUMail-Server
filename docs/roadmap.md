@@ -64,7 +64,8 @@ Each step ships as its own commits, container image and test deployment.
 - [x] DNS blocklists (Spamhaus ZEN, SpamCop, Barracuda), greylisting only for suspicious senders, sender reputation by DMARC domain or network
 - [x] Thresholds for greylisting, Junk and refusing (off by default) in the admin panel
 - [x] "Spam" / "Not spam" in the apps (moving to or from Junk, `$junk` / `$notjunk`) corrects the sender's reputation
-- [ ] Rspamd rules ported to Rust: header/body patterns, URL and phishing checks, MIME tricks
+- [x] Content rules after Rspamd's example: phishing links and look-alike domains, faked display names, dangerous attachments (also inside zip archives), header and MIME oddities, Spamhaus DBL for link domains
+- [ ] More content rules: URL shorteners and redirectors, SURBL/URIBL, text patterns
 - [ ] Bayes classifier that learns from "Spam" / "Not spam" in the apps
 - [ ] Optional external Rspamd, optional ClamAV container
 

@@ -48,7 +48,11 @@ Design choices that matter later:
 - `spam`: scores mail from other servers (authentication results, greeting,
   reverse name, blocklists, reputation) and decides between inbox,
   greylisting, Junk and refusing; see [spam-filter.md](spam-filter.md). Lookups
-  are bounded in time and a question without an answer scores nothing.
+  are bounded in time and a question without an answer scores nothing. The
+  message itself is read once on a blocking thread (`spam::content` with
+  `html`, `links` and `attachments`) for phishing links, dangerous attachments
+  and header oddities; link domains are asked about on Spamhaus DBL. Moving mail
+  into or out of Junk moves the sender's count in the store.
 - `outbound` + `client`: the delivery worker claims due recipients with a
   lease, groups them by domain, resolves MX (or a relay / static route),
   delivers with opportunistic TLS, and records the outcome per recipient.
