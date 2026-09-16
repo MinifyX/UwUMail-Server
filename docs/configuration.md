@@ -93,6 +93,10 @@ require_tls = false
 [delivery.routes]
 # "internal.example" = "10.0.0.5:25"
 
+# A UwUMail Gateway in front of a server at home, see docs/gateway.md.
+[gateway]
+code = ""              # the gateway's pairing code, used once; the pairing then lives in the database
+
 [tone]
 language = "de"        # de | en
 internal = "playful"   # playful | neutral: mail to our own people

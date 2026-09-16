@@ -36,7 +36,7 @@ These are the rules I build by.
    ManageSieve keep every other app working.
 4. **Home is a valid place for a server.** An optional UwUMail Gateway on a
    small VPS provides a fixed IP and port 25 and tunnels everything home,
-   buffering mail while the home connection is down.
+   without keeping any mail on the VPS.
 5. **Private by default.** No telemetry. Submitted mail does not reveal the
    sender's IP address or device name. Update checks can be turned off.
 6. **Cute, not childish.** The interface and mail to the server's own people
@@ -54,7 +54,7 @@ yourself, UwUMail Server might suit you too.
 | --- | --- |
 | "I want my own domain for the family" | Guided setup, accounts in a few clicks, mail that arrives |
 | "Our club needs info@ and shared mailboxes" | Groups, shared folders, aliases, a web mail everyone can use |
-| "My server lives at home" | Gateway for port 25 and a fixed IP, buffering, good deliverability |
+| "My server lives at home" | Gateway for port 25 and a fixed IP, good deliverability |
 | "I run infrastructure anyway" | Reverse proxy mode, OIDC/LDAP login, Prometheus metrics, backups to S3 |
 
 Much of this is still on the [roadmap](roadmap.md).

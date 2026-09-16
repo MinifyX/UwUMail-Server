@@ -40,8 +40,9 @@ something a family, a club or a small team can run without being a mail admin:
   meant to join them.
 - **Guided setup (planned).** A setup assistant that walks you through domain,
   certificate and DNS records and checks everything live.
-- **Delivers from home (planned).** Blocked port 25 or no fixed IP? An
-  optional UwUMail Gateway on a small VPS tunnels mail to your server at home.
+- **Delivers from home.** Blocked port 25 or no fixed IP? An optional
+  [UwUMail Gateway](docs/gateway.md) on a small VPS tunnels mail and web to
+  your server at home and sends from its own address.
 - **Modern protocols.** JMAP first and SMTP submission today; IMAP, CalDAV,
   CardDAV and Sieve filters are planned.
 - **Simple or Pro.** The admin panel has the same two modes as the app: a
@@ -61,6 +62,9 @@ something a family, a club or a small team can run without being a mail admin:
 | `crates/uwumail-jmap` | JMAP: mail, submission, uploads and downloads, push |
 | `crates/uwumail-web` | The web portal: JSON API and the embedded admin and account app |
 | `crates/uwumail-store` | SQLite + file storage: domains, accounts, mailboxes, messages, queue |
+| `crates/uwumail-tunnel` | The QUIC tunnel between a server and its UwUMail Gateway |
+| `crates/uwumail-gateway` | The UwUMail Gateway program for a VPS |
+| `deploy/gateway` | systemd service, configuration and install script for the gateway |
 | `web/` | The portal's React app |
 | `docker/` | Container images |
 | `docs/` | Vision, architecture, configuration and deployment guides |

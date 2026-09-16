@@ -77,11 +77,20 @@ Each step ships as its own commits, container image and test deployment.
 - [ ] UwUMail web client (built from the app repository) served at `/`, switchable in the admin panel
 - [ ] External mailboxes (Gmail, GMX, ...) through the UwUMail engine, shown as extra JMAP accounts
 
+## UwUMail Gateway ✅ in progress
+
+- [x] QUIC tunnel with pinned certificates, pairing codes, real client addresses, outgoing connections from the gateway
+- [x] Gateway program for a VPS: public mail and web ports, 421 while the server is away, mail ports only outwards, connection limits, systemd service with install script
+- [x] Server side: pairing from the configuration, connections through the tunnel, outgoing mail only through the gateway
+- [x] Setup assistant: detect a home connection (public address, Spamhaus PBL, reverse DNS, port 25, provider), recommend the gateway, pair with the code, DNS records with the gateway's addresses
+- [x] Gateway in the health overview and under Server → Setup, notes on providers that block port 25
+- [ ] Cloudflare button for the host name's A/AAAA records with the gateway's addresses
+- [ ] Tried on a real VPS with a test instance behind it
+
 ## Later
 
 - [ ] Sieve filters and ManageSieve
 - [ ] CalDAV, CardDAV, JMAP Calendars and Contacts
-- [ ] UwUMail Gateway: WireGuard tunnel from a VPS, PROXY protocol, buffering, outbound via fixed IP
 - [ ] OAuth 2 / OpenID Connect provider for mail apps; login via external OIDC or LDAP
 - [ ] Migration assistant (IMAP import from the old provider)
 - [ ] Groups, shared mailboxes, masked addresses

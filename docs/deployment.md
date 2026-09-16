@@ -12,9 +12,9 @@
 - A domain where you can edit DNS records.
 - Docker with Compose.
 
-At home without a fixed IP or with a blocked port 25? The UwUMail Gateway
-(see the roadmap) will solve that; until then send through a relay (the setup
-assistant offers it, or `[delivery.relay]`).
+At home without a fixed IP or with a blocked port 25? Put a
+[UwUMail Gateway](gateway.md) on a small VPS in front of your server. Or only
+send through a relay (the setup assistant offers it, or `[delivery.relay]`).
 
 ## Start
 

@@ -115,7 +115,38 @@ sends mail. Admins can run all checks at once with "Check now".
 
 The binary: configuration (`figment`: TOML + `UWUMAIL_*` environment),
 certificates (`instant-acme`, file reload, self-signed), HTTP(S) with `axum`,
-listeners and graceful shutdown, and management commands.
+listeners and graceful shutdown, and management commands. With a paired
+gateway it runs the tunnel client: connections that arrive through the tunnel
+go to the same SMTP sessions and HTTP apps as the local listeners, and the
+delivery queue connects to other servers through the gateway.
+
+### `uwumail-tunnel` and `uwumail-gateway`
+
+The [UwUMail Gateway](gateway.md) is a separate program for a small VPS.
+`uwumail-tunnel` holds what both sides share:
+
+- **QUIC** (`quinn` on rustls and aws-lc-rs, TLS 1.3 only, ALPN
+  `uwumail-tunnel/1`). The server dials out and keeps the connection alive with
+  keep-alives every 10 seconds; after 30 silent seconds it counts as lost.
+- **Identities:** a self-signed Ed25519 certificate per side, pinned by the
+  SHA-256 of the certificate. The server trusts only the fingerprint from its
+  pairing code; the gateway accepts any client certificate in the handshake and
+  decides afterwards, by fingerprint, whether it is the paired server. Handshake
+  signatures are always checked, so a side has to hold its key.
+- **Pairing codes:** `uwugw1` + base32 of the gateway's addresses and tunnel
+  port, its fingerprint, a 128-bit one-time token and a 4-byte checksum.
+- **Streams:** one per carried connection, each starting with a JSON message
+  behind a 4-byte length. The server's first stream is the control stream
+  (`Hello` with the token while pairing, answered by `Welcome` or `Refused`).
+  The gateway opens a stream per public connection (`Open`: service, client
+  address). The server opens one per outgoing connection (`Connect`: address,
+  answered by `Connected` or `Failed`).
+
+`uwumail-gateway` keeps its key, the paired server and the current token in
+its state directory, checks the pairing every two seconds (so `unpair` takes
+effect while it runs), limits connections in total and per network, answers
+`421` on the SMTP ports while no server is connected, and connects outwards
+only to its mail ports on public addresses.
 
 ## Security notes
 
