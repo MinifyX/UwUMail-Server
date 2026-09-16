@@ -33,3 +33,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Private security-test notes (repro steps, PoCs) — never commit
+security-test-notes.local.md
