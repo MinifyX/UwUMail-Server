@@ -100,16 +100,14 @@ async fn start_with(domain: &str, users: &[&str], routes: &[(&str, SocketAddr)],
 
 impl TestServer {
     async fn inbox(&self, login: &str) -> Vec<EmailSummary> {
+        self.mailbox(login, MailboxRole::Inbox).await
+    }
+
+    async fn mailbox(&self, login: &str, role: MailboxRole) -> Vec<EmailSummary> {
         let store = self.smtp.store();
         let account = store.account(login).await.unwrap().unwrap();
-        let inbox = store
-            .mailboxes(account.id)
-            .await
-            .unwrap()
-            .into_iter()
-            .find(|m| m.role == Some(MailboxRole::Inbox))
-            .unwrap();
-        store.emails_in_mailbox(inbox.id, 50).await.unwrap()
+        let mailbox = store.mailboxes(account.id).await.unwrap().into_iter().find(|m| m.role == Some(role)).unwrap();
+        store.emails_in_mailbox(mailbox.id, 50).await.unwrap()
     }
 
     async fn wait_for_inbox(&self, login: &str, count: usize) -> Vec<EmailSummary> {
@@ -466,4 +464,36 @@ async fn reports_are_read_by_the_server_instead_of_landing_in_a_mailbox() {
     assert_eq!((summary.tls.successful, summary.tls.failed), (9, 1));
     assert_eq!(summary.tls.failures[0].result_type, "certificate-not-trusted");
     assert!(a.inbox("mini@a.test").await.is_empty(), "nothing went to the catch-all");
+}
+
+/// Hands in mail claiming to be from bank.test, straight from 127.0.0.1, which bank.test's SPF
+/// record does not allow, without a DKIM signature: what a plain forgery looks like.
+async fn forged_bank_mail(server: &TestServer, dmarc: &str) -> String {
+    server.smtp.dns_cache().pin_txt("bank.test", "v=spf1 ip4:198.51.100.1 -all").unwrap();
+    server.smtp.dns_cache().pin_txt("_dmarc.bank.test", dmarc).unwrap();
+    server.smtp.dns_cache().pin_no_txt("mail.bank.test");
+
+    let mut session = RawSession::connect(server.mx).await;
+    assert!(session.command("EHLO mail.bank.test").await.starts_with("250"));
+    assert!(session.command("MAIL FROM:<security@bank.test>").await.starts_with("250"));
+    assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
+    assert!(session.command("DATA").await.starts_with("354"));
+    session.command("From: security@bank.test\r\nSubject: Konto gesperrt\r\n\r\nBitte hier anmelden\r\n.").await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn forged_mail_from_a_domain_that_rejects_it_is_refused() {
+    let a = start("a.test", &["mini"], &[]).await;
+    let reply = forged_bank_mail(&a, "v=DMARC1; p=reject").await;
+    assert!(reply.starts_with("550 5.7.1"), "neither SPF nor DKIM aligns, so DMARC fails: {reply}");
+    assert!(a.inbox("mini@a.test").await.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn forged_mail_from_a_domain_that_quarantines_it_goes_to_junk() {
+    let a = start("a.test", &["mini"], &[]).await;
+    let reply = forged_bank_mail(&a, "v=DMARC1; p=quarantine").await;
+    assert!(reply.starts_with("250"), "{reply}");
+    assert!(a.inbox("mini@a.test").await.is_empty(), "a quarantined forgery stays out of the inbox");
+    assert_eq!(a.mailbox("mini@a.test", MailboxRole::Junk).await.len(), 1);
 }

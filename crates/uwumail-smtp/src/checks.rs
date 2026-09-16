@@ -54,9 +54,10 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
         .with_dmarc_result(&dmarc)
         .to_header();
 
-    // Both alignments failed against a published policy.
-    let dmarc_failed =
-        matches!(dmarc.dkim_result(), DmarcResult::Fail(_)) && matches!(dmarc.spf_result(), DmarcResult::Fail(_));
+    // A policy is published and neither SPF nor DKIM passed aligned with it. The single results
+    // only say Fail when a check passed for another domain; a forgery whose SPF fails and that
+    // carries no valid signature has None for both, and only the overall result calls that a fail.
+    let dmarc_failed = matches!(dmarc.result(), DmarcResult::Fail(_));
     let action = match (dmarc_failed, dmarc.policy()) {
         (true, Policy::Reject) if ctx.live().smtp.enforce_dmarc_reject => {
             Action::Reject(format!("the DMARC policy of {} rejects this message", dmarc.domain()))
