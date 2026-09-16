@@ -341,6 +341,7 @@ export function SettingsPage() {
         keys={[
           "spam.enabled",
           "spam.blocklists",
+          "spam.bayes",
           "spam.junk_score",
           "spam.greylist_score",
           "spam.greylist_delay_secs",
@@ -462,6 +463,14 @@ function SpamFields({ form, pro }: { form: Form; pro: boolean }) {
           settingKey="spam.blocklists"
           label={t("settings.spam.blocklists")}
           hint={t("settings.spam.blocklistsHint")}
+        />
+      )}
+      {enabled && (
+        <ToggleField
+          form={form}
+          settingKey="spam.bayes"
+          label={t("settings.spam.bayes")}
+          hint={t("settings.spam.bayesHint")}
         />
       )}
       {enabled && pro && (

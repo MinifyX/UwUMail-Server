@@ -37,6 +37,7 @@ const KNOWN_ACTIONS = new Set([
   "queueRetry",
   "queueDrop",
   "settingsUpdate",
+  "spamLearnFromFolders",
 ]);
 
 function actorName(actor: string, t: TFunction) {

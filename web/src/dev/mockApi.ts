@@ -7,6 +7,8 @@
  */
 
 import type {
+  AccountSpamView,
+  AdminSpamView,
   AppPasswordInfo,
   ForwardingView,
   AuditRecord,
@@ -17,6 +19,7 @@ import type {
   DomainDetail,
   DomainReport,
   DomainSummary,
+  LearnedFromFolders,
   GatewayView,
   Info,
   MtaStsView,
@@ -440,6 +443,7 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "spam.greylist_score": { value: 2, source: "default" },
   "spam.greylist_delay_secs": { value: 300, source: "default" },
   "spam.reject_score": { value: null, source: "default" },
+  "spam.bayes": { value: true, source: "default" },
 };
 
 const settingsView = () => ({
@@ -451,6 +455,8 @@ const settingsView = () => ({
   })),
   configFile: "/etc/uwumail/uwumail.toml",
 });
+
+const mockBayes = { own: { spam: 18, ham: 41 }, server: { spam: 264, ham: 1310 } };
 
 const mockSecurity: SecurityView = {
   totp: false,
@@ -1073,6 +1079,25 @@ const routes: [string, RegExp, Handler][] = [
   ],
   ["POST", /^\/api\/auth\/passkey\/options$/, () => problem(409, "loginExpired")],
   ["GET", /^\/api\/account\/security$/, () => [200, mockSecurity]],
+  [
+    "GET",
+    /^\/api\/account\/spam$/,
+    () => [
+      200,
+      { bayes: { enabled: true, minimum: 50, own: mockBayes.own, server: mockBayes.server } } satisfies AccountSpamView,
+    ],
+  ],
+  ["POST", /^\/api\/account\/spam\/learn-folders$/, () => [200, { spam: 12, ham: 87 } satisfies LearnedFromFolders]],
+  [
+    "GET",
+    /^\/api\/admin\/spam$/,
+    () => [200, { bayes: { enabled: true, minimum: 50, server: mockBayes.server, queued: 3 } } satisfies AdminSpamView],
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/spam\/learn-folders$/,
+    () => [200, { spam: 40, ham: 310, people: 3 } satisfies LearnedFromFolders],
+  ],
   ["GET", /^\/api\/account\/forwarding$/, () => [200, mockForwarding]],
   [
     "POST",

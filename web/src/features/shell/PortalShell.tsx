@@ -10,9 +10,11 @@ import {
   Settings,
   LayoutDashboard,
   LogOut,
+  MailWarning,
   Menu as MenuIcon,
   Palette,
   Server,
+  ShieldBan,
   ShieldCheck,
   UserRound,
   Users,
@@ -132,6 +134,7 @@ export function PortalShell({ session, children }: { session: Session; children:
             { to: "/account", label: t("nav.overview"), icon: LayoutDashboard },
             { to: "/account/addresses", label: t("nav.addresses"), icon: AtSign },
             { to: "/account/mail", label: t("nav.mail"), icon: Forward },
+            { to: "/account/spam", label: t("nav.spam"), icon: MailWarning },
             { to: "/account/security", label: t("nav.security"), icon: ShieldCheck },
           ]}
         />
@@ -146,6 +149,7 @@ export function PortalShell({ session, children }: { session: Session; children:
               { to: "/admin/people", label: t("nav.people"), icon: Users },
               { to: "/admin/domains", label: t("nav.domains"), icon: Globe },
               { to: "/admin/queue", label: t("nav.queue"), icon: Send },
+              { to: "/admin/spam", label: t("nav.spamFilter"), icon: ShieldBan },
               { to: "/admin/settings", label: t("nav.settings"), icon: Settings },
               { to: "/admin/setup", label: t("nav.setup"), icon: WandSparkles },
               { to: "/admin/log", label: t("nav.log"), icon: History },

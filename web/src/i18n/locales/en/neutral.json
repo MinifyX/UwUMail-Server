@@ -47,7 +47,9 @@
     "security": "Security",
     "mail": "Forwarding",
     "addresses": "Addresses",
-    "setup": "Setup"
+    "setup": "Setup",
+    "spam": "Spam",
+    "spamFilter": "Spam filter"
   },
   "mode": {
     "label": "View",
@@ -224,7 +226,8 @@
       "cloudflareFailed": "Cloudflare: {{detail}}",
       "mtaStsCertificate": "Enforce mode needs a valid certificate on the server first.",
       "gatewayCodeInvalid": "The pairing code is not right. Copy it again, all of it, from the gateway.",
-      "gatewayForgetFailed": "The gateway could not be forgotten."
+      "gatewayForgetFailed": "The gateway could not be forgotten.",
+      "learningBusy": "The filter still has a lot of mail to learn. Please try again later."
     }
   },
   "people": {
@@ -407,7 +410,8 @@
       "accountSecondFactorsReset": "{{actor}} reset the two-factor login of {{target}}",
       "accountExternalForwarding": "{{actor}} changed forwarding to other servers for {{target}}",
       "domainSelfServiceAliases": "{{actor}} changed own addresses on {{target}}",
-      "accountAliasLimit": "{{actor}} changed the address limit of {{target}}"
+      "accountAliasLimit": "{{actor}} changed the address limit of {{target}}",
+      "spamLearnFromFolders": "{{actor}} had the spam filter learn from existing mail"
     },
     "details": {
       "adminOn": "is now an admin",
@@ -759,6 +763,8 @@
       "enabledHint": "When it is off, only DMARC decides what goes to spam.",
       "blocklists": "Ask blocklists",
       "blocklistsHint": "Asks Spamhaus, SpamCop and Barracuda about the sending server. A list that does not answer does not count against the sender.",
+      "bayes": "Learning filter",
+      "bayesHint": "Learns from marks and clear cases what spam looks like and scores it. It only counts once it has learned enough.",
       "junkScore": "Spam from score",
       "junkScoreHint": "From this score on, mail goes to the spam folder.",
       "greylistScore": "Hold back from score",
@@ -1396,6 +1402,41 @@
       "fromConfig": "This pairing is set as gateway.code in the configuration. If you forget the gateway here, remove the code as well, or the server pairs again on the next start.",
       "paired": "Paired, the tunnel is coming up.",
       "forgotten": "Gateway forgotten."
+    }
+  },
+  "spam": {
+    "account": {
+      "title": "Spam",
+      "intro": "What the spam filter learned from your marks."
+    },
+    "admin": {
+      "title": "Spam filter",
+      "intro": "What the spam filter learned from the mail on this server.",
+      "settingsLink": "Settings"
+    },
+    "bayes": {
+      "title": "Learning filter",
+      "explain": "The filter remembers which words, links and senders show up in spam and in wanted mail. It compares new mail with that and gives points for or against it. When you mark a mail as spam or not spam, it learns from that. Only checksums are stored, not the words themselves.",
+      "explainAdmin": "The server learns from clear cases and from everyone's marks. On top of that, each person has their own knowledge that comes only from their own marks. Only checksums are stored, not the words themselves.",
+      "off": "The learning filter is turned off on this server. It keeps learning from marks but gives no points.",
+      "own": "Your own knowledge",
+      "server": "The server's knowledge",
+      "spam": "Spam",
+      "ham": "Wanted mail",
+      "countLearning": "{{value}} of {{minimum}}",
+      "countDone": "{{value}}",
+      "ownCounts": "Your own knowledge counts and weighs more the more you mark.",
+      "ownLearning": "Your own knowledge counts once {{minimum}} mails of each kind are learned. Until then, the server's knowledge decides.",
+      "serverCounts": "The filter scores new mail.",
+      "serverLearning": "The filter scores mail once {{minimum}} mails of each kind are learned.",
+      "queued_one": "{{count}} mail is still waiting to be learned.",
+      "queued_other": "{{count}} mails are still waiting to be learned.",
+      "learnHint": "Learn once from existing mail: mail in the spam folder counts as spam, read mail in the inbox and archive older than two weeks as wanted.",
+      "learnHintAdmin": "Learn once from everyone's mail: mail in the spam folder counts as spam, read mail in the inbox and archive older than two weeks as wanted.",
+      "learnOwn": "Learn from my mail",
+      "learnAll": "Learn from everyone's mail",
+      "learnQueued": "{{spam}} spam mails and {{ham}} wanted mails are up for learning.",
+      "learnNothing": "No suitable mail to learn from found."
     }
   }
 }

@@ -21,6 +21,7 @@ import { SecurityPage } from "@/features/security/SecurityPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { SetupPage } from "@/features/setup/SetupPage";
 import { SetupWizard } from "@/features/setup/SetupWizard";
+import { AccountSpamPage, AdminSpamPage } from "@/features/spam/SpamPage";
 import { useSession } from "@/features/session/session";
 import { PortalShell } from "@/features/shell/PortalShell";
 import { useApplyLanguage, useT } from "@/i18n";
@@ -50,6 +51,7 @@ function page(path: string, session: Session): ReactNode {
   if (path === "/account/security") return <SecurityPage session={session} />;
   if (path === "/account/mail") return <MailboxPage />;
   if (path === "/account/addresses") return <AddressesPage />;
+  if (path === "/account/spam") return <AccountSpamPage />;
   if (session.account.role !== "admin") return <NotFound />;
   if (path === "/admin") return <AdminHome />;
   if (matchPath("/admin/people", path)) return <PeoplePage session={session} />;
@@ -59,6 +61,7 @@ function page(path: string, session: Session): ReactNode {
   const domain = matchPath("/admin/domains/:name", path);
   if (domain?.name) return <DomainPage key={domain.name} name={domain.name} />;
   if (matchPath("/admin/queue", path)) return <QueuePage />;
+  if (matchPath("/admin/spam", path)) return <AdminSpamPage />;
   if (matchPath("/admin/log", path)) return <LogPage />;
   if (matchPath("/admin/logs", path)) return <LogsPage />;
   if (matchPath("/admin/settings", path)) return <SettingsPage />;

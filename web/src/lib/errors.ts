@@ -49,6 +49,7 @@ const KNOWN = [
   "addressReserved",
   "notEmptiable",
   "forwardingThrottled",
+  "learningBusy",
   "setupCodeInvalid",
   "setupDone",
   "testMailFailed",

@@ -310,6 +310,25 @@ export interface SettingValue {
   source: SettingSource;
 }
 
+export interface BayesTotals {
+  spam: number;
+  ham: number;
+}
+
+export interface AccountSpamView {
+  bayes: { enabled: boolean; minimum: number; own: BayesTotals; server: BayesTotals };
+}
+
+export interface AdminSpamView {
+  bayes: { enabled: boolean; minimum: number; server: BayesTotals; queued: number };
+}
+
+export interface LearnedFromFolders {
+  spam: number;
+  ham: number;
+  people?: number;
+}
+
 export interface SettingsView {
   settings: SettingValue[];
   configFile: string | null;

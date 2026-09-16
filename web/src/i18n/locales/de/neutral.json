@@ -47,7 +47,9 @@
     "security": "Sicherheit",
     "mail": "Weiterleitung",
     "addresses": "Adressen",
-    "setup": "Einrichtung"
+    "setup": "Einrichtung",
+    "spam": "Spam",
+    "spamFilter": "Spamfilter"
   },
   "mode": {
     "label": "Ansicht",
@@ -224,7 +226,8 @@
       "cloudflareFailed": "Cloudflare: {{detail}}",
       "mtaStsCertificate": "Für den strengen Modus braucht der Server erst ein gültiges Zertifikat.",
       "gatewayCodeInvalid": "Der Kopplungs-Code stimmt nicht. Kopier ihn nochmal vollständig vom Gateway.",
-      "gatewayForgetFailed": "Das Gateway ließ sich nicht vergessen."
+      "gatewayForgetFailed": "Das Gateway ließ sich nicht vergessen.",
+      "learningBusy": "Der Filter hat gerade noch sehr viele Mails zu lernen. Versuch es später wieder."
     }
   },
   "people": {
@@ -407,7 +410,8 @@
       "accountSecondFactorsReset": "{{actor}} hat die Zwei-Faktor-Anmeldung von {{target}} zurückgesetzt",
       "accountExternalForwarding": "{{actor}} hat die Weiterleitung nach außen für {{target}} geändert",
       "domainSelfServiceAliases": "{{actor}} hat eigene Adressen auf {{target}} geändert",
-      "accountAliasLimit": "{{actor}} hat das Adress-Limit von {{target}} geändert"
+      "accountAliasLimit": "{{actor}} hat das Adress-Limit von {{target}} geändert",
+      "spamLearnFromFolders": "{{actor}} hat den Spamfilter aus vorhandener Post lernen lassen"
     },
     "details": {
       "adminOn": "ist jetzt Admin",
@@ -759,6 +763,8 @@
       "enabledHint": "Ausgeschaltet entscheidet nur noch DMARC, was in Spam landet.",
       "blocklists": "Blocklisten fragen",
       "blocklistsHint": "Fragt Spamhaus, SpamCop und Barracuda nach dem sendenden Server. Antwortet eine Liste nicht, zählt das nicht gegen den Absender.",
+      "bayes": "Lernender Filter",
+      "bayesHint": "Lernt aus Markierungen und eindeutigen Fällen, wie Spam aussieht, und gibt dafür Punkte. Zählt erst, wenn genug gelernt ist.",
       "junkScore": "Spam ab Punktzahl",
       "junkScoreHint": "Ab hier landet eine Mail im Spam-Ordner.",
       "greylistScore": "Zurückstellen ab Punktzahl",
@@ -1396,6 +1402,41 @@
       "fromConfig": "Diese Kopplung steht als gateway.code in der Konfiguration. Wenn du das Gateway hier vergisst, entferne auch den Code, sonst koppelt der Server beim nächsten Start neu.",
       "paired": "Gekoppelt, der Tunnel baut sich auf.",
       "forgotten": "Gateway vergessen."
+    }
+  },
+  "spam": {
+    "account": {
+      "title": "Spam",
+      "intro": "Was der Spamfilter aus deinen Markierungen gelernt hat."
+    },
+    "admin": {
+      "title": "Spamfilter",
+      "intro": "Was der Spamfilter aus der Post auf diesem Server gelernt hat.",
+      "settingsLink": "Einstellungen"
+    },
+    "bayes": {
+      "title": "Lernender Filter",
+      "explain": "Der Filter merkt sich, welche Wörter, Links und Absender in Spam und in erwünschter Post vorkommen. Neue Mails vergleicht er damit und gibt Punkte dafür oder dagegen. Markierst du eine Mail als Spam oder als kein Spam, lernt er daraus. Gespeichert werden nur Prüfsummen, nicht die Wörter selbst.",
+      "explainAdmin": "Der Server lernt aus eindeutigen Fällen und aus den Markierungen aller Personen. Jede Person hat zusätzlich eigenes Wissen, das nur aus ihren eigenen Markierungen stammt. Gespeichert werden nur Prüfsummen, nicht die Wörter selbst.",
+      "off": "Der lernende Filter ist auf diesem Server ausgeschaltet. Er lernt weiter aus Markierungen, gibt aber keine Punkte.",
+      "own": "Dein eigenes Wissen",
+      "server": "Wissen des Servers",
+      "spam": "Spam",
+      "ham": "Erwünschte Post",
+      "countLearning": "{{value}} von {{minimum}}",
+      "countDone": "{{value}}",
+      "ownCounts": "Dein eigenes Wissen zählt mit und wiegt stärker, je mehr du markierst.",
+      "ownLearning": "Dein eigenes Wissen zählt, sobald je {{minimum}} Mails gelernt sind. Bis dahin entscheidet das Wissen des Servers.",
+      "serverCounts": "Der Filter gibt neuen Mails Punkte.",
+      "serverLearning": "Der Filter gibt Punkte, sobald je {{minimum}} Mails gelernt sind.",
+      "queued_one": "{{count}} Mail wartet noch aufs Lernen.",
+      "queued_other": "{{count}} Mails warten noch aufs Lernen.",
+      "learnHint": "Einmal aus vorhandener Post lernen: Mails im Spam-Ordner zählen als Spam, gelesene Mails im Posteingang und Archiv, die älter als zwei Wochen sind, als erwünscht.",
+      "learnHintAdmin": "Einmal aus der Post aller Personen lernen: Mails im Spam-Ordner zählen als Spam, gelesene Mails im Posteingang und Archiv, die älter als zwei Wochen sind, als erwünscht.",
+      "learnOwn": "Aus meiner Post lernen",
+      "learnAll": "Aus der Post aller lernen",
+      "learnQueued": "{{spam}} Spam-Mails und {{ham}} erwünschte Mails kommen zum Lernen dran.",
+      "learnNothing": "Keine passenden Mails zum Lernen gefunden."
     }
   }
 }
