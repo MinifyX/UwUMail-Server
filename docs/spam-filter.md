@@ -69,6 +69,19 @@ Reputation counts every delivered message for its sender: by From domain when
 the message passed DMARC, otherwise by sending network, because a domain name
 that nothing vouches for could be anyone's.
 
+## Spam and Not spam from the apps
+
+When someone moves a message into Junk or out of it, or a mail app sets the
+`$junk` or `$notjunk` keyword, the sender's reputation follows. Every delivered
+message counts once, when it arrives; marking it moves that count from good to
+junk or back. Clicking back and forth never counts twice, and a mistake is
+undone by marking the message the other way. The UwUMail apps move the message
+and set the keyword together, which also counts once.
+
+Moving spam from Junk to the Trash is tidying up, not "Not spam". Mail that was
+never counted (from our own people or network, or from before the filter) has
+nothing to move.
+
 A forged message from a server without a reverse name, for a domain that
 publishes DMARC, collects `DMARC_FAIL`, `SPF_FAIL`, `NO_AUTH` and
 `NO_REVERSE_DNS`: 7.0 points, Junk.

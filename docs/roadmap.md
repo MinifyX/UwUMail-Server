@@ -63,6 +63,7 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Score for mail from other servers with the rules that fired, `X-Spam-Score` / `X-Spam-Status` headers, score in the server log
 - [x] DNS blocklists (Spamhaus ZEN, SpamCop, Barracuda), greylisting only for suspicious senders, sender reputation by DMARC domain or network
 - [x] Thresholds for greylisting, Junk and refusing (off by default) in the admin panel
+- [x] "Spam" / "Not spam" in the apps (moving to or from Junk, `$junk` / `$notjunk`) corrects the sender's reputation
 - [ ] Rspamd rules ported to Rust: header/body patterns, URL and phishing checks, MIME tricks
 - [ ] Bayes classifier that learns from "Spam" / "Not spam" in the apps
 - [ ] Optional external Rspamd, optional ClamAV container
