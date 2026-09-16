@@ -25,6 +25,7 @@ mod query;
 mod queue;
 mod reports;
 mod security;
+mod spam;
 mod web;
 
 use std::path::{Path, PathBuf};
@@ -57,6 +58,7 @@ pub use security::{
     AppPassword, AppScope, CodeCheck, CreatedAppPassword, MailAuth, MailAuthDenied, NewAppPassword, Passkey,
     SecurityEvent, SecurityEventRecord, SecurityOverview, TotpSetup, WebSessionInfo,
 };
+pub use spam::{Greylist, Reputation};
 pub use web::{NewWebSession, ServerCounts, WebSession};
 
 #[derive(Debug, thiserror::Error)]
