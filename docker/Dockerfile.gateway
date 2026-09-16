@@ -1,0 +1,25 @@
+# syntax=docker/dockerfile:1.7
+#
+# Builds the UwUMail Gateway binary for Linux and puts only the file into the output:
+#
+#   docker build -f docker/Dockerfile.gateway --output type=local,dest=dist .
+#
+# Built on Debian 12, so it runs on Debian 12 and newer and on Ubuntu 24.04 and newer.
+
+FROM rust:1-slim-bookworm AS build
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends cmake clang \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY . .
+# Touching the workspace sources keeps a cached target directory from hiding changes
+# (see docker/Dockerfile). The target cache has its own id: C code built against the newer glibc
+# of the server image would not link here.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=uwumail-gateway-bookworm-target,target=/src/target \
+    touch crates/*/src/lib.rs crates/*/src/main.rs 2>/dev/null; \
+    cargo build --release --locked -p uwumail-gateway \
+ && cp target/release/uwumail-gateway /uwumail-gateway
+
+FROM scratch
+COPY --from=build /uwumail-gateway /uwumail-gateway

@@ -1,0 +1,29 @@
+# UwUMail Gateway. Everything is optional; these are the defaults.
+# Environment variables override the file: UWUMAIL_GATEWAY_TUNNEL, UWUMAIL_GATEWAY_LISTEN__HTTP, ...
+
+# UDP port the UwUMail server connects to for the tunnel.
+tunnel = "[::]:443"
+state_dir = "/var/lib/uwumail-gateway"
+# The gateway's public addresses, for the pairing code and the server's DNS records.
+# Empty: the addresses this machine sends from. Set them when the machine sits behind NAT.
+public_addresses = []
+
+# Public TCP ports and what they are for. An empty string turns one off.
+[listen]
+smtp = "[::]:25"          # mail from other servers
+submission = "[::]:587"   # mail apps, STARTTLS
+submissions = "[::]:465"  # mail apps, TLS
+http = "[::]:80"          # certificate challenges, redirect to HTTPS
+https = "[::]:443"        # web portal, web mail, JMAP
+
+# Connections the server makes through the gateway: only these ports on public addresses.
+[outbound]
+ports = [25, 465, 587]
+
+[limits]
+max_connections = 1000
+max_connections_per_ip = 50
+
+[log]
+format = "text"           # text | json
+level = "info"
