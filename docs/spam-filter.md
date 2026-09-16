@@ -3,9 +3,10 @@
 The spam filter scores mail that arrives from other servers and decides
 whether it goes to the inbox, waits a little, goes to Junk or is refused. It
 judges the sending server, the authentication results, what the message itself
-shows (its links, attachments and headers) and how the sender behaved before,
-and it learns from "Spam" / "Not spam" in the apps. A filter that learns from
-the words in messages is next on the [roadmap](roadmap.md).
+shows (its links, attachments and headers) and how the sender behaved before.
+It learns from "Spam" / "Not spam" in the apps, both about senders and about
+what spam looks like, and everyone can keep a list of senders that are always
+let through or kept out, and so can admins for a domain or the whole server.
 
 ## What gets scored
 
@@ -35,12 +36,15 @@ to the same person is not delayed again. Mail that scores below
 services arrive at once. Setting `greylist_score` to `junk_score` turns
 greylisting off.
 
-Refusing is off unless `reject_score` is set: a filter that does not learn yet
-is wrong now and then, and Junk loses nothing while a refusal does.
+Refusing is off unless `reject_score` is set: any filter is wrong now and then,
+and Junk loses nothing while a refusal does.
 
 DMARC comes first and does not depend on the score: mail that fails the
 sender's `p=reject` policy is refused (unless `smtp.enforce_dmarc_reject` is
 off), and `p=quarantine` puts it into Junk.
+
+Allowed and blocked senders come before the score; see
+[Allowed and blocked senders](#allowed-and-blocked-senders).
 
 Mail in Junk is never forwarded to other addresses.
 
@@ -126,7 +130,8 @@ about its server counts.
 ## Spam and Not spam from the apps
 
 When someone moves a message into Junk or out of it, or a mail app sets the
-`$junk` or `$notjunk` keyword, the sender's reputation follows. Every delivered
+`$junk` or `$notjunk` keyword, the sender's reputation follows and the
+[learning filter](#the-learning-filter-bayes) learns the message. Every delivered
 message counts once, when it arrives; marking it moves that count from good to
 junk or back. Clicking back and forth never counts twice, and a mistake is
 undone by marking the message the other way. The UwUMail apps move the message
@@ -135,6 +140,114 @@ and set the keyword together, which also counts once.
 Moving spam from Junk to the Trash is tidying up, not "Not spam". Mail that was
 never counted (from our own people or network, or from before the filter) has
 nothing to move.
+
+## The learning filter (Bayes)
+
+The Bayes filter learns what spam and wanted mail look like on this server.
+For every learned message it counts small pieces, called tokens: words from
+the subject, words and word pairs from the text, the sites its links lead to,
+the From domain, the mail program, the kind of message and the endings of
+attachment names. A new message is taken apart the same way. Tokens that showed up mostly in spam point one way, tokens
+from wanted mail the other, and tokens seen only a few times count little. The
+150 most telling tokens are combined into a chance that the message is spam
+(Robinson and Fisher's method, as in SpamBayes).
+
+| Rule | Points | When |
+| --- | --- | --- |
+| `BAYES_SPAM` | up to +5.0 | the chance is 80 % or more, +5.0 at 100 % |
+| `BAYES_HAM` | down to −3.0 | the chance is 20 % or less, −3.0 at 0 % |
+
+In between it gives no points. The sender reputation and the clear cases below
+look at a message's points without the learned rules (these two and the
+reputation rules), so what was learned never feeds on itself.
+
+It learns from:
+
+- **Marks.** "Spam" and "Not spam" in the apps (moving into or out of Junk, or
+  `$junk` / `$notjunk`) teach the whole server and the person who marked the
+  message. Changing one's mind unlearns the earlier verdict first.
+- **Clear cases**, for the whole server only: 12 points or more on the
+  message's own merits, or DMARC passed with nothing against it and not in
+  Junk.
+- **Mail that is already sorted**, once and on request: in the portal under
+  *Mein Konto → Spam* for one's own mail, under *Server → Spamfilter* for
+  everyone's, or with `uwumail-server spam learn [address]`. Mail in Junk
+  counts as spam, read mail in the inbox and archive that is older than two
+  weeks as wanted mail, at most 2,000 of each per person. This teaches the
+  whole server and each person.
+
+The server's knowledge counts once it has learned 50 spam and 50 wanted
+messages. Every person also has their own knowledge, only from their own marks
+and their own sorted mail. It counts once it reaches 50 and 50 as well and is then mixed with the
+server's: 60 % their own at first, growing to 90 % by 500 learned messages.
+That way the same newsletter can land in one person's inbox and in another
+one's Junk. `uwumail-server spam stats` shows how far the server got.
+
+Tokens are not stored as text. Each one is hashed with a secret key of the
+server (HMAC-SHA-256, cut to 64 bits), so the database holds numbers instead
+of words, and without the key nobody can check whether a word was learned.
+Learning runs in the background. Tokens seen only once and not for 90 days are
+forgotten, and what a message was learned as is forgotten after a year.
+
+With `spam.bayes` off, the filter gives no points and does not learn clear
+cases, but it keeps learning from marks, so it is ready when it is turned on
+again.
+
+## Allowed and blocked senders
+
+Everyone keeps their own list of allowed and blocked senders in the portal
+under *Mein Konto → Spam*. Admins keep one for the whole server and one per
+domain under *Server → Spamfilter*, or on the command line.
+
+| Kind | Example | Matches |
+| --- | --- | --- |
+| IP address or network | `192.0.2.10`, `198.51.100.0/24`, `2001:db8::/48` | the address of the sending server; networks may be at most /8 (IPv4) or /16 (IPv6) wide |
+| Host name | `mx1.example.com`, `*.mail.example.com` | the reverse name of the sending server, but only if that name points back to the same address; `*.` matches the names below, not the name itself |
+| Email address | `news@example.com` | the From address; blocking also looks at the envelope sender |
+| Domain | `example.com` | the From domain and its subdomains; blocking also looks at the envelope sender's |
+
+The portal and the command line guess the kind: an address or network,
+anything with an `@`, a `*.` pattern, otherwise a domain. A single host name
+without `*.` has to be chosen as a host name.
+
+| List | A person's | A domain's or the server's |
+| --- | --- | --- |
+| Allowed | inbox | inbox |
+| Blocked | Junk | refused in the SMTP dialogue (`550 5.7.1`) |
+
+Allowed senders are never held back by greylisting, and their score cannot
+refuse them or put them into Junk. A DMARC quarantine does not either, but a
+failed `p=reject` policy is still refused. An allowed From address or domain
+only counts when SPF or DKIM passed for that domain (or a parent or subdomain
+of it), with or without a published DMARC policy, because anyone can write
+any From. An address or a confirmed host name of the sending server cannot be
+faked that way and always counts. Blocking needs no confirmation.
+
+Which entry decides:
+
+1. Within each list (the person's, the domain's, the server's), the most
+   specific matching entry: an email address before a single IP address or
+   exact host name, before a network or `*.` pattern, before a domain, and a
+   subdomain before its parent. At a tie, blocking wins. So `boss@example.com`
+   can be allowed while `example.com` is blocked in the same list.
+2. If the server's or the domain's list blocks, the message is refused, no
+   matter what a person allowed.
+3. Otherwise a person's own list decides, then the domain's, then the server's.
+
+The domain is the one of the address the message was sent to. When a message
+goes to several people and a domain list blocks it for only some of them, the
+others get it and the blocked ones find it in Junk, because the SMTP dialogue
+can only refuse a message for everyone at once. Changes to the server's and
+the domains' lists are in the change log.
+
+```sh
+uwumail-server spam block 198.51.100.0/24 --note "only ever sent spam"
+uwumail-server spam allow news@example.com --domain example.org
+uwumail-server spam block mx1.example.net --kind host
+uwumail-server spam allow grandma@example.net --account someone@example.org
+uwumail-server spam senders [--account someone@example.org]
+uwumail-server spam unlist 12 [--account someone@example.org]
+```
 
 ## Headers
 
@@ -175,6 +288,7 @@ All of these can be changed in the portal under *Einstellungen* /
 [spam]
 enabled = true              # score mail from other servers
 blocklists = true           # ask Spamhaus ZEN, SpamCop and Barracuda
+bayes = true                # the learning filter
 junk_score = 5.0            # from here on: Junk
 greylist_score = 2.0        # from here to junk_score: hold back once
 greylist_delay_secs = 300   # how long a held-back sender waits

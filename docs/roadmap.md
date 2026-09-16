@@ -66,7 +66,9 @@ Each step ships as its own commits, container image and test deployment.
 - [x] "Spam" / "Not spam" in the apps (moving to or from Junk, `$junk` / `$notjunk`) corrects the sender's reputation
 - [x] Content rules after Rspamd's example: phishing links and look-alike domains, faked display names, dangerous attachments (also inside zip archives), header and MIME oddities, Spamhaus DBL for link domains
 - [ ] More content rules: URL shorteners and redirectors, SURBL/URIBL, text patterns
-- [ ] Bayes classifier that learns from "Spam" / "Not spam" in the apps
+- [x] Bayes filter that learns from "Spam" / "Not spam", clear cases and once from sorted mail, with knowledge for the whole server and per person, tokens only as keyed hashes
+- [x] Allowed and blocked senders (IP address or network, confirmed host name, address, domain) per person, domain and server
+- [ ] "Block" in the apps puts the sender on the person's list on the server
 - [ ] Optional external Rspamd, optional ClamAV container
 
 ## 5. IMAP

@@ -52,7 +52,12 @@ Design choices that matter later:
   message itself is read once on a blocking thread (`spam::content` with
   `html`, `links` and `attachments`) for phishing links, dangerous attachments
   and header oddities; link domains are asked about on Spamhaus DBL. Moving mail
-  into or out of Junk moves the sender's count in the store.
+  into or out of Junk moves the sender's count in the store. `spam::bayes` takes
+  messages apart into tokens, hashed with a key of the server, and learns them
+  from a queue in the store in the background.
+- `sender_lists`: allowed and blocked senders of a person, a domain and the
+  server, decided per recipient before the score. Host names count only when
+  the reverse name points back to the sending address.
 - `outbound` + `client`: the delivery worker claims due recipients with a
   lease, groups them by domain, resolves MX (or a relay / static route),
   delivers with opportunistic TLS, and records the outcome per recipient.

@@ -35,9 +35,9 @@ UwUMail Server is a self-hosted mail server written in Rust. It is the home
 base for the UwUMail apps and works with other mail apps too. I want it to be
 something a family, a club or a small team can run without being a mail admin:
 
-- **One container.** Mail server and admin panel in a single image for amd64
-  and arm64 (yes, a Raspberry Pi is enough); spam filter and web mail are
-  meant to join them.
+- **One container.** Mail server, spam filter and admin panel in a single
+  image for amd64 and arm64 (yes, a Raspberry Pi is enough); web mail is meant
+  to join them.
 - **Guided setup (planned).** A setup assistant that walks you through domain,
   certificate and DNS records and checks everything live.
 - **Delivers from home.** Blocked port 25 or no fixed IP? An optional
