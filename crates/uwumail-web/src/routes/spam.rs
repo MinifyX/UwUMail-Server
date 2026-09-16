@@ -1,10 +1,15 @@
-//! The spam filter in My account and for admins: what the Bayes filter learned, and learning once
-//! from mail that is already sorted into Junk or kept in the inbox.
+//! The spam filter in My account and for admins: what the Bayes filter learned, learning once from
+//! mail that is already sorted into Junk or kept in the inbox, and allowed and blocked senders.
 
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
+use serde::Deserialize;
 use serde_json::{Value, json};
-use uwumail_store::{BAYES_FOLDER_LIMIT, BAYES_MIN_LEARNED, BAYES_WANTED_AFTER_SECS};
+use uwumail_store::{
+    BAYES_FOLDER_LIMIT, BAYES_MIN_LEARNED, BAYES_WANTED_AFTER_SECS, ListOwner, ListScope, NewSenderListEntry,
+    SENDER_LIST_ADMIN_LIMIT, SENDER_LIST_PERSONAL_LIMIT, SenderKind, SenderList,
+};
 
 use crate::Web;
 use crate::error::{ApiError, ApiResult};
@@ -70,4 +75,105 @@ pub async fn admin_learn(State(web): State<Web>, Admin(session): Admin) -> ApiRe
     let details = json!({ "spam": spam, "ham": ham, "people": people });
     audit(&web, &session, "spam.learnFromFolders", "server", details.clone()).await;
     Ok(Json(details))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewSender {
+    list: SenderList,
+    /// Guessed from the value when left out.
+    kind: Option<SenderKind>,
+    value: String,
+    #[serde(default)]
+    note: String,
+    /// Admins only: the domain the entry is for; the whole server when left out.
+    domain: Option<String>,
+}
+
+async fn own_senders(web: &Web, session: &Session) -> ApiResult<Json<Value>> {
+    let entries = web.store().sender_list(ListScope::Account(session.account.id)).await?;
+    Ok(Json(json!({ "entries": entries, "limit": SENDER_LIST_PERSONAL_LIMIT })))
+}
+
+async fn admin_senders(web: &Web) -> ApiResult<Json<Value>> {
+    let store = web.store();
+    let entries = store.admin_sender_lists().await?;
+    let domains: Vec<String> = store.domains().await?.into_iter().map(|domain| domain.name).collect();
+    Ok(Json(json!({ "entries": entries, "domains": domains, "limit": SENDER_LIST_ADMIN_LIMIT })))
+}
+
+/// One's own allowed and blocked senders.
+pub async fn account_senders(State(web): State<Web>, session: Session) -> ApiResult<Json<Value>> {
+    own_senders(&web, &session).await
+}
+
+pub async fn account_add_sender(
+    State(web): State<Web>,
+    session: Session,
+    Json(new): Json<NewSender>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    web.store()
+        .add_sender_list_entry(NewSenderListEntry {
+            scope: ListScope::Account(session.account.id),
+            list: new.list,
+            kind: new.kind,
+            value: new.value,
+            note: new.note,
+            created_by: session.account.login.clone(),
+        })
+        .await?;
+    Ok((StatusCode::CREATED, own_senders(&web, &session).await?))
+}
+
+pub async fn account_remove_sender(
+    State(web): State<Web>,
+    session: Session,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<Value>> {
+    web.store().remove_sender_list_entry(ListOwner::Account(session.account.id), id).await?;
+    own_senders(&web, &session).await
+}
+
+/// The allowed and blocked senders of the whole server and of every domain.
+pub async fn admin_senders_view(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Value>> {
+    admin_senders(&web).await
+}
+
+pub async fn admin_add_sender(
+    State(web): State<Web>,
+    Admin(session): Admin,
+    Json(new): Json<NewSender>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let store = web.store();
+    let scope = match new.domain.as_deref() {
+        Some(name) => {
+            let domain = store.domain(name).await?.ok_or_else(|| ApiError::NotFound(format!("domain {name}")))?;
+            ListScope::Domain(domain.id)
+        }
+        None => ListScope::Server,
+    };
+    let entry = store
+        .add_sender_list_entry(NewSenderListEntry {
+            scope,
+            list: new.list,
+            kind: new.kind,
+            value: new.value,
+            note: new.note,
+            created_by: session.account.login.clone(),
+        })
+        .await?;
+    let details = json!({ "list": entry.list, "kind": entry.kind, "domain": entry.domain });
+    audit(&web, &session, "spam.senderAdd", &entry.value, details).await;
+    Ok((StatusCode::CREATED, admin_senders(&web).await?))
+}
+
+pub async fn admin_remove_sender(
+    State(web): State<Web>,
+    Admin(session): Admin,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<Value>> {
+    let entry = web.store().remove_sender_list_entry(ListOwner::Admin, id).await?;
+    let details = json!({ "list": entry.list, "kind": entry.kind, "domain": entry.domain });
+    audit(&web, &session, "spam.senderRemove", &entry.value, details).await;
+    admin_senders(&web).await
 }

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Debug, Parser)]
 #[command(name = "uwumail-server", version, about = "UwUMail Server: your own cute mail server (=^･ω･^=)")]
@@ -51,6 +51,48 @@ pub enum SpamCommand {
     },
     /// What the Bayes filter has learned so far.
     Stats,
+    /// Always let a sender through: an IP address or network, a host name, an email address or a domain.
+    Allow(SenderArgs),
+    /// Keep a sender out. Blocked for the server or a domain, their mail is refused; for a person it goes
+    /// to Junk.
+    Block(SenderArgs),
+    /// Show allowed and blocked senders: the server's and every domain's, or one person's.
+    Senders {
+        #[arg(long)]
+        account: Option<String>,
+    },
+    /// Take a sender off a list by the number `senders` shows.
+    Unlist {
+        id: i64,
+        /// The person the entry belongs to, for personal entries.
+        #[arg(long)]
+        account: Option<String>,
+    },
+}
+
+#[derive(Debug, Args)]
+pub struct SenderArgs {
+    /// E.g. 192.0.2.10, 198.51.100.0/24, *.mail.example.com, someone@example.com or example.com.
+    pub value: String,
+    /// What the value is; guessed when left out. A single host name has to be given as host.
+    #[arg(long, value_enum)]
+    pub kind: Option<SenderKindArg>,
+    /// Only for mail to this one of our domains.
+    #[arg(long, conflicts_with = "account")]
+    pub domain: Option<String>,
+    /// Only for this person.
+    #[arg(long)]
+    pub account: Option<String>,
+    #[arg(long, default_value = "")]
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum SenderKindArg {
+    Ip,
+    Host,
+    Address,
+    Domain,
 }
 
 #[derive(Debug, Subcommand)]

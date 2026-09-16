@@ -193,6 +193,11 @@ impl Web {
             .route("/api/account/storage", get(routes::own::storage))
             .route("/api/account/spam", get(routes::spam::account_overview))
             .route("/api/account/spam/learn-folders", post(routes::spam::account_learn))
+            .route(
+                "/api/account/spam/senders",
+                get(routes::spam::account_senders).post(routes::spam::account_add_sender),
+            )
+            .route("/api/account/spam/senders/{id}", delete(routes::spam::account_remove_sender))
             .route("/api/account/mailboxes/{role}/empty", post(routes::own::empty_mailbox))
             .route("/api/forwarding-links/{token}", get(routes::mailbox::show_link))
             .route("/api/forwarding-links/{token}/confirm", post(routes::mailbox::confirm_link))
@@ -223,6 +228,11 @@ impl Web {
             .route("/api/admin/settings", get(routes::settings::show).patch(routes::settings::update))
             .route("/api/admin/spam", get(routes::spam::admin_overview))
             .route("/api/admin/spam/learn-folders", post(routes::spam::admin_learn))
+            .route(
+                "/api/admin/spam/senders",
+                get(routes::spam::admin_senders_view).post(routes::spam::admin_add_sender),
+            )
+            .route("/api/admin/spam/senders/{id}", delete(routes::spam::admin_remove_sender))
             .route("/api/admin/people", get(routes::people::list).post(routes::people::create))
             .route(
                 "/api/admin/people/{login}",

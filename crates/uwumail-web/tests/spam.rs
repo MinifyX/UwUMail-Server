@@ -51,8 +51,8 @@ async fn login(app: &Router, address: &str) -> (String, String) {
     (login["_cookie"].as_str().unwrap().to_owned(), login["csrfToken"].as_str().unwrap().to_owned())
 }
 
-#[tokio::test]
-async fn people_and_admins_see_what_was_learned_and_can_learn_from_sorted_mail() {
+/// A server with the domain example.de, the admin chef and Leni; returns their account ids.
+async fn server() -> (tempfile::TempDir, Store, Vec<i64>) {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
     store.create_domain("example.de").await.unwrap();
@@ -67,6 +67,34 @@ async fn people_and_admins_see_what_was_learned_and_can_learn_from_sorted_mail()
         };
         ids.push(store.create_account(account).await.unwrap().id);
     }
+    (dir, store, ids)
+}
+
+fn router(store: &Store) -> Router {
+    let settings = SmtpSettings {
+        hostname: "mail.example.de".into(),
+        smtp: Default::default(),
+        spam: Default::default(),
+        delivery: Default::default(),
+        tone: Default::default(),
+        server_tls: None,
+    };
+    let web = Web::new(
+        Smtp::new(store.clone(), settings).unwrap(),
+        WebSettings {
+            hostname: "mail.example.de".into(),
+            started: Instant::now(),
+            logs: None,
+            config: None,
+            certificate: None,
+        },
+    );
+    web.router()
+}
+
+#[tokio::test]
+async fn people_and_admins_see_what_was_learned_and_can_learn_from_sorted_mail() {
+    let (_dir, store, ids) = server().await;
     let month_ago = now_secs() - 30 * 24 * 3600;
     for (raw, role, keywords, received_at) in [
         (&b"Subject: Gewinnspiel\r\n\r\ngratis\r\n"[..], MailboxRole::Junk, vec![], None),
@@ -86,26 +114,7 @@ async fn people_and_admins_see_what_was_learned_and_can_learn_from_sorted_mail()
         };
         store.ingest(request).await.unwrap();
     }
-
-    let settings = SmtpSettings {
-        hostname: "mail.example.de".into(),
-        smtp: Default::default(),
-        spam: Default::default(),
-        delivery: Default::default(),
-        tone: Default::default(),
-        server_tls: None,
-    };
-    let web = Web::new(
-        Smtp::new(store.clone(), settings).unwrap(),
-        WebSettings {
-            hostname: "mail.example.de".into(),
-            started: Instant::now(),
-            logs: None,
-            config: None,
-            certificate: None,
-        },
-    );
-    let app = web.router();
+    let app = router(&store);
 
     let leni = login(&app, "leni@example.de").await;
     let (status, overview) = call(&app, "GET", "/api/account/spam", None, Some(&leni)).await;
@@ -132,4 +141,55 @@ async fn people_and_admins_see_what_was_learned_and_can_learn_from_sorted_mail()
 
 fn now_secs() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64
+}
+
+#[tokio::test]
+async fn people_keep_their_own_sender_lists_and_admins_those_of_the_server_and_domains() {
+    let (_dir, store, _ids) = server().await;
+    let app = router(&store);
+    let leni = login(&app, "leni@example.de").await;
+    let chef = login(&app, "chef@example.de").await;
+
+    let body = json!({ "list": "block", "value": "Werbung@Example.com", "note": "Newsletter" });
+    let (status, view) = call(&app, "POST", "/api/account/spam/senders", Some(body), Some(&leni)).await;
+    assert_eq!(status, StatusCode::CREATED, "{view}");
+    let entry = &view["entries"][0];
+    assert_eq!((entry["kind"].as_str(), entry["value"].as_str()), (Some("address"), Some("werbung@example.com")));
+    assert_eq!(view["limit"].as_i64(), Some(1000));
+    let id = entry["id"].as_i64().unwrap();
+
+    let body = json!({ "list": "allow", "value": "werbung@example.com" });
+    let (status, error) = call(&app, "POST", "/api/account/spam/senders", Some(body), Some(&leni)).await;
+    assert_eq!((status, error["code"].as_str()), (StatusCode::CONFLICT, Some("senderListed")));
+    let body = json!({ "list": "block", "kind": "ip", "value": "example.com" });
+    let (status, error) = call(&app, "POST", "/api/account/spam/senders", Some(body), Some(&leni)).await;
+    assert_eq!((status, error["code"].as_str()), (StatusCode::CONFLICT, Some("senderInvalid")));
+
+    let (status, _) = call(&app, "DELETE", &format!("/api/account/spam/senders/{id}"), None, Some(&chef)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "nobody removes someone else's entry, admins neither");
+    let (status, _) = call(&app, "GET", "/api/admin/spam/senders", None, Some(&leni)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let body = json!({ "list": "allow", "value": "192.0.2.10", "domain": "example.de" });
+    let (status, view) = call(&app, "POST", "/api/admin/spam/senders", Some(body), Some(&chef)).await;
+    assert_eq!(status, StatusCode::CREATED, "{view}");
+    assert_eq!(view["entries"][0]["domain"].as_str(), Some("example.de"));
+    assert_eq!(view["domains"], json!(["example.de"]));
+    let body = json!({ "list": "block", "value": "*.spam.example" });
+    let (status, view) = call(&app, "POST", "/api/admin/spam/senders", Some(body), Some(&chef)).await;
+    assert_eq!(status, StatusCode::CREATED, "{view}");
+    assert_eq!(view["entries"].as_array().map(Vec::len), Some(2), "Leni's own entry is not the admins' business");
+    let body = json!({ "list": "block", "value": "spam.example", "domain": "unknown.example" });
+    let (status, _) = call(&app, "POST", "/api/admin/spam/senders", Some(body), Some(&chef)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let host = view["entries"].as_array().unwrap().iter().find(|entry| entry["kind"] == "host").unwrap();
+    let path = format!("/api/admin/spam/senders/{}", host["id"]);
+    let (status, view) = call(&app, "DELETE", &path, None, Some(&chef)).await;
+    assert_eq!(status, StatusCode::OK, "{view}");
+    let actions: Vec<String> = store.audit_log(10, None).await.unwrap().into_iter().map(|entry| entry.action).collect();
+    assert!(actions.contains(&"spam.senderAdd".to_owned()) && actions.contains(&"spam.senderRemove".to_owned()));
+
+    let (status, view) = call(&app, "DELETE", &format!("/api/account/spam/senders/{id}"), None, Some(&leni)).await;
+    assert_eq!((status, view["entries"].as_array().map(Vec::len)), (StatusCode::OK, Some(0)));
 }

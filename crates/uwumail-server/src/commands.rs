@@ -2,9 +2,14 @@
 
 use anyhow::bail;
 use serde_json::{Value, json};
-use uwumail_store::{AccountUpdate, AuditEntry, NewAccount, PasswordLinkPurpose, Role, Store};
+use uwumail_store::{
+    AccountUpdate, AuditEntry, ListOwner, ListScope, NewAccount, NewSenderListEntry, PasswordLinkPurpose, Role,
+    SenderKind, SenderList, SenderListEntry, Store,
+};
 
-use crate::cli::{AccountCommand, AliasCommand, DomainCommand, GatewayCommand, QueueCommand, SpamCommand};
+use crate::cli::{
+    AccountCommand, AliasCommand, DomainCommand, GatewayCommand, QueueCommand, SenderArgs, SenderKindArg, SpamCommand,
+};
 use crate::config::Config;
 
 /// Password links from the command line work as long as those from the admin panel.
@@ -301,7 +306,95 @@ pub async fn spam(store: &Store, command: SpamCommand) -> anyhow::Result<()> {
             println!("Learned for the whole server: {} spam, {} wanted ({queued} waiting)", server.spam, server.ham);
             println!("The Bayes filter counts once both reach {}.", uwumail_store::BAYES_MIN_LEARNED);
         }
+        SpamCommand::Allow(args) => add_sender(store, SenderList::Allow, args).await?,
+        SpamCommand::Block(args) => add_sender(store, SenderList::Block, args).await?,
+        SpamCommand::Senders { account } => {
+            let entries = match account {
+                Some(login) => store.sender_list(ListScope::Account(account_id(store, &login).await?)).await?,
+                None => store.admin_sender_lists().await?,
+            };
+            if entries.is_empty() {
+                println!("No senders listed.");
+            }
+            for entry in entries {
+                let scope = entry.domain.clone().unwrap_or_else(|| "server".into());
+                let scope = if matches!(entry.scope, ListScope::Account(_)) { "own".into() } else { scope };
+                let note = if entry.note.is_empty() { String::new() } else { format!("  ({})", entry.note) };
+                println!(
+                    "{:>5}  {:<5}  {:<7}  {:<20}  {}{note}",
+                    entry.id,
+                    list_name(&entry),
+                    kind_name(entry.kind),
+                    scope,
+                    entry.value
+                );
+            }
+        }
+        SpamCommand::Unlist { id, account } => {
+            let owner = match account {
+                Some(login) => ListOwner::Account(account_id(store, &login).await?),
+                None => ListOwner::Admin,
+            };
+            let entry = store.remove_sender_list_entry(owner, id).await?;
+            if owner == ListOwner::Admin {
+                audit(store, "spam.senderRemove", &entry.value, sender_details(&entry)).await;
+            }
+            println!("Took {} off the {} list.", entry.value, list_name(&entry));
+        }
     }
+    Ok(())
+}
+
+async fn account_id(store: &Store, login: &str) -> anyhow::Result<i64> {
+    Ok(store.account(login).await?.ok_or_else(|| anyhow::anyhow!("no account {login}"))?.id)
+}
+
+fn list_name(entry: &SenderListEntry) -> &'static str {
+    match entry.list {
+        SenderList::Allow => "allow",
+        SenderList::Block => "block",
+    }
+}
+
+fn kind_name(kind: SenderKind) -> &'static str {
+    match kind {
+        SenderKind::Ip => "ip",
+        SenderKind::Host => "host",
+        SenderKind::Address => "address",
+        SenderKind::Domain => "domain",
+    }
+}
+
+fn sender_details(entry: &SenderListEntry) -> Value {
+    json!({ "list": entry.list, "kind": entry.kind, "domain": entry.domain })
+}
+
+async fn add_sender(store: &Store, list: SenderList, args: SenderArgs) -> anyhow::Result<()> {
+    let scope = match (&args.domain, &args.account) {
+        (Some(name), _) => {
+            ListScope::Domain(store.domain(name).await?.ok_or_else(|| anyhow::anyhow!("no domain {name}"))?.id)
+        }
+        (None, Some(login)) => ListScope::Account(account_id(store, login).await?),
+        (None, None) => ListScope::Server,
+    };
+    let kind = args.kind.map(|kind| match kind {
+        SenderKindArg::Ip => SenderKind::Ip,
+        SenderKindArg::Host => SenderKind::Host,
+        SenderKindArg::Address => SenderKind::Address,
+        SenderKindArg::Domain => SenderKind::Domain,
+    });
+    let new = NewSenderListEntry { scope, list, kind, value: args.value, note: args.note, created_by: "cli".into() };
+    let entry = store.add_sender_list_entry(new).await?;
+    if !matches!(scope, ListScope::Account(_)) {
+        audit(store, "spam.senderAdd", &entry.value, sender_details(&entry)).await;
+    }
+    println!(
+        "Put {} ({}) on the {} list as number {}.",
+        entry.value,
+        kind_name(entry.kind),
+        list_name(&entry),
+        entry.id
+    );
     Ok(())
 }
 
