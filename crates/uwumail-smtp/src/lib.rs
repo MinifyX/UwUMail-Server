@@ -86,6 +86,8 @@ pub(crate) struct Context {
     pub auth_limiter: limiter::AuthLimiter,
     /// Recent blocklist answers about sending servers.
     pub blocklist_cache: spam::BlocklistCache,
+    /// Recent domain blocklist answers about link domains.
+    pub domain_cache: spam::DomainCache,
     /// Sized at start; changing these limits takes a restart.
     pub connections: Arc<Semaphore>,
     pub delivery_permits: Arc<Semaphore>,
@@ -160,6 +162,7 @@ impl Smtp {
                 dns: DnsCaches::default(),
                 auth_limiter: limiter::AuthLimiter::default(),
                 blocklist_cache: spam::BlocklistCache::default(),
+                domain_cache: spam::DomainCache::default(),
                 inflight: Mutex::new(HashSet::new()),
                 stats: health::DeliveryStats::default(),
                 connector: RwLock::new(None),

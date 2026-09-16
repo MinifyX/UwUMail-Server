@@ -816,7 +816,9 @@ impl Session {
         // Only mail we can attribute to a sending server is scored; behind a relay that means the
         // server the relay talked to.
         let score = match &client {
-            Some((ip, helo)) if live.spam.enabled => spam::score(&ctx, &live.spam, *ip, helo, verdict.as_ref()).await,
+            Some((ip, helo)) if live.spam.enabled => {
+                spam::score(&ctx, &live.spam, *ip, helo, verdict.as_ref(), &raw).await
+            }
             _ => None,
         };
         let outcome = score.as_ref().map_or(spam::Outcome::Deliver, |score| spam::outcome(&live.spam, score.points));

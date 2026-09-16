@@ -531,20 +531,53 @@ async fn spam_test_server(spam: SpamConfig, dmarc: Option<&str>) -> TestServer {
 
 /// Hands in a message that the relay received from 203.0.113.7; returns the reply to the data.
 async fn relay_from_outside(server: &TestServer) -> String {
+    relay_message_from_outside(
+        server,
+        "X-Spam-Status: No, score=-99.0\r\nFrom: news@sender.test\r\nSubject: Nur heute\r\n\r\nAngebot\r\n",
+    )
+    .await
+}
+
+/// Hands in `message` (headers and body) the way the relay received it from 203.0.113.7, with the Date
+/// and Message-ID every mail program writes, so only what the message itself adds is judged.
+async fn relay_message_from_outside(server: &TestServer, message: &str) -> String {
     let mut session = RawSession::connect(server.mx).await;
     assert!(session.command("EHLO relay.local").await.starts_with("250"));
     assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
     assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
     assert!(session.command("DATA").await.starts_with("354"));
+    let id = uwumail_store::BlobHash::of(message.as_bytes());
     session
-        .command(
+        .command(&format!(
             "Received: from mail.sender.test (mail.sender.test [203.0.113.7])\r\n\
              \tby relay.local (Postfix) with ESMTPS id 4F2;\r\n\
-             \tMon, 14 Sep 2026 10:00:00 +0200\r\n\
-             X-Spam-Status: No, score=-99.0\r\n\
-             From: news@sender.test\r\nSubject: Nur heute\r\n\r\nAngebot\r\n.",
-        )
+             \t{date}\r\n\
+             Date: {date}\r\nMessage-ID: <{id}@sender.test>\r\n{message}.",
+            date = mail_builder::headers::date::Date::now().to_rfc822(),
+            id = &id.as_str()[..16],
+        ))
         .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_phishing_mail_is_judged_by_what_it_contains() {
+    let a = spam_test_server(SpamConfig::default(), None).await;
+    let message = "From: \"service@bank.example\" <news@sender.test>\r\nSubject: Ihr Konto\r\n\
+        MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"m\"\r\n\r\n\
+        --m\r\nContent-Type: text/html\r\n\r\n<a href=\"https://login.evil.example/\">www.bank.example</a>\r\n\
+        --m\r\nContent-Type: application/octet-stream\r\n\
+        Content-Disposition: attachment; filename=\"rechnung.pdf.exe\"\r\n\
+        Content-Transfer-Encoding: base64\r\n\r\nTVo=\r\n--m--\r\n";
+
+    let reply = relay_message_from_outside(&a, message).await;
+    assert!(reply.starts_with("250"), "{reply}");
+    let junk = a.mailbox("mini@a.test", MailboxRole::Junk).await;
+    assert_eq!(junk.len(), 1, "the tricks alone are enough for Junk");
+    let raw = a.raw(&junk[0]).await;
+    for rule in ["FROM_NAME_SPOOFS_ADDRESS", "PHISHING_LINK_TEXT", "EXECUTABLE_ATTACHMENT", "DISGUISED_ATTACHMENT"] {
+        assert!(raw.contains(rule), "{rule} in {raw}");
+    }
+    assert!(!raw.contains("MISSING_DATE") && !raw.contains("MISSING_MESSAGE_ID"), "{raw}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

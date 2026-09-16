@@ -8,7 +8,12 @@
 //! A rule never punishes a question that could not be asked. A blocklist that refuses to answer,
 //! a resolver that is down or a missing DMARC record are worth nothing, in either direction.
 
-use std::net::IpAddr;
+mod attachments;
+mod content;
+mod html;
+mod links;
+
+use std::net::{IpAddr, Ipv4Addr};
 use std::time::{Duration, Instant};
 
 use mail_auth::ResolverCache;
@@ -18,7 +23,9 @@ use uwumail_store::Greylist;
 use crate::Context;
 use crate::checks::Verdict;
 use crate::config::SpamConfig;
-use crate::dnscheck::{BLOCKLISTS, Blocklist, ListingStatus, blocklist_status_with, reverse_names_with};
+use crate::dnscheck::{
+    BLOCKLISTS, Blocklist, ListingStatus, blocklist_status_with, domain_list_answers_with, reverse_names_with,
+};
 use crate::reachability::generic_reverse_name;
 use crate::servercheck::is_private;
 
@@ -28,6 +35,76 @@ const LISTING_TTL: Duration = Duration::from_secs(3600);
 const UNKNOWN_TTL: Duration = Duration::from_secs(600);
 
 pub(crate) type BlocklistCache = crate::dns::TtlCache<(IpAddr, &'static str), ListingStatus>;
+pub(crate) type DomainCache = crate::dns::TtlCache<String, DomainListing>;
+
+/// Spamhaus' list of domains seen in spam, phishing and malware, asked about link domains.
+const DBL_ZONE: &str = "dbl.spamhaus.org";
+
+/// What Spamhaus DBL says about a domain, from harmless to worst.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum DomainListing {
+    Clean,
+    /// The question was refused or got no answer, which says nothing.
+    Unknown,
+    /// A real domain that spammers abuse, e.g. a hacked site.
+    Abused,
+    Spam,
+    /// Phishing, malware or a botnet's control server.
+    Malicious,
+}
+
+/// What DBL's answers mean. 127.0.1.2 lists a spam domain, .4 to .6 phishing, malware and botnet
+/// domains, .102 to .106 legitimate domains that are being abused. 127.0.1.255 and 127.255.255.x
+/// mean the question was not allowed or not understood.
+fn domain_listing(codes: &[Ipv4Addr]) -> DomainListing {
+    codes
+        .iter()
+        .map(|code| match code.octets() {
+            [127, 0, 1, 4..=6] => DomainListing::Malicious,
+            [127, 0, 1, 2..=99] => DomainListing::Spam,
+            [127, 0, 1, 102..=199] => DomainListing::Abused,
+            _ => DomainListing::Unknown,
+        })
+        .max()
+        .unwrap_or(DomainListing::Clean)
+}
+
+fn domain_rule(listing: DomainListing) -> Option<(&'static str, f32)> {
+    match listing {
+        DomainListing::Malicious => Some(("SPAMHAUS_DBL_MALICIOUS", 6.0)),
+        DomainListing::Spam => Some(("SPAMHAUS_DBL", 4.0)),
+        DomainListing::Abused => Some(("SPAMHAUS_DBL_ABUSED", 1.5)),
+        DomainListing::Clean | DomainListing::Unknown => None,
+    }
+}
+
+/// Asks Spamhaus DBL about link domains at the same time, reusing recent answers.
+async fn domain_listings(ctx: &Context, domains: &[String]) -> Vec<(String, DomainListing)> {
+    let mut answers = Vec::with_capacity(domains.len());
+    let mut asking = tokio::task::JoinSet::new();
+    for domain in domains {
+        match ctx.domain_cache.get(domain) {
+            Some(listing) => answers.push((domain.clone(), listing)),
+            None => {
+                let resolver = ctx.authenticator.resolver().clone();
+                let domain = domain.clone();
+                asking.spawn(async move {
+                    let codes = in_time(domain_list_answers_with(&resolver, &domain, DBL_ZONE)).await.flatten();
+                    let listing = codes.map_or(DomainListing::Unknown, |codes| domain_listing(&codes));
+                    (domain, listing)
+                });
+            }
+        }
+    }
+    while let Some(joined) = asking.join_next().await {
+        let Ok((domain, listing)) = joined else { continue };
+        let ttl = if listing == DomainListing::Unknown { UNKNOWN_TTL } else { LISTING_TTL };
+        ctx.domain_cache.insert(domain.clone(), listing, Instant::now() + ttl);
+        answers.push((domain, listing));
+    }
+    answers.sort_by_key(|(domain, _)| domains.iter().position(|known| known == domain));
+    answers
+}
 
 /// A question the filter asks never holds up the SMTP dialogue for long. A resolver that does not
 /// answer in time means the question was not asked, which is worth no points in either direction.
@@ -194,6 +271,7 @@ pub async fn score(
     ip: IpAddr,
     helo: &str,
     verdict: Option<&Verdict>,
+    raw: &[u8],
 ) -> Option<Score> {
     if is_private(ip) {
         return None;
@@ -221,7 +299,21 @@ pub async fn score(
 
     let blocklists = async { if config.blocklists { listings(ctx, ip).await } else { Vec::new() } };
     let reverse = in_time(reverse_names_with(ctx.authenticator.resolver(), ip));
-    let (names, listed) = tokio::join!(reverse, blocklists);
+    // What the message itself shows, read on a blocking thread because big messages take a moment,
+    // and then what the domain blocklist says about its links.
+    let message = async {
+        let examination = if raw.len() <= content::MAX_MESSAGE {
+            let (raw, now) = (raw.to_vec(), crate::now());
+            let dmarc_passed = verdict.is_some_and(|verdict| verdict.dmarc_passed);
+            tokio::task::spawn_blocking(move || content::examine(&raw, now, dmarc_passed)).await.unwrap_or_default()
+        } else {
+            content::Examination::default()
+        };
+        let domains =
+            if config.blocklists { domain_listings(ctx, &examination.link_domains).await } else { Vec::new() };
+        (examination.hits, domains)
+    };
+    let (names, listed, (content_hits, domains)) = tokio::join!(reverse, blocklists, message);
 
     // No answer at all is not the same as no reverse name, so a timeout costs nothing.
     if let Some(names) = names {
@@ -238,6 +330,17 @@ pub async fn score(
         if status == ListingStatus::Listed {
             let (rule, points) = blocklist_rule(list);
             score.add(rule, points, Some(list.name.to_owned()));
+        }
+    }
+
+    for hit in content_hits {
+        score.add(hit.rule, hit.points, hit.detail);
+    }
+    for (domain, listing) in domains {
+        if let Some((rule, points)) = domain_rule(listing)
+            && !score.hits.iter().any(|hit| hit.rule == rule)
+        {
+            score.add(rule, points, Some(domain));
         }
     }
 
@@ -377,6 +480,30 @@ mod tests {
         assert_eq!(outcome(&SpamConfig::default(), score.points), Outcome::Suspicious);
         assert!((score.points_without_reputation() - 1.5).abs() < f32::EPSILON);
         assert_eq!(outcome(&SpamConfig::default(), score.points_without_reputation()), Outcome::Deliver);
+    }
+
+    #[test]
+    fn domain_blocklist_answers_are_read_by_how_bad_they_are() {
+        let code = |last: u8| Ipv4Addr::new(127, 0, 1, last);
+        assert_eq!(domain_listing(&[]), DomainListing::Clean);
+        assert_eq!(domain_listing(&[code(2)]), DomainListing::Spam);
+        assert_eq!(domain_listing(&[code(4)]), DomainListing::Malicious);
+        assert_eq!(domain_listing(&[code(102), code(5)]), DomainListing::Malicious);
+        assert_eq!(domain_listing(&[code(103)]), DomainListing::Abused);
+        // Refused or not understood: never a listing.
+        assert_eq!(domain_listing(&[code(255)]), DomainListing::Unknown);
+        assert_eq!(domain_listing(&[Ipv4Addr::new(127, 255, 255, 254)]), DomainListing::Unknown);
+        assert_eq!(domain_rule(DomainListing::Unknown), None);
+    }
+
+    /// Spamhaus lists dbltest.com as a spam domain for testing; run with
+    /// `cargo test -p uwumail-smtp domain_blocklist_test_entry -- --ignored`.
+    #[tokio::test]
+    #[ignore = "needs the internet and a resolver Spamhaus answers"]
+    async fn domain_blocklist_test_entry() {
+        let resolver = mail_auth::MessageAuthenticator::new_system_conf().unwrap();
+        let codes = domain_list_answers_with(resolver.resolver(), "dbltest.com", DBL_ZONE).await.unwrap();
+        assert_eq!(domain_listing(&codes), DomainListing::Spam);
     }
 
     #[test]

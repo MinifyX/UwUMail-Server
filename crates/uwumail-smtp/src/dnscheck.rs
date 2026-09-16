@@ -847,6 +847,13 @@ pub async fn blocklist_status_with(resolver: &TokioResolver, ip: IpAddr, list: &
     }
 }
 
+/// The answers a domain blocklist like Spamhaus DBL gives for `domain`, asked through `resolver`:
+/// empty when the domain is not listed, `None` when the question got no answer.
+pub async fn domain_list_answers_with(resolver: &TokioResolver, domain: &str, zone: &str) -> Option<Vec<Ipv4Addr>> {
+    let answers = Lookups::System(resolver).records(&format!("{domain}.{zone}"), RecordType::A).await.ok()?;
+    Some(answers.into_iter().filter_map(|data| if let RData::A(a) = data { Some(a.0) } else { None }).collect())
+}
+
 /// The names `ip` points back to, asked through `resolver`. Empty when it points nowhere.
 pub async fn reverse_names_with(resolver: &TokioResolver, ip: IpAddr) -> Vec<String> {
     let name = reverse_name(ip);
