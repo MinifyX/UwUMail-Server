@@ -115,6 +115,12 @@ table inet filter {
     meta l4proto { icmp, ipv6-icmp } accept
     tcp dport { 22, 25, 80, 443, 465, 587 } accept
     udp dport 443 accept
+    # Do not leave these out on a VPS that gets its addresses by DHCP. A DHCPv6
+    # answer arrives from another address than the multicast one it was asked
+    # for, so connection tracking cannot pair it with the request: without this
+    # rule the IPv6 address quietly expires a few hours later and the machine
+    # loses IPv6 altogether. (It cost me exactly that.)
+    udp dport { 68, 546 } accept
   }
 }
 ```
