@@ -6,8 +6,11 @@
 //   UWUMAIL_PASSWORD_FILE=test.password node scripts/live-check.mjs \
 //     [--to someone@example.org ...] [--smtp host:587] [--wait-reply-from example.org] [--minutes 10]
 //
-// --to               send a check mail to these addresses (through the relay for outside ones)
-// --smtp             also log in on this submission port with STARTTLS (the certificate must be valid)
+// --to               send a check mail to these addresses (outside ones leave like any other mail:
+//                    through the relay, the gateway or directly)
+// --smtp             also log in on this submission port with STARTTLS; the certificate is checked
+//                    against the host name in UWUMAIL_URL, so host may be an address, e.g. the
+//                    gateway's public one when the name resolves to something else at home
 // --wait-reply-from  wait for a mail from this address or domain and print its Authentication-Results,
 //                    e.g. with --to check-auth@verifier.port25.com --wait-reply-from port25.com
 

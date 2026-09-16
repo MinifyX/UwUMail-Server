@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Updates a server that runs UwUMail with Docker Compose to an image from the registry and waits
-# until it is healthy. CI publishes images for release tags and manual runs; to try the current
-# code on a test server, use scripts/deploy-local.sh instead.
+# until it is healthy. CI publishes `edge` (and `sha-<commit>`) for every push to main that changes
+# code, and version tags for releases; to try code that is not pushed yet, use
+# scripts/deploy-local.sh instead.
 #
 #   UWUMAIL_DEPLOY_HOST=user@host [UWUMAIL_DEPLOY_DIR=/opt/uwumail] scripts/deploy.sh [tag]
 set -euo pipefail
