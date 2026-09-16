@@ -752,6 +752,23 @@
       "trustedRelays": "Vorgeschaltete Mailserver",
       "trustedRelaysHint": "IP-Adressen oder Netze, eine pro Zeile. Deren Absender-Prüfung übernimmt UwUMail."
     },
+    "spam": {
+      "title": "Spamfilter",
+      "intro": "Bewertet Mails von anderen Servern und legt Verdächtiges in den Spam-Ordner. Mails aus deinem eigenen Netz werden nicht bewertet.",
+      "enabled": "Spamfilter",
+      "enabledHint": "Ausgeschaltet entscheidet nur noch DMARC, was in Spam landet.",
+      "blocklists": "Blocklisten fragen",
+      "blocklistsHint": "Fragt Spamhaus, SpamCop und Barracuda nach dem sendenden Server. Antwortet eine Liste nicht, zählt das nicht gegen den Absender.",
+      "junkScore": "Spam ab Punktzahl",
+      "junkScoreHint": "Ab hier landet eine Mail im Spam-Ordner.",
+      "greylistScore": "Zurückstellen ab Punktzahl",
+      "greylistScoreHint": "Verdächtige, unbekannte Absender müssen es etwas später noch einmal versuchen. Derselbe Wert wie bei Spam schaltet das aus.",
+      "greylistDelay": "Zurückstellen für (Minuten)",
+      "greylistDelayHint": "So lange muss ein zurückgestellter Absender warten.",
+      "rejectScore": "Ablehnen ab Punktzahl",
+      "rejectScoreHint": "Leer lassen, um nie abzulehnen. Abgelehnte Mails sind weg, im Spam-Ordner kannst du dagegen nachsehen.",
+      "rejectScoreOff": "nie"
+    },
     "apps": {
       "title": "Mail-Apps",
       "intro": "Anmeldung und Datenschutz beim Senden aus Apps.",

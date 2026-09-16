@@ -752,6 +752,23 @@
       "trustedRelays": "Upstream mail servers",
       "trustedRelaysHint": "IP addresses or networks, one per line. UwUMail does their sender checks."
     },
+    "spam": {
+      "title": "Spam filter",
+      "intro": "Scores mail from other servers and puts what looks suspicious into the spam folder. Mail from your own network is not scored.",
+      "enabled": "Spam filter",
+      "enabledHint": "When it is off, only DMARC decides what goes to spam.",
+      "blocklists": "Ask blocklists",
+      "blocklistsHint": "Asks Spamhaus, SpamCop and Barracuda about the sending server. A list that does not answer does not count against the sender.",
+      "junkScore": "Spam from score",
+      "junkScoreHint": "From this score on, mail goes to the spam folder.",
+      "greylistScore": "Hold back from score",
+      "greylistScoreHint": "Suspicious senders we do not know yet have to try again a little later. The same value as for spam turns this off.",
+      "greylistDelay": "Hold back for (minutes)",
+      "greylistDelayHint": "How long a sender that was held back has to wait.",
+      "rejectScore": "Refuse from score",
+      "rejectScoreHint": "Leave empty to never refuse. Refused mail is gone, while the spam folder lets you look.",
+      "rejectScoreOff": "never"
+    },
     "apps": {
       "title": "Mail apps",
       "intro": "Login and privacy when sending from apps.",

@@ -196,6 +196,42 @@ function NumberField({
   );
 }
 
+/** A number with decimals, e.g. a spam score. Empty means the setting's default. */
+function DecimalField({
+  form,
+  settingKey,
+  label,
+  hint,
+  placeholder,
+}: {
+  form: Form;
+  settingKey: string;
+  label: string;
+  hint?: string;
+  placeholder?: string;
+}) {
+  const locked = form.locked(settingKey);
+  const raw = form.value(settingKey);
+  return (
+    <Field label={label} hint={locked ? <LockedHint /> : hint}>
+      {(id) => (
+        <TextInput
+          id={id}
+          type="number"
+          inputMode="decimal"
+          min={1}
+          max={100}
+          step={0.5}
+          disabled={locked}
+          placeholder={placeholder}
+          value={typeof raw === "number" ? raw : ""}
+          onChange={(event) => form.set(settingKey, event.target.value === "" ? null : Number(event.target.value))}
+        />
+      )}
+    </Field>
+  );
+}
+
 function TextField({
   form,
   settingKey,
@@ -298,6 +334,22 @@ export function SettingsPage() {
         )}
       </Section>
 
+      <Section
+        title={t("settings.spam.title")}
+        intro={t("settings.spam.intro")}
+        view={view}
+        keys={[
+          "spam.enabled",
+          "spam.blocklists",
+          "spam.junk_score",
+          "spam.greylist_score",
+          "spam.greylist_delay_secs",
+          "spam.reject_score",
+        ]}
+      >
+        {(form) => <SpamFields form={form} pro={pro} />}
+      </Section>
+
       {pro && (
         <div className="grid gap-5 lg:grid-cols-2">
           <Section
@@ -389,6 +441,60 @@ export function SettingsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** The spam filter: switches for everyone, the numbers behind it in Pro mode. */
+function SpamFields({ form, pro }: { form: Form; pro: boolean }) {
+  const { t } = useT();
+  const enabled = Boolean(form.value("spam.enabled"));
+  return (
+    <>
+      <ToggleField
+        form={form}
+        settingKey="spam.enabled"
+        label={t("settings.spam.enabled")}
+        hint={t("settings.spam.enabledHint")}
+      />
+      {enabled && (
+        <ToggleField
+          form={form}
+          settingKey="spam.blocklists"
+          label={t("settings.spam.blocklists")}
+          hint={t("settings.spam.blocklistsHint")}
+        />
+      )}
+      {enabled && pro && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <DecimalField
+            form={form}
+            settingKey="spam.junk_score"
+            label={t("settings.spam.junkScore")}
+            hint={t("settings.spam.junkScoreHint")}
+          />
+          <DecimalField
+            form={form}
+            settingKey="spam.greylist_score"
+            label={t("settings.spam.greylistScore")}
+            hint={t("settings.spam.greylistScoreHint")}
+          />
+          <NumberField
+            form={form}
+            settingKey="spam.greylist_delay_secs"
+            label={t("settings.spam.greylistDelay")}
+            hint={t("settings.spam.greylistDelayHint")}
+            scale={60}
+          />
+          <DecimalField
+            form={form}
+            settingKey="spam.reject_score"
+            label={t("settings.spam.rejectScore")}
+            hint={t("settings.spam.rejectScoreHint")}
+            placeholder={t("settings.spam.rejectScoreOff")}
+          />
+        </div>
+      )}
+    </>
   );
 }
 

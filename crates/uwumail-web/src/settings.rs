@@ -15,6 +15,11 @@ pub enum SettingKind {
         min: i64,
         max: i64,
     },
+    /// A number that may have decimals, like a spam score, between whole-number limits.
+    Decimal {
+        min: i64,
+        max: i64,
+    },
     Text,
     /// Never sent back to the browser; only whether it is set.
     Secret,
@@ -56,6 +61,12 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("smtp.reveal_client_ip", SettingKind::Bool),
     spec("smtp.trusted_relays", SettingKind::List),
     spec("smtp.allow_external_forwarding", SettingKind::Bool),
+    spec("spam.enabled", SettingKind::Bool),
+    spec("spam.blocklists", SettingKind::Bool),
+    spec("spam.junk_score", SettingKind::Decimal { min: 1, max: 100 }),
+    spec("spam.greylist_score", SettingKind::Decimal { min: 1, max: 100 }),
+    spec("spam.greylist_delay_secs", SettingKind::Integer { min: 60, max: 3600 }),
+    spec("spam.reject_score", SettingKind::Decimal { min: 1, max: 100 }),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -100,6 +111,9 @@ pub fn check_value(spec: &SettingSpec, value: &Value) -> Result<(), String> {
     let ok = match spec.kind {
         SettingKind::Bool => value.is_boolean(),
         SettingKind::Integer { min, max } => value.as_i64().is_some_and(|n| (min..=max).contains(&n)),
+        SettingKind::Decimal { min, max } => {
+            value.as_f64().is_some_and(|n| n.is_finite() && (min as f64..=max as f64).contains(&n))
+        }
         SettingKind::Text | SettingKind::Secret => value.as_str().is_some_and(|s| s.len() <= 1000),
         SettingKind::Choice { options } => value.as_str().is_some_and(|s| options.contains(&s)),
         SettingKind::List => value.as_array().is_some_and(|items| {
@@ -188,6 +202,12 @@ mod tests {
         let security = spec_for("delivery.relay.security").unwrap();
         assert!(check_value(security, &json!("tls")).is_ok());
         assert!(check_value(security, &json!("ssl")).is_err());
+        let junk = spec_for("spam.junk_score").unwrap();
+        assert!(check_value(junk, &json!(6.5)).is_ok(), "spam scores may have decimals");
+        assert!(check_value(junk, &json!(5)).is_ok());
+        assert!(check_value(junk, &json!(0.5)).is_err());
+        assert!(check_value(junk, &json!(100.5)).is_err());
+        assert!(check_value(junk, &json!("6.5")).is_err());
         let relays = spec_for("smtp.trusted_relays").unwrap();
         assert!(check_value(relays, &json!(["192.0.2.1", "2001:db8::/32"])).is_ok());
         assert!(spec_for("hostname").is_none(), "the host name stays in the config file");

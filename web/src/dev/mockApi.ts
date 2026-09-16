@@ -434,6 +434,12 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "smtp.reveal_client_ip": { value: false, source: "default" },
   "smtp.trusted_relays": { value: ["192.0.2.16"], source: "file" },
   "smtp.allow_external_forwarding": { value: true, source: "default" },
+  "spam.enabled": { value: true, source: "default" },
+  "spam.blocklists": { value: true, source: "default" },
+  "spam.junk_score": { value: 5, source: "default" },
+  "spam.greylist_score": { value: 2, source: "default" },
+  "spam.greylist_delay_secs": { value: 300, source: "default" },
+  "spam.reject_score": { value: null, source: "default" },
 };
 
 const settingsView = () => ({
