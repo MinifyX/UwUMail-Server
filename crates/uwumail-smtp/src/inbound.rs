@@ -695,11 +695,7 @@ impl Session {
                     orcpt: to.orcpt,
                 });
             }
-            self.reply(
-                "250 2.1.5 Recipient OK
-",
-            )
-            .await?;
+            self.reply("250 2.1.5 Recipient OK\r\n").await?;
             return Ok(Next::Continue);
         }
         let local_account = match store.resolve_recipient(&address).await {
