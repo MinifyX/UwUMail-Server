@@ -14,7 +14,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 use uwumail_smtp::{DeliveryConfig, ListenerKind, Smtp, SmtpConfig, SmtpSettings, SpamConfig, ToneConfig};
-use uwumail_store::{EmailSummary, MailboxRole, NewAccount, Role, Store};
+use uwumail_store::{EmailSummary, EmailUpdate, KeywordsChange, MailboxRole, MailboxesChange, NewAccount, Role, Store};
 
 const PASSWORD: &str = "katzenpfote-123";
 
@@ -581,8 +581,22 @@ async fn mail_over_the_junk_score_is_filed_as_junk_and_counts_against_the_sender
     assert!(raw.contains("DMARC_FAIL"), "{raw}");
 
     // The sender is not vouched for by DMARC, so its network carries the count.
-    let reputation = a.smtp.store().reputation("network:203.0.113.0/24".into()).await.unwrap();
+    let store = a.smtp.store();
+    let network = || "network:203.0.113.0/24".to_owned();
+    let reputation = store.reputation(network()).await.unwrap();
     assert_eq!((reputation.good, reputation.junk), (0, 1));
+
+    // Someone says "Not spam" by moving it to the inbox: the same count moves to the good side.
+    let account = store.account("mini@a.test").await.unwrap().unwrap();
+    let inbox = store.mailboxes(account.id).await.unwrap().into_iter().find(|m| m.role == Some(MailboxRole::Inbox));
+    let update = EmailUpdate {
+        id: junk[0].id,
+        keywords: KeywordsChange::Keep,
+        mailboxes: MailboxesChange::Replace(vec![inbox.unwrap().id]),
+    };
+    assert!(store.update_emails(account.id, vec![update]).await.unwrap().iter().all(Result::is_ok));
+    let reputation = store.reputation(network()).await.unwrap();
+    assert_eq!((reputation.good, reputation.junk), (1, 0));
 }
 
 #[tokio::test(flavor = "multi_thread")]

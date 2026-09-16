@@ -1,8 +1,9 @@
 //! Greylisting and what a sender delivered so far.
 
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{OptionalExtension, Transaction, params};
 use serde::Serialize;
 
+use crate::blobs::BlobHash;
 use crate::{Result, Store, now};
 
 /// Greylisted senders that never came back are forgotten after two days.
@@ -113,6 +114,7 @@ impl Store {
             )?;
             removed +=
                 tx.execute("DELETE FROM spam_reputation WHERE updated_at < ?1", params![now - reputation_secs])?;
+            removed += tx.execute("DELETE FROM spam_verdicts WHERE counted_at < ?1", params![now - reputation_secs])?;
             Ok(removed)
         })
         .await
@@ -130,22 +132,57 @@ impl Store {
         .await
     }
 
-    /// Counts one message for this sender, either as delivered or as junk.
-    pub async fn record_reputation(&self, subject: String, junk: bool) -> Result<()> {
+    /// Counts a delivered message for its sender and remembers how, so that a person marking it as
+    /// spam or not spam later moves this count instead of adding one. A message counts once, however
+    /// many of our people it reached.
+    pub async fn record_delivery(&self, blob: BlobHash, subject: String, junk: bool) -> Result<()> {
         self.write(move |tx| {
             let now = now();
-            let column = if junk { "junk" } else { "good" };
-            tx.execute(
-                &format!(
-                    "INSERT INTO spam_reputation (subject, {column}, first_seen, updated_at) VALUES (?1, 1, ?2, ?2)
-                     ON CONFLICT (subject) DO UPDATE SET {column} = {column} + 1, updated_at = ?2"
-                ),
-                params![subject, now],
+            let new = tx.execute(
+                "INSERT INTO spam_verdicts (blob_hash, subject, junk, counted_at) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT (blob_hash) DO NOTHING",
+                params![blob.as_str(), subject, junk, now],
             )?;
+            if new == 1 {
+                let column = if junk { "junk" } else { "good" };
+                tx.execute(
+                    &format!(
+                        "INSERT INTO spam_reputation (subject, {column}, first_seen, updated_at) VALUES (?1, 1, ?2, ?2)
+                         ON CONFLICT (subject) DO UPDATE SET {column} = {column} + 1, updated_at = ?2"
+                    ),
+                    params![subject, now],
+                )?;
+            }
             Ok(())
         })
         .await
     }
+}
+
+/// A person marked an email as junk (`true`) or not junk (`false`): moves how its delivery counts for
+/// the sender. Mail that was never counted, like mail from our own people or network or from before
+/// the filter, has nothing to move, and marking it the way it already counts changes nothing.
+pub(crate) fn rebook_verdict(tx: &Transaction<'_>, email_id: i64, junk: bool) -> Result<()> {
+    let counted: Option<(String, String, bool)> = tx
+        .query_row(
+            "SELECT v.blob_hash, v.subject, v.junk FROM emails e JOIN spam_verdicts v ON v.blob_hash = e.blob_hash
+             WHERE e.id = ?1",
+            params![email_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    let Some((blob_hash, subject, counted_junk)) = counted else { return Ok(()) };
+    if counted_junk == junk {
+        return Ok(());
+    }
+    let (good, bad) = if junk { (-1, 1) } else { (1, -1) };
+    tx.execute(
+        "UPDATE spam_reputation SET good = MAX(good + ?2, 0), junk = MAX(junk + ?3, 0), updated_at = ?4
+         WHERE subject = ?1",
+        params![subject, good, bad, now()],
+    )?;
+    tx.execute("UPDATE spam_verdicts SET junk = ?2 WHERE blob_hash = ?1", params![blob_hash, junk])?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -174,19 +211,98 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path()).await.unwrap();
         let (network, sender) = ("192.0.2.0/24".to_owned(), "news@example.com".to_owned());
-        // One sender still waiting, one that came back and passed, and a reputation entry.
+        // One sender still waiting, one that came back and passed, and a counted delivery.
         store.greylist(network.clone(), sender.clone(), "a@uwu.test".into(), 300).await.unwrap();
         store.greylist(network.clone(), sender.clone(), "b@uwu.test".into(), 300).await.unwrap();
         store.greylist(network, sender, "b@uwu.test".into(), 0).await.unwrap();
-        store.record_reputation("domain:example.com".into(), false).await.unwrap();
+        store.record_delivery(BlobHash::of(b"one"), "domain:example.com".into(), false).await.unwrap();
 
         let long = 365 * 24 * 3600;
         assert_eq!(store.prune_spam_history(long, long, long).await.unwrap(), 0, "nothing is old yet");
         // A negative age puts the cut-off in the future, so it catches everything of that kind.
         assert_eq!(store.prune_spam_history(-1, long, long).await.unwrap(), 1, "only the waiting entry");
         assert_eq!(store.prune_spam_history(long, -1, long).await.unwrap(), 1, "then the passed one");
-        assert_eq!(store.prune_spam_history(long, long, -1).await.unwrap(), 1, "then the reputation");
+        assert_eq!(store.prune_spam_history(long, long, -1).await.unwrap(), 2, "then the reputation and its verdict");
         assert_eq!(store.reputation("domain:example.com".into()).await.unwrap().good, 0);
+    }
+
+    async fn counts(store: &Store, subject: &str) -> (i64, i64) {
+        let reputation = store.reputation(subject.to_owned()).await.unwrap();
+        (reputation.good, reputation.junk)
+    }
+
+    async fn apply(store: &Store, account_id: i64, update: crate::EmailUpdate) {
+        let results = store.update_emails(account_id, vec![update]).await.unwrap();
+        assert!(results.iter().all(Result::is_ok), "{results:?}");
+    }
+
+    #[tokio::test]
+    async fn spam_and_not_spam_from_a_person_move_the_count() {
+        use crate::{
+            EmailUpdate, IngestRequest, KeywordsChange, MailboxRole, MailboxTarget, MailboxesChange, NewAccount, Role,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).await.unwrap();
+        store.create_domain("uwu.test").await.unwrap();
+        let account = NewAccount {
+            address: "mini@uwu.test".into(),
+            display_name: String::new(),
+            password: None,
+            role: Role::User,
+            quota_bytes: 0,
+        };
+        let account_id = store.create_account(account).await.unwrap().id;
+        let boxes = store.mailboxes(account_id).await.unwrap();
+        let mailbox = |role| boxes.iter().find(|mailbox| mailbox.role == Some(role)).unwrap().id;
+        let (inbox, junk, trash) =
+            (mailbox(MailboxRole::Inbox), mailbox(MailboxRole::Junk), mailbox(MailboxRole::Trash));
+        let deliver = |raw: &[u8]| IngestRequest {
+            account_id,
+            raw: raw.to_vec(),
+            mailboxes: vec![MailboxTarget::Role(MailboxRole::Inbox)],
+            keywords: vec![],
+            received_at: None,
+        };
+        let subject = "domain:example.com";
+        let raw = b"From: news@example.com\r\nSubject: Angebot\r\n\r\nNur heute\r\n";
+        let email = store.ingest(deliver(raw)).await.unwrap().id;
+        store.record_delivery(BlobHash::of(raw), subject.into(), false).await.unwrap();
+        store.record_delivery(BlobHash::of(raw), subject.into(), false).await.unwrap();
+        assert_eq!(counts(&store, subject).await, (1, 0), "one delivery counts once");
+
+        let change = |keywords, mailboxes| EmailUpdate { id: email, keywords, mailboxes };
+        // "Spam" the way the UwUMail apps say it: keyword and move together, counted once.
+        apply(
+            &store,
+            account_id,
+            change(KeywordsChange::Patch(vec![("$junk".into(), true)]), MailboxesChange::Replace(vec![junk])),
+        )
+        .await;
+        assert_eq!(counts(&store, subject).await, (0, 1));
+        // Emptying Junk into the Trash is tidying up, not "Not spam".
+        apply(&store, account_id, change(KeywordsChange::Keep, MailboxesChange::Replace(vec![trash]))).await;
+        assert_eq!(counts(&store, subject).await, (0, 1));
+        // Back into Junk: it already counts as junk.
+        apply(&store, account_id, change(KeywordsChange::Keep, MailboxesChange::Replace(vec![junk]))).await;
+        assert_eq!(counts(&store, subject).await, (0, 1));
+        // "Not spam" by moving it out of Junk, as any mail app can.
+        apply(&store, account_id, change(KeywordsChange::Keep, MailboxesChange::Replace(vec![inbox]))).await;
+        assert_eq!(counts(&store, subject).await, (1, 0));
+        // And by the keyword alone, which it already is.
+        apply(
+            &store,
+            account_id,
+            change(KeywordsChange::Patch(vec![("$notjunk".into(), true)]), MailboxesChange::Keep),
+        )
+        .await;
+        assert_eq!(counts(&store, subject).await, (1, 0));
+
+        // Mail that was never counted, e.g. from before the filter, has nothing to move.
+        let other = store.ingest(deliver(b"From: old@example.com\r\nSubject: Alt\r\n\r\nalt\r\n")).await.unwrap().id;
+        let other =
+            EmailUpdate { id: other, keywords: KeywordsChange::Keep, mailboxes: MailboxesChange::Replace(vec![junk]) };
+        apply(&store, account_id, other).await;
+        assert_eq!(counts(&store, subject).await, (1, 0));
     }
 
     #[tokio::test]
@@ -195,10 +311,13 @@ mod tests {
         let store = Store::open(dir.path()).await.unwrap();
         let subject = "domain:example.com";
         assert_eq!(store.reputation(subject.to_owned()).await.unwrap().good, 0);
-        for _ in 0..4 {
-            store.record_reputation(subject.to_owned(), false).await.unwrap();
+        for n in 0..4 {
+            store
+                .record_delivery(BlobHash::of(format!("good {n}").as_bytes()), subject.to_owned(), false)
+                .await
+                .unwrap();
         }
-        store.record_reputation(subject.to_owned(), true).await.unwrap();
+        store.record_delivery(BlobHash::of(b"junk"), subject.to_owned(), true).await.unwrap();
         let reputation = store.reputation(subject.to_owned()).await.unwrap();
         assert_eq!((reputation.good, reputation.junk), (4, 1));
         assert!(reputation.is_known());

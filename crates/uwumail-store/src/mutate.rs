@@ -87,6 +87,44 @@ fn mailbox_belongs(conn: &Connection, account_id: i64, mailbox_id: i64) -> Resul
     )?)
 }
 
+/// What a person said about an email with this change: `Some(true)` for "Spam", `Some(false)` for
+/// "Not spam". Apps say it with the `$junk` / `$notjunk` keywords or by moving the email into or out
+/// of the Junk mailbox; the UwUMail apps do both at once, which still counts once. Moving spam from
+/// Junk to the Trash is only tidying up, not "Not spam".
+fn junk_signal(
+    tx: &Transaction<'_>,
+    account_id: i64,
+    (old_keywords, new_keywords): (&BTreeSet<String>, &BTreeSet<String>),
+    (old_mailboxes, new_mailboxes): (&BTreeSet<i64>, &BTreeSet<i64>),
+) -> Result<Option<bool>> {
+    let added = |keyword: &str| new_keywords.contains(keyword) && !old_keywords.contains(keyword);
+    let mut spam = added("$junk");
+    let mut not_spam = added("$notjunk");
+    if old_mailboxes != new_mailboxes {
+        let role = |name: &str| -> Result<Option<i64>> {
+            Ok(tx
+                .query_row(
+                    "SELECT id FROM mailboxes WHERE account_id = ?1 AND role = ?2",
+                    params![account_id, name],
+                    |row| row.get(0),
+                )
+                .optional()?)
+        };
+        if let Some(junk) = role("junk")? {
+            let (was, is) = (old_mailboxes.contains(&junk), new_mailboxes.contains(&junk));
+            let to_trash = role("trash")?.is_some_and(|trash| new_mailboxes.contains(&trash));
+            spam |= is && !was;
+            not_spam |= was && !is && !to_trash;
+        }
+    }
+    Ok(match (spam, not_spam) {
+        (true, false) => Some(true),
+        (false, true) => Some(false),
+        // Nothing said, or both at once: nothing to learn.
+        _ => None,
+    })
+}
+
 fn update_one(tx: &Transaction<'_>, batch: &mut Batch, update: &EmailUpdate) -> Result<()> {
     let account_id = batch.account_id;
     let exists: bool = tx.query_row(
@@ -164,6 +202,11 @@ fn update_one(tx: &Transaction<'_>, batch: &mut Batch, update: &EmailUpdate) -> 
     tx.execute("UPDATE email_mailboxes SET modseq = ?1 WHERE email_id = ?2", params![modseq, update.id])?;
     tx.execute("UPDATE emails SET updated_modseq = ?1 WHERE id = ?2", params![modseq, update.id])?;
     record_change(tx, account_id, modseq, "Email", update.id, "updated")?;
+
+    // "Spam" and "Not spam" from a person teach the filter about the sender.
+    if let Some(junk) = junk_signal(tx, account_id, (&old_keywords, &new_keywords), (&old_mailboxes, &new_mailboxes))? {
+        crate::spam::rebook_verdict(tx, update.id, junk)?;
+    }
 
     // Counts change in every mailbox the email was or is in.
     let seen_changed = old_keywords.contains("$seen") != new_keywords.contains("$seen");

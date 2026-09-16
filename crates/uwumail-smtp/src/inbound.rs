@@ -975,7 +975,9 @@ impl Session {
             let subject = spam::reputation_subject(*ip, verdict.as_ref());
             let on_its_own = spam::outcome(&live.spam, score.points_without_reputation());
             let counts_as_junk = quarantined || matches!(on_its_own, spam::Outcome::Junk | spam::Outcome::Reject);
-            if let Err(err) = ctx.store.record_reputation(subject, counts_as_junk).await {
+            // Every recipient stores the same bytes, so this names the message a person may mark later.
+            let stored = uwumail_store::BlobHash::of(&message);
+            if let Err(err) = ctx.store.record_delivery(stored, subject, counts_as_junk).await {
                 tracing::warn!(%id, %err, "counting a message for the sender reputation failed");
             }
         }
