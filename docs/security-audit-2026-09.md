@@ -18,10 +18,14 @@ service was run against it.
 
 | Severity | New | Fixed | Accepted / open |
 | --- | --- | --- | --- |
-| Medium | 0 | — | 0 |
-| Low | 2 | 0 | 2 open (S-1, S-2) |
-| Informational | 1 | — | 1 (S-3) |
+| Medium | 1 (S-4, added later) | 1 | 0 |
+| Low | 2 | 2 | 0 |
+| Informational | 1 | 1 | 0 |
 | Gateway/Tunnel | 0 | — | 0 |
+
+*Updated 16 September 2026:* S-1 to S-3 were fixed right after this report. S-4, a real gap in DMARC
+enforcement, was found later while building the spam filter and fixed the same day; see the
+[addendum](#addendum--16-september-2026).
 
 The earlier findings **M1** (a spoofed `Sender` or hidden second `From` on submission) and **M2**
 (forwarding-confirmation spam) still hold, and both were confirmed live. The "what held up" list
@@ -39,7 +43,7 @@ read mail or passwords (TLS ends at home) and not sign in as anyone.
 
 ## New findings
 
-### S-1 — Forged `Authentication-Results` with a version number survive stripping *(Low, open)*
+### S-1 — Forged `Authentication-Results` with a version number survive stripping *(Low, fixed in 46c0de0)*
 
 | Field | Content |
 | --- | --- |
@@ -52,7 +56,7 @@ read mail or passwords (TLS ends at home) and not sign in as anyone.
 | Recommended fix | Parse the authserv-id as the first whitespace-delimited token of the pre-`;` portion and compare that (case-insensitively) to the hostname, ignoring an optional trailing version number. Strip on a match. |
 | Regression test | Extend the `strips_only_our_auth_results` test with a `"<hostname> 1; …"` line and assert it is removed, while a genuinely different authserv-id is kept. |
 
-### S-2 — Submission does not check `Resent-*` sender identity headers *(Low, open)*
+### S-2 — Submission does not check `Resent-*` sender identity headers *(Low, fixed in ef17cb7)*
 
 | Field | Content |
 | --- | --- |
@@ -65,7 +69,7 @@ read mail or passwords (TLS ends at home) and not sign in as anyone.
 | Recommended fix | Extend the ownership check to `Resent-From` and `Resent-Sender` (treat like `From`/`Sender`), and refuse more than one `Sender`. Keep it defence-in-depth: the practical impact depends on the receiving client. |
 | Regression test | A `claimed_addresses` test that returns `Resent-From`/`Resent-Sender` addresses for the same ownership check, and refuses a second `Sender`. |
 
-### S-3 — Report-recipient RCPT reply ends in a bare LF *(Informational)*
+### S-3 — Report-recipient RCPT reply ends in a bare LF *(Informational, fixed in 8bccb30)*
 
 | Field | Content |
 | --- | --- |
@@ -146,9 +150,9 @@ these changed.
 ## Priorities before 1.0 / before real mail
 
 1. **S-1** — parse the authserv-id token so version-suffixed forgeries are stripped. Small change,
-   worth doing before the DKIM/DMARC story is relied on downstream.
-2. **S-2** — extend the submission ownership check to `Resent-*` and cap `Sender`.
-3. **S-3** — fix the bare-LF reply (trivial).
+   worth doing before the DKIM/DMARC story is relied on downstream. **Done** (46c0de0).
+2. **S-2** — extend the submission ownership check to `Resent-*` and cap `Sender`. **Done** (ef17cb7).
+3. **S-3** — fix the bare-LF reply (trivial). **Done** (8bccb30).
 4. Consider image signing (cosign) for the container.
 
 ## What could not be tested, and why
@@ -160,3 +164,31 @@ these changed.
   and, for the tunnel, exercised via their bounds tests); a `cargo fuzz` campaign is a good next step.
 - **The production instance for the real domain** was left untouched apart from the explicitly
   authorised, non-invasive tests on a separate throwaway test domain, which was removed afterwards.
+
+## Addendum — 16 September 2026
+
+Found after the audit, while building the spam filter, by reading how `mail-auth` reports DMARC
+alignment. It is the most serious finding in this report.
+
+### S-4 — DMARC `p=reject` and `p=quarantine` were not enforced for plain forgeries *(Medium, fixed in 9a01c9a)*
+
+| Field | Content |
+| --- | --- |
+| ID | S-4 |
+| Severity | Medium — CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:H/A:N |
+| Component | `crates/uwumail-smtp/src/checks.rs` (`verify`) |
+| Attacker & preconditions | Any mail sender; the forged domain publishes DMARC with `p=reject` or `p=quarantine` |
+| Impact | Incoming mail that fails the sender's `p=reject` policy is meant to be refused (unless `smtp.enforce_dmarc_reject` is off), and `p=quarantine` puts it into Junk. The check required *both* alignment results to be `Fail`. `mail-auth` 0.13.2 (following RFC 9989) only reports `Fail` for a mechanism that passed for another domain; a plain forgery, whose SPF fails and which carries no valid DKIM signature, gets `None` for both. So a forgery in the name of a bank that publishes `p=reject` was accepted into the inbox, although the server's own `Authentication-Results` said `dmarc=fail … policy.dmarc=reject`. Mail that passed DKIM, which is most legitimate mail, was never affected. |
+| Evidence | **Verified live** through the gateway from a public address: a forgery in the name of `example.com` (`v=spf1 -all`, `p=reject`) to a throwaway test domain went to the inbox before the fix and was refused with `550 5.7.1` after it; the test domain was removed afterwards. Two end-to-end tests forge mail from a reject and a quarantine domain, and both failed before the fix. |
+| Fix | Use the overall DMARC result (`DmarcOutput::result()`), which fails whenever a policy is published and nothing passed aligned with it. |
+| Regression test | `forged_mail_from_a_domain_that_rejects_it_is_refused` and `forged_mail_from_a_domain_that_quarantines_it_goes_to_junk` in `crates/uwumail-smtp/tests/flow.rs` |
+
+Enforcement is now real, so the sending address the server sees has to be right: behind something
+that hides it, forwarded mail without DKIM from `p=reject` domains would be refused. Behind a server
+in `smtp.trusted_relays` and behind the UwUMail Gateway the real address arrives; both were checked.
+
+S-3 also has its regression test now: the reply to a report address in
+`reports_are_read_by_the_server_instead_of_landing_in_a_mailbox` has to end with CRLF.
+
+Since this report, the gateway runs on a real VPS, and outbound mail leaves through it; the live
+check for S-4 went that way.
