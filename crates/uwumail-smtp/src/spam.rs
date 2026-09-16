@@ -200,6 +200,12 @@ pub fn network_of(ip: IpAddr) -> String {
 
 /// Who a message counts for in the reputation: the From domain when DMARC vouches for it, the
 /// sending network otherwise, because an unauthenticated domain name can be anyone's.
+///
+/// The network is only as right as the address the server sees: the connection's own, the server a
+/// trusted relay talked to (from its Received header), or the sender the UwUMail Gateway reports
+/// through the tunnel. Were that address ever wrong, e.g. the gateway's own, every sender without
+/// DMARC would share one reputation, and one wave of spam would spoil it for all of them. Changes
+/// to relays or the tunnel therefore touch this too.
 pub fn reputation_subject(ip: IpAddr, verdict: Option<&Verdict>) -> String {
     match verdict {
         Some(Verdict { dmarc_passed: true, from_domain: Some(domain), .. }) if !domain.is_empty() => {
