@@ -71,8 +71,7 @@ pub fn strip_forged_auth_results(raw: &[u8], hostname: &str) -> Vec<u8> {
     let forged: Vec<&RawHeader<'_>> = headers
         .iter()
         .filter(|h| {
-            h.name.eq_ignore_ascii_case("Authentication-Results")
-                && h.value().split(';').next().is_some_and(|id| id.trim().eq_ignore_ascii_case(hostname))
+            h.name.eq_ignore_ascii_case("Authentication-Results") && claims_to_be(&h.value(), hostname)
         })
         .collect();
     if forged.is_empty() {
@@ -87,6 +86,17 @@ pub fn strip_forged_auth_results(raw: &[u8], hostname: &str) -> Vec<u8> {
     }
     out.extend_from_slice(&raw[pos..]);
     out
+}
+
+/// Whether an `Authentication-Results` value names `hostname` as its authserv-id. RFC 8601 allows
+/// an optional version number after the id (`example.com 1; ...`), so only the first token before
+/// the `;` is compared — otherwise a sender could dodge the check by appending a version.
+fn claims_to_be(value: &str, hostname: &str) -> bool {
+    value
+        .split(';')
+        .next()
+        .and_then(|id| id.split_whitespace().next())
+        .is_some_and(|authserv| authserv.eq_ignore_ascii_case(hostname))
 }
 
 /// Converts bare LF line endings to CRLF.
@@ -126,6 +136,20 @@ mod tests {
         assert!(!text.contains("dkim=pass"));
         assert!(text.contains("other.example; spf=pass"));
         assert!(text.starts_with("Received: from a\r\n by b\r\n"));
+    }
+
+    #[test]
+    fn strips_our_results_even_with_a_version_number() {
+        // RFC 8601 allows "authserv-id version"; a forged header must not slip through by adding one.
+        let message = b"Authentication-Results: mx.example.de 1; dkim=pass header.d=evil.example\r\n\
+Authentication-Results: mx.example.de; spf=pass\r\nSubject: Hi\r\n\r\nbody\r\n";
+        let stripped = String::from_utf8(strip_forged_auth_results(message, "mx.example.de")).unwrap();
+        assert!(!stripped.contains("dkim=pass"), "the versioned forgery is removed: {stripped}");
+        assert!(!stripped.contains("spf=pass"), "the plain forgery is removed too");
+        assert!(stripped.starts_with("Subject: Hi\r\n"));
+        // A genuinely different authserv-id is kept.
+        assert!(claims_to_be("mx.example.de 1; dkim=pass", "mx.example.de"));
+        assert!(!claims_to_be("other.example; dkim=pass", "mx.example.de"));
     }
 
     #[test]
