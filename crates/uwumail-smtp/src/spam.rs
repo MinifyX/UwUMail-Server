@@ -9,9 +9,12 @@
 //! a resolver that is down or a missing DMARC record are worth nothing, in either direction.
 
 mod attachments;
+mod bayes;
 mod content;
 mod html;
 mod links;
+
+pub use bayes::run_learning;
 
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::{Duration, Instant};
@@ -114,8 +117,12 @@ async fn in_time<T>(lookup: impl Future<Output = T>) -> Option<T> {
     tokio::time::timeout(LOOKUP_TIMEOUT, lookup).await.ok()
 }
 
-/// The rules that come from the reputation itself.
-const REPUTATION_RULES: [&str; 2] = ["KNOWN_GOOD_SENDER", "KNOWN_JUNK_SENDER"];
+/// The rules that come from what the filter learned: the sender's reputation and the Bayes filter.
+const LEARNED_RULES: [&str; 4] = ["KNOWN_GOOD_SENDER", "KNOWN_JUNK_SENDER", "BAYES_SPAM", "BAYES_HAM"];
+
+/// From this score on the message's own merits, a message teaches the Bayes filter what spam is
+/// without anyone marking it.
+pub(crate) const AUTOLEARN_SPAM: f32 = 12.0;
 
 /// One reason the score is what it is.
 #[derive(Debug, Clone, Serialize)]
@@ -133,6 +140,12 @@ pub struct Hit {
 pub struct Score {
     pub points: f32,
     pub hits: Vec<Hit>,
+    /// The message's Bayes tokens, to weigh them against a person's own knowledge too.
+    #[serde(skip)]
+    pub(crate) tokens: Vec<i64>,
+    /// The chance of spam by what the whole server learned, when it learned enough.
+    #[serde(skip)]
+    pub(crate) server_chance: Option<f64>,
 }
 
 impl Score {
@@ -141,11 +154,12 @@ impl Score {
         self.hits.push(Hit { rule, points, detail });
     }
 
-    /// The score without what the sender's reputation added or took away. The reputation is
-    /// counted from this, so a sender's past cannot keep itself going: one that was filed as junk
-    /// and has since fixed its setup recovers instead of staying junk for good.
-    pub fn points_without_reputation(&self) -> f32 {
-        self.hits.iter().filter(|hit| !REPUTATION_RULES.contains(&hit.rule)).map(|hit| hit.points).sum()
+    /// The score on the message's own merits, without what the filter learned: the sender's
+    /// reputation and the Bayes filter. Both are fed from this, so what was learned cannot keep
+    /// itself going: a sender that was filed as junk and has since fixed its setup recovers instead of
+    /// staying junk for good.
+    pub fn points_on_its_own(&self) -> f32 {
+        self.hits.iter().filter(|hit| !LEARNED_RULES.contains(&hit.rule)).map(|hit| hit.points).sum()
     }
 
     /// The rules that fired, for the `X-Spam-Status` header: `none` when nothing did, the way
@@ -311,15 +325,19 @@ pub async fn score(
         let examination = if raw.len() <= content::MAX_MESSAGE {
             let (raw, now) = (raw.to_vec(), crate::now());
             let dmarc_passed = verdict.is_some_and(|verdict| verdict.dmarc_passed);
-            tokio::task::spawn_blocking(move || content::examine(&raw, now, dmarc_passed)).await.unwrap_or_default()
+            let key = if config.bayes { bayes::context_key(ctx).await } else { None };
+            tokio::task::spawn_blocking(move || content::examine(&raw, now, dmarc_passed, key.as_ref()))
+                .await
+                .unwrap_or_default()
         } else {
             content::Examination::default()
         };
         let domains =
             if config.blocklists { domain_listings(ctx, &examination.link_domains).await } else { Vec::new() };
-        (examination.hits, domains)
+        let chance = if examination.tokens.is_empty() { None } else { server_chance(ctx, &examination.tokens).await };
+        (examination.hits, domains, examination.tokens, chance)
     };
-    let (names, listed, (content_hits, domains)) = tokio::join!(reverse, blocklists, message);
+    let (names, listed, (content_hits, domains, tokens, chance)) = tokio::join!(reverse, blocklists, message);
 
     // No answer at all is not the same as no reverse name, so a timeout costs nothing.
     if let Some(names) = names {
@@ -350,6 +368,19 @@ pub async fn score(
         }
     }
 
+    // What the whole server's Bayes filter learned; a person's own knowledge is weighed per recipient.
+    if let Some(chance) = chance {
+        let points = bayes::points(chance);
+        let detail = Some(format!("{:.0} %", chance * 100.0));
+        if points > 0.0 {
+            score.add("BAYES_SPAM", points, detail);
+        } else if points < 0.0 {
+            score.add("BAYES_HAM", points, detail);
+        }
+    }
+    score.tokens = tokens;
+    score.server_chance = chance;
+
     match ctx.store.reputation(reputation_subject(ip, verdict)).await {
         Ok(reputation) if reputation.is_known() => {
             let share = reputation.junk_share();
@@ -364,6 +395,32 @@ pub async fn score(
     }
 
     Some(score)
+}
+
+/// The chance of spam by what the whole server's Bayes filter learned, when it learned enough.
+async fn server_chance(ctx: &Context, tokens: &[i64]) -> Option<f64> {
+    let totals = ctx.store.bayes_totals(None).await.ok()?;
+    if !bayes::has_learned_enough(totals) {
+        return None;
+    }
+    let counts = ctx.store.bayes_counts(None, tokens.to_vec()).await.ok()?;
+    bayes::spam_chance(tokens, &counts, totals)
+}
+
+/// How many points a person's own Bayes knowledge adds to or takes from the server's verdict for them,
+/// once they marked enough mail themselves.
+pub(crate) async fn personal_bayes_points(ctx: &Context, config: &SpamConfig, score: &Score, account_id: i64) -> f32 {
+    if !config.bayes || score.tokens.is_empty() {
+        return 0.0;
+    }
+    let Ok(totals) = ctx.store.bayes_totals(Some(account_id)).await else { return 0.0 };
+    if !bayes::has_learned_enough(totals) {
+        return 0.0;
+    }
+    let Ok(counts) = ctx.store.bayes_counts(Some(account_id), score.tokens.clone()).await else { return 0.0 };
+    let Some(own) = bayes::spam_chance(&score.tokens, &counts, totals) else { return 0.0 };
+    let blended = bayes::blended(score.server_chance, Some((own, totals))).unwrap_or(own);
+    bayes::points(blended) - score.server_chance.map_or(0.0, bayes::points)
 }
 
 /// Asks a suspicious sender to come back later, unless it already did. `Some(seconds)` means the
@@ -484,8 +541,8 @@ mod tests {
         score.add("KNOWN_JUNK_SENDER", 3.0, None);
         // Junk because of its past, but on its own merits this message is fine.
         assert_eq!(outcome(&SpamConfig::default(), score.points), Outcome::Suspicious);
-        assert!((score.points_without_reputation() - 1.5).abs() < f32::EPSILON);
-        assert_eq!(outcome(&SpamConfig::default(), score.points_without_reputation()), Outcome::Deliver);
+        assert!((score.points_on_its_own() - 1.5).abs() < f32::EPSILON);
+        assert_eq!(outcome(&SpamConfig::default(), score.points_on_its_own()), Outcome::Deliver);
     }
 
     #[test]

@@ -49,6 +49,7 @@ pub use inbound::{ListenerKind, serve, serve_stream};
 pub use limiter::AuthLimiter;
 pub use outbound::run_queue;
 pub use relay::IpNetwork;
+pub use spam::run_learning;
 pub use stream::{BoxIo, Io};
 pub use submission::{Submission, SubmissionRecipient, SubmitError, Submitted};
 
@@ -88,6 +89,8 @@ pub(crate) struct Context {
     pub blocklist_cache: spam::BlocklistCache,
     /// Recent domain blocklist answers about link domains.
     pub domain_cache: spam::DomainCache,
+    /// The key Bayes tokens are hashed with, loaded or made on first use.
+    pub bayes_key: tokio::sync::OnceCell<[u8; 32]>,
     /// Sized at start; changing these limits takes a restart.
     pub connections: Arc<Semaphore>,
     pub delivery_permits: Arc<Semaphore>,
@@ -163,6 +166,7 @@ impl Smtp {
                 auth_limiter: limiter::AuthLimiter::default(),
                 blocklist_cache: spam::BlocklistCache::default(),
                 domain_cache: spam::DomainCache::default(),
+                bayes_key: tokio::sync::OnceCell::new(),
                 inflight: Mutex::new(HashSet::new()),
                 stats: health::DeliveryStats::default(),
                 connector: RwLock::new(None),

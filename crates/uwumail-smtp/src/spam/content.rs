@@ -4,8 +4,8 @@
 
 use mail_parser::{Encoding, Message, MessageParser, PartType};
 
-use super::links::{self, Target};
-use super::{Hit, attachments, html};
+use super::links::{self, Link, Target};
+use super::{Hit, attachments, bayes, html};
 
 /// Messages larger than this are not read for content; the rules about the sending server still apply.
 pub(crate) const MAX_MESSAGE: usize = 25 * 1024 * 1024;
@@ -18,6 +18,8 @@ pub(crate) struct Examination {
     pub hits: Vec<Hit>,
     /// Link domains worth asking a domain blocklist about.
     pub link_domains: Vec<String>,
+    /// The message's Bayes tokens, hashed; empty without a key.
+    pub tokens: Vec<i64>,
 }
 
 fn add(hits: &mut Vec<Hit>, rule: &'static str, points: f32, detail: Option<String>) {
@@ -26,9 +28,71 @@ fn add(hits: &mut Vec<Hit>, rule: &'static str, points: f32, detail: Option<Stri
     }
 }
 
+/// What the text and HTML parts of a message hold.
+#[derive(Default)]
+struct Body {
+    links: Vec<Link>,
+    text_parts: usize,
+    html_parts: usize,
+    hidden_chars: usize,
+    /// A text part is base64-encoded although it is plain ASCII.
+    needless_base64: bool,
+}
+
+fn read_body(message: &Message<'_>) -> Body {
+    let mut ids: Vec<u32> = message.text_body.iter().chain(&message.html_body).copied().collect();
+    ids.sort_unstable();
+    ids.dedup();
+    let mut body = Body::default();
+    for part in ids.iter().filter_map(|id| message.parts.get(*id as usize)) {
+        let content = match &part.body {
+            PartType::Text(text) => {
+                body.text_parts += 1;
+                body.links.extend(links::in_text(text));
+                text
+            }
+            PartType::Html(html) => {
+                body.html_parts += 1;
+                let read = html::read(html);
+                body.hidden_chars += read.hidden_chars;
+                body.links.extend(links::in_anchors(&read.anchors));
+                html
+            }
+            _ => continue,
+        };
+        // Base64 hides words from simple filters; plain ASCII text never needs it.
+        if part.encoding == Encoding::Base64 && !content.trim().is_empty() && content.is_ascii() {
+            body.needless_base64 = true;
+        }
+    }
+    body
+}
+
+/// The sites a message links to, as the Bayes filter sees them.
+fn link_sites(found: &[Link]) -> Vec<String> {
+    found
+        .iter()
+        .map(|link| match &link.target {
+            Target::Domain(domain) => links::site(domain),
+            Target::Ip(_) => "ip".to_owned(),
+        })
+        .collect()
+}
+
+/// The hashed Bayes tokens of a stored message, for learning it.
+pub(crate) fn learning_tokens(raw: &[u8], key: &[u8; 32]) -> Vec<i64> {
+    if raw.len() > MAX_MESSAGE {
+        return Vec::new();
+    }
+    let Some(message) = MessageParser::default().parse(raw) else { return Vec::new() };
+    let body = read_body(&message);
+    bayes::hashed(key, &bayes::tokens(&message, &link_sites(&body.links)))
+}
+
 /// Reads a message for the content rules. `dmarc_passed` softens the rules that newsletters from real
 /// senders trip over: tracking links whose text shows the shop's own address, and hidden preview text.
-pub(crate) fn examine(raw: &[u8], now: i64, dmarc_passed: bool) -> Examination {
+/// With a `key`, the message's Bayes tokens come along.
+pub(crate) fn examine(raw: &[u8], now: i64, dmarc_passed: bool, key: Option<&[u8; 32]>) -> Examination {
     if raw.len() > MAX_MESSAGE {
         return Examination::default();
     }
@@ -37,40 +101,18 @@ pub(crate) fn examine(raw: &[u8], now: i64, dmarc_passed: bool) -> Examination {
     headers(&message, now, &mut hits);
     from_name(&message, &mut hits);
 
-    let mut body: Vec<u32> = message.text_body.iter().chain(&message.html_body).copied().collect();
-    body.sort_unstable();
-    body.dedup();
-    let (mut text_parts, mut html_parts, mut hidden_chars) = (0, 0, 0);
-    let mut found = Vec::new();
-    for part in body.iter().filter_map(|id| message.parts.get(*id as usize)) {
-        let content = match &part.body {
-            PartType::Text(text) => {
-                text_parts += 1;
-                found.extend(links::in_text(text));
-                text
-            }
-            PartType::Html(html) => {
-                html_parts += 1;
-                let read = html::read(html);
-                hidden_chars += read.hidden_chars;
-                found.extend(links::in_anchors(&read.anchors));
-                html
-            }
-            _ => continue,
-        };
-        // Base64 hides words from simple filters; plain ASCII text never needs it.
-        if part.encoding == Encoding::Base64 && !content.trim().is_empty() && content.is_ascii() {
-            add(&mut hits, "BASE64_TEXT", 1.0, None);
-        }
+    let body = read_body(&message);
+    if body.needless_base64 {
+        add(&mut hits, "BASE64_TEXT", 1.0, None);
     }
-    if html_parts > 0 && text_parts == 0 {
+    if body.html_parts > 0 && body.text_parts == 0 {
         add(&mut hits, "HTML_ONLY", 0.5, None);
     }
-    if !dmarc_passed && hidden_chars > HIDDEN_TEXT_CHARS {
-        add(&mut hits, "HIDDEN_TEXT", 1.0, Some(format!("{hidden_chars} characters")));
+    if !dmarc_passed && body.hidden_chars > HIDDEN_TEXT_CHARS {
+        add(&mut hits, "HIDDEN_TEXT", 1.0, Some(format!("{} characters", body.hidden_chars)));
     }
 
-    for link in &found {
+    for link in &body.links {
         match (&link.target, link.text.as_deref().and_then(links::named_in_text)) {
             (Target::Domain(domain), Some(named)) if !dmarc_passed && !links::same_site(&named, domain) => {
                 add(&mut hits, "PHISHING_LINK_TEXT", 3.0, Some(format!("{named} -> {domain}")));
@@ -92,7 +134,9 @@ pub(crate) fn examine(raw: &[u8], now: i64, dmarc_passed: bool) -> Examination {
     for hit in attachments::judge(&message) {
         add(&mut hits, hit.rule, hit.points, hit.detail);
     }
-    Examination { hits, link_domains: links::domains_to_look_up(&found) }
+    let tokens =
+        key.map(|key| bayes::hashed(key, &bayes::tokens(&message, &link_sites(&body.links)))).unwrap_or_default();
+    Examination { hits, link_domains: links::domains_to_look_up(&body.links), tokens }
 }
 
 /// Headers every mail program writes. Missing ones, or a date days away from now, are typical for
@@ -149,7 +193,7 @@ mod tests {
 
     fn rules(raw: &str, dmarc_passed: bool) -> Vec<&'static str> {
         let mut rules: Vec<&'static str> =
-            examine(raw.as_bytes(), now(), dmarc_passed).hits.into_iter().map(|hit| hit.rule).collect();
+            examine(raw.as_bytes(), now(), dmarc_passed, None).hits.into_iter().map(|hit| hit.rule).collect();
         rules.sort_unstable();
         rules
     }
@@ -168,7 +212,7 @@ mod tests {
     fn a_real_newsletter_trips_nothing_and_its_tracking_links_only_count_without_dmarc() {
         assert!(rules(&newsletter(), true).is_empty(), "{:?}", rules(&newsletter(), true));
         assert_eq!(rules(&newsletter(), false), ["PHISHING_LINK_TEXT"]);
-        let found = examine(newsletter().as_bytes(), now(), true);
+        let found = examine(newsletter().as_bytes(), now(), true, None);
         assert_eq!(found.link_domains, ["shop.example", "click.mailer.example"]);
     }
 
@@ -238,8 +282,8 @@ mod tests {
 
     #[test]
     fn broken_or_huge_messages_give_nothing() {
-        assert!(examine(b"\x00\xff not mail at all", now(), false).hits.len() <= 3);
+        assert!(examine(b"\x00\xff not mail at all", now(), false, None).hits.len() <= 3);
         let huge = vec![b'a'; MAX_MESSAGE + 1];
-        assert!(examine(&huge, now(), false).hits.is_empty());
+        assert!(examine(&huge, now(), false, None).hits.is_empty());
     }
 }

@@ -52,6 +52,9 @@ pub struct SpamConfig {
     pub enabled: bool,
     /// Ask DNS blocklists about the sending server.
     pub blocklists: bool,
+    /// Learn from Spam / Not spam and clear cases, and let the Bayes filter score mail once it learned
+    /// enough.
+    pub bayes: bool,
     /// From this score on, a message goes into Junk instead of the inbox.
     pub junk_score: f32,
     /// Senders scoring at least this much, but below `junk_score`, are asked to come back later.
@@ -70,6 +73,7 @@ impl Default for SpamConfig {
         SpamConfig {
             enabled: true,
             blocklists: true,
+            bayes: true,
             junk_score: 5.0,
             greylist_score: 2.0,
             greylist_delay_secs: 300,

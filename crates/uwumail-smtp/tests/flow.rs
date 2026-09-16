@@ -14,7 +14,10 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 use uwumail_smtp::{DeliveryConfig, ListenerKind, Smtp, SmtpConfig, SmtpSettings, SpamConfig, ToneConfig};
-use uwumail_store::{EmailSummary, EmailUpdate, KeywordsChange, MailboxRole, MailboxesChange, NewAccount, Role, Store};
+use uwumail_store::{
+    BayesTotals, EmailSummary, EmailUpdate, IngestRequest, KeywordsChange, MailboxRole, MailboxTarget, MailboxesChange,
+    NewAccount, Role, Store,
+};
 
 const PASSWORD: &str = "katzenpfote-123";
 
@@ -105,6 +108,7 @@ async fn start_with_spam(
         addrs.push(listener.local_addr().unwrap());
         tokio::spawn(uwumail_smtp::serve(smtp.clone(), listener, kind, rx.clone()));
     }
+    tokio::spawn(uwumail_smtp::run_learning(smtp.clone(), rx.clone()));
     tokio::spawn(uwumail_smtp::run_queue(smtp.clone(), rx));
 
     TestServer { smtp, mx: addrs[0], submission: addrs[1], submission_tls: addrs[2], _shutdown: shutdown, _dir: dir }
@@ -517,9 +521,13 @@ async fn forged_mail_from_a_domain_that_quarantines_it_goes_to_junk() {
 /// blocklists. The reverse name of that address may or may not resolve here; the thresholds in the
 /// tests hold either way.
 async fn spam_test_server(spam: SpamConfig, dmarc: Option<&str>) -> TestServer {
+    spam_test_server_for(&["mini"], spam, dmarc).await
+}
+
+async fn spam_test_server_for(users: &[&str], spam: SpamConfig, dmarc: Option<&str>) -> TestServer {
     let config = SmtpConfig { trusted_relays: vec!["127.0.0.1".into()], ..SmtpConfig::default() };
     let spam = SpamConfig { blocklists: false, greylist_delay_secs: 0, ..spam };
-    let a = start_with_spam("a.test", &["mini"], &[], config, spam).await;
+    let a = start_with_spam("a.test", users, &[], config, spam).await;
     a.smtp.dns_cache().pin_txt("sender.test", "v=spf1 ip4:198.51.100.1 -all").unwrap();
     a.smtp.dns_cache().pin_no_txt("mail.sender.test");
     match dmarc {
@@ -541,10 +549,16 @@ async fn relay_from_outside(server: &TestServer) -> String {
 /// Hands in `message` (headers and body) the way the relay received it from 203.0.113.7, with the Date
 /// and Message-ID every mail program writes, so only what the message itself adds is judged.
 async fn relay_message_from_outside(server: &TestServer, message: &str) -> String {
+    relay_message_to(server, &["mini@a.test"], message).await
+}
+
+async fn relay_message_to(server: &TestServer, recipients: &[&str], message: &str) -> String {
     let mut session = RawSession::connect(server.mx).await;
     assert!(session.command("EHLO relay.local").await.starts_with("250"));
     assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
-    assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
+    for recipient in recipients {
+        assert!(session.command(&format!("RCPT TO:<{recipient}>")).await.starts_with("250"));
+    }
     assert!(session.command("DATA").await.starts_with("354"));
     let id = uwumail_store::BlobHash::of(message.as_bytes());
     session
@@ -663,4 +677,73 @@ async fn mail_from_our_own_network_is_not_judged() {
     let inbox = a.inbox("mini@a.test").await;
     assert_eq!(inbox.len(), 1, "127.0.0.1 is in our own network");
     assert!(!a.raw(&inbox[0]).await.contains("X-Spam-"));
+}
+
+/// Stores a message in `login`'s inbox and queues it to be learned, as if a person had marked it:
+/// for the whole server, or with `personal` for that person.
+async fn teach(server: &TestServer, login: &str, personal: bool, spam: bool, raw: String) {
+    let store = server.smtp.store();
+    let account = store.account(login).await.unwrap().unwrap().id;
+    let request = IngestRequest {
+        account_id: account,
+        raw: raw.into_bytes(),
+        mailboxes: vec![MailboxTarget::Role(MailboxRole::Inbox)],
+        keywords: vec![],
+        received_at: None,
+    };
+    let stored = store.ingest(request).await.unwrap();
+    store.queue_bayes_learning(stored.blob, personal.then_some(account), spam).await.unwrap();
+}
+
+async fn wait_until_learned(server: &TestServer, account: Option<i64>, expected: BayesTotals) {
+    let started = Instant::now();
+    loop {
+        let totals = server.smtp.store().bayes_totals(account).await.unwrap();
+        if totals == expected {
+            return;
+        }
+        assert!(started.elapsed() < Duration::from_secs(60), "learned {totals:?}, expected {expected:?}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_bayes_filter_learns_and_a_person_can_see_it_differently() {
+    let a = spam_test_server_for(&["mini", "leni"], SpamConfig::default(), None).await;
+    let offer = |n: u32| {
+        format!(
+            "From: deals@shop.test\r\nSubject: Gratis Gewinnspiel {n}\r\n\r\nJetzt gratis teilnehmen und Luxusuhren gewinnen, nur heute {n}\r\n"
+        )
+    };
+    let school = |n: u32| {
+        format!(
+            "From: verein@schule.test\r\nSubject: Elternabend {n}\r\n\r\nLiebe Eltern, der Elternabend der Klasse findet am Dienstag statt {n}\r\n"
+        )
+    };
+    // The server learns offers as spam and school mail as wanted. Leni sees it the other way round.
+    for n in 0..55 {
+        teach(&a, "mini@a.test", false, true, offer(n)).await;
+        teach(&a, "mini@a.test", false, false, school(n)).await;
+        teach(&a, "leni@a.test", true, false, offer(n + 100)).await;
+        teach(&a, "leni@a.test", true, true, school(n + 100)).await;
+    }
+    let leni = a.smtp.store().account("leni@a.test").await.unwrap().unwrap().id;
+    wait_until_learned(&a, None, BayesTotals { spam: 55, ham: 55 }).await;
+    wait_until_learned(&a, Some(leni), BayesTotals { spam: 55, ham: 55 }).await;
+
+    let reply = relay_message_to(&a, &["mini@a.test", "leni@a.test"], &offer(999)).await;
+    assert!(reply.starts_with("250"), "{reply}");
+    let for_mini = a.mailbox("mini@a.test", MailboxRole::Junk).await;
+    assert_eq!(for_mini.len(), 1, "the server's knowledge puts the offer into Junk");
+    let raw = a.raw(&for_mini[0]).await;
+    assert!(raw.contains("BAYES_SPAM"), "{raw}");
+    assert!(a.mailbox("leni@a.test", MailboxRole::Junk).await.is_empty(), "Leni's own knowledge keeps it out of Junk");
+    assert_eq!(a.inbox("leni@a.test").await.iter().filter(|email| email.subject.contains("999")).count(), 1);
+
+    // Wanted mail by the server's knowledge gets points taken off.
+    let reply = relay_message_to(&a, &["mini@a.test"], &school(998)).await;
+    assert!(reply.starts_with("250"), "{reply}");
+    let inbox = a.inbox("mini@a.test").await;
+    let school_mail = inbox.iter().find(|email| email.subject.contains("998")).expect("in the inbox");
+    assert!(a.raw(school_mail).await.contains("BAYES_HAM"));
 }

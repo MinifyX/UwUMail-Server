@@ -83,6 +83,7 @@ pub async fn run(
         }
     }
     tasks.spawn(uwumail_smtp::run_queue(smtp.clone(), shutdown_rx.clone()));
+    tasks.spawn(uwumail_smtp::run_learning(smtp.clone(), shutdown_rx.clone()));
 
     let jmap = uwumail_jmap::Jmap::new(smtp.clone()).router();
     let certificate: uwumail_web::CertificateSource = {
@@ -203,6 +204,11 @@ async fn collect_garbage(store: Store, mut shutdown: watch::Receiver<bool>) {
             Ok(0) => {}
             Ok(removed) => tracing::info!(removed, "forgot old greylisting and sender reputation entries"),
             Err(err) => tracing::warn!(%err, "cleaning up greylisting and sender reputation failed"),
+        }
+        match store.prune_bayes(uwumail_store::BAYES_RARE_TOKEN_SECS, uwumail_store::BAYES_LEARNED_SECS).await {
+            Ok(0) => {}
+            Ok(removed) => tracing::info!(removed, "forgot rare and old Bayes filter entries"),
+            Err(err) => tracing::warn!(%err, "cleaning up the Bayes filter failed"),
         }
         match store.collect_garbage(3600).await {
             Ok(0) => {}

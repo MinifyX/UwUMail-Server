@@ -907,6 +907,20 @@ impl Session {
                 continue;
             }
             seen_accounts.push(account_id);
+            // What a person taught their own Bayes filter can move the message into or out of Junk for
+            // them. A DMARC quarantine stays a quarantine.
+            let junk = match &score {
+                Some(score) if !quarantined => {
+                    let own = spam::personal_bayes_points(&ctx, &live.spam, score, account_id).await;
+                    let theirs = spam::outcome(&live.spam, score.points + own);
+                    let moved = matches!(theirs, spam::Outcome::Junk | spam::Outcome::Reject);
+                    if own != 0.0 && moved != junk {
+                        tracing::info!(%id, account = account_id, junk = moved, points = own, "moved by a person's own filter");
+                    }
+                    moved
+                }
+                _ => junk,
+            };
             // Suspicious mail is never forwarded; it stays in Junk.
             let plan = if junk {
                 forward::Plan { keep_copy: true, targets: Vec::new() }
@@ -975,12 +989,24 @@ impl Session {
             && delivered > 0
         {
             let subject = spam::reputation_subject(*ip, verdict.as_ref());
-            let on_its_own = spam::outcome(&live.spam, score.points_without_reputation());
-            let counts_as_junk = quarantined || matches!(on_its_own, spam::Outcome::Junk | spam::Outcome::Reject);
+            let points = score.points_on_its_own();
+            let counts_as_junk =
+                quarantined || matches!(spam::outcome(&live.spam, points), spam::Outcome::Junk | spam::Outcome::Reject);
             // Every recipient stores the same bytes, so this names the message a person may mark later.
             let stored = uwumail_store::BlobHash::of(&message);
-            if let Err(err) = ctx.store.record_delivery(stored, subject, counts_as_junk).await {
+            if let Err(err) = ctx.store.record_delivery(stored.clone(), subject, counts_as_junk).await {
                 tracing::warn!(%id, %err, "counting a message for the sender reputation failed");
+            }
+            // Clear cases teach the whole server's Bayes filter without anyone marking them: very spammy
+            // on the message's own merits, or vouched for by DMARC with nothing against it.
+            let dmarc_passed = verdict.as_ref().is_some_and(|verdict| verdict.dmarc_passed);
+            let spam = points >= spam::AUTOLEARN_SPAM;
+            let wanted = !junk && dmarc_passed && points <= 0.0;
+            if live.spam.bayes
+                && (spam || wanted)
+                && let Err(err) = ctx.store.queue_bayes_learning(stored, None, spam).await
+            {
+                tracing::warn!(%id, %err, "queueing a clear case for the Bayes filter failed");
             }
         }
 
