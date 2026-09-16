@@ -9,7 +9,7 @@ Check a configuration with `uwumail-server check-config`.
 
 ## Settings in the admin panel
 
-Admins can change sending, receiving, mail-app and tone settings under
+Admins can change sending, receiving, spam filter, mail-app and tone settings under
 *Einstellungen* / *Settings* in the web portal. The server checks them and
 applies them at once, without a restart. They are stored in the database
 (`config.overlay`), so they survive updates.
@@ -64,6 +64,14 @@ trusted_relays = []           # servers in front that forward mail to us, e.g. [
 enforce_dmarc_reject = true   # otherwise p=reject failures go to Junk
 reveal_client_ip = false      # keep senders' IP and device name out of headers
 allow_external_forwarding = true  # people may forward to other servers (after the address confirms)
+
+[spam]                        # see spam-filter.md
+enabled = true
+blocklists = true             # ask Spamhaus ZEN, SpamCop and Barracuda
+junk_score = 5.0
+greylist_score = 2.0          # up to junk_score: suspicious senders retry once
+greylist_delay_secs = 300
+# reject_score = 15.0         # refuse from this score on; off unless set
 
 [delivery]
 concurrency = 16

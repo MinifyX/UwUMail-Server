@@ -76,7 +76,8 @@ bash dev/seed.sh && node dev/smoke.mjs
 ```
 
 More in [docs/development.md](docs/development.md). Running it for real:
-[docs/deployment.md](docs/deployment.md) and [docs/configuration.md](docs/configuration.md).
+[docs/deployment.md](docs/deployment.md), [docs/configuration.md](docs/configuration.md) and
+[docs/spam-filter.md](docs/spam-filter.md).
 
 ## License
 
