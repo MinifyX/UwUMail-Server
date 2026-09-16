@@ -45,6 +45,8 @@ pub enum SubmitError {
     NoFrom,
     #[error("you are not allowed to send as <{0}>")]
     ForbiddenFrom(String),
+    #[error("a message may have only one Sender")]
+    AmbiguousSender,
     #[error("there are no recipients")]
     NoRecipients,
     #[error("<{0}> is not a valid address")]
@@ -55,27 +57,41 @@ pub enum SubmitError {
     Queue(StoreError),
 }
 
-/// The author (`From`) and submitter (`Sender`) addresses a message claims, which all have to
-/// belong to the sending account. RFC 5322 §3.6.2 allows exactly one `From`; a hidden second
-/// `From` header, or a forged `Sender`, must never let a login send mail that displays as
-/// another person, so more than one `From` is refused here and the `Sender` is returned for the
-/// same ownership check as the `From`.
+/// The author (`From`), submitter (`Sender`) and resender (`Resent-From`/`Resent-Sender`) addresses
+/// a message claims, which all have to belong to the sending account. RFC 5322 §3.6 allows exactly
+/// one `From` and at most one `Sender`; a hidden second `From`, a forged `Sender`, or a `Resent-*`
+/// header naming another person (which some mail clients display) must never let a login send mail
+/// that shows as someone else. So more than one `From` or `Sender` is refused, and every address of
+/// each identity header — all occurrences, whatever the order — is returned for the ownership check.
 fn claimed_addresses(raw: &[u8]) -> Result<(Vec<String>, Vec<String>), SubmitError> {
     if headers::count(raw, "From") > 1 {
         return Err(SubmitError::NoFrom);
     }
+    if headers::count(raw, "Sender") > 1 {
+        return Err(SubmitError::AmbiguousSender);
+    }
     let parsed = MessageParser::new().parse_headers(raw);
-    let addresses = |value: Option<&mail_parser::Address<'_>>| -> Vec<String> {
-        value
-            .map(|list| list.iter().filter_map(|a| a.address.as_deref().map(str::to_owned)).collect())
-            .unwrap_or_default()
-    };
-    let from = parsed.as_ref().map(|m| addresses(m.from())).unwrap_or_default();
+    let mut from = Vec::new();
+    let mut claimed = Vec::new();
+    if let Some(message) = parsed.as_ref() {
+        for header in message.headers() {
+            let name = header.name();
+            let bucket = if name.eq_ignore_ascii_case("From") {
+                &mut from
+            } else if ["Sender", "Resent-From", "Resent-Sender"].iter().any(|h| name.eq_ignore_ascii_case(h)) {
+                &mut claimed
+            } else {
+                continue;
+            };
+            if let Some(address) = header.value().as_address() {
+                bucket.extend(address.iter().filter_map(|a| a.address.as_deref().map(str::to_owned)));
+            }
+        }
+    }
     if from.is_empty() {
         return Err(SubmitError::NoFrom);
     }
-    let sender = parsed.as_ref().map(|m| addresses(m.sender())).unwrap_or_default();
-    Ok((from, sender))
+    Ok((from, claimed))
 }
 
 /// Removes Bcc headers: blind copies must not show up for anyone.
@@ -242,6 +258,22 @@ mod tests {
             claimed_addresses(b"From: mini@a.test\r\nSender: ami@a.test\r\nSubject: hi\r\n\r\nhi\r\n").unwrap();
         assert_eq!(from, ["mini@a.test"]);
         assert_eq!(sender, ["ami@a.test"]);
+
+        // Resent-From and Resent-Sender count as claimed identities too, whatever their order.
+        let (from, claimed) = claimed_addresses(
+            b"Resent-Sender: rs@a.test\r\nFrom: mini@a.test\r\nResent-From: rf@a.test\r\nSubject: hi\r\n\r\nhi\r\n",
+        )
+        .unwrap();
+        assert_eq!(from, ["mini@a.test"]);
+        assert!(claimed.contains(&"rf@a.test".to_string()) && claimed.contains(&"rs@a.test".to_string()));
+    }
+
+    #[test]
+    fn a_second_sender_is_refused() {
+        assert!(matches!(
+            err(b"From: mini@a.test\r\nSender: mini@a.test\r\nSender: ami@a.test\r\nSubject: hi\r\n\r\nhi\r\n"),
+            Some(SubmitError::AmbiguousSender)
+        ));
     }
 
     #[test]

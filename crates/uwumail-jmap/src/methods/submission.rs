@@ -161,6 +161,7 @@ async fn create_one(ctx: &Ctx<'_>, object: &Map<String, Value>) -> Result<(i64, 
     };
     let submitted = ctx.jmap.smtp.submit(submission).await.map_err(|err| match err {
         SubmitError::NoFrom => SetError::new("invalidEmail", "the email has no From header"),
+        SubmitError::AmbiguousSender => SetError::new("invalidEmail", "a message may have only one Sender"),
         SubmitError::ForbiddenFrom(address) if address == mail_from => {
             SetError::new("forbiddenMailFrom", format!("you are not allowed to send as {address}"))
         }

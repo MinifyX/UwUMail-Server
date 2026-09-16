@@ -944,6 +944,7 @@ impl Session {
             Err(SubmitError::ForbiddenFrom(address)) => {
                 format!("550 5.7.1 You are not allowed to send as <{address}>\r\n")
             }
+            Err(SubmitError::AmbiguousSender) => "550 5.6.0 A message may have only one Sender\r\n".into(),
             Err(SubmitError::InvalidRecipient(address)) => format!("501 5.1.3 <{address}> is not a valid address\r\n"),
             Err(SubmitError::NoRecipients) => "503 5.5.1 Send RCPT first\r\n".into(),
             Err(SubmitError::NobodyAccepted) => "552 5.2.2 No recipient could take the message\r\n".into(),
