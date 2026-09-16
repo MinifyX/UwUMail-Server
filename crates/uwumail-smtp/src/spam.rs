@@ -71,8 +71,12 @@ impl Score {
         self.hits.iter().filter(|hit| !REPUTATION_RULES.contains(&hit.rule)).map(|hit| hit.points).sum()
     }
 
-    /// The rules that fired, for the `X-Spam-Status` header.
+    /// The rules that fired, for the `X-Spam-Status` header: `none` when nothing did, the way
+    /// SpamAssassin writes it, so a filter looking for a word after `tests=` always finds one.
     pub fn tests(&self) -> String {
+        if self.hits.is_empty() {
+            return "none".into();
+        }
         self.hits.iter().map(|hit| hit.rule).collect::<Vec<_>>().join(",")
     }
 }
@@ -346,6 +350,12 @@ mod tests {
         // Without DMARC the From domain could be anyone's, so the network counts instead.
         assert_eq!(reputation_subject(ip, Some(&verdict(false, Some("example.com")))), "network:192.0.2.0/24");
         assert_eq!(reputation_subject(ip, Some(&verdict(true, None))), "network:192.0.2.0/24");
+    }
+
+    #[test]
+    fn a_clean_message_says_that_no_rule_fired() {
+        let headers = headers(&Score::default(), false, 5.0);
+        assert!(headers.contains("X-Spam-Status: No, score=0.0 required=5.0 tests=none\r\n"), "{headers}");
     }
 
     #[test]
