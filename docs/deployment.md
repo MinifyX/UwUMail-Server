@@ -64,6 +64,7 @@ Instead of the assistant, or for more domains and people:
 ```bash
 docker compose exec uwumail uwumail-server domain add example.com
 docker compose exec uwumail uwumail-server account add you@example.com --name "You" --admin
+docker compose exec uwumail uwumail-server account admin someone@example.com on
 ```
 
 `domain add` prints the DNS records to create:

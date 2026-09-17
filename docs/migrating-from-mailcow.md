@@ -60,6 +60,13 @@ a small one.
 
 The same without `--dry-run`. Afterwards delete the export on the mailcow host.
 
+Everyone comes over as a normal person. On a fresh server, skip the setup
+assistant and make yourself admin once your mailbox is here:
+
+```sh
+docker compose exec uwumail uwumail-server account admin you@example.com on
+```
+
 ## 4. Copy the mail
 
 mailcow encrypts mail on disk, so it comes over IMAP. With a dovecot master

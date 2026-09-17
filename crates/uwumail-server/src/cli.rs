@@ -190,6 +190,12 @@ pub struct SenderArgs {
     pub note: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum Switch {
+    On,
+    Off,
+}
+
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum SenderKindArg {
     Ip,
@@ -271,6 +277,11 @@ pub enum AccountCommand {
     },
     Enable {
         address: String,
+    },
+    /// Let someone manage the whole server, or take that away. The last admin cannot be taken away.
+    Admin {
+        address: String,
+        state: Switch,
     },
     /// Let someone send as any address of these domains; without domains, only as their own again.
     SendAs {

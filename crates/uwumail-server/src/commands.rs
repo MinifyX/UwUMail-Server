@@ -9,7 +9,7 @@ use uwumail_store::{
 
 use crate::cli::{
     AccountCommand, AliasCommand, BackupCommand, DomainCommand, ForwardCommand, GatewayCommand, QueueCommand,
-    SenderArgs, SenderKindArg, SpamCommand, WordTarget, WordsCommand,
+    SenderArgs, SenderKindArg, SpamCommand, Switch, WordTarget, WordsCommand,
 };
 use crate::config::Config;
 
@@ -253,6 +253,16 @@ pub async fn account(config: &Config, store: &Store, command: AccountCommand) ->
             store.update_account(&address, AccountUpdate { disabled: Some(false), ..Default::default() }).await?;
             audit(store, "account.update", &address, json!({ "disabled": false })).await;
             println!("{address} is active again");
+        }
+        AccountCommand::Admin { address, state } => {
+            let role = if state == Switch::On { Role::Admin } else { Role::User };
+            let account =
+                store.update_account(&address, AccountUpdate { role: Some(role), ..Default::default() }).await?;
+            audit(store, "account.update", &account.login, json!({ "role": account.role })).await;
+            match account.role {
+                Role::Admin => println!("{} may manage the whole server now", account.login),
+                Role::User => println!("{} is no admin anymore", account.login),
+            }
         }
         AccountCommand::SendAs { address, domains } => {
             let account = store.account(&address).await?.ok_or_else(|| anyhow::anyhow!("no account {address}"))?;
