@@ -30,7 +30,7 @@ export function Wordmark({ className, hop }: { className?: string; hop?: number 
     <span className={clsx("inline-flex items-center gap-2 font-extrabold tracking-[-0.02em]", className)}>
       <LogoSymbol className="h-[1.3em] w-auto" hop={hop} />
       <span>
-        UwU<span className="text-pink">Mail</span>
+        <span className="text-pink">UwU</span>Mail
       </span>
     </span>
   );
