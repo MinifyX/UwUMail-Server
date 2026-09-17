@@ -9,7 +9,7 @@ use crate::db::{next_modseq, record_change};
 use crate::parse::{EmailMeta, parse};
 use crate::{Result, Store, StoreError, now};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MailboxRole {
     Inbox,

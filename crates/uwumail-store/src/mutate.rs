@@ -41,13 +41,13 @@ pub struct MailboxUpdate {
 }
 
 /// One modseq for a whole batch, taken on the first actual change.
-struct Batch {
-    account_id: i64,
-    modseq: Option<i64>,
+pub(crate) struct Batch {
+    pub(crate) account_id: i64,
+    pub(crate) modseq: Option<i64>,
 }
 
 impl Batch {
-    fn modseq(&mut self, tx: &Transaction<'_>) -> Result<i64> {
+    pub(crate) fn modseq(&mut self, tx: &Transaction<'_>) -> Result<i64> {
         if let Some(modseq) = self.modseq {
             return Ok(modseq);
         }
@@ -125,7 +125,7 @@ fn junk_signal(
     })
 }
 
-fn update_one(tx: &Transaction<'_>, batch: &mut Batch, update: &EmailUpdate) -> Result<()> {
+pub(crate) fn update_one(tx: &Transaction<'_>, batch: &mut Batch, update: &EmailUpdate) -> Result<()> {
     let account_id = batch.account_id;
     let exists: bool = tx.query_row(
         "SELECT EXISTS (SELECT 1 FROM emails WHERE id = ?1 AND account_id = ?2)",
@@ -222,7 +222,7 @@ fn update_one(tx: &Transaction<'_>, batch: &mut Batch, update: &EmailUpdate) -> 
     Ok(())
 }
 
-fn destroy_one(tx: &Transaction<'_>, batch: &mut Batch, email_id: i64) -> Result<()> {
+pub(crate) fn destroy_one(tx: &Transaction<'_>, batch: &mut Batch, email_id: i64) -> Result<()> {
     let account_id = batch.account_id;
     let found: Option<(i64, i64)> = tx
         .query_row(
