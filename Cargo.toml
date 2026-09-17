@@ -4,6 +4,7 @@ members = [
     "crates/uwumail-store",
     "crates/uwumail-smtp",
     "crates/uwumail-imap",
+    "crates/uwumail-dav",
     "crates/uwumail-jmap",
     "crates/uwumail-web",
     "crates/uwumail-server",
@@ -19,6 +20,7 @@ repository = "https://github.com/MinifyX/UwUMail-Server"
 rust-version = "1.88"
 
 [workspace.dependencies]
+uwumail-dav = { path = "crates/uwumail-dav" }
 uwumail-gateway = { path = "crates/uwumail-gateway" }
 uwumail-imap = { path = "crates/uwumail-imap" }
 uwumail-jmap = { path = "crates/uwumail-jmap" }
@@ -47,6 +49,8 @@ idna = "1"
 hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "tls12", "aws-lc-rs"] }
 http-body-util = "0.1"
 bytes = "1"
+# iCalendar and vCard for CalDAV and CardDAV: checking what clients store and when events happen.
+calcard = { version = "0.3", default-features = false }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "service", "client-legacy", "http1"] }
 instant-acme = { version = "0.8", features = ["rcgen"] }
 mail-auth = "0.13"
@@ -56,6 +60,8 @@ mail-parser = "0.11"
 md-5 = "0.11"
 # QR codes for setting up authenticator apps, as plain modules the portal draws itself.
 qrcode = { version = "0.14", default-features = false }
+# WebDAV request bodies; the same version mail-auth uses.
+quick-xml = "0.42"
 getrandom = "0.4"
 # QUIC for the tunnel between a server and its UwUMail Gateway, on the same rustls and aws-lc-rs.
 quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-aws-lc-rs"] }

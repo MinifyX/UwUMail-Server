@@ -92,7 +92,16 @@ pub async fn run(
     tasks.spawn(uwumail_smtp::run_learning(smtp.clone(), shutdown_rx.clone()));
     tasks.spawn(uwumail_smtp::run_list_updates(smtp.clone(), shutdown_rx.clone()));
 
-    let jmap = uwumail_jmap::Jmap::new(smtp.clone()).router();
+    // Calendars and contacts (CalDAV, CardDAV) live next to JMAP on the same HTTPS port.
+    let names = match config.tone.language {
+        uwumail_smtp::Language::De => ("Kalender", "Kontakte"),
+        _ => ("Calendar", "Contacts"),
+    };
+    let dav = uwumail_dav::Dav::new(
+        store.clone(),
+        uwumail_dav::DavSettings { calendar_name: names.0.into(), addressbook_name: names.1.into() },
+    );
+    let jmap = uwumail_jmap::Jmap::new(smtp.clone()).router().merge(dav.router());
     let certificate: uwumail_web::CertificateSource = {
         let (certs, automatic) = (certs.clone(), config.tls.mode == TlsMode::Acme);
         Arc::new(move || {
