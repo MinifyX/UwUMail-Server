@@ -246,3 +246,100 @@ async fn unpairing_disconnects_the_server_and_brings_a_new_code() {
     let token = wait_for_token(&state).await;
     assert!(!token.matches(&gateway.code.token), "the new code is a new one");
 }
+
+/// Waits until `path` exists and holds something, or gives up.
+async fn wait_for_file(path: &Path) -> String {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            if let Ok(text) = std::fs::read_to_string(path) {
+                if !text.trim().is_empty() {
+                    return text;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("{} never turned up", path.display()))
+}
+
+#[tokio::test]
+async fn the_server_can_ask_for_bans_but_never_against_itself() {
+    let gateway = TestGateway::start(2525).await;
+    let (_stop, stop_rx) = watch::channel(false);
+    let client = start_client(&gateway.code, true, stop_rx.clone());
+    wait_for(&client, |s| matches!(s, Status::Connected { .. })).await;
+
+    // Where the tunnel comes from is written down before anything else can happen: the helper and
+    // fail2ban read this, and it is what keeps a ban from ever reaching the server.
+    let trusted = wait_for_file(&gateway.dir.path().join("trusted")).await;
+    assert!(trusted.starts_with("127.0.0.1 "), "the tunnel's address, as seen: {trusted:?}");
+    assert!(trusted.trim_end().ends_with("127.0.0.1/32"), "with the range for fail2ban: {trusted:?}");
+
+    // A stranger is passed on to the privileged helper.
+    client.ban("9.9.9.9".parse().unwrap(), Duration::from_secs(3600), "tried logins that do not exist");
+    let bans = wait_for_file(&gateway.dir.path().join("bans.jsonl")).await;
+    let asked: serde_json::Value = serde_json::from_str(bans.lines().next().unwrap()).unwrap();
+    assert_eq!(asked["ip"], "9.9.9.9");
+    assert_eq!(asked["action"], "ban");
+    assert_eq!(asked["seconds"], 3600);
+
+    // The address the tunnel itself comes from is refused, however loudly the server asks. This is
+    // the one that would take the server off the internet.
+    client.ban(LOCALHOST, Duration::from_secs(3600), "a mail app at home got the password wrong");
+    client.ban("8.8.4.4".parse().unwrap(), Duration::from_secs(3600), "another stranger");
+    // The second stranger arriving means the one before it was handled, too.
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            if std::fs::read_to_string(gateway.dir.path().join("bans.jsonl")).is_ok_and(|text| text.contains("8.8.4.4"))
+            {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("the second stranger never arrived");
+
+    let bans = std::fs::read_to_string(gateway.dir.path().join("bans.jsonl")).unwrap();
+    assert!(!bans.contains("127.0.0.1"), "the server asked to ban itself and the gateway did it: {bans}");
+}
+
+#[tokio::test]
+async fn the_server_hears_how_the_gateway_is_doing() {
+    let gateway = TestGateway::start(2525).await;
+    // What the privileged helper would have written, as it writes it.
+    std::fs::write(
+        gateway.dir.path().join("machine.json"),
+        serde_json::json!({
+            "writtenAt": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+            "system": { "name": "Ubuntu 26.04.1 LTS", "updates": 12, "securityUpdates": 3, "rebootRequired": true },
+            "protection": { "firewall": "ufw", "firewallActive": true, "fail2ban": true, "banned": 2 },
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let (_stop, stop_rx) = watch::channel(false);
+    let client = start_client(&gateway.code, true, stop_rx.clone());
+    wait_for(&client, |s| matches!(s, Status::Connected { .. })).await;
+
+    let status = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            if let Some(status) = client.gateway_status() {
+                return status;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("the gateway never said how it was doing");
+
+    let system = status.system.expect("the machine report came through");
+    assert_eq!(system.name, "Ubuntu 26.04.1 LTS");
+    assert_eq!(system.security_updates, 3);
+    assert!(system.reboot_required);
+    assert_eq!(status.protection.expect("and the protection").firewall, "ufw");
+    assert_eq!(status.trusted, [LOCALHOST], "and where it knows the server to be");
+}
