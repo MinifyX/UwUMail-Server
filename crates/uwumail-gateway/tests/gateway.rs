@@ -251,10 +251,10 @@ async fn unpairing_disconnects_the_server_and_brings_a_new_code() {
 async fn wait_for_file(path: &Path) -> String {
     tokio::time::timeout(Duration::from_secs(20), async {
         loop {
-            if let Ok(text) = std::fs::read_to_string(path) {
-                if !text.trim().is_empty() {
-                    return text;
-                }
+            if let Ok(text) = std::fs::read_to_string(path)
+                && !text.trim().is_empty()
+            {
+                return text;
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
