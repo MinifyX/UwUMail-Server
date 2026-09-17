@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-# Builds the UwUMail Gateway on this machine and installs or updates it on a server over SSH.
-# Needs Docker here, and a Linux server with systemd there (logged in as root or with sudo).
+# Installs or updates the UwUMail Gateway on a server over SSH (a Linux server with systemd, logged
+# in as root or with sudo). The binary comes from one of:
 #
-#   UWUMAIL_GATEWAY_HOST=root@gateway.example.com scripts/deploy-gateway.sh
+#   UWUMAIL_GATEWAY_HOST=root@gateway.example.com scripts/deploy-gateway.sh           # CI (default)
+#   UWUMAIL_GATEWAY_HOST=... UWUMAIL_GATEWAY_RUN=12345678 scripts/deploy-gateway.sh   # a given CI run
+#   UWUMAIL_GATEWAY_HOST=... UWUMAIL_GATEWAY_BUILD=local scripts/deploy-gateway.sh    # Docker here
+#
+# From CI it takes the "Gateway binary" of the newest successful run on main (needs the GitHub CLI)
+# and checks its SHA-256 sum. CI builds only for amd64; arm64 servers need the local build.
 set -euo pipefail
 
 host="${UWUMAIL_GATEWAY_HOST:?set UWUMAIL_GATEWAY_HOST=user@host}"
@@ -19,8 +24,20 @@ esac
 
 out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
-echo "building the gateway for $platform"
-docker build --platform "$platform" -f "$root/docker/Dockerfile.gateway" --output "type=local,dest=$out" "$root"
+if [ "${UWUMAIL_GATEWAY_BUILD:-ci}" = "local" ]; then
+  echo "building the gateway for $platform"
+  docker build --platform "$platform" -f "$root/docker/Dockerfile.gateway" --output "type=local,dest=$out" "$root"
+else
+  if [ "$platform" != "linux/amd64" ]; then
+    echo "CI builds the gateway for amd64 only; use UWUMAIL_GATEWAY_BUILD=local for $platform" >&2
+    exit 1
+  fi
+  run="${UWUMAIL_GATEWAY_RUN:-$(gh run list --repo MinifyX/UwUMail-Server --workflow CI --branch main \
+    --status success --limit 1 --json databaseId --jq '.[0].databaseId')}"
+  echo "taking the gateway from CI run $run"
+  gh run download "$run" --repo MinifyX/UwUMail-Server --name uwumail-gateway-linux-amd64 --dir "$out"
+  (cd "$out" && sha256sum --check --strict uwumail-gateway.sha256)
+fi
 
 echo "copying it to $host"
 remote=/tmp/uwumail-gateway-install

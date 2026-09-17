@@ -75,14 +75,18 @@ only ever show the gateway, never your home address.
 
 ## Install the gateway
 
-From a clone of this repository, with Docker on your machine and SSH access to
+From a clone of this repository, with the GitHub CLI (`gh`) and SSH access to
 the VPS:
 
 ```bash
 UWUMAIL_GATEWAY_HOST=root@203.0.113.10 scripts/deploy-gateway.sh
 ```
 
-It builds the gateway for the VPS's CPU, copies it over and runs
+It takes the gateway that CI built from the newest successful commit on `main`
+and checks its SHA-256 sum (`UWUMAIL_GATEWAY_RUN=<run id>` picks another run).
+CI builds for amd64 only; for an arm64 VPS, or to try a change before pushing
+it, `UWUMAIL_GATEWAY_BUILD=local` builds it with Docker on your machine. The
+script then copies it over and runs
 [`deploy/gateway/install.sh`](../deploy/gateway/install.sh), which
 
 - creates the system user `uwumail-gateway`,

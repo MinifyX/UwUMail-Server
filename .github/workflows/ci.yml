@@ -86,6 +86,36 @@ jobs:
           path: web/dist
           retention-days: 3
 
+  gateway:
+    name: Gateway binary
+    if: github.event_name != 'pull_request'
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      # Built on Debian 12 like docker/Dockerfile.gateway says, so it runs on older VPS images too.
+      - name: Build amd64
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: docker/Dockerfile.gateway
+          platforms: linux/amd64
+          outputs: type=local,dest=gateway-dist
+          cache-from: type=gha,scope=gateway
+          cache-to: type=gha,scope=gateway,mode=max
+      - name: Check the binary
+        run: |
+          cd gateway-dist
+          chmod +x uwumail-gateway
+          ./uwumail-gateway --version
+          sha256sum uwumail-gateway | tee uwumail-gateway.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: uwumail-gateway-linux-amd64
+          path: gateway-dist
+          retention-days: 30
+
   image:
     name: Container image
     if: github.event_name != 'pull_request'
