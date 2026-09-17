@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/uwumail-store",
     "crates/uwumail-smtp",
+    "crates/uwumail-imap",
     "crates/uwumail-jmap",
     "crates/uwumail-web",
     "crates/uwumail-server",
@@ -19,6 +20,7 @@ rust-version = "1.88"
 
 [workspace.dependencies]
 uwumail-gateway = { path = "crates/uwumail-gateway" }
+uwumail-imap = { path = "crates/uwumail-imap" }
 uwumail-jmap = { path = "crates/uwumail-jmap" }
 uwumail-smtp = { path = "crates/uwumail-smtp" }
 uwumail-store = { path = "crates/uwumail-store" }

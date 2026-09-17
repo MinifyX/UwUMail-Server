@@ -2886,6 +2886,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "uwumail-imap"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "mail-parser",
+ "rustls",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-rustls",
+ "tracing",
+ "uwumail-smtp",
+ "uwumail-store",
+]
+
+[[package]]
 name = "uwumail-jmap"
 version = "0.1.0"
 dependencies = [
