@@ -129,6 +129,8 @@ export interface Person {
   security?: PersonSecurity;
   forwarding?: { externalBlocked: boolean; targets: number; external: number };
   aliasLimit?: number;
+  /** Domains the person may send as with any address; only in the detail view. */
+  sendAsDomains?: string[];
 }
 
 /** A one-time link to choose a password; `path` is relative to the portal. */

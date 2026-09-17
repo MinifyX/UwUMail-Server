@@ -294,6 +294,8 @@ const detail = (domain: MockDomain): DomainDetail => ({
   setup: { hostname: "mail.uwu.example", relayHost: null, upstreamMx: false },
 });
 
+const mockSendAs: Record<string, string[]> = {};
+
 let nextAuditId = 20;
 const audit: AuditRecord[] = [
   {
@@ -1892,7 +1894,8 @@ const routes: [string, RegExp, Handler][] = [
       const forwarding = me
         ? { externalBlocked: false, targets: mockForwarding.targets.length, external: 1 }
         : { externalBlocked: found.login === "opa@verein.example", targets: 0, external: 0 };
-      return [200, { ...found, security, forwarding, aliasLimit: me ? mockAddresses.limit : 10 }];
+      const sendAsDomains = mockSendAs[found.login] ?? [];
+      return [200, { ...found, security, forwarding, aliasLimit: me ? mockAddresses.limit : 10, sendAsDomains }];
     },
   ],
   [
@@ -1950,6 +1953,16 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["POST", /^\/api\/admin\/people\/([^/]+)\/password-link$/, () => [200, link()]],
+  [
+    "PUT",
+    /^\/api\/admin\/people\/([^/]+)\/send-as-domains$/,
+    (body, [login]) => {
+      const { domains: chosen } = body as { domains: string[] };
+      mockSendAs[login!] = [...new Set(chosen)].sort();
+      log("account.sendAsDomains", login!, { domains: mockSendAs[login!] });
+      return [200, { domains: mockSendAs[login!] }];
+    },
+  ],
   [
     "PUT",
     /^\/api\/admin\/people\/([^/]+)\/alias-limit$/,

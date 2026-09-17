@@ -686,21 +686,42 @@ impl Store {
         self.read(move |conn| resolve(conn, &address)).await
     }
 
-    /// Whether the account may send as `address` (its own addresses and their sub-addresses).
+    /// Whether the account may send as `address`: its own addresses and their sub-addresses, and every
+    /// address of the domains it may send as.
     pub async fn account_owns_address(&self, account_id: i64, address: &str) -> Result<bool> {
-        let Ok((local, domain)) = normalize_address(address) else {
-            return Ok(false);
-        };
+        let address = address.to_owned();
+        self.read(move |conn| crate::extras::owns(conn, account_id, &address)).await
+    }
+
+    /// The domains an account may send as with any address.
+    pub async fn send_as_domains(&self, account_id: i64) -> Result<Vec<String>> {
         self.read(move |conn| {
-            let base = base_local_part(&local).to_owned();
-            Ok(conn.query_row(
-                "SELECT EXISTS (SELECT 1 FROM addresses a JOIN domains d ON d.id = a.domain_id
-                 WHERE a.account_id = ?1 AND d.name = ?2 AND a.local_part IN (?3, ?4))",
-                params![account_id, domain, local, base],
-                |r| r.get(0),
-            )?)
+            let mut stmt = conn.prepare(
+                "SELECT d.name FROM send_as_domains s JOIN domains d ON d.id = s.domain_id
+                 WHERE s.account_id = ?1 ORDER BY d.name",
+            )?;
+            let rows = stmt.query_map([account_id], |row| row.get(0))?;
+            Ok(rows.collect::<rusqlite::Result<_>>()?)
         })
         .await
+    }
+
+    /// Replaces the domains an account may send as with any address.
+    pub async fn set_send_as_domains(&self, account_id: i64, domains: Vec<String>) -> Result<Vec<String>> {
+        let domains = domains.iter().map(|name| normalize_domain(name)).collect::<Result<Vec<_>>>()?;
+        self.write(move |tx| {
+            let ids = domains.iter().map(|name| domain_id(tx, name)).collect::<Result<Vec<_>>>()?;
+            tx.execute("DELETE FROM send_as_domains WHERE account_id = ?1", [account_id])?;
+            for id in ids {
+                tx.execute(
+                    "INSERT OR IGNORE INTO send_as_domains (account_id, domain_id, created_at) VALUES (?1, ?2, ?3)",
+                    params![account_id, id, now()],
+                )?;
+            }
+            Ok(())
+        })
+        .await?;
+        self.send_as_domains(account_id).await
     }
 }
 
@@ -768,6 +789,14 @@ mod tests {
 
         assert!(store.account_owns_address(mini.id, "kontakt+x@example.de").await.unwrap());
         assert!(!store.account_owns_address(mini.id, "ami@example.de").await.unwrap());
+        store.create_domain("verein.de").await.unwrap();
+        let domains = vec!["Verein.de".into(), "verein.de".into()];
+        assert_eq!(store.set_send_as_domains(mini.id, domains).await.unwrap(), vec!["verein.de"]);
+        assert!(store.account_owns_address(mini.id, "vorstand@verein.de").await.unwrap(), "any address of it");
+        assert!(!store.account_owns_address(mini.id, "ami@example.de").await.unwrap(), "not other domains");
+        assert!(store.set_send_as_domains(mini.id, vec!["elsewhere.de".into()]).await.is_err());
+        assert!(store.set_send_as_domains(mini.id, vec![]).await.unwrap().is_empty());
+        assert!(!store.account_owns_address(mini.id, "vorstand@verein.de").await.unwrap());
         assert_eq!(store.addresses("mini@example.de").await.unwrap(), vec!["mini@example.de", "kontakt@example.de"]);
 
         store.remove_alias("kontakt@example.de").await.unwrap();

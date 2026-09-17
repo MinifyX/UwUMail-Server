@@ -70,14 +70,18 @@ fn identity_from_row(row: &Row<'_>) -> rusqlite::Result<Identity> {
 
 const IDENTITY_COLUMNS: &str = "id, name, email, reply_to, bcc, text_signature, html_signature";
 
-fn owns(conn: &rusqlite::Connection, account_id: i64, email: &str) -> Result<bool> {
+/// Whether an account may send as `email`: its own addresses and their sub-addresses, and any address
+/// of a domain an admin let it send as.
+pub(crate) fn owns(conn: &rusqlite::Connection, account_id: i64, email: &str) -> Result<bool> {
     let Ok((local, domain)) = normalize_address(email) else {
         return Ok(false);
     };
     let base = base_local_part(&local).to_owned();
     Ok(conn.query_row(
         "SELECT EXISTS (SELECT 1 FROM addresses a JOIN domains d ON d.id = a.domain_id
-         WHERE a.account_id = ?1 AND d.name = ?2 AND a.local_part IN (?3, ?4))",
+                        WHERE a.account_id = ?1 AND d.name = ?2 AND a.local_part IN (?3, ?4))
+             OR EXISTS (SELECT 1 FROM send_as_domains s JOIN domains d ON d.id = s.domain_id
+                        WHERE s.account_id = ?1 AND d.name = ?2)",
         params![account_id, domain, local, base],
         |row| row.get(0),
     )?)

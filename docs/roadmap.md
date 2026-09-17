@@ -11,6 +11,7 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Storage: SQLite (WAL) + content-addressed blob files, migrations
 - [x] Domains, accounts (argon2id), aliases, sub-addresses, catch-all, postmaster/abuse routing
 - [x] Forwarding addresses without a mailbox (domain page, `uwumail-server forward`), no spam passed on
+- [x] Sending as any address of a domain for chosen people (person page, `uwumail-server account send-as`)
 - [x] Mailboxes with IMAP UIDs, threading, full-text index, change log (JMAP states / CONDSTORE), quotas
 - [x] SMTP receiving (MX): STARTTLS, recipient checks, relay protection, pipelining, CHUNKING, size limits
 - [x] SPF, DKIM and DMARC verification, Authentication-Results, DMARC reject/quarantine

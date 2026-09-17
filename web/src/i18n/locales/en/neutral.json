@@ -343,7 +343,10 @@
       "aliasLimitHint": "How many addresses this person may create on open domains.",
       "aliasLimitNone": "None",
       "aliasLimitCount_one": "Up to {{count}}",
-      "aliasLimitCount_other": "Up to {{count}}"
+      "aliasLimitCount_other": "Up to {{count}}",
+      "sendAs": "Send as a whole domain",
+      "sendAsHint": "This person may send with any address of these domains, even addresses that do not exist. Handy for a shared office.",
+      "sendAsDomain": "Any address of {{domain}}"
     },
     "purge": {
       "title": "Delete {{login}} for good?",

@@ -234,6 +234,11 @@ pub enum AccountCommand {
     Enable {
         address: String,
     },
+    /// Let someone send as any address of these domains; without domains, only as their own again.
+    SendAs {
+        address: String,
+        domains: Vec<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]

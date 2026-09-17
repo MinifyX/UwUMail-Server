@@ -153,6 +153,18 @@ export function useSetAliasLimit(login: string) {
   });
 }
 
+export function useSetSendAsDomains(login: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (domains: string[]) =>
+      api<{ domains: string[] }>(`${personPath(login)}/send-as-domains`, { method: "PUT", body: { domains } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "people", login] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
+    },
+  });
+}
+
 export function useSetPassword(login: string) {
   const updated = usePersonUpdated();
   return useMutation({

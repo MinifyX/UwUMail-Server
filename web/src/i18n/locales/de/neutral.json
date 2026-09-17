@@ -343,7 +343,10 @@
       "aliasLimitHint": "So viele Adressen darf die Person auf freigegebenen Domains selbst anlegen.",
       "aliasLimitNone": "Keine",
       "aliasLimitCount_one": "Bis zu {{count}}",
-      "aliasLimitCount_other": "Bis zu {{count}}"
+      "aliasLimitCount_other": "Bis zu {{count}}",
+      "sendAs": "Senden als ganze Domain",
+      "sendAsHint": "Die Person darf mit jeder Adresse dieser Domains senden, auch mit Adressen, die es nicht gibt. Praktisch für ein gemeinsames Büro.",
+      "sendAsDomain": "Jede Adresse von {{domain}}"
     },
     "purge": {
       "title": "{{login}} endgültig löschen?",

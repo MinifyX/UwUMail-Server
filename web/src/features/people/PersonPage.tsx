@@ -25,6 +25,7 @@ import {
   useResetSecondFactors,
   useSetAliasLimit,
   useSetExternalForwarding,
+  useSetSendAsDomains,
   useRestorePerson,
   useSetPassword,
   useTrashPerson,
@@ -112,6 +113,40 @@ function AliasLimit({ person }: { person: Person }) {
   );
 }
 
+/** Domains the person may send as with any address, e.g. for a shared office. Pro mode, or once set. */
+function SendAsDomains({ person }: { person: Person }) {
+  const { t } = useT();
+  const pro = usePrefs((s) => s.mode) === "pro";
+  const errorText = useErrorText();
+  const domains = useDomains();
+  const save = useSetSendAsDomains(person.login);
+  const chosen = person.sendAsDomains;
+  if (chosen === undefined || (!pro && chosen.length === 0) || !domains.data) return null;
+  const toggle = (name: string, on: boolean) => {
+    const next = on ? [...chosen, name] : chosen.filter((domain) => domain !== name);
+    save.mutate(next, {
+      onSuccess: () => toast(t("people.toasts.saved"), "success"),
+      onError: (error) => toast(errorText(error), "error"),
+    });
+  };
+  return (
+    <div className="mt-4 flex flex-col gap-3 border-t border-hairline pt-4">
+      <div>
+        <h3 className="text-sm font-semibold">{t("people.detail.sendAs")}</h3>
+        <p className="text-[13px] text-muted">{t("people.detail.sendAsHint")}</p>
+      </div>
+      {domains.data.map((domain) => (
+        <Toggle
+          key={domain.name}
+          checked={chosen.includes(domain.name)}
+          onChange={(on) => toggle(domain.name, on)}
+          label={t("people.detail.sendAsDomain", { domain: domain.name })}
+        />
+      ))}
+    </div>
+  );
+}
+
 function Addresses({ person, editable }: { person: Person; editable: boolean }) {
   const { t } = useT();
   const domains = useDomains();
@@ -189,6 +224,7 @@ function Addresses({ person, editable }: { person: Person; editable: boolean }) 
         </form>
       )}
       {editable && <AliasLimit person={person} />}
+      {editable && <SendAsDomains person={person} />}
     </Card>
   );
 }

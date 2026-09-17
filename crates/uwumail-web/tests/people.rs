@@ -229,6 +229,15 @@ async fn change_lock_out_trash_and_restore() {
         .await;
     assert_eq!(status, StatusCode::CONFLICT, "an address belongs to one person");
 
+    let send_as = json!({ "domains": ["verein.de"] });
+    let (status, _, allowed) =
+        portal.request("PUT", "/api/admin/people/nyu@example.de/send-as-domains", Some(send_as), Some(&nyu)).await;
+    assert_eq!((status, allowed["domains"].clone()), (StatusCode::OK, json!(["verein.de"])));
+    let (_, _, detail) = portal.request("GET", "/api/admin/people/nyu@example.de", None, Some(&nyu)).await;
+    assert_eq!(detail["sendAsDomains"], json!(["verein.de"]));
+    let nyu_id = portal.store.account("nyu@example.de").await.unwrap().unwrap().id;
+    assert!(portal.store.account_owns_address(nyu_id, "vorstand@verein.de").await.unwrap());
+
     let (status, _, trashed) = portal.request("DELETE", "/api/admin/people/ami@example.de", None, Some(&nyu)).await;
     assert_eq!((status, trashed["status"].as_str()), (StatusCode::OK, Some("deleted")));
     assert!(trashed["purgeAt"].as_i64().unwrap() > trashed["deletedAt"].as_i64().unwrap());

@@ -254,6 +254,15 @@ pub async fn account(config: &Config, store: &Store, command: AccountCommand) ->
             audit(store, "account.update", &address, json!({ "disabled": false })).await;
             println!("{address} is active again");
         }
+        AccountCommand::SendAs { address, domains } => {
+            let account = store.account(&address).await?.ok_or_else(|| anyhow::anyhow!("no account {address}"))?;
+            let domains = store.set_send_as_domains(account.id, domains).await?;
+            audit(store, "account.sendAsDomains", &account.login, json!({ "domains": domains })).await;
+            match domains.is_empty() {
+                true => println!("{} sends only as their own addresses", account.login),
+                false => println!("{} may send as any address of {}", account.login, domains.join(", ")),
+            }
+        }
     }
     Ok(())
 }

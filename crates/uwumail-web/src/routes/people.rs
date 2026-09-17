@@ -68,6 +68,7 @@ pub async fn detail(State(web): State<Web>, _admin: Admin, Path(login): Path<Str
         "appPasswordsRequired": security.app_passwords_required(),
     });
     value["aliasLimit"] = json!(web.store().own_addresses(person.account.id).await?.limit);
+    value["sendAsDomains"] = json!(web.store().send_as_domains(person.account.id).await?);
     value["forwarding"] = json!({
         "externalBlocked": forwarding.external_blocked,
         "targets": forwarding.targets.len(),
@@ -284,6 +285,24 @@ pub async fn set_password(
 #[derive(Deserialize)]
 pub struct NewAlias {
     address: String,
+}
+
+#[derive(Deserialize)]
+pub struct SendAsDomains {
+    domains: Vec<String>,
+}
+
+/// The domains someone may send as with any address, e.g. for a shared office.
+pub async fn set_send_as_domains(
+    State(web): State<Web>,
+    Admin(session): Admin,
+    Path(login): Path<String>,
+    Json(body): Json<SendAsDomains>,
+) -> ApiResult<Json<Value>> {
+    let person = load(&web, &login).await?;
+    let domains = web.store().set_send_as_domains(person.account.id, body.domains).await?;
+    audit(&web, &session, "account.sendAsDomains", &person.account.login, json!({ "domains": domains })).await;
+    Ok(Json(json!({ "domains": domains })))
 }
 
 pub async fn add_alias(
