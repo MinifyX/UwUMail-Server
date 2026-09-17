@@ -78,7 +78,8 @@ Each step ships as its own commits, container image and test deployment.
 - [x] IMAP4rev1 on port 993 (TLS) with IDLE, UIDPLUS, MOVE, SPECIAL-USE, LIST-EXTENDED, LIST-STATUS, ESEARCH, CONDSTORE, QRESYNC, QUOTA, UTF8=ACCEPT, also through the gateway
 - [ ] IMAP4rev2, ACL and shared folders
 - [x] Autoconfig, Autodiscover and Apple configuration profiles with their own app password
-- [ ] Signed Apple configuration profiles, CalDAV and CardDAV in the profile
+- [x] CalDAV and CardDAV with sync-collection, calendar-query and multiget, also in the Apple profile
+- [ ] Signed Apple configuration profiles, scheduling (iTIP), shared calendars
 
 ## 6. Web mail and external mailboxes
 
@@ -98,7 +99,7 @@ Each step ships as its own commits, container image and test deployment.
 ## Later
 
 - [ ] Sieve filters and ManageSieve
-- [ ] CalDAV, CardDAV, JMAP Calendars and Contacts
+- [ ] JMAP Calendars and Contacts
 - [ ] OAuth 2 / OpenID Connect provider for mail apps; login via external OIDC or LDAP
 - [ ] Migration assistant (IMAP import from the old provider)
 - [ ] Groups, shared mailboxes, masked addresses

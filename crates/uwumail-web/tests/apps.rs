@@ -149,6 +149,15 @@ async fn apple_profiles_carry_a_new_app_password_and_download_once() {
         matches!(auth_result, MailAuth::Ok { app_password: Some(_), .. }),
         "the profile's password is an app password"
     );
+    // The same password sets up calendars and contacts.
+    assert!(
+        download
+            .text
+            .contains("<key>CalDAVPrincipalURL</key>\n      <string>/dav/principals/mini@example.de/</string>")
+    );
+    assert!(download.text.contains(&format!("<key>CardDAVPassword</key>\n      <string>{secret}</string>")));
+    let dav = store.authenticate_mail("mini@example.de", secret, AppScope::Dav, "dav", "").await.unwrap();
+    assert!(matches!(dav, MailAuth::Ok { .. }), "the app password may use CalDAV and CardDAV");
     let again = send(&app, Request::builder().uri(url).body(Body::empty()).unwrap()).await;
     assert_eq!(again.status, StatusCode::NOT_FOUND);
 }

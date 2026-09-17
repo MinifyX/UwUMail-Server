@@ -184,7 +184,7 @@ fn identifier(hostname: &str, login: &str) -> String {
     parts.join(".")
 }
 
-/// A configuration profile with the mail account, the app password inside.
+/// A configuration profile with mail, calendars and contacts, the app password inside.
 pub fn apple_profile(hostname: &str, login: &str, display_name: &str, secret: &str) -> String {
     let (host, address, name, secret) = (xml(hostname), xml(login), xml(display_name), xml(secret));
     let name = if name.is_empty() { address.clone() } else { name };
@@ -246,6 +246,62 @@ pub fn apple_profile(hostname: &str, login: &str, display_name: &str, secret: &s
       <key>PreventMove</key>
       <false/>
     </dict>
+    <dict>
+      <key>CalDAVAccountDescription</key>
+      <string>{address}</string>
+      <key>CalDAVHostName</key>
+      <string>{host}</string>
+      <key>CalDAVPort</key>
+      <integer>443</integer>
+      <key>CalDAVPrincipalURL</key>
+      <string>/dav/principals/{address}/</string>
+      <key>CalDAVUseSSL</key>
+      <true/>
+      <key>CalDAVUsername</key>
+      <string>{address}</string>
+      <key>CalDAVPassword</key>
+      <string>{secret}</string>
+      <key>PayloadDescription</key>
+      <string>Calendars of {address}</string>
+      <key>PayloadDisplayName</key>
+      <string>Calendars ({address})</string>
+      <key>PayloadIdentifier</key>
+      <string>{id}.caldav</string>
+      <key>PayloadType</key>
+      <string>com.apple.caldav.account</string>
+      <key>PayloadUUID</key>
+      <string>{caldav_uuid}</string>
+      <key>PayloadVersion</key>
+      <integer>1</integer>
+    </dict>
+    <dict>
+      <key>CardDAVAccountDescription</key>
+      <string>{address}</string>
+      <key>CardDAVHostName</key>
+      <string>{host}</string>
+      <key>CardDAVPort</key>
+      <integer>443</integer>
+      <key>CardDAVPrincipalURL</key>
+      <string>/dav/principals/{address}/</string>
+      <key>CardDAVUseSSL</key>
+      <true/>
+      <key>CardDAVUsername</key>
+      <string>{address}</string>
+      <key>CardDAVPassword</key>
+      <string>{secret}</string>
+      <key>PayloadDescription</key>
+      <string>Contacts of {address}</string>
+      <key>PayloadDisplayName</key>
+      <string>Contacts ({address})</string>
+      <key>PayloadIdentifier</key>
+      <string>{id}.carddav</string>
+      <key>PayloadType</key>
+      <string>com.apple.carddav.account</string>
+      <key>PayloadUUID</key>
+      <string>{carddav_uuid}</string>
+      <key>PayloadVersion</key>
+      <integer>1</integer>
+    </dict>
   </array>
   <key>PayloadDescription</key>
   <string>Sets up {address} from {host} with its own app password.</string>
@@ -267,6 +323,8 @@ pub fn apple_profile(hostname: &str, login: &str, display_name: &str, secret: &s
 </plist>
 "#,
         mail_uuid = uuid(),
+        caldav_uuid = uuid(),
+        carddav_uuid = uuid(),
         profile_uuid = uuid(),
     )
 }
@@ -295,7 +353,11 @@ pub async fn create_apple_profile(
         .store()
         .create_app_password(
             session.account.id,
-            NewAppPassword { name: device.to_owned(), scopes: vec![AppScope::Mail, AppScope::Smtp], expires_at: None },
+            NewAppPassword {
+                name: device.to_owned(),
+                scopes: vec![AppScope::Mail, AppScope::Smtp, AppScope::Dav],
+                expires_at: None,
+            },
         )
         .await?;
     let (actor, ip) = origin(&session);

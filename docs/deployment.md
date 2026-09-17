@@ -139,10 +139,28 @@ Most apps find these settings themselves:
   `autodiscover.example.com`. The answer only names the servers; it does not
   say whether a mailbox exists.
 - **iPhone, iPad and Mac:** *My account → Connect mail apps → Download profile*
-  makes an app password for the device and a configuration profile with it. The
-  download link works once and for ten minutes. On an iPhone, install the
-  profile in *Settings* under *Profile Downloaded*. The profile is not signed,
-  so iOS shows it as unverified.
+  makes an app password for the device and a configuration profile with mail,
+  calendars and contacts. The download link works once and for ten minutes. On
+  an iPhone, install the profile in *Settings* under *Profile Downloaded*. The
+  profile is not signed, so iOS shows it as unverified.
+
+## Calendars and contacts
+
+CalDAV and CardDAV run on the HTTPS port next to the portal and JMAP:
+
+| | Address |
+| --- | --- |
+| Server (most apps find the rest) | `https://mail.example.com/` |
+| Principal | `https://mail.example.com/dav/principals/you@example.com/` |
+| Calendars | `https://mail.example.com/dav/calendars/you@example.com/` |
+| Address books | `https://mail.example.com/dav/addressbooks/you@example.com/` |
+
+Log in with the full address and an app password that may use *Calendars and
+contacts* (the Apple profile makes one), or the account password while mail
+apps may still use it. Everyone starts with one calendar and one address book;
+apps can add more. Sync tokens let apps like DAVx5 and the iPhone fetch only
+what changed. Scheduling (invitations sent by the server) and shared calendars
+are not there yet.
 
 ## Behind a reverse proxy
 

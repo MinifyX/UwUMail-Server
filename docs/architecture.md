@@ -98,6 +98,21 @@ from the store's change log, and push listens to the same broadcast channel.
 `EmailSubmission/set` goes through `Smtp::submit`, exactly like SMTP
 submission: sender checks, DKIM, local delivery and the queue.
 
+### `uwumail-imap`
+
+IMAP4rev1 on port 993 with its own parser. Flags are the email's keywords, the
+UIDs are the store's per-mailbox UIDs, and CONDSTORE/QRESYNC read the account's
+change sequence number and a table of UIDs that left a mailbox. IDLE listens to
+the store's broadcast channel like JMAP push.
+
+### `uwumail-dav`
+
+CalDAV and CardDAV under `/dav`, merged into the HTTPS router. Collections and
+entries live in the store with an ETag each; every change counts up the
+collection's change number, which is both the CTag and the sync token.
+Calendar objects are checked with `calcard`, which also works out when an
+event happens for time-range queries.
+
 ### `uwumail-web`
 
 The web portal: a JSON API under `/api` and the React app from `web/`
