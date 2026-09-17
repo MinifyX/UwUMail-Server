@@ -5,6 +5,9 @@
 #   3. docker compose logs uwumail | grep "one-time code"
 #   4. open https://<your host name>/setup and enter the code
 #
+# With a UwUMail Gateway, its pairing code goes into .env before the first start. When another
+# web server already uses ports 80 and 443 on this machine, .env moves UwUMail's web ports.
+#
 # The whole way, with DNS and the gateway: docs/install.md. Reverse proxies and every DNS
 # record: docs/deployment.md.
 
@@ -18,10 +21,11 @@ services:
       UWUMAIL_HOSTNAME: ${UWUMAIL_HOSTNAME}
       UWUMAIL_TLS__ACME_EMAIL: ${UWUMAIL_ACME_EMAIL:-}
       UWUMAIL_TONE__LANGUAGE: ${UWUMAIL_LANGUAGE:-de}
+      UWUMAIL_GATEWAY__CODE: ${UWUMAIL_GATEWAY_CODE:-}
     ports:
       - "25:25"     # mail from other servers
-      - "80:80"     # certificate challenges, redirects to HTTPS
-      - "443:443"   # web (portal and JMAP)
+      - "${UWUMAIL_HTTP_BIND:-80}:80"      # certificate challenges, redirects to HTTPS
+      - "${UWUMAIL_HTTPS_BIND:-443}:443"   # web (portal and JMAP)
       - "465:465"   # mail apps, TLS
       - "993:993"   # mail apps, IMAP with TLS
       - "587:587"   # mail apps, STARTTLS
