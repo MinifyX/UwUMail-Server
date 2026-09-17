@@ -322,7 +322,9 @@ Mailcow keeps port 25 and all other domains. Ready-made files:
    password goes into `.env` as `RELAY_PASSWORD`.
 4. **Web:** the reverse proxy forwards the UwUMail host name to port 8080;
    put its address into `http.trusted_proxies` so login throttling sees the
-   real client addresses.
+   real client addresses. Port 8080 is plain HTTP, so give it to the proxy
+   only: `UWUMAIL_PROXY_BIND` in `.env` binds it to one address, see the
+   comment in `compose.yaml`.
 5. **DNS for the test domain:** MX to the existing mail server's host name,
    SPF with the relay's IP address, the two DKIM keys from `domain add`, and a
    DMARC record (start with `p=none`). A subdomain needs its own DMARC record
