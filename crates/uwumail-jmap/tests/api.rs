@@ -12,11 +12,12 @@ use uwumail_smtp::{DeliveryConfig, Smtp, SmtpConfig, SmtpSettings, ToneConfig};
 use uwumail_store::{IngestRequest, MailboxRole, MailboxTarget, NewAccount, Role, Store};
 
 const PASSWORD: &str = "katzenpfote-123";
-const USING: [&str; 4] = [
+const USING: [&str; 5] = [
     "urn:ietf:params:jmap:core",
     "urn:ietf:params:jmap:mail",
     "urn:ietf:params:jmap:submission",
     "urn:ietf:params:jmap:vacationresponse",
+    "urn:uwumail:jmap:senders",
 ];
 
 struct Server {
@@ -392,4 +393,81 @@ async fn drafts_vacation_and_push() {
     let event = tokio::time::timeout(std::time::Duration::from_secs(10), push).await.unwrap().unwrap();
     assert!(event.contains("event: state"), "{event}");
     assert!(event.contains("\"Email\""), "{event}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn people_block_senders_on_the_server_like_the_uwumail_app() {
+    let server = server().await;
+    let (_, body) = server.get("/.well-known/jmap", "mini@example.de").await;
+    let session: Value = serde_json::from_slice(&body).unwrap();
+    let account = server.account_id("mini@example.de").await;
+    assert!(session["capabilities"]["urn:uwumail:jmap:senders"].is_object(), "{session}");
+    assert_eq!(session["accounts"][&account]["accountCapabilities"]["urn:uwumail:jmap:senders"]["maxEntries"], 1000);
+
+    let responses = server
+        .api(
+            "mini@example.de",
+            json!([
+                ["SenderList/set", { "accountId": account, "create": {
+                    "a": { "list": "block", "value": "Werbung@Shop.example" },
+                    "b": { "list": "block", "kind": "domain", "value": "@newsletter.example" },
+                    "c": { "list": "block", "value": "not an address@" },
+                    "d": { "list": "maybe", "value": "x@example.org" },
+                } }, "0"],
+                ["SenderList/get", { "accountId": account }, "1"],
+            ]),
+        )
+        .await;
+    let set = args(&responses, 0, "SenderList/set");
+    assert_eq!(set["created"]["a"]["value"], "werbung@shop.example", "the client learns the stored form");
+    assert_eq!(set["created"]["a"]["kind"], "address");
+    assert_eq!(set["created"]["b"]["value"], "newsletter.example");
+    assert_eq!(set["notCreated"]["c"]["type"], "senderInvalid");
+    assert_eq!(set["notCreated"]["d"]["type"], "invalidProperties");
+    let get = args(&responses, 1, "SenderList/get");
+    assert_eq!(get["list"].as_array().map(Vec::len), Some(2));
+    assert_eq!(get["state"], set["newState"]);
+    assert_ne!(set["oldState"], set["newState"]);
+
+    // The same list as in the portal, and nobody else's.
+    let entries = server
+        .store
+        .sender_list(uwumail_store::ListScope::Account(
+            server.store.account("mini@example.de").await.unwrap().unwrap().id,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(entries.len(), 2);
+    let other = server.account_id("nyu@example.de").await;
+    let theirs = server.api("nyu@example.de", json!([["SenderList/get", { "accountId": other }, "0"]])).await;
+    assert_eq!(args(&theirs, 0, "SenderList/get")["list"], json!([]));
+    let id = set["created"]["a"]["id"].as_str().unwrap();
+    let stolen =
+        server.api("nyu@example.de", json!([["SenderList/set", { "accountId": other, "destroy": [id] }, "0"]])).await;
+    assert_eq!(args(&stolen, 0, "SenderList/set")["notDestroyed"][id]["type"], "notFound");
+
+    let responses = server
+        .api(
+            "mini@example.de",
+            json!([
+                ["SenderList/set", { "accountId": account, "ifInState": "stale", "destroy": [id] }, "0"],
+                ["SenderList/set", { "accountId": account, "destroy": [id], "update": { "l1": { "note": "x" } } }, "1"],
+            ]),
+        )
+        .await;
+    assert_eq!(responses[0][1]["type"], "stateMismatch");
+    let set = args(&responses, 1, "SenderList/set");
+    assert_eq!(set["destroyed"], json!([id]));
+    assert_eq!(set["notUpdated"]["l1"]["type"], "forbidden");
+
+    // Without the capability in `using` the methods are unknown.
+    let body = json!({ "using": ["urn:ietf:params:jmap:core"], "methodCalls": [["SenderList/get", { "accountId": account }, "0"]] });
+    let request = Request::post("/jmap/api")
+        .header(header::AUTHORIZATION, basic("mini@example.de", PASSWORD))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    let (_, bytes) = server.request(request).await;
+    let response: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(response["methodResponses"][0][1]["type"], "unknownMethod");
 }

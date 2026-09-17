@@ -26,6 +26,10 @@ pub fn submission(id: i64) -> String {
     format!("s{id}")
 }
 
+pub fn sender(id: i64) -> String {
+    format!("l{id}")
+}
+
 /// Parses an id with the given type letter.
 pub fn parse(prefix: char, value: &str) -> Option<i64> {
     let rest = value.strip_prefix(prefix)?;

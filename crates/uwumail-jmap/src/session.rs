@@ -16,6 +16,8 @@ pub const CORE: &str = "urn:ietf:params:jmap:core";
 pub const MAIL: &str = "urn:ietf:params:jmap:mail";
 pub const SUBMISSION: &str = "urn:ietf:params:jmap:submission";
 pub const VACATION: &str = "urn:ietf:params:jmap:vacationresponse";
+/// Our own extension: one's allowed and blocked senders on this server (docs/jmap-senders.md).
+pub const SENDERS: &str = "urn:uwumail:jmap:senders";
 
 /// Origin the client used, so every URL in the session works from where it is.
 ///
@@ -63,7 +65,8 @@ pub fn document(account: &Account, base: &str) -> Value {
             },
             MAIL: {},
             SUBMISSION: {},
-            VACATION: {}
+            VACATION: {},
+            SENDERS: {}
         },
         "accounts": {
             account_id.clone(): {
@@ -80,14 +83,16 @@ pub fn document(account: &Account, base: &str) -> Value {
                         "mayCreateTopLevelMailbox": true
                     },
                     SUBMISSION: { "maxDelayedSend": 0, "submissionExtensions": {} },
-                    VACATION: {}
+                    VACATION: {},
+                    SENDERS: { "maxEntries": uwumail_store::SENDER_LIST_PERSONAL_LIMIT }
                 }
             }
         },
         "primaryAccounts": {
             MAIL: account_id.clone(),
             SUBMISSION: account_id.clone(),
-            VACATION: account_id
+            VACATION: account_id.clone(),
+            SENDERS: account_id
         },
         "username": account.login,
         "apiUrl": format!("{base}/jmap/api"),

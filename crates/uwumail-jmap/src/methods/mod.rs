@@ -3,6 +3,7 @@
 mod email;
 mod identity;
 mod mailbox;
+mod senders;
 mod snippet;
 mod submission;
 mod thread;
@@ -15,10 +16,10 @@ use uwumail_store::{Account, Changes};
 
 use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
-use crate::session::{CORE, MAIL, SUBMISSION, VACATION};
+use crate::session::{CORE, MAIL, SENDERS, SUBMISSION, VACATION};
 use crate::{Inner, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, ids};
 
-pub const KNOWN_CAPABILITIES: &[&str] = &[CORE, MAIL, SUBMISSION, VACATION];
+pub const KNOWN_CAPABILITIES: &[&str] = &[CORE, MAIL, SUBMISSION, VACATION, SENDERS];
 
 /// One or more `(method name, arguments)` responses for a call.
 pub type Outputs = Vec<(String, Value)>;
@@ -71,6 +72,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "Mailbox" | "Email" | "Thread" | "SearchSnippet" => MAIL,
         "Identity" | "EmailSubmission" => SUBMISSION,
         "VacationResponse" => VACATION,
+        "SenderList" => SENDERS,
         _ => return Err(MethodError::kind("unknownMethod")),
     };
     if !requires(capability, &ctx.using) {
@@ -107,6 +109,8 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "EmailSubmission/set" => submission::set(ctx, &args).await,
         "VacationResponse/get" => single(vacation::get(ctx, &args).await?),
         "VacationResponse/set" => single(vacation::set(ctx, &args).await?),
+        "SenderList/get" => single(senders::get(ctx, &args).await?),
+        "SenderList/set" => single(senders::set(ctx, &args).await?),
         _ => Err(MethodError::kind("unknownMethod")),
     }
 }
