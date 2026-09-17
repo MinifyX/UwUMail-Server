@@ -15,6 +15,7 @@ mod blobs;
 mod db;
 mod directory;
 mod extras;
+mod feeds;
 mod forwarding;
 mod mail;
 mod mutate;
@@ -49,6 +50,7 @@ pub use bayes::{
 pub use blobs::BlobHash;
 pub use directory::{Account, DkimKey, DkimKeyAlgorithm, DkimKeyState, Domain, NewAccount, Role};
 pub use extras::{Identity, IdentityUpdate, SubmissionRecord, UPLOAD_LIFETIME_SECS, VacationResponse};
+pub use feeds::FeedState;
 pub use forwarding::{ActiveForwarding, FORWARD_LINK_LIFETIME_SECS, ForwardTarget, Forwarding, MAX_FORWARD_TARGETS};
 pub use mail::{EmailSummary, IngestRequest, IngestedEmail, Mailbox, MailboxRole, MailboxTarget, TestMessageStatus};
 pub use mutate::{EmailUpdate, KeywordsChange, MailboxUpdate, MailboxesChange};

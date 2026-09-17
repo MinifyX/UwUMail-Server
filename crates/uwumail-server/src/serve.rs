@@ -84,6 +84,7 @@ pub async fn run(
     }
     tasks.spawn(uwumail_smtp::run_queue(smtp.clone(), shutdown_rx.clone()));
     tasks.spawn(uwumail_smtp::run_learning(smtp.clone(), shutdown_rx.clone()));
+    tasks.spawn(uwumail_smtp::run_list_updates(smtp.clone(), shutdown_rx.clone()));
 
     let jmap = uwumail_jmap::Jmap::new(smtp.clone()).router();
     let certificate: uwumail_web::CertificateSource = {

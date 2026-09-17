@@ -822,3 +822,45 @@ async fn word_lists_count_for_everyone_or_only_for_their_owner() {
     assert_eq!(a.inbox("mini@a.test").await.len(), 1, "Leni's own word is none of Mini's business");
     assert_eq!(a.mailbox("leni@a.test", MailboxRole::Junk).await.len(), 2);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn built_in_lists_know_malware_links_throwaway_senders_and_shorteners() {
+    let feeds = uwumail_smtp::FeedsConfig { abuse_ch_key: Some("testkey123".into()), ..Default::default() };
+    let spam = SpamConfig { greylist_score: 5.0, feeds, ..SpamConfig::default() };
+    let a = spam_test_server(spam, None).await;
+    let store = a.smtp.store();
+    store.replace_feed("urlhaus", vec!["https://files.evil.example/rechnung.exe".into()], None).await.unwrap();
+    store.replace_feed("disposable", vec!["sender.test".into()], None).await.unwrap();
+    store.replace_feed("redirectors", vec!["bit.example".into()], None).await.unwrap();
+    store.replace_feed("freemail", vec!["freemail.example".into()], None).await.unwrap();
+    store.replace_feed("bad_subjects", vec!["/Rekord.+Jackpot/i".into()], None).await.unwrap();
+
+    let message = "From: news@sender.test\r\nReply-To: kasse@freemail.example\r\nSubject: Rekord Jackpot\r\n\
+        MIME-Version: 1.0\r\nContent-Type: text/html\r\n\r\n\
+        <a href=\"https://Files.Evil.example/rechnung.exe#jetzt\">Rechnung</a> <a href=\"https://mail.bit.example/x\">mehr</a>\r\n";
+    let reply = relay_message_from_outside(&a, message).await;
+    assert!(reply.starts_with("250"), "{reply}");
+    let junk = a.mailbox("mini@a.test", MailboxRole::Junk).await;
+    assert_eq!(junk.len(), 1, "a known malware link is enough for Junk");
+    let raw = a.raw(&junk[0]).await;
+    for rule in ["MALWARE_LINK", "DISPOSABLE_FROM", "LINK_SHORTENER", "FREEMAIL_REPLYTO", "BAD_WORDS"] {
+        assert!(raw.contains(rule), "{rule} in {raw}");
+    }
+
+    // Switched off, a list counts no more, even with its values still stored.
+    let mut settings = a.smtp.spam_settings();
+    settings.feeds.urlhaus = false;
+    settings.feeds.disposable = false;
+    let smtp = SmtpConfig { trusted_relays: vec!["127.0.0.1".into()], ..SmtpConfig::default() };
+    a.smtp.update_settings(smtp, settings, DeliveryConfig::default(), ToneConfig::default()).unwrap();
+    let reply = relay_message_from_outside(
+        &a,
+        "From: news@sender.test\r\nSubject: Hallo\r\n\r\nhttps://files.evil.example/rechnung.exe\r\n",
+    )
+    .await;
+    assert!(reply.starts_with("250"), "{reply}");
+    let inbox = a.inbox("mini@a.test").await;
+    assert_eq!(inbox.len(), 1);
+    let raw = a.raw(&inbox[0]).await;
+    assert!(!raw.contains("MALWARE_LINK") && !raw.contains("DISPOSABLE_FROM"), "{raw}");
+}

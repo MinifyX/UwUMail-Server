@@ -1,13 +1,10 @@
 //! Word lists, compiled into regular expression sets per scope: the whole server's, each domain's and each
-//! person's. They are compiled again only when the lists changed.
+//! person's.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use regex::{RegexSet, RegexSetBuilder};
 use uwumail_store::{CompiledWord, ListScope, PATTERN_SIZE_LIMIT, WORD_POINTS_MAX, word_regex};
-
-use crate::Context;
 
 /// Patterns per compiled set; a set of thousands of big patterns could exceed the size limits at once.
 const CHUNK: usize = 250;
@@ -76,17 +73,16 @@ impl Scope {
     }
 }
 
-/// Every scope's compiled entries at one version of the lists.
+/// Every scope's compiled entries.
 #[derive(Default)]
 pub(crate) struct Compiled {
-    version: i64,
     pub server: Scope,
     pub domains: HashMap<String, Scope>,
     pub accounts: HashMap<i64, Scope>,
 }
 
 impl Compiled {
-    fn new(version: i64, words: Vec<CompiledWord>) -> Compiled {
+    pub fn new(words: Vec<CompiledWord>) -> Compiled {
         let mut server = Vec::new();
         let mut domains: HashMap<String, Vec<_>> = HashMap::new();
         let mut accounts: HashMap<i64, Vec<_>> = HashMap::new();
@@ -100,40 +96,11 @@ impl Compiled {
             }
         }
         Compiled {
-            version,
             server: Scope::new(server),
             domains: domains.into_iter().map(|(domain, words)| (domain, Scope::new(words))).collect(),
             accounts: accounts.into_iter().map(|(id, words)| (id, Scope::new(words))).collect(),
         }
     }
-}
-
-/// The word lists as they are now, compiled again when they changed since the last message.
-pub(crate) async fn compiled(ctx: &Context) -> Arc<Compiled> {
-    let mut cached = ctx.word_lists.lock().await;
-    let version = match ctx.store.word_lists_version().await {
-        Ok(version) => version,
-        Err(err) => {
-            tracing::warn!(%err, "reading the version of the word lists failed");
-            return cached.clone().unwrap_or_default();
-        }
-    };
-    if let Some(compiled) = cached.as_ref().filter(|compiled| compiled.version == version) {
-        return compiled.clone();
-    }
-    let words = match ctx.store.compiled_words().await {
-        Ok(words) => words,
-        Err(err) => {
-            tracing::warn!(%err, "reading the word lists failed");
-            return cached.clone().unwrap_or_default();
-        }
-    };
-    let count = words.len();
-    let compiled =
-        tokio::task::spawn_blocking(move || Arc::new(Compiled::new(version, words))).await.unwrap_or_default();
-    tracing::debug!(entries = count, version, "compiled the word lists");
-    *cached = Some(compiled.clone());
-    compiled
 }
 
 #[cfg(test)]
@@ -146,17 +113,14 @@ mod tests {
 
     #[test]
     fn each_scope_counts_its_own_entries_up_to_the_maximum() {
-        let compiled = Compiled::new(
-            1,
-            vec![
-                word(ListScope::Server, None, "casino", 2.5, false),
-                word(ListScope::Server, None, r"/\slottery\s/i", 4.0, true),
-                word(ListScope::Server, None, "/(?=x)/", 9.0, false),
-                word(ListScope::Domain(1), Some("example.de"), "gewinn", 6.0, false),
-                word(ListScope::Domain(1), Some("example.de"), "jackpot", 6.0, false),
-                word(ListScope::Account(7), None, "fußball", 1.0, false),
-            ],
-        );
+        let compiled = Compiled::new(vec![
+            word(ListScope::Server, None, "casino", 2.5, false),
+            word(ListScope::Server, None, r"/\slottery\s/i", 4.0, true),
+            word(ListScope::Server, None, "/(?=x)/", 9.0, false),
+            word(ListScope::Domain(1), Some("example.de"), "gewinn", 6.0, false),
+            word(ListScope::Domain(1), Some("example.de"), "jackpot", 6.0, false),
+            word(ListScope::Account(7), None, "fußball", 1.0, false),
+        ]);
         let subject = "Your LOTTERY win";
         let text = "Visit our casino, win the lottery jackpot and a Gewinn";
         let server = compiled.server.find(subject, text);

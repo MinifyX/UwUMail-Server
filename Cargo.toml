@@ -50,6 +50,8 @@ instant-acme = { version = "0.8", features = ["rcgen"] }
 mail-auth = "0.13"
 mail-builder = "1"
 mail-parser = "0.11"
+# MalwareBazaar lists attachments by their MD5 or SHA-256.
+md-5 = "0.11"
 # QR codes for setting up authenticator apps, as plain modules the portal draws itself.
 qrcode = { version = "0.14", default-features = false }
 getrandom = "0.4"
@@ -58,6 +60,8 @@ quinn = { version = "0.11", default-features = false, features = ["runtime-tokio
 rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem"] }
 # Word lists: words and Rspamd-style regular expressions, matched in linear time.
 regex = "1.13"
+# Built-in lists come packed with zstd; only unpacking is needed, in plain Rust.
+ruzstd = "0.9"
 rusqlite = { version = "0.40", features = ["bundled"] }
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12", "logging"] }
 rustls-pki-types = "1"

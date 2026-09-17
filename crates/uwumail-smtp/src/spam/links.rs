@@ -19,6 +19,8 @@ pub(crate) struct Link {
     pub target: Target,
     /// For links in HTML: the text on them.
     pub text: Option<String>,
+    /// The whole address, as lists of known links write it.
+    pub url: Option<String>,
 }
 
 /// How many link domains are asked about on a blocklist per message.
@@ -127,6 +129,18 @@ pub(crate) fn target(href: &str) -> Option<Target> {
     }
 }
 
+/// A web address the way lists of known links write it: scheme and host in lower case, without a fragment.
+pub(crate) fn normalized_url(href: &str) -> Option<String> {
+    let href = href.trim();
+    let lower = href.get(..8).unwrap_or(href).to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        return None;
+    }
+    let mut url = Url::parse(href).ok()?;
+    url.set_fragment(None);
+    Some(url.to_string())
+}
+
 /// Addresses written out in plain text.
 pub(crate) fn in_text(text: &str) -> Vec<Link> {
     let mut found = Vec::new();
@@ -141,7 +155,7 @@ pub(crate) fn in_text(text: &str) -> Vec<Link> {
             .map_or(text.len(), |len| start + len);
         let candidate = text[start..end].trim_end_matches(['.', ',', ';', ':', '!', '?']);
         if let Some(target) = target(candidate) {
-            found.push(Link { target, text: None });
+            found.push(Link { target, text: None, url: normalized_url(candidate) });
         }
         pos = end.max(start + 1);
     }
@@ -151,7 +165,13 @@ pub(crate) fn in_text(text: &str) -> Vec<Link> {
 pub(crate) fn in_anchors(anchors: &[Anchor]) -> Vec<Link> {
     anchors
         .iter()
-        .filter_map(|anchor| Some(Link { target: target(&anchor.href)?, text: Some(anchor.text.clone()) }))
+        .filter_map(|anchor| {
+            Some(Link {
+                target: target(&anchor.href)?,
+                text: Some(anchor.text.clone()),
+                url: normalized_url(&anchor.href),
+            })
+        })
         .collect()
 }
 

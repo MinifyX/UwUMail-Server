@@ -2,7 +2,9 @@
 //! built, what its links claim, and its attachments. Plain functions over the bytes, so they run on a
 //! blocking thread and are easy to test.
 
-use mail_parser::{Encoding, Message, MessageParser, PartType};
+use mail_parser::{Address, Encoding, Message, MessageParser, MimeHeaders, PartType};
+use md5::{Digest, Md5};
+use sha2::Sha256;
 
 use super::links::{self, Link, Target};
 use super::{Hit, attachments, bayes, html};
@@ -23,6 +25,12 @@ pub(crate) struct Examination {
     /// The subject, and the text a reader sees (HTML turned into text), for word lists.
     pub subject: String,
     pub text: String,
+    /// Link addresses and hosts, and each attachment's name with its MD5 and SHA-256, for built-in lists.
+    pub urls: Vec<String>,
+    pub link_hosts: Vec<String>,
+    pub files: Vec<(String, [String; 2])>,
+    pub from_domain: Option<String>,
+    pub reply_to_domain: Option<String>,
 }
 
 fn add(hits: &mut Vec<Hit>, rule: &'static str, points: f32, detail: Option<String>) {
@@ -140,13 +148,48 @@ pub(crate) fn examine(raw: &[u8], now: i64, dmarc_passed: bool, key: Option<&[u8
     let tokens =
         key.map(|key| bayes::hashed(key, &bayes::tokens(&message, &link_sites(&body.links)))).unwrap_or_default();
     let subject = message.subject().unwrap_or_default().chars().take(MAX_SUBJECT).collect();
+    let mut urls: Vec<String> = body.links.iter().filter_map(|link| link.url.clone()).collect();
+    urls.sort();
+    urls.dedup();
+    let mut link_hosts: Vec<String> = body
+        .links
+        .iter()
+        .filter_map(|link| match &link.target {
+            Target::Domain(domain) => Some(domain.clone()),
+            Target::Ip(_) => None,
+        })
+        .collect();
+    link_hosts.sort();
+    link_hosts.dedup();
+    let files = message
+        .attachments()
+        .take(MAX_FILES)
+        .map(|part| {
+            let name = part.attachment_name().unwrap_or("attachment").to_owned();
+            let contents = part.contents();
+            (name, [hex::encode(Md5::digest(contents)), hex::encode(Sha256::digest(contents))])
+        })
+        .collect();
     Examination {
         hits,
         link_domains: links::domains_to_look_up(&body.links),
         tokens,
         subject,
         text: visible_text(&message),
+        urls,
+        link_hosts,
+        files,
+        from_domain: address_domain(message.from()),
+        reply_to_domain: address_domain(message.reply_to()),
     }
+}
+
+/// Attachments looked at for known malware; more are rarely more than a padded spam.
+const MAX_FILES: usize = 25;
+
+fn address_domain(address: Option<&Address<'_>>) -> Option<String> {
+    let address = address?.first()?.address()?;
+    address.rsplit_once('@').map(|(_, domain)| domain.trim().trim_end_matches('.').to_ascii_lowercase())
 }
 
 /// Enough of a message's text for word lists: spammers put their words up front.
@@ -214,6 +257,41 @@ mod tests {
     use super::*;
 
     const DATE: &str = "Wed, 16 Sep 2026 10:00:00 +0000";
+
+    #[test]
+    fn links_attachments_and_addresses_are_read_for_built_in_lists() {
+        let raw = "From: Shop <news@Shop.example>
+Reply-To: kasse@freemail.example
+Subject: Rechnung
+\
+            MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary=\"m\"
+
+\
+            --m
+Content-Type: text/html
+
+<a href=\"https://Files.Example/x.exe#a\">x</a>
+\
+            --m
+Content-Type: application/octet-stream
+Content-Disposition: attachment; filename=\"x.exe\"
+\
+            Content-Transfer-Encoding: base64
+
+TVo=
+--m--
+";
+        let examination = examine(raw.as_bytes(), now(), false, None);
+        assert_eq!(examination.urls, ["https://files.example/x.exe"]);
+        assert_eq!(examination.link_hosts, ["files.example"]);
+        assert_eq!(examination.from_domain.as_deref(), Some("shop.example"));
+        assert_eq!(examination.reply_to_domain.as_deref(), Some("freemail.example"));
+        let (name, [md5, sha256]) = &examination.files[0];
+        assert_eq!(name, "x.exe");
+        assert_eq!(md5, "ac6ad5d9b99757c3a878f2d275ace198");
+        assert_eq!(sha256, "9b8db510ef42b8ed54a3712636fda55a4f8cfcd5493e20b74ab00cd4f3979f2d");
+    }
 
     fn now() -> i64 {
         let raw = format!("Date: {DATE}\r\n\r\n");

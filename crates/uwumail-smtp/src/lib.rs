@@ -12,6 +12,7 @@ pub mod dkim;
 mod dns;
 pub mod dnscheck;
 mod dsn;
+mod fetch;
 mod forward;
 mod headers;
 pub mod health;
@@ -42,15 +43,15 @@ use uwumail_store::Store;
 
 pub use client::{Connector, connect_directly};
 pub use config::{
-    DeliveryConfig, ExternalTone, InternalTone, Language, RelayConfig, RelaySecurity, SmtpConfig, SpamConfig,
-    ToneConfig,
+    DeliveryConfig, ExternalTone, FeedsConfig, InternalTone, Language, RelayConfig, RelaySecurity, SmtpConfig,
+    SpamConfig, ToneConfig,
 };
 pub use dns::DnsCaches;
 pub use inbound::{ListenerKind, serve, serve_stream};
 pub use limiter::AuthLimiter;
 pub use outbound::run_queue;
 pub use relay::IpNetwork;
-pub use spam::run_learning;
+pub use spam::{FEEDS, Feed, feed, run_learning, run_list_updates};
 pub use stream::{BoxIo, Io};
 pub use submission::{Submission, SubmissionRecipient, SubmitError, Submitted};
 
@@ -92,8 +93,10 @@ pub(crate) struct Context {
     pub domain_cache: spam::DomainCache,
     /// The key Bayes tokens are hashed with, loaded or made on first use.
     pub bayes_key: tokio::sync::OnceCell<[u8; 32]>,
-    /// The word lists, compiled again when they change.
-    pub(crate) word_lists: spam::WordLists,
+    /// The word lists and built-in lists, compiled again when they change.
+    pub(crate) lists: spam::CompiledLists,
+    /// Fetches lists from the web.
+    pub(crate) fetcher: fetch::Fetcher,
     /// Sized at start; changing these limits takes a restart.
     pub connections: Arc<Semaphore>,
     pub delivery_permits: Arc<Semaphore>,
@@ -170,7 +173,8 @@ impl Smtp {
                 blocklist_cache: spam::BlocklistCache::default(),
                 domain_cache: spam::DomainCache::default(),
                 bayes_key: tokio::sync::OnceCell::new(),
-                word_lists: Default::default(),
+                lists: Default::default(),
+                fetcher: fetch::Fetcher::new(),
                 inflight: Mutex::new(HashSet::new()),
                 stats: health::DeliveryStats::default(),
                 connector: RwLock::new(None),
@@ -205,6 +209,21 @@ impl Smtp {
 
     pub fn store(&self) -> &Store {
         &self.inner.store
+    }
+
+    /// Fetches a built-in list now. Returns how many entries it holds, or why it failed.
+    pub async fn refresh_feed(&self, feed: &Feed) -> Result<usize, String> {
+        spam::refresh_feed(&self.inner, feed).await
+    }
+
+    /// Fetches a subscribed word list now. Returns how many entries it holds, or why it failed.
+    pub async fn refresh_word_source(&self, source: &uwumail_store::WordSource) -> Result<usize, String> {
+        spam::refresh_word_source(&self.inner, source).await
+    }
+
+    /// Why a link cannot be subscribed to, if it cannot.
+    pub fn check_list_link(url: &str) -> Result<(), String> {
+        fetch::check_url(url, false).map(|_| ())
     }
 
     /// The spam filter settings in effect right now.

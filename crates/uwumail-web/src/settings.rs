@@ -68,6 +68,13 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("spam.greylist_score", SettingKind::Decimal { min: 1, max: 100 }),
     spec("spam.greylist_delay_secs", SettingKind::Integer { min: 60, max: 3600 }),
     spec("spam.reject_score", SettingKind::Decimal { min: 1, max: 100 }),
+    spec("spam.feeds.urlhaus", SettingKind::Bool),
+    spec("spam.feeds.malware_bazaar", SettingKind::Bool),
+    spec("spam.feeds.bad_subjects", SettingKind::Bool),
+    spec("spam.feeds.disposable", SettingKind::Bool),
+    spec("spam.feeds.freemail", SettingKind::Bool),
+    spec("spam.feeds.redirectors", SettingKind::Bool),
+    spec("spam.feeds.abuse_ch_key", SettingKind::Secret),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

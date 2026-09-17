@@ -11,11 +11,15 @@
 mod attachments;
 mod bayes;
 mod content;
+mod feeds;
 mod html;
 mod links;
+mod lists;
 mod words;
 
 pub use bayes::run_learning;
+pub use feeds::{FEEDS, Feed, feed, run_list_updates};
+pub(crate) use feeds::{refresh_feed, refresh_word_source};
 
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::{Duration, Instant};
@@ -154,8 +158,8 @@ pub struct Score {
     pub(crate) text: String,
 }
 
-/// The compiled word lists, kept between messages.
-pub(crate) type WordLists = tokio::sync::Mutex<Option<std::sync::Arc<words::Compiled>>>;
+/// The compiled word lists and built-in lists, kept between messages.
+pub(crate) type CompiledLists = tokio::sync::Mutex<Option<std::sync::Arc<lists::Lists>>>;
 
 impl Score {
     fn add(&mut self, rule: &'static str, points: f32, detail: Option<String>) {
@@ -347,7 +351,18 @@ pub async fn score(
         (examination, domains, chance)
     };
     let (names, listed, (examination, domains, chance)) = tokio::join!(reverse, blocklists, message);
-    let content::Examination { hits: content_hits, tokens, subject, text, .. } = examination;
+    let content::Examination {
+        hits: content_hits,
+        tokens,
+        subject,
+        text,
+        urls,
+        link_hosts,
+        files,
+        from_domain,
+        reply_to_domain,
+        ..
+    } = examination;
 
     // No answer at all is not the same as no reverse name, so a timeout costs nothing.
     if let Some(names) = names {
@@ -391,12 +406,37 @@ pub async fn score(
     score.tokens = tokens;
     score.server_chance = chance;
 
-    // The whole server's word lists; a domain's and a person's own count per recipient.
+    // The whole server's word lists, where a domain's and a person's own count per recipient, and what
+    // the built-in lists know.
+    let lists = lists::current(ctx).await;
     if !subject.is_empty() || !text.is_empty() {
-        let found = words::compiled(ctx).await.server.find(&subject, &text);
+        let found = lists.words.server.find(&subject, &text);
         if found.points > 0.0 {
             score.add("BAD_WORDS", tenths(found.points), Some(found.detail()));
         }
+    }
+    let known = &lists.feeds;
+    if let Some(url) = urls.iter().find(|url| known.malware_links.contains(*url)) {
+        let host = url::Url::parse(url).ok().and_then(|url| url.host_str().map(str::to_owned));
+        score.add("MALWARE_LINK", 10.0, host);
+    }
+    if let Some((name, _)) =
+        files.iter().find(|(_, hashes)| hashes.iter().any(|hash| known.malware_files.contains(hash)))
+    {
+        score.add("MALWARE_ATTACHMENT", 10.0, Some(name.clone()));
+    }
+    if let Some(domain) = from_domain.as_deref().and_then(|domain| feeds::listed(&known.disposable, domain)) {
+        score.add("DISPOSABLE_FROM", 1.5, Some(domain.to_owned()));
+    }
+    // A sender that is no freemail address, whose replies go to one: the classic of scams.
+    if let Some(reply_to) = reply_to_domain.as_deref()
+        && from_domain.as_deref().is_some_and(|from| feeds::listed(&known.freemail, from).is_none())
+        && let Some(provider) = feeds::listed(&known.freemail, reply_to)
+    {
+        score.add("FREEMAIL_REPLYTO", 2.0, Some(provider.to_owned()));
+    }
+    if let Some(host) = link_hosts.iter().find_map(|host| feeds::listed(&known.redirectors, host)) {
+        score.add("LINK_SHORTENER", 0.5, Some(host.to_owned()));
     }
     score.subject = subject;
     score.text = text;
@@ -453,8 +493,8 @@ pub(crate) async fn personal_word_points(ctx: &Context, score: &Score, account_i
     if score.subject.is_empty() && score.text.is_empty() {
         return 0.0;
     }
-    let lists = words::compiled(ctx).await;
-    let own = [lists.domains.get(domain), lists.accounts.get(&account_id)]
+    let lists = lists::current(ctx).await;
+    let own = [lists.words.domains.get(domain), lists.words.accounts.get(&account_id)]
         .into_iter()
         .flatten()
         .map(|scope| scope.find(&score.subject, &score.text).points)

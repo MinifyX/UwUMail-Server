@@ -66,6 +66,8 @@ pub struct SpamConfig {
     /// From this score on, mail is refused in the SMTP dialogue. Off unless set: a young filter
     /// is wrong now and then, and Junk loses nothing while a refusal does.
     pub reject_score: Option<f32>,
+    /// Built-in lists the server fetches itself.
+    pub feeds: FeedsConfig,
 }
 
 impl Default for SpamConfig {
@@ -78,6 +80,41 @@ impl Default for SpamConfig {
             greylist_score: 2.0,
             greylist_delay_secs: 300,
             reject_score: None,
+            feeds: FeedsConfig::default(),
+        }
+    }
+}
+
+/// Built-in lists the server fetches itself; see docs/spam-filter.md.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FeedsConfig {
+    /// Links to malware that is online right now (abuse.ch URLhaus). Needs `abuse_ch_key`.
+    pub urlhaus: bool,
+    /// Files seen as malware in the last two days (abuse.ch MalwareBazaar). Needs `abuse_ch_key`.
+    pub malware_bazaar: bool,
+    /// Subjects of spam waves, as regular expressions (mailcow).
+    pub bad_subjects: bool,
+    /// Domains of throwaway addresses (Rspamd).
+    pub disposable: bool,
+    /// Freemail providers, for replies that are meant to go somewhere else (Rspamd).
+    pub freemail: bool,
+    /// Link shorteners and redirectors (Rspamd).
+    pub redirectors: bool,
+    /// One's own Auth-Key from auth.abuse.ch; free for non-commercial use only.
+    pub abuse_ch_key: Option<String>,
+}
+
+impl Default for FeedsConfig {
+    fn default() -> Self {
+        FeedsConfig {
+            urlhaus: true,
+            malware_bazaar: true,
+            bad_subjects: true,
+            disposable: true,
+            freemail: true,
+            redirectors: true,
+            abuse_ch_key: None,
         }
     }
 }
