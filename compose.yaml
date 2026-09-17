@@ -2,14 +2,15 @@
 #
 #   1. cp .env.example .env   and fill in your host name
 #   2. docker compose up -d
-#   3. docker compose exec uwumail uwumail-server domain add example.com
-#   4. docker compose exec uwumail uwumail-server account add you@example.com --admin
+#   3. docker compose logs uwumail | grep "one-time code"
+#   4. open https://<your host name>/setup and enter the code
 #
-# See docs/deployment.md for DNS records, firewalls and running behind a reverse proxy.
+# The whole way, with DNS and the gateway: docs/install.md. Reverse proxies and every DNS
+# record: docs/deployment.md.
 
 services:
   uwumail:
-    image: ghcr.io/minifyx/uwumail-server:${UWUMAIL_VERSION:-edge}
+    image: ghcr.io/minifyx/uwumail-server:${UWUMAIL_VERSION:-latest}
     container_name: uwumail
     restart: unless-stopped
     hostname: ${UWUMAIL_HOSTNAME:?set UWUMAIL_HOSTNAME in .env}

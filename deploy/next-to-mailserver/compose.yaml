@@ -13,7 +13,7 @@
 
 services:
   uwumail:
-    image: ghcr.io/minifyx/uwumail-server:${UWUMAIL_VERSION:-edge}
+    image: ghcr.io/minifyx/uwumail-server:${UWUMAIL_VERSION:-latest}
     container_name: uwumail
     restart: unless-stopped
     environment:
