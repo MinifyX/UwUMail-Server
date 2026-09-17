@@ -1,8 +1,9 @@
 import { Globe, Plus, X } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button, IconButton } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/Card";
+import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Field, TextInput } from "@/components/ui/Field";
@@ -17,11 +18,25 @@ import { useCreateDomain } from "./queries";
 
 export const domainUrl = (name: string) => `/admin/domains/${encodeURIComponent(name)}`;
 
-function CreateDomain({ onClose }: { onClose: () => void }) {
+function CreateDomain({
+  onClose,
+  onCancel,
+  onDirtyChange,
+}: {
+  onClose: () => void;
+  onCancel: () => void;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
   const { t } = useT();
   const errorText = useErrorText();
   const create = useCreateDomain();
   const [name, setName] = useState("");
+
+  const dirty = name.trim() !== "";
+  useEffect(() => {
+    onDirtyChange(dirty);
+    return () => onDirtyChange(false);
+  }, [dirty, onDirtyChange]);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -38,7 +53,7 @@ function CreateDomain({ onClose }: { onClose: () => void }) {
     <form className="flex flex-col gap-4 px-6 pt-5 pb-6" onSubmit={submit}>
       <header className="flex items-center justify-between gap-4">
         <h2 className="text-lg font-bold">{t("domains.create.title")}</h2>
-        <IconButton icon={X} label={t("common.close")} onClick={onClose} />
+        <IconButton icon={X} label={t("common.close")} onClick={onCancel} />
       </header>
       <Field
         label={t("domains.create.name")}
@@ -59,7 +74,7 @@ function CreateDomain({ onClose }: { onClose: () => void }) {
         )}
       </Field>
       <div className="flex justify-end gap-2">
-        <Button onClick={onClose}>{t("common.cancel")}</Button>
+        <Button onClick={onCancel}>{t("common.cancel")}</Button>
         <Button type="submit" variant="primary" busy={create.isPending}>
           {t("domains.create.submit")}
         </Button>
@@ -73,6 +88,13 @@ export function DomainsPage() {
   const pro = usePrefs((s) => s.mode) === "pro";
   const domains = useDomains();
   const [creating, setCreating] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+
+  const requestClose = () => {
+    if (dirty) setConfirmingDiscard(true);
+    else setCreating(false);
+  };
 
   if (domains.isPending) return <Loading />;
   if (domains.isError) return <LoadError error={domains.error} onRetry={() => void domains.refetch()} />;
@@ -125,9 +147,17 @@ export function DomainsPage() {
           ))}
         </ul>
       )}
-      <Dialog open={creating} onClose={() => setCreating(false)} width="sm">
-        <CreateDomain onClose={() => setCreating(false)} />
+      <Dialog open={creating} onClose={requestClose} dismissable={!dirty} width="sm">
+        <CreateDomain onClose={() => setCreating(false)} onCancel={requestClose} onDirtyChange={setDirty} />
       </Dialog>
+      <ConfirmDiscardDialog
+        open={confirmingDiscard}
+        onKeepEditing={() => setConfirmingDiscard(false)}
+        onDiscard={() => {
+          setConfirmingDiscard(false);
+          setCreating(false);
+        }}
+      />
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import { Check, Copy, X } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { NyuScene } from "@/components/nyu/scenes";
 import { Button, IconButton } from "@/components/ui/Button";
+import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
@@ -63,15 +64,41 @@ export function LinkBox({ link }: { link: PasswordLinkCreated }) {
 }
 
 export function CreatePersonDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [dirty, setDirty] = useState(false);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+
+  const requestClose = () => {
+    if (dirty) setConfirmingDiscard(true);
+    else onClose();
+  };
+
   // The dialog only renders its content while open, so every opening starts with an empty form.
   return (
-    <Dialog open={open} onClose={onClose} width="sm">
-      <CreatePerson onClose={onClose} />
-    </Dialog>
+    <>
+      <Dialog open={open} onClose={requestClose} dismissable={!dirty} width="sm">
+        <CreatePerson onClose={onClose} onCancel={requestClose} onDirtyChange={setDirty} />
+      </Dialog>
+      <ConfirmDiscardDialog
+        open={confirmingDiscard}
+        onKeepEditing={() => setConfirmingDiscard(false)}
+        onDiscard={() => {
+          setConfirmingDiscard(false);
+          onClose();
+        }}
+      />
+    </>
   );
 }
 
-function CreatePerson({ onClose }: { onClose: () => void }) {
+function CreatePerson({
+  onClose,
+  onCancel,
+  onDirtyChange,
+}: {
+  onClose: () => void;
+  onCancel: () => void;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
   const { t } = useT();
   const pro = usePrefs((s) => s.mode) === "pro";
   const domains = useDomains();
@@ -88,6 +115,12 @@ function CreatePerson({ onClose }: { onClose: () => void }) {
   const [created, setCreated] = useState<{ person: Person; link: PasswordLinkCreated | null } | null>(null);
 
   const chosenDomain = domain || domains.data?.[0]?.name || "";
+  // Once the person exists there is nothing left to lose, so only the untouched form counts.
+  const dirty = !created && Boolean(name.trim() || localPart.trim() || admin || quota || ownPassword || password);
+  useEffect(() => {
+    onDirtyChange(dirty);
+    return () => onDirtyChange(false);
+  }, [dirty, onDirtyChange]);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -142,7 +175,7 @@ function CreatePerson({ onClose }: { onClose: () => void }) {
         <form className="flex flex-col gap-4 px-6 pt-5 pb-6" onSubmit={submit}>
           <header className="flex items-center justify-between gap-4">
             <h2 className="text-lg font-bold">{t("people.create.title")}</h2>
-            <IconButton icon={X} label={t("common.close")} onClick={onClose} />
+            <IconButton icon={X} label={t("common.close")} onClick={onCancel} />
           </header>
           {domains.data?.length === 0 && (
             <p className="rounded-control bg-warning-tint px-3 py-2.5 text-[13px] text-warning">
@@ -234,7 +267,7 @@ function CreatePerson({ onClose }: { onClose: () => void }) {
             </p>
           )}
           <div className="mt-1 flex justify-end gap-2">
-            <Button onClick={onClose}>{t("common.cancel")}</Button>
+            <Button onClick={onCancel}>{t("common.cancel")}</Button>
             <Button type="submit" variant="primary" busy={create.isPending} disabled={!chosenDomain}>
               {t("people.create.submit")}
             </Button>

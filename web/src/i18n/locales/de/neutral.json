@@ -16,6 +16,12 @@
     "showPassword": "Passwort anzeigen",
     "hidePassword": "Passwort verbergen"
   },
+  "discardChanges": {
+    "title": "Änderungen verwerfen?",
+    "body": "Was du hier eingegeben hast, geht sonst verloren.",
+    "discard": "Verwerfen",
+    "keepEditing": "Weiter bearbeiten"
+  },
   "login": {
     "title": "Anmelden",
     "subtitle": "Melde dich mit deiner Mail-Adresse und deinem Passwort an.",

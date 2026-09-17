@@ -1,7 +1,8 @@
 import { KeySquare, Plus, Trash2 } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
@@ -24,13 +25,26 @@ interface Created {
   secret: string;
 }
 
-function CreateForm({ confirmed, onCreated }: { confirmed: Confirmed; onCreated: (created: Created) => void }) {
+function CreateForm({
+  confirmed,
+  onCreated,
+  onDirtyChange,
+}: {
+  confirmed: Confirmed;
+  onCreated: (created: Created) => void;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
   const { t } = useT();
   const errorText = useErrorText();
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState<AppScope[]>(["mail", "smtp"]);
   const [days, setDays] = useState(0);
   const [nowAtOpen] = useState(() => Math.floor(Date.now() / 1000));
+  const dirty = name.trim() !== "" || days !== 0 || [...scopes].sort().join() !== "mail,smtp";
+  useEffect(() => {
+    onDirtyChange(dirty);
+    return () => onDirtyChange(false);
+  }, [dirty, onDirtyChange]);
   const create = useSecurityAction(() =>
     confirmed((password) =>
       api<Created>("/api/account/app-passwords", {
@@ -190,6 +204,17 @@ export function AppPasswordsCard({
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<Created | null>(null);
   const [revoking, setRevoking] = useState<AppPasswordInfo | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+
+  const closeCreate = () => {
+    setCreating(false);
+    setCreated(null);
+  };
+  const requestCloseCreate = () => {
+    if (dirty) setConfirmingDiscard(true);
+    else closeCreate();
+  };
 
   const failure = (error: unknown) => {
     if (!(error instanceof Cancelled)) toast(errorText(error), "error");
@@ -241,25 +266,17 @@ export function AppPasswordsCard({
 
       <Dialog
         open={creating || created !== null}
-        onClose={() => {
-          setCreating(false);
-          setCreated(null);
-        }}
+        onClose={requestCloseCreate}
+        dismissable={!dirty}
         title={created ? t("security.appPasswords.createdTitle") : t("security.appPasswords.newTitle")}
       >
         {created ? (
-          <CreatedView
-            created={created}
-            login={session.account.login}
-            onClose={() => {
-              setCreated(null);
-              setCreating(false);
-            }}
-          />
+          <CreatedView created={created} login={session.account.login} onClose={closeCreate} />
         ) : (
           creating && (
             <CreateForm
               confirmed={confirmed}
+              onDirtyChange={setDirty}
               onCreated={(result) => {
                 setCreated(result);
                 setCreating(false);
@@ -268,6 +285,15 @@ export function AppPasswordsCard({
           )
         )}
       </Dialog>
+
+      <ConfirmDiscardDialog
+        open={confirmingDiscard}
+        onKeepEditing={() => setConfirmingDiscard(false)}
+        onDiscard={() => {
+          setConfirmingDiscard(false);
+          closeCreate();
+        }}
+      />
 
       <Dialog
         open={revoking !== null}

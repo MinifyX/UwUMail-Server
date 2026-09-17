@@ -16,6 +16,12 @@
     "showPassword": "Show password",
     "hidePassword": "Hide password"
   },
+  "discardChanges": {
+    "title": "Discard your changes?",
+    "body": "What you've entered here would be lost.",
+    "discard": "Discard changes",
+    "keepEditing": "Keep editing"
+  },
   "login": {
     "title": "Log in",
     "subtitle": "Log in with your email address and password.",

@@ -1,4 +1,8 @@
 {
+  "discardChanges": {
+    "title": "Throw it all away? (・_・;)",
+    "body": "I'll forget everything you just typed here."
+  },
   "login": {
     "title": "Hi! Nice to see you",
     "subtitle": "I'm Nyu. Log in with your email address and password.",

@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/Button";
+import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
@@ -20,12 +21,28 @@ interface Pending {
   reject: (error: unknown) => void;
 }
 
-function PasswordForm({ pending, onClose }: { pending: Pending; onClose: () => void }) {
+function PasswordForm({
+  pending,
+  onClose,
+  onCancel,
+  onDirtyChange,
+}: {
+  pending: Pending;
+  onClose: () => void;
+  onCancel: () => void;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
   const { t } = useT();
   const errorText = useErrorText();
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
+
+  const dirty = password !== "";
+  useEffect(() => {
+    onDirtyChange(dirty);
+    return () => onDirtyChange(false);
+  }, [dirty, onDirtyChange]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -63,14 +80,7 @@ function PasswordForm({ pending, onClose }: { pending: Pending; onClose: () => v
         )}
       </Field>
       <div className="flex justify-end gap-2">
-        <Button
-          onClick={() => {
-            pending.reject(new Cancelled());
-            onClose();
-          }}
-        >
-          {t("common.cancel")}
-        </Button>
+        <Button onClick={onCancel}>{t("common.cancel")}</Button>
         <Button type="submit" variant="primary" busy={busy}>
           {t("security.confirm.submit")}
         </Button>
@@ -86,6 +96,8 @@ function PasswordForm({ pending, onClose }: { pending: Pending; onClose: () => v
 export function usePasswordConfirmation() {
   const { t } = useT();
   const [pending, setPending] = useState<Pending | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
 
   const confirmed = async <T,>(action: (password?: string) => Promise<T>): Promise<T> => {
     try {
@@ -99,18 +111,36 @@ export function usePasswordConfirmation() {
   };
 
   const close = () => setPending(null);
+  const cancel = () => {
+    pending?.reject(new Cancelled());
+    close();
+  };
+  const requestCancel = () => {
+    if (dirty) setConfirmingDiscard(true);
+    else cancel();
+  };
   const dialog = (
-    <Dialog
-      open={pending !== null}
-      onClose={() => {
-        pending?.reject(new Cancelled());
-        close();
-      }}
-      title={t("security.confirm.title")}
-      width="sm"
-    >
-      {pending && <PasswordForm pending={pending} onClose={close} />}
-    </Dialog>
+    <>
+      <Dialog
+        open={pending !== null}
+        onClose={requestCancel}
+        dismissable={!dirty}
+        title={t("security.confirm.title")}
+        width="sm"
+      >
+        {pending && (
+          <PasswordForm pending={pending} onClose={close} onCancel={requestCancel} onDirtyChange={setDirty} />
+        )}
+      </Dialog>
+      <ConfirmDiscardDialog
+        open={confirmingDiscard}
+        onKeepEditing={() => setConfirmingDiscard(false)}
+        onDiscard={() => {
+          setConfirmingDiscard(false);
+          cancel();
+        }}
+      />
+    </>
   );
   return { confirmed, dialog };
 }

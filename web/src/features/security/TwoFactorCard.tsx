@@ -1,7 +1,8 @@
 import { Fingerprint, KeyRound, ShieldCheck, Smartphone, Trash2 } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
@@ -42,10 +43,23 @@ function CodesDialog({ codes, onClose }: { codes: string[] | null; onClose: () =
   );
 }
 
-function TotpSetupForm({ setup, onDone }: { setup: TotpSetup; onDone: (codes: string[] | null) => void }) {
+function TotpSetupForm({
+  setup,
+  onDone,
+  onDirtyChange,
+}: {
+  setup: TotpSetup;
+  onDone: (codes: string[] | null) => void;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
   const { t } = useT();
   const errorText = useErrorText();
   const [code, setCode] = useState("");
+  const dirty = code.trim() !== "";
+  useEffect(() => {
+    onDirtyChange(dirty);
+    return () => onDirtyChange(false);
+  }, [dirty, onDirtyChange]);
   const confirm = useSecurityAction((value: string) =>
     api<{ recoveryCodes: string[] | null }>("/api/account/totp/confirm", { method: "POST", body: { code: value } }),
   );
@@ -136,6 +150,12 @@ export function TwoFactorCard({
   const [codes, setCodes] = useState<string[] | null>(null);
   const [passkeyName, setPasskeyName] = useState<string | null>(null);
   const canAddPasskey = passkeysAvailable(session.server.hostname);
+  const [totpDirty, setTotpDirty] = useState(false);
+  const [discarding, setDiscarding] = useState<"totp" | "passkey" | null>(null);
+
+  const passkeyDirty = (passkeyName ?? "").trim() !== "";
+  const requestCloseTotp = () => (totpDirty ? setDiscarding("totp") : setSetup(null));
+  const requestClosePasskey = () => (passkeyDirty ? setDiscarding("passkey") : setPasskeyName(null));
 
   const startTotp = useSecurityAction(() =>
     confirmed((password) => api<TotpSetup>("/api/account/totp", { method: "POST", body: { password } })),
@@ -277,10 +297,16 @@ export function TwoFactorCard({
         )}
       </div>
 
-      <Dialog open={setup !== null} onClose={() => setSetup(null)} title={t("security.totp.setUpTitle")}>
+      <Dialog
+        open={setup !== null}
+        onClose={requestCloseTotp}
+        dismissable={!totpDirty}
+        title={t("security.totp.setUpTitle")}
+      >
         {setup && (
           <TotpSetupForm
             setup={setup}
+            onDirtyChange={setTotpDirty}
             onDone={(recoveryCodes) => {
               setSetup(null);
               if (recoveryCodes) setCodes(recoveryCodes);
@@ -291,7 +317,8 @@ export function TwoFactorCard({
 
       <Dialog
         open={passkeyName !== null}
-        onClose={() => setPasskeyName(null)}
+        onClose={requestClosePasskey}
+        dismissable={!passkeyDirty}
         title={t("security.passkeys.addTitle")}
         width="sm"
       >
@@ -323,7 +350,7 @@ export function TwoFactorCard({
               )}
             </Field>
             <div className="flex justify-end gap-2">
-              <Button onClick={() => setPasskeyName(null)}>{t("common.cancel")}</Button>
+              <Button onClick={requestClosePasskey}>{t("common.cancel")}</Button>
               <Button type="submit" variant="primary" icon={Fingerprint} busy={addPasskey.isPending}>
                 {t("security.passkeys.create")}
               </Button>
@@ -333,6 +360,16 @@ export function TwoFactorCard({
       </Dialog>
 
       <CodesDialog codes={codes} onClose={() => setCodes(null)} />
+
+      <ConfirmDiscardDialog
+        open={discarding !== null}
+        onKeepEditing={() => setDiscarding(null)}
+        onDiscard={() => {
+          if (discarding === "totp") setSetup(null);
+          else setPasskeyName(null);
+          setDiscarding(null);
+        }}
+      />
     </Card>
   );
 }

@@ -4,6 +4,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button, IconButton } from "@/components/ui/Button";
 import { Card, KeyValue } from "@/components/ui/Card";
+import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
@@ -398,49 +399,72 @@ function PurgeDialog({ person, open, onClose }: { person: Person; open: boolean;
   const errorText = useErrorText();
   const purge = usePurgePerson(person.login);
   const [typed, setTyped] = useState("");
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const dirty = typed.trim() !== "";
+  const requestClose = () => {
+    if (dirty) setConfirmingDiscard(true);
+    else onClose();
+  };
   return (
-    <Dialog open={open} onClose={onClose} title={t("people.purge.title", { login: person.login })} width="sm">
-      <form
-        className="flex flex-col gap-4 px-6 pt-1 pb-6"
-        onSubmit={(event) => {
-          event.preventDefault();
-          purge.mutate(typed, {
-            onSuccess: () => {
-              toast(t("people.toasts.purged", { login: person.login }), "success");
-              onClose();
-              navigate("/admin/people", { replace: true });
-            },
-          });
-        }}
+    <>
+      <Dialog
+        open={open}
+        onClose={requestClose}
+        dismissable={!dirty}
+        title={t("people.purge.title", { login: person.login })}
+        width="sm"
       >
-        <p className="text-sm text-muted">{t("people.purge.body")}</p>
-        <Field label={t("people.purge.confirm")} error={purge.isError && errorText(purge.error)}>
-          {(id) => (
-            <TextInput
-              id={id}
-              autoComplete="off"
-              autoCapitalize="none"
-              spellCheck={false}
-              placeholder={person.login}
-              value={typed}
-              onChange={(event) => setTyped(event.target.value)}
-            />
-          )}
-        </Field>
-        <div className="flex justify-end gap-2">
-          <Button onClick={onClose}>{t("common.cancel")}</Button>
-          <Button
-            type="submit"
-            variant="danger"
-            icon={Trash2}
-            busy={purge.isPending}
-            disabled={typed.trim().toLowerCase() !== person.login}
-          >
-            {t("people.purge.submit")}
-          </Button>
-        </div>
-      </form>
-    </Dialog>
+        <form
+          className="flex flex-col gap-4 px-6 pt-1 pb-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+            purge.mutate(typed, {
+              onSuccess: () => {
+                toast(t("people.toasts.purged", { login: person.login }), "success");
+                onClose();
+                navigate("/admin/people", { replace: true });
+              },
+            });
+          }}
+        >
+          <p className="text-sm text-muted">{t("people.purge.body")}</p>
+          <Field label={t("people.purge.confirm")} error={purge.isError && errorText(purge.error)}>
+            {(id) => (
+              <TextInput
+                id={id}
+                autoComplete="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                placeholder={person.login}
+                value={typed}
+                onChange={(event) => setTyped(event.target.value)}
+              />
+            )}
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button onClick={requestClose}>{t("common.cancel")}</Button>
+            <Button
+              type="submit"
+              variant="danger"
+              icon={Trash2}
+              busy={purge.isPending}
+              disabled={typed.trim().toLowerCase() !== person.login}
+            >
+              {t("people.purge.submit")}
+            </Button>
+          </div>
+        </form>
+      </Dialog>
+      <ConfirmDiscardDialog
+        open={confirmingDiscard}
+        onKeepEditing={() => setConfirmingDiscard(false)}
+        onDiscard={() => {
+          setConfirmingDiscard(false);
+          setTyped("");
+          onClose();
+        }}
+      />
+    </>
   );
 }
 
