@@ -18,6 +18,8 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   start, so the setup assistant is reachable through the gateway right away; `docs/install.md`
   follows that order now. The certificate is ordered as soon as the tunnel is up, instead of up to
   an hour later.
+- Portal: a form dialog stays open when you click beside it, and Escape or the X asks before
+  throwing away what you typed.
 - The new `.env` lines belong to `compose.yaml`, not to the server: an installation from before
   this version loads the current `compose.yaml` first, otherwise they do nothing.
 
