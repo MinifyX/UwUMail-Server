@@ -1,7 +1,10 @@
 # Deployment
 
-> UwUMail Server is in early development. Run it for testing, not yet for the
-> only copy of your mail.
+> New here? [install.md](install.md) walks through the whole setup step by step.
+> This page is the reference behind it.
+>
+> UwUMail Server is young. I run my own mail on it, but set up
+> [backups](backups.md) before you rely on it.
 
 ## What you need
 
@@ -20,11 +23,11 @@ send through a relay (the setup assistant offers it, or `[delivery.relay]`).
 
 ```bash
 mkdir uwumail && cd uwumail
-curl -O https://raw.githubusercontent.com/MinifyX/UwUMail-Server/main/compose.yaml
-curl -o .env https://raw.githubusercontent.com/MinifyX/UwUMail-Server/main/.env.example
+curl -fsSLO https://raw.githubusercontent.com/MinifyX/UwUMail-Server/main/compose.yaml
+curl -fsSL -o .env https://raw.githubusercontent.com/MinifyX/UwUMail-Server/main/.env.example
 # edit .env: UWUMAIL_HOSTNAME=mail.example.com
 docker compose up -d
-docker compose logs uwumail | grep setup
+docker compose logs uwumail | grep "one-time code"
 ```
 
 The server gets a Let's Encrypt certificate as soon as `mail.example.com`

@@ -38,20 +38,43 @@ something a family, a club or a small team can run without being a mail admin:
 - **One container.** Mail server, spam filter and admin panel in a single
   image for amd64 and arm64 (yes, a Raspberry Pi is enough); web mail is meant
   to join them.
-- **Guided setup (planned).** A setup assistant that walks you through domain,
-  certificate and DNS records and checks everything live.
+- **Guided setup.** A setup assistant walks you through admin account, domain,
+  DNS records and sending, checks everything live and ends with a test mail.
 - **Delivers from home.** Blocked port 25 or no fixed IP? An optional
   [UwUMail Gateway](docs/gateway.md) on a small VPS tunnels mail and web to
   your server at home and sends from its own address.
-- **Modern protocols.** JMAP first and SMTP submission today; IMAP, CalDAV,
-  CardDAV and Sieve filters are planned.
+- **Mail, calendars, contacts.** JMAP, IMAP and SMTP for mail apps, CalDAV and
+  CardDAV for calendars and contacts; Sieve filters are planned.
+- **Backups and updates built in.** Nightly deduplicated, encrypted backups to
+  SFTP, and the portal tells you when a new version is out.
 - **Simple or Pro.** The admin panel has the same two modes as the app: a
   calm overview for everyone, every detail for those who want it.
 - **Private by default.** No telemetry. Your mail stays on your hardware.
 
-> **Status:** early development. I run a test instance for my own domain, but
-> it isn't ready for anyone's real mail yet. The [roadmap](docs/roadmap.md)
-> shows what's done and what I'd like to do next.
+> **Status:** early, but I run my own mail on it. Set up backups, and remember
+> there's no support. The [roadmap](docs/roadmap.md) shows what's done and what
+> I'd like to do next.
+
+## Install
+
+You need a domain and a Linux machine with Docker: either a server with a public
+address, or a machine at home plus a small VPS for the
+[UwUMail Gateway](docs/gateway.md).
+
+```bash
+mkdir uwumail && cd uwumail
+curl -fsSLO https://raw.githubusercontent.com/MinifyX/UwUMail-Server/main/compose.yaml
+curl -fsSL -o .env https://raw.githubusercontent.com/MinifyX/UwUMail-Server/main/.env.example
+nano .env    # UWUMAIL_HOSTNAME=mail.example.com
+docker compose up -d
+docker compose logs uwumail | grep "one-time code"
+```
+
+Then open `https://mail.example.com/setup` and enter the code. The whole way,
+with DNS, the gateway, mail apps and backups, is in
+**[docs/install.md](docs/install.md)**.
+
+Coming from mailcow? [docs/migrating-from-mailcow.md](docs/migrating-from-mailcow.md).
 
 ## Project layout
 
@@ -60,6 +83,9 @@ something a family, a club or a small team can run without being a mail admin:
 | `crates/uwumail-server` | The server binary: configuration, listeners, TLS, HTTP, command line |
 | `crates/uwumail-smtp` | SMTP receiving and submission, outbound queue, DKIM, SPF/DMARC checks |
 | `crates/uwumail-jmap` | JMAP: mail, submission, uploads and downloads, push |
+| `crates/uwumail-imap` | IMAP for mail apps |
+| `crates/uwumail-dav` | CalDAV and CardDAV |
+| `crates/uwumail-backup` | Deduplicated, encrypted backups over SFTP |
 | `crates/uwumail-web` | The web portal: JSON API and the embedded admin and account app |
 | `crates/uwumail-store` | SQLite + file storage: domains, accounts, mailboxes, messages, queue |
 | `crates/uwumail-tunnel` | The QUIC tunnel between a server and its UwUMail Gateway |
@@ -80,8 +106,8 @@ bash dev/seed.sh && node dev/smoke.mjs
 ```
 
 More in [docs/development.md](docs/development.md). Running it for real:
-[docs/deployment.md](docs/deployment.md), [docs/configuration.md](docs/configuration.md) and
-[docs/spam-filter.md](docs/spam-filter.md).
+[docs/install.md](docs/install.md), [docs/deployment.md](docs/deployment.md),
+[docs/configuration.md](docs/configuration.md) and [docs/spam-filter.md](docs/spam-filter.md).
 
 ## License
 

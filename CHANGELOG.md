@@ -17,6 +17,9 @@ The first version I use instead of mailcow.
   built-in lists and limits per person.
 - UwUMail Gateway: a VPS in front of a server at home, over a QUIC tunnel.
 - Moving from mailcow: export script, import of people with their password hashes, aliases,
-  settings, DKIM keys, calendars and contacts, and copying mail over IMAP.
+  settings, DKIM keys, calendars and contacts, and copying mail over IMAP;
+  `uwumail-server account admin` names the admin afterwards.
 - Backups: nightly to SFTP, deduplicated and encrypted, with restore from the command line.
 - Updates: the portal shows new versions of the chosen channel and the commands to update.
+- Installing: a step-by-step guide in `docs/install.md`, images tagged `latest`, and a ready
+  gateway for amd64 with every release.

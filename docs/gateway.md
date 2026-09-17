@@ -75,8 +75,22 @@ only ever show the gateway, never your home address.
 
 ## Install the gateway
 
-From a clone of this repository, with the GitHub CLI (`gh`) and SSH access to
-the VPS:
+Every release carries a ready gateway for amd64. On the VPS:
+
+```bash
+cd /tmp
+curl -fsSLO https://github.com/MinifyX/UwUMail-Server/releases/latest/download/uwumail-gateway-linux-amd64.tar.gz
+curl -fsSLO https://github.com/MinifyX/UwUMail-Server/releases/latest/download/uwumail-gateway-linux-amd64.tar.gz.sha256
+sha256sum -c uwumail-gateway-linux-amd64.tar.gz.sha256
+tar -xzf uwumail-gateway-linux-amd64.tar.gz
+sudo bash uwumail-gateway/install.sh uwumail-gateway/uwumail-gateway
+```
+
+The same commands update it; when a new release is out, the portal shows them
+with the exact version.
+
+To follow `main` instead, from a clone of this repository, with the GitHub CLI
+(`gh`, logged in, because CI artifacts need a login) and SSH access to the VPS:
 
 ```bash
 UWUMAIL_GATEWAY_HOST=root@203.0.113.10 scripts/deploy-gateway.sh
@@ -87,7 +101,9 @@ and checks its SHA-256 sum (`UWUMAIL_GATEWAY_RUN=<run id>` picks another run).
 CI builds for amd64 only; for an arm64 VPS, or to try a change before pushing
 it, `UWUMAIL_GATEWAY_BUILD=local` builds it with Docker on your machine. The
 script then copies it over and runs
-[`deploy/gateway/install.sh`](../deploy/gateway/install.sh), which
+[`deploy/gateway/install.sh`](../deploy/gateway/install.sh).
+
+Either way, `install.sh`
 
 - creates the system user `uwumail-gateway`,
 - installs the program to `/usr/local/bin/uwumail-gateway`,
