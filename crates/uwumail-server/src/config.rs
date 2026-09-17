@@ -213,6 +213,8 @@ impl Config {
             uwumail_tunnel::PairingCode::parse(&self.gateway.code)
                 .map_err(|err| anyhow::anyhow!("`gateway.code`: {err}"))?;
         }
+        uwumail_smtp::IpNetwork::parse_list(&self.http.trusted_proxies)
+            .map_err(|err| anyhow::anyhow!("`http.trusted_proxies`: {err}"))?;
         // Behind a reverse proxy the challenge arrives through the proxy listener instead of port 80.
         if self.tls.mode == TlsMode::Acme && self.listen.http.is_empty() && self.listen.proxy.is_empty() {
             bail!(
@@ -269,6 +271,38 @@ language = \"de\"
         let fixed = Config::file_and_environment(Some(&path)).unwrap();
         assert!(fixed.contains("tone.language"));
         assert!(!fixed.contains("tone.external"));
+    }
+
+    /// The configuration with one setting read the way an environment variable's text is, without
+    /// touching the environment other tests read.
+    fn with_env_text(key: &str, text: &str) -> anyhow::Result<Config> {
+        let value: figment::value::Value = text.parse().expect("any text is a value");
+        Figment::new()
+            .merge(Serialized::default("hostname", "mail.example.de"))
+            .merge(Serialized::default(key, value))
+            .extract()
+            .context("the configuration is invalid")
+    }
+
+    #[test]
+    fn lists_from_the_environment_need_brackets() {
+        let config = with_env_text("http.trusted_proxies", "[172.30.25.2, 10.0.0.0/8]").unwrap();
+        assert_eq!(config.http.trusted_proxies, ["172.30.25.2", "10.0.0.0/8"]);
+        config.validate().unwrap();
+        assert!(with_env_text("http.trusted_proxies", "[]").unwrap().http.trusted_proxies.is_empty());
+        assert!(with_env_text("http.trusted_proxies", "172.30.25.2").is_err(), "one address is not a list");
+        assert!(with_env_text("http.trusted_proxies", "").is_err(), "and neither is nothing");
+
+        // A listener address starts like a list and is still taken as text.
+        assert_eq!(with_env_text("listen.proxy", "[::]:8080").unwrap().listen.proxy, "[::]:8080");
+        assert_eq!(with_env_text("gateway.code", "").unwrap().gateway.code, "");
+    }
+
+    #[test]
+    fn a_reverse_proxy_has_to_be_an_address() {
+        let config = with_env_text("http.trusted_proxies", "[caddy]").unwrap();
+        let error = config.validate().unwrap_err().to_string();
+        assert!(error.contains("http.trusted_proxies"), "{error}");
     }
 
     #[test]
