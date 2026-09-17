@@ -33,6 +33,15 @@ impl fmt::Display for BlobHash {
     }
 }
 
+/// While it lives, unreferenced blobs are not deleted.
+pub struct BlobCleanupPause(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+impl Drop for BlobCleanupPause {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 pub(crate) struct BlobStore {
     root: PathBuf,
 }
@@ -107,9 +116,39 @@ impl Store {
         self.inner.blobs.get(hash).await
     }
 
+    /// Every blob something refers to, with its size.
+    pub async fn blob_hashes(&self) -> Result<Vec<(BlobHash, u64)>> {
+        self.read(|conn| {
+            let mut stmt = conn.prepare("SELECT hash, size FROM blobs WHERE refs > 0 ORDER BY hash")?;
+            let rows = stmt.query_map([], |row| Ok((BlobHash(row.get(0)?), row.get::<_, i64>(1)?.max(0) as u64)))?;
+            Ok(rows.collect::<rusqlite::Result<_>>()?)
+        })
+        .await
+    }
+
+    /// Keeps blobs on disk until the returned guard is dropped, so a backup can read every blob its
+    /// database copy refers to.
+    pub fn pause_blob_cleanup(&self) -> BlobCleanupPause {
+        self.inner.blob_cleanup_paused.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        BlobCleanupPause(self.inner.blob_cleanup_paused.clone())
+    }
+
+    /// A consistent copy of the database at `path`, taken while mail keeps arriving.
+    pub async fn snapshot_database(&self, path: PathBuf) -> Result<()> {
+        let _ = tokio::fs::remove_file(&path).await;
+        self.read(move |conn| {
+            conn.execute("VACUUM INTO ?1", [path.to_string_lossy().as_ref()])?;
+            Ok(())
+        })
+        .await
+    }
+
     /// Deletes blobs nothing refers to anymore. Blobs younger than `min_age_secs`
     /// are kept because a write that references them may still be in flight.
     pub async fn collect_garbage(&self, min_age_secs: i64) -> Result<usize> {
+        if self.inner.blob_cleanup_paused.load(std::sync::atomic::Ordering::SeqCst) > 0 {
+            return Ok(0);
+        }
         let _guard = self.inner.blob_lock.write().await;
         let cutoff = now() - min_age_secs;
         let hashes: Vec<String> = self

@@ -51,7 +51,7 @@ pub use bayes::{
     BAYES_FOLDER_LIMIT, BAYES_LEARNED_SECS, BAYES_MIN_LEARNED, BAYES_RARE_TOKEN_SECS, BAYES_WANTED_AFTER_SECS,
     BayesJob, BayesTotals,
 };
-pub use blobs::BlobHash;
+pub use blobs::{BlobCleanupPause, BlobHash};
 pub use dav::{
     DAV_COLLECTIONS_PER_ACCOUNT, DAV_RESOURCE_MAX_BYTES, DAV_RESOURCES_PER_COLLECTION, DavChanges, DavCollection,
     DavCollectionUpdate, DavKind, DavPrecondition, DavResource, DavResourceInfo, DavWrite, DavWriteOutcome,
@@ -135,6 +135,8 @@ struct Inner {
     db: db::Database,
     blobs: blobs::BlobStore,
     blob_lock: tokio::sync::RwLock<()>,
+    /// Backups running; cleaning up blobs waits while one reads them.
+    blob_cleanup_paused: Arc<std::sync::atomic::AtomicUsize>,
     changes: broadcast::Sender<StateChange>,
     queue_wakeup: Notify,
     data_dir: PathBuf,
@@ -156,6 +158,7 @@ impl Store {
                 db,
                 blobs,
                 blob_lock: Default::default(),
+                blob_cleanup_paused: Default::default(),
                 changes,
                 queue_wakeup: Notify::new(),
                 data_dir,
