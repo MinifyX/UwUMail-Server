@@ -8,8 +8,8 @@ use uwumail_store::{
 };
 
 use crate::cli::{
-    AccountCommand, AliasCommand, DomainCommand, ForwardCommand, GatewayCommand, QueueCommand, SenderArgs,
-    SenderKindArg, SpamCommand, WordTarget, WordsCommand,
+    AccountCommand, AliasCommand, BackupCommand, DomainCommand, ForwardCommand, GatewayCommand, QueueCommand,
+    SenderArgs, SenderKindArg, SpamCommand, WordTarget, WordsCommand,
 };
 use crate::config::Config;
 
@@ -283,6 +283,132 @@ pub async fn alias(store: &Store, command: AliasCommand) -> anyhow::Result<()> {
             for address in store.addresses(&account).await? {
                 println!("{address}");
             }
+        }
+    }
+    Ok(())
+}
+
+fn megabytes(bytes: u64) -> String {
+    format!("{:.1} MB", bytes as f64 / 1_000_000.0)
+}
+
+fn utc(time: i64) -> String {
+    let days = time.div_euclid(86_400);
+    let seconds = time.rem_euclid(86_400);
+    // Howard Hinnant's civil_from_days.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year}-{month:02}-{day:02} {:02}:{:02} UTC", seconds / 3600, seconds % 3600 / 60)
+}
+
+pub async fn backup(config: &Config, store: &Store, command: BackupCommand) -> anyhow::Result<()> {
+    let backups = uwumail_backup::Backups::new(store.clone(), &config.hostname, env!("CARGO_PKG_VERSION"));
+    match command {
+        BackupCommand::Run => {
+            let report = backups.run_now().await?;
+            println!(
+                "Snapshot {}: {} uploaded of {}; {} old snapshots and {} unused parts removed",
+                report.snapshot,
+                megabytes(report.uploaded),
+                megabytes(report.total),
+                report.removed_snapshots,
+                report.removed_objects
+            );
+        }
+        BackupCommand::List => {
+            let snapshots = backups.snapshots().await?;
+            if snapshots.is_empty() {
+                println!("No snapshots yet.");
+            }
+            for (name, manifest) in snapshots {
+                let total = manifest.database_size + manifest.blobs_size;
+                println!(
+                    "{name}  {}  {} mails  {}  (uploaded {})",
+                    utc(manifest.created_at),
+                    manifest.blobs.len(),
+                    megabytes(total),
+                    megabytes(manifest.uploaded)
+                );
+            }
+        }
+        BackupCommand::Check => {
+            let snapshots = backups.snapshots().await?;
+            let Some((name, _)) = snapshots.first() else { anyhow::bail!("there are no snapshots yet") };
+            let mut settings = backups.settings().await?;
+            let target = settings.target.take().ok_or_else(|| anyhow::anyhow!("no backup server is set up"))?;
+            let key = settings.key.as_deref().map(uwumail_backup::RepoKey::from_recovery_text).transpose()?;
+            let sftp = uwumail_backup::sftp::Sftp::connect(&target).await?;
+            let repo = uwumail_backup::Repository::open_existing(uwumail_backup::Storage::Sftp(sftp), key).await?;
+            let missing = uwumail_backup::check(&repo, name).await;
+            repo.storage.close().await;
+            let missing = missing?;
+            if !missing.is_empty() {
+                anyhow::bail!("{} parts of snapshot {name} are missing on the backup server", missing.len());
+            }
+            println!("Snapshot {name} is complete (=^･ω･^=)");
+        }
+        BackupCommand::Restore { sftp, port, ssh_key, host_key, snapshot, into } => {
+            let (user, rest) = sftp.split_once('@').ok_or_else(|| anyhow::anyhow!("--sftp needs user@host:/path"))?;
+            let (host, path) = rest.split_once(':').ok_or_else(|| anyhow::anyhow!("--sftp needs user@host:/path"))?;
+            let login = match ssh_key {
+                Some(file) => uwumail_backup::Login::Key { private_key: std::fs::read_to_string(file)? },
+                None => uwumail_backup::Login::Password {
+                    password: std::env::var("UWUMAIL_BACKUP_SFTP_PASSWORD")
+                        .map_err(|_| anyhow::anyhow!("give --ssh-key or set UWUMAIL_BACKUP_SFTP_PASSWORD"))?,
+                },
+            };
+            let target = uwumail_backup::Target {
+                host: host.into(),
+                port,
+                user: user.into(),
+                path: path.into(),
+                login,
+                host_key,
+            };
+            let connection = uwumail_backup::sftp::Sftp::connect(&target).await?;
+            println!("Connected to {host}, host key {}", connection.host_key);
+            let storage = uwumail_backup::Storage::Sftp(connection);
+            let key = if uwumail_backup::Repository::is_encrypted(&storage).await? {
+                let text = match std::env::var("UWUMAIL_BACKUP_KEY") {
+                    Ok(text) => text,
+                    Err(_) => {
+                        eprintln!("Recovery key:");
+                        let mut line = String::new();
+                        std::io::stdin().read_line(&mut line)?;
+                        line
+                    }
+                };
+                Some(uwumail_backup::RepoKey::from_recovery_text(&text)?)
+            } else {
+                None
+            };
+            let repo = uwumail_backup::Repository::open_existing(storage, key).await?;
+            let result = async {
+                let name = match snapshot.as_str() {
+                    "latest" => {
+                        repo.snapshots().await?.pop().ok_or_else(|| anyhow::anyhow!("there are no snapshots"))?
+                    }
+                    name => name.to_owned(),
+                };
+                let manifest = uwumail_backup::restore(&repo, &name, &into).await?;
+                anyhow::Ok((name, manifest))
+            }
+            .await;
+            repo.storage.close().await;
+            let (name, manifest) = result?;
+            println!(
+                "Restored snapshot {name} of {} from {} into {} (=^･ω･^=)",
+                manifest.hostname,
+                utc(manifest.created_at),
+                into.display()
+            );
         }
     }
     Ok(())

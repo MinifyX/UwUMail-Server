@@ -8,6 +8,7 @@
 
 pub mod format;
 pub mod retention;
+pub mod service;
 pub mod sftp;
 pub mod storage;
 
@@ -19,6 +20,7 @@ use uwumail_store::{BlobHash, Store};
 
 pub use format::{Codec, Manifest, RepoConfig, RepoKey};
 pub use retention::Retention;
+pub use service::{BackupSettings, BackupStatus, Backups};
 pub use sftp::{Login, Target};
 pub use storage::Storage;
 
@@ -64,10 +66,30 @@ impl Repository {
     /// Opens the repository at the storage, creating it when there is none yet. `key` is needed for
     /// encrypted ones; a new repository is encrypted exactly when a key is given.
     pub async fn open(storage: Storage, key: Option<RepoKey>, now: i64) -> Result<Repository, Error> {
+        Self::open_with(storage, key, Some(now)).await
+    }
+
+    /// Opens a repository that must exist already, e.g. for a restore.
+    pub async fn open_existing(storage: Storage, key: Option<RepoKey>) -> Result<Repository, Error> {
+        Self::open_with(storage, key, None).await
+    }
+
+    /// Whether the repository at the storage is encrypted, without needing the key.
+    pub async fn is_encrypted(storage: &Storage) -> Result<bool, Error> {
+        let bytes =
+            storage.read(CONFIG_PATH).await?.ok_or_else(|| Error::Config("there is no UwUMail backup there".into()))?;
+        let config: RepoConfig = serde_json::from_slice(&bytes)
+            .map_err(|_| Error::Damaged(format!("{CONFIG_PATH} is not a UwUMail backup")))?;
+        Ok(config.encrypted)
+    }
+
+    async fn open_with(storage: Storage, key: Option<RepoKey>, create_at: Option<i64>) -> Result<Repository, Error> {
         let config = match storage.read(CONFIG_PATH).await? {
             Some(bytes) => serde_json::from_slice::<RepoConfig>(&bytes)
                 .map_err(|_| Error::Damaged(format!("{CONFIG_PATH} is not a UwUMail backup")))?,
+            None if create_at.is_none() => return Err(Error::Config("there is no UwUMail backup there".into())),
             None => {
+                let now = create_at.unwrap_or_default();
                 let config = Codec::config_for(key.as_ref(), now);
                 storage.write(CONFIG_PATH, &serde_json::to_vec_pretty(&config).expect("config serializes")).await?;
                 config
@@ -131,7 +153,7 @@ impl Repository {
 }
 
 /// What a backup did.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupReport {
     pub snapshot: String,

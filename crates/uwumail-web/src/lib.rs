@@ -71,6 +71,8 @@ struct Inner {
     apple_profiles: Mutex<HashMap<String, routes::apps::PendingProfile>>,
     /// The UwUMail Gateway, once the server plugged it in.
     gateway: std::sync::OnceLock<Arc<dyn gateway::GatewayBackend>>,
+    /// Backups, once the server plugged them in.
+    backups: std::sync::OnceLock<uwumail_backup::Backups>,
 }
 
 impl Web {
@@ -91,6 +93,7 @@ impl Web {
                 server_check: Mutex::default(),
                 apple_profiles: Mutex::default(),
                 gateway: std::sync::OnceLock::new(),
+                backups: std::sync::OnceLock::new(),
             }),
         }
     }
@@ -135,6 +138,15 @@ impl Web {
     /// Lets the portal show and pair the UwUMail Gateway. Only the first call counts.
     pub fn set_gateway(&self, gateway: Arc<dyn gateway::GatewayBackend>) {
         let _ = self.inner.gateway.set(gateway);
+    }
+
+    /// Lets the portal set up and run backups. Only the first call counts.
+    pub fn set_backups(&self, backups: uwumail_backup::Backups) {
+        let _ = self.inner.backups.set(backups);
+    }
+
+    pub(crate) fn backups(&self) -> Option<&uwumail_backup::Backups> {
+        self.inner.backups.get()
     }
 
     pub(crate) fn gateway(&self) -> Option<&Arc<dyn gateway::GatewayBackend>> {
@@ -223,6 +235,12 @@ impl Web {
             .route("/api/admin/overview", get(routes::admin::overview))
             .route("/api/admin/health", get(routes::admin::health))
             .route("/api/admin/health/check", post(routes::admin::check_health))
+            .route("/api/admin/backups", get(routes::backups::show).put(routes::backups::save))
+            .route("/api/admin/backups/test", post(routes::backups::test))
+            .route("/api/admin/backups/forget-host-key", post(routes::backups::forget_host_key))
+            .route("/api/admin/backups/run", post(routes::backups::run))
+            .route("/api/admin/backups/snapshots", get(routes::backups::snapshots))
+            .route("/api/admin/backups/recovery-key", post(routes::backups::recovery_key))
             .route("/api/admin/domains", get(routes::domains::list).post(routes::domains::create))
             .route("/api/admin/domains/{name}", get(routes::domains::detail).delete(routes::domains::remove))
             .route("/api/admin/domains/{name}/catch-all", put(routes::domains::set_catch_all))

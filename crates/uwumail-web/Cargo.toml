@@ -9,6 +9,7 @@ rust-version.workspace = true
 build = "build.rs"
 
 [dependencies]
+uwumail-backup.workspace = true
 uwumail-jmap.workspace = true
 uwumail-smtp.workspace = true
 uwumail-store.workspace = true

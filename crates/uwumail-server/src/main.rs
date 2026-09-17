@@ -118,6 +118,7 @@ async fn run(
         Command::Queue(command) => commands::queue(&store, command).await,
         Command::Gateway(command) => commands::gateway(&config, &store, command).await,
         Command::Spam(command) => commands::spam(&store, command).await,
+        Command::Backup(command) => commands::backup(&config, &store, command).await,
         Command::Serve | Command::CheckConfig | Command::Health => unreachable!("handled above"),
     }
 }

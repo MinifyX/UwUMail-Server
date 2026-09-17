@@ -135,6 +135,8 @@ pub async fn run(
         shutdown_rx.clone(),
     );
     web.set_gateway(gateway.clone());
+    let backups = uwumail_backup::Backups::new(store.clone(), &config.hostname, env!("CARGO_PKG_VERSION"));
+    web.set_backups(backups.clone());
     let web = web.router();
     let trusted_proxies = Arc::new(
         uwumail_smtp::IpNetwork::parse_list(&config.http.trusted_proxies)
@@ -172,6 +174,7 @@ pub async fn run(
     }
 
     tasks.spawn(collect_garbage(store.clone(), shutdown_rx.clone()));
+    tasks.spawn(backups.clone().run(shutdown_rx.clone()));
 
     tracing::info!("ready ✉");
     wait_for_signal().await;

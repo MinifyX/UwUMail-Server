@@ -2,6 +2,7 @@ pub mod account;
 pub mod admin;
 pub mod apps;
 pub mod auth;
+pub mod backups;
 pub mod domains;
 pub mod gateway;
 pub mod links;

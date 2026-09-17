@@ -45,6 +45,41 @@ pub enum Command {
     /// The spam filter.
     #[command(subcommand)]
     Spam(SpamCommand),
+    /// Backups to an SFTP server, set up in the admin panel.
+    #[command(subcommand)]
+    Backup(BackupCommand),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum BackupCommand {
+    /// Back up now. While the server runs, the button in the admin panel is the better way.
+    Run,
+    /// The snapshots on the backup server.
+    List,
+    /// Check that every part of the newest snapshot is on the backup server.
+    Check,
+    /// Restore a snapshot into an empty data directory, e.g. on a new machine. Needs no settings:
+    /// the SSH password comes from UWUMAIL_BACKUP_SFTP_PASSWORD, the recovery key from
+    /// UWUMAIL_BACKUP_KEY or the first line of standard input.
+    Restore {
+        /// Where the backups are: user@host:/path.
+        #[arg(long)]
+        sftp: String,
+        #[arg(long, default_value_t = 22)]
+        port: u16,
+        /// An OpenSSH private key to log in with, instead of a password.
+        #[arg(long)]
+        ssh_key: Option<std::path::PathBuf>,
+        /// The host key's SHA256 fingerprint, to be sure it is the right server.
+        #[arg(long)]
+        host_key: Option<String>,
+        /// A snapshot name from `backup list`, or `latest`.
+        #[arg(long, default_value = "latest")]
+        snapshot: String,
+        /// The empty data directory to restore into.
+        #[arg(long)]
+        into: std::path::PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]
