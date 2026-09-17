@@ -439,7 +439,7 @@ export type LoginResult = Session | { secondFactor: SecondFactorChallenge };
 export const needsSecondFactor = (result: LoginResult): result is { secondFactor: SecondFactorChallenge } =>
   "secondFactor" in result;
 
-export type AppScope = "mail" | "smtp";
+export type AppScope = "mail" | "smtp" | "dav";
 
 export interface AppPasswordInfo {
   id: number;

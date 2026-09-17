@@ -30,7 +30,7 @@ use axum::routing::{get, post};
 use uwumail_smtp::Smtp;
 use uwumail_store::Store;
 
-pub use auth::ClientInfo;
+pub use auth::{AuthError, Authenticator, ClientInfo};
 
 pub const MAX_UPLOAD_BYTES: usize = 50 * 1024 * 1024;
 pub const MAX_REQUEST_BYTES: usize = 10 * 1024 * 1024;

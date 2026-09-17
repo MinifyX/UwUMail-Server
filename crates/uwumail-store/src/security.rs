@@ -62,10 +62,12 @@ fn candidate(kind: &str, input: &str, chars: usize) -> Option<Vec<u8>> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AppScope {
-    /// Reading and managing mail: JMAP now, IMAP later. JMAP can also send.
+    /// Reading and managing mail with JMAP or IMAP. JMAP can also send.
     Mail,
     /// Sending through SMTP submission.
     Smtp,
+    /// Calendars and contacts with CalDAV and CardDAV.
+    Dav,
 }
 
 impl AppScope {
@@ -73,6 +75,7 @@ impl AppScope {
         match self {
             AppScope::Mail => "mail",
             AppScope::Smtp => "smtp",
+            AppScope::Dav => "dav",
         }
     }
 
@@ -82,6 +85,7 @@ impl AppScope {
             .filter_map(|scope| match scope {
                 "mail" => Some(AppScope::Mail),
                 "smtp" => Some(AppScope::Smtp),
+                "dav" => Some(AppScope::Dav),
                 _ => None,
             })
             .collect()

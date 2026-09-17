@@ -62,6 +62,9 @@ impl IntoResponse for AuthError {
 
 pub struct Authenticator {
     store: Store,
+    /// What app passwords must allow, and the protocol name for the activity list and the log.
+    scope: AppScope,
+    protocol: &'static str,
     secret: [u8; 32],
     /// Account id, when it was cached, and the same as a Unix time to compare with password changes.
     cache: Mutex<HashMap<[u8; 32], (i64, Instant, i64)>>,
@@ -81,9 +84,14 @@ fn network(ip: IpAddr) -> IpAddr {
 
 impl Authenticator {
     pub fn new(store: Store) -> Authenticator {
+        Authenticator::for_protocol(store, AppScope::Mail, "jmap")
+    }
+
+    /// Basic authentication for another HTTP protocol, like CalDAV with its own app password scope.
+    pub fn for_protocol(store: Store, scope: AppScope, protocol: &'static str) -> Authenticator {
         let mut secret = [0u8; 32];
         getrandom::fill(&mut secret).expect("the system RNG failed");
-        Authenticator { store, secret, cache: Mutex::default(), failures: Mutex::default() }
+        Authenticator { store, scope, protocol, secret, cache: Mutex::default(), failures: Mutex::default() }
     }
 
     fn cache_key(&self, login: &str, password: &str) -> [u8; 32] {
@@ -145,7 +153,7 @@ impl Authenticator {
             return Err(AuthError::Blocked);
         }
         let ip = client.ip.to_string();
-        match self.store.authenticate_mail(login, password, AppScope::Mail, "jmap", &ip).await {
+        match self.store.authenticate_mail(login, password, self.scope, self.protocol, &ip).await {
             Ok(MailAuth::Ok { account, app_password }) => {
                 // App passwords are a quick lookup; only the slow account password is worth caching.
                 if app_password.is_none() {
@@ -163,11 +171,11 @@ impl Authenticator {
                 if reason != MailAuthDenied::AppPasswordRequired {
                     self.record_failure(client.ip);
                 }
-                tracing::warn!(%login, ip = %client.ip, %reason, "failed JMAP login");
+                tracing::warn!(%login, ip = %client.ip, %reason, protocol = self.protocol, "failed login");
                 Err(AuthError::Invalid)
             }
             Err(err) => {
-                tracing::error!(%err, "JMAP authentication failed internally");
+                tracing::error!(%err, protocol = self.protocol, "authentication failed internally");
                 Err(AuthError::Internal)
             }
         }

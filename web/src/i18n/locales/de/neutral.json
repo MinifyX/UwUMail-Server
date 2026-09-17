@@ -1007,9 +1007,11 @@
       "nameHint": "Zum Beispiel „Handy“ oder „Thunderbird“.",
       "scopes": "Erlaubt",
       "scopeMail": "Mails lesen und verwalten",
-      "scopeMailHint": "Für Mail-Apps mit JMAP. Solche Apps können damit auch senden.",
+      "scopeMailHint": "Für Mail-Apps mit IMAP oder JMAP. JMAP-Apps können damit auch senden.",
       "scopeSmtp": "Mails senden (SMTP)",
       "scopeSmtpHint": "Für Apps, Drucker oder Skripte, die nur senden.",
+      "scopeDav": "Kalender und Kontakte",
+      "scopeDavHint": "Für Apps mit CalDAV und CardDAV, wie Kalender und Kontakte auf dem iPhone.",
       "expiry": "Gültig",
       "never": "Ohne Ablauf",
       "days_one": "{{count}} Tag",
@@ -1023,7 +1025,8 @@
       "done": "Fertig",
       "scopeShort": {
         "mail": "Mails",
-        "smtp": "Senden"
+        "smtp": "Senden",
+        "dav": "Kalender"
       },
       "expired": "Abgelaufen",
       "lastUsed": "Zuletzt {{time}} über {{protocol}} von {{ip}}",

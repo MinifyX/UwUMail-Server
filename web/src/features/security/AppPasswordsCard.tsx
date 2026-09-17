@@ -75,6 +75,12 @@ function CreateForm({ confirmed, onCreated }: { confirmed: Confirmed; onCreated:
           label={t("security.appPasswords.scopeSmtp")}
           description={t("security.appPasswords.scopeSmtpHint")}
         />
+        <Toggle
+          checked={scopes.includes("dav")}
+          onChange={(on) => toggle("dav", on)}
+          label={t("security.appPasswords.scopeDav")}
+          description={t("security.appPasswords.scopeDavHint")}
+        />
       </fieldset>
       <Field label={t("security.appPasswords.expiry")}>
         {(id) => (
