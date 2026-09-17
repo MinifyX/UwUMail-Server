@@ -1,0 +1,28 @@
+[package]
+name = "uwumail-backup"
+description = "Deduplicated, encrypted backups of a UwUMail server to SFTP"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+uwumail-store.workspace = true
+
+aws-lc-rs.workspace = true
+data-encoding.workspace = true
+fastcdc = "5"
+flate2 = "1"
+hex.workspace = true
+russh = { version = "0.63", default-features = false, features = ["aws-lc-rs", "flate2"] }
+russh-sftp = "3"
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

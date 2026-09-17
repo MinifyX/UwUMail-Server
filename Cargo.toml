@@ -10,6 +10,7 @@ members = [
     "crates/uwumail-server",
     "crates/uwumail-tunnel",
     "crates/uwumail-gateway",
+    "crates/uwumail-backup",
 ]
 
 [workspace.package]
@@ -17,9 +18,10 @@ version = "0.1.0"
 edition = "2024"
 license = "AGPL-3.0-only"
 repository = "https://github.com/MinifyX/UwUMail-Server"
-rust-version = "1.88"
+rust-version = "1.89"
 
 [workspace.dependencies]
+uwumail-backup = { path = "crates/uwumail-backup" }
 uwumail-dav = { path = "crates/uwumail-dav" }
 uwumail-gateway = { path = "crates/uwumail-gateway" }
 uwumail-imap = { path = "crates/uwumail-imap" }
