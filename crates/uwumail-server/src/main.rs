@@ -84,6 +84,7 @@ async fn run(
         Command::Domain(command) => commands::domain(&config, &store, command).await,
         Command::Account(command) => commands::account(&config, &store, command).await,
         Command::Alias(command) => commands::alias(&store, command).await,
+        Command::Forward(command) => commands::forward(&store, command).await,
         Command::Queue(command) => commands::queue(&store, command).await,
         Command::Gateway(command) => commands::gateway(&config, &store, command).await,
         Command::Spam(command) => commands::spam(&store, command).await,

@@ -431,6 +431,56 @@ async fn forwarded_mail_uses_srs_and_bounces_find_the_original_sender() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn forwarding_addresses_pass_mail_on_without_a_mailbox() {
+    let unreachable = SocketAddr::from(([127, 0, 0, 1], 9));
+    let a = start("a.test", &["mini", "leni"], &[("c.test", unreachable)]).await;
+    for name in ["sender.test", "client.sender.test", "_dmarc.sender.test"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+    let store = a.smtp.store();
+    store.set_forward_address("kasse@a.test", vec!["oma@c.test".into(), "leni@a.test".into()], "").await.unwrap();
+
+    let mut session = RawSession::connect(a.mx).await;
+    assert!(session.command("EHLO client.sender.test").await.starts_with("250"));
+    assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+    assert!(session.command("RCPT TO:<kasse+2026@a.test>").await.starts_with("250"));
+    assert!(session.command("DATA").await.starts_with("354"));
+    let reply = session.command("From: news@sender.test\r\nSubject: Beitrag\r\n\r\nBitte zahlen\r\n.").await;
+    assert!(reply.starts_with("250"), "{reply}");
+
+    assert_eq!(a.wait_for_inbox("leni@a.test", 1).await[0].subject, "Beitrag");
+    let started = Instant::now();
+    let return_path = loop {
+        let entries = store.queue_entries().await.unwrap();
+        if let Some(entry) = entries.iter().find(|e| e.recipients.iter().any(|r| r.address == "oma@c.test")) {
+            break entry.message.return_path.clone();
+        }
+        assert!(started.elapsed() < Duration::from_secs(10), "the forward was not queued");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+    assert!(return_path.starts_with("SRS0=") && return_path.ends_with("=sender.test=news@a.test"), "{return_path}");
+
+    // People here reach it too, and their own address keeps its sender.
+    a.mailer("mini@a.test", PASSWORD, false).send(mail("mini@a.test", &["kasse@a.test"], "Quittung")).await.unwrap();
+    let inbox = a.wait_for_inbox("leni@a.test", 2).await;
+    assert!(inbox.iter().any(|email| email.subject == "Quittung"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn forwarding_addresses_pass_no_spam_on() {
+    let a = spam_test_server_for(&["mini", "leni"], SpamConfig::default(), Some("v=DMARC1; p=none")).await;
+    a.smtp.store().set_forward_address("kasse@a.test", vec!["leni@a.test".into()], "").await.unwrap();
+
+    let message = "From: news@sender.test\r\nSubject: Gewinn\r\n\r\nAngebot\r\n";
+    let reply = relay_message_to(&a, &["kasse@a.test"], message).await;
+    assert!(reply.starts_with("550 5.7.1"), "the sender learns it did not arrive: {reply}");
+    let reply = relay_message_to(&a, &["kasse@a.test", "mini@a.test"], message).await;
+    assert!(reply.starts_with("250"), "{reply}");
+    assert_eq!(a.mailbox("mini@a.test", MailboxRole::Junk).await.len(), 1);
+    assert!(a.inbox("leni@a.test").await.is_empty() && a.mailbox("leni@a.test", MailboxRole::Junk).await.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn reports_are_read_by_the_server_instead_of_landing_in_a_mailbox() {
     let a = start("a.test", &["mini"], &[]).await;
     let store = a.smtp.store().clone();

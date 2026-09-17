@@ -84,6 +84,8 @@ Design choices that matter later:
   signatures stay intact. Suspicious mail (DMARC quarantine or a junk score) is never
   forwarded, and a `Delivered-To` header stops loops. Bounces to SRS addresses
   are only accepted with an empty sender and go back to the original sender.
+  Forwarding addresses of a domain have no mailbox and pass everything on the
+  same way; when nobody else would get a junk message, it is refused instead.
 - `dsn` + `texts`: bounces in German or English. Mail to our own people uses
   the internal tone (playful by default), mail to anyone else the external
   tone (neutral by default).

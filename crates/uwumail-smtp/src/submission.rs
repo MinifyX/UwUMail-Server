@@ -171,7 +171,8 @@ impl Smtp {
                     if !plan.targets.is_empty()
                         && let Ok(Some(target)) = ctx.store.account_by_id(account_id).await
                     {
-                        forward::send(ctx, &target, &address, &mail_from, &signed, &plan.targets).await;
+                        let forwarder = forward::Forwarder { name: &target.login, account_id: Some(target.id) };
+                        forward::send(ctx, forwarder, &address, &mail_from, &signed, &plan.targets).await;
                     }
                     if !plan.keep_copy {
                         local_deliveries += 1;
@@ -198,10 +199,19 @@ impl Smtp {
                         }),
                     }
                 }
-                None if ctx.store.is_local_domain(&domain).await.unwrap_or(false) => failed.push(FailedRecipient {
-                    address: address.clone(),
-                    error: format!("550 5.1.1 <{address}>: No such mailbox here"),
-                }),
+                None if ctx.store.is_local_domain(&domain).await.unwrap_or(false) => {
+                    match ctx.store.forward_address_targets(&address).await.ok().flatten() {
+                        Some(targets) => {
+                            let forwarder = forward::Forwarder { name: &address, account_id: Some(account.id) };
+                            forward::send(ctx, forwarder, &address, &mail_from, &signed, &targets).await;
+                            local_deliveries += 1;
+                        }
+                        None => failed.push(FailedRecipient {
+                            address: address.clone(),
+                            error: format!("550 5.1.1 <{address}>: No such mailbox here"),
+                        }),
+                    }
+                }
                 None => remote.push(NewQueueRecipient {
                     address,
                     notify_flags: recipient.notify_flags,

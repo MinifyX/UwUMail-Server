@@ -30,6 +30,9 @@ pub enum Command {
     /// Extra addresses that deliver into an account.
     #[command(subcommand)]
     Alias(AliasCommand),
+    /// Addresses without a mailbox that pass their mail on to other addresses.
+    #[command(subcommand)]
+    Forward(ForwardCommand),
     /// The outgoing mail queue.
     #[command(subcommand)]
     Queue(QueueCommand),
@@ -245,6 +248,27 @@ pub enum AliasCommand {
     /// All addresses of an account.
     List {
         account: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ForwardCommand {
+    /// Create a forwarding address or replace its targets.
+    Set {
+        address: String,
+        /// Where its mail goes, here or elsewhere.
+        #[arg(required = true)]
+        targets: Vec<String>,
+        #[arg(long, default_value = "")]
+        note: String,
+    },
+    Remove {
+        address: String,
+    },
+    /// All forwarding addresses, or those of one domain.
+    List {
+        #[arg(long)]
+        domain: Option<String>,
     },
 }
 

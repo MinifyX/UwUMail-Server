@@ -65,7 +65,7 @@ verify_senders = true         # SPF, DKIM, DMARC for incoming mail
 trusted_relays = []           # servers in front that forward mail to us, e.g. ["10.0.0.5"]
 enforce_dmarc_reject = true   # otherwise p=reject failures go to Junk
 reveal_client_ip = false      # keep senders' IP and device name out of headers
-allow_external_forwarding = true  # people may forward to other servers (after the address confirms)
+allow_external_forwarding = true  # people may forward to other servers (after the address confirms); forwarding addresses set up by admins always may
 
 [spam]                        # see spam-filter.md
 enabled = true

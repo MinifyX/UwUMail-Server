@@ -116,6 +116,8 @@ struct Recipient {
     srs_return: Option<String>,
     /// DMARC or TLS reports for one of our domains, read by the server itself.
     report: Option<ReportKind>,
+    /// A forwarding address without a mailbox: where its mail goes, `Some(account id)` for people here.
+    forward_to: Option<Vec<(String, Option<i64>)>>,
     notify_flags: u64,
     orcpt: Option<String>,
 }
@@ -665,6 +667,7 @@ impl Session {
                             local_account: None,
                             srs_return: Some(original),
                             report: None,
+                            forward_to: None,
                             notify_flags: to.flags,
                             orcpt: to.orcpt,
                         });
@@ -692,6 +695,23 @@ impl Session {
                     local_account: None,
                     srs_return: None,
                     report: Some(kind),
+                    forward_to: None,
+                    notify_flags: to.flags,
+                    orcpt: to.orcpt,
+                });
+            }
+            self.reply("250 2.1.5 Recipient OK\r\n").await?;
+            return Ok(Next::Continue);
+        }
+        // On submission the targets are looked up again when the message is handed on.
+        if let Ok(Some(targets)) = store.forward_address_targets(&address).await {
+            if !self.recipients.iter().any(|r| r.address == address) {
+                self.recipients.push(Recipient {
+                    address,
+                    local_account: None,
+                    srs_return: None,
+                    report: None,
+                    forward_to: Some(targets),
                     notify_flags: to.flags,
                     orcpt: to.orcpt,
                 });
@@ -733,6 +753,7 @@ impl Session {
                 local_account,
                 srs_return: None,
                 report: None,
+                forward_to: None,
                 notify_flags: to.flags,
                 orcpt: to.orcpt,
             });
@@ -856,6 +877,7 @@ impl Session {
         let spam_score = score.as_ref().map(|score| score.points);
         let spam_tests = score.as_ref().map(spam::Score::tests);
         let quarantined = matches!(&verdict, Some(v) if v.action == Action::Quarantine);
+        let junk = quarantined || matches!(outcome, spam::Outcome::Junk | spam::Outcome::Reject);
         // What the score means for each person without a listed sender: their own Bayes knowledge and
         // word lists add points, and their own limits say what the sum means.
         let limits = match &score {
@@ -882,11 +904,13 @@ impl Session {
             };
             personal.push(theirs);
         }
-        // Refused when the server's limit says so, or when every recipient's own limit or list does.
-        // Otherwise a recipient who allowed the sender still gets it and everyone else finds it in Junk.
+        // Refused when the server's limit says so, or when every recipient's own limit or list does, or
+        // nobody but forwarding addresses would get it, which pass no spam on. Otherwise a recipient who
+        // allowed the sender still gets it and everyone else finds it in Junk.
         let everyone_refuses = !recipients.is_empty()
             && recipients.iter().zip(&decisions).zip(&personal).all(|((recipient, decision), theirs)| match decision {
                 Decision::Reject(_) => true,
+                Decision::None if recipient.forward_to.is_some() => junk,
                 Decision::None => {
                     recipient.srs_return.is_none()
                         && recipient.report.is_none()
@@ -937,7 +961,6 @@ impl Session {
             }
         }
 
-        let junk = quarantined || matches!(outcome, spam::Outcome::Junk | spam::Outcome::Reject);
         // Our verdict replaces whatever the message brought along.
         let raw = if score.is_some() { headers::strip_spam_verdicts(&raw) } else { raw };
 
@@ -971,6 +994,16 @@ impl Session {
                     raw.clone(),
                     authenticated,
                 ));
+                delivered += 1;
+                continue;
+            }
+            if let Some(targets) = &recipient.forward_to {
+                if junk {
+                    tracing::info!(%id, to = %recipient.address, "not passing spam on from a forwarding address");
+                } else {
+                    let forwarder = forward::Forwarder { name: &recipient.address, account_id: None };
+                    forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, targets).await;
+                }
                 delivered += 1;
                 continue;
             }
@@ -1010,7 +1043,8 @@ impl Session {
             if !plan.targets.is_empty()
                 && let Ok(Some(account)) = ctx.store.account_by_id(account_id).await
             {
-                forward::send(&ctx, &account, &recipient.address, &envelope.address, &message, &plan.targets).await;
+                let forwarder = forward::Forwarder { name: &account.login, account_id: Some(account.id) };
+                forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, &plan.targets).await;
             }
             if !plan.keep_copy {
                 delivered += 1;

@@ -17,6 +17,7 @@ mod db;
 mod directory;
 mod extras;
 mod feeds;
+mod forward_addresses;
 mod forwarding;
 mod imap;
 mod mail;
@@ -58,6 +59,7 @@ pub use dav::{
 pub use directory::{Account, DkimKey, DkimKeyAlgorithm, DkimKeyState, Domain, NewAccount, Role};
 pub use extras::{Identity, IdentityUpdate, SubmissionRecord, UPLOAD_LIFETIME_SECS, VacationResponse};
 pub use feeds::FeedState;
+pub use forward_addresses::{FORWARD_ADDRESS_MAX_TARGETS, ForwardAddress};
 pub use forwarding::{ActiveForwarding, FORWARD_LINK_LIFETIME_SECS, ForwardTarget, Forwarding, MAX_FORWARD_TARGETS};
 pub use imap::{DELETED_KEYWORD, FlagChange, ImapEmail, ImapMailbox, ImapMessage, ImapMessages, ImapStatus};
 pub use mail::{EmailSummary, IngestRequest, IngestedEmail, Mailbox, MailboxRole, MailboxTarget, TestMessageStatus};

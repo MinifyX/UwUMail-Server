@@ -1,6 +1,6 @@
-//! Passing mail on to the addresses a person forwards to.
+//! Passing mail on to the addresses a person or a forwarding address forwards to.
 
-use uwumail_store::{Account, IngestRequest, MailboxRole, MailboxTarget, NewQueueRecipient};
+use uwumail_store::{IngestRequest, MailboxRole, MailboxTarget, NewQueueRecipient};
 
 use crate::{Context, headers, srs};
 
@@ -27,11 +27,19 @@ pub(crate) async fn plan(ctx: &Context, account_id: i64) -> Plan {
     }
 }
 
+/// Whose mail is forwarded: a person's, or a forwarding address's, which has no account.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Forwarder<'a> {
+    /// The person's login or the forwarding address, for the log and the SRS domain.
+    pub name: &'a str,
+    pub account_id: Option<i64>,
+}
+
 /// Sends a received message on. `recipient` is the address it arrived for; it goes into a
 /// Delivered-To header, which also stops mail going round in circles between forwards.
 pub(crate) async fn send(
     ctx: &Context,
-    account: &Account,
+    forwarder: Forwarder<'_>,
     recipient: &str,
     envelope_from: &str,
     message: &[u8],
@@ -45,7 +53,7 @@ pub(crate) async fn send(
         .iter()
         .any(|field| field.name.eq_ignore_ascii_case("Delivered-To") && field.value().eq_ignore_ascii_case(recipient));
     if looped {
-        tracing::warn!(login = %account.login, %recipient, "not forwarding a message that was here before");
+        tracing::warn!(forwarder = %forwarder.name, %recipient, "not forwarding a message that was here before");
         return;
     }
     let mut forwarded = format!("Delivered-To: {recipient}\r\n").into_bytes();
@@ -64,7 +72,7 @@ pub(crate) async fn send(
                     received_at: None,
                 };
                 if let Err(err) = ctx.store.ingest(request).await {
-                    tracing::warn!(%err, login = %account.login, to = %address, "forwarding to a local mailbox failed");
+                    tracing::warn!(%err, forwarder = %forwarder.name, to = %address, "forwarding to a local mailbox failed");
                 }
             }
             None => remote.push(NewQueueRecipient { address: address.clone(), notify_flags: 0, orcpt: None }),
@@ -72,7 +80,7 @@ pub(crate) async fn send(
     }
 
     if !remote.is_empty() {
-        let our_domain = account.login.rsplit_once('@').map(|(_, domain)| domain).unwrap_or(&ctx.hostname);
+        let our_domain = forwarder.name.rsplit_once('@').map(|(_, domain)| domain).unwrap_or(&ctx.hostname);
         let sender_domain = envelope_from.rsplit_once('@').map(|(_, domain)| domain).unwrap_or_default();
         let return_path = if envelope_from.is_empty() || ctx.store.is_local_domain(sender_domain).await.unwrap_or(false)
         {
@@ -81,16 +89,18 @@ pub(crate) async fn send(
             match srs::secret(&ctx.store).await {
                 Some(secret) => srs::rewrite(&secret, envelope_from, our_domain),
                 None => {
-                    tracing::error!(login = %account.login, "no SRS secret, not forwarding to other servers");
+                    tracing::error!(forwarder = %forwarder.name, "no SRS secret, not forwarding to other servers");
                     return;
                 }
             }
         };
         let lifetime = ctx.live().delivery.max_lifetime_hours as i64 * 3600;
-        if let Err(err) = ctx.store.enqueue(&return_path, remote, &forwarded, Some(account.id), None, lifetime).await {
-            tracing::error!(%err, login = %account.login, "queueing a forward failed");
+        if let Err(err) =
+            ctx.store.enqueue(&return_path, remote, &forwarded, forwarder.account_id, None, lifetime).await
+        {
+            tracing::error!(%err, forwarder = %forwarder.name, "queueing a forward failed");
             return;
         }
     }
-    tracing::info!(login = %account.login, targets = targets.len(), "forwarded message");
+    tracing::info!(forwarder = %forwarder.name, targets = targets.len(), "forwarded message");
 }

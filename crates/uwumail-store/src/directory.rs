@@ -191,7 +191,8 @@ pub(crate) fn login_key(address: &str) -> Result<String> {
     Ok(format!("{local}@{domain}"))
 }
 
-/// Looks up the account an address delivers to, following sub-addresses and catch-alls.
+/// Looks up the account an address delivers to, following sub-addresses and catch-alls. A forwarding
+/// address has no account, and no catch-all takes its mail.
 ///
 /// Disabled accounts still receive mail; accounts in the trash do not.
 pub(crate) fn resolve(conn: &Connection, address: &str) -> Result<Option<i64>> {
@@ -228,6 +229,9 @@ pub(crate) fn resolve(conn: &Connection, address: &str) -> Result<Option<i64>> {
         && let Some(id) = lookup(base)?
     {
         return Ok(Some(id));
+    }
+    if crate::forward_addresses::forward_targets(conn, &local, domain_id)?.is_some() {
+        return Ok(None);
     }
     if catch_all.is_some() {
         return Ok(catch_all);
@@ -285,8 +289,12 @@ impl Store {
         let name = normalize_domain(name)?;
         self.write(move |tx| {
             let id = domain_id(tx, &name)?;
-            let in_use: i64 =
-                tx.query_row("SELECT count(*) FROM addresses WHERE domain_id = ?1", [id], |r| r.get(0))?;
+            let in_use: i64 = tx.query_row(
+                "SELECT (SELECT count(*) FROM addresses WHERE domain_id = ?1)
+                      + (SELECT count(*) FROM forward_addresses WHERE domain_id = ?1)",
+                [id],
+                |r| r.get(0),
+            )?;
             if in_use > 0 {
                 return Err(StoreError::Invalid(format!("{in_use} addresses still use {name}, remove them first")));
             }
@@ -465,12 +473,11 @@ impl Store {
             let domain_id = domain_id(tx, &domain)?;
             let login = format!("{local}@{domain}");
             let taken: bool = tx.query_row(
-                "SELECT EXISTS (SELECT 1 FROM addresses WHERE local_part = ?1 AND domain_id = ?2)
-                     OR EXISTS (SELECT 1 FROM accounts WHERE login = ?3)",
-                params![local, domain_id, login],
+                "SELECT EXISTS (SELECT 1 FROM accounts WHERE login = ?1)",
+                params![login],
                 |r| r.get(0),
             )?;
-            if taken {
+            if taken || crate::forward_addresses::address_in_use(tx, &local, domain_id)? {
                 return Err(StoreError::Conflict(format!("address {login}")));
             }
             let created_at = now();
@@ -622,6 +629,9 @@ impl Store {
                     code: "addressReserved",
                     message: format!("{local}@{domain} was deleted recently and is still reserved"),
                 });
+            }
+            if crate::forward_addresses::address_in_use(tx, &local, domain_id)? {
+                return Err(StoreError::Conflict(format!("address {local}@{domain}")));
             }
             tx.execute("DELETE FROM released_addresses WHERE local_part = ?1 AND domain_id = ?2", params![local, domain_id])?;
             tx.execute(

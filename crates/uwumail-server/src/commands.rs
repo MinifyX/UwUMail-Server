@@ -8,8 +8,8 @@ use uwumail_store::{
 };
 
 use crate::cli::{
-    AccountCommand, AliasCommand, DomainCommand, GatewayCommand, QueueCommand, SenderArgs, SenderKindArg, SpamCommand,
-    WordTarget, WordsCommand,
+    AccountCommand, AliasCommand, DomainCommand, ForwardCommand, GatewayCommand, QueueCommand, SenderArgs,
+    SenderKindArg, SpamCommand, WordTarget, WordsCommand,
 };
 use crate::config::Config;
 
@@ -273,6 +273,27 @@ pub async fn alias(store: &Store, command: AliasCommand) -> anyhow::Result<()> {
         AliasCommand::List { account } => {
             for address in store.addresses(&account).await? {
                 println!("{address}");
+            }
+        }
+    }
+    Ok(())
+}
+
+pub async fn forward(store: &Store, command: ForwardCommand) -> anyhow::Result<()> {
+    match command {
+        ForwardCommand::Set { address, targets, note } => {
+            let saved = store.set_forward_address(&address, targets, &note).await?;
+            audit(store, "domain.forwardAddress", &saved.address, json!({ "targets": saved.targets })).await;
+            println!("{} now forwards to {}", saved.address, saved.targets.join(", "));
+        }
+        ForwardCommand::Remove { address } => {
+            store.remove_forward_address(&address).await?;
+            audit(store, "domain.forwardAddressRemove", &address, json!({})).await;
+            println!("Removed {address}");
+        }
+        ForwardCommand::List { domain } => {
+            for forward in store.forward_addresses(domain).await? {
+                println!("{} -> {}", forward.address, forward.targets.join(", "));
             }
         }
     }
