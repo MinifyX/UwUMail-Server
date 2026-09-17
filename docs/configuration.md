@@ -40,6 +40,7 @@ data_dir = "/data"
 smtp = "[::]:25"
 submission = "[::]:587"
 submissions = "[::]:465"
+imaps = "[::]:993"     # IMAP with TLS for mail apps
 http = "[::]:80"       # ACME challenges and redirect to HTTPS
 https = "[::]:443"
 proxy = ""             # plain HTTP for a reverse proxy, e.g. "[::]:8080"

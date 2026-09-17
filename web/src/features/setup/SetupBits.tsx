@@ -296,7 +296,7 @@ export function TestMailPanel({ login, explain }: { login: string; explain: bool
 }
 
 /** Kinds of records that can be replaced when they hold another value. */
-const KINDS = ["mx", "spf", "dmarc", "dkim", "tlsrpt", "mtasts", "jmap", "submissions", "submission"] as const;
+const KINDS = ["mx", "spf", "dmarc", "dkim", "tlsrpt", "mtasts", "jmap", "imaps", "submissions", "submission"] as const;
 
 /** Puts missing records into Cloudflare with a token that is used once. */
 export function CloudflarePanel({

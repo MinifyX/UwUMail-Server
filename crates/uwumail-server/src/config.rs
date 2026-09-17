@@ -62,6 +62,8 @@ pub struct ListenConfig {
     pub smtp: String,
     pub submission: String,
     pub submissions: String,
+    /// IMAP over TLS for mail apps.
+    pub imaps: String,
     pub http: String,
     pub https: String,
     /// Plain HTTP for running behind a reverse proxy that terminates TLS.
@@ -74,6 +76,7 @@ impl Default for ListenConfig {
             smtp: "[::]:25".into(),
             submission: "[::]:587".into(),
             submissions: "[::]:465".into(),
+            imaps: "[::]:993".into(),
             http: "[::]:80".into(),
             https: "[::]:443".into(),
             proxy: String::new(),

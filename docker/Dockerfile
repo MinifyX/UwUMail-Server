@@ -54,7 +54,7 @@ USER 10001:10001
 # read-only root file system.
 ENV UWUMAIL_DATA_DIR=/data HOME=/data
 VOLUME /data
-EXPOSE 25 80 443 465 587
+EXPOSE 25 80 443 465 587 993
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s CMD ["/usr/local/bin/uwumail-server", "health"]
 ENTRYPOINT ["/usr/local/bin/uwumail-server"]
 CMD ["serve"]

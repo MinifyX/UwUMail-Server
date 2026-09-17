@@ -40,6 +40,8 @@ pub(crate) struct Active {
     pub connection: Connection,
     pub server: Fingerprint,
     pub hostname: String,
+    /// The public services the server takes; connections to the others are turned away.
+    pub services: Vec<Service>,
 }
 
 pub(crate) struct Shared {
@@ -162,12 +164,17 @@ impl Shared {
         self.hostname.read().expect("hostname poisoned").clone()
     }
 
-    fn welcome(&self) -> Welcome {
+    /// The open services the server takes: a server cannot read the names of newer ones.
+    fn shared_services(&self, hello: &Hello) -> Vec<Service> {
+        self.services.iter().copied().filter(|service| hello.services().contains(service)).collect()
+    }
+
+    fn welcome(&self, services: Vec<Service>) -> Welcome {
         Welcome {
             version: VERSION,
             software: format!("uwumail-gateway {}", env!("CARGO_PKG_VERSION")),
             addresses: self.public_addresses.clone(),
-            services: self.services.clone(),
+            services,
             outbound_ports: self.config.outbound.ports.clone(),
         }
     }
@@ -290,7 +297,10 @@ async fn handle_tunnel(shared: Arc<Shared>, incoming: Incoming) {
     };
 
     match shared.authorize(fingerprint, &hello).await {
-        Ok(hostname) => serve_server(shared, connection, control, fingerprint, hostname).await,
+        Ok(hostname) => {
+            let services = shared.shared_services(&hello);
+            serve_server(shared, connection, control, fingerprint, hostname, services).await
+        }
         Err((reason, message)) => {
             shared.record_refusal(remote.ip());
             tracing::warn!(%remote, ?reason, %fingerprint, "refused a tunnel");
@@ -309,13 +319,15 @@ async fn serve_server(
     mut control: TunnelStream,
     server: Fingerprint,
     hostname: String,
+    services: Vec<Service>,
 ) {
-    if proto::write_message(&mut control, &HelloReply::Welcome(shared.welcome())).await.is_err() {
+    let welcome = HelloReply::Welcome(shared.welcome(services.clone()));
+    if proto::write_message(&mut control, &welcome).await.is_err() {
         return;
     }
     let remote = connection.remote_address();
     *shared.hostname.write().expect("hostname poisoned") = hostname.clone();
-    let active = Active { connection: connection.clone(), server, hostname: hostname.clone() };
+    let active = Active { connection: connection.clone(), server, hostname: hostname.clone(), services };
     if let Some(previous) = shared.active.send_replace(Some(active)) {
         previous.connection.close(CLOSE_REPLACED, b"a newer connection of the server took over");
     }

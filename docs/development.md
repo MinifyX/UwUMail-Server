@@ -45,6 +45,7 @@ node dev/smoke.mjs   # portal login, then a mail: delivery and bounce
 | SMTP | 127.0.0.1:2525 | 127.0.0.1:4525 |
 | Submission (STARTTLS) | 127.0.0.1:2587 | 127.0.0.1:4587 |
 | Submission (TLS) | 127.0.0.1:2465 | 127.0.0.1:4465 |
+| IMAP (TLS) | 127.0.0.1:2993 | 127.0.0.1:4993 |
 | HTTPS | https://127.0.0.1:8443 | https://127.0.0.1:9443 |
 
 Accounts use the password `katzenpfote-123`. Management commands:

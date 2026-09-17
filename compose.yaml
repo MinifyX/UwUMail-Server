@@ -20,8 +20,9 @@ services:
     ports:
       - "25:25"     # mail from other servers
       - "80:80"     # certificate challenges, redirects to HTTPS
-      - "443:443"   # web (admin panel and web mail, coming soon)
+      - "443:443"   # web (portal and JMAP)
       - "465:465"   # mail apps, TLS
+      - "993:993"   # mail apps, IMAP with TLS
       - "587:587"   # mail apps, STARTTLS
     volumes:
       - uwumail-data:/data

@@ -166,6 +166,7 @@ export type RecordKind =
   | "mtastsHost"
   | "mtastsPolicy"
   | "jmap"
+  | "imaps"
   | "submissions"
   | "submission";
 

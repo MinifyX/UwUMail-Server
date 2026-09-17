@@ -12,7 +12,7 @@ use tokio::time::timeout;
 
 use crate::code::Token;
 use crate::identity::{CERTIFICATE_NAME, Fingerprint, Identity};
-use crate::proto::{self, Connect, ConnectReply, Hello, HelloReply, Open, Refusal, VERSION, Welcome};
+use crate::proto::{self, Connect, ConnectReply, Hello, HelloReply, Open, Refusal, Service, VERSION, Welcome};
 use crate::quic;
 use crate::stream::TunnelStream;
 
@@ -30,6 +30,8 @@ pub struct ClientSettings {
     pub identity: Identity,
     pub hostname: String,
     pub software: String,
+    /// The services this server takes from the gateway.
+    pub services: Vec<Service>,
     /// The token from the pairing code, until the gateway knows this server.
     pub token: Option<Token>,
 }
@@ -187,6 +189,7 @@ async fn session(
         hostname: settings.hostname.clone(),
         software: settings.software.clone(),
         token: settings.token.as_ref().map(Token::to_text),
+        services: Some(settings.services.clone()),
     };
     let answer = timeout(ANSWER_TIMEOUT, async {
         proto::write_message(&mut control, &hello).await?;

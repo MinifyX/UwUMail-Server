@@ -60,7 +60,7 @@ pub enum CheckStatus {
 #[serde(rename_all = "camelCase")]
 pub struct RecordCheck {
     /// "mx", "spf", "dmarc", "dkim", "tlsrpt", "mtasts", "mtastsHost", "mtastsPolicy", "jmap",
-    /// "submissions" or "submission".
+    /// "imaps", "submissions" or "submission".
     pub kind: &'static str,
     pub name: String,
     pub record_type: &'static str,
@@ -492,10 +492,11 @@ pub fn evaluate_dkim(key: &DkimKey, answer: Answer<String>) -> RecordCheck {
     record
 }
 
-/// The SRV records that let apps find the server: JMAP (RFC 8620) and submission (RFC 6186, 8314).
-pub fn service_records(domain: &str) -> [(&'static str, String, u16); 3] {
+/// The SRV records that let apps find the server: JMAP (RFC 8620), IMAP and submission (RFC 6186, 8314).
+pub fn service_records(domain: &str) -> [(&'static str, String, u16); 4] {
     [
         ("jmap", format!("_jmap._tcp.{domain}"), 443),
+        ("imaps", format!("_imaps._tcp.{domain}"), 993),
         ("submissions", format!("_submissions._tcp.{domain}"), 465),
         ("submission", format!("_submission._tcp.{domain}"), 587),
     ]
@@ -774,7 +775,7 @@ mod tests {
             })
             .await;
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
-        assert_eq!(report.records.len(), 7, "MX, SPF, DMARC, TLS reports and three SRV records");
+        assert_eq!(report.records.len(), 8, "MX, SPF, DMARC, TLS reports and four SRV records");
     }
 
     #[test]

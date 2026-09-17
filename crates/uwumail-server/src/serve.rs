@@ -82,6 +82,12 @@ pub async fn run(
             tasks.spawn(uwumail_smtp::serve(smtp.clone(), listener, kind, shutdown_rx.clone()));
         }
     }
+    // Mail apps may append messages as big as they may send.
+    let imap = uwumail_imap::Imap::new(store.clone(), config.smtp.max_message_size);
+    let mail_tls = tls::mail_server_config(certs.clone())?;
+    if let Some(listener) = bind(&config.listen.imaps, "mail apps (IMAP with TLS)").await? {
+        tasks.spawn(imap.clone().serve(listener, mail_tls.clone(), shutdown_rx.clone()));
+    }
     tasks.spawn(uwumail_smtp::run_queue(smtp.clone(), shutdown_rx.clone()));
     tasks.spawn(uwumail_smtp::run_learning(smtp.clone(), shutdown_rx.clone()));
     tasks.spawn(uwumail_smtp::run_list_updates(smtp.clone(), shutdown_rx.clone()));
@@ -143,7 +149,8 @@ pub async fn run(
         tasks.spawn(http::serve(listener, None, app, shutdown_rx.clone()));
     }
     // Connections that arrive through a UwUMail Gateway reach the same services.
-    gateway.start(gateway::Services { smtp: smtp.clone(), https_tls, https, http: redirect }, &config.gateway).await;
+    let services = gateway::Services { smtp: smtp.clone(), imap, mail_tls, https_tls, https, http: redirect };
+    gateway.start(services, &config.gateway).await;
 
     match config.tls.mode {
         TlsMode::Acme => {

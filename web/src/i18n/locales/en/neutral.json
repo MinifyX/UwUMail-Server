@@ -114,10 +114,11 @@
       "intro": "The UwUMail app only needs the server address. Other apps use these settings:",
       "server": "Server",
       "jmap": "JMAP",
+      "imap": "Reading (IMAP)",
+      "imapValue": "{{hostname}}, port 993 (TLS)",
       "submission": "Sending (SMTP)",
       "submissionValue": "{{hostname}}, port 465 (TLS) or 587 (STARTTLS)",
-      "username": "Username",
-      "imapSoon": "IMAP comes in a later update."
+      "username": "Username"
     },
     "details": {
       "title": "Details",
@@ -527,6 +528,7 @@
         "mtastsHost": "Other servers fetch the policy from this name. It has to point to this server.",
         "mtastsPolicy": "This is the policy as other servers see it. UwUMail serves it itself.",
         "jmap": "Lets apps like UwUMail find the server when you only enter your mail address.",
+        "imaps": "Tells mail apps where to read mail (IMAP, port 993).",
         "submissions": "Tells mail apps where to send mail with TLS (port 465).",
         "submission": "Tells mail apps where to send mail with STARTTLS (port 587)."
       },
@@ -589,6 +591,7 @@
         "mtastsHost": "MTA-STS address",
         "mtastsPolicy": "MTA-STS policy",
         "jmap": "App discovery (JMAP)",
+        "imaps": "Reading for mail apps (IMAP)",
         "submissions": "Sending for mail apps (TLS)",
         "submission": "Sending for mail apps (STARTTLS)"
       }

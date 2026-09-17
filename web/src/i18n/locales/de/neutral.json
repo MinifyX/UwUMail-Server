@@ -114,10 +114,11 @@
       "intro": "Die UwUMail-App braucht nur die Server-Adresse. Andere Apps nutzen diese Angaben:",
       "server": "Server",
       "jmap": "JMAP",
+      "imap": "Abrufen (IMAP)",
+      "imapValue": "{{hostname}}, Port 993 (TLS)",
       "submission": "Senden (SMTP)",
       "submissionValue": "{{hostname}}, Port 465 (TLS) oder 587 (STARTTLS)",
-      "username": "Benutzername",
-      "imapSoon": "IMAP kommt in einem späteren Update."
+      "username": "Benutzername"
     },
     "details": {
       "title": "Details",
@@ -527,6 +528,7 @@
         "mtastsHost": "Unter diesem Namen holen andere Server die Richtlinie ab. Er muss auf diesen Server zeigen.",
         "mtastsPolicy": "So sehen andere Server die Richtlinie. UwUMail liefert sie selbst aus.",
         "jmap": "Damit finden Apps wie UwUMail den Server, wenn du nur deine Mail-Adresse eingibst.",
+        "imaps": "Sagt Mail-Apps, wo sie Mails abrufen (IMAP, Port 993).",
         "submissions": "Sagt Mail-Apps, wo sie Mails verschlüsselt verschicken (Port 465).",
         "submission": "Sagt Mail-Apps, wo sie Mails mit STARTTLS verschicken (Port 587)."
       },
@@ -589,6 +591,7 @@
         "mtastsHost": "MTA-STS-Adresse",
         "mtastsPolicy": "MTA-STS-Richtlinie",
         "jmap": "App-Suche (JMAP)",
+        "imaps": "Abruf für Mail-Apps (IMAP)",
         "submissions": "Versand für Mail-Apps (TLS)",
         "submission": "Versand für Mail-Apps (STARTTLS)"
       }

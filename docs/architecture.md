@@ -5,6 +5,7 @@
  other mail servers ───▶ │ :25   SMTP (MX)  ──┐                                          │
  mail apps          ───▶ │ :587  submission ──┼─▶ uwumail-smtp ──▶ uwumail-store ──▶ /data│
                     ───▶ │ :465  submission ──┘      │  ▲             SQLite + blobs     │
+                    ───▶ │ :993  IMAP ───────▶ uwumail-imap ───────────┘                  │
                          │                           ▼  │                                │
  other mail servers ◀─── │                    delivery queue                            │
                          │                                                              │

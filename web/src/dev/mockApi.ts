@@ -207,6 +207,7 @@ function report(domain: MockDomain, healthy: boolean): DomainReport {
   }
   for (const [kind, service, port] of [
     ["jmap", "_jmap._tcp", 443],
+    ["imaps", "_imaps._tcp", 993],
     ["submissions", "_submissions._tcp", 465],
     ["submission", "_submission._tcp", 587],
   ] as const) {

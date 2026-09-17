@@ -44,6 +44,9 @@ pub struct StoredPairing {
 #[derive(Clone)]
 pub struct Services {
     pub smtp: Smtp,
+    pub imap: uwumail_imap::Imap,
+    /// TLS for mail apps (IMAP on 993).
+    pub mail_tls: Arc<rustls::ServerConfig>,
     pub https_tls: Arc<rustls::ServerConfig>,
     pub https: Router,
     pub http: Router,
@@ -63,6 +66,10 @@ impl Inbound for Services {
             Service::Https => {
                 let acceptor = TlsAcceptor::from(self.https_tls.clone());
                 tokio::spawn(http::serve_connection(stream, client, Some(acceptor), self.https.clone()));
+                return;
+            }
+            Service::Imaps => {
+                self.imap.serve_stream(stream, client, self.mail_tls.clone());
                 return;
             }
         };
@@ -156,6 +163,7 @@ impl GatewayManager {
             identity: pairing.identity.clone(),
             hostname: self.hostname.clone(),
             software: format!("uwumail-server {}", env!("CARGO_PKG_VERSION")),
+            services: Service::ALL.to_vec(),
             token: if pairing.confirmed { None } else { Token::from_text(&pairing.token) },
         };
         let client = TunnelClient::start(settings, Arc::new(services.clone()), self.shutdown.clone());
@@ -388,6 +396,7 @@ mod tests {
                 submissions: String::new(),
                 http: "127.0.0.1:0".into(),
                 https: "127.0.0.1:0".into(),
+                imaps: "127.0.0.1:0".into(),
             },
             outbound: OutboundConfig { ports: vec![25], allow_private: true },
             ..uwumail_gateway::GatewayConfig::default()
@@ -422,14 +431,16 @@ mod tests {
         .unwrap();
         let certificate = rcgen::generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
         let key = rustls_pki_types::PrivateKeyDer::Pkcs8(certificate.signing_key.serialize_der().into());
-        let mut tls =
+        let mail_tls =
             rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
                 .with_safe_default_protocol_versions()
                 .unwrap()
                 .with_no_client_auth()
                 .with_single_cert(vec![certificate.cert.der().clone()], key)
                 .unwrap();
+        let mut tls = mail_tls.clone();
         tls.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+        let imap = uwumail_imap::Imap::new(smtp.store().clone(), 1024 * 1024);
 
         let state = http::HttpState {
             hostname: "mail.example.com".into(),
@@ -444,6 +455,8 @@ mod tests {
         );
         let services = Services {
             smtp,
+            imap,
+            mail_tls: Arc::new(mail_tls),
             https_tls: Arc::new(tls),
             https: http::app(state.clone(), Router::new(), who, Arc::default()),
             http: http::redirect_app(state),
@@ -463,6 +476,7 @@ mod tests {
             identity: Identity::generate().unwrap(),
             hostname: "mail.example.com".into(),
             software: "test".into(),
+            services: Service::ALL.to_vec(),
             token: Some(code.token.clone()),
         };
         let client = TunnelClient::start(settings, Arc::new(services), running_until.subscribe());
@@ -549,12 +563,26 @@ mod tests {
                 .unwrap()
                 .with_root_certificates(roots)
                 .with_no_client_auth();
+        let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
         let socket = tokio::net::TcpStream::connect(gateway.listener(Service::Https).unwrap()).await.unwrap();
         let name = rustls_pki_types::ServerName::try_from("localhost").unwrap();
-        let tls = tokio_rustls::TlsConnector::from(Arc::new(config)).connect(name, socket).await.unwrap();
+        let tls = connector.connect(name.clone(), socket).await.unwrap();
         let response = http_get(tls, "/who").await;
         assert!(response.starts_with("HTTP/1.1 200"), "{response}");
         assert!(response.ends_with("127.0.0.1 https=true"), "{response}");
+
+        // Mail apps reach IMAP on 993, encrypted end to end as well.
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+        let socket = tokio::net::TcpStream::connect(gateway.listener(Service::Imaps).unwrap()).await.unwrap();
+        let tls = connector.connect(name, socket).await.unwrap();
+        let mut imap = tokio::io::BufReader::new(tls);
+        let mut greeting = String::new();
+        imap.read_line(&mut greeting).await.unwrap();
+        assert!(greeting.starts_with("* OK [CAPABILITY IMAP4rev1"), "{greeting}");
+        imap.get_mut().write_all(b"a LOGOUT\r\n").await.unwrap();
+        let mut bye = String::new();
+        imap.read_line(&mut bye).await.unwrap();
+        assert!(bye.starts_with("* BYE"), "{bye}");
     }
 
     #[test]

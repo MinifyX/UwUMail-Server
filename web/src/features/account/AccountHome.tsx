@@ -86,9 +86,9 @@ export function AccountHome({ session }: { session: Session }) {
           {simple && <p className="mb-2 text-[13px] text-muted">{t("account.apps.intro")}</p>}
           <KeyValue label={t("account.apps.server")} value={hostname} copy={hostname} />
           <KeyValue label={t("account.apps.jmap")} value={`https://${hostname}`} copy={`https://${hostname}`} />
+          <KeyValue label={t("account.apps.imap")} value={t("account.apps.imapValue", { hostname })} />
           <KeyValue label={t("account.apps.submission")} value={t("account.apps.submissionValue", { hostname })} />
           <KeyValue label={t("account.apps.username")} value={data.login} copy={data.login} />
-          {simple && <p className="mt-3 text-[12px] text-faint">{t("account.apps.imapSoon")}</p>}
         </Card>
 
         {!simple && (

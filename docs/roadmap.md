@@ -75,7 +75,8 @@ Each step ships as its own commits, container image and test deployment.
 
 ## 5. IMAP
 
-- [ ] IMAP4rev2 with CONDSTORE/QRESYNC, IDLE, MOVE, SPECIAL-USE, QUOTA, ACL
+- [x] IMAP4rev1 on port 993 (TLS) with IDLE, UIDPLUS, MOVE, SPECIAL-USE, LIST-EXTENDED, LIST-STATUS, ESEARCH, CONDSTORE, QRESYNC, QUOTA, UTF8=ACCEPT, also through the gateway
+- [ ] IMAP4rev2, ACL and shared folders
 - [ ] Autoconfig, Autodiscover and Apple configuration profiles (they need IMAP)
 
 ## 6. Web mail and external mailboxes

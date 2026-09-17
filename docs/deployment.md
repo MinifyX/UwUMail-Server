@@ -78,6 +78,7 @@ Recommended, mail works without them:
 | --- | --- |
 | `_smtp._tls.example.com TXT "v=TLSRPTv1; rua=mailto:tls-reports@example.com"` | Reports about TLS connections to the server |
 | `_jmap._tcp.example.com SRV 0 1 443 mail.example.com.` | Apps like UwUMail find the server from the address alone |
+| `_imaps._tcp` (993) SRV | Mail apps find where to read mail |
 | `_submissions._tcp` (465) and `_submission._tcp` (587) SRV | Mail apps find where to send |
 
 Show them again any time with `uwumail-server domain dns example.com`. The
@@ -118,6 +119,7 @@ certificate, and otherwise tries again later.
 
 | | Server | Port | Security |
 | --- | --- | --- | --- |
+| Reading (IMAP) | `mail.example.com` | 993 | TLS |
 | Sending | `mail.example.com` | 465 | TLS |
 | Sending | `mail.example.com` | 587 | STARTTLS |
 
@@ -126,7 +128,7 @@ app or passkey), or when switched on under *Security* in the portal, mail apps
 need an app password instead; the main password then only works in the portal.
 JMAP apps (like UwUMail) only need
 `https://mail.example.com`; they find everything else at `/.well-known/jmap`.
-IMAP follows in a later step (see the roadmap).
+IMAP is only offered with TLS on port 993, not with STARTTLS on 143.
 
 ## Behind a reverse proxy
 
@@ -179,8 +181,8 @@ Mailcow keeps port 25 and all other domains. Ready-made files:
    DMARC record (start with `p=none`). A subdomain needs its own DMARC record
    when the parent domain says `sp=reject`, or its mail is rejected.
 
-Mail apps in your own network connect straight to the UwUMail machine on 465
-or 587; a local DNS entry for the host name keeps certificates valid.
+Mail apps in your own network connect straight to the UwUMail machine on 993,
+465 or 587; a local DNS entry for the host name keeps certificates valid.
 
 ## Checking a live server
 

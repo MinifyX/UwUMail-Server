@@ -49,6 +49,7 @@ pub struct ListenConfig {
     pub submissions: String,
     pub http: String,
     pub https: String,
+    pub imaps: String,
 }
 
 impl Default for ListenConfig {
@@ -59,6 +60,7 @@ impl Default for ListenConfig {
             submissions: "[::]:465".into(),
             http: "[::]:80".into(),
             https: "[::]:443".into(),
+            imaps: "[::]:993".into(),
         }
     }
 }
@@ -71,6 +73,7 @@ impl ListenConfig {
             (Service::Submissions, &self.submissions),
             (Service::Http, &self.http),
             (Service::Https, &self.https),
+            (Service::Imaps, &self.imaps),
         ]
         .into_iter()
         .filter(|(_, address)| !address.is_empty())
@@ -187,7 +190,7 @@ mod tests {
     fn defaults_are_valid() {
         let config = GatewayConfig::default();
         config.validate().unwrap();
-        assert_eq!(config.listen.addresses().len(), 5);
+        assert_eq!(config.listen.addresses().len(), 6);
     }
 
     #[test]

@@ -12,6 +12,7 @@ name = "uwumail-server"
 path = "src/main.rs"
 
 [dependencies]
+uwumail-imap.workspace = true
 uwumail-jmap.workspace = true
 uwumail-smtp.workspace = true
 uwumail-store.workspace = true

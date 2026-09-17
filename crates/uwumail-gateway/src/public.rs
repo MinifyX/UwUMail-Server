@@ -47,7 +47,7 @@ async fn handle(shared: Arc<Shared>, mut tcp: TcpStream, client: SocketAddr, ser
         say_goodbye(&mut tcp, service, Goodbye::Busy, &shared.hostname()).await;
         return;
     };
-    let Some(active) = shared.active.borrow().clone() else {
+    let Some(active) = shared.active.borrow().clone().filter(|active| active.services.contains(&service)) else {
         say_goodbye(&mut tcp, service, Goodbye::Away, &shared.hostname()).await;
         return;
     };
@@ -100,7 +100,7 @@ fn goodbye(service: Service, reason: Goodbye, hostname: &str) -> Option<String> 
             "HTTP/1.1 503 Service Unavailable\r\nRetry-After: 120\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
                 .into(),
         ),
-        (Service::Submissions | Service::Https, _) => None,
+        (Service::Submissions | Service::Https | Service::Imaps, _) => None,
     }
 }
 

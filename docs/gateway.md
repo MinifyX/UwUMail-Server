@@ -20,7 +20,8 @@ only ever show the gateway, never your home address.
                                    VPS                                  at home
  other mail servers ──▶ ┌──────────────────────┐              ┌──────────────────────┐
  mail apps          ──▶ │   UwUMail Gateway    │  QUIC tunnel │    UwUMail Server    │
- browsers           ──▶ │ :25 :465 :587 :80 :443 ◀══════════════ dials out (UDP 443) │
+ browsers           ──▶ │ :25 :465 :587 :993   ◀════════════════ dials out (UDP 443) │
+                        │ :80 :443             │              │                      │
                         │                      │              │                      │
  other mail servers ◀── │ outgoing mail leaves │ ◀─ "connect" │ queue, DKIM, TLS     │
                         │ from the VPS address │              │ and all data         │
@@ -31,8 +32,8 @@ only ever show the gateway, never your home address.
   behind carrier-grade NAT or DS-Lite. The connection is QUIC with a certificate
   on each side; each side pins the other's fingerprint.
 - **TLS ends at home.** The gateway passes bytes along. It never sees passwords
-  or the content of TLS connections (ports 465 and 443, and port 25 and 587 after
-  STARTTLS); the certificate and its key stay on your server.
+  or the content of TLS connections (ports 465, 993 and 443, and port 25 and 587
+  after STARTTLS); the certificate and its key stay on your server.
 - **Real client addresses.** Each carried connection starts with the client's
   address, so SPF checks, login limits and logs work as if the server stood on
   the internet itself.
@@ -68,7 +69,7 @@ only ever show the gateway, never your home address.
 
   Until port 25 is open, the server can send through a relay on port 587; that
   connection goes through the gateway too.
-- **Open ports on the VPS:** TCP 25, 80, 443, 465 and 587 from everywhere, and
+- **Open ports on the VPS:** TCP 25, 80, 443, 465, 587 and 993 from everywhere, and
   UDP 443 for the tunnel.
 - **At home:** your UwUMail server may send UDP to the VPS.
 
@@ -113,7 +114,7 @@ table inet filter {
     ct state established,related accept
     iif lo accept
     meta l4proto { icmp, ipv6-icmp } accept
-    tcp dport { 22, 25, 80, 443, 465, 587 } accept
+    tcp dport { 22, 25, 80, 443, 465, 587, 993 } accept
     udp dport 443 accept
     # Do not leave these out on a VPS that gets its addresses by DHCP. A DHCPv6
     # answer arrives from another address than the multicast one it was asked

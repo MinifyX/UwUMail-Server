@@ -142,6 +142,7 @@ async fn mail_comes_in_and_goes_out_through_the_gateway() {
             submissions: String::new(),
             http: String::new(),
             https: String::new(),
+            imaps: String::new(),
         },
         outbound: OutboundConfig { ports: vec![b.mx.port()], allow_private: true },
         ..GatewayConfig::default()
@@ -168,6 +169,7 @@ async fn mail_comes_in_and_goes_out_through_the_gateway() {
         identity: Identity::generate().unwrap(),
         hostname: "mx.a.test".into(),
         software: "test".into(),
+        services: uwumail_tunnel::Service::FIRST.to_vec(),
         token: Some(code.token.clone()),
     };
     let client = TunnelClient::start(settings, Arc::new(BehindGateway(a.smtp.clone())), client_shutdown_rx);

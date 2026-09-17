@@ -2946,6 +2946,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uwumail-gateway",
+ "uwumail-imap",
  "uwumail-jmap",
  "uwumail-smtp",
  "uwumail-store",

@@ -22,6 +22,7 @@ services:
     ports:
       - "25:25"       # mail forwarded by the existing mail server
       - "465:465"     # mail apps, TLS
+      - "993:993"     # mail apps, IMAP with TLS
       - "587:587"     # mail apps, STARTTLS
       - "8080:8080"   # web, behind the reverse proxy
       - "443:443"     # web, straight from your own network (do not forward from the internet)

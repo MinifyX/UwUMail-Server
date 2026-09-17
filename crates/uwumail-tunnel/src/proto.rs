@@ -26,10 +26,16 @@ pub enum Service {
     Http,
     /// Port 443: the web portal, web mail and JMAP.
     Https,
+    /// Port 993: mail apps reading mail with IMAP over TLS.
+    Imaps,
 }
 
 impl Service {
-    pub const ALL: [Service; 5] =
+    pub const ALL: [Service; 6] =
+        [Service::Smtp, Service::Submission, Service::Submissions, Service::Http, Service::Https, Service::Imaps];
+
+    /// What servers from before `Hello::services` existed take: they cannot even read the others.
+    pub const FIRST: [Service; 5] =
         [Service::Smtp, Service::Submission, Service::Submissions, Service::Http, Service::Https];
 
     pub fn as_str(self) -> &'static str {
@@ -39,6 +45,7 @@ impl Service {
             Service::Submissions => "submissions",
             Service::Http => "http",
             Service::Https => "https",
+            Service::Imaps => "imaps",
         }
     }
 }
@@ -54,6 +61,15 @@ pub struct Hello {
     /// The one-time token of a pairing code, while pairing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
+    /// The services the server takes. Missing from older servers, which take [`Service::FIRST`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub services: Option<Vec<Service>>,
+}
+
+impl Hello {
+    pub fn services(&self) -> &[Service] {
+        self.services.as_deref().unwrap_or(&Service::FIRST)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -220,5 +236,20 @@ mod tests {
         let reply = HelloReply::Refused { reason: Refusal::OtherServer, message: String::new() };
         assert_eq!(serde_json::to_value(&reply).unwrap()["type"], "refused");
         assert_eq!(serde_json::to_value(Service::Submissions).unwrap(), "submissions");
+    }
+
+    #[test]
+    fn servers_without_a_service_list_take_the_first_services() {
+        let old: Hello = serde_json::from_str(r#"{"version":1,"hostname":"mail.example.de","software":"x"}"#).unwrap();
+        assert_eq!(old.services(), Service::FIRST);
+        let hello = Hello {
+            version: VERSION,
+            hostname: "mail.example.de".into(),
+            software: "x".into(),
+            token: None,
+            services: Some(Service::ALL.to_vec()),
+        };
+        let json = serde_json::to_value(&hello).unwrap();
+        assert_eq!(json["services"][5], "imaps");
     }
 }

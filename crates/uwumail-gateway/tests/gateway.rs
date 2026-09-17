@@ -29,6 +29,7 @@ fn config(dir: &Path, outbound_port: u16) -> GatewayConfig {
             submissions: String::new(),
             http: "127.0.0.1:0".into(),
             https: "127.0.0.1:0".into(),
+            imaps: String::new(),
         },
         outbound: OutboundConfig { ports: vec![25, outbound_port], allow_private: true },
         ..GatewayConfig::default()
@@ -100,6 +101,7 @@ fn start_client(code: &PairingCode, with_token: bool, stop: watch::Receiver<bool
         identity: Identity::generate().unwrap(),
         hostname: "mail.example.com".into(),
         software: "test".into(),
+        services: uwumail_tunnel::Service::FIRST.to_vec(),
         token: with_token.then(|| code.token.clone()),
     };
     TunnelClient::start(settings, Arc::new(Echo), stop)

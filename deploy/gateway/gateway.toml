@@ -15,6 +15,7 @@ submission = "[::]:587"   # mail apps, STARTTLS
 submissions = "[::]:465"  # mail apps, TLS
 http = "[::]:80"          # certificate challenges, redirect to HTTPS
 https = "[::]:443"        # web portal, web mail, JMAP
+imaps = "[::]:993"        # mail apps, IMAP with TLS
 
 # Connections the server makes through the gateway: only these ports on public addresses.
 [outbound]
