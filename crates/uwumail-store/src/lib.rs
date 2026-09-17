@@ -66,6 +66,8 @@ pub use mail::{EmailSummary, IngestRequest, IngestedEmail, Mailbox, MailboxRole,
 pub use mutate::{EmailUpdate, KeywordsChange, MailboxUpdate, MailboxesChange};
 pub use objects::{Changes, EmailRecord};
 pub use own::{MailboxUsage, OwnAddress, OwnAddresses, RELEASED_ADDRESS_SECS, ReleasedAddress};
+/// Checks a password hash from another server (bcrypt or Argon2) and returns how it would be stored.
+pub use password::import_hash as normalize_imported_password_hash;
 pub use query::{EmailFilter, EmailSort, EmailSortProperty};
 pub use queue::{NewQueueRecipient, QueueEntry, QueueRecipient, QueueRecipientStatus, QueuedMessage};
 pub use reports::{

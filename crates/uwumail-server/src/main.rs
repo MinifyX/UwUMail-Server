@@ -6,6 +6,7 @@ mod commands;
 mod config;
 mod gateway;
 mod http;
+mod import;
 mod serve;
 mod settings;
 mod tls;
@@ -85,6 +86,15 @@ async fn run(
         Command::Account(command) => commands::account(&config, &store, command).await,
         Command::Alias(command) => commands::alias(&store, command).await,
         Command::Forward(command) => commands::forward(&store, command).await,
+        Command::Import(crate::cli::ImportCommand::Mailcow { file, domain, dry_run }) => {
+            let names = match config.tone.language {
+                uwumail_smtp::Language::De => ("Kalender", "Kontakte"),
+                _ => ("Calendar", "Contacts"),
+            };
+            let settings = uwumail_dav::DavSettings { calendar_name: names.0.into(), addressbook_name: names.1.into() };
+            let dav = uwumail_dav::Dav::new(store.clone(), settings);
+            import::mailcow(&store, dav, &file, &domain, dry_run).await
+        }
         Command::Queue(command) => commands::queue(&store, command).await,
         Command::Gateway(command) => commands::gateway(&config, &store, command).await,
         Command::Spam(command) => commands::spam(&store, command).await,

@@ -16,7 +16,7 @@ use crate::config::Config;
 /// Password links from the command line work as long as those from the admin panel.
 const PASSWORD_LINK_LIFETIME_SECS: i64 = 7 * 24 * 3600;
 
-async fn audit(store: &Store, action: &str, target: &str, details: Value) {
+pub(crate) async fn audit(store: &Store, action: &str, target: &str, details: Value) {
     let entry = AuditEntry {
         actor_id: None,
         actor: "cli".into(),

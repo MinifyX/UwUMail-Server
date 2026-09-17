@@ -36,6 +36,9 @@ pub enum Command {
     /// The outgoing mail queue.
     #[command(subcommand)]
     Queue(QueueCommand),
+    /// Take over people, addresses and settings from another mail server.
+    #[command(subcommand)]
+    Import(ImportCommand),
     /// The UwUMail Gateway in front of this server.
     #[command(subcommand)]
     Gateway(GatewayCommand),
@@ -274,6 +277,21 @@ pub enum ForwardCommand {
     List {
         #[arg(long)]
         domain: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ImportCommand {
+    /// Import the file scripts/mailcow-export.sh wrote. Safe to run again: what exists stays.
+    Mailcow {
+        /// The export, or - to read it from standard input.
+        file: std::path::PathBuf,
+        /// Only this domain; repeat for more. All active domains when left out.
+        #[arg(long)]
+        domain: Vec<String>,
+        /// Show what would happen without changing anything.
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
