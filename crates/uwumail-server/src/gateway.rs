@@ -331,7 +331,7 @@ async fn load(store: &Store) -> anyhow::Result<Option<StoredPairing>> {
 
 /// The pairing to use: the stored one, or a new one when the configuration has a code that was
 /// not used yet.
-async fn prepare(store: &Store, config: &GatewayConfig) -> anyhow::Result<Option<StoredPairing>> {
+pub(crate) async fn prepare(store: &Store, config: &GatewayConfig) -> anyhow::Result<Option<StoredPairing>> {
     let stored = load(store).await?;
     let code = config.code.trim();
     if code.is_empty() {
@@ -343,7 +343,15 @@ async fn prepare(store: &Store, config: &GatewayConfig) -> anyhow::Result<Option
         && stored.gateway == code.fingerprint
         && stored.token == token
     {
-        return Ok(Some(stored.clone()));
+        // The gateway keeps its token until it was used, so a corrected code, with other addresses
+        // or another port, carries the same one. A confirmed pairing has proven its addresses.
+        if stored.confirmed || stored.addresses == code.addresses {
+            return Ok(Some(stored.clone()));
+        }
+        let pairing = StoredPairing { addresses: code.addresses, ..stored.clone() };
+        save(store, &pairing).await?;
+        tracing::info!(gateway = %pairing.gateway, "took the gateway's addresses from the corrected code");
+        return Ok(Some(pairing));
     }
     // A new code. Keeping this server's key does no harm and lets a gateway that still knows it
     // take the server back.
@@ -383,10 +391,22 @@ mod tests {
         assert!(prepare(&store, &GatewayConfig::default()).await.unwrap().is_none(), "no gateway, no pairing");
 
         let gateway = Identity::generate().unwrap();
-        let first = GatewayConfig { code: code(&gateway, &Token::generate()) };
+        let token = Token::generate();
+        let first = GatewayConfig { code: code(&gateway, &token) };
         let pairing = prepare(&store, &first).await.unwrap().unwrap();
         assert_eq!(pairing.gateway, gateway.fingerprint());
         assert!(!pairing.confirmed);
+
+        // The gateway showed a wrong port at first: the corrected code has the same token, and
+        // while the gateway has not accepted the pairing its addresses are taken over.
+        let elsewhere: SocketAddr = "192.0.2.10:4433".parse().unwrap();
+        let corrected =
+            PairingCode { addresses: vec![elsewhere], fingerprint: gateway.fingerprint(), token: token.clone() };
+        let moved = prepare(&store, &GatewayConfig { code: corrected.encode() }).await.unwrap().unwrap();
+        assert_eq!(moved.addresses, [elsewhere]);
+        assert_eq!(moved.identity.fingerprint(), pairing.identity.fingerprint(), "with the same key");
+        let pairing = prepare(&store, &first).await.unwrap().unwrap();
+        assert_eq!(pairing.addresses, ["192.0.2.10:443".parse::<SocketAddr>().unwrap()]);
 
         // Confirmed by the gateway; the same code in the configuration changes nothing after a restart.
         save(&store, &StoredPairing { confirmed: true, ..pairing.clone() }).await.unwrap();
@@ -394,6 +414,9 @@ mod tests {
         assert!(again.confirmed);
         assert_eq!(again.identity.fingerprint(), pairing.identity.fingerprint());
         assert!(prepare(&store, &GatewayConfig::default()).await.unwrap().unwrap().confirmed);
+        // A pairing that works has proven its addresses, so an old code with other ones changes nothing.
+        let kept = prepare(&store, &GatewayConfig { code: corrected.encode() }).await.unwrap().unwrap();
+        assert_eq!(kept.addresses, pairing.addresses);
 
         // After `uwumail-gateway unpair`: a new token for the same gateway pairs again, with the same key.
         let second = GatewayConfig { code: code(&gateway, &Token::generate()) };
