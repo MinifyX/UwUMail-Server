@@ -4,13 +4,15 @@
 //
 //   UWUMAIL_URL=https://mail.example.com UWUMAIL_LOGIN=test@example.com \
 //   UWUMAIL_PASSWORD_FILE=test.password node scripts/live-check.mjs \
-//     [--to someone@example.org ...] [--smtp host:587] [--wait-reply-from example.org] [--minutes 10]
+//     [--to someone@example.org ...] [--smtp host:587] [--imap host:993] [--wait-reply-from example.org] [--minutes 10]
 //
 // --to               send a check mail to these addresses (outside ones leave like any other mail:
 //                    through the relay, the gateway or directly)
 // --smtp             also log in on this submission port with STARTTLS; the certificate is checked
 //                    against the host name in UWUMAIL_URL, so host may be an address, e.g. the
 //                    gateway's public one when the name resolves to something else at home
+// --imap             also use IMAP with TLS like a mail app: capabilities, folders, QRESYNC, and IDLE
+//                    noticing a draft made through JMAP, which IMAP then deletes again
 // --wait-reply-from  wait for a mail from this address or domain and print its Authentication-Results,
 //                    e.g. with --to check-auth@verifier.port25.com --wait-reply-from port25.com
 
@@ -18,13 +20,14 @@ import { readFileSync } from "node:fs";
 import net from "node:net";
 import tls from "node:tls";
 
-const args = { to: [], smtp: null, waitReplyFrom: null, minutes: 10 };
+const args = { to: [], smtp: null, imap: null, waitReplyFrom: null, minutes: 10 };
 for (let i = 2; i < process.argv.length; i++) {
   const flag = process.argv[i];
   const value = process.argv[++i];
   if (value === undefined) throw new Error(`${flag} needs a value`);
   if (flag === "--to") args.to.push(value);
   else if (flag === "--smtp") args.smtp = value;
+  else if (flag === "--imap") args.imap = value;
   else if (flag === "--wait-reply-from") args.waitReplyFrom = value.toLowerCase();
   else if (flag === "--minutes") args.minutes = Number(value);
   else throw new Error(`unknown option ${flag}`);
@@ -179,6 +182,136 @@ async function smtpLogin(target, servername) {
   return `${certificate.issuer?.O ?? "?"}, valid until ${certificate.valid_to}`;
 }
 
+class Imap {
+  constructor(socket) {
+    this.socket = socket;
+    this.buffer = Buffer.alloc(0);
+    this.lines = [];
+    this.waiters = [];
+    this.tag = 0;
+    socket.on("data", (chunk) => {
+      this.buffer = Buffer.concat([this.buffer, chunk]);
+      this.split();
+    });
+  }
+
+  /** Complete response lines, with the data of literals kept inline. */
+  split() {
+    for (;;) {
+      let end = this.buffer.indexOf("\r\n");
+      let consumed = 0;
+      while (end >= 0) {
+        const head = this.buffer.subarray(consumed, end).toString("latin1");
+        const literal = /\{(\d+)\}$/.exec(head);
+        if (!literal) break;
+        consumed = end + 2 + Number(literal[1]);
+        if (this.buffer.length < consumed) return;
+        end = this.buffer.indexOf("\r\n", consumed);
+      }
+      if (end < 0) return;
+      this.lines.push(this.buffer.subarray(0, end).toString("utf8"));
+      this.buffer = this.buffer.subarray(end + 2);
+      while (this.waiters.length > 0 && this.lines.length > 0) this.waiters.shift()(this.lines.shift());
+    }
+  }
+
+  next(seconds = 20) {
+    if (this.lines.length > 0) return Promise.resolve(this.lines.shift());
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("IMAP: no answer in time")), seconds * 1000);
+      this.waiters.push((line) => {
+        clearTimeout(timer);
+        resolve(line);
+      });
+    });
+  }
+
+  async command(line) {
+    const tag = `c${++this.tag}`;
+    this.socket.write(`${tag} ${line}\r\n`);
+    const untagged = [];
+    for (;;) {
+      const answer = await this.next();
+      if (!answer.startsWith(`${tag} `)) {
+        untagged.push(answer);
+        continue;
+      }
+      if (!answer.startsWith(`${tag} OK`)) throw new Error(`IMAP "${line.split(" ")[0]}" got "${answer}"`);
+      return untagged;
+    }
+  }
+}
+
+/** IMAP like a mail app: login, folders, QRESYNC, and IDLE hearing about a draft made through JMAP. */
+async function checkImap(target, servername, session, accountId, mailboxes) {
+  const [host, port] = target.split(":");
+  const socket = tls.connect({ host, port: Number(port ?? 993), servername });
+  await new Promise((resolve, reject) => socket.once("secureConnect", resolve).once("error", reject));
+  const imap = new Imap(socket);
+  const greeting = await imap.next();
+  if (!greeting.startsWith("* OK")) throw new Error(`IMAP greeting: ${greeting}`);
+  const token = Buffer.from(`${NUL}${login}${NUL}${password}`).toString("base64");
+  await imap.command(`AUTHENTICATE PLAIN ${token}`);
+  const capabilities = (await imap.command("CAPABILITY")).join(" ");
+  for (const needed of ["IDLE", "UIDPLUS", "MOVE", "SPECIAL-USE", "CONDSTORE", "QRESYNC"]) {
+    if (!capabilities.includes(` ${needed}`)) throw new Error(`IMAP lacks ${needed}`);
+  }
+  const folders = await imap.command('LIST "" "*"');
+  const sent = folders.find((line) => line.includes("\\Sent"));
+  if (!folders.some((line) => line.endsWith('"INBOX"')) || !sent) throw new Error(`IMAP folders: ${folders.join(" | ")}`);
+  await imap.command("ENABLE QRESYNC");
+  const inbox = await imap.command("SELECT INBOX");
+  const exists = inbox.find((line) => line.endsWith(" EXISTS"));
+  if (!inbox.some((line) => line.includes("[HIGHESTMODSEQ "))) throw new Error("IMAP SELECT has no HIGHESTMODSEQ");
+  if (exists && !exists.startsWith("* 0 ")) {
+    const fetched = await imap.command("FETCH * (UID FLAGS ENVELOPE BODYSTRUCTURE BODY.PEEK[HEADER.FIELDS (SUBJECT)])");
+    if (!fetched.some((line) => line.includes("BODYSTRUCTURE ("))) throw new Error("IMAP FETCH has no BODYSTRUCTURE");
+  }
+
+  const drafts = mailboxes.list.find((mailbox) => mailbox.role === "drafts");
+  const draftsName = folders.find((line) => line.includes("\\Drafts"))?.match(/"([^"]+)"$/)?.[1];
+  if (!draftsName) throw new Error("IMAP shows no Drafts folder");
+  await imap.command(`SELECT "${draftsName}"`);
+  imap.socket.write("idle IDLE\r\n");
+  if (!(await imap.next()).startsWith("+")) throw new Error("IMAP IDLE was not accepted");
+  const [[, created]] = await api(session, [
+    [
+      "Email/set",
+      {
+        accountId,
+        create: {
+          draft: {
+            mailboxIds: { [drafts.id]: true },
+            keywords: { $draft: true, $seen: true },
+            subject: `UwUMail IMAP check ${runId}`,
+            bodyValues: { text: { value: "IMAP check, deleted again right away" } },
+            textBody: [{ partId: "text", type: "text/plain" }],
+          },
+        },
+      },
+      "0",
+    ],
+  ]);
+  let line;
+  do line = await imap.next(20);
+  while (!line.endsWith(" EXISTS"));
+  imap.socket.write("DONE\r\n");
+  do line = await imap.next();
+  while (line.startsWith("* "));
+  if (!line.startsWith("idle OK")) throw new Error(`IMAP IDLE did not end: ${line}`);
+  const found = await imap.command(`UID SEARCH SUBJECT "UwUMail IMAP check ${runId}"`);
+  const uid = found.find((entry) => entry.startsWith("* SEARCH "))?.split(" ")[2];
+  if (!uid) throw new Error(`IMAP did not find the draft: ${found.join(" | ")}`);
+  await imap.command(`UID STORE ${uid} +FLAGS.SILENT (\\Deleted)`);
+  const vanished = await imap.command(`UID EXPUNGE ${uid}`);
+  if (!vanished.some((entry) => entry === `* VANISHED ${uid}`)) throw new Error(`IMAP expunge: ${vanished.join(" | ")}`);
+  const [[, gone]] = await api(session, [["Email/get", { accountId, ids: [created.created.draft.id], properties: ["id"] }, "0"]]);
+  if (gone.notFound?.length !== 1) throw new Error("the draft deleted through IMAP is still there in JMAP");
+  await imap.command("LOGOUT");
+  socket.end();
+  return folders.length;
+}
+
 /** The web portal: its page and headers, then a login, the account page's data and a logout. */
 async function checkPortal() {
   const page = await fetch(`${base}/account`);
@@ -233,6 +366,10 @@ const identity = identities.list.find((entry) => entry.email === login) ?? ident
 ok(`${mailboxes.list.length} mailboxes, identity ${identity.email}`);
 
 if (args.smtp) ok(`SMTP login on ${args.smtp}, certificate by ${await smtpLogin(args.smtp, new URL(base).hostname)}`);
+if (args.imap) {
+  const folders = await checkImap(args.imap, new URL(base).hostname, session, accountId, mailboxes);
+  ok(`IMAP on ${args.imap}: ${folders} folders, QRESYNC, IDLE saw a JMAP draft, UID EXPUNGE removed it`);
+}
 
 if (args.to.length > 0) {
   const subject = `UwUMail live check ${runId}`;
