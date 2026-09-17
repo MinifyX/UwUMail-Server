@@ -120,9 +120,15 @@ On the VPS:
 
 | Command | |
 | --- | --- |
-| `uwumail-gateway code` | Shows the pairing code (also in `journalctl -u uwumail-gateway`) |
-| `uwumail-gateway unpair` | Forgets the paired server; the gateway disconnects it and makes a new code |
-| `uwumail-gateway check-config` | Checks the configuration |
+| `sudo uwumail-gateway code` | Shows the pairing code (also in `journalctl -u uwumail-gateway`) |
+| `sudo uwumail-gateway unpair` | Forgets the paired server; the gateway disconnects it and makes a new code |
+| `uwumail-gateway --config /etc/uwumail-gateway/gateway.toml check-config` | Checks the configuration |
+
+Only the service reads `/etc/uwumail-gateway/gateway.toml` by itself; a command
+reads it when `--config` names it. With the stock file that makes no
+difference. Once you set `public_addresses`, `tunnel` or `state_dir` in it, add
+`--config /etc/uwumail-gateway/gateway.toml` to `code` and `unpair` as well, or
+the code carries the wrong addresses or port.
 
 A firewall that only lets through what the gateway needs, for example with
 nftables:
@@ -151,29 +157,51 @@ table inet filter {
 A pairing code looks like `uwugw1…` and contains the gateway's addresses, the
 fingerprint of its certificate and a one-time token.
 
-**In the portal:** the setup assistant has a step *Reachability* right after
-the admin account. It checks whether your connection is a home connection
-(Spamhaus PBL), whether its reverse DNS was made up by the provider, which
-network it belongs to and whether port 25 works, and recommends a gateway or
-sending directly. Choose *Through a gateway*, paste the code and pair; the
-panel shows when the tunnel is up and where the host name has to point. The
-same checks and the pairing stay under *Server → Setup*. Pairing and
-forgetting ask for your password again.
+**In the configuration:** the way for a fresh install, before the first start.
+The host name already points to the gateway, so the setup assistant can only be
+reached through it once the server is paired; an unpaired gateway closes port
+443 and answers 503 on port 80. With the stock `compose.yaml`, the code goes
+into `.env`:
 
-**In the configuration:** put the code into the configuration,
+```bash
+UWUMAIL_GATEWAY_CODE=uwugw1…
+```
+
+`compose.yaml` hands it to the server as `UWUMAIL_GATEWAY__CODE`. With your own
+compose file, set that variable yourself; in a TOML configuration it is
 
 ```toml
 [gateway]
 code = "uwugw1…"
 ```
 
-or into `UWUMAIL_GATEWAY__CODE`, and restart the server. The log shows
-`paired with the UwUMail Gateway` and then `connected to the UwUMail Gateway`.
+The stock `compose.yaml` always sets `UWUMAIL_GATEWAY__CODE`, empty when `.env`
+has no code, and the environment wins over a config file. With that file the
+code belongs in `.env`; a `[gateway] code` in a mounted TOML file is ignored.
+
+Then start the server. When it already runs, `sudo docker compose up -d` picks
+up the changed `.env`; `restart` does not. The server pairs without an admin
+account. The log shows `paired with the UwUMail Gateway` and then
+`connected to the UwUMail Gateway`, and as soon as the tunnel is connected the
+server asks Let's Encrypt for its certificate (`got a fresh certificate`).
+
+**In the portal:** the second way, for a portal you can reach without the
+gateway: a server whose name still points to it, or the server's address in
+your network. The setup assistant has a step *Reachability* right after
+the admin account. It checks whether your connection is a home connection
+(Spamhaus PBL), whether its reverse DNS was made up by the provider, which
+network it belongs to and whether port 25 works, and recommends a gateway or
+sending directly. Choose *Through a gateway*, paste the code and pair; the
+panel shows when the tunnel is up and where the host name has to point. After a
+pairing from the configuration it shows the gateway as already paired. The
+same checks and the pairing stay under *Server → Setup*. Pairing and
+forgetting ask for your password again.
 
 The token only works once: the gateway now knows your server by its
 certificate, and the server keeps its key and the pairing in its database, so
-the code may stay in the configuration. `uwumail-server gateway show` shows the
-pairing, `uwumail-server gateway forget` removes it.
+the code may stay in the configuration. A code there that differs from a
+pairing made in the portal replaces it at the next restart, so keep the two the
+same or take the code out. `uwumail-server gateway show` shows the pairing.
 
 From then on, mail to other servers **only** leaves through the gateway, also
 while it is unreachable (it waits in the queue instead of leaking your home
@@ -181,8 +209,11 @@ address). Servers in your own network, like fixed routes to private
 addresses, are still reached directly. The health overview has a *Gateway* area
 that turns yellow when the tunnel is down and red after five minutes.
 
-To pair another server with the gateway, run `uwumail-gateway unpair` on the
-VPS and use the new code.
+`uwumail-server gateway forget`, or *Forget gateway* in the portal, removes the
+pairing together with this server's tunnel key, and a new data volume has
+neither. The server then pairs with a new key, and the gateway, which still
+knows the old one, refuses it: run `sudo uwumail-gateway unpair` on the VPS and
+use the new code. The same goes for pairing another server with the gateway.
 
 ## DNS records
 
@@ -196,7 +227,11 @@ Everything that pointed to your server now points to the gateway:
 | Reverse DNS of the gateway's addresses | `mail.example.com`, set at the VPS provider |
 
 In your home network, a local DNS entry for `mail.example.com` can keep pointing
-straight to your server, so mail apps at home don't take the detour.
+straight to your server, so mail apps at home don't take the detour. The entry
+moves the whole name, so the home machine then has to answer on ports 443, 993,
+465 and 587 itself. When another web server holds port 443 there, the simplest
+is to skip the entry and use the gateway from home too; see
+[deployment.md](deployment.md#behind-a-reverse-proxy).
 
 ## Good to know
 

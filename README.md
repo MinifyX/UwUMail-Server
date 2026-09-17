@@ -70,8 +70,10 @@ docker compose up -d
 docker compose logs uwumail | grep "one-time code"
 ```
 
-Then open `https://mail.example.com/setup` and enter the code. The whole way,
-with DNS, the gateway, mail apps and backups, is in
+Then open `https://mail.example.com/setup` and enter the code. With a gateway,
+its pairing code goes into `.env` before the first start, and when ports 80 and
+443 are already taken on the machine, `.env` moves them. Both, and the whole
+way with DNS, the gateway, mail apps and backups, are in
 **[docs/install.md](docs/install.md)**.
 
 Coming from mailcow? [docs/migrating-from-mailcow.md](docs/migrating-from-mailcow.md).
