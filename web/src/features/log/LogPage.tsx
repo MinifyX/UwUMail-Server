@@ -40,6 +40,10 @@ const KNOWN_ACTIONS = new Set([
   "spamLearnFromFolders",
   "spamSenderAdd",
   "spamSenderRemove",
+  "spamWordsAdd",
+  "spamWordRemove",
+  "spamWordSourceAdd",
+  "spamWordSourceRemove",
 ]);
 
 function actorName(actor: string, t: TFunction) {
@@ -67,6 +71,14 @@ export function detailText(record: AuditRecord, t: TFunction, language: string):
   if (typeof details.name === "string") parts.push(t("log.details.name", { value: details.name }));
   if (details.invited === true) parts.push(t("log.details.invited"));
   if (details.reason === "trash") parts.push(t("log.details.reasonTrash"));
+  if (record.action.startsWith("spam.word")) {
+    if (typeof details.added === "number") parts.push(t("log.details.wordsAdded", { count: details.added }));
+    parts.push(
+      typeof details.domain === "string"
+        ? t("log.details.senderDomain", { domain: details.domain })
+        : t("log.details.senderServer"),
+    );
+  }
   if (record.action.startsWith("spam.sender")) {
     if (details.list === "allow" || details.list === "block") {
       parts.push(t(details.list === "allow" ? "log.details.senderAllow" : "log.details.senderBlock"));

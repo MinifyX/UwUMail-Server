@@ -229,7 +229,12 @@
       "learningBusy": "The filter still has a lot of mail to learn. Please try again later.",
       "senderInvalid": "That does not look like an address, domain, IP address or host name. Networks may be at most /8 (IPv4) or /16 (IPv6) wide, and domains need at least one dot.",
       "senderListed": "This sender is already on the list. To switch it, remove it first.",
-      "senderListFull": "The list is full. Remove old entries first."
+      "senderListFull": "The list is full. Remove old entries first.",
+      "wordInvalid": "That is no usable entry. Points have to be between 0.1 and 10.",
+      "wordSourceInvalid": "This link cannot be subscribed to: https only, and no addresses in your own network.",
+      "wordSourcesFull": "As many lists as possible are subscribed already.",
+      "wordSourceListed": "This list is subscribed already.",
+      "feedInactive": "This list is switched off or still waits for the Auth-Key."
     }
   },
   "people": {
@@ -415,7 +420,11 @@
       "accountAliasLimit": "{{actor}} changed the address limit of {{target}}",
       "spamLearnFromFolders": "{{actor}} had the spam filter learn from existing mail",
       "spamSenderAdd": "{{actor}} put {{target}} on a sender list",
-      "spamSenderRemove": "{{actor}} took {{target}} off a sender list"
+      "spamSenderRemove": "{{actor}} took {{target}} off a sender list",
+      "spamWordsAdd": "{{actor}} added entries to the word list of {{target}}",
+      "spamWordRemove": "{{actor}} removed {{target}} from a word list",
+      "spamWordSourceAdd": "{{actor}} subscribed to the word list {{target}}",
+      "spamWordSourceRemove": "{{actor}} unsubscribed from {{target}}"
     },
     "details": {
       "adminOn": "is now an admin",
@@ -429,7 +438,9 @@
       "senderAllow": "allowed",
       "senderBlock": "blocked",
       "senderDomain": "for {{domain}}",
-      "senderServer": "for the whole server"
+      "senderServer": "for the whole server",
+      "wordsAdded_one": "{{count}} entry",
+      "wordsAdded_other": "{{count}} entries"
     }
   },
   "password": {
@@ -1482,6 +1493,82 @@
       "empty": "No senders listed yet.",
       "allowedTitle": "Allowed ({{count}})",
       "blockedTitle": "Blocked ({{count}})"
+    },
+    "words": {
+      "title": "Word list",
+      "titleAdmin": "Word lists for the server and domains",
+      "explain": "Words, phrases or expressions that make mail to you suspicious. Each match in the subject or text gives {{points}} points, all word lists together at most {{max}}. Paste Rspamd maps like /\\sviagra\\s/i as they are.",
+      "explainAdmin": "Words, phrases or expressions that make mail suspicious, for the whole server or one domain. Each match in the subject or text gives {{points}} points, all word lists together at most {{max}}. Rspamd maps like /\\sviagra\\s/i can be pasted as they are or subscribed to by link.",
+      "entries": "Entries",
+      "entriesHint": "One entry per line. A word matches whole words only, in any case; /expression/i is read as a regular expression. Lines starting with # are skipped.",
+      "placeholder": "casino\nweb development\n/\\sjackpot\\s/i",
+      "points": "Points per match",
+      "add": "Add",
+      "imported": "{{added}} added, {{duplicates}} already listed, {{refused}} not usable.",
+      "moreRefused": "… and {{count}} more",
+      "subscribeTitle": "Subscribe to a list by link",
+      "url": "Link to the list",
+      "urlHint": "https only. The server fetches the list right away and then daily; at most 1 MB.",
+      "subjectOnly": "Look in the subject only",
+      "subjectOnlyHint": "For lists of subjects, e.g. from mailcow.",
+      "subjectOnlyShort": "subject only",
+      "subscribe": "Subscribe",
+      "subscribed": "Subscribed and fetched.",
+      "subscribedFailed": "Subscribed, but not fetched yet: {{error}}",
+      "fetched": "Fetched the list again.",
+      "fetchFailed": "Fetching failed: {{error}}",
+      "notFetched": "not fetched yet",
+      "sourceState": "{{entries}} entries · fetched {{when}}",
+      "refresh": "Fetch now",
+      "unsubscribe": "Unsubscribe",
+      "listTitle": "Own entries ({{count}})",
+      "filter": "Search entries",
+      "empty": "No entries of your own yet.",
+      "pointsShort": "{{points}} points",
+      "remove": "Remove {{entry}}",
+      "more": "… and {{count}} more; narrow the search"
+    },
+    "feeds": {
+      "title": "Built-in lists",
+      "intro": "Lists the server fetches regularly by itself. Each can be switched off; fetching them means the server contacts their providers.",
+      "lists": {
+        "urlhaus": {
+          "label": "Malware links (abuse.ch URLhaus)",
+          "hint": "Links to malware that is online right now. A match gives 10 points. Needs the Auth-Key."
+        },
+        "malware_bazaar": {
+          "label": "Malware attachments (abuse.ch MalwareBazaar)",
+          "hint": "Files reported as malware in the last two days. A match gives 10 points. Needs the Auth-Key."
+        },
+        "bad_subjects": {
+          "label": "Spam subjects (mailcow)",
+          "hint": "Subjects of current spam waves; each match counts like a word on the server's list. Only reachable without encryption, so expressions that match ordinary subjects are dropped."
+        },
+        "disposable": {
+          "label": "Throwaway addresses (Rspamd)",
+          "hint": "Senders with a throwaway address get 1.5 points."
+        },
+        "freemail": {
+          "label": "Freemail providers (Rspamd)",
+          "hint": "2 points when replies are meant to go to a freemail address although the sender has none."
+        },
+        "redirectors": {
+          "label": "Link shorteners (Rspamd)",
+          "hint": "0.5 points for links through shorteners like bit.ly. The server never opens the links."
+        }
+      },
+      "key": "abuse.ch Auth-Key",
+      "keyHint": "Free at auth.abuse.ch, for non-commercial use only. Without a key the two abuse.ch lists stay off.",
+      "keySet": "A key is stored. A new one replaces it.",
+      "keyRemove": "Remove key",
+      "off": "Switched off",
+      "waitsForKey": "Waits for the Auth-Key",
+      "notYet": "Not fetched yet",
+      "failed": "The last fetch failed: {{error}}",
+      "fetched_one": "{{entries}} entry · fetched {{when}}",
+      "fetched_other": "{{entries}} entries · fetched {{when}}",
+      "refresh": "Fetch now",
+      "refreshed": "Fetched the list."
     }
   }
 }

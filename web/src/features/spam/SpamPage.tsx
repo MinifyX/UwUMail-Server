@@ -16,7 +16,9 @@ import {
 import { useErrorText } from "@/lib/errors";
 import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
+import { FeedsCard } from "./FeedsCard";
 import { SenderListCard } from "./SenderListCard";
+import { WordListCard } from "./WordListCard";
 
 const accountKey = ["account", "spam"] as const;
 const adminKey = ["admin", "spam"] as const;
@@ -82,6 +84,7 @@ export function AccountSpamPage() {
     <div className="flex flex-col gap-5">
       <PageHeader title={t("spam.account.title")} intro={t("spam.account.intro")} />
       <SenderListCard admin={false} />
+      <WordListCard admin={false} />
       <Card title={t("spam.bayes.title")}>
         <div className="flex flex-col gap-4">
           <p className="-mt-1 text-[13px] text-muted">{t("spam.bayes.explain")}</p>
@@ -139,7 +142,9 @@ export function AdminSpamPage() {
       >
         {(form) => <SpamFields form={form} pro={pro} />}
       </Section>
+      <FeedsCard view={settings.data} />
       <SenderListCard admin />
+      <WordListCard admin />
       <Card title={t("spam.bayes.title")}>
         <div className="flex flex-col gap-4">
           <p className="-mt-1 text-[13px] text-muted">{t("spam.bayes.explainAdmin")}</p>

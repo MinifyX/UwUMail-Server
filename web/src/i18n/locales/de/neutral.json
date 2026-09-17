@@ -229,7 +229,12 @@
       "learningBusy": "Der Filter hat gerade noch sehr viele Mails zu lernen. Versuch es später wieder.",
       "senderInvalid": "Das sieht nicht nach Adresse, Domain, IP-Adresse oder Hostname aus. Netze dürfen höchstens /8 (IPv4) oder /16 (IPv6) groß sein, Domains brauchen mindestens einen Punkt.",
       "senderListed": "Dieser Absender steht schon auf der Liste. Um ihn umzustellen, entferne ihn zuerst.",
-      "senderListFull": "Die Liste ist voll. Entferne zuerst alte Einträge."
+      "senderListFull": "Die Liste ist voll. Entferne zuerst alte Einträge.",
+      "wordInvalid": "Das ist kein verwendbarer Eintrag. Punkte müssen zwischen 0,1 und 10 liegen.",
+      "wordSourceInvalid": "Dieser Link lässt sich nicht abonnieren: nur https, keine Adressen im eigenen Netz.",
+      "wordSourcesFull": "Es sind schon so viele Listen abonniert, wie möglich sind.",
+      "wordSourceListed": "Diese Liste ist schon abonniert.",
+      "feedInactive": "Diese Liste ist ausgeschaltet oder wartet noch auf den Auth-Key."
     }
   },
   "people": {
@@ -415,7 +420,11 @@
       "accountAliasLimit": "{{actor}} hat das Adress-Limit von {{target}} geändert",
       "spamLearnFromFolders": "{{actor}} hat den Spamfilter aus vorhandener Post lernen lassen",
       "spamSenderAdd": "{{actor}} hat {{target}} auf eine Absenderliste gesetzt",
-      "spamSenderRemove": "{{actor}} hat {{target}} von einer Absenderliste genommen"
+      "spamSenderRemove": "{{actor}} hat {{target}} von einer Absenderliste genommen",
+      "spamWordsAdd": "{{actor}} hat Einträge zur Wortliste von {{target}} hinzugefügt",
+      "spamWordRemove": "{{actor}} hat {{target}} von einer Wortliste entfernt",
+      "spamWordSourceAdd": "{{actor}} hat die Wortliste {{target}} abonniert",
+      "spamWordSourceRemove": "{{actor}} hat das Abo {{target}} beendet"
     },
     "details": {
       "adminOn": "ist jetzt Admin",
@@ -429,7 +438,9 @@
       "senderAllow": "erlaubt",
       "senderBlock": "blockiert",
       "senderDomain": "für {{domain}}",
-      "senderServer": "für den ganzen Server"
+      "senderServer": "für den ganzen Server",
+      "wordsAdded_one": "{{count}} Eintrag",
+      "wordsAdded_other": "{{count}} Einträge"
     }
   },
   "password": {
@@ -1482,6 +1493,82 @@
       "empty": "Noch keine Absender eingetragen.",
       "allowedTitle": "Erlaubt ({{count}})",
       "blockedTitle": "Blockiert ({{count}})"
+    },
+    "words": {
+      "title": "Wortliste",
+      "titleAdmin": "Wortlisten für Server und Domains",
+      "explain": "Wörter, Wortgruppen oder Ausdrücke, die eine Mail an dich verdächtig machen. Jeder Treffer im Betreff oder Text gibt {{points}} Punkte, alle Wortlisten zusammen höchstens {{max}}. Rspamd-Maps wie /\\sviagra\\s/i kannst du direkt einfügen.",
+      "explainAdmin": "Wörter, Wortgruppen oder Ausdrücke, die Mails verdächtig machen, für den ganzen Server oder eine Domain. Jeder Treffer im Betreff oder Text gibt {{points}} Punkte, alle Wortlisten zusammen höchstens {{max}}. Rspamd-Maps wie /\\sviagra\\s/i lassen sich direkt einfügen oder per Link abonnieren.",
+      "entries": "Einträge",
+      "entriesHint": "Eine Zeile pro Eintrag. Ein Wort trifft nur ganze Wörter, Groß- und Kleinschreibung egal; /Ausdruck/i wird als regulärer Ausdruck gelesen. Zeilen mit # werden übersprungen.",
+      "placeholder": "casino\nweb development\n/\\sjackpot\\s/i",
+      "points": "Punkte je Treffer",
+      "add": "Hinzufügen",
+      "imported": "{{added}} hinzugefügt, {{duplicates}} schon vorhanden, {{refused}} nicht verwendbar.",
+      "moreRefused": "… und {{count}} weitere",
+      "subscribeTitle": "Liste per Link abonnieren",
+      "url": "Link zur Liste",
+      "urlHint": "Nur https. Der Server holt die Liste gleich und dann täglich neu; höchstens 1 MB.",
+      "subjectOnly": "Nur im Betreff suchen",
+      "subjectOnlyHint": "Für Listen mit Betreffzeilen, z. B. von mailcow.",
+      "subjectOnlyShort": "nur Betreff",
+      "subscribe": "Abonnieren",
+      "subscribed": "Liste abonniert und geholt.",
+      "subscribedFailed": "Liste abonniert, aber noch nicht geholt: {{error}}",
+      "fetched": "Liste neu geholt.",
+      "fetchFailed": "Abruf fehlgeschlagen: {{error}}",
+      "notFetched": "noch nicht geholt",
+      "sourceState": "{{entries}} Einträge · geholt {{when}}",
+      "refresh": "Jetzt holen",
+      "unsubscribe": "Abo beenden",
+      "listTitle": "Eigene Einträge ({{count}})",
+      "filter": "Einträge durchsuchen",
+      "empty": "Noch keine eigenen Einträge.",
+      "pointsShort": "{{points}} Punkte",
+      "remove": "{{entry}} entfernen",
+      "more": "… und {{count}} weitere, grenze die Suche ein"
+    },
+    "feeds": {
+      "title": "Eingebaute Listen",
+      "intro": "Listen, die der Server selbst regelmäßig holt. Jede lässt sich einzeln abschalten; dabei meldet sich der Server bei den Anbietern.",
+      "lists": {
+        "urlhaus": {
+          "label": "Malware-Links (abuse.ch URLhaus)",
+          "hint": "Links zu Schadsoftware, die gerade online ist. Ein Treffer gibt 10 Punkte. Braucht den Auth-Key."
+        },
+        "malware_bazaar": {
+          "label": "Malware-Anhänge (abuse.ch MalwareBazaar)",
+          "hint": "Dateien, die in den letzten zwei Tagen als Schadsoftware gemeldet wurden. Ein Treffer gibt 10 Punkte. Braucht den Auth-Key."
+        },
+        "bad_subjects": {
+          "label": "Spam-Betreffzeilen (mailcow)",
+          "hint": "Betreffzeilen aktueller Spam-Wellen; jeder Treffer zählt wie ein Wort der Serverliste. Nur ohne Verschlüsselung erreichbar, darum werden Ausdrücke verworfen, die gewöhnliche Betreffzeilen treffen."
+        },
+        "disposable": {
+          "label": "Wegwerf-Adressen (Rspamd)",
+          "hint": "Absender mit Wegwerf-Adresse bekommen 1,5 Punkte."
+        },
+        "freemail": {
+          "label": "Freemail-Anbieter (Rspamd)",
+          "hint": "2 Punkte, wenn Antworten an eine Freemail-Adresse gehen sollen, der Absender selbst aber keine hat."
+        },
+        "redirectors": {
+          "label": "Link-Kürzer (Rspamd)",
+          "hint": "0,5 Punkte für Links über Kürzer wie bit.ly. Der Server ruft die Links nie auf."
+        }
+      },
+      "key": "abuse.ch Auth-Key",
+      "keyHint": "Kostenlos unter auth.abuse.ch, aber nur für nicht-kommerzielle Nutzung. Ohne Key bleiben die beiden abuse.ch-Listen aus.",
+      "keySet": "Ein Key ist gespeichert. Ein neuer ersetzt ihn.",
+      "keyRemove": "Key entfernen",
+      "off": "Ausgeschaltet",
+      "waitsForKey": "Wartet auf den Auth-Key",
+      "notYet": "Noch nicht geholt",
+      "failed": "Letzter Abruf fehlgeschlagen: {{error}}",
+      "fetched_one": "{{entries}} Eintrag · geholt {{when}}",
+      "fetched_other": "{{entries}} Einträge · geholt {{when}}",
+      "refresh": "Jetzt holen",
+      "refreshed": "Liste geholt."
     }
   }
 }

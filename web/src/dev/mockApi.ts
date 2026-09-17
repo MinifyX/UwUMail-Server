@@ -24,6 +24,7 @@ import type {
   SenderListEntry,
   SendersView,
   GatewayView,
+  FeedsView,
   Info,
   MtaStsView,
   OwnAddressesView,
@@ -39,6 +40,10 @@ import type {
   SetupStatus,
   StorageView,
   VacationView,
+  WordEntry,
+  WordImport,
+  WordSource,
+  WordsView,
 } from "@/lib/api";
 import { guessSenderKind } from "@/features/spam/senders";
 
@@ -448,6 +453,13 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "spam.greylist_delay_secs": { value: 300, source: "default" },
   "spam.reject_score": { value: null, source: "default" },
   "spam.bayes": { value: true, source: "default" },
+  "spam.feeds.urlhaus": { value: true, source: "default" },
+  "spam.feeds.malware_bazaar": { value: true, source: "default" },
+  "spam.feeds.bad_subjects": { value: true, source: "default" },
+  "spam.feeds.disposable": { value: true, source: "default" },
+  "spam.feeds.freemail": { value: true, source: "default" },
+  "spam.feeds.redirectors": { value: false, source: "database" },
+  "spam.feeds.abuse_ch_key": { value: null, source: "default", set: false },
 };
 
 const settingsView = () => ({
@@ -503,6 +515,105 @@ const addSender = (scope: "own" | "admin", body: unknown): [number, unknown] => 
 const removeSender = (scope: "own" | "admin", id: string | undefined): [number, unknown] => {
   mockSenders[scope] = mockSenders[scope].filter((entry) => String(entry.id) !== id);
   return [200, sendersView(scope)];
+};
+
+const wordEntry = (
+  id: number,
+  pattern: string,
+  points: number | null = null,
+  domain: string | null = null,
+): WordEntry => ({
+  id,
+  pattern,
+  points,
+  note: "",
+  domain,
+  createdAt: now - id * 3_600,
+  createdBy: "mini@uwu.example",
+});
+const wordSource = (id: number, url: string, entries: number, error: string | null = null): WordSource => ({
+  id,
+  url,
+  subjectOnly: url.includes("subject"),
+  points: null,
+  domain: null,
+  fetchedAt: now - 5 * 3_600,
+  error,
+  entries,
+  createdAt: now - 20 * 86_400,
+  createdBy: "mini@uwu.example",
+});
+const mockWords: Record<"own" | "admin", WordsView> = {
+  own: {
+    entries: [wordEntry(1, "gewinnspiel"), wordEntry(2, "/\\sjackpot\\s/i", 4)],
+    sources: [],
+    limit: 2000,
+    sourceLimit: 5,
+    defaultPoints: 2.5,
+    maxPoints: 10,
+  },
+  admin: {
+    entries: [wordEntry(10, "casino"), wordEntry(11, "web development", 1.5, "verein.example")],
+    sources: [
+      wordSource(20, "https://lists.example.org/bad_words.map", 29),
+      wordSource(21, "https://lists.example.net/subjects.txt", 0, "the link answered 404 Not Found"),
+    ],
+    domains: ["uwu.example", "verein.example"],
+    limit: 20000,
+    sourceLimit: 50,
+    defaultPoints: 2.5,
+    maxPoints: 10,
+  },
+};
+let nextWordId = 500;
+const addWords = (scope: "own" | "admin", body: unknown): [number, unknown] => {
+  const { text: typed, points, domain } = body as { text: string; points?: number; domain?: string };
+  const report: WordImport = { added: 0, duplicates: 0, refused: [], refusedCount: 0 };
+  for (const line of typed.split("\n").map((entry) => entry.trim())) {
+    if (!line || line.startsWith("#")) continue;
+    if (line.includes("(?")) {
+      report.refused.push({ line, reason: "look-around is not supported" });
+      continue;
+    }
+    const pattern = line.startsWith("/") ? line : line.toLowerCase();
+    if (mockWords[scope].entries.some((entry) => entry.pattern === pattern)) {
+      report.duplicates++;
+      continue;
+    }
+    mockWords[scope].entries.push(wordEntry(nextWordId++, pattern, points ?? null, domain ?? null));
+    report.added++;
+  }
+  report.refusedCount = report.refused.length;
+  return [200, { import: report, lists: mockWords[scope] }];
+};
+const subscribeWords = (scope: "own" | "admin", body: unknown): [number, unknown] => {
+  const { url, domain } = body as { url: string; domain?: string };
+  if (!url.startsWith("https://")) return problem(409, "wordSourceInvalid");
+  const source = { ...wordSource(nextWordId++, url, 12), domain: domain ?? null, fetchedAt: now };
+  mockWords[scope].sources.push(source);
+  return [200, { error: null, lists: mockWords[scope] }];
+};
+const mockFeeds: FeedsView = {
+  abuseChKeySet: false,
+  feeds: [
+    ["urlhaus", "abuse.ch URLhaus", "https://urlhaus.abuse.ch/api/", true, false, 0, null],
+    ["malware_bazaar", "abuse.ch MalwareBazaar", "https://bazaar.abuse.ch/export/", true, false, 0, null],
+    ["bad_subjects", "mailcow", "https://github.com/mailcow/mailcow-dockerized", false, true, 125, null],
+    ["disposable", "Rspamd", "https://rspamd.com/", false, true, 1161, null],
+    ["freemail", "Rspamd", "https://rspamd.com/", false, true, 4009, "the Rspamd list did not answer in time"],
+    ["redirectors", "Rspamd", "https://rspamd.com/", false, false, 1211, null],
+  ].map(([key, source, page, needsKey, active, entries, error]) => ({
+    key: key as string,
+    source: source as string,
+    page: page as string,
+    needsKey: needsKey as boolean,
+    intervalSecs: needsKey ? 3_600 : 86_400,
+    active: active as boolean,
+    fetchedAt: active ? now - 3 * 3_600 : null,
+    changedAt: active ? now - 3 * 3_600 : null,
+    error: error as string | null,
+    entries: entries as number,
+  })),
 };
 
 const mockBayes = { own: { spam: 18, ham: 41 }, server: { spam: 264, ham: 1310 } };
@@ -1142,6 +1253,62 @@ const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/api\/admin\/spam\/senders$/, () => [200, sendersView("admin")]],
   ["POST", /^\/api\/admin\/spam\/senders$/, (body) => addSender("admin", body)],
   ["DELETE", /^\/api\/admin\/spam\/senders\/(\d+)$/, (_, [id]) => removeSender("admin", id)],
+  ["GET", /^\/api\/account\/spam\/words$/, () => [200, mockWords.own]],
+  ["POST", /^\/api\/account\/spam\/words$/, (body) => addWords("own", body)],
+  [
+    "DELETE",
+    /^\/api\/account\/spam\/words\/(\d+)$/,
+    (_, [id]) => {
+      mockWords.own.entries = mockWords.own.entries.filter((entry) => String(entry.id) !== id);
+      return [200, mockWords.own];
+    },
+  ],
+  ["POST", /^\/api\/account\/spam\/word-sources$/, (body) => subscribeWords("own", body)],
+  [
+    "DELETE",
+    /^\/api\/account\/spam\/word-sources\/(\d+)$/,
+    (_, [id]) => {
+      mockWords.own.sources = mockWords.own.sources.filter((source) => String(source.id) !== id);
+      return [200, mockWords.own];
+    },
+  ],
+  ["POST", /^\/api\/account\/spam\/word-sources\/\d+\/refresh$/, () => [200, { error: null, lists: mockWords.own }]],
+  ["GET", /^\/api\/admin\/spam\/words$/, () => [200, mockWords.admin]],
+  ["POST", /^\/api\/admin\/spam\/words$/, (body) => addWords("admin", body)],
+  [
+    "DELETE",
+    /^\/api\/admin\/spam\/words\/(\d+)$/,
+    (_, [id]) => {
+      mockWords.admin.entries = mockWords.admin.entries.filter((entry) => String(entry.id) !== id);
+      return [200, mockWords.admin];
+    },
+  ],
+  ["POST", /^\/api\/admin\/spam\/word-sources$/, (body) => subscribeWords("admin", body)],
+  [
+    "DELETE",
+    /^\/api\/admin\/spam\/word-sources\/(\d+)$/,
+    (_, [id]) => {
+      mockWords.admin.sources = mockWords.admin.sources.filter((source) => String(source.id) !== id);
+      return [200, mockWords.admin];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/spam\/word-sources\/\d+\/refresh$/,
+    () => [200, { error: "the link answered 404 Not Found", lists: mockWords.admin }],
+  ],
+  ["GET", /^\/api\/admin\/spam\/feeds$/, () => [200, mockFeeds]],
+  [
+    "POST",
+    /^\/api\/admin\/spam\/feeds\/(\w+)\/refresh$/,
+    (_, [key]) => {
+      const feed = mockFeeds.feeds.find((entry) => entry.key === key);
+      if (!feed?.active) return problem(409, "feedInactive");
+      feed.fetchedAt = now;
+      feed.error = null;
+      return [200, { ...mockFeeds, error: null }];
+    },
+  ],
   ["POST", /^\/api\/account\/spam\/learn-folders$/, () => [200, { spam: 12, ham: 87 } satisfies LearnedFromFolders]],
   [
     "GET",

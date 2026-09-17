@@ -353,6 +353,67 @@ export interface NewSender {
   domain?: string;
 }
 
+export interface WordEntry {
+  id: number;
+  pattern: string;
+  points: number | null;
+  note: string;
+  domain: string | null;
+  createdAt: number;
+  createdBy: string;
+}
+
+export interface WordSource {
+  id: number;
+  url: string;
+  subjectOnly: boolean;
+  points: number | null;
+  domain: string | null;
+  fetchedAt: number | null;
+  error: string | null;
+  entries: number;
+  createdAt: number;
+  createdBy: string;
+}
+
+export interface WordsView {
+  entries: WordEntry[];
+  sources: WordSource[];
+  limit: number;
+  sourceLimit: number;
+  defaultPoints: number;
+  maxPoints: number;
+  /** Admins only: the domains an entry can be for. */
+  domains?: string[];
+}
+
+export interface WordImport {
+  added: number;
+  duplicates: number;
+  refused: { line: string; reason: string }[];
+  refusedCount: number;
+}
+
+export interface FeedStatus {
+  key: string;
+  source: string;
+  page: string;
+  needsKey: boolean;
+  intervalSecs: number;
+  active: boolean;
+  fetchedAt: number | null;
+  changedAt: number | null;
+  error: string | null;
+  entries: number;
+}
+
+export interface FeedsView {
+  feeds: FeedStatus[];
+  abuseChKeySet: boolean;
+  /** Only after fetching one now: why it failed. */
+  error?: string | null;
+}
+
 export interface LearnedFromFolders {
   spam: number;
   ham: number;

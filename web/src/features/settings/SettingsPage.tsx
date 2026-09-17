@@ -69,7 +69,7 @@ export function Section({
     Object.entries(draft).filter(([key, value]) => {
       if (!keys.includes(key) || value === undefined) return false;
       // Secrets never come back: typing one sets it, null removes a stored one.
-      if (key.endsWith("password"))
+      if (key.endsWith("password") || key.endsWith("_key"))
         return (typeof value === "string" && value !== "") || (value === null && byKey[key]?.set);
       return JSON.stringify(value) !== JSON.stringify(byKey[key]?.value);
     }),
@@ -139,7 +139,7 @@ function ChoiceField<T extends string>({
   );
 }
 
-function ToggleField({
+export function ToggleField({
   form,
   settingKey,
   label,
