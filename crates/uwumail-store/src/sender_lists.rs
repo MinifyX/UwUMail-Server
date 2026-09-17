@@ -17,6 +17,9 @@ const NOTE_MAX_CHARS: usize = 200;
 /// Networks wider than this would cover whole providers or continents.
 const MIN_PREFIX_V4: u8 = 8;
 const MIN_PREFIX_V6: u8 = 16;
+/// A pattern needs this much besides `*`, or it would match nearly everyone.
+const PATTERN_MIN_TEXT: usize = 3;
+const PATTERN_MAX_CHARS: usize = 254;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -34,7 +37,8 @@ impl SenderList {
     }
 }
 
-/// What an entry names: the sending server by address or confirmed host name, or the sender.
+/// What an entry names: the sending server by address or confirmed host name, or the sender by
+/// address, domain or a pattern with `*` over the whole address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SenderKind {
@@ -42,6 +46,7 @@ pub enum SenderKind {
     Host,
     Address,
     Domain,
+    Pattern,
 }
 
 impl SenderKind {
@@ -51,6 +56,7 @@ impl SenderKind {
             SenderKind::Host => "host",
             SenderKind::Address => "address",
             SenderKind::Domain => "domain",
+            SenderKind::Pattern => "pattern",
         }
     }
 }
@@ -132,19 +138,66 @@ fn parse_network(value: &str) -> Option<(IpAddr, u8)> {
     Some((address, prefix))
 }
 
-/// What a value most likely is: an address or network, a full email address, a `*.` host pattern,
-/// otherwise a domain. A single host name needs to be asked for as a host.
+/// What a value most likely is: an address or network, a `*.` host name like `*.mail.example.com`,
+/// any other value with `*` a pattern, a full email address, otherwise a domain. A single host name
+/// needs to be asked for as a host.
 pub fn guess_sender_kind(value: &str) -> SenderKind {
     let value = value.trim();
     if parse_network(value).is_some() {
         SenderKind::Ip
+    } else if value.strip_prefix("*.").is_some_and(|rest| rest.contains('.') && !rest.contains(['*', '@'])) {
+        SenderKind::Host
+    } else if value.contains('*') {
+        SenderKind::Pattern
     } else if value.contains('@') && !value.starts_with('@') {
         SenderKind::Address
-    } else if value.starts_with("*.") {
-        SenderKind::Host
     } else {
         SenderKind::Domain
     }
+}
+
+/// A lowercase pattern where `*` stands for any text, runs of `*` squeezed into one.
+fn normalize_pattern(original: &str) -> Result<String> {
+    if !original.contains('*') {
+        return Err(invalid(format!("'{original}' has no '*'; list it as an address or domain")));
+    }
+    if original.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err(invalid(format!("'{original}' may not contain spaces")));
+    }
+    let mut pattern = String::with_capacity(original.len());
+    for c in original.chars().flat_map(char::to_lowercase) {
+        if !(c == '*' && pattern.ends_with('*')) {
+            pattern.push(c);
+        }
+    }
+    if pattern.chars().filter(|c| *c != '*').count() < PATTERN_MIN_TEXT {
+        return Err(invalid(format!("'{original}' would match nearly every sender")));
+    }
+    if pattern.chars().count() > PATTERN_MAX_CHARS {
+        return Err(invalid(format!("'{original}' is too long")));
+    }
+    Ok(pattern)
+}
+
+/// Whether `text` fits a normalized pattern, `*` standing for any text including none.
+pub fn pattern_matches(pattern: &str, text: &str) -> bool {
+    let mut parts = pattern.split('*');
+    let first = parts.next().unwrap_or_default();
+    let Some(mut rest) = text.strip_prefix(first) else {
+        return false;
+    };
+    let mut parts: Vec<&str> = parts.collect();
+    // Without a '*' the pattern is the text itself.
+    let Some(last) = parts.pop() else {
+        return rest.is_empty();
+    };
+    for part in parts {
+        match rest.find(part) {
+            Some(at) => rest = &rest[at + part.len()..],
+            None => return false,
+        }
+    }
+    rest.len() >= last.len() && rest.ends_with(last)
 }
 
 /// A name with at least two labels; a bare top-level domain would match far too much.
@@ -198,6 +251,7 @@ pub fn normalize_sender(kind: SenderKind, value: &str) -> Result<String> {
             let name = name.strip_prefix("*.").unwrap_or(name);
             normalize_name(name, original)
         }
+        SenderKind::Pattern => normalize_pattern(original),
     }
 }
 
@@ -217,6 +271,7 @@ fn entry(row: &Row<'_>) -> rusqlite::Result<SenderListEntry> {
             "ip" => SenderKind::Ip,
             "host" => SenderKind::Host,
             "address" => SenderKind::Address,
+            "pattern" => SenderKind::Pattern,
             _ => SenderKind::Domain,
         },
         value: row.get(3)?,
@@ -353,10 +408,31 @@ mod tests {
         assert_eq!(normalized("*.Mail.Example.com."), (SenderKind::Host, Ok("*.mail.example.com".into())));
         assert_eq!(normalized("@bücher.de"), (SenderKind::Domain, Ok("xn--bcher-kva.de".into())));
         assert!(normalized("com").1.is_err(), "a bare top-level domain matches too much");
-        assert!(normalized("*.com").1.is_err());
+        assert_eq!(normalized("*.RU"), (SenderKind::Pattern, Ok("*.ru".into())));
+        assert_eq!(normalized("**Newsletter**"), (SenderKind::Pattern, Ok("*newsletter*".into())));
+        assert_eq!(normalized("*@Example.com"), (SenderKind::Pattern, Ok("*@example.com".into())));
+        assert!(normalized("*.c*").1.is_err(), "matches nearly everyone");
+        assert!(normalized("*spam mail*").1.is_err());
+        assert!(normalize_sender(SenderKind::Pattern, "spam@example.com").is_err(), "no '*'");
         assert!(normalized("not an address@").1.is_err());
         assert_eq!(normalize_sender(SenderKind::Host, "mx1.example.org").unwrap(), "mx1.example.org");
         assert_eq!(normalize_sender(SenderKind::Domain, "*.example.org").unwrap(), "example.org");
+    }
+
+    #[test]
+    fn patterns_match_the_whole_text() {
+        assert!(pattern_matches("*.ru", "anna@shop.ru"));
+        assert!(!pattern_matches("*.ru", "anna@shop.ru.example.com"));
+        assert!(pattern_matches("*newsletter*", "newsletter@example.com"));
+        assert!(pattern_matches("*newsletter*", "news@newsletter.example.com"));
+        assert!(pattern_matches("*@example.com", "a@example.com"));
+        assert!(!pattern_matches("*@example.com", "a@mail.example.com"));
+        assert!(pattern_matches("info@*.example.com", "info@mail.example.com"));
+        assert!(!pattern_matches("info@*.example.com", "sales@mail.example.com"));
+        assert!(pattern_matches("a*a", "aa"), "the ends may not overlap in the middle");
+        assert!(!pattern_matches("ab*ba", "aba"), "but they may not share letters either");
+        assert!(pattern_matches("*spam*spam*", "spamxspam"));
+        assert!(!pattern_matches("*spam*spam*", "spam"));
     }
 
     #[tokio::test]

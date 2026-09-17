@@ -23,7 +23,7 @@ A client adds the capability to `using` to call the methods below.
 | --- | --- | --- |
 | `id` | `Id` | immutable, server-set |
 | `list` | `String` | `allow` or `block` |
-| `kind` | `String` | `ip`, `host`, `address` or `domain`; guessed from `value` when left out on create |
+| `kind` | `String` | `ip`, `host`, `address`, `domain` or `pattern`; guessed from `value` when left out on create |
 | `value` | `String` | stored normalized: lower case, ASCII domains, masked networks, no leading `@` |
 | `note` | `String` | free text, at most 200 characters |
 | `createdAt` | `Int` | seconds since 1970, server-set |
@@ -44,7 +44,7 @@ Errors in `notCreated`:
 | `type` | When |
 | --- | --- |
 | `invalidProperties` | `list` or `value` missing, or `list`/`kind` has an unknown value |
-| `senderInvalid` | the value is not what `kind` says, a network is wider than /8 or /16, or a domain has no dot |
+| `senderInvalid` | the value is not what `kind` says, a network is wider than /8 or /16, a domain has no dot, or a pattern has fewer than three characters besides `*` |
 | `senderListed` | the value is already on one of the two lists |
 | `senderListFull` | the list holds `maxEntries` entries |
 

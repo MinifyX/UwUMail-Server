@@ -77,7 +77,7 @@ pub use security::{
 };
 pub use sender_lists::{
     ListOwner, ListScope, NewSenderListEntry, SENDER_LIST_ADMIN_LIMIT, SENDER_LIST_PERSONAL_LIMIT, SenderKind,
-    SenderList, SenderListEntry, guess_sender_kind, normalize_sender,
+    SenderList, SenderListEntry, guess_sender_kind, normalize_sender, pattern_matches,
 };
 pub use spam::{GREYLIST_PASSED_SECS, GREYLIST_WAITING_SECS, Greylist, REPUTATION_RETENTION_SECS, Reputation};
 pub use web::{NewWebSession, ServerCounts, WebSession};

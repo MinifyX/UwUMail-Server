@@ -1479,7 +1479,7 @@
       "block": "Block",
       "allow": "Allow",
       "value": "Sender",
-      "valueHint": "Email address, domain, IP address or network, or a host name like *.mail.example.com",
+      "valueHint": "Email address, domain, IP address or network, host name like *.mail.example.com, or a pattern like *.tld or *newsletter* (* stands for any text)",
       "valuePlaceholder": "e.g. newsletter@example.com or example.com",
       "guessed": "Will be added as: {{kind}}",
       "scope": "Applies to",
@@ -1490,7 +1490,8 @@
         "address": "Email address",
         "domain": "Domain with subdomains",
         "ip": "IP address or network",
-        "host": "Host name of the server"
+        "host": "Host name of the server",
+        "pattern": "Pattern with *"
       },
       "note": "Note",
       "notePlaceholder": "What for? (optional)",

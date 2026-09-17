@@ -19,7 +19,7 @@ import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 import { guessSenderKind } from "./senders";
 
-const KINDS: SenderKind[] = ["address", "domain", "ip", "host"];
+const KINDS: SenderKind[] = ["address", "domain", "pattern", "ip", "host"];
 
 function EntryRow({
   entry,

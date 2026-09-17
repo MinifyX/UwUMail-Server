@@ -133,7 +133,8 @@ pub struct WordTarget {
 
 #[derive(Debug, Args)]
 pub struct SenderArgs {
-    /// E.g. 192.0.2.10, 198.51.100.0/24, *.mail.example.com, someone@example.com or example.com.
+    /// E.g. 192.0.2.10, 198.51.100.0/24, *.mail.example.com, someone@example.com, example.com or a
+    /// pattern like *.tld or *newsletter*.
     pub value: String,
     /// What the value is; guessed when left out. A single host name has to be given as host.
     #[arg(long, value_enum)]
@@ -154,6 +155,7 @@ pub enum SenderKindArg {
     Host,
     Address,
     Domain,
+    Pattern,
 }
 
 #[derive(Debug, Subcommand)]

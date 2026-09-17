@@ -210,10 +210,13 @@ domain under *Server → Spamfilter*, or on the command line.
 | Host name | `mx1.example.com`, `*.mail.example.com` | the reverse name of the sending server, but only if that name points back to the same address; `*.` matches the names below, not the name itself |
 | Email address | `news@example.com` | the From address; blocking also looks at the envelope sender |
 | Domain | `example.com` | the From domain and its subdomains; blocking also looks at the envelope sender's |
+| Pattern | `*.tld`, `*newsletter*`, `*@example.com` | the whole From address, `*` standing for any text; blocking also looks at the envelope sender. Needs three characters besides `*` |
 
-The portal and the command line guess the kind: an address or network,
-anything with an `@`, a `*.` pattern, otherwise a domain. A single host name
-without `*.` has to be chosen as a host name.
+The portal and the command line guess the kind: an address or network, a `*.`
+host name with a dot after it (`*.mail.example.com`), anything else with `*` as
+a pattern, anything with an `@`, otherwise a domain. A single host name without
+`*.` has to be chosen as a host name. Patterns are what Mailcow and Rspamd call
+wildcards in their allow and block lists.
 
 | List | A person's | A domain's or the server's |
 | --- | --- | --- |
@@ -232,8 +235,9 @@ Which entry decides:
 
 1. Within each list (the person's, the domain's, the server's), the most
    specific matching entry: an email address before a single IP address or
-   exact host name, before a network or `*.` pattern, before a domain, and a
-   subdomain before its parent. At a tie, blocking wins. So `boss@example.com`
+   exact host name, before a network or `*.` host name, before a domain, and a
+   subdomain before its parent, before a pattern, a longer pattern before a
+   shorter one. At a tie, blocking wins. So `boss@example.com`
    can be allowed while `example.com` is blocked in the same list.
 2. If the server's or the domain's list blocks, the message is refused, no
    matter what a person allowed.
@@ -249,6 +253,7 @@ the domains' lists are in the change log.
 uwumail-server spam block 198.51.100.0/24 --note "only ever sent spam"
 uwumail-server spam allow news@example.com --domain example.org
 uwumail-server spam block mx1.example.net --kind host
+uwumail-server spam block '*.tld'
 uwumail-server spam allow grandma@example.net --account someone@example.org
 uwumail-server spam senders [--account someone@example.org]
 uwumail-server spam unlist 12 [--account someone@example.org]

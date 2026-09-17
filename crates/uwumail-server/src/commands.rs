@@ -473,6 +473,7 @@ fn kind_name(kind: SenderKind) -> &'static str {
         SenderKind::Host => "host",
         SenderKind::Address => "address",
         SenderKind::Domain => "domain",
+        SenderKind::Pattern => "pattern",
     }
 }
 
@@ -493,6 +494,7 @@ async fn add_sender(store: &Store, list: SenderList, args: SenderArgs) -> anyhow
         SenderKindArg::Host => SenderKind::Host,
         SenderKindArg::Address => SenderKind::Address,
         SenderKindArg::Domain => SenderKind::Domain,
+        SenderKindArg::Pattern => SenderKind::Pattern,
     });
     let new = NewSenderListEntry { scope, list, kind, value: args.value, note: args.note, created_by: "cli".into() };
     let entry = store.add_sender_list_entry(new).await?;

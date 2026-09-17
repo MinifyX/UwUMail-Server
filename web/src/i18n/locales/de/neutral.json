@@ -1479,7 +1479,7 @@
       "block": "Blockieren",
       "allow": "Erlauben",
       "value": "Absender",
-      "valueHint": "E-Mail-Adresse, Domain, IP-Adresse oder Netz, oder Hostname wie *.mail.example.com",
+      "valueHint": "E-Mail-Adresse, Domain, IP-Adresse oder Netz, Hostname wie *.mail.example.com oder Muster wie *.tld und *newsletter* (* steht für beliebigen Text)",
       "valuePlaceholder": "z. B. newsletter@example.com oder example.com",
       "guessed": "Wird eingetragen als: {{kind}}",
       "scope": "Gilt für",
@@ -1490,7 +1490,8 @@
         "address": "E-Mail-Adresse",
         "domain": "Domain mit Subdomains",
         "ip": "IP-Adresse oder Netz",
-        "host": "Hostname des Servers"
+        "host": "Hostname des Servers",
+        "pattern": "Muster mit *"
       },
       "note": "Notiz",
       "notePlaceholder": "Wofür? (optional)",

@@ -10,7 +10,7 @@ use std::net::IpAddr;
 use std::time::Duration;
 
 use mail_parser::MessageParser;
-use uwumail_store::{ListScope, SenderKind, SenderList, SenderListEntry};
+use uwumail_store::{ListScope, SenderKind, SenderList, SenderListEntry, pattern_matches};
 
 use crate::Context;
 use crate::checks::normalized_address;
@@ -134,7 +134,7 @@ fn domain_of(address: &str) -> Option<&str> {
 }
 
 /// How narrowly an entry names a sender: within one scope the narrowest match decides, so a listed
-/// address can be the exception to its listed domain.
+/// address can be the exception to its listed domain. Patterns are the loosest, the longer the narrower.
 fn specificity(entry: &SenderListEntry) -> u32 {
     let labels = |name: &str| name.split('.').count() as u32;
     match entry.kind {
@@ -148,6 +148,7 @@ fn specificity(entry: &SenderListEntry) -> u32 {
             }
         },
         SenderKind::Domain => 100 + labels(&entry.value),
+        SenderKind::Pattern => 1 + entry.value.chars().filter(|c| *c != '*').count().min(98) as u32,
     }
 }
 
@@ -171,6 +172,7 @@ impl Lists {
             SenderKind::Domain => addresses()
                 .filter_map(domain_of)
                 .any(|domain| domain == entry.value || domain.ends_with(&format!(".{}", entry.value))),
+            SenderKind::Pattern => addresses().any(|address| pattern_matches(&entry.value, address)),
         }
     }
 
@@ -298,5 +300,30 @@ mod tests {
             entry(ListScope::Server, SenderList::Block, SenderKind::Domain, "example.com"),
         ];
         assert_eq!(decided(tie, &other).as_deref(), Some("reject example.com"), "a tie goes to the block");
+    }
+
+    #[test]
+    fn patterns_are_the_loosest_entries() {
+        let own = vec![
+            entry(ListScope::Account(LENI), SenderList::Block, SenderKind::Pattern, "*.com"),
+            entry(ListScope::Account(LENI), SenderList::Allow, SenderKind::Domain, "example.com"),
+        ];
+        assert_eq!(decided(own.clone(), &sender("boss@example.com", true)).as_deref(), Some("allow example.com"));
+        assert_eq!(decided(own, &sender("x@shop.com", true)).as_deref(), Some("junk *.com"));
+
+        let longer = vec![
+            entry(ListScope::Account(LENI), SenderList::Block, SenderKind::Pattern, "*news*"),
+            entry(ListScope::Account(LENI), SenderList::Allow, SenderKind::Pattern, "*news@example.com"),
+        ];
+        assert_eq!(
+            decided(longer, &sender("news@example.com", true)).as_deref(),
+            Some("allow *news@example.com"),
+            "the longer pattern is the exception"
+        );
+
+        let envelope = vec![entry(ListScope::Server, SenderList::Block, SenderKind::Pattern, "bounces@*")];
+        assert_eq!(decided(envelope.clone(), &sender("x@example.com", false)).as_deref(), Some("reject bounces@*"));
+        let allowed = vec![entry(ListScope::Server, SenderList::Allow, SenderKind::Pattern, "*@example.com")];
+        assert_eq!(decided(allowed, &sender("x@example.com", false)), None, "allowing still needs a vouched From");
     }
 }

@@ -325,7 +325,7 @@ export interface AdminSpamView {
 }
 
 export type SenderListName = "allow" | "block";
-export type SenderKind = "ip" | "host" | "address" | "domain";
+export type SenderKind = "ip" | "host" | "address" | "domain" | "pattern";
 
 export interface SenderListEntry {
   id: number;
