@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, anyhow, bail};
 use instant_acme::{
-    Account, AccountCredentials, AuthorizationStatus, ChallengeType, Identifier, NewAccount, NewOrder, OrderStatus,
-    RetryPolicy,
+    Account, AccountCredentials, AuthorizationStatus, ChallengeType, Identifier, NewAccount, NewOrder, Order,
+    OrderStatus, RetryPolicy,
 };
 use tokio::sync::{Notify, watch};
 use uwumail_store::Store;
@@ -109,22 +109,24 @@ pub async fn run(
                 tracing::info!(names = %names.join(", "), "got a fresh certificate (=^･ω･^=)");
                 wait = Duration::from_secs(NAME_CHECK_SECS);
             }
-            Err(err) if names.len() > 1 => {
-                // Try again soon without the extra names, which may simply not reach us yet.
-                tracing::warn!(
-                    error = %format!("{err:#}"),
-                    "getting a certificate with the names of our domains failed, leaving them out for a day"
-                );
-                for name in &names[1..] {
-                    failed_names.insert(name.clone(), now);
+            Err(err) => {
+                let refused = err.downcast_ref::<Refused>().map(|refused| refused.0.clone()).unwrap_or_default();
+                let (paused, retry) = after_failed_order(&names, &refused);
+                if paused.is_empty() {
+                    tracing::warn!(error = %format!("{err:#}"), "getting a certificate failed, retrying in an hour");
+                } else {
+                    // Try again soon without them; they may simply not reach us yet.
+                    tracing::warn!(
+                        error = %format!("{err:#}"),
+                        names = %paused.join(", "),
+                        "getting a certificate with names of our domains failed, leaving them out for a day"
+                    );
+                }
+                for name in paused {
+                    failed_names.insert(name, now);
                 }
                 failures.push_back(Instant::now());
-                wait = Duration::from_secs(60);
-            }
-            Err(err) => {
-                tracing::warn!(error = %format!("{err:#}"), "getting a certificate failed, retrying in an hour");
-                failures.push_back(Instant::now());
-                wait = Duration::from_secs(3600);
+                wait = retry;
             }
         }
         challenges.clear();
@@ -195,6 +197,36 @@ fn names_to_request(hostname: &str, extra: &[String], failed: &HashMap<String, i
     names
 }
 
+/// The names the CA could not validate, attached to the error of a failed order.
+#[derive(Debug)]
+struct Refused(Vec<String>);
+
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "the certificate authority could not validate {}", self.0.join(", "))
+    }
+}
+
+/// Which names to leave out for a day after a failed order, and when to try again. `names` starts
+/// with the server's own name; `refused` is what the CA could not validate, if it said.
+fn after_failed_order(names: &[String], refused: &[String]) -> (Vec<String>, Duration) {
+    let (hostname, extra) = (&names[0], &names[1..]);
+    let hour = Duration::from_secs(3600);
+    if refused.contains(hostname) {
+        // The server itself was not reached, e.g. while the tunnel was down, and then every name
+        // fails with it. One that is broken on its own shows in the next order that gets through.
+        return (Vec::new(), hour);
+    }
+    let paused: Vec<String> = if refused.is_empty() {
+        // The CA did not say which name it was. Without the extra ones the order may still work.
+        extra.to_vec()
+    } else {
+        extra.iter().filter(|name| refused.contains(name)).cloned().collect()
+    };
+    let retry = if paused.is_empty() { hour } else { Duration::from_secs(60) };
+    (paused, retry)
+}
+
 /// How many orders failed within the last hour. Older ones are forgotten.
 fn recent_failures(failures: &mut VecDeque<Instant>, now: Instant) -> usize {
     while failures.front().is_some_and(|at| now.saturating_duration_since(*at) >= FAILURE_WINDOW) {
@@ -239,6 +271,28 @@ async fn account(config: &Config) -> anyhow::Result<Account> {
     Ok(account)
 }
 
+/// The names whose validation failed, asked from the CA after an order went wrong.
+async fn refused_names(order: &mut Order) -> Vec<String> {
+    let mut refused = Vec::new();
+    let mut authorizations = order.authorizations();
+    while let Some(Ok(mut authorization)) = authorizations.next().await {
+        // What we saw before the challenge is stale by now.
+        let Ok(state) = authorization.refresh().await else {
+            continue;
+        };
+        if state.status == AuthorizationStatus::Invalid
+            && let Identifier::Dns(name) = state.identifier().identifier
+        {
+            refused.push(name.clone());
+        }
+    }
+    refused
+}
+
+fn with_refused(error: anyhow::Error, refused: Vec<String>) -> anyhow::Error {
+    if refused.is_empty() { error } else { error.context(Refused(refused)) }
+}
+
 async fn order(config: &Config, certs: &CertStore, challenges: &Challenges, names: &[String]) -> anyhow::Result<()> {
     let account = account(config).await?;
     let identifiers: Vec<Identifier> = names.iter().map(|name| Identifier::Dns(name.clone())).collect();
@@ -260,14 +314,21 @@ async fn order(config: &Config, certs: &CertStore, challenges: &Challenges, name
     }
 
     let retries = RetryPolicy::default().timeout(Duration::from_secs(120));
-    let status = order.poll_ready(&retries).await.context("waiting for the challenge")?;
+    let status = match order.poll_ready(&retries).await {
+        Ok(status) => status,
+        Err(err) => {
+            let error = anyhow::Error::new(err).context("waiting for the challenge");
+            return Err(with_refused(error, refused_names(&mut order).await));
+        }
+    };
     if status != OrderStatus::Ready {
-        bail!(
+        let error = anyhow!(
             "the certificate authority could not reach http://{}/.well-known/acme-challenge/ (order is {status:?}). \
              Is port 80 open and does the DNS record point here? Behind a UwUMail Gateway it has to point to \
              the gateway, and the tunnel has to be connected.",
             names.join(", http://")
         );
+        return Err(with_refused(error, refused_names(&mut order).await));
     }
     let key_pem = order.finalize().await?;
     let cert_pem = order.poll_certificate(&retries).await?;
@@ -313,6 +374,25 @@ mod tests {
         );
         let later = now + FAILED_NAME_PAUSE_SECS;
         assert_eq!(names_to_request("mail.example.de", &extra, &failed, later).len(), 3, "tried again a day later");
+    }
+
+    #[test]
+    fn only_the_names_the_ca_refused_are_left_out() {
+        let names: Vec<String> = ["mail.example.de", "imap.example.de", "mta-sts.verein.de"].map(String::from).to_vec();
+        let refused = |list: &[&str]| list.iter().map(|name| name.to_string()).collect::<Vec<_>>();
+        let (minute, hour) = (Duration::from_secs(60), Duration::from_secs(3600));
+
+        // One of the extra names does not reach us yet: the rest is tried again soon.
+        assert_eq!(
+            after_failed_order(&names, &refused(&["mta-sts.verein.de"])),
+            (refused(&["mta-sts.verein.de"]), minute)
+        );
+        // The server itself was not reached, e.g. the tunnel was down: the other names keep their chance.
+        assert_eq!(after_failed_order(&names, &refused(&["mail.example.de"])), (Vec::new(), hour));
+        assert_eq!(after_failed_order(&names, &names), (Vec::new(), hour), "behind a gateway they fail together");
+        // The CA did not say which name: without the extra ones the order may still work.
+        assert_eq!(after_failed_order(&names, &[]), (names[1..].to_vec(), minute));
+        assert_eq!(after_failed_order(&names[..1], &[]), (Vec::new(), hour));
     }
 
     #[test]
