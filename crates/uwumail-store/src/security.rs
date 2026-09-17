@@ -449,6 +449,102 @@ impl Store {
         })
     }
 
+    /// Takes over an app password from another server by its hash, e.g. mailcow's bcrypt. It keeps
+    /// working with the secret the person already typed into their apps. Taking over the same name
+    /// again changes nothing.
+    pub async fn import_app_password(
+        &self,
+        account_id: i64,
+        name: &str,
+        stored: &str,
+        scopes: Vec<AppScope>,
+    ) -> Result<AppPassword> {
+        let name = name.trim().chars().take(60).collect::<String>();
+        if name.is_empty() {
+            return Err(StoreError::Invalid("an app password needs a name".into()));
+        }
+        let stored = password::import_hash(stored)?;
+        let mut scopes = scopes;
+        scopes.sort_by_key(|scope| scope.as_str());
+        scopes.dedup();
+        if scopes.is_empty() {
+            return Err(StoreError::Invalid("an app password needs at least one use".into()));
+        }
+        let scope_list = scopes.iter().map(|scope| scope.as_str()).collect::<Vec<_>>().join(" ");
+        self.write(move |tx| {
+            let existing = tx
+                .query_row(
+                    &format!(
+                        "SELECT {APP_PASSWORD_COLUMNS} FROM app_passwords
+                         WHERE account_id = ?1 AND name = ?2 AND imported_hash IS NOT NULL"
+                    ),
+                    params![account_id, name],
+                    app_password_from_row,
+                )
+                .optional()?;
+            if let Some(existing) = existing {
+                return Ok(existing);
+            }
+            let count: i64 =
+                tx.query_row("SELECT COUNT(*) FROM app_passwords WHERE account_id = ?1", [account_id], |r| r.get(0))?;
+            if count >= MAX_APP_PASSWORDS {
+                return Err(StoreError::Rule {
+                    code: "tooManyAppPasswords",
+                    message: format!("at most {MAX_APP_PASSWORDS} app passwords"),
+                });
+            }
+            // Never matches a typed code: only the imported hash is checked for this one.
+            let unmatchable = random_bytes::<32>().to_vec();
+            tx.execute(
+                "INSERT INTO app_passwords (account_id, name, secret_hash, scopes, created_at, imported_hash)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![account_id, name, unmatchable, scope_list, now(), stored],
+            )?;
+            let id = tx.last_insert_rowid();
+            Ok(tx.query_row(
+                &format!("SELECT {APP_PASSWORD_COLUMNS} FROM app_passwords WHERE id = ?1"),
+                [id],
+                app_password_from_row,
+            )?)
+        })
+        .await
+    }
+
+    /// Takes over a password hash from another server, e.g. mailcow's BLF-CRYPT. At the next login
+    /// with the right password it is replaced by our own.
+    pub async fn import_password_hash(&self, account_id: i64, stored: &str) -> Result<()> {
+        let stored = password::import_hash(stored)?;
+        self.write(move |tx| {
+            let changed =
+                tx.execute("UPDATE accounts SET password_hash = ?1 WHERE id = ?2", params![stored, account_id])?;
+            if changed == 0 {
+                return Err(StoreError::NotFound(format!("account {account_id}")));
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    /// Replaces a hash taken over from another server with our own, now that the password proved right.
+    /// A password too short for our own rules keeps the old hash.
+    pub(crate) async fn upgrade_imported_hash(&self, account_id: i64, old: String, password: String) {
+        let Ok(Ok(new)) = tokio::task::spawn_blocking(move || password::hash(&password)).await else {
+            return;
+        };
+        let result = self
+            .write(move |tx| {
+                tx.execute(
+                    "UPDATE accounts SET password_hash = ?1 WHERE id = ?2 AND password_hash = ?3",
+                    params![new, account_id, old],
+                )?;
+                Ok(())
+            })
+            .await;
+        if let Err(err) = result {
+            tracing::warn!(%err, account_id, "replacing a taken-over password hash failed");
+        }
+    }
+
     pub async fn revoke_app_password(&self, account_id: i64, id: i64) -> Result<AppPassword> {
         self.write(move |tx| {
             let found = tx
@@ -510,15 +606,35 @@ impl Store {
                         .optional()?,
                     None => None,
                 };
-                Ok(Some((account, hash, required, app)))
+                // App passwords taken over from another server can only be told apart by checking each hash.
+                let mut imported = Vec::new();
+                if app.is_none() {
+                    let mut stmt = conn.prepare(
+                        "SELECT id, scopes, expires_at, imported_hash FROM app_passwords
+                         WHERE account_id = ?1 AND imported_hash IS NOT NULL",
+                    )?;
+                    let rows = stmt.query_map([account.id], |row| {
+                        Ok(((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<i64>>(2)?), row.get::<_, String>(3)?))
+                    })?;
+                    imported = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+                }
+                Ok(Some((account, hash, required, app, imported)))
             })
             .await?;
 
-        let Some((account, hash, required, app)) = found else {
+        let Some((account, hash, required, mut app, imported)) = found else {
             let password = password.to_owned();
             let _ = tokio::task::spawn_blocking(move || password::verify(&password, None)).await;
             return Ok(MailAuth::Denied(MailAuthDenied::Invalid));
         };
+        if app.is_none() && !imported.is_empty() {
+            let password = password.to_owned();
+            app = tokio::task::spawn_blocking(move || {
+                imported.into_iter().find(|(_, stored)| password::verify(&password, Some(stored))).map(|(app, _)| app)
+            })
+            .await
+            .map_err(|err| StoreError::Internal(err.to_string()))?;
+        }
 
         if let Some((id, scopes, expires_at)) = app {
             let now = now();
@@ -545,12 +661,15 @@ impl Store {
             return Ok(MailAuth::Ok { account, app_password: Some(id) });
         }
 
-        let password = password.to_owned();
-        let valid = tokio::task::spawn_blocking(move || password::verify(&password, hash.as_deref()))
+        let (typed, stored) = (password.to_owned(), hash.clone());
+        let valid = tokio::task::spawn_blocking(move || password::verify(&typed, stored.as_deref()))
             .await
             .map_err(|err| StoreError::Internal(err.to_string()))?;
         if !valid || !account.can_log_in() {
             return Ok(MailAuth::Denied(MailAuthDenied::Invalid));
+        }
+        if let Some(old) = hash.filter(|hash| password::is_imported(hash)) {
+            self.upgrade_imported_hash(account.id, old, password.to_owned()).await;
         }
         if required {
             // The person should learn that their main password was typed into a mail app,
@@ -995,6 +1114,52 @@ mod tests {
         assert_eq!(totp_step(secret, "081804", 1_111_111_109 + 30, 0), Some(1_111_111_109 / 30), "one step late");
         assert_eq!(totp_step(secret, "081804", 1_111_111_109, 1_111_111_109 / 30), None, "used before");
         assert_eq!(totp_step(secret, "81804", 1_111_111_109, 0), None);
+    }
+
+    #[tokio::test]
+    async fn passwords_and_app_passwords_from_mailcow_keep_working() {
+        let (store, _dir) = crate::test_support::store().await;
+        store.create_domain("example.de").await.unwrap();
+        let new = NewAccount {
+            address: "mini@example.de".into(),
+            display_name: String::new(),
+            password: None,
+            role: Role::User,
+            quota_bytes: 0,
+        };
+        let mini = store.create_account(new).await.unwrap();
+        let bcrypt = |secret: &str| {
+            let parts = bcrypt::hash_with_result(secret, 4).unwrap();
+            format!("{{BLF-CRYPT}}{}", parts.format_for_version(bcrypt::Version::TwoY))
+        };
+        store.import_password_hash(mini.id, &bcrypt("katzenpfote-123")).await.unwrap();
+        assert!(store.import_password_hash(mini.id, "{SHA512-CRYPT}$6$x$y").await.is_err());
+
+        let stored = |store: Store| async move {
+            store
+                .read(move |conn| {
+                    Ok(conn.query_row("SELECT password_hash FROM accounts WHERE id = ?1", [mini.id], |row| {
+                        row.get::<_, String>(0)
+                    })?)
+                })
+                .await
+                .unwrap()
+        };
+        assert!(store.authenticate("mini@example.de", "falsch-falsch").await.unwrap().is_none());
+        assert!(store.authenticate("mini@example.de", "katzenpfote-123").await.unwrap().is_some());
+        assert!(stored(store.clone()).await.starts_with("$argon2"), "replaced by our own hash at the first login");
+        let auth = store.authenticate_mail("mini@example.de", "katzenpfote-123", AppScope::Mail, "imap", "").await;
+        assert!(matches!(auth.unwrap(), MailAuth::Ok { app_password: None, .. }));
+
+        let phone =
+            store.import_app_password(mini.id, "iPhone", &bcrypt("mein-altes-app-pw"), vec![AppScope::Mail]).await;
+        let phone = phone.unwrap();
+        let again = store.import_app_password(mini.id, "iPhone", &bcrypt("anderes"), vec![AppScope::Smtp]).await;
+        assert_eq!(again.unwrap().id, phone.id, "importing twice keeps the first");
+        let auth = store.authenticate_mail("mini@example.de", "mein-altes-app-pw", AppScope::Mail, "imap", "").await;
+        assert!(matches!(auth.unwrap(), MailAuth::Ok { app_password: Some(id), .. } if id == phone.id));
+        let auth = store.authenticate_mail("mini@example.de", "mein-altes-app-pw", AppScope::Smtp, "smtp", "").await;
+        assert!(matches!(auth.unwrap(), MailAuth::Denied(MailAuthDenied::WrongScope)));
     }
 
     #[test]

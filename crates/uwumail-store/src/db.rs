@@ -27,6 +27,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0018_spam_limits.sql"),
     include_str!("migrations/0019_forward_addresses.sql"),
     include_str!("migrations/0020_send_as_domains.sql"),
+    include_str!("migrations/0021_imported_app_passwords.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 

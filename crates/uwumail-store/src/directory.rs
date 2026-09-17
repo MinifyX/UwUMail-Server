@@ -597,17 +597,17 @@ impl Store {
                     .optional()?)
             })
             .await?;
-        let password = password.to_owned();
-        tokio::task::spawn_blocking(move || {
-            let (account, hash) = match found {
-                Some((account, hash)) => (Some(account), hash),
-                None => (None, None),
-            };
-            let valid = password::verify(&password, hash.as_deref());
-            Ok(account.filter(|account| valid && account.can_log_in()))
-        })
-        .await
-        .map_err(|err| StoreError::Internal(err.to_string()))?
+        let (typed, stored) = (password.to_owned(), found.as_ref().and_then(|(_, hash)| hash.clone()));
+        let valid = tokio::task::spawn_blocking(move || password::verify(&typed, stored.as_deref()))
+            .await
+            .map_err(|err| StoreError::Internal(err.to_string()))?;
+        let Some((account, hash)) = found.filter(|(account, _)| valid && account.can_log_in()) else {
+            return Ok(None);
+        };
+        if let Some(old) = hash.filter(|hash| password::is_imported(hash)) {
+            self.upgrade_imported_hash(account.id, old, password.to_owned()).await;
+        }
+        Ok(Some(account))
     }
 
     pub async fn add_alias(&self, address: &str, login: &str) -> Result<()> {

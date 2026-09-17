@@ -31,6 +31,8 @@ uwumail-web = { path = "crates/uwumail-web" }
 
 anyhow = "1"
 argon2 = { version = "0.6", features = ["getrandom"] }
+# Only to check password hashes taken over from other mail servers, e.g. mailcow's BLF-CRYPT.
+bcrypt = "0.19"
 # prebuilt-nasm: Windows builds need no NASM, like rustls already arranges when it is part of the build.
 aws-lc-rs = { version = "1", features = ["prebuilt-nasm"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "http2", "json", "tokio", "query"] }
