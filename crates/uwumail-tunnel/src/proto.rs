@@ -64,6 +64,10 @@ pub struct Hello {
     /// The services the server takes. Missing from older servers, which take [`Service::FIRST`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub services: Option<Vec<Service>>,
+    /// Whether this server speaks on the control stream after the handshake. Older servers never
+    /// read it again, so the gateway stays quiet for them.
+    #[serde(default)]
+    pub control: bool,
 }
 
 impl Hello {
@@ -94,6 +98,10 @@ pub struct Welcome {
     pub services: Vec<Service>,
     /// Ports the gateway connects to for outgoing mail.
     pub outbound_ports: Vec<u16>,
+    /// Whether this gateway speaks on the control stream after the handshake. Older gateways
+    /// never read it again, so the server keeps its bans to itself.
+    #[serde(default)]
+    pub control: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -107,6 +115,79 @@ pub enum Refusal {
     OtherServer,
     /// The two sides speak different tunnel versions.
     Version,
+}
+
+/// What the gateway says on the control stream once both sides agreed on it. Only sent when the
+/// server's [`Hello::control`] says it listens.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum GatewayMessage {
+    Status(Box<GatewayStatus>),
+}
+
+/// What the server asks of the gateway on the control stream. Only sent when the gateway's
+/// [`Welcome::control`] says it listens.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ServerMessage {
+    /// Keep `ip` away from the gateway's public ports for `seconds`. The gateway refuses addresses
+    /// its own tunnel comes from, whatever the server asks: a mail app at home getting a password
+    /// wrong must never cut the household off from its own gateway.
+    Ban {
+        ip: IpAddr,
+        seconds: u32,
+        reason: String,
+    },
+    Unban {
+        ip: IpAddr,
+    },
+}
+
+/// How the machine the gateway runs on is doing. The portal shows it, so a VPS that needs updates
+/// or lost its firewall says so where it is noticed, instead of waiting for the next SSH login.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct GatewayStatus {
+    pub software: String,
+    pub system: Option<System>,
+    pub protection: Option<Protection>,
+    /// The addresses the gateway keeps out of every ban list, this server's among them.
+    pub trusted: Vec<IpAddr>,
+    /// Unix time the gateway last looked at the machine.
+    pub checked_at: i64,
+}
+
+/// The operating system of the VPS and what it waits for.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct System {
+    /// As the machine calls itself, for example `Ubuntu 26.04.1 LTS`.
+    pub name: String,
+    pub updates: u32,
+    pub security_updates: u32,
+    pub reboot_required: bool,
+    /// Whether security updates install themselves.
+    pub automatic_security: bool,
+    /// A newer release of the operating system, when one waits.
+    pub new_release: Option<String>,
+    /// What to run on the VPS to install the updates.
+    pub command: String,
+}
+
+/// What keeps the VPS itself safe: the firewall and fail2ban.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Protection {
+    /// The firewall in use, for example `ufw`; empty when none was found.
+    pub firewall: String,
+    pub firewall_active: bool,
+    pub fail2ban: bool,
+    /// Addresses fail2ban keeps out right now, over all jails.
+    pub banned: u32,
+    /// The jails that watch, by name.
+    pub jails: Vec<String>,
+    /// Of those bans, the ones this server asked for.
+    pub from_server: u32,
 }
 
 /// Starts each stream the gateway opens: a connection arrived from `client`.
@@ -202,6 +283,18 @@ where
     serde_json::from_slice(&body).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
 }
 
+/// Reads one message on a stream that carries a conversation, telling a broken stream apart from a
+/// message this version does not know yet. Unknown ones come back as `None` and the reader stays in
+/// step, so a newer other side never has to break off the control stream to stay understood.
+pub async fn read_known<R, T>(reader: &mut R) -> io::Result<Option<T>>
+where
+    R: AsyncRead + Unpin,
+    T: DeserializeOwned,
+{
+    let value: serde_json::Value = read_message(reader).await?;
+    Ok(serde_json::from_value(value).ok())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -248,8 +341,47 @@ mod tests {
             software: "x".into(),
             token: None,
             services: Some(Service::ALL.to_vec()),
+            control: true,
         };
         let json = serde_json::to_value(&hello).unwrap();
         assert_eq!(json["services"][5], "imaps");
+    }
+
+    #[test]
+    fn sides_from_before_the_control_stream_stay_quiet() {
+        let old: Hello = serde_json::from_str(r#"{"version":1,"hostname":"mail.example.de","software":"x"}"#).unwrap();
+        assert!(!old.control, "an older server does not read the control stream");
+        let old: Welcome =
+            serde_json::from_str(r#"{"version":1,"software":"x","addresses":[],"services":[],"outboundPorts":[]}"#)
+                .unwrap();
+        assert!(!old.control, "an older gateway does not read the control stream");
+    }
+
+    #[test]
+    fn control_messages_are_tagged() {
+        let ban = ServerMessage::Ban { ip: "192.0.2.7".parse().unwrap(), seconds: 3600, reason: "imap".into() };
+        let json = serde_json::to_value(&ban).unwrap();
+        assert_eq!(json["type"], "ban");
+        assert_eq!(json["ip"], "192.0.2.7");
+
+        let status = GatewayMessage::Status(Box::default());
+        assert_eq!(serde_json::to_value(&status).unwrap()["type"], "status");
+        // Fields the other side does not know yet must not make the whole message unreadable.
+        let grown = r#"{"type":"status","software":"uwumail-gateway 9.9.9","whatIsThis":true}"#;
+        let read: GatewayMessage = serde_json::from_str(grown).unwrap();
+        let GatewayMessage::Status(status) = read;
+        assert_eq!(status.software, "uwumail-gateway 9.9.9");
+    }
+
+    #[tokio::test]
+    async fn an_unknown_message_is_skipped_instead_of_ending_the_talk() {
+        let mut buffer = Vec::new();
+        write_message(&mut buffer, &serde_json::json!({ "type": "somethingNewer" })).await.unwrap();
+        write_message(&mut buffer, &ServerMessage::Unban { ip: "192.0.2.7".parse().unwrap() }).await.unwrap();
+
+        let mut reader = buffer.as_slice();
+        assert!(read_known::<_, ServerMessage>(&mut reader).await.unwrap().is_none(), "skipped, not fatal");
+        let next = read_known::<_, ServerMessage>(&mut reader).await.unwrap();
+        assert_eq!(next, Some(ServerMessage::Unban { ip: "192.0.2.7".parse().unwrap() }), "still in step");
     }
 }

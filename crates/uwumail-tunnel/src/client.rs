@@ -2,17 +2,20 @@
 //! arrive at the gateway to the server and opens connections to other servers from there.
 
 use std::io;
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use quinn::{Connection, Endpoint, VarInt};
-use tokio::sync::watch;
+use quinn::{Connection, Endpoint, RecvStream, SendStream, VarInt};
+use tokio::sync::{mpsc, watch};
 use tokio::time::timeout;
 
 use crate::code::Token;
 use crate::identity::{CERTIFICATE_NAME, Fingerprint, Identity};
-use crate::proto::{self, Connect, ConnectReply, Hello, HelloReply, Open, Refusal, Service, VERSION, Welcome};
+use crate::proto::{
+    self, Connect, ConnectReply, GatewayMessage, GatewayStatus, Hello, HelloReply, Open, Refusal, ServerMessage,
+    Service, VERSION, Welcome,
+};
 use crate::quic;
 use crate::stream::TunnelStream;
 
@@ -22,6 +25,9 @@ const HEADER_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_BACKOFF: Duration = Duration::from_secs(60);
 /// After a refusal nothing changes until someone acts; asking often would only fill the gateway's log.
 const REFUSED_RETRY: Duration = Duration::from_secs(300);
+/// Bans waiting for a gateway that is slow to read them. Past this the oldest are dropped: the
+/// server's own limiter already holds the line, and a full queue must never stall a login.
+const BANS_WAITING: usize = 64;
 
 pub struct ClientSettings {
     /// Where the gateway waits for the tunnel, tried in this order.
@@ -70,6 +76,11 @@ pub struct TunnelClient {
 struct Shared {
     connection: Mutex<Option<Connection>>,
     status: watch::Sender<Status>,
+    /// What the gateway last said about the machine it runs on. `None` until it says something,
+    /// and for gateways from before the control stream.
+    gateway_status: watch::Sender<Option<GatewayStatus>>,
+    /// Where bans go while a gateway that listens is connected.
+    control: Mutex<Option<mpsc::Sender<ServerMessage>>>,
     stop: watch::Sender<bool>,
 }
 
@@ -87,8 +98,10 @@ impl TunnelClient {
     /// Connects in the background, again and again, until `shutdown` changes or [`TunnelClient::stop`].
     pub fn start(settings: ClientSettings, inbound: Arc<dyn Inbound>, shutdown: watch::Receiver<bool>) -> TunnelClient {
         let (status, _) = watch::channel(Status::Connecting { error: None });
+        let (gateway_status, _) = watch::channel(None);
         let (stop, stop_rx) = watch::channel(false);
-        let shared = Arc::new(Shared { connection: Mutex::new(None), status, stop });
+        let shared =
+            Arc::new(Shared { connection: Mutex::new(None), status, gateway_status, control: Mutex::new(None), stop });
         tokio::spawn(run(shared.clone(), settings, inbound, shutdown, stop_rx));
         TunnelClient { shared }
     }
@@ -99,6 +112,39 @@ impl TunnelClient {
 
     pub fn subscribe(&self) -> watch::Receiver<Status> {
         self.shared.status.subscribe()
+    }
+
+    /// What the gateway last said about its machine: updates, firewall and fail2ban. `None` while
+    /// nothing was said yet, and for gateways from before the control stream.
+    pub fn gateway_status(&self) -> Option<GatewayStatus> {
+        self.shared.gateway_status.borrow().clone()
+    }
+
+    /// Asks the gateway to keep `ip` away from its public ports. Does nothing when the gateway is
+    /// away or too old to listen: the server's own limiter holds the line either way.
+    ///
+    /// The gateway refuses addresses its own tunnel comes from, so a mail app at home with the
+    /// wrong password cannot cut the household off from its own gateway.
+    pub fn ban(&self, ip: IpAddr, how_long: Duration, reason: &str) {
+        self.send_control(ServerMessage::Ban {
+            ip,
+            seconds: how_long.as_secs().clamp(60, 7 * 24 * 3600) as u32,
+            reason: reason.to_owned(),
+        });
+    }
+
+    pub fn unban(&self, ip: IpAddr) {
+        self.send_control(ServerMessage::Unban { ip });
+    }
+
+    fn send_control(&self, message: ServerMessage) {
+        let sender = self.shared.control.lock().expect("tunnel control poisoned").clone();
+        if let Some(sender) = sender {
+            // Never waits: a gateway that cannot keep up must not hold up a login.
+            if sender.try_send(message).is_err() {
+                tracing::debug!("the gateway is not taking bans right now");
+            }
+        }
     }
 
     pub fn stop(&self) {
@@ -190,6 +236,7 @@ async fn session(
         software: settings.software.clone(),
         token: settings.token.as_ref().map(Token::to_text),
         services: Some(settings.services.clone()),
+        control: true,
     };
     let answer = timeout(ANSWER_TIMEOUT, async {
         proto::write_message(&mut control, &hello).await?;
@@ -211,7 +258,18 @@ async fn session(
     let gateway = connection.remote_address();
     tracing::info!(%gateway, addresses = ?welcome.addresses, "connected to the UwUMail Gateway");
     *shared.connection.lock().expect("tunnel connection poisoned") = Some(connection.clone());
+    let controlling = welcome.control;
     shared.status.send_replace(Status::Connected { gateway, welcome, since: unix_now() });
+
+    // A gateway from before the control stream never reads it again, so for that one the stream is
+    // only held open; talking into it would fill a buffer nobody empties.
+    let mut held_open = Some(control);
+    let talking = controlling.then(|| {
+        let (bans, waiting) = mpsc::channel(BANS_WAITING);
+        *shared.control.lock().expect("tunnel control poisoned") = Some(bans);
+        let (send, recv) = held_open.take().expect("the control stream is still here").into_parts();
+        tokio::spawn(talk(send, recv, waiting, shared.gateway_status.clone()))
+    });
 
     let accepting = tokio::spawn(accept_streams(connection.clone(), inbound.clone()));
     let ended = tokio::select! {
@@ -220,7 +278,14 @@ async fn session(
         _ = stop.changed() => Ended::Stopped,
     };
     accepting.abort();
-    drop(control);
+    *shared.control.lock().expect("tunnel control poisoned") = None;
+    // What the gateway said belongs to the connection that said it; keeping it would show a
+    // reassuring old report while the tunnel is down.
+    shared.gateway_status.send_replace(None);
+    if let Some(talking) = talking {
+        talking.abort();
+    }
+    drop(held_open);
     if matches!(ended, Ended::Stopped) {
         connection.close(VarInt::from_u32(0), b"stopped");
         let _ = timeout(Duration::from_secs(2), endpoint.wait_idle()).await;
@@ -261,6 +326,45 @@ async fn dial(settings: &ClientSettings) -> Result<(Endpoint, Connection), Strin
         errors.push("no address for the gateway".into());
     }
     Err(errors.join("; "))
+}
+
+/// The control stream after the handshake: the gateway reports on its machine, the server asks for
+/// bans. Both directions run until the connection ends and the task is dropped with it.
+async fn talk(
+    mut send: SendStream,
+    mut recv: RecvStream,
+    mut bans: mpsc::Receiver<ServerMessage>,
+    status: watch::Sender<Option<GatewayStatus>>,
+) {
+    let listening = async {
+        // A message this version does not know is skipped, not fatal: a newer gateway keeps talking.
+        while let Ok(message) = proto::read_known::<_, GatewayMessage>(&mut recv).await {
+            if let Some(GatewayMessage::Status(report)) = message {
+                if let Some(system) = &report.system {
+                    // Worth a line in the log of a server nobody is looking at right now.
+                    if system.security_updates > 0 || system.reboot_required {
+                        tracing::info!(
+                            security_updates = system.security_updates,
+                            reboot_required = system.reboot_required,
+                            "the UwUMail Gateway's machine is waiting for updates"
+                        );
+                    }
+                }
+                status.send_replace(Some(*report));
+            }
+        }
+    };
+    let asking = async {
+        while let Some(message) = bans.recv().await {
+            if proto::write_message(&mut send, &message).await.is_err() {
+                break;
+            }
+        }
+    };
+    tokio::select! {
+        _ = listening => {}
+        _ = asking => {}
+    }
 }
 
 async fn accept_streams(connection: Connection, inbound: Arc<dyn Inbound>) {

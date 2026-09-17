@@ -44,6 +44,7 @@ async fn handle(shared: Arc<Shared>, mut tcp: TcpStream, client: SocketAddr, ser
     // Dual-stack listeners report IPv4 clients as ::ffff:a.b.c.d; the server needs the plain address.
     let client = SocketAddr::new(client.ip().to_canonical(), client.port());
     let Some(_admission) = shared.limits.admit(client.ip()) else {
+        shared.note_turned_away(client.ip(), service);
         say_goodbye(&mut tcp, service, Goodbye::Busy, &shared.hostname()).await;
         return;
     };

@@ -6,26 +6,34 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::Context as _;
-use quinn::{Connection, Endpoint, Incoming, VarInt};
+use quinn::{Connection, Endpoint, Incoming, RecvStream, SendStream, VarInt};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
-use uwumail_tunnel::proto::{self, Hello, HelloReply, Refusal, Service, VERSION, Welcome};
+use uwumail_tunnel::proto::{
+    self, GatewayMessage, Hello, HelloReply, Refusal, ServerMessage, Service, VERSION, Welcome,
+};
 use uwumail_tunnel::{Fingerprint, Identity, PairingCode, Token, TunnelStream};
 
 use crate::config::GatewayConfig;
 use crate::limits::Limits;
+use crate::machine::Machine;
 use crate::state::{Pairing, State};
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 /// How often the gateway looks whether the pairing changed on disk (`uwumail-gateway unpair`).
 const PAIRING_CHECK: Duration = Duration::from_secs(2);
+/// How often the machine's state goes to the server for the portal. The report behind it is
+/// refreshed once a day; this pace also carries the count of banned addresses.
+const REPORT_EVERY: Duration = Duration::from_secs(5 * 60);
 /// Refused tunnel attempts from one address before it has to wait for the window to pass.
 const MAX_REFUSALS: u32 = 10;
 const REFUSAL_WINDOW: Duration = Duration::from_secs(600);
+/// How long one address stays quiet in the log after it was turned away for being over its limit.
+const TURNED_AWAY_QUIET: Duration = Duration::from_secs(300);
 /// Used in answers to mail senders until a server told its name.
 const NO_HOSTNAME: &str = "uwumail-gateway";
 
@@ -49,12 +57,14 @@ pub(crate) struct Shared {
     pub active: watch::Sender<Option<Active>>,
     pub limits: Arc<Limits>,
     state: State,
+    machine: Machine,
     identity: Identity,
     public_addresses: Vec<IpAddr>,
     services: Vec<Service>,
     hostname: RwLock<String>,
     pairing_lock: tokio::sync::Mutex<()>,
     refusals: Mutex<HashMap<IpAddr, (u32, Instant)>>,
+    turned_away: Mutex<HashMap<IpAddr, Instant>>,
 }
 
 /// A started gateway.
@@ -116,6 +126,7 @@ pub async fn start(config: GatewayConfig, shutdown: watch::Receiver<bool>) -> an
     let (active, _) = watch::channel(None);
     let shared = Arc::new(Shared {
         limits: Limits::new(config.limits.max_connections, config.limits.max_connections_per_ip),
+        machine: Machine::new(&config.state_dir),
         config,
         active,
         state,
@@ -125,6 +136,7 @@ pub async fn start(config: GatewayConfig, shutdown: watch::Receiver<bool>) -> an
         hostname: RwLock::new(hostname),
         pairing_lock: tokio::sync::Mutex::new(()),
         refusals: Mutex::new(HashMap::new()),
+        turned_away: Mutex::new(HashMap::new()),
     });
 
     let bound = listeners.iter().map(|(service, _, local)| (*service, *local)).collect();
@@ -176,7 +188,25 @@ impl Shared {
             addresses: self.public_addresses.clone(),
             services,
             outbound_ports: self.config.outbound.ports.clone(),
+            control: true,
         }
+    }
+
+    /// Whether a ban the server asks for may be carried out. The tunnel's own address is the one
+    /// that matters: a mail app at home with a wrong password would otherwise take the whole
+    /// household's connection down, gateway and all.
+    fn may_ban(&self, ip: IpAddr) -> Result<(), &'static str> {
+        let ip = ip.to_canonical();
+        if self.machine.is_trusted(ip) {
+            return Err("it is where the server's own tunnel comes from");
+        }
+        if self.public_addresses.iter().any(|own| own.to_canonical() == ip) {
+            return Err("it is the gateway itself");
+        }
+        if !uwumail_tunnel::net::is_global(ip) {
+            return Err("it is not a public address");
+        }
+        Ok(())
     }
 
     /// Decides whether the server with `fingerprint` may use the gateway, pairing it when it
@@ -240,6 +270,27 @@ impl Shared {
         }
         entry.0 += 1;
     }
+
+    /// A client turned away because its network already has as many connections as it may have.
+    /// Worth knowing when mail goes missing, but at most one line per address and window: the
+    /// case that fills this log is exactly the one that floods it.
+    pub(crate) fn note_turned_away(&self, ip: IpAddr, service: Service) {
+        let mut noted = self.turned_away.lock().expect("turned away poisoned");
+        if noted.len() > 10_000 {
+            noted.retain(|_, at: &mut Instant| at.elapsed() < TURNED_AWAY_QUIET);
+        }
+        let entry = noted.entry(ip).or_insert_with(|| Instant::now() - TURNED_AWAY_QUIET);
+        if entry.elapsed() < TURNED_AWAY_QUIET {
+            return;
+        }
+        *entry = Instant::now();
+        tracing::warn!(
+            client = %ip,
+            service = service.as_str(),
+            limit = self.config.limits.max_connections_per_ip,
+            "turned a client away: its network holds as many connections as it may"
+        );
+    }
 }
 
 async fn accept_tunnels(shared: Arc<Shared>, endpoint: Endpoint, mut shutdown: watch::Receiver<bool>) {
@@ -299,7 +350,7 @@ async fn handle_tunnel(shared: Arc<Shared>, incoming: Incoming) {
     match shared.authorize(fingerprint, &hello).await {
         Ok(hostname) => {
             let services = shared.shared_services(&hello);
-            serve_server(shared, connection, control, fingerprint, hostname, services).await
+            serve_server(shared, connection, control, fingerprint, hostname, services, hello.control).await
         }
         Err((reason, message)) => {
             shared.record_refusal(remote.ip());
@@ -320,6 +371,7 @@ async fn serve_server(
     server: Fingerprint,
     hostname: String,
     services: Vec<Service>,
+    talks: bool,
 ) {
     let welcome = HelloReply::Welcome(shared.welcome(services.clone()));
     if proto::write_message(&mut control, &welcome).await.is_err() {
@@ -331,11 +383,25 @@ async fn serve_server(
     if let Some(previous) = shared.active.send_replace(Some(active)) {
         previous.connection.close(CLOSE_REPLACED, b"a newer connection of the server took over");
     }
+    // Before anything else: from here on no ban may touch the address this tunnel comes from.
+    // A home connection brings a new one every night, so this is where the firewall learns it.
+    shared.machine.trust(remote.ip().to_canonical());
     tracing::info!(%remote, server = %hostname, "the UwUMail server is connected");
+
+    // A server from before the control stream never reads it again; for that one it is only held open.
+    let mut held_open = Some(control);
+    let talking = talks.then(|| {
+        let (send, recv) = held_open.take().expect("the control stream is still here").into_parts();
+        tokio::spawn(talk(shared.clone(), remote, send, recv))
+    });
 
     while let Ok((send, recv)) = connection.accept_bi().await {
         tokio::spawn(crate::outbound::handle(shared.clone(), TunnelStream::new(send, recv)));
     }
+    if let Some(talking) = talking {
+        talking.abort();
+    }
+    drop(held_open);
 
     let id = connection.stable_id();
     shared.active.send_if_modified(|active| {
@@ -347,7 +413,50 @@ async fn serve_server(
     });
     let reason = connection.close_reason().map(|reason| reason.to_string()).unwrap_or_default();
     tracing::info!(%remote, server = %hostname, %reason, "the UwUMail server disconnected");
-    drop(control);
+}
+
+/// The control stream after the handshake: the gateway reports on the machine it runs on so the
+/// portal can show it, and carries out the bans the server asks for.
+async fn talk(shared: Arc<Shared>, remote: SocketAddr, mut send: SendStream, mut recv: RecvStream) {
+    let asked = async {
+        // A message this version does not know is skipped, not fatal: a newer server keeps talking.
+        while let Ok(message) = proto::read_known::<_, ServerMessage>(&mut recv).await {
+            match message {
+                Some(ServerMessage::Ban { ip, seconds, reason }) => match shared.may_ban(ip) {
+                    Ok(()) => {
+                        if shared.machine.ban(ip, seconds, &reason) {
+                            tracing::info!(%ip, seconds, %reason, "the server asked to keep an address out");
+                        }
+                    }
+                    // Loud on purpose: this is the case that would take the server off the internet.
+                    Err(why) => tracing::warn!(%ip, why, "did not ban an address the server asked about"),
+                },
+                Some(ServerMessage::Unban { ip }) if shared.machine.unban(ip) => {
+                    tracing::info!(%ip, "the server asked to let an address in again");
+                }
+                Some(ServerMessage::Unban { .. }) | None => {}
+            }
+        }
+    };
+    let reporting = async {
+        loop {
+            // Says again that this is where the tunnel is, so the note does not time out under a
+            // connection that is very much in use. The trust is deliberately short-lived: the
+            // address the server gives up at the nightly reconnect belongs to someone else by
+            // morning, and it must not stay unbannable after that.
+            shared.machine.trust(remote.ip().to_canonical());
+            let software = format!("uwumail-gateway {}", env!("CARGO_PKG_VERSION"));
+            let status = shared.machine.status(software);
+            if proto::write_message(&mut send, &GatewayMessage::Status(Box::new(status))).await.is_err() {
+                break;
+            }
+            tokio::time::sleep(REPORT_EVERY).await;
+        }
+    };
+    tokio::select! {
+        _ = asked => {}
+        _ = reporting => {}
+    }
 }
 
 /// Follows changes of the pairing on disk: a removed pairing disconnects the server and brings a

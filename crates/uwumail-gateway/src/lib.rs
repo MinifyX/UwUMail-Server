@@ -7,6 +7,7 @@
 pub mod config;
 mod gateway;
 mod limits;
+pub mod machine;
 mod outbound;
 mod pipe;
 mod public;
