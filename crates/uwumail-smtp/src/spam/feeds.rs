@@ -412,6 +412,34 @@ mod tests {
         assert!(parse(Kind::Domains, "<html>error</html>").is_err(), "an error page empties nothing");
     }
 
+    /// Fetches the real lists that need no key: `cargo test -p uwumail-smtp --lib real_lists -- --ignored`.
+    #[tokio::test]
+    #[ignore = "reaches the internet"]
+    async fn real_lists_can_be_fetched_and_read() {
+        let fetcher = crate::fetch::Fetcher::new();
+        for key in ["bad_subjects", "disposable", "freemail", "redirectors"] {
+            let feed = feed(key).unwrap();
+            let url = feed.url(&FeedsConfig::default()).unwrap();
+            let http = url.starts_with("http://");
+            let Fetched::Fresh { body, validator } = fetcher.get(&url, http, None, feed.max_bytes, key).await.unwrap()
+            else {
+                panic!("{key}: nothing fetched")
+            };
+            let values = parse(feed.kind, &String::from_utf8_lossy(&body)).unwrap();
+            assert!(values.len() > 50, "{key}: only {} entries", values.len());
+            let unchanged = match &validator {
+                Some(validator) => {
+                    fetcher.get(&url, http, Some(validator), feed.max_bytes, key).await.unwrap() == Fetched::Unchanged
+                }
+                None => false,
+            };
+            eprintln!(
+                "{key}: {} entries, validator {validator:?}, unchanged on the second fetch: {unchanged}",
+                values.len()
+            );
+        }
+    }
+
     #[test]
     fn switches_and_the_key_decide_what_counts() {
         let mut config = FeedsConfig::default();
