@@ -293,6 +293,31 @@ pub enum ImportCommand {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Copy mail over IMAP with TLS. Running it again only fetches what arrived since.
+    Imap {
+        /// The old server, e.g. 192.0.2.10:993.
+        #[arg(long)]
+        host: String,
+        /// The name on the old server's certificate, when --host is an IP address or another name.
+        #[arg(long)]
+        tls_name: Option<String>,
+        /// A dovecot master user, so no one's own password is needed.
+        #[arg(long)]
+        master_user: Option<String>,
+        /// The password (the master password with --master-user). Read from the first line of standard
+        /// input when not set.
+        #[arg(long, env = "UWUMAIL_IMPORT_PASSWORD", hide_env_values = true)]
+        password: Option<String>,
+        /// A person to copy, with the same login on both servers; repeat for more.
+        #[arg(long)]
+        login: Vec<String>,
+        /// Everyone on this domain here; repeat for more.
+        #[arg(long)]
+        domain: Vec<String>,
+        /// Only count what would be copied.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]

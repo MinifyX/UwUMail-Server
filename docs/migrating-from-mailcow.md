@@ -60,8 +60,34 @@ a small one.
 
 The same without `--dry-run`. Afterwards delete the export on the mailcow host.
 
-## 4. Mail and DNS
+## 4. Copy the mail
 
-Copy the mail over IMAP (coming next), then point the MX and the names mail
-apps use (`imap.`, `smtp.`, `mail.`, `autoconfig.`, `autodiscover.`) to the
-server or its gateway. Those names join the certificate once they point here.
+mailcow encrypts mail on disk, so it comes over IMAP. With a dovecot master
+user nobody's password is needed: set `DOVECOT_MASTER_USER` and
+`DOVECOT_MASTER_PASS` in `mailcow.conf`, run `docker compose up -d`, and look
+up the user's exact name in the first field of
+`data/conf/dovecot/dovecot-master.passwd`. UwUMail logs in as
+`person*master`, the separator mailcow's dovecot uses.
+
+```sh
+cat master-password.txt | docker compose exec -T uwumail uwumail-server import imap \
+  --host 192.0.2.10:993 --tls-name mail.example.com \
+  --master-user master --domain example.com --dry-run
+```
+
+`--host` is where to connect, `--tls-name` the name on mailcow's certificate.
+The password comes from the first line of standard input (or
+`UWUMAIL_IMPORT_PASSWORD`), never from the command line. Use `--login` for
+single people. Every folder of the person's own namespace comes along with its
+flags and arrival date; shared folders stay behind. Special folders (Sent,
+Drafts, Junk, Trash, Archive) land in their counterparts.
+
+Each folder remembers the last message taken over, so run it once early and
+again right before switching DNS: the second run only fetches what arrived in
+between. Remove the master user from `mailcow.conf` afterwards.
+
+## 5. DNS
+
+Point the MX and the names mail apps use (`imap.`, `smtp.`, `mail.`,
+`autoconfig.`, `autodiscover.`) to the server or its gateway. Those names join
+the certificate once they point here. Then copy the mail one last time.

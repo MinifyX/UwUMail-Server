@@ -95,6 +95,26 @@ async fn run(
             let dav = uwumail_dav::Dav::new(store.clone(), settings);
             import::mailcow(&store, dav, &file, &domain, dry_run).await
         }
+        Command::Import(crate::cli::ImportCommand::Imap {
+            host,
+            tls_name,
+            master_user,
+            password,
+            login,
+            domain,
+            dry_run,
+        }) => {
+            let password = match password {
+                Some(password) => password,
+                None => {
+                    let mut line = String::new();
+                    std::io::stdin().read_line(&mut line)?;
+                    line.trim_end_matches(['\r', '\n']).to_owned()
+                }
+            };
+            let source = import::imap::Source { address: host, tls_name, roots: None, master_user, password };
+            import::imap(&store, source, &login, &domain, dry_run).await
+        }
         Command::Queue(command) => commands::queue(&store, command).await,
         Command::Gateway(command) => commands::gateway(&config, &store, command).await,
         Command::Spam(command) => commands::spam(&store, command).await,

@@ -13,6 +13,7 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Forwarding addresses without a mailbox (domain page, `uwumail-server forward`), no spam passed on
 - [x] Sending as any address of a domain for chosen people (person page, `uwumail-server account send-as`)
 - [x] Import from mailcow (`scripts/mailcow-export.sh`, `uwumail-server import mailcow`): people with their password hashes, aliases, forwarding, app passwords, sender lists, spam limits, DKIM keys, calendars and contacts
+- [x] Copying mail over IMAP with a dovecot master user, repeatable for what arrived since (`uwumail-server import imap`)
 - [x] Mailboxes with IMAP UIDs, threading, full-text index, change log (JMAP states / CONDSTORE), quotas
 - [x] SMTP receiving (MX): STARTTLS, recipient checks, relay protection, pipelining, CHUNKING, size limits
 - [x] SPF, DKIM and DMARC verification, Authentication-Results, DMARC reject/quarantine

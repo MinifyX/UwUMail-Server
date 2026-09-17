@@ -3144,6 +3144,7 @@ dependencies = [
  "uwumail-store",
  "uwumail-tunnel",
  "uwumail-web",
+ "webpki-roots",
  "x509-parser",
 ]
 
