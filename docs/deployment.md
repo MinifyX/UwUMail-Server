@@ -40,7 +40,14 @@ here too.
 ## Setup assistant
 
 While there is no admin, the server writes a one-time code to its log on every
-start. Open `https://mail.example.com/setup` and enter it. The assistant
+start. Open `https://mail.example.com/setup` and enter it.
+
+Behind a [gateway](gateway.md#pair-your-server) the name only answers once the
+server is paired, so the pairing code goes into `.env` before the first start.
+`https://<address of the server>/setup` works as well, with the port when
+`UWUMAIL_HTTPS_BIND` moved 443; the browser warns about the certificate.
+
+The assistant
 
 1. creates the first domain (with DKIM keys) and your admin account,
 2. shows the DNS records and checks them; if the domain is at Cloudflare, it can
@@ -172,7 +179,39 @@ are not there yet.
 
 ## Behind a reverse proxy
 
-Mail ports are always handled by UwUMail itself. For the web part:
+Mail ports are always handled by UwUMail itself. A reverse proxy only carries
+the web part, and its upstream is the **proxy listener** (`listen.proxy`, for
+example port 8080). That one serves the whole site over plain HTTP, without a
+redirect and without HSTS.
+
+Never point a proxy at UwUMail's port 80. That port answers certificate
+challenges and redirects everything else to `https://mail.example.com/`, which
+behind a proxy goes round in circles. When a request there was already HTTPS at
+the proxy, UwUMail answers with a short page (HTTP 421) that says so instead.
+
+The proxy has to pass the `Host` header on unchanged and set `X-Forwarded-For`
+and `X-Forwarded-Proto`. Caddy's `reverse_proxy` does both by itself.
+
+**With the stock `compose.yaml`:** the files for a proxy that runs in Docker on
+the same machine are in [`deploy/behind-proxy`](../deploy/behind-proxy). Copy
+`compose.proxy.yaml` next to `compose.yaml` and add to `.env`:
+
+```bash
+COMPOSE_FILE=compose.yaml:compose.proxy.yaml
+UWUMAIL_HTTP_BIND=127.0.0.1:8081
+UWUMAIL_HTTPS_BIND=8443
+```
+
+The first line loads the override. It switches the proxy listener on, trusts
+the proxy's address and creates the Docker network `uwumail-proxy`, which the
+proxy joins with the fixed address `172.30.25.2` to reach `uwumail:8080`. Port
+8080 is not published. The other two lines move UwUMail's own web ports away
+from 80 and 443, as a port or as `address:port`. The header of
+`compose.proxy.yaml` has the steps, and says what to change when that address
+range is taken. Its end has the variant for a proxy that runs on the host
+instead of in Docker, and the `Caddyfile` next to it is Caddy's side.
+
+**With a config file** the same looks like this:
 
 ```toml
 [listen]
@@ -180,22 +219,90 @@ http = ""
 https = ""
 proxy = "[::]:8080"
 
+[http]
+trusted_proxies = ["172.30.25.2"]
+
 [tls]
 mode = "files"
 cert_file = "/certs/mail.example.com.crt"
 key_file = "/certs/mail.example.com.key"
 ```
 
-Point the proxy at port 8080 and mount the certificate your proxy manages
-(Traefik, Caddy and Nginx Proxy Manager can all export it) so STARTTLS and
-port 465 use the same certificate. It is reloaded when the files change.
+`http.trusted_proxies` lists the addresses whose `X-Forwarded-For` and
+`X-Forwarded-Proto` UwUMail believes. While the proxy's address is missing,
+every visitor counts as the proxy: all logins share one throttle (10 failures
+in 15 minutes per address), the logs and the change log show the proxy's
+address, and the session cookie is set without `Secure`. To find the address,
+leave the list empty and open the site through the proxy once. The server then
+names it in a warning, once per start:
 
-Alternatively keep `mode = "acme"` with only the proxy listener: Let's Encrypt
-follows the proxy's redirect to HTTPS, and the proxy forwards
-`/.well-known/acme-challenge/` to UwUMail like every other path.
+```bash
+docker compose logs uwumail | grep trusted_proxies
+```
+
+If that is the gateway address of a Docker network (like `172.18.0.1`, when the
+proxy runs on the host and reaches a published port), other traffic to
+published ports can arrive from it as well: IPv6 visitors on a Docker network
+without IPv6, and everything under Docker Desktop or rootless Docker. Trust it
+only when every published web port is bound to loopback:
+`UWUMAIL_HTTP_BIND=127.0.0.1:8081`, `UWUMAIL_HTTPS_BIND=127.0.0.1:8443` and
+`127.0.0.1:8080:8080` for the proxy listener.
+
+As an environment variable the list needs its square brackets:
+`UWUMAIL_HTTP__TRUSTED_PROXIES=[172.30.25.2]`. With a bare or an empty value
+the server refuses to start. In a compose file, quote it (`"[172.30.25.2]"`),
+or YAML reads it as a list of its own.
+
+The mail ports need a certificate for the host name too. Both ways need the
+public name to point to the proxy:
+
+- `mode = "files"`, as above: mount the certificate your proxy manages
+  (Traefik, Caddy and Nginx Proxy Manager can all export it), so the mail ports
+  use the same one. It is reloaded when the files change.
+- `mode = "acme"`, which is the default and what the stock `compose.yaml` runs
+  with: Let's Encrypt follows the proxy's redirect to HTTPS, and the proxy
+  forwards `/.well-known/acme-challenge/` to UwUMail like every other path.
+  Every name on the certificate is checked that way, so `imap.<domain>` and
+  the like only join it when the proxy routes them to UwUMail as well. UwUMail
+  asks a few seconds after it starts. When the proxy only learned the name
+  after that, the first try has failed: `docker compose restart uwumail` makes
+  it ask again once the site opens through the proxy, otherwise it retries
+  within the hour.
 
 For MTA-STS, also route `mta-sts.<domain>` of each domain to port 8080; UwUMail
-picks the domain from the host name.
+picks the domain from the host name. The same goes for `autoconfig.<domain>`
+and `autodiscover.<domain>`, where mail apps look up their settings.
+
+### With a gateway (setup B)
+
+A server at home behind a [UwUMail Gateway](gateway.md) needs none of this,
+also when Caddy or another web server already holds ports 80 and 443 on the
+machine. The public name points to the gateway, and the gateway's ports 80 and
+443 end in UwUMail through the tunnel, so the other web server is not in the
+public path. Keep `tls.mode = "acme"`, because the challenge arrives through
+the tunnel as well, and only move UwUMail's web ports out of the way in `.env`:
+
+```bash
+UWUMAIL_HTTP_BIND=127.0.0.1:8081
+UWUMAIL_HTTPS_BIND=8443
+```
+
+`https://<address in your network>:8443` then reaches the portal without the
+gateway; the browser warns about the certificate. That is a fallback for setup
+and admin work, not an address to hand out: passkeys are bound to
+`https://mail.example.com` without a port, the Apple profile points calendars
+and contacts at port 443 of the host name, and invitation links you copy in the
+portal carry the address you opened it with.
+
+An entry for the name in the local proxy is only of use with a local DNS entry
+that points the name at the home machine. The proxy cannot get a public
+certificate for it, because Let's Encrypt's checks end at the gateway. That
+leaves a certificate from the proxy's own CA (Caddy: `tls internal`) or a DNS
+challenge, which in Caddy needs a build with a DNS plugin. With its own CA,
+every device has to trust the root certificate: through the gateway UwUMail
+sends HSTS for a year, and a browser that has seen it does not let you click
+through a certificate warning for the name. The simplest is no local DNS
+entry: use the gateway from home too.
 
 ## Next to an existing mail server
 

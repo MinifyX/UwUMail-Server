@@ -5,6 +5,20 @@ and then environment variables starting with `UWUMAIL_`. Nested keys use a
 double underscore, e.g. `UWUMAIL_TLS__MODE=files`. Everything has a default
 except `hostname`.
 
+A list in an environment variable needs square brackets, also for one entry:
+`UWUMAIL_HTTP__TRUSTED_PROXIES=[192.0.2.51, 172.30.25.2]`. With a bare or an
+empty value the server refuses to start. In a compose file, quote it
+(`"[192.0.2.51, 172.30.25.2]"`), or YAML reads a list of its own and Compose
+refuses the file.
+
+The stock `compose.yaml` only passes on the variables listed under
+`environment:`; anything else in `.env` never reaches the server, so add
+further settings there. `UWUMAIL_GATEWAY_CODE`, `UWUMAIL_HTTP_BIND` and
+`UWUMAIL_HTTPS_BIND` in `.env` are variables of that compose file, not settings
+of the server: the first is handed on as `UWUMAIL_GATEWAY__CODE` (the key
+`gateway.code`, the only spelling the server itself knows), the other two pick
+the ports on the Docker host.
+
 Check a configuration with `uwumail-server check-config`.
 
 ## Settings in the admin panel

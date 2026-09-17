@@ -1,0 +1,42 @@
+# Caddy in front of UwUMail Server, to go with compose.proxy.yaml in this folder.
+#
+# The upstream is UwUMail's proxy listener on port 8080. Never point a reverse proxy at UwUMail's
+# port 80: that one only redirects to https://<host name>/, which behind a proxy goes round in
+# circles.
+#
+# Nothing else to set: reverse_proxy passes the Host header on unchanged and sets X-Forwarded-For
+# and X-Forwarded-Proto by itself. That is exactly what UwUMail reads, once Caddy's address is in
+# http.trusted_proxies.
+
+mail.example.com {
+	reverse_proxy uwumail:8080
+}
+
+# Other names that have to reach UwUMail too, as soon as their DNS records point here:
+# mta-sts.<domain> of every domain with MTA-STS on (UwUMail picks the domain from the host name),
+# and autoconfig.<domain> and autodiscover.<domain>, where Thunderbird and Outlook look up the
+# settings. Caddy gets their certificates.
+#
+# UwUMail's own Let's Encrypt certificate for the mail ports (tls.mode = "acme") is checked
+# through Caddy as well, name by name. Names that mail apps connect to, like imap.<domain> or
+# smtp.<domain>, only join it when they are listed here too.
+#
+# mta-sts.example.com, autoconfig.example.com, autodiscover.example.com {
+# 	reverse_proxy uwumail:8080
+# }
+
+# A server at home behind a UwUMail Gateway (setup B): Caddy is not in the public path. The name
+# points to the gateway, whose ports 80 and 443 end in UwUMail through the tunnel, so UwUMail
+# needs no entry here, and Caddy could not get a public certificate for the name anyway. The
+# simplest is no local DNS entry for the name: use the gateway from home too.
+#
+# Only with a local DNS entry that points the name at this machine inside your own network: Caddy
+# can serve it with a certificate from its own CA. Every device then has to trust Caddy's root
+# certificate. Through the gateway UwUMail sends HSTS, and a browser that has seen it does not let
+# you click through a certificate warning for the name. The other way is a Caddy build with a DNS
+# plugin and the DNS challenge instead of "tls internal".
+#
+# mail.example.com {
+# 	tls internal
+# 	reverse_proxy uwumail:8080
+# }

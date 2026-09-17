@@ -1,0 +1,84 @@
+# UwUMail Server behind a web reverse proxy (e.g. Caddy) that runs in Docker on the same machine
+# and keeps ports 80 and 443.
+#
+# An override on top of the stock compose.yaml: it switches on UwUMail's proxy listener and puts
+# UwUMail on a Docker network that the reverse proxy joins. The mail ports stay as they are.
+#
+#   1. Copy this file next to compose.yaml
+#   2. Add to .env:
+#        COMPOSE_FILE=compose.yaml:compose.proxy.yaml
+#        UWUMAIL_HTTP_BIND=127.0.0.1:8081
+#        UWUMAIL_HTTPS_BIND=8443
+#      The last two move UwUMail's own web ports away from 80 and 443.
+#   3. docker compose up -d   (first here: it creates the network uwumail-proxy)
+#   4. In the reverse proxy's own compose file, join that network with the fixed address. A
+#      service that lists networks has to list the ones it already had as well, e.g. default:
+#
+#        services:
+#          caddy:
+#            networks:
+#              default:
+#              uwumail-proxy:
+#                ipv4_address: 172.30.25.2
+#
+#        networks:
+#          uwumail-proxy:
+#            external: true
+#
+#   5. Point the proxy at uwumail:8080 (see the Caddyfile in this folder), never at port 80,
+#      and run docker compose up -d there too
+#   6. As soon as https://<your host name> opens through the proxy:  docker compose restart uwumail
+#      UwUMail asked Let's Encrypt for the mail ports' certificate a few seconds after step 3,
+#      before the proxy knew the name, so that try failed. Without the restart it tries again
+#      within the hour. While there is no admin yet, a restart makes a new one-time code for the
+#      setup assistant, so read it from the log afterwards.
+#
+# See docs/deployment.md, section "Behind a reverse proxy". A server at home behind a UwUMail
+# Gateway does not need this file: its web arrives through the tunnel, and the two BIND lines
+# from step 2 are enough.
+
+services:
+  uwumail:
+    environment:
+      # The whole site over plain HTTP, without redirect and HSTS. Not published: the reverse
+      # proxy reaches uwumail:8080 over the shared network.
+      UWUMAIL_LISTEN__PROXY: "[::]:8080"
+      # Whose X-Forwarded-For and X-Forwarded-Proto are believed. A list in one variable needs the
+      # square brackets, and YAML needs the quotes around them.
+      # Only the proxy's one address, not the whole subnet: traffic to the published ports can
+      # arrive from the network's gateway address, and that one must not be allowed to claim
+      # other people's addresses.
+      UWUMAIL_HTTP__TRUSTED_PROXIES: "[172.30.25.2]"
+    networks:
+      - default
+      - proxy
+
+networks:
+  proxy:
+    name: uwumail-proxy
+    ipam:
+      config:
+        # Docker answers "Pool overlaps with other one on this address space"? Then another
+        # network on this machine already covers 172.30.25.x. Pick any free private /24 and change
+        # it in all four places: subnet and ip_range here, UWUMAIL_HTTP__TRUSTED_PROXIES above and
+        # the proxy's ipv4_address from step 4.
+        - subnet: 172.30.25.0/24
+          # Addresses Docker hands out by itself come from the upper half, so 172.30.25.2 stays
+          # free for the reverse proxy.
+          ip_range: 172.30.25.128/25
+
+# The reverse proxy runs on the host itself instead of in Docker? Then use this instead of
+# everything above. Start without trusted_proxies and open the site through the proxy once. The
+# server then names the address the proxy arrives from:
+#   docker compose logs uwumail | grep trusted_proxies
+# Put that address in and run docker compose up -d again. It is usually the Docker network's
+# gateway address, which other traffic to the published ports can arrive from too, so bind both
+# moved web ports in .env to 127.0.0.1.
+#
+# services:
+#   uwumail:
+#     environment:
+#       UWUMAIL_LISTEN__PROXY: "[::]:8080"
+#       # UWUMAIL_HTTP__TRUSTED_PROXIES: "[<address from the log>]"
+#     ports:
+#       - "127.0.0.1:8080:8080"
