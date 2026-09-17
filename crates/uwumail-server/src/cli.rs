@@ -209,8 +209,19 @@ pub enum SenderKindArg {
 pub enum GatewayCommand {
     /// Show the pairing with the gateway.
     Show,
-    /// Forget the gateway, so mail leaves from this machine again after a restart. Remove
-    /// `gateway.code` from the configuration too, or the server pairs again.
+    /// Pair with a gateway, for when the portal cannot be reached to do it there.
+    ///
+    /// Takes effect after a restart. With the stock compose file, `UWUMAIL_GATEWAY_CODE` in `.env`
+    /// does the same.
+    Pair {
+        /// The pairing code the gateway shows (`uwugw1…`).
+        code: String,
+    },
+    /// Forget the gateway, so mail leaves from this machine again after a restart.
+    ///
+    /// Remove `gateway.code` from the configuration too, or the server tries to pair again with a
+    /// new key, which the gateway refuses. To pair again, run `uwumail-gateway unpair` on the VPS
+    /// and use the new code.
     Forget,
 }
 

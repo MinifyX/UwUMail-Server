@@ -1,6 +1,6 @@
 //! Management commands for the terminal. Changes are written to the change log as "cli".
 
-use anyhow::bail;
+use anyhow::{Context as _, bail};
 use serde_json::{Value, json};
 use uwumail_store::{
     AccountUpdate, AuditEntry, ListOwner, ListScope, NewAccount, NewSenderListEntry, PasswordLinkPurpose, Role,
@@ -728,6 +728,37 @@ pub async fn gateway(config: &Config, store: &Store, command: GatewayCommand) ->
             let state = if pairing.confirmed { "paired" } else { "waiting for the gateway to accept the code" };
             println!("  pairing              {state}");
         }
+        GatewayCommand::Pair { code } => {
+            let code = code.trim();
+            let parsed =
+                uwumail_tunnel::PairingCode::parse(code).map_err(|err| anyhow::anyhow!("the pairing code: {err}"))?;
+            let configured = config.gateway.code.trim();
+            if !configured.is_empty() && configured != code {
+                anyhow::bail!(
+                    "`gateway.code` in the configuration holds another code, and that one wins on every start. \
+                     Put this code there instead (with the stock compose file: UWUMAIL_GATEWAY_CODE in .env)"
+                );
+            }
+            // A corrected code has the same token with other addresses, and is taken while unconfirmed.
+            let known = stored.as_ref().is_some_and(|stored| {
+                stored.gateway == parsed.fingerprint
+                    && stored.token == parsed.token.to_text()
+                    && (stored.confirmed || stored.addresses == parsed.addresses)
+            });
+            if known {
+                println!("This code is in use already; `gateway show` has the state of the pairing.");
+                return Ok(());
+            }
+            let config = crate::config::GatewayConfig { code: code.to_owned() };
+            let pairing = crate::gateway::prepare(store, &config).await?.context("the pairing was not saved")?;
+            audit(store, "gateway.pair", "", json!({ "fingerprint": pairing.gateway.to_string() })).await;
+            let addresses = pairing.addresses.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
+            println!("Saved the pairing with the gateway at {addresses}.");
+            println!("Restart the server: it then tries to connect, and mail to other servers only leaves through");
+            println!("the gateway, waiting in the queue until the gateway accepts this server. After the restart,");
+            println!("`gateway show` tells whether it did. A gateway that still knows another key refuses, until");
+            println!("`uwumail-gateway unpair` made a new code there and this server got that one.");
+        }
         GatewayCommand::Forget => {
             if stored.is_none() {
                 println!("There is no gateway to forget.");
@@ -737,7 +768,13 @@ pub async fn gateway(config: &Config, store: &Store, command: GatewayCommand) ->
             audit(store, "gateway.forget", "", json!({})).await;
             println!("Forgot the gateway. Restart the server; mail then leaves from this machine again.");
             if !config.gateway.code.trim().is_empty() {
-                println!("Also remove `gateway.code` from the configuration, or the server pairs again on start.");
+                println!(
+                    "Also remove `gateway.code` from the configuration. With it, the server tries to pair again on"
+                );
+                println!(
+                    "start with a new key; the gateway refuses that, and mail to other servers waits in the queue."
+                );
+                println!("To pair again, run `uwumail-gateway unpair` on the VPS and put the new code there instead.");
             }
         }
     }
@@ -747,6 +784,36 @@ pub async fn gateway(config: &Config, store: &Store, command: GatewayCommand) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_gateway_is_paired_from_the_command_line() {
+        use uwumail_tunnel::{Identity, PairingCode, Token};
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).await.unwrap();
+        let code = PairingCode {
+            addresses: vec!["192.0.2.10:443".parse().unwrap()],
+            fingerprint: Identity::generate().unwrap().fingerprint(),
+            token: Token::generate(),
+        }
+        .encode();
+        let pair = |code: &str| GatewayCommand::Pair { code: code.to_owned() };
+
+        assert!(gateway(&Config::default(), &store, pair("uwugw1broken")).await.is_err());
+        gateway(&Config::default(), &store, pair(&code)).await.unwrap();
+        let raw = store.setting(crate::gateway::PAIRING_KEY).await.unwrap().expect("the pairing is saved");
+        let saved: crate::gateway::StoredPairing = serde_json::from_str(&raw).unwrap();
+        assert!(!saved.confirmed, "the gateway accepts it once the server connects");
+        // The same code again changes nothing, also not this server's key.
+        gateway(&Config::default(), &store, pair(&code)).await.unwrap();
+        assert_eq!(store.setting(crate::gateway::PAIRING_KEY).await.unwrap().unwrap(), raw);
+
+        // Another code in the configuration would win on the next start, so this one is refused.
+        let mut config = Config::default();
+        config.gateway.code = "uwugw1another".into();
+        let error = gateway(&config, &store, pair(&code)).await.unwrap_err().to_string();
+        assert!(error.contains("gateway.code"), "{error}");
+    }
 
     #[test]
     fn generated_passwords_are_long_and_readable() {
