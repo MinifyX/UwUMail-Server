@@ -2,6 +2,7 @@
 
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use axum::Router;
@@ -69,12 +70,33 @@ struct Peer {
     tls: bool,
 }
 
+/// Whether the log already named a reverse proxy that is missing in `http.trusted_proxies`.
+static UNTRUSTED_PROXY_NAMED: AtomicBool = AtomicBool::new(false);
+
+/// The address of a reverse proxy that forwards requests without being trusted. Only the proxy
+/// listener is reached without TLS, and browsers do not send X-Forwarded-For themselves.
+fn untrusted_proxy(peer: Option<Peer>, trusted: bool, headers: &HeaderMap) -> Option<IpAddr> {
+    let peer = peer.filter(|peer| !peer.tls && !trusted)?;
+    headers.contains_key("x-forwarded-for").then(|| peer.addr.ip().to_canonical())
+}
+
 /// Works out who the client is; behind a trusted reverse proxy that is the address it forwarded.
 async fn client_info(State(trusted): State<Arc<Vec<IpNetwork>>>, mut request: Request, next: Next) -> Response {
     let peer = request.extensions().get::<Peer>().copied();
     let mut info =
         peer.map_or_else(ClientInfo::default, |p| ClientInfo { ip: p.addr.ip().to_canonical(), https: p.tls });
     let is_trusted = |ip: IpAddr| trusted.iter().any(|network| network.contains(ip));
+    if let Some(proxy) = untrusted_proxy(peer, is_trusted(info.ip), request.headers())
+        && !UNTRUSTED_PROXY_NAMED.swap(true, Ordering::Relaxed)
+    {
+        // Said once: it is the address to put into the configuration.
+        tracing::warn!(
+            %proxy,
+            "requests with X-Forwarded-For arrive from an address that is not in http.trusted_proxies. If that is \
+             your reverse proxy, add it: until then every visitor counts as this address and cookies are not \
+             marked Secure"
+        );
+    }
     if is_trusted(info.ip) {
         let headers = request.headers();
         if let Some(forwarded) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
@@ -330,5 +352,18 @@ mod tests {
         let plain = Request::get("/login").header("x-forwarded-proto", "http").body(Body::empty()).unwrap();
         let response = redirect_app(state()).oneshot(plain).await.unwrap();
         assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);
+    }
+
+    #[test]
+    fn only_a_forwarding_peer_of_the_proxy_listener_is_named() {
+        let peer = |tls| Some(Peer { addr: "172.30.25.2:40000".parse().unwrap(), tls });
+        let mut forwarded = HeaderMap::new();
+        forwarded.insert("x-forwarded-for", HeaderValue::from_static("203.0.113.7"));
+
+        assert_eq!(untrusted_proxy(peer(false), false, &forwarded), Some("172.30.25.2".parse().unwrap()));
+        assert_eq!(untrusted_proxy(peer(false), true, &forwarded), None, "trusted already");
+        assert_eq!(untrusted_proxy(peer(true), false, &forwarded), None, "HTTPS is not the proxy listener");
+        assert_eq!(untrusted_proxy(peer(false), false, &HeaderMap::new()), None, "a browser, not a proxy");
+        assert_eq!(untrusted_proxy(None, false, &forwarded), None);
     }
 }
