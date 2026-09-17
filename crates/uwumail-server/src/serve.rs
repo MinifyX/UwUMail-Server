@@ -180,7 +180,15 @@ pub async fn run(
 
     match config.tls.mode {
         TlsMode::Acme => {
-            tasks.spawn(acme::run(config.clone(), certs.clone(), challenges, store.clone(), shutdown_rx.clone()));
+            let tunnel = acme::Tunnel { paired: gateway.is_paired(), up: gateway.tunnel_up() };
+            tasks.spawn(acme::run(
+                config.clone(),
+                certs.clone(),
+                challenges,
+                store.clone(),
+                tunnel,
+                shutdown_rx.clone(),
+            ));
         }
         TlsMode::Files => {
             tasks.spawn(tls::watch_files(config.clone(), certs.clone(), shutdown_rx.clone()));

@@ -4,16 +4,16 @@
 //! `mta-sts.<domain>` for domains with MTA-STS on, so senders can fetch their policy, and the names
 //! mail apps know from other servers, like `imap.<domain>` or `autoconfig.<domain>`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, anyhow, bail};
 use instant_acme::{
     Account, AccountCredentials, AuthorizationStatus, ChallengeType, Identifier, NewAccount, NewOrder, OrderStatus,
     RetryPolicy,
 };
-use tokio::sync::watch;
+use tokio::sync::{Notify, watch};
 use uwumail_store::Store;
 
 use crate::config::Config;
@@ -25,6 +25,13 @@ const RENEW_BEFORE_SECS: i64 = 30 * 24 * 3600;
 const FAILED_NAME_PAUSE_SECS: i64 = 24 * 3600;
 /// How often to look for new names while the certificate is fine.
 const NAME_CHECK_SECS: u64 = 15 * 60;
+/// How long the first order waits for the tunnel to a paired gateway before it tries anyway.
+const TUNNEL_WAIT_SECS: u64 = 60;
+/// The tunnel coming up stops asking for an order after this many failed ones within an hour.
+/// Let's Encrypt allows five failed validations per name and hour; this leaves room for the
+/// retries on the clock, also with a tunnel that comes and goes.
+const TUNNEL_ORDER_FAILURES: usize = 3;
+const FAILURE_WINDOW: Duration = Duration::from_secs(3600);
 /// Names under each of our domains that mail apps connect to or look up their settings at.
 const CLIENT_NAMES: [&str; 5] = ["mail", "imap", "smtp", "autoconfig", "autodiscover"];
 
@@ -48,21 +55,46 @@ impl Challenges {
     }
 }
 
-/// Keeps the certificate fresh and its names complete. Retries failures hourly.
+/// What the certificate task hears from a UwUMail Gateway. Behind one, the CA reaches this server
+/// only while the tunnel is up.
+#[derive(Clone, Default)]
+pub struct Tunnel {
+    /// Whether a gateway was paired when the server started.
+    pub paired: bool,
+    /// Notified each time the tunnel comes up.
+    pub up: Arc<Notify>,
+}
+
+/// Keeps the certificate fresh and its names complete. Retries failures hourly, and sooner when
+/// the tunnel to a gateway comes up.
 pub async fn run(
     config: Config,
     certs: Arc<CertStore>,
     challenges: Arc<Challenges>,
     store: Store,
+    tunnel: Tunnel,
     mut shutdown: watch::Receiver<bool>,
 ) {
-    // Give the HTTP listener a moment to come up before the CA calls back.
-    let mut wait = Duration::from_secs(3);
+    // Give the HTTP listener a moment to come up before the CA calls back. Behind a gateway the
+    // CA gets nowhere before the tunnel is up, which wakes this task.
+    let mut wait = Duration::from_secs(if tunnel.paired { TUNNEL_WAIT_SECS } else { 3 });
     let mut failed_names: HashMap<String, i64> = HashMap::new();
+    let mut failures: VecDeque<Instant> = VecDeque::new();
     loop {
-        tokio::select! {
-            _ = tokio::time::sleep(wait) => {}
+        let asleep_since = Instant::now();
+        let tunnel_came_up = tokio::select! {
+            _ = tokio::time::sleep(wait) => false,
+            _ = tunnel.up.notified() => true,
             _ = shutdown.changed() => return,
+        };
+        if tunnel_came_up && recent_failures(&mut failures, Instant::now()) >= TUNNEL_ORDER_FAILURES {
+            // An order may work now, but too many failed lately: a tunnel that comes and goes must
+            // not use up the failed validations the CA allows. The retry on the clock stays due.
+            tracing::info!(
+                "the tunnel is up, but too many orders failed within the hour: the certificate waits for its retry"
+            );
+            wait = wait.saturating_sub(asleep_since.elapsed());
+            continue;
         }
         let now = uwumail_now();
         let extra = extra_names(&config.hostname, &store).await;
@@ -86,10 +118,12 @@ pub async fn run(
                 for name in &names[1..] {
                     failed_names.insert(name.clone(), now);
                 }
+                failures.push_back(Instant::now());
                 wait = Duration::from_secs(60);
             }
             Err(err) => {
                 tracing::warn!(error = %format!("{err:#}"), "getting a certificate failed, retrying in an hour");
+                failures.push_back(Instant::now());
                 wait = Duration::from_secs(3600);
             }
         }
@@ -161,6 +195,14 @@ fn names_to_request(hostname: &str, extra: &[String], failed: &HashMap<String, i
     names
 }
 
+/// How many orders failed within the last hour. Older ones are forgotten.
+fn recent_failures(failures: &mut VecDeque<Instant>, now: Instant) -> usize {
+    while failures.front().is_some_and(|at| now.saturating_duration_since(*at) >= FAILURE_WINDOW) {
+        failures.pop_front();
+    }
+    failures.len()
+}
+
 fn needs_certificate(current: Option<&CertificateInfo>, names: &[String], now: i64) -> bool {
     match current {
         Some(info) => {
@@ -222,7 +264,8 @@ async fn order(config: &Config, certs: &CertStore, challenges: &Challenges, name
     if status != OrderStatus::Ready {
         bail!(
             "the certificate authority could not reach http://{}/.well-known/acme-challenge/ (order is {status:?}). \
-             Is port 80 open and does the DNS record point here?",
+             Is port 80 open and does the DNS record point here? Behind a UwUMail Gateway it has to point to \
+             the gateway, and the tunnel has to be connected.",
             names.join(", http://")
         );
     }
@@ -270,6 +313,19 @@ mod tests {
         );
         let later = now + FAILED_NAME_PAUSE_SECS;
         assert_eq!(names_to_request("mail.example.de", &extra, &failed, later).len(), 3, "tried again a day later");
+    }
+
+    #[test]
+    fn failed_orders_count_for_an_hour() {
+        let start = Instant::now();
+        let at = |secs| start + Duration::from_secs(secs);
+        let mut failures = VecDeque::from([at(0), at(60), at(1800)]);
+        assert_eq!(recent_failures(&mut failures, at(1801)), 3, "the tunnel stops asking here");
+        assert_eq!(recent_failures(&mut failures, at(3599)), 3);
+        assert_eq!(recent_failures(&mut failures, at(3600)), 2, "the first one is an hour old");
+        assert_eq!(recent_failures(&mut failures, at(3700)), 1);
+        assert_eq!(recent_failures(&mut failures, at(2 * 3600)), 0);
+        assert!(failures.is_empty());
     }
 
     #[test]

@@ -10,7 +10,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::Context as _;
 use axum::Router;
 use serde::{Deserialize, Serialize};
-use tokio::sync::watch;
+use tokio::sync::{Notify, watch};
 use tokio_rustls::TlsAcceptor;
 use uwumail_smtp::{BoxIo, Connector, ListenerKind, Smtp};
 use uwumail_store::Store;
@@ -121,6 +121,8 @@ pub struct GatewayManager {
     shutdown: watch::Receiver<bool>,
     services: OnceLock<Services>,
     current: Arc<Mutex<Option<Current>>>,
+    /// Notified each time the tunnel comes up: from then on the certificate authority reaches us.
+    tunnel_up: Arc<Notify>,
 }
 
 impl GatewayManager {
@@ -139,12 +141,18 @@ impl GatewayManager {
             shutdown,
             services: OnceLock::new(),
             current: Arc::default(),
+            tunnel_up: Arc::default(),
         })
     }
 
     /// Whether a gateway is paired, connected or not.
     pub fn is_paired(&self) -> bool {
         self.current.lock().expect("gateway poisoned").is_some()
+    }
+
+    /// Notified each time the tunnel comes up.
+    pub fn tunnel_up(&self) -> Arc<Notify> {
+        self.tunnel_up.clone()
     }
 
     /// Connects with the stored pairing, or pairs with the configured code, once the services
@@ -182,7 +190,8 @@ impl GatewayManager {
         if let Some(previous) = self.current.lock().expect("gateway poisoned").replace(current) {
             previous.client.stop();
         }
-        tokio::spawn(follow(self.store.clone(), self.current.clone(), client, pairing, down_since));
+        let tunnel_up = self.tunnel_up.clone();
+        tokio::spawn(follow(self.store.clone(), self.current.clone(), client, pairing, down_since, tunnel_up));
     }
 
     async fn pair_with(&self, code: &str) -> Result<(), String> {
@@ -270,15 +279,22 @@ async fn follow(
     client: TunnelClient,
     pairing: StoredPairing,
     down_since: Arc<Mutex<Option<i64>>>,
+    tunnel_up: Arc<Notify>,
 ) {
     let mut status = client.subscribe();
     let mut confirmed = pairing.confirmed;
+    let mut was_connected = false;
     loop {
         let connected = match *status.borrow_and_update() {
             Status::Stopped => return,
             Status::Connected { .. } => true,
             _ => false,
         };
+        if connected && !was_connected {
+            // A certificate that could not be ordered while the tunnel was down can be now.
+            tunnel_up.notify_one();
+        }
+        was_connected = connected;
         {
             let mut down = down_since.lock().expect("gateway poisoned");
             *down = if connected { None } else { down.or(Some(unix_now())) };
@@ -525,6 +541,10 @@ mod tests {
         };
         assert_eq!(view.addresses, ["127.0.0.1"]);
         assert!(view.down_since.is_none() && view.connected_since.is_some());
+        // The certificate task hears about it, so it does not wait for its hourly retry.
+        tokio::time::timeout(Duration::from_secs(5), manager.tunnel_up().notified())
+            .await
+            .expect("the tunnel coming up is announced");
         // Confirmed in the database, so a restart does not send the used token again.
         let confirmed = loop {
             if load(&store).await.unwrap().unwrap().confirmed {
