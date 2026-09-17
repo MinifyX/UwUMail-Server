@@ -97,7 +97,8 @@ async fn client_info(State(trusted): State<Arc<Vec<IpNetwork>>>, mut request: Re
     next.run(request).await
 }
 
-/// Port 80: answers ACME challenges and sends everyone else to HTTPS.
+/// Port 80: answers ACME challenges and sends everyone else to HTTPS. A reverse proxy belongs at
+/// the proxy listener instead and is told so.
 pub fn redirect_app(state: HttpState) -> Router {
     Router::new()
         .route("/healthz", get(health))
@@ -121,9 +122,41 @@ async fn acme_challenge(State(state): State<HttpState>, Path(token): Path<String
     }
 }
 
-async fn redirect_to_https(State(state): State<HttpState>, uri: Uri) -> Redirect {
+async fn redirect_to_https(State(state): State<HttpState>, uri: Uri, headers: HeaderMap) -> Response {
+    // A visitor who already came over HTTPS can only have arrived through a reverse proxy that
+    // points at this port. Redirecting again would go round in circles, so say what to change.
+    // The header decides nothing else here, so it does not matter who sent it.
+    let forwarded_https = headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .is_some_and(|proto| proto.trim().eq_ignore_ascii_case("https"));
+    if forwarded_https {
+        return proxy_at_redirect_port(&headers, &state.hostname).into_response();
+    }
     let path = uri.path_and_query().map(|p| p.as_str()).unwrap_or("/");
-    Redirect::permanent(&format!("https://{}{path}", state.hostname))
+    Redirect::permanent(&format!("https://{}{path}", state.hostname)).into_response()
+}
+
+fn proxy_at_redirect_port(headers: &HeaderMap, hostname: &str) -> (StatusCode, Html<String>) {
+    let (lang, title, text) = if prefers_german(headers) {
+        (
+            "de",
+            "Dieser Port leitet nur um (・_・;)",
+            "Dein Reverse Proxy zeigt auf Port 80 von UwUMail. Der schickt alle zu HTTPS, und hinter einem Proxy \
+             dreht sich das im Kreis. Richte ihn stattdessen auf den Proxy-Listener (listen.proxy). Wie das geht, \
+             steht in docs/deployment.md unter „Behind a reverse proxy“.",
+        )
+    } else {
+        (
+            "en",
+            "This port only redirects (・_・;)",
+            "Your reverse proxy points at UwUMail's port 80. That one sends everyone to HTTPS, and behind a proxy \
+             this goes round in circles. Point it at the proxy listener (listen.proxy) instead. \
+             docs/deployment.md, “Behind a reverse proxy”, shows how.",
+        )
+    };
+    (StatusCode::MISDIRECTED_REQUEST, Html(page(lang, title, text, hostname)))
 }
 
 fn prefers_german(headers: &HeaderMap) -> bool {
@@ -269,5 +302,33 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn a_reverse_proxy_at_the_redirect_port_is_told_instead_of_looping() {
+        let through_proxy = |path: &str| {
+            Request::get(path)
+                .header("x-forwarded-proto", "https")
+                .header(header::ACCEPT_LANGUAGE, "en")
+                .body(Body::empty())
+                .unwrap()
+        };
+        let response = redirect_app(state()).oneshot(through_proxy("/login")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::MISDIRECTED_REQUEST);
+        assert!(!response.headers().contains_key(header::LOCATION));
+        let body = axum::body::to_bytes(response.into_body(), 64 * 1024).await.unwrap();
+        assert!(String::from_utf8_lossy(&body).contains("listen.proxy"));
+
+        // Certificate challenges and health checks work through a proxy as well.
+        let response = redirect_app(state()).oneshot(through_proxy("/healthz")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let response =
+            redirect_app(state()).oneshot(through_proxy("/.well-known/acme-challenge/unknown")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        // A proxy that forwards plain HTTP visitors is redirected like everyone else.
+        let plain = Request::get("/login").header("x-forwarded-proto", "http").body(Body::empty()).unwrap();
+        let response = redirect_app(state()).oneshot(plain).await.unwrap();
+        assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);
     }
 }
