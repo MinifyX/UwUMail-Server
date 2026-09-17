@@ -58,9 +58,12 @@ docker compose exec uwumail uwumail-server backup check   # is the newest one co
 Restoring needs nothing from the old server: on a new machine, restore into an
 empty data directory before starting UwUMail there.
 
+The container runs as user 10001, so give it a copy of the key it may read:
+
 ```sh
+sudo install -o 10001 -m 0400 ~/.ssh/backup_key /tmp/backup_key
 docker run --rm -it -v uwumail-data:/data \
-  -v ~/.ssh/backup_key:/key:ro \
+  -v /tmp/backup_key:/key:ro \
   ghcr.io/minifyx/uwumail-server:latest \
   backup restore --sftp backup@nas.example.com:uwumail --ssh-key /key --into /data
 ```
@@ -69,3 +72,5 @@ The command asks for the recovery key (or reads `UWUMAIL_BACKUP_KEY`). With a
 password instead of a key, set `UWUMAIL_BACKUP_SFTP_PASSWORD`. `--snapshot`
 picks an older snapshot from `backup list`; `--host-key` checks the backup
 server's fingerprint.
+
+Delete `/tmp/backup_key` afterwards.
