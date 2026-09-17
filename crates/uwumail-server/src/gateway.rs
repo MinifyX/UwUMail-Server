@@ -142,6 +142,11 @@ impl GatewayManager {
         })
     }
 
+    /// Whether a gateway is paired, connected or not.
+    pub fn is_paired(&self) -> bool {
+        self.current.lock().expect("gateway poisoned").is_some()
+    }
+
     /// Connects with the stored pairing, or pairs with the configured code, once the services
     /// for arriving connections exist.
     pub async fn start(&self, services: Services, config: &GatewayConfig) {
@@ -504,8 +509,10 @@ mod tests {
         manager.start(services, &GatewayConfig::default()).await;
         assert_eq!(manager.view().state, GatewayState::None);
         assert!(manager.pair("uwugw1broken").await.is_err());
+        assert!(!manager.is_paired());
 
         manager.pair(&code.encode()).await.unwrap();
+        assert!(manager.is_paired());
         assert!(smtp.has_connector(), "mail goes through the gateway from the moment of pairing");
         let started = std::time::Instant::now();
         let view = loop {

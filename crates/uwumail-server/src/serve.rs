@@ -125,9 +125,7 @@ pub async fn run(
     );
     tasks.spawn(web.clone().run_health_checks(shutdown_rx.clone()));
     tasks.spawn(web.clone().run_update_checks(shutdown_rx.clone()));
-    if let Some(code) = web.open_setup().await {
-        tracing::warn!("no admin yet: open https://{}/setup and enter the one-time code {code}", config.hostname);
-    }
+    let setup_code = web.open_setup().await;
     let gateway = gateway::GatewayManager::new(
         store.clone(),
         smtp.clone(),
@@ -163,6 +161,22 @@ pub async fn run(
     // Connections that arrive through a UwUMail Gateway reach the same services.
     let services = gateway::Services { smtp: smtp.clone(), imap, mail_tls, https_tls, https, http: redirect };
     gateway.start(services, &config.gateway).await;
+
+    if let Some(code) = setup_code {
+        let hostname = &config.hostname;
+        tracing::warn!("no admin yet: open https://{hostname}/setup and enter the one-time code {code}");
+        if gateway.is_paired() {
+            tracing::info!(
+                "this server uses a UwUMail Gateway: https://{hostname}/setup works through it as soon as the \
+                 tunnel is connected"
+            );
+        } else if !config.listen.https.is_empty() {
+            tracing::info!(
+                "if {hostname} does not reach this server yet, https://<address of this machine>/setup works too \
+                 (with the port, when 443 is published on another one)"
+            );
+        }
+    }
 
     match config.tls.mode {
         TlsMode::Acme => {
