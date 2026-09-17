@@ -42,6 +42,54 @@ pub struct GatewayView {
     pub refusal: Option<String>,
     /// The pairing comes from `gateway.code` in the configuration.
     pub from_config: bool,
+    /// What the gateway says about the machine it runs on: its updates, its firewall, its bans.
+    /// `None` while the tunnel is down, and for gateways from before they told us.
+    pub machine: Option<GatewayMachine>,
+}
+
+/// The gateway's machine, as the portal shows it. The server fills this in from what comes through
+/// the tunnel; the portal never learns that a tunnel is what carries it.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayMachine {
+    pub system: Option<GatewaySystem>,
+    pub protection: Option<GatewayProtection>,
+    /// The addresses the gateway keeps out of every ban list, this server's among them.
+    pub trusted: Vec<String>,
+    /// Unix time the gateway last looked at its machine.
+    pub checked_at: i64,
+}
+
+/// The operating system on the gateway's machine and what it waits for.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewaySystem {
+    /// As the machine calls itself, for example `Ubuntu 26.04.1 LTS`.
+    pub name: String,
+    pub updates: u32,
+    pub security_updates: u32,
+    pub reboot_required: bool,
+    /// Whether security updates install themselves.
+    pub automatic_security: bool,
+    /// A newer release of the operating system, when one waits.
+    pub new_release: Option<String>,
+    /// What to run on the gateway to install the updates.
+    pub command: String,
+}
+
+/// What keeps the gateway's machine itself safe.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayProtection {
+    /// The firewall in use, for example `ufw`; empty when none was found.
+    pub firewall: String,
+    pub firewall_active: bool,
+    pub fail2ban: bool,
+    /// Addresses fail2ban keeps out right now, over all jails.
+    pub banned: u32,
+    pub jails: Vec<String>,
+    /// Of those, the ones this server asked for.
+    pub from_server: u32,
 }
 
 pub type GatewayFuture<'a> = Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>>;

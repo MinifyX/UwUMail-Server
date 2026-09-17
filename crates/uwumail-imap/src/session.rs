@@ -428,8 +428,11 @@ where
                 Ok(Flow::Continue)
             }
             Ok(MailAuth::Denied(reason)) => {
-                if reason != MailAuthDenied::AppPasswordRequired {
-                    self.imap.limiter.record_failure(self.peer.ip());
+                match reason {
+                    // A phone still using the right account password should not lock out its network.
+                    MailAuthDenied::AppPasswordRequired => {}
+                    MailAuthDenied::UnknownLogin => self.imap.limiter.record_unknown_login(self.peer.ip()),
+                    _ => self.imap.limiter.record_failure(self.peer.ip()),
                 }
                 self.auth_failures += 1;
                 tracing::warn!(login = %username, peer = %self.peer, %reason, "failed imap login");

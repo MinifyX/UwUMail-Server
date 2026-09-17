@@ -122,8 +122,15 @@ pub struct CreatedAppPassword {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MailAuthDenied {
-    /// Unknown login, wrong password, or the person may not log in.
+    /// Wrong password, or the person may not log in.
     Invalid,
+    /// There is no such login here at all.
+    ///
+    /// Told apart from [`MailAuthDenied::Invalid`] only so that guessing at names can be stopped
+    /// sooner than guessing at passwords: whoever works through `info@`, `sales@` and `admin@` is
+    /// not close to a password, they are reading the address book. What the other side is told
+    /// stays word for word the same, and so does how long it takes — see the check itself.
+    UnknownLogin,
     /// The main password was right, but this person uses app passwords for mail apps.
     AppPasswordRequired,
     Expired,
@@ -134,7 +141,10 @@ pub enum MailAuthDenied {
 impl std::fmt::Display for MailAuthDenied {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
+            // Word for word the same as UnknownLogin, and it has to stay that way: this text
+            // reaches the other side, and a difference here would say which names exist.
             MailAuthDenied::Invalid => "wrong login or password",
+            MailAuthDenied::UnknownLogin => "wrong login or password",
             MailAuthDenied::AppPasswordRequired => "main password used, but an app password is required",
             MailAuthDenied::Expired => "the app password has expired",
             MailAuthDenied::WrongScope => "the app password is not allowed for this",
@@ -623,9 +633,11 @@ impl Store {
             .await?;
 
         let Some((account, hash, required, mut app, imported)) = found else {
+            // The hashing happens anyway, against nothing: without it this answer would come back
+            // faster than a wrong password does, and the clock alone would say which names exist.
             let password = password.to_owned();
             let _ = tokio::task::spawn_blocking(move || password::verify(&password, None)).await;
-            return Ok(MailAuth::Denied(MailAuthDenied::Invalid));
+            return Ok(MailAuth::Denied(MailAuthDenied::UnknownLogin));
         };
         if app.is_none() && !imported.is_empty() {
             let password = password.to_owned();

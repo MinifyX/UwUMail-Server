@@ -45,6 +45,12 @@ impl Imap {
         }
     }
 
+    /// Hands every network this turns away to `reporter` as well, so it can be kept out further
+    /// away than this server — at the UwUMail Gateway, where it never reaches the house at all.
+    pub fn report_blocks_to(&self, reporter: Option<uwumail_smtp::Reporter>) {
+        self.limiter.report_to(reporter);
+    }
+
     /// Accepts connections on port 993 until `shutdown` changes.
     pub async fn serve(
         self,

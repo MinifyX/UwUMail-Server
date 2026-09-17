@@ -134,6 +134,12 @@ pub async fn run(
         shutdown_rx.clone(),
     );
     web.set_gateway(gateway.clone());
+    // A network this server turns away is kept off the gateway's public ports too, so the next
+    // try does not reach the house at all. Only this side can see who fails to log in.
+    let report_blocks = gateway.reporter();
+    smtp.report_blocks_to(Some(report_blocks.clone()));
+    imap.report_blocks_to(Some(report_blocks.clone()));
+    web.report_blocks_to(Some(report_blocks));
     let backups = uwumail_backup::Backups::new(store.clone(), &config.hostname, env!("CARGO_PKG_VERSION"));
     web.set_backups(backups.clone());
     let web = web.router();

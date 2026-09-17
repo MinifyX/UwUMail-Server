@@ -26,6 +26,10 @@ use crate::http;
 /// Where the pairing lives in the settings table.
 pub const PAIRING_KEY: &str = "gateway.pairing";
 
+/// How long the gateway keeps a network away that this server turned away. The same hour its
+/// fail2ban jail uses, so the two do not disagree about when someone may come back.
+const BAN_AT_GATEWAY: Duration = Duration::from_secs(3600);
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoredPairing {
@@ -98,6 +102,34 @@ impl Connector for ThroughGateway {
     }
 }
 
+/// What the gateway said about its machine, in the portal's own words. The portal has no idea a
+/// tunnel is involved, so the shapes are kept apart and translated here.
+fn machine_view(status: uwumail_tunnel::proto::GatewayStatus) -> uwumail_web::gateway::GatewayMachine {
+    use uwumail_web::gateway::{GatewayMachine, GatewayProtection, GatewaySystem};
+
+    GatewayMachine {
+        system: status.system.map(|system| GatewaySystem {
+            name: system.name,
+            updates: system.updates,
+            security_updates: system.security_updates,
+            reboot_required: system.reboot_required,
+            automatic_security: system.automatic_security,
+            new_release: system.new_release,
+            command: system.command,
+        }),
+        protection: status.protection.map(|protection| GatewayProtection {
+            firewall: protection.firewall,
+            firewall_active: protection.firewall_active,
+            fail2ban: protection.fail2ban,
+            banned: protection.banned,
+            jails: protection.jails,
+            from_server: protection.from_server,
+        }),
+        trusted: status.trusted.iter().map(ToString::to_string).collect(),
+        checked_at: status.checked_at,
+    }
+}
+
 /// Servers in the own network, like fixed routes to a private address, are reached directly:
 /// that reveals nothing, and the gateway would not connect there anyway.
 fn through_gateway(address: SocketAddr) -> bool {
@@ -153,6 +185,27 @@ impl GatewayManager {
     /// Notified each time the tunnel comes up.
     pub fn tunnel_up(&self) -> Arc<Notify> {
         self.tunnel_up.clone()
+    }
+
+    /// Hand this to whatever turns networks away — SMTP, IMAP, the portal — and the gateway keeps
+    /// them off its public ports too. Only this server sees who fails to log in: the gateway
+    /// carries TLS it cannot read, so without this the guessing simply arrives again.
+    ///
+    /// The gateway refuses to ban the address its own tunnel comes from, so a mail app at home
+    /// with the wrong password cannot take the household off its own gateway.
+    pub fn reporter(self: &Arc<Self>) -> uwumail_smtp::Reporter {
+        // Weak, so the manager is not kept alive by the services it hands this to.
+        let manager = Arc::downgrade(self);
+        Arc::new(move |ip, why: &str| {
+            let Some(manager) = manager.upgrade() else {
+                return;
+            };
+            let client =
+                manager.current.lock().expect("gateway poisoned").as_ref().map(|current| current.client.clone());
+            if let Some(client) = client {
+                client.ban(ip, BAN_AT_GATEWAY, why);
+            }
+        })
     }
 
     /// Connects with the stored pairing, or pairs with the configured code, once the services
@@ -252,6 +305,7 @@ impl GatewayBackend for GatewayManager {
                 view.software = Some(welcome.software);
                 view.connected_since = Some(since);
                 view.down_since = None;
+                view.machine = current.client.gateway_status().map(machine_view);
             }
             Status::Refused { reason, message } => {
                 view.state = GatewayState::Refused;

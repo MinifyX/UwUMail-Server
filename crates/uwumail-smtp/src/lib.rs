@@ -48,7 +48,7 @@ pub use config::{
 };
 pub use dns::DnsCaches;
 pub use inbound::{ListenerKind, serve, serve_stream};
-pub use limiter::AuthLimiter;
+pub use limiter::{AuthLimiter, Reporter};
 pub use outbound::run_queue;
 pub use relay::IpNetwork;
 pub use spam::{FEEDS, Feed, feed, run_learning, run_list_updates};
@@ -191,6 +191,12 @@ impl Smtp {
     /// Whether connections to other servers go through a [`Connector`].
     pub fn has_connector(&self) -> bool {
         self.inner.connector().is_some()
+    }
+
+    /// Hands every network this turns away to `reporter` as well, so it can be kept out further
+    /// away than this server — at the UwUMail Gateway, where it never reaches the house at all.
+    pub fn report_blocks_to(&self, reporter: Option<Reporter>) {
+        self.inner.auth_limiter.report_to(reporter);
     }
 
     /// Switches to new settings at once: new connections and deliveries use them, running ones finish

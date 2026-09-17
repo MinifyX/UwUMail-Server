@@ -166,6 +166,12 @@ impl Web {
         &self.inner.limiter
     }
 
+    /// Hands every network the portal turns away to `reporter` as well, so it can be kept out at
+    /// the UwUMail Gateway instead of arriving here again.
+    pub fn report_blocks_to(&self, reporter: Option<uwumail_smtp::Reporter>) {
+        self.inner.limiter.report_to(reporter);
+    }
+
     pub fn router(&self) -> Router {
         let api = Router::new()
             .route("/api/info", get(routes::auth::info))
