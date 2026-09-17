@@ -118,7 +118,12 @@
       "imapValue": "{{hostname}}, Port 993 (TLS)",
       "submission": "Senden (SMTP)",
       "submissionValue": "{{hostname}}, Port 465 (TLS) oder 587 (STARTTLS)",
-      "username": "Benutzername"
+      "username": "Benutzername",
+      "appleTitle": "iPhone, iPad oder Mac",
+      "appleIntro": "Lädt ein Profil, das Mail mit einem eigenen App-Passwort einrichtet. Auf dem iPhone installierst du es danach in den Einstellungen unter „Profil geladen“.",
+      "appleDevice": "Gerätename",
+      "appleButton": "Profil laden",
+      "appleStarted": "Das Profil kommt gleich. Installieren kannst du es in den Einstellungen."
     },
     "details": {
       "title": "Details",

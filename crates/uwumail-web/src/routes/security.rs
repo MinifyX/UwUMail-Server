@@ -44,7 +44,7 @@ pub(crate) async fn confirm_identity(web: &Web, session: &Session, password: Opt
     }
 }
 
-fn origin(session: &Session) -> (String, String) {
+pub(crate) fn origin(session: &Session) -> (String, String) {
     (String::new(), session.client.ip.to_string())
 }
 

@@ -6,6 +6,7 @@ import { useT } from "@/i18n";
 import { api, type Profile, type Session } from "@/lib/api";
 import { formatBytes, formatDate } from "@/lib/format";
 import { usePrefs } from "@/state/prefs";
+import { AppleProfile } from "./AppleProfile";
 
 function StorageBar({ used, quota }: { used: number; quota: number }) {
   const share = quota > 0 ? Math.min(1, used / quota) : 0;
@@ -89,6 +90,7 @@ export function AccountHome({ session }: { session: Session }) {
           <KeyValue label={t("account.apps.imap")} value={t("account.apps.imapValue", { hostname })} />
           <KeyValue label={t("account.apps.submission")} value={t("account.apps.submissionValue", { hostname })} />
           <KeyValue label={t("account.apps.username")} value={data.login} copy={data.login} />
+          <AppleProfile />
         </Card>
 
         {!simple && (

@@ -67,6 +67,8 @@ struct Inner {
     setup_code: Mutex<Option<String>>,
     /// The latest run of the setup checks.
     server_check: Mutex<Option<uwumail_smtp::servercheck::ServerCheck>>,
+    /// Apple configuration profiles waiting for their one download, by token.
+    apple_profiles: Mutex<HashMap<String, routes::apps::PendingProfile>>,
     /// The UwUMail Gateway, once the server plugged it in.
     gateway: std::sync::OnceLock<Arc<dyn gateway::GatewayBackend>>,
 }
@@ -87,6 +89,7 @@ impl Web {
                 login: login::LoginState::default(),
                 setup_code: Mutex::default(),
                 server_check: Mutex::default(),
+                apple_profiles: Mutex::default(),
                 gateway: std::sync::OnceLock::new(),
             }),
         }
@@ -179,6 +182,12 @@ impl Web {
             .route("/api/account/apps-need-app-password", put(routes::security::set_apps_need_app_password))
             .route("/api/account/app-passwords", post(routes::security::create_app_password))
             .route("/api/account/app-passwords/{id}", delete(routes::security::revoke_app_password))
+            .route("/api/account/apple-profiles", post(routes::apps::create_apple_profile))
+            .route("/api/apple-profiles/{token}", get(routes::apps::download_apple_profile))
+            .route("/mail/config-v1.1.xml", get(routes::apps::autoconfig))
+            .route("/.well-known/autoconfig/mail/config-v1.1.xml", get(routes::apps::autoconfig))
+            .route("/autodiscover/autodiscover.xml", post(routes::apps::autodiscover))
+            .route("/Autodiscover/Autodiscover.xml", post(routes::apps::autodiscover))
             .route("/api/account/sessions/{id}", delete(routes::security::end_session))
             .route("/api/account/sessions/end-others", post(routes::security::end_other_sessions))
             .route("/api/account/passkeys/options", post(routes::security::passkey_options))

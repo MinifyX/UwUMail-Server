@@ -80,6 +80,7 @@ Recommended, mail works without them:
 | `_jmap._tcp.example.com SRV 0 1 443 mail.example.com.` | Apps like UwUMail find the server from the address alone |
 | `_imaps._tcp` (993) SRV | Mail apps find where to read mail |
 | `_submissions._tcp` (465) and `_submission._tcp` (587) SRV | Mail apps find where to send |
+| `autoconfig.example.com` and `autodiscover.example.com` A/AAAA (or CNAME to `mail.example.com`) | Thunderbird and Outlook set themselves up; the certificate must cover these names too |
 
 Show them again any time with `uwumail-server domain dns example.com`. The
 portal checks all of them and, for domains at Cloudflare, can add them.
@@ -129,6 +130,19 @@ need an app password instead; the main password then only works in the portal.
 JMAP apps (like UwUMail) only need
 `https://mail.example.com`; they find everything else at `/.well-known/jmap`.
 IMAP is only offered with TLS on port 993, not with STARTTLS on 143.
+
+Most apps find these settings themselves:
+
+- **Thunderbird** and others ask for `/.well-known/autoconfig/mail/config-v1.1.xml`
+  on the server or `/mail/config-v1.1.xml` on `autoconfig.example.com`.
+- **Outlook** posts to `/autodiscover/autodiscover.xml` on
+  `autodiscover.example.com`. The answer only names the servers; it does not
+  say whether a mailbox exists.
+- **iPhone, iPad and Mac:** *My account → Connect mail apps → Download profile*
+  makes an app password for the device and a configuration profile with it. The
+  download link works once and for ten minutes. On an iPhone, install the
+  profile in *Settings* under *Profile Downloaded*. The profile is not signed,
+  so iOS shows it as unverified.
 
 ## Behind a reverse proxy
 

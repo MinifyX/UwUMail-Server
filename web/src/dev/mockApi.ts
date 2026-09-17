@@ -1509,6 +1509,27 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   [
+    "POST",
+    /^\/api\/account\/apple-profiles$/,
+    (body) => {
+      const { device } = body as { device: string };
+      const appPassword: AppPasswordInfo = {
+        id: nextSecurityId++,
+        name: device.trim(),
+        scopes: ["mail", "smtp"],
+        createdAt: Math.floor(Date.now() / 1000),
+        expiresAt: null,
+        lastUsedAt: null,
+        lastUsedProtocol: null,
+        lastUsedIp: null,
+      };
+      mockSecurity.appPasswords.unshift(appPassword);
+      securityEvent("appPasswordCreated", { name: appPassword.name });
+      // The demo has no profile to download; staying on the page is enough.
+      return [201, { appPassword, url: "#profile-downloaded" }];
+    },
+  ],
+  [
     "DELETE",
     /^\/api\/account\/app-passwords\/(\d+)$/,
     (_, [id]) => {

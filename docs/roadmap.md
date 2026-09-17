@@ -77,7 +77,8 @@ Each step ships as its own commits, container image and test deployment.
 
 - [x] IMAP4rev1 on port 993 (TLS) with IDLE, UIDPLUS, MOVE, SPECIAL-USE, LIST-EXTENDED, LIST-STATUS, ESEARCH, CONDSTORE, QRESYNC, QUOTA, UTF8=ACCEPT, also through the gateway
 - [ ] IMAP4rev2, ACL and shared folders
-- [ ] Autoconfig, Autodiscover and Apple configuration profiles (they need IMAP)
+- [x] Autoconfig, Autodiscover and Apple configuration profiles with their own app password
+- [ ] Signed Apple configuration profiles, CalDAV and CardDAV in the profile
 
 ## 6. Web mail and external mailboxes
 

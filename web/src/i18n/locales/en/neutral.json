@@ -118,7 +118,12 @@
       "imapValue": "{{hostname}}, port 993 (TLS)",
       "submission": "Sending (SMTP)",
       "submissionValue": "{{hostname}}, port 465 (TLS) or 587 (STARTTLS)",
-      "username": "Username"
+      "username": "Username",
+      "appleTitle": "iPhone, iPad or Mac",
+      "appleIntro": "Downloads a profile that sets up mail with its own app password. On an iPhone, install it afterwards in Settings under “Profile Downloaded”.",
+      "appleDevice": "Device name",
+      "appleButton": "Download profile",
+      "appleStarted": "The profile is on its way. Install it in Settings."
     },
     "details": {
       "title": "Details",
