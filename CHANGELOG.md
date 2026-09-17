@@ -3,6 +3,42 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.2.0
+
+- The UwUMail Gateway looks after the machine it runs on. The same install command as always does
+  it — a first install, an update, and a check that what was set up is still there — and it now
+  sets up ufw with the ports the gateway needs and the port SSH really listens on, fail2ban against
+  SSH guessing, and unattended-upgrades for security updates only, never rebooting on its own. It
+  reports what it found instead of changing things quietly, and files you edited afterwards are
+  left alone: the new version lands beside yours as `.new`. `--no-harden` skips all of it,
+  `--check` changes nothing and only reports. See `docs/gateway.md`, "What it does to the machine".
+- Updates on the gateway show up in the portal under *Server → Setup*: how many wait, how many are
+  security updates, whether a restart is due, whether a newer system version is out — with the
+  whole SSH command to install them, ready to paste. The same thing greets you when you log into
+  the gateway over SSH. Nobody logs into a VPS for weeks, so it says so where it is noticed.
+- Nothing on the gateway can lock your server out. Its address changes every night, and behind
+  carrier-grade NAT the neighbours share it, so the address a stranger brute-forces SSH from today
+  can be the one your server connects from tomorrow. Every ban is TCP only while the tunnel is QUIC
+  over UDP, so a ban cannot touch it; fail2ban asks before each ban and is told where the tunnel
+  comes from; and a timer frees an address that was banned before your server moved onto it. When
+  your server moves off an address, the gateway stops vouching for it — last night's address
+  belongs to the next customer by morning. IPv6 counts as the whole /64 that one connection is
+  handed, IPv4 as the single address.
+- Guessing at mailbox names is stopped sooner than guessing at passwords: three tries at logins
+  that do not exist here, instead of ten. Whoever works through `info@`, `sales@` and `admin@` is
+  reading the address book, not getting close to a password. Three and not one, because at one try
+  the block itself would answer "does this mailbox exist?"; what the other side is told stays word
+  for word the same either way, and the password check still runs against nothing, so the clock
+  gives nothing away. A network that is turned away is handed to the gateway, which keeps it off
+  its public ports for an hour — only the server can see a failed login, since the gateway carries
+  TLS it cannot read.
+- Port 25 has no ban list on purpose, and gets none: the gateway cannot see who fails to log in
+  there, so a jail could only count connections, and banning a mail server for connecting often
+  means losing its mail.
+- The handwritten nftables rules this page used to hand out are stood down by the installer when it
+  finds them, and kept as `/etc/nftables.conf.before-uwumail-ufw`. Any other rule set is left alone
+  and reported instead.
+
 ## 0.1.2
 
 - UwUMail Gateway: `uwumail-server gateway pair <code>` pairs from the command line, for when the
