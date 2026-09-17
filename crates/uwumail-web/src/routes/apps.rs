@@ -28,6 +28,7 @@ const PROFILE_LIFETIME: Duration = Duration::from_secs(10 * 60);
 const MAX_PENDING_PROFILES: usize = 1000;
 const MAX_AUTODISCOVER_BODY: usize = 16 * 1024;
 
+#[derive(Clone)]
 pub struct PendingProfile {
     pub file: Vec<u8>,
     pub filename: String,
@@ -381,12 +382,16 @@ pub async fn create_apple_profile(
     ))
 }
 
-/// `GET /api/apple-profiles/{token}`: the profile, once, within ten minutes.
+/// `GET /api/apple-profiles/{token}`: the profile, within ten minutes. Apple devices ask for the
+/// same link more than once — the browser downloads it and hands the address to the part of the
+/// system that installs profiles — so the link keeps working until it runs out of time instead of
+/// burning on the first request. `inline` rather than `attachment` lets Safari on iPhone, iPad and
+/// Mac open it as a profile instead of filing it away as a download.
 pub async fn download_apple_profile(State(web): State<Web>, Path(token): Path<String>) -> Response {
-    let Some(profile) = web.take_profile(&token).filter(|profile| profile.created.elapsed() < PROFILE_LIFETIME) else {
+    let Some(profile) = web.profile(&token) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let disposition = format!("attachment; filename=\"{}\"", profile.filename);
+    let disposition = format!("inline; filename=\"{}\"", profile.filename);
     let mut response = (StatusCode::OK, profile.file).into_response();
     let headers = response.headers_mut();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/x-apple-aspen-config"));
@@ -407,8 +412,11 @@ impl Web {
         pending.insert(token, profile);
     }
 
-    fn take_profile(&self, token: &str) -> Option<PendingProfile> {
-        self.inner.apple_profiles.lock().expect("profiles poisoned").remove(token)
+    /// The profile behind a link, as often as the device asks for it, until its time is up.
+    fn profile(&self, token: &str) -> Option<PendingProfile> {
+        let mut pending = self.inner.apple_profiles.lock().expect("profiles poisoned");
+        pending.retain(|_, profile| profile.created.elapsed() < PROFILE_LIFETIME);
+        pending.get(token).cloned()
     }
 }
 

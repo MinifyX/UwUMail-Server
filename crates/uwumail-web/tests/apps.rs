@@ -17,6 +17,7 @@ const PASSWORD: &str = "katzenpfote-123";
 struct Reply {
     status: StatusCode,
     content_type: String,
+    disposition: String,
     text: String,
     cookie: Option<String>,
 }
@@ -28,9 +29,10 @@ async fn send(app: &Router, request: Request<Body>) -> Reply {
     let status = response.status();
     let header_text = |name| response.headers().get(name).map(|v: &header::HeaderValue| v.to_str().unwrap().to_owned());
     let content_type = header_text(header::CONTENT_TYPE).unwrap_or_default();
+    let disposition = header_text(header::CONTENT_DISPOSITION).unwrap_or_default();
     let cookie = header_text(header::SET_COOKIE).map(|value| value.split(';').next().unwrap().to_owned());
     let bytes = axum::body::to_bytes(response.into_body(), 1 << 20).await.unwrap();
-    Reply { status, content_type, text: String::from_utf8_lossy(&bytes).into_owned(), cookie }
+    Reply { status, content_type, disposition, text: String::from_utf8_lossy(&bytes).into_owned(), cookie }
 }
 
 fn json_request(method: &str, path: &str, body: Value, auth: Option<&(String, String)>) -> Request<Body> {
@@ -112,7 +114,7 @@ async fn apps_find_their_settings() {
 }
 
 #[tokio::test]
-async fn apple_profiles_carry_a_new_app_password_and_download_once() {
+async fn apple_profiles_carry_a_new_app_password_and_open_as_a_profile() {
     let (app, store, _dir) = setup().await;
     let login = send(
         &app,
@@ -134,10 +136,11 @@ async fn apple_profiles_carry_a_new_app_password_and_download_once() {
     assert_eq!(created["appPassword"]["name"], "iPhone");
     let url = created["url"].as_str().unwrap();
 
-    // The download needs no session: the link itself is the secret, and it works once.
+    // The download needs no session: the link itself is the secret.
     let download = send(&app, Request::builder().uri(url).body(Body::empty()).unwrap()).await;
     assert_eq!(download.status, StatusCode::OK);
     assert_eq!(download.content_type, "application/x-apple-aspen-config");
+    assert!(download.disposition.starts_with("inline;"), "Safari opens it as a profile: {}", download.disposition);
     let secret = download
         .text
         .split("<key>IncomingPassword</key>\n      <string>")
@@ -158,6 +161,10 @@ async fn apple_profiles_carry_a_new_app_password_and_download_once() {
     assert!(download.text.contains(&format!("<key>CardDAVPassword</key>\n      <string>{secret}</string>")));
     let dav = store.authenticate_mail("mini@example.de", secret, AppScope::Dav, "dav", "").await.unwrap();
     assert!(matches!(dav, MailAuth::Ok { .. }), "the app password may use CalDAV and CardDAV");
+    // An iPhone asks for the link twice: once for the download, once to install what it downloaded.
     let again = send(&app, Request::builder().uri(url).body(Body::empty()).unwrap()).await;
-    assert_eq!(again.status, StatusCode::NOT_FOUND);
+    assert_eq!(again.status, StatusCode::OK);
+    assert_eq!(again.text, download.text);
+    let unknown = send(&app, Request::builder().uri("/api/apple-profiles/nothing").body(Body::empty()).unwrap()).await;
+    assert_eq!(unknown.status, StatusCode::NOT_FOUND);
 }
