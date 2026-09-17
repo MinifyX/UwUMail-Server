@@ -134,7 +134,7 @@ export function PortalShell({ session, children }: { session: Session; children:
             { to: "/account", label: t("nav.overview"), icon: LayoutDashboard },
             { to: "/account/addresses", label: t("nav.addresses"), icon: AtSign },
             { to: "/account/mail", label: t("nav.mail"), icon: Forward },
-            { to: "/account/spam", label: t("nav.spam"), icon: MailWarning },
+            { to: "/account/spam", label: t("nav.spamFilter"), icon: MailWarning },
             { to: "/account/security", label: t("nav.security"), icon: ShieldCheck },
           ]}
         />

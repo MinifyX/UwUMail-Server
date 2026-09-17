@@ -3,10 +3,18 @@ import { GraduationCap } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
 import { Card, PageHeader } from "@/components/ui/Card";
+import { SPAM_SETTING_KEYS, Section, SpamFields } from "@/features/settings/SettingsPage";
 import { useT } from "@/i18n";
-import { api, type AccountSpamView, type AdminSpamView, type BayesTotals, type LearnedFromFolders } from "@/lib/api";
+import {
+  api,
+  type AccountSpamView,
+  type AdminSpamView,
+  type BayesTotals,
+  type LearnedFromFolders,
+  type SettingsView,
+} from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
-import { Link } from "@/lib/router";
+import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 import { SenderListCard } from "./SenderListCard";
 
@@ -61,7 +69,7 @@ function useLearn(path: string, key: readonly string[]) {
   });
 }
 
-/** Spam in My account: what the filter learned from one's own marks. */
+/** The spam filter in My account: one's own sender list and what the filter learned from one's marks. */
 export function AccountSpamPage() {
   const { t } = useT();
   const query = useQuery({ queryKey: accountKey, queryFn: () => api<AccountSpamView>("/api/account/spam") });
@@ -103,20 +111,36 @@ export function AccountSpamPage() {
   );
 }
 
-/** The spam filter for admins: what the whole server learned. */
+/** The spam filter for admins: its settings, the server and domain sender lists, and what it learned. */
 export function AdminSpamPage() {
   const { t } = useT();
+  const pro = usePrefs((s) => s.mode) === "pro";
+  const queryClient = useQueryClient();
   const query = useQuery({ queryKey: adminKey, queryFn: () => api<AdminSpamView>("/api/admin/spam") });
+  const settings = useQuery({
+    queryKey: ["admin", "settings"],
+    queryFn: () => api<SettingsView>("/api/admin/settings"),
+  });
   const learn = useLearn("/api/admin/spam/learn-folders", adminKey);
-  if (query.isPending) return <Loading />;
+  if (query.isPending || settings.isPending) return <Loading />;
   if (query.isError) return <LoadError error={query.error} onRetry={() => void query.refetch()} />;
+  if (settings.isError) return <LoadError error={settings.error} onRetry={() => void settings.refetch()} />;
   const { bayes } = query.data;
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title={t("spam.admin.title")} intro={t("spam.admin.intro")} />
+      <Section
+        title={t("spam.admin.settingsTitle")}
+        intro={t("settings.spam.intro")}
+        view={settings.data}
+        keys={SPAM_SETTING_KEYS}
+        onSaved={() => void queryClient.invalidateQueries({ queryKey: adminKey })}
+      >
+        {(form) => <SpamFields form={form} pro={pro} />}
+      </Section>
       <SenderListCard admin />
-      <Card title={t("spam.bayes.title")} action={<Link to="/admin/settings">{t("spam.admin.settingsLink")}</Link>}>
+      <Card title={t("spam.bayes.title")}>
         <div className="flex flex-col gap-4">
           <p className="-mt-1 text-[13px] text-muted">{t("spam.bayes.explainAdmin")}</p>
           {!bayes.enabled && <p className="rounded-control bg-canvas px-3 py-2 text-[13px]">{t("spam.bayes.off")}</p>}

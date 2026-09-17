@@ -8,6 +8,7 @@ import { Field, Segmented, Select, TextInput, Toggle } from "@/components/ui/Fie
 import { useT } from "@/i18n";
 import { api, type SettingsView, type SettingValue } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
+import { Link } from "@/lib/router";
 import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 
@@ -334,22 +335,12 @@ export function SettingsPage() {
         )}
       </Section>
 
-      <Section
-        title={t("settings.spam.title")}
-        intro={t("settings.spam.intro")}
-        view={view}
-        keys={[
-          "spam.enabled",
-          "spam.blocklists",
-          "spam.bayes",
-          "spam.junk_score",
-          "spam.greylist_score",
-          "spam.greylist_delay_secs",
-          "spam.reject_score",
-        ]}
-      >
-        {(form) => <SpamFields form={form} pro={pro} />}
-      </Section>
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
+        {t("settings.spamHint")}
+        <Link to="/admin/spam" className="font-semibold text-pink-ink hover:underline">
+          {t("settings.spamLink")}
+        </Link>
+      </p>
 
       {pro && (
         <div className="grid gap-5 lg:grid-cols-2">
@@ -357,13 +348,7 @@ export function SettingsPage() {
             title={t("settings.receiving.title")}
             intro={t("settings.receiving.intro")}
             view={view}
-            keys={[
-              "smtp.max_message_size",
-              "smtp.max_recipients",
-              "smtp.verify_senders",
-              "smtp.enforce_dmarc_reject",
-              "smtp.trusted_relays",
-            ]}
+            keys={["smtp.max_message_size", "smtp.max_recipients", "smtp.trusted_relays"]}
           >
             {(form) => (
               <>
@@ -377,18 +362,6 @@ export function SettingsPage() {
                   form={form}
                   settingKey="smtp.max_recipients"
                   label={t("settings.receiving.maxRecipients")}
-                />
-                <ToggleField
-                  form={form}
-                  settingKey="smtp.verify_senders"
-                  label={t("settings.receiving.verifySenders")}
-                  hint={t("settings.receiving.verifySendersHint")}
-                />
-                <ToggleField
-                  form={form}
-                  settingKey="smtp.enforce_dmarc_reject"
-                  label={t("settings.receiving.enforceDmarc")}
-                  hint={t("settings.receiving.enforceDmarcHint")}
                 />
                 <Field
                   label={t("settings.receiving.trustedRelays")}
@@ -445,8 +418,21 @@ export function SettingsPage() {
   );
 }
 
-/** The spam filter: switches for everyone, the numbers behind it in Pro mode. */
-function SpamFields({ form, pro }: { form: Form; pro: boolean }) {
+/** Every setting on the spam filter page. */
+export const SPAM_SETTING_KEYS = [
+  "spam.enabled",
+  "spam.blocklists",
+  "spam.bayes",
+  "spam.junk_score",
+  "spam.greylist_score",
+  "spam.greylist_delay_secs",
+  "spam.reject_score",
+  "smtp.verify_senders",
+  "smtp.enforce_dmarc_reject",
+];
+
+/** The spam filter: switches for everyone; the numbers behind it and the sender checks in Pro mode. */
+export function SpamFields({ form, pro }: { form: Form; pro: boolean }) {
   const { t } = useT();
   const enabled = Boolean(form.value("spam.enabled"));
   return (
@@ -502,6 +488,22 @@ function SpamFields({ form, pro }: { form: Form; pro: boolean }) {
             placeholder={t("settings.spam.rejectScoreOff")}
           />
         </div>
+      )}
+      {pro && (
+        <>
+          <ToggleField
+            form={form}
+            settingKey="smtp.verify_senders"
+            label={t("settings.receiving.verifySenders")}
+            hint={t("settings.receiving.verifySendersHint")}
+          />
+          <ToggleField
+            form={form}
+            settingKey="smtp.enforce_dmarc_reject"
+            label={t("settings.receiving.enforceDmarc")}
+            hint={t("settings.receiving.enforceDmarcHint")}
+          />
+        </>
       )}
     </>
   );

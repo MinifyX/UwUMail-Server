@@ -9,8 +9,9 @@ Check a configuration with `uwumail-server check-config`.
 
 ## Settings in the admin panel
 
-Admins can change sending, receiving, spam filter, mail-app and tone settings under
-*Einstellungen* / *Settings* in the web portal. The server checks them and
+Admins can change sending, receiving, mail-app and tone settings under
+*Einstellungen* / *Settings* in the web portal, and the spam filter under
+*Spamfilter* / *Spam filter*. The server checks them and
 applies them at once, without a restart. They are stored in the database
 (`config.overlay`), so they survive updates.
 

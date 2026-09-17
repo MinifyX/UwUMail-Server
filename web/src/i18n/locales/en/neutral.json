@@ -48,7 +48,6 @@
     "mail": "Forwarding",
     "addresses": "Addresses",
     "setup": "Setup",
-    "spam": "Spam",
     "spamFilter": "Spam filter"
   },
   "mode": {
@@ -708,6 +707,8 @@
     "envNote": "Whatever UWUMAIL_* environment variables set takes precedence and is locked here.",
     "locked": "Set in the config file",
     "save": "Save",
+    "spamHint": "The spam filter, with allowed and blocked senders, has a page of its own.",
+    "spamLink": "Go to the spam filter",
     "saved": "Settings saved",
     "unchanged": "No changes",
     "tone": {
@@ -755,7 +756,7 @@
     },
     "receiving": {
       "title": "Receiving",
-      "intro": "Limits and checks for incoming mail.",
+      "intro": "Limits for incoming mail and mail servers in front of this one.",
       "maxSize": "Largest message (MB)",
       "maxRecipients": "Recipients per message",
       "verifySenders": "Check senders (SPF, DKIM, DMARC)",
@@ -1415,13 +1416,13 @@
   },
   "spam": {
     "account": {
-      "title": "Spam",
+      "title": "Spam filter",
       "intro": "Senders you always let through or sort out, and what the spam filter learned from you."
     },
     "admin": {
       "title": "Spam filter",
-      "intro": "Senders the server or a domain always lets through or turns away, and what the spam filter learned.",
-      "settingsLink": "Settings"
+      "intro": "How the server scores mail from other servers, which senders it always lets through or turns away, and what the spam filter learned.",
+      "settingsTitle": "Settings"
     },
     "bayes": {
       "title": "Learning filter",

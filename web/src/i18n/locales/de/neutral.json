@@ -48,7 +48,6 @@
     "mail": "Weiterleitung",
     "addresses": "Adressen",
     "setup": "Einrichtung",
-    "spam": "Spam",
     "spamFilter": "Spamfilter"
   },
   "mode": {
@@ -708,6 +707,8 @@
     "envNote": "Was in UWUMAIL_*-Umgebungsvariablen steht, hat Vorrang und ist hier gesperrt.",
     "locked": "In der Konfigurationsdatei festgelegt",
     "save": "Speichern",
+    "spamHint": "Den Spamfilter mit erlaubten und blockierten Absendern stellst du auf einer eigenen Seite ein.",
+    "spamLink": "Zum Spamfilter",
     "saved": "Einstellungen gespeichert",
     "unchanged": "Keine Änderungen",
     "tone": {
@@ -755,7 +756,7 @@
     },
     "receiving": {
       "title": "Empfang",
-      "intro": "Grenzen und Prüfungen für eingehende Mails.",
+      "intro": "Grenzen für eingehende Mails und vorgeschaltete Mailserver.",
       "maxSize": "Größte Mail (MB)",
       "maxRecipients": "Empfänger pro Mail",
       "verifySenders": "Absender prüfen (SPF, DKIM, DMARC)",
@@ -1415,13 +1416,13 @@
   },
   "spam": {
     "account": {
-      "title": "Spam",
+      "title": "Spamfilter",
       "intro": "Absender, die du immer durchlässt oder aussortierst, und was der Spamfilter von dir gelernt hat."
     },
     "admin": {
       "title": "Spamfilter",
-      "intro": "Absender, die der Server oder eine Domain immer durchlässt oder abweist, und was der Spamfilter gelernt hat.",
-      "settingsLink": "Einstellungen"
+      "intro": "Wie der Server Mails von anderen Servern bewertet, welche Absender er immer durchlässt oder abweist und was der Spamfilter gelernt hat.",
+      "settingsTitle": "Einstellungen"
     },
     "bayes": {
       "title": "Lernender Filter",

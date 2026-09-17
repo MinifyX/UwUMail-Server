@@ -170,7 +170,7 @@ It learns from:
   message's own merits, or DMARC passed with nothing against it and not in
   Junk.
 - **Mail that is already sorted**, once and on request: in the portal under
-  *Mein Konto → Spam* for one's own mail, under *Server → Spamfilter* for
+  *Mein Konto → Spamfilter* for one's own mail, under *Server → Spamfilter* for
   everyone's, or with `uwumail-server spam learn [address]`. Mail in Junk
   counts as spam, read mail in the inbox and archive that is older than two
   weeks as wanted mail, at most 2,000 of each per person. This teaches the
@@ -196,7 +196,7 @@ again.
 ## Allowed and blocked senders
 
 Everyone keeps their own list of allowed and blocked senders in the portal
-under *Mein Konto → Spam*. Admins keep one for the whole server and one per
+under *Mein Konto → Spamfilter*. Admins keep one for the whole server and one per
 domain under *Server → Spamfilter*, or on the command line.
 
 | Kind | Example | Matches |
@@ -281,8 +281,9 @@ applies to you.
 
 ## Settings
 
-All of these can be changed in the portal under *Einstellungen* /
-*Settings* (the numbers in Pro mode), or in the config file:
+All of these can be changed in the portal under *Server → Spamfilter*
+(the numbers in Pro mode, together with checking senders and following
+`p=reject`), or in the config file:
 
 ```toml
 [spam]
