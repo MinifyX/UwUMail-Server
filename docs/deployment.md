@@ -29,6 +29,10 @@ docker compose logs uwumail | grep setup
 
 The server gets a Let's Encrypt certificate as soon as `mail.example.com`
 points to it and port 80 is reachable. Until then it uses a self-signed one.
+Names that mail apps may already know from an earlier server, like
+`imap.<domain>`, `smtp.<domain>`, `mail.<domain>`, `autoconfig.<domain>` and
+`autodiscover.<domain>`, join the certificate within 15 minutes once they point
+here too.
 
 ## Setup assistant
 

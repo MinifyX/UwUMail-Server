@@ -1,7 +1,8 @@
 //! Let's Encrypt certificates through the ACME HTTP-01 challenge.
 //!
-//! The certificate names the server, plus `mta-sts.<domain>` for domains with MTA-STS on whose
-//! DNS already points here, so senders can fetch their policy.
+//! The certificate names the server, plus the names of our domains whose DNS already points here:
+//! `mta-sts.<domain>` for domains with MTA-STS on, so senders can fetch their policy, and the names
+//! mail apps know from other servers, like `imap.<domain>` or `autoconfig.<domain>`.
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -24,6 +25,8 @@ const RENEW_BEFORE_SECS: i64 = 30 * 24 * 3600;
 const FAILED_NAME_PAUSE_SECS: i64 = 24 * 3600;
 /// How often to look for new names while the certificate is fine.
 const NAME_CHECK_SECS: u64 = 15 * 60;
+/// Names under each of our domains that mail apps connect to or look up their settings at.
+const CLIENT_NAMES: [&str; 5] = ["mail", "imap", "smtp", "autoconfig", "autodiscover"];
 
 /// Tokens the HTTP listener on port 80 hands out during a challenge.
 #[derive(Default)]
@@ -62,7 +65,7 @@ pub async fn run(
             _ = shutdown.changed() => return,
         }
         let now = uwumail_now();
-        let extra = mta_sts_names(&config.hostname, &store).await;
+        let extra = extra_names(&config.hostname, &store).await;
         let names = names_to_request(&config.hostname, &extra, &failed_names, now);
         if !needs_certificate(certs.info().as_ref(), &names, now) {
             wait = Duration::from_secs(NAME_CHECK_SECS);
@@ -78,7 +81,7 @@ pub async fn run(
                 // Try again soon without the extra names, which may simply not reach us yet.
                 tracing::warn!(
                     error = %format!("{err:#}"),
-                    "getting a certificate with the MTA-STS names failed, leaving them out for a day"
+                    "getting a certificate with the names of our domains failed, leaving them out for a day"
                 );
                 for name in &names[1..] {
                     failed_names.insert(name.clone(), now);
@@ -94,24 +97,46 @@ pub async fn run(
     }
 }
 
-/// `mta-sts.<domain>` of the domains with MTA-STS on, when the name resolves to this server.
-async fn mta_sts_names(hostname: &str, store: &Store) -> Vec<String> {
-    let domains = match store.mta_sts_domains().await {
+/// The names under our domains that resolve to this server: `mta-sts.<domain>` of the domains with
+/// MTA-STS on, and the names mail apps use for every domain.
+async fn extra_names(hostname: &str, store: &Store) -> Vec<String> {
+    let mta_sts = match store.mta_sts_domains().await {
         Ok(domains) => domains,
         Err(err) => {
             tracing::warn!(%err, "reading the MTA-STS domains failed");
-            return Vec::new();
+            Vec::new()
         }
     };
-    if domains.is_empty() {
+    let domains = match store.domains().await {
+        Ok(domains) => domains.into_iter().map(|domain| domain.name).collect(),
+        Err(err) => {
+            tracing::warn!(%err, "reading the domains failed");
+            Vec::new()
+        }
+    };
+    let candidates = candidate_names(hostname, &mta_sts, &domains);
+    if candidates.is_empty() {
         return Vec::new();
     }
     let ours = addresses(hostname).await;
     let mut names = Vec::new();
-    for domain in domains {
-        let name = format!("mta-sts.{domain}");
+    for name in candidates {
         if addresses(&name).await.iter().any(|ip| ours.contains(ip)) {
             names.push(name);
+        }
+    }
+    names
+}
+
+/// Every name that may belong on the certificate, before asking DNS whether it points here.
+fn candidate_names(hostname: &str, mta_sts: &[String], domains: &[String]) -> Vec<String> {
+    let mut names: Vec<String> = mta_sts.iter().map(|domain| format!("mta-sts.{domain}")).collect();
+    for domain in domains {
+        for prefix in CLIENT_NAMES {
+            let name = format!("{prefix}.{domain}");
+            if name != hostname && !names.contains(&name) {
+                names.push(name);
+            }
         }
     }
     names
@@ -222,6 +247,16 @@ mod tests {
             names: names.iter().map(|name| name.to_string()).collect(),
             self_signed,
         }
+    }
+
+    #[test]
+    fn candidates_cover_mta_sts_and_the_names_mail_apps_use() {
+        let domains = ["example.de".to_owned(), "verein.de".to_owned()];
+        let names = candidate_names("mail.example.de", &domains[1..], &domains);
+        assert_eq!(names[0], "mta-sts.verein.de");
+        assert!(names.contains(&"imap.verein.de".to_owned()) && names.contains(&"autodiscover.example.de".to_owned()));
+        assert!(!names.contains(&"mail.example.de".to_owned()), "the server's own name comes first anyway");
+        assert_eq!(names.len(), 1 + 2 * CLIENT_NAMES.len() - 1);
     }
 
     #[test]
