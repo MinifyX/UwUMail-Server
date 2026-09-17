@@ -740,6 +740,40 @@ export interface GatewayView {
   error: string | null;
   refusal: "notPaired" | "wrongToken" | "otherServer" | "version" | null;
   fromConfig: boolean;
+  /** The machine the gateway runs on. Missing while the tunnel is down. */
+  machine: GatewayMachine | null;
+}
+
+export interface GatewayMachine {
+  system: GatewaySystem | null;
+  protection: GatewayProtection | null;
+  /** Addresses the gateway keeps out of every ban list, this server's among them. */
+  trusted: string[];
+  checkedAt: number;
+}
+
+export interface GatewaySystem {
+  /** As the machine calls itself, for example `Ubuntu 26.04.1 LTS`. */
+  name: string;
+  updates: number;
+  securityUpdates: number;
+  rebootRequired: boolean;
+  /** Whether security updates install themselves. */
+  automaticSecurity: boolean;
+  newRelease: string | null;
+  /** What to run on the gateway to install them. */
+  command: string;
+}
+
+export interface GatewayProtection {
+  /** The firewall in use, for example `ufw`; empty when none was found. */
+  firewall: string;
+  firewallActive: boolean;
+  fail2ban: boolean;
+  banned: number;
+  jails: string[];
+  /** Of those bans, the ones this server asked for. */
+  fromServer: number;
 }
 
 export interface TestMailSent {

@@ -980,6 +980,7 @@ const noGateway: GatewayView = {
   error: null,
   refusal: null,
   fromConfig: false,
+  machine: null,
 };
 let gateway: GatewayView = noGateway;
 let gatewayPairedAt = 0;

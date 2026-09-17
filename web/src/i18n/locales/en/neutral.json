@@ -1400,7 +1400,17 @@
       "gatewayRefusedNotPaired": "The gateway does not know this server.",
       "gatewayRefusedWrongToken": "The pairing code is not valid, or not any more.",
       "gatewayRefusedOtherServer": "The gateway already belongs to another server.",
-      "gatewayRefusedVersion": "Gateway and server speak different tunnel versions."
+      "gatewayRefusedVersion": "Gateway and server speak different tunnel versions.",
+      "gatewayUpToDate": "The gateway is up to date ({{name}}).",
+      "gatewaySecurityUpdates": "{{count}} updates wait on the gateway, {{security}} of them security updates.",
+      "gatewayUpdates": "{{count}} updates wait on the gateway, none of them security updates.",
+      "gatewayAutomaticSecurity": "The gateway installs security updates by itself.",
+      "gatewayReboot": "The gateway is waiting for a restart.",
+      "gatewayNewRelease": "A newer version of the gateway's system waits: {{release}}.",
+      "gatewayProtected": "The gateway runs {{firewall}} and fail2ban. {{banned}} addresses are kept out, {{fromServer}} of them at this server's request.",
+      "gatewayNoFirewall": "The gateway has no firewall running.",
+      "gatewayNoFail2ban": "The gateway runs {{firewall}}, but no fail2ban.",
+      "gatewayTrusted": "The gateway never locks this server out ({{addresses}})."
     },
     "hints": {
       "directDns": "Check that the server has a working DNS resolver.",
@@ -1432,7 +1442,14 @@
       "gatewayRefusedNotPaired": "Get a pairing code on the VPS with uwumail-gateway code.",
       "gatewayRefusedWrongToken": "Get a new pairing code on the VPS with uwumail-gateway code.",
       "gatewayRefusedOtherServer": "Undo the old pairing on the VPS with uwumail-gateway unpair, then pair again.",
-      "gatewayRefusedVersion": "Update the gateway and the server to the same version."
+      "gatewayRefusedVersion": "Update the gateway and the server to the same version.",
+      "gatewaySecurityUpdates": "Over SSH onto the gateway, and install them: {{ssh}}",
+      "gatewayUpdates": "Over SSH onto the gateway, and install them: {{ssh}}",
+      "gatewayReboot": "While it restarts, other mail servers are asked to try again later, and they do. Nothing is lost.",
+      "gatewayNewRelease": "A version jump wants company: do-release-upgrade on the gateway, when you have time and a second SSH session open.",
+      "gatewayNoFirewall": "Run the install command again; it sets up ufw as well.",
+      "gatewayNoFail2ban": "Run the install command again; it sets up fail2ban as well.",
+      "gatewayTrusted": "This address is on the gateway's exception list, so no ban can lock out your own server. When your address changes, the gateway swaps it on the next connection."
     },
     "reach": {
       "title": "How can your server be reached?",

@@ -68,6 +68,64 @@ export function gatewayLines(view: GatewayView, hostname: string): CheckLineData
     case "refused":
       return [line(`gatewayRefused${capitalized(view.refusal ?? "notPaired")}`, "problem")];
     case "connected":
-      return [line("gatewayConnected", "ok", { addresses }), line("gatewayDns", "unknown", { hostname, addresses })];
+      return [
+        line("gatewayConnected", "ok", { addresses }),
+        line("gatewayDns", "unknown", { hostname, addresses }),
+        ...machineLines(view),
+      ];
   }
+}
+
+/**
+ * What the gateway says about the machine it runs on. Nobody logs into a VPS to see that it needs
+ * updates, so it says so here instead. Missing for gateways from before they told us.
+ */
+function machineLines(view: GatewayView): CheckLineData[] {
+  const machine = view.machine;
+  if (!machine) return [];
+  const lines: CheckLineData[] = [];
+
+  const system = machine.system;
+  if (system) {
+    // The whole command, ready to paste: the gateway is a machine you reach over SSH and rarely
+    // think about, so "there are updates" is only half an answer.
+    const address = view.addresses[0];
+    const ssh = address ? `ssh root@${address} '${system.command}'` : system.command;
+    if (system.securityUpdates > 0) {
+      lines.push(
+        line("gatewaySecurityUpdates", "problem", {
+          count: system.updates,
+          security: system.securityUpdates,
+          ssh,
+        }),
+      );
+    } else if (system.updates > 0) {
+      lines.push(line("gatewayUpdates", "warning", { count: system.updates, ssh }));
+    } else {
+      lines.push(line("gatewayUpToDate", "ok", { name: system.name }));
+    }
+    if (system.automaticSecurity) lines.push(line("gatewayAutomaticSecurity", "ok", {}));
+    if (system.rebootRequired) lines.push(line("gatewayReboot", "warning", {}));
+    if (system.newRelease) lines.push(line("gatewayNewRelease", "unknown", { release: system.newRelease }));
+  }
+
+  const protection = machine.protection;
+  if (protection) {
+    if (!protection.firewallActive) lines.push(line("gatewayNoFirewall", "problem", {}));
+    else if (!protection.fail2ban) lines.push(line("gatewayNoFail2ban", "warning", { firewall: protection.firewall }));
+    else {
+      lines.push(
+        line("gatewayProtected", "ok", {
+          firewall: protection.firewall,
+          banned: protection.banned,
+          fromServer: protection.fromServer,
+        }),
+      );
+    }
+  }
+
+  // The one that matters most when something goes wrong: no ban on the gateway may lock this
+  // server out, and this is where you can see that it knows where the server is.
+  if (machine.trusted.length > 0) lines.push(line("gatewayTrusted", "ok", { addresses: machine.trusted.join(", ") }));
+  return lines;
 }

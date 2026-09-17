@@ -1400,7 +1400,17 @@
       "gatewayRefusedNotPaired": "Das Gateway kennt diesen Server nicht.",
       "gatewayRefusedWrongToken": "Der Kopplungs-Code gilt nicht oder nicht mehr.",
       "gatewayRefusedOtherServer": "Das Gateway gehört schon zu einem anderen Server.",
-      "gatewayRefusedVersion": "Gateway und Server sprechen verschiedene Tunnel-Versionen."
+      "gatewayRefusedVersion": "Gateway und Server sprechen verschiedene Tunnel-Versionen.",
+      "gatewayUpToDate": "Das Gateway ist auf dem neuesten Stand ({{name}}).",
+      "gatewaySecurityUpdates": "Auf dem Gateway warten {{count}} Updates, davon {{security}} Sicherheitsupdates.",
+      "gatewayUpdates": "Auf dem Gateway warten {{count}} Updates, keins davon sicherheitsrelevant.",
+      "gatewayAutomaticSecurity": "Sicherheitsupdates spielt das Gateway von allein ein.",
+      "gatewayReboot": "Das Gateway wartet auf einen Neustart.",
+      "gatewayNewRelease": "Für das Gateway gibt es eine neuere Systemversion: {{release}}.",
+      "gatewayProtected": "Auf dem Gateway laufen {{firewall}} und fail2ban. Gesperrt sind {{banned}} Adressen, {{fromServer}} davon auf Wunsch dieses Servers.",
+      "gatewayNoFirewall": "Auf dem Gateway läuft keine Firewall.",
+      "gatewayNoFail2ban": "Auf dem Gateway läuft {{firewall}}, aber kein fail2ban.",
+      "gatewayTrusted": "Das Gateway sperrt diesen Server niemals aus ({{addresses}})."
     },
     "hints": {
       "directDns": "Prüfe, ob der Server einen funktionierenden DNS-Resolver hat.",
@@ -1432,7 +1442,14 @@
       "gatewayRefusedNotPaired": "Hol dir auf dem VPS mit uwumail-gateway code einen Kopplungs-Code.",
       "gatewayRefusedWrongToken": "Hol dir auf dem VPS mit uwumail-gateway code einen neuen Kopplungs-Code.",
       "gatewayRefusedOtherServer": "Löse die alte Kopplung auf dem VPS mit uwumail-gateway unpair und koppel dann neu.",
-      "gatewayRefusedVersion": "Bring Gateway und Server auf dieselbe Version."
+      "gatewayRefusedVersion": "Bring Gateway und Server auf dieselbe Version.",
+      "gatewaySecurityUpdates": "Per SSH aufs Gateway und einspielen: {{ssh}}",
+      "gatewayUpdates": "Per SSH aufs Gateway und einspielen: {{ssh}}",
+      "gatewayReboot": "Während des Neustarts bekommen andere Mailserver „später nochmal“ und versuchen es wieder. Es geht nichts verloren.",
+      "gatewayNewRelease": "Ein Versionssprung will begleitet werden: do-release-upgrade auf dem Gateway, wenn du Zeit und eine zweite SSH-Sitzung offen hast.",
+      "gatewayNoFirewall": "Führ das Installationskommando noch einmal aus, es richtet ufw mit ein.",
+      "gatewayNoFail2ban": "Führ das Installationskommando noch einmal aus, es richtet fail2ban mit ein.",
+      "gatewayTrusted": "Diese Adresse steht auf der Ausnahmeliste des Gateways, damit keine Sperre deinen eigenen Server aussperrt. Wechselt deine Adresse, tauscht das Gateway sie beim nächsten Verbinden aus."
     },
     "reach": {
       "title": "Wie ist dein Server erreichbar?",

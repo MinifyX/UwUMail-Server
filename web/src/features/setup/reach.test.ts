@@ -88,6 +88,7 @@ describe("gateway lines", () => {
     error: null,
     refusal: null,
     fromConfig: false,
+    machine: null,
     ...overrides,
   });
 
@@ -102,5 +103,65 @@ describe("gateway lines", () => {
     );
     expect(codes(connected)).toEqual(["gatewayConnected", "gatewayDns"]);
     expect(connected[1]!.params).toEqual({ hostname: "mail.example.com", addresses: "203.0.113.10, 2001:db8::10" });
+  });
+
+  it("says what the gateway's machine needs, with the command to do it", () => {
+    const lines = gatewayLines(
+      view({
+        state: "connected",
+        addresses: ["203.0.113.10"],
+        machine: {
+          system: {
+            name: "Ubuntu 26.04.1 LTS",
+            updates: 12,
+            securityUpdates: 3,
+            rebootRequired: true,
+            automaticSecurity: true,
+            newRelease: null,
+            command: "apt-get update && apt-get -y dist-upgrade",
+          },
+          protection: {
+            firewall: "ufw",
+            firewallActive: true,
+            fail2ban: true,
+            banned: 2,
+            jails: ["sshd", "uwumail-server"],
+            fromServer: 1,
+          },
+          trusted: ["80.140.35.247"],
+          checkedAt: 1_800_000_000,
+        },
+      }),
+      "mail.example.com",
+    );
+    expect(codes(lines)).toEqual([
+      "gatewayConnected",
+      "gatewayDns",
+      "gatewaySecurityUpdates",
+      "gatewayAutomaticSecurity",
+      "gatewayReboot",
+      "gatewayProtected",
+      "gatewayTrusted",
+    ]);
+    // The whole line to paste, not just "there are updates".
+    expect(lines[2]!.params.ssh).toBe("ssh root@203.0.113.10 'apt-get update && apt-get -y dist-upgrade'");
+    expect(lines[2]!.level).toBe("problem");
+  });
+
+  it("is loud when the gateway lost its firewall", () => {
+    const machine = {
+      system: null,
+      protection: { firewall: "", firewallActive: false, fail2ban: false, banned: 0, jails: [], fromServer: 0 },
+      trusted: [],
+      checkedAt: 1_800_000_000,
+    };
+    const lines = gatewayLines(view({ state: "connected", machine }), "mail.example.com");
+    expect(codes(lines)).toContain("gatewayNoFirewall");
+    expect(lines.find((one) => one.code === "gatewayNoFirewall")!.level).toBe("problem");
+  });
+
+  it("says nothing about a machine a gateway is too old to describe", () => {
+    const lines = gatewayLines(view({ state: "connected", machine: null }), "mail.example.com");
+    expect(codes(lines)).toEqual(["gatewayConnected", "gatewayDns"]);
   });
 });
