@@ -106,6 +106,8 @@ struct Importer<'a> {
     report: Report,
     /// Logins whose mailbox this run creates, or would create in a dry run.
     created: BTreeSet<String>,
+    /// Domains with a mailcow DKIM key, taken over now or before (a dry run stores none).
+    keyed: BTreeSet<String>,
 }
 
 fn lower(value: &str) -> String {
@@ -171,7 +173,8 @@ pub async fn mailcow(
         anyhow::bail!("{missing} is not in the export");
     }
 
-    let mut importer = Importer { store, dav, dry_run, report: Report::default(), created: BTreeSet::new() };
+    let mut importer =
+        Importer { store, dav, dry_run, report: Report::default(), created: BTreeSet::new(), keyed: BTreeSet::new() };
     importer.run(&entries, &chosen).await?;
 
     let report = importer.report;
@@ -213,7 +216,8 @@ impl Importer<'_> {
             }
         }
         for domain in chosen {
-            let has_keys = !self.store.dkim_keys(domain).await.unwrap_or_default().is_empty();
+            let has_keys =
+                self.keyed.contains(domain) || !self.store.dkim_keys(domain).await.unwrap_or_default().is_empty();
             if !has_keys {
                 if !self.dry_run {
                     uwumail_smtp::dkim::ensure_domain_keys(self.store, domain).await?;
@@ -325,6 +329,7 @@ impl Importer<'_> {
     }
 
     async fn dkim(&mut self, domain: &str, selector: &str, pem: &str) -> anyhow::Result<()> {
+        self.keyed.insert(domain.to_owned());
         if self.store.dkim_keys(domain).await.unwrap_or_default().iter().any(|key| key.selector == selector) {
             return Ok(());
         }
@@ -628,10 +633,12 @@ impl Importer<'_> {
             return Ok(None);
         }
         let Some(account) = self.store.account(owner).await? else {
-            if self.dry_run {
-                self.report.count(if kind == DavKind::Calendar { "calendars" } else { "address books" });
+            if !self.dry_run {
+                return Ok(None);
             }
-            return Ok(None);
+            // The mailbox only exists in a dry run's imagination: count what would land in it.
+            self.report.count(if kind == DavKind::Calendar { "calendars" } else { "address books" });
+            return Ok(Some((0, 0, kind)));
         };
         let default = self.dav.default_collection(kind);
         let slug = match path {
@@ -678,6 +685,10 @@ impl Importer<'_> {
                 return Ok(());
             }
         };
+        if self.dry_run {
+            self.report.count("calendar entries and contacts");
+            return Ok(());
+        }
         let write = DavWrite {
             name: name.clone(),
             content: content.to_owned(),
@@ -770,6 +781,19 @@ mod tests {
 
         mailcow(&store, dav(&store), &file, &[], true).await.unwrap();
         assert!(store.domains().await.unwrap().is_empty(), "a dry run changes nothing");
+        let entries: Vec<Entry> = export().lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+        let mut dry = Importer {
+            store: &store,
+            dav: dav(&store),
+            dry_run: true,
+            report: Report::default(),
+            created: BTreeSet::new(),
+            keyed: BTreeSet::new(),
+        };
+        dry.run(&entries, &["example.de".into(), "verein.de".into()].into()).await.unwrap();
+        let missing: Vec<_> = dry.report.notes.iter().filter(|note| note.contains("no DKIM key")).collect();
+        assert_eq!(missing, ["verein.de had no DKIM key in mailcow: new keys need DNS records"]);
+        assert_eq!(dry.report.counts.get("calendar entries and contacts"), Some(&2), "a dry run counts DAV objects");
 
         mailcow(&store, dav(&store), &file, &[], false).await.unwrap();
         let names: Vec<_> = store.domains().await.unwrap().into_iter().map(|domain| domain.name).collect();
