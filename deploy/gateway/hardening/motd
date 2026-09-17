@@ -1,0 +1,7 @@
+#!/bin/sh
+# What a UwUMail Gateway says when you log in over SSH. install.sh puts this into
+# /etc/update-motd.d/, where Ubuntu runs it on login.
+#
+# Quiet when there is nothing to say: a login message that always says the same thing is one nobody
+# reads on the day it matters.
+exec /usr/local/lib/uwumail-gateway/helper report --motd

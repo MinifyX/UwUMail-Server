@@ -1,0 +1,14 @@
+# Reacts the moment the gateway writes something for the privileged side: a new address its tunnel
+# comes from, or a ban the UwUMail server asked for. The timer beside this is only the safety net.
+[Unit]
+Description=UwUMail Gateway: watch for trusted addresses and bans
+
+[Path]
+# A home connection that reconnects brings a new address; this is where it becomes safe from bans.
+PathChanged=/var/lib/uwumail-gateway/trusted
+# Bans should take hold in seconds, not at the next tick.
+PathModified=/var/lib/uwumail-gateway/bans.jsonl
+Unit=uwumail-gateway-helper.service
+
+[Install]
+WantedBy=multi-user.target

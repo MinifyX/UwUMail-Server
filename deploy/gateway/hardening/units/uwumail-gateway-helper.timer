@@ -1,0 +1,13 @@
+# The safety net under uwumail-gateway-helper.path: a file event can be missed, fail2ban can be
+# restarted with an address still banned that the server has since moved to. Every two minutes
+# costs nothing and means the server is never locked out for longer than that.
+[Unit]
+Description=UwUMail Gateway: check trusted addresses and bans regularly
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=2min
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target

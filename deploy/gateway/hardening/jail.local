@@ -1,0 +1,57 @@
+# fail2ban for a UwUMail Gateway. install.sh puts this into /etc/fail2ban/jail.d/, where its
+# .local ending makes it the last word over the distribution's own defaults.
+#
+# The rule that shapes everything here: a ban must never reach the UwUMail server. It dials in from
+# a home connection whose address changes every night, and behind carrier-grade NAT the neighbours
+# share that address — so the address a stranger brute-forces SSH from today can be the one the
+# server connects from tomorrow. Three things keep that from cutting the server off:
+#
+#   1. Every ban is `proto tcp`. The tunnel is QUIC on UDP 443 and cannot be hit by one at all.
+#   2. ignorecommand asks the helper before each ban, which knows where the tunnel comes from.
+#   3. uwumail-gateway-helper.timer frees a trusted address that was banned before the tunnel
+#      moved to it.
+
+[DEFAULT]
+# This machine's firewall is ufw; without this line fail2ban would write past it into nftables,
+# where its rules and ufw's would each have their own idea of what is blocked.
+# `proto tcp` is what keeps the tunnel out of reach of every ban here.
+banaction = ufw[blocktype=reject, destination="any proto tcp"]
+banaction_allports = ufw[blocktype=reject, destination="any proto tcp"]
+
+ignorecommand = /usr/local/lib/uwumail-gateway/helper ignore <ip>
+# Addresses of this machine itself, whatever else happens.
+ignoreself = true
+
+bantime = 1h
+findtime = 10m
+maxretry = 5
+
+[sshd]
+enabled = true
+# Ubuntu stopped writing /var/log/auth.log, so there is nothing to tail: the journal is the log.
+backend = systemd
+
+# Whoever comes back after being banned gets a week. Still only TCP, still not the server.
+[recidive]
+enabled = true
+backend = systemd
+bantime = 1w
+findtime = 1d
+maxretry = 5
+
+# The jail with no log behind it: it holds the addresses the UwUMail server asked to keep out over
+# the tunnel. Only the server sees failed logins — the gateway carries TLS it cannot read — so this
+# is the one place where a mail password guessed at wrongly can reach the firewall on the VPS.
+[uwumail-server]
+enabled = true
+filter = uwumail-server
+backend = systemd
+# Deliberately a unit that does not exist: nothing is ever read into this jail.
+journalmatch = _SYSTEMD_UNIT=uwumail-gateway-holds-no-log.service
+bantime = 1h
+findtime = 10m
+maxretry = 1
+
+# Port 25 has no jail on purpose. The gateway cannot see who fails to log in there — it carries the
+# bytes and nothing else — so any jail on it would count connections, and banning a mail server for
+# connecting often means losing its mail. The gateway's own per-network limit holds that line.

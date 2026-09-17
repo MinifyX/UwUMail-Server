@@ -1,0 +1,21 @@
+# Asks apt what the machine is waiting for and writes it where the gateway can read it. From there
+# it goes through the tunnel into the portal, so a VPS that needs updates says so where it is seen.
+[Unit]
+Description=UwUMail Gateway: look at the machine's updates
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/uwumail-gateway/helper machine
+# Only the package lists are refreshed; nothing is installed here. Security updates are
+# unattended-upgrades' job, everything else stays the operator's decision.
+User=root
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# apt over a slow line, once a day: no reason to let it hang around longer than this.
+TimeoutStartSec=10min

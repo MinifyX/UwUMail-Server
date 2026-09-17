@@ -1,0 +1,13 @@
+[Unit]
+Description=UwUMail Gateway: look at the machine's updates daily
+
+[Timer]
+# Soon after boot, so a gateway that was off for a week does not wait until tomorrow to say so.
+OnBootSec=3min
+OnCalendar=daily
+# Every gateway asking the mirrors at midnight helps nobody.
+RandomizedDelaySec=2h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
