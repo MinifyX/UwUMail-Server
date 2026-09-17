@@ -236,7 +236,10 @@ jobs:
           mkdir -p release/uwumail-gateway
           cp gateway-dist/uwumail-gateway deploy/gateway/install.sh deploy/gateway/gateway.toml \
             deploy/gateway/uwumail-gateway.service release/uwumail-gateway/
-          chmod +x release/uwumail-gateway/uwumail-gateway
+          # install.sh looks after the machine as well, and everything it needs for that is here.
+          cp -r deploy/gateway/hardening release/uwumail-gateway/
+          chmod +x release/uwumail-gateway/uwumail-gateway \
+            release/uwumail-gateway/hardening/helper release/uwumail-gateway/hardening/motd
           cd release
           tar -czf uwumail-gateway-linux-amd64.tar.gz uwumail-gateway
           sha256sum uwumail-gateway-linux-amd64.tar.gz > uwumail-gateway-linux-amd64.tar.gz.sha256

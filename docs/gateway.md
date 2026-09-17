@@ -111,10 +111,73 @@ Either way, `install.sh`
   is kept), see [`deploy/gateway/gateway.toml`](../deploy/gateway/gateway.toml),
 - installs and starts the systemd service, which runs as that user with nothing
   but the permission to use the low ports,
+- looks after the machine itself (below),
 - shows the pairing code.
 
 The same command updates an installed gateway. The key and the pairing live in
 `/var/lib/uwumail-gateway`.
+
+## What it does to the machine
+
+A gateway is a VPS with six ports open to the internet that nobody logs into for
+weeks. `install.sh` sets up what such a machine should not be without, and says
+what it found. `--no-harden` leaves all of it alone; `--check` changes nothing
+and only reports.
+
+- **ufw** with the ports the gateway needs, and the port SSH really listens on —
+  asked of `sshd`, not guessed. If a gateway before this one left the handwritten
+  nftables rules from this page behind, they are stood down and kept as
+  `/etc/nftables.conf.before-uwumail-ufw`; any other rule set is left alone and
+  reported instead.
+- **fail2ban** against SSH guessing, and as the place the UwUMail server's bans
+  land.
+- **unattended-upgrades** for security updates only, and never a restart of its
+  own accord.
+- **sysctl and sshd settings** for a machine on the open internet. Password
+  logins over SSH are *reported*, not switched off: it is the best thing you can
+  do for this machine, and the worst thing to do behind your back on a VPS with
+  no console. The summary prints the two lines that do it once your key works.
+
+Files it writes are remembered by their checksum. Change one and the next run
+leaves it alone, putting the new version beside it as `.new`.
+
+### No ban may reach your server
+
+Your server dials in from a home connection. Its address changes every night,
+and behind carrier-grade NAT the neighbours share it — so the address a stranger
+brute-forces SSH from today can be the one your server connects from tomorrow.
+A ban that catches it would take your mail off the internet, and you would find
+out from the queue.
+
+Three things keep that from happening:
+
+1. **Every ban is `proto tcp`.** The tunnel is QUIC over UDP 443, so a ban cannot
+   reach it at all. Your server gets back in even from an address that is banned.
+2. **The gateway knows where the tunnel comes from.** It sees the address on
+   every connection — nothing to configure, nothing to look up — and fail2ban
+   asks before each ban. IPv6 counts as the whole /64, which is what one
+   connection is handed; IPv4 stays the single address, because a range there
+   would mean the neighbours too.
+3. **A timer frees an address** that was banned before your server moved onto it,
+   and takes the trust back when your server moves off it again — last night's
+   address belongs to the next customer by morning.
+
+Port 25 has no jail on purpose. The gateway carries TLS it cannot read and never
+sees a login, so a jail there could only count connections — and banning a mail
+server for connecting often means losing its mail. The gateway's own per-network
+limit holds that line instead.
+
+What the gateway *can* do is act on what your server sees. Your server reads the
+failed logins, and hands the addresses worth keeping out to the gateway over the
+tunnel, where they stop before they reach the house at all.
+
+### What it says, and where
+
+The portal shows it under *Server → Setup*: updates waiting on the gateway and
+the exact SSH command to install them, whether security updates install
+themselves, whether a restart is due, the firewall and jails, and the address
+the gateway keeps safe from bans. Logging in over SSH says the same thing, and
+`sudo bash install.sh --check` prints it on demand.
 
 On the VPS:
 
@@ -132,27 +195,14 @@ the defaults and not your file, and once you set `public_addresses`, `tunnel`
 or `state_dir` there, `code` and `unpair` need it too, or the code carries the
 wrong addresses or port.
 
-A firewall that only lets through what the gateway needs, for example with
-nftables:
-
-```
-table inet filter {
-  chain input {
-    type filter hook input priority 0; policy drop;
-    ct state established,related accept
-    iif lo accept
-    meta l4proto { icmp, ipv6-icmp } accept
-    tcp dport { 22, 25, 80, 443, 465, 587, 993 } accept
-    udp dport 443 accept
-    # Do not leave these out on a VPS that gets its addresses by DHCP. A DHCPv6
-    # answer arrives from another address than the multicast one it was asked
-    # for, so connection tracking cannot pair it with the request: without this
-    # rule the IPv6 address quietly expires a few hours later and the machine
-    # loses IPv6 altogether. (It cost me exactly that.)
-    udp dport { 68, 546 } accept
-  }
-}
-```
+The firewall is `install.sh`'s job, so there is nothing to write by hand any
+more. If you set it up yourself instead, it needs TCP 22, 25, 80, 443, 465, 587
+and 993 in, and UDP 443 for the tunnel — and on a VPS that gets its addresses by
+DHCP, UDP 68 and 546 as well. Do not leave those two out: a DHCPv6 answer
+arrives from a different address than the multicast one it was asked for, so
+connection tracking cannot pair it with the request, and without the rule the
+IPv6 address quietly expires a few hours later and the machine loses IPv6
+altogether. (It cost me exactly that.)
 
 ## Pair your server
 

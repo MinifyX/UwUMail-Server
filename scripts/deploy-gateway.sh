@@ -32,6 +32,8 @@ else
   arch=x86_64
 fi
 cp "$root/deploy/gateway/install.sh" "$root/deploy/gateway/gateway.toml" "$root/deploy/gateway/uwumail-gateway.service" "$out/"
+# install.sh looks after the machine as well; everything it needs for that lives in here.
+cp -r "$root/deploy/gateway/hardening" "$out/"
 
 echo "installing it on $host"
 {
@@ -45,7 +47,7 @@ dir=\$(mktemp -d)
 trap 'rm -rf "\$dir"' EXIT
 base64 -d > "\$dir/gateway.tar" <<'ARCHIVE'
 REMOTE
-  tar -C "$out" -cf - uwumail-gateway install.sh gateway.toml uwumail-gateway.service | base64
+  tar -C "$out" -cf - uwumail-gateway install.sh gateway.toml uwumail-gateway.service hardening | base64
   cat <<'REMOTE'
 ARCHIVE
 tar -xf "$dir/gateway.tar" -C "$dir"
