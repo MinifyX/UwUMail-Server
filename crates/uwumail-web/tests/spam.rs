@@ -193,3 +193,67 @@ async fn people_keep_their_own_sender_lists_and_admins_those_of_the_server_and_d
     let (status, view) = call(&app, "DELETE", &format!("/api/account/spam/senders/{id}"), None, Some(&leni)).await;
     assert_eq!((status, view["entries"].as_array().map(Vec::len)), (StatusCode::OK, Some(0)));
 }
+
+#[tokio::test]
+async fn people_and_admins_keep_word_lists_and_see_the_built_in_lists() {
+    let (_dir, store, _ids) = server().await;
+    let app = router(&store);
+    let leni = login(&app, "leni@example.de").await;
+    let chef = login(&app, "chef@example.de").await;
+
+    let body = json!({ "text": "# meine Liste\nCasino\n/\\sjackpot\\s/i\ncasino\n/(?=x)/\n", "points": 3.0 });
+    let (status, answer) = call(&app, "POST", "/api/account/spam/words", Some(body), Some(&leni)).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    let import = &answer["import"];
+    assert_eq!(
+        (import["added"].as_u64(), import["duplicates"].as_u64(), import["refusedCount"].as_u64()),
+        (Some(2), Some(1), Some(1))
+    );
+    assert_eq!(import["refused"][0]["line"], "/(?=x)/");
+    assert_eq!(answer["lists"]["entries"].as_array().map(Vec::len), Some(2));
+    assert_eq!(answer["lists"]["defaultPoints"], 2.5);
+    let body = json!({ "text": "roulette", "points": 20.0 });
+    let (status, error) = call(&app, "POST", "/api/account/spam/words", Some(body), Some(&leni)).await;
+    assert_eq!((status, error["code"].as_str()), (StatusCode::CONFLICT, Some("wordInvalid")));
+
+    for url in ["http://lists.example.org/bad.map", "https://127.0.0.1/bad.map", "https://localhost/bad.map"] {
+        let (status, error) =
+            call(&app, "POST", "/api/account/spam/word-sources", Some(json!({ "url": url })), Some(&leni)).await;
+        assert_eq!((status, error["code"].as_str()), (StatusCode::CONFLICT, Some("wordSourceInvalid")), "{url}");
+    }
+    // A link that leads nowhere is kept, with the reason, and fetched again later.
+    let body = json!({ "url": "https://lists.invalid/bad.map", "subjectOnly": true });
+    let (status, answer) = call(&app, "POST", "/api/account/spam/word-sources", Some(body), Some(&leni)).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    assert!(answer["error"].is_string(), "{answer}");
+    let source = &answer["lists"]["sources"][0];
+    assert_eq!((source["subjectOnly"].as_bool(), source["error"].is_string()), (Some(true), true));
+
+    let entry_id = answer["lists"]["entries"][0]["id"].as_i64().unwrap();
+    let (status, _) = call(&app, "DELETE", &format!("/api/admin/spam/words/{entry_id}"), None, Some(&chef)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "admins keep out of personal lists");
+    let (status, _) = call(&app, "GET", "/api/admin/spam/words", None, Some(&leni)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let body = json!({ "text": "lottery", "domain": "example.de" });
+    let (status, answer) = call(&app, "POST", "/api/admin/spam/words", Some(body), Some(&chef)).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    let lists = &answer["lists"];
+    assert_eq!(lists["entries"].as_array().map(Vec::len), Some(1), "Leni's entries are not the admins' business");
+    assert_eq!(lists["entries"][0]["domain"], "example.de");
+    assert_eq!(lists["domains"], json!(["example.de"]));
+
+    let (status, feeds) = call(&app, "GET", "/api/admin/spam/feeds", None, Some(&chef)).await;
+    assert_eq!(status, StatusCode::OK, "{feeds}");
+    assert_eq!(feeds["feeds"].as_array().map(Vec::len), Some(6));
+    let urlhaus = feeds["feeds"].as_array().unwrap().iter().find(|feed| feed["key"] == "urlhaus").unwrap();
+    assert_eq!((urlhaus["needsKey"].as_bool(), urlhaus["active"].as_bool()), (Some(true), Some(false)));
+    assert_eq!(feeds["abuseChKeySet"], false);
+    let (status, error) = call(&app, "POST", "/api/admin/spam/feeds/urlhaus/refresh", None, Some(&chef)).await;
+    assert_eq!((status, error["code"].as_str()), (StatusCode::CONFLICT, Some("feedInactive")));
+    let (status, _) = call(&app, "GET", "/api/admin/spam/feeds", None, Some(&leni)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let actions: Vec<String> = store.audit_log(10, None).await.unwrap().into_iter().map(|entry| entry.action).collect();
+    assert!(actions.contains(&"spam.wordsAdd".to_owned()), "{actions:?}");
+}

@@ -68,6 +68,67 @@ pub enum SpamCommand {
         #[arg(long)]
         account: Option<String>,
     },
+    /// Word lists: words, phrases and /regex/flags that count against a message.
+    #[command(subcommand)]
+    Words(WordsCommand),
+    /// The built-in lists and how fetching them went.
+    Feeds,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum WordsCommand {
+    /// Show the server's and every domain's entries and subscribed lists, or one person's.
+    List {
+        #[arg(long)]
+        account: Option<String>,
+    },
+    /// Add entries: words, phrases or /regex/flags.
+    Add {
+        #[arg(required = true)]
+        entries: Vec<String>,
+        #[command(flatten)]
+        target: WordTarget,
+    },
+    /// Add every entry of a file, one per line, like an Rspamd map.
+    Import {
+        file: PathBuf,
+        #[command(flatten)]
+        target: WordTarget,
+    },
+    /// Remove an entry by the number `list` shows.
+    Remove {
+        id: i64,
+        #[arg(long)]
+        account: Option<String>,
+    },
+    /// Subscribe to a list by https link. The running server fetches it within ten minutes, then daily.
+    Subscribe {
+        url: String,
+        #[command(flatten)]
+        target: WordTarget,
+        /// Look for the entries in the subject only.
+        #[arg(long)]
+        subject_only: bool,
+    },
+    /// Unsubscribe by the number `list` shows.
+    Unsubscribe {
+        id: i64,
+        #[arg(long)]
+        account: Option<String>,
+    },
+}
+
+#[derive(Debug, Args)]
+pub struct WordTarget {
+    /// Only for mail to this one of our domains.
+    #[arg(long, conflicts_with = "account")]
+    pub domain: Option<String>,
+    /// Only for this person.
+    #[arg(long)]
+    pub account: Option<String>,
+    /// Points per matching entry; 2.5 when left out.
+    #[arg(long)]
+    pub points: Option<f32>,
 }
 
 #[derive(Debug, Args)]

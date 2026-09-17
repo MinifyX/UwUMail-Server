@@ -198,6 +198,11 @@ impl Web {
                 get(routes::spam::account_senders).post(routes::spam::account_add_sender),
             )
             .route("/api/account/spam/senders/{id}", delete(routes::spam::account_remove_sender))
+            .route("/api/account/spam/words", get(routes::words::account_words).post(routes::words::account_add_words))
+            .route("/api/account/spam/words/{id}", delete(routes::words::account_remove_word))
+            .route("/api/account/spam/word-sources", post(routes::words::account_subscribe))
+            .route("/api/account/spam/word-sources/{id}", delete(routes::words::account_unsubscribe))
+            .route("/api/account/spam/word-sources/{id}/refresh", post(routes::words::account_refresh_source))
             .route("/api/account/mailboxes/{role}/empty", post(routes::own::empty_mailbox))
             .route("/api/forwarding-links/{token}", get(routes::mailbox::show_link))
             .route("/api/forwarding-links/{token}/confirm", post(routes::mailbox::confirm_link))
@@ -233,6 +238,13 @@ impl Web {
                 get(routes::spam::admin_senders_view).post(routes::spam::admin_add_sender),
             )
             .route("/api/admin/spam/senders/{id}", delete(routes::spam::admin_remove_sender))
+            .route("/api/admin/spam/words", get(routes::words::admin_words).post(routes::words::admin_add_words))
+            .route("/api/admin/spam/words/{id}", delete(routes::words::admin_remove_word))
+            .route("/api/admin/spam/word-sources", post(routes::words::admin_subscribe))
+            .route("/api/admin/spam/word-sources/{id}", delete(routes::words::admin_unsubscribe))
+            .route("/api/admin/spam/word-sources/{id}/refresh", post(routes::words::admin_refresh_source))
+            .route("/api/admin/spam/feeds", get(routes::words::admin_feeds))
+            .route("/api/admin/spam/feeds/{key}/refresh", post(routes::words::admin_refresh_feed))
             .route("/api/admin/people", get(routes::people::list).post(routes::people::create))
             .route(
                 "/api/admin/people/{login}",

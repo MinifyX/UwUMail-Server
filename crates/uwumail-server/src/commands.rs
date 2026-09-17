@@ -9,6 +9,7 @@ use uwumail_store::{
 
 use crate::cli::{
     AccountCommand, AliasCommand, DomainCommand, GatewayCommand, QueueCommand, SenderArgs, SenderKindArg, SpamCommand,
+    WordTarget, WordsCommand,
 };
 use crate::config::Config;
 
@@ -340,6 +341,116 @@ pub async fn spam(store: &Store, command: SpamCommand) -> anyhow::Result<()> {
                 audit(store, "spam.senderRemove", &entry.value, sender_details(&entry)).await;
             }
             println!("Took {} off the {} list.", entry.value, list_name(&entry));
+        }
+        SpamCommand::Words(command) => words(store, command).await?,
+        SpamCommand::Feeds => {
+            let states = store.feed_states().await?;
+            for feed in uwumail_smtp::FEEDS {
+                let state = states.iter().find(|state| state.key == feed.key);
+                let status = match state {
+                    None => "not fetched yet".to_owned(),
+                    Some(state) => match &state.error {
+                        Some(error) => format!("{} entries, last attempt failed: {error}", state.entries),
+                        None => format!("{} entries", state.entries),
+                    },
+                };
+                let key = if feed.needs_key { " (needs spam.feeds.abuse_ch_key)" } else { "" };
+                println!("{:<15} {:<24} {status}{key}", feed.key, feed.source);
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn word_scope(store: &Store, target: &WordTarget) -> anyhow::Result<ListScope> {
+    Ok(match (&target.domain, &target.account) {
+        (Some(name), _) => {
+            ListScope::Domain(store.domain(name).await?.ok_or_else(|| anyhow::anyhow!("no domain {name}"))?.id)
+        }
+        (None, Some(login)) => ListScope::Account(account_id(store, login).await?),
+        (None, None) => ListScope::Server,
+    })
+}
+
+async fn word_owner(store: &Store, account: Option<String>) -> anyhow::Result<ListOwner> {
+    Ok(match account {
+        Some(login) => ListOwner::Account(account_id(store, &login).await?),
+        None => ListOwner::Admin,
+    })
+}
+
+async fn add_words(store: &Store, target: WordTarget, text: String) -> anyhow::Result<()> {
+    let scope = word_scope(store, &target).await?;
+    let report = store.add_words(scope, text, target.points, String::new(), "cli".into()).await?;
+    if report.added > 0 && !matches!(scope, ListScope::Account(_)) {
+        let details = json!({ "added": report.added, "domain": target.domain });
+        audit(store, "spam.wordsAdd", target.domain.as_deref().unwrap_or("server"), details).await;
+    }
+    println!("Added {}, {} already listed, {} refused.", report.added, report.duplicates, report.refused_count);
+    for refused in report.refused {
+        println!("  {}: {}", refused.line, refused.reason);
+    }
+    Ok(())
+}
+
+pub async fn words(store: &Store, command: WordsCommand) -> anyhow::Result<()> {
+    match command {
+        WordsCommand::List { account } => {
+            let (entries, sources) = match account {
+                Some(login) => {
+                    let scope = ListScope::Account(account_id(store, &login).await?);
+                    (store.word_entries(scope).await?, store.word_sources(scope).await?)
+                }
+                None => (store.admin_word_entries().await?, store.admin_word_sources().await?),
+            };
+            if entries.is_empty() && sources.is_empty() {
+                println!("No word lists.");
+            }
+            for entry in entries {
+                let scope = entry.domain.clone().unwrap_or_else(|| "server".into());
+                let points = entry.points.map_or(String::new(), |points| format!("  ({points} points)"));
+                println!("{:>5}  {:<20}  {}{points}", entry.id, scope, entry.pattern);
+            }
+            for source in sources {
+                let scope = source.domain.clone().unwrap_or_else(|| "server".into());
+                let state = match &source.error {
+                    Some(error) => format!("failed: {error}"),
+                    None if source.fetched_at.is_none() => "not fetched yet".into(),
+                    None => format!("{} entries", source.entries),
+                };
+                println!("{:>5}  {:<20}  {}  [{state}]", source.id, scope, source.url);
+            }
+        }
+        WordsCommand::Add { entries, target } => add_words(store, target, entries.join("\n")).await?,
+        WordsCommand::Import { file, target } => {
+            let text = std::fs::read_to_string(&file)
+                .map_err(|err| anyhow::anyhow!("could not read {}: {err}", file.display()))?;
+            add_words(store, target, text).await?;
+        }
+        WordsCommand::Remove { id, account } => {
+            let owner = word_owner(store, account).await?;
+            let entry = store.remove_word_entry(owner, id).await?;
+            if owner == ListOwner::Admin {
+                audit(store, "spam.wordRemove", &entry.pattern, json!({ "domain": entry.domain })).await;
+            }
+            println!("Removed {}.", entry.pattern);
+        }
+        WordsCommand::Subscribe { url, target, subject_only } => {
+            uwumail_smtp::Smtp::check_list_link(&url).map_err(|reason| anyhow::anyhow!("{reason}"))?;
+            let scope = word_scope(store, &target).await?;
+            let source = store.add_word_source(scope, url, subject_only, target.points, "cli".into()).await?;
+            if !matches!(scope, ListScope::Account(_)) {
+                audit(store, "spam.wordSourceAdd", &source.url, json!({ "domain": target.domain })).await;
+            }
+            println!("Subscribed as number {}; the running server fetches it within ten minutes.", source.id);
+        }
+        WordsCommand::Unsubscribe { id, account } => {
+            let owner = word_owner(store, account).await?;
+            let source = store.remove_word_source(owner, id).await?;
+            if owner == ListOwner::Admin {
+                audit(store, "spam.wordSourceRemove", &source.url, json!({ "domain": source.domain })).await;
+            }
+            println!("Unsubscribed from {}.", source.url);
         }
     }
     Ok(())
