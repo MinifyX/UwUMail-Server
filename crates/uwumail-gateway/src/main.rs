@@ -1,7 +1,7 @@
 //! UwUMail Gateway: a fixed public address for a UwUMail server at home.
 
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -9,7 +9,7 @@ use clap::{Parser, Subcommand};
 use tokio::sync::watch;
 use tracing_subscriber::EnvFilter;
 use uwumail_gateway::GatewayConfig;
-use uwumail_gateway::config::LogFormat;
+use uwumail_gateway::config::{INSTALLED_CONFIG, LogFormat, config_file};
 use uwumail_gateway::state::State;
 
 #[derive(Debug, Parser)]
@@ -19,7 +19,8 @@ use uwumail_gateway::state::State;
     about = "UwUMail Gateway: a fixed public address for a UwUMail server at home (=^･ω･^=)"
 )]
 struct Cli {
-    /// Path to the TOML configuration. Environment variables (UWUMAIL_GATEWAY_*) override it.
+    /// Path to the TOML configuration [default: /etc/uwumail-gateway/gateway.toml if it exists].
+    /// Environment variables (UWUMAIL_GATEWAY_*) override it.
     #[arg(long, short, global = true, env = "UWUMAIL_GATEWAY_CONFIG")]
     config: Option<PathBuf>,
 
@@ -42,7 +43,8 @@ enum Command {
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
-    let config = match GatewayConfig::load(cli.config.as_deref()) {
+    let file = config_file(cli.config, Path::new(INSTALLED_CONFIG));
+    let config = match GatewayConfig::load(file.as_deref()) {
         Ok(config) => config,
         Err(err) => {
             eprintln!("(╥﹏╥) {err:#}");

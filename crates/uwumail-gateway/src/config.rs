@@ -147,6 +147,15 @@ impl Default for LogConfig {
     }
 }
 
+/// Where `install.sh` puts the configuration. The commands find it there by themselves, so that
+/// `uwumail-gateway code` shows the same addresses and port the running service uses.
+pub const INSTALLED_CONFIG: &str = "/etc/uwumail-gateway/gateway.toml";
+
+/// The configuration file to read: the one that was named, else the installed one if it exists.
+pub fn config_file(named: Option<PathBuf>, installed: &Path) -> Option<PathBuf> {
+    named.or_else(|| installed.exists().then(|| installed.to_path_buf()))
+}
+
 impl GatewayConfig {
     pub fn load(path: Option<&Path>) -> anyhow::Result<GatewayConfig> {
         let mut figment = Figment::new();
@@ -203,6 +212,21 @@ mod tests {
         assert_eq!(config.tunnel, "0.0.0.0:4433");
         assert!(!config.listen.addresses().iter().any(|(service, _)| *service == Service::Http));
         assert_eq!(config.outbound.ports, [25]);
+    }
+
+    #[test]
+    fn the_installed_file_is_found_unless_another_is_named() {
+        let dir = tempfile::tempdir().unwrap();
+        let installed = dir.path().join("gateway.toml");
+        assert_eq!(config_file(None, &installed), None, "no file, so only defaults and the environment");
+
+        std::fs::write(&installed, "public_addresses = [\"192.0.2.10\"]\n").unwrap();
+        assert_eq!(config_file(None, &installed), Some(installed.clone()));
+        let config = GatewayConfig::load(config_file(None, &installed).as_deref()).unwrap();
+        assert_eq!(config.public_addresses(), ["192.0.2.10".parse::<IpAddr>().unwrap()]);
+
+        let named = dir.path().join("other.toml");
+        assert_eq!(config_file(Some(named.clone()), &installed), Some(named));
     }
 
     #[test]
