@@ -11,6 +11,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use mail_auth::common::crypto::{Ed25519Key, RsaKey, Sha256};
 use mail_auth::common::headers::HeaderWriter;
 use mail_auth::dkim::DkimSigner;
+use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
 use uwumail_store::{DkimKey, DkimKeyAlgorithm, Store};
 
@@ -66,6 +67,26 @@ pub fn generate_keys(tag: &str) -> Result<Vec<GeneratedKey>, SmtpError> {
             public_key: BASE64.encode(ed_public),
         },
     ])
+}
+
+/// Reads an RSA signing key another server used, as PEM (PKCS#1 or PKCS#8), so mail keeps being
+/// signed with the selector that is already in DNS.
+pub fn import_rsa_key(selector: &str, pem: &str) -> Result<GeneratedKey, SmtpError> {
+    let dkim_err = |err: &dyn std::fmt::Display| SmtpError::Dkim(format!("the DKIM key for {selector}: {err}"));
+    let key = match PrivateKeyDer::from_pem_slice(pem.trim().as_bytes()).map_err(|e| dkim_err(&e))? {
+        PrivateKeyDer::Pkcs1(der) => KeyPair::from_der(der.secret_pkcs1_der()),
+        PrivateKeyDer::Pkcs8(der) => KeyPair::from_pkcs8(der.secret_pkcs8_der()),
+        _ => return Err(dkim_err(&"only RSA keys can be taken over")),
+    }
+    .map_err(|e| dkim_err(&e))?;
+    let private_key = AsDer::<aws_lc_rs::encoding::Pkcs8V1Der>::as_der(&key).map_err(|e| dkim_err(&e))?;
+    let public_key = key.public_key().as_der().map_err(|e| dkim_err(&e))?;
+    Ok(GeneratedKey {
+        selector: selector.to_owned(),
+        algorithm: DkimKeyAlgorithm::RsaSha256,
+        private_key: private_key.as_ref().to_vec(),
+        public_key: BASE64.encode(public_key.as_ref()),
+    })
 }
 
 /// Makes sure a domain has signing keys and returns them.
@@ -164,6 +185,18 @@ pub fn sign(raw: &[u8], keys: &[DkimKey]) -> Result<String, SmtpError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rsa_keys_from_another_server_are_taken_over() {
+        let generated = generate_keys("202609").unwrap().remove(0);
+        let body = BASE64.encode(&generated.private_key);
+        let lines: Vec<&str> = body.as_bytes().chunks(64).map(|line| std::str::from_utf8(line).unwrap()).collect();
+        let pem = format!("-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----\n", lines.join("\n"));
+        let imported = import_rsa_key("dkim", &pem).unwrap();
+        assert_eq!((imported.selector.as_str(), imported.algorithm), ("dkim", DkimKeyAlgorithm::RsaSha256));
+        assert_eq!(imported.public_key, generated.public_key);
+        assert!(import_rsa_key("dkim", "not a key").is_err());
+    }
 
     #[test]
     fn selectors_use_year_and_month() {

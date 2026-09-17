@@ -7,7 +7,7 @@
 //! - `/dav/principals/<login>/`: who is logged in and where the homes are
 //! - `/dav/calendars/<login>/<calendar>/<event>` and `/dav/addressbooks/<login>/<book>/<contact>`
 
-mod objects;
+pub mod objects;
 mod props;
 pub mod xml;
 
@@ -69,7 +69,8 @@ impl Dav {
         &self.inner.store
     }
 
-    fn default_collection(&self, kind: DavKind) -> NewDavCollection {
+    /// The calendar or address book everyone starts with.
+    pub fn default_collection(&self, kind: DavKind) -> NewDavCollection {
         match kind {
             DavKind::Calendar => NewDavCollection {
                 slug: "personal".into(),
