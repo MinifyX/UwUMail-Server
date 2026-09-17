@@ -22,6 +22,12 @@
     "discard": "Discard changes",
     "keepEditing": "Keep editing"
   },
+  "keepSecret": {
+    "title": "Close it already?",
+    "body": "This is shown only now and can't be shown again later.",
+    "close": "Close anyway",
+    "back": "Let me look again"
+  },
   "login": {
     "title": "Log in",
     "subtitle": "Log in with your email address and password.",

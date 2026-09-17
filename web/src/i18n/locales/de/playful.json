@@ -3,6 +3,10 @@
     "title": "Alles wegwerfen? (・_・;)",
     "body": "Ich vergesse dann alles, was du hier eingetippt hast."
   },
+  "keepSecret": {
+    "title": "Schon notiert? (・・ )?",
+    "body": "Ich zeig dir das nur dieses eine Mal. Danach ist es auch bei mir weg."
+  },
   "login": {
     "title": "Hi! Schön, dass du da bist",
     "subtitle": "Ich bin Nyu. Melde dich mit deiner Mail-Adresse und deinem Passwort an.",

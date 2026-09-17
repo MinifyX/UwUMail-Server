@@ -2,6 +2,7 @@ import { Fingerprint, KeyRound, ShieldCheck, Smartphone, Trash2 } from "lucide-r
 import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { ConfirmCloseSecretDialog } from "@/components/ui/ConfirmCloseSecretDialog";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, TextInput } from "@/components/ui/Field";
@@ -29,17 +30,35 @@ function useFailure() {
 
 function CodesDialog({ codes, onClose }: { codes: string[] | null; onClose: () => void }) {
   const { t } = useT();
+  // The codes are on screen once and nowhere else, so leaving is worth a question.
+  const [confirming, setConfirming] = useState(false);
   return (
-    <Dialog open={codes !== null} onClose={onClose} title={t("security.recovery.title")} width="sm">
-      <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
-        {codes && <RecoveryCodesBox codes={codes} />}
-        <div className="flex justify-end">
-          <Button variant="primary" onClick={onClose}>
-            {t("security.recovery.saved")}
-          </Button>
+    <>
+      <Dialog
+        open={codes !== null}
+        onClose={() => setConfirming(true)}
+        closeOnOutsideClick={false}
+        title={t("security.recovery.title")}
+        width="sm"
+      >
+        <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
+          {codes && <RecoveryCodesBox codes={codes} />}
+          <div className="flex justify-end">
+            <Button variant="primary" onClick={onClose}>
+              {t("security.recovery.saved")}
+            </Button>
+          </div>
         </div>
-      </div>
-    </Dialog>
+      </Dialog>
+      <ConfirmCloseSecretDialog
+        open={confirming}
+        onBack={() => setConfirming(false)}
+        onClose={() => {
+          setConfirming(false);
+          onClose();
+        }}
+      />
+    </>
   );
 }
 

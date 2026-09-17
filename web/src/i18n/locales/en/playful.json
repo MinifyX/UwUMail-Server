@@ -3,6 +3,10 @@
     "title": "Throw it all away? (・_・;)",
     "body": "I'll forget everything you just typed here."
   },
+  "keepSecret": {
+    "title": "Written down already? (・・ )?",
+    "body": "I'm showing you this just this once. After that it's gone from me too."
+  },
   "login": {
     "title": "Hi! Nice to see you",
     "subtitle": "I'm Nyu. Log in with your email address and password.",

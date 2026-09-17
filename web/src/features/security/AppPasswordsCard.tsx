@@ -2,6 +2,7 @@ import { KeySquare, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { ConfirmCloseSecretDialog } from "@/components/ui/ConfirmCloseSecretDialog";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, Select, TextInput, Toggle } from "@/components/ui/Field";
@@ -206,13 +207,16 @@ export function AppPasswordsCard({
   const [revoking, setRevoking] = useState<AppPasswordInfo | null>(null);
   const [dirty, setDirty] = useState(false);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const [confirmingSecret, setConfirmingSecret] = useState(false);
 
   const closeCreate = () => {
     setCreating(false);
     setCreated(null);
   };
   const requestCloseCreate = () => {
-    if (dirty) setConfirmingDiscard(true);
+    // The new password is on screen once and nowhere else, so leaving is worth a question too.
+    if (created) setConfirmingSecret(true);
+    else if (dirty) setConfirmingDiscard(true);
     else closeCreate();
   };
 
@@ -267,7 +271,7 @@ export function AppPasswordsCard({
       <Dialog
         open={creating || created !== null}
         onClose={requestCloseCreate}
-        closeOnOutsideClick={!dirty}
+        closeOnOutsideClick={!dirty && created === null}
         title={created ? t("security.appPasswords.createdTitle") : t("security.appPasswords.newTitle")}
       >
         {created ? (
@@ -291,6 +295,15 @@ export function AppPasswordsCard({
         onKeepEditing={() => setConfirmingDiscard(false)}
         onDiscard={() => {
           setConfirmingDiscard(false);
+          closeCreate();
+        }}
+      />
+
+      <ConfirmCloseSecretDialog
+        open={confirmingSecret}
+        onBack={() => setConfirmingSecret(false)}
+        onClose={() => {
+          setConfirmingSecret(false);
           closeCreate();
         }}
       />

@@ -22,6 +22,12 @@
     "discard": "Verwerfen",
     "keepEditing": "Weiter bearbeiten"
   },
+  "keepSecret": {
+    "title": "Wirklich schließen?",
+    "body": "Das wird nur jetzt angezeigt und lässt sich später nicht mehr anzeigen.",
+    "close": "Trotzdem schließen",
+    "back": "Nochmal ansehen"
+  },
   "login": {
     "title": "Anmelden",
     "subtitle": "Melde dich mit deiner Mail-Adresse und deinem Passwort an.",
