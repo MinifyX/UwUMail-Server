@@ -124,11 +124,13 @@ On the VPS:
 | `sudo uwumail-gateway unpair` | Forgets the paired server; the gateway disconnects it and makes a new code |
 | `uwumail-gateway --config /etc/uwumail-gateway/gateway.toml check-config` | Checks the configuration |
 
-Only the service reads `/etc/uwumail-gateway/gateway.toml` by itself; a command
-reads it when `--config` names it. With the stock file that makes no
-difference. Once you set `public_addresses`, `tunnel` or `state_dir` in it, add
-`--config /etc/uwumail-gateway/gateway.toml` to `code` and `unpair` as well, or
-the code carries the wrong addresses or port.
+From 0.1.2 the commands read `/etc/uwumail-gateway/gateway.toml` by themselves
+when it exists, like the service does, and `--config` names another file. A
+gateway before that only reads it with
+`--config /etc/uwumail-gateway/gateway.toml`: `check-config` without it checks
+the defaults and not your file, and once you set `public_addresses`, `tunnel`
+or `state_dir` there, `code` and `unpair` need it too, or the code carries the
+wrong addresses or port.
 
 A firewall that only lets through what the gateway needs, for example with
 nftables:
@@ -185,7 +187,19 @@ account. The log shows `paired with the UwUMail Gateway` and then
 `connected to the UwUMail Gateway`, and as soon as the tunnel is connected the
 server asks Let's Encrypt for its certificate (`got a fresh certificate`).
 
-**In the portal:** the second way, for a portal you can reach without the
+**From the command line** (from 0.1.2), for when you cannot reach the portal
+and do not want to put the code into the configuration:
+
+```bash
+sudo docker compose exec uwumail uwumail-server gateway pair uwugw1…
+sudo docker compose restart uwumail
+```
+
+It refuses a code that differs from `gateway.code` in the configuration,
+because that one wins on every start. After the restart,
+`uwumail-server gateway show` tells whether the gateway accepted the code.
+
+**In the portal:** another way, for a portal you can reach without the
 gateway: a server whose name still points to it, or the server's address in
 your network. The setup assistant has a step *Reachability* right after
 the admin account. It checks whether your connection is a home connection
