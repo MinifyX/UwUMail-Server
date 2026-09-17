@@ -3,6 +3,34 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.1.2
+
+- UwUMail Gateway: `uwumail-server gateway pair <code>` pairs from the command line, for when the
+  portal cannot be reached and the code should not go into the configuration. It takes effect after
+  a restart. A pairing code that the gateway shows again with other addresses or another port is
+  taken over while the gateway has not accepted the pairing yet; before, the server kept the
+  addresses that never worked.
+- Gateway on the VPS: `uwumail-gateway code`, `unpair` and `check-config` read
+  `/etc/uwumail-gateway/gateway.toml` by themselves. Before, only the service did: with
+  `public_addresses`, `tunnel` or `state_dir` set, the pairing code carried the wrong addresses or
+  port, and `check-config` checked the defaults instead of the file. Update the gateway for this,
+  with the same commands that installed it (`docs/gateway.md`, "Install the gateway").
+- Certificate: after a failed order the server asks Let's Encrypt which names it refused. When its
+  own name is among them, as while the tunnel to the gateway is down, it leaves none out and tries
+  again in an hour; otherwise it leaves the refused ones out for a day. Before, any failure left
+  every extra name (`imap.`, `autoconfig.`, `mta-sts.` and the like) off the certificate for a day.
+  That still happens when Let's Encrypt names none, for example when the order fails before any
+  name is checked.
+- Forgetting a gateway: the portal and the command line said the server pairs again by itself when
+  the code stays in the configuration. It tries with a new key, the gateway refuses that, and mail
+  to other servers waits in the queue. The texts say so now, and what to do instead.
+- Portal: an app password and the recovery codes stay on screen when you click beside the window,
+  and Escape or the X asks first. They are shown once and nowhere else.
+- `deploy/next-to-mailserver`: `UWUMAIL_PROXY_BIND` in `.env`, for example `127.0.0.1:8080`, binds
+  the plain HTTP port 8080 to one address, so only the reverse proxy reaches it. The line belongs
+  to that folder's `compose.yaml`, not to the server: an installation from before this version
+  takes the current `compose.yaml` first, otherwise it does nothing.
+
 ## 0.1.1
 
 - Apple configuration profiles: an iPhone ended up with an empty file and refused it as an invalid
