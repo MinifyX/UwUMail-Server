@@ -12,6 +12,7 @@ mod address;
 mod admin;
 mod bayes;
 mod blobs;
+mod dav;
 mod db;
 mod directory;
 mod extras;
@@ -49,6 +50,11 @@ pub use bayes::{
     BayesJob, BayesTotals,
 };
 pub use blobs::BlobHash;
+pub use dav::{
+    DAV_COLLECTIONS_PER_ACCOUNT, DAV_RESOURCE_MAX_BYTES, DAV_RESOURCES_PER_COLLECTION, DavChanges, DavCollection,
+    DavCollectionUpdate, DavKind, DavPrecondition, DavResource, DavResourceInfo, DavWrite, DavWriteOutcome,
+    NewDavCollection, dav_etag,
+};
 pub use directory::{Account, DkimKey, DkimKeyAlgorithm, DkimKeyState, Domain, NewAccount, Role};
 pub use extras::{Identity, IdentityUpdate, SubmissionRecord, UPLOAD_LIFETIME_SECS, VacationResponse};
 pub use feeds::FeedState;
