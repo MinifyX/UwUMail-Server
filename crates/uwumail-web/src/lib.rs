@@ -202,6 +202,7 @@ impl Web {
             .route("/api/account/storage", get(routes::own::storage))
             .route("/api/account/spam", get(routes::spam::account_overview))
             .route("/api/account/spam/learn-folders", post(routes::spam::account_learn))
+            .route("/api/account/spam/limits", put(routes::spam::account_set_limits))
             .route(
                 "/api/account/spam/senders",
                 get(routes::spam::account_senders).post(routes::spam::account_add_sender),

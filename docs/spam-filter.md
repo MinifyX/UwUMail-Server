@@ -42,6 +42,14 @@ greylisting off.
 Refusing is off unless `reject_score` is set: any filter is wrong now and then,
 and Junk loses nothing while a refusal does.
 
+Everyone can set their own limits under *Mein Konto → Spamfilter*: from how
+many points their mail goes to Junk, and from how many it is refused. Empty
+follows the server. The Junk limit may be higher or lower than the server's;
+the refusal limit can only be stricter, so a server-wide `reject_score` still
+refuses. A message to several people is refused only when it would be
+refused for every one of them; the others' limits put it into Junk for those
+who wanted it refused.
+
 DMARC comes first and does not depend on the score: mail that fails the
 sender's `p=reject` policy is refused (unless `smtp.enforce_dmarc_reject` is
 off), and `p=quarantine` puts it into Junk.

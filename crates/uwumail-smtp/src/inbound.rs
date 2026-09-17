@@ -855,8 +855,46 @@ impl Session {
         // What the filter saw, for the log: the score and the rules behind it.
         let spam_score = score.as_ref().map(|score| score.points);
         let spam_tests = score.as_ref().map(spam::Score::tests);
-        // A recipient who allowed the sender still gets it; everyone else finds it in Junk.
-        if outcome == spam::Outcome::Reject && !allowed {
+        let quarantined = matches!(&verdict, Some(v) if v.action == Action::Quarantine);
+        // What the score means for each person without a listed sender: their own Bayes knowledge and
+        // word lists add points, and their own limits say what the sum means.
+        let limits = match &score {
+            Some(_) if !quarantined && !targets.is_empty() => {
+                let accounts = targets.iter().map(|(account, _)| *account).collect();
+                ctx.store.spam_limits_for(accounts).await.unwrap_or_else(|err| {
+                    tracing::warn!(%id, %err, "reading the spam limits failed, using the server's");
+                    Default::default()
+                })
+            }
+            _ => Default::default(),
+        };
+        let mut personal: Vec<Option<(f32, spam::Outcome)>> = Vec::with_capacity(recipients.len());
+        for (recipient, decision) in recipients.iter().zip(&decisions) {
+            let theirs = match (&score, recipient.local_account, decision) {
+                (Some(score), Some(account_id), Decision::None) if !quarantined => {
+                    let domain = recipient.address.rsplit_once('@').map_or("", |(_, domain)| domain);
+                    let own = spam::personal_bayes_points(&ctx, &live.spam, score, account_id).await
+                        + spam::personal_word_points(&ctx, score, account_id, domain).await;
+                    let limits = limits.get(&account_id).copied().unwrap_or_default();
+                    Some((own, spam::personal_outcome(&live.spam, limits, score.points + own)))
+                }
+                _ => None,
+            };
+            personal.push(theirs);
+        }
+        // Refused when the server's limit says so, or when every recipient's own limit or list does.
+        // Otherwise a recipient who allowed the sender still gets it and everyone else finds it in Junk.
+        let everyone_refuses = !recipients.is_empty()
+            && recipients.iter().zip(&decisions).zip(&personal).all(|((recipient, decision), theirs)| match decision {
+                Decision::Reject(_) => true,
+                Decision::None => {
+                    recipient.srs_return.is_none()
+                        && recipient.report.is_none()
+                        && matches!(theirs, Some((_, spam::Outcome::Reject)))
+                }
+                _ => false,
+            });
+        if (outcome == spam::Outcome::Reject && !allowed) || everyone_refuses {
             tracing::info!(
                 %id,
                 from = %envelope.address,
@@ -899,7 +937,6 @@ impl Session {
             }
         }
 
-        let quarantined = matches!(&verdict, Some(v) if v.action == Action::Quarantine);
         let junk = quarantined || matches!(outcome, spam::Outcome::Junk | spam::Outcome::Reject);
         // Our verdict replaces whatever the message brought along.
         let raw = if score.is_some() { headers::strip_spam_verdicts(&raw) } else { raw };
@@ -920,7 +957,7 @@ impl Session {
         let mut temporary = false;
         let mut seen_accounts = Vec::new();
         let mut returned = Vec::new();
-        for (recipient, decision) in recipients.iter().zip(&decisions) {
+        for ((recipient, decision), theirs) in recipients.iter().zip(&decisions).zip(&personal) {
             if let Some(original) = &recipient.srs_return {
                 returned.push(NewQueueRecipient { address: original.clone(), notify_flags: 0, orcpt: None });
                 continue;
@@ -943,8 +980,8 @@ impl Session {
             }
             seen_accounts.push(account_id);
             // A listed sender goes where the list says, even out of a DMARC quarantine. Otherwise what a
-            // person taught their own Bayes filter can move the message into or out of Junk for them, and a
-            // DMARC quarantine stays a quarantine.
+            // person taught their own Bayes filter and their own limits can move the message into or out of
+            // Junk for them, and a DMARC quarantine stays a quarantine.
             let junk = match decision {
                 Decision::Allow(entry) | Decision::Junk(entry) | Decision::Reject(entry) => {
                     let listed = !matches!(decision, Decision::Allow(_));
@@ -953,19 +990,15 @@ impl Session {
                     }
                     listed
                 }
-                Decision::None => match &score {
-                    Some(score) if !quarantined => {
-                        let domain = recipient.address.rsplit_once('@').map_or("", |(_, domain)| domain);
-                        let own = spam::personal_bayes_points(&ctx, &live.spam, score, account_id).await
-                            + spam::personal_word_points(&ctx, score, account_id, domain).await;
-                        let theirs = spam::outcome(&live.spam, score.points + own);
+                Decision::None => match theirs {
+                    Some((own, theirs)) => {
                         let moved = matches!(theirs, spam::Outcome::Junk | spam::Outcome::Reject);
-                        if own != 0.0 && moved != junk {
+                        if moved != junk {
                             tracing::info!(%id, account = account_id, junk = moved, points = own, "moved by a person's own filter");
                         }
                         moved
                     }
-                    _ => junk,
+                    None => junk,
                 },
             };
             // Suspicious mail is never forwarded; it stays in Junk.

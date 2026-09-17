@@ -1,5 +1,6 @@
 //! The spam filter in My account and for admins: what the Bayes filter learned, learning once from
-//! mail that is already sorted into Junk or kept in the inbox, and allowed and blocked senders.
+//! mail that is already sorted into Junk or kept in the inbox, allowed and blocked senders, and one's
+//! own spam limits.
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -8,7 +9,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uwumail_store::{
     BAYES_FOLDER_LIMIT, BAYES_MIN_LEARNED, BAYES_WANTED_AFTER_SECS, ListOwner, ListScope, NewSenderListEntry,
-    SENDER_LIST_ADMIN_LIMIT, SENDER_LIST_PERSONAL_LIMIT, SenderKind, SenderList,
+    SENDER_LIST_ADMIN_LIMIT, SENDER_LIST_PERSONAL_LIMIT, SPAM_LIMIT_RANGE, SenderKind, SenderList, SpamLimits,
 };
 
 use crate::Web;
@@ -26,9 +27,21 @@ async fn not_busy(web: &Web) -> ApiResult<()> {
     Ok(())
 }
 
+/// One's own limits next to the server's, which apply where one set none.
+async fn limits_json(web: &Web, account_id: i64) -> ApiResult<Value> {
+    let spam = web.smtp().spam_settings();
+    Ok(json!({
+        "own": web.store().spam_limits(account_id).await?,
+        "server": { "junk": spam.junk_score, "reject": spam.reject_score },
+        "min": SPAM_LIMIT_RANGE.start(),
+        "max": SPAM_LIMIT_RANGE.end(),
+    }))
+}
+
 pub async fn account_overview(State(web): State<Web>, session: Session) -> ApiResult<Json<Value>> {
     let store = web.store();
     Ok(Json(json!({
+        "limits": limits_json(&web, session.account.id).await?,
         "bayes": {
             "enabled": web.smtp().spam_settings().bayes,
             "minimum": BAYES_MIN_LEARNED,
@@ -36,6 +49,15 @@ pub async fn account_overview(State(web): State<Web>, session: Session) -> ApiRe
             "server": store.bayes_totals(None).await?,
         },
     })))
+}
+
+pub async fn account_set_limits(
+    State(web): State<Web>,
+    session: Session,
+    Json(limits): Json<SpamLimits>,
+) -> ApiResult<Json<Value>> {
+    web.store().set_spam_limits(session.account.id, limits).await?;
+    Ok(Json(limits_json(&web, session.account.id).await?))
 }
 
 /// Learns from one's own sorted mail, for the whole server and for oneself.

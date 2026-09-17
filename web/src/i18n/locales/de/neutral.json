@@ -236,6 +236,7 @@
       "senderInvalid": "Das sieht nicht nach Adresse, Domain, IP-Adresse oder Hostname aus. Netze dürfen höchstens /8 (IPv4) oder /16 (IPv6) groß sein, Domains brauchen mindestens einen Punkt.",
       "senderListed": "Dieser Absender steht schon auf der Liste. Um ihn umzustellen, entferne ihn zuerst.",
       "senderListFull": "Die Liste ist voll. Entferne zuerst alte Einträge.",
+      "spamLimitsOrder": "Die Grenze zum Ablehnen muss mindestens so hoch sein wie die für den Spam-Ordner.",
       "wordInvalid": "Das ist kein verwendbarer Eintrag. Punkte müssen zwischen 0,1 und 10 liegen.",
       "wordSourceInvalid": "Dieser Link lässt sich nicht abonnieren: nur https, keine Adressen im eigenen Netz.",
       "wordSourcesFull": "Es sind schon so viele Listen abonniert, wie möglich sind.",
@@ -1440,6 +1441,17 @@
     "account": {
       "title": "Spamfilter",
       "intro": "Absender, die du immer durchlässt oder aussortierst, und was der Spamfilter von dir gelernt hat."
+    },
+    "limits": {
+      "title": "Deine Grenzen",
+      "explain": "Jede Mail von außen bekommt Punkte, je verdächtiger, desto mehr. Hier legst du fest, ab wie vielen Punkten deine Mails im Spam-Ordner landen oder gar nicht erst angenommen werden. Leer heißt: wie der Server.",
+      "junk": "Spam-Ordner ab",
+      "junkHint": "Server: ab {{server}} Punkten. Höher lässt mehr durch, niedriger sortiert strenger aus.",
+      "reject": "Ablehnen ab",
+      "rejectHint": "Server: ab {{server}} Punkten. Du kannst strenger sein, aber nicht lockerer. Abgelehnte Mails siehst du nie.",
+      "rejectHintNever": "Der Server lehnt nichts ab. Abgelehnte Mails siehst du nie, auch nicht im Spam-Ordner.",
+      "serverValue": "wie der Server ({{value}})",
+      "never": "nie"
     },
     "admin": {
       "title": "Spamfilter",

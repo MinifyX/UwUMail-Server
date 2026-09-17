@@ -236,6 +236,7 @@
       "senderInvalid": "That does not look like an address, domain, IP address or host name. Networks may be at most /8 (IPv4) or /16 (IPv6) wide, and domains need at least one dot.",
       "senderListed": "This sender is already on the list. To switch it, remove it first.",
       "senderListFull": "The list is full. Remove old entries first.",
+      "spamLimitsOrder": "The limit for refusing has to be at least as high as the one for the spam folder.",
       "wordInvalid": "That is no usable entry. Points have to be between 0.1 and 10.",
       "wordSourceInvalid": "This link cannot be subscribed to: https only, and no addresses in your own network.",
       "wordSourcesFull": "As many lists as possible are subscribed already.",
@@ -1440,6 +1441,17 @@
     "account": {
       "title": "Spam filter",
       "intro": "Senders you always let through or sort out, and what the spam filter learned from you."
+    },
+    "limits": {
+      "title": "Your limits",
+      "explain": "Every message from outside gets points, the more suspicious the more. Here you choose from how many points your mail goes to the spam folder or is not accepted at all. Empty means: like the server.",
+      "junk": "Spam folder from",
+      "junkHint": "Server: from {{server}} points. Higher lets more through, lower sorts out more strictly.",
+      "reject": "Refuse from",
+      "rejectHint": "Server: from {{server}} points. You can be stricter, not more lenient. You never see refused mail.",
+      "rejectHintNever": "The server refuses nothing. You never see refused mail, not even in the spam folder.",
+      "serverValue": "like the server ({{value}})",
+      "never": "never"
     },
     "admin": {
       "title": "Spam filter",

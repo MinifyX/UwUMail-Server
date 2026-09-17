@@ -210,6 +210,22 @@ pub fn outcome(config: &SpamConfig, points: f32) -> Outcome {
     Outcome::Deliver
 }
 
+/// What the score means for one person with their own limits. They choose when their mail goes to
+/// Junk, and may refuse more than the server does, but not less.
+pub fn personal_outcome(config: &SpamConfig, limits: uwumail_store::SpamLimits, points: f32) -> Outcome {
+    let reject = match (limits.reject, config.reject_score) {
+        (Some(own), Some(server)) => Some(own.min(server)),
+        (own, server) => own.or(server),
+    };
+    if reject.is_some_and(|reject| points >= reject) {
+        return Outcome::Reject;
+    }
+    if points >= limits.junk.unwrap_or(config.junk_score) {
+        return Outcome::Junk;
+    }
+    Outcome::Deliver
+}
+
 /// The network a sending server belongs to: a /24 or /64. Senders retry from a neighbouring
 /// address often enough that a single address is too narrow to recognise them by.
 pub fn network_of(ip: IpAddr) -> String {
@@ -562,6 +578,20 @@ mod tests {
     fn networks_group_neighbouring_addresses() {
         assert_eq!(network_of("192.0.2.77".parse().unwrap()), "192.0.2.0/24");
         assert_eq!(network_of("2001:db8:1:2:3:4:5:6".parse().unwrap()), "2001:db8:1:2::/64");
+    }
+
+    #[test]
+    fn a_person_moves_their_own_limits_but_cannot_refuse_less() {
+        let mut config = SpamConfig::default();
+        let own = |junk, reject| uwumail_store::SpamLimits { junk, reject };
+        assert_eq!(personal_outcome(&config, own(None, None), 6.0), Outcome::Junk);
+        assert_eq!(personal_outcome(&config, own(Some(8.0), None), 6.0), Outcome::Deliver);
+        assert_eq!(personal_outcome(&config, own(Some(8.0), Some(20.0)), 19.0), Outcome::Junk);
+        assert_eq!(personal_outcome(&config, own(Some(8.0), Some(20.0)), 20.0), Outcome::Reject);
+        assert_eq!(personal_outcome(&config, own(Some(3.0), None), 4.0), Outcome::Junk, "stricter than the server");
+        config.reject_score = Some(15.0);
+        assert_eq!(personal_outcome(&config, own(None, Some(30.0)), 16.0), Outcome::Reject, "the server still refuses");
+        assert_eq!(personal_outcome(&config, own(Some(40.0), None), 16.0), Outcome::Reject);
     }
 
     #[test]

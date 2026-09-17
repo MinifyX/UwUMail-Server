@@ -53,6 +53,7 @@ const KNOWN = [
   "senderInvalid",
   "senderListed",
   "senderListFull",
+  "spamLimitsOrder",
   "wordInvalid",
   "wordSourceInvalid",
   "wordSourcesFull",

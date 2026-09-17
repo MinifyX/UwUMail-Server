@@ -16,7 +16,7 @@ use tokio::sync::watch;
 use uwumail_smtp::{DeliveryConfig, ListenerKind, Smtp, SmtpConfig, SmtpSettings, SpamConfig, ToneConfig};
 use uwumail_store::{
     BayesTotals, EmailSummary, EmailUpdate, IngestRequest, KeywordsChange, ListScope, MailboxRole, MailboxTarget,
-    MailboxesChange, NewAccount, NewSenderListEntry, Role, SenderList, Store,
+    MailboxesChange, NewAccount, NewSenderListEntry, Role, SenderList, SpamLimits, Store,
 };
 
 const PASSWORD: &str = "katzenpfote-123";
@@ -654,6 +654,30 @@ async fn mail_is_only_refused_once_a_reject_score_is_set() {
     let reply = relay_from_outside(&a).await;
     assert!(reply.starts_with("550 5.7.1"), "{reply}");
     assert!(a.mailbox("mini@a.test", MailboxRole::Junk).await.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn people_set_their_own_limits_and_mail_is_refused_once_all_of_them_refuse() {
+    let a = spam_test_server_for(&["mini", "leni"], SpamConfig::default(), Some("v=DMARC1; p=none")).await;
+    let store = a.smtp.store();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap().id;
+    let leni = store.account("leni@a.test").await.unwrap().unwrap().id;
+    let both = ["mini@a.test", "leni@a.test"];
+    let message = |subject: &str| format!("From: news@sender.test\r\nSubject: {subject}\r\n\r\nAngebot\r\n");
+
+    let lenient = SpamLimits { junk: Some(30.0), reject: None };
+    store.set_spam_limits(leni, lenient).await.unwrap();
+    let strict = SpamLimits { junk: None, reject: Some(5.0) };
+    store.set_spam_limits(mini, strict).await.unwrap();
+    let reply = relay_message_to(&a, &both, &message("Eins")).await;
+    assert!(reply.starts_with("250"), "Leni still wants it: {reply}");
+    assert_eq!(a.mailbox("mini@a.test", MailboxRole::Junk).await.len(), 1, "one recipient cannot be refused alone");
+    assert_eq!(a.inbox("leni@a.test").await.len(), 1, "over the server's junk score, under Leni's own");
+
+    store.set_spam_limits(leni, strict).await.unwrap();
+    let reply = relay_message_to(&a, &both, &message("Zwei")).await;
+    assert!(reply.starts_with("550 5.7.1"), "{reply}");
+    assert_eq!(a.inbox("leni@a.test").await.len(), 1);
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -144,6 +144,28 @@ fn now_secs() -> i64 {
 }
 
 #[tokio::test]
+async fn people_set_their_own_spam_limits() {
+    let (_dir, store, _ids) = server().await;
+    let app = router(&store);
+    let leni = login(&app, "leni@example.de").await;
+
+    let (status, overview) = call(&app, "GET", "/api/account/spam", None, Some(&leni)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(overview["limits"]["own"], json!({ "junk": null, "reject": null }));
+    assert_eq!(overview["limits"]["server"]["junk"], 5.0);
+
+    let limits = json!({ "junk": 8.0, "reject": 20.0 });
+    let (status, saved) = call(&app, "PUT", "/api/account/spam/limits", Some(limits.clone()), Some(&leni)).await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["own"], limits);
+    let reversed = json!({ "junk": 20.0, "reject": 8.0 });
+    let (status, refused) = call(&app, "PUT", "/api/account/spam/limits", Some(reversed), Some(&leni)).await;
+    assert_eq!((status, refused["code"].as_str()), (StatusCode::CONFLICT, Some("spamLimitsOrder")), "{refused}");
+    let (status, _) = call(&app, "PUT", "/api/account/spam/limits", Some(json!({ "junk": 0.5 })), None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn people_keep_their_own_sender_lists_and_admins_those_of_the_server_and_domains() {
     let (_dir, store, _ids) = server().await;
     let app = router(&store);

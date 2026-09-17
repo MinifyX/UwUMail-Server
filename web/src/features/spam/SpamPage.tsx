@@ -18,6 +18,7 @@ import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 import { FeedsCard } from "./FeedsCard";
 import { SenderListCard } from "./SenderListCard";
+import { SpamLimitsCard } from "./SpamLimitsCard";
 import { WordListCard } from "./WordListCard";
 
 const accountKey = ["account", "spam"] as const;
@@ -78,13 +79,14 @@ export function AccountSpamPage() {
   const learn = useLearn("/api/account/spam/learn-folders", accountKey);
   if (query.isPending) return <Loading />;
   if (query.isError) return <LoadError error={query.error} onRetry={() => void query.refetch()} />;
-  const { bayes } = query.data;
+  const { bayes, limits } = query.data;
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title={t("spam.account.title")} intro={t("spam.account.intro")} />
       <SenderListCard admin={false} />
       <WordListCard admin={false} />
+      <SpamLimitsCard limits={limits} queryKey={accountKey} />
       <Card title={t("spam.bayes.title")}>
         <div className="flex flex-col gap-4">
           <p className="-mt-1 text-[13px] text-muted">{t("spam.bayes.explain")}</p>

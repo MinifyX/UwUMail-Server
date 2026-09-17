@@ -316,7 +316,20 @@ export interface BayesTotals {
   ham: number;
 }
 
+export interface SpamLimits {
+  junk: number | null;
+  reject: number | null;
+}
+
+export interface SpamLimitsView {
+  own: SpamLimits;
+  server: { junk: number; reject: number | null };
+  min: number;
+  max: number;
+}
+
 export interface AccountSpamView {
+  limits: SpamLimitsView;
   bayes: { enabled: boolean; minimum: number; own: BayesTotals; server: BayesTotals };
 }
 

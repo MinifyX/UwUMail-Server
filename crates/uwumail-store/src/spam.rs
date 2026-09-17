@@ -1,10 +1,12 @@
-//! Greylisting and what a sender delivered so far.
+//! Greylisting, what a sender delivered so far, and a person's own spam limits.
 
-use rusqlite::{OptionalExtension, Transaction, params};
-use serde::Serialize;
+use std::collections::HashMap;
+
+use rusqlite::{OptionalExtension, Transaction, params, params_from_iter};
+use serde::{Deserialize, Serialize};
 
 use crate::blobs::BlobHash;
-use crate::{Result, Store, now};
+use crate::{Result, Store, StoreError, now};
 
 /// Greylisted senders that never came back are forgotten after two days.
 pub const GREYLIST_WAITING_SECS: i64 = 2 * 24 * 3600;
@@ -13,6 +15,44 @@ pub const GREYLIST_WAITING_SECS: i64 = 2 * 24 * 3600;
 pub const GREYLIST_PASSED_SECS: i64 = 35 * 24 * 3600;
 /// What a sender delivered is forgotten after 180 days without mail from it.
 pub const REPUTATION_RETENTION_SECS: i64 = 180 * 24 * 3600;
+
+/// The range a spam limit may have, like the server's own.
+pub const SPAM_LIMIT_RANGE: std::ops::RangeInclusive<f32> = 1.0..=100.0;
+
+/// A person's own spam limits; `None` follows the server.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpamLimits {
+    /// From this many points their mail goes to Junk.
+    pub junk: Option<f32>,
+    /// From this many points their mail is refused.
+    pub reject: Option<f32>,
+}
+
+impl SpamLimits {
+    fn check(self) -> Result<SpamLimits> {
+        for value in [self.junk, self.reject].into_iter().flatten() {
+            if !SPAM_LIMIT_RANGE.contains(&value) {
+                return Err(StoreError::Invalid(format!(
+                    "a spam limit must be between {} and {}",
+                    SPAM_LIMIT_RANGE.start(),
+                    SPAM_LIMIT_RANGE.end()
+                )));
+            }
+        }
+        if let (Some(junk), Some(reject)) = (self.junk, self.reject)
+            && reject < junk
+        {
+            return Err(StoreError::Rule {
+                code: "spamLimitsOrder",
+                message: format!("refusing from {reject} points would refuse mail meant for Junk from {junk}"),
+            });
+        }
+        // Stored with one decimal, as the portal shows them.
+        let tenths = |value: f32| (value * 10.0).round() / 10.0;
+        Ok(SpamLimits { junk: self.junk.map(tenths), reject: self.reject.map(tenths) })
+    }
+}
 
 /// What should happen with a message whose sender is being greylisted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +87,44 @@ impl Reputation {
 }
 
 impl Store {
+    pub async fn spam_limits(&self, account_id: i64) -> Result<SpamLimits> {
+        Ok(self.spam_limits_for(vec![account_id]).await?.remove(&account_id).unwrap_or_default())
+    }
+
+    /// The limits of the people who set their own; everyone else follows the server.
+    pub async fn spam_limits_for(&self, accounts: Vec<i64>) -> Result<HashMap<i64, SpamLimits>> {
+        if accounts.is_empty() {
+            return Ok(HashMap::new());
+        }
+        self.read(move |conn| {
+            let marks = vec!["?"; accounts.len()].join(", ");
+            let mut stmt = conn.prepare(&format!(
+                "SELECT id, spam_junk_score, spam_reject_score FROM accounts
+                 WHERE id IN ({marks}) AND (spam_junk_score IS NOT NULL OR spam_reject_score IS NOT NULL)"
+            ))?;
+            let rows = stmt.query_map(params_from_iter(accounts), |row| {
+                Ok((row.get(0)?, SpamLimits { junk: row.get(1)?, reject: row.get(2)? }))
+            })?;
+            Ok(rows.collect::<rusqlite::Result<_>>()?)
+        })
+        .await
+    }
+
+    pub async fn set_spam_limits(&self, account_id: i64, limits: SpamLimits) -> Result<SpamLimits> {
+        let limits = limits.check()?;
+        self.write(move |tx| {
+            let changed = tx.execute(
+                "UPDATE accounts SET spam_junk_score = ?1, spam_reject_score = ?2 WHERE id = ?3",
+                params![limits.junk, limits.reject, account_id],
+            )?;
+            if changed == 0 {
+                return Err(StoreError::NotFound(format!("account {account_id}")));
+            }
+            Ok(limits)
+        })
+        .await
+    }
+
     /// Whether this triplet may deliver now. The first attempt is recorded and told to wait;
     /// a retry after `delay_secs` passes and is remembered, so later mail is not delayed again.
     pub async fn greylist(
@@ -204,6 +282,41 @@ mod tests {
         assert_eq!(store.greylist(network, sender, recipient, 0).await.unwrap(), Greylist::Pass);
         let (network, sender, recipient) = triplet();
         assert_eq!(store.greylist(network, sender, recipient, 300).await.unwrap(), Greylist::Pass);
+    }
+
+    #[tokio::test]
+    async fn people_keep_their_own_spam_limits() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).await.unwrap();
+        store.create_domain("uwu.test").await.unwrap();
+        let mut ids = Vec::new();
+        for address in ["mini@uwu.test", "leni@uwu.test"] {
+            let account = crate::NewAccount {
+                address: address.into(),
+                display_name: String::new(),
+                password: None,
+                role: crate::Role::User,
+                quota_bytes: 0,
+            };
+            ids.push(store.create_account(account).await.unwrap().id);
+        }
+        assert_eq!(store.spam_limits(ids[0]).await.unwrap(), SpamLimits::default());
+
+        let own = SpamLimits { junk: Some(8.04), reject: Some(20.0) };
+        assert_eq!(
+            store.set_spam_limits(ids[0], own).await.unwrap(),
+            SpamLimits { junk: Some(8.0), reject: Some(20.0) }
+        );
+        let found = store.spam_limits_for(ids.clone()).await.unwrap();
+        assert_eq!(found.len(), 1, "only who set their own");
+        assert_eq!(found[&ids[0]].junk, Some(8.0));
+
+        let reversed = SpamLimits { junk: Some(12.0), reject: Some(6.0) };
+        assert!(matches!(store.set_spam_limits(ids[0], reversed).await, Err(StoreError::Rule { .. })));
+        let huge = SpamLimits { junk: Some(1000.0), reject: None };
+        assert!(matches!(store.set_spam_limits(ids[0], huge).await, Err(StoreError::Invalid(_))));
+        store.set_spam_limits(ids[0], SpamLimits::default()).await.unwrap();
+        assert!(store.spam_limits_for(ids).await.unwrap().is_empty());
     }
 
     #[tokio::test]

@@ -8,6 +8,8 @@
 
 import type {
   AccountSpamView,
+  SpamLimits,
+  SpamLimitsView,
   AdminSpamView,
   AppPasswordInfo,
   ForwardingView,
@@ -618,6 +620,12 @@ const mockFeeds: FeedsView = {
 };
 
 const mockBayes = { own: { spam: 18, ham: 41 }, server: { spam: 264, ham: 1310 } };
+const mockLimits: SpamLimitsView = {
+  own: { junk: null, reject: null },
+  server: { junk: 5, reject: null },
+  min: 1,
+  max: 100,
+};
 
 const mockSecurity: SecurityView = {
   totp: false,
@@ -1245,8 +1253,21 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/account\/spam$/,
     () => [
       200,
-      { bayes: { enabled: true, minimum: 50, own: mockBayes.own, server: mockBayes.server } } satisfies AccountSpamView,
+      {
+        limits: mockLimits,
+        bayes: { enabled: true, minimum: 50, own: mockBayes.own, server: mockBayes.server },
+      } satisfies AccountSpamView,
     ],
+  ],
+  [
+    "PUT",
+    /^\/api\/account\/spam\/limits$/,
+    (body) => {
+      const own = body as SpamLimits;
+      if (own.junk !== null && own.reject !== null && own.reject < own.junk) return problem(409, "spamLimitsOrder");
+      mockLimits.own = own;
+      return [200, mockLimits];
+    },
   ],
   ["GET", /^\/api\/account\/spam\/senders$/, () => [200, sendersView("own")]],
   ["POST", /^\/api\/account\/spam\/senders$/, (body) => addSender("own", body)],
