@@ -58,6 +58,11 @@ Design choices that matter later:
 - `sender_lists`: allowed and blocked senders of a person, a domain and the
   server, decided per recipient before the score. Host names count only when
   the reverse name points back to the sending address.
+- `spam::words`, `spam::feeds`, `spam::lists`: word lists compiled into regex
+  sets per scope, and the built-in lists, kept compiled between messages and
+  compiled again when a list or its switch changed. `fetch` fetches lists from
+  public addresses only (a resolver that drops private ones), without
+  redirects, size-capped, zstd unpacked, with ETag / Last-Modified.
 - `outbound` + `client`: the delivery worker claims due recipients with a
   lease, groups them by domain, resolves MX (or a relay / static route),
   delivers with opportunistic TLS, and records the outcome per recipient.

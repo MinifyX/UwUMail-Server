@@ -5,8 +5,11 @@ whether it goes to the inbox, waits a little, goes to Junk or is refused. It
 judges the sending server, the authentication results, what the message itself
 shows (its links, attachments and headers) and how the sender behaved before.
 It learns from "Spam" / "Not spam" in the apps, both about senders and about
-what spam looks like, and everyone can keep a list of senders that are always
-let through or kept out, and so can admins for a domain or the whole server.
+what spam looks like. Everyone can keep a list of senders that are always let
+through or kept out and a list of suspicious words, and so can admins for a
+domain or the whole server. Built-in lists from abuse.ch, mailcow and Rspamd
+add known malware links and files, spam subjects, throwaway and freemail
+domains and link shorteners.
 
 ## What gets scored
 
@@ -96,6 +99,8 @@ message.
 | `HTML_ONLY` | +0.5 | the message has HTML but no plain text version |
 | `BASE64_TEXT` | +1.0 | plain ASCII text is base64-encoded, which only hides words from filters |
 | `HIDDEN_TEXT` | +1.0 | more than 200 characters of text are hidden from the reader (only without DMARC) |
+| `BAD_WORDS` | up to +10.0 | entries of the whole server's word list, see [Word lists](#word-lists) |
+| `MALWARE_LINK`, `MALWARE_ATTACHMENT`, `DISPOSABLE_FROM`, `FREEMAIL_REPLYTO`, `LINK_SHORTENER` | see there | [built-in lists](#built-in-lists) |
 
 Newsletters from real senders wrap their links in tracking addresses, so the
 text shows the shop while the link leads to the mailing service, and they like
@@ -249,6 +254,85 @@ uwumail-server spam senders [--account someone@example.org]
 uwumail-server spam unlist 12 [--account someone@example.org]
 ```
 
+## Word lists
+
+Words, phrases and regular expressions that make a message suspicious. Like
+sender lists, there is one per person (*Mein Konto → Spamfilter*), one per
+domain and one for the whole server (*Server → Spamfilter*), and the command
+line has `uwumail-server spam words`.
+
+| Entry | Example | Matches |
+| --- | --- | --- |
+| Word or phrase | `casino`, `web development` | whole words in any case, with any whitespace between them |
+| Expression | `/\sviagra\s/i` | a regular expression with the flags `i`, `m`, `s`, `x` (and `u`, which changes nothing), like Rspamd's regexp maps |
+
+Each matching entry gives 2.5 points unless it was added with points of its
+own, and all word lists together give at most 10. The subject and the text a
+reader sees are searched, HTML turned into text, up to 200 KB. The server's
+list counts as `BAD_WORDS` for everyone and shows in the headers; a domain's
+and a person's own lists count for that recipient only, within the same 10
+points.
+
+Expressions run on Rust's regex engine, which takes linear time whatever the
+pattern: a list cannot slow the server down. In exchange, look-around and
+back-references are not supported, and an expression that matches an empty
+text is refused, because it would match every message.
+
+Entries can be typed in one per line, or a whole list can be pasted, for
+example an Rspamd map. Lines starting with `#` are skipped; the portal and
+the command line report what was added, what was already on the list and which
+lines could not be used, and why.
+
+A list can also be subscribed to by link. The server fetches it right away and
+then every day, only over https, only from public addresses, without following
+redirects, at most 1 MB, and only when it changed. Its entries replace those of
+the last fetch; a fetch that fails or brings nothing usable keeps them. A
+subscription can look in the subject only, for lists of spam subjects.
+
+```sh
+uwumail-server spam words add casino "web development" --points 3
+uwumail-server spam words import bad_words.map --domain example.org
+uwumail-server spam words subscribe https://lists.example.org/bad.map
+uwumail-server spam words list [--account someone@example.org]
+uwumail-server spam words remove 12
+uwumail-server spam words unsubscribe 3
+```
+
+## Built-in lists
+
+Lists the server fetches itself, each of which can be switched off under
+*Server → Spamfilter* or in the config file (`[spam.feeds]`). Fetching means
+the server contacts these providers regularly, similar to asking blocklists.
+The lists are not part of UwUMail: every server fetches them from their
+providers under their terms.
+
+| List | Provider | Fetched | Rule | Points |
+| --- | --- | --- | --- | --- |
+| Malware links (`urlhaus`) | [abuse.ch URLhaus](https://urlhaus.abuse.ch/api/) | hourly | `MALWARE_LINK`: a link in the message is a known malware address that is online | +10.0 |
+| Malware attachments (`malware_bazaar`) | [abuse.ch MalwareBazaar](https://bazaar.abuse.ch/export/) | hourly | `MALWARE_ATTACHMENT`: an attachment's MD5 or SHA-256 was reported as malware in the last two days | +10.0 |
+| Spam subjects (`bad_subjects`) | [mailcow](https://github.com/mailcow/mailcow-dockerized) | daily | counts like the server's word list, in the subject only | +2.5 each |
+| Throwaway addresses (`disposable`) | [Rspamd](https://rspamd.com/) | daily | `DISPOSABLE_FROM`: the From domain or a parent of it is a throwaway service | +1.5 |
+| Freemail providers (`freemail`) | [Rspamd](https://rspamd.com/) | daily | `FREEMAIL_REPLYTO`: replies are meant to go to a freemail address although the sender has none | +2.0 |
+| Link shorteners (`redirectors`) | [Rspamd](https://rspamd.com/) | daily | `LINK_SHORTENER`: a link goes through a shortener or redirector | +0.5 |
+
+- **abuse.ch** needs one's own Auth-Key from
+  [auth.abuse.ch](https://auth.abuse.ch/). Its
+  [terms](https://abuse.ch/terms-of-use/) allow free use for non-commercial
+  purposes only; commercial use needs a paid subscription. Without a key the
+  two lists stay off. The key is stored like a password and only goes into the
+  download address.
+- **mailcow's** list is only reachable over plain http. So that a changed list
+  cannot sort ordinary mail into Junk, expressions that match everyday subjects
+  ("Hallo", "Rechnung September", …) are dropped when it is read.
+- **Links** are never opened: `LINK_SHORTENER` only looks at the host name.
+  Reading a malware address list compares whole addresses, without the part
+  after `#`.
+
+A fetch that fails, or brings no usable entries, keeps the values of the last
+good one and is tried again an hour later. The portal shows for each list how
+many entries it holds, when it was fetched and why it failed, with a button to
+fetch it now; `uwumail-server spam feeds` shows the same.
+
 ## Headers
 
 Every scored message gets two headers, so a mail app can filter on them and a
@@ -294,6 +378,15 @@ junk_score = 5.0            # from here on: Junk
 greylist_score = 2.0        # from here to junk_score: hold back once
 greylist_delay_secs = 300   # how long a held-back sender waits
 # reject_score = 15.0       # refuse from here on; off unless set
+
+[spam.feeds]
+urlhaus = true              # built-in lists, see above
+malware_bazaar = true
+bad_subjects = true
+disposable = true
+freemail = true
+redirectors = true
+# abuse_ch_key = "..."      # from auth.abuse.ch, non-commercial use only
 ```
 
 The server refuses thresholds in the wrong order: `greylist_score` above

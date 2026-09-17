@@ -65,10 +65,12 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Thresholds for greylisting, Junk and refusing (off by default) in the admin panel
 - [x] "Spam" / "Not spam" in the apps (moving to or from Junk, `$junk` / `$notjunk`) corrects the sender's reputation
 - [x] Content rules after Rspamd's example: phishing links and look-alike domains, faked display names, dangerous attachments (also inside zip archives), header and MIME oddities, Spamhaus DBL for link domains
-- [ ] More content rules: URL shorteners and redirectors, SURBL/URIBL, text patterns
+- [x] Word lists (words, phrases, Rspamd-style expressions) per person, domain and server, pasted or subscribed to by link
+- [x] Built-in lists: malware links and attachments (abuse.ch), spam subjects (mailcow), throwaway and freemail domains and link shorteners (Rspamd)
+- [ ] More content rules: SURBL/URIBL
 - [x] Bayes filter that learns from "Spam" / "Not spam", clear cases and once from sorted mail, with knowledge for the whole server and per person, tokens only as keyed hashes
 - [x] Allowed and blocked senders (IP address or network, confirmed host name, address, domain) per person, domain and server
-- [ ] "Block" in the apps puts the sender on the person's list on the server
+- [x] "Block" in the apps puts the sender on the person's list on the server (JMAP `SenderList`, see jmap-senders.md)
 - [ ] Optional external Rspamd, optional ClamAV container
 
 ## 5. IMAP

@@ -75,6 +75,15 @@ greylist_score = 2.0          # up to junk_score: suspicious senders retry once
 greylist_delay_secs = 300
 # reject_score = 15.0         # refuse from this score on; off unless set
 
+[spam.feeds]                  # built-in lists, see spam-filter.md
+urlhaus = true                # malware links (abuse.ch, needs abuse_ch_key)
+malware_bazaar = true         # malware attachments (abuse.ch, needs abuse_ch_key)
+bad_subjects = true           # spam subjects (mailcow)
+disposable = true             # throwaway address domains (Rspamd)
+freemail = true               # freemail providers (Rspamd)
+redirectors = true            # link shorteners (Rspamd)
+# abuse_ch_key = "..."        # from auth.abuse.ch; free for non-commercial use only
+
 [delivery]
 concurrency = 16
 max_lifetime_hours = 120
