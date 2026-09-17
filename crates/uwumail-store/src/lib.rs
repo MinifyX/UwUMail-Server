@@ -29,6 +29,7 @@ mod security;
 mod sender_lists;
 mod spam;
 mod web;
+mod word_lists;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -70,6 +71,11 @@ pub use sender_lists::{
 };
 pub use spam::{GREYLIST_PASSED_SECS, GREYLIST_WAITING_SECS, Greylist, REPUTATION_RETENTION_SECS, Reputation};
 pub use web::{NewWebSession, ServerCounts, WebSession};
+pub use word_lists::{
+    CompiledWord, PATTERN_SIZE_LIMIT, RefusedWord, WORD_LIST_ADMIN_LIMIT, WORD_LIST_PERSONAL_LIMIT, WORD_POINTS,
+    WORD_POINTS_MAX, WORD_SOURCE_ENTRY_LIMIT, WORD_SOURCE_MAX_BYTES, WORD_SOURCES_ADMIN_LIMIT,
+    WORD_SOURCES_PERSONAL_LIMIT, WordEntry, WordImport, WordSource, normalize_word, parse_word_lines, word_regex,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {

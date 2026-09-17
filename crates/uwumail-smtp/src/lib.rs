@@ -92,6 +92,8 @@ pub(crate) struct Context {
     pub domain_cache: spam::DomainCache,
     /// The key Bayes tokens are hashed with, loaded or made on first use.
     pub bayes_key: tokio::sync::OnceCell<[u8; 32]>,
+    /// The word lists, compiled again when they change.
+    pub(crate) word_lists: spam::WordLists,
     /// Sized at start; changing these limits takes a restart.
     pub connections: Arc<Semaphore>,
     pub delivery_permits: Arc<Semaphore>,
@@ -168,6 +170,7 @@ impl Smtp {
                 blocklist_cache: spam::BlocklistCache::default(),
                 domain_cache: spam::DomainCache::default(),
                 bayes_key: tokio::sync::OnceCell::new(),
+                word_lists: Default::default(),
                 inflight: Mutex::new(HashSet::new()),
                 stats: health::DeliveryStats::default(),
                 connector: RwLock::new(None),

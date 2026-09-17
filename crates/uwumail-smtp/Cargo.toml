@@ -24,6 +24,7 @@ idna.workspace = true
 mail-auth.workspace = true
 mail-builder.workspace = true
 mail-parser.workspace = true
+regex.workspace = true
 rustls.workspace = true
 rustls-pki-types.workspace = true
 serde.workspace = true

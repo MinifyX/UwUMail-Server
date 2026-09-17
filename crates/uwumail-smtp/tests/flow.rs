@@ -792,3 +792,33 @@ async fn listed_senders_skip_the_filter_or_are_kept_out() {
     assert!(reply.starts_with("550 5.7.1"), "{reply}");
     assert_eq!(a.inbox("leni@a.test").await.len(), 2);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn word_lists_count_for_everyone_or_only_for_their_owner() {
+    // No greylisting, so the sender's 3.0 points (SPF_FAIL, NO_AUTH) alone deliver into the inbox.
+    let spam = SpamConfig { greylist_score: 5.0, ..SpamConfig::default() };
+    let a = spam_test_server_for(&["mini", "leni"], spam, None).await;
+    let store = a.smtp.store();
+    let leni = store.account("leni@a.test").await.unwrap().unwrap().id;
+    let both = ["mini@a.test", "leni@a.test"];
+    let add = |scope, text: &str, points| store.add_words(scope, text.into(), points, String::new(), String::new());
+
+    add(uwumail_store::ListScope::Server, "casino\n/\\sjackpot\\s/i", None).await.unwrap();
+    add(uwumail_store::ListScope::Account(leni), "sonderangebot", Some(3.0)).await.unwrap();
+
+    let reply =
+        relay_message_to(&a, &both, "From: news@sender.test\r\nSubject: Einladung\r\n\r\nHeute Casino-Abend\r\n").await;
+    assert!(reply.starts_with("250"), "{reply}");
+    let junk = a.mailbox("mini@a.test", MailboxRole::Junk).await;
+    assert_eq!(junk.len(), 1, "a word on the server's list counts for everyone");
+    let raw = a.raw(&junk[0]).await;
+    assert!(raw.contains("BAD_WORDS"), "{raw}");
+    assert_eq!(a.mailbox("leni@a.test", MailboxRole::Junk).await.len(), 1);
+
+    let reply =
+        relay_message_to(&a, &both, "From: news@sender.test\r\nSubject: Nur heute\r\n\r\nUnser Sonderangebot\r\n")
+            .await;
+    assert!(reply.starts_with("250"), "{reply}");
+    assert_eq!(a.inbox("mini@a.test").await.len(), 1, "Leni's own word is none of Mini's business");
+    assert_eq!(a.mailbox("leni@a.test", MailboxRole::Junk).await.len(), 2);
+}

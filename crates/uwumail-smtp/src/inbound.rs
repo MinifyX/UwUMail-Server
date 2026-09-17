@@ -955,7 +955,9 @@ impl Session {
                 }
                 Decision::None => match &score {
                     Some(score) if !quarantined => {
-                        let own = spam::personal_bayes_points(&ctx, &live.spam, score, account_id).await;
+                        let domain = recipient.address.rsplit_once('@').map_or("", |(_, domain)| domain);
+                        let own = spam::personal_bayes_points(&ctx, &live.spam, score, account_id).await
+                            + spam::personal_word_points(&ctx, score, account_id, domain).await;
                         let theirs = spam::outcome(&live.spam, score.points + own);
                         let moved = matches!(theirs, spam::Outcome::Junk | spam::Outcome::Reject);
                         if own != 0.0 && moved != junk {

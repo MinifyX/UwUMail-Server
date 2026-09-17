@@ -56,6 +56,8 @@ getrandom = "0.4"
 # QUIC for the tunnel between a server and its UwUMail Gateway, on the same rustls and aws-lc-rs.
 quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-aws-lc-rs"] }
 rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem"] }
+# Word lists: words and Rspamd-style regular expressions, matched in linear time.
+regex = "1.13"
 rusqlite = { version = "0.40", features = ["bundled"] }
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12", "logging"] }
 rustls-pki-types = "1"

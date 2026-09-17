@@ -13,6 +13,7 @@ mod bayes;
 mod content;
 mod html;
 mod links;
+mod words;
 
 pub use bayes::run_learning;
 
@@ -146,7 +147,15 @@ pub struct Score {
     /// The chance of spam by what the whole server learned, when it learned enough.
     #[serde(skip)]
     pub(crate) server_chance: Option<f64>,
+    /// The subject and visible text, to look for a domain's and a person's own word lists too.
+    #[serde(skip)]
+    pub(crate) subject: String,
+    #[serde(skip)]
+    pub(crate) text: String,
 }
+
+/// The compiled word lists, kept between messages.
+pub(crate) type WordLists = tokio::sync::Mutex<Option<std::sync::Arc<words::Compiled>>>;
 
 impl Score {
     fn add(&mut self, rule: &'static str, points: f32, detail: Option<String>) {
@@ -335,9 +344,10 @@ pub async fn score(
         let domains =
             if config.blocklists { domain_listings(ctx, &examination.link_domains).await } else { Vec::new() };
         let chance = if examination.tokens.is_empty() { None } else { server_chance(ctx, &examination.tokens).await };
-        (examination.hits, domains, examination.tokens, chance)
+        (examination, domains, chance)
     };
-    let (names, listed, (content_hits, domains, tokens, chance)) = tokio::join!(reverse, blocklists, message);
+    let (names, listed, (examination, domains, chance)) = tokio::join!(reverse, blocklists, message);
+    let content::Examination { hits: content_hits, tokens, subject, text, .. } = examination;
 
     // No answer at all is not the same as no reverse name, so a timeout costs nothing.
     if let Some(names) = names {
@@ -381,6 +391,16 @@ pub async fn score(
     score.tokens = tokens;
     score.server_chance = chance;
 
+    // The whole server's word lists; a domain's and a person's own count per recipient.
+    if !subject.is_empty() || !text.is_empty() {
+        let found = words::compiled(ctx).await.server.find(&subject, &text);
+        if found.points > 0.0 {
+            score.add("BAD_WORDS", tenths(found.points), Some(found.detail()));
+        }
+    }
+    score.subject = subject;
+    score.text = text;
+
     match ctx.store.reputation(reputation_subject(ip, verdict)).await {
         Ok(reputation) if reputation.is_known() => {
             let share = reputation.junk_share();
@@ -421,6 +441,26 @@ pub(crate) async fn personal_bayes_points(ctx: &Context, config: &SpamConfig, sc
     let Some(own) = bayes::spam_chance(&score.tokens, &counts, totals) else { return 0.0 };
     let blended = bayes::blended(score.server_chance, Some((own, totals))).unwrap_or(own);
     bayes::points(blended) - score.server_chance.map_or(0.0, bayes::points)
+}
+
+fn tenths(points: f32) -> f32 {
+    (points * 10.0).round() / 10.0
+}
+
+/// How many points a domain's and a person's own word lists add for one recipient, within what word lists
+/// may add together.
+pub(crate) async fn personal_word_points(ctx: &Context, score: &Score, account_id: i64, domain: &str) -> f32 {
+    if score.subject.is_empty() && score.text.is_empty() {
+        return 0.0;
+    }
+    let lists = words::compiled(ctx).await;
+    let own = [lists.domains.get(domain), lists.accounts.get(&account_id)]
+        .into_iter()
+        .flatten()
+        .map(|scope| scope.find(&score.subject, &score.text).points)
+        .sum::<f32>();
+    let server: f32 = score.hits.iter().filter(|hit| hit.rule == "BAD_WORDS").map(|hit| hit.points).sum();
+    tenths(own.min((uwumail_store::WORD_POINTS_MAX - server).max(0.0)))
 }
 
 /// Asks a suspicious sender to come back later, unless it already did. `Some(seconds)` means the

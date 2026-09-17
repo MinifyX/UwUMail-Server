@@ -20,6 +20,9 @@ pub(crate) struct Examination {
     pub link_domains: Vec<String>,
     /// The message's Bayes tokens, hashed; empty without a key.
     pub tokens: Vec<i64>,
+    /// The subject, and the text a reader sees (HTML turned into text), for word lists.
+    pub subject: String,
+    pub text: String,
 }
 
 fn add(hits: &mut Vec<Hit>, rule: &'static str, points: f32, detail: Option<String>) {
@@ -136,7 +139,33 @@ pub(crate) fn examine(raw: &[u8], now: i64, dmarc_passed: bool, key: Option<&[u8
     }
     let tokens =
         key.map(|key| bayes::hashed(key, &bayes::tokens(&message, &link_sites(&body.links)))).unwrap_or_default();
-    Examination { hits, link_domains: links::domains_to_look_up(&body.links), tokens }
+    let subject = message.subject().unwrap_or_default().chars().take(MAX_SUBJECT).collect();
+    Examination {
+        hits,
+        link_domains: links::domains_to_look_up(&body.links),
+        tokens,
+        subject,
+        text: visible_text(&message),
+    }
+}
+
+/// Enough of a message's text for word lists: spammers put their words up front.
+const MAX_TEXT: usize = 200 * 1024;
+const MAX_SUBJECT: usize = 1_000;
+
+/// The text parts, and HTML parts turned into text, as a reader sees them.
+fn visible_text(message: &Message<'_>) -> String {
+    let mut text = String::new();
+    for index in 0..message.text_body.len() {
+        if text.len() >= MAX_TEXT {
+            break;
+        }
+        if let Some(body) = message.body_text(index) {
+            text.push_str(&body);
+            text.push('\n');
+        }
+    }
+    text
 }
 
 /// Headers every mail program writes. Missing ones, or a date days away from now, are typical for
