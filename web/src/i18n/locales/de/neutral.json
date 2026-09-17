@@ -48,7 +48,8 @@
     "mail": "Weiterleitung",
     "addresses": "Adressen",
     "setup": "Einrichtung",
-    "spamFilter": "Spamfilter"
+    "spamFilter": "Spamfilter",
+    "backups": "Backups"
   },
   "mode": {
     "label": "Ansicht",
@@ -237,6 +238,11 @@
       "senderListed": "Dieser Absender steht schon auf der Liste. Um ihn umzustellen, entferne ihn zuerst.",
       "senderListFull": "Die Liste ist voll. Entferne zuerst alte Einträge.",
       "spamLimitsOrder": "Die Grenze zum Ablehnen muss mindestens so hoch sein wie die für den Spam-Ordner.",
+      "backupWrongKey": "Der Wiederherstellungsschlüssel passt nicht zu den Backups in diesem Ordner.",
+      "backupHostKeyChanged": "Der Backup-Server meldet sich mit einem anderen Schlüssel als bisher. Wenn du ihn neu aufgesetzt hast, vertrau dem neuen Schlüssel; sonst stimmt etwas nicht. ({{detail}})",
+      "backupLoginRefused": "Der Backup-Server lehnt die Anmeldung ab. Prüfe Benutzer, Passwort oder ob der öffentliche Schlüssel in authorized_keys steht.",
+      "backupFailed": "Das Backup hat nicht geklappt: {{detail}}",
+      "backupEncryptionFixed": "Sobald es Backups gibt, bleibt die Verschlüsselung, wie sie ist. Für eine Änderung nimm einen neuen Ordner.",
       "wordInvalid": "Das ist kein verwendbarer Eintrag. Punkte müssen zwischen 0,1 und 10 liegen.",
       "wordSourceInvalid": "Dieser Link lässt sich nicht abonnieren: nur https, keine Adressen im eigenen Netz.",
       "wordSourcesFull": "Es sind schon so viele Listen abonniert, wie möglich sind.",
@@ -1455,6 +1461,66 @@
       "fromConfig": "Diese Kopplung steht als gateway.code in der Konfiguration. Wenn du das Gateway hier vergisst, entferne auch den Code, sonst koppelt der Server beim nächsten Start neu.",
       "paired": "Gekoppelt, der Tunnel baut sich auf.",
       "forgotten": "Gateway vergessen."
+    }
+  },
+  "backups": {
+    "title": "Backups",
+    "intro": "Der Server sichert Mails, Einstellungen, Kalender und Kontakte jede Nacht auf einen SFTP-Server, zum Beispiel ein NAS. Nach dem ersten Mal wird nur hochgeladen, was neu ist.",
+    "status": {
+      "title": "Stand",
+      "running": "Das Backup läuft gerade …",
+      "last": "Letztes Backup: {{time}}",
+      "sizes": "{{total}} gesichert, davon {{uploaded}} neu hochgeladen",
+      "never": "Noch kein Backup.",
+      "failed": "Der letzte Versuch ist fehlgeschlagen: {{error}}",
+      "paused": "Die nächtlichen Backups sind ausgeschaltet.",
+      "runNow": "Jetzt sichern",
+      "refresh": "Aktualisieren",
+      "started": "Das Backup startet"
+    },
+    "target": {
+      "title": "Backup-Server",
+      "explain": "Wohin gesichert wird. Der Ordner wird angelegt, wenn es ihn noch nicht gibt; nimm für jeden Server einen eigenen.",
+      "host": "Adresse",
+      "port": "Port",
+      "user": "Benutzer",
+      "path": "Ordner",
+      "pathHint": "Relativ zum Home-Verzeichnis oder mit / beginnend",
+      "method": "Anmeldung",
+      "methodKey": "SSH-Schlüssel",
+      "methodPassword": "Passwort",
+      "keyAfterSave": "Nach dem Speichern erzeugt der Server einen eigenen Schlüssel und zeigt ihn hier.",
+      "publicKeyHint": "Trag diese Zeile beim Benutzer auf dem Backup-Server in ~/.ssh/authorized_keys ein:",
+      "password": "Passwort",
+      "passwordKept": "Leer lassen, um das gespeicherte Passwort zu behalten.",
+      "hostKey": "Schlüssel des Backup-Servers:",
+      "test": "Verbindung testen",
+      "testOk": "Verbindung klappt",
+      "testFirst": "Verbindung klappt. Der Server hat sich mit {{hostKey}} gemeldet; ab jetzt muss es dieser Schlüssel sein.",
+      "trustNewKey": "Neuem Schlüssel vertrauen"
+    },
+    "schedule": {
+      "enabled": "Jede Nacht sichern",
+      "hour": "Ab",
+      "daily": "Tage behalten",
+      "weekly": "Wochen behalten",
+      "monthly": "Monate behalten",
+      "encrypted": "Verschlüsseln",
+      "encryptedHint": "Empfohlen: Auf dem Backup-Server kann dann niemand die Mails lesen. Zum Wiederherstellen brauchst du den Wiederherstellungsschlüssel.",
+      "encryptedFixed": "Es gibt schon Backups, deshalb bleibt diese Einstellung, wie sie ist."
+    },
+    "snapshots": {
+      "title": "Gesicherte Stände",
+      "restoreHint": "Wiederherstellen geht auf der Kommandozeile, in ein leeres Datenverzeichnis, auch auf einem neuen Rechner. Den Wiederherstellungsschlüssel fragt der Befehl ab.",
+      "load": "Stände anzeigen",
+      "showKey": "Wiederherstellungsschlüssel anzeigen",
+      "none": "Noch keine Stände.",
+      "line": "{{mails}} Mails · {{size}} · {{uploaded}} neu"
+    },
+    "recovery": {
+      "title": "Wiederherstellungsschlüssel",
+      "explain": "Ohne diesen Schlüssel lassen sich die Backups nicht mehr lesen, auch nicht von mir. Schreib ihn auf oder leg ihn in deinen Passwort-Manager, getrennt von diesem Server.",
+      "written": "Ich habe den Schlüssel sicher abgelegt"
     }
   },
   "spam": {

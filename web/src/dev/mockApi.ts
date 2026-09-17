@@ -8,6 +8,8 @@
 
 import type {
   AccountSpamView,
+  BackupSnapshot,
+  BackupsView,
   ForwardAddress,
   SpamLimits,
   SpamLimitsView,
@@ -295,6 +297,37 @@ const detail = (domain: MockDomain): DomainDetail => ({
 });
 
 const mockSendAs: Record<string, string[]> = {};
+
+const mockBackups: BackupsView = {
+  enabled: true,
+  hour: 1,
+  retention: { daily: 7, weekly: 4, monthly: 6 },
+  encrypted: true,
+  target: {
+    host: "nas.uwu.example",
+    port: 22,
+    user: "backup",
+    path: "uwumail",
+    method: "key",
+    publicKey:
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExample uwumail-backup@mail.uwu.example",
+    passwordSet: false,
+    hostKey: "SHA256:uwuExampleHostKeyFingerprint0000000000000000",
+  },
+  status: {
+    lastAttemptAt: Math.floor(Date.now() / 1000) - 5 * 3600,
+    lastSuccessAt: Math.floor(Date.now() / 1000) - 5 * 3600,
+    lastError: null,
+    lastReport: {
+      snapshot: "001790000000-a1b2c3",
+      uploaded: 18_400_000,
+      total: 2_310_000_000,
+      removedSnapshots: 1,
+      removedObjects: 12,
+    },
+  },
+  running: false,
+};
 
 let nextAuditId = 20;
 const audit: AuditRecord[] = [
@@ -1953,6 +1986,68 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["POST", /^\/api\/admin\/people\/([^/]+)\/password-link$/, () => [200, link()]],
+  ["GET", /^\/api\/admin\/backups$/, () => [200, mockBackups]],
+  [
+    "PUT",
+    /^\/api\/admin\/backups$/,
+    (body) => {
+      const next = body as {
+        enabled: boolean;
+        hour: number;
+        encrypted: boolean;
+        retention: BackupsView["retention"];
+        target: { host: string; port: number; user: string; path: string; method: "key" | "password" };
+      };
+      const newKey = next.encrypted && !mockBackups.encrypted;
+      Object.assign(mockBackups, {
+        enabled: next.enabled,
+        hour: next.hour,
+        retention: next.retention,
+        encrypted: next.encrypted,
+        target: { ...mockBackups.target!, ...next.target, passwordSet: next.target.method === "password" },
+      });
+      log("backup.settings", "server");
+      return [
+        200,
+        newKey
+          ? { ...mockBackups, recoveryKey: "ABCD-EFGH-IJKL-MNOP-QRST-UVWX-YZ23-4567-ABCD-EFGH-IJKL-MNOP-QRST" }
+          : mockBackups,
+      ];
+    },
+  ],
+  ["POST", /^\/api\/admin\/backups\/test$/, () => [200, { hostKey: mockBackups.target!.hostKey, known: true }]],
+  [
+    "POST",
+    /^\/api\/admin\/backups\/run$/,
+    () => {
+      mockBackups.running = true;
+      window.setTimeout(() => {
+        mockBackups.running = false;
+        mockBackups.status.lastSuccessAt = Math.floor(Date.now() / 1000);
+      }, 4000);
+      return [202, null];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/backups\/snapshots$/,
+    () => [
+      200,
+      [0, 1, 2, 9].map((days): BackupSnapshot => ({
+        name: `0017900${days}0000-a1b2c3`,
+        createdAt: Math.floor(Date.now() / 1000) - days * 86_400 - 5 * 3600,
+        mails: 3300 - days * 4,
+        size: 2_310_000_000 - days * 2_000_000,
+        uploaded: days === 9 ? 2_100_000_000 : 18_000_000,
+        version: "0.1.0",
+      })),
+    ],
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/backups\/recovery-key$/,
+    () => [200, { recoveryKey: "ABCD-EFGH-IJKL-MNOP-QRST-UVWX-YZ23-4567-ABCD-EFGH-IJKL-MNOP-QRST" }],
+  ],
   [
     "PUT",
     /^\/api\/admin\/people\/([^/]+)\/send-as-domains$/,

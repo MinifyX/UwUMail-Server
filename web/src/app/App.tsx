@@ -22,6 +22,7 @@ import { SettingsPage } from "@/features/settings/SettingsPage";
 import { SetupPage } from "@/features/setup/SetupPage";
 import { SetupWizard } from "@/features/setup/SetupWizard";
 import { AccountSpamPage, AdminSpamPage } from "@/features/spam/SpamPage";
+import { BackupsPage } from "@/features/backups/BackupsPage";
 import { useSession } from "@/features/session/session";
 import { PortalShell } from "@/features/shell/PortalShell";
 import { useApplyLanguage, useT } from "@/i18n";
@@ -62,6 +63,7 @@ function page(path: string, session: Session): ReactNode {
   if (domain?.name) return <DomainPage key={domain.name} name={domain.name} />;
   if (matchPath("/admin/queue", path)) return <QueuePage />;
   if (matchPath("/admin/spam", path)) return <AdminSpamPage />;
+  if (matchPath("/admin/backups", path)) return <BackupsPage />;
   if (matchPath("/admin/log", path)) return <LogPage />;
   if (matchPath("/admin/logs", path)) return <LogsPage />;
   if (matchPath("/admin/settings", path)) return <SettingsPage />;

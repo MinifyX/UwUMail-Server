@@ -48,7 +48,8 @@
     "mail": "Forwarding",
     "addresses": "Addresses",
     "setup": "Setup",
-    "spamFilter": "Spam filter"
+    "spamFilter": "Spam filter",
+    "backups": "Backups"
   },
   "mode": {
     "label": "View",
@@ -237,6 +238,11 @@
       "senderListed": "This sender is already on the list. To switch it, remove it first.",
       "senderListFull": "The list is full. Remove old entries first.",
       "spamLimitsOrder": "The limit for refusing has to be at least as high as the one for the spam folder.",
+      "backupWrongKey": "The recovery key does not fit the backups in this folder.",
+      "backupHostKeyChanged": "The backup server presents a different key than before. If you set it up again, trust the new key; otherwise something is wrong. ({{detail}})",
+      "backupLoginRefused": "The backup server refuses the login. Check the user, the password, or whether the public key is in authorized_keys.",
+      "backupFailed": "The backup did not work: {{detail}}",
+      "backupEncryptionFixed": "Once there are backups, encryption stays as it is. Use a new folder to change it.",
       "wordInvalid": "That is no usable entry. Points have to be between 0.1 and 10.",
       "wordSourceInvalid": "This link cannot be subscribed to: https only, and no addresses in your own network.",
       "wordSourcesFull": "As many lists as possible are subscribed already.",
@@ -1455,6 +1461,66 @@
       "fromConfig": "This pairing is set as gateway.code in the configuration. If you forget the gateway here, remove the code as well, or the server pairs again on the next start.",
       "paired": "Paired, the tunnel is coming up.",
       "forgotten": "Gateway forgotten."
+    }
+  },
+  "backups": {
+    "title": "Backups",
+    "intro": "Every night the server backs up mail, settings, calendars and contacts to an SFTP server, like a NAS. After the first time it only uploads what is new.",
+    "status": {
+      "title": "Status",
+      "running": "The backup is running …",
+      "last": "Last backup: {{time}}",
+      "sizes": "{{total}} backed up, {{uploaded}} of it uploaded now",
+      "never": "No backup yet.",
+      "failed": "The last attempt failed: {{error}}",
+      "paused": "Nightly backups are switched off.",
+      "runNow": "Back up now",
+      "refresh": "Refresh",
+      "started": "The backup is starting"
+    },
+    "target": {
+      "title": "Backup server",
+      "explain": "Where backups go. The folder is created if it does not exist; use one per server.",
+      "host": "Address",
+      "port": "Port",
+      "user": "User",
+      "path": "Folder",
+      "pathHint": "Relative to the home directory, or starting with /",
+      "method": "Login",
+      "methodKey": "SSH key",
+      "methodPassword": "Password",
+      "keyAfterSave": "After saving, the server makes its own key and shows it here.",
+      "publicKeyHint": "Add this line to ~/.ssh/authorized_keys of the user on the backup server:",
+      "password": "Password",
+      "passwordKept": "Leave empty to keep the stored password.",
+      "hostKey": "Key of the backup server:",
+      "test": "Test connection",
+      "testOk": "The connection works",
+      "testFirst": "The connection works. The server presented {{hostKey}}; from now on it has to be this key.",
+      "trustNewKey": "Trust the new key"
+    },
+    "schedule": {
+      "enabled": "Back up every night",
+      "hour": "From",
+      "daily": "Days to keep",
+      "weekly": "Weeks to keep",
+      "monthly": "Months to keep",
+      "encrypted": "Encrypt",
+      "encryptedHint": "Recommended: then nobody can read the mail on the backup server. To restore you need the recovery key.",
+      "encryptedFixed": "There are backups already, so this stays as it is."
+    },
+    "snapshots": {
+      "title": "Snapshots",
+      "restoreHint": "Restoring works on the command line, into an empty data directory, also on a new machine. The command asks for the recovery key.",
+      "load": "Show snapshots",
+      "showKey": "Show recovery key",
+      "none": "No snapshots yet.",
+      "line": "{{mails}} mails · {{size}} · {{uploaded}} new"
+    },
+    "recovery": {
+      "title": "Recovery key",
+      "explain": "Without this key the backups cannot be read anymore, not even by me. Write it down or keep it in your password manager, apart from this server.",
+      "written": "I stored the key safely"
     }
   },
   "spam": {

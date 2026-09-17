@@ -109,6 +109,7 @@ Each step ships as its own commits, container image and test deployment.
 - [ ] Groups, shared mailboxes, masked addresses
 - [ ] Settings sync for the UwUMail apps, send later and snooze on the server
 - [ ] Web Push / UnifiedPush, sender pictures from the server
-- [ ] Scheduled backups (folder, S3, SFTP) with restore per mailbox
+- [x] Nightly backups to SFTP: deduplicated, encrypted by default, 7/4/6 retention, full restore from the command line
+- [ ] Restore per mailbox in the portal, backups to S3 or a mounted folder
 - [ ] Admin alerts, statistics, Prometheus metrics
 - [ ] Sending TLS reports to other domains, DANE

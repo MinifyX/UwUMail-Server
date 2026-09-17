@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import {
   AtSign,
+  DatabaseBackup,
   ChevronsUpDown,
   Forward,
   Globe,
@@ -150,6 +151,7 @@ export function PortalShell({ session, children }: { session: Session; children:
               { to: "/admin/domains", label: t("nav.domains"), icon: Globe },
               { to: "/admin/queue", label: t("nav.queue"), icon: Send },
               { to: "/admin/spam", label: t("nav.spamFilter"), icon: ShieldBan },
+              { to: "/admin/backups", label: t("nav.backups"), icon: DatabaseBackup },
               { to: "/admin/settings", label: t("nav.settings"), icon: Settings },
               { to: "/admin/setup", label: t("nav.setup"), icon: WandSparkles },
               { to: "/admin/log", label: t("nav.log"), icon: History },

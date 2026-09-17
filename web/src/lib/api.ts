@@ -327,6 +327,48 @@ export interface BayesTotals {
   ham: number;
 }
 
+export interface BackupReport {
+  snapshot: string;
+  uploaded: number;
+  total: number;
+  removedSnapshots: number;
+  removedObjects: number;
+}
+
+export interface BackupsView {
+  enabled: boolean;
+  /** The hour in UTC. */
+  hour: number;
+  retention: { daily: number; weekly: number; monthly: number };
+  encrypted: boolean;
+  target: {
+    host: string;
+    port: number;
+    user: string;
+    path: string;
+    method: "key" | "password";
+    publicKey: string | null;
+    passwordSet: boolean;
+    hostKey: string | null;
+  } | null;
+  status: {
+    lastAttemptAt: number | null;
+    lastSuccessAt: number | null;
+    lastError: string | null;
+    lastReport: BackupReport | null;
+  };
+  running: boolean;
+}
+
+export interface BackupSnapshot {
+  name: string;
+  createdAt: number;
+  mails: number;
+  size: number;
+  uploaded: number;
+  version: string;
+}
+
 export interface SpamLimits {
   junk: number | null;
   reject: number | null;

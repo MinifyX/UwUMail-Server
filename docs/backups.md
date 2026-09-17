@@ -1,0 +1,71 @@
+# Backups
+
+The server backs up to an SFTP server, for example a NAS, once a night and
+whenever I press *Jetzt sichern* under *Server → Backups*.
+
+## What is in a backup
+
+Everything a new server needs to take over: the database (people, settings,
+spam filter, calendars and contacts), every mail and the other files in the
+data directory, such as certificates. The database is copied while mail keeps
+arriving, so nothing has to stop.
+
+The first backup uploads everything. Later ones only upload what is new: every
+mail is stored once by its content, and the database copy is cut into pieces
+that only change where the database changed. A day of mail usually means a few
+megabytes.
+
+Every snapshot stays complete on its own. The retention rules keep the newest
+snapshot of each of the last 7 days, 4 weeks and 6 months (adjustable), and
+remove what no remaining snapshot needs.
+
+## Encryption
+
+Backups are encrypted by default (ChaCha20-Poly1305, with keyed names, so the
+backup server sees neither content nor which mails exist). When I set up the
+backups, the portal shows the **recovery key** once. Without it the backups
+cannot be read by anyone, so it belongs in a password manager, apart from the
+server. It can be shown again under *Server → Backups* after confirming the
+password.
+
+Unencrypted backups are possible for a backup server that is encrypted itself.
+The choice is fixed once there are backups; for a change, use a new folder.
+
+## The backup server
+
+- **SSH key** (recommended): the server makes its own key. Put the line the
+  portal shows into `~/.ssh/authorized_keys` of the backup user.
+- **Password**: for systems like Synology DSM that offer only that for SFTP.
+
+The first *Test connection* shows the backup server's host key and remembers
+it. If the key changes later, backups stop until I confirm the new one, as
+`ssh` would warn.
+
+A dedicated user with access to just the backup folder is a good idea. RSA
+keys are not supported; the backup server needs an Ed25519 or ECDSA host key,
+which current systems have.
+
+## From the command line
+
+```sh
+docker compose exec uwumail uwumail-server backup run     # back up now
+docker compose exec uwumail uwumail-server backup list    # snapshots
+docker compose exec uwumail uwumail-server backup check   # is the newest one complete?
+```
+
+## Restoring the whole server
+
+Restoring needs nothing from the old server: on a new machine, restore into an
+empty data directory before starting UwUMail there.
+
+```sh
+docker run --rm -it -v uwumail-data:/data \
+  -v ~/.ssh/backup_key:/key:ro \
+  ghcr.io/minifyx/uwumail-server:latest \
+  backup restore --sftp backup@nas.example.com:uwumail --ssh-key /key --into /data
+```
+
+The command asks for the recovery key (or reads `UWUMAIL_BACKUP_KEY`). With a
+password instead of a key, set `UWUMAIL_BACKUP_SFTP_PASSWORD`. `--snapshot`
+picks an older snapshot from `backup list`; `--host-key` checks the backup
+server's fingerprint.
