@@ -1,4 +1,4 @@
-//! Domains: add and remove, catch-all, DNS check and DKIM key rotation.
+//! Domains: add and remove, catch-all, forwarding addresses, DNS check and DKIM key rotation.
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -56,6 +56,7 @@ pub(crate) async fn detail_json(web: &Web, name: &str) -> ApiResult<Value> {
         "createdAt": domain.created_at,
         "people": people,
         "aliases": aliases,
+        "forwards": web.store().forward_addresses(Some(domain.name.clone())).await?,
         "keys": keys.iter().map(|key| {
             let (dns_name, dns_value) = key.dns_record();
             json!({
@@ -105,8 +106,10 @@ pub async fn create(
 pub async fn remove(State(web): State<Web>, Admin(session): Admin, Path(name): Path<String>) -> ApiResult<StatusCode> {
     let domain = load(&web, &name).await?;
     let (people, aliases) = web.store().domain_address_counts().await?.get(&domain.name).copied().unwrap_or_default();
-    if people + aliases > 0 {
-        return Err(ApiError::Rule("domainInUse", format!("{} addresses still use {}", people + aliases, domain.name)));
+    let forwards = web.store().forward_addresses(Some(domain.name.clone())).await?.len() as i64;
+    let in_use = people + aliases + forwards;
+    if in_use > 0 {
+        return Err(ApiError::Rule("domainInUse", format!("{in_use} addresses still use {}", domain.name)));
     }
     web.store().delete_domain(&domain.name).await?;
     web.forget_report(&domain.name);
@@ -139,6 +142,45 @@ pub async fn set_catch_all(
 }
 
 /// Checks the domain's DNS records now and keeps the result for the overview.
+#[derive(Deserialize)]
+pub struct ForwardAddressBody {
+    /// The part before the @; the domain is the one in the path.
+    local: String,
+    targets: Vec<String>,
+    #[serde(default)]
+    note: String,
+}
+
+/// Creates a forwarding address of this domain or replaces its targets.
+pub async fn set_forward_address(
+    State(web): State<Web>,
+    Admin(session): Admin,
+    Path(name): Path<String>,
+    Json(body): Json<ForwardAddressBody>,
+) -> ApiResult<Json<Value>> {
+    let domain = load(&web, &name).await?;
+    let local = body.local.trim();
+    if local.is_empty() || local.contains('@') {
+        return Err(ApiError::Invalid("give the part before the @".into()));
+    }
+    let address = format!("{local}@{}", domain.name);
+    let saved = web.store().set_forward_address(&address, body.targets, &body.note).await?;
+    audit(&web, &session, "domain.forwardAddress", &saved.address, json!({ "targets": saved.targets })).await;
+    Ok(Json(detail_json(&web, &domain.name).await?))
+}
+
+pub async fn remove_forward_address(
+    State(web): State<Web>,
+    Admin(session): Admin,
+    Path((name, local)): Path<(String, String)>,
+) -> ApiResult<Json<Value>> {
+    let domain = load(&web, &name).await?;
+    let address = format!("{local}@{}", domain.name);
+    web.store().remove_forward_address(&address).await?;
+    audit(&web, &session, "domain.forwardAddressRemove", &address, json!({})).await;
+    Ok(Json(detail_json(&web, &domain.name).await?))
+}
+
 pub async fn check(State(web): State<Web>, _admin: Admin, Path(name): Path<String>) -> ApiResult<Json<Value>> {
     let domain = load(&web, &name).await?;
     let report = run_check(&web, &domain.name).await?;

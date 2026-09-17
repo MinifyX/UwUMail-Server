@@ -12,6 +12,7 @@ import { toast } from "@/state/toasts";
 import { usePeople } from "@/features/people/queries";
 import { CloudflarePanel } from "@/features/setup/SetupBits";
 import { DnsStatusPill, RecordList } from "./DnsBits";
+import { ForwardsCard } from "./ForwardsCard";
 import { MtaStsCard, ReportsCard } from "./MtaStsCards";
 import {
   useActivateKeys,
@@ -195,7 +196,7 @@ export function DomainPage({ name }: { name: string }) {
   if (query.isPending) return <Loading />;
   if (query.isError) return <LoadError error={query.error} onRetry={() => void query.refetch()} />;
   const domain = query.data;
-  const unused = domain.people + domain.aliases === 0;
+  const unused = domain.people + domain.aliases + domain.forwards.length === 0;
 
   return (
     <div className="flex flex-col gap-5">
@@ -229,6 +230,7 @@ export function DomainPage({ name }: { name: string }) {
         </div>
         <div className="flex flex-col gap-5">
           <CatchAllCard domain={domain} />
+          <ForwardsCard domain={domain} />
           <Card title={t("domains.detail.remove")}>
             <div className="flex flex-col items-start gap-3">
               <p className="text-[13px] text-muted">{t("domains.detail.removeHint")}</p>

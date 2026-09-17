@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type DomainDetail, type DomainReport, type MtaStsMode, type ReportsView } from "@/lib/api";
+import { useT } from "@/i18n";
 import { useErrorText } from "@/lib/errors";
 import { toast } from "@/state/toasts";
 
@@ -70,6 +71,28 @@ export function useSetCatchAll(name: string, success: string) {
   return useDomainAction(
     (login: string | null) => api<DomainDetail>(`${domainPath(name)}/catch-all`, { method: "PUT", body: { login } }),
     success,
+  );
+}
+
+export function useSetForwardAddress(name: string) {
+  const { t } = useT();
+  const changed = useDomainChanged();
+  return useMutation({
+    mutationFn: (body: { local: string; targets: string[]; note: string }) =>
+      api<DomainDetail>(`${domainPath(name)}/forwards`, { method: "PUT", body }),
+    onSuccess: (detail, body) => {
+      changed(detail);
+      toast(t("domains.toasts.forwardSaved", { address: `${body.local}@${name}` }), "success");
+    },
+  });
+}
+
+export function useRemoveForwardAddress(name: string) {
+  const { t } = useT();
+  return useDomainAction(
+    (local: string) =>
+      api<DomainDetail>(`${domainPath(name)}/forwards/${encodeURIComponent(local)}`, { method: "DELETE" }),
+    t("domains.toasts.forwardRemoved"),
   );
 }
 

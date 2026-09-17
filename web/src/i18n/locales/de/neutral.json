@@ -602,9 +602,26 @@
         "submission": "Versand für Mail-Apps (STARTTLS)"
       }
     },
+    "forwards": {
+      "title": "Weiterleitungs-Adressen",
+      "explain": "Adressen ohne eigenes Postfach: Mails an sie gehen direkt weiter, an Leute hier oder an andere Server. Als Spam erkannte Mails werden nicht weitergeleitet.",
+      "to": "an {{targets}}",
+      "edit": "Zum Ändern ins Formular übernehmen",
+      "remove": "{{address}} entfernen",
+      "removeConfirm": "{{address}} wirklich entfernen? Mails an die Adresse werden dann abgelehnt.",
+      "address": "Adresse",
+      "addressPlaceholder": "z. B. kasse",
+      "targets": "Weiterleiten an",
+      "targetsHint": "Eine oder mehrere Adressen, getrennt durch Zeilen oder Kommas. Gibt es die Adresse schon, werden ihre Ziele ersetzt.",
+      "note": "Notiz",
+      "notePlaceholder": "Wofür? (optional)",
+      "save": "Speichern"
+    },
     "toasts": {
       "created": "{{domain}} ist angelegt",
       "removed": "{{domain}} ist entfernt",
+      "forwardSaved": "{{address}} leitet jetzt weiter",
+      "forwardRemoved": "Weiterleitungs-Adresse entfernt",
       "checked": "DNS geprüft",
       "catchAll": "Sammeladresse gespeichert",
       "rotated": "Neue Schlüssel sind bereit",

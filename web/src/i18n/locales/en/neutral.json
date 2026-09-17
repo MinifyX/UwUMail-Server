@@ -602,8 +602,25 @@
         "submission": "Sending for mail apps (STARTTLS)"
       }
     },
+    "forwards": {
+      "title": "Forwarding addresses",
+      "explain": "Addresses without a mailbox of their own: mail to them goes straight on, to people here or to other servers. Mail recognized as spam is not passed on.",
+      "to": "to {{targets}}",
+      "edit": "Put into the form to change it",
+      "remove": "Remove {{address}}",
+      "removeConfirm": "Really remove {{address}}? Mail to the address is refused then.",
+      "address": "Address",
+      "addressPlaceholder": "e.g. billing",
+      "targets": "Forward to",
+      "targetsHint": "One or more addresses, one per line or separated by commas. If the address exists, its targets are replaced.",
+      "note": "Note",
+      "notePlaceholder": "What for? (optional)",
+      "save": "Save"
+    },
     "toasts": {
       "created": "{{domain}} has been added",
+      "forwardSaved": "{{address}} forwards now",
+      "forwardRemoved": "Forwarding address removed",
       "removed": "{{domain}} has been removed",
       "checked": "DNS checked",
       "catchAll": "Catch-all saved",

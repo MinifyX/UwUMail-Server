@@ -226,6 +226,8 @@ impl Web {
             .route("/api/admin/domains", get(routes::domains::list).post(routes::domains::create))
             .route("/api/admin/domains/{name}", get(routes::domains::detail).delete(routes::domains::remove))
             .route("/api/admin/domains/{name}/catch-all", put(routes::domains::set_catch_all))
+            .route("/api/admin/domains/{name}/forwards", put(routes::domains::set_forward_address))
+            .route("/api/admin/domains/{name}/forwards/{local}", delete(routes::domains::remove_forward_address))
             .route("/api/admin/domains/{name}/self-service", put(routes::own::set_domain_self_service))
             .route("/api/admin/domains/{name}/check", post(routes::domains::check))
             .route("/api/admin/domains/{name}/mta-sts", put(routes::reports::set_mode))

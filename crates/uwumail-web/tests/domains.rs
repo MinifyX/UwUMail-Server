@@ -135,6 +135,17 @@ async fn domains_with_catch_all_and_key_rotation() {
         call(&app, "PUT", "/api/admin/domains/verein.de/catch-all", Some(json!({ "login": null })), Some(&auth)).await;
     assert_eq!(domain["catchAll"], Value::Null);
 
+    // A forwarding address keeps the domain in use until it is gone.
+    let forward = json!({ "local": "Kasse", "targets": ["kassenwart@example.org"], "note": "Beiträge" });
+    let (status, domain) = call(&app, "PUT", "/api/admin/domains/verein.de/forwards", Some(forward), Some(&auth)).await;
+    assert_eq!(status, StatusCode::OK, "{domain}");
+    assert_eq!(domain["forwards"][0]["address"], "kasse@verein.de");
+    assert_eq!(domain["forwards"][0]["targets"], json!(["kassenwart@example.org"]));
+    let (status, refused) = call(&app, "DELETE", "/api/admin/domains/verein.de", None, Some(&auth)).await;
+    assert_eq!((status, refused["code"].as_str()), (StatusCode::CONFLICT, Some("domainInUse")));
+    let (status, domain) = call(&app, "DELETE", "/api/admin/domains/verein.de/forwards/kasse", None, Some(&auth)).await;
+    assert_eq!((status, domain["forwards"].as_array().map(Vec::len)), (StatusCode::OK, Some(0)));
+
     // Rotation: new keys wait, switch over (forced, no DNS in tests), the old ones retire and can go.
     let (_, rotating) =
         call(&app, "POST", "/api/admin/domains/verein.de/dkim/rotate", Some(json!({})), Some(&auth)).await;
@@ -176,6 +187,8 @@ async fn domains_with_catch_all_and_key_rotation() {
             "domain.dkimActivate",
             "domain.dkimPrepare",
             "domain.dkimPrepare",
+            "domain.forwardAddressRemove",
+            "domain.forwardAddress",
             "domain.catchAll",
             "domain.catchAll",
             "domain.create"

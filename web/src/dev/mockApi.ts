@@ -8,6 +8,7 @@
 
 import type {
   AccountSpamView,
+  ForwardAddress,
   SpamLimits,
   SpamLimitsView,
   AdminSpamView,
@@ -118,6 +119,7 @@ interface MockDomain {
   /** False for a domain from the setup assistant until its records are at Cloudflare. */
   published?: boolean;
   mtaSts?: MtaStsView | null;
+  forwards?: ForwardAddress[];
 }
 
 function mtaStsView(mode: MtaStsView["mode"], changedAt: number): MtaStsView {
@@ -288,6 +290,7 @@ const detail = (domain: MockDomain): DomainDetail => ({
   keys: domain.keys,
   report: domain.report,
   mtaSts: domain.mtaSts ?? null,
+  forwards: domain.forwards ?? [],
   setup: { hostname: "mail.uwu.example", relayHost: null, upstreamMx: false },
 });
 
@@ -1768,6 +1771,33 @@ const routes: [string, RegExp, Handler][] = [
       if (!found) return problem(404, "notFound");
       found.catchAll = (body as { login: string | null }).login;
       log("domain.catchAll", name!, { account: found.catchAll });
+      return [200, detail(found)];
+    },
+  ],
+  [
+    "PUT",
+    /^\/api\/admin\/domains\/([^/]+)\/forwards$/,
+    (body, [name]) => {
+      const found = domains.find((d) => d.name === name);
+      if (!found) return problem(404, "notFound");
+      const { local, targets, note } = body as { local: string; targets: string[]; note: string };
+      if (targets.length === 0 || targets.some((target) => !target.includes("@"))) return problem(422, "invalid");
+      const address = `${local.toLowerCase()}@${name}`;
+      const others = (found.forwards ?? []).filter((forward) => forward.address !== address);
+      const createdAt = Math.floor(Date.now() / 1000);
+      found.forwards = [...others, { address, domain: name!, targets, note, createdAt }];
+      log("domain.forwardAddress", address, { targets });
+      return [200, detail(found)];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/admin\/domains\/([^/]+)\/forwards\/([^/]+)$/,
+    (_, [name, local]) => {
+      const found = domains.find((d) => d.name === name);
+      if (!found) return problem(404, "notFound");
+      found.forwards = (found.forwards ?? []).filter((forward) => forward.address !== `${local}@${name}`);
+      log("domain.forwardAddressRemove", `${local}@${name}`);
       return [200, detail(found)];
     },
   ],

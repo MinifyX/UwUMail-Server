@@ -204,8 +204,17 @@ export interface DkimKeyInfo {
   dnsValue: string;
 }
 
+export interface ForwardAddress {
+  address: string;
+  domain: string;
+  targets: string[];
+  note: string;
+  createdAt: number;
+}
+
 export interface DomainDetail extends Omit<DomainSummary, "dns"> {
   selfServiceAliases?: boolean;
+  forwards: ForwardAddress[];
   keys: DkimKeyInfo[];
   report: DomainReport | null;
   mtaSts: MtaStsView | null;
