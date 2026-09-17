@@ -267,7 +267,7 @@ export function AppPasswordsCard({
       <Dialog
         open={creating || created !== null}
         onClose={requestCloseCreate}
-        dismissable={!dirty}
+        closeOnOutsideClick={!dirty}
         title={created ? t("security.appPasswords.createdTitle") : t("security.appPasswords.newTitle")}
       >
         {created ? (

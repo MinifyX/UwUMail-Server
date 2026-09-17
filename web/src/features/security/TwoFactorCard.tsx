@@ -300,7 +300,7 @@ export function TwoFactorCard({
       <Dialog
         open={setup !== null}
         onClose={requestCloseTotp}
-        dismissable={!totpDirty}
+        closeOnOutsideClick={!totpDirty}
         title={t("security.totp.setUpTitle")}
       >
         {setup && (
@@ -318,7 +318,7 @@ export function TwoFactorCard({
       <Dialog
         open={passkeyName !== null}
         onClose={requestClosePasskey}
-        dismissable={!passkeyDirty}
+        closeOnOutsideClick={!passkeyDirty}
         title={t("security.passkeys.addTitle")}
         width="sm"
       >

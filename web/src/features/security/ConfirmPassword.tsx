@@ -124,7 +124,7 @@ export function usePasswordConfirmation() {
       <Dialog
         open={pending !== null}
         onClose={requestCancel}
-        dismissable={!dirty}
+        closeOnOutsideClick={!dirty}
         title={t("security.confirm.title")}
         width="sm"
       >

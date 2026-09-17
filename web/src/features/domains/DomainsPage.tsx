@@ -147,7 +147,7 @@ export function DomainsPage() {
           ))}
         </ul>
       )}
-      <Dialog open={creating} onClose={requestClose} dismissable={!dirty} width="sm">
+      <Dialog open={creating} onClose={requestClose} closeOnOutsideClick={!dirty} width="sm">
         <CreateDomain onClose={() => setCreating(false)} onCancel={requestClose} onDirtyChange={setDirty} />
       </Dialog>
       <ConfirmDiscardDialog

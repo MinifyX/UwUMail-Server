@@ -410,7 +410,7 @@ function PurgeDialog({ person, open, onClose }: { person: Person; open: boolean;
       <Dialog
         open={open}
         onClose={requestClose}
-        dismissable={!dirty}
+        closeOnOutsideClick={!dirty}
         title={t("people.purge.title", { login: person.login })}
         width="sm"
       >

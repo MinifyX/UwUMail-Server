@@ -75,7 +75,7 @@ export function CreatePersonDialog({ open, onClose }: { open: boolean; onClose: 
   // The dialog only renders its content while open, so every opening starts with an empty form.
   return (
     <>
-      <Dialog open={open} onClose={requestClose} dismissable={!dirty} width="sm">
+      <Dialog open={open} onClose={requestClose} closeOnOutsideClick={!dirty} width="sm">
         <CreatePerson onClose={onClose} onCancel={requestClose} onDirtyChange={setDirty} />
       </Dialog>
       <ConfirmDiscardDialog

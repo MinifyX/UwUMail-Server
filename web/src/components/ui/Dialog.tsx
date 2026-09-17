@@ -11,12 +11,20 @@ interface DialogProps {
   children: ReactNode;
   width?: "sm" | "md" | "lg" | "viewer";
   className?: string;
-  /** False while a form inside has unsaved input: Escape and a backdrop click no longer close it, only an explicit action can. Defaults to true. */
-  dismissable?: boolean;
+  /** False while a form inside has unsaved input: a click beside the window leaves it open instead of closing it. Escape still counts as closing on purpose, like the X. Defaults to true. */
+  closeOnOutsideClick?: boolean;
 }
 
 /** Modal built on <dialog>: focus trapping, Escape and backdrop come from the browser. */
-export function Dialog({ open, onClose, title, children, width = "md", className, dismissable = true }: DialogProps) {
+export function Dialog({
+  open,
+  onClose,
+  title,
+  children,
+  width = "md",
+  className,
+  closeOnOutsideClick = true,
+}: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const { t } = useT();
 
@@ -32,10 +40,10 @@ export function Dialog({ open, onClose, title, children, width = "md", className
       ref={ref}
       onCancel={(event) => {
         event.preventDefault();
-        if (dismissable) onClose();
+        onClose();
       }}
       onClick={(event) => {
-        if (dismissable && event.target === ref.current) onClose();
+        if (closeOnOutsideClick && event.target === ref.current) onClose();
       }}
       className={clsx(
         "m-auto max-h-[min(720px,calc(100vh-48px))] w-[calc(100vw-48px)] overflow-hidden rounded-[22px] border border-line bg-surface p-0 text-ink shadow-float backdrop:bg-[#1c1420]/35 backdrop:backdrop-blur-[2px] open:animate-pop",
