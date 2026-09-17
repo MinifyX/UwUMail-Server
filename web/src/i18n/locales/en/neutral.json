@@ -1470,7 +1470,7 @@
       "forgetTitle": "Forget the gateway?",
       "forgetBody": "Your server then sends and receives mail itself again. Change the DNS records back too, or mail stops arriving.",
       "forgetConfirm": "Forget",
-      "fromConfig": "This pairing is set as gateway.code in the configuration. If you forget the gateway here, remove the code as well, or the server pairs again on the next start.",
+      "fromConfig": "This pairing is set as gateway.code in the configuration. If you forget the gateway here, remove the code as well. Otherwise the server tries to pair again on the next start with a new key, the gateway refuses it, and mail to other servers waits in the queue. To pair again later, run uwumail-gateway unpair on the gateway and use the new code.",
       "paired": "Paired, the tunnel is coming up.",
       "forgotten": "Gateway forgotten."
     }

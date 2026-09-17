@@ -1470,7 +1470,7 @@
       "forgetTitle": "Gateway vergessen?",
       "forgetBody": "Danach sendet und empfängt dein Server wieder selbst. Stell auch die DNS-Einträge zurück, sonst kommen keine Mails mehr an.",
       "forgetConfirm": "Vergessen",
-      "fromConfig": "Diese Kopplung steht als gateway.code in der Konfiguration. Wenn du das Gateway hier vergisst, entferne auch den Code, sonst koppelt der Server beim nächsten Start neu.",
+      "fromConfig": "Diese Kopplung steht als gateway.code in der Konfiguration. Wenn du das Gateway hier vergisst, entferne auch den Code. Sonst versucht der Server beim nächsten Start, sich mit einem neuen Schlüssel erneut zu koppeln, das Gateway lehnt ihn ab, und Mail an andere Server wartet in der Warteschlange. Zum späteren Neukoppeln auf dem Gateway uwumail-gateway unpair ausführen und den neuen Code verwenden.",
       "paired": "Gekoppelt, der Tunnel baut sich auf.",
       "forgotten": "Gateway vergessen."
     }
