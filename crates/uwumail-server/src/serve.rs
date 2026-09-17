@@ -124,6 +124,7 @@ pub async fn run(
         },
     );
     tasks.spawn(web.clone().run_health_checks(shutdown_rx.clone()));
+    tasks.spawn(web.clone().run_update_checks(shutdown_rx.clone()));
     if let Some(code) = web.open_setup().await {
         tracing::warn!("no admin yet: open https://{}/setup and enter the one-time code {code}", config.hostname);
     }

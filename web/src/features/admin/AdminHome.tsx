@@ -11,6 +11,7 @@ import { api, type Overview } from "@/lib/api";
 import { formatBytes, formatDuration } from "@/lib/format";
 import { usePrefs } from "@/state/prefs";
 import { HealthCard, useHealth } from "./HealthCard";
+import { UpdatesCard } from "./UpdatesCard";
 
 function Stat({
   icon: Icon,
@@ -120,6 +121,8 @@ export function AdminHome() {
         <KeyValue label={t("admin.server.uptime")} value={formatDuration(server.uptimeSeconds, t)} />
         {compact && <KeyValue label={t("admin.cards.queue")} value={queueNote} />}
       </Card>
+
+      <UpdatesCard />
     </div>
   );
 }

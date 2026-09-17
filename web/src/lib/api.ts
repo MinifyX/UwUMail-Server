@@ -327,6 +327,24 @@ export interface BayesTotals {
   ham: number;
 }
 
+export type UpdateChannel = "stable" | "beta";
+
+export interface UpdatesView {
+  build: { version: string; commit: string | null; release: boolean };
+  settings: { check: boolean; channel: UpdateChannel };
+  info: {
+    checkedAt: number | null;
+    error: string | null;
+    releases: { version: string; name: string; notes: string; publishedAt: string; url: string; prerelease: boolean }[];
+    behind: number | null;
+    commits: { sha: string; message: string }[];
+  };
+  image: string;
+  serverCommand: string;
+  gateway: { software: string } | null;
+  gatewayCommand: string | null;
+}
+
 export interface BackupReport {
   snapshot: string;
   uploaded: number;

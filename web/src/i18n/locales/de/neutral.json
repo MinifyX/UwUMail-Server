@@ -1463,6 +1463,27 @@
       "forgotten": "Gateway vergessen."
     }
   },
+  "updates": {
+    "title": "Updates",
+    "running": "Läuft: Version {{version}}",
+    "runningEdge": "Läuft: edge, Commit {{commit}} (Version {{version}})",
+    "notChecked": "Noch nicht nach Updates gesehen.",
+    "upToDate": "Aktuell, zuletzt geprüft {{time}}.",
+    "checkFailed": "Die Prüfung hat nicht geklappt: {{error}}",
+    "edgeBehind_one": "Auf main gibt es {{count}} neuen Commit:",
+    "edgeBehind_other": "Auf main gibt es {{count}} neue Commits:",
+    "onGitHub": "auf GitHub",
+    "howTo": "Zum Aktualisieren im Ordner mit der compose.yaml ausführen. Welches Image kommt, steht in UWUMAIL_VERSION in der .env; für diesen Kanal ist das {{image}}. Die Mails bleiben dabei, und der Server ist nach wenigen Sekunden wieder da.",
+    "serverCommand": "Server",
+    "gatewayCommand": "Gateway (auf dem VPS)",
+    "gatewayRunning": "Gateway: {{software}}",
+    "check": "Täglich nach Updates sehen",
+    "checkHint": "Fragt einmal am Tag bei GitHub nach, ob es eine neue Version gibt. Es wird nichts von selbst installiert.",
+    "channel": "Kanal",
+    "stable": "Stabil",
+    "beta": "Beta",
+    "checkNow": "Jetzt nachsehen"
+  },
   "backups": {
     "title": "Backups",
     "intro": "Der Server sichert Mails, Einstellungen, Kalender und Kontakte jede Nacht auf einen SFTP-Server, zum Beispiel ein NAS. Nach dem ersten Mal wird nur hochgeladen, was neu ist.",

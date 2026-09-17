@@ -239,8 +239,24 @@ outside; that reply also proves that incoming mail reaches the server.
 
 ## Updates
 
+`UWUMAIL_VERSION` in `.env` picks what the server follows:
+
+| Tag | |
+| --- | --- |
+| `latest` | stable releases |
+| `beta` | every release, stable or beta |
+| `edge` | every commit on `main` that passed CI |
+| `0.1.0` | exactly this version |
+
 ```bash
 docker compose pull && docker compose up -d
 ```
 
-Database migrations run automatically on start.
+Database migrations run automatically on start. Once a day the server asks
+GitHub what is newer on its channel (for `edge`: which commits came since) and
+shows it on the admin overview with the changes and the commands for the server
+and the gateway. Nothing updates by itself; the check can be switched off there.
+
+Releases come from tags: I add a section for the version to `CHANGELOG.md`,
+push the tag `v0.1.0` (or `v0.2.0-beta.1`), and CI builds the image with its
+tags and publishes a GitHub release with the notes and the gateway for amd64.

@@ -17,6 +17,7 @@ mod notices;
 mod routes;
 mod session;
 pub mod settings;
+mod updates;
 mod webauthn;
 
 use std::collections::HashMap;
@@ -235,6 +236,8 @@ impl Web {
             .route("/api/admin/overview", get(routes::admin::overview))
             .route("/api/admin/health", get(routes::admin::health))
             .route("/api/admin/health/check", post(routes::admin::check_health))
+            .route("/api/admin/updates", get(routes::updates::show).put(routes::updates::save))
+            .route("/api/admin/updates/check", post(routes::updates::check))
             .route("/api/admin/backups", get(routes::backups::show).put(routes::backups::save))
             .route("/api/admin/backups/test", post(routes::backups::test))
             .route("/api/admin/backups/forget-host-key", post(routes::backups::forget_host_key))

@@ -11,6 +11,7 @@ import type {
   BackupSnapshot,
   BackupsView,
   ForwardAddress,
+  UpdatesView,
   SpamLimits,
   SpamLimitsView,
   AdminSpamView,
@@ -297,6 +298,32 @@ const detail = (domain: MockDomain): DomainDetail => ({
 });
 
 const mockSendAs: Record<string, string[]> = {};
+
+const mockUpdates: UpdatesView = {
+  build: { version: "0.1.0", commit: "3eedf6a1c0ffee", release: true },
+  settings: { check: true, channel: "stable" },
+  info: {
+    checkedAt: Math.floor(Date.now() / 1000) - 3 * 3600,
+    error: null,
+    releases: [
+      {
+        version: "0.1.1",
+        name: "UwUMail Server 0.1.1",
+        notes: "- Backups: restore single mailboxes in the portal\n- IMAP: faster SEARCH in big folders",
+        publishedAt: "2026-10-02T09:00:00Z",
+        url: "https://github.com/example/releases/v0.1.1",
+        prerelease: false,
+      },
+    ],
+    behind: null,
+    commits: [],
+  },
+  image: "ghcr.io/minifyx/uwumail-server:latest",
+  serverCommand: "docker compose pull && docker compose up -d",
+  gateway: { software: "uwumail-gateway 0.1.0" },
+  gatewayCommand:
+    "cd /tmp && curl -fsSLO https://github.com/example/releases/download/v0.1.1/uwumail-gateway-linux-amd64.tar.gz && sudo bash uwumail-gateway/install.sh uwumail-gateway/uwumail-gateway",
+};
 
 const mockBackups: BackupsView = {
   enabled: true,
@@ -1986,6 +2013,23 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["POST", /^\/api\/admin\/people\/([^/]+)\/password-link$/, () => [200, link()]],
+  ["GET", /^\/api\/admin\/updates$/, () => [200, mockUpdates]],
+  [
+    "PUT",
+    /^\/api\/admin\/updates$/,
+    (body) => {
+      mockUpdates.settings = body as UpdatesView["settings"];
+      return [200, mockUpdates];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/updates\/check$/,
+    () => {
+      mockUpdates.info.checkedAt = Math.floor(Date.now() / 1000);
+      return [200, mockUpdates];
+    },
+  ],
   ["GET", /^\/api\/admin\/backups$/, () => [200, mockBackups]],
   [
     "PUT",
