@@ -994,9 +994,32 @@ function gatewayView(): GatewayView {
       addresses: ["203.0.113.10", "2001:db8::10"],
       services: ["smtp", "submission", "submissions", "http", "https"],
       outboundPorts: [25, 465, 587],
-      software: "uwumail-gateway 0.1.0",
+      software: "uwumail-gateway 0.2.0",
       connectedSince: at,
       downSince: null,
+      // A gateway with something to say: updates waiting, a restart due, and the address of the
+      // server it must never lock out.
+      machine: {
+        system: {
+          name: "Ubuntu 26.04.1 LTS",
+          updates: 12,
+          securityUpdates: 3,
+          rebootRequired: true,
+          automaticSecurity: true,
+          newRelease: null,
+          command: "apt-get update && apt-get -y dist-upgrade && reboot",
+        },
+        protection: {
+          firewall: "ufw",
+          firewallActive: true,
+          fail2ban: true,
+          banned: 4,
+          jails: ["sshd", "recidive", "uwumail-server"],
+          fromServer: 1,
+        },
+        trusted: ["203.0.113.77"],
+        checkedAt: at,
+      },
     };
   }
   return gateway;
