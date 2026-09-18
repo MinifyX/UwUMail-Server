@@ -106,6 +106,8 @@ export function PortalShell({ session, children }: { session: Session; children:
   const path = usePath();
   const logout = useLogout();
   const [drawer, setDrawer] = useState(false);
+  /** Counts up whenever the phone menu opens, which makes Nyu hop once at the top of it. */
+  const [hops, setHops] = useState(0);
   const [appearance, setAppearance] = useState(false);
   const isAdmin = session.account.role === "admin";
   const pro = usePrefs((s) => s.mode) === "pro";
@@ -121,7 +123,7 @@ export function PortalShell({ session, children }: { session: Session; children:
     <nav aria-label={t("nav.label")} className="flex h-full flex-col px-3 pt-5 pb-3">
       <div className="flex items-center justify-between px-3">
         <Link to="/account" onClick={() => setDrawer(false)} className="rounded-full">
-          <Wordmark className="text-lg" />
+          <Wordmark className="text-lg" hop={hops} />
         </Link>
         <IconButton icon={X} label={t("nav.closeMenu")} className="lg:hidden" onClick={() => setDrawer(false)} />
       </div>
@@ -236,11 +238,21 @@ export function PortalShell({ session, children }: { session: Session; children:
       )}
 
       <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-hairline bg-canvas/85 px-4 backdrop-blur sm:px-6">
-        <IconButton icon={MenuIcon} label={t("nav.openMenu")} className="lg:hidden" onClick={() => setDrawer(true)} />
+        <IconButton
+          icon={MenuIcon}
+          label={t("nav.openMenu")}
+          className="lg:hidden"
+          onClick={() => {
+            setDrawer(true);
+            setHops((count) => count + 1);
+          }}
+        />
         <Link to="/account" className="rounded-full lg:hidden">
           <Wordmark className="text-base" />
         </Link>
-        <div className="ml-auto">
+        {/* On a phone the switch is the last thing that fits, and the same setting sits in the
+            appearance dialog, which the menu at the foot of the drawer opens. */}
+        <div className="ml-auto max-sm:hidden">
           <ModeSwitch />
         </div>
       </header>

@@ -97,7 +97,7 @@ export function LogsPage() {
       {unavailable ? (
         <EmptyState compact scene="loadError" title={t("logs.unavailable")} />
       ) : (
-        <div className="max-h-[calc(100vh-280px)] min-h-[320px] overflow-auto rounded-card border border-hairline bg-surface p-3 font-mono text-[12px] leading-5">
+        <div className="max-h-[calc(100svh-280px)] min-h-[320px] overflow-auto rounded-card border border-hairline bg-surface p-3 font-mono text-[12px] leading-5">
           {lines.length === 0 ? (
             <p className="p-4 text-center font-sans text-muted">{t("logs.empty")}</p>
           ) : (

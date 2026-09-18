@@ -10,6 +10,7 @@ import { Pill } from "@/components/ui/Pill";
 import { useT } from "@/i18n";
 import type { Person, PersonStatus, Session } from "@/lib/api";
 import { formatDate } from "@/lib/format";
+import { usePhone } from "@/lib/media";
 import { Link } from "@/lib/router";
 import { usePrefs } from "@/state/prefs";
 import { CreatePersonDialog } from "./CreatePersonDialog";
@@ -35,6 +36,7 @@ export function PeoplePage({ session }: { session: Session }) {
   const { t, i18n } = useT();
   const mode = usePrefs((s) => s.mode);
   const people = usePeople();
+  const phone = usePhone();
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
@@ -54,6 +56,10 @@ export function PeoplePage({ session }: { session: Session }) {
   const visible = people.data.filter((person) => matches(person, filter, search.trim()));
   const onlyMe = people.data.length === 1 && people.data[0]?.login === session.account.login;
   const pro = mode === "pro";
+  // The table is 720 pixels wide and would scroll inside the page on a phone, which feels exactly
+  // like the page itself sliding away. Pro mode keeps the cards there; nothing is lost, only laid
+  // out differently.
+  const table = pro && !phone;
 
   return (
     <div className="flex flex-col gap-5">
@@ -113,7 +119,7 @@ export function PeoplePage({ session }: { session: Session }) {
               title={t("people.noResults.title")}
               body={t("people.noResults.body")}
             />
-          ) : pro ? (
+          ) : table ? (
             <div className="overflow-x-auto rounded-card border border-hairline bg-surface">
               <table className="w-full min-w-[720px] text-left text-sm">
                 <thead className="border-b border-hairline text-[12px] font-semibold text-muted">

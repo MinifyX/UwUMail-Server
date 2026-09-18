@@ -246,7 +246,11 @@ export function WordListCard({ admin }: { admin: boolean }) {
                 >
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold">{source.url}</span>
-                    <span className={`block truncate text-[12px] ${source.error ? "text-danger" : "text-muted"}`}>
+                    {/* A fetch error is the one line here worth reading in full, so on a phone it
+                        gets a second line instead of ending in an ellipsis. */}
+                    <span
+                      className={`block truncate text-[12px] max-sm:line-clamp-2 max-sm:whitespace-normal ${source.error ? "text-danger" : "text-muted"}`}
+                    >
                       {[
                         admin ? scopeName(source) : null,
                         source.subjectOnly ? t("spam.words.subjectOnlyShort") : null,

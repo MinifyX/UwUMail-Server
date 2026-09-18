@@ -46,11 +46,13 @@ export function Dialog({
         if (closeOnOutsideClick && event.target === ref.current) onClose();
       }}
       className={clsx(
-        "m-auto max-h-[min(720px,calc(100vh-48px))] w-[calc(100vw-48px)] overflow-hidden rounded-[22px] border border-line bg-surface p-0 text-ink shadow-float backdrop:bg-[#1c1420]/35 backdrop:backdrop-blur-[2px] open:animate-pop",
+        // svh, not vh: on a phone `vh` is the height with the address bar hidden, so a dialog sized
+        // by it reaches below the visible area and takes its buttons with it.
+        "m-auto max-h-[min(720px,calc(100svh-48px))] w-[calc(100vw-48px)] overflow-hidden rounded-[22px] border border-line bg-surface p-0 text-ink shadow-float backdrop:bg-[#1c1420]/35 backdrop:backdrop-blur-[2px] open:animate-pop",
         width === "sm" && "max-w-[420px]",
         width === "md" && "max-w-[560px]",
         width === "lg" && "max-w-[860px]",
-        width === "viewer" && "h-[calc(100vh-48px)] max-h-none max-w-[1200px]",
+        width === "viewer" && "h-[calc(100svh-48px)] max-h-none max-w-[1200px]",
         // Phones: everything but small confirmations fills the screen.
         width !== "sm" &&
           "max-[699px]:h-full max-[699px]:max-h-none max-[699px]:w-full max-[699px]:max-w-none max-[699px]:rounded-none max-[699px]:border-0",
