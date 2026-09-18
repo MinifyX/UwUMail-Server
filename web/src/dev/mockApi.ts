@@ -1258,6 +1258,26 @@ function serverCheck(blocklists: boolean): ServerCheck {
 /** What the spam filter decided, the four kinds that leave no other trace and one that arrived. */
 const spamLogEntries: SpamLogEntry[] = [
   {
+    id: 413,
+    at: now - 300,
+    smtpId: "v1r2u5",
+    messageId: "<invoice-88@partner.example>",
+    action: "virus",
+    envelopeFrom: "buchhaltung@partner.example",
+    headerFrom: "Buchhaltung <buchhaltung@partner.example>",
+    subject: "Rechnung 2026-0912",
+    clientIp: "203.0.113.9",
+    helo: "mail.partner.example",
+    reverseName: "mail.partner.example",
+    size: 244_000,
+    // A virus is not a matter of points, so the name rides along as a rule of its own.
+    score: null,
+    hits: [{ rule: "VIRUS", points: 0, detail: "Win.Downloader.Agent-9876543-0" }],
+    auth: "Authentication-Results: mail.uwu.example; spf=pass; dkim=pass; dmarc=pass",
+    recipients: [{ address: "nyu@uwu.example", action: "virus", mailbox: null }],
+    correctedToJunk: null,
+  },
+  {
     id: 412,
     at: now - 600,
     smtpId: "k3n9x2",
