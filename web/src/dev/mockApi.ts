@@ -321,7 +321,7 @@ const mockSendAs: Record<string, string[]> = {};
 
 const mockUpdates: UpdatesView = {
   build: { version: "0.1.0", commit: "3eedf6a1c0ffee", release: true },
-  settings: { check: true, channel: "stable", auto: false, weekday: null, hour: 4, minute: 0, backupFirst: true },
+  settings: { check: true, channel: "stable" },
   info: {
     checkedAt: Math.floor(Date.now() / 1000) - 3 * 3600,
     error: null,
@@ -339,52 +339,11 @@ const mockUpdates: UpdatesView = {
     commits: [],
   },
   image: "ghcr.io/minifyx/uwumail-server:latest",
-  serverCommand: "docker compose pull && docker compose up -d",
+  serverCommand: "sudo bash update.sh",
   gateway: { software: "uwumail-gateway 0.1.0" },
   gatewayCommand:
     "cd /tmp && curl -fsSLO https://github.com/example/releases/download/v0.1.1/uwumail-gateway-linux-amd64.tar.gz && sudo bash uwumail-gateway/install.sh uwumail-gateway/uwumail-gateway",
-  canInstall: true,
-  target: "0.1.1",
-  status: {
-    state: "idle",
-    by: "",
-    from: "",
-    to: null,
-    job: null,
-    backup: null,
-    startedAt: null,
-    finishedAt: null,
-    error: null,
-  },
-  log: "",
-  backupReady: true,
-  nearBackup: false,
 };
-
-/**
- * An update in the mock walks through its states on the clock, so the page can be seen doing what
- * it does on a real server: back up, pull, restart, come back as the new version.
- */
-function stepUpdate(): UpdatesView {
-  const status = mockUpdates.status;
-  if (status.state !== "backup" && status.state !== "running") return mockUpdates;
-  const since = Math.floor(Date.now() / 1000) - (status.startedAt ?? 0);
-  if (status.state === "backup" && since >= 4) {
-    status.state = "running";
-    status.backup = status.backup === "skipped" ? "skipped" : "done";
-    status.job = "mock";
-    mockUpdates.log = "== docker compose pull\n0.1.1: Pulling from minifyx/uwumail-server\n";
-  }
-  if (status.state === "running" && since >= 10) {
-    status.state = "done";
-    status.finishedAt = Math.floor(Date.now() / 1000);
-    mockUpdates.build = { ...mockUpdates.build, version: status.to ?? mockUpdates.build.version };
-    mockUpdates.info = { ...mockUpdates.info, releases: [] };
-    mockUpdates.target = null;
-    mockUpdates.log += "== docker compose up -d\nthe new version answers its health check\n";
-  }
-  return mockUpdates;
-}
 
 const mockBackups: BackupsView = {
   enabled: true,
@@ -2544,7 +2503,7 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["POST", /^\/api\/admin\/people\/([^/]+)\/password-link$/, () => [200, link()]],
-  ["GET", /^\/api\/admin\/updates$/, () => [200, stepUpdate()]],
+  ["GET", /^\/api\/admin\/updates$/, () => [200, mockUpdates]],
   [
     "PUT",
     /^\/api\/admin\/updates$/,
@@ -2558,35 +2517,6 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/admin\/updates\/check$/,
     () => {
       mockUpdates.info.checkedAt = Math.floor(Date.now() / 1000);
-      return [200, mockUpdates];
-    },
-  ],
-  [
-    "POST",
-    /^\/api\/admin\/updates\/run$/,
-    (body) => {
-      const backup = (body as { backup?: boolean }).backup !== false;
-      mockUpdates.status = {
-        state: backup ? "backup" : "running",
-        by: "hand",
-        from: mockUpdates.build.version,
-        to: mockUpdates.target,
-        job: backup ? null : "mock",
-        backup: backup ? null : "skipped",
-        startedAt: Math.floor(Date.now() / 1000),
-        finishedAt: null,
-        error: null,
-      };
-      mockUpdates.log = "";
-      return [200, mockUpdates];
-    },
-  ],
-  [
-    "DELETE",
-    /^\/api\/admin\/updates\/run$/,
-    () => {
-      mockUpdates.status = { ...mockUpdates.status, state: "idle", error: null };
-      mockUpdates.log = "";
       return [200, mockUpdates];
     },
   ],

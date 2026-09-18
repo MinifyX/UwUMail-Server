@@ -1,8 +1,8 @@
-import { ArrowRight, Download } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Loading } from "@/components/StatusViews";
-import { busy, useUpdates } from "@/features/updates/queries";
+import { useUpdates } from "@/features/updates/queries";
 import { useT } from "@/i18n";
 import { formatDateTime } from "@/lib/format";
 import { navigate } from "@/lib/router";
@@ -26,12 +26,11 @@ export function UpdatesCard() {
   if (query.isError) return null;
 
   const view = query.data;
-  const { build, info, status } = view;
+  const { build, info } = view;
   const edge = !build.release;
   const behind = info.behind ?? 0;
   const newest = info.releases[0];
   const available = edge ? behind > 0 : Boolean(newest);
-  const running = busy(status);
 
   return (
     <Card
@@ -51,25 +50,15 @@ export function UpdatesCard() {
             })}
           </p>
           <p className="text-[13px] text-muted">
-            {running
-              ? t("updates.run.states." + status.state, {
-                  version: status.to ?? t("updates.run.theNewest"),
-                  from: status.from,
-                })
-              : available
-                ? edge
-                  ? t("updates.edgeBehind", { count: behind })
-                  : t("updates.newer", { version: newest?.version })
-                : info.checkedAt
-                  ? t("updates.upToDate", { time: formatDateTime(info.checkedAt, i18n.language) })
-                  : t("updates.notChecked")}
+            {available
+              ? edge
+                ? t("updates.edgeBehind", { count: behind })
+                : t("updates.newer", { version: newest?.version })
+              : info.checkedAt
+                ? t("updates.upToDate", { time: formatDateTime(info.checkedAt, i18n.language) })
+                : t("updates.notChecked")}
           </p>
         </div>
-        {available && !running && (
-          <Button variant="primary" size="sm" icon={Download} onClick={() => navigate("/admin/updates")}>
-            {t("updates.install.now")}
-          </Button>
-        )}
       </div>
     </Card>
   );

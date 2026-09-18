@@ -115,18 +115,6 @@
     }
   },
   "updates": {
-    "intro": "Welche Version läuft, was es Neues gibt, und der Knopf dafür. Nyu packt vorher die Sachen zusammen (=^･ω･^=)",
-    "install": {
-      "backupFirst": "Nyu macht vorher ein Backup. Klappt das nicht, rührt sie nichts an."
-    },
-    "run": {
-      "reconnecting": "Kurz weg, gleich wieder da. Nyu hält die Tür auf …",
-      "states": {
-        "backup": "Nyu packt erst mal alles ein …",
-        "running": "Nyu holt {{version}} …",
-        "done": "Fertig, jetzt läuft {{version}} (=^･ω･^=)",
-        "rolledBack": "Die neue Version wollte nicht aufwachen, Nyu hat {{from}} zurückgeholt."
-      }
-    }
+    "intro": "Welche Version läuft, was es Neues gibt, und der Knopf dafür. Nyu packt vorher die Sachen zusammen (=^･ω･^=)"
   }
 }
