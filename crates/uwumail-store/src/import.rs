@@ -65,6 +65,7 @@ mod tests {
             password: None,
             role: Role::User,
             quota_bytes: 0,
+            protocols: None,
         };
         let mini = store.create_account(new).await.unwrap().id;
         assert_eq!(store.import_progress(mini, "old.example.de", "INBOX").await.unwrap(), None);

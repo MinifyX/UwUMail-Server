@@ -154,6 +154,7 @@ pub async fn account(config: &Config, store: &Store, command: AccountCommand) ->
                     password: Some(password.clone()),
                     role: if admin { Role::Admin } else { Role::User },
                     quota_bytes: quota_mb.max(0) * 1024 * 1024,
+                    protocols: None,
                 })
                 .await?;
             audit(
@@ -265,6 +266,7 @@ pub async fn account(config: &Config, store: &Store, command: AccountCommand) ->
             match account.role {
                 Role::Admin => println!("{} may manage the whole server now", account.login),
                 Role::User => println!("{} is no admin anymore", account.login),
+                Role::Service => println!("{} is a service and never reaches the portal", account.login),
             }
         }
         AccountCommand::SendAs { address, domains } => {

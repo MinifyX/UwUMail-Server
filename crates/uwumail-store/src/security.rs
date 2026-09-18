@@ -17,7 +17,7 @@ const ALPHABET: &[u8; 31] = b"abcdefghjkmnpqrstuvwxyz23456789";
 const APP_PASSWORD_CHARS: usize = 16;
 const RECOVERY_CODE_CHARS: usize = 10;
 const RECOVERY_CODES: usize = 10;
-const MAX_APP_PASSWORDS: i64 = 50;
+pub(crate) const MAX_APP_PASSWORDS: i64 = 50;
 const TOTP_PERIOD: i64 = 30;
 const EVENT_RETENTION_SECS: i64 = 180 * 24 * 3600;
 
@@ -70,8 +70,24 @@ pub enum AppScope {
     Dav,
 }
 
+/// The uses an app password of this account can sensibly have: only protocols the account may
+/// actually use. A service with nothing but SMTP gets a password that can only send.
+pub(crate) fn scopes_for(protocols: crate::Protocols) -> Vec<AppScope> {
+    let mut scopes = Vec::new();
+    if protocols.imap || protocols.jmap {
+        scopes.push(AppScope::Mail);
+    }
+    if protocols.smtp {
+        scopes.push(AppScope::Smtp);
+    }
+    if protocols.caldav || protocols.carddav {
+        scopes.push(AppScope::Dav);
+    }
+    scopes
+}
+
 impl AppScope {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             AppScope::Mail => "mail",
             AppScope::Smtp => "smtp",
@@ -1138,6 +1154,7 @@ mod tests {
             password: None,
             role: Role::User,
             quota_bytes: 0,
+            protocols: None,
         };
         let mini = store.create_account(new).await.unwrap();
         let bcrypt = |secret: &str| {
@@ -1195,6 +1212,7 @@ mod tests {
                 password: Some("Seifenblase-Wanderweg-17".into()),
                 role: Role::User,
                 quota_bytes: 0,
+                protocols: None,
             })
             .await
             .unwrap()

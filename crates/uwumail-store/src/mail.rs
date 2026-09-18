@@ -424,6 +424,7 @@ mod tests {
                 password: None,
                 role: Role::User,
                 quota_bytes: 0,
+                protocols: None,
             })
             .await
             .unwrap()
@@ -507,6 +508,7 @@ mod tests {
                 password: None,
                 role: Role::User,
                 quota_bytes: 200,
+                protocols: None,
             })
             .await
             .unwrap();

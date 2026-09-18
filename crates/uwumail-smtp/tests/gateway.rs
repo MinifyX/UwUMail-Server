@@ -43,6 +43,7 @@ async fn start_server(domain: &str, user: &str, routes: &[(&str, SocketAddr)]) -
             password: None,
             role: Role::User,
             quota_bytes: 0,
+            protocols: None,
         })
         .await
         .unwrap();

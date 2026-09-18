@@ -36,6 +36,7 @@ async fn setup() -> (Router, tempfile::TempDir) {
                 password: Some("katzenpfote-123".into()),
                 role,
                 quota_bytes: 0,
+                protocols: None,
             })
             .await
             .unwrap();

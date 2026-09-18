@@ -50,6 +50,7 @@ impl Portal {
                 password: Some("katzenpfote-123".into()),
                 role: Role::Admin,
                 quota_bytes: 0,
+                protocols: None,
             })
             .await
             .unwrap();

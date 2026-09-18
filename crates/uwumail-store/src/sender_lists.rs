@@ -447,6 +447,7 @@ mod tests {
             password: None,
             role: Role::User,
             quota_bytes: 0,
+            protocols: None,
         };
         let leni = store.create_account(account).await.unwrap().id;
         let add = |scope, list, value: &str| NewSenderListEntry {

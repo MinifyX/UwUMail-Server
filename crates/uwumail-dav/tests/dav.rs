@@ -29,6 +29,7 @@ async fn setup() -> (Router, tempfile::TempDir) {
                 password: Some(PASSWORD.into()),
                 role: Role::User,
                 quota_bytes: 0,
+                protocols: None,
             })
             .await
             .unwrap();

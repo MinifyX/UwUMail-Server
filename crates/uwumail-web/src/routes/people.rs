@@ -125,6 +125,7 @@ pub async fn create(
             password: new.password,
             role: if new.admin { Role::Admin } else { Role::User },
             quota_bytes: new.quota_bytes,
+            protocols: None,
         })
         .await?;
     let link = if invite {
@@ -180,6 +181,7 @@ pub async fn update(
                 role: changes.admin.map(|admin| if admin { Role::Admin } else { Role::User }),
                 quota_bytes: changes.quota_bytes,
                 disabled: changes.disabled,
+                ..Default::default()
             },
         )
         .await?;

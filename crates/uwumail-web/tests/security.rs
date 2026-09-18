@@ -86,6 +86,7 @@ async fn second_factors_app_passwords_and_notices() {
             password: Some(PASSWORD.into()),
             role: Role::Admin,
             quota_bytes: 0,
+            protocols: None,
         })
         .await
         .unwrap();

@@ -335,6 +335,7 @@ mod tests {
                 password: None,
                 role: Role::User,
                 quota_bytes: 0,
+                protocols: None,
             })
             .await
             .unwrap()

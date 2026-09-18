@@ -36,6 +36,7 @@ async fn backup_and_restore_over_sftp() {
         password: None,
         role: Role::User,
         quota_bytes: 0,
+        protocols: None,
     };
     let mini = store.create_account(new).await.unwrap().id;
     let raw = b"From: nyu@example.org\r\nSubject: Hallo\r\n\r\nHallo\r\n".to_vec();

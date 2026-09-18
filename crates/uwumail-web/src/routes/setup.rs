@@ -278,6 +278,7 @@ pub async fn complete(
             password: Some(body.password.clone()),
             role: Role::Admin,
             quota_bytes: 0,
+            protocols: None,
         })
         .await?;
     web.close_setup();

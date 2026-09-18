@@ -57,6 +57,7 @@ async fn forwarding_needs_confirmation_elsewhere_and_away_messages_need_text() {
                 password: Some("katzenpfote-123".into()),
                 role,
                 quota_bytes: 0,
+                protocols: None,
             })
             .await
             .unwrap();

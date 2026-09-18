@@ -7,10 +7,61 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::directory::{ACCOUNT_COLUMN_COUNT, ACCOUNT_COLUMNS, account_from_row, account_id, login_key};
-use crate::{Account, Result, Role, Store, StoreError, now, password, random_bytes};
+use crate::{Account, Protocols, Result, Role, Store, StoreError, now, password, random_bytes};
 
 /// People stay in the trash this long before they are removed for good.
 pub const TRASH_RETENTION_SECS: i64 = 30 * 24 * 3600;
+
+/// Checks where a service's mail may be sent instead. Empty clears it; anything else has to be an
+/// address of this server, and not the service's own.
+fn redirect_target(tx: &Connection, account: &Account, wanted: &str) -> Result<String> {
+    let wanted = wanted.trim();
+    if wanted.is_empty() {
+        return Ok(String::new());
+    }
+    let address = crate::address::normalize_address(wanted)
+        .map(|(local, domain)| format!("{local}@{domain}"))
+        .map_err(|_| StoreError::Invalid(format!("{wanted} is not an address")))?;
+    if address == account.login {
+        return Err(StoreError::Invalid("the redirect would send the mail back to the service itself".into()));
+    }
+    match crate::directory::resolve(tx, &address)? {
+        Some(_) => Ok(address),
+        None => Err(StoreError::Invalid(format!("{address} is not an address of this server"))),
+    }
+}
+
+/// What becoming a service does to the way in: the portal password turns into an app password that
+/// does not expire, and the second factors, passkeys and sessions of a person go.
+fn become_service(tx: &Connection, account: &Account) -> Result<()> {
+    let hash: Option<String> =
+        tx.query_row("SELECT password_hash FROM accounts WHERE id = ?1", [account.id], |row| row.get(0))?;
+    if let Some(hash) = hash.filter(|hash| !hash.trim().is_empty()) {
+        let scopes = crate::security::scopes_for(account.protocols);
+        if !scopes.is_empty() {
+            let names = scopes.iter().map(|scope| scope.as_str()).collect::<Vec<_>>().join(" ");
+            let count: i64 =
+                tx.query_row("SELECT count(*) FROM app_passwords WHERE account_id = ?1", [account.id], |row| {
+                    row.get(0)
+                })?;
+            if count < crate::security::MAX_APP_PASSWORDS {
+                // Never matches a typed code: only the hash taken over is checked for this one.
+                let unmatchable = crate::random_bytes::<32>().to_vec();
+                tx.execute(
+                    "INSERT INTO app_passwords (account_id, name, secret_hash, scopes, created_at, imported_hash)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![account.id, "Passwort von vorher", unmatchable, names, now(), hash],
+                )?;
+            }
+        }
+    }
+    tx.execute("UPDATE accounts SET password_hash = NULL WHERE id = ?1", [account.id])?;
+    for table in ["web_sessions", "totp_secrets", "recovery_codes", "passkeys"] {
+        tx.execute(&format!("DELETE FROM {table} WHERE account_id = ?1"), [account.id])?;
+    }
+    tx.execute("UPDATE accounts SET credentials_changed_at = ?1 WHERE id = ?2", params![now(), account.id])?;
+    Ok(())
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct AccountUpdate {
@@ -19,6 +70,11 @@ pub struct AccountUpdate {
     /// 0 means unlimited.
     pub quota_bytes: Option<i64>,
     pub disabled: Option<bool>,
+    /// Which protocols the account may use. Only a service is ever set up switch by switch.
+    pub protocols: Option<Protocols>,
+    /// Where mail goes for a service without a mailbox. An empty string means: refuse it at the
+    /// door. The address has to belong to this server.
+    pub redirect_to: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -144,23 +200,62 @@ impl Store {
             if let Some(disabled) = update.disabled {
                 after.disabled = disabled;
             }
+            if let Some(protocols) = update.protocols {
+                after.protocols = protocols;
+            }
+            if let Some(target) = &update.redirect_to {
+                after.redirect_to = redirect_target(tx, &after, target)?;
+            }
+            // A service is never an admin: it cannot reach the portal at all.
+            if after.role == Role::Service && before.role == Role::Admin {
+                after.role = Role::Service;
+            }
             keep_an_admin(tx, &before, active_admin(&after))?;
             tx.execute(
-                "UPDATE accounts SET display_name = ?1, role = ?2, quota_bytes = ?3, disabled = ?4 WHERE id = ?5",
+                "UPDATE accounts SET display_name = ?1, role = ?2, kind = ?3, quota_bytes = ?4, disabled = ?5,
+                        smtp_enabled = ?6, imap_enabled = ?7, jmap_enabled = ?8, caldav_enabled = ?9,
+                        carddav_enabled = ?10, redirect_to = ?11
+                 WHERE id = ?12",
                 params![
                     after.display_name,
                     if after.role == Role::Admin { "admin" } else { "user" },
+                    if after.role == Role::Service { "service" } else { "person" },
                     after.quota_bytes,
                     after.disabled,
+                    after.protocols.smtp,
+                    after.protocols.imap,
+                    after.protocols.jmap,
+                    after.protocols.caldav,
+                    after.protocols.carddav,
+                    after.redirect_to,
                     after.id
                 ],
             )?;
+            // Switching a protocol back on for an account that never had folders gives it some.
+            if after.has_mailbox() {
+                let mailboxes: i64 =
+                    tx.query_row("SELECT count(*) FROM mailboxes WHERE account_id = ?1", [after.id], |row| row.get(0))?;
+                if mailboxes == 0 {
+                    crate::mail::create_default_mailboxes(tx, after.id)?;
+                }
+            }
             if after.disabled && !before.disabled {
                 tx.execute("DELETE FROM web_sessions WHERE account_id = ?1", [after.id])?;
+            }
+            // Becoming a service: the password it had becomes an app password that does not expire,
+            // and everything that only makes sense for a person in front of a browser goes.
+            if after.role == Role::Service && before.role != Role::Service {
+                become_service(tx, &after)?;
             }
             Ok(after)
         })
         .await
+    }
+
+    /// Turns a service back into a person, or a person into a service. The mail stays either way;
+    /// see [`AccountUpdate`] for what else changes.
+    pub async fn set_account_role(&self, login: &str, role: Role) -> Result<Account> {
+        self.update_account(login, AccountUpdate { role: Some(role), ..Default::default() }).await
     }
 
     /// Moves a person to the trash: logged out everywhere, no more mail, addresses reserved.
@@ -414,8 +509,8 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::NewAccount;
     use crate::test_support::store;
+    use crate::{NewAccount, Protocols};
 
     async fn people(store: &Store) -> (Account, Account) {
         store.create_domain("example.de").await.unwrap();
@@ -425,10 +520,80 @@ mod tests {
             password: None,
             role,
             quota_bytes: 0,
+            protocols: None,
         };
         let nyu = store.create_account(new("nyu@example.de", Role::Admin)).await.unwrap();
         let leni = store.create_account(new("leni@example.de", Role::User)).await.unwrap();
         (nyu, leni)
+    }
+
+    #[tokio::test]
+    async fn a_person_becomes_a_service_and_comes_back() {
+        let (store, _dir) = store().await;
+        let (_, leni) = people(&store).await;
+        store
+            .create_account(NewAccount {
+                address: "backup@example.de".into(),
+                display_name: "Backup".into(),
+                password: Some("katzenpfote-123".into()),
+                role: Role::User,
+                quota_bytes: 0,
+                protocols: None,
+            })
+            .await
+            .unwrap();
+
+        // Becoming a service: the password it had keeps working as an app password, the portal
+        // does not, and the mail stays where it is.
+        let service = store.set_account_role("backup@example.de", Role::Service).await.unwrap();
+        assert!(service.is_service() && !service.can_use_portal() && service.can_log_in());
+        assert!(service.has_mailbox(), "IMAP and JMAP stay on until someone switches them off");
+        let passwords = store.app_passwords(service.id).await.unwrap();
+        assert_eq!(passwords.len(), 1, "the old password lives on as one");
+        assert!(passwords[0].expires_at.is_none(), "and it does not expire");
+        assert!(
+            store.authenticate("backup@example.de", "katzenpfote-123").await.unwrap().is_none(),
+            "the portal password is gone"
+        );
+
+        // Switching everything but sending off takes the mailbox away, and its mail may go on to
+        // an address of this server -- but only to one that exists here.
+        let only_smtp = AccountUpdate {
+            protocols: Some(Protocols { smtp: true, imap: false, jmap: false, caldav: false, carddav: false }),
+            redirect_to: Some("leni@example.de".into()),
+            ..Default::default()
+        };
+        let sender = store.update_account("backup@example.de", only_smtp).await.unwrap();
+        assert!(!sender.has_mailbox());
+        assert_eq!(sender.redirect_to, leni.login);
+        let elsewhere = AccountUpdate { redirect_to: Some("someone@other.example".into()), ..Default::default() };
+        assert!(store.update_account("backup@example.de", elsewhere).await.is_err(), "no address of this server");
+        let itself = AccountUpdate { redirect_to: Some("backup@example.de".into()), ..Default::default() };
+        assert!(store.update_account("backup@example.de", itself).await.is_err(), "not back to itself");
+
+        // And back: a person again, with the folders it had.
+        let person = store.set_account_role("backup@example.de", Role::User).await.unwrap();
+        assert!(!person.is_service() && person.can_use_portal());
+    }
+
+    #[tokio::test]
+    async fn a_service_starts_without_calendars_and_without_a_password() {
+        let (store, _dir) = store().await;
+        people(&store).await;
+        let service = store
+            .create_account(NewAccount {
+                address: "monitoring@example.de".into(),
+                display_name: "Monitoring".into(),
+                password: None,
+                role: Role::Service,
+                quota_bytes: 0,
+                protocols: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(service.protocols, Protocols::for_service());
+        assert!(!service.protocols.caldav && !service.protocols.carddav, "calendars and contacts stay off");
+        assert!(service.is_service() && !service.can_use_portal());
     }
 
     #[tokio::test]

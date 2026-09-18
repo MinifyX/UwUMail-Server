@@ -58,7 +58,7 @@ pub use dav::{
     DavCollectionUpdate, DavKind, DavPrecondition, DavResource, DavResourceInfo, DavWrite, DavWriteOutcome,
     NewDavCollection, dav_etag,
 };
-pub use directory::{Account, DkimKey, DkimKeyAlgorithm, DkimKeyState, Domain, NewAccount, Role};
+pub use directory::{Account, DkimKey, DkimKeyAlgorithm, DkimKeyState, Domain, NewAccount, Protocols, Role};
 pub use extras::{Identity, IdentityUpdate, SubmissionRecord, UPLOAD_LIFETIME_SECS, VacationResponse};
 pub use feeds::FeedState;
 pub use forward_addresses::{FORWARD_ADDRESS_MAX_TARGETS, ForwardAddress};

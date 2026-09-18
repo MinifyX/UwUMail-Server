@@ -73,6 +73,7 @@ async fn start_with_spam(
                 password: Some(PASSWORD.into()),
                 role: if index == 0 { Role::Admin } else { Role::User },
                 quota_bytes: 0,
+                protocols: None,
             })
             .await
             .unwrap();

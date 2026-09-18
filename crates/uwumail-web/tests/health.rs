@@ -28,6 +28,7 @@ async fn health_lists_every_area_with_findings() {
             password: Some("katzenpfote-123".into()),
             role: Role::Admin,
             quota_bytes: 0,
+            protocols: None,
         })
         .await
         .unwrap();
@@ -38,6 +39,7 @@ async fn health_lists_every_area_with_findings() {
             password: None,
             role: Role::User,
             quota_bytes: 100,
+            protocols: None,
         })
         .await
         .unwrap();

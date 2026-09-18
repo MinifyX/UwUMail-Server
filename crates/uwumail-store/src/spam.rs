@@ -297,6 +297,7 @@ mod tests {
                 password: None,
                 role: crate::Role::User,
                 quota_bytes: 0,
+                protocols: None,
             };
             ids.push(store.create_account(account).await.unwrap().id);
         }
@@ -363,6 +364,7 @@ mod tests {
             password: None,
             role: Role::User,
             quota_bytes: 0,
+            protocols: None,
         };
         let account_id = store.create_account(account).await.unwrap().id;
         let boxes = store.mailboxes(account_id).await.unwrap();

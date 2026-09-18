@@ -512,6 +512,7 @@ mod tests {
             password: password.map(str::to_owned),
             role: uwumail_store::Role::User,
             quota_bytes: 0,
+            protocols: None,
         };
         let id = store.create_account(new).await.unwrap().id;
         (store, id)

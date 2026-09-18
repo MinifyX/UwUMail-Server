@@ -11,18 +11,66 @@ use crate::{Result, Store, StoreError, mail, now, password};
 pub enum Role {
     Admin,
     User,
+    /// A mailbox that belongs to a program: it never signs in to the portal, and each protocol is
+    /// switched on by itself. Stored as `kind = 'service'` beside `role = 'user'`; see migration 25.
+    Service,
 }
 
 impl Role {
+    /// What goes into `accounts.role`. A service is a user there, and its own column says the rest.
     fn as_str(self) -> &'static str {
         match self {
             Role::Admin => "admin",
-            Role::User => "user",
+            Role::User | Role::Service => "user",
         }
     }
 
-    fn parse(value: &str) -> Role {
-        if value == "admin" { Role::Admin } else { Role::User }
+    /// What goes into `accounts.kind`.
+    fn kind_str(self) -> &'static str {
+        match self {
+            Role::Service => "service",
+            _ => "person",
+        }
+    }
+
+    fn parse(role: &str, kind: &str) -> Role {
+        match (role, kind) {
+            (_, "service") => Role::Service,
+            ("admin", _) => Role::Admin,
+            _ => Role::User,
+        }
+    }
+}
+
+/// Which protocols an account may use at all, whoever holds its password.
+///
+/// A person has all of them. A service is set up switch by switch, and with neither IMAP nor JMAP
+/// it has no mailbox: mail to its address is refused, or sent on to [`Account::redirect_to`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Protocols {
+    pub smtp: bool,
+    pub imap: bool,
+    pub jmap: bool,
+    pub caldav: bool,
+    pub carddav: bool,
+}
+
+impl Default for Protocols {
+    fn default() -> Self {
+        Protocols { smtp: true, imap: true, jmap: true, caldav: true, carddav: true }
+    }
+}
+
+impl Protocols {
+    /// What a new service starts with: mail in and out, no calendars and no address books.
+    pub fn for_service() -> Protocols {
+        Protocols { smtp: true, imap: true, jmap: true, caldav: false, carddav: false }
+    }
+
+    /// Whether mail can be stored for this account at all.
+    pub fn has_mailbox(self) -> bool {
+        self.imap || self.jmap
     }
 }
 
@@ -136,11 +184,31 @@ pub struct Account {
     pub deleted_at: Option<i64>,
     /// When a password, app password or second factor last changed. Cached logins from before end.
     pub credentials_changed_at: i64,
+    /// Which protocols this account may use at all.
+    pub protocols: Protocols,
+    /// Where mail goes for a service without a mailbox. Empty means its address refuses mail.
+    pub redirect_to: String,
 }
 
 impl Account {
+    /// Whether a password of this account counts at all, for any protocol.
     pub fn can_log_in(&self) -> bool {
         !self.disabled && self.deleted_at.is_none()
+    }
+
+    pub fn is_service(&self) -> bool {
+        self.role == Role::Service
+    }
+
+    /// The web portal, and with it webmail, calendars and address books in the browser. A service
+    /// never gets in: it has no password of its own, and this says so a second time.
+    pub fn can_use_portal(&self) -> bool {
+        self.can_log_in() && !self.is_service()
+    }
+
+    /// Whether mail is stored for this account. A send-only service has no mailbox at all.
+    pub fn has_mailbox(&self) -> bool {
+        self.protocols.has_mailbox()
     }
 }
 
@@ -148,29 +216,41 @@ impl Account {
 pub struct NewAccount {
     pub address: String,
     pub display_name: String,
+    /// A service has none of its own: its app passwords are the only way in.
     pub password: Option<String>,
     pub role: Role,
     /// 0 means unlimited.
     pub quota_bytes: i64,
+    /// Left out means all of them for a person, and [`Protocols::for_service`] for a service.
+    pub protocols: Option<Protocols>,
 }
 
-pub(crate) const ACCOUNT_COLUMNS: &str =
-    "id, login, display_name, role, quota_bytes, used_bytes, disabled, created_at, deleted_at, credentials_changed_at";
+pub(crate) const ACCOUNT_COLUMNS: &str = "id, login, display_name, role, quota_bytes, used_bytes, disabled, \
+     created_at, deleted_at, credentials_changed_at, kind, smtp_enabled, imap_enabled, jmap_enabled, \
+     caldav_enabled, carddav_enabled, redirect_to";
 /// Number of columns in [`ACCOUNT_COLUMNS`]; extra columns of a query start here.
-pub(crate) const ACCOUNT_COLUMN_COUNT: usize = 10;
+pub(crate) const ACCOUNT_COLUMN_COUNT: usize = 17;
 
 pub(crate) fn account_from_row(row: &Row<'_>) -> rusqlite::Result<Account> {
     Ok(Account {
         id: row.get(0)?,
         login: row.get(1)?,
         display_name: row.get(2)?,
-        role: Role::parse(&row.get::<_, String>(3)?),
+        role: Role::parse(&row.get::<_, String>(3)?, &row.get::<_, String>(10)?),
         quota_bytes: row.get(4)?,
         used_bytes: row.get(5)?,
         disabled: row.get(6)?,
         created_at: row.get(7)?,
         deleted_at: row.get(8)?,
         credentials_changed_at: row.get(9)?,
+        protocols: Protocols {
+            smtp: row.get(11)?,
+            imap: row.get(12)?,
+            jmap: row.get(13)?,
+            caldav: row.get(14)?,
+            carddav: row.get(15)?,
+        },
+        redirect_to: row.get(16)?,
     })
 }
 
@@ -469,6 +549,12 @@ impl Store {
             ),
             None => None,
         };
+        // A person may use everything; a service starts with mail only, and the rest is switched on
+        // one by one.
+        let protocols = new.protocols.unwrap_or(match new.role {
+            Role::Service => Protocols::for_service(),
+            _ => Protocols::default(),
+        });
         self.write(move |tx| {
             let domain_id = domain_id(tx, &domain)?;
             let login = format!("{local}@{domain}");
@@ -482,16 +568,33 @@ impl Store {
             }
             let created_at = now();
             tx.execute(
-                "INSERT INTO accounts (login, display_name, password_hash, role, quota_bytes, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![login, new.display_name.trim(), password_hash, new.role.as_str(), new.quota_bytes, created_at],
+                "INSERT INTO accounts (login, display_name, password_hash, role, kind, quota_bytes, created_at,
+                                       smtp_enabled, imap_enabled, jmap_enabled, caldav_enabled, carddav_enabled)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                params![
+                    login,
+                    new.display_name.trim(),
+                    password_hash,
+                    new.role.as_str(),
+                    new.role.kind_str(),
+                    new.quota_bytes,
+                    created_at,
+                    protocols.smtp,
+                    protocols.imap,
+                    protocols.jmap,
+                    protocols.caldav,
+                    protocols.carddav
+                ],
             )?;
             let id = tx.last_insert_rowid();
             tx.execute(
                 "INSERT INTO addresses (local_part, domain_id, account_id, kind, created_at) VALUES (?1, ?2, ?3, 'primary', ?4)",
                 params![local, domain_id, id, created_at],
             )?;
-            mail::create_default_mailboxes(tx, id)?;
+            // A service that only sends has no mailbox, so it gets no folders either.
+            if protocols.has_mailbox() {
+                mail::create_default_mailboxes(tx, id)?;
+            }
             Ok(Account {
                 id,
                 login,
@@ -503,6 +606,8 @@ impl Store {
                 created_at,
                 deleted_at: None,
                 credentials_changed_at: 0,
+                protocols,
+                redirect_to: String::new(),
             })
         })
         .await
@@ -737,6 +842,7 @@ mod tests {
             password: Some("katzenpfote".into()),
             role: Role::User,
             quota_bytes: 0,
+            protocols: None,
         }
     }
 

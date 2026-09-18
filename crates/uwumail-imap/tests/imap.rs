@@ -26,6 +26,7 @@ async fn server() -> Server {
             password: Some(PASSWORD.into()),
             role: Role::User,
             quota_bytes: 10 * 1024 * 1024,
+            protocols: None,
         })
         .await
         .unwrap()

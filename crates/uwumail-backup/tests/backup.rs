@@ -12,6 +12,7 @@ async fn server(dir: &std::path::Path) -> (Store, i64) {
         password: Some("katzenpfote-123".into()),
         role: Role::User,
         quota_bytes: 0,
+        protocols: None,
     };
     let id = store.create_account(new).await.unwrap().id;
     (store, id)

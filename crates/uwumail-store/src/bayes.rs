@@ -311,6 +311,7 @@ mod tests {
             password: None,
             role: Role::User,
             quota_bytes: 0,
+            protocols: None,
         };
         let account_id = store.create_account(account).await.unwrap().id;
         let month_ago = now() - 30 * 24 * 3600;

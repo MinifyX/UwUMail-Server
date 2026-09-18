@@ -574,6 +574,7 @@ mod tests {
             password: None,
             role: Role::User,
             quota_bytes: 0,
+            protocols: None,
         };
         let leni = store.create_account(account).await.unwrap().id;
         let version = store.word_lists_version().await.unwrap();

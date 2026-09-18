@@ -64,6 +64,7 @@ async fn server() -> (tempfile::TempDir, Store, Vec<i64>) {
             password: Some("katzenpfote-123".into()),
             role,
             quota_bytes: 0,
+            protocols: None,
         };
         ids.push(store.create_account(account).await.unwrap().id);
     }

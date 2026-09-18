@@ -358,6 +358,7 @@ impl Importer<'_> {
                 password: None,
                 role: Role::User,
                 quota_bytes: quota.max(0),
+                protocols: None,
             };
             let account = self.store.create_account(new).await?;
             if uwumail_store::normalize_imported_password_hash(hash).is_ok() {

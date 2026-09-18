@@ -92,6 +92,7 @@ async fn settings_are_checked_locked_stored_and_logged() {
             password: Some("katzenpfote-123".into()),
             role: Role::Admin,
             quota_bytes: 0,
+            protocols: None,
         })
         .await
         .unwrap();
