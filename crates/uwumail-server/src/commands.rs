@@ -340,8 +340,9 @@ pub async fn backup(config: &Config, store: &Store, command: BackupCommand) -> a
             for (name, manifest) in snapshots {
                 let total = manifest.database_size + manifest.blobs_size;
                 println!(
-                    "{name}  {}  {} mails  {}  (uploaded {})",
+                    "{name}  {}  UwUMail {}  {} mails  {}  (uploaded {})",
                     utc(manifest.created_at),
+                    manifest.version,
                     manifest.blobs.len(),
                     megabytes(total),
                     megabytes(manifest.uploaded)
@@ -364,63 +365,63 @@ pub async fn backup(config: &Config, store: &Store, command: BackupCommand) -> a
             }
             println!("Snapshot {name} is complete (=^･ω･^=)");
         }
-        BackupCommand::Restore { sftp, port, ssh_key, host_key, snapshot, into } => {
-            let (user, rest) = sftp.split_once('@').ok_or_else(|| anyhow::anyhow!("--sftp needs user@host:/path"))?;
-            let (host, path) = rest.split_once(':').ok_or_else(|| anyhow::anyhow!("--sftp needs user@host:/path"))?;
-            let login = match ssh_key {
-                Some(file) => uwumail_backup::Login::Key { private_key: std::fs::read_to_string(file)? },
-                None => uwumail_backup::Login::Password {
-                    password: std::env::var("UWUMAIL_BACKUP_SFTP_PASSWORD")
-                        .map_err(|_| anyhow::anyhow!("give --ssh-key or set UWUMAIL_BACKUP_SFTP_PASSWORD"))?,
-                },
-            };
-            let target = uwumail_backup::Target {
-                host: host.into(),
-                port,
-                user: user.into(),
-                path: path.into(),
-                login,
-                host_key,
-            };
-            let connection = uwumail_backup::sftp::Sftp::connect(&target).await?;
-            println!("Connected to {host}, host key {}", connection.host_key);
-            let storage = uwumail_backup::Storage::Sftp(connection);
-            let key = if uwumail_backup::Repository::is_encrypted(&storage).await? {
-                let text = match std::env::var("UWUMAIL_BACKUP_KEY") {
-                    Ok(text) => text,
-                    Err(_) => {
-                        eprintln!("Recovery key:");
-                        let mut line = String::new();
-                        std::io::stdin().read_line(&mut line)?;
-                        line
-                    }
-                };
-                Some(uwumail_backup::RepoKey::from_recovery_text(&text)?)
-            } else {
-                None
-            };
-            let repo = uwumail_backup::Repository::open_existing(storage, key).await?;
-            let result = async {
-                let name = match snapshot.as_str() {
-                    "latest" => {
-                        repo.snapshots().await?.pop().ok_or_else(|| anyhow::anyhow!("there are no snapshots"))?
-                    }
-                    name => name.to_owned(),
-                };
-                let manifest = uwumail_backup::restore(&repo, &name, &into).await?;
-                anyhow::Ok((name, manifest))
-            }
-            .await;
-            repo.storage.close().await;
-            let (name, manifest) = result?;
-            println!(
-                "Restored snapshot {name} of {} from {} into {} (=^･ω･^=)",
-                manifest.hostname,
-                utc(manifest.created_at),
-                into.display()
-            );
-        }
+        BackupCommand::Restore { .. } => unreachable!("restore runs before the store is opened"),
     }
+    Ok(())
+}
+
+/// Puts a snapshot back into an empty data directory. This one runs without a store, and has to:
+/// opening one would leave a fresh database in the directory the restore wants empty.
+pub async fn backup_restore(command: BackupCommand) -> anyhow::Result<()> {
+    let BackupCommand::Restore { sftp, port, ssh_key, host_key, snapshot, into } = command else {
+        unreachable!("only restore comes here")
+    };
+    let (user, rest) = sftp.split_once('@').ok_or_else(|| anyhow::anyhow!("--sftp needs user@host:/path"))?;
+    let (host, path) = rest.split_once(':').ok_or_else(|| anyhow::anyhow!("--sftp needs user@host:/path"))?;
+    let login = match ssh_key {
+        Some(file) => uwumail_backup::Login::Key { private_key: std::fs::read_to_string(file)? },
+        None => uwumail_backup::Login::Password {
+            password: std::env::var("UWUMAIL_BACKUP_SFTP_PASSWORD")
+                .map_err(|_| anyhow::anyhow!("give --ssh-key or set UWUMAIL_BACKUP_SFTP_PASSWORD"))?,
+        },
+    };
+    let target =
+        uwumail_backup::Target { host: host.into(), port, user: user.into(), path: path.into(), login, host_key };
+    let connection = uwumail_backup::sftp::Sftp::connect(&target).await?;
+    println!("Connected to {host}, host key {}", connection.host_key);
+    let storage = uwumail_backup::Storage::Sftp(connection);
+    let key = if uwumail_backup::Repository::is_encrypted(&storage).await? {
+        let text = match std::env::var("UWUMAIL_BACKUP_KEY") {
+            Ok(text) => text,
+            Err(_) => {
+                eprintln!("Recovery key:");
+                let mut line = String::new();
+                std::io::stdin().read_line(&mut line)?;
+                line
+            }
+        };
+        Some(uwumail_backup::RepoKey::from_recovery_text(&text)?)
+    } else {
+        None
+    };
+    let repo = uwumail_backup::Repository::open_existing(storage, key).await?;
+    let result = async {
+        let name = match snapshot.as_str() {
+            "latest" => repo.snapshots().await?.pop().ok_or_else(|| anyhow::anyhow!("there are no snapshots"))?,
+            name => name.to_owned(),
+        };
+        let manifest = uwumail_backup::restore(&repo, &name, &into).await?;
+        anyhow::Ok((name, manifest))
+    }
+    .await;
+    repo.storage.close().await;
+    let (name, manifest) = result?;
+    println!(
+        "Restored snapshot {name} of {} from {} into {} (=^･ω･^=)",
+        manifest.hostname,
+        utc(manifest.created_at),
+        into.display()
+    );
     Ok(())
 }
 

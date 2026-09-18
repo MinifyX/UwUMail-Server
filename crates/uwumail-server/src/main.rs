@@ -80,6 +80,12 @@ async fn run(
     if matches!(command, Command::Health) {
         return health(&config).await;
     }
+    // Restoring comes before the store: opening it would put a fresh uwumail.db into the data
+    // directory, and a restore wants an empty one. It is the one command that runs without a store.
+    if matches!(command, Command::Backup(crate::cli::BackupCommand::Restore { .. })) {
+        let Command::Backup(command) = command else { unreachable!("matched a line ago") };
+        return commands::backup_restore(command).await;
+    }
     let store = uwumail_store::Store::open(&config.data_dir).await?;
     match command {
         Command::Domain(command) => commands::domain(&config, &store, command).await,

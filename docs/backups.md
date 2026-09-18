@@ -73,4 +73,12 @@ password instead of a key, set `UWUMAIL_BACKUP_SFTP_PASSWORD`. `--snapshot`
 picks an older snapshot from `backup list`; `--host-key` checks the backup
 server's fingerprint.
 
+If the connection breaks halfway, run the same command again: mail that is
+already in place stays, and only the rest is fetched.
+
+Restore with the version the snapshot came from, or a newer one. The database
+migrations only ever run forwards, so an older server cannot open a newer
+snapshot and says so instead of trying. `backup list` shows each snapshot's
+version.
+
 Delete `/tmp/backup_key` afterwards.
