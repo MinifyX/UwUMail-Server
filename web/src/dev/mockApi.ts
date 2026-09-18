@@ -1037,12 +1037,42 @@ const noGateway: GatewayView = {
   refusal: null,
   fromConfig: false,
   machine: null,
+  canInstall: false,
+  softwareVersion: null,
 };
 let gateway: GatewayView = noGateway;
 let gatewayPairedAt = 0;
 
+let gatewayJobStartedAt = 0;
+
+/** Moves a job on the gateway's machine along, so the buttons can be seen doing something. */
+function stepGatewayJob() {
+  const job = gateway.machine?.job;
+  if (!gateway.machine || !job || job.state !== "running") return;
+  const since = Date.now() - gatewayJobStartedAt;
+  const machine = gateway.machine;
+  if (since > 3000 && !job.log) {
+    gateway = {
+      ...gateway,
+      machine: { ...machine, job: { ...job, log: "== apt-get update\nReading package lists…\n" } },
+    };
+    return;
+  }
+  if (since > 9000) {
+    gateway = {
+      ...gateway,
+      machine: {
+        ...machine,
+        system: machine.system && { ...machine.system, updates: 0, securityUpdates: 0 },
+        job: { ...job, state: "done", log: job.log + "\n== apt-get dist-upgrade\n12 upgraded, 0 newly installed.\n" },
+      },
+    };
+  }
+}
+
 function gatewayView(): GatewayView {
   const at = Math.floor(Date.now() / 1000);
+  stepGatewayJob();
   if (gateway.state === "connecting" && Date.now() - gatewayPairedAt > 4000) {
     gateway = {
       ...gateway,
@@ -1075,7 +1105,11 @@ function gatewayView(): GatewayView {
         },
         trusted: ["203.0.113.77"],
         checkedAt: at,
+        job: null,
       },
+      // A gateway with a helper beside it, so the portal shows buttons rather than commands.
+      canInstall: true,
+      softwareVersion: "0.2.2",
     };
   }
   return gateway;
@@ -1467,6 +1501,23 @@ const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/api\/admin\/setup\/check$/, () => [200, lastServerCheck]],
   ["POST", /^\/api\/admin\/setup\/reachability$/, () => [200, reachability()]],
   ["GET", /^\/api\/admin\/gateway$/, () => [200, gatewayView()]],
+  [
+    "POST",
+    /^\/api\/admin\/gateway\/jobs$/,
+    (body) => {
+      const verb = (body as { verb?: string }).verb ?? "os-update";
+      if (!gateway.machine) return [409, { code: "gatewayJobRefused", detail: "the gateway is away" }];
+      gatewayJobStartedAt = Date.now();
+      gateway = {
+        ...gateway,
+        machine: {
+          ...gateway.machine,
+          job: { id: "mock-" + verb, state: "running", error: "", at: Math.floor(Date.now() / 1000), log: "" },
+        },
+      };
+      return [200, gateway];
+    },
+  ],
   [
     "POST",
     /^\/api\/admin\/gateway$/,

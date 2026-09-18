@@ -89,6 +89,8 @@ describe("gateway lines", () => {
     refusal: null,
     fromConfig: false,
     machine: null,
+    canInstall: false,
+    softwareVersion: null,
     ...overrides,
   });
 
@@ -128,6 +130,7 @@ describe("gateway lines", () => {
             jails: ["sshd", "uwumail-server"],
             fromServer: 1,
           },
+          job: null,
           trusted: ["80.140.35.247"],
           checkedAt: 1_800_000_000,
         },
@@ -154,6 +157,7 @@ describe("gateway lines", () => {
       protection: { firewall: "", firewallActive: false, fail2ban: false, banned: 0, jails: [], fromServer: 0 },
       trusted: [],
       checkedAt: 1_800_000_000,
+      job: null,
     };
     const lines = gatewayLines(view({ state: "connected", machine }), "mail.example.com");
     expect(codes(lines)).toContain("gatewayNoFirewall");

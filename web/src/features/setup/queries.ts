@@ -134,9 +134,27 @@ export function useGateway() {
   return useQuery({
     queryKey: GATEWAY_KEY,
     queryFn: () => api<GatewayView>("/api/admin/gateway"),
-    refetchInterval: (query) => (query.state.data?.state === "connecting" ? 2000 : 15_000),
+    refetchInterval: (query) => {
+      const view = query.state.data;
+      // While the VPS is installing something, the gateway reports every few seconds and the
+      // portal should show it moving. The rest of the time this is a quiet heartbeat.
+      if (view?.machine?.job?.state === "running") return 3000;
+      return view?.state === "connecting" ? 2000 : 15_000;
+    },
   });
 }
+
+/** Asks the VPS the gateway runs on for its updates, a restart, or a newer gateway. */
+export function useGatewayJob() {
+  const changed = useGatewayChanged();
+  return useMutation({
+    mutationFn: ({ verb, password }: { verb: GatewayVerb; password?: string }) =>
+      api<GatewayView>("/api/admin/gateway/jobs", { method: "POST", body: { verb, password } }),
+    onSuccess: (view) => changed(view),
+  });
+}
+
+export type GatewayVerb = "os-update" | "reboot" | "gateway-update";
 
 function useGatewayChanged() {
   const queryClient = useQueryClient();

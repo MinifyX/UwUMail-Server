@@ -917,6 +917,10 @@ export interface GatewayView {
   fromConfig: boolean;
   /** The machine the gateway runs on. Missing while the tunnel is down. */
   machine: GatewayMachine | null;
+  /** Whether the portal can ask this gateway's machine for things, or only show the commands. */
+  canInstall: boolean;
+  /** The gateway version there is to install, when the running one is not the newest. */
+  softwareVersion: string | null;
 }
 
 export interface GatewayMachine {
@@ -925,6 +929,16 @@ export interface GatewayMachine {
   /** Addresses the gateway keeps out of every ban list, this server's among them. */
   trusted: string[];
   checkedAt: number;
+  /** What the portal last asked this machine for, while there is something. */
+  job: GatewayJob | null;
+}
+
+export interface GatewayJob {
+  id: string;
+  state: "running" | "done" | "failed" | "refused" | string;
+  error: string;
+  at: number;
+  log: string;
 }
 
 export interface GatewaySystem {

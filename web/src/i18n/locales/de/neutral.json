@@ -263,7 +263,8 @@
       "wordSourceListed": "Diese Liste ist schon abonniert.",
       "feedInactive": "Diese Liste ist ausgeschaltet oder wartet noch auf den Auth-Key.",
       "hostJobRefused": "Der Helfer auf der Maschine hat das abgelehnt: {{detail}}",
-      "updateRefused": "Das Update wurde nicht gestartet: {{detail}}"
+      "updateRefused": "Das Update wurde nicht gestartet: {{detail}}",
+      "gatewayJobRefused": "Das Gateway hat das nicht angenommen: {{detail}}"
     }
   },
   "people": {
@@ -1588,7 +1589,20 @@
       "forgetConfirm": "Vergessen",
       "fromConfig": "Diese Kopplung steht als gateway.code in der Konfiguration. Wenn du das Gateway hier vergisst, entferne auch den Code. Sonst versucht der Server beim nächsten Start, sich mit einem neuen Schlüssel erneut zu koppeln, das Gateway lehnt ihn ab, und Mail an andere Server wartet in der Warteschlange. Zum späteren Neukoppeln auf dem Gateway uwumail-gateway unpair ausführen und den neuen Code verwenden.",
       "paired": "Gekoppelt, der Tunnel baut sich auf.",
-      "forgotten": "Gateway vergessen."
+      "forgotten": "Gateway vergessen.",
+      "machine": {
+        "title": "Der VPS",
+        "installUpdates": "Updates installieren",
+        "updateGateway": "Gateway auf {{version}} aktualisieren",
+        "restart": "Neu starten",
+        "hint": "Das Gateway hat zuletzt am {{time}} nachgesehen. Während eine dieser Sachen läuft, ist das Gateway kurz weg — Mail wird in der Zeit vom sendenden Server später noch einmal zugestellt.",
+        "states": {
+          "running": "Läuft gerade …",
+          "done": "Fertig.",
+          "failed": "Hat nicht geklappt.",
+          "refused": "Wurde abgelehnt."
+        }
+      }
     }
   },
   "updates": {

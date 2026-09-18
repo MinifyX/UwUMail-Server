@@ -263,7 +263,8 @@
       "wordSourceListed": "This list is subscribed already.",
       "feedInactive": "This list is switched off or still waits for the Auth-Key.",
       "hostJobRefused": "The helper on the machine refused: {{detail}}",
-      "updateRefused": "The update did not start: {{detail}}"
+      "updateRefused": "The update did not start: {{detail}}",
+      "gatewayJobRefused": "The gateway did not take it: {{detail}}"
     }
   },
   "people": {
@@ -1588,7 +1589,20 @@
       "forgetConfirm": "Forget",
       "fromConfig": "This pairing is set as gateway.code in the configuration. If you forget the gateway here, remove the code as well. Otherwise the server tries to pair again on the next start with a new key, the gateway refuses it, and mail to other servers waits in the queue. To pair again later, run uwumail-gateway unpair on the gateway and use the new code.",
       "paired": "Paired, the tunnel is coming up.",
-      "forgotten": "Gateway forgotten."
+      "forgotten": "Gateway forgotten.",
+      "machine": {
+        "title": "The VPS",
+        "installUpdates": "Install updates",
+        "updateGateway": "Update the gateway to {{version}}",
+        "restart": "Restart",
+        "hint": "The gateway last looked on {{time}}. While one of these runs the gateway is away for a moment — mail that arrives meanwhile is delivered again later by the sending server.",
+        "states": {
+          "running": "Running …",
+          "done": "Done.",
+          "failed": "It did not work.",
+          "refused": "It was refused."
+        }
+      }
     }
   },
   "updates": {

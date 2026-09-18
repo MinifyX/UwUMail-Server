@@ -24,6 +24,7 @@ const KNOWN = [
   "loginExpired",
   "confirmPassword",
   "gatewayCodeInvalid",
+  "gatewayJobRefused",
   "hostJobRefused",
   "updateRefused",
   "gatewayForgetFailed",
