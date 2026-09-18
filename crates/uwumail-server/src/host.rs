@@ -71,6 +71,23 @@ fn unix_now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |since| since.as_secs() as i64)
 }
 
+/// `1.2.3` or `1.2.3-beta.4`, and nothing else.
+///
+/// The helper checks this again — it is the side with the rights — but a version should not travel
+/// this far unchecked. What ends up here came out of GitHub's release list, and "whatever the API
+/// said, trimmed of a leading v" is not the same thing as a version number.
+fn is_version(version: &str) -> bool {
+    let (core, pre) = version.split_once('-').map_or((version, None), |(core, pre)| (core, Some(pre)));
+    let numbers: Vec<&str> = core.split('.').collect();
+    let sane = |part: &&str| !part.is_empty() && part.len() <= 4 && part.bytes().all(|byte| byte.is_ascii_digit());
+    if numbers.len() != 3 || !numbers.iter().all(sane) {
+        return false;
+    }
+    pre.is_none_or(|pre| {
+        !pre.is_empty() && pre.len() <= 20 && pre.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.')
+    })
+}
+
 /// An id that names a file, so nothing but letters and digits. It only has to be one of a kind, not
 /// hard to guess: the shared directory belongs to root and this container, and whoever can write
 /// there already has everything this could protect. The helper checks the shape again anyway,
@@ -118,6 +135,12 @@ impl HostBackend for HostBridge {
 
     fn ask<'a>(&'a self, verb: &'a str, version: Option<&'a str>) -> HostFuture<'a> {
         Box::pin(async move {
+            if !matches!(verb, "os-update" | "reboot" | "server-update") {
+                return Err(format!("this server does not ask for {verb}"));
+            }
+            if version.is_some_and(|version| !is_version(version)) {
+                return Err("that is not a version number".into());
+            }
             // One at a time. Two updates at once is never what anyone meant.
             if let Some(job) = self.view().job
                 && job.state == "running"

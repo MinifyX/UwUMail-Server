@@ -198,6 +198,20 @@ is_version() {
   [[ "${1:-}" =~ ^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(-[0-9A-Za-z.]{1,20})?$ ]]
 }
 
+
+# Whether going to $1 from $2 would be going backwards.
+#
+# The portal only ever offers something newer, but the portal runs in the container -- the side this
+# helper exists to distrust. An old image is an old set of holes, so a server somebody took over
+# must not be able to ask for one and walk back in through it. When either side is not a version
+# (a tag like `latest`), there is nothing to compare and the update is allowed.
+is_older() {
+  local want="${1:-}" have="${2:-}"
+  is_version "$want" && is_version "$have" || return 1
+  [ "$want" = "$have" ] && return 1
+  [ "$(printf '%s\n%s\n' "$want" "$have" | sort -V | head -1)" = "$want" ]
+}
+
 job_state() {
   local id="$1" state="$2" error="${3:-}"
   jq -n --arg id "$id" --arg state "$state" --arg error "$error" --argjson at "$(date +%s)" \
@@ -279,6 +293,10 @@ do_server_update() {
   }
   local before
   before=$(version_now)
+  if [ -n "$version" ] && is_older "$version" "$before"; then
+    job_state "$id" failed "$version is older than $before; this helper does not go backwards"
+    return 1
+  fi
   [ -n "$version" ] && set_version "$version"
 
   {
