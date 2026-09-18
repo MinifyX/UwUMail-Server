@@ -180,6 +180,16 @@ tunnel_port() {
   printf '%s' "$port"
 }
 
+# Whether ufw is actually on.
+#
+# Asked for the whole word, and this is not fussiness: `ufw status` answers "Status: inactive" when
+# it is off, and a plain `grep active` matches that happily — "in-active" contains "active". That
+# one missing anchor meant the installer believed the firewall was already up, never switched it
+# on, and then reported it as running. Two gateways spent an evening with no firewall because of it.
+firewall_is_on() {
+  ufw status 2>/dev/null | head -1 | grep -q '^Status: active$'
+}
+
 set_up_firewall() {
   if ! command -v ufw >/dev/null 2>&1; then
     DEBIAN_FRONTEND=noninteractive apt-get install -y ufw >/dev/null 2>&1 || {
@@ -205,19 +215,40 @@ set_up_firewall() {
   ufw default deny incoming >/dev/null 2>&1
   ufw default allow outgoing >/dev/null 2>&1
 
-  if ! ufw status 2>/dev/null | head -1 | grep -q active; then
-    # Checked rather than trusted: if the rule is not there, switching the firewall on cuts the
-    # cable this script is running over.
-    if ! ufw status 2>/dev/null | grep -q "^$ssh/tcp"; then
-      warn "ufw has no rule for SSH on port $ssh; leaving the firewall off"
-      note "Firewall|off|no SSH rule, not switched on"
-      return 1
-    fi
+  # Checked rather than trusted: if the rule is not there, switching the firewall on cuts the cable
+  # this script is running over.
+  #
+  # Asked of `show added`, not of `status`: while ufw is off — which is exactly when this matters,
+  # because that is when it is about to be switched on — `status` prints "Status: inactive" and no
+  # rules at all, so looking there would find nothing and give up on every first install.
+  if ! ufw show added 2>/dev/null | grep -qE "allow $ssh/tcp( |$)"; then
+    warn "ufw has no rule for SSH on port $ssh; leaving the firewall off"
+    note "Firewall|off|no SSH rule, not switched on"
+    return 1
+  fi
+
+  # ufw goes on first, so there is never a moment with no firewall at all: for the few seconds that
+  # both are up they allow the same ports, which is harmless.
+  if ! firewall_is_on; then
     ufw --force enable >/dev/null
   fi
 
-  note "Firewall|ufw|$ssh 25 80 443 465 587 993/tcp · $tunnel/udp"
-  retire_old_nftables "$tunnel"
+  # Then the old rule set goes. Stopping nftables.service runs `nft flush ruleset`, which empties
+  # the table for everyone, and systemd does not always finish that before the next command runs.
+  # So instead of guessing when it is done, ufw is simply told to load its rules again afterwards —
+  # `reload` is cheap and says nothing about timing.
+  retire_old_nftables
+  ufw reload >/dev/null 2>&1
+
+  # Said only once it is true. "The firewall is on" is not a claim to make from the exit code of
+  # the command that was supposed to switch it on.
+  if firewall_is_on; then
+    note "Firewall|ufw|$ssh 25 80 443 465 587 993/tcp · $tunnel/udp"
+  else
+    warn "ufw did not come up; this machine has no firewall right now. Try: ufw --force enable"
+    note "Firewall|NOT ON|ufw refused to start"
+    return 1
+  fi
 }
 
 # The gateway's documentation used to hand out an nftables rule set to write by hand. With ufw in
@@ -232,8 +263,17 @@ retire_old_nftables() {
   # first line. Both are ours; anything that says neither is someone else's and is left alone.
   if grep -qE "UwUMail Gateway|tunnel to the UwUMail server" "$rules" 2>/dev/null; then
     cp -a "$rules" "$rules.before-uwumail-ufw"
-    systemctl disable --now nftables >/dev/null 2>&1
-    # ufw brings its own table; the handwritten one goes with the service that loaded it.
+    # Stopping the service runs `nft flush ruleset`, which empties the table for everyone — so this
+    # has to be finished before ufw puts anything there. `disable --now` comes back before the stop
+    # job has run, and the flush then arrived after ufw was up and carried its rules off with it,
+    # leaving the machine with no firewall at all. Hence: stop, wait for it, then disable.
+    systemctl stop nftables >/dev/null 2>&1
+    local _
+    for _ in $(seq 1 20); do
+      systemctl is-active --quiet nftables || break
+      sleep 0.5
+    done
+    systemctl disable nftables >/dev/null 2>&1
     nft delete table inet filter >/dev/null 2>&1
     note "nftables|stood down|ufw took over, old rules kept as $rules.before-uwumail-ufw"
   else
@@ -396,7 +436,7 @@ if $check; then
   else
     note "Gateway|stopped|$version"
   fi
-  if ufw status 2>/dev/null | head -1 | grep -q active; then
+  if firewall_is_on; then
     note "Firewall|ufw|active"
   else
     note "Firewall|ufw|not active"
@@ -429,6 +469,18 @@ if $harden; then
     # Writes the first report, so the summary below has something to say.
     "$helper_dir/helper" machine >/dev/null 2>&1 || warn "could not look at the machine's updates"
     "$helper_dir/helper" tick >/dev/null 2>&1
+
+    # The last word on the firewall, after everything else has had its turn. Switching it on and
+    # checking right away was not enough once: a stop job still running in the background emptied
+    # the table afterwards, and the run ended with a reassuring summary and an open machine.
+    if command -v ufw >/dev/null 2>&1 && ! firewall_is_on; then
+      ufw --force enable >/dev/null 2>&1
+      if firewall_is_on; then
+        warn "the firewall had gone down again during the run and was switched back on"
+      else
+        warn "this machine has NO firewall right now. Switch it on with: ufw --force enable"
+      fi
+    fi
   fi
 fi
 

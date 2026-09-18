@@ -3,6 +3,25 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.2.2
+
+- **The installer never actually switched the firewall on, and then said it had.** `ufw status`
+  answers `Status: inactive` when it is off, and the check looked for "active" without anchoring
+  it — which matches "in-active" just as happily. So the installer believed ufw was already
+  running, skipped switching it on, stood the old nftables rules down, and printed a summary
+  saying the firewall was up. A gateway updated with 0.2.0 or 0.2.1 that had the handwritten
+  nftables rules is left with **no firewall at all**. Update to this version, or switch it on by
+  hand with `ufw --force enable`; `sudo bash install.sh --check` now says truthfully which of the
+  two it is.
+- Same mistake in the report the portal reads: a firewall that was off was shown as active.
+- The order is safer as well now. ufw goes on before the old rules come down, so there is no moment
+  without a firewall, and ufw is told to load its rules again afterwards — stopping nftables runs
+  `nft flush ruleset`, which empties the table for everyone, and systemd does not always finish
+  that before the next command runs. The run ends with one last check that the firewall is really
+  up, and says so loudly if it is not.
+- The check for the SSH rule asks `ufw show added` instead of `ufw status`, which prints no rules
+  at all while ufw is off — that is exactly when the check matters, right before switching it on.
+
 ## 0.2.1
 
 - The installer recognises the gateway's own handwritten firewall rules in both wordings it went

@@ -223,7 +223,9 @@ cmd_machine() {
   local firewall="" firewall_active=false fail2ban=false banned=0 from_server=0 jails="[]"
   if command -v ufw >/dev/null 2>&1; then
     firewall=ufw
-    ufw status 2>/dev/null | head -1 | grep -q "active" && firewall_active=true
+    # The whole word: "Status: inactive" contains "active", and reporting a firewall that is off
+    # as running would be worse than saying nothing at all.
+    ufw status 2>/dev/null | head -1 | grep -q '^Status: active$' && firewall_active=true
   elif command -v nft >/dev/null 2>&1 && nft list ruleset 2>/dev/null | grep -q 'hook input'; then
     firewall=nftables
     firewall_active=true
