@@ -11,24 +11,10 @@ import { useT } from "@/i18n";
 import { ApiError, api, type BackupSnapshot, type BackupsView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatBytes, formatDateTime } from "@/lib/format";
+import { localTime, minuteOptions, utcTime } from "@/lib/time";
 import { toast } from "@/state/toasts";
 
 const key = ["admin", "backups"] as const;
-
-/**
- * A time of day as minutes since midnight, in the browser's time zone for one in UTC and back.
- * Whole minutes, not whole hours: half-hour zones like India's exist, and the backup now starts on
- * a minute. Daylight saving is taken as it is today, so a time chosen in summer moves by an hour in
- * winter — the same as everywhere else that keeps a UTC hour.
- */
-const offsetMinutes = () => -new Date().getTimezoneOffset();
-const wrapDay = (minutes: number) => ((minutes % 1440) + 1440) % 1440;
-const localTime = (hour: number, minute: number) => wrapDay(hour * 60 + minute + offsetMinutes());
-const utcTime = (local: number) => wrapDay(local - offsetMinutes());
-
-/** Five-minute steps, plus whatever minute is set now, so a time from the command line survives. */
-const minuteOptions = (current: number) =>
-  [...new Set([...Array.from({ length: 12 }, (_, step) => step * 5), current])].sort((a, b) => a - b);
 
 function RecoveryKeyDialog({ recoveryKey, onClose }: { recoveryKey: string | null; onClose: () => void }) {
   const { t } = useT();
