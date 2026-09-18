@@ -14,6 +14,15 @@ use crate::Context;
 /// megabyte unpacked, and everything past this only buys an outsider our memory and our time.
 const MAX_UNPACKED_BYTES: usize = 8 * 1024 * 1024;
 
+/// The most a message may weigh to be read as a report at all.
+///
+/// A real aggregate report is a few kilobytes; the largest senders stay well under a megabyte. The
+/// cap matters because the parser tries every part of the message in turn, and each one may unpack
+/// to [`MAX_UNPACKED_BYTES`] before it turns out to be nonsense — so a message full of small,
+/// densely packed parts costs far more to read than it costs to send. Anything this size is not a
+/// report, and refusing it here keeps that multiplication small.
+const MAX_REPORT_BYTES: usize = 4 * 1024 * 1024;
+
 /// How many reports are read at the same time. The rest are let go rather than queued: the raw
 /// message would have to be held all the while, and another copy arrives with every connection.
 pub(crate) const AT_ONCE: usize = 4;
@@ -26,6 +35,10 @@ const NEWEST_PERIOD_SECS: i64 = 24 * 3600;
 /// Takes a report off a connection and reads it in the background, unless too many are being read
 /// already. The message counts as delivered either way: whoever sent it did nothing wrong.
 pub(crate) fn receive_soon(ctx: Arc<Context>, kind: ReportKind, address: String, raw: Vec<u8>, authenticated: bool) {
+    if raw.len() > MAX_REPORT_BYTES {
+        tracing::info!(%address, size = raw.len(), "ignored a report far too big to be one");
+        return;
+    }
     let Ok(permit) = ctx.reports.clone().try_acquire_owned() else {
         tracing::warn!(%address, "{AT_ONCE} reports are being read already; this one is let go");
         return;
