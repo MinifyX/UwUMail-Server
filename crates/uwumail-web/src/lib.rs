@@ -271,6 +271,7 @@ impl Web {
             .route("/api/admin/backups/forget-host-key", post(routes::backups::forget_host_key))
             .route("/api/admin/backups/run", post(routes::backups::run))
             .route("/api/admin/backups/snapshots", get(routes::backups::snapshots))
+            .route("/api/admin/backups/restore", post(routes::backups::restore).delete(routes::backups::forget_restore))
             .route("/api/admin/backups/recovery-key", post(routes::backups::recovery_key))
             .route("/api/admin/domains", get(routes::domains::list).post(routes::domains::create))
             .route("/api/admin/domains/{name}", get(routes::domains::detail).delete(routes::domains::remove))

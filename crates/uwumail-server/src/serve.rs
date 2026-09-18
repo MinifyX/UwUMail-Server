@@ -41,7 +41,21 @@ pub async fn run(
     config.validate()?;
     tracing::info!(version = env!("CARGO_PKG_VERSION"), hostname = %config.hostname, "UwUMail Server is waking up (=^･ω･^=)");
 
+    // Before anything opens the data directory: a snapshot the portal fetched may be waiting to
+    // take the place of what is here. This is the only moment those files belong to nobody.
+    let waiting = crate::restore::waiting(&config.data_dir);
+    // Read while the old database is still the one in place: the gateway in the snapshot belongs
+    // to the machine that made it, and this one is very likely its replacement.
+    let pairing_here = match &waiting {
+        Some(ready) if ready.keep_gateway => crate::restore::pairing_here(&config.data_dir).await,
+        _ => None,
+    };
+    let restored = crate::restore::take_over(&config.data_dir).await;
+
     let store = Store::open(&config.data_dir).await.context("opening the data directory")?;
+    if let Some(done) = &restored {
+        crate::restore::after(&store, done, pairing_here, &config.hostname).await;
+    }
     // Settings changed in the admin panel, underneath the config file and environment.
     let overlay = store
         .setting(uwumail_web::SETTINGS_OVERLAY_KEY)
@@ -146,6 +160,18 @@ pub async fn run(
     }
     let backups = uwumail_backup::Backups::new(store.clone(), &config.hostname, env!("CARGO_PKG_VERSION"));
     web.set_backups(backups.clone());
+    // The one thing a restore needs that the backup service cannot have by itself: where the data
+    // lives, and a way to stop the server once the snapshot is here. It cannot put the files in
+    // place while running on the database it would replace.
+    {
+        let stop = shutdown.clone();
+        backups.restores_into(
+            &config.data_dir,
+            Box::new(move || {
+                let _ = stop.send(true);
+            }),
+        );
+    }
     // After the helper and the backups, not before: the first thing this does is ask the helper how
     // the update that replaced the container it is starting in turned out.
     tasks.spawn(web.clone().run_updates(shutdown_rx.clone()));

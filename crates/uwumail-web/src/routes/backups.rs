@@ -63,8 +63,27 @@ async fn view(web: &Web) -> ApiResult<Value> {
         "target": target,
         "status": backups.status().await,
         "running": backups.is_running(),
+        "restore": restore_view(web, backups).await,
     }))
 }
+
+/// Everything about putting a backup back: whether this server can, what is going on right now, and
+/// how the last one went.
+async fn restore_view(web: &Web, backups: &Backups) -> Value {
+    // Written by the server before it opened this database, in the start after the restore. It is
+    // the only place the answer can come from: the process that asked for it is long gone.
+    let last: Option<Value> =
+        web.store().setting(RESTORE_STATUS_KEY).await.ok().flatten().and_then(|raw| serde_json::from_str(&raw).ok());
+    json!({
+        "available": backups.can_restore(),
+        "fetching": backups.fetching(),
+        "staged": backups.staged(),
+        "last": last,
+    })
+}
+
+/// Where the server writes down how the restore it carried out at start-up went.
+const RESTORE_STATUS_KEY: &str = "restore.status";
 
 pub async fn show(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Value>> {
     Ok(Json(view(&web).await?))
@@ -228,6 +247,49 @@ pub async fn snapshots(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<
             })
             .collect(),
     )))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreBody {
+    /// The snapshot to put back, or `latest`.
+    snapshot: String,
+    /// Keep the gateway this machine is paired with instead of the snapshot's. On by default,
+    /// because the usual reason to restore is that this machine stands in for one that died.
+    #[serde(default = "yes")]
+    keep_gateway: bool,
+    #[serde(default)]
+    password: Option<String>,
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// Puts a backup back over everything this server has.
+///
+/// This fetches the snapshot and then stops the server; the next start puts the files in place,
+/// because that is the only moment the database is nobody's. Docker brings the container back by
+/// itself. The answer comes as soon as the fetching has started, and the portal follows it — until
+/// the server goes away under it, which is the point.
+pub async fn restore(
+    State(web): State<Web>,
+    Admin(session): Admin,
+    Json(body): Json<RestoreBody>,
+) -> ApiResult<Json<Value>> {
+    let backups = backups(&web)?;
+    // Everything on this server is about to be replaced by what was on another one. Of all the
+    // things the portal can do, this is the one that most deserves the password again.
+    confirm_identity(&web, &session, body.password.as_deref()).await?;
+    audit(&web, &session, "backups.restore", &body.snapshot, json!({ "keepGateway": body.keep_gateway })).await;
+    backups.start_restore(&body.snapshot, body.keep_gateway, &session.account.login).await.map_err(api_error)?;
+    Ok(Json(view(&web).await?))
+}
+
+/// Puts the note about the last restore away, once it has been read.
+pub async fn forget_restore(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Value>> {
+    let _ = web.store().delete_setting(RESTORE_STATUS_KEY).await;
+    Ok(Json(view(&web).await?))
 }
 
 #[derive(Deserialize)]

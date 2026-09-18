@@ -8,6 +8,7 @@ mod gateway;
 mod host;
 mod http;
 mod import;
+mod restore;
 mod serve;
 mod settings;
 mod tls;

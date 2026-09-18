@@ -1,6 +1,7 @@
 //! Backups as the server runs them: settings in the database, a daily run at a chosen hour, a run
 //! on request, and the status of the last one.
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,6 +14,10 @@ use crate::{BackupReport, Error, Manifest, RepoKey, Repository, Retention, Stora
 
 const SETTINGS_KEY: &str = "backup.settings";
 const STATUS_KEY: &str = "backup.status";
+/// The file that tells the next start a snapshot is waiting to take over, and what it is.
+pub const READY_FILE: &str = "restore.ready";
+/// The directory a snapshot is put together in before it does.
+pub const STAGING_DIR: &str = "restore";
 /// After a failed run, the next attempt waits this long.
 const RETRY_SECS: i64 = 3600;
 /// A run that has not finished after this long was cut short by a restart, not still going. Without
@@ -56,12 +61,65 @@ pub struct BackupStatus {
     pub last_report: Option<BackupReport>,
 }
 
+/// What the portal writes down when it has fetched a snapshot, for the next start to read.
+///
+/// The fetching half cannot put the files where they belong: the database it would replace is the
+/// one it is running on. So it leaves this beside the files and asks the server to stop.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Staged {
+    pub snapshot: String,
+    /// The server the snapshot was made on.
+    pub hostname: String,
+    pub created_at: i64,
+    /// Keep the gateway this machine is paired with, rather than the one in the snapshot. That is
+    /// what you want when this machine is the replacement for one that died.
+    pub keep_gateway: bool,
+    pub asked_at: i64,
+    /// Who asked, for the log.
+    pub by: String,
+}
+
+impl Default for Staged {
+    fn default() -> Self {
+        Staged {
+            snapshot: String::new(),
+            hostname: String::new(),
+            created_at: 0,
+            keep_gateway: true,
+            asked_at: 0,
+            by: String::new(),
+        }
+    }
+}
+
+/// Where a restore has got to, in this process. It lives in memory on purpose: the whole point of
+/// the exercise is that the process ends, and after that the file beside the data speaks for it.
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Fetching {
+    /// `idle`, `fetching`, `ready` or `failed`.
+    pub state: String,
+    pub snapshot: String,
+    pub error: String,
+    pub started_at: i64,
+    /// How much of the snapshot is here, in bytes, and how much there is.
+    pub done_bytes: u64,
+    pub total_bytes: u64,
+}
+
 struct Inner {
     store: Store,
     hostname: String,
     version: String,
     wakeup: Notify,
     running: Mutex<()>,
+    /// Where the server keeps its data. Only set when a restore is possible at all -- the command
+    /// line and the tests have no use for it.
+    data_dir: std::sync::OnceLock<PathBuf>,
+    /// Stops the server, so the next start can put the snapshot in place. Set by the server.
+    stop: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>,
+    fetching: std::sync::Mutex<Fetching>,
 }
 
 #[derive(Clone)]
@@ -78,7 +136,145 @@ impl Backups {
                 version: version.to_owned(),
                 wakeup: Notify::new(),
                 running: Mutex::new(()),
+                data_dir: std::sync::OnceLock::new(),
+                stop: std::sync::OnceLock::new(),
+                fetching: std::sync::Mutex::default(),
             }),
+        }
+    }
+
+    /// Lets this server be restored into. Without it the portal can still show snapshots, but the
+    /// button that puts one back is absent -- there would be nowhere to put it.
+    pub fn restores_into(&self, data_dir: &Path, stop: Box<dyn Fn() + Send + Sync>) {
+        let _ = self.inner.data_dir.set(data_dir.to_owned());
+        let _ = self.inner.stop.set(stop);
+    }
+
+    pub fn can_restore(&self) -> bool {
+        self.inner.data_dir.get().is_some()
+    }
+
+    /// Where a restore has got to in this process.
+    pub fn fetching(&self) -> Fetching {
+        self.inner.fetching.lock().expect("restore progress poisoned").clone()
+    }
+
+    /// A snapshot that has already been fetched and is waiting for the next start.
+    pub fn staged(&self) -> Option<Staged> {
+        let dir = self.inner.data_dir.get()?;
+        serde_json::from_str(&std::fs::read_to_string(dir.join(READY_FILE)).ok()?).ok()
+    }
+
+    /// Fetches a snapshot into the data directory and asks the server to stop, so the next start
+    /// can put it in place. Returns as soon as the fetching has begun.
+    ///
+    /// `latest` takes the newest snapshot there is.
+    pub async fn start_restore(&self, snapshot: &str, keep_gateway: bool, by: &str) -> Result<(), Error> {
+        let dir = self
+            .inner
+            .data_dir
+            .get()
+            .ok_or_else(|| Error::Config("this server cannot restore into itself".into()))?
+            .clone();
+        if self.fetching().state == "fetching" {
+            return Err(Error::Config("a restore is already being fetched".into()));
+        }
+        if self.staged().is_some() {
+            return Err(Error::Config("a restore is already waiting; restart the server to put it in place".into()));
+        }
+        if self.is_running() {
+            return Err(Error::Config("a backup is running right now".into()));
+        }
+        let settings = self.settings().await?;
+        if settings.target.is_none() {
+            return Err(Error::Config("no backup server is set up".into()));
+        }
+        // An empty staging directory: `restore` refuses to write into one that already holds a
+        // database, and a leftover from an attempt that failed halfway would be exactly that.
+        let staging = dir.join(STAGING_DIR);
+        let _ = tokio::fs::remove_dir_all(&staging).await;
+
+        *self.inner.fetching.lock().expect("restore progress poisoned") = Fetching {
+            state: "fetching".into(),
+            snapshot: snapshot.to_owned(),
+            started_at: now(),
+            ..Fetching::default()
+        };
+        let this = self.clone();
+        let (snapshot, by) = (snapshot.to_owned(), by.to_owned());
+        tokio::spawn(async move { this.fetch_restore(dir, snapshot, keep_gateway, by).await });
+        Ok(())
+    }
+
+    async fn fetch_restore(self, dir: PathBuf, snapshot: String, keep_gateway: bool, by: String) {
+        let staging = dir.join(STAGING_DIR);
+        let result = async {
+            let mut settings = self.settings().await?;
+            let repo = self.open(&mut settings).await?;
+            let fetched = async {
+                let name = match snapshot.as_str() {
+                    "latest" => repo
+                        .snapshots()
+                        .await?
+                        .pop()
+                        .ok_or_else(|| Error::Config("there are no snapshots on the backup server".into()))?,
+                    name => name.to_owned(),
+                };
+                let manifest = repo.manifest(&name).await?;
+                {
+                    let mut progress = self.inner.fetching.lock().expect("restore progress poisoned");
+                    progress.snapshot = name.clone();
+                    progress.total_bytes = manifest.database_size + manifest.blobs_size;
+                }
+                let manifest = crate::restore(&repo, &name, &staging).await?;
+                Ok::<_, Error>((name, manifest))
+            }
+            .await;
+            repo.storage.close().await;
+            fetched
+        }
+        .await;
+
+        let (name, manifest) = match result {
+            Ok(fetched) => fetched,
+            Err(err) => {
+                // Half a snapshot is worse than none: the next start must not find something it
+                // would take for a whole one.
+                let _ = tokio::fs::remove_dir_all(&staging).await;
+                let mut progress = self.inner.fetching.lock().expect("restore progress poisoned");
+                progress.state = "failed".into();
+                progress.error = err.to_string();
+                tracing::warn!(%err, "fetching the snapshot to restore failed");
+                return;
+            }
+        };
+
+        let staged = Staged {
+            snapshot: name.clone(),
+            hostname: manifest.hostname.clone(),
+            created_at: manifest.created_at,
+            keep_gateway,
+            asked_at: now(),
+            by,
+        };
+        let raw = serde_json::to_string(&staged).expect("the note serializes");
+        if let Err(err) = tokio::fs::write(dir.join(READY_FILE), raw).await {
+            let _ = tokio::fs::remove_dir_all(&staging).await;
+            let mut progress = self.inner.fetching.lock().expect("restore progress poisoned");
+            progress.state = "failed".into();
+            progress.error = format!("the snapshot is here but could not be handed over: {err}");
+            return;
+        }
+        {
+            let mut progress = self.inner.fetching.lock().expect("restore progress poisoned");
+            progress.state = "ready".into();
+            progress.done_bytes = progress.total_bytes;
+        }
+        tracing::warn!(snapshot = %name, from = %manifest.hostname, "the snapshot is here; stopping so it can take over");
+        // A moment for the answer to reach the browser before the server goes away under it.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        if let Some(stop) = self.inner.stop.get() {
+            stop();
         }
     }
 
