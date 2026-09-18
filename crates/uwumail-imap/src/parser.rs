@@ -29,11 +29,23 @@ pub fn literal_announcement(line: &[u8]) -> Option<(usize, bool)> {
     Some((size, plus))
 }
 
+/// How deeply a SEARCH key may nest.
+///
+/// `(`, `NOT` and `OR` each make [`Parser::search_key`] call itself, and nothing else stopped it:
+/// a command line may be 64 KiB, which is tens of thousands of brackets, and the stack runs out
+/// long before that. A stack overflow is not an error a process can catch — it takes the whole
+/// server down, and this parser runs before anyone has logged in.
+///
+/// Real clients nest two or three levels. Thunderbird's widest saved search is nowhere near this.
+const MAX_SEARCH_DEPTH: usize = 32;
+
 struct Parser<'a> {
     input: &'a [u8],
     pos: usize,
     /// Mailbox names come as UTF-8 once the client enabled UTF8=ACCEPT, as modified UTF-7 before.
     utf8: bool,
+    /// How many SEARCH keys deep we are, against [`MAX_SEARCH_DEPTH`].
+    depth: usize,
 }
 
 const MONTHS: [&str; 12] = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
@@ -208,7 +220,11 @@ impl<'a> Parser<'a> {
             return Err("a literal must end its line".into());
         }
         self.byte(b'\n')?;
-        let data = self.input.get(self.pos..self.pos + size).ok_or("the literal is shorter than announced")?;
+        // checked: a client may announce up to twenty digits, and pos + size would wrap. It wraps
+        // quietly in release and panics in a debug build -- and with panic = "abort" a panic here,
+        // in a parser a stranger reaches before logging in, would take the whole server with it.
+        let end = self.pos.checked_add(size).ok_or("the literal is longer than this server can hold")?;
+        let data = self.input.get(self.pos..end).ok_or("the literal is shorter than announced")?;
         self.pos += size;
         Ok(data)
     }
@@ -844,6 +860,17 @@ impl<'a> Parser<'a> {
     }
 
     fn search_key(&mut self) -> Parsed<SearchKey> {
+        self.depth += 1;
+        if self.depth > MAX_SEARCH_DEPTH {
+            self.depth -= 1;
+            return Err("the search is nested too deeply".into());
+        }
+        let key = self.nested_search_key();
+        self.depth -= 1;
+        key
+    }
+
+    fn nested_search_key(&mut self) -> Parsed<SearchKey> {
         if self.eat(b'(') {
             let mut keys = vec![self.search_key()?];
             while self.eat(b' ') {
@@ -978,7 +1005,7 @@ pub fn parse_date_time(text: &str) -> Option<i64> {
 
 /// Parses one complete command. `utf8` says whether the client enabled UTF8=ACCEPT.
 pub fn parse_command(input: &[u8], utf8: bool) -> Result<Command, ParseError> {
-    let mut parser = Parser { input, pos: 0, utf8 };
+    let mut parser = Parser { input, pos: 0, utf8, depth: 0 };
     let tag = match parser.word(false) {
         Ok(tag) if !tag.contains('+') => tag.to_owned(),
         _ => return Err(ParseError { tag: None, message: "a command starts with a tag".into() }),
@@ -1193,5 +1220,60 @@ mod tests {
         assert_eq!(parse_date("29-Feb-2024"), Some(days_from_civil(2024, 2, 29)));
         assert_eq!(parse_date_time(" 1-Jan-2000 00:00:00 +0100"), Some(days_from_civil(2000, 1, 1) * 86_400 - 3600));
         assert_eq!(parse_date("32-Jan-2000"), None);
+    }
+}
+
+#[cfg(test)]
+mod depth_tests {
+    use super::*;
+
+    /// A search nested past what any client sends is an error, not a crash.
+    ///
+    /// `(`, `NOT` and `OR` each make the parser call itself, and a command line may be 64 KiB —
+    /// tens of thousands of brackets, far past the stack. This runs before anyone has logged in,
+    /// and a stack overflow cannot be caught: it takes the whole server down.
+    #[test]
+    fn a_search_nested_too_deeply_is_refused_rather_than_fatal() {
+        let nested = |depth: usize| {
+            let mut line = b"z SEARCH ".to_vec();
+            line.extend(std::iter::repeat_n(b'(', depth));
+            line.extend_from_slice(b"ALL");
+            line.extend(std::iter::repeat_n(b')', depth));
+            line.extend_from_slice(b"\r\n");
+            line
+        };
+        assert!(parse_command(&nested(4), false).is_ok(), "what a client really sends still works");
+        // The key inside the brackets counts as a level of its own, so n brackets are n + 1 deep.
+        assert!(parse_command(&nested(MAX_SEARCH_DEPTH - 1), false).is_ok(), "and the whole allowance");
+        assert!(parse_command(&nested(MAX_SEARCH_DEPTH), false).is_err(), "one past it is refused");
+        // The sizes that used to end the process. Reaching this line at all is the test.
+        for depth in [200, 5_000, 30_000] {
+            assert!(parse_command(&nested(depth), false).is_err(), "depth {depth} should be refused");
+        }
+    }
+
+    /// `NOT` and `OR` recurse as well, so the same guard has to cover them.
+    #[test]
+    fn not_and_or_are_counted_too() {
+        let mut line = b"z SEARCH ".to_vec();
+        line.extend(std::iter::repeat_n(b"NOT ".as_slice(), 5_000).flatten().copied());
+        line.extend_from_slice(b"ALL\r\n");
+        assert!(parse_command(&line, false).is_err());
+
+        let mut line = b"z SEARCH ".to_vec();
+        line.extend(std::iter::repeat_n(b"OR ALL ".as_slice(), 5_000).flatten().copied());
+        line.extend_from_slice(b"ALL\r\n");
+        assert!(parse_command(&line, false).is_err());
+    }
+
+    /// A literal may announce twenty digits; adding that to the position must not wrap.
+    #[test]
+    fn an_absurd_literal_length_does_not_wrap_the_position() {
+        for line in [
+            b"z LOGIN {18446744073709551615}\r\nx\r\n".as_slice(),
+            b"z LOGIN {99999999999999999999}\r\nx\r\n".as_slice(),
+        ] {
+            assert!(parse_command(line, false).is_err(), "it has to be an error, and never a panic");
+        }
     }
 }
