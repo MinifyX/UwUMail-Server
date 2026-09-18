@@ -1886,7 +1886,8 @@
       "clearTitle": "Clear the history?",
       "clearBody": "Every entry goes. The mail itself and what the filter learned are untouched.",
       "cleared_one": "One entry removed.",
-      "cleared_other": "{{count}} entries removed."
+      "cleared_other": "{{count}} entries removed.",
+      "virus": "Find"
     },
     "bayes": {
       "title": "Learning filter",

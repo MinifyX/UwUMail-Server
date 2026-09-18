@@ -367,7 +367,7 @@ export interface HostView {
 }
 
 /** What the spam filter did with one message. */
-export type SpamLogAction = "delivered" | "junk" | "greylist" | "reject" | "dmarc" | "blocked";
+export type SpamLogAction = "delivered" | "junk" | "greylist" | "reject" | "dmarc" | "blocked" | "virus";
 
 export interface SpamLogEntry {
   id: number;

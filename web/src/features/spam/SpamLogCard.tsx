@@ -14,7 +14,16 @@ import { formatDate, formatDateTime, formatNumber } from "@/lib/format";
 import { usePhone } from "@/lib/media";
 import { toast } from "@/state/toasts";
 
-const ACTIONS: (SpamLogAction | "all")[] = ["all", "junk", "reject", "greylist", "dmarc", "blocked", "delivered"];
+const ACTIONS: (SpamLogAction | "all")[] = [
+  "all",
+  "junk",
+  "reject",
+  "greylist",
+  "dmarc",
+  "blocked",
+  "virus",
+  "delivered",
+];
 
 /** Held-back mail is what the history is for, so it is the one that stands out. */
 const TONE: Record<SpamLogAction, string> = {
@@ -24,6 +33,7 @@ const TONE: Record<SpamLogAction, string> = {
   reject: "text-danger",
   dmarc: "text-danger",
   blocked: "text-danger",
+  virus: "text-danger",
 };
 
 function Line({ label, children }: { label: string; children: React.ReactNode }) {
@@ -37,6 +47,8 @@ function Line({ label, children }: { label: string; children: React.ReactNode })
 
 function EntryDialog({ entry, onClose }: { entry: SpamLogEntry | null; onClose: () => void }) {
   const { t, i18n } = useT();
+  // A virus has no score, so its name rides along as a rule of its own.
+  const virus = entry?.hits.find((hit) => hit.rule === "VIRUS")?.detail;
   return (
     <Dialog open={entry !== null} onClose={onClose} title={t("spam.log.oneMessage")}>
       {entry && (
@@ -56,6 +68,7 @@ function EntryDialog({ entry, onClose }: { entry: SpamLogEntry | null; onClose: 
               <Line label={t("spam.log.envelope")}>{entry.envelopeFrom}</Line>
             )}
             {entry.subject && <Line label={t("spam.log.subject")}>{entry.subject}</Line>}
+            {virus && <Line label={t("spam.log.virus")}>{virus}</Line>}
             <Line label={t("spam.log.server")}>
               <span className="font-mono text-[12px]">{entry.clientIp || "–"}</span>
               {entry.reverseName && <span className="ml-2">{entry.reverseName}</span>}

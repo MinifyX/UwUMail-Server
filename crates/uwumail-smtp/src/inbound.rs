@@ -53,6 +53,8 @@ struct SpamNote<'a> {
     recipients: Vec<SpamLogRecipient>,
     /// Names the stored message, so what a person says about it later can be found again.
     blob_hash: Option<String>,
+    /// What the virus scanner found, when it found something.
+    virus: Option<&'a str>,
 }
 
 /// Every recipient with the same outcome, for the decisions that apply to the whole message.
@@ -88,6 +90,20 @@ async fn note_spam(ctx: &crate::Context, config: &crate::config::SpamLogConfig, 
         })
         .flatten()
         .map(|subject| shorten(&subject, SPAM_LOG_SUBJECT_MAX));
+    // The rules that fired, and for a virus the one thing there is to say about it: its name.
+    let mut hits: Vec<SpamLogHit> = note
+        .score
+        .map(|score| {
+            score
+                .hits
+                .iter()
+                .map(|hit| SpamLogHit { rule: hit.rule.to_owned(), points: hit.points, detail: hit.detail.clone() })
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Some(name) = note.virus {
+        hits.push(SpamLogHit { rule: "VIRUS".into(), points: 0.0, detail: Some(name.to_owned()) });
+    }
     let entry = NewSpamLogEntry {
         smtp_id: note.id.to_owned(),
         message_id: headers::first_value(note.raw, "Message-ID").map(|id| shorten(&id, 200)),
@@ -100,16 +116,7 @@ async fn note_spam(ctx: &crate::Context, config: &crate::config::SpamLogConfig, 
         reverse_name: note.score.and_then(|score| score.reverse_name.clone()),
         size: note.raw.len() as i64,
         score: note.score.map(|score| score.points),
-        hits: note
-            .score
-            .map(|score| {
-                score
-                    .hits
-                    .iter()
-                    .map(|hit| SpamLogHit { rule: hit.rule.to_owned(), points: hit.points, detail: hit.detail.clone() })
-                    .collect()
-            })
-            .unwrap_or_default(),
+        hits,
         // The whole Authentication-Results line, which says what SPF, DKIM and DMARC found.
         auth: note.verdict.map(|verdict| verdict.header.trim().to_owned()).filter(|line| !line.is_empty()),
         blob_hash: note.blob_hash,
@@ -935,6 +942,7 @@ impl Session {
                 score: None,
                 recipients: all_recipients(&recipients, SpamAction::Dmarc),
                 blob_hash: None,
+                virus: None,
             };
             note_spam(&ctx, &live.spam.log, note).await;
             return format!("550 5.7.1 {reason}\r\n");
@@ -975,6 +983,7 @@ impl Session {
                 score: None,
                 recipients: all_recipients(&recipients, SpamAction::Blocked),
                 blob_hash: None,
+                virus: None,
             };
             note_spam(&ctx, &live.spam.log, note).await;
             return "550 5.7.1 Mail from this sender is not accepted here\r\n".into();
@@ -996,6 +1005,7 @@ impl Session {
                 score: None,
                 recipients: all_recipients(&recipients, SpamAction::Virus),
                 blob_hash: None,
+                virus: Some(name),
             };
             note_spam(&ctx, &live.spam.log, note).await;
             return format!("554 5.7.0 This message contains {name}\r\n");
@@ -1073,6 +1083,7 @@ impl Session {
                 score: score.as_ref(),
                 recipients: all_recipients(&recipients, SpamAction::Reject),
                 blob_hash: None,
+                virus: None,
             };
             note_spam(&ctx, &live.spam.log, note).await;
             return "550 5.7.1 This message looks like spam\r\n".into();
@@ -1116,6 +1127,7 @@ impl Session {
                     score: score.as_ref(),
                     recipients: all_recipients(&recipients, SpamAction::Greylist),
                     blob_hash: None,
+                    virus: None,
                 };
                 note_spam(&ctx, &live.spam.log, note).await;
                 return format!("451 4.7.1 Please try again in {minutes} minutes\r\n");
@@ -1298,6 +1310,7 @@ impl Session {
                 score: score.as_ref(),
                 recipients: noted,
                 blob_hash: stored.as_ref().map(|hash| hash.as_str().to_owned()),
+                virus: None,
             };
             note_spam(&ctx, &live.spam.log, note).await;
         }

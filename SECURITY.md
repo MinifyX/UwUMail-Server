@@ -24,6 +24,8 @@ Security sweeps are done with Claude, and written down in full:
   again, and the gateway and its tunnel for the first time.
 - [docs/security-audit-2026-09-18.md](docs/security-audit-2026-09-18.md) — the
   whole stack, including the desktop client, and everything built since.
+- [docs/security-audit-0.3.0.md](docs/security-audit-0.3.0.md) — what 0.3.0
+  added: the virus scanner and the DNS records at Cloudflare.
 
 Each one lists the findings, what was checked, what was hardened and the limits
 that are known and accepted. They are honest reviews, not independent

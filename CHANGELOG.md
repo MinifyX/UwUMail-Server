@@ -5,6 +5,9 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ## Unreleased
 
+**Security.** Both of the additions below were reviewed afterwards:
+[docs/security-audit-0.3.0.md](docs/security-audit-0.3.0.md). Two small findings, both fixed.
+
 **A virus scanner, if you want one.** ClamAV can now look at every message before it is taken.
 It runs in its own container beside the server — clamd wants two gigabytes of memory and a
 writable place for its signatures, which a read-only image on a Raspberry Pi does not have — and

@@ -1886,7 +1886,8 @@
       "clearTitle": "Verlauf leeren?",
       "clearBody": "Alle Einträge werden gelöscht. Die Mails selbst und was der Filter gelernt hat bleiben davon unberührt.",
       "cleared_one": "Ein Eintrag gelöscht.",
-      "cleared_other": "{{count}} Einträge gelöscht."
+      "cleared_other": "{{count}} Einträge gelöscht.",
+      "virus": "Fund"
     },
     "bayes": {
       "title": "Lernender Filter",

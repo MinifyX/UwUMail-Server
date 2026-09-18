@@ -17,6 +17,8 @@ use crate::config::AntivirusConfig;
 const CHUNK: usize = 32 * 1024;
 /// clamd answers in one short line; anything longer is not an answer we understand.
 const MAX_REPLY: usize = 4096;
+/// How long the portal waits for the scanner to say what it is.
+const STATUS_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// What clamd said about one message.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,8 +112,11 @@ impl Clamav {
     }
 
     /// What clamd answers to `VERSION`, for the portal.
+    ///
+    /// The portal asks this while someone waits for a page, so it gives up much sooner than a
+    /// scan does: a scanner that hangs must not hold up the overview.
     pub async fn status(&self) -> Result<Status, String> {
-        let answer = tokio::time::timeout(self.timeout, async {
+        let answer = tokio::time::timeout(self.timeout.min(STATUS_TIMEOUT), async {
             let mut stream = self.connect().await?;
             stream.write_all(b"zVERSION\0").await.map_err(|err| format!("the virus scanner broke off: {err}"))?;
             Clamav::reply(&mut stream).await
@@ -214,7 +219,12 @@ fn built_at(date: &str) -> Option<i64> {
     let year: i64 = year.parse().ok()?;
     let clock: Vec<i64> = time.split(':').map(|part| part.parse().unwrap_or(-1)).collect();
     let [hour, minute, second] = clock.as_slice() else { return None };
-    if *hour < 0 || *minute < 0 || *second < 0 {
+    // Nothing here is trusted enough to multiply without looking: a made-up year would run over
+    // what an i64 holds. A date outside these bounds is not a date.
+    if !(1970..=9999).contains(&year) || !(1..=31).contains(&day) {
+        return None;
+    }
+    if !(0..=23).contains(hour) || !(0..=59).contains(minute) || !(0..=60).contains(second) {
         return None;
     }
     Some(days_since_epoch(year, month, day) * 86_400 + hour * 3600 + minute * 60 + second)
@@ -278,6 +288,11 @@ mod tests {
         assert_eq!(built_at("Wed Sep 17 08:32:11 2026"), Some(1_789_633_931));
         assert_eq!(built_at("Wed Sep 17 2026"), None);
         assert_eq!(built_at("Wed Sep 17 08:xx:11 2026"), None);
+        // A made-up date is refused instead of being multiplied into an overflow.
+        assert_eq!(built_at("Wed Sep 17 08:32:11 9223372036854775807"), None);
+        assert_eq!(built_at("Wed Sep 17 9223372036854775807:32:11 2026"), None);
+        assert_eq!(built_at("Wed Sep 999 08:32:11 2026"), None);
+        assert_eq!(built_at("Wed Mai 17 08:32:11 2026"), None);
     }
 
     /// A stand-in clamd that answers `reply` to whatever it is asked.
