@@ -3,7 +3,7 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
-## Unreleased
+## 0.3.0
 
 **Security.** Both of the additions below were reviewed afterwards:
 [docs/security-audit-0.3.0.md](docs/security-audit-0.3.0.md). Two small findings, both fixed.
