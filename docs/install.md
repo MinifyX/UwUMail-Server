@@ -48,7 +48,10 @@ On other systems, follow [Docker's guide](https://docs.docker.com/engine/install
 ## 2. B only: install the gateway on the VPS
 
 The gateway comes first, because the server pairs with it when it starts. On
-the VPS (Debian 12 or newer, Ubuntu 24.04 or newer, amd64):
+the VPS (Debian 12 or newer, Ubuntu 24.04 or newer, amd64), and that VPS should
+be the gateway's alone: no second mail or web server, no Plesk. It wants ports
+25, 80, 443, 465, 587 and 993 for itself, and everything else there shares its
+fate.
 
 ```bash
 cd /tmp

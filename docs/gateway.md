@@ -47,10 +47,15 @@ only ever show the gateway, never your home address.
 
 ## What you need
 
-- **A small VPS.** The gateway is a single program that needs a few megabytes
-  of memory; the smallest plan of most providers is plenty. Linux with systemd
-  (Debian 12 or newer, Ubuntu 24.04 or newer), no other mail or web server on it
-  (pick an image without Plesk or similar).
+- **A small VPS, and it is the gateway's alone.** The gateway is a single
+  program that needs a few megabytes of memory; the smallest plan of most
+  providers is plenty. Linux with systemd (Debian 12 or newer, Ubuntu 24.04 or
+  newer), no other mail or web server on it (pick an image without Plesk or
+  similar). It wants ports 25, 80, 443, 465, 587 and 993 for itself, and
+  whatever else you put there shares its fate: a restart for an update takes
+  that along, and your mail is only as reachable as the busiest thing on the
+  machine. `install.sh` says so when it finds company, and installs anyway —
+  it is your machine.
 - **A fixed IPv4 address** (IPv6 as well is better) with **reverse DNS you can
   set**. Set it before you send the first mail: a gateway whose address has no
   matching reverse entry is turned away by big mail providers outright, with

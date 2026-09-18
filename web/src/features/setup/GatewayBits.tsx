@@ -101,6 +101,10 @@ export function GatewayPanel({ hostname, explain }: { hostname: string; explain:
       {view.fromConfig && view.state !== "none" && (
         <p className="rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">{t("setup.gateway.fromConfig")}</p>
       )}
+      {/* Not behind `explain`: whoever pairs a gateway has to read this, in Pro mode as well. */}
+      {showForm && (
+        <p className="rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">{t("setup.gateway.vpsAlone")}</p>
+      )}
       {showForm ? (
         <form className="flex flex-col gap-3" onSubmit={(event) => void submit(event)}>
           {explain && <p className="text-[13px] text-muted">{t("setup.gateway.howTo")}</p>}

@@ -1482,6 +1482,7 @@
     "gateway": {
       "title": "UwUMail Gateway",
       "howTo": "Miete einen kleinen VPS mit fester Adresse, bei dem Port 25 frei ist, installiere dort das Gateway und kopiere den Kopplungs-Code aus seinem Log oder von uwumail-gateway code.",
+      "vpsAlone": "Der VPS gehört allein dem Gateway: kein zweiter Mail- oder Webserver, kein Plesk, keine anderen Dienste. Das Gateway braucht die Ports 25, 80, 443, 465, 587 und 993 für sich, und was sonst dort läuft, hängt mit an deiner Erreichbarkeit.",
       "codeLabel": "Kopplungs-Code",
       "codeHint": "Beginnt mit uwugw1 und gilt nur einmal.",
       "pair": "Koppeln",

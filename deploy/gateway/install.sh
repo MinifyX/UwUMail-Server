@@ -424,6 +424,36 @@ ADVICE
   fi
 }
 
+# ── is this machine the gateway's alone? ──────────────────────────────────────────────────────
+# The gateway wants 25, 80, 443, 465, 587 and 993 for itself, and anything else here shares its
+# fate: a reboot for an update takes that along, and a web server already on 443 keeps the gateway
+# from ever answering there. This only ever warns. It is your machine, and a check that refuses to
+# run is a check people learn to work around.
+look_for_company() {
+  local listening="" busy="" others="" port owner service
+  command -v ss >/dev/null 2>&1 && listening=$(ss -Hlntp 2>/dev/null)
+  for port in 25 80 443 465 587 993; do
+    owner=$(printf '%s\n' "$listening" | awk -v want=":$port\$" '$4 ~ want' |
+      sed -n 's/.*users:(("\([^"]*\)".*/\1/p' | head -1)
+    [ -z "$owner" ] && continue
+    # Our own gateway, which is listening there on every run but the first. `ss` cuts the name at
+    # fifteen characters, so match the beginning.
+    case "$owner" in uwumail-gatew*) continue ;; esac
+    busy="$busy $port($owner)"
+  done
+  # Plesk is `sw-engine`; the mail and web servers are the ones people put on a VPS by habit.
+  for service in postfix exim4 sendmail dovecot nginx apache2 httpd caddy lighttpd sw-engine; do
+    systemctl is-active --quiet "$service" 2>/dev/null && others="$others $service"
+  done
+  if [ -n "$busy" ]; then
+    warn "something else already listens on:$busy. The gateway needs 25, 80, 443, 465, 587 and 993 for itself."
+  fi
+  if [ -n "$others" ]; then
+    warn "this machine also runs:$others. A gateway VPS should belong to the gateway alone."
+  fi
+  return 0
+}
+
 # ── what actually runs ────────────────────────────────────────────────────────────────────────
 if $check; then
   command -v uwumail-gateway >/dev/null 2>&1 || {
@@ -447,10 +477,13 @@ if $check; then
     note "fail2ban|not running|"
   fi
   [ -x "$helper_dir/helper" ] && "$helper_dir/helper" machine >/dev/null 2>&1
+  look_for_company
   report
   exit 0
 fi
 
+# Before anything is installed, so it is read while there is still a choice.
+look_for_company
 step "installing the gateway"
 install_gateway
 wait_for_gateway
