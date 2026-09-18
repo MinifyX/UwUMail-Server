@@ -405,7 +405,36 @@ const mockBackups: BackupsView = {
     },
   },
   running: false,
+  restore: {
+    available: true,
+    fetching: { state: "idle", snapshot: "", error: "", startedAt: 0, doneBytes: 0, totalBytes: 0 },
+    staged: null,
+    last: null,
+  },
 };
+
+let restoreStartedAt = 0;
+
+/**
+ * A restore in the mock walks through fetching and then waits, which is where a real one leaves the
+ * portal: the server stops, and the start after it puts the files in place.
+ */
+function stepRestore(): BackupsView {
+  const restore = mockBackups.restore;
+  if (restore.fetching.state !== "fetching") return mockBackups;
+  if (Date.now() - restoreStartedAt > 6000) {
+    restore.fetching = { ...restore.fetching, state: "ready", doneBytes: restore.fetching.totalBytes };
+    restore.staged = {
+      snapshot: restore.fetching.snapshot,
+      hostname: "mail.old.example",
+      createdAt: Math.floor(Date.now() / 1000) - 86_400,
+      keepGateway: true,
+      askedAt: Math.floor(Date.now() / 1000),
+      by: "lorin@uwu.example",
+    };
+  }
+  return mockBackups;
+}
 
 let nextAuditId = 20;
 const audit: AuditRecord[] = [
@@ -2449,7 +2478,41 @@ const routes: [string, RegExp, Handler][] = [
       return [200, mockUpdates];
     },
   ],
-  ["GET", /^\/api\/admin\/backups$/, () => [200, mockBackups]],
+  ["GET", /^\/api\/admin\/backups$/, () => [200, stepRestore()]],
+  [
+    "POST",
+    /^\/api\/admin\/backups\/restore$/,
+    (body) => {
+      const snapshot = (body as { snapshot?: string }).snapshot ?? "latest";
+      restoreStartedAt = Date.now();
+      mockBackups.restore.fetching = {
+        state: "fetching",
+        snapshot,
+        error: "",
+        startedAt: Math.floor(Date.now() / 1000),
+        doneBytes: 0,
+        totalBytes: 2_310_000_000,
+      };
+      return [200, mockBackups];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/admin\/backups\/restore$/,
+    () => {
+      mockBackups.restore.last = null;
+      mockBackups.restore.staged = null;
+      mockBackups.restore.fetching = {
+        state: "idle",
+        snapshot: "",
+        error: "",
+        startedAt: 0,
+        doneBytes: 0,
+        totalBytes: 0,
+      };
+      return [200, mockBackups];
+    },
+  ],
   [
     "PUT",
     /^\/api\/admin\/backups$/,

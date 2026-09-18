@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { DatabaseBackup, KeyRound, Plug, RefreshCw } from "lucide-react";
+import { Check, DatabaseBackup, History, KeyRound, Plug, RefreshCw } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
@@ -343,6 +343,92 @@ function SettingsCard({ view, onRecoveryKey }: { view: BackupsView; onRecoveryKe
   );
 }
 
+/**
+ * Putting a backup back: what the last one did, what is being fetched, and what is waiting.
+ *
+ * The buttons that start one sit in the snapshot list below, beside the snapshot they would put
+ * back. This card is what happens afterwards, which is the part that needs explaining: the server
+ * fetches the snapshot, stops itself, and the start after that puts the files in place — because
+ * while it runs, the database it would replace is the one it is running on.
+ */
+function RestoreCard({ view }: { view: BackupsView }) {
+  const { t, i18n } = useT();
+  const errorText = useErrorText();
+  const queryClient = useQueryClient();
+  const restore = view.restore;
+  const forget = useMutation({
+    mutationFn: () => api<BackupsView>("/api/admin/backups/restore", { method: "DELETE" }),
+    onSuccess: (next) => queryClient.setQueryData(key, next),
+    onError: (error) => toast(errorText(error), "error"),
+  });
+
+  const fetching = restore.fetching;
+  const busy = fetching.state === "fetching";
+  const nothing = !restore.last && !restore.staged && fetching.state === "idle";
+  if (!restore.available || nothing) return null;
+
+  return (
+    <Card title={t("backups.restore.title")}>
+      <div className="flex flex-col gap-3">
+        {busy && (
+          <p className="rounded-control bg-pink-tint px-3 py-2 text-[13px] text-pink-ink">
+            {t("backups.restore.fetching", {
+              snapshot: fetching.snapshot,
+              size: formatBytes(fetching.totalBytes, i18n.language),
+            })}
+          </p>
+        )}
+        {fetching.state === "failed" && (
+          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+            {t("backups.restore.fetchFailed", { error: fetching.error })}
+          </p>
+        )}
+        {restore.staged && (
+          <p className="rounded-control bg-pink-tint px-3 py-2 text-[13px] text-pink-ink">
+            {t("backups.restore.staged", {
+              hostname: restore.staged.hostname,
+              time: formatDateTime(restore.staged.createdAt, i18n.language),
+            })}
+          </p>
+        )}
+        {restore.last && (
+          <div className="flex flex-col gap-2">
+            <p
+              className={
+                restore.last.error
+                  ? "rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning"
+                  : "rounded-control bg-success-tint px-3 py-2 text-[13px] text-success"
+              }
+            >
+              {restore.last.error
+                ? t("backups.restore.lastFailed", { error: restore.last.error })
+                : t("backups.restore.lastDone", {
+                    hostname: restore.last.hostname,
+                    time: formatDateTime(restore.last.createdAt, i18n.language),
+                  })}
+            </p>
+            {!restore.last.error && (
+              <>
+                {/* The one thing nobody must find out by surprise weeks later. */}
+                <p className="text-[13px] text-muted">{t("backups.restore.backupsOff")}</p>
+                {restore.last.keptGateway && (
+                  <p className="text-[13px] text-muted">{t("backups.restore.keptGateway")}</p>
+                )}
+                <p className="text-[13px] text-muted">{t("backups.restore.oldDatabase")}</p>
+              </>
+            )}
+            <div>
+              <Button variant="ghost" size="sm" icon={Check} busy={forget.isPending} onClick={() => forget.mutate()}>
+                {t("backups.restore.forget")}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 function SnapshotsCard({ view }: { view: BackupsView }) {
   const { t, i18n } = useT();
   const [open, setOpen] = useState(false);
@@ -353,7 +439,27 @@ function SnapshotsCard({ view }: { view: BackupsView }) {
   });
   const { confirmed, dialog } = usePasswordConfirmation();
   const errorText = useErrorText();
+  const queryClient = useQueryClient();
   const [shownKey, setShownKey] = useState<string | null>(null);
+  const [asking, setAsking] = useState<BackupSnapshot | null>(null);
+  const [keepGateway, setKeepGateway] = useState(true);
+  const restoring = useMutation({
+    mutationFn: (snapshot: string) =>
+      confirmed((password) =>
+        api<BackupsView>("/api/admin/backups/restore", {
+          method: "POST",
+          body: { snapshot, keepGateway, password },
+        }),
+      ),
+    onSuccess: (next) => {
+      setAsking(null);
+      queryClient.setQueryData(key, next);
+    },
+    onError: (error) => {
+      if (!(error instanceof Cancelled)) toast(errorText(error), "error");
+    },
+  });
+  const busy = view.restore.fetching.state === "fetching" || view.restore.staged !== null;
   const reveal = useMutation({
     mutationFn: () =>
       confirmed((password) =>
@@ -368,7 +474,10 @@ function SnapshotsCard({ view }: { view: BackupsView }) {
   return (
     <Card title={t("backups.snapshots.title")}>
       <div className="flex flex-col gap-3">
-        <p className="-mt-1 text-[13px] text-muted">{t("backups.snapshots.restoreHint")}</p>
+        <p className="-mt-1 text-[13px] text-muted">
+          {t(view.restore.available ? "backups.snapshots.restoreHere" : "backups.snapshots.restoreHint")}
+        </p>
+        {/* Still worth showing: it is the way back on a machine that has no server running yet. */}
         <code className="rounded-control bg-canvas px-3 py-2 font-mono text-[12px] break-all">
           uwumail-server backup restore --sftp user@host:/path --into /data
         </code>
@@ -402,12 +511,47 @@ function SnapshotsCard({ view }: { view: BackupsView }) {
                     uploaded: formatBytes(snapshot.uploaded, i18n.language),
                   })}
                 </span>
-                <code className="w-full font-mono text-[11px] text-faint">{snapshot.name}</code>
+                <code className="min-w-0 flex-1 font-mono text-[11px] text-faint">{snapshot.name}</code>
+                {view.restore.available && (
+                  <Button size="sm" icon={History} disabled={busy} onClick={() => setAsking(snapshot)}>
+                    {t("backups.restore.put")}
+                  </Button>
+                )}
               </li>
             ))}
           </ul>
         )}
       </div>
+      <Dialog open={asking !== null} onClose={() => setAsking(null)} title={t("backups.restore.title")}>
+        <div className="flex flex-col gap-4 px-6 pb-6">
+          <p className="text-sm">
+            {asking && t("backups.restore.from", { time: formatDateTime(asking.createdAt, i18n.language) })}
+          </p>
+          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+            {t("backups.restore.warning")}
+          </p>
+          <p className="text-[13px] text-muted">{t("backups.restore.how")}</p>
+          <Toggle
+            checked={keepGateway}
+            onChange={setKeepGateway}
+            label={t("backups.restore.keepGatewayLabel")}
+            description={t("backups.restore.keepGatewayHint")}
+          />
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="ghost" onClick={() => setAsking(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="danger"
+              icon={History}
+              busy={restoring.isPending}
+              onClick={() => asking && restoring.mutate(asking.name)}
+            >
+              {t("backups.restore.put")}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
       {dialog}
       <RecoveryKeyDialog key={shownKey ?? ""} recoveryKey={shownKey} onClose={() => setShownKey(null)} />
     </Card>
@@ -420,7 +564,14 @@ export function BackupsPage() {
   const query = useQuery({
     queryKey: key,
     queryFn: () => api<BackupsView>("/api/admin/backups"),
-    refetchInterval: (current) => (current.state.data?.running ? 3000 : false),
+    refetchInterval: (current) => {
+      const data = current.state.data;
+      // While a snapshot is being fetched the server is about to stop under us, so keep asking.
+      if (data?.restore.fetching.state === "fetching") return 2000;
+      return data?.running ? 3000 : false;
+    },
+    retry: (count, error) => !(error instanceof ApiError && error.status < 500) && count < 40,
+    retryDelay: 3000,
   });
   const [recoveryKey, setRecoveryKey] = useState<string | null>(null);
   if (query.isPending) return <Loading />;
@@ -429,6 +580,7 @@ export function BackupsPage() {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title={t("backups.title")} intro={t("backups.intro")} />
+      <RestoreCard view={view} />
       <StatusCard view={view} />
       <SettingsCard view={view} onRecoveryKey={setRecoveryKey} />
       <SnapshotsCard view={view} />

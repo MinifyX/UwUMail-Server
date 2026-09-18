@@ -549,6 +549,41 @@ export interface BackupsView {
     lastReport: BackupReport | null;
   };
   running: boolean;
+  restore: RestoreView;
+}
+
+/** Putting a backup back over everything this server has. */
+export interface RestoreView {
+  /** Whether this server can restore into itself at all. */
+  available: boolean;
+  /** What is going on in this process right now. */
+  fetching: {
+    state: "idle" | "fetching" | "ready" | "failed" | string;
+    snapshot: string;
+    error: string;
+    startedAt: number;
+    doneBytes: number;
+    totalBytes: number;
+  };
+  /** A snapshot that is here and waiting for the next start to put it in place. */
+  staged: {
+    snapshot: string;
+    hostname: string;
+    createdAt: number;
+    keepGateway: boolean;
+    askedAt: number;
+    by: string;
+  } | null;
+  /** How the restore this server carried out at its last start went. */
+  last: {
+    snapshot: string;
+    hostname: string;
+    createdAt: number;
+    finishedAt: number;
+    /** Empty when it worked. */
+    error: string;
+    keptGateway: boolean;
+  } | null;
 }
 
 export interface BackupSnapshot {

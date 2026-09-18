@@ -1734,12 +1734,31 @@
       "load": "Show snapshots",
       "showKey": "Show recovery key",
       "none": "No snapshots yet.",
-      "line": "{{mails}} mails · {{size}} · {{uploaded}} new"
+      "line": "{{mails}} mails · {{size}} · {{uploaded}} new",
+      "restoreHere": "A snapshot can be put back here, or on the command line into an empty data directory — including on a brand new machine where no server runs yet:"
     },
     "recovery": {
       "title": "Recovery key",
       "explain": "Without this key the backups cannot be read anymore, not even by me. Write it down or keep it in your password manager, apart from this server.",
       "written": "I stored the key safely"
+    },
+    "restore": {
+      "title": "Put a backup back",
+      "put": "Put back",
+      "from": "The state of {{time}}.",
+      "warning": "Everything on this server is replaced by what is in the backup: mail, accounts, settings, calendars, contacts. Anything that arrived since is gone afterwards.",
+      "how": "The server fetches the backup, then stops itself, and the next start puts the files in place — while it runs it is working on exactly the database that would be replaced. Docker brings the container back by itself; it takes a few minutes.",
+      "keepGatewayLabel": "Keep this machine's gateway pairing",
+      "keepGatewayHint": "The backup carries the pairing of the server it came from. If this machine is its replacement, the one here is the right one.",
+      "fetching": "Fetching the backup {{snapshot}} ({{size}}). The server restarts afterwards.",
+      "fetchFailed": "The backup could not be fetched: {{error}}. Nothing was touched.",
+      "staged": "A backup from {{hostname}}, the state of {{time}}, is here. It goes in at the next start — restart the server.",
+      "lastDone": "Put back: the state of {{time}} from {{hostname}}.",
+      "lastFailed": "Putting the backup back did not work: {{error}}. The server is running on what was here before.",
+      "backupsOff": "Backups are switched off now. The backup carried the old server's target — turn them on again once the target is right.",
+      "keptGateway": "This machine's gateway pairing was kept, not the one from the backup.",
+      "oldDatabase": "The database from before is in the data directory as uwumail.db.replaced.*. Delete it once you are sure.",
+      "forget": "Got it"
     }
   },
   "spam": {

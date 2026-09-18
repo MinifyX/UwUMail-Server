@@ -1734,12 +1734,31 @@
       "load": "Stände anzeigen",
       "showKey": "Wiederherstellungsschlüssel anzeigen",
       "none": "Noch keine Stände.",
-      "line": "{{mails}} Mails · {{size}} · {{uploaded}} neu"
+      "line": "{{mails}} Mails · {{size}} · {{uploaded}} neu",
+      "restoreHere": "Ein Stand lässt sich hier zurückspielen, oder auf der Kommandozeile in ein leeres Datenverzeichnis — auch auf einem ganz neuen Rechner, auf dem noch kein Server läuft:"
     },
     "recovery": {
       "title": "Wiederherstellungsschlüssel",
       "explain": "Ohne diesen Schlüssel lassen sich die Backups nicht mehr lesen, auch nicht von mir. Schreib ihn auf oder leg ihn in deinen Passwort-Manager, getrennt von diesem Server.",
       "written": "Ich habe den Schlüssel sicher abgelegt"
+    },
+    "restore": {
+      "title": "Backup zurückspielen",
+      "put": "Zurückspielen",
+      "from": "Stand vom {{time}}.",
+      "warning": "Alles, was jetzt auf diesem Server ist, wird durch den Stand aus dem Backup ersetzt: Mails, Konten, Einstellungen, Kalender, Kontakte. Was seitdem angekommen ist, ist danach weg.",
+      "how": "Der Server holt sich das Backup, hält sich dann selbst an und legt die Dateien beim nächsten Start an ihren Platz — solange er läuft, arbeitet er ja auf genau der Datenbank, die ersetzt werden soll. Docker startet den Container von allein wieder; das dauert ein paar Minuten.",
+      "keepGatewayLabel": "Gateway-Kopplung dieser Maschine behalten",
+      "keepGatewayHint": "Im Backup steckt die Kopplung des Servers, von dem es stammt. Wenn diese Maschine der Ersatz dafür ist, ist die hier die richtige.",
+      "fetching": "Das Backup {{snapshot}} wird geholt ({{size}}). Danach startet der Server neu.",
+      "fetchFailed": "Das Backup konnte nicht geholt werden: {{error}}. Es wurde nichts angefasst.",
+      "staged": "Ein Backup von {{hostname}}, Stand {{time}}, liegt bereit. Es wird beim nächsten Start eingesetzt — starte den Server neu.",
+      "lastDone": "Zurückgespielt: Stand vom {{time}} von {{hostname}}.",
+      "lastFailed": "Das Zurückspielen hat nicht geklappt: {{error}}. Der Server läuft auf dem, was vorher da war.",
+      "backupsOff": "Die Backups sind jetzt ausgeschaltet. Im Backup stand das Ziel des alten Servers — schalte sie erst wieder ein, wenn das Ziel stimmt.",
+      "keptGateway": "Die Gateway-Kopplung dieser Maschine wurde behalten, nicht die aus dem Backup.",
+      "oldDatabase": "Die Datenbank von vorher liegt als uwumail.db.replaced.* im Datenverzeichnis. Lösch sie, wenn du sicher bist.",
+      "forget": "Verstanden"
     }
   },
   "spam": {
