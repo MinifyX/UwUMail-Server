@@ -233,30 +233,42 @@ impl Backups {
             .get()
             .ok_or_else(|| Error::Config("this server cannot restore into itself".into()))?
             .clone();
-        if self.fetching().state == "fetching" {
-            return Err(Error::Config("a restore is already being fetched".into()));
-        }
         if self.staged().is_some() {
             return Err(Error::Config("a restore is already waiting; restart the server to put it in place".into()));
         }
         if self.is_running() {
             return Err(Error::Config("a backup is running right now".into()));
         }
-        let settings = self.settings().await?;
-        if settings.target.is_none() {
-            return Err(Error::Config("no backup server is set up".into()));
+        // Claimed here, under the lock and before anything is awaited. Checking first and setting
+        // after would let two clicks a moment apart both get through, and the second one empties the
+        // staging directory the first is still filling.
+        {
+            let mut progress = self.inner.fetching.lock().expect("restore progress poisoned");
+            if progress.state == "fetching" {
+                return Err(Error::Config("a restore is already being fetched".into()));
+            }
+            *progress = Fetching {
+                state: "fetching".into(),
+                snapshot: snapshot.to_owned(),
+                started_at: now(),
+                ..Fetching::default()
+            };
         }
+        let settings = match self.settings().await {
+            Ok(settings) if settings.target.is_some() => settings,
+            other => {
+                // The slot goes back: nothing was started.
+                *self.inner.fetching.lock().expect("restore progress poisoned") = Fetching::default();
+                other?;
+                return Err(Error::Config("no backup server is set up".into()));
+            }
+        };
+        let _ = settings;
         // An empty staging directory: `restore` refuses to write into one that already holds a
         // database, and a leftover from an attempt that failed halfway would be exactly that.
         let staging = dir.join(STAGING_DIR);
         let _ = tokio::fs::remove_dir_all(&staging).await;
 
-        *self.inner.fetching.lock().expect("restore progress poisoned") = Fetching {
-            state: "fetching".into(),
-            snapshot: snapshot.to_owned(),
-            started_at: now(),
-            ..Fetching::default()
-        };
         let this = self.clone();
         let (snapshot, by) = (snapshot.to_owned(), by.to_owned());
         tokio::spawn(async move { this.fetch_restore(dir, snapshot, keep_gateway, by).await });

@@ -281,8 +281,10 @@ pub async fn restore(
     // Everything on this server is about to be replaced by what was on another one. Of all the
     // things the portal can do, this is the one that most deserves the password again.
     confirm_identity(&web, &session, body.password.as_deref()).await?;
-    audit(&web, &session, "backups.restore", &body.snapshot, json!({ "keepGateway": body.keep_gateway })).await;
+    // After it started, not before: an entry for a restore that was refused would make the one
+    // record of what happened to this server say something that did not.
     backups.start_restore(&body.snapshot, body.keep_gateway, &session.account.login).await.map_err(api_error)?;
+    audit(&web, &session, "backups.restore", &body.snapshot, json!({ "keepGateway": body.keep_gateway })).await;
     Ok(Json(view(&web).await?))
 }
 
