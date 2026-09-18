@@ -178,11 +178,27 @@ tunnel, where they stop before they reach the house at all.
 
 ### What it says, and where
 
-The portal shows it under *Server → Setup*: updates waiting on the gateway and
-the exact SSH command to install them, whether security updates install
-themselves, whether a restart is due, the firewall and jails, and the address
-the gateway keeps safe from bans. Logging in over SSH says the same thing, and
-`sudo bash install.sh --check` prints it on demand.
+The portal shows it under *Server → Setup*: updates waiting on the gateway,
+whether security updates install themselves, whether a restart is due, the
+firewall and jails, and the address the gateway keeps safe from bans. Logging in
+over SSH says the same thing, and `sudo bash install.sh --check` prints it on
+demand.
+
+Underneath are the buttons for the VPS itself: install its updates, fetch a
+newer gateway, restart it. They are there when `install.sh` hardened the machine,
+because that is what puts the privileged helper beside the gateway; without one
+the portal shows the SSH command to copy instead, the way it always did.
+
+What crosses the tunnel for one of those is a single word — `os-update`,
+`reboot` or `gateway-update` — and, for the last one, a version number that has
+to look like one. Never a command, never a path, never an address: the helper
+builds the address it downloads from out of its own constants and checks the
+archive against the checksum published beside it. A UwUMail server somebody
+broke into must not become root on the VPS.
+
+A gateway update runs the same `install.sh` you ran by hand, so it also
+re-applies the hardening. If the new gateway does not come up, the binary from
+before goes back and the portal says so.
 
 On the VPS:
 
