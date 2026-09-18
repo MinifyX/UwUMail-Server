@@ -15,6 +15,9 @@ const SETTINGS_KEY: &str = "backup.settings";
 const STATUS_KEY: &str = "backup.status";
 /// After a failed run, the next attempt waits this long.
 const RETRY_SECS: i64 = 3600;
+/// A run that has not finished after this long was cut short by a restart, not still going. Without
+/// the limit a single kill would keep `blocks` saying "a backup is running" forever.
+const RUN_MAX_SECS: i64 = 6 * 3600;
 
 fn now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |since| since.as_secs() as i64)
@@ -30,11 +33,13 @@ pub struct BackupSettings {
     pub retention: Retention,
     /// The hour (UTC) from which the daily backup runs.
     pub hour: u8,
+    /// The minute of that hour. Older settings have none and start on the hour.
+    pub minute: u8,
 }
 
 impl Default for BackupSettings {
     fn default() -> Self {
-        BackupSettings { enabled: false, target: None, key: None, retention: Retention::default(), hour: 1 }
+        BackupSettings { enabled: false, target: None, key: None, retention: Retention::default(), hour: 1, minute: 0 }
     }
 }
 
@@ -43,6 +48,10 @@ impl Default for BackupSettings {
 pub struct BackupStatus {
     pub last_attempt_at: Option<i64>,
     pub last_success_at: Option<i64>,
+    /// When the run that is going on, or the last one, began and ended. Both are missing for
+    /// backups made before the server kept track, which then simply never block an update.
+    pub started_at: Option<i64>,
+    pub finished_at: Option<i64>,
     pub last_error: Option<String>,
     pub last_report: Option<BackupReport>,
 }
@@ -85,6 +94,9 @@ impl Backups {
     pub async fn save_settings(&self, settings: &BackupSettings) -> Result<(), Error> {
         if settings.hour > 23 {
             return Err(Error::Config("the hour must be between 0 and 23".into()));
+        }
+        if settings.minute > 59 {
+            return Err(Error::Config("the minute must be between 0 and 59".into()));
         }
         if let Some(key) = &settings.key {
             RepoKey::from_recovery_text(key)?;
@@ -134,7 +146,10 @@ impl Backups {
         let _running =
             self.inner.running.try_lock().map_err(|_| Error::Config("a backup is running already".into()))?;
         let mut status = self.status().await;
-        status.last_attempt_at = Some(now());
+        let started = now();
+        status.last_attempt_at = Some(started);
+        status.started_at = Some(started);
+        status.finished_at = None;
         self.save_status(&status).await;
 
         let mut settings = self.settings().await?;
@@ -165,6 +180,7 @@ impl Backups {
                 tracing::warn!(%err, "backup failed");
             }
         }
+        status.finished_at = Some(now());
         self.save_status(&status).await;
         result
     }
@@ -191,14 +207,38 @@ impl Backups {
         if !settings.enabled || settings.target.is_none() {
             return false;
         }
-        let today = now.div_euclid(86_400);
-        let hour = now.rem_euclid(86_400) / 3600;
-        if hour < i64::from(settings.hour) {
+        if now.rem_euclid(86_400) / 60 < minute_of_day(settings) {
             return false;
         }
-        let succeeded_today = status.last_success_at.is_some_and(|at| at.div_euclid(86_400) == today);
         let tried_recently = status.last_attempt_at.is_some_and(|at| now - at < RETRY_SECS);
-        !succeeded_today && !tried_recently
+        !succeeded_today(status, now) && !tried_recently
+    }
+
+    /// Whether a backup is too close for an update to start: while one runs, and `margin_secs`
+    /// before and after it.
+    ///
+    /// Two things this does not know, so whoever updates has to ask them separately: a backup can
+    /// always be started by hand a second later, so check [`Backups::is_running`] right before
+    /// starting, and an update that makes its own backup first has to ask again afterwards,
+    /// because by then the window has moved.
+    pub fn blocks(settings: &BackupSettings, status: &BackupStatus, now: i64, margin_secs: i64) -> bool {
+        if running_at(status, now) {
+            return true;
+        }
+        if status.finished_at.is_some_and(|at| (0..margin_secs).contains(&(now - at))) {
+            return true;
+        }
+        if !settings.enabled || settings.target.is_none() {
+            return false;
+        }
+        if (0..=margin_secs).contains(&(next_run_at(settings, now) - now)) {
+            return true;
+        }
+        // A run that failed tries again every hour until one works, and the hour it does is as bad
+        // a moment as the planned one. While they keep failing there is no quiet gap left, so an
+        // update waits until a backup works or the backups are switched off — the portal says so
+        // rather than leaving it a mystery.
+        Self::due(settings, status, now) || Self::due(settings, status, now + margin_secs)
     }
 
     /// Runs backups when they are due or asked for, until shutdown.
@@ -223,21 +263,48 @@ impl Backups {
     }
 }
 
+/// The minute of the day the daily backup starts at.
+fn minute_of_day(settings: &BackupSettings) -> i64 {
+    i64::from(settings.hour) * 60 + i64::from(settings.minute)
+}
+
+/// When the daily backup starts next: today's time while it is still to come, else tomorrow's.
+fn next_run_at(settings: &BackupSettings, now: i64) -> i64 {
+    let at = now.div_euclid(86_400) * 86_400 + minute_of_day(settings) * 60;
+    if at >= now { at } else { at + 86_400 }
+}
+
+/// Whether a run began and has not finished since. See [`RUN_MAX_SECS`] for the one that was killed.
+fn running_at(status: &BackupStatus, now: i64) -> bool {
+    match (status.started_at, status.finished_at) {
+        (Some(started), finished) if finished.is_none_or(|at| at < started) => now - started < RUN_MAX_SECS,
+        _ => false,
+    }
+}
+
+fn succeeded_today(status: &BackupStatus, now: i64) -> bool {
+    status.last_success_at.is_some_and(|at| at.div_euclid(86_400) == now.div_euclid(86_400))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Login;
 
-    #[test]
-    fn the_daily_backup_waits_for_its_hour_and_retries_hourly() {
-        let target = Target {
+    fn a_backup_server() -> Target {
+        Target {
             host: "nas.example.de".into(),
             port: 22,
             user: "backup".into(),
             path: "uwumail".into(),
             login: Login::Password { password: "geheim".into() },
             host_key: None,
-        };
+        }
+    }
+
+    #[test]
+    fn the_daily_backup_waits_for_its_hour_and_retries_hourly() {
+        let target = a_backup_server();
         let settings = BackupSettings { enabled: true, target: Some(target), hour: 3, ..Default::default() };
         let day = 20_000 * 86_400;
         let fresh = BackupStatus::default();
@@ -255,5 +322,67 @@ mod tests {
         assert!(Backups::due(&settings, &failed, day + 4 * 3600 + 1), "again an hour later");
         let off = BackupSettings { enabled: false, ..settings };
         assert!(!Backups::due(&off, &fresh, day + 5 * 3600));
+    }
+
+    #[test]
+    fn the_daily_backup_waits_for_the_minute_too() {
+        let settings = BackupSettings {
+            enabled: true,
+            target: Some(a_backup_server()),
+            hour: 3,
+            minute: 45,
+            ..Default::default()
+        };
+        let day = 20_000 * 86_400;
+        let fresh = BackupStatus::default();
+        assert!(!Backups::due(&settings, &fresh, day + 3 * 3600 + 44 * 60), "a minute early");
+        assert!(Backups::due(&settings, &fresh, day + 3 * 3600 + 45 * 60));
+    }
+
+    #[test]
+    fn an_update_keeps_away_from_the_backup_window() {
+        let half_an_hour = 1800;
+        let settings =
+            BackupSettings { enabled: true, target: Some(a_backup_server()), hour: 3, minute: 0, ..Default::default() };
+        let day = 20_000 * 86_400;
+        let fresh = BackupStatus::default();
+
+        assert!(!Backups::blocks(&settings, &fresh, day + 3600, half_an_hour), "two hours before");
+        assert!(Backups::blocks(&settings, &fresh, day + 2 * 3600 + 40 * 60, half_an_hour), "twenty minutes before");
+        assert!(Backups::blocks(&settings, &fresh, day + 3 * 3600, half_an_hour), "on the dot");
+
+        let running =
+            BackupStatus { started_at: Some(day + 3 * 3600), last_attempt_at: Some(day + 3 * 3600), ..fresh.clone() };
+        assert!(Backups::blocks(&settings, &running, day + 3 * 3600 + 600, half_an_hour), "while it runs");
+
+        let done = BackupStatus {
+            started_at: Some(day + 3 * 3600),
+            finished_at: Some(day + 3 * 3600 + 300),
+            last_success_at: Some(day + 3 * 3600 + 300),
+            last_attempt_at: Some(day + 3 * 3600),
+            ..fresh.clone()
+        };
+        assert!(Backups::blocks(&settings, &done, day + 3 * 3600 + 900, half_an_hour), "ten minutes after");
+        assert!(!Backups::blocks(&settings, &done, day + 5 * 3600, half_an_hour), "two hours after");
+        assert!(!Backups::blocks(&settings, &done, day + 86_400 + 3600, half_an_hour), "and after midnight");
+
+        // A run that failed leaves no quiet gap: the half hour after it runs into the half hour
+        // before its hourly retry.
+        let failed = BackupStatus {
+            started_at: Some(day + 3 * 3600),
+            finished_at: Some(day + 3 * 3600 + 60),
+            last_attempt_at: Some(day + 3 * 3600),
+            last_error: Some("the backup server said no".into()),
+            ..fresh.clone()
+        };
+        assert!(Backups::blocks(&settings, &failed, day + 3 * 3600 + 20 * 60, half_an_hour), "just after it failed");
+        assert!(Backups::blocks(&settings, &failed, day + 3 * 3600 + 40 * 60, half_an_hour), "before the retry");
+        assert!(Backups::blocks(&settings, &failed, day + 4 * 3600, half_an_hour), "as the retry is due");
+
+        let off = BackupSettings { enabled: false, ..settings.clone() };
+        assert!(!Backups::blocks(&off, &fresh, day + 3 * 3600, half_an_hour), "nothing is planned");
+        assert!(Backups::blocks(&off, &running, day + 3 * 3600 + 600, half_an_hour), "but a run by hand still counts");
+        let killed = BackupStatus { started_at: Some(day + 3 * 3600), ..fresh.clone() };
+        assert!(!Backups::blocks(&off, &killed, day + 12 * 3600, half_an_hour), "a run a restart cut short lets go");
     }
 }

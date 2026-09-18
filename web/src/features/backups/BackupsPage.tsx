@@ -15,10 +15,20 @@ import { toast } from "@/state/toasts";
 
 const key = ["admin", "backups"] as const;
 
-/** The hour in the browser's time zone for an hour in UTC, and back. */
-const offsetHours = () => -Math.round(new Date().getTimezoneOffset() / 60);
-const localHour = (utc: number) => (((utc + offsetHours()) % 24) + 24) % 24;
-const utcHour = (local: number) => (((local - offsetHours()) % 24) + 24) % 24;
+/**
+ * A time of day as minutes since midnight, in the browser's time zone for one in UTC and back.
+ * Whole minutes, not whole hours: half-hour zones like India's exist, and the backup now starts on
+ * a minute. Daylight saving is taken as it is today, so a time chosen in summer moves by an hour in
+ * winter — the same as everywhere else that keeps a UTC hour.
+ */
+const offsetMinutes = () => -new Date().getTimezoneOffset();
+const wrapDay = (minutes: number) => ((minutes % 1440) + 1440) % 1440;
+const localTime = (hour: number, minute: number) => wrapDay(hour * 60 + minute + offsetMinutes());
+const utcTime = (local: number) => wrapDay(local - offsetMinutes());
+
+/** Five-minute steps, plus whatever minute is set now, so a time from the command line survives. */
+const minuteOptions = (current: number) =>
+  [...new Set([...Array.from({ length: 12 }, (_, step) => step * 5), current])].sort((a, b) => a - b);
 
 function RecoveryKeyDialog({ recoveryKey, onClose }: { recoveryKey: string | null; onClose: () => void }) {
   const { t } = useT();
@@ -116,7 +126,7 @@ function SettingsCard({ view, onRecoveryKey }: { view: BackupsView; onRecoveryKe
   const [method, setMethod] = useState<"key" | "password">(target?.method ?? "key");
   const [password, setPassword] = useState("");
   const [enabled, setEnabled] = useState(view.target ? view.enabled : true);
-  const [hour, setHour] = useState(localHour(view.hour));
+  const [time, setTime] = useState(localTime(view.hour, view.minute));
   const [encrypted, setEncrypted] = useState(view.target ? view.encrypted : true);
   const [daily, setDaily] = useState(String(view.retention.daily));
   const [weekly, setWeekly] = useState(String(view.retention.weekly));
@@ -128,7 +138,8 @@ function SettingsCard({ view, onRecoveryKey }: { view: BackupsView; onRecoveryKe
         method: "PUT",
         body: {
           enabled,
-          hour: utcHour(hour),
+          hour: Math.floor(utcTime(time) / 60),
+          minute: utcTime(time) % 60,
           retention: { daily: Number(daily), weekly: Number(weekly), monthly: Number(monthly) },
           encrypted,
           target: {
@@ -280,13 +291,33 @@ function SettingsCard({ view, onRecoveryKey }: { view: BackupsView; onRecoveryKe
           <div className="grid gap-3 sm:grid-cols-4">
             <Field label={t("backups.schedule.hour")} className="sm:col-span-1">
               {(id) => (
-                <Select id={id} value={hour} onChange={(event) => setHour(Number(event.target.value))}>
-                  {Array.from({ length: 24 }, (_, value) => (
-                    <option key={value} value={value}>
-                      {String(value).padStart(2, "0")}:00
-                    </option>
-                  ))}
-                </Select>
+                <div className="flex items-center gap-1">
+                  <Select
+                    id={id}
+                    value={Math.floor(time / 60)}
+                    onChange={(event) => setTime(Number(event.target.value) * 60 + (time % 60))}
+                  >
+                    {Array.from({ length: 24 }, (_, value) => (
+                      <option key={value} value={value}>
+                        {String(value).padStart(2, "0")}
+                      </option>
+                    ))}
+                  </Select>
+                  <span aria-hidden className="text-muted">
+                    :
+                  </span>
+                  <Select
+                    aria-label={t("backups.schedule.hour")}
+                    value={time % 60}
+                    onChange={(event) => setTime(Math.floor(time / 60) * 60 + Number(event.target.value))}
+                  >
+                    {minuteOptions(time % 60).map((value) => (
+                      <option key={value} value={value}>
+                        {String(value).padStart(2, "0")}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
               )}
             </Field>
             {retentionField(t("backups.schedule.daily"), daily, setDaily)}

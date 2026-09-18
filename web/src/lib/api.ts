@@ -355,8 +355,9 @@ export interface BackupReport {
 
 export interface BackupsView {
   enabled: boolean;
-  /** The hour in UTC. */
+  /** The hour in UTC the daily backup starts at, and the minute of it. */
   hour: number;
+  minute: number;
   retention: { daily: number; weekly: number; monthly: number };
   encrypted: boolean;
   target: {
@@ -372,6 +373,9 @@ export interface BackupsView {
   status: {
     lastAttemptAt: number | null;
     lastSuccessAt: number | null;
+    /** When the run that is going on, or the last one, began and ended. */
+    startedAt: number | null;
+    finishedAt: number | null;
     lastError: string | null;
     lastReport: BackupReport | null;
   };

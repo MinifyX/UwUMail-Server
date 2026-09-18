@@ -57,6 +57,7 @@ async fn view(web: &Web) -> ApiResult<Value> {
     Ok(json!({
         "enabled": settings.enabled,
         "hour": settings.hour,
+        "minute": settings.minute,
         "retention": settings.retention,
         "encrypted": settings.key.is_some(),
         "target": target,
@@ -87,6 +88,9 @@ pub struct TargetBody {
 pub struct SettingsBody {
     enabled: bool,
     hour: u8,
+    /// Left out by an older app, which only knew full hours.
+    #[serde(default)]
+    minute: u8,
     retention: Retention,
     encrypted: bool,
     target: Option<TargetBody>,
@@ -149,6 +153,7 @@ pub async fn save(
     };
     settings.enabled = body.enabled && settings.target.is_some();
     settings.hour = body.hour;
+    settings.minute = body.minute;
     settings.retention = body.retention;
     backups.save_settings(&settings).await.map_err(api_error)?;
 

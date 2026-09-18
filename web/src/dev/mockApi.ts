@@ -328,6 +328,7 @@ const mockUpdates: UpdatesView = {
 const mockBackups: BackupsView = {
   enabled: true,
   hour: 1,
+  minute: 30,
   retention: { daily: 7, weekly: 4, monthly: 6 },
   encrypted: true,
   target: {
@@ -344,6 +345,8 @@ const mockBackups: BackupsView = {
   status: {
     lastAttemptAt: Math.floor(Date.now() / 1000) - 5 * 3600,
     lastSuccessAt: Math.floor(Date.now() / 1000) - 5 * 3600,
+    startedAt: Math.floor(Date.now() / 1000) - 5 * 3600,
+    finishedAt: Math.floor(Date.now() / 1000) - 5 * 3600 + 210,
     lastError: null,
     lastReport: {
       snapshot: "001790000000-a1b2c3",
@@ -2062,6 +2065,7 @@ const routes: [string, RegExp, Handler][] = [
       const next = body as {
         enabled: boolean;
         hour: number;
+        minute: number;
         encrypted: boolean;
         retention: BackupsView["retention"];
         target: { host: string; port: number; user: string; path: string; method: "key" | "password" };
@@ -2070,6 +2074,7 @@ const routes: [string, RegExp, Handler][] = [
       Object.assign(mockBackups, {
         enabled: next.enabled,
         hour: next.hour,
+        minute: next.minute,
         retention: next.retention,
         encrypted: next.encrypted,
         target: { ...mockBackups.target!, ...next.target, passwordSet: next.target.method === "password" },
