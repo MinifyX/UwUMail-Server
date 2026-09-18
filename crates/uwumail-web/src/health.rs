@@ -133,14 +133,15 @@ async fn dns_area(web: &Web) -> ApiResult<Area> {
     for domain in &domains {
         // What other servers reported about the last week.
         let (tls_failed, dmarc_failed) = crate::routes::reports::problems(web, &domain.name, &own).await?;
-        let link = format!("/admin/domains/{}", domain.name);
+        // Reports have their own section now; the domain's page keeps the detail, so a finding that
+        // names a number points at the place that shows every domain's numbers together.
         if tls_failed > 0 {
             let params = json!({ "domain": domain.name, "count": tls_failed });
-            findings.push(Finding::new("tlsFailures", Level::Warning, params).link(link.clone()));
+            findings.push(Finding::new("tlsFailures", Level::Warning, params).link("/admin/reports"));
         }
         if dmarc_failed > 0 {
             let params = json!({ "domain": domain.name, "count": dmarc_failed });
-            findings.push(Finding::new("dmarcOwnFailures", Level::Warning, params).link(link));
+            findings.push(Finding::new("dmarcOwnFailures", Level::Warning, params).link("/admin/reports"));
         }
         let Some(report) = web.report(&domain.name) else {
             pending += 1;

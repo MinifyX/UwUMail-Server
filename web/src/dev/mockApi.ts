@@ -39,6 +39,7 @@ import type {
   Profile,
   Reachability,
   RecordCheck,
+  ReportsOverview,
   ReportsView,
   SecurityView,
   ServerCheck,
@@ -1124,6 +1125,58 @@ function serverCheck(blocklists: boolean): ServerCheck {
   };
 }
 
+/** What other servers reported about one domain. Only uwu.example has anything to show. */
+function reportsFor(name: string): ReportsView {
+  const empty = { reports: 0, unauthenticated: 0, firstBegin: null, lastEnd: null, reporters: [] };
+  if (name !== "uwu.example") {
+    return {
+      days: 30,
+      dmarc: { ...empty, messages: 0, passed: 0, sources: [] },
+      tls: { ...empty, successful: 0, failed: 0, failures: [] },
+      suggestions: [],
+    };
+  }
+  return {
+    days: 30,
+    dmarc: {
+      reports: 41,
+      unauthenticated: 1,
+      messages: 1287,
+      passed: 1241,
+      firstBegin: now - 30 * 86_400,
+      lastEnd: now - 3600,
+      reporters: [
+        { organization: "google.com", reports: 29, count: 1102 },
+        { organization: "Yahoo", reports: 8, count: 131 },
+        { organization: "Enterprise Outlook", reports: 4, count: 54 },
+      ],
+      sources: [
+        { ip: "192.0.2.10", messages: 1198, passed: 1198, headerFrom: ["uwu.example"], ours: true },
+        { ip: "2001:db8::10", messages: 43, passed: 43, headerFrom: ["uwu.example"], ours: true },
+        { ip: "198.51.100.77", messages: 39, passed: 0, headerFrom: ["uwu.example"], ours: false },
+        { ip: "203.0.113.9", messages: 7, passed: 0, headerFrom: ["uwu.example"], ours: false },
+      ],
+    },
+    tls: {
+      reports: 22,
+      unauthenticated: 0,
+      successful: 4803,
+      failed: 3,
+      firstBegin: now - 30 * 86_400,
+      lastEnd: now - 3600,
+      reporters: [
+        { organization: "Google Inc.", reports: 20, count: 4790 },
+        { organization: "Microsoft Corporation", reports: 2, count: 16 },
+      ],
+      failures: [
+        { resultType: "certificate-expired", policyType: "sts", mxHost: "mail.uwu.example", sessions: 2 },
+        { resultType: "starttls-not-supported", policyType: "sts", mxHost: "mail.uwu.example", sessions: 1 },
+      ],
+    },
+    suggestions: [{ code: "mtaStsEnforce" }, { code: "dmarcStricter", params: { from: "quarantine", to: "reject" } }],
+  };
+}
+
 const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/api\/admin\/health$/, () => [200, health()]],
   [
@@ -1793,66 +1846,28 @@ const routes: [string, RegExp, Handler][] = [
       return [200, detail(found)];
     },
   ],
+  ["GET", /^\/api\/admin\/domains\/([^/]+)\/reports$/, (_, [name]) => [200, reportsFor(name ?? "")]],
   [
     "GET",
-    /^\/api\/admin\/domains\/([^/]+)\/reports$/,
-    (_, [name]) => {
-      const empty = { reports: 0, unauthenticated: 0, firstBegin: null, lastEnd: null, reporters: [] };
-      if (name !== "uwu.example") {
-        return [
-          200,
-          {
-            days: 30,
-            dmarc: { ...empty, messages: 0, passed: 0, sources: [] },
-            tls: { ...empty, successful: 0, failed: 0, failures: [] },
-            suggestions: [],
-          } satisfies ReportsView,
-        ];
-      }
-      const view: ReportsView = {
+    /^\/api\/admin\/reports$/,
+    () => [
+      200,
+      {
         days: 30,
-        dmarc: {
-          reports: 41,
-          unauthenticated: 1,
-          messages: 1287,
-          passed: 1241,
-          firstBegin: now - 30 * 86_400,
-          lastEnd: now - 3600,
-          reporters: [
-            { organization: "google.com", reports: 29, count: 1102 },
-            { organization: "Yahoo", reports: 8, count: 131 },
-            { organization: "Enterprise Outlook", reports: 4, count: 54 },
-          ],
-          sources: [
-            { ip: "192.0.2.10", messages: 1198, passed: 1198, headerFrom: ["uwu.example"], ours: true },
-            { ip: "2001:db8::10", messages: 43, passed: 43, headerFrom: ["uwu.example"], ours: true },
-            { ip: "198.51.100.77", messages: 39, passed: 0, headerFrom: ["uwu.example"], ours: false },
-            { ip: "203.0.113.9", messages: 7, passed: 0, headerFrom: ["uwu.example"], ours: false },
-          ],
-        },
-        tls: {
-          reports: 22,
-          unauthenticated: 0,
-          successful: 4803,
-          failed: 3,
-          firstBegin: now - 30 * 86_400,
-          lastEnd: now - 3600,
-          reporters: [
-            { organization: "Google Inc.", reports: 20, count: 4790 },
-            { organization: "Microsoft Corporation", reports: 2, count: 16 },
-          ],
-          failures: [
-            { resultType: "certificate-expired", policyType: "sts", mxHost: "mail.uwu.example", sessions: 2 },
-            { resultType: "starttls-not-supported", policyType: "sts", mxHost: "mail.uwu.example", sessions: 1 },
-          ],
-        },
-        suggestions: [
-          { code: "mtaStsEnforce" },
-          { code: "dmarcStricter", params: { from: "quarantine", to: "reject" } },
-        ],
-      };
-      return [200, view];
-    },
+        since: now - 30 * 86_400,
+        domains: domains.map((domain) => {
+          const view = reportsFor(domain.name);
+          return {
+            name: domain.name,
+            dmarc: view.dmarc,
+            tls: view.tls,
+            ownFailing: 0,
+            // One domain shows what it looks like when a mailbox sits on the report address.
+            reading: { dmarc: domain.name !== "verein.example", tls: true },
+          };
+        }),
+      } satisfies ReportsOverview,
+    ],
   ],
   [
     "PUT",

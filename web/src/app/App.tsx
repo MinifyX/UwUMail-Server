@@ -17,6 +17,7 @@ import { PasswordPage } from "@/features/password/PasswordPage";
 import { PeoplePage } from "@/features/people/PeoplePage";
 import { PersonPage } from "@/features/people/PersonPage";
 import { QueuePage } from "@/features/queue/QueuePage";
+import { ReportsPage } from "@/features/reports/ReportsPage";
 import { SecurityPage } from "@/features/security/SecurityPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { SetupPage } from "@/features/setup/SetupPage";
@@ -62,6 +63,7 @@ function page(path: string, session: Session): ReactNode {
   const domain = matchPath("/admin/domains/:name", path);
   if (domain?.name) return <DomainPage key={domain.name} name={domain.name} />;
   if (matchPath("/admin/queue", path)) return <QueuePage />;
+  if (matchPath("/admin/reports", path)) return <ReportsPage />;
   if (matchPath("/admin/spam", path)) return <AdminSpamPage />;
   if (matchPath("/admin/backups", path)) return <BackupsPage />;
   if (matchPath("/admin/log", path)) return <LogPage />;

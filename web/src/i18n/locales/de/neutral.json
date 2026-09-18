@@ -61,7 +61,8 @@
     "addresses": "Adressen",
     "setup": "Einrichtung",
     "spamFilter": "Spamfilter",
-    "backups": "Backups"
+    "backups": "Backups",
+    "reports": "Berichte"
   },
   "mode": {
     "label": "Ansicht",
@@ -712,6 +713,30 @@
       },
       "unauthenticated_one": "Ein Bericht kam von einem Absender, der sich nicht ausweisen konnte. Seine Zahlen könnten erfunden sein.",
       "unauthenticated_other": "{{count}} Berichte kamen von Absendern, die sich nicht ausweisen konnten. Ihre Zahlen könnten erfunden sein."
+    }
+  },
+  "reports": {
+    "title": "Berichte",
+    "intro": "Was andere Mailserver über deine Domains zurückmelden.",
+    "explain": "Große Anbieter schicken täglich zusammengefasste Berichte: DMARC sagt, wie viel Post in deinem Namen unterwegs war und ob sie als echt durchging, TLS-Berichte sagen, ob die Verbindungen zu deinem Server verschlüsselt zustande kamen. Der Server liest sie automatisch, hier stehen die Zahlen.",
+    "period": "Zeitraum",
+    "days_one": "{{count}} Tag",
+    "days_other": "{{count}} Tage",
+    "messages": "Nachrichten",
+    "passed": "Als echt erkannt",
+    "tlsSessions": "TLS-Verbindungen",
+    "tlsFailed": "Davon gescheitert",
+    "none": "In den letzten {{days}} Tagen kam kein Bericht. Das ist normal, solange kaum Post in deinem Namen unterwegs ist – die großen Anbieter melden sich erst, wenn sie welche sehen.",
+    "someFailed_one": "{{count}} Nachricht ging nicht als echt durch, verteilt auf {{sources}} Absender-Adressen.",
+    "someFailed_other": "{{count}} Nachrichten gingen nicht als echt durch, verteilt auf {{sources}} Absender-Adressen.",
+    "ownFailing_one": "Eine Adresse, von der dieser Server selbst sendet, scheitert an DMARC. Das gehört angesehen: auf der Domain-Seite steht, woran.",
+    "ownFailing_other": "{{count}} Adressen, von denen dieser Server selbst sendet, scheitern an DMARC. Das gehört angesehen: auf der Domain-Seite steht, woran.",
+    "reporters": "Berichtet von: {{names}}",
+    "addressTaken": "An {{addresses}} hängt ein Postfach oder ein Alias. Solange das so ist, landen die Berichte dort und werden nicht ausgewertet.",
+    "toDomain": "Zur Domain",
+    "noDomains": {
+      "title": "Noch keine Domain",
+      "body": "Berichte kommen erst, wenn eine Domain eingerichtet ist und Post in ihrem Namen unterwegs war."
     }
   },
   "queue": {

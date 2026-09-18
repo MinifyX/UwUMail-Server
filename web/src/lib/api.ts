@@ -270,6 +270,24 @@ export interface ReportsView {
   suggestions: ({ code: "mtaStsEnforce" } | { code: "dmarcStricter"; params: { from: string; to: string } })[];
 }
 
+/** One domain in the Reports section: the same numbers as its own page, side by side with the rest. */
+export interface DomainReports {
+  name: string;
+  /** Unlike the single domain's view, the sources here are not marked as ours one by one. */
+  dmarc: ReportPeriod & { messages: number; passed: number; sources: Omit<DmarcSource, "ours">[] };
+  tls: ReportsView["tls"];
+  /** Sources of ours that failed DMARC in the period. */
+  ownFailing: number;
+  /** False when someone claimed dmarc-reports@ or tls-reports@ as a mailbox or alias. */
+  reading: { dmarc: boolean; tls: boolean };
+}
+
+export interface ReportsOverview {
+  days: number;
+  since: number;
+  domains: DomainReports[];
+}
+
 export interface AuditRecord {
   id: number;
   at: number;

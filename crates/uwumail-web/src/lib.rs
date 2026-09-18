@@ -259,6 +259,7 @@ impl Web {
             .route("/api/admin/domains/{name}/check", post(routes::domains::check))
             .route("/api/admin/domains/{name}/mta-sts", put(routes::reports::set_mode))
             .route("/api/admin/domains/{name}/reports", get(routes::reports::domain_reports))
+            .route("/api/admin/reports", get(routes::reports::overview))
             .route("/.well-known/mta-sts.txt", get(routes::reports::policy))
             .route("/api/admin/domains/{name}/dns/cloudflare", post(routes::domains::cloudflare))
             .route("/api/admin/domains/{name}/dkim/rotate", post(routes::domains::rotate_keys))

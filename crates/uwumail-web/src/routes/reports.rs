@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uwumail_smtp::dnscheck::DomainReport;
 use uwumail_smtp::mta_sts::Policy;
-use uwumail_store::{DmarcSummary, MtaStsMode, MtaStsSettings, TlsSummary};
+use uwumail_store::{DMARC_REPORT_ADDRESS, DmarcSummary, MtaStsMode, MtaStsSettings, TLS_REPORT_ADDRESS, TlsSummary};
 
 use super::audit;
 use super::domains::{detail_json, load, run_check};
@@ -213,6 +213,46 @@ pub(crate) fn suggestions(input: &SuggestionInput<'_>, now: i64) -> Vec<Value> {
 #[derive(Deserialize)]
 pub struct ReportQuery {
     days: Option<i64>,
+}
+
+/// Every domain's reports side by side, for the Reports section. The single domain's page keeps the
+/// detail and the suggestions; this is the place that says where to look first.
+pub async fn overview(
+    State(web): State<Web>,
+    _admin: Admin,
+    Query(query): Query<ReportQuery>,
+) -> ApiResult<Json<Value>> {
+    let now = unix_now();
+    let days = query.days.unwrap_or(30).clamp(1, 180);
+    let since = now - days * DAY;
+    let store = web.store();
+    let own = own_addresses(&web).await;
+
+    let mut domains = Vec::new();
+    for domain in store.domains().await? {
+        let summary = store.report_summary(&domain.name, since).await?;
+        // A report address someone claimed as a mailbox or an alias stops the reports being read at
+        // all, silently. Nothing else in the portal would ever say so.
+        let dmarc_address = format!("{DMARC_REPORT_ADDRESS}@{}", domain.name);
+        let tls_address = format!("{TLS_REPORT_ADDRESS}@{}", domain.name);
+        let failing_sources = summary
+            .dmarc
+            .sources
+            .iter()
+            .filter(|source| own.contains(&source.ip) && source.passed < source.messages)
+            .count();
+        domains.push(json!({
+            "name": domain.name,
+            "dmarc": summary.dmarc,
+            "tls": summary.tls,
+            "ownFailing": failing_sources,
+            "reading": {
+                "dmarc": store.report_recipient(&dmarc_address).await?.is_some(),
+                "tls": store.report_recipient(&tls_address).await?.is_some(),
+            },
+        }));
+    }
+    Ok(Json(json!({ "days": days, "since": since, "domains": domains })))
 }
 
 pub async fn domain_reports(

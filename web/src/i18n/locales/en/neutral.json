@@ -61,7 +61,8 @@
     "addresses": "Addresses",
     "setup": "Setup",
     "spamFilter": "Spam filter",
-    "backups": "Backups"
+    "backups": "Backups",
+    "reports": "Reports"
   },
   "mode": {
     "label": "View",
@@ -712,6 +713,30 @@
       },
       "unauthenticated_one": "One report came from a sender that could not prove who it is. Its numbers could be made up.",
       "unauthenticated_other": "{{count}} reports came from senders that could not prove who they are. Their numbers could be made up."
+    }
+  },
+  "reports": {
+    "title": "Reports",
+    "intro": "What other mail servers report back about your domains.",
+    "explain": "Big providers send a summary every day: DMARC says how much mail went out in your name and how much of it was taken as genuine, TLS reports say whether the connections to your server were encrypted. The server reads them by itself; the numbers are here.",
+    "period": "Period",
+    "days_one": "{{count}} day",
+    "days_other": "{{count}} days",
+    "messages": "Messages",
+    "passed": "Taken as genuine",
+    "tlsSessions": "TLS connections",
+    "tlsFailed": "Of those failed",
+    "none": "No report arrived in the last {{days}} days. That is normal while there is little mail in your name -- the big providers only speak up once they see some.",
+    "someFailed_one": "{{count}} message did not pass as genuine, across {{sources}} sending addresses.",
+    "someFailed_other": "{{count}} messages did not pass as genuine, across {{sources}} sending addresses.",
+    "ownFailing_one": "An address this server sends from itself fails DMARC. That is worth a look: the domain's page says what fails.",
+    "ownFailing_other": "{{count}} addresses this server sends from itself fail DMARC. That is worth a look: the domain's page says what fails.",
+    "reporters": "Reported by: {{names}}",
+    "addressTaken": "A mailbox or alias sits on {{addresses}}. While it does, the reports land there and are not read.",
+    "toDomain": "To the domain",
+    "noDomains": {
+      "title": "No domain yet",
+      "body": "Reports arrive once a domain is set up and mail has gone out in its name."
     }
   },
   "queue": {
