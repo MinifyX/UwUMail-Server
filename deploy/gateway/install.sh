@@ -227,7 +227,10 @@ retire_old_nftables() {
   systemctl is-enabled nftables >/dev/null 2>&1 || return 0
   local rules=/etc/nftables.conf
   [ -f "$rules" ] || return 0
-  if grep -q "the QUIC tunnel to the UwUMail server" "$rules" 2>/dev/null; then
+  # Our own rule set went out in more than one wording: the one from docs/gateway.md, which names
+  # the tunnel on the UDP line, and the one machines ended up with, which says whose it is in the
+  # first line. Both are ours; anything that says neither is someone else's and is left alone.
+  if grep -qE "UwUMail Gateway|tunnel to the UwUMail server" "$rules" 2>/dev/null; then
     cp -a "$rules" "$rules.before-uwumail-ufw"
     systemctl disable --now nftables >/dev/null 2>&1
     # ufw brings its own table; the handwritten one goes with the service that loaded it.

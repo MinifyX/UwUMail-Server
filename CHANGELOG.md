@@ -3,6 +3,14 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.2.1
+
+- The installer recognises the gateway's own handwritten firewall rules in both wordings it went
+  out in, not just the one from `docs/gateway.md`. On a machine with the other one, 0.2.0 switched
+  ufw on and left nftables running beside it: two firewalls with their own idea of what is open,
+  which is a bad thing to go looking for later. Rules that are not the gateway's are still left
+  alone and only reported.
+
 ## 0.2.0
 
 - The UwUMail Gateway looks after the machine it runs on. The same install command as always does
