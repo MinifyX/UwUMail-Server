@@ -111,6 +111,16 @@
     overflow-wrap: break-word;
   }
 
+  /*
+   * Children of a grid or a flex box keep `min-width: auto` and refuse to go below the width of
+   * their longest word, so one address or one German compound pushes the whole page sideways on a
+   * phone. Nothing in the portal wants that; what really must not shrink says so with `shrink-0`.
+   * Written with :where() so it has no specificity and every utility still wins.
+   */
+  :where(*) {
+    min-width: 0;
+  }
+
   :focus-visible {
     outline: none;
     box-shadow: var(--uwu-focus);

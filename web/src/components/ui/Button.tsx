@@ -20,10 +20,12 @@ const VARIANTS: Record<Variant, string> = {
   danger: "bg-surface text-danger border border-line hover:bg-danger-tint",
 };
 
+// On a phone the label may wrap and the button grow taller, rather than a long German word making
+// the button wider than the screen. Off the phone the height stays exactly as it was.
 const SIZES: Record<Size, string> = {
-  sm: "h-8 px-3 text-[13px] gap-1.5",
-  md: "h-10 px-4 text-sm gap-2",
-  lg: "h-12 px-6 text-[15px] gap-2",
+  sm: "h-8 px-3 text-[13px] gap-1.5 max-sm:h-auto max-sm:min-h-8",
+  md: "h-10 px-4 text-sm gap-2 max-sm:h-auto max-sm:min-h-10",
+  lg: "h-12 px-6 text-[15px] gap-2 max-sm:h-auto max-sm:min-h-12",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
@@ -36,6 +38,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       type="button"
       className={clsx(
         "inline-flex shrink-0 items-center justify-center rounded-full font-semibold whitespace-nowrap transition-[background,box-shadow,transform] duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-55",
+        "max-sm:shrink max-sm:py-2 max-sm:text-center max-sm:whitespace-normal",
         VARIANTS[variant],
         SIZES[size],
         className,
