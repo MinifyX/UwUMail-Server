@@ -13,28 +13,34 @@ pub struct ServerSettings {
     pub smtp: Smtp,
 }
 
+/// The effective value and origin of every setting, for an overlay. Used by the admin panel and
+/// by the command line, which has no running server behind it.
+pub fn view_settings(path: Option<&std::path::Path>, overlay: &Value) -> Result<Vec<SettingValue>, String> {
+    let config = Config::load_with_overlay(path, overlay).map_err(|err| format!("{err:#}"))?;
+    let fixed = Config::file_and_environment(path).map_err(|err| format!("{err:#}"))?;
+    let effective =
+        json!({ "smtp": config.smtp, "spam": config.spam, "delivery": config.delivery, "tone": config.tone });
+    Ok(SETTINGS
+        .iter()
+        .map(|spec| {
+            let value = get_path(&effective, spec.key).cloned().unwrap_or(Value::Null);
+            let source = if fixed.contains(spec.key) {
+                SettingSource::File
+            } else if get_path(overlay, spec.key).is_some() {
+                SettingSource::Database
+            } else {
+                SettingSource::Default
+            };
+            let set = !value.is_null() && value != json!("");
+            let value = if matches!(spec.kind, SettingKind::Secret) { Value::Null } else { value };
+            SettingValue { key: spec.key, value, set, source }
+        })
+        .collect())
+}
+
 impl SettingsBackend for ServerSettings {
     fn view(&self, overlay: &Value) -> Result<Vec<SettingValue>, String> {
-        let config = Config::load_with_overlay(self.path.as_deref(), overlay).map_err(|err| format!("{err:#}"))?;
-        let fixed = Config::file_and_environment(self.path.as_deref()).map_err(|err| format!("{err:#}"))?;
-        let effective =
-            json!({ "smtp": config.smtp, "spam": config.spam, "delivery": config.delivery, "tone": config.tone });
-        Ok(SETTINGS
-            .iter()
-            .map(|spec| {
-                let value = get_path(&effective, spec.key).cloned().unwrap_or(Value::Null);
-                let source = if fixed.contains(spec.key) {
-                    SettingSource::File
-                } else if get_path(overlay, spec.key).is_some() {
-                    SettingSource::Database
-                } else {
-                    SettingSource::Default
-                };
-                let set = !value.is_null() && value != json!("");
-                let value = if matches!(spec.kind, SettingKind::Secret) { Value::Null } else { value };
-                SettingValue { key: spec.key, value, set, source }
-            })
-            .collect())
+        view_settings(self.path.as_deref(), overlay)
     }
 
     fn apply(&self, overlay: &Value) -> Result<(), String> {

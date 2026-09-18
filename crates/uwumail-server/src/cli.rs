@@ -45,6 +45,9 @@ pub enum Command {
     /// The spam filter.
     #[command(subcommand)]
     Spam(SpamCommand),
+    /// Server settings, the same ones the admin panel changes.
+    #[command(subcommand)]
+    Settings(SettingsCommand),
     /// Backups to an SFTP server, set up in the admin panel.
     #[command(subcommand)]
     Backup(BackupCommand),
@@ -80,6 +83,26 @@ pub enum BackupCommand {
         #[arg(long)]
         into: std::path::PathBuf,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SettingsCommand {
+    /// Every setting, its value, and where that value comes from.
+    List {
+        /// Only settings whose key starts with this, e.g. `spam`.
+        prefix: Option<String>,
+    },
+    /// What one setting is set to.
+    Get { key: String },
+    /// Change a setting. A running server takes it from its next start.
+    Set {
+        key: String,
+        /// The new value. `-` reads it from standard input, so a password stays out of the shell
+        /// history.
+        value: String,
+    },
+    /// Forget a setting made here, back to the config file or the default.
+    Unset { key: String },
 }
 
 #[derive(Debug, Subcommand)]

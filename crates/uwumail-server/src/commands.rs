@@ -6,10 +6,13 @@ use uwumail_store::{
     AccountUpdate, AuditEntry, ListOwner, ListScope, NewAccount, NewSenderListEntry, PasswordLinkPurpose, Role,
     SenderKind, SenderList, SenderListEntry, Store,
 };
+use uwumail_web::settings::{
+    SettingKind, SettingSource, SettingSpec, SettingValue, check_value, set_path, spec_for, tidy,
+};
 
 use crate::cli::{
     AccountCommand, AliasCommand, BackupCommand, DomainCommand, ForwardCommand, GatewayCommand, QueueCommand,
-    SenderArgs, SenderKindArg, SpamCommand, Switch, WordTarget, WordsCommand,
+    SenderArgs, SenderKindArg, SettingsCommand, SpamCommand, Switch, WordTarget, WordsCommand,
 };
 use crate::config::Config;
 
@@ -446,6 +449,145 @@ pub async fn forward(store: &Store, command: ForwardCommand) -> anyhow::Result<(
     Ok(())
 }
 
+/// Turns what someone typed into the JSON the setting expects. The spec checks it afterwards.
+fn setting_value(spec: &SettingSpec, raw: &str) -> anyhow::Result<Value> {
+    let raw = raw.trim();
+    Ok(match spec.kind {
+        SettingKind::Bool => match raw.to_ascii_lowercase().as_str() {
+            "true" | "yes" | "on" | "1" => json!(true),
+            "false" | "no" | "off" | "0" => json!(false),
+            _ => bail!("{} wants true or false", spec.key),
+        },
+        SettingKind::Integer { .. } => {
+            json!(raw.parse::<i64>().with_context(|| format!("{} wants a whole number", spec.key))?)
+        }
+        SettingKind::Decimal { .. } => {
+            json!(raw.parse::<f64>().with_context(|| format!("{} wants a number", spec.key))?)
+        }
+        // Several values in one argument, separated by commas: networks, for example.
+        SettingKind::List => {
+            json!(raw.split(',').map(str::trim).filter(|value| !value.is_empty()).collect::<Vec<_>>())
+        }
+        SettingKind::Text | SettingKind::Secret | SettingKind::Choice { .. } => json!(raw),
+    })
+}
+
+/// A value the way someone would write it, not the way JSON does.
+fn plain(value: &Value) -> String {
+    match value {
+        Value::Null => "—".into(),
+        Value::String(text) if text.is_empty() => "—".into(),
+        Value::String(text) => text.clone(),
+        Value::Array(items) => items.iter().filter_map(|item| item.as_str()).collect::<Vec<_>>().join(", "),
+        other => other.to_string(),
+    }
+}
+
+/// How a setting reads in the terminal. Secrets never show themselves.
+fn shown(setting: &SettingValue, kind: SettingKind) -> String {
+    if matches!(kind, SettingKind::Secret) {
+        return if setting.set { "•••".into() } else { "—".into() };
+    }
+    plain(&setting.value)
+}
+
+fn source_word(source: SettingSource) -> &'static str {
+    match source {
+        SettingSource::Default => "default",
+        SettingSource::Database => "set here",
+        SettingSource::File => "config file",
+    }
+}
+
+/// Server settings from the terminal: the same keys, checks and precedence as the admin panel.
+///
+/// A running server keeps the settings it started with, so a change made here reaches it when it
+/// next starts — which is what the installer wants, because it sets things before the first start.
+pub async fn settings(path: Option<&std::path::Path>, store: &Store, command: SettingsCommand) -> anyhow::Result<()> {
+    let mut overlay: Value = store
+        .setting(uwumail_web::SETTINGS_OVERLAY_KEY)
+        .await?
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_else(|| json!({}));
+    let view = crate::settings::view_settings(path, &overlay).map_err(|err| anyhow::anyhow!(err))?;
+    let of = |key: &str| view.iter().find(|setting| setting.key == key);
+
+    match command {
+        SettingsCommand::List { prefix } => {
+            let prefix = prefix.unwrap_or_default();
+            let mut shown_any = false;
+            for setting in view.iter().filter(|setting| setting.key.starts_with(&prefix)) {
+                let spec = spec_for(setting.key).expect("every setting has a spec");
+                println!("{:<34}  {:<22}  {}", setting.key, shown(setting, spec.kind), source_word(setting.source));
+                shown_any = true;
+            }
+            if !shown_any {
+                println!("No setting starts with \"{prefix}\".");
+            }
+        }
+        SettingsCommand::Get { key } => {
+            let spec = spec_for(&key).ok_or_else(|| anyhow::anyhow!("no setting {key}"))?;
+            let setting = of(&key).expect("every spec has a value");
+            println!("{}  ({})", shown(setting, spec.kind), source_word(setting.source));
+        }
+        SettingsCommand::Set { key, value } => {
+            let spec = spec_for(&key).ok_or_else(|| anyhow::anyhow!("no setting {key}"))?;
+            let typed = if value == "-" {
+                let mut line = String::new();
+                std::io::stdin().read_line(&mut line).context("reading the value from standard input")?;
+                setting_value(spec, line.trim_end_matches(['\r', '\n']))?
+            } else {
+                setting_value(spec, &value)?
+            };
+            check_value(spec, &typed).map_err(|err| anyhow::anyhow!(err))?;
+            if of(&key).is_some_and(|setting| setting.source == SettingSource::File) {
+                bail!("{key} is set in the config file or the environment, which wins over this");
+            }
+            set_path(&mut overlay, spec.key, typed.clone());
+            save(path, store, overlay, &key, &typed, spec.kind).await?;
+        }
+        SettingsCommand::Unset { key } => {
+            let spec = spec_for(&key).ok_or_else(|| anyhow::anyhow!("no setting {key}"))?;
+            set_path(&mut overlay, spec.key, Value::Null);
+            save(path, store, overlay, &key, &Value::Null, spec.kind).await?;
+        }
+    }
+    Ok(())
+}
+
+/// Checks the whole configuration with the change in it, writes it, and says what happens next.
+async fn save(
+    path: Option<&std::path::Path>,
+    store: &Store,
+    mut overlay: Value,
+    key: &str,
+    value: &Value,
+    kind: SettingKind,
+) -> anyhow::Result<()> {
+    let host_from_file = crate::config::Config::file_and_environment(path)
+        .map(|fixed| fixed.contains("delivery.relay.host"))
+        .unwrap_or(false);
+    tidy(&mut overlay, host_from_file);
+    // The same check the admin panel runs: a setting that would make the server refuse to start
+    // must not be written in the first place.
+    let config = crate::config::Config::load_with_overlay(path, &overlay).map_err(|err| anyhow::anyhow!("{err:#}"))?;
+    config.validate()?;
+    store.set_setting(uwumail_web::SETTINGS_OVERLAY_KEY, &overlay.to_string()).await?;
+    // Passwords never go into the change log.
+    let logged =
+        if matches!(kind, SettingKind::Secret) && !value.is_null() { json!("•••") } else { value.clone() };
+    audit(store, "settings.update", "", json!({ key: logged })).await;
+    if value.is_null() {
+        println!("{key} follows the config file or the default again.");
+    } else if matches!(kind, SettingKind::Secret) {
+        println!("{key} is now set.");
+    } else {
+        println!("{key} is now {}.", plain(value));
+    }
+    println!("A running server takes the change from its next start.");
+    Ok(())
+}
+
 pub async fn spam(store: &Store, command: SpamCommand) -> anyhow::Result<()> {
     match command {
         SpamCommand::Learn { account } => {
@@ -814,6 +956,36 @@ mod tests {
         config.gateway.code = "uwugw1another".into();
         let error = gateway(&config, &store, pair(&code)).await.unwrap_err().to_string();
         assert!(error.contains("gateway.code"), "{error}");
+    }
+
+    #[test]
+    fn typed_values_come_from_what_someone_wrote() {
+        let bool_spec = spec_for("spam.antivirus.enabled").unwrap();
+        assert_eq!(setting_value(bool_spec, "TRUE").unwrap(), json!(true));
+        assert_eq!(setting_value(bool_spec, " off ").unwrap(), json!(false));
+        assert!(setting_value(bool_spec, "vielleicht").is_err());
+
+        let number = spec_for("spam.antivirus.timeout_secs").unwrap();
+        assert_eq!(setting_value(number, "45").unwrap(), json!(45));
+        assert!(setting_value(number, "45s").is_err());
+        // The spec is what decides whether a number is allowed, not the parser.
+        assert!(check_value(number, &setting_value(number, "1").unwrap()).is_err());
+
+        let score = spec_for("spam.junk_score").unwrap();
+        assert_eq!(setting_value(score, "6.5").unwrap(), json!(6.5));
+
+        let list = spec_for("smtp.trusted_relays").unwrap();
+        assert_eq!(setting_value(list, "10.0.0.5, 10.0.0.6 ,").unwrap(), json!(["10.0.0.5", "10.0.0.6"]));
+
+        let choice = spec_for("tone.language").unwrap();
+        assert_eq!(setting_value(choice, "en").unwrap(), json!("en"));
+        assert!(check_value(choice, &setting_value(choice, "kl").unwrap()).is_err());
+
+        // A secret shows as set, never as itself.
+        let secret = spec_for("spam.feeds.abuse_ch_key").unwrap();
+        let set = SettingValue { key: secret.key, value: Value::Null, set: true, source: SettingSource::Database };
+        assert_eq!(shown(&set, secret.kind), "•••");
+        assert_eq!(plain(&json!("clamav:3310")), "clamav:3310");
     }
 
     #[test]

@@ -41,6 +41,30 @@ panel. Remove it there to manage it from the panel instead. Listeners, TLS,
 the data directory and logging stay file-only because changing them needs a
 restart.
 
+The same settings, with the same checks and the same order, are reachable from
+the terminal — which is where the installer sets them, before there is a portal
+to log into:
+
+```bash
+docker compose exec uwumail uwumail-server settings list spam
+docker compose exec uwumail uwumail-server settings get spam.antivirus.enabled
+docker compose exec uwumail uwumail-server settings set spam.antivirus.enabled true
+docker compose exec uwumail uwumail-server settings unset spam.antivirus.enabled
+```
+
+`list` takes a prefix and says where each value comes from (default, set here,
+config file). A setting the config file or the environment already fixes is
+refused, the way the panel greys it out. Passwords are written with `-` as the
+value and read from standard input, so they stay out of the shell history:
+
+```bash
+printf '%s' "$KEY" | docker compose exec -T uwumail uwumail-server settings set spam.feeds.abuse_ch_key -
+```
+
+A running server keeps the settings it started with, so a change made in the
+terminal reaches it when it next starts. With the server stopped, the same
+commands work through `docker compose run --rm uwumail …`.
+
 The relay password is stored in the database like the rest (the portal never
 shows it again). If you would rather keep it out of the database, set
 `UWUMAIL_DELIVERY__RELAY__PASSWORD` in the environment.
