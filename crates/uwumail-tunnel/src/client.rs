@@ -137,12 +137,29 @@ impl TunnelClient {
         self.send_control(ServerMessage::Unban { ip });
     }
 
-    fn send_control(&self, message: ServerMessage) {
+    /// Asks the gateway's machine for one of `os-update`, `reboot` or `gateway-update`. The answer
+    /// comes back with the next status, which the gateway sends far more often while one runs.
+    ///
+    /// Says whether the ask went out at all. It does not when the gateway is away or too old, and
+    /// then nothing happened and the portal should say so rather than wait for an answer that is
+    /// not coming.
+    pub fn task(&self, id: &str, verb: &str, version: Option<&str>) -> bool {
+        self.send_control(ServerMessage::Task {
+            id: id.to_owned(),
+            verb: verb.to_owned(),
+            version: version.map(str::to_owned),
+        })
+    }
+
+    fn send_control(&self, message: ServerMessage) -> bool {
         let sender = self.shared.control.lock().expect("tunnel control poisoned").clone();
-        if let Some(sender) = sender {
-            // Never waits: a gateway that cannot keep up must not hold up a login.
-            if sender.try_send(message).is_err() {
-                tracing::debug!("the gateway is not taking bans right now");
+        let Some(sender) = sender else { return false };
+        // Never waits: a gateway that cannot keep up must not hold up a login.
+        match sender.try_send(message) {
+            Ok(()) => true,
+            Err(_) => {
+                tracing::debug!("the gateway is not taking anything right now");
+                false
             }
         }
     }

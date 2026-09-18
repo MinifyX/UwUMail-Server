@@ -29,6 +29,9 @@ const PAIRING_CHECK: Duration = Duration::from_secs(2);
 /// How often the machine's state goes to the server for the portal. The report behind it is
 /// refreshed once a day; this pace also carries the count of banned addresses.
 const REPORT_EVERY: Duration = Duration::from_secs(5 * 60);
+/// While a task runs, someone is watching the portal and five minutes is a long time to stare at
+/// nothing.
+const REPORT_WHILE_BUSY: Duration = Duration::from_secs(3);
 /// Refused tunnel attempts from one address before it has to wait for the window to pass.
 const MAX_REFUSALS: u32 = 10;
 const REFUSAL_WINDOW: Duration = Duration::from_secs(600);
@@ -189,6 +192,9 @@ impl Shared {
             services,
             outbound_ports: self.config.outbound.ports.clone(),
             control: true,
+            // Only with a helper beside us. Without one the portal keeps showing the commands,
+            // and a button that quietly did nothing would be worse than no button.
+            tasks: self.machine.has_helper(),
         }
     }
 
@@ -434,6 +440,11 @@ async fn talk(shared: Arc<Shared>, remote: SocketAddr, mut send: SendStream, mut
                 Some(ServerMessage::Unban { ip }) if shared.machine.unban(ip) => {
                     tracing::info!(%ip, "the server asked to let an address in again");
                 }
+                Some(ServerMessage::Task { id, verb, version }) => {
+                    // The machine checks all three again before anything happens; this only hands
+                    // them over. Whether it worked comes back with the next status.
+                    shared.machine.ask(&id, &verb, version.as_deref());
+                }
                 Some(ServerMessage::Unban { .. }) | None => {}
             }
         }
@@ -447,10 +458,13 @@ async fn talk(shared: Arc<Shared>, remote: SocketAddr, mut send: SendStream, mut
             shared.machine.trust(remote.ip().to_canonical());
             let software = format!("uwumail-gateway {}", env!("CARGO_PKG_VERSION"));
             let status = shared.machine.status(software);
+            // While something is being installed the portal is watching, so it is told every few
+            // seconds instead of every few minutes. The rest of the time this is a quiet heartbeat.
+            let busy = status.job.as_ref().is_some_and(|job| job.state == "running");
             if proto::write_message(&mut send, &GatewayMessage::Status(Box::new(status))).await.is_err() {
                 break;
             }
-            tokio::time::sleep(REPORT_EVERY).await;
+            tokio::time::sleep(if busy { REPORT_WHILE_BUSY } else { REPORT_EVERY }).await;
         }
     };
     tokio::select! {

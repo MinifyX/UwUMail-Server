@@ -5,7 +5,10 @@
 #
 #   trusted      written by the gateway   the address its tunnel comes from, and nothing else
 #   bans.jsonl   written by the gateway   bans it was asked for, one JSON object per line
+#   jobs.jsonl   written by the gateway   what the portal asked this machine to do
 #   machine.json written here             what apt, ufw and fail2ban have to say
+#   job-<id>.log written here             what a job printed, while it runs
+#   job-<id>.json written here            how it ended, which survives the gateway restarting
 #   ignoring     written here             what fail2ban was last told to leave alone
 #
 # `trusted` holds the address in use and no history: the one a home connection gives up at the
@@ -17,6 +20,7 @@
 #
 #   helper tick            keep the trusted addresses safe and carry out waiting bans
 #   helper machine         write machine.json (slow: asks apt)
+#   helper task            carry out what the portal asked for: updates, a restart, a new gateway
 #   helper ignore <ip>     for fail2ban's ignorecommand: 0 when the address must never be banned
 #   helper report [--motd] what all of this looks like right now, for people
 set -uo pipefail
@@ -24,11 +28,23 @@ set -uo pipefail
 state=/var/lib/uwumail-gateway
 trusted_file="$state/trusted"
 bans_file="$state/bans.jsonl"
+jobs_file="$state/jobs.jsonl"
 report_file="$state/machine.json"
 # What we last told fail2ban to ignore, so it can be taken back when it stops being the server's.
 ignoring_file="$state/ignoring"
 # The jail that only ever holds what the UwUMail server asked for.
 jail=uwumail-server
+
+# ── what the portal may ask for ───────────────────────────────────────────────────────────────
+# Three words, and nothing else is ever carried out. The address a new gateway is fetched from is
+# built here out of these constants and a version number that had to look like one -- never out of
+# anything the server sent. A server somebody broke into must not be able to hand this VPS a URL.
+verbs="os-update reboot gateway-update"
+releases=https://github.com/MinifyX/UwUMail-Server/releases/download
+# A job that waited longer than this was asked for by a portal that has long given up.
+JOB_MAX_AGE=1800
+# The most of a job's output that is kept, so a chatty apt cannot fill the disk.
+LOG_MAX_BYTES=65536
 
 # An address as the gateway writes it, and nothing else. Everything downstream trusts this check.
 is_address() {
@@ -204,6 +220,202 @@ automatic_security() {
     systemctl is-enabled unattended-upgrades >/dev/null 2>&1
 }
 
+# ── jobs ──────────────────────────────────────────────────────────────────────────────────────
+# A version as we are willing to read one. Nothing else ever reaches a command line or a URL.
+is_version() {
+  [[ "${1:-}" =~ ^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(-[0-9A-Za-z.]{1,20})?$ ]]
+}
+
+job_state() {
+  local id="$1" how="$2" error="${3:-}"
+  jq -n --arg id "$id" --arg state "$how" --arg error "$error" --argjson at "$(date +%s)" \
+    '{id: $id, state: $state, error: $error, at: $at}' >"$state/job-$id.json.tmp" 2>/dev/null &&
+    mv -f "$state/job-$id.json.tmp" "$state/job-$id.json" && chmod 0644 "$state/job-$id.json"
+}
+
+# Everything a job prints goes here, capped, so the portal can show it while it runs.
+job_log() {
+  local id="$1"
+  tail -c "$LOG_MAX_BYTES" >>"$state/job-$id.log"
+  chmod 0644 "$state/job-$id.log" 2>/dev/null
+}
+
+# apt with every question answered the way the package maintainer meant it. NEEDRESTART_MODE=a is
+# the one that matters on Ubuntu 24.04 and newer: without it the run stops on a full-screen
+# question nobody is there to answer.
+run_apt() {
+  DEBIAN_FRONTEND=noninteractive \
+    NEEDRESTART_MODE=a \
+    APT_LISTCHANGES_FRONTEND=none \
+    apt-get -y \
+    -o Dpkg::Options::=--force-confdef \
+    -o Dpkg::Options::=--force-confold \
+    -o DPkg::Lock::Timeout=300 \
+    "$@"
+}
+
+do_os_update() {
+  local id="$1"
+  command -v apt-get >/dev/null 2>&1 || {
+    job_state "$id" failed "this machine is not one apt can update"
+    return 1
+  }
+  {
+    printf '== apt-get update\n'
+    run_apt update
+    printf '\n== apt-get dist-upgrade\n'
+    run_apt dist-upgrade
+    printf '\n== apt-get autoremove\n'
+    run_apt --purge autoremove
+  } 2>&1 | job_log "$id"
+  local result=${PIPESTATUS[0]}
+  cmd_machine
+  [ "$result" -eq 0 ] && job_state "$id" done || job_state "$id" failed "apt ended with $result"
+}
+
+do_reboot() {
+  local id="$1"
+  job_state "$id" done
+  printf 'the machine restarts in a minute\n' | job_log "$id"
+  # A minute, so the answer still reaches the server and mail in flight has a moment to finish.
+  shutdown -r +1 "UwUMail Gateway: restart from the portal" >/dev/null 2>&1 &
+}
+
+# Fetches the gateway of a given version, checks it against the checksum published beside it, and
+# lets install.sh put it in place. The old binary is kept until the new one is up.
+do_gateway_update() {
+  local id="$1" version="$2"
+  local architecture file work
+  architecture=$(dpkg --print-architecture 2>/dev/null || uname -m)
+  if [ "$architecture" != "amd64" ] && [ "$architecture" != "x86_64" ]; then
+    job_state "$id" failed "there is no published gateway for $architecture; update it by hand"
+    return 1
+  fi
+  file=uwumail-gateway-linux-amd64.tar.gz
+  work=$(mktemp -d) || {
+    job_state "$id" failed "could not make a working directory"
+    return 1
+  }
+
+  local result=0
+  {
+    printf '== fetching uwumail-gateway %s\n' "$version"
+    curl -fsSL --retry 3 --max-time 300 -o "$work/$file" "$releases/v$version/$file" &&
+      curl -fsSL --retry 3 --max-time 60 -o "$work/$file.sha256" "$releases/v$version/$file.sha256" || exit 1
+    printf '\n== checking the checksum\n'
+    (cd "$work" && sha256sum -c "$file.sha256") || exit 1
+    printf '\n== unpacking\n'
+    tar -xzf "$work/$file" -C "$work" || exit 1
+    [ -x "$work/uwumail-gateway/uwumail-gateway" ] || exit 1
+    printf '\n== keeping the gateway that runs now\n'
+    cp -a /usr/local/bin/uwumail-gateway "$work/before" 2>/dev/null || true
+    printf '\n== install.sh\n'
+    bash "$work/uwumail-gateway/install.sh" "$work/uwumail-gateway/uwumail-gateway" || exit 1
+  } 2>&1 | job_log "$id"
+  result=${PIPESTATUS[0]}
+
+  if [ "$result" -ne 0 ]; then
+    rm -rf "$work"
+    job_state "$id" failed "the update ended with $result"
+    return 1
+  fi
+
+  # Wait for it to come back. install.sh restarts the service itself; this only checks that what
+  # came up is actually running and speaking.
+  local waited=0
+  while [ "$waited" -lt 60 ]; do
+    systemctl is-active --quiet uwumail-gateway && break
+    sleep 3
+    waited=$((waited + 3))
+  done
+  if systemctl is-active --quiet uwumail-gateway; then
+    printf '\nuwumail-gateway is running again\n' | job_log "$id"
+    rm -rf "$work"
+    cmd_machine
+    job_state "$id" done
+    return 0
+  fi
+
+  # It did not come up. Put back the binary that did, which is the only thing that changed.
+  {
+    printf '\n== the new gateway did not come up, putting the old one back\n'
+    journalctl -u uwumail-gateway -n 30 --no-pager 2>/dev/null
+    if [ -x "$work/before" ]; then
+      install -m 0755 "$work/before" /usr/local/bin/uwumail-gateway
+      systemctl restart uwumail-gateway
+    fi
+  } 2>&1 | job_log "$id"
+  rm -rf "$work"
+  cmd_machine
+  job_state "$id" failed "the new gateway did not come up; the one before is running again"
+  return 1
+}
+
+# helper task — what the gateway wrote into jobs.jsonl, one line at a time.
+cmd_task() {
+  [ -s "$jobs_file" ] || return 0
+
+  # A gateway update runs install.sh, and install.sh writes a new helper over this very file.
+  # Bash reads a script from disk as it goes, so the rest of this one would turn into whatever
+  # landed at the same offset. The work therefore happens in a copy that nobody is going to touch.
+  if [ "" != "1" ]; then
+    local copy result
+    copy=$(mktemp) || return 1
+    cp "$0" "$copy" && chmod 0700 "$copy" || {
+      rm -f "$copy"
+      return 1
+    }
+    UWUMAIL_HELPER_COPY=1 bash "$copy" task
+    result=$?
+    rm -f "$copy"
+    return $result
+  fi
+
+  local waiting="$jobs_file.now"
+  mv -f "$jobs_file" "$waiting" 2>/dev/null || return 0
+
+  local line id verb version asked now
+  now=$(date +%s)
+  while IFS= read -r line; do
+    id=$(printf '%s' "$line" | jq -r '.id // empty' 2>/dev/null)
+    verb=$(printf '%s' "$line" | jq -r '.verb // empty' 2>/dev/null)
+    version=$(printf '%s' "$line" | jq -r '.version // empty' 2>/dev/null)
+    asked=$(printf '%s' "$line" | jq -r '.at // 0' 2>/dev/null)
+    # An id names a file, so it may be nothing but letters and digits.
+    [[ "$id" =~ ^[A-Za-z0-9]{4,40}$ ]] || continue
+    case " $verbs " in *" $verb "*) ;; *)
+      job_state "$id" failed "this helper does not do $verb"
+      continue
+      ;;
+    esac
+    [[ "$asked" =~ ^[0-9]{1,12}$ ]] || asked=0
+    if [ "$asked" -gt 0 ] && [ $((now - asked)) -gt "$JOB_MAX_AGE" ]; then
+      job_state "$id" failed "the job waited too long; ask again"
+      continue
+    fi
+    if [ -n "$version" ] && ! is_version "$version"; then
+      job_state "$id" failed "that is not a version number"
+      continue
+    fi
+    if [ "$verb" = "gateway-update" ] && [ -z "$version" ]; then
+      job_state "$id" failed "no version was named"
+      continue
+    fi
+    [ -e "$state/job-$id.json" ] && continue # already done, or being done
+
+    job_state "$id" running
+    case "$verb" in
+      os-update) do_os_update "$id" ;;
+      reboot) do_reboot "$id" ;;
+      gateway-update) do_gateway_update "$id" "$version" ;;
+    esac
+  done <"$waiting"
+  rm -f "$waiting"
+
+  # Jobs nobody will ask about again.
+  find "$state" -maxdepth 1 -name 'job-*' -mtime +7 -delete 2>/dev/null
+}
+
 cmd_machine() {
   # Only the package lists, never an install: what gets installed stays the operator's decision,
   # apart from the security updates unattended-upgrades handles on its own.
@@ -317,10 +529,11 @@ cmd_report() {
 case "${1:-}" in
   tick) cmd_tick ;;
   machine) cmd_machine ;;
+  task) cmd_task ;;
   ignore) cmd_ignore "${2:-}" ;;
   report) cmd_report "${2:-}" ;;
   *)
-    echo "usage: ${0##*/} tick | machine | ignore <ip> | report [--motd]" >&2
+    echo "usage: ${0##*/} tick | machine | task | ignore <ip> | report [--motd]" >&2
     exit 2
     ;;
 esac

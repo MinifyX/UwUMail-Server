@@ -19,6 +19,8 @@ use uwumail_web::{CSRF_HEADER, Web, WebSettings};
 struct FakeGateway {
     view: Mutex<GatewayView>,
     codes: Mutex<Vec<String>>,
+    /// Everything the portal asked the gateway's machine for, in order.
+    asked: Mutex<Vec<(String, Option<String>)>>,
 }
 
 impl GatewayBackend for FakeGateway {
@@ -47,6 +49,20 @@ impl GatewayBackend for FakeGateway {
         Box::pin(async move {
             *self.view.lock().unwrap() = GatewayView::default();
             Ok(())
+        })
+    }
+
+    fn ask<'a>(
+        &'a self,
+        verb: &'a str,
+        version: Option<&'a str>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send + 'a>> {
+        Box::pin(async move {
+            if !self.view.lock().unwrap().can_install {
+                return Err("the gateway is not listening for this right now".into());
+            }
+            self.asked.lock().unwrap().push((verb.to_owned(), version.map(str::to_owned)));
+            Ok("job1".to_owned())
         })
     }
 }

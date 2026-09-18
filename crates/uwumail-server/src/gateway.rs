@@ -127,7 +127,22 @@ fn machine_view(status: uwumail_tunnel::proto::GatewayStatus) -> uwumail_web::ga
         }),
         trusted: status.trusted.iter().map(ToString::to_string).collect(),
         checked_at: status.checked_at,
+        job: status.job.map(|job| uwumail_web::gateway::GatewayJob {
+            id: job.id,
+            state: job.state,
+            error: job.error,
+            at: job.at,
+            log: job.log,
+        }),
     }
+}
+
+/// An id that names a file on the other side, so letters and digits only. It does not have to be
+/// hard to guess -- only one of a kind, and only ever made here.
+fn job_id() -> String {
+    let nanos =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |since| since.as_nanos() as u64);
+    format!("{nanos:016x}{:04x}", std::process::id() & 0xffff)
 }
 
 /// Servers in the own network, like fixed routes to a private address, are reached directly:
@@ -305,6 +320,7 @@ impl GatewayBackend for GatewayManager {
                 view.software = Some(welcome.software);
                 view.connected_since = Some(since);
                 view.down_since = None;
+                view.can_install = welcome.tasks;
                 view.machine = current.client.gateway_status().map(machine_view);
             }
             Status::Refused { reason, message } => {
@@ -323,6 +339,35 @@ impl GatewayBackend for GatewayManager {
 
     fn forget(&self) -> GatewayFuture<'_> {
         Box::pin(self.forget_gateway())
+    }
+
+    fn ask<'a>(
+        &'a self,
+        verb: &'a str,
+        version: Option<&'a str>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, String>> + Send + 'a>> {
+        Box::pin(async move {
+            let client = {
+                let current = self.current.lock().expect("gateway poisoned");
+                current.as_ref().map(|current| current.client.clone())
+            };
+            let client = client.ok_or_else(|| "no gateway is paired with this server".to_owned())?;
+            if !matches!(client.status(), Status::Connected { ref welcome, .. } if welcome.tasks) {
+                return Err("the gateway is not listening for this right now".into());
+            }
+            if client.gateway_status().and_then(|status| status.job).is_some_and(|job| job.state == "running") {
+                return Err("something is already running on the gateway".into());
+            }
+            let id = job_id();
+            // The ask goes down the same control stream as a ban, and like a ban it is never
+            // waited for: what came of it arrives with the next status, which the gateway sends
+            // every few seconds while something runs.
+            if !client.task(&id, verb, version) {
+                return Err("the gateway did not take it".into());
+            }
+            tracing::info!(%verb, %id, "asked the gateway's machine for a job");
+            Ok(id)
+        })
     }
 }
 

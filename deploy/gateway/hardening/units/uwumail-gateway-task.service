@@ -1,0 +1,20 @@
+# Carries out what the portal asked this VPS for: install the system's updates, restart the
+# machine, or fetch and install a newer gateway.
+#
+# This is the one unit here that changes something, and it is deliberately not locked down the way
+# the one beside it is: apt runs maintainer scripts and install.sh touches the firewall, sshd and
+# systemd. A sandbox tight enough to be worth the name would break both. What keeps this safe sits
+# on the other side -- the helper takes one of three words and a version number that has to look
+# like one, and never a command, a path or an address from whoever asked. The address a new gateway
+# comes from is built out of the helper's own constants.
+[Unit]
+Description=UwUMail Gateway: carry out a job from the portal
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/uwumail-gateway/helper task
+User=root
+# apt can take a while on a small VPS, and so can a download on a slow line.
+TimeoutStartSec=45min

@@ -45,6 +45,11 @@ pub struct GatewayView {
     /// What the gateway says about the machine it runs on: its updates, its firewall, its bans.
     /// `None` while the tunnel is down, and for gateways from before they told us.
     pub machine: Option<GatewayMachine>,
+    /// Whether the portal can ask this gateway to update or restart its machine. False for a
+    /// gateway without a helper beside it, which is also the one that shows the commands instead.
+    pub can_install: bool,
+    /// The newest gateway there is to install, when the server knows of one.
+    pub software_version: Option<String>,
 }
 
 /// The gateway's machine, as the portal shows it. The server fills this in from what comes through
@@ -58,6 +63,21 @@ pub struct GatewayMachine {
     pub trusted: Vec<String>,
     /// Unix time the gateway last looked at its machine.
     pub checked_at: i64,
+    /// The job the portal asked for last, while there is one.
+    pub job: Option<GatewayJob>,
+}
+
+/// A job the gateway's machine is carrying out, or has.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayJob {
+    pub id: String,
+    /// `running`, `done`, `failed` or `refused`.
+    pub state: String,
+    pub error: String,
+    pub at: i64,
+    /// What it has printed so far, capped.
+    pub log: String,
 }
 
 /// The operating system on the gateway's machine and what it waits for.
@@ -102,4 +122,14 @@ pub trait GatewayBackend: Send + Sync + 'static {
     fn pair<'a>(&'a self, code: &'a str) -> GatewayFuture<'a>;
     /// Disconnects and forgets the gateway; mail leaves from this server again.
     fn forget(&self) -> GatewayFuture<'_>;
+    /// Asks the gateway's machine for `os-update`, `reboot` or `gateway-update`; the version is
+    /// only for the last one. Returns the id of the job, to follow it with [`GatewayBackend::view`].
+    ///
+    /// Fails when the tunnel is down or the gateway is too old to listen. It has to: an ask that
+    /// went nowhere would otherwise leave the portal waiting for an answer nobody is writing.
+    fn ask<'a>(
+        &'a self,
+        verb: &'a str,
+        version: Option<&'a str>,
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>>;
 }

@@ -178,6 +178,10 @@ pub struct UpdateInfo {
     /// For an edge build: how many commits `main` is ahead, and the newest of them.
     pub behind: Option<u32>,
     pub commits: Vec<Commit>,
+    /// The newest stable release there is, whatever this server follows. Only the gateway needs
+    /// this: it is built for releases and nothing else, so even an `edge` server updates its
+    /// gateway to a release.
+    pub newest_release: Option<String>,
 }
 
 /// `1.2.3-beta.4` as comparable parts; a pre-release sorts before its release.
@@ -242,6 +246,24 @@ fn newer_releases(list: Vec<GitHubRelease>, current: &str, channel: Channel) -> 
         .collect();
     newer.sort_by(|a, b| compare_versions(&b.version, &a.version));
     newer
+}
+
+/// The releases GitHub lists, newest first as it sends them.
+async fn releases(https: &uwumail_smtp::https::Https, timeout: Duration) -> Result<Vec<GitHubRelease>, String> {
+    let url = format!("https://api.github.com/repos/{}/releases?per_page=30", repository());
+    let fetched = https.get(&url, MAX_RESPONSE, timeout).await?;
+    serde_json::from_str(&fetched.body).map_err(|_| "GitHub answered something unexpected".to_owned())
+}
+
+/// The newest release that is neither a draft nor a beta.
+fn newest_stable(list: &[GitHubRelease]) -> Option<String> {
+    let mut stable: Vec<&str> = list
+        .iter()
+        .filter(|release| !release.draft && !release.prerelease)
+        .map(|release| release.tag_name.trim_start_matches('v'))
+        .collect();
+    stable.sort_by(|a, b| compare_versions(b, a));
+    stable.first().map(|version| (*version).to_owned())
 }
 
 #[derive(Deserialize)]
@@ -548,12 +570,15 @@ impl Web {
                             message: commit.commit.message.lines().next().unwrap_or_default().to_owned(),
                         })
                         .collect();
+                    // One more request, for the gateway alone: it is built for releases and
+                    // nothing else, so even a server following main updates its gateway to one.
+                    if let Ok(list) = releases(&https, timeout).await {
+                        info.newest_release = newest_stable(&list);
+                    }
                 }
                 _ => {
-                    let url = format!("https://api.github.com/repos/{}/releases?per_page=30", repository());
-                    let fetched = https.get(&url, MAX_RESPONSE, timeout).await?;
-                    let list: Vec<GitHubRelease> = serde_json::from_str(&fetched.body)
-                        .map_err(|_| "GitHub answered something unexpected".to_owned())?;
+                    let list = releases(&https, timeout).await?;
+                    info.newest_release = newest_stable(&list);
                     info.releases = newer_releases(list, build.version, settings.channel);
                 }
             }

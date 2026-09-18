@@ -1,0 +1,12 @@
+# Reacts the moment the UwUMail server asks this machine for something: its updates, a restart, or
+# a newer gateway. Watched separately from the bans next door because the two are nothing alike --
+# a ban is a line handed to fail2ban in milliseconds, this can run apt for a quarter of an hour.
+[Unit]
+Description=UwUMail Gateway: watch for jobs from the portal
+
+[Path]
+PathModified=/var/lib/uwumail-gateway/jobs.jsonl
+Unit=uwumail-gateway-task.service
+
+[Install]
+WantedBy=multi-user.target

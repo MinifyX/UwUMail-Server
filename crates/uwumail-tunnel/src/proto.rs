@@ -102,6 +102,11 @@ pub struct Welcome {
     /// never read it again, so the server keeps its bans to itself.
     #[serde(default)]
     pub control: bool,
+    /// Whether this gateway can be asked to update or restart its machine. A gateway that cannot
+    /// simply ignores the ask, so this is only here to keep the portal from offering a button that
+    /// would do nothing.
+    #[serde(default)]
+    pub tasks: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -141,6 +146,31 @@ pub enum ServerMessage {
     Unban {
         ip: IpAddr,
     },
+    /// Something the VPS should do: install its updates, restart, or fetch a new gateway.
+    ///
+    /// `verb` is one of a fixed list the gateway checks again, and `version` has to look like a
+    /// version. Never a command, never a path, never an address: the gateway's helper runs as root,
+    /// and it builds the address it downloads from out of its own constants. A server somebody
+    /// broke into must not be able to hand a VPS something to run.
+    Task {
+        id: String,
+        verb: String,
+        #[serde(default)]
+        version: Option<String>,
+    },
+}
+
+/// What became of a [`ServerMessage::Task`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TaskState {
+    pub id: String,
+    /// `running`, `done`, `failed` or `refused`.
+    pub state: String,
+    pub error: String,
+    pub at: i64,
+    /// The tail of what it printed, for the portal to show.
+    pub log: String,
 }
 
 /// How the machine the gateway runs on is doing. The portal shows it, so a VPS that needs updates
@@ -155,6 +185,10 @@ pub struct GatewayStatus {
     pub trusted: Vec<IpAddr>,
     /// Unix time the gateway last looked at the machine.
     pub checked_at: i64,
+    /// The task asked for last, while there is one. It rides along with the status instead of
+    /// having a message of its own: the status is already sent regularly and already kept by the
+    /// server, and the gateway simply reports more often while something is running.
+    pub job: Option<TaskState>,
 }
 
 /// The operating system of the VPS and what it waits for.

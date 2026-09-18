@@ -9,9 +9,13 @@
 //! - `bans.jsonl` — written here, read by the helper, which hands each line to fail2ban.
 //! - `trusted` — written here, read by both helpers: the addresses the tunnel comes from, which
 //!   no ban may ever touch.
+//! - `jobs.jsonl` — written here: what the portal asked this machine for. `job-<id>.log` and
+//!   `job-<id>.json` come back the other way, and being files they survive the gateway being
+//!   restarted by the very update it asked for.
 //!
 //! Every file is a plain one: nothing here can run a command, and a missing helper only means the
-//! portal has less to show.
+//! portal has less to show. What crosses over for a job is a verb from a fixed list and a version
+//! number that has to look like one — never a command, a path or an address.
 
 use std::fs::OpenOptions;
 use std::io::Write as _;
@@ -24,6 +28,13 @@ use uwumail_tunnel::proto::GatewayStatus;
 const REPORT: &str = "machine.json";
 const BANS: &str = "bans.jsonl";
 const TRUSTED: &str = "trusted";
+const JOBS: &str = "jobs.jsonl";
+
+/// The most of a task's output that is passed on to the portal at once.
+const LOG_MAX: usize = 16 * 1024;
+/// The verbs the gateway will pass on. The helper checks them again -- it is the side with the
+/// rights -- but a word the gateway has never heard of never reaches a file at all.
+const VERBS: [&str; 3] = ["os-update", "reboot", "gateway-update"];
 
 /// Past this the report is too old to mean anything: the helper runs far more often, so an older
 /// file says its timer stopped rather than that all is well.
@@ -73,7 +84,13 @@ impl Machine {
             protection: report.as_ref().and_then(|report| report.protection.clone()),
             trusted: self.trusted(),
             checked_at: report.map(|report| report.written_at).unwrap_or_default(),
+            job: self.job(),
         }
+    }
+
+    /// Whether a helper is installed at all. Without one the portal keeps showing the commands.
+    pub fn has_helper(&self) -> bool {
+        self.dir.join(REPORT).is_file()
     }
 
     fn report(&self) -> Option<Report> {
@@ -144,6 +161,75 @@ impl Machine {
         self.write_ban(&Ban { action: "unban", ip, seconds: 0, reason: String::new(), at: unix_now() })
     }
 
+    /// Hands a task to the helper. Says whether it was written down.
+    ///
+    /// Nothing here is ever run: the verb has to be one of [`VERBS`], the id has to be letters and
+    /// digits because it names a file, and the version has to look like a version. What reaches the
+    /// helper is three checked words in a JSON line, and the helper checks them all over again.
+    pub fn ask(&self, id: &str, verb: &str, version: Option<&str>) -> bool {
+        if !VERBS.contains(&verb) || !is_id(id) {
+            tracing::warn!(%verb, "the server asked for something this gateway does not do");
+            return false;
+        }
+        if version.is_some_and(|version| !is_version(version)) {
+            tracing::warn!("the server named a version that is not one");
+            return false;
+        }
+        if self.job().is_some_and(|job| job.state == "running") {
+            tracing::info!("something is already running on this machine");
+            return false;
+        }
+        let job = Job { id, verb, version, at: unix_now() };
+        let Ok(mut line) = serde_json::to_vec(&job) else { return false };
+        line.push(b'\n');
+        let path = self.dir.join(JOBS);
+        // Opened fresh each time, like the bans: the helper carries the file off by renaming it.
+        match OpenOptions::new().create(true).append(true).open(&path).and_then(|mut file| file.write_all(&line)) {
+            Ok(()) => {
+                let _ = std::fs::remove_file(self.dir.join(format!("job-{id}.log")));
+                tracing::info!(%verb, %id, "the server asked this machine for a job");
+                true
+            }
+            Err(err) => {
+                tracing::warn!(%err, "could not write down what the server asked for");
+                false
+            }
+        }
+    }
+
+    /// The task asked for last, with whatever it has printed so far.
+    fn job(&self) -> Option<uwumail_tunnel::proto::TaskState> {
+        let id = self.newest_job()?;
+        let answer: JobAnswer = std::fs::read(self.dir.join(format!("job-{id}.json")))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or(JobAnswer { id: id.clone(), state: "running".into(), ..JobAnswer::default() });
+        let log = std::fs::read_to_string(self.dir.join(format!("job-{id}.log")))
+            .map(|text| match text.char_indices().nth_back(LOG_MAX) {
+                Some((at, _)) => text[at..].to_owned(),
+                None => text,
+            })
+            .unwrap_or_default();
+        Some(uwumail_tunnel::proto::TaskState { id, state: answer.state, error: answer.error, at: answer.at, log })
+    }
+
+    /// The task whose files were touched last. After a gateway restart -- which an update causes --
+    /// this is how the answer is found again.
+    fn newest_job(&self) -> Option<String> {
+        let mut newest: Option<(std::time::SystemTime, String)> = None;
+        for entry in std::fs::read_dir(&self.dir).ok()?.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let id =
+                name.strip_prefix("job-").and_then(|rest| rest.strip_suffix(".json").or(rest.strip_suffix(".log")));
+            let Some(id) = id else { continue };
+            let Ok(at) = entry.metadata().and_then(|data| data.modified()) else { continue };
+            if newest.as_ref().is_none_or(|(seen, _)| at > *seen) {
+                newest = Some((at, id.to_owned()));
+            }
+        }
+        newest.map(|(_, id)| id)
+    }
+
     fn write_ban(&self, ban: &Ban) -> bool {
         let path = self.dir.join(BANS);
         // A file nobody empties means the helper is gone; writing on would only fill the disk.
@@ -165,6 +251,25 @@ impl Machine {
             }
         }
     }
+}
+
+/// What the helper writes back about a task, as it writes it.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct JobAnswer {
+    id: String,
+    state: String,
+    error: String,
+    at: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Job<'a> {
+    id: &'a str,
+    verb: &'a str,
+    version: Option<&'a str>,
+    at: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -204,6 +309,31 @@ fn covers(trusted: IpAddr, candidate: IpAddr) -> bool {
     match (trusted, candidate) {
         (IpAddr::V6(a), IpAddr::V6(b)) => (u128::from(a) ^ u128::from(b)) >> 64 == 0,
         _ => false,
+    }
+}
+
+/// An id names a file, so it may only be what an id is made of.
+fn is_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 40 && id.chars().all(|letter| letter.is_ascii_alphanumeric())
+}
+
+/// `1.2.3` or `1.2.3-beta.4`, and nothing else. The helper builds the address it downloads from out
+/// of its own constants and this; anything that is not a version has no business getting that far.
+fn is_version(version: &str) -> bool {
+    let (core, pre) = version.split_once('-').map_or((version, None), |(core, pre)| (core, Some(pre)));
+    let numbers: Vec<&str> = core.split('.').collect();
+    if numbers.len() != 3
+        || !numbers
+            .iter()
+            .all(|part| !part.is_empty() && part.len() <= 4 && part.bytes().all(|byte| byte.is_ascii_digit()))
+    {
+        return false;
+    }
+    match pre {
+        None => true,
+        Some(pre) => {
+            !pre.is_empty() && pre.len() <= 20 && pre.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'.')
+        }
     }
 }
 
@@ -318,5 +448,39 @@ mod tests {
         let stale = serde_json::json!({ "writtenAt": unix_now() - REPORT_STALE_SECS - 60, "system": { "updates": 1 } });
         std::fs::write(dir.path().join(REPORT), stale.to_string()).unwrap();
         assert!(machine.status(String::new()).system.is_none(), "a stopped helper must not look reassuring");
+    }
+
+    #[test]
+    fn only_three_words_and_a_version_ever_reach_the_helper() {
+        let dir = tempfile::tempdir().unwrap();
+        let machine = Machine::new(dir.path());
+
+        assert!(machine.ask("abc1", "os-update", None));
+        assert!(machine.ask("abc2", "gateway-update", Some("0.2.3")));
+        assert!(machine.ask("abc3", "gateway-update", Some("1.0.0-beta.2")));
+
+        // Everything that is not one of the three words, or not a version.
+        assert!(!machine.ask("abc4", "rm -rf /", None), "not a verb");
+        assert!(!machine.ask("abc5", "server-update", None), "the server's verb, not this machine's");
+        assert!(!machine.ask("abc6", "gateway-update", Some("0.2.3; id")), "a command after the version");
+        assert!(!machine.ask("abc7", "gateway-update", Some("$(id)")), "a substitution instead of a version");
+        assert!(!machine.ask("abc8", "gateway-update", Some("../../etc/passwd")), "a path instead of a version");
+        assert!(!machine.ask("../../etc/passwd", "os-update", None), "an id that is a path");
+        assert!(!machine.ask("", "os-update", None), "no id at all");
+
+        // Only what passed is on the way over, and in the order it was asked for.
+        let written = std::fs::read_to_string(dir.path().join(JOBS)).unwrap();
+        let ids: Vec<String> = written
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .map(|line| line["id"].as_str().unwrap_or_default().to_owned())
+            .collect();
+        assert_eq!(ids, ["abc1", "abc2", "abc3"]);
+
+        // While one runs, nothing else starts.
+        std::fs::write(dir.path().join("job-abc3.json"), r#"{"id":"abc3","state":"running"}"#).unwrap();
+        assert!(!machine.ask("abc9", "os-update", None), "one at a time");
+        let job = machine.status(String::new()).job.expect("the running one is reported");
+        assert_eq!((job.id.as_str(), job.state.as_str()), ("abc3", "running"));
     }
 }

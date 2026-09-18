@@ -327,6 +327,8 @@ install_helper() {
   done
   systemctl daemon-reload
   systemctl enable --now uwumail-gateway-helper.path uwumail-gateway-helper.timer >/dev/null 2>&1
+  # What the portal asks this machine for lands in a file; this is what notices.
+  systemctl enable --now uwumail-gateway-task.path >/dev/null 2>&1
   systemctl enable uwumail-gateway-machine.timer >/dev/null 2>&1
   systemctl start uwumail-gateway-machine.timer >/dev/null 2>&1
 
