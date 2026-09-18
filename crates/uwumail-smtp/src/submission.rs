@@ -5,7 +5,7 @@ use mail_parser::MessageParser;
 use uwumail_store::{Account, IngestRequest, MailboxRole, MailboxTarget, NewQueueRecipient, StoreError};
 
 use crate::dsn::{self, FailedRecipient};
-use crate::{Smtp, dkim, forward, headers, random_id, vacation};
+use crate::{Smtp, clamav, dkim, forward, headers, random_id, vacation};
 
 pub struct Submission {
     pub account: Account,
@@ -53,6 +53,8 @@ pub enum SubmitError {
     InvalidRecipient(String),
     #[error("no recipient could take the message")]
     NobodyAccepted,
+    #[error("the message contains {0}")]
+    Virus(String),
     #[error("the message could not be queued: {0}")]
     Queue(StoreError),
 }
@@ -128,6 +130,12 @@ impl Smtp {
             if !ctx.store.account_owns_address(account.id, address).await.unwrap_or(false) {
                 return Err(SubmitError::ForbiddenFrom(address.clone()));
             }
+        }
+        // Our own people send viruses too, mostly without knowing. Turning one away here keeps it
+        // out of other people's mailboxes and our name off their scanner's report.
+        if let clamav::Checked::Found(name) = clamav::check(&self.inner.live().spam.antivirus, &raw).await {
+            tracing::info!(login = %account.login, virus = %name, "refused to send, the virus scanner found something");
+            return Err(SubmitError::Virus(name));
         }
         let from_domain = from[0].rsplit_once('@').map(|(_, d)| d.to_ascii_lowercase()).unwrap_or_default();
         let id = random_id();

@@ -70,6 +70,8 @@ pub struct SpamConfig {
     pub feeds: FeedsConfig,
     /// What the filter decided about each message, kept so an admin can look it up afterwards.
     pub log: SpamLogConfig,
+    /// A ClamAV daemon that looks at messages before they are taken.
+    pub antivirus: AntivirusConfig,
 }
 
 impl Default for SpamConfig {
@@ -84,7 +86,30 @@ impl Default for SpamConfig {
             reject_score: None,
             feeds: FeedsConfig::default(),
             log: SpamLogConfig::default(),
+            antivirus: AntivirusConfig::default(),
         }
+    }
+}
+
+/// The virus scanner. It runs in its own container beside the server, because it needs a
+/// writable place for its signatures and about two gigabytes of memory; see docs/antivirus.md.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AntivirusConfig {
+    /// Hand every message to clamd. Off unless the scanner is actually running.
+    pub enabled: bool,
+    /// Where clamd listens, as `host:port`.
+    pub address: String,
+    /// How long the scanner may take before the message goes on unchecked.
+    pub timeout_secs: u64,
+    /// Messages larger than this are passed on without being looked at: clamd refuses them
+    /// anyway (its own `StreamMaxLength`), and a virus that big is not what it is built for.
+    pub max_size: usize,
+}
+
+impl Default for AntivirusConfig {
+    fn default() -> Self {
+        AntivirusConfig { enabled: false, address: "clamav:3310".into(), timeout_secs: 30, max_size: 25 * 1024 * 1024 }
     }
 }
 

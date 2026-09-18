@@ -1,0 +1,90 @@
+# Virus scanner
+
+UwUMail can hand every message to [ClamAV](https://www.clamav.net/) before it
+is taken. If ClamAV finds something, the message is never accepted: the sending
+server gets a `554` and tells its own sender, and nothing of it reaches a
+mailbox. Mail that our own people send is checked the same way, so an infected
+attachment does not leave the house either.
+
+The scanner is off until you switch it on, and it is not part of the UwUMail
+image: it runs in its own container beside the server. clamd wants about two
+gigabytes of memory for its signatures and a writable place to keep them,
+neither of which fits a read-only image that is meant to run on a Raspberry Pi.
+
+## Starting it
+
+The scanner is a service in `compose.yaml` behind a profile, so it only starts
+when you ask for it:
+
+```bash
+docker compose --profile antivirus up -d
+```
+
+Its first start takes a few minutes: the image ships without signatures and
+fetches them once, into the `uwumail-clamav` volume. `docker compose logs
+clamav` shows how far it got; `docker compose ps` shows `healthy` once clamd
+answers.
+
+Then switch it on in the portal under *Spam filter → Viruses*. The server
+reaches it as `clamav:3310` inside the compose network, and nothing outside the
+machine can: the port is not published.
+
+Leave the profile out of a later `docker compose up -d` and the scanner is
+gone, while the setting stays on — the portal then says the scanner cannot be
+reached, and mail keeps flowing unchecked. Switch it off in the portal too.
+
+## What it does with a message
+
+| What the scanner says | What happens |
+| --- | --- |
+| nothing found | the message goes its usual way and carries `X-Virus-Scanned: yes (ClamAV)` |
+| something found | `554`, nothing is delivered, the find is written into the spam history with its name |
+| no answer, too slow, or the message is bigger than `spam.antivirus.max_size` | the message goes on and carries `X-Virus-Scanned: no (…)` |
+
+The last row is the deliberate part: a scanner that is away must not stop the
+post. The header says that nobody looked, the server log says why, and the
+health overview on the server page turns red while the scanner is unreachable.
+A virus verdict that a message brought along is removed first, so the only one
+left is this server's.
+
+The check happens before the spam filter scores anything, so an infected
+message is never learned from and never lands in anyone's Junk folder. It is
+not a matter of points either: an allowed sender does not get a virus through.
+
+## Settings
+
+Under *Spam filter → Viruses*, or in the configuration file:
+
+```toml
+[spam.antivirus]
+enabled = false
+address = "clamav:3310"
+timeout_secs = 30
+max_size = 26214400  # 25 MiB
+```
+
+`max_size` follows clamd's own `StreamMaxLength` (25 MiB by default). Larger
+messages are not sent to it at all, because it would refuse them anyway.
+
+## Checking that it works
+
+The page has a button that sends the scanner the
+[EICAR test file](https://www.eicar.org/download-anti-malware-testfile/) — a
+harmless string every scanner recognises. If it comes back named, the two
+really do talk to each other.
+
+The page also shows the version and the number and date of the signature
+database. ClamAV publishes several times a day; a database older than three
+days means its updater (`freshclam`, which runs inside the same container) is
+not getting through, and the health overview says so.
+
+## Memory
+
+clamd keeps the whole signature database in memory: expect around 1.5 to 2 GB
+for the container, plus what UwUMail itself uses. On a machine with 2 GB the
+two together will not fit, and the kernel will kill one of them — leave the
+scanner off there, or give the machine more memory.
+
+The built-in lists from abuse.ch already catch known malware links and file
+hashes without a scanner ([spam filter](spam-filter.md)); they are not a
+replacement, but they cost nothing.

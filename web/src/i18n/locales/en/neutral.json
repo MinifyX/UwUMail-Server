@@ -264,7 +264,8 @@
       "feedInactive": "This list is switched off or still waits for the Auth-Key.",
       "hostJobRefused": "The helper on the machine refused: {{detail}}",
       "updateRefused": "The update did not start: {{detail}}",
-      "gatewayJobRefused": "The gateway did not take it: {{detail}}"
+      "gatewayJobRefused": "The gateway did not take it: {{detail}}",
+      "virusScannerOff": "The virus scanner is switched off."
     }
   },
   "people": {
@@ -950,6 +951,16 @@
       "requireTlsHint": "Passwords never travel unencrypted.",
       "revealIp": "Show the IP address in sent mail",
       "revealIpHint": "By default UwUMail does not reveal where someone sent a message from."
+    },
+    "antivirus": {
+      "enabled": "Check messages for viruses",
+      "enabledHint": "Needs a ClamAV running beside the server. Start it first: docker compose --profile antivirus up -d. Its first start takes a few minutes, until the signatures are there.",
+      "address": "Address of the scanner",
+      "addressHint": "Host and port of clamd; clamav:3310 in the setup that ships with UwUMail.",
+      "timeout": "Patience in seconds",
+      "timeoutHint": "After that the message goes on unchecked.",
+      "maxSize": "Largest message checked (MB)",
+      "maxSizeHint": "Bigger messages go through unchecked; clamd refuses them anyway."
     }
   },
   "health": {
@@ -980,7 +991,8 @@
       "delivery": "Sending",
       "storage": "Storage",
       "security": "Login",
-      "gateway": "Gateway"
+      "gateway": "Gateway",
+      "antivirus": "Viruses"
     },
     "findings": {
       "noDomains": "No domain set up yet.",
@@ -1029,7 +1041,9 @@
       "gatewayRefused": "The UwUMail Gateway does not accept this server.",
       "gatewayOk": "Mail leaves through the gateway.",
       "gatewayPort25Blocked": "The gateway cannot reach other mail servers on port 25.",
-      "gatewayOutboundBlocked": "Other mail servers cannot be reached through the gateway ({{count}} domains affected)."
+      "gatewayOutboundBlocked": "Other mail servers cannot be reached through the gateway ({{count}} domains affected).",
+      "virusScannerAway": "The virus scanner does not answer. Until it is back, mail is delivered unchecked and says so in its headers.",
+      "virusSignaturesOld": "The virus signatures are {{since}} old. The scanner is not fetching new ones any more."
     },
     "hints": {
       "noDomains": "Without a domain the server cannot receive mail.",
@@ -1813,7 +1827,8 @@
       "tab": "View",
       "tabs": {
         "filter": "Filter",
-        "history": "History"
+        "history": "History",
+        "antivirus": "Viruses"
       }
     },
     "log": {
@@ -1841,7 +1856,8 @@
         "greylist": "held back",
         "reject": "refused",
         "dmarc": "refused by DMARC",
-        "blocked": "sender blocked"
+        "blocked": "sender blocked",
+        "virus": "virus found"
       },
       "search": "Search",
       "searchPlaceholder": "Sender or IP address",
@@ -2007,6 +2023,28 @@
       "fetched_other": "{{entries}} entries · fetched {{when}}",
       "refresh": "Fetch now",
       "refreshed": "Fetched the list."
+    },
+    "antivirus": {
+      "title": "Virus scanner",
+      "explain": "With a ClamAV running beside the server, every message is shown to it before it is taken. If it finds something, the message is never accepted. If it does not answer, the message goes on and its headers say that nobody looked.",
+      "settingsTitle": "Virus scanner settings",
+      "settingsIntro": "The scanner runs in its own container next to the server. How to start it: docs/antivirus.md.",
+      "off": "Off. Every message is taken without being shown to a scanner.",
+      "away": "The scanner cannot be reached: {{error}}",
+      "version": "Version",
+      "signatures": "Signatures",
+      "found_one": "In the last {{days}} days 1 message was turned away for a find.",
+      "found_other": "In the last {{days}} days {{count}} messages were turned away for a find.",
+      "test": "Send the test file",
+      "testHint": "Sends the scanner the harmless EICAR test file that every scanner knows. If it reports it, the two really do talk to each other.",
+      "testFound": "The scanner recognised the test file: {{name}}",
+      "testFailed": "The scanner did not recognise the test file.",
+      "state": {
+        "ok": "Reachable",
+        "warning": "Signatures old",
+        "problem": "Not reachable",
+        "off": "Off"
+      }
     }
   }
 }

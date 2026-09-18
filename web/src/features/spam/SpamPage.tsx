@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { GraduationCap } from "lucide-react";
-import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
 import { Card, PageHeader } from "@/components/ui/Card";
 import { Segmented } from "@/components/ui/Field";
 import {
+  ANTIVIRUS_SETTING_KEYS,
+  AntivirusFields,
   SPAM_LOG_SETTING_KEYS,
   SPAM_SETTING_KEYS,
   Section,
@@ -22,8 +23,10 @@ import {
   type SettingsView,
 } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
+import { navigate } from "@/lib/router";
 import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
+import { AntivirusCard } from "./AntivirusCard";
 import { FeedsCard } from "./FeedsCard";
 import { SenderListCard } from "./SenderListCard";
 import { SpamLimitsCard } from "./SpamLimitsCard";
@@ -33,9 +36,16 @@ import { WordListCard } from "./WordListCard";
 const accountKey = ["account", "spam"] as const;
 const adminKey = ["admin", "spam"] as const;
 
-/** The settings of the filter, and what it decided message by message. */
-type Tab = "filter" | "history";
-const TABS: Tab[] = ["filter", "history"];
+/** The settings of the filter, the virus scanner, and what was decided message by message. */
+export type SpamTab = "filter" | "antivirus" | "history";
+const TABS: SpamTab[] = ["filter", "antivirus", "history"];
+
+/** Every tab has its own address, so the health overview can link straight to the one it means. */
+const PATHS: Record<SpamTab, string> = {
+  filter: "/admin/spam",
+  antivirus: "/admin/spam/antivirus",
+  history: "/admin/spam/history",
+};
 
 const counts = (totals: BayesTotals, minimum: number) => totals.spam >= minimum && totals.ham >= minimum;
 
@@ -130,11 +140,11 @@ export function AccountSpamPage() {
 }
 
 /** The spam filter for admins: its settings, the server and domain sender lists, and what it learned. */
-export function AdminSpamPage() {
+export function AdminSpamPage({ tab = "filter" }: { tab?: SpamTab }) {
   const { t } = useT();
   const pro = usePrefs((s) => s.mode) === "pro";
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<Tab>("filter");
+  const setTab = (value: string) => navigate(PATHS[value as SpamTab] ?? PATHS.filter);
   const query = useQuery({ queryKey: adminKey, queryFn: () => api<AdminSpamView>("/api/admin/spam") });
   const settings = useQuery({
     queryKey: ["admin", "settings"],
@@ -146,16 +156,39 @@ export function AdminSpamPage() {
   if (settings.isError) return <LoadError error={settings.error} onRetry={() => void settings.refetch()} />;
   const { bayes } = query.data;
 
+  const tabs = (
+    <Segmented<string>
+      label={t("spam.admin.tab")}
+      value={tab}
+      onChange={setTab}
+      options={TABS.map((value) => ({ value, label: t(`spam.admin.tabs.${value}`) }))}
+    />
+  );
+
+  if (tab === "antivirus") {
+    return (
+      <div className="flex flex-col gap-5">
+        <PageHeader title={t("spam.admin.title")} intro={t("spam.admin.intro")} />
+        {tabs}
+        <Section
+          title={t("spam.antivirus.settingsTitle")}
+          intro={t("spam.antivirus.settingsIntro")}
+          view={settings.data}
+          keys={ANTIVIRUS_SETTING_KEYS}
+          onSaved={() => void queryClient.invalidateQueries({ queryKey: ["admin", "spam", "antivirus"] })}
+        >
+          {(form) => <AntivirusFields form={form} pro={pro} />}
+        </Section>
+        <AntivirusCard explain={!pro} />
+      </div>
+    );
+  }
+
   if (tab === "history") {
     return (
       <div className="flex flex-col gap-5">
         <PageHeader title={t("spam.admin.title")} intro={t("spam.admin.intro")} />
-        <Segmented<string>
-          label={t("spam.admin.tab")}
-          value={tab}
-          onChange={(value) => setTab(value as Tab)}
-          options={TABS.map((value) => ({ value, label: t(`spam.admin.tabs.${value}`) }))}
-        />
+        {tabs}
         <Section
           title={t("spam.log.settingsTitle")}
           intro={t("spam.log.settingsIntro")}
@@ -173,12 +206,7 @@ export function AdminSpamPage() {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title={t("spam.admin.title")} intro={t("spam.admin.intro")} />
-      <Segmented<string>
-        label={t("spam.admin.tab")}
-        value={tab}
-        onChange={(value) => setTab(value as Tab)}
-        options={TABS.map((value) => ({ value, label: t(`spam.admin.tabs.${value}`) }))}
-      />
+      {tabs}
       <Section
         title={t("spam.admin.settingsTitle")}
         intro={t("settings.spam.intro")}

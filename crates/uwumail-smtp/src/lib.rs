@@ -6,6 +6,7 @@
 //! - [`dkim`] creates and uses the signing keys of hosted domains.
 
 mod checks;
+pub mod clamav;
 mod client;
 pub mod config;
 pub mod dkim;
@@ -43,8 +44,8 @@ use uwumail_store::Store;
 
 pub use client::{Connector, connect_directly};
 pub use config::{
-    DeliveryConfig, ExternalTone, FeedsConfig, InternalTone, Language, RelayConfig, RelaySecurity, SmtpConfig,
-    SpamConfig, SpamLogConfig, ToneConfig,
+    AntivirusConfig, DeliveryConfig, ExternalTone, FeedsConfig, InternalTone, Language, RelayConfig, RelaySecurity,
+    SmtpConfig, SpamConfig, SpamLogConfig, ToneConfig,
 };
 pub use dns::DnsCaches;
 pub use inbound::{ListenerKind, serve, serve_stream};
@@ -219,6 +220,26 @@ impl Smtp {
 
     pub fn store(&self) -> &Store {
         &self.inner.store
+    }
+
+    /// The virus scanner's settings as they are right now.
+    pub fn antivirus(&self) -> AntivirusConfig {
+        self.inner.live().spam.antivirus.clone()
+    }
+
+    /// What the virus scanner says about itself; `None` while it is switched off.
+    pub async fn virus_status(&self) -> Option<Result<clamav::Status, String>> {
+        let config = self.antivirus();
+        if !config.enabled {
+            return None;
+        }
+        Some(clamav::Clamav::new(&config).status().await)
+    }
+
+    /// Hands the scanner the harmless test file every scanner knows, so an admin can see that the
+    /// two of them really talk to each other.
+    pub async fn virus_selftest(&self) -> Result<clamav::Scan, String> {
+        clamav::Clamav::new(&self.antivirus()).scan(clamav::test_file().as_bytes()).await
     }
 
     /// Fetches a built-in list now. Returns how many entries it holds, or why it failed.

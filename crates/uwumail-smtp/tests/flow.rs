@@ -10,10 +10,12 @@ use lettre::transport::smtp::authentication::Credentials;
 use lettre::transport::smtp::client::{Tls, TlsParameters};
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use rustls_pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
-use uwumail_smtp::{DeliveryConfig, ListenerKind, Smtp, SmtpConfig, SmtpSettings, SpamConfig, ToneConfig};
+use uwumail_smtp::{
+    AntivirusConfig, DeliveryConfig, ListenerKind, Smtp, SmtpConfig, SmtpSettings, SpamConfig, ToneConfig,
+};
 use uwumail_store::{
     BayesTotals, EmailSummary, EmailUpdate, IngestRequest, KeywordsChange, ListScope, MailboxRole, MailboxTarget,
     MailboxesChange, NewAccount, NewSenderListEntry, Role, SenderList, SpamLimits, Store,
@@ -937,4 +939,74 @@ async fn built_in_lists_know_malware_links_throwaway_senders_and_shorteners() {
     assert_eq!(inbox.len(), 1);
     let raw = a.raw(&inbox[0]).await;
     assert!(!raw.contains("MALWARE_LINK") && !raw.contains("DISPOSABLE_FROM"), "{raw}");
+}
+
+/// A stand-in clamd that reads a whole INSTREAM and then says `reply` to it.
+async fn fake_clamd(reply: &'static str) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    tokio::spawn(async move {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            let mut command = Vec::new();
+            let mut byte = [0u8; 1];
+            while let Ok(1) = stream.read(&mut byte).await {
+                if byte[0] == 0 {
+                    break;
+                }
+                command.push(byte[0]);
+            }
+            if command == b"zINSTREAM" {
+                loop {
+                    let mut length = [0u8; 4];
+                    if stream.read_exact(&mut length).await.is_err() {
+                        break;
+                    }
+                    let length = u32::from_be_bytes(length) as usize;
+                    if length == 0 {
+                        break;
+                    }
+                    let mut chunk = vec![0u8; length];
+                    if stream.read_exact(&mut chunk).await.is_err() {
+                        break;
+                    }
+                }
+            }
+            let _ = stream.write_all(reply.as_bytes()).await;
+            let _ = stream.write_all(b"\0").await;
+        }
+    });
+    address
+}
+
+fn with_scanner(address: String) -> SpamConfig {
+    SpamConfig {
+        antivirus: AntivirusConfig { enabled: true, address, timeout_secs: 5, ..AntivirusConfig::default() },
+        ..SpamConfig::default()
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_message_with_a_virus_is_turned_away_and_a_scanner_that_is_away_never_stops_the_post() {
+    let message = "From: news@sender.test\r\nSubject: Rechnung\r\n\r\nanbei\r\n";
+    let found = spam_test_server(with_scanner(fake_clamd("stream: Win.Test.EICAR_HDB-1 FOUND").await), None).await;
+    let reply = relay_message_from_outside(&found, message).await;
+    assert!(reply.starts_with("554"), "{reply}");
+    assert!(reply.contains("Win.Test.EICAR_HDB-1"), "{reply}");
+    assert!(found.inbox("mini@a.test").await.is_empty(), "nothing of it reaches a mailbox");
+    let entries =
+        found.smtp.store().spam_log(uwumail_store::SpamLogFilter { limit: 10, ..Default::default() }).await.unwrap();
+    assert_eq!(entries.first().map(|entry| entry.action.as_str()), Some("virus"));
+
+    // A scanner nobody can reach must not stop the post; the message says that nobody looked, and
+    // whatever the sender claimed about a scan of their own is gone.
+    let away = spam_test_server(with_scanner("127.0.0.1:1".into()), None).await;
+    let message = "X-Virus-Scanned: yes (trust me)\r\nFrom: news@sender.test\r\nSubject: Nur heute\r\n\r\nAngebot\r\n";
+    // Mail from a stranger waits once for the greylist, as everywhere else in these tests.
+    assert!(relay_message_from_outside(&away, message).await.starts_with("451"));
+    let reply = relay_message_from_outside(&away, message).await;
+    assert!(reply.starts_with("250"), "{reply}");
+    let inbox = away.wait_for_inbox("mini@a.test", 1).await;
+    let raw = away.raw(&inbox[0]).await;
+    assert!(raw.contains("X-Virus-Scanned: no (the virus scanner did not answer)"), "{raw}");
+    assert!(!raw.contains("trust me"), "{raw}");
 }

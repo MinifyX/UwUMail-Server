@@ -9,7 +9,9 @@ what spam looks like. Everyone can keep a list of senders that are always let
 through or kept out and a list of suspicious words, and so can admins for a
 domain or the whole server. Built-in lists from abuse.ch, mailcow and Rspamd
 add known malware links and files, spam subjects, throwaway and freemail
-domains and link shorteners.
+domains and link shorteners. A virus scanner can look at every message before
+it is taken; that one is not about points at all, see
+[antivirus.md](antivirus.md).
 
 ## What gets scored
 
@@ -354,6 +356,13 @@ curious person can see why a message ended up where it did:
 ```
 X-Spam-Score: 7.0
 X-Spam-Status: Yes, score=7.0 required=5.0 tests=DMARC_FAIL,SPF_FAIL,NO_AUTH,NO_REVERSE_DNS
+```
+
+With the virus scanner on, every message that is taken also says whether
+anyone looked at it:
+
+```
+X-Virus-Scanned: yes (ClamAV)
 ```
 
 The server log (Pro mode in the portal) shows the score and the rules for

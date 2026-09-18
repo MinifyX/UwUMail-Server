@@ -264,7 +264,8 @@
       "feedInactive": "Diese Liste ist ausgeschaltet oder wartet noch auf den Auth-Key.",
       "hostJobRefused": "Der Helfer auf der Maschine hat das abgelehnt: {{detail}}",
       "updateRefused": "Das Update wurde nicht gestartet: {{detail}}",
-      "gatewayJobRefused": "Das Gateway hat das nicht angenommen: {{detail}}"
+      "gatewayJobRefused": "Das Gateway hat das nicht angenommen: {{detail}}",
+      "virusScannerOff": "Der Virenscanner ist ausgeschaltet."
     }
   },
   "people": {
@@ -950,6 +951,16 @@
       "requireTlsHint": "Passwörter gehen nie unverschlüsselt über die Leitung.",
       "revealIp": "IP-Adresse in gesendeten Mails zeigen",
       "revealIpHint": "Standardmäßig verrät UwUMail nicht, von wo aus jemand eine Mail geschickt hat."
+    },
+    "antivirus": {
+      "enabled": "Mails auf Viren prüfen",
+      "enabledHint": "Braucht ein laufendes ClamAV daneben. Vorher starten: docker compose --profile antivirus up -d. Der erste Start dauert ein paar Minuten, bis die Signaturen da sind.",
+      "address": "Adresse des Scanners",
+      "addressHint": "Host und Port von clamd, im mitgelieferten Aufbau clamav:3310.",
+      "timeout": "Geduld in Sekunden",
+      "timeoutHint": "Danach geht die Mail ungeprüft weiter.",
+      "maxSize": "Größte geprüfte Mail (MB)",
+      "maxSizeHint": "Größere Mails gehen ungeprüft durch; clamd nimmt sie ohnehin nicht an."
     }
   },
   "health": {
@@ -980,7 +991,8 @@
       "delivery": "Versand",
       "storage": "Speicher",
       "security": "Anmeldung",
-      "gateway": "Gateway"
+      "gateway": "Gateway",
+      "antivirus": "Viren"
     },
     "findings": {
       "noDomains": "Noch keine Domain eingerichtet.",
@@ -1029,7 +1041,9 @@
       "gatewayRefused": "Das UwUMail Gateway nimmt diesen Server nicht an.",
       "gatewayOk": "Mails gehen über das Gateway hinaus.",
       "gatewayPort25Blocked": "Das Gateway erreicht andere Mailserver nicht über Port 25.",
-      "gatewayOutboundBlocked": "Über das Gateway sind andere Mailserver nicht erreichbar ({{count}} Domains betroffen)."
+      "gatewayOutboundBlocked": "Über das Gateway sind andere Mailserver nicht erreichbar ({{count}} Domains betroffen).",
+      "virusScannerAway": "Der Virenscanner antwortet nicht. Bis er wieder da ist, wird Post ungeprüft zugestellt und trägt einen Vermerk im Kopf.",
+      "virusSignaturesOld": "Die Virensignaturen sind {{since}} alt. Der Scanner holt sich offenbar keine neuen mehr."
     },
     "hints": {
       "noDomains": "Ohne Domain kann der Server keine Mails annehmen.",
@@ -1813,7 +1827,8 @@
       "tab": "Ansicht",
       "tabs": {
         "filter": "Filter",
-        "history": "Verlauf"
+        "history": "Verlauf",
+        "antivirus": "Viren"
       }
     },
     "log": {
@@ -1841,7 +1856,8 @@
         "greylist": "zurückgestellt",
         "reject": "abgewiesen",
         "dmarc": "DMARC abgewiesen",
-        "blocked": "Absender blockiert"
+        "blocked": "Absender blockiert",
+        "virus": "Virus gefunden"
       },
       "search": "Suchen",
       "searchPlaceholder": "Absender oder IP-Adresse",
@@ -2007,6 +2023,28 @@
       "fetched_other": "{{entries}} Einträge · geholt {{when}}",
       "refresh": "Jetzt holen",
       "refreshed": "Liste geholt."
+    },
+    "antivirus": {
+      "title": "Virenscanner",
+      "explain": "Läuft ein ClamAV daneben, bekommt er jede Mail zu sehen, bevor sie angenommen wird. Findet er etwas, nimmt der Server die Mail gar nicht erst an. Antwortet er nicht, geht die Mail trotzdem durch und trägt im Kopf, dass niemand hingeschaut hat.",
+      "settingsTitle": "Einstellungen zum Virenscanner",
+      "settingsIntro": "Der Scanner läuft in einem eigenen Container neben dem Server. Wie du ihn startest, steht in docs/antivirus.md.",
+      "off": "Aus. Der Server nimmt jede Mail, ohne sie einem Scanner zu zeigen.",
+      "away": "Der Scanner ist nicht erreichbar: {{error}}",
+      "version": "Version",
+      "signatures": "Signaturen",
+      "found_one": "In den letzten {{days}} Tagen wurde 1 Mail wegen eines Fundes abgewiesen.",
+      "found_other": "In den letzten {{days}} Tagen wurden {{count}} Mails wegen eines Fundes abgewiesen.",
+      "test": "Testdatei schicken",
+      "testHint": "Schickt dem Scanner die harmlose EICAR-Testdatei, die jeder Scanner kennt. Meldet er sie, reden die beiden wirklich miteinander.",
+      "testFound": "Der Scanner hat die Testdatei erkannt: {{name}}",
+      "testFailed": "Der Scanner hat die Testdatei nicht erkannt.",
+      "state": {
+        "ok": "Erreichbar",
+        "warning": "Signaturen alt",
+        "problem": "Nicht erreichbar",
+        "off": "Aus"
+      }
     }
   }
 }

@@ -23,7 +23,7 @@ use crate::dsn::{self, FailedRecipient};
 use crate::sender_lists::{self, Decision};
 use crate::stream::{BoxIo, Stream};
 use crate::submission::{Submission, SubmissionRecipient, SubmitError};
-use crate::{Smtp, forward, headers, random_id, relay, reports, spam, srs, vacation};
+use crate::{Smtp, clamav, forward, headers, random_id, relay, reports, spam, srs, vacation};
 
 const MAX_HOPS: usize = 50;
 const MAX_ERRORS: u32 = 10;
@@ -981,6 +981,26 @@ impl Session {
         }
         let allowed = decisions.iter().any(|decision| matches!(decision, Decision::Allow(_)));
 
+        // A virus is not a matter of points: a message carrying one is never taken, no matter who
+        // sent it or who allowed them. It is also not scored afterwards, so nothing learns from it.
+        let checked = clamav::check(&live.spam.antivirus, &raw).await;
+        if let clamav::Checked::Found(name) = &checked {
+            tracing::info!(%id, from = %envelope.address, virus = %name, "refused, the virus scanner found something");
+            let note = SpamNote {
+                id: &id,
+                action: SpamAction::Virus,
+                envelope: &envelope,
+                raw: &raw,
+                client: client.as_ref(),
+                verdict: verdict.as_ref(),
+                score: None,
+                recipients: all_recipients(&recipients, SpamAction::Virus),
+                blob_hash: None,
+            };
+            note_spam(&ctx, &live.spam.log, note).await;
+            return format!("554 5.7.0 This message contains {name}\r\n");
+        }
+
         // Only mail we can attribute to a sending server is scored; behind a relay that means the
         // server the relay talked to.
         let score = match &client {
@@ -1104,11 +1124,18 @@ impl Session {
 
         // Our verdict replaces whatever the message brought along.
         let raw = if score.is_some() { headers::strip_spam_verdicts(&raw) } else { raw };
+        let raw = match checked {
+            clamav::Checked::Off => raw,
+            _ => headers::strip_virus_verdicts(&raw),
+        };
 
         let single = (recipients.len() == 1).then(|| recipients[0].address.as_str());
         let mut message = self.received_header(&id, single).into_bytes();
         if let Some(verdict) = &verdict {
             message.extend_from_slice(verdict.header.as_bytes());
+        }
+        if let Some(header) = clamav::header(&checked) {
+            message.extend_from_slice(header.as_bytes());
         }
         if let Some(score) = &score {
             message.extend_from_slice(spam::headers(score, junk, live.spam.junk_score).as_bytes());
@@ -1341,6 +1368,7 @@ impl Session {
             Err(SubmitError::InvalidRecipient(address)) => format!("501 5.1.3 <{address}> is not a valid address\r\n"),
             Err(SubmitError::NoRecipients) => "503 5.5.1 Send RCPT first\r\n".into(),
             Err(SubmitError::NobodyAccepted) => "552 5.2.2 No recipient could take the message\r\n".into(),
+            Err(SubmitError::Virus(name)) => format!("554 5.7.0 This message contains {name}\r\n"),
             Err(SubmitError::Queue(err)) => {
                 tracing::error!(%err, "queueing a message failed");
                 "451 4.3.0 Could not queue the message, please try again\r\n".into()

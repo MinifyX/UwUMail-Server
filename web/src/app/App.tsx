@@ -66,6 +66,8 @@ function page(path: string, session: Session): ReactNode {
   if (matchPath("/admin/queue", path)) return <QueuePage />;
   if (matchPath("/admin/reports", path)) return <ReportsPage />;
   if (matchPath("/admin/spam", path)) return <AdminSpamPage />;
+  if (matchPath("/admin/spam/antivirus", path)) return <AdminSpamPage tab="antivirus" />;
+  if (matchPath("/admin/spam/history", path)) return <AdminSpamPage tab="history" />;
   if (matchPath("/admin/backups", path)) return <BackupsPage />;
   if (matchPath("/admin/log", path)) return <LogPage />;
   if (matchPath("/admin/logs", path)) return <LogsPage />;

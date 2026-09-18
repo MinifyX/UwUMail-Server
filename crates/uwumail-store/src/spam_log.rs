@@ -29,6 +29,8 @@ pub enum SpamAction {
     Dmarc,
     /// Turned away by a sender list.
     Blocked,
+    /// Turned away because the virus scanner found something.
+    Virus,
 }
 
 impl SpamAction {
@@ -40,6 +42,7 @@ impl SpamAction {
             SpamAction::Reject => "reject",
             SpamAction::Dmarc => "dmarc",
             SpamAction::Blocked => "blocked",
+            SpamAction::Virus => "virus",
         }
     }
 
@@ -51,6 +54,7 @@ impl SpamAction {
             "reject" => SpamAction::Reject,
             "dmarc" => SpamAction::Dmarc,
             "blocked" => SpamAction::Blocked,
+            "virus" => SpamAction::Virus,
             _ => return None,
         })
     }
@@ -257,6 +261,19 @@ impl Store {
             let oldest: Option<i64> =
                 conn.query_row("SELECT min(at) FROM spam_log", [], |row| row.get(0)).optional()?.flatten();
             Ok((count, oldest))
+        })
+        .await
+    }
+
+    /// How many decisions of one kind the history holds from `since` on, e.g. the viruses of the
+    /// last thirty days.
+    pub async fn spam_log_count(&self, action: SpamAction, since: i64) -> Result<i64> {
+        self.read(move |conn| {
+            Ok(conn.query_row(
+                "SELECT count(*) FROM spam_log WHERE action = ?1 AND at >= ?2",
+                params![action.as_str(), since],
+                |row| row.get(0),
+            )?)
         })
         .await
     }

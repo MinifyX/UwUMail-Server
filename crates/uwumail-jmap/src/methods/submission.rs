@@ -173,6 +173,7 @@ async fn create_one(ctx: &Ctx<'_>, object: &Map<String, Value>) -> Result<(i64, 
             SetError::new("invalidRecipients", format!("{address} is not a valid address"))
         }
         SubmitError::NobodyAccepted => SetError::new("forbiddenToSend", "no recipient could take the message"),
+        SubmitError::Virus(name) => SetError::new("forbiddenToSend", format!("the message contains {name}")),
         SubmitError::Queue(err) => SetError::from(err),
     })?;
     let envelope_json = json!({

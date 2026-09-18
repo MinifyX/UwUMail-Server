@@ -204,7 +204,21 @@ More domains and people are added under *Domains* and *People*.
 
 Details, calendars and contacts: [deployment.md](deployment.md#mail-apps).
 
-## 7. Backups
+## 7. Virus scanner (optional)
+
+UwUMail can hand every message to ClamAV before it is taken. It runs in its own
+container and stays out of the way until you ask for it, in `/opt/uwumail`:
+
+```bash
+sudo docker compose --profile antivirus up -d
+```
+
+Its first start takes a few minutes while it fetches its signatures. Then
+switch it on under *Spam filter → Viruses*. It wants about two gigabytes of
+memory, so leave it off on a small machine. Everything about it:
+[antivirus.md](antivirus.md).
+
+## 8. Backups
 
 Set them up before you rely on the server: *Server → Backups* backs up every
 night to an SFTP server such as a NAS, deduplicated and encrypted. Keep the
@@ -314,4 +328,5 @@ takes them with it.
 - [configuration.md](configuration.md): all settings
 - [gateway.md](gateway.md): how the gateway works
 - [spam-filter.md](spam-filter.md): how the spam filter decides
+- [antivirus.md](antivirus.md): the optional virus scanner beside the server
 - [migrating-from-mailcow.md](migrating-from-mailcow.md): moving over from mailcow

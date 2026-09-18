@@ -94,6 +94,12 @@ pub fn strip_spam_verdicts(raw: &[u8]) -> Vec<u8> {
     without(raw, |h| h.name.eq_ignore_ascii_case("X-Spam-Score") || h.name.eq_ignore_ascii_case("X-Spam-Status"))
 }
 
+/// Removes virus verdicts that came with the message. Only done when our own scanner looked (or
+/// tried to), so a sender cannot claim `X-Virus-Scanned: yes` for itself.
+pub fn strip_virus_verdicts(raw: &[u8]) -> Vec<u8> {
+    without(raw, |h| h.name.eq_ignore_ascii_case("X-Virus-Scanned"))
+}
+
 fn claims_to_be(value: &str, hostname: &str) -> bool {
     value
         .split(';')
@@ -137,6 +143,13 @@ mod tests {
         let raw = b"X-Spam-Status: No, score=-10\r\nSubject: Hi\r\nx-spam-score: -10.0\r\nX-Rspamd-Score: 1.2\r\n\r\nX-Spam-Status: body\r\n";
         let stripped = String::from_utf8(strip_spam_verdicts(raw)).unwrap();
         assert_eq!(stripped, "Subject: Hi\r\nX-Rspamd-Score: 1.2\r\n\r\nX-Spam-Status: body\r\n");
+    }
+
+    #[test]
+    fn strips_virus_verdicts_the_sender_brought_along() {
+        let raw = b"x-virus-scanned: yes (trust me)\r\nSubject: Hi\r\nX-Virus-Scanned: also me\r\n\r\nbody\r\n";
+        let stripped = String::from_utf8(strip_virus_verdicts(raw)).unwrap();
+        assert_eq!(stripped, "Subject: Hi\r\n\r\nbody\r\n");
     }
 
     #[test]

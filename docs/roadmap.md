@@ -75,7 +75,8 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Bayes filter that learns from "Spam" / "Not spam", clear cases and once from sorted mail, with knowledge for the whole server and per person, tokens only as keyed hashes
 - [x] Allowed and blocked senders (IP address or network, confirmed host name, address, domain) per person, domain and server
 - [x] "Block" in the apps puts the sender on the person's list on the server (JMAP `SenderList`, see jmap-senders.md)
-- [ ] Optional external Rspamd, optional ClamAV container
+- [x] Optional ClamAV beside the server: infected mail is turned away at the door, its own page in the portal, off until it is started (docs/antivirus.md)
+- [ ] Optional external Rspamd
 
 ## 5. IMAP
 

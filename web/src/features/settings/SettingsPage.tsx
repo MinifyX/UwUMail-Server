@@ -450,6 +450,56 @@ export function SpamLogFields({ form }: { form: Form }) {
   );
 }
 
+export const ANTIVIRUS_SETTING_KEYS = [
+  "spam.antivirus.enabled",
+  "spam.antivirus.address",
+  "spam.antivirus.timeout_secs",
+  "spam.antivirus.max_size",
+];
+
+/** The virus scanner: the switch for everyone, where it listens and its limits in Pro mode. */
+export function AntivirusFields({ form, pro }: { form: Form; pro: boolean }) {
+  const { t } = useT();
+  const enabled = Boolean(form.value("spam.antivirus.enabled"));
+  return (
+    <>
+      <ToggleField
+        form={form}
+        settingKey="spam.antivirus.enabled"
+        label={t("settings.antivirus.enabled")}
+        hint={t("settings.antivirus.enabledHint")}
+      />
+      {enabled && (
+        <>
+          <TextField
+            form={form}
+            settingKey="spam.antivirus.address"
+            label={t("settings.antivirus.address")}
+            hint={t("settings.antivirus.addressHint")}
+          />
+          {pro && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <NumberField
+                form={form}
+                settingKey="spam.antivirus.timeout_secs"
+                label={t("settings.antivirus.timeout")}
+                hint={t("settings.antivirus.timeoutHint")}
+              />
+              <NumberField
+                form={form}
+                settingKey="spam.antivirus.max_size"
+                label={t("settings.antivirus.maxSize")}
+                hint={t("settings.antivirus.maxSizeHint")}
+                scale={MB}
+              />
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
 export const SPAM_SETTING_KEYS = [
   "spam.enabled",
   "spam.blocklists",

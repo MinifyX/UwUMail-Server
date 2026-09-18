@@ -31,7 +31,7 @@ async fn not_busy(web: &Web) -> ApiResult<()> {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogQuery {
-    /// delivered, junk, greylist, reject, dmarc or blocked.
+    /// delivered, junk, greylist, reject, dmarc, blocked or virus.
     action: Option<String>,
     /// Matches the envelope sender, the From header or the sending address.
     search: Option<String>,
@@ -130,6 +130,56 @@ pub async fn admin_overview(State(web): State<Web>, _admin: Admin) -> ApiResult<
             "queued": store.bayes_queue_length().await?,
         },
     })))
+}
+
+/// How far back the virus page counts its finds.
+const VIRUS_DAYS: i64 = 30;
+
+/// The virus scanner: whether it is on, whether it answers, and what it turned away lately.
+pub async fn admin_antivirus(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Value>> {
+    let config = web.smtp().antivirus();
+    let (status, error) = match web.smtp().virus_status().await {
+        Some(Ok(status)) => (Some(status), None),
+        Some(Err(err)) => (None, Some(err)),
+        None => (None, None),
+    };
+    let now = crate::health::unix_now();
+    let since = now - VIRUS_DAYS * 86_400;
+    // The server knows when it last saw fresh signatures; the page should not have to guess from
+    // the browser's own clock.
+    let signatures_old = status
+        .as_ref()
+        .and_then(|status| status.signatures_at)
+        .is_some_and(|built| built < now - crate::health::SIGNATURES_OLD);
+    Ok(Json(json!({
+        "enabled": config.enabled,
+        "address": config.address,
+        "maxSize": config.max_size,
+        "status": status,
+        "signaturesOld": signatures_old,
+        "error": error,
+        "days": VIRUS_DAYS,
+        "found": web.store().spam_log_count(SpamAction::Virus, since).await?,
+    })))
+}
+
+/// Sends the scanner the harmless test file, so an admin can see the two really talk.
+pub async fn admin_antivirus_test(State(web): State<Web>, Admin(session): Admin) -> ApiResult<Json<Value>> {
+    if !web.smtp().antivirus().enabled {
+        return Err(ApiError::Rule("virusScannerOff", "the virus scanner is switched off".into()));
+    }
+    let outcome = web.smtp().virus_selftest().await;
+    let found = match &outcome {
+        Ok(uwumail_smtp::clamav::Scan::Found(name)) => Some(name.clone()),
+        _ => None,
+    };
+    let error = match &outcome {
+        Err(err) => Some(err.clone()),
+        // The scanner answered, but did not know the one file every scanner knows.
+        Ok(other) => (found.is_none()).then(|| format!("the scanner said {other:?} about the test file")),
+    };
+    audit(&web, &session, "spam.virusTest", "server", json!({ "found": found, "error": error })).await;
+    Ok(Json(json!({ "found": found, "error": error })))
 }
 
 /// Learns from everyone's sorted mail at once.

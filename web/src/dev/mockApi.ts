@@ -8,6 +8,8 @@
 
 import type {
   AccountSpamView,
+  AntivirusTest,
+  AntivirusView,
   BackupSnapshot,
   BackupsView,
   ForwardAddress,
@@ -619,6 +621,10 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "spam.feeds.freemail": { value: true, source: "default" },
   "spam.feeds.redirectors": { value: false, source: "database" },
   "spam.feeds.abuse_ch_key": { value: null, source: "default", set: false },
+  "spam.antivirus.enabled": { value: true, source: "database" },
+  "spam.antivirus.address": { value: "clamav:3310", source: "default" },
+  "spam.antivirus.timeout_secs": { value: 30, source: "default" },
+  "spam.antivirus.max_size": { value: 26_214_400, source: "default" },
   "spam.log.enabled": { value: true, source: "default" },
   "spam.log.clean_subjects": { value: false, source: "default" },
   "spam.log.retention_days": { value: 30, source: "default" },
@@ -1742,6 +1748,37 @@ const routes: [string, RegExp, Handler][] = [
     ],
   ],
   ["DELETE", /^\/api\/admin\/spam\/log$/, () => [200, { removed: spamLogEntries.length }]],
+  [
+    "GET",
+    /^\/api\/admin\/spam\/antivirus$/,
+    () => {
+      const enabled = Boolean(settings["spam.antivirus.enabled"]?.value);
+      return [
+        200,
+        {
+          enabled,
+          address: String(settings["spam.antivirus.address"]?.value ?? ""),
+          maxSize: Number(settings["spam.antivirus.max_size"]?.value ?? 0),
+          status: enabled
+            ? { version: "ClamAV 1.5.4/27700/Wed Sep 17 08:32:11 2026", signatures: 27_700, signaturesAt: now - 3600 }
+            : null,
+          signaturesOld: false,
+          error: null,
+          days: 30,
+          found: 2,
+        } satisfies AntivirusView,
+      ];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/spam\/antivirus\/test$/,
+    () => {
+      if (!settings["spam.antivirus.enabled"]?.value) return problem(409, "virusScannerOff");
+      log("spam.virusTest", "server");
+      return [200, { found: "Eicar-Test-Signature", error: null } satisfies AntivirusTest];
+    },
+  ],
   [
     "GET",
     /^\/api\/admin\/host$/,

@@ -99,6 +99,12 @@ freemail = true               # freemail providers (Rspamd)
 redirectors = true            # link shorteners (Rspamd)
 # abuse_ch_key = "..."        # from auth.abuse.ch; free for non-commercial use only
 
+[spam.antivirus]              # ClamAV beside the server, see antivirus.md
+enabled = false               # needs the scanner running: docker compose --profile antivirus up -d
+address = "clamav:3310"        # where clamd listens
+timeout_secs = 30             # after that the message goes on unchecked
+max_size = 26214400           # bigger messages are not sent to the scanner (its own limit)
+
 [delivery]
 concurrency = 16
 max_lifetime_hours = 120

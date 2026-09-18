@@ -5,6 +5,20 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ## Unreleased
 
+**A virus scanner, if you want one.** ClamAV can now look at every message before it is taken.
+It runs in its own container beside the server — clamd wants two gigabytes of memory and a
+writable place for its signatures, which a read-only image on a Raspberry Pi does not have — and
+it stays out of the way until you ask for it: `docker compose --profile antivirus up -d`, then
+switch it on under *Spam filter → Viruses*.
+
+A find means the message is never accepted: the sending server gets a `554` and tells its own
+sender, and the find is written into the spam history with its name. Our own people are checked
+the same way, so nothing infected leaves the house either. A scanner that is away never stops the
+post: the message goes on and carries `X-Virus-Scanned: no (…)`, the server log says why and the
+health overview turns red. The new page shows the version, the age of the signatures and what was
+turned away in the last thirty days, and sends the harmless EICAR test file on a button press.
+The whole story: [docs/antivirus.md](docs/antivirus.md).
+
 **DNS records at Cloudflare.** TXT values now go there in quotes, and split into several strings
 once they outgrow the 255 bytes one string may hold — the way Cloudflare's own dashboard writes
 them, so it stops marking our records as unquoted. A record that is already right but sits there

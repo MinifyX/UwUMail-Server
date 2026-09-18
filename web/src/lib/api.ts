@@ -69,7 +69,7 @@ export interface Profile {
 }
 
 export type HealthLevel = "ok" | "unknown" | "warning" | "problem";
-export type HealthAreaName = "dns" | "certificate" | "gateway" | "delivery" | "storage" | "security";
+export type HealthAreaName = "dns" | "certificate" | "gateway" | "delivery" | "antivirus" | "storage" | "security";
 
 export interface HealthFinding {
   code: string;
@@ -616,6 +616,34 @@ export interface AccountSpamView {
 
 export interface AdminSpamView {
   bayes: { enabled: boolean; minimum: number; server: BayesTotals; queued: number };
+}
+
+/** What clamd says about itself. */
+export interface AntivirusStatus {
+  version: string;
+  signatures: number | null;
+  /** When the signature database was built, in unix seconds. */
+  signaturesAt: number | null;
+}
+
+export interface AntivirusView {
+  enabled: boolean;
+  address: string;
+  maxSize: number;
+  status: AntivirusStatus | null;
+  /// The scanner has not fetched new signatures for days.
+  signaturesOld: boolean;
+  /** Why the scanner could not be asked, when it could not. */
+  error: string | null;
+  /** How many days the count covers. */
+  days: number;
+  found: number;
+}
+
+export interface AntivirusTest {
+  /** What the scanner called the test file; missing means it did not recognise it. */
+  found: string | null;
+  error: string | null;
 }
 
 export type SenderListName = "allow" | "block";

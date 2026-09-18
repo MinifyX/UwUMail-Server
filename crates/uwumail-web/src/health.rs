@@ -113,6 +113,9 @@ pub(crate) async fn health(web: &Web, viewer: &str) -> ApiResult<Health> {
         areas.push(area);
     }
     areas.push(delivery_area(web, now).await?);
+    if let Some(area) = antivirus_area(web, now).await {
+        areas.push(area);
+    }
     areas.push(storage_area(web).await?);
     areas.push(security_area(web, viewer).await?);
     let level = areas.iter().map(|area| area.level).max().unwrap_or(Level::Ok);
@@ -311,6 +314,29 @@ async fn delivery_area(web: &Web, now: i64) -> ApiResult<Area> {
         findings.push(Finding::new("manyBounces", Level::Warning, params));
     }
     Ok(Area::new("delivery", findings))
+}
+
+/// How old the scanner's signatures may be before that is worth saying. ClamAV publishes several
+/// times a day, so a database this old means its updater is not running.
+pub(crate) const SIGNATURES_OLD: i64 = 3 * DAY;
+
+/// Only there while the virus scanner is switched on, and only saying anything when it cannot do
+/// its job: a scanner that is quietly away would otherwise let mail through unchecked for weeks.
+async fn antivirus_area(web: &Web, now: i64) -> Option<Area> {
+    let mut findings = Vec::new();
+    match web.smtp().virus_status().await? {
+        Err(error) => {
+            let params = json!({ "error": error });
+            findings.push(Finding::new("virusScannerAway", Level::Problem, params).link("/admin/spam/antivirus"));
+        }
+        Ok(status) => {
+            if let Some(built) = status.signatures_at.filter(|built| *built < now - SIGNATURES_OLD) {
+                let params = json!({ "ageSecs": now - built, "at": built });
+                findings.push(Finding::new("virusSignaturesOld", Level::Warning, params).link("/admin/spam/antivirus"));
+            }
+        }
+    }
+    Some(Area::new("antivirus", findings))
 }
 
 #[cfg(unix)]

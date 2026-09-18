@@ -68,6 +68,7 @@ function useFindingText() {
         values.count = Math.max(num("days"), 0);
         break;
       case "queueStuck":
+      case "virusSignaturesOld":
         values.since = formatDuration(num("ageSecs"), t);
         break;
       case "gatewayConnected":

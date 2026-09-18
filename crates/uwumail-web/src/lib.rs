@@ -311,6 +311,8 @@ impl Web {
             .route("/api/admin/spam/word-sources", post(routes::words::admin_subscribe))
             .route("/api/admin/spam/word-sources/{id}", delete(routes::words::admin_unsubscribe))
             .route("/api/admin/spam/word-sources/{id}/refresh", post(routes::words::admin_refresh_source))
+            .route("/api/admin/spam/antivirus", get(routes::spam::admin_antivirus))
+            .route("/api/admin/spam/antivirus/test", post(routes::spam::admin_antivirus_test))
             .route("/api/admin/spam/feeds", get(routes::words::admin_feeds))
             .route("/api/admin/spam/feeds/{key}/refresh", post(routes::words::admin_refresh_feed))
             .route("/api/admin/people", get(routes::people::list).post(routes::people::create))
