@@ -96,6 +96,11 @@ impl Codec {
         RepoConfig { format: FORMAT, encrypted: key.is_some(), key_check: key.map(RepoKey::check), created_at }
     }
 
+    /// Whether objects lie there unencrypted, so an id is the plain SHA-256 of its content.
+    pub fn is_plain(&self) -> bool {
+        self.key.is_none()
+    }
+
     /// The id of content whose SHA-256 is `sha256` (hex), e.g. a blob's hash.
     pub fn id_for_hash(&self, sha256: &str) -> String {
         match &self.key {

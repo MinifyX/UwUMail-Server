@@ -131,7 +131,13 @@ impl Repository {
             .read(&object_path(id))
             .await?
             .ok_or_else(|| Error::Damaged(format!("the object {id} is missing")))?;
-        self.codec.decode(&object)
+        let content = self.codec.decode(&object)?;
+        // An encrypted repository proves an object with its authentication tag. A plain one has
+        // only the id, which is the SHA-256 of the content, so it is worth recomputing.
+        if self.codec.is_plain() && self.codec.id_for(&content) != id {
+            return Err(Error::Damaged(format!("the object {id} does not match its content")));
+        }
+        Ok(content)
     }
 
     /// Snapshot names, oldest first.
@@ -328,6 +334,10 @@ pub async fn prune(repo: &Repository, retention: Retention) -> Result<(usize, us
 }
 
 /// Writes a snapshot into an empty data directory: the database, the blobs and the other files.
+///
+/// A second attempt after a broken connection picks up where the first one stopped: a mail that is
+/// already in place with the right content is not fetched again. The database is written afresh,
+/// because its chunks only mean something as a whole.
 pub async fn restore(repo: &Repository, snapshot: &str, data_dir: &Path) -> Result<Manifest, Error> {
     if tokio::fs::try_exists(data_dir.join("uwumail.db")).await? {
         return Err(Error::Config(format!(
@@ -336,36 +346,109 @@ pub async fn restore(repo: &Repository, snapshot: &str, data_dir: &Path) -> Resu
         )));
     }
     let manifest = repo.manifest(snapshot).await?;
+    fits_this_server(&manifest)?;
     tokio::fs::create_dir_all(data_dir).await?;
 
     let partial = data_dir.join("uwumail.db.restoring");
     let mut database = tokio::fs::File::create(&partial).await?;
     for id in &manifest.database {
-        let chunk = repo.get(id).await?;
+        let chunk = repo.get(checked_id(id)?).await?;
         tokio::io::AsyncWriteExt::write_all(&mut database, &chunk).await?;
     }
     tokio::io::AsyncWriteExt::flush(&mut database).await?;
     drop(database);
 
     for hash in &manifest.blobs {
+        let path = data_dir.join("blobs").join(&checked_id(hash)?[0..2]).join(&hash[2..4]).join(hash);
+        if already_restored(&path, hash).await? {
+            continue;
+        }
         let content = repo.get(&repo.codec.id_for_hash(hash)).await?;
         if BlobHash::of(&content).as_str() != hash {
             return Err(Error::Damaged(format!("the blob {hash} does not match its content")));
         }
-        let path = data_dir.join("blobs").join(&hash[0..2]).join(&hash[2..4]).join(hash);
         tokio::fs::create_dir_all(path.parent().expect("blob paths have a parent")).await?;
         tokio::fs::write(path, content).await?;
     }
     for file in &manifest.files {
-        let path = data_dir.join(&file.path);
-        if file.path.split('/').any(|part| part == "..") {
+        // Rules out `..`, an absolute path and a Windows drive letter in one go: the snapshot may
+        // come from a backup server that is not ours, and this writes wherever it says.
+        if Path::new(&file.path).components().any(|part| !matches!(part, std::path::Component::Normal(_))) {
             return Err(Error::Damaged(format!("the file name {} leaves the data directory", file.path)));
         }
+        let path = data_dir.join(&file.path);
         tokio::fs::create_dir_all(path.parent().unwrap_or(data_dir)).await?;
-        tokio::fs::write(path, repo.get(&file.id).await?).await?;
+        // These are the server's certificates and keys, so they go back as privately as they came.
+        write_private(&path, &repo.get(checked_id(&file.id)?).await?).await?;
     }
     tokio::fs::rename(partial, data_dir.join("uwumail.db")).await?;
     Ok(manifest)
+}
+
+/// Whether this build can put a snapshot back. A newer server's database carries migrations this
+/// one does not know, and migrations only ever run forwards.
+fn fits_this_server(manifest: &Manifest) -> Result<(), Error> {
+    if manifest.format > format::FORMAT {
+        return Err(Error::Config(format!(
+            "this snapshot is written in backup format {}, and this server knows {}",
+            manifest.format,
+            format::FORMAT
+        )));
+    }
+    let ours = env!("CARGO_PKG_VERSION");
+    if release_order(&manifest.version) > release_order(ours) {
+        return Err(Error::Config(format!(
+            "this snapshot comes from UwUMail {}, and this server is {ours}; restore it with {} or newer",
+            manifest.version, manifest.version
+        )));
+    }
+    Ok(())
+}
+
+/// The leading `major.minor.patch` of a version. What follows it (`-beta.1`) is left out on
+/// purpose: a snapshot from 0.3.0-beta.1 holds the same database as one from 0.3.0.
+fn release_order(version: &str) -> (u64, u64, u64) {
+    let mut numbers = version.split('-').next().unwrap_or_default().split('.').map(|part| part.parse().unwrap_or(0));
+    (numbers.next().unwrap_or(0), numbers.next().unwrap_or(0), numbers.next().unwrap_or(0))
+}
+
+/// Object ids and blob hashes are the hex of a SHA-256, keyed or plain, and nothing else may ever
+/// reach a path. A snapshot is the one part of a backup a hostile server could rewrite unnoticed.
+fn checked_id(id: &str) -> Result<&str, Error> {
+    if id.len() == 64 && id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Ok(id);
+    }
+    Err(Error::Damaged(format!("the snapshot names something that is not an id: {}", id.escape_debug())))
+}
+
+/// Whether a mail is already in place from an earlier attempt, content and all.
+async fn already_restored(path: &Path, hash: &str) -> Result<bool, Error> {
+    match tokio::fs::read(path).await {
+        Ok(content) => Ok(BlobHash::of(&content).as_str() == hash),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(err) => Err(err.into()),
+    }
+}
+
+/// Writes a file only the server user may read, from the moment it exists.
+async fn write_private(path: &Path, contents: &[u8]) -> Result<(), Error> {
+    let mut options = tokio::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path).await?;
+    tokio::io::AsyncWriteExt::write_all(&mut file, contents).await?;
+    tokio::io::AsyncWriteExt::flush(&mut file).await?;
+    // A file left over from an earlier attempt keeps the mode it was made with, so say it again.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tokio::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).await?;
+    }
+    Ok(())
 }
 
 /// Checks that every object a snapshot needs is there. Returns the missing ids.
