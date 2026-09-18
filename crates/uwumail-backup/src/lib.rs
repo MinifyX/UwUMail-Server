@@ -434,11 +434,9 @@ async fn already_restored(path: &Path, hash: &str) -> Result<bool, Error> {
 async fn write_private(path: &Path, contents: &[u8]) -> Result<(), Error> {
     let mut options = tokio::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
+    // tokio's OpenOptions brings its own mode() on unix, so no extension trait is needed here.
     #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
+    options.mode(0o600);
     let mut file = options.open(path).await?;
     tokio::io::AsyncWriteExt::write_all(&mut file, contents).await?;
     tokio::io::AsyncWriteExt::flush(&mut file).await?;
