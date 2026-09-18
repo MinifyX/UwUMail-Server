@@ -100,6 +100,9 @@ pub(crate) struct Context {
     /// Sized at start; changing these limits takes a restart.
     pub connections: Arc<Semaphore>,
     pub delivery_permits: Arc<Semaphore>,
+    /// Unpacking and reading a report is the most work a stranger can ask for with one message, so
+    /// only a few are read at a time and the rest are let go.
+    pub reports: Arc<Semaphore>,
     pub inflight: Mutex<HashSet<i64>>,
     pub stats: health::DeliveryStats,
     /// Where connections to other servers start; `None` is this machine.
@@ -163,6 +166,7 @@ impl Smtp {
                 hostname: hostname.to_ascii_lowercase(),
                 connections: Arc::new(Semaphore::new(smtp.max_connections.max(1))),
                 delivery_permits: Arc::new(Semaphore::new(delivery.concurrency.max(1))),
+                reports: Arc::new(Semaphore::new(reports::AT_ONCE)),
                 live: RwLock::new(Arc::new(Live::new(smtp, spam, delivery, tone)?)),
                 server_tls,
                 client_tls: tls::ClientTls::new()?,

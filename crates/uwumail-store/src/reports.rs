@@ -14,6 +14,11 @@ use crate::{Result, Store, StoreError, now};
 pub const REPORT_RETENTION_SECS: i64 = 180 * 24 * 3600;
 /// More reports than this per domain in a day are dropped: nobody sends that many honestly.
 const MAX_REPORTS_PER_DAY: i64 = 200;
+/// And this many of them may come from a sender that did not pass DMARC. Anyone can address a
+/// message to `dmarc-reports@`, so without a share of their own a few minutes of made-up reports
+/// would use up the day's room and push the real ones out. It does not make spoofing impossible —
+/// a domain of one's own passes DMARC too — but it does make it cost a domain that can be blocked.
+const MAX_UNAUTHENTICATED_REPORTS_PER_DAY: i64 = 20;
 const MAX_ROWS_PER_REPORT: usize = 2000;
 
 /// The local parts of the addresses the server reads reports from.
@@ -196,13 +201,17 @@ fn report_domain_id(conn: &Connection, domain: &str) -> Result<i64> {
     domain_id(conn, &normalize_domain(domain)?)
 }
 
-fn too_many(conn: &Connection, table: &str, domain_id: i64) -> Result<bool> {
+fn too_many(conn: &Connection, table: &str, domain_id: i64, authenticated: bool) -> Result<bool> {
+    let (only_theirs, limit) = match authenticated {
+        true => ("", MAX_REPORTS_PER_DAY),
+        false => ("AND authenticated = 0", MAX_UNAUTHENTICATED_REPORTS_PER_DAY),
+    };
     let count: i64 = conn.query_row(
-        &format!("SELECT count(*) FROM {table} WHERE domain_id = ?1 AND received_at > ?2"),
+        &format!("SELECT count(*) FROM {table} WHERE domain_id = ?1 AND received_at > ?2 {only_theirs}"),
         params![domain_id, now() - 24 * 3600],
         |row| row.get(0),
     )?;
-    Ok(count >= MAX_REPORTS_PER_DAY)
+    Ok(count >= limit)
 }
 
 impl Store {
@@ -339,7 +348,7 @@ impl Store {
             if exists {
                 return Ok(ReportStored::Duplicate);
             }
-            if too_many(tx, "tls_reports", domain_id)? {
+            if too_many(tx, "tls_reports", domain_id, report.authenticated)? {
                 return Ok(ReportStored::TooMany);
             }
             tx.execute(
@@ -389,7 +398,7 @@ impl Store {
             if exists {
                 return Ok(ReportStored::Duplicate);
             }
-            if too_many(tx, "dmarc_reports", domain_id)? {
+            if too_many(tx, "dmarc_reports", domain_id, report.authenticated)? {
                 return Ok(ReportStored::TooMany);
             }
             report.rows.sort_by_key(|row| std::cmp::Reverse(row.messages));

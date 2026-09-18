@@ -989,13 +989,7 @@ impl Session {
             }
             if let Some(kind) = recipient.report {
                 let authenticated = verdict.as_ref().is_some_and(|verdict| verdict.dmarc_passed);
-                tokio::spawn(reports::receive(
-                    ctx.clone(),
-                    kind,
-                    recipient.address.clone(),
-                    raw.clone(),
-                    authenticated,
-                ));
+                reports::receive_soon(ctx.clone(), kind, recipient.address.clone(), raw.clone(), authenticated);
                 delivered += 1;
                 continue;
             }
