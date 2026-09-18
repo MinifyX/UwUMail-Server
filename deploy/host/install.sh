@@ -24,7 +24,8 @@ helper_dir=/usr/local/lib/uwumail-host
 config_dir=/etc/uwumail-host
 config="$config_dir/host.conf"
 written="$state/written.sha256"
-override_name=compose.override.uwumail-host.yaml
+# The one name docker compose reads without being told to.
+override_name=compose.override.yaml
 
 here="$(cd "$(dirname "$0")" && pwd)"
 compose_dir=""
@@ -126,8 +127,20 @@ if $remove; then
     /etc/systemd/system/uwumail-host-*.path
   systemctl daemon-reload
   rm -rf "$helper_dir" "$config_dir"
-  found=$(find_compose) && [ -f "$found/$override_name" ] && rm -f "$found/$override_name" &&
-    step "removed $found/$override_name; run: docker compose up -d"
+  # Only what we wrote. An override file somebody edited afterwards is theirs, and taking our
+  # helper away is no reason to take their file with it.
+  if found=$(find_compose); then
+    for leftover in "$found/$override_name" "$found/compose.override.uwumail-host.yaml"; do
+      [ -f "$leftover" ] || continue
+      if grep -qF " $leftover" "$written" 2>/dev/null &&
+        [ "$(sha256sum "$leftover" | cut -d' ' -f1)" = "$(grep -F " $leftover" "$written" | cut -d' ' -f1)" ]; then
+        rm -f "$leftover"
+        step "removed $leftover; run: cd $found && docker compose up -d"
+      else
+        step "left $leftover alone, you changed it; remove the /host line yourself"
+      fi
+    done
+  fi
   rm -rf "$state"
   echo "the portal can no longer look after this machine (=^･ω･^=)"
   exit 0
@@ -157,6 +170,17 @@ if $check; then
   else
     note "compose|not wired up|$compose_dir"
   fi
+  if [ -d "$bridge" ]; then
+    note "shared directory|$(stat -c '%a %u:%g' "$bridge" 2>/dev/null)|should be 770 0:10001"
+  else
+    note "shared directory|missing|$bridge"
+  fi
+  # The one that matters: a file only helps when the container can actually see it.
+  if docker inspect "$service" --format '{{range .Mounts}}{{.Destination}} {{end}}' 2>/dev/null | grep -qw /host; then
+    note "container|sees it|/host"
+  else
+    note "container|does NOT see it|run: cd $compose_dir && docker compose up -d"
+  fi
   printf '\n'
   for line in "${notes[@]}"; do
     IFS='|' read -r what how detail <<<"$line"
@@ -181,11 +205,18 @@ step "installing the helper"
 install -d -m 0755 "$helper_dir"
 place "$here/helper" "$helper_dir/helper" 0755
 
-# The directory the two share. The container runs as 10001, so that is who may read and write here
-# besides root. Nothing else on the machine can look in.
+# The directory the two share. The container runs as 10001:10001, so that is who may read and write
+# here besides root; nothing else on the machine can look in. The group need not exist here as a
+# name -- the number is what the kernel compares -- so this chowns by number and says so if even
+# that fails, rather than falling back to a directory the whole machine can write to.
 step "making the shared directory"
 install -d -m 0755 "$state"
-install -d -m 0770 -o root -g 10001 "$bridge" 2>/dev/null || install -d -m 0777 "$bridge"
+install -d -m 0770 "$bridge"
+if chown 0:10001 "$bridge" 2>/dev/null; then
+  chmod 0770 "$bridge"
+else
+  warn "could not give $bridge to the container's user (10001); the portal will not be able to write there"
+fi
 
 install -d -m 0755 "$config_dir"
 if [ ! -f "$config" ]; then
@@ -206,7 +237,9 @@ systemctl enable --now uwumail-host-machine.timer >/dev/null 2>&1
 systemctl enable --now uwumail-host-task.path >/dev/null 2>&1
 
 # ── letting the container see it ──────────────────────────────────────────────────────────────
-# An override file of our own, so an override the admin wrote stays theirs.
+# It has to be called compose.override.yaml: that is the one name docker reads by itself. A file
+# under any other name would sit there and never be looked at -- which is exactly what happened the
+# first time this was tried.
 step "wiring the directory into the container"
 override="$compose_dir/$override_name"
 tmp=$(mktemp)
@@ -218,12 +251,28 @@ tmp=$(mktemp)
   printf '    volumes:\n'
   printf '      - %s:/host\n' "$bridge"
 } >"$tmp"
-place "$tmp" "$override" 0644
-rm -f "$tmp"
 
-if [ -f "$compose_dir/compose.override.yaml" ] || [ -f "$compose_dir/docker-compose.override.yaml" ]; then
-  warn "there is an override file of your own here; docker only reads one unless you name both. Start with: docker compose -f compose.yaml -f compose.override.yaml -f $override_name up -d"
+# An earlier version of this script wrote a file under a name docker never reads by itself. If one
+# is still lying there from then, it goes: it did nothing and only confuses the next person.
+stale="$compose_dir/compose.override.uwumail-host.yaml"
+if [ -f "$stale" ] && grep -qF " $stale" "$written" 2>/dev/null; then
+  rm -f "$stale"
+  grep -vF " $stale" "$written" >"$written.tmp" 2>/dev/null && mv -f "$written.tmp" "$written"
+  step "removed $stale, which docker never read"
 fi
+
+theirs=false
+if [ -f "$override" ] && ! grep -qF " $override" "$written" 2>/dev/null; then
+  theirs=true
+fi
+if $theirs; then
+  # Their file, their business. Say what to add and leave it alone.
+  warn "$override is yours, so it was left as it is. Add these lines to it and run docker compose up -d:"
+  printf '\n      volumes:\n        - %s:/host\n\n' "$bridge" >&2
+else
+  place "$tmp" "$override" 0644
+fi
+rm -f "$tmp"
 
 step "writing down what this machine looks like"
 "$helper_dir/helper" machine >/dev/null 2>&1 || warn "could not look at the machine"

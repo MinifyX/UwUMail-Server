@@ -148,7 +148,9 @@ deployed() {
 }
 
 cmd_machine() {
-  install -d -m 0770 "$bridge"
+  # Only when it is not there. The installer decides who this belongs to, and re-creating it here
+  # with a mode of our own would quietly undo that on the next tick.
+  [ -d "$bridge" ] || install -d -m 0770 "$bridge"
   local kind name updates security reboot packages alone others image digest counts
   kind=$(os_kind)
   name=$(os_name)
