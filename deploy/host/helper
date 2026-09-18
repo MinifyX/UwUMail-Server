@@ -20,9 +20,12 @@
 #   helper report         what all of this looks like right now, for people
 set -uo pipefail
 
-state=/var/lib/uwumail-host
+# Where this keeps things. Both can be moved for a dry run on a machine one has no root on; the
+# systemd units set no environment, and systemd does not pass one in, so in service they are always
+# the paths below.
+state="${UWUMAIL_HOST_STATE:-/var/lib/uwumail-host}"
 bridge="$state/bridge"
-config=/etc/uwumail-host/host.conf
+config="${UWUMAIL_HOST_CONFIG:-/etc/uwumail-host/host.conf}"
 machine_file="$bridge/machine.json"
 jobs_file="$bridge/jobs.jsonl"
 # What this helper is willing to do at all.
@@ -38,6 +41,12 @@ COMPOSE_DIR="${COMPOSE_DIR:-/opt/uwumail}"
 SERVICE="${SERVICE:-uwumail}"
 
 say() { logger -t uwumail-host "$1"; }
+
+# Filled in by look_around and deployed, which answer in variables rather than a printed line.
+found_alone="null"
+found_others=""
+found_image=""
+found_digest=""
 
 compose() {
   ( cd "$COMPOSE_DIR" && docker compose "$@" )
@@ -79,12 +88,21 @@ count_updates() {
 #
 # The important rule: when this cannot be answered, it says so. A warning that sometimes stays
 # quiet is worse than no warning.
+# The two below answer in variables rather than in a printed line: a packed line read back with
+# `read` loses an empty first field, because a tab counts as whitespace and gets stripped.
 look_around() {
   local ours="" others="" alone="null" seen_docker=false
   if command -v docker >/dev/null 2>&1 && docker ps >/dev/null 2>&1; then
     seen_docker=true
-    ours=$(cd "$COMPOSE_DIR" 2>/dev/null && docker compose ls --format json 2>/dev/null |
-      jq -r '.[0].Name // empty' 2>/dev/null)
+    # Our own project by name. `docker compose ls` lists every project on the machine, so picking
+    # the first of those would name somebody else's -- and then UwUMail itself looks like the
+    # stranger. `compose config` answers for this directory and nothing else.
+    ours=$(compose config --format json 2>/dev/null | jq -r '.name // empty' 2>/dev/null)
+    if [ -z "$ours" ]; then
+      local mine
+      mine=$(compose ps -q "$SERVICE" 2>/dev/null | head -1)
+      ours=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$mine" 2>/dev/null)
+    fi
     while IFS= read -r project; do
       [ -z "$project" ] && continue
       [ "$project" = "$ours" ] && continue
@@ -112,20 +130,21 @@ look_around() {
   else
     alone="false"
   fi
-  printf '%s\t%s' "$alone" "$others"
+  found_alone="$alone"
+  found_others="$others"
 }
 
-# What is deployed right now, so an update can be told apart from a restart afterwards.
+# What is deployed right now, so an update can be told apart from a restart afterwards. The tag
+# comes from what compose says it pulled; the id is the image the running container was made from,
+# which is the only thing that really tells two builds of the same tag apart.
 deployed() {
-  local image="" digest=""
-  image=$(compose images --format json 2>/dev/null |
-    jq -r --arg s "$SERVICE" '(if type == "array" then .[] else . end) | select(.Service == $s) | "\(.Repository):\(.Tag)"' 2>/dev/null |
+  local container
+  found_image=$(compose images --format json "$SERVICE" 2>/dev/null |
+    jq -r 'if type == "array" then .[0] else . end | select(.Repository != null and .Repository != "") | "\(.Repository):\(.Tag)"' 2>/dev/null |
     head -1)
-  digest=$(docker inspect --format '{{index .RepoDigests 0}}' \
-    "$(compose ps -q "$SERVICE" 2>/dev/null | head -1)" 2>/dev/null)
-  [ -z "$digest" ] && digest=$(docker inspect --format '{{.Image}}' \
-    "$(compose ps -q "$SERVICE" 2>/dev/null | head -1)" 2>/dev/null)
-  printf '%s\t%s' "$image" "$digest"
+  container=$(compose ps -q "$SERVICE" 2>/dev/null | head -1)
+  found_digest=$(docker inspect --format '{{.Image}}' "$container" 2>/dev/null)
+  [ -z "$found_image" ] && found_image=$(docker inspect --format '{{.Config.Image}}' "$container" 2>/dev/null)
 }
 
 cmd_machine() {
@@ -147,8 +166,12 @@ cmd_machine() {
   [ -f /var/run/reboot-required ] && reboot=true
   packages=""
   [ -f /var/run/reboot-required.pkgs ] && packages=$(sort -u /var/run/reboot-required.pkgs | tr '\n' ' ')
-  IFS=$'\t' read -r alone others < <(look_around)
-  IFS=$'\t' read -r image digest < <(deployed)
+  look_around
+  deployed
+  alone="$found_alone"
+  others="$found_others"
+  image="$found_image"
+  digest="$found_digest"
 
   local tmp="$machine_file.tmp"
   jq -n \
