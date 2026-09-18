@@ -16,7 +16,15 @@ production mail.
 
 ## Audit
 
-A security sweep was done with Claude before the code and container image went
-public — findings, what was checked, the container hardening and the known
-limits are in [docs/security-audit.md](docs/security-audit.md). It is an honest
-review, not an independent certification.
+Security sweeps are done with Claude, and written down in full:
+
+- [docs/security-audit.md](docs/security-audit.md) — before the code and the
+  container image went public.
+- [docs/security-audit-2026-09.md](docs/security-audit-2026-09.md) — the server
+  again, and the gateway and its tunnel for the first time.
+- [docs/security-audit-2026-09-18.md](docs/security-audit-2026-09-18.md) — the
+  whole stack, including the desktop client, and everything built since.
+
+Each one lists the findings, what was checked, what was hardened and the limits
+that are known and accepted. They are honest reviews, not independent
+certifications.
