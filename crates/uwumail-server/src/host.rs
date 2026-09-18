@@ -107,6 +107,15 @@ impl HostBackend for HostBridge {
         HostView { available: true, machine, job, log, command: String::new() }
     }
 
+    fn job(&self, id: &str) -> Option<HostJob> {
+        // The id names a file, so it may only be what an id is made of. Nothing here comes from
+        // outside, but a path that is built from a string should say out loud that it checked.
+        if id.is_empty() || !id.chars().all(|letter| letter.is_ascii_alphanumeric()) {
+            return None;
+        }
+        serde_json::from_str(&self.read(&format!("job-{id}.json"))?).ok()
+    }
+
     fn ask<'a>(&'a self, verb: &'a str, version: Option<&'a str>) -> HostFuture<'a> {
         Box::pin(async move {
             // One at a time. Two updates at once is never what anyone meant.

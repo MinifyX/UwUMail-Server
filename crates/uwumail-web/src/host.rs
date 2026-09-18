@@ -66,6 +66,9 @@ pub type HostFuture<'a> = Pin<Box<dyn Future<Output = Result<String, String>> + 
 /// The helper on the machine, as the portal may use it.
 pub trait HostBackend: Send + Sync + 'static {
     fn view(&self) -> HostView;
+    /// One job by its id, which is how an update finds out across a restart how it ended: the job
+    /// it is looking for is not the one the new process would call current.
+    fn job(&self, id: &str) -> Option<HostJob>;
     /// Asks for one of `os-update`, `reboot` or `server-update`; the version is only for the last
     /// one. Returns the id of the job, to follow it with [`HostBackend::view`].
     fn ask<'a>(&'a self, verb: &'a str, version: Option<&'a str>) -> HostFuture<'a>;

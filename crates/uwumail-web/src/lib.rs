@@ -77,6 +77,10 @@ struct Inner {
     host: std::sync::OnceLock<Arc<dyn host::HostBackend>>,
     /// Backups, once the server plugged them in.
     backups: std::sync::OnceLock<uwumail_backup::Backups>,
+    /// Whether *this* process is the one carrying out an update. A status that says "running" while
+    /// this is false is an update that outlived the container that asked for it -- which is the
+    /// normal way an update ends, and how the new process knows to go looking for the answer.
+    updating: std::sync::atomic::AtomicBool,
 }
 
 impl Web {
@@ -99,6 +103,7 @@ impl Web {
                 gateway: std::sync::OnceLock::new(),
                 host: std::sync::OnceLock::new(),
                 backups: std::sync::OnceLock::new(),
+                updating: std::sync::atomic::AtomicBool::new(false),
             }),
         }
     }
@@ -259,6 +264,7 @@ impl Web {
             .route("/api/admin/health/check", post(routes::admin::check_health))
             .route("/api/admin/updates", get(routes::updates::show).put(routes::updates::save))
             .route("/api/admin/updates/check", post(routes::updates::check))
+            .route("/api/admin/updates/run", post(routes::updates::run).delete(routes::updates::forget))
             .route("/api/admin/backups", get(routes::backups::show).put(routes::backups::save))
             .route("/api/admin/backups/test", post(routes::backups::test))
             .route("/api/admin/backups/forget-host-key", post(routes::backups::forget_host_key))

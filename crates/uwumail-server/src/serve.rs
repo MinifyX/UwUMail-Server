@@ -124,7 +124,6 @@ pub async fn run(
         },
     );
     tasks.spawn(web.clone().run_health_checks(shutdown_rx.clone()));
-    tasks.spawn(web.clone().run_update_checks(shutdown_rx.clone()));
     let setup_code = web.open_setup().await;
     let gateway = gateway::GatewayManager::new(
         store.clone(),
@@ -147,6 +146,9 @@ pub async fn run(
     }
     let backups = uwumail_backup::Backups::new(store.clone(), &config.hostname, env!("CARGO_PKG_VERSION"));
     web.set_backups(backups.clone());
+    // After the helper and the backups, not before: the first thing this does is ask the helper how
+    // the update that replaced the container it is starting in turned out.
+    tasks.spawn(web.clone().run_updates(shutdown_rx.clone()));
     let web = web.router();
     let trusted_proxies = Arc::new(
         uwumail_smtp::IpNetwork::parse_list(&config.http.trusted_proxies)
