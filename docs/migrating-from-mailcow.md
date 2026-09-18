@@ -27,6 +27,10 @@ again), alias domains, `null@localhost` and learning addresses, quarantine,
 sieve filters, send-as rights for single addresses, and spam scores for whole
 domains.
 
+mailcow scans mail with ClamAV. UwUMail can too, in its own container beside
+the server, but it is off until you start it: see [antivirus.md](antivirus.md).
+Nothing about it is imported — it has nothing to import.
+
 A person's own settings are only taken over together with their mailbox. If
 the person already exists on UwUMail, the import leaves them alone, so running
 it again never undoes a change made here.

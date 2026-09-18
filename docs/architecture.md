@@ -56,6 +56,10 @@ Design choices that matter later:
   into or out of Junk moves the sender's count in the store. `spam::bayes` takes
   messages apart into tokens, hashed with a key of the server, and learns them
   from a queue in the store in the background.
+- `clamav`: hands the whole message to a ClamAV daemon over its INSTREAM command before the
+  filter scores anything, when the scanner is switched on. A find refuses the message; anything
+  else that is not a clear "clean" lets it through with a header saying nobody looked, because a
+  scanner that is away must not stop the post. See [antivirus.md](antivirus.md).
 - `sender_lists`: allowed and blocked senders of a person, a domain and the
   server, decided per recipient before the score. Host names count only when
   the reverse name points back to the sending address.
