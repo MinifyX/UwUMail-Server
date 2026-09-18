@@ -3,6 +3,77 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.2.3
+
+**Security.** Two of these are reachable from the internet without a login, and both stop the mail
+until the server is restarted. If you run UwUMail, this is the release to take.
+
+- **A search could end the whole server.** `(`, `NOT` and `OR` each make the IMAP search parser
+  call itself, and nothing counted the levels — while a command line may be 64 KiB, which is far
+  more nesting than any stack holds. A stack overflow cannot be caught: it takes SMTP, IMAP, JMAP,
+  the portal and the queue with it, and the next line takes the restarted one again. The parser now
+  refuses anything nested deeper than real clients ever go.
+- **A stranger could make the server set aside a message worth of memory per connection.** `APPEND`
+  may carry a whole message, and that much was reserved the moment a literal was *announced* —
+  before the bytes arrived and before anyone had logged in. The generous limit now belongs to people
+  who are logged in.
+- A message far too big to be a report is no longer unpacked as one, an announced literal length can
+  no longer wrap, and the helpers that run as root now check what they are handed on both sides and
+  refuse to install an older version than the one running.
+- The whole stack was reviewed, the desktop client for the first time:
+  [docs/security-audit-2026-09-18.md](docs/security-audit-2026-09-18.md). Nine findings, all fixed.
+  The two above were found by a new randomized parser test that runs in CI
+  (`crates/uwumail-imap/tests/robustness.rs`).
+
+**Updates from the portal.** With a small helper installed beside the container
+([docs/install.md](docs/install.md#buttons-instead-of-commands-optional)), *Server → Updates* now
+does it instead of showing a command:
+
+- **Update now**, or on a day and time you choose. It backs up first, and a failed backup means
+  nothing is touched — with one deliberate way past that for a server with nowhere to back up to.
+- A scheduled update keeps out of the backup's way: not in the half hour before one, not while it
+  runs, not in the half hour after. When its minute falls inside that window it waits and tries
+  again, for up to six hours.
+- The update replaces the container that asked for it, so the page keeps knocking through the gap
+  and the result is there when the server comes back.
+- If the new version does not answer its health check, the tag from before goes back.
+
+**The machine, and the gateway's.** The portal can install the system's updates and restart either
+machine. On the mail server's own machine it says plainly that something else may be running there
+and that this is nobody's responsibility but yours. On the VPS it can also fetch and install a newer
+gateway. Nothing but a word from a fixed list and a version number ever crosses over; the addresses
+and the checksums come from the helper's own constants.
+
+**Restoring a backup.** From the portal, beside the snapshot, or from the setup assistant on a
+machine that has no server yet — which is what you want when it stands in for one that died.
+Afterwards backups are switched off (the snapshot carries the old server's target), this machine's
+gateway pairing is kept, and the database from before is kept beside the new one.
+
+> The backup and restore functions in this release are **untested in practice**. The code is there,
+> the unit tests pass and the refusal path was checked on a real machine — but no snapshot has been
+> fetched from a real backup server and put back yet. Do not rely on it as your only way back.
+
+**Reports.** *Server → Reports* shows what other servers report about your domains: DMARC and TLS,
+who reported, how much passed, which connections failed, and a curve over time. What a report says
+is kept, not only how much it counted.
+
+**Spam history.** A second tab on the spam page shows what the filter decided for every message and
+why. The subject of spam is always kept; the subject of clean mail stays hidden until you ask for
+it.
+
+**On a phone.** The portal no longer scrolls sideways. That was two things: grid and flex children
+default to a minimum width of their content, and buttons refused to wrap. Both are fixed
+everywhere, not page by page.
+
+**Smaller things**
+
+- *Server → Settings → Sending* says when mail leaves through a UwUMail Gateway, so nobody changes
+  something there that the gateway decides.
+- The gateway installer and the setup assistant say that the VPS belongs to the gateway alone.
+- Backups remember when a run started and finished, and can start on a minute rather than an hour.
+- A restore checks a snapshot before writing it and carries on after a connection breaks.
+- A report with a made-up date can no longer crowd out the real ones.
+
 ## 0.2.2
 
 - **The installer never actually switched the firewall on, and then said it had.** `ufw status`
