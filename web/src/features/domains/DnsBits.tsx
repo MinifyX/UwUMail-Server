@@ -105,6 +105,7 @@ export function RecordRow({ record, domain, explain }: { record: RecordCheck; do
       {note && (
         <p className={clsx("text-[13px]", record.status === "ok" ? "text-muted" : "font-medium text-ink")}>{note}</p>
       )}
+      {record.differs && <p className="text-[13px] text-muted">{t("domains.detail.differs")}</p>}
       <div className="grid gap-2 md:grid-cols-[120px_1fr] md:items-start">
         <span className="pt-1.5 text-[12px] font-semibold text-muted">
           {isDns ? t("domains.detail.name") : t("domains.detail.address")}

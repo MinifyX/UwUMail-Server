@@ -539,6 +539,7 @@
       "value": "Wert",
       "found": "Gefunden",
       "foundNothing": "Nichts gefunden",
+      "differs": "Der Eintrag funktioniert, ist aber anders geschrieben, als UwUMail ihn anlegen würde.",
       "copyName": "Name kopieren",
       "copyValue": "Wert kopieren",
       "nameHint": "Manche DNS-Anbieter wollen als Name nur den Teil vor {{domain}}.",
@@ -1392,11 +1393,16 @@
       "tokenHint": "Erstelle bei Cloudflare unter „Profil → API-Token“ einen Token mit der Berechtigung „Zone → DNS → Bearbeiten“ für diese Domain.",
       "replace": "Diese falschen Einträge ersetzen",
       "replaceHint": "Ohne Haken lasse ich vorhandene Einträge in Ruhe.",
+      "tidy": "Formatierung an UwUMail angleichen",
+      "tidyHint": "Diese Einträge funktionieren. Mit Haken schreibe ich sie so, wie UwUMail sie anlegen würde.",
+      "tidyWarning": "Bei MX und SPF aufpassen: Ich schreibe genau meinen Wert hinein. Andere Absender oder ein vorgelagerter Mailserver, die dort mit drinstehen, fallen dabei weg.",
+      "quotesOnly": "Es fehlt nichts. Ich kann trotzdem nachsehen, ob die Einträge bei Cloudflare in Anführungszeichen stehen, und sie sonst nachtragen.",
       "submit": "Einträge eintragen",
       "nothing": "Es gab nichts einzutragen.",
       "outcome": {
         "created": "angelegt",
         "updated": "ersetzt",
+        "requoted": "in Anführungszeichen gesetzt",
         "skipped": "nicht angefasst",
         "failed": "fehlgeschlagen"
       }

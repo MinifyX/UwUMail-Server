@@ -98,7 +98,17 @@ Recommended, mail works without them:
 | `autoconfig.example.com` and `autodiscover.example.com` A/AAAA (or CNAME to `mail.example.com`) | Thunderbird and Outlook set themselves up; the certificate must cover these names too |
 
 Show them again any time with `uwumail-server domain dns example.com`. The
-portal checks all of them and, for domains at Cloudflare, can add them.
+portal checks all of them and, for domains at Cloudflare, can add them. TXT
+values go there in quotes, split into several strings when they outgrow the 255
+bytes one string may hold, the way Cloudflare's own dashboard writes them; a
+record that is already right but sits there without quotes gets them.
+
+A record that works but does not read the way UwUMail would write it — a DMARC
+policy with other tags, reports going to another address — counts as fine, and
+the check leaves it at that. The Cloudflare button offers it under *Bring the
+spelling in line with UwUMail*, unticked; only a tick rewrites it. For MX and
+SPF that means exactly our value: another sender listed in SPF, or a second MX,
+would fall away.
 
 ## MTA-STS and reports
 

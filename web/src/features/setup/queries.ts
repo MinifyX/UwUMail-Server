@@ -88,7 +88,7 @@ export function useCloudflare(domain: string) {
   const queryClient = useQueryClient();
   const errorText = useErrorText();
   return useMutation({
-    mutationFn: async (input: { token: string; replace: string[] }) => {
+    mutationFn: async (input: { token: string; replace: string[]; tidy: string[] }) => {
       const path = `/api/admin/domains/${encodeURIComponent(domain)}`;
       const { results } = await api<{ results: CloudflareResult[] }>(`${path}/dns/cloudflare`, {
         method: "POST",

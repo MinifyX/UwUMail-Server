@@ -3,6 +3,19 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## Unreleased
+
+**DNS records at Cloudflare.** TXT values now go there in quotes, and split into several strings
+once they outgrow the 255 bytes one string may hold — the way Cloudflare's own dashboard writes
+them, so it stops marking our records as unquoted. A record that is already right but sits there
+without quotes gets them on the next run, which changes nothing about what DNS answers.
+
+A record that works but does not read the way UwUMail would write it — a DMARC policy with other
+tags, TLS reports going to another address — still counts as fine. It now says so in the DNS
+check, and the Cloudflare button offers to bring it into our wording under its own heading,
+unticked. MX and SPF carry a warning there: rewriting them means exactly our value, so another
+sender or a second MX would fall away.
+
 ## 0.2.3
 
 **Security.** Two of these are reachable from the internet without a login, and both stop the mail

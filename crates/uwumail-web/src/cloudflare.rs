@@ -16,6 +16,22 @@ use uwumail_smtp::dnscheck::{CheckStatus, DomainReport};
 
 pub const API: &str = "https://api.cloudflare.com/client/v4";
 
+/// The most bytes one string inside a TXT record may hold (RFC 1035 §3.3.14).
+const TXT_STRING_LIMIT: usize = 255;
+
+/// How what is published compares with what UwUMail would publish.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecordState {
+    /// Nothing is published yet, so it is simply created.
+    Missing,
+    /// Published with a value that does not work; only replaced when the admin says so.
+    Wrong,
+    /// Published, working, only not written our way; only tidied when the admin says so.
+    Differs,
+    /// Published exactly as we would write it. At most its quoting needs a hand.
+    Ours,
+}
+
 /// One record the domain needs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WantedRecord {
@@ -26,8 +42,7 @@ pub struct WantedRecord {
     pub priority: Option<u16>,
     /// Structured data instead of `content`, for SRV records.
     pub data: Option<Value>,
-    /// It exists with another value; only replaced when the admin says so.
-    pub wrong: bool,
+    pub state: RecordState,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -35,19 +50,71 @@ pub struct WantedRecord {
 pub struct Applied {
     pub name: String,
     pub record_type: &'static str,
-    /// "created", "updated", "skipped" or "failed".
+    /// "created", "updated", "requoted", "skipped" or "failed".
     pub outcome: &'static str,
     pub error: Option<String>,
 }
 
-/// The records a DNS check found missing or wrong, in the shape Cloudflare wants.
+/// The value of a TXT record the way Cloudflare writes it: in quotes, and split into several
+/// strings once it outgrows one. Cloudflare marks unquoted records in its dashboard, and a
+/// quoted value longer than one string is refused.
+pub fn quote_txt(value: &str) -> String {
+    let mut strings: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for character in value.chars() {
+        if current.len() + character.len_utf8() > TXT_STRING_LIMIT {
+            strings.push(std::mem::take(&mut current));
+        }
+        current.push(character);
+    }
+    strings.push(current);
+    strings
+        .iter()
+        .map(|string| format!("\"{}\"", string.replace('\\', "\\\\").replace('"', "\\\"")))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// What a TXT record really says, whether Cloudflare holds it in quotes or bare.
+pub fn unquote_txt(content: &str) -> String {
+    let content = content.trim();
+    if !content.starts_with('"') {
+        return content.to_owned();
+    }
+    let mut value = String::new();
+    let mut inside = false;
+    let mut escaped = false;
+    for character in content.chars() {
+        match character {
+            _ if escaped => {
+                value.push(character);
+                escaped = false;
+            }
+            '\\' if inside => escaped = true,
+            '"' => inside = !inside,
+            // Whitespace between two strings belongs to neither.
+            _ if inside => value.push(character),
+            _ => {}
+        }
+    }
+    value
+}
+
+/// Every record UwUMail would publish, in the shape Cloudflare wants, with what the DNS check
+/// saw of it. What is done with each one is up to [`Cloudflare::apply`].
 pub fn wanted_records(report: &DomainReport) -> Vec<WantedRecord> {
     report
         .records
         .iter()
-        .filter(|record| matches!(record.status, CheckStatus::Missing | CheckStatus::Wrong))
+        // A record we could not look up stays untouched: we do not know what is there.
+        .filter(|record| record.status != CheckStatus::Error)
         .filter_map(|record| {
-            let wrong = record.status == CheckStatus::Wrong;
+            let state = match record.status {
+                CheckStatus::Missing => RecordState::Missing,
+                CheckStatus::Wrong => RecordState::Wrong,
+                _ if record.differs => RecordState::Differs,
+                _ => RecordState::Ours,
+            };
             match record.record_type {
                 "MX" => {
                     let (priority, host) = record.expected.split_once(' ')?;
@@ -58,7 +125,7 @@ pub fn wanted_records(report: &DomainReport) -> Vec<WantedRecord> {
                         content: host.trim_end_matches('.').to_owned(),
                         priority: priority.parse().ok(),
                         data: None,
-                        wrong,
+                        state,
                     })
                 }
                 "TXT" => Some(WantedRecord {
@@ -68,7 +135,7 @@ pub fn wanted_records(report: &DomainReport) -> Vec<WantedRecord> {
                     content: record.expected.clone(),
                     priority: None,
                     data: None,
-                    wrong,
+                    state,
                 }),
                 "CNAME" => Some(WantedRecord {
                     kind: record.kind,
@@ -77,7 +144,7 @@ pub fn wanted_records(report: &DomainReport) -> Vec<WantedRecord> {
                     content: record.expected.clone(),
                     priority: None,
                     data: None,
-                    wrong,
+                    state,
                 }),
                 "SRV" => {
                     let parts: Vec<&str> = record.expected.split_whitespace().collect();
@@ -94,7 +161,7 @@ pub fn wanted_records(report: &DomainReport) -> Vec<WantedRecord> {
                             "port": port.parse::<u16>().ok()?,
                             "target": target,
                         })),
-                        wrong,
+                        state,
                     })
                 }
                 // The MTA-STS policy file is not a DNS record.
@@ -186,12 +253,15 @@ impl Cloudflare {
         Ok(found["result"].as_array().cloned().unwrap_or_default())
     }
 
-    /// Creates what is missing; replaces wrong records only when `replace` lists their kind (e.g. mx, spf, mtasts).
+    /// Creates what is missing, replaces a broken record when `replace` lists its kind (e.g. mx,
+    /// spf, mtasts), brings one that merely reads differently into our shape when `tidy` lists it,
+    /// and puts the quotes around a TXT record that already says the right thing without them.
     pub async fn apply(
         &self,
         domain: &str,
         wanted: &[WantedRecord],
         replace: &[String],
+        tidy: &[String],
     ) -> Result<Vec<Applied>, String> {
         let (zone, _) = self.zone_for(domain).await?;
         let mut results = Vec::new();
@@ -202,12 +272,22 @@ impl Cloudflare {
                 outcome,
                 error,
             };
-            if record.wrong && !replace.iter().any(|kind| kind == record.kind) {
+            let asked_for = match record.state {
+                RecordState::Wrong => replace.iter().any(|kind| kind == record.kind),
+                RecordState::Differs => tidy.iter().any(|kind| kind == record.kind),
+                RecordState::Missing | RecordState::Ours => true,
+            };
+            if !asked_for {
                 results.push(applied("skipped", None));
                 continue;
             }
-            let mut body =
-                json!({ "type": record.record_type, "name": record.name, "content": record.content, "ttl": 1 });
+            // Anything else that is already ours is right down to the letter; only TXT records
+            // can still be missing their quotes.
+            if record.state == RecordState::Ours && record.record_type != "TXT" {
+                continue;
+            }
+            let content = if record.record_type == "TXT" { quote_txt(&record.content) } else { record.content.clone() };
+            let mut body = json!({ "type": record.record_type, "name": record.name, "content": content, "ttl": 1 });
             if let Some(priority) = record.priority {
                 body["priority"] = json!(priority);
             }
@@ -224,7 +304,7 @@ impl Cloudflare {
                 let same_kind: Vec<&Value> = existing
                     .iter()
                     .filter(|entry| {
-                        let content = entry["content"].as_str().unwrap_or_default().trim_matches('"');
+                        let content = unquote_txt(entry["content"].as_str().unwrap_or_default());
                         match record.kind {
                             "spf" => content.starts_with("v=spf1"),
                             "dmarc" => content.starts_with("v=DMARC1"),
@@ -235,28 +315,42 @@ impl Cloudflare {
                         }
                     })
                     .collect();
+                if record.state == RecordState::Ours {
+                    // The value is right, so the only reason to write is the missing quoting.
+                    let bare = same_kind.iter().find(|entry| {
+                        let content = entry["content"].as_str().unwrap_or_default();
+                        !content.trim_start().starts_with('"') && unquote_txt(content) == record.content
+                    });
+                    let Some(id) = bare.and_then(|entry| entry["id"].as_str()) else {
+                        return Ok::<_, String>(None);
+                    };
+                    self.call(Method::PUT, &format!("/zones/{zone}/dns_records/{id}"), Some(body.clone())).await?;
+                    return Ok(Some("requoted"));
+                }
                 match same_kind.first().and_then(|entry| entry["id"].as_str()) {
-                    Some(id) if record.wrong => {
+                    Some(id) => {
                         self.call(Method::PUT, &format!("/zones/{zone}/dns_records/{id}"), Some(body.clone())).await?;
                         // Only one MX should remain when replacing, or mail would still go elsewhere.
-                        if record.record_type == "MX" {
+                        if record.record_type == "MX" && record.state != RecordState::Missing {
                             for extra in same_kind.iter().skip(1).filter_map(|entry| entry["id"].as_str()) {
                                 self.call(Method::DELETE, &format!("/zones/{zone}/dns_records/{extra}"), None).await?;
                             }
                         }
-                        Ok::<_, String>("updated")
+                        Ok(Some("updated"))
                     }
-                    _ => {
+                    None => {
                         self.call(Method::POST, &format!("/zones/{zone}/dns_records"), Some(body.clone())).await?;
-                        Ok("created")
+                        Ok(Some("created"))
                     }
                 }
             }
             .await;
-            results.push(match outcome {
-                Ok(outcome) => applied(outcome, None),
-                Err(error) => applied("failed", Some(error)),
-            });
+            match outcome {
+                Ok(Some(outcome)) => results.push(applied(outcome, None)),
+                // Nothing was in the way and nothing had to change.
+                Ok(None) => {}
+                Err(error) => results.push(applied("failed", Some(error))),
+            }
         }
         Ok(results)
     }
@@ -340,16 +434,46 @@ mod tests {
             selector: None,
             key_state: None,
             optional: false,
+            differs: false,
         }
     }
 
+    /// A record that works, only not in our words.
+    fn differing(kind: &'static str, record_type: &'static str, name: &str, expected: &str) -> RecordCheck {
+        RecordCheck { differs: true, ..check(kind, record_type, name, expected, CheckStatus::Ok) }
+    }
+
+    #[test]
+    fn txt_values_travel_in_quotes_and_come_back_whole() {
+        assert_eq!(quote_txt("v=spf1 -all"), "\"v=spf1 -all\"");
+        assert_eq!(unquote_txt("\"v=spf1 -all\""), "v=spf1 -all");
+        // Cloudflare held plenty of records long before it asked for quotes.
+        assert_eq!(unquote_txt("v=spf1 -all"), "v=spf1 -all");
+        assert_eq!(unquote_txt("  \"v=DMARC1;\" \" p=reject\"  "), "v=DMARC1; p=reject");
+        assert_eq!(unquote_txt(&quote_txt("a \"quoted\" back\\slash")), "a \"quoted\" back\\slash");
+
+        // A DKIM key outgrows the 255 bytes one string may hold, so it goes as several.
+        let key = format!("v=DKIM1; k=rsa; p={}", "A".repeat(300));
+        let quoted = quote_txt(&key);
+        assert_eq!(quoted, format!("\"{}\" \"{}\"", &key[..255], &key[255..]));
+        assert_eq!(unquote_txt(&quoted), key);
+    }
+
     #[tokio::test]
-    async fn missing_records_are_created_and_wrong_ones_only_replaced_on_request() {
+    async fn records_are_created_replaced_or_tidied_as_asked() {
+        let key = format!("v=DKIM1; k=rsa; p={}", "A".repeat(300));
         let fake = Arc::new(Fake::default());
-        fake.records
-            .lock()
-            .unwrap()
-            .push(json!({ "id": "old", "type": "TXT", "name": "example.de", "content": "\"v=spf1 -all\"" }));
+        fake.records.lock().unwrap().extend([
+            json!({ "id": "old", "type": "TXT", "name": "example.de", "content": "\"v=spf1 -all\"" }),
+            // Exactly what we would publish, only without the quotes Cloudflare now asks for.
+            json!({ "id": "bare", "type": "TXT", "name": "_dmarc.example.de", "content": "v=DMARC1; p=quarantine" }),
+            json!({
+                "id": "tls",
+                "type": "TXT",
+                "name": "_smtp._tls.example.de",
+                "content": "\"v=TLSRPTv1; rua=mailto:reports@other.example\"",
+            }),
+        ]);
         let app = Router::new()
             .route("/zones", get(zones))
             .route("/zones/{zone}/dns_records", get(list).post(create))
@@ -369,22 +493,43 @@ mod tests {
                 check("mx", "MX", "example.de", "10 mail.example.de", CheckStatus::Missing),
                 check("spf", "TXT", "example.de", "v=spf1 a:mail.example.de -all", CheckStatus::Wrong),
                 check("dmarc", "TXT", "_dmarc.example.de", "v=DMARC1; p=quarantine", CheckStatus::Ok),
+                differing("tlsrpt", "TXT", "_smtp._tls.example.de", "v=TLSRPTv1; rua=mailto:tls@example.de"),
+                check("dkim", "TXT", "uwu._domainkey.example.de", &key, CheckStatus::Missing),
             ],
         };
         let wanted = wanted_records(&report);
-        assert_eq!(wanted.len(), 2);
+        assert_eq!(wanted.len(), 5);
         assert_eq!((wanted[0].priority, wanted[0].content.as_str()), (Some(10), "mail.example.de"));
 
         let cloudflare = Cloudflare::with_base("test-token", &base);
-        let results = cloudflare.apply("example.de", &wanted, &[]).await.unwrap();
-        assert_eq!(results.iter().map(|r| r.outcome).collect::<Vec<_>>(), ["created", "skipped"]);
-
-        let results = cloudflare.apply("example.de", &wanted[1..], &["spf".to_owned()]).await.unwrap();
-        assert_eq!(results[0].outcome, "updated");
+        let results = cloudflare.apply("example.de", &wanted, &[], &[]).await.unwrap();
+        // The missing ones go in, the broken and the differing one wait for a tick, and the
+        // DMARC record that was right all along only gets its quotes.
+        assert_eq!(
+            results.iter().map(|r| r.outcome).collect::<Vec<_>>(),
+            ["created", "skipped", "requoted", "skipped", "created"]
+        );
         {
             let records = fake.records.lock().unwrap();
-            assert!(records.iter().any(|r| r["content"] == "v=spf1 a:mail.example.de -all" && r["id"] == "old"));
+            let dmarc = records.iter().find(|r| r["id"] == "bare").unwrap();
+            assert_eq!(dmarc["content"], "\"v=DMARC1; p=quarantine\"");
+            let dkim = records.iter().find(|r| r["name"] == "uwu._domainkey.example.de").unwrap();
+            assert_eq!(dkim["content"], format!("\"{}\" \"{}\"", &key[..255], &key[255..]));
             assert!(records.iter().any(|r| r["type"] == "MX" && r["priority"] == 10));
+        }
+
+        // A second run writes no duplicates, and the quoted DMARC record is left alone entirely.
+        let results = cloudflare.apply("example.de", &wanted, &[], &[]).await.unwrap();
+        assert_eq!(results.iter().map(|r| r.outcome).collect::<Vec<_>>(), ["updated", "skipped", "skipped", "updated"]);
+
+        let replace = ["spf".to_owned()];
+        let tidy = ["tlsrpt".to_owned()];
+        let results = cloudflare.apply("example.de", &wanted[1..4], &replace, &tidy).await.unwrap();
+        assert_eq!(results.iter().map(|r| r.outcome).collect::<Vec<_>>(), ["updated", "updated"]);
+        {
+            let records = fake.records.lock().unwrap();
+            assert!(records.iter().any(|r| r["content"] == "\"v=spf1 a:mail.example.de -all\"" && r["id"] == "old"));
+            assert!(records.iter().any(|r| r["content"] == "\"v=TLSRPTv1; rua=mailto:tls@example.de\""));
         }
 
         let error = Cloudflare::with_base("test-token", &base).zone_for("elsewhere.example").await.unwrap_err();

@@ -74,6 +74,9 @@ pub struct RecordCheck {
     pub key_state: Option<DkimKeyState>,
     /// Recommended, but mail works without it, so it does not count for the domain's status.
     pub optional: bool,
+    /// Published and fine, only not written the way UwUMail would write it. Nothing to fix,
+    /// but the admin can have it brought into our shape when records go to a DNS provider.
+    pub differs: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -299,6 +302,9 @@ impl DnsChecker {
             records.push(evaluate_srv(kind, &name, setup.hostname, port, lookups.srv(&name).await));
         }
 
+        for record in &mut records {
+            record.differs = differs_from_ours(record);
+        }
         let status = records
             .iter()
             .filter(|record| !record.optional)
@@ -358,7 +364,19 @@ fn check(kind: &'static str, name: &str, record_type: &'static str, expected: St
         selector: None,
         key_state: None,
         optional: false,
+        differs: false,
     }
+}
+
+/// Whether a published record works but says it differently than we would.
+///
+/// Only values that can be compared text for text count: the MTA-STS host may well be an
+/// address instead of a CNAME, and the policy file is already compared by its meaning.
+fn differs_from_ours(record: &RecordCheck) -> bool {
+    matches!(record.status, CheckStatus::Ok | CheckStatus::Warning)
+        && matches!(record.record_type, "MX" | "TXT" | "SRV")
+        && !record.found.is_empty()
+        && !record.found.iter().any(|found| found.trim() == record.expected.trim())
 }
 
 fn failed(mut record: RecordCheck, error: &str) -> RecordCheck {
@@ -722,6 +740,40 @@ mod tests {
         assert_eq!(tls(false, &["v=TLSRPTv1; rua=mailto:tls-reports@example.de"]).status, CheckStatus::Ok);
         assert_eq!(tls(false, &["v=TLSRPTv1; rua=mailto:x@other.example"]).note, Some("tlsRptElsewhere"));
         assert_eq!(tls(false, &["v=TLSRPTv1; rua=a", "v=TLSRPTv1; rua=b"]).note, Some("tlsRptMultiple"));
+    }
+
+    #[test]
+    fn records_that_work_but_read_differently_are_marked() {
+        let dmarc = |texts: &[&str]| evaluate_dmarc("example.de", Ok(texts.iter().map(|t| t.to_string()).collect()));
+        let ours = dmarc(&["v=DMARC1; p=quarantine; adkim=s; aspf=s; rua=mailto:dmarc-reports@example.de"]);
+        assert_eq!(ours.found, vec![ours.expected.clone()]);
+        assert!(!differs_from_ours(&ours));
+        // Fine as it is, so nothing to fix - but not how we would write it.
+        assert!(differs_from_ours(&dmarc(&["v=DMARC1;p=reject"])));
+        // Broken or absent records are not a matter of spelling.
+        assert!(!differs_from_ours(&dmarc(&["v=DMARC1; p=maybe"])));
+        assert!(!differs_from_ours(&dmarc(&[])));
+
+        // A backup MX beside ours is another record, not another spelling.
+        let mx = evaluate_mx("example.de", "mail.example.de", false, Ok(vec![(10, "mail.example.de".into())]));
+        assert!(!differs_from_ours(&mx));
+        let backup = evaluate_mx(
+            "example.de",
+            "mail.example.de",
+            false,
+            Ok(vec![(10, "mail.example.de".into()), (20, "backup.example.net".into())]),
+        );
+        assert!(!differs_from_ours(&backup));
+        let other_priority =
+            evaluate_mx("example.de", "mail.example.de", false, Ok(vec![(5, "mail.example.de".into())]));
+        assert!(differs_from_ours(&other_priority));
+
+        // The policy file is compared by its meaning, not letter by letter.
+        let policy = Policy::ours(MtaStsMode::Testing, &["mail.example.de".into()]);
+        let served = Fetched { content_type: "text/plain".into(), body: policy.to_text().replace('\n', "\r\n") };
+        let published = evaluate_mta_sts_policy("example.de", &policy, Ok(served));
+        assert_eq!(published.status, CheckStatus::Ok);
+        assert!(!differs_from_ours(&published));
     }
 
     #[test]

@@ -539,6 +539,7 @@
       "value": "Value",
       "found": "Found",
       "foundNothing": "Nothing found",
+      "differs": "The record works, it is just written differently than UwUMail would publish it.",
       "copyName": "Copy name",
       "copyValue": "Copy value",
       "nameHint": "Some DNS providers want only the part before {{domain}} as the name.",
@@ -1392,11 +1393,16 @@
       "tokenHint": "At Cloudflare, create a token under “Profile → API Tokens” with the permission “Zone → DNS → Edit” for this domain.",
       "replace": "Replace these wrong records",
       "replaceHint": "Unticked records stay as they are.",
+      "tidy": "Bring the spelling in line with UwUMail",
+      "tidyHint": "These records work. With a tick I write them the way UwUMail would publish them.",
+      "tidyWarning": "Careful with MX and SPF: I write exactly my own value. Other senders or a mail server in front of this one that are listed there fall away.",
+      "quotesOnly": "Nothing is missing. I can still check whether the records sit in quotes at Cloudflare and add them where they do not.",
       "submit": "Add records",
       "nothing": "There was nothing to add.",
       "outcome": {
         "created": "added",
         "updated": "replaced",
+        "requoted": "put in quotes",
         "skipped": "left alone",
         "failed": "failed"
       }

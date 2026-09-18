@@ -185,6 +185,8 @@ export interface RecordCheck {
   keyState: DkimKeyState | null;
   /** Recommended; it does not count for the domain's status. */
   optional: boolean;
+  /** Published and fine, only not written the way UwUMail would write it. */
+  differs: boolean;
 }
 
 export interface DomainReport {
@@ -1012,7 +1014,8 @@ export interface TestMailStatus {
 
 export interface CloudflareResult {
   name: string;
-  recordType: "MX" | "TXT";
-  outcome: "created" | "updated" | "skipped" | "failed";
+  recordType: "MX" | "TXT" | "SRV" | "CNAME";
+  /** "requoted" means the value was right and only its quoting was put in order. */
+  outcome: "created" | "updated" | "requoted" | "skipped" | "failed";
   error: string | null;
 }

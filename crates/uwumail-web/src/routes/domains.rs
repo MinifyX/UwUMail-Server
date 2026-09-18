@@ -277,6 +277,9 @@ pub struct CloudflareRequest {
     /// Kinds of wrong records to overwrite: mx, spf, dmarc, dkim.
     #[serde(default)]
     replace: Vec<String>,
+    /// Kinds of working records to rewrite the way UwUMail would publish them.
+    #[serde(default)]
+    tidy: Vec<String>,
 }
 
 /// Puts the missing records into Cloudflare with a token that is used once and forgotten.
@@ -293,12 +296,12 @@ pub async fn cloudflare(
     let report = run_check(&web, &domain.name).await?;
     let wanted = crate::cloudflare::wanted_records(&report);
     let results = crate::cloudflare::Cloudflare::new(&request.token)
-        .apply(&domain.name, &wanted, &request.replace)
+        .apply(&domain.name, &wanted, &request.replace, &request.tidy)
         .await
         .map_err(|message| ApiError::Rule("cloudflareFailed", message))?;
     let changed: Vec<String> = results
         .iter()
-        .filter(|result| matches!(result.outcome, "created" | "updated"))
+        .filter(|result| matches!(result.outcome, "created" | "updated" | "requoted"))
         .map(|result| format!("{} {}", result.record_type, result.name))
         .collect();
     audit(&web, &session, "domain.cloudflare", &domain.name, json!({ "changed": changed })).await;

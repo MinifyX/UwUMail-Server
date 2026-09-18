@@ -298,6 +298,35 @@ export function TestMailPanel({ login, explain }: { login: string; explain: bool
 /** Kinds of records that can be replaced when they hold another value. */
 const KINDS = ["mx", "spf", "dmarc", "dkim", "tlsrpt", "mtasts", "jmap", "imaps", "submissions", "submission"] as const;
 
+/** Rewriting these can cut off other senders or another mail server, so they get a warning. */
+const DELICATE = ["mx", "spf"];
+
+/** A list of record kinds to tick off. */
+function KindChoices({
+  kinds,
+  chosen,
+  onChange,
+}: {
+  kinds: readonly string[];
+  chosen: string[];
+  onChange: (kinds: string[]) => void;
+}) {
+  const { t } = useT();
+  return kinds.map((kind) => (
+    <label key={kind} className="flex items-center gap-2 text-sm">
+      <input
+        type="checkbox"
+        className="size-4 accent-pink"
+        checked={chosen.includes(kind)}
+        onChange={(event) =>
+          onChange(event.target.checked ? [...chosen, kind] : chosen.filter((entry) => entry !== kind))
+        }
+      />
+      <span className="font-semibold">{t(`domains.detail.kinds.${kind}`)}</span>
+    </label>
+  ));
+}
+
 /** Puts missing records into Cloudflare with a token that is used once. */
 export function CloudflarePanel({
   domain,
@@ -313,6 +342,7 @@ export function CloudflarePanel({
   const [open, setOpen] = useState(false);
   const [token, setToken] = useState("");
   const [replace, setReplace] = useState<string[]>([]);
+  const [tidy, setTidy] = useState<string[]>([]);
   // The MTA-STS policy is a file this server serves, not a DNS record.
   const missing = report.records.filter(
     (record) => record.status === "missing" && record.keyState !== "pending" && record.recordType !== "HTTPS",
@@ -320,14 +350,17 @@ export function CloudflarePanel({
   const wrongKinds = KINDS.filter((kind) =>
     report.records.some((record) => record.kind === kind && record.status === "wrong"),
   );
+  // Published, working, only written differently than UwUMail would write it.
+  const differingKinds = KINDS.filter((kind) =>
+    report.records.some((record) => record.kind === kind && record.differs),
+  );
   const results = cloudflare.data?.results;
-
-  if (missing.length === 0 && wrongKinds.length === 0 && !results) return null;
+  const nothingToDo = missing.length === 0 && wrongKinds.length === 0 && differingKinds.length === 0;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     cloudflare.mutate(
-      { token, replace },
+      { token, replace, tidy },
       {
         // The token is only needed for this one request.
         onSettled: () => setToken(""),
@@ -346,7 +379,9 @@ export function CloudflarePanel({
   return (
     <form className="flex flex-col gap-3 rounded-card border border-hairline bg-canvas p-4" onSubmit={submit}>
       <SubHeading icon={Cloud}>{t("setup.cloudflare.title")}</SubHeading>
-      <p className="text-[13px] text-muted">{t("setup.cloudflare.body")}</p>
+      <p className="text-[13px] text-muted">
+        {nothingToDo && !results ? t("setup.cloudflare.quotesOnly") : t("setup.cloudflare.body")}
+      </p>
       <Field label={t("setup.cloudflare.token")} hint={explain ? t("setup.cloudflare.tokenHint") : undefined}>
         {(id) => (
           <TextInput
@@ -362,22 +397,20 @@ export function CloudflarePanel({
       {wrongKinds.length > 0 && (
         <fieldset className="flex flex-col gap-1.5">
           <legend className="text-[13px] font-semibold text-muted">{t("setup.cloudflare.replace")}</legend>
-          {wrongKinds.map((kind) => (
-            <label key={kind} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="size-4 accent-pink"
-                checked={replace.includes(kind)}
-                onChange={(event) =>
-                  setReplace((current) =>
-                    event.target.checked ? [...current, kind] : current.filter((entry) => entry !== kind),
-                  )
-                }
-              />
-              <span className="font-semibold">{t(`domains.detail.kinds.${kind}`)}</span>
-            </label>
-          ))}
+          <KindChoices kinds={wrongKinds} chosen={replace} onChange={setReplace} />
           <p className="text-[12px] text-muted">{t("setup.cloudflare.replaceHint")}</p>
+        </fieldset>
+      )}
+      {differingKinds.length > 0 && (
+        <fieldset className="flex flex-col gap-1.5">
+          <legend className="text-[13px] font-semibold text-muted">{t("setup.cloudflare.tidy")}</legend>
+          <KindChoices kinds={differingKinds} chosen={tidy} onChange={setTidy} />
+          <p className="text-[12px] text-muted">{t("setup.cloudflare.tidyHint")}</p>
+          {differingKinds.some((kind) => DELICATE.includes(kind)) && (
+            <p className="rounded-control bg-warning-tint px-3 py-2 text-[12px] text-warning">
+              {t("setup.cloudflare.tidyWarning")}
+            </p>
+          )}
         </fieldset>
       )}
       <div className="flex flex-wrap gap-2">

@@ -160,7 +160,7 @@ function record(
   found: string[],
   extra: Partial<RecordCheck> = {},
 ): RecordCheck {
-  return {
+  const made: RecordCheck = {
     kind,
     name,
     recordType: kind === "mx" ? "MX" : "TXT",
@@ -171,7 +171,18 @@ function record(
     selector: null,
     keyState: null,
     optional: false,
+    differs: false,
     ...extra,
+  };
+  // The same rule the server follows: it works, it is just not our wording.
+  return {
+    ...made,
+    differs:
+      extra.differs ??
+      ((made.status === "ok" || made.status === "warning") &&
+        ["MX", "TXT", "SRV"].includes(made.recordType) &&
+        made.found.length > 0 &&
+        !made.found.includes(made.expected)),
   };
 }
 
@@ -1644,12 +1655,24 @@ const routes: [string, RegExp, Handler][] = [
       const found = domains.find((d) => d.name === name);
       if (!found) return problem(404, "notFound");
       if ((body as { token: string }).token === "wrong") return problem(409, "cloudflareFailed");
-      const missing = (found.report ?? report(found, false)).records.filter((r) => r.status !== "ok");
+      const { replace = [], tidy = [] } = body as { replace?: string[]; tidy?: string[] };
+      const records = (found.report ?? report(found, false)).records.filter((r) => r.recordType !== "HTTPS");
+      const outcome = (r: RecordCheck) => {
+        if (r.status === "missing") return "created";
+        if (r.status === "wrong") return replace.includes(r.kind) ? "updated" : "skipped";
+        if (r.differs) return tidy.includes(r.kind) ? "updated" : "skipped";
+        // Only the DMARC record of the mock is still unquoted at the pretend Cloudflare.
+        return r.kind === "dmarc" ? "requoted" : null;
+      };
       found.published = true;
       log("domain.cloudflare", found.name);
       return [
         200,
-        { results: missing.map((r) => ({ name: r.name, recordType: r.recordType, outcome: "created", error: null })) },
+        {
+          results: records
+            .map((r) => ({ name: r.name, recordType: r.recordType, outcome: outcome(r), error: null }))
+            .filter((result) => result.outcome),
+        },
       ];
     },
   ],
