@@ -107,9 +107,12 @@ pub async fn download(
         header::CONTENT_TYPE,
         HeaderValue::from_str(&content_type).unwrap_or(HeaderValue::from_static("application/octet-stream")),
     );
-    if let Ok(value) = HeaderValue::from_str(&format!("attachment; filename*=UTF-8''{}", encode_filename(&name))) {
-        headers.insert(header::CONTENT_DISPOSITION, value);
-    }
+    // Always set, even when the name will not go into a header: this is what keeps a blob whose
+    // content type the caller chose from being rendered on the portal own origin, and it must not
+    // fall away quietly with the file name.
+    let disposition = HeaderValue::from_str(&format!("attachment; filename*=UTF-8''{}", encode_filename(&name)))
+        .unwrap_or(HeaderValue::from_static("attachment"));
+    headers.insert(header::CONTENT_DISPOSITION, disposition);
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, immutable, max-age=31536000"));
     headers.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
     response
