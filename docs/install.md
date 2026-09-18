@@ -226,6 +226,35 @@ That does not fetch a new `compose.yaml`. Options in `.env` that came later,
 like `UWUMAIL_GATEWAY_CODE` or `UWUMAIL_HTTP_BIND`, need the current file; see
 *A line in `.env` changes nothing* below.
 
+### Buttons instead of commands (optional)
+
+The server's container cannot touch the machine it runs on. It is distroless,
+read-only, unprivileged, and every capability is dropped but the one it needs
+for the low mail ports — which is most of what makes a break-in worth little,
+so it stays that way.
+
+A small helper beside it can, and then the portal shows what the system has
+waiting and installs it with a button:
+
+```bash
+cd /tmp
+curl -fsSLO https://github.com/MinifyX/UwUMail-Server/releases/latest/download/uwumail-host.tar.gz
+tar -xzf uwumail-host.tar.gz
+sudo bash uwumail-host/install.sh --dir /opt/uwumail
+cd /opt/uwumail && sudo docker compose up -d
+```
+
+What the container may ask the helper for is one of three things — install the
+system's updates, restart the machine, pull a new UwUMail — plus a version
+number that has to look like one. Never a command, never a path, never an
+address. The docker socket stays where it is: handing that to a container is
+handing it the machine.
+
+`sudo bash install.sh --check` says how things stand, `--remove` takes it back
+out. If anything else runs on this machine, the portal says so above the button
+and installs anyway when you insist: `apt` restarts those too, and a reboot
+takes them with it.
+
 ## When something doesn't work
 
 - `sudo docker compose logs --tail 100 uwumail` shows what the server is doing.

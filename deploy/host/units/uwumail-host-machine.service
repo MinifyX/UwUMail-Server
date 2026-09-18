@@ -1,0 +1,21 @@
+# Writes down what this machine looks like, for the UwUMail portal: what apt has waiting, whether a
+# restart is due, and whether anything else runs here. deploy/host/install.sh puts this into place.
+[Unit]
+Description=UwUMail: look at the machine
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/uwumail-host/helper machine
+# It asks apt and docker, both of which want root. It only ever reads.
+User=root
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes

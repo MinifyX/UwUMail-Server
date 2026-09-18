@@ -1,0 +1,13 @@
+[Unit]
+Description=UwUMail: look at the machine every so often
+
+[Timer]
+# Soon after boot, so a machine that was off for a week does not wait to say what it needs.
+OnBootSec=2min
+OnUnitActiveSec=15min
+# Every server asking the mirrors on the same minute helps nobody.
+RandomizedDelaySec=3min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

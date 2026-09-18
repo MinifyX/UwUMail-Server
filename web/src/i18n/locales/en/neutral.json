@@ -777,6 +777,28 @@
       "body": "Reports arrive once a domain is set up and mail has gone out in its name."
     }
   },
+  "host": {
+    "title": "This machine",
+    "noReport": "The helper on this machine has not said anything for a while. Is uwumail-host-machine.timer still running?",
+    "unknownSystem": "Unknown system",
+    "checked": "last looked at {{at}}",
+    "notApt": "This machine does not use apt. UwUMail cannot say what it needs -- that one stays yours.",
+    "upToDate": "Nothing to do: the system is up to date.",
+    "waiting_one": "{{count}} package is waiting, {{security}} of them security updates.",
+    "waiting_other": "{{count}} packages are waiting, {{security}} of them security updates.",
+    "rebootNeeded": "A restart is due for the updates to take hold.",
+    "notAlone": "More runs on this machine: {{others}}. An update restarts those too, and a restart takes them with it.",
+    "cannotTell": "I cannot tell what else runs here. Better look for yourself before pressing the button.",
+    "liability": "What happens here happens on your machine. I look first, as well as I can -- I cannot answer for it.",
+    "installUpdates": "Install updates",
+    "restart": "Restart",
+    "states": {
+      "running": "running ...",
+      "done": "done",
+      "failed": "failed",
+      "rolledBack": "rolled back"
+    }
+  },
   "queue": {
     "title": "Queue",
     "intro": "Outgoing mail that has not reached all recipients yet. Subjects and content are not shown here.",

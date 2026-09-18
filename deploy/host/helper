@@ -1,0 +1,375 @@
+#!/usr/bin/env bash
+# The part of a UwUMail Server installation that needs root. The server itself has none: its
+# container is distroless, read-only, unprivileged and has every capability dropped but the one it
+# needs for the low ports. It cannot ask apt what is waiting, and it certainly cannot install it.
+#
+# The two meet in a directory both can see, through plain files:
+#
+#   machine.json   written here    what apt says, what else runs on this machine, what is deployed
+#   jobs.jsonl     written by the server   one job per line, waiting to be carried out
+#   job-<id>.log   written here    what the job printed, while it runs
+#   job-<id>.json  written here    how it ended, which survives the container being replaced
+#
+# Nothing the server writes is ever run as a command. A job is a verb from a fixed list plus, for an
+# update, a version number that has to look like one. The download address, the image name and the
+# compose file all come from here, never from the other side. A server somebody took over can ask
+# for "update to 1.2.3" and nothing else.
+#
+#   helper machine        write machine.json (slow: asks apt)
+#   helper task           carry out the jobs that are waiting
+#   helper report         what all of this looks like right now, for people
+set -uo pipefail
+
+state=/var/lib/uwumail-host
+bridge="$state/bridge"
+config=/etc/uwumail-host/host.conf
+machine_file="$bridge/machine.json"
+jobs_file="$bridge/jobs.jsonl"
+# What this helper is willing to do at all.
+verbs="os-update reboot server-update"
+# A job older than this was meant for a different day; the server asks again if it still wants it.
+JOB_MAX_AGE=1800
+LOG_MAX_BYTES=65536
+
+# COMPOSE_DIR and, if the admin set one, COMPOSE_FILE.
+# shellcheck source=/dev/null
+[ -f "$config" ] && . "$config"
+COMPOSE_DIR="${COMPOSE_DIR:-/opt/uwumail}"
+SERVICE="${SERVICE:-uwumail}"
+
+say() { logger -t uwumail-host "$1"; }
+
+compose() {
+  ( cd "$COMPOSE_DIR" && docker compose "$@" )
+}
+
+# ── what this machine looks like ──────────────────────────────────────────────────────────────
+# Whether this is a machine we know how to update at all. Everything else is reported as unknown
+# rather than guessed at: a wrong "nothing to do" is worse than an honest "I cannot tell".
+os_kind() {
+  local id="" like=""
+  if [ -r /etc/os-release ]; then
+    id=$(. /etc/os-release && printf '%s' "${ID:-}")
+    like=$(. /etc/os-release && printf '%s' "${ID_LIKE:-}")
+  fi
+  case " $id $like " in
+    *" debian "* | *" ubuntu "*) command -v apt-get >/dev/null 2>&1 && { printf 'debian'; return; } ;;
+  esac
+  printf 'unknown'
+}
+
+os_name() {
+  [ -r /etc/os-release ] && (. /etc/os-release && printf '%s' "${PRETTY_NAME:-${NAME:-}}")
+}
+
+# How many packages wait, and how many of those are security updates.
+count_updates() {
+  if [ -x /usr/lib/update-notifier/apt-check ]; then
+    /usr/lib/update-notifier/apt-check 2>&1 | tr ';' ' '
+    return
+  fi
+  local all
+  all=$(apt-get -s -o Debug::NoLocking=true dist-upgrade 2>/dev/null | grep -c '^Inst ')
+  printf '%s 0' "$all"
+}
+
+# Everything here that is not us. A machine that only runs UwUMail can be updated without thinking
+# about it; one that also runs a web server or somebody's Nextcloud cannot, because `apt` restarts
+# those too and a reboot takes them with it.
+#
+# The important rule: when this cannot be answered, it says so. A warning that sometimes stays
+# quiet is worse than no warning.
+look_around() {
+  local ours="" others="" alone="null" seen_docker=false
+  if command -v docker >/dev/null 2>&1 && docker ps >/dev/null 2>&1; then
+    seen_docker=true
+    ours=$(cd "$COMPOSE_DIR" 2>/dev/null && docker compose ls --format json 2>/dev/null |
+      jq -r '.[0].Name // empty' 2>/dev/null)
+    while IFS= read -r project; do
+      [ -z "$project" ] && continue
+      [ "$project" = "$ours" ] && continue
+      others="$others $project"
+    done < <(docker ps --format '{{.Label "com.docker.compose.project"}}' 2>/dev/null | sort -u)
+    # Containers that belong to no compose project at all still share the machine.
+    local loose
+    loose=$(docker ps --filter 'label=com.docker.compose.project' --format '{{.ID}}' 2>/dev/null | wc -l)
+    local total
+    total=$(docker ps --format '{{.ID}}' 2>/dev/null | wc -l)
+    [ "$total" -gt "$loose" ] && others="$others docker"
+  fi
+  command -v podman >/dev/null 2>&1 && [ "$(podman ps -q 2>/dev/null | wc -l)" -gt 0 ] && others="$others podman"
+  local service
+  for service in postfix exim4 dovecot nginx apache2 httpd caddy lighttpd sw-engine k3s kubelet mysql mariadb \
+    postgresql nextcloud-cron; do
+    systemctl is-active --quiet "$service" 2>/dev/null && others="$others $service"
+  done
+  others=$(printf '%s' "$others" | tr ' ' '\n' | grep -v '^$' | sort -u | tr '\n' ' ' | sed 's/ $//')
+  if ! $seen_docker; then
+    # No way to see the containers means no way to be sure, so the answer stays unknown.
+    alone="null"
+  elif [ -z "$others" ]; then
+    alone="true"
+  else
+    alone="false"
+  fi
+  printf '%s\t%s' "$alone" "$others"
+}
+
+# What is deployed right now, so an update can be told apart from a restart afterwards.
+deployed() {
+  local image="" digest=""
+  image=$(compose images --format json 2>/dev/null |
+    jq -r --arg s "$SERVICE" '(if type == "array" then .[] else . end) | select(.Service == $s) | "\(.Repository):\(.Tag)"' 2>/dev/null |
+    head -1)
+  digest=$(docker inspect --format '{{index .RepoDigests 0}}' \
+    "$(compose ps -q "$SERVICE" 2>/dev/null | head -1)" 2>/dev/null)
+  [ -z "$digest" ] && digest=$(docker inspect --format '{{.Image}}' \
+    "$(compose ps -q "$SERVICE" 2>/dev/null | head -1)" 2>/dev/null)
+  printf '%s\t%s' "$image" "$digest"
+}
+
+cmd_machine() {
+  install -d -m 0770 "$bridge"
+  local kind name updates security reboot packages alone others image digest counts
+  kind=$(os_kind)
+  name=$(os_name)
+  updates=0
+  security=0
+  if [ "$kind" = "debian" ]; then
+    apt-get update -qq >/dev/null 2>&1
+    counts=$(count_updates)
+    updates=${counts%% *}
+    security=${counts##* }
+  fi
+  [[ "$updates" =~ ^[0-9]+$ ]] || updates=0
+  [[ "$security" =~ ^[0-9]+$ ]] || security=0
+  reboot=false
+  [ -f /var/run/reboot-required ] && reboot=true
+  packages=""
+  [ -f /var/run/reboot-required.pkgs ] && packages=$(sort -u /var/run/reboot-required.pkgs | tr '\n' ' ')
+  IFS=$'\t' read -r alone others < <(look_around)
+  IFS=$'\t' read -r image digest < <(deployed)
+
+  local tmp="$machine_file.tmp"
+  jq -n \
+    --arg kind "$kind" --arg name "$name" --argjson updates "$updates" --argjson security "$security" \
+    --argjson reboot "$reboot" --arg packages "$packages" --argjson alone "$alone" --arg others "$others" \
+    --arg image "$image" --arg digest "$digest" --arg dir "$COMPOSE_DIR" \
+    --argjson at "$(date +%s)" --arg helper "$(helper_version)" \
+    '{kind: $kind, name: $name, updates: $updates, securityUpdates: $security,
+      rebootRequired: $reboot, rebootPackages: ($packages | split(" ") | map(select(. != ""))),
+      alone: $alone, others: ($others | split(" ") | map(select(. != ""))),
+      image: $image, digest: $digest, composeDir: $dir, checkedAt: $at, helper: $helper}' >"$tmp" 2>/dev/null &&
+    mv -f "$tmp" "$machine_file" && chmod 0640 "$machine_file"
+}
+
+helper_version() {
+  printf '%s' "${UWUMAIL_HOST_HELPER_VERSION:-1}"
+}
+
+# ── the jobs the server may ask for ───────────────────────────────────────────────────────────
+# A version as we are willing to read one. Nothing else ever reaches a command line.
+is_version() {
+  [[ "${1:-}" =~ ^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(-[0-9A-Za-z.]{1,20})?$ ]]
+}
+
+job_state() {
+  local id="$1" state="$2" error="${3:-}"
+  jq -n --arg id "$id" --arg state "$state" --arg error "$error" --argjson at "$(date +%s)" \
+    '{id: $id, state: $state, error: $error, at: $at}' >"$bridge/job-$id.json.tmp" 2>/dev/null &&
+    mv -f "$bridge/job-$id.json.tmp" "$bridge/job-$id.json" && chmod 0640 "$bridge/job-$id.json"
+}
+
+# Everything a job prints goes here, capped, so the portal can show it while it runs.
+job_log() {
+  local id="$1"
+  tail -c "$LOG_MAX_BYTES" >>"$bridge/job-$id.log"
+  chmod 0640 "$bridge/job-$id.log" 2>/dev/null
+}
+
+# apt, with every question answered the way the package maintainer meant it. NEEDRESTART_MODE=a
+# matters on Ubuntu 24.04 and newer: without it the run stops on a full-screen question nobody is
+# there to answer.
+run_apt() {
+  DEBIAN_FRONTEND=noninteractive \
+    NEEDRESTART_MODE=a \
+    APT_LISTCHANGES_FRONTEND=none \
+    apt-get -y \
+    -o Dpkg::Options::=--force-confdef \
+    -o Dpkg::Options::=--force-confold \
+    -o DPkg::Lock::Timeout=300 \
+    "$@"
+}
+
+do_os_update() {
+  local id="$1"
+  [ "$(os_kind)" = "debian" ] || {
+    job_state "$id" failed "this machine is not one apt can update"
+    return 1
+  }
+  {
+    printf '== apt-get update\n'
+    run_apt update
+    printf '\n== apt-get dist-upgrade\n'
+    run_apt dist-upgrade
+    printf '\n== apt-get autoremove\n'
+    run_apt --purge autoremove
+  } 2>&1 | job_log "$id"
+  local result=${PIPESTATUS[0]}
+  cmd_machine
+  [ "$result" -eq 0 ] && job_state "$id" done || job_state "$id" failed "apt ended with $result"
+}
+
+do_reboot() {
+  local id="$1"
+  job_state "$id" done
+  printf 'the machine restarts in a minute\n' | job_log "$id"
+  say "restarting on request from the portal"
+  # A minute, so the answer to the request still gets out and mail in flight has a moment.
+  shutdown -r +1 "UwUMail: update" >/dev/null 2>&1 &
+}
+
+# The tag the compose file goes by. Both the update and the way back are this one line in .env;
+# the image name itself comes from the compose file, never from the other side.
+version_now() {
+  [ -f "$COMPOSE_DIR/.env" ] && sed -n 's/^UWUMAIL_VERSION=//p' "$COMPOSE_DIR/.env" | head -1
+}
+
+set_version() {
+  local want="${1:-}"
+  [ -f "$COMPOSE_DIR/.env" ] || touch "$COMPOSE_DIR/.env"
+  if grep -q '^UWUMAIL_VERSION=' "$COMPOSE_DIR/.env"; then
+    sed -i "s/^UWUMAIL_VERSION=.*/UWUMAIL_VERSION=$want/" "$COMPOSE_DIR/.env"
+  else
+    printf 'UWUMAIL_VERSION=%s\n' "$want" >>"$COMPOSE_DIR/.env"
+  fi
+}
+
+# Pull the image the compose file names and recreate the container.
+do_server_update() {
+  local id="$1" version="${2:-}"
+  [ -d "$COMPOSE_DIR" ] || {
+    job_state "$id" failed "no compose directory at $COMPOSE_DIR"
+    return 1
+  }
+  local before
+  before=$(version_now)
+  [ -n "$version" ] && set_version "$version"
+
+  {
+    printf '== docker compose pull\n'
+    compose pull "$SERVICE"
+    printf '\n== docker compose up -d\n'
+    compose up -d "$SERVICE"
+  } 2>&1 | job_log "$id"
+  local result=${PIPESTATUS[0]}
+  if [ "$result" -ne 0 ]; then
+    [ -n "$version" ] && [ -n "$before" ] && set_version "$before"
+    job_state "$id" failed "docker compose ended with $result"
+    return 1
+  fi
+
+  # Wait for the new one to say it is well. This runs the server's own health check, the same one
+  # the container uses, so it is the server's answer and not docker's guess. The absolute path
+  # matters: the image is distroless and has no shell to look anything up.
+  local waited=0 healthy=false
+  while [ "$waited" -lt 90 ]; do
+    if compose exec -T "$SERVICE" /usr/local/bin/uwumail-server health >/dev/null 2>&1; then
+      healthy=true
+      break
+    fi
+    sleep 3
+    waited=$((waited + 3))
+  done
+
+  if $healthy; then
+    printf '\nthe new version answers its health check\n' | job_log "$id"
+    cmd_machine
+    job_state "$id" done
+    return 0
+  fi
+
+  # It did not come up. Put the tag from before back, which is the only thing that changed here.
+  # The portal says the rest: the database may already have been migrated, and migrations only ever
+  # run forwards, so an older binary on a newer database is not safe.
+  {
+    printf '\n== the new version did not answer, going back to the one before\n'
+    compose logs --tail 50 "$SERVICE"
+  } 2>&1 | job_log "$id"
+  if [ -n "$before" ] && [ "$before" != "$version" ]; then
+    set_version "$before"
+    { printf '\n== docker compose up -d with %s\n' "$before"; compose up -d "$SERVICE"; } 2>&1 | job_log "$id"
+  fi
+  cmd_machine
+  job_state "$id" "rolledBack" "the new version did not answer its health check"
+  return 1
+}
+
+cmd_task() {
+  [ -s "$jobs_file" ] || return 0
+  local waiting="$jobs_file.now"
+  mv -f "$jobs_file" "$waiting" 2>/dev/null || return 0
+
+  local line id verb version asked now
+  now=$(date +%s)
+  while IFS= read -r line; do
+    id=$(printf '%s' "$line" | jq -r '.id // empty' 2>/dev/null)
+    verb=$(printf '%s' "$line" | jq -r '.verb // empty' 2>/dev/null)
+    version=$(printf '%s' "$line" | jq -r '.version // empty' 2>/dev/null)
+    asked=$(printf '%s' "$line" | jq -r '.at // 0' 2>/dev/null)
+    # An id names a file, so it may be nothing but letters and digits.
+    [[ "$id" =~ ^[A-Za-z0-9]{4,40}$ ]] || continue
+    case " $verbs " in *" $verb "*) ;; *)
+      job_state "$id" failed "this helper does not do $verb"
+      continue
+      ;;
+    esac
+    [[ "$asked" =~ ^[0-9]{1,12}$ ]] || asked=0
+    if [ "$asked" -gt 0 ] && [ $((now - asked)) -gt "$JOB_MAX_AGE" ]; then
+      job_state "$id" failed "the job waited too long; ask again"
+      continue
+    fi
+    if [ -n "$version" ] && ! is_version "$version"; then
+      job_state "$id" failed "that is not a version number"
+      continue
+    fi
+    [ -e "$bridge/job-$id.json" ] && continue # already done, or being done
+
+    say "carrying out $verb (job $id)"
+    job_state "$id" running
+    case "$verb" in
+      os-update) do_os_update "$id" ;;
+      reboot) do_reboot "$id" ;;
+      server-update) do_server_update "$id" "$version" ;;
+    esac
+  done <"$waiting"
+  rm -f "$waiting"
+
+  # Jobs nobody will ask about again.
+  find "$bridge" -maxdepth 1 -name 'job-*' -mtime +7 -delete 2>/dev/null
+}
+
+cmd_report() {
+  if [ ! -f "$machine_file" ]; then
+    echo "nothing has been written down yet; run: $0 machine"
+    return 0
+  fi
+  jq -r '
+    "UwUMail host, seen \(.checkedAt | todate)",
+    "  system     \(.name) (\(.kind))",
+    "  updates    \(.updates) waiting, \(.securityUpdates) of them security",
+    "  restart    \(if .rebootRequired then "needed" else "not needed" end)",
+    "  alone      \(if .alone == true then "yes" elif .alone == false then "no: " + (.others | join(", ")) else "cannot tell" end)",
+    "  deployed   \(.image) \(.digest)"
+  ' "$machine_file"
+}
+
+case "${1:-}" in
+  machine) cmd_machine ;;
+  task) cmd_task ;;
+  report) cmd_report ;;
+  *)
+    sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+    exit 2
+    ;;
+esac

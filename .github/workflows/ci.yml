@@ -243,6 +243,15 @@ jobs:
           cd release
           tar -czf uwumail-gateway-linux-amd64.tar.gz uwumail-gateway
           sha256sum uwumail-gateway-linux-amd64.tar.gz > uwumail-gateway-linux-amd64.tar.gz.sha256
+      - name: Package the host helper
+        run: |
+          # Shell and unit files only, so the same archive fits every machine.
+          mkdir -p release/uwumail-host
+          cp -r deploy/host/. release/uwumail-host/
+          chmod +x release/uwumail-host/helper release/uwumail-host/install.sh
+          cd release
+          tar -czf uwumail-host.tar.gz uwumail-host
+          sha256sum uwumail-host.tar.gz > uwumail-host.tar.gz.sha256
       - name: Release notes from CHANGELOG.md
         run: |
           version="${GITHUB_REF_NAME#v}"
@@ -262,4 +271,5 @@ jobs:
           flags=""
           case "$GITHUB_REF_NAME" in *-*) flags="--prerelease" ;; esac
           gh release create "$GITHUB_REF_NAME" $flags --title "UwUMail Server ${GITHUB_REF_NAME#v}" --notes-file notes.md \
-            release/uwumail-gateway-linux-amd64.tar.gz release/uwumail-gateway-linux-amd64.tar.gz.sha256
+            release/uwumail-gateway-linux-amd64.tar.gz release/uwumail-gateway-linux-amd64.tar.gz.sha256 \
+            release/uwumail-host.tar.gz release/uwumail-host.tar.gz.sha256

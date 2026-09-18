@@ -140,6 +140,11 @@ pub async fn run(
     smtp.report_blocks_to(Some(report_blocks.clone()));
     imap.report_blocks_to(Some(report_blocks.clone()));
     web.report_blocks_to(Some(report_blocks));
+    // Only there when someone installed the helper beside us (deploy/host/). Without it the portal
+    // shows the commands to copy, the way it always did.
+    if let Some(bridge) = crate::host::HostBridge::find() {
+        web.set_host(Arc::new(bridge));
+    }
     let backups = uwumail_backup::Backups::new(store.clone(), &config.hostname, env!("CARGO_PKG_VERSION"));
     web.set_backups(backups.clone());
     let web = web.router();

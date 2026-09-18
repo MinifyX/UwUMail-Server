@@ -5,6 +5,7 @@ mod cli;
 mod commands;
 mod config;
 mod gateway;
+mod host;
 mod http;
 mod import;
 mod serve;

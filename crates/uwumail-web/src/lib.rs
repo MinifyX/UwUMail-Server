@@ -11,6 +11,7 @@ mod cloudflare;
 mod error;
 pub mod gateway;
 mod health;
+pub mod host;
 mod login;
 mod logs;
 mod notices;
@@ -72,6 +73,8 @@ struct Inner {
     apple_profiles: Mutex<HashMap<String, routes::apps::PendingProfile>>,
     /// The UwUMail Gateway, once the server plugged it in.
     gateway: std::sync::OnceLock<Arc<dyn gateway::GatewayBackend>>,
+    /// The helper on the machine, once the server plugged it in.
+    host: std::sync::OnceLock<Arc<dyn host::HostBackend>>,
     /// Backups, once the server plugged them in.
     backups: std::sync::OnceLock<uwumail_backup::Backups>,
 }
@@ -94,6 +97,7 @@ impl Web {
                 server_check: Mutex::default(),
                 apple_profiles: Mutex::default(),
                 gateway: std::sync::OnceLock::new(),
+                host: std::sync::OnceLock::new(),
                 backups: std::sync::OnceLock::new(),
             }),
         }
@@ -154,6 +158,15 @@ impl Web {
         self.inner.gateway.get()
     }
 
+    /// Lets the portal look after the machine the server runs on. Only the first call counts.
+    pub fn set_host(&self, host: Arc<dyn host::HostBackend>) {
+        let _ = self.inner.host.set(host);
+    }
+
+    pub(crate) fn host(&self) -> Option<&Arc<dyn host::HostBackend>> {
+        self.inner.host.get()
+    }
+
     pub(crate) fn settings(&self) -> &WebSettings {
         &self.inner.settings
     }
@@ -183,6 +196,8 @@ impl Web {
             .route("/api/setup/code", post(routes::setup::verify_code))
             .route("/api/admin/setup/check", get(routes::setup::last_check).post(routes::setup::run_check))
             .route("/api/admin/setup/reachability", post(routes::gateway::reachability))
+            .route("/api/admin/host", get(routes::host::show))
+            .route("/api/admin/host/jobs", post(routes::host::ask))
             .route(
                 "/api/admin/gateway",
                 get(routes::gateway::show).post(routes::gateway::pair).delete(routes::gateway::forget),

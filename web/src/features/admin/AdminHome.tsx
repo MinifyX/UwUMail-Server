@@ -11,6 +11,7 @@ import { api, type Overview } from "@/lib/api";
 import { formatBytes, formatDuration } from "@/lib/format";
 import { usePrefs } from "@/state/prefs";
 import { HealthCard, useHealth } from "./HealthCard";
+import { HostCard } from "./HostCard";
 import { UpdatesCard } from "./UpdatesCard";
 
 function Stat({
@@ -123,6 +124,7 @@ export function AdminHome() {
       </Card>
 
       <UpdatesCard />
+      <HostCard />
     </div>
   );
 }

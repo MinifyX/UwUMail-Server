@@ -5,6 +5,7 @@ pub mod auth;
 pub mod backups;
 pub mod domains;
 pub mod gateway;
+pub mod host;
 pub mod links;
 pub mod mailbox;
 pub mod own;

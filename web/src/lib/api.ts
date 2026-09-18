@@ -337,6 +337,33 @@ export interface TlsReportFailure {
   detail: string | null;
 }
 
+/** The machine the server runs on, as the helper beside the container sees it. */
+export interface HostMachine {
+  /** "debian" for a machine apt can update, "unknown" for anything else. */
+  kind: string;
+  name: string;
+  updates: number;
+  securityUpdates: number;
+  rebootRequired: boolean;
+  rebootPackages: string[];
+  /** null means the helper could not tell, which is never shown as yes. */
+  alone: boolean | null;
+  others: string[];
+  image: string;
+  digest: string;
+  composeDir: string;
+  checkedAt: number;
+}
+
+export interface HostView {
+  /** Whether a helper is installed at all; without one the portal shows commands to copy. */
+  available: boolean;
+  machine: HostMachine | null;
+  job: { id: string; state: string; error: string; at: number } | null;
+  log: string;
+  command: string;
+}
+
 /** What the spam filter did with one message. */
 export type SpamLogAction = "delivered" | "junk" | "greylist" | "reject" | "dmarc" | "blocked";
 

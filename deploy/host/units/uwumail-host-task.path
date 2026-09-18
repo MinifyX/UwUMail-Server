@@ -1,0 +1,10 @@
+# Reacts the moment the server asks for something: an update, or a restart.
+[Unit]
+Description=UwUMail: watch for jobs from the portal
+
+[Path]
+PathModified=/var/lib/uwumail-host/bridge/jobs.jsonl
+Unit=uwumail-host-task.service
+
+[Install]
+WantedBy=multi-user.target

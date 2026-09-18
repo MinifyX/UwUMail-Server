@@ -1,0 +1,23 @@
+# Carries out what the portal asked for: install the system's updates, restart the machine, or pull
+# a new UwUMail and recreate its container.
+#
+# This is the one unit here that changes something, and it is deliberately not locked down the way
+# the others are: apt runs maintainer scripts, and docker recreates containers. A sandbox tight
+# enough to be worth the name would break both. What keeps this safe is on the other side -- the
+# helper takes a verb from a fixed list and a version number that has to look like one, and never a
+# command, a path or an address from whoever asked.
+#
+# An update can restart docker, and with it the container that asked for the update. That is why
+# the answer is a file here and not a reply on a connection: this unit finishes writing it either
+# way.
+[Unit]
+Description=UwUMail: carry out a job from the portal
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/uwumail-host/helper task
+User=root
+# apt may take a while on a slow machine, and a docker pull on a slow line takes longer.
+TimeoutStartSec=45min

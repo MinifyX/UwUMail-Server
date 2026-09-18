@@ -777,6 +777,28 @@
       "body": "Berichte kommen erst, wenn eine Domain eingerichtet ist und Post in ihrem Namen unterwegs war."
     }
   },
+  "host": {
+    "title": "Diese Maschine",
+    "noReport": "Der Helfer auf dieser Maschine hat sich lange nicht gemeldet. Läuft uwumail-host-machine.timer noch?",
+    "unknownSystem": "Unbekanntes System",
+    "checked": "zuletzt angesehen {{at}}",
+    "notApt": "Diese Maschine benutzt kein apt. Was sie an Updates braucht, kann UwUMail hier nicht sagen – das bleibt deine Baustelle.",
+    "upToDate": "Nichts zu tun: das System ist aktuell.",
+    "waiting_one": "{{count}} Paket wartet, davon {{security}} Sicherheitsupdates.",
+    "waiting_other": "{{count}} Pakete warten, davon {{security}} Sicherheitsupdates.",
+    "rebootNeeded": "Ein Neustart steht aus, damit die Updates greifen.",
+    "notAlone": "Auf dieser Maschine läuft noch mehr: {{others}}. Ein Update startet die mit neu, ein Neustart nimmt sie mit.",
+    "cannotTell": "Ich kann nicht feststellen, was hier sonst noch läuft. Sieh besser selbst nach, bevor du den Knopf drückst.",
+    "liability": "Was hier passiert, passiert auf deiner Maschine. Ich schaue vorher hin, so gut ich kann – haften kann ich dafür nicht.",
+    "installUpdates": "Updates installieren",
+    "restart": "Neu starten",
+    "states": {
+      "running": "läuft gerade …",
+      "done": "fertig",
+      "failed": "fehlgeschlagen",
+      "rolledBack": "zurückgerollt"
+    }
+  },
   "queue": {
     "title": "Warteschlange",
     "intro": "Ausgehende Mails, die noch nicht bei allen Empfängern angekommen sind. Betreff und Inhalt siehst du hier nicht.",
