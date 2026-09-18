@@ -367,8 +367,30 @@ docker compose pull && docker compose up -d
 
 Database migrations run automatically on start. Once a day the server asks
 GitHub what is newer on its channel (for `edge`: which commits came since) and
-shows it on the admin overview with the changes and the commands for the server
-and the gateway. Nothing updates by itself; the check can be switched off there.
+shows it under *Server → Updates* with the changes. The check can be switched
+off there.
+
+With the helper from [install.md](install.md#buttons-instead-of-commands-optional)
+installed, that page also has the button. It backs up first, writes the version
+into `UWUMAIL_VERSION`, pulls, recreates the container and waits for the new one
+to answer its own health check; if it does not, the tag from before goes back
+and the page says so. The page keeps asking through the gap where the server is
+away, so the result is there when it comes back — the answer is read out of the
+directory the helper shares, by the process that replaced the one that asked.
+
+Two things worth knowing about that button:
+
+- It pins the exact version in `.env`. A server that followed `latest` follows
+  `0.2.3` afterwards, and the next update moves it on again.
+- A rollback puts the image tag back, nothing else. Migrations only ever run
+  forwards, so an older binary may find a newer database. The backup from just
+  before is the real way back.
+
+*Install updates by itself* installs stable releases on a chosen day and
+time (kept in UTC, shown in local time). It keeps out of the backup's way: not
+in the half hour before one, not while it runs, not in the half hour after. When
+its minute falls inside that window it waits, asking again every minute for up
+to six hours, and otherwise lets the day go. A failed backup cancels the update.
 
 Releases come from tags: I add a section for the version to `CHANGELOG.md`,
 push the tag `v0.1.0` (or `v0.2.0-beta.1`), and CI builds the image with its

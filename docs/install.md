@@ -212,15 +212,21 @@ recovery key somewhere else than the server. See [backups.md](backups.md).
 
 ## Updates
 
-The admin overview shows when a new version is out, with what changed. To
-update, in `/opt/uwumail`:
+*Server → Updates* in the portal shows when a new version is out, with what
+changed. To update, in `/opt/uwumail`:
 
 ```bash
 sudo docker compose pull && sudo docker compose up -d
 ```
 
 Mail stays, and database changes run by themselves. For the gateway, the portal
-shows the matching command. Nothing updates on its own.
+shows the matching command.
+
+With the helper below installed, that page updates the server itself instead:
+a button, or a day and time. It makes a backup first — if that fails, nothing
+is touched — and it keeps half an hour clear on either side of the nightly
+backup. Should the new version not come up, the old tag goes back. Without the
+helper nothing updates on its own.
 
 That does not fetch a new `compose.yaml`. Options in `.env` that came later,
 like `UWUMAIL_GATEWAY_CODE` or `UWUMAIL_HTTP_BIND`, need the current file; see
