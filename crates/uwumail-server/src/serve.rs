@@ -202,7 +202,7 @@ pub async fn run(
         TlsMode::SelfSigned => tracing::warn!("using a self-signed certificate: fine for testing, not for real mail"),
     }
 
-    tasks.spawn(collect_garbage(store.clone(), shutdown_rx.clone()));
+    tasks.spawn(collect_garbage(store.clone(), smtp.clone(), shutdown_rx.clone()));
     tasks.spawn(backups.clone().run(shutdown_rx.clone()));
 
     tracing::info!("ready ✉");
@@ -213,7 +213,7 @@ pub async fn run(
     Ok(())
 }
 
-async fn collect_garbage(store: Store, mut shutdown: watch::Receiver<bool>) {
+async fn collect_garbage(store: Store, smtp: uwumail_smtp::Smtp, mut shutdown: watch::Receiver<bool>) {
     loop {
         tokio::select! {
             _ = tokio::time::sleep(Duration::from_secs(3600)) => {}
@@ -253,6 +253,13 @@ async fn collect_garbage(store: Store, mut shutdown: watch::Receiver<bool>) {
             Ok(0) => {}
             Ok(removed) => tracing::info!(removed, "forgot old greylisting and sender reputation entries"),
             Err(err) => tracing::warn!(%err, "cleaning up greylisting and sender reputation failed"),
+        }
+        // The spam history is the one table an admin sets the age of, so it is read fresh each round.
+        let log = smtp.spam_log_settings();
+        match store.prune_spam_log(i64::from(log.retention_days.max(1)) * 24 * 3600).await {
+            Ok(0) => {}
+            Ok(removed) => tracing::info!(removed, "removed old entries from the spam history"),
+            Err(err) => tracing::warn!(%err, "cleaning up the spam history failed"),
         }
         match store.prune_bayes(uwumail_store::BAYES_RARE_TOKEN_SECS, uwumail_store::BAYES_LEARNED_SECS).await {
             Ok(0) => {}

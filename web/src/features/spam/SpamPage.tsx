@@ -1,9 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { GraduationCap } from "lucide-react";
+import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
 import { Card, PageHeader } from "@/components/ui/Card";
-import { SPAM_SETTING_KEYS, Section, SpamFields } from "@/features/settings/SettingsPage";
+import { Segmented } from "@/components/ui/Field";
+import {
+  SPAM_LOG_SETTING_KEYS,
+  SPAM_SETTING_KEYS,
+  Section,
+  SpamFields,
+  SpamLogFields,
+} from "@/features/settings/SettingsPage";
 import { useT } from "@/i18n";
 import {
   api,
@@ -19,10 +27,15 @@ import { toast } from "@/state/toasts";
 import { FeedsCard } from "./FeedsCard";
 import { SenderListCard } from "./SenderListCard";
 import { SpamLimitsCard } from "./SpamLimitsCard";
+import { SpamLogCard } from "./SpamLogCard";
 import { WordListCard } from "./WordListCard";
 
 const accountKey = ["account", "spam"] as const;
 const adminKey = ["admin", "spam"] as const;
+
+/** The settings of the filter, and what it decided message by message. */
+type Tab = "filter" | "history";
+const TABS: Tab[] = ["filter", "history"];
 
 const counts = (totals: BayesTotals, minimum: number) => totals.spam >= minimum && totals.ham >= minimum;
 
@@ -121,6 +134,7 @@ export function AdminSpamPage() {
   const { t } = useT();
   const pro = usePrefs((s) => s.mode) === "pro";
   const queryClient = useQueryClient();
+  const [tab, setTab] = useState<Tab>("filter");
   const query = useQuery({ queryKey: adminKey, queryFn: () => api<AdminSpamView>("/api/admin/spam") });
   const settings = useQuery({
     queryKey: ["admin", "settings"],
@@ -132,9 +146,39 @@ export function AdminSpamPage() {
   if (settings.isError) return <LoadError error={settings.error} onRetry={() => void settings.refetch()} />;
   const { bayes } = query.data;
 
+  if (tab === "history") {
+    return (
+      <div className="flex flex-col gap-5">
+        <PageHeader title={t("spam.admin.title")} intro={t("spam.admin.intro")} />
+        <Segmented<string>
+          label={t("spam.admin.tab")}
+          value={tab}
+          onChange={(value) => setTab(value as Tab)}
+          options={TABS.map((value) => ({ value, label: t(`spam.admin.tabs.${value}`) }))}
+        />
+        <Section
+          title={t("spam.log.settingsTitle")}
+          intro={t("spam.log.settingsIntro")}
+          view={settings.data}
+          keys={SPAM_LOG_SETTING_KEYS}
+          onSaved={() => void queryClient.invalidateQueries({ queryKey: ["admin", "spam", "log"] })}
+        >
+          {(form) => <SpamLogFields form={form} />}
+        </Section>
+        <SpamLogCard />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title={t("spam.admin.title")} intro={t("spam.admin.intro")} />
+      <Segmented<string>
+        label={t("spam.admin.tab")}
+        value={tab}
+        onChange={(value) => setTab(value as Tab)}
+        options={TABS.map((value) => ({ value, label: t(`spam.admin.tabs.${value}`) }))}
+      />
       <Section
         title={t("spam.admin.settingsTitle")}
         intro={t("settings.spam.intro")}

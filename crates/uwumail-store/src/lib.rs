@@ -33,6 +33,7 @@ mod reports;
 mod security;
 mod sender_lists;
 mod spam;
+mod spam_log;
 mod web;
 mod word_lists;
 
@@ -88,6 +89,9 @@ pub use sender_lists::{
 pub use spam::{
     GREYLIST_PASSED_SECS, GREYLIST_WAITING_SECS, Greylist, REPUTATION_RETENTION_SECS, Reputation, SPAM_LIMIT_RANGE,
     SpamLimits,
+};
+pub use spam_log::{
+    NewSpamLogEntry, SPAM_LOG_MAX_ROWS, SpamAction, SpamLogEntry, SpamLogFilter, SpamLogHit, SpamLogRecipient,
 };
 pub use web::{NewWebSession, ServerCounts, WebSession};
 pub use word_lists::{

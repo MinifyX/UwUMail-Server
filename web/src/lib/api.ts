@@ -337,6 +337,40 @@ export interface TlsReportFailure {
   detail: string | null;
 }
 
+/** What the spam filter did with one message. */
+export type SpamLogAction = "delivered" | "junk" | "greylist" | "reject" | "dmarc" | "blocked";
+
+export interface SpamLogEntry {
+  id: number;
+  at: number;
+  smtpId: string;
+  messageId: string | null;
+  action: SpamLogAction;
+  envelopeFrom: string;
+  headerFrom: string;
+  /** Only kept for mail the filter held back, unless an admin asked for the rest too. */
+  subject: string | null;
+  clientIp: string;
+  helo: string;
+  reverseName: string | null;
+  size: number;
+  score: number | null;
+  hits: { rule: string; points: number; detail: string | null }[];
+  /** The Authentication-Results line in full. */
+  auth: string | null;
+  recipients: { address: string; action: string; mailbox: string | null }[];
+  /** What someone said later with Spam / Not spam; null means nobody said anything. */
+  correctedToJunk: boolean | null;
+}
+
+export interface SpamLogView {
+  entries: SpamLogEntry[];
+  total: number;
+  oldest: number | null;
+  settings: { enabled: boolean; cleanSubjects: boolean; retentionDays: number };
+  maxRows: number;
+}
+
 export type ReportDetail =
   | { kind: "dmarc"; report: ReportEntry; rows: DmarcReportRow[] }
   | { kind: "tls"; report: ReportEntry; policy: string | null; failures: TlsReportFailure[] };

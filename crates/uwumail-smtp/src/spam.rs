@@ -156,6 +156,10 @@ pub struct Score {
     pub(crate) subject: String,
     #[serde(skip)]
     pub(crate) text: String,
+    /// The sending server's own name, when DNS gave one. Only a missing or a generic name costs
+    /// points, so this is kept for the history rather than for the score.
+    #[serde(skip)]
+    pub(crate) reverse_name: Option<String>,
 }
 
 /// The compiled word lists and built-in lists, kept between messages.
@@ -382,6 +386,7 @@ pub async fn score(
 
     // No answer at all is not the same as no reverse name, so a timeout costs nothing.
     if let Some(names) = names {
+        score.reverse_name = names.first().cloned();
         match names.first() {
             None => score.add("NO_REVERSE_DNS", 1.5, None),
             Some(name) if generic_reverse_name(name, ip) => {

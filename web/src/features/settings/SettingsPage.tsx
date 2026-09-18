@@ -419,6 +419,37 @@ export function SettingsPage() {
 }
 
 /** Every setting on the spam filter page. */
+export const SPAM_LOG_SETTING_KEYS = ["spam.log.enabled", "spam.log.clean_subjects", "spam.log.retention_days"];
+
+/** The spam history: kept at all, for how long, and whether mail that arrived keeps its subject. */
+export function SpamLogFields({ form }: { form: Form }) {
+  const { t } = useT();
+  const enabled = Boolean(form.value("spam.log.enabled"));
+  return (
+    <>
+      <ToggleField
+        form={form}
+        settingKey="spam.log.enabled"
+        label={t("settings.spamLog.enabled")}
+        hint={t("settings.spamLog.enabledHint")}
+      />
+      {enabled && (
+        <>
+          <ToggleField
+            form={form}
+            settingKey="spam.log.clean_subjects"
+            label={t("settings.spamLog.cleanSubjects")}
+            hint={t("settings.spamLog.cleanSubjectsHint")}
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <NumberField form={form} settingKey="spam.log.retention_days" label={t("settings.spamLog.retentionDays")} />
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
 export const SPAM_SETTING_KEYS = [
   "spam.enabled",
   "spam.blocklists",

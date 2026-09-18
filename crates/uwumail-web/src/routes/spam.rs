@@ -3,13 +3,14 @@
 //! own spam limits.
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uwumail_store::{
     BAYES_FOLDER_LIMIT, BAYES_MIN_LEARNED, BAYES_WANTED_AFTER_SECS, ListOwner, ListScope, NewSenderListEntry,
-    SENDER_LIST_ADMIN_LIMIT, SENDER_LIST_PERSONAL_LIMIT, SPAM_LIMIT_RANGE, SenderKind, SenderList, SpamLimits,
+    SENDER_LIST_ADMIN_LIMIT, SENDER_LIST_PERSONAL_LIMIT, SPAM_LIMIT_RANGE, SPAM_LOG_MAX_ROWS, SenderKind, SenderList,
+    SpamAction, SpamLimits, SpamLogFilter,
 };
 
 use crate::Web;
@@ -25,6 +26,57 @@ async fn not_busy(web: &Web) -> ApiResult<()> {
         return Err(ApiError::Rule("learningBusy", "the spam filter is still learning, try again later".into()));
     }
     Ok(())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogQuery {
+    /// delivered, junk, greylist, reject, dmarc or blocked.
+    action: Option<String>,
+    /// Matches the envelope sender, the From header or the sending address.
+    search: Option<String>,
+    min_score: Option<f32>,
+    /// Continues after the smallest id of the page before, newest first.
+    before: Option<i64>,
+    limit: Option<usize>,
+}
+
+/// What the filter decided, message by message. Admins only, and for good reason: this is the one
+/// place that says who writes to whom.
+pub async fn admin_log(State(web): State<Web>, _admin: Admin, Query(query): Query<LogQuery>) -> ApiResult<Json<Value>> {
+    if let Some(action) = &query.action
+        && SpamAction::parse(action).is_none()
+    {
+        return Err(ApiError::Invalid(format!("unknown action: {action}")));
+    }
+    let settings = web.smtp().spam_log_settings();
+    let filter = SpamLogFilter {
+        action: query.action.clone(),
+        search: query.search.clone(),
+        min_score: query.min_score,
+        before: query.before,
+        limit: query.limit.unwrap_or(50),
+    };
+    let entries = web.store().spam_log(filter).await?;
+    let (count, oldest) = web.store().spam_log_extent().await?;
+    Ok(Json(json!({
+        "entries": entries,
+        "total": count,
+        "oldest": oldest,
+        "settings": {
+            "enabled": settings.enabled,
+            "cleanSubjects": settings.clean_subjects,
+            "retentionDays": settings.retention_days,
+        },
+        "maxRows": SPAM_LOG_MAX_ROWS,
+    })))
+}
+
+/// Throws the whole history away. There is no other way back once subjects were kept by mistake.
+pub async fn admin_clear_log(State(web): State<Web>, Admin(session): Admin) -> ApiResult<Json<Value>> {
+    let removed = web.store().clear_spam_log().await?;
+    audit(&web, &session, "spam.logCleared", "server", json!({ "removed": removed })).await;
+    Ok(Json(json!({ "removed": removed })))
 }
 
 /// One's own limits next to the server's, which apply where one set none.

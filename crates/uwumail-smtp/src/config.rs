@@ -68,6 +68,8 @@ pub struct SpamConfig {
     pub reject_score: Option<f32>,
     /// Built-in lists the server fetches itself.
     pub feeds: FeedsConfig,
+    /// What the filter decided about each message, kept so an admin can look it up afterwards.
+    pub log: SpamLogConfig,
 }
 
 impl Default for SpamConfig {
@@ -81,7 +83,27 @@ impl Default for SpamConfig {
             greylist_delay_secs: 300,
             reject_score: None,
             feeds: FeedsConfig::default(),
+            log: SpamLogConfig::default(),
         }
+    }
+}
+
+/// The spam filter's history. It is the most telling table in the product -- who writes to whom --
+/// so what it keeps is deliberately small, and the subjects of mail that arrived cleanly are not
+/// part of it unless someone asks for them.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SpamLogConfig {
+    pub enabled: bool,
+    /// Subjects of mail that was delivered normally. The subject of anything the filter held back
+    /// is always kept: without it the entry does not explain anything.
+    pub clean_subjects: bool,
+    pub retention_days: u32,
+}
+
+impl Default for SpamLogConfig {
+    fn default() -> Self {
+        SpamLogConfig { enabled: true, clean_subjects: false, retention_days: 30 }
     }
 }
 

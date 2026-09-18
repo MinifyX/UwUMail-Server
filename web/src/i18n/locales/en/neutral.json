@@ -890,6 +890,13 @@
       "trustedRelays": "Upstream mail servers",
       "trustedRelaysHint": "IP addresses or networks, one per line. UwUMail does their sender checks."
     },
+    "spamLog": {
+      "enabled": "Keep a history",
+      "enabledHint": "Writes down what the filter did with each arriving message. Without it you never see why a message was refused.",
+      "cleanSubjects": "Subjects of delivered mail too",
+      "cleanSubjectsHint": "Off by default. The subject of anything held back is always kept -- without it the entry explains nothing. For mail that arrived normally it explains nothing and is only a risk.",
+      "retentionDays": "Days to keep"
+    },
     "spam": {
       "title": "Spam filter",
       "intro": "Scores mail from other servers and puts what looks suspicious into the spam folder. Mail from your own network is not scored.",
@@ -1659,7 +1666,68 @@
     "admin": {
       "title": "Spam filter",
       "intro": "How the server scores mail from other servers, which senders it always lets through or turns away, and what the spam filter learned.",
-      "settingsTitle": "Settings"
+      "settingsTitle": "Settings",
+      "tab": "View",
+      "tabs": {
+        "filter": "Filter",
+        "history": "History"
+      }
+    },
+    "log": {
+      "title": "History",
+      "explain": "What the filter did with each arriving message. The refused and the held-back ones are nowhere else at all -- they reach no mailbox, and the running log is empty after a restart.",
+      "off": "The history is switched off. New decisions are not written down.",
+      "privacy": "This says who writes to whom. Entries go after {{days}} days.",
+      "subjectsOn": "Subjects are kept for mail that arrived normally too.",
+      "subjectsOff": "Subjects are only kept for mail that was held back.",
+      "settingsTitle": "History settings",
+      "settingsIntro": "What is written down, and for how long.",
+      "filter": "Filter",
+      "filters": {
+        "all": "Everything",
+        "junk": "Spam folder",
+        "reject": "Refused",
+        "greylist": "Held back",
+        "dmarc": "DMARC",
+        "blocked": "Blocked",
+        "delivered": "Delivered"
+      },
+      "actions": {
+        "delivered": "delivered",
+        "junk": "to spam",
+        "greylist": "held back",
+        "reject": "refused",
+        "dmarc": "refused by DMARC",
+        "blocked": "sender blocked"
+      },
+      "search": "Search",
+      "searchPlaceholder": "Sender or IP address",
+      "oneMessage": "One message",
+      "when": "When",
+      "action": "Outcome",
+      "from": "Sender",
+      "envelope": "Envelope sender",
+      "subject": "Subject",
+      "server": "Sending server",
+      "recipients": "Recipients",
+      "size": "Size",
+      "smtpId": "Id",
+      "messageId": "Message-ID",
+      "scoreOf": "{{score}} points from {{count}} rules",
+      "noRules": "No rule fired.",
+      "authResults": "What SPF, DKIM and DMARC found:",
+      "laterSpam": "-- later marked as spam",
+      "laterNotSpam": "-- later marked as not spam",
+      "empty": {
+        "title": "Nothing here",
+        "body": "There are no entries for this filter."
+      },
+      "extent": "{{total}} entries, oldest from {{since}}",
+      "clear": "Clear the history",
+      "clearTitle": "Clear the history?",
+      "clearBody": "Every entry goes. The mail itself and what the filter learned are untouched.",
+      "cleared_one": "One entry removed.",
+      "cleared_other": "{{count}} entries removed."
     },
     "bayes": {
       "title": "Learning filter",

@@ -44,7 +44,7 @@ use uwumail_store::Store;
 pub use client::{Connector, connect_directly};
 pub use config::{
     DeliveryConfig, ExternalTone, FeedsConfig, InternalTone, Language, RelayConfig, RelaySecurity, SmtpConfig,
-    SpamConfig, ToneConfig,
+    SpamConfig, SpamLogConfig, ToneConfig,
 };
 pub use dns::DnsCaches;
 pub use inbound::{ListenerKind, serve, serve_stream};
@@ -268,6 +268,11 @@ impl Smtp {
     /// Whether another mail server receives mail first and hands it to us.
     pub fn behind_upstream_server(&self) -> bool {
         !self.inner.live().trusted_relays.is_empty()
+    }
+
+    /// What the spam history is set to keep, for the job that clears it out and for the portal.
+    pub fn spam_log_settings(&self) -> config::SpamLogConfig {
+        self.inner.live().spam.log.clone()
     }
 }
 

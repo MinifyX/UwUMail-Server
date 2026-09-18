@@ -275,6 +275,7 @@ impl Web {
             .route("/api/admin/settings", get(routes::settings::show).patch(routes::settings::update))
             .route("/api/admin/spam", get(routes::spam::admin_overview))
             .route("/api/admin/spam/learn-folders", post(routes::spam::admin_learn))
+            .route("/api/admin/spam/log", get(routes::spam::admin_log).delete(routes::spam::admin_clear_log))
             .route(
                 "/api/admin/spam/senders",
                 get(routes::spam::admin_senders_view).post(routes::spam::admin_add_sender),

@@ -890,6 +890,13 @@
       "trustedRelays": "Vorgeschaltete Mailserver",
       "trustedRelaysHint": "IP-Adressen oder Netze, eine pro Zeile. Deren Absender-Prüfung übernimmt UwUMail."
     },
+    "spamLog": {
+      "enabled": "Verlauf mitschreiben",
+      "enabledHint": "Hält fest, was der Filter mit jeder eingehenden Mail gemacht hat. Ohne das siehst du nie, warum eine Mail abgewiesen wurde.",
+      "cleanSubjects": "Betreffs auch bei zugestellter Post",
+      "cleanSubjectsHint": "Standardmäßig aus. Bei zurückgehaltener Post wird der Betreff immer gespeichert – ohne ihn erklärt der Eintrag nichts. Bei normal zugestellter Post erklärt er nichts und ist nur Risiko.",
+      "retentionDays": "Tage aufbewahren"
+    },
     "spam": {
       "title": "Spamfilter",
       "intro": "Bewertet Mails von anderen Servern und legt Verdächtiges in den Spam-Ordner. Mails aus deinem eigenen Netz werden nicht bewertet.",
@@ -1659,7 +1666,68 @@
     "admin": {
       "title": "Spamfilter",
       "intro": "Wie der Server Mails von anderen Servern bewertet, welche Absender er immer durchlässt oder abweist und was der Spamfilter gelernt hat.",
-      "settingsTitle": "Einstellungen"
+      "settingsTitle": "Einstellungen",
+      "tab": "Ansicht",
+      "tabs": {
+        "filter": "Filter",
+        "history": "Verlauf"
+      }
+    },
+    "log": {
+      "title": "Verlauf",
+      "explain": "Was der Filter mit jeder eingehenden Mail gemacht hat. Gerade die abgewiesenen und die zurückgestellten stehen sonst nirgends – sie erreichen kein Postfach, und das laufende Log ist nach einem Neustart leer.",
+      "off": "Der Verlauf ist ausgeschaltet. Neue Entscheidungen werden nicht mehr festgehalten.",
+      "privacy": "Hier steht, wer wem schreibt. Einträge werden nach {{days}} Tagen gelöscht.",
+      "subjectsOn": "Betreffs werden auch bei normal zugestellter Post gespeichert.",
+      "subjectsOff": "Betreffs werden nur bei zurückgehaltener Post gespeichert.",
+      "settingsTitle": "Einstellungen zum Verlauf",
+      "settingsIntro": "Was festgehalten wird und wie lange.",
+      "filter": "Filter",
+      "filters": {
+        "all": "Alles",
+        "junk": "Spam-Ordner",
+        "reject": "Abgewiesen",
+        "greylist": "Zurückgestellt",
+        "dmarc": "DMARC",
+        "blocked": "Blockiert",
+        "delivered": "Zugestellt"
+      },
+      "actions": {
+        "delivered": "zugestellt",
+        "junk": "in den Spam",
+        "greylist": "zurückgestellt",
+        "reject": "abgewiesen",
+        "dmarc": "DMARC abgewiesen",
+        "blocked": "Absender blockiert"
+      },
+      "search": "Suchen",
+      "searchPlaceholder": "Absender oder IP-Adresse",
+      "oneMessage": "Eine Nachricht",
+      "when": "Wann",
+      "action": "Ergebnis",
+      "from": "Absender",
+      "envelope": "Umschlag-Absender",
+      "subject": "Betreff",
+      "server": "Sendender Server",
+      "recipients": "Empfänger",
+      "size": "Größe",
+      "smtpId": "Kennung",
+      "messageId": "Message-ID",
+      "scoreOf": "{{score}} Punkte aus {{count}} Regeln",
+      "noRules": "Keine Regel hat angeschlagen.",
+      "authResults": "Was SPF, DKIM und DMARC ergeben haben:",
+      "laterSpam": "– später als Spam markiert",
+      "laterNotSpam": "– später als kein Spam markiert",
+      "empty": {
+        "title": "Nichts dabei",
+        "body": "Zu diesem Filter gibt es keine Einträge."
+      },
+      "extent": "{{total}} Einträge, ältester vom {{since}}",
+      "clear": "Verlauf leeren",
+      "clearTitle": "Verlauf leeren?",
+      "clearBody": "Alle Einträge werden gelöscht. Die Mails selbst und was der Filter gelernt hat bleiben davon unberührt.",
+      "cleared_one": "Ein Eintrag gelöscht.",
+      "cleared_other": "{{count}} Einträge gelöscht."
     },
     "bayes": {
       "title": "Lernender Filter",

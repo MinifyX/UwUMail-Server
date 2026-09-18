@@ -75,6 +75,9 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("spam.feeds.freemail", SettingKind::Bool),
     spec("spam.feeds.redirectors", SettingKind::Bool),
     spec("spam.feeds.abuse_ch_key", SettingKind::Secret),
+    spec("spam.log.enabled", SettingKind::Bool),
+    spec("spam.log.clean_subjects", SettingKind::Bool),
+    spec("spam.log.retention_days", SettingKind::Integer { min: 1, max: 365 }),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
