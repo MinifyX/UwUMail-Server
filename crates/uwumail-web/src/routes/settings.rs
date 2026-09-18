@@ -27,18 +27,29 @@ pub async fn load_overlay(web: &Web) -> ApiResult<Value> {
         .unwrap_or_else(|| json!({})))
 }
 
-fn view_json(backend: &dyn SettingsBackend, overlay: &Value) -> ApiResult<Value> {
+/// Whether a gateway is paired. Outgoing mail leaves through it from that moment, whatever the
+/// sending route says, so the page has to be able to say so.
+fn through_gateway(web: &Web) -> bool {
+    web.gateway().is_some_and(|gateway| gateway.view().state != crate::gateway::GatewayState::None)
+}
+
+fn view_json(web: &Web, backend: &dyn SettingsBackend, overlay: &Value) -> ApiResult<Value> {
     let values = backend.view(overlay).map_err(|err| {
         tracing::error!(%err, "reading the effective settings failed");
         ApiError::Internal
     })?;
-    Ok(json!({ "settings": values, "specs": SETTINGS, "configFile": backend.config_file() }))
+    Ok(json!({
+        "settings": values,
+        "specs": SETTINGS,
+        "configFile": backend.config_file(),
+        "gateway": { "paired": through_gateway(web) },
+    }))
 }
 
 pub async fn show(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Value>> {
     let backend = backend(&web)?;
     let overlay = load_overlay(&web).await?;
-    Ok(Json(view_json(backend, &overlay)?))
+    Ok(Json(view_json(&web, backend, &overlay)?))
 }
 
 #[derive(Deserialize)]
@@ -80,5 +91,5 @@ pub async fn update(
     backend.apply(&overlay).map_err(|err| ApiError::Rule("settingsInvalid", err))?;
     web.store().set_setting(OVERLAY_KEY, &overlay.to_string()).await?;
     audit(&web, &session, "settings.update", "", Value::Object(details)).await;
-    Ok(Json(view_json(backend, &overlay)?))
+    Ok(Json(view_json(&web, backend, &overlay)?))
 }

@@ -298,7 +298,7 @@ export function SettingsPage() {
           "smtp.allow_external_forwarding",
         ]}
       >
-        {(form) => <DeliveryFields form={form} pro={pro} />}
+        {(form) => <DeliveryFields form={form} pro={pro} throughGateway={view.gateway.paired} />}
       </Section>
 
       <Section
@@ -510,7 +510,18 @@ export function SpamFields({ form, pro }: { form: Form; pro: boolean }) {
 }
 
 /** Sending settings; `relayOnly` shows just the relay fields, for the setup assistant. */
-export function DeliveryFields({ form, pro, relayOnly = false }: { form: Form; pro: boolean; relayOnly?: boolean }) {
+export function DeliveryFields({
+  form,
+  pro,
+  relayOnly = false,
+  throughGateway = false,
+}: {
+  form: Form;
+  pro: boolean;
+  relayOnly?: boolean;
+  /** Mail leaves through a paired UwUMail Gateway, whatever the route below says. */
+  throughGateway?: boolean;
+}) {
   const { t } = useT();
   const hostLocked = form.locked("delivery.relay.host");
   const [relayMode, setRelayMode] = useState(relayOnly || Boolean(form.setting("delivery.relay.host")?.value));
@@ -519,6 +530,17 @@ export function DeliveryFields({ form, pro, relayOnly = false }: { form: Form; p
 
   return (
     <>
+      {/* The gateway sits below the route: from the moment it is paired, everything leaves through
+          it, direct or by relay. Without this line the page reads "Direct" and invites a change
+          that would not do what it looks like. */}
+      {throughGateway && !relayOnly && (
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-control bg-pink-tint/50 px-3 py-2 text-[13px]">
+          {t("settings.delivery.gatewayNote")}
+          <Link to="/admin/setup" className="font-semibold text-pink-ink hover:underline">
+            {t("settings.delivery.gatewayLink")}
+          </Link>
+        </p>
+      )}
       {!relayOnly && (
         <>
           <Field label={t("settings.delivery.mode")} hint={hostLocked ? <LockedHint /> : undefined}>
@@ -542,7 +564,11 @@ export function DeliveryFields({ form, pro, relayOnly = false }: { form: Form; p
             }
           </Field>
           <p className="-mt-2 text-[13px] text-muted">
-            {relayMode || hostLocked ? t("settings.delivery.relayHint") : t("settings.delivery.directHint")}
+            {relayMode || hostLocked
+              ? t("settings.delivery.relayHint")
+              : throughGateway
+                ? t("settings.delivery.directViaGatewayHint")
+                : t("settings.delivery.directHint")}
           </p>
         </>
       )}

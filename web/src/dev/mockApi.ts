@@ -541,6 +541,8 @@ const settingsView = () => ({
     source: entry.source,
   })),
   configFile: "/etc/uwumail/uwumail.toml",
+  // The mock portal has a gateway, so the note on the sending page can be seen while working on it.
+  gateway: { paired: true },
 });
 
 const senderEntry = (

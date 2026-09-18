@@ -512,6 +512,8 @@ export interface LearnedFromFolders {
 export interface SettingsView {
   settings: SettingValue[];
   configFile: string | null;
+  /** Runtime, not a setting: with a gateway paired, mail leaves through it whatever the route says. */
+  gateway: { paired: boolean };
 }
 
 /** The first login step when the account has a second factor: no session yet. */
