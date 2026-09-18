@@ -340,6 +340,9 @@ Mailcow keeps port 25 and all other domains. Ready-made files:
    DMARC record (start with `p=none`). A subdomain needs its own DMARC record
    when the parent domain says `sp=reject`, or its mail is rejected.
 
+The [virus scanner](antivirus.md) is in these files too, behind the same
+profile as everywhere else: `docker compose --profile antivirus up -d`.
+
 Mail apps in your own network connect straight to the UwUMail machine on 993,
 465 or 587; a local DNS entry for the host name keeps certificates valid.
 

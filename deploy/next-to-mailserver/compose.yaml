@@ -50,5 +50,29 @@ services:
     cap_add:
       - NET_BIND_SERVICE
 
+  # The virus scanner, exactly as in the stock compose.yaml. It stays out of the way until you
+  # ask for it:
+  #
+  #   docker compose --profile antivirus up -d
+  #
+  # It wants about a gigabyte of memory (plan for two), and its first start takes a few minutes
+  # while it fetches its signatures. Afterwards switch it on in the portal under
+  # Spam filter → Viruses; the server reaches it as clamav:3310 and nothing outside this machine
+  # can. The whole story: docs/antivirus.md.
+  clamav:
+    image: clamav/clamav:1.5_base-debian13-slim
+    container_name: uwumail-clamav
+    profiles:
+      - antivirus
+    restart: unless-stopped
+    volumes:
+      - clamav:/var/lib/clamav
+    expose:
+      - "3310"
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+
 volumes:
   data:
+  clamav:
