@@ -228,7 +228,12 @@ where
                 .split(' ')
                 .nth(1)
                 .is_some_and(|word| word.eq_ignore_ascii_case("APPEND"));
-            let limit = if is_append { self.imap.max_append } else { MAX_COMMAND };
+            // The generous append limit is for people who are logged in. Before that, a stranger
+            // could announce a literal of the full message size and make the server set aside that
+            // much -- the bytes are never sent, the memory is held until the login times out, and
+            // one short line per connection is all it costs. Nothing before a login needs more than
+            // a command.
+            let limit = if is_append && self.account.is_some() { self.imap.max_append } else { MAX_COMMAND };
             if size > limit || command.len() + size > limit + MAX_COMMAND {
                 if non_synchronizing {
                     return Err(io::Error::new(io::ErrorKind::InvalidData, "Literal too big"));

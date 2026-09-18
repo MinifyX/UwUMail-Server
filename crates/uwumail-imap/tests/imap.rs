@@ -325,3 +325,26 @@ fn base64_plain(login: &str, password: &str) -> String {
     use base64::Engine as _;
     base64::engine::general_purpose::STANDARD.encode(format!("\0{login}\0{password}"))
 }
+
+/// Before a login, a literal may not be bigger than a command.
+///
+/// `APPEND` is allowed a whole message, and the reader sets that much aside the moment the size is
+/// announced — before the bytes arrive and before anyone has said who they are. A stranger could
+/// send one short line per connection and make the server hold a message's worth of memory for as
+/// long as the login takes to time out.
+#[tokio::test]
+async fn before_a_login_a_literal_may_not_be_bigger_than_a_command() {
+    let server = server().await;
+    let mut stranger = Client::connect(&server).await;
+    // Under this server's append limit (1 MiB), over what a command may be.
+    stranger.send(b"x1 APPEND INBOX {900000}\r\n").await;
+    let answer = stranger.line().await;
+    assert!(answer.starts_with("x1 NO") || answer.starts_with("x1 BAD"), "a stranger was allowed it: {answer}");
+    assert!(!answer.starts_with("+ "), "the server offered to take the data: {answer}");
+
+    // Logged in, the same size is welcome: this is a real APPEND of a real message.
+    let mut member = Client::login(&server).await;
+    member.send(b"x2 APPEND INBOX {900000}\r\n").await;
+    let ready = member.line().await;
+    assert!(ready.starts_with("+ "), "a member was refused their own message: {ready}");
+}
