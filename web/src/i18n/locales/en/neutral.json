@@ -1603,6 +1603,29 @@
           "refused": "It was refused."
         }
       }
+    },
+    "restore": {
+      "offer": "Is this server standing in for one that is gone?",
+      "offerLink": "Put a backup back",
+      "title": "Put a backup back",
+      "body": "Say where the backups are. This server fetches a snapshot from there and becomes the server it came from — with all its mail, accounts and settings.",
+      "look": "Look for backups",
+      "privateKey": "Private SSH key",
+      "privateKeyHint": "The key the old server reached the backup server with. This machine has none that is listed there yet — and the old one cannot list it any more.",
+      "recoveryKey": "Recovery key",
+      "recoveryHint": "Only needed when the backups are encrypted.",
+      "recoveryNeeded": "The backups there are encrypted. Without the recovery key this cannot go on.",
+      "hostKey": "The backup server's key: {{key}}",
+      "none": "There are no snapshots on this backup server.",
+      "line": "from {{hostname}} · {{mails}} mails",
+      "put": "Take this one",
+      "warning": "Everything on this server is replaced by it. On a freshly set up server that is nothing — which is exactly what this is for.",
+      "running": {
+        "title": "Fetching the backup",
+        "body": "Nyu is unpacking the snapshot. Depending on its size and the line this takes a few minutes.",
+        "wait": "The server fetches the backup and restarts afterwards. You can leave this page open.",
+        "then": "After that, log in with the account that is in the backup — not with a new one."
+      }
     }
   },
   "updates": {

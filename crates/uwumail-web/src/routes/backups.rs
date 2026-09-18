@@ -19,7 +19,7 @@ fn backups(web: &Web) -> ApiResult<&Backups> {
     web.backups().ok_or_else(|| ApiError::NotFound("backups on this server".into()))
 }
 
-fn api_error(err: uwumail_backup::Error) -> ApiError {
+pub(crate) fn api_error(err: uwumail_backup::Error) -> ApiError {
     use uwumail_backup::Error;
     match err {
         Error::WrongKey => ApiError::Rule("backupWrongKey", err.to_string()),

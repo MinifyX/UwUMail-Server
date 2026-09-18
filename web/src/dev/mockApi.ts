@@ -1495,6 +1495,38 @@ const routes: [string, RegExp, Handler][] = [
   ],
   [
     "POST",
+    /^\/api\/setup\/backup\/look$/,
+    (body) => {
+      const given = body as { host?: string; recoveryKey?: string };
+      if (!setupOpen) return problem(409, "setupDone");
+      if ((given.host ?? "").includes("wrong")) return problem(409, "backupLoginRefused");
+      // A repository that wants its recovery key first: the case worth seeing.
+      const snapshots = given.recoveryKey
+        ? [
+            {
+              name: "001789900000-9f8e7d",
+              createdAt: Math.floor(Date.now() / 1000) - 7200,
+              hostname: "mail.old.example",
+              version: "0.2.2",
+              mails: 18_422,
+              size: 2_310_000_000,
+            },
+            {
+              name: "001789800000-1a2b3c",
+              createdAt: Math.floor(Date.now() / 1000) - 93_600,
+              hostname: "mail.old.example",
+              version: "0.2.2",
+              mails: 18_100,
+              size: 2_290_000_000,
+            },
+          ]
+        : [];
+      return [200, { hostKey: "SHA256:uwuExampleHostKeyFingerprint0000000000000000", encrypted: true, snapshots }];
+    },
+  ],
+  ["POST", /^\/api\/setup\/backup\/restore$/, () => (setupOpen ? [200, { started: true }] : problem(409, "setupDone"))],
+  [
+    "POST",
     /^\/api\/setup\/code$/,
     (body) => {
       if (!setupOpen) return problem(409, "setupDone");

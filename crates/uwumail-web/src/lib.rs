@@ -199,6 +199,8 @@ impl Web {
             .route("/api/auth/second-factor", post(routes::auth::second_factor))
             .route("/api/setup", get(routes::setup::status).post(routes::setup::complete))
             .route("/api/setup/code", post(routes::setup::verify_code))
+            .route("/api/setup/backup/look", post(routes::setup::backup_look))
+            .route("/api/setup/backup/restore", post(routes::setup::backup_restore))
             .route("/api/admin/setup/check", get(routes::setup::last_check).post(routes::setup::run_check))
             .route("/api/admin/setup/reachability", post(routes::gateway::reachability))
             .route("/api/admin/host", get(routes::host::show))

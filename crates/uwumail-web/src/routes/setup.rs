@@ -110,6 +110,133 @@ pub async fn verify_code(
     Ok(Json(json!({ "ok": true })))
 }
 
+/// A backup server to look at, as the assistant asks for it.
+///
+/// A machine standing in for one that died has no key on that backup server, and no way to put one
+/// there — the machine that had it is gone. So a private key can be pasted here. It is used for
+/// this one look, and only kept if a restore actually follows.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupServer {
+    code: String,
+    host: String,
+    #[serde(default = "twenty_two")]
+    port: u16,
+    user: String,
+    path: String,
+    /// `password` or `key`.
+    method: String,
+    #[serde(default)]
+    password: Option<String>,
+    /// An OpenSSH private key in full, for a backup server that only takes keys.
+    #[serde(default)]
+    private_key: Option<String>,
+    /// Needed when the repository is encrypted; without it the look only says that it is.
+    #[serde(default)]
+    recovery_key: Option<String>,
+    /// Only for the restore: which snapshot, and `latest` for the newest.
+    #[serde(default)]
+    snapshot: String,
+}
+
+fn twenty_two() -> u16 {
+    22
+}
+
+impl BackupServer {
+    fn target(&self) -> ApiResult<uwumail_backup::Target> {
+        let login = match self.method.as_str() {
+            "key" => uwumail_backup::Login::Key {
+                private_key: self
+                    .private_key
+                    .clone()
+                    .filter(|key| key.contains("PRIVATE KEY"))
+                    .ok_or_else(|| ApiError::Invalid("paste the private key of the backup server".into()))?,
+            },
+            "password" => uwumail_backup::Login::Password {
+                password: self
+                    .password
+                    .clone()
+                    .filter(|password| !password.is_empty())
+                    .ok_or_else(|| ApiError::Invalid("the password is missing".into()))?,
+            },
+            other => return Err(ApiError::Invalid(format!("unknown login: {other}"))),
+        };
+        Ok(uwumail_backup::Target {
+            host: self.host.trim().to_owned(),
+            port: self.port,
+            user: self.user.trim().to_owned(),
+            path: self.path.trim().to_owned(),
+            login,
+            host_key: None,
+        })
+    }
+}
+
+/// What is on a backup server, before anything is decided. Nothing is saved by this.
+pub async fn backup_look(
+    State(web): State<Web>,
+    client: Option<Extension<ClientInfo>>,
+    Json(body): Json<BackupServer>,
+) -> ApiResult<Json<Value>> {
+    let client = client.map(|Extension(c)| c).unwrap_or_default();
+    require_code(&web, client, &body.code).await?;
+    let look = uwumail_backup::Backups::look_at(&body.target()?, body.recovery_key.as_deref())
+        .await
+        .map_err(super::backups::api_error)?;
+    Ok(Json(json!({
+        "hostKey": look.host_key,
+        "encrypted": look.encrypted,
+        "snapshots": look
+            .snapshots
+            .into_iter()
+            .map(|(name, manifest)| {
+                json!({
+                    "name": name,
+                    "createdAt": manifest.created_at,
+                    "hostname": manifest.hostname,
+                    "version": manifest.version,
+                    "mails": manifest.blobs.len(),
+                    "size": manifest.database_size + manifest.blobs_size,
+                })
+            })
+            .collect::<Vec<_>>(),
+    })))
+}
+
+/// Puts a backup back onto a server that has not been set up yet.
+///
+/// The backup server is saved first, because that is what the restore opens — and everything saved
+/// here is replaced by the snapshot's own settings a minute later anyway, which are then switched
+/// off. The assistant stays open until an admin exists, so a restore that fails leaves the machine
+/// exactly where it was.
+pub async fn backup_restore(
+    State(web): State<Web>,
+    client: Option<Extension<ClientInfo>>,
+    Json(body): Json<BackupServer>,
+) -> ApiResult<Json<Value>> {
+    let client = client.map(|Extension(c)| c).unwrap_or_default();
+    require_code(&web, client, &body.code).await?;
+    let backups = web.backups().ok_or_else(|| ApiError::NotFound("backups on this server".into()))?;
+    if !backups.can_restore() {
+        return Err(ApiError::Rule("backupFailed", "this server cannot restore into itself".into()));
+    }
+    let settings = uwumail_backup::BackupSettings {
+        enabled: false,
+        target: Some(body.target()?),
+        key: body.recovery_key.clone().filter(|key| !key.trim().is_empty()),
+        ..uwumail_backup::BackupSettings::default()
+    };
+    backups.save_settings(&settings).await.map_err(super::backups::api_error)?;
+    let snapshot = match body.snapshot.trim() {
+        "" => "latest",
+        name => name,
+    };
+    backups.start_restore(snapshot, false, "setup").await.map_err(super::backups::api_error)?;
+    tracing::warn!(%snapshot, "the setup assistant is putting a backup back");
+    Ok(Json(json!({ "started": true })))
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FirstAdmin {

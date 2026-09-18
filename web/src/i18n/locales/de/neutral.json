@@ -1603,6 +1603,29 @@
           "refused": "Wurde abgelehnt."
         }
       }
+    },
+    "restore": {
+      "offer": "Steht dieser Server für einen anderen ein, der nicht mehr da ist?",
+      "offerLink": "Aus einem Backup wiederherstellen",
+      "title": "Aus einem Backup wiederherstellen",
+      "body": "Sag, wo die Backups liegen. Dieser Server holt sich einen Stand von dort und wird zu dem Server, von dem er stammt — mit allen Mails, Konten und Einstellungen.",
+      "look": "Backups suchen",
+      "privateKey": "Privater SSH-Schlüssel",
+      "privateKeyHint": "Der Schlüssel, mit dem der alte Server auf den Backup-Server kam. Diese Maschine hat noch keinen, der dort eingetragen wäre — und der alte kann ihn nicht mehr eintragen.",
+      "recoveryKey": "Wiederherstellungsschlüssel",
+      "recoveryHint": "Nur nötig, wenn die Backups verschlüsselt sind.",
+      "recoveryNeeded": "Die Backups dort sind verschlüsselt. Ohne den Wiederherstellungsschlüssel geht es nicht weiter.",
+      "hostKey": "Schlüssel des Backup-Servers: {{key}}",
+      "none": "Auf diesem Backup-Server liegen keine Stände.",
+      "line": "von {{hostname}} · {{mails}} Mails",
+      "put": "Diesen Stand nehmen",
+      "warning": "Alles, was auf diesem Server ist, wird dabei ersetzt. Auf einem frisch aufgesetzten Server ist das nichts — genau dafür ist das hier.",
+      "running": {
+        "title": "Das Backup wird geholt",
+        "body": "Nyu packt den Stand aus. Das kann je nach Größe und Leitung ein paar Minuten dauern.",
+        "wait": "Der Server holt sich das Backup und startet danach neu. Diese Seite kannst du offen lassen.",
+        "then": "Danach meldest du dich mit dem Konto an, das im Backup steht — nicht mit einem neuen."
+      }
     }
   },
   "updates": {

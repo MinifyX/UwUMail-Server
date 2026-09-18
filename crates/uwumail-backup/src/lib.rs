@@ -20,7 +20,7 @@ use uwumail_store::{BlobHash, Store};
 
 pub use format::{Codec, Manifest, RepoConfig, RepoKey};
 pub use retention::Retention;
-pub use service::{BackupSettings, BackupStatus, Backups, Fetching, READY_FILE, STAGING_DIR, Staged};
+pub use service::{BackupSettings, BackupStatus, Backups, Fetching, Look, READY_FILE, STAGING_DIR, Staged};
 pub use sftp::{Login, Target};
 pub use storage::Storage;
 

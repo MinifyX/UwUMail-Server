@@ -93,6 +93,16 @@ impl Default for Staged {
     }
 }
 
+/// A look at a backup server, before anything is decided.
+#[derive(Debug, Clone)]
+pub struct Look {
+    /// The fingerprint of the backup server's host key, to check against what you expect.
+    pub host_key: String,
+    pub encrypted: bool,
+    /// Newest first. Empty for an encrypted repository nobody gave the key for.
+    pub snapshots: Vec<(String, Manifest)>,
+}
+
 /// Where a restore has got to, in this process. It lives in memory on purpose: the whole point of
 /// the exercise is that the process ends, and after that the file beside the data speaks for it.
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
@@ -141,6 +151,53 @@ impl Backups {
                 fetching: std::sync::Mutex::default(),
             }),
         }
+    }
+
+    /// What is on a backup server this one does not call its own — for the setup assistant, where
+    /// there is nothing saved yet and the whole point is to look before deciding.
+    ///
+    /// Saves nothing and changes nothing. Answers whether the repository is encrypted and, when it
+    /// could be opened, the snapshots on it, newest first. An encrypted repository without the
+    /// recovery key answers `(true, [])` rather than an error: "there is something here, and you
+    /// need the key" is a more useful thing to show than a failure.
+    pub async fn look_at(target: &Target, key: Option<&str>) -> Result<Look, Error> {
+        let sftp = Sftp::connect(target).await?;
+        let mut look = Look { host_key: sftp.host_key.clone(), encrypted: false, snapshots: Vec::new() };
+        let storage = Storage::Sftp(sftp);
+        let encrypted = match Repository::is_encrypted(&storage).await {
+            Ok(encrypted) => encrypted,
+            Err(err) => {
+                storage.close().await;
+                return Err(err);
+            }
+        };
+        look.encrypted = encrypted;
+        let key = match (encrypted, key) {
+            (true, None) => {
+                storage.close().await;
+                return Ok(look);
+            }
+            (true, Some(text)) => match RepoKey::from_recovery_text(text) {
+                Ok(key) => Some(key),
+                Err(err) => {
+                    storage.close().await;
+                    return Err(err);
+                }
+            },
+            (false, _) => None,
+        };
+        let repo = Repository::open_existing(storage, key).await?;
+        let found = async {
+            let mut found = Vec::new();
+            for name in repo.snapshots().await?.into_iter().rev() {
+                found.push((name.clone(), repo.manifest(&name).await?));
+            }
+            Ok::<_, Error>(found)
+        }
+        .await;
+        repo.storage.close().await;
+        look.snapshots = found?;
+        Ok(look)
     }
 
     /// Lets this server be restored into. Without it the portal can still show snapshots, but the

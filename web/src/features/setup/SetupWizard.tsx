@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import { ArrowLeft, ArrowRight, Eye, EyeOff, RefreshCw, Route } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
@@ -12,6 +12,7 @@ import { Wordmark } from "@/components/ui/Logo";
 import { useT } from "@/i18n";
 import { api, ApiError, type DomainSummary, type Session } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
+import { formatDateTime } from "@/lib/format";
 import { navigate } from "@/lib/router";
 import { usePrefs, type Mode } from "@/state/prefs";
 import { RecordList } from "@/features/domains/DnsBits";
@@ -266,18 +267,222 @@ function WelcomeStep({ hostname, onCode }: { hostname: string; onCode: (code: st
   );
 }
 
+interface FoundSnapshot {
+  name: string;
+  createdAt: number;
+  hostname: string;
+  version: string;
+  mails: number;
+  size: number;
+}
+
+interface Look {
+  hostKey: string;
+  encrypted: boolean;
+  snapshots: FoundSnapshot[];
+}
+
+/**
+ * Putting a backup back instead of setting a new server up — the reason this is offered here at all.
+ *
+ * A machine standing in for one that died has no key on the backup server and no way to put one
+ * there, so the private key can be pasted. It is used for the look and only kept once a restore
+ * actually follows; the snapshot brings its own settings a minute later anyway.
+ */
+function RestoreStep({ code, onBack }: { code: string; onBack: () => void }) {
+  const { t, i18n } = useT();
+  const errorText = useErrorText();
+  const [host, setHost] = useState("");
+  const [port, setPort] = useState("22");
+  const [user, setUser] = useState("");
+  const [path, setPath] = useState("uwumail-backup");
+  const [method, setMethod] = useState<"key" | "password">("password");
+  const [password, setPassword] = useState("");
+  const [privateKey, setPrivateKey] = useState("");
+  const [recoveryKey, setRecoveryKey] = useState("");
+  const [started, setStarted] = useState(false);
+
+  const body = () => ({
+    code,
+    host: host.trim(),
+    port: Number(port) || 22,
+    user: user.trim(),
+    path: path.trim(),
+    method,
+    password: method === "password" ? password : undefined,
+    privateKey: method === "key" ? privateKey : undefined,
+    recoveryKey: recoveryKey.trim() || undefined,
+  });
+
+  const look = useMutation({
+    mutationFn: () => api<Look>("/api/setup/backup/look", { method: "POST", body: body() }),
+  });
+  const restore = useMutation({
+    mutationFn: (snapshot: string) =>
+      api<{ started: boolean }>("/api/setup/backup/restore", { method: "POST", body: { ...body(), snapshot } }),
+    onSuccess: () => setStarted(true),
+  });
+
+  const found = look.data;
+  const needsKey = found?.encrypted && found.snapshots.length === 0;
+
+  if (started) {
+    return (
+      <Frame
+        step="admin"
+        loggedIn={false}
+        title={t("setup.restore.running.title")}
+        body={t("setup.restore.running.body")}
+      >
+        <div className="flex flex-col gap-3">
+          <p className="rounded-control bg-pink-tint px-3 py-2 text-[13px] text-pink-ink">
+            {t("setup.restore.running.wait")}
+          </p>
+          <p className="text-[13px] text-muted">{t("setup.restore.running.then")}</p>
+        </div>
+      </Frame>
+    );
+  }
+
+  return (
+    <Frame
+      step="admin"
+      loggedIn={false}
+      title={t("setup.restore.title")}
+      body={t("setup.restore.body")}
+      footer={<Nav onBack={onBack} onNext={() => look.mutate()} nextLabel={t("setup.restore.look")} />}
+    >
+      <div className="flex flex-col gap-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label={t("backups.target.host")}>
+            {(id) => <TextInput id={id} autoFocus value={host} onChange={(event) => setHost(event.target.value)} />}
+          </Field>
+          <Field label={t("backups.target.port")}>
+            {(id) => (
+              <TextInput id={id} inputMode="numeric" value={port} onChange={(event) => setPort(event.target.value)} />
+            )}
+          </Field>
+          <Field label={t("backups.target.user")}>
+            {(id) => <TextInput id={id} value={user} onChange={(event) => setUser(event.target.value)} />}
+          </Field>
+          <Field label={t("backups.target.path")}>
+            {(id) => <TextInput id={id} value={path} onChange={(event) => setPath(event.target.value)} />}
+          </Field>
+        </div>
+        <Segmented<"key" | "password">
+          label={t("backups.target.method")}
+          value={method}
+          onChange={setMethod}
+          options={[
+            { value: "password", label: t("backups.target.methodPassword") },
+            { value: "key", label: t("backups.target.methodKey") },
+          ]}
+        />
+        {method === "password" ? (
+          <Field label={t("backups.target.password")}>
+            {(id) => (
+              <TextInput
+                id={id}
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            )}
+          </Field>
+        ) : (
+          <Field label={t("setup.restore.privateKey")} hint={t("setup.restore.privateKeyHint")}>
+            {(id) => (
+              <textarea
+                id={id}
+                rows={4}
+                spellCheck={false}
+                autoComplete="off"
+                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                className="w-full rounded-control border border-line bg-surface px-3.5 py-2.5 font-mono text-[12px] break-all focus:border-pink focus:shadow-focus focus:outline-none"
+                value={privateKey}
+                onChange={(event) => setPrivateKey(event.target.value)}
+              />
+            )}
+          </Field>
+        )}
+        {(found?.encrypted || recoveryKey) && (
+          <Field
+            label={t("setup.restore.recoveryKey")}
+            hint={needsKey ? t("setup.restore.recoveryNeeded") : t("setup.restore.recoveryHint")}
+          >
+            {(id) => (
+              <TextInput
+                id={id}
+                spellCheck={false}
+                autoComplete="off"
+                className="font-mono text-[13px]"
+                value={recoveryKey}
+                onChange={(event) => setRecoveryKey(event.target.value)}
+              />
+            )}
+          </Field>
+        )}
+
+        {look.isError && (
+          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">{errorText(look.error)}</p>
+        )}
+        {restore.isError && (
+          <p className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+            {errorText(restore.error)}
+          </p>
+        )}
+
+        {found && (
+          <div className="flex flex-col gap-2 border-t border-hairline pt-4">
+            <p className="text-[12px] text-muted">{t("setup.restore.hostKey", { key: found.hostKey })}</p>
+            {found.snapshots.length === 0 ? (
+              // With no key the hint on the field above already says it; saying it twice is noise.
+              needsKey ? null : (
+                <p className="text-sm text-muted">{t("setup.restore.none")}</p>
+              )
+            ) : (
+              <ul className="flex flex-col divide-y divide-hairline">
+                {found.snapshots.map((snapshot) => (
+                  <li key={snapshot.name} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                    <span className="font-semibold">{formatDateTime(snapshot.createdAt, i18n.language)}</span>
+                    <span className="min-w-0 text-[13px] text-muted">
+                      {t("setup.restore.line", { hostname: snapshot.hostname, mails: snapshot.mails })}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      busy={restore.isPending}
+                      onClick={() => restore.mutate(snapshot.name)}
+                    >
+                      {t("setup.restore.put")}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="text-[13px] text-muted">{t("setup.restore.warning")}</p>
+          </div>
+        )}
+      </div>
+    </Frame>
+  );
+}
+
 function AdminStep({
   code,
   hostname,
   domains,
   onBack,
   onDone,
+  onRestore,
 }: {
   code: string;
   hostname: string;
   domains: string[];
   onBack: () => void;
   onDone: (session: Session, domain: string) => void;
+  onRestore: () => void;
 }) {
   const { t } = useT();
   const errorText = useErrorText();
@@ -401,6 +606,13 @@ function AdminStep({
             <ArrowRight className="size-4" aria-hidden />
           </Button>
         </div>
+        {/* The other thing you can do here: this machine may be standing in for one that died. */}
+        <p className="border-t border-hairline pt-4 text-[13px] text-muted">
+          {t("setup.restore.offer")}{" "}
+          <button type="button" className="font-semibold text-pink-ink hover:underline" onClick={onRestore}>
+            {t("setup.restore.offerLink")}
+          </button>
+        </p>
       </form>
     </Frame>
   );
@@ -690,6 +902,7 @@ function Closed() {
 export function SetupWizard({ session }: { session: Session | null }) {
   const [progress, setProgress] = useState(loadProgress);
   const [code, setCode] = useState("");
+  const [restoring, setRestoring] = useState(false);
   const status = useSetupStatus();
   const start = useStartSession();
   const isAdmin = session?.account.role === "admin";
@@ -722,6 +935,9 @@ export function SetupWizard({ session }: { session: Session | null }) {
     }
     if (!status.data.open) return <Closed />;
     const hostname = status.data.hostname;
+    if (restoring && code) {
+      return <RestoreStep code={code} onBack={() => setRestoring(false)} />;
+    }
     if (progress.step === "admin" && code) {
       return (
         <AdminStep
@@ -729,6 +945,7 @@ export function SetupWizard({ session }: { session: Session | null }) {
           hostname={hostname}
           domains={status.data.domains}
           onBack={() => go("welcome")}
+          onRestore={() => setRestoring(true)}
           onDone={(created, domain) => {
             go("reach", domain);
             start(created, "/setup");
