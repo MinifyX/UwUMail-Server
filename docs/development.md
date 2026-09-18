@@ -17,6 +17,10 @@ time; one at a time they all pass. Linux, and with it CI, is not affected.
 and checks submission, DKIM verification across servers, bounces, relay
 protection and forged Authentication-Results.
 
+The virus scanner is tested against a stand-in clamd that speaks INSTREAM and
+answers whatever the test wants, in `clamav.rs` and in `flow.rs`; no ClamAV has
+to be installed to run the tests.
+
 ## Web portal
 
 The React app lives in `web/` (pnpm, Node 24):
