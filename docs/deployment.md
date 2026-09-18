@@ -9,7 +9,7 @@
 ## What you need
 
 - A machine with a public IPv4 (and ideally IPv6) address, 1 GB RAM or more
-  (4 GB with the optional [virus scanner](antivirus.md)), amd64 or arm64.
+  (3 GB or more with the optional [virus scanner](antivirus.md)), amd64 or arm64.
 - **Port 25 open in both directions.** Some providers block it until you ask.
 - **Reverse DNS** (PTR) of the IP pointing to your server's host name.
 - A domain where you can edit DNS records.

@@ -47,7 +47,7 @@ services:
   #
   #   docker compose --profile antivirus up -d
   #
-  # It wants about two gigabytes of memory, and its first start takes a few minutes while it
+  # It wants about a gigabyte of memory (plan for two), and its first start takes a few minutes while it
   # fetches its signatures. Afterwards switch it on in the portal under Spam filter → Viruses;
   # the server reaches it as clamav:3310 and nothing outside this machine can.
   # The whole story: docs/antivirus.md.

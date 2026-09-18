@@ -92,7 +92,7 @@ impl Default for SpamConfig {
 }
 
 /// The virus scanner. It runs in its own container beside the server, because it needs a
-/// writable place for its signatures and about two gigabytes of memory; see docs/antivirus.md.
+/// writable place for its signatures and about a gigabyte of memory; see docs/antivirus.md.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct AntivirusConfig {

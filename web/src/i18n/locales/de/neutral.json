@@ -954,7 +954,7 @@
     },
     "antivirus": {
       "enabled": "Mails auf Viren prüfen",
-      "enabledHint": "Braucht ein laufendes ClamAV daneben. Vorher starten: docker compose --profile antivirus up -d. Der erste Start dauert ein paar Minuten, bis die Signaturen da sind.",
+      "enabledHint": "Braucht ein laufendes ClamAV daneben. Vorher starten: docker compose --profile antivirus up -d. Der erste Start dauert ein paar Minuten, bis die Signaturen da sind; danach braucht der Scanner rund 1 GB Arbeitsspeicher.",
       "address": "Adresse des Scanners",
       "addressHint": "Host und Port von clamd, im mitgelieferten Aufbau clamav:3310.",
       "timeout": "Geduld in Sekunden",

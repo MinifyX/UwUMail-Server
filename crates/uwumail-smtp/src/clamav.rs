@@ -1,8 +1,8 @@
 //! Handing a message to a ClamAV daemon (clamd) before it is taken.
 //!
 //! clamd runs beside the server in its own container: it wants a writable place for its
-//! signatures and about two gigabytes of memory, neither of which the read-only UwUMail image
-//! has. Only its address is configured here, the message travels over the `INSTREAM` command,
+//! signatures and about a gigabyte of memory for them, neither of which the read-only UwUMail
+//! image has. Only its address is configured here, the message travels over the `INSTREAM` command,
 //! and nothing of it is kept on either side.
 
 use std::time::Duration;
@@ -284,6 +284,8 @@ mod tests {
 
     #[test]
     fn the_signature_date_is_read() {
+        // What a real clamd 1.5.4 answered on the test instance, 18 September 2026.
+        assert_eq!(built_at("Fri Sep 18 06:25:28 2026"), Some(1_789_712_728));
         assert_eq!(built_at("Thu Jan 1 00:00:00 1970"), Some(0));
         assert_eq!(built_at("Wed Sep 17 08:32:11 2026"), Some(1_789_633_931));
         assert_eq!(built_at("Wed Sep 17 2026"), None);

@@ -954,7 +954,7 @@
     },
     "antivirus": {
       "enabled": "Check messages for viruses",
-      "enabledHint": "Needs a ClamAV running beside the server. Start it first: docker compose --profile antivirus up -d. Its first start takes a few minutes, until the signatures are there.",
+      "enabledHint": "Needs a ClamAV running beside the server. Start it first: docker compose --profile antivirus up -d. Its first start takes a few minutes, until the signatures are there; afterwards the scanner needs about 1 GB of memory.",
       "address": "Address of the scanner",
       "addressHint": "Host and port of clamd; clamav:3310 in the setup that ships with UwUMail.",
       "timeout": "Patience in seconds",

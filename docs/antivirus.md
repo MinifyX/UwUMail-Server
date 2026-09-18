@@ -7,9 +7,10 @@ mailbox. Mail that our own people send is checked the same way, so an infected
 attachment does not leave the house either.
 
 The scanner is off until you switch it on, and it is not part of the UwUMail
-image: it runs in its own container beside the server. clamd wants about two
-gigabytes of memory for its signatures and a writable place to keep them,
-neither of which fits a read-only image that is meant to run on a Raspberry Pi.
+image: it runs in its own container beside the server. clamd keeps its
+signatures in memory — a good gigabyte of it — and needs a writable place for
+them, neither of which fits a read-only image that is meant to run on a
+Raspberry Pi.
 
 ## Starting it
 
@@ -78,12 +79,20 @@ database. ClamAV publishes several times a day; a database older than three
 days means its updater (`freshclam`, which runs inside the same container) is
 not getting through, and the health overview says so.
 
+Tried end to end on the test instance on 18 September 2026 with ClamAV 1.5.4: a
+message with the EICAR file as an attachment came back as `554 5.7.0 This
+message contains Eicar-Test-Signature` and reached no mailbox, a clean one
+arrived carrying `X-Virus-Scanned: yes (ClamAV)`, a scan verdict the sender
+had written itself was dropped, and with the scanner stopped both messages went
+through with `X-Virus-Scanned: no (the virus scanner did not answer)`.
+
 ## Memory
 
-clamd keeps the whole signature database in memory: expect around 1.5 to 2 GB
-for the container, plus what UwUMail itself uses. On a machine with 2 GB the
-two together will not fit, and the kernel will kill one of them — leave the
-scanner off there, or give the machine more memory.
+clamd keeps the whole signature database in memory. On the test instance
+(ClamAV 1.5.4, 3.6 million signatures) the container settles at about 970 MB
+while UwUMail itself uses under 10 MB; plan for 2 GB so an update of the
+signatures has room. On a machine with 2 GB in total the two will not fit
+comfortably — leave the scanner off there, or give the machine more memory.
 
 The built-in lists from abuse.ch already catch known malware links and file
 hashes without a scanner ([spam filter](spam-filter.md)); they are not a
