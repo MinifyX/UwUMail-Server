@@ -4,7 +4,7 @@
 
 pub mod command;
 mod mailboxes;
-mod mime;
+pub mod mime;
 pub mod mutf7;
 pub mod parser;
 mod response;
