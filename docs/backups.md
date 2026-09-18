@@ -55,6 +55,41 @@ docker compose exec uwumail uwumail-server backup check   # is the newest one co
 
 ## Restoring the whole server
 
+There are three ways in, and they differ only in where you are standing.
+
+### From the portal, on a server that is running
+
+*Server → Backups → Snapshots*, then *Put back* beside the snapshot. The server
+fetches it, stops itself, and the start after that puts the files in place —
+while it runs, the database it would replace is the one it is running on. Docker
+brings the container back by itself; it takes a few minutes.
+
+Three things belong to this machine and not to the one the snapshot came from,
+and are put right afterwards:
+
+- **Backups are switched off.** The snapshot carries the old server's backup
+  target and recovery key, and the first thing this machine would otherwise do
+  is write its own history over that server's. Turn them on again once the
+  target is the right one.
+- **The gateway pairing of this machine is kept**, unless you say otherwise. The
+  pairing in the snapshot belongs to the machine that made it.
+- The database from before is kept as `uwumail.db.replaced.<time>` in the data
+  directory. Delete it once you are sure.
+
+### From the setup assistant, on a fresh machine
+
+A machine that is standing in for one that died has no admin yet, so open
+`/setup`, enter the one-time code, and choose *Put a backup back* instead of
+creating the first admin. It asks for the backup server, lists what is there and
+puts a snapshot back.
+
+That machine has no SSH key the backup server knows, and no way to add one — the
+machine that had it is gone. So the assistant takes the old private key pasted
+in, or a password. Afterwards you log in with an account from the backup, not a
+new one.
+
+### From the command line
+
 Restoring needs nothing from the old server: on a new machine, restore into an
 empty data directory before starting UwUMail there.
 

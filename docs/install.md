@@ -210,6 +210,10 @@ Set them up before you rely on the server: *Server → Backups* backs up every
 night to an SFTP server such as a NAS, deduplicated and encrypted. Keep the
 recovery key somewhere else than the server. See [backups.md](backups.md).
 
+Putting one back is on the same page, beside the snapshot. On a machine that has
+no server yet, the setup assistant offers it instead of creating the first
+admin — which is what you want when this machine stands in for one that died.
+
 ## Updates
 
 *Server → Updates* in the portal shows when a new version is out, with what
