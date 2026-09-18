@@ -215,6 +215,70 @@ pub struct ReportQuery {
     days: Option<i64>,
 }
 
+fn kind_of(kind: &str) -> ApiResult<uwumail_store::ReportKind> {
+    match kind {
+        "dmarc" => Ok(uwumail_store::ReportKind::Dmarc),
+        "tls" => Ok(uwumail_store::ReportKind::Tls),
+        other => Err(ApiError::Invalid(format!("unknown kind of report: {other}"))),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListQuery {
+    limit: Option<usize>,
+    /// Continues after the smallest id of the page before, newest first.
+    before: Option<i64>,
+}
+
+/// The reports of one kind for a domain, newest first, so one of them can be read on its own.
+pub async fn list(
+    State(web): State<Web>,
+    _admin: Admin,
+    Path((name, kind)): Path<(String, String)>,
+    Query(query): Query<ListQuery>,
+) -> ApiResult<Json<Value>> {
+    let domain = load(&web, &name).await?;
+    let kind = kind_of(&kind)?;
+    let limit = query.limit.unwrap_or(25).clamp(1, 200);
+    let entries = web.store().reports(&domain.name, kind, limit, query.before).await?;
+    Ok(Json(json!({ "reports": entries })))
+}
+
+/// Everything one report says.
+pub async fn detail(
+    State(web): State<Web>,
+    _admin: Admin,
+    Path((name, kind, id)): Path<(String, String, i64)>,
+) -> ApiResult<Json<Value>> {
+    let domain = load(&web, &name).await?;
+    let store = web.store();
+    let value = match kind_of(&kind)? {
+        uwumail_store::ReportKind::Dmarc => {
+            let (report, rows) = store
+                .dmarc_report(&domain.name, id)
+                .await?
+                .ok_or_else(|| ApiError::NotFound(format!("report {id}")))?;
+            let own = own_addresses(&web).await;
+            let rows: Vec<Value> = rows
+                .iter()
+                .map(|row| {
+                    let mut value = json!(row);
+                    value["ours"] = json!(own.contains(&row.source_ip));
+                    value
+                })
+                .collect();
+            json!({ "kind": "dmarc", "report": report, "rows": rows })
+        }
+        uwumail_store::ReportKind::Tls => {
+            let (report, policy, failures) =
+                store.tls_report(&domain.name, id).await?.ok_or_else(|| ApiError::NotFound(format!("report {id}")))?;
+            json!({ "kind": "tls", "report": report, "policy": policy, "failures": failures })
+        }
+    };
+    Ok(Json(value))
+}
+
 /// Every domain's reports side by side, for the Reports section. The single domain's page keeps the
 /// detail and the suggestions; this is the place that says where to look first.
 pub async fn overview(

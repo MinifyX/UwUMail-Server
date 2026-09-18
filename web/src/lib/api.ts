@@ -288,6 +288,59 @@ export interface ReportsOverview {
   domains: DomainReports[];
 }
 
+export type ReportKind = "dmarc" | "tls";
+
+/** One report in a list. `good` and `bad` are messages for DMARC and sessions for TLS. */
+export interface ReportEntry {
+  id: number;
+  organization: string;
+  reportId: string;
+  beginAt: number;
+  endAt: number;
+  receivedAt: number;
+  /** The report mail itself passed DMARC, so the sender is who they say. */
+  authenticated: boolean;
+  good: number;
+  bad: number;
+  about: string | null;
+  policy: string | null;
+}
+
+/** One line of a DMARC report: what one sending address did, and what was checked. */
+export interface DmarcReportRow {
+  sourceIp: string;
+  messages: number;
+  dkimAligned: boolean;
+  spfAligned: boolean;
+  disposition: string;
+  headerFrom: string;
+  dkimDomain: string | null;
+  dkimSelector: string | null;
+  dkimResult: string | null;
+  spfDomain: string | null;
+  spfResult: string | null;
+  overrideReason: string | null;
+  envelopeFrom: string | null;
+  envelopeTo: string | null;
+  ours: boolean;
+}
+
+export interface TlsReportFailure {
+  policyType: string;
+  resultType: string;
+  mxHost: string;
+  sendingIp: string;
+  sessions: number;
+  failureCode: string | null;
+  receivingIp: string | null;
+  helo: string | null;
+  detail: string | null;
+}
+
+export type ReportDetail =
+  | { kind: "dmarc"; report: ReportEntry; rows: DmarcReportRow[] }
+  | { kind: "tls"; report: ReportEntry; policy: string | null; failures: TlsReportFailure[] };
+
 export interface AuditRecord {
   id: number;
   at: number;

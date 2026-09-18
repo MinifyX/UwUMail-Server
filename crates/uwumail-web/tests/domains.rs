@@ -252,6 +252,7 @@ async fn mta_sts_policy_and_reports() {
             successful: 5,
             failed: 1,
             failures: vec![],
+            ..Default::default()
         })
         .await
         .unwrap();
@@ -259,6 +260,34 @@ async fn mta_sts_policy_and_reports() {
     assert_eq!(status, StatusCode::OK, "{reports}");
     assert_eq!((reports["tls"]["successful"].clone(), reports["tls"]["failed"].clone()), (json!(5), json!(1)));
     assert_eq!((reports["days"].clone(), reports["suggestions"].clone()), (json!(7), json!([])));
+
+    // The section that shows every domain at once.
+    let (status, overview) = call(&app, "GET", "/api/admin/reports?days=7", None, Some(&auth)).await;
+    assert_eq!(status, StatusCode::OK, "{overview}");
+    let first = &overview["domains"][0];
+    assert_eq!(first["name"], json!("example.de"));
+    assert_eq!(first["tls"]["successful"], json!(5));
+    assert_eq!(first["reading"], json!({ "dmarc": true, "tls": true }));
+
+    // And one report on its own, listed and then read.
+    let (status, listed) = call(&app, "GET", "/api/admin/domains/example.de/reports/tls", None, Some(&auth)).await;
+    assert_eq!(status, StatusCode::OK, "{listed}");
+    let entry = &listed["reports"][0];
+    assert_eq!(
+        (entry["organization"].clone(), entry["good"].clone(), entry["bad"].clone()),
+        (json!("reporter.example"), json!(5), json!(1))
+    );
+    let id = entry["id"].as_i64().unwrap();
+    let (status, detail) =
+        call(&app, "GET", &format!("/api/admin/domains/example.de/reports/tls/{id}"), None, Some(&auth)).await;
+    assert_eq!(status, StatusCode::OK, "{detail}");
+    assert_eq!((detail["kind"].clone(), detail["report"]["reportId"].clone()), (json!("tls"), json!("t1")));
+
+    let (status, gone) = call(&app, "GET", "/api/admin/domains/example.de/reports/tls/999999", None, Some(&auth)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{gone}");
+    let (status, nonsense) =
+        call(&app, "GET", "/api/admin/domains/example.de/reports/nonsense", None, Some(&auth)).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{nonsense}");
 
     let (_, health) = call(&app, "GET", "/api/admin/health", None, Some(&auth)).await;
     let dns = health["areas"].as_array().unwrap().iter().find(|area| area["area"] == "dns").unwrap();

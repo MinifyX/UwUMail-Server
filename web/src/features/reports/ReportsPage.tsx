@@ -10,6 +10,7 @@ import { formatNumber } from "@/lib/format";
 import { Link } from "@/lib/router";
 import { usePrefs } from "@/state/prefs";
 import { useReports } from "./queries";
+import { ReportList } from "./ReportList";
 
 const PERIODS = [7, 30, 90, 180];
 
@@ -38,6 +39,7 @@ function Number_({ label, value, tone }: { label: string; value: string; tone?: 
 function DomainCard({ domain, days }: { domain: DomainReports; days: number }) {
   const { t, i18n } = useT();
   const language = i18n.language;
+  const [showing, setShowing] = useState(false);
   const { dmarc, tls } = domain;
   const nothing = dmarc.reports === 0 && tls.reports === 0;
   const dmarcFailed = dmarc.messages - dmarc.passed;
@@ -97,6 +99,18 @@ function DomainCard({ domain, days }: { domain: DomainReports; days: number }) {
             </p>
           </>
         )}
+        {!nothing &&
+          (showing ? (
+            <ReportList domain={domain.name} />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowing(true)}
+              className="self-start text-[13px] font-semibold text-pink-ink hover:underline"
+            >
+              {t("reports.showSingle")}
+            </button>
+          ))}
         <Link
           to={`/admin/domains/${encodeURIComponent(domain.name)}`}
           className="text-[13px] font-semibold text-pink-ink hover:underline"

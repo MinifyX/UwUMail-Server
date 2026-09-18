@@ -82,16 +82,22 @@ impl CachedStsPolicy {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TlsFailure {
     pub policy_type: String,
     pub result_type: String,
     pub mx_host: String,
     pub sending_ip: String,
     pub sessions: i64,
+    /// Why the session failed, in the sender's own words, and where it went.
+    pub failure_code: Option<String>,
+    pub receiving_ip: Option<String>,
+    pub helo: Option<String>,
+    pub detail: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NewTlsReport {
     pub domain: String,
     pub organization: String,
@@ -101,10 +107,15 @@ pub struct NewTlsReport {
     pub authenticated: bool,
     pub successful: i64,
     pub failed: i64,
+    /// The policy the sender applied, so a mismatch with ours can be seen.
+    pub policy_domain: Option<String>,
+    pub policy_string: Option<String>,
+    pub contact: Option<String>,
     pub failures: Vec<TlsFailure>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DmarcRow {
     pub source_ip: String,
     pub messages: i64,
@@ -112,9 +123,19 @@ pub struct DmarcRow {
     pub spf_aligned: bool,
     pub disposition: String,
     pub header_from: String,
+    /// What the reporter checked and found. `None` for rows stored before this was kept.
+    pub dkim_domain: Option<String>,
+    pub dkim_selector: Option<String>,
+    pub dkim_result: Option<String>,
+    pub spf_domain: Option<String>,
+    pub spf_result: Option<String>,
+    /// Why the reporter did not apply the policy it found, e.g. a forwarder it knows.
+    pub override_reason: Option<String>,
+    pub envelope_from: Option<String>,
+    pub envelope_to: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NewDmarcReport {
     pub domain: String,
     pub organization: String,
@@ -124,6 +145,12 @@ pub struct NewDmarcReport {
     pub authenticated: bool,
     /// The published policy (`none`, `quarantine`, `reject`) as the reporter saw it.
     pub policy: String,
+    /// The domain the report is about, which for a subdomain is not the one we file it under.
+    pub reported_domain: Option<String>,
+    pub subdomain_policy: Option<String>,
+    /// How strictly the reporter was told to align, e.g. `adkim=s aspf=r`.
+    pub alignment: Option<String>,
+    pub contact: Option<String>,
     pub rows: Vec<DmarcRow>,
 }
 
@@ -187,6 +214,26 @@ pub struct TlsSummary {
     pub last_end: Option<i64>,
     pub reporters: Vec<Reporter>,
     pub failures: Vec<TlsFailureSummary>,
+}
+
+/// One report in a list, whichever kind it is. `good` and `bad` are messages that passed and failed
+/// for DMARC, and sessions that worked and failed for TLS.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportEntry {
+    pub id: i64,
+    pub organization: String,
+    pub report_id: String,
+    pub begin_at: i64,
+    pub end_at: i64,
+    pub received_at: i64,
+    pub authenticated: bool,
+    pub good: i64,
+    pub bad: i64,
+    /// The domain the report names, when it named one; a subdomain shows up here.
+    pub about: Option<String>,
+    /// DMARC only: the policy the reporter saw.
+    pub policy: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -353,8 +400,8 @@ impl Store {
             }
             tx.execute(
                 "INSERT INTO tls_reports (domain_id, organization, report_id, begin_at, end_at, received_at,
-                                          authenticated, successful, failed)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                                          authenticated, successful, failed, policy_domain, policy_string, contact)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     domain_id,
                     report.organization,
@@ -364,13 +411,17 @@ impl Store {
                     now(),
                     report.authenticated,
                     report.successful.max(0),
-                    report.failed.max(0)
+                    report.failed.max(0),
+                    report.policy_domain,
+                    report.policy_string,
+                    report.contact
                 ],
             )?;
             let id = tx.last_insert_rowid();
             let mut insert = tx.prepare(
-                "INSERT INTO tls_report_failures (report_id, policy_type, result_type, mx_host, sending_ip, sessions)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO tls_report_failures (report_id, policy_type, result_type, mx_host, sending_ip, sessions,
+                                                 failure_code, receiving_ip, helo, detail)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             )?;
             for failure in report.failures.iter().take(MAX_ROWS_PER_REPORT) {
                 insert.execute(params![
@@ -379,7 +430,11 @@ impl Store {
                     failure.result_type,
                     failure.mx_host,
                     failure.sending_ip,
-                    failure.sessions.max(0)
+                    failure.sessions.max(0),
+                    failure.failure_code,
+                    failure.receiving_ip,
+                    failure.helo,
+                    failure.detail
                 ])?;
             }
             Ok(ReportStored::Added)
@@ -412,8 +467,9 @@ impl Store {
                 .sum();
             tx.execute(
                 "INSERT INTO dmarc_reports (domain_id, organization, report_id, begin_at, end_at, received_at,
-                                            authenticated, policy, messages, passed)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                                            authenticated, policy, messages, passed, reported_domain,
+                                            subdomain_policy, alignment, contact)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                 params![
                     domain_id,
                     report.organization,
@@ -424,14 +480,19 @@ impl Store {
                     report.authenticated,
                     report.policy,
                     messages,
-                    passed
+                    passed,
+                    report.reported_domain,
+                    report.subdomain_policy,
+                    report.alignment,
+                    report.contact
                 ],
             )?;
             let id = tx.last_insert_rowid();
             let mut insert = tx.prepare(
                 "INSERT INTO dmarc_report_rows (report_id, source_ip, messages, dkim_aligned, spf_aligned,
-                                                disposition, header_from)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                                                disposition, header_from, dkim_domain, dkim_selector, dkim_result,
+                                                spf_domain, spf_result, override_reason, envelope_from, envelope_to)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             )?;
             for row in &report.rows {
                 insert.execute(params![
@@ -441,10 +502,187 @@ impl Store {
                     row.dkim_aligned,
                     row.spf_aligned,
                     row.disposition,
-                    row.header_from
+                    row.header_from,
+                    row.dkim_domain,
+                    row.dkim_selector,
+                    row.dkim_result,
+                    row.spf_domain,
+                    row.spf_result,
+                    row.override_reason,
+                    row.envelope_from,
+                    row.envelope_to
                 ])?;
             }
             Ok(ReportStored::Added)
+        })
+        .await
+    }
+
+    /// The reports themselves, newest first, for reading one of them. `before` continues after the
+    /// smallest id of the page before, the way the change log is paged.
+    pub async fn reports(
+        &self,
+        domain: &str,
+        kind: ReportKind,
+        limit: usize,
+        before: Option<i64>,
+    ) -> Result<Vec<ReportEntry>> {
+        let domain = normalize_domain(domain)?;
+        let limit = limit.clamp(1, 200) as i64;
+        let before = before.unwrap_or(i64::MAX);
+        self.read(move |conn| {
+            let domain_id = domain_id(conn, &domain)?;
+            let sql = match kind {
+                ReportKind::Dmarc => {
+                    "SELECT id, organization, report_id, begin_at, end_at, received_at, authenticated, passed,
+                            messages - passed, reported_domain, policy
+                     FROM dmarc_reports WHERE domain_id = ?1 AND id < ?2 ORDER BY id DESC LIMIT ?3"
+                }
+                ReportKind::Tls => {
+                    "SELECT id, organization, report_id, begin_at, end_at, received_at, authenticated, successful,
+                            failed, policy_domain, NULL
+                     FROM tls_reports WHERE domain_id = ?1 AND id < ?2 ORDER BY id DESC LIMIT ?3"
+                }
+            };
+            let mut statement = conn.prepare(sql)?;
+            let found = statement
+                .query_map(params![domain_id, before, limit], |row| {
+                    Ok(ReportEntry {
+                        id: row.get(0)?,
+                        organization: row.get(1)?,
+                        report_id: row.get(2)?,
+                        begin_at: row.get(3)?,
+                        end_at: row.get(4)?,
+                        received_at: row.get(5)?,
+                        authenticated: row.get(6)?,
+                        good: row.get(7)?,
+                        bad: row.get(8)?,
+                        about: row.get(9)?,
+                        policy: row.get(10)?,
+                    })
+                })?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            Ok(found)
+        })
+        .await
+    }
+
+    /// Everything one report says. `None` when it is not this domain's.
+    pub async fn dmarc_report(&self, domain: &str, id: i64) -> Result<Option<(ReportEntry, Vec<DmarcRow>)>> {
+        let domain = normalize_domain(domain)?;
+        self.read(move |conn| {
+            let domain_id = domain_id(conn, &domain)?;
+            let entry = conn
+                .query_row(
+                    "SELECT id, organization, report_id, begin_at, end_at, received_at, authenticated, passed,
+                            messages - passed, reported_domain, policy
+                     FROM dmarc_reports WHERE id = ?1 AND domain_id = ?2",
+                    params![id, domain_id],
+                    |row| {
+                        Ok(ReportEntry {
+                            id: row.get(0)?,
+                            organization: row.get(1)?,
+                            report_id: row.get(2)?,
+                            begin_at: row.get(3)?,
+                            end_at: row.get(4)?,
+                            received_at: row.get(5)?,
+                            authenticated: row.get(6)?,
+                            good: row.get(7)?,
+                            bad: row.get(8)?,
+                            about: row.get(9)?,
+                            policy: row.get(10)?,
+                        })
+                    },
+                )
+                .optional()?;
+            let Some(entry) = entry else { return Ok(None) };
+            let mut statement = conn.prepare(
+                "SELECT source_ip, messages, dkim_aligned, spf_aligned, disposition, header_from, dkim_domain,
+                        dkim_selector, dkim_result, spf_domain, spf_result, override_reason, envelope_from, envelope_to
+                 FROM dmarc_report_rows WHERE report_id = ?1 ORDER BY messages DESC",
+            )?;
+            let rows = statement
+                .query_map([entry.id], |row| {
+                    Ok(DmarcRow {
+                        source_ip: row.get(0)?,
+                        messages: row.get(1)?,
+                        dkim_aligned: row.get(2)?,
+                        spf_aligned: row.get(3)?,
+                        disposition: row.get(4)?,
+                        header_from: row.get(5)?,
+                        dkim_domain: row.get(6)?,
+                        dkim_selector: row.get(7)?,
+                        dkim_result: row.get(8)?,
+                        spf_domain: row.get(9)?,
+                        spf_result: row.get(10)?,
+                        override_reason: row.get(11)?,
+                        envelope_from: row.get(12)?,
+                        envelope_to: row.get(13)?,
+                    })
+                })?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            Ok(Some((entry, rows)))
+        })
+        .await
+    }
+
+    /// Everything one TLS report says, with the policy the sender applied.
+    pub async fn tls_report(
+        &self,
+        domain: &str,
+        id: i64,
+    ) -> Result<Option<(ReportEntry, Option<String>, Vec<TlsFailure>)>> {
+        let domain = normalize_domain(domain)?;
+        self.read(move |conn| {
+            let domain_id = domain_id(conn, &domain)?;
+            let found = conn
+                .query_row(
+                    "SELECT id, organization, report_id, begin_at, end_at, received_at, authenticated, successful,
+                            failed, policy_domain, policy_string
+                     FROM tls_reports WHERE id = ?1 AND domain_id = ?2",
+                    params![id, domain_id],
+                    |row| {
+                        Ok((
+                            ReportEntry {
+                                id: row.get(0)?,
+                                organization: row.get(1)?,
+                                report_id: row.get(2)?,
+                                begin_at: row.get(3)?,
+                                end_at: row.get(4)?,
+                                received_at: row.get(5)?,
+                                authenticated: row.get(6)?,
+                                good: row.get(7)?,
+                                bad: row.get(8)?,
+                                about: row.get(9)?,
+                                policy: None,
+                            },
+                            row.get::<_, Option<String>>(10)?,
+                        ))
+                    },
+                )
+                .optional()?;
+            let Some((entry, policy_string)) = found else { return Ok(None) };
+            let mut statement = conn.prepare(
+                "SELECT policy_type, result_type, mx_host, sending_ip, sessions, failure_code, receiving_ip, helo,
+                        detail
+                 FROM tls_report_failures WHERE report_id = ?1 ORDER BY sessions DESC",
+            )?;
+            let failures = statement
+                .query_map([entry.id], |row| {
+                    Ok(TlsFailure {
+                        policy_type: row.get(0)?,
+                        result_type: row.get(1)?,
+                        mx_host: row.get(2)?,
+                        sending_ip: row.get(3)?,
+                        sessions: row.get(4)?,
+                        failure_code: row.get(5)?,
+                        receiving_ip: row.get(6)?,
+                        helo: row.get(7)?,
+                        detail: row.get(8)?,
+                    })
+                })?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            Ok(Some((entry, policy_string, failures)))
         })
         .await
     }
@@ -581,6 +819,7 @@ mod tests {
             authenticated: true,
             policy: "quarantine".into(),
             rows,
+            ..Default::default()
         }
     }
 
@@ -592,6 +831,7 @@ mod tests {
             spf_aligned: false,
             disposition: if pass { "none" } else { "quarantine" }.into(),
             header_from: "Example.de".into(),
+            ..Default::default()
         }
     }
 
@@ -671,7 +911,9 @@ mod tests {
                     mx_host: "mail.example.de".into(),
                     sending_ip: "203.0.113.5".into(),
                     sessions: 2,
+                    ..Default::default()
                 }],
+                ..Default::default()
             })
             .await
             .unwrap();

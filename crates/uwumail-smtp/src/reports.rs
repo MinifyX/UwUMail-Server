@@ -87,6 +87,19 @@ fn covers(domain: &str, reported: &str) -> bool {
     reported == domain || reported.ends_with(&format!(".{domain}"))
 }
 
+/// A name for one of mail-auth's report enums, lower case, as the portal shows it. Going through
+/// serde rather than matching means a value the crate learns later still arrives with a name.
+fn name_of(value: impl serde::Serialize) -> Option<String> {
+    let text = serde_json::to_value(value).ok()?.as_str()?.to_ascii_lowercase();
+    (!text.is_empty() && text != "unspecified").then_some(text)
+}
+
+/// Empty strings mean "the report did not say", which is not the same as an empty value.
+fn said(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_owned())
+}
+
 /// The period a report covers, if it is one a report could honestly cover. Nothing else checks
 /// these numbers afterwards, and they decide when the report is cleared away again.
 fn period(begin: i64, end: i64, now: i64) -> Result<(i64, i64), String> {
@@ -131,6 +144,11 @@ fn tls_report(domain: &str, report: TlsReport, authenticated: bool, now: i64) ->
                     .to_ascii_lowercase(),
                 sending_ip: detail.sending_mta_ip.map(|ip| ip.to_string()).unwrap_or_default(),
                 sessions: i64::from(detail.failed_session_count),
+                // What the sender says went wrong, which is the part that explains a failure.
+                failure_code: detail.failure_reason_code.as_deref().and_then(said),
+                receiving_ip: detail.receiving_ip.map(|ip| ip.to_string()),
+                helo: detail.receiving_mx_helo.as_deref().and_then(said),
+                detail: detail.additional_information.as_deref().and_then(said),
             });
         }
     }
@@ -145,6 +163,11 @@ fn tls_report(domain: &str, report: TlsReport, authenticated: bool, now: i64) ->
         authenticated,
         successful: policies.iter().map(|policy| i64::from(policy.summary.total_success)).sum(),
         failed: policies.iter().map(|policy| i64::from(policy.summary.total_failure)).sum(),
+        // The policy the sender actually applied. When it does not match what we publish, that is
+        // the whole explanation for a run of failures, and it was thrown away until now.
+        policy_domain: policies.first().and_then(|policy| said(&policy.policy.policy_domain)),
+        policy_string: policies.first().map(|policy| policy.policy.policy_string.join("\n")).as_deref().and_then(said),
+        contact: report.contact_info.as_deref().and_then(said),
         failures,
     })
 }
@@ -164,6 +187,10 @@ fn dmarc_report(domain: &str, report: Report, authenticated: bool, now: i64) -> 
         .iter()
         .map(|record| {
             let evaluated = &record.row.policy_evaluated;
+            // The signature and the SPF check the reporter looked at. A record may carry several;
+            // the first is the one its verdict rests on, and more than one is vanishingly rare.
+            let dkim = record.auth_results.dkim.first();
+            let spf = record.auth_results.spf.first();
             DmarcRow {
                 source_ip: record.row.source_ip.map(|ip| ip.to_string()).unwrap_or_default(),
                 messages: i64::from(record.row.count),
@@ -177,6 +204,20 @@ fn dmarc_report(domain: &str, report: Report, authenticated: bool, now: i64) -> 
                 }
                 .into(),
                 header_from: record.identifiers.header_from.trim().to_ascii_lowercase(),
+                dkim_domain: dkim.and_then(|result| said(&result.domain)),
+                dkim_selector: dkim.and_then(|result| said(&result.selector)),
+                dkim_result: dkim.and_then(|result| name_of(result.result)),
+                spf_domain: spf.and_then(|result| said(&result.domain)),
+                spf_result: spf.and_then(|result| name_of(result.result)),
+                override_reason: evaluated.reason.first().and_then(|reason| {
+                    let name = name_of(reason.type_)?;
+                    Some(match reason.comment.as_deref().and_then(said) {
+                        Some(comment) => format!("{name}: {comment}"),
+                        None => name,
+                    })
+                }),
+                envelope_from: said(&record.identifiers.envelope_from),
+                envelope_to: record.identifiers.envelope_to.as_deref().and_then(said),
             }
         })
         .collect();
@@ -194,6 +235,17 @@ fn dmarc_report(domain: &str, report: Report, authenticated: bool, now: i64) -> 
         end_at,
         authenticated,
         policy: policy.into(),
+        // The domain the report names is the one the policy was published for, which for a
+        // subdomain is not the domain we file the report under.
+        reported_domain: said(&report.policy_published.domain).map(|name| name.to_ascii_lowercase()),
+        subdomain_policy: name_of(report.policy_published.sp),
+        alignment: match (name_of(report.policy_published.adkim), name_of(report.policy_published.aspf)) {
+            (None, None) => None,
+            (dkim, spf) => {
+                Some(format!("adkim={} aspf={}", dkim.as_deref().unwrap_or("?"), spf.as_deref().unwrap_or("?")))
+            }
+        },
+        contact: said(&metadata.email).or_else(|| metadata.extra_contact_info.as_deref().and_then(said)),
         rows,
     })
 }
@@ -277,9 +329,22 @@ mod tests {
                 spf_aligned: false,
                 disposition: "none".into(),
                 header_from: "example.de".into(),
+                // What the reporter checked, which used to be dropped on the floor.
+                dkim_domain: Some("example.de".into()),
+                dkim_selector: Some("uwu202609e".into()),
+                dkim_result: Some("pass".into()),
+                ..Default::default()
             }
         );
         assert_eq!(parsed.rows[1].disposition, "quarantine");
+        // The second record is the interesting one: SPF passes for a domain that is not ours, so
+        // the mail is not aligned. Without these fields nothing could say that.
+        assert_eq!(parsed.rows[1].spf_domain.as_deref(), Some("spammer.example"));
+        assert_eq!(parsed.rows[1].spf_result.as_deref(), Some("pass"));
+        assert_eq!(parsed.reported_domain.as_deref(), Some("example.de"));
+        assert_eq!(parsed.alignment.as_deref(), Some("adkim=strict aspf=strict"));
+        assert_eq!(parsed.subdomain_policy.as_deref(), Some("quarantine"));
+        assert_eq!(parsed.contact.as_deref(), Some("noreply-dmarc-support@google.com"));
         assert!(dmarc_report("other.example", report.clone(), true, DMARC_NOW).is_err(), "not our domain");
         assert!(dmarc_report("example.de", report, true, DMARC_NOW + 500 * 24 * 3600).is_err(), "far too old");
     }

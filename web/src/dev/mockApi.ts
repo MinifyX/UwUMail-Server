@@ -39,6 +39,9 @@ import type {
   Profile,
   Reachability,
   RecordCheck,
+  ReportDetail,
+  ReportEntry,
+  ReportKind,
   ReportsOverview,
   ReportsView,
   SecurityView,
@@ -1125,6 +1128,39 @@ function serverCheck(blocklists: boolean): ServerCheck {
   };
 }
 
+/** The reports themselves, so the list and the detail dialog have something to open. */
+function singleReports(kind: ReportKind): ReportEntry[] {
+  const dmarc = kind === "dmarc";
+  return [
+    {
+      id: dmarc ? 41 : 22,
+      organization: dmarc ? "google.com" : "Google Inc.",
+      reportId: dmarc ? "12345678901234567890" : "5065427c-23d3-47ca-b6e0-946ea0e8c4be",
+      beginAt: now - 2 * 86_400,
+      endAt: now - 86_400,
+      receivedAt: now - 3600,
+      authenticated: true,
+      good: dmarc ? 1237 : 4790,
+      bad: dmarc ? 46 : 3,
+      about: "uwu.example",
+      policy: dmarc ? "quarantine" : null,
+    },
+    {
+      id: dmarc ? 40 : 21,
+      organization: dmarc ? "Yahoo" : "Microsoft Corporation",
+      reportId: dmarc ? "998877665544332211" : "b1c2d3e4-1111-2222-3333-444455556666",
+      beginAt: now - 3 * 86_400,
+      endAt: now - 2 * 86_400,
+      receivedAt: now - 2 * 86_400,
+      authenticated: false,
+      good: dmarc ? 128 : 16,
+      bad: 0,
+      about: "uwu.example",
+      policy: dmarc ? "quarantine" : null,
+    },
+  ];
+}
+
 /** What other servers reported about one domain. Only uwu.example has anything to show. */
 function reportsFor(name: string): ReportsView {
   const empty = { reports: 0, unauthenticated: 0, firstBegin: null, lastEnd: null, reporters: [] };
@@ -1847,6 +1883,85 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["GET", /^\/api\/admin\/domains\/([^/]+)\/reports$/, (_, [name]) => [200, reportsFor(name ?? "")]],
+  [
+    "GET",
+    /^\/api\/admin\/domains\/([^/]+)\/reports\/(dmarc|tls)$/,
+    (_, [name, kind]) => [200, { reports: name === "uwu.example" ? singleReports(kind as ReportKind) : [] }],
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/domains\/([^/]+)\/reports\/(dmarc|tls)\/(\d+)$/,
+    (_, [, kind, id]) => {
+      const entry = singleReports(kind as ReportKind).find((report) => report.id === Number(id));
+      if (!entry) return problem(404, "notFound");
+      if (kind === "tls") {
+        return [
+          200,
+          {
+            kind: "tls",
+            report: entry,
+            policy: "version: STSv1\nmode: enforce\nmx: mail.uwu.example\nmax_age: 604800",
+            failures: [
+              {
+                policyType: "sts",
+                resultType: "certificate-expired",
+                mxHost: "mail.uwu.example",
+                sendingIp: "2001:db8:abcd:12::1",
+                sessions: 2,
+                failureCode: "certificate has expired",
+                receivingIp: "192.0.2.10",
+                helo: "mail.uwu.example",
+                detail: null,
+              },
+            ],
+          } satisfies ReportDetail,
+        ];
+      }
+      return [
+        200,
+        {
+          kind: "dmarc",
+          report: entry,
+          rows: [
+            {
+              sourceIp: "192.0.2.10",
+              messages: 1198,
+              dkimAligned: true,
+              spfAligned: true,
+              disposition: "none",
+              headerFrom: "uwu.example",
+              dkimDomain: "uwu.example",
+              dkimSelector: "uwu202609e",
+              dkimResult: "pass",
+              spfDomain: "uwu.example",
+              spfResult: "pass",
+              overrideReason: null,
+              envelopeFrom: "nyu@uwu.example",
+              envelopeTo: null,
+              ours: true,
+            },
+            {
+              sourceIp: "198.51.100.77",
+              messages: 39,
+              dkimAligned: false,
+              spfAligned: false,
+              disposition: "quarantine",
+              headerFrom: "uwu.example",
+              dkimDomain: null,
+              dkimSelector: null,
+              dkimResult: "none",
+              spfDomain: "spammer.example",
+              spfResult: "pass",
+              overrideReason: null,
+              envelopeFrom: "bounce@spammer.example",
+              envelopeTo: null,
+              ours: false,
+            },
+          ],
+        } satisfies ReportDetail,
+      ];
+    },
+  ],
   [
     "GET",
     /^\/api\/admin\/reports$/,
