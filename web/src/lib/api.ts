@@ -461,9 +461,36 @@ export interface BayesTotals {
 
 export type UpdateChannel = "stable" | "beta";
 
+export interface UpdateSettings {
+  check: boolean;
+  channel: UpdateChannel;
+  /** Install new stable releases without being asked. */
+  auto: boolean;
+  /** 0 is Monday; null means every day. */
+  weekday: number | null;
+  /** In UTC, like the backup's; the page shows it in local time. */
+  hour: number;
+  minute: number;
+  backupFirst: boolean;
+}
+
+/** Where an update is. It survives the restart the update itself causes. */
+export interface UpdateStatus {
+  state: "idle" | "backup" | "running" | "done" | "failed" | "rolledBack";
+  /** "hand" or "schedule". */
+  by: string;
+  from: string;
+  to: string | null;
+  job: string | null;
+  backup: "skipped" | "done" | "failed" | null;
+  startedAt: number | null;
+  finishedAt: number | null;
+  error: string | null;
+}
+
 export interface UpdatesView {
   build: { version: string; commit: string | null; release: boolean };
-  settings: { check: boolean; channel: UpdateChannel };
+  settings: UpdateSettings;
   info: {
     checkedAt: number | null;
     error: string | null;
@@ -475,6 +502,16 @@ export interface UpdatesView {
   serverCommand: string;
   gateway: { software: string } | null;
   gatewayCommand: string | null;
+  /** Whether a helper on the machine can do it, or the portal can only say how. */
+  canInstall: boolean;
+  /** The version a click would install; null for an edge build, which follows its tag. */
+  target: string | null;
+  status: UpdateStatus;
+  /** What the helper has printed so far, while this update is the job it has in hand. */
+  log: string;
+  backupReady: boolean;
+  /** Whether a backup is close enough right now to hold a scheduled update back. */
+  nearBackup: boolean;
 }
 
 export interface BackupReport {

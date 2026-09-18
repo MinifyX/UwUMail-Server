@@ -62,7 +62,8 @@
     "setup": "Setup",
     "spamFilter": "Spam filter",
     "backups": "Backups",
-    "reports": "Reports"
+    "reports": "Reports",
+    "updates": "Updates"
   },
   "mode": {
     "label": "View",
@@ -260,7 +261,9 @@
       "wordSourceInvalid": "This link cannot be subscribed to: https only, and no addresses in your own network.",
       "wordSourcesFull": "As many lists as possible are subscribed already.",
       "wordSourceListed": "This list is subscribed already.",
-      "feedInactive": "This list is switched off or still waits for the Auth-Key."
+      "feedInactive": "This list is switched off or still waits for the Auth-Key.",
+      "hostJobRefused": "The helper on the machine refused: {{detail}}",
+      "updateRefused": "The update did not start: {{detail}}"
     }
   },
   "people": {
@@ -1590,24 +1593,80 @@
   },
   "updates": {
     "title": "Updates",
+    "intro": "Which version is running, what is new, and the button that installs it. It backs up first unless you deliberately say otherwise.",
+    "open": "Open",
     "running": "Running: version {{version}}",
     "runningEdge": "Running: edge, commit {{commit}} (version {{version}})",
-    "notChecked": "Not checked for updates yet.",
+    "notChecked": "Have not looked for updates yet.",
     "upToDate": "Up to date, last checked {{time}}.",
+    "newer": "New: version {{version}}",
     "checkFailed": "The check did not work: {{error}}",
-    "edgeBehind_one": "main has {{count}} new commit:",
-    "edgeBehind_other": "main has {{count}} new commits:",
+    "edgeBehind_one": "There is {{count}} new commit on main:",
+    "edgeBehind_other": "There are {{count}} new commits on main:",
     "onGitHub": "on GitHub",
-    "howTo": "To update, run this in the folder with compose.yaml. UWUMAIL_VERSION in .env picks the image; for this channel that is {{image}}. Mail stays, and the server is back after a few seconds.",
     "serverCommand": "Server",
     "gatewayCommand": "Gateway (on the VPS)",
     "gatewayRunning": "Gateway: {{software}}",
+    "noHelper": "There is no helper installed on this machine, so the portal cannot update it itself (deploy/host/install.sh). Until then, by hand, in the directory with the compose.yaml:",
     "check": "Look for updates daily",
-    "checkHint": "Asks GitHub once a day whether there is a new version. Nothing is installed by itself.",
+    "checkHint": "Asks GitHub once a day whether there is a new version.",
     "channel": "Channel",
     "stable": "Stable",
     "beta": "Beta",
-    "checkNow": "Check now"
+    "checkNow": "Look now",
+    "version": {
+      "title": "Version"
+    },
+    "install": {
+      "title": "Update now",
+      "now": "Update now",
+      "hint": "The server pulls the new image, restarts and comes back. Mail and settings stay where they are.",
+      "to": "To version {{version}}.",
+      "toEdge": "To the newest {{image}}.",
+      "explain": "The server is away for a minute or two. Mail that arrives meanwhile is delivered again later by the sending server, so nothing is lost. If the new version does not answer, the old one comes back.",
+      "backupFirst": "A backup is made first. If it fails, nothing happens at all.",
+      "noTarget": "No backup server is set up, so there is nothing to back up to.",
+      "without": "Update without a backup",
+      "withoutHint": "Only if you have nowhere to back up to right now. If something goes wrong there is nothing to go back to.",
+      "noBackupSetting": "Backing up before an update is switched off. Nothing will be saved.",
+      "go": "Update"
+    },
+    "run": {
+      "title": "This update",
+      "theNewest": "the newest version",
+      "byHand": "Started by hand",
+      "bySchedule": "Started by the schedule",
+      "reconnecting": "The server is restarting. This page comes back by itself once it answers again.",
+      "forget": "Got it",
+      "rolledBackHint": "The old version is running again. Careful: the database may already have been migrated, and that cannot be undone. If the server behaves oddly, the backup from before is the way back.",
+      "states": {
+        "backup": "Backing up before updating …",
+        "running": "Updating to {{version}} …",
+        "done": "Updated to {{version}}.",
+        "failed": "The update did not work.",
+        "rolledBack": "The new version did not come up, so {{from}} is running again."
+      },
+      "backups": {
+        "skipped": "without a backup",
+        "done": "backed up",
+        "failed": "backup failed"
+      }
+    },
+    "schedule": {
+      "title": "Schedule",
+      "auto": "Install updates by itself",
+      "autoHint": "Stable versions only, never a beta. At the time below, unless a backup is going on then.",
+      "day": "Day",
+      "everyDay": "Every day",
+      "time": "Time",
+      "timeHint": "Your local time",
+      "window": "At {{time}} — unless a backup is less than half an hour away. Then the update waits until the backup is through, for up to six hours.",
+      "nearBackup": "A backup is too close right now; an update would wait.",
+      "backupFirst": "Back up before every update",
+      "backupFirstHint": "If the backup fails, nothing is updated. The button above lets you go around this once.",
+      "noTarget": "No backup server is set up. Without one, nothing can be saved before an update.",
+      "notForEdge": "An edge build follows main and gets no schedule. The button above still works."
+    }
   },
   "backups": {
     "title": "Backups",

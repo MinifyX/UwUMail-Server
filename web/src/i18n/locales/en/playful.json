@@ -113,5 +113,20 @@
     "done": {
       "title": "All done! (=^･ω･^=)"
     }
+  },
+  "updates": {
+    "intro": "Which version is running, what is new, and the button for it. Nyu packs everything up first (=^･ω･^=)",
+    "install": {
+      "backupFirst": "Nyu makes a backup first. If that fails, she touches nothing."
+    },
+    "run": {
+      "reconnecting": "Away for a moment, back shortly. Nyu is holding the door …",
+      "states": {
+        "backup": "Nyu is packing everything up …",
+        "running": "Nyu is fetching {{version}} …",
+        "done": "Done, {{version}} it is (=^･ω･^=)",
+        "rolledBack": "The new version would not wake up, so Nyu brought {{from}} back."
+      }
+    }
   }
 }

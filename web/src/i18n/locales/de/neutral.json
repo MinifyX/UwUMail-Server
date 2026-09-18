@@ -62,7 +62,8 @@
     "setup": "Einrichtung",
     "spamFilter": "Spamfilter",
     "backups": "Backups",
-    "reports": "Berichte"
+    "reports": "Berichte",
+    "updates": "Updates"
   },
   "mode": {
     "label": "Ansicht",
@@ -260,7 +261,9 @@
       "wordSourceInvalid": "Dieser Link lässt sich nicht abonnieren: nur https, keine Adressen im eigenen Netz.",
       "wordSourcesFull": "Es sind schon so viele Listen abonniert, wie möglich sind.",
       "wordSourceListed": "Diese Liste ist schon abonniert.",
-      "feedInactive": "Diese Liste ist ausgeschaltet oder wartet noch auf den Auth-Key."
+      "feedInactive": "Diese Liste ist ausgeschaltet oder wartet noch auf den Auth-Key.",
+      "hostJobRefused": "Der Helfer auf der Maschine hat das abgelehnt: {{detail}}",
+      "updateRefused": "Das Update wurde nicht gestartet: {{detail}}"
     }
   },
   "people": {
@@ -1590,24 +1593,80 @@
   },
   "updates": {
     "title": "Updates",
+    "intro": "Welche Version läuft, was es Neues gibt, und der Knopf, der es einspielt. Vorher wird gesichert, außer du sagst ausdrücklich etwas anderes.",
+    "open": "Öffnen",
     "running": "Läuft: Version {{version}}",
     "runningEdge": "Läuft: edge, Commit {{commit}} (Version {{version}})",
     "notChecked": "Noch nicht nach Updates gesehen.",
     "upToDate": "Aktuell, zuletzt geprüft {{time}}.",
+    "newer": "Neu: Version {{version}}",
     "checkFailed": "Die Prüfung hat nicht geklappt: {{error}}",
     "edgeBehind_one": "Auf main gibt es {{count}} neuen Commit:",
     "edgeBehind_other": "Auf main gibt es {{count}} neue Commits:",
     "onGitHub": "auf GitHub",
-    "howTo": "Zum Aktualisieren im Ordner mit der compose.yaml ausführen. Welches Image kommt, steht in UWUMAIL_VERSION in der .env; für diesen Kanal ist das {{image}}. Die Mails bleiben dabei, und der Server ist nach wenigen Sekunden wieder da.",
     "serverCommand": "Server",
     "gatewayCommand": "Gateway (auf dem VPS)",
     "gatewayRunning": "Gateway: {{software}}",
+    "noHelper": "Auf dieser Maschine ist kein Helfer installiert, deshalb kann das Portal nicht selbst aktualisieren (deploy/host/install.sh). Bis dahin von Hand, im Ordner mit der compose.yaml:",
     "check": "Täglich nach Updates sehen",
-    "checkHint": "Fragt einmal am Tag bei GitHub nach, ob es eine neue Version gibt. Es wird nichts von selbst installiert.",
+    "checkHint": "Fragt einmal am Tag bei GitHub nach, ob es eine neue Version gibt.",
     "channel": "Kanal",
     "stable": "Stabil",
     "beta": "Beta",
-    "checkNow": "Jetzt nachsehen"
+    "checkNow": "Jetzt nachsehen",
+    "version": {
+      "title": "Version"
+    },
+    "install": {
+      "title": "Jetzt aktualisieren",
+      "now": "Jetzt aktualisieren",
+      "hint": "Der Server lädt das neue Abbild, startet sich neu und meldet sich wieder. Mails und Einstellungen bleiben.",
+      "to": "Auf Version {{version}}.",
+      "toEdge": "Auf den neuesten Stand von {{image}}.",
+      "explain": "Für ein bis zwei Minuten ist der Server nicht erreichbar. Mail, die in dieser Zeit ankommt, stellt der sendende Server später noch einmal zu — es geht nichts verloren. Meldet sich die neue Version nicht, kommt die alte zurück.",
+      "backupFirst": "Vorher wird ein Backup gemacht. Klappt das nicht, passiert gar nichts.",
+      "noTarget": "Es ist kein Backup-Server eingerichtet, deshalb kann vorher nichts gesichert werden.",
+      "without": "Ohne Backup aktualisieren",
+      "withoutHint": "Nur, wenn du gerade kein Backup-Ziel hast. Geht etwas schief, gibt es nichts, worauf man zurück kann.",
+      "noBackupSetting": "Das Backup vor dem Update ist ausgeschaltet. Es wird nichts gesichert.",
+      "go": "Aktualisieren"
+    },
+    "run": {
+      "title": "Dieses Update",
+      "theNewest": "die neueste Version",
+      "byHand": "Von Hand gestartet",
+      "bySchedule": "Vom Zeitplan gestartet",
+      "reconnecting": "Der Server startet gerade neu. Diese Seite meldet sich von selbst zurück, sobald er wieder da ist.",
+      "forget": "Erledigt",
+      "rolledBackHint": "Die alte Version läuft wieder. Achtung: die Datenbank kann schon auf den neuen Stand gebracht worden sein, und das lässt sich nicht zurückdrehen. Wenn der Server sich merkwürdig verhält, ist das Backup von vorhin der Weg zurück.",
+      "states": {
+        "backup": "Es wird gesichert, bevor aktualisiert wird …",
+        "running": "Wird auf {{version}} aktualisiert …",
+        "done": "Aktualisiert auf {{version}}.",
+        "failed": "Das Update hat nicht geklappt.",
+        "rolledBack": "Die neue Version ist nicht hochgekommen, deshalb läuft wieder {{from}}."
+      },
+      "backups": {
+        "skipped": "ohne Backup",
+        "done": "Backup gemacht",
+        "failed": "Backup fehlgeschlagen"
+      }
+    },
+    "schedule": {
+      "title": "Zeitplan",
+      "auto": "Updates von selbst einspielen",
+      "autoHint": "Nur stabile Versionen, nie eine Beta. Zu der Zeit unten, wenn dann gerade kein Backup läuft.",
+      "day": "Tag",
+      "everyDay": "Jeden Tag",
+      "time": "Uhrzeit",
+      "timeHint": "Deine Ortszeit",
+      "window": "Um {{time}} — außer ein Backup ist keine halbe Stunde entfernt. Dann wartet das Update, bis das Backup durch ist, und versucht es bis zu sechs Stunden lang.",
+      "nearBackup": "Gerade ist ein Backup zu nah, ein Update würde jetzt warten.",
+      "backupFirst": "Vor jedem Update sichern",
+      "backupFirstHint": "Klappt das Backup nicht, wird nicht aktualisiert. Beim Knopf oben kannst du das im Einzelfall übergehen.",
+      "noTarget": "Es ist kein Backup-Server eingerichtet. Ohne einen kann vor dem Update nichts gesichert werden.",
+      "notForEdge": "Ein edge-Build folgt main und bekommt keinen Zeitplan. Der Knopf oben geht trotzdem."
+    }
   },
   "backups": {
     "title": "Backups",

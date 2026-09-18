@@ -20,6 +20,7 @@ import { QueuePage } from "@/features/queue/QueuePage";
 import { ReportsPage } from "@/features/reports/ReportsPage";
 import { SecurityPage } from "@/features/security/SecurityPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
+import { UpdatesPage } from "@/features/updates/UpdatesPage";
 import { SetupPage } from "@/features/setup/SetupPage";
 import { SetupWizard } from "@/features/setup/SetupWizard";
 import { AccountSpamPage, AdminSpamPage } from "@/features/spam/SpamPage";
@@ -68,6 +69,7 @@ function page(path: string, session: Session): ReactNode {
   if (matchPath("/admin/backups", path)) return <BackupsPage />;
   if (matchPath("/admin/log", path)) return <LogPage />;
   if (matchPath("/admin/logs", path)) return <LogsPage />;
+  if (matchPath("/admin/updates", path)) return <UpdatesPage />;
   if (matchPath("/admin/settings", path)) return <SettingsPage />;
   if (matchPath("/admin/setup", path)) return <SetupPage session={session} />;
   return <NotFound />;
