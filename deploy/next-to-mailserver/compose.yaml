@@ -58,7 +58,8 @@ services:
   # It wants about a gigabyte of memory (plan for two), and its first start takes a few minutes
   # while it fetches its signatures. Afterwards switch it on in the portal under
   # Spam filter → Viruses; the server reaches it as clamav:3310 and nothing outside this machine
-  # can. The whole story: docs/antivirus.md.
+  # can. COMPOSE_PROFILES=antivirus in .env brings it along with every up -d.
+  # The whole story: docs/antivirus.md.
   clamav:
     image: clamav/clamav:1.5_base-debian13-slim
     container_name: uwumail-clamav

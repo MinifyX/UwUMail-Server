@@ -214,9 +214,12 @@ sudo docker compose --profile antivirus up -d
 ```
 
 Its first start takes a few minutes while it fetches its signatures. Then
-switch it on under *Spam filter → Viruses*. It wants about two gigabytes of
-memory, so leave it off on a small machine. Everything about it:
-[antivirus.md](antivirus.md).
+switch it on under *Spam filter → Viruses*. It wants about a gigabyte of
+memory, so leave it off on a small machine.
+
+The profile keeps it out of every other `docker compose up -d`, which also
+means an update will not start it. `COMPOSE_PROFILES=antivirus` in `.env`
+makes it come along every time. Everything about it: [antivirus.md](antivirus.md).
 
 ## 8. Backups
 

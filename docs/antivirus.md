@@ -86,6 +86,32 @@ arrived carrying `X-Virus-Scanned: yes (ClamAV)`, a scan verdict the sender
 had written itself was dropped, and with the scanner stopped both messages went
 through with `X-Virus-Scanned: no (the virus scanner did not answer)`.
 
+## Updating, and installations that are already running
+
+An update (`docker compose pull && docker compose up -d`, or the button under
+*Server → Updates*) only fetches a new image. It does **not** touch your
+`compose.yaml`: a server installed before 0.3.0 has the file from back then,
+which has no scanner in it at all. Fetch the current one next to your `.env`,
+or copy the `clamav` service and its volume out of it:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/MinifyX/UwUMail-Server/main/compose.yaml
+```
+
+To have the scanner come along with every `docker compose up -d` — including
+the ones an update does for you — put the profile into `.env` instead of
+typing it every time:
+
+```
+COMPOSE_PROFILES=antivirus
+```
+
+Without that line it still survives updates: `docker compose up -d` and even
+`docker compose down` leave a running scanner alone, because it belongs to a
+profile that was not asked for. Only `docker compose --profile antivirus down`
+takes it away — and after a reboot it comes back by itself, like every other
+container here.
+
 ## Memory
 
 clamd keeps the whole signature database in memory. On the test instance
