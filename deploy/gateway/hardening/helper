@@ -284,12 +284,16 @@ do_os_update() {
   } 2>&1 | job_log "$id"
   local result=${PIPESTATUS[0]}
   cmd_machine
-  [ "$result" -eq 0 ] && job_state "$id" done || job_state "$id" failed "apt ended with $result"
+  if [ "$result" -eq 0 ]; then
+    job_state "$id" "done"
+  else
+    job_state "$id" failed "apt ended with $result"
+  fi
 }
 
 do_reboot() {
   local id="$1"
-  job_state "$id" done
+  job_state "$id" "done"
   printf 'the machine restarts in a minute\n' | job_log "$id"
   # A minute, so the answer still reaches the server and mail in flight has a moment to finish.
   shutdown -r +1 "UwUMail Gateway: restart from the portal" >/dev/null 2>&1 &
@@ -352,7 +356,7 @@ do_gateway_update() {
     printf '\nuwumail-gateway is running again\n' | job_log "$id"
     rm -rf "$work"
     cmd_machine
-    job_state "$id" done
+    job_state "$id" "done"
     return 0
   fi
 
@@ -378,7 +382,7 @@ cmd_task() {
   # A gateway update runs install.sh, and install.sh writes a new helper over this very file.
   # Bash reads a script from disk as it goes, so the rest of this one would turn into whatever
   # landed at the same offset. The work therefore happens in a copy that nobody is going to touch.
-  if [ "" != "1" ]; then
+  if [ "${UWUMAIL_HELPER_COPY:-}" != "1" ]; then
     local copy result
     copy=$(mktemp) || return 1
     cp "$0" "$copy" && chmod 0700 "$copy" || {
