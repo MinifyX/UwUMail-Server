@@ -210,6 +210,21 @@ impl Account {
     pub fn has_mailbox(&self) -> bool {
         self.protocols.has_mailbox()
     }
+
+    /// Whether this account may use a protocol at all: `imap`, `jmap`, `smtp` or `dav`. A name
+    /// nobody taught this function about is never quietly allowed.
+    ///
+    /// `dav` means calendars or address books; which of the two a request may touch is decided
+    /// where the collections are served, because one password covers both.
+    pub fn may_use(&self, protocol: &str) -> bool {
+        match protocol {
+            "imap" => self.protocols.imap,
+            "jmap" => self.protocols.jmap,
+            "smtp" => self.protocols.smtp,
+            "dav" => self.protocols.caldav || self.protocols.carddav,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

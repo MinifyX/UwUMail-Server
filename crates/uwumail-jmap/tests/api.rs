@@ -126,6 +126,38 @@ async fn session_and_authentication() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn switching_jmap_off_shuts_the_door_at_once() {
+    let server = server().await;
+    assert_eq!(server.get("/.well-known/jmap", "mini@example.de").await.0, StatusCode::OK);
+
+    // The right password is remembered for a while, because checking it is slow on purpose. The
+    // switch has to hold anyway, or it would only hold once that memory runs out.
+    server
+        .store
+        .update_account(
+            "mini@example.de",
+            uwumail_store::AccountUpdate {
+                protocols: Some(uwumail_store::Protocols { jmap: false, ..Default::default() }),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(server.get("/.well-known/jmap", "mini@example.de").await.0, StatusCode::UNAUTHORIZED);
+
+    // And back on again, without anybody having to type a new password.
+    server
+        .store
+        .update_account(
+            "mini@example.de",
+            uwumail_store::AccountUpdate { protocols: Some(uwumail_store::Protocols::default()), ..Default::default() },
+        )
+        .await
+        .unwrap();
+    assert_eq!(server.get("/.well-known/jmap", "mini@example.de").await.0, StatusCode::OK);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn reading_searching_and_changing_mail() {
     let server = server().await;
     let login = "mini@example.de";

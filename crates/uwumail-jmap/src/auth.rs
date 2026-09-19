@@ -138,8 +138,14 @@ impl Authenticator {
             && since.elapsed() < CACHE_LIFETIME
         {
             match self.store.account_by_id(account_id).await {
-                // A new password, app password rule or second factor since then ends the cached login.
-                Ok(Some(account)) if account.can_log_in() && account.credentials_changed_at < cached_at => {
+                // A new password, app password rule or second factor since then ends the cached
+                // login, and so does a protocol switched off in the meantime: the switch has to
+                // hold here too, or it would only hold for five minutes.
+                Ok(Some(account))
+                    if account.can_log_in()
+                        && account.credentials_changed_at < cached_at
+                        && account.may_use(self.protocol) =>
+                {
                     return Ok(account);
                 }
                 Ok(_) => {

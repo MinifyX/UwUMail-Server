@@ -72,19 +72,8 @@ pub enum AppScope {
 
 /// Whether an account may use the protocol at all. A person may use everything; a service is
 /// switched on one protocol at a time, and a switch that is off holds whatever password is typed.
-///
-/// `dav` here means calendars or address books; which of the two a request may touch is decided
-/// where the collections are served, because one password covers both.
 fn protocol_allowed(account: &crate::Account, protocol: &str) -> bool {
-    let protocols = account.protocols;
-    match protocol {
-        "imap" => protocols.imap,
-        "jmap" => protocols.jmap,
-        "smtp" => protocols.smtp,
-        "dav" => protocols.caldav || protocols.carddav,
-        // A protocol nobody taught this function about is not quietly allowed.
-        _ => false,
-    }
+    account.may_use(protocol)
 }
 
 /// The uses an app password of this account can sensibly have: only protocols the account may
