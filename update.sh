@@ -11,6 +11,7 @@
 #   --no-backup        do not back up first
 #   --no-antivirus     do not offer the virus scanner
 #   --force            take the new compose.yaml even when this one was changed by hand
+#   --keep-compose     leave compose.yaml alone, now and from now on
 #   --no-self-update   do not fetch a newer update.sh first
 #   --yes              ask nothing; every answer takes its default
 #   --help
@@ -25,11 +26,15 @@ image=ghcr.io/minifyx/uwumail-server
 service=uwumail
 here="$(cd "$(dirname "$0")" && pwd)"
 
+# What we were called with, for the copy that takes over after a self-update.
+called_with=("$@")
+
 dir=""
 version=""
 backup=true
 antivirus=true
 force=false
+keep_compose=false
 self_update=true
 ask=true
 
@@ -47,10 +52,11 @@ while [ $# -gt 0 ]; do
     --no-backup) backup=false; shift ;;
     --no-antivirus) antivirus=false; shift ;;
     --force) force=true; shift ;;
+    --keep-compose) keep_compose=true; shift ;;
     --no-self-update) self_update=false; shift ;;
     --yes | -y) ask=false; shift ;;
     -h | --help)
-      sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) die "unknown option: $1" ;;
@@ -78,7 +84,7 @@ state="$dir/.uwumail-update"
 # ── small helpers ─────────────────────────────────────────────────────────────────────────────
 yesno() {
   local prompt="$1" fallback="$2" answer=""
-  if ! $ask || [ ! -r /dev/tty ]; then
+  if ! $ask || ! have_tty; then
     [ "$fallback" = y ] && return 0 || return 1
   fi
   read -r -p "  $prompt [$([ "$fallback" = y ] && echo 'Y/n' || echo 'y/N')]: " answer </dev/tty
@@ -89,7 +95,7 @@ yesno() {
 fetch() {
   local url="$1" target="$2"
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --proto '=https' --tlsv1.2 -o "$target" "$url"
+    curl -fsL --proto '=https' --tlsv1.2 -o "$target" "$url"
   elif command -v wget >/dev/null 2>&1; then
     wget -q --https-only -O "$target" "$url"
   else
@@ -108,6 +114,10 @@ fetch_checked() {
   rm -f "$sums"
   [ -n "$want" ] && [ "$want" = "$have" ]
 }
+
+# Whether there is a terminal to ask on: after an exec there may be none, whatever /dev/tty
+# looks like in the file system.
+have_tty() { { : </dev/tty; } 2>/dev/null; }
 
 hash_of() { sha256sum "$1" | cut -d' ' -f1; }
 looks_like_version() { case "${1:-}" in [0-9]*) return 0 ;; *) return 1 ;; esac; }
@@ -150,7 +160,7 @@ if $self_update; then
     step "there is a newer update.sh; taking that one"
     install -m 0755 "$fresh" "$dir/update.sh"
     rm -f "$fresh"
-    exec bash "$dir/update.sh" --no-self-update --dir "$dir" "$@"
+    exec bash "$dir/update.sh" --no-self-update --dir "$dir" "${called_with[@]}"
   fi
   rm -f "$fresh"
 fi
@@ -226,29 +236,46 @@ compose_is_ours() {
   return 1
 }
 
+if ! $keep_compose && [ -f "$state" ] && grep -qx "compose keep" "$state"; then
+  keep_compose=true
+  step "compose.yaml is yours; leaving it alone"
+fi
+
 stock=$(mktemp)
-if fetch_checked compose.yaml "$stock"; then
+compose_known=false
+if $keep_compose; then
+  :
+elif fetch_checked compose.yaml "$stock"; then
   if [ "$(hash_of "$stock")" = "$(hash_of "$dir/compose.yaml")" ]; then
     step "compose.yaml is the current one"
+    compose_known=true
   elif compose_is_ours; then
     install -m 0644 "$stock" "$dir/compose.yaml"
     step "compose.yaml brought up to date"
+    compose_known=true
   elif [ "$(normalized "$dir/compose.yaml")" = "$(normalized "$stock")" ]; then
     lift_into_env "$dir/compose.yaml"
     install -m 0644 "$stock" "$dir/compose.yaml"
     step "compose.yaml brought up to date, your changes live in .env now"
+    compose_known=true
   elif $force; then
     cp -p "$dir/compose.yaml" "$dir/compose.yaml.bak"
     lift_into_env "$dir/compose.yaml.bak"
     install -m 0644 "$stock" "$dir/compose.yaml"
     warn "compose.yaml replaced as asked; the old one is next to it as compose.yaml.bak"
+    compose_known=true
   else
     printf '\n'
     warn "your compose.yaml is not the one this version ships, and not everything in it fits"
     warn "into .env. Nothing was changed. This is what differs:"
     printf '\n'
     diff -u "$dir/compose.yaml" "$stock" | sed -n '3,40p'
-    printf '\n  Take the new file and keep yours as compose.yaml.bak:  sudo bash update.sh --force\n\n'
+    cat <<-CHOICE
+
+	  Your file on purpose, say so once and it stops asking:  sudo bash update.sh --keep-compose
+	  Take the new one, yours stays as compose.yaml.bak:      sudo bash update.sh --force
+
+	CHOICE
     rm -f "$stock"
     exit 1
   fi
@@ -281,7 +308,8 @@ fi
 if $backup; then
   if docker compose ps --status running --services 2>/dev/null | grep -qx "$service"; then
     step "backing up first"
-    if ! docker compose exec -T "$service" backup run; then
+    # exec does not go through the image entrypoint, so the binary is named here.
+    if ! docker compose exec -T "$service" uwumail-server backup run; then
       warn "no backup was made; that needs a backup server set up in the portal"
       yesno "Update anyway?" y || die "stopped, nothing was changed"
     fi
@@ -293,7 +321,7 @@ fi
 # ── the new version ───────────────────────────────────────────────────────────────────────────
 if $add_antivirus; then
   step "switching the virus scanner on"
-  docker compose exec -T "$service" settings set spam.antivirus.enabled true >/dev/null ||
+  docker compose exec -T "$service" uwumail-server settings set spam.antivirus.enabled true >/dev/null ||
     warn "could not switch the scanner on; the portal does it too, under Spam filter"
   set_env COMPOSE_PROFILES antivirus
 fi
@@ -336,7 +364,11 @@ fi
 
 {
   printf '# Written by update.sh: what it put here, so it knows what it may replace.\n'
-  printf 'compose %s\n' "$compose_hash"
+  if $keep_compose; then
+    printf 'compose keep\n'
+  elif $compose_known; then
+    printf 'compose %s\n' "$compose_hash"
+  fi
 } >"$state"
 chmod 0644 "$state"
 

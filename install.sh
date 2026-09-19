@@ -76,7 +76,7 @@ docker info >/dev/null 2>&1 || die "Docker is installed but not running: systemc
 fetch() {
   local url="$1" target="$2"
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --proto '=https' --tlsv1.2 -o "$target" "$url"
+    curl -fsL --proto '=https' --tlsv1.2 -o "$target" "$url"
   elif command -v wget >/dev/null 2>&1; then
     wget -q --https-only -O "$target" "$url"
   else
@@ -116,9 +116,13 @@ take() {
 }
 
 # ── the questions ─────────────────────────────────────────────────────────────────────────────
+# Whether there is a terminal to ask on. A device node that is there is not the same as one that
+# answers, so this opens it rather than looking at it.
+have_tty() { { : </dev/tty; } 2>/dev/null; }
+
 askfor() {
   local prompt="$1" fallback="${2:-}" answer=""
-  if ! $ask; then
+  if ! $ask || ! have_tty; then
     printf '%s' "$fallback"
     return 0
   fi
@@ -132,7 +136,7 @@ askfor() {
 
 yesno() {
   local prompt="$1" fallback="$2" answer=""
-  if ! $ask; then
+  if ! $ask || ! have_tty; then
     [ "$fallback" = y ] && return 0 || return 1
   fi
   read -r -p "  $prompt [$([ "$fallback" = y ] && echo 'Y/n' || echo 'y/N')]: " answer </dev/tty
@@ -140,7 +144,7 @@ yesno() {
   case "$answer" in [yYjJ]*) return 0 ;; *) return 1 ;; esac
 }
 
-if $ask && [ ! -r /dev/tty ]; then
+if $ask && ! have_tty; then
   die "there is no terminal to ask on. Pass --hostname ... --yes, or start this from a shell."
 fi
 
