@@ -1,9 +1,13 @@
 # UwUMail Server
 #
+# install.sh sets all of this up for you. By hand it is:
+#
 #   1. cp .env.example .env   and fill in your host name
 #   2. docker compose up -d
 #   3. docker compose logs uwumail | grep "one-time code"
 #   4. open https://<your host name>/setup and enter the code
+#
+# The next version: update.sh, next to this file.
 #
 # With a UwUMail Gateway, its pairing code goes into .env before the first start. When another
 # web server already uses ports 80 and 443 on this machine, .env moves UwUMail's web ports.
