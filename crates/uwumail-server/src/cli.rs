@@ -281,6 +281,10 @@ pub enum AccountCommand {
         /// May manage the whole server.
         #[arg(long)]
         admin: bool,
+        /// A mailbox for a program: no portal login, app passwords only, calendars and contacts
+        /// off to begin with.
+        #[arg(long, conflicts_with = "admin")]
+        service: bool,
         /// Storage limit in megabytes, 0 for none.
         #[arg(long, default_value_t = 0)]
         quota_mb: i64,
@@ -316,6 +320,30 @@ pub enum AccountCommand {
     Admin {
         address: String,
         state: Switch,
+    },
+    /// Turn a mailbox into one for a program, or back into a person's. The mail stays either way;
+    /// on the way in, the password becomes an app password that does not expire.
+    Service {
+        address: String,
+        state: Switch,
+    },
+    /// Which protocols an account may use, and where its mail goes when it has no mailbox.
+    Protocols {
+        address: String,
+        #[arg(long)]
+        smtp: Option<Switch>,
+        #[arg(long)]
+        imap: Option<Switch>,
+        #[arg(long)]
+        jmap: Option<Switch>,
+        #[arg(long)]
+        calendar: Option<Switch>,
+        #[arg(long)]
+        contacts: Option<Switch>,
+        /// Where mail goes while this account has no mailbox; an address of this server. Empty
+        /// means its address takes no mail at all.
+        #[arg(long)]
+        redirect: Option<String>,
     },
     /// Let someone send as any address of these domains; without domains, only as their own again.
     SendAs {

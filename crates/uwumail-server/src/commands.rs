@@ -145,14 +145,20 @@ fn zone_quoted(value: &str) -> String {
 
 pub async fn account(config: &Config, store: &Store, command: AccountCommand) -> anyhow::Result<()> {
     match command {
-        AccountCommand::Add { address, name, admin, quota_mb } => {
+        AccountCommand::Add { address, name, admin, service, quota_mb } => {
             let (password, generated) = password_from_env_or_generated();
+            let role = match (admin, service) {
+                (true, _) => Role::Admin,
+                (_, true) => Role::Service,
+                _ => Role::User,
+            };
             let account = store
                 .create_account(NewAccount {
                     address,
                     display_name: name,
-                    password: Some(password.clone()),
-                    role: if admin { Role::Admin } else { Role::User },
+                    // A service signs in nowhere: app passwords are the only way in.
+                    password: (!service).then(|| password.clone()),
+                    role,
                     quota_bytes: quota_mb.max(0) * 1024 * 1024,
                     protocols: None,
                 })
@@ -165,7 +171,10 @@ pub async fn account(config: &Config, store: &Store, command: AccountCommand) ->
             )
             .await;
             println!("Created {} ✉", account.login);
-            if generated {
+            if service {
+                println!("A service signs in nowhere, so it has no password here.");
+                println!("Give it an app password in the portal, under Accounts.");
+            } else if generated {
                 println!("Password: {password}");
                 println!("(Shown only once. Mail apps log in with the address and this password.)");
             }
@@ -179,6 +188,8 @@ pub async fn account(config: &Config, store: &Store, command: AccountCommand) ->
                 };
                 let flags = [
                     (account.role == Role::Admin).then_some("admin"),
+                    account.is_service().then_some("service"),
+                    (account.is_service() && !account.has_mailbox()).then_some("sends only"),
                     account.disabled.then_some("disabled"),
                     account.deleted_at.is_some().then_some("in the trash"),
                 ]
@@ -267,6 +278,57 @@ pub async fn account(config: &Config, store: &Store, command: AccountCommand) ->
                 Role::Admin => println!("{} may manage the whole server now", account.login),
                 Role::User => println!("{} is no admin anymore", account.login),
                 Role::Service => println!("{} is a service and never reaches the portal", account.login),
+            }
+        }
+        AccountCommand::Service { address, state } => {
+            let role = if state == Switch::On { Role::Service } else { Role::User };
+            let account = store.set_account_role(&address, role).await?;
+            audit(store, "account.update", &account.login, json!({ "role": account.role })).await;
+            if account.is_service() {
+                println!("{} is a service now: no portal login, app passwords only.", account.login);
+                println!("The password it had lives on as an app password that does not expire.");
+            } else {
+                println!("{} is a person again. Give them a password with: account password", account.login);
+            }
+        }
+        AccountCommand::Protocols { address, smtp, imap, jmap, calendar, contacts, redirect } => {
+            let account = store.account(&address).await?.ok_or_else(|| anyhow::anyhow!("no account {address}"))?;
+            let switch = |wanted: Option<Switch>, current: bool| wanted.map_or(current, |state| state == Switch::On);
+            let protocols = uwumail_store::Protocols {
+                smtp: switch(smtp, account.protocols.smtp),
+                imap: switch(imap, account.protocols.imap),
+                jmap: switch(jmap, account.protocols.jmap),
+                caldav: switch(calendar, account.protocols.caldav),
+                carddav: switch(contacts, account.protocols.carddav),
+            };
+            let updated = store
+                .update_account(
+                    &account.login,
+                    AccountUpdate { protocols: Some(protocols), redirect_to: redirect, ..Default::default() },
+                )
+                .await?;
+            audit(
+                store,
+                "account.protocols",
+                &updated.login,
+                json!({ "protocols": updated.protocols, "redirectTo": updated.redirect_to }),
+            )
+            .await;
+            let on = |yes: bool| if yes { "on" } else { "off" };
+            println!(
+                "{}: SMTP {}, IMAP {}, JMAP {}, calendars {}, contacts {}",
+                updated.login,
+                on(updated.protocols.smtp),
+                on(updated.protocols.imap),
+                on(updated.protocols.jmap),
+                on(updated.protocols.caldav),
+                on(updated.protocols.carddav)
+            );
+            if !updated.has_mailbox() {
+                match updated.redirect_to.as_str() {
+                    "" => println!("No mailbox, so mail to this address is refused."),
+                    to => println!("No mailbox; mail to this address goes to {to}."),
+                }
             }
         }
         AccountCommand::SendAs { address, domains } => {
