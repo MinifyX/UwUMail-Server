@@ -225,19 +225,21 @@ pub async fn update(
     if changes.disabled == Some(true) && login.eq_ignore_ascii_case(&session.account.login) {
         return Err(ApiError::Rule("notYourself", "you cannot lock yourself out".into()));
     }
+    let before = load(&web, &login).await?;
     let account = web
         .store()
         .update_account(
             &login,
             AccountUpdate {
                 display_name: changes.name.clone(),
-                // Service wins over admin: a mailbox for a program manages nothing.
+                // Service wins over admin: a mailbox for a program manages nothing. Turning the
+                // service switch off only ever brings a service back, never takes an admin down.
                 role: match (changes.service, changes.admin) {
                     (Some(true), _) => Some(Role::Service),
-                    (Some(false), _) => Some(Role::User),
-                    (None, Some(true)) => Some(Role::Admin),
-                    (None, Some(false)) => Some(Role::User),
-                    (None, None) => None,
+                    (Some(false), _) if before.account.is_service() => Some(Role::User),
+                    (_, Some(true)) => Some(Role::Admin),
+                    (_, Some(false)) => Some(Role::User),
+                    _ => None,
                 },
                 quota_bytes: changes.quota_bytes,
                 disabled: changes.disabled,
