@@ -70,8 +70,6 @@ pub enum AppScope {
     Dav,
 }
 
-/// The uses an app password of this account can sensibly have: only protocols the account may
-/// actually use. A service with nothing but SMTP gets a password that can only send.
 /// Whether an account may use the protocol at all. A person may use everything; a service is
 /// switched on one protocol at a time, and a switch that is off holds whatever password is typed.
 ///
@@ -89,7 +87,9 @@ fn protocol_allowed(account: &crate::Account, protocol: &str) -> bool {
     }
 }
 
-pub(crate) fn scopes_for(protocols: crate::Protocols) -> Vec<AppScope> {
+/// The uses an app password of this account can sensibly have: only protocols the account may
+/// actually use. A service with nothing but SMTP gets a password that can only send.
+pub fn scopes_for(protocols: crate::Protocols) -> Vec<AppScope> {
     let mut scopes = Vec::new();
     if protocols.imap || protocols.jmap {
         scopes.push(AppScope::Mail);
@@ -453,6 +453,19 @@ impl Store {
         scopes.dedup();
         if scopes.is_empty() {
             return Err(StoreError::Invalid("an app password needs at least one use".into()));
+        }
+        // A password whose every use is switched off would never open anything: the login gate
+        // holds it at each protocol. Better to say so here than to hand out a secret that fails.
+        // Rights beyond that are kept, so switching a protocol on later makes them work.
+        let account = self
+            .account_by_id(account_id)
+            .await?
+            .ok_or_else(|| StoreError::NotFound(format!("account {account_id}")))?;
+        let usable = scopes_for(account.protocols);
+        if !scopes.iter().any(|scope| usable.contains(scope)) {
+            return Err(StoreError::Invalid(
+                "this account may not use any of those protocols, so the password would open nothing".into(),
+            ));
         }
         let created_at = now();
         if new.expires_at.is_some_and(|at| at <= created_at) {
@@ -1193,6 +1206,15 @@ mod tests {
             })
             .await
             .unwrap();
+        // A password that could only read mail would open nothing here, so it is refused.
+        let useless = store
+            .create_app_password(
+                service.id,
+                NewAppPassword { name: "Reader".into(), scopes: vec![AppScope::Mail], expires_at: None },
+            )
+            .await;
+        assert!(matches!(useless, Err(StoreError::Invalid(_))), "{useless:?}");
+
         let created = store
             .create_app_password(
                 service.id,

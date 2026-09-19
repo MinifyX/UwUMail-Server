@@ -80,7 +80,7 @@ pub use reports::{
 };
 pub use security::{
     AppPassword, AppScope, CodeCheck, CreatedAppPassword, MailAuth, MailAuthDenied, NewAppPassword, Passkey,
-    SecurityEvent, SecurityEventRecord, SecurityOverview, TotpSetup, WebSessionInfo,
+    SecurityEvent, SecurityEventRecord, SecurityOverview, TotpSetup, WebSessionInfo, scopes_for,
 };
 pub use sender_lists::{
     ListOwner, ListScope, NewSenderListEntry, SENDER_LIST_ADMIN_LIMIT, SENDER_LIST_PERSONAL_LIMIT, SenderKind,

@@ -50,7 +50,7 @@ fn become_service(tx: &Connection, account: &Account) -> Result<()> {
                 tx.execute(
                     "INSERT INTO app_passwords (account_id, name, secret_hash, scopes, created_at, imported_hash)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![account.id, "Passwort von vorher", unmatchable, names, now(), hash],
+                    params![account.id, "Former password", unmatchable, names, now(), hash],
                 )?;
             }
         }
