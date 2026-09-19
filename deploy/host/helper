@@ -10,10 +10,10 @@
 #   job-<id>.log   written here    what the job printed, while it runs
 #   job-<id>.json  written here    how it ended, which survives the container being replaced
 #
-# Nothing the server writes is ever run as a command. A job is a verb from a fixed list plus, for an
-# update, a version number that has to look like one. The download address, the image name and the
-# compose file all come from here, never from the other side. A server somebody took over can ask
-# for "update to 1.2.3" and nothing else.
+# Nothing the server writes is ever run as a command. A job is one verb from a fixed list, and
+# nothing else: no command, no path, no address. A server somebody took over can ask for the
+# system's updates or a restart, and for nothing more. UwUMail itself is updated by update.sh,
+# which a person starts on this machine.
 #
 #   helper machine        write machine.json (slow: asks apt)
 #   helper task           carry out the jobs that are waiting
@@ -29,7 +29,7 @@ config="${UWUMAIL_HOST_CONFIG:-/etc/uwumail-host/host.conf}"
 machine_file="$bridge/machine.json"
 jobs_file="$bridge/jobs.jsonl"
 # What this helper is willing to do at all.
-verbs="os-update reboot server-update"
+verbs="os-update reboot"
 # A job older than this was meant for a different day; the server asks again if it still wants it.
 JOB_MAX_AGE=1800
 LOG_MAX_BYTES=65536
@@ -193,25 +193,6 @@ helper_version() {
 }
 
 # ── the jobs the server may ask for ───────────────────────────────────────────────────────────
-# A version as we are willing to read one. Nothing else ever reaches a command line.
-is_version() {
-  [[ "${1:-}" =~ ^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(-[0-9A-Za-z.]{1,20})?$ ]]
-}
-
-
-# Whether going to $1 from $2 would be going backwards.
-#
-# The portal only ever offers something newer, but the portal runs in the container -- the side this
-# helper exists to distrust. An old image is an old set of holes, so a server somebody took over
-# must not be able to ask for one and walk back in through it. When either side is not a version
-# (a tag like `latest`), there is nothing to compare and the update is allowed.
-is_older() {
-  local want="${1:-}" have="${2:-}"
-  is_version "$want" && is_version "$have" || return 1
-  [ "$want" = "$have" ] && return 1
-  [ "$(printf '%s\n%s\n' "$want" "$have" | sort -V | head -1)" = "$want" ]
-}
-
 job_state() {
   local id="$1" state="$2" error="${3:-}"
   jq -n --arg id "$id" --arg state "$state" --arg error "$error" --argjson at "$(date +%s)" \
@@ -256,96 +237,20 @@ do_os_update() {
   } 2>&1 | job_log "$id"
   local result=${PIPESTATUS[0]}
   cmd_machine
-  [ "$result" -eq 0 ] && job_state "$id" done || job_state "$id" failed "apt ended with $result"
+  if [ "$result" -eq 0 ]; then
+    job_state "$id" "done"
+  else
+    job_state "$id" failed "apt ended with $result"
+  fi
 }
 
 do_reboot() {
   local id="$1"
-  job_state "$id" done
+  job_state "$id" "done"
   printf 'the machine restarts in a minute\n' | job_log "$id"
   say "restarting on request from the portal"
   # A minute, so the answer to the request still gets out and mail in flight has a moment.
   shutdown -r +1 "UwUMail: update" >/dev/null 2>&1 &
-}
-
-# The tag the compose file goes by. Both the update and the way back are this one line in .env;
-# the image name itself comes from the compose file, never from the other side.
-version_now() {
-  [ -f "$COMPOSE_DIR/.env" ] && sed -n 's/^UWUMAIL_VERSION=//p' "$COMPOSE_DIR/.env" | head -1
-}
-
-set_version() {
-  local want="${1:-}"
-  [ -f "$COMPOSE_DIR/.env" ] || touch "$COMPOSE_DIR/.env"
-  if grep -q '^UWUMAIL_VERSION=' "$COMPOSE_DIR/.env"; then
-    sed -i "s/^UWUMAIL_VERSION=.*/UWUMAIL_VERSION=$want/" "$COMPOSE_DIR/.env"
-  else
-    printf 'UWUMAIL_VERSION=%s\n' "$want" >>"$COMPOSE_DIR/.env"
-  fi
-}
-
-# Pull the image the compose file names and recreate the container.
-do_server_update() {
-  local id="$1" version="${2:-}"
-  [ -d "$COMPOSE_DIR" ] || {
-    job_state "$id" failed "no compose directory at $COMPOSE_DIR"
-    return 1
-  }
-  local before
-  before=$(version_now)
-  if [ -n "$version" ] && is_older "$version" "$before"; then
-    job_state "$id" failed "$version is older than $before; this helper does not go backwards"
-    return 1
-  fi
-  [ -n "$version" ] && set_version "$version"
-
-  {
-    printf '== docker compose pull\n'
-    compose pull "$SERVICE"
-    printf '\n== docker compose up -d\n'
-    compose up -d "$SERVICE"
-  } 2>&1 | job_log "$id"
-  local result=${PIPESTATUS[0]}
-  if [ "$result" -ne 0 ]; then
-    [ -n "$version" ] && [ -n "$before" ] && set_version "$before"
-    job_state "$id" failed "docker compose ended with $result"
-    return 1
-  fi
-
-  # Wait for the new one to say it is well. This runs the server's own health check, the same one
-  # the container uses, so it is the server's answer and not docker's guess. The absolute path
-  # matters: the image is distroless and has no shell to look anything up.
-  local waited=0 healthy=false
-  while [ "$waited" -lt 90 ]; do
-    if compose exec -T "$SERVICE" /usr/local/bin/uwumail-server health >/dev/null 2>&1; then
-      healthy=true
-      break
-    fi
-    sleep 3
-    waited=$((waited + 3))
-  done
-
-  if $healthy; then
-    printf '\nthe new version answers its health check\n' | job_log "$id"
-    cmd_machine
-    job_state "$id" done
-    return 0
-  fi
-
-  # It did not come up. Put the tag from before back, which is the only thing that changed here.
-  # The portal says the rest: the database may already have been migrated, and migrations only ever
-  # run forwards, so an older binary on a newer database is not safe.
-  {
-    printf '\n== the new version did not answer, going back to the one before\n'
-    compose logs --tail 50 "$SERVICE"
-  } 2>&1 | job_log "$id"
-  if [ -n "$before" ] && [ "$before" != "$version" ]; then
-    set_version "$before"
-    { printf '\n== docker compose up -d with %s\n' "$before"; compose up -d "$SERVICE"; } 2>&1 | job_log "$id"
-  fi
-  cmd_machine
-  job_state "$id" "rolledBack" "the new version did not answer its health check"
-  return 1
 }
 
 cmd_task() {
@@ -353,12 +258,11 @@ cmd_task() {
   local waiting="$jobs_file.now"
   mv -f "$jobs_file" "$waiting" 2>/dev/null || return 0
 
-  local line id verb version asked now
+  local line id verb asked now
   now=$(date +%s)
   while IFS= read -r line; do
     id=$(printf '%s' "$line" | jq -r '.id // empty' 2>/dev/null)
     verb=$(printf '%s' "$line" | jq -r '.verb // empty' 2>/dev/null)
-    version=$(printf '%s' "$line" | jq -r '.version // empty' 2>/dev/null)
     asked=$(printf '%s' "$line" | jq -r '.at // 0' 2>/dev/null)
     # An id names a file, so it may be nothing but letters and digits.
     [[ "$id" =~ ^[A-Za-z0-9]{4,40}$ ]] || continue
@@ -372,10 +276,6 @@ cmd_task() {
       job_state "$id" failed "the job waited too long; ask again"
       continue
     fi
-    if [ -n "$version" ] && ! is_version "$version"; then
-      job_state "$id" failed "that is not a version number"
-      continue
-    fi
     [ -e "$bridge/job-$id.json" ] && continue # already done, or being done
 
     say "carrying out $verb (job $id)"
@@ -383,7 +283,6 @@ cmd_task() {
     case "$verb" in
       os-update) do_os_update "$id" ;;
       reboot) do_reboot "$id" ;;
-      server-update) do_server_update "$id" "$version" ;;
     esac
   done <"$waiting"
   rm -f "$waiting"
