@@ -6,19 +6,23 @@ server gets a `554` and tells its own sender, and nothing of it reaches a
 mailbox. Mail that our own people send is checked the same way, so an infected
 attachment does not leave the house either.
 
-The scanner is off until you switch it on, and it is not part of the UwUMail
-image: it runs in its own container beside the server. clamd keeps its
-signatures in memory — a good gigabyte of it — and needs a writable place for
-them, neither of which fits a read-only image that is meant to run on a
-Raspberry Pi.
+The scanner is not part of the UwUMail image: it runs in its own container
+beside the server. clamd keeps its signatures in memory — a good gigabyte of
+it — and needs a writable place for them, neither of which fits a read-only
+image that is meant to run on a Raspberry Pi.
 
 ## Starting it
 
-The scanner is a service in `compose.yaml` behind a profile, so it only starts
-when you ask for it:
+`install.sh` brings the scanner along and switches it on, unless you said
+`--no-antivirus` or the machine has less than 2.5 GB of memory.
+`update.sh` offers it to an installation that does not have it yet.
+
+By hand it is a service in `compose.yaml` behind a profile, so it only starts
+when somebody asks for it:
 
 ```bash
 docker compose --profile antivirus up -d
+docker compose exec uwumail uwumail-server settings set spam.antivirus.enabled true
 ```
 
 Its first start takes a few minutes: the image ships without signatures and
@@ -26,9 +30,9 @@ fetches them once, into the `uwumail-clamav` volume. `docker compose logs
 clamav` shows how far it got; `docker compose ps` shows `healthy` once clamd
 answers.
 
-Then switch it on in the portal under *Spam filter → Viruses*. The server
-reaches it as `clamav:3310` inside the compose network, and nothing outside the
-machine can: the port is not published.
+The setting can also be switched under *Spam filter → Viruses* in the portal.
+The server reaches the scanner as `clamav:3310` inside the compose network, and
+nothing outside the machine can: the port is not published.
 
 Leave the profile out of a later `docker compose up -d` and the scanner is
 gone, while the setting stays on — the portal then says the scanner cannot be
@@ -88,19 +92,20 @@ through with `X-Virus-Scanned: no (the virus scanner did not answer)`.
 
 ## Updating, and installations that are already running
 
-An update (`docker compose pull && docker compose up -d`, or the button under
-*Server → Updates*) only fetches a new image. It does **not** touch your
-`compose.yaml`: a server installed before 0.3.0 has the file from back then,
-which has no scanner in it at all. Fetch the current one next to your `.env`,
-or copy the `clamav` service and its volume out of it:
+`update.sh` brings `compose.yaml` up to date, so a server installed before
+0.3.0 — whose file has no scanner in it at all — gets one there. It then offers
+to add the scanner, and `--no-antivirus` says no. By hand, the current file is:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/MinifyX/UwUMail-Server/main/compose.yaml
+curl -fsSLO https://github.com/MinifyX/UwUMail-Server/releases/latest/download/compose.yaml
 ```
 
+A plain `docker compose pull && docker compose up -d` only fetches a new image
+and leaves `compose.yaml` alone.
+
 To have the scanner come along with every `docker compose up -d` — including
-the ones an update does for you — put the profile into `.env` instead of
-typing it every time:
+the ones an update does for you — the profile goes into `.env`, which is what
+the two scripts write there:
 
 ```
 COMPOSE_PROFILES=antivirus

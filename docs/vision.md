@@ -28,9 +28,11 @@ These are the rules I build by.
 1. **Self-hosting without the pain.** One container, a setup assistant and
    plain explanations. When something is wrong (DNS, port 25, a blocklist),
    the server says what and how to fix it.
-2. **Simple first, powerful on request.** The admin panel has a Simple mode
-   (people, domains, a traffic light) and a Pro mode (queue, logs, DKIM,
-   spam scores, raw settings), like the Simple and Pro layouts of the app.
+2. **Everything there, said plainly.** The admin panel shows the whole
+   server — accounts, domains, queue, logs, DKIM, spam scores, raw settings —
+   and explains each of them in a sentence instead of hiding them. A calmer
+   view for people who only want the traffic light may come back later, once
+   there is a full set of features to choose from.
 3. **Modern protocols, no lock-in.** JMAP is the primary protocol and powers
    the UwUMail apps and web mail. IMAP, SMTP submission, CalDAV, CardDAV and
    ManageSieve keep every other app working.

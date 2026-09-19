@@ -22,9 +22,18 @@ send through a relay (the setup assistant offers it, or `[delivery.relay]`).
 ## Start
 
 ```bash
+curl -fsSLO https://github.com/MinifyX/UwUMail-Server/releases/latest/download/install.sh
+sudo bash install.sh --hostname mail.example.com --email you@example.org --yes
+```
+
+That writes `/opt/uwumail` with `compose.yaml` and an `.env`, starts the server
+and prints the one-time code. `--help` lists every flag, `--dir` puts it
+somewhere else. By hand it is the same three files:
+
+```bash
 mkdir uwumail && cd uwumail
-curl -fsSLO https://raw.githubusercontent.com/MinifyX/UwUMail-Server/main/compose.yaml
-curl -fsSL -o .env https://raw.githubusercontent.com/MinifyX/UwUMail-Server/main/.env.example
+curl -fsSLO https://github.com/MinifyX/UwUMail-Server/releases/latest/download/compose.yaml
+curl -fsSL -o .env https://github.com/MinifyX/UwUMail-Server/releases/latest/download/env.example
 # edit .env: UWUMAIL_HOSTNAME=mail.example.com
 docker compose up -d
 docker compose logs uwumail | grep "one-time code"
@@ -76,6 +85,10 @@ docker compose exec uwumail uwumail-server domain add example.com
 docker compose exec uwumail uwumail-server account add you@example.com --name "You" --admin
 docker compose exec uwumail uwumail-server account admin someone@example.com on
 ```
+
+A mailbox for a program rather than a person gets `--service`: no portal login,
+app passwords only, and the protocols it may use are switches of their own. See
+[configuration.md](configuration.md#accounts-people-and-services).
 
 `domain add` prints the DNS records to create:
 
@@ -375,36 +388,43 @@ outside; that reply also proves that incoming mail reaches the server.
 | `0.1.0` | exactly this version |
 
 ```bash
-docker compose pull && docker compose up -d
+cd /opt/uwumail && sudo bash update.sh
 ```
 
 Database migrations run automatically on start. Once a day the server asks
 GitHub what is newer on its channel (for `edge`: which commits came since) and
 shows it under *Server → Updates* with the changes. The check can be switched
-off there.
+off there. Nothing installs itself: the update happens when somebody runs the
+script.
 
-With the helper from [install.md](install.md#buttons-instead-of-commands-optional)
-installed, that page also has the button. It backs up first, writes the version
-into `UWUMAIL_VERSION`, pulls, recreates the container and waits for the new one
-to answer its own health check; if it does not, the tag from before goes back
-and the page says so. The page keeps asking through the gap where the server is
-away, so the result is there when it comes back — the answer is read out of the
-directory the helper shares, by the process that replaced the one that asked.
+What `update.sh` does, in order:
 
-Two things worth knowing about that button:
+1. Fetches `update.sh` from the newest release, checks its `sha256`, and if it
+   differs from itself, replaces itself and hands over to the new one.
+2. Fetches `compose.yaml` the same way. When the one here is the one it put
+   there, it is replaced. When it was edited, what it understands moves into
+   `.env` — a changed web port, a pinned image tag, a virus scanner without its
+   profile — and anything else stops the update with a diff. `--force` takes the
+   new file and keeps yours as `compose.yaml.bak`.
+3. Runs `backup run` in the container, unless `--no-backup`. Without a backup
+   server set up it says so and asks whether to go on.
+4. Offers the virus scanner when it is not there yet and the machine has the
+   memory for it (`--no-antivirus` to skip the question).
+5. `docker compose pull` and `up -d`, then waits up to two minutes for the
+   server's own health check.
+6. If it does not answer, `UWUMAIL_VERSION` goes back to the version that ran
+   before and the container is recreated from it.
+
+Two things worth knowing about that way back:
 
 - It pins the exact version in `.env`. A server that followed `latest` follows
-  `0.2.3` afterwards, and the next update moves it on again.
-- A rollback puts the image tag back, nothing else. Migrations only ever run
-  forwards, so an older binary may find a newer database. The backup from just
-  before is the real way back.
-
-*Install updates by itself* installs stable releases on a chosen day and
-time (kept in UTC, shown in local time). It keeps out of the backup's way: not
-in the half hour before one, not while it runs, not in the half hour after. When
-its minute falls inside that window it waits, asking again every minute for up
-to six hours, and otherwise lets the day go. A failed backup cancels the update.
+  `0.3.0` afterwards; take the line out again once the trouble is understood.
+- It puts the image back, nothing else. Migrations only ever run forwards, so an
+  older binary may find a newer database. The backup from just before is the
+  real way back.
 
 Releases come from tags: I add a section for the version to `CHANGELOG.md`,
 push the tag `v0.1.0` (or `v0.2.0-beta.1`), and CI builds the image with its
-tags and publishes a GitHub release with the notes and the gateway for amd64.
+tags and publishes a GitHub release with the notes, the two scripts, the stock
+`compose.yaml` and `env.example` (each with a `.sha256`), the host helper and
+the gateway for amd64.

@@ -43,16 +43,17 @@ Each step ships as its own commits, container image and test deployment.
 ## 3. Setup assistant and admin panel ✅ in progress
 
 - [x] Web portal: JSON API with session cookies and CSRF protection, React app embedded in the binary, one login for everyone
-- [x] Portal shell with Nyu, German and English, playful/neutral tone, Simple and Pro mode, light/dark theme, phone layout
+- [x] Portal shell with Nyu, German and English, playful/neutral tone, light/dark theme, phone layout
 - [x] My account overview (addresses, storage, settings for mail apps) and a first server overview for admins
-- [x] People: invite with a one-time link, change role and storage limit, lock out (mail keeps arriving), 30-day trash, aliases
-- [x] Change log of admin changes (portal and command line)
+- [x] Accounts: invite with a one-time link, change role and storage limit, lock out (mail keeps arriving), 30-day trash, aliases
+- [x] Service accounts for programs: no portal login, app passwords an admin makes, a switch per protocol, and no mailbox at all when IMAP and JMAP are off (mail refused or handed to one address)
+- [x] Change log of admin changes (portal and command line), every entry opening to who, what, when, from where and the details as they are stored
 - [x] Domains: DNS check of MX, SPF, DMARC and DKIM from the root servers down, catch-all, DKIM key rotation
-- [x] Queue (senders, recipients, errors, never subjects) with retry and delete; live server log in Pro mode
+- [x] Queue (senders, recipients, errors, never subjects) with retry and delete; live server log
 - [x] Server settings in the admin panel, applied without a restart; config file and environment take precedence
 - [x] Health overview: DNS, certificate, outgoing mail (relay/port 25 probe, stuck mail, bounces), disk and mailbox space
 - [x] Setup assistant with a one-time code from the log: first domain and admin, DNS records (optionally added at Cloudflare), sending route and port 25 both ways, reverse DNS, blocklists on request, test mail with a reply from outside; the checks stay under Server → Setup
-- [x] Admin panel, Simple and Pro mode, German and English, playful/neutral tone, Nyu
+- [x] Admin panel, German and English, playful/neutral tone, Nyu
 - [x] HSTS on the server's own HTTPS once it has a real certificate
 - [x] Security in My account: password change, authenticator app with recovery codes, passkeys, app passwords with scopes and expiry, browser sessions, activity list and notice mails
 - [x] Forwarding in My account (people on this server at once, other servers after a confirmation link, SRS, admin locks) and away messages
@@ -60,7 +61,8 @@ Each step ships as its own commits, container image and test deployment.
 - [x] MTA-STS per domain (testing, then enforce with a suggestion after 14 clean days), policy served on `mta-sts.<domain>` with its certificate, and followed when delivering to other domains
 - [x] DMARC and TLS reports read by the server and shown per domain, with suggestions for a stricter DMARC policy
 - [x] Recommended records in the DNS check: TLS reporting, SRV for JMAP and submission
-- [ ] Update notices with changelog
+- [x] Update notices with the changelog; the update itself is `update.sh` on the machine, with a backup, a health check and a way back
+- [x] `install.sh`: host name, gateway code, virus scanner and host helper in one go, from an empty machine to the one-time code
 
 ## 4. Spam filter ✅ in progress
 
@@ -112,5 +114,6 @@ Each step ships as its own commits, container image and test deployment.
 - [ ] Web Push / UnifiedPush, sender pictures from the server
 - [x] Nightly backups to SFTP: deduplicated, encrypted by default, 7/4/6 retention, full restore from the command line
 - [ ] Restore per mailbox in the portal, backups to S3 or a mounted folder
+- [ ] A calmer view of the admin panel for people who only want the traffic light
 - [ ] Admin alerts, statistics, Prometheus metrics
 - [ ] Sending TLS reports to other domains, DANE

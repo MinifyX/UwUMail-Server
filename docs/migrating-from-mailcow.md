@@ -9,7 +9,7 @@ copied over IMAP afterwards.
 | mailcow | UwUMail |
 | --- | --- |
 | Domains (active ones, or the ones you choose) | Domains |
-| Mailboxes with name, quota and password hash (BLF-CRYPT) | People; the hash is replaced by Argon2 at the first login |
+| Mailboxes with name, quota and password hash (BLF-CRYPT) | Accounts; the hash is replaced by Argon2 at the first login |
 | Mailbox locked for logins | Person locked out (mail still arrives) |
 | Aliases to one mailbox | Aliases |
 | Aliases to several or outside addresses | Forwarding addresses on the domain page |

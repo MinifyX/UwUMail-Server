@@ -51,8 +51,8 @@ something a family, a club or a small team can run without being a mail admin:
   it is taken.
 - **Backups and updates built in.** Nightly deduplicated, encrypted backups to
   SFTP, and the portal tells you when a new version is out.
-- **Simple or Pro.** The admin panel has the same two modes as the app: a
-  calm overview for everyone, every detail for those who want it.
+- **Everything in one panel.** Accounts, domains, queue, logs, spam and
+  settings, in German or English and in a playful or a plain tone.
 - **Private by default.** No telemetry. Your mail stays on your hardware.
 
 > **Status:** early, but I run my own mail on it. Set up backups, and remember
@@ -66,18 +66,26 @@ address, or a machine at home plus a small VPS for the
 [UwUMail Gateway](docs/gateway.md).
 
 ```bash
-mkdir uwumail && cd uwumail
-curl -fsSLO https://raw.githubusercontent.com/MinifyX/UwUMail-Server/main/compose.yaml
-curl -fsSL -o .env https://raw.githubusercontent.com/MinifyX/UwUMail-Server/main/.env.example
-nano .env    # UWUMAIL_HOSTNAME=mail.example.com
-docker compose up -d
-docker compose logs uwumail | grep "one-time code"
+curl -fsSLO https://github.com/MinifyX/UwUMail-Server/releases/latest/download/install.sh
+sudo bash install.sh
 ```
 
-Then open `https://mail.example.com/setup` and enter the code. With a gateway,
-its pairing code goes into `.env` before the first start, and when ports 80 and
-443 are already taken on the machine, `.env` moves them. Both, and the whole
-way with DNS, the gateway, mail apps and backups, are in
+It asks for the host name and a few other things, sets up `/opt/uwumail`,
+starts the server and shows a one-time code. Then open
+`https://mail.example.com/setup` and enter it. Every answer is a flag as well,
+so it runs without questions too:
+
+```bash
+sudo bash install.sh --hostname mail.example.com --email me@example.org --yes
+```
+
+The next version, later on:
+
+```bash
+cd /opt/uwumail && sudo bash update.sh
+```
+
+The whole way with DNS, the gateway, mail apps and backups is in
 **[docs/install.md](docs/install.md)**.
 
 Coming from mailcow? [docs/migrating-from-mailcow.md](docs/migrating-from-mailcow.md).
@@ -97,6 +105,7 @@ Coming from mailcow? [docs/migrating-from-mailcow.md](docs/migrating-from-mailco
 | `crates/uwumail-tunnel` | The QUIC tunnel between a server and its UwUMail Gateway |
 | `crates/uwumail-gateway` | The UwUMail Gateway program for a VPS |
 | `deploy/gateway` | systemd service, configuration and install script for the gateway |
+| `install.sh`, `update.sh` | Setting the server up on a machine, and bringing it to the next version |
 | `web/` | The portal's React app |
 | `docker/` | Container images |
 | `docs/` | Vision, architecture, configuration and deployment guides |

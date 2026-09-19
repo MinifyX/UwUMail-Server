@@ -69,6 +69,53 @@ The relay password is stored in the database like the rest (the portal never
 shows it again). If you would rather keep it out of the database, set
 `UWUMAIL_DELIVERY__RELAY__PASSWORD` in the environment.
 
+## Accounts: people and services
+
+*Server → Accounts* holds both. A **person** signs in to the portal and may use
+everything. A **service** is a mailbox that belongs to a program: a backup
+script that sends a report, a shop that sends receipts, a monitoring job. It
+never signs in to the portal, never has a password of its own, and gets in only
+with app passwords, which an admin creates on its page.
+
+Every account has five switches, under *Protocols*:
+
+| Switch | What it opens |
+| --- | --- |
+| SMTP | Sending through this server |
+| IMAP | Mail apps like Thunderbird or Apple Mail |
+| JMAP | UwUMail and everything else that speaks JMAP |
+| Calendars (CalDAV) | Calendars |
+| Contacts (CardDAV) | Address books |
+
+A switch that is off holds every password at the door, including an app
+password that still says it may do this — the check happens at the login, not
+at the password. A person has all five; a service starts with SMTP, IMAP and
+JMAP, and calendars and contacts off.
+
+**Without IMAP and JMAP an account has no mailbox at all.** Mail to its address
+is then refused right at the door with a `550`, or, when *Send mail here
+instead* names an address of this server, handed on to that one. Nothing is
+stored under the service itself. That is the shape for a sender that only ever
+sends: no mailbox to fill up, and an answer that lands somewhere a person reads.
+
+Turning a person into a service keeps the mail and turns the password they had
+into an app password that does not expire, so what already works keeps working;
+their second factors, passkeys and open sessions go, since none of them has
+anything left to sign in to. The way back is the same button, and afterwards the
+account needs a new password or an invitation link.
+
+The same from the terminal:
+
+```bash
+docker compose exec uwumail uwumail-server account add reports@example.com --service --name "Reports"
+docker compose exec uwumail uwumail-server account protocols reports@example.com \
+  --imap off --jmap off --redirect me@example.com
+docker compose exec uwumail uwumail-server account service someone@example.com on
+```
+
+`account list` marks a service as such, and says `sends only` when it has no
+mailbox. App passwords are made in the portal, on the account's page.
+
 ```toml
 # Public name of the server. Used in SMTP greetings, MX records and the certificate.
 hostname = "mail.example.com"

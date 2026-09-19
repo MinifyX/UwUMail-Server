@@ -87,36 +87,39 @@ The MX, SPF, DKIM and DMARC records come in step 5; the assistant shows them.
 ## 4. Start UwUMail
 
 ```bash
-sudo mkdir -p /opt/uwumail && cd /opt/uwumail
-sudo curl -fsSLO https://raw.githubusercontent.com/MinifyX/UwUMail-Server/main/compose.yaml
-sudo curl -fsSL -o .env https://raw.githubusercontent.com/MinifyX/UwUMail-Server/main/.env.example
-sudo nano .env
+curl -fsSLO https://github.com/MinifyX/UwUMail-Server/releases/latest/download/install.sh
+sudo bash install.sh
 ```
 
-In `.env`, set at least the host name. The e-mail address is optional:
-Let's Encrypt warns you there before a certificate expires.
+It asks what it needs to know and does the rest: it sets up `/opt/uwumail` with
+`compose.yaml` and an `.env`, starts the server and shows the **one-time code**
+for the setup assistant. The questions are:
+
+| It asks | What to answer |
+| --- | --- |
+| Public name of this mail server | `mail.example.com` from step 3 |
+| E-mail for certificate warnings | Optional. Let's Encrypt warns you there before a certificate expires |
+| Language of the mail the server writes | `de` or `en`, for bounces and notices |
+| Behind a UwUMail Gateway? | **B:** yes, then the pairing code from step 2. **A:** no |
+| Virus scanner | ClamAV, about 1 GB of memory. On by default, and skipped on a machine with less than 2.5 GB. See [antivirus.md](antivirus.md) |
+| System updates in the portal | Installs a small helper so the portal can show and install what the machine needs |
+
+Every answer is a flag too, so nothing has to be typed:
 
 ```bash
-UWUMAIL_HOSTNAME=mail.example.com
-UWUMAIL_ACME_EMAIL=you@example.org
-UWUMAIL_LANGUAGE=en
-UWUMAIL_VERSION=latest
+sudo bash install.sh --hostname mail.example.com --email you@example.org \
+  --language en --no-antivirus --yes
 ```
 
-**B:** also set the pairing code from step 2. The server then pairs with the
-gateway when it starts, before there is an admin account.
+`sudo bash install.sh --help` lists them all, including `--dir` for a place
+other than `/opt/uwumail` and `--version` for a tag other than `latest`.
 
-```bash
-UWUMAIL_GATEWAY_CODE=uwugw1…
-```
-
-The stock `compose.yaml` hands that line to the server as
-`UWUMAIL_GATEWAY__CODE`, with two underscores. With a compose file of your own,
-set that variable under `environment:`; Compose does not pass `.env` into the
-container by itself.
+**B:** the pairing code goes in before the first start, so the server pairs with
+the gateway while there is not even an admin account yet.
 
 If another web server (Caddy, Traefik, nginx) already uses ports 80 and 443 on
-this machine, move UwUMail's web ports in `.env`, as a port or as address:port:
+this machine, move UwUMail's web ports afterwards, in `/opt/uwumail/.env`, as a
+port or as address:port, and run `sudo docker compose up -d` in that directory:
 
 ```bash
 UWUMAIL_HTTP_BIND=127.0.0.1:8081
@@ -137,15 +140,12 @@ and 993.
 from outside at all: the web arrives through the tunnel, like the mail. The
 server only needs to reach the gateway over UDP port 443.
 
-Then start it:
+The one-time code is good until the first admin account exists; the server makes
+a new one at every start, so the newest one in the log is the one that works:
 
 ```bash
-sudo docker compose up -d
-sudo docker compose logs uwumail | grep "one-time code"
+cd /opt/uwumail && sudo docker compose logs uwumail | grep "one-time code"
 ```
-
-The last line shows a one-time code for the setup assistant. The server makes a
-new one on every start until the first admin exists, so always use the newest.
 
 ## 5. Setup assistant
 
@@ -189,7 +189,7 @@ soon as the tunnel to the gateway is connected, also when you pair in the
 assistant; no restart needed.
 
 Everything the assistant checked stays in the portal under *Server → Setup*.
-More domains and people are added under *Domains* and *People*.
+More domains and accounts are added under *Domains* and *Accounts*.
 
 ## 6. Mail apps
 
@@ -204,22 +204,24 @@ More domains and people are added under *Domains* and *People*.
 
 Details, calendars and contacts: [deployment.md](deployment.md#mail-apps).
 
-## 7. Virus scanner (optional)
+## 7. Virus scanner
 
-UwUMail can hand every message to ClamAV before it is taken. It runs in its own
-container and stays out of the way until you ask for it, in `/opt/uwumail`:
+UwUMail hands every message to ClamAV before it takes it. The installer brings
+it along unless you said no, or unless the machine has less than 2.5 GB of
+memory — it wants about a gigabyte for itself. Its first start takes a few
+minutes while it fetches its signatures; *Spam filter → Viruses* in the portal
+shows when it is ready and what it found.
+
+Adding it later, in `/opt/uwumail`:
 
 ```bash
 sudo docker compose --profile antivirus up -d
+sudo docker compose exec uwumail uwumail-server settings set spam.antivirus.enabled true
 ```
 
-Its first start takes a few minutes while it fetches its signatures. Then
-switch it on under *Spam filter → Viruses*. It wants about a gigabyte of
-memory, so leave it off on a small machine.
-
-The profile keeps it out of every other `docker compose up -d`, which also
-means an update will not start it. `COMPOSE_PROFILES=antivirus` in `.env`
-makes it come along every time. Everything about it: [antivirus.md](antivirus.md).
+and `COMPOSE_PROFILES=antivirus` in `.env`, so it comes along at every start
+from then on. `update.sh` offers the same thing when it is not there yet.
+Everything about it: [antivirus.md](antivirus.md).
 
 ## 8. Backups
 
@@ -233,27 +235,28 @@ admin — which is what you want when this machine stands in for one that died.
 
 ## Updates
 
-*Server → Updates* in the portal shows when a new version is out, with what
-changed. To update, in `/opt/uwumail`:
+*Server → Updates* in the portal shows when a new version is out and what
+changed. The update itself happens on the machine:
 
 ```bash
-sudo docker compose pull && sudo docker compose up -d
+cd /opt/uwumail && sudo bash update.sh
 ```
 
-Mail stays, and database changes run by themselves. For the gateway, the portal
-shows the matching command.
+It fetches a newer `update.sh` first and hands over to it, backs up if a backup
+server is set up, brings `compose.yaml` up to date, pulls the images and waits
+for the server to answer its health check. If it does not, the version from
+before comes back and `.env` says which one that is. Mail stays where it is,
+and database changes run by themselves.
 
-With the helper below installed, that page updates the server itself instead:
-a button, or a day and time. It makes a backup first — if that fails, nothing
-is touched — and it keeps half an hour clear on either side of the nightly
-backup. Should the new version not come up, the old tag goes back. Without the
-helper nothing updates on its own.
+A `compose.yaml` you edited is not walked over. What it can, `update.sh` moves
+into `.env` — a changed web port, a pinned image tag, the virus scanner — and
+anything else stops it with a diff and one sentence about `--force`.
+`sudo bash update.sh --help` lists every flag, among them `--no-backup`,
+`--version` for another tag, and `--no-antivirus`.
 
-That does not fetch a new `compose.yaml`. Options in `.env` that came later,
-like `UWUMAIL_GATEWAY_CODE` or `UWUMAIL_HTTP_BIND`, need the current file; see
-*A line in `.env` changes nothing* below.
+For the gateway, the portal shows the matching command.
 
-### Buttons instead of commands (optional)
+### Buttons for the machine itself (optional)
 
 The server's container cannot touch the machine it runs on. It is distroless,
 read-only, unprivileged, and every capability is dropped but the one it needs
@@ -261,7 +264,8 @@ for the low mail ports — which is most of what makes a break-in worth little,
 so it stays that way.
 
 A small helper beside it can, and then the portal shows what the system has
-waiting and installs it with a button:
+waiting and installs it with a button. The installer offers it; adding it
+later:
 
 ```bash
 cd /tmp
@@ -271,11 +275,11 @@ sudo bash uwumail-host/install.sh --dir /opt/uwumail
 cd /opt/uwumail && sudo docker compose up -d
 ```
 
-What the container may ask the helper for is one of three things — install the
-system's updates, restart the machine, pull a new UwUMail — plus a version
-number that has to look like one. Never a command, never a path, never an
-address. The docker socket stays where it is: handing that to a container is
-handing it the machine.
+What the container may ask the helper for is one of two things: install the
+system's updates, or restart the machine. Never a command, never a path, never
+an address, and never a version of anything — UwUMail itself is updated by
+`update.sh`, which a person starts. The docker socket stays where it is:
+handing that to a container is handing it the machine.
 
 `sudo bash install.sh --check` says how things stand, `--remove` takes it back
 out. If anything else runs on this machine, the portal says so above the button
@@ -298,9 +302,8 @@ takes them with it.
   `UWUMAIL_HTTP_BIND` and `UWUMAIL_HTTPS_BIND` only work with a `compose.yaml`
   that mentions them; one from before they existed ignores them without a
   word. `grep -c UWUMAIL_HTTP_BIND compose.yaml` has to answer 1 or more. If it
-  doesn't, fetch the current file with the `curl` line for `compose.yaml` from
-  step 4 (copy the old one first if you changed it) and run
-  `sudo docker compose up -d`. `.env` and your mail stay.
+  doesn't, `sudo bash update.sh` brings the file up to date, keeping what you
+  changed in it. `.env` and your mail stay.
 - **The browser says too many redirects:** a reverse proxy points at UwUMail's
   port 80, which only redirects to HTTPS. Point it at the proxy listener, see
   [deployment.md](deployment.md#behind-a-reverse-proxy). In B, remove the entry
@@ -331,5 +334,5 @@ takes them with it.
 - [configuration.md](configuration.md): all settings
 - [gateway.md](gateway.md): how the gateway works
 - [spam-filter.md](spam-filter.md): how the spam filter decides
-- [antivirus.md](antivirus.md): the optional virus scanner beside the server
+- [antivirus.md](antivirus.md): the virus scanner beside the server
 - [migrating-from-mailcow.md](migrating-from-mailcow.md): moving over from mailcow

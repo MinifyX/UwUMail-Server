@@ -365,8 +365,8 @@ anyone looked at it:
 X-Virus-Scanned: yes (ClamAV)
 ```
 
-The server log (Pro mode in the portal) shows the score and the rules for
-every received, held back and refused message.
+The server log in the portal shows the score and the rules for every
+received, held back and refused message.
 
 ## Blocklists and your DNS resolver
 
@@ -387,9 +387,9 @@ applies to you.
 
 ## Settings
 
-All of these can be changed in the portal under *Server → Spamfilter*
-(the numbers in Pro mode, together with checking senders and following
-`p=reject`), or in the config file:
+All of these can be changed in the portal under *Server → Spamfilter*,
+together with checking senders and following `p=reject`, or in the config
+file:
 
 ```toml
 [spam]

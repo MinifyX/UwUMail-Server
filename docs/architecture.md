@@ -129,7 +129,15 @@ app serves every page from one `index.html` and picks the page from the URL.
 
 Everyone logs in at the same place and lands in "My account" (`/account`);
 admins also get "Server" (`/admin`). Portal preferences (language, tone,
-Simple/Pro, theme) are stored per account.
+theme) are stored per account.
+
+An account is a person, an admin or a service. A service is a mailbox that
+belongs to a program: it has no portal password at all, `can_use_portal()` is
+false for it everywhere a session is made, and an admin keeps its app passwords
+on its page. Each account carries five switches — SMTP, IMAP, JMAP, CalDAV,
+CardDAV — and with neither IMAP nor JMAP it has no mailbox: SMTP refuses mail to
+its address at RCPT time with a `550`, or hands it to the one address named in
+`redirect_to`, which has to belong to this server.
 
 The server overview opens with a health check in five areas:
 
@@ -193,6 +201,10 @@ only to its mail ports on public addresses.
   incoming mail before we add our own.
 - Received headers of submitted mail contain neither the client's IP address
   nor its HELO name (opt-in via `smtp.reveal_client_ip`).
+- Every protocol asks the account first: a switch that is off turns any
+  password into a refusal (`ProtocolOff`), before the password is even looked
+  at, and however the password was made. For DAV the collection decides which
+  of the two switches applies.
 - Logins from mail apps (JMAP, SMTP) go through one check. App passwords are
   16 random characters (about 79 bits), so a SHA-256 lookup is enough; they
   carry scopes ("mail", "smtp"), an optional expiry and when they were last

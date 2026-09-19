@@ -3,6 +3,65 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.4.0
+
+**Security.** Everything new here was reviewed afterwards, together with every way into the
+server: [docs/security-audit-0.4.0.md](docs/security-audit-0.4.0.md).
+
+**One script to set it up, one to update it.** A new machine now needs two lines:
+
+```bash
+curl -fsSLO https://github.com/MinifyX/UwUMail-Server/releases/latest/download/install.sh
+sudo bash install.sh
+```
+
+It asks for the host name and a few other things — every answer is a flag too — writes
+`/opt/uwumail`, brings the virus scanner along unless the machine is too small for it or you say
+no, installs the helper for system updates, starts the server and shows the one-time code.
+
+Later on, `cd /opt/uwumail && sudo bash update.sh`. It fetches a newer `update.sh` and hands over
+to it, backs up, brings `compose.yaml` up to date, pulls and waits for the server's own health
+check — and when that does not answer, puts the version from before back and says so. A
+`compose.yaml` you edited is not walked over: what fits goes into `.env` (a moved web port, a
+pinned tag, the virus scanner), and anything else stops the update with a diff and `--force`.
+Both scripts check what they download against a `sha256` published next to it.
+
+**The update button is gone from the portal.** *Server → Updates* still says what is new and what
+changed; the machine does the update, with `update.sh`. The helper beside the server now only
+does what only root can: install the system's updates and restart the machine. It no longer takes
+a version number from the container, so a job is one verb and nothing else.
+
+**Accounts instead of people, and mailboxes for programs.** *Server → Personen* is *Server →
+Konten* / *Accounts*, with filters for people, services and a single domain. A **service** is a
+mailbox that belongs to a program: it never signs in to the portal, has no password of its own,
+and gets in with app passwords an admin makes on its page. A person becomes a service and back
+with one button; the mail stays, and the password they had lives on as an app password that does
+not expire.
+
+Every account has five switches — SMTP, IMAP, JMAP, calendars, contacts. A switch that is off
+holds every password at the door, whatever the password says it may do, because the check happens
+at the login. With neither IMAP nor JMAP an account has no mailbox at all: mail to it is refused
+at the door, or handed to the one address you name instead. A sender that only sends now costs
+nothing and fills nothing up.
+
+**The change log opens.** Every entry folds out to who did it, what it was about, when, from
+where, and the details exactly as they are stored. Twenty actions that used to read as their raw
+name now have a sentence of their own.
+
+**One panel instead of two views.** The Simple/Pro switch is gone and everything is simply there.
+A calmer view for people who only want the traffic light may come back later, more deliberately.
+For an admin the two menu groups fold away instead, and the browser remembers which.
+
+**Settings from the terminal.** `uwumail-server settings list|get|set|unset` reaches the same
+settings as the panel, with the same checks and the same order — which is how the installer
+switches the scanner on before there is a portal to log into. Secrets are written with `-` and
+read from standard input, so they stay out of the shell history.
+
+**Fixed.** On the gateway, the helper that carries out what the portal asks for kept starting
+itself instead of doing the work: the guard that tells the copy from the original had lost its
+variable, so no gateway job ever ran. An app password whose every use is switched off is refused
+now instead of being handed out and never opening anything.
+
 ## 0.3.0
 
 **Security.** Both of the additions below were reviewed afterwards:
