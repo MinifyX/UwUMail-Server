@@ -26,6 +26,9 @@ Security sweeps are done with Claude, and written down in full:
   whole stack, including the desktop client, and everything built since.
 - [docs/security-audit-0.3.0.md](docs/security-audit-0.3.0.md) — what 0.3.0
   added: the virus scanner and the DNS records at Cloudflare.
+- [docs/security-audit-0.4.0.md](docs/security-audit-0.4.0.md) — what 0.4.0
+  added, and every way into the server once more: service accounts with a
+  switch per protocol, the two shell scripts, and the helpers beside the server.
 
 Each one lists the findings, what was checked, what was hardened and the limits
 that are known and accepted. They are honest reviews, not independent
