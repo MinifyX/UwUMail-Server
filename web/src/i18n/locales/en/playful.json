@@ -40,10 +40,10 @@
   "people": {
     "empty": {
       "title": "So far it's just you (˘ᵕ˘)",
-      "body": "Add the people who should move in. I'll make them a cozy mailbox."
+      "body": "Add the accounts that should move in. I'll make them a cozy mailbox."
     },
     "noResults": {
-      "title": "Nobody found (・_・;)"
+      "title": "Nothing found (・_・;)"
     },
     "invite": {
       "title": "{{name}} can move in!"

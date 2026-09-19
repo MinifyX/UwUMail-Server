@@ -5,7 +5,7 @@ import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { TextInput } from "@/components/ui/Field";
+import { Select, TextInput } from "@/components/ui/Field";
 import { Pill } from "@/components/ui/Pill";
 import { useT } from "@/i18n";
 import type { Person, PersonStatus, Session } from "@/lib/api";
@@ -13,17 +13,26 @@ import { formatDate } from "@/lib/format";
 import { usePhone } from "@/lib/media";
 import { Link } from "@/lib/router";
 import { CreatePersonDialog } from "./CreatePersonDialog";
-import { AdminPill, PersonAvatar, StatusPill, StorageLine } from "./PersonBits";
+import { AdminPill, PersonAvatar, ServicePill, StatusPill, StorageLine } from "./PersonBits";
 import { usePeople } from "./queries";
 
 type Filter = "all" | PersonStatus;
 const FILTERS: Filter[] = ["all", "active", "invited", "disabled", "deleted"];
 
+/** People, programs, or both. */
+type Kind = "all" | "person" | "service";
+const KINDS: Kind[] = ["all", "person", "service"];
+
+const kindOf = (person: Person): Exclude<Kind, "all"> => (person.role === "service" ? "service" : "person");
+const domainOf = (login: string) => login.split("@")[1] ?? "";
+
 export const personUrl = (login: string) => `/admin/people/${encodeURIComponent(login)}`;
 
-function matches(person: Person, filter: Filter, search: string) {
+function matches(person: Person, filter: Filter, kind: Kind, domain: string, search: string) {
   // The trash only shows up when asked for.
   if (filter === "all" ? person.status === "deleted" : person.status !== filter) return false;
+  if (kind !== "all" && kindOf(person) !== kind) return false;
+  if (domain && domainOf(person.login) !== domain) return false;
   if (!search) return true;
   const needle = search.toLowerCase();
   return (
@@ -36,6 +45,8 @@ export function PeoplePage({ session }: { session: Session }) {
   const people = usePeople();
   const phone = usePhone();
   const [filter, setFilter] = useState<Filter>("all");
+  const [kind, setKind] = useState<Kind>("all");
+  const [domain, setDomain] = useState("");
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
 
@@ -51,7 +62,9 @@ export function PeoplePage({ session }: { session: Session }) {
   if (people.isPending) return <Loading />;
   if (people.isError) return <LoadError error={people.error} onRetry={() => void people.refetch()} />;
 
-  const visible = people.data.filter((person) => matches(person, filter, search.trim()));
+  const visible = people.data.filter((person) => matches(person, filter, kind, domain, search.trim()));
+  // Only worth offering when there is more than one.
+  const domains = [...new Set(people.data.map((person) => domainOf(person.login)))].filter(Boolean).sort();
   const onlyMe = people.data.length === 1 && people.data[0]?.login === session.account.login;
   // The table is 720 pixels wide and would scroll inside the page on a phone, which feels exactly
   // like the page itself sliding away, so a phone gets the cards instead. Nothing is lost, only
@@ -93,6 +106,26 @@ export function PeoplePage({ session }: { session: Session }) {
                 </Pill>
               ))}
             </div>
+            <div className="flex flex-wrap gap-2">
+              {KINDS.map((value) => (
+                <Pill key={value} active={kind === value} onClick={() => setKind(value)}>
+                  {t(`people.kind.${value}`)}
+                </Pill>
+              ))}
+            </div>
+            {domains.length > 1 && (
+              <label className="w-full sm:w-52">
+                <span className="sr-only">{t("people.domain")}</span>
+                <Select className="h-10" value={domain} onChange={(event) => setDomain(event.target.value)}>
+                  <option value="">{t("people.allDomains")}</option>
+                  {domains.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+            )}
             <label className="relative ml-auto w-full sm:w-64">
               <span className="sr-only">{t("people.search")}</span>
               <Search
@@ -139,6 +172,7 @@ export function PeoplePage({ session }: { session: Session }) {
                         <span className="flex flex-wrap gap-1.5">
                           <StatusPill status={person.status} />
                           {person.role === "admin" && <AdminPill />}
+                          {person.role === "service" && <ServicePill />}
                         </span>
                       </td>
                       <td className="px-4 py-2">
@@ -176,6 +210,7 @@ export function PeoplePage({ session }: { session: Session }) {
                     <span className="flex flex-wrap gap-1.5">
                       <StatusPill status={person.status} />
                       {person.role === "admin" && <AdminPill />}
+                      {person.role === "service" && <ServicePill />}
                       {person.addresses.length > 1 && (
                         <span className="inline-flex h-6 items-center text-[12px] text-muted">
                           {t("people.addresses", { count: person.addresses.length })}

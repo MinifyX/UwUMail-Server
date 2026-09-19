@@ -322,6 +322,8 @@ impl Web {
             .route("/api/admin/people/{login}/external-forwarding", put(routes::mailbox::set_external_forwarding))
             .route("/api/admin/people/{login}/alias-limit", put(routes::own::set_alias_limit))
             .route("/api/admin/people/{login}/send-as-domains", put(routes::people::set_send_as_domains))
+            .route("/api/admin/people/{login}/app-passwords", post(routes::people::create_app_password))
+            .route("/api/admin/people/{login}/app-passwords/{id}", delete(routes::people::revoke_app_password))
             .route("/api/admin/people/{login}/aliases", post(routes::people::add_alias))
             .route("/api/admin/people/{login}/aliases/{address}", delete(routes::people::remove_alias))
             .route("/api", get(routes::not_found))

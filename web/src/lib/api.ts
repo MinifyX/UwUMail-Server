@@ -44,7 +44,7 @@ export async function api<T>(path: string, options: { method?: string; body?: un
   return data as T;
 }
 
-export type Role = "admin" | "user";
+export type Role = "admin" | "user" | "service";
 
 export interface Info {
   hostname: string;
@@ -114,10 +114,24 @@ export interface AddressInfo {
   createdAt: number;
 }
 
+/** Which protocols an account may use at all, whoever holds its password. */
+export interface Protocols {
+  smtp: boolean;
+  imap: boolean;
+  jmap: boolean;
+  caldav: boolean;
+  carddav: boolean;
+}
+
 export interface Person {
   login: string;
   name: string;
   role: Role;
+  protocols: Protocols;
+  /** Where mail goes while this account has no mailbox; empty means it takes none. */
+  redirectTo: string;
+  /** False for a service with neither IMAP nor JMAP. */
+  hasMailbox: boolean;
   status: PersonStatus;
   quotaBytes: number;
   usedBytes: number;
@@ -131,6 +145,14 @@ export interface Person {
   aliasLimit?: number;
   /** Domains the person may send as with any address; only in the detail view. */
   sendAsDomains?: string[];
+  /** Only for a service, which cannot open its own security page. */
+  appPasswordList?: AppPasswordInfo[];
+}
+
+/** An app password the moment it is made: the only time its secret is readable. */
+export interface AppPasswordCreated {
+  appPassword: AppPasswordInfo;
+  secret: string;
 }
 
 /** A one-time link to choose a password; `path` is relative to the portal. */

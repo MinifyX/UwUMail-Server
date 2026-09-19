@@ -40,10 +40,10 @@
   "people": {
     "empty": {
       "title": "Hier bist bisher nur du (˘ᵕ˘)",
-      "body": "Leg die Personen an, die hier einziehen sollen. Ich mach ihnen ein gemütliches Postfach."
+      "body": "Leg die Konten an, die hier einziehen sollen. Ich mach ihnen ein gemütliches Postfach."
     },
     "noResults": {
-      "title": "Niemand gefunden (・_・;)"
+      "title": "Nichts gefunden (・_・;)"
     },
     "invite": {
       "title": "{{name}} kann einziehen!"

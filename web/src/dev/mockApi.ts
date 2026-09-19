@@ -37,7 +37,10 @@ import type {
   MtaStsView,
   OwnAddressesView,
   Overview,
+  AppPasswordCreated,
+  AppScope,
   Person,
+  Protocols,
   Profile,
   Reachability,
   RecordCheck,
@@ -82,11 +85,18 @@ const address = (value: string, kind: "primary" | "alias" = "primary") => ({
   createdAt: now - 86_400,
 });
 
+/** Everything on for a person, calendars and contacts off for a service. */
+const allProtocols = (): Protocols => ({ smtp: true, imap: true, jmap: true, caldav: true, carddav: true });
+const serviceProtocols = (): Protocols => ({ ...allProtocols(), caldav: false, carddav: false });
+
 function person(login: string, name: string, extra: Partial<Person> = {}): Person {
   return {
     login,
     name,
     role: "user",
+    protocols: allProtocols(),
+    redirectTo: "",
+    hasMailbox: true,
     status: "active",
     quotaBytes: 5 * GB,
     usedBytes: Math.round(Math.random() * 3 * GB),
@@ -114,12 +124,65 @@ const people: Person[] = [
   person("kassenwart@verein.example", "Kassenwart", {
     addresses: [address("kassenwart@verein.example"), address("kasse@verein.example", "alias")],
   }),
+  person("backup@uwu.example", "Backup-Skript", {
+    role: "service",
+    protocols: { smtp: true, imap: false, jmap: false, caldav: false, carddav: false },
+    hasMailbox: false,
+    redirectTo: "lorin@uwu.example",
+    quotaBytes: 0,
+    usedBytes: 0,
+  }),
+  person("noreply@verein.example", "Vereins-Rundmail", {
+    role: "service",
+    protocols: { smtp: true, imap: true, jmap: true, caldav: false, carddav: false },
+    quotaBytes: 1 * GB,
+    usedBytes: Math.round(0.12 * GB),
+  }),
   person("alt@uwu.example", "Altes Konto", {
     status: "deleted",
     deletedAt: now - 3 * 86_400,
     purgeAt: now + 27 * 86_400,
   }),
 ];
+
+/** App passwords of the services, as the admin panel sees them. */
+const servicePasswords: Record<string, AppPasswordInfo[]> = {
+  "backup@uwu.example": [
+    {
+      id: 901,
+      name: "Access",
+      scopes: ["smtp"],
+      createdAt: now - 9 * 86_400,
+      expiresAt: null,
+      lastUsedAt: now - 3600,
+      lastUsedProtocol: "smtp",
+      lastUsedIp: "192.0.2.10",
+    },
+  ],
+};
+
+let nextAppPasswordId = 950;
+
+function newAppPassword(login: string, name: string): AppPasswordCreated {
+  const found = people.find((p) => p.login === login);
+  const protocols = found?.protocols ?? allProtocols();
+  const scopes: AppScope[] = [];
+  if (protocols.imap || protocols.jmap) scopes.push("mail");
+  if (protocols.smtp) scopes.push("smtp");
+  if (protocols.caldav || protocols.carddav) scopes.push("dav");
+  const appPassword: AppPasswordInfo = {
+    id: (nextAppPasswordId += 1),
+    name,
+    scopes,
+    createdAt: Math.floor(Date.now() / 1000),
+    expiresAt: null,
+    lastUsedAt: null,
+    lastUsedProtocol: null,
+    lastUsedIp: null,
+  };
+  servicePasswords[login] = [appPassword, ...(servicePasswords[login] ?? [])];
+  return { appPassword, secret: "nyuu-mock-pass-word" };
+}
 
 interface MockDomain {
   name: string;
@@ -2407,20 +2470,30 @@ const routes: [string, RegExp, Handler][] = [
     "POST",
     /^\/api\/admin\/people$/,
     (body) => {
-      const input = body as { address: string; name: string; admin: boolean; quotaBytes: number; password?: string };
+      const input = body as {
+        address: string;
+        name: string;
+        admin: boolean;
+        service?: boolean;
+        makePassword?: boolean;
+        quotaBytes: number;
+        password?: string;
+      };
       const login = input.address.toLowerCase();
       if (people.some((p) => p.addresses.some((a) => a.address === login))) return problem(409, "conflict");
       const created = person(login, input.name, {
-        role: input.admin ? "admin" : "user",
+        role: input.service ? "service" : input.admin ? "admin" : "user",
+        protocols: input.service ? serviceProtocols() : allProtocols(),
         quotaBytes: input.quotaBytes,
         usedBytes: 0,
-        status: input.password ? "active" : "invited",
+        status: input.service || input.password ? "active" : "invited",
         createdAt: Math.floor(Date.now() / 1000),
       });
       people.push(created);
       people.sort((a, b) => a.login.localeCompare(b.login));
-      log("account.create", login, { invited: !input.password });
-      return [201, { person: created, link: input.password ? null : link() }];
+      log("account.create", login, { invited: !input.service && !input.password });
+      const access = input.service && input.makePassword ? newAppPassword(login, "Access") : null;
+      return [201, { person: created, link: input.service || input.password ? null : link(), access }];
     },
   ],
   [
@@ -2445,7 +2518,11 @@ const routes: [string, RegExp, Handler][] = [
         ? { externalBlocked: false, targets: mockForwarding.targets.length, external: 1 }
         : { externalBlocked: found.login === "opa@verein.example", targets: 0, external: 0 };
       const sendAsDomains = mockSendAs[found.login] ?? [];
-      return [200, { ...found, security, forwarding, aliasLimit: me ? mockAddresses.limit : 10, sendAsDomains }];
+      const appPasswordList = found.role === "service" ? (servicePasswords[found.login] ?? []) : undefined;
+      return [
+        200,
+        { ...found, security, forwarding, aliasLimit: me ? mockAddresses.limit : 10, sendAsDomains, appPasswordList },
+      ];
     },
   ],
   [
@@ -2454,12 +2531,31 @@ const routes: [string, RegExp, Handler][] = [
     (body, [login]) => {
       const found = people.find((p) => p.login === login);
       if (!found) return problem(404, "notFound");
-      const changes = body as { name?: string; admin?: boolean; quotaBytes?: number; disabled?: boolean };
-      if (login === "lorin@uwu.example" && (changes.admin === false || changes.disabled)) {
-        return problem(409, changes.disabled ? "notYourself" : "lastAdmin");
+      const changes = body as {
+        name?: string;
+        admin?: boolean;
+        service?: boolean;
+        protocols?: Protocols;
+        redirectTo?: string;
+        quotaBytes?: number;
+        disabled?: boolean;
+      };
+      if (login === "lorin@uwu.example" && (changes.admin === false || changes.disabled || changes.service)) {
+        return problem(409, changes.admin === false ? "lastAdmin" : "notYourself");
       }
       if (changes.name !== undefined) found.name = changes.name;
       if (changes.admin !== undefined) found.role = changes.admin ? "admin" : "user";
+      if (changes.service !== undefined) found.role = changes.service ? "service" : "user";
+      if (changes.protocols !== undefined) {
+        found.protocols = changes.protocols;
+        found.hasMailbox = changes.protocols.imap || changes.protocols.jmap;
+      }
+      if (changes.redirectTo !== undefined) {
+        if (changes.redirectTo && !people.some((p) => p.addresses.some((a) => a.address === changes.redirectTo))) {
+          return problem(422, "invalid");
+        }
+        found.redirectTo = changes.redirectTo;
+      }
       if (changes.quotaBytes !== undefined) found.quotaBytes = changes.quotaBytes;
       if (changes.disabled !== undefined) found.status = changes.disabled ? "disabled" : "active";
       log("account.update", login!, changes);
@@ -2503,6 +2599,31 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["POST", /^\/api\/admin\/people\/([^/]+)\/password-link$/, () => [200, link()]],
+  [
+    "POST",
+    /^\/api\/admin\/people\/([^/]+)\/app-passwords$/,
+    (body, [login]) => {
+      const found = people.find((p) => p.login === login);
+      if (!found) return problem(404, "notFound");
+      if (found.role !== "service") return problem(409, "notAService");
+      const name = (body as { name?: string }).name?.trim() || "Access";
+      const created = newAppPassword(found.login, name);
+      log("account.appPasswordCreated", found.login, { name });
+      return [201, created];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/admin\/people\/([^/]+)\/app-passwords\/(\d+)$/,
+    (_, [login, id]) => {
+      const list = servicePasswords[login!] ?? [];
+      const at = list.findIndex((entry) => entry.id === Number(id));
+      if (at < 0) return problem(404, "notFound");
+      log("account.appPasswordRevoked", login!, { name: list[at]!.name });
+      list.splice(at, 1);
+      return [204, null];
+    },
+  ],
   ["GET", /^\/api\/admin\/updates$/, () => [200, mockUpdates]],
   [
     "PUT",

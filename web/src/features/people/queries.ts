@@ -1,5 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type DomainSummary, type PasswordLinkCreated, type Person } from "@/lib/api";
+import {
+  api,
+  type AppPasswordCreated,
+  type AppPasswordInfo,
+  type DomainSummary,
+  type PasswordLinkCreated,
+  type Person,
+  type Protocols,
+} from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { toast } from "@/state/toasts";
 
@@ -33,15 +41,25 @@ export interface NewPerson {
   address: string;
   name: string;
   admin: boolean;
+  /** A mailbox for a program: no portal login, app passwords only. */
+  service?: boolean;
+  /** Only for a service: hand out an app password right away. */
+  makePassword?: boolean;
   quotaBytes: number;
   password?: string;
+}
+
+/** What comes back from creating one: an invitation link for a person, a secret for a service. */
+export interface PersonCreated {
+  person: Person;
+  link: PasswordLinkCreated | null;
+  access: AppPasswordCreated | null;
 }
 
 export function useCreatePerson() {
   const updated = usePersonUpdated();
   return useMutation({
-    mutationFn: (person: NewPerson) =>
-      api<{ person: Person; link: PasswordLinkCreated | null }>("/api/admin/people", { method: "POST", body: person }),
+    mutationFn: (person: NewPerson) => api<PersonCreated>("/api/admin/people", { method: "POST", body: person }),
     onSuccess: (result) => updated(result.person),
   });
 }
@@ -49,6 +67,10 @@ export function useCreatePerson() {
 export interface PersonChanges {
   name?: string;
   admin?: boolean;
+  /** Turns a person into a service, or a service back into a person. */
+  service?: boolean;
+  protocols?: Protocols;
+  redirectTo?: string;
   quotaBytes?: number;
   disabled?: boolean;
 }
@@ -162,6 +184,34 @@ export function useSetSendAsDomains(login: string) {
       void queryClient.invalidateQueries({ queryKey: ["admin", "people", login] });
       void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
     },
+  });
+}
+
+/** A service cannot open its own security page, so an admin manages its app passwords here. */
+export function useCreateServicePassword(login: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) =>
+      api<AppPasswordCreated>(`${personPath(login)}/app-passwords`, { method: "POST", body: { name } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "people", login] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
+    },
+  });
+}
+
+export function useRevokeServicePassword(login: string, success: (name: string) => string) {
+  const queryClient = useQueryClient();
+  const errorText = useErrorText();
+  return useMutation({
+    mutationFn: (password: AppPasswordInfo) =>
+      api<void>(`${personPath(login)}/app-passwords/${password.id}`, { method: "DELETE" }),
+    onSuccess: (_result, password) => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "people", login] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
+      toast(success(password.name), "success");
+    },
+    onError: (error) => toast(errorText(error), "error"),
   });
 }
 

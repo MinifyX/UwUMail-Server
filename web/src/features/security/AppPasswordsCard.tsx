@@ -13,7 +13,7 @@ import { formatDate, formatRelative } from "@/lib/format";
 import { toast } from "@/state/toasts";
 import { Cancelled } from "./ConfirmPassword";
 import { useSecurityAction } from "./queries";
-import { CopyTextButton } from "./SecurityBits";
+import { CopyTextButton, SecretBox } from "./SecurityBits";
 
 type Confirmed = <T>(action: (password?: string) => Promise<T>) => Promise<T>;
 
@@ -126,12 +126,7 @@ function CreatedView({ created, login, onClose }: { created: Created; login: str
   return (
     <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
       <p className="text-sm text-muted">{t("security.appPasswords.createdBody", { name: created.appPassword.name })}</p>
-      <div className="flex flex-col gap-2 rounded-control bg-canvas px-4 py-3">
-        <span className="text-[12px] font-semibold text-muted">{t("security.appPasswords.login")}</span>
-        <code className="font-mono text-sm select-all">{login}</code>
-        <span className="mt-1 text-[12px] font-semibold text-muted">{t("security.appPasswords.password")}</span>
-        <code className="font-mono text-lg tracking-wide select-all">{created.secret}</code>
-      </div>
+      <SecretBox login={login} secret={created.secret} />
       <div className="flex flex-wrap justify-between gap-2">
         <CopyTextButton value={created.secret} label={t("security.appPasswords.copy")} />
         <Button variant="primary" onClick={onClose}>
@@ -142,7 +137,7 @@ function CreatedView({ created, login, onClose }: { created: Created; login: str
   );
 }
 
-function AppPasswordRow({ appPassword, onRevoke }: { appPassword: AppPasswordInfo; onRevoke: () => void }) {
+export function AppPasswordRow({ appPassword, onRevoke }: { appPassword: AppPasswordInfo; onRevoke: () => void }) {
   const { t, i18n } = useT();
   const language = i18n.language;
   const [nowAtRender] = useState(() => Math.floor(Date.now() / 1000));

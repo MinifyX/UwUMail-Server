@@ -5,7 +5,9 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use uwumail_store::{AccountUpdate, NewAccount, PasswordLinkPurpose, Person, Role, TRASH_RETENTION_SECS};
+use uwumail_store::{
+    AccountUpdate, NewAccount, NewAppPassword, PasswordLinkPurpose, Person, Role, TRASH_RETENTION_SECS, scopes_for,
+};
 
 use super::{audit, check_password};
 use crate::Web;
@@ -22,7 +24,8 @@ pub fn person_json(person: &Person) -> Value {
         "deleted"
     } else if account.disabled {
         "disabled"
-    } else if !person.has_password {
+    // A service has no portal password on purpose, so it is not waiting for an invitation.
+    } else if !person.has_password && !account.is_service() {
         "invited"
     } else {
         "active"
@@ -38,6 +41,10 @@ pub fn person_json(person: &Person) -> Value {
         "deletedAt": account.deleted_at,
         "purgeAt": account.deleted_at.map(|at| at + TRASH_RETENTION_SECS),
         "addresses": person.addresses,
+        "protocols": account.protocols,
+        "redirectTo": account.redirect_to,
+        // A service with neither IMAP nor JMAP has no mailbox at all.
+        "hasMailbox": account.has_mailbox(),
     })
 }
 
@@ -67,6 +74,10 @@ pub async fn detail(State(web): State<Web>, _admin: Admin, Path(login): Path<Str
         "appPasswords": app_passwords,
         "appPasswordsRequired": security.app_passwords_required(),
     });
+    if person.account.is_service() {
+        // A service cannot open its own security page, so the admin sees the list here.
+        value["appPasswordList"] = json!(web.store().app_passwords(person.account.id).await?);
+    }
     value["aliasLimit"] = json!(web.store().own_addresses(person.account.id).await?.limit);
     value["sendAsDomains"] = json!(web.store().send_as_domains(person.account.id).await?);
     value["forwarding"] = json!({
@@ -102,10 +113,16 @@ pub struct NewPerson {
     name: String,
     #[serde(default)]
     admin: bool,
+    /// A mailbox for a program: no portal login, app passwords only.
+    #[serde(default)]
+    service: bool,
     #[serde(default)]
     quota_bytes: i64,
-    /// Without a password the person gets an invitation link.
+    /// Without a password the person gets an invitation link. A service never has one.
     password: Option<String>,
+    /// For a service: hand out an app password right away, shown once.
+    #[serde(default)]
+    make_password: bool,
 }
 
 pub async fn create(
@@ -116,14 +133,20 @@ pub async fn create(
     if let Some(password) = &new.password {
         check_password(password, &new.address)?;
     }
-    let invite = new.password.is_none();
+    // Nobody signs in as a service, so it gets neither a password nor an invitation.
+    let invite = new.password.is_none() && !new.service;
+    let role = match (new.admin, new.service) {
+        (true, _) => Role::Admin,
+        (_, true) => Role::Service,
+        _ => Role::User,
+    };
     let account = web
         .store()
         .create_account(NewAccount {
             address: new.address.trim().to_owned(),
             display_name: new.name,
-            password: new.password,
-            role: if new.admin { Role::Admin } else { Role::User },
+            password: new.password.filter(|_| !new.service),
+            role,
             quota_bytes: new.quota_bytes,
             protocols: None,
         })
@@ -150,8 +173,33 @@ pub async fn create(
         json!({ "role": account.role, "quotaBytes": account.quota_bytes, "invited": invite }),
     )
     .await;
+    // A service has no way in until it gets one, so it may start with an app password.
+    let app_password = if new.service && new.make_password {
+        let created = web
+            .store()
+            .create_app_password(
+                account.id,
+                NewAppPassword {
+                    name: FIRST_APP_PASSWORD.into(),
+                    scopes: scopes_for(account.protocols),
+                    expires_at: None,
+                },
+            )
+            .await?;
+        audit(
+            &web,
+            &session,
+            "account.appPasswordCreated",
+            &account.login,
+            json!({ "name": created.app_password.name }),
+        )
+        .await;
+        Some(json!({ "appPassword": created.app_password, "secret": created.secret }))
+    } else {
+        None
+    };
     let person = load(&web, &account.login).await?;
-    Ok((StatusCode::CREATED, Json(json!({ "person": person_json(&person), "link": link }))))
+    Ok((StatusCode::CREATED, Json(json!({ "person": person_json(&person), "link": link, "access": app_password }))))
 }
 
 #[derive(Deserialize)]
@@ -159,8 +207,13 @@ pub async fn create(
 pub struct PersonChanges {
     name: Option<String>,
     admin: Option<bool>,
+    /// Turns a person into a service, or a service back into a person.
+    service: Option<bool>,
     quota_bytes: Option<i64>,
     disabled: Option<bool>,
+    protocols: Option<uwumail_store::Protocols>,
+    /// Where mail goes while this account has no mailbox; an address of this server, or empty.
+    redirect_to: Option<String>,
 }
 
 pub async fn update(
@@ -178,10 +231,18 @@ pub async fn update(
             &login,
             AccountUpdate {
                 display_name: changes.name.clone(),
-                role: changes.admin.map(|admin| if admin { Role::Admin } else { Role::User }),
+                // Service wins over admin: a mailbox for a program manages nothing.
+                role: match (changes.service, changes.admin) {
+                    (Some(true), _) => Some(Role::Service),
+                    (Some(false), _) => Some(Role::User),
+                    (None, Some(true)) => Some(Role::Admin),
+                    (None, Some(false)) => Some(Role::User),
+                    (None, None) => None,
+                },
                 quota_bytes: changes.quota_bytes,
                 disabled: changes.disabled,
-                ..Default::default()
+                protocols: changes.protocols,
+                redirect_to: changes.redirect_to.clone(),
             },
         )
         .await?;
@@ -191,6 +252,15 @@ pub async fn update(
     }
     if let Some(admin) = changes.admin {
         details.insert("admin".into(), admin.into());
+    }
+    if let Some(service) = changes.service {
+        details.insert("service".into(), service.into());
+    }
+    if let Some(protocols) = changes.protocols {
+        details.insert("protocols".into(), serde_json::to_value(protocols).unwrap_or_default());
+    }
+    if let Some(redirect) = changes.redirect_to {
+        details.insert("redirectTo".into(), redirect.into());
     }
     if let Some(quota) = changes.quota_bytes {
         details.insert("quotaBytes".into(), quota.into());
@@ -281,6 +351,64 @@ pub async fn set_password(
     audit(&web, &session, "account.passwordSet", &person.account.login, json!({})).await;
     let ip = session.client.ip.to_string();
     notify(&web, &person.account, Notice::PasswordSetByAdmin, Origin { actor: &session.account.login, ip: &ip }).await;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// The name a service's first app password gets. Stored, so it stays English like the mailboxes.
+const FIRST_APP_PASSWORD: &str = "Access";
+
+/// An admin may only do this for a service: a person manages their own app passwords, and nobody
+/// should be able to quietly mint a key to someone else's mailbox.
+fn service_only(person: &Person) -> ApiResult<()> {
+    if person.account.is_service() {
+        Ok(())
+    } else {
+        Err(ApiError::Rule("notAService", "only a service has its app passwords managed here".into()))
+    }
+}
+
+#[derive(Deserialize)]
+pub struct NewServicePassword {
+    #[serde(default)]
+    name: String,
+}
+
+pub async fn create_app_password(
+    State(web): State<Web>,
+    Admin(session): Admin,
+    Path(login): Path<String>,
+    Json(new): Json<NewServicePassword>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let person = load(&web, &login).await?;
+    service_only(&person)?;
+    let name = if new.name.trim().is_empty() { FIRST_APP_PASSWORD.to_owned() } else { new.name.trim().to_owned() };
+    let created = web
+        .store()
+        .create_app_password(
+            person.account.id,
+            NewAppPassword { name, scopes: scopes_for(person.account.protocols), expires_at: None },
+        )
+        .await?;
+    audit(
+        &web,
+        &session,
+        "account.appPasswordCreated",
+        &person.account.login,
+        json!({ "name": created.app_password.name }),
+    )
+    .await;
+    Ok((StatusCode::CREATED, Json(json!({ "appPassword": created.app_password, "secret": created.secret }))))
+}
+
+pub async fn revoke_app_password(
+    State(web): State<Web>,
+    Admin(session): Admin,
+    Path((login, id)): Path<(String, i64)>,
+) -> ApiResult<StatusCode> {
+    let person = load(&web, &login).await?;
+    service_only(&person)?;
+    let revoked = web.store().revoke_app_password(person.account.id, id).await?;
+    audit(&web, &session, "account.appPasswordRevoked", &person.account.login, json!({ "name": revoked.name })).await;
     Ok(StatusCode::NO_CONTENT)
 }
 

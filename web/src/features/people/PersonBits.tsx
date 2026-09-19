@@ -68,6 +68,16 @@ export function StatusPill({ status }: { status: PersonStatus }) {
   );
 }
 
+/** Says that this mailbox belongs to a program, not a person. */
+export function ServicePill() {
+  const { t } = useT();
+  return (
+    <span className="inline-flex h-6 items-center rounded-full border border-line px-2.5 text-[12px] font-semibold text-muted">
+      {t("people.service")}
+    </span>
+  );
+}
+
 export function AdminPill() {
   const { t } = useT();
   return (

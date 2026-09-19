@@ -47,6 +47,19 @@ export function CopyTextButton({ value, label }: { value: string; label: string 
   );
 }
 
+/** The login and the secret of a fresh app password, readable only at this moment. */
+export function SecretBox({ login, secret }: { login: string; secret: string }) {
+  const { t } = useT();
+  return (
+    <div className="flex flex-col gap-2 rounded-control bg-canvas px-4 py-3">
+      <span className="text-[12px] font-semibold text-muted">{t("security.appPasswords.login")}</span>
+      <code className="font-mono text-sm select-all">{login}</code>
+      <span className="mt-1 text-[12px] font-semibold text-muted">{t("security.appPasswords.password")}</span>
+      <code className="font-mono text-lg tracking-wide select-all">{secret}</code>
+    </div>
+  );
+}
+
 export function RecoveryCodesBox({ codes }: { codes: string[] }) {
   const { t } = useT();
   return (

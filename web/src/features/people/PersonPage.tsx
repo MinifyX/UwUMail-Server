@@ -1,5 +1,18 @@
 import clsx from "clsx";
-import { ArrowLeft, KeyRound, Lock, LockOpen, Plus, RotateCcw, ShieldCheck, ShieldOff, Trash2, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Bot,
+  KeyRound,
+  Lock,
+  LockOpen,
+  Plus,
+  RotateCcw,
+  ShieldCheck,
+  ShieldOff,
+  Trash2,
+  UserRound,
+  X,
+} from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button, IconButton } from "@/components/ui/Button";
@@ -8,16 +21,21 @@ import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
-import type { PasswordLinkCreated, Person, Session } from "@/lib/api";
+import { AppPasswordRow } from "@/features/security/AppPasswordsCard";
+import { SecretBox } from "@/features/security/SecurityBits";
+import type { AppPasswordCreated, AppPasswordInfo, PasswordLinkCreated, Person, Protocols, Session } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatDate } from "@/lib/format";
 import { Link, navigate } from "@/lib/router";
 import { toast } from "@/state/toasts";
+import { ConfirmCloseSecretDialog } from "@/components/ui/ConfirmCloseSecretDialog";
 import { LinkBox, QuotaSelect } from "./CreatePersonDialog";
-import { AdminPill, PersonAvatar, StatusPill, StorageLine } from "./PersonBits";
+import { AdminPill, PersonAvatar, ServicePill, StatusPill, StorageLine } from "./PersonBits";
 import {
   useAddAlias,
   useCreatePasswordLink,
+  useCreateServicePassword,
+  useRevokeServicePassword,
   useDomains,
   usePerson,
   usePurgePerson,
@@ -222,8 +240,255 @@ function Addresses({ person, editable }: { person: Person; editable: boolean }) 
           </Button>
         </form>
       )}
-      {editable && <AliasLimit person={person} />}
+      {editable && person.role !== "service" && <AliasLimit person={person} />}
       {editable && <SendAsDomains person={person} />}
+    </Card>
+  );
+}
+
+/** Which protocols this account may use, and where its mail goes while it has no mailbox. */
+function ProtocolCard({ person }: { person: Person }) {
+  const { t } = useT();
+  const update = useUpdatePerson(person.login, () => t("people.toasts.saved"));
+  const rows: { key: keyof Protocols; hint?: boolean }[] = [
+    { key: "smtp", hint: true },
+    { key: "imap", hint: true },
+    { key: "jmap", hint: true },
+    { key: "caldav" },
+    { key: "carddav" },
+  ];
+  return (
+    <Card title={t("people.protocols.title")}>
+      <p className="mb-4 text-[13px] text-muted">{t("people.protocols.hint")}</p>
+      <div className="flex flex-col gap-3">
+        {rows.map(({ key, hint }) => (
+          <Toggle
+            key={key}
+            checked={person.protocols[key]}
+            onChange={(on) => update.mutate({ protocols: { ...person.protocols, [key]: on } })}
+            label={t(`people.protocols.${key}`)}
+            description={hint ? t(`people.protocols.${key}Hint`) : undefined}
+          />
+        ))}
+      </div>
+      {!person.hasMailbox && (
+        <div className="mt-4 flex flex-col gap-3 border-t border-hairline pt-4">
+          <p className="text-[13px] text-warning">{t("people.protocols.noMailbox")}</p>
+          <RedirectField key={person.redirectTo} person={person} />
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/** Without a mailbox the mail has to go somewhere, or be refused at the door. */
+function RedirectField({ person }: { person: Person }) {
+  const { t } = useT();
+  const [address, setAddress] = useState(person.redirectTo);
+  const update = useUpdatePerson(person.login, () => t("people.toasts.saved"));
+  const changed = address.trim() !== person.redirectTo;
+  return (
+    <form
+      className="flex items-end gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (changed) update.mutate({ redirectTo: address.trim() });
+      }}
+    >
+      <Field label={t("people.protocols.redirect")} hint={t("people.protocols.redirectHint")} className="flex-1">
+        {(id) => (
+          <TextInput
+            id={id}
+            type="email"
+            autoComplete="off"
+            spellCheck={false}
+            value={address}
+            onChange={(event) => setAddress(event.target.value)}
+          />
+        )}
+      </Field>
+      {changed && (
+        <Button type="submit" variant="primary" busy={update.isPending}>
+          {t("common.save")}
+        </Button>
+      )}
+    </form>
+  );
+}
+
+/** Turns a person into a mailbox for a program, or back. Both ways keep the mail. */
+function Convert({ person }: { person: Person }) {
+  const { t } = useT();
+  const errorText = useErrorText();
+  const service = person.role === "service";
+  const [asking, setAsking] = useState(false);
+  const update = useUpdatePerson(person.login, () =>
+    t(service ? "people.toasts.becamePerson" : "people.toasts.becameService", { login: person.login }),
+  );
+  const which = service ? "ToPerson" : "ToService";
+  return (
+    <div className="flex flex-col items-start gap-2 border-t border-hairline pt-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <p className="min-w-0 flex-1 text-[13px] text-muted">{t(`people.detail.convert${which}Hint`)}</p>
+      <Button icon={service ? UserRound : Bot} onClick={() => setAsking(true)}>
+        {t(`people.detail.convert${which}`)}
+      </Button>
+      <Dialog
+        open={asking}
+        onClose={() => setAsking(false)}
+        title={t(`people.detail.convert${which}Title`, { login: person.login })}
+        width="sm"
+      >
+        <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
+          <p className="text-sm text-muted">{t(`people.detail.convert${which}Body`)}</p>
+          {update.isError && (
+            <p role="alert" className="text-[13px] text-danger">
+              {errorText(update.error)}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setAsking(false)}>{t("common.cancel")}</Button>
+            <Button
+              variant="primary"
+              icon={service ? UserRound : Bot}
+              busy={update.isPending}
+              onClick={() => update.mutate({ service: !service }, { onSuccess: () => setAsking(false) })}
+            >
+              {t(`people.detail.convert${which}`)}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    </div>
+  );
+}
+
+/** A service signs in nowhere, so an admin keeps its app passwords here. */
+function ServiceAccess({ person }: { person: Person }) {
+  const { t } = useT();
+  const errorText = useErrorText();
+  const create = useCreateServicePassword(person.login);
+  const revoke = useRevokeServicePassword(person.login, (name) => t("people.toasts.appPasswordRevoked", { name }));
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [created, setCreated] = useState<AppPasswordCreated | null>(null);
+  const [confirmingSecret, setConfirmingSecret] = useState(false);
+  const [revoking, setRevoking] = useState<AppPasswordInfo | null>(null);
+  const list = person.appPasswordList ?? [];
+
+  const closeCreate = () => {
+    setCreating(false);
+    setCreated(null);
+    setName("");
+  };
+  const requestCloseCreate = () => {
+    // The secret is on screen once and nowhere else, so leaving is worth a question.
+    if (created) setConfirmingSecret(true);
+    else closeCreate();
+  };
+
+  return (
+    <Card
+      title={t("people.serviceAccess.title")}
+      action={
+        <Button size="sm" icon={Plus} onClick={() => setCreating(true)}>
+          {t("people.serviceAccess.create")}
+        </Button>
+      }
+    >
+      <p className="mb-3 text-[13px] text-muted">{t("people.serviceAccess.hint")}</p>
+      {list.length === 0 ? (
+        <p className="text-sm text-muted">{t("people.serviceAccess.none")}</p>
+      ) : (
+        <ul className="flex flex-col">
+          {list.map((appPassword) => (
+            <AppPasswordRow key={appPassword.id} appPassword={appPassword} onRevoke={() => setRevoking(appPassword)} />
+          ))}
+        </ul>
+      )}
+
+      <Dialog
+        open={creating || created !== null}
+        onClose={requestCloseCreate}
+        closeOnOutsideClick={created === null && !name.trim()}
+        title={t(created ? "people.serviceAccess.createdTitle" : "people.serviceAccess.create")}
+        width="sm"
+      >
+        {created ? (
+          <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
+            <p className="text-sm text-muted">{t("people.created.body")}</p>
+            <SecretBox login={person.login} secret={created.secret} />
+            <div className="flex justify-end">
+              <Button variant="primary" onClick={closeCreate}>
+                {t("common.done")}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <form
+            className="flex flex-col gap-4 px-6 pt-1 pb-6"
+            onSubmit={(event) => {
+              event.preventDefault();
+              create.mutate(name.trim(), { onSuccess: setCreated });
+            }}
+          >
+            <Field label={t("people.serviceAccess.name")}>
+              {(id) => (
+                <TextInput
+                  id={id}
+                  autoFocus
+                  required
+                  maxLength={60}
+                  placeholder={t("people.serviceAccess.namePlaceholder")}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
+              )}
+            </Field>
+            {create.isError && (
+              <p role="alert" className="text-[13px] text-danger">
+                {errorText(create.error)}
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button onClick={requestCloseCreate}>{t("common.cancel")}</Button>
+              <Button type="submit" variant="primary" busy={create.isPending}>
+                {t("people.serviceAccess.create")}
+              </Button>
+            </div>
+          </form>
+        )}
+      </Dialog>
+
+      <ConfirmCloseSecretDialog
+        open={confirmingSecret}
+        onBack={() => setConfirmingSecret(false)}
+        onClose={() => {
+          setConfirmingSecret(false);
+          closeCreate();
+        }}
+      />
+
+      <Dialog
+        open={revoking !== null}
+        onClose={() => setRevoking(null)}
+        title={t("people.serviceAccess.revokeTitle", { name: revoking?.name ?? "" })}
+        width="sm"
+      >
+        <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
+          <p className="text-sm text-muted">{t("people.serviceAccess.revokeBody")}</p>
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setRevoking(null)}>{t("common.cancel")}</Button>
+            <Button
+              variant="danger"
+              icon={Trash2}
+              busy={revoke.isPending}
+              onClick={() => revoking && revoke.mutate(revoking, { onSuccess: () => setRevoking(null) })}
+            >
+              {t("security.appPasswords.revoke")}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </Card>
   );
 }
@@ -300,30 +565,36 @@ function SecurityInfo({ person, isMe }: { person: Person; isMe: boolean }) {
   const [asking, setAsking] = useState(false);
   const security = person.security;
   if (!security) return null;
+  // A service never signs in to the portal, so its way in is the app password list instead.
+  const service = person.role === "service";
   const methods = [
     security.totp && t("people.security.totp"),
     security.passkeys > 0 && t("people.security.passkeys", { count: security.passkeys }),
   ].filter(Boolean);
 
   return (
-    <Card title={t("people.security.title")}>
+    <Card title={t(service ? "people.forwarding.title" : "people.security.title")}>
       <div className="flex flex-col gap-3">
-        <p className="flex items-start gap-2 text-sm">
-          {security.secondFactor ? (
-            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
-          ) : (
-            <ShieldOff className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
-          )}
-          <span>
-            {security.secondFactor
-              ? t("people.security.on", { methods: methods.join(", ") })
-              : t("people.security.off")}
-          </span>
-        </p>
-        <p className="text-[13px] text-muted">
-          {t("people.security.appPasswords", { count: security.appPasswords })}
-          {security.appPasswordsRequired && ` · ${t("people.security.appsOnly")}`}
-        </p>
+        {!service && (
+          <p className="flex items-start gap-2 text-sm">
+            {security.secondFactor ? (
+              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+            ) : (
+              <ShieldOff className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden />
+            )}
+            <span>
+              {security.secondFactor
+                ? t("people.security.on", { methods: methods.join(", ") })
+                : t("people.security.off")}
+            </span>
+          </p>
+        )}
+        {!service && (
+          <p className="text-[13px] text-muted">
+            {t("people.security.appPasswords", { count: security.appPasswords })}
+            {security.appPasswordsRequired && ` · ${t("people.security.appsOnly")}`}
+          </p>
+        )}
         {security.secondFactor && !isMe && (
           <div className="flex flex-col items-start gap-2 border-t border-hairline pt-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <p className="min-w-0 flex-1 text-[13px] text-muted">{t("people.security.resetHint")}</p>
@@ -504,6 +775,7 @@ export function PersonPage({ login, session }: { login: string; session: Session
         <div className="flex flex-wrap gap-1.5">
           <StatusPill status={person.status} />
           {person.role === "admin" && <AdminPill />}
+          {person.role === "service" && <ServicePill />}
         </div>
       </header>
 
@@ -550,12 +822,14 @@ export function PersonPage({ login, session }: { login: string; session: Session
           ) : (
             <div className="flex flex-col gap-4">
               <NameField key={person.name} person={person} />
-              <Toggle
-                checked={person.role === "admin"}
-                onChange={(admin) => update.mutate({ admin })}
-                label={t("people.detail.admin")}
-                description={t("people.detail.adminHint")}
-              />
+              {person.role !== "service" && (
+                <Toggle
+                  checked={person.role === "admin"}
+                  onChange={(admin) => update.mutate({ admin })}
+                  label={t("people.detail.admin")}
+                  description={t("people.detail.adminHint")}
+                />
+              )}
               <Field label={t("people.detail.quota")}>
                 {(id) => (
                   <QuotaSelect
@@ -566,13 +840,16 @@ export function PersonPage({ login, session }: { login: string; session: Session
                 )}
               </Field>
               <StorageLine person={person} />
+              {!isMe && <Convert person={person} />}
             </div>
           )}
         </Card>
 
         <Addresses person={person} editable={!deleted} />
 
-        {!deleted && <Access person={person} />}
+        {!deleted && <ProtocolCard person={person} />}
+
+        {!deleted && (person.role === "service" ? <ServiceAccess person={person} /> : <Access person={person} />)}
 
         {!deleted && <SecurityInfo person={person} isMe={isMe} />}
 

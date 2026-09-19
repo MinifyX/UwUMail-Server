@@ -50,7 +50,7 @@
     "overview": "Übersicht",
     "openMenu": "Menü öffnen",
     "closeMenu": "Menü schließen",
-    "people": "Personen",
+    "people": "Konten",
     "log": "Protokoll",
     "domains": "Domains",
     "queue": "Warteschlange",
@@ -142,7 +142,7 @@
     "title": "Server",
     "intro": "So geht es deinem Server.",
     "cards": {
-      "accounts": "Personen",
+      "accounts": "Konten",
       "domains": "Domains",
       "aliases": "Zusätzliche Adressen",
       "queue": "Warteschlange",
@@ -260,10 +260,10 @@
     }
   },
   "people": {
-    "title": "Personen",
-    "intro": "Alle, die auf diesem Server ein Postfach haben.",
-    "add": "Person hinzufügen",
-    "search": "Personen durchsuchen",
+    "title": "Konten",
+    "intro": "Jedes Postfach auf diesem Server: Personen und Dienste.",
+    "add": "Konto hinzufügen",
+    "search": "Konten durchsuchen",
     "filter": {
       "all": "Alle",
       "active": "Aktiv",
@@ -278,6 +278,7 @@
       "deleted": "Im Papierkorb"
     },
     "admin": "Admin",
+    "service": "Dienst",
     "you": "Du",
     "storageOf": "{{used}} von {{quota}}",
     "storageUsed": "{{used}}",
@@ -285,21 +286,21 @@
     "addresses_other": "{{count}} Adressen",
     "empty": {
       "title": "Hier bist bisher nur du",
-      "body": "Leg die Personen an, die auf diesem Server ein Postfach bekommen sollen."
+      "body": "Leg die Konten an, die auf diesem Server ein Postfach bekommen sollen."
     },
     "noResults": {
-      "title": "Niemand gefunden",
+      "title": "Nichts gefunden",
       "body": "Versuch einen anderen Namen oder Filter."
     },
     "table": {
-      "person": "Person",
+      "person": "Konto",
       "status": "Status",
       "storage": "Speicher",
       "addresses": "Adressen",
       "created": "Angelegt"
     },
     "create": {
-      "title": "Person hinzufügen",
+      "title": "Konto hinzufügen",
       "name": "Name",
       "namePlaceholder": "Leni Wanders",
       "address": "Adresse",
@@ -314,16 +315,24 @@
       "ownPasswordHint": "Statt eines Einladungslinks. Die Person kann es später ändern.",
       "password": "Passwort",
       "submit": "Hinzufügen",
-      "noDomains": "Es gibt noch keine Domain. Leg zuerst eine an."
+      "noDomains": "Es gibt noch keine Domain. Leg zuerst eine an.",
+      "kind": "Art",
+      "kindPerson": "Person",
+      "kindPersonHint": "Meldet sich im Portal an und hat ein Postfach.",
+      "kindService": "Dienst",
+      "kindServiceHint": "Für Programme: kein Portal-Login, nur App-Passwörter. Kalender und Kontakte bleiben erst mal aus.",
+      "makePassword": "Gleich ein App-Passwort erzeugen",
+      "makePasswordHint": "Wird genau einmal angezeigt. Du kannst jederzeit ein neues anlegen.",
+      "namePlaceholderService": "Backup-Skript"
     },
     "invite": {
       "title": "{{name}} ist angelegt",
       "body": "Schick diesen Link an {{name}}. Darüber wird das eigene Passwort festgelegt. Der Link funktioniert nur einmal.",
       "copy": "Link kopieren",
-      "open": "Zur Person"
+      "open": "Zum Konto"
     },
     "detail": {
-      "back": "Personen",
+      "back": "Konten",
       "general": "Allgemein",
       "name": "Name",
       "admin": "Admin",
@@ -361,7 +370,15 @@
       "aliasLimitCount_other": "Bis zu {{count}}",
       "sendAs": "Senden als ganze Domain",
       "sendAsHint": "Die Person darf mit jeder Adresse dieser Domains senden, auch mit Adressen, die es nicht gibt. Praktisch für ein gemeinsames Büro.",
-      "sendAsDomain": "Jede Adresse von {{domain}}"
+      "sendAsDomain": "Jede Adresse von {{domain}}",
+      "convertToService": "In einen Dienst umwandeln",
+      "convertToServiceHint": "Für Postfächer, die einem Programm gehören.",
+      "convertToServiceTitle": "{{login}} in einen Dienst umwandeln?",
+      "convertToServiceBody": "Danach ist kein Portal-Login mehr möglich. Zwei-Faktor-Anmeldung, Passkeys und offene Sitzungen werden entfernt; das bisherige Passwort lebt als unbefristetes App-Passwort weiter. Die Mails bleiben, wo sie sind.",
+      "convertToPerson": "In eine Person umwandeln",
+      "convertToPersonHint": "Für ein Postfach, das doch jemandem gehört.",
+      "convertToPersonTitle": "{{login}} in eine Person umwandeln?",
+      "convertToPersonBody": "Das Konto darf sich danach wieder im Portal anmelden, sobald du ein Passwort setzt oder einen Einladungslink schickst. Die App-Passwörter bleiben."
     },
     "purge": {
       "title": "{{login}} endgültig löschen?",
@@ -380,7 +397,10 @@
       "purged": "{{login}} ist endgültig gelöscht",
       "aliasAdded": "{{address}} hinzugefügt",
       "aliasRemoved": "{{address}} entfernt",
-      "secondFactorsReset": "Zwei-Faktor-Anmeldung von {{login}} zurückgesetzt"
+      "secondFactorsReset": "Zwei-Faktor-Anmeldung von {{login}} zurückgesetzt",
+      "becameService": "{{login}} ist jetzt ein Dienst",
+      "becamePerson": "{{login}} ist jetzt eine Person",
+      "appPasswordRevoked": "{{name}} zurückgezogen"
     },
     "security": {
       "title": "Anmeldung",
@@ -399,10 +419,50 @@
       "yours": "Deine Einstellungen unter Sicherheit"
     },
     "forwarding": {
+      "title": "Weiterleitung",
       "allowExternal": "Weiterleitung an andere Server erlauben",
       "targets_one": "{{count}} Weiterleitung eingerichtet",
       "targets_other": "{{count}} Weiterleitungen eingerichtet",
       "none": "Keine Weiterleitung eingerichtet"
+    },
+    "kind": {
+      "all": "Alle",
+      "person": "Personen",
+      "service": "Dienste"
+    },
+    "domain": "Domain",
+    "allDomains": "Alle Domains",
+    "created": {
+      "title": "{{name}} ist angelegt",
+      "body": "Das App-Passwort steht nur jetzt hier. Danach kannst du nur noch ein neues anlegen."
+    },
+    "protocols": {
+      "title": "Protokolle",
+      "hint": "Was dieses Konto benutzen darf. Ein ausgeschaltetes Protokoll lässt niemanden durch, egal welches Passwort eingetippt wird.",
+      "smtp": "Senden (SMTP)",
+      "smtpHint": "Darf Mails über diesen Server verschicken.",
+      "imap": "IMAP",
+      "imapHint": "Mail-Apps wie Thunderbird oder Apple Mail.",
+      "jmap": "JMAP",
+      "jmapHint": "UwUMail und alles andere, was JMAP spricht.",
+      "caldav": "Kalender (CalDAV)",
+      "carddav": "Kontakte (CardDAV)",
+      "noMailbox": "Ohne IMAP und JMAP hat dieses Konto kein Postfach.",
+      "redirect": "Mail stattdessen an",
+      "redirectHint": "Eine Adresse auf diesem Server. Leer: Mails an dieses Konto werden gleich beim Einliefern abgewiesen.",
+      "redirectNone": "Mails an dieses Konto werden abgewiesen.",
+      "redirectTo": "Mails an dieses Konto gehen an {{address}}."
+    },
+    "serviceAccess": {
+      "title": "Zugang",
+      "hint": "Ein Dienst meldet sich nie im Portal an. Der Weg hinein sind App-Passwörter, und die legst du hier an.",
+      "create": "App-Passwort erzeugen",
+      "none": "Noch kein App-Passwort. Ohne eins kommt der Dienst nirgends rein.",
+      "name": "Wofür ist das Passwort?",
+      "namePlaceholder": "Backup-Skript",
+      "revokeTitle": "{{name}} zurückziehen?",
+      "revokeBody": "Was dieses Passwort benutzt, kommt danach nicht mehr rein.",
+      "createdTitle": "Neues App-Passwort"
     }
   },
   "log": {

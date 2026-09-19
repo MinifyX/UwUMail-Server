@@ -50,7 +50,7 @@
     "overview": "Overview",
     "openMenu": "Open menu",
     "closeMenu": "Close menu",
-    "people": "People",
+    "people": "Accounts",
     "log": "Change log",
     "domains": "Domains",
     "queue": "Queue",
@@ -142,7 +142,7 @@
     "title": "Server",
     "intro": "How your server is doing.",
     "cards": {
-      "accounts": "People",
+      "accounts": "Accounts",
       "domains": "Domains",
       "aliases": "Additional addresses",
       "queue": "Queue",
@@ -260,10 +260,10 @@
     }
   },
   "people": {
-    "title": "People",
-    "intro": "Everyone who has a mailbox on this server.",
-    "add": "Add person",
-    "search": "Search people",
+    "title": "Accounts",
+    "intro": "Every mailbox on this server: people and services.",
+    "add": "Add account",
+    "search": "Search accounts",
     "filter": {
       "all": "All",
       "active": "Active",
@@ -278,6 +278,7 @@
       "deleted": "In the trash"
     },
     "admin": "Admin",
+    "service": "Service",
     "you": "You",
     "storageOf": "{{used}} of {{quota}}",
     "storageUsed": "{{used}}",
@@ -285,21 +286,21 @@
     "addresses_other": "{{count}} addresses",
     "empty": {
       "title": "So far it's just you",
-      "body": "Add the people who should get a mailbox on this server."
+      "body": "Add the accounts that should get a mailbox on this server."
     },
     "noResults": {
-      "title": "Nobody found",
+      "title": "Nothing found",
       "body": "Try another name or filter."
     },
     "table": {
-      "person": "Person",
+      "person": "Account",
       "status": "Status",
       "storage": "Storage",
       "addresses": "Addresses",
       "created": "Created"
     },
     "create": {
-      "title": "Add person",
+      "title": "Add account",
       "name": "Name",
       "namePlaceholder": "Leni Wanders",
       "address": "Address",
@@ -314,16 +315,24 @@
       "ownPasswordHint": "Instead of an invitation link. The person can change it later.",
       "password": "Password",
       "submit": "Add",
-      "noDomains": "There is no domain yet. Add one first."
+      "noDomains": "There is no domain yet. Add one first.",
+      "kind": "Type",
+      "kindPerson": "Person",
+      "kindPersonHint": "Signs in to the portal and has a mailbox.",
+      "kindService": "Service",
+      "kindServiceHint": "For programs: no portal login, app passwords only. Calendars and contacts start out off.",
+      "makePassword": "Create an app password right away",
+      "makePasswordHint": "Shown exactly once. You can add another one whenever you like.",
+      "namePlaceholderService": "Backup script"
     },
     "invite": {
       "title": "{{name}} has been added",
       "body": "Send this link to {{name}} to choose their own password. It works only once.",
       "copy": "Copy link",
-      "open": "Open person"
+      "open": "Open account"
     },
     "detail": {
-      "back": "People",
+      "back": "Accounts",
       "general": "General",
       "name": "Name",
       "admin": "Admin",
@@ -361,7 +370,15 @@
       "aliasLimitCount_other": "Up to {{count}}",
       "sendAs": "Send as a whole domain",
       "sendAsHint": "This person may send with any address of these domains, even addresses that do not exist. Handy for a shared office.",
-      "sendAsDomain": "Any address of {{domain}}"
+      "sendAsDomain": "Any address of {{domain}}",
+      "convertToService": "Turn into a service",
+      "convertToServiceHint": "For a mailbox that belongs to a program.",
+      "convertToServiceTitle": "Turn {{login}} into a service?",
+      "convertToServiceBody": "There is no portal login afterwards. Two-factor sign-in, passkeys and open sessions are removed; the password so far lives on as an app password that never expires. The mail stays where it is.",
+      "convertToPerson": "Turn into a person",
+      "convertToPersonHint": "For a mailbox that belongs to someone after all.",
+      "convertToPersonTitle": "Turn {{login}} into a person?",
+      "convertToPersonBody": "The account may sign in to the portal again as soon as you set a password or send an invitation link. Its app passwords stay."
     },
     "purge": {
       "title": "Delete {{login}} for good?",
@@ -380,7 +397,10 @@
       "purged": "{{login}} has been deleted for good",
       "aliasAdded": "Added {{address}}",
       "aliasRemoved": "Removed {{address}}",
-      "secondFactorsReset": "Two-factor login of {{login}} reset"
+      "secondFactorsReset": "Two-factor login of {{login}} reset",
+      "becameService": "{{login}} is a service now",
+      "becamePerson": "{{login}} is a person now",
+      "appPasswordRevoked": "{{name}} revoked"
     },
     "security": {
       "title": "Login",
@@ -399,10 +419,50 @@
       "yours": "Your settings under Security"
     },
     "forwarding": {
+      "title": "Forwarding",
       "allowExternal": "Allow forwarding to other servers",
       "targets_one": "{{count}} forwarding address",
       "targets_other": "{{count}} forwarding addresses",
       "none": "No forwarding set up"
+    },
+    "kind": {
+      "all": "All",
+      "person": "People",
+      "service": "Services"
+    },
+    "domain": "Domain",
+    "allDomains": "All domains",
+    "created": {
+      "title": "{{name}} is ready",
+      "body": "The app password is only here now. After this you can only create a new one."
+    },
+    "protocols": {
+      "title": "Protocols",
+      "hint": "What this account may use. A protocol that is off lets nobody through, whatever password is typed.",
+      "smtp": "Sending (SMTP)",
+      "smtpHint": "May send mail through this server.",
+      "imap": "IMAP",
+      "imapHint": "Mail apps like Thunderbird or Apple Mail.",
+      "jmap": "JMAP",
+      "jmapHint": "UwUMail and anything else that speaks JMAP.",
+      "caldav": "Calendars (CalDAV)",
+      "carddav": "Contacts (CardDAV)",
+      "noMailbox": "Without IMAP and JMAP this account has no mailbox.",
+      "redirect": "Send mail here instead",
+      "redirectHint": "An address on this server. Empty: mail to this account is refused at the door.",
+      "redirectNone": "Mail to this account is refused.",
+      "redirectTo": "Mail to this account goes to {{address}}."
+    },
+    "serviceAccess": {
+      "title": "Access",
+      "hint": "A service never signs in to the portal. The way in is an app password, and you create those here.",
+      "create": "Create app password",
+      "none": "No app password yet. Without one the service gets in nowhere.",
+      "name": "What is the password for?",
+      "namePlaceholder": "Backup script",
+      "revokeTitle": "Revoke {{name}}?",
+      "revokeBody": "Whatever uses this password stops getting in.",
+      "createdTitle": "New app password"
     }
   },
   "log": {

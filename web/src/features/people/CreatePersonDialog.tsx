@@ -5,13 +5,15 @@ import { Button, IconButton } from "@/components/ui/Button";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, Select, TextInput, Toggle } from "@/components/ui/Field";
+import { Pill } from "@/components/ui/Pill";
 import { useT } from "@/i18n";
-import { absoluteUrl, type PasswordLinkCreated, type Person } from "@/lib/api";
+import { absoluteUrl, type PasswordLinkCreated } from "@/lib/api";
+import { SecretBox } from "@/features/security/SecurityBits";
 import { useErrorText } from "@/lib/errors";
 import { formatDateTime } from "@/lib/format";
 import { navigate } from "@/lib/router";
 import { toast } from "@/state/toasts";
-import { useCreatePerson, useDomains } from "./queries";
+import { useCreatePerson, useDomains, type PersonCreated } from "./queries";
 
 const GB = 1024 ** 3;
 export const QUOTA_CHOICES = [0, 1, 2, 5, 10, 25, 50].map((gigabytes) => gigabytes * GB);
@@ -99,11 +101,11 @@ function CreatePerson({
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const { t } = useT();
-  const pro = true;
   const domains = useDomains();
   const create = useCreatePerson();
   const errorText = useErrorText();
 
+  const [service, setService] = useState(false);
   const [name, setName] = useState("");
   const [localPart, setLocalPart] = useState("");
   const [domain, setDomain] = useState("");
@@ -111,11 +113,14 @@ function CreatePerson({
   const [quota, setQuota] = useState(0);
   const [ownPassword, setOwnPassword] = useState(false);
   const [password, setPassword] = useState("");
-  const [created, setCreated] = useState<{ person: Person; link: PasswordLinkCreated | null } | null>(null);
+  // A service has no way in at all until it gets one, so this starts switched on.
+  const [makePassword, setMakePassword] = useState(true);
+  const [created, setCreated] = useState<PersonCreated | null>(null);
 
   const chosenDomain = domain || domains.data?.[0]?.name || "";
-  // Once the person exists there is nothing left to lose, so only the untouched form counts.
-  const dirty = !created && Boolean(name.trim() || localPart.trim() || admin || quota || ownPassword || password);
+  // Once the account exists there is nothing left to lose, so only the untouched form counts.
+  const dirty =
+    !created && Boolean(service || name.trim() || localPart.trim() || admin || quota || ownPassword || password);
   useEffect(() => {
     onDirtyChange(dirty);
     return () => onDirtyChange(false);
@@ -127,13 +132,16 @@ function CreatePerson({
       {
         address: `${localPart.trim()}@${chosenDomain}`,
         name: name.trim(),
-        admin,
+        admin: !service && admin,
+        service,
+        makePassword: service && makePassword,
         quotaBytes: quota,
-        password: pro && ownPassword ? password : undefined,
+        password: !service && ownPassword ? password : undefined,
       },
       {
         onSuccess: (result) => {
-          if (result.link) {
+          // An invitation link or a fresh secret is shown once; otherwise straight to the account.
+          if (result.link || result.access) {
             setCreated(result);
           } else {
             onClose();
@@ -145,10 +153,29 @@ function CreatePerson({
   };
 
   const personName = created ? created.person.name || created.person.login : "";
+  const openCreated = () => {
+    onClose();
+    if (created) navigate(`/admin/people/${encodeURIComponent(created.person.login)}`);
+  };
 
   return (
     <>
-      {created?.link ? (
+      {created?.access ? (
+        <div className="flex flex-col items-center gap-3 px-6 pt-6 pb-6 text-center">
+          <NyuScene name="done" className="h-auto w-[180px]" />
+          <h2 className="text-lg font-bold">{t("people.created.title", { name: personName })}</h2>
+          <p className="text-[13px] text-muted">{t("people.created.body")}</p>
+          <div className="w-full text-left">
+            <SecretBox login={created.person.login} secret={created.access.secret} />
+          </div>
+          <div className="mt-2 flex w-full justify-end gap-2">
+            <Button onClick={openCreated}>{t("people.invite.open")}</Button>
+            <Button variant="primary" onClick={onClose}>
+              {t("common.done")}
+            </Button>
+          </div>
+        </div>
+      ) : created?.link ? (
         <div className="flex flex-col items-center gap-3 px-6 pt-6 pb-6 text-center">
           <NyuScene name="done" className="h-auto w-[180px]" />
           <h2 className="text-lg font-bold">{t("people.invite.title", { name: personName })}</h2>
@@ -157,14 +184,7 @@ function CreatePerson({
             <LinkBox link={created.link} />
           </div>
           <div className="mt-2 flex w-full justify-end gap-2">
-            <Button
-              onClick={() => {
-                onClose();
-                navigate(`/admin/people/${encodeURIComponent(created.person.login)}`);
-              }}
-            >
-              {t("people.invite.open")}
-            </Button>
+            <Button onClick={openCreated}>{t("people.invite.open")}</Button>
             <Button variant="primary" onClick={onClose}>
               {t("common.done")}
             </Button>
@@ -181,12 +201,27 @@ function CreatePerson({
               {t("people.create.noDomains")}
             </p>
           )}
+          <Field
+            label={t("people.create.kind")}
+            hint={t(service ? "people.create.kindServiceHint" : "people.create.kindPersonHint")}
+          >
+            {() => (
+              <div className="flex gap-2">
+                <Pill active={!service} onClick={() => setService(false)}>
+                  {t("people.create.kindPerson")}
+                </Pill>
+                <Pill active={service} onClick={() => setService(true)}>
+                  {t("people.create.kindService")}
+                </Pill>
+              </div>
+            )}
+          </Field>
           <Field label={t("people.create.name")}>
             {(id) => (
               <TextInput
                 id={id}
                 autoFocus
-                placeholder={t("people.create.namePlaceholder")}
+                placeholder={t(service ? "people.create.namePlaceholderService" : "people.create.namePlaceholder")}
                 value={name}
                 onChange={(event) => setName(event.target.value)}
               />
@@ -229,14 +264,21 @@ function CreatePerson({
           <Field label={t("people.create.quota")}>
             {(id) => <QuotaSelect id={id} value={quota} onChange={setQuota} />}
           </Field>
-          <Toggle
-            checked={admin}
-            onChange={setAdmin}
-            label={t("people.create.admin")}
-            description={t("people.create.adminHint")}
-          />
-          {
+          {service ? (
+            <Toggle
+              checked={makePassword}
+              onChange={setMakePassword}
+              label={t("people.create.makePassword")}
+              description={t("people.create.makePasswordHint")}
+            />
+          ) : (
             <>
+              <Toggle
+                checked={admin}
+                onChange={setAdmin}
+                label={t("people.create.admin")}
+                description={t("people.create.adminHint")}
+              />
               <Toggle
                 checked={ownPassword}
                 onChange={setOwnPassword}
@@ -259,7 +301,7 @@ function CreatePerson({
                 </Field>
               )}
             </>
-          }
+          )}
           {create.isError && (
             <p role="alert" className="text-[13px] text-danger">
               {errorText(create.error)}
