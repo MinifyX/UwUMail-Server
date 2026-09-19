@@ -63,7 +63,9 @@
     "spamFilter": "Spamfilter",
     "backups": "Backups",
     "reports": "Berichte",
-    "updates": "Updates"
+    "updates": "Updates",
+    "collapse": "{{group}} einklappen",
+    "expand": "{{group}} ausklappen"
   },
   "userMenu": {
     "open": "Kontomenü öffnen",
@@ -509,7 +511,25 @@
       "spamWordsAdd": "{{actor}} hat Einträge zur Wortliste von {{target}} hinzugefügt",
       "spamWordRemove": "{{actor}} hat {{target}} von einer Wortliste entfernt",
       "spamWordSourceAdd": "{{actor}} hat die Wortliste {{target}} abonniert",
-      "spamWordSourceRemove": "{{actor}} hat das Abo {{target}} beendet"
+      "spamWordSourceRemove": "{{actor}} hat das Abo {{target}} beendet",
+      "accountProtocols": "{{actor}} hat die Protokolle von {{target}} geändert",
+      "accountAppPasswordCreated": "{{actor}} hat ein App-Passwort für {{target}} erzeugt",
+      "accountAppPasswordRevoked": "{{actor}} hat ein App-Passwort von {{target}} zurückgezogen",
+      "accountSendAsDomains": "{{actor}} hat geändert, als welche Domains {{target}} senden darf",
+      "backupRun": "{{actor}} hat ein Backup gestartet",
+      "backupSettings": "{{actor}} hat die Backup-Einstellungen geändert",
+      "backupShowRecoveryKey": "{{actor}} hat den Wiederherstellungsschlüssel angezeigt",
+      "backupForgetHostKey": "{{actor}} hat den Schlüssel des Backup-Servers vergessen lassen",
+      "domainCloudflare": "{{actor}} hat die DNS-Einträge von {{target}} bei Cloudflare gesetzt",
+      "domainMtaSts": "{{actor}} hat MTA-STS für {{target}} geändert",
+      "domainForwardAddress": "{{actor}} hat die Weiterleitung für {{target}} geändert",
+      "domainForwardAddressRemove": "{{actor}} hat die Weiterleitung für {{target}} entfernt",
+      "gatewayPair": "{{actor}} hat ein Gateway gekoppelt",
+      "gatewayForget": "{{actor}} hat ein Gateway entkoppelt",
+      "gatewayJob": "{{actor}} hat auf dem Gateway {{target}} ausgeführt",
+      "hostJob": "{{actor}} hat auf dem Server {{target}} ausgeführt",
+      "spamLogCleared": "{{actor}} hat das Spam-Protokoll geleert",
+      "spamVirusTest": "{{actor}} hat den Virenscanner getestet"
     },
     "details": {
       "adminOn": "ist jetzt Admin",
@@ -525,7 +545,23 @@
       "senderDomain": "für {{domain}}",
       "senderServer": "für den ganzen Server",
       "wordsAdded_one": "{{count}} Eintrag",
-      "wordsAdded_other": "{{count}} Einträge"
+      "wordsAdded_other": "{{count}} Einträge",
+      "serviceOn": "ist jetzt ein Dienst",
+      "serviceOff": "ist jetzt eine Person",
+      "protocols": "Protokolle: {{value}}",
+      "protocolsNone": "alle Protokolle aus",
+      "redirectTo": "Mail geht an {{address}}",
+      "redirectNone": "Mail wird abgewiesen",
+      "appPassword": "App-Passwort „{{value}}“"
+    },
+    "entry": {
+      "actor": "Wer",
+      "target": "Worum",
+      "action": "Aktion",
+      "time": "Wann",
+      "ip": "IP-Adresse",
+      "raw": "Rohdaten",
+      "noDetails": "Zu dieser Änderung gibt es keine weiteren Angaben."
     }
   },
   "password": {

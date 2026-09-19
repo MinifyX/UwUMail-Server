@@ -63,7 +63,9 @@
     "spamFilter": "Spam filter",
     "backups": "Backups",
     "reports": "Reports",
-    "updates": "Updates"
+    "updates": "Updates",
+    "collapse": "Collapse {{group}}",
+    "expand": "Expand {{group}}"
   },
   "userMenu": {
     "open": "Open account menu",
@@ -509,7 +511,25 @@
       "spamWordsAdd": "{{actor}} added entries to the word list of {{target}}",
       "spamWordRemove": "{{actor}} removed {{target}} from a word list",
       "spamWordSourceAdd": "{{actor}} subscribed to the word list {{target}}",
-      "spamWordSourceRemove": "{{actor}} unsubscribed from {{target}}"
+      "spamWordSourceRemove": "{{actor}} unsubscribed from {{target}}",
+      "accountProtocols": "{{actor}} changed the protocols of {{target}}",
+      "accountAppPasswordCreated": "{{actor}} created an app password for {{target}}",
+      "accountAppPasswordRevoked": "{{actor}} revoked an app password of {{target}}",
+      "accountSendAsDomains": "{{actor}} changed which domains {{target}} may send as",
+      "backupRun": "{{actor}} started a backup",
+      "backupSettings": "{{actor}} changed the backup settings",
+      "backupShowRecoveryKey": "{{actor}} looked at the recovery key",
+      "backupForgetHostKey": "{{actor}} made the backup server key be forgotten",
+      "domainCloudflare": "{{actor}} wrote the DNS records of {{target}} at Cloudflare",
+      "domainMtaSts": "{{actor}} changed MTA-STS for {{target}}",
+      "domainForwardAddress": "{{actor}} changed the forwarding for {{target}}",
+      "domainForwardAddressRemove": "{{actor}} removed the forwarding for {{target}}",
+      "gatewayPair": "{{actor}} paired a gateway",
+      "gatewayForget": "{{actor}} unpaired a gateway",
+      "gatewayJob": "{{actor}} ran {{target}} on the gateway",
+      "hostJob": "{{actor}} ran {{target}} on the server",
+      "spamLogCleared": "{{actor}} emptied the spam log",
+      "spamVirusTest": "{{actor}} tested the virus scanner"
     },
     "details": {
       "adminOn": "is now an admin",
@@ -525,7 +545,23 @@
       "senderDomain": "for {{domain}}",
       "senderServer": "for the whole server",
       "wordsAdded_one": "{{count}} entry",
-      "wordsAdded_other": "{{count}} entries"
+      "wordsAdded_other": "{{count}} entries",
+      "serviceOn": "is a service now",
+      "serviceOff": "is a person now",
+      "protocols": "protocols: {{value}}",
+      "protocolsNone": "every protocol off",
+      "redirectTo": "mail goes to {{address}}",
+      "redirectNone": "mail is refused",
+      "appPassword": "app password “{{value}}”"
+    },
+    "entry": {
+      "actor": "Who",
+      "target": "What",
+      "action": "Action",
+      "time": "When",
+      "ip": "IP address",
+      "raw": "Raw data",
+      "noDetails": "There is nothing more on record for this change."
     }
   },
   "password": {
