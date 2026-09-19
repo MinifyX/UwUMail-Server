@@ -3,6 +3,35 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.5.0
+
+**Every port can move, and the installer asks before it starts.** The mail ports were nailed to
+25, 465, 587 and 993, so a machine that already ran something on one of them needed an edited
+`compose.yaml` — and an edited `compose.yaml` is what `update.sh` has to stop and ask about. They
+now read the same `.env` variables the web ports always have: `UWUMAIL_SMTP_BIND`,
+`UWUMAIL_SUBMISSIONS_BIND`, `UWUMAIL_SUBMISSION_BIND` and `UWUMAIL_IMAPS_BIND`, a port or an
+`address:port` each.
+
+Only where UwUMail listens moves. From the outside the numbers stay what they are, because other
+mail servers only ever try 25 and mail apps expect 465, 587 and 993, so whatever sits in front
+sends them on — one field in a router's port forwarding — and behind a gateway the question does
+not come up at all.
+
+`install.sh` looks at all six before it writes anything, instead of letting the start fail at the
+end on a machine that already looks installed. Every taken port becomes a question with the first
+free port as its suggestion, and the answer goes into `.env`. With `--yes` or without a terminal
+it stops and names each one with its flag (`--https-bind 8443` and the rest): quietly moving a
+mail server's port 25 means mail that never arrives, and that is worse than an installer that did
+not run. `update.sh` lifts all six out of a hand-edited `compose.yaml` now instead of two.
+
+**Installing, in four ways from beginning to end.** [docs/install.md](docs/install.md) walks
+through a machine of its own and a machine that already runs other containers, each with and
+without a gateway, instead of asking the reader to pick the right box at every step. With the
+part nobody had written down: which ports have to arrive, how to forward them on a FRITZ!Box, a
+Telekom Speedport, a UniFi gateway or an OPNsense, what IPv6 needs instead, and when forwarding
+cannot work at all — DS-Lite, a blocked port 25, reverse DNS the provider made up — which is the
+moment to put a gateway in front.
+
 ## 0.4.0
 
 **Security.** Everything new here was reviewed afterwards, together with every way into the

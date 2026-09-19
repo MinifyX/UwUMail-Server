@@ -13,11 +13,25 @@ refuses the file.
 
 The stock `compose.yaml` only passes on the variables listed under
 `environment:`; anything else in `.env` never reaches the server, so add
-further settings there. `UWUMAIL_GATEWAY_CODE`, `UWUMAIL_HTTP_BIND` and
-`UWUMAIL_HTTPS_BIND` in `.env` are variables of that compose file, not settings
-of the server: the first is handed on as `UWUMAIL_GATEWAY__CODE` (the key
-`gateway.code`, the only spelling the server itself knows), the other two pick
-the ports on the Docker host.
+further settings there. `UWUMAIL_GATEWAY_CODE` and the six `…_BIND` variables in
+`.env` are variables of that compose file, not settings of the server: the first
+is handed on as `UWUMAIL_GATEWAY__CODE` (the key `gateway.code`, the only
+spelling the server itself knows), and the others pick the ports on the Docker
+host, one per listener:
+
+| In `.env` | Container port | |
+| --- | --- | --- |
+| `UWUMAIL_SMTP_BIND` | 25 | mail from other servers |
+| `UWUMAIL_HTTP_BIND` | 80 | certificate challenges, redirect to HTTPS |
+| `UWUMAIL_HTTPS_BIND` | 443 | portal, JMAP, apps |
+| `UWUMAIL_SUBMISSIONS_BIND` | 465 | mail apps, TLS |
+| `UWUMAIL_SUBMISSION_BIND` | 587 | mail apps, STARTTLS |
+| `UWUMAIL_IMAPS_BIND` | 993 | mail apps, IMAP |
+
+Each takes a port or an `address:port`, and each only moves the host side: what
+arrives from outside keeps the number it always had. `install.sh` asks about
+every one it finds taken, and `update.sh` moves one written into `compose.yaml`
+by hand over here.
 
 Check a configuration with `uwumail-server check-config`.
 

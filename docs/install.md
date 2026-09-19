@@ -266,17 +266,17 @@ through it.
 
 The mail ports are never proxied. UwUMail keeps 25, 465, 587 and 993 itself.
 
-Two lines move UwUMail's own web ports out of the way, as a port or as
-`address:port`:
+UwUMail's own web ports move out of the way in `/opt/uwumail/.env`, as a port or
+as `address:port`:
 
 ```bash
 UWUMAIL_HTTP_BIND=127.0.0.1:8081
 UWUMAIL_HTTPS_BIND=8443
 ```
 
-They belong in `/opt/uwumail/.env`, which the installer writes in
-[2.5](#25-run-the-installer) — that step says how to have them in place for the
-very first start.
+The installer in [2.5](#25-run-the-installer) writes those two lines by itself:
+it looks at every port before it starts anything and asks where UwUMail should
+listen instead of the ones it finds taken. This is the answer for 80 and 443.
 
 Then give the proxy UwUMail's **proxy listener** on port 8080, which serves the
 whole site over plain HTTP. For a proxy that runs in Docker on the same
@@ -321,43 +321,28 @@ whole story: [deployment.md](deployment.md#behind-a-reverse-proxy).
 - *Move it off the machine or switch it off*, and follow way 1 from here.
 
 **Something that is not a mail server sits on 465, 587 or 993** — that happens.
-Move that service, or let UwUMail publish the port somewhere else and have the
-router land on it.
-
-The mail ports in the stock `compose.yaml` are fixed, and an override file that
-simply lists `ports:` makes it worse: Compose merges the two lists, so the old
-entry stays and takes the conflict with it. The `!override` tag replaces the
-list instead — Docker Compose 2.24.4 or newer, which `docker compose version`
-confirms. Next to `compose.yaml`, as `compose.ports.yaml`:
-
-```yaml
-services:
-  uwumail:
-    ports: !override
-      - "25:25"
-      - "${UWUMAIL_HTTP_BIND:-80}:80"
-      - "${UWUMAIL_HTTPS_BIND:-443}:443"
-      - "1465:465"      # the machine answers on 1465, the router forwards 465 here
-      - "993:993"
-      - "587:587"
-```
-
-In `.env`, with `compose.proxy.yaml` from [2.2](#22-web-ports-80-and-443-are-taken)
-in the list too if you use it:
+Move that service, or let UwUMail listen somewhere else and have whatever is in
+front send those ports to it. Every port has its own line in `.env`, the same
+way the web ports do, and the installer offers them when it finds one taken:
 
 ```bash
-COMPOSE_FILE=compose.yaml:compose.ports.yaml
+UWUMAIL_SMTP_BIND=1025          # 25
+UWUMAIL_SUBMISSIONS_BIND=1465   # 465
+UWUMAIL_SUBMISSION_BIND=1587    # 587
+UWUMAIL_IMAPS_BIND=1993         # 993
 ```
 
-`sudo docker compose config` prints what came out of both files before anything
-starts. Editing `compose.yaml` itself would do the same job, but then every
-`update.sh` has to ask about it; an override file leaves the stock file alone
-and is carried along by name.
+Only this side moves. From the outside the numbers stay what they are, because
+other mail servers only ever try 25 and mail apps expect 465, 587 and 993 — so
+the router or firewall in front has to forward each of them to the new port
+(external 25 → internal 1025). On a machine at home that is
+[one field in the rule](#port-forwarding-on-your-router); on a VPS whose
+provider firewall cannot translate, the service that holds the port has to move
+instead.
 
-Port 25 is the one exception: from the outside it has to arrive on **25**,
-because that is the only port other mail servers ever try. On a machine at home
-the router can do the translating (external 25 → internal 1025); on a VPS it
-cannot.
+Leave `compose.yaml` alone either way. A port written in there by hand works,
+but every `update.sh` then has to stop and ask about the file; a line in `.env`
+is carried along by itself.
 
 ### 2.4 DNS and reverse DNS
 
@@ -371,25 +356,26 @@ how to forward an external port to a different internal one.
 
 ```bash
 curl -fsSLO https://github.com/MinifyX/UwUMail-Server/releases/latest/download/install.sh
-sudo env UWUMAIL_HTTP_BIND=127.0.0.1:8081 UWUMAIL_HTTPS_BIND=8443 bash install.sh
+sudo bash install.sh
 ```
 
-The two variables are for this one run: the installer starts the server at the
-end, and without them that start walks into the occupied ports and stops with
-`address already in use`. Compose takes them from the environment, ahead of
-anything in `.env`. It asks the same questions as in
-[1.4](#14-run-the-installer); the gateway question is a no here.
+Same questions as in [1.4](#14-run-the-installer), with a no to the gateway one,
+and one more before it starts anything: it goes through all six ports, and for
+each one that is taken it says so and asks where UwUMail should listen instead.
 
-Nothing bad happens if you forget them — the installer has written
-`/opt/uwumail` by then, and only the start failed. Either way the two lines
-have to end up in `.env`, or the next `up -d` takes port 80 again:
-
-```bash
-cd /opt/uwumail
-sudo nano .env      # the two UWUMAIL_..._BIND lines, and COMPOSE_FILE if you use one
-sudo docker compose up -d
-sudo docker compose logs uwumail | grep "one-time code"
 ```
+  (>_<) port 443 is taken on this machine (the portal and the apps)
+  Which port should UwUMail listen on instead? [8443]:
+```
+
+The suggestion is the first free port, the answer can be a port or an
+`address:port` (`127.0.0.1:8081` keeps it to this machine, which is what you
+want with a proxy in front), and it goes into `.env`, so the next `up -d` and
+every update keep it. With `--yes` or without a terminal it stops instead and
+names each taken port with its flag — `--https-bind 8443` and the rest.
+
+After moving the web ports, the name only answers once the proxy passes it on;
+the installer prints the address to use meanwhile.
 
 ### 2.6 Setup assistant
 
@@ -563,9 +549,16 @@ UWUMAIL_HTTP_BIND=127.0.0.1:8081
 UWUMAIL_HTTPS_BIND=8443
 ```
 
-That is all. **No reverse proxy entry, no `compose.proxy.yaml`**: the web
-arrives through the tunnel, and the other web server is not in the public path
-at all. The two lines only keep the container from colliding with it locally.
+That is all, and the installer in [4.4](#44-install-docker-run-the-installer)
+writes it for you when it finds the ports taken. **No reverse proxy entry, no
+`compose.proxy.yaml`**: the web arrives through the tunnel, and the other web
+server is not in the public path at all. The two lines only keep the container
+from colliding with it locally.
+
+A mail port that is taken moves the same way
+([2.3](#23-mail-ports-are-taken)), and here it costs nothing at all: mail comes
+in through the tunnel, so the moved ports only matter to mail apps in your own
+network.
 
 `https://<the machine's address>:8443` then reaches the portal without the
 gateway; the browser warns about the certificate. That is a fallback for setup
@@ -584,22 +577,16 @@ reasons and the two ways around it:
 sudo apt update
 sudo apt install -y docker.io docker-compose-v2
 curl -fsSLO https://github.com/MinifyX/UwUMail-Server/releases/latest/download/install.sh
-sudo env UWUMAIL_HTTP_BIND=127.0.0.1:8081 UWUMAIL_HTTPS_BIND=8443 bash install.sh
+sudo bash install.sh
 ```
 
-The two variables are for this one run, so that the start at the end does not
-walk into the occupied ports; Compose takes them from the environment. The
-questions are the ones from [1.4](#14-run-the-installer), with yes to the
-gateway and the pairing code from [3.2](#32-install-the-gateway).
+The questions are the ones from [1.4](#14-run-the-installer), with yes to the
+gateway and the pairing code from [3.2](#32-install-the-gateway), plus one for
+every port it finds taken — answer 8081 and 8443, or take what it suggests. The
+answers go into `.env` and stay there.
 
-Afterwards the two lines have to end up in `.env` as well, or the next `up -d`
-takes port 80 again:
-
-```bash
-cd /opt/uwumail
-sudo nano .env
-sudo docker compose up -d
-```
+Behind the gateway it also says what the moved mail ports mean here: nothing
+arrives on them from outside, so they only matter to mail apps at home.
 
 ### 4.5 The rest
 
@@ -780,12 +767,10 @@ sudo bash update.sh
 `--version` for another tag, and `--keep-compose`.
 
 **Ways 2 and 4:** a `compose.yaml` you edited is not walked over. What it can,
-`update.sh` moves into `.env` — a changed web port, a pinned image tag, the
+`update.sh` moves into `.env` — any of the six ports, a pinned image tag, the
 virus scanner — and anything else stops it with a diff and one sentence about
-`--force`. An override file next to it
-([2.3](#23-mail-ports-are-taken)) is the quieter way: the stock `compose.yaml`
-stays the stock one, `COMPOSE_FILE` in `.env` keeps loading yours on top, and
-the update has nothing to ask about.
+`--force`. Which is the reason to keep the moved ports in `.env` in the first
+place: there, nothing ever has to ask.
 
 **The gateway** (ways 3 and 4) is updated with the same commands that installed
 it; the portal shows them with the exact version.
@@ -828,20 +813,22 @@ takes them with it.
   sending, storage, logins and the gateway; *Server → Setup* runs the checks
   again.
 - **`address already in use` or `port is already allocated`:** another program
-  has one of the six ports. Which one is in the message;
-  [2.1](#21-find-out-what-is-taken) finds out who has it, and
+  has one of the six ports. The installer asks about that before it starts
+  anything, so this is something that arrived afterwards. Which port is in the
+  message; [2.1](#21-find-out-what-is-taken) finds out who has it, and
   [2.2](#22-web-ports-80-and-443-are-taken) and
-  [2.3](#23-mail-ports-are-taken) move it out of the way.
+  [2.3](#23-mail-ports-are-taken) move it out of the way, followed by
+  `sudo docker compose up -d`.
 - **The installer stops with `/opt/uwumail is already set up`:** that is the
   guard against a second first-time install. To go on from what is there:
   `cd /opt/uwumail && sudo bash update.sh`, or edit `.env` and
   `sudo docker compose up -d`.
-- **A line in `.env` changes nothing:** `UWUMAIL_GATEWAY_CODE`,
-  `UWUMAIL_HTTP_BIND` and `UWUMAIL_HTTPS_BIND` only work with a `compose.yaml`
-  that mentions them; one from before they existed ignores them without a word.
-  `grep -c UWUMAIL_HTTP_BIND compose.yaml` has to answer 1 or more. If it
-  doesn't, `sudo bash update.sh` brings the file up to date, keeping what you
-  changed in it. `.env` and your mail stay.
+- **A line in `.env` changes nothing:** `UWUMAIL_GATEWAY_CODE` and the six
+  `…_BIND` variables only work with a `compose.yaml` that mentions them; one
+  from before they existed ignores them without a word, and the four mail ports
+  are the newest of them. `grep -c UWUMAIL_SMTP_BIND compose.yaml` has to answer
+  1 or more. If it answers 0, `sudo bash update.sh` brings the file up to date,
+  keeping what you changed in it. `.env` and your mail stay.
 - **The browser says too many redirects:** a reverse proxy points at UwUMail's
   port 80, which only redirects to HTTPS. Point it at the proxy listener on
   8080, see [deployment.md](deployment.md#behind-a-reverse-proxy). In ways 3

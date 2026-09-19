@@ -234,6 +234,14 @@ from 80 and 443, as a port or as `address:port`. The header of
 range is taken. Its end has the variant for a proxy that runs on the host
 instead of in Docker, and the `Caddyfile` next to it is Caddy's side.
 
+The mail ports move the same way when something on the machine already holds
+one of them — `UWUMAIL_SMTP_BIND`, `UWUMAIL_SUBMISSIONS_BIND`,
+`UWUMAIL_SUBMISSION_BIND` and `UWUMAIL_IMAPS_BIND`, all six in a table in
+[configuration.md](configuration.md). They are never proxied,
+though: only where UwUMail listens moves, and whatever is in front has to send
+25, 465, 587 and 993 to the new ports. `install.sh` asks about every port it
+finds taken, so a fresh install usually has these lines already.
+
 **With a config file** the same looks like this:
 
 ```toml
