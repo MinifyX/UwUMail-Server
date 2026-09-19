@@ -30,7 +30,11 @@ pub async fn bounce(ctx: &Context, return_path: &str, original: &[u8], failed: &
         false => None,
     };
     let return_path = unwrapped.as_deref().unwrap_or(return_path);
-    let local_account = ctx.store.resolve_recipient(return_path).await.ok().flatten();
+    // A bounce for a mailbox-less service goes where its mail goes, or out over the queue.
+    let local_account = match ctx.store.resolve_recipient(return_path).await.ok().flatten() {
+        Some(account_id) => ctx.store.delivery_target(account_id).await.ok().flatten(),
+        None => None,
+    };
     let texts = texts::bounce(ctx.live().tone, local_account.is_some());
     let raw = match build(ctx, &texts, return_path, original, failed) {
         Ok(raw) => raw,

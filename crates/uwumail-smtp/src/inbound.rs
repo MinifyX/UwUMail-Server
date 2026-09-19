@@ -846,19 +846,7 @@ impl Session {
             // admin named for it, and without one the address does not take mail -- said here, at
             // the door, so the other side hears it at once instead of guessing.
             if !account.has_mailbox() {
-                let target = match account.redirect_to.trim() {
-                    "" => None,
-                    to => store.resolve_recipient(to).await.ok().flatten(),
-                };
-                // One hop only: a redirect into another mailbox-less account is no redirect.
-                let target = match target {
-                    Some(id) => match store.account_by_id(id).await {
-                        Ok(Some(account)) if account.has_mailbox() => Some(id),
-                        _ => None,
-                    },
-                    None => None,
-                };
-                let Some(target) = target else {
+                let Some(target) = store.delivery_target(account.id).await.ok().flatten() else {
                     let text = format!("550 5.1.1 <{address}>: This address does not take mail\r\n");
                     self.error(&text).await?;
                     return Ok(Next::Continue);

@@ -105,7 +105,11 @@ pub async fn maybe_reply(ctx: &Context, account_id: i64, envelope_from: &str, ra
     let mut signed = signatures.into_bytes();
     signed.extend_from_slice(&reply);
 
-    let result = match ctx.store.resolve_recipient(envelope_from).await.ok().flatten() {
+    let local = match ctx.store.resolve_recipient(envelope_from).await.ok().flatten() {
+        Some(account_id) => ctx.store.delivery_target(account_id).await.ok().flatten(),
+        None => None,
+    };
+    let result = match local {
         Some(local_account) => ctx
             .store
             .ingest(IngestRequest {

@@ -636,6 +636,27 @@ impl Store {
         .await
     }
 
+    /// Which account a message for this one is stored under: itself, or the single address a
+    /// mailbox-less service hands its mail to. `None` means the address takes no mail at all.
+    ///
+    /// One hop only: a redirect into another account without a mailbox is no redirect. Every way
+    /// in asks this, so the answer at the door and the answer at delivery cannot drift apart.
+    pub async fn delivery_target(&self, account_id: i64) -> Result<Option<i64>> {
+        let Some(account) = self.account_by_id(account_id).await? else { return Ok(None) };
+        if account.has_mailbox() {
+            return Ok(Some(account.id));
+        }
+        let to = account.redirect_to.trim().to_owned();
+        if to.is_empty() {
+            return Ok(None);
+        }
+        let Some(target) = self.resolve_recipient(&to).await? else { return Ok(None) };
+        match self.account_by_id(target).await? {
+            Some(target) if target.has_mailbox() => Ok(Some(target.id)),
+            _ => Ok(None),
+        }
+    }
+
     pub async fn account_by_id(&self, id: i64) -> Result<Option<Account>> {
         self.read(move |conn| {
             Ok(conn

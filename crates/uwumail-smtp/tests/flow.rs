@@ -470,6 +470,67 @@ async fn forwarding_addresses_pass_mail_on_without_a_mailbox() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_service_without_a_mailbox_takes_no_mail_from_anywhere() {
+    let a = start("a.test", &["mini", "leni"], &[]).await;
+    for name in ["sender.test", "client.sender.test", "_dmarc.sender.test"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+    let store = a.smtp.store().clone();
+    let service = store
+        .create_account(uwumail_store::NewAccount {
+            address: "reports@a.test".into(),
+            display_name: "Reports".into(),
+            password: None,
+            role: uwumail_store::Role::Service,
+            quota_bytes: 0,
+            protocols: Some(uwumail_store::Protocols {
+                smtp: true,
+                imap: false,
+                jmap: false,
+                caldav: false,
+                carddav: false,
+            }),
+        })
+        .await
+        .unwrap();
+    assert!(!service.has_mailbox());
+
+    // From outside, the door says so at RCPT.
+    let mut session = RawSession::connect(a.mx).await;
+    assert!(session.command("EHLO client.sender.test").await.starts_with("250"));
+    assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+    let reply = session.command("RCPT TO:<reports@a.test>").await;
+    assert!(reply.starts_with("550 5.1.1"), "{reply}");
+
+    // And from a mail app on this server, where the recipient is looked up again.
+    let sent = a.mailer("mini@a.test", PASSWORD, false).send(mail("mini@a.test", &["reports@a.test"], "Bericht")).await;
+    assert!(sent.is_err(), "submission accepted mail for a service without a mailbox");
+    assert!(store.mailboxes(service.id).await.unwrap().is_empty(), "a service without a mailbox has none");
+
+    // With an address named for it, both ways land there instead.
+    store
+        .update_account(
+            "reports@a.test",
+            uwumail_store::AccountUpdate { redirect_to: Some("leni@a.test".into()), ..Default::default() },
+        )
+        .await
+        .unwrap();
+    let mut session = RawSession::connect(a.mx).await;
+    assert!(session.command("EHLO client.sender.test").await.starts_with("250"));
+    assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+    assert!(session.command("RCPT TO:<reports@a.test>").await.starts_with("250"));
+    assert!(session.command("DATA").await.starts_with("354"));
+    let reply = session.command("From: news@sender.test\r\nSubject: Von aussen\r\n\r\nHallo\r\n.").await;
+    assert!(reply.starts_with("250"), "{reply}");
+    a.mailer("mini@a.test", PASSWORD, false).send(mail("mini@a.test", &["reports@a.test"], "Von innen")).await.unwrap();
+
+    let inbox = a.wait_for_inbox("leni@a.test", 2).await;
+    let subjects: Vec<_> = inbox.iter().map(|email| email.subject.as_str()).collect();
+    assert!(subjects.contains(&"Von aussen") && subjects.contains(&"Von innen"), "{subjects:?}");
+    assert!(store.mailboxes(service.id).await.unwrap().is_empty(), "nothing was stored under the service");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn forwarding_addresses_pass_no_spam_on() {
     let a = spam_test_server_for(&["mini", "leni"], SpamConfig::default(), Some("v=DMARC1; p=none")).await;
     a.smtp.store().set_forward_address("kasse@a.test", vec!["leni@a.test".into()], "").await.unwrap();

@@ -236,8 +236,14 @@ pub async fn notify(web: &Web, account: &Account, notice: Notice, origin: Origin
         tracing::error!(login = %account.login, "building a security notice failed");
         return;
     };
+    // A service has no mailbox of its own; its notice goes where its mail goes, and nowhere
+    // when it takes none.
+    let Ok(Some(account_id)) = web.store().delivery_target(account.id).await else {
+        tracing::info!(login = %account.login, "no mailbox for a security notice");
+        return;
+    };
     let request = IngestRequest {
-        account_id: account.id,
+        account_id,
         raw,
         mailboxes: vec![MailboxTarget::Role(MailboxRole::Inbox)],
         keywords: vec![],

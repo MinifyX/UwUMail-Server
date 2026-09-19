@@ -63,9 +63,14 @@ pub(crate) async fn send(
     for (address, local) in targets {
         match local {
             // People on this server get it directly; their own forwarding does not apply again.
+            // A target without a mailbox of its own passes it on once more, or takes nothing.
             Some(target_account) => {
+                let Some(target_account) = ctx.store.delivery_target(*target_account).await.ok().flatten() else {
+                    tracing::warn!(forwarder = %forwarder.name, to = %address, "the target takes no mail");
+                    continue;
+                };
                 let request = IngestRequest {
-                    account_id: *target_account,
+                    account_id: target_account,
                     raw: forwarded.clone(),
                     mailboxes: vec![MailboxTarget::Role(MailboxRole::Inbox)],
                     keywords: vec![],

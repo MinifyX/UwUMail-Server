@@ -173,7 +173,22 @@ impl Smtp {
                 return Err(SubmitError::InvalidRecipient(recipient.address.clone()));
             };
             let address = format!("{local}@{domain}");
-            match ctx.store.resolve_recipient(&address).await.ok().flatten() {
+            // The recipient is looked up again here, so the mailbox-less service has to be
+            // asked about again too: mail for it belongs to the address it hands its mail to.
+            let resolved = match ctx.store.resolve_recipient(&address).await.ok().flatten() {
+                Some(account_id) => match ctx.store.delivery_target(account_id).await.ok().flatten() {
+                    Some(target) => Some(target),
+                    None => {
+                        failed.push(FailedRecipient {
+                            address: address.clone(),
+                            error: "550 5.1.1 This address does not take mail".into(),
+                        });
+                        continue;
+                    }
+                },
+                None => None,
+            };
+            match resolved {
                 Some(account_id) => {
                     let plan = forward::plan(ctx, account_id).await;
                     if !plan.targets.is_empty()
