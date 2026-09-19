@@ -166,10 +166,16 @@ esac
 [ -n "$email" ] || email=$(askfor "E-mail for certificate warnings (optional)")
 if [ -n "$email" ]; then
   case "$email" in
+    *[!a-zA-Z0-9.@_+-]*) die "an e-mail address here may only hold letters, digits and .@_+-" ;;
     *@*.*) ;;
     *) die "that does not look like an e-mail address: $email" ;;
   esac
 fi
+
+# The version becomes part of a download address and a line in the .env.
+case "$version" in
+  *[!a-zA-Z0-9._-]*) die "a version is letters, digits, dots, dashes and underscores: $version" ;;
+esac
 
 language=$(askfor "Language of the mail the server writes (de or en)" "$language")
 case "$language" in de | en) ;; *) die "the language is de or en, not $language" ;; esac
@@ -212,7 +218,8 @@ take .env.example "$dir/.env.example" env.example
 take update.sh "$dir/update.sh"
 chmod 0755 "$dir/update.sh"
 
-# Writes one line of the .env, whether it is in there already, commented out, or missing.
+# Writes one line of the .env, whether it is in there already, commented out, or missing. The
+# file keeps the rights it has: it holds the gateway code and belongs to root alone.
 set_env() {
   local key="$1" value="$2" file="$3" line found=false
   local tmp="$file.tmp"
@@ -228,7 +235,8 @@ set_env() {
     esac
   done <"$file"
   $found || printf '%s=%s\n' "$key" "$value" >>"$tmp"
-  mv -f "$tmp" "$file"
+  cat "$tmp" >"$file"
+  rm -f "$tmp"
 }
 
 install -m 0600 "$dir/.env.example" "$dir/.env"

@@ -122,6 +122,10 @@ have_tty() { { : </dev/tty; } 2>/dev/null; }
 hash_of() { sha256sum "$1" | cut -d' ' -f1; }
 looks_like_version() { case "${1:-}" in [0-9]*) return 0 ;; *) return 1 ;; esac; }
 
+# A value on its way into the .env has to be one line of plain characters, wherever it came from:
+# a flag, or a compose.yaml somebody wrote by hand.
+plain_value() { case "${1:-}" in "" | *[!a-zA-Z0-9.:_/+-]*) return 1 ;; *) return 0 ;; esac; }
+
 # Reads one value out of the .env, without sourcing a file we did not write.
 env_value() {
   local line
@@ -133,6 +137,7 @@ env_value() {
 # keeps its rights: it holds a gateway code and belongs to root alone.
 set_env() {
   local key="$1" value="$2" file="$dir/.env" line found=false tmp="$dir/.env.tmp"
+  plain_value "$value" || die "$key would become something odd, so nothing was written: $value"
   : >"$tmp"
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
@@ -300,6 +305,7 @@ case ",$profiles," in
 esac
 
 if [ -n "$version" ]; then
+  plain_value "$version" || die "a version is letters, digits, dots, dashes and underscores"
   set_env UWUMAIL_VERSION "$version"
   step "switching to the $version tag"
 fi
