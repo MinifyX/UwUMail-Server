@@ -19,7 +19,10 @@ It asks for the host name and a few other things — every answer is a flag too 
 `/opt/uwumail`, brings the virus scanner along unless the machine is too small for it or you say
 no, installs the helper for system updates, starts the server and shows the one-time code.
 
-Later on, `cd /opt/uwumail && sudo bash update.sh`. It fetches a newer `update.sh` and hands over
+Later on, `cd /opt/uwumail && sudo bash update.sh`. A server that is already running gets the
+script once with
+`curl -fsSLO https://github.com/MinifyX/UwUMail-Server/releases/latest/download/update.sh` in its
+directory, and from then on the script keeps itself up to date. It fetches a newer `update.sh` and hands over
 to it, backs up, brings `compose.yaml` up to date, pulls and waits for the server's own health
 check — and when that does not answer, puts the version from before back and says so. A
 `compose.yaml` you edited is not walked over: what fits goes into `.env` (a moved web port, a
@@ -43,6 +46,9 @@ holds every password at the door, whatever the password says it may do, because 
 at the login. With neither IMAP nor JMAP an account has no mailbox at all: mail to it is refused
 at the door, or handed to the one address you name instead. A sender that only sends now costs
 nothing and fills nothing up.
+
+App passwords follow the same switches: the page that makes one only offers uses the account
+actually has, and one whose every use is switched off is refused instead of handed out.
 
 **The change log opens.** Every entry folds out to who did it, what it was about, when, from
 where, and the details exactly as they are stored. Twenty actions that used to read as their raw

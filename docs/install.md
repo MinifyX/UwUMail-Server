@@ -242,6 +242,14 @@ changed. The update itself happens on the machine:
 cd /opt/uwumail && sudo bash update.sh
 ```
 
+A server set up before 0.4.0 has no `update.sh` yet, so it gets one once:
+
+```bash
+cd /opt/uwumail
+sudo curl -fsSLO https://github.com/MinifyX/UwUMail-Server/releases/latest/download/update.sh
+sudo bash update.sh
+```
+
 It fetches a newer `update.sh` first and hands over to it, backs up if a backup
 server is set up, brings `compose.yaml` up to date, pulls the images and waits
 for the server to answer its health check. If it does not, the version from

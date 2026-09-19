@@ -391,6 +391,9 @@ outside; that reply also proves that incoming mail reaches the server.
 cd /opt/uwumail && sudo bash update.sh
 ```
 
+A server set up before 0.4.0 fetches the script once first:
+`sudo curl -fsSLO https://github.com/MinifyX/UwUMail-Server/releases/latest/download/update.sh`.
+
 Database migrations run automatically on start. Once a day the server asks
 GitHub what is newer on its channel (for `edge`: which commits came since) and
 shows it under *Server → Updates* with the changes. The check can be switched
