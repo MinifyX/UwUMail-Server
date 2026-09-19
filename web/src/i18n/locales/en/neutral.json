@@ -529,7 +529,8 @@
       "gatewayJob": "{{actor}} ran {{target}} on the gateway",
       "hostJob": "{{actor}} ran {{target}} on the server",
       "spamLogCleared": "{{actor}} emptied the spam log",
-      "spamVirusTest": "{{actor}} tested the virus scanner"
+      "spamVirusTest": "{{actor}} tested the virus scanner",
+      "updatesSettings": "{{actor}} changed the update settings"
     },
     "details": {
       "adminOn": "is now an admin",

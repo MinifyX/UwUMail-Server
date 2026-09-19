@@ -55,6 +55,7 @@ const KNOWN_ACTIONS = new Set([
   "queueRetry",
   "queueDrop",
   "settingsUpdate",
+  "updatesSettings",
   "spamLearnFromFolders",
   "spamSenderAdd",
   "spamSenderRemove",

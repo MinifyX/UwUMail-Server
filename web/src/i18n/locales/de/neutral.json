@@ -529,7 +529,8 @@
       "gatewayJob": "{{actor}} hat auf dem Gateway {{target}} ausgeführt",
       "hostJob": "{{actor}} hat auf dem Server {{target}} ausgeführt",
       "spamLogCleared": "{{actor}} hat das Spam-Protokoll geleert",
-      "spamVirusTest": "{{actor}} hat den Virenscanner getestet"
+      "spamVirusTest": "{{actor}} hat den Virenscanner getestet",
+      "updatesSettings": "{{actor}} hat die Update-Einstellungen geändert"
     },
     "details": {
       "adminOn": "ist jetzt Admin",
