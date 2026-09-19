@@ -29,18 +29,21 @@ function CreateForm({
   confirmed,
   onCreated,
   onDirtyChange,
+  usable,
 }: {
   confirmed: Confirmed;
   onCreated: (created: Created) => void;
   onDirtyChange: (dirty: boolean) => void;
+  usable: AppScope[];
 }) {
   const { t } = useT();
   const errorText = useErrorText();
   const [name, setName] = useState("");
-  const [scopes, setScopes] = useState<AppScope[]>(["mail", "smtp"]);
+  const [scopes, setScopes] = useState<AppScope[]>(() => usable.filter((scope) => scope !== "dav"));
   const [days, setDays] = useState(0);
   const [nowAtOpen] = useState(() => Math.floor(Date.now() / 1000));
-  const dirty = name.trim() !== "" || days !== 0 || [...scopes].sort().join() !== "mail,smtp";
+  const start = usable.filter((scope) => scope !== "dav");
+  const dirty = name.trim() !== "" || days !== 0 || [...scopes].sort().join() !== [...start].sort().join();
   useEffect(() => {
     onDirtyChange(dirty);
     return () => onDirtyChange(false);
@@ -77,24 +80,30 @@ function CreateForm({
       </Field>
       <fieldset className="flex flex-col gap-3">
         <legend className="mb-1 text-[13px] font-semibold text-muted">{t("security.appPasswords.scopes")}</legend>
-        <Toggle
-          checked={scopes.includes("mail")}
-          onChange={(on) => toggle("mail", on)}
-          label={t("security.appPasswords.scopeMail")}
-          description={t("security.appPasswords.scopeMailHint")}
-        />
-        <Toggle
-          checked={scopes.includes("smtp")}
-          onChange={(on) => toggle("smtp", on)}
-          label={t("security.appPasswords.scopeSmtp")}
-          description={t("security.appPasswords.scopeSmtpHint")}
-        />
-        <Toggle
-          checked={scopes.includes("dav")}
-          onChange={(on) => toggle("dav", on)}
-          label={t("security.appPasswords.scopeDav")}
-          description={t("security.appPasswords.scopeDavHint")}
-        />
+        {usable.includes("mail") && (
+          <Toggle
+            checked={scopes.includes("mail")}
+            onChange={(on) => toggle("mail", on)}
+            label={t("security.appPasswords.scopeMail")}
+            description={t("security.appPasswords.scopeMailHint")}
+          />
+        )}
+        {usable.includes("smtp") && (
+          <Toggle
+            checked={scopes.includes("smtp")}
+            onChange={(on) => toggle("smtp", on)}
+            label={t("security.appPasswords.scopeSmtp")}
+            description={t("security.appPasswords.scopeSmtpHint")}
+          />
+        )}
+        {usable.includes("dav") && (
+          <Toggle
+            checked={scopes.includes("dav")}
+            onChange={(on) => toggle("dav", on)}
+            label={t("security.appPasswords.scopeDav")}
+            description={t("security.appPasswords.scopeDavHint")}
+          />
+        )}
       </fieldset>
       <Field label={t("security.appPasswords.expiry")}>
         {(id) => (
@@ -272,6 +281,7 @@ export function AppPasswordsCard({
           creating && (
             <CreateForm
               confirmed={confirmed}
+              usable={security.appPasswordScopes}
               onDirtyChange={setDirty}
               onCreated={(result) => {
                 setCreated(result);

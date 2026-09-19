@@ -800,6 +800,8 @@ export interface SecurityView {
   recoveryCodesLeft: number;
   secondFactor: boolean;
   appsNeedAppPassword: boolean;
+  /** The uses an app password of this account can have; a switched-off protocol is not in here. */
+  appPasswordScopes: AppScope[];
   appPasswordsRequired: boolean;
   appPasswords: AppPasswordInfo[];
   sessions: WebSessionInfo[];

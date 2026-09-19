@@ -90,6 +90,8 @@ pub async fn overview(State(web): State<Web>, session: Session) -> ApiResult<Jso
         "appsNeedAppPassword": security.apps_need_app_password,
         "appPasswordsRequired": security.app_passwords_required(),
         "appPasswords": store.app_passwords(id).await?,
+        // Only the uses this account may have: a switched-off protocol opens nothing.
+        "appPasswordScopes": uwumail_store::scopes_for(session.account.protocols),
         "sessions": sessions,
         "events": store.security_events(id, 50).await?,
     })))

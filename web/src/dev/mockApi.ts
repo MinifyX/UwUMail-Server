@@ -822,6 +822,7 @@ const mockSecurity: SecurityView = {
   recoveryCodesLeft: 0,
   secondFactor: false,
   appsNeedAppPassword: false,
+  appPasswordScopes: ["mail", "smtp", "dav"] as AppScope[],
   appPasswordsRequired: false,
   appPasswords: [
     {
