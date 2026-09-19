@@ -25,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { ChevronDown } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { IconButton } from "@/components/ui/Button";
 import { Wordmark } from "@/components/ui/Logo";
@@ -41,45 +42,115 @@ interface NavItem {
   icon: LucideIcon;
 }
 
+const OPEN_SECTIONS_KEY = "uwumail-portal-nav";
+
+/** Which menu groups this browser last left open. A group nobody touched is not in here. */
+function storedOpen(): Record<string, boolean> {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(OPEN_SECTIONS_KEY) ?? "{}");
+    if (!raw || typeof raw !== "object") return {};
+    return Object.fromEntries(
+      Object.entries(raw as Record<string, unknown>).filter(([, value]) => typeof value === "boolean"),
+    ) as Record<string, boolean>;
+  } catch {
+    // Private windows may refuse storage; then every group simply starts at its default.
+    return {};
+  }
+}
+
+function rememberOpen(name: string, open: boolean) {
+  try {
+    localStorage.setItem(OPEN_SECTIONS_KEY, JSON.stringify({ ...storedOpen(), [name]: open }));
+  } catch {
+    // See above: without storage the choice holds for this visit only.
+  }
+}
+
 function NavSection({
+  name,
   title,
   icon: Icon,
   items,
   path,
   onNavigate,
+  collapsible,
+  startsOpen,
 }: {
+  /** How this group is remembered; only needed when it can be folded away. */
+  name?: string;
   title: string;
   icon: LucideIcon;
   items: NavItem[];
   path: string;
   onNavigate: () => void;
+  collapsible?: boolean;
+  startsOpen?: boolean;
 }) {
+  const { t } = useT();
+  const here = items.some((item) => path === item.to || path.startsWith(`${item.to}/`));
+  // What this browser last chose wins; otherwise the group opens if the current page is in it.
+  const [open, setOpen] = useState(() => {
+    const remembered = name ? storedOpen()[name] : undefined;
+    return remembered ?? (here || (startsOpen ?? true));
+  });
+  // Landing inside a folded group unfolds it, so the current page is never hidden. Only the
+  // arrival counts: staying here after folding it away by hand leaves it folded.
+  const [wasHere, setWasHere] = useState(here);
+  if (here !== wasHere) {
+    setWasHere(here);
+    if (here) setOpen(true);
+  }
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (name) rememberOpen(name, next);
+  };
+  const heading = (
+    <>
+      <Icon className="size-3.5" aria-hidden />
+      {title}
+    </>
+  );
+
   return (
     <div className="flex flex-col gap-0.5">
-      <p className="flex items-center gap-2 px-3 pt-4 pb-1.5 text-[12px] font-semibold tracking-wide text-faint uppercase">
-        <Icon className="size-3.5" aria-hidden />
-        {title}
-      </p>
-      {items.map((item) => {
-        // The overview only lights up on its own page, sections also on their sub-pages.
-        const overview = item.to === "/admin" || item.to === "/account";
-        const active = path === item.to || (!overview && path.startsWith(`${item.to}/`));
-        return (
-          <Link
-            key={item.to}
-            to={item.to}
-            onClick={onNavigate}
-            aria-current={active ? "page" : undefined}
-            className={clsx(
-              "flex h-10 items-center gap-3 rounded-full px-3 text-sm font-semibold transition-colors",
-              active ? "bg-pink-tint text-pink-ink" : "text-muted hover:bg-pink-tint/50 hover:text-ink",
-            )}
-          >
-            <item.icon className="size-[18px]" strokeWidth={2} aria-hidden />
-            {item.label}
-          </Link>
-        );
-      })}
+      {collapsible ? (
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={open}
+          aria-label={t(open ? "nav.collapse" : "nav.expand", { group: title })}
+          className="flex items-center gap-2 rounded-full px-3 pt-4 pb-1.5 text-[12px] font-semibold tracking-wide text-faint uppercase hover:text-muted"
+        >
+          {heading}
+          <ChevronDown className={clsx("size-3.5 transition-transform", !open && "-rotate-90")} aria-hidden />
+        </button>
+      ) : (
+        <p className="flex items-center gap-2 px-3 pt-4 pb-1.5 text-[12px] font-semibold tracking-wide text-faint uppercase">
+          {heading}
+        </p>
+      )}
+      {open &&
+        items.map((item) => {
+          // The overview only lights up on its own page, sections also on their sub-pages.
+          const overview = item.to === "/admin" || item.to === "/account";
+          const active = path === item.to || (!overview && path.startsWith(`${item.to}/`));
+          return (
+            <Link
+              key={item.to}
+              to={item.to}
+              onClick={onNavigate}
+              aria-current={active ? "page" : undefined}
+              className={clsx(
+                "flex h-10 items-center gap-3 rounded-full px-3 text-sm font-semibold transition-colors",
+                active ? "bg-pink-tint text-pink-ink" : "text-muted hover:bg-pink-tint/50 hover:text-ink",
+              )}
+            >
+              <item.icon className="size-[18px]" strokeWidth={2} aria-hidden />
+              {item.label}
+            </Link>
+          );
+        })}
     </div>
   );
 }
@@ -110,9 +181,11 @@ export function PortalShell({ session, children }: { session: Session; children:
       </div>
       <div className="mt-2 flex-1 overflow-y-auto">
         <NavSection
+          name="account"
           title={t("nav.account")}
           icon={UserRound}
           path={path}
+          collapsible={isAdmin}
           onNavigate={() => setDrawer(false)}
           items={[
             { to: "/account", label: t("nav.overview"), icon: LayoutDashboard },
@@ -124,9 +197,12 @@ export function PortalShell({ session, children }: { session: Session; children:
         />
         {isAdmin && (
           <NavSection
+            name="server"
             title={t("nav.server")}
             icon={Server}
             path={path}
+            collapsible
+            startsOpen={false}
             onNavigate={() => setDrawer(false)}
             items={[
               { to: "/admin", label: t("nav.overview"), icon: LayoutDashboard },
