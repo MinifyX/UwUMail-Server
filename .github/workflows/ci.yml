@@ -43,7 +43,14 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
       - name: Script syntax
-        run: node --check dev/smoke.mjs && node --check scripts/live-check.mjs
+        run: |
+          node --check dev/smoke.mjs
+          node --check scripts/live-check.mjs
+          # Everything anybody is told to run with bash, checked before anybody runs it.
+          scripts=$(git ls-files '*.sh' deploy/host/helper deploy/gateway/hardening/helper \
+            deploy/gateway/hardening/motd)
+          for script in $scripts; do bash -n "$script"; done
+          shellcheck --severity=warning $scripts
 
   audit:
     name: Dependency audit
@@ -243,6 +250,16 @@ jobs:
           cd release
           tar -czf uwumail-gateway-linux-amd64.tar.gz uwumail-gateway
           sha256sum uwumail-gateway-linux-amd64.tar.gz > uwumail-gateway-linux-amd64.tar.gz.sha256
+      - name: Package the files people download
+        run: |
+          # install.sh and update.sh check what they fetch, so everything they fetch needs a sum.
+          mkdir -p release
+          cp .env.example release/env.example
+          for file in install.sh update.sh compose.yaml; do cp "$file" release/; done
+          for file in install.sh update.sh compose.yaml env.example; do
+            (cd release && sha256sum "$file" > "$file.sha256")
+          done
+          chmod +x release/install.sh release/update.sh
       - name: Package the host helper
         run: |
           # Shell and unit files only, so the same archive fits every machine.
@@ -271,5 +288,9 @@ jobs:
           flags=""
           case "$GITHUB_REF_NAME" in *-*) flags="--prerelease" ;; esac
           gh release create "$GITHUB_REF_NAME" $flags --title "UwUMail Server ${GITHUB_REF_NAME#v}" --notes-file notes.md \
+            release/install.sh release/install.sh.sha256 \
+            release/update.sh release/update.sh.sha256 \
+            release/compose.yaml release/compose.yaml.sha256 \
+            release/env.example release/env.example.sha256 \
             release/uwumail-gateway-linux-amd64.tar.gz release/uwumail-gateway-linux-amd64.tar.gz.sha256 \
             release/uwumail-host.tar.gz release/uwumail-host.tar.gz.sha256
