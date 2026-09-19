@@ -2,14 +2,12 @@ import { create } from "zustand";
 
 export type LanguageSetting = "system" | "de" | "en";
 export type Tone = "playful" | "neutral";
-export type Mode = "simple" | "pro";
 export type ThemeSetting = "system" | "light" | "dark";
 export type MotionSetting = "system" | "on" | "off";
 
 export interface Prefs {
   language: LanguageSetting;
   tone: Tone;
-  mode: Mode;
   theme: ThemeSetting;
   motion: MotionSetting;
 }
@@ -17,7 +15,6 @@ export interface Prefs {
 export const DEFAULT_PREFS: Prefs = {
   language: "system",
   tone: "playful",
-  mode: "simple",
   theme: "system",
   motion: "system",
 };
@@ -25,7 +22,6 @@ export const DEFAULT_PREFS: Prefs = {
 const ALLOWED: { [K in keyof Prefs]: readonly Prefs[K][] } = {
   language: ["system", "de", "en"],
   tone: ["playful", "neutral"],
-  mode: ["simple", "pro"],
   theme: ["system", "light", "dark"],
   motion: ["system", "on", "off"],
 };
@@ -63,8 +59,8 @@ export const usePrefs = create<PrefsState>((set) => ({
     set((state) => {
       const next = { ...state, ...sanitize(prefs) };
       try {
-        const { language, tone, mode, theme, motion } = next;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ language, tone, mode, theme, motion }));
+        const { language, tone, theme, motion } = next;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ language, tone, theme, motion }));
       } catch {
         // Private windows may refuse storage; the preferences still apply for now.
       }

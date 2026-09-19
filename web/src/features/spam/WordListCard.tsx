@@ -9,7 +9,6 @@ import { useT } from "@/i18n";
 import { api, type WordEntry, type WordImport, type WordSource, type WordsView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatNumber, formatRelative } from "@/lib/format";
-import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 
 /** Entries shown at once; the filter finds the rest. */
@@ -50,7 +49,6 @@ export function WordListCard({ admin }: { admin: boolean }) {
   const { t, i18n } = useT();
   const language = i18n.language;
   const errorText = useErrorText();
-  const pro = usePrefs((s) => s.mode) === "pro";
   const queryClient = useQueryClient();
   const key = admin ? ["admin", "spam", "words"] : ["account", "spam", "words"];
   const base = admin ? "/api/admin/spam" : "/api/account/spam";
@@ -183,7 +181,7 @@ export function WordListCard({ admin }: { admin: boolean }) {
             )}
           </Field>
           <div className="flex flex-wrap items-end gap-3">
-            {pro && (
+            {
               <Field label={t("spam.words.points")} className="w-36">
                 {(id) => (
                   <TextInput
@@ -195,7 +193,7 @@ export function WordListCard({ admin }: { admin: boolean }) {
                   />
                 )}
               </Field>
-            )}
+            }
             <Button type="submit" icon={Plus} busy={add.isPending} disabled={!text.trim()}>
               {t("spam.words.add")}
             </Button>
@@ -223,14 +221,14 @@ export function WordListCard({ admin }: { admin: boolean }) {
                 />
               )}
             </Field>
-            {pro && (
+            {
               <Toggle
                 checked={subjectOnly}
                 onChange={setSubjectOnly}
                 label={t("spam.words.subjectOnly")}
                 description={t("spam.words.subjectOnlyHint")}
               />
-            )}
+            }
             <div>
               <Button type="submit" icon={Link2} busy={subscribe.isPending} disabled={!url.trim()}>
                 {t("spam.words.subscribe")}

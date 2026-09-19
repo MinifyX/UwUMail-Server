@@ -12,7 +12,6 @@ import type { PasswordLinkCreated, Person, Session } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatDate } from "@/lib/format";
 import { Link, navigate } from "@/lib/router";
-import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 import { LinkBox, QuotaSelect } from "./CreatePersonDialog";
 import { AdminPill, PersonAvatar, StatusPill, StorageLine } from "./PersonBits";
@@ -117,12 +116,11 @@ function AliasLimit({ person }: { person: Person }) {
 /** Domains the person may send as with any address, e.g. for a shared office. Pro mode, or once set. */
 function SendAsDomains({ person }: { person: Person }) {
   const { t } = useT();
-  const pro = usePrefs((s) => s.mode) === "pro";
   const errorText = useErrorText();
   const domains = useDomains();
   const save = useSetSendAsDomains(person.login);
   const chosen = person.sendAsDomains;
-  if (chosen === undefined || (!pro && chosen.length === 0) || !domains.data) return null;
+  if (chosen === undefined || !domains.data) return null;
   const toggle = (name: string, on: boolean) => {
     const next = on ? [...chosen, name] : chosen.filter((domain) => domain !== name);
     save.mutate(next, {
@@ -232,7 +230,6 @@ function Addresses({ person, editable }: { person: Person; editable: boolean }) 
 
 function Access({ person }: { person: Person }) {
   const { t } = useT();
-  const pro = usePrefs((s) => s.mode) === "pro";
   const errorText = useErrorText();
   const createLink = useCreatePasswordLink(person.login);
   const setPassword = useSetPassword(person.login);
@@ -253,7 +250,7 @@ function Access({ person }: { person: Person }) {
           {person.status === "invited" ? t("people.detail.createInvite") : t("people.detail.createLink")}
         </Button>
       )}
-      {pro && (
+      {
         <form
           className="mt-5 flex flex-col gap-2 border-t border-hairline pt-4"
           onSubmit={(event) => {
@@ -289,7 +286,7 @@ function Access({ person }: { person: Person }) {
             )}
           </Field>
         </form>
-      )}
+      }
     </Card>
   );
 }

@@ -8,7 +8,6 @@ import { useT } from "@/i18n";
 import type { DomainReports } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import { Link } from "@/lib/router";
-import { usePrefs } from "@/state/prefs";
 import { useReports } from "./queries";
 import { ReportList } from "./ReportList";
 
@@ -125,14 +124,12 @@ function DomainCard({ domain, days }: { domain: DomainReports; days: number }) {
 /** What other mail servers report about our domains: DMARC results and TLS to our MX. */
 export function ReportsPage() {
   const { t } = useT();
-  const pro = usePrefs((s) => s.mode) === "pro";
   const [days, setDays] = useState(30);
   const query = useReports(days);
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title={t("reports.title")} intro={t("reports.intro")} />
-      {!pro && <p className="text-[13px] text-muted">{t("reports.explain")}</p>}
       <Segmented<string>
         label={t("reports.period")}
         value={String(days)}

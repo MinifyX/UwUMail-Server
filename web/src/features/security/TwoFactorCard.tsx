@@ -11,7 +11,6 @@ import { api, type PasskeyInfo, type SecurityView, type Session, type TotpSetup 
 import { useErrorText } from "@/lib/errors";
 import { formatDate, formatRelative } from "@/lib/format";
 import { createPasskey, passkeysAvailable, wasCancelled, type CreationOptionsJson } from "@/lib/webauthn";
-import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 import { Cancelled } from "./ConfirmPassword";
 import { useSecurityAction } from "./queries";
@@ -163,7 +162,6 @@ export function TwoFactorCard({
   confirmed: Confirmed;
 }) {
   const { t } = useT();
-  const simple = usePrefs((s) => s.mode) === "simple";
   const failure = useFailure();
   const [setup, setSetup] = useState<TotpSetup | null>(null);
   const [codes, setCodes] = useState<string[] | null>(null);
@@ -215,7 +213,6 @@ export function TwoFactorCard({
             {security.secondFactor ? t("security.twoFactor.on") : t("security.twoFactor.off")}
           </span>
         </p>
-        {simple && <p className="-mt-3 text-[13px] text-muted">{t("security.twoFactor.explain")}</p>}
 
         <section className="flex flex-col gap-2">
           <h3 className="flex items-center gap-2 text-[13px] font-bold">
@@ -259,7 +256,6 @@ export function TwoFactorCard({
             <Fingerprint className="size-4 text-muted" aria-hidden />
             {t("security.passkeys.title")}
           </h3>
-          {simple && <p className="text-[13px] text-muted">{t("security.passkeys.explain")}</p>}
           {security.passkeys.length > 0 && (
             <ul className="flex flex-col">
               {security.passkeys.map((passkey) => (

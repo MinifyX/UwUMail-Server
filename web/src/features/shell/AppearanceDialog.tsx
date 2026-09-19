@@ -2,14 +2,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Field, Segmented, Select } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { useSavePrefs } from "@/features/session/session";
-import {
-  usePrefs,
-  type LanguageSetting,
-  type Mode,
-  type MotionSetting,
-  type ThemeSetting,
-  type Tone,
-} from "@/state/prefs";
+import { usePrefs, type LanguageSetting, type MotionSetting, type ThemeSetting, type Tone } from "@/state/prefs";
 
 export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useT();
@@ -19,19 +12,6 @@ export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: ()
   return (
     <Dialog open={open} onClose={onClose} title={t("appearance.title")} width="sm">
       <div className="flex flex-col gap-5 px-6 pt-2 pb-6">
-        <Field label={t("appearance.mode.label")} hint={t("appearance.mode.hint")}>
-          {() => (
-            <Segmented<Mode>
-              label={t("appearance.mode.label")}
-              value={prefs.mode}
-              onChange={(mode) => save.mutate({ mode })}
-              options={[
-                { value: "simple", label: t("mode.simple") },
-                { value: "pro", label: t("mode.pro") },
-              ]}
-            />
-          )}
-        </Field>
         <Field label={t("appearance.language.label")}>
           {(id) => (
             <Select

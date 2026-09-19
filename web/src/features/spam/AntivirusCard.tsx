@@ -35,7 +35,7 @@ function Pill({ tone, children }: { tone: Tone; children: string }) {
 }
 
 /** Whether the scanner is there, what it is, and what it turned away lately. */
-export function AntivirusCard({ explain }: { explain: boolean }) {
+export function AntivirusCard() {
   const { t, i18n } = useT();
   const errorText = useErrorText();
   const queryClient = useQueryClient();
@@ -61,7 +61,6 @@ export function AntivirusCard({ explain }: { explain: boolean }) {
   return (
     <Card title={t("spam.antivirus.title")}>
       <div className="flex flex-col gap-4">
-        {explain && <p className="-mt-1 text-[13px] text-muted">{t("spam.antivirus.explain")}</p>}
         <div className="flex flex-wrap items-center gap-2">
           <Pill tone={tone}>{t(`spam.antivirus.state.${tone}`)}</Pill>
           {view.enabled && <span className="text-[13px] text-muted">{view.address}</span>}

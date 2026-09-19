@@ -151,7 +151,7 @@ export function RelayForm({ explain, onSaved }: { explain: boolean; onSaved: () 
       ]}
       onSaved={onSaved}
     >
-      {(form) => <DeliveryFields form={form} pro={!explain} relayOnly />}
+      {(form) => <DeliveryFields form={form} relayOnly />}
     </Section>
   );
 }

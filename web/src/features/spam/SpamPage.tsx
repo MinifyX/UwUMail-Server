@@ -24,7 +24,6 @@ import {
 } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { navigate } from "@/lib/router";
-import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 import { AntivirusCard } from "./AntivirusCard";
 import { FeedsCard } from "./FeedsCard";
@@ -142,7 +141,6 @@ export function AccountSpamPage() {
 /** The spam filter for admins: its settings, the server and domain sender lists, and what it learned. */
 export function AdminSpamPage({ tab = "filter" }: { tab?: SpamTab }) {
   const { t } = useT();
-  const pro = usePrefs((s) => s.mode) === "pro";
   const queryClient = useQueryClient();
   const setTab = (value: string) => navigate(PATHS[value as SpamTab] ?? PATHS.filter);
   const query = useQuery({ queryKey: adminKey, queryFn: () => api<AdminSpamView>("/api/admin/spam") });
@@ -177,9 +175,9 @@ export function AdminSpamPage({ tab = "filter" }: { tab?: SpamTab }) {
           keys={ANTIVIRUS_SETTING_KEYS}
           onSaved={() => void queryClient.invalidateQueries({ queryKey: ["admin", "spam", "antivirus"] })}
         >
-          {(form) => <AntivirusFields form={form} pro={pro} />}
+          {(form) => <AntivirusFields form={form} />}
         </Section>
-        <AntivirusCard explain={!pro} />
+        <AntivirusCard />
       </div>
     );
   }
@@ -214,7 +212,7 @@ export function AdminSpamPage({ tab = "filter" }: { tab?: SpamTab }) {
         keys={SPAM_SETTING_KEYS}
         onSaved={() => void queryClient.invalidateQueries({ queryKey: adminKey })}
       >
-        {(form) => <SpamFields form={form} pro={pro} />}
+        {(form) => <SpamFields form={form} />}
       </Section>
       <FeedsCard view={settings.data} />
       <SenderListCard admin />

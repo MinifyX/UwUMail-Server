@@ -12,7 +12,6 @@ import type { Person, PersonStatus, Session } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { usePhone } from "@/lib/media";
 import { Link } from "@/lib/router";
-import { usePrefs } from "@/state/prefs";
 import { CreatePersonDialog } from "./CreatePersonDialog";
 import { AdminPill, PersonAvatar, StatusPill, StorageLine } from "./PersonBits";
 import { usePeople } from "./queries";
@@ -34,7 +33,6 @@ function matches(person: Person, filter: Filter, search: string) {
 
 export function PeoplePage({ session }: { session: Session }) {
   const { t, i18n } = useT();
-  const mode = usePrefs((s) => s.mode);
   const people = usePeople();
   const phone = usePhone();
   const [filter, setFilter] = useState<Filter>("all");
@@ -55,16 +53,15 @@ export function PeoplePage({ session }: { session: Session }) {
 
   const visible = people.data.filter((person) => matches(person, filter, search.trim()));
   const onlyMe = people.data.length === 1 && people.data[0]?.login === session.account.login;
-  const pro = mode === "pro";
   // The table is 720 pixels wide and would scroll inside the page on a phone, which feels exactly
-  // like the page itself sliding away. Pro mode keeps the cards there; nothing is lost, only laid
-  // out differently.
-  const table = pro && !phone;
+  // like the page itself sliding away, so a phone gets the cards instead. Nothing is lost, only
+  // laid out differently.
+  const table = !phone;
 
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <PageHeader title={t("people.title")} intro={!pro && t("people.intro")} />
+        <PageHeader title={t("people.title")} />
         <Button variant="primary" icon={UserPlus} onClick={() => setCreating(true)}>
           {t("people.add")}
         </Button>
@@ -113,12 +110,7 @@ export function PeoplePage({ session }: { session: Session }) {
           </div>
 
           {visible.length === 0 ? (
-            <EmptyState
-              compact={pro}
-              scene="search"
-              title={t("people.noResults.title")}
-              body={t("people.noResults.body")}
-            />
+            <EmptyState compact scene="search" title={t("people.noResults.title")} body={t("people.noResults.body")} />
           ) : table ? (
             <div className="overflow-x-auto rounded-card border border-hairline bg-surface">
               <table className="w-full min-w-[720px] text-left text-sm">

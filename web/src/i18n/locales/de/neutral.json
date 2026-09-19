@@ -65,11 +65,6 @@
     "reports": "Berichte",
     "updates": "Updates"
   },
-  "mode": {
-    "label": "Ansicht",
-    "simple": "Einfach",
-    "pro": "Profi"
-  },
   "userMenu": {
     "open": "Kontomenü öffnen",
     "appearance": "Darstellung und Sprache",
@@ -81,10 +76,6 @@
   },
   "appearance": {
     "title": "Darstellung und Sprache",
-    "mode": {
-      "label": "Ansicht",
-      "hint": "Einfach zeigt das Wichtigste mit Erklärungen, Profi zeigt alle Details kompakt."
-    },
     "language": {
       "label": "Sprache",
       "system": "Wie der Browser",

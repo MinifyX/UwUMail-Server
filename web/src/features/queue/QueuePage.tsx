@@ -9,7 +9,6 @@ import { useT } from "@/i18n";
 import { api, type QueuedMessage, type QueueRecipient } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatBytes, formatDateTime, formatRelative } from "@/lib/format";
-import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 
 const STATUS_STYLES: Record<QueueRecipient["status"], string> = {
@@ -34,7 +33,6 @@ function useQueueAction(run: (id: number) => Promise<void>, success: (id: number
 
 function Message({ message }: { message: QueuedMessage }) {
   const { t, i18n } = useT();
-  const pro = usePrefs((s) => s.mode) === "pro";
   const retry = useQueueAction(
     (id) => api<void>(`/api/admin/queue/${id}/retry`, { method: "POST", body: {} }),
     () => t("queue.toasts.retry"),
@@ -50,7 +48,7 @@ function Message({ message }: { message: QueuedMessage }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate font-semibold">
-            {pro && <span className="mr-2 text-muted">#{message.id}</span>}
+            <span className="mr-2 text-muted">#{message.id}</span>
             {message.from || t("queue.bounce")}
           </p>
           <p className="text-[12px] text-muted">

@@ -10,7 +10,6 @@ import { useT } from "@/i18n";
 import { api, type AppPasswordInfo, type AppScope, type SecurityView, type Session } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatDate, formatRelative } from "@/lib/format";
-import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 import { Cancelled } from "./ConfirmPassword";
 import { useSecurityAction } from "./queries";
@@ -201,7 +200,6 @@ export function AppPasswordsCard({
 }) {
   const { t } = useT();
   const errorText = useErrorText();
-  const simple = usePrefs((s) => s.mode) === "simple";
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<Created | null>(null);
   const [revoking, setRevoking] = useState<AppPasswordInfo | null>(null);
@@ -240,7 +238,6 @@ export function AppPasswordsCard({
       }
     >
       <div className="flex flex-col gap-4">
-        {simple && <p className="text-[13px] text-muted">{t("security.appPasswords.explain")}</p>}
         {security.secondFactor ? (
           <p className="rounded-control bg-pink-tint/60 px-3 py-2.5 text-[13px] text-pink-ink">
             {t("security.appPasswords.requiredBySecondFactor")}

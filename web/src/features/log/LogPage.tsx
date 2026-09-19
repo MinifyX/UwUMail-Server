@@ -9,7 +9,6 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { useT } from "@/i18n";
 import { api, type AuditRecord } from "@/lib/api";
 import { dayKey, formatBytes, formatDate, formatTime } from "@/lib/format";
-import { usePrefs } from "@/state/prefs";
 
 const PAGE = 50;
 
@@ -94,7 +93,7 @@ export function detailText(record: AuditRecord, t: TFunction, language: string):
 
 export function LogPage() {
   const { t, i18n } = useT();
-  const pro = usePrefs((s) => s.mode) === "pro";
+  const pro = true;
   const [today] = useState(() => dayKey(Date.now() / 1000));
   const log = useInfiniteQuery({
     queryKey: ["admin", "audit"],
@@ -142,7 +141,7 @@ export function LogPage() {
                       <div className="min-w-0 flex-1">
                         <p className="text-sm break-words">{describe(record, t)}</p>
                         {details && <p className="text-[13px] text-muted">{details}</p>}
-                        {pro && record.ip && <p className="text-[12px] text-faint">{record.ip}</p>}
+                        {record.ip && <p className="text-[12px] text-faint">{record.ip}</p>}
                       </div>
                       <time
                         className="shrink-0 text-[12px] text-muted"

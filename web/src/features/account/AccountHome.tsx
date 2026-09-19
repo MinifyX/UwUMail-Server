@@ -1,11 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { NyuScene } from "@/components/nyu/scenes";
 import { Card, CopyButton, KeyValue, PageHeader } from "@/components/ui/Card";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { useT } from "@/i18n";
 import { api, type Profile, type Session } from "@/lib/api";
 import { formatBytes, formatDate } from "@/lib/format";
-import { usePrefs } from "@/state/prefs";
 import { AppleProfile } from "./AppleProfile";
 
 function StorageBar({ used, quota }: { used: number; quota: number }) {
@@ -28,7 +26,6 @@ function StorageBar({ used, quota }: { used: number; quota: number }) {
 
 export function AccountHome({ session }: { session: Session }) {
   const { t, i18n } = useT();
-  const mode = usePrefs((s) => s.mode);
   const profile = useQuery({ queryKey: ["account"], queryFn: () => api<Profile>("/api/account") });
   const hostname = session.server.hostname;
   const name = session.account.name || session.account.login.split("@")[0];
@@ -37,15 +34,10 @@ export function AccountHome({ session }: { session: Session }) {
   if (profile.isError) return <LoadError error={profile.error} onRetry={() => void profile.refetch()} />;
   const data = profile.data;
   const language = i18n.language;
-  const simple = mode === "simple";
 
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader
-        title={t("account.greeting", { name })}
-        intro={t("account.intro")}
-        art={simple && <NyuScene name="welcome" className="h-auto w-[150px]" />}
-      />
+      <PageHeader title={t("account.greeting", { name })} intro={t("account.intro")} />
 
       <div className="grid gap-5 md:grid-cols-2">
         <Card title={t("account.addresses.title")}>
@@ -57,11 +49,6 @@ export function AccountHome({ session }: { session: Session }) {
               >
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-semibold">{address}</span>
-                  {simple && (
-                    <span className="block text-[12px] text-muted">
-                      {address === data.login ? t("account.addresses.primary") : t("account.addresses.alias")}
-                    </span>
-                  )}
                 </span>
                 <CopyButton value={address} />
               </li>
@@ -84,7 +71,6 @@ export function AccountHome({ session }: { session: Session }) {
         </Card>
 
         <Card title={t("account.apps.title")} className="md:col-span-2">
-          {simple && <p className="mb-2 text-[13px] text-muted">{t("account.apps.intro")}</p>}
           <KeyValue label={t("account.apps.server")} value={hostname} copy={hostname} />
           <KeyValue label={t("account.apps.jmap")} value={`https://${hostname}`} copy={`https://${hostname}`} />
           <KeyValue label={t("account.apps.imap")} value={t("account.apps.imapValue", { hostname })} />
@@ -93,13 +79,11 @@ export function AccountHome({ session }: { session: Session }) {
           <AppleProfile />
         </Card>
 
-        {!simple && (
-          <Card title={t("account.details.title")} className="md:col-span-2">
-            <KeyValue label={t("account.details.login")} value={data.login} />
-            <KeyValue label={t("account.details.role")} value={t(`userMenu.role.${data.role}`)} />
-            <KeyValue label={t("account.details.created")} value={formatDate(data.createdAt, language)} />
-          </Card>
-        )}
+        <Card title={t("account.details.title")} className="md:col-span-2">
+          <KeyValue label={t("account.details.login")} value={data.login} />
+          <KeyValue label={t("account.details.role")} value={t(`userMenu.role.${data.role}`)} />
+          <KeyValue label={t("account.details.created")} value={formatDate(data.createdAt, language)} />
+        </Card>
       </div>
     </div>
   );

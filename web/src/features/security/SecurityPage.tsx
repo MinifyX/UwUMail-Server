@@ -4,12 +4,10 @@ import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
 import { Card, PageHeader } from "@/components/ui/Card";
 import { Field, TextInput } from "@/components/ui/Field";
-import { NyuScene } from "@/components/nyu/scenes";
 import { useT } from "@/i18n";
 import { api, type SecurityView, type Session } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatDateTime, formatRelative } from "@/lib/format";
-import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 import { AppPasswordsCard } from "./AppPasswordsCard";
 import { usePasswordConfirmation } from "./ConfirmPassword";
@@ -171,7 +169,6 @@ function SessionsCard({ security }: { security: SecurityView }) {
 function ActivityCard({ security }: { security: SecurityView }) {
   const { t, i18n } = useT();
   const text = useEventText();
-  const pro = usePrefs((s) => s.mode) === "pro";
   const [all, setAll] = useState(false);
   const events = all ? security.events : security.events.slice(0, 8);
   return (
@@ -187,7 +184,7 @@ function ActivityCard({ security }: { security: SecurityView }) {
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm">{text(event)}</span>
                   <span className="block text-[12px] text-muted">
-                    {pro ? formatDateTime(event.at, i18n.language) : formatRelative(event.at, i18n.language)}
+                    {formatDateTime(event.at, i18n.language)}
                     {event.ip && ` · ${event.ip}`}
                   </span>
                 </span>
@@ -211,7 +208,6 @@ function ActivityCard({ security }: { security: SecurityView }) {
 
 export function SecurityPage({ session }: { session: Session }) {
   const { t } = useT();
-  const simple = usePrefs((s) => s.mode) === "simple";
   const security = useSecurity();
   const { confirmed, dialog } = usePasswordConfirmation();
 
@@ -221,11 +217,7 @@ export function SecurityPage({ session }: { session: Session }) {
 
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader
-        title={t("security.title")}
-        intro={t("security.intro")}
-        art={simple && <NyuScene name={data.secondFactor ? "done" : "pick"} className="h-auto w-[140px]" />}
-      />
+      <PageHeader title={t("security.title")} intro={t("security.intro")} />
       {!data.secondFactor && session.account.role === "admin" && (
         <p className="rounded-card bg-warning-tint px-4 py-3 text-sm text-warning">{t("security.adminReminder")}</p>
       )}

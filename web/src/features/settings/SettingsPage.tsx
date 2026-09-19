@@ -9,7 +9,6 @@ import { useT } from "@/i18n";
 import { api, type SettingsView, type SettingValue } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { Link } from "@/lib/router";
-import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 
 type Draft = Record<string, unknown>;
@@ -265,7 +264,6 @@ function TextField({
 
 export function SettingsPage() {
   const { t } = useT();
-  const pro = usePrefs((s) => s.mode) === "pro";
   const query = useQuery({ queryKey: ["admin", "settings"], queryFn: () => api<SettingsView>("/api/admin/settings") });
 
   if (query.isPending) return <Loading />;
@@ -277,11 +275,11 @@ export function SettingsPage() {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title={t("settings.title")} intro={t("settings.intro")} />
-      {pro && (
+      {
         <p className="rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
           {view.configFile ? t("settings.fileNote", { file: view.configFile }) : t("settings.envNote")}
         </p>
-      )}
+      }
 
       <Section
         title={t("settings.delivery.title")}
@@ -298,7 +296,7 @@ export function SettingsPage() {
           "smtp.allow_external_forwarding",
         ]}
       >
-        {(form) => <DeliveryFields form={form} pro={pro} throughGateway={view.gateway.paired} />}
+        {(form) => <DeliveryFields form={form} throughGateway={view.gateway.paired} />}
       </Section>
 
       <Section
@@ -342,7 +340,7 @@ export function SettingsPage() {
         </Link>
       </p>
 
-      {pro && (
+      {
         <div className="grid gap-5 lg:grid-cols-2">
           <Section
             title={t("settings.receiving.title")}
@@ -413,7 +411,7 @@ export function SettingsPage() {
             )}
           </Section>
         </div>
-      )}
+      }
     </div>
   );
 }
@@ -458,7 +456,7 @@ export const ANTIVIRUS_SETTING_KEYS = [
 ];
 
 /** The virus scanner: the switch for everyone, where it listens and its limits in Pro mode. */
-export function AntivirusFields({ form, pro }: { form: Form; pro: boolean }) {
+export function AntivirusFields({ form }: { form: Form }) {
   const { t } = useT();
   const enabled = Boolean(form.value("spam.antivirus.enabled"));
   return (
@@ -477,7 +475,7 @@ export function AntivirusFields({ form, pro }: { form: Form; pro: boolean }) {
             label={t("settings.antivirus.address")}
             hint={t("settings.antivirus.addressHint")}
           />
-          {pro && (
+          {
             <div className="grid gap-4 sm:grid-cols-2">
               <NumberField
                 form={form}
@@ -493,7 +491,7 @@ export function AntivirusFields({ form, pro }: { form: Form; pro: boolean }) {
                 scale={MB}
               />
             </div>
-          )}
+          }
         </>
       )}
     </>
@@ -513,7 +511,7 @@ export const SPAM_SETTING_KEYS = [
 ];
 
 /** The spam filter: switches for everyone; the numbers behind it and the sender checks in Pro mode. */
-export function SpamFields({ form, pro }: { form: Form; pro: boolean }) {
+export function SpamFields({ form }: { form: Form }) {
   const { t } = useT();
   const enabled = Boolean(form.value("spam.enabled"));
   return (
@@ -540,7 +538,7 @@ export function SpamFields({ form, pro }: { form: Form; pro: boolean }) {
           hint={t("settings.spam.bayesHint")}
         />
       )}
-      {enabled && pro && (
+      {enabled && (
         <div className="grid gap-4 sm:grid-cols-2">
           <DecimalField
             form={form}
@@ -570,7 +568,7 @@ export function SpamFields({ form, pro }: { form: Form; pro: boolean }) {
           />
         </div>
       )}
-      {pro && (
+      {
         <>
           <ToggleField
             form={form}
@@ -585,7 +583,7 @@ export function SpamFields({ form, pro }: { form: Form; pro: boolean }) {
             hint={t("settings.receiving.enforceDmarcHint")}
           />
         </>
-      )}
+      }
     </>
   );
 }
@@ -593,12 +591,10 @@ export function SpamFields({ form, pro }: { form: Form; pro: boolean }) {
 /** Sending settings; `relayOnly` shows just the relay fields, for the setup assistant. */
 export function DeliveryFields({
   form,
-  pro,
   relayOnly = false,
   throughGateway = false,
 }: {
   form: Form;
-  pro: boolean;
   relayOnly?: boolean;
   /** Mail leaves through a paired UwUMail Gateway, whatever the route below says. */
   throughGateway?: boolean;
@@ -714,14 +710,14 @@ export function DeliveryFields({
             label={t("settings.delivery.allowForwarding")}
             hint={t("settings.delivery.allowForwardingHint")}
           />
-          {pro && (
+          {
             <NumberField
               form={form}
               settingKey="delivery.max_lifetime_hours"
               label={t("settings.delivery.lifetime")}
               hint={t("settings.delivery.lifetimeHint")}
             />
-          )}
+          }
         </>
       )}
     </>

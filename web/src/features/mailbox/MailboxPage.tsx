@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Clock, Plus, TreePalm, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { NyuScene } from "@/components/nyu/scenes";
 import { Button } from "@/components/ui/Button";
 import { Card, PageHeader } from "@/components/ui/Card";
 import { Field, TextInput, Toggle } from "@/components/ui/Field";
@@ -10,7 +9,6 @@ import { useT } from "@/i18n";
 import { api, type ForwardingView, type VacationView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatDate } from "@/lib/format";
-import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 
 const forwardingKey = ["account", "forwarding"] as const;
@@ -19,7 +17,6 @@ const vacationKey = ["account", "vacation"] as const;
 function ForwardingCard({ forwarding }: { forwarding: ForwardingView }) {
   const { t, i18n } = useT();
   const errorText = useErrorText();
-  const simple = usePrefs((s) => s.mode) === "simple";
   const queryClient = useQueryClient();
   const [address, setAddress] = useState("");
   const saved = (data: ForwardingView) => queryClient.setQueryData(forwardingKey, data);
@@ -58,7 +55,6 @@ function ForwardingCard({ forwarding }: { forwarding: ForwardingView }) {
   return (
     <Card title={t("mailbox.forwarding.title")}>
       <div className="flex flex-col gap-4">
-        {simple && <p className="text-[13px] text-muted">{t("mailbox.forwarding.explain")}</p>}
         {!forwarding.externalAllowed && (
           <p className="rounded-control bg-canvas px-3 py-2.5 text-[13px] text-muted">
             {t("mailbox.forwarding.onlyLocal")}
@@ -232,7 +228,6 @@ function VacationForm({ vacation }: { vacation: VacationView }) {
 
 export function MailboxPage() {
   const { t } = useT();
-  const simple = usePrefs((s) => s.mode) === "simple";
   const forwarding = useQuery({
     queryKey: forwardingKey,
     queryFn: () => api<ForwardingView>("/api/account/forwarding"),
@@ -245,11 +240,7 @@ export function MailboxPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader
-        title={t("mailbox.title")}
-        intro={t("mailbox.intro")}
-        art={simple && <NyuScene name="inbox" className="h-auto w-[140px]" />}
-      />
+      <PageHeader title={t("mailbox.title")} intro={t("mailbox.intro")} />
       <div className="grid gap-5 lg:grid-cols-2">
         <ForwardingCard forwarding={forwarding.data} />
         <Card

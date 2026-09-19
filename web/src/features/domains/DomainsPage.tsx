@@ -10,7 +10,6 @@ import { Field, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { useErrorText } from "@/lib/errors";
 import { Link, navigate } from "@/lib/router";
-import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 import { useDomains } from "@/features/people/queries";
 import { DnsStatusPill } from "./DnsBits";
@@ -85,7 +84,7 @@ function CreateDomain({
 
 export function DomainsPage() {
   const { t } = useT();
-  const pro = usePrefs((s) => s.mode) === "pro";
+  const pro = true;
   const domains = useDomains();
   const [creating, setCreating] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -120,9 +119,9 @@ export function DomainsPage() {
           action={addButton}
         />
       ) : (
-        <ul className={pro ? "rounded-card border border-hairline bg-surface" : "grid gap-3 sm:grid-cols-2"}>
+        <ul className="rounded-card border border-hairline bg-surface">
           {domains.data.map((domain) => (
-            <li key={domain.name} className={pro ? "border-b border-hairline last:border-b-0" : undefined}>
+            <li key={domain.name} className="border-b border-hairline last:border-b-0">
               <Link
                 to={domainUrl(domain.name)}
                 className={

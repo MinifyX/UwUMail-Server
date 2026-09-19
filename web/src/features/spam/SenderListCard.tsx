@@ -15,7 +15,6 @@ import {
   type SendersView,
 } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
-import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 import { guessSenderKind } from "./senders";
 
@@ -53,7 +52,6 @@ function EntryRow({
 export function SenderListCard({ admin }: { admin: boolean }) {
   const { t } = useT();
   const errorText = useErrorText();
-  const pro = usePrefs((s) => s.mode) === "pro";
   const queryClient = useQueryClient();
   const key = admin ? ["admin", "spam", "senders"] : ["account", "spam", "senders"];
   const path = admin ? "/api/admin/spam/senders" : "/api/account/spam/senders";
@@ -173,7 +171,7 @@ export function SenderListCard({ admin }: { admin: boolean }) {
                 )}
               </Field>
             )}
-            {pro && (
+            {
               <Field label={t("spam.senders.kind")}>
                 {(id) => (
                   <Select id={id} value={kind} onChange={(event) => setKind(event.target.value as SenderKind | "auto")}>
@@ -186,8 +184,8 @@ export function SenderListCard({ admin }: { admin: boolean }) {
                   </Select>
                 )}
               </Field>
-            )}
-            {pro && (
+            }
+            {
               <Field label={t("spam.senders.note")} className={admin ? "sm:col-span-2" : undefined}>
                 {(id) => (
                   <TextInput
@@ -199,7 +197,7 @@ export function SenderListCard({ admin }: { admin: boolean }) {
                   />
                 )}
               </Field>
-            )}
+            }
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Button type="submit" icon={Plus} busy={add.isPending} disabled={full || !value.trim()}>

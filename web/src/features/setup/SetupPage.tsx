@@ -6,7 +6,6 @@ import { Card, PageHeader } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import type { Session } from "@/lib/api";
 import { Link, navigate } from "@/lib/router";
-import { usePrefs } from "@/state/prefs";
 import { DnsStatusPill } from "@/features/domains/DnsBits";
 import { useDomains } from "@/features/people/queries";
 import { GatewayPanel, ReachabilityChecks } from "./GatewayBits";
@@ -16,7 +15,6 @@ import { useLastReachability, useLastServerCheck, useRunReachability, useRunServ
 /** Server → Setup: the checks of the setup assistant, whenever they are needed again. */
 export function SetupPage({ session }: { session: Session }) {
   const { t } = useT();
-  const explain = usePrefs((s) => s.mode) === "simple";
   const last = useLastServerCheck();
   const run = useRunServerCheck();
   const domains = useDomains();
@@ -56,18 +54,17 @@ export function SetupPage({ session }: { session: Session }) {
           }
         >
           <div className="flex flex-col gap-4">
-            {explain && <p className="-mt-1 text-[13px] text-muted">{t("setup.reach.body")}</p>}
             {runReach.isPending && <Checking />}
             {reach && !runReach.isPending && (
               <>
                 <CheckedAt check={reach} />
-                <ReachabilityChecks reach={reach} explain={explain} />
+                <ReachabilityChecks reach={reach} explain={false} />
               </>
             )}
           </div>
         </Card>
         <Card title={t("setup.gateway.title")}>
-          <GatewayPanel hostname={session.server.hostname} explain={explain} />
+          <GatewayPanel hostname={session.server.hostname} explain={false} />
         </Card>
       </div>
 
@@ -80,12 +77,11 @@ export function SetupPage({ session }: { session: Session }) {
         }
       >
         <div className="flex flex-col gap-4">
-          {explain && <p className="-mt-1 text-[13px] text-muted">{t("setup.sending.body")}</p>}
           {busyPlain && <Checking />}
           {check && !busyPlain && (
             <>
               <CheckedAt check={check} />
-              <DeliveryChecks check={check} explain={explain} onRecheck={() => run.mutate(false)} />
+              <DeliveryChecks check={check} explain={false} onRecheck={() => run.mutate(false)} />
             </>
           )}
           {!check && !run.isPending && <p className="text-[13px] text-muted">{t("setup.page.neverRun")}</p>}
@@ -95,14 +91,8 @@ export function SetupPage({ session }: { session: Session }) {
       <div className="grid gap-5 lg:grid-cols-2">
         <Card title={t("setup.checks.title")}>
           <div className="flex flex-col gap-4">
-            {explain && <p className="-mt-1 text-[13px] text-muted">{t("setup.checks.body")}</p>}
             {check && !busyPlain ? (
-              <AddressChecks
-                check={check}
-                explain={explain}
-                busy={run.isPending}
-                onBlocklists={() => run.mutate(true)}
-              />
+              <AddressChecks check={check} explain={false} busy={run.isPending} onBlocklists={() => run.mutate(true)} />
             ) : (
               busyPlain && <Checking />
             )}
@@ -111,15 +101,13 @@ export function SetupPage({ session }: { session: Session }) {
 
         <Card title={t("setup.testMail.title")}>
           <div className="flex flex-col gap-4">
-            {explain && <p className="-mt-1 text-[13px] text-muted">{t("setup.testMail.body")}</p>}
-            <TestMailPanel login={session.account.login} explain={explain} />
+            <TestMailPanel login={session.account.login} explain={false} />
           </div>
         </Card>
       </div>
 
       <Card title={t("setup.page.domainsTitle")}>
         <div className="flex flex-col gap-3">
-          {explain && <p className="-mt-1 text-[13px] text-muted">{t("setup.page.domainsBody")}</p>}
           <ul className="flex flex-col">
             {(domains.data ?? []).map((domain) => (
               <li key={domain.name} className="border-b border-hairline last:border-b-0">

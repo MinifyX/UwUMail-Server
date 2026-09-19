@@ -6,7 +6,6 @@ import { Field, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import type { DomainDetail, ForwardAddress } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
-import { usePrefs } from "@/state/prefs";
 import { useRemoveForwardAddress, useSetForwardAddress } from "./queries";
 
 const textareaClass =
@@ -16,7 +15,6 @@ const textareaClass =
 export function ForwardsCard({ domain }: { domain: DomainDetail }) {
   const { t } = useT();
   const errorText = useErrorText();
-  const pro = usePrefs((s) => s.mode) === "pro";
   const save = useSetForwardAddress(domain.name);
   const remove = useRemoveForwardAddress(domain.name);
   const [local, setLocal] = useState("");
@@ -119,7 +117,7 @@ export function ForwardsCard({ domain }: { domain: DomainDetail }) {
               />
             )}
           </Field>
-          {pro && (
+          {
             <Field label={t("domains.forwards.note")}>
               {(id) => (
                 <TextInput
@@ -131,7 +129,7 @@ export function ForwardsCard({ domain }: { domain: DomainDetail }) {
                 />
               )}
             </Field>
-          )}
+          }
           <div className="flex justify-end">
             <Button type="submit" icon={Forward} busy={save.isPending}>
               {t("domains.forwards.save")}

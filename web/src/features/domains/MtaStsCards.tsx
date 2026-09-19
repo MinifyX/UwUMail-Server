@@ -8,7 +8,6 @@ import { Segmented } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import type { DomainDetail, MtaStsMode } from "@/lib/api";
 import { formatDate, formatNumber } from "@/lib/format";
-import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 import { useDomainReports, useSetMtaSts } from "./queries";
 
@@ -29,7 +28,6 @@ function Suggestion({ children, action }: { children: ReactNode; action?: ReactN
 /** Switching MTA-STS for a domain: off, testing, enforce. */
 export function MtaStsCard({ domain }: { domain: DomainDetail }) {
   const { t, i18n } = useT();
-  const pro = usePrefs((s) => s.mode) === "pro";
   const set = useSetMtaSts(domain.name);
   const reports = useDomainReports(domain.name, 30);
   const settings = domain.mtaSts;
@@ -39,14 +37,12 @@ export function MtaStsCard({ domain }: { domain: DomainDetail }) {
 
   const change = (next: ModeChoice) => {
     if (next === mode) return;
-    if (next === "enforce" && !pro && !window.confirm(t("domains.mtaSts.enforceConfirm"))) return;
     set.mutate(next, { onSuccess: () => toast(t(`domains.mtaSts.toasts.${next}`), "success") });
   };
 
   return (
     <Card title={t("domains.mtaSts.title")}>
       <div className="flex flex-col gap-3">
-        {!pro && <p className="text-[13px] text-muted">{t("domains.mtaSts.intro")}</p>}
         <Segmented<ModeChoice>
           label={t("domains.mtaSts.title")}
           value={mode}
@@ -67,13 +63,12 @@ export function MtaStsCard({ domain }: { domain: DomainDetail }) {
                 {t("domains.mtaSts.since", { date: formatDate(settings.changedAt, i18n.language) })}
               </span>
             </p>
-            {!pro && <p className="text-[13px] text-muted">{t("domains.mtaSts.records")}</p>}
-            {pro && (
+            {
               <div className="flex items-start gap-1 rounded-control bg-canvas px-2.5 py-1.5">
                 <code className="min-w-0 flex-1 text-[12px] whitespace-pre-wrap">{settings.policy.trimEnd()}</code>
                 <CopyButton value={settings.policy} />
               </div>
-            )}
+            }
           </>
         )}
         {ready && (
@@ -130,7 +125,6 @@ function percent(part: number, whole: number, language: string) {
 export function ReportsCard({ domain }: { domain: DomainDetail }) {
   const { t, i18n } = useT();
   const language = i18n.language;
-  const pro = usePrefs((s) => s.mode) === "pro";
   const [days, setDays] = useState(30);
   const query = useDomainReports(domain.name, days);
 
@@ -142,7 +136,6 @@ export function ReportsCard({ domain }: { domain: DomainDetail }) {
       return (
         <div className="flex flex-col gap-2 text-[13px] text-muted">
           <p>{t("domains.reports.empty", { days })}</p>
-          {!pro && <p>{t("domains.reports.emptyHint", { domain: domain.name })}</p>}
         </div>
       );
     }
@@ -154,7 +147,6 @@ export function ReportsCard({ domain }: { domain: DomainDetail }) {
       <div className="flex flex-col gap-6">
         <section className="flex flex-col gap-3">
           <h3 className="text-sm font-bold">{t("domains.reports.dmarcTitle")}</h3>
-          {!pro && <p className="-mt-2 text-[13px] text-muted">{t("domains.reports.dmarcIntro")}</p>}
           {dmarc.reports === 0 ? (
             <p className="text-[13px] text-muted">{t("domains.reports.noneOfKind")}</p>
           ) : (
@@ -199,7 +191,7 @@ export function ReportsCard({ domain }: { domain: DomainDetail }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {dmarc.sources.slice(0, pro ? 50 : 10).map((source) => {
+                    {dmarc.sources.slice(0, 50).map((source) => {
                       const failed = source.messages - source.passed;
                       return (
                         <tr key={source.ip} className="border-t border-hairline">
@@ -211,7 +203,7 @@ export function ReportsCard({ domain }: { domain: DomainDetail }) {
                                 {t("domains.reports.ours")}
                               </span>
                             )}
-                            {pro && source.headerFrom.length > 0 && (
+                            {source.headerFrom.length > 0 && (
                               <span className="block text-[11px] text-faint">{source.headerFrom.join(", ")}</span>
                             )}
                           </td>
@@ -232,14 +224,12 @@ export function ReportsCard({ domain }: { domain: DomainDetail }) {
                   </tbody>
                 </table>
               </div>
-              {!pro && <p className="text-[12px] text-faint">{t("domains.reports.strangers")}</p>}
             </>
           )}
         </section>
 
         <section className="flex flex-col gap-3">
           <h3 className="text-sm font-bold">{t("domains.reports.tlsTitle")}</h3>
-          {!pro && <p className="-mt-2 text-[13px] text-muted">{t("domains.reports.tlsIntro")}</p>}
           {tls.reports === 0 ? (
             <p className="text-[13px] text-muted">{t("domains.reports.noneOfKind")}</p>
           ) : (

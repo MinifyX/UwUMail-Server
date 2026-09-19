@@ -14,10 +14,9 @@ import { api, ApiError, type DomainSummary, type Session } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatDateTime } from "@/lib/format";
 import { navigate } from "@/lib/router";
-import { usePrefs, type Mode } from "@/state/prefs";
 import { RecordList } from "@/features/domains/DnsBits";
 import { useCheckDomain, useDomain } from "@/features/domains/queries";
-import { useInfo, useSavePrefs, useStartSession } from "@/features/session/session";
+import { useInfo, useStartSession } from "@/features/session/session";
 import { GatewayPanel, ReachabilityChecks } from "./GatewayBits";
 import {
   AddressChecks,
@@ -86,40 +85,20 @@ function domainFromHostname(hostname: string): string {
   return labels.length > 2 ? labels.slice(1).join(".") : hostname;
 }
 
-function ModeSwitch({ loggedIn }: { loggedIn: boolean }) {
-  const { t } = useT();
-  const mode = usePrefs((s) => s.mode);
-  const save = useSavePrefs();
-  return (
-    <Segmented<Mode>
-      label={t("mode.label")}
-      value={mode}
-      onChange={(value) => (loggedIn ? save.mutate({ mode: value }) : usePrefs.getState().apply({ mode: value }))}
-      options={[
-        { value: "simple", label: t("mode.simple") },
-        { value: "pro", label: t("mode.pro") },
-      ]}
-    />
-  );
-}
-
 function Frame({
   step,
-  loggedIn,
   title,
   body,
   children,
   footer,
 }: {
   step: Step;
-  loggedIn: boolean;
   title: string;
   body?: string;
   children: ReactNode;
   footer?: ReactNode;
 }) {
   const { t } = useT();
-  const explain = usePrefs((s) => s.mode) === "simple";
   const heading = useRef<HTMLHeadingElement>(null);
   const index = STEPS.indexOf(step);
 
@@ -134,9 +113,7 @@ function Frame({
         <div className="mx-auto flex h-16 w-full max-w-[1000px] items-center gap-3 px-4 sm:px-6">
           <Wordmark className="text-base" />
           <span className="hidden text-[13px] font-semibold text-muted sm:inline">{t("setup.title")}</span>
-          <div className="ml-auto">
-            <ModeSwitch loggedIn={loggedIn} />
-          </div>
+          <div className="ml-auto"></div>
         </div>
         <div className="mx-auto w-full max-w-[1000px] px-4 pb-3 sm:px-6">
           <p className="sr-only">{t("setup.progress", { step: index + 1, count: STEPS.length })}</p>
@@ -164,15 +141,12 @@ function Frame({
       </header>
 
       <main className="mx-auto w-full max-w-[1000px] px-4 py-8 sm:px-6">
-        <div
-          key={step}
-          className={clsx("grid animate-slide-up gap-6", explain && "md:grid-cols-[240px_minmax(0,1fr)] md:gap-10")}
-        >
-          {explain && (
+        <div key={step} className="grid animate-slide-up gap-6 md:grid-cols-[240px_minmax(0,1fr)] md:gap-10">
+          {
             <div className="flex justify-center md:block">
               <NyuScene name={SCENES[step]} className="h-auto w-[180px] md:sticky md:top-32 md:w-full" />
             </div>
-          )}
+          }
           <div className="flex min-w-0 flex-col gap-5">
             <div>
               <p className="text-[12px] font-semibold tracking-wide text-faint uppercase">
@@ -181,7 +155,7 @@ function Frame({
               <h1 ref={heading} tabIndex={-1} className="mt-1 text-[24px] font-bold tracking-[-0.01em] outline-none">
                 {title}
               </h1>
-              {body && explain && <p className="mt-2 text-[15px] text-muted">{body}</p>}
+              {body && <p className="mt-2 text-[15px] text-muted">{body}</p>}
             </div>
             <div className="rounded-[22px] border border-hairline bg-surface p-5 shadow-float sm:p-6">{children}</div>
             {footer && <div className="flex flex-wrap items-center justify-between gap-3">{footer}</div>}
@@ -214,7 +188,6 @@ function Nav({ onBack, onNext, nextLabel }: { onBack?: () => void; onNext: () =>
 function WelcomeStep({ hostname, onCode }: { hostname: string; onCode: (code: string) => void }) {
   const { t } = useT();
   const errorText = useErrorText();
-  const explain = usePrefs((s) => s.mode) === "simple";
   const verify = useVerifySetupCode();
   const [code, setCode] = useState("");
   const command = "docker compose logs uwumail | grep setup";
@@ -225,7 +198,7 @@ function WelcomeStep({ hostname, onCode }: { hostname: string; onCode: (code: st
   };
 
   return (
-    <Frame step="welcome" loggedIn={false} title={t("setup.welcome.title")} body={t("setup.welcome.body")}>
+    <Frame step="welcome" title={t("setup.welcome.title")} body={t("setup.welcome.body")}>
       <form className="flex flex-col gap-4" onSubmit={submit}>
         <Field
           label={t("setup.welcome.codeLabel")}
@@ -247,9 +220,7 @@ function WelcomeStep({ hostname, onCode }: { hostname: string; onCode: (code: st
           )}
         </Field>
         <div className="flex flex-col gap-2 rounded-control bg-canvas p-3">
-          <p className="text-[13px] text-muted">
-            {explain ? t("setup.welcome.whereSimple") : t("setup.welcome.wherePro")}
-          </p>
+          <p className="text-[13px] text-muted">{t("setup.welcome.whereSimple")}</p>
           <div className="flex items-center gap-1 rounded-control bg-surface px-2.5 py-1.5">
             <code className="min-w-0 flex-1 text-[12px] break-all select-all">{command}</code>
             <CopyButton value={command} />
@@ -328,12 +299,7 @@ function RestoreStep({ code, onBack }: { code: string; onBack: () => void }) {
 
   if (started) {
     return (
-      <Frame
-        step="admin"
-        loggedIn={false}
-        title={t("setup.restore.running.title")}
-        body={t("setup.restore.running.body")}
-      >
+      <Frame step="admin" title={t("setup.restore.running.title")} body={t("setup.restore.running.body")}>
         <div className="flex flex-col gap-3">
           <p className="rounded-control bg-pink-tint px-3 py-2 text-[13px] text-pink-ink">
             {t("setup.restore.running.wait")}
@@ -347,7 +313,6 @@ function RestoreStep({ code, onBack }: { code: string; onBack: () => void }) {
   return (
     <Frame
       step="admin"
-      loggedIn={false}
       title={t("setup.restore.title")}
       body={t("setup.restore.body")}
       footer={<Nav onBack={onBack} onNext={() => look.mutate()} nextLabel={t("setup.restore.look")} />}
@@ -512,7 +477,7 @@ function AdminStep({
   };
 
   return (
-    <Frame step="admin" loggedIn={false} title={t("setup.admin.title")} body={t("setup.admin.body")}>
+    <Frame step="admin" title={t("setup.admin.title")} body={t("setup.admin.body")}>
       <form className="flex flex-col gap-4" onSubmit={submit}>
         <Field label={t("setup.admin.domain")} hint={t("setup.admin.domainHint")}>
           {(id) => (
@@ -620,7 +585,6 @@ function AdminStep({
 
 function ReachStep({ hostname, onNext }: { hostname: string; onNext: () => void }) {
   const { t } = useT();
-  const explain = usePrefs((s) => s.mode) === "simple";
   const last = useLastReachability();
   const run = useRunReachability();
   const gateway = useGateway();
@@ -639,13 +603,7 @@ function ReachStep({ hostname, onNext }: { hostname: string; onNext: () => void 
   const way = choice ?? (paired || reach?.recommendation === "gateway" ? "gateway" : "direct");
 
   return (
-    <Frame
-      step="reach"
-      loggedIn
-      title={t("setup.reach.title")}
-      body={t("setup.reach.body")}
-      footer={<Nav onNext={onNext} />}
-    >
+    <Frame step="reach" title={t("setup.reach.title")} body={t("setup.reach.body")} footer={<Nav onNext={onNext} />}>
       <div className="flex flex-col gap-5">
         {run.isPending && <Checking />}
         {reach && !run.isPending && (
@@ -656,7 +614,7 @@ function ReachStep({ hostname, onNext }: { hostname: string; onNext: () => void 
                 {t("setup.reach.run")}
               </Button>
             </div>
-            <ReachabilityChecks reach={reach} explain={explain} />
+            <ReachabilityChecks reach={reach} explain />
           </>
         )}
         <div className="flex flex-col gap-3">
@@ -671,7 +629,7 @@ function ReachStep({ hostname, onNext }: { hostname: string; onNext: () => void 
             ]}
           />
           {way === "gateway" ? (
-            <GatewayPanel hostname={hostname} explain={explain} />
+            <GatewayPanel hostname={hostname} explain />
           ) : (
             <p className="text-[13px] text-muted">{t("setup.reach.directNote")}</p>
           )}
@@ -693,7 +651,6 @@ function DnsStep({
   onNext: () => void;
 }) {
   const { t } = useT();
-  const explain = usePrefs((s) => s.mode) === "simple";
   const gateway = useGateway();
   const query = useDomain(domain);
   const check = useCheckDomain(domain, t("domains.toasts.checked"));
@@ -715,7 +672,6 @@ function DnsStep({
   return (
     <Frame
       step="dns"
-      loggedIn
       title={t("setup.dns.title", { domain })}
       body={t("setup.dns.body")}
       footer={<Nav onBack={onBack} onNext={onNext} />}
@@ -747,8 +703,8 @@ function DnsStep({
                   {t("setup.dns.allOk")}
                 </p>
               )}
-              <RecordList records={report.records} domain={domain} explain={explain} />
-              <CloudflarePanel domain={domain} report={report} explain={explain} />
+              <RecordList records={report.records} domain={domain} explain />
+              <CloudflarePanel domain={domain} report={report} explain />
               {!allOk && <p className="text-[13px] text-muted">{t("setup.dns.later")}</p>}
             </>
           ) : (
@@ -778,12 +734,10 @@ function useServerCheck() {
 
 function SendingStep({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
   const { t } = useT();
-  const explain = usePrefs((s) => s.mode) === "simple";
   const { check, run } = useServerCheck();
   return (
     <Frame
       step="sending"
-      loggedIn
       title={t("setup.sending.title")}
       body={t("setup.sending.body")}
       footer={<Nav onBack={onBack} onNext={onNext} />}
@@ -798,7 +752,7 @@ function SendingStep({ onBack, onNext }: { onBack: () => void; onNext: () => voi
                 {t("setup.sending.run")}
               </Button>
             </div>
-            <DeliveryChecks check={check} explain={explain} onRecheck={() => run.mutate(false)} />
+            <DeliveryChecks check={check} explain onRecheck={() => run.mutate(false)} />
           </>
         )}
       </div>
@@ -808,12 +762,10 @@ function SendingStep({ onBack, onNext }: { onBack: () => void; onNext: () => voi
 
 function ChecksStep({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
   const { t } = useT();
-  const explain = usePrefs((s) => s.mode) === "simple";
   const { check, run } = useServerCheck();
   return (
     <Frame
       step="checks"
-      loggedIn
       title={t("setup.checks.title")}
       body={t("setup.checks.body")}
       footer={<Nav onBack={onBack} onNext={onNext} />}
@@ -821,7 +773,7 @@ function ChecksStep({ onBack, onNext }: { onBack: () => void; onNext: () => void
       <div className="flex flex-col gap-4">
         {run.isPending && run.variables === false && <Checking />}
         {check && !(run.isPending && run.variables === false) && (
-          <AddressChecks check={check} explain={explain} busy={run.isPending} onBlocklists={() => run.mutate(true)} />
+          <AddressChecks check={check} explain busy={run.isPending} onBlocklists={() => run.mutate(true)} />
         )}
       </div>
     </Frame>
@@ -830,16 +782,14 @@ function ChecksStep({ onBack, onNext }: { onBack: () => void; onNext: () => void
 
 function TestMailStep({ login, onBack, onNext }: { login: string; onBack: () => void; onNext: () => void }) {
   const { t } = useT();
-  const explain = usePrefs((s) => s.mode) === "simple";
   return (
     <Frame
       step="testMail"
-      loggedIn
       title={t("setup.testMail.title")}
       body={t("setup.testMail.body")}
       footer={<Nav onBack={onBack} onNext={onNext} />}
     >
-      <TestMailPanel login={login} explain={explain} />
+      <TestMailPanel login={login} explain />
     </Frame>
   );
 }
@@ -849,7 +799,6 @@ function DoneStep({ onBack }: { onBack: () => void }) {
   return (
     <Frame
       step="done"
-      loggedIn
       title={t("setup.done.title")}
       body={t("setup.done.body")}
       footer={

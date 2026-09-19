@@ -27,14 +27,12 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { IconButton } from "@/components/ui/Button";
-import { Segmented } from "@/components/ui/Field";
 import { Wordmark } from "@/components/ui/Logo";
 import { Menu } from "@/components/ui/Menu";
 import { useT } from "@/i18n";
 import type { Session } from "@/lib/api";
 import { Link, usePath } from "@/lib/router";
-import { useLogout, useSavePrefs } from "@/features/session/session";
-import { usePrefs, type Mode } from "@/state/prefs";
+import { useLogout } from "@/features/session/session";
 import { AppearanceDialog } from "./AppearanceDialog";
 
 interface NavItem {
@@ -86,23 +84,6 @@ function NavSection({
   );
 }
 
-function ModeSwitch() {
-  const { t } = useT();
-  const mode = usePrefs((s) => s.mode);
-  const save = useSavePrefs();
-  return (
-    <Segmented<Mode>
-      label={t("mode.label")}
-      value={mode}
-      onChange={(value) => save.mutate({ mode: value })}
-      options={[
-        { value: "simple", label: t("mode.simple") },
-        { value: "pro", label: t("mode.pro") },
-      ]}
-    />
-  );
-}
-
 export function PortalShell({ session, children }: { session: Session; children: ReactNode }) {
   const { t } = useT();
   const path = usePath();
@@ -112,8 +93,6 @@ export function PortalShell({ session, children }: { session: Session; children:
   const [hops, setHops] = useState(0);
   const [appearance, setAppearance] = useState(false);
   const isAdmin = session.account.role === "admin";
-  const pro = usePrefs((s) => s.mode) === "pro";
-
   useEffect(() => {
     if (!drawer) return;
     const onKey = (event: KeyboardEvent) => event.key === "Escape" && setDrawer(false);
@@ -161,8 +140,7 @@ export function PortalShell({ session, children }: { session: Session; children:
               { to: "/admin/settings", label: t("nav.settings"), icon: Settings },
               { to: "/admin/setup", label: t("nav.setup"), icon: WandSparkles },
               { to: "/admin/log", label: t("nav.log"), icon: History },
-              // The raw server log is for Pro mode.
-              ...(pro ? [{ to: "/admin/logs", label: t("nav.logs"), icon: ScrollText }] : []),
+              { to: "/admin/logs", label: t("nav.logs"), icon: ScrollText },
             ]}
           />
         )}
@@ -254,11 +232,6 @@ export function PortalShell({ session, children }: { session: Session; children:
         <Link to="/account" className="rounded-full lg:hidden">
           <Wordmark className="text-base" />
         </Link>
-        {/* On a phone the switch is the last thing that fits, and the same setting sits in the
-            appearance dialog, which the menu at the foot of the drawer opens. */}
-        <div className="ml-auto max-sm:hidden">
-          <ModeSwitch />
-        </div>
       </header>
 
       <main className="mx-auto w-full max-w-[1080px] px-4 py-6 sm:px-6 sm:py-8">{children}</main>

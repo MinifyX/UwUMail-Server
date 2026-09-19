@@ -10,7 +10,6 @@ import { absoluteUrl, type PasswordLinkCreated, type Person } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatDateTime } from "@/lib/format";
 import { navigate } from "@/lib/router";
-import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 import { useCreatePerson, useDomains } from "./queries";
 
@@ -100,7 +99,7 @@ function CreatePerson({
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const { t } = useT();
-  const pro = usePrefs((s) => s.mode) === "pro";
+  const pro = true;
   const domains = useDomains();
   const create = useCreatePerson();
   const errorText = useErrorText();
@@ -236,7 +235,7 @@ function CreatePerson({
             label={t("people.create.admin")}
             description={t("people.create.adminHint")}
           />
-          {pro && (
+          {
             <>
               <Toggle
                 checked={ownPassword}
@@ -260,7 +259,7 @@ function CreatePerson({
                 </Field>
               )}
             </>
-          )}
+          }
           {create.isError && (
             <p role="alert" className="text-[13px] text-danger">
               {errorText(create.error)}

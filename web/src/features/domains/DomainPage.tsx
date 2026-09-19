@@ -7,7 +7,6 @@ import { useT } from "@/i18n";
 import { ApiError, type DomainDetail } from "@/lib/api";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { Link, navigate } from "@/lib/router";
-import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 import { usePeople } from "@/features/people/queries";
 import { CloudflarePanel } from "@/features/setup/SetupBits";
@@ -27,7 +26,7 @@ import {
 
 function DnsCard({ domain }: { domain: DomainDetail }) {
   const { t, i18n } = useT();
-  const pro = usePrefs((s) => s.mode) === "pro";
+  const pro = true;
   const check = useCheckDomain(domain.name, t("domains.toasts.checked"));
   const report = domain.report;
 
@@ -41,7 +40,6 @@ function DnsCard({ domain }: { domain: DomainDetail }) {
       }
     >
       <div className="flex flex-col gap-3">
-        {!pro && <p className="text-[13px] text-muted">{t("domains.detail.dnsIntro")}</p>}
         {domain.setup.upstreamMx && (
           <p className="flex gap-2 rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
             <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
@@ -117,7 +115,7 @@ function CatchAllCard({ domain }: { domain: DomainDetail }) {
 
 function KeysCard({ domain }: { domain: DomainDetail }) {
   const { t, i18n } = useT();
-  const pro = usePrefs((s) => s.mode) === "pro";
+  const pro = true;
   const rotate = useRotateKeys(domain.name, t("domains.toasts.rotated"));
   const activate = useActivateKeys(domain.name, t("domains.toasts.activated"));
   const removeKey = useRemoveKey(domain.name, t("domains.toasts.keyRemoved"));
@@ -128,7 +126,6 @@ function KeysCard({ domain }: { domain: DomainDetail }) {
   return (
     <Card title={t("domains.detail.keys")}>
       <div className="flex flex-col gap-3">
-        {!pro && <p className="text-[13px] text-muted">{t("domains.detail.keysIntro")}</p>}
         <ul className="flex flex-col">
           {domain.keys.map((key) => (
             <li

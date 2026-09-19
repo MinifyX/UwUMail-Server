@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AtSign, Folder, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { NyuScene } from "@/components/nyu/scenes";
 import { Button } from "@/components/ui/Button";
 import { Card, CopyButton, PageHeader } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
@@ -11,7 +10,6 @@ import { useT } from "@/i18n";
 import { api, type OwnAddressesView, type StorageView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatBytes, formatDate } from "@/lib/format";
-import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 
 const addressesKey = ["account", "addresses"] as const;
@@ -20,7 +18,6 @@ const storageKey = ["account", "storage"] as const;
 function AddressesCard({ data }: { data: OwnAddressesView }) {
   const { t, i18n } = useT();
   const errorText = useErrorText();
-  const simple = usePrefs((s) => s.mode) === "simple";
   const queryClient = useQueryClient();
   const [local, setLocal] = useState("");
   const [domain, setDomain] = useState(data.domains[0] ?? "");
@@ -91,7 +88,6 @@ function AddressesCard({ data }: { data: OwnAddressesView }) {
           <p className="rounded-control bg-canvas px-3 py-2.5 text-[13px] text-muted">{t("addresses.closed")}</p>
         ) : (
           <>
-            {simple && <p className="text-[13px] text-muted">{t("addresses.explain")}</p>}
             <form className="flex flex-col gap-2" onSubmit={submit}>
               <Field
                 label={t("addresses.new")}
@@ -278,7 +274,6 @@ function StorageCard({ storage }: { storage: StorageView }) {
 
 export function AddressesPage() {
   const { t } = useT();
-  const simple = usePrefs((s) => s.mode) === "simple";
   const addresses = useQuery({
     queryKey: addressesKey,
     queryFn: () => api<OwnAddressesView>("/api/account/addresses"),
@@ -299,7 +294,6 @@ export function AddressesPage() {
           </span>
         }
         intro={t("addresses.intro")}
-        art={simple && <NyuScene name="emptyFolder" className="h-auto w-[140px]" />}
       />
       <div className="grid gap-5 lg:grid-cols-2">
         <AddressesCard key={addresses.data.domains.join()} data={addresses.data} />

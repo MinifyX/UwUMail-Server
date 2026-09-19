@@ -4,13 +4,11 @@ import { ChevronRight, CircleCheck, CircleHelp, CircleX, RotateCw, TriangleAlert
 import type { LucideIcon } from "lucide-react";
 import type { NyuMood } from "@/components/nyu/Nyu";
 import { Button } from "@/components/ui/Button";
-import { LogoSymbol } from "@/components/ui/Logo";
 import { useT } from "@/i18n";
 import { api, type Health, type HealthArea, type HealthFinding, type HealthLevel } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatBytes, formatDate, formatDuration, formatRelative } from "@/lib/format";
 import { Link } from "@/lib/router";
-import { usePrefs } from "@/state/prefs";
 import { toast } from "@/state/toasts";
 
 const LEVELS: Record<HealthLevel, { icon: LucideIcon; tint: string; dot: string; mood: NyuMood }> = {
@@ -19,34 +17,6 @@ const LEVELS: Record<HealthLevel, { icon: LucideIcon; tint: string; dot: string;
   warning: { icon: TriangleAlert, tint: "bg-warning-tint text-warning", dot: "bg-warning", mood: "puzzled" },
   problem: { icon: CircleX, tint: "bg-danger-tint text-danger", dot: "bg-danger", mood: "sad" },
 };
-
-/** Codes with an extra explanation in Simple mode. */
-const HINTS = new Set([
-  "noDomains",
-  "dnsDomain",
-  "certWaiting",
-  "certSelfSigned",
-  "certWrongName",
-  "certExpired",
-  "certExpiresSoon",
-  "relayLogin",
-  "relayTls",
-  "relayUnreachable",
-  "outboundBlocked",
-  "port25Blocked",
-  "gatewayDown",
-  "gatewayRefused",
-  "gatewayPort25Blocked",
-  "gatewayOutboundBlocked",
-  "queueStuck",
-  "manyBounces",
-  "diskLow",
-  "mailboxesNearlyFull",
-  "adminsWithoutSecondFactor",
-  "youWithoutSecondFactor",
-  "tlsFailures",
-  "dmarcOwnFailures",
-]);
 
 function useFindingText() {
   const { t, i18n } = useT();
@@ -87,7 +57,7 @@ function useFindingText() {
   };
 }
 
-function Finding({ finding, simple }: { finding: HealthFinding; simple: boolean }) {
+function Finding({ finding }: { finding: HealthFinding }) {
   const { t, i18n } = useT();
   const text = useFindingText();
   const params = finding.params ?? {};
@@ -97,7 +67,6 @@ function Finding({ finding, simple }: { finding: HealthFinding; simple: boolean 
         ? t("health.lastDelivered", { time: formatRelative(params.lastDeliveredAt, i18n.language) })
         : null
       : null;
-  const showHint = simple && finding.level !== "ok" && HINTS.has(finding.code);
   const error = finding.level !== "ok" && typeof params.error === "string" ? params.error : null;
   return (
     <li className="text-sm">
@@ -105,8 +74,7 @@ function Finding({ finding, simple }: { finding: HealthFinding; simple: boolean 
         {text(finding)}
         {detail && <span className="text-muted"> {detail}</span>}
       </p>
-      {showHint && <p className="mt-0.5 text-[13px] text-muted">{t(`health.hints.${finding.code}`)}</p>}
-      {error && !simple && <p className="mt-0.5 font-mono text-[12px] break-all text-faint">{error}</p>}
+      {error && <p className="mt-0.5 font-mono text-[12px] break-all text-faint">{error}</p>}
       {finding.link && finding.level !== "ok" && (
         <Link
           to={finding.link}
@@ -120,11 +88,11 @@ function Finding({ finding, simple }: { finding: HealthFinding; simple: boolean 
   );
 }
 
-function AreaTile({ area, simple }: { area: HealthArea; simple: boolean }) {
+function AreaTile({ area }: { area: HealthArea }) {
   const { t } = useT();
   const level = LEVELS[area.level];
   return (
-    <div className={clsx("rounded-control border border-hairline bg-canvas/60", simple ? "p-4" : "p-3")}>
+    <div className="rounded-control border border-hairline bg-canvas/60 p-3">
       <h3 className="flex items-center gap-2 text-[13px] font-bold">
         <span className={clsx("size-2.5 shrink-0 rounded-full", level.dot)} aria-hidden />
         {t(`health.areas.${area.area}`)}
@@ -132,7 +100,7 @@ function AreaTile({ area, simple }: { area: HealthArea; simple: boolean }) {
       </h3>
       <ul className="mt-1.5 flex flex-col gap-2 pl-[18px]">
         {area.findings.map((finding, index) => (
-          <Finding key={`${finding.code}-${index}`} finding={finding} simple={simple} />
+          <Finding key={`${finding.code}-${index}`} finding={finding} />
         ))}
       </ul>
     </div>
@@ -149,8 +117,6 @@ export function useHealth() {
 
 export function HealthCard() {
   const { t, i18n } = useT();
-  const mode = usePrefs((s) => s.mode);
-  const simple = mode === "simple";
   const errorText = useErrorText();
   const queryClient = useQueryClient();
   const health = useHealth();
@@ -177,17 +143,11 @@ export function HealthCard() {
   return (
     <section className="rounded-card border border-hairline bg-surface p-5" aria-labelledby="health-title">
       <header className="flex flex-wrap items-center gap-4">
-        {simple ? (
-          <span className={clsx("flex size-14 shrink-0 items-center justify-center rounded-full", level.tint)}>
-            <LogoSymbol mood={level.mood} className="h-10 w-auto" />
-          </span>
-        ) : (
-          <span className={clsx("flex size-9 shrink-0 items-center justify-center rounded-full", level.tint)}>
-            <Icon className="size-[18px]" aria-hidden />
-          </span>
-        )}
+        <span className={clsx("flex size-9 shrink-0 items-center justify-center rounded-full", level.tint)}>
+          <Icon className="size-[18px]" aria-hidden />
+        </span>
         <div className="min-w-0 flex-1 basis-52">
-          <h2 id="health-title" className={clsx("font-bold", simple ? "text-lg" : "text-[15px]")}>
+          <h2 id="health-title" className="text-[15px] font-bold">
             {data.level === "warning" || data.level === "problem"
               ? t(`health.summary.${data.level}`, { count: open.length })
               : t(`health.summary.${data.level}`)}
@@ -202,9 +162,9 @@ export function HealthCard() {
           {check.isPending ? t("health.checking") : t("health.checkNow")}
         </Button>
       </header>
-      <div className={clsx("mt-4 grid gap-3", simple ? "md:grid-cols-2" : "sm:grid-cols-2 xl:grid-cols-4")}>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {data.areas.map((area) => (
-          <AreaTile key={area.area} area={area} simple={simple} />
+          <AreaTile key={area.area} area={area} />
         ))}
       </div>
     </section>
