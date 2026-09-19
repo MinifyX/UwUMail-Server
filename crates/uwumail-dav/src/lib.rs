@@ -251,6 +251,21 @@ async fn handle(State(dav): State<Dav>, request: Request) -> Response {
     if !owner_ok {
         return simple(StatusCode::FORBIDDEN, "Only your own calendars and contacts");
     }
+    // Calendars and address books are switched on one at a time, and one password covers both --
+    // so which of the two a request may touch is decided here, not where it logged in.
+    let kind = match &target {
+        Path::Root | Path::Principals | Path::Principal(_) => None,
+        Path::Home(kind, _) | Path::Collection(kind, _, _) | Path::Resource(kind, _, _, _) => Some(*kind),
+    };
+    let allowed = match kind {
+        Some(DavKind::Calendar) => account.protocols.caldav,
+        Some(DavKind::Addressbook) => account.protocols.carddav,
+        // The root and the principal say what there is; with neither switch on there is nothing.
+        None => account.protocols.caldav || account.protocols.carddav,
+    };
+    if !allowed {
+        return simple(StatusCode::FORBIDDEN, "This account does not use this");
+    }
     let session = Session { dav: &dav, account: &account, login: &login };
     match method.as_str() {
         "PROPFIND" => session.propfind(&target, &headers, &body).await,

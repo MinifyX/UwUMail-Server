@@ -72,6 +72,23 @@ pub enum AppScope {
 
 /// The uses an app password of this account can sensibly have: only protocols the account may
 /// actually use. A service with nothing but SMTP gets a password that can only send.
+/// Whether an account may use the protocol at all. A person may use everything; a service is
+/// switched on one protocol at a time, and a switch that is off holds whatever password is typed.
+///
+/// `dav` here means calendars or address books; which of the two a request may touch is decided
+/// where the collections are served, because one password covers both.
+fn protocol_allowed(account: &crate::Account, protocol: &str) -> bool {
+    let protocols = account.protocols;
+    match protocol {
+        "imap" => protocols.imap,
+        "jmap" => protocols.jmap,
+        "smtp" => protocols.smtp,
+        "dav" => protocols.caldav || protocols.carddav,
+        // A protocol nobody taught this function about is not quietly allowed.
+        _ => false,
+    }
+}
+
 pub(crate) fn scopes_for(protocols: crate::Protocols) -> Vec<AppScope> {
     let mut scopes = Vec::new();
     if protocols.imap || protocols.jmap {
@@ -152,6 +169,8 @@ pub enum MailAuthDenied {
     Expired,
     /// The app password is not allowed for this protocol.
     WrongScope,
+    /// The account itself may not use this protocol, whatever password was typed.
+    ProtocolOff,
 }
 
 impl std::fmt::Display for MailAuthDenied {
@@ -164,6 +183,9 @@ impl std::fmt::Display for MailAuthDenied {
             MailAuthDenied::AppPasswordRequired => "main password used, but an app password is required",
             MailAuthDenied::Expired => "the app password has expired",
             MailAuthDenied::WrongScope => "the app password is not allowed for this",
+            // Not „wrong password“: the password may be perfectly right, this account simply does
+            // not do this protocol. Saying so saves whoever set it up an evening.
+            MailAuthDenied::ProtocolOff => "this account may not use this protocol",
         })
     }
 }
@@ -669,6 +691,9 @@ impl Store {
             if !account.can_log_in() {
                 return Ok(MailAuth::Denied(MailAuthDenied::Invalid));
             }
+            if !protocol_allowed(&account, protocol) {
+                return Ok(MailAuth::Denied(MailAuthDenied::ProtocolOff));
+            }
             if expires_at.is_some_and(|at| at <= now) {
                 return Ok(MailAuth::Denied(MailAuthDenied::Expired));
             }
@@ -695,6 +720,9 @@ impl Store {
             .map_err(|err| StoreError::Internal(err.to_string()))?;
         if !valid || !account.can_log_in() {
             return Ok(MailAuth::Denied(MailAuthDenied::Invalid));
+        }
+        if !protocol_allowed(&account, protocol) {
+            return Ok(MailAuth::Denied(MailAuthDenied::ProtocolOff));
         }
         if let Some(old) = hash.filter(|hash| password::is_imported(hash)) {
             self.upgrade_imported_hash(account.id, old, password.to_owned()).await;
@@ -1142,6 +1170,71 @@ mod tests {
         assert_eq!(totp_step(secret, "081804", 1_111_111_109 + 30, 0), Some(1_111_111_109 / 30), "one step late");
         assert_eq!(totp_step(secret, "081804", 1_111_111_109, 1_111_111_109 / 30), None, "used before");
         assert_eq!(totp_step(secret, "81804", 1_111_111_109, 0), None);
+    }
+
+    #[tokio::test]
+    async fn a_switched_off_protocol_holds_every_password() {
+        let (store, _dir) = crate::test_support::store().await;
+        store.create_domain("example.de").await.unwrap();
+        let service = store
+            .create_account(NewAccount {
+                address: "monitoring@example.de".into(),
+                display_name: "Monitoring".into(),
+                password: None,
+                role: Role::Service,
+                quota_bytes: 0,
+                protocols: Some(crate::Protocols {
+                    smtp: true,
+                    imap: false,
+                    jmap: false,
+                    caldav: false,
+                    carddav: false,
+                }),
+            })
+            .await
+            .unwrap();
+        let created = store
+            .create_app_password(
+                service.id,
+                NewAppPassword {
+                    name: "Sender".into(),
+                    scopes: vec![AppScope::Smtp, AppScope::Mail],
+                    expires_at: None,
+                },
+            )
+            .await
+            .unwrap();
+        let secret = created.secret.replace(' ', "");
+
+        // Sending is what this one is for.
+        let sending = store.authenticate_mail("monitoring@example.de", &secret, AppScope::Smtp, "smtp", "").await;
+        assert!(matches!(sending, Ok(MailAuth::Ok { .. })), "{sending:?}");
+
+        // IMAP is off for the account, so the password does not open it, right or not.
+        let reading = store.authenticate_mail("monitoring@example.de", &secret, AppScope::Mail, "imap", "").await;
+        assert!(matches!(reading, Ok(MailAuth::Denied(MailAuthDenied::ProtocolOff))), "{reading:?}");
+        let jmap = store.authenticate_mail("monitoring@example.de", &secret, AppScope::Mail, "jmap", "").await;
+        assert!(matches!(jmap, Ok(MailAuth::Denied(MailAuthDenied::ProtocolOff))), "{jmap:?}");
+        let dav = store.authenticate_mail("monitoring@example.de", &secret, AppScope::Dav, "dav", "").await;
+        assert!(matches!(dav, Ok(MailAuth::Denied(MailAuthDenied::ProtocolOff))), "{dav:?}");
+
+        // And a protocol nobody taught the gate about is not quietly allowed either.
+        let unknown = store.authenticate_mail("monitoring@example.de", &secret, AppScope::Mail, "pop3", "").await;
+        assert!(matches!(unknown, Ok(MailAuth::Denied(MailAuthDenied::ProtocolOff))), "{unknown:?}");
+
+        // Switching IMAP back on lets the same password in.
+        store
+            .update_account(
+                "monitoring@example.de",
+                crate::AccountUpdate {
+                    protocols: Some(crate::Protocols { imap: true, ..service.protocols }),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let again = store.authenticate_mail("monitoring@example.de", &secret, AppScope::Mail, "imap", "").await;
+        assert!(matches!(again, Ok(MailAuth::Ok { .. })), "{again:?}");
     }
 
     #[tokio::test]

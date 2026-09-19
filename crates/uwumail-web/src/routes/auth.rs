@@ -79,7 +79,10 @@ pub async fn login(
     if web.limiter().is_blocked(client.ip) {
         return Err(ApiError::TooManyAttempts);
     }
-    let Some(account) = web.store().authenticate(request.login.trim(), &request.password).await? else {
+    // A service account has no password here at all, but the answer must not say which of the
+    // two it was: the same refusal, and the same time spent, as a wrong password.
+    let found = web.store().authenticate(request.login.trim(), &request.password).await?;
+    let Some(account) = found.filter(Account::can_use_portal) else {
         web.limiter().record_failure(client.ip);
         tracing::warn!(login = %request.login, ip = %client.ip, "failed web login");
         return Err(ApiError::InvalidCredentials);
@@ -202,7 +205,7 @@ pub async fn passkey_login(
     let pending = web.login_state().get(&request.token).ok_or_else(expired)?;
     let challenge = pending.challenge.clone().ok_or_else(expired)?;
     let account =
-        web.store().account_by_id(pending.account_id).await?.filter(Account::can_log_in).ok_or_else(expired)?;
+        web.store().account_by_id(pending.account_id).await?.filter(Account::can_use_portal).ok_or_else(expired)?;
 
     let checked = async {
         let credential_id = webauthn::decode(&request.credential.id)?;
@@ -254,7 +257,7 @@ pub async fn second_factor(
     let expired = || ApiError::Rule("loginExpired", "start the login again".into());
     let pending = web.login_state().get(&request.token).ok_or_else(expired)?;
     let account =
-        web.store().account_by_id(pending.account_id).await?.filter(Account::can_log_in).ok_or_else(expired)?;
+        web.store().account_by_id(pending.account_id).await?.filter(Account::can_use_portal).ok_or_else(expired)?;
     let check = web.store().check_second_factor_code(account.id, &request.code).await?;
     if check == CodeCheck::Invalid {
         web.limiter().record_failure(client.ip);

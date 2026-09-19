@@ -838,14 +838,39 @@ impl Session {
                 return Ok(Next::Continue);
             }
         }
+        let mut local_account = local_account;
         if let Some(account_id) = local_account
             && let Ok(Some(account)) = store.account_by_id(account_id).await
-            && account.quota_bytes > 0
-            && account.used_bytes + self.envelope.as_ref().map_or(0, |e| e.size as i64) > account.quota_bytes
         {
-            let text = format!("452 4.2.2 <{address}>: Mailbox is full\r\n");
-            self.reply(&text).await?;
-            return Ok(Next::Continue);
+            // A service that only sends has no mailbox at all. Its mail goes to the address an
+            // admin named for it, and without one the address does not take mail -- said here, at
+            // the door, so the other side hears it at once instead of guessing.
+            if !account.has_mailbox() {
+                let target = match account.redirect_to.trim() {
+                    "" => None,
+                    to => store.resolve_recipient(to).await.ok().flatten(),
+                };
+                // One hop only: a redirect into another mailbox-less account is no redirect.
+                let target = match target {
+                    Some(id) => match store.account_by_id(id).await {
+                        Ok(Some(account)) if account.has_mailbox() => Some(id),
+                        _ => None,
+                    },
+                    None => None,
+                };
+                let Some(target) = target else {
+                    let text = format!("550 5.1.1 <{address}>: This address does not take mail\r\n");
+                    self.error(&text).await?;
+                    return Ok(Next::Continue);
+                };
+                local_account = Some(target);
+            } else if account.quota_bytes > 0
+                && account.used_bytes + self.envelope.as_ref().map_or(0, |e| e.size as i64) > account.quota_bytes
+            {
+                let text = format!("452 4.2.2 <{address}>: Mailbox is full\r\n");
+                self.reply(&text).await?;
+                return Ok(Next::Continue);
+            }
         }
         if !self.recipients.iter().any(|r| r.address == address) {
             self.recipients.push(Recipient {

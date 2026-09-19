@@ -320,7 +320,7 @@ impl Store {
         let expires_at = self
             .write(move |tx| {
                 let account = load_account(tx, &login)?;
-                if !account.can_log_in() {
+                if !account.can_use_portal() {
                     return Err(StoreError::Invalid(format!("{login} is disabled or in the trash")));
                 }
                 let now = now();
@@ -361,7 +361,7 @@ impl Store {
                 )
                 .optional()?;
             Ok(found.and_then(|(account, purpose, expires_at)| {
-                (expires_at > now() && account.can_log_in()).then(|| PasswordLink {
+                (expires_at > now() && account.can_use_portal()).then(|| PasswordLink {
                     account,
                     purpose: if purpose == "invite" { PasswordLinkPurpose::Invite } else { PasswordLinkPurpose::Reset },
                     expires_at,

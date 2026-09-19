@@ -111,7 +111,9 @@ impl Store {
             return Ok(None);
         };
         let now = now();
-        if expires_at <= now || !account.can_log_in() {
+        // A service never has a session, and one it had from before stops counting the moment it
+        // becomes one.
+        if expires_at <= now || !account.can_use_portal() {
             return Ok(None);
         }
         let mut session = WebSession { account, csrf_token, created_at, expires_at };

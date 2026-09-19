@@ -1011,3 +1011,73 @@ async fn a_message_with_a_virus_is_turned_away_and_a_scanner_that_is_away_never_
     assert!(raw.contains("X-Virus-Scanned: no (the virus scanner did not answer)"), "{raw}");
     assert!(!raw.contains("trust me"), "{raw}");
 }
+
+/// Hands in one message and returns the reply to RCPT TO, without sending any data.
+async fn offer_to(server: &TestServer, recipient: &str) -> String {
+    let mut session = RawSession::connect(server.mx).await;
+    assert!(session.command("EHLO relay.local").await.starts_with("250"));
+    assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+    session.command(&format!("RCPT TO:<{recipient}>")).await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_service_that_only_sends_takes_no_mail_unless_it_names_a_place_for_it() {
+    let a = start("a.test", &["mini", "ami"], &[]).await;
+    let store = a.smtp.store();
+    store
+        .create_account(NewAccount {
+            address: "monitoring@a.test".into(),
+            display_name: "Monitoring".into(),
+            password: None,
+            role: Role::Service,
+            quota_bytes: 0,
+            protocols: Some(uwumail_store::Protocols {
+                smtp: true,
+                imap: false,
+                jmap: false,
+                caldav: false,
+                carddav: false,
+            }),
+        })
+        .await
+        .unwrap();
+
+    // Nothing to deliver into: said at the door, not swallowed.
+    let refused = offer_to(&a, "monitoring@a.test").await;
+    assert!(refused.starts_with("550"), "{refused}");
+    assert!(refused.contains("does not take mail"), "{refused}");
+
+    // With a place named for it, the mail lands there instead.
+    store
+        .update_account(
+            "monitoring@a.test",
+            uwumail_store::AccountUpdate { redirect_to: Some("ami@a.test".into()), ..Default::default() },
+        )
+        .await
+        .unwrap();
+    let message = "From: news@sender.test\r\nSubject: Platte fast voll\r\n\r\nbitte nachsehen\r\n";
+    let reply = relay_message_to(&a, &["monitoring@a.test"], message).await;
+    assert!(reply.starts_with("250"), "{reply}");
+    let inbox = a.wait_for_inbox("ami@a.test", 1).await;
+    assert_eq!(inbox[0].subject, "Platte fast voll");
+    assert!(a.inbox("mini@a.test").await.is_empty(), "only the address that was named gets it");
+
+    // A service may still send, and what it sends is signed and delivered like anyone's mail.
+    let app = store
+        .create_app_password(
+            store.account("monitoring@a.test").await.unwrap().unwrap().id,
+            uwumail_store::NewAppPassword {
+                name: "Sender".into(),
+                scopes: vec![uwumail_store::AppScope::Smtp],
+                expires_at: None,
+            },
+        )
+        .await
+        .unwrap();
+    a.mailer("monitoring@a.test", &app.secret.replace(' ', ""), false)
+        .send(mail("Monitoring <monitoring@a.test>", &["mini@a.test"], "Alarm"))
+        .await
+        .unwrap();
+    let delivered = a.wait_for_inbox("mini@a.test", 1).await;
+    assert_eq!(delivered[0].subject, "Alarm");
+}
