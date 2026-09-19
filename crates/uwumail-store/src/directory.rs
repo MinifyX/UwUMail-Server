@@ -46,8 +46,8 @@ impl Role {
 ///
 /// A person has all of them. A service is set up switch by switch, and with neither IMAP nor JMAP
 /// it has no mailbox: mail to its address is refused, or sent on to [`Account::redirect_to`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct Protocols {
     pub smtp: bool,
     pub imap: bool,
