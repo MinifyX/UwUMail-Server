@@ -14,6 +14,12 @@
 #   --email ADDRESS      where Let's Encrypt warns before a certificate expires (optional)
 #   --language de|en     the language of bounces and other mail the server writes
 #   --gateway-code CODE  pairing code of a UwUMail Gateway (uwugw1...), for a server at home
+#   --smtp-bind X        where UwUMail listens when that port is taken on this machine: a port
+#   --http-bind X        or an address:port, for 25, 80, 443, 465, 587 and 993 in this order.
+#   --https-bind X       Without them it looks at the six itself and asks about every one it
+#   --submissions-bind X finds taken. What arrives from outside keeps its own number either
+#   --submission-bind X  way, so whatever sits in front has to send it to the new one.
+#   --imaps-bind X
 #   --version TAG        latest (default), beta, edge, or an exact version like 0.4.0
 #   --with-antivirus     bring the virus scanner along even on a small machine
 #   --no-antivirus       leave the virus scanner out
@@ -33,6 +39,12 @@ hostname_answer=""
 email=""
 language=de
 gateway_code=""
+smtp_bind=""
+http_bind=""
+https_bind=""
+submissions_bind=""
+submission_bind=""
+imaps_bind=""
 version=latest
 antivirus=auto
 host_helper=true
@@ -52,13 +64,19 @@ while [ $# -gt 0 ]; do
     --email) email="${2:-}"; shift 2 ;;
     --language) language="${2:?--language needs de or en}"; shift 2 ;;
     --gateway-code) gateway_code="${2:-}"; shift 2 ;;
+    --smtp-bind) smtp_bind="${2:?--smtp-bind needs a port}"; shift 2 ;;
+    --http-bind) http_bind="${2:?--http-bind needs a port}"; shift 2 ;;
+    --https-bind) https_bind="${2:?--https-bind needs a port}"; shift 2 ;;
+    --submissions-bind) submissions_bind="${2:?--submissions-bind needs a port}"; shift 2 ;;
+    --submission-bind) submission_bind="${2:?--submission-bind needs a port}"; shift 2 ;;
+    --imaps-bind) imaps_bind="${2:?--imaps-bind needs a port}"; shift 2 ;;
     --version) version="${2:?--version needs a tag}"; shift 2 ;;
     --with-antivirus) antivirus=true; shift ;;
     --no-antivirus) antivirus=false; shift ;;
     --no-host-helper) host_helper=false; shift ;;
     --yes | -y) ask=false; shift ;;
     -h | --help)
-      sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) die "unknown option: $1" ;;
@@ -209,6 +227,90 @@ if $host_helper && $ask; then
   yesno "Let the portal show and install this machine's system updates?" y || host_helper=false
 fi
 
+# ── the ports ─────────────────────────────────────────────────────────────────────────────────
+# Docker only finds out that it cannot have a port when everything else is done already, and then
+# it is the start that fails, on a machine that looks installed. So we look first, while an
+# answer can still go into the .env.
+
+# Whether something on this machine is listening there. Without ss or netstat nobody can say, and
+# then Docker is the one who will.
+port_busy() {
+  local port="$1"
+  if command -v ss >/dev/null 2>&1; then
+    ss -Hltn "sport = :$port" 2>/dev/null | grep -q .
+  elif command -v netstat >/dev/null 2>&1; then
+    netstat -ltn 2>/dev/null | awk '{ print $4 }' | grep -qE "[:.]$port$"
+  else
+    return 1
+  fi
+}
+
+# A port, or an address:port, the way Compose wants it.
+valid_bind() { [[ "$1" =~ ^(\[[0-9a-fA-F:]+\]:|[0-9]{1,3}(\.[0-9]{1,3}){3}:)?[0-9]{1,5}$ ]]; }
+
+# The port out of either form.
+port_of() { printf '%s' "${1##*:}"; }
+
+# The first free port from there on, so what we suggest is one that works.
+free_from() {
+  local port="$1"
+  while [ "$port" -lt 65535 ] && port_busy "$port"; do port=$((port + 1)); done
+  printf '%s' "$port"
+}
+
+# One port. What was passed wins; a free port needs nothing; a taken one is a question, or a line
+# for the message at the end when there is nobody to ask. The answer goes into plan_result,
+# because a subshell could not tell us what it found.
+plan_result=""
+ports_taken=""
+plan_port() {
+  local what="$1" port="$2" suggestion="$3" flag="$4" given="$5" answer
+  plan_result="$given"
+  if [ -n "$given" ]; then
+    valid_bind "$given" || die "$flag wants a port or an address:port, not $given"
+    port_busy "$(port_of "$given")" && warn "$flag points at $given, and that one is taken as well"
+    return 0
+  fi
+  port_busy "$port" || return 0
+  if ! $ask || ! have_tty; then
+    ports_taken="$ports_taken
+        port $port ($what): $flag <port>"
+    return 0
+  fi
+  warn "port $port is taken on this machine ($what)"
+  answer=$(askfor "Which port should UwUMail listen on instead?" "$(free_from "$suggestion")")
+  valid_bind "$answer" || die "that is not a port or an address:port: $answer"
+  plan_result="$answer"
+}
+
+plan_port "mail from other servers" 25 1025 --smtp-bind "$smtp_bind"
+smtp_bind="$plan_result"
+plan_port "certificate challenges" 80 8081 --http-bind "$http_bind"
+http_bind="$plan_result"
+plan_port "the portal and the apps" 443 8443 --https-bind "$https_bind"
+https_bind="$plan_result"
+plan_port "mail apps, TLS" 465 1465 --submissions-bind "$submissions_bind"
+submissions_bind="$plan_result"
+plan_port "mail apps, STARTTLS" 587 1587 --submission-bind "$submission_bind"
+submission_bind="$plan_result"
+plan_port "mail apps, IMAP" 993 1993 --imaps-bind "$imaps_bind"
+imaps_bind="$plan_result"
+
+if [ -n "$ports_taken" ]; then
+  die "these ports are taken on this machine, and there is no terminal to ask on. Say where
+      UwUMail should listen instead, and nothing else has to move:
+$ports_taken"
+fi
+
+# Moving a mail port moves only this side of it: 25, 465, 587 and 993 are what the world knocks on.
+if [ -n "$smtp_bind$submissions_bind$submission_bind$imaps_bind" ]; then
+  if [ -n "$gateway_code" ]; then
+    step "the gateway brings mail in through the tunnel, so the moved ports only matter to mail apps in your own network"
+  else
+    step "mail still arrives on 25, 465, 587 and 993 from outside: the router or firewall in front has to send those to the ports above"
+  fi
+fi
+
 # ── the files ─────────────────────────────────────────────────────────────────────────────────
 printf '\n'
 step "setting up $dir"
@@ -246,6 +348,13 @@ set_env UWUMAIL_LANGUAGE "$language" "$dir/.env"
 set_env UWUMAIL_VERSION "$version" "$dir/.env"
 set_env UWUMAIL_GATEWAY_CODE "$gateway_code" "$dir/.env"
 $antivirus && set_env COMPOSE_PROFILES antivirus "$dir/.env"
+# Only the ports that had to move; the rest keeps the commented-out line and its explanation.
+[ -n "$smtp_bind" ] && set_env UWUMAIL_SMTP_BIND "$smtp_bind" "$dir/.env"
+[ -n "$http_bind" ] && set_env UWUMAIL_HTTP_BIND "$http_bind" "$dir/.env"
+[ -n "$https_bind" ] && set_env UWUMAIL_HTTPS_BIND "$https_bind" "$dir/.env"
+[ -n "$submissions_bind" ] && set_env UWUMAIL_SUBMISSIONS_BIND "$submissions_bind" "$dir/.env"
+[ -n "$submission_bind" ] && set_env UWUMAIL_SUBMISSION_BIND "$submission_bind" "$dir/.env"
+[ -n "$imaps_bind" ] && set_env UWUMAIL_IMAPS_BIND "$imaps_bind" "$dir/.env"
 step "wrote $dir/.env"
 
 # ── the helper that looks after the machine ───────────────────────────────────────────────────
@@ -311,3 +420,18 @@ cat <<DONE
   Next version:   cd $dir && sudo bash update.sh
   What is next:   https://github.com/$repo/blob/main/docs/install.md
 DONE
+
+# The name goes to the web server that kept port 443, and it is not passing it on yet.
+if [ -n "$https_bind" ] && [ -z "$gateway_code" ]; then
+  cat <<MOVED
+
+  The web port moved to $https_bind, so $hostname_answer will only answer once the web server in
+  front of UwUMail sends that name on to it. Until then, from your own network:
+
+      https://<this machine's address>:$(port_of "$https_bind")/setup
+
+  The browser warns about the certificate there; that is the self-signed one from before
+  Let's Encrypt could be asked. How the web server in front is set up:
+  https://github.com/$repo/blob/main/docs/deployment.md#behind-a-reverse-proxy
+MOVED
+fi
