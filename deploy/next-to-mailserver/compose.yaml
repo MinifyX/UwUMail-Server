@@ -20,11 +20,13 @@ services:
     environment:
       UWUMAIL_CONFIG: /etc/uwumail/uwumail.toml
       UWUMAIL_DELIVERY__RELAY__PASSWORD: ${RELAY_PASSWORD:?set RELAY_PASSWORD in .env}
+    # Each of these moves in .env when something on this machine already holds it, as a port or
+    # as address:port; what sends here then has to be told the new number.
     ports:
-      - "25:25"       # mail forwarded by the existing mail server
-      - "465:465"     # mail apps, TLS
-      - "993:993"     # mail apps, IMAP with TLS
-      - "587:587"     # mail apps, STARTTLS
+      - "${UWUMAIL_SMTP_BIND:-25}:25"            # mail forwarded by the existing mail server
+      - "${UWUMAIL_SUBMISSIONS_BIND:-465}:465"   # mail apps, TLS
+      - "${UWUMAIL_IMAPS_BIND:-993}:993"         # mail apps, IMAP with TLS
+      - "${UWUMAIL_SUBMISSION_BIND:-587}:587"    # mail apps, STARTTLS
       # Web, behind the reverse proxy. This port is plain HTTP: whoever reaches it gets the portal
       # without TLS. Give it only to the proxy, with UWUMAIL_PROXY_BIND in .env: 127.0.0.1:8080
       # when the proxy runs on this machine itself (not in Docker), else this machine's address in

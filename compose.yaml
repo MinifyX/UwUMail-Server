@@ -9,8 +9,9 @@
 #
 # The next version: update.sh, next to this file.
 #
-# With a UwUMail Gateway, its pairing code goes into .env before the first start. When another
-# web server already uses ports 80 and 443 on this machine, .env moves UwUMail's web ports.
+# With a UwUMail Gateway, its pairing code goes into .env before the first start. When something
+# else on this machine already holds one of the ports, .env moves UwUMail's; install.sh asks
+# about that by itself.
 #
 # The whole way, with DNS and the gateway: docs/install.md. Reverse proxies and every DNS
 # record: docs/deployment.md.
@@ -26,13 +27,17 @@ services:
       UWUMAIL_TLS__ACME_EMAIL: ${UWUMAIL_ACME_EMAIL:-}
       UWUMAIL_TONE__LANGUAGE: ${UWUMAIL_LANGUAGE:-de}
       UWUMAIL_GATEWAY__CODE: ${UWUMAIL_GATEWAY_CODE:-}
+    # Every one of these can be moved in .env, as a port or as address:port, for a machine where
+    # something else already holds one of them. Only where UwUMail listens moves: from the
+    # outside the numbers stay, because other mail servers only ever try 25 and mail apps expect
+    # 465, 587 and 993, so the router or the firewall in front has to do the translating.
     ports:
-      - "25:25"     # mail from other servers
-      - "${UWUMAIL_HTTP_BIND:-80}:80"      # certificate challenges, redirects to HTTPS
-      - "${UWUMAIL_HTTPS_BIND:-443}:443"   # web (portal and JMAP)
-      - "465:465"   # mail apps, TLS
-      - "993:993"   # mail apps, IMAP with TLS
-      - "587:587"   # mail apps, STARTTLS
+      - "${UWUMAIL_SMTP_BIND:-25}:25"            # mail from other servers
+      - "${UWUMAIL_HTTP_BIND:-80}:80"            # certificate challenges, redirects to HTTPS
+      - "${UWUMAIL_HTTPS_BIND:-443}:443"         # web (portal and JMAP)
+      - "${UWUMAIL_SUBMISSIONS_BIND:-465}:465"   # mail apps, TLS
+      - "${UWUMAIL_IMAPS_BIND:-993}:993"         # mail apps, IMAP with TLS
+      - "${UWUMAIL_SUBMISSION_BIND:-587}:587"    # mail apps, STARTTLS
     volumes:
       - uwumail-data:/data
     stop_grace_period: 20s

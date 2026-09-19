@@ -189,22 +189,12 @@ lift_into_env() {
       set_env UWUMAIL_VERSION "$value"
       ;;
   esac
-  value=$(grep -oE '^ *- "[^"]+:80"' "$file" | head -1 | sed -E 's/.*"(.*):80"/\1/')
-  case "$value" in
-    "" | '${UWUMAIL_HTTP_BIND'*) ;;
-    *)
-      step "moving the web port $value into .env"
-      set_env UWUMAIL_HTTP_BIND "$value"
-      ;;
-  esac
-  value=$(grep -oE '^ *- "[^"]+:443"' "$file" | head -1 | sed -E 's/.*"(.*):443"/\1/')
-  case "$value" in
-    "" | '${UWUMAIL_HTTPS_BIND'*) ;;
-    *)
-      step "moving the web port $value into .env"
-      set_env UWUMAIL_HTTPS_BIND "$value"
-      ;;
-  esac
+  lift_port "$file" 25 UWUMAIL_SMTP_BIND
+  lift_port "$file" 80 UWUMAIL_HTTP_BIND
+  lift_port "$file" 443 UWUMAIL_HTTPS_BIND
+  lift_port "$file" 465 UWUMAIL_SUBMISSIONS_BIND
+  lift_port "$file" 587 UWUMAIL_SUBMISSION_BIND
+  lift_port "$file" 993 UWUMAIL_IMAPS_BIND
   # A clamav service without its profile means: this machine wants the scanner at every start.
   if grep -q '^  clamav:' "$file" && ! grep -q '^      - antivirus' "$file"; then
     step "moving the virus scanner into .env"
@@ -212,14 +202,35 @@ lift_into_env() {
   fi
 }
 
+# One published port of that file into the .env, when somebody wrote a number where the stock
+# file has the variable. The container side never moves, so it is what we look the port up by.
+lift_port() {
+  local file="$1" port="$2" key="$3" value
+  value=$(grep -oE "^ *- \"[^\"]+:$port\"" "$file" | head -1 | sed -E "s/.*\"(.*):$port\"/\1/")
+  case "$value" in
+    "" | "\${$key"*) ;;
+    *)
+      step "moving port $port, which is at $value here, into .env"
+      set_env "$key" "$value"
+      ;;
+  esac
+}
+
 # The same file with every value we understand written the way the stock file writes it. What is
-# left over after that is a change nobody can translate, and then we stop.
+# left over after that is a change nobody can translate, and then we stop. The last line takes
+# the width of the comment column out of it as well: a port somebody wrote by hand shifts the
+# comment behind it, and that is not a change worth stopping for.
 # shellcheck disable=SC2016  # sed writes the ${...} out literally, that is the point
 normalized() {
   sed -E \
     -e "s#(image: $image:).*#\1\\\$\{UWUMAIL_VERSION:-latest\}#" \
+    -e 's#^( *- ")[^"]+(:25".*)#\1${UWUMAIL_SMTP_BIND:-25}\2#' \
     -e 's#^( *- ")[^"]+(:80".*)#\1${UWUMAIL_HTTP_BIND:-80}\2#' \
     -e 's#^( *- ")[^"]+(:443".*)#\1${UWUMAIL_HTTPS_BIND:-443}\2#' \
+    -e 's#^( *- ")[^"]+(:465".*)#\1${UWUMAIL_SUBMISSIONS_BIND:-465}\2#' \
+    -e 's#^( *- ")[^"]+(:587".*)#\1${UWUMAIL_SUBMISSION_BIND:-587}\2#' \
+    -e 's#^( *- ")[^"]+(:993".*)#\1${UWUMAIL_IMAPS_BIND:-993}\2#' \
+    -e 's|[[:space:]]+#| #|' \
     "$1" | sha256sum | cut -d' ' -f1
 }
 
