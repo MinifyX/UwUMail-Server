@@ -19,6 +19,11 @@ use uwumail_store::{ImportProgress, IngestRequest, MailboxRole, MailboxTarget, S
 /// Messages fetched per request.
 const BATCH: usize = 25;
 const TIMEOUT: Duration = Duration::from_secs(120);
+/// The largest literal this reads before allocating for it. A hostile or broken provider could
+/// otherwise announce something like `{9223372036854775808}` and make the allocation abort the
+/// whole server, which then crash-loops on the same account (security-audit-0.5.2 S-25). It also
+/// bounds a fetched message body, since that arrives as a literal.
+const MAX_LITERAL: usize = 64 * 1024 * 1024;
 
 /// Where to copy from and how to log in.
 pub struct Source {
@@ -156,6 +161,9 @@ impl Connection {
             };
             response.text.push_str(String::from_utf8_lossy(shown).trim_end_matches(['\r', '\n']));
             let Some(size) = literal else { return Ok(response) };
+            if size > MAX_LITERAL {
+                bail!("the server announced a {size}-byte literal, more than this reads at once");
+            }
             let mut bytes = vec![0; size];
             tokio::time::timeout(TIMEOUT, self.stream.read_exact(&mut bytes))
                 .await
@@ -485,6 +493,15 @@ pub async fn copy_mail(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_huge_literal_is_past_the_cap_read_response_enforces() {
+        // The provider can announce any size; read_response refuses one over MAX_LITERAL before it
+        // would allocate for it (security-audit-0.5.2 S-25).
+        let mut tokens = Vec::new();
+        let size = tokenize(b"* OK {9223372036854775807}\r\n", &mut tokens).expect("a literal size");
+        assert!(size > MAX_LITERAL);
+    }
 
     #[test]
     fn responses_with_literals_become_tokens() {

@@ -596,6 +596,12 @@ pub async fn settings(path: Option<&std::path::Path>, store: &Store, command: Se
         }
         SettingsCommand::Set { key, value } => {
             let spec = spec_for(&key).ok_or_else(|| anyhow::anyhow!("no setting {key}"))?;
+            // A secret must not stand in the argument list, where the process list and the shell
+            // history keep it: it is given as `-` and read from standard input
+            // (security-audit-0.5.2 S-24).
+            if matches!(spec.kind, SettingKind::Secret) && value != "-" {
+                bail!("{key} is a secret: pass it as `-` and type the value on standard input, not on the command line");
+            }
             let typed = if value == "-" {
                 let mut line = String::new();
                 std::io::stdin().read_line(&mut line).context("reading the value from standard input")?;

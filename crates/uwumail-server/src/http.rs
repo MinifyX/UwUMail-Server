@@ -81,6 +81,18 @@ fn untrusted_proxy(peer: Option<Peer>, trusted: bool, headers: &HeaderMap) -> Op
 }
 
 /// Works out who the client is; behind a trusted reverse proxy that is the address it forwarded.
+/// One `X-Forwarded-For` hop as an address: a bare IP, or the `ip:port` / `[v6]:port` form some
+/// proxies write. `None` for anything else, which ends the walk.
+fn parse_forwarded_hop(hop: &str) -> Option<IpAddr> {
+    if let Ok(ip) = hop.parse::<IpAddr>() {
+        return Some(ip);
+    }
+    if let Some(rest) = hop.strip_prefix('[') {
+        return rest[..rest.find(']')?].parse().ok();
+    }
+    hop.rsplit_once(':').and_then(|(host, _)| host.parse().ok())
+}
+
 async fn client_info(State(trusted): State<Arc<Vec<IpNetwork>>>, mut request: Request, next: Next) -> Response {
     let peer = request.extensions().get::<Peer>().copied();
     let mut info =
@@ -100,13 +112,22 @@ async fn client_info(State(trusted): State<Arc<Vec<IpNetwork>>>, mut request: Re
     if is_trusted(info.ip) {
         let headers = request.headers();
         if let Some(forwarded) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
-            // The last address that is not one of our proxies is the real client.
-            let client = forwarded
-                .split(',')
-                .rev()
-                .filter_map(|part| part.trim().parse::<IpAddr>().ok())
-                .map(|ip| ip.to_canonical())
-                .find(|ip| !is_trusted(*ip));
+            // The rightmost address that is not one of our proxies is the real client. A hop that
+            // cannot be read as an address ends the walk rather than being skipped over -- skipping
+            // it let a client behind a proxy that appends `ip:port` pick its own address for the
+            // login throttle (security-audit-0.5.2 S-20). A `:port` suffix is stripped so such
+            // proxies work.
+            let mut client = None;
+            for hop in forwarded.split(',').rev() {
+                let Some(ip) = parse_forwarded_hop(hop.trim()) else {
+                    break;
+                };
+                let ip = ip.to_canonical();
+                if !is_trusted(ip) {
+                    client = Some(ip);
+                    break;
+                }
+            }
             if let Some(client) = client {
                 info.ip = client;
             }
@@ -297,6 +318,17 @@ mod tests {
         assert!(hsts_allowed(info(false)));
         assert!(!hsts_allowed(info(true)));
         assert!(!hsts_allowed(None));
+    }
+
+    #[test]
+    fn a_forwarded_hop_reads_bare_and_port_forms_and_nothing_else() {
+        let ip = |s: &str| parse_forwarded_hop(s);
+        assert_eq!(ip("203.0.113.9"), "203.0.113.9".parse().ok());
+        assert_eq!(ip("203.0.113.9:5555"), "203.0.113.9".parse().ok(), "a :port suffix is stripped");
+        assert_eq!(ip("[2001:db8::1]:443"), "2001:db8::1".parse().ok());
+        assert_eq!(ip("2001:db8::1"), "2001:db8::1".parse().ok());
+        assert_eq!(ip("for=1.2.3.4"), None, "an unreadable hop ends the walk, it is not skipped");
+        assert_eq!(ip("garbage"), None);
     }
     use axum::body::Body;
     use axum::http::Request;
