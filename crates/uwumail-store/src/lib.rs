@@ -99,7 +99,8 @@ pub use spam::{
     SpamLimits,
 };
 pub use spam_log::{
-    NewSpamLogEntry, SPAM_LOG_MAX_ROWS, SpamAction, SpamLogEntry, SpamLogFilter, SpamLogHit, SpamLogRecipient,
+    FetchedVerdicts, NewSpamLogEntry, SPAM_LOG_MAX_ROWS, SpamAction, SpamLogEntry, SpamLogFilter, SpamLogHit,
+    SpamLogRecipient,
 };
 pub use web::{NewWebSession, ServerCounts, WebSession};
 pub use word_lists::{

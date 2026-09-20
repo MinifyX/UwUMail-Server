@@ -2021,7 +2021,21 @@ const routes: [string, RegExp, Handler][] = [
   [
     "GET",
     /^\/api\/admin\/spam$/,
-    () => [200, { bayes: { enabled: true, minimum: 50, server: mockBayes.server, queued: 3 } } satisfies AdminSpamView],
+    () => [
+      200,
+      {
+        bayes: { enabled: true, minimum: 50, server: mockBayes.server, queued: 3 },
+        fetched: {
+          since: now - 30 * 86_400,
+          total: 412,
+          agreedJunk: 288,
+          weLetThrough: 19,
+          weCaught: 37,
+          agreedClean: 68,
+        },
+        fetchedDays: 30,
+      } satisfies AdminSpamView,
+    ],
   ],
   [
     "POST",

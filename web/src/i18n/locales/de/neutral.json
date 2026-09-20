@@ -2202,6 +2202,20 @@
         "problem": "Nicht erreichbar",
         "off": "Aus"
       }
+    },
+    "fetched": {
+      "title": "Abgeholte Mail im Vergleich",
+      "explain": "Von {{count}} abgeholten Mails der letzten {{days}} Tage: wie oft dieser Server derselben Meinung war wie der Anbieter — und wo nicht.",
+      "empty": "In den letzten {{days}} Tagen wurde nichts abgeholt, oder der Spam-Verlauf ist aus.",
+      "agreedJunk": "Beide aussortiert",
+      "agreedJunkHint": "Der Anbieter hatte sie im Spam-Ordner, hier landete sie auch in Spam.",
+      "weCaught": "Nur hier aussortiert",
+      "weCaughtHint": "Der Anbieter hat sie durchgelassen, dieser Filter nicht. Das ist der Gewinn.",
+      "weLetThrough": "Nur dort aussortiert",
+      "weLetThroughHint": "Der Anbieter hielt sie für Spam, hier kam sie in den Posteingang. Entweder ein Fehlalarm von ihm — oder etwas, das dieser Filter noch nicht kennt.",
+      "agreedClean": "Beide durchgelassen",
+      "agreedCleanHint": "Ganz gewöhnliche Mail.",
+      "caveat": "Gezählt wird aus dem Spam-Verlauf, also nur solange der etwas hergibt. Der Anbieter ist kein Maßstab, sondern eine zweite Meinung."
     }
   }
 }

@@ -643,8 +643,21 @@ export interface GreylistView {
  */
 export type GreylistDecision = "deliver" | "discard" | "discard-spam";
 
+/** What became of fetched mail, next to what its provider had thought of it. */
+export interface FetchedVerdicts {
+  since: number;
+  total: number;
+  agreedJunk: number;
+  weLetThrough: number;
+  weCaught: number;
+  agreedClean: number;
+}
+
 export interface AdminSpamView {
   bayes: { enabled: boolean; minimum: number; server: BayesTotals; queued: number };
+  /** Missing when no mailbox is fetched at all. */
+  fetched: FetchedVerdicts | null;
+  fetchedDays: number;
 }
 
 /** What clamd says about itself. */

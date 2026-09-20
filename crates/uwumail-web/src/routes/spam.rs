@@ -120,8 +120,17 @@ pub async fn account_learn(State(web): State<Web>, session: Session) -> ApiResul
     Ok(Json(json!({ "spam": spam, "ham": ham })))
 }
 
+/// How far back the comparison with the providers counts.
+const FETCHED_DAYS: i64 = 30;
+
 pub async fn admin_overview(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Value>> {
     let store = web.store();
+    // Only worth showing where mail is fetched at all; it is read out of the history, so it says
+    // nothing while that is switched off.
+    let fetched = match store.fetch_accounts(None).await?.is_empty() {
+        true => None,
+        false => Some(store.fetched_verdicts(FETCHED_DAYS * 24 * 3600).await?),
+    };
     Ok(Json(json!({
         "bayes": {
             "enabled": web.smtp().spam_settings().bayes,
@@ -129,6 +138,8 @@ pub async fn admin_overview(State(web): State<Web>, _admin: Admin) -> ApiResult<
             "server": store.bayes_totals(None).await?,
             "queued": store.bayes_queue_length().await?,
         },
+        "fetched": fetched,
+        "fetchedDays": FETCHED_DAYS,
     })))
 }
 

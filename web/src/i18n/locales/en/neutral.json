@@ -2202,6 +2202,20 @@
         "problem": "Not reachable",
         "off": "Off"
       }
+    },
+    "fetched": {
+      "title": "Fetched mail compared",
+      "explain": "Of {{count}} messages fetched in the last {{days}} days: how often this server agreed with the provider, and where it did not.",
+      "empty": "Nothing was fetched in the last {{days}} days, or the spam history is off.",
+      "agreedJunk": "Both sorted it out",
+      "agreedJunkHint": "The provider had it in its junk folder, and it landed in Junk here too.",
+      "weCaught": "Only sorted out here",
+      "weCaughtHint": "The provider let it through and this filter did not. That is the gain.",
+      "weLetThrough": "Only sorted out there",
+      "weLetThroughHint": "The provider thought it was spam; here it reached the inbox. Either a false alarm of theirs, or something this filter does not know yet.",
+      "agreedClean": "Both let it through",
+      "agreedCleanHint": "Ordinary mail.",
+      "caveat": "Counted from the spam history, so only as far back as that goes. The provider is a second opinion, not a yardstick."
     }
   }
 }

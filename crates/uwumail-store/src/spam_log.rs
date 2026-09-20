@@ -301,6 +301,59 @@ impl Store {
     pub async fn clear_spam_log(&self) -> Result<usize> {
         self.write(move |tx| Ok(tx.execute("DELETE FROM spam_log", [])?)).await
     }
+
+    /// How this server judged fetched mail, next to what the provider thought of it.
+    ///
+    /// Read out of the history rather than counted along the way: every fetched message carries a
+    /// `FETCHED` rule and, when the provider had sorted it out, a `PROVIDER_JUNK` one, so the two
+    /// verdicts can be put side by side afterwards without a counter that has to be kept in step.
+    /// It only says as much as the history holds -- switched off or cleared, it says nothing.
+    pub async fn fetched_verdicts(&self, since_secs: i64) -> Result<FetchedVerdicts> {
+        let since = now() - since_secs;
+        self.read(move |conn| {
+            let counts = conn.query_row(
+                "SELECT COUNT(*),
+                        SUM(CASE WHEN theirs AND ours THEN 1 ELSE 0 END),
+                        SUM(CASE WHEN theirs AND NOT ours THEN 1 ELSE 0 END),
+                        SUM(CASE WHEN NOT theirs AND ours THEN 1 ELSE 0 END),
+                        SUM(CASE WHEN NOT theirs AND NOT ours THEN 1 ELSE 0 END)
+                 FROM (SELECT hits LIKE '%\"rule\":\"PROVIDER_JUNK\"%' AS theirs,
+                              action IN ('junk', 'reject') AS ours
+                       FROM spam_log
+                       WHERE at >= ?1 AND hits LIKE '%\"rule\":\"FETCHED\"%')",
+                params![since],
+                |row| {
+                    Ok(FetchedVerdicts {
+                        since,
+                        total: row.get(0)?,
+                        agreed_junk: row.get::<_, Option<i64>>(1)?.unwrap_or_default(),
+                        we_let_through: row.get::<_, Option<i64>>(2)?.unwrap_or_default(),
+                        we_caught: row.get::<_, Option<i64>>(3)?.unwrap_or_default(),
+                        agreed_clean: row.get::<_, Option<i64>>(4)?.unwrap_or_default(),
+                    })
+                },
+            )?;
+            Ok(counts)
+        })
+        .await
+    }
+}
+
+/// What became of fetched mail, next to what its provider had thought.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchedVerdicts {
+    /// The oldest moment these numbers cover.
+    pub since: i64,
+    pub total: i64,
+    /// The provider had sorted it out, and so did this server.
+    pub agreed_junk: i64,
+    /// The provider had sorted it out; this server let it through.
+    pub we_let_through: i64,
+    /// The provider let it through; this server sorted it out.
+    pub we_caught: i64,
+    /// Both let it through.
+    pub agreed_clean: i64,
 }
 
 #[cfg(test)]
@@ -376,5 +429,49 @@ mod tests {
         assert_eq!(store.prune_spam_log(3600).await.unwrap(), 0, "nothing is old yet");
         assert_eq!(store.prune_spam_log(-1).await.unwrap(), 3, "a cut-off in the future takes everything");
         assert_eq!(store.spam_log(SpamLogFilter { limit: 50, ..Default::default() }).await.unwrap().len(), 0);
+    }
+
+    /// A fetched message as the filter writes it down: always a FETCHED rule, and a PROVIDER_JUNK
+    /// one when the provider had sorted it out.
+    fn fetched_entry(smtp_id: &str, action: SpamAction, from_provider_junk: bool) -> NewSpamLogEntry {
+        let mut hits =
+            vec![SpamLogHit { rule: "FETCHED".into(), points: 0.0, detail: Some("mini@freemail.example".into()) }];
+        if from_provider_junk {
+            hits.push(SpamLogHit { rule: "PROVIDER_JUNK".into(), points: 2.5, detail: None });
+        }
+        NewSpamLogEntry { hits, ..entry(smtp_id, action, "werbung@shop.example", 3.0) }
+    }
+
+    #[tokio::test]
+    async fn fetched_mail_is_counted_against_what_the_provider_thought() {
+        let (store, _dir) = store().await;
+        // Nothing fetched yet: the comparison is empty rather than wrong.
+        let empty = store.fetched_verdicts(30 * 24 * 3600).await.unwrap();
+        assert_eq!(empty.total, 0);
+
+        // Mail that was handed in normally never counts here, however it went.
+        store.add_spam_log(entry("plain", SpamAction::Junk, "werbung@shop.example", 6.0)).await.unwrap();
+
+        store.add_spam_log(fetched_entry("a", SpamAction::Junk, true)).await.unwrap();
+        store.add_spam_log(fetched_entry("b", SpamAction::Junk, true)).await.unwrap();
+        store.add_spam_log(fetched_entry("c", SpamAction::Delivered, true)).await.unwrap();
+        store.add_spam_log(fetched_entry("d", SpamAction::Junk, false)).await.unwrap();
+        store.add_spam_log(fetched_entry("e", SpamAction::Reject, false)).await.unwrap();
+        store.add_spam_log(fetched_entry("f", SpamAction::Delivered, false)).await.unwrap();
+
+        let counted = store.fetched_verdicts(30 * 24 * 3600).await.unwrap();
+        assert_eq!(counted.total, 6, "only the fetched ones");
+        assert_eq!(counted.agreed_junk, 2, "the provider sorted them out and so did we");
+        assert_eq!(counted.we_let_through, 1, "it sorted this one out, we did not");
+        assert_eq!(counted.we_caught, 2, "it let these through, we did not -- a refusal counts too");
+        assert_eq!(counted.agreed_clean, 1);
+        assert_eq!(
+            counted.agreed_junk + counted.we_let_through + counted.we_caught + counted.agreed_clean,
+            counted.total,
+            "every message lands in exactly one of the four"
+        );
+
+        // A window that ends before everything happened counts nothing.
+        assert_eq!(store.fetched_verdicts(-1).await.unwrap().total, 0);
     }
 }

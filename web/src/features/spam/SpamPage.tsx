@@ -27,6 +27,7 @@ import { useErrorText } from "@/lib/errors";
 import { navigate } from "@/lib/router";
 import { toast } from "@/state/toasts";
 import { AntivirusCard } from "./AntivirusCard";
+import { FetchedCard } from "./FetchedCard";
 import { FeedsCard } from "./FeedsCard";
 import { SenderListCard } from "./SenderListCard";
 import { SpamLimitsCard } from "./SpamLimitsCard";
@@ -193,7 +194,7 @@ export function AdminSpamPage({ tab = "filter" }: { tab?: SpamTab }) {
   if (query.isPending || settings.isPending) return <Loading />;
   if (query.isError) return <LoadError error={query.error} onRetry={() => void query.refetch()} />;
   if (settings.isError) return <LoadError error={settings.error} onRetry={() => void settings.refetch()} />;
-  const { bayes } = query.data;
+  const { bayes, fetched, fetchedDays } = query.data;
 
   const tabs = (
     <Segmented<string>
@@ -255,6 +256,7 @@ export function AdminSpamPage({ tab = "filter" }: { tab?: SpamTab }) {
       >
         {(form) => <SpamFields form={form} />}
       </Section>
+      {fetched && <FetchedCard verdicts={fetched} days={fetchedDays} />}
       <FeedsCard view={settings.data} />
       <SenderListCard admin />
       <WordListCard admin />
