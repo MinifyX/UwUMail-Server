@@ -5,6 +5,7 @@
 //! - [`run_queue`] delivers queued mail to other servers, retries, and bounces.
 //! - [`dkim`] creates and uses the signing keys of hosted domains.
 
+pub mod autoconfig;
 mod checks;
 pub mod clamav;
 mod client;

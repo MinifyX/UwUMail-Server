@@ -249,6 +249,7 @@ impl Web {
             .route("/api/account/forwarding/keep-copy", put(routes::mailbox::set_keep_copy))
             .route("/api/account/vacation", get(routes::mailbox::vacation).put(routes::mailbox::set_vacation))
             .route("/api/account/fetch", get(routes::fetch::list).post(routes::fetch::create))
+            .route("/api/account/fetch/discover", post(routes::fetch::discover))
             .route("/api/account/fetch/{id}", patch(routes::fetch::update).delete(routes::fetch::delete))
             .route("/api/account/fetch/{id}/run", post(routes::fetch::fetch_now))
             .route("/api/account/addresses", get(routes::own::addresses))
