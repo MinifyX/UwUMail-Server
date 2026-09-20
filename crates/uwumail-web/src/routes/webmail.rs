@@ -65,3 +65,33 @@ pub async fn access(State(web): State<Web>, session: Session) -> ApiResult<Json<
 pub fn allowed_for(web: &Web, account: &uwumail_store::Account) -> bool {
     web.webmail_enabled() && account.webmail && account.has_mailbox()
 }
+
+#[cfg(test)]
+mod tests {
+    use axum::Router;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use axum::routing::get;
+    use tower::ServiceExt;
+
+    /// The three paths the webmail is served on, exactly as `lib.rs` registers them.
+    ///
+    /// Two things can go wrong here and neither shows up in a normal test run, because a build
+    /// without a webmail in it never registers these routes at all. Overlapping paths make axum
+    /// panic while the router is built, which takes the server down at startup rather than failing
+    /// one request. And `/mail/` fell between an exact `/mail` and a `/mail/{*rest}` that wants at
+    /// least one character after the slash — which is how the address the webmail is built with
+    /// came to answer with a not-found in 0.5.0.
+    #[tokio::test]
+    async fn the_webmail_answers_with_the_slash_as_well_as_without() {
+        let app = Router::new()
+            .route("/mail", get(async || "page"))
+            .route("/mail/", get(async || "page"))
+            .route("/mail/{*rest}", get(async || "below"));
+        for path in ["/mail", "/mail/", "/mail/inbox", "/mail/assets/app.js"] {
+            let request = Request::builder().uri(path).body(Body::empty()).unwrap();
+            let response = app.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{path} is served by the webmail");
+        }
+    }
+}
