@@ -58,9 +58,29 @@ pub struct BodyValueOptions {
 /// Properties that need the raw message.
 pub fn needs_raw(properties: &[String]) -> bool {
     properties.iter().any(|p| {
-        matches!(p.as_str(), "headers" | "bodyStructure" | "bodyValues" | "textBody" | "htmlBody" | "attachments")
-            || p.starts_with("header:")
+        matches!(
+            p.as_str(),
+            "headers"
+                | "bodyStructure"
+                | "bodyValues"
+                | "textBody"
+                | "htmlBody"
+                | "attachments"
+                | "uwuSafeHtml"
+                | "uwuHasRemoteContent"
+        ) || p.starts_with("header:")
     })
+}
+
+/// The cleaned HTML body of a message, or nothing when it has none.
+fn safe_html_of(message: &Message<'_>) -> Option<String> {
+    let index = *message.html_body.first()? as usize;
+    let part = message.parts.get(index)?;
+    let html = match &part.body {
+        PartType::Html(text) => text.as_ref(),
+        _ => return None,
+    };
+    Some(crate::safe_html::sanitize(html))
 }
 
 fn addresses_or_null(list: &[EmailAddress]) -> Value {
@@ -371,6 +391,10 @@ pub fn to_json(
                 )
             }
             ("bodyValues", _, Some(m)) => body_values(m, options),
+            ("uwuSafeHtml", _, Some(m)) => safe_html_of(m).map_or(Value::Null, Value::String),
+            ("uwuHasRemoteContent", _, Some(m)) => {
+                json!(safe_html_of(m).is_some_and(|clean| crate::safe_html::has_remote_content(&clean)))
+            }
             (other, _, Some(_)) if other.starts_with("header:") => {
                 header_property(other, &headers).unwrap_or(Value::Null)
             }

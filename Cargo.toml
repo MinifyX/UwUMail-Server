@@ -31,6 +31,7 @@ uwumail-store = { path = "crates/uwumail-store" }
 uwumail-tunnel = { path = "crates/uwumail-tunnel" }
 uwumail-web = { path = "crates/uwumail-web" }
 
+ammonia = "4"
 anyhow = "1"
 argon2 = { version = "0.6", features = ["getrandom"] }
 # Only to check password hashes taken over from other mail servers, e.g. mailcow's BLF-CRYPT.
