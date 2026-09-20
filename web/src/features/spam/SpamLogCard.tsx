@@ -34,6 +34,7 @@ const TONE: Record<SpamLogAction, string> = {
   dmarc: "text-danger",
   blocked: "text-danger",
   virus: "text-danger",
+  settled: "text-muted",
 };
 
 function Line({ label, children }: { label: string; children: React.ReactNode }) {

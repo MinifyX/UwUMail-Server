@@ -55,6 +55,7 @@ function page(path: string, session: Session): ReactNode {
   if (path === "/account/mail") return <MailboxPage />;
   if (path === "/account/addresses") return <AddressesPage />;
   if (path === "/account/spam") return <AccountSpamPage />;
+  if (path === "/account/spam/waiting") return <AccountSpamPage tab="waiting" />;
   if (session.account.role !== "admin") return <NotFound />;
   if (path === "/admin") return <AdminHome />;
   if (matchPath("/admin/people", path)) return <PeoplePage session={session} />;

@@ -505,6 +505,7 @@ export const SPAM_SETTING_KEYS = [
   "spam.junk_score",
   "spam.greylist_score",
   "spam.greylist_delay_secs",
+  "spam.greylist_hold",
   "spam.reject_score",
   "smtp.verify_senders",
   "smtp.enforce_dmarc_reject",
@@ -567,6 +568,14 @@ export function SpamFields({ form }: { form: Form }) {
             placeholder={t("settings.spam.rejectScoreOff")}
           />
         </div>
+      )}
+      {enabled && (
+        <ToggleField
+          form={form}
+          settingKey="spam.greylist_hold"
+          label={t("settings.spam.greylistHold")}
+          hint={t("settings.spam.greylistHoldHint")}
+        />
       )}
       {
         <>

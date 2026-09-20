@@ -389,7 +389,7 @@ export interface HostView {
 }
 
 /** What the spam filter did with one message. */
-export type SpamLogAction = "delivered" | "junk" | "greylist" | "reject" | "dmarc" | "blocked" | "virus";
+export type SpamLogAction = "delivered" | "junk" | "greylist" | "reject" | "dmarc" | "blocked" | "virus" | "settled";
 
 export interface SpamLogEntry {
   id: number;
@@ -606,6 +606,35 @@ export interface AccountSpamView {
   limits: SpamLimitsView;
   bayes: { enabled: boolean; minimum: number; own: BayesTotals; server: BayesTotals };
 }
+
+/**
+ * One message greylisting is holding back. Who wrote and what about, and nothing else — the body
+ * stays on the server until someone delivers it to their own mailbox.
+ */
+export interface GreylistHold {
+  id: number;
+  at: number;
+  address: string;
+  envelopeFrom: string;
+  headerFrom: string;
+  subject: string | null;
+  clientIp: string;
+  score: number | null;
+  size: number;
+  /** When it is given up on, if nobody decided and the sender never returns. */
+  expiresAt: number;
+}
+
+export interface GreylistView {
+  /** Whether the server keeps greylisted mail at all. */
+  enabled: boolean;
+  waiting: GreylistHold[];
+  /** How many are waiting in total, which the list itself may cut short. */
+  count: number;
+}
+
+/** What someone can do with a waiting message. */
+export type GreylistDecision = "allow-deliver" | "deliver" | "discard" | "discard-spam";
 
 export interface AdminSpamView {
   bayes: { enabled: boolean; minimum: number; server: BayesTotals; queued: number };

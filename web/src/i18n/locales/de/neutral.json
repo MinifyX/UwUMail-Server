@@ -1028,6 +1028,8 @@
       "greylistScoreHint": "Verdächtige, unbekannte Absender müssen es etwas später noch einmal versuchen. Derselbe Wert wie bei Spam schaltet das aus.",
       "greylistDelay": "Zurückstellen für (Minuten)",
       "greylistDelayHint": "So lange muss ein zurückgestellter Absender warten.",
+      "greylistHold": "Zurückgestellte Nachrichten aufheben",
+      "greylistHoldHint": "Jeder sieht unter Spamfilter, was für ihn zurückgestellt wurde, und kann es sofort zustellen oder verwerfen. Aus heißt: zurückgestellte Mail wird abgewiesen und vergessen, wie früher.",
       "rejectScore": "Ablehnen ab Punktzahl",
       "rejectScoreHint": "Leer lassen, um nie abzulehnen. Abgelehnte Mails sind weg, im Spam-Ordner kannst du dagegen nachsehen.",
       "rejectScoreOff": "nie"
@@ -1846,7 +1848,39 @@
   "spam": {
     "account": {
       "title": "Spamfilter",
-      "intro": "Absender, die du immer durchlässt oder aussortierst, und was der Spamfilter von dir gelernt hat."
+      "intro": "Absender, die du immer durchlässt oder aussortierst, und was der Spamfilter von dir gelernt hat.",
+      "tab": "Ansicht",
+      "tabs": {
+        "filter": "Filter",
+        "waiting": "Wartet",
+        "waitingCount": "Wartet ({{count}})"
+      }
+    },
+    "greylist": {
+      "title": "Wartende Nachrichten",
+      "explain": "Sieht eine Nachricht verdächtig aus, bittet der Server den absendenden Server, es später noch einmal zu versuchen. Richtige Mailserver tun das nach ein paar Minuten, Spam-Versender meistens nie. So lange steht die Nachricht hier. „Immer durchlassen“ nimmt den Absender dauerhaft von der Prüfung aus — auch dann, wenn seine Adresse gefälscht ist.",
+      "off": "Der Server hebt zurückgestellte Nachrichten gerade nicht auf. So lange bleibt diese Liste leer.",
+      "empty": "Nichts wartet.",
+      "emptyHint": "Zurückgestellte Nachrichten stehen hier, bis sie von selbst ankommen oder du entscheidest.",
+      "noSubject": "Kein Betreff",
+      "sentTo": "An {{address}}",
+      "decide": {
+        "deliver": "Zustellen",
+        "allowDeliver": "Zustellen, Absender immer durchlassen",
+        "discard": "Verwerfen",
+        "discardSpam": "Verwerfen und als Spam melden"
+      },
+      "done": {
+        "delivered": "Liegt jetzt in deinem Posteingang.",
+        "discarded": "Weg — auch wenn der Absender es noch einmal versucht."
+      },
+      "confirm": {
+        "title": "Nachricht verwerfen?",
+        "body": "Die Nachricht wird gelöscht. Versucht der Absender es später noch einmal, kommt sie nicht zurück.",
+        "bodySpam": "Die Nachricht wird gelöscht, und der Spamfilter lernt daraus. Versucht der Absender es später noch einmal, kommt sie nicht zurück.",
+        "keep": "Behalten",
+        "discard": "Verwerfen"
+      }
     },
     "limits": {
       "title": "Deine Grenzen",
@@ -1896,7 +1930,8 @@
         "reject": "abgewiesen",
         "dmarc": "DMARC abgewiesen",
         "blocked": "Absender blockiert",
-        "virus": "Virus gefunden"
+        "virus": "Virus gefunden",
+        "settled": "vorher erledigt"
       },
       "search": "Suchen",
       "searchPlaceholder": "Absender oder IP-Adresse",

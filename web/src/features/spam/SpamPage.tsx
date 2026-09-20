@@ -20,6 +20,7 @@ import {
   type AdminSpamView,
   type BayesTotals,
   type LearnedFromFolders,
+  type GreylistView,
   type SettingsView,
 } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -29,6 +30,7 @@ import { AntivirusCard } from "./AntivirusCard";
 import { FeedsCard } from "./FeedsCard";
 import { SenderListCard } from "./SenderListCard";
 import { SpamLimitsCard } from "./SpamLimitsCard";
+import { GreylistCard, greylistKey } from "./GreylistCard";
 import { SpamLogCard } from "./SpamLogCard";
 import { WordListCard } from "./WordListCard";
 
@@ -38,6 +40,14 @@ const adminKey = ["admin", "spam"] as const;
 /** The settings of the filter, the virus scanner, and what was decided message by message. */
 export type SpamTab = "filter" | "antivirus" | "history";
 const TABS: SpamTab[] = ["filter", "antivirus", "history"];
+
+/** In My account: one's own filter, and what greylisting is currently holding back. */
+export type AccountSpamTab = "filter" | "waiting";
+const ACCOUNT_TABS: AccountSpamTab[] = ["filter", "waiting"];
+const ACCOUNT_PATHS: Record<AccountSpamTab, string> = {
+  filter: "/account/spam",
+  waiting: "/account/spam/waiting",
+};
 
 /** Every tab has its own address, so the health overview can link straight to the one it means. */
 const PATHS: Record<SpamTab, string> = {
@@ -95,10 +105,40 @@ function useLearn(path: string, key: readonly string[]) {
 }
 
 /** The spam filter in My account: one's own sender list and what the filter learned from one's marks. */
-export function AccountSpamPage() {
+export function AccountSpamPage({ tab = "filter" }: { tab?: AccountSpamTab }) {
   const { t } = useT();
   const query = useQuery({ queryKey: accountKey, queryFn: () => api<AccountSpamView>("/api/account/spam") });
+  // Also on the filter tab, so the number of waiting messages shows without opening the other one.
+  const greylist = useQuery({ queryKey: greylistKey, queryFn: () => api<GreylistView>("/api/account/greylist") });
   const learn = useLearn("/api/account/spam/learn-folders", accountKey);
+  const setTab = (value: string) => navigate(ACCOUNT_PATHS[value as AccountSpamTab] ?? ACCOUNT_PATHS.filter);
+
+  const waiting = greylist.data?.count ?? 0;
+  const tabs = (
+    <Segmented<string>
+      label={t("spam.account.tab")}
+      value={tab}
+      onChange={setTab}
+      options={ACCOUNT_TABS.map((value) => ({
+        value,
+        label:
+          value === "waiting" && waiting > 0
+            ? t("spam.account.tabs.waitingCount", { count: waiting })
+            : t(`spam.account.tabs.${value}`),
+      }))}
+    />
+  );
+
+  if (tab === "waiting") {
+    return (
+      <div className="flex flex-col gap-5">
+        <PageHeader title={t("spam.account.title")} intro={t("spam.account.intro")} />
+        {tabs}
+        <GreylistCard />
+      </div>
+    );
+  }
+
   if (query.isPending) return <Loading />;
   if (query.isError) return <LoadError error={query.error} onRetry={() => void query.refetch()} />;
   const { bayes, limits } = query.data;
@@ -106,6 +146,7 @@ export function AccountSpamPage() {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title={t("spam.account.title")} intro={t("spam.account.intro")} />
+      {tabs}
       <SenderListCard admin={false} />
       <WordListCard admin={false} />
       <SpamLimitsCard limits={limits} queryKey={accountKey} />
