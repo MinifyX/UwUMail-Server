@@ -4282,6 +4282,7 @@ dependencies = [
  "mail-builder",
  "mail-parser",
  "md-5",
+ "quick-xml",
  "rcgen",
  "regex",
  "rustls",

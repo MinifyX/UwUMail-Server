@@ -49,6 +49,46 @@ pub async fn list(State(web): State<Web>, session: Session) -> ApiResult<Json<Va
 }
 
 #[derive(Deserialize)]
+pub struct Unknown {
+    address: String,
+    password: String,
+}
+
+/// Works out how a provider's mailbox is reached, from the address and the password alone, so
+/// nobody has to know what their provider calls its servers.
+///
+/// Nothing here is guessed at the person: the settings come back only once a login has really
+/// worked with them, so the page can fill its fields with something that has been tried rather
+/// than with something that sounded likely. What did not work comes back as a code the page turns
+/// into a sentence -- which of the four sources answered is not the person's business, and saying
+/// "your password is wrong" only when the server said so keeps the two apart.
+pub async fn discover(
+    State(web): State<Web>,
+    session: Session,
+    Json(unknown): Json<Unknown>,
+) -> ApiResult<Json<Value>> {
+    // Every mailbox this person has already set up counts, so the discovery cannot be used to knock
+    // on providers' doors past the limit that holds for keeping one.
+    let held = web.store().fetch_accounts(Some(session.account.id)).await?.len();
+    if held >= uwumail_store::MAX_FETCH_ACCOUNTS {
+        return Err(ApiError::Rule(
+            "fetchLimit",
+            format!("at most {} fetched mailboxes", uwumail_store::MAX_FETCH_ACCOUNTS),
+        ));
+    }
+    let found =
+        uwumail_smtp::autoconfig::discover(web.smtp(), web.dns(), &unknown.address, &unknown.password, true).await;
+    match found {
+        Ok(settings) => Ok(Json(json!(settings))),
+        Err(code) => Err(match code.as_str() {
+            "wrongPassword" => ApiError::Rule("wrongPassword", "the provider refused this password".into()),
+            "notAnAddress" => ApiError::Rule("senderInvalid", format!("'{}' is not an address", unknown.address)),
+            _ => ApiError::Rule("providerNotFound", "no settings of this provider answered".into()),
+        }),
+    }
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NewMailbox {
     address: String,

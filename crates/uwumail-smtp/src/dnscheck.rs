@@ -952,6 +952,20 @@ fn reverse_name(ip: IpAddr) -> String {
 }
 
 impl DnsChecker {
+    /// Where a domain says its own clients should connect (RFC 6186), best first. `name` is the
+    /// whole service name, like `_imaps._tcp.example.com`. A single target of `.` is how a domain
+    /// says it does not offer the service at all, and comes back as nothing.
+    pub async fn service_hosts(&self, name: &str) -> Vec<(String, u16)> {
+        let (lookups, _) = self.lookups(name).await;
+        let mut found = lookups.srv(name).await.unwrap_or_default();
+        found.sort_by_key(|(priority, weight, _, _)| (*priority, std::cmp::Reverse(*weight)));
+        found
+            .into_iter()
+            .filter(|(_, _, port, target)| !target.is_empty() && target != "." && *port != 0)
+            .map(|(_, _, port, target)| (target, port))
+            .collect()
+    }
+
     /// The addresses a host name points to, as the rest of the internet sees them.
     pub async fn host_addresses(&self, host: &str) -> Vec<IpAddr> {
         let (lookups, _) = self.lookups(host).await;
