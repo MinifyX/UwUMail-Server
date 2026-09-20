@@ -261,7 +261,7 @@
       "updateRefused": "The update did not start: {{detail}}",
       "gatewayJobRefused": "The gateway did not take it: {{detail}}",
       "virusScannerOff": "The virus scanner is switched off.",
-      "providerNotFound": "No server of this provider answered. Fill the server names in below — the provider's own help page has them.",
+      "providerNotFound": "No server of this provider answered. Fill the server names in here — the provider's own help page has them.",
       "fetchLimit": "No room for another fetched mailbox: {{detail}}"
     }
   },

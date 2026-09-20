@@ -261,7 +261,7 @@
       "updateRefused": "Das Update wurde nicht gestartet: {{detail}}",
       "gatewayJobRefused": "Das Gateway hat das nicht angenommen: {{detail}}",
       "virusScannerOff": "Der Virenscanner ist ausgeschaltet.",
-      "providerNotFound": "Bei diesem Anbieter hat kein Server geantwortet. Trag die Servernamen unten selbst ein — sie stehen in der Hilfe des Anbieters.",
+      "providerNotFound": "Bei diesem Anbieter hat kein Server geantwortet. Trag die Servernamen hier selbst ein — sie stehen in der Hilfe des Anbieters.",
       "fetchLimit": "Mehr Abrufkonten gehen nicht: {{detail}}"
     }
   },
