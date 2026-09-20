@@ -3,7 +3,8 @@
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
@@ -17,6 +18,33 @@ use uwumail_store::{Account, AppScope, MailAuth, MailAuthDenied, Store};
 const CACHE_LIFETIME: Duration = Duration::from_secs(300);
 const FAILURE_WINDOW: Duration = Duration::from_secs(15 * 60);
 const MAX_FAILURES: u32 = 10;
+
+/// The portal's session cookie and CSRF header, which the webmail signs in with. Defined here
+/// because this is the layer that reads them; the portal uses the same names from this module.
+/// Over HTTPS the `__Host-` prefix pins the cookie to this exact host.
+pub const SECURE_SESSION_COOKIE: &str = "__Host-uwumail";
+pub const PLAIN_SESSION_COOKIE: &str = "uwumail";
+pub const CSRF_HEADER: &str = "x-csrf-token";
+/// A session ends after this long without use.
+pub const WEB_SESSION_LIFETIME_SECS: i64 = 14 * 24 * 3600;
+
+/// The session token from a request's cookies, if any.
+pub fn session_cookie(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get_all(header::COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(';'))
+        .filter_map(|pair| pair.trim().split_once('='))
+        .find(|(name, _)| *name == SECURE_SESSION_COOKIE || *name == PLAIN_SESSION_COOKIE)
+        .map(|(_, value)| value.to_owned())
+        .filter(|value| !value.is_empty() && value.len() <= 128)
+}
+
+/// Compares two tokens without letting the time taken say how much of them matched.
+pub fn constant_time_eq(a: &str, b: &str) -> bool {
+    a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
 
 /// Who is connecting, as seen by the HTTP layer (after trusted reverse proxies).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,6 +90,10 @@ impl IntoResponse for AuthError {
 
 pub struct Authenticator {
     store: Store,
+    /// Whether the webmail is switched on for the whole server. Signing in with the portal's
+    /// session is only for the webmail, so it stops here too when an admin switches it off —
+    /// not just at the page. Basic auth is untouched by this.
+    webmail: Arc<AtomicBool>,
     /// What app passwords must allow, and the protocol name for the activity list and the log.
     scope: AppScope,
     protocol: &'static str,
@@ -91,7 +123,22 @@ impl Authenticator {
     pub fn for_protocol(store: Store, scope: AppScope, protocol: &'static str) -> Authenticator {
         let mut secret = [0u8; 32];
         getrandom::fill(&mut secret).expect("the system RNG failed");
-        Authenticator { store, scope, protocol, secret, cache: Mutex::default(), failures: Mutex::default() }
+        Authenticator {
+            store,
+            // Without a server saying otherwise the webmail is on; a build without one has no
+            // page to reach anyway.
+            webmail: Arc::new(AtomicBool::new(true)),
+            scope,
+            protocol,
+            secret,
+            cache: Mutex::default(),
+            failures: Mutex::default(),
+        }
+    }
+
+    /// Hands the authenticator the server's webmail switch, so it sees changes at once.
+    pub fn watch_webmail(&mut self, webmail: Arc<AtomicBool>) {
+        self.webmail = webmail;
     }
 
     fn cache_key(&self, login: &str, password: &str) -> [u8; 32] {
@@ -120,6 +167,54 @@ impl Authenticator {
             *entry = (0, Instant::now());
         }
         entry.0 += 1;
+    }
+
+    /// Who is signed in, by `Authorization` or — for the webmail — by the portal's session.
+    ///
+    /// `changes` says whether this request would change something: those have to carry the CSRF
+    /// token as well, exactly like the portal's own JSON API. Reading with the cookie alone is
+    /// safe because the server sends no CORS headers and the cookie is `SameSite=Strict`, so no
+    /// other site can read an answer or even get the cookie sent.
+    pub async fn account_for(
+        &self,
+        headers: &HeaderMap,
+        client: ClientInfo,
+        changes: bool,
+    ) -> Result<Account, AuthError> {
+        if headers.get(header::AUTHORIZATION).is_none() {
+            return self.session_account(headers, changes).await;
+        }
+        self.account(headers, client).await
+    }
+
+    /// The portal's session as a JMAP login: only for people whose webmail is switched on.
+    ///
+    /// Deliberately independent of the JMAP protocol switch, which decides what *other* mail
+    /// programs may do with this account's password. The webmail is part of the server itself.
+    ///
+    /// The same three conditions the portal shows the way in by. An account that is told it has no
+    /// webmail must not get one by asking for it directly — an answer that only the button knows
+    /// about is not a rule, it is a decoration.
+    async fn session_account(&self, headers: &HeaderMap, changes: bool) -> Result<Account, AuthError> {
+        if !self.webmail.load(Ordering::Relaxed) {
+            return Err(AuthError::Missing);
+        }
+        let token = session_cookie(headers).ok_or(AuthError::Missing)?;
+        let session = match self.store.web_session(&token, WEB_SESSION_LIFETIME_SECS).await {
+            Ok(Some(session)) => session,
+            Ok(None) => return Err(AuthError::Invalid),
+            Err(_) => return Err(AuthError::Internal),
+        };
+        if changes {
+            let sent = headers.get(CSRF_HEADER).and_then(|value| value.to_str().ok()).unwrap_or_default();
+            if !constant_time_eq(sent, &session.csrf_token) {
+                return Err(AuthError::Invalid);
+            }
+        }
+        if !session.account.can_use_portal() || !session.account.webmail || !session.account.has_mailbox() {
+            return Err(AuthError::Invalid);
+        }
+        Ok(session.account)
     }
 
     pub async fn account(&self, headers: &HeaderMap, client: ClientInfo) -> Result<Account, AuthError> {
@@ -185,5 +280,29 @@ impl Authenticator {
                 Err(AuthError::Internal)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{constant_time_eq, session_cookie};
+    use axum::http::{HeaderMap, HeaderValue, header};
+
+    #[test]
+    fn reads_either_cookie_name() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::COOKIE, HeaderValue::from_static("theme=dark; __Host-uwumail=abc123"));
+        assert_eq!(session_cookie(&headers).as_deref(), Some("abc123"));
+        headers.insert(header::COOKIE, HeaderValue::from_static("uwumail=def456"));
+        assert_eq!(session_cookie(&headers).as_deref(), Some("def456"));
+        headers.insert(header::COOKIE, HeaderValue::from_static("uwumail="));
+        assert_eq!(session_cookie(&headers), None);
+    }
+
+    #[test]
+    fn compares_tokens_without_leaking_their_length_in_time() {
+        assert!(constant_time_eq("abc", "abc"));
+        assert!(!constant_time_eq("abc", "abd"));
+        assert!(!constant_time_eq("abc", "ab"));
     }
 }

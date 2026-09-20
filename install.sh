@@ -208,6 +208,11 @@ if [ -n "$gateway_code" ]; then
     uwugw1*) ;;
     *) die "a pairing code starts with uwugw1, this one does not: $gateway_code" ;;
   esac
+  # It goes into the .env as it stands, and a line break in it would become a second line there
+  # that Compose reads as its own setting. Every other answer is checked the same way.
+  case "$gateway_code" in
+    *[!a-zA-Z0-9._-]*) die "a pairing code holds only letters, digits, dots, underscores and dashes" ;;
+  esac
 fi
 
 # The scanner wants about a gigabyte for itself, so a small machine is better off without it.
@@ -245,8 +250,14 @@ port_busy() {
   fi
 }
 
-# A port, or an address:port, the way Compose wants it.
-valid_bind() { [[ "$1" =~ ^(\[[0-9a-fA-F:]+\]:|[0-9]{1,3}(\.[0-9]{1,3}){3}:)?[0-9]{1,5}$ ]]; }
+# A port, or an address:port, the way Compose wants it. The number has to be one a port can be:
+# 70000 has the shape and would fail at the start, which is the failure this whole block exists to
+# prevent.
+valid_bind() {
+  [[ "$1" =~ ^(\[[0-9a-fA-F:]+\]:|[0-9]{1,3}(\.[0-9]{1,3}){3}:)?[0-9]{1,5}$ ]] || return 1
+  local port=$((10#${1##*:}))
+  [ "$port" -ge 1 ] && [ "$port" -le 65535 ]
+}
 
 # The port out of either form.
 port_of() { printf '%s' "${1##*:}"; }
@@ -267,7 +278,7 @@ plan_port() {
   local what="$1" port="$2" suggestion="$3" flag="$4" given="$5" answer
   plan_result="$given"
   if [ -n "$given" ]; then
-    valid_bind "$given" || die "$flag wants a port or an address:port, not $given"
+    valid_bind "$given" || die "$flag wants a port from 1 to 65535, or an address:port, not $given"
     port_busy "$(port_of "$given")" && warn "$flag points at $given, and that one is taken as well"
     return 0
   fi
@@ -279,7 +290,7 @@ plan_port() {
   fi
   warn "port $port is taken on this machine ($what)"
   answer=$(askfor "Which port should UwUMail listen on instead?" "$(free_from "$suggestion")")
-  valid_bind "$answer" || die "that is not a port or an address:port: $answer"
+  valid_bind "$answer" || die "that is not a port from 1 to 65535, or an address:port: $answer"
   plan_result="$answer"
 }
 
@@ -325,7 +336,13 @@ chmod 0755 "$dir/update.sh"
 set_env() {
   local key="$1" value="$2" file="$3" line found=false
   local tmp="$file.tmp"
-  : >"$tmp"
+  # The copy holds everything the .env holds, the gateway code included, so it is made with the
+  # rights of the file it replaces rather than whatever the umask happens to be. A run that dies
+  # in between leaves nothing readable behind either, which is what the trap is for — written the
+  # way update.sh writes it, so it says the path rather than a name that is out of scope by the
+  # time a signal arrives. The only file this is ever called with is the .env.
+  install -m 0600 /dev/null "$tmp"
+  trap 'rm -f "$dir/.env.tmp"' EXIT INT TERM
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       "$key="* | "#$key="*)

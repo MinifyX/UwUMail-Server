@@ -117,7 +117,10 @@ pub async fn run(
         store.clone(),
         uwumail_dav::DavSettings { calendar_name: names.0.into(), addressbook_name: names.1.into() },
     );
-    let jmap = uwumail_jmap::Jmap::new(smtp.clone()).router().merge(dav.router());
+    // One switch for the whole server, shared by everything that has to honour it: the page
+    // under /mail, JMAP's session login, and the admin panel that flips it.
+    let webmail = Arc::new(std::sync::atomic::AtomicBool::new(config.http.webmail));
+    let jmap = uwumail_jmap::Jmap::with_webmail(smtp.clone(), webmail.clone()).router().merge(dav.router());
     let certificate: uwumail_web::CertificateSource = {
         let (certs, automatic) = (certs.clone(), config.tls.mode == TlsMode::Acme);
         Arc::new(move || {
@@ -135,8 +138,13 @@ pub async fn run(
             hostname: config.hostname.clone(),
             started: Instant::now(),
             logs: Some(logs),
-            config: Some(Arc::new(crate::settings::ServerSettings { path: config_path, smtp: smtp.clone() })),
+            config: Some(Arc::new(crate::settings::ServerSettings {
+                path: config_path,
+                smtp: smtp.clone(),
+                webmail: webmail.clone(),
+            })),
             certificate: Some(certificate),
+            webmail,
         },
     );
     tasks.spawn(web.clone().run_health_checks(shutdown_rx.clone()));

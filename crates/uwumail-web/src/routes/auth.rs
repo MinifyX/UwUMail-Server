@@ -35,6 +35,9 @@ pub(crate) fn session_body(web: &Web, account: &Account, csrf_token: &str, prefe
         },
         "csrfToken": csrf_token,
         "preferences": preferences,
+        // Whether this person has a mailbox in the browser, so the portal knows where to send
+        // them after they sign in and whether to offer the button at all.
+        "webmail": super::webmail::allowed_for(web, account),
         "server": {
             "hostname": web.settings().hostname,
             "version": env!("CARGO_PKG_VERSION"),

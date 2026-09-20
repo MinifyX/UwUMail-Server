@@ -5,6 +5,63 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ## 0.5.0
 
+**Security.** Everything new here was reviewed afterwards, and the webmail's own repository with
+it, which nobody had read before: [docs/security-audit-0.5.0.md](docs/security-audit-0.5.0.md).
+Nine findings, all fixed before this release.
+
+**A mailbox in the browser, under `/mail`.** Getting to your own mail away from your own machine
+meant the app: on a borrowed computer, at work or on somebody else's phone there was simply no way
+in. The server now brings a mailbox for the browser with it.
+
+It is the UwUMail app's interface, cut to what a browser is good at: reading, writing, folders,
+search, conversations, attachments with a preview, reporting spam, blocking a sender,
+unsubscribing from a newsletter, keyboard shortcuts — and on a phone the same view as the app,
+swipes and all. It can go on the home screen too.
+
+Whoever is signed in to the portal is signed in here. No second password, no second login:
+two-factor, passkeys, the session list and locking someone out hold here just as well, because it
+is the same session.
+
+Message HTML never reaches the browser unfiltered. The server cleans it by the same rules as the
+app, the webmail cleans it a second time, and what is left is shown in a frame without scripts
+that loads nothing from other servers until somebody asks it to.
+
+Whoever does not want any of it switches it off: once for the whole server under Settings, and per
+account under People. Mail programs are never affected either way.
+
+Not there yet, and meant for the next version: undo send, signatures, sender pictures and address
+suggestions. Unsubscribing opens the sender's own page instead of taking the one-click route —
+that one would have meant the server calling on an address a mail header named.
+
+The webmail lives in its own repository, [UwUMail-Webmail](https://github.com/MinifyX/UwUMail-Webmail),
+and the image is built from the commit `webmail.pin` names: `02bd99d` for this release.
+
+**Greylisting keeps the mail now instead of throwing it away.** When a message looks suspicious,
+the server asks the sending server to come back later — real mail servers do, a few minutes on,
+and spammers mostly never. That filters well and feels terrible: the mail somebody is waiting for
+sits nowhere for a quarter of an hour, and the one that never comes back leaves no trace at all.
+
+The message is now kept while its sender is being asked to come back. Under Spam filter there is a
+second tab with whatever is being held right now, and the number beside it says so without opening
+it. Every entry shows the sender and the subject and nothing else: whoever wants to read a waiting
+message delivers it to their own mailbox first, where a mail program does the usual about pictures
+and links. A settings page is the wrong place to show a message the filter has just called
+suspicious.
+
+Three ways out, and all three are about this one message: deliver it, throw it away, or throw it
+away and let the spam filter learn from it. Throwing away asks first, because the sender's second
+attempt will not bring the message back — a row somebody decided about stays behind as a note to
+self and keeps the retry from delivering twice or from undoing a discard. Letting a sender through
+for good stays an entry in the sender list: the moment the filter has just called a message
+suspicious is the wrong one to take its sender off the check for ever, not least because the
+envelope address that would land there can be forged.
+
+Delivery itself is unchanged: left alone, the mail still arrives when its sender comes back. Kept
+for two days, at most 5 MB per message and 200 messages per person; past that it is greylisted the
+way it always was. No admin route leads to these rows — they hold whole messages, and a message
+belongs to the person it was addressed to. Off with `spam.greylist_hold`, which also clears out
+what is already being kept.
+
 **Every port can move, and the installer asks before it starts.** The mail ports were nailed to
 25, 465, 587 and 993, so a machine that already ran something on one of them needed an edited
 `compose.yaml` — and an edited `compose.yaml` is what `update.sh` has to stop and ask about. They
@@ -31,6 +88,15 @@ part nobody had written down: which ports have to arrive, how to forward them on
 Telekom Speedport, a UniFi gateway or an OPNsense, what IPv6 needs instead, and when forwarding
 cannot work at all — DS-Lite, a blocked port 25, reverse DNS the provider made up — which is the
 moment to put a gateway in front.
+
+**Three smaller things in the installer and the updater.** Every line they set rewrote the `.env`
+through a copy next to it, and that copy was made with whatever umask the shell had — 0644 on a
+stock Ubuntu, in a directory every user may read, holding what the `.env` holds. Both make it with
+0600 now, like the file they replace, and both clear it away when a run ends early. A port is
+checked for being a port: `70000` had the right shape, went into the `.env`, and let the start fail
+at the end anyway, which is the one thing looking at the ports first is meant to prevent. And a
+pairing code is held to the characters a pairing code has, so a line break in one cannot put a
+second setting into the `.env`.
 
 ## 0.4.0
 

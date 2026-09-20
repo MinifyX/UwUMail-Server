@@ -24,7 +24,7 @@ pub async fn upload(
     body: Bytes,
 ) -> Response {
     let client = client.map(|Extension(c)| c).unwrap_or_default();
-    let owner = match jmap.inner.auth.account(&headers, client).await {
+    let owner = match jmap.inner.auth.account_for(&headers, client, true).await {
         Ok(owner) => owner,
         Err(err) => return err.into_response(),
     };
@@ -73,7 +73,7 @@ pub async fn download(
     headers: HeaderMap,
 ) -> Response {
     let client = client.map(|Extension(c)| c).unwrap_or_default();
-    let owner = match jmap.inner.auth.account(&headers, client).await {
+    let owner = match jmap.inner.auth.account_for(&headers, client, false).await {
         Ok(owner) => owner,
         Err(err) => return err.into_response(),
     };

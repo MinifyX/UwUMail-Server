@@ -8,6 +8,7 @@ import {
   Forward,
   Globe,
   History,
+  Inbox,
   ScrollText,
   Send,
   Settings,
@@ -180,6 +181,17 @@ export function PortalShell({ session, children }: { session: Session; children:
         <IconButton icon={X} label={t("nav.closeMenu")} className="lg:hidden" onClick={() => setDrawer(false)} />
       </div>
       <div className="mt-2 flex-1 overflow-y-auto">
+        {session.webmail && (
+          // A real link, not a route: the webmail is its own app under /mail.
+          <a
+            href="/mail"
+            onClick={() => setDrawer(false)}
+            className="mt-2 flex h-10 items-center gap-3 rounded-full bg-pink-tint px-3 text-sm font-semibold text-pink-ink transition-colors hover:bg-pink-tint/70"
+          >
+            <Inbox className="size-[18px]" strokeWidth={2} aria-hidden />
+            {t("nav.mailbox")}
+          </a>
+        )}
         <NavSection
           name="account"
           title={t("nav.account")}

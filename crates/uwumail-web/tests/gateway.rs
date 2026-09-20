@@ -123,6 +123,7 @@ async fn portal(gateway: Arc<FakeGateway>) -> Portal {
             logs: None,
             config: None,
             certificate: None,
+            webmail: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
         },
     );
     web.set_gateway(gateway);

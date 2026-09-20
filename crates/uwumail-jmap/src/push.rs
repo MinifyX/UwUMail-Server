@@ -95,7 +95,7 @@ pub async fn handle(
     headers: HeaderMap,
 ) -> Response {
     let client = client.map(|Extension(c)| c).unwrap_or_default();
-    let account = match jmap.inner.auth.account(&headers, client).await {
+    let account = match jmap.inner.auth.account_for(&headers, client, false).await {
         Ok(account) => account,
         Err(err) => return err.into_response(),
     };

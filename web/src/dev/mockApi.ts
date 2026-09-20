@@ -81,6 +81,7 @@ const session = (): Session => ({
   csrfToken: "mock",
   preferences,
   server: { hostname: "mail.uwu.example", version: "0.1.0" },
+  webmail: true,
 });
 
 const address = (value: string, kind: "primary" | "alias" = "primary") => ({
@@ -101,6 +102,7 @@ function person(login: string, name: string, extra: Partial<Person> = {}): Perso
     protocols: allProtocols(),
     redirectTo: "",
     hasMailbox: true,
+    webmail: true,
     status: "active",
     quotaBytes: 5 * GB,
     usedBytes: Math.round(Math.random() * 3 * GB),

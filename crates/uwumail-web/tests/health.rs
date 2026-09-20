@@ -83,6 +83,7 @@ async fn health_lists_every_area_with_findings() {
                     automatic: true,
                 })
             })),
+            webmail: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
         },
     );
     let app = web.router();

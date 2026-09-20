@@ -275,6 +275,9 @@ impl Store {
     /// A row that is still waiting means the sender came back on their own: the message is about to
     /// be delivered the normal way, so the row goes and the person never sees it in the list. A
     /// settled row means they already dealt with it by hand, and the retry must not undo that.
+    ///
+    /// A settled row only ever recognises the message it was made from, by its bytes. See the
+    /// query for why a Message-ID is not enough to drop somebody's mail on.
     pub async fn returning_greylist_hold(
         &self,
         account_id: i64,
@@ -283,13 +286,19 @@ impl Store {
     ) -> Result<Returning> {
         let (raw_hash, message_id) = (raw_hash.to_owned(), message_id.map(str::to_owned));
         self.write(move |tx| {
-            // Same bytes, or failing that the same Message-ID: a sender that rewrites something on
-            // the retry still gets recognised, and one that sends neither is simply delivered.
+            // The same bytes, always. The same Message-ID only for a row that is still waiting,
+            // where the worst it can do is take an entry off somebody's list.
+            //
+            // A settled row decides whether a message is delivered or dropped, and a Message-ID is
+            // a line the sender wrote: anyone may put any of them on a mail. If that were enough,
+            // a settled row would be a two-day trap for every later message carrying that same
+            // line — and plenty of senders number theirs in a way that can be guessed. Dropped
+            // mail leaves nobody a trace, so this side errs towards delivering twice.
             let found: Option<(i64, Option<String>)> = tx
                 .query_row(
                     "SELECT id, settled FROM greylist_hold
                      WHERE account_id = ?1
-                       AND (raw_hash = ?2 OR (?3 IS NOT NULL AND message_id = ?3))
+                       AND (raw_hash = ?2 OR (?3 IS NOT NULL AND message_id = ?3 AND settled IS NULL))
                      ORDER BY settled IS NULL DESC, id DESC
                      LIMIT 1",
                     params![account_id, raw_hash, message_id],
@@ -430,6 +439,44 @@ mod tests {
         let other = BlobHash::of(b"etwas ganz anderes").as_str().to_owned();
         assert_eq!(store.returning_greylist_hold(account, &other, None).await.unwrap(), Returning::Fresh);
         let _ = id;
+    }
+
+    #[tokio::test]
+    async fn a_decided_message_does_not_swallow_another_that_shares_its_message_id() {
+        let (store, _dir) = ready().await;
+        let account = new_account(&store, "nyu").await;
+
+        // Somebody throws away a message whose Message-ID they never chose.
+        let spam = b"Subject: Rechnung\r\n\r\nBitte zahlen".to_vec();
+        let id = store.hold_greylisted(hold(account, "Rechnung", &spam)).await.unwrap().unwrap();
+        store.settle_greylist_hold(account, id, Settled::Discarded, false).await.unwrap();
+
+        // A different message arrives carrying the same line. It is not the one that was decided
+        // about, and it has to be delivered.
+        let real = BlobHash::of(b"Subject: Rechnung\r\n\r\nGanz andere Nachricht").as_str().to_owned();
+        assert_eq!(
+            store.returning_greylist_hold(account, &real, Some("<Rechnung@example.org>")).await.unwrap(),
+            Returning::Fresh,
+            "a Message-ID is a line the sender wrote, not a reason to drop somebody's mail"
+        );
+
+        // The same bytes are still recognised, so a real retry is still not delivered twice.
+        let spam_hash = BlobHash::of(&spam).as_str().to_owned();
+        assert_eq!(
+            store.returning_greylist_hold(account, &spam_hash, Some("<Rechnung@example.org>")).await.unwrap(),
+            Returning::Discarded
+        );
+
+        // While a message is still waiting, the Message-ID may take it off the list: the mail is
+        // arriving by itself, and nothing is lost by that.
+        let waiting = b"Subject: Angebot\r\n\r\nHallo".to_vec();
+        store.hold_greylisted(hold(account, "Angebot", &waiting)).await.unwrap().unwrap();
+        let rewritten = BlobHash::of(b"Subject: Angebot\r\n\r\nHallo, mit anderem Datum").as_str().to_owned();
+        assert_eq!(
+            store.returning_greylist_hold(account, &rewritten, Some("<Angebot@example.org>")).await.unwrap(),
+            Returning::Fresh
+        );
+        assert_eq!(store.greylist_holds(account).await.unwrap().len(), 0, "it is arriving normally now");
     }
 
     #[tokio::test]

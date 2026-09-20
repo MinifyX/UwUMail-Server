@@ -56,6 +56,8 @@ export interface Session {
   csrfToken: string;
   preferences: Record<string, unknown>;
   server: { hostname: string; version: string };
+  /** Whether this person has a mailbox in the browser under /mail. */
+  webmail: boolean;
 }
 
 export interface Profile {
@@ -132,6 +134,8 @@ export interface Person {
   redirectTo: string;
   /** False for a service with neither IMAP nor JMAP. */
   hasMailbox: boolean;
+  /** Whether this person may open their mailbox in the browser. Its own switch, not a protocol. */
+  webmail: boolean;
   status: PersonStatus;
   quotaBytes: number;
   usedBytes: number;
@@ -633,8 +637,11 @@ export interface GreylistView {
   count: number;
 }
 
-/** What someone can do with a waiting message. */
-export type GreylistDecision = "allow-deliver" | "deliver" | "discard" | "discard-spam";
+/**
+ * What someone can do with a waiting message. Each one is about that message alone; letting a
+ * sender through for good is a sender list entry and belongs on its own page.
+ */
+export type GreylistDecision = "deliver" | "discard" | "discard-spam";
 
 export interface AdminSpamView {
   bayes: { enabled: boolean; minimum: number; server: BayesTotals; queued: number };

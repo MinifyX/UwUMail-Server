@@ -66,7 +66,8 @@
     "reports": "Berichte",
     "updates": "Updates",
     "collapse": "{{group}} einklappen",
-    "expand": "{{group}} ausklappen"
+    "expand": "{{group}} ausklappen",
+    "mailbox": "Postfach"
   },
   "userMenu": {
     "open": "Kontomenü öffnen",
@@ -454,7 +455,9 @@
       "redirect": "Mail stattdessen an",
       "redirectHint": "Eine Adresse auf diesem Server. Leer: Mails an dieses Konto werden gleich beim Einliefern abgewiesen.",
       "redirectNone": "Mails an dieses Konto werden abgewiesen.",
-      "redirectTo": "Mails an dieses Konto gehen an {{address}}."
+      "redirectTo": "Mails an dieses Konto gehen an {{address}}.",
+      "webmail": "Postfach im Browser",
+      "webmailHint": "Dieses Postfach unter /mail mit der Portal-Anmeldung öffnen. Getrennt von IMAP und JMAP, die regeln, was Mail-Programme dürfen."
     },
     "serviceAccess": {
       "title": "Zugang",
@@ -1052,6 +1055,12 @@
       "timeoutHint": "Danach geht die Mail ungeprüft weiter.",
       "maxSize": "Größte geprüfte Mail (MB)",
       "maxSizeHint": "Größere Mails gehen ungeprüft durch; clamd nimmt sie ohnehin nicht an."
+    },
+    "webmail": {
+      "title": "Postfach im Browser",
+      "intro": "Mail lesen und schreiben unter mail.…/mail, ganz ohne Mail-Programm.",
+      "enabled": "Webmail anbieten",
+      "enabledHint": "Wer im Portal angemeldet ist, kann sein Postfach hier öffnen. Jedes Konto hat unter Personen noch einen eigenen Schalter; Mail-Programme sind davon in beiden Fällen nicht betroffen."
     }
   },
   "health": {
@@ -1925,7 +1934,7 @@
     },
     "greylist": {
       "title": "Wartende Nachrichten",
-      "explain": "Sieht eine Nachricht verdächtig aus, bittet der Server den absendenden Server, es später noch einmal zu versuchen. Richtige Mailserver tun das nach ein paar Minuten, Spam-Versender meistens nie. So lange steht die Nachricht hier. „Immer durchlassen“ nimmt den Absender dauerhaft von der Prüfung aus — auch dann, wenn seine Adresse gefälscht ist.",
+      "explain": "Sieht eine Nachricht verdächtig aus, bittet der Server den absendenden Server, es später noch einmal zu versuchen. Richtige Mailserver tun das nach ein paar Minuten, Spam-Versender meistens nie. So lange steht die Nachricht hier. Was du hier entscheidest, gilt nur für diese eine Nachricht — einen Absender dauerhaft durchlassen kannst du unter Filter bei deinen Absendern.",
       "off": "Der Server hebt zurückgestellte Nachrichten gerade nicht auf. So lange bleibt diese Liste leer.",
       "empty": "Nichts wartet.",
       "emptyHint": "Zurückgestellte Nachrichten stehen hier, bis sie von selbst ankommen oder du entscheidest.",
@@ -1933,7 +1942,6 @@
       "sentTo": "An {{address}}",
       "decide": {
         "deliver": "Zustellen",
-        "allowDeliver": "Zustellen, Absender immer durchlassen",
         "discard": "Verwerfen",
         "discardSpam": "Verwerfen und als Spam melden"
       },

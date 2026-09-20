@@ -37,6 +37,8 @@ pub use logs::{LogBuffer, LogLine};
 pub use routes::settings::OVERLAY_KEY as SETTINGS_OVERLAY_KEY;
 pub use session::{Admin, CSRF_HEADER, SESSION_LIFETIME_SECS, Session};
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 pub struct WebSettings {
     pub hostname: String,
     pub started: Instant,
@@ -46,6 +48,9 @@ pub struct WebSettings {
     pub config: Option<Arc<dyn settings::SettingsBackend>>,
     /// The certificate in use, for the health overview.
     pub certificate: Option<CertificateSource>,
+    /// Whether the webmail is served. Shared with the settings backend, so changing it in the
+    /// admin panel takes effect without a restart.
+    pub webmail: Arc<AtomicBool>,
 }
 
 #[derive(Clone)]
@@ -106,6 +111,11 @@ impl Web {
     /// Whether this build contains the web app. Without it the server shows a simple landing page.
     pub fn has_app() -> bool {
         assets::index().is_some()
+    }
+
+    /// Whether the webmail is served right now: built into this binary and switched on.
+    pub(crate) fn webmail_enabled(&self) -> bool {
+        assets::has_webmail() && self.inner.settings.webmail.load(Ordering::Relaxed)
     }
 
     pub(crate) fn store(&self) -> &Store {
@@ -211,6 +221,7 @@ impl Web {
             .route("/api/auth/passkey", post(routes::auth::passkey_login))
             .route("/api/account", get(routes::account::profile))
             .route("/api/account/preferences", patch(routes::account::update_preferences))
+            .route("/api/account/webmail", get(routes::webmail::access))
             .route("/api/account/security", get(routes::security::overview))
             .route("/api/account/password", post(routes::security::change_password))
             .route("/api/account/totp", post(routes::security::start_totp).delete(routes::security::disable_totp))
@@ -362,6 +373,15 @@ impl Web {
                 app = app.route(file.path, get(move || async move { assets::respond(file) }));
             }
         }
-        api.merge(app)
+        // The webmail is a second app under /mail, built from its own repository. It routes
+        // itself, so every path below hands out the same page.
+        if assets::has_webmail() {
+            app = app.route("/mail", get(routes::webmail::page));
+            // One wildcard for everything below: the handler tells a file of the build from a
+            // path the webmail routes itself. Two overlapping wildcards would not be allowed here.
+            app = app.route("/mail/{*rest}", get(routes::webmail::below));
+        }
+        // The webmail routes need the state; the portal ones do not, so it is applied once here.
+        api.merge(app.with_state(self.clone()))
     }
 }

@@ -11,14 +11,35 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store pnpm install --froze
 COPY web/ ./
 RUN pnpm build
 
+# The webmail comes from its own repository, at the commit webmail.pin names. A full hash, never a
+# branch: the same server tag has to bake in the same webmail whenever it is built.
+FROM node:24-slim AS webmail
+WORKDIR /src
+RUN corepack enable \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates git \
+ && rm -rf /var/lib/apt/lists/*
+COPY webmail.pin ./
+RUN repo="$(sed -n 's/^repo=//p' webmail.pin)" \
+ && commit="$(sed -n 's/^commit=//p' webmail.pin)" \
+ && git init -q webmail \
+ && git -C webmail remote add origin "$repo" \
+ && git -C webmail fetch -q --depth 1 origin "$commit" \
+ && git -C webmail checkout -q FETCH_HEAD \
+ && test "$(git -C webmail rev-parse HEAD)" = "$commit"
+WORKDIR /src/webmail
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store pnpm install --frozen-lockfile
+RUN pnpm build
+
 FROM rust:1-slim-trixie AS build
 RUN apt-get update \
  && apt-get install -y --no-install-recommends cmake clang \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY . .
-# The web app is embedded into the binary (crates/uwumail-web/build.rs).
+# The web app is embedded into the binary (crates/uwumail-web/build.rs), and so is the webmail.
 COPY --from=web /web/dist /src/web/dist
+COPY --from=webmail /src/webmail/dist /src/webmail/dist
 # The cached target directory can hold artifacts from an earlier build whose sources look
 # unchanged to cargo (context mtimes are unreliable on Docker Desktop), which then embeds stale
 # web assets or misses new code. Touching the workspace sources forces those crates to rebuild;

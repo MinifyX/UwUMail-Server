@@ -66,7 +66,8 @@
     "reports": "Reports",
     "updates": "Updates",
     "collapse": "Collapse {{group}}",
-    "expand": "Expand {{group}}"
+    "expand": "Expand {{group}}",
+    "mailbox": "Mailbox"
   },
   "userMenu": {
     "open": "Open account menu",
@@ -454,7 +455,9 @@
       "redirect": "Send mail here instead",
       "redirectHint": "An address on this server. Empty: mail to this account is refused at the door.",
       "redirectNone": "Mail to this account is refused.",
-      "redirectTo": "Mail to this account goes to {{address}}."
+      "redirectTo": "Mail to this account goes to {{address}}.",
+      "webmail": "Mailbox in the browser",
+      "webmailHint": "Opening this mailbox at /mail with the portal login. Separate from IMAP and JMAP, which decide what mail programs may do."
     },
     "serviceAccess": {
       "title": "Access",
@@ -1052,6 +1055,12 @@
       "timeoutHint": "After that the message goes on unchecked.",
       "maxSize": "Largest message checked (MB)",
       "maxSizeHint": "Bigger messages go through unchecked; clamd refuses them anyway."
+    },
+    "webmail": {
+      "title": "Mailbox in the browser",
+      "intro": "Reading and writing mail at mail.…/mail, without a mail program.",
+      "enabled": "Offer the webmail",
+      "enabledHint": "Everyone signed in to the portal can open their mailbox here. Each account has its own switch under People; mail programs are not affected either way."
     }
   },
   "health": {
@@ -1925,7 +1934,7 @@
     },
     "greylist": {
       "title": "Waiting messages",
-      "explain": "When a message looks suspicious, the server asks the sending server to try again later. Real mail servers do that within a few minutes; spammers mostly never do. Until then the message waits here. Always allowing a sender takes them off the check for good — even if their address turns out to be forged.",
+      "explain": "When a message looks suspicious, the server asks the sending server to try again later. Real mail servers do that within a few minutes; spammers mostly never do. Until then the message waits here. What you decide here is about this one message — letting a sender through for good is under Filter, in your sender list.",
       "off": "The server is not keeping delayed messages at the moment, so this list stays empty.",
       "empty": "Nothing is waiting.",
       "emptyHint": "Delayed messages wait here until they arrive by themselves or you decide about them.",
@@ -1933,7 +1942,6 @@
       "sentTo": "To {{address}}",
       "decide": {
         "deliver": "Deliver",
-        "allowDeliver": "Deliver, always allow sender",
         "discard": "Discard",
         "discardSpam": "Discard and report as spam"
       },

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ShieldCheck, Trash2, TriangleAlert } from "lucide-react";
+import { Check, Trash2, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
@@ -47,9 +47,6 @@ function Waiting({
       <div className="flex flex-wrap gap-2">
         <Button variant="primary" icon={Check} busy={busy} onClick={() => onDecide("deliver")}>
           {t("spam.greylist.decide.deliver")}
-        </Button>
-        <Button icon={ShieldCheck} busy={busy} onClick={() => onDecide("allow-deliver")}>
-          {t("spam.greylist.decide.allowDeliver")}
         </Button>
         <Button icon={Trash2} busy={busy} onClick={() => onDecide("discard")}>
           {t("spam.greylist.decide.discard")}
@@ -118,8 +115,7 @@ export function GreylistCard() {
     onMutate: ({ hold }) => setBusyId(hold.id),
     onSuccess: (view, { action }) => {
       queryClient.setQueryData(greylistKey, view);
-      const delivered = action === "deliver" || action === "allow-deliver";
-      toast(t(delivered ? "spam.greylist.done.delivered" : "spam.greylist.done.discarded"), "success");
+      toast(t(action === "deliver" ? "spam.greylist.done.delivered" : "spam.greylist.done.discarded"), "success");
     },
     onError: (error) => toast(errorText(error), "error"),
     onSettled: () => setBusyId(null),
