@@ -237,6 +237,8 @@ impl Web {
             .route("/api/account/aliases", post(routes::own::create_alias))
             .route("/api/account/aliases/{address}", delete(routes::own::delete_alias))
             .route("/api/account/storage", get(routes::own::storage))
+            .route("/api/account/greylist", get(routes::greylist::waiting))
+            .route("/api/account/greylist/{id}", post(routes::greylist::decide))
             .route("/api/account/spam", get(routes::spam::account_overview))
             .route("/api/account/spam/learn-folders", post(routes::spam::account_learn))
             .route("/api/account/spam/limits", put(routes::spam::account_set_limits))
