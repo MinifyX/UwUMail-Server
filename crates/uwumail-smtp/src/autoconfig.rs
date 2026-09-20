@@ -135,8 +135,9 @@ async fn from_domain(dns: &DnsChecker, domain: &str) -> Option<Settings> {
         .or_else(|| {
             starttls.map(|(host, port)| Server { host, port, security: security_for(port), login: Login::WholeAddress })
         });
+    // `_imaps` is TLS from the first byte by definition, whatever port it names.
     Some(Settings {
-        imap: Server { host: imap.0, port: imap.1, security: security_for(imap.1), login: Login::WholeAddress },
+        imap: Server { host: imap.0, port: imap.1, security: Security::Tls, login: Login::WholeAddress },
         smtp,
         source: Source::Domain,
     })
@@ -156,13 +157,17 @@ impl PartialServer {
     /// A server this program can use: IMAP or SMTP, encrypted, with a host name. Anything else --
     /// POP3, a plain connection -- is passed over, so a provider that offers both is read as the
     /// one worth having.
+    ///
+    /// Incoming mail is fetched over TLS from the first byte and nothing else, because that is all
+    /// the fetch worker speaks. A provider that publishes only a STARTTLS port for IMAP is passed
+    /// over here rather than stored as a mailbox that would fail on every run.
     fn finish(self, want: &str) -> Option<Server> {
         if !self.kind.eq_ignore_ascii_case(want) || self.host.is_empty() {
             return None;
         }
         let security = match self.socket.to_ascii_uppercase().as_str() {
             "SSL" => Security::Tls,
-            "STARTTLS" => Security::Starttls,
+            "STARTTLS" if !want.eq_ignore_ascii_case("imap") => Security::Starttls,
             _ => return None,
         };
         let port = self.port?;
@@ -555,6 +560,20 @@ mod tests {
     fn passes_over_pop3() {
         let (imap, _) = read_client_config(WEB_DE).expect("web.de has an IMAP server");
         assert_eq!(imap.host, "imap.web.de");
+    }
+
+    /// The fetch worker speaks TLS from the first byte only, so a provider that publishes just a
+    /// STARTTLS port for IMAP must not become a mailbox that fails on every run -- while its
+    /// outgoing server on STARTTLS is perfectly fine.
+    #[test]
+    fn refuses_starttls_for_fetching_but_not_for_sending() {
+        let starttls_imap = ICLOUD.replace(
+            "<hostname>imap.mail.me.com</hostname>\n              <port>993</port>\n              <socketType>SSL</socketType>",
+            "<hostname>imap.mail.me.com</hostname>\n              <port>143</port>\n              <socketType>STARTTLS</socketType>",
+        );
+        assert!(read_client_config(&starttls_imap).is_none());
+        let (_, smtp) = read_client_config(ICLOUD).expect("iCloud has an IMAP server");
+        assert_eq!(smtp.expect("and an outgoing one").security, Security::Starttls);
     }
 
     #[test]
