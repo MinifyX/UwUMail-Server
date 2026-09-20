@@ -226,8 +226,7 @@ fn unseal(conn: &Connection, sealed: &[u8]) -> Result<String> {
     let plain = key
         .open_in_place(Nonce::assume_unique_for_key(nonce), Aad::empty(), &mut buffer)
         .map_err(|_| StoreError::Internal("a stored provider password could not be read".into()))?;
-    String::from_utf8(plain.to_vec())
-        .map_err(|_| StoreError::Internal("a stored provider password is not text".into()))
+    String::from_utf8(plain.to_vec()).map_err(|_| StoreError::Internal("a stored provider password is not text".into()))
 }
 
 /// Keeps a provider's error message short enough for a table and a page.
@@ -270,10 +269,17 @@ impl Store {
         .await
     }
 
-    pub async fn fetch_account(&self, id: i64) -> Result<Option<FetchAccount>> {
+    /// One fetched mailbox of this person. Every single-row function takes whose it is and asks for
+    /// both, so a row id from a URL can never reach somebody else's mailbox -- not even through a
+    /// caller that forgot to check.
+    pub async fn fetch_account(&self, account_id: i64, id: i64) -> Result<Option<FetchAccount>> {
         self.read(move |conn| {
             Ok(conn
-                .query_row(&format!("SELECT {COLUMNS} FROM fetch_accounts WHERE id = ?1"), params![id], from_row)
+                .query_row(
+                    &format!("SELECT {COLUMNS} FROM fetch_accounts WHERE id = ?1 AND account_id = ?2"),
+                    params![id, account_id],
+                    from_row,
+                )
                 .optional()?)
         })
         .await
@@ -294,11 +300,16 @@ impl Store {
         .await
     }
 
-    /// The password to send to the provider.
-    pub async fn fetch_password(&self, id: i64) -> Result<Option<String>> {
+    /// The password to send to the provider. It opens a mailbox somewhere else, so this one asks
+    /// whose it is even more than the others do.
+    pub async fn fetch_password(&self, account_id: i64, id: i64) -> Result<Option<String>> {
         self.read(move |conn| {
             let sealed: Option<Vec<u8>> = conn
-                .query_row("SELECT password FROM fetch_accounts WHERE id = ?1", params![id], |row| row.get(0))
+                .query_row(
+                    "SELECT password FROM fetch_accounts WHERE id = ?1 AND account_id = ?2",
+                    params![id, account_id],
+                    |row| row.get(0),
+                )
                 .optional()?;
             sealed.map(|sealed| unseal(conn, &sealed)).transpose()
         })
@@ -365,19 +376,30 @@ impl Store {
 
     /// Changes what was given and leaves the rest. A new password replaces the old one; the state of
     /// the folders stays, because the mailbox is the same one.
-    pub async fn update_fetch_account(&self, id: i64, update: FetchAccountUpdate) -> Result<FetchAccount> {
+    pub async fn update_fetch_account(
+        &self,
+        account_id: i64,
+        id: i64,
+        update: FetchAccountUpdate,
+    ) -> Result<FetchAccount> {
         let host = update.host.as_deref().map(check_host).transpose()?;
         let interval = update.interval_secs.map(check_interval).transpose()?;
         self.write(move |tx| {
-            let exists: bool =
-                tx.query_row("SELECT EXISTS (SELECT 1 FROM fetch_accounts WHERE id = ?1)", params![id], |row| {
-                    row.get(0)
-                })?;
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS (SELECT 1 FROM fetch_accounts WHERE id = ?1 AND account_id = ?2)",
+                params![id, account_id],
+                |row| row.get(0),
+            )?;
             if !exists {
                 return Err(StoreError::NotFound(format!("fetched mailbox {id}")));
             }
+            // Every statement below asks for both, so a wrong owner changes nothing even if the
+            // check above were ever removed.
             let set = |column: &str, value: &dyn rusqlite::ToSql| -> Result<()> {
-                tx.execute(&format!("UPDATE fetch_accounts SET {column} = ?1 WHERE id = ?2"), params![value, id])?;
+                tx.execute(
+                    &format!("UPDATE fetch_accounts SET {column} = ?1 WHERE id = ?2 AND account_id = ?3"),
+                    params![value, id, account_id],
+                )?;
                 Ok(())
             };
             if let Some(host) = host {
@@ -416,20 +438,25 @@ impl Store {
                 set("enabled", &enabled)?;
                 // Switching it back on should not wait for the interval to pass.
                 if enabled {
-                    tx.execute("UPDATE fetch_accounts SET last_run_at = NULL WHERE id = ?1", params![id])?;
+                    set("last_run_at", &None::<i64>)?;
                 }
             }
             if let Some(name) = &update.auth_serv_id {
                 set("auth_serv_id", &name.trim().to_ascii_lowercase())?;
             }
-            Ok(tx.query_row(&format!("SELECT {COLUMNS} FROM fetch_accounts WHERE id = ?1"), params![id], from_row)?)
+            Ok(tx.query_row(
+                &format!("SELECT {COLUMNS} FROM fetch_accounts WHERE id = ?1 AND account_id = ?2"),
+                params![id, account_id],
+                from_row,
+            )?)
         })
         .await
     }
 
-    pub async fn delete_fetch_account(&self, id: i64) -> Result<()> {
+    pub async fn delete_fetch_account(&self, account_id: i64, id: i64) -> Result<()> {
         self.write(move |tx| {
-            let gone = tx.execute("DELETE FROM fetch_accounts WHERE id = ?1", params![id])?;
+            let gone =
+                tx.execute("DELETE FROM fetch_accounts WHERE id = ?1 AND account_id = ?2", params![id, account_id])?;
             if gone == 0 {
                 return Err(StoreError::NotFound(format!("fetched mailbox {id}")));
             }
@@ -464,9 +491,15 @@ impl Store {
     }
 
     /// Lets the next run start at once, whatever the interval says.
-    pub async fn fetch_account_due_now(&self, id: i64) -> Result<()> {
+    pub async fn fetch_account_due_now(&self, account_id: i64, id: i64) -> Result<()> {
         self.write(move |tx| {
-            tx.execute("UPDATE fetch_accounts SET last_run_at = NULL WHERE id = ?1", params![id])?;
+            let changed = tx.execute(
+                "UPDATE fetch_accounts SET last_run_at = NULL WHERE id = ?1 AND account_id = ?2",
+                params![id, account_id],
+            )?;
+            if changed == 0 {
+                return Err(StoreError::NotFound(format!("fetched mailbox {id}")));
+            }
             Ok(())
         })
         .await
@@ -577,7 +610,10 @@ mod tests {
         let fetched = store.create_fetch_account(new_account(account_id)).await.unwrap();
         assert_eq!(fetched.address, "mini@example.com", "the address is normalized");
 
-        assert_eq!(store.fetch_password(fetched.id).await.unwrap().as_deref(), Some("secret-at-the-provider"));
+        assert_eq!(
+            store.fetch_password(account_id, fetched.id).await.unwrap().as_deref(),
+            Some("secret-at-the-provider")
+        );
         let stored: Vec<u8> = store
             .read(move |conn| {
                 Ok(conn.query_row("SELECT password FROM fetch_accounts WHERE id = ?1", params![fetched.id], |row| {
@@ -608,13 +644,17 @@ mod tests {
 
         store.note_fetch_run(fetched.id, 3, None).await.unwrap();
         assert!(store.fetch_accounts_due().await.unwrap().is_empty(), "not again before the interval");
-        assert_eq!(store.fetch_account(fetched.id).await.unwrap().unwrap().total_fetched, 3);
+        assert_eq!(store.fetch_account(account_id, fetched.id).await.unwrap().unwrap().total_fetched, 3);
 
-        store.fetch_account_due_now(fetched.id).await.unwrap();
+        store.fetch_account_due_now(account_id, fetched.id).await.unwrap();
         assert_eq!(store.fetch_accounts_due().await.unwrap().len(), 1, "asking for it now works");
 
         store
-            .update_fetch_account(fetched.id, FetchAccountUpdate { enabled: Some(false), ..Default::default() })
+            .update_fetch_account(
+                account_id,
+                fetched.id,
+                FetchAccountUpdate { enabled: Some(false), ..Default::default() },
+            )
             .await
             .unwrap();
         assert!(store.fetch_accounts_due().await.unwrap().is_empty(), "a mailbox that is off is never due");
@@ -659,7 +699,7 @@ mod tests {
         store.set_fetch_folder(fetched.id, "INBOX".into(), state).await.unwrap();
         store.mark_fetch_seen(fetched.id, "<one@example.com>".into()).await.unwrap();
 
-        store.delete_fetch_account(fetched.id).await.unwrap();
+        store.delete_fetch_account(account_id, fetched.id).await.unwrap();
         assert!(store.fetch_folder(fetched.id, "INBOX".into()).await.unwrap().is_none());
         let remembered: i64 = store
             .read(move |conn| {
@@ -670,5 +710,51 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(remembered, 0, "and what it remembered is gone with it");
+    }
+
+    #[tokio::test]
+    async fn nobody_reaches_another_persons_fetched_mailbox() {
+        let (store, _dir, account_id) = store_with_person().await;
+        let other = store
+            .create_account(NewAccount {
+                address: "leni@uwu.test".into(),
+                display_name: String::new(),
+                password: None,
+                role: Role::User,
+                quota_bytes: 0,
+                protocols: None,
+            })
+            .await
+            .unwrap()
+            .id;
+        let fetched = store.create_fetch_account(new_account(account_id)).await.unwrap();
+
+        // Knowing the row id is not enough: every single-row function asks whose it is.
+        assert!(store.fetch_account(other, fetched.id).await.unwrap().is_none());
+        assert!(store.fetch_password(other, fetched.id).await.unwrap().is_none(), "least of all the password");
+        assert!(matches!(
+            store.update_fetch_account(other, fetched.id, FetchAccountUpdate::default()).await,
+            Err(StoreError::NotFound(_))
+        ));
+        assert!(matches!(store.fetch_account_due_now(other, fetched.id).await, Err(StoreError::NotFound(_))));
+        assert!(matches!(store.delete_fetch_account(other, fetched.id).await, Err(StoreError::NotFound(_))));
+
+        // Nothing of it was changed or taken away by trying.
+        let mine = store.fetch_account(account_id, fetched.id).await.unwrap().unwrap();
+        assert_eq!(mine.host, "imap.example.com");
+        assert_eq!(
+            store.fetch_password(account_id, fetched.id).await.unwrap().as_deref(),
+            Some("secret-at-the-provider")
+        );
+
+        // Turning the host into one's own server is the point of asking: that is where the
+        // provider's password would be sent on the next run.
+        let hijack = FetchAccountUpdate { host: Some("imap.attacker.example".into()), ..Default::default() };
+        assert!(store.update_fetch_account(other, fetched.id, hijack).await.is_err());
+        assert_eq!(store.fetch_account(account_id, fetched.id).await.unwrap().unwrap().host, "imap.example.com");
+
+        // And a listing only ever shows one's own.
+        assert!(store.fetch_accounts(Some(other)).await.unwrap().is_empty());
+        assert_eq!(store.fetch_accounts(Some(account_id)).await.unwrap().len(), 1);
     }
 }
