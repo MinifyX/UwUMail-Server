@@ -127,6 +127,71 @@ async fn note_spam(ctx: &crate::Context, config: &crate::config::SpamLogConfig, 
     }
 }
 
+/// A greylisted message, as it is kept for the people it was addressed to.
+struct HeldMessage<'a> {
+    id: &'a str,
+    envelope: &'a Envelope,
+    recipients: &'a [Recipient],
+    /// What the sender wrote, for the headers worth showing.
+    raw: &'a [u8],
+    /// What would have been delivered, our own headers and all.
+    message: &'a [u8],
+    raw_hash: &'a str,
+    message_id: Option<&'a str>,
+    client_ip: String,
+    score: Option<f32>,
+    /// What the filter already read out of the message, if it read it.
+    subject: Option<String>,
+}
+
+/// Keeps a greylisted message for everyone here it was meant for, so it is not simply gone while
+/// its sender is asked to come back.
+///
+/// Only accounts on this server get a copy: a forwarding address has no page to look at it on, and
+/// an address that is only passing mail through has no business holding it. Failures are logged and
+/// never change the answer — the sender is being asked to come back either way, and a message we
+/// could not keep is exactly the greylisting we had before this existed.
+async fn hold_greylisted(ctx: &crate::Context, held: HeldMessage<'_>) {
+    if held.message.len() as i64 > uwumail_store::MAX_HELD_SIZE {
+        tracing::debug!(id = %held.id, size = held.message.len(), "a greylisted message is too large to keep");
+        return;
+    }
+    let subject = held
+        .subject
+        .filter(|subject| !subject.is_empty())
+        .or_else(|| headers::first_value(held.raw, "Subject"))
+        .map(|subject| shorten(&subject, SPAM_LOG_SUBJECT_MAX));
+    let header_from = headers::first_value(held.raw, "From").map(|from| shorten(&from, 320)).unwrap_or_default();
+    let message_id = held.message_id.map(|id| shorten(id, 200));
+    let mut kept = 0;
+    for recipient in held.recipients {
+        let Some(account_id) = recipient.local_account else { continue };
+        let hold = uwumail_store::NewGreylistHold {
+            account_id,
+            address: recipient.address.clone(),
+            envelope_from: shorten(&held.envelope.address, 320),
+            header_from: header_from.clone(),
+            subject: subject.clone(),
+            message_id: message_id.clone(),
+            smtp_id: held.id.to_owned(),
+            client_ip: held.client_ip.clone(),
+            score: held.score,
+            message: held.message.to_vec(),
+            raw_hash: held.raw_hash.to_owned(),
+            keep_secs: uwumail_store::GREYLIST_WAITING_SECS,
+        };
+        match ctx.store.hold_greylisted(hold).await {
+            Ok(_) => kept += 1,
+            Err(err) => {
+                tracing::warn!(id = %held.id, account = account_id, %err, "keeping a greylisted message failed")
+            }
+        }
+    }
+    if kept > 0 {
+        tracing::debug!(id = %held.id, kept, "kept a greylisted message for its recipients");
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListenerKind {
     /// Port 25: mail for our domains from other servers. No authentication.
@@ -1101,6 +1166,34 @@ impl Session {
             note_spam(&ctx, &live.spam.log, note).await;
             return "550 5.7.1 This message looks like spam\r\n".into();
         }
+        // What a retry of this message hashes to. Taken before our own headers go on top, so the
+        // same message from the same server lands on the same value when it comes back.
+        let raw_hash = live.spam.greylist_hold.then(|| uwumail_store::BlobHash::of(&raw).as_str().to_owned());
+
+        // Our verdict replaces whatever the message brought along.
+        let raw = if score.is_some() { headers::strip_spam_verdicts(&raw) } else { raw };
+        let raw = match checked {
+            clamav::Checked::Off => raw,
+            _ => headers::strip_virus_verdicts(&raw),
+        };
+
+        let single = (recipients.len() == 1).then(|| recipients[0].address.as_str());
+        let mut message = self.received_header(&id, single).into_bytes();
+        if let Some(verdict) = &verdict {
+            message.extend_from_slice(verdict.header.as_bytes());
+        }
+        if let Some(header) = clamav::header(&checked) {
+            message.extend_from_slice(header.as_bytes());
+        }
+        if let Some(score) = &score {
+            message.extend_from_slice(spam::headers(score, junk, live.spam.junk_score).as_bytes());
+        }
+        message.extend_from_slice(&raw);
+
+        // The other half of recognising a returning message, for senders that rewrite something
+        // between attempts.
+        let message_id = raw_hash.is_some().then(|| headers::first_value(&raw, "Message-ID")).flatten();
+
         if outcome == spam::Outcome::Suspicious
             && let Some((ip, _)) = &client
         {
@@ -1143,29 +1236,27 @@ impl Session {
                     virus: None,
                 };
                 note_spam(&ctx, &live.spam.log, note).await;
+                if let Some(raw_hash) = &raw_hash {
+                    hold_greylisted(
+                        &ctx,
+                        HeldMessage {
+                            id: &id,
+                            envelope: &envelope,
+                            recipients: &recipients,
+                            raw: &raw,
+                            message: &message,
+                            raw_hash,
+                            message_id: message_id.as_deref(),
+                            client_ip: ip.to_string(),
+                            score: spam_score,
+                            subject: score.as_ref().map(|score| score.subject.clone()),
+                        },
+                    )
+                    .await;
+                }
                 return format!("451 4.7.1 Please try again in {minutes} minutes\r\n");
             }
         }
-
-        // Our verdict replaces whatever the message brought along.
-        let raw = if score.is_some() { headers::strip_spam_verdicts(&raw) } else { raw };
-        let raw = match checked {
-            clamav::Checked::Off => raw,
-            _ => headers::strip_virus_verdicts(&raw),
-        };
-
-        let single = (recipients.len() == 1).then(|| recipients[0].address.as_str());
-        let mut message = self.received_header(&id, single).into_bytes();
-        if let Some(verdict) = &verdict {
-            message.extend_from_slice(verdict.header.as_bytes());
-        }
-        if let Some(header) = clamav::header(&checked) {
-            message.extend_from_slice(header.as_bytes());
-        }
-        if let Some(score) = &score {
-            message.extend_from_slice(spam::headers(score, junk, live.spam.junk_score).as_bytes());
-        }
-        message.extend_from_slice(&raw);
 
         let mut delivered = 0;
         let mut inbox_accounts = Vec::new();
@@ -1210,6 +1301,26 @@ impl Session {
                 continue;
             }
             seen_accounts.push(account_id);
+            // The sender came back with a message this person already dealt with by hand while it
+            // was waiting. Take it and let it go: delivering it again would double it, and bringing
+            // a discarded one back would undo what they decided.
+            if let Some(raw_hash) = &raw_hash {
+                match ctx.store.returning_greylist_hold(account_id, raw_hash, message_id.as_deref()).await {
+                    Ok(uwumail_store::Returning::Fresh) => {}
+                    Ok(settled) => {
+                        tracing::info!(
+                            %id,
+                            account = account_id,
+                            discarded = settled == uwumail_store::Returning::Discarded,
+                            "a returning greylisted message was already settled by hand"
+                        );
+                        note_for(&recipient.address, SpamAction::Settled, None);
+                        delivered += 1;
+                        continue;
+                    }
+                    Err(err) => tracing::warn!(%id, account = account_id, %err, "looking up a held message failed"),
+                }
+            }
             // A listed sender goes where the list says, even out of a DMARC quarantine. Otherwise what a
             // person taught their own Bayes filter and their own limits can move the message into or out of
             // Junk for them, and a DMARC quarantine stays a quarantine.

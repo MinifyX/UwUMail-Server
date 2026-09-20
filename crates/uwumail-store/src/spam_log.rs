@@ -31,6 +31,9 @@ pub enum SpamAction {
     Blocked,
     /// Turned away because the virus scanner found something.
     Virus,
+    /// Its recipient had already delivered or discarded it out of the greylist list, so the
+    /// sender's retry was taken and dropped.
+    Settled,
 }
 
 impl SpamAction {
@@ -43,6 +46,7 @@ impl SpamAction {
             SpamAction::Dmarc => "dmarc",
             SpamAction::Blocked => "blocked",
             SpamAction::Virus => "virus",
+            SpamAction::Settled => "settled",
         }
     }
 
@@ -55,6 +59,7 @@ impl SpamAction {
             "dmarc" => SpamAction::Dmarc,
             "blocked" => SpamAction::Blocked,
             "virus" => SpamAction::Virus,
+            "settled" => SpamAction::Settled,
             _ => return None,
         })
     }

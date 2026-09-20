@@ -294,6 +294,18 @@ async fn collect_garbage(store: Store, smtp: uwumail_smtp::Smtp, mut shutdown: w
             Ok(removed) => tracing::info!(removed, "removed old entries from the spam history"),
             Err(err) => tracing::warn!(%err, "cleaning up the spam history failed"),
         }
+        // Greylisted messages nobody came back for, and everything at all once an admin switched
+        // keeping them off. Before the message files are cleaned up, so both go in the same round.
+        let held = if smtp.spam_settings().greylist_hold {
+            store.prune_greylist_holds().await
+        } else {
+            store.clear_greylist_holds().await
+        };
+        match held {
+            Ok(0) => {}
+            Ok(removed) => tracing::info!(removed, "removed greylisted messages nobody decided about"),
+            Err(err) => tracing::warn!(%err, "cleaning up greylisted messages failed"),
+        }
         match store.prune_bayes(uwumail_store::BAYES_RARE_TOKEN_SECS, uwumail_store::BAYES_LEARNED_SECS).await {
             Ok(0) => {}
             Ok(removed) => tracing::info!(removed, "forgot rare and old Bayes filter entries"),

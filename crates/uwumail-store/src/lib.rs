@@ -19,6 +19,7 @@ mod extras;
 mod feeds;
 mod forward_addresses;
 mod forwarding;
+mod greylist_hold;
 mod imap;
 mod import;
 mod mail;
@@ -63,6 +64,7 @@ pub use extras::{Identity, IdentityUpdate, SubmissionRecord, UPLOAD_LIFETIME_SEC
 pub use feeds::FeedState;
 pub use forward_addresses::{FORWARD_ADDRESS_MAX_TARGETS, ForwardAddress};
 pub use forwarding::{ActiveForwarding, FORWARD_LINK_LIFETIME_SECS, ForwardTarget, Forwarding, MAX_FORWARD_TARGETS};
+pub use greylist_hold::{GreylistHold, GreylistHoldMessage, MAX_HELD_SIZE, NewGreylistHold, Returning, Settled};
 pub use imap::{DELETED_KEYWORD, FlagChange, ImapEmail, ImapMailbox, ImapMessage, ImapMessages, ImapStatus};
 pub use import::ImportProgress;
 pub use mail::{EmailSummary, IngestRequest, IngestedEmail, Mailbox, MailboxRole, MailboxTarget, TestMessageStatus};

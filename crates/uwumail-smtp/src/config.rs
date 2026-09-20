@@ -63,6 +63,10 @@ pub struct SpamConfig {
     pub greylist_score: f32,
     /// How long a greylisted sender has to wait before a retry is let through.
     pub greylist_delay_secs: u64,
+    /// Keep a greylisted message so the person it was meant for can see it waiting, and have it now
+    /// if they want it. Off means greylisting works as it always did: the message is turned away
+    /// and forgotten, and nobody knows it was there.
+    pub greylist_hold: bool,
     /// From this score on, mail is refused in the SMTP dialogue. Off unless set: a young filter
     /// is wrong now and then, and Junk loses nothing while a refusal does.
     pub reject_score: Option<f32>,
@@ -83,6 +87,7 @@ impl Default for SpamConfig {
             junk_score: 5.0,
             greylist_score: 2.0,
             greylist_delay_secs: 300,
+            greylist_hold: true,
             reject_score: None,
             feeds: FeedsConfig::default(),
             log: SpamLogConfig::default(),

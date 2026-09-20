@@ -32,6 +32,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0023_report_detail.sql"),
     include_str!("migrations/0024_spam_log.sql"),
     include_str!("migrations/0025_service_accounts.sql"),
+    include_str!("migrations/0026_greylist_hold.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 
