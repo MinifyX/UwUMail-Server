@@ -9,7 +9,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use uwumail_store::{AfterFetch, FetchAccountUpdate, FetchSecurity, NewFetchAccount};
+use uwumail_store::{AfterFetch, FetchAccountUpdate, FetchSecurity, NewFetchAccount, SendSecurity};
 
 use crate::Web;
 use crate::error::{ApiError, ApiResult};
@@ -103,6 +103,20 @@ pub struct Changes {
     interval_secs: Option<i64>,
     enabled: Option<bool>,
     auth_serv_id: Option<String>,
+    /// Where the provider takes outgoing mail, for answering from this address.
+    smtp_host: Option<String>,
+    smtp_port: Option<u16>,
+    smtp_security: Option<String>,
+    send_enabled: Option<bool>,
+}
+
+/// How the provider's outgoing server is reached. Never unencrypted.
+fn sending_of(value: Option<&str>) -> ApiResult<SendSecurity> {
+    match value {
+        None | Some("starttls") => Ok(SendSecurity::Starttls),
+        Some("tls") => Ok(SendSecurity::Tls),
+        Some(value) => Err(ApiError::Rule("badSecurity", format!("'{value}' is not a way to connect"))),
+    }
 }
 
 // Whose mailbox it is goes into every call below, so the id from the URL can only ever reach one
@@ -124,6 +138,10 @@ pub async fn update(
         interval_secs: changes.interval_secs,
         enabled: changes.enabled,
         auth_serv_id: changes.auth_serv_id,
+        smtp_host: changes.smtp_host,
+        smtp_port: changes.smtp_port,
+        smtp_security: changes.smtp_security.as_deref().map(|value| sending_of(Some(value))).transpose()?,
+        send_enabled: changes.send_enabled,
     };
     Ok(Json(json!(web.store().update_fetch_account(session.account.id, id, update).await?)))
 }

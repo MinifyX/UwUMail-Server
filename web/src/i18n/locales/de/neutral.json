@@ -1406,7 +1406,14 @@
       "junkHint": "Was der Anbieter aussortiert hat, wird hier neu bewertet — sein Urteil zählt nur als Hinweis.",
       "add": "Hinzufügen",
       "added": "Postfach hinzugefügt. Der erste Abruf merkt sich nur den Stand.",
-      "saved": "Gespeichert"
+      "saved": "Gespeichert",
+      "send": "Von dieser Adresse antworten",
+      "sendHint": "Antworten gehen über den Postausgang des Anbieters — anders lässt dessen DMARC-Richtlinie sie beim Empfänger auseinanderfallen.",
+      "smtpHost": "Postausgangsserver",
+      "smtpHostHint": "Wird aus der Adresse geraten. Das Passwort ist dasselbe wie beim Abrufen.",
+      "smtpSecurity": "Verschlüsselung",
+      "starttls": "STARTTLS (Port 587)",
+      "implicitTls": "TLS (Port 465)"
     },
     "toasts": {
       "runQueued": "Wird gleich abgerufen.",

@@ -1406,7 +1406,14 @@
       "junkHint": "What the provider sorted out is judged again here — its verdict only counts as a hint.",
       "add": "Add",
       "added": "Mailbox added. The first run only writes down where things stand.",
-      "saved": "Saved"
+      "saved": "Saved",
+      "send": "Answer from this address",
+      "sendHint": "Replies go out through the provider, otherwise its DMARC policy takes them apart at the recipient.",
+      "smtpHost": "Outgoing server",
+      "smtpHostHint": "Guessed from the address. The password is the same one that fetches.",
+      "smtpSecurity": "Encryption",
+      "starttls": "STARTTLS (port 587)",
+      "implicitTls": "TLS (port 465)"
     },
     "toasts": {
       "runQueued": "Fetching shortly.",

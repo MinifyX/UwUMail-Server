@@ -25,6 +25,14 @@ function guessHost(address: string): string {
   return `imap.${domain}`;
 }
 
+/** Where the provider takes outgoing mail, guessed the same way. */
+function guessSendHost(address: string): string {
+  const domain = address.split("@")[1]?.trim().toLowerCase() ?? "";
+  if (!domain.includes(".")) return "";
+  if (["icloud.com", "me.com", "mac.com"].includes(domain)) return "smtp.mail.me.com";
+  return `smtp.${domain}`;
+}
+
 interface FormState {
   address: string;
   host: string;
@@ -34,6 +42,10 @@ interface FormState {
   fetchJunk: boolean;
   intervalSecs: number;
   enabled: boolean;
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecurity: "starttls" | "tls";
+  sendEnabled: boolean;
 }
 
 function emptyForm(defaultInterval: number): FormState {
@@ -46,6 +58,10 @@ function emptyForm(defaultInterval: number): FormState {
     fetchJunk: true,
     intervalSecs: defaultInterval,
     enabled: true,
+    smtpHost: "",
+    smtpPort: 587,
+    smtpSecurity: "starttls",
+    sendEnabled: false,
   };
 }
 
@@ -59,6 +75,10 @@ function formOf(account: FetchAccountInfo): FormState {
     fetchJunk: account.fetchJunk,
     intervalSecs: account.intervalSecs,
     enabled: account.enabled,
+    smtpHost: account.smtpHost,
+    smtpPort: account.smtpPort,
+    smtpSecurity: account.smtpSecurity,
+    sendEnabled: account.sendEnabled,
   };
 }
 
@@ -109,6 +129,8 @@ function MailboxForm({
   };
   // Until someone types a server name themselves, it follows the address.
   const host = hostTouched ? form.host : guessHost(form.address);
+  // The outgoing server usually sits under the same name as the incoming one.
+  const sendHost = form.smtpHost || guessSendHost(form.address);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -120,6 +142,10 @@ function MailboxForm({
         fetchJunk: form.fetchJunk,
         intervalSecs: form.intervalSecs,
         enabled: form.enabled,
+        sendEnabled: form.sendEnabled,
+        ...(form.sendEnabled || form.smtpHost
+          ? { smtpHost: sendHost.trim(), smtpPort: form.smtpPort, smtpSecurity: form.smtpSecurity }
+          : {}),
         // An empty password on an existing mailbox means: keep the one that is stored.
         ...(form.password ? { password: form.password } : {}),
       };
@@ -235,6 +261,37 @@ function MailboxForm({
         label={t("fetch.form.junk")}
         description={t("fetch.form.junkHint")}
       />
+      <Toggle
+        checked={form.sendEnabled}
+        onChange={(value) => change("sendEnabled", value)}
+        label={t("fetch.form.send")}
+        description={t("fetch.form.sendHint")}
+      />
+      {form.sendEnabled && (
+        <>
+          <Field label={t("fetch.form.smtpHost")} hint={t("fetch.form.smtpHostHint")}>
+            {(id) => (
+              <TextInput id={id} value={sendHost} onChange={(event) => change("smtpHost", event.target.value)} />
+            )}
+          </Field>
+          <Field label={t("fetch.form.smtpSecurity")}>
+            {(id) => (
+              <Select
+                id={id}
+                value={`${form.smtpSecurity}:${form.smtpPort}`}
+                onChange={(event) => {
+                  const [security, port] = event.target.value.split(":");
+                  change("smtpSecurity", security as FormState["smtpSecurity"]);
+                  change("smtpPort", Number(port));
+                }}
+              >
+                <option value="starttls:587">{t("fetch.form.starttls")}</option>
+                <option value="tls:465">{t("fetch.form.implicitTls")}</option>
+              </Select>
+            )}
+          </Field>
+        </>
+      )}
       {error && <p className="text-[13px] text-danger">{error}</p>}
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onCancel} type="button">

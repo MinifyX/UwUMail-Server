@@ -895,6 +895,11 @@ export interface FetchAccountInfo {
   intervalSecs: number;
   enabled: boolean;
   authServId: string;
+  /** Where the provider takes outgoing mail, for answering from this address. */
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecurity: "starttls" | "tls";
+  sendEnabled: boolean;
   createdAt: number;
   lastRunAt: number | null;
   lastOkAt: number | null;
