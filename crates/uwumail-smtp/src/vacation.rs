@@ -47,8 +47,11 @@ fn is_automated_message(raw: &[u8]) -> bool {
 }
 
 /// Sends the account's vacation response to the sender of `raw`, when it is on and due.
-pub async fn maybe_reply(ctx: &Context, account_id: i64, envelope_from: &str, raw: &[u8]) {
-    if envelope_from.is_empty() || is_automated_sender(envelope_from) || is_automated_message(raw) {
+///
+/// Only to a sender the checks verified (SPF pass for the MAIL FROM domain, or an aligned DKIM
+/// pass): a reply to a forged envelope sender is backscatter (security-audit-0.5.2 S-16).
+pub async fn maybe_reply(ctx: &Context, account_id: i64, envelope_from: &str, sender_verified: bool, raw: &[u8]) {
+    if !sender_verified || envelope_from.is_empty() || is_automated_sender(envelope_from) || is_automated_message(raw) {
         return;
     }
     let Ok(Some(account)) = ctx.store.account_by_id(account_id).await else { return };

@@ -18,17 +18,34 @@ use uwumail_store::{DkimKey, DkimKeyAlgorithm, Store};
 use crate::SmtpError;
 
 /// Headers covered by our signatures, in the order they are listed.
+///
+/// The identity and display headers are listed twice on purpose. mail-auth marks the first
+/// occurrence as present and signs it, and appends the second as if it were absent -- the RFC 6376
+/// oversigning entry that stops a replay from prepending a new From, Subject, To or the like above
+/// the original and still verifying (security-audit-0.5.2 S-19).
 const SIGNED_HEADERS: &[&str] = &[
     "From",
+    "From",
+    "Sender",
+    "Sender",
+    "Reply-To",
     "Reply-To",
     "Subject",
+    "Subject",
+    "Date",
     "Date",
     "Message-ID",
+    "Message-ID",
+    "To",
     "To",
     "Cc",
+    "Cc",
+    "In-Reply-To",
     "In-Reply-To",
     "References",
+    "References",
     "MIME-Version",
+    "Content-Type",
     "Content-Type",
     "Content-Transfer-Encoding",
     "List-Unsubscribe",

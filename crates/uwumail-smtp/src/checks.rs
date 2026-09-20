@@ -108,8 +108,15 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
         _ => Action::Accept,
     };
 
-    let sender_verified =
-        spf.result() == SpfResult::Pass || dkim.iter().any(|output| output.result() == &DkimResult::Pass);
+    // Verified enough that a bounce to the envelope sender is not backscatter: SPF passed for the
+    // MAIL FROM domain (SPF is checked against exactly that), or a DKIM signature aligned with it
+    // passed. A DKIM pass from an unrelated domain the attacker signs with does not count
+    // (security-audit-0.5.2 S-15).
+    let sender_verified = spf.result() == SpfResult::Pass
+        || dkim.iter().any(|output| {
+            output.result() == &DkimResult::Pass
+                && output.signature().is_some_and(|signature| related_to_from(Some(mail_from), &signature.d))
+        });
 
     let dmarc_passed =
         matches!(dmarc.dkim_result(), DmarcResult::Pass) || matches!(dmarc.spf_result(), DmarcResult::Pass);

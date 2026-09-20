@@ -1665,10 +1665,12 @@ pub(crate) async fn receive(
             "552 5.2.2 Mailbox is full\r\n".into()
         };
     }
-    for account_id in inbox_accounts {
-        vacation::maybe_reply(&ctx, account_id, &envelope.address, &message).await;
-    }
+    // Verified enough that answering it is not backscatter to a forged sender. The same gate an
+    // auto-reply and a bounce share (security-audit-0.5.2 S-16).
     let sender_verified = verdict.as_ref().is_none_or(|v| v.sender_verified);
+    for account_id in inbox_accounts {
+        vacation::maybe_reply(&ctx, account_id, &envelope.address, sender_verified, &message).await;
+    }
     if !failed.is_empty() && sender_verified {
         dsn::bounce(&ctx, &envelope.address, &message, &failed).await;
     }

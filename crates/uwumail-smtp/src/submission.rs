@@ -219,7 +219,8 @@ impl Smtp {
                     match ctx.store.ingest(request).await {
                         Ok(_) => {
                             local_deliveries += 1;
-                            vacation::maybe_reply(ctx, account_id, &mail_from, &signed).await;
+                            // The sender is an authenticated local account, so it is verified.
+                            vacation::maybe_reply(ctx, account_id, &mail_from, true, &signed).await;
                         }
                         Err(err) => failed.push(FailedRecipient {
                             address,
