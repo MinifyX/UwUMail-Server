@@ -271,7 +271,14 @@ async fn take_folder(
             let Some(raw) = message.body else { continue };
             let uid = i64::from(message.uid);
             match take_message(store, smtp, account, to, from_junk, raw).await? {
-                Taken::Kept | Taken::Refused(_) => {}
+                Taken::Kept => {}
+                Taken::Refused(_) => {
+                    // Refused mail was never stored here. Leave it untouched at the provider -- a
+                    // filter reject or a full mailbox must not destroy the only copy -- but step
+                    // past it so it is not fetched and refused again on every run.
+                    state.last_uid = state.last_uid.max(uid);
+                    continue;
+                }
                 Taken::Later(answer) => {
                     tracing::info!(address = %account.address, folder, uid, %answer, "left for the next run");
                     held = Some(uid);
@@ -327,11 +334,18 @@ async fn take_message(
     from_junk: bool,
     raw: Vec<u8>,
 ) -> anyhow::Result<Taken> {
-    if store.mark_fetch_seen(account.id, message_key(&raw)).await? {
+    let key = message_key(&raw);
+    if store.is_fetch_seen(account.id, key.clone()).await? {
         tracing::debug!(address = %account.address, "this message was already here");
         return Ok(Taken::Kept);
     }
-    Ok(uwumail_smtp::deliver_fetched(smtp, mailbox_of(account), from_junk, to.to_owned(), raw).await)
+    let taken = uwumail_smtp::deliver_fetched(smtp, mailbox_of(account), from_junk, to.to_owned(), raw).await;
+    // Only a message that was really taken is remembered as seen. One left for later (greylisting,
+    // a transient store error) stays unseen, so the next run offers it again instead of skipping it.
+    if matches!(taken, Taken::Kept) {
+        store.mark_fetch_seen(account.id, key).await?;
+    }
+    Ok(taken)
 }
 
 #[cfg(test)]

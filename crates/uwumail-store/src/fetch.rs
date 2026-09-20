@@ -379,7 +379,9 @@ impl Store {
         self.read(move |conn| {
             let mut stmt = conn.prepare(&format!(
                 "SELECT {COLUMNS} FROM fetch_accounts
-                 WHERE enabled = 1 AND (last_run_at IS NULL OR last_run_at + interval_secs <= ?1)
+                 WHERE enabled = 1
+                   AND account_id IN (SELECT id FROM accounts WHERE deleted_at IS NULL)
+                   AND (last_run_at IS NULL OR last_run_at + interval_secs <= ?1)
                  ORDER BY last_run_at IS NOT NULL, last_run_at"
             ))?;
             let rows = stmt.query_map(params![at], from_row)?;
@@ -726,6 +728,19 @@ impl Store {
 
     /// Remembers a message and says whether this mailbox brought it before. One step, so two runs
     /// at once cannot both decide that a message is new.
+    /// Whether this mailbox has already brought a message with this key, without recording anything.
+    /// The worker asks this before delivering, and only records it as seen once it was really taken.
+    pub async fn is_fetch_seen(&self, fetch_id: i64, key: String) -> Result<bool> {
+        self.read(move |conn| {
+            Ok(conn.query_row(
+                "SELECT EXISTS (SELECT 1 FROM fetch_seen WHERE fetch_id = ?1 AND key = ?2)",
+                params![fetch_id, key],
+                |row| row.get(0),
+            )?)
+        })
+        .await
+    }
+
     pub async fn mark_fetch_seen(&self, fetch_id: i64, key: String) -> Result<bool> {
         let at = now();
         self.write(move |tx| {
@@ -1077,5 +1092,23 @@ mod tests {
         // A public IP literal and a normal name are fine.
         let ok = NewFetchAccount { host: "9.9.9.9".into(), ..new_account(account_id) };
         assert!(store.create_fetch_account(ok).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_trashed_account_stops_fetching() {
+        // Trashing a person must stop pulling their provider mail, and must not silently resume on
+        // restore (S-13).
+        let (store, _dir, account_id) = store_with_person().await;
+        let fetched = store.create_fetch_account(new_account(account_id)).await.unwrap();
+        assert_eq!(store.fetch_accounts_due().await.unwrap().len(), 1, "due before trashing");
+
+        let login = store.account_by_id(account_id).await.unwrap().unwrap().login;
+        store.trash_account(&login).await.unwrap();
+        assert!(store.fetch_accounts_due().await.unwrap().is_empty(), "a trashed account is never due");
+        assert!(!store.fetch_account(account_id, fetched.id).await.unwrap().unwrap().enabled, "and its fetch is off");
+
+        // Restoring does not turn it back on by itself.
+        store.restore_account(&login).await.unwrap();
+        assert!(store.fetch_accounts_due().await.unwrap().is_empty(), "restore leaves the fetch off");
     }
 }
