@@ -16,6 +16,17 @@ const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self'; st
      img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; \
      form-action 'self'; frame-ancestors 'none'";
 
+/// The webmail's policy, which differs in exactly one place.
+///
+/// A message is shown in a `srcdoc` frame without scripts, and such a frame inherits the policy of
+/// the page around it. So "load the pictures in this mail" can only work if `img-src` allows other
+/// hosts here as well. The decision itself stays with the reader: until they ask for them, the
+/// frame carries its own, stricter policy that allows no remote content at all. `form-action` is
+/// `'none'`, because nothing in the webmail ever submits a form — everything goes through fetch.
+const WEBMAIL_CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
+     img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self'; object-src 'none'; \
+     base-uri 'none'; form-action 'none'; frame-src 'self' blob:; frame-ancestors 'none'";
+
 pub fn find(path: &str) -> Option<&'static Asset> {
     ASSETS.binary_search_by(|asset| asset.path.cmp(path)).ok().map(|index| &ASSETS[index])
 }
@@ -27,6 +38,30 @@ pub fn index() -> Option<&'static Asset> {
 /// Files at the top of the build (favicon and friends), which need their own routes.
 pub fn root_files() -> impl Iterator<Item = &'static Asset> {
     ASSETS.iter().filter(|asset| asset.path != "/index.html" && asset.path[1..].find('/').is_none())
+}
+
+/// The webmail's files, built from its own repository and served under `/mail`.
+pub fn webmail_find(path: &str) -> Option<&'static Asset> {
+    WEBMAIL_ASSETS.binary_search_by(|asset| asset.path.cmp(path)).ok().map(|index| &WEBMAIL_ASSETS[index])
+}
+
+pub fn webmail_index() -> Option<&'static Asset> {
+    webmail_find("/index.html")
+}
+
+/// Whether a webmail was built into this binary at all.
+pub fn has_webmail() -> bool {
+    webmail_index().is_some()
+}
+
+pub fn webmail_respond(asset: &'static Asset) -> Response {
+    let mut response = respond(asset);
+    if asset.path == "/index.html" {
+        response
+            .headers_mut()
+            .insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(WEBMAIL_CONTENT_SECURITY_POLICY));
+    }
+    response
 }
 
 pub fn respond(asset: &'static Asset) -> Response {

@@ -88,6 +88,7 @@ fn router(store: &Store) -> Router {
             logs: None,
             config: None,
             certificate: None,
+            webmail: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
         },
     );
     web.router()

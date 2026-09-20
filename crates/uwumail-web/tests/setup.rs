@@ -60,6 +60,7 @@ async fn a_fresh_server_is_set_up_with_the_code_from_the_log() {
             logs: None,
             config: None,
             certificate: None,
+            webmail: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
         },
     );
     let code = web.open_setup().await.expect("no admin yet, so there is a code");

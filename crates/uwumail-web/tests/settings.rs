@@ -113,6 +113,7 @@ async fn settings_are_checked_locked_stored_and_logged() {
             logs: None,
             config: Some(server.clone()),
             certificate: None,
+            webmail: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
         },
     );
     let app = web.router();

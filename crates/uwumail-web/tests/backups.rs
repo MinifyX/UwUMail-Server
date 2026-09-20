@@ -44,6 +44,7 @@ async fn portal() -> (Router, Store, tempfile::TempDir) {
             logs: None,
             config: None,
             certificate: None,
+            webmail: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
         },
     );
     web.set_backups(uwumail_backup::Backups::new(store.clone(), "mail.example.de", "0.1.0"));

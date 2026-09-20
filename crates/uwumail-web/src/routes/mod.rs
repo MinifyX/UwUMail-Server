@@ -18,6 +18,7 @@ pub mod settings;
 pub mod setup;
 pub mod spam;
 pub mod updates;
+pub mod webmail;
 pub mod words;
 
 use axum::extract::Path;

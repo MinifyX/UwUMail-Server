@@ -37,30 +37,25 @@ fn collect(dir: &Path, files: &mut Vec<PathBuf>) {
     }
 }
 
-fn main() {
-    println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-env-changed=UWUMAIL_WEB_DIST");
-    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
-    let dist =
-        env::var_os("UWUMAIL_WEB_DIST").map(PathBuf::from).unwrap_or_else(|| manifest_dir.join("../../web/dist"));
-
+/// Turns one `dist` folder into a `&[Asset]` literal named `name`.
+fn embed(name: &str, dist: &Path) -> String {
     let mut files = Vec::new();
     if dist.join("index.html").is_file() {
         // Only watched when it exists: a missing path would rerun this script on every build.
         println!("cargo:rerun-if-changed={}", dist.display());
-        collect(&dist, &mut files);
+        collect(dist, &mut files);
     }
 
     let mut entries: Vec<(String, PathBuf)> = files
         .into_iter()
         .map(|file| {
-            let relative = file.strip_prefix(&dist).expect("inside dist").to_string_lossy().replace('\\', "/");
+            let relative = file.strip_prefix(dist).expect("inside dist").to_string_lossy().replace('\\', "/");
             (format!("/{relative}"), fs::canonicalize(&file).expect("readable asset"))
         })
         .collect();
     entries.sort();
 
-    let mut code = String::from("pub static ASSETS: &[Asset] = &[\n");
+    let mut code = format!("pub static {name}: &[Asset] = &[\n");
     for (path, file) in &entries {
         writeln!(
             code,
@@ -71,6 +66,25 @@ fn main() {
         .expect("writing to a string");
     }
     code.push_str("];\n");
+    code
+}
+
+fn main() {
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=UWUMAIL_WEB_DIST");
+    println!("cargo:rerun-if-env-changed=UWUMAIL_WEBMAIL_DIST");
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
+    let portal =
+        env::var_os("UWUMAIL_WEB_DIST").map(PathBuf::from).unwrap_or_else(|| manifest_dir.join("../../web/dist"));
+    // The webmail is built from its own repository (MinifyX/UwUMail-Webmail); the container build
+    // clones it at a fixed commit and points this at the result. Without it the server simply has
+    // no webmail, and everything else works as before.
+    let webmail = env::var_os("UWUMAIL_WEBMAIL_DIST")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| manifest_dir.join("../../webmail/dist"));
+
+    let mut code = embed("ASSETS", &portal);
+    code.push_str(&embed("WEBMAIL_ASSETS", &webmail));
     let out = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR")).join("assets.rs");
     fs::write(out, code).expect("writing assets.rs");
 }
