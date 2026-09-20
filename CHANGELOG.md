@@ -5,6 +5,10 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ## 0.5.0
 
+**Security.** Everything new here was reviewed afterwards, and the webmail's own repository with
+it, which nobody had read before: [docs/security-audit-0.5.0.md](docs/security-audit-0.5.0.md).
+Nine findings, all fixed before this release.
+
 **A mailbox in the browser, under `/mail`.** Getting to your own mail away from your own machine
 meant the app: on a borrowed computer, at work or on somebody else's phone there was simply no way
 in. The server now brings a mailbox for the browser with it.
@@ -30,7 +34,7 @@ suggestions. Unsubscribing opens the sender's own page instead of taking the one
 that one would have meant the server calling on an address a mail header named.
 
 The webmail lives in its own repository, [UwUMail-Webmail](https://github.com/MinifyX/UwUMail-Webmail),
-and the image is built from the commit `webmail.pin` names: `c65be6d` for this release.
+and the image is built from the commit `webmail.pin` names: `2e98b2c` for this release.
 
 **Greylisting keeps the mail now instead of throwing it away.** When a message looks suspicious,
 the server asks the sending server to come back later — real mail servers do, a few minutes on,
@@ -85,12 +89,14 @@ Telekom Speedport, a UniFi gateway or an OPNsense, what IPv6 needs instead, and 
 cannot work at all — DS-Lite, a blocked port 25, reverse DNS the provider made up — which is the
 moment to put a gateway in front.
 
-**Two smaller things in the installer.** Every line it sets rewrote the `.env` through a copy next
-to it, and that copy was made with whatever umask the shell had — 0644 on a stock Ubuntu, in a
-directory every user may read, holding what the `.env` holds. It is made with 0600 now, like the
-file it replaces. And a port is checked for being a port: `70000` had the right shape, went into
-the `.env`, and let the start fail at the end anyway, which is the one thing looking at the ports
-first is meant to prevent.
+**Three smaller things in the installer and the updater.** Every line they set rewrote the `.env`
+through a copy next to it, and that copy was made with whatever umask the shell had — 0644 on a
+stock Ubuntu, in a directory every user may read, holding what the `.env` holds. Both make it with
+0600 now, like the file they replace, and both clear it away when a run ends early. A port is
+checked for being a port: `70000` had the right shape, went into the `.env`, and let the start fail
+at the end anyway, which is the one thing looking at the ports first is meant to prevent. And a
+pairing code is held to the characters a pairing code has, so a line break in one cannot put a
+second setting into the `.env`.
 
 ## 0.4.0
 
