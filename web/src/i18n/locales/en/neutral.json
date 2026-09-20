@@ -263,7 +263,7 @@
       "virusScannerOff": "The virus scanner is switched off.",
       "lokiInvalid": "That won't work for Loki: {{detail}}",
       "lokiUnreachable": "Loki didn't take the test line: {{detail}}",
-      "providerNotFound": "No server of this provider answered. Fill the server names in below — the provider's own help page has them.",
+      "providerNotFound": "No server of this provider answered. Fill the server names in here — the provider's own help page has them.",
       "fetchLimit": "No room for another fetched mailbox: {{detail}}"
     }
   },
