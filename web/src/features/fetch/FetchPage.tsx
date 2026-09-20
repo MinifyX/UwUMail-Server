@@ -9,33 +9,23 @@ import { Dialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Field, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
-import { api, type FetchAccountInfo, type FetchView } from "@/lib/api";
+import { api, type DiscoveredServer, type DiscoveredSettings, type FetchAccountInfo, type FetchView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatDateTime } from "@/lib/format";
 import { toast } from "@/state/toasts";
 
 const fetchKey = ["account", "fetch"] as const;
 
-/** The IMAP server of a provider, guessed from the address so most people never have to type one. */
-function guessHost(address: string): string {
-  const domain = address.split("@")[1]?.trim().toLowerCase() ?? "";
-  if (!domain.includes(".")) return "";
-  // Apple keeps its mail under a different name than the address suggests.
-  if (["icloud.com", "me.com", "mac.com"].includes(domain)) return "imap.mail.me.com";
-  return `imap.${domain}`;
-}
-
-/** Where the provider takes outgoing mail, guessed the same way. */
-function guessSendHost(address: string): string {
-  const domain = address.split("@")[1]?.trim().toLowerCase() ?? "";
-  if (!domain.includes(".")) return "";
-  if (["icloud.com", "me.com", "mac.com"].includes(domain)) return "smtp.mail.me.com";
-  return `smtp.${domain}`;
+/** The login name a provider wants, as the server found out it is spelled. */
+function loginName(address: string, login: DiscoveredServer["login"]): string {
+  return login === "localPart" ? (address.split("@")[0] ?? address) : address;
 }
 
 interface FormState {
   address: string;
   host: string;
+  port: number;
+  security: "tls" | "starttls";
   username: string;
   password: string;
   afterFetch: "markRead" | "delete";
@@ -48,10 +38,12 @@ interface FormState {
   sendEnabled: boolean;
 }
 
-function emptyForm(defaultInterval: number): FormState {
+function emptyForm(defaultInterval: number, defaultPort: number): FormState {
   return {
     address: "",
     host: "",
+    port: defaultPort,
+    security: "tls",
     username: "",
     password: "",
     afterFetch: "markRead",
@@ -69,6 +61,8 @@ function formOf(account: FetchAccountInfo): FormState {
   return {
     address: account.address,
     host: account.host,
+    port: account.port,
+    security: account.security,
     username: account.username,
     password: "",
     afterFetch: account.afterFetch,
@@ -119,48 +113,101 @@ function MailboxForm({
   const { t } = useT();
   const errorText = useErrorText();
   const queryClient = useQueryClient();
-  const [form, setForm] = useState<FormState>(() => (account ? formOf(account) : emptyForm(view.defaultIntervalSecs)));
-  const [hostTouched, setHostTouched] = useState(Boolean(account));
+  const [form, setForm] = useState<FormState>(() =>
+    account ? formOf(account) : emptyForm(view.defaultIntervalSecs, view.defaultPort),
+  );
+  // A mailbox that already works shows what it was set up with; a new one is worked out by the
+  // server, and these only come out when somebody wants to see them or when the search failed.
+  const [showServers, setShowServers] = useState(Boolean(account));
   const [error, setError] = useState<string | null>(null);
 
   const change = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((old) => ({ ...old, [key]: value }));
     onDirtyChange(true);
   };
-  // Until someone types a server name themselves, it follows the address.
-  const host = hostTouched ? form.host : guessHost(form.address);
-  // The outgoing server usually sits under the same name as the incoming one.
-  const sendHost = form.smtpHost || guessSendHost(form.address);
 
   const save = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (found?: DiscoveredSettings) => {
+      const address = form.address.trim();
+      const imap = found?.imap;
+      const smtp = found
+        ? found.smtp
+        : { host: form.smtpHost.trim(), port: form.smtpPort, security: form.smtpSecurity };
       const body = {
-        address: form.address.trim(),
-        host: host.trim(),
-        username: form.username.trim() || form.address.trim(),
+        address,
+        host: imap ? imap.host : form.host.trim(),
+        port: imap ? imap.port : form.port,
+        security: imap ? imap.security : form.security,
+        username: imap ? loginName(address, imap.login) : form.username.trim() || address,
         afterFetch: form.afterFetch,
         fetchJunk: form.fetchJunk,
         intervalSecs: form.intervalSecs,
         enabled: form.enabled,
-        sendEnabled: form.sendEnabled,
-        ...(form.sendEnabled || form.smtpHost
-          ? { smtpHost: sendHost.trim(), smtpPort: form.smtpPort, smtpSecurity: form.smtpSecurity }
-          : {}),
         // An empty password on an existing mailbox means: keep the one that is stored.
         ...(form.password ? { password: form.password } : {}),
       };
-      return account
-        ? api<FetchAccountInfo>(`/api/account/fetch/${account.id}`, { method: "PATCH", body })
-        : api<FetchAccountInfo>("/api/account/fetch", { method: "POST", body });
+      const sending: Record<string, unknown> = {};
+      if (smtp?.host) {
+        Object.assign(sending, { smtpHost: smtp.host, smtpPort: smtp.port, smtpSecurity: smtp.security });
+      }
+      if (account) {
+        return api<FetchAccountInfo>(`/api/account/fetch/${account.id}`, {
+          method: "PATCH",
+          body: { ...body, ...sending, sendEnabled: form.sendEnabled },
+        });
+      }
+      const created = await api<FetchAccountInfo>("/api/account/fetch", { method: "POST", body });
+      // A new mailbox is stored first and learns about sending afterwards: where it may send from
+      // is decided by the one door that asks for the account, not by what the form claimed on the
+      // way in. Without an outgoing server there is nothing to switch on either.
+      if (form.sendEnabled && smtp?.host) sending.sendEnabled = true;
+      if (Object.keys(sending).length === 0) return created;
+      return api<FetchAccountInfo>(`/api/account/fetch/${created.id}`, { method: "PATCH", body: sending });
     },
-    onSuccess: () => {
+    onSuccess: (saved) => {
       void queryClient.invalidateQueries({ queryKey: fetchKey });
       onDirtyChange(false);
       toast(account ? t("fetch.form.saved") : t("fetch.form.added"), "success");
+      // Asked to answer from this address, but no outgoing server took the password. Saying so is
+      // better than a switch that quietly stayed off.
+      if (!account && form.sendEnabled && !saved.sendEnabled) {
+        toast(t("fetch.form.sendNotFound"), "info");
+      }
       onClose();
     },
     onError: (failure) => setError(errorText(failure)),
   });
+
+  /** Asks the server what this provider's servers are, by logging in to them. */
+  const discover = useMutation({
+    mutationFn: () =>
+      api<DiscoveredSettings>("/api/account/fetch/discover", {
+        method: "POST",
+        body: { address: form.address.trim(), password: form.password },
+      }),
+    onSuccess: (found) => {
+      // What was proven fills the fields, so a later look shows what is really being talked to.
+      setForm((old) => ({
+        ...old,
+        host: found.imap.host,
+        port: found.imap.port,
+        security: found.imap.security,
+        username: loginName(old.address.trim(), found.imap.login),
+        smtpHost: found.smtp?.host ?? "",
+        smtpPort: found.smtp?.port ?? old.smtpPort,
+        smtpSecurity: found.smtp?.security ?? old.smtpSecurity,
+        sendEnabled: old.sendEnabled && Boolean(found.smtp),
+      }));
+      save.mutate(found);
+    },
+    // Nothing answered, so the servers come out and can be typed in by hand.
+    onError: (failure) => {
+      setError(errorText(failure));
+      setShowServers(true);
+    },
+  });
+
+  const busy = discover.isPending || save.isPending;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -169,7 +216,12 @@ function MailboxForm({
       setError(t("fetch.form.needPassword"));
       return;
     }
-    save.mutate();
+    // A new mailbox nobody has typed a server for is worked out by the server itself.
+    if (!account && !form.host.trim()) {
+      discover.mutate();
+      return;
+    }
+    save.mutate(undefined);
   };
 
   return (
@@ -187,29 +239,6 @@ function MailboxForm({
           />
         )}
       </Field>
-      <Field label={t("fetch.form.host")} hint={t("fetch.form.hostHint")}>
-        {(id) => (
-          <TextInput
-            id={id}
-            value={host}
-            onChange={(event) => {
-              setHostTouched(true);
-              change("host", event.target.value);
-            }}
-          />
-        )}
-      </Field>
-      <Field label={t("fetch.form.username")} hint={t("fetch.form.usernameHint")}>
-        {(id) => (
-          <TextInput
-            id={id}
-            autoComplete="off"
-            placeholder={form.address}
-            value={form.username}
-            onChange={(event) => change("username", event.target.value)}
-          />
-        )}
-      </Field>
       <Field
         label={account ? t("fetch.form.newPassword") : t("fetch.form.password")}
         hint={account ? t("fetch.form.newPasswordHint") : t("fetch.form.passwordHint")}
@@ -224,6 +253,7 @@ function MailboxForm({
           />
         )}
       </Field>
+      {!account && !showServers && <p className="text-[13px] text-muted">{t("fetch.form.serversFound")}</p>}
       <Field label={t("fetch.form.afterFetch")} hint={t("fetch.form.afterFetchHint")}>
         {(id) => (
           <Select
@@ -267,11 +297,25 @@ function MailboxForm({
         label={t("fetch.form.send")}
         description={t("fetch.form.sendHint")}
       />
-      {form.sendEnabled && (
+      {showServers ? (
         <>
+          <Field label={t("fetch.form.host")} hint={t("fetch.form.hostHint")}>
+            {(id) => <TextInput id={id} value={form.host} onChange={(event) => change("host", event.target.value)} />}
+          </Field>
+          <Field label={t("fetch.form.username")} hint={t("fetch.form.usernameHint")}>
+            {(id) => (
+              <TextInput
+                id={id}
+                autoComplete="off"
+                placeholder={form.address}
+                value={form.username}
+                onChange={(event) => change("username", event.target.value)}
+              />
+            )}
+          </Field>
           <Field label={t("fetch.form.smtpHost")} hint={t("fetch.form.smtpHostHint")}>
             {(id) => (
-              <TextInput id={id} value={sendHost} onChange={(event) => change("smtpHost", event.target.value)} />
+              <TextInput id={id} value={form.smtpHost} onChange={(event) => change("smtpHost", event.target.value)} />
             )}
           </Field>
           <Field label={t("fetch.form.smtpSecurity")}>
@@ -291,14 +335,22 @@ function MailboxForm({
             )}
           </Field>
         </>
+      ) : (
+        <button
+          type="button"
+          className="hover:text-fg self-start text-[13px] text-muted underline underline-offset-2"
+          onClick={() => setShowServers(true)}
+        >
+          {t("fetch.form.showServers")}
+        </button>
       )}
       {error && <p className="text-[13px] text-danger">{error}</p>}
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onCancel} type="button">
           {t("common.cancel")}
         </Button>
-        <Button variant="primary" type="submit" busy={save.isPending}>
-          {account ? t("common.save") : t("fetch.form.add")}
+        <Button variant="primary" type="submit" busy={busy}>
+          {account ? t("common.save") : discover.isPending ? t("fetch.form.searching") : t("fetch.form.add")}
         </Button>
       </div>
     </form>
