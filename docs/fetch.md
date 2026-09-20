@@ -105,6 +105,35 @@ wants to see it can still find it there.
 | Als gelesen markieren | the message is flagged `\Seen` and stays. Nothing is lost if a run goes wrong. This is the default. |
 | Endgültig löschen | the message is deleted there. Good for a mailbox one only keeps because a service insists on it. |
 
+## Answering from a fetched address
+
+A reply from a free mail address has to leave through that provider's own
+outgoing server. Sent from here it would carry our name on the envelope while
+claiming theirs in the `From` header, and their DMARC policy would take it
+apart at the recipient — the very policy that makes the address worth
+something.
+
+So a fetched mailbox can learn where its provider takes outgoing mail, under
+*Von dieser Adresse antworten* on the same page: the server name (guessed from
+the address), and STARTTLS on port 587 or TLS on port 465. Never unencrypted:
+this sends a password across the internet. The password is the one that is
+already stored for fetching — providers use the same one for both, and a second
+one to keep in sync would only be a second one to get wrong.
+
+Two things follow from that:
+
+* **The address may be sent from only by the person who fetches it.** Two
+  people can fetch the same provider, and neither may send as the other's. The
+  one place that decides who may send as which address asks for the account,
+  not only for the address.
+* **Without a server there is nothing to switch on.** Sending cannot be
+  enabled until an outgoing server is set, so no address ever claims it can
+  answer when it cannot.
+
+Mail from such an address then goes out through the provider whoever it is
+addressed to — before the server's own smarthost, if one is configured, because
+whose address it comes from decides where it may leave.
+
 ## The password
 
 The password belongs to the provider, so unlike the passwords here it cannot be
@@ -134,7 +163,5 @@ own.
 
 * **STARTTLS on port 143.** Fetching is over TLS from the first byte, which is
   what every provider worth using offers on port 993.
-* **Sending as the fetched address.** Replying from it needs the provider's own
-  outgoing server, otherwise its DMARC policy takes the reply apart.
 * **IDLE.** A run happens on its interval; the provider is not asked to keep a
   connection open and announce new mail.

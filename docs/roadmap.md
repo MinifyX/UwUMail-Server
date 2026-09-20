@@ -93,7 +93,7 @@ Each step ships as its own commits, container image and test deployment.
 - [x] UwUMail webmail (its own repository, built from the app's interface) served at `/mail`, switchable for the server and per account (docs/webmail.md)
 - [ ] Delayed sending, signatures, sender pictures and address suggestions on the server, so the webmail stops doing without them
 - [x] Fetched mailboxes: mail from another provider's IMAP mailbox, emptied into someone's own and judged here like any other, with rules of its own for what a fetched message can still be asked (docs/fetch.md)
-- [ ] Sending as a fetched address, over the provider's own outgoing server
+- [x] Sending as a fetched address, over the provider's own outgoing server
 - [ ] External mailboxes shown as extra JMAP accounts, with their folders and with changes going back
 
 ## UwUMail Gateway ✅ in progress
