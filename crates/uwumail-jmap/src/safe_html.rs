@@ -73,13 +73,52 @@ fn body_background(html: &str) -> Option<String> {
 
 /// Whether the cleaned HTML would fetch something from another server when shown.
 ///
-/// The webmail asks before it lets that happen, so this only has to be honest about "there is
-/// something here that would phone home", not about what exactly it is.
+/// Asked the careful way round: everything that points somewhere counts, unless it points at the
+/// message itself (`cid:`) or carries its content along (`data:`). Looking for `http` instead
+/// would miss `src="//tracker.example/pixel.png"`, which a browser happily resolves against
+/// https, and every `@import` that does not spell out `url(`.
+///
+/// The webmail only uses this to decide whether to offer "load the pictures in this mail"; what
+/// is actually loaded is decided by the frame's own policy, which allows nothing remote until
+/// someone asks. So an answer that is too careful costs a banner, never a leak.
 pub fn has_remote_content(clean: &str) -> bool {
     let lower = clean.to_ascii_lowercase();
-    ["src=\"http", "src='http", "src=http", "url(http", "url('http", "url(\"http", "background=\"http"]
-        .iter()
-        .any(|needle| lower.contains(needle))
+    // `srcset` and `poster` do not survive the cleaning above, but they are checked anyway: this
+    // function should still be right if that rule set ever grows.
+    for (marker, opener) in [
+        ("src=", None),
+        ("srcset=", None),
+        ("poster=", None),
+        ("background=", None),
+        ("url(", Some(')')),
+        ("@import", None),
+    ] {
+        let mut rest = lower.as_str();
+        while let Some(at) = rest.find(marker) {
+            rest = &rest[at + marker.len()..];
+            if points_outwards(rest, opener) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Reads the value right after a marker and says whether it would leave this message.
+fn points_outwards(rest: &str, closer: Option<char>) -> bool {
+    let value = rest.trim_start();
+    let value = match value.strip_prefix(['"', '\'']) {
+        Some(quoted) => quoted.split(['"', '\'']).next().unwrap_or_default(),
+        None => {
+            let end = value.find(|c: char| c.is_whitespace() || Some(c) == closer || c == '>');
+            &value[..end.unwrap_or(value.len())]
+        }
+    };
+    let value = value.trim();
+    // `srcset="a.png 1x, b.png 2x"` and friends: the first entry decides, the rest would be the
+    // same kind of address anyway.
+    let value = value.split([',', ' ']).next().unwrap_or_default();
+    !value.is_empty() && !value.starts_with("data:") && !value.starts_with("cid:")
 }
 
 #[cfg(test)]
@@ -122,5 +161,18 @@ mod tests {
         assert!(has_remote_content("<img src=\"https://tracker.example/pixel.gif\">"));
         assert!(has_remote_content("<div style=\"background:url(http://tracker.example/a.png)\"></div>"));
         assert!(!has_remote_content("<img src=\"cid:part1\"><img src=\"data:image/png;base64,AAA\">"));
+        assert!(!has_remote_content("<p>Just words.</p>"));
+    }
+
+    #[test]
+    fn spots_the_addresses_that_do_not_say_https() {
+        // A browser resolves these against https, so they count just as much.
+        assert!(has_remote_content("<img src=\"//tracker.example/pixel.gif\">"));
+        assert!(has_remote_content("<img src='//tracker.example/pixel.gif'>"));
+        assert!(has_remote_content("<img src=//tracker.example/pixel.gif>"));
+        assert!(has_remote_content("<style>@import \"https://tracker.example/a.css\";</style>"));
+        assert!(has_remote_content("<style>@import url(//tracker.example/a.css);</style>"));
+        assert!(has_remote_content("<div style=\"background:url('//tracker.example/a.png')\"></div>"));
+        assert!(has_remote_content("<img srcset=\"//tracker.example/a.png 1x\">"));
     }
 }
