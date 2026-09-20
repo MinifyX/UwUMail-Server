@@ -35,7 +35,10 @@ services:
       # the networks part of deploy/behind-proxy/compose.proxy.yaml; this port is then not needed.
       # Docker publishes ports past a host firewall like ufw, so "only the proxy may connect"
       # belongs into the network's firewall or the DOCKER-USER chain.
-      - "${UWUMAIL_PROXY_BIND:-8080}:8080"
+      # Defaults to loopback so a missing UWUMAIL_PROXY_BIND cannot publish the plain-HTTP portal on
+      # every interface (security-audit-0.5.2 S-28). Set it to this machine's address in the proxy's
+      # network when the proxy is on another host.
+      - "${UWUMAIL_PROXY_BIND:-127.0.0.1:8080}:8080"
       - "443:443"     # web, straight from your own network (do not forward from the internet)
     volumes:
       - ./uwumail.toml:/etc/uwumail/uwumail.toml:ro
