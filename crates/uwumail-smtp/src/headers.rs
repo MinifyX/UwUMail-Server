@@ -54,6 +54,31 @@ pub fn count(raw: &[u8], name: &str) -> usize {
     split(raw).0.iter().filter(|h| h.name.eq_ignore_ascii_case(name)).count()
 }
 
+/// A fault in the header block that must stop a message before it is judged, expressed as the SMTP
+/// reason (without the code). `None` means the block is fine to go on with.
+///
+/// Two shapes let a sender show one `From` to the recipient while a different one (or none) is what
+/// SPF/DKIM/DMARC ran against:
+/// - more than one `From` header (a policy domain placed first or last, judged as neither);
+/// - a header block cut short by a line with no colon, which the authentication parser treats as
+///   the end of the headers while the display parser reads past it to the real `From` below.
+///
+/// Both are refused. `split` already stops at the first line it cannot read as a field, so a block
+/// that did not end at a blank line was cut short by exactly such a line.
+pub fn header_block_fault(raw: &[u8]) -> Option<&'static str> {
+    let (headers, body_start) = split(raw);
+    let ended_cleanly = body_start == raw.len()
+        || raw[..body_start].ends_with(b"\r\n\r\n")
+        || raw[..body_start].ends_with(b"\n\n");
+    if !ended_cleanly {
+        return Some("the message has a malformed header block");
+    }
+    if headers.iter().filter(|h| h.name.eq_ignore_ascii_case("From")).count() > 1 {
+        return Some("a message may have only one From header");
+    }
+    None
+}
+
 pub fn first_value(raw: &[u8], name: &str) -> Option<String> {
     split(raw).0.iter().find(|h| h.name.eq_ignore_ascii_case(name)).map(RawHeader::value)
 }

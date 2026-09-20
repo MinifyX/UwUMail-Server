@@ -43,8 +43,31 @@ pub struct Verdict {
     pub from_verified: bool,
 }
 
+/// A verdict that refuses the message outright, before any SPF/DKIM/DMARC result. Used for a header
+/// block that cannot be judged safely (more than one From, or a block a malformed line cut short).
+fn rejecting(hostname: &str, reason: &str) -> Verdict {
+    Verdict {
+        header: format!("Authentication-Results: {hostname}; none\r\n"),
+        action: Action::Reject(reason.to_string()),
+        sender_verified: false,
+        dmarc_passed: false,
+        spf_failed: false,
+        dkim_failed: false,
+        dmarc_failed: true,
+        from_domain: None,
+        from_address: None,
+        from_verified: false,
+    }
+}
+
 pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw: &[u8]) -> Verdict {
     let hostname = ctx.hostname.as_str();
+    // The From the recipient sees must be the one the checks below run against. A header block with
+    // more than one From, or one a malformed line cut short so the real From hides below it, is
+    // refused before it can be judged (security-audit-0.5.2 S-3/S-4).
+    if let Some(reason) = crate::headers::header_block_fault(raw) {
+        return rejecting(hostname, reason);
+    }
     let Some(message) = AuthenticatedMessage::parse(raw) else {
         return Verdict {
             header: format!("Authentication-Results: {hostname}; none\r\n"),
