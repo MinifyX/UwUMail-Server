@@ -13,6 +13,8 @@ import type {
   BackupSnapshot,
   BackupsView,
   ForwardAddress,
+  GreylistHold,
+  GreylistView,
   UpdatesView,
   SpamLimits,
   SpamLimitsView,
@@ -815,6 +817,34 @@ const mockLimits: SpamLimitsView = {
   min: 1,
   max: 100,
 };
+
+/** Greylisted mail waiting for its recipient to decide. */
+const mockGreylist: GreylistHold[] = [
+  {
+    id: 7,
+    at: now - 420,
+    address: "nyu@uwu.test",
+    envelopeFrom: "bestellung@versand.example",
+    headerFrom: "Versand <bestellung@versand.example>",
+    subject: "Deine Bestellung ist unterwegs",
+    clientIp: "198.51.100.24",
+    score: 2.4,
+    size: 18_400,
+    expiresAt: now + 2 * 86_400,
+  },
+  {
+    id: 6,
+    at: now - 5400,
+    address: "nyu@uwu.test",
+    envelopeFrom: "no-reply@newsletter.example",
+    headerFrom: "no-reply@newsletter.example",
+    subject: null,
+    clientIp: "203.0.113.9",
+    score: 3.8,
+    size: 64_200,
+    expiresAt: now + 2 * 86_400 - 5400,
+  },
+];
 
 const mockSecurity: SecurityView = {
   totp: false,
@@ -1771,6 +1801,21 @@ const routes: [string, RegExp, Handler][] = [
       if (own.junk !== null && own.reject !== null && own.reject < own.junk) return problem(409, "spamLimitsOrder");
       mockLimits.own = own;
       return [200, mockLimits];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/account\/greylist$/,
+    () => [200, { enabled: true, waiting: mockGreylist, count: mockGreylist.length } satisfies GreylistView],
+  ],
+  [
+    "POST",
+    /^\/api\/account\/greylist\/(\d+)$/,
+    (_, [id]) => {
+      const at = mockGreylist.findIndex((hold) => hold.id === Number(id));
+      if (at < 0) return problem(404, "notFound");
+      mockGreylist.splice(at, 1);
+      return [200, { enabled: true, waiting: mockGreylist, count: mockGreylist.length } satisfies GreylistView];
     },
   ],
   ["GET", /^\/api\/account\/spam\/senders$/, () => [200, sendersView("own")]],
