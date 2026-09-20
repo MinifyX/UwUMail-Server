@@ -325,7 +325,9 @@ chmod 0755 "$dir/update.sh"
 set_env() {
   local key="$1" value="$2" file="$3" line found=false
   local tmp="$file.tmp"
-  : >"$tmp"
+  # The copy holds everything the .env holds, the gateway code included, so it is made with the
+  # rights of the file it replaces rather than whatever the umask happens to be.
+  install -m 0600 /dev/null "$tmp"
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       "$key="* | "#$key="*)
