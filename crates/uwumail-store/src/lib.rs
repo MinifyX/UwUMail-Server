@@ -17,6 +17,7 @@ mod db;
 mod directory;
 mod extras;
 mod feeds;
+mod fetch;
 mod forward_addresses;
 mod forwarding;
 mod greylist_hold;
@@ -62,6 +63,11 @@ pub use dav::{
 pub use directory::{Account, DkimKey, DkimKeyAlgorithm, DkimKeyState, Domain, NewAccount, Protocols, Role};
 pub use extras::{Identity, IdentityUpdate, SubmissionRecord, UPLOAD_LIFETIME_SECS, VacationResponse};
 pub use feeds::FeedState;
+pub use fetch::{
+    AfterFetch, DEFAULT_FETCH_INTERVAL_SECS, FETCH_HOLD_LIMIT_SECS, FETCH_SEEN_SECS, FetchAccount,
+    FetchAccountUpdate, FetchFolder, FetchSecurity, MAX_FETCH_ACCOUNTS, MAX_FETCH_INTERVAL_SECS,
+    MIN_FETCH_INTERVAL_SECS, NewFetchAccount,
+};
 pub use forward_addresses::{FORWARD_ADDRESS_MAX_TARGETS, ForwardAddress};
 pub use forwarding::{ActiveForwarding, FORWARD_LINK_LIFETIME_SECS, ForwardTarget, Forwarding, MAX_FORWARD_TARGETS};
 pub use greylist_hold::{GreylistHold, GreylistHoldMessage, MAX_HELD_SIZE, NewGreylistHold, Returning, Settled};
