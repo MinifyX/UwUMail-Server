@@ -75,6 +75,8 @@ pub struct AccountUpdate {
     /// Where mail goes for a service without a mailbox. An empty string means: refuse it at the
     /// door. The address has to belong to this server.
     pub redirect_to: Option<String>,
+    /// Whether this account may open its mailbox in the browser.
+    pub webmail: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -206,6 +208,9 @@ impl Store {
             if let Some(target) = &update.redirect_to {
                 after.redirect_to = redirect_target(tx, &after, target)?;
             }
+            if let Some(webmail) = update.webmail {
+                after.webmail = webmail;
+            }
             // A service is never an admin: it cannot reach the portal at all.
             if after.role == Role::Service && before.role == Role::Admin {
                 after.role = Role::Service;
@@ -214,8 +219,8 @@ impl Store {
             tx.execute(
                 "UPDATE accounts SET display_name = ?1, role = ?2, kind = ?3, quota_bytes = ?4, disabled = ?5,
                         smtp_enabled = ?6, imap_enabled = ?7, jmap_enabled = ?8, caldav_enabled = ?9,
-                        carddav_enabled = ?10, redirect_to = ?11
-                 WHERE id = ?12",
+                        carddav_enabled = ?10, redirect_to = ?11, webmail_enabled = ?12
+                 WHERE id = ?13",
                 params![
                     after.display_name,
                     if after.role == Role::Admin { "admin" } else { "user" },
@@ -228,6 +233,7 @@ impl Store {
                     after.protocols.caldav,
                     after.protocols.carddav,
                     after.redirect_to,
+                    after.webmail,
                     after.id
                 ],
             )?;

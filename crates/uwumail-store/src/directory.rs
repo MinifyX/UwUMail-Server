@@ -188,6 +188,9 @@ pub struct Account {
     pub protocols: Protocols,
     /// Where mail goes for a service without a mailbox. Empty means its address refuses mail.
     pub redirect_to: String,
+    /// Whether this account may open its mailbox in the browser. Its own switch, not a protocol:
+    /// see migration 0028.
+    pub webmail: bool,
 }
 
 impl Account {
@@ -242,9 +245,9 @@ pub struct NewAccount {
 
 pub(crate) const ACCOUNT_COLUMNS: &str = "id, login, display_name, role, quota_bytes, used_bytes, disabled, \
      created_at, deleted_at, credentials_changed_at, kind, smtp_enabled, imap_enabled, jmap_enabled, \
-     caldav_enabled, carddav_enabled, redirect_to";
+     caldav_enabled, carddav_enabled, redirect_to, webmail_enabled";
 /// Number of columns in [`ACCOUNT_COLUMNS`]; extra columns of a query start here.
-pub(crate) const ACCOUNT_COLUMN_COUNT: usize = 17;
+pub(crate) const ACCOUNT_COLUMN_COUNT: usize = 18;
 
 pub(crate) fn account_from_row(row: &Row<'_>) -> rusqlite::Result<Account> {
     Ok(Account {
@@ -266,6 +269,7 @@ pub(crate) fn account_from_row(row: &Row<'_>) -> rusqlite::Result<Account> {
             carddav: row.get(15)?,
         },
         redirect_to: row.get(16)?,
+        webmail: row.get(17)?,
     })
 }
 
@@ -623,6 +627,7 @@ impl Store {
                 credentials_changed_at: 0,
                 protocols,
                 redirect_to: String::new(),
+                webmail: true,
             })
         })
         .await

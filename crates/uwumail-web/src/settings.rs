@@ -60,6 +60,7 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("smtp.require_tls_for_auth", SettingKind::Bool),
     spec("smtp.reveal_client_ip", SettingKind::Bool),
     spec("smtp.trusted_relays", SettingKind::List),
+    spec("http.webmail", SettingKind::Bool),
     spec("smtp.allow_external_forwarding", SettingKind::Bool),
     spec("spam.enabled", SettingKind::Bool),
     spec("spam.blocklists", SettingKind::Bool),
