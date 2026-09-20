@@ -260,7 +260,9 @@
       "hostJobRefused": "The helper on the machine refused: {{detail}}",
       "updateRefused": "The update did not start: {{detail}}",
       "gatewayJobRefused": "The gateway did not take it: {{detail}}",
-      "virusScannerOff": "The virus scanner is switched off."
+      "virusScannerOff": "The virus scanner is switched off.",
+      "providerNotFound": "No server of this provider answered. Fill the server names in below — the provider's own help page has them.",
+      "fetchLimit": "No room for another fetched mailbox: {{detail}}"
     }
   },
   "people": {
@@ -1387,8 +1389,12 @@
       "editTitle": "Edit mailbox",
       "address": "Address at the provider",
       "addressHint": "The address whose mail should come here.",
+      "serversFound": "The server works the rest out itself: it asks the provider for its settings and signs in with them once before anything is stored.",
+      "showServers": "Enter the servers myself",
+      "searching": "Looking …",
+      "sendNotFound": "The provider's outgoing server did not take the login. The mailbox is still fetched; the outgoing server can be filled in by editing the mailbox.",
       "host": "IMAP server",
-      "hostHint": "Guessed from the address. Enter it here if the name is different.",
+      "hostHint": "Leave it empty and the server looks it up itself.",
       "username": "User name",
       "usernameHint": "Leave empty when it is the address itself.",
       "password": "Password",
@@ -1412,7 +1418,7 @@
       "send": "Answer from this address",
       "sendHint": "Replies go out through the provider, otherwise its DMARC policy takes them apart at the recipient.",
       "smtpHost": "Outgoing server",
-      "smtpHostHint": "Guessed from the address. The password is the same one that fetches.",
+      "smtpHostHint": "Leave it empty and the server looks it up itself. The password is the same one that fetches.",
       "smtpSecurity": "Encryption",
       "starttls": "STARTTLS (port 587)",
       "implicitTls": "TLS (port 465)"

@@ -921,6 +921,23 @@ export interface FetchAccountInfo {
   totalFetched: number;
 }
 
+/** One server of a provider, as the server worked it out and then proved by logging in. */
+export interface DiscoveredServer {
+  host: string;
+  port: number;
+  security: "tls" | "starttls";
+  /** Whether the provider takes the whole address as the login or only the part before the @. */
+  login: "wholeAddress" | "localPart";
+}
+
+/** What the server found out about a provider from an address and a password. */
+export interface DiscoveredSettings {
+  imap: DiscoveredServer;
+  /** Missing when the provider has no outgoing server, or when it refused this login. */
+  smtp: DiscoveredServer | null;
+  source: "domain" | "provider" | "database" | "guessed";
+}
+
 export interface FetchView {
   accounts: FetchAccountInfo[];
   max: number;

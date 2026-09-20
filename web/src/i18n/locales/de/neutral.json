@@ -260,7 +260,9 @@
       "hostJobRefused": "Der Helfer auf der Maschine hat das abgelehnt: {{detail}}",
       "updateRefused": "Das Update wurde nicht gestartet: {{detail}}",
       "gatewayJobRefused": "Das Gateway hat das nicht angenommen: {{detail}}",
-      "virusScannerOff": "Der Virenscanner ist ausgeschaltet."
+      "virusScannerOff": "Der Virenscanner ist ausgeschaltet.",
+      "providerNotFound": "Bei diesem Anbieter hat kein Server geantwortet. Trag die Servernamen unten selbst ein — sie stehen in der Hilfe des Anbieters.",
+      "fetchLimit": "Mehr Abrufkonten gehen nicht: {{detail}}"
     }
   },
   "people": {
@@ -1387,8 +1389,12 @@
       "editTitle": "Postfach bearbeiten",
       "address": "Adresse beim Anbieter",
       "addressHint": "Die Adresse, deren Mail hierher soll.",
+      "serversFound": "Den Rest sucht der Server selbst: Er fragt den Anbieter nach seinen Einstellungen und meldet sich einmal damit an, bevor etwas gespeichert wird.",
+      "showServers": "Server selbst eintragen",
+      "searching": "Wird gesucht …",
+      "sendNotFound": "Der Postausgang des Anbieters hat die Anmeldung nicht angenommen. Abgerufen wird trotzdem; den Postausgangsserver kannst du beim Bearbeiten selbst eintragen.",
       "host": "IMAP-Server",
-      "hostHint": "Wird aus der Adresse geraten. Stimmt der Name nicht, trag ihn hier ein.",
+      "hostHint": "Leer lassen, dann sucht der Server ihn selbst.",
       "username": "Benutzername",
       "usernameHint": "Leer lassen, wenn es die Adresse selbst ist.",
       "password": "Passwort",
@@ -1412,7 +1418,7 @@
       "send": "Von dieser Adresse antworten",
       "sendHint": "Antworten gehen über den Postausgang des Anbieters — anders lässt dessen DMARC-Richtlinie sie beim Empfänger auseinanderfallen.",
       "smtpHost": "Postausgangsserver",
-      "smtpHostHint": "Wird aus der Adresse geraten. Das Passwort ist dasselbe wie beim Abrufen.",
+      "smtpHostHint": "Leer lassen, dann sucht der Server ihn selbst. Das Passwort ist dasselbe wie beim Abrufen.",
       "smtpSecurity": "Verschlüsselung",
       "starttls": "STARTTLS (Port 587)",
       "implicitTls": "TLS (Port 465)"
