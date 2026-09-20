@@ -4,6 +4,7 @@ mod acme;
 mod cli;
 mod commands;
 mod config;
+mod fetch;
 mod gateway;
 mod host;
 mod http;

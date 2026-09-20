@@ -105,6 +105,8 @@ pub async fn run(
     tasks.spawn(uwumail_smtp::run_queue(smtp.clone(), shutdown_rx.clone()));
     tasks.spawn(uwumail_smtp::run_learning(smtp.clone(), shutdown_rx.clone()));
     tasks.spawn(uwumail_smtp::run_list_updates(smtp.clone(), shutdown_rx.clone()));
+    // Mailboxes at other providers, emptied into the mailboxes here that asked for them.
+    tasks.spawn(crate::fetch::run_fetchers(store.clone(), smtp.clone(), shutdown_rx.clone()));
 
     // Calendars and contacts (CalDAV, CardDAV) live next to JMAP on the same HTTPS port.
     let names = match config.tone.language {

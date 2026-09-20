@@ -33,7 +33,7 @@ pub struct Source {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum Token {
+pub(crate) enum Token {
     Atom(String),
     String(Vec<u8>),
     Nil,
@@ -42,7 +42,7 @@ enum Token {
 }
 
 impl Token {
-    fn text(&self) -> Option<String> {
+    pub(crate) fn text(&self) -> Option<String> {
         match self {
             Token::Atom(atom) => Some(atom.clone()),
             Token::String(bytes) => Some(String::from_utf8_lossy(bytes).into_owned()),
@@ -53,10 +53,10 @@ impl Token {
 
 /// One untagged or tagged response with its literals in place.
 #[derive(Debug, Default)]
-struct Response {
-    tokens: Vec<Token>,
+pub(crate) struct Response {
+    pub(crate) tokens: Vec<Token>,
     /// The response without literals, for status codes like `[UIDVALIDITY 7]`.
-    text: String,
+    pub(crate) text: String,
 }
 
 /// Splits one segment of a response line into tokens. A trailing `{n}` announces a literal.
@@ -104,13 +104,13 @@ fn tokenize(segment: &[u8], tokens: &mut Vec<Token>) -> Option<usize> {
     None
 }
 
-struct Connection {
+pub(crate) struct Connection {
     stream: BufReader<TlsStream<TcpStream>>,
     next_tag: u32,
 }
 
 impl Connection {
-    async fn open(source: &Source) -> anyhow::Result<Connection> {
+    pub(crate) async fn open(source: &Source) -> anyhow::Result<Connection> {
         let host = source.address.rsplit_once(':').map_or(source.address.as_str(), |(host, _)| host);
         let name = source.tls_name.clone().unwrap_or_else(|| host.trim_matches(['[', ']']).to_owned());
         let roots = source
@@ -165,7 +165,7 @@ impl Connection {
     }
 
     /// Sends a command and returns its untagged responses once it completed.
-    async fn command(&mut self, command: &str) -> anyhow::Result<Vec<Response>> {
+    pub(crate) async fn command(&mut self, command: &str) -> anyhow::Result<Vec<Response>> {
         let tag = format!("u{}", self.next_tag);
         self.next_tag += 1;
         self.stream.get_mut().write_all(format!("{tag} {command}\r\n").as_bytes()).await?;
@@ -184,18 +184,18 @@ impl Connection {
     }
 }
 
-fn quoted(text: &str) -> String {
+pub(crate) fn quoted(text: &str) -> String {
     format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 /// A folder on the old server.
 #[derive(Debug, Clone)]
-struct Folder {
+pub(crate) struct Folder {
     /// As the server names it, for SELECT.
-    raw: String,
+    pub(crate) raw: String,
     /// Decoded path segments.
-    path: Vec<String>,
-    role: Option<MailboxRole>,
+    pub(crate) path: Vec<String>,
+    pub(crate) role: Option<MailboxRole>,
 }
 
 fn role_of(attributes: &[String], path: &[String]) -> Option<MailboxRole> {
@@ -226,7 +226,7 @@ fn role_of(attributes: &[String], path: &[String]) -> Option<MailboxRole> {
 }
 
 /// The folders to copy: everything selectable in the person's own namespace.
-async fn folders(connection: &mut Connection) -> anyhow::Result<Vec<Folder>> {
+pub(crate) async fn folders(connection: &mut Connection) -> anyhow::Result<Vec<Folder>> {
     let mut shared_prefixes = Vec::new();
     if let Ok(responses) = connection.command("NAMESPACE").await {
         for response in responses {
@@ -314,14 +314,14 @@ async fn mailbox_for(store: &Store, account_id: i64, folder: &Folder) -> anyhow:
 }
 
 #[derive(Debug, Default)]
-struct Fetched {
-    uid: u32,
-    flags: Vec<String>,
-    internal_date: Option<i64>,
-    body: Option<Vec<u8>>,
+pub(crate) struct Fetched {
+    pub(crate) uid: u32,
+    pub(crate) flags: Vec<String>,
+    pub(crate) internal_date: Option<i64>,
+    pub(crate) body: Option<Vec<u8>>,
 }
 
-fn parse_fetch(response: &Response) -> Option<Fetched> {
+pub(crate) fn parse_fetch(response: &Response) -> Option<Fetched> {
     let tokens = &response.tokens;
     if tokens.get(2) != Some(&Token::Atom("FETCH".into())) {
         return None;
