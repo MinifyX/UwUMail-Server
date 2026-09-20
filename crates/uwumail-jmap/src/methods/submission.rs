@@ -176,6 +176,8 @@ async fn create_one(ctx: &Ctx<'_>, object: &Map<String, Value>) -> Result<(i64, 
         SubmitError::SendingOff => {
             SetError::new("forbiddenToSend", "sending through this server is switched off for this account")
         }
+        SubmitError::TooManyRecipients => SetError::new("tooManyRecipients", "too many recipients"),
+        SubmitError::TooLarge => SetError::new("tooLarge", "the message is larger than this server accepts"),
         SubmitError::Virus(name) => SetError::new("forbiddenToSend", format!("the message contains {name}")),
         SubmitError::Queue(err) => SetError::from(err),
     })?;

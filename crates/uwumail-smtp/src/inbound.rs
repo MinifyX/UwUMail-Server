@@ -1722,6 +1722,8 @@ impl Session {
             Err(SubmitError::SendingOff) => {
                 "550 5.7.1 Sending through this server is switched off for this account\r\n".into()
             }
+            Err(SubmitError::TooManyRecipients) => "452 4.5.3 Too many recipients\r\n".into(),
+            Err(SubmitError::TooLarge) => "552 5.3.4 The message is too large\r\n".into(),
             Err(SubmitError::Virus(name)) => format!("554 5.7.0 This message contains {name}\r\n"),
             Err(SubmitError::Queue(err)) => {
                 tracing::error!(%err, "queueing a message failed");

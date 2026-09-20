@@ -55,6 +55,10 @@ pub enum SubmitError {
     NobodyAccepted,
     #[error("sending through this server is switched off for this account")]
     SendingOff,
+    #[error("too many recipients")]
+    TooManyRecipients,
+    #[error("the message is larger than this server accepts")]
+    TooLarge,
     #[error("the message contains {0}")]
     Virus(String),
     #[error("the message could not be queued: {0}")]
@@ -126,6 +130,15 @@ impl Smtp {
         // here (security-audit-0.5.2 S-11).
         if !account.may_use("smtp") {
             return Err(SubmitError::SendingOff);
+        }
+        // The same limits the SMTP port enforces at RCPT and DATA, so a policy an admin sets holds
+        // on both doors, not only on 587/465 (security-audit-0.5.2 S-30).
+        let live = ctx.live();
+        if recipients.len() > live.smtp.max_recipients {
+            return Err(SubmitError::TooManyRecipients);
+        }
+        if raw.len() > live.smtp.max_message_size {
+            return Err(SubmitError::TooLarge);
         }
         if mail_from.is_empty() || !ctx.store.account_owns_address(account.id, &mail_from).await.unwrap_or(false) {
             return Err(SubmitError::ForbiddenFrom(mail_from));
