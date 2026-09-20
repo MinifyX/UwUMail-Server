@@ -2093,6 +2093,40 @@ const routes: [string, RegExp, Handler][] = [
   ],
   ["GET", /^\/api\/account\/fetch$/, () => [200, mockFetchView()]],
   [
+    // The real one asks DNS, the provider and Mozilla and then logs in; here two addresses stand
+    // for the three ways it can go, so the page can be worked on without a provider.
+    "POST",
+    /^\/api\/account\/fetch\/discover$/,
+    (body) => {
+      const input = body as { address?: string; password?: string };
+      const address = (input.address ?? "").trim().toLowerCase();
+      const domain = address.split("@")[1] ?? "";
+      if (!domain.includes(".")) return problem(409, "senderInvalid");
+      if (!input.password) return problem(409, "wrongPassword");
+      // Whatever nobody publishes anything for: the dialog opens its fields.
+      if (domain.endsWith("nowhere.example")) return problem(409, "providerNotFound");
+      const localPart = ["icloud.com", "me.com", "web.de"].includes(domain);
+      return [
+        200,
+        {
+          imap: {
+            host: domain === "icloud.com" ? "imap.mail.me.com" : `imap.${domain}`,
+            port: 993,
+            security: "tls",
+            login: localPart ? "localPart" : "wholeAddress",
+          },
+          smtp: {
+            host: domain === "icloud.com" ? "smtp.mail.me.com" : `smtp.${domain}`,
+            port: 587,
+            security: "starttls",
+            login: "wholeAddress",
+          },
+          source: domain === "icloud.com" ? "domain" : "database",
+        },
+      ];
+    },
+  ],
+  [
     "POST",
     /^\/api\/account\/fetch$/,
     (body) => {
@@ -2131,7 +2165,7 @@ const routes: [string, RegExp, Handler][] = [
     "PATCH",
     /^\/api\/account\/fetch\/(\d+)$/,
     (body, match) => {
-      const account = mockFetchAccounts.find((entry) => entry.id === Number(match[1]));
+      const account = mockFetchAccounts.find((entry) => entry.id === Number(match[0]));
       if (!account) return problem(404, "notFound");
       Object.assign(account, body as Partial<FetchAccountInfo>);
       return [200, account];
@@ -2141,7 +2175,7 @@ const routes: [string, RegExp, Handler][] = [
     "DELETE",
     /^\/api\/account\/fetch\/(\d+)$/,
     (_body, match) => {
-      const at = mockFetchAccounts.findIndex((entry) => entry.id === Number(match[1]));
+      const at = mockFetchAccounts.findIndex((entry) => entry.id === Number(match[0]));
       if (at < 0) return problem(404, "notFound");
       mockFetchAccounts.splice(at, 1);
       return [204, null];
