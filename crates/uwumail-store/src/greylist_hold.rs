@@ -23,6 +23,13 @@ use crate::{BlobHash, Result, Store, now};
 /// the mail someone is waiting for, not to hold copies of every large attachment a stranger sends.
 pub const MAX_HELD_SIZE: i64 = 5 * 1024 * 1024;
 
+/// How many messages are kept for one person at a time. Greylisting costs nothing to trigger — one
+/// row per sender and recipient — so without a ceiling a spam wave from changing senders would be a
+/// way to fill the disk through port 25. Once someone is at the limit, further mail is greylisted
+/// the way it always was, turned away and not kept. The same number the list shows, so nothing is
+/// ever kept that nobody could see.
+pub const MAX_HELD_PER_ACCOUNT: i64 = 200;
+
 /// What became of a held message once its recipient decided.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Settled {
@@ -111,7 +118,13 @@ pub enum Returning {
 impl Store {
     /// Keeps a greylisted message for one recipient. The message goes into the blob store, the row
     /// holds the reference, and both go away together when it expires.
-    pub async fn hold_greylisted(&self, hold: NewGreylistHold) -> Result<i64> {
+    ///
+    /// Answers `None` when this person already has [`MAX_HELD_PER_ACCOUNT`] waiting, which leaves
+    /// the message greylisted the old way instead of keeping a copy nobody would see.
+    pub async fn hold_greylisted(&self, hold: NewGreylistHold) -> Result<Option<i64>> {
+        if self.greylist_hold_count(hold.account_id).await? >= MAX_HELD_PER_ACCOUNT {
+            return Ok(None);
+        }
         let hash = self.put_blob(&hold.message).await?;
         let size = hold.message.len() as i64;
         let expires_at = now() + hold.keep_secs.max(0);
@@ -137,7 +150,7 @@ impl Store {
                     expires_at,
                 ],
             )?;
-            Ok(tx.last_insert_rowid())
+            Ok(Some(tx.last_insert_rowid()))
         })
         .await
     }
@@ -150,10 +163,10 @@ impl Store {
                  FROM greylist_hold
                  WHERE account_id = ?1 AND settled IS NULL
                  ORDER BY id DESC
-                 LIMIT 200",
+                 LIMIT ?2",
             )?;
             let found = statement
-                .query_map(params![account_id], |row| {
+                .query_map(params![account_id, MAX_HELD_PER_ACCOUNT], |row| {
                     Ok(GreylistHold {
                         id: row.get(0)?,
                         at: row.get(1)?,
@@ -242,6 +255,21 @@ impl Store {
         .await
     }
 
+    /// Puts a claimed row back into the waiting list, for a delivery that failed after the row was
+    /// already settled — a full mailbox, say. Only possible while the message is still kept, which
+    /// is why claiming a delivery keeps it.
+    pub async fn reopen_greylist_hold(&self, account_id: i64, id: i64) -> Result<bool> {
+        self.write(move |tx| {
+            let changed = tx.execute(
+                "UPDATE greylist_hold SET settled = NULL, settled_at = NULL
+                 WHERE id = ?1 AND account_id = ?2 AND settled IS NOT NULL AND blob_hash IS NOT NULL",
+                params![id, account_id],
+            )?;
+            Ok(changed > 0)
+        })
+        .await
+    }
+
     /// What to do with a message arriving for someone who was greylisted on it before.
     ///
     /// A row that is still waiting means the sender came back on their own: the message is about to
@@ -305,7 +333,7 @@ mod tests {
         (store, dir)
     }
 
-    async fn account(store: &Store, login: &str) -> i64 {
+    async fn new_account(store: &Store, login: &str) -> i64 {
         let account = crate::NewAccount {
             address: format!("{login}@uwu.test"),
             display_name: String::new(),
@@ -337,9 +365,9 @@ mod tests {
     #[tokio::test]
     async fn a_held_message_is_listed_read_and_settled() {
         let (store, _dir) = ready().await;
-        let account = account(&store, "nyu").await;
+        let account = new_account(&store, "nyu").await;
         let raw = b"Subject: Rechnung\r\n\r\nHallo".to_vec();
-        let id = store.hold_greylisted(hold(account, "Rechnung", &raw)).await.unwrap();
+        let id = store.hold_greylisted(hold(account, "Rechnung", &raw)).await.unwrap().unwrap();
 
         let waiting = store.greylist_holds(account).await.unwrap();
         assert_eq!(waiting.len(), 1);
@@ -364,8 +392,8 @@ mod tests {
     #[tokio::test]
     async fn nobody_reads_or_settles_another_persons_mail() {
         let (store, _dir) = ready().await;
-        let (mine, theirs) = (account(&store, "nyu").await, account(&store, "lorin").await);
-        let id = store.hold_greylisted(hold(mine, "Privat", b"Subject: Privat\r\n\r\nGeheim")).await.unwrap();
+        let (mine, theirs) = (new_account(&store, "nyu").await, new_account(&store, "lorin").await);
+        let id = store.hold_greylisted(hold(mine, "Privat", b"Subject: Privat\r\n\r\nGeheim")).await.unwrap().unwrap();
 
         assert_eq!(store.greylist_holds(theirs).await.unwrap().len(), 0);
         assert!(store.greylist_hold_message(theirs, id).await.unwrap().is_none(), "not even by guessing the number");
@@ -376,10 +404,10 @@ mod tests {
     #[tokio::test]
     async fn a_returning_message_is_recognised_by_what_was_decided() {
         let (store, _dir) = ready().await;
-        let account = account(&store, "nyu").await;
+        let account = new_account(&store, "nyu").await;
         let raw = b"Subject: Angebot\r\n\r\nHallo".to_vec();
         let raw_hash = BlobHash::of(&raw).as_str().to_owned();
-        let id = store.hold_greylisted(hold(account, "Angebot", &raw)).await.unwrap();
+        let id = store.hold_greylisted(hold(account, "Angebot", &raw)).await.unwrap().unwrap();
 
         // Coming back while it still waits: delivered as usual, and the row goes.
         assert_eq!(
@@ -389,12 +417,12 @@ mod tests {
         assert_eq!(store.greylist_holds(account).await.unwrap().len(), 0, "it is arriving normally now");
 
         // Delivered by hand: the retry must not deliver it a second time.
-        let id2 = store.hold_greylisted(hold(account, "Angebot", &raw)).await.unwrap();
+        let id2 = store.hold_greylisted(hold(account, "Angebot", &raw)).await.unwrap().unwrap();
         store.settle_greylist_hold(account, id2, Settled::Delivered, false).await.unwrap();
         assert_eq!(store.returning_greylist_hold(account, &raw_hash, None).await.unwrap(), Returning::Delivered);
 
         // Discarded: the retry must not bring it back.
-        let id3 = store.hold_greylisted(hold(account, "Weg", &raw)).await.unwrap();
+        let id3 = store.hold_greylisted(hold(account, "Weg", &raw)).await.unwrap().unwrap();
         store.settle_greylist_hold(account, id3, Settled::Discarded, false).await.unwrap();
         assert_eq!(store.returning_greylist_hold(account, &raw_hash, None).await.unwrap(), Returning::Discarded);
 
@@ -405,9 +433,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn one_person_can_only_be_kept_so_much_mail() {
+        let (store, _dir) = ready().await;
+        let account = new_account(&store, "nyu").await;
+        for n in 0..MAX_HELD_PER_ACCOUNT {
+            let body = format!("Subject: Welle {n}\r\n\r\nHallo");
+            assert!(store.hold_greylisted(hold(account, "Welle", body.as_bytes())).await.unwrap().is_some());
+        }
+        // From here on it is greylisted the way it always was, and nothing more is kept.
+        let over = store.hold_greylisted(hold(account, "Zuviel", b"Subject: Zuviel\r\n\r\nHallo")).await.unwrap();
+        assert_eq!(over, None);
+        assert_eq!(store.greylist_hold_count(account).await.unwrap(), MAX_HELD_PER_ACCOUNT);
+
+        // Deciding about one makes room again.
+        let first = store.greylist_holds(account).await.unwrap()[0].id;
+        store.settle_greylist_hold(account, first, Settled::Discarded, false).await.unwrap();
+        assert!(
+            store.hold_greylisted(hold(account, "Wieder", b"Subject: Wieder\r\n\r\nHallo")).await.unwrap().is_some()
+        );
+
+        // And it is a limit per person, not for the whole server.
+        let other = new_account(&store, "lorin").await;
+        assert!(store.hold_greylisted(hold(other, "Frei", b"Subject: Frei\r\n\r\nHallo")).await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn a_claimed_message_can_be_handed_back_when_delivering_fails() {
+        let (store, _dir) = ready().await;
+        let account = new_account(&store, "nyu").await;
+        let id =
+            store.hold_greylisted(hold(account, "Rechnung", b"Subject: Rechnung\r\n\r\nHallo")).await.unwrap().unwrap();
+
+        // Claiming it keeps the message, which is what makes handing it back possible.
+        assert!(store.settle_greylist_hold(account, id, Settled::Delivered, true).await.unwrap());
+        assert!(!store.settle_greylist_hold(account, id, Settled::Delivered, true).await.unwrap(), "only once");
+        assert_eq!(store.greylist_holds(account).await.unwrap().len(), 0);
+
+        assert!(store.reopen_greylist_hold(account, id).await.unwrap());
+        assert_eq!(store.greylist_holds(account).await.unwrap().len(), 1, "waiting again");
+        assert!(store.greylist_hold_message(account, id).await.unwrap().is_some());
+
+        // A row whose message was let go of stays settled: there would be nothing to deliver.
+        store.settle_greylist_hold(account, id, Settled::Discarded, false).await.unwrap();
+        assert!(!store.reopen_greylist_hold(account, id).await.unwrap());
+        // And nobody hands back someone else's.
+        let theirs = new_account(&store, "lorin").await;
+        assert!(!store.reopen_greylist_hold(theirs, id).await.unwrap());
+    }
+
+    #[tokio::test]
     async fn a_message_nobody_came_back_for_is_forgotten() {
         let (store, _dir) = ready().await;
-        let account = account(&store, "nyu").await;
+        let account = new_account(&store, "nyu").await;
         let mut expiring = hold(account, "Alt", b"Subject: Alt\r\n\r\nHallo");
         expiring.keep_secs = -1;
         store.hold_greylisted(expiring).await.unwrap();
@@ -425,9 +502,9 @@ mod tests {
     #[tokio::test]
     async fn the_kept_message_is_freed_with_the_row() {
         let (store, _dir) = ready().await;
-        let account = account(&store, "nyu").await;
+        let account = new_account(&store, "nyu").await;
         let raw = b"Subject: Muell\r\n\r\nHallo".to_vec();
-        let id = store.hold_greylisted(hold(account, "Muell", &raw)).await.unwrap();
+        let id = store.hold_greylisted(hold(account, "Muell", &raw)).await.unwrap().unwrap();
         let hash = BlobHash::of(&raw);
 
         assert!(store.blob_hashes().await.unwrap().iter().any(|(each, _)| each == &hash), "held while it waits");

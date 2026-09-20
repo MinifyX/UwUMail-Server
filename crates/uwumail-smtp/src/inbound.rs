@@ -181,7 +181,11 @@ async fn hold_greylisted(ctx: &crate::Context, held: HeldMessage<'_>) {
             keep_secs: uwumail_store::GREYLIST_WAITING_SECS,
         };
         match ctx.store.hold_greylisted(hold).await {
-            Ok(_) => kept += 1,
+            Ok(Some(_)) => kept += 1,
+            // Already as many waiting as the list would show them; greylisted the old way then.
+            Ok(None) => {
+                tracing::debug!(id = %held.id, account = account_id, "too many messages waiting already")
+            }
             Err(err) => {
                 tracing::warn!(id = %held.id, account = account_id, %err, "keeping a greylisted message failed")
             }

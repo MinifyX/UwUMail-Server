@@ -45,6 +45,8 @@ async fn view(web: &Web, session: &Session) -> ApiResult<Json<Value>> {
     Ok(Json(json!({
         "enabled": web.smtp().spam_settings().greylist_hold,
         "waiting": web.store().greylist_holds(session.account.id).await?,
+        // The list itself stops at a sensible number of rows; this is what the tab counts.
+        "count": web.store().greylist_hold_count(session.account.id).await?,
     })))
 }
 
@@ -55,11 +57,15 @@ pub async fn waiting(State(web): State<Web>, session: Session) -> ApiResult<Json
 
 /// Acts on one waiting message.
 ///
-/// The order matters. Delivering stores the message in the mailbox first and settles the row only
-/// afterwards, because settling is what lets go of the kept copy — the other way round a cleanup
-/// running in between could take the message out from under the delivery. Learning from a discarded
-/// message keeps the copy instead, until the row expires: the spam filter learns off its own queue,
-/// some time after this request is long finished, and would otherwise find nothing left to learn.
+/// The order matters. Every path settles the row first, which is a single conditional update and so
+/// the one place a decision can be claimed: two clicks arriving at once settle exactly one of them,
+/// and only the one that won goes on to deliver. Doing it the other way round would let both
+/// deliver and put the message in the mailbox twice.
+///
+/// Delivering therefore settles while keeping the message, so a delivery that fails afterwards —
+/// a full mailbox, say — can hand the row back instead of taking the mail down with it. Discarding
+/// keeps the message only when the spam filter is to learn from it, because it learns off its own
+/// queue some time after this request is long finished and would otherwise find nothing left.
 pub async fn decide(
     State(web): State<Web>,
     session: Session,
@@ -75,6 +81,7 @@ pub async fn decide(
 
     match decision.action {
         Decide::AllowDeliver | Decide::Deliver => {
+            claim(&web, account, id, Settled::Delivered, true).await?;
             let request = IngestRequest {
                 account_id: account,
                 raw: held.message,
@@ -83,8 +90,17 @@ pub async fn decide(
                 // It arrived when it arrived, not when the decision was made.
                 received_at: Some(held.received_at),
             };
-            store.ingest(request).await?;
-            store.settle_greylist_hold(account, id, Settled::Delivered, false).await?;
+            if let Err(err) = store.ingest(request).await {
+                // Hand the row back, so a mailbox that was full at the wrong moment does not cost
+                // them the message.
+                match store.reopen_greylist_hold(account, id).await {
+                    Ok(true) => tracing::warn!(login = %session.account.login, %err, "a waiting message stays waiting"),
+                    Ok(false) | Err(_) => {
+                        tracing::error!(login = %session.account.login, %err, "delivering a waiting message failed")
+                    }
+                }
+                return Err(err.into());
+            }
             if decision.action == Decide::AllowDeliver {
                 allow_sender(&web, &session, &held.envelope_from).await?;
             }
@@ -97,12 +113,12 @@ pub async fn decide(
         }
         Decide::Discard | Decide::DiscardSpam => {
             let learn = decision.action == Decide::DiscardSpam;
+            claim(&web, account, id, Settled::Discarded, learn).await?;
             if learn {
                 // For the whole server and for them, the same as marking mail as spam by hand.
                 store.queue_bayes_learning(held.hash.clone(), None, true).await?;
                 store.queue_bayes_learning(held.hash, Some(account), true).await?;
             }
-            store.settle_greylist_hold(account, id, Settled::Discarded, learn).await?;
             tracing::info!(
                 login = %session.account.login,
                 sender = %held.envelope_from,
@@ -112,6 +128,15 @@ pub async fn decide(
         }
     }
     view(&web, &session).await
+}
+
+/// Settles the row, and says no to whoever comes second. Two clicks at once, or a request sent
+/// twice, then act on it exactly once.
+async fn claim(web: &Web, account: i64, id: i64, how: Settled, keep_message: bool) -> ApiResult<()> {
+    match web.store().settle_greylist_hold(account, id, how, keep_message).await? {
+        true => Ok(()),
+        false => Err(ApiError::NotFound("this waiting message".into())),
+    }
 }
 
 /// Puts the sender on this person's own allowed list, so the next message from them is not held
