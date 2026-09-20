@@ -1036,7 +1036,9 @@
       "greylistHoldHint": "Everyone sees under Spam filter what was held back for them, and can deliver or discard it right away. Off means delayed mail is turned away and forgotten, the way it used to be.",
       "rejectScore": "Refuse from score",
       "rejectScoreHint": "Leave empty to never refuse. Refused mail is gone, while the spam folder lets you look.",
-      "rejectScoreOff": "never"
+      "rejectScoreOff": "never",
+      "traps": "Spam traps",
+      "trapsHint": "Addresses that only collect spam: what arrives there is taken, taught to the learning filter and delivered nowhere. One per line. Only use addresses nobody writes to any more."
     },
     "apps": {
       "title": "Mail apps",

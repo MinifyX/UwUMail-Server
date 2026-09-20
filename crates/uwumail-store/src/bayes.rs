@@ -76,6 +76,14 @@ impl Store {
 
     /// The oldest messages waiting to be learned. They stay queued until learned or dropped, so a
     /// restart in between does not lose them, and learning one twice changes nothing.
+    /// Hands a message that reaches no mailbox to the learning filter: a spam trap keeps nothing
+    /// else, and without the bytes there would be nothing to learn from. The message is kept only
+    /// as long as the job needs it; cleaning up takes it away again afterwards.
+    pub async fn learn_message(&self, raw: &[u8], spam: bool) -> Result<()> {
+        let blob = self.put_blob(raw).await?;
+        self.queue_bayes_learning(blob, None, spam).await
+    }
+
     pub async fn bayes_jobs(&self, limit: usize) -> Result<Vec<BayesJob>> {
         self.read(move |conn| {
             let mut stmt =

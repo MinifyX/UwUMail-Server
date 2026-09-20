@@ -419,3 +419,36 @@ redirectors = true
 
 The server refuses thresholds in the wrong order: `greylist_score` above
 `junk_score`, or `reject_score` below it.
+
+## Spam traps
+
+An address that exists only to catch spam: nobody reads it, nobody is given it,
+and it is never used to write to anyone. Whatever arrives there is spam by
+definition, so the server learns from it without anyone marking anything —
+straight into the whole server's [Bayes filter](#the-learning-filter-bayes).
+
+Admins keep the list under *Server → Spamfilter* (`spam.traps`, one address per
+line). A trap needs no mailbox and no account; the address only has to be one
+this server is asked about.
+
+A trap answers exactly like a real address: the sender hears the same `250`.
+One that said "no such mailbox" would be crossed off the spammer's list, and
+then it would catch nothing. For the same reason two rules are set aside for
+trapped mail:
+
+* **It is never greylisted.** Greylisting works by sending a suspicious sender
+  away in the hope that it never comes back — which is exactly what a trap must
+  not do.
+* **The score never turns it away.** A trap is there to collect the worst of
+  what arrives, so `reject_score` does not apply to it.
+
+What a virus scanner or a DMARC policy refuses stays refused. No amount of
+learning material is worth keeping a virus for.
+
+The message is learned and then let go: it reaches no mailbox, and nothing of
+it is kept but what the [history](#headers) keeps of any message.
+
+Where to get such an address: an old one that only receives spam now does, and
+so does a fresh one that is published nowhere. An address that was once real
+and is still written to by people is a bad trap — it teaches the filter that
+their mail is spam.

@@ -70,6 +70,12 @@ pub struct SpamConfig {
     /// From this score on, mail is refused in the SMTP dialogue. Off unless set: a young filter
     /// is wrong now and then, and Junk loses nothing while a refusal does.
     pub reject_score: Option<f32>,
+    /// Addresses that exist only to catch spam. Nobody reads them and nobody hands them out, so
+    /// whatever arrives is spam by definition and teaches the filter without anyone marking it.
+    /// The sender is told the message was taken, because a trap that answers differently from a
+    /// real address stops being one.
+    #[serde(default)]
+    pub traps: Vec<String>,
     /// Built-in lists the server fetches itself.
     pub feeds: FeedsConfig,
     /// What the filter decided about each message, kept so an admin can look it up afterwards.
@@ -89,6 +95,7 @@ impl Default for SpamConfig {
             greylist_delay_secs: 300,
             greylist_hold: true,
             reject_score: None,
+            traps: Vec::new(),
             feeds: FeedsConfig::default(),
             log: SpamLogConfig::default(),
             antivirus: AntivirusConfig::default(),

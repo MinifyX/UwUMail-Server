@@ -1036,7 +1036,9 @@
       "greylistHoldHint": "Jeder sieht unter Spamfilter, was für ihn zurückgestellt wurde, und kann es sofort zustellen oder verwerfen. Aus heißt: zurückgestellte Mail wird abgewiesen und vergessen, wie früher.",
       "rejectScore": "Ablehnen ab Punktzahl",
       "rejectScoreHint": "Leer lassen, um nie abzulehnen. Abgelehnte Mails sind weg, im Spam-Ordner kannst du dagegen nachsehen.",
-      "rejectScoreOff": "nie"
+      "rejectScoreOff": "nie",
+      "traps": "Spam-Fallen",
+      "trapsHint": "Adressen, die nur Spam einsammeln: Was dort ankommt, wird angenommen, dem lernenden Filter beigebracht und nirgends zugestellt. Eine pro Zeile. Nur Adressen nehmen, die niemand mehr benutzt."
     },
     "apps": {
       "title": "Mail-Apps",

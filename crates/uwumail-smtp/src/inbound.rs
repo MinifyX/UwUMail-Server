@@ -251,6 +251,7 @@ pub async fn deliver_fetched(
         srs_return: None,
         report: None,
         forward_to: None,
+        trap: false,
         notify_flags: 0,
         orcpt: None,
     }];
@@ -337,6 +338,8 @@ pub(crate) struct Recipient {
     report: Option<ReportKind>,
     /// A forwarding address without a mailbox: where its mail goes, `Some(account id)` for people here.
     forward_to: Option<Vec<(String, Option<i64>)>>,
+    /// An address that exists only to catch spam: taken, learned from, never delivered.
+    trap: bool,
     notify_flags: u64,
     orcpt: Option<String>,
 }
@@ -967,6 +970,7 @@ impl Session {
                             srs_return: Some(original),
                             report: None,
                             forward_to: None,
+                            trap: false,
                             notify_flags: to.flags,
                             orcpt: to.orcpt,
                         });
@@ -995,6 +999,25 @@ impl Session {
                     srs_return: None,
                     report: Some(kind),
                     forward_to: None,
+                    trap: false,
+                    notify_flags: to.flags,
+                    orcpt: to.orcpt,
+                });
+            }
+            self.reply("250 2.1.5 Recipient OK\r\n").await?;
+            return Ok(Next::Continue);
+        }
+        // A trap address answers exactly like a real one: a trap that says "no such mailbox" is
+        // crossed off the spammer's list, and then it catches nothing.
+        if !self.kind.is_submission() && ctx.live().spam.traps.iter().any(|trap| trap.eq_ignore_ascii_case(&address)) {
+            if !self.recipients.iter().any(|r| r.address == address) {
+                self.recipients.push(Recipient {
+                    address,
+                    local_account: None,
+                    srs_return: None,
+                    report: None,
+                    forward_to: None,
+                    trap: true,
                     notify_flags: to.flags,
                     orcpt: to.orcpt,
                 });
@@ -1011,6 +1034,7 @@ impl Session {
                     srs_return: None,
                     report: None,
                     forward_to: Some(targets),
+                    trap: false,
                     notify_flags: to.flags,
                     orcpt: to.orcpt,
                 });
@@ -1066,6 +1090,7 @@ impl Session {
                 srs_return: None,
                 report: None,
                 forward_to: None,
+                trap: false,
                 notify_flags: to.flags,
                 orcpt: to.orcpt,
             });
@@ -1278,7 +1303,10 @@ pub(crate) async fn receive(
             }
             _ => false,
         });
-    if (outcome == spam::Outcome::Reject && !allowed) || everyone_refuses {
+    // A trap keeps the worst of what arrives, so the score never turns it away either. What a virus
+    // scanner or DMARC refuses stays refused: no amount of learning material is worth keeping that.
+    let trapped = recipients.iter().any(|recipient| recipient.trap);
+    if (outcome == spam::Outcome::Reject && !allowed && !trapped) || everyone_refuses {
         tracing::info!(
             %id,
             from = %envelope.address,
@@ -1336,6 +1364,12 @@ pub(crate) async fn receive(
         for (recipient, decision) in recipients.iter().zip(&decisions) {
             // An allowed sender never waits, and neither does the message for the others then.
             if matches!(decision, Decision::Allow(_)) {
+                continue;
+            }
+            // Neither does a spam trap. Greylisting works by sending spammers away in the hope that
+            // they never come back -- which is exactly what a trap must not do, because then it
+            // never sees what it was built to collect.
+            if recipient.trap {
                 continue;
             }
             let wait = spam::greylist_wait(&ctx, &live.spam, *ip, &envelope.address, &recipient.address).await;
@@ -1412,6 +1446,20 @@ pub(crate) async fn receive(
     for ((recipient, decision), theirs) in recipients.iter().zip(&decisions).zip(&personal) {
         if let Some(original) = &recipient.srs_return {
             returned.push(NewQueueRecipient { address: original.clone(), notify_flags: 0, orcpt: None });
+            continue;
+        }
+        // A trap address takes the message, teaches the whole server what spam looks like, and
+        // delivers it nowhere. The sender hears the same 250 as everyone: a trap that answers
+        // differently is crossed off the list and then it catches nothing.
+        if recipient.trap {
+            if live.spam.bayes
+                && let Err(err) = ctx.store.learn_message(&message, true).await
+            {
+                tracing::warn!(%id, %err, "a trapped message could not be handed to the filter");
+            }
+            tracing::info!(%id, from = %envelope.address, to = %recipient.address, "caught in a spam trap");
+            note_for(&recipient.address, SpamAction::Junk, None);
+            delivered += 1;
             continue;
         }
         if let Some(kind) = recipient.report {

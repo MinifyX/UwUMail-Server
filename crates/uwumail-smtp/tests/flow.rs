@@ -1217,3 +1217,23 @@ async fn an_unsigned_verdict_in_a_fetched_message_cannot_vouch_for_it() {
     let raw = a.raw(&inbox[0]).await;
     assert!(raw.contains("FETCHED_NO_AUTH"), "a stranger's pass vouches for nothing: {raw}");
 }
+
+/// A trap address takes mail like a real one, teaches the filter and delivers nowhere.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_spam_trap_learns_from_what_it_catches_and_keeps_nothing() {
+    let spam = SpamConfig { traps: vec!["alt@a.test".into()], ..SpamConfig::default() };
+    let a = spam_test_server_for(&["mini"], spam, None).await;
+    let before = a.smtp.store().bayes_totals(None).await.unwrap();
+
+    // The trap is not a mailbox here, and it still answers like one.
+    let reply =
+        relay_message_to(&a, &["alt@a.test"], "From: news@sender.test\r\nSubject: Nur heute\r\n\r\nAngebot\r\n").await;
+    assert!(reply.starts_with("250"), "a trap that answers differently stops being one: {reply}");
+
+    // Nothing was delivered anywhere.
+    assert!(a.inbox("mini@a.test").await.is_empty());
+    assert!(a.mailbox("mini@a.test", MailboxRole::Junk).await.is_empty());
+
+    // And the whole server learned it as spam, exactly once and never as wanted mail.
+    wait_until_learned(&a, None, BayesTotals { spam: before.spam + 1, ham: before.ham }).await;
+}

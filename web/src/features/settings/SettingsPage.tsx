@@ -522,6 +522,7 @@ export const SPAM_SETTING_KEYS = [
   "spam.greylist_delay_secs",
   "spam.greylist_hold",
   "spam.reject_score",
+  "spam.traps",
   "smtp.verify_senders",
   "smtp.enforce_dmarc_reject",
 ];
@@ -582,6 +583,29 @@ export function SpamFields({ form }: { form: Form }) {
             hint={t("settings.spam.rejectScoreHint")}
             placeholder={t("settings.spam.rejectScoreOff")}
           />
+          <Field
+            label={t("settings.spam.traps")}
+            hint={form.locked("spam.traps") ? <LockedHint /> : t("settings.spam.trapsHint")}
+          >
+            {(id) => (
+              <textarea
+                id={id}
+                rows={2}
+                disabled={form.locked("spam.traps")}
+                className="w-full rounded-control border border-line bg-surface px-3.5 py-2.5 font-mono text-[13px] focus:border-pink focus:shadow-focus focus:outline-none disabled:opacity-60"
+                value={((form.value("spam.traps") as string[] | null) ?? []).join("\n")}
+                onChange={(event) =>
+                  form.set(
+                    "spam.traps",
+                    event.target.value
+                      .split(/\s+/)
+                      .map((line) => line.trim())
+                      .filter(Boolean),
+                  )
+                }
+              />
+            )}
+          </Field>
         </div>
       )}
       {enabled && (
