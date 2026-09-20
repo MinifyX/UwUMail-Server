@@ -226,8 +226,7 @@ fn unseal(conn: &Connection, sealed: &[u8]) -> Result<String> {
     let plain = key
         .open_in_place(Nonce::assume_unique_for_key(nonce), Aad::empty(), &mut buffer)
         .map_err(|_| StoreError::Internal("a stored provider password could not be read".into()))?;
-    String::from_utf8(plain.to_vec())
-        .map_err(|_| StoreError::Internal("a stored provider password is not text".into()))
+    String::from_utf8(plain.to_vec()).map_err(|_| StoreError::Internal("a stored provider password is not text".into()))
 }
 
 /// Keeps a provider's error message short enough for a table and a page.
