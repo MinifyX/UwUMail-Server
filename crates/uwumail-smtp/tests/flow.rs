@@ -1142,3 +1142,78 @@ async fn a_service_that_only_sends_takes_no_mail_unless_it_names_a_place_for_it(
     let delivered = a.wait_for_inbox("mini@a.test", 1).await;
     assert_eq!(delivered[0].subject, "Alarm");
 }
+
+/// A message as a provider would hand it over: with the Return-Path it recorded and, when it
+/// checked, its own Authentication-Results above everything else.
+fn fetched_message(auth: Option<&str>, extra: &str) -> Vec<u8> {
+    let auth = auth.map(|line| format!("Authentication-Results: {line}\r\n")).unwrap_or_default();
+    format!(
+        "{auth}Return-Path: <news@sender.test>\r\n\
+         {extra}From: news@sender.test\r\nTo: mini@freemail.example\r\n\
+         Subject: Nur heute\r\nMessage-ID: <one@sender.test>\r\n\
+         Date: Fri, 18 Sep 2026 10:00:00 +0200\r\n\r\nAngebot\r\n"
+    )
+    .into_bytes()
+}
+
+fn fetched_mailbox(account_id: i64) -> uwumail_smtp::FetchedMailbox {
+    uwumail_smtp::FetchedMailbox {
+        id: 1,
+        account_id,
+        address: "mini@freemail.example".into(),
+        host: "imap.mail.freemail.example".into(),
+        auth_serv_id: String::new(),
+    }
+}
+
+/// Mail fetched from somewhere else goes through the same pipeline, and what the provider says
+/// about it is worth points -- not a verdict.
+#[tokio::test(flavor = "multi_thread")]
+async fn fetched_mail_is_judged_here_and_the_providers_word_only_adds_points() {
+    let a = spam_test_server(SpamConfig::default(), None).await;
+    let account = a.smtp.store().account("mini@a.test").await.unwrap().unwrap();
+    let mailbox = fetched_mailbox(account.id);
+    let take = async |from_junk, raw: Vec<u8>| {
+        uwumail_smtp::deliver_fetched(&a.smtp, mailbox.clone(), from_junk, "mini@a.test".into(), raw).await
+    };
+
+    // Out of the provider's inbox, with its own header saying everything passed: nothing is held
+    // against it, and it lands where it would have landed had it come in at the door.
+    let vouched = "mx.freemail.example; spf=pass smtp.mailfrom=news@sender.test; dkim=pass; dmarc=pass";
+    assert_eq!(take(false, fetched_message(Some(vouched), "")).await, uwumail_smtp::Taken::Kept);
+    let inbox = a.wait_for_inbox("mini@a.test", 1).await;
+    assert_eq!(inbox[0].subject, "Nur heute");
+    let raw = a.raw(&inbox[0]).await;
+    assert!(raw.contains("(fetched for mini@freemail.example)"), "the trace says how it got here: {raw}");
+    assert!(!raw.contains("PROVIDER_JUNK"), "{raw}");
+
+    // The same message out of the provider's junk folder, with its spam flag on it: this server
+    // says so in the score, and with nothing vouching for it that is enough for Junk.
+    let flagged = fetched_message(None, "X-Spam-Flag: YES\r\n");
+    assert_eq!(take(true, flagged).await, uwumail_smtp::Taken::Kept);
+    let junk = a.mailbox("mini@a.test", MailboxRole::Junk).await;
+    assert_eq!(junk.len(), 1, "the provider's verdict plus no authentication is enough");
+    let raw = a.raw(&junk[0]).await;
+    for rule in ["PROVIDER_JUNK", "PROVIDER_SPAM_FLAG", "FETCHED_NO_AUTH"] {
+        assert!(raw.contains(rule), "{rule} should be in {raw}");
+    }
+}
+
+/// A header nobody signed for may count against a message, never for it.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unsigned_verdict_in_a_fetched_message_cannot_vouch_for_it() {
+    let a = spam_test_server(SpamConfig::default(), None).await;
+    let account = a.smtp.store().account("mini@a.test").await.unwrap().unwrap();
+    let mailbox = fetched_mailbox(account.id);
+
+    // Somebody else's name on the header: it says nothing at all, so the message is unvouched for.
+    let forged = "mx.somewhere-else.example; spf=pass; dkim=pass; dmarc=pass";
+    let raw = fetched_message(Some(forged), "");
+    assert_eq!(
+        uwumail_smtp::deliver_fetched(&a.smtp, mailbox, false, "mini@a.test".into(), raw).await,
+        uwumail_smtp::Taken::Kept
+    );
+    let inbox = a.wait_for_inbox("mini@a.test", 1).await;
+    let raw = a.raw(&inbox[0]).await;
+    assert!(raw.contains("FETCHED_NO_AUTH"), "a stranger's pass vouches for nothing: {raw}");
+}

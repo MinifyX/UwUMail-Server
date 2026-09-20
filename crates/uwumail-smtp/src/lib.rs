@@ -14,6 +14,7 @@ mod dns;
 pub mod dnscheck;
 mod dsn;
 mod fetch;
+mod fetched;
 mod forward;
 mod headers;
 pub mod health;
@@ -48,7 +49,10 @@ pub use config::{
     SmtpConfig, SpamConfig, SpamLogConfig, ToneConfig,
 };
 pub use dns::DnsCaches;
-pub use inbound::{ListenerKind, serve, serve_stream};
+pub use fetched::Mailbox as FetchedMailbox;
+/// The value of one header of a raw message, for callers that fetch mail and hand it in here.
+pub use headers::first_value as header_value;
+pub use inbound::{ListenerKind, Taken, deliver_fetched, serve, serve_stream};
 pub use limiter::{AuthLimiter, Reporter};
 pub use outbound::run_queue;
 pub use relay::IpNetwork;

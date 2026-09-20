@@ -23,7 +23,7 @@ use crate::dsn::{self, FailedRecipient};
 use crate::sender_lists::{self, Decision};
 use crate::stream::{BoxIo, Stream};
 use crate::submission::{Submission, SubmissionRecipient, SubmitError};
-use crate::{Smtp, clamav, forward, headers, random_id, relay, reports, spam, srs, vacation};
+use crate::{Smtp, clamav, fetched, forward, headers, random_id, relay, reports, spam, srs, vacation};
 
 const MAX_HOPS: usize = 50;
 const MAX_ERRORS: u32 = 10;
@@ -212,6 +212,58 @@ impl ListenerKind {
     }
 }
 
+/// What became of a message this server fetched from a mailbox elsewhere.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Taken {
+    /// It is here now, in the inbox or in Junk, and can be dealt with at the provider.
+    Kept,
+    /// Not this time: greylisting asked for it later, or the mailbox was full. It stays where it is
+    /// and is offered again on the next run, which is what the answer asks for.
+    Later(String),
+    /// Refused for good, the same way it would have been refused at the door. It is not brought
+    /// here and it is not deleted there either: whoever wants to see it can still find it.
+    Refused(String),
+}
+
+/// Hands a message fetched from another provider's mailbox to the same pipeline that mail from
+/// other servers goes through: the same checks, the same filter, the same lists, the same
+/// forwarding, the same history.
+///
+/// The envelope is rebuilt from what is left of it. The sender comes from the `Return-Path` the
+/// provider wrote, which is the address a bounce would have gone to; without one the message
+/// counts as coming from nobody, like a bounce does. The recipient is the mailbox here that the
+/// fetched mailbox belongs to, whatever address the message itself names.
+pub async fn deliver_fetched(
+    smtp: &Smtp,
+    mailbox: fetched::Mailbox,
+    from_junk: bool,
+    to: String,
+    raw: Vec<u8>,
+) -> Taken {
+    let raw = headers::normalize_line_endings(&raw);
+    if headers::count(&raw, "Received") > MAX_HOPS {
+        return Taken::Refused("554 5.4.6 Too many hops, possible mail loop".into());
+    }
+    let envelope = Envelope { address: fetched::return_path(&raw).unwrap_or_default(), size: raw.len(), env_id: None };
+    let recipients = vec![Recipient {
+        address: to,
+        local_account: Some(mailbox.account_id),
+        srs_return: None,
+        report: None,
+        forward_to: None,
+        notify_flags: 0,
+        orcpt: None,
+    }];
+    let origin = Origin::Fetched { mailbox, from_junk };
+    let answer = receive(smtp, &origin, envelope, recipients, raw).await;
+    let answer = answer.trim().to_owned();
+    match answer.as_bytes().first() {
+        Some(b'2') => Taken::Kept,
+        Some(b'4') => Taken::Later(answer),
+        _ => Taken::Refused(answer),
+    }
+}
+
 /// Accepts connections until `shutdown` changes.
 pub async fn serve(smtp: Smtp, listener: TcpListener, kind: ListenerKind, mut shutdown: watch::Receiver<bool>) {
     loop {
@@ -270,13 +322,13 @@ async fn handle(smtp: Smtp, mut socket: BoxIo, peer: SocketAddr, kind: ListenerK
     session.run().await
 }
 
-struct Envelope {
+pub(crate) struct Envelope {
     address: String,
     size: usize,
     env_id: Option<String>,
 }
 
-struct Recipient {
+pub(crate) struct Recipient {
     address: String,
     local_account: Option<i64>,
     /// A bounce for a forwarded message, to pass on to this original sender.
@@ -287,6 +339,84 @@ struct Recipient {
     forward_to: Option<Vec<(String, Option<i64>)>>,
     notify_flags: u64,
     orcpt: Option<String>,
+}
+
+/// Where a message reached this server.
+///
+/// Everything below this point treats both the same way: the same checks, the same filter, the same
+/// sender lists, the same forwarding and the same history. What differs is only what can be known
+/// about where the message came from, which is what [`Origin::client`] answers.
+pub(crate) enum Origin {
+    /// An SMTP client handed it in.
+    Client { peer: IpAddr, helo: String, tls: Option<String>, submitted: bool },
+    /// This server took it out of a mailbox at another provider.
+    Fetched { mailbox: fetched::Mailbox, from_junk: bool },
+}
+
+impl Origin {
+    /// The address and greeting of the server that sent the message, when one can be known.
+    ///
+    /// Behind a trusted relay that is the server the relay talked to, read from its Received
+    /// header. For a fetched message it is the address the provider wrote down under its own name,
+    /// and nothing at all when it wrote none: guessing one would judge an innocent server.
+    fn client(
+        &self,
+        live: &crate::Live,
+        raw: &[u8],
+        provenance: Option<&fetched::Provenance>,
+    ) -> Option<(IpAddr, String)> {
+        match self {
+            Origin::Client { peer, helo, .. } => {
+                if live.trusted_relays.iter().any(|network| network.contains(*peer)) {
+                    relay::original_client(raw, &live.trusted_relays)
+                } else {
+                    Some((*peer, helo.clone()))
+                }
+            }
+            Origin::Fetched { .. } => provenance.and_then(fetched::Provenance::checkable_client),
+        }
+    }
+
+    /// The trace header this server adds on top, saying how the message got here.
+    fn received_header(&self, ctx: &crate::Context, id: &str, recipient: Option<&str>) -> String {
+        let mut header = match self {
+            Origin::Client { peer, helo, tls, submitted } => {
+                let private = *submitted && !ctx.live().smtp.reveal_client_ip;
+                // The name a mail app announces often is the device name or a local IP, so it stays
+                // private too.
+                let helo = if private {
+                    "localhost"
+                } else if helo.is_empty() {
+                    "unknown"
+                } else {
+                    helo.as_str()
+                };
+                let protocol = match (submitted, tls.is_some()) {
+                    (true, true) => "ESMTPSA",
+                    (true, false) => "ESMTPA",
+                    (false, true) => "ESMTPS",
+                    (false, false) => "ESMTP",
+                };
+                let client = if private { String::new() } else { format!(" ([{peer}])") };
+                let mut header =
+                    format!("Received: from {helo}{client}\r\n\tby {} (UwUMail) with {protocol}", ctx.hostname);
+                if let Some(tls) = tls {
+                    header.push_str(&format!("\r\n\t(using {tls})"));
+                }
+                header
+            }
+            Origin::Fetched { mailbox, .. } => format!(
+                "Received: from {} (fetched for {})\r\n\tby {} (UwUMail) with IMAP",
+                mailbox.host, mailbox.address, ctx.hostname
+            ),
+        };
+        header.push_str(&format!(" id {id}"));
+        if let Some(recipient) = recipient {
+            header.push_str(&format!("\r\n\tfor <{recipient}>"));
+        }
+        header.push_str(&format!(";\r\n\t{}\r\n", Date::now().to_rfc822()));
+        header
+    }
 }
 
 enum AuthStep {
@@ -957,537 +1087,539 @@ impl Session {
         let response = if self.kind.is_submission() {
             self.submit(envelope, recipients, raw).await
         } else {
-            self.receive(envelope, recipients, raw).await
+            receive(&self.smtp, &self.origin(), envelope, recipients, raw).await
         };
         self.reply(&response).await
     }
 
-    fn received_header(&self, id: &str, recipient: Option<&str>) -> String {
-        let ctx = &self.smtp.inner;
-        let private = self.account.is_some() && !ctx.live().smtp.reveal_client_ip;
-        // The name a mail app announces often is the device name or a local IP, so it stays private too.
-        let helo = if private { "localhost" } else { self.helo.as_deref().unwrap_or("unknown") };
-        let tls = self.stream.as_ref().and_then(Stream::tls_description);
-        let protocol = match (self.account.is_some(), tls.is_some()) {
-            (true, true) => "ESMTPSA",
-            (true, false) => "ESMTPA",
-            (false, true) => "ESMTPS",
-            (false, false) => "ESMTP",
-        };
-        let client = if private { String::new() } else { format!(" ([{}])", self.peer) };
-        let mut header = format!("Received: from {helo}{client}\r\n\tby {} (UwUMail) with {protocol}", ctx.hostname);
-        if let Some(tls) = tls {
-            header.push_str(&format!("\r\n\t(using {tls})"));
+    fn origin(&self) -> Origin {
+        Origin::Client {
+            peer: self.peer,
+            helo: self.helo.clone().unwrap_or_default(),
+            tls: self.stream.as_ref().and_then(Stream::tls_description),
+            submitted: self.account.is_some(),
         }
-        header.push_str(&format!(" id {id}"));
-        if let Some(recipient) = recipient {
-            header.push_str(&format!("\r\n\tfor <{recipient}>"));
-        }
-        header.push_str(&format!(";\r\n\t{}\r\n", Date::now().to_rfc822()));
-        header
+    }
+}
+
+/// Mail from another server, or out of a mailbox elsewhere, for our own people.
+pub(crate) async fn receive(
+    smtp: &Smtp,
+    origin: &Origin,
+    envelope: Envelope,
+    recipients: Vec<Recipient>,
+    raw: Vec<u8>,
+) -> String {
+    let ctx = smtp.inner.clone();
+    let id = random_id();
+    let raw = headers::strip_forged_auth_results(&raw, &ctx.hostname);
+
+    let live = ctx.live();
+    // Where a fetched message has been, as far as its headers can be trusted.
+    let provenance = match origin {
+        Origin::Fetched { mailbox, from_junk } => Some(fetched::read(mailbox, *from_junk, &raw)),
+        Origin::Client { .. } => None,
+    };
+    let client = origin.client(&live, &raw, provenance.as_ref());
+    if client.is_none()
+        && let Origin::Client { peer, .. } = origin
+    {
+        tracing::warn!(%id, relay = %peer, "no readable Received header from the trusted relay, skipping sender checks");
     }
 
-    /// Mail from another server for our own people.
-    async fn receive(&mut self, envelope: Envelope, recipients: Vec<Recipient>, raw: Vec<u8>) -> String {
-        let ctx = self.smtp.inner.clone();
-        let id = random_id();
-        let raw = headers::strip_forged_auth_results(&raw, &ctx.hostname);
-        let helo = self.helo.clone().unwrap_or_default();
-
-        // Behind a trusted relay, check the server that talked to the relay.
-        let live = ctx.live();
-        let client = if live.trusted_relays.iter().any(|network| network.contains(self.peer)) {
-            let found = relay::original_client(&raw, &live.trusted_relays);
-            if found.is_none() {
-                tracing::warn!(%id, relay = %self.peer, "no readable Received header from the trusted relay, skipping sender checks");
-            }
-            found
-        } else {
-            Some((self.peer, helo))
+    let verdict = match (&client, origin) {
+        (Some((ip, helo)), _) if live.smtp.verify_senders => {
+            Some(checks::verify(&ctx, *ip, helo, &envelope.address, &raw).await)
+        }
+        // A fetched message the provider vouched for nothing about: its signatures are still
+        // worth checking, and they are all that is left to check.
+        (None, Origin::Fetched { .. }) if live.smtp.verify_senders => Some(checks::verify_signatures(&ctx, &raw).await),
+        _ => None,
+    };
+    if let Some(checks::Verdict { action: Action::Reject(reason), .. }) = &verdict {
+        tracing::info!(%id, from = %envelope.address, %reason, "rejected by DMARC");
+        let note = SpamNote {
+            id: &id,
+            action: SpamAction::Dmarc,
+            envelope: &envelope,
+            raw: &raw,
+            client: client.as_ref(),
+            verdict: verdict.as_ref(),
+            score: None,
+            recipients: all_recipients(&recipients, SpamAction::Dmarc),
+            blob_hash: None,
+            virus: None,
         };
+        note_spam(&ctx, &live.spam.log, note).await;
+        return format!("550 5.7.1 {reason}\r\n");
+    }
 
-        let verdict = match &client {
-            Some((ip, helo)) if live.smtp.verify_senders => {
-                Some(checks::verify(&ctx, *ip, helo, &envelope.address, &raw).await)
+    // Allowed and blocked senders decide for each recipient before the score does.
+    let sender =
+        sender_lists::Sender::new(client.as_ref().map(|(ip, _)| *ip), &envelope.address, verdict.as_ref(), &raw);
+    let targets: Vec<(i64, String)> = recipients
+        .iter()
+        .filter_map(|recipient| {
+            let (_, domain) = recipient.address.rsplit_once('@')?;
+            Some((recipient.local_account?, domain.to_owned()))
+        })
+        .collect();
+    let lists = if targets.is_empty() {
+        sender_lists::Lists::default()
+    } else {
+        sender_lists::load(&ctx, &sender, &targets).await
+    };
+    let decisions: Vec<Decision> = recipients
+        .iter()
+        .map(|recipient| match (recipient.local_account, recipient.address.rsplit_once('@')) {
+            (Some(account), Some((_, domain))) => lists.decide(&sender, account, domain),
+            _ => Decision::None,
+        })
+        .collect();
+    if !decisions.is_empty() && decisions.iter().all(|decision| matches!(decision, Decision::Reject(_))) {
+        let listed = decisions[0].entry().map(|entry| entry.value.as_str());
+        tracing::info!(%id, from = %envelope.address, listed, "refused by a sender list");
+        let note = SpamNote {
+            id: &id,
+            action: SpamAction::Blocked,
+            envelope: &envelope,
+            raw: &raw,
+            client: client.as_ref(),
+            verdict: verdict.as_ref(),
+            score: None,
+            recipients: all_recipients(&recipients, SpamAction::Blocked),
+            blob_hash: None,
+            virus: None,
+        };
+        note_spam(&ctx, &live.spam.log, note).await;
+        return "550 5.7.1 Mail from this sender is not accepted here\r\n".into();
+    }
+    let allowed = decisions.iter().any(|decision| matches!(decision, Decision::Allow(_)));
+
+    // A virus is not a matter of points: a message carrying one is never taken, no matter who
+    // sent it or who allowed them. It is also not scored afterwards, so nothing learns from it.
+    let checked = clamav::check(&live.spam.antivirus, &raw).await;
+    if let clamav::Checked::Found(name) = &checked {
+        tracing::info!(%id, from = %envelope.address, virus = %name, "refused, the virus scanner found something");
+        let note = SpamNote {
+            id: &id,
+            action: SpamAction::Virus,
+            envelope: &envelope,
+            raw: &raw,
+            client: client.as_ref(),
+            verdict: verdict.as_ref(),
+            score: None,
+            recipients: all_recipients(&recipients, SpamAction::Virus),
+            blob_hash: None,
+            virus: Some(name),
+        };
+        note_spam(&ctx, &live.spam.log, note).await;
+        return format!("554 5.7.0 This message contains {name}\r\n");
+    }
+
+    // Only mail we can attribute to a sending server is scored; behind a relay that means the
+    // server the relay talked to. A fetched message is scored even without one: what is left of
+    // it -- the message itself, what it learned from and where the provider says it has been --
+    // is still more than nothing.
+    let source = spam::Source {
+        ip: client.as_ref().map(|(ip, _)| *ip),
+        helo: client.as_ref().map_or("", |(_, helo)| helo.as_str()),
+        verdict: verdict.as_ref(),
+        fetched: provenance.as_ref(),
+    };
+    let score = if live.spam.enabled && (client.is_some() || provenance.is_some()) {
+        spam::score(&ctx, &live.spam, source, &raw).await
+    } else {
+        None
+    };
+    let outcome = score.as_ref().map_or(spam::Outcome::Deliver, |score| spam::outcome(&live.spam, score.points));
+    // What the filter saw, for the log: the score and the rules behind it.
+    let spam_score = score.as_ref().map(|score| score.points);
+    let spam_tests = score.as_ref().map(spam::Score::tests);
+    let quarantined = matches!(&verdict, Some(v) if v.action == Action::Quarantine);
+    let junk = quarantined || matches!(outcome, spam::Outcome::Junk | spam::Outcome::Reject);
+    // What the score means for each person without a listed sender: their own Bayes knowledge and
+    // word lists add points, and their own limits say what the sum means.
+    let limits = match &score {
+        Some(_) if !quarantined && !targets.is_empty() => {
+            let accounts = targets.iter().map(|(account, _)| *account).collect();
+            ctx.store.spam_limits_for(accounts).await.unwrap_or_else(|err| {
+                tracing::warn!(%id, %err, "reading the spam limits failed, using the server's");
+                Default::default()
+            })
+        }
+        _ => Default::default(),
+    };
+    let mut personal: Vec<Option<(f32, spam::Outcome)>> = Vec::with_capacity(recipients.len());
+    for (recipient, decision) in recipients.iter().zip(&decisions) {
+        let theirs = match (&score, recipient.local_account, decision) {
+            (Some(score), Some(account_id), Decision::None) if !quarantined => {
+                let domain = recipient.address.rsplit_once('@').map_or("", |(_, domain)| domain);
+                let own = spam::personal_bayes_points(&ctx, &live.spam, score, account_id).await
+                    + spam::personal_word_points(&ctx, score, account_id, domain).await;
+                let limits = limits.get(&account_id).copied().unwrap_or_default();
+                Some((own, spam::personal_outcome(&live.spam, limits, score.points + own)))
             }
             _ => None,
         };
-        if let Some(checks::Verdict { action: Action::Reject(reason), .. }) = &verdict {
-            tracing::info!(%id, from = %envelope.address, %reason, "rejected by DMARC");
-            let note = SpamNote {
-                id: &id,
-                action: SpamAction::Dmarc,
-                envelope: &envelope,
-                raw: &raw,
-                client: client.as_ref(),
-                verdict: verdict.as_ref(),
-                score: None,
-                recipients: all_recipients(&recipients, SpamAction::Dmarc),
-                blob_hash: None,
-                virus: None,
-            };
-            note_spam(&ctx, &live.spam.log, note).await;
-            return format!("550 5.7.1 {reason}\r\n");
-        }
-
-        // Allowed and blocked senders decide for each recipient before the score does.
-        let sender =
-            sender_lists::Sender::new(client.as_ref().map(|(ip, _)| *ip), &envelope.address, verdict.as_ref(), &raw);
-        let targets: Vec<(i64, String)> = recipients
-            .iter()
-            .filter_map(|recipient| {
-                let (_, domain) = recipient.address.rsplit_once('@')?;
-                Some((recipient.local_account?, domain.to_owned()))
-            })
-            .collect();
-        let lists = if targets.is_empty() {
-            sender_lists::Lists::default()
-        } else {
-            sender_lists::load(&ctx, &sender, &targets).await
-        };
-        let decisions: Vec<Decision> = recipients
-            .iter()
-            .map(|recipient| match (recipient.local_account, recipient.address.rsplit_once('@')) {
-                (Some(account), Some((_, domain))) => lists.decide(&sender, account, domain),
-                _ => Decision::None,
-            })
-            .collect();
-        if !decisions.is_empty() && decisions.iter().all(|decision| matches!(decision, Decision::Reject(_))) {
-            let listed = decisions[0].entry().map(|entry| entry.value.as_str());
-            tracing::info!(%id, from = %envelope.address, listed, "refused by a sender list");
-            let note = SpamNote {
-                id: &id,
-                action: SpamAction::Blocked,
-                envelope: &envelope,
-                raw: &raw,
-                client: client.as_ref(),
-                verdict: verdict.as_ref(),
-                score: None,
-                recipients: all_recipients(&recipients, SpamAction::Blocked),
-                blob_hash: None,
-                virus: None,
-            };
-            note_spam(&ctx, &live.spam.log, note).await;
-            return "550 5.7.1 Mail from this sender is not accepted here\r\n".into();
-        }
-        let allowed = decisions.iter().any(|decision| matches!(decision, Decision::Allow(_)));
-
-        // A virus is not a matter of points: a message carrying one is never taken, no matter who
-        // sent it or who allowed them. It is also not scored afterwards, so nothing learns from it.
-        let checked = clamav::check(&live.spam.antivirus, &raw).await;
-        if let clamav::Checked::Found(name) = &checked {
-            tracing::info!(%id, from = %envelope.address, virus = %name, "refused, the virus scanner found something");
-            let note = SpamNote {
-                id: &id,
-                action: SpamAction::Virus,
-                envelope: &envelope,
-                raw: &raw,
-                client: client.as_ref(),
-                verdict: verdict.as_ref(),
-                score: None,
-                recipients: all_recipients(&recipients, SpamAction::Virus),
-                blob_hash: None,
-                virus: Some(name),
-            };
-            note_spam(&ctx, &live.spam.log, note).await;
-            return format!("554 5.7.0 This message contains {name}\r\n");
-        }
-
-        // Only mail we can attribute to a sending server is scored; behind a relay that means the
-        // server the relay talked to.
-        let score = match &client {
-            Some((ip, helo)) if live.spam.enabled => {
-                spam::score(&ctx, &live.spam, *ip, helo, verdict.as_ref(), &raw).await
+        personal.push(theirs);
+    }
+    // Refused when the server's limit says so, or when every recipient's own limit or list does, or
+    // nobody but forwarding addresses would get it, which pass no spam on. Otherwise a recipient who
+    // allowed the sender still gets it and everyone else finds it in Junk.
+    let everyone_refuses = !recipients.is_empty()
+        && recipients.iter().zip(&decisions).zip(&personal).all(|((recipient, decision), theirs)| match decision {
+            Decision::Reject(_) => true,
+            Decision::None if recipient.forward_to.is_some() => junk,
+            Decision::None => {
+                recipient.srs_return.is_none()
+                    && recipient.report.is_none()
+                    && matches!(theirs, Some((_, spam::Outcome::Reject)))
             }
-            _ => None,
-        };
-        let outcome = score.as_ref().map_or(spam::Outcome::Deliver, |score| spam::outcome(&live.spam, score.points));
-        // What the filter saw, for the log: the score and the rules behind it.
-        let spam_score = score.as_ref().map(|score| score.points);
-        let spam_tests = score.as_ref().map(spam::Score::tests);
-        let quarantined = matches!(&verdict, Some(v) if v.action == Action::Quarantine);
-        let junk = quarantined || matches!(outcome, spam::Outcome::Junk | spam::Outcome::Reject);
-        // What the score means for each person without a listed sender: their own Bayes knowledge and
-        // word lists add points, and their own limits say what the sum means.
-        let limits = match &score {
-            Some(_) if !quarantined && !targets.is_empty() => {
-                let accounts = targets.iter().map(|(account, _)| *account).collect();
-                ctx.store.spam_limits_for(accounts).await.unwrap_or_else(|err| {
-                    tracing::warn!(%id, %err, "reading the spam limits failed, using the server's");
-                    Default::default()
-                })
-            }
-            _ => Default::default(),
-        };
-        let mut personal: Vec<Option<(f32, spam::Outcome)>> = Vec::with_capacity(recipients.len());
-        for (recipient, decision) in recipients.iter().zip(&decisions) {
-            let theirs = match (&score, recipient.local_account, decision) {
-                (Some(score), Some(account_id), Decision::None) if !quarantined => {
-                    let domain = recipient.address.rsplit_once('@').map_or("", |(_, domain)| domain);
-                    let own = spam::personal_bayes_points(&ctx, &live.spam, score, account_id).await
-                        + spam::personal_word_points(&ctx, score, account_id, domain).await;
-                    let limits = limits.get(&account_id).copied().unwrap_or_default();
-                    Some((own, spam::personal_outcome(&live.spam, limits, score.points + own)))
-                }
-                _ => None,
-            };
-            personal.push(theirs);
-        }
-        // Refused when the server's limit says so, or when every recipient's own limit or list does, or
-        // nobody but forwarding addresses would get it, which pass no spam on. Otherwise a recipient who
-        // allowed the sender still gets it and everyone else finds it in Junk.
-        let everyone_refuses = !recipients.is_empty()
-            && recipients.iter().zip(&decisions).zip(&personal).all(|((recipient, decision), theirs)| match decision {
-                Decision::Reject(_) => true,
-                Decision::None if recipient.forward_to.is_some() => junk,
-                Decision::None => {
-                    recipient.srs_return.is_none()
-                        && recipient.report.is_none()
-                        && matches!(theirs, Some((_, spam::Outcome::Reject)))
-                }
-                _ => false,
-            });
-        if (outcome == spam::Outcome::Reject && !allowed) || everyone_refuses {
-            tracing::info!(
-                %id,
-                from = %envelope.address,
-                score = spam_score,
-                tests = spam_tests.as_deref(),
-                "refused as spam"
-            );
-            let note = SpamNote {
-                id: &id,
-                action: SpamAction::Reject,
-                envelope: &envelope,
-                raw: &raw,
-                client: client.as_ref(),
-                verdict: verdict.as_ref(),
-                score: score.as_ref(),
-                recipients: all_recipients(&recipients, SpamAction::Reject),
-                blob_hash: None,
-                virus: None,
-            };
-            note_spam(&ctx, &live.spam.log, note).await;
-            return "550 5.7.1 This message looks like spam\r\n".into();
-        }
-        // What a retry of this message hashes to. Taken before our own headers go on top, so the
-        // same message from the same server lands on the same value when it comes back.
-        let raw_hash = live.spam.greylist_hold.then(|| uwumail_store::BlobHash::of(&raw).as_str().to_owned());
-
-        // Our verdict replaces whatever the message brought along.
-        let raw = if score.is_some() { headers::strip_spam_verdicts(&raw) } else { raw };
-        let raw = match checked {
-            clamav::Checked::Off => raw,
-            _ => headers::strip_virus_verdicts(&raw),
-        };
-
-        let single = (recipients.len() == 1).then(|| recipients[0].address.as_str());
-        let mut message = self.received_header(&id, single).into_bytes();
-        if let Some(verdict) = &verdict {
-            message.extend_from_slice(verdict.header.as_bytes());
-        }
-        if let Some(header) = clamav::header(&checked) {
-            message.extend_from_slice(header.as_bytes());
-        }
-        if let Some(score) = &score {
-            message.extend_from_slice(spam::headers(score, junk, live.spam.junk_score).as_bytes());
-        }
-        message.extend_from_slice(&raw);
-
-        // The other half of recognising a returning message, for senders that rewrite something
-        // between attempts.
-        let message_id = raw_hash.is_some().then(|| headers::first_value(&raw, "Message-ID")).flatten();
-
-        if outcome == spam::Outcome::Suspicious
-            && let Some((ip, _)) = &client
-        {
-            let mut waiting = Vec::new();
-            for (recipient, decision) in recipients.iter().zip(&decisions) {
-                // An allowed sender never waits, and neither does the message for the others then.
-                if matches!(decision, Decision::Allow(_)) {
-                    continue;
-                }
-                let wait = spam::greylist_wait(&ctx, &live.spam, *ip, &envelope.address, &recipient.address).await;
-                if let Some(seconds) = wait {
-                    waiting.push(seconds);
-                }
-            }
-            // Hold the message only while every recipient is still waiting. Once one of them may
-            // have it, delivering to all of them keeps the retry from arriving twice.
-            if !recipients.is_empty()
-                && waiting.len() == recipients.len()
-                && let Some(seconds) = waiting.into_iter().min()
-            {
-                let minutes = ((seconds + 59) / 60).max(1);
-                tracing::info!(
-                    %id,
-                    from = %envelope.address,
-                    %seconds,
-                    score = spam_score,
-                    tests = spam_tests.as_deref(),
-                    "greylisted"
-                );
-                let note = SpamNote {
-                    id: &id,
-                    action: SpamAction::Greylist,
-                    envelope: &envelope,
-                    raw: &raw,
-                    client: client.as_ref(),
-                    verdict: verdict.as_ref(),
-                    score: score.as_ref(),
-                    recipients: all_recipients(&recipients, SpamAction::Greylist),
-                    blob_hash: None,
-                    virus: None,
-                };
-                note_spam(&ctx, &live.spam.log, note).await;
-                if let Some(raw_hash) = &raw_hash {
-                    hold_greylisted(
-                        &ctx,
-                        HeldMessage {
-                            id: &id,
-                            envelope: &envelope,
-                            recipients: &recipients,
-                            raw: &raw,
-                            message: &message,
-                            raw_hash,
-                            message_id: message_id.as_deref(),
-                            client_ip: ip.to_string(),
-                            score: spam_score,
-                            subject: score.as_ref().map(|score| score.subject.clone()),
-                        },
-                    )
-                    .await;
-                }
-                return format!("451 4.7.1 Please try again in {minutes} minutes\r\n");
-            }
-        }
-
-        let mut delivered = 0;
-        let mut inbox_accounts = Vec::new();
-        let mut failed: Vec<FailedRecipient> = Vec::new();
-        let mut temporary = false;
-        let mut seen_accounts = Vec::new();
-        let mut returned = Vec::new();
-        // What happened for each of them, for the history. The message as a whole is one decision,
-        // but a sender list or someone's own filter can send it two ways at once.
-        let mut noted: Vec<SpamLogRecipient> = Vec::new();
-        let mut note_for = |address: &str, action: SpamAction, mailbox: Option<&str>| {
-            noted.push(SpamLogRecipient {
-                address: address.to_owned(),
-                action: action.as_str().to_owned(),
-                mailbox: mailbox.map(str::to_owned),
-            });
-        };
-        for ((recipient, decision), theirs) in recipients.iter().zip(&decisions).zip(&personal) {
-            if let Some(original) = &recipient.srs_return {
-                returned.push(NewQueueRecipient { address: original.clone(), notify_flags: 0, orcpt: None });
-                continue;
-            }
-            if let Some(kind) = recipient.report {
-                let authenticated = verdict.as_ref().is_some_and(|verdict| verdict.dmarc_passed);
-                reports::receive_soon(ctx.clone(), kind, recipient.address.clone(), raw.clone(), authenticated);
-                delivered += 1;
-                continue;
-            }
-            if let Some(targets) = &recipient.forward_to {
-                if junk {
-                    tracing::info!(%id, to = %recipient.address, "not passing spam on from a forwarding address");
-                } else {
-                    let forwarder = forward::Forwarder { name: &recipient.address, account_id: None };
-                    forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, targets).await;
-                }
-                note_for(&recipient.address, if junk { SpamAction::Junk } else { SpamAction::Delivered }, None);
-                delivered += 1;
-                continue;
-            }
-            let Some(account_id) = recipient.local_account else { continue };
-            if seen_accounts.contains(&account_id) {
-                continue;
-            }
-            seen_accounts.push(account_id);
-            // The sender came back with a message this person already dealt with by hand while it
-            // was waiting. Take it and let it go: delivering it again would double it, and bringing
-            // a discarded one back would undo what they decided.
-            if let Some(raw_hash) = &raw_hash {
-                match ctx.store.returning_greylist_hold(account_id, raw_hash, message_id.as_deref()).await {
-                    Ok(uwumail_store::Returning::Fresh) => {}
-                    Ok(settled) => {
-                        tracing::info!(
-                            %id,
-                            account = account_id,
-                            discarded = settled == uwumail_store::Returning::Discarded,
-                            "a returning greylisted message was already settled by hand"
-                        );
-                        note_for(&recipient.address, SpamAction::Settled, None);
-                        delivered += 1;
-                        continue;
-                    }
-                    Err(err) => tracing::warn!(%id, account = account_id, %err, "looking up a held message failed"),
-                }
-            }
-            // A listed sender goes where the list says, even out of a DMARC quarantine. Otherwise what a
-            // person taught their own Bayes filter and their own limits can move the message into or out of
-            // Junk for them, and a DMARC quarantine stays a quarantine.
-            let junk = match decision {
-                Decision::Allow(entry) | Decision::Junk(entry) | Decision::Reject(entry) => {
-                    let listed = !matches!(decision, Decision::Allow(_));
-                    if listed != junk {
-                        tracing::info!(%id, account = account_id, junk = listed, listed = %entry.value, "moved by a sender list");
-                    }
-                    listed
-                }
-                Decision::None => match theirs {
-                    Some((own, theirs)) => {
-                        let moved = matches!(theirs, spam::Outcome::Junk | spam::Outcome::Reject);
-                        if moved != junk {
-                            tracing::info!(%id, account = account_id, junk = moved, points = own, "moved by a person's own filter");
-                        }
-                        moved
-                    }
-                    None => junk,
-                },
-            };
-            // Suspicious mail is never forwarded; it stays in Junk.
-            let plan = if junk {
-                forward::Plan { keep_copy: true, targets: Vec::new() }
-            } else {
-                forward::plan(&ctx, account_id).await
-            };
-            if !plan.targets.is_empty()
-                && let Ok(Some(account)) = ctx.store.account_by_id(account_id).await
-            {
-                let forwarder = forward::Forwarder { name: &account.login, account_id: Some(account.id) };
-                forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, &plan.targets).await;
-            }
-            if !plan.keep_copy {
-                note_for(&recipient.address, SpamAction::Delivered, None);
-                delivered += 1;
-                inbox_accounts.push(account_id);
-                continue;
-            }
-            let mailboxes = vec![MailboxTarget::Role(if junk { MailboxRole::Junk } else { MailboxRole::Inbox })];
-            let request =
-                IngestRequest { account_id, raw: message.clone(), mailboxes, keywords: vec![], received_at: None };
-            match ctx.store.ingest(request).await {
-                Ok(_) => {
-                    note_for(
-                        &recipient.address,
-                        if junk { SpamAction::Junk } else { SpamAction::Delivered },
-                        Some(if junk { "junk" } else { "inbox" }),
-                    );
-                    delivered += 1;
-                    if !junk {
-                        inbox_accounts.push(account_id);
-                    }
-                }
-                Err(StoreError::QuotaExceeded) => failed.push(FailedRecipient {
-                    address: recipient.address.clone(),
-                    error: "552 5.2.2 Mailbox is full".into(),
-                }),
-                Err(err) => {
-                    tracing::error!(%id, %err, "storing an incoming message failed");
-                    temporary = true;
-                    failed.push(FailedRecipient {
-                        address: recipient.address.clone(),
-                        error: "451 4.3.0 Temporary storage failure".into(),
-                    });
-                }
-            }
-        }
-
-        if !returned.is_empty() {
-            let lifetime = ctx.live().delivery.max_lifetime_hours as i64 * 3600;
-            let count = returned.len();
-            match ctx.store.enqueue("", returned, &message, None, None, lifetime).await {
-                Ok(_) => delivered += count,
-                Err(err) => {
-                    tracing::error!(%id, %err, "passing on a bounce for forwarded mail failed");
-                    temporary = true;
-                }
-            }
-        }
+            _ => false,
+        });
+    if (outcome == spam::Outcome::Reject && !allowed) || everyone_refuses {
         tracing::info!(
             %id,
             from = %envelope.address,
-            recipients = recipients.len(),
-            delivered,
-            junk,
             score = spam_score,
             tests = spam_tests.as_deref(),
-            "received message"
+            "refused as spam"
         );
-        // Every recipient stores the same bytes, so this one name stands for the message wherever it
-        // went: the sender's reputation counts it, and the history finds what a person says about it
-        // later under the same name.
-        let stored = (delivered > 0).then(|| uwumail_store::BlobHash::of(&message));
+        let note = SpamNote {
+            id: &id,
+            action: SpamAction::Reject,
+            envelope: &envelope,
+            raw: &raw,
+            client: client.as_ref(),
+            verdict: verdict.as_ref(),
+            score: score.as_ref(),
+            recipients: all_recipients(&recipients, SpamAction::Reject),
+            blob_hash: None,
+            virus: None,
+        };
+        note_spam(&ctx, &live.spam.log, note).await;
+        return "550 5.7.1 This message looks like spam\r\n".into();
+    }
+    // What a retry of this message hashes to. Taken before our own headers go on top, so the
+    // same message from the same server lands on the same value when it comes back.
+    let raw_hash = live.spam.greylist_hold.then(|| uwumail_store::BlobHash::of(&raw).as_str().to_owned());
 
-        // The history of what the filter decided, for the admin page. Mail that reached nobody has
-        // its own entry above; this is the one for mail that arrived.
-        if delivered > 0 {
+    // Our verdict replaces whatever the message brought along.
+    let raw = if score.is_some() { headers::strip_spam_verdicts(&raw) } else { raw };
+    let raw = match checked {
+        clamav::Checked::Off => raw,
+        _ => headers::strip_virus_verdicts(&raw),
+    };
+
+    let single = (recipients.len() == 1).then(|| recipients[0].address.as_str());
+    let mut message = origin.received_header(&ctx, &id, single).into_bytes();
+    if let Some(verdict) = &verdict {
+        message.extend_from_slice(verdict.header.as_bytes());
+    }
+    if let Some(header) = clamav::header(&checked) {
+        message.extend_from_slice(header.as_bytes());
+    }
+    if let Some(score) = &score {
+        message.extend_from_slice(spam::headers(score, junk, live.spam.junk_score).as_bytes());
+    }
+    message.extend_from_slice(&raw);
+
+    // The other half of recognising a returning message, for senders that rewrite something
+    // between attempts.
+    let message_id = raw_hash.is_some().then(|| headers::first_value(&raw, "Message-ID")).flatten();
+
+    if outcome == spam::Outcome::Suspicious
+        && let Some((ip, _)) = &client
+    {
+        let mut waiting = Vec::new();
+        for (recipient, decision) in recipients.iter().zip(&decisions) {
+            // An allowed sender never waits, and neither does the message for the others then.
+            if matches!(decision, Decision::Allow(_)) {
+                continue;
+            }
+            let wait = spam::greylist_wait(&ctx, &live.spam, *ip, &envelope.address, &recipient.address).await;
+            if let Some(seconds) = wait {
+                waiting.push(seconds);
+            }
+        }
+        // Hold the message only while every recipient is still waiting. Once one of them may
+        // have it, delivering to all of them keeps the retry from arriving twice.
+        if !recipients.is_empty()
+            && waiting.len() == recipients.len()
+            && let Some(seconds) = waiting.into_iter().min()
+        {
+            let minutes = ((seconds + 59) / 60).max(1);
+            tracing::info!(
+                %id,
+                from = %envelope.address,
+                %seconds,
+                score = spam_score,
+                tests = spam_tests.as_deref(),
+                "greylisted"
+            );
             let note = SpamNote {
                 id: &id,
-                action: if noted.iter().any(|to| to.action == SpamAction::Junk.as_str()) {
-                    SpamAction::Junk
-                } else {
-                    SpamAction::Delivered
-                },
+                action: SpamAction::Greylist,
                 envelope: &envelope,
                 raw: &raw,
                 client: client.as_ref(),
                 verdict: verdict.as_ref(),
                 score: score.as_ref(),
-                recipients: noted,
-                blob_hash: stored.as_ref().map(|hash| hash.as_str().to_owned()),
+                recipients: all_recipients(&recipients, SpamAction::Greylist),
+                blob_hash: None,
                 virus: None,
             };
             note_spam(&ctx, &live.spam.log, note).await;
-        }
-
-        // Count the message for whoever sent it, so a sender that keeps behaving gets the benefit
-        // of the doubt next time, and one that keeps ending up in Junk stops getting it.
-        if let (Some(score), Some((ip, _)), Some(stored)) = (&score, &client, &stored) {
-            let subject = spam::reputation_subject(*ip, verdict.as_ref());
-            let points = score.points_on_its_own();
-            let counts_as_junk =
-                quarantined || matches!(spam::outcome(&live.spam, points), spam::Outcome::Junk | spam::Outcome::Reject);
-            if let Err(err) = ctx.store.record_delivery(stored.clone(), subject, counts_as_junk).await {
-                tracing::warn!(%id, %err, "counting a message for the sender reputation failed");
+            if let Some(raw_hash) = &raw_hash {
+                hold_greylisted(
+                    &ctx,
+                    HeldMessage {
+                        id: &id,
+                        envelope: &envelope,
+                        recipients: &recipients,
+                        raw: &raw,
+                        message: &message,
+                        raw_hash,
+                        message_id: message_id.as_deref(),
+                        client_ip: ip.to_string(),
+                        score: spam_score,
+                        subject: score.as_ref().map(|score| score.subject.clone()),
+                    },
+                )
+                .await;
             }
-            // Clear cases teach the whole server's Bayes filter without anyone marking them: very spammy
-            // on the message's own merits, or vouched for by DMARC with nothing against it.
-            let dmarc_passed = verdict.as_ref().is_some_and(|verdict| verdict.dmarc_passed);
-            // Nobody allowed the sender for the server to learn their mail as spam.
-            let spam = points >= spam::AUTOLEARN_SPAM && !allowed;
-            let wanted = !junk && dmarc_passed && points <= 0.0;
-            if live.spam.bayes
-                && (spam || wanted)
-                && let Err(err) = ctx.store.queue_bayes_learning(stored.clone(), None, spam).await
-            {
-                tracing::warn!(%id, %err, "queueing a clear case for the Bayes filter failed");
-            }
+            return format!("451 4.7.1 Please try again in {minutes} minutes\r\n");
         }
-
-        if delivered == 0 {
-            return if temporary {
-                "451 4.3.0 Temporary storage failure, please try again later\r\n".into()
-            } else {
-                "552 5.2.2 Mailbox is full\r\n".into()
-            };
-        }
-        for account_id in inbox_accounts {
-            vacation::maybe_reply(&ctx, account_id, &envelope.address, &message).await;
-        }
-        let sender_verified = verdict.as_ref().is_none_or(|v| v.sender_verified);
-        if !failed.is_empty() && sender_verified {
-            dsn::bounce(&ctx, &envelope.address, &message, &failed).await;
-        }
-        format!("250 2.0.0 Message accepted as {id}\r\n")
     }
 
+    let mut delivered = 0;
+    let mut inbox_accounts = Vec::new();
+    let mut failed: Vec<FailedRecipient> = Vec::new();
+    let mut temporary = false;
+    let mut seen_accounts = Vec::new();
+    let mut returned = Vec::new();
+    // What happened for each of them, for the history. The message as a whole is one decision,
+    // but a sender list or someone's own filter can send it two ways at once.
+    let mut noted: Vec<SpamLogRecipient> = Vec::new();
+    let mut note_for = |address: &str, action: SpamAction, mailbox: Option<&str>| {
+        noted.push(SpamLogRecipient {
+            address: address.to_owned(),
+            action: action.as_str().to_owned(),
+            mailbox: mailbox.map(str::to_owned),
+        });
+    };
+    for ((recipient, decision), theirs) in recipients.iter().zip(&decisions).zip(&personal) {
+        if let Some(original) = &recipient.srs_return {
+            returned.push(NewQueueRecipient { address: original.clone(), notify_flags: 0, orcpt: None });
+            continue;
+        }
+        if let Some(kind) = recipient.report {
+            let authenticated = verdict.as_ref().is_some_and(|verdict| verdict.dmarc_passed);
+            reports::receive_soon(ctx.clone(), kind, recipient.address.clone(), raw.clone(), authenticated);
+            delivered += 1;
+            continue;
+        }
+        if let Some(targets) = &recipient.forward_to {
+            if junk {
+                tracing::info!(%id, to = %recipient.address, "not passing spam on from a forwarding address");
+            } else {
+                let forwarder = forward::Forwarder { name: &recipient.address, account_id: None };
+                forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, targets).await;
+            }
+            note_for(&recipient.address, if junk { SpamAction::Junk } else { SpamAction::Delivered }, None);
+            delivered += 1;
+            continue;
+        }
+        let Some(account_id) = recipient.local_account else { continue };
+        if seen_accounts.contains(&account_id) {
+            continue;
+        }
+        seen_accounts.push(account_id);
+        // The sender came back with a message this person already dealt with by hand while it
+        // was waiting. Take it and let it go: delivering it again would double it, and bringing
+        // a discarded one back would undo what they decided.
+        if let Some(raw_hash) = &raw_hash {
+            match ctx.store.returning_greylist_hold(account_id, raw_hash, message_id.as_deref()).await {
+                Ok(uwumail_store::Returning::Fresh) => {}
+                Ok(settled) => {
+                    tracing::info!(
+                        %id,
+                        account = account_id,
+                        discarded = settled == uwumail_store::Returning::Discarded,
+                        "a returning greylisted message was already settled by hand"
+                    );
+                    note_for(&recipient.address, SpamAction::Settled, None);
+                    delivered += 1;
+                    continue;
+                }
+                Err(err) => tracing::warn!(%id, account = account_id, %err, "looking up a held message failed"),
+            }
+        }
+        // A listed sender goes where the list says, even out of a DMARC quarantine. Otherwise what a
+        // person taught their own Bayes filter and their own limits can move the message into or out of
+        // Junk for them, and a DMARC quarantine stays a quarantine.
+        let junk = match decision {
+            Decision::Allow(entry) | Decision::Junk(entry) | Decision::Reject(entry) => {
+                let listed = !matches!(decision, Decision::Allow(_));
+                if listed != junk {
+                    tracing::info!(%id, account = account_id, junk = listed, listed = %entry.value, "moved by a sender list");
+                }
+                listed
+            }
+            Decision::None => match theirs {
+                Some((own, theirs)) => {
+                    let moved = matches!(theirs, spam::Outcome::Junk | spam::Outcome::Reject);
+                    if moved != junk {
+                        tracing::info!(%id, account = account_id, junk = moved, points = own, "moved by a person's own filter");
+                    }
+                    moved
+                }
+                None => junk,
+            },
+        };
+        // Suspicious mail is never forwarded; it stays in Junk.
+        let plan = if junk {
+            forward::Plan { keep_copy: true, targets: Vec::new() }
+        } else {
+            forward::plan(&ctx, account_id).await
+        };
+        if !plan.targets.is_empty()
+            && let Ok(Some(account)) = ctx.store.account_by_id(account_id).await
+        {
+            let forwarder = forward::Forwarder { name: &account.login, account_id: Some(account.id) };
+            forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, &plan.targets).await;
+        }
+        if !plan.keep_copy {
+            note_for(&recipient.address, SpamAction::Delivered, None);
+            delivered += 1;
+            inbox_accounts.push(account_id);
+            continue;
+        }
+        let mailboxes = vec![MailboxTarget::Role(if junk { MailboxRole::Junk } else { MailboxRole::Inbox })];
+        let request =
+            IngestRequest { account_id, raw: message.clone(), mailboxes, keywords: vec![], received_at: None };
+        match ctx.store.ingest(request).await {
+            Ok(_) => {
+                note_for(
+                    &recipient.address,
+                    if junk { SpamAction::Junk } else { SpamAction::Delivered },
+                    Some(if junk { "junk" } else { "inbox" }),
+                );
+                delivered += 1;
+                if !junk {
+                    inbox_accounts.push(account_id);
+                }
+            }
+            Err(StoreError::QuotaExceeded) => failed.push(FailedRecipient {
+                address: recipient.address.clone(),
+                error: "552 5.2.2 Mailbox is full".into(),
+            }),
+            Err(err) => {
+                tracing::error!(%id, %err, "storing an incoming message failed");
+                temporary = true;
+                failed.push(FailedRecipient {
+                    address: recipient.address.clone(),
+                    error: "451 4.3.0 Temporary storage failure".into(),
+                });
+            }
+        }
+    }
+
+    if !returned.is_empty() {
+        let lifetime = ctx.live().delivery.max_lifetime_hours as i64 * 3600;
+        let count = returned.len();
+        match ctx.store.enqueue("", returned, &message, None, None, lifetime).await {
+            Ok(_) => delivered += count,
+            Err(err) => {
+                tracing::error!(%id, %err, "passing on a bounce for forwarded mail failed");
+                temporary = true;
+            }
+        }
+    }
+    tracing::info!(
+        %id,
+        from = %envelope.address,
+        recipients = recipients.len(),
+        delivered,
+        junk,
+        score = spam_score,
+        tests = spam_tests.as_deref(),
+        "received message"
+    );
+    // Every recipient stores the same bytes, so this one name stands for the message wherever it
+    // went: the sender's reputation counts it, and the history finds what a person says about it
+    // later under the same name.
+    let stored = (delivered > 0).then(|| uwumail_store::BlobHash::of(&message));
+
+    // The history of what the filter decided, for the admin page. Mail that reached nobody has
+    // its own entry above; this is the one for mail that arrived.
+    if delivered > 0 {
+        let note = SpamNote {
+            id: &id,
+            action: if noted.iter().any(|to| to.action == SpamAction::Junk.as_str()) {
+                SpamAction::Junk
+            } else {
+                SpamAction::Delivered
+            },
+            envelope: &envelope,
+            raw: &raw,
+            client: client.as_ref(),
+            verdict: verdict.as_ref(),
+            score: score.as_ref(),
+            recipients: noted,
+            blob_hash: stored.as_ref().map(|hash| hash.as_str().to_owned()),
+            virus: None,
+        };
+        note_spam(&ctx, &live.spam.log, note).await;
+    }
+
+    // Count the message for whoever sent it, so a sender that keeps behaving gets the benefit
+    // of the doubt next time, and one that keeps ending up in Junk stops getting it.
+    let reputation_subject = spam::reputation_subject(client.as_ref().map(|(ip, _)| *ip), verdict.as_ref());
+    if let (Some(score), Some(subject), Some(stored)) = (&score, reputation_subject, &stored) {
+        let points = score.points_on_its_own();
+        let counts_as_junk =
+            quarantined || matches!(spam::outcome(&live.spam, points), spam::Outcome::Junk | spam::Outcome::Reject);
+        if let Err(err) = ctx.store.record_delivery(stored.clone(), subject, counts_as_junk).await {
+            tracing::warn!(%id, %err, "counting a message for the sender reputation failed");
+        }
+        // Clear cases teach the whole server's Bayes filter without anyone marking them: very spammy
+        // on the message's own merits, or vouched for by DMARC with nothing against it.
+        let dmarc_passed = verdict.as_ref().is_some_and(|verdict| verdict.dmarc_passed);
+        // Nobody allowed the sender for the server to learn their mail as spam.
+        let spam = points >= spam::AUTOLEARN_SPAM && !allowed;
+        let wanted = !junk && dmarc_passed && points <= 0.0;
+        if live.spam.bayes
+            && (spam || wanted)
+            && let Err(err) = ctx.store.queue_bayes_learning(stored.clone(), None, spam).await
+        {
+            tracing::warn!(%id, %err, "queueing a clear case for the Bayes filter failed");
+        }
+    }
+
+    if delivered == 0 {
+        return if temporary {
+            "451 4.3.0 Temporary storage failure, please try again later\r\n".into()
+        } else {
+            "552 5.2.2 Mailbox is full\r\n".into()
+        };
+    }
+    for account_id in inbox_accounts {
+        vacation::maybe_reply(&ctx, account_id, &envelope.address, &message).await;
+    }
+    let sender_verified = verdict.as_ref().is_none_or(|v| v.sender_verified);
+    if !failed.is_empty() && sender_verified {
+        dsn::bounce(&ctx, &envelope.address, &message, &failed).await;
+    }
+    format!("250 2.0.0 Message accepted as {id}\r\n")
+}
+
+impl Session {
     /// Mail from one of our people, to anyone.
     async fn submit(&mut self, envelope: Envelope, recipients: Vec<Recipient>, raw: Vec<u8>) -> String {
         let account = self.account.clone().expect("MAIL requires authentication on submission ports");
-        let trace = self.received_header(&random_id(), None);
+        let trace = self.origin().received_header(&self.smtp.inner, &random_id(), None);
         let submission = Submission {
             account,
             mail_from: envelope.address,
