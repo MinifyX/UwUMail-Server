@@ -3,6 +3,37 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## Unreleased
+
+**A mailbox somewhere else needs an address and a password, nothing more.** Setting one up meant
+knowing what the provider calls its IMAP server, which port it listens on, and whether it wants the
+whole address as the login or only the part before the `@`. Almost nobody knows that about their own
+free mail account, and the page guessed it from a short list in its own code — which got iCloud
+right and everything else by luck.
+
+The server now works it out. It asks the domain's own SRV records first, then the autoconfig file
+the provider publishes, then Mozilla's collection for the providers that publish nothing, and only
+then guesses the usual names. mail.de and iCloud answer at the very first step, GMX, web.de and
+t-online at the third.
+
+Nothing is stored on the strength of a guess: the server **logs in for real** before the mailbox is
+kept, so what is saved is what a connection answered to. That also settles the one thing no source
+states reliably — iCloud and web.de want the part before the `@` on the way in, and the whole
+address on the way out. A wrong password ends the search where it is, instead of trying the next
+candidate with it and filling the provider's lockout counter. The outgoing server is proven
+separately and left out when it does not answer, and the dialog says so rather than quietly
+dropping the switch.
+
+The choices that are really somebody's own stay where they were, in front: what happens at the
+provider afterwards — mark as read or delete for good — how often, whether the junk folder comes
+too, and whether this address answers its own mail. The server names only come out for whoever wants
+to type them, and by themselves when no provider answered, so a mailbox at a provider nobody has
+heard of can still be set up by hand.
+
+Two things this reaches out for: the provider's own file, and Mozilla's collection, which learns the
+domain of the address being set up. Both go through the same door as the subscribed word lists —
+HTTPS, valid certificates, public addresses only — and so do the logins.
+
 ## 0.6.0
 
 **The log goes to Grafana Loki, and the gateway's comes along.** Under *Server → Logs* the server
