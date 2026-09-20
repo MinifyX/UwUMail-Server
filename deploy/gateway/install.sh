@@ -121,8 +121,13 @@ install_gateway() {
   # such bit at all), and running it from where it landed would fail for that reason alone.
   install -m 0755 "$binary" /usr/local/bin/uwumail-gateway.new
   trap 'rm -f /usr/local/bin/uwumail-gateway.new' EXIT
-  # Fails early when the binary does not fit this machine, before it replaces a working one.
-  /usr/local/bin/uwumail-gateway.new --version >/dev/null
+  # Fails early when the binary does not fit this machine, before it replaces a working one. The
+  # script runs without `set -e`, so the guard needs its own `|| exit` -- otherwise a binary that
+  # cannot run here was moved into place anyway and the service restarted into failure (G-8).
+  /usr/local/bin/uwumail-gateway.new --version >/dev/null || {
+    echo "the new gateway binary does not run on this machine; keeping the current one" >&2
+    exit 1
+  }
   mv /usr/local/bin/uwumail-gateway.new /usr/local/bin/uwumail-gateway
   trap - EXIT
 
@@ -130,7 +135,10 @@ install_gateway() {
   if [ ! -f "$config" ]; then
     install -m 0644 "$here/gateway.toml" "$config"
   fi
-  /usr/local/bin/uwumail-gateway --config "$config" check-config >/dev/null
+  /usr/local/bin/uwumail-gateway --config "$config" check-config >/dev/null || {
+    echo "the gateway does not accept its configuration; not starting it" >&2
+    exit 1
+  }
 
   place "$here/uwumail-gateway.service" /etc/systemd/system/uwumail-gateway.service
   systemctl daemon-reload

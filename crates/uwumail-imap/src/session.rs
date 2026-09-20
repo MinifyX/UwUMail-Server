@@ -136,6 +136,11 @@ where
     W: AsyncWrite + Unpin + Send,
 {
     pub fn new(imap: Imap, peer: SocketAddr, reader: R, writer: W) -> Self {
+        // Canonicalise an IPv4-mapped IPv6 peer to plain IPv4, like the SMTP and HTTP listeners do.
+        // Otherwise the login limiter's /64 key folds every `::ffff:a.b.c.d` to `::` -- one IPv4
+        // client would throttle all of them -- and a ban reported to the gateway would name an
+        // address fail2ban cannot match (security-audit-0.5.2 S-27).
+        let peer = SocketAddr::new(peer.ip().to_canonical(), peer.port());
         Session {
             store: imap.store.clone(),
             imap,

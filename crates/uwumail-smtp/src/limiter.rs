@@ -43,10 +43,11 @@ pub struct AuthLimiter {
     reporter: RwLock<Option<Reporter>>,
 }
 
-/// IPv6 users usually own a whole /64, so failures count per /64.
+/// IPv6 users usually own a whole /64, so failures count per /64. An IPv4-mapped address is
+/// canonicalised first, so `::ffff:a.b.c.d` keys as the IPv4 address, not the shared `::` (S-27).
 fn key(ip: IpAddr) -> IpAddr {
-    match ip {
-        IpAddr::V4(_) => ip,
+    match ip.to_canonical() {
+        v4 @ IpAddr::V4(_) => v4,
         IpAddr::V6(v6) => {
             let mut segments = v6.segments();
             segments[4..].fill(0);
@@ -133,6 +134,20 @@ mod tests {
         assert!(!limiter.is_blocked("192.0.2.1".parse().unwrap()));
         limiter.record_success(ip);
         assert!(!limiter.is_blocked(ip));
+    }
+
+    #[test]
+    fn ipv4_mapped_addresses_are_not_all_one_key() {
+        // `::ffff:a.b.c.d` must key as the IPv4 address, not the shared `::`, so one IPv4 client
+        // does not throttle all of them (security-audit-0.5.2 S-27).
+        let limiter = AuthLimiter::default();
+        let mapped: IpAddr = "::ffff:192.0.2.1".parse().unwrap();
+        for _ in 0..MAX_UNKNOWN {
+            limiter.record_unknown_login(mapped);
+        }
+        assert!(limiter.is_blocked(mapped), "the offending client is blocked");
+        assert!(limiter.is_blocked("192.0.2.1".parse().unwrap()), "by its canonical address too");
+        assert!(!limiter.is_blocked("::ffff:192.0.2.2".parse().unwrap()), "another IPv4 client is not");
     }
 
     #[test]
