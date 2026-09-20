@@ -7,7 +7,47 @@ mail arrives where all their other mail arrives — in every app, in the search,
 in the backups — instead of in a second place nobody looks at.
 
 Everyone sets their own up in the portal under *Mein Konto → Abrufkonten*, with
-the address, the provider's IMAP server and the password for it.
+the address and the password for it. What the provider calls its servers, which
+ports it listens on and how it spells the login is worked out by the server
+itself, see [Finding the provider](#finding-the-provider).
+
+## Finding the provider
+
+Almost nobody knows that iCloud keeps its mail under `imap.mail.me.com`, or
+that it wants only the part before the `@` as the login while its own outgoing
+server wants the whole address. So the address and the password are all that is
+asked for, and the server finds the rest. It asks in this order and stops at the
+first source that answers:
+
+| Source | What it is | Who is found there |
+| --- | --- | --- |
+| The domain itself | the `_imaps._tcp` and `_submission(s)._tcp` records of RFC 6186 | mail.de, iCloud |
+| The provider's own file | Thunderbird's autoconfig, at `autoconfig.<domain>` and under `.well-known` on the domain | providers that publish one |
+| Mozilla's database | the collection Thunderbird ships with | GMX, web.de, t-online |
+| Guessing | `imap.<domain>`, `mail.<domain>`, the usual ports | anyone else |
+
+None of it is taken on trust: the server **logs in for real** before a mailbox
+is stored, so what is saved is what a connection answered to, not what a
+database claims. The one thing no source states reliably — whether the login is
+the whole address or only the part before the `@` — is settled the same way:
+when the whole address is refused, the local part is tried once, and never more
+than that, so this cannot walk into a provider's lockout. A provider that
+answers and says the password is wrong ends the search then and there, because
+asking the next candidate with the same wrong password only fills its counter.
+
+The outgoing server is proven separately, with the same password, and is left
+out when it does not answer — a mailbox that cannot send is better than one that
+claims it can.
+
+Whoever has a provider that none of this finds types the names in themselves,
+under *Server selbst eintragen* in the same dialog; that is also what the dialog
+opens by itself when the search came back with nothing.
+
+Two things this reaches out to the internet for: the provider's file, and
+Mozilla's database, which learns the domain of the address being set up. Both go
+through the same door as the subscribed word lists — HTTPS with a valid
+certificate, public addresses only — and so do the logins, so an address nobody
+has proven yet cannot point this server at its own network.
 
 ## What happens to fetched mail
 
@@ -114,11 +154,13 @@ apart at the recipient — the very policy that makes the address worth
 something.
 
 So a fetched mailbox can learn where its provider takes outgoing mail, under
-*Von dieser Adresse antworten* on the same page: the server name (guessed from
-the address), and STARTTLS on port 587 or TLS on port 465. Never unencrypted:
-this sends a password across the internet. The password is the one that is
-already stored for fetching — providers use the same one for both, and a second
-one to keep in sync would only be a second one to get wrong.
+*Von dieser Adresse antworten* on the same page. The server is found with
+everything else and proven with the same password before it is offered; where
+nothing was found it is typed in by hand, as STARTTLS on port 587 or TLS on
+port 465. Never unencrypted: this sends a password across the internet. The
+password is the one that is already stored for fetching — providers use the same
+one for both, and a second one to keep in sync would only be a second one to get
+wrong.
 
 Two things follow from that:
 
