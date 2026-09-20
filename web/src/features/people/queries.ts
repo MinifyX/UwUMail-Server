@@ -73,6 +73,8 @@ export interface PersonChanges {
   redirectTo?: string;
   quotaBytes?: number;
   disabled?: boolean;
+  /** Whether this person may open their mailbox in the browser. */
+  webmail?: boolean;
 }
 
 /**

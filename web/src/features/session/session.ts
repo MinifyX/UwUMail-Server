@@ -3,6 +3,7 @@ import { api, needsSecondFactor, setCsrfToken, type Info, type LoginResult, type
 import { assertPasskey, type RequestOptionsJson } from "@/lib/webauthn";
 import { navigate } from "@/lib/router";
 import { usePrefs, type Prefs } from "@/state/prefs";
+import { afterLogin, isPortalPath } from "./afterLogin";
 
 function adopt(session: Session): Session {
   setCsrfToken(session.csrfToken);
@@ -29,12 +30,14 @@ export function useInfo() {
 /** Takes over a fresh session and leaves the login page. */
 export function useStartSession() {
   const queryClient = useQueryClient();
-  return (session: Session, to = "/account") => {
+  return (session: Session, to?: string) => {
     queryClient.setQueryData(["session"], adopt(session));
     const path = window.location.pathname;
-    if (path === "/" || path === "/login" || path.startsWith("/password/")) {
-      navigate(to, { replace: true });
-    }
+    if (path !== "/" && path !== "/login" && !path.startsWith("/password/")) return;
+    const target = to ?? afterLogin(window.location.search, session.webmail);
+    // The webmail is its own app, so it is opened as a page instead of routed to.
+    if (isPortalPath(target)) navigate(target, { replace: true });
+    else window.location.replace(target);
   };
 }
 

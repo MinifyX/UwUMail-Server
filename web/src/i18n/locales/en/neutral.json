@@ -65,7 +65,8 @@
     "reports": "Reports",
     "updates": "Updates",
     "collapse": "Collapse {{group}}",
-    "expand": "Expand {{group}}"
+    "expand": "Expand {{group}}",
+    "mailbox": "Mailbox"
   },
   "userMenu": {
     "open": "Open account menu",
@@ -453,7 +454,9 @@
       "redirect": "Send mail here instead",
       "redirectHint": "An address on this server. Empty: mail to this account is refused at the door.",
       "redirectNone": "Mail to this account is refused.",
-      "redirectTo": "Mail to this account goes to {{address}}."
+      "redirectTo": "Mail to this account goes to {{address}}.",
+      "webmail": "Mailbox in the browser",
+      "webmailHint": "Opening this mailbox at /mail with the portal login. Separate from IMAP and JMAP, which decide what mail programs may do."
     },
     "serviceAccess": {
       "title": "Access",
@@ -1051,6 +1054,12 @@
       "timeoutHint": "After that the message goes on unchecked.",
       "maxSize": "Largest message checked (MB)",
       "maxSizeHint": "Bigger messages go through unchecked; clamd refuses them anyway."
+    },
+    "webmail": {
+      "title": "Mailbox in the browser",
+      "intro": "Reading and writing mail at mail.…/mail, without a mail program.",
+      "enabled": "Offer the webmail",
+      "enabledHint": "Everyone signed in to the portal can open their mailbox here. Each account has its own switch under People; mail programs are not affected either way."
     }
   },
   "health": {
