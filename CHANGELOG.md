@@ -3,6 +3,32 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.5.2
+
+**A security release.** The sixth review looked at everything 0.5.0 added — above all the fetch
+feature (pulling mail from other mailboxes and sending as the fetched address) and the spam traps —
+at the gateway and tunnel, and re-read the rest of the server; the whole webmail was read alongside.
+Details in [docs/security-audit-0.5.2.md](docs/security-audit-0.5.2.md) and, for the webmail, in its
+own repository. Every Critical, High and Medium finding is fixed here, each with a regression test.
+
+The one that mattered most: **outgoing mail was routed by the envelope address alone**, so a user
+who registered a fetched mailbox for someone else's address could intercept that person's outbound
+mail or send as them. Routing and send-as ownership are now scoped to the account, a fetched
+mailbox must be a real one elsewhere (not a hosted address), and sending from it needs one
+successful fetch first. Alongside it: **DMARC could be bypassed** on the receive path with a second
+`From` header, a malformed header line, or a HELO address literal behind a trusted relay — all
+refused now; fetched mail no longer trusts a sender-written `Authentication-Results` or a private
+`client-ip`; the session cookie is read per transport again; fetched mail is no longer lost or
+destroyed at the provider when it is refused, held or the account is trashed; the fetch and send-as
+workers only reach public hosts; the SMTP "sending" switch holds on the JMAP door too; and a spam
+trap no longer shields its co-recipients. The gateway expires an unused pairing code, stops trusting
+a migrated address, and its root helpers no longer follow planted symlinks or run gateway-chosen
+commands; the release now gates on `cargo audit` and checks the version against the tag.
+
+The webmail reveals a hidden Bcc, cleans pasted content, keeps a mail's CSS out of the printed
+header, does not auto-load remote images for junked mail, names the address an unsubscribe sends to,
+and flags more disguised links and dangerous files. It is pinned to its 2026-09 security commit.
+
 ## 0.5.1
 
 **The webmail answers on its own address again.** `/mail` worked and so did every path below it,
