@@ -93,6 +93,45 @@ jobs:
           path: web/dist
           retention-days: 3
 
+  webmail:
+    name: Webmail
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    # The webmail lives in its own repository, pinned by full commit hash in webmail.pin. Its build
+    # runs its own package scripts, so it gets a job to itself: no token left behind for it to find,
+    # no write rights, and nothing of the server in the directory it builds in.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Fetch the pinned commit
+        run: |
+          repo="$(sed -n 's/^repo=//p' webmail.pin)"
+          commit="$(sed -n 's/^commit=//p' webmail.pin)"
+          git init -q webmail
+          git -C webmail remote add origin "$repo"
+          git -C webmail fetch -q --depth 1 origin "$commit"
+          git -C webmail checkout -q FETCH_HEAD
+          test "$(git -C webmail rev-parse HEAD)" = "$commit"
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          package_json_file: webmail/package.json
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24
+      - name: Build
+        working-directory: webmail
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: webmail-dist
+          path: webmail/dist
+          retention-days: 3
+
   gateway:
     name: Gateway binary
     if: github.event_name != 'pull_request'
@@ -126,7 +165,7 @@ jobs:
   image:
     name: Container image
     if: github.event_name != 'pull_request'
-    needs: [test, web]
+    needs: [test, web, webmail]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -137,29 +176,21 @@ jobs:
       UWUMAIL_RELEASE: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          # This job has packages: write and builds the binary that gets pushed. Nothing here needs
+          # git credentials afterwards, so none are left lying in .git/config.
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: web-dist
           path: web/dist
-      # The webmail lives in its own repository, pinned by full commit hash in webmail.pin, and
-      # is embedded into the binary like the portal is. Without this step the server would build
-      # fine and simply have no /mail, which is why the check below insists it is really in there.
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+      # Built in a job of its own, from the commit webmail.pin names, and embedded into the binary
+      # like the portal is. Without it the server would build fine and simply have no /mail, which
+      # is why the check below insists it is really in there.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          node-version: 24
-      - name: Build the webmail from its pinned commit
-        run: |
-          repo="$(sed -n 's/^repo=//p' webmail.pin)"
-          commit="$(sed -n 's/^commit=//p' webmail.pin)"
-          git init -q webmail
-          git -C webmail remote add origin "$repo"
-          git -C webmail fetch -q --depth 1 origin "$commit"
-          git -C webmail checkout -q FETCH_HEAD
-          test "$(git -C webmail rev-parse HEAD)" = "$commit"
-          cd webmail
-          pnpm install --frozen-lockfile
-          pnpm build
+          name: webmail-dist
+          path: webmail/dist
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           targets: x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu
