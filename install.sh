@@ -245,8 +245,14 @@ port_busy() {
   fi
 }
 
-# A port, or an address:port, the way Compose wants it.
-valid_bind() { [[ "$1" =~ ^(\[[0-9a-fA-F:]+\]:|[0-9]{1,3}(\.[0-9]{1,3}){3}:)?[0-9]{1,5}$ ]]; }
+# A port, or an address:port, the way Compose wants it. The number has to be one a port can be:
+# 70000 has the shape and would fail at the start, which is the failure this whole block exists to
+# prevent.
+valid_bind() {
+  [[ "$1" =~ ^(\[[0-9a-fA-F:]+\]:|[0-9]{1,3}(\.[0-9]{1,3}){3}:)?[0-9]{1,5}$ ]] || return 1
+  local port=$((10#${1##*:}))
+  [ "$port" -ge 1 ] && [ "$port" -le 65535 ]
+}
 
 # The port out of either form.
 port_of() { printf '%s' "${1##*:}"; }
@@ -267,7 +273,7 @@ plan_port() {
   local what="$1" port="$2" suggestion="$3" flag="$4" given="$5" answer
   plan_result="$given"
   if [ -n "$given" ]; then
-    valid_bind "$given" || die "$flag wants a port or an address:port, not $given"
+    valid_bind "$given" || die "$flag wants a port from 1 to 65535, or an address:port, not $given"
     port_busy "$(port_of "$given")" && warn "$flag points at $given, and that one is taken as well"
     return 0
   fi
@@ -279,7 +285,7 @@ plan_port() {
   fi
   warn "port $port is taken on this machine ($what)"
   answer=$(askfor "Which port should UwUMail listen on instead?" "$(free_from "$suggestion")")
-  valid_bind "$answer" || die "that is not a port or an address:port: $answer"
+  valid_bind "$answer" || die "that is not a port from 1 to 65535, or an address:port: $answer"
   plan_result="$answer"
 }
 
