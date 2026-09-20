@@ -182,11 +182,14 @@ async fn lookup(host: &str, port: u16) -> Vec<SocketAddr> {
 /// Mail from a fetched address leaves through that provider's own outgoing server, whoever it is
 /// addressed to. Sent from here it would carry our name on the envelope and theirs in the From
 /// header, and their DMARC policy would take it apart at the recipient.
-async fn sender_route(ctx: &Context, return_path: &str) -> Option<Target> {
+async fn sender_route(ctx: &Context, account_id: Option<i64>, return_path: &str) -> Option<Target> {
+    // The route hangs on the sending account, not on the envelope address alone: mail with no
+    // account (bounces, system mail) never takes a fetched sender's server.
+    let account_id = account_id?;
     if return_path.is_empty() {
         return None;
     }
-    let sender = match ctx.store.fetch_sender(return_path).await {
+    let sender = match ctx.store.fetch_sender(account_id, return_path).await {
         Ok(sender) => sender?,
         Err(err) => {
             tracing::warn!(%err, "looking up the outgoing server of a fetched address failed");
@@ -207,7 +210,12 @@ async fn sender_route(ctx: &Context, return_path: &str) -> Option<Target> {
     Some(Target { host: relay.host.clone(), addrs, via: Via::Relay(relay), verified_tls: false })
 }
 
-async fn resolve_targets(ctx: &Context, domain: &str, return_path: &str) -> Result<Vec<Target>, Outcome> {
+async fn resolve_targets(
+    ctx: &Context,
+    domain: &str,
+    account_id: Option<i64>,
+    return_path: &str,
+) -> Result<Vec<Target>, Outcome> {
     let live = ctx.live();
     if let Some(route) = live.delivery.routes.get(domain) {
         let (host, port) = route
@@ -217,8 +225,9 @@ async fn resolve_targets(ctx: &Context, domain: &str, return_path: &str) -> Resu
         let addrs = lookup(&host, port).await;
         return Ok(vec![Target { host, addrs, via: Via::Route, verified_tls: false }]);
     }
-    // Before the server's own smarthost: whose address it comes from decides where it may leave.
-    if let Some(target) = sender_route(ctx, return_path).await {
+    // Before the server's own smarthost: whose account it comes from, together with the address,
+    // decides where it may leave.
+    if let Some(target) = sender_route(ctx, account_id, return_path).await {
         return Ok(vec![target]);
     }
     if let Some(relay) = &live.delivery.relay {
@@ -297,7 +306,7 @@ async fn deliver_domain(
     recipients: &[QueueRecipient],
 ) -> Vec<Outcome> {
     let everyone = |outcome: Outcome| recipients.iter().map(|_| outcome.clone()).collect::<Vec<_>>();
-    let targets = match resolve_targets(ctx, domain, &message.return_path).await {
+    let targets = match resolve_targets(ctx, domain, message.account_id, &message.return_path).await {
         Ok(targets) => targets,
         Err(outcome) => return everyone(outcome),
     };

@@ -373,6 +373,14 @@ impl Store {
         let (local, domain) = normalize_address(&new.address)
             .map_err(|_| StoreError::Invalid(format!("'{}' is not a valid email address", new.address)))?;
         let address = format!("{local}@{domain}");
+        // A fetched mailbox is one somewhere else. Refuse an address of a domain hosted here: it
+        // would let an account register (and, once send is on, send as) a local address it does not
+        // own -- the admin's, or another person's -- signed with this server's own key.
+        if self.is_local_domain(&domain).await? {
+            return Err(StoreError::Invalid(
+                "this address is hosted on this server; a fetched mailbox is for a mailbox elsewhere".into(),
+            ));
+        }
         let host = check_host(&new.host)?;
         let interval = check_interval(new.interval_secs)?;
         let username = new.username.trim().to_owned();
@@ -509,12 +517,23 @@ impl Store {
             }
             if let Some(send) = update.send_enabled {
                 // Sending needs somewhere to send to: a server name is what makes the difference
-                // between an address that can answer and one that only claims it can.
-                let host: String =
-                    tx.query_row("SELECT smtp_host FROM fetch_accounts WHERE id = ?1", params![id], |row| row.get(0))?;
+                // between an address that can answer and one that only claims it can. And it needs
+                // proof that this account can read the mailbox -- one successful fetch -- so that a
+                // row alone can never grant the right to send as an address nobody has opened.
+                let (host, last_ok_at): (String, Option<i64>) = tx.query_row(
+                    "SELECT smtp_host, last_ok_at FROM fetch_accounts WHERE id = ?1",
+                    params![id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )?;
                 if send && host.trim().is_empty() {
                     return Err(StoreError::Invalid(
                         "sending from this address needs the provider's outgoing server".into(),
+                    ));
+                }
+                if send && last_ok_at.is_none() {
+                    return Err(StoreError::Invalid(
+                        "sending from this address needs one successful fetch first, to prove the mailbox is yours"
+                            .into(),
                     ));
                 }
                 set("send_enabled", &send)?;
@@ -569,8 +588,11 @@ impl Store {
     ///
     /// A reply from a free mail address only holds up if it goes out through that provider: its
     /// DMARC policy is what makes the address worth anything, and our server is not in it. Asked
-    /// once per delivery attempt, by the envelope sender.
-    pub async fn fetch_sender(&self, address: &str) -> Result<Option<FetchSender>> {
+    /// once per delivery attempt, by the sending account and the envelope sender together: the
+    /// route hangs on the account, not on the address alone, so two people who fetch the same
+    /// provider can never leave through each other's server. Mail with no account (bounces, system
+    /// mail) has no fetched sender.
+    pub async fn fetch_sender(&self, account_id: i64, address: &str) -> Result<Option<FetchSender>> {
         let Ok((local, domain)) = normalize_address(address) else {
             return Ok(None);
         };
@@ -579,8 +601,9 @@ impl Store {
             let found = conn
                 .query_row(
                     "SELECT account_id, address, smtp_host, smtp_port, smtp_security, username, password
-                     FROM fetch_accounts WHERE address = ?1 AND send_enabled = 1 AND smtp_host <> ''",
-                    params![address],
+                     FROM fetch_accounts
+                     WHERE account_id = ?2 AND address = ?1 AND send_enabled = 1 AND smtp_host <> ''",
+                    params![address, account_id],
                     |row| {
                         let security: String = row.get(4)?;
                         let sealed: Vec<u8> = row.get(6)?;
@@ -900,7 +923,7 @@ mod tests {
 
         // Fetching alone says nothing about sending: the address cannot be sent from yet.
         assert!(!store.account_owns_address(account_id, &address).await.unwrap());
-        assert!(store.fetch_sender(&address).await.unwrap().is_none());
+        assert!(store.fetch_sender(account_id, &address).await.unwrap().is_none());
 
         // And it cannot be switched on without somewhere to send to.
         let just_on = FetchAccountUpdate { send_enabled: Some(true), ..Default::default() };
@@ -910,32 +933,97 @@ mod tests {
         ));
         assert!(!store.account_owns_address(account_id, &address).await.unwrap());
 
-        let with_server = FetchAccountUpdate {
+        // A server can be saved, but sending stays off until a fetch has proven the mailbox is ours.
+        let set_server = FetchAccountUpdate {
             smtp_host: Some("smtp.example.com".into()),
             smtp_port: Some(465),
             smtp_security: Some(SendSecurity::Tls),
-            send_enabled: Some(true),
             ..Default::default()
         };
-        let saved = store.update_fetch_account(account_id, fetched.id, with_server).await.unwrap();
-        assert!(saved.send_enabled && saved.smtp_port == 465);
+        store.update_fetch_account(account_id, fetched.id, set_server).await.unwrap();
+        let too_early = FetchAccountUpdate { send_enabled: Some(true), ..Default::default() };
+        assert!(
+            matches!(store.update_fetch_account(account_id, fetched.id, too_early).await, Err(StoreError::Invalid(_))),
+            "send is refused before any successful fetch"
+        );
+        assert!(!store.account_owns_address(account_id, &address).await.unwrap());
 
-        // Now the owner may answer from it -- and only the owner.
+        // One successful fetch proves control; now the owner may answer from it -- and only the owner.
+        store.note_fetch_run(fetched.id, 1, None).await.unwrap();
+        let turn_on = FetchAccountUpdate { send_enabled: Some(true), ..Default::default() };
+        let saved = store.update_fetch_account(account_id, fetched.id, turn_on).await.unwrap();
+        assert!(saved.send_enabled && saved.smtp_port == 465);
         assert!(store.account_owns_address(account_id, &address).await.unwrap());
         assert!(!store.account_owns_address(other, &address).await.unwrap(), "not somebody else's address");
 
         // What the delivery worker needs to send it: the provider's server and the login.
-        let sender = store.fetch_sender(&address).await.unwrap().unwrap();
+        let sender = store.fetch_sender(account_id, &address).await.unwrap().unwrap();
         assert_eq!((sender.host.as_str(), sender.port), ("smtp.example.com", 465));
         assert_eq!(sender.security, SendSecurity::Tls);
         assert_eq!(sender.username, "mini@example.com");
         assert_eq!(sender.password, "secret-at-the-provider", "the same one that opens the mailbox");
         assert_eq!(sender.account_id, account_id);
 
+        // Another account asking for the same address gets nothing: the route is the account's own.
+        assert!(store.fetch_sender(other, &address).await.unwrap().is_none());
+
         // Switched off again, the address stops being one to send from at once.
         let off = FetchAccountUpdate { send_enabled: Some(false), ..Default::default() };
         store.update_fetch_account(account_id, fetched.id, off).await.unwrap();
         assert!(!store.account_owns_address(account_id, &address).await.unwrap());
-        assert!(store.fetch_sender(&address).await.unwrap().is_none());
+        assert!(store.fetch_sender(account_id, &address).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn two_accounts_fetching_the_same_address_keep_their_own_outgoing_server() {
+        // Two people may legitimately fetch the same shared mailbox; neither may leave through the
+        // other's provider, and neither may read the other's outbound mail. The route is keyed on
+        // the account, not on the address alone (S-1).
+        let (store, _dir, a) = store_with_person().await;
+        let b = store
+            .create_account(NewAccount {
+                address: "leni@uwu.test".into(),
+                display_name: String::new(),
+                password: None,
+                role: Role::User,
+                quota_bytes: 0,
+                protocols: None,
+            })
+            .await
+            .unwrap()
+            .id;
+
+        let shared = |account_id| NewFetchAccount { account_id, ..new_account(account_id) };
+        let a_row = store.create_fetch_account(shared(a)).await.unwrap();
+        let b_row = store.create_fetch_account(shared(b)).await.unwrap();
+        let address = a_row.address.clone();
+        assert_eq!(address, b_row.address, "the same shared address, two accounts");
+
+        for (id, row, host) in
+            [(a, a_row.id, "smtp.a.example"), (b, b_row.id, "smtp.b.example")]
+        {
+            store.note_fetch_run(row, 1, None).await.unwrap();
+            let on = FetchAccountUpdate {
+                smtp_host: Some(host.into()),
+                smtp_port: Some(465),
+                smtp_security: Some(SendSecurity::Tls),
+                send_enabled: Some(true),
+                ..Default::default()
+            };
+            store.update_fetch_account(id, row, on).await.unwrap();
+        }
+
+        // Each account routes through its own server, whatever the row order in the table is.
+        assert_eq!(store.fetch_sender(a, &address).await.unwrap().unwrap().host, "smtp.a.example");
+        assert_eq!(store.fetch_sender(b, &address).await.unwrap().unwrap().host, "smtp.b.example");
+    }
+
+    #[tokio::test]
+    async fn a_fetched_address_of_a_hosted_domain_is_refused() {
+        // A fetched mailbox is one somewhere else. An address of a domain hosted here would let an
+        // account claim (and, with send on, impersonate) a local address it does not own (S-2).
+        let (store, _dir, account_id) = store_with_person().await;
+        let local = NewFetchAccount { address: "admin@uwu.test".into(), ..new_account(account_id) };
+        assert!(matches!(store.create_fetch_account(local).await, Err(StoreError::Invalid(_))));
     }
 }
