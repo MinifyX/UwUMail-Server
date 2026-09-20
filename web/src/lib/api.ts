@@ -56,6 +56,8 @@ export interface Session {
   csrfToken: string;
   preferences: Record<string, unknown>;
   server: { hostname: string; version: string };
+  /** Whether this person has a mailbox in the browser under /mail. */
+  webmail: boolean;
 }
 
 export interface Profile {
@@ -132,6 +134,8 @@ export interface Person {
   redirectTo: string;
   /** False for a service with neither IMAP nor JMAP. */
   hasMailbox: boolean;
+  /** Whether this person may open their mailbox in the browser. Its own switch, not a protocol. */
+  webmail: boolean;
   status: PersonStatus;
   quotaBytes: number;
   usedBytes: number;

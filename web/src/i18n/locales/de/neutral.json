@@ -65,7 +65,8 @@
     "reports": "Berichte",
     "updates": "Updates",
     "collapse": "{{group}} einklappen",
-    "expand": "{{group}} ausklappen"
+    "expand": "{{group}} ausklappen",
+    "mailbox": "Postfach"
   },
   "userMenu": {
     "open": "Kontomenü öffnen",
@@ -453,7 +454,9 @@
       "redirect": "Mail stattdessen an",
       "redirectHint": "Eine Adresse auf diesem Server. Leer: Mails an dieses Konto werden gleich beim Einliefern abgewiesen.",
       "redirectNone": "Mails an dieses Konto werden abgewiesen.",
-      "redirectTo": "Mails an dieses Konto gehen an {{address}}."
+      "redirectTo": "Mails an dieses Konto gehen an {{address}}.",
+      "webmail": "Postfach im Browser",
+      "webmailHint": "Dieses Postfach unter /mail mit der Portal-Anmeldung öffnen. Getrennt von IMAP und JMAP, die regeln, was Mail-Programme dürfen."
     },
     "serviceAccess": {
       "title": "Zugang",
@@ -1049,6 +1052,12 @@
       "timeoutHint": "Danach geht die Mail ungeprüft weiter.",
       "maxSize": "Größte geprüfte Mail (MB)",
       "maxSizeHint": "Größere Mails gehen ungeprüft durch; clamd nimmt sie ohnehin nicht an."
+    },
+    "webmail": {
+      "title": "Postfach im Browser",
+      "intro": "Mail lesen und schreiben unter mail.…/mail, ganz ohne Mail-Programm.",
+      "enabled": "Webmail anbieten",
+      "enabledHint": "Wer im Portal angemeldet ist, kann sein Postfach hier öffnen. Jedes Konto hat unter Personen noch einen eigenen Schalter; Mail-Programme sind davon in beiden Fällen nicht betroffen."
     }
   },
   "health": {

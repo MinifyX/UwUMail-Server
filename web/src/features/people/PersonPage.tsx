@@ -271,6 +271,16 @@ function ProtocolCard({ person }: { person: Person }) {
           />
         ))}
       </div>
+      {person.hasMailbox && person.role !== "service" && (
+        <div className="mt-4 border-t border-hairline pt-4">
+          <Toggle
+            checked={person.webmail}
+            onChange={(on) => update.mutate({ webmail: on })}
+            label={t("people.protocols.webmail")}
+            description={t("people.protocols.webmailHint")}
+          />
+        </div>
+      )}
       {!person.hasMailbox && (
         <div className="mt-4 flex flex-col gap-3 border-t border-hairline pt-4">
           <p className="text-[13px] text-warning">{t("people.protocols.noMailbox")}</p>

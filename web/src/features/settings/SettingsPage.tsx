@@ -410,6 +410,21 @@ export function SettingsPage() {
               </>
             )}
           </Section>
+          <Section
+            title={t("settings.webmail.title")}
+            intro={t("settings.webmail.intro")}
+            view={view}
+            keys={["http.webmail"]}
+          >
+            {(form) => (
+              <ToggleField
+                form={form}
+                settingKey="http.webmail"
+                label={t("settings.webmail.enabled")}
+                hint={t("settings.webmail.enabledHint")}
+              />
+            )}
+          </Section>
         </div>
       }
     </div>
