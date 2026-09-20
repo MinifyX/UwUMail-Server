@@ -208,6 +208,11 @@ if [ -n "$gateway_code" ]; then
     uwugw1*) ;;
     *) die "a pairing code starts with uwugw1, this one does not: $gateway_code" ;;
   esac
+  # It goes into the .env as it stands, and a line break in it would become a second line there
+  # that Compose reads as its own setting. Every other answer is checked the same way.
+  case "$gateway_code" in
+    *[!a-zA-Z0-9._-]*) die "a pairing code holds only letters, digits, dots, underscores and dashes" ;;
+  esac
 fi
 
 # The scanner wants about a gigabyte for itself, so a small machine is better off without it.
