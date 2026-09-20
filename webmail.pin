@@ -7,4 +7,4 @@
 #
 # To move to a newer webmail: put its commit here, let CI build once, and say so in the changelog.
 repo=https://github.com/MinifyX/UwUMail-Webmail.git
-commit=58e8c6f92c80269c1f04e641b76f95b692a104d9
+commit=c65be6d4668a493cc7de319e393db905004f8ef9
