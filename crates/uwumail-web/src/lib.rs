@@ -377,6 +377,10 @@ impl Web {
         // itself, so every path below hands out the same page.
         if assets::has_webmail() {
             app = app.route("/mail", get(routes::webmail::page));
+            // With the slash as well. It is the address the webmail is built with, so it is what a
+            // bookmark and a link from the page itself hold — and a wildcard wants at least one
+            // character after the slash, so neither route would have caught it on its own.
+            app = app.route("/mail/", get(routes::webmail::page));
             // One wildcard for everything below: the handler tells a file of the build from a
             // path the webmail routes itself. Two overlapping wildcards would not be allowed here.
             app = app.route("/mail/{*rest}", get(routes::webmail::below));

@@ -3,6 +3,16 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.5.1
+
+**The webmail answers on its own address again.** `/mail` worked and so did every path below it,
+but `/mail/` — with the slash, which is the address the webmail is built with and therefore the one
+a bookmark holds — answered with a not-found. One route was missing between the exact path and the
+wildcard below it, because a wildcard wants at least one character after the slash. Found by trying
+the release on the test machine before it went anywhere else.
+
+The webmail itself is unchanged: this builds the same commit `webmail.pin` named for 0.5.0.
+
 ## 0.5.0
 
 **Security.** Everything new here was reviewed afterwards, and the webmail's own repository with
