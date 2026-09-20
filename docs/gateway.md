@@ -322,8 +322,21 @@ is to skip the entry and use the gateway from home too; see
 
 - **Only one server per gateway.**
 - **Not everything goes through the gateway.** DNS lookups (SPF, DKIM, MX),
-  certificate renewals and MTA-STS policies are fetched from home. None of that
-  ends up in DNS records or mail headers.
+  certificate renewals, MTA-STS policy fetches, and mail fetched from other
+  providers all leave from home, not through the tunnel. None of it ends up in
+  your DNS records or mail headers — but the web server behind an `_mta-sts`
+  domain you send to, and a provider you fetch mail from, do see your home
+  address in their own logs. If hiding it from them matters, front those with a
+  VPN or expect them to know it.
+- **Public ports follow the gateway's own config, not your server's.** A
+  listener you switch off at home (an empty `listen.*`) is still carried on the
+  gateway's public port unless you also turn it off in the gateway's
+  `gateway.toml`. Every service keeps its own TLS/AUTH gate, so nothing opens up
+  by itself.
+- **Dual-stack households:** the tunnel is dialled over one address family, and
+  only that one is spared from bans. A wrong password from a household device
+  reaching the gateway over the other family can ban that address for an hour
+  (the tunnel itself stays up).
 - **Trust the VPS like the server.** Someone who breaks into it cannot read TLS
   connections, but could strip STARTTLS on port 25 like any network on the way
   (MTA-STS protects against that), and could hand connections to your server

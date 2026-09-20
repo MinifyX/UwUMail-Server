@@ -225,7 +225,7 @@ mod tests {
         for private in [
             "127.0.0.1",
             "10.1.2.3",
-            "192.168.70.20",
+            "192.168.1.20",
             "169.254.1.1",
             "100.64.0.1",
             "0.0.0.0",
@@ -237,7 +237,7 @@ mod tests {
         ] {
             assert!(!is_public(private.parse().unwrap()), "{private}");
         }
-        for public in ["1.1.1.1", "217.154.145.139", "2a01:4f8::1"] {
+        for public in ["1.1.1.1", "9.9.9.9", "2a01:4f8::1"] {
             assert!(is_public(public.parse().unwrap()), "{public}");
         }
         assert!(check_url("https://maps.example.org/list.txt", false).is_ok());
