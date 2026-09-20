@@ -88,9 +88,10 @@ Each step ships as its own commits, container image and test deployment.
 - [x] CalDAV and CardDAV with sync-collection, calendar-query and multiget, also in the Apple profile
 - [ ] Signed Apple configuration profiles, scheduling (iTIP), shared calendars
 
-## 6. Web mail and external mailboxes
+## 6. Web mail and external mailboxes ✅ in progress
 
-- [ ] UwUMail web client (built from the app repository) served at `/`, switchable in the admin panel
+- [x] UwUMail webmail (its own repository, built from the app's interface) served at `/mail`, switchable for the server and per account (docs/webmail.md)
+- [ ] Delayed sending, signatures, sender pictures and address suggestions on the server, so the webmail stops doing without them
 - [ ] External mailboxes (Gmail, GMX, ...) through the UwUMail engine, shown as extra JMAP accounts
 
 ## UwUMail Gateway ✅ in progress
