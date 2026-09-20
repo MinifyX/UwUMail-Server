@@ -59,6 +59,46 @@ impl FetchSecurity {
     }
 }
 
+/// How the provider's outgoing server is reached. Never unencrypted: this sends a password across
+/// the internet, not across a machine room.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SendSecurity {
+    /// A plain connection upgraded with STARTTLS, usually port 587.
+    Starttls,
+    /// TLS from the first byte, usually port 465.
+    Tls,
+}
+
+impl SendSecurity {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Starttls => "starttls",
+            Self::Tls => "tls",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "starttls" => Some(Self::Starttls),
+            "tls" => Some(Self::Tls),
+            _ => None,
+        }
+    }
+}
+
+/// Where a fetched address sends its mail, and with which login.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FetchSender {
+    pub account_id: i64,
+    pub address: String,
+    pub host: String,
+    pub port: u16,
+    pub security: SendSecurity,
+    pub username: String,
+    pub password: String,
+}
+
 /// What happens to a message at the provider once this server has it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -101,6 +141,10 @@ pub struct FetchAccount {
     pub interval_secs: i64,
     pub enabled: bool,
     pub auth_serv_id: String,
+    pub smtp_host: String,
+    pub smtp_port: u16,
+    pub smtp_security: SendSecurity,
+    pub send_enabled: bool,
     pub created_at: i64,
     pub last_run_at: Option<i64>,
     pub last_ok_at: Option<i64>,
@@ -136,6 +180,10 @@ pub struct FetchAccountUpdate {
     pub interval_secs: Option<i64>,
     pub enabled: Option<bool>,
     pub auth_serv_id: Option<String>,
+    pub smtp_host: Option<String>,
+    pub smtp_port: Option<u16>,
+    pub smtp_security: Option<SendSecurity>,
+    pub send_enabled: Option<bool>,
 }
 
 /// Where one folder of a fetch account stands.
@@ -156,12 +204,13 @@ impl FetchFolder {
 }
 
 const COLUMNS: &str = "id, account_id, address, host, port, security, username, after_fetch, fetch_junk, \
-                       interval_secs, enabled, auth_serv_id, created_at, last_run_at, last_ok_at, last_error, \
-                       last_fetched, total_fetched";
+                       interval_secs, enabled, auth_serv_id, smtp_host, smtp_port, smtp_security, send_enabled, \
+                       created_at, last_run_at, last_ok_at, last_error, last_fetched, total_fetched";
 
 fn from_row(row: &Row<'_>) -> rusqlite::Result<FetchAccount> {
     let security: String = row.get(5)?;
     let after: String = row.get(7)?;
+    let sending: String = row.get(14)?;
     Ok(FetchAccount {
         id: row.get(0)?,
         account_id: row.get(1)?,
@@ -175,12 +224,16 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<FetchAccount> {
         interval_secs: row.get(9)?,
         enabled: row.get(10)?,
         auth_serv_id: row.get(11)?,
-        created_at: row.get(12)?,
-        last_run_at: row.get(13)?,
-        last_ok_at: row.get(14)?,
-        last_error: row.get(15)?,
-        last_fetched: row.get(16)?,
-        total_fetched: row.get(17)?,
+        smtp_host: row.get(12)?,
+        smtp_port: row.get::<_, i64>(13)? as u16,
+        smtp_security: SendSecurity::parse(&sending).unwrap_or(SendSecurity::Starttls),
+        send_enabled: row.get(15)?,
+        created_at: row.get(16)?,
+        last_run_at: row.get(17)?,
+        last_ok_at: row.get(18)?,
+        last_error: row.get(19)?,
+        last_fetched: row.get(20)?,
+        total_fetched: row.get(21)?,
     })
 }
 
@@ -383,6 +436,7 @@ impl Store {
         update: FetchAccountUpdate,
     ) -> Result<FetchAccount> {
         let host = update.host.as_deref().map(check_host).transpose()?;
+        let smtp_host = update.smtp_host.as_deref().map(check_host).transpose()?;
         let interval = update.interval_secs.map(check_interval).transpose()?;
         self.write(move |tx| {
             let exists: bool = tx.query_row(
@@ -444,6 +498,27 @@ impl Store {
             if let Some(name) = &update.auth_serv_id {
                 set("auth_serv_id", &name.trim().to_ascii_lowercase())?;
             }
+            if let Some(host) = smtp_host {
+                set("smtp_host", &host)?;
+            }
+            if let Some(port) = update.smtp_port {
+                set("smtp_port", &(port as i64))?;
+            }
+            if let Some(security) = update.smtp_security {
+                set("smtp_security", &security.as_str())?;
+            }
+            if let Some(send) = update.send_enabled {
+                // Sending needs somewhere to send to: a server name is what makes the difference
+                // between an address that can answer and one that only claims it can.
+                let host: String =
+                    tx.query_row("SELECT smtp_host FROM fetch_accounts WHERE id = ?1", params![id], |row| row.get(0))?;
+                if send && host.trim().is_empty() {
+                    return Err(StoreError::Invalid(
+                        "sending from this address needs the provider's outgoing server".into(),
+                    ));
+                }
+                set("send_enabled", &send)?;
+            }
             Ok(tx.query_row(
                 &format!("SELECT {COLUMNS} FROM fetch_accounts WHERE id = ?1 AND account_id = ?2"),
                 params![id, account_id],
@@ -486,6 +561,53 @@ impl Store {
                 )?,
             };
             Ok(())
+        })
+        .await
+    }
+
+    /// Where mail from this address has to leave, when it is a fetched address that may send.
+    ///
+    /// A reply from a free mail address only holds up if it goes out through that provider: its
+    /// DMARC policy is what makes the address worth anything, and our server is not in it. Asked
+    /// once per delivery attempt, by the envelope sender.
+    pub async fn fetch_sender(&self, address: &str) -> Result<Option<FetchSender>> {
+        let Ok((local, domain)) = normalize_address(address) else {
+            return Ok(None);
+        };
+        let address = format!("{local}@{domain}");
+        self.read(move |conn| {
+            let found = conn
+                .query_row(
+                    "SELECT account_id, address, smtp_host, smtp_port, smtp_security, username, password
+                     FROM fetch_accounts WHERE address = ?1 AND send_enabled = 1 AND smtp_host <> ''",
+                    params![address],
+                    |row| {
+                        let security: String = row.get(4)?;
+                        let sealed: Vec<u8> = row.get(6)?;
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, i64>(3)? as u16,
+                            SendSecurity::parse(&security).unwrap_or(SendSecurity::Starttls),
+                            row.get::<_, String>(5)?,
+                            sealed,
+                        ))
+                    },
+                )
+                .optional()?;
+            let Some((account_id, address, host, port, security, username, sealed)) = found else {
+                return Ok(None);
+            };
+            Ok(Some(FetchSender {
+                account_id,
+                address,
+                host,
+                port,
+                security,
+                username,
+                password: unseal(conn, &sealed)?,
+            }))
         })
         .await
     }
@@ -756,5 +878,64 @@ mod tests {
         // And a listing only ever shows one's own.
         assert!(store.fetch_accounts(Some(other)).await.unwrap().is_empty());
         assert_eq!(store.fetch_accounts(Some(account_id)).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn answering_from_a_fetched_address_needs_a_server_and_one_owner() {
+        let (store, _dir, account_id) = store_with_person().await;
+        let other = store
+            .create_account(NewAccount {
+                address: "leni@uwu.test".into(),
+                display_name: String::new(),
+                password: None,
+                role: Role::User,
+                quota_bytes: 0,
+                protocols: None,
+            })
+            .await
+            .unwrap()
+            .id;
+        let fetched = store.create_fetch_account(new_account(account_id)).await.unwrap();
+        let address = fetched.address.clone();
+
+        // Fetching alone says nothing about sending: the address cannot be sent from yet.
+        assert!(!store.account_owns_address(account_id, &address).await.unwrap());
+        assert!(store.fetch_sender(&address).await.unwrap().is_none());
+
+        // And it cannot be switched on without somewhere to send to.
+        let just_on = FetchAccountUpdate { send_enabled: Some(true), ..Default::default() };
+        assert!(matches!(
+            store.update_fetch_account(account_id, fetched.id, just_on).await,
+            Err(StoreError::Invalid(_))
+        ));
+        assert!(!store.account_owns_address(account_id, &address).await.unwrap());
+
+        let with_server = FetchAccountUpdate {
+            smtp_host: Some("smtp.example.com".into()),
+            smtp_port: Some(465),
+            smtp_security: Some(SendSecurity::Tls),
+            send_enabled: Some(true),
+            ..Default::default()
+        };
+        let saved = store.update_fetch_account(account_id, fetched.id, with_server).await.unwrap();
+        assert!(saved.send_enabled && saved.smtp_port == 465);
+
+        // Now the owner may answer from it -- and only the owner.
+        assert!(store.account_owns_address(account_id, &address).await.unwrap());
+        assert!(!store.account_owns_address(other, &address).await.unwrap(), "not somebody else's address");
+
+        // What the delivery worker needs to send it: the provider's server and the login.
+        let sender = store.fetch_sender(&address).await.unwrap().unwrap();
+        assert_eq!((sender.host.as_str(), sender.port), ("smtp.example.com", 465));
+        assert_eq!(sender.security, SendSecurity::Tls);
+        assert_eq!(sender.username, "mini@example.com");
+        assert_eq!(sender.password, "secret-at-the-provider", "the same one that opens the mailbox");
+        assert_eq!(sender.account_id, account_id);
+
+        // Switched off again, the address stops being one to send from at once.
+        let off = FetchAccountUpdate { send_enabled: Some(false), ..Default::default() };
+        store.update_fetch_account(account_id, fetched.id, off).await.unwrap();
+        assert!(!store.account_owns_address(account_id, &address).await.unwrap());
+        assert!(store.fetch_sender(&address).await.unwrap().is_none());
     }
 }

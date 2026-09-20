@@ -77,12 +77,19 @@ pub(crate) fn owns(conn: &rusqlite::Connection, account_id: i64, email: &str) ->
         return Ok(false);
     };
     let base = base_local_part(&local).to_owned();
+    let full = format!("{local}@{domain}");
+    // The third case is a mailbox elsewhere that this account fetches and may answer from. It hangs
+    // on the account, not on the address: two people can fetch the same provider, and neither may
+    // send as the other's. Without a server to send through it is no address to send from either.
     Ok(conn.query_row(
         "SELECT EXISTS (SELECT 1 FROM addresses a JOIN domains d ON d.id = a.domain_id
                         WHERE a.account_id = ?1 AND d.name = ?2 AND a.local_part IN (?3, ?4))
              OR EXISTS (SELECT 1 FROM send_as_domains s JOIN domains d ON d.id = s.domain_id
-                        WHERE s.account_id = ?1 AND d.name = ?2)",
-        params![account_id, domain, local, base],
+                        WHERE s.account_id = ?1 AND d.name = ?2)
+             OR EXISTS (SELECT 1 FROM fetch_accounts f
+                        WHERE f.account_id = ?1 AND f.address = ?5
+                          AND f.send_enabled = 1 AND f.smtp_host <> '')",
+        params![account_id, domain, local, base, full],
         |row| row.get(0),
     )?)
 }
