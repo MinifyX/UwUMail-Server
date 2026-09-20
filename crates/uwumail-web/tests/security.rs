@@ -106,6 +106,7 @@ async fn second_factors_app_passwords_and_notices() {
             logs: None,
             config: None,
             certificate: None,
+            webmail: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
         },
     );
     let app = web.router();

@@ -62,6 +62,7 @@ impl Portal {
                 logs: None,
                 config: None,
                 certificate: None,
+                webmail: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             },
         );
         Portal { app: web.router(), store, _dir: dir }
