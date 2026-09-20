@@ -379,15 +379,23 @@ async fn session(
         }
     }
 
+    // A relay set to "none" still uses STARTTLS opportunistically when the relay offers it, so the
+    // AUTH login and the mail are not sent in the clear against a relay that supports TLS -- it
+    // just is not required or verified, matching "only on your own network" (S-31).
     let (want_tls, must_tls) = match relay {
-        Some(relay) => (relay.security == RelaySecurity::Starttls, relay.security == RelaySecurity::Starttls),
+        Some(relay) => (
+            matches!(relay.security, RelaySecurity::Starttls | RelaySecurity::None),
+            relay.security == RelaySecurity::Starttls,
+        ),
         None => (true, settings.require_tls || target.verified_tls),
     };
     if want_tls && !client.is_tls() {
         if caps.starttls {
             let reply = client.send("STARTTLS\r\n").await.map_err(io)?;
             if reply.code == 220 {
-                let config = if relay.is_some() || target.verified_tls {
+                // A "none" relay uses the non-verifying config: it may carry a self-signed
+                // certificate on the local network, so encrypt without demanding a valid one.
+                let config = if relay.is_some_and(|r| r.security != RelaySecurity::None) || target.verified_tls {
                     ctx.client_tls.verified.clone()
                 } else {
                     ctx.client_tls.opportunistic.clone()

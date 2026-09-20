@@ -126,10 +126,17 @@ pub fn strip_virus_verdicts(raw: &[u8]) -> Vec<u8> {
 }
 
 fn claims_to_be(value: &str, hostname: &str) -> bool {
-    value
-        .split(';')
+    // The authserv-id may carry a leading comment, surrounding quotes (RFC 8601 §2.2) or a trailing
+    // dot; a conformant reader ignores those, so a forgery that hides behind them must still be
+    // recognised as ours and stripped (security-audit-0.5.2 S-18).
+    let id = value.split(';').next().unwrap_or_default().trim_start();
+    let id = match id.strip_prefix('(') {
+        Some(rest) => rest.split_once(')').map_or(rest, |(_, after)| after),
+        None => id,
+    };
+    id.split_whitespace()
         .next()
-        .and_then(|id| id.split_whitespace().next())
+        .map(|authserv| authserv.trim_matches('"').trim_end_matches('.'))
         .is_some_and(|authserv| authserv.eq_ignore_ascii_case(hostname))
 }
 
@@ -184,6 +191,17 @@ mod tests {
         assert!(!text.contains("dkim=pass"));
         assert!(text.contains("other.example; spf=pass"));
         assert!(text.starts_with("Received: from a\r\n by b\r\n"));
+    }
+
+    #[test]
+    fn strips_our_results_behind_quotes_a_comment_or_a_trailing_dot() {
+        // A conformant reader ignores a quoted authserv-id, a leading comment or a trailing dot, so
+        // a forgery hiding behind them is still ours to strip (security-audit-0.5.2 S-18).
+        for id in ["\"mx.example.de\"", "(by our filter) mx.example.de", "mx.example.de."] {
+            let message = format!("Authentication-Results: {id}; dkim=pass header.d=evil.example\r\nSubject: Hi\r\n\r\nbody\r\n");
+            let stripped = String::from_utf8(strip_forged_auth_results(message.as_bytes(), "mx.example.de")).unwrap();
+            assert!(!stripped.contains("dkim=pass"), "forgery behind {id} is removed: {stripped}");
+        }
     }
 
     #[test]

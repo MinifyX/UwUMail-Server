@@ -1318,7 +1318,11 @@ pub(crate) async fn receive(
     // A trap keeps the worst of what arrives, so the score never turns it away either. What a virus
     // scanner or DMARC refuses stays refused: no amount of learning material is worth keeping that.
     let trapped = recipients.iter().any(|recipient| recipient.trap);
-    if (outcome == spam::Outcome::Reject && !allowed && !trapped) || everyone_refuses {
+    // Without a trap this message is refused here; with one it is accepted so the trap keeps
+    // collecting, but it must still not be delivered to the real co-recipients (S-17). The delivery
+    // loop below skips them when this holds.
+    let server_rejects = outcome == spam::Outcome::Reject && !allowed;
+    if (server_rejects && !trapped) || everyone_refuses {
         tracing::info!(
             %id,
             from = %envelope.address,
@@ -1389,10 +1393,15 @@ pub(crate) async fn receive(
                 waiting.push(seconds);
             }
         }
-        // Hold the message only while every recipient is still waiting. Once one of them may
-        // have it, delivering to all of them keeps the retry from arriving twice.
-        if !recipients.is_empty()
-            && waiting.len() == recipients.len()
+        // An allowed sender lifts greylisting for everyone; otherwise the message is held only
+        // while every recipient that can wait still is. A trap never waits and must not, on its
+        // own, stop the real recipients from being greylisted (security-audit-0.5.2 S-17). Once one
+        // recipient may have it, delivering to all keeps the retry from arriving twice.
+        let any_allowed = decisions.iter().any(|decision| matches!(decision, Decision::Allow(_)));
+        let eligible = recipients.iter().filter(|recipient| !recipient.trap).count();
+        if !any_allowed
+            && eligible > 0
+            && waiting.len() == eligible
             && let Some(seconds) = waiting.into_iter().min()
         {
             let minutes = ((seconds + 59) / 60).max(1);
@@ -1492,6 +1501,13 @@ pub(crate) async fn receive(
             continue;
         }
         let Some(account_id) = recipient.local_account else { continue };
+        // A message the server score rejects reaches here only because a trap kept it from being
+        // refused outright. It still must not land in a real person's mailbox (security-audit-0.5.2
+        // S-17); the trap above already learned from it.
+        if server_rejects {
+            note_for(&recipient.address, SpamAction::Reject, None);
+            continue;
+        }
         if seen_accounts.contains(&account_id) {
             continue;
         }

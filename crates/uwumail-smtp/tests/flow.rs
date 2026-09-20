@@ -1237,3 +1237,19 @@ async fn a_spam_trap_learns_from_what_it_catches_and_keeps_nothing() {
     // And the whole server learned it as spam, exactly once and never as wanted mail.
     wait_until_learned(&a, None, BayesTotals { spam: before.spam + 1, ham: before.ham }).await;
 }
+
+/// A trap keeps the transaction accepted so it goes on collecting, but a message the score rejects
+/// must still not reach the real co-recipients (security-audit-0.5.2 S-17).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_spam_trap_does_not_shield_its_co_recipients() {
+    let spam = SpamConfig { traps: vec!["alt@a.test".into()], reject_score: Some(3.0), ..SpamConfig::default() };
+    let a = spam_test_server_for(&["mini"], spam, None).await;
+
+    let reply =
+        relay_message_to(&a, &["mini@a.test", "alt@a.test"], "From: news@sender.test\r\nSubject: Nur heute\r\n\r\nAngebot\r\n").await;
+    assert!(reply.starts_with("250"), "the trap keeps the transaction accepted: {reply}");
+
+    // The real recipient gets nothing -- not even Junk -- although a trap shared the transaction.
+    assert!(a.inbox("mini@a.test").await.is_empty(), "a rejected message does not reach the real recipient");
+    assert!(a.mailbox("mini@a.test", MailboxRole::Junk).await.is_empty(), "not even Junk");
+}
