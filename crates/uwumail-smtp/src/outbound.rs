@@ -206,7 +206,14 @@ async fn sender_route(ctx: &Context, account_id: Option<i64>, return_path: &str)
         username: Some(sender.username),
         password: Some(sender.password),
     };
-    let addrs = lookup(&relay.host, relay.port).await;
+    // Only public addresses: a fetched account's outgoing server must not point the delivery worker
+    // at this host or the local network, even when a public-looking name resolves there
+    // (security-audit-0.5.2 S-10). With none left the target is unreachable and the message defers.
+    let addrs: Vec<SocketAddr> =
+        lookup(&relay.host, relay.port).await.into_iter().filter(|a| crate::fetch::is_public(a.ip())).collect();
+    if addrs.is_empty() {
+        tracing::warn!(host = %relay.host, "the outgoing server of a fetched address is not a public host");
+    }
     Some(Target { host: relay.host.clone(), addrs, via: Via::Relay(relay), verified_tls: false })
 }
 

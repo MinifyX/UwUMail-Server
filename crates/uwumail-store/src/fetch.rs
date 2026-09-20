@@ -300,10 +300,45 @@ fn check_interval(secs: i64) -> Result<i64> {
     Ok(secs)
 }
 
+/// Whether an IP address is on the open internet, not this machine, the local network or a reserved
+/// range. A fetched mailbox and its outgoing server live somewhere else, so a private or loopback
+/// address would only point the worker at this host or the LAN (security-audit-0.5.2 S-10).
+fn is_public_ip(ip: std::net::IpAddr) -> bool {
+    match ip.to_canonical() {
+        std::net::IpAddr::V4(v4) => {
+            let [a, b, ..] = v4.octets();
+            !(v4.is_unspecified()
+                || v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_broadcast()
+                || v4.is_multicast()
+                || a == 0
+                || a >= 240
+                || (a == 100 && (b & 0xc0) == 64))
+        }
+        std::net::IpAddr::V6(v6) => {
+            let first = v6.segments()[0];
+            !(v6.is_unspecified()
+                || v6.is_loopback()
+                || v6.is_multicast()
+                || (first & 0xfe00) == 0xfc00
+                || (first & 0xffc0) == 0xfe80)
+        }
+    }
+}
+
 fn check_host(host: &str) -> Result<String> {
     let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
     if host.is_empty() || !host.contains('.') || host.contains(char::is_whitespace) {
         return Err(StoreError::Invalid(format!("'{host}' is not a server name")));
+    }
+    // An IP literal must be public. A name is re-checked when the connection is made, so it cannot
+    // resolve to a private address either.
+    if let Ok(ip) = host.parse::<std::net::IpAddr>()
+        && !is_public_ip(ip)
+    {
+        return Err(StoreError::Invalid(format!("'{host}' is not a public address")));
     }
     Ok(host)
 }
@@ -1025,5 +1060,22 @@ mod tests {
         let (store, _dir, account_id) = store_with_person().await;
         let local = NewFetchAccount { address: "admin@uwu.test".into(), ..new_account(account_id) };
         assert!(matches!(store.create_fetch_account(local).await, Err(StoreError::Invalid(_))));
+    }
+
+    #[tokio::test]
+    async fn a_private_or_loopback_host_is_refused() {
+        // A fetched mailbox must live on the open internet; an IP literal in this host or the
+        // sending host must not point the worker at this machine or the LAN (S-10).
+        let (store, _dir, account_id) = store_with_person().await;
+        for host in ["127.0.0.1", "10.0.0.5", "192.168.1.1", "169.254.0.1", "::ffff:10.0.0.1"] {
+            let bad = NewFetchAccount { host: host.into(), ..new_account(account_id) };
+            assert!(
+                matches!(store.create_fetch_account(bad).await, Err(StoreError::Invalid(_))),
+                "{host} is refused as a host"
+            );
+        }
+        // A public IP literal and a normal name are fine.
+        let ok = NewFetchAccount { host: "9.9.9.9".into(), ..new_account(account_id) };
+        assert!(store.create_fetch_account(ok).await.is_ok());
     }
 }

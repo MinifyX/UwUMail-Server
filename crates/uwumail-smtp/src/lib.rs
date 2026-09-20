@@ -49,6 +49,7 @@ pub use config::{
     SmtpConfig, SpamConfig, SpamLogConfig, ToneConfig,
 };
 pub use dns::DnsCaches;
+pub use fetch::is_public;
 pub use fetched::Mailbox as FetchedMailbox;
 /// The value of one header of a raw message, for callers that fetch mail and hand it in here.
 pub use headers::first_value as header_value;

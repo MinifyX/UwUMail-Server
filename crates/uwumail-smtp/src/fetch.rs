@@ -25,7 +25,7 @@ const TIMEOUT: Duration = Duration::from_secs(60);
 const ZSTD_MAGIC: [u8; 4] = [0x28, 0xb5, 0x2f, 0xfd];
 
 /// Whether an address is on the open internet: not this machine, not the local network, not reserved.
-pub(crate) fn is_public(ip: IpAddr) -> bool {
+pub fn is_public(ip: IpAddr) -> bool {
     match ip.to_canonical() {
         IpAddr::V4(v4) => {
             let [a, b, c, _] = v4.octets();

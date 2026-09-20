@@ -132,6 +132,18 @@ async fn run_once(store: &Store, smtp: &Smtp, account: FetchAccount, detour: Opt
     if account.security == FetchSecurity::Starttls {
         bail!("this server fetches over TLS only, so far -- use the provider's TLS port, usually 993");
     }
+    if detour.is_none() {
+        // The host is re-checked here so a public-looking name cannot resolve to this machine or the
+        // local network (security-audit-0.5.2 S-10). The detour is used only by tests against a
+        // local server, and is exempt.
+        let public = tokio::net::lookup_host((account.host.as_str(), account.port))
+            .await
+            .map(|addrs| addrs.into_iter().any(|addr| uwumail_smtp::is_public(addr.ip())))
+            .unwrap_or(false);
+        if !public {
+            bail!("{} does not resolve to a public address", account.host);
+        }
+    }
     let password = store
         .fetch_password(account.account_id, account.id)
         .await?
