@@ -3,6 +3,7 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,9 @@ use uwumail_tunnel::{Fingerprint, Identity, Token};
 const IDENTITY: &str = "identity.json";
 const PAIRING: &str = "pairing.json";
 const TOKEN: &str = "pairing-token";
+/// An unused pairing code expires after this, so watch_pairing mints a fresh one and a leaked but
+/// never-used code cannot pair an attacker's server later (security-audit-0.5.2 G-1).
+const TOKEN_LIFETIME: Duration = Duration::from_secs(24 * 3600);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,9 +72,20 @@ impl State {
     pub fn token(&self) -> anyhow::Result<Option<Token>> {
         let path = self.dir.join(TOKEN);
         match std::fs::read_to_string(&path) {
-            Ok(text) => Token::from_text(&text)
-                .map(Some)
-                .with_context(|| format!("{} is damaged; delete it to get a new pairing code", path.display())),
+            Ok(text) => {
+                // A code older than its lifetime counts as spent: watch_pairing then mints and
+                // announces a fresh one, and authorize refuses the old one.
+                let expired = std::fs::metadata(&path)
+                    .and_then(|meta| meta.modified())
+                    .map(|minted| minted.elapsed().map(|age| age > TOKEN_LIFETIME).unwrap_or(false))
+                    .unwrap_or(false);
+                if expired {
+                    return Ok(None);
+                }
+                Token::from_text(&text)
+                    .map(Some)
+                    .with_context(|| format!("{} is damaged; delete it to get a new pairing code", path.display()))
+            }
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(err) => Err(err).with_context(|| format!("reading {}", path.display())),
         }
@@ -146,5 +161,20 @@ mod tests {
         assert_eq!(state.pairing().unwrap(), Some(pairing));
         assert!(state.remove_pairing().unwrap());
         assert!(!state.remove_pairing().unwrap());
+    }
+
+    #[test]
+    fn a_stale_pairing_token_is_treated_as_spent() {
+        use std::time::SystemTime;
+        let dir = tempfile::tempdir().unwrap();
+        let state = State::open(dir.path()).unwrap();
+        state.create_token().unwrap();
+        assert!(state.token().unwrap().is_some(), "a fresh code is valid");
+
+        // Backdate the token file past its lifetime: a leaked but unused code no longer pairs (G-1).
+        let path = dir.path().join(TOKEN);
+        let old = SystemTime::now() - TOKEN_LIFETIME - Duration::from_secs(60);
+        std::fs::File::options().write(true).open(&path).unwrap().set_modified(old).unwrap();
+        assert!(state.token().unwrap().is_none(), "a stale code is spent");
     }
 }

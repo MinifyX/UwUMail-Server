@@ -47,6 +47,10 @@ pub fn server_endpoint(address: SocketAddr, identity: &Identity) -> Result<Endpo
     let crypto = QuicServerConfig::try_from(tls).map_err(|err| TunnelError::Quic(err.to_string()))?;
     let mut config = ServerConfig::with_crypto(Arc::new(crypto));
     config.transport_config(transport());
+    // No connection migration: a home address change forces a reconnect, so the gateway learns and
+    // trusts the new address instead of silently keeping the old one unbannable in every jail while
+    // it now belongs to a stranger (security-audit-0.5.2 G-2).
+    config.migration(false);
     Ok(Endpoint::server(config, address)?)
 }
 
