@@ -281,10 +281,7 @@ impl Store {
             // Stop pulling (and, with delete, destroying) the person's provider mail while they are
             // in the trash, and do not silently resume it on restore: sending needs a fresh proven
             // fetch, fetching needs switching back on by hand (security-audit-0.5.2 S-13).
-            tx.execute(
-                "UPDATE fetch_accounts SET enabled = 0, send_enabled = 0 WHERE account_id = ?1",
-                [account.id],
-            )?;
+            tx.execute("UPDATE fetch_accounts SET enabled = 0, send_enabled = 0 WHERE account_id = ?1", [account.id])?;
             account.deleted_at = Some(at);
             Ok(account)
         })

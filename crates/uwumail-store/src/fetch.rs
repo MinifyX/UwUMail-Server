@@ -1049,9 +1049,7 @@ mod tests {
         let address = a_row.address.clone();
         assert_eq!(address, b_row.address, "the same shared address, two accounts");
 
-        for (id, row, host) in
-            [(a, a_row.id, "smtp.a.example"), (b, b_row.id, "smtp.b.example")]
-        {
+        for (id, row, host) in [(a, a_row.id, "smtp.a.example"), (b, b_row.id, "smtp.b.example")] {
             store.note_fetch_run(row, 1, None).await.unwrap();
             let on = FetchAccountUpdate {
                 smtp_host: Some(host.into()),

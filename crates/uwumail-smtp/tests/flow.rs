@@ -1245,8 +1245,12 @@ async fn a_spam_trap_does_not_shield_its_co_recipients() {
     let spam = SpamConfig { traps: vec!["alt@a.test".into()], reject_score: Some(3.0), ..SpamConfig::default() };
     let a = spam_test_server_for(&["mini"], spam, None).await;
 
-    let reply =
-        relay_message_to(&a, &["mini@a.test", "alt@a.test"], "From: news@sender.test\r\nSubject: Nur heute\r\n\r\nAngebot\r\n").await;
+    let reply = relay_message_to(
+        &a,
+        &["mini@a.test", "alt@a.test"],
+        "From: news@sender.test\r\nSubject: Nur heute\r\n\r\nAngebot\r\n",
+    )
+    .await;
     assert!(reply.starts_with("250"), "the trap keeps the transaction accepted: {reply}");
 
     // The real recipient gets nothing -- not even Junk -- although a trap shared the transaction.

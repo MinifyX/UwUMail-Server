@@ -67,9 +67,8 @@ pub fn count(raw: &[u8], name: &str) -> usize {
 /// that did not end at a blank line was cut short by exactly such a line.
 pub fn header_block_fault(raw: &[u8]) -> Option<&'static str> {
     let (headers, body_start) = split(raw);
-    let ended_cleanly = body_start == raw.len()
-        || raw[..body_start].ends_with(b"\r\n\r\n")
-        || raw[..body_start].ends_with(b"\n\n");
+    let ended_cleanly =
+        body_start == raw.len() || raw[..body_start].ends_with(b"\r\n\r\n") || raw[..body_start].ends_with(b"\n\n");
     if !ended_cleanly {
         return Some("the message has a malformed header block");
     }
@@ -198,7 +197,8 @@ mod tests {
         // A conformant reader ignores a quoted authserv-id, a leading comment or a trailing dot, so
         // a forgery hiding behind them is still ours to strip (security-audit-0.5.2 S-18).
         for id in ["\"mx.example.de\"", "(by our filter) mx.example.de", "mx.example.de."] {
-            let message = format!("Authentication-Results: {id}; dkim=pass header.d=evil.example\r\nSubject: Hi\r\n\r\nbody\r\n");
+            let message =
+                format!("Authentication-Results: {id}; dkim=pass header.d=evil.example\r\nSubject: Hi\r\n\r\nbody\r\n");
             let stripped = String::from_utf8(strip_forged_auth_results(message.as_bytes(), "mx.example.de")).unwrap();
             assert!(!stripped.contains("dkim=pass"), "forgery behind {id} is removed: {stripped}");
         }
