@@ -148,9 +148,7 @@ describe("gateway lines", () => {
     ]);
     // The whole line to paste is this portal's own constant (with reboot, since one is required),
     // never the string the gateway sent (security-audit-0.5.2 G-4).
-    expect(lines[2]!.params.ssh).toBe(
-      "ssh root@203.0.113.10 'apt-get update && apt-get -y dist-upgrade && reboot'",
-    );
+    expect(lines[2]!.params.ssh).toBe("ssh root@203.0.113.10 'apt-get update && apt-get -y dist-upgrade && reboot'");
     expect(lines[2]!.params.ssh).not.toContain("evil.example");
     expect(lines[2]!.level).toBe("problem");
   });

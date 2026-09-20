@@ -265,7 +265,8 @@ job_state() {
 
 # Everything a job prints goes here, capped, so the portal can show it while it runs.
 job_log() {
-  local id="$1" log="$state/job-$id.log"
+  local id="$1"
+  local log="$state/job-$id.log"
   # Never append through a planted symlink; start the log as a fresh regular file.
   [ -L "$log" ] && rm -f -- "$log"
   tail -c "$LOG_MAX_BYTES" >>"$log"
