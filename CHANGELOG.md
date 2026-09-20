@@ -34,7 +34,7 @@ suggestions. Unsubscribing opens the sender's own page instead of taking the one
 that one would have meant the server calling on an address a mail header named.
 
 The webmail lives in its own repository, [UwUMail-Webmail](https://github.com/MinifyX/UwUMail-Webmail),
-and the image is built from the commit `webmail.pin` names: `2e98b2c` for this release.
+and the image is built from the commit `webmail.pin` names: `02bd99d` for this release.
 
 **Greylisting keeps the mail now instead of throwing it away.** When a message looks suspicious,
 the server asks the sending server to come back later — real mail servers do, a few minutes on,

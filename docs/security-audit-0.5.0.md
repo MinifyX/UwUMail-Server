@@ -317,6 +317,18 @@ For the record, because a report that says "checked" without saying how is worth
   `cargo clippy --all-targets -- -D warnings` over the three crates this review changed.
 - In the webmail repository: `tsc --noEmit`, `eslint`, `prettier --check` and 83 tests, five of them
   new for F-3.
+- The webmail against a real server on the test instance, by the session that wrote it, with an
+  image built the way a release is built — the clone from `webmail.pin` included. Signing in with
+  the portal's session and then speaking JMAP, writing and sending a message and reading it back,
+  and then the boundaries: a JMAP call without the CSRF token and with a wrong one (401 both), an
+  upload without it (401), asking for another account's mailboxes (`accountNotFound`), downloading
+  a blob under another account's id (404) and one that does not exist (404), and a download of
+  one's own (`attachment`, `nosniff`). Both switches were turned off and on again: with the
+  account's switch off JMAP answers 401 and the page says why, with the server's switch off `/mail`
+  is gone — while the portal, Basic auth on JMAP and IMAP keep working, which is what the switch is
+  for. That run also found a bug that no unit test could have: drafts were left behind on every
+  save, because the server returns a Message-ID without the angle brackets the client wrote. Fixed
+  and pinned.
 - `bash -n` on both scripts, plus a run of the port check against valid ports, out-of-range
   numbers, empty input and two injection attempts, and a run of the `.env` writer against a sample
   file.
