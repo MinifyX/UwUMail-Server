@@ -13,7 +13,7 @@ mod bayes;
 mod content;
 mod feeds;
 mod html;
-mod links;
+pub(crate) mod links;
 mod lists;
 mod words;
 
@@ -34,6 +34,7 @@ use crate::config::SpamConfig;
 use crate::dnscheck::{
     BLOCKLISTS, Blocklist, ListingStatus, blocklist_status_with, domain_list_answers_with, reverse_names_with,
 };
+use crate::fetched;
 use crate::reachability::generic_reverse_name;
 use crate::servercheck::is_private;
 
@@ -253,12 +254,15 @@ pub fn network_of(ip: IpAddr) -> String {
 /// through the tunnel. Were that address ever wrong, e.g. the gateway's own, every sender without
 /// DMARC would share one reputation, and one wave of spam would spoil it for all of them. Changes
 /// to relays or the tunnel therefore touch this too.
-pub fn reputation_subject(ip: IpAddr, verdict: Option<&Verdict>) -> String {
-    match verdict {
-        Some(Verdict { dmarc_passed: true, from_domain: Some(domain), .. }) if !domain.is_empty() => {
-            format!("domain:{domain}")
+/// A fetched message without an address the provider stood behind has neither: it counts for
+/// nobody's reputation, because the only network involved was the provider's own.
+pub fn reputation_subject(ip: Option<IpAddr>, verdict: Option<&Verdict>) -> Option<String> {
+    match (verdict, ip) {
+        (Some(Verdict { dmarc_passed: true, from_domain: Some(domain), .. }), _) if !domain.is_empty() => {
+            Some(format!("domain:{domain}"))
         }
-        _ => format!("network:{}", network_of(ip)),
+        (_, Some(ip)) => Some(format!("network:{}", network_of(ip))),
+        (_, None) => None,
     }
 }
 
@@ -312,21 +316,29 @@ async fn listings(ctx: &Context, ip: IpAddr) -> Vec<(&'static Blocklist, Listing
     answers
 }
 
-/// Scores a message from another server. `verdict` is what SPF, DKIM and DMARC said, when they
-/// were asked at all.
+/// Where a message came from, as far as this server could find out.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Source<'a> {
+    /// The server that sent it. Missing for a message fetched from another provider's mailbox when
+    /// the provider did not put its name to an address: then every rule that judges a sending
+    /// server is left out rather than guessed at.
+    pub ip: Option<IpAddr>,
+    /// The name that server greeted with, empty when nobody said.
+    pub helo: &'a str,
+    /// What SPF, DKIM and DMARC said, when they were asked at all.
+    pub verdict: Option<&'a Verdict>,
+    /// Where a fetched message has been; see [`crate::fetched`].
+    pub fetched: Option<&'a fetched::Provenance>,
+}
+
+/// Scores a message from another server, or one taken out of a mailbox elsewhere.
 ///
 /// Mail from our own network is not judged at all: a relay in front is looked through already
 /// (the address here is the server it talked to), so what is left is a scanner, a NAS or another
 /// machine in the house, which has no reverse name, no blocklist entry and usually no DKIM.
-pub async fn score(
-    ctx: &Context,
-    config: &SpamConfig,
-    ip: IpAddr,
-    helo: &str,
-    verdict: Option<&Verdict>,
-    raw: &[u8],
-) -> Option<Score> {
-    if is_private(ip) {
+pub async fn score(ctx: &Context, config: &SpamConfig, source: Source<'_>, raw: &[u8]) -> Option<Score> {
+    let Source { ip, helo, verdict, fetched } = source;
+    if ip.is_some_and(is_private) {
         return None;
     }
     let mut score = Score::default();
@@ -346,12 +358,24 @@ pub async fn score(
         }
     }
 
-    if helo_looks_wrong(helo, &ctx.hostname) {
+    // A fetched message only answers for a greeting somebody wrote down; not knowing one says
+    // nothing about it, while an SMTP client that greets with nothing has something to hide.
+    if (fetched.is_none() || !helo.is_empty()) && helo_looks_wrong(helo, &ctx.hostname) {
         score.add("HELO_NOT_A_NAME", 1.0, Some(helo.trim().to_owned()));
     }
 
-    let blocklists = async { if config.blocklists { listings(ctx, ip).await } else { Vec::new() } };
-    let reverse = in_time(reverse_names_with(ctx.authenticator.resolver(), ip));
+    let blocklists = async {
+        match ip {
+            Some(ip) if config.blocklists => listings(ctx, ip).await,
+            _ => Vec::new(),
+        }
+    };
+    let reverse = async {
+        match ip {
+            Some(ip) => in_time(reverse_names_with(ctx.authenticator.resolver(), ip)).await,
+            None => None,
+        }
+    };
     // What the message itself shows, read on a blocking thread because big messages take a moment,
     // and then what the domain blocklist says about its links.
     let message = async {
@@ -385,7 +409,7 @@ pub async fn score(
     } = examination;
 
     // No answer at all is not the same as no reverse name, so a timeout costs nothing.
-    if let Some(names) = names {
+    if let (Some(names), Some(ip)) = (names, ip) {
         score.reverse_name = names.first().cloned();
         match names.first() {
             None => score.add("NO_REVERSE_DNS", 1.5, None),
@@ -462,7 +486,18 @@ pub async fn score(
     score.subject = subject;
     score.text = text;
 
-    match ctx.store.reputation(reputation_subject(ip, verdict)).await {
+    // What a fetched message brings from where it has been: the provider's verdict, and its own
+    // findings where this server could not make them. With an address the provider put its name to,
+    // SPF, DKIM and DMARC were checked above like for any other message and are not counted again.
+    if let Some(provenance) = fetched {
+        let own_dkim_passed = verdict.is_some_and(|verdict| verdict.sender_verified);
+        for (rule, points, detail) in provenance.rules(ip.is_some(), own_dkim_passed) {
+            score.add(rule, points, detail);
+        }
+    }
+
+    let Some(subject) = reputation_subject(ip, verdict) else { return Some(score) };
+    match ctx.store.reputation(subject).await {
         Ok(reputation) if reputation.is_known() => {
             let share = reputation.junk_share();
             if share <= 0.1 {
@@ -628,11 +663,25 @@ mod tests {
     #[test]
     fn reputation_follows_the_domain_only_when_dmarc_vouches_for_it() {
         let ip: IpAddr = "192.0.2.77".parse().unwrap();
-        assert_eq!(reputation_subject(ip, None), "network:192.0.2.0/24");
-        assert_eq!(reputation_subject(ip, Some(&verdict(true, Some("example.com")))), "domain:example.com");
+        let network = || Some("network:192.0.2.0/24".to_owned());
+        assert_eq!(reputation_subject(Some(ip), None), network());
+        assert_eq!(
+            reputation_subject(Some(ip), Some(&verdict(true, Some("example.com")))),
+            Some("domain:example.com".to_owned())
+        );
         // Without DMARC the From domain could be anyone's, so the network counts instead.
-        assert_eq!(reputation_subject(ip, Some(&verdict(false, Some("example.com")))), "network:192.0.2.0/24");
-        assert_eq!(reputation_subject(ip, Some(&verdict(true, None))), "network:192.0.2.0/24");
+        assert_eq!(reputation_subject(Some(ip), Some(&verdict(false, Some("example.com")))), network());
+        assert_eq!(reputation_subject(Some(ip), Some(&verdict(true, None))), network());
+
+        // A fetched message without an address the provider stood behind counts for nobody: there
+        // is no network of the sender's, and the From domain alone could be anyone's.
+        assert_eq!(reputation_subject(None, None), None);
+        assert_eq!(reputation_subject(None, Some(&verdict(false, Some("example.com")))), None);
+        assert_eq!(
+            reputation_subject(None, Some(&verdict(true, Some("example.com")))),
+            Some("domain:example.com".to_owned()),
+            "unless DMARC vouches for the domain, which travels with the message"
+        );
     }
 
     #[test]

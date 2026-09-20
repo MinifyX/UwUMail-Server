@@ -98,14 +98,7 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
 
     // DMARC only judges domains that publish a policy. Without one, a signature or SPF pass for the
     // From domain, a parent or a subdomain of it still shows who sent the message.
-    let related = |domain: &str| {
-        let from = from_address.as_deref().and_then(|address| address.rsplit_once('@')).map(|(_, domain)| domain);
-        let domain = domain.trim_end_matches('.').to_ascii_lowercase();
-        from.is_some_and(|from| {
-            domain.contains('.')
-                && (from == domain || from.ends_with(&format!(".{domain}")) || domain.ends_with(&format!(".{from}")))
-        })
-    };
+    let related = |domain: &str| related_to_from(from_address.as_deref(), domain);
     let from_verified = dmarc_passed
         || dkim.iter().any(|output| {
             output.result() == &DkimResult::Pass && output.signature().is_some_and(|signature| related(&signature.d))
@@ -124,6 +117,61 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
         from_address,
         from_verified,
     }
+}
+
+/// Whether a domain is the From domain, a parent of it or below it.
+fn related_to_from(from_address: Option<&str>, domain: &str) -> bool {
+    let from = from_address.and_then(|address| address.rsplit_once('@')).map(|(_, domain)| domain);
+    let domain = domain.trim_end_matches('.').to_ascii_lowercase();
+    from.is_some_and(|from| {
+        domain.contains('.')
+            && (from == domain || from.ends_with(&format!(".{domain}")) || domain.ends_with(&format!(".{from}")))
+    })
+}
+
+/// What a message can still be asked when there is no sending server to ask: its signatures.
+///
+/// This is for mail fetched out of a mailbox somewhere else. A DKIM signature travels with the
+/// message and still says who signed it, but SPF went with the connection that delivered it the
+/// first time, and so did the envelope. So nothing here is ever called a failure that merely
+/// travelling could have caused: no SPF result, no DMARC failure, no quarantine. What the provider
+/// found out instead is read in [`crate::fetched`] and counts as points, not as a verdict.
+pub async fn verify_signatures(ctx: &Context, raw: &[u8]) -> Verdict {
+    let hostname = ctx.hostname.as_str();
+    let mut verdict = Verdict {
+        header: format!("Authentication-Results: {hostname}; none\r\n"),
+        action: Action::Accept,
+        sender_verified: false,
+        dmarc_passed: false,
+        spf_failed: false,
+        dkim_failed: false,
+        dmarc_failed: false,
+        from_domain: None,
+        from_address: None,
+        from_verified: false,
+    };
+    let Some(message) = AuthenticatedMessage::parse(raw) else {
+        return verdict;
+    };
+
+    let dkim = ctx.authenticator.verify_dkim(ctx.dns.params(&message)).await;
+    let header_from = message.from.first().map(String::as_str).unwrap_or_default();
+    verdict.header = AuthenticationResults::new(hostname).with_dkim_results(&dkim, header_from).to_header();
+    verdict.from_domain = header_from.rsplit_once('@').map(|(_, domain)| domain.trim().to_ascii_lowercase());
+    verdict.from_address = normalized_address(header_from);
+    verdict.sender_verified = dkim.iter().any(|output| output.result() == &DkimResult::Pass);
+    verdict.dkim_failed = dkim.iter().any(|output| matches!(output.result(), DkimResult::Fail(_)));
+    // A signature that holds for the From domain is as good as it was before the message travelled:
+    // it says the domain really sent this, which is all DMARC alignment asks of DKIM.
+    let signed_by_sender = dkim.iter().any(|output| {
+        output.result() == &DkimResult::Pass
+            && output
+                .signature()
+                .is_some_and(|signature| related_to_from(verdict.from_address.as_deref(), &signature.d))
+    });
+    verdict.dmarc_passed = signed_by_sender;
+    verdict.from_verified = signed_by_sender;
+    verdict
 }
 
 /// An address as sender lists store it, or `None` if it is not one.
