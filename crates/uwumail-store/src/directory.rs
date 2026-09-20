@@ -587,9 +587,13 @@ impl Store {
             }
             let created_at = now();
             tx.execute(
+                // credentials_changed_at is set to the creation time, not left at 0: a login cached
+                // for a purged account whose row id SQLite later hands to a new account must not
+                // compare as "unchanged since" and open the new account (security-audit-0.5.2 S-22).
                 "INSERT INTO accounts (login, display_name, password_hash, role, kind, quota_bytes, created_at,
+                                       credentials_changed_at,
                                        smtp_enabled, imap_enabled, jmap_enabled, caldav_enabled, carddav_enabled)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     login,
                     new.display_name.trim(),
@@ -624,7 +628,7 @@ impl Store {
                 disabled: false,
                 created_at,
                 deleted_at: None,
-                credentials_changed_at: 0,
+                credentials_changed_at: created_at,
                 protocols,
                 redirect_to: String::new(),
                 webmail: true,
