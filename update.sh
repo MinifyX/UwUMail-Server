@@ -138,7 +138,11 @@ env_value() {
 set_env() {
   local key="$1" value="$2" file="$dir/.env" line found=false tmp="$dir/.env.tmp"
   plain_value "$value" || die "$key would become something odd, so nothing was written: $value"
-  : >"$tmp"
+  # The copy holds everything the .env holds, the gateway code included, so it is made with the
+  # rights of the file it replaces rather than whatever the umask happens to be. A run that dies
+  # in between leaves nothing readable behind either, which is what the trap is for.
+  install -m 0600 /dev/null "$tmp"
+  trap 'rm -f "$dir/.env.tmp"' EXIT INT TERM
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       "$key="* | "#$key="*)
