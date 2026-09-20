@@ -119,11 +119,19 @@ fn parts(segment: &str) -> impl Iterator<Item = (&str, &str)> {
 
 /// The provider's own `Authentication-Results`, or nothing.
 ///
-/// Only the topmost one is read, and only when it carries the provider's name: the provider writes
-/// its header above everything the message brought along, so anything below it may be a forgery.
+/// Only trusted when it carries the provider's name *and* stands above the provider's own trace:
+/// the search stops at the first `Received` header, because an `Authentication-Results` that only
+/// appears below the trace is part of the message the sender composed, not the provider's word, and
+/// a sender who guesses the provider's site could otherwise vouch for their own forgery when the
+/// provider writes no header of its own (security-audit-0.5.2 S-6).
 fn attested(raw: &[u8], authserv: &str) -> Option<Attested> {
     let (fields, _) = headers::split(raw);
-    let header = fields.iter().find(|field| field.name.eq_ignore_ascii_case("Authentication-Results"))?;
+    let header = fields.iter().find(|field| {
+        field.name.eq_ignore_ascii_case("Authentication-Results") || field.name.eq_ignore_ascii_case("Received")
+    })?;
+    if !header.name.eq_ignore_ascii_case("Authentication-Results") {
+        return None;
+    }
     let value = header.value();
     let (id, results) = value.split_once(';')?;
     let id = id.split_whitespace().next().unwrap_or_default().trim().to_ascii_lowercase();
@@ -209,9 +217,16 @@ pub fn read(mailbox: &Mailbox, from_junk: bool, raw: &[u8]) -> Provenance {
 
 impl Provenance {
     /// The address to check ourselves, when the provider named one under its own name.
+    ///
+    /// Only a public address: a non-public `client-ip` is nothing this server can verify a sender
+    /// against, and letting one through made the whole score skip as "from our own network"
+    /// (security-audit-0.5.2 S-6).
     pub fn checkable_client(&self) -> Option<(IpAddr, String)> {
         let attested = self.attested.as_ref()?;
         let ip = attested.client_ip?;
+        if !crate::fetch::is_public(ip) {
+            return None;
+        }
         Some((ip, attested.helo.clone().unwrap_or_default()))
     }
 
@@ -307,6 +322,25 @@ mod tests {
         );
         let found = read(&mailbox(), false, &raw).attested.unwrap();
         assert_eq!(found.spf, Some(AuthResult::Fail), "the provider writes above what the message brought");
+    }
+
+    #[test]
+    fn a_header_below_the_providers_trace_is_not_trusted() {
+        // An Authentication-Results the sender placed below the provider's Received is theirs, not
+        // the provider's, even under the provider's name.
+        let raw = message(
+            "Received: from mail.sender.example by mx.icloud.example\r\n\
+             Authentication-Results: mx.icloud.example; spf=pass; dkim=pass; dmarc=pass",
+        );
+        assert_eq!(read(&mailbox(), false, &raw).attested, None);
+    }
+
+    #[test]
+    fn a_non_public_client_ip_is_not_checked_or_trusted() {
+        // A private client-ip in the attested header must not be verified against (or let the whole
+        // score skip as "from our own network").
+        let raw = message("Authentication-Results: mx.icloud.example; spf=pass client-ip=10.0.0.1");
+        assert!(read(&mailbox(), false, &raw).checkable_client().is_none());
     }
 
     #[test]

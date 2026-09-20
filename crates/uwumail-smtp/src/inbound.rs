@@ -244,10 +244,22 @@ pub async fn deliver_fetched(
     if headers::count(&raw, "Received") > MAX_HOPS {
         return Taken::Refused("554 5.4.6 Too many hops, possible mail loop".into());
     }
+    // Deliver into the owner's mailbox -- unless it has none, in which case the mail follows the
+    // redirect an admin set for it, or is refused if there is none, the same as the door decides
+    // for a service without a mailbox (security-audit-0.5.2 S-14). Refused fetched mail is left at
+    // the provider, so nothing is lost.
+    let deliver_to = match smtp.store().account_by_id(mailbox.account_id).await {
+        Ok(Some(account)) if account.has_mailbox() => mailbox.account_id,
+        Ok(Some(account)) => match smtp.store().delivery_target(account.id).await.ok().flatten() {
+            Some(target) => target,
+            None => return Taken::Refused("550 5.1.1 This address does not take mail".into()),
+        },
+        _ => return Taken::Refused("550 5.1.1 the mailbox this fetches into does not exist any more".into()),
+    };
     let envelope = Envelope { address: fetched::return_path(&raw).unwrap_or_default(), size: raw.len(), env_id: None };
     let recipients = vec![Recipient {
         address: to,
-        local_account: Some(mailbox.account_id),
+        local_account: Some(deliver_to),
         srs_return: None,
         report: None,
         forward_to: None,
@@ -1689,6 +1701,9 @@ impl Session {
             Err(SubmitError::InvalidRecipient(address)) => format!("501 5.1.3 <{address}> is not a valid address\r\n"),
             Err(SubmitError::NoRecipients) => "503 5.5.1 Send RCPT first\r\n".into(),
             Err(SubmitError::NobodyAccepted) => "552 5.2.2 No recipient could take the message\r\n".into(),
+            Err(SubmitError::SendingOff) => {
+                "550 5.7.1 Sending through this server is switched off for this account\r\n".into()
+            }
             Err(SubmitError::Virus(name)) => format!("554 5.7.0 This message contains {name}\r\n"),
             Err(SubmitError::Queue(err)) => {
                 tracing::error!(%err, "queueing a message failed");

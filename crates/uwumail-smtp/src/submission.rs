@@ -53,6 +53,8 @@ pub enum SubmitError {
     InvalidRecipient(String),
     #[error("no recipient could take the message")]
     NobodyAccepted,
+    #[error("sending through this server is switched off for this account")]
+    SendingOff,
     #[error("the message contains {0}")]
     Virus(String),
     #[error("the message could not be queued: {0}")]
@@ -118,6 +120,12 @@ impl Smtp {
         let Submission { account, mail_from, recipients, raw, env_id, trace } = submission;
         if recipients.is_empty() {
             return Err(SubmitError::NoRecipients);
+        }
+        // The SMTP switch governs sending through this server from every door, not only ports
+        // 587/465: the JMAP path (webmail and any client) calls submit directly, so it is checked
+        // here (security-audit-0.5.2 S-11).
+        if !account.may_use("smtp") {
+            return Err(SubmitError::SendingOff);
         }
         if mail_from.is_empty() || !ctx.store.account_owns_address(account.id, &mail_from).await.unwrap_or(false) {
             return Err(SubmitError::ForbiddenFrom(mail_from));
