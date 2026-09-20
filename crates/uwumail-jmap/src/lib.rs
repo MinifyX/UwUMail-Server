@@ -12,7 +12,7 @@
 //! | `GET /jmap/eventsource` | Push |
 
 mod api;
-mod auth;
+pub mod auth;
 mod blob;
 pub mod dates;
 mod email;
@@ -20,6 +20,7 @@ mod error;
 mod ids;
 mod methods;
 mod push;
+pub mod safe_html;
 mod session;
 
 use std::sync::Arc;
@@ -51,8 +52,16 @@ pub(crate) struct Inner {
 
 impl Jmap {
     pub fn new(smtp: Smtp) -> Jmap {
+        Jmap::with_webmail(smtp, std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)))
+    }
+
+    /// The same, but told whether the webmail is switched on: only then does signing in with the
+    /// portal's session work here.
+    pub fn with_webmail(smtp: Smtp, webmail: std::sync::Arc<std::sync::atomic::AtomicBool>) -> Jmap {
         let store = smtp.store().clone();
-        Jmap { inner: Arc::new(Inner { auth: auth::Authenticator::new(store.clone()), store, smtp }) }
+        let mut auth = auth::Authenticator::new(store.clone());
+        auth.watch_webmail(webmail);
+        Jmap { inner: Arc::new(Inner { auth, store, smtp }) }
     }
 
     pub fn router(&self) -> Router {

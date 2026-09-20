@@ -2,35 +2,22 @@
 
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
-use axum::http::{HeaderMap, HeaderValue, Method, header};
+use axum::http::{HeaderValue, Method};
 use uwumail_jmap::ClientInfo;
 use uwumail_store::{Account, Role};
 
 use crate::Web;
 use crate::error::ApiError;
 
-/// A session ends after this long without use.
-pub const SESSION_LIFETIME_SECS: i64 = 14 * 24 * 3600;
-/// Over HTTPS the `__Host-` prefix pins the cookie to this exact host.
-const SECURE_COOKIE: &str = "__Host-uwumail";
-const PLAIN_COOKIE: &str = "uwumail";
-pub const CSRF_HEADER: &str = "x-csrf-token";
+// The cookie names, the CSRF header and the session lifetime live in uwumail-jmap: the webmail
+// signs in to JMAP with this very session, and one definition is easier to keep right than two.
+pub use uwumail_jmap::auth::{
+    CSRF_HEADER, PLAIN_SESSION_COOKIE as PLAIN_COOKIE, SECURE_SESSION_COOKIE as SECURE_COOKIE,
+    WEB_SESSION_LIFETIME_SECS as SESSION_LIFETIME_SECS, constant_time_eq as same, session_cookie as token,
+};
 
 pub fn client(parts: &Parts) -> ClientInfo {
     parts.extensions.get::<ClientInfo>().copied().unwrap_or_default()
-}
-
-/// The session token from the request's cookies, if any.
-pub fn token(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get_all(header::COOKIE)
-        .iter()
-        .filter_map(|value| value.to_str().ok())
-        .flat_map(|value| value.split(';'))
-        .filter_map(|pair| pair.trim().split_once('='))
-        .find(|(name, _)| *name == SECURE_COOKIE || *name == PLAIN_COOKIE)
-        .map(|(_, value)| value.to_owned())
-        .filter(|value| !value.is_empty() && value.len() <= 128)
 }
 
 pub fn set_cookie(token: &str, client: ClientInfo) -> HeaderValue {
@@ -48,10 +35,6 @@ pub fn clear_cookie(client: ClientInfo) -> HeaderValue {
     } else {
         "uwumail=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"
     })
-}
-
-fn same(a: &str, b: &str) -> bool {
-    a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 /// A logged-in person. Requests that change something must carry the CSRF token.
@@ -104,17 +87,6 @@ impl FromRequestParts<Web> for Admin {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn reads_either_cookie_name() {
-        let mut headers = HeaderMap::new();
-        headers.insert(header::COOKIE, HeaderValue::from_static("theme=dark; __Host-uwumail=abc123"));
-        assert_eq!(token(&headers).as_deref(), Some("abc123"));
-        headers.insert(header::COOKIE, HeaderValue::from_static("uwumail=def456"));
-        assert_eq!(token(&headers).as_deref(), Some("def456"));
-        headers.insert(header::COOKIE, HeaderValue::from_static("uwumail="));
-        assert_eq!(token(&headers), None);
-    }
 
     #[test]
     fn secure_cookies_over_https() {
