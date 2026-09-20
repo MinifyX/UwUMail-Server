@@ -1858,7 +1858,7 @@
     },
     "greylist": {
       "title": "Waiting messages",
-      "explain": "When a message looks suspicious, the server asks the sending server to try again later. Real mail servers do that within a few minutes; spammers mostly never do. Until then the message waits here. Always allowing a sender takes them off the check for good — even if their address turns out to be forged.",
+      "explain": "When a message looks suspicious, the server asks the sending server to try again later. Real mail servers do that within a few minutes; spammers mostly never do. Until then the message waits here. What you decide here is about this one message — letting a sender through for good is under Filter, in your sender list.",
       "off": "The server is not keeping delayed messages at the moment, so this list stays empty.",
       "empty": "Nothing is waiting.",
       "emptyHint": "Delayed messages wait here until they arrive by themselves or you decide about them.",
@@ -1866,7 +1866,6 @@
       "sentTo": "To {{address}}",
       "decide": {
         "deliver": "Deliver",
-        "allowDeliver": "Deliver, always allow sender",
         "discard": "Discard",
         "discardSpam": "Discard and report as spam"
       },

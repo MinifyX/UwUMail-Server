@@ -14,20 +14,21 @@ use axum::Json;
 use axum::extract::{Path, State};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use uwumail_store::{
-    IngestRequest, ListScope, MailboxRole, MailboxTarget, NewSenderListEntry, SenderList, Settled, StoreError,
-};
+use uwumail_store::{IngestRequest, MailboxRole, MailboxTarget, Settled};
 
 use crate::Web;
 use crate::error::{ApiError, ApiResult};
 use crate::session::Session;
 
 /// What someone can do with a message that is waiting.
+///
+/// Every one of them is about this message and no other. Letting a sender through for good is a
+/// sender list entry, which is its own page and its own deliberate decision: a message the filter
+/// just called suspicious is a bad moment to take a sender off the check for ever, not least
+/// because the envelope address it would list can be forged.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Decide {
-    /// Put it in the inbox, and never greylist this sender for me again.
-    AllowDeliver,
     /// Put it in the inbox, this once.
     Deliver,
     /// Throw it away.
@@ -80,7 +81,7 @@ pub async fn decide(
         .ok_or_else(|| ApiError::NotFound("this waiting message".into()))?;
 
     match decision.action {
-        Decide::AllowDeliver | Decide::Deliver => {
+        Decide::Deliver => {
             claim(&web, account, id, Settled::Delivered, true).await?;
             let request = IngestRequest {
                 account_id: account,
@@ -101,13 +102,9 @@ pub async fn decide(
                 }
                 return Err(err.into());
             }
-            if decision.action == Decide::AllowDeliver {
-                allow_sender(&web, &session, &held.envelope_from).await?;
-            }
             tracing::info!(
                 login = %session.account.login,
                 sender = %held.envelope_from,
-                allowed = decision.action == Decide::AllowDeliver,
                 "delivered a waiting message"
             );
         }
@@ -136,22 +133,5 @@ async fn claim(web: &Web, account: i64, id: i64, how: Settled, keep_message: boo
     match web.store().settle_greylist_hold(account, id, how, keep_message).await? {
         true => Ok(()),
         false => Err(ApiError::NotFound("this waiting message".into())),
-    }
-}
-
-/// Puts the sender on this person's own allowed list, so the next message from them is not held
-/// back. Someone who is already on it is exactly where they wanted them, so that is not an error.
-async fn allow_sender(web: &Web, session: &Session, sender: &str) -> ApiResult<()> {
-    let entry = NewSenderListEntry {
-        scope: ListScope::Account(session.account.id),
-        list: SenderList::Allow,
-        kind: None,
-        value: sender.to_owned(),
-        note: String::new(),
-        created_by: session.account.login.clone(),
-    };
-    match web.store().add_sender_list_entry(entry).await {
-        Ok(_) | Err(StoreError::Rule { code: "senderListed", .. }) => Ok(()),
-        Err(err) => Err(err.into()),
     }
 }

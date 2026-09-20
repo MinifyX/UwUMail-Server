@@ -633,8 +633,11 @@ export interface GreylistView {
   count: number;
 }
 
-/** What someone can do with a waiting message. */
-export type GreylistDecision = "allow-deliver" | "deliver" | "discard" | "discard-spam";
+/**
+ * What someone can do with a waiting message. Each one is about that message alone; letting a
+ * sender through for good is a sender list entry and belongs on its own page.
+ */
+export type GreylistDecision = "deliver" | "discard" | "discard-spam";
 
 export interface AdminSpamView {
   bayes: { enabled: boolean; minimum: number; server: BayesTotals; queued: number };

@@ -1858,7 +1858,7 @@
     },
     "greylist": {
       "title": "Wartende Nachrichten",
-      "explain": "Sieht eine Nachricht verdächtig aus, bittet der Server den absendenden Server, es später noch einmal zu versuchen. Richtige Mailserver tun das nach ein paar Minuten, Spam-Versender meistens nie. So lange steht die Nachricht hier. „Immer durchlassen“ nimmt den Absender dauerhaft von der Prüfung aus — auch dann, wenn seine Adresse gefälscht ist.",
+      "explain": "Sieht eine Nachricht verdächtig aus, bittet der Server den absendenden Server, es später noch einmal zu versuchen. Richtige Mailserver tun das nach ein paar Minuten, Spam-Versender meistens nie. So lange steht die Nachricht hier. Was du hier entscheidest, gilt nur für diese eine Nachricht — einen Absender dauerhaft durchlassen kannst du unter Filter bei deinen Absendern.",
       "off": "Der Server hebt zurückgestellte Nachrichten gerade nicht auf. So lange bleibt diese Liste leer.",
       "empty": "Nichts wartet.",
       "emptyHint": "Zurückgestellte Nachrichten stehen hier, bis sie von selbst ankommen oder du entscheidest.",
@@ -1866,7 +1866,6 @@
       "sentTo": "An {{address}}",
       "decide": {
         "deliver": "Zustellen",
-        "allowDeliver": "Zustellen, Absender immer durchlassen",
         "discard": "Verwerfen",
         "discardSpam": "Verwerfen und als Spam melden"
       },
