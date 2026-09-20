@@ -1,0 +1,10 @@
+# Which webmail this server carries.
+#
+# The webmail lives in its own repository and is built into the binary under /mail. The commit is
+# pinned with its full hash and never with a branch name, so the same server tag always bakes in
+# the same webmail — a build a year from now, and a security fix over there that nobody noticed,
+# both stay visible as a change to this file.
+#
+# To move to a newer webmail: put its commit here, let CI build once, and say so in the changelog.
+repo=https://github.com/MinifyX/UwUMail-Webmail.git
+commit=58e8c6f92c80269c1f04e641b76f95b692a104d9
