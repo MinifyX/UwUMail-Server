@@ -184,27 +184,39 @@ cmd_machine() {
     '{kind: $kind, name: $name, updates: $updates, securityUpdates: $security,
       rebootRequired: $reboot, rebootPackages: ($packages | split(" ") | map(select(. != ""))),
       alone: $alone, others: ($others | split(" ") | map(select(. != ""))),
-      image: $image, digest: $digest, composeDir: $dir, checkedAt: $at, helper: $helper}' >"$tmp" 2>/dev/null &&
-    mv -f "$tmp" "$machine_file" && chmod 0640 "$machine_file"
+      image: $image, digest: $digest, composeDir: $dir, checkedAt: $at, helper: $helper}' 2>/dev/null |
+    safe_write "$tmp" && mv -f "$tmp" "$machine_file" && chmod 0640 "$machine_file"
 }
 
 helper_version() {
   printf '%s' "${UWUMAIL_HOST_HELPER_VERSION:-1}"
 }
 
+# Writes standard input to a file without following a symlink the other side may have planted in the
+# shared directory. The name is cleared first (removing a symlink, not its target), then opened with
+# noclobber (O_EXCL), so a symlink re-planted in the meantime makes the write fail rather than reach
+# through it to an arbitrary host file (security-audit-0.5.2 S-12).
+safe_write() {
+  local target="$1"
+  rm -f -- "$target"
+  ( set -C; cat >"$target" )
+}
+
 # ── the jobs the server may ask for ───────────────────────────────────────────────────────────
 job_state() {
   local id="$1" state="$2" error="${3:-}"
   jq -n --arg id "$id" --arg state "$state" --arg error "$error" --argjson at "$(date +%s)" \
-    '{id: $id, state: $state, error: $error, at: $at}' >"$bridge/job-$id.json.tmp" 2>/dev/null &&
+    '{id: $id, state: $state, error: $error, at: $at}' 2>/dev/null | safe_write "$bridge/job-$id.json.tmp" &&
     mv -f "$bridge/job-$id.json.tmp" "$bridge/job-$id.json" && chmod 0640 "$bridge/job-$id.json"
 }
 
 # Everything a job prints goes here, capped, so the portal can show it while it runs.
 job_log() {
-  local id="$1"
-  tail -c "$LOG_MAX_BYTES" >>"$bridge/job-$id.log"
-  chmod 0640 "$bridge/job-$id.log" 2>/dev/null
+  local id="$1" log="$bridge/job-$id.log"
+  # Never append through a planted symlink; start the log as a fresh regular file.
+  [ -L "$log" ] && rm -f -- "$log"
+  tail -c "$LOG_MAX_BYTES" >>"$log"
+  chmod 0640 "$log" 2>/dev/null
 }
 
 # apt, with every question answered the way the package maintainer meant it. NEEDRESTART_MODE=a

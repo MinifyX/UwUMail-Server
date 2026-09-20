@@ -90,7 +90,13 @@ function machineLines(view: GatewayView): CheckLineData[] {
     // The whole command, ready to paste: the gateway is a machine you reach over SSH and rarely
     // think about, so "there are updates" is only half an answer.
     const address = view.addresses[0];
-    const ssh = address ? `ssh root@${address} '${system.command}'` : system.command;
+    // The command is composed here from a constant and the reboot flag, never taken from the
+    // gateway's report: a compromised gateway must not put a command in front of the admin to run
+    // as root over SSH (security-audit-0.5.2 G-4).
+    const command = system.rebootRequired
+      ? "apt-get update && apt-get -y dist-upgrade && reboot"
+      : "apt-get update && apt-get -y dist-upgrade";
+    const ssh = address ? `ssh root@${address} '${command}'` : command;
     if (system.securityUpdates > 0) {
       lines.push(
         line("gatewaySecurityUpdates", "problem", {
