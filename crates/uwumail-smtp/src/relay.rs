@@ -78,15 +78,22 @@ pub fn original_client(raw: &[u8], trusted: &[IpNetwork]) -> Option<(IpAddr, Str
 }
 
 /// Reads `from <helo> (<rdns> [<ip>])` out of a Received header value.
+///
+/// The client address is taken from the parenthesised comment the relay writes, never from the
+/// HELO. The HELO comes first and may itself be an address literal `[a.b.c.d]`; trusting its
+/// bracket, as taking the first `[...]` did, let a sender behind a trusted relay choose the address
+/// every SPF/DMARC/list/reputation check then ran against (security-audit-0.5.2 S-5). A HELO has no
+/// space or `(`, so the first `(` always begins the relay's own comment.
 fn parse_received_from(value: &str) -> Option<(String, IpAddr)> {
     let lower = value.to_ascii_lowercase();
     let from_start = lower.find("from ")? + 5;
     let from_end = lower[from_start..].find(" by ").map_or(value.len(), |i| from_start + i);
     let from = &value[from_start..from_end];
     let helo = from.split_whitespace().next()?.trim_matches(['[', ']']).to_owned();
-    let open = from.find('[')?;
-    let close = from[open..].find(']')? + open;
-    let literal = from[open + 1..close].trim();
+    let comment = &from[from.find('(')?..];
+    let open = comment.find('[')? + 1;
+    let close = comment[open..].find(']')? + open;
+    let literal = comment[open..close].trim();
     let literal = literal.strip_prefix("IPv6:").or_else(|| literal.strip_prefix("ipv6:")).unwrap_or(literal);
     let ip = literal.parse::<IpAddr>().ok()?.to_canonical();
     Some((helo, ip))
@@ -132,5 +139,15 @@ Subject: hi\r\n\r\nbody\r\n";
         );
         let raw = b"Received: by localhost with LMTP\r\nSubject: x\r\n\r\n";
         assert_eq!(original_client(raw, &[]), None);
+    }
+
+    #[test]
+    fn a_helo_address_literal_does_not_become_the_client() {
+        // A sender behind a trusted relay greets with an address literal of their choosing. The
+        // client address is the one the relay wrote in the comment, not the sender's first bracket.
+        let value = "from [203.0.113.7] (unknown [198.51.100.9]) by relay.local (Postfix) with ESMTP id 1";
+        assert_eq!(parse_received_from(value), Some(("203.0.113.7".into(), "198.51.100.9".parse().unwrap())));
+        // A hop with only a HELO literal and no relay comment cannot be read: it is not trusted.
+        assert_eq!(parse_received_from("from [203.0.113.7] by relay.local"), None);
     }
 }
