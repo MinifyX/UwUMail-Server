@@ -58,6 +58,7 @@
     "settings": "Settings",
     "security": "Security",
     "mail": "Forwarding",
+    "fetch": "Fetched mail",
     "addresses": "Addresses",
     "setup": "Setup",
     "spamFilter": "Spam filter",
@@ -1341,6 +1342,72 @@
       "totp": "password and app",
       "recoveryCode": "password and recovery code",
       "passkey": "password and passkey"
+    }
+  },
+  "fetch": {
+    "title": "Fetched mailboxes",
+    "intro": "Mailboxes at other providers that this server empties for you.",
+    "card": {
+      "title": "Your fetched mailboxes",
+      "add": "Add a mailbox",
+      "brought": "{{count}} message brought",
+      "brought_other": "{{count}} messages brought",
+      "hint": "Fetched mail lands in your inbox and goes through the spam filter like any other."
+    },
+    "empty": {
+      "title": "No mailbox here yet",
+      "body": "Add an address at another provider and this server will fetch its mail regularly."
+    },
+    "status": {
+      "paused": "Paused",
+      "waiting": "Not fetched yet",
+      "lastRun": "Last fetched: {{date}}"
+    },
+    "actions": {
+      "edit": "Edit",
+      "runNow": "Fetch now",
+      "pause": "Pause",
+      "resume": "Resume",
+      "remove": "Remove",
+      "removeConfirm": "Stop fetching {{address}}? Mail that already arrived stays where it is."
+    },
+    "form": {
+      "addTitle": "Add a mailbox",
+      "editTitle": "Edit mailbox",
+      "address": "Address at the provider",
+      "addressHint": "The address whose mail should come here.",
+      "host": "IMAP server",
+      "hostHint": "Guessed from the address. Enter it here if the name is different.",
+      "username": "User name",
+      "usernameHint": "Leave empty when it is the address itself.",
+      "password": "Password",
+      "passwordHint": "iCloud and Google need an app password, not the one you sign in with.",
+      "newPassword": "New password",
+      "newPasswordHint": "Leave empty to keep the stored one.",
+      "needPassword": "Without a password this server cannot get into the mailbox.",
+      "afterFetch": "At the provider afterwards",
+      "afterFetchHint": "Only what really arrived here is ever deleted.",
+      "markRead": "Mark as read",
+      "delete": "Delete for good",
+      "interval": "How often",
+      "everyMinutes": "Every {{count}} minutes",
+      "everyHours": "Every {{count}} hours",
+      "everyHours_one": "Every hour",
+      "junk": "Take the junk folder too",
+      "junkHint": "What the provider sorted out is judged again here — its verdict only counts as a hint.",
+      "add": "Add",
+      "added": "Mailbox added. The first run only writes down where things stand.",
+      "saved": "Saved"
+    },
+    "toasts": {
+      "runQueued": "Fetching shortly.",
+      "removed": "Mailbox removed."
+    },
+    "about": {
+      "title": "Worth knowing",
+      "spam": "Fetched mail is judged again here. What the provider thought was spam counts as a hint and does not decide on its own.",
+      "first": "The first run brings nothing, it only writes down where the folders stand. Mail that is already there comes over with the server's migration command.",
+      "password": "The password only goes in and never comes out again. The server needs it to sign in at the provider and keeps it sealed."
     }
   },
   "mailbox": {

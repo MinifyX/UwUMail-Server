@@ -874,6 +874,37 @@ export interface VacationView {
   textBody: string | null;
 }
 
+/** A mailbox at another provider that this server empties into ours. */
+export interface FetchAccountInfo {
+  id: number;
+  accountId: number;
+  address: string;
+  host: string;
+  port: number;
+  security: "tls" | "starttls";
+  username: string;
+  afterFetch: "markRead" | "delete";
+  fetchJunk: boolean;
+  intervalSecs: number;
+  enabled: boolean;
+  authServId: string;
+  createdAt: number;
+  lastRunAt: number | null;
+  lastOkAt: number | null;
+  lastError: string;
+  lastFetched: number;
+  totalFetched: number;
+}
+
+export interface FetchView {
+  accounts: FetchAccountInfo[];
+  max: number;
+  defaultPort: number;
+  defaultIntervalSecs: number;
+  minIntervalSecs: number;
+  maxIntervalSecs: number;
+}
+
 export interface ForwardLinkInfo {
   address: string;
   from: string;

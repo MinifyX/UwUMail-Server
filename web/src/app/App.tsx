@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Toaster } from "@/components/ui/Toaster";
 import { AccountHome } from "@/features/account/AccountHome";
+import { FetchPage } from "@/features/fetch/FetchPage";
 import { AddressesPage } from "@/features/addresses/AddressesPage";
 import { AdminHome } from "@/features/admin/AdminHome";
 import { DomainPage } from "@/features/domains/DomainPage";
@@ -53,6 +54,7 @@ function page(path: string, session: Session): ReactNode {
   if (path === "/account") return <AccountHome session={session} />;
   if (path === "/account/security") return <SecurityPage session={session} />;
   if (path === "/account/mail") return <MailboxPage />;
+  if (path === "/account/fetch") return <FetchPage />;
   if (path === "/account/addresses") return <AddressesPage />;
   if (path === "/account/spam") return <AccountSpamPage />;
   if (path === "/account/spam/waiting") return <AccountSpamPage tab="waiting" />;

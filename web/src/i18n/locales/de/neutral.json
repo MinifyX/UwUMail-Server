@@ -58,6 +58,7 @@
     "settings": "Einstellungen",
     "security": "Sicherheit",
     "mail": "Weiterleitung",
+    "fetch": "Abrufkonten",
     "addresses": "Adressen",
     "setup": "Einrichtung",
     "spamFilter": "Spamfilter",
@@ -1341,6 +1342,72 @@
       "totp": "Passwort und App",
       "recoveryCode": "Passwort und Wiederherstellungscode",
       "passkey": "Passwort und Passkey"
+    }
+  },
+  "fetch": {
+    "title": "Abrufkonten",
+    "intro": "Postfächer bei anderen Anbietern, die dieser Server für dich leert.",
+    "card": {
+      "title": "Deine Abrufkonten",
+      "add": "Postfach hinzufügen",
+      "brought": "{{count}} Mail geholt",
+      "brought_other": "{{count}} Mails geholt",
+      "hint": "Geholte Mail landet in deinem Posteingang und geht wie jede andere durch den Spamfilter."
+    },
+    "empty": {
+      "title": "Noch kein Postfach hier",
+      "body": "Trag eine Adresse bei einem anderen Anbieter ein, und dieser Server holt die Mail von dort regelmäßig ab."
+    },
+    "status": {
+      "paused": "Pausiert",
+      "waiting": "Noch nicht abgerufen",
+      "lastRun": "Zuletzt geholt: {{date}}"
+    },
+    "actions": {
+      "edit": "Bearbeiten",
+      "runNow": "Jetzt abrufen",
+      "pause": "Pausieren",
+      "resume": "Fortsetzen",
+      "remove": "Entfernen",
+      "removeConfirm": "{{address}} nicht mehr abrufen? Schon geholte Mail bleibt, wo sie ist."
+    },
+    "form": {
+      "addTitle": "Postfach hinzufügen",
+      "editTitle": "Postfach bearbeiten",
+      "address": "Adresse beim Anbieter",
+      "addressHint": "Die Adresse, deren Mail hierher soll.",
+      "host": "IMAP-Server",
+      "hostHint": "Wird aus der Adresse geraten. Stimmt der Name nicht, trag ihn hier ein.",
+      "username": "Benutzername",
+      "usernameHint": "Leer lassen, wenn es die Adresse selbst ist.",
+      "password": "Passwort",
+      "passwordHint": "Bei iCloud und Google braucht es ein App-Passwort, nicht das Anmeldepasswort.",
+      "newPassword": "Neues Passwort",
+      "newPasswordHint": "Leer lassen, um das gespeicherte zu behalten.",
+      "needPassword": "Ohne Passwort kommt dieser Server nicht in das Postfach.",
+      "afterFetch": "Beim Anbieter danach",
+      "afterFetchHint": "Gelöscht wird nur, was hier wirklich angekommen ist.",
+      "markRead": "Als gelesen markieren",
+      "delete": "Endgültig löschen",
+      "interval": "Wie oft",
+      "everyMinutes": "Alle {{count}} Minuten",
+      "everyHours": "Alle {{count}} Stunden",
+      "everyHours_one": "Jede Stunde",
+      "junk": "Spam-Ordner mitnehmen",
+      "junkHint": "Was der Anbieter aussortiert hat, wird hier neu bewertet — sein Urteil zählt nur als Hinweis.",
+      "add": "Hinzufügen",
+      "added": "Postfach hinzugefügt. Der erste Abruf merkt sich nur den Stand.",
+      "saved": "Gespeichert"
+    },
+    "toasts": {
+      "runQueued": "Wird gleich abgerufen.",
+      "removed": "Postfach entfernt."
+    },
+    "about": {
+      "title": "Gut zu wissen",
+      "spam": "Geholte Mail wird hier neu bewertet. Was der Anbieter für Spam hielt, zählt als Hinweis und entscheidet nicht allein.",
+      "first": "Der erste Abruf holt nichts, er merkt sich nur, wo die Ordner stehen. Vorhandene Mail holst du mit dem Umzugsbefehl des Servers herüber.",
+      "password": "Das Passwort geht hier nur hinein und kommt nie wieder heraus. Der Server braucht es, um sich beim Anbieter anzumelden, und verwahrt es verschlüsselt."
     }
   },
   "mailbox": {

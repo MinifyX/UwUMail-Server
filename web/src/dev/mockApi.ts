@@ -20,6 +20,8 @@ import type {
   SpamLimitsView,
   AdminSpamView,
   AppPasswordInfo,
+  FetchAccountInfo,
+  FetchView,
   ForwardingView,
   AuditRecord,
   Health,
@@ -962,6 +964,57 @@ function fakeQr(size = 29) {
   return { size, modules };
 }
 
+const mockFetchAccounts: FetchAccountInfo[] = [
+  {
+    id: 1,
+    accountId: 1,
+    address: "lorin@freemail.example",
+    host: "imap.freemail.example",
+    port: 993,
+    security: "tls",
+    username: "lorin@freemail.example",
+    afterFetch: "delete",
+    fetchJunk: true,
+    intervalSecs: 300,
+    enabled: true,
+    authServId: "",
+    createdAt: now - 12 * 86_400,
+    lastRunAt: now - 180,
+    lastOkAt: now - 180,
+    lastError: "",
+    lastFetched: 2,
+    totalFetched: 431,
+  },
+  {
+    id: 2,
+    accountId: 1,
+    address: "lorin@oldmail.example",
+    host: "imap.mail.oldmail.example",
+    port: 993,
+    security: "tls",
+    username: "lorin@oldmail.example",
+    afterFetch: "markRead",
+    fetchJunk: true,
+    intervalSecs: 1800,
+    enabled: true,
+    authServId: "",
+    createdAt: now - 3 * 86_400,
+    lastRunAt: now - 900,
+    lastOkAt: now - 6 * 3600,
+    lastError: "the provider did not accept the user name and password",
+    lastFetched: 0,
+    totalFetched: 1204,
+  },
+];
+
+const mockFetchView = (): FetchView => ({
+  accounts: mockFetchAccounts,
+  max: 10,
+  defaultPort: 993,
+  defaultIntervalSecs: 300,
+  minIntervalSecs: 60,
+  maxIntervalSecs: 21_600,
+});
 const mockForwarding: ForwardingView = {
   keepCopy: true,
   externalAllowed: true,
@@ -1965,6 +2018,59 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/admin\/spam\/learn-folders$/,
     () => [200, { spam: 40, ham: 310, people: 3 } satisfies LearnedFromFolders],
   ],
+  ["GET", /^\/api\/account\/fetch$/, () => [200, mockFetchView()]],
+  [
+    "POST",
+    /^\/api\/account\/fetch$/,
+    (body) => {
+      const input = body as Partial<FetchAccountInfo> & { password?: string };
+      const address = (input.address ?? "").trim().toLowerCase();
+      if (mockFetchAccounts.some((account) => account.address === address)) return problem(409, "conflict");
+      const account: FetchAccountInfo = {
+        id: mockFetchAccounts.length + 1,
+        accountId: 1,
+        address,
+        host: input.host ?? "",
+        port: input.port ?? 993,
+        security: "tls",
+        username: input.username ?? address,
+        afterFetch: input.afterFetch ?? "markRead",
+        fetchJunk: input.fetchJunk ?? true,
+        intervalSecs: input.intervalSecs ?? 300,
+        enabled: true,
+        authServId: "",
+        createdAt: Math.floor(Date.now() / 1000),
+        lastRunAt: null,
+        lastOkAt: null,
+        lastError: "",
+        lastFetched: 0,
+        totalFetched: 0,
+      };
+      mockFetchAccounts.push(account);
+      return [201, account];
+    },
+  ],
+  [
+    "PATCH",
+    /^\/api\/account\/fetch\/(\d+)$/,
+    (body, match) => {
+      const account = mockFetchAccounts.find((entry) => entry.id === Number(match[1]));
+      if (!account) return problem(404, "notFound");
+      Object.assign(account, body as Partial<FetchAccountInfo>);
+      return [200, account];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/account\/fetch\/(\d+)$/,
+    (_body, match) => {
+      const at = mockFetchAccounts.findIndex((entry) => entry.id === Number(match[1]));
+      if (at < 0) return problem(404, "notFound");
+      mockFetchAccounts.splice(at, 1);
+      return [204, null];
+    },
+  ],
+  ["POST", /^\/api\/account\/fetch\/(\d+)\/run$/, () => [202, null]],
   ["GET", /^\/api\/account\/forwarding$/, () => [200, mockForwarding]],
   [
     "POST",
