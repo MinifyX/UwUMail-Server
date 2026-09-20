@@ -18,6 +18,9 @@ pub const SUBMISSION: &str = "urn:ietf:params:jmap:submission";
 pub const VACATION: &str = "urn:ietf:params:jmap:vacationresponse";
 /// Our own extension: one's allowed and blocked senders on this server (docs/jmap-senders.md).
 pub const SENDERS: &str = "urn:uwumail:jmap:senders";
+/// Our own extension: what the webmail needs on top of plain JMAP, currently the cleaned HTML
+/// body of a message (`uwuSafeHtml`, `uwuHasRemoteContent`).
+pub const WEBMAIL: &str = "urn:uwumail:jmap:webmail";
 
 /// Origin the client used, so every URL in the session works from where it is.
 ///
@@ -66,7 +69,8 @@ pub fn document(account: &Account, base: &str) -> Value {
             MAIL: {},
             SUBMISSION: {},
             VACATION: {},
-            SENDERS: {}
+            SENDERS: {},
+            WEBMAIL: {}
         },
         "accounts": {
             account_id.clone(): {
@@ -105,7 +109,7 @@ pub fn document(account: &Account, base: &str) -> Value {
 
 pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInfo>>, headers: HeaderMap) -> Response {
     let client = client.map(|Extension(c)| c).unwrap_or_default();
-    match jmap.inner.auth.account(&headers, client).await {
+    match jmap.inner.auth.account_for(&headers, client, false).await {
         Ok(account) => {
             let base = base_url(&headers, client);
             ([(header::CACHE_CONTROL, "no-cache, no-store")], Json(document(&account, &base))).into_response()
