@@ -1,6 +1,8 @@
 //! Settings from the admin panel: merged with the config file and applied while the server runs.
 
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde_json::{Value, json};
 use uwumail_smtp::Smtp;
@@ -11,6 +13,9 @@ use crate::config::Config;
 pub struct ServerSettings {
     pub path: Option<PathBuf>,
     pub smtp: Smtp,
+    /// The web portal's copy of `http.webmail`, so a change in the admin panel is in effect
+    /// before the answer is written.
+    pub webmail: Arc<AtomicBool>,
 }
 
 /// The effective value and origin of every setting, for an overlay. Used by the admin panel and
@@ -18,8 +23,13 @@ pub struct ServerSettings {
 pub fn view_settings(path: Option<&std::path::Path>, overlay: &Value) -> Result<Vec<SettingValue>, String> {
     let config = Config::load_with_overlay(path, overlay).map_err(|err| format!("{err:#}"))?;
     let fixed = Config::file_and_environment(path).map_err(|err| format!("{err:#}"))?;
-    let effective =
-        json!({ "smtp": config.smtp, "spam": config.spam, "delivery": config.delivery, "tone": config.tone });
+    let effective = json!({
+        "smtp": config.smtp,
+        "spam": config.spam,
+        "delivery": config.delivery,
+        "tone": config.tone,
+        "http": { "webmail": config.http.webmail },
+    });
     Ok(SETTINGS
         .iter()
         .map(|spec| {
@@ -46,6 +56,7 @@ impl SettingsBackend for ServerSettings {
     fn apply(&self, overlay: &Value) -> Result<(), String> {
         let config = Config::load_with_overlay(self.path.as_deref(), overlay).map_err(|err| format!("{err:#}"))?;
         config.validate().map_err(|err| format!("{err:#}"))?;
+        self.webmail.store(config.http.webmail, Ordering::Relaxed);
         self.smtp
             .update_settings(config.smtp, config.spam, config.delivery, config.tone)
             .map_err(|err| err.to_string())?;

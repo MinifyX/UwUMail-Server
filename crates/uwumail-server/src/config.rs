@@ -119,11 +119,21 @@ impl Default for TlsConfig {
     }
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct HttpConfig {
     /// Reverse proxies whose X-Forwarded-For and X-Forwarded-Proto headers are believed.
     pub trusted_proxies: Vec<String>,
+    /// Whether the webmail is served under `/mail`. On where a webmail was built into the
+    /// binary at all; an admin can switch it off for the whole server, and each account has its
+    /// own switch on top of this one.
+    pub webmail: bool,
+}
+
+impl Default for HttpConfig {
+    fn default() -> Self {
+        HttpConfig { trusted_proxies: Vec::new(), webmail: true }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]

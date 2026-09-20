@@ -43,6 +43,8 @@ pub fn person_json(person: &Person) -> Value {
         "addresses": person.addresses,
         "protocols": account.protocols,
         "redirectTo": account.redirect_to,
+        // The webmail is its own switch, not a sixth protocol: see migration 0028.
+        "webmail": account.webmail,
         // A service with neither IMAP nor JMAP has no mailbox at all.
         "hasMailbox": account.has_mailbox(),
     })
@@ -214,6 +216,8 @@ pub struct PersonChanges {
     protocols: Option<uwumail_store::Protocols>,
     /// Where mail goes while this account has no mailbox; an address of this server, or empty.
     redirect_to: Option<String>,
+    /// Whether this person may open their mailbox in the browser.
+    webmail: Option<bool>,
 }
 
 pub async fn update(
@@ -245,6 +249,7 @@ pub async fn update(
                 disabled: changes.disabled,
                 protocols: changes.protocols,
                 redirect_to: changes.redirect_to.clone(),
+                webmail: changes.webmail,
             },
         )
         .await?;
@@ -263,6 +268,9 @@ pub async fn update(
     }
     if let Some(redirect) = changes.redirect_to {
         details.insert("redirectTo".into(), redirect.into());
+    }
+    if let Some(webmail) = changes.webmail {
+        details.insert("webmail".into(), webmail.into());
     }
     if let Some(quota) = changes.quota_bytes {
         details.insert("quotaBytes".into(), quota.into());
