@@ -51,7 +51,8 @@ impl FromRequestParts<Web> for Session {
     type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, web: &Web) -> Result<Self, Self::Rejection> {
-        let token = token(&parts.headers).ok_or(ApiError::NotLoggedIn)?;
+        let client = client(parts);
+        let token = token(&parts.headers, client.https).ok_or(ApiError::NotLoggedIn)?;
         let session = web.store().web_session(&token, SESSION_LIFETIME_SECS).await?.ok_or(ApiError::NotLoggedIn)?;
         if !matches!(parts.method, Method::GET | Method::HEAD) {
             let sent = parts.headers.get(CSRF_HEADER).and_then(|v| v.to_str().ok()).unwrap_or_default();
@@ -63,7 +64,7 @@ impl FromRequestParts<Web> for Session {
             account: session.account,
             csrf_token: session.csrf_token,
             token,
-            client: client(parts),
+            client,
             created_at: session.created_at,
         })
     }

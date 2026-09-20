@@ -29,14 +29,20 @@ pub const CSRF_HEADER: &str = "x-csrf-token";
 pub const WEB_SESSION_LIFETIME_SECS: i64 = 14 * 24 * 3600;
 
 /// The session token from a request's cookies, if any.
-pub fn session_cookie(headers: &HeaderMap) -> Option<String> {
+///
+/// Transport-aware on purpose: over HTTPS only the `__Host-`-prefixed cookie is read, over plain
+/// HTTP only the un-prefixed one. Reading both on every request undid the `__Host-` prefix — a
+/// cookie a sibling host or a plain-HTTP answer planted as `uwumail=` would shadow the real
+/// `__Host-uwumail`, binding the victim to the attacker's session (security-audit-0.5.2 S-7).
+pub fn session_cookie(headers: &HeaderMap, https: bool) -> Option<String> {
+    let name = if https { SECURE_SESSION_COOKIE } else { PLAIN_SESSION_COOKIE };
     headers
         .get_all(header::COOKIE)
         .iter()
         .filter_map(|value| value.to_str().ok())
         .flat_map(|value| value.split(';'))
         .filter_map(|pair| pair.trim().split_once('='))
-        .find(|(name, _)| *name == SECURE_SESSION_COOKIE || *name == PLAIN_SESSION_COOKIE)
+        .find(|(cookie, _)| *cookie == name)
         .map(|(_, value)| value.to_owned())
         .filter(|value| !value.is_empty() && value.len() <= 128)
 }
@@ -182,7 +188,7 @@ impl Authenticator {
         changes: bool,
     ) -> Result<Account, AuthError> {
         if headers.get(header::AUTHORIZATION).is_none() {
-            return self.session_account(headers, changes).await;
+            return self.session_account(headers, client.https, changes).await;
         }
         self.account(headers, client).await
     }
@@ -195,11 +201,11 @@ impl Authenticator {
     /// The same three conditions the portal shows the way in by. An account that is told it has no
     /// webmail must not get one by asking for it directly — an answer that only the button knows
     /// about is not a rule, it is a decoration.
-    async fn session_account(&self, headers: &HeaderMap, changes: bool) -> Result<Account, AuthError> {
+    async fn session_account(&self, headers: &HeaderMap, https: bool, changes: bool) -> Result<Account, AuthError> {
         if !self.webmail.load(Ordering::Relaxed) {
             return Err(AuthError::Missing);
         }
-        let token = session_cookie(headers).ok_or(AuthError::Missing)?;
+        let token = session_cookie(headers, https).ok_or(AuthError::Missing)?;
         let session = match self.store.web_session(&token, WEB_SESSION_LIFETIME_SECS).await {
             Ok(Some(session)) => session,
             Ok(None) => return Err(AuthError::Invalid),
@@ -254,6 +260,11 @@ impl Authenticator {
             return Err(AuthError::Blocked);
         }
         let ip = client.ip.to_string();
+        // Stamp the cache from before the slow check runs, not after: a credential change that
+        // lands while argon2 is verifying must invalidate the entry, not be masked for the cache
+        // lifetime (security-audit-0.5.2 S-21).
+        let started = Instant::now();
+        let started_unix = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
         match self.store.authenticate_mail(login, password, self.scope, self.protocol, &ip).await {
             Ok(MailAuth::Ok { account, app_password }) => {
                 // App passwords are a quick lookup; only the slow account password is worth caching.
@@ -262,8 +273,7 @@ impl Authenticator {
                     if cache.len() > 10_000 {
                         cache.retain(|_, (_, since, _)| since.elapsed() < CACHE_LIFETIME);
                     }
-                    let unix = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
-                    cache.insert(key, (account.id, Instant::now(), unix));
+                    cache.insert(key, (account.id, started, started_unix));
                 }
                 Ok(account)
             }
@@ -289,14 +299,20 @@ mod tests {
     use axum::http::{HeaderMap, HeaderValue, header};
 
     #[test]
-    fn reads_either_cookie_name() {
+    fn reads_the_cookie_the_transport_allows() {
         let mut headers = HeaderMap::new();
-        headers.insert(header::COOKIE, HeaderValue::from_static("theme=dark; __Host-uwumail=abc123"));
-        assert_eq!(session_cookie(&headers).as_deref(), Some("abc123"));
-        headers.insert(header::COOKIE, HeaderValue::from_static("uwumail=def456"));
-        assert_eq!(session_cookie(&headers).as_deref(), Some("def456"));
-        headers.insert(header::COOKIE, HeaderValue::from_static("uwumail="));
-        assert_eq!(session_cookie(&headers), None);
+        // Over HTTPS the __Host- cookie is read and a planted plain cookie riding ahead of it is
+        // ignored, so it cannot shadow the real session.
+        headers.insert(header::COOKIE, HeaderValue::from_static("uwumail=attacker; __Host-uwumail=victim"));
+        assert_eq!(session_cookie(&headers, true).as_deref(), Some("victim"));
+        // Over plain HTTP only the un-prefixed cookie exists.
+        assert_eq!(session_cookie(&headers, false).as_deref(), Some("attacker"));
+        // A plain cookie alone over HTTPS is not accepted.
+        headers.insert(header::COOKIE, HeaderValue::from_static("uwumail=attacker"));
+        assert_eq!(session_cookie(&headers, true), None);
+        // An empty value is no cookie.
+        headers.insert(header::COOKIE, HeaderValue::from_static("__Host-uwumail="));
+        assert_eq!(session_cookie(&headers, true), None);
     }
 
     #[test]

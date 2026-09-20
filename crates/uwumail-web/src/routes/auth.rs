@@ -285,7 +285,7 @@ pub async fn second_factor(
 pub async fn logout(State(web): State<Web>, parts: Parts) -> ApiResult<Response> {
     let mut parts = parts;
     let client = session::client(&parts);
-    if let Some(token) = session::token(&parts.headers) {
+    if let Some(token) = session::token(&parts.headers, client.https) {
         // Only a request from the app itself may end a valid session.
         match Session::from_request_parts(&mut parts, &web).await {
             Ok(_) | Err(ApiError::NotLoggedIn) => web.store().delete_web_session(&token).await?,
