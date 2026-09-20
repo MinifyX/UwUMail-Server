@@ -191,6 +191,10 @@ impl Authenticator {
     ///
     /// Deliberately independent of the JMAP protocol switch, which decides what *other* mail
     /// programs may do with this account's password. The webmail is part of the server itself.
+    ///
+    /// The same three conditions the portal shows the way in by. An account that is told it has no
+    /// webmail must not get one by asking for it directly — an answer that only the button knows
+    /// about is not a rule, it is a decoration.
     async fn session_account(&self, headers: &HeaderMap, changes: bool) -> Result<Account, AuthError> {
         if !self.webmail.load(Ordering::Relaxed) {
             return Err(AuthError::Missing);
@@ -207,7 +211,7 @@ impl Authenticator {
                 return Err(AuthError::Invalid);
             }
         }
-        if !session.account.can_use_portal() || !session.account.webmail {
+        if !session.account.can_use_portal() || !session.account.webmail || !session.account.has_mailbox() {
             return Err(AuthError::Invalid);
         }
         Ok(session.account)
