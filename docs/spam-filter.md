@@ -24,6 +24,12 @@ Behind a server in `smtp.trusted_relays`, the filter scores the server that
 talked to the relay. Behind a UwUMail Gateway it sees the real address of the
 sending server, too.
 
+Mail this server fetches out of a mailbox at another provider is scored as
+well, but it was delivered once already: there is no sending server left to
+judge, so the rules about one are replaced by rules of their own — what the
+provider put its name to, and what it thought of the message. See
+[fetch.md](fetch.md#what-the-filter-can-still-ask).
+
 ## What happens
 
 | Score | Outcome |

@@ -91,7 +91,9 @@ Each step ships as its own commits, container image and test deployment.
 ## 6. Web mail and external mailboxes
 
 - [ ] UwUMail web client (built from the app repository) served at `/`, switchable in the admin panel
-- [ ] External mailboxes (Gmail, GMX, ...) through the UwUMail engine, shown as extra JMAP accounts
+- [x] Fetched mailboxes: mail from another provider's IMAP mailbox, emptied into someone's own and judged here like any other, with rules of its own for what a fetched message can still be asked
+- [ ] Sending as a fetched address, over the provider's own outgoing server
+- [ ] External mailboxes shown as extra JMAP accounts, with folders and changes going back
 
 ## UwUMail Gateway ✅ in progress
 
