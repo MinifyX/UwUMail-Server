@@ -16,7 +16,8 @@ overwrite each other. See [docs/jmap-settings.md](docs/jmap-settings.md).
 Everything in it is on a whitelist with rules for its value and limits for its size, because what
 one device writes is handed to all the others. Theme, tone, language and the webmail's mail choices
 are not stored a second time: they are the portal's preferences, so a change in the portal shows up
-in the apps too, and the other way round.
+in the apps too, and the other way round. One write may name at most as many keys as an account may
+keep, removals included, so a single request can't keep the database busy with thousands of them.
 
 The portal had been turning away the webmail's own mail preferences — conversations, density,
 remote images, mail appearance, sender pictures and swiping — as unknown, so they never reached the

@@ -18,7 +18,7 @@ and in the account's `accountCapabilities`:
 
 | Limit | |
 | --- | --- |
-| `maxKeys` | how many keys `values` may hold |
+| `maxKeys` | how many keys `values` may hold, and how many one update may name |
 | `maxSize` | how many bytes `values` may take, as a JSON object |
 | `maxValueSize` | how many bytes one value may take, as JSON |
 
@@ -96,7 +96,7 @@ Errors in `notUpdated`:
 | `invalidProperties` | a key is not on the list below, or its value is not allowed; `properties` lists the offending keys as plain keys (`colour`, not `values/colour`), and any property other than `values` or `id` by its name |
 | `invalidPatch` | a path points inside a value, has a bad `~` escape, or `values` and `values/…` are mixed |
 | `tooLarge` | one value is larger than `maxValueSize` |
-| `overQuota` | afterwards there would be more than `maxKeys` keys or more than `maxSize` bytes |
+| `overQuota` | afterwards there would be more than `maxKeys` keys or more than `maxSize` bytes, or the update names more than `maxKeys` keys (removals and `null`s count too) |
 
 A stale `ifInState` fails the whole call with `stateMismatch`, also when
 another write slipped in between the check and the write.
