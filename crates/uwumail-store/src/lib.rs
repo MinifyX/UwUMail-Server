@@ -36,6 +36,7 @@ mod security;
 mod sender_lists;
 mod spam;
 mod spam_log;
+mod user_settings;
 mod web;
 mod word_lists;
 
@@ -101,6 +102,10 @@ pub use spam::{
 pub use spam_log::{
     FetchedVerdicts, NewSpamLogEntry, SPAM_LOG_MAX_ROWS, SpamAction, SpamLogEntry, SpamLogFilter, SpamLogHit,
     SpamLogRecipient,
+};
+pub use user_settings::{
+    SettingProblem, SettingsChange, USER_SETTINGS_MAX_KEYS, USER_SETTINGS_MAX_SIZE, USER_SETTINGS_MAX_VALUE_SIZE,
+    UserSettings, validate_setting,
 };
 pub use web::{NewWebSession, ServerCounts, WebSession};
 pub use word_lists::{

@@ -6,6 +6,7 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 use crate::directory::{ACCOUNT_COLUMN_COUNT, ACCOUNT_COLUMNS, account_from_row};
+use crate::user_settings::{bump_settings_state, is_mirrored_preference};
 use crate::{Account, Result, Store, StoreError, now, random_bytes};
 
 /// A session is only written back when it was last seen longer ago than this.
@@ -160,28 +161,38 @@ impl Store {
     }
 
     /// Merges `changes` into the stored preferences; `null` removes a key.
+    ///
+    /// Some preferences are also synced settings (see `user_settings`); changing one of them moves
+    /// the settings' state, so the apps hear about it.
     pub async fn update_preferences(&self, account_id: i64, changes: Map<String, Value>) -> Result<Map<String, Value>> {
-        self.write(move |tx| {
-            let raw: String = tx
-                .query_row("SELECT preferences FROM accounts WHERE id = ?1", [account_id], |row| row.get(0))
-                .optional()?
-                .ok_or_else(|| StoreError::NotFound(format!("account {account_id}")))?;
-            let mut preferences: Map<String, Value> = serde_json::from_str(&raw).unwrap_or_default();
-            for (key, value) in changes {
-                if value.is_null() {
-                    preferences.remove(&key);
-                } else {
-                    preferences.insert(key, value);
+        let (preferences, settings_modseq) = self
+            .write(move |tx| {
+                let raw: String = tx
+                    .query_row("SELECT preferences FROM accounts WHERE id = ?1", [account_id], |row| row.get(0))
+                    .optional()?
+                    .ok_or_else(|| StoreError::NotFound(format!("account {account_id}")))?;
+                let mut preferences: Map<String, Value> = serde_json::from_str(&raw).unwrap_or_default();
+                let synced = changes.keys().any(|key| is_mirrored_preference(key));
+                for (key, value) in changes {
+                    if value.is_null() {
+                        preferences.remove(&key);
+                    } else {
+                        preferences.insert(key, value);
+                    }
                 }
-            }
-            let encoded = Value::Object(preferences.clone()).to_string();
-            if encoded.len() > 16 * 1024 {
-                return Err(StoreError::Invalid("preferences are too large".into()));
-            }
-            tx.execute("UPDATE accounts SET preferences = ?1 WHERE id = ?2", params![encoded, account_id])?;
-            Ok(preferences)
-        })
-        .await
+                let encoded = Value::Object(preferences.clone()).to_string();
+                if encoded.len() > 16 * 1024 {
+                    return Err(StoreError::Invalid("preferences are too large".into()));
+                }
+                tx.execute("UPDATE accounts SET preferences = ?1 WHERE id = ?2", params![encoded, account_id])?;
+                let settings_modseq = if synced { Some(bump_settings_state(tx, account_id)?) } else { None };
+                Ok((preferences, settings_modseq))
+            })
+            .await?;
+        if let Some(modseq) = settings_modseq {
+            self.notify_change(account_id, modseq);
+        }
+        Ok(preferences)
     }
 
     pub async fn server_counts(&self) -> Result<ServerCounts> {
