@@ -14,7 +14,7 @@ import { toast } from "@/state/toasts";
 type Draft = Record<string, unknown>;
 const MB = 1024 * 1024;
 
-function LockedHint() {
+export function LockedHint() {
   const { t } = useT();
   return (
     <span className="flex items-center gap-1 text-[12px] text-muted">
@@ -32,6 +32,7 @@ export function Section({
   keys,
   children,
   onSaved,
+  canSave,
 }: {
   title: string;
   intro: string;
@@ -39,6 +40,8 @@ export function Section({
   keys: string[];
   children: (form: Form) => ReactNode;
   onSaved?: () => void;
+  /** Whether the changes may be saved as they are; the server checks again either way. */
+  canSave?: (form: Form) => boolean;
 }) {
   const { t } = useT();
   const queryClient = useQueryClient();
@@ -58,22 +61,23 @@ export function Section({
     onError: (error) => toast(errorText(error), "error"),
   });
 
-  const form: Form = {
-    setting: (key) => byKey[key],
-    value: (key) => (key in draft ? draft[key] : byKey[key]?.value),
-    locked: (key) => byKey[key]?.source === "file",
-    set: (key, value) => setDraft((current) => ({ ...current, [key]: value })),
-  };
   const changes = Object.fromEntries(
     Object.entries(draft).filter(([key, value]) => {
       if (!keys.includes(key) || value === undefined) return false;
       // Secrets never come back: typing one sets it, null removes a stored one.
-      if (key.endsWith("password") || key.endsWith("_key"))
+      if (key.endsWith("password") || key.endsWith("_key") || key.endsWith("token"))
         return (typeof value === "string" && value !== "") || (value === null && byKey[key]?.set);
       return JSON.stringify(value) !== JSON.stringify(byKey[key]?.value);
     }),
   );
   const dirty = Object.keys(changes).length > 0;
+  const form: Form = {
+    setting: (key) => byKey[key],
+    value: (key) => (key in draft ? draft[key] : byKey[key]?.value),
+    locked: (key) => byKey[key]?.source === "file",
+    set: (key, value) => setDraft((current) => ({ ...current, [key]: value })),
+    pending: changes,
+  };
 
   return (
     <Card title={title}>
@@ -81,7 +85,12 @@ export function Section({
         <p className="-mt-1 text-[13px] text-muted">{intro}</p>
         {children(form)}
         <div className="flex justify-end">
-          <Button variant="primary" disabled={!dirty} busy={save.isPending} onClick={() => save.mutate(changes)}>
+          <Button
+            variant="primary"
+            disabled={!dirty || (canSave ? !canSave(form) : false)}
+            busy={save.isPending}
+            onClick={() => save.mutate(changes)}
+          >
             {t("settings.save")}
           </Button>
         </div>
@@ -95,9 +104,11 @@ export interface Form {
   value: (key: string) => unknown;
   locked: (key: string) => boolean;
   set: (key: string, value: unknown) => void;
+  /** The changes not saved yet, the way they would be sent. */
+  pending: Draft;
 }
 
-function ChoiceField<T extends string>({
+export function ChoiceField<T extends string>({
   form,
   settingKey,
   label,
@@ -232,7 +243,7 @@ function DecimalField({
   );
 }
 
-function TextField({
+export function TextField({
   form,
   settingKey,
   label,

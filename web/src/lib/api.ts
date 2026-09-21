@@ -467,10 +467,23 @@ export interface LogLine {
   seq: number;
   /** Milliseconds since 1970. */
   at: number;
+  /** "gateway" for lines the UwUMail Gateway handed over through the tunnel. */
+  source: "server" | "gateway";
   level: "error" | "warn" | "info" | "debug" | "trace";
   target: string;
   message: string;
   fields: [string, string][];
+}
+
+/** How sending the log to Grafana Loki goes. */
+export interface LokiStatus {
+  enabled: boolean;
+  queued: number;
+  sent: number;
+  dropped: number;
+  /** Unix time of the last push Loki took. */
+  lastSuccess: number | null;
+  error: string | null;
 }
 
 export type SettingSource = "default" | "database" | "file";

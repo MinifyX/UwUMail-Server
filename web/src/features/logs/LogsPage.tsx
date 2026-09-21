@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/ui/Card";
 import { Segmented, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, ApiError, type LogLine } from "@/lib/api";
+import { LokiCard } from "./LokiCard";
 
 type Level = "all" | "warn" | "error";
 const MAX_LINES = 1000;
@@ -108,6 +109,11 @@ export function LogsPage() {
                   {line.level}
                 </span>
                 <span className="min-w-0 break-words">
+                  {line.source === "gateway" && (
+                    <span className="mr-2 rounded bg-pink-tint px-1.5 py-px font-sans text-[11px] font-semibold text-pink-ink">
+                      {t("logs.gateway")}
+                    </span>
+                  )}
                   {line.message}
                   {line.fields.map(([key, value]) => (
                     <span key={key} className="ml-2 text-muted">
@@ -122,6 +128,7 @@ export function LogsPage() {
         </div>
       )}
       <p className="text-[12px] text-faint">{live ? t("logs.live") : t("logs.paused")}</p>
+      {!unavailable && <LokiCard />}
     </div>
   );
 }

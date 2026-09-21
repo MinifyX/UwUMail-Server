@@ -73,6 +73,8 @@ const KNOWN = [
   "cloudflareFailed",
   "mtaStsCertificate",
   "virusScannerOff",
+  "lokiInvalid",
+  "lokiUnreachable",
 ];
 
 /** Turns an API error into a sentence for the person in front of the screen. */

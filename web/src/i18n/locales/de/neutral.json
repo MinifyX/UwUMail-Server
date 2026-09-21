@@ -260,7 +260,9 @@
       "hostJobRefused": "Der Helfer auf der Maschine hat das abgelehnt: {{detail}}",
       "updateRefused": "Das Update wurde nicht gestartet: {{detail}}",
       "gatewayJobRefused": "Das Gateway hat das nicht angenommen: {{detail}}",
-      "virusScannerOff": "Der Virenscanner ist ausgeschaltet."
+      "virusScannerOff": "Der Virenscanner ist ausgeschaltet.",
+      "lokiInvalid": "So geht das nicht an Loki: {{detail}}",
+      "lokiUnreachable": "Loki hat die Testzeile nicht angenommen: {{detail}}"
     }
   },
   "people": {
@@ -939,7 +941,53 @@
     "pause": "Anhalten",
     "resume": "Weiter",
     "empty": "Keine passenden Zeilen.",
-    "unavailable": "Dieser Server hält keine Logs für die Verwaltung bereit."
+    "unavailable": "Dieser Server hält keine Logs für die Verwaltung bereit.",
+    "loki": {
+      "title": "An Grafana Loki senden",
+      "intro": "Schickt die Logs dieses Servers und seines Gateways an ein Grafana Loki, z. B. an deinen eigenen Log-Server oder an Grafana Cloud.",
+      "enabled": "Logs an Loki senden",
+      "enabledHint": "Neue Zeilen gehen alle paar Sekunden gesammelt raus. Ist Loki nicht erreichbar, wartet der Server und versucht es weiter, ohne dass Mail darunter leidet.",
+      "privacyTitle": "Datenschutz",
+      "privacyText": "Log-Zeilen enthalten personenbezogene Daten: Anmeldenamen und Mailadressen, IP-Adressen von Mail-Apps und anderen Servern, Absender empfangener Mails. Mit dem Einschalten verlassen diese Daten den Server und liegen danach in Loki – so lange, wie Loki sie aufbewahrt. Sorge dafür, dass das für alle Postfächer auf diesem Server in Ordnung ist.",
+      "privacyConsent": "Ich habe das verstanden und erlaube, dass die Logs mit diesen Daten an die unten eingetragene Adresse gesendet werden.",
+      "url": "Adresse von Loki",
+      "urlHint": "z. B. http://192.168.1.20:3100 oder https://logs-prod-012.grafana.net. /loki/api/v1/push wird ergänzt, wenn die Adresse keinen Pfad hat.",
+      "auth": "Anmeldung",
+      "authNone": "Keine",
+      "authBasic": "Benutzer & Passwort",
+      "authToken": "Token",
+      "username": "Benutzer",
+      "password": "Passwort",
+      "token": "Token",
+      "secretSet": "Ist gespeichert. Tippe einen neuen Wert, um ihn zu ersetzen.",
+      "secretRemove": "Entfernen",
+      "level": "Ab Stufe",
+      "levelHint": "Was weniger wichtig ist, bleibt hier.",
+      "levels": {
+        "error": "Nur Fehler",
+        "warn": "Warnungen und Fehler",
+        "info": "Info und wichtiger",
+        "debug": "Alles bis Debug"
+      },
+      "tenant": "Mandant (X-Scope-OrgID)",
+      "tenantHint": "Nur für ein Loki mit mehreren Mandanten.",
+      "labels": "Eigene Labels",
+      "labelsHint": "Eins pro Zeile als name=wert. app, instance, source und level setzt der Server selbst.",
+      "gateway": "Gateway-Logs mitsenden",
+      "gatewayHint": "Die Zeilen des UwUMail Gateways kommen durch den Tunnel hierher und gehen mit dem Label source=gateway weiter.",
+      "test": "Testzeile senden",
+      "testOk": "Die Testzeile ist in Loki angekommen.",
+      "status": {
+        "off": "Aus.",
+        "sent_one": "{{sent}} Zeile gesendet, zuletzt {{when}}",
+        "sent_other": "{{sent}} Zeilen gesendet, zuletzt {{when}}",
+        "never": "noch nie",
+        "queued": "{{queued}} warten",
+        "dropped": "{{dropped}} verworfen",
+        "error": "Loki nimmt gerade nichts an: {{error}}"
+      }
+    },
+    "gateway": "Gateway"
   },
   "settings": {
     "title": "Einstellungen",

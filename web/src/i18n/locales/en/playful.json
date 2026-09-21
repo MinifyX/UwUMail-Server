@@ -116,5 +116,10 @@
   },
   "updates": {
     "intro": "Which version is running, what is new, and the button for it. Nyu packs everything up first (=^･ω･^=)"
+  },
+  "logs": {
+    "loki": {
+      "testOk": "The test line made it to Loki (=^･ω･^=)"
+    }
   }
 }

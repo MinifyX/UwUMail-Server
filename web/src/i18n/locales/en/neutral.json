@@ -260,7 +260,9 @@
       "hostJobRefused": "The helper on the machine refused: {{detail}}",
       "updateRefused": "The update did not start: {{detail}}",
       "gatewayJobRefused": "The gateway did not take it: {{detail}}",
-      "virusScannerOff": "The virus scanner is switched off."
+      "virusScannerOff": "The virus scanner is switched off.",
+      "lokiInvalid": "That won't work for Loki: {{detail}}",
+      "lokiUnreachable": "Loki didn't take the test line: {{detail}}"
     }
   },
   "people": {
@@ -939,7 +941,53 @@
     "pause": "Pause",
     "resume": "Resume",
     "empty": "No matching lines.",
-    "unavailable": "This server keeps no logs for the admin panel."
+    "unavailable": "This server keeps no logs for the admin panel.",
+    "loki": {
+      "title": "Send to Grafana Loki",
+      "intro": "Sends the logs of this server and its gateway to a Grafana Loki, such as your own log server or Grafana Cloud.",
+      "enabled": "Send logs to Loki",
+      "enabledHint": "New lines go out in batches every few seconds. While Loki can't be reached, the server waits and keeps trying, and mail never has to wait for it.",
+      "privacyTitle": "Privacy",
+      "privacyText": "Log lines contain personal data: login names and email addresses, IP addresses of mail apps and other servers, senders of received mail. Switching this on sends that data off this server, and it stays in Loki for as long as Loki keeps it. Make sure that is fine for every mailbox on this server.",
+      "privacyConsent": "I understand and allow the logs, with this data in them, to be sent to the address below.",
+      "url": "Loki address",
+      "urlHint": "e.g. http://192.168.1.20:3100 or https://logs-prod-012.grafana.net. /loki/api/v1/push is added when the address has no path.",
+      "auth": "Login",
+      "authNone": "None",
+      "authBasic": "Username & password",
+      "authToken": "Token",
+      "username": "Username",
+      "password": "Password",
+      "token": "Token",
+      "secretSet": "Stored. Type a new value to replace it.",
+      "secretRemove": "Remove",
+      "level": "From level",
+      "levelHint": "Anything less important stays here.",
+      "levels": {
+        "error": "Errors only",
+        "warn": "Warnings and errors",
+        "info": "Info and above",
+        "debug": "Everything up to debug"
+      },
+      "tenant": "Tenant (X-Scope-OrgID)",
+      "tenantHint": "Only for a Loki with more than one tenant.",
+      "labels": "Extra labels",
+      "labelsHint": "One per line as name=value. The server sets app, instance, source and level itself.",
+      "gateway": "Send the gateway's logs too",
+      "gatewayHint": "The UwUMail Gateway's lines come here through the tunnel and go on with the label source=gateway.",
+      "test": "Send a test line",
+      "testOk": "The test line arrived in Loki.",
+      "status": {
+        "off": "Off.",
+        "sent_one": "{{sent}} line sent, last {{when}}",
+        "sent_other": "{{sent}} lines sent, last {{when}}",
+        "never": "never",
+        "queued": "{{queued}} waiting",
+        "dropped": "{{dropped}} dropped",
+        "error": "Loki isn't taking anything right now: {{error}}"
+      }
+    },
+    "gateway": "Gateway"
   },
   "settings": {
     "title": "Settings",

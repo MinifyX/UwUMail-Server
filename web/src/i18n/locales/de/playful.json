@@ -116,5 +116,10 @@
   },
   "updates": {
     "intro": "Welche Version läuft, was es Neues gibt, und der Knopf dafür. Nyu packt vorher die Sachen zusammen (=^･ω･^=)"
+  },
+  "logs": {
+    "loki": {
+      "testOk": "Die Testzeile ist in Loki angekommen (=^･ω･^=)"
+    }
   }
 }

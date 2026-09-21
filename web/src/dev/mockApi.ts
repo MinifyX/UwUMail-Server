@@ -32,6 +32,7 @@ import type {
   DomainReport,
   DomainSummary,
   LearnedFromFolders,
+  LokiStatus,
   NewSender,
   SenderListEntry,
   SendersView,
@@ -656,6 +657,16 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "spam.log.enabled": { value: true, source: "default" },
   "spam.log.clean_subjects": { value: false, source: "default" },
   "spam.log.retention_days": { value: 30, source: "default" },
+  "log.loki.enabled": { value: false, source: "default" },
+  "log.loki.privacy_consent": { value: false, source: "default" },
+  "log.loki.url": { value: null, source: "default" },
+  "log.loki.username": { value: null, source: "default" },
+  "log.loki.password": { value: null, source: "default", set: false },
+  "log.loki.token": { value: null, source: "default", set: false },
+  "log.loki.tenant": { value: null, source: "default" },
+  "log.loki.labels": { value: [], source: "default" },
+  "log.loki.level": { value: "info", source: "default" },
+  "log.loki.gateway": { value: true, source: "default" },
 };
 
 const settingsView = () => ({
@@ -1587,7 +1598,7 @@ const routes: [string, RegExp, Handler][] = [
         const entry = settings[key];
         if (!entry) return problem(422, "invalid");
         if (entry.source === "file") return problem(409, "settingLocked");
-        if (key.endsWith("password")) {
+        if (key.endsWith("password") || key.endsWith("token")) {
           settings[key] = { value: null, source: value === null ? "default" : "database", set: value !== null };
         } else {
           settings[key] = { value, source: value === null ? "default" : "database" };
@@ -1601,7 +1612,7 @@ const routes: [string, RegExp, Handler][] = [
       const logged = Object.fromEntries(
         Object.entries(changes).map(([key, value]) => [
           key,
-          key.endsWith("password") && value !== null ? "•••" : value,
+          (key.endsWith("password") || key.endsWith("token")) && value !== null ? "•••" : value,
         ]),
       );
       log("settings.update", "", logged);
@@ -1635,9 +1646,47 @@ const routes: [string, RegExp, Handler][] = [
       const lines = Array.from({ length: logSeq === 0 ? 40 : 2 }, () => {
         logSeq += 1;
         const [level, message, fields] = LOG_SAMPLES[logSeq % LOG_SAMPLES.length]!;
-        return { seq: logSeq, at: Date.now() - (40 - logSeq) * 1000, level, target: "uwumail", message, fields };
+        // Every seventh line comes from the gateway, so its badge can be seen.
+        const source = logSeq % 7 === 0 ? "gateway" : "server";
+        return {
+          seq: logSeq,
+          at: Date.now() - (40 - logSeq) * 1000,
+          source,
+          level,
+          target: "uwumail",
+          message,
+          fields,
+        };
       });
       return [200, { lines, latest: logSeq }];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/logs\/loki$/,
+    () => {
+      const enabled = settings["log.loki.enabled"]?.value === true;
+      const status: LokiStatus = {
+        enabled,
+        queued: enabled ? 3 : 0,
+        sent: enabled ? 12_480 : 0,
+        dropped: 0,
+        lastSuccess: enabled ? Math.floor(Date.now() / 1000) - 4 : null,
+        error: null,
+      };
+      return [200, status];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/logs\/loki\/test$/,
+    (body) => {
+      // "down" anywhere in the address plays a Loki that does not answer.
+      const changes = (body as { changes: Record<string, unknown> }).changes;
+      const url = String(changes["log.loki.url"] ?? settings["log.loki.url"]?.value ?? "");
+      if (!/^https?:\/\//.test(url)) return problem(409, "lokiInvalid");
+      if (url.includes("down")) return problem(409, "lokiUnreachable");
+      return [200, { ok: true }];
     },
   ],
   ["GET", /^\/api\/info$/, () => [200, { hostname: "mail.uwu.example", setupRequired: setupOpen } satisfies Info]],
