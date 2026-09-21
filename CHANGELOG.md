@@ -3,6 +3,25 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.6.0
+
+**The log goes to Grafana Loki, and the gateway's comes along.** Under *Server → Logs* the server
+can now send its log lines to a Grafana Loki by itself — your own log server or Grafana Cloud, with
+no login, a username and password, or a token — so nothing like Alloy or Promtail has to run next
+to it. Lines go out in batches, wait in memory while Loki is away, and never hold up mail; the
+panel shows what was sent, what waits, and what went wrong. *Send a test line* tries an address
+before anything is saved. Every line carries `app`, `instance`, `source` and `level` labels and is
+the same JSON the server writes with `log.format = "json"`, so one set of queries fits both ways
+in. Log lines contain login names and IP addresses, so switching this on asks the admin to agree to
+sending exactly that off the server; without that agreement the server refuses to switch it on,
+from the panel, the terminal and the config file alike.
+
+The UwUMail Gateway now hands its own log to the server through the tunnel. Its lines show up on
+the portal's *Logs* page marked *Gateway* and go on to Loki with `source=gateway`, so the VPS
+nobody logs into says what it has to say where people look. While the server is away the gateway
+keeps its last 1000 lines for it. Both sides only do this when both are new enough: an older
+server never asks, and an older gateway never sends.
+
 ## 0.5.2
 
 **A security release.** The sixth review looked at everything 0.5.0 added — above all the fetch
