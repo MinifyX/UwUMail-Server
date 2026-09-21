@@ -3,6 +3,25 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## Unreleased
+
+**The webmail and the apps keep their settings in step.** A new JMAP extension,
+`urn:uwumail:jmap:settings`, holds one settings document per account: theme, tone, language, how
+mail is shown, the undo window for sending, trusted senders, remembered link domains, per-sender
+appearance and signatures. Every device reads it at start and hears about changes over push, so a
+signature written on the PC is there in the webmail and on the phone, and a sender trusted on one is
+trusted on all. Lists are kept one key per entry, so two devices adding at the same time never
+overwrite each other. See [docs/jmap-settings.md](docs/jmap-settings.md).
+
+Everything in it is on a whitelist with rules for its value and limits for its size, because what
+one device writes is handed to all the others. Theme, tone, language and the webmail's mail choices
+are not stored a second time: they are the portal's preferences, so a change in the portal shows up
+in the apps too, and the other way round.
+
+The portal had been turning away the webmail's own mail preferences — conversations, density,
+remote images, mail appearance, sender pictures and swiping — as unknown, so they never reached the
+server and every new browser started from the defaults. It takes them now.
+
 ## 0.6.2
 
 **A fetched mailbox brings the mail that was already in it.** Fetching started where the folders
