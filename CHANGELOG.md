@@ -3,7 +3,7 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
-## Unreleased
+## 0.6.2
 
 **A fetched mailbox brings the mail that was already in it.** Fetching started where the folders
 stood on the first run, so everything that was in the mailbox before — often years of it — stayed at
