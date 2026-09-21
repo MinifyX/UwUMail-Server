@@ -102,6 +102,8 @@ pub struct NewMailbox {
     fetch_junk: Option<bool>,
     interval_secs: Option<i64>,
     auth_serv_id: Option<String>,
+    /// Whether the mail that is already in the mailbox comes too, not only what arrives from now on.
+    take_existing: Option<bool>,
 }
 
 pub async fn create(
@@ -126,7 +128,19 @@ pub async fn create(
             auth_serv_id: new.auth_serv_id.unwrap_or_default(),
         })
         .await?;
+    if new.take_existing == Some(true) {
+        web.store().request_fetch_backlog(session.account.id, created.id).await?;
+        let asked = web.store().fetch_account(session.account.id, created.id).await?.unwrap_or(created);
+        return Ok((StatusCode::CREATED, Json(json!(asked))));
+    }
     Ok((StatusCode::CREATED, Json(json!(created))))
+}
+
+/// Brings over the mail that was already in the mailbox, for one that was set up without it. The
+/// next runs work through it next to the new mail; what is already here is not brought twice.
+pub async fn take_existing(State(web): State<Web>, session: Session, Path(id): Path<i64>) -> ApiResult<StatusCode> {
+    web.store().request_fetch_backlog(session.account.id, id).await?;
+    Ok(StatusCode::ACCEPTED)
 }
 
 #[derive(Deserialize)]

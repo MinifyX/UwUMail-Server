@@ -252,6 +252,7 @@ impl Web {
             .route("/api/account/fetch/discover", post(routes::fetch::discover))
             .route("/api/account/fetch/{id}", patch(routes::fetch::update).delete(routes::fetch::delete))
             .route("/api/account/fetch/{id}/run", post(routes::fetch::fetch_now))
+            .route("/api/account/fetch/{id}/existing", post(routes::fetch::take_existing))
             .route("/api/account/addresses", get(routes::own::addresses))
             .route("/api/account/aliases", post(routes::own::create_alias))
             .route("/api/account/aliases/{address}", delete(routes::own::delete_alias))

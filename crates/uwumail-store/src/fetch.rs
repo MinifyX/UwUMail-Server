@@ -16,7 +16,7 @@ use serde::Serialize;
 
 use crate::address::normalize_address;
 use crate::db::{get_setting, set_setting};
-use crate::{Result, Store, StoreError, now, random_bytes};
+use crate::{BlobHash, Result, Store, StoreError, now, random_bytes};
 
 /// How many mailboxes one person may have this server empty for them.
 pub const MAX_FETCH_ACCOUNTS: usize = 10;
@@ -151,6 +151,8 @@ pub struct FetchAccount {
     pub last_error: String,
     pub last_fetched: i64,
     pub total_fetched: i64,
+    /// When the mail that was already there was asked for, while it is still being brought over.
+    pub backlog_at: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -194,6 +196,12 @@ pub struct FetchFolder {
     /// A message the server asked us to bring later; the folder waits at it.
     pub held_uid: Option<i64>,
     pub held_since: Option<i64>,
+    /// Which request for the mail that was already there this folder is working on.
+    pub backlog_at: Option<i64>,
+    /// The next UID of that mail to look at.
+    pub backlog_next: i64,
+    /// The last UID that belongs to it; `None` once the folder is through, or never started.
+    pub backlog_until: Option<i64>,
 }
 
 impl FetchFolder {
@@ -205,7 +213,7 @@ impl FetchFolder {
 
 const COLUMNS: &str = "id, account_id, address, host, port, security, username, after_fetch, fetch_junk, \
                        interval_secs, enabled, auth_serv_id, smtp_host, smtp_port, smtp_security, send_enabled, \
-                       created_at, last_run_at, last_ok_at, last_error, last_fetched, total_fetched";
+                       created_at, last_run_at, last_ok_at, last_error, last_fetched, total_fetched, backlog_at";
 
 fn from_row(row: &Row<'_>) -> rusqlite::Result<FetchAccount> {
     let security: String = row.get(5)?;
@@ -234,6 +242,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<FetchAccount> {
         last_error: row.get(19)?,
         last_fetched: row.get(20)?,
         total_fetched: row.get(21)?,
+        backlog_at: row.get(22)?,
     })
 }
 
@@ -687,12 +696,68 @@ impl Store {
         .await
     }
 
+    /// Asks for the mail that was already in this mailbox, and for it to start right away. The
+    /// runs work through it next to the new mail until it is all here; asking again while it runs
+    /// starts it over, and what already arrived is recognised and not brought twice.
+    pub async fn request_fetch_backlog(&self, account_id: i64, id: i64) -> Result<()> {
+        let at = now();
+        self.write(move |tx| {
+            let changed = tx.execute(
+                "UPDATE fetch_accounts SET backlog_at = ?3, last_run_at = NULL WHERE id = ?1 AND account_id = ?2",
+                params![id, account_id, at],
+            )?;
+            if changed == 0 {
+                return Err(StoreError::NotFound(format!("fetched mailbox {id}")));
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    /// Marks the mail that was already there as brought -- but only the request that was worked on:
+    /// one that came in meanwhile stays, and the next run starts it.
+    pub async fn finish_fetch_backlog(&self, id: i64, at: i64) -> Result<()> {
+        self.write(move |tx| {
+            tx.execute(
+                "UPDATE fetch_accounts SET backlog_at = NULL WHERE id = ?1 AND backlog_at = ?2",
+                params![id, at],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Whether a message is already in somebody's mailbox: by its Message-ID where it has one, by
+    /// its bytes where it has none. For mail that was already at a provider, which may have come
+    /// here by any way at all -- fetched long ago, imported, or sent here directly as well.
+    pub async fn holds_message(&self, account_id: i64, message_id: Option<String>, blob: BlobHash) -> Result<bool> {
+        let message_id = message_id
+            .map(|id| id.trim().trim_start_matches('<').trim_end_matches('>').to_owned())
+            .filter(|id| !id.is_empty());
+        self.read(move |conn| {
+            let found: bool = match message_id {
+                Some(message_id) => conn.query_row(
+                    "SELECT EXISTS (SELECT 1 FROM emails WHERE account_id = ?1 AND message_id = ?2)",
+                    params![account_id, message_id],
+                    |row| row.get(0),
+                )?,
+                None => conn.query_row(
+                    "SELECT EXISTS (SELECT 1 FROM emails WHERE account_id = ?1 AND blob_hash = ?2)",
+                    params![account_id, blob.as_str()],
+                    |row| row.get(0),
+                )?,
+            };
+            Ok(found)
+        })
+        .await
+    }
+
     pub async fn fetch_folder(&self, fetch_id: i64, folder: String) -> Result<Option<FetchFolder>> {
         self.read(move |conn| {
             Ok(conn
                 .query_row(
-                    "SELECT uid_validity, last_uid, held_uid, held_since FROM fetch_state
-                     WHERE fetch_id = ?1 AND folder = ?2",
+                    "SELECT uid_validity, last_uid, held_uid, held_since, backlog_at, backlog_next, backlog_until
+                     FROM fetch_state WHERE fetch_id = ?1 AND folder = ?2",
                     params![fetch_id, folder],
                     |row| {
                         Ok(FetchFolder {
@@ -700,6 +765,9 @@ impl Store {
                             last_uid: row.get(1)?,
                             held_uid: row.get(2)?,
                             held_since: row.get(3)?,
+                            backlog_at: row.get(4)?,
+                            backlog_next: row.get(5)?,
+                            backlog_until: row.get(6)?,
                         })
                     },
                 )
@@ -712,14 +780,28 @@ impl Store {
     pub async fn set_fetch_folder(&self, fetch_id: i64, folder: String, state: FetchFolder) -> Result<()> {
         self.write(move |tx| {
             tx.execute(
-                "INSERT INTO fetch_state (fetch_id, folder, uid_validity, last_uid, held_uid, held_since)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                "INSERT INTO fetch_state (fetch_id, folder, uid_validity, last_uid, held_uid, held_since,
+                                          backlog_at, backlog_next, backlog_until)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                  ON CONFLICT (fetch_id, folder) DO UPDATE SET
                      uid_validity = excluded.uid_validity,
                      last_uid = excluded.last_uid,
                      held_uid = excluded.held_uid,
-                     held_since = excluded.held_since",
-                params![fetch_id, folder, state.uid_validity, state.last_uid, state.held_uid, state.held_since],
+                     held_since = excluded.held_since,
+                     backlog_at = excluded.backlog_at,
+                     backlog_next = excluded.backlog_next,
+                     backlog_until = excluded.backlog_until",
+                params![
+                    fetch_id,
+                    folder,
+                    state.uid_validity,
+                    state.last_uid,
+                    state.held_uid,
+                    state.held_since,
+                    state.backlog_at,
+                    state.backlog_next,
+                    state.backlog_until
+                ],
             )?;
             Ok(())
         })
@@ -860,7 +942,8 @@ mod tests {
         let (store, _dir, account_id) = store_with_person().await;
         let fetched = store.create_fetch_account(new_account(account_id)).await.unwrap();
 
-        let state = FetchFolder { uid_validity: 7, last_uid: 42, held_uid: None, held_since: None };
+        let state =
+            FetchFolder { uid_validity: 7, last_uid: 42, held_uid: None, held_since: None, ..Default::default() };
         store.set_fetch_folder(fetched.id, "INBOX".into(), state).await.unwrap();
         assert_eq!(store.fetch_folder(fetched.id, "INBOX".into()).await.unwrap(), Some(state));
 
@@ -890,7 +973,8 @@ mod tests {
     async fn deleting_the_mailbox_takes_its_state_with_it() {
         let (store, _dir, account_id) = store_with_person().await;
         let fetched = store.create_fetch_account(new_account(account_id)).await.unwrap();
-        let state = FetchFolder { uid_validity: 1, last_uid: 5, held_uid: None, held_since: None };
+        let state =
+            FetchFolder { uid_validity: 1, last_uid: 5, held_uid: None, held_since: None, ..Default::default() };
         store.set_fetch_folder(fetched.id, "INBOX".into(), state).await.unwrap();
         store.mark_fetch_seen(fetched.id, "<one@example.com>".into()).await.unwrap();
 
@@ -1108,5 +1192,71 @@ mod tests {
         // Restoring does not turn it back on by itself.
         store.restore_account(&login).await.unwrap();
         assert!(store.fetch_accounts_due().await.unwrap().is_empty(), "restore leaves the fetch off");
+    }
+
+    #[tokio::test]
+    async fn the_mail_that_was_there_is_asked_for_and_finished_by_its_own_request() {
+        let (store, _dir, account_id) = store_with_person().await;
+        let fetched = store.create_fetch_account(new_account(account_id)).await.unwrap();
+        assert_eq!(fetched.backlog_at, None, "nothing is asked for by itself");
+
+        // Only its owner can ask for it.
+        assert!(matches!(store.request_fetch_backlog(account_id + 1, fetched.id).await, Err(StoreError::NotFound(_))));
+
+        store.request_fetch_backlog(account_id, fetched.id).await.unwrap();
+        let asked = store.fetch_account(account_id, fetched.id).await.unwrap().unwrap();
+        let at = asked.backlog_at.expect("it is waiting now");
+        assert_eq!(asked.last_run_at, None, "and the next run starts right away");
+
+        // A run that worked on an older request does not clear a newer one.
+        store.finish_fetch_backlog(fetched.id, at - 1).await.unwrap();
+        assert_eq!(store.fetch_account(account_id, fetched.id).await.unwrap().unwrap().backlog_at, Some(at));
+        store.finish_fetch_backlog(fetched.id, at).await.unwrap();
+        assert_eq!(store.fetch_account(account_id, fetched.id).await.unwrap().unwrap().backlog_at, None);
+    }
+
+    #[tokio::test]
+    async fn a_folder_remembers_how_far_it_got_with_the_mail_that_was_there() {
+        let (store, _dir, account_id) = store_with_person().await;
+        let fetched = store.create_fetch_account(new_account(account_id)).await.unwrap();
+        let state = FetchFolder {
+            uid_validity: 3,
+            last_uid: 90,
+            backlog_at: Some(1_700_000_000),
+            backlog_next: 41,
+            backlog_until: Some(90),
+            ..Default::default()
+        };
+        store.set_fetch_folder(fetched.id, "INBOX".into(), state).await.unwrap();
+        assert_eq!(store.fetch_folder(fetched.id, "INBOX".into()).await.unwrap(), Some(state));
+    }
+
+    #[tokio::test]
+    async fn a_message_is_recognised_however_it_came() {
+        let (store, _dir, account_id) = store_with_person().await;
+        let named = b"Message-ID: <alt@shop.example>\r\nSubject: Alt\r\n\r\nHallo\r\n".to_vec();
+        let unnamed = b"Subject: ohne Namen\r\n\r\nHallo\r\n".to_vec();
+        for raw in [&named, &unnamed] {
+            store
+                .ingest(crate::IngestRequest {
+                    account_id,
+                    raw: raw.clone(),
+                    mailboxes: vec![crate::MailboxTarget::Role(crate::MailboxRole::Inbox)],
+                    keywords: vec![],
+                    received_at: None,
+                })
+                .await
+                .unwrap();
+        }
+        let hash = |raw: &[u8]| BlobHash::of(raw);
+        // The Message-ID is found with its brackets or without.
+        assert!(store.holds_message(account_id, Some("<alt@shop.example>".into()), hash(b"x")).await.unwrap());
+        assert!(store.holds_message(account_id, Some("alt@shop.example".into()), hash(b"x")).await.unwrap());
+        assert!(!store.holds_message(account_id, Some("<neu@shop.example>".into()), hash(&named)).await.unwrap());
+        // Without one, the bytes decide.
+        assert!(store.holds_message(account_id, None, hash(&unnamed)).await.unwrap());
+        assert!(!store.holds_message(account_id, None, hash(b"Subject: anders\r\n\r\n")).await.unwrap());
+        // And only in the mailbox it was asked about.
+        assert!(!store.holds_message(account_id + 1, Some("alt@shop.example".into()), hash(b"x")).await.unwrap());
     }
 }
