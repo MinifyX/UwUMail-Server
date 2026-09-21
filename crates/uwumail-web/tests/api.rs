@@ -160,7 +160,7 @@ async fn login_session_and_logout() {
 async fn preferences_need_csrf_and_valid_values() {
     let (app, _dir) = setup().await;
     let (cookie, csrf) = login(&app, "leni@example.de").await;
-    let change = json!({ "mode": "pro", "language": "de" });
+    let change = json!({ "mode": "pro", "language": "de", "mailConversations": "off" });
 
     let (status, _, body) = call(
         &app,
@@ -179,9 +179,9 @@ async fn preferences_need_csrf_and_valid_values() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, json!({ "mode": "pro", "language": "de" }));
+    assert_eq!(body, json!({ "mode": "pro", "language": "de", "mailConversations": "off" }));
 
-    for invalid in [json!({ "mode": "expert" }), json!({ "colour": "pink" })] {
+    for invalid in [json!({ "mode": "expert" }), json!({ "colour": "pink" }), json!({ "mailConversations": true })] {
         let (status, _, _) = call(
             &app,
             Call {

@@ -22,13 +22,22 @@ pub async fn profile(State(web): State<Web>, session: Session) -> ApiResult<Json
     })))
 }
 
-/// The allowed values of each portal preference.
+/// The allowed values of each portal preference. The `mail…` ones are the webmail's; language,
+/// tone, theme and some of the webmail's are also synced to the apps as JMAP `UserSettings`
+/// (docs/jmap-settings.md), which checks the same values.
 const PREFERENCES: &[(&str, &[&str])] = &[
     ("language", &["system", "de", "en"]),
     ("tone", &["playful", "neutral"]),
     ("mode", &["simple", "pro"]),
     ("theme", &["system", "light", "dark"]),
     ("motion", &["system", "on", "off"]),
+    ("mailConversations", &["on", "off"]),
+    ("mailDensity", &["relaxed", "compact"]),
+    ("mailRemoteImages", &["ask", "always"]),
+    ("mailAppearance", &["auto", "light", "dark"]),
+    ("mailSenderPictures", &["on", "off"]),
+    ("mailSwipeRight", &["read", "archive", "trash", "flag", "none"]),
+    ("mailSwipeLeft", &["read", "archive", "trash", "flag", "none"]),
 ];
 
 pub async fn update_preferences(
