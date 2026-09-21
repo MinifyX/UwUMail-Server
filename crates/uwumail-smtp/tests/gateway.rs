@@ -172,6 +172,7 @@ async fn mail_comes_in_and_goes_out_through_the_gateway() {
         software: "test".into(),
         services: uwumail_tunnel::Service::FIRST.to_vec(),
         token: Some(code.token.clone()),
+        logs: None,
     };
     let client = TunnelClient::start(settings, Arc::new(BehindGateway(a.smtp.clone())), client_shutdown_rx);
     a.smtp.set_connector(Some(Arc::new(ThroughTunnel(client.clone()))));

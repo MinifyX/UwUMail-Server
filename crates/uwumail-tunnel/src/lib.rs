@@ -23,10 +23,12 @@ mod quic;
 mod stream;
 mod verify;
 
-pub use client::{ClientSettings, Inbound, Status, TunnelClient};
+pub use client::{ClientSettings, Inbound, LogSink, Status, TunnelClient};
 pub use code::{CodeError, PairingCode, Token};
 pub use identity::{Fingerprint, Identity};
-pub use proto::{Connect, ConnectFailure, ConnectReply, Hello, HelloReply, Open, Refusal, Service, Welcome};
+pub use proto::{
+    Connect, ConnectFailure, ConnectReply, GatewayLogLine, Hello, HelloReply, Open, Refusal, Service, Welcome,
+};
 pub use quic::{client_config, peer_fingerprint, server_endpoint};
 pub use stream::TunnelStream;
 

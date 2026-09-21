@@ -246,6 +246,7 @@ impl GatewayManager {
             software: format!("uwumail-server {}", env!("CARGO_PKG_VERSION")),
             services: Service::ALL.to_vec(),
             token: if pairing.confirmed { None } else { Token::from_text(&pairing.token) },
+            logs: None,
         };
         let client = TunnelClient::start(settings, Arc::new(services.clone()), self.shutdown.clone());
         // From now on mail to other servers only leaves through the gateway, also while it is away:
@@ -621,6 +622,7 @@ mod tests {
             software: "test".into(),
             services: Service::ALL.to_vec(),
             token: Some(code.token.clone()),
+            logs: None,
         };
         let client = TunnelClient::start(settings, Arc::new(services), running_until.subscribe());
         let mut status = client.subscribe();

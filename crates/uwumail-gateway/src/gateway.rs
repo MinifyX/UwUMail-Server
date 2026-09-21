@@ -19,6 +19,7 @@ use uwumail_tunnel::{Fingerprint, Identity, PairingCode, Token, TunnelStream};
 
 use crate::config::GatewayConfig;
 use crate::limits::Limits;
+use crate::logs::LogQueue;
 use crate::machine::Machine;
 use crate::state::{Pairing, State};
 
@@ -32,6 +33,8 @@ const REPORT_EVERY: Duration = Duration::from_secs(5 * 60);
 /// While a task runs, someone is watching the portal and five minutes is a long time to stare at
 /// nothing.
 const REPORT_WHILE_BUSY: Duration = Duration::from_secs(3);
+/// How long the gateway gathers log lines before it sends them to the server.
+const LOG_BATCH_DELAY: Duration = Duration::from_secs(1);
 /// Refused tunnel attempts from one address before it has to wait for the window to pass.
 const MAX_REFUSALS: u32 = 10;
 const REFUSAL_WINDOW: Duration = Duration::from_secs(600);
@@ -68,6 +71,8 @@ pub(crate) struct Shared {
     pairing_lock: tokio::sync::Mutex<()>,
     refusals: Mutex<HashMap<IpAddr, (u32, Instant)>>,
     turned_away: Mutex<HashMap<IpAddr, Instant>>,
+    /// The gateway's own log lines, for a server that asks for them.
+    logs: Option<Arc<LogQueue>>,
 }
 
 /// A started gateway.
@@ -102,6 +107,15 @@ pub fn pairing_code(addresses: &[IpAddr], tunnel_port: u16, identity: &Identity,
 
 /// Binds the tunnel and the public ports and starts serving until `shutdown` changes.
 pub async fn start(config: GatewayConfig, shutdown: watch::Receiver<bool>) -> anyhow::Result<Running> {
+    start_with_logs(config, shutdown, None).await
+}
+
+/// Like [`start`], handing the lines `logs` collects to a server that asks for them.
+pub async fn start_with_logs(
+    config: GatewayConfig,
+    shutdown: watch::Receiver<bool>,
+    logs: Option<Arc<LogQueue>>,
+) -> anyhow::Result<Running> {
     config.validate()?;
     let state = State::open(&config.state_dir)?;
     let identity = state.load_or_create_identity()?;
@@ -140,6 +154,7 @@ pub async fn start(config: GatewayConfig, shutdown: watch::Receiver<bool>) -> an
         pairing_lock: tokio::sync::Mutex::new(()),
         refusals: Mutex::new(HashMap::new()),
         turned_away: Mutex::new(HashMap::new()),
+        logs,
     });
 
     let bound = listeners.iter().map(|(service, _, local)| (*service, *local)).collect();
@@ -356,7 +371,8 @@ async fn handle_tunnel(shared: Arc<Shared>, incoming: Incoming) {
     match shared.authorize(fingerprint, &hello).await {
         Ok(hostname) => {
             let services = shared.shared_services(&hello);
-            serve_server(shared, connection, control, fingerprint, hostname, services, hello.control).await
+            serve_server(shared, connection, control, fingerprint, hostname, services, (hello.control, hello.logs))
+                .await
         }
         Err((reason, message)) => {
             shared.record_refusal(remote.ip());
@@ -377,7 +393,7 @@ async fn serve_server(
     server: Fingerprint,
     hostname: String,
     services: Vec<Service>,
-    talks: bool,
+    (talks, wants_logs): (bool, bool),
 ) {
     let welcome = HelloReply::Welcome(shared.welcome(services.clone()));
     if proto::write_message(&mut control, &welcome).await.is_err() {
@@ -398,7 +414,7 @@ async fn serve_server(
     let mut held_open = Some(control);
     let talking = talks.then(|| {
         let (send, recv) = held_open.take().expect("the control stream is still here").into_parts();
-        tokio::spawn(talk(shared.clone(), remote, send, recv))
+        tokio::spawn(talk(shared.clone(), remote, send, recv, wants_logs))
     });
 
     while let Ok((send, recv)) = connection.accept_bi().await {
@@ -423,7 +439,9 @@ async fn serve_server(
 
 /// The control stream after the handshake: the gateway reports on the machine it runs on so the
 /// portal can show it, and carries out the bans the server asks for.
-async fn talk(shared: Arc<Shared>, remote: SocketAddr, mut send: SendStream, mut recv: RecvStream) {
+async fn talk(shared: Arc<Shared>, remote: SocketAddr, send: SendStream, mut recv: RecvStream, wants_logs: bool) {
+    // Status reports and log batches share the one stream, so they take turns at it.
+    let send = tokio::sync::Mutex::new(send);
     let asked = async {
         // A message this version does not know is skipped, not fatal: a newer server keeps talking.
         while let Ok(message) = proto::read_known::<_, ServerMessage>(&mut recv).await {
@@ -461,15 +479,37 @@ async fn talk(shared: Arc<Shared>, remote: SocketAddr, mut send: SendStream, mut
             // While something is being installed the portal is watching, so it is told every few
             // seconds instead of every few minutes. The rest of the time this is a quiet heartbeat.
             let busy = status.job.as_ref().is_some_and(|job| job.state == "running");
-            if proto::write_message(&mut send, &GatewayMessage::Status(Box::new(status))).await.is_err() {
+            if proto::write_message(&mut *send.lock().await, &GatewayMessage::Status(Box::new(status))).await.is_err() {
                 break;
             }
             tokio::time::sleep(if busy { REPORT_WHILE_BUSY } else { REPORT_EVERY }).await;
         }
     };
+    let logs = shared.logs.clone().filter(|_| wants_logs);
+    let shipping = async {
+        let Some(logs) = logs else { return std::future::pending().await };
+        loop {
+            logs.wait().await;
+            // A moment for the lines that come together to travel together.
+            tokio::time::sleep(LOG_BATCH_DELAY).await;
+            loop {
+                let batch = logs.take_batch();
+                if batch.is_empty() {
+                    break;
+                }
+                let message = GatewayMessage::Logs { lines: batch };
+                if proto::write_message(&mut *send.lock().await, &message).await.is_err() {
+                    let GatewayMessage::Logs { lines } = message else { unreachable!("built a line ago") };
+                    logs.put_back(lines);
+                    return;
+                }
+            }
+        }
+    };
     tokio::select! {
         _ = asked => {}
         _ = reporting => {}
+        _ = shipping => {}
     }
 }
 

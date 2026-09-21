@@ -13,8 +13,8 @@ use tokio::time::timeout;
 use crate::code::Token;
 use crate::identity::{CERTIFICATE_NAME, Fingerprint, Identity};
 use crate::proto::{
-    self, Connect, ConnectReply, GatewayMessage, GatewayStatus, Hello, HelloReply, Open, Refusal, ServerMessage,
-    Service, VERSION, Welcome,
+    self, Connect, ConnectReply, GatewayLogLine, GatewayMessage, GatewayStatus, Hello, HelloReply, Open, Refusal,
+    ServerMessage, Service, VERSION, Welcome,
 };
 use crate::quic;
 use crate::stream::TunnelStream;
@@ -40,7 +40,13 @@ pub struct ClientSettings {
     pub services: Vec<Service>,
     /// The token from the pairing code, until the gateway knows this server.
     pub token: Option<Token>,
+    /// Takes the gateway's log lines. With one, the server asks the gateway for them.
+    pub logs: Option<LogSink>,
 }
+
+/// Where the gateway's log lines go, one batch at a time. Called on the tunnel's task, so it must not
+/// wait for anything.
+pub type LogSink = Arc<dyn Fn(Vec<GatewayLogLine>) + Send + Sync>;
 
 /// Takes the connections that arrive at the gateway.
 pub trait Inbound: Send + Sync + 'static {
@@ -254,6 +260,7 @@ async fn session(
         token: settings.token.as_ref().map(Token::to_text),
         services: Some(settings.services.clone()),
         control: true,
+        logs: settings.logs.is_some(),
     };
     let answer = timeout(ANSWER_TIMEOUT, async {
         proto::write_message(&mut control, &hello).await?;
@@ -285,7 +292,7 @@ async fn session(
         let (bans, waiting) = mpsc::channel(BANS_WAITING);
         *shared.control.lock().expect("tunnel control poisoned") = Some(bans);
         let (send, recv) = held_open.take().expect("the control stream is still here").into_parts();
-        tokio::spawn(talk(send, recv, waiting, shared.gateway_status.clone()))
+        tokio::spawn(talk(send, recv, waiting, shared.gateway_status.clone(), settings.logs.clone()))
     });
 
     let accepting = tokio::spawn(accept_streams(connection.clone(), inbound.clone()));
@@ -352,22 +359,31 @@ async fn talk(
     mut recv: RecvStream,
     mut bans: mpsc::Receiver<ServerMessage>,
     status: watch::Sender<Option<GatewayStatus>>,
+    logs: Option<LogSink>,
 ) {
     let listening = async {
         // A message this version does not know is skipped, not fatal: a newer gateway keeps talking.
         while let Ok(message) = proto::read_known::<_, GatewayMessage>(&mut recv).await {
-            if let Some(GatewayMessage::Status(report)) = message {
-                if let Some(system) = &report.system {
-                    // Worth a line in the log of a server nobody is looking at right now.
-                    if system.security_updates > 0 || system.reboot_required {
-                        tracing::info!(
-                            security_updates = system.security_updates,
-                            reboot_required = system.reboot_required,
-                            "the UwUMail Gateway's machine is waiting for updates"
-                        );
+            match message {
+                Some(GatewayMessage::Status(report)) => {
+                    if let Some(system) = &report.system {
+                        // Worth a line in the log of a server nobody is looking at right now.
+                        if system.security_updates > 0 || system.reboot_required {
+                            tracing::info!(
+                                security_updates = system.security_updates,
+                                reboot_required = system.reboot_required,
+                                "the UwUMail Gateway's machine is waiting for updates"
+                            );
+                        }
+                    }
+                    status.send_replace(Some(*report));
+                }
+                Some(GatewayMessage::Logs { lines }) => {
+                    if let Some(logs) = &logs {
+                        logs(lines);
                     }
                 }
-                status.send_replace(Some(*report));
+                None => {}
             }
         }
     };

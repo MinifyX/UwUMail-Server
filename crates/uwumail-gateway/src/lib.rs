@@ -7,6 +7,7 @@
 pub mod config;
 mod gateway;
 mod limits;
+pub mod logs;
 pub mod machine;
 mod outbound;
 mod pipe;
@@ -14,4 +15,4 @@ mod public;
 pub mod state;
 
 pub use config::GatewayConfig;
-pub use gateway::{Running, pairing_code, start};
+pub use gateway::{Running, pairing_code, start, start_with_logs};

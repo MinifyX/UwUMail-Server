@@ -68,6 +68,10 @@ pub struct Hello {
     /// read it again, so the gateway stays quiet for them.
     #[serde(default)]
     pub control: bool,
+    /// Whether this server wants the gateway's log lines on the control stream. Older servers would
+    /// only skip them, so the gateway keeps them to itself unless asked.
+    #[serde(default)]
+    pub logs: bool,
 }
 
 impl Hello {
@@ -128,6 +132,60 @@ pub enum Refusal {
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum GatewayMessage {
     Status(Box<GatewayStatus>),
+    /// What the gateway logged since the last batch, oldest first. Only sent when the server's
+    /// [`Hello::logs`] asks for it; a batch always fits into one message.
+    Logs {
+        lines: Vec<GatewayLogLine>,
+    },
+}
+
+/// One line of the gateway's log, the way the server's own lines are kept.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct GatewayLogLine {
+    /// Milliseconds since 1970.
+    pub at: u64,
+    /// `error`, `warn`, `info`, `debug` or `trace`.
+    pub level: String,
+    pub message: String,
+    pub fields: Vec<(String, String)>,
+}
+
+impl GatewayLogLine {
+    /// Longest message and field value the gateway sends; the rest is cut, so one chatty line can
+    /// never take a whole batch.
+    pub const MAX_TEXT: usize = 2048;
+    /// Most fields per line.
+    pub const MAX_FIELDS: usize = 24;
+    /// Room a batch leaves inside [`MAX_MESSAGE`] for the envelope around the lines.
+    pub const BATCH_BYTES: usize = MAX_MESSAGE - 4 * 1024;
+
+    /// Cuts the line down to what may travel.
+    pub fn bounded(mut self) -> GatewayLogLine {
+        cut(&mut self.message, Self::MAX_TEXT);
+        self.fields.truncate(Self::MAX_FIELDS);
+        for (key, value) in &mut self.fields {
+            cut(key, 64);
+            cut(value, Self::MAX_TEXT);
+        }
+        self
+    }
+
+    /// Roughly how many bytes the line takes as JSON, to fill a batch without going over.
+    pub fn size(&self) -> usize {
+        serde_json::to_vec(self).map(|json| json.len()).unwrap_or(GatewayLogLine::BATCH_BYTES)
+    }
+}
+
+fn cut(text: &mut String, max: usize) {
+    if text.len() > max {
+        let mut end = max;
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+        text.push('…');
+    }
 }
 
 /// What the server asks of the gateway on the control stream. Only sent when the gateway's
@@ -376,6 +434,7 @@ mod tests {
             token: None,
             services: Some(Service::ALL.to_vec()),
             control: true,
+            logs: true,
         };
         let json = serde_json::to_value(&hello).unwrap();
         assert_eq!(json["services"][5], "imaps");
@@ -403,7 +462,7 @@ mod tests {
         // Fields the other side does not know yet must not make the whole message unreadable.
         let grown = r#"{"type":"status","software":"uwumail-gateway 9.9.9","whatIsThis":true}"#;
         let read: GatewayMessage = serde_json::from_str(grown).unwrap();
-        let GatewayMessage::Status(status) = read;
+        let GatewayMessage::Status(status) = read else { panic!("a status") };
         assert_eq!(status.software, "uwumail-gateway 9.9.9");
     }
 
@@ -417,5 +476,36 @@ mod tests {
         assert!(read_known::<_, ServerMessage>(&mut reader).await.unwrap().is_none(), "skipped, not fatal");
         let next = read_known::<_, ServerMessage>(&mut reader).await.unwrap();
         assert_eq!(next, Some(ServerMessage::Unban { ip: "192.0.2.7".parse().unwrap() }), "still in step");
+    }
+
+    #[test]
+    fn log_lines_travel_only_when_asked_and_stay_small() {
+        let old: Hello =
+            serde_json::from_str(r#"{"version":1,"hostname":"mail.example.de","software":"x","control":true}"#)
+                .unwrap();
+        assert!(!old.logs, "an older server did not ask for the gateway's log");
+
+        let logs = GatewayMessage::Logs {
+            lines: vec![GatewayLogLine {
+                at: 1,
+                level: "info".into(),
+                message: "ready".into(),
+                fields: vec![("fingerprint".into(), "ab:cd".into())],
+            }],
+        };
+        let json = serde_json::to_value(&logs).unwrap();
+        assert_eq!(json["type"], "logs");
+        assert_eq!(json["lines"][0]["fields"][0], serde_json::json!(["fingerprint", "ab:cd"]));
+
+        let long = GatewayLogLine {
+            message: "ä".repeat(GatewayLogLine::MAX_TEXT),
+            fields: (0..100).map(|n| (format!("k{n}"), "v".into())).collect(),
+            ..GatewayLogLine::default()
+        }
+        .bounded();
+        assert!(long.message.len() <= GatewayLogLine::MAX_TEXT + '…'.len_utf8());
+        assert!(long.message.ends_with('…'), "cut on a character boundary");
+        assert_eq!(long.fields.len(), GatewayLogLine::MAX_FIELDS);
+        assert!(long.size() < GatewayLogLine::BATCH_BYTES);
     }
 }

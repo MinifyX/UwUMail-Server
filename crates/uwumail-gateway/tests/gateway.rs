@@ -11,9 +11,11 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 use uwumail_gateway::GatewayConfig;
 use uwumail_gateway::config::{ListenConfig, OutboundConfig};
+use uwumail_gateway::logs::LogQueue;
 use uwumail_gateway::state::State;
 use uwumail_tunnel::{
-    ClientSettings, Identity, Inbound, Open, PairingCode, Refusal, Service, Status, Token, TunnelClient, TunnelStream,
+    ClientSettings, GatewayLogLine, Identity, Inbound, Open, PairingCode, Refusal, Service, Status, Token,
+    TunnelClient, TunnelStream,
 };
 
 const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
@@ -45,9 +47,14 @@ struct TestGateway {
 
 impl TestGateway {
     async fn start(outbound_port: u16) -> TestGateway {
+        TestGateway::start_with_logs(outbound_port, None).await
+    }
+
+    async fn start_with_logs(outbound_port: u16, logs: Option<Arc<LogQueue>>) -> TestGateway {
         let dir = tempfile::tempdir().unwrap();
         let (shutdown, shutdown_rx) = watch::channel(false);
-        let running = uwumail_gateway::start(config(dir.path(), outbound_port), shutdown_rx).await.unwrap();
+        let running =
+            uwumail_gateway::start_with_logs(config(dir.path(), outbound_port), shutdown_rx, logs).await.unwrap();
         let state = State::open(dir.path()).unwrap();
         let token = wait_for_token(&state).await;
         let identity = state.identity().unwrap().unwrap();
@@ -103,6 +110,7 @@ fn start_client(code: &PairingCode, with_token: bool, stop: watch::Receiver<bool
         software: "test".into(),
         services: uwumail_tunnel::Service::FIRST.to_vec(),
         token: with_token.then(|| code.token.clone()),
+        logs: None,
     };
     TunnelClient::start(settings, Arc::new(Echo), stop)
 }
@@ -342,4 +350,58 @@ async fn the_server_hears_how_the_gateway_is_doing() {
     assert!(system.reboot_required);
     assert_eq!(status.protection.expect("and the protection").firewall, "ufw");
     assert_eq!(status.trusted, [LOCALHOST], "and where it knows the server to be");
+}
+
+fn log_line(message: &str) -> GatewayLogLine {
+    GatewayLogLine { at: 1, level: "info".into(), message: message.into(), fields: vec![] }
+}
+
+#[tokio::test]
+async fn the_gateway_hands_its_log_to_a_server_that_asks() {
+    let logs = LogQueue::new(100);
+    // Said while no server was there: kept for the one that comes.
+    logs.push(log_line("said before the server came"));
+    let gateway = TestGateway::start_with_logs(echo_server().await, Some(logs.clone())).await;
+    let identity = Identity::generate().unwrap();
+    let settings = |token: Option<Token>, sink: Option<uwumail_tunnel::LogSink>| ClientSettings {
+        addresses: gateway.code.addresses.clone(),
+        gateway: gateway.code.fingerprint,
+        identity: identity.clone(),
+        hostname: "mail.example.com".into(),
+        software: "test".into(),
+        services: Service::FIRST.to_vec(),
+        token,
+        logs: sink,
+    };
+
+    // A server that does not ask (like one from before) leaves the lines where they are.
+    let (stop_quiet, stop_quiet_rx) = watch::channel(false);
+    let quiet = TunnelClient::start(settings(Some(gateway.code.token.clone()), None), Arc::new(Echo), stop_quiet_rx);
+    wait_for(&quiet, |status| matches!(status, Status::Connected { .. })).await;
+    logs.push(log_line("said while an older server listened"));
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let kept = logs.take_batch();
+    assert_eq!(kept.len(), 2, "not asked, not sent");
+    logs.put_back(kept);
+    let _ = stop_quiet.send(true);
+    wait_for(&quiet, |status| matches!(status, Status::Stopped)).await;
+
+    // The same server, now asking: it gets what waited, then what comes.
+    let (sink, mut received) = tokio::sync::mpsc::unbounded_channel();
+    let sink: uwumail_tunnel::LogSink = Arc::new(move |lines: Vec<GatewayLogLine>| {
+        for line in lines {
+            let _ = sink.send(line.message);
+        }
+    });
+    let (_stop, stop_rx) = watch::channel(false);
+    let asking = TunnelClient::start(settings(None, Some(sink)), Arc::new(Echo), stop_rx);
+    wait_for(&asking, |status| matches!(status, Status::Connected { .. })).await;
+    assert_eq!(next_line(&mut received).await, "said before the server came");
+    assert_eq!(next_line(&mut received).await, "said while an older server listened");
+    logs.push(log_line("said while it listens"));
+    assert_eq!(next_line(&mut received).await, "said while it listens");
+}
+
+async fn next_line(received: &mut tokio::sync::mpsc::UnboundedReceiver<String>) -> String {
+    tokio::time::timeout(Duration::from_secs(10), received.recv()).await.expect("a log line arrives").unwrap()
 }
