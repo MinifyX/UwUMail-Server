@@ -1,4 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import { useState } from "react";
 import { Card, CopyButton, KeyValue, PageHeader } from "@/components/ui/Card";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { useT } from "@/i18n";
@@ -24,6 +26,49 @@ function StorageBar({ used, quota }: { used: number; quota: number }) {
   );
 }
 
+/** How many addresses the card shows before somebody asks for the rest. */
+const SHOWN_ADDRESSES = 3;
+
+/**
+ * Someone with two addresses wants to see both; someone with twenty wants to see the page. So the
+ * card keeps its size and the rest is one click away, and the button says how many that is.
+ */
+function AddressList({ addresses }: { addresses: string[] }) {
+  const { t } = useT();
+  const [expanded, setExpanded] = useState(false);
+  const hidden = addresses.length - SHOWN_ADDRESSES;
+  const shown = expanded ? addresses : addresses.slice(0, SHOWN_ADDRESSES);
+
+  return (
+    <Card title={t("account.addresses.title")}>
+      <ul className="flex flex-col">
+        {shown.map((address) => (
+          <li
+            key={address}
+            className="flex min-h-11 items-center justify-between gap-3 border-b border-hairline last:border-b-0"
+          >
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold">{address}</span>
+            </span>
+            <CopyButton value={address} />
+          </li>
+        ))}
+      </ul>
+      {hidden > 0 && (
+        <button
+          type="button"
+          className="mt-3 flex items-center gap-1 text-[13px] font-semibold text-pink hover:underline"
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+        >
+          {expanded ? <ChevronUp className="size-4" aria-hidden /> : <ChevronDown className="size-4" aria-hidden />}
+          {expanded ? t("account.addresses.less") : t("account.addresses.more", { count: hidden })}
+        </button>
+      )}
+    </Card>
+  );
+}
+
 export function AccountHome({ session }: { session: Session }) {
   const { t, i18n } = useT();
   const profile = useQuery({ queryKey: ["account"], queryFn: () => api<Profile>("/api/account") });
@@ -40,21 +85,7 @@ export function AccountHome({ session }: { session: Session }) {
       <PageHeader title={t("account.greeting", { name })} intro={t("account.intro")} />
 
       <div className="grid gap-5 md:grid-cols-2">
-        <Card title={t("account.addresses.title")}>
-          <ul className="flex flex-col">
-            {data.addresses.map((address) => (
-              <li
-                key={address}
-                className="flex min-h-11 items-center justify-between gap-3 border-b border-hairline last:border-b-0"
-              >
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-semibold">{address}</span>
-                </span>
-                <CopyButton value={address} />
-              </li>
-            ))}
-          </ul>
-        </Card>
+        <AddressList addresses={data.addresses} />
 
         <Card title={t("account.storage.title")}>
           <div className="flex flex-col gap-3">

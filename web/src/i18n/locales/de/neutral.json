@@ -112,7 +112,10 @@
     "addresses": {
       "title": "Deine Adressen",
       "primary": "Hauptadresse",
-      "alias": "Zusätzliche Adresse"
+      "alias": "Zusätzliche Adresse",
+      "more": "{{count}} weitere anzeigen",
+      "more_one": "Eine weitere anzeigen",
+      "less": "Weniger anzeigen"
     },
     "storage": {
       "title": "Speicher",
