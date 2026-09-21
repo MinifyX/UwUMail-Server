@@ -218,8 +218,7 @@ function MailboxForm({
   };
 
   return (
-    <form className="flex flex-col gap-4" onSubmit={submit}>
-      <h2 className="text-base font-semibold">{account ? t("fetch.form.editTitle") : t("fetch.form.addTitle")}</h2>
+    <form className="flex flex-col gap-4 px-6 pb-6" onSubmit={submit}>
       <Field label={t("fetch.form.address")} hint={t("fetch.form.addressHint")}>
         {(id) => (
           <TextInput
@@ -383,7 +382,14 @@ function MailboxDialog({
 
   return (
     <>
-      <Dialog open={open} onClose={requestClose} closeOnOutsideClick={!dirty} width="sm">
+      {/* The heading belongs to the dialog, like everywhere else: that is what puts the padding
+          and the close button there, instead of a form growing its own title against the edge. */}
+      <Dialog
+        open={open}
+        onClose={requestClose}
+        closeOnOutsideClick={!dirty}
+        title={account ? t("fetch.form.editTitle") : t("fetch.form.addTitle")}
+      >
         <MailboxForm view={view} account={account} onClose={close} onCancel={requestClose} onDirtyChange={setDirty} />
       </Dialog>
       <ConfirmDiscardDialog
