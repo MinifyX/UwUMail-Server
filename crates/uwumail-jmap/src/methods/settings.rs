@@ -2,7 +2,7 @@
 //! sync, one singleton per account like VacationResponse. See docs/jmap-settings.md.
 
 use serde_json::{Map, Value, json};
-use uwumail_store::{SettingProblem, SettingsChange, StoreError, validate_setting};
+use uwumail_store::{SettingProblem, SettingsChange, StoreError, USER_SETTINGS_MAX_KEYS, validate_setting};
 
 use super::{Ctx, SetResponse, get_ids, if_in_state, pick, properties};
 use crate::error::{MethodError, MethodResult, SetError};
@@ -51,6 +51,13 @@ fn unescape(token: &str) -> Option<String> {
 /// Turns the patch into a change the store applies, checking every key and value first so that a
 /// single bad one refuses the whole update.
 fn parse_patch(patch: &Map<String, Value>) -> Result<SettingsChange, SetError> {
+    // One write never needs to name more keys than an account may keep; removals count too, so a
+    // request full of `null`s can't turn into hundreds of thousands of statements.
+    let named = patch.keys().filter(|path| path.starts_with("values/")).count()
+        + patch.get("values").and_then(Value::as_object).map_or(0, Map::len);
+    if named > USER_SETTINGS_MAX_KEYS {
+        return Err(SetError::new("overQuota", format!("at most {USER_SETTINGS_MAX_KEYS} settings in one write")));
+    }
     let mut writes: Vec<(String, Option<Value>)> = Vec::new();
     let mut replace: Option<Map<String, Value>> = None;
     let mut bad: Vec<String> = Vec::new();
@@ -234,5 +241,18 @@ mod tests {
 
         let huge = json!({ "email": "", "name": "", "html": "x".repeat(300_000), "forNew": true, "forReplies": true });
         assert_eq!(patch(json!({ "values/signature:w": huge })).unwrap_err().kind, "tooLarge");
+    }
+
+    #[test]
+    fn a_write_names_no_more_keys_than_an_account_keeps() {
+        let removals: Map<String, Value> =
+            (0..=USER_SETTINGS_MAX_KEYS).map(|n| (format!("values/linkDomains:h{n}.example"), Value::Null)).collect();
+        assert_eq!(parse_patch(&removals).unwrap_err().kind, "overQuota");
+        let nulls: Map<String, Value> =
+            (0..=USER_SETTINGS_MAX_KEYS).map(|n| (format!("junk{n}"), Value::Null)).collect();
+        assert_eq!(patch(json!({ "values": nulls })).unwrap_err().kind, "overQuota");
+        let fits: Map<String, Value> =
+            (0..USER_SETTINGS_MAX_KEYS).map(|n| (format!("values/linkDomains:h{n}.example"), Value::Null)).collect();
+        assert!(parse_patch(&fits).is_ok());
     }
 }

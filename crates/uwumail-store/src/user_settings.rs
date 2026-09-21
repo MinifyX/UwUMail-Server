@@ -331,6 +331,15 @@ impl Store {
     ) -> Result<UserSettings> {
         let (settings, modseq) = self
             .write(move |tx| {
+                // Counted before anything else: removals and `null`s cost a statement each as well,
+                // and no write needs to touch more keys than an account may keep.
+                let touched = match &change {
+                    SettingsChange::Patch(writes) => writes.len(),
+                    SettingsChange::Replace(all) => all.len(),
+                };
+                if touched > USER_SETTINGS_MAX_KEYS {
+                    return Err(rule("overQuota", format!("at most {USER_SETTINGS_MAX_KEYS} settings in one write")));
+                }
                 let (mut preferences, modseq) = account_row(tx, account_id)?;
                 if if_in_state.is_some_and(|expected| expected != modseq.to_string()) {
                     return Err(rule("stateMismatch", "the settings have changed since"));
@@ -597,6 +606,16 @@ mod tests {
         let many: Vec<_> =
             (0..=USER_SETTINGS_MAX_KEYS).map(|n| (format!("linkDomains:host{n}.example"), Some(json!(true)))).collect();
         let refused = store.update_user_settings(nyu, SettingsChange::Patch(many), None).await;
+        assert!(matches!(refused, Err(StoreError::Rule { code: "overQuota", .. })));
+
+        // Removals cost a statement each too, so they count against the same limit.
+        let removals: Vec<_> =
+            (0..=USER_SETTINGS_MAX_KEYS).map(|n| (format!("linkDomains:host{n}.example"), None)).collect();
+        let refused = store.update_user_settings(nyu, SettingsChange::Patch(removals), None).await;
+        assert!(matches!(refused, Err(StoreError::Rule { code: "overQuota", .. })));
+        let nulls: Map<String, Value> =
+            (0..=USER_SETTINGS_MAX_KEYS).map(|n| (format!("junk{n}"), Value::Null)).collect();
+        let refused = store.update_user_settings(nyu, SettingsChange::Replace(nulls), None).await;
         assert!(matches!(refused, Err(StoreError::Rule { code: "overQuota", .. })));
 
         let big = json!({ "email": "", "name": "", "html": "x".repeat(200_000), "forNew": true, "forReplies": true });
