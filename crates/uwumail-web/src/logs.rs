@@ -2,7 +2,7 @@
 
 use std::collections::VecDeque;
 use std::fmt::Write as _;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
@@ -11,6 +11,26 @@ use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::Layer;
 use tracing_subscriber::layer::Context;
 
+use crate::loki::Loki;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogSource {
+    /// This server.
+    Server,
+    /// The UwUMail Gateway in front of it, which hands its lines over through the tunnel.
+    Gateway,
+}
+
+impl LogSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LogSource::Server => "server",
+            LogSource::Gateway => "gateway",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogLine {
@@ -18,6 +38,7 @@ pub struct LogLine {
     pub seq: u64,
     /// Milliseconds since 1970.
     pub at: u64,
+    pub source: LogSource,
     /// "error", "warn", "info", "debug" or "trace".
     pub level: &'static str,
     pub target: String,
@@ -28,6 +49,8 @@ pub struct LogLine {
 pub struct LogBuffer {
     capacity: usize,
     inner: Mutex<(VecDeque<LogLine>, u64)>,
+    /// Where every line also goes, once the server sends its logs on.
+    loki: OnceLock<Arc<Loki>>,
 }
 
 fn level_name(level: Level) -> &'static str {
@@ -53,7 +76,11 @@ pub fn level_rank(name: &str) -> u8 {
 
 impl LogBuffer {
     pub fn new(capacity: usize) -> Arc<LogBuffer> {
-        Arc::new(LogBuffer { capacity, inner: Mutex::new((VecDeque::with_capacity(capacity), 1)) })
+        Arc::new(LogBuffer {
+            capacity,
+            inner: Mutex::new((VecDeque::with_capacity(capacity), 1)),
+            loki: OnceLock::new(),
+        })
     }
 
     /// A tracing layer that copies every event into this buffer.
@@ -61,7 +88,27 @@ impl LogBuffer {
         LogLayer(self.clone())
     }
 
+    /// Sends every line from now on to `loki` as well.
+    pub fn forward_to(&self, loki: Arc<Loki>) {
+        let _ = self.loki.set(loki);
+    }
+
+    /// Keeps a line the gateway logged. `level` is one of the level names; anything else counts as info.
+    pub fn record_gateway(&self, at: u64, level: &str, message: String, fields: Vec<(String, String)>) {
+        let level = match level {
+            "error" => "error",
+            "warn" => "warn",
+            "debug" => "debug",
+            "trace" => "trace",
+            _ => "info",
+        };
+        self.push(LogLine { seq: 0, at, source: LogSource::Gateway, level, target: "gateway".into(), message, fields });
+    }
+
     fn push(&self, mut line: LogLine) {
+        if let Some(loki) = self.loki.get() {
+            loki.offer(&line);
+        }
         let mut inner = self.inner.lock().expect("log buffer poisoned");
         line.seq = inner.1;
         inner.1 += 1;
@@ -128,6 +175,7 @@ impl<S: Subscriber> Layer<S> for LogLayer {
         self.0.push(LogLine {
             seq: 0,
             at,
+            source: LogSource::Server,
             level: level_name(*event.metadata().level()),
             target: event.metadata().target().to_owned(),
             message: fields.message,
@@ -167,5 +215,16 @@ mod tests {
         assert_eq!(newer.len(), 1);
         let (found, _) = buffer.lines(0, 4, Some("DISK"), 100);
         assert_eq!(found[0].level, "error");
+    }
+
+    #[test]
+    fn gateway_lines_sit_next_to_the_servers_own() {
+        let buffer = LogBuffer::new(10);
+        buffer.record_gateway(5, "warn", "did not ban an address the server asked about".into(), vec![]);
+        buffer.record_gateway(6, "loud", "an unknown level".into(), vec![]);
+        let (lines, _) = buffer.lines(0, 4, None, 10);
+        assert_eq!((lines[0].source, lines[0].level, lines[0].at), (LogSource::Gateway, "warn", 5));
+        assert_eq!(lines[1].level, "info", "an unknown level counts as info");
+        assert_eq!(serde_json::to_value(&lines[0]).unwrap()["source"], "gateway");
     }
 }

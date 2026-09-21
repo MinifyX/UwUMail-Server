@@ -150,11 +150,13 @@ pub struct LogConfig {
     pub format: LogFormat,
     /// `error`, `warn`, `info`, `debug` or `trace`.
     pub level: String,
+    /// Sending the log to Grafana Loki. The admin panel can change this part.
+    pub loki: uwumail_web::LokiConfig,
 }
 
 impl Default for LogConfig {
     fn default() -> Self {
-        LogConfig { format: LogFormat::Text, level: "info".into() }
+        LogConfig { format: LogFormat::Text, level: "info".into(), loki: uwumail_web::LokiConfig::default() }
     }
 }
 
@@ -225,6 +227,7 @@ impl Config {
         }
         uwumail_smtp::IpNetwork::parse_list(&self.http.trusted_proxies)
             .map_err(|err| anyhow::anyhow!("`http.trusted_proxies`: {err}"))?;
+        self.log.loki.target(&self.hostname).map_err(|err| anyhow::anyhow!(err))?;
         // Behind a reverse proxy the challenge arrives through the proxy listener instead of port 80.
         if self.tls.mode == TlsMode::Acme && self.listen.http.is_empty() && self.listen.proxy.is_empty() {
             bail!(
@@ -341,5 +344,25 @@ language = \"de\"
         assert!(error.contains("spam.greylist_score"), "{error}");
         let error = with(serde_json::json!({ "reject_score": 4.0 })).validate().unwrap_err().to_string();
         assert!(error.contains("spam.reject_score"), "{error}");
+    }
+
+    #[test]
+    fn sending_the_log_to_loki_needs_an_address_and_the_privacy_consent() {
+        let with = |loki: serde_json::Value| {
+            let overlay = serde_json::json!({ "hostname": "mail.example.de", "log": { "loki": loki } });
+            Config::load_with_overlay(None, &overlay).unwrap()
+        };
+        assert!(with(serde_json::json!({})).validate().is_ok(), "off by default");
+        let error = with(serde_json::json!({ "enabled": true, "url": "http://loki:3100" })).validate().unwrap_err();
+        assert!(error.to_string().contains("privacy_consent"), "{error}");
+        let error = with(serde_json::json!({ "enabled": true, "privacy_consent": true })).validate().unwrap_err();
+        assert!(error.to_string().contains("log.loki.url"), "{error}");
+        let config = with(serde_json::json!({ "enabled": true, "privacy_consent": true, "url": "http://loki:3100" }));
+        assert!(config.validate().is_ok());
+        assert!(config.log.loki.gateway, "the gateway's lines go along unless switched off");
+        assert_eq!(config.log.format, LogFormat::Text, "the rest of `log` stays where it was");
+
+        let from_env = with_env_text("log.loki.labels", "[\"env=home\"]").unwrap();
+        assert_eq!(from_env.log.loki.labels, vec!["env=home"]);
     }
 }

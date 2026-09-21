@@ -121,6 +121,15 @@ pub async fn run(
     // under /mail, JMAP's session login, and the admin panel that flips it.
     let webmail = Arc::new(std::sync::atomic::AtomicBool::new(config.http.webmail));
     let jmap = uwumail_jmap::Jmap::with_webmail(smtp.clone(), webmail.clone()).router().merge(dav.router());
+    // The log to Grafana Loki, when the config or the admin panel asks for it; the admin panel
+    // switches it on, over and off while the server runs.
+    let loki = uwumail_web::Loki::new();
+    logs.forward_to(loki.clone());
+    match config.log.loki.target(&config.hostname) {
+        Ok(target) => loki.set_target(target),
+        Err(err) => tracing::warn!(%err, "not sending the log to Loki"),
+    }
+    tasks.spawn(loki.clone().run(shutdown_rx.clone()));
     let certificate: uwumail_web::CertificateSource = {
         let (certs, automatic) = (certs.clone(), config.tls.mode == TlsMode::Acme);
         Arc::new(move || {
@@ -137,10 +146,12 @@ pub async fn run(
         uwumail_web::WebSettings {
             hostname: config.hostname.clone(),
             started: Instant::now(),
-            logs: Some(logs),
+            logs: Some(logs.clone()),
+            loki: Some(loki.clone()),
             config: Some(Arc::new(crate::settings::ServerSettings {
                 path: config_path,
                 smtp: smtp.clone(),
+                loki,
                 webmail: webmail.clone(),
             })),
             certificate: Some(certificate),
@@ -157,6 +168,8 @@ pub async fn run(
         shutdown_rx.clone(),
     );
     web.set_gateway(gateway.clone());
+    // What the gateway logs shows up next to this server's lines, in the portal and in Loki.
+    gateway.log_to(logs.clone());
     // A network this server turns away is kept off the gateway's public ports too, so the next
     // try does not reach the house at all. Only this side can see who fails to log in.
     let report_blocks = gateway.reporter();

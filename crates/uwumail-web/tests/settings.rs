@@ -111,6 +111,7 @@ async fn settings_are_checked_locked_stored_and_logged() {
             hostname: "mail.example.de".into(),
             started: Instant::now(),
             logs: None,
+            loki: None,
             config: Some(server.clone()),
             certificate: None,
             webmail: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),

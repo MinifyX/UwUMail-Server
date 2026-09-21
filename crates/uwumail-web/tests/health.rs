@@ -74,6 +74,7 @@ async fn health_lists_every_area_with_findings() {
             hostname: "mail.example.de".into(),
             started: Instant::now(),
             logs: None,
+            loki: None,
             config: None,
             certificate: Some(Arc::new(move || {
                 Some(CertificateStatus {

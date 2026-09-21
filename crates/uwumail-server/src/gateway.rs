@@ -15,8 +15,8 @@ use tokio_rustls::TlsAcceptor;
 use uwumail_smtp::{BoxIo, Connector, ListenerKind, Smtp};
 use uwumail_store::Store;
 use uwumail_tunnel::{
-    ClientSettings, Fingerprint, Identity, Inbound, Open, PairingCode, Service, Status, Token, TunnelClient,
-    TunnelStream,
+    ClientSettings, Fingerprint, GatewayLogLine, Identity, Inbound, LogSink, Open, PairingCode, Service, Status, Token,
+    TunnelClient, TunnelStream,
 };
 use uwumail_web::gateway::{GatewayBackend, GatewayFuture, GatewayState, GatewayView};
 
@@ -170,6 +170,8 @@ pub struct GatewayManager {
     current: Arc<Mutex<Option<Current>>>,
     /// Notified each time the tunnel comes up: from then on the certificate authority reaches us.
     tunnel_up: Arc<Notify>,
+    /// Where the gateway's log lines go.
+    logs: OnceLock<Arc<uwumail_web::LogBuffer>>,
 }
 
 impl GatewayManager {
@@ -189,7 +191,14 @@ impl GatewayManager {
             services: OnceLock::new(),
             current: Arc::default(),
             tunnel_up: Arc::default(),
+            logs: OnceLock::new(),
         })
+    }
+
+    /// Keeps the gateway's log lines in `logs`, next to this server's own. Takes effect with the next
+    /// connection to the gateway.
+    pub fn log_to(&self, logs: Arc<uwumail_web::LogBuffer>) {
+        let _ = self.logs.set(logs);
     }
 
     /// Whether a gateway is paired, connected or not.
@@ -246,7 +255,13 @@ impl GatewayManager {
             software: format!("uwumail-server {}", env!("CARGO_PKG_VERSION")),
             services: Service::ALL.to_vec(),
             token: if pairing.confirmed { None } else { Token::from_text(&pairing.token) },
-            logs: None,
+            logs: self.logs.get().cloned().map(|logs| -> LogSink {
+                Arc::new(move |lines: Vec<GatewayLogLine>| {
+                    for line in lines {
+                        logs.record_gateway(line.at, &line.level, line.message, line.fields);
+                    }
+                })
+            }),
         };
         let client = TunnelClient::start(settings, Arc::new(services.clone()), self.shutdown.clone());
         // From now on mail to other servers only leaves through the gateway, also while it is away:

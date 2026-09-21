@@ -72,6 +72,7 @@ async fn setup() -> (Router, Store, tempfile::TempDir) {
             hostname: "mail.example.de".into(),
             started: Instant::now(),
             logs: None,
+            loki: None,
             config: None,
             certificate: None,
             webmail: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),

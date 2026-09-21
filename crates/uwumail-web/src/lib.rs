@@ -14,6 +14,7 @@ mod health;
 pub mod host;
 mod login;
 mod logs;
+pub mod loki;
 mod notices;
 mod routes;
 mod session;
@@ -33,7 +34,8 @@ use uwumail_store::Store;
 
 pub use error::{ApiError, ApiResult};
 pub use health::{CertificateSource, CertificateStatus};
-pub use logs::{LogBuffer, LogLine};
+pub use logs::{LogBuffer, LogLine, LogSource};
+pub use loki::{Loki, LokiConfig};
 pub use routes::settings::OVERLAY_KEY as SETTINGS_OVERLAY_KEY;
 pub use session::{Admin, CSRF_HEADER, SESSION_LIFETIME_SECS, Session};
 
@@ -44,6 +46,8 @@ pub struct WebSettings {
     pub started: Instant,
     /// The newest server log lines, when the server keeps them.
     pub logs: Option<Arc<LogBuffer>>,
+    /// Sending the log to Grafana Loki, when the server can.
+    pub loki: Option<Arc<Loki>>,
     /// Changing server settings from the admin panel, when the server allows it.
     pub config: Option<Arc<dyn settings::SettingsBackend>>,
     /// The certificate in use, for the health overview.
@@ -307,6 +311,8 @@ impl Web {
             .route("/api/admin/queue/{id}/retry", post(routes::queue::retry))
             .route("/api/admin/queue/{id}", delete(routes::queue::drop))
             .route("/api/admin/logs", get(routes::queue::logs))
+            .route("/api/admin/logs/loki", get(routes::settings::loki_status))
+            .route("/api/admin/logs/loki/test", post(routes::settings::loki_test))
             .route("/api/admin/settings", get(routes::settings::show).patch(routes::settings::update))
             .route("/api/admin/spam", get(routes::spam::admin_overview))
             .route("/api/admin/spam/learn-folders", post(routes::spam::admin_learn))

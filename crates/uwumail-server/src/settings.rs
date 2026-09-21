@@ -6,6 +6,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde_json::{Value, json};
 use uwumail_smtp::Smtp;
+use uwumail_web::Loki;
+use uwumail_web::loki::LokiTarget;
 use uwumail_web::settings::{SETTINGS, SettingKind, SettingSource, SettingValue, SettingsBackend, get_path};
 
 use crate::config::Config;
@@ -13,6 +15,8 @@ use crate::config::Config;
 pub struct ServerSettings {
     pub path: Option<PathBuf>,
     pub smtp: Smtp,
+    /// Sends the log to Loki; switched on, over and off from here.
+    pub loki: Arc<Loki>,
     /// The web portal's copy of `http.webmail`, so a change in the admin panel is in effect
     /// before the answer is written.
     pub webmail: Arc<AtomicBool>,
@@ -29,6 +33,7 @@ pub fn view_settings(path: Option<&std::path::Path>, overlay: &Value) -> Result<
         "delivery": config.delivery,
         "tone": config.tone,
         "http": { "webmail": config.http.webmail },
+        "log": { "loki": config.log.loki },
     });
     Ok(SETTINGS
         .iter()
@@ -60,11 +65,17 @@ impl SettingsBackend for ServerSettings {
         self.smtp
             .update_settings(config.smtp, config.spam, config.delivery, config.tone)
             .map_err(|err| err.to_string())?;
+        self.loki.set_target(config.log.loki.target(&config.hostname)?);
         tracing::info!("settings from the admin panel are in effect");
         Ok(())
     }
 
     fn config_file(&self) -> Option<String> {
         self.path.as_ref().map(|path| path.display().to_string())
+    }
+
+    fn loki_connection(&self, overlay: &Value) -> Result<LokiTarget, String> {
+        let config = Config::load_with_overlay(self.path.as_deref(), overlay).map_err(|err| format!("{err:#}"))?;
+        config.log.loki.connection(&config.hostname)
     }
 }

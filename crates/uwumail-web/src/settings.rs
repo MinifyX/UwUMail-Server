@@ -85,6 +85,16 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("spam.log.enabled", SettingKind::Bool),
     spec("spam.log.clean_subjects", SettingKind::Bool),
     spec("spam.log.retention_days", SettingKind::Integer { min: 1, max: 365 }),
+    spec("log.loki.enabled", SettingKind::Bool),
+    spec("log.loki.privacy_consent", SettingKind::Bool),
+    spec("log.loki.url", SettingKind::Text),
+    spec("log.loki.username", SettingKind::Text),
+    spec("log.loki.password", SettingKind::Secret),
+    spec("log.loki.token", SettingKind::Secret),
+    spec("log.loki.tenant", SettingKind::Text),
+    spec("log.loki.labels", SettingKind::List),
+    spec("log.loki.level", SettingKind::Choice { options: &["error", "warn", "info", "debug"] }),
+    spec("log.loki.gateway", SettingKind::Bool),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -115,6 +125,11 @@ pub trait SettingsBackend: Send + Sync + 'static {
     fn apply(&self, overlay: &Value) -> Result<(), String>;
     /// Where the config file is, to explain locked settings.
     fn config_file(&self) -> Option<String>;
+    /// Where and how logs would go to Loki with this overlay, switched on or not, to send a test line.
+    fn loki_connection(&self, overlay: &Value) -> Result<crate::loki::LokiTarget, String> {
+        let _ = overlay;
+        Err("this server cannot send its logs to Loki".into())
+    }
 }
 
 pub fn spec_for(key: &str) -> Option<&'static SettingSpec> {

@@ -57,17 +57,16 @@ pub struct Changes {
     changes: Map<String, Value>,
 }
 
-pub async fn update(
-    State(web): State<Web>,
-    Admin(session): Admin,
-    Json(request): Json<Changes>,
-) -> ApiResult<Json<Value>> {
-    let backend = backend(&web)?;
-    let mut overlay = load_overlay(&web).await?;
-    let current = backend.view(&overlay).map_err(|_| ApiError::Internal)?;
-
+/// Puts `changes` into `overlay` the way the admin panel may: known settings, valid values, none the
+/// config file holds. Returns what goes into the change log, passwords hidden.
+fn merge_changes(
+    backend: &dyn SettingsBackend,
+    overlay: &mut Value,
+    changes: &Map<String, Value>,
+) -> ApiResult<Map<String, Value>> {
+    let current = backend.view(overlay).map_err(|_| ApiError::Internal)?;
     let mut details = Map::new();
-    for (key, value) in &request.changes {
+    for (key, value) in changes {
         let Some(spec) = spec_for(key) else {
             return Err(ApiError::Invalid(format!("unknown setting {key}")));
         };
@@ -75,7 +74,7 @@ pub async fn update(
         if current.iter().any(|setting| setting.key == spec.key && setting.source == SettingSource::File) {
             return Err(ApiError::Rule("settingLocked", format!("{key} is set in the config file")));
         }
-        set_path(&mut overlay, spec.key, value.clone());
+        set_path(overlay, spec.key, value.clone());
         // Passwords never go into the change log.
         let logged = if matches!(spec.kind, SettingKind::Secret) && !value.is_null() {
             json!("•••")
@@ -86,10 +85,39 @@ pub async fn update(
     }
     let host_from_file =
         current.iter().any(|setting| setting.key == "delivery.relay.host" && setting.source == SettingSource::File);
-    tidy(&mut overlay, host_from_file);
+    tidy(overlay, host_from_file);
+    Ok(details)
+}
+
+pub async fn update(
+    State(web): State<Web>,
+    Admin(session): Admin,
+    Json(request): Json<Changes>,
+) -> ApiResult<Json<Value>> {
+    let backend = backend(&web)?;
+    let mut overlay = load_overlay(&web).await?;
+    let details = merge_changes(backend, &mut overlay, &request.changes)?;
 
     backend.apply(&overlay).map_err(|err| ApiError::Rule("settingsInvalid", err))?;
     web.store().set_setting(OVERLAY_KEY, &overlay.to_string()).await?;
     audit(&web, &session, "settings.update", "", Value::Object(details)).await;
     Ok(Json(view_json(&web, backend, &overlay)?))
+}
+
+/// How sending the log to Loki goes.
+pub async fn loki_status(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Value>> {
+    let loki = web.settings().loki.as_ref().ok_or_else(|| ApiError::NotFound("sending logs to Loki".into()))?;
+    Ok(Json(serde_json::to_value(loki.status()).map_err(|_| ApiError::Internal)?))
+}
+
+/// Sends one test line with the saved settings and the changes not saved yet, so an address and its
+/// credentials can be tried before anything is switched on. The line itself says nothing about anyone.
+pub async fn loki_test(State(web): State<Web>, _admin: Admin, Json(request): Json<Changes>) -> ApiResult<Json<Value>> {
+    let loki = web.settings().loki.clone().ok_or_else(|| ApiError::NotFound("sending logs to Loki".into()))?;
+    let backend = backend(&web)?;
+    let mut overlay = load_overlay(&web).await?;
+    merge_changes(backend, &mut overlay, &request.changes)?;
+    let target = backend.loki_connection(&overlay).map_err(|err| ApiError::Rule("lokiInvalid", err))?;
+    loki.test(&target).await.map_err(|err| ApiError::Rule("lokiUnreachable", err))?;
+    Ok(Json(json!({ "ok": true })))
 }
