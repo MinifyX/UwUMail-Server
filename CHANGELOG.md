@@ -3,6 +3,28 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## Unreleased
+
+**A fetched mailbox brings the mail that was already in it.** Fetching started where the folders
+stood on the first run, so everything that was in the mailbox before — often years of it — stayed at
+the provider for good, and the only way over was a command on the server. Now it comes when it is
+asked for: *Vorhandene Mails übernehmen* when a mailbox is added, on by default, or later with the
+clock button in the mailbox's row.
+
+It comes the way the migration import copies a mailbox rather than the way new mail arrives: with
+the date it had at the provider and read or unread as it was there — not as a heap of new mail from
+today — and filed where the provider had it, the inbox into the inbox and the junk folder into Junk,
+without the spam filter judging months-old mail again against DKIM keys the senders have long
+rotated. What is already here, by whatever way it came, is recognised and not brought twice, so
+asking for it on a mailbox that has been fetching for months is safe. Every run takes 200 messages
+of it per folder next to the new mail, and the next portion follows half a minute later until it is
+all here; a full mailbox makes it wait at the provider the way it makes new mail wait. Afterwards it
+is marked as read or deleted there like any other message.
+
+The dialog's hint about deleting at the provider said only mail that arrived is ever deleted; since
+0.6.1 mail the filter refuses is too, and it now says so. A message a provider names in its search
+and then does not hand out is now written to the log instead of being passed over in silence.
+
 ## 0.6.1
 
 **A mailbox somewhere else needs an address and a password, nothing more.** Setting one up meant

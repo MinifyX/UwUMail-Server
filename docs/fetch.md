@@ -128,10 +128,9 @@ Three things it is careful about:
   That is exactly what greylisting asks of a sending server, and here this
   server is that sender. A message that cannot be taken for a whole day is
   stepped over, so one message can never block a folder for good.
-* **The first run takes nothing.** It only writes down where the folders stand.
-  Years of old mail would otherwise arrive as if it came today. To bring the
-  existing mail over with its folders and its dates, use the migration import:
-  `uwumail-server import imap`, see [migrating-from-mailcow.md](migrating-from-mailcow.md).
+* **New mail starts where the folders stood at the first run.** What was
+  already there only comes when it is asked for — see
+  [The mail that was already there](#the-mail-that-was-already-there).
 
 A run takes at most 200 messages per folder and is cut short after five
 minutes; what is left waits for the next one.
@@ -155,6 +154,42 @@ fetches into is gone, or its address takes no mail. That is not a verdict on
 the message but a mistake on this side, and somebody's mail is not deleted over
 it — it stays at the provider, untouched, and is stepped over so the folder
 does not stick on it.
+
+## The mail that was already there
+
+A mailbox that is set up mid-life already holds mail — often years of it. That
+mail comes over when it is asked for: with *Vorhandene Mails übernehmen* when
+the mailbox is added (on by default), or later with the clock button in its row.
+From then on, next to the new mail, every run works through a portion of it —
+200 messages per folder — and the next portion follows half a minute later
+instead of after the mailbox's interval, until the folder holds nothing this
+server has not seen.
+
+It comes differently from new mail, on purpose:
+
+* **With the date it had at the provider**, not the day it came over, and
+  **read, unread or flagged as it was there**. A backlog is not a heap of new
+  mail from today.
+* **Where the provider had it, not judged again.** The inbox goes into the
+  inbox and the junk folder into Junk, the way the migration import copies a
+  mailbox. The spam filter would judge months-old mail against DKIM keys the
+  senders have long since rotated and find it wanting; and since refused mail
+  is cleared at the provider, a mailbox set to delete would lose good old mail
+  that way. The virus scanner is not asked either. This is the person's own
+  mail, from a mailbox they proved is theirs by opening it.
+* **Only what is not here yet.** A message that is already in the mailbox —
+  fetched before, imported, or sent here directly as well — is recognised by
+  its `Message-ID` (by its bytes where it has none) and not brought twice. That
+  is what makes it safe to ask again, and to ask for it on a mailbox that has
+  been fetching for a while.
+
+Afterwards it is marked as read or deleted at the provider like any other
+message. A full mailbox here stops it the way it stops new mail: it waits at
+the provider, untouched, and carries on once there is room.
+
+It goes only into a mailbox of the person's own. A service account whose mail
+is redirected elsewhere does not get its old mail sent on: that stays at the
+provider.
 
 ## At the provider afterwards
 
@@ -220,7 +255,8 @@ own.
 | --- | --- |
 | Mailboxes per person | 10 |
 | How often | every 60 seconds to every 6 hours, 5 minutes by default |
-| Messages per folder and run | 200 |
+| Messages per folder and run | 200, and 200 more of the mail that was already there |
+| While the mail that was already there comes | the next run follows after 30 seconds |
 | How long a run may take | 5 minutes |
 | A message waiting to be taken | stepped over after 24 hours |
 | Message names remembered | 30 days |

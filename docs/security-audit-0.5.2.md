@@ -692,6 +692,16 @@ risks from 0.4.0/0.5.0. Status: **holds** / **circumventable** / **no longer app
   here. Whoever wants a second look sets the mailbox to mark as read. What is *not* accepted: losing
   mail that was never judged — a full mailbox (now "later") and mail with nowhere to go
   (`Taken::Nowhere`) are both left at the provider.
+- **The mail already in a fetched mailbox comes over unfiltered and unscanned** (added after 0.5.2,
+  21 September 2026). Asked for by its owner, a fetched mailbox's existing mail is copied the way
+  `uwumail-server import imap` copies one — filed where the provider had it, with its own date, past
+  the spam filter *and* the virus scanner — because judging months-old mail against rotated DKIM
+  keys refuses good mail, which the change above would then delete at the provider. The reach is
+  the owner's own mailbox only (an account without one gets nothing), fed from a provider mailbox
+  its owner has logged into, and duplicates are recognised by `Message-ID`. Accepted: an infected
+  attachment that already sat in that provider mailbox arrives here unscanned, as it would through
+  the migration import. Not accepted: this path taking mail for anybody but the fetch account's
+  owner.
 
 ## Prioritised fix order
 
