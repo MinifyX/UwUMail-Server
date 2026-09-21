@@ -761,3 +761,61 @@ risks from 0.4.0/0.5.0. Status: **holds** / **circumventable** / **no longer app
 - The fetch-cluster root cause (**S-1**) confirmed by reading the exact SQL in `fetch_sender`, the
   `UNIQUE (account_id, address)` schema, and the `sender_route` call site — corroborated by the
   independent verification voters that completed before the session limit, all of which upheld it.
+
+## Addendum — the settings sync extension, 22 September 2026
+
+A focused pass over the settings extension that landed after 0.6.2 (`urn:uwumail:jmap:settings`,
+[docs/jmap-settings.md](jmap-settings.md)): the store (`crates/uwumail-store/src/user_settings.rs`,
+migration `0031_user_settings.sql`), the JMAP methods and push (`crates/uwumail-jmap/src/methods/settings.rs`,
+`push.rs`, `session.rs`), the portal preferences that the extension mirrors
+(`crates/uwumail-store/src/web.rs`) and the portal's new webmail preferences (commit 8b5553c). It was
+reviewed together with the webmail's side of the sync, whose findings continue in
+[UwUMail-Webmail/docs/security-audit-2026-09.md](https://github.com/MinifyX/UwUMail-Webmail/blob/main/docs/security-audit-2026-09.md)
+(W-12 to W-21).
+
+Threat model: a **logged-in account** against the server and against other accounts, and the values
+themselves as **untrusted input for every device** of the account, because what one device writes is
+handed to all the others.
+
+**What held up.** Every call checks `accountId` against the signed-in account, and the integration
+tests cover reading and writing another account's settings (`accountNotFound`, nothing changed).
+All SQL is parameterized. The request body is capped (`maxSizeRequest`) before it is parsed and
+`serde_json` limits nesting, so no deep or huge document reaches the settings code. Keys are on a
+strict whitelist with a rule per value; limits on keys, total size and value size hold, and a
+refused write changes nothing. Push only ever reports changes of the listener's own account, and the
+settings state is read for that account alone. The portal mirror validates in both directions
+(portal preference list, settings whitelist), and a portal write moves the settings state so the
+apps hear about it.
+
+| ID | Severity | Finding | Status |
+| --- | --- | --- | --- |
+| S-39 | Low | One `UserSettings/set` could name an unbounded number of keys | fixed in eb3ef99 |
+| S-40 | Informational | Keys and entries that are special in JavaScript or in text direction are accepted | accepted, clients handle it |
+| S-41 | Informational | Signature HTML is stored as written | accepted by design |
+
+- **S-39 · Low · One `UserSettings/set` could name an unbounded number of keys** —
+  `crates/uwumail-jmap/src/methods/settings.rs` (`parse_patch`), `crates/uwumail-store/src/user_settings.rs`
+  (`update_user_settings`). The limits counted only what would end up stored. Removals in a patch
+  and `null`s in a whole replacement were not counted, and each costs a statement inside the one
+  write transaction, so a single request up to the body cap could name a few hundred thousand keys
+  and hold the database's only writer — delivery included — for all of them, again and again. Only
+  a signed-in account can do it, and nothing is read or changed that isn't theirs. *Fix:* an update
+  names at most `maxKeys` keys, removals included; checked in the method before any validation and
+  again in the store. Tests in both crates; the limit is documented in `jmap-settings.md`.
+- **S-40 · Informational · Keys and entries that are special in JavaScript or in text direction are
+  accepted** — a signature id may be `__proto__` or `constructor` (letters and `_` are allowed), and
+  list entries and signature names may contain Unicode format characters such as a right-to-left
+  override (only control characters are refused). Neither harms the server; both are data a client
+  has to treat as data. The webmail now checks for its own keys only (W-19) and isolates names it
+  shows (W-21). The desktop app shares `settingsSync.ts` with the webmail and needs the W-19 change
+  too.
+- **S-41 · Informational · Signature HTML is stored as written** — by design and documented: the
+  server does not know how a client will show it, so every client cleans it like mail HTML before
+  showing or inserting it. The webmail does (`cleanSignatureHtml`: the composer's cleaner, pictures
+  only as embedded raster `data:` URLs).
+
+Not a security matter, noted in passing: the portal's list of swipe actions has no `spam`, so the
+webmail keeps that choice in the browser only.
+
+**What was run:** `cargo fmt --check`, `cargo clippy -D warnings` and the tests of `uwumail-store` and
+`uwumail-jmap` (`--test-threads=2`), all green. Nothing was run against a live server.
