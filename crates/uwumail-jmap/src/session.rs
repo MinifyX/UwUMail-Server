@@ -18,6 +18,8 @@ pub const SUBMISSION: &str = "urn:ietf:params:jmap:submission";
 pub const VACATION: &str = "urn:ietf:params:jmap:vacationresponse";
 /// Our own extension: one's allowed and blocked senders on this server (docs/jmap-senders.md).
 pub const SENDERS: &str = "urn:uwumail:jmap:senders";
+/// Our own extension: the settings the webmail and the apps keep in sync (docs/jmap-settings.md).
+pub const SETTINGS: &str = "urn:uwumail:jmap:settings";
 /// Our own extension: what the webmail needs on top of plain JMAP, currently the cleaned HTML
 /// body of a message (`uwuSafeHtml`, `uwuHasRemoteContent`).
 pub const WEBMAIL: &str = "urn:uwumail:jmap:webmail";
@@ -70,6 +72,7 @@ pub fn document(account: &Account, base: &str) -> Value {
             SUBMISSION: {},
             VACATION: {},
             SENDERS: {},
+            SETTINGS: {},
             WEBMAIL: {}
         },
         "accounts": {
@@ -88,7 +91,12 @@ pub fn document(account: &Account, base: &str) -> Value {
                     },
                     SUBMISSION: { "maxDelayedSend": 0, "submissionExtensions": {} },
                     VACATION: {},
-                    SENDERS: { "maxEntries": uwumail_store::SENDER_LIST_PERSONAL_LIMIT }
+                    SENDERS: { "maxEntries": uwumail_store::SENDER_LIST_PERSONAL_LIMIT },
+                    SETTINGS: {
+                        "maxKeys": uwumail_store::USER_SETTINGS_MAX_KEYS,
+                        "maxSize": uwumail_store::USER_SETTINGS_MAX_SIZE,
+                        "maxValueSize": uwumail_store::USER_SETTINGS_MAX_VALUE_SIZE
+                    }
                 }
             }
         },
@@ -96,7 +104,8 @@ pub fn document(account: &Account, base: &str) -> Value {
             MAIL: account_id.clone(),
             SUBMISSION: account_id.clone(),
             VACATION: account_id.clone(),
-            SENDERS: account_id
+            SENDERS: account_id.clone(),
+            SETTINGS: account_id
         },
         "username": account.login,
         "apiUrl": format!("{base}/jmap/api"),

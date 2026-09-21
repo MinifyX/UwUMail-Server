@@ -12,12 +12,13 @@ use uwumail_smtp::{DeliveryConfig, Smtp, SmtpConfig, SmtpSettings, ToneConfig};
 use uwumail_store::{IngestRequest, MailboxRole, MailboxTarget, NewAccount, Role, Store};
 
 const PASSWORD: &str = "katzenpfote-123";
-const USING: [&str; 5] = [
+const USING: [&str; 6] = [
     "urn:ietf:params:jmap:core",
     "urn:ietf:params:jmap:mail",
     "urn:ietf:params:jmap:submission",
     "urn:ietf:params:jmap:vacationresponse",
     "urn:uwumail:jmap:senders",
+    "urn:uwumail:jmap:settings",
 ];
 
 struct Server {
@@ -503,4 +504,221 @@ async fn people_block_senders_on_the_server_like_the_uwumail_app() {
     let (_, bytes) = server.request(request).await;
     let response: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(response["methodResponses"][0][1]["type"], "unknownMethod");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn settings_sync_between_the_apps_the_webmail_and_the_portal() {
+    let server = server().await;
+    let login = "mini@example.de";
+    let account = server.account_id(login).await;
+    let (_, body) = server.get("/.well-known/jmap", login).await;
+    let session: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(session["capabilities"]["urn:uwumail:jmap:settings"], json!({}));
+    assert_eq!(
+        session["accounts"][&account]["accountCapabilities"]["urn:uwumail:jmap:settings"],
+        json!({ "maxKeys": 5000, "maxSize": 1048576, "maxValueSize": 262144 })
+    );
+    assert_eq!(session["primaryAccounts"]["urn:uwumail:jmap:settings"], account);
+
+    // Nothing stored yet.
+    let responses = server.api(login, json!([["UserSettings/get", { "accountId": account, "ids": null }, "0"]])).await;
+    let get = args(&responses, 0, "UserSettings/get");
+    assert_eq!(get["list"], json!([{ "id": "singleton", "values": {} }]));
+    let empty_state = get["state"].clone();
+
+    let signature = json!({ "email": "mini@example.de", "name": "Arbeit", "html": "<p>Mini</p>", "forNew": true, "forReplies": false });
+    let responses = server
+        .api(
+            login,
+            json!([
+                ["UserSettings/set", { "accountId": account, "update": { "singleton": {
+                    "values/theme": "dark",
+                    "values/conversations": false,
+                    "values/undoSendSeconds": 10,
+                    "values/trustedSenders:@shop.example": true,
+                    "values/linkDomains:example.net": true,
+                    "values/signature:work": signature.clone(),
+                } } }, "0"],
+                ["UserSettings/get", { "accountId": account, "ids": ["singleton", "other"] }, "1"],
+            ]),
+        )
+        .await;
+    let set = args(&responses, 0, "UserSettings/set");
+    assert_eq!(set["updated"], json!({ "singleton": null }), "{set}");
+    assert_eq!(set["oldState"], empty_state);
+    assert_ne!(set["newState"], empty_state);
+    let get = args(&responses, 1, "UserSettings/get");
+    assert_eq!(get["state"], set["newState"]);
+    assert_eq!(get["notFound"], json!(["other"]));
+    assert_eq!(
+        get["list"][0]["values"],
+        json!({
+            "theme": "dark",
+            "conversations": false,
+            "undoSendSeconds": 10,
+            "trustedSenders:@shop.example": true,
+            "linkDomains:example.net": true,
+            "signature:work": signature,
+        })
+    );
+    let state = set["newState"].as_str().unwrap().to_owned();
+
+    // The portal and the webmail read the same preferences.
+    let id = server.store.account(login).await.unwrap().unwrap().id;
+    let preferences = server.store.preferences(id).await.unwrap();
+    assert_eq!((preferences["theme"].as_str(), preferences["mailConversations"].as_str()), (Some("dark"), Some("off")));
+
+    // One bad key refuses the whole update, and nothing of it is kept.
+    let responses = server
+        .api(
+            login,
+            json!([
+                ["UserSettings/set", { "accountId": account, "update": { "singleton": {
+                    "values/tone": "neutral",
+                    "values/colour": "pink",
+                    "values/trustedSenders:Big@Shop.example": true,
+                    "values/theme": null,
+                } } }, "0"],
+                ["UserSettings/get", { "accountId": account }, "1"],
+            ]),
+        )
+        .await;
+    let set = args(&responses, 0, "UserSettings/set");
+    assert_eq!(set["notUpdated"]["singleton"]["type"], "invalidProperties");
+    assert_eq!(set["notUpdated"]["singleton"]["properties"], json!(["colour", "trustedSenders:Big@Shop.example"]));
+    assert_eq!(set["newState"], state);
+    let values = &args(&responses, 1, "UserSettings/get")["list"][0]["values"];
+    assert_eq!((values["theme"].as_str(), values.get("tone")), (Some("dark"), None));
+
+    // null removes a key; ifInState guards against writes in between.
+    let responses = server
+        .api(
+            login,
+            json!([
+                ["UserSettings/set", { "accountId": account, "ifInState": state, "update": { "singleton": {
+                    "values/theme": null,
+                    "values/trustedSenders:@shop.example": null,
+                    "values/signature:work": null,
+                } } }, "0"],
+                ["UserSettings/set", { "accountId": account, "ifInState": state, "update": { "singleton": {
+                    "values/tone": "neutral",
+                } } }, "1"],
+                ["UserSettings/get", { "accountId": account, "properties": ["values"] }, "2"],
+            ]),
+        )
+        .await;
+    let set = args(&responses, 0, "UserSettings/set");
+    assert_eq!(set["updated"], json!({ "singleton": null }), "{set}");
+    assert_eq!(responses[1][1]["type"], "stateMismatch", "the state moved with the first call");
+    let values = &args(&responses, 2, "UserSettings/get")["list"][0]["values"];
+    assert_eq!(values, &json!({ "conversations": false, "undoSendSeconds": 10, "linkDomains:example.net": true }));
+    assert!(!server.store.preferences(id).await.unwrap().contains_key("theme"));
+
+    // Limits: one value too large, too many keys.
+    let huge = json!({ "email": "", "name": "", "html": "x".repeat(300_000), "forNew": true, "forReplies": true });
+    let many: serde_json::Map<String, Value> =
+        (0..5000).map(|n| (format!("values/linkDomains:host{n}.example"), json!(true))).collect();
+    let responses = server
+        .api(
+            login,
+            json!([
+                ["UserSettings/set", { "accountId": account, "update": { "singleton": { "values/signature:big": huge } } }, "0"],
+                ["UserSettings/set", { "accountId": account, "update": { "singleton": many } }, "1"],
+            ]),
+        )
+        .await;
+    assert_eq!(args(&responses, 0, "UserSettings/set")["notUpdated"]["singleton"]["type"], "tooLarge");
+    assert_eq!(args(&responses, 1, "UserSettings/set")["notUpdated"]["singleton"]["type"], "overQuota");
+
+    // A whole replacement, and the singleton cannot be created or destroyed.
+    let responses = server
+        .api(
+            login,
+            json!([
+                ["UserSettings/set", { "accountId": account,
+                    "create": { "new": { "values": {} } },
+                    "update": { "singleton": { "values": { "language": "en", "senderAppearance:news@shop.example": "dark" } } },
+                    "destroy": ["singleton"] }, "0"],
+                ["UserSettings/get", { "accountId": account }, "1"],
+            ]),
+        )
+        .await;
+    let set = args(&responses, 0, "UserSettings/set");
+    assert_eq!(set["notCreated"]["new"]["type"], "singleton");
+    assert_eq!(set["notDestroyed"]["singleton"]["type"], "singleton");
+    assert_eq!(set["updated"], json!({ "singleton": null }));
+    let get = args(&responses, 1, "UserSettings/get");
+    assert_eq!(get["list"][0]["values"], json!({ "language": "en", "senderAppearance:news@shop.example": "dark" }));
+    let preferences = server.store.preferences(id).await.unwrap();
+    assert!(!preferences.contains_key("mailConversations"), "replaced away: {preferences:?}");
+
+    // A change in the portal shows up here with a new state.
+    let before = get["state"].clone();
+    let change = json!({ "mailSenderPictures": "off" }).as_object().unwrap().clone();
+    server.store.update_preferences(id, change).await.unwrap();
+    let responses = server.api(login, json!([["UserSettings/get", { "accountId": account }, "0"]])).await;
+    let get = args(&responses, 0, "UserSettings/get");
+    assert_ne!(get["state"], before);
+    assert_eq!(get["list"][0]["values"]["senderPictures"], false);
+
+    // Somebody else's settings are out of reach.
+    let other = server.account_id("nyu@example.de").await;
+    let responses = server
+        .api(
+            login,
+            json!([
+                ["UserSettings/get", { "accountId": other }, "0"],
+                ["UserSettings/set", { "accountId": other, "update": { "singleton": { "values/theme": "light" } } }, "1"],
+            ]),
+        )
+        .await;
+    assert_eq!(responses[0][1]["type"], "accountNotFound");
+    assert_eq!(responses[1][1]["type"], "accountNotFound");
+    let theirs = server.api("nyu@example.de", json!([["UserSettings/get", { "accountId": other }, "0"]])).await;
+    assert_eq!(args(&theirs, 0, "UserSettings/get")["list"][0]["values"], json!({}));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_settings_change_is_pushed_with_its_state() {
+    let server = server().await;
+    let login = "mini@example.de";
+    let account = server.account_id(login).await;
+    let router = server.router.clone();
+    let push = tokio::spawn(async move {
+        let request = Request::get("/jmap/eventsource/?types=UserSettings&closeafter=state&ping=0")
+            .header(header::AUTHORIZATION, basic("mini@example.de", PASSWORD))
+            .body(Body::empty())
+            .unwrap();
+        let response = router.oneshot(request).await.unwrap();
+        String::from_utf8(to_bytes(response.into_body(), 1024 * 1024).await.unwrap().to_vec()).unwrap()
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    let update = json!({ "singleton": { "values/linkConfirm": true } });
+    let responses =
+        server.api(login, json!([["UserSettings/set", { "accountId": account, "update": update }, "0"]])).await;
+    let state = args(&responses, 0, "UserSettings/set")["newState"].as_str().unwrap().to_owned();
+
+    let event = tokio::time::timeout(std::time::Duration::from_secs(10), push).await.unwrap().unwrap();
+    let data = event.lines().find_map(|line| line.strip_prefix("data:")).unwrap();
+    let data: Value = serde_json::from_str(data.trim()).unwrap();
+    assert_eq!(data["changed"][&account], json!({ "UserSettings": state }), "{event}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_webmail_sees_the_settings_capability_too() {
+    let server = server().await;
+    let id = server.store.account("mini@example.de").await.unwrap().unwrap().id;
+    let web_session = server.store.create_web_session(id, 3600, "", "").await.unwrap();
+    let request = Request::get("/jmap/session")
+        .header(header::COOKIE, format!("{}={}", uwumail_jmap::auth::PLAIN_SESSION_COOKIE, web_session.token))
+        .header(header::HOST, "mail.example.de")
+        .body(Body::empty())
+        .unwrap();
+    let (status, body) = server.request(request).await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let session: Value = serde_json::from_slice(&body).unwrap();
+    assert!(session["capabilities"]["urn:uwumail:jmap:settings"].is_object(), "{session}");
+    let account = server.account_id("mini@example.de").await;
+    assert_eq!(session["accounts"][&account]["accountCapabilities"]["urn:uwumail:jmap:settings"]["maxKeys"], 5000);
 }

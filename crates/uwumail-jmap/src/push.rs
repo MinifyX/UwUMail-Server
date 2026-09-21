@@ -17,7 +17,8 @@ use uwumail_store::{StateChange, Store};
 use crate::auth::ClientInfo;
 use crate::{Jmap, ids};
 
-const TYPES: &[&str] = &["Mailbox", "Email", "Thread", "Identity", "EmailSubmission", "VacationResponse"];
+const TYPES: &[&str] =
+    &["Mailbox", "Email", "Thread", "Identity", "EmailSubmission", "VacationResponse", "UserSettings"];
 
 #[derive(Deserialize)]
 pub struct PushQuery {
@@ -67,7 +68,18 @@ async fn next_event(mut listener: Listener) -> Option<(Result<Event, Infallible>
         listener.last_modseq = listener.last_modseq.max(change.modseq);
         let mut changed = Map::new();
         for kind in kinds.iter().filter(|k| listener.types.iter().any(|t| t == *k)) {
-            changed.insert(kind.clone(), json!(change.modseq.to_string()));
+            // UserSettings has a state of its own (it does not move with mail), so the client can
+            // tell whether it already has it.
+            let state = if kind == "UserSettings" {
+                listener
+                    .store
+                    .user_settings_state(listener.account_id)
+                    .await
+                    .unwrap_or_else(|_| change.modseq.to_string())
+            } else {
+                change.modseq.to_string()
+            };
+            changed.insert(kind.clone(), json!(state));
         }
         if kinds.iter().any(|k| k == "Email") && listener.types.iter().any(|t| t == "EmailDelivery") {
             changed.insert("EmailDelivery".into(), json!(change.modseq.to_string()));
