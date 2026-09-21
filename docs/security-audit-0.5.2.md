@@ -343,6 +343,23 @@ schema `crates/uwumail-store/src/migrations/0027_fetch_accounts.sql`
   checking the owner's quota before delivering, as RCPT does.
 - **Regression test:** worker test against the in-crate IMAP server: a message the filter refuses
   with `after_fetch=Delete` must still exist at the provider after the run.
+- **Changed after 0.5.2 (21 September 2026), at the operator's request.** The first half of this fix
+  is deliberately turned back: a message the filter *refuses* — virus, blocked sender, rejecting
+  DMARC policy, score over the limit — is now marked read or deleted at the provider by
+  `after_fetch`, like one that arrived, because leaving it there filled fetched mailboxes with
+  exactly the mail this server had already thrown out. Listed under
+  [New or changed accepted risks](#new-or-changed-accepted-risks). The half of this finding that
+  was about losing mail still holds, and holds better than it shipped:
+  - **A full mailbox is "later", not a refusal** — the quota mapping this fix asked for, which 0.5.2
+    did not implement (`fix(fetch): wait for room instead of losing mail to a full mailbox`). A
+    `552 5.2.2` from storing a fetched message is now read by its enhanced status code X.2.2 and left
+    at the provider until it fits; before, it was stepped past for good. Without this, the change
+    above would have deleted mail at the provider whenever the mailbox here was full.
+  - **Mail this server has nowhere to put** — the mailbox it fetches into is gone, or its address
+    takes no mail — is `Taken::Nowhere`, not `Taken::Refused`, and is still left untouched.
+  - The regression test above is replaced by two: `a_refused_message_is_cleared_at_the_provider`
+    and `a_full_mailbox_here_never_costs_the_mail_at_the_provider`
+    (`crates/uwumail-server/src/fetch.rs`), each checked to fail without the change it guards.
 
 ### S-9 · Medium · A fetched message answered "later" is marked seen on the first attempt and dropped on the next
 
@@ -666,6 +683,15 @@ risks from 0.4.0/0.5.0. Status: **holds** / **circumventable** / **no longer app
 - **Traps accept and learn from any MX mail** (S-33) — this is the trap design; the accepted part is
   that traps take mail; the *unbounded, un-reviewed learning* should not stay accepted before real
   mail.
+- **Refused fetched mail is cleared at the provider** (S-8, changed 21 September 2026 at the
+  operator's request). With `after_fetch = delete`, a message the filter refuses is deleted at the
+  provider, so a false positive — list mail a DMARC policy rejects, a virus scanner that is wrong —
+  is gone for good; the spam history keeps sender, subject and reason for its retention period
+  (30 days by default), not the message. An attacker who can make the filter refuse a message can
+  therefore have it deleted there, which is no more than the filter's own verdict already decides
+  here. Whoever wants a second look sets the mailbox to mark as read. What is *not* accepted: losing
+  mail that was never judged — a full mailbox (now "later") and mail with nowhere to go
+  (`Taken::Nowhere`) are both left at the provider.
 
 ## Prioritised fix order
 
