@@ -3,7 +3,7 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
-## Unreleased
+## 0.6.1
 
 **A mailbox somewhere else needs an address and a password, nothing more.** Setting one up meant
 knowing what the provider calls its IMAP server, which port it listens on, and whether it wants the
