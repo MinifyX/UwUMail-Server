@@ -52,8 +52,8 @@ The order, from weakest to strongest:
 
 Anything the config file or the environment sets is shown as locked in the
 panel. Remove it there to manage it from the panel instead. Listeners, TLS,
-the data directory and logging stay file-only because changing them needs a
-restart.
+the data directory and the log format and level stay file-only because changing
+them needs a restart; sending the log to Grafana Loki is in the panel, see below.
 
 The same settings, with the same checks and the same order, are reachable from
 the terminal — which is where the installer sets them, before there is a portal
@@ -82,6 +82,62 @@ commands work through `docker compose run --rm uwumail …`.
 The relay password is stored in the database like the rest (the portal never
 shows it again). If you would rather keep it out of the database, set
 `UWUMAIL_DELIVERY__RELAY__PASSWORD` in the environment.
+
+## Sending the log to Grafana Loki
+
+The server can send its log lines to a [Grafana Loki](https://grafana.com/oss/loki/)
+itself, so no Alloy or Promtail has to run next to it. With a UwUMail Gateway,
+the gateway's lines come along: it hands them to the server through the tunnel,
+and they go on with the label `source=gateway`. They also show up on the
+portal's *Logs* page, marked *Gateway*.
+
+Switch it on under *Server → Logs → Send to Grafana Loki*. The address is Loki's
+base address (`http://192.168.1.20:3100`, `https://logs-prod-012.grafana.net`);
+`/loki/api/v1/push` is added when it has no path of its own, so an address
+behind a reverse proxy can name the whole path instead. Loki can be reached
+without a login, with a username and password (Grafana Cloud: the user id and an
+access token), or with a bearer token. *Send a test line* tries the address with
+what is typed, before anything is saved or switched on.
+
+**Log lines contain personal data** — login names and addresses, the IP
+addresses of mail apps and other servers, the senders of received mail — and
+sending them hands that data to another machine. Switching it on therefore
+needs the admin to agree to exactly that (`privacy_consent`); the change log
+notes who did. Switching it off in the portal takes the agreement back.
+
+Every line carries the labels `app="uwumail"`, `instance` (the host name),
+`source` (`server` or `gateway`) and `level`, plus any extra labels you give.
+The line itself is the same JSON the server writes with `log.format = "json"`,
+so one set of queries works for both ways into Loki:
+
+```logql
+{app="uwumail", level=~"warn|error"}
+{app="uwumail", source="server"} | json | fields_message=~"failed.*login"
+```
+
+Lines wait in memory (up to 10'000) while Loki is away and go out once it is
+back; past that the oldest are dropped, and the panel shows how many. Mail never
+waits for Loki. The server's own `log.level` comes first: what the server does
+not log, it cannot send.
+
+```toml
+[log.loki]
+enabled = false
+privacy_consent = false  # needed for enabled: log lines contain personal data
+url = ""                 # e.g. "http://192.168.1.20:3100"
+username = ""            # basic authentication, or
+password = ""
+token = ""               # a bearer token instead
+tenant = ""              # X-Scope-OrgID, for a Loki with several tenants
+labels = []              # e.g. ["env=production"]
+level = "info"           # error | warn | info | debug
+gateway = true           # send the gateway's lines too
+```
+
+As environment variables: `UWUMAIL_LOG__LOKI__ENABLED=true`,
+`UWUMAIL_LOG__LOKI__PRIVACY_CONSENT=true`, `UWUMAIL_LOG__LOKI__URL=…`, and so on.
+The password and the token are stored in the database like the relay password;
+set them in the environment to keep them out of it.
 
 ## Accounts: people and services
 
@@ -222,4 +278,7 @@ external = "neutral"   # neutral | light: mail to everyone else
 [log]
 format = "text"        # text | json
 level = "info"
+# Sending the log to Grafana Loki: see "Sending the log to Grafana Loki" above.
+# [log.loki]
+# enabled = false
 ```

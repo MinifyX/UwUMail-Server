@@ -184,6 +184,13 @@ firewall and jails, and the address the gateway keeps safe from bans. Logging in
 over SSH says the same thing, and `sudo bash install.sh --check` prints it on
 demand.
 
+What the gateway logs goes to the server as well, through the tunnel: the
+portal's *Logs* page shows those lines marked *Gateway*, and when the server sends
+its log to Grafana Loki, they go along with the label `source=gateway` (see
+[configuration.md](configuration.md#sending-the-log-to-grafana-loki)). While the
+server is away the gateway keeps its last 1000 lines and hands them over when it
+is back. `journalctl -u uwumail-gateway` still has all of it.
+
 Underneath are the buttons for the VPS itself: install its updates, fetch a
 newer gateway, restart it. They are there when `install.sh` hardened the machine,
 because that is what puts the privileged helper beside the gateway; without one
