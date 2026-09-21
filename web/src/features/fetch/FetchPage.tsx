@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, Download, Pause, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, History, Pause, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button, IconButton } from "@/components/ui/Button";
@@ -36,6 +36,8 @@ interface FormState {
   smtpPort: number;
   smtpSecurity: "starttls" | "tls";
   sendEnabled: boolean;
+  /** Whether the mail already in the mailbox comes too. Only asked when a mailbox is added. */
+  takeExisting: boolean;
 }
 
 function emptyForm(defaultInterval: number, defaultPort: number): FormState {
@@ -54,6 +56,7 @@ function emptyForm(defaultInterval: number, defaultPort: number): FormState {
     smtpPort: 587,
     smtpSecurity: "starttls",
     sendEnabled: false,
+    takeExisting: true,
   };
 }
 
@@ -73,6 +76,7 @@ function formOf(account: FetchAccountInfo): FormState {
     smtpPort: account.smtpPort,
     smtpSecurity: account.smtpSecurity,
     sendEnabled: account.sendEnabled,
+    takeExisting: false,
   };
 }
 
@@ -156,7 +160,10 @@ function MailboxForm({
           body: { ...body, ...sending, sendEnabled: form.sendEnabled },
         });
       }
-      const created = await api<FetchAccountInfo>("/api/account/fetch", { method: "POST", body });
+      const created = await api<FetchAccountInfo>("/api/account/fetch", {
+        method: "POST",
+        body: { ...body, takeExisting: form.takeExisting },
+      });
       // The outgoing server is kept right away, but answering from the address is not switched on
       // here: that needs one successful fetch first, to prove the mailbox really is this person's.
       // So a new mailbox is stored with the server ready and the switch waiting in Edit.
@@ -166,7 +173,10 @@ function MailboxForm({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: fetchKey });
       onDirtyChange(false);
-      toast(account ? t("fetch.form.saved") : t("fetch.form.added"), "success");
+      toast(
+        account ? t("fetch.form.saved") : form.takeExisting ? t("fetch.form.addedWithExisting") : t("fetch.form.added"),
+        "success",
+      );
       onClose();
     },
     onError: (failure) => setError(errorText(failure)),
@@ -283,6 +293,14 @@ function MailboxForm({
         label={t("fetch.form.junk")}
         description={t("fetch.form.junkHint")}
       />
+      {!account && (
+        <Toggle
+          checked={form.takeExisting}
+          onChange={(value) => change("takeExisting", value)}
+          label={t("fetch.form.takeExisting")}
+          description={t("fetch.form.takeExistingHint")}
+        />
+      )}
       {account ? (
         <Toggle
           checked={form.sendEnabled}
@@ -418,6 +436,14 @@ export function FetchPage() {
     onSuccess: () => toast(t("fetch.toasts.runQueued"), "success"),
     onError: (failure) => toast(errorText(failure), "error"),
   });
+  const takeExisting = useMutation({
+    mutationFn: (id: number) => api<void>(`/api/account/fetch/${id}/existing`, { method: "POST" }),
+    onSuccess: () => {
+      refresh();
+      toast(t("fetch.toasts.existingQueued"), "success");
+    },
+    onError: (failure) => toast(errorText(failure), "error"),
+  });
   const setEnabled = useMutation({
     mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) =>
       api<FetchAccountInfo>(`/api/account/fetch/${id}`, { method: "PATCH", body: { enabled } }),
@@ -456,6 +482,9 @@ export function FetchPage() {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold">{account.address}</span>
                     <Status account={account} />
+                    {account.backlogAt !== null && (
+                      <span className="block text-[12px] text-muted">{t("fetch.status.takingExisting")}</span>
+                    )}
                     <span className="block text-[12px] text-muted">
                       {t("fetch.card.brought", { count: account.totalFetched })}
                     </span>
@@ -466,6 +495,13 @@ export function FetchPage() {
                       label={t("fetch.actions.runNow")}
                       onClick={() => runNow.mutate(account.id)}
                     />
+                    {account.backlogAt === null && (
+                      <IconButton
+                        icon={History}
+                        label={t("fetch.actions.takeExisting")}
+                        onClick={() => takeExisting.mutate(account.id)}
+                      />
+                    )}
                     <IconButton
                       icon={account.enabled ? Pause : Play}
                       label={account.enabled ? t("fetch.actions.pause") : t("fetch.actions.resume")}

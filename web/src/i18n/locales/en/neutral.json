@@ -1425,11 +1425,13 @@
     "status": {
       "paused": "Paused",
       "waiting": "Not fetched yet",
-      "lastRun": "Last fetched: {{date}}"
+      "lastRun": "Last fetched: {{date}}",
+      "takingExisting": "What was already in the mailbox is coming over …"
     },
     "actions": {
       "edit": "Edit",
       "runNow": "Fetch now",
+      "takeExisting": "Fetch what is already in the mailbox too",
       "pause": "Pause",
       "resume": "Resume",
       "remove": "Remove",
@@ -1454,7 +1456,7 @@
       "newPasswordHint": "Leave empty to keep the stored one.",
       "needPassword": "Without a password this server cannot get into the mailbox.",
       "afterFetch": "At the provider afterwards",
-      "afterFetchHint": "Only what really arrived here is ever deleted.",
+      "afterFetchHint": "Only once the server has decided: arrived, or refused for good by the spam filter. With the mailbox full, it stays.",
       "markRead": "Mark as read",
       "delete": "Delete for good",
       "interval": "How often",
@@ -1463,8 +1465,11 @@
       "everyHours_one": "Every hour",
       "junk": "Take the junk folder too",
       "junkHint": "What the provider sorted out is judged again here — its verdict only counts as a hint.",
+      "takeExisting": "Bring over the mail already there",
+      "takeExistingHint": "What is in the mailbox now comes over too — with the provider's date, read or unread as it was there, and without the spam filter judging old mail again: the inbox into the inbox, spam into spam.",
       "add": "Add",
       "added": "Mailbox added. The first run only writes down where things stand.",
+      "addedWithExisting": "Mailbox added. What is already in it is coming over shortly.",
       "saved": "Saved",
       "send": "Answer from this address",
       "sendHint": "Replies go out through the provider, otherwise its DMARC policy takes them apart at the recipient.",
@@ -1476,12 +1481,13 @@
     },
     "toasts": {
       "runQueued": "Fetching shortly.",
+      "existingQueued": "What is already in the mailbox is coming over shortly.",
       "removed": "Mailbox removed."
     },
     "about": {
       "title": "Worth knowing",
       "spam": "Fetched mail is judged again here. What the provider thought was spam counts as a hint and does not decide on its own.",
-      "first": "The first run brings nothing, it only writes down where the folders stand. Mail that is already there comes over with the server's migration command.",
+      "first": "What is already in the mailbox only comes when you want it to: with “Bring over the mail already there” when adding it, or later with the clock button in its row. It comes with the provider's date, not as a heap of new mail from today.",
       "password": "The password only goes in and never comes out again. The server needs it to sign in at the provider and keeps it sealed."
     }
   },

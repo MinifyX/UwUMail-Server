@@ -932,6 +932,8 @@ export interface FetchAccountInfo {
   lastError: string;
   lastFetched: number;
   totalFetched: number;
+  /** When the mail that was already there was asked for, while it is still being brought over. */
+  backlogAt: number | null;
 }
 
 /** One server of a provider, as the server worked it out and then proved by logging in. */

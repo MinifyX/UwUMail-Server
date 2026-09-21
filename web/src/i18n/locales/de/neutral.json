@@ -1425,11 +1425,13 @@
     "status": {
       "paused": "Pausiert",
       "waiting": "Noch nicht abgerufen",
-      "lastRun": "Zuletzt geholt: {{date}}"
+      "lastRun": "Zuletzt geholt: {{date}}",
+      "takingExisting": "Was schon im Postfach lag, kommt gerade mit herüber …"
     },
     "actions": {
       "edit": "Bearbeiten",
       "runNow": "Jetzt abrufen",
+      "takeExisting": "Was schon im Postfach liegt, auch holen",
       "pause": "Pausieren",
       "resume": "Fortsetzen",
       "remove": "Entfernen",
@@ -1454,7 +1456,7 @@
       "newPasswordHint": "Leer lassen, um das gespeicherte zu behalten.",
       "needPassword": "Ohne Passwort kommt dieser Server nicht in das Postfach.",
       "afterFetch": "Beim Anbieter danach",
-      "afterFetchHint": "Gelöscht wird nur, was hier wirklich angekommen ist.",
+      "afterFetchHint": "Erst wenn der Server entschieden hat: angekommen, oder vom Spamfilter endgültig abgelehnt. Bei vollem Postfach bleibt sie liegen.",
       "markRead": "Als gelesen markieren",
       "delete": "Endgültig löschen",
       "interval": "Wie oft",
@@ -1463,8 +1465,11 @@
       "everyHours_one": "Jede Stunde",
       "junk": "Spam-Ordner mitnehmen",
       "junkHint": "Was der Anbieter aussortiert hat, wird hier neu bewertet — sein Urteil zählt nur als Hinweis.",
+      "takeExisting": "Vorhandene Mails übernehmen",
+      "takeExistingHint": "Auch was jetzt schon im Postfach liegt, kommt herüber — mit dem Datum vom Anbieter, gelesen oder ungelesen wie dort, und ohne dass der Spamfilter alte Mail neu bewertet: Posteingang in den Posteingang, Spam in den Spam.",
       "add": "Hinzufügen",
       "added": "Postfach hinzugefügt. Der erste Abruf merkt sich nur den Stand.",
+      "addedWithExisting": "Postfach hinzugefügt. Was schon drin liegt, kommt gleich mit herüber.",
       "saved": "Gespeichert",
       "send": "Von dieser Adresse antworten",
       "sendHint": "Antworten gehen über den Postausgang des Anbieters — anders lässt dessen DMARC-Richtlinie sie beim Empfänger auseinanderfallen.",
@@ -1476,12 +1481,13 @@
     },
     "toasts": {
       "runQueued": "Wird gleich abgerufen.",
+      "existingQueued": "Was schon im Postfach liegt, kommt gleich mit herüber.",
       "removed": "Postfach entfernt."
     },
     "about": {
       "title": "Gut zu wissen",
       "spam": "Geholte Mail wird hier neu bewertet. Was der Anbieter für Spam hielt, zählt als Hinweis und entscheidet nicht allein.",
-      "first": "Der erste Abruf holt nichts, er merkt sich nur, wo die Ordner stehen. Vorhandene Mail holst du mit dem Umzugsbefehl des Servers herüber.",
+      "first": "Was schon im Postfach liegt, kommt nur, wenn du es willst: beim Hinzufügen mit „Vorhandene Mails übernehmen“, oder später mit dem Uhr-Knopf in der Zeile. Es kommt mit dem Datum vom Anbieter, nicht als Stapel neuer Mail von heute.",
       "password": "Das Passwort geht hier nur hinein und kommt nie wieder heraus. Der Server braucht es, um sich beim Anbieter anzumelden, und verwahrt es verschlüsselt."
     }
   },

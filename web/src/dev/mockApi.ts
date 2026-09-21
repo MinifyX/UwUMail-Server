@@ -1001,6 +1001,7 @@ const mockFetchAccounts: FetchAccountInfo[] = [
     lastError: "",
     lastFetched: 2,
     totalFetched: 431,
+    backlogAt: null,
   },
   {
     id: 2,
@@ -1025,6 +1026,7 @@ const mockFetchAccounts: FetchAccountInfo[] = [
     lastError: "the provider did not accept the user name and password",
     lastFetched: 0,
     totalFetched: 1204,
+    backlogAt: null,
   },
 ];
 
@@ -2130,7 +2132,7 @@ const routes: [string, RegExp, Handler][] = [
     "POST",
     /^\/api\/account\/fetch$/,
     (body) => {
-      const input = body as Partial<FetchAccountInfo> & { password?: string };
+      const input = body as Partial<FetchAccountInfo> & { password?: string; takeExisting?: boolean };
       const address = (input.address ?? "").trim().toLowerCase();
       if (mockFetchAccounts.some((account) => account.address === address)) return problem(409, "conflict");
       const account: FetchAccountInfo = {
@@ -2156,9 +2158,22 @@ const routes: [string, RegExp, Handler][] = [
         lastError: "",
         lastFetched: 0,
         totalFetched: 0,
+        backlogAt: input.takeExisting ? Math.floor(Date.now() / 1000) : null,
       };
       mockFetchAccounts.push(account);
       return [201, account];
+    },
+  ],
+  [
+    // The real one only asks for it and lets the next runs do the work; here nothing runs, so it
+    // stays "coming over" -- which is the state the row has to show anyway.
+    "POST",
+    /^\/api\/account\/fetch\/(\d+)\/existing$/,
+    (_body, match) => {
+      const account = mockFetchAccounts.find((entry) => entry.id === Number(match[0]));
+      if (!account) return problem(404, "notFound");
+      account.backlogAt = Math.floor(Date.now() / 1000);
+      return [202, null];
     },
   ],
   [
