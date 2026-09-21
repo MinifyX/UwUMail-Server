@@ -1392,7 +1392,7 @@
       "serversFound": "Den Rest sucht der Server selbst: Er fragt den Anbieter nach seinen Einstellungen und meldet sich einmal damit an, bevor etwas gespeichert wird.",
       "showServers": "Server selbst eintragen",
       "searching": "Wird gesucht …",
-      "sendNotFound": "Der Postausgang des Anbieters hat die Anmeldung nicht angenommen. Abgerufen wird trotzdem; den Postausgangsserver kannst du beim Bearbeiten selbst eintragen.",
+      "sendLater": "Von dieser Adresse antworten kannst du einschalten, sobald einmal abgerufen wurde — das ist der Nachweis, dass das Postfach dir gehört. Der Postausgangsserver wird dabei gleich mit gesucht und gespeichert.",
       "host": "IMAP-Server",
       "hostHint": "Leer lassen, dann sucht der Server ihn selbst.",
       "username": "Benutzername",

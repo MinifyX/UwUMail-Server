@@ -157,22 +157,16 @@ function MailboxForm({
         });
       }
       const created = await api<FetchAccountInfo>("/api/account/fetch", { method: "POST", body });
-      // A new mailbox is stored first and learns about sending afterwards: where it may send from
-      // is decided by the one door that asks for the account, not by what the form claimed on the
-      // way in. Without an outgoing server there is nothing to switch on either.
-      if (form.sendEnabled && smtp?.host) sending.sendEnabled = true;
+      // The outgoing server is kept right away, but answering from the address is not switched on
+      // here: that needs one successful fetch first, to prove the mailbox really is this person's.
+      // So a new mailbox is stored with the server ready and the switch waiting in Edit.
       if (Object.keys(sending).length === 0) return created;
       return api<FetchAccountInfo>(`/api/account/fetch/${created.id}`, { method: "PATCH", body: sending });
     },
-    onSuccess: (saved) => {
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: fetchKey });
       onDirtyChange(false);
       toast(account ? t("fetch.form.saved") : t("fetch.form.added"), "success");
-      // Asked to answer from this address, but no outgoing server took the password. Saying so is
-      // better than a switch that quietly stayed off.
-      if (!account && form.sendEnabled && !saved.sendEnabled) {
-        toast(t("fetch.form.sendNotFound"), "info");
-      }
       onClose();
     },
     onError: (failure) => setError(errorText(failure)),
@@ -196,7 +190,6 @@ function MailboxForm({
         smtpHost: found.smtp?.host ?? "",
         smtpPort: found.smtp?.port ?? old.smtpPort,
         smtpSecurity: found.smtp?.security ?? old.smtpSecurity,
-        sendEnabled: old.sendEnabled && Boolean(found.smtp),
       }));
       save.mutate(found);
     },
@@ -291,12 +284,18 @@ function MailboxForm({
         label={t("fetch.form.junk")}
         description={t("fetch.form.junkHint")}
       />
-      <Toggle
-        checked={form.sendEnabled}
-        onChange={(value) => change("sendEnabled", value)}
-        label={t("fetch.form.send")}
-        description={t("fetch.form.sendHint")}
-      />
+      {account ? (
+        <Toggle
+          checked={form.sendEnabled}
+          onChange={(value) => change("sendEnabled", value)}
+          label={t("fetch.form.send")}
+          description={t("fetch.form.sendHint")}
+        />
+      ) : (
+        // Answering from the address needs one successful fetch behind it, so there is nothing to
+        // switch on yet. Saying that beats a switch that refuses the moment it is touched.
+        <p className="text-[13px] text-muted">{t("fetch.form.sendLater")}</p>
+      )}
       {showServers ? (
         <>
           <Field label={t("fetch.form.host")} hint={t("fetch.form.hostHint")}>
@@ -368,6 +367,7 @@ function MailboxDialog({
   account?: FetchAccountInfo;
   onClose: () => void;
 }) {
+  const { t } = useT();
   const [dirty, setDirty] = useState(false);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
 

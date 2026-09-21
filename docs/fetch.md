@@ -171,6 +171,12 @@ Two things follow from that:
 * **Without a server there is nothing to switch on.** Sending cannot be
   enabled until an outgoing server is set, so no address ever claims it can
   answer when it cannot.
+* **One successful fetch has to come first.** Until this server has really
+  emptied the mailbox once, sending from the address stays off, whatever the
+  row says. A row anyone can write is not proof that the mailbox is theirs;
+  opening it is. So a mailbox that was just set up carries its outgoing server
+  from the start and gets the switch after its first run — the dialog for a new
+  mailbox says so instead of offering a switch that would be refused.
 
 Mail from such an address then goes out through the provider whoever it is
 addressed to — before the server's own smarthost, if one is configured, because
