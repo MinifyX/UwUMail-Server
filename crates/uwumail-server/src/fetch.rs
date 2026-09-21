@@ -13,10 +13,13 @@
 //! * **A message is taken once.** A folder remembers the last UID it read; a provider that
 //!   renumbers its folders starts over, and then the message's own name keeps it from arriving
 //!   twice.
-//! * **A message is never lost.** It is only marked or deleted at the provider once this server has
-//!   really taken it. An answer of "later" -- greylisting, a full mailbox -- leaves it where it is
-//!   and stops the folder there, so the next run offers it again. That is exactly what greylisting
-//!   asks of a sending server, and here this server is the sending server.
+//! * **Nothing is touched at the provider before this server has decided.** A message is marked
+//!   or deleted there once it has arrived here, or once the filter has refused it for good -- a
+//!   refused message is finished with, and keeping it would only fill a mailbox nobody reads. An
+//!   answer of "later" -- greylisting, a full mailbox -- is not a decision: it leaves the message
+//!   where it is and stops the folder there, so the next run offers it again. That is exactly what
+//!   greylisting asks of a sending server, and here this server is the sending server. Mail this
+//!   server has nowhere to put is left alone too: that is a mistake on this side, not a verdict.
 //! * **The first run takes nothing.** It only writes down where the folders stand. Years of old
 //!   mail would otherwise arrive as if it came today; `uwumail-server import imap` copies a
 //!   mailbox over with its folders and dates for that.
@@ -270,12 +273,22 @@ async fn take_folder(
         for message in messages {
             let Some(raw) = message.body else { continue };
             let uid = i64::from(message.uid);
+            let mut judged = false;
             match take_message(store, smtp, account, to, from_junk, raw).await? {
                 Taken::Kept => {}
-                Taken::Refused(_) => {
-                    // Refused mail was never stored here. Leave it untouched at the provider -- a
-                    // filter reject or a full mailbox must not destroy the only copy -- but step
-                    // past it so it is not fetched and refused again on every run.
+                Taken::Refused(answer) => {
+                    // The filter has decided about this one, so it is finished with either way.
+                    // It is not brought here, and at the provider it is dealt with like any other
+                    // message the run has been through -- otherwise the mailbox fills up with
+                    // exactly what this server refuses, run after run, and nobody empties it.
+                    tracing::info!(address = %account.address, folder, uid, %answer, "refused, cleared at the provider");
+                    judged = true;
+                }
+                Taken::Nowhere(answer) => {
+                    // Not the message's fault: there is nowhere here to put it. Leave it
+                    // untouched -- somebody else's mail is not deleted over a mistake on this
+                    // side -- but step past it so the folder is not stuck on it every run.
+                    tracing::warn!(address = %account.address, folder, uid, %answer, "nowhere to put it; left at the provider");
                     state.last_uid = state.last_uid.max(uid);
                     continue;
                 }
@@ -285,7 +298,8 @@ async fn take_folder(
                     break 'batches;
                 }
             }
-            // Only now, with the message really here, is anything changed at the provider.
+            // Only now, with the message either here or decided about, is anything changed at the
+            // provider.
             match account.after_fetch {
                 AfterFetch::MarkRead => {
                     let _ = connection.command(&format!("UID STORE {uid} +FLAGS (\\Seen)")).await;
@@ -297,7 +311,11 @@ async fn take_folder(
                 }
             }
             state.last_uid = state.last_uid.max(uid);
-            taken += 1;
+            // A refused message was cleared, not fetched: it never reached anybody's mailbox, so
+            // it does not count towards what this run brought.
+            if !judged {
+                taken += 1;
+            }
         }
     }
     if deleted {
@@ -353,7 +371,7 @@ mod tests {
     use std::sync::Arc;
 
     use uwumail_smtp::{DeliveryConfig, SmtpConfig, SmtpSettings, SpamConfig, ToneConfig};
-    use uwumail_store::{IngestRequest, MailboxTarget, NewAccount, NewFetchAccount, Role};
+    use uwumail_store::{AccountUpdate, IngestRequest, MailboxTarget, NewAccount, NewFetchAccount, Role};
 
     use super::*;
 
@@ -380,10 +398,15 @@ mod tests {
             "From: shop@shop.example\r\nTo: mini@freemail.example\r\nSubject: {subject}\r\n\
              Message-ID: <{subject}@shop.example>\r\n\r\nHallo\r\n"
         );
+        at_provider_raw(store, account, mailbox, raw.into_bytes()).await;
+    }
+
+    /// The same, for a message whose headers the test writes itself.
+    async fn at_provider_raw(store: &Store, account: i64, mailbox: MailboxTarget, raw: Vec<u8>) {
         store
             .ingest(IngestRequest {
                 account_id: account,
-                raw: raw.into_bytes(),
+                raw,
                 mailboxes: vec![mailbox],
                 keywords: vec![],
                 received_at: Some(1_700_000_000),
@@ -480,6 +503,145 @@ mod tests {
 
         // It was marked as read at the provider, and nothing was deleted there.
         assert_eq!(inbox(&provider, provider_id).await, (2, 1), "only the fetched one is read there now");
+    }
+
+    /// A provider that is an IMAP server of ours, and our own side with a mailbox that fetches from
+    /// it set to delete what it has dealt with -- the setting under test in the two tests below.
+    struct Rig {
+        _dir: tempfile::TempDir,
+        _shutdown: tokio::sync::watch::Sender<bool>,
+        provider: Store,
+        provider_id: i64,
+        ours: Store,
+        our_id: i64,
+        smtp: Smtp,
+        fetch_id: i64,
+        detour: Detour,
+    }
+
+    impl Rig {
+        async fn new() -> Rig {
+            let dir = tempfile::tempdir().unwrap();
+            let (provider, provider_id) = store_with_person(&dir.path().join("provider"), Some(PASSWORD)).await;
+            let generated = rcgen::generate_simple_self_signed(vec!["imap.freemail.example".to_owned()]).unwrap();
+            let key = rustls_pki_types::PrivateKeyDer::Pkcs8(generated.signing_key.serialize_der().into());
+            let tls =
+                rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
+                    .with_safe_default_protocol_versions()
+                    .unwrap()
+                    .with_no_client_auth()
+                    .with_single_cert(vec![generated.cert.der().clone()], key)
+                    .unwrap();
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let (shutdown, shutdown_rx) = tokio::sync::watch::channel(false);
+            tokio::spawn(uwumail_imap::Imap::new(provider.clone(), 1 << 20).serve(
+                listener,
+                Arc::new(tls),
+                shutdown_rx,
+            ));
+            let mut roots = rustls::RootCertStore::empty();
+            roots.add(generated.cert.der().clone()).unwrap();
+
+            let (ours, our_id) = store_with_person(&dir.path().join("ours"), None).await;
+            let smtp = our_smtp(ours.clone());
+            let fetch_id = ours
+                .create_fetch_account(NewFetchAccount {
+                    account_id: our_id,
+                    address: "mini@freemail.example".into(),
+                    host: "imap.freemail.example".into(),
+                    port: 993,
+                    security: FetchSecurity::Tls,
+                    username: "mini@example.de".into(),
+                    password: PASSWORD.into(),
+                    after_fetch: AfterFetch::Delete,
+                    fetch_junk: false,
+                    interval_secs: uwumail_store::DEFAULT_FETCH_INTERVAL_SECS,
+                    auth_serv_id: String::new(),
+                })
+                .await
+                .unwrap()
+                .id;
+            let detour =
+                Detour { address: format!("127.0.0.1:{port}"), tls_name: "imap.freemail.example".into(), roots };
+            Rig { _dir: dir, _shutdown: shutdown, provider, provider_id, ours, our_id, smtp, fetch_id, detour }
+        }
+
+        async fn run(&self) -> i64 {
+            let account = self.ours.fetch_account(self.our_id, self.fetch_id).await.unwrap().unwrap();
+            run_once(&self.ours, &self.smtp, account, Some(self.detour.clone())).await.unwrap()
+        }
+
+        async fn inbox(store: &Store, id: i64) -> i64 {
+            let mailboxes = store.mailboxes(id).await.unwrap();
+            mailboxes.into_iter().find(|m| m.role == Some(MailboxRole::Inbox)).unwrap().total_emails
+        }
+
+        async fn at_provider(&self) -> i64 {
+            Rig::inbox(&self.provider, self.provider_id).await
+        }
+
+        async fn here(&self) -> i64 {
+            Rig::inbox(&self.ours, self.our_id).await
+        }
+    }
+
+    /// What a refused message leaves behind at the provider. This server has judged it, so it is
+    /// finished with it either way: it is cleared there like any other, because a mailbox that
+    /// keeps everything this server refuses is a mailbox that fills up and that nobody empties.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_refused_message_is_cleared_at_the_provider() {
+        let rig = Rig::new().await;
+        assert_eq!(rig.run().await, 0, "the first run only writes down where the folders stand");
+
+        // A mail loop: refused before the filter even runs, the same `Taken::Refused` a virus, a
+        // blocked sender or a DMARC policy that rejects produces further down the same path.
+        let mut raw = String::from("From: shop@shop.example\r\nTo: mini@freemail.example\r\n");
+        for hop in 0..=51 {
+            raw.push_str(&format!(
+                "Received: from a{hop}.example by b{hop}.example; Mon, 1 Jan 2026 00:00:00 +0000\r\n"
+            ));
+        }
+        raw.push_str("Subject: Schleife\r\nMessage-ID: <loop@shop.example>\r\n\r\nHallo\r\n");
+        at_provider_raw(&rig.provider, rig.provider_id, MailboxTarget::Role(MailboxRole::Inbox), raw.into_bytes())
+            .await;
+        assert_eq!(rig.at_provider().await, 1, "it is lying at the provider");
+
+        assert_eq!(rig.run().await, 0, "a refused message is not counted as fetched");
+        assert_eq!(rig.here().await, 0, "and nothing of it arrived here");
+        assert_eq!(rig.at_provider().await, 0, "but it was cleared away at the provider");
+        assert_eq!(rig.run().await, 0, "and it is not offered again");
+    }
+
+    /// The case that must never go the way a refusal goes. A full mailbox here says nothing about
+    /// the message: its owner makes room and then it can come. Were it read as a refusal, it would
+    /// be cleared at the provider like one -- and a mailbox that ran out of room here would quietly
+    /// delete everything arriving there. So it is "later": left where it is, the folder held on it.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_full_mailbox_here_never_costs_the_mail_at_the_provider() {
+        let rig = Rig::new().await;
+        assert_eq!(rig.run().await, 0, "the first run only writes down where the folders stand");
+
+        // One byte of room: anything at all fills it.
+        rig.ours
+            .update_account("mini@example.de", AccountUpdate { quota_bytes: Some(1), ..Default::default() })
+            .await
+            .unwrap();
+        at_provider(&rig.provider, rig.provider_id, MailboxTarget::Role(MailboxRole::Inbox), "Wichtig").await;
+        assert_eq!(rig.at_provider().await, 1, "it is lying at the provider");
+
+        assert_eq!(rig.run().await, 0, "nothing could be taken");
+        assert_eq!(rig.here().await, 0, "because there is no room here");
+        assert_eq!(rig.at_provider().await, 1, "and it is still at the provider, although it is set to delete");
+
+        // Room again: the same message comes, and only now is it deleted there.
+        rig.ours
+            .update_account("mini@example.de", AccountUpdate { quota_bytes: Some(0), ..Default::default() })
+            .await
+            .unwrap();
+        assert_eq!(rig.run().await, 1, "with room it comes over");
+        assert_eq!(rig.here().await, 1);
+        assert_eq!(rig.at_provider().await, 0, "and is cleared there once it is really here");
     }
 
     #[tokio::test(flavor = "multi_thread")]
