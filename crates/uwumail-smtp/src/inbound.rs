@@ -270,11 +270,25 @@ pub async fn deliver_fetched(
     let origin = Origin::Fetched { mailbox, from_junk };
     let answer = receive(smtp, &origin, envelope, recipients, raw).await;
     let answer = answer.trim().to_owned();
+    // A full mailbox is not a verdict on the message: its owner can make room, and then it can
+    // come. At the door RCPT says so with a 4xx; storing it says 552, which would make it a
+    // refusal -- and a refused message is stepped past for good, so mail that arrived while the
+    // mailbox was full would never come, not even once there is room again. So for fetched mail a
+    // full mailbox is "later": the folder waits on it, and it comes as soon as it fits.
+    if mailbox_full(&answer) {
+        return Taken::Later(answer);
+    }
     match answer.as_bytes().first() {
         Some(b'2') => Taken::Kept,
         Some(b'4') => Taken::Later(answer),
         _ => Taken::Refused(answer),
     }
+}
+
+/// Whether an answer says the mailbox is full: the enhanced status code X.2.2 of RFC 3463, whether
+/// it came as 4.2.2 or 5.2.2.
+fn mailbox_full(answer: &str) -> bool {
+    answer.split_whitespace().nth(1).is_some_and(|code| code.ends_with(".2.2"))
 }
 
 /// Accepts connections until `shutdown` changes.
@@ -1735,4 +1749,22 @@ impl Session {
 
 fn decode_utf8(value: &str) -> Option<String> {
     BASE64.decode(value.trim()).ok().and_then(|bytes| String::from_utf8(bytes).ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mailbox_full;
+
+    /// A full mailbox must never read as a refusal for fetched mail: a refused message is stepped
+    /// past for good, and mail that arrived while there was no room here would never come.
+    #[test]
+    fn a_full_mailbox_is_recognised_however_it_is_answered() {
+        assert!(mailbox_full("552 5.2.2 Mailbox is full"), "how storing it answers");
+        assert!(mailbox_full("452 4.2.2 <mini@example.de>: Mailbox is full"), "how RCPT answers");
+        assert!(!mailbox_full("550 5.7.1 Message rejected as spam"), "a verdict is not a full mailbox");
+        assert!(!mailbox_full("554 5.7.1 DMARC policy of the sender rejects it"));
+        assert!(!mailbox_full("550 5.1.1 This address does not take mail"));
+        assert!(!mailbox_full("552 5.3.4 Message too big"), "too big is not full");
+        assert!(!mailbox_full(""), "and nothing is nothing");
+    }
 }
