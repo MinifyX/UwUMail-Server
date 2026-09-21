@@ -2444,7 +2444,15 @@ const routes: [string, RegExp, Handler][] = [
         login: "lorin@uwu.example",
         name: "Lorin",
         role: "admin",
-        addresses: ["lorin@uwu.example", "hallo@uwu.example", "nyu@uwu.example"],
+        // More than the card shows at once, so the way to the rest is there to be tried.
+        addresses: [
+          "lorin@uwu.example",
+          "hallo@uwu.example",
+          "nyu@uwu.example",
+          "post@uwu.example",
+          "shop@uwu.example",
+          "verein@uwu.example",
+        ],
         quotaBytes: 5 * GB,
         usedBytes: 1.3 * GB,
         createdAt: now - 20 * 86_400,

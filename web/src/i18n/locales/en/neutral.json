@@ -112,7 +112,10 @@
     "addresses": {
       "title": "Your addresses",
       "primary": "Main address",
-      "alias": "Additional address"
+      "alias": "Additional address",
+      "more": "Show {{count}} more",
+      "more_one": "Show one more",
+      "less": "Show fewer"
     },
     "storage": {
       "title": "Storage",
