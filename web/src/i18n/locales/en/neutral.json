@@ -1440,7 +1440,7 @@
       "serversFound": "The server works the rest out itself: it asks the provider for its settings and signs in with them once before anything is stored.",
       "showServers": "Enter the servers myself",
       "searching": "Looking …",
-      "sendNotFound": "The provider's outgoing server did not take the login. The mailbox is still fetched; the outgoing server can be filled in by editing the mailbox.",
+      "sendLater": "Answering from this address can be switched on once the mailbox has been fetched from — that is the proof it is yours. The outgoing server is looked up and kept right away.",
       "host": "IMAP server",
       "hostHint": "Leave it empty and the server looks it up itself.",
       "username": "User name",

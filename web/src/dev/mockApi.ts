@@ -2167,7 +2167,15 @@ const routes: [string, RegExp, Handler][] = [
     (body, match) => {
       const account = mockFetchAccounts.find((entry) => entry.id === Number(match[0]));
       if (!account) return problem(404, "notFound");
-      Object.assign(account, body as Partial<FetchAccountInfo>);
+      const changes = body as Partial<FetchAccountInfo>;
+      // The server refuses both of these, and a mock that is friendlier than the server hides
+      // exactly the mistakes this page is written to avoid.
+      if (changes.sendEnabled) {
+        const host = changes.smtpHost ?? account.smtpHost;
+        if (!host.trim()) return problem(409, "invalid");
+        if (account.lastOkAt === null) return problem(409, "invalid");
+      }
+      Object.assign(account, changes);
       return [200, account];
     },
   ],
