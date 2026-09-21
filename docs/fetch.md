@@ -80,23 +80,41 @@ Three things it is careful about:
   provider that renumbers a folder (a new `UIDVALIDITY`) starts the count over,
   and then the message's own `Message-ID` keeps it from arriving twice. Names
   are remembered for 30 days.
-* **A message is never lost.** Nothing is marked or deleted at the provider
-  until this server really has the message. An answer of "later" — greylisting
-  asking the sender to come back, a full mailbox — leaves it where it is and
-  stops the folder at it, so the next run offers it again. That is exactly what
-  greylisting asks of a sending server, and here this server is that sender. A
-  message that cannot be taken for a whole day is stepped over, so one message
-  can never block a folder for good.
+* **Nothing is touched at the provider before this server has decided.** A
+  message is marked or deleted there only once it has either arrived here or
+  been refused here for good. An answer of "later" — greylisting asking the
+  sender to come back, a full mailbox — is not a decision: it leaves the message
+  where it is and stops the folder at it, so the next run offers it again.
+  That is exactly what greylisting asks of a sending server, and here this
+  server is that sender. A message that cannot be taken for a whole day is
+  stepped over, so one message can never block a folder for good.
 * **The first run takes nothing.** It only writes down where the folders stand.
   Years of old mail would otherwise arrive as if it came today. To bring the
   existing mail over with its folders and its dates, use the migration import:
   `uwumail-server import imap`, see [migrating-from-mailcow.md](migrating-from-mailcow.md).
 
 A run takes at most 200 messages per folder and is cut short after five
-minutes; what is left waits for the next one. Mail that is refused — a virus, a
-blocked sender, a DMARC policy that rejects — is not brought here, and it is
-not deleted at the provider either, whatever the mailbox is set to: whoever
-wants to see it can still find it there.
+minutes; what is left waits for the next one.
+
+**Refused mail is cleared at the provider too.** A message the filter turns
+away — a virus, a blocked sender, a DMARC policy that rejects, a score over the
+limit — is not brought here, and at the provider it is dealt with exactly like
+one that arrived: marked as read, or deleted, by what the mailbox is set to.
+This server has made its decision, and a fetched mailbox that keeps everything
+it refuses is one that fills up and that nobody ever empties.
+
+What stays behind is the record, not the message: the history under
+*Spamfilter* keeps who sent it, its subject and why it was refused — for 30 days
+by default, and not at all where the history is switched off. With *Endgültig
+löschen* the message itself is then gone for good; with *Als gelesen
+markieren* it is still at the provider, just no longer unread. Whoever wants a
+second look at refused mail sets the mailbox to mark as read.
+
+The one exception is mail this server has nowhere to put: when the mailbox it
+fetches into is gone, or its address takes no mail. That is not a verdict on
+the message but a mistake on this side, and somebody's mail is not deleted over
+it — it stays at the provider, untouched, and is stepped over so the folder
+does not stick on it.
 
 ## At the provider afterwards
 

@@ -220,9 +220,17 @@ pub enum Taken {
     /// Not this time: greylisting asked for it later, or the mailbox was full. It stays where it is
     /// and is offered again on the next run, which is what the answer asks for.
     Later(String),
-    /// Refused for good, the same way it would have been refused at the door. It is not brought
-    /// here and it is not deleted there either: whoever wants to see it can still find it.
+    /// Judged and refused for good, the same way it would have been refused at the door: a virus,
+    /// a blocked sender, a DMARC policy that rejects, a score over the limit. It is not brought
+    /// here, and at the provider it is dealt with exactly like a message that did arrive -- marked
+    /// read or deleted, by what the mailbox is set to. This server has made its decision, and
+    /// leaving the message behind would only fill a mailbox nobody reads with what was already
+    /// thrown away here.
     Refused(String),
+    /// Nothing is wrong with the message: this server has nowhere to put it, because the mailbox
+    /// it fetches into is gone or its address takes no mail. That is a mistake on this side, and
+    /// somebody else's mail must not be deleted over it -- so it stays where it is, untouched.
+    Nowhere(String),
 }
 
 /// Hands a message fetched from another provider's mailbox to the same pipeline that mail from
@@ -245,16 +253,16 @@ pub async fn deliver_fetched(
         return Taken::Refused("554 5.4.6 Too many hops, possible mail loop".into());
     }
     // Deliver into the owner's mailbox -- unless it has none, in which case the mail follows the
-    // redirect an admin set for it, or is refused if there is none, the same as the door decides
-    // for a service without a mailbox (security-audit-0.5.2 S-14). Refused fetched mail is left at
-    // the provider, so nothing is lost.
+    // redirect an admin set for it, or is turned away if there is none, the same as the door
+    // decides for a service without a mailbox (security-audit-0.5.2 S-14). Neither of these is a
+    // verdict on the message, so it is left where it is at the provider.
     let deliver_to = match smtp.store().account_by_id(mailbox.account_id).await {
         Ok(Some(account)) if account.has_mailbox() => mailbox.account_id,
         Ok(Some(account)) => match smtp.store().delivery_target(account.id).await.ok().flatten() {
             Some(target) => target,
-            None => return Taken::Refused("550 5.1.1 This address does not take mail".into()),
+            None => return Taken::Nowhere("550 5.1.1 This address does not take mail".into()),
         },
-        _ => return Taken::Refused("550 5.1.1 the mailbox this fetches into does not exist any more".into()),
+        _ => return Taken::Nowhere("550 5.1.1 the mailbox this fetches into does not exist any more".into()),
     };
     let envelope = Envelope { address: fetched::return_path(&raw).unwrap_or_default(), size: raw.len(), env_id: None };
     let recipients = vec![Recipient {
@@ -272,9 +280,9 @@ pub async fn deliver_fetched(
     let answer = answer.trim().to_owned();
     // A full mailbox is not a verdict on the message: its owner can make room, and then it can
     // come. At the door RCPT says so with a 4xx; storing it says 552, which would make it a
-    // refusal -- and a refused message is stepped past for good, so mail that arrived while the
-    // mailbox was full would never come, not even once there is room again. So for fetched mail a
-    // full mailbox is "later": the folder waits on it, and it comes as soon as it fits.
+    // refusal -- and a refused message is cleared at the provider, so a mailbox that ran out of
+    // room here would quietly delete everything arriving there. So for fetched mail a full mailbox
+    // is "later": the folder waits on it, and it comes as soon as it fits.
     if mailbox_full(&answer) {
         return Taken::Later(answer);
     }
@@ -1755,8 +1763,9 @@ fn decode_utf8(value: &str) -> Option<String> {
 mod tests {
     use super::mailbox_full;
 
-    /// A full mailbox must never read as a refusal for fetched mail: a refused message is stepped
-    /// past for good, and mail that arrived while there was no room here would never come.
+    /// A full mailbox must never read as a refusal for fetched mail: a refused message is cleared
+    /// at the provider, and then a mailbox that ran out of room here would cost somebody their mail
+    /// there.
     #[test]
     fn a_full_mailbox_is_recognised_however_it_is_answered() {
         assert!(mailbox_full("552 5.2.2 Mailbox is full"), "how storing it answers");

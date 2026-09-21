@@ -3,6 +3,29 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## Unreleased
+
+**A fetched mailbox no longer keeps what this server refused.** Mail the filter turned away — a
+virus, a blocked sender, a DMARC policy that rejects, a score over the limit — was left untouched
+at the provider, so that nothing was ever destroyed there. In practice that meant a free mail
+account filling up with exactly the mail this server had already thrown out, run after run, with
+nobody emptying it. Refused mail is now dealt with at the provider like mail that arrived: marked
+as read, or deleted, by what the mailbox is set to. What was refused and why stays in the history
+under Spam filter; the message itself is gone for good only where the mailbox is set to delete.
+
+This deliberately turns back part of the fix for **S-8** in
+[docs/security-audit-0.5.2.md](docs/security-audit-0.5.2.md), which had made refused mail stay at
+the provider. What S-8 was really afraid of still cannot happen: an answer of "later" —
+greylisting — leaves the message where it is, and so does mail this server has nowhere to put,
+because a mailbox it fetches into is gone or takes no mail. That one is a mistake on this side, not
+a verdict on the message, and somebody's mail is not deleted over it.
+
+**A full mailbox no longer costs mail.** It used to count as a refusal, so everything that arrived
+at the provider while there was no room here was stepped past for good — making room afterwards
+brought none of it back. It now counts as "later", the way it is answered at the door: the folder
+waits, and the mail comes as soon as it fits. Without this, the change above would have gone
+further and deleted it at the provider.
+
 ## 0.5.2
 
 **A security release.** The sixth review looked at everything 0.5.0 added — above all the fetch
