@@ -3,7 +3,21 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
-## Unreleased
+## 0.6.3
+
+**The webmail catches up with the app** (webmail [v0.6.3](https://github.com/MinifyX/UwUMail-Webmail/releases/tag/v0.6.3)).
+↑ and ↓ open the previous and next mail, also while reading one; Shift extends the selection and
+Ctrl+A selects everything loaded in the list. Every row has a spam button on hover, and spam can be
+a swipe on the phone. The full addresses of a message — from, reply-to, to, cc, bcc — fold out
+under the header and show on hover. A link from a mail no longer opens straight away: a question
+shows its full address first, with its real domain in bold, a warning when it isn't what the text
+claims, and where a tracking or redirect link leads, worked out without ever loading it. Domains can
+be remembered, and the question can be switched off under *Lesen*, except for disguised links,
+which always ask. Hovering a link shows where it goes at the bottom of the mail. Sending can be
+undone for a few seconds, and signatures are back. The webmail had its own security review
+(W-12 to W-21) — see its docs/security-audit-2026-09.md.
+
+The portal takes spam as a swipe action, too.
 
 **The webmail and the apps keep their settings in step.** A new JMAP extension,
 `urn:uwumail:jmap:settings`, holds one settings document per account: theme, tone, language, how
