@@ -36,8 +36,8 @@ const PREFERENCES: &[(&str, &[&str])] = &[
     ("mailRemoteImages", &["ask", "always"]),
     ("mailAppearance", &["auto", "light", "dark"]),
     ("mailSenderPictures", &["on", "off"]),
-    ("mailSwipeRight", &["read", "archive", "trash", "flag", "none"]),
-    ("mailSwipeLeft", &["read", "archive", "trash", "flag", "none"]),
+    ("mailSwipeRight", &["read", "archive", "trash", "flag", "spam", "none"]),
+    ("mailSwipeLeft", &["read", "archive", "trash", "flag", "spam", "none"]),
 ];
 
 pub async fn update_preferences(
