@@ -37,6 +37,7 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Vacation auto-replies when mail arrives (once per sender per week, never to lists or machines)
 - [x] Settings the webmail and the apps keep in sync, shared with the portal's preferences (JMAP `UserSettings`, see jmap-settings.md)
 - [x] JMAP Calendars on the CalDAV calendars: `Calendar`, `CalendarEvent` (query with expanded recurrences) and `ParticipantIdentity`, changes going both ways between JMAP and CalDAV (see jmap-calendars.md)
+- [x] JMAP Contacts on the CardDAV address books: `AddressBook`, `ContactCard` (query by name, email, phone and more), changes going both ways between JMAP and CardDAV (see jmap-contacts.md)
 - [ ] App passwords and Bearer tokens
 - [ ] WebSocket push, delayed sending (undo window), `Email/copy`, query changes
 - [x] The UwUMail app's JMAP integration test passes against this server (`dev/client-compat.sh`)
@@ -111,7 +112,6 @@ Each step ships as its own commits, container image and test deployment.
 ## Later
 
 - [x] Sieve filters and ManageSieve: mail rules per account, run at delivery, managed over JMAP (RFC 9661) and ManageSieve (RFC 5804) (docs/sieve.md)
-- [ ] JMAP Contacts
 - [ ] OAuth 2 / OpenID Connect provider for mail apps; login via external OIDC or LDAP
 - [ ] Migration assistant (IMAP import from the old provider)
 - [ ] Groups, shared mailboxes, masked addresses

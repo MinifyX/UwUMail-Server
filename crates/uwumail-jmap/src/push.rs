@@ -28,6 +28,8 @@ const TYPES: &[&str] = &[
     "Calendar",
     "CalendarEvent",
     "ParticipantIdentity",
+    "AddressBook",
+    "ContactCard",
     "SieveScript",
 ];
 

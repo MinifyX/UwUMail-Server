@@ -13,7 +13,7 @@ use serde_json::{Map, Value, json};
 use uwumail_store::{CalendarEventRecord, CalendarEventWrite, DAV_RESOURCE_MAX_BYTES, DavCollection, StoreError};
 
 use super::calendar::{calendars, check_enabled};
-use super::{Ctx, SetResponse, check_set_size, get_ids, if_in_state, pick};
+use super::{Ctx, SetResponse, check_set_size, get_ids, if_in_state, pick, query_response};
 use crate::error::{MethodError, MethodResult, SetError};
 use crate::jscal::{self, Parsed};
 use crate::{MAX_OBJECTS_IN_GET, ids};
@@ -1173,45 +1173,6 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         }
         a.start.cmp(&b.start).then_with(|| a.id.cmp(&b.id))
     });
-    let total = hits.len();
-    let mut position = match args.get("anchor").and_then(Value::as_str) {
-        Some(anchor) => {
-            let index =
-                hits.iter().position(|hit| hit.id == anchor).ok_or_else(|| MethodError::kind("anchorNotFound"))?;
-            let offset = args.get("anchorOffset").and_then(Value::as_i64).unwrap_or(0);
-            (index as i64 + offset).max(0) as usize
-        }
-        None => match args.get("position").and_then(Value::as_i64).unwrap_or(0) {
-            p if p < 0 => total.saturating_sub(p.unsigned_abs() as usize),
-            p => p as usize,
-        },
-    };
-    position = position.min(total);
-    let asked = match args.get("limit") {
-        None | Some(Value::Null) => None,
-        Some(value) => {
-            Some(value.as_u64().ok_or_else(|| MethodError::invalid_arguments("limit must be a positive number"))?
-                as usize)
-        }
-    };
-    let limit = asked.unwrap_or(MAX_QUERY_LIMIT).min(MAX_QUERY_LIMIT);
-    let ids: Vec<String> = hits.into_iter().skip(position).take(limit).map(|hit| hit.id).collect();
-    let mut response = json!({
-        "accountId": ctx.account_id(),
-        "queryState": state,
-        "canCalculateChanges": false,
-        "position": position,
-        "ids": ids,
-    });
-    if args.get("calculateTotal").and_then(Value::as_bool).unwrap_or(false) {
-        response["total"] = json!(total);
-    }
-    let capped = match asked {
-        Some(asked) => asked > MAX_QUERY_LIMIT,
-        None => total - position > MAX_QUERY_LIMIT,
-    };
-    if capped {
-        response["limit"] = json!(limit);
-    }
-    Ok(response)
+    let ids = hits.into_iter().map(|hit| hit.id).collect();
+    query_response(ctx, args, state, ids, MAX_QUERY_LIMIT)
 }

@@ -1,8 +1,9 @@
 //! Calendars and address books for CalDAV and CardDAV: collections, the iCalendar and vCard objects
 //! in them with their ETags, and the change numbers that sync tokens are made from.
 //!
-//! JMAP Calendars reads the same calendars, so every write to a calendar also goes into the
-//! account's change log (`Calendar`, `CalendarEvent`), whoever made it.
+//! JMAP Calendars and JMAP Contacts read the same collections, so every write to a calendar or an
+//! address book also goes into the account's change log (`Calendar`, `CalendarEvent`,
+//! `AddressBook`, `ContactCard`), whoever made it.
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::Serialize;
@@ -24,6 +25,15 @@ pub enum DavKind {
 }
 
 impl DavKind {
+    /// The JMAP types of a collection of this kind and of the entries JMAP sees in it, with the
+    /// component those entries have.
+    fn jmap_types(self) -> (&'static str, &'static str, &'static str) {
+        match self {
+            DavKind::Calendar => ("Calendar", "CalendarEvent", "VEVENT"),
+            DavKind::Addressbook => ("AddressBook", "ContactCard", "VCARD"),
+        }
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             DavKind::Calendar => "calendar",
@@ -53,7 +63,8 @@ pub struct DavCollection {
     pub resources: i64,
     /// Whether the webmail and the apps show its events (JMAP `isVisible`).
     pub is_visible: bool,
-    /// The calendar new events go into by default; one per account.
+    /// The calendar new events go into by default, or the address book for new cards; one of each
+    /// per account.
     pub is_default: bool,
 }
 
@@ -76,6 +87,11 @@ impl NewDavCollection {
             components: vec!["VEVENT".into(), "VTODO".into()],
             ..Default::default()
         }
+    }
+
+    /// The address book everyone starts with, made the first time CardDAV or JMAP looks for one.
+    pub fn default_address_book(name: &str) -> NewDavCollection {
+        NewDavCollection { slug: "contacts".into(), display_name: name.into(), ..Default::default() }
     }
 }
 
@@ -194,8 +210,7 @@ fn info_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavResourceInfo> {
     })
 }
 
-/// The JMAP side of a write: which calendars and events it touched, all under one change number.
-/// Address books are not part of JMAP here and leave no trace.
+/// The JMAP side of a write: which collections and entries it touched, all under one change number.
 pub(crate) struct ChangeLog {
     account_id: i64,
     modseq: Option<i64>,
@@ -214,8 +229,8 @@ impl ChangeLog {
         record_change(conn, self.account_id, modseq, kind, object_id, change)
     }
 
-    pub(crate) fn calendar(&mut self, conn: &Connection, collection: &DavCollection, change: &str) -> Result<()> {
-        if collection.kind == DavKind::Calendar { self.record(conn, "Calendar", collection.id, change) } else { Ok(()) }
+    pub(crate) fn collection(&mut self, conn: &Connection, collection: &DavCollection, change: &str) -> Result<()> {
+        self.record(conn, collection.kind.jmap_types().0, collection.id, change)
     }
 
     /// An entry of a collection changed from one component to another (`None`: not there).
@@ -227,17 +242,15 @@ impl ChangeLog {
         before: Option<&str>,
         after: Option<&str>,
     ) -> Result<()> {
-        if collection.kind != DavKind::Calendar {
-            return Ok(());
-        }
         // Only events are CalendarEvents; tasks and journal entries stay CalDAV's.
-        let change = match (before == Some("VEVENT"), after == Some("VEVENT")) {
+        let (_, entry_type, component) = collection.kind.jmap_types();
+        let change = match (before == Some(component), after == Some(component)) {
             (false, true) => "created",
             (true, true) => "updated",
             (true, false) => "destroyed",
             (false, false) => return Ok(()),
         };
-        self.record(conn, "CalendarEvent", resource_id, change)
+        self.record(conn, entry_type, resource_id, change)
     }
 
     pub(crate) fn modseq(&self) -> Option<i64> {
@@ -318,23 +331,21 @@ pub(crate) fn insert_collection(
         return Err(StoreError::Conflict(format!("collection {}", new.slug)));
     }
     let id = tx.last_insert_rowid();
-    if kind == DavKind::Calendar {
-        // The first calendar, or the first after all others were deleted, is the default.
-        tx.execute(
-            "UPDATE dav_collections SET is_default = 1 WHERE id = ?1 AND NOT EXISTS
-                 (SELECT 1 FROM dav_collections WHERE account_id = ?2 AND kind = 'calendar' AND is_default)",
-            params![id, account_id],
-        )?;
-        log.record(tx, "Calendar", id, "created")?;
-    }
+    // The first collection of its kind, or the first after all others were deleted, is the default.
+    tx.execute(
+        "UPDATE dav_collections SET is_default = 1 WHERE id = ?1 AND NOT EXISTS
+             (SELECT 1 FROM dav_collections WHERE account_id = ?2 AND kind = ?3 AND is_default)",
+        params![id, account_id, kind.as_str()],
+    )?;
+    log.record(tx, kind.jmap_types().0, id, "created")?;
     Ok(id)
 }
 
-/// After the default calendar is gone, the first of the rest takes over.
-pub(crate) fn ensure_default_calendar(tx: &Transaction<'_>, log: &mut ChangeLog, account_id: i64) -> Result<()> {
+/// After the default collection of a kind is gone, the first of the rest takes over.
+pub(crate) fn ensure_default(tx: &Transaction<'_>, log: &mut ChangeLog, account_id: i64, kind: DavKind) -> Result<()> {
     let has_default: bool = tx.query_row(
-        "SELECT EXISTS (SELECT 1 FROM dav_collections WHERE account_id = ?1 AND kind = 'calendar' AND is_default)",
-        [account_id],
+        "SELECT EXISTS (SELECT 1 FROM dav_collections WHERE account_id = ?1 AND kind = ?2 AND is_default)",
+        params![account_id, kind.as_str()],
         |row| row.get(0),
     )?;
     if has_default {
@@ -342,34 +353,131 @@ pub(crate) fn ensure_default_calendar(tx: &Transaction<'_>, log: &mut ChangeLog,
     }
     let first: Option<i64> = tx
         .query_row(
-            "SELECT id FROM dav_collections WHERE account_id = ?1 AND kind = 'calendar' ORDER BY sort_order, id LIMIT 1",
-            [account_id],
+            "SELECT id FROM dav_collections WHERE account_id = ?1 AND kind = ?2 ORDER BY sort_order, id LIMIT 1",
+            params![account_id, kind.as_str()],
             |row| row.get(0),
         )
         .optional()?;
     if let Some(id) = first {
         tx.execute("UPDATE dav_collections SET is_default = 1 WHERE id = ?1", [id])?;
-        log.record(tx, "Calendar", id, "updated")?;
+        log.record(tx, kind.jmap_types().0, id, "updated")?;
     }
     Ok(())
 }
 
-/// Deletes a collection with everything in it, telling JMAP which calendar and events went away.
-pub(crate) fn delete_collection(tx: &Transaction<'_>, log: &mut ChangeLog, collection: &DavCollection) -> Result<()> {
-    if collection.kind == DavKind::Calendar {
-        let mut stmt = tx.prepare("SELECT id FROM dav_resources WHERE collection_id = ?1 AND component = 'VEVENT'")?;
-        let events: Vec<i64> = stmt.query_map([collection.id], |row| row.get(0))?.collect::<Result<_, _>>()?;
-        drop(stmt);
-        for event in events {
-            log.record(tx, "CalendarEvent", event, "destroyed")?;
-        }
-        log.calendar(tx, collection, "destroyed")?;
+/// Makes a collection the default one of its kind; both collections whose flag changed are logged.
+pub(crate) fn set_default(tx: &Transaction<'_>, log: &mut ChangeLog, collection: &DavCollection) -> Result<()> {
+    if collection.is_default {
+        return Ok(());
     }
+    let mut stmt = tx.prepare(
+        "UPDATE dav_collections SET is_default = 0 WHERE account_id = ?1 AND kind = ?2 AND is_default RETURNING id",
+    )?;
+    let previous: Vec<i64> = stmt
+        .query_map(params![collection.account_id, collection.kind.as_str()], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    drop(stmt);
+    let collection_type = collection.kind.jmap_types().0;
+    for id in previous {
+        log.record(tx, collection_type, id, "updated")?;
+    }
+    tx.execute("UPDATE dav_collections SET is_default = 1 WHERE id = ?1", [collection.id])?;
+    log.record(tx, collection_type, collection.id, "updated")
+}
+
+/// Deletes a collection with everything in it, telling JMAP which collection and entries went away.
+pub(crate) fn delete_collection(tx: &Transaction<'_>, log: &mut ChangeLog, collection: &DavCollection) -> Result<()> {
+    let (_, entry_type, component) = collection.kind.jmap_types();
+    let mut stmt = tx.prepare("SELECT id FROM dav_resources WHERE collection_id = ?1 AND component = ?2")?;
+    let entries: Vec<i64> =
+        stmt.query_map(params![collection.id, component], |row| row.get(0))?.collect::<Result<_, _>>()?;
+    drop(stmt);
+    for entry in entries {
+        log.record(tx, entry_type, entry, "destroyed")?;
+    }
+    log.collection(tx, collection, "destroyed")?;
     tx.execute("DELETE FROM dav_collections WHERE id = ?1", [collection.id])?;
     if collection.is_default {
-        ensure_default_calendar(tx, log, collection.account_id)?;
+        ensure_default(tx, log, collection.account_id, collection.kind)?;
     }
     Ok(())
+}
+
+/// A resource name for a new entry: the UID when it fits into a URL and is free, else a random one.
+pub(crate) fn new_entry_name(tx: &Transaction<'_>, collection_id: i64, uid: &str, extension: &str) -> Result<String> {
+    let taken = |name: &str| -> Result<bool> {
+        Ok(tx.query_row(
+            "SELECT EXISTS (SELECT 1 FROM dav_resources WHERE collection_id = ?1 AND name = ?2)
+                 OR EXISTS (SELECT 1 FROM dav_tombstones WHERE collection_id = ?1 AND name = ?2)",
+            params![collection_id, name],
+            |row| row.get(0),
+        )?)
+    };
+    let from_uid = format!("{uid}.{extension}");
+    if valid_segment(&from_uid) && from_uid.len() <= 120 && !taken(&from_uid)? {
+        return Ok(from_uid);
+    }
+    loop {
+        let name = format!("{}.{extension}", hex::encode(crate::random_bytes::<16>()));
+        if !taken(&name)? {
+            return Ok(name);
+        }
+    }
+}
+
+/// Moves an entry into another collection of the account with new content. It keeps its row id,
+/// so JMAP sees the same object; CardDAV and CalDAV see it gone from one collection and new in the
+/// other. `write.name` is the entry's current name, which it keeps when the target has it free.
+/// Returns the new ETag.
+pub(crate) fn move_entry(
+    tx: &Transaction<'_>,
+    log: &mut ChangeLog,
+    id: i64,
+    source_id: i64,
+    target: &DavCollection,
+    write: &DavWrite,
+    extension: &str,
+) -> Result<String> {
+    let name = write.name.as_str();
+    let count: i64 =
+        tx.query_row("SELECT count(*) FROM dav_resources WHERE collection_id = ?1", [target.id], |row| row.get(0))?;
+    if count >= DAV_RESOURCES_PER_COLLECTION {
+        return Err(StoreError::QuotaExceeded);
+    }
+    let free: bool = tx.query_row(
+        "SELECT NOT EXISTS (SELECT 1 FROM dav_resources WHERE collection_id = ?1 AND name = ?2)",
+        params![target.id, name],
+        |row| row.get(0),
+    )?;
+    let new_name = if free { name.to_owned() } else { new_entry_name(tx, target.id, &write.uid, extension)? };
+    let old_change = next_change(tx, source_id)?;
+    tx.execute(
+        "INSERT OR REPLACE INTO dav_tombstones (collection_id, name, change) VALUES (?1, ?2, ?3)",
+        params![source_id, name, old_change],
+    )?;
+    let change = next_change(tx, target.id)?;
+    let etag = dav_etag(&write.content);
+    tx.execute(
+        "UPDATE dav_resources SET collection_id = ?1, name = ?2, uid = ?3, etag = ?4, content = ?5,
+             starts_at = ?6, ends_at = ?7, size = ?8, modified_at = ?9, change = ?10
+         WHERE id = ?11",
+        params![
+            target.id,
+            new_name,
+            write.uid,
+            etag,
+            write.content,
+            write.starts_at,
+            write.ends_at,
+            write.content.len() as i64,
+            now(),
+            change,
+            id
+        ],
+    )?;
+    tx.execute("DELETE FROM dav_tombstones WHERE collection_id = ?1 AND name = ?2", params![target.id, new_name])?;
+    log.entry(tx, target, id, Some(&write.component), Some(&write.component))?;
+    Ok(etag)
 }
 
 /// Changes a collection's properties and counts it as a change, as clients compare CTags to know
@@ -480,7 +588,7 @@ impl Store {
                 let mut log = ChangeLog::new(account_id);
                 let collection = own_collection(tx, account_id, collection_id)?;
                 apply_collection_update(tx, collection_id, &update)?;
-                log.calendar(tx, &collection, "updated")?;
+                log.collection(tx, &collection, "updated")?;
                 Ok((own_collection(tx, account_id, collection_id)?, log.modseq()))
             })
             .await?;
