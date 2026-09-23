@@ -14,6 +14,7 @@ pub mod dkim;
 mod dns;
 pub mod dnscheck;
 mod dsn;
+pub mod egress;
 mod fetch;
 mod fetched;
 mod forward;
