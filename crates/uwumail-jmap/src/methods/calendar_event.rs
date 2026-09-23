@@ -100,11 +100,17 @@ fn decorate(object: &mut Map<String, Value>, id: String, calendar_id: i64, base:
 
 /// The requested properties of an event; `None` asks for all stored ones.
 fn output(mut object: Map<String, Value>, properties: &Option<Vec<String>>, floating: Tz) -> Value {
-    match properties {
-        None => {
-            object.remove("iCalendar");
-            Value::Object(object)
+    // The iCalendar conversion hints only when asked for, in the overrides too.
+    if !properties.as_ref().is_some_and(|list| list.iter().any(|p| p == "iCalendar")) {
+        object.remove("iCalendar");
+        if let Some(Value::Object(overrides)) = object.get_mut("recurrenceOverrides") {
+            for patch in overrides.values_mut().filter_map(Value::as_object_mut) {
+                patch.remove("iCalendar");
+            }
         }
+    }
+    match properties {
+        None => Value::Object(object),
         Some(list) => {
             if list.iter().any(|p| p == "utcStart" || p == "utcEnd")
                 && let Some((start, end)) = jscal::span(&object, floating)
@@ -133,7 +139,11 @@ struct Loaded {
 }
 
 async fn load(ctx: &Ctx<'_>, ids: Option<Vec<i64>>) -> MethodResult<Vec<Loaded>> {
+    let all = ids.is_none();
     let records = ctx.jmap.store.calendar_events(ctx.account.id, ids).await?;
+    if all && records.len() > MAX_OBJECTS_IN_GET {
+        return Err(MethodError::new("requestTooLarge", "too many events to fetch at once; ask for ids"));
+    }
     run_blocking(move || {
         records
             .into_iter()
@@ -188,9 +198,6 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
             if bases.is_empty() { Vec::new() } else { load(ctx, Some(bases.into_iter().collect())).await? }
         }
     };
-    if wanted.is_none() && loaded.len() > MAX_OBJECTS_IN_GET {
-        return Err(MethodError::new("requestTooLarge", "too many events to fetch at once; ask for ids"));
-    }
     let own = own_addresses(ctx).await?;
     let (list, not_found) = run_blocking(move || {
         let by_id: HashMap<i64, &Loaded> = loaded.iter().map(|l| (l.record.id, l)).collect();
@@ -578,8 +585,7 @@ impl Writer<'_> {
                     .map_err(|message| SetError::new("invalidPatch", message))?;
             }
             let own = jscal::override_for(event, rid, &changed);
-            let new_version = own.keys().any(|key| !PER_USER.contains(&key.as_str()))
-                || patch.keys().any(|path| !PER_USER.contains(&path.split('/').next().unwrap_or_default()));
+            let new_version = patch.keys().any(|path| !PER_USER.contains(&path.split('/').next().unwrap_or_default()));
             Ok((Value::Object(own), new_version))
         })
         .await

@@ -858,6 +858,9 @@ END:VCALENDAR\r\n";
         assert!(override_part.contains("LOCATION:Park"), "{text}");
         let again = from_icalendar(&text).unwrap();
         assert_eq!(again.event()["recurrenceOverrides"], event["recurrenceOverrides"]);
+        // Written again, the time zone it now carries is not added a second time.
+        let twice = again.to_icalendar(again.event()).unwrap();
+        assert_eq!(twice.matches("BEGIN:VTIMEZONE").count(), 1, "{twice}");
     }
 
     #[test]
