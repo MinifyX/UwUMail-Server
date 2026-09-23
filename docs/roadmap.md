@@ -109,7 +109,7 @@ Each step ships as its own commits, container image and test deployment.
 
 ## Later
 
-- [ ] Sieve filters and ManageSieve
+- [x] Sieve filters and ManageSieve: mail rules per account, run at delivery, managed over JMAP (RFC 9661) and ManageSieve (RFC 5804) (docs/sieve.md)
 - [ ] JMAP Calendars and Contacts
 - [ ] OAuth 2 / OpenID Connect provider for mail apps; login via external OIDC or LDAP
 - [ ] Migration assistant (IMAP import from the old provider)

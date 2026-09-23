@@ -44,7 +44,8 @@ something a family, a club or a small team can run without being a mail admin:
   [UwUMail Gateway](docs/gateway.md) on a small VPS tunnels mail and web to
   your server at home and sends from its own address.
 - **Mail, calendars, contacts.** JMAP, IMAP and SMTP for mail apps, CalDAV and
-  CardDAV for calendars and contacts; Sieve filters are planned.
+  CardDAV for calendars and contacts; [Sieve mail rules](docs/sieve.md) over
+  JMAP and ManageSieve.
 - **Spam filter and, if you want, a virus scanner.** The filter learns, keeps
   sender and word lists and fetches known-bad lists by itself; an optional
   [ClamAV beside the server](docs/antivirus.md) turns infected mail away before

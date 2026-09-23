@@ -3,6 +3,36 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## Unreleased
+
+**Mail rules on the server.** Everyone can have their mail sorted as it arrives — into folders,
+marked as read or flagged, passed on, or thrown away — and it happens on the server, so the rules
+hold for every app and while every device is off. The rules are standard Sieve scripts, one of them
+active per account. The webmail and the apps are getting a rule editor that writes them; anything
+else that speaks Sieve can manage them too: JMAP clients through `urn:ietf:params:jmap:sieve`
+(RFC 9661), and Thunderbird's Sieve add-on, Roundcube or `sieve-connect` through ManageSieve on
+port 4190 (RFC 5804). See [docs/sieve.md](docs/sieve.md).
+
+A script can file by folder path or by JMAP mailbox id, make a missing folder, set flags and
+keywords, discard, and test headers, addresses, the envelope, the body and the size, with
+variables and numeric comparisons. What it asks for is checked when it is stored, against exactly
+what delivery carries out: `vacation`, `reject`, `regex` and the like are refused then, with the
+line that asked, instead of failing quietly on the first mail. Junk stays junk — the spam filter and
+the sender lists decide first, and rules only see the mail you want. A script that fails, runs too
+long or points at a folder that does not exist leaves the message in the inbox.
+
+A rule can pass a message on only where forwarding could: to people on this server, or to an
+address elsewhere that confirmed it through the forwarding link, once per message, with SRS and the
+same loop protection. A rule can't turn the server into a mail cannon, and a redirect that is not
+allowed keeps the message here instead of losing it.
+
+ManageSieve wants STARTTLS before it offers a login, and takes the same passwords, app passwords
+and lockouts as IMAP; the account's IMAP switch covers it. It listens on 4190, set by
+`listen.managesieve` and `UWUMAIL_MANAGESIEVE_BIND`, and the installer checks that port like the
+others. On a machine where something else already holds 4190 — a Dovecot next door, say —
+`update.sh` moves UwUMail's to the next free port rather than failing to start. It is not carried
+through the UwUMail Gateway yet; the webmail and the apps manage rules over JMAP and don't need it.
+
 ## 0.6.3
 
 **The webmail catches up with the app** (webmail [v0.6.3](https://github.com/MinifyX/UwUMail-Webmail/releases/tag/v0.6.3)).
