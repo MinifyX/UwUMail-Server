@@ -27,6 +27,8 @@ services:
       UWUMAIL_TLS__ACME_EMAIL: ${UWUMAIL_ACME_EMAIL:-}
       UWUMAIL_TONE__LANGUAGE: ${UWUMAIL_LANGUAGE:-de}
       UWUMAIL_GATEWAY__CODE: ${UWUMAIL_GATEWAY_CODE:-}
+      UWUMAIL_EGRESS__PROXY: ${UWUMAIL_EGRESS_PROXY:-}
+      UWUMAIL_EGRESS__FALLBACK: ${UWUMAIL_EGRESS_FALLBACK:-block}
     # Every one of these can be moved in .env, as a port or as address:port, for a machine where
     # something else already holds one of them. Only where UwUMail listens moves: from the
     # outside the numbers stay, because other mail servers only ever try 25 and mail apps expect
@@ -75,6 +77,35 @@ services:
     security_opt:
       - no-new-privileges:true
     stop_grace_period: 30s
+
+  # A VPN for the remote pictures in messages, so their senders see the VPN instead of this
+  # server. Nothing else goes through it; mail, DNS and everything else leave as before.
+  #
+  #   cp .env.vpn.example .env.vpn   and fill in your VPN (NordVPN, WireGuard, OpenVPN, ...)
+  #   UWUMAIL_EGRESS_PROXY=http://gluetun:8888   in .env
+  #   docker compose --profile vpn up -d
+  #
+  # COMPOSE_PROFILES=vpn in .env brings it along with every up -d. The whole story:
+  # "Remote pictures through a VPN" in docs/configuration.md.
+  gluetun:
+    image: qmcgaw/gluetun:v3.41
+    container_name: uwumail-vpn
+    profiles:
+      - vpn
+    restart: unless-stopped
+    env_file:
+      - path: .env.vpn
+        required: false
+    environment:
+      # The proxy the server fetches through; reachable only from the containers next to it.
+      HTTPPROXY: "on"
+      HTTPPROXY_STEALTH: "on"
+    expose:
+      - "8888"
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
 
 volumes:
   uwumail-data:
