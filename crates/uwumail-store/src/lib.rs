@@ -12,6 +12,7 @@ mod address;
 mod admin;
 mod bayes;
 mod blobs;
+mod calendar;
 mod dav;
 mod db;
 mod directory;
@@ -21,6 +22,7 @@ mod fetch;
 mod forward_addresses;
 mod forwarding;
 mod greylist_hold;
+pub mod ical;
 mod imap;
 mod import;
 mod mail;
@@ -34,6 +36,7 @@ mod queue;
 mod reports;
 mod security;
 mod sender_lists;
+mod sieve;
 mod spam;
 mod spam_log;
 mod user_settings;
@@ -56,6 +59,7 @@ pub use bayes::{
     BayesJob, BayesTotals,
 };
 pub use blobs::{BlobCleanupPause, BlobHash};
+pub use calendar::{CalendarEventRecord, CalendarEventWrite};
 pub use dav::{
     DAV_COLLECTIONS_PER_ACCOUNT, DAV_RESOURCE_MAX_BYTES, DAV_RESOURCES_PER_COLLECTION, DavChanges, DavCollection,
     DavCollectionUpdate, DavKind, DavPrecondition, DavResource, DavResourceInfo, DavWrite, DavWriteOutcome,
@@ -94,6 +98,10 @@ pub use security::{
 pub use sender_lists::{
     ListOwner, ListScope, NewSenderListEntry, SENDER_LIST_ADMIN_LIMIT, SENDER_LIST_PERSONAL_LIMIT, SenderKind,
     SenderList, SenderListEntry, guess_sender_kind, normalize_sender, pattern_matches,
+};
+pub use sieve::{
+    SIEVE_MAX_NAME_SIZE, SIEVE_MAX_SCRIPT_SIZE, SIEVE_MAX_SCRIPTS, SieveActivation, SieveError, SieveScript,
+    validate_sieve_name,
 };
 pub use spam::{
     GREYLIST_PASSED_SECS, GREYLIST_WAITING_SECS, Greylist, REPUTATION_RETENTION_SECS, Reputation, SPAM_LIMIT_RANGE,

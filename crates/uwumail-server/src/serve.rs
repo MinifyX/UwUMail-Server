@@ -102,6 +102,11 @@ pub async fn run(
     if let Some(listener) = bind(&config.listen.imaps, "mail apps (IMAP with TLS)").await? {
         tasks.spawn(imap.clone().serve(listener, mail_tls.clone(), shutdown_rx.clone()));
     }
+    // Mail rules for apps that manage Sieve scripts; the same logins and lockouts as IMAP.
+    if let Some(listener) = bind(&config.listen.managesieve, "mail rules (ManageSieve with STARTTLS)").await? {
+        let managesieve = uwumail_imap::ManageSieve::new(&imap);
+        tasks.spawn(managesieve.serve(listener, mail_tls.clone(), shutdown_rx.clone()));
+    }
     tasks.spawn(uwumail_smtp::run_queue(smtp.clone(), shutdown_rx.clone()));
     tasks.spawn(uwumail_smtp::run_learning(smtp.clone(), shutdown_rx.clone()));
     tasks.spawn(uwumail_smtp::run_list_updates(smtp.clone(), shutdown_rx.clone()));

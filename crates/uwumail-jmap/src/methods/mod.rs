@@ -1,10 +1,13 @@
 //! Method implementations and the helpers they share.
 
+mod calendar;
+mod calendar_event;
 mod email;
 mod identity;
 mod mailbox;
 mod senders;
 mod settings;
+mod sieve;
 mod snippet;
 mod submission;
 mod thread;
@@ -17,10 +20,11 @@ use uwumail_store::{Account, Changes};
 
 use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
-use crate::session::{CORE, MAIL, SENDERS, SETTINGS, SUBMISSION, VACATION, WEBMAIL};
+use crate::session::{CALENDARS, CORE, MAIL, SENDERS, SETTINGS, SIEVE, SUBMISSION, VACATION, WEBMAIL};
 use crate::{Inner, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, ids};
 
-pub const KNOWN_CAPABILITIES: &[&str] = &[CORE, MAIL, SUBMISSION, VACATION, SENDERS, SETTINGS, WEBMAIL];
+pub const KNOWN_CAPABILITIES: &[&str] =
+    &[CORE, MAIL, SUBMISSION, VACATION, SENDERS, SETTINGS, SIEVE, WEBMAIL, CALENDARS];
 
 /// One or more `(method name, arguments)` responses for a call.
 pub type Outputs = Vec<(String, Value)>;
@@ -30,11 +34,14 @@ pub struct Ctx<'a> {
     pub account: Account,
     pub using: Vec<String>,
     pub created_ids: HashMap<String, String>,
+    /// When the request began: work that has to be bounded per request (expanding calendar
+    /// recurrences) counts from here, across all its method calls.
+    pub started: std::time::Instant,
 }
 
 impl<'a> Ctx<'a> {
     pub fn new(jmap: &'a Inner, account: Account, using: Vec<String>, created_ids: HashMap<String, String>) -> Ctx<'a> {
-        Ctx { jmap, account, using, created_ids }
+        Ctx { jmap, account, using, created_ids, started: std::time::Instant::now() }
     }
 
     pub fn account_id(&self) -> String {
@@ -75,6 +82,8 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "VacationResponse" => VACATION,
         "SenderList" => SENDERS,
         "UserSettings" => SETTINGS,
+        "Calendar" | "CalendarEvent" | "ParticipantIdentity" => CALENDARS,
+        "SieveScript" => SIEVE,
         _ => return Err(MethodError::kind("unknownMethod")),
     };
     if !requires(capability, &ctx.using) {
@@ -115,6 +124,32 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "SenderList/set" => single(senders::set(ctx, &args).await?),
         "UserSettings/get" => single(settings::get(ctx, &args).await?),
         "UserSettings/set" => single(settings::set(ctx, &args).await?),
+        "Calendar/get" => single(calendar::get(ctx, &args).await?),
+        "Calendar/changes" => {
+            calendar::check_enabled(ctx)?;
+            single(changes(ctx, &args, "Calendar", 'c').await?)
+        }
+        "Calendar/set" => single(calendar::set(ctx, &args).await?),
+        "CalendarEvent/get" => single(calendar_event::get(ctx, &args).await?),
+        "CalendarEvent/changes" => {
+            calendar::check_enabled(ctx)?;
+            single(changes(ctx, &args, "CalendarEvent", 'v').await?)
+        }
+        "CalendarEvent/set" => single(calendar_event::set(ctx, &args).await?),
+        "CalendarEvent/query" => single(calendar_event::query(ctx, &args).await?),
+        "CalendarEvent/queryChanges" => Err(MethodError::kind("cannotCalculateChanges")),
+        "ParticipantIdentity/get" => single(calendar::identities_get(ctx, &args).await?),
+        "ParticipantIdentity/changes" => {
+            calendar::check_enabled(ctx)?;
+            single(changes(ctx, &args, "ParticipantIdentity", 'u').await?)
+        }
+        "ParticipantIdentity/set" => single(calendar::identities_set(ctx, &args).await?),
+        "SieveScript/get" => single(sieve::get(ctx, &args).await?),
+        "SieveScript/changes" => single(changes(ctx, &args, "SieveScript", 'r').await?),
+        "SieveScript/set" => single(sieve::set(ctx, &args).await?),
+        "SieveScript/query" => single(sieve::query(ctx, &args).await?),
+        "SieveScript/queryChanges" => Err(MethodError::kind("cannotCalculateChanges")),
+        "SieveScript/validate" => single(sieve::validate(ctx, &args).await?),
         _ => Err(MethodError::kind("unknownMethod")),
     }
 }

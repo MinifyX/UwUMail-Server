@@ -1,15 +1,19 @@
 //! IMAP4rev1 with the extensions mail apps expect (IDLE, UIDPLUS, MOVE, SPECIAL-USE, CONDSTORE,
 //! QRESYNC, ESEARCH, QUOTA, UTF8=ACCEPT and more), on top of the store's mailboxes and messages.
-//! Only implicit TLS (port 993) is offered.
+//! Only implicit TLS (port 993) is offered. ManageSieve (RFC 5804, port 4190) lives here too: it
+//! shares the logins and the lockouts.
 
 pub mod command;
 mod mailboxes;
+mod managesieve;
 pub mod mime;
 pub mod mutf7;
 pub mod parser;
 mod response;
 mod search;
 mod session;
+
+pub use managesieve::ManageSieve;
 
 use std::net::SocketAddr;
 use std::sync::Arc;

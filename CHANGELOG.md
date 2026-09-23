@@ -3,6 +3,73 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.7.0
+
+**The webmail gets a calendar, mail rules and folders** (webmail [v0.7.0](https://github.com/MinifyX/UwUMail-Webmail/releases/tag/v0.7.0)).
+A switch at the top of the sidebar leads from the mail to a calendar with month, week and day views
+and an agenda on the phone: click or drag to make an event, drag it to move or stretch it, open it
+for the full editor with place, notes and repeats, and choose "only this one" or "the whole series"
+when deleting from a series. Calendars keep their colour, can be hidden, renamed, made the default
+or deleted. Under Settings → Rules, mail can be sorted as it arrives — by sender, recipient, subject
+or mailing list into a folder, marked as read, flagged, moved to the trash or passed on — and the
+editor writes the account's Sieve script for it. Folders can be made, nested, renamed and deleted
+from the sidebar, and Trash and Junk have a button that empties them.
+
+**Calendars over JMAP.** The calendars people already keep over CalDAV are now JMAP Calendars
+too (`urn:ietf:params:jmap:calendars`, the draft in the RFC editor queue), so the webmail and the
+apps can show and edit them: calendars with their colour, visibility and default, events with
+title, place, time zone, all-day and repeats, and a query that expands a series into its instances
+for a month or a week. One instance can be moved, renamed or taken out of its series; that becomes
+an override or an exclusion the way iCalendar has it. See
+[docs/jmap-calendars.md](docs/jmap-calendars.md) for what is supported and what is not (sharing,
+invitations and server-side reminders are not).
+
+There is no second copy: events stay iCalendar on disk, in the same calendars. What a phone stores
+over CalDAV shows up in JMAP's changes and push right away, and what the webmail writes moves the
+sync token and the ETag, so the phone fetches it on its next sync. Everything written over JMAP
+goes through the same check as a CalDAV PUT, with the same size limit, so a phone can always read
+it and store it back; changed instances are written out whole for CalDAV clients. Dates, time
+zones, titles and repeats have limits of their own, which the session announces, and expanding
+repeats stops after 10 000 occurrences per series or five seconds per query. Accounts without
+calendars, like services, don't get the capability. Migration 32 adds whether a calendar is shown
+and which one is the default; the first calendar of every account becomes its default.
+
+**Mail rules on the server.** Everyone can have their mail sorted as it arrives — into folders,
+marked as read or flagged, passed on, or thrown away — and it happens on the server, so the rules
+hold for every app and while every device is off. The rules are standard Sieve scripts, one of them
+active per account. The webmail and the apps are getting a rule editor that writes them; anything
+else that speaks Sieve can manage them too: JMAP clients through `urn:ietf:params:jmap:sieve`
+(RFC 9661), and Thunderbird's Sieve add-on, Roundcube or `sieve-connect` through ManageSieve on
+port 4190 (RFC 5804). See [docs/sieve.md](docs/sieve.md).
+
+A script can file by folder path or by JMAP mailbox id, make a missing folder, set flags and
+keywords, discard, and test headers, addresses, the envelope, the body and the size, with
+variables and numeric comparisons. What it asks for is checked when it is stored, against exactly
+what delivery carries out: `vacation`, `reject`, `regex` and the like are refused then, with the
+line that asked, instead of failing quietly on the first mail. Junk stays junk — the spam filter and
+the sender lists decide first, and rules only see the mail you want. A script that fails, runs too
+long or points at a folder that does not exist leaves the message in the inbox.
+
+A rule can pass a message on only where forwarding could: to people on this server, or to an
+address elsewhere that confirmed it through the forwarding link, once per message, with SRS and the
+same loop protection. A rule can't turn the server into a mail cannon, and a redirect that is not
+allowed keeps the message here instead of losing it.
+
+ManageSieve wants STARTTLS before it offers a login, and takes the same passwords, app passwords
+and lockouts as IMAP; the account's IMAP switch covers it. It listens on 4190, set by
+`listen.managesieve` and `UWUMAIL_MANAGESIEVE_BIND`, and the installer checks that port like the
+others. On a machine where something else already holds 4190 — a Dovecot next door, say —
+`update.sh` moves UwUMail's to the next free port rather than failing to start. It is not carried
+through the UwUMail Gateway yet; the webmail and the apps manage rules over JMAP and don't need it.
+
+**Reviewed before release.** The new calendars, rules and ManageSieve had their own security
+review ([docs/security-audit-0.7.0.md](docs/security-audit-0.7.0.md)). What it found is fixed in
+this release: ManageSieve no longer lets a connection pile up memory or stay open without logging
+in, a script that runs away no longer holds up delivery, a redirect that reaches nobody keeps the
+message, one mail can't make a pile of folders, and calendar requests and blob reads have a budget
+of their own. Event ends across a daylight-saving change are now calculated on the clock, not the
+calendar. The webmail's review of the same features is in its docs/security-audit-2026-09.md.
+
 ## 0.6.3
 
 **The webmail catches up with the app** (webmail [v0.6.3](https://github.com/MinifyX/UwUMail-Webmail/releases/tag/v0.6.3)).

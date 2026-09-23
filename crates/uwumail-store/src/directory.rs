@@ -214,14 +214,15 @@ impl Account {
         self.protocols.has_mailbox()
     }
 
-    /// Whether this account may use a protocol at all: `imap`, `jmap`, `smtp` or `dav`. A name
-    /// nobody taught this function about is never quietly allowed.
+    /// Whether this account may use a protocol at all: `imap`, `managesieve`, `jmap`, `smtp` or
+    /// `dav`. A name nobody taught this function about is never quietly allowed.
     ///
     /// `dav` means calendars or address books; which of the two a request may touch is decided
-    /// where the collections are served, because one password covers both.
+    /// where the collections are served, because one password covers both. `managesieve` manages
+    /// mail rules, which belongs to reading mail in a mail app: the IMAP switch covers it.
     pub fn may_use(&self, protocol: &str) -> bool {
         match protocol {
-            "imap" => self.protocols.imap,
+            "imap" | "managesieve" => self.protocols.imap,
             "jmap" => self.protocols.jmap,
             "smtp" => self.protocols.smtp,
             "dav" => self.protocols.caldav || self.protocols.carddav,

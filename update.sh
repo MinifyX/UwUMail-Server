@@ -199,6 +199,7 @@ lift_into_env() {
   lift_port "$file" 465 UWUMAIL_SUBMISSIONS_BIND
   lift_port "$file" 587 UWUMAIL_SUBMISSION_BIND
   lift_port "$file" 993 UWUMAIL_IMAPS_BIND
+  lift_port "$file" 4190 UWUMAIL_MANAGESIEVE_BIND
   # A clamav service without its profile means: this machine wants the scanner at every start.
   if grep -q '^  clamav:' "$file" && ! grep -q '^      - antivirus' "$file"; then
     step "moving the virus scanner into .env"
@@ -234,6 +235,7 @@ normalized() {
     -e 's#^( *- ")[^"]+(:465".*)#\1${UWUMAIL_SUBMISSIONS_BIND:-465}\2#' \
     -e 's#^( *- ")[^"]+(:587".*)#\1${UWUMAIL_SUBMISSION_BIND:-587}\2#' \
     -e 's#^( *- ")[^"]+(:993".*)#\1${UWUMAIL_IMAPS_BIND:-993}\2#' \
+    -e 's#^( *- ")[^"]+(:4190".*)#\1${UWUMAIL_MANAGESIEVE_BIND:-4190}\2#' \
     -e 's|[[:space:]]+#| #|' \
     "$1" | sha256sum | cut -d' ' -f1
 }
@@ -304,6 +306,18 @@ else
 fi
 rm -f "$stock"
 compose_hash=$(hash_of "$dir/compose.yaml")
+
+# ── the ManageSieve port ──────────────────────────────────────────────────────────────────────
+# 4190 came later than the other ports. Where something else on this machine holds it already,
+# UwUMail takes the next free one rather than failing to start over a port few people need.
+if grep -q ':4190"' "$dir/compose.yaml" && ! env_value UWUMAIL_MANAGESIEVE_BIND >/dev/null &&
+  command -v ss >/dev/null 2>&1 && ss -Hltn 'sport = :4190' 2>/dev/null | grep -q . &&
+  ! docker port "$service" 4190 >/dev/null 2>&1; then
+  sieve_port=14190
+  while ss -Hltn "sport = :$sieve_port" 2>/dev/null | grep -q .; do sieve_port=$((sieve_port + 1)); done
+  set_env UWUMAIL_MANAGESIEVE_BIND "$sieve_port"
+  warn "port 4190 is taken on this machine, so ManageSieve (mail rules) listens on $sieve_port instead"
+fi
 
 # ── the virus scanner ─────────────────────────────────────────────────────────────────────────
 memory_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)

@@ -55,11 +55,13 @@ pub struct SetError {
     pub kind: &'static str,
     pub description: Option<String>,
     pub properties: Option<Vec<String>>,
+    /// `alreadyExists`: the object that is in the way (RFC 8620 section 5.3).
+    pub existing_id: Option<String>,
 }
 
 impl SetError {
     pub fn new(kind: &'static str, description: impl Into<String>) -> SetError {
-        SetError { kind, description: Some(description.into()), properties: None }
+        SetError { kind, description: Some(description.into()), properties: None, existing_id: None }
     }
 
     pub fn invalid_properties(properties: &[&str], description: impl Into<String>) -> SetError {
@@ -67,11 +69,12 @@ impl SetError {
             kind: "invalidProperties",
             description: Some(description.into()),
             properties: Some(properties.iter().map(|p| p.to_string()).collect()),
+            existing_id: None,
         }
     }
 
     pub fn not_found() -> SetError {
-        SetError { kind: "notFound", description: None, properties: None }
+        SetError { kind: "notFound", description: None, properties: None, existing_id: None }
     }
 
     pub fn to_json(&self) -> Value {
@@ -82,6 +85,9 @@ impl SetError {
         }
         if let Some(properties) = &self.properties {
             object.insert("properties".into(), json!(properties));
+        }
+        if let Some(existing_id) = &self.existing_id {
+            object.insert("existingId".into(), json!(existing_id));
         }
         Value::Object(object)
     }

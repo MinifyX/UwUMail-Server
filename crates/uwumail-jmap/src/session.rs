@@ -9,7 +9,7 @@ use uwumail_store::Account;
 
 use crate::auth::ClientInfo;
 use crate::{
-    Jmap, MAX_CALLS_IN_REQUEST, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, MAX_REQUEST_BYTES, MAX_UPLOAD_BYTES, ids,
+    Jmap, MAX_CALLS_IN_REQUEST, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, MAX_REQUEST_BYTES, MAX_UPLOAD_BYTES, ids, jscal,
 };
 
 pub const CORE: &str = "urn:ietf:params:jmap:core";
@@ -20,9 +20,13 @@ pub const VACATION: &str = "urn:ietf:params:jmap:vacationresponse";
 pub const SENDERS: &str = "urn:uwumail:jmap:senders";
 /// Our own extension: the settings the webmail and the apps keep in sync (docs/jmap-settings.md).
 pub const SETTINGS: &str = "urn:uwumail:jmap:settings";
+/// Sieve scripts, the mail rules delivery runs (RFC 9661, docs/sieve.md).
+pub const SIEVE: &str = "urn:ietf:params:jmap:sieve";
 /// Our own extension: what the webmail needs on top of plain JMAP, currently the cleaned HTML
 /// body of a message (`uwuSafeHtml`, `uwuHasRemoteContent`).
 pub const WEBMAIL: &str = "urn:uwumail:jmap:webmail";
+/// JMAP Calendars (draft-ietf-jmap-calendars) on the CalDAV calendars; see docs/jmap-calendars.md.
+pub const CALENDARS: &str = "urn:ietf:params:jmap:calendars";
 
 /// Origin the client used, so every URL in the session works from where it is.
 ///
@@ -51,12 +55,13 @@ pub fn base_url(headers: &HeaderMap, client: ClientInfo) -> String {
 
 pub fn session_state(account: &Account) -> String {
     // Changes whenever something in the session document would change.
-    format!("{}-{}", account.id, account.login.len() + account.display_name.len())
+    let calendars = if account.protocols.caldav { "-c" } else { "" };
+    format!("{}-{}{calendars}", account.id, account.login.len() + account.display_name.len())
 }
 
 pub fn document(account: &Account, base: &str) -> Value {
     let account_id = ids::account(account.id);
-    json!({
+    let mut document = json!({
         "capabilities": {
             CORE: {
                 "maxSizeUpload": MAX_UPLOAD_BYTES,
@@ -73,6 +78,7 @@ pub fn document(account: &Account, base: &str) -> Value {
             VACATION: {},
             SENDERS: {},
             SETTINGS: {},
+            SIEVE: { "implementation": "UwUMail Server" },
             WEBMAIL: {}
         },
         "accounts": {
@@ -96,6 +102,15 @@ pub fn document(account: &Account, base: &str) -> Value {
                         "maxKeys": uwumail_store::USER_SETTINGS_MAX_KEYS,
                         "maxSize": uwumail_store::USER_SETTINGS_MAX_SIZE,
                         "maxValueSize": uwumail_store::USER_SETTINGS_MAX_VALUE_SIZE
+                    },
+                    SIEVE: {
+                        "maxSizeScriptName": uwumail_store::SIEVE_MAX_NAME_SIZE,
+                        "maxSizeScript": uwumail_store::SIEVE_MAX_SCRIPT_SIZE,
+                        "maxNumberScripts": uwumail_store::SIEVE_MAX_SCRIPTS,
+                        "maxNumberRedirects": uwumail_smtp::sieve::MAX_REDIRECTS,
+                        "sieveExtensions": uwumail_smtp::sieve::EXTENSIONS,
+                        "notificationMethods": null,
+                        "externalLists": null
                     }
                 }
             }
@@ -105,7 +120,8 @@ pub fn document(account: &Account, base: &str) -> Value {
             SUBMISSION: account_id.clone(),
             VACATION: account_id.clone(),
             SENDERS: account_id.clone(),
-            SETTINGS: account_id
+            SETTINGS: account_id.clone(),
+            SIEVE: account_id.clone()
         },
         "username": account.login,
         "apiUrl": format!("{base}/jmap/api"),
@@ -113,7 +129,21 @@ pub fn document(account: &Account, base: &str) -> Value {
         "uploadUrl": format!("{base}/jmap/upload/{{accountId}}/"),
         "eventSourceUrl": format!("{base}/jmap/eventsource/?types={{types}}&closeafter={{closeafter}}&ping={{ping}}"),
         "state": session_state(account)
-    })
+    });
+    // Calendars are there when the account may use them, as over CalDAV.
+    if account.protocols.caldav {
+        document["capabilities"][CALENDARS] = json!({});
+        document["accounts"][&account_id]["accountCapabilities"][CALENDARS] = json!({
+            "maxCalendarsPerEvent": 1,
+            "minDateTime": jscal::MIN_DATE_TIME,
+            "maxDateTime": jscal::MAX_DATE_TIME,
+            "maxExpandedQueryDuration": jscal::MAX_EXPANDED_DURATION,
+            "maxParticipantsPerEvent": null,
+            "mayCreateCalendar": true
+        });
+        document["primaryAccounts"][CALENDARS] = json!(account_id);
+    }
+    document
 }
 
 pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInfo>>, headers: HeaderMap) -> Response {

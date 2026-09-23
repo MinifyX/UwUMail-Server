@@ -37,6 +37,9 @@ pub(crate) struct Forwarder<'a> {
 
 /// Sends a received message on. `recipient` is the address it arrived for; it goes into a
 /// Delivered-To header, which also stops mail going round in circles between forwards.
+///
+/// Returns whether the message reached at least one target (stored here or queued for elsewhere),
+/// so a caller that keeps no copy of its own can keep one after all when it went nowhere.
 pub(crate) async fn send(
     ctx: &Context,
     forwarder: Forwarder<'_>,
@@ -44,9 +47,9 @@ pub(crate) async fn send(
     envelope_from: &str,
     message: &[u8],
     targets: &[(String, Option<i64>)],
-) {
+) -> bool {
     if targets.is_empty() {
-        return;
+        return false;
     }
     let (fields, _) = headers::split(message);
     let looped = fields
@@ -54,12 +57,13 @@ pub(crate) async fn send(
         .any(|field| field.name.eq_ignore_ascii_case("Delivered-To") && field.value().eq_ignore_ascii_case(recipient));
     if looped {
         tracing::warn!(forwarder = %forwarder.name, %recipient, "not forwarding a message that was here before");
-        return;
+        return false;
     }
     let mut forwarded = format!("Delivered-To: {recipient}\r\n").into_bytes();
     forwarded.extend_from_slice(message);
 
     let mut remote = Vec::new();
+    let mut reached = false;
     for (address, local) in targets {
         match local {
             // People on this server get it directly; their own forwarding does not apply again.
@@ -76,8 +80,11 @@ pub(crate) async fn send(
                     keywords: vec![],
                     received_at: None,
                 };
-                if let Err(err) = ctx.store.ingest(request).await {
-                    tracing::warn!(%err, forwarder = %forwarder.name, to = %address, "forwarding to a local mailbox failed");
+                match ctx.store.ingest(request).await {
+                    Ok(_) => reached = true,
+                    Err(err) => {
+                        tracing::warn!(%err, forwarder = %forwarder.name, to = %address, "forwarding to a local mailbox failed");
+                    }
                 }
             }
             None => remote.push(NewQueueRecipient { address: address.clone(), notify_flags: 0, orcpt: None }),
@@ -95,7 +102,7 @@ pub(crate) async fn send(
                 Some(secret) => srs::rewrite(&secret, envelope_from, our_domain),
                 None => {
                     tracing::error!(forwarder = %forwarder.name, "no SRS secret, not forwarding to other servers");
-                    return;
+                    return reached;
                 }
             }
         };
@@ -104,8 +111,10 @@ pub(crate) async fn send(
             ctx.store.enqueue(&return_path, remote, &forwarded, forwarder.account_id, None, lifetime).await
         {
             tracing::error!(%err, forwarder = %forwarder.name, "queueing a forward failed");
-            return;
+            return reached;
         }
+        reached = true;
     }
-    tracing::info!(forwarder = %forwarder.name, targets = targets.len(), "forwarded message");
+    tracing::info!(forwarder = %forwarder.name, targets = targets.len(), reached, "forwarded message");
+    reached
 }

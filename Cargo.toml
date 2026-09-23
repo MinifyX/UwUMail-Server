@@ -14,7 +14,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.6.3"
+version = "0.7.0"
 edition = "2024"
 license = "AGPL-3.0-only"
 repository = "https://github.com/MinifyX/UwUMail-Server"
@@ -56,6 +56,9 @@ http-body-util = "0.1"
 bytes = "1"
 # iCalendar and vCard for CalDAV and CardDAV: checking what clients store and when events happen.
 calcard = { version = "0.3", default-features = false }
+# Local times and time zones of calendar events for JMAP Calendars; the versions calcard uses.
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+chrono-tz = "0.10"
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "service", "client-legacy", "http1"] }
 instant-acme = { version = "0.8", features = ["rcgen"] }
 mail-auth = "0.13"
@@ -83,6 +86,8 @@ rustix = { version = "1", default-features = false, features = ["std", "fs"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.11"
+# Sieve mail rules (RFC 5228 and extensions), compiled and run in-process; AGPL-3.0-only like this server.
+sieve-rs = "1.0.2"
 smtp-proto = "0.2"
 tempfile = "3"
 thiserror = "2"

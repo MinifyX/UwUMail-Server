@@ -72,13 +72,7 @@ impl Dav {
     /// The calendar or address book everyone starts with.
     pub fn default_collection(&self, kind: DavKind) -> NewDavCollection {
         match kind {
-            DavKind::Calendar => NewDavCollection {
-                slug: "personal".into(),
-                display_name: self.inner.settings.calendar_name.clone(),
-                color: Some("#FF4D8DFF".into()),
-                components: vec!["VEVENT".into(), "VTODO".into()],
-                ..Default::default()
-            },
+            DavKind::Calendar => NewDavCollection::default_calendar(&self.inner.settings.calendar_name),
             DavKind::Addressbook => NewDavCollection {
                 slug: "contacts".into(),
                 display_name: self.inner.settings.addressbook_name.clone(),

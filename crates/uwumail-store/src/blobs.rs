@@ -116,6 +116,19 @@ impl Store {
         self.inner.blobs.get(hash).await
     }
 
+    /// The size of a stored blob, without reading it.
+    pub async fn blob_size(&self, hash: &BlobHash) -> Result<Option<u64>> {
+        use rusqlite::OptionalExtension;
+        let key = hash.as_str().to_owned();
+        self.read(move |conn| {
+            Ok(conn
+                .query_row("SELECT size FROM blobs WHERE hash = ?1", [key], |row| row.get::<_, i64>(0))
+                .optional()?
+                .map(|size| size.max(0) as u64))
+        })
+        .await
+    }
+
     /// Every blob something refers to, with its size.
     pub async fn blob_hashes(&self) -> Result<Vec<(BlobHash, u64)>> {
         self.read(|conn| {

@@ -75,7 +75,8 @@ only ever show the gateway, never your home address.
   Until port 25 is open, the server can send through a relay on port 587; that
   connection goes through the gateway too.
 - **Open ports on the VPS:** TCP 25, 80, 443, 465, 587 and 993 from everywhere, and
-  UDP 443 for the tunnel.
+  UDP 443 for the tunnel. ManageSieve (4190, [mail rules](sieve.md)) does not go
+  through the gateway yet; the webmail and the apps manage rules over 443.
 - **At home:** your UwUMail server may send UDP to the VPS.
 
 ## Install the gateway

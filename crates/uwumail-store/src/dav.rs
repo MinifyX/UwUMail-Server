@@ -1,10 +1,14 @@
 //! Calendars and address books for CalDAV and CardDAV: collections, the iCalendar and vCard objects
 //! in them with their ETags, and the change numbers that sync tokens are made from.
+//!
+//! JMAP Calendars reads the same calendars, so every write to a calendar also goes into the
+//! account's change log (`Calendar`, `CalendarEvent`), whoever made it.
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+use crate::db::{next_modseq, record_change};
 use crate::{Result, Store, StoreError, now};
 
 /// Entries per collection, and bytes per entry. Calendars of real people stay far below both.
@@ -47,6 +51,10 @@ pub struct DavCollection {
     pub timezone: Option<String>,
     pub change: i64,
     pub resources: i64,
+    /// Whether the webmail and the apps show its events (JMAP `isVisible`).
+    pub is_visible: bool,
+    /// The calendar new events go into by default; one per account.
+    pub is_default: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -58,6 +66,19 @@ pub struct NewDavCollection {
     pub components: Vec<String>,
 }
 
+impl NewDavCollection {
+    /// The calendar everyone starts with, made the first time CalDAV or JMAP looks for one.
+    pub fn default_calendar(name: &str) -> NewDavCollection {
+        NewDavCollection {
+            slug: "personal".into(),
+            display_name: name.into(),
+            color: Some("#FF4D8DFF".into()),
+            components: vec!["VEVENT".into(), "VTODO".into()],
+            ..Default::default()
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct DavCollectionUpdate {
     pub display_name: Option<String>,
@@ -65,6 +86,7 @@ pub struct DavCollectionUpdate {
     pub color: Option<Option<String>>,
     pub sort_order: Option<i64>,
     pub timezone: Option<Option<String>>,
+    pub is_visible: Option<bool>,
 }
 
 /// An entry without its content, for listings.
@@ -135,9 +157,10 @@ pub fn dav_etag(content: &str) -> String {
 }
 
 const COLLECTION_COLUMNS: &str = "c.id, c.account_id, c.kind, c.slug, c.display_name, c.description, c.color, \
-     c.sort_order, c.components, c.timezone, c.change, (SELECT count(*) FROM dav_resources r WHERE r.collection_id = c.id)";
+     c.sort_order, c.components, c.timezone, c.change, (SELECT count(*) FROM dav_resources r WHERE r.collection_id = c.id), \
+     c.is_visible, c.is_default";
 
-fn collection_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavCollection> {
+pub(crate) fn collection_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavCollection> {
     Ok(DavCollection {
         id: row.get(0)?,
         account_id: row.get(1)?,
@@ -151,6 +174,8 @@ fn collection_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavCollection> {
         timezone: row.get(9)?,
         change: row.get(10)?,
         resources: row.get(11)?,
+        is_visible: row.get(12)?,
+        is_default: row.get(13)?,
     })
 }
 
@@ -169,7 +194,67 @@ fn info_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavResourceInfo> {
     })
 }
 
-fn own_collection(conn: &Connection, account_id: i64, collection_id: i64) -> Result<DavCollection> {
+/// The JMAP side of a write: which calendars and events it touched, all under one change number.
+/// Address books are not part of JMAP here and leave no trace.
+pub(crate) struct ChangeLog {
+    account_id: i64,
+    modseq: Option<i64>,
+}
+
+impl ChangeLog {
+    pub(crate) fn new(account_id: i64) -> ChangeLog {
+        ChangeLog { account_id, modseq: None }
+    }
+
+    pub(crate) fn record(&mut self, conn: &Connection, kind: &str, object_id: i64, change: &str) -> Result<()> {
+        let modseq = match self.modseq {
+            Some(modseq) => modseq,
+            None => *self.modseq.insert(next_modseq(conn, self.account_id)?),
+        };
+        record_change(conn, self.account_id, modseq, kind, object_id, change)
+    }
+
+    pub(crate) fn calendar(&mut self, conn: &Connection, collection: &DavCollection, change: &str) -> Result<()> {
+        if collection.kind == DavKind::Calendar { self.record(conn, "Calendar", collection.id, change) } else { Ok(()) }
+    }
+
+    /// An entry of a collection changed from one component to another (`None`: not there).
+    pub(crate) fn entry(
+        &mut self,
+        conn: &Connection,
+        collection: &DavCollection,
+        resource_id: i64,
+        before: Option<&str>,
+        after: Option<&str>,
+    ) -> Result<()> {
+        if collection.kind != DavKind::Calendar {
+            return Ok(());
+        }
+        // Only events are CalendarEvents; tasks and journal entries stay CalDAV's.
+        let change = match (before == Some("VEVENT"), after == Some("VEVENT")) {
+            (false, true) => "created",
+            (true, true) => "updated",
+            (true, false) => "destroyed",
+            (false, false) => return Ok(()),
+        };
+        self.record(conn, "CalendarEvent", resource_id, change)
+    }
+
+    pub(crate) fn modseq(&self) -> Option<i64> {
+        self.modseq
+    }
+}
+
+impl Store {
+    /// Tells push listeners about a write's JMAP changes once it is committed.
+    pub(crate) fn notify_log(&self, account_id: i64, modseq: Option<i64>) {
+        if let Some(modseq) = modseq {
+            self.notify_change(account_id, modseq);
+        }
+    }
+}
+
+pub(crate) fn own_collection(conn: &Connection, account_id: i64, collection_id: i64) -> Result<DavCollection> {
     conn.query_row(
         &format!("SELECT {COLLECTION_COLUMNS} FROM dav_collections c WHERE c.id = ?1 AND c.account_id = ?2"),
         params![collection_id, account_id],
@@ -180,7 +265,7 @@ fn own_collection(conn: &Connection, account_id: i64, collection_id: i64) -> Res
 }
 
 /// Path segments stay short and URL-safe, so hrefs never need escaping rules of their own.
-fn valid_segment(segment: &str) -> bool {
+pub(crate) fn valid_segment(segment: &str) -> bool {
     !segment.is_empty()
         && segment.len() <= 200
         && segment != "."
@@ -188,7 +273,7 @@ fn valid_segment(segment: &str) -> bool {
         && segment.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.@+~".contains(&b))
 }
 
-fn next_change(tx: &Transaction<'_>, collection_id: i64) -> Result<i64> {
+pub(crate) fn next_change(tx: &Transaction<'_>, collection_id: i64) -> Result<i64> {
     Ok(tx.query_row(
         "UPDATE dav_collections SET change = change + 1 WHERE id = ?1 RETURNING change",
         [collection_id],
@@ -196,7 +281,13 @@ fn next_change(tx: &Transaction<'_>, collection_id: i64) -> Result<i64> {
     )?)
 }
 
-fn insert_collection(tx: &Transaction<'_>, account_id: i64, kind: DavKind, new: &NewDavCollection) -> Result<i64> {
+pub(crate) fn insert_collection(
+    tx: &Transaction<'_>,
+    log: &mut ChangeLog,
+    account_id: i64,
+    kind: DavKind,
+    new: &NewDavCollection,
+) -> Result<i64> {
     if !valid_segment(&new.slug) {
         return Err(StoreError::Invalid(format!("'{}' cannot be part of a URL", new.slug)));
     }
@@ -226,7 +317,91 @@ fn insert_collection(tx: &Transaction<'_>, account_id: i64, kind: DavKind, new: 
     if inserted == 0 {
         return Err(StoreError::Conflict(format!("collection {}", new.slug)));
     }
-    Ok(tx.last_insert_rowid())
+    let id = tx.last_insert_rowid();
+    if kind == DavKind::Calendar {
+        // The first calendar, or the first after all others were deleted, is the default.
+        tx.execute(
+            "UPDATE dav_collections SET is_default = 1 WHERE id = ?1 AND NOT EXISTS
+                 (SELECT 1 FROM dav_collections WHERE account_id = ?2 AND kind = 'calendar' AND is_default)",
+            params![id, account_id],
+        )?;
+        log.record(tx, "Calendar", id, "created")?;
+    }
+    Ok(id)
+}
+
+/// After the default calendar is gone, the first of the rest takes over.
+pub(crate) fn ensure_default_calendar(tx: &Transaction<'_>, log: &mut ChangeLog, account_id: i64) -> Result<()> {
+    let has_default: bool = tx.query_row(
+        "SELECT EXISTS (SELECT 1 FROM dav_collections WHERE account_id = ?1 AND kind = 'calendar' AND is_default)",
+        [account_id],
+        |row| row.get(0),
+    )?;
+    if has_default {
+        return Ok(());
+    }
+    let first: Option<i64> = tx
+        .query_row(
+            "SELECT id FROM dav_collections WHERE account_id = ?1 AND kind = 'calendar' ORDER BY sort_order, id LIMIT 1",
+            [account_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(id) = first {
+        tx.execute("UPDATE dav_collections SET is_default = 1 WHERE id = ?1", [id])?;
+        log.record(tx, "Calendar", id, "updated")?;
+    }
+    Ok(())
+}
+
+/// Deletes a collection with everything in it, telling JMAP which calendar and events went away.
+pub(crate) fn delete_collection(tx: &Transaction<'_>, log: &mut ChangeLog, collection: &DavCollection) -> Result<()> {
+    if collection.kind == DavKind::Calendar {
+        let mut stmt = tx.prepare("SELECT id FROM dav_resources WHERE collection_id = ?1 AND component = 'VEVENT'")?;
+        let events: Vec<i64> = stmt.query_map([collection.id], |row| row.get(0))?.collect::<Result<_, _>>()?;
+        drop(stmt);
+        for event in events {
+            log.record(tx, "CalendarEvent", event, "destroyed")?;
+        }
+        log.calendar(tx, collection, "destroyed")?;
+    }
+    tx.execute("DELETE FROM dav_collections WHERE id = ?1", [collection.id])?;
+    if collection.is_default {
+        ensure_default_calendar(tx, log, collection.account_id)?;
+    }
+    Ok(())
+}
+
+/// Changes a collection's properties and counts it as a change, as clients compare CTags to know
+/// that something changed, properties included.
+pub(crate) fn apply_collection_update(
+    tx: &Transaction<'_>,
+    collection_id: i64,
+    update: &DavCollectionUpdate,
+) -> Result<()> {
+    if let Some(name) = &update.display_name {
+        tx.execute("UPDATE dav_collections SET display_name = ?1 WHERE id = ?2", params![name.trim(), collection_id])?;
+    }
+    if let Some(description) = &update.description {
+        tx.execute(
+            "UPDATE dav_collections SET description = ?1 WHERE id = ?2",
+            params![description.trim(), collection_id],
+        )?;
+    }
+    if let Some(color) = &update.color {
+        tx.execute("UPDATE dav_collections SET color = ?1 WHERE id = ?2", params![color, collection_id])?;
+    }
+    if let Some(order) = update.sort_order {
+        tx.execute("UPDATE dav_collections SET sort_order = ?1 WHERE id = ?2", params![order, collection_id])?;
+    }
+    if let Some(timezone) = &update.timezone {
+        tx.execute("UPDATE dav_collections SET timezone = ?1 WHERE id = ?2", params![timezone, collection_id])?;
+    }
+    if let Some(visible) = update.is_visible {
+        tx.execute("UPDATE dav_collections SET is_visible = ?1 WHERE id = ?2", params![visible, collection_id])?;
+    }
+    next_change(tx, collection_id)?;
+    Ok(())
 }
 
 impl Store {
@@ -237,23 +412,27 @@ impl Store {
         kind: DavKind,
         default: NewDavCollection,
     ) -> Result<Vec<DavCollection>> {
-        self.write(move |tx| {
-            let exists: bool = tx.query_row(
-                "SELECT EXISTS (SELECT 1 FROM dav_collections WHERE account_id = ?1 AND kind = ?2)",
-                params![account_id, kind.as_str()],
-                |row| row.get(0),
-            )?;
-            if !exists {
-                insert_collection(tx, account_id, kind, &default)?;
-            }
-            let mut stmt = tx.prepare(&format!(
-                "SELECT {COLLECTION_COLUMNS} FROM dav_collections c WHERE c.account_id = ?1 AND c.kind = ?2
-                 ORDER BY c.sort_order, c.id"
-            ))?;
-            let rows = stmt.query_map(params![account_id, kind.as_str()], collection_row)?;
-            Ok(rows.collect::<Result<_, _>>()?)
-        })
-        .await
+        let (list, modseq) = self
+            .write(move |tx| {
+                let mut log = ChangeLog::new(account_id);
+                let exists: bool = tx.query_row(
+                    "SELECT EXISTS (SELECT 1 FROM dav_collections WHERE account_id = ?1 AND kind = ?2)",
+                    params![account_id, kind.as_str()],
+                    |row| row.get(0),
+                )?;
+                if !exists {
+                    insert_collection(tx, &mut log, account_id, kind, &default)?;
+                }
+                let mut stmt = tx.prepare(&format!(
+                    "SELECT {COLLECTION_COLUMNS} FROM dav_collections c WHERE c.account_id = ?1 AND c.kind = ?2
+                     ORDER BY c.sort_order, c.id"
+                ))?;
+                let rows = stmt.query_map(params![account_id, kind.as_str()], collection_row)?;
+                Ok((rows.collect::<Result<Vec<_>, _>>()?, log.modseq()))
+            })
+            .await?;
+        self.notify_log(account_id, modseq);
+        Ok(list)
     }
 
     pub async fn dav_collection(&self, account_id: i64, kind: DavKind, slug: &str) -> Result<Option<DavCollection>> {
@@ -279,11 +458,15 @@ impl Store {
         kind: DavKind,
         new: NewDavCollection,
     ) -> Result<DavCollection> {
-        self.write(move |tx| {
-            let id = insert_collection(tx, account_id, kind, &new)?;
-            own_collection(tx, account_id, id)
-        })
-        .await
+        let (collection, modseq) = self
+            .write(move |tx| {
+                let mut log = ChangeLog::new(account_id);
+                let id = insert_collection(tx, &mut log, account_id, kind, &new)?;
+                Ok((own_collection(tx, account_id, id)?, log.modseq()))
+            })
+            .await?;
+        self.notify_log(account_id, modseq);
+        Ok(collection)
     }
 
     pub async fn dav_update_collection(
@@ -292,43 +475,30 @@ impl Store {
         collection_id: i64,
         update: DavCollectionUpdate,
     ) -> Result<DavCollection> {
-        self.write(move |tx| {
-            own_collection(tx, account_id, collection_id)?;
-            if let Some(name) = &update.display_name {
-                tx.execute(
-                    "UPDATE dav_collections SET display_name = ?1 WHERE id = ?2",
-                    params![name.trim(), collection_id],
-                )?;
-            }
-            if let Some(description) = &update.description {
-                tx.execute(
-                    "UPDATE dav_collections SET description = ?1 WHERE id = ?2",
-                    params![description.trim(), collection_id],
-                )?;
-            }
-            if let Some(color) = &update.color {
-                tx.execute("UPDATE dav_collections SET color = ?1 WHERE id = ?2", params![color, collection_id])?;
-            }
-            if let Some(order) = update.sort_order {
-                tx.execute("UPDATE dav_collections SET sort_order = ?1 WHERE id = ?2", params![order, collection_id])?;
-            }
-            if let Some(timezone) = &update.timezone {
-                tx.execute("UPDATE dav_collections SET timezone = ?1 WHERE id = ?2", params![timezone, collection_id])?;
-            }
-            // Clients compare CTags to know that something changed, properties included.
-            next_change(tx, collection_id)?;
-            own_collection(tx, account_id, collection_id)
-        })
-        .await
+        let (collection, modseq) = self
+            .write(move |tx| {
+                let mut log = ChangeLog::new(account_id);
+                let collection = own_collection(tx, account_id, collection_id)?;
+                apply_collection_update(tx, collection_id, &update)?;
+                log.calendar(tx, &collection, "updated")?;
+                Ok((own_collection(tx, account_id, collection_id)?, log.modseq()))
+            })
+            .await?;
+        self.notify_log(account_id, modseq);
+        Ok(collection)
     }
 
     pub async fn dav_delete_collection(&self, account_id: i64, collection_id: i64) -> Result<()> {
-        self.write(move |tx| {
-            own_collection(tx, account_id, collection_id)?;
-            tx.execute("DELETE FROM dav_collections WHERE id = ?1", [collection_id])?;
-            Ok(())
-        })
-        .await
+        let modseq = self
+            .write(move |tx| {
+                let mut log = ChangeLog::new(account_id);
+                let collection = own_collection(tx, account_id, collection_id)?;
+                delete_collection(tx, &mut log, &collection)?;
+                Ok(log.modseq())
+            })
+            .await?;
+        self.notify_log(account_id, modseq);
+        Ok(())
     }
 
     /// The entries of a collection, without their content.
@@ -389,71 +559,16 @@ impl Store {
         if write.content.len() > DAV_RESOURCE_MAX_BYTES {
             return Err(StoreError::QuotaExceeded);
         }
-        self.write(move |tx| {
-            own_collection(tx, account_id, collection_id)?;
-            let current: Option<String> = tx
-                .query_row(
-                    "SELECT etag FROM dav_resources WHERE collection_id = ?1 AND name = ?2",
-                    params![collection_id, write.name],
-                    |row| row.get(0),
-                )
-                .optional()?;
-            let matches = match (&condition.if_match, &current) {
-                (Some(wanted), Some(etag)) => wanted == "*" || wanted == etag,
-                (Some(_), None) => false,
-                (None, _) => true,
-            };
-            if !matches || (condition.if_none_match_any && current.is_some()) {
-                return Ok(DavWriteOutcome::PreconditionFailed);
-            }
-            let other: Option<String> = tx
-                .query_row(
-                    "SELECT name FROM dav_resources WHERE collection_id = ?1 AND uid = ?2 AND name <> ?3",
-                    params![collection_id, write.uid, write.name],
-                    |row| row.get(0),
-                )
-                .optional()?;
-            if let Some(name) = other {
-                return Ok(DavWriteOutcome::UidTaken { name });
-            }
-            if current.is_none() {
-                let count: i64 = tx.query_row(
-                    "SELECT count(*) FROM dav_resources WHERE collection_id = ?1",
-                    [collection_id],
-                    |row| row.get(0),
-                )?;
-                if count >= DAV_RESOURCES_PER_COLLECTION {
-                    return Err(StoreError::QuotaExceeded);
-                }
-            }
-            let etag = dav_etag(&write.content);
-            let change = next_change(tx, collection_id)?;
-            tx.execute(
-                "INSERT INTO dav_resources (collection_id, name, uid, etag, content, component, starts_at, ends_at, size,
-                     modified_at, change)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
-                 ON CONFLICT (collection_id, name) DO UPDATE SET uid = excluded.uid, etag = excluded.etag,
-                     content = excluded.content, component = excluded.component, starts_at = excluded.starts_at,
-                     ends_at = excluded.ends_at, size = excluded.size, modified_at = excluded.modified_at,
-                     change = excluded.change",
-                params![
-                    collection_id,
-                    write.name,
-                    write.uid,
-                    etag,
-                    write.content,
-                    write.component,
-                    write.starts_at,
-                    write.ends_at,
-                    write.content.len() as i64,
-                    now(),
-                    change
-                ],
-            )?;
-            tx.execute("DELETE FROM dav_tombstones WHERE collection_id = ?1 AND name = ?2", params![collection_id, write.name])?;
-            Ok(if current.is_some() { DavWriteOutcome::Updated { etag } } else { DavWriteOutcome::Created { etag } })
-        })
-        .await
+        let (outcome, modseq) = self
+            .write(move |tx| {
+                let mut log = ChangeLog::new(account_id);
+                let collection = own_collection(tx, account_id, collection_id)?;
+                let (outcome, _) = put_entry(tx, &mut log, &collection, &write, &condition)?;
+                Ok((outcome, log.modseq()))
+            })
+            .await?;
+        self.notify_log(account_id, modseq);
+        Ok(outcome)
     }
 
     /// Deletes an entry. `Ok(false)` when it is not there, or the condition does not hold.
@@ -465,31 +580,16 @@ impl Store {
         if_match: Option<String>,
     ) -> Result<bool> {
         let name = name.to_owned();
-        self.write(move |tx| {
-            own_collection(tx, account_id, collection_id)?;
-            let current: Option<String> = tx
-                .query_row(
-                    "SELECT etag FROM dav_resources WHERE collection_id = ?1 AND name = ?2",
-                    params![collection_id, name],
-                    |row| row.get(0),
-                )
-                .optional()?;
-            let Some(etag) = current else { return Ok(false) };
-            if if_match.is_some_and(|wanted| wanted != "*" && wanted != etag) {
-                return Ok(false);
-            }
-            let change = next_change(tx, collection_id)?;
-            tx.execute(
-                "DELETE FROM dav_resources WHERE collection_id = ?1 AND name = ?2",
-                params![collection_id, name],
-            )?;
-            tx.execute(
-                "INSERT OR REPLACE INTO dav_tombstones (collection_id, name, change) VALUES (?1, ?2, ?3)",
-                params![collection_id, name, change],
-            )?;
-            Ok(true)
-        })
-        .await
+        let (deleted, modseq) = self
+            .write(move |tx| {
+                let mut log = ChangeLog::new(account_id);
+                let collection = own_collection(tx, account_id, collection_id)?;
+                let deleted = delete_entry(tx, &mut log, &collection, &name, if_match.as_deref())?;
+                Ok((deleted, log.modseq()))
+            })
+            .await?;
+        self.notify_log(account_id, modseq);
+        Ok(deleted)
     }
 
     /// What changed after `since`, for sync-collection.
@@ -507,6 +607,122 @@ impl Store {
         })
         .await
     }
+}
+
+/// Stores an entry of a collection that is known to belong to the account. Returns the outcome and,
+/// when it was written, the entry's row id.
+pub(crate) fn put_entry(
+    tx: &Transaction<'_>,
+    log: &mut ChangeLog,
+    collection: &DavCollection,
+    write: &DavWrite,
+    condition: &DavPrecondition,
+) -> Result<(DavWriteOutcome, Option<i64>)> {
+    let current: Option<(i64, String, String)> = tx
+        .query_row(
+            "SELECT id, etag, component FROM dav_resources WHERE collection_id = ?1 AND name = ?2",
+            params![collection.id, write.name],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    let matches = match (&condition.if_match, &current) {
+        (Some(wanted), Some((_, etag, _))) => wanted == "*" || wanted == etag,
+        (Some(_), None) => false,
+        (None, _) => true,
+    };
+    if !matches || (condition.if_none_match_any && current.is_some()) {
+        return Ok((DavWriteOutcome::PreconditionFailed, None));
+    }
+    let other: Option<String> = tx
+        .query_row(
+            "SELECT name FROM dav_resources WHERE collection_id = ?1 AND uid = ?2 AND name <> ?3",
+            params![collection.id, write.uid, write.name],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(name) = other {
+        return Ok((DavWriteOutcome::UidTaken { name }, None));
+    }
+    if current.is_none() {
+        let count: i64 =
+            tx.query_row("SELECT count(*) FROM dav_resources WHERE collection_id = ?1", [collection.id], |row| {
+                row.get(0)
+            })?;
+        if count >= DAV_RESOURCES_PER_COLLECTION {
+            return Err(StoreError::QuotaExceeded);
+        }
+    }
+    let etag = dav_etag(&write.content);
+    let change = next_change(tx, collection.id)?;
+    let id: i64 = tx.query_row(
+        "INSERT INTO dav_resources (collection_id, name, uid, etag, content, component, starts_at, ends_at, size,
+             modified_at, change)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+         ON CONFLICT (collection_id, name) DO UPDATE SET uid = excluded.uid, etag = excluded.etag,
+             content = excluded.content, component = excluded.component, starts_at = excluded.starts_at,
+             ends_at = excluded.ends_at, size = excluded.size, modified_at = excluded.modified_at,
+             change = excluded.change
+         RETURNING id",
+        params![
+            collection.id,
+            write.name,
+            write.uid,
+            etag,
+            write.content,
+            write.component,
+            write.starts_at,
+            write.ends_at,
+            write.content.len() as i64,
+            now(),
+            change
+        ],
+        |row| row.get(0),
+    )?;
+    tx.execute(
+        "DELETE FROM dav_tombstones WHERE collection_id = ?1 AND name = ?2",
+        params![collection.id, write.name],
+    )?;
+    log.entry(
+        tx,
+        collection,
+        id,
+        current.as_ref().map(|(_, _, component)| component.as_str()),
+        Some(&write.component),
+    )?;
+    Ok((
+        if current.is_some() { DavWriteOutcome::Updated { etag } } else { DavWriteOutcome::Created { etag } },
+        Some(id),
+    ))
+}
+
+/// Deletes an entry and leaves a tombstone for sync-collection. `false` when it is not there or
+/// the condition does not hold.
+pub(crate) fn delete_entry(
+    tx: &Transaction<'_>,
+    log: &mut ChangeLog,
+    collection: &DavCollection,
+    name: &str,
+    if_match: Option<&str>,
+) -> Result<bool> {
+    let current: Option<(i64, String, String)> = tx
+        .query_row(
+            "SELECT id, etag, component FROM dav_resources WHERE collection_id = ?1 AND name = ?2",
+            params![collection.id, name],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    let Some((id, etag, component)) = current else { return Ok(false) };
+    if if_match.is_some_and(|wanted| wanted != "*" && wanted != etag) {
+        return Ok(false);
+    }
+    let change = next_change(tx, collection.id)?;
+    tx.execute("DELETE FROM dav_resources WHERE id = ?1", [id])?;
+    tx.execute(
+        "INSERT OR REPLACE INTO dav_tombstones (collection_id, name, change) VALUES (?1, ?2, ?3)",
+        params![collection.id, name, change],
+    )?;
+    log.entry(tx, collection, id, Some(&component), None)?;
+    Ok(true)
 }
 
 #[cfg(test)]

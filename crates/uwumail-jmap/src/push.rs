@@ -17,8 +17,19 @@ use uwumail_store::{StateChange, Store};
 use crate::auth::ClientInfo;
 use crate::{Jmap, ids};
 
-const TYPES: &[&str] =
-    &["Mailbox", "Email", "Thread", "Identity", "EmailSubmission", "VacationResponse", "UserSettings"];
+const TYPES: &[&str] = &[
+    "Mailbox",
+    "Email",
+    "Thread",
+    "Identity",
+    "EmailSubmission",
+    "VacationResponse",
+    "UserSettings",
+    "Calendar",
+    "CalendarEvent",
+    "ParticipantIdentity",
+    "SieveScript",
+];
 
 #[derive(Deserialize)]
 pub struct PushQuery {
