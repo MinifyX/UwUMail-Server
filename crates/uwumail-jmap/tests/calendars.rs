@@ -813,3 +813,46 @@ async fn a_series_has_a_bounded_number_of_changed_instances() {
         .await;
     assert_eq!(found["ids"], json!([enough]), "{found}");
 }
+
+/// Hours are exact, days nominal (RFC 8984 section 1.4.6): an event over the night the clocks go
+/// back ends five real hours after it starts, in /get, in query windows and for each instance.
+#[tokio::test(flavor = "multi_thread")]
+async fn exact_durations_end_on_time_when_the_clocks_change() {
+    let server = server().await;
+    let account = server.account_id(MINI).await;
+    let calendar = server.default_calendar(MINI).await;
+    let mut night = timed(&calendar, "Nachtschicht");
+    night["start"] = json!("2026-10-24T23:30:00");
+    night["duration"] = json!("PT5H");
+    let id = server.create_event(MINI, night.clone()).await;
+    let got = server.get_event(MINI, &id, json!(["utcStart", "utcEnd"])).await;
+    assert_eq!(got["utcStart"], "2026-10-24T21:30:00Z");
+    assert_eq!(got["utcEnd"], "2026-10-25T02:30:00Z", "{got}");
+
+    let query = |after: &str, expand: bool| {
+        json!({
+            "accountId": account,
+            "filter": { "after": after, "before": "2026-10-26T00:00:00" },
+            "expandRecurrences": expand
+        })
+    };
+    let before_end = server.call(MINI, "CalendarEvent/query", query("2026-10-25T02:15:00", false)).await;
+    assert_eq!(before_end["ids"], json!([id]), "{before_end}");
+    let after_end = server.call(MINI, "CalendarEvent/query", query("2026-10-25T02:45:00", false)).await;
+    assert_eq!(after_end["ids"], json!([]), "{after_end}");
+
+    // The same for one instance of a weekly series.
+    let destroyed = server.call(MINI, "CalendarEvent/set", json!({ "accountId": account, "destroy": [id] })).await;
+    assert_eq!(destroyed["destroyed"], json!([id]));
+    let mut series = night;
+    series["start"] = json!("2026-10-17T23:30:00");
+    series["recurrenceRule"] = json!({ "frequency": "weekly", "count": 3 });
+    let base = server.create_event(MINI, series).await;
+    let instance = format!("{base}_20261024T233000");
+    let inside = server.call(MINI, "CalendarEvent/query", query("2026-10-25T02:15:00", true)).await;
+    assert_eq!(inside["ids"], json!([instance]), "{inside}");
+    let outside = server.call(MINI, "CalendarEvent/query", query("2026-10-25T02:45:00", true)).await;
+    assert_eq!(outside["ids"], json!([]), "{outside}");
+    let got = server.get_event(MINI, &instance, json!(["utcEnd"])).await;
+    assert_eq!(got["utcEnd"], "2026-10-25T02:30:00Z", "{got}");
+}

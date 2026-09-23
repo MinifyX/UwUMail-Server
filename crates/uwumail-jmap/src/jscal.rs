@@ -336,10 +336,12 @@ pub fn span(event: &Map<String, Value>, floating: Tz) -> Option<(i64, i64)> {
         None if all_day => (1, 0),
         None => (0, 0),
     };
-    let end = start
-        .checked_add_signed(chrono::Duration::days(days))?
-        .checked_add_signed(chrono::Duration::seconds(seconds))?;
-    Some((to_utc(start, zone), to_utc(end, zone)))
+    // RFC 8984 section 1.4.6 (as RFC 5545 section 3.3.6): days and weeks are nominal and move the
+    // wall clock, hours, minutes and seconds are exact and move the instant. Across a change of
+    // the clocks, `P1D` is 23 or 25 hours and `PT5H` is always five.
+    let nominal_end = start.checked_add_signed(chrono::Duration::days(days))?;
+    let end = to_utc(nominal_end, zone).checked_add(seconds)?;
+    Some((to_utc(start, zone), end))
 }
 
 /// Whether `[start, end)` overlaps a query window: ends after `after` and starts before `before`.
@@ -819,6 +821,29 @@ mod tests {
         assert_eq!(format_utc(to_utc(gap, berlin)), "2026-03-29T01:30:00Z");
         assert!(time_zone("europe/berlin").is_none());
         assert!(time_zone("Mars/Olympus_Mons").is_none());
+    }
+
+    /// The clocks in Berlin go back from 03:00 to 02:00 on 25 October 2026.
+    #[test]
+    fn exact_durations_move_the_instant_and_days_the_wall_clock() {
+        let utc = chrono_tz::UTC;
+        let span_of = |start: &str, duration: &str| {
+            let event = object(json!({ "start": start, "timeZone": "Europe/Berlin", "duration": duration }));
+            let (start, end) = span(&event, utc).unwrap();
+            (format_utc(start), format_utc(end))
+        };
+        let late = span_of("2026-10-24T23:30:00", "PT5H");
+        assert_eq!(late, ("2026-10-24T21:30:00Z".into(), "2026-10-25T02:30:00Z".into()), "five hours are five hours");
+        let day = span_of("2026-10-24T12:00:00", "P1D");
+        assert_eq!(day, ("2026-10-24T10:00:00Z".into(), "2026-10-25T11:00:00Z".into()), "a day ends at the same time");
+        let both = span_of("2026-10-24T12:00:00", "P1DT1H");
+        assert_eq!(both.1, "2026-10-25T12:00:00Z", "the day first, then the hour");
+        // In spring the day is short.
+        let spring = span_of("2026-03-28T12:00:00", "P1D");
+        assert_eq!(spring, ("2026-03-28T11:00:00Z".into(), "2026-03-29T10:00:00Z".into()));
+        let floating = object(json!({ "start": "2026-10-24T23:30:00", "duration": "PT5H" }));
+        let berlin = time_zone("Europe/Berlin").unwrap();
+        assert_eq!(span(&floating, berlin).map(|(_, end)| format_utc(end)).unwrap(), "2026-10-25T02:30:00Z");
     }
 
     #[test]
