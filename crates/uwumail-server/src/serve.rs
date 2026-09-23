@@ -125,7 +125,15 @@ pub async fn run(
     // One switch for the whole server, shared by everything that has to honour it: the page
     // under /mail, JMAP's session login, and the admin panel that flips it.
     let webmail = Arc::new(std::sync::atomic::AtomicBool::new(config.http.webmail));
-    let jmap = uwumail_jmap::Jmap::with_webmail(smtp.clone(), webmail.clone()).router().merge(dav.router());
+    // A message's remote pictures, fetched here instead of by the reader; through a VPN when one is set.
+    let egress = uwumail_smtp::egress::Egress::new(&config.egress).map_err(anyhow::Error::msg)?;
+    if egress.proxied() {
+        tracing::info!(fallback = ?config.egress.fallback, "remote pictures leave through the egress proxy");
+    }
+    let jmap = uwumail_jmap::Jmap::with_webmail(smtp.clone(), webmail.clone())
+        .with_egress(egress)
+        .router()
+        .merge(dav.router());
     // The log to Grafana Loki, when the config or the admin panel asks for it; the admin panel
     // switches it on, over and off while the server runs.
     let loki = uwumail_web::Loki::new();

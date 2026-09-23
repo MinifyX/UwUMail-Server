@@ -8,6 +8,7 @@ use anyhow::{Context as _, bail};
 use figment::Figment;
 use figment::providers::{Env, Format, Serialized, Toml};
 use serde::Deserialize;
+use uwumail_smtp::egress::EgressConfig;
 use uwumail_smtp::{DeliveryConfig, SmtpConfig, SpamConfig, ToneConfig};
 
 #[derive(Debug, Clone, Deserialize)]
@@ -25,6 +26,8 @@ pub struct Config {
     pub delivery: DeliveryConfig,
     pub tone: ToneConfig,
     pub gateway: GatewayConfig,
+    /// How a message's remote pictures leave the server: straight, or through a VPN's proxy.
+    pub egress: EgressConfig,
     pub log: LogConfig,
 }
 
@@ -41,6 +44,7 @@ impl Default for Config {
             delivery: DeliveryConfig::default(),
             tone: ToneConfig::default(),
             gateway: GatewayConfig::default(),
+            egress: EgressConfig::default(),
             log: LogConfig::default(),
         }
     }
@@ -231,6 +235,7 @@ impl Config {
         uwumail_smtp::IpNetwork::parse_list(&self.http.trusted_proxies)
             .map_err(|err| anyhow::anyhow!("`http.trusted_proxies`: {err}"))?;
         self.log.loki.target(&self.hostname).map_err(|err| anyhow::anyhow!(err))?;
+        uwumail_smtp::egress::Egress::new(&self.egress).map_err(|err| anyhow::anyhow!(err))?;
         // Behind a reverse proxy the challenge arrives through the proxy listener instead of port 80.
         if self.tls.mode == TlsMode::Acme && self.listen.http.is_empty() && self.listen.proxy.is_empty() {
             bail!(
@@ -314,6 +319,18 @@ language = \"de\"
         assert_eq!(with_env_text("listen.proxy", "[::]:8080").unwrap().listen.proxy, "[::]:8080");
         assert_eq!(with_env_text("gateway.code", "").unwrap().gateway.code, "");
         assert_eq!(with_env_text("listen.managesieve", "").unwrap().listen.managesieve, "", "switched off");
+    }
+
+    #[test]
+    fn the_egress_proxy_is_checked_before_the_server_starts() {
+        let config = with_env_text("egress.proxy", "http://gluetun:8888").unwrap();
+        config.validate().unwrap();
+        assert_eq!(config.egress.fallback, uwumail_smtp::egress::Fallback::Block, "blocked unless told otherwise");
+        let direct = with_env_text("egress.fallback", "direct").unwrap();
+        assert_eq!(direct.egress.fallback, uwumail_smtp::egress::Fallback::Direct);
+        assert!(with_env_text("egress.fallback", "sometimes").is_err());
+        let error = with_env_text("egress.proxy", "ftp://gluetun").unwrap().validate().unwrap_err().to_string();
+        assert!(error.contains("egress.proxy"), "{error}");
     }
 
     #[test]
