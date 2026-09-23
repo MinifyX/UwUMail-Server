@@ -36,6 +36,7 @@ Each step ships as its own commits, container image and test deployment.
 - [x] `VacationResponse/get|set`
 - [x] Vacation auto-replies when mail arrives (once per sender per week, never to lists or machines)
 - [x] Settings the webmail and the apps keep in sync, shared with the portal's preferences (JMAP `UserSettings`, see jmap-settings.md)
+- [x] JMAP Calendars on the CalDAV calendars: `Calendar`, `CalendarEvent` (query with expanded recurrences) and `ParticipantIdentity`, changes going both ways between JMAP and CalDAV (see jmap-calendars.md)
 - [ ] App passwords and Bearer tokens
 - [ ] WebSocket push, delayed sending (undo window), `Email/copy`, query changes
 - [x] The UwUMail app's JMAP integration test passes against this server (`dev/client-compat.sh`)
@@ -110,7 +111,7 @@ Each step ships as its own commits, container image and test deployment.
 ## Later
 
 - [ ] Sieve filters and ManageSieve
-- [ ] JMAP Calendars and Contacts
+- [ ] JMAP Contacts
 - [ ] OAuth 2 / OpenID Connect provider for mail apps; login via external OIDC or LDAP
 - [ ] Migration assistant (IMAP import from the old provider)
 - [ ] Groups, shared mailboxes, masked addresses

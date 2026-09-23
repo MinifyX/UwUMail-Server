@@ -44,7 +44,8 @@ something a family, a club or a small team can run without being a mail admin:
   [UwUMail Gateway](docs/gateway.md) on a small VPS tunnels mail and web to
   your server at home and sends from its own address.
 - **Mail, calendars, contacts.** JMAP, IMAP and SMTP for mail apps, CalDAV and
-  CardDAV for calendars and contacts; Sieve filters are planned.
+  CardDAV for calendars and contacts, and the same calendars as JMAP Calendars
+  for the webmail and the apps; Sieve filters are planned.
 - **Spam filter and, if you want, a virus scanner.** The filter learns, keeps
   sender and word lists and fetches known-bad lists by itself; an optional
   [ClamAV beside the server](docs/antivirus.md) turns infected mail away before
@@ -96,7 +97,7 @@ Coming from mailcow? [docs/migrating-from-mailcow.md](docs/migrating-from-mailco
 | --- | --- |
 | `crates/uwumail-server` | The server binary: configuration, listeners, TLS, HTTP, command line |
 | `crates/uwumail-smtp` | SMTP receiving and submission, outbound queue, DKIM, SPF/DMARC checks |
-| `crates/uwumail-jmap` | JMAP: mail, submission, uploads and downloads, push |
+| `crates/uwumail-jmap` | JMAP: mail, submission, calendars, uploads and downloads, push |
 | `crates/uwumail-imap` | IMAP for mail apps |
 | `crates/uwumail-dav` | CalDAV and CardDAV |
 | `crates/uwumail-backup` | Deduplicated, encrypted backups over SFTP |

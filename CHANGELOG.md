@@ -3,6 +3,27 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## Unreleased
+
+**Calendars over JMAP.** The calendars people already keep over CalDAV are now JMAP Calendars
+too (`urn:ietf:params:jmap:calendars`, the draft in the RFC editor queue), so the webmail and the
+apps can show and edit them: calendars with their colour, visibility and default, events with
+title, place, time zone, all-day and repeats, and a query that expands a series into its instances
+for a month or a week. One instance can be moved, renamed or taken out of its series; that becomes
+an override or an exclusion the way iCalendar has it. See
+[docs/jmap-calendars.md](docs/jmap-calendars.md) for what is supported and what is not (sharing,
+invitations and server-side reminders are not).
+
+There is no second copy: events stay iCalendar on disk, in the same calendars. What a phone stores
+over CalDAV shows up in JMAP's changes and push right away, and what the webmail writes moves the
+sync token and the ETag, so the phone fetches it on its next sync. Everything written over JMAP
+goes through the same check as a CalDAV PUT, with the same size limit, so a phone can always read
+it and store it back; changed instances are written out whole for CalDAV clients. Dates, time
+zones, titles and repeats have limits of their own, which the session announces, and expanding
+repeats stops after 10 000 occurrences per series or five seconds per query. Accounts without
+calendars, like services, don't get the capability. Migration 32 adds whether a calendar is shown
+and which one is the default; the first calendar of every account becomes its default.
+
 ## 0.6.3
 
 **The webmail catches up with the app** (webmail [v0.6.3](https://github.com/MinifyX/UwUMail-Webmail/releases/tag/v0.6.3)).
