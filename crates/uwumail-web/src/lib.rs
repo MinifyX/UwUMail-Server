@@ -86,6 +86,8 @@ struct Inner {
     host: std::sync::OnceLock<Arc<dyn host::HostBackend>>,
     /// Backups, once the server plugged them in.
     backups: std::sync::OnceLock<uwumail_backup::Backups>,
+    /// The way out for a message's remote pictures, once the server plugged it in.
+    egress: std::sync::OnceLock<uwumail_smtp::egress::Egress>,
 }
 
 impl Web {
@@ -108,6 +110,7 @@ impl Web {
                 gateway: std::sync::OnceLock::new(),
                 host: std::sync::OnceLock::new(),
                 backups: std::sync::OnceLock::new(),
+                egress: std::sync::OnceLock::new(),
             }),
         }
     }
@@ -166,6 +169,15 @@ impl Web {
 
     pub(crate) fn backups(&self) -> Option<&uwumail_backup::Backups> {
         self.inner.backups.get()
+    }
+
+    /// Lets the portal show how remote pictures leave the server. Only the first call counts.
+    pub fn set_egress(&self, egress: uwumail_smtp::egress::Egress) {
+        let _ = self.inner.egress.set(egress);
+    }
+
+    pub(crate) fn egress(&self) -> Option<&uwumail_smtp::egress::Egress> {
+        self.inner.egress.get()
     }
 
     pub(crate) fn gateway(&self) -> Option<&Arc<dyn gateway::GatewayBackend>> {
@@ -316,6 +328,8 @@ impl Web {
             .route("/api/admin/logs/loki", get(routes::settings::loki_status))
             .route("/api/admin/logs/loki/test", post(routes::settings::loki_test))
             .route("/api/admin/settings", get(routes::settings::show).patch(routes::settings::update))
+            .route("/api/admin/egress", get(routes::egress::show))
+            .route("/api/admin/egress/test", post(routes::egress::test))
             .route("/api/admin/spam", get(routes::spam::admin_overview))
             .route("/api/admin/spam/learn-folders", post(routes::spam::admin_learn))
             .route("/api/admin/spam/log", get(routes::spam::admin_log).delete(routes::spam::admin_clear_log))

@@ -11,6 +11,8 @@
 //! | `POST /jmap/upload/{accountId}` | Blob upload |
 //! | `GET /jmap/download/{accountId}/{blobId}/{name}` | Blob download |
 //! | `GET /jmap/eventsource` | Push |
+//! | `GET /jmap/image/{accountId}?url=` | A message's remote picture, fetched by the server |
+//! | `GET /jmap/picture/{accountId}?email=` | The logo or website icon of a company sender |
 
 mod api;
 pub mod auth;
@@ -23,6 +25,7 @@ mod jscal;
 mod jscontact;
 mod methods;
 mod push;
+mod remote;
 pub mod safe_html;
 mod session;
 
@@ -32,6 +35,8 @@ use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, post};
 use uwumail_smtp::Smtp;
+use uwumail_smtp::egress::Egress;
+use uwumail_smtp::pictures::SenderPictures;
 use uwumail_store::Store;
 
 pub use auth::{AuthError, Authenticator, ClientInfo};
@@ -51,6 +56,10 @@ pub(crate) struct Inner {
     pub store: Store,
     pub smtp: Smtp,
     pub auth: auth::Authenticator,
+    /// The way out for a message's remote pictures.
+    pub egress: Egress,
+    /// Logos and website icons of company senders, fetched the same way.
+    pub pictures: Arc<SenderPictures>,
 }
 
 impl Jmap {
@@ -64,7 +73,17 @@ impl Jmap {
         let store = smtp.store().clone();
         let mut auth = auth::Authenticator::new(store.clone());
         auth.watch_webmail(webmail);
-        Jmap { inner: Arc::new(Inner { auth, store, smtp }) }
+        let egress = Egress::direct();
+        let pictures = Arc::new(SenderPictures::new(egress.clone()));
+        Jmap { inner: Arc::new(Inner { auth, store, smtp, egress, pictures }) }
+    }
+
+    /// Remote pictures and sender pictures leave through `egress` instead of straight from the server.
+    /// Called before the router is built.
+    pub fn with_egress(self, egress: Egress) -> Jmap {
+        let inner = Arc::into_inner(self.inner).expect("the egress is set before anything else holds the JMAP service");
+        let pictures = Arc::new(SenderPictures::new(egress.clone()));
+        Jmap { inner: Arc::new(Inner { egress, pictures, ..inner }) }
     }
 
     pub fn router(&self) -> Router {
@@ -78,6 +97,8 @@ impl Jmap {
             .route("/jmap/download/{account}/{blob}/{name}", get(blob::download))
             .route("/jmap/eventsource", get(push::handle))
             .route("/jmap/eventsource/", get(push::handle))
+            .route("/jmap/image/{account}", get(remote::image))
+            .route("/jmap/picture/{account}", get(remote::picture))
             .with_state(self.clone())
     }
 }

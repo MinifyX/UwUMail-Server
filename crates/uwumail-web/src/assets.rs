@@ -16,15 +16,17 @@ const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self'; st
      img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; \
      form-action 'self'; frame-ancestors 'none'";
 
-/// The webmail's policy, which differs in exactly one place.
+/// The webmail's policy.
 ///
 /// A message is shown in a `srcdoc` frame without scripts, and such a frame inherits the policy of
-/// the page around it. So "load the pictures in this mail" can only work if `img-src` allows other
-/// hosts here as well. The decision itself stays with the reader: until they ask for them, the
-/// frame carries its own, stricter policy that allows no remote content at all. `form-action` is
-/// `'none'`, because nothing in the webmail ever submits a form — everything goes through fetch.
+/// the page around it. Its remote pictures come through this server (`/jmap/image`, see
+/// docs/jmap-remote.md), so `img-src` allows no other host here either: a picture that did not go
+/// through the server can't reach its sender, not even by mistake. Whether a mail's pictures load at
+/// all stays with the reader; until they ask, the frame carries its own policy that allows none.
+/// `form-action` is `'none'`, because nothing in the webmail ever submits a form — everything goes
+/// through fetch. PDF previews live in `blob:` frames.
 const WEBMAIL_CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
-     img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self'; object-src 'none'; \
+     img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; \
      base-uri 'none'; form-action 'none'; frame-src 'self' blob:; frame-ancestors 'none'";
 
 pub fn find(path: &str) -> Option<&'static Asset> {
@@ -84,4 +86,17 @@ pub fn respond(asset: &'static Asset) -> Response {
         headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     }
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pictures_load_only_from_here() {
+        for policy in [CONTENT_SECURITY_POLICY, WEBMAIL_CONTENT_SECURITY_POLICY] {
+            let images = policy.split(';').map(str::trim).find(|part| part.starts_with("img-src")).unwrap();
+            assert_eq!(images, "img-src 'self' data: blob:", "{policy}");
+        }
+    }
 }

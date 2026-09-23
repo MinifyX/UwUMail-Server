@@ -701,6 +701,27 @@ export interface AntivirusTest {
   error: string | null;
 }
 
+/** How a mail's remote pictures leave the server, counted since it started. */
+export interface EgressView {
+  /** The proxy without its login, e.g. `http://gluetun:8888`; null when pictures leave straight. */
+  proxy: string | null;
+  fallback: "block" | "direct";
+  fetched: number;
+  failed: number;
+  proxyFailures: number;
+  /** Of those, how many went out directly instead. */
+  fallbacks: number;
+  /** In unix seconds. */
+  lastProxyFailure: { at: number; error: string } | null;
+}
+
+export interface EgressTest {
+  proxied: boolean;
+  /** The address senders see; null when the test failed. */
+  address: string | null;
+  error: string | null;
+}
+
 export type SenderListName = "allow" | "block";
 export type SenderKind = "ip" | "host" | "address" | "domain" | "pattern";
 

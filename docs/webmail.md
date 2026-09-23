@@ -56,6 +56,12 @@ environment variables win over the admin panel.
   past.
 - **Building the message.** Sending goes through `Email/set` with a structured
   body, so the MIME is built here and not in a browser.
+- **Fetching pictures.** A mail's remote pictures, once the reader lets them
+  show, and the logos of company senders come through the server
+  (`urn:uwumail:jmap:remote`, [jmap-remote.md](jmap-remote.md)). The sender
+  sees the server — or the VPN in `[egress]` — and never who reads the mail.
+  The page's policy allows pictures from its own origin only, so one that did
+  not take that way can't load at all.
 
 Two things the app does that the webmail leaves alone: it never asks the server
 to follow a `List-Unsubscribe` link, because that would let a mail header decide
@@ -86,6 +92,5 @@ portal offers no button, and everything else works as before.
 
 - Delayed sending, so "undo send" is real instead of a trick in one tab
 - Signatures on the server, shared by the webmail, the app and Android
-- Sender pictures from the server, instead of coloured initials
 - Address suggestions from the address book and from mail history
 - Web Push, so new mail arrives with the browser closed

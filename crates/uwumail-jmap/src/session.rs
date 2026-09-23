@@ -25,6 +25,9 @@ pub const SIEVE: &str = "urn:ietf:params:jmap:sieve";
 /// Our own extension: what the webmail needs on top of plain JMAP, currently the cleaned HTML
 /// body of a message (`uwuSafeHtml`, `uwuHasRemoteContent`).
 pub const WEBMAIL: &str = "urn:uwumail:jmap:webmail";
+/// Our own extension: a message's remote pictures, fetched by the server so the sender never sees
+/// who reads it (docs/jmap-remote.md).
+pub const REMOTE: &str = "urn:uwumail:jmap:remote";
 /// JMAP Calendars (draft-ietf-jmap-calendars) on the CalDAV calendars; see docs/jmap-calendars.md.
 pub const CALENDARS: &str = "urn:ietf:params:jmap:calendars";
 /// JMAP Contacts (RFC 9610) on the CardDAV address books; see docs/jmap-contacts.md.
@@ -82,7 +85,12 @@ pub fn document(account: &Account, base: &str) -> Value {
             SENDERS: {},
             SETTINGS: {},
             SIEVE: { "implementation": "UwUMail Server" },
-            WEBMAIL: {}
+            WEBMAIL: {},
+            REMOTE: {
+                "imageUrl": format!("{base}/jmap/image/{{accountId}}?url={{url}}"),
+                "pictureUrl": format!("{base}/jmap/picture/{{accountId}}?email={{email}}"),
+                "maxSizeImage": crate::remote::MAX_IMAGE_BYTES
+            }
         },
         "accounts": {
             account_id.clone(): {

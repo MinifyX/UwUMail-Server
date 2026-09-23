@@ -139,6 +139,50 @@ As environment variables: `UWUMAIL_LOG__LOKI__ENABLED=true`,
 The password and the token are stored in the database like the relay password;
 set them in the environment to keep them out of it.
 
+## Remote pictures through a VPN
+
+A picture in a message that is loaded from the sender's server tells the sender
+that the message was opened, when, and from which address. The webmail and the
+UwUMail apps therefore don't load such pictures themselves: they ask the server
+for them (`/jmap/image`, see [jmap-remote.md](jmap-remote.md)), and only once
+the reader said they may be shown. The sender then sees the server, never the
+reader.
+
+With `egress.proxy` set, the server fetches them through a proxy too, so the
+sender sees a VPN instead of the server. Only these requests take that way:
+DNS, delivering mail, blocklists and list updates say nothing about who reads
+what and keep leaving directly. Outgoing mail on port 25 could not go through a
+VPN anyway; providers block it, and their addresses are on every blocklist.
+
+Two kinds of proxy work:
+
+- `http://host:port`, a proxy that tunnels with `CONNECT`. The easiest is
+  [gluetun](https://github.com/qdm12/gluetun) next to the server, which speaks
+  OpenVPN and WireGuard and knows NordVPN, Mullvad, ProtonVPN and many other
+  providers. `compose.yaml` has it behind the `vpn` profile; fill in the
+  `GLUETUN_*` lines in `.env` and start it with
+  `docker compose --profile vpn up -d`.
+- `socks5://host:port`, for example a SOCKS5 proxy a VPN provider runs.
+
+Both may carry a login (`http://user:password@host:port`); characters like `@`
+in it are written percent-encoded (`%40`). The server resolves names itself and
+hands the proxy an address, which it checked is on the open internet, so no
+picture can reach a machine inside the network through the proxy.
+
+`egress.fallback` decides what happens while the proxy can't be reached or
+refuses the tunnel: `block` (the default) shows no pictures until it is back,
+`direct` fetches them from the server as if no proxy were set, and the sender
+sees the server for that time.
+
+```toml
+[egress]
+proxy = "http://gluetun:8888"
+fallback = "block"
+```
+
+As environment variables: `UWUMAIL_EGRESS__PROXY` and `UWUMAIL_EGRESS__FALLBACK`.
+A proxy login belongs in `.env`, not in a file anyone else reads.
+
 ## Accounts: people and services
 
 *Server → Accounts* holds both. A **person** signs in to the portal and may use
@@ -270,6 +314,11 @@ require_tls = false
 # A UwUMail Gateway in front of a server at home, see docs/gateway.md.
 [gateway]
 code = ""              # the gateway's pairing code, used once; the pairing then lives in the database
+
+# Remote pictures in messages, fetched by the server: see "Remote pictures through a VPN" above.
+[egress]
+proxy = ""             # "http://gluetun:8888" or "socks5://user:password@host:1080"; empty: straight out
+fallback = "block"     # block | direct: what happens while the proxy is away
 
 [tone]
 language = "de"        # de | en

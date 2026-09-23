@@ -94,7 +94,8 @@ Each step ships as its own commits, container image and test deployment.
 ## 6. Web mail and external mailboxes ✅ in progress
 
 - [x] UwUMail webmail (its own repository, built from the app's interface) served at `/mail`, switchable for the server and per account (docs/webmail.md)
-- [ ] Delayed sending, signatures, sender pictures and address suggestions on the server, so the webmail stops doing without them
+- [ ] Delayed sending, signatures and address suggestions on the server, so the webmail stops doing without them
+- [x] Remote pictures and sender pictures fetched by the server, optionally through a VPN, so senders never see who reads their mail (docs/jmap-remote.md)
 - [x] Fetched mailboxes: mail from another provider's IMAP mailbox, emptied into someone's own and judged here like any other, with rules of its own for what a fetched message can still be asked (docs/fetch.md)
 - [x] Sending as a fetched address, over the provider's own outgoing server
 - [ ] External mailboxes shown as extra JMAP accounts, with their folders and with changes going back
@@ -116,7 +117,7 @@ Each step ships as its own commits, container image and test deployment.
 - [ ] Migration assistant (IMAP import from the old provider)
 - [ ] Groups, shared mailboxes, masked addresses
 - [ ] Settings sync for the UwUMail apps, send later and snooze on the server
-- [ ] Web Push / UnifiedPush, sender pictures from the server
+- [ ] Web Push / UnifiedPush
 - [x] Nightly backups to SFTP: deduplicated, encrypted by default, 7/4/6 retention, full restore from the command line
 - [ ] Restore per mailbox in the portal, backups to S3 or a mounted folder
 - [ ] A calmer view of the admin panel for people who only want the traffic light

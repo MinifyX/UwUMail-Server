@@ -66,6 +66,8 @@ mail-builder = "1"
 mail-parser = "0.11"
 # MalwareBazaar lists attachments by their MD5 or SHA-256.
 md-5 = "0.11"
+# The public suffix list, so a sender picture is asked of `shop.example` and never of `news.mail.shop.example`.
+psl = "2"
 # QR codes for setting up authenticator apps, as plain modules the portal draws itself.
 qrcode = { version = "0.14", default-features = false }
 # WebDAV request bodies; the same version mail-auth uses.

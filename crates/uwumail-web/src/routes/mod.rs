@@ -4,6 +4,7 @@ pub mod apps;
 pub mod auth;
 pub mod backups;
 pub mod domains;
+pub mod egress;
 pub mod fetch;
 pub mod gateway;
 pub mod greylist;

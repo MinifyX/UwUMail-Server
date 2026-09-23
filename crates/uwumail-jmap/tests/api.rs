@@ -127,6 +127,41 @@ async fn session_and_authentication() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn remote_pictures_are_fetched_only_for_their_account_and_never_from_inside() {
+    let server = server().await;
+    let (_, body) = server.get("/jmap/session", "mini@example.de").await;
+    let session: Value = serde_json::from_slice(&body).unwrap();
+    let account = server.account_id("mini@example.de").await;
+    assert_eq!(
+        session["capabilities"]["urn:uwumail:jmap:remote"]["imageUrl"],
+        "http://mail.example.de/jmap/image/{accountId}?url={url}"
+    );
+
+    let inside = format!("/jmap/image/{account}?url=http%3A%2F%2F127.0.0.1%2Fadmin");
+    let (status, body) = server.get(&inside, "mini@example.de").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{}", String::from_utf8_lossy(&body));
+    let (status, _) =
+        server.get(&format!("/jmap/image/{account}?url=file%3A%2F%2F%2Fetc%2Fpasswd"), "mini@example.de").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let long = format!("/jmap/image/{account}?url=https%3A%2F%2Fpictures.example%2F{}", "a".repeat(5000));
+    assert_eq!(server.get(&long, "mini@example.de").await.0, StatusCode::BAD_REQUEST);
+
+    let (status, _) = server.get(&inside, "nyu@example.de").await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "not someone else's account");
+    let anonymous = Request::get(inside.as_str()).body(Body::empty()).unwrap();
+    assert_eq!(server.request(anonymous).await.0, StatusCode::UNAUTHORIZED);
+
+    // Sender pictures: announced, and never asked of a mail provider on a person's behalf.
+    assert_eq!(
+        session["capabilities"]["urn:uwumail:jmap:remote"]["pictureUrl"],
+        "http://mail.example.de/jmap/picture/{accountId}?email={email}"
+    );
+    let person = format!("/jmap/picture/{account}?email=friend%40gmail.com");
+    assert_eq!(server.get(&person, "mini@example.de").await.0, StatusCode::NOT_FOUND);
+    assert_eq!(server.get(&person, "nyu@example.de").await.0, StatusCode::NOT_FOUND, "not someone else's account");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn switching_jmap_off_shuts_the_door_at_once() {
     let server = server().await;
     assert_eq!(server.get("/.well-known/jmap", "mini@example.de").await.0, StatusCode::OK);
