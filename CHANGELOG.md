@@ -3,7 +3,17 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
-## Unreleased
+## 0.7.0
+
+**The webmail gets a calendar, mail rules and folders** (webmail [v0.7.0](https://github.com/MinifyX/UwUMail-Webmail/releases/tag/v0.7.0)).
+A switch at the top of the sidebar leads from the mail to a calendar with month, week and day views
+and an agenda on the phone: click or drag to make an event, drag it to move or stretch it, open it
+for the full editor with place, notes and repeats, and choose "only this one" or "the whole series"
+when deleting from a series. Calendars keep their colour, can be hidden, renamed, made the default
+or deleted. Under Settings → Rules, mail can be sorted as it arrives — by sender, recipient, subject
+or mailing list into a folder, marked as read, flagged, moved to the trash or passed on — and the
+editor writes the account's Sieve script for it. Folders can be made, nested, renamed and deleted
+from the sidebar, and Trash and Junk have a button that empties them.
 
 **Calendars over JMAP.** The calendars people already keep over CalDAV are now JMAP Calendars
 too (`urn:ietf:params:jmap:calendars`, the draft in the RFC editor queue), so the webmail and the
@@ -51,6 +61,14 @@ and lockouts as IMAP; the account's IMAP switch covers it. It listens on 4190, s
 others. On a machine where something else already holds 4190 — a Dovecot next door, say —
 `update.sh` moves UwUMail's to the next free port rather than failing to start. It is not carried
 through the UwUMail Gateway yet; the webmail and the apps manage rules over JMAP and don't need it.
+
+**Reviewed before release.** The new calendars, rules and ManageSieve had their own security
+review ([docs/security-audit-0.7.0.md](docs/security-audit-0.7.0.md)). What it found is fixed in
+this release: ManageSieve no longer lets a connection pile up memory or stay open without logging
+in, a script that runs away no longer holds up delivery, a redirect that reaches nobody keeps the
+message, one mail can't make a pile of folders, and calendar requests and blob reads have a budget
+of their own. Event ends across a daylight-saving change are now calculated on the clock, not the
+calendar. The webmail's review of the same features is in its docs/security-audit-2026-09.md.
 
 ## 0.6.3
 
