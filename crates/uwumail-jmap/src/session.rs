@@ -20,6 +20,8 @@ pub const VACATION: &str = "urn:ietf:params:jmap:vacationresponse";
 pub const SENDERS: &str = "urn:uwumail:jmap:senders";
 /// Our own extension: the settings the webmail and the apps keep in sync (docs/jmap-settings.md).
 pub const SETTINGS: &str = "urn:uwumail:jmap:settings";
+/// Sieve scripts, the mail rules delivery runs (RFC 9661, docs/sieve.md).
+pub const SIEVE: &str = "urn:ietf:params:jmap:sieve";
 /// Our own extension: what the webmail needs on top of plain JMAP, currently the cleaned HTML
 /// body of a message (`uwuSafeHtml`, `uwuHasRemoteContent`).
 pub const WEBMAIL: &str = "urn:uwumail:jmap:webmail";
@@ -76,6 +78,7 @@ pub fn document(account: &Account, base: &str) -> Value {
             VACATION: {},
             SENDERS: {},
             SETTINGS: {},
+            SIEVE: { "implementation": "UwUMail Server" },
             WEBMAIL: {}
         },
         "accounts": {
@@ -99,6 +102,15 @@ pub fn document(account: &Account, base: &str) -> Value {
                         "maxKeys": uwumail_store::USER_SETTINGS_MAX_KEYS,
                         "maxSize": uwumail_store::USER_SETTINGS_MAX_SIZE,
                         "maxValueSize": uwumail_store::USER_SETTINGS_MAX_VALUE_SIZE
+                    },
+                    SIEVE: {
+                        "maxSizeScriptName": uwumail_store::SIEVE_MAX_NAME_SIZE,
+                        "maxSizeScript": uwumail_store::SIEVE_MAX_SCRIPT_SIZE,
+                        "maxNumberScripts": uwumail_store::SIEVE_MAX_SCRIPTS,
+                        "maxNumberRedirects": uwumail_smtp::sieve::MAX_REDIRECTS,
+                        "sieveExtensions": uwumail_smtp::sieve::EXTENSIONS,
+                        "notificationMethods": null,
+                        "externalLists": null
                     }
                 }
             }
@@ -108,7 +120,8 @@ pub fn document(account: &Account, base: &str) -> Value {
             SUBMISSION: account_id.clone(),
             VACATION: account_id.clone(),
             SENDERS: account_id.clone(),
-            SETTINGS: account_id.clone()
+            SETTINGS: account_id.clone(),
+            SIEVE: account_id.clone()
         },
         "username": account.login,
         "apiUrl": format!("{base}/jmap/api"),

@@ -28,6 +28,7 @@ const TYPES: &[&str] = &[
     "Calendar",
     "CalendarEvent",
     "ParticipantIdentity",
+    "SieveScript",
 ];
 
 #[derive(Deserialize)]

@@ -23,7 +23,7 @@ use crate::dsn::{self, FailedRecipient};
 use crate::sender_lists::{self, Decision};
 use crate::stream::{BoxIo, Stream};
 use crate::submission::{Submission, SubmissionRecipient, SubmitError};
-use crate::{Smtp, clamav, fetched, forward, headers, random_id, relay, reports, spam, srs, vacation};
+use crate::{Smtp, clamav, fetched, forward, headers, random_id, relay, reports, rules, spam, srs, vacation};
 
 const MAX_HOPS: usize = 50;
 const MAX_ERRORS: u32 = 10;
@@ -1594,18 +1594,35 @@ pub(crate) async fn receive(
             inbox_accounts.push(account_id);
             continue;
         }
-        let mailboxes = vec![MailboxTarget::Role(if junk { MailboxRole::Junk } else { MailboxRole::Inbox })];
-        let request =
-            IngestRequest { account_id, raw: message.clone(), mailboxes, keywords: vec![], received_at: None };
-        match ctx.store.ingest(request).await {
-            Ok(_) => {
-                note_for(
-                    &recipient.address,
-                    if junk { SpamAction::Junk } else { SpamAction::Delivered },
-                    Some(if junk { "junk" } else { "inbox" }),
-                );
+        // What stays is sorted by the person's own rules, if they have some. Junk stays in Junk: the
+        // rules are for the mail they want (docs/sieve.md).
+        let script = if junk {
+            None
+        } else {
+            ctx.store.active_sieve_script(account_id).await.unwrap_or_else(|err| {
+                tracing::warn!(%id, account = account_id, %err, "reading the sieve script failed, delivering to the inbox");
+                None
+            })
+        };
+        let stored = match script {
+            Some((_, script)) => {
+                rules::deliver(&ctx, account_id, script, &recipient.address, &envelope.address, &message)
+                    .await
+                    .map(|filed| (filed.mailbox, filed.stored))
+            }
+            None => {
+                let mailboxes = vec![MailboxTarget::Role(if junk { MailboxRole::Junk } else { MailboxRole::Inbox })];
+                let request =
+                    IngestRequest { account_id, raw: message.clone(), mailboxes, keywords: vec![], received_at: None };
+                ctx.store.ingest(request).await.map(|_| (Some(if junk { "junk" } else { "inbox" }), true))
+            }
+        };
+        match stored {
+            Ok((mailbox, kept)) => {
+                note_for(&recipient.address, if junk { SpamAction::Junk } else { SpamAction::Delivered }, mailbox);
                 delivered += 1;
-                if !junk {
+                // A message the rules discarded gets no vacation reply either.
+                if !junk && kept {
                     inbox_accounts.push(account_id);
                 }
             }

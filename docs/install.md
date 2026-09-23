@@ -87,6 +87,11 @@ UwUMail wants these, all TCP:
 | 587 | mail apps, sending with STARTTLS |
 | 993 | mail apps, reading over TLS |
 
+Optional: **4190** for apps that manage [mail rules](sieve.md) over ManageSieve
+(Thunderbird's Sieve add-on, for example). The webmail and the UwUMail apps
+don't need it; they use 443. Open it only if you want those apps from outside;
+it moves with `UWUMAIL_MANAGESIEVE_BIND` like the others below.
+
 **On a VPS or root server:** open those six in the provider's firewall, and
 check that port 25 is open outgoing as well. Many providers block it for new
 customers until you ask. The setup assistant tests it later and says what it
@@ -330,6 +335,7 @@ UWUMAIL_SMTP_BIND=1025          # 25
 UWUMAIL_SUBMISSIONS_BIND=1465   # 465
 UWUMAIL_SUBMISSION_BIND=1587    # 587
 UWUMAIL_IMAPS_BIND=1993         # 993
+UWUMAIL_MANAGESIEVE_BIND=14190  # 4190, mail rules (an update moves it there by itself when 4190 is taken)
 ```
 
 Only this side moves. From the outside the numbers stay what they are, because

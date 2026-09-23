@@ -38,6 +38,7 @@ services:
       - "${UWUMAIL_SUBMISSIONS_BIND:-465}:465"   # mail apps, TLS
       - "${UWUMAIL_IMAPS_BIND:-993}:993"         # mail apps, IMAP with TLS
       - "${UWUMAIL_SUBMISSION_BIND:-587}:587"    # mail apps, STARTTLS
+      - "${UWUMAIL_MANAGESIEVE_BIND:-4190}:4190" # mail rules (ManageSieve, STARTTLS); optional
     volumes:
       - uwumail-data:/data
     stop_grace_period: 20s

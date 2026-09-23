@@ -1,5 +1,6 @@
 //! JMAP for the UwUMail server: RFC 8620 (core), RFC 8621 (mail, submission,
-//! vacation responses), JMAP Calendars on the CalDAV calendars and push over EventSource.
+//! vacation responses), RFC 9661 (Sieve scripts), JMAP Calendars on the CalDAV calendars and
+//! push over EventSource.
 //!
 //! [`Jmap::router`] serves:
 //!
