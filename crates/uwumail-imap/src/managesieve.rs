@@ -27,8 +27,13 @@ use crate::Imap;
 const MAX_LINE: usize = 8 * 1024;
 /// The largest literal before logging in: nothing but AUTHENTICATE data needs one.
 const MAX_LITERAL_BEFORE_LOGIN: usize = 4 * 1024;
-/// A literal this much over the script limit is read and refused; beyond, the connection ends.
+/// Literal bytes one command may keep after logging in: a script and a name to go with it.
+const MAX_LITERALS_AFTER_LOGIN: usize = SIEVE_MAX_SCRIPT_SIZE + MAX_LITERAL_BEFORE_LOGIN;
+/// Literals of one command beyond what it may keep are read and refused up to this many bytes in
+/// all; beyond, the connection ends.
 const MAX_LITERAL_DISCARD: usize = 1024 * 1024;
+/// Lines of one command, the first one and one after each literal. No command has more arguments.
+const MAX_COMMAND_LINES: usize = 8;
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(60);
 /// RFC 5804 section 1.2: at least 30 minutes once logged in.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(31 * 60);
@@ -305,11 +310,12 @@ impl Session {
         Ok(line)
     }
 
-    /// Reads a command with its literals.
+    /// Reads a command with its literals. What one command may hold is bounded as a whole, not only
+    /// per literal: a command can go on with literal after literal.
     async fn read_command(&mut self) -> io::Result<Read> {
         let mut args = Vec::new();
         let mut too_big = false;
-        let mut total = 0usize;
+        let (mut kept, mut read, mut lines) = (0usize, 0usize, 0usize);
         loop {
             let line = self.read_line().await?;
             if line.is_empty() && args.is_empty() {
@@ -319,14 +325,23 @@ impl Session {
                 }
                 continue;
             }
+            lines += 1;
+            if lines > MAX_COMMAND_LINES {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "Too many literals in one command"));
+            }
             let size = tokenize(&line, &mut args).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
             let Some(size) = size else {
                 return Ok(if too_big { Read::TooBig } else { Read::Command(args) });
             };
-            let limit = if self.account.is_some() { SIEVE_MAX_SCRIPT_SIZE } else { MAX_LITERAL_BEFORE_LOGIN };
-            total += size;
-            if size > limit {
-                if self.account.is_none() || total > MAX_LITERAL_DISCARD {
+            let logged_in = self.account.is_some();
+            let (limit, keep) = if logged_in {
+                (SIEVE_MAX_SCRIPT_SIZE, MAX_LITERALS_AFTER_LOGIN)
+            } else {
+                (MAX_LITERAL_BEFORE_LOGIN, MAX_LITERAL_BEFORE_LOGIN)
+            };
+            read = read.saturating_add(size);
+            if size > limit || kept + size > keep {
+                if !logged_in || read > MAX_LITERAL_DISCARD {
                     return Err(io::Error::new(io::ErrorKind::InvalidData, "Literal too big"));
                 }
                 // Read what the client sends anyway, and answer once the command is over.
@@ -335,6 +350,7 @@ impl Session {
                 args.push(Arg::Text(Vec::new()));
                 continue;
             }
+            kept += size;
             let mut literal = vec![0; size];
             self.stream().read_exact(&mut literal).await?;
             args.push(Arg::Text(literal));

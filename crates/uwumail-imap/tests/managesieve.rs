@@ -193,3 +193,53 @@ async fn wrong_passwords_are_counted_and_scripts_are_per_account() {
     assert!(client.command("SETACTIVE \"nyus\"").await.starts_with("NO (NONEXISTENT)"));
     assert!(store.active_sieve_script(nyu).await.unwrap().is_none());
 }
+
+/// Sends one command made of `count` literals of `size` bytes each and returns what the server
+/// answers, ending in `(closed)` when it hung up.
+async fn many_literals<S: AsyncRead + AsyncWrite + Unpin>(client: &mut Client<S>, count: usize, size: usize) -> String {
+    let mut command = b"NOOP ".to_vec();
+    for _ in 0..count {
+        command.extend_from_slice(format!("{{{size}+}}\r\n").as_bytes());
+        command.extend(std::iter::repeat_n(b'a', size));
+    }
+    command.extend_from_slice(b"\r\n");
+    // The server may hang up before it has read everything.
+    let _ = client.stream.get_mut().write_all(&command).await;
+    let mut answer = String::new();
+    loop {
+        let mut line = String::new();
+        match client.stream.read_line(&mut line).await {
+            // The server hangs up; with our data still unread, the BYE may be lost in a reset.
+            Ok(0) | Err(_) => return answer + "(closed)",
+            Ok(_) => answer.push_str(&line),
+        }
+        // After a BYE, read on to the hang-up.
+        if ["OK", "NO"].iter().any(|word| line.starts_with(word)) {
+            return answer;
+        }
+    }
+}
+
+/// security-audit-0.7.0 S-42: one command could go on with literal after literal, each within the
+/// limit, and the server kept all of them -- before logging in, too.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_command_cannot_pile_up_literals() {
+    let (_store, address, certificate, _shutdown, _dir) = setup().await;
+    let mut plain = Client { stream: BufReader::new(TcpStream::connect(address).await.unwrap()) };
+    plain.response().await;
+    let answer = many_literals(&mut plain, 64, 4000).await;
+    assert!(!answer.contains("OK") && answer.ends_with("(closed)"), "before logging in: {answer:?}");
+
+    let (mut client, _, _) = secure(address, &certificate).await;
+    let login = client.command(&format!("AUTHENTICATE \"PLAIN\" \"{}\"", plain_login("mini@example.com"))).await;
+    assert!(login.starts_with("OK"), "{login}");
+    let answer = many_literals(&mut client, 64, 60_000).await;
+    assert!(!answer.contains("OK") && answer.ends_with("(closed)"), "after logging in: {answer:?}");
+
+    // What real commands send still works.
+    let (mut client, _, _) = secure(address, &certificate).await;
+    client.command(&format!("AUTHENTICATE \"PLAIN\" \"{}\"", plain_login("mini@example.com"))).await;
+    let script = "keep;\r\n".repeat(9000);
+    let stored = client.command(&format!("PUTSCRIPT {{5+}}\r\nrules {{{}+}}\r\n{script}", script.len())).await;
+    assert!(stored.starts_with("OK"), "{stored}");
+}

@@ -160,7 +160,8 @@ Commands: `CAPABILITY`, `STARTTLS`, `AUTHENTICATE`, `LOGOUT`, `NOOP`, `UNAUTHENT
 `HAVESPACE`, `PUTSCRIPT`, `LISTSCRIPTS`, `SETACTIVE`, `GETSCRIPT`, `DELETESCRIPT`, `RENAMESCRIPT`
 and `CHECKSCRIPT`. Literals may be sent as `{n+}` or `{n}`; the server never waits for a
 continuation. A command line may be 8 KiB, a literal 4 KiB before logging in and a script's size
-after. A connection idle for a minute before logging in, or 31 minutes after, is closed.
+after; one command may have at most seven literals, which together may hold 4 KiB before logging
+in and a script and its name after. A connection idle for a minute before logging in, or 31 minutes after, is closed.
 
 **Behind a [UwUMail Gateway](gateway.md)** port 4190 is not carried through the tunnel yet: the
 tunnel's list of services is read strictly by gateways of today, so a new name in it would break the
