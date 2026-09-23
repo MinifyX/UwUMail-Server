@@ -34,7 +34,10 @@ const MAX_LITERALS_AFTER_LOGIN: usize = SIEVE_MAX_SCRIPT_SIZE + MAX_LITERAL_BEFO
 const MAX_LITERAL_DISCARD: usize = 1024 * 1024;
 /// Lines of one command, the first one and one after each literal. No command has more arguments.
 const MAX_COMMAND_LINES: usize = 8;
+/// How long one command may take to arrive before logging in.
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(60);
+/// How long a connection may stay without logging in, however busy it keeps itself.
+const PRE_LOGIN_LIMIT: Duration = Duration::from_secs(3 * 60);
 /// RFC 5804 section 1.2: at least 30 minutes once logged in.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(31 * 60);
 const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -48,6 +51,8 @@ pub struct ManageSieve {
     store: Store,
     limiter: Arc<AuthLimiter>,
     connections: Arc<Semaphore>,
+    /// [`LOGIN_TIMEOUT`] and [`PRE_LOGIN_LIMIT`]; shorter in tests.
+    login_timeouts: (Duration, Duration),
 }
 
 impl ManageSieve {
@@ -57,7 +62,16 @@ impl ManageSieve {
             store: imap.store.clone(),
             limiter: imap.limiter.clone(),
             connections: Arc::new(Semaphore::new(MAX_CONNECTIONS)),
+            login_timeouts: (LOGIN_TIMEOUT, PRE_LOGIN_LIMIT),
         }
+    }
+
+    /// Other limits for the time before logging in: per command and for the whole connection. For
+    /// tests, which cannot wait minutes.
+    #[doc(hidden)]
+    pub fn with_login_timeouts(mut self, per_command: Duration, in_all: Duration) -> ManageSieve {
+        self.login_timeouts = (per_command, in_all);
+        self
     }
 
     /// Accepts connections (port 4190) until `shutdown` changes.
@@ -100,6 +114,7 @@ impl ManageSieve {
                 encrypted: false,
                 account: None,
                 auth_failures: 0,
+                unauthenticated_since: tokio::time::Instant::now(),
             };
             match session.run().await {
                 Err(err)
@@ -230,6 +245,9 @@ struct Session {
     encrypted: bool,
     account: Option<Account>,
     auth_failures: u32,
+    /// Since when the connection has not been logged in: from the start, and again after
+    /// UNAUTHENTICATE.
+    unauthenticated_since: tokio::time::Instant,
 }
 
 impl Session {
@@ -263,11 +281,22 @@ impl Session {
         text
     }
 
+    /// How long the next command may take to arrive. Before logging in, also no longer than what is
+    /// left of the time a connection may stay without logging in: NOOP after NOOP does not keep one
+    /// open for ever.
+    fn read_limit(&self) -> Duration {
+        if self.account.is_some() {
+            return IDLE_TIMEOUT;
+        }
+        let (per_command, in_all) = self.sieve.login_timeouts;
+        per_command.min(in_all.saturating_sub(self.unauthenticated_since.elapsed()))
+    }
+
     async fn run(&mut self) -> io::Result<()> {
         let greeting = format!("{}OK {}\r\n", self.capabilities(), string("UwUMail ManageSieve ready, nya"));
         self.send(&greeting).await?;
         loop {
-            let limit = if self.account.is_some() { IDLE_TIMEOUT } else { LOGIN_TIMEOUT };
+            let limit = self.read_limit();
             let read = match tokio::time::timeout(limit, self.read_command()).await {
                 Ok(Ok(read)) => read,
                 Ok(Err(err)) if err.kind() == io::ErrorKind::InvalidData => {
@@ -380,6 +409,7 @@ impl Session {
             ("STARTTLS" | "AUTHENTICATE", true) => no(None, "Already logged in"),
             ("UNAUTHENTICATE", true) => {
                 self.account = None;
+                self.unauthenticated_since = tokio::time::Instant::now();
                 ok("Logged out, the connection stays")
             }
             ("UNAUTHENTICATE", false) => no(None, "Not logged in"),
@@ -450,7 +480,12 @@ impl Session {
             Some(initial) => initial.text().map(<[u8]>::to_vec),
             None => {
                 self.send("\"\"\r\n").await?;
-                match self.read_command().await? {
+                // The answer is a command's worth of reading like any other: under the same clock.
+                let Ok(read) = tokio::time::timeout(self.read_limit(), self.read_command()).await else {
+                    self.send(&format!("BYE {}\r\n", string("You were idle for too long, bye"))).await?;
+                    return Ok(Flow::Close);
+                };
+                match read? {
                     Read::Command(args) => args.first().and_then(Arg::text).map(<[u8]>::to_vec),
                     Read::TooBig | Read::Closed => None,
                 }

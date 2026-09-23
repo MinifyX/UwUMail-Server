@@ -2,6 +2,7 @@
 //! talks to it: STARTTLS first, then AUTHENTICATE PLAIN, then the script commands.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use base64::Engine;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
@@ -50,6 +51,13 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
 }
 
 async fn setup() -> (Store, std::net::SocketAddr, Vec<u8>, watch::Sender<bool>, tempfile::TempDir) {
+    setup_with(None).await
+}
+
+/// With other limits for the time before logging in: per command and in all.
+async fn setup_with(
+    login_timeouts: Option<(Duration, Duration)>,
+) -> (Store, std::net::SocketAddr, Vec<u8>, watch::Sender<bool>, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
     store.create_domain("example.com").await.unwrap();
@@ -78,7 +86,11 @@ async fn setup() -> (Store, std::net::SocketAddr, Vec<u8>, watch::Sender<bool>, 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let (shutdown, rx) = watch::channel(false);
-    tokio::spawn(ManageSieve::new(&imap).serve(listener, Arc::new(tls), rx));
+    let mut sieve = ManageSieve::new(&imap);
+    if let Some((per_command, in_all)) = login_timeouts {
+        sieve = sieve.with_login_timeouts(per_command, in_all);
+    }
+    tokio::spawn(sieve.serve(listener, Arc::new(tls), rx));
     (store, address, certificate.cert.der().to_vec(), shutdown, dir)
 }
 
@@ -242,4 +254,42 @@ async fn a_command_cannot_pile_up_literals() {
     let script = "keep;\r\n".repeat(9000);
     let stored = client.command(&format!("PUTSCRIPT {{5+}}\r\nrules {{{}+}}\r\n{script}", script.len())).await;
     assert!(stored.starts_with("OK"), "{stored}");
+}
+
+/// security-audit-0.7.0 S-47: before logging in, a connection could stay for ever -- with a NOOP
+/// now and then, or by never answering AUTHENTICATE's challenge, which had no timeout at all.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_connection_that_does_not_log_in_is_closed_in_time() {
+    let (_store, address, certificate, _shutdown, _dir) =
+        setup_with(Some((Duration::from_millis(1500), Duration::from_secs(3)))).await;
+
+    // Busy, but never logging in.
+    let mut plain = Client { stream: BufReader::new(TcpStream::connect(address).await.unwrap()) };
+    plain.response().await;
+    let started = std::time::Instant::now();
+    // The server says BYE and hangs up; a NOOP sent meanwhile may meet a reset instead.
+    let mut closed = false;
+    while started.elapsed() < Duration::from_secs(6) {
+        let _ = plain.stream.get_mut().write_all(b"NOOP\r\n").await;
+        let mut line = String::new();
+        match plain.stream.read_line(&mut line).await {
+            Ok(0) | Err(_) => closed = true,
+            Ok(_) => closed = line.starts_with("BYE"),
+        }
+        if closed {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert!(closed, "still open after {:?}", started.elapsed());
+    assert!(started.elapsed() < Duration::from_secs(5), "{:?}", started.elapsed());
+
+    // Asked for its credentials and never answering.
+    let (mut client, _, _) = secure(address, &certificate).await;
+    client.stream.get_mut().write_all(b"AUTHENTICATE \"PLAIN\"\r\n").await.unwrap();
+    let started = std::time::Instant::now();
+    let answer = tokio::time::timeout(Duration::from_secs(10), client.response()).await;
+    let answer = answer.expect("the server keeps waiting for an answer to its challenge");
+    assert!(answer.contains("BYE"), "{answer:?}");
+    assert!(started.elapsed() < Duration::from_secs(4), "{:?}", started.elapsed());
 }
