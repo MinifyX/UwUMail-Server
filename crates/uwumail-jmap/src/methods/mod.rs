@@ -5,6 +5,7 @@ mod identity;
 mod mailbox;
 mod senders;
 mod settings;
+mod sieve;
 mod snippet;
 mod submission;
 mod thread;
@@ -17,10 +18,10 @@ use uwumail_store::{Account, Changes};
 
 use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
-use crate::session::{CORE, MAIL, SENDERS, SETTINGS, SUBMISSION, VACATION, WEBMAIL};
+use crate::session::{CORE, MAIL, SENDERS, SETTINGS, SIEVE, SUBMISSION, VACATION, WEBMAIL};
 use crate::{Inner, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, ids};
 
-pub const KNOWN_CAPABILITIES: &[&str] = &[CORE, MAIL, SUBMISSION, VACATION, SENDERS, SETTINGS, WEBMAIL];
+pub const KNOWN_CAPABILITIES: &[&str] = &[CORE, MAIL, SUBMISSION, VACATION, SENDERS, SETTINGS, SIEVE, WEBMAIL];
 
 /// One or more `(method name, arguments)` responses for a call.
 pub type Outputs = Vec<(String, Value)>;
@@ -75,6 +76,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "VacationResponse" => VACATION,
         "SenderList" => SENDERS,
         "UserSettings" => SETTINGS,
+        "SieveScript" => SIEVE,
         _ => return Err(MethodError::kind("unknownMethod")),
     };
     if !requires(capability, &ctx.using) {
@@ -115,6 +117,12 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "SenderList/set" => single(senders::set(ctx, &args).await?),
         "UserSettings/get" => single(settings::get(ctx, &args).await?),
         "UserSettings/set" => single(settings::set(ctx, &args).await?),
+        "SieveScript/get" => single(sieve::get(ctx, &args).await?),
+        "SieveScript/changes" => single(changes(ctx, &args, "SieveScript", 'r').await?),
+        "SieveScript/set" => single(sieve::set(ctx, &args).await?),
+        "SieveScript/query" => single(sieve::query(ctx, &args).await?),
+        "SieveScript/queryChanges" => Err(MethodError::kind("cannotCalculateChanges")),
+        "SieveScript/validate" => single(sieve::validate(ctx, &args).await?),
         _ => Err(MethodError::kind("unknownMethod")),
     }
 }

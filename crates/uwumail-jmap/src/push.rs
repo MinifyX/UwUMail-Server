@@ -18,7 +18,7 @@ use crate::auth::ClientInfo;
 use crate::{Jmap, ids};
 
 const TYPES: &[&str] =
-    &["Mailbox", "Email", "Thread", "Identity", "EmailSubmission", "VacationResponse", "UserSettings"];
+    &["Mailbox", "Email", "Thread", "Identity", "EmailSubmission", "VacationResponse", "UserSettings", "SieveScript"];
 
 #[derive(Deserialize)]
 pub struct PushQuery {

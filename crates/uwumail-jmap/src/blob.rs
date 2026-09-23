@@ -84,21 +84,30 @@ pub async fn download(
         return problem(StatusCode::NOT_FOUND, "Unknown blob.");
     };
     let store = &jmap.inner.store;
-    if !store.blob_accessible(owner.id, reference.hash()).await.unwrap_or(false) {
-        return problem(StatusCode::NOT_FOUND, "Unknown blob.");
-    }
-    let Ok(bytes) = store.blob(reference.hash()).await else {
-        return problem(StatusCode::NOT_FOUND, "Unknown blob.");
+    // A Sieve script's content lives with the script, not in the blob files (RFC 9661 section 2.2).
+    let script = match &reference {
+        ids::BlobRef::Whole(hash) => store.sieve_script_blob(owner.id, hash).await.ok().flatten(),
+        ids::BlobRef::Part(..) => None,
     };
-    let (bytes, detected) = match reference {
-        ids::BlobRef::Whole(ref hash) => {
-            let uploaded = store.upload_media_type(owner.id, hash).await.ok().flatten();
-            (bytes, uploaded.unwrap_or_else(|| "message/rfc822".into()))
+    let (bytes, detected) = if let Some(script) = script {
+        (script.into_bytes(), "application/sieve".to_owned())
+    } else {
+        if !store.blob_accessible(owner.id, reference.hash()).await.unwrap_or(false) {
+            return problem(StatusCode::NOT_FOUND, "Unknown blob.");
         }
-        ids::BlobRef::Part(_, index) => match email::part_content(&bytes, index) {
-            Some(part) => part,
-            None => return problem(StatusCode::NOT_FOUND, "Unknown blob."),
-        },
+        let Ok(bytes) = store.blob(reference.hash()).await else {
+            return problem(StatusCode::NOT_FOUND, "Unknown blob.");
+        };
+        match reference {
+            ids::BlobRef::Whole(ref hash) => {
+                let uploaded = store.upload_media_type(owner.id, hash).await.ok().flatten();
+                (bytes, uploaded.unwrap_or_else(|| "message/rfc822".into()))
+            }
+            ids::BlobRef::Part(_, index) => match email::part_content(&bytes, index) {
+                Some(part) => part,
+                None => return problem(StatusCode::NOT_FOUND, "Unknown blob."),
+            },
+        }
     };
     let content_type = query.accept.filter(|t| t.contains('/')).unwrap_or(detected);
     let mut response = Response::new(Body::from(bytes));
