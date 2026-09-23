@@ -17,6 +17,7 @@ it may show it, and never loads one from the sender directly.
 ```json
 "urn:uwumail:jmap:remote": {
   "imageUrl": "https://mail.example.com/jmap/image/{accountId}?url={url}",
+  "pictureUrl": "https://mail.example.com/jmap/picture/{accountId}?email={email}",
   "maxSizeImage": 10485760
 }
 ```
@@ -51,3 +52,28 @@ an `<img>` ignores both, while someone who opens the address itself gets a
 download instead of a page that could run on the server's origin.
 
 The server fetches at most 32 pictures at a time, for all accounts together.
+
+## Sender pictures
+
+`GET` on the filled-in `pictureUrl` (`email` percent-encoded) answers with the
+logo or website icon of a company sender, or `404` when there is none. Only the
+registrable domain of the address is asked (`news.mail.shop.de` becomes
+`shop.de`), and never for addresses at mail providers such as gmail.com or
+web.de, which belong to people.
+
+The server looks, in this order, for:
+
+1. the SVG logo of a BIMI record (`default._bimi.<domain>` in DNS),
+2. the icons the website's start page links (`apple-touch-icon` first, then the
+   largest `icon`), at `https://<domain>/` or `https://www.<domain>/`,
+3. `/favicon.ico`.
+
+The DNS lookup goes out directly; the web requests take the same way as remote
+pictures, through the egress proxy when one is set. The answer carries the
+picture with its type and `X-Picture-Kind`: `logo` for a picture made to fill a
+circle, `icon` for a small symbol that wants a plain background around it.
+
+What was found, and that nothing was, is kept in memory for a week and shared by
+all accounts, so a company sees at most one request a week from the server, no
+matter who reads its mail and how often. After a restart, or once the week is
+over, the server asks again, so a new logo arrives within a week.

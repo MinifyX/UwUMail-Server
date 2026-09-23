@@ -150,6 +150,15 @@ async fn remote_pictures_are_fetched_only_for_their_account_and_never_from_insid
     assert_eq!(status, StatusCode::NOT_FOUND, "not someone else's account");
     let anonymous = Request::get(inside.as_str()).body(Body::empty()).unwrap();
     assert_eq!(server.request(anonymous).await.0, StatusCode::UNAUTHORIZED);
+
+    // Sender pictures: announced, and never asked of a mail provider on a person's behalf.
+    assert_eq!(
+        session["capabilities"]["urn:uwumail:jmap:remote"]["pictureUrl"],
+        "http://mail.example.de/jmap/picture/{accountId}?email={email}"
+    );
+    let person = format!("/jmap/picture/{account}?email=friend%40gmail.com");
+    assert_eq!(server.get(&person, "mini@example.de").await.0, StatusCode::NOT_FOUND);
+    assert_eq!(server.get(&person, "nyu@example.de").await.0, StatusCode::NOT_FOUND, "not someone else's account");
 }
 
 #[tokio::test(flavor = "multi_thread")]

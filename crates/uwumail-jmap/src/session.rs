@@ -85,6 +85,7 @@ pub fn document(account: &Account, base: &str) -> Value {
             WEBMAIL: {},
             REMOTE: {
                 "imageUrl": format!("{base}/jmap/image/{{accountId}}?url={{url}}"),
+                "pictureUrl": format!("{base}/jmap/picture/{{accountId}}?email={{email}}"),
                 "maxSizeImage": crate::remote::MAX_IMAGE_BYTES
             }
         },

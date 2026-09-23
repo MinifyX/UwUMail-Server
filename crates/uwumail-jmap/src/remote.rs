@@ -75,6 +75,55 @@ pub async fn image(
     response
 }
 
+#[derive(Deserialize)]
+pub struct PictureQuery {
+    email: String,
+}
+
+/// The logo or website icon of a company sender, fetched and kept by the server. `404` for people, mail
+/// providers and companies without one.
+pub async fn picture(
+    State(jmap): State<Jmap>,
+    Path(account): Path<String>,
+    Query(query): Query<PictureQuery>,
+    client: Option<Extension<ClientInfo>>,
+    headers: HeaderMap,
+) -> Response {
+    let client = client.map(|Extension(c)| c).unwrap_or_default();
+    let owner = match jmap.inner.auth.account_for(&headers, client, false).await {
+        Ok(owner) => owner,
+        Err(err) => return err.into_response(),
+    };
+    if account != ids::account(owner.id) {
+        return problem(StatusCode::NOT_FOUND, "Unknown account.");
+    }
+    if query.email.len() > 320 {
+        return problem(StatusCode::BAD_REQUEST, "That is not an address.");
+    }
+    let Some(found) = jmap.inner.pictures.get(&query.email).await else {
+        let mut response = problem(StatusCode::NOT_FOUND, "No picture for this sender.");
+        // Asking again soon changes nothing; the server remembers for a week.
+        response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("private, max-age=86400"));
+        return response;
+    };
+    let mut response = Response::new(Body::from(found.bytes));
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(found.media_type));
+    headers.insert("x-picture-kind", HeaderValue::from_static(found.kind.as_str()));
+    if let Ok(domain) = HeaderValue::from_str(&found.domain) {
+        headers.insert("x-picture-domain", domain);
+    }
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, max-age=86400"));
+    headers.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
+    headers.insert(header::CONTENT_DISPOSITION, HeaderValue::from_static("attachment"));
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static("default-src 'none'; style-src 'unsafe-inline'; sandbox"),
+    );
+    headers.insert("cross-origin-resource-policy", HeaderValue::from_static("same-origin"));
+    response
+}
+
 /// The type to hand the picture on with: the one it was sent with when that is a picture, otherwise what
 /// its first bytes say. Anything else is not passed on.
 fn picture_type(sent: &str, body: &[u8]) -> Option<HeaderValue> {
