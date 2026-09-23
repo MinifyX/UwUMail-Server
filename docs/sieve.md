@@ -101,6 +101,7 @@ than those few threads.
 | Size of a script | 64 KiB |
 | Length of a name | 512 bytes (128 characters in any script); no control characters |
 | Redirects per message | 1 |
+| Folders `:create` makes for one message | 10; what does not fit goes to the inbox |
 | Active scripts | one at a time; the active one can't be deleted before it is switched off |
 
 ## JMAP

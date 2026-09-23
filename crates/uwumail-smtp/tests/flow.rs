@@ -1383,3 +1383,35 @@ async fn a_sieve_redirect_that_goes_nowhere_keeps_the_message() {
     assert_eq!(a.wait_for_inbox("leni@a.test", 1).await[0].subject, "Weiter");
     assert_eq!(a.inbox("mini@a.test").await.len(), 1);
 }
+
+/// security-audit-0.7.0 S-48: `fileinto :create` with a name taken from the message let every
+/// message make up to 64 folders of up to 64 levels each in the recipient's account.
+#[tokio::test(flavor = "multi_thread")]
+async fn sieve_makes_only_a_few_folders_for_one_message() {
+    let a = start("a.test", &["mini"], &[]).await;
+    for name in ["sender.test", "client.sender.test", "_dmarc.sender.test"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+    let store = a.smtp.store();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap().id;
+    let script = br#"require ["fileinto", "mailbox", "variables", "copy"];
+if header :matches "subject" "*" { set "path" "${1}"; }
+fileinto :copy :create "${path}";
+fileinto :create "Extra/One";
+"#;
+    uwumail_smtp::sieve::validate(script).unwrap();
+    let created = store.create_sieve_script(mini, Some("UwUMail"), script).await.unwrap();
+    store.activate_sieve_script(mini, Some(created.id)).await.unwrap();
+    let before = store.mailboxes(mini).await.unwrap().len();
+
+    let deep = (1..=20).map(|n| format!("L{n}")).collect::<Vec<_>>().join("/");
+    assert!(deliver_to(&a, "mini@a.test", &deep).await.starts_with("250"));
+    let made = store.mailboxes(mini).await.unwrap().len() - before;
+    assert!(made <= 10, "{made} folders for one message");
+    assert_eq!(a.inbox("mini@a.test").await.len(), 1, "what could not be filed stays in the inbox");
+
+    // A message that names few folders still gets them.
+    assert!(deliver_to(&a, "mini@a.test", "Kurz/Weg").await.starts_with("250"));
+    assert_eq!(folder(&a, "mini@a.test", &["Kurz", "Weg"]).await.map(|m| m.len()), Some(1));
+    assert_eq!(folder(&a, "mini@a.test", &["Extra", "One"]).await.map(|m| m.len()), Some(1));
+}

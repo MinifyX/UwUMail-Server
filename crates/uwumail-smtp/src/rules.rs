@@ -18,6 +18,9 @@ use crate::{Context, forward};
 /// How long a run may take before the message is simply kept. The engine's own limits stop a script
 /// long before this; this is for a machine that is very busy.
 const RUN_TIMEOUT: Duration = Duration::from_secs(10);
+/// Folders `fileinto :create` may make for one message. A name can come from the message itself
+/// (`${1}` of a header), and without a bound every message could make hundreds of folders.
+const MAX_CREATED_PER_MESSAGE: usize = 10;
 
 /// Where a message went after the script.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -170,7 +173,13 @@ async fn plan(script: String, message: &[u8], envelope: Envelope<'_>, folders: &
 }
 
 /// Finds or makes the folder a filing names. `None` means the inbox.
-async fn folder_for(ctx: &Context, account_id: i64, folders: &mut Vec<Folder>, target: &Target) -> Option<i64> {
+async fn folder_for(
+    ctx: &Context,
+    account_id: i64,
+    folders: &mut Vec<Folder>,
+    target: &Target,
+    may_create: &mut usize,
+) -> Option<i64> {
     let Target::Folder { name, mailbox_id, create } = target else {
         return None;
     };
@@ -204,6 +213,14 @@ async fn folder_for(ctx: &Context, account_id: i64, folders: &mut Vec<Folder>, t
             parent = Some(existing.id);
             continue;
         }
+        if *may_create == 0 {
+            tracing::info!(
+                account = account_id,
+                "a sieve script makes too many folders for one message, keeping it in the inbox"
+            );
+            return None;
+        }
+        *may_create -= 1;
         match ctx.store.create_mailbox(account_id, level, parent, None, 0, true).await {
             Ok(id) => {
                 folders.push(Folder { id, path: current.clone() });
@@ -292,12 +309,14 @@ pub(crate) async fn deliver(
     let inbox_id = folders.first().map(|folder| folder.id);
     let mut groups: BTreeMap<Vec<String>, Vec<i64>> = BTreeMap::new();
     let mut placed: Vec<i64> = Vec::new();
+    let mut may_create = MAX_CREATED_PER_MESSAGE;
     let mut in_inbox = false;
     for filing in &filings {
-        let mailbox = match folder_for(ctx, account_id, &mut folders, &filing.target).await.or(inbox_id) {
-            Some(id) => id,
-            None => continue,
-        };
+        let mailbox =
+            match folder_for(ctx, account_id, &mut folders, &filing.target, &mut may_create).await.or(inbox_id) {
+                Some(id) => id,
+                None => continue,
+            };
         in_inbox |= Some(mailbox) == inbox_id;
         if placed.contains(&mailbox) {
             continue;
