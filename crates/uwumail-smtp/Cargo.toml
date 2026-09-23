@@ -25,6 +25,7 @@ mail-auth.workspace = true
 mail-builder.workspace = true
 mail-parser.workspace = true
 md-5.workspace = true
+psl.workspace = true
 quick-xml.workspace = true
 regex.workspace = true
 rustls.workspace = true

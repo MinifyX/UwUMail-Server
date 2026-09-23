@@ -25,6 +25,7 @@ mod inbound;
 mod limiter;
 pub mod mta_sts;
 mod outbound;
+pub mod pictures;
 pub mod reachability;
 mod relay;
 mod reports;
