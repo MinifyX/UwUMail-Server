@@ -64,6 +64,8 @@ pub struct ListenConfig {
     pub submissions: String,
     /// IMAP over TLS for mail apps.
     pub imaps: String,
+    /// ManageSieve for mail rules (RFC 5804), with STARTTLS.
+    pub managesieve: String,
     pub http: String,
     pub https: String,
     /// Plain HTTP for running behind a reverse proxy that terminates TLS.
@@ -77,6 +79,7 @@ impl Default for ListenConfig {
             submission: "[::]:587".into(),
             submissions: "[::]:465".into(),
             imaps: "[::]:993".into(),
+            managesieve: "[::]:4190".into(),
             http: "[::]:80".into(),
             https: "[::]:443".into(),
             proxy: String::new(),
@@ -256,6 +259,7 @@ mod tests {
         assert_eq!(config.tls.mode, TlsMode::SelfSigned);
         assert_eq!(config.delivery.routes["b.test"], "127.0.0.1:2525");
         assert_eq!(config.listen.smtp, "[::]:25");
+        assert_eq!(config.listen.managesieve, "[::]:4190");
         config.validate().unwrap();
     }
 
@@ -309,6 +313,7 @@ language = \"de\"
         // A listener address starts like a list and is still taken as text.
         assert_eq!(with_env_text("listen.proxy", "[::]:8080").unwrap().listen.proxy, "[::]:8080");
         assert_eq!(with_env_text("gateway.code", "").unwrap().gateway.code, "");
+        assert_eq!(with_env_text("listen.managesieve", "").unwrap().listen.managesieve, "", "switched off");
     }
 
     #[test]

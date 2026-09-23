@@ -16,10 +16,11 @@
 #   --gateway-code CODE  pairing code of a UwUMail Gateway (uwugw1...), for a server at home
 #   --smtp-bind X        where UwUMail listens when that port is taken on this machine: a port
 #   --http-bind X        or an address:port, for 25, 80, 443, 465, 587 and 993 in this order.
-#   --https-bind X       Without them it looks at the six itself and asks about every one it
+#   --https-bind X       Without them it looks at the ports itself and asks about every one it
 #   --submissions-bind X finds taken. What arrives from outside keeps its own number either
 #   --submission-bind X  way, so whatever sits in front has to send it to the new one.
 #   --imaps-bind X
+#   --managesieve-bind X the same for 4190, where apps manage mail rules (ManageSieve)
 #   --version TAG        latest (default), beta, edge, or an exact version like 0.4.0
 #   --with-antivirus     bring the virus scanner along even on a small machine
 #   --no-antivirus       leave the virus scanner out
@@ -45,6 +46,7 @@ https_bind=""
 submissions_bind=""
 submission_bind=""
 imaps_bind=""
+managesieve_bind=""
 version=latest
 antivirus=auto
 host_helper=true
@@ -70,13 +72,14 @@ while [ $# -gt 0 ]; do
     --submissions-bind) submissions_bind="${2:?--submissions-bind needs a port}"; shift 2 ;;
     --submission-bind) submission_bind="${2:?--submission-bind needs a port}"; shift 2 ;;
     --imaps-bind) imaps_bind="${2:?--imaps-bind needs a port}"; shift 2 ;;
+    --managesieve-bind) managesieve_bind="${2:?--managesieve-bind needs a port}"; shift 2 ;;
     --version) version="${2:?--version needs a tag}"; shift 2 ;;
     --with-antivirus) antivirus=true; shift ;;
     --no-antivirus) antivirus=false; shift ;;
     --no-host-helper) host_helper=false; shift ;;
     --yes | -y) ask=false; shift ;;
     -h | --help)
-      sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) die "unknown option: $1" ;;
@@ -306,6 +309,8 @@ plan_port "mail apps, STARTTLS" 587 1587 --submission-bind "$submission_bind"
 submission_bind="$plan_result"
 plan_port "mail apps, IMAP" 993 1993 --imaps-bind "$imaps_bind"
 imaps_bind="$plan_result"
+plan_port "mail rules (ManageSieve)" 4190 14190 --managesieve-bind "$managesieve_bind"
+managesieve_bind="$plan_result"
 
 if [ -n "$ports_taken" ]; then
   die "these ports are taken on this machine, and there is no terminal to ask on. Say where
@@ -372,6 +377,7 @@ $antivirus && set_env COMPOSE_PROFILES antivirus "$dir/.env"
 [ -n "$submissions_bind" ] && set_env UWUMAIL_SUBMISSIONS_BIND "$submissions_bind" "$dir/.env"
 [ -n "$submission_bind" ] && set_env UWUMAIL_SUBMISSION_BIND "$submission_bind" "$dir/.env"
 [ -n "$imaps_bind" ] && set_env UWUMAIL_IMAPS_BIND "$imaps_bind" "$dir/.env"
+[ -n "$managesieve_bind" ] && set_env UWUMAIL_MANAGESIEVE_BIND "$managesieve_bind" "$dir/.env"
 step "wrote $dir/.env"
 
 # ── the helper that looks after the machine ───────────────────────────────────────────────────
