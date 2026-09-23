@@ -1257,3 +1257,98 @@ async fn a_spam_trap_does_not_shield_its_co_recipients() {
     assert!(a.inbox("mini@a.test").await.is_empty(), "a rejected message does not reach the real recipient");
     assert!(a.mailbox("mini@a.test", MailboxRole::Junk).await.is_empty(), "not even Junk");
 }
+
+/// Hands in a message from news@sender.test for `to`; returns the reply to the data.
+async fn deliver_to(server: &TestServer, to: &str, subject: &str) -> String {
+    let mut session = RawSession::connect(server.mx).await;
+    assert!(session.command("EHLO client.sender.test").await.starts_with("250"));
+    assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+    assert!(session.command(&format!("RCPT TO:<{to}>")).await.starts_with("250"));
+    assert!(session.command("DATA").await.starts_with("354"));
+    session.command(&format!("From: news@sender.test\r\nTo: {to}\r\nSubject: {subject}\r\n\r\nMiau\r\n.")).await
+}
+
+async fn folder(server: &TestServer, login: &str, path: &[&str]) -> Option<Vec<EmailSummary>> {
+    let store = server.smtp.store();
+    let account = store.account(login).await.unwrap().unwrap();
+    let mailboxes = store.mailboxes(account.id).await.unwrap();
+    let mut parent = None;
+    let mut found = None;
+    for name in path {
+        found = mailboxes.iter().find(|m| m.parent_id == parent && m.name == *name);
+        parent = Some(found?.id);
+    }
+    Some(store.emails_in_mailbox(found?.id, 50).await.unwrap())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sieve_script_files_flags_redirects_and_discards_but_leaves_junk_alone() {
+    let unreachable = SocketAddr::from(([127, 0, 0, 1], 9));
+    let a = start("a.test", &["mini", "leni"], &[("c.test", unreachable)]).await;
+    for name in ["sender.test", "client.sender.test", "_dmarc.sender.test"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+    let store = a.smtp.store();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap().id;
+    let script = br#"require ["fileinto", "imap4flags", "mailbox", "copy"];
+if header :contains "subject" "Rechnung" {
+    addflag "\\Seen";
+    fileinto :create "Finanzen/Rechnungen";
+    stop;
+}
+if header :contains "subject" "Weiter" { redirect :copy "leni@a.test"; }
+if header :contains "subject" "Weg" { discard; }
+if header :contains "subject" "Fremd" { redirect "fremd@c.test"; }
+if header :contains "subject" "Nirgends" { fileinto "Gibt es nicht"; }
+"#;
+    uwumail_smtp::sieve::validate(script).unwrap();
+    let created = store.create_sieve_script(mini, Some("UwUMail"), script).await.unwrap();
+    store.activate_sieve_script(mini, Some(created.id)).await.unwrap();
+
+    // Filed into a folder the script creates, marked as read.
+    assert!(deliver_to(&a, "mini@a.test", "Rechnung 42").await.starts_with("250"));
+    let filed = folder(&a, "mini@a.test", &["Finanzen", "Rechnungen"]).await.expect("the folder was created");
+    assert_eq!(filed.len(), 1);
+    assert_eq!(filed[0].keywords, ["$seen"]);
+    assert!(a.inbox("mini@a.test").await.is_empty());
+
+    // A copy for someone on this server, one stays.
+    assert!(deliver_to(&a, "mini@a.test", "Weiter bitte").await.starts_with("250"));
+    assert_eq!(a.wait_for_inbox("leni@a.test", 1).await[0].subject, "Weiter bitte");
+    assert_eq!(a.inbox("mini@a.test").await.len(), 1);
+
+    // Discarded: accepted, stored nowhere.
+    assert!(deliver_to(&a, "mini@a.test", "Weg damit").await.starts_with("250"));
+    assert_eq!(a.inbox("mini@a.test").await.len(), 1);
+
+    // Elsewhere only after a confirmed forwarding: without one, the message stays here.
+    assert!(deliver_to(&a, "mini@a.test", "Fremd").await.starts_with("250"));
+    assert_eq!(a.inbox("mini@a.test").await.len(), 2);
+    assert!(store.queue_entries().await.unwrap().is_empty(), "nothing went out");
+
+    // A folder that does not exist, without :create: the inbox.
+    assert!(deliver_to(&a, "mini@a.test", "Nirgends").await.starts_with("250"));
+    assert_eq!(a.inbox("mini@a.test").await.len(), 3);
+
+    // Once confirmed, the redirect goes out -- through the queue, with SRS, like forwarding.
+    let (_, token) = store.add_forward_target(mini, "fremd@c.test", true).await.unwrap();
+    store.confirm_forward_link(&token.unwrap()).await.unwrap();
+    store.set_forward_keep_copy(mini, true).await.unwrap();
+    assert!(deliver_to(&a, "mini@a.test", "Fremd again").await.starts_with("250"));
+    let queued = store.queue_entries().await.unwrap();
+    assert!(queued.iter().all(|entry| entry.message.return_path.starts_with("SRS0=")), "{queued:?}");
+    assert!(!queued.is_empty());
+
+    // Junk stays junk: the script does not see it.
+    store
+        .add_sender_list_entry(list_entry(ListScope::Account(mini), SenderList::Block, "news@sender.test"))
+        .await
+        .unwrap();
+    assert!(deliver_to(&a, "mini@a.test", "Rechnung spam").await.starts_with("250"));
+    assert_eq!(a.mailbox("mini@a.test", MailboxRole::Junk).await.len(), 1);
+    assert_eq!(folder(&a, "mini@a.test", &["Finanzen", "Rechnungen"]).await.unwrap().len(), 1);
+
+    // Leni has no script: her mail is untouched by Mini's.
+    assert!(deliver_to(&a, "leni@a.test", "Rechnung für Leni").await.starts_with("250"));
+    assert_eq!(a.inbox("leni@a.test").await.len(), 2);
+}
