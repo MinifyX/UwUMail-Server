@@ -25,6 +25,9 @@ pub const MAX_EXPANDED_DURATION: &str = "P400D";
 pub const EXPANSION_LIMIT: usize = 10_000;
 /// Longest title, in bytes. Everything else is bounded by the size of the whole object.
 pub const MAX_TITLE_BYTES: usize = 1024;
+/// Changed or excluded instances of one series that JMAP writes. Checking an event looks at each of
+/// them against the series, so the number is bounded before anything else is done with them.
+pub const MAX_OVERRIDES: usize = 1000;
 const MAX_UID_BYTES: usize = 255;
 
 /// Properties JMAP adds to an event; they never go into the iCalendar object.
@@ -393,8 +396,12 @@ pub fn instance(event: &Map<String, Value>, rid: &str) -> Option<Map<String, Val
     if patch.is_some_and(|patch| patch.get("excluded") == Some(&Value::Bool(true))) {
         return None;
     }
-    let mut object = event.clone();
-    object.remove("iCalendar");
+    // Not a whole clone: the overrides of a long series would be copied once per instance.
+    let mut object: Map<String, Value> = event
+        .iter()
+        .filter(|(key, _)| !matches!(key.as_str(), "iCalendar" | "recurrenceOverrides"))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
     object.insert("recurrenceRule".into(), Value::Null);
     object.insert("recurrenceOverrides".into(), Value::Null);
     object.insert("recurrenceId".into(), Value::String(rid.to_owned()));
@@ -667,6 +674,12 @@ pub fn validate(event: &Map<String, Value>) -> Result<(), Invalid> {
     match event.get("recurrenceOverrides") {
         None | Some(Value::Null) => {}
         Some(Value::Object(overrides)) => {
+            if overrides.len() > MAX_OVERRIDES {
+                return Err(invalid(
+                    "recurrenceOverrides",
+                    format!("a series may have at most {MAX_OVERRIDES} changed or excluded instances"),
+                ));
+            }
             for (rid, patch) in overrides {
                 let property = format!("recurrenceOverrides/{}", escape_token(rid));
                 check_local(Some(&Value::String(rid.clone())), &property)?;

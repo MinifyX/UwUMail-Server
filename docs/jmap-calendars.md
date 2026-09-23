@@ -230,7 +230,8 @@ Checked before anything is stored (`invalidProperties` names the property):
   `recurrenceRules`, `excludedRecurrenceRules` and a top-level `recurrenceId`
   are refused.
 - An override may not change what belongs to the series (`uid`,
-  `recurrenceRule`, `privacy`, …).
+  `recurrenceRule`, `privacy`, …); a series has at most 1000 changed or
+  excluded instances.
 - `isDraft` may only be `false`.
 
 Everything else in an event is kept as data, unknown properties included.
@@ -258,6 +259,11 @@ that do not repeat keep theirs. A series is expanded for its first 10 000
 occurrences, so an endless daily series shows for about 27 years; a query
 that spends more than five seconds expanding stops with
 `cannotCalculateOccurrences`.
+
+All calendar-event calls of one request share fifteen seconds between them.
+What comes after is refused: `/get` with `serverUnavailable`, `/query` with
+`cannotCalculateOccurrences`, and each further object
+of `/set` with `rateLimit`, so a client sends the rest in a new request.
 
 `CalendarEvent/queryChanges` answers `cannotCalculateChanges`.
 

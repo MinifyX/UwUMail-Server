@@ -34,11 +34,14 @@ pub struct Ctx<'a> {
     pub account: Account,
     pub using: Vec<String>,
     pub created_ids: HashMap<String, String>,
+    /// When the request began: work that has to be bounded per request (expanding calendar
+    /// recurrences) counts from here, across all its method calls.
+    pub started: std::time::Instant,
 }
 
 impl<'a> Ctx<'a> {
     pub fn new(jmap: &'a Inner, account: Account, using: Vec<String>, created_ids: HashMap<String, String>) -> Ctx<'a> {
-        Ctx { jmap, account, using, created_ids }
+        Ctx { jmap, account, using, created_ids, started: std::time::Instant::now() }
     }
 
     pub fn account_id(&self) -> String {

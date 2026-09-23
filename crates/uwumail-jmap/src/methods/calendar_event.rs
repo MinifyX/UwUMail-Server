@@ -35,6 +35,22 @@ const PER_USER: &[&str] = &[
 const MAX_QUERY_LIMIT: usize = 5000;
 /// How long one query may spend on expanding recurrences before it gives up.
 const QUERY_TIME_LIMIT: Duration = Duration::from_secs(5);
+/// How long one request may spend on calendar events in all its method calls together: without
+/// it, each of the calls in a request would get the query limit anew, and /get and /set none.
+const REQUEST_TIME_LIMIT: Duration = Duration::from_secs(15);
+
+/// When the request's time for calendar work is up.
+fn request_deadline(ctx: &Ctx<'_>) -> Instant {
+    ctx.started + REQUEST_TIME_LIMIT
+}
+
+fn out_of_time() -> MethodError {
+    MethodError::new(
+        "serverUnavailable",
+        "this request has used up its time for calendar events; send the rest in a new request",
+    )
+}
+
 /// Writes retried when CalDAV changed the event between reading and writing it.
 const WRITE_ATTEMPTS: usize = 3;
 
@@ -162,6 +178,10 @@ async fn run_blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static)
 
 pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     check_enabled(ctx)?;
+    let deadline = request_deadline(ctx);
+    if Instant::now() > deadline {
+        return Err(out_of_time());
+    }
     let state = ctx.state().await?;
     let floating = floating_zone(args)?;
     let properties = match args.get("properties") {
@@ -199,7 +219,7 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         }
     };
     let own = own_addresses(ctx).await?;
-    let (list, not_found) = run_blocking(move || {
+    let (list, not_found) = run_blocking(move || -> MethodResult<(Vec<Value>, Vec<String>)> {
         let by_id: HashMap<i64, &Loaded> = loaded.iter().map(|l| (l.record.id, l)).collect();
         let stored = |loaded: &Loaded| {
             let mut object = loaded.parsed.event().clone();
@@ -207,12 +227,16 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
             output(object, &properties, floating)
         };
         let Some(wanted) = wanted else {
-            return (loaded.iter().map(stored).collect::<Vec<_>>(), Vec::new());
+            return Ok((loaded.iter().map(stored).collect::<Vec<_>>(), Vec::new()));
         };
         let mut series: HashMap<i64, BTreeSet<String>> = HashMap::new();
         let mut list = Vec::new();
         let mut not_found = Vec::new();
         for (text, id) in wanted {
+            // Instances each expand their series; the request's time bounds them all.
+            if Instant::now() > deadline {
+                return Err(out_of_time());
+            }
             let found = match &id {
                 Some(EventId::Stored(n)) => by_id.get(n).map(|loaded| stored(loaded)),
                 Some(EventId::Instance(n, rid)) => by_id.get(n).and_then(|loaded| {
@@ -232,9 +256,9 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
                 None => not_found.push(text),
             }
         }
-        (list, not_found)
+        Ok((list, not_found))
     })
-    .await?;
+    .await??;
     Ok(json!({ "accountId": ctx.account_id(), "state": state, "list": list, "notFound": not_found }))
 }
 
@@ -329,15 +353,52 @@ fn new_uid() -> String {
     format!("{}-{}-{}-{}-{}", &hex[0..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..32])
 }
 
+/// Checks an event and turns it into iCalendar the way a CalDAV PUT would take it.
+fn convert(
+    parsed: &Parsed,
+    event: &Map<String, Value>,
+    components: &[String],
+) -> Result<(String, uwumail_store::ical::Checked), SetError> {
+    jscal::validate(event).map_err(invalid)?;
+    let content = parsed.to_icalendar(event).map_err(|message| SetError::new("invalidProperties", message))?;
+    if content.len() > DAV_RESOURCE_MAX_BYTES {
+        return Err(SetError::new("tooLarge", format!("an event may take up to {DAV_RESOURCE_MAX_BYTES} bytes")));
+    }
+    // The same check a CalDAV PUT goes through: what JMAP writes, phones can read.
+    let checked = match uwumail_store::ical::check_calendar(&content, components) {
+        Ok(checked) if checked.component == "VEVENT" => checked,
+        Ok(_) | Err(uwumail_store::ical::Refused::UnsupportedComponent(_)) => {
+            return Err(SetError::invalid_properties(&["calendarIds"], "this calendar does not hold events"));
+        }
+        Err(_) => return Err(SetError::new("invalidProperties", "the event cannot be stored as iCalendar")),
+    };
+    if jscal::from_icalendar(&content).is_none() {
+        return Err(SetError::new("invalidProperties", "the event cannot be stored as iCalendar"));
+    }
+    Ok((content, checked))
+}
+
 /// Everything a write needs from around it.
 struct Writer<'a> {
     calendars: Vec<DavCollection>,
     own: Vec<String>,
     scheduling: bool,
+    /// When the request's time for calendar work is up; later objects are refused.
+    deadline: Instant,
     ctx: &'a Ctx<'a>,
 }
 
 impl Writer<'_> {
+    fn in_time(&self) -> Result<(), SetError> {
+        if Instant::now() > self.deadline {
+            return Err(SetError::new(
+                "rateLimit",
+                "this request has used up its time for calendar events; send the rest in a new request",
+            ));
+        }
+        Ok(())
+    }
+
     fn calendar(&self, id: i64) -> Result<&DavCollection, SetError> {
         self.calendars.iter().find(|c| c.id == id).ok_or_else(|| {
             SetError::invalid_properties(&["calendarIds"], "an event belongs to exactly one of your calendars")
@@ -357,38 +418,20 @@ impl Writer<'_> {
             Ok(calendar) => calendar,
             Err(err) => return Ok(Err(err)),
         };
-        if let Err(err) = jscal::validate(event) {
-            return Ok(Err(invalid(err)));
-        }
         if self.scheduling && has_others(event, &self.own) {
             return Ok(Err(SetError::new(
                 "noSupportedScheduleMethods",
                 "this server does not send invitations; store the event without sendSchedulingMessages",
             )));
         }
-        let content = match parsed.to_icalendar(event) {
-            Ok(content) => content,
-            Err(message) => return Ok(Err(SetError::new("invalidProperties", message))),
+        // Checking and converting is work in proportion to the event: off the async threads.
+        let (parsed, event, components) = (parsed.clone(), event.clone(), calendar.components.clone());
+        let converted = run_blocking(move || convert(&parsed, &event, &components)).await;
+        let (content, checked) = match converted {
+            Ok(Ok(converted)) => converted,
+            Ok(Err(err)) => return Ok(Err(err)),
+            Err(_) => return Ok(Err(SetError::new("serverFail", "the event could not be converted"))),
         };
-        if content.len() > DAV_RESOURCE_MAX_BYTES {
-            return Ok(Err(SetError::new(
-                "tooLarge",
-                format!("an event may take up to {DAV_RESOURCE_MAX_BYTES} bytes"),
-            )));
-        }
-        // The same check a CalDAV PUT goes through: what JMAP writes, phones can read.
-        let checked = match uwumail_store::ical::check_calendar(&content, &calendar.components) {
-            Ok(checked) if checked.component == "VEVENT" => checked,
-            Ok(_) | Err(uwumail_store::ical::Refused::UnsupportedComponent(_)) => {
-                return Ok(Err(SetError::invalid_properties(&["calendarIds"], "this calendar does not hold events")));
-            }
-            Err(_) => {
-                return Ok(Err(SetError::new("invalidProperties", "the event cannot be stored as iCalendar")));
-            }
-        };
-        if jscal::from_icalendar(&content).is_none() {
-            return Ok(Err(SetError::new("invalidProperties", "the event cannot be stored as iCalendar")));
-        }
         let write = CalendarEventWrite {
             id,
             calendar_id,
@@ -654,14 +697,19 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
     if_in_state(args, &old_state)?;
     let own = own_addresses(ctx).await?;
     let scheduling = args.get("sendSchedulingMessages").and_then(Value::as_bool).unwrap_or(false);
+    let deadline = request_deadline(ctx);
     let mut response = SetResponse::default();
     let mut created_ids: Vec<(String, String)> = Vec::new();
 
     {
-        let writer = Writer { calendars, own, scheduling, ctx };
+        let writer = Writer { calendars, own, scheduling, deadline, ctx };
         if let Some(create) = args.get("create").and_then(Value::as_object) {
             for (creation_id, object) in create {
-                match writer.create(object).await {
+                let created = match writer.in_time() {
+                    Ok(()) => writer.create(object).await,
+                    Err(err) => Err(err),
+                };
+                match created {
                     Ok((id, server_set)) => {
                         created_ids.push((creation_id.clone(), ids::calendar_event(id)));
                         response.created.insert(creation_id.clone(), Value::Object(server_set));
@@ -677,11 +725,12 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
     ctx.created_ids.extend(created_ids);
     let calendars = super::calendar::calendars(ctx).await?;
     let own = own_addresses(ctx).await?;
-    let writer = Writer { calendars, own, scheduling, ctx };
+    let writer = Writer { calendars, own, scheduling, deadline, ctx };
 
     if let Some(update) = args.get("update").and_then(Value::as_object) {
         for (id, patch) in update {
             let result = async {
+                writer.in_time()?;
                 let patch =
                     patch.as_object().ok_or_else(|| SetError::new("invalidPatch", "the patch must be an object"))?;
                 match EventId::parse(ctx, id) {
@@ -708,8 +757,10 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
 
     if let Some(destroy) = args.get("destroy").and_then(Value::as_array) {
         for id in destroy.iter().filter_map(Value::as_str) {
-            let result = match EventId::parse(ctx, id) {
-                Some(EventId::Stored(n)) => {
+            let parsed = writer.in_time().map(|()| EventId::parse(ctx, id));
+            let result = match parsed {
+                Err(err) => Err(err),
+                Ok(Some(EventId::Stored(n))) => {
                     if scheduling
                         && let Ok(loaded) = writer.load_one(n).await
                         && has_others(loaded.parsed.event(), &writer.own)
@@ -719,8 +770,8 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                         ctx.jmap.store.destroy_calendar_event(ctx.account.id, n, None).await.map_err(SetError::from)
                     }
                 }
-                Some(EventId::Instance(n, rid)) => writer.destroy_instance(n, &rid).await,
-                None => Err(SetError::not_found()),
+                Ok(Some(EventId::Instance(n, rid))) => writer.destroy_instance(n, &rid).await,
+                Ok(None) => Err(SetError::not_found()),
             };
             match result {
                 Ok(()) => response.destroyed.push(id.to_owned()),
@@ -947,10 +998,17 @@ impl Evaluator {
             let hit = if recurring {
                 self.check_time()?;
                 let rids = rids.get_or_insert_with(|| jscal::recurrence_ids(&loaded.record.content, event));
-                rids.iter().any(|rid| {
-                    instance_span(event, rid, self.floating)
+                let mut hit = false;
+                for rid in rids.iter() {
+                    self.check_time()?;
+                    if instance_span(event, rid, self.floating)
                         .is_some_and(|(s, e)| jscal::overlaps(s, e, condition.after, condition.before))
-                })
+                    {
+                        hit = true;
+                        break;
+                    }
+                }
+                hit
             } else {
                 jscal::span(event, self.floating)
                     .is_some_and(|(s, e)| jscal::overlaps(s, e, condition.after, condition.before))
@@ -963,12 +1021,15 @@ impl Evaluator {
             return Ok(true);
         }
         // Changed instances have texts of their own.
-        let overrides = event.get("recurrenceOverrides").and_then(Value::as_object);
-        Ok(overrides.is_some_and(|overrides| {
-            overrides
-                .keys()
-                .any(|rid| jscal::instance(event, rid).is_some_and(|instance| text_matches(condition, &instance)))
-        }))
+        if let Some(overrides) = event.get("recurrenceOverrides").and_then(Value::as_object) {
+            for rid in overrides.keys() {
+                self.check_time()?;
+                if jscal::instance(event, rid).is_some_and(|instance| text_matches(condition, &instance)) {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
     }
 
     fn hit(&self, id: String, object: &Map<String, Value>, recurrence_id: Option<&str>, start: i64) -> Hit {
@@ -1013,6 +1074,7 @@ impl Evaluator {
         self.check_time()?;
         let mut hits = Vec::new();
         for rid in jscal::recurrence_ids(&loaded.record.content, event) {
+            self.check_time()?;
             let Some((start, end)) = instance_span(event, &rid, self.floating) else { continue };
             if !jscal::overlaps(start, end, condition.after, condition.before) {
                 continue;
@@ -1077,7 +1139,9 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         }
     }
     let records = ctx.jmap.store.calendar_events_between(ctx.account.id, window.0, window.1, window.2).await?;
-    let evaluator = Evaluator { floating, deadline: Instant::now() + QUERY_TIME_LIMIT };
+    // A query's own limit, within what is left of the request's.
+    let deadline = (Instant::now() + QUERY_TIME_LIMIT).min(request_deadline(ctx));
+    let evaluator = Evaluator { floating, deadline };
     let mut hits = run_blocking(move || -> MethodResult<Vec<Hit>> {
         let mut hits = Vec::new();
         for record in records {

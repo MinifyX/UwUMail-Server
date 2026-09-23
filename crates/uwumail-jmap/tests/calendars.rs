@@ -776,3 +776,40 @@ async fn events_stay_within_limits() {
     let reply = server.send(MINI, "GET", "/jmap/session", &[], String::new()).await;
     assert!(!reply.body.contains("urn:ietf:params:jmap:calendars"), "{}", reply.body);
 }
+
+/// security-audit-0.7.0 S-45: checking an event looked at every changed instance against a whole
+/// copy of the series, overrides included, so the work grew with the square of their number. Their
+/// number is bounded now, and a series at the bound is still taken.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_series_has_a_bounded_number_of_changed_instances() {
+    let server = server().await;
+    let account = server.account_id(MINI).await;
+    let calendar = server.default_calendar(MINI).await;
+    let series = |instances: usize| {
+        let mut event = timed(&calendar, "Täglich");
+        event["recurrenceRule"] = json!({ "frequency": "daily", "count": 5000 });
+        let start = chrono::NaiveDate::from_ymd_opt(2026, 10, 21).unwrap();
+        let overrides: serde_json::Map<String, Value> = (0..instances)
+            .map(|day| {
+                let date = start + chrono::Duration::days(day as i64);
+                (format!("{}T09:00:00", date.format("%Y-%m-%d")), json!({ "title": format!("Tag {day}") }))
+            })
+            .collect();
+        event["recurrenceOverrides"] = Value::Object(overrides);
+        event
+    };
+    let set = server
+        .call(
+            MINI,
+            "CalendarEvent/set",
+            json!({ "accountId": account, "create": { "many": series(1001), "enough": series(1000) } }),
+        )
+        .await;
+    assert_eq!(set["notCreated"]["many"]["type"], "invalidProperties", "{}", set["notCreated"]);
+    assert_eq!(set["notCreated"]["many"]["properties"], json!(["recurrenceOverrides"]));
+    let enough = set["created"]["enough"]["id"].as_str().unwrap_or_else(|| panic!("{set}"));
+    let found = server
+        .call(MINI, "CalendarEvent/query", json!({ "accountId": account, "filter": { "title": "Tag 999" } }))
+        .await;
+    assert_eq!(found["ids"], json!([enough]), "{found}");
+}
