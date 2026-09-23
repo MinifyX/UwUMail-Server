@@ -1352,3 +1352,34 @@ if header :contains "subject" "Nirgends" { fileinto "Gibt es nicht"; }
     assert!(deliver_to(&a, "leni@a.test", "Rechnung für Leni").await.starts_with("250"));
     assert_eq!(a.inbox("leni@a.test").await.len(), 2);
 }
+
+/// security-audit-0.7.0 S-44: a redirect without `:copy` that reached nobody -- here because the
+/// message was already passed on from this address once -- used to take the message with it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sieve_redirect_that_goes_nowhere_keeps_the_message() {
+    let a = start("a.test", &["mini", "leni"], &[]).await;
+    for name in ["sender.test", "client.sender.test", "_dmarc.sender.test"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+    let store = a.smtp.store();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap().id;
+    let created = store.create_sieve_script(mini, Some("UwUMail"), b"redirect \"leni@a.test\";").await.unwrap();
+    store.activate_sieve_script(mini, Some(created.id)).await.unwrap();
+
+    let mut session = RawSession::connect(a.mx).await;
+    assert!(session.command("EHLO client.sender.test").await.starts_with("250"));
+    assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+    assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
+    assert!(session.command("DATA").await.starts_with("354"));
+    let reply = session
+        .command("Delivered-To: mini@a.test\r\nFrom: news@sender.test\r\nTo: mini@a.test\r\nSubject: Schon hier\r\n\r\nMiau\r\n.")
+        .await;
+    assert!(reply.starts_with("250"), "{reply}");
+    assert_eq!(a.inbox("mini@a.test").await.len(), 1, "the message stays with Mini");
+    assert!(a.inbox("leni@a.test").await.is_empty());
+
+    // Without the loop, the redirect works and nothing stays.
+    assert!(deliver_to(&a, "mini@a.test", "Weiter").await.starts_with("250"));
+    assert_eq!(a.wait_for_inbox("leni@a.test", 1).await[0].subject, "Weiter");
+    assert_eq!(a.inbox("mini@a.test").await.len(), 1);
+}
