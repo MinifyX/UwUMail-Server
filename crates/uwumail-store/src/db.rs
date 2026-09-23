@@ -38,6 +38,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0029_fetch_sending.sql"),
     include_str!("migrations/0030_fetch_backlog.sql"),
     include_str!("migrations/0031_user_settings.sql"),
+    include_str!("migrations/0032_jmap_calendars.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 

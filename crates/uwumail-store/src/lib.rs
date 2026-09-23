@@ -12,6 +12,7 @@ mod address;
 mod admin;
 mod bayes;
 mod blobs;
+mod calendar;
 mod dav;
 mod db;
 mod directory;
@@ -57,6 +58,7 @@ pub use bayes::{
     BayesJob, BayesTotals,
 };
 pub use blobs::{BlobCleanupPause, BlobHash};
+pub use calendar::{CalendarEventRecord, CalendarEventWrite};
 pub use dav::{
     DAV_COLLECTIONS_PER_ACCOUNT, DAV_RESOURCE_MAX_BYTES, DAV_RESOURCES_PER_COLLECTION, DavChanges, DavCollection,
     DavCollectionUpdate, DavKind, DavPrecondition, DavResource, DavResourceInfo, DavWrite, DavWriteOutcome,
