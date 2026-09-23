@@ -460,8 +460,12 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "hashify",
+ "jmap-tools",
  "mail-builder",
  "mail-parser",
+ "serde",
+ "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -519,6 +523,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -1854,6 +1859,17 @@ name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
+
+[[package]]
+name = "jmap-tools"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5bdcd368dcd58a5efaac10c142fb8cddb4d2949af1297b624df3ff0db4cbff54"
+dependencies = [
+ "hashify",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "jni"
@@ -3418,6 +3434,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1_smol"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
+
+[[package]]
 name = "sha2"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4129,6 +4151,7 @@ checksum = "2ef6dac1e96601b4fb3acccccff2139741fcb757cb9a36089bf5be91cfb285ce"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",
+ "sha1_smol",
  "wasm-bindgen",
 ]
 
@@ -4209,6 +4232,9 @@ dependencies = [
  "ammonia",
  "axum",
  "base64 0.23.1",
+ "calcard",
+ "chrono",
+ "chrono-tz",
  "futures-util",
  "getrandom 0.4.3",
  "hex",
@@ -4221,6 +4247,7 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
+ "uwumail-dav",
  "uwumail-smtp",
  "uwumail-store",
 ]

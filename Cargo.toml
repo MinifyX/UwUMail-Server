@@ -56,6 +56,9 @@ http-body-util = "0.1"
 bytes = "1"
 # iCalendar and vCard for CalDAV and CardDAV: checking what clients store and when events happen.
 calcard = { version = "0.3", default-features = false }
+# Local times and time zones of calendar events for JMAP Calendars; the versions calcard uses.
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+chrono-tz = "0.10"
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "service", "client-legacy", "http1"] }
 instant-acme = { version = "0.8", features = ["rcgen"] }
 mail-auth = "0.13"

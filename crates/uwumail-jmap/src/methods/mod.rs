@@ -1,5 +1,7 @@
 //! Method implementations and the helpers they share.
 
+mod calendar;
+mod calendar_event;
 mod email;
 mod identity;
 mod mailbox;
@@ -17,10 +19,10 @@ use uwumail_store::{Account, Changes};
 
 use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
-use crate::session::{CORE, MAIL, SENDERS, SETTINGS, SUBMISSION, VACATION, WEBMAIL};
+use crate::session::{CALENDARS, CORE, MAIL, SENDERS, SETTINGS, SUBMISSION, VACATION, WEBMAIL};
 use crate::{Inner, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, ids};
 
-pub const KNOWN_CAPABILITIES: &[&str] = &[CORE, MAIL, SUBMISSION, VACATION, SENDERS, SETTINGS, WEBMAIL];
+pub const KNOWN_CAPABILITIES: &[&str] = &[CORE, MAIL, SUBMISSION, VACATION, SENDERS, SETTINGS, WEBMAIL, CALENDARS];
 
 /// One or more `(method name, arguments)` responses for a call.
 pub type Outputs = Vec<(String, Value)>;
@@ -75,6 +77,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "VacationResponse" => VACATION,
         "SenderList" => SENDERS,
         "UserSettings" => SETTINGS,
+        "Calendar" | "CalendarEvent" | "ParticipantIdentity" => CALENDARS,
         _ => return Err(MethodError::kind("unknownMethod")),
     };
     if !requires(capability, &ctx.using) {
@@ -115,6 +118,26 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "SenderList/set" => single(senders::set(ctx, &args).await?),
         "UserSettings/get" => single(settings::get(ctx, &args).await?),
         "UserSettings/set" => single(settings::set(ctx, &args).await?),
+        "Calendar/get" => single(calendar::get(ctx, &args).await?),
+        "Calendar/changes" => {
+            calendar::check_enabled(ctx)?;
+            single(changes(ctx, &args, "Calendar", 'c').await?)
+        }
+        "Calendar/set" => single(calendar::set(ctx, &args).await?),
+        "CalendarEvent/get" => single(calendar_event::get(ctx, &args).await?),
+        "CalendarEvent/changes" => {
+            calendar::check_enabled(ctx)?;
+            single(changes(ctx, &args, "CalendarEvent", 'v').await?)
+        }
+        "CalendarEvent/set" => single(calendar_event::set(ctx, &args).await?),
+        "CalendarEvent/query" => single(calendar_event::query(ctx, &args).await?),
+        "CalendarEvent/queryChanges" => Err(MethodError::kind("cannotCalculateChanges")),
+        "ParticipantIdentity/get" => single(calendar::identities_get(ctx, &args).await?),
+        "ParticipantIdentity/changes" => {
+            calendar::check_enabled(ctx)?;
+            single(changes(ctx, &args, "ParticipantIdentity", 'u').await?)
+        }
+        "ParticipantIdentity/set" => single(calendar::identities_set(ctx, &args).await?),
         _ => Err(MethodError::kind("unknownMethod")),
     }
 }

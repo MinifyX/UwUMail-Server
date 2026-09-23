@@ -30,6 +30,44 @@ pub fn sender(id: i64) -> String {
     format!("l{id}")
 }
 
+pub fn calendar(id: i64) -> String {
+    format!("c{id}")
+}
+
+pub fn calendar_event(id: i64) -> String {
+    format!("v{id}")
+}
+
+/// One instance of a recurring event, found by expanding it: the event id and the instance's
+/// recurrence id without its separators, like `v12_20261027T090000`.
+pub fn event_instance(id: i64, recurrence_id: &str) -> String {
+    let compact: String = recurrence_id.chars().filter(|c| *c != '-' && *c != ':').collect();
+    format!("v{id}_{compact}")
+}
+
+/// The event id and recurrence id (`2026-10-27T09:00:00`) of an instance id.
+pub fn parse_event_instance(value: &str) -> Option<(i64, String)> {
+    let (event, compact) = value.split_once('_')?;
+    let b = compact.as_bytes();
+    if b.len() != 15 || b[8] != b'T' || !compact.bytes().enumerate().all(|(i, c)| i == 8 || c.is_ascii_digit()) {
+        return None;
+    }
+    let rid = format!(
+        "{}-{}-{}T{}:{}:{}",
+        &compact[0..4],
+        &compact[4..6],
+        &compact[6..8],
+        &compact[9..11],
+        &compact[11..13],
+        &compact[13..15]
+    );
+    Some((parse('v', event)?, rid))
+}
+
+pub fn participant(account_id: i64) -> String {
+    format!("u{account_id}")
+}
+
 /// Parses an id with the given type letter.
 pub fn parse(prefix: char, value: &str) -> Option<i64> {
     let rest = value.strip_prefix(prefix)?;
@@ -86,5 +124,11 @@ mod tests {
         assert_eq!(parse_blob(&blob(&hash)), Some(BlobRef::Whole(hash.clone())));
         assert_eq!(parse_blob(&part_blob(&hash, 3)), Some(BlobRef::Part(hash, 3)));
         assert_eq!(parse_blob("bnothex"), None);
+        assert_eq!(
+            parse_event_instance(&event_instance(7, "2026-10-27T09:00:00")),
+            Some((7, "2026-10-27T09:00:00".into()))
+        );
+        assert_eq!(parse_event_instance("v7_2026102"), None);
+        assert_eq!(parse_event_instance("v7_2026-10-27T0"), None);
     }
 }

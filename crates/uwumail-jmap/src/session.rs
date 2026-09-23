@@ -9,7 +9,7 @@ use uwumail_store::Account;
 
 use crate::auth::ClientInfo;
 use crate::{
-    Jmap, MAX_CALLS_IN_REQUEST, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, MAX_REQUEST_BYTES, MAX_UPLOAD_BYTES, ids,
+    Jmap, MAX_CALLS_IN_REQUEST, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, MAX_REQUEST_BYTES, MAX_UPLOAD_BYTES, ids, jscal,
 };
 
 pub const CORE: &str = "urn:ietf:params:jmap:core";
@@ -23,6 +23,8 @@ pub const SETTINGS: &str = "urn:uwumail:jmap:settings";
 /// Our own extension: what the webmail needs on top of plain JMAP, currently the cleaned HTML
 /// body of a message (`uwuSafeHtml`, `uwuHasRemoteContent`).
 pub const WEBMAIL: &str = "urn:uwumail:jmap:webmail";
+/// JMAP Calendars (draft-ietf-jmap-calendars) on the CalDAV calendars; see docs/jmap-calendars.md.
+pub const CALENDARS: &str = "urn:ietf:params:jmap:calendars";
 
 /// Origin the client used, so every URL in the session works from where it is.
 ///
@@ -51,12 +53,13 @@ pub fn base_url(headers: &HeaderMap, client: ClientInfo) -> String {
 
 pub fn session_state(account: &Account) -> String {
     // Changes whenever something in the session document would change.
-    format!("{}-{}", account.id, account.login.len() + account.display_name.len())
+    let calendars = if account.protocols.caldav { "-c" } else { "" };
+    format!("{}-{}{calendars}", account.id, account.login.len() + account.display_name.len())
 }
 
 pub fn document(account: &Account, base: &str) -> Value {
     let account_id = ids::account(account.id);
-    json!({
+    let mut document = json!({
         "capabilities": {
             CORE: {
                 "maxSizeUpload": MAX_UPLOAD_BYTES,
@@ -105,7 +108,7 @@ pub fn document(account: &Account, base: &str) -> Value {
             SUBMISSION: account_id.clone(),
             VACATION: account_id.clone(),
             SENDERS: account_id.clone(),
-            SETTINGS: account_id
+            SETTINGS: account_id.clone()
         },
         "username": account.login,
         "apiUrl": format!("{base}/jmap/api"),
@@ -113,7 +116,21 @@ pub fn document(account: &Account, base: &str) -> Value {
         "uploadUrl": format!("{base}/jmap/upload/{{accountId}}/"),
         "eventSourceUrl": format!("{base}/jmap/eventsource/?types={{types}}&closeafter={{closeafter}}&ping={{ping}}"),
         "state": session_state(account)
-    })
+    });
+    // Calendars are there when the account may use them, as over CalDAV.
+    if account.protocols.caldav {
+        document["capabilities"][CALENDARS] = json!({});
+        document["accounts"][&account_id]["accountCapabilities"][CALENDARS] = json!({
+            "maxCalendarsPerEvent": 1,
+            "minDateTime": jscal::MIN_DATE_TIME,
+            "maxDateTime": jscal::MAX_DATE_TIME,
+            "maxExpandedQueryDuration": jscal::MAX_EXPANDED_DURATION,
+            "maxParticipantsPerEvent": null,
+            "mayCreateCalendar": true
+        });
+        document["primaryAccounts"][CALENDARS] = json!(account_id);
+    }
+    document
 }
 
 pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInfo>>, headers: HeaderMap) -> Response {
