@@ -3,6 +3,19 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.7.1
+
+**Images follow dark mode** (webmail [v0.7.1](https://github.com/MinifyX/UwUMail-Webmail/releases/tag/v0.7.1)).
+When a mail is shown dark, newsletter images with white paper baked in are recoloured to match: the
+paper takes the colour behind the image, text and lines turn light, colours keep their hue. Photos,
+large shapes and light text on coloured buttons stay as they are. The work happens in the browser,
+in a worker, so large images never make the page stutter. The webmail can read embedded images and
+remote ones whose server allows it; the others stay as the sender made them. It is on by default
+and can be switched off under *Lesen*.
+
+The settings extension takes the new key `darkImages`, so that switch follows the account between
+the webmail and the apps.
+
 ## 0.7.0
 
 **The webmail gets a calendar, mail rules and folders** (webmail [v0.7.0](https://github.com/MinifyX/UwUMail-Webmail/releases/tag/v0.7.0)).
