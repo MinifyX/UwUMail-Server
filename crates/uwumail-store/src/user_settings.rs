@@ -182,7 +182,7 @@ pub fn validate_setting(key: &str, value: &Value) -> Result<(), SettingProblem> 
         "theme" => return one_of(key, value, &["system", "light", "dark"]),
         "tone" => return one_of(key, value, &["playful", "neutral"]),
         "language" => return one_of(key, value, &["system", "de", "en"]),
-        "conversations" | "senderPictures" | "linkConfirm" => return boolean(key, value),
+        "conversations" | "senderPictures" | "linkConfirm" | "darkImages" => return boolean(key, value),
         "remoteImages" => return one_of(key, value, &["ask", "always"]),
         "mailAppearance" => return one_of(key, value, &["auto", "light", "dark"]),
         "undoSendSeconds" => {
@@ -450,6 +450,7 @@ mod tests {
             ("senderPictures", json!(false), json!(0)),
             ("undoSendSeconds", json!(20), json!(15)),
             ("linkConfirm", json!(true), json!(null)),
+            ("darkImages", json!(false), json!("on")),
         ] {
             assert_eq!(check(key, good), Ok(()), "{key}");
             assert!(matches!(check(key, bad), Err(SettingProblem::Invalid(_))), "{key}");

@@ -125,7 +125,7 @@ fn validate_removal(key: &str) -> Result<(), SettingProblem> {
         "theme" => json!("system"),
         "tone" => json!("playful"),
         "language" => json!("system"),
-        "conversations" | "senderPictures" | "linkConfirm" => json!(true),
+        "conversations" | "senderPictures" | "linkConfirm" | "darkImages" => json!(true),
         "remoteImages" => json!("ask"),
         "mailAppearance" => json!("auto"),
         "undoSendSeconds" => json!(0),
