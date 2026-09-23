@@ -38,6 +38,10 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0029_fetch_sending.sql"),
     include_str!("migrations/0030_fetch_backlog.sql"),
     include_str!("migrations/0031_user_settings.sql"),
+    // 0032 belongs to the calendar work on another branch; this empty step keeps the number free
+    // until both meet, and is replaced by that migration then.
+    "",
+    include_str!("migrations/0033_sieve.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 

@@ -34,6 +34,7 @@ mod queue;
 mod reports;
 mod security;
 mod sender_lists;
+mod sieve;
 mod spam;
 mod spam_log;
 mod user_settings;
@@ -94,6 +95,10 @@ pub use security::{
 pub use sender_lists::{
     ListOwner, ListScope, NewSenderListEntry, SENDER_LIST_ADMIN_LIMIT, SENDER_LIST_PERSONAL_LIMIT, SenderKind,
     SenderList, SenderListEntry, guess_sender_kind, normalize_sender, pattern_matches,
+};
+pub use sieve::{
+    SIEVE_MAX_NAME_SIZE, SIEVE_MAX_SCRIPT_SIZE, SIEVE_MAX_SCRIPTS, SieveActivation, SieveError, SieveScript,
+    validate_sieve_name,
 };
 pub use spam::{
     GREYLIST_PASSED_SECS, GREYLIST_WAITING_SECS, Greylist, REPUTATION_RETENTION_SECS, Reputation, SPAM_LIMIT_RANGE,
