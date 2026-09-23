@@ -733,6 +733,27 @@ if true {
         assert!(filed.redirects.is_empty());
     }
 
+    /// The apps escape `*`, `?` and `\` in values for `:matches` (startsWith and endsWith).
+    #[test]
+    fn escaped_wildcards_match_themselves() {
+        let starts = r#"require "fileinto";
+if header :matches "subject" "Quarterly \\*report\\**" { fileinto "Starts"; }
+if header :matches "subject" "Quarterly \\*x*" { fileinto "Wrong"; }
+if header :matches "subject" "*ready" { fileinto "Ends"; }
+if header :matches "subject" "Quarterly ?report*" { fileinto "Wildcard"; }
+if not header :matches "subject" "\\?*" { fileinto "NoQuestion"; }
+"#;
+        let targets: Vec<String> = plan(starts)
+            .filings
+            .into_iter()
+            .map(|filing| match filing.target {
+                Target::Folder { name, .. } => name,
+                Target::Inbox => "INBOX".into(),
+            })
+            .collect();
+        assert_eq!(targets, ["Starts", "Ends", "Wildcard", "NoQuestion"]);
+    }
+
     #[test]
     fn invalid_scripts_are_refused_with_a_line() {
         let problem = |script: &str| validate(script.as_bytes()).unwrap_err();
