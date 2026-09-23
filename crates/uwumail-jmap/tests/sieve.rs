@@ -463,3 +463,33 @@ async fn scripts_are_checked_named_and_kept_apart() {
         .await;
     assert_eq!(args(&responses, 1, "SieveScript/set")["destroyed"], json!([unnamed]));
 }
+
+/// security-audit-0.7.0 S-46: a blob named as a script's content was read whole before its size
+/// was looked at -- an upload or a message of up to 50 MB, as often as one call names it. The size
+/// is checked first now; the content of a blob that is too large is never read.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_blob_too_large_for_a_script_is_not_read() {
+    let server = server().await;
+    let account = server.account_id("mini@example.com").await;
+    let big = format!("keep;\n{}", "#".repeat(2 * 1024 * 1024));
+    let blob = server.upload("mini@example.com", &big).await;
+    // Take the content away: only its recorded size is left to answer with.
+    let hash = blob.trim_start_matches('b');
+    let path = server._dir.path().join("blobs").join(&hash[0..2]).join(&hash[2..4]).join(hash);
+    std::fs::remove_file(&path).unwrap_or_else(|err| panic!("{}: {err}", path.display()));
+    let creates: serde_json::Map<String, Value> =
+        (0..50).map(|n| (format!("s{n}"), json!({ "name": format!("big {n}"), "blobId": blob }))).collect();
+    let responses = server
+        .api(
+            "mini@example.com",
+            json!([
+                ["SieveScript/set", { "accountId": account, "create": creates }, "0"],
+                ["SieveScript/validate", { "accountId": account, "blobId": blob }, "1"]
+            ]),
+        )
+        .await;
+    let not_created = responses[0][1]["notCreated"].as_object().unwrap();
+    assert_eq!(not_created.len(), 50);
+    assert!(not_created.values().all(|error| error["type"] == "tooLarge"), "{not_created:?}");
+    assert_eq!(responses[1][1]["error"]["type"], "tooLarge", "{}", responses[1][1]);
+}

@@ -56,9 +56,16 @@ async fn content(ctx: &Ctx<'_>, blob_id: &str) -> Result<Vec<u8>, SetError> {
     if !store.blob_accessible(ctx.account.id, &hash).await? {
         return Err(missing());
     }
+    // The size first: a blob may be an upload or a whole message of up to 50 MB, and one call may
+    // name it hundreds of times.
+    let too_large = || SetError::new("tooLarge", format!("a script may have at most {SIEVE_MAX_SCRIPT_SIZE} bytes"));
+    // A blob without a recorded size is read and measured below.
+    if store.blob_size(&hash).await?.is_some_and(|size| size > SIEVE_MAX_SCRIPT_SIZE as u64) {
+        return Err(too_large());
+    }
     let bytes = store.blob(&hash).await.map_err(|_| missing())?;
     if bytes.len() > SIEVE_MAX_SCRIPT_SIZE {
-        return Err(SetError::new("tooLarge", format!("a script may have at most {SIEVE_MAX_SCRIPT_SIZE} bytes")));
+        return Err(too_large());
     }
     Ok(bytes)
 }
