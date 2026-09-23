@@ -56,25 +56,114 @@ fn folders(mailboxes: &[ImapMailbox]) -> Vec<Folder> {
     folders.into_iter().map(|(_, folder)| folder).collect()
 }
 
+/// Where script runs take turns. A thread running a script cannot be stopped from outside, and the
+/// engine counts instructions, not the work one test does (a `:matches` over a long header is one
+/// instruction). So a run that outlives [`RUN_TIMEOUT`] keeps its slot until it is really done, and
+/// an account whose run is still going on skips its script meanwhile: runaway scripts can hold at
+/// most `slots` threads, never the whole blocking pool that the store needs too.
+struct Runs {
+    slots: std::sync::Arc<tokio::sync::Semaphore>,
+    /// Accounts with a run that outlived its timeout, and whether it has finished since.
+    overrun: std::sync::Mutex<HashMap<i64, std::sync::Arc<std::sync::atomic::AtomicBool>>>,
+    timeout: Duration,
+}
+
+/// Why a run gave no plan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Skipped {
+    /// The account's previous run is still going on after its timeout.
+    StillRunning,
+    /// No slot came free in time.
+    Busy,
+    TimedOut,
+    Crashed(String),
+}
+
+impl Runs {
+    fn new(slots: usize, timeout: Duration) -> Runs {
+        Runs {
+            slots: std::sync::Arc::new(tokio::sync::Semaphore::new(slots)),
+            overrun: std::sync::Mutex::new(HashMap::new()),
+            timeout,
+        }
+    }
+
+    fn shared() -> &'static Runs {
+        static RUNS: std::sync::OnceLock<Runs> = std::sync::OnceLock::new();
+        RUNS.get_or_init(|| {
+            let cores = std::thread::available_parallelism().map_or(2, std::num::NonZeroUsize::get);
+            Runs::new((cores / 2).clamp(2, 8), RUN_TIMEOUT)
+        })
+    }
+
+    /// Runs `work` for `account_id` on the blocking pool, within the limits above.
+    async fn run<T: Send + 'static>(
+        &self,
+        account_id: i64,
+        work: impl FnOnce() -> T + Send + 'static,
+    ) -> Result<T, Skipped> {
+        {
+            let mut overrun = self.overrun.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            match overrun.get(&account_id) {
+                Some(done) if !done.load(std::sync::atomic::Ordering::Acquire) => return Err(Skipped::StillRunning),
+                Some(_) => {
+                    overrun.remove(&account_id);
+                }
+                None => {}
+            }
+        }
+        let started = tokio::time::Instant::now();
+        let permit = match tokio::time::timeout(self.timeout, self.slots.clone().acquire_owned()).await {
+            Ok(Ok(permit)) => permit,
+            _ => return Err(Skipped::Busy),
+        };
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let finished = done.clone();
+        let task = tokio::task::spawn_blocking(move || {
+            let result = work();
+            finished.store(true, std::sync::atomic::Ordering::Release);
+            drop(permit);
+            result
+        });
+        match tokio::time::timeout_at(started + self.timeout, task).await {
+            Ok(Ok(result)) => Ok(result),
+            Ok(Err(err)) => Err(Skipped::Crashed(err.to_string())),
+            Err(_) => {
+                self.overrun.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(account_id, done);
+                Err(Skipped::TimedOut)
+            }
+        }
+    }
+}
+
 /// Runs the script on the blocking pool. Any failure is the same as no script: keep.
 async fn plan(script: String, message: &[u8], envelope: Envelope<'_>, folders: &[Folder], account_id: i64) -> Plan {
     let (message, from, to, folders) =
         (message.to_vec(), envelope.from.to_owned(), envelope.to.to_owned(), folders.to_vec());
-    let task = tokio::task::spawn_blocking(move || {
-        sieve::run(script.as_bytes(), &message, Envelope { from: &from, to: &to }, &folders)
-    });
-    match tokio::time::timeout(RUN_TIMEOUT, task).await {
-        Ok(Ok(Ok(plan))) => plan,
-        Ok(Ok(Err(reason))) => {
+    let run = Runs::shared()
+        .run(account_id, move || sieve::run(script.as_bytes(), &message, Envelope { from: &from, to: &to }, &folders))
+        .await;
+    match run {
+        Ok(Ok(plan)) => plan,
+        Ok(Err(reason)) => {
             tracing::warn!(account = account_id, %reason, "the sieve script failed, keeping the message in the inbox");
             Plan::keep()
         }
-        Ok(Err(err)) => {
+        Err(Skipped::Crashed(err)) => {
             tracing::error!(account = account_id, %err, "the sieve script crashed, keeping the message in the inbox");
             Plan::keep()
         }
-        Err(_) => {
-            tracing::warn!(account = account_id, "the sieve script took too long, keeping the message in the inbox");
+        Err(skipped) => {
+            let reason = match skipped {
+                Skipped::StillRunning => "its last run is still going on",
+                Skipped::Busy => "no slot came free in time",
+                _ => "it took too long",
+            };
+            tracing::warn!(
+                account = account_id,
+                reason,
+                "the sieve script did not run, keeping the message in the inbox"
+            );
             Plan::keep()
         }
     }
@@ -247,6 +336,34 @@ mod tests {
 
     fn mailbox(id: i64, parent_id: Option<i64>, name: &str, role: Option<MailboxRole>) -> ImapMailbox {
         ImapMailbox { id, parent_id, name: name.into(), role, subscribed: true, uid_validity: 1, uid_next: 1 }
+    }
+
+    /// security-audit-0.7.0 S-43: a run that outlives its timeout used to keep its thread busy while
+    /// every further message started another one.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn runaway_runs_hold_their_slot_and_their_account_waits() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let runs = Runs::new(1, Duration::from_millis(100));
+        let started = std::sync::Arc::new(AtomicUsize::new(0));
+        let counting = |sleep_ms: u64| {
+            let started = started.clone();
+            move || {
+                started.fetch_add(1, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(sleep_ms));
+                "done"
+            }
+        };
+
+        assert_eq!(runs.run(1, counting(600)).await, Err(Skipped::TimedOut));
+        // The same account skips its script while the run goes on, without starting another.
+        assert_eq!(runs.run(1, counting(0)).await, Err(Skipped::StillRunning));
+        // Everyone else waits for the slot the runaway still holds, and gives up in time.
+        assert_eq!(runs.run(2, counting(0)).await, Err(Skipped::Busy));
+        assert_eq!(started.load(Ordering::SeqCst), 1, "only the runaway ever ran");
+
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        assert_eq!(runs.run(1, counting(0)).await, Ok("done"), "once it is done, the account runs again");
+        assert_eq!(runs.run(2, counting(0)).await, Ok("done"));
     }
 
     #[test]

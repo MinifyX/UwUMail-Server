@@ -87,6 +87,12 @@ instructions), wants too much memory (4 MB), hands back more than 64 actions, or
 way. The log says so, with the account's number and the reason, never with anything of the script
 or the message.
 
+Scripts run on a few threads of their own (half the processor cores, two to eight), each for at
+most ten seconds. The engine counts instructions, not what a single test costs, so a run can go on
+after its ten seconds; it keeps its thread until it is done, and meanwhile new mail for that
+account goes to the inbox without the script. However many scripts misbehave, they never hold more
+than those few threads.
+
 ## Limits
 
 | | |
