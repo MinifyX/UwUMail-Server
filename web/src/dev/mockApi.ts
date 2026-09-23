@@ -10,6 +10,8 @@ import type {
   AccountSpamView,
   AntivirusTest,
   AntivirusView,
+  EgressTest,
+  EgressView,
   BackupSnapshot,
   BackupsView,
   ForwardAddress,
@@ -1979,6 +1981,30 @@ const routes: [string, RegExp, Handler][] = [
       if (!settings["spam.antivirus.enabled"]?.value) return problem(409, "virusScannerOff");
       log("spam.virusTest", "server");
       return [200, { found: "Eicar-Test-Signature", error: null } satisfies AntivirusTest];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/egress$/,
+    () => [
+      200,
+      {
+        proxy: "http://gluetun:8888",
+        fallback: "block",
+        fetched: 1284,
+        failed: 17,
+        proxyFailures: 3,
+        fallbacks: 0,
+        lastProxyFailure: { at: now - 5 * 3600, error: "the proxy did not answer in time" },
+      } satisfies EgressView,
+    ],
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/egress\/test$/,
+    () => {
+      log("egress.test", "server");
+      return [200, { proxied: true, address: "185.107.56.10", error: null } satisfies EgressTest];
     },
   ],
   [

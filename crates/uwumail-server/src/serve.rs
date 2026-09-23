@@ -131,7 +131,7 @@ pub async fn run(
         tracing::info!(fallback = ?config.egress.fallback, "remote pictures leave through the egress proxy");
     }
     let jmap = uwumail_jmap::Jmap::with_webmail(smtp.clone(), webmail.clone())
-        .with_egress(egress)
+        .with_egress(egress.clone())
         .router()
         .merge(dav.router());
     // The log to Grafana Loki, when the config or the admin panel asks for it; the admin panel
@@ -171,6 +171,7 @@ pub async fn run(
             webmail,
         },
     );
+    web.set_egress(egress);
     tasks.spawn(web.clone().run_health_checks(shutdown_rx.clone()));
     let setup_code = web.open_setup().await;
     let gateway = gateway::GatewayManager::new(

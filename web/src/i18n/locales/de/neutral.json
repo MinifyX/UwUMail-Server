@@ -1116,6 +1116,31 @@
       "intro": "Mail lesen und schreiben unter mail.…/mail, ganz ohne Mail-Programm.",
       "enabled": "Webmail anbieten",
       "enabledHint": "Wer im Portal angemeldet ist, kann sein Postfach hier öffnen. Jedes Konto hat unter Personen noch einen eigenen Schalter; Mail-Programme sind davon in beiden Fällen nicht betroffen."
+    },
+    "egress": {
+      "title": "Bilder in Mails",
+      "intro": "Bilder, die eine Mail von fremden Servern nachlädt, holt der Server selbst. So erfährt der Absender nie, wer die Mail wann und von wo liest. Mit einem Proxy, etwa einem VPN, sieht er auch diesen Server nicht.",
+      "state": {
+        "proxy": "Über Proxy",
+        "trouble": "Proxy macht Probleme",
+        "direct": "Direkt vom Server"
+      },
+      "proxy": "Proxy",
+      "fallback": "Wenn der Proxy fehlt",
+      "fallbackOptions": {
+        "block": "Keine Bilder, bis er wieder da ist",
+        "direct": "Direkt vom Server laden"
+      },
+      "directHint": "Absender sehen die Adresse dieses Servers, aber nie die der Lesenden.",
+      "counts": "Seit dem Start: {{fetched}} Bilder geladen, {{failed}} nicht.",
+      "proxyFailed": "Der Proxy hat {{times}}-mal nicht funktioniert, zuletzt {{when}}: {{error}}",
+      "fallbacks": "{{times}}-mal wurde deshalb direkt geladen.",
+      "configHint": "Eingestellt wird das in der Konfiguration oder in der .env (UWUMAIL_EGRESS_PROXY, UWUMAIL_EGRESS_FALLBACK), weil die Proxy-Adresse oft ein Passwort enthält. Mehr dazu in docs/configuration.md.",
+      "test": "Weg testen",
+      "testHint": "Fragt api.ipify.org auf demselben Weg wie die Bilder, welche Adresse es sieht.",
+      "testProxied": "Absender sehen {{address}}. Das sollte die Adresse des VPN sein.",
+      "testDirect": "Absender sehen {{address}}, die Adresse dieses Servers.",
+      "testFailed": "Der Test hat nicht geklappt: {{error}}"
     }
   },
   "health": {

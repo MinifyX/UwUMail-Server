@@ -10,6 +10,7 @@ import { api, type SettingsView, type SettingValue } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { Link } from "@/lib/router";
 import { toast } from "@/state/toasts";
+import { EgressCard } from "./EgressCard";
 
 type Draft = Record<string, unknown>;
 const MB = 1024 * 1024;
@@ -438,6 +439,8 @@ export function SettingsPage() {
           </Section>
         </div>
       }
+
+      <EgressCard />
     </div>
   );
 }
