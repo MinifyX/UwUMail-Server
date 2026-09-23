@@ -21,6 +21,7 @@ mod fetch;
 mod forward_addresses;
 mod forwarding;
 mod greylist_hold;
+pub mod ical;
 mod imap;
 mod import;
 mod mail;

@@ -4314,6 +4314,7 @@ dependencies = [
  "argon2",
  "aws-lc-rs",
  "bcrypt",
+ "calcard",
  "data-encoding",
  "getrandom 0.4.3",
  "hex",
