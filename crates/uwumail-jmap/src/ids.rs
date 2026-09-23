@@ -64,6 +64,16 @@ pub fn parse_event_instance(value: &str) -> Option<(i64, String)> {
     Some((parse('v', event)?, rid))
 }
 
+/// An address book: `b` for book.
+pub fn address_book(id: i64) -> String {
+    format!("b{id}")
+}
+
+/// A contact card: `k` for Kontakt, as `c` is taken by calendars.
+pub fn contact_card(id: i64) -> String {
+    format!("k{id}")
+}
+
 pub fn participant(account_id: i64) -> String {
     format!("u{account_id}")
 }

@@ -73,11 +73,7 @@ impl Dav {
     pub fn default_collection(&self, kind: DavKind) -> NewDavCollection {
         match kind {
             DavKind::Calendar => NewDavCollection::default_calendar(&self.inner.settings.calendar_name),
-            DavKind::Addressbook => NewDavCollection {
-                slug: "contacts".into(),
-                display_name: self.inner.settings.addressbook_name.clone(),
-                ..Default::default()
-            },
+            DavKind::Addressbook => NewDavCollection::default_address_book(&self.inner.settings.addressbook_name),
         }
     }
 }

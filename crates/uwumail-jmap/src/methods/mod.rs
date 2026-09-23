@@ -1,7 +1,9 @@
 //! Method implementations and the helpers they share.
 
+mod address_book;
 mod calendar;
 mod calendar_event;
+mod contact_card;
 mod email;
 mod identity;
 mod mailbox;
@@ -20,11 +22,11 @@ use uwumail_store::{Account, Changes};
 
 use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
-use crate::session::{CALENDARS, CORE, MAIL, SENDERS, SETTINGS, SIEVE, SUBMISSION, VACATION, WEBMAIL};
+use crate::session::{CALENDARS, CONTACTS, CORE, MAIL, SENDERS, SETTINGS, SIEVE, SUBMISSION, VACATION, WEBMAIL};
 use crate::{Inner, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, ids};
 
 pub const KNOWN_CAPABILITIES: &[&str] =
-    &[CORE, MAIL, SUBMISSION, VACATION, SENDERS, SETTINGS, SIEVE, WEBMAIL, CALENDARS];
+    &[CORE, MAIL, SUBMISSION, VACATION, SENDERS, SETTINGS, SIEVE, WEBMAIL, CALENDARS, CONTACTS];
 
 /// One or more `(method name, arguments)` responses for a call.
 pub type Outputs = Vec<(String, Value)>;
@@ -83,6 +85,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "SenderList" => SENDERS,
         "UserSettings" => SETTINGS,
         "Calendar" | "CalendarEvent" | "ParticipantIdentity" => CALENDARS,
+        "AddressBook" | "ContactCard" => CONTACTS,
         "SieveScript" => SIEVE,
         _ => return Err(MethodError::kind("unknownMethod")),
     };
@@ -144,6 +147,20 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
             single(changes(ctx, &args, "ParticipantIdentity", 'u').await?)
         }
         "ParticipantIdentity/set" => single(calendar::identities_set(ctx, &args).await?),
+        "AddressBook/get" => single(address_book::get(ctx, &args).await?),
+        "AddressBook/changes" => {
+            address_book::check_enabled(ctx)?;
+            single(changes(ctx, &args, "AddressBook", 'b').await?)
+        }
+        "AddressBook/set" => single(address_book::set(ctx, &args).await?),
+        "ContactCard/get" => single(contact_card::get(ctx, &args).await?),
+        "ContactCard/changes" => {
+            address_book::check_enabled(ctx)?;
+            single(changes(ctx, &args, "ContactCard", 'k').await?)
+        }
+        "ContactCard/set" => single(contact_card::set(ctx, &args).await?),
+        "ContactCard/query" => single(contact_card::query(ctx, &args).await?),
+        "ContactCard/queryChanges" => Err(MethodError::kind("cannotCalculateChanges")),
         "SieveScript/get" => single(sieve::get(ctx, &args).await?),
         "SieveScript/changes" => single(changes(ctx, &args, "SieveScript", 'r').await?),
         "SieveScript/set" => single(sieve::set(ctx, &args).await?),
@@ -246,6 +263,57 @@ async fn changes(ctx: &Ctx<'_>, args: &Value, kind: &str, prefix: char) -> Metho
     });
     if kind == "Mailbox" {
         response["updatedProperties"] = Value::Null;
+    }
+    Ok(response)
+}
+
+/// The page of a sorted /query result that `position` or `anchor`, `anchorOffset` and `limit`
+/// ask for (RFC 8620, section 5.5), as the response.
+pub fn query_response(
+    ctx: &Ctx<'_>,
+    args: &Value,
+    state: String,
+    ids: Vec<String>,
+    max_limit: usize,
+) -> MethodResult<Value> {
+    let total = ids.len();
+    let mut position = match args.get("anchor").and_then(Value::as_str) {
+        Some(anchor) => {
+            let index = ids.iter().position(|id| id == anchor).ok_or_else(|| MethodError::kind("anchorNotFound"))?;
+            let offset = args.get("anchorOffset").and_then(Value::as_i64).unwrap_or(0);
+            (index as i64 + offset).max(0) as usize
+        }
+        None => match args.get("position").and_then(Value::as_i64).unwrap_or(0) {
+            p if p < 0 => total.saturating_sub(p.unsigned_abs() as usize),
+            p => p as usize,
+        },
+    };
+    position = position.min(total);
+    let asked = match args.get("limit") {
+        None | Some(Value::Null) => None,
+        Some(value) => {
+            Some(value.as_u64().ok_or_else(|| MethodError::invalid_arguments("limit must be a positive number"))?
+                as usize)
+        }
+    };
+    let limit = asked.unwrap_or(max_limit).min(max_limit);
+    let page: Vec<String> = ids.into_iter().skip(position).take(limit).collect();
+    let mut response = json!({
+        "accountId": ctx.account_id(),
+        "queryState": state,
+        "canCalculateChanges": false,
+        "position": position,
+        "ids": page,
+    });
+    if args.get("calculateTotal").and_then(Value::as_bool).unwrap_or(false) {
+        response["total"] = json!(total);
+    }
+    let capped = match asked {
+        Some(asked) => asked > max_limit,
+        None => total - position > max_limit,
+    };
+    if capped {
+        response["limit"] = json!(limit);
     }
     Ok(response)
 }

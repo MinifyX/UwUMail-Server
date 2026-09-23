@@ -30,6 +30,8 @@ pub const WEBMAIL: &str = "urn:uwumail:jmap:webmail";
 pub const REMOTE: &str = "urn:uwumail:jmap:remote";
 /// JMAP Calendars (draft-ietf-jmap-calendars) on the CalDAV calendars; see docs/jmap-calendars.md.
 pub const CALENDARS: &str = "urn:ietf:params:jmap:calendars";
+/// JMAP Contacts (RFC 9610) on the CardDAV address books; see docs/jmap-contacts.md.
+pub const CONTACTS: &str = "urn:ietf:params:jmap:contacts";
 
 /// Origin the client used, so every URL in the session works from where it is.
 ///
@@ -59,7 +61,8 @@ pub fn base_url(headers: &HeaderMap, client: ClientInfo) -> String {
 pub fn session_state(account: &Account) -> String {
     // Changes whenever something in the session document would change.
     let calendars = if account.protocols.caldav { "-c" } else { "" };
-    format!("{}-{}{calendars}", account.id, account.login.len() + account.display_name.len())
+    let contacts = if account.protocols.carddav { "-k" } else { "" };
+    format!("{}-{}{calendars}{contacts}", account.id, account.login.len() + account.display_name.len())
 }
 
 pub fn document(account: &Account, base: &str) -> Value {
@@ -150,6 +153,15 @@ pub fn document(account: &Account, base: &str) -> Value {
             "mayCreateCalendar": true
         });
         document["primaryAccounts"][CALENDARS] = json!(account_id);
+    }
+    // Address books too, as over CardDAV.
+    if account.protocols.carddav {
+        document["capabilities"][CONTACTS] = json!({});
+        document["accounts"][&account_id]["accountCapabilities"][CONTACTS] = json!({
+            "maxAddressBooksPerCard": 1,
+            "mayCreateAddressBook": true
+        });
+        document["primaryAccounts"][CONTACTS] = json!(account_id);
     }
     document
 }

@@ -1,6 +1,6 @@
 [package]
 name = "uwumail-jmap"
-description = "JMAP (RFC 8620, 8621, JMAP Calendars) for the UwUMail server"
+description = "JMAP (RFC 8620, 8621, 9610, JMAP Calendars) for the UwUMail server"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,7 +14,7 @@ uwumail-store.workspace = true
 ammonia.workspace = true
 axum.workspace = true
 base64.workspace = true
-# iCalendar <-> JSCalendar for JMAP Calendars.
+# iCalendar <-> JSCalendar for JMAP Calendars, vCard <-> JSContact for JMAP Contacts.
 calcard = { workspace = true, features = ["jmap"] }
 chrono.workspace = true
 chrono-tz.workspace = true

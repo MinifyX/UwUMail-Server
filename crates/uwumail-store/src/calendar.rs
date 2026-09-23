@@ -7,10 +7,10 @@ use rusqlite::{OptionalExtension, Transaction, params};
 
 use crate::dav::{
     ChangeLog, DavCollection, DavCollectionUpdate, DavKind, DavPrecondition, DavWrite, DavWriteOutcome,
-    NewDavCollection, apply_collection_update, delete_collection, delete_entry, next_change, own_collection, put_entry,
-    valid_segment,
+    NewDavCollection, apply_collection_update, delete_collection, delete_entry, move_entry, new_entry_name,
+    own_collection, put_entry, set_default,
 };
-use crate::{DAV_RESOURCE_MAX_BYTES, DAV_RESOURCES_PER_COLLECTION, Result, Store, StoreError, dav_etag, now};
+use crate::{DAV_RESOURCE_MAX_BYTES, Result, Store, StoreError};
 
 /// An event as JMAP sees it: a VEVENT entry of one of the account's calendars.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,28 +64,6 @@ fn own_calendar(tx: &Transaction<'_>, account_id: i64, calendar_id: i64) -> Resu
         return Err(StoreError::NotFound(format!("calendar {calendar_id}")));
     }
     Ok(collection)
-}
-
-/// A resource name for a new event: the UID when it fits into a URL and is free, else a random one.
-fn new_name(tx: &Transaction<'_>, collection_id: i64, uid: &str) -> Result<String> {
-    let taken = |name: &str| -> Result<bool> {
-        Ok(tx.query_row(
-            "SELECT EXISTS (SELECT 1 FROM dav_resources WHERE collection_id = ?1 AND name = ?2)
-                 OR EXISTS (SELECT 1 FROM dav_tombstones WHERE collection_id = ?1 AND name = ?2)",
-            params![collection_id, name],
-            |row| row.get(0),
-        )?)
-    };
-    let from_uid = format!("{uid}.ics");
-    if valid_segment(&from_uid) && from_uid.len() <= 120 && !taken(&from_uid)? {
-        return Ok(from_uid);
-    }
-    loop {
-        let name = format!("{}.ics", hex::encode(crate::random_bytes::<16>()));
-        if !taken(&name)? {
-            return Ok(name);
-        }
-    }
 }
 
 impl Store {
@@ -154,20 +132,7 @@ impl Store {
             .write(move |tx| {
                 let mut log = ChangeLog::new(account_id);
                 let calendar = own_calendar(tx, account_id, calendar_id)?;
-                if calendar.is_default {
-                    return Ok(None);
-                }
-                let mut stmt = tx.prepare(
-                    "UPDATE dav_collections SET is_default = 0
-                     WHERE account_id = ?1 AND kind = 'calendar' AND is_default RETURNING id",
-                )?;
-                let previous: Vec<i64> = stmt.query_map([account_id], |row| row.get(0))?.collect::<Result<_, _>>()?;
-                drop(stmt);
-                for id in previous {
-                    log.record(tx, "Calendar", id, "updated")?;
-                }
-                tx.execute("UPDATE dav_collections SET is_default = 1 WHERE id = ?1", [calendar_id])?;
-                log.record(tx, "Calendar", calendar_id, "updated")?;
+                set_default(tx, &mut log, &calendar)?;
                 Ok(log.modseq())
             })
             .await?;
@@ -240,7 +205,7 @@ impl Store {
                     ends_at: write.ends_at,
                 };
                 let Some(id) = write.id else {
-                    let name = new_name(tx, target.id, &write.uid)?;
+                    let name = new_entry_name(tx, target.id, &write.uid, "ics")?;
                     let condition = DavPrecondition { if_none_match_any: true, ..Default::default() };
                     return match put_entry(tx, &mut log, &target, &entry(name), &condition)? {
                         (DavWriteOutcome::Created { etag }, Some(id)) => Ok(((id, etag), log.modseq())),
@@ -269,49 +234,7 @@ impl Store {
                 }
                 // Into another calendar: the same entry under the same id, gone from the old
                 // calendar's point of view and new in the other one.
-                let count: i64 =
-                    tx.query_row("SELECT count(*) FROM dav_resources WHERE collection_id = ?1", [target.id], |row| {
-                        row.get(0)
-                    })?;
-                if count >= DAV_RESOURCES_PER_COLLECTION {
-                    return Err(StoreError::QuotaExceeded);
-                }
-                let free: bool = tx.query_row(
-                    "SELECT NOT EXISTS (SELECT 1 FROM dav_resources WHERE collection_id = ?1 AND name = ?2)",
-                    params![target.id, name],
-                    |row| row.get(0),
-                )?;
-                let new_name = if free { name.clone() } else { new_name(tx, target.id, &write.uid)? };
-                let old_change = next_change(tx, source_id)?;
-                tx.execute(
-                    "INSERT OR REPLACE INTO dav_tombstones (collection_id, name, change) VALUES (?1, ?2, ?3)",
-                    params![source_id, name, old_change],
-                )?;
-                let change = next_change(tx, target.id)?;
-                let etag = dav_etag(&write.content);
-                tx.execute(
-                    "UPDATE dav_resources SET collection_id = ?1, name = ?2, uid = ?3, etag = ?4, content = ?5,
-                         starts_at = ?6, ends_at = ?7, size = ?8, modified_at = ?9, change = ?10
-                     WHERE id = ?11",
-                    params![
-                        target.id,
-                        new_name,
-                        write.uid,
-                        etag,
-                        write.content,
-                        write.starts_at,
-                        write.ends_at,
-                        write.content.len() as i64,
-                        now(),
-                        change,
-                        id
-                    ],
-                )?;
-                tx.execute(
-                    "DELETE FROM dav_tombstones WHERE collection_id = ?1 AND name = ?2",
-                    params![target.id, new_name],
-                )?;
-                log.entry(tx, &target, id, Some("VEVENT"), Some("VEVENT"))?;
+                let etag = move_entry(tx, &mut log, id, source_id, &target, &entry(name), "ics")?;
                 Ok(((id, etag), log.modseq()))
             })
             .await?;
