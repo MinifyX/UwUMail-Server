@@ -29,17 +29,23 @@ const DEFAULTS: &[&str] = &[
 const MAX_NAME_BYTES: usize = 255;
 const MAX_DESCRIPTION_BYTES: usize = 10_000;
 
-/// The account's calendars, the default one made the first time like CalDAV does.
+/// The account's calendars, the default one made the first time like CalDAV does. Lists that only
+/// hold tasks, like the reminders of Apple's devices, are not calendars of events and stay out.
 pub async fn calendars(ctx: &Ctx<'_>) -> MethodResult<Vec<DavCollection>> {
     let name = match ctx.jmap.smtp.tone().language {
         uwumail_smtp::Language::De => "Kalender",
         _ => "Calendar",
     };
-    Ok(ctx
+    let all = ctx
         .jmap
         .store
         .dav_collections(ctx.account.id, DavKind::Calendar, NewDavCollection::default_calendar(name))
-        .await?)
+        .await?;
+    Ok(all.into_iter().filter(holds_events).collect())
+}
+
+fn holds_events(calendar: &DavCollection) -> bool {
+    calendar.components.is_empty() || calendar.components.iter().any(|kind| kind.eq_ignore_ascii_case("VEVENT"))
 }
 
 /// The calendars are switched off for the account the way CalDAV is.
@@ -198,7 +204,7 @@ fn parse_properties(object: &Map<String, Value>, creating: bool) -> Result<DavCo
 pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
     check_enabled(ctx)?;
     check_set_size(args)?;
-    calendars(ctx).await?;
+    let known = calendars(ctx).await?;
     let old_state = ctx.state().await?;
     if_in_state(args, &old_state)?;
     let store = ctx.jmap.store.clone();
@@ -250,6 +256,9 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
         for (id, patch) in update {
             let result: Result<(), SetError> = async {
                 let calendar_id = ctx.parse_id('c', id).ok_or_else(SetError::not_found)?;
+                if !known.iter().any(|calendar| calendar.id == calendar_id) {
+                    return Err(SetError::not_found());
+                }
                 let patch =
                     patch.as_object().ok_or_else(|| SetError::new("invalidPatch", "the patch must be an object"))?;
                 let changes = parse_properties(patch, false)?;

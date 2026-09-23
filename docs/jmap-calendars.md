@@ -33,8 +33,9 @@ from its session and every calendar method answers
 
 There is no second copy. A Calendar is a CalDAV calendar collection, a
 CalendarEvent is an event (`VEVENT`) stored in one; tasks (`VTODO`) stay
-CalDAV's and are not shown. Events stay iCalendar on disk and are turned into
-JSCalendar when read and back into iCalendar when written, with the
+CalDAV's and are not shown, and neither are lists that only hold tasks, like
+the reminders of Apple's devices. Events stay iCalendar on disk and are
+turned into JSCalendar when read and back into iCalendar when written, with the
 [calcard](https://crates.io/crates/calcard) crate, so JSCalendar property names
 are the ones calcard uses (`recurrenceRule` in the singular, `showWithoutTime`,
 `locations`, `recurrenceOverrides`, `excluded`, …).

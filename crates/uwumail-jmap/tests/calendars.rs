@@ -634,6 +634,17 @@ async fn caldav_and_jmap_see_each_others_changes() {
     assert_eq!(changes["destroyed"], json!([&phone_id]));
     let calendars = server.call(MINI, "Calendar/changes", json!({ "accountId": account, "sinceState": &middle })).await;
     assert_eq!(calendars["created"].as_array().unwrap().len(), 1, "{calendars}");
+
+    // A list of reminders from an iPhone holds tasks, not events: it is not a calendar here.
+    let reminders = r#"<?xml version="1.0" encoding="utf-8"?>
+<c:mkcalendar xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:set><d:prop><d:displayname>Erinnerungen</d:displayname>
+<c:supported-calendar-component-set><c:comp name="VTODO"/></c:supported-calendar-component-set></d:prop></d:set></c:mkcalendar>"#;
+    let made = server.send(MINI, "MKCALENDAR", "/dav/calendars/mini@example.de/tasks/", &[], reminders.into()).await;
+    assert_eq!(made.status, StatusCode::CREATED);
+    let list = server.call(MINI, "Calendar/get", json!({ "accountId": account })).await;
+    let names: Vec<&str> = list["list"].as_array().unwrap().iter().filter_map(|c| c["name"].as_str()).collect();
+    assert_eq!(names.len(), 2, "{list}");
+    assert!(!names.contains(&"Erinnerungen"), "{list}");
 }
 
 #[tokio::test(flavor = "multi_thread")]
