@@ -3,6 +3,23 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.9.2
+
+**Provider files are recognised.** Reading a WireGuard `.conf` under *VPN & Proxy* now tells from
+the file whose it is — NordVPN (`Endpoint = …wg.nordhold.net`), Mullvad, Proton VPN, Surfshark,
+IVPN, AirVPN, Windscribe — switches to that provider and takes over the country from the server's
+name (a NordVPN file named `de1380-nordvpn.conf` sets *Germany*). Before, the file was read into
+whatever provider happened to be selected and its location was left out. A file nobody knows is
+taken as an own server, and a server named in it instead of an IP address is now looked up when
+saving rather than refused.
+
+**The VPN can always be switched off.** *Switch the VPN off* only showed while gluetun reported
+`running`, so a VPN that kept restarting could not be stopped from the portal, and without a new
+enough helper switching off was refused altogether. The button now shows whenever anything of the
+VPN is left, sends everything straight again at once, and asks the helper to stop gluetun where
+there is one. A job the helper has not started yet shows as *waiting*, and the page follows it
+until it is done, instead of going on showing the state from before.
+
 ## 0.9.1
 
 **Only names nobody owns in examples.** Tests, docs, sample data and placeholders used
