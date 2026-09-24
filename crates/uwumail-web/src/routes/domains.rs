@@ -194,6 +194,10 @@ pub async fn run_check(web: &Web, domain: &str) -> ApiResult<uwumail_smtp::dnsch
     let keys = web.store().dkim_keys(domain).await?;
     let relay_host = web.smtp().relay_host();
     let policy = web.store().mta_sts(domain).await?.map(|settings| Policy::ours(settings.mode, &settings.mx));
+    let account = web.settings().certificate.as_ref().and_then(|source| source()).and_then(|status| {
+        // A self-signed stand-in says nothing about the account the real one comes from.
+        status.lets_encrypt_account.filter(|_| status.automatic && !status.self_signed)
+    });
     let report = checker
         .check(DomainSetup {
             domain,
@@ -202,6 +206,7 @@ pub async fn run_check(web: &Web, domain: &str) -> ApiResult<uwumail_smtp::dnsch
             upstream_mx: web.smtp().behind_upstream_server(),
             dkim_keys: &keys,
             mta_sts: policy.as_ref(),
+            lets_encrypt_account: account.as_deref(),
         })
         .await;
     web.keep_report(report.clone());
@@ -274,7 +279,8 @@ pub async fn remove_key(
 #[derive(Deserialize)]
 pub struct CloudflareRequest {
     token: String,
-    /// Kinds of wrong records to overwrite: mx, spf, dmarc, dkim.
+    /// Kinds of wrong records to overwrite: mx, spf, dmarc, dkim. `caa` is also the only way a
+    /// missing CAA record is created: it decides who may issue certificates for the host name.
     #[serde(default)]
     replace: Vec<String>,
     /// Kinds of working records to rewrite the way UwUMail would publish them.

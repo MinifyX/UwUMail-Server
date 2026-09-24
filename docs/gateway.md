@@ -33,7 +33,11 @@ only ever show the gateway, never your home address.
   on each side; each side pins the other's fingerprint.
 - **TLS ends at home.** The gateway passes bytes along. It never sees passwords
   or the content of TLS connections (ports 465, 993 and 443, and port 25 and 587
-  after STARTTLS); the certificate and its key stay on your server.
+  after STARTTLS); the certificate and its key stay on your server. One thing
+  it could do if someone took it over: it answers for your host name, so it
+  could get a certificate of its own from a public CA and read along. A CAA
+  record bound to your server's account closes that — see
+  [DNS records](#dns-records).
 - **Real client addresses.** Each carried connection starts with the client's
   address, so SPF checks, login limits and logs work as if the server stood on
   the internet itself.
@@ -318,6 +322,37 @@ Everything that pointed to your server now points to the gateway:
 | `example.com MX` | `10 mail.example.com.`, as before |
 | `example.com TXT` | `v=spf1 mx -all` covers the gateway, because the MX host points to it |
 | Reverse DNS of the gateway's addresses | `mail.example.com`, set at the VPS provider |
+| `mail.example.com CAA` (recommended) | `0 issue "letsencrypt.org; accounturi=…; validationmethods=http-01"` |
+
+### A CAA record, so only your server gets certificates
+
+Let's Encrypt checks that whoever asks for a certificate answers on port 80 of
+the name, and with a gateway that is the VPS. Someone who took over the VPS
+could therefore get a certificate for `mail.example.com` from any public CA,
+end TLS there, and read passwords and mail on their way home. A CAA record with
+`accounturi` (RFC 8657) allows certificates for the name only from Let's
+Encrypt and only for your server's own ACME account; the VPS has no way to use
+that account.
+
+The DNS check shows the exact record under the domain the host name belongs to,
+with your server's account in it, once the server has a certificate from Let's
+Encrypt: *Domains → the domain → DNS*, as a recommended record. With
+Cloudflare, tick it under *Add at Cloudflare*; it is never set
+without being asked for. Things to know before you publish it:
+
+- It binds the name to **this account**. The account lives in the data
+  directory (`tls/acme/account.json`) and comes back with a backup. On a new
+  server without it, or when you move to another CA, change or remove the
+  record first, or the certificate cannot be renewed. The DNS check says so when
+  the record names another account.
+- It covers `mail.example.com` and names below it. Other names of yours that
+  point to the gateway and are on the certificate, such as `mta-sts.example.com`
+  or `imap.example.com`, need the same record if you want them covered too — or
+  publish it on `example.com` itself, if nothing else in the domain gets its
+  certificates elsewhere.
+- Certificate Transparency makes every public certificate visible. A monitoring
+  service that watches your domain there (several are free) tells you about a
+  certificate you did not ask for, with or without the record.
 
 In your home network, a local DNS entry for `mail.example.com` can keep pointing
 straight to your server, so mail apps at home don't take the detour. The entry
@@ -346,9 +381,11 @@ is to skip the entry and use the gateway from home too; see
   reaching the gateway over the other family can ban that address for an hour
   (the tunnel itself stays up).
 - **Trust the VPS like the server.** Someone who breaks into it cannot read TLS
-  connections, but could strip STARTTLS on port 25 like any network on the way
-  (MTA-STS protects against that), and could hand connections to your server
-  with made-up client addresses. Keep it updated and locked down.
+  connections as long as the [CAA record](#a-caa-record-so-only-your-server-gets-certificates)
+  is in place; without it they can get a certificate for your host name and read
+  everything, passwords included. They could also strip STARTTLS on port 25 like
+  any network on the way (MTA-STS protects against that), and hand connections
+  to your server with made-up client addresses. Keep it updated and locked down.
 - **The tunnel waits a moment.** A new home address after a reconnect means a
   new tunnel after a few seconds; mail senders in that moment get a 421 and try
   again.

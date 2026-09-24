@@ -164,6 +164,25 @@ pub fn wanted_records(report: &DomainReport) -> Vec<WantedRecord> {
                         state,
                     })
                 }
+                "CAA" => {
+                    // `0 issue "<value>"`, in the shape Cloudflare takes a CAA record.
+                    let value = record.expected.splitn(3, ' ').nth(2)?.trim_matches('"').to_owned();
+                    Some(WantedRecord {
+                        kind: record.kind,
+                        record_type: "CAA",
+                        name: record.name.clone(),
+                        content: String::new(),
+                        priority: None,
+                        data: Some(json!({ "flags": 0, "tag": "issue", "value": value })),
+                        // One that only warns lets others issue too, which is reason enough to
+                        // replace it -- when asked, as for every CAA record.
+                        state: match record.status {
+                            CheckStatus::Missing => RecordState::Missing,
+                            CheckStatus::Ok => RecordState::Ours,
+                            _ => RecordState::Wrong,
+                        },
+                    })
+                }
                 // The MTA-STS policy file is not a DNS record.
                 _ => None,
             }
@@ -273,6 +292,11 @@ impl Cloudflare {
                 error,
             };
             let asked_for = match record.state {
+                // Who may issue certificates for the name is only ever decided by the admin: a CAA
+                // record that no longer fits the server's account stops its renewals.
+                RecordState::Missing | RecordState::Wrong if record.kind == "caa" => {
+                    replace.iter().any(|kind| kind == "caa")
+                }
                 RecordState::Wrong => replace.iter().any(|kind| kind == record.kind),
                 RecordState::Differs => tidy.iter().any(|kind| kind == record.kind),
                 RecordState::Missing | RecordState::Ours => true,
@@ -311,6 +335,8 @@ impl Cloudflare {
                             "dkim" => content.starts_with("v=DKIM1"),
                             "tlsrpt" => content.starts_with("v=TLSRPTv1"),
                             "mtasts" => content.starts_with("v=STSv1"),
+                            // Only who may issue; an iodef address stays.
+                            "caa" => entry["data"]["tag"].as_str().is_some_and(|tag| tag.eq_ignore_ascii_case("issue")),
                             _ => true,
                         }
                     })
@@ -330,8 +356,9 @@ impl Cloudflare {
                 match same_kind.first().and_then(|entry| entry["id"].as_str()) {
                     Some(id) => {
                         self.call(Method::PUT, &format!("/zones/{zone}/dns_records/{id}"), Some(body.clone())).await?;
-                        // Only one MX should remain when replacing, or mail would still go elsewhere.
-                        if record.record_type == "MX" && record.state != RecordState::Missing {
+                        // Only one MX should remain when replacing, or mail would still go elsewhere;
+                        // only one CAA issue property, or another CA or account could still issue.
+                        if matches!(record.record_type, "MX" | "CAA") && record.state != RecordState::Missing {
                             for extra in same_kind.iter().skip(1).filter_map(|entry| entry["id"].as_str()) {
                                 self.call(Method::DELETE, &format!("/zones/{zone}/dns_records/{extra}"), None).await?;
                             }
@@ -534,5 +561,64 @@ mod tests {
 
         let error = Cloudflare::with_base("test-token", &base).zone_for("elsewhere.example").await.unwrap_err();
         assert!(error.contains("elsewhere.example"));
+    }
+
+    async fn remove(State(fake): State<Arc<Fake>>, Path((_, id)): Path<(String, String)>) -> axum::Json<Value> {
+        fake.records.lock().unwrap().retain(|r| r["id"] != json!(id));
+        axum::Json(json!({ "success": true, "result": { "id": id } }))
+    }
+
+    #[tokio::test]
+    async fn a_caa_record_is_only_ever_written_when_asked_for() {
+        // security-audit-0.8.0 INF-2: it decides who may issue certificates for the host name.
+        let fake = Arc::new(Fake::default());
+        let app = Router::new()
+            .route("/zones", get(zones))
+            .route("/zones/{zone}/dns_records", get(list).post(create))
+            .route("/zones/{zone}/dns_records/{id}", put(update).delete(remove))
+            .with_state(fake.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let account = "https://acme-v02.api.letsencrypt.org/acme/acct/1";
+        let value = uwumail_smtp::dnscheck::caa_value(account);
+        let report = |status| DomainReport {
+            domain: "example.de".into(),
+            checked_at: 0,
+            source: "authoritative",
+            nameservers: vec![],
+            status: CheckStatus::Ok,
+            records: vec![check("caa", "CAA", "mail.example.de", &format!("0 issue \"{value}\""), status)],
+        };
+        let cloudflare = Cloudflare::with_base("test-token", &base);
+        let wanted = wanted_records(&report(CheckStatus::Missing));
+        let results = cloudflare.apply("example.de", &wanted, &[], &[]).await.unwrap();
+        assert_eq!(results.iter().map(|r| r.outcome).collect::<Vec<_>>(), ["skipped"], "missing, but not asked for");
+        assert!(fake.records.lock().unwrap().is_empty());
+
+        let caa = ["caa".to_owned()];
+        let results = cloudflare.apply("example.de", &wanted, &caa, &[]).await.unwrap();
+        assert_eq!(results.iter().map(|r| r.outcome).collect::<Vec<_>>(), ["created"]);
+        {
+            let records = fake.records.lock().unwrap();
+            assert_eq!(records[0]["type"], "CAA");
+            assert_eq!(records[0]["data"], json!({ "flags": 0, "tag": "issue", "value": value }));
+        }
+
+        // One that lets others issue too is replaced, when asked, and the others go; an iodef stays.
+        fake.records.lock().unwrap().extend([
+            json!({ "id": "other", "type": "CAA", "name": "mail.example.de", "data": { "flags": 0, "tag": "issue", "value": "sectigo.com" } }),
+            json!({ "id": "report", "type": "CAA", "name": "mail.example.de", "data": { "flags": 0, "tag": "iodef", "value": "mailto:caa@example.de" } }),
+        ]);
+        let wanted = wanted_records(&report(CheckStatus::Warning));
+        let results = cloudflare.apply("example.de", &wanted, &[], &[]).await.unwrap();
+        assert_eq!(results.iter().map(|r| r.outcome).collect::<Vec<_>>(), ["skipped"]);
+        let results = cloudflare.apply("example.de", &wanted, &caa, &[]).await.unwrap();
+        assert_eq!(results.iter().map(|r| r.outcome).collect::<Vec<_>>(), ["updated"]);
+        let records = fake.records.lock().unwrap();
+        assert_eq!(records.len(), 2, "{records:?}");
+        assert!(records.iter().any(|r| r["data"]["value"] == json!(value)));
+        assert!(records.iter().any(|r| r["id"] == "report"));
     }
 }

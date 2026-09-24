@@ -24,7 +24,7 @@ pub use service::{BackupSettings, BackupStatus, Backups, Fetching, Look, READY_F
 pub use sftp::{Login, Target};
 pub use storage::Storage;
 
-use crate::format::{CONFIG_PATH, FileEntry, object_path};
+use crate::format::{CONFIG_PATH, FileEntry, checked_id, is_snapshot_name, object_path};
 
 const CHUNK_MIN: usize = 16 * 1024;
 const CHUNK_AVG: usize = 64 * 1024;
@@ -32,6 +32,18 @@ const CHUNK_MAX: usize = 256 * 1024;
 /// Files bigger than this in the data directory are not part of a backup; they are not ours.
 const FILE_MAX: u64 = 64 * 1024 * 1024;
 const TEMP_DIR: &str = "backup-tmp";
+
+// What this server reads from a backup server at most. The backup server decides how big its files
+// are, and one that is not ours must not be able to have this server read, or inflate, all the
+// memory there is (security-audit-0.8.0 INF-4).
+/// `uwumail-backup.json` is a few lines.
+const CONFIG_MAX: u64 = 64 * 1024;
+/// A manifest names every mail by its hash, about 67 bytes each: this is room for millions.
+const MANIFEST_MAX: u64 = 256 * 1024 * 1024;
+/// A single mail. Far above what the server takes by default; only a limit, not a promise.
+const BLOB_MAX: u64 = 1024 * 1024 * 1024;
+/// What an object adds to its content: the header, the nonce and the tag.
+const OBJECT_OVERHEAD: u64 = 64;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -76,15 +88,17 @@ impl Repository {
 
     /// Whether the repository at the storage is encrypted, without needing the key.
     pub async fn is_encrypted(storage: &Storage) -> Result<bool, Error> {
-        let bytes =
-            storage.read(CONFIG_PATH).await?.ok_or_else(|| Error::Config("there is no UwUMail backup there".into()))?;
+        let bytes = storage
+            .read(CONFIG_PATH, CONFIG_MAX)
+            .await?
+            .ok_or_else(|| Error::Config("there is no UwUMail backup there".into()))?;
         let config: RepoConfig = serde_json::from_slice(&bytes)
             .map_err(|_| Error::Damaged(format!("{CONFIG_PATH} is not a UwUMail backup")))?;
         Ok(config.encrypted)
     }
 
     async fn open_with(storage: Storage, key: Option<RepoKey>, create_at: Option<i64>) -> Result<Repository, Error> {
-        let config = match storage.read(CONFIG_PATH).await? {
+        let config = match storage.read(CONFIG_PATH, CONFIG_MAX).await? {
             Some(bytes) => serde_json::from_slice::<RepoConfig>(&bytes)
                 .map_err(|_| Error::Damaged(format!("{CONFIG_PATH} is not a UwUMail backup")))?,
             None if create_at.is_none() => return Err(Error::Config("there is no UwUMail backup there".into())),
@@ -102,11 +116,20 @@ impl Repository {
         Ok(Repository { storage, codec, config })
     }
 
-    /// Ids of every object in the repository.
+    /// Ids of every object in the repository. A name that is not one is left alone with a warning:
+    /// the listing comes from the backup server, and nothing it says reaches a path unchecked.
     async fn object_ids(&self) -> Result<HashSet<String>, Error> {
         let mut ids = HashSet::new();
         for prefix in self.storage.list("data").await? {
+            if prefix.len() != 2 || !prefix.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                tracing::warn!(name = %prefix.escape_debug(), "the backup server lists something in data/ that is not ours");
+                continue;
+            }
             for id in self.storage.list(&format!("data/{prefix}")).await? {
+                if checked_id(&id).is_err() || !id.starts_with(&prefix) {
+                    tracing::warn!(name = %id.escape_debug(), "the backup server lists something in data/ that is not an object");
+                    continue;
+                }
                 ids.insert(id);
             }
         }
@@ -120,41 +143,51 @@ impl Repository {
             return Ok((id, 0));
         }
         let object = self.codec.encode(content)?;
-        self.storage.write(&object_path(&id), &object).await?;
+        self.storage.write(&object_path(&id)?, &object).await?;
         known.insert(id.clone());
         Ok((id, object.len() as u64))
     }
 
-    async fn get(&self, id: &str) -> Result<Vec<u8>, Error> {
+    /// An object's content, which may be at most `limit` bytes long.
+    async fn get(&self, id: &str, limit: u64) -> Result<Vec<u8>, Error> {
         let object = self
             .storage
-            .read(&object_path(id))
+            .read(&object_path(id)?, limit.saturating_add(OBJECT_OVERHEAD))
             .await?
             .ok_or_else(|| Error::Damaged(format!("the object {id} is missing")))?;
-        let content = self.codec.decode(&object)?;
-        // An encrypted repository proves an object with its authentication tag. A plain one has
-        // only the id, which is the SHA-256 of the content, so it is worth recomputing.
-        if self.codec.is_plain() && self.codec.id_for(&content) != id {
+        let content = self.codec.decode(&object, limit)?;
+        // The id comes from the content, keyed in an encrypted repository. Recomputing it is what
+        // ties an object to its name: the authentication tag alone proves only that this server
+        // wrote it, and an authentic object moved to another id's path would pass that
+        // (security-audit-0.8.0 INF-1).
+        if self.codec.id_for(&content) != id {
             return Err(Error::Damaged(format!("the object {id} does not match its content")));
         }
         Ok(content)
     }
 
-    /// Snapshot names, oldest first.
+    /// Snapshot names, oldest first. Only names this server gives count.
     pub async fn snapshots(&self) -> Result<Vec<String>, Error> {
         let mut names = self.storage.list("snapshots").await?;
+        names.retain(|name| is_snapshot_name(name));
         names.sort();
         Ok(names)
     }
 
     pub async fn manifest(&self, name: &str) -> Result<Manifest, Error> {
-        let object = self
-            .storage
-            .read(&format!("snapshots/{name}"))
-            .await?
-            .ok_or_else(|| Error::Config(format!("there is no snapshot {name}")))?;
-        serde_json::from_slice(&self.codec.decode(&object)?)
-            .map_err(|_| Error::Damaged(format!("the snapshot {name} cannot be read")))
+        let missing = || Error::Config(format!("there is no snapshot {}", name.escape_debug()));
+        if !is_snapshot_name(name) {
+            return Err(missing());
+        }
+        let object = self.storage.read(&format!("snapshots/{name}"), MANIFEST_MAX).await?.ok_or_else(missing)?;
+        let manifest: Manifest = serde_json::from_slice(&self.codec.decode(&object, MANIFEST_MAX)?)
+            .map_err(|_| Error::Damaged(format!("the snapshot {name} cannot be read")))?;
+        // A manifest names itself inside what the key seals, so an authentic one cannot stand in
+        // for another. Ones written before 0.8.0 do not, and are taken as they are.
+        if manifest.name.as_deref().is_some_and(|own| own != name) {
+            return Err(Error::Damaged(format!("the snapshot {name} holds another snapshot")));
+        }
+        Ok(manifest)
     }
 }
 
@@ -274,6 +307,7 @@ pub async fn backup(
         files.push(FileEntry { path, id, size: content.len() as u64 });
     }
 
+    let name = format!("{now:012}-{}", random_suffix());
     let manifest = Manifest {
         format: format::FORMAT,
         created_at: now,
@@ -285,8 +319,8 @@ pub async fn backup(
         blobs_size,
         files,
         uploaded,
+        name: Some(name.clone()),
     };
-    let name = format!("{now:012}-{}", random_suffix());
     let encoded = repo.codec.encode(&serde_json::to_vec(&manifest).expect("manifests serialize"))?;
     repo.storage.write(&format!("snapshots/{name}"), &encoded).await?;
 
@@ -325,7 +359,7 @@ pub async fn prune(repo: &Repository, retention: Retention) -> Result<(usize, us
     if !manifests.is_empty() {
         for id in repo.object_ids().await? {
             if !needed.contains(&id) {
-                repo.storage.remove(&object_path(&id)).await?;
+                repo.storage.remove(&object_path(&id)?).await?;
                 removed_objects += 1;
             }
         }
@@ -352,7 +386,7 @@ pub async fn restore(repo: &Repository, snapshot: &str, data_dir: &Path) -> Resu
     let partial = data_dir.join("uwumail.db.restoring");
     let mut database = tokio::fs::File::create(&partial).await?;
     for id in &manifest.database {
-        let chunk = repo.get(checked_id(id)?).await?;
+        let chunk = repo.get(checked_id(id)?, CHUNK_MAX as u64).await?;
         tokio::io::AsyncWriteExt::write_all(&mut database, &chunk).await?;
     }
     tokio::io::AsyncWriteExt::flush(&mut database).await?;
@@ -363,7 +397,7 @@ pub async fn restore(repo: &Repository, snapshot: &str, data_dir: &Path) -> Resu
         if already_restored(&path, hash).await? {
             continue;
         }
-        let content = repo.get(&repo.codec.id_for_hash(hash)).await?;
+        let content = repo.get(&repo.codec.id_for_hash(hash), BLOB_MAX).await?;
         if BlobHash::of(&content).as_str() != hash {
             return Err(Error::Damaged(format!("the blob {hash} does not match its content")));
         }
@@ -379,7 +413,7 @@ pub async fn restore(repo: &Repository, snapshot: &str, data_dir: &Path) -> Resu
         let path = data_dir.join(&file.path);
         tokio::fs::create_dir_all(path.parent().unwrap_or(data_dir)).await?;
         // These are the server's certificates and keys, so they go back as privately as they came.
-        write_private(&path, &repo.get(checked_id(&file.id)?).await?).await?;
+        write_private(&path, &repo.get(checked_id(&file.id)?, file.size.min(FILE_MAX)).await?).await?;
     }
     tokio::fs::rename(partial, data_dir.join("uwumail.db")).await?;
     Ok(manifest)
@@ -410,15 +444,6 @@ fn fits_this_server(manifest: &Manifest) -> Result<(), Error> {
 fn release_order(version: &str) -> (u64, u64, u64) {
     let mut numbers = version.split('-').next().unwrap_or_default().split('.').map(|part| part.parse().unwrap_or(0));
     (numbers.next().unwrap_or(0), numbers.next().unwrap_or(0), numbers.next().unwrap_or(0))
-}
-
-/// Object ids and blob hashes are the hex of a SHA-256, keyed or plain, and nothing else may ever
-/// reach a path. A snapshot is the one part of a backup a hostile server could rewrite unnoticed.
-fn checked_id(id: &str) -> Result<&str, Error> {
-    if id.len() == 64 && id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Ok(id);
-    }
-    Err(Error::Damaged(format!("the snapshot names something that is not an id: {}", id.escape_debug())))
 }
 
 /// Whether a mail is already in place from an earlier attempt, content and all.

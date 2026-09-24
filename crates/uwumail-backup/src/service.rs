@@ -172,19 +172,21 @@ impl Backups {
             }
         };
         look.encrypted = encrypted;
+        // A key that was given is used whatever the backup server says: a repository that claims
+        // to be unencrypted to someone who knows it is not is refused, not read as plain text.
         let key = match (encrypted, key) {
             (true, None) => {
                 storage.close().await;
                 return Ok(look);
             }
-            (true, Some(text)) => match RepoKey::from_recovery_text(text) {
+            (_, Some(text)) => match RepoKey::from_recovery_text(text) {
                 Ok(key) => Some(key),
                 Err(err) => {
                     storage.close().await;
                     return Err(err);
                 }
             },
-            (false, _) => None,
+            (false, None) => None,
         };
         let repo = Repository::open_existing(storage, key).await?;
         let found = async {
@@ -254,16 +256,15 @@ impl Backups {
                 ..Fetching::default()
             };
         }
-        let settings = match self.settings().await {
-            Ok(settings) if settings.target.is_some() => settings,
+        match self.settings().await {
+            Ok(ref settings) if settings.target.is_some() => {}
             other => {
                 // The slot goes back: nothing was started.
                 *self.inner.fetching.lock().expect("restore progress poisoned") = Fetching::default();
                 other?;
                 return Err(Error::Config("no backup server is set up".into()));
             }
-        };
-        let _ = settings;
+        }
         // An empty staging directory: `restore` refuses to write into one that already holds a
         // database, and a leftover from an attempt that failed halfway would be exactly that.
         let staging = dir.join(STAGING_DIR);

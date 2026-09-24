@@ -24,9 +24,12 @@ const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self'; st
 /// through the server can't reach its sender, not even by mistake. Whether a mail's pictures load at
 /// all stays with the reader; until they ask, the frame carries its own policy that allows none.
 /// `form-action` is `'none'`, because nothing in the webmail ever submits a form — everything goes
-/// through fetch. PDF previews live in `blob:` frames.
+/// through fetch. PDF previews live in `blob:` frames, and the previews of text, table, JSON,
+/// calendar and contact attachments read the file back from its `blob:` URL with fetch, so
+/// `connect-src` allows `blob:` as well. Such a URL only ever holds what the page itself made; the
+/// portal has no use for it and keeps `connect-src 'self'`.
 const WEBMAIL_CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
-     img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; \
+     img-src 'self' data: blob:; font-src 'self'; connect-src 'self' blob:; object-src 'none'; \
      base-uri 'none'; form-action 'none'; frame-src 'self' blob:; frame-ancestors 'none'";
 
 pub fn find(path: &str) -> Option<&'static Asset> {
@@ -98,5 +101,17 @@ mod tests {
             let images = policy.split(';').map(str::trim).find(|part| part.starts_with("img-src")).unwrap();
             assert_eq!(images, "img-src 'self' data: blob:", "{policy}");
         }
+    }
+
+    #[test]
+    fn only_the_webmail_may_fetch_blob_urls() {
+        // Attachment previews read the file back from its blob: URL; the portal never does.
+        static INDEX: Asset = Asset { path: "/index.html", content_type: "text/html; charset=utf-8", bytes: b"" };
+        let connect = |response: Response| {
+            let policy = response.headers()[header::CONTENT_SECURITY_POLICY].to_str().unwrap().to_owned();
+            policy.split(';').map(str::trim).find(|part| part.starts_with("connect-src")).unwrap().to_owned()
+        };
+        assert_eq!(connect(webmail_respond(&INDEX)), "connect-src 'self' blob:");
+        assert_eq!(connect(respond(&INDEX)), "connect-src 'self'");
     }
 }

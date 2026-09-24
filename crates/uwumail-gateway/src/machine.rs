@@ -399,12 +399,12 @@ mod tests {
         assert!(written.contains("2001:db8:1234:5678::/64"), "the range fail2ban is given");
 
         // IPv4 stays exact: behind carrier-grade NAT the neighbours share the address.
-        machine.trust("80.140.35.247".parse().unwrap());
-        assert!(machine.is_trusted("80.140.35.247".parse().unwrap()));
-        assert!(machine.is_trusted("::ffff:80.140.35.247".parse().unwrap()), "however it is written");
-        assert!(!machine.is_trusted("80.140.35.248".parse().unwrap()), "not the whole range");
+        machine.trust("198.51.100.47".parse().unwrap());
+        assert!(machine.is_trusted("198.51.100.47".parse().unwrap()));
+        assert!(machine.is_trusted("::ffff:198.51.100.47".parse().unwrap()), "however it is written");
+        assert!(!machine.is_trusted("198.51.100.48".parse().unwrap()), "not the whole range");
         let written = std::fs::read_to_string(dir.path().join(TRUSTED)).unwrap();
-        assert!(written.contains("80.140.35.247/32"));
+        assert!(written.contains("198.51.100.47/32"));
     }
 
     #[test]

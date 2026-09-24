@@ -196,13 +196,14 @@ export type RecordKind =
   | "jmap"
   | "imaps"
   | "submissions"
-  | "submission";
+  | "submission"
+  | "caa";
 
 export interface RecordCheck {
   kind: RecordKind;
   name: string;
   /** HTTPS is the MTA-STS policy file, not a DNS record. */
-  recordType: "MX" | "TXT" | "SRV" | "CNAME" | "HTTPS";
+  recordType: "MX" | "TXT" | "SRV" | "CNAME" | "CAA" | "HTTPS";
   expected: string;
   found: string[];
   status: CheckStatus;
@@ -1175,7 +1176,7 @@ export interface TestMailStatus {
 
 export interface CloudflareResult {
   name: string;
-  recordType: "MX" | "TXT" | "SRV" | "CNAME";
+  recordType: "MX" | "TXT" | "SRV" | "CNAME" | "CAA";
   /** "requoted" means the value was right and only its quoting was put in order. */
   outcome: "created" | "updated" | "requoted" | "skipped" | "failed";
   error: string | null;

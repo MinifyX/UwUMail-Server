@@ -9,7 +9,10 @@
 #   machine.json written here             what apt, ufw and fail2ban have to say
 #   job-<id>.log written here             what a job printed, while it runs
 #   job-<id>.json written here            how it ended, which survives the gateway restarting
-#   ignoring     written here             what fail2ban was last told to leave alone
+#
+# What only this side reads lives in a directory of its own that the gateway cannot write:
+#
+#   ignoring     what fail2ban was last told to leave alone
 #
 # `trusted` holds the address in use and no history: the one a home connection gives up at the
 # nightly reconnect goes to the next customer, so anything older is not the server's to vouch for.
@@ -18,20 +21,32 @@
 # Nothing the gateway writes is ever run as a command here: addresses are checked against a strict
 # pattern, and the only thing that reaches fail2ban is an address that passed it.
 #
+# The gateway owns its state directory, so it can put a symlink wherever a name is. Nothing here
+# therefore touches a name there after creating it: a file is made fresh with its final mode and
+# renamed into place (a rename replaces a symlink, it never follows one), and a job's log is opened
+# once and written through that descriptor (security-audit-0.5.2 G-5, security-audit-0.8.0 INF-3).
+#
 #   helper tick            keep the trusted addresses safe and carry out waiting bans
 #   helper machine         write machine.json (slow: asks apt)
 #   helper task            carry out what the portal asked for: updates, a restart, a new gateway
 #   helper ignore <ip>     for fail2ban's ignorecommand: 0 when the address must never be banned
 #   helper report [--motd] what all of this looks like right now, for people
 set -uo pipefail
+# Everything this writes for the gateway is meant to be read by it, and is created that way.
+umask 022
 
-state=/var/lib/uwumail-gateway
+# Where this keeps things. Both can be moved for a test on a machine one has no root on; the
+# systemd units set no environment, so in service they are always the paths below.
+state="${UWUMAIL_GATEWAY_STATE:-/var/lib/uwumail-gateway}"
+private="${UWUMAIL_GATEWAY_PRIVATE:-/var/lib/uwumail-gateway-helper}"
 trusted_file="$state/trusted"
 bans_file="$state/bans.jsonl"
 jobs_file="$state/jobs.jsonl"
 report_file="$state/machine.json"
 # What we last told fail2ban to ignore, so it can be taken back when it stops being the server's.
-ignoring_file="$state/ignoring"
+ignoring_file="$private/ignoring"
+# Where versions before 0.8.0 kept it, in the gateway's own directory.
+old_ignoring_file="$state/ignoring"
 # The jail that only ever holds what the UwUMail server asked for.
 jail=uwumail-server
 
@@ -99,8 +114,12 @@ keep_the_trusted_out_of_jails() {
   local now before range one
   now=$(trusted_ranges | sort -u)
 
-  # Take back everything we told fail2ban before that is not trusted any more.
-  if [ -f "$ignoring_file" ]; then
+  # Take back everything we told fail2ban before that is not trusted any more. The list an older
+  # version left in the gateway's directory is read once more, only for what it names, and goes.
+  install -d -m 0700 "$private" || return 1
+  local list
+  for list in "$ignoring_file" "$old_ignoring_file"; do
+    [ -f "$list" ] || continue
     while read -r before; do
       [[ "$before" =~ ^[0-9a-fA-F:.]{3,45}/[0-9]{1,3}$ ]] || continue
       printf '%s\n' "$now" | grep -qxF "$before" && continue
@@ -108,8 +127,9 @@ keep_the_trusted_out_of_jails() {
         fail2ban-client set "$one" delignoreip "$before" >/dev/null 2>&1
       done
       logger -t uwumail-gateway "stopped trusting $before: the UwUMail server does not connect from it any more"
-    done <"$ignoring_file"
-  fi
+    done <"$list"
+  done
+  rm -f -- "$old_ignoring_file"
 
   while read -r range; do
     [ -n "$range" ] || continue
@@ -119,7 +139,7 @@ keep_the_trusted_out_of_jails() {
   done <<<"$now"
 
   # Only now, so a run that dies halfway leaves something to clean up rather than nothing.
-  printf '%s\n' "$now" >"$ignoring_file"
+  printf '%s\n' "$now" | safe_write "$ignoring_file"
 }
 
 own_addresses() {
@@ -165,7 +185,7 @@ carry_out_bans() {
   fail2ban-client status "$jail" >/dev/null 2>&1 || return 0
 
   local waiting="$bans_file.now"
-  mv -f "$bans_file" "$waiting" 2>/dev/null || return 0
+  mv -fT "$bans_file" "$waiting" 2>/dev/null || return 0
 
   local line action address seconds reason
   while IFS= read -r line; do
@@ -256,21 +276,39 @@ safe_write() {
   ( set -C; cat >"$target" )
 }
 
+# Made with its final mode and renamed into place. Nothing touches the name afterwards: a chmod
+# would follow a symlink put there in the meantime (security-audit-0.8.0 INF-3).
 job_state() {
   local id="$1" how="$2" error="${3:-}"
   jq -n --arg id "$id" --arg state "$how" --arg error "$error" --argjson at "$(date +%s)" \
     '{id: $id, state: $state, error: $error, at: $at}' 2>/dev/null | safe_write "$state/job-$id.json.tmp" &&
-    mv -f "$state/job-$id.json.tmp" "$state/job-$id.json" && chmod 0644 "$state/job-$id.json"
+    mv -fT "$state/job-$id.json.tmp" "$state/job-$id.json"
 }
 
-# Everything a job prints goes here, capped, so the portal can show it while it runs.
+# Everything a job prints goes here, capped, so the portal can show it while it runs. The log is
+# opened once, by run_job, and only ever written through that descriptor (3), never by its name.
 job_log() {
-  local id="$1"
-  local log="$state/job-$id.log"
-  # Never append through a planted symlink; start the log as a fresh regular file.
-  [ -L "$log" ] && rm -f -- "$log"
-  tail -c "$LOG_MAX_BYTES" >>"$log"
-  chmod 0644 "$log" 2>/dev/null
+  tail -c "$LOG_MAX_BYTES" >&3
+}
+
+# Carries out one job with its log open on descriptor 3: made fresh with noclobber, so a name
+# re-planted after the rm makes the job fail rather than write through it.
+run_job() {
+  local id="$1" verb="$2" version="$3"
+  local log="$state/job-$id.log" started=false
+  rm -f -- "$log"
+  set -C
+  {
+    set +C
+    started=true
+    case "$verb" in
+      os-update) do_os_update "$id" ;;
+      reboot) do_reboot "$id" ;;
+      gateway-update) do_gateway_update "$id" "$version" ;;
+    esac
+  } 3>"$log"
+  set +C
+  $started || job_state "$id" failed "the job's log could not be started"
 }
 
 # apt with every question answered the way the package maintainer meant it. NEEDRESTART_MODE=a is
@@ -415,7 +453,7 @@ cmd_task() {
   fi
 
   local waiting="$jobs_file.now"
-  mv -f "$jobs_file" "$waiting" 2>/dev/null || return 0
+  mv -fT "$jobs_file" "$waiting" 2>/dev/null || return 0
 
   local line id verb version asked now
   now=$(date +%s)
@@ -447,11 +485,7 @@ cmd_task() {
     [ -e "$state/job-$id.json" ] && continue # already done, or being done
 
     job_state "$id" running
-    case "$verb" in
-      os-update) do_os_update "$id" ;;
-      reboot) do_reboot "$id" ;;
-      gateway-update) do_gateway_update "$id" "$version" ;;
-    esac
+    run_job "$id" "$verb" "$version"
   done <"$waiting"
   rm -f "$waiting"
 
@@ -502,7 +536,8 @@ cmd_machine() {
   local command="apt-get update && apt-get -y dist-upgrade"
   [ "$reboot" = true ] && command="$command && reboot"
 
-  # Written through a temporary file: the gateway reads this while it is being replaced.
+  # Written through a temporary file: the gateway reads this while it is being replaced. Made with
+  # its final mode and renamed, and never touched by name after that.
   local temporary="$report_file.tmp"
   jq -n \
     --argjson writtenAt "$(date +%s)" \
@@ -531,8 +566,7 @@ cmd_machine() {
         banned: $banned, jails: $jails, fromServer: $fromServer
       }
     }' 2>/dev/null | safe_write "$temporary" || return 1
-  chmod 0644 "$temporary"
-  mv -f "$temporary" "$report_file"
+  mv -fT "$temporary" "$report_file"
 }
 
 # helper report — the same thing for people. --motd keeps it to the few lines worth seeing on login.
@@ -573,6 +607,9 @@ cmd_report() {
   [ "$updates" = 0 ] || printf '  Install them with:  %s\n' "$command"
   printf '\n'
 }
+
+# Sourced by deploy/tests/helpers.sh, which calls the functions above on a directory of its own.
+[ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 
 case "${1:-}" in
   tick) cmd_tick ;;

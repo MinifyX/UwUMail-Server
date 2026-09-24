@@ -232,3 +232,21 @@ async fn plain_http_gets_a_plain_cookie_and_logins_are_throttled() {
     }
     assert_eq!(last, StatusCode::TOO_MANY_REQUESTS);
 }
+
+#[tokio::test]
+async fn logging_into_ones_own_account_does_not_reset_the_guesses_at_another() {
+    // security-audit-0.8.0 W-1: a success used to clear its whole network's failures.
+    let (app, _dir) = setup().await;
+    let wrong = json!({ "login": "nyu@example.de", "password": "falsch" });
+    let own = json!({ "login": "leni@example.de", "password": "katzenpfote-123" });
+    for _ in 0..9 {
+        let (status, _, _) = call(&app, Call::send("POST", "/api/auth/login", wrong.clone())).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+    let (status, _, _) = call(&app, Call::send("POST", "/api/auth/login", own.clone())).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _, _) = call(&app, Call::send("POST", "/api/auth/login", wrong.clone())).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "the tenth guess");
+    let (status, _, _) = call(&app, Call::send("POST", "/api/auth/login", own)).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "and the network waits, whoever it is");
+}

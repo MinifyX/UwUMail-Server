@@ -25,6 +25,7 @@ pub enum Notice {
     AppsMayUseMainPassword,
     SecondFactorsReset,
     ForwardingAdded { address: String },
+    SecondFactorLocked,
 }
 
 impl Notice {
@@ -43,6 +44,7 @@ impl Notice {
             Notice::AppsMayUseMainPassword => "appsMayUseMainPassword",
             Notice::SecondFactorsReset => "secondFactorsReset",
             Notice::ForwardingAdded { .. } => "forwardingAdded",
+            Notice::SecondFactorLocked => "secondFactorLocked",
         }
     }
 
@@ -108,6 +110,10 @@ impl Notice {
                     "Zwei-Faktor-Anmeldung zurückgesetzt",
                     format!("{actor} hat die Zwei-Faktor-Anmeldung deines Kontos zurückgesetzt. Du meldest dich jetzt nur mit deinem Passwort an."),
                 ),
+                Notice::SecondFactorLocked => (
+                    "Anmeldung vorübergehend gesperrt",
+                    format!("bei der Anmeldung in dein Konto {login} wurde zu oft ein falscher zweiter Faktor eingegeben, nach dem richtigen Passwort. Die Anmeldung ist deshalb für 15 Minuten gesperrt."),
+                ),
             },
             Language::En => match self {
                 Notice::PasswordChanged => {
@@ -153,6 +159,10 @@ impl Notice {
                 Notice::SecondFactorsReset => (
                     "Two-factor login reset",
                     format!("{actor} reset the two-factor login of your account. You now log in with your password only."),
+                ),
+                Notice::SecondFactorLocked => (
+                    "Logging in paused",
+                    format!("a wrong second factor was entered too often while logging in to your account {login}, after the right password. Logging in is paused for 15 minutes."),
                 ),
             },
         }

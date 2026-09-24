@@ -663,7 +663,8 @@
         "jmap": "Damit finden Apps wie UwUMail den Server, wenn du nur deine Mail-Adresse eingibst.",
         "imaps": "Sagt Mail-Apps, wo sie Mails abrufen (IMAP, Port 993).",
         "submissions": "Sagt Mail-Apps, wo sie Mails verschlüsselt verschicken (Port 465).",
-        "submission": "Sagt Mail-Apps, wo sie Mails mit STARTTLS verschicken (Port 587)."
+        "submission": "Sagt Mail-Apps, wo sie Mails mit STARTTLS verschicken (Port 587).",
+        "caa": "Erlaubt Zertifikate für den Namen des Servers nur von Let's Encrypt und nur für das eigene Konto dieses Servers. Hält TLS hinter einem UwUMail Gateway privat."
       },
       "notes": {
         "mxUpstream": "Zeigt auf den vorgeschalteten Mailserver. Das passt so.",
@@ -686,7 +687,10 @@
         "mtaStsMultiple": "Es gibt mehrere MTA-STS-Einträge. Erlaubt ist nur einer.",
         "mtaStsFetchFailed": "Die Richtlinie ließ sich nicht abholen. Prüfe den Namen mta-sts und das Zertifikat.",
         "mtaStsPolicyDiffers": "Dort steht eine andere Richtlinie. Vielleicht antwortet unter dem Namen ein anderer Server.",
-        "mtaStsPolicyInvalid": "Dort steht keine gültige Richtlinie."
+        "mtaStsPolicyInvalid": "Dort steht keine gültige Richtlinie.",
+        "caaWithoutAccount": "Erlaubt auch andere Konten oder Zertifizierungsstellen. Mit accounturi bekommt nur dieser Server Zertifikate.",
+        "caaOtherAccount": "Nennt ein anderes Let's-Encrypt-Konto. Dieser Server kann sein Zertifikat erst verlängern, wenn der Eintrag sein eigenes nennt.",
+        "caaForbids": "Erlaubt diesem Server kein Zertifikat von Let's Encrypt. Das Verlängern schlägt fehl."
       },
       "catchAll": "Sammeladresse",
       "catchAllHint": "Mails an Adressen, die es nicht gibt, gehen an diese Person. Das zieht auch mehr Spam an.",
@@ -726,7 +730,8 @@
         "jmap": "App-Suche (JMAP)",
         "imaps": "Abruf für Mail-Apps (IMAP)",
         "submissions": "Versand für Mail-Apps (TLS)",
-        "submission": "Versand für Mail-Apps (STARTTLS)"
+        "submission": "Versand für Mail-Apps (STARTTLS)",
+        "caa": "Zertifikate nur für diesen Server (CAA)"
       }
     },
     "forwards": {
@@ -1421,6 +1426,7 @@
       "sessionsEnded_other": "{{count}} andere Browser abgemeldet",
       "other": "Änderung an der Sicherheit",
       "forwardingAdded": "Weiterleitung an {{address}} eingerichtet",
+      "secondFactorLocked": "Zu oft ein falscher Code nach dem richtigen Passwort: Anmeldung für 15 Minuten gesperrt",
       "forwardingRemoved": "Weiterleitung an {{address}} entfernt",
       "forwardingConfirmed": "{{address}} hat die Weiterleitung bestätigt",
       "forwardingDeclined": "{{address}} hat die Weiterleitung abgelehnt",
@@ -1673,6 +1679,8 @@
       "tidy": "Formatierung an UwUMail angleichen",
       "tidyHint": "Diese Einträge funktionieren. Mit Haken schreibe ich sie so, wie UwUMail sie anlegen würde.",
       "tidyWarning": "Bei MX und SPF aufpassen: Ich schreibe genau meinen Wert hinein. Andere Absender oder ein vorgelagerter Mailserver, die dort mit drinstehen, fallen dabei weg.",
+      "caa": "Zertifikate auf diesen Server beschränken",
+      "caaHint": "Nur mit Haken. Danach bekommt nur noch das Let's-Encrypt-Konto dieses Servers Zertifikate für den Namen. Auf einem neuen Server ohne das alte Datenverzeichnis oder mit einer anderen Zertifizierungsstelle zuerst den Eintrag ändern.",
       "quotesOnly": "Es fehlt nichts. Ich kann trotzdem nachsehen, ob die Einträge bei Cloudflare in Anführungszeichen stehen, und sie sonst nachtragen.",
       "submit": "Einträge eintragen",
       "nothing": "Es gab nichts einzutragen.",

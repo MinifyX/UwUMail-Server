@@ -82,6 +82,7 @@ async fn health_lists_every_area_with_findings() {
                     names: vec!["mail.example.de".into()],
                     self_signed: false,
                     automatic: true,
+                    lets_encrypt_account: None,
                 })
             })),
             webmail: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),

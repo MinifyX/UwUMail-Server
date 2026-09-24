@@ -16,7 +16,7 @@ use instant_acme::{
 use tokio::sync::{Notify, watch};
 use uwumail_store::Store;
 
-use crate::config::Config;
+use crate::config::{Config, TlsMode};
 use crate::tls::{CertStore, CertificateInfo, tls_dir, write_private};
 
 /// Renew when the certificate expires in less than this.
@@ -248,6 +248,23 @@ fn needs_certificate(current: Option<&CertificateInfo>, names: &[String], now: i
 
 fn uwumail_now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or_default()
+}
+
+/// The URL of the Let's Encrypt account the certificates are ordered with, once there is one: what
+/// a CAA record's `accounturi` (RFC 8657) names, so only this server can get certificates for its
+/// name, not a UwUMail Gateway that answers the challenges for it (security-audit-0.8.0 INF-2).
+/// `None` for another CA, whose name in CAA records this server does not know.
+pub fn lets_encrypt_account(config: &Config) -> Option<String> {
+    if config.tls.mode != TlsMode::Acme {
+        return None;
+    }
+    let saved = std::fs::read(tls_dir(config).join("acme").join("account.json")).ok()?;
+    let credentials: serde_json::Value = serde_json::from_slice(&saved).ok()?;
+    let id = credentials["id"].as_str()?;
+    let lets_encrypt = ["https://acme-v02.api.letsencrypt.org/", "https://acme-staging-v02.api.letsencrypt.org/"];
+    // A CAA value ends at a semicolon or a space, so an id with either cannot be written into one.
+    let plain = !id.contains([';', ' ', '"', '\\']) && !id.chars().any(char::is_control);
+    (lets_encrypt.iter().any(|prefix| id.starts_with(prefix)) && plain).then(|| id.to_owned())
 }
 
 async fn account(config: &Config) -> anyhow::Result<Account> {

@@ -126,6 +126,7 @@ const KNOWN_EVENTS = [
   "appsMayUseMainPassword",
   "mainPasswordRefused",
   "secondFactorsReset",
+  "secondFactorLocked",
   "sessionEnded",
   "sessionsEnded",
   "forwardingAdded",

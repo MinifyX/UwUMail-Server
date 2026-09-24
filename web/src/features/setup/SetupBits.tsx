@@ -343,9 +343,18 @@ export function CloudflarePanel({
   const [token, setToken] = useState("");
   const [replace, setReplace] = useState<string[]>([]);
   const [tidy, setTidy] = useState<string[]>([]);
-  // The MTA-STS policy is a file this server serves, not a DNS record.
+  const [caa, setCaa] = useState(false);
+  // The MTA-STS policy is a file this server serves, not a DNS record. The CAA record is only ever
+  // set when asked for: it decides who may issue certificates for the name.
   const missing = report.records.filter(
-    (record) => record.status === "missing" && record.keyState !== "pending" && record.recordType !== "HTTPS",
+    (record) =>
+      record.status === "missing" &&
+      record.keyState !== "pending" &&
+      record.recordType !== "HTTPS" &&
+      record.kind !== "caa",
+  );
+  const caaOffered = report.records.some(
+    (record) => record.kind === "caa" && record.status !== "ok" && record.status !== "error",
   );
   const wrongKinds = KINDS.filter((kind) =>
     report.records.some((record) => record.kind === kind && record.status === "wrong"),
@@ -355,12 +364,12 @@ export function CloudflarePanel({
     report.records.some((record) => record.kind === kind && record.differs),
   );
   const results = cloudflare.data?.results;
-  const nothingToDo = missing.length === 0 && wrongKinds.length === 0 && differingKinds.length === 0;
+  const nothingToDo = missing.length === 0 && wrongKinds.length === 0 && differingKinds.length === 0 && !caaOffered;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     cloudflare.mutate(
-      { token, replace, tidy },
+      { token, replace: caa ? [...replace, "caa"] : replace, tidy },
       {
         // The token is only needed for this one request.
         onSettled: () => setToken(""),
@@ -411,6 +420,21 @@ export function CloudflarePanel({
               {t("setup.cloudflare.tidyWarning")}
             </p>
           )}
+        </fieldset>
+      )}
+      {caaOffered && (
+        <fieldset className="flex flex-col gap-1.5">
+          <legend className="text-[13px] font-semibold text-muted">{t("setup.cloudflare.caa")}</legend>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="size-4 accent-pink"
+              checked={caa}
+              onChange={(event) => setCaa(event.target.checked)}
+            />
+            <span className="font-semibold">{t("domains.detail.kinds.caa")}</span>
+          </label>
+          <p className="text-[12px] text-muted">{t("setup.cloudflare.caaHint")}</p>
         </fieldset>
       )}
       <div className="flex flex-wrap gap-2">

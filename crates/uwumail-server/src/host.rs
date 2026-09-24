@@ -74,8 +74,8 @@ fn unix_now() -> i64 {
 /// An id that names a file, so nothing but letters and digits. It only has to be one of a kind, not
 /// hard to guess: the shared directory belongs to root and this container, and whoever can write
 /// there already has everything this could protect. The helper checks the shape again anyway,
-/// because it is the side with the rights.
-fn job_id() -> String {
+/// because it is the side with the rights. The gateway's jobs use the same ids.
+pub(crate) fn job_id() -> String {
     let nanos =
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |since| since.as_nanos() as u64);
     format!("{nanos:016x}{:04x}", std::process::id() & 0xffff)

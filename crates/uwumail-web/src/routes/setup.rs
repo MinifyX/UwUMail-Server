@@ -84,6 +84,9 @@ pub struct Code {
     code: String,
 }
 
+/// How wrong setup codes are counted in the login throttle: as tries at a login of their own.
+const SETUP_CODE: &str = "setup code";
+
 async fn require_code(web: &Web, client: ClientInfo, code: &str) -> ApiResult<()> {
     if web.limiter().is_blocked(client.ip) {
         return Err(ApiError::TooManyAttempts);
@@ -93,7 +96,7 @@ async fn require_code(web: &Web, client: ClientInfo, code: &str) -> ApiResult<()
         return Err(ApiError::Rule("setupDone", "this server already has an admin".into()));
     }
     if !web.setup_code_matches(code) {
-        web.limiter().record_failure(client.ip);
+        web.limiter().record_failure(client.ip, SETUP_CODE);
         tracing::warn!(ip = %client.ip, "wrong setup code");
         return Err(ApiError::Rule("setupCodeInvalid", "the code is wrong".into()));
     }
@@ -294,7 +297,7 @@ pub async fn complete(
         tracing::error!(%err, "writing the change log failed");
     }
     tracing::info!(login = %account.login, %domain, "setup finished, the first admin exists");
-    web.limiter().record_success(client.ip);
+    web.limiter().record_success(client.ip, SETUP_CODE);
     super::auth::complete_login(&web, &account, client, &headers, "setup").await
 }
 

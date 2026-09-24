@@ -357,7 +357,7 @@ impl Loki {
         match result {
             Ok(()) => {
                 state.status.sent += batch.len() as u64;
-                state.status.last_success = Some(unix_now());
+                state.status.last_success = Some(crate::health::unix_now());
                 if state.status.error.take().is_some() {
                     drop(state);
                     tracing::info!("Loki takes the log lines again");
@@ -471,10 +471,6 @@ fn push_body(target: &LokiTarget, lines: &[LogLine]) -> Vec<u8> {
         })
         .collect();
     json!({ "streams": streams }).to_string().into_bytes()
-}
-
-fn unix_now() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or_default()
 }
 
 /// hyper's errors hide the interesting part (a refused connection, a certificate) in their sources.

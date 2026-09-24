@@ -49,7 +49,7 @@ pub struct Access {
 
 /// Whether this account may use the webmail: the server's switch, then the account's own.
 pub async fn access(State(web): State<Web>, session: Session) -> ApiResult<Json<Access>> {
-    if !web.webmail_enabled() || !assets::has_webmail() {
+    if !web.webmail_enabled() {
         return Ok(Json(Access { allowed: false, reason: Some("server") }));
     }
     if !session.account.webmail || !session.account.has_mailbox() {

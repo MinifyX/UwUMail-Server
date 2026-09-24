@@ -15,10 +15,18 @@
 # system's updates or a restart, and for nothing more. UwUMail itself is updated by update.sh,
 # which a person starts on this machine.
 #
+# The container can write the shared directory, so it can put a symlink wherever a name is. Nothing
+# here therefore touches a name there after creating it: a file is made fresh with its final mode
+# and renamed into place (a rename replaces a symlink, it never follows one), and a job's log is
+# opened once and written through that descriptor (security-audit-0.5.2 S-12,
+# security-audit-0.8.0 INF-3).
+#
 #   helper machine        write machine.json (slow: asks apt)
 #   helper task           carry out the jobs that are waiting
 #   helper report         what all of this looks like right now, for people
 set -uo pipefail
+# The mode everything written into the shared directory has from the moment it exists.
+umask 027
 
 # Where this keeps things. Both can be moved for a dry run on a machine one has no root on; the
 # systemd units set no environment, and systemd does not pass one in, so in service they are always
@@ -185,7 +193,7 @@ cmd_machine() {
       rebootRequired: $reboot, rebootPackages: ($packages | split(" ") | map(select(. != ""))),
       alone: $alone, others: ($others | split(" ") | map(select(. != ""))),
       image: $image, digest: $digest, composeDir: $dir, checkedAt: $at, helper: $helper}' 2>/dev/null |
-    safe_write "$tmp" && mv -f "$tmp" "$machine_file" && chmod 0640 "$machine_file"
+    safe_write "$tmp" && mv -fT "$tmp" "$machine_file"
 }
 
 helper_version() {
@@ -207,17 +215,32 @@ job_state() {
   local id="$1" state="$2" error="${3:-}"
   jq -n --arg id "$id" --arg state "$state" --arg error "$error" --argjson at "$(date +%s)" \
     '{id: $id, state: $state, error: $error, at: $at}' 2>/dev/null | safe_write "$bridge/job-$id.json.tmp" &&
-    mv -f "$bridge/job-$id.json.tmp" "$bridge/job-$id.json" && chmod 0640 "$bridge/job-$id.json"
+    mv -fT "$bridge/job-$id.json.tmp" "$bridge/job-$id.json"
 }
 
-# Everything a job prints goes here, capped, so the portal can show it while it runs.
+# Everything a job prints goes here, capped, so the portal can show it while it runs. The log is
+# opened once, by run_job, and only ever written through that descriptor (3), never by its name.
 job_log() {
-  local id="$1"
-  local log="$bridge/job-$id.log"
-  # Never append through a planted symlink; start the log as a fresh regular file.
-  [ -L "$log" ] && rm -f -- "$log"
-  tail -c "$LOG_MAX_BYTES" >>"$log"
-  chmod 0640 "$log" 2>/dev/null
+  tail -c "$LOG_MAX_BYTES" >&3
+}
+
+# Carries out one job with its log open on descriptor 3: made fresh with noclobber, so a name
+# re-planted after the rm makes the job fail rather than write through it.
+run_job() {
+  local id="$1" verb="$2"
+  local log="$bridge/job-$id.log" started=false
+  rm -f -- "$log"
+  set -C
+  {
+    set +C
+    started=true
+    case "$verb" in
+      os-update) do_os_update "$id" ;;
+      reboot) do_reboot "$id" ;;
+    esac
+  } 3>"$log"
+  set +C
+  $started || job_state "$id" failed "the job's log could not be started"
 }
 
 # apt, with every question answered the way the package maintainer meant it. NEEDRESTART_MODE=a
@@ -269,7 +292,7 @@ do_reboot() {
 cmd_task() {
   [ -s "$jobs_file" ] || return 0
   local waiting="$jobs_file.now"
-  mv -f "$jobs_file" "$waiting" 2>/dev/null || return 0
+  mv -fT "$jobs_file" "$waiting" 2>/dev/null || return 0
 
   local line id verb asked now
   now=$(date +%s)
@@ -293,10 +316,7 @@ cmd_task() {
 
     say "carrying out $verb (job $id)"
     job_state "$id" running
-    case "$verb" in
-      os-update) do_os_update "$id" ;;
-      reboot) do_reboot "$id" ;;
-    esac
+    run_job "$id" "$verb"
   done <"$waiting"
   rm -f "$waiting"
 
@@ -319,12 +339,15 @@ cmd_report() {
   ' "$machine_file"
 }
 
+# Sourced by deploy/tests/helpers.sh, which calls the functions above on a directory of its own.
+[ "${BASH_SOURCE[0]}" = "$0" ] || return 0
+
 case "${1:-}" in
   machine) cmd_machine ;;
   task) cmd_task ;;
   report) cmd_report ;;
   *)
-    sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac

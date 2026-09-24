@@ -151,12 +151,20 @@ impl Sftp {
         if path.is_empty() { self.root.clone() } else { format!("{}/{path}", self.root) }
     }
 
-    pub async fn read(&self, path: &str) -> Result<Option<Vec<u8>>, Error> {
-        match self.session.read(self.full(path)).await {
-            Ok(bytes) => Ok(Some(bytes)),
-            Err(err) if not_found(&err) => Ok(None),
-            Err(err) => Err(sftp_error(err)),
-        }
+    /// A file's content, up to one byte past `limit`: whatever size the server claims or sends, no
+    /// more than that is ever held.
+    pub async fn read(&self, path: &str, limit: u64) -> Result<Option<Vec<u8>>, Error> {
+        use tokio::io::AsyncReadExt;
+        let file = match self.session.open(self.full(path)).await {
+            Ok(file) => file,
+            Err(err) if not_found(&err) => return Ok(None),
+            Err(err) => return Err(sftp_error(err)),
+        };
+        let mut bytes = Vec::new();
+        let mut limited = file.take(limit.saturating_add(1));
+        limited.read_to_end(&mut bytes).await?;
+        let _ = limited.into_inner().close().await;
+        Ok(Some(bytes))
     }
 
     pub async fn write(&self, path: &str, bytes: &[u8]) -> Result<(), Error> {

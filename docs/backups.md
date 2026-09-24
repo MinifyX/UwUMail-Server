@@ -31,6 +31,14 @@ password.
 Unencrypted backups are possible for a backup server that is encrypted itself.
 The choice is fixed once there are backups; for a change, use a new folder.
 
+Whether a backup is encrypted is decided by the server, by whether it has a
+recovery key, and never by the backup server. A folder that claims to hold an
+unencrypted backup while the server has a key is refused, and so is anything in
+an encrypted backup that is not encrypted, that sits under another object's
+name, or a snapshot stored under another snapshot's name. An unencrypted backup
+has no such protection: its content is checked against its names, which
+catches damage, but whoever controls the backup server can change both.
+
 ## The backup server
 
 - **SSH key** (recommended): the server makes its own key. Put the line the
@@ -103,8 +111,10 @@ docker run --rm -it -v uwumail-data:/data \
   backup restore --sftp backup@nas.example.com:uwumail --ssh-key /key --into /data
 ```
 
-The command asks for the recovery key (or reads `UWUMAIL_BACKUP_KEY`). With a
-password instead of a key, set `UWUMAIL_BACKUP_SFTP_PASSWORD`. `--snapshot`
+The command asks for the recovery key (or reads `UWUMAIL_BACKUP_KEY`), also when
+the backup server says the backup is not encrypted: if yours is, enter the key
+anyway, and a backup server that lies about it is caught. With a password
+instead of a key, set `UWUMAIL_BACKUP_SFTP_PASSWORD`. `--snapshot`
 picks an older snapshot from `backup list`; `--host-key` checks the backup
 server's fingerprint.
 

@@ -54,6 +54,8 @@ pub struct Services {
     pub https_tls: Arc<rustls::ServerConfig>,
     pub https: Router,
     pub http: Router,
+    /// Shared with the HTTP listeners: the gateway is one more way in, not a way around the limits.
+    pub http_connections: Arc<http::Connections>,
 }
 
 impl Inbound for Services {
@@ -64,12 +66,16 @@ impl Inbound for Services {
             Service::Submission => ListenerKind::Submission,
             Service::Submissions => ListenerKind::SubmissionTls,
             Service::Http => {
-                tokio::spawn(http::serve_connection(stream, client, None, self.http.clone()));
+                if let Some(admitted) = self.http_connections.admit(client.ip(), true) {
+                    tokio::spawn(http::serve_connection(stream, client, None, self.http.clone(), admitted));
+                }
                 return;
             }
             Service::Https => {
-                let acceptor = TlsAcceptor::from(self.https_tls.clone());
-                tokio::spawn(http::serve_connection(stream, client, Some(acceptor), self.https.clone()));
+                if let Some(admitted) = self.http_connections.admit(client.ip(), true) {
+                    let acceptor = TlsAcceptor::from(self.https_tls.clone());
+                    tokio::spawn(http::serve_connection(stream, client, Some(acceptor), self.https.clone(), admitted));
+                }
                 return;
             }
             Service::Imaps => {
@@ -135,14 +141,6 @@ fn machine_view(status: uwumail_tunnel::proto::GatewayStatus) -> uwumail_web::ga
             log: job.log,
         }),
     }
-}
-
-/// An id that names a file on the other side, so letters and digits only. It does not have to be
-/// hard to guess -- only one of a kind, and only ever made here.
-fn job_id() -> String {
-    let nanos =
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |since| since.as_nanos() as u64);
-    format!("{nanos:016x}{:04x}", std::process::id() & 0xffff)
 }
 
 /// Servers in the own network, like fixed routes to a private address, are reached directly:
@@ -374,7 +372,7 @@ impl GatewayBackend for GatewayManager {
             if client.gateway_status().and_then(|status| status.job).is_some_and(|job| job.state == "running") {
                 return Err("something is already running on the gateway".into());
             }
-            let id = job_id();
+            let id = crate::host::job_id();
             // The ask goes down the same control stream as a ban, and like a ban it is never
             // waited for: what came of it arrives with the next status, which the gateway sends
             // every few seconds while something runs.
@@ -619,6 +617,7 @@ mod tests {
             https_tls: Arc::new(tls),
             https: http::app(state.clone(), Router::new(), who, Arc::default()),
             http: http::redirect_app(state),
+            http_connections: http::Connections::new(),
         };
         (services, certificate.cert.der().to_vec())
     }

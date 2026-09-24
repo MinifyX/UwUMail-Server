@@ -1,8 +1,12 @@
 //! HTTP(S): JMAP, the web portal, health checks and ACME challenges.
 
+use std::collections::HashMap;
+use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
 use axum::Router;
@@ -11,12 +15,12 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri, header};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Json, Redirect, Response};
 use axum::routing::get;
-use hyper_util::rt::{TokioExecutor, TokioIo};
+use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use hyper_util::service::TowerToHyperService;
 use serde_json::json;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpListener;
-use tokio::sync::watch;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
 use tokio_rustls::TlsAcceptor;
 use tower::ServiceExt;
 use uwumail_jmap::ClientInfo;
@@ -261,11 +265,164 @@ fn page(lang: &str, title: &str, text: &str, hostname: &str) -> String {
     )
 }
 
-/// Serves HTTP/1 and HTTP/2 on a listener, with TLS when `tls` is given.
+// Before anything is logged in, an HTTP connection costs a task, a descriptor and buffers. Neither
+// the internet as a whole nor one network may hold them open without end: that would also leave
+// SMTP and IMAP without descriptors (security-audit-0.8.0 W-2). JMAP's event stream keeps a
+// connection open on purpose, so the limits count connections, not how long they last.
+/// Connections all HTTP listeners and the gateway hold at once.
+const MAX_CONNECTIONS: usize = 4096;
+/// Connections one network (an IPv4 address, an IPv6 /64) holds at once. Not counted behind a
+/// reverse proxy, where every connection comes from the proxy.
+const MAX_PER_NETWORK: usize = 128;
+/// How long a request's headers may take, and how long an HTTP/1 connection may wait for the next
+/// request. The first bytes, which tell HTTP/1 from HTTP/2, have to arrive within it too.
+const HEADER_TIMEOUT: Duration = Duration::from_secs(20);
+/// An HTTP/2 connection is pinged this often, and closed when a ping goes unanswered this long.
+const H2_KEEP_ALIVE: Duration = Duration::from_secs(60);
+const H2_KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(20);
+const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// What the HTTP connections hold, in all and per network.
+pub struct Connections {
+    total: Arc<Semaphore>,
+    per_network: Mutex<HashMap<IpAddr, usize>>,
+    per_network_max: usize,
+    header_timeout: Duration,
+}
+
+/// One connection's place, given back when it closes.
+pub struct Admitted {
+    _permit: OwnedSemaphorePermit,
+    network: Option<IpAddr>,
+    connections: Arc<Connections>,
+}
+
+impl Drop for Admitted {
+    fn drop(&mut self) {
+        let Some(network) = self.network else { return };
+        let mut counts = self.connections.per_network.lock().expect("connection counts poisoned");
+        if let Some(count) = counts.get_mut(&network) {
+            *count -= 1;
+            if *count == 0 {
+                counts.remove(&network);
+            }
+        }
+    }
+}
+
+/// IPv6 users usually own a whole /64, so connections count per /64, like failed logins do.
+fn network(ip: IpAddr) -> IpAddr {
+    match ip.to_canonical() {
+        v4 @ IpAddr::V4(_) => v4,
+        IpAddr::V6(v6) => {
+            let mut segments = v6.segments();
+            segments[4..].fill(0);
+            IpAddr::V6(segments.into())
+        }
+    }
+}
+
+impl Connections {
+    pub fn new() -> Arc<Connections> {
+        Connections::with_limits(MAX_CONNECTIONS, MAX_PER_NETWORK, HEADER_TIMEOUT)
+    }
+
+    fn with_limits(total: usize, per_network: usize, header_timeout: Duration) -> Arc<Connections> {
+        Arc::new(Connections {
+            total: Arc::new(Semaphore::new(total)),
+            per_network: Mutex::default(),
+            per_network_max: per_network,
+            header_timeout,
+        })
+    }
+
+    /// A place for a connection from `ip`, unless all are taken. `count_network` is false where
+    /// every connection comes from the same reverse proxy.
+    pub fn admit(self: &Arc<Self>, ip: IpAddr, count_network: bool) -> Option<Admitted> {
+        let permit = self.total.clone().try_acquire_owned().ok()?;
+        let network = count_network.then(|| network(ip));
+        if let Some(network) = network {
+            let mut counts = self.per_network.lock().expect("connection counts poisoned");
+            let count = counts.entry(network).or_default();
+            if *count >= self.per_network_max {
+                return None;
+            }
+            *count += 1;
+        }
+        Some(Admitted { _permit: permit, network, connections: self.clone() })
+    }
+}
+
+/// A connection that has to start talking within [`HEADER_TIMEOUT`]. hyper's header timeout only
+/// starts once it knows which HTTP version it speaks, and it learns that from the first bytes.
+struct FirstBytesDue<S> {
+    inner: S,
+    deadline: Option<Pin<Box<tokio::time::Sleep>>>,
+}
+
+impl<S> FirstBytesDue<S> {
+    fn new(inner: S, due: Duration) -> FirstBytesDue<S> {
+        FirstBytesDue { inner, deadline: Some(Box::pin(tokio::time::sleep(due))) }
+    }
+}
+
+impl<S: AsyncRead + Unpin> AsyncRead for FirstBytesDue<S> {
+    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<std::io::Result<()>> {
+        let this = &mut *self;
+        let before = buf.filled().len();
+        match Pin::new(&mut this.inner).poll_read(cx, buf) {
+            Poll::Ready(result) => {
+                if buf.filled().len() > before {
+                    this.deadline = None;
+                }
+                Poll::Ready(result)
+            }
+            Poll::Pending => {
+                if let Some(deadline) = this.deadline.as_mut()
+                    && deadline.as_mut().poll(cx).is_ready()
+                {
+                    return Poll::Ready(Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "no request in time")));
+                }
+                Poll::Pending
+            }
+        }
+    }
+}
+
+impl<S: AsyncWrite + Unpin> AsyncWrite for FirstBytesDue<S> {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
+        Pin::new(&mut self.inner).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[std::io::IoSlice<'_>],
+    ) -> Poll<std::io::Result<usize>> {
+        Pin::new(&mut self.inner).poll_write_vectored(cx, bufs)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.inner.is_write_vectored()
+    }
+}
+
+/// Serves HTTP/1 and HTTP/2 on a listener, with TLS when `tls` is given. `count_network` is false
+/// on the listener behind a reverse proxy.
 pub async fn serve(
     listener: TcpListener,
     tls: Option<Arc<rustls::ServerConfig>>,
     app: Router,
+    connections: Arc<Connections>,
+    count_network: bool,
     mut shutdown: watch::Receiver<bool>,
 ) {
     let acceptor = tls.map(TlsAcceptor::from);
@@ -276,34 +433,53 @@ pub async fn serve(
                     tokio::time::sleep(Duration::from_millis(50)).await;
                     continue;
                 };
-                tokio::spawn(serve_connection(socket, addr, acceptor.clone(), app.clone()));
+                // A connection beyond the limits is closed right away, before it costs anything.
+                let Some(admitted) = connections.admit(addr.ip(), count_network) else { continue };
+                tokio::spawn(serve_connection(socket, addr, acceptor.clone(), app.clone(), admitted));
             }
             _ = shutdown.changed() => break,
         }
     }
 }
 
-/// Serves one connection from `addr`, which arrived on a listener or through the UwUMail Gateway.
-pub async fn serve_connection<S>(stream: S, addr: SocketAddr, acceptor: Option<TlsAcceptor>, app: Router)
-where
+/// Serves one connection from `addr`, which arrived on a listener or through the UwUMail Gateway,
+/// and holds its place in [`Connections`] until it closes.
+pub async fn serve_connection<S>(
+    stream: S,
+    addr: SocketAddr,
+    acceptor: Option<TlsAcceptor>,
+    app: Router,
+    admitted: Admitted,
+) where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
+    let header_timeout = admitted.connections.header_timeout;
+    let _admitted = admitted;
     let peer = Peer { addr, tls: acceptor.is_some() };
     let service = app.map_request(move |mut request: axum::http::Request<hyper::body::Incoming>| {
         request.extensions_mut().insert(peer);
         request
     });
     let service = TowerToHyperService::new(service);
-    let builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
+    let mut builder = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
+    // Without a timer hyper has no header timeout at all, whatever its defaults say.
+    builder.http1().timer(TokioTimer::new()).header_read_timeout(header_timeout);
+    builder
+        .http2()
+        .timer(TokioTimer::new())
+        .keep_alive_interval(H2_KEEP_ALIVE)
+        .keep_alive_timeout(H2_KEEP_ALIVE_TIMEOUT);
     match acceptor {
         Some(acceptor) => {
-            let Ok(Ok(stream)) = tokio::time::timeout(Duration::from_secs(10), acceptor.accept(stream)).await else {
+            let Ok(Ok(stream)) = tokio::time::timeout(TLS_HANDSHAKE_TIMEOUT, acceptor.accept(stream)).await else {
                 return;
             };
-            let _ = builder.serve_connection_with_upgrades(TokioIo::new(stream), service).await;
+            let io = TokioIo::new(FirstBytesDue::new(stream, header_timeout));
+            let _ = builder.serve_connection_with_upgrades(io, service).await;
         }
         None => {
-            let _ = builder.serve_connection_with_upgrades(TokioIo::new(stream), service).await;
+            let io = TokioIo::new(FirstBytesDue::new(stream, header_timeout));
+            let _ = builder.serve_connection_with_upgrades(io, service).await;
         }
     }
 }
@@ -397,5 +573,68 @@ mod tests {
         assert_eq!(untrusted_proxy(peer(true), false, &forwarded), None, "HTTPS is not the proxy listener");
         assert_eq!(untrusted_proxy(peer(false), false, &HeaderMap::new()), None, "a browser, not a proxy");
         assert_eq!(untrusted_proxy(None, false, &forwarded), None);
+    }
+
+    #[test]
+    fn connections_are_limited_in_all_and_per_network() {
+        let connections = Connections::with_limits(4, 2, HEADER_TIMEOUT);
+        let ip = |text: &str| text.parse::<IpAddr>().unwrap();
+        let first = connections.admit(ip("192.0.2.1"), true).unwrap();
+        let _second = connections.admit(ip("192.0.2.1"), true).unwrap();
+        assert!(connections.admit(ip("192.0.2.1"), true).is_none(), "two per network");
+        assert!(connections.admit(ip("::ffff:192.0.2.1"), true).is_none(), "the same address, mapped");
+        let _v6 = connections.admit(ip("2001:db8::1"), true).unwrap();
+        let _v6_neighbour = connections.admit(ip("2001:db8::2"), true).expect("the same /64, second place");
+        assert!(connections.admit(ip("2001:db8::3"), true).is_none(), "the same /64, no third");
+        assert!(connections.admit(ip("198.51.100.1"), false).is_none(), "four in all, also behind a proxy");
+        drop(first);
+        assert!(connections.admit(ip("192.0.2.1"), true).is_some(), "a closed connection gives its place back");
+    }
+
+    #[tokio::test]
+    async fn a_connection_that_sends_nothing_is_closed() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let connections = Connections::with_limits(3, 3, Duration::from_millis(300));
+        let (_stop, shutdown) = watch::channel(false);
+        tokio::spawn(serve(listener, None, redirect_app(state()), connections.clone(), true, shutdown));
+
+        // Silent from the start: closed although hyper has not even learnt the HTTP version.
+        let mut silent = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let started = Instant::now();
+        let read = tokio::time::timeout(Duration::from_secs(10), silent.read(&mut [0u8; 64])).await;
+        assert!(matches!(read, Ok(Ok(0)) | Ok(Err(_))), "closed");
+        assert!(started.elapsed() < Duration::from_secs(5));
+
+        // Half a request: closed by the header timeout.
+        let mut slow = tokio::net::TcpStream::connect(addr).await.unwrap();
+        slow.write_all(
+            b"GET /healthz HTTP/1.1
+Host: x
+",
+        )
+        .await
+        .unwrap();
+        let mut answer = Vec::new();
+        let read = tokio::time::timeout(Duration::from_secs(10), slow.read_to_end(&mut answer)).await;
+        assert!(read.is_ok(), "closed");
+        assert!(!String::from_utf8_lossy(&answer).contains("200 OK"));
+
+        // A whole request is answered, and the places come back once the connections are gone.
+        let mut client = tokio::net::TcpStream::connect(addr).await.unwrap();
+        client
+            .write_all(
+                b"GET /healthz HTTP/1.1
+Host: x
+Connection: close
+
+",
+            )
+            .await
+            .unwrap();
+        let mut answer = Vec::new();
+        tokio::time::timeout(Duration::from_secs(10), client.read_to_end(&mut answer)).await.unwrap().unwrap();
+        assert!(String::from_utf8_lossy(&answer).starts_with("HTTP/1.1 200"));
     }
 }

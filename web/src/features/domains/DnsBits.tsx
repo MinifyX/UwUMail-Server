@@ -59,6 +59,9 @@ const KNOWN_NOTES = [
   "mtaStsFetchFailed",
   "mtaStsPolicyDiffers",
   "mtaStsPolicyInvalid",
+  "caaWithoutAccount",
+  "caaOtherAccount",
+  "caaForbids",
 ];
 
 function Value({ value, label }: { value: string; label: string }) {

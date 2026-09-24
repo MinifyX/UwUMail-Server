@@ -60,7 +60,7 @@ pub enum CheckStatus {
 #[serde(rename_all = "camelCase")]
 pub struct RecordCheck {
     /// "mx", "spf", "dmarc", "dkim", "tlsrpt", "mtasts", "mtastsHost", "mtastsPolicy", "jmap",
-    /// "imaps", "submissions" or "submission".
+    /// "imaps", "submissions", "submission" or "caa".
     pub kind: &'static str,
     pub name: String,
     pub record_type: &'static str,
@@ -103,6 +103,27 @@ pub struct DomainSetup<'a> {
     pub dkim_keys: &'a [DkimKey],
     /// The domain's MTA-STS policy, when MTA-STS is on.
     pub mta_sts: Option<&'a Policy>,
+    /// The URL of the Let's Encrypt account the server's certificate is ordered with, once there is
+    /// one. With it, the domain the host name belongs to is told the CAA record that binds the
+    /// name's certificates to that account.
+    pub lets_encrypt_account: Option<&'a str>,
+}
+
+/// One CAA property as published (RFC 8659).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Caa {
+    pub flags: u8,
+    pub tag: String,
+    pub value: String,
+}
+
+/// The issuer name Let's Encrypt looks for in CAA records.
+pub const LETS_ENCRYPT_CAA: &str = "letsencrypt.org";
+
+/// The `issue` value that lets only this server's Let's Encrypt account get certificates for the
+/// name, and only through the challenge it uses (RFC 8657).
+pub fn caa_value(account: &str) -> String {
+    format!("{LETS_ENCRYPT_CAA}; accounturi={account}; validationmethods=http-01")
 }
 
 pub struct DnsChecker {
@@ -196,6 +217,34 @@ impl Lookups<'_> {
                 _ => None,
             })
             .collect())
+    }
+
+    /// The CAA records that apply to `name`: its own, or else those of the nearest parent up to
+    /// `domain` that has any (RFC 8659 section 3).
+    async fn caa(&self, name: &str, domain: &str) -> Answer<Caa> {
+        let mut current = name.to_owned();
+        loop {
+            let found: Vec<Caa> = self
+                .records(&current, RecordType::CAA)
+                .await?
+                .into_iter()
+                .filter_map(|data| match data {
+                    RData::CAA(caa) => Some(Caa {
+                        flags: caa.flags(),
+                        tag: caa.tag.to_ascii_lowercase(),
+                        value: String::from_utf8_lossy(&caa.value).into_owned(),
+                    }),
+                    _ => None,
+                })
+                .collect();
+            if !found.is_empty() || current == domain {
+                return Ok(found);
+            }
+            match current.split_once('.') {
+                Some((_, parent)) if parent.len() >= domain.len() => current = parent.to_owned(),
+                _ => return Ok(found),
+            }
+        }
     }
 
     async fn addresses(&self, host: &str) -> (Vec<Ipv4Addr>, Vec<Ipv6Addr>) {
@@ -300,6 +349,13 @@ impl DnsChecker {
         }
         for (kind, name, port) in service_records(&domain) {
             records.push(evaluate_srv(kind, &name, setup.hostname, port, lookups.srv(&name).await));
+        }
+        // The host name's CAA record belongs to the domain the name is in, if it is one of ours.
+        let host = setup.hostname.trim_end_matches('.').to_ascii_lowercase();
+        if let Some(account) = setup.lets_encrypt_account
+            && (host == domain || host.ends_with(&format!(".{domain}")))
+        {
+            records.push(evaluate_caa(&host, account, lookups.caa(&host, &domain).await));
         }
 
         for record in &mut records {
@@ -545,6 +601,68 @@ pub fn evaluate_srv(
     record
 }
 
+/// Whether nobody but this server can get a certificate for its host name: recommended with a
+/// UwUMail Gateway, which answers the CA's challenges for the name and could otherwise get one
+/// itself (security-audit-0.8.0 INF-2).
+///
+/// Missing when no `issue` property applies; a warning when one lets other accounts or CAs issue
+/// too; wrong, and no longer optional, when none lets this server's account renew its certificate.
+pub fn evaluate_caa(hostname: &str, account: &str, answer: Answer<Caa>) -> RecordCheck {
+    let hostname = hostname.trim_end_matches('.').to_ascii_lowercase();
+    let mut record = check("caa", &hostname, "CAA", format!("0 issue \"{}\"", caa_value(account)));
+    record.optional = true;
+    let found = match answer {
+        Ok(found) => found,
+        Err(error) => return failed(record, &error),
+    };
+    record.found = found.iter().map(|caa| format!("{} {} \"{}\"", caa.flags, caa.tag, caa.value)).collect();
+    // An issue value is the issuer's name and parameters, separated by semicolons.
+    let issuers: Vec<(String, Vec<(String, String)>)> = found
+        .iter()
+        .filter(|caa| caa.tag == "issue")
+        .map(|caa| {
+            let mut parts = caa.value.split(';');
+            let issuer = parts.next().unwrap_or_default().trim().to_ascii_lowercase();
+            let parameters = parts
+                .filter_map(|part| part.trim().split_once('='))
+                .map(|(key, value)| (key.trim().to_ascii_lowercase(), value.trim().to_owned()))
+                .collect();
+            (issuer, parameters)
+        })
+        .collect();
+    if issuers.is_empty() {
+        record.status = CheckStatus::Missing;
+        return record;
+    }
+    let parameter = |parameters: &[(String, String)], key: &str| {
+        parameters.iter().find(|(name, _)| name == key).map(|(_, value)| value.clone())
+    };
+    let ours: Vec<&[(String, String)]> = issuers
+        .iter()
+        .filter(|(issuer, _)| issuer == LETS_ENCRYPT_CAA)
+        .map(|(_, parameters)| parameters.as_slice())
+        .collect();
+    let lets_us = |parameters: &&[(String, String)]| {
+        parameter(parameters, "accounturi").is_none_or(|uri| uri == account)
+            && parameter(parameters, "validationmethods")
+                .is_none_or(|methods| methods.split(',').any(|method| method.trim() == "http-01"))
+    };
+    if !ours.iter().any(lets_us) {
+        // The certificate cannot be renewed like this, which matters for all mail.
+        record.status = CheckStatus::Wrong;
+        record.optional = false;
+        let other_account =
+            ours.iter().any(|parameters| parameter(parameters, "accounturi").is_some_and(|uri| uri != account));
+        record.note = Some(if other_account { "caaOtherAccount" } else { "caaForbids" });
+    } else if ours.iter().any(|parameters| parameter(parameters, "accounturi").is_none())
+        || issuers.iter().any(|(issuer, _)| !issuer.is_empty() && issuer != LETS_ENCRYPT_CAA)
+    {
+        record.status = CheckStatus::Warning;
+        record.note = Some("caaWithoutAccount");
+    }
+    record
+}
+
 /// Where other servers send reports about TLS connections to us. Required once MTA-STS is on.
 pub fn evaluate_tls_rpt(domain: &str, required: bool, answer: Answer<String>) -> RecordCheck {
     let address = format!("{TLS_REPORT_ADDRESS}@{domain}");
@@ -686,6 +804,44 @@ mod tests {
     }
 
     #[test]
+    fn caa_binds_the_host_name_to_this_servers_account() {
+        // security-audit-0.8.0 INF-2.
+        let account = "https://acme-v02.api.letsencrypt.org/acme/acct/123456";
+        let issue = |value: &str| Caa { flags: 0, tag: "issue".into(), value: value.into() };
+        let caa = |found: Vec<Caa>| {
+            let record = evaluate_caa("Mail.Example.de.", account, Ok(found));
+            (record.status, record.note, record.optional)
+        };
+        let expected = evaluate_caa("mail.example.de", account, Ok(vec![]));
+        assert_eq!(expected.name, "mail.example.de");
+        assert_eq!(
+            expected.expected,
+            format!("0 issue \"letsencrypt.org; accounturi={account}; validationmethods=http-01\"")
+        );
+        assert_eq!(caa(vec![]), (CheckStatus::Missing, None, true), "recommended, not required");
+        let iodef = Caa { flags: 0, tag: "iodef".into(), value: "mailto:caa@example.de".into() };
+        assert_eq!(caa(vec![iodef]), (CheckStatus::Missing, None, true), "no issue property, no restriction");
+        assert_eq!(caa(vec![issue(&caa_value(account))]), (CheckStatus::Ok, None, true));
+        assert_eq!(
+            caa(vec![issue(&format!("LetsEncrypt.org ; accounturi={account}"))]),
+            (CheckStatus::Ok, None, true),
+            "any challenge, but only this account"
+        );
+        assert_eq!(caa(vec![issue("letsencrypt.org")]), (CheckStatus::Warning, Some("caaWithoutAccount"), true));
+        assert_eq!(
+            caa(vec![issue(&caa_value(account)), issue("sectigo.com")]),
+            (CheckStatus::Warning, Some("caaWithoutAccount"), true),
+            "another CA may still issue"
+        );
+        assert_eq!(caa(vec![issue(&caa_value(account)), issue(";")]), (CheckStatus::Ok, None, true));
+        let other = "letsencrypt.org; accounturi=https://acme-v02.api.letsencrypt.org/acme/acct/9";
+        assert_eq!(caa(vec![issue(other)]), (CheckStatus::Wrong, Some("caaOtherAccount"), false), "renewals fail");
+        assert_eq!(caa(vec![issue("sectigo.com")]), (CheckStatus::Wrong, Some("caaForbids"), false));
+        let dns_only = format!("letsencrypt.org; accounturi={account}; validationmethods=dns-01");
+        assert_eq!(caa(vec![issue(&dns_only)]), (CheckStatus::Wrong, Some("caaForbids"), false));
+    }
+
+    #[test]
     fn spf_record_shape() {
         let keys = [];
         let setup = DomainSetup {
@@ -695,6 +851,7 @@ mod tests {
             upstream_mx: false,
             dkim_keys: &keys,
             mta_sts: None,
+            lets_encrypt_account: None,
         };
         let spf = |texts: &[&str]| {
             evaluate_spf_record("example.de", &setup, Ok(texts.iter().map(|t| t.to_string()).collect()))
@@ -824,6 +981,7 @@ mod tests {
                 upstream_mx: std::env::var("UWUMAIL_DNSCHECK_UPSTREAM").is_ok(),
                 dkim_keys: &[],
                 mta_sts: None,
+                lets_encrypt_account: None,
             })
             .await;
         println!("{}", serde_json::to_string_pretty(&report).unwrap());

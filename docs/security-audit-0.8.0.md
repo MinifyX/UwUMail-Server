@@ -282,3 +282,263 @@ migration import. Found while fixing W-3.
   `is_public_ip`, `servercheck::is_private`) touches the SSRF gate and the callers want slightly
   different things (see P-4); merging `shorten` and the IMAP `quoted` helpers across crates was not
   worth a shared module.
+
+## Web portal, backup, gateway and deployment
+
+Scope: the portal's JSON API, sessions, login, second factors and passkeys
+(`crates/uwumail-web`), the HTTP layer (`crates/uwumail-server/src/http.rs`), the backups
+(`crates/uwumail-backup`, the restore paths in the server), certificates (`acme.rs`), the gateway
+and the tunnel (`crates/uwumail-gateway`, `crates/uwumail-tunnel`, the server's side of both), the
+root helpers and installers under `deploy/`, `docker/`, `install.sh`, `update.sh`, `scripts/` and
+the CI workflow. Finding ids `W-` for the web side, `INF-` for backup, gateway and deployment.
+
+### What held up
+
+- **Access control in the portal.** Every admin route takes the `Admin` extractor, every account
+  route `Session`, and every account-scoped store call the session's own account id. No path from
+  one account into another's data was found.
+- **Sessions and CSRF.** `__Host-` cookies over HTTPS, `HttpOnly`, `SameSite=Strict`, tokens stored
+  hashed, a 192-bit CSRF token compared in constant time on every method but GET and HEAD, and the
+  transport-aware cookie reader of 0.5.2 S-7, in the portal and in JMAP alike.
+- **Passwords, TOTP, passkeys and links.** argon2 with a dummy hash for unknown logins, a one-step
+  TOTP window with replay block, hashed recovery codes, exact WebAuthn origin and RP-ID checks, and
+  256-bit single-use password and forwarding links.
+- **The earlier rounds.** The X-Forwarded-For walk (S-20), HSTS only with a trusted certificate, the
+  Cloudflare token used once and never stored, the restore path checks (`Component::Normal` only,
+  ids checked), gateway token expiry (G-1), no path migration (G-2), `/32` and `/64` only for
+  trusted ranges (G-3), commands composed from constants (G-4), the `--version` guard (G-8), the
+  helpers' verb and version checks and no downgrade, pinning on both ends of the tunnel, and the
+  CLI secret handling (S-24) were re-checked and hold.
+- **Dependencies.** `cargo audit` against the advisory database of 23 September 2026: no advisories.
+
+### Summary
+
+| Severity | Found | Fixed |
+| --- | --- | --- |
+| High | 1 | 1 |
+| Medium | 6 | 5 |
+| Low | 8 | 0 |
+| Info | 6 | 1 |
+
+W-3, the sixth Medium of the web review, sits in `crates/uwumail-smtp/src/autoconfig.rs` and is
+fixed with the transport findings above. Plus one correctness fix in the webmail's policy.
+
+### Findings
+
+#### INF-1 · High · A backup server could turn encryption off and choose what a restore takes
+
+`crates/uwumail-backup/src/format.rs` (`Codec::new`, `Codec::decode`),
+`crates/uwumail-backup/src/lib.rs` (`get`, `manifest`)
+
+- **Attacker & preconditions:** whoever controls the SFTP backup target — the storage the
+  encryption exists to distrust.
+- **Impact:** `uwumail-backup.json` lies on the target unauthenticated, and a server with a recovery
+  key followed it: `encrypted: false` gave an unkeyed codec, so the next scheduled backup uploaded
+  the database, every mail and the data directory's keys in plain text, while the portal still
+  showed encryption on. A keyed codec also accepted objects without the encryption flag, object ids
+  were only recomputed in plain repositories, and a manifest was not tied to its name, so a restore
+  from a hostile target could be handed a database of the target's choosing.
+- **Fix:** whether a repository is encrypted is the server's decision: with a key, a config that
+  says otherwise and any object without the encryption flag are refused. Every object's id is
+  recomputed from its content (keyed with HMAC when encrypted), so an authentic object cannot stand
+  in for another. New manifests carry their name inside the sealed content; manifests from before
+  0.8.0 have none and are still read. The setup assistant and `backup restore` use a key that was
+  given even when the target claims the backup is unencrypted. Existing encrypted repositories are
+  unaffected: all their objects are flagged.
+- **Status:** fixed in `cc3aaa6`.
+- **Regression test:** `crates/uwumail-backup/tests/backup.rs`
+  `a_backup_server_cannot_turn_encryption_off_or_swap_what_it_holds` (a rewritten config, a plain
+  object, an authentic object moved to another id, a manifest under another snapshot's name);
+  `format.rs` `a_key_is_never_given_up_for_what_the_backup_server_says`.
+- **Not covered:** a hostile target can still withhold newer snapshots and offer an older, authentic
+  one. An unencrypted repository has no protection against its target by design; docs/backups.md
+  says so.
+
+#### INF-2 · Medium · A compromised gateway VPS could get a trusted certificate for the server's name
+
+`crates/uwumail-server/src/acme.rs`, `crates/uwumail-smtp/src/dnscheck.rs`,
+`crates/uwumail-web/src/cloudflare.rs`, `docs/gateway.md`
+
+- **Attacker & preconditions:** code running on the gateway VPS, as root or as the gateway user.
+- **Impact:** with a gateway, the host name's A/AAAA records point to the VPS and it answers ports
+  80 and 443, so it passes HTTP-01 validation at any public CA. With such a certificate it can end
+  TLS on 443, 993, 465 and 587 and read passwords and mail on their way home. docs/gateway.md said
+  the VPS could not read TLS.
+- **Fix:** the DNS check now recommends a CAA record for the host name with RFC 8657
+  `accounturi` bound to the server's own Let's Encrypt account and `validationmethods=http-01`, and
+  reports one that lets other accounts or CAs issue (warning) or no longer lets the server renew
+  (wrong). The Cloudflare automation writes it only when it is ticked. docs/gateway.md explains the
+  record, what breaks when the account changes, CT monitoring, and corrects the two claims.
+  Opt-in, because a record bound to the account stops renewals on a new server without the old
+  data directory.
+- **Status:** fixed in `530d6a2`.
+- **Regression test:** `dnscheck.rs` `caa_binds_the_host_name_to_this_servers_account`;
+  `cloudflare.rs` `a_caa_record_is_only_ever_written_when_asked_for`.
+- **Not covered:** other names on the certificate that point to the gateway (`mta-sts.`, `imap.` …)
+  are only mentioned in the documentation, not checked.
+
+#### INF-3 · Medium · The root helpers still followed symlinks the unprivileged side planted
+
+`deploy/gateway/hardening/helper`, `deploy/host/helper`, `deploy/gateway/install.sh`
+
+- **Attacker & preconditions:** code running as the gateway user on the VPS, or as uid 10001 in the
+  container on the host.
+- **Impact:** 0.5.2 G-5/S-12 made the helpers create files safely, but they still worked by name
+  afterwards in a directory the other side can write: `chmod` after a rename and after a job had
+  run for minutes, `>>` appends to a job log, a plain redirect for the list of fail2ban ignores,
+  `mv` onto a name that could be a symlink to a directory, and the installer's
+  `written.sha256.tmp`. Root could be made to change the mode of, append to, or overwrite files
+  elsewhere.
+- **Fix:** files are created with their final mode (a umask instead of `chmod`) and renamed with
+  `mv -T`, which replaces a symlink rather than following it; a job's log is opened once with
+  noclobber and written through that descriptor; the ignore list and the installer's checksum list
+  moved to `/var/lib/uwumail-gateway-helper`, which only root can write, and are taken over from
+  their old place once. File names, contents and modes stay as they were.
+- **Status:** fixed in `26a260d`.
+- **Regression test:** `deploy/tests/helpers.sh`, run in CI: every write and job of both helpers,
+  with the other side winning each race by putting a symlink to a canary file in place.
+- **Not covered:** the `ProtectSystem=strict` sandbox for the tick and machine units was left out;
+  it could not be tried on a real VPS in this round.
+
+#### INF-4 · Medium · A backup server could crash the whole server at every scheduled backup
+
+`crates/uwumail-backup/src/lib.rs` (`object_ids`, `prune`), `format.rs` (`object_path`),
+`sftp.rs`, `storage.rs`
+
+- **Attacker & preconditions:** whoever controls the backup target.
+- **Impact:** names from the target's directory listing went into `&id[..2]` unchecked; a one-byte
+  name panicked, and with `panic = "abort"` that stopped SMTP, IMAP, JMAP and the portal, at every
+  daily run. Objects and manifests were read and inflated in full, so a large file or a deflate
+  bomb could exhaust memory.
+- **Fix:** listed names are checked (64 hex digits under their prefix; snapshot names as this
+  server gives them) and anything else is left alone with a warning. Every read stops one byte
+  past a limit that fits what it reads — 64 KiB for the config, 256 MiB for a manifest, the chunk
+  size for database chunks, a file's recorded size, 1 GiB for a mail — and inflating stops at the
+  same limit.
+- **Status:** fixed in `d5746ce`.
+- **Regression test:** `crates/uwumail-backup/tests/backup.rs`
+  `a_backup_server_cannot_crash_a_backup_with_what_it_lists`; `format.rs`
+  `objects_are_inflated_no_further_than_their_limit`, `only_ids_and_snapshot_names_reach_a_path`.
+
+#### W-1 · Medium · Any successful login reset its network's failure count
+
+`crates/uwumail-smtp/src/limiter.rs`, `crates/uwumail-web/src/routes/auth.rs`,
+`crates/uwumail-web/src/login.rs`
+
+- **Attacker & preconditions:** anyone with an account of their own on the server; for the second
+  factor, someone who also knows the victim's password.
+- **Impact:** `record_success` removed the whole network's failures, so logging into one's own
+  account now and then allowed unlimited guesses at another account's password, including an
+  admin's. The five tries at a second factor belonged to one pending login, and a new one needed
+  only the password, so TOTP codes could be guessed without limit. The same limiter serves IMAP,
+  SMTP and ManageSieve.
+- **Fix:** a success takes back only the failures of the login that succeeded; the rest of the
+  network's count stays until the window ends. Each login also has a count over all networks: after
+  ten wrong passwords in fifteen minutes, its tries are spaced to one per thirty seconds — a delay,
+  not a lockout, so knowing a login name is not enough to keep its owner out. Wrong second factors
+  count per account over all pending logins: after ten, no second factor is looked at for fifteen
+  minutes, and the account's owner gets a security notice. Another account's success lifts
+  nothing. IMAP, SMTP and ManageSieve pass the login to the limiter as well.
+- **Status:** fixed in `27f25da`.
+- **Regression test:** `limiter.rs` `a_success_does_not_forgive_what_others_tried`,
+  `guesses_at_one_login_from_many_networks_are_spaced_out`; `login.rs`
+  `a_new_pending_login_does_not_bring_new_tries`; `crates/uwumail-web/tests/api.rs`
+  `logging_into_ones_own_account_does_not_reset_the_guesses_at_another`.
+
+#### W-2 · Medium · The HTTP listeners had no header or idle timeout and no connection limit
+
+`crates/uwumail-server/src/http.rs` (`serve`, `serve_connection`), `gateway.rs`, `serve.rs`
+
+- **Attacker & preconditions:** anyone who can reach port 80 or 443 (directly or through the
+  gateway), before logging in.
+- **Impact:** hyper was built without a timer, so its default header timeout did nothing, and the
+  first read that tells HTTP/1 from HTTP/2 had no deadline at all. Every connection got a task of
+  its own with no cap. Enough idle connections used up the process's memory or descriptors, which
+  also stops SMTP and IMAP from accepting.
+- **Fix:** a timer with a 20-second header timeout, which also closes an HTTP/1 connection that
+  waits that long for its next request; the first bytes have to arrive within the same time;
+  HTTP/2 connections are pinged and closed when a ping goes unanswered. All HTTP listeners and the
+  gateway share a limit of 4096 connections, and one network (an IPv4 address, an IPv6 /64) may
+  hold 128 of them; behind a reverse proxy only the total counts. The JMAP event stream keeps
+  working: the limits count connections, not how long they last.
+- **Status:** fixed in `ce08482`.
+- **Regression test:** `http.rs` `connections_are_limited_in_all_and_per_network`,
+  `a_connection_that_sends_nothing_is_closed` (silent from the start, half a request, and a
+  complete one against a running listener).
+- **Not covered:** an HTTP/2 connection that answers pings may stay idle; the per-network limit
+  bounds it.
+
+#### Correctness · The webmail's attachment previews were blocked by its CSP (fixed)
+
+The previews of text, CSV, JSON, calendar and contact attachments read the file back from its
+`blob:` URL with `fetch`, which `connect-src 'self'` refused, so they never showed on a real server.
+The webmail's policy under `/mail` allows `blob:` in `connect-src` now; the portal's stays
+`'self'`. Fixed in `6cdfe85`, test `assets.rs` `only_the_webmail_may_fetch_blob_urls`.
+
+### Cleanups
+
+- **INF-9 / 0.5.2 S-36:** the real public IPv4 address and the old test-VM LAN address in
+  `crates/uwumail-gateway/src/machine.rs`, `web/src/features/setup/reach.test.ts` and
+  `crates/uwumail-tunnel/src/net.rs` are documentation addresses now, and the S-36 entry of
+  security-audit-0.5.2.md no longer quotes them (`b897cd8`).
+- One job-id generator for the host bridge and the gateway instead of two identical ones (`993119e`).
+- A leftover `let _ = settings;` in `start_restore` (`99b3b48`).
+- The cookie that logs out is built from the cookie-name constants, like the one that logs in (`5dc2466`).
+- `loki.rs` uses the portal's `unix_now`, the webmail access check no longer asks twice whether a
+  webmail was built in, and the module doc lists every page the portal serves (`dbd9f24`).
+- Not done: the redacting `Debug` for config structs that hold secrets (INF C-7), the single
+  `Confirmation` struct and `Client` extractor of the web review, the shared network-key helper for
+  JMAP: behaviour-preserving but not worth the churn in this round, or touching the other fixer's
+  crates. The `System.command` pass-through (INF C-1) stays until no supported portal reads it.
+
+### Low / Informational (not fixed)
+
+- **W-4 · Low · X-Forwarded-For and X-Forwarded-Proto are read from the first header line only.**
+  Behind a proxy that adds a second line instead of appending, the client picks its own address.
+  Caddy, the documented proxy, merges.
+- **W-5 · Low · Mailbox discovery lets any user test passwords at other providers without a limit.**
+  No per-account budget and no activity entry for `POST /api/account/fetch/discover`.
+- **W-6 · Low · The password re-entry misses the settings that send data elsewhere** (backup target,
+  relay, antivirus address, Loki), extending the deferred 0.5.2 S-23.
+- **W-7 · Low · An admin-set password leaves older reset and invitation links working** for up to
+  seven days.
+- **W-8 · Low · One user can fill the server-wide queue of pending Apple configuration profiles**, and
+  the API still returns a download link for a profile it dropped.
+- **INF-5 · Low · The gateway can present private client addresses**, which skips spam scoring for
+  that connection; an extension of the accepted "made-up client addresses" risk.
+- **INF-6 · Low · The portal's gateway update command and the docs unpack into fixed `/tmp` paths**
+  before `sudo bash`; a local user on the VPS could pre-create them.
+- **INF-7 · Low · `scripts/mailcow-export.sh` passes the mailcow database and Redis passwords on the
+  `docker exec` command line.**
+- **W-9 · Info · Any account's sorting trains the server-wide Bayes filter.** A conscious choice to
+  make, like the accepted S-33.
+- **W-10 · Info · The webmail and the admin portal share one origin.** Defence in depth only; the
+  sandboxed frame and `script-src 'self'` hold.
+- **W-11 · Info · Security headers are only on the portal's HTML page**, not on JSON, XML and profile
+  responses.
+- **INF-8 · Info · A compromised gateway can crowd the server's own lines out of the portal's log
+  view.**
+- **INF-10 · Info · The release job keeps its git credentials** (`persist-credentials` is not off),
+  though nothing after the checkout needs them.
+
+### What was run
+
+- **Tests, on Windows:** the new regression tests above and the test files they live in —
+  `cargo test` for `uwumail-backup` (unit and `tests/backup.rs`), the limiter, `login.rs`,
+  `dnscheck.rs`, `cloudflare.rs`, `assets.rs`, `session.rs`, `tests/api.rs` and `tests/health.rs` of
+  the portal, the `http.rs`
+  tests of the server, `machine.rs` of the gateway and `net.rs` of the tunnel, with
+  `--test-threads=1`. `cargo fmt --check` and `cargo clippy --workspace --all-targets -D warnings`
+  over the whole workspace. In `web/`: `pnpm format:check`, `pnpm typecheck`, `pnpm lint` and
+  `pnpm test`.
+- **Left to CI (Linux):** the full `cargo test --workspace`, `shellcheck` and the new
+  `deploy/tests/helpers.sh` — neither Docker nor a Linux shell with real symlinks was available on
+  the machine the fixes were made on.
+
+### What could not be tested
+
+- **A real gateway VPS and a real host.** The helper changes are exercised by
+  `deploy/tests/helpers.sh` against a temporary directory, not by systemd on a VPS.
+- **A real CAA record at a CA.** The record's syntax and meaning follow RFC 8659 and RFC 8657 and
+  Let's Encrypt's documentation; no certificate was ordered against one.
+- **An SFTP target that lies.** The backup tests use a local directory standing in for the target.
