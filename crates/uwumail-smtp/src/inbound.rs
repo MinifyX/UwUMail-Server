@@ -662,7 +662,10 @@ impl Session {
                         }
                     }
                 }
-                if bytes.as_slice().is_empty() {
+                // A BDAT chunk may be empty (`BDAT 0 LAST` ends many a message): it is complete
+                // without another byte, so it is taken now rather than after a read that never comes.
+                let chunk = matches!(state, State::Bdat(_) | State::BdatDiscard(_));
+                if bytes.as_slice().is_empty() && !chunk {
                     break;
                 }
             }

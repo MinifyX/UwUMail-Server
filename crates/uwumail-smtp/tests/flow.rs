@@ -314,6 +314,31 @@ impl RawSession {
         self.reader.get_mut().write_all(format!("{command}\r\n").as_bytes()).await.unwrap();
         self.read_reply().await
     }
+
+    /// One BDAT chunk (RFC 3030) with exactly `data`.
+    async fn bdat(&mut self, data: &[u8], last: bool) -> String {
+        let last = if last { " LAST" } else { "" };
+        let stream = self.reader.get_mut();
+        stream.write_all(format!("BDAT {}{last}\r\n", data.len()).as_bytes()).await.unwrap();
+        stream.write_all(data).await.unwrap();
+        self.read_reply().await
+    }
+}
+
+/// Many clients end a chunked message with an empty last chunk; it is answered at once, not after
+/// another packet that never comes.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_chunked_message_may_end_with_an_empty_chunk() {
+    let a = start("a.test", &["mini"], &[]).await;
+    let mut session = RawSession::connect(a.mx).await;
+    assert!(session.command("EHLO mail.sender.test").await.starts_with("250"));
+    assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+    assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
+    let message = b"From: news@sender.test\r\nSubject: In Teilen\r\n\r\nHallo\r\n";
+    assert!(session.bdat(message, false).await.starts_with("250"));
+    let reply = tokio::time::timeout(Duration::from_secs(10), session.bdat(b"", true)).await.expect("an answer");
+    assert!(reply.starts_with("250"), "{reply}");
+    a.wait_for_inbox("mini@a.test", 1).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
