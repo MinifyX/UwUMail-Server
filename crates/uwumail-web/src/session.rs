@@ -30,11 +30,12 @@ pub fn set_cookie(token: &str, client: ClientInfo) -> HeaderValue {
 }
 
 pub fn clear_cookie(client: ClientInfo) -> HeaderValue {
-    HeaderValue::from_static(if client.https {
-        "__Host-uwumail=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict"
+    let value = if client.https {
+        format!("{SECURE_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict")
     } else {
-        "uwumail=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"
-    })
+        format!("{PLAIN_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict")
+    };
+    HeaderValue::from_str(&value).expect("cookie names are valid header values")
 }
 
 /// A logged-in person. Requests that change something must carry the CSRF token.
@@ -97,5 +98,12 @@ mod tests {
         assert!(cookie.to_str().unwrap().contains("Secure"));
         assert!(!set_cookie("abc", ClientInfo::default()).to_str().unwrap().contains("Secure"));
         assert!(same("abc", "abc") && !same("abc", "abd") && !same("abc", "ab"));
+    }
+
+    #[test]
+    fn clearing_a_cookie_names_the_same_cookie() {
+        let https = ClientInfo { https: true, ..ClientInfo::default() };
+        assert_eq!(clear_cookie(https), "__Host-uwumail=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict");
+        assert_eq!(clear_cookie(ClientInfo::default()), "uwumail=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict");
     }
 }
