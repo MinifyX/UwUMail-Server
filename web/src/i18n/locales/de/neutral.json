@@ -50,8 +50,6 @@
     "overview": "Übersicht",
     "openMenu": "Menü öffnen",
     "closeMenu": "Menü schließen",
-    "people": "Konten",
-    "domains": "Domains",
     "queue": "Warteschlange",
     "logs": "Protokolle",
     "settings": "Einstellungen",
@@ -60,10 +58,10 @@
     "fetch": "Abrufkonten",
     "addresses": "Adressen",
     "spamFilter": "Spamfilter",
-    "reports": "Berichte",
     "collapse": "{{group}} einklappen",
     "expand": "{{group}} ausklappen",
-    "mailbox": "Postfach"
+    "mailbox": "Postfach",
+    "directory": "Konten & Domains"
   },
   "userMenu": {
     "open": "Kontomenü öffnen",
@@ -2675,5 +2673,9 @@
       "body": "Der VPN-Container wird gestoppt und gelöscht, dazu .env.vpn, die OpenVPN-Datei und die hier gespeicherten Schlüssel. Anfragen gehen danach direkt vom Server raus. Zum Wiederverbinden musst du den VPN neu einrichten.",
       "confirm": "Entfernen"
     }
+  },
+  "directory": {
+    "title": "Konten & Domains",
+    "tab": "Bereich"
   }
 }

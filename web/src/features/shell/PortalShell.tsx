@@ -1,11 +1,9 @@
 import clsx from "clsx";
 import {
   AtSign,
-  ChartNoAxesColumn,
   ChevronsUpDown,
   Download,
   Forward,
-  Globe,
   Inbox,
   ScrollText,
   Send,
@@ -232,9 +230,12 @@ export function PortalShell({ session, children }: { session: Session; children:
                 icon: LayoutDashboard,
                 also: ["/admin/mail-flow", "/admin/backups", "/admin/updates"],
               },
-              { to: "/admin/people", label: t("nav.people"), icon: Users },
-              { to: "/admin/domains", label: t("nav.domains"), icon: Globe },
-              { to: "/admin/reports", label: t("nav.reports"), icon: ChartNoAxesColumn },
+              {
+                to: "/admin/people",
+                label: t("nav.directory"),
+                icon: Users,
+                also: ["/admin/domains", "/admin/reports"],
+              },
               { to: "/admin/queue", label: t("nav.queue"), icon: Send },
               { to: "/admin/spam", label: t("nav.spamFilter"), icon: ShieldBan },
               { to: "/admin/settings", label: t("nav.settings"), icon: Settings },

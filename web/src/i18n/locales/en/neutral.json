@@ -50,8 +50,6 @@
     "overview": "Overview",
     "openMenu": "Open menu",
     "closeMenu": "Close menu",
-    "people": "Accounts",
-    "domains": "Domains",
     "queue": "Queue",
     "logs": "Logs",
     "settings": "Settings",
@@ -60,10 +58,10 @@
     "fetch": "Fetched mail",
     "addresses": "Addresses",
     "spamFilter": "Spam filter",
-    "reports": "Reports",
     "collapse": "Collapse {{group}}",
     "expand": "Expand {{group}}",
-    "mailbox": "Mailbox"
+    "mailbox": "Mailbox",
+    "directory": "Accounts & domains"
   },
   "userMenu": {
     "open": "Open account menu",
@@ -2675,5 +2673,9 @@
       "body": "The VPN container is stopped and deleted, along with .env.vpn, the OpenVPN file and the keys stored here. Requests then leave the server directly. To connect again you set the VPN up anew.",
       "confirm": "Remove"
     }
+  },
+  "directory": {
+    "title": "Accounts & domains",
+    "tab": "Section"
   }
 }
