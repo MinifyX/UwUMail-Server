@@ -77,3 +77,11 @@ What was found, and that nothing was, is kept in memory for a week and shared by
 all accounts, so a company sees at most one request a week from the server, no
 matter who reads its mail and how often. After a restart, or once the week is
 over, the server asks again, so a new logo arrives within a week.
+
+## IMAP accounts
+
+The UwUMail apps use this for IMAP accounts on a UwUMail server too. They know
+such a server by its IMAP greeting (`* OK [CAPABILITY …] UwUMail IMAP ready`),
+and only then sign in over JMAP, at `/.well-known/jmap` on the IMAP host, just
+to have pictures fetched. The greeting is therefore kept as it is; the IMAP
+tests check it.
