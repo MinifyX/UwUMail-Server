@@ -3,8 +3,9 @@
 //! - `/api/...` is a JSON API for the portal, logged in with a session cookie.
 //!   Requests that change something need the session's CSRF token in the
 //!   `X-CSRF-Token` header.
-//! - `/`, `/login`, `/account/...`, `/admin/...` and `/setup` serve the React app
-//!   from `web/`, embedded into the binary at build time.
+//! - `/`, `/login`, `/account/...`, `/admin/...`, `/setup`, `/password/{token}` and
+//!   `/forwarding/{token}` serve the React app from `web/`, embedded into the binary at build time.
+//! - `/mail` serves the webmail, built from its own repository, when the build has one and it is on.
 
 mod assets;
 mod cloudflare;
