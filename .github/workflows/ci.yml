@@ -51,6 +51,8 @@ jobs:
             deploy/gateway/hardening/motd)
           for script in $scripts; do bash -n "$script"; done
           shellcheck --severity=warning $scripts
+      - name: The root helpers never follow a symlink
+        run: bash deploy/tests/helpers.sh
 
   audit:
     name: Dependency audit

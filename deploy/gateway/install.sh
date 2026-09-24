@@ -28,8 +28,13 @@ set -uo pipefail
 config=/etc/uwumail-gateway/gateway.toml
 state=/var/lib/uwumail-gateway
 helper_dir=/usr/local/lib/uwumail-gateway
-# What this script wrote last time, so a file you changed since is never overwritten.
-written="$state/written.sha256"
+# What this script wrote last time, so a file you changed since is never overwritten. It lies where
+# only root can write, beside the helper's own list: in the gateway's directory the gateway could
+# swap it, or the temporary file beside it, for a symlink (security-audit-0.8.0 INF-3).
+private=/var/lib/uwumail-gateway-helper
+written="$private/written.sha256"
+# Where versions before 0.8.0 kept it.
+old_written="$state/written.sha256"
 
 binary=""
 harden=true
@@ -88,6 +93,7 @@ place() {
       remember "$target" "$now"
       return 0
     fi
+    move_written
     before=$(grep -F " $target" "$written" 2>/dev/null | cut -d' ' -f1)
     if [ -n "$before" ] && [ "$current" != "$before" ]; then
       install -m "$mode" "$source" "$target.new"
@@ -102,11 +108,21 @@ place() {
 
 remember() {
   local target="$1" sum="$2"
-  install -d -m 0755 "$(dirname "$written")"
+  move_written
   touch "$written"
   grep -vF " $1" "$written" >"$written.tmp" 2>/dev/null || true
   printf '%s %s\n' "$sum" "$target" >>"$written.tmp"
   mv -f "$written.tmp" "$written"
+}
+
+# Takes the list over from where an older version kept it, once: only a regular file is read, and
+# the old name goes either way.
+move_written() {
+  install -d -m 0700 "$private"
+  if [ ! -e "$written" ] && [ -f "$old_written" ] && [ ! -L "$old_written" ]; then
+    cat -- "$old_written" >"$written.tmp" 2>/dev/null && mv -f "$written.tmp" "$written"
+  fi
+  rm -f -- "$old_written" "$old_written.tmp"
 }
 
 # ── the gateway itself ────────────────────────────────────────────────────────────────────────
