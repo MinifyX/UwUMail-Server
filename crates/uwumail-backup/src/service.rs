@@ -172,19 +172,21 @@ impl Backups {
             }
         };
         look.encrypted = encrypted;
+        // A key that was given is used whatever the backup server says: a repository that claims
+        // to be unencrypted to someone who knows it is not is refused, not read as plain text.
         let key = match (encrypted, key) {
             (true, None) => {
                 storage.close().await;
                 return Ok(look);
             }
-            (true, Some(text)) => match RepoKey::from_recovery_text(text) {
+            (_, Some(text)) => match RepoKey::from_recovery_text(text) {
                 Ok(key) => Some(key),
                 Err(err) => {
                     storage.close().await;
                     return Err(err);
                 }
             },
-            (false, _) => None,
+            (false, None) => None,
         };
         let repo = Repository::open_existing(storage, key).await?;
         let found = async {

@@ -457,19 +457,28 @@ pub async fn backup_restore(command: BackupCommand) -> anyhow::Result<()> {
     let connection = uwumail_backup::sftp::Sftp::connect(&target).await?;
     println!("Connected to {host}, host key {}", connection.host_key);
     let storage = uwumail_backup::Storage::Sftp(connection);
-    let key = if uwumail_backup::Repository::is_encrypted(&storage).await? {
-        let text = match std::env::var("UWUMAIL_BACKUP_KEY") {
-            Ok(text) => text,
-            Err(_) => {
+    // Whether the backup is encrypted is what the backup server says, and it may lie to turn the
+    // check of what comes back off. So a key in UWUMAIL_BACKUP_KEY is always used, and a backup that
+    // calls itself unencrypted still gets asked for one (security-audit-0.8.0 INF-1).
+    let text = match std::env::var("UWUMAIL_BACKUP_KEY") {
+        Ok(text) => text,
+        Err(_) => {
+            if uwumail_backup::Repository::is_encrypted(&storage).await? {
                 eprintln!("Recovery key:");
-                let mut line = String::new();
-                std::io::stdin().read_line(&mut line)?;
-                line
+            } else {
+                eprintln!(
+                    "The backup server says this backup is not encrypted. If yours is, enter its recovery key; \
+                     otherwise just press Enter:"
+                );
             }
-        };
-        Some(uwumail_backup::RepoKey::from_recovery_text(&text)?)
-    } else {
-        None
+            let mut line = String::new();
+            std::io::stdin().read_line(&mut line)?;
+            line
+        }
+    };
+    let key = match text.trim() {
+        "" => None,
+        text => Some(uwumail_backup::RepoKey::from_recovery_text(text)?),
     };
     let repo = uwumail_backup::Repository::open_existing(storage, key).await?;
     let result = async {

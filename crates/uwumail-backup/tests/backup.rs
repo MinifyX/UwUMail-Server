@@ -153,3 +153,61 @@ async fn a_backup_server_cannot_crash_a_backup_with_what_it_lists() {
     assert_eq!(storage.read("big", 100).await.unwrap().unwrap().len(), 100);
     assert!(matches!(storage.read("big", 99).await, Err(uwumail_backup::Error::Damaged(_))));
 }
+
+/// The backup server holds the config that says whether a backup is encrypted, and every object.
+/// With a key, it can neither turn encryption off nor have a restore take anything this server did
+/// not write under that name (security-audit-0.8.0 INF-1).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_backup_server_cannot_turn_encryption_off_or_swap_what_it_holds() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, mini) = server(&dir.path().join("data")).await;
+    deliver(&store, mini, "Eins").await;
+    std::fs::create_dir_all(dir.path().join("data/tls")).unwrap();
+    std::fs::write(dir.path().join("data/tls/a.pem"), b"aaaa").unwrap();
+    std::fs::write(dir.path().join("data/tls/b.pem"), b"bbbb").unwrap();
+    let key = RepoKey::generate();
+    let repo_dir = dir.path().join("repo");
+    let storage = || Storage::Local(repo_dir.clone());
+    let repo = Repository::open(storage(), Some(key.clone()), 0).await.unwrap();
+    let first = uwumail_backup::backup(&store, &repo, "mail.example.de", "0.1.0", Retention::default(), 1_000_000)
+        .await
+        .unwrap();
+
+    // "Not encrypted", says the config, to a server that has a key.
+    let config = repo_dir.join("uwumail-backup.json");
+    let genuine_config = std::fs::read(&config).unwrap();
+    std::fs::write(&config, br#"{"format":1,"encrypted":false,"keyCheck":null,"createdAt":0}"#).unwrap();
+    assert!(Repository::open(storage(), Some(key.clone()), 0).await.is_err(), "no plain text for the next backup");
+    assert!(Repository::open_existing(storage(), Some(key.clone())).await.is_err(), "nor for a restore");
+    std::fs::write(&config, &genuine_config).unwrap();
+
+    let manifest = repo.manifest(&first.snapshot).await.unwrap();
+    let object = |id: &str| repo_dir.join("data").join(&id[..2]).join(id);
+    let id_of = |name: &str| manifest.files.iter().find(|file| file.path == name).unwrap().id.clone();
+    let (a, b) = (object(&id_of("tls/a.pem")), object(&id_of("tls/b.pem")));
+    let genuine_b = std::fs::read(&b).unwrap();
+    let restoring = |name: &'static str| {
+        let target = dir.path().join(name);
+        let repo = &repo;
+        let snapshot = first.snapshot.clone();
+        async move { uwumail_backup::restore(repo, &snapshot, &target).await }
+    };
+
+    // A plain object where an encrypted one belongs.
+    std::fs::write(&b, [1u8, 0, b'b', b'b', b'b', b'b']).unwrap();
+    assert!(restoring("plain").await.is_err());
+    // An authentic object, moved to another one's name.
+    std::fs::copy(&a, &b).unwrap();
+    assert!(restoring("moved").await.is_err());
+    std::fs::write(&b, &genuine_b).unwrap();
+    assert!(restoring("genuine").await.is_ok());
+
+    // An authentic manifest, under another snapshot's name.
+    let second = uwumail_backup::backup(&store, &repo, "mail.example.de", "0.1.0", Retention::default(), 1_086_400)
+        .await
+        .unwrap();
+    let snapshots = repo_dir.join("snapshots");
+    std::fs::copy(snapshots.join(&first.snapshot), snapshots.join(&second.snapshot)).unwrap();
+    assert!(repo.manifest(&second.snapshot).await.is_err());
+    assert_eq!(repo.manifest(&first.snapshot).await.unwrap().name.as_deref(), Some(first.snapshot.as_str()));
+}

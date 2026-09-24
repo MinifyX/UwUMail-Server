@@ -156,9 +156,11 @@ impl Repository {
             .await?
             .ok_or_else(|| Error::Damaged(format!("the object {id} is missing")))?;
         let content = self.codec.decode(&object, limit)?;
-        // An encrypted repository proves an object with its authentication tag. A plain one has
-        // only the id, which is the SHA-256 of the content, so it is worth recomputing.
-        if self.codec.is_plain() && self.codec.id_for(&content) != id {
+        // The id comes from the content, keyed in an encrypted repository. Recomputing it is what
+        // ties an object to its name: the authentication tag alone proves only that this server
+        // wrote it, and an authentic object moved to another id's path would pass that
+        // (security-audit-0.8.0 INF-1).
+        if self.codec.id_for(&content) != id {
             return Err(Error::Damaged(format!("the object {id} does not match its content")));
         }
         Ok(content)
@@ -178,8 +180,14 @@ impl Repository {
             return Err(missing());
         }
         let object = self.storage.read(&format!("snapshots/{name}"), MANIFEST_MAX).await?.ok_or_else(missing)?;
-        serde_json::from_slice(&self.codec.decode(&object, MANIFEST_MAX)?)
-            .map_err(|_| Error::Damaged(format!("the snapshot {name} cannot be read")))
+        let manifest: Manifest = serde_json::from_slice(&self.codec.decode(&object, MANIFEST_MAX)?)
+            .map_err(|_| Error::Damaged(format!("the snapshot {name} cannot be read")))?;
+        // A manifest names itself inside what the key seals, so an authentic one cannot stand in
+        // for another. Ones written before 0.8.0 do not, and are taken as they are.
+        if manifest.name.as_deref().is_some_and(|own| own != name) {
+            return Err(Error::Damaged(format!("the snapshot {name} holds another snapshot")));
+        }
+        Ok(manifest)
     }
 }
 
@@ -299,6 +307,7 @@ pub async fn backup(
         files.push(FileEntry { path, id, size: content.len() as u64 });
     }
 
+    let name = format!("{now:012}-{}", random_suffix());
     let manifest = Manifest {
         format: format::FORMAT,
         created_at: now,
@@ -310,8 +319,8 @@ pub async fn backup(
         blobs_size,
         files,
         uploaded,
+        name: Some(name.clone()),
     };
-    let name = format!("{now:012}-{}", random_suffix());
     let encoded = repo.codec.encode(&serde_json::to_vec(&manifest).expect("manifests serialize"))?;
     repo.storage.write(&format!("snapshots/{name}"), &encoded).await?;
 

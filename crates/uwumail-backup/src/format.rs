@@ -79,9 +79,18 @@ pub struct Codec {
 }
 
 impl Codec {
+    /// Whether the repository is encrypted is this server's decision, made by whether it has a key,
+    /// and never the backup server's: `uwumail-backup.json` lies there unauthenticated, so a
+    /// repository that says "not encrypted" to a server with a key was changed, or is not one to
+    /// write plain text into (security-audit-0.8.0 INF-1).
     pub fn new(config: &RepoConfig, key: Option<RepoKey>) -> Result<Codec, Error> {
         match (config.encrypted, key) {
-            (false, _) => Ok(Codec { key: None }),
+            (false, None) => Ok(Codec { key: None }),
+            (false, Some(_)) => Err(Error::Damaged(
+                "the backup server says this backup is not encrypted, but this server encrypts its backups; \
+                 it was changed, or the directory holds another backup"
+                    .into(),
+            )),
             (true, None) => Err(Error::WrongKey),
             (true, Some(key)) => {
                 if config.key_check.as_deref() != Some(key.check().as_str()) {
@@ -151,6 +160,11 @@ impl Codec {
         let [version, flags, rest @ ..] = object else { return Err(Error::Damaged("an object is too short".into())) };
         if *version != OBJECT_VERSION {
             return Err(Error::Damaged(format!("unknown object version {version}")));
+        }
+        // Every object this server writes into an encrypted repository is sealed. One that is not
+        // was put there by someone without the key, and is never read, let alone inflated.
+        if self.key.is_some() && flags & FLAG_ENCRYPTED == 0 {
+            return Err(Error::Damaged("an object in this encrypted backup is not encrypted; it was changed".into()));
         }
         let body = if flags & FLAG_ENCRYPTED != 0 {
             let key = self.key.as_ref().ok_or(Error::WrongKey)?;
@@ -237,6 +251,10 @@ pub struct Manifest {
     pub files: Vec<FileEntry>,
     /// Bytes this snapshot had to upload.
     pub uploaded: u64,
+    /// The name it is stored under, so an authentic manifest cannot be passed off under another
+    /// one. Snapshots from before 0.8.0 have none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 #[cfg(test)]
@@ -268,6 +286,19 @@ mod tests {
         assert_eq!(text.len(), 52 + 12, "52 characters in groups of four");
         let typed = text.to_lowercase().replace('-', " ");
         assert!(Codec::new(&config, Some(RepoKey::from_recovery_text(&typed).unwrap())).is_ok());
+    }
+
+    #[test]
+    fn a_key_is_never_given_up_for_what_the_backup_server_says() {
+        // security-audit-0.8.0 INF-1: the config and the objects lie on the backup server.
+        let key = RepoKey::generate();
+        let plain_config = Codec::config_for(None, 0);
+        assert!(matches!(Codec::new(&plain_config, Some(key.clone())), Err(Error::Damaged(_))));
+        let codec = Codec::new(&Codec::config_for(Some(&key), 0), Some(key)).unwrap();
+        let plain = Codec::new(&plain_config, None).unwrap();
+        for object in [plain.encode(b"not sealed").unwrap(), plain.encode(&[b'x'; 4096]).unwrap()] {
+            assert!(matches!(codec.decode(&object, u64::MAX), Err(Error::Damaged(_))), "{:?}", &object[..2]);
+        }
     }
 
     #[test]
