@@ -5,7 +5,7 @@ import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field, Segmented, Select, TextInput, Toggle } from "@/components/ui/Field";
-import { useT } from "@/i18n";
+import { LANGUAGE_NAMES, LANGUAGES, useT } from "@/i18n";
 import { api, type SettingsView, type SettingValue } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { Link } from "@/lib/router";
@@ -306,7 +306,7 @@ export function SettingsPage({ tab = "general" }: { tab?: SettingsTab }) {
                   form={form}
                   settingKey="tone.language"
                   label={t("settings.tone.language")}
-                  options={choices(["de", "en"], "settings.tone.options")}
+                  options={LANGUAGES.map((value) => ({ value, label: LANGUAGE_NAMES[value] }))}
                 />
                 <ChoiceField
                   form={form}

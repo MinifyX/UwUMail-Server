@@ -20,11 +20,12 @@ import { SecurityPage } from "@/features/security/SecurityPage";
 import { AdminSettingsPage, SETTINGS_PATHS, type AdminSettingsTab } from "@/features/settings/AdminSettingsPage";
 import { SetupWizard } from "@/features/setup/SetupWizard";
 import { AccountSpamPage, AdminSpamPage, SPAM_TABS, type SpamTab } from "@/features/spam/SpamPage";
-import { useSession } from "@/features/session/session";
+import { useInfo, useSession } from "@/features/session/session";
 import { PortalShell } from "@/features/shell/PortalShell";
 import { useApplyLanguage, useT } from "@/i18n";
 import type { Session } from "@/lib/api";
 import { matchPath, navigate, usePath } from "@/lib/router";
+import { useApplyBrand } from "@/lib/brand";
 import { useApplyTheme } from "@/lib/theme";
 
 function NotFound() {
@@ -108,6 +109,8 @@ function Portal({ session }: { session: Session }) {
 function Routes() {
   const path = usePath();
   const session = useSession();
+  // Also where nobody is logged in: it brings the brand along.
+  useInfo();
   const passwordLink = matchPath("/password/:token", path);
   const forwardingLink = matchPath("/forwarding/:token", path);
 
@@ -132,6 +135,7 @@ function Routes() {
 export function App() {
   useApplyTheme();
   useApplyLanguage();
+  useApplyBrand();
   return (
     <>
       <Routes />

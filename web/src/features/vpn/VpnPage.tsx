@@ -480,7 +480,7 @@ function VpnCard({ view }: { view: VpnView }) {
                   <TextInput
                     id={id}
                     className="font-mono"
-                    placeholder="10.64.0.2/32"
+                    placeholder="198.51.100.2/32"
                     value={draft.wireguardAddresses}
                     onChange={(event) => set({ wireguardAddresses: event.target.value })}
                   />

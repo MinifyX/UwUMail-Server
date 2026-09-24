@@ -1,0 +1,146 @@
+{
+  "discardChanges": {
+    "title": "Tout jeter ? (・_・;)",
+    "body": "J'oublierai tout ce que vous venez de saisir ici."
+  },
+  "keepSecret": {
+    "title": "Déjà noté ? (・・ )?",
+    "body": "Je vous le montre juste cette fois. Après, il disparaît de chez moi aussi."
+  },
+  "login": {
+    "title": "Coucou ! Ravi de vous voir",
+    "subtitle": "Je suis Nyu. Connectez-vous avec votre adresse e-mail et votre mot de passe.",
+    "errors": {
+      "invalidCredentials": "Cette adresse ou ce mot de passe ne correspond pas (・_・;)",
+      "tooManyAttempts": "Ça fait beaucoup d'essais. Respirez un coup et réessayez dans quelques minutes (˘ᵕ˘)",
+      "offline": "Je n'arrive pas à joindre le serveur pour le moment (・_・;)"
+    }
+  },
+  "account": {
+    "greeting": "Coucou {{name}} !",
+    "intro": "Tout ce qui concerne votre boîte mail, juste ici (｡･ω･｡)"
+  },
+  "admin": {
+    "intro": "L'état de votre serveur. Je garde un œil dessus, moi aussi (=^･ω･^=)",
+    "queueEmpty": "Rien n'attend, tout est en route ✉︎",
+    "tiles": {
+      "mailFlow": {
+        "ok": "Le courrier file dans les deux sens (=^･ω･^=)"
+      },
+      "changes": {
+        "none": "Tout est encore comme au premier jour (´｡• ω •｡`)"
+      }
+    }
+  },
+  "errors": {
+    "loadFailed": {
+      "title": "Oups, ça n'a pas marché (╥﹏╥)"
+    },
+    "offline": {
+      "title": "Le serveur ne répond pas (・_・;)",
+      "body": "J'attends un instant et je réessaie."
+    },
+    "notFound": {
+      "title": "Rien ici (・_・;)",
+      "body": "J'ai cherché partout, même sous le canapé."
+    }
+  },
+  "people": {
+    "empty": {
+      "title": "Pour l'instant, il n'y a que vous (˘ᵕ˘)",
+      "body": "Ajoutez les comptes qui doivent emménager. Je leur préparerai une boîte mail douillette."
+    },
+    "noResults": {
+      "title": "Aucun résultat (・_・;)"
+    },
+    "invite": {
+      "title": "{{name}} peut emménager !"
+    }
+  },
+  "log": {
+    "empty": {
+      "title": "Tout est calme pour l'instant (˘ᵕ˘)"
+    }
+  },
+  "password": {
+    "inviteTitle": "Coucou {{name}}, trop content que vous soyez là !",
+    "invalid": {
+      "title": "Ce lien a expiré (・_・;)"
+    }
+  },
+  "domains": {
+    "empty": {
+      "title": "Aucun domaine pour l'instant (・_・;)"
+    },
+    "toasts": {
+      "checked": "DNS vérifié, j'ai regardé partout ✉︎"
+    },
+    "mtaSts": {
+      "ready": "Aucun problème TLS depuis 14 jours, tout ronronne (=^･ω･^=) Vous pouvez passer MTA-STS en mode strict."
+    }
+  },
+  "queue": {
+    "empty": {
+      "title": "Rien n'attend, tout est en route ✉︎"
+    }
+  },
+  "health": {
+    "summary": {
+      "ok": "Tout ronronne (=^･ω･^=)",
+      "unknown": "Je renifle encore un peu partout",
+      "warning_one": "Un point mérite un coup d'œil (・_・;)",
+      "warning_many": "{{count}} points méritent un coup d'œil (・_・;)",
+      "warning_other": "{{count}} points méritent un coup d'œil (・_・;)",
+      "problem_one": "Quelque chose coince (╥﹏╥)",
+      "problem_many": "{{count}} choses coincent (╥﹏╥)",
+      "problem_other": "{{count}} choses coincent (╥﹏╥)"
+    },
+    "notChecked": "Je vérifie tout une fois, juste après le démarrage.",
+    "checking": "Je renifle …"
+  },
+  "secondFactor": {
+    "title": "Encore une toute petite étape (・ω・)"
+  },
+  "security": {
+    "twoFactor": {
+      "on": "Activée. Votre compte est maintenant fermé à double tour (=^･ω･^=)"
+    },
+    "recovery": {
+      "saved": "Bien rangé en lieu sûr ✓"
+    }
+  },
+  "setup": {
+    "welcome": {
+      "title": "Coucou ! Je suis Nyu (=^･ω･^=)",
+      "body": "Je vais vous aider à installer votre serveur de messagerie. D'abord votre compte admin et le domaine, puis le DNS, l'envoi et un message de test pour finir. On va y arriver !"
+    },
+    "sending": {
+      "running": "Je renifle autour du serveur, cela peut prendre jusqu'à une minute …"
+    },
+    "testMail": {
+      "arrived": "Il est arrivé ! Votre boîte mail ronronne ✉︎"
+    },
+    "done": {
+      "title": "Tout est prêt ! (=^･ω･^=)"
+    },
+    "reach": {
+      "body": "Nyu regarde comment les autres serveurs de messagerie voient votre serveur : adresse publique, Spamhaus, réseau et port 25. Ensuite, vous décidez si le courrier part directement ou via une UwUMail Gateway.",
+      "recommend": {
+        "gateway": "Nyu recommande une UwUMail Gateway : beaucoup de serveurs de messagerie n'accepteraient pas le courrier provenant de cette connexion."
+      }
+    },
+    "restore": {
+      "running": {
+        "body": "Nyu déballe l'instantané. Selon sa taille et la connexion, cela prend quelques minutes."
+      }
+    }
+  },
+  "updates": {
+    "intro": "Quelle version tourne, ce qui est nouveau, et le bouton pour l'installer. Nyu emballe d'abord tout bien (=^･ω･^=)"
+  },
+  "logs": {
+    "loki": {
+      "testOk": "La ligne de test est bien arrivée dans Loki (=^･ω･^=)"
+    }
+  }
+}

@@ -13,6 +13,8 @@ import { dayKey, formatBytes, formatDate, formatDateTime, formatTime } from "@/l
 const PAGE = 50;
 
 const KNOWN_ACTIONS = new Set([
+  "brandLogo",
+  "brandLogoRemoved",
   "accountCreate",
   "accountUpdate",
   "accountProtocols",

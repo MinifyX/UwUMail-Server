@@ -120,6 +120,17 @@
     },
     "done": {
       "title": "All done! (=^･ω･^=)"
+    },
+    "reach": {
+      "body": "Nyu looks at how other mail servers see your server: public address, Spamhaus, network and port 25. Then you decide whether mail goes directly or through a UwUMail Gateway.",
+      "recommend": {
+        "gateway": "Nyu recommends a UwUMail Gateway: many mail servers would not accept mail from this connection."
+      }
+    },
+    "restore": {
+      "running": {
+        "body": "Nyu is unpacking the snapshot. Depending on its size and the line this takes a few minutes."
+      }
     }
   },
   "updates": {

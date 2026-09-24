@@ -1,3 +1,5 @@
+import type { Brand } from "@/state/brand";
+
 /** The server's JSON API under /api. */
 
 export class ApiError extends Error {
@@ -21,7 +23,10 @@ export function setCsrfToken(token: string | null) {
 export async function api<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
   const method = options.method ?? "GET";
   const headers: Record<string, string> = { Accept: "application/json" };
-  if (options.body !== undefined) headers["Content-Type"] = "application/json";
+  // A file goes as it is, anything else as JSON.
+  const file = options.body instanceof Blob ? options.body : null;
+  if (file) headers["Content-Type"] = file.type || "application/octet-stream";
+  else if (options.body !== undefined) headers["Content-Type"] = "application/json";
   if (method !== "GET" && csrfToken) headers["X-CSRF-Token"] = csrfToken;
 
   let response: Response;
@@ -29,7 +34,7 @@ export async function api<T>(path: string, options: { method?: string; body?: un
     response = await fetch(path, {
       method,
       headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body: file ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
       credentials: "same-origin",
     });
   } catch {
@@ -49,13 +54,14 @@ export type Role = "admin" | "user" | "service";
 export interface Info {
   hostname: string;
   setupRequired: boolean;
+  brand: Brand;
 }
 
 export interface Session {
   account: { id: number; login: string; name: string; role: Role };
   csrfToken: string;
   preferences: Record<string, unknown>;
-  server: { hostname: string; version: string };
+  server: { hostname: string; version: string; brand: Brand };
   /** Whether this person has a mailbox in the browser under /mail. */
   webmail: boolean;
 }

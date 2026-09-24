@@ -2,12 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, needsSecondFactor, setCsrfToken, type Info, type LoginResult, type Session } from "@/lib/api";
 import { assertPasskey, type RequestOptionsJson } from "@/lib/webauthn";
 import { navigate } from "@/lib/router";
+import { useBrand } from "@/state/brand";
 import { usePrefs, type Prefs } from "@/state/prefs";
 import { afterLogin, isPortalPath } from "./afterLogin";
 
 function adopt(session: Session): Session {
   setCsrfToken(session.csrfToken);
   usePrefs.getState().apply(session.preferences);
+  useBrand.getState().apply(session.server.brand);
   return session;
 }
 
@@ -18,13 +20,19 @@ async function loadSession(): Promise<Session | null> {
   return null;
 }
 
+async function loadInfo(): Promise<Info> {
+  const info = await api<Info>("/api/info");
+  useBrand.getState().apply(info.brand);
+  return info;
+}
+
 /** The logged-in person, or `null` on the login page. */
 export function useSession() {
   return useQuery({ queryKey: ["session"], queryFn: loadSession, staleTime: 60_000 });
 }
 
 export function useInfo() {
-  return useQuery({ queryKey: ["info"], queryFn: () => api<Info>("/api/info"), staleTime: Infinity });
+  return useQuery({ queryKey: ["info"], queryFn: loadInfo, staleTime: Infinity });
 }
 
 /** Takes over a fresh session and leaves the login page. */

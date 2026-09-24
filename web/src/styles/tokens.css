@@ -17,6 +17,8 @@
   --uwu-pink-ink: #a3154f;
   --uwu-pink-tint: #ffe4ef;
   --uwu-pink-tint-strong: #ffd0e2;
+  /* The accent on the dark toasts of the light theme. */
+  --uwu-toast-accent: #ff7fac;
 
   --uwu-danger: #d92d44;
   --uwu-danger-tint: #fde4e7;

@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { useBrand } from "@/state/brand";
 import type { ReactNode } from "react";
 import { Nyu, NYU, Paw, Sticker } from "./Nyu";
 
@@ -348,7 +349,10 @@ export const SCENE_NAMES = Object.keys(SCENES) as SceneName[];
 
 /** A small illustration of Nyu for empty and error states. Decorative only. */
 export function NyuScene({ name, className }: { name: SceneName; className?: string }) {
+  const mascot = useBrand((s) => s.mascot);
   const Scene = SCENES[name];
+  // Switched off by the admin: the pages simply do without the picture.
+  if (!mascot) return null;
   return (
     <svg
       viewBox="-10 -10 340 230"

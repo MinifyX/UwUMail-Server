@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type LanguageSetting = "system" | "de" | "en";
+export type LanguageSetting = "system" | "de" | "en" | "fr" | "nl" | "ja" | "zh";
 export type Tone = "playful" | "neutral";
 export type ThemeSetting = "system" | "light" | "dark";
 export type MotionSetting = "system" | "on" | "off";
@@ -20,7 +20,7 @@ export const DEFAULT_PREFS: Prefs = {
 };
 
 const ALLOWED: { [K in keyof Prefs]: readonly Prefs[K][] } = {
-  language: ["system", "de", "en"],
+  language: ["system", "de", "en", "fr", "nl", "ja", "zh"],
   tone: ["playful", "neutral"],
   theme: ["system", "light", "dark"],
   motion: ["system", "on", "off"],

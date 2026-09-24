@@ -120,6 +120,17 @@
     },
     "done": {
       "title": "Geschafft! (=^･ω･^=)"
+    },
+    "reach": {
+      "body": "Nyu schaut, wie andere Mailserver deinen Server sehen: öffentliche Adresse, Spamhaus, Netzbetreiber und Port 25. Danach entscheidest du, ob Mails direkt oder über ein UwUMail Gateway laufen.",
+      "recommend": {
+        "gateway": "Nyu empfiehlt ein UwUMail Gateway: Von dieser Verbindung aus würden viele Mailserver deine Mails nicht annehmen."
+      }
+    },
+    "restore": {
+      "running": {
+        "body": "Nyu packt den Stand aus. Das kann je nach Größe und Leitung ein paar Minuten dauern."
+      }
     }
   },
   "updates": {
