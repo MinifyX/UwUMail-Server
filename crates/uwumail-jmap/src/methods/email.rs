@@ -19,7 +19,7 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let state = ctx.state().await?;
     let requested = get_ids(args)?.ok_or_else(|| MethodError::new("requestTooLarge", "ask for specific email ids"))?;
     let properties = properties(args, "properties", DEFAULT_PROPERTIES)?;
-    let body_properties = properties_or(args, "bodyProperties", DEFAULT_BODY_PROPERTIES)?;
+    let body_properties = super::properties(args, "bodyProperties", DEFAULT_BODY_PROPERTIES)?;
     let options = BodyValueOptions {
         text: args.get("fetchTextBodyValues").and_then(Value::as_bool).unwrap_or(false),
         html: args.get("fetchHTMLBodyValues").and_then(Value::as_bool).unwrap_or(false),
@@ -48,10 +48,6 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         ));
     }
     Ok(json!({ "accountId": ctx.account_id(), "state": state, "list": list, "notFound": not_found }))
-}
-
-fn properties_or(args: &Value, key: &str, defaults: &[&str]) -> MethodResult<Vec<String>> {
-    properties(args, key, defaults)
 }
 
 fn keyword(value: &Value, name: &str) -> MethodResult<String> {
@@ -513,7 +509,7 @@ pub async fn parse(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         .filter(|p| !matches!(*p, "id" | "threadId" | "mailboxIds" | "keywords" | "receivedAt"))
         .collect();
     let properties = properties(args, "properties", &defaults)?.into_iter().filter(|p| p != "id").collect::<Vec<_>>();
-    let body_properties = properties_or(args, "bodyProperties", DEFAULT_BODY_PROPERTIES)?;
+    let body_properties = super::properties(args, "bodyProperties", DEFAULT_BODY_PROPERTIES)?;
     let options = BodyValueOptions {
         text: args.get("fetchTextBodyValues").and_then(Value::as_bool).unwrap_or(false),
         html: args.get("fetchHTMLBodyValues").and_then(Value::as_bool).unwrap_or(false),
