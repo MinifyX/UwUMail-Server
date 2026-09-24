@@ -1,10 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { Download, ExternalLink, RefreshCw, RotateCw } from "lucide-react";
 import { NyuScene } from "@/components/nyu/scenes";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
 import { Card, CopyButton, PageHeader } from "@/components/ui/Card";
 import { Field, Segmented, Toggle } from "@/components/ui/Field";
+import { helperCan, helperOutdated, JobBox, jobBusy, updateCommand, useAskHost, useHost } from "@/features/admin/host";
 import { useT } from "@/i18n";
 import { api, type UpdateChannel, type UpdateSettings, type UpdatesView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -90,7 +92,57 @@ function News({ view }: { view: UpdatesView }) {
   );
 }
 
-/** What runs here, what is newer, and the commands that install it on the machine. */
+/**
+ * How the new version gets here: with the machine's helper a button, which runs update.sh there
+ * (backup, compose file, images, and back to the old version when the new one does not come up);
+ * without it, the command to run by hand.
+ */
+function Install({ view }: { view: UpdatesView }) {
+  const { t } = useT();
+  const host = useHost();
+  // Only an update asked for from this page reloads it; the new version brings a new portal.
+  const [asked, setAsked] = useState(false);
+  const { ask, dialog } = useAskHost((verb) => setAsked(verb === "uwumail-update"));
+  const machine = host.data?.machine;
+  const job = host.data?.job;
+  const busy = jobBusy(job?.state);
+
+  if (helperCan(machine, "uwumail-update")) {
+    return (
+      <div className="flex flex-col gap-3">
+        <p className="text-[13px] text-muted">{t("updates.byButton")}</p>
+        {asked && host.data && <JobBox view={host.data} />}
+        <div className="flex flex-wrap gap-2">
+          {asked && job?.state === "done" ? (
+            <Button variant="primary" icon={RotateCw} onClick={() => window.location.reload()}>
+              {t("updates.reload")}
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              icon={Download}
+              busy={ask.isPending || (asked && busy)}
+              disabled={busy}
+              onClick={() => ask.mutate("uwumail-update")}
+            >
+              {t("updates.installNow")}
+            </Button>
+          )}
+        </div>
+        {dialog}
+      </div>
+    );
+  }
+  const old = host.data?.available && helperOutdated(machine);
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-[13px] text-muted">{t(old ? "updates.helperOld" : "updates.onTheMachine")}</p>
+      <Command label={t("updates.serverCommand")} command={old ? updateCommand(machine) : view.serverCommand} />
+    </div>
+  );
+}
+
+/** What runs here, what is newer, and how it gets installed. */
 function VersionCard({ view }: { view: UpdatesView }) {
   const { t } = useT();
   const errorText = useErrorText();
@@ -120,8 +172,7 @@ function VersionCard({ view }: { view: UpdatesView }) {
 
         {available && (
           <div className="flex flex-col gap-3 border-t border-hairline pt-4">
-            <p className="text-[13px] text-muted">{t("updates.onTheMachine")}</p>
-            <Command label={t("updates.serverCommand")} command={view.serverCommand} />
+            <Install view={view} />
             {view.gatewayCommand && <Command label={t("updates.gatewayCommand")} command={view.gatewayCommand} />}
           </div>
         )}

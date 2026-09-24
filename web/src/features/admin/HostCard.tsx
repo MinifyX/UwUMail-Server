@@ -1,18 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, RotateCcw } from "lucide-react";
+import { Download, RefreshCw, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
+import { Card, CopyButton } from "@/components/ui/Card";
 import { useT } from "@/i18n";
-import { api, type HostView } from "@/lib/api";
-import { useErrorText } from "@/lib/errors";
 import { formatDateTime } from "@/lib/format";
-import { toast } from "@/state/toasts";
-
-type Verb = "os-update" | "reboot";
-
-/** While a job runs, ask often enough that its output moves. */
-const BUSY_MS = 2000;
+import { helperCan, helperOutdated, JobBox, jobBusy, updateCommand, useAskHost, useHost } from "./host";
 
 /**
  * The machine the server runs on: what it has waiting, and the buttons that install it.
@@ -22,30 +13,11 @@ const BUSY_MS = 2000;
  */
 export function HostCard() {
   const { t, i18n } = useT();
-  const errorText = useErrorText();
-  const queryClient = useQueryClient();
-  const { confirmed, dialog } = usePasswordConfirmation();
-
-  const query = useQuery({
-    queryKey: ["admin", "host"],
-    queryFn: () => api<HostView>("/api/admin/host"),
-    refetchInterval: (query) => (["running", "waiting"].includes(query.state.data?.job?.state ?? "") ? BUSY_MS : false),
-  });
-
-  const ask = useMutation({
-    mutationFn: (verb: Verb) =>
-      confirmed((password) => api<HostView>("/api/admin/host/jobs", { method: "POST", body: { verb, password } })),
-    onSuccess: (view) => {
-      queryClient.setQueryData(["admin", "host"], view);
-      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
-    },
-    onError: (error) => {
-      if (!(error instanceof Cancelled)) toast(errorText(error), "error");
-    },
-  });
+  const query = useHost();
+  const { ask, dialog } = useAskHost();
 
   if (query.isPending || query.isError || !query.data.available) return null;
-  const { machine, job, log } = query.data;
+  const { machine, job } = query.data;
   if (!machine) {
     return (
       <Card title={t("host.title")}>
@@ -58,7 +30,9 @@ export function HostCard() {
   // Never "yes" unless the helper said so. It answers null when it could not tell, and a warning
   // that sometimes stays quiet is worse than none at all.
   const alone = machine.alone === true;
-  const running = job?.state === "running";
+  const running = jobBusy(job?.state);
+  const outdated = helperOutdated(machine);
+  const selfUpdate = helperCan(machine, "helper-update");
   const nothingToDo = machine.updates === 0 && !machine.rebootRequired;
 
   return (
@@ -94,15 +68,20 @@ export function HostCard() {
         )}
         <p className="text-[12px] text-muted">{t("host.liability")}</p>
 
-        {job && (
-          <div className="rounded-control bg-canvas px-3 py-2">
-            <p className="text-[13px] font-semibold">
-              {t(`host.states.${job.state}`, { defaultValue: job.state })}
-              {job.error && <span className="ml-2 font-normal text-danger">{job.error}</span>}
-            </p>
-            {log && <pre className="mt-2 max-h-64 overflow-auto font-mono text-[12px] whitespace-pre-wrap">{log}</pre>}
-          </div>
-        )}
+        {outdated &&
+          (selfUpdate ? (
+            <p className="rounded-control bg-pink-tint px-3 py-2 text-[13px]">{t("host.helperNewer")}</p>
+          ) : (
+            <div className="flex flex-col gap-1.5 rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+              <p>{t("host.helperOld", { version: machine.helper ?? "1" })}</p>
+              <div className="flex items-start gap-2 rounded-control bg-surface px-3 py-1.5 text-ink">
+                <code className="min-w-0 flex-1 font-mono text-[12px] break-all">{updateCommand(machine)}</code>
+                <CopyButton value={updateCommand(machine)} />
+              </div>
+            </div>
+          ))}
+
+        <JobBox view={query.data} />
 
         <div className="flex flex-wrap gap-2">
           <Button
@@ -113,6 +92,11 @@ export function HostCard() {
           >
             {t("host.installUpdates")}
           </Button>
+          {outdated && selfUpdate && (
+            <Button icon={Download} disabled={running} onClick={() => ask.mutate("helper-update")}>
+              {t("host.updateHelper")}
+            </Button>
+          )}
           <Button icon={RotateCcw} variant="danger" disabled={running} onClick={() => ask.mutate("reboot")}>
             {t("host.restart")}
           </Button>

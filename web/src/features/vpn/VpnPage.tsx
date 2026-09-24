@@ -10,6 +10,7 @@ import {
   Power,
   Save,
   ScrollText,
+  Trash2,
   TriangleAlert,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -19,6 +20,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, CopyButton, PageHeader } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, Segmented, Select, TextInput } from "@/components/ui/Field";
+import { updateCommand } from "@/features/admin/host";
 import { ChoiceField, LockedHint, Section, ToggleField, type Form } from "@/features/settings/SettingsPage";
 import { useT } from "@/i18n";
 import {
@@ -248,6 +250,7 @@ function VpnCard({ view }: { view: VpnView }) {
   const [advanced, setAdvanced] = useState(Boolean(view.config.regions || view.config.hostnames));
   const [files, setFiles] = useState<VpnFiles | null>(null);
   const [showLog, setShowLog] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const confFile = useRef<HTMLInputElement>(null);
   const ovpnFile = useRef<HTMLInputElement>(null);
 
@@ -297,6 +300,16 @@ function VpnCard({ view }: { view: VpnView }) {
     onSuccess: (next) => {
       saved(next);
       toast(t(view.helper.canVpn ? "vpn.form.stopping" : "vpn.form.stoppedByHand"), "info");
+    },
+    onError: (error) => toast(errorText(error), "error"),
+  });
+  const remove = useMutation({
+    mutationFn: () => api<VpnView>("/api/admin/vpn/remove", { method: "POST" }),
+    onSuccess: (next) => {
+      setRemoving(false);
+      saved(next);
+      setShowLog(false);
+      toast(t(view.helper.canVpn ? "vpn.form.removed" : "vpn.form.removedByHand"), "success");
     },
     onError: (error) => toast(errorText(error), "error"),
   });
@@ -373,9 +386,13 @@ function VpnCard({ view }: { view: VpnView }) {
         {!view.helper.available ? (
           <p className="rounded-control bg-canvas px-3 py-2.5 text-[13px]">{t("vpn.helper.missing")}</p>
         ) : !view.helper.canVpn ? (
-          <p className="rounded-control bg-warning-tint px-3 py-2.5 text-[13px] text-warning">
-            {t("vpn.helper.old", { version: view.helper.version ?? "1" })}
-          </p>
+          <div className="flex flex-col gap-2 rounded-control bg-warning-tint px-3 py-2.5 text-[13px] text-warning">
+            <p>{t("vpn.helper.old", { version: view.helper.version ?? "1" })}</p>
+            <div className="flex items-start gap-2 rounded-control bg-surface px-3 py-1.5 text-ink">
+              <code className="min-w-0 flex-1 font-mono text-[12px] break-all">{updateCommand(null)}</code>
+              <CopyButton value={updateCommand(null)} />
+            </div>
+          </div>
         ) : null}
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -660,6 +677,11 @@ function VpnCard({ view }: { view: VpnView }) {
           <Button icon={Save} busy={save.isPending} disabled={!dirty} onClick={() => save.mutate()}>
             {t("common.save")}
           </Button>
+          {(view.saved || active) && (
+            <Button variant="ghost" icon={Trash2} disabled={running} onClick={() => setRemoving(true)}>
+              {t("vpn.form.remove")}
+            </Button>
+          )}
           {active && (
             <Button variant="danger" icon={Power} busy={stop.isPending} onClick={() => stop.mutate()}>
               {t("vpn.form.stop")}
@@ -693,6 +715,20 @@ function VpnCard({ view }: { view: VpnView }) {
           </pre>
         )}
       </div>
+
+      <Dialog open={removing} onClose={() => setRemoving(false)} title={t("vpn.remove.title")} width="sm">
+        <div className="flex flex-col gap-4 px-6 pt-2 pb-6 text-[13px]">
+          <p className="text-muted">{t("vpn.remove.body")}</p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button autoFocus onClick={() => setRemoving(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="danger" icon={Trash2} busy={remove.isPending} onClick={() => remove.mutate()}>
+              {t("vpn.remove.confirm")}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
 
       <Dialog open={files !== null} onClose={() => setFiles(null)} title={t("vpn.files.title")} width="lg">
         {files && (

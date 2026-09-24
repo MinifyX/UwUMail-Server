@@ -909,7 +909,10 @@
       "failed": "fehlgeschlagen",
       "rolledBack": "zurückgerollt",
       "waiting": "wartet"
-    }
+    },
+    "helperNewer": "Für den Helfer auf dieser Maschine gibt es eine neue Version. Ein Knopfdruck holt sie.",
+    "helperOld": "Der Helfer auf dieser Maschine (Version {{version}}) kann sich noch nicht selbst aktualisieren. Einmal noch auf der Maschine ausführen, danach geht alles hier im Portal:",
+    "updateHelper": "Helfer aktualisieren"
   },
   "queue": {
     "title": "Warteschlange",
@@ -1938,7 +1941,11 @@
       "title": "Version"
     },
     "onTheMachine": "Aktualisiert wird auf der Maschine, nicht von hier aus — das Skript bringt auch eine neue compose.yaml mit, was ein Container, der sich selbst ersetzt, nicht könnte.",
-    "checkTitle": "Nachsehen"
+    "checkTitle": "Nachsehen",
+    "byButton": "Der Knopf spielt die neue Version auf dieser Maschine ein: vorher ein Backup, dann neue compose.yaml und Images. Startet die neue Version nicht, läuft die alte weiter. Der Server ist dabei etwa eine Minute nicht erreichbar.",
+    "installNow": "Jetzt aktualisieren",
+    "reload": "Seite neu laden",
+    "helperOld": "Der Helfer auf dieser Maschine ist zu alt für den Update-Knopf. Einmal noch auf der Maschine ausführen – das bringt auch den Helfer auf den neuesten Stand, danach aktualisierst du hier per Knopf:"
   },
   "backups": {
     "title": "Backups",
@@ -2517,7 +2524,7 @@
     },
     "helper": {
       "missing": "Auf diesem Rechner läuft kein UwUMail-Helfer. Du kannst den VPN hier trotzdem einrichten: Das Portal zeigt dir dann die Datei .env.vpn und den Befehl, mit dem du ihn startest. Mit dem Helfer (deploy/host) startet das Portal ihn selbst.",
-      "old": "Der Helfer auf diesem Rechner (Version {{version}}) kennt den VPN noch nicht. Installier ihn neu (sudo bash install.sh im Ordner uwumail-host der neuesten Version), dann startet das Portal den VPN selbst. Bis dahin kannst du ihn von Hand starten."
+      "old": "Der Helfer auf diesem Rechner (Version {{version}}) kennt den VPN noch nicht. Einmal noch auf der Maschine ausführen – das bringt UwUMail und den Helfer auf den neuesten Stand. Danach geht alles hier im Portal, auch künftige Updates."
     },
     "form": {
       "title": "VPN",
@@ -2572,7 +2579,10 @@
       "proxyLocked": "Der Proxy ist in .env oder der Konfigurationsdatei festgelegt, das Portal ändert ihn deshalb nicht.",
       "confDetected": "{{provider}} erkannt ({{where}}). Schlüssel und Adresse sind übernommen, speichern nicht vergessen.",
       "confCustom": "Kein bekannter Anbieter: als eigener Server übernommen, samt Schlüssel und Adresse des Servers. Speichern nicht vergessen.",
-      "stoppedByHand": "Anfragen gehen wieder direkt raus. Den Container stoppst du ohne Helfer von Hand: sudo docker compose --profile vpn stop gluetun"
+      "stoppedByHand": "Anfragen gehen wieder direkt raus. Den Container stoppst du ohne Helfer von Hand: sudo docker compose --profile vpn stop gluetun",
+      "remove": "VPN entfernen",
+      "removed": "Der VPN ist entfernt: Container, Einstellungen und Schlüssel sind weg, Anfragen gehen direkt raus.",
+      "removedByHand": "Einstellungen und Schlüssel sind entfernt, Anfragen gehen direkt raus. Ohne Helfer bleibt der Container, bis du ihn auf der Maschine stoppst."
     },
     "keyHints": {
       "nordvpn": "Bei NordVPN im Konto unter NordVPN → Manuelle Einrichtung → WireGuard. Eine Adresse braucht NordVPN nicht.",
@@ -2613,6 +2623,11 @@
       "proxyCurrent": "Gerade: {{proxy}}. Eine neue Adresse ersetzt ihn.",
       "proxyRemoved": "Wird beim Speichern entfernt, dann geht alles direkt raus.",
       "direct": "Direkt"
+    },
+    "remove": {
+      "title": "VPN entfernen?",
+      "body": "Der VPN-Container wird gestoppt und gelöscht, dazu .env.vpn, die OpenVPN-Datei und die hier gespeicherten Schlüssel. Anfragen gehen danach direkt vom Server raus. Zum Wiederverbinden musst du den VPN neu einrichten.",
+      "confirm": "Entfernen"
     }
   }
 }

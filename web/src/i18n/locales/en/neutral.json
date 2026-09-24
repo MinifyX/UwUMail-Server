@@ -909,7 +909,10 @@
       "failed": "failed",
       "rolledBack": "rolled back",
       "waiting": "waiting"
-    }
+    },
+    "helperNewer": "There is a new version of the helper on this machine. One click fetches it.",
+    "helperOld": "The helper on this machine (version {{version}}) cannot update itself yet. Run this once on the machine; after that everything happens here in the portal:",
+    "updateHelper": "Update helper"
   },
   "queue": {
     "title": "Queue",
@@ -1938,7 +1941,11 @@
       "title": "Version"
     },
     "onTheMachine": "Updating happens on the machine, not from here — the script also brings a new compose.yaml along, which a container replacing itself never could.",
-    "checkTitle": "Looking for updates"
+    "checkTitle": "Looking for updates",
+    "byButton": "The button installs the new version on this machine: a backup first, then the new compose.yaml and images. If the new version does not start, the old one keeps running. The server is unreachable for about a minute meanwhile.",
+    "installNow": "Update now",
+    "reload": "Reload page",
+    "helperOld": "The helper on this machine is too old for the update button. Run this once on the machine -- it brings the helper up to date too, and from then on you update here with a click:"
   },
   "backups": {
     "title": "Backups",
@@ -2517,7 +2524,7 @@
     },
     "helper": {
       "missing": "No UwUMail helper runs on this machine. You can still set up the VPN here: the portal then shows you the .env.vpn file and the command that starts it. With the helper (deploy/host) the portal starts it by itself.",
-      "old": "The helper on this machine (version {{version}}) does not know the VPN yet. Install it again (sudo bash install.sh in the uwumail-host folder of the latest release) and the portal starts the VPN by itself. Until then you can start it by hand."
+      "old": "The helper on this machine (version {{version}}) does not know the VPN yet. Run this once on the machine -- it brings UwUMail and the helper up to date. After that everything happens here in the portal, future updates included."
     },
     "form": {
       "title": "VPN",
@@ -2572,7 +2579,10 @@
       "proxyLocked": "The proxy is set in .env or the config file, so the portal leaves it alone.",
       "confDetected": "{{provider}} recognised ({{where}}). Key and address are taken over; don't forget to save.",
       "confCustom": "No provider this knows: taken as an own server, with the server's key and address. Don't forget to save.",
-      "stoppedByHand": "Requests leave directly again. Without the helper, stop the container by hand: sudo docker compose --profile vpn stop gluetun"
+      "stoppedByHand": "Requests leave directly again. Without the helper, stop the container by hand: sudo docker compose --profile vpn stop gluetun",
+      "remove": "Remove VPN",
+      "removed": "The VPN is removed: container, settings and keys are gone, requests go out directly.",
+      "removedByHand": "Settings and keys are removed, requests go out directly. Without the helper the container stays until you stop it on the machine."
     },
     "keyHints": {
       "nordvpn": "At NordVPN in your account under NordVPN → Manual setup → WireGuard. NordVPN needs no address.",
@@ -2613,6 +2623,11 @@
       "proxyCurrent": "Right now: {{proxy}}. A new address replaces it.",
       "proxyRemoved": "Removed when you save; everything then leaves directly.",
       "direct": "Direct"
+    },
+    "remove": {
+      "title": "Remove the VPN?",
+      "body": "The VPN container is stopped and deleted, along with .env.vpn, the OpenVPN file and the keys stored here. Requests then leave the server directly. To connect again you set the VPN up anew.",
+      "confirm": "Remove"
     }
   }
 }

@@ -26,11 +26,14 @@ async fn store(web: &Web, config: &VpnConfig) -> ApiResult<()> {
     Ok(())
 }
 
-/// Whether the helper on the machine can start the VPN: it has to be there and new enough.
+/// Whether the helper on the machine can do `verb`: it has to be there and new enough.
+fn helper_does(web: &Web, verb: &str) -> bool {
+    web.host().and_then(|host| host.view().machine).is_some_and(|machine| machine.can(verb))
+}
+
+/// Whether the helper on the machine can start the VPN.
 fn helper_can(web: &Web) -> bool {
-    web.host()
-        .and_then(|host| host.view().machine)
-        .is_some_and(|machine| machine.verbs.iter().any(|verb| verb == "vpn-apply"))
+    helper_does(web, "vpn-apply")
 }
 
 async fn view(web: &Web) -> ApiResult<Value> {
@@ -49,6 +52,8 @@ async fn view(web: &Web) -> ApiResult<Value> {
         "helper": {
             "available": host.as_ref().is_some_and(|host| host.available),
             "canVpn": helper_can(web),
+            "canRemove": helper_does(web, "vpn-remove"),
+            "canUpdate": helper_does(web, "helper-update"),
             "version": machine.as_ref().map(|machine| machine.helper.clone()),
             "vpn": machine.and_then(|machine| machine.vpn),
         },
@@ -144,6 +149,25 @@ pub async fn stop(State(web): State<Web>, Admin(session): Admin) -> ApiResult<Js
         id = Some(host.ask("vpn-stop").await.map_err(|message| ApiError::Rule("hostJobRefused", message))?);
     }
     audit(&web, &session, "vpn.stop", "", json!({ "id": id })).await;
+    Ok(Json(view(&web).await?))
+}
+
+/// Takes the VPN out entirely: the settings stored here, keys included, and -- through the helper --
+/// the container, `.env.vpn` and the OpenVPN file. The way out goes straight again at once. A helper
+/// too old to remove things at least stops the container; one that is missing leaves it to the admin.
+pub async fn remove(State(web): State<Web>, Admin(session): Admin) -> ApiResult<Json<Value>> {
+    if web.egress().and_then(|egress| egress.status().proxy).as_deref() == Some(GLUETUN_PROXY) {
+        change_settings(&web, &session, proxy_change(Value::Null)).await?;
+    }
+    let verb = ["vpn-remove", "vpn-stop"].into_iter().find(|verb| helper_does(&web, verb));
+    let mut id = None;
+    if let (Some(verb), Some(host)) = (verb, web.host().cloned()) {
+        id = Some(host.ask(verb).await.map_err(|message| ApiError::Rule("hostJobRefused", message))?);
+    }
+    // Forgotten only once the helper took the job: a refused one leaves everything as it was.
+    let provider = load(&web).await?.provider;
+    web.store().delete_setting(VPN_KEY).await?;
+    audit(&web, &session, "vpn.remove", &provider, json!({ "id": id })).await;
     Ok(Json(view(&web).await?))
 }
 

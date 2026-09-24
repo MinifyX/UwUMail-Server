@@ -395,6 +395,14 @@ outside; that reply also proves that incoming mail reaches the server.
 | `edge` | every commit on `main` that passed CI |
 | `0.1.0` | exactly this version |
 
+With the machine's helper (the installer sets it up; see
+[install.md](install.md)) *Server → Updates* has a button for it: after the
+password, the helper fetches `update.sh` from the newest release, checks its
+`sha256` and runs it here, and the page follows its output while the server is
+replaced. From the button it asks nothing: it does not offer the virus scanner
+(that is under *Spam filter*) and goes on without a backup when no backup server
+is set up. Without the helper, or with one from before 0.9.3, it is the command:
+
 ```bash
 cd /opt/uwumail && sudo bash update.sh
 ```
@@ -405,8 +413,8 @@ A server set up before 0.4.0 fetches the script once first:
 Database migrations run automatically on start. Once a day the server asks
 GitHub what is newer on its channel (for `edge`: which commits came since) and
 shows it under *Server → Updates* with the changes. The check can be switched
-off there. Nothing installs itself: the update happens when somebody runs the
-script.
+off there. Nothing installs itself: the update happens when somebody presses
+the button or runs the script.
 
 What `update.sh` does, in order:
 
@@ -424,7 +432,10 @@ What `update.sh` does, in order:
 5. `docker compose pull` and `up -d`, then waits up to two minutes for the
    server's own health check.
 6. If it does not answer, `UWUMAIL_VERSION` goes back to the version that ran
-   before and the container is recreated from it.
+   before and the container is recreated from it, and the script ends with exit
+   code 3 (the portal shows that as *rolled back*).
+7. Where the machine's helper is installed, brings it to the newest release as
+   well.
 
 Two things worth knowing about that way back:
 

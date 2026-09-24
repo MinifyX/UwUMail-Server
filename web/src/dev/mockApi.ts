@@ -392,6 +392,57 @@ const detail = (domain: MockDomain): DomainDetail => ({
 
 const mockSendAs: Record<string, string[]> = {};
 
+// The machine's helper: a job runs for a few seconds, printing as it goes, then is done.
+let hostJob: { verb: string; asked: number } | null = null;
+const JOB_LINES: Record<string, string[]> = {
+  "uwumail-update": [
+    "== fetching the newest update.sh",
+    "  UwUMail Server, update",
+    "  running now: 0.1.0",
+    "  compose.yaml brought up to date",
+    "  backing up first",
+    "  fetching the images",
+    "  starting the new version",
+    "  waiting for the server.....",
+    "  the machine's helper is up to date",
+    "  UwUMail is on 0.1.1 now (=^･ω･^=)",
+  ],
+  "helper-update": ["== fetching the newest helper", "  installing the helper", "  installing the units"],
+};
+
+function hostView(): HostView {
+  const elapsed = hostJob ? (Date.now() - hostJob.asked) / 1000 : 0;
+  const lines = hostJob ? (JOB_LINES[hostJob.verb] ?? ["== " + hostJob.verb]) : [];
+  const shown = Math.min(lines.length, Math.floor(elapsed / 0.6));
+  const state = !hostJob ? null : elapsed < 1 ? "waiting" : shown < lines.length ? "running" : "done";
+  return {
+    available: true,
+    machine: {
+      kind: "debian",
+      name: "Ubuntu 24.04.1 LTS",
+      updates: 7,
+      securityUpdates: 3,
+      rebootRequired: true,
+      rebootPackages: ["linux-image-generic", "libssl3"],
+      // The mock shows the case worth showing: this machine is not UwUMail's alone.
+      alone: false,
+      others: ["caddy"],
+      image: "ghcr.io/minifyx/uwumail-server:latest",
+      digest: "sha256:0c1d2e",
+      composeDir: "/opt/uwumail",
+      checkedAt: now - 400,
+      helper: new URLSearchParams(window.location.search).get("helper") ?? "3",
+      verbs:
+        new URLSearchParams(window.location.search).get("helper") === "2"
+          ? ["os-update", "reboot", "vpn-apply", "vpn-stop"]
+          : ["os-update", "reboot", "uwumail-update", "helper-update", "vpn-apply", "vpn-stop", "vpn-remove"],
+    },
+    job: hostJob && state ? { id: "18c0ffee", state, error: "", at: Math.floor(hostJob.asked / 1000) } : null,
+    log: lines.slice(0, shown).join("\n"),
+    command: "",
+  };
+}
+
 const mockUpdates: UpdatesView = {
   build: { version: "0.1.0", commit: "3eedf6a1c0ffee", release: true },
   settings: { check: true, channel: "stable" },
@@ -2015,33 +2066,16 @@ const routes: [string, RegExp, Handler][] = [
       return [200, { proxied: true, address: "185.107.56.10", error: null } satisfies EgressTest];
     },
   ],
+  ["GET", /^\/api\/admin\/host$/, () => [200, hostView()]],
   [
-    "GET",
-    /^\/api\/admin\/host$/,
-    () => [
-      200,
-      {
-        available: true,
-        machine: {
-          kind: "debian",
-          name: "Ubuntu 24.04.1 LTS",
-          updates: 7,
-          securityUpdates: 3,
-          rebootRequired: true,
-          rebootPackages: ["linux-image-generic", "libssl3"],
-          // The mock shows the case worth showing: this machine is not UwUMail's alone.
-          alone: false,
-          others: ["caddy"],
-          image: "ghcr.io/minifyx/uwumail-server:latest",
-          digest: "sha256:0c1d2e",
-          composeDir: "/opt/uwumail",
-          checkedAt: now - 400,
-        },
-        job: null,
-        log: "",
-        command: "",
-      } satisfies HostView,
-    ],
+    "POST",
+    /^\/api\/admin\/host\/jobs$/,
+    (body) => {
+      const { verb } = body as { verb: string };
+      hostJob = { verb, asked: Date.now() };
+      log("host.job", verb);
+      return [200, hostView()];
+    },
   ],
   ["GET", /^\/api\/admin\/spam\/senders$/, () => [200, sendersView("admin")]],
   ["POST", /^\/api\/admin\/spam\/senders$/, (body) => addSender("admin", body)],
