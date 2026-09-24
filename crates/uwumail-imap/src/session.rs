@@ -32,6 +32,10 @@ const MAX_AUTH_FAILURES: u32 = 3;
 
 pub const CAPABILITIES_BEFORE_LOGIN: &str = "IMAP4rev1 SASL-IR LITERAL+ ID ENABLE IDLE AUTH=PLAIN";
 
+/// The text of the greeting. The UwUMail apps know a UwUMail server by it and then have their IMAP
+/// accounts' pictures fetched here (docs/jmap-remote.md), so it stays as it is.
+pub const GREETING: &str = "UwUMail IMAP ready";
+
 pub fn capabilities_after_login(max_append: usize) -> String {
     format!(
         "IMAP4rev1 LITERAL+ ID ENABLE IDLE NAMESPACE UIDPLUS MOVE UNSELECT CHILDREN SPECIAL-USE LIST-EXTENDED \
@@ -166,7 +170,7 @@ where
     }
 
     pub async fn run(mut self) -> io::Result<()> {
-        let greeting = format!("* OK [CAPABILITY {CAPABILITIES_BEFORE_LOGIN}] UwUMail IMAP ready\r\n");
+        let greeting = format!("* OK [CAPABILITY {CAPABILITIES_BEFORE_LOGIN}] {GREETING}\r\n");
         self.send(greeting.as_bytes()).await?;
         self.flush().await?;
         loop {

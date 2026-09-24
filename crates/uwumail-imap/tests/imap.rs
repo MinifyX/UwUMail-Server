@@ -66,6 +66,8 @@ impl Client {
         let mut client = Client { reader: BufReader::new(reader), writer, next_tag: 1 };
         let greeting = client.line().await;
         assert!(greeting.starts_with("* OK [CAPABILITY IMAP4rev1"), "{greeting}");
+        // The apps tell a UwUMail server by these words; changing them loses its accounts' pictures.
+        assert!(greeting.trim_end().ends_with("] UwUMail IMAP ready"), "{greeting}");
         client
     }
 
