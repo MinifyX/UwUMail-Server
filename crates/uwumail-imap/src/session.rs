@@ -429,7 +429,7 @@ where
         let peer = self.peer.to_string();
         match self.store.authenticate_mail(username, password, AppScope::Mail, "imap", &peer).await {
             Ok(MailAuth::Ok { account, app_password }) => {
-                self.imap.limiter.record_success(self.peer.ip());
+                self.imap.limiter.record_success(self.peer.ip(), username);
                 tracing::info!(login = %account.login, peer = %self.peer, app_password = app_password.is_some(), "imap login");
                 self.changes = Some(self.store.subscribe_changes());
                 self.account = Some(account);
@@ -442,7 +442,7 @@ where
                     // A phone still using the right account password should not lock out its network.
                     MailAuthDenied::AppPasswordRequired => {}
                     MailAuthDenied::UnknownLogin => self.imap.limiter.record_unknown_login(self.peer.ip()),
-                    _ => self.imap.limiter.record_failure(self.peer.ip()),
+                    _ => self.imap.limiter.record_failure(self.peer.ip(), username),
                 }
                 self.auth_failures += 1;
                 tracing::warn!(login = %username, peer = %self.peer, %reason, "failed imap login");

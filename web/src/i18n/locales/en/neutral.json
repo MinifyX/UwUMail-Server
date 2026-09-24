@@ -1421,6 +1421,7 @@
       "sessionsEnded_other": "Logged out {{count}} other browsers",
       "other": "Security change",
       "forwardingAdded": "Forwarding to {{address}} set up",
+      "secondFactorLocked": "Too many wrong codes after the right password: logging in paused for 15 minutes",
       "forwardingRemoved": "Forwarding to {{address}} removed",
       "forwardingConfirmed": "{{address}} confirmed the forwarding",
       "forwardingDeclined": "{{address}} declined the forwarding",

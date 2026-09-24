@@ -903,7 +903,7 @@ impl Session {
         let peer = self.peer.to_string();
         match ctx.store.authenticate_mail(login, password, AppScope::Smtp, "smtp", &peer).await {
             Ok(MailAuth::Ok { account, app_password }) => {
-                ctx.auth_limiter.record_success(self.peer);
+                ctx.auth_limiter.record_success(self.peer, login);
                 tracing::info!(login = %account.login, peer = %self.peer, app_password = app_password.is_some(), "smtp login");
                 self.account = Some(account);
                 self.reply("235 2.7.0 Authentication succeeded\r\n").await?;
@@ -914,7 +914,7 @@ impl Session {
                     // A phone still using the right account password should not lock out its network.
                     MailAuthDenied::AppPasswordRequired => {}
                     MailAuthDenied::UnknownLogin => ctx.auth_limiter.record_unknown_login(self.peer),
-                    _ => ctx.auth_limiter.record_failure(self.peer),
+                    _ => ctx.auth_limiter.record_failure(self.peer, login),
                 }
                 self.auth_failures += 1;
                 tracing::warn!(%login, peer = %self.peer, %reason, "failed smtp login");

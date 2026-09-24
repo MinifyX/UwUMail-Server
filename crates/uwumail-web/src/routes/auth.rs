@@ -79,14 +79,14 @@ pub async fn login(
     Json(request): Json<LoginRequest>,
 ) -> ApiResult<Response> {
     let client = client.map(|Extension(c)| c).unwrap_or_default();
-    if web.limiter().is_blocked(client.ip) {
+    if web.limiter().is_blocked(client.ip) || web.limiter().account_throttled(&request.login) {
         return Err(ApiError::TooManyAttempts);
     }
     // A service account has no password here at all, but the answer must not say which of the
     // two it was: the same refusal, and the same time spent, as a wrong password.
     let found = web.store().authenticate(request.login.trim(), &request.password).await?;
     let Some(account) = found.filter(Account::can_use_portal) else {
-        web.limiter().record_failure(client.ip);
+        web.limiter().record_failure(client.ip, &request.login);
         tracing::warn!(login = %request.login, ip = %client.ip, "failed web login");
         return Err(ApiError::InvalidCredentials);
     };
@@ -103,7 +103,7 @@ pub(crate) async fn begin_login(
     let security = web.store().security_overview(account.id).await?;
     if !security.second_factor {
         // Failed attempts only reset once the whole login succeeded, so codes cannot be guessed endlessly.
-        web.limiter().record_success(client.ip);
+        web.limiter().record_success(client.ip, &account.login);
         return complete_login(web, &account, client, headers, "password").await;
     }
     let token = web.login_state().start(account.id);
@@ -209,6 +209,9 @@ pub async fn passkey_login(
     let challenge = pending.challenge.clone().ok_or_else(expired)?;
     let account =
         web.store().account_by_id(pending.account_id).await?.filter(Account::can_use_portal).ok_or_else(expired)?;
+    if web.login_state().second_factor_locked(account.id) {
+        return Err(ApiError::TooManyAttempts);
+    }
 
     let checked = async {
         let credential_id = webauthn::decode(&request.credential.id)?;
@@ -235,16 +238,27 @@ pub async fn passkey_login(
     let (passkey, count) = match checked {
         Ok(ok) => ok,
         Err(detail) => {
-            web.limiter().record_failure(client.ip);
-            web.login_state().failed(&request.token);
+            second_factor_failed(&web, &account, client, &request.token).await;
             tracing::warn!(login = %account.login, ip = %client.ip, %detail, "passkey login refused");
             return Err(ApiError::Rule("passkeyInvalid", detail));
         }
     };
     web.login_state().finish(&request.token).ok_or_else(expired)?;
     web.store().touch_passkey(passkey.id, i64::from(count)).await?;
-    web.limiter().record_success(client.ip);
+    web.login_state().second_factor_passed(account.id);
+    web.limiter().record_success(client.ip, &account.login);
     complete_login(&web, &account, client, &headers, "passkey").await
+}
+
+/// A wrong second factor counts for the network, the pending login and the account. When it is the
+/// one that locks the account, its owner hears of it: whoever tries knows the password.
+async fn second_factor_failed(web: &Web, account: &Account, client: ClientInfo, token: &str) {
+    web.limiter().record_failure(client.ip, &account.login);
+    if web.login_state().failed(token) {
+        tracing::warn!(login = %account.login, ip = %client.ip, "too many wrong second factors, locked for a while");
+        let ip = client.ip.to_string();
+        notify(web, account, Notice::SecondFactorLocked, Origin { actor: "", ip: &ip }).await;
+    }
 }
 
 pub async fn second_factor(
@@ -261,15 +275,18 @@ pub async fn second_factor(
     let pending = web.login_state().get(&request.token).ok_or_else(expired)?;
     let account =
         web.store().account_by_id(pending.account_id).await?.filter(Account::can_use_portal).ok_or_else(expired)?;
+    if web.login_state().second_factor_locked(account.id) {
+        return Err(ApiError::TooManyAttempts);
+    }
     let check = web.store().check_second_factor_code(account.id, &request.code).await?;
     if check == CodeCheck::Invalid {
-        web.limiter().record_failure(client.ip);
-        web.login_state().failed(&request.token);
+        second_factor_failed(&web, &account, client, &request.token).await;
         tracing::warn!(login = %account.login, ip = %client.ip, "wrong second factor code");
         return Err(ApiError::Rule("codeInvalid", "the code is wrong or was used before".into()));
     }
     web.login_state().finish(&request.token).ok_or_else(expired)?;
-    web.limiter().record_success(client.ip);
+    web.login_state().second_factor_passed(account.id);
+    web.limiter().record_success(client.ip, &account.login);
     let method = match check {
         CodeCheck::RecoveryCode { left } => {
             let ip = client.ip.to_string();

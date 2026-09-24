@@ -1421,6 +1421,7 @@
       "sessionsEnded_other": "{{count}} andere Browser abgemeldet",
       "other": "Änderung an der Sicherheit",
       "forwardingAdded": "Weiterleitung an {{address}} eingerichtet",
+      "secondFactorLocked": "Zu oft ein falscher Code nach dem richtigen Passwort: Anmeldung für 15 Minuten gesperrt",
       "forwardingRemoved": "Weiterleitung an {{address}} entfernt",
       "forwardingConfirmed": "{{address}} hat die Weiterleitung bestätigt",
       "forwardingDeclined": "{{address}} hat die Weiterleitung abgelehnt",

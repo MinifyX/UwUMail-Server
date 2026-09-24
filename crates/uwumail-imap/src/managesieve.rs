@@ -520,7 +520,7 @@ impl Session {
         let peer = self.peer.to_string();
         match self.sieve.store.authenticate_mail(username, password, AppScope::Mail, "managesieve", &peer).await {
             Ok(MailAuth::Ok { account, app_password }) => {
-                limiter.record_success(self.peer.ip());
+                limiter.record_success(self.peer.ip(), username);
                 tracing::info!(login = %account.login, peer = %self.peer, app_password = app_password.is_some(), "managesieve login");
                 self.account = Some(account);
                 self.send(&ok("Logged in, hi")).await?;
@@ -530,7 +530,7 @@ impl Session {
                 match reason {
                     MailAuthDenied::AppPasswordRequired => {}
                     MailAuthDenied::UnknownLogin => limiter.record_unknown_login(self.peer.ip()),
-                    _ => limiter.record_failure(self.peer.ip()),
+                    _ => limiter.record_failure(self.peer.ip(), username),
                 }
                 self.auth_failures += 1;
                 tracing::warn!(login = %username, peer = %self.peer, %reason, "failed managesieve login");

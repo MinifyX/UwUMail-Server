@@ -8,6 +8,12 @@ use std::time::{Duration, Instant};
 /// A login waits this long for its second factor.
 const PENDING_LIFETIME: Duration = Duration::from_secs(5 * 60);
 const MAX_ATTEMPTS: u32 = 5;
+/// Wrong second factors for one account, over all its pending logins, before every further try is
+/// refused for [`SECOND_FACTOR_LOCK`]. A pending login only needs the right password, so without
+/// this a new one gave five more tries each time (security-audit-0.8.0 W-1).
+const MAX_ACCOUNT_ATTEMPTS: u32 = 10;
+/// How long an account's second factor stays locked after the last wrong one that counted.
+pub const SECOND_FACTOR_LOCK: Duration = Duration::from_secs(15 * 60);
 /// After confirming the password, sensitive changes need no new confirmation for this long.
 pub const CONFIRMATION_LIFETIME: Duration = Duration::from_secs(10 * 60);
 
@@ -26,6 +32,8 @@ pub struct LoginState {
     confirmed: Mutex<HashMap<String, Instant>>,
     /// Challenges for adding a passkey, by session id.
     registrations: Mutex<HashMap<String, (Vec<u8>, Instant)>>,
+    /// Wrong second factors per account, and when the last one was.
+    second_factor_failures: Mutex<HashMap<i64, (u32, Instant)>>,
 }
 
 pub fn random_bytes() -> [u8; 32] {
@@ -65,15 +73,40 @@ impl LoginState {
         }
     }
 
-    /// Counts a wrong second factor. After too many, the login has to start over.
-    pub fn failed(&self, token: &str) {
-        let mut pending = self.pending.lock().expect("pending logins poisoned");
-        if let Some(login) = pending.get_mut(token) {
+    /// Counts a wrong second factor. After too many, the login has to start over; after too many
+    /// for the account, whichever login they came from, its second factor is locked for a while.
+    /// Returns true for the one that locks it, so its owner can be told.
+    pub fn failed(&self, token: &str) -> bool {
+        let account_id = {
+            let mut pending = self.pending.lock().expect("pending logins poisoned");
+            let Some(login) = pending.get_mut(token) else { return false };
             login.attempts += 1;
+            let account_id = login.account_id;
             if login.attempts >= MAX_ATTEMPTS {
                 pending.remove(token);
             }
-        }
+            account_id
+        };
+        let mut failures = self.second_factor_failures.lock().expect("second factor failures poisoned");
+        failures.retain(|_, (_, last)| last.elapsed() < SECOND_FACTOR_LOCK);
+        let (count, last) = failures.entry(account_id).or_insert((0, Instant::now()));
+        *count += 1;
+        *last = Instant::now();
+        *count == MAX_ACCOUNT_ATTEMPTS
+    }
+
+    /// Whether the account's second factor is locked: no code, passkey or recovery code is even
+    /// looked at until the lock runs out. Another account's success does not lift it.
+    pub fn second_factor_locked(&self, account_id: i64) -> bool {
+        let failures = self.second_factor_failures.lock().expect("second factor failures poisoned");
+        failures
+            .get(&account_id)
+            .is_some_and(|(count, last)| *count >= MAX_ACCOUNT_ATTEMPTS && last.elapsed() < SECOND_FACTOR_LOCK)
+    }
+
+    /// The account's second factor was right: its own count starts over.
+    pub fn second_factor_passed(&self, account_id: i64) {
+        self.second_factor_failures.lock().expect("second factor failures poisoned").remove(&account_id);
     }
 
     pub fn finish(&self, token: &str) -> Option<PendingLogin> {
@@ -126,5 +159,27 @@ mod tests {
         let token = state.start(7);
         assert!(state.finish(&token).is_some());
         assert!(state.finish(&token).is_none(), "a login finishes once");
+    }
+
+    #[test]
+    fn a_new_pending_login_does_not_bring_new_tries() {
+        // security-audit-0.8.0 W-1: the password alone starts a pending login, so the tries for
+        // the second factor are counted per account as well.
+        let state = LoginState::default();
+        let mut locked = Vec::new();
+        for _ in 0..2 {
+            let token = state.start(7);
+            for _ in 0..MAX_ATTEMPTS {
+                assert!(!state.second_factor_locked(7));
+                locked.push(state.failed(&token));
+            }
+        }
+        assert!(state.second_factor_locked(7), "ten wrong codes over two logins lock the account");
+        assert_eq!(locked.iter().filter(|locked| **locked).count(), 1, "its owner is told once");
+        assert!(!state.second_factor_locked(8), "another account is not affected");
+        state.second_factor_passed(8);
+        assert!(state.second_factor_locked(7), "nor does another account's success lift it");
+        state.second_factor_passed(7);
+        assert!(!state.second_factor_locked(7));
     }
 }
