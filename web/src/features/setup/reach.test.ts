@@ -131,7 +131,7 @@ describe("gateway lines", () => {
             fromServer: 1,
           },
           job: null,
-          trusted: ["80.140.35.247"],
+          trusted: ["198.51.100.47"],
           checkedAt: 1_800_000_000,
         },
       }),

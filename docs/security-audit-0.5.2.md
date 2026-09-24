@@ -620,8 +620,8 @@ so they are not rediscovered as findings.
   send-as path does go through the gateway for public 465/587). *Fix:* document the exception, or add
   993 to the gateway ports and route the fetch through the connector.
 - **S-36 · Operator-specific addresses in committed tests and history** —
-  `crates/uwumail-smtp/src/fetch.rs:228`. The test list uses `192.168.70.20` (the operator's test-VM
-  address) as a "private" example and `217.154.145.139` as a "public" one — contradicting the
+  `crates/uwumail-smtp/src/fetch.rs:228`. The test list used the operator's test-VM LAN
+  address as a "private" example and a real server address as a "public" one — contradicting the
   repository's own rule that no real hosts/internal addresses are committed. A private LAN address
   discloses nothing reachable; **nothing to rotate** (no keys/tokens/passwords were found anywhere in
   history — checked with gitleaks over the full history; the production hostname committed on
