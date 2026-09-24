@@ -143,14 +143,6 @@ fn machine_view(status: uwumail_tunnel::proto::GatewayStatus) -> uwumail_web::ga
     }
 }
 
-/// An id that names a file on the other side, so letters and digits only. It does not have to be
-/// hard to guess -- only one of a kind, and only ever made here.
-fn job_id() -> String {
-    let nanos =
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |since| since.as_nanos() as u64);
-    format!("{nanos:016x}{:04x}", std::process::id() & 0xffff)
-}
-
 /// Servers in the own network, like fixed routes to a private address, are reached directly:
 /// that reveals nothing, and the gateway would not connect there anyway.
 fn through_gateway(address: SocketAddr) -> bool {
@@ -380,7 +372,7 @@ impl GatewayBackend for GatewayManager {
             if client.gateway_status().and_then(|status| status.job).is_some_and(|job| job.state == "running") {
                 return Err("something is already running on the gateway".into());
             }
-            let id = job_id();
+            let id = crate::host::job_id();
             // The ask goes down the same control stream as a ban, and like a ban it is never
             // waited for: what came of it arrives with the next status, which the gateway sends
             // every few seconds while something runs.
