@@ -54,7 +54,9 @@ something a family, a club or a small team can run without being a mail admin:
 - **Backups and updates built in.** Nightly deduplicated, encrypted backups to
   SFTP, and the portal tells you when a new version is out.
 - **Everything in one panel.** Accounts, domains, queue, logs, spam and
-  settings, in German or English and in a playful or a plain tone.
+  settings, in German, English, French, Dutch, Japanese or Chinese, in a playful
+  or a plain tone — and with [your own name, logo and colour](docs/branding.md)
+  instead of UwUMail's if you like.
 - **Private by default.** No telemetry. Your mail stays on your hardware.
 
 > **Status:** early, but I run my own mail on it. Set up backups, and remember

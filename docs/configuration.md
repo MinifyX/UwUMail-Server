@@ -37,8 +37,9 @@ Check a configuration with `uwumail-server check-config`.
 
 ## Settings in the admin panel
 
-Admins can change sending, receiving, mail-app and tone settings under
-*Einstellungen* / *Settings* in the web portal, and the spam filter under
+Admins can change sending, receiving, mail-app, tone and branding settings under
+*Einstellungen* / *Settings* in the web portal ([branding.md](branding.md) explains the logo,
+name, colour and languages), and the spam filter under
 *Spamfilter* / *Spam filter*. The server checks them and
 applies them at once, without a restart. They are stored in the database
 (`config.overlay`), so they survive updates.
@@ -353,9 +354,15 @@ updates = false        # the check for new versions takes it
 fetch = false          # fetching from mailboxes at other providers takes it
 
 [tone]
-language = "de"        # de | en
+language = "de"        # de | en | fr | nl | ja | zh
 internal = "playful"   # playful | neutral: mail to our own people
 external = "neutral"   # neutral | light: mail to everyone else
+
+# Name, colour and mascot instead of UwUMail's own, see docs/branding.md.
+# [brand]
+# name = "Post & Co"
+# color = "#0ea5e9"
+# mascot = true
 
 [log]
 format = "text"        # text | json

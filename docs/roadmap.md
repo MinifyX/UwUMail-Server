@@ -47,6 +47,8 @@ Each step ships as its own commits, container image and test deployment.
 
 - [x] Web portal: JSON API with session cookies and CSRF protection, React app embedded in the binary, one login for everyone
 - [x] Portal shell with Nyu, German and English, playful/neutral tone, light/dark theme, phone layout
+- [x] French, Dutch, Japanese and Simplified Chinese in the portal, the webmail and the mail the server writes
+- [x] Own branding: logo, name, accent colour (light and dark worked out from one colour), Nyu and the kaomoji switchable (docs/branding.md)
 - [x] My account overview (addresses, storage, settings for mail apps) and a first server overview for admins
 - [x] Accounts: invite with a one-time link, change role and storage limit, lock out (mail keeps arriving), 30-day trash, aliases
 - [x] Service accounts for programs: no portal login, app passwords an admin makes, a switch per protocol, and no mailbox at all when IMAP and JMAP are off (mail refused or handed to one address)
