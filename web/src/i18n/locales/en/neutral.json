@@ -907,7 +907,8 @@
       "running": "running ...",
       "done": "done",
       "failed": "failed",
-      "rolledBack": "rolled back"
+      "rolledBack": "rolled back",
+      "waiting": "waiting"
     }
   },
   "queue": {
@@ -2529,7 +2530,6 @@
       "kind": "Connection",
       "readConf": "Read a WireGuard file (.conf)",
       "readConfHint": "Takes the keys and addresses from your provider's file.",
-      "confRead": "The WireGuard file is read. Don't forget to save.",
       "confUnreadable": "The file has no PrivateKey.",
       "privateKey": "Private key",
       "privateKeyHint": "44 characters, ends with =. Your provider has it under manual setup, or in the WireGuard file.",
@@ -2569,7 +2569,10 @@
       "showFiles": "Show the files to set it up",
       "useGluetun": "Point the proxy at the VPN",
       "proxySet": "Requests now go through the VPN container.",
-      "proxyLocked": "The proxy is set in .env or the config file, so the portal leaves it alone."
+      "proxyLocked": "The proxy is set in .env or the config file, so the portal leaves it alone.",
+      "confDetected": "{{provider}} recognised ({{where}}). Key and address are taken over; don't forget to save.",
+      "confCustom": "No provider this knows: taken as an own server, with the server's key and address. Don't forget to save.",
+      "stoppedByHand": "Requests leave directly again. Without the helper, stop the container by hand: sudo docker compose --profile vpn stop gluetun"
     },
     "keyHints": {
       "nordvpn": "At NordVPN in your account under NordVPN → Manual setup → WireGuard. NordVPN needs no address.",
@@ -2582,7 +2585,7 @@
     },
     "job": {
       "running": "The helper is at work …",
-      "waiting": "Waiting for the helper to start.",
+      "waiting": "Waiting for the helper to start …",
       "done": "Last done {{when}}",
       "failed": "Did not work: {{error}}"
     },

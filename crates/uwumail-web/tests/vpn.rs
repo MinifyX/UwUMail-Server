@@ -221,3 +221,35 @@ async fn an_old_helper_or_an_incomplete_vpn_starts_nothing() {
     let (status, _) = call(&app, "PUT", "/api/admin/vpn", Some(json!({ "provider": "evilvpn" })), &auth).await;
     assert_eq!(status, StatusCode::CONFLICT);
 }
+
+#[tokio::test]
+async fn the_vpn_can_always_be_switched_off_and_a_named_server_is_looked_up() {
+    // A helper too old for the VPN: switching off still sends everything straight again.
+    let (app, host, _dir) = portal(&["os-update", "reboot"]).await;
+    let auth = login(&app).await;
+    let (status, view) = call(&app, "POST", "/api/admin/vpn/use-gluetun", None, &auth).await;
+    assert_eq!((status, view["proxy"]["current"].as_str()), (StatusCode::OK, Some("http://gluetun:8888")));
+    let (status, view) = call(&app, "POST", "/api/admin/vpn/stop", None, &auth).await;
+    assert_eq!(status, StatusCode::OK, "{view}");
+    assert_eq!(view["proxy"]["current"], Value::Null);
+    assert!(host.asked.lock().unwrap().is_empty(), "nothing asked of a helper that cannot do it");
+
+    // An own WireGuard server named in its file (Endpoint = name:port) is stored by address.
+    let custom = json!({
+        "provider": "custom",
+        "kind": "wireguard",
+        "wireguardPrivateKey": KEY,
+        "wireguardAddresses": "10.5.0.2/16",
+        "wireguardPublicKey": KEY,
+        "wireguardEndpointIp": "localhost",
+        "wireguardEndpointPort": 51820,
+    });
+    let (status, view) = call(&app, "PUT", "/api/admin/vpn", Some(custom), &auth).await;
+    assert_eq!(status, StatusCode::OK, "{view}");
+    let address = view["config"]["wireguardEndpointIp"].as_str().unwrap();
+    assert!(address.parse::<std::net::IpAddr>().unwrap().is_loopback(), "{address}");
+    assert_eq!(view["complete"], Value::Null);
+    let unknown = json!({ "provider": "custom", "kind": "wireguard", "wireguardEndpointIp": "vpn.invalid" });
+    let (status, body) = call(&app, "PUT", "/api/admin/vpn", Some(unknown), &auth).await;
+    assert_eq!((status, body["code"].as_str()), (StatusCode::CONFLICT, Some("vpnInvalid")), "{body}");
+}
