@@ -299,6 +299,12 @@ fn mailbox_full(answer: &str) -> bool {
     answer.split_whitespace().nth(1).is_some_and(|code| code.ends_with(".2.2"))
 }
 
+/// Whether a BDAT chunk of `size` bytes still fits behind the `buffered` ones. A chunk may announce
+/// any size up to `usize::MAX`, so the sum is checked, not assumed.
+fn chunk_fits(buffered: usize, size: usize, max_size: usize) -> bool {
+    buffered.checked_add(size).is_some_and(|total| total <= max_size)
+}
+
 /// Accepts connections until `shutdown` changes.
 pub async fn serve(smtp: Smtp, listener: TcpListener, kind: ListenerKind, mut shutdown: watch::Receiver<bool>) {
     loop {
@@ -467,6 +473,8 @@ enum State {
     Data(DataReceiver),
     DataDiscard(DummyDataReceiver),
     Bdat(BdatReceiver),
+    /// A chunk of a message that is already too big: read and thrown away. `true` for the last one.
+    BdatTooBig(DummyDataReceiver, bool),
     BdatDiscard(DummyDataReceiver),
     Auth(AuthStep, LineReceiver<()>),
 }
@@ -561,7 +569,18 @@ impl Session {
                                     self.message_too_big = false;
                                     state = State::Data(DataReceiver::new());
                                 }
-                                Next::Bdat { size, last } => state = State::Bdat(BdatReceiver::new(size, last)),
+                                Next::Bdat { size, last } => {
+                                    // Judged by the size the chunk announces, before any of it is read:
+                                    // the buffer never holds more than the limit, as with DATA
+                                    // (security-audit-0.8.0 T-1).
+                                    state = if !self.message_too_big && chunk_fits(self.message.len(), size, max_size) {
+                                        State::Bdat(BdatReceiver::new(size, last))
+                                    } else {
+                                        self.message = Vec::new();
+                                        self.message_too_big = true;
+                                        State::BdatTooBig(DummyDataReceiver::new_bdat(size), last)
+                                    };
+                                }
                                 Next::BdatDiscard(size) => {
                                     state = State::BdatDiscard(DummyDataReceiver::new_bdat(size))
                                 }
@@ -620,18 +639,25 @@ impl Session {
                         if receiver.ingest(&mut bytes, &mut self.message) {
                             let last = receiver.is_last;
                             state = State::Command(RequestReceiver::default());
-                            if self.message.len() > max_size {
-                                self.message = Vec::new();
-                                self.message_too_big = true;
-                            }
                             if !last {
                                 self.reply("250 2.0.0 Chunk received\r\n").await?;
-                            } else if self.message_too_big {
-                                self.reset_transaction();
-                                self.reply("552 5.3.4 Message too big\r\n").await?;
                             } else {
                                 let message = std::mem::take(&mut self.message);
                                 self.finish_message(message).await?;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    State::BdatTooBig(receiver, last) => {
+                        if receiver.ingest(&mut bytes) {
+                            let last = *last;
+                            state = State::Command(RequestReceiver::default());
+                            if !last {
+                                self.reply("250 2.0.0 Chunk received\r\n").await?;
+                            } else {
+                                self.reset_transaction();
+                                self.reply("552 5.3.4 Message too big\r\n").await?;
                             }
                         } else {
                             break;
@@ -664,7 +690,7 @@ impl Session {
                 }
                 // A BDAT chunk may be empty (`BDAT 0 LAST` ends many a message): it is complete
                 // without another byte, so it is taken now rather than after a read that never comes.
-                let chunk = matches!(state, State::Bdat(_) | State::BdatDiscard(_));
+                let chunk = matches!(state, State::Bdat(_) | State::BdatTooBig(..) | State::BdatDiscard(_));
                 if bytes.as_slice().is_empty() && !chunk {
                     break;
                 }
@@ -1781,7 +1807,17 @@ fn decode_utf8(value: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::mailbox_full;
+    use super::{chunk_fits, mailbox_full};
+
+    /// security-audit-0.8.0 T-1: a chunk is judged by the size it announces, before it is read.
+    #[test]
+    fn a_bdat_chunk_is_judged_before_it_is_read() {
+        assert!(chunk_fits(0, 1024, 1024), "exactly the limit");
+        assert!(chunk_fits(1000, 24, 1024));
+        assert!(!chunk_fits(1000, 25, 1024), "one byte past the limit");
+        assert!(!chunk_fits(0, usize::MAX - 1, 50 * 1024 * 1024), "a chunk announced as endless");
+        assert!(!chunk_fits(2, usize::MAX - 1, usize::MAX), "a sum that would overflow");
+    }
 
     /// A full mailbox must never read as a refusal for fetched mail: a refused message is cleared
     /// at the provider, and then a mailbox that ran out of room here would cost somebody their mail

@@ -341,6 +341,39 @@ async fn a_chunked_message_may_end_with_an_empty_chunk() {
     a.wait_for_inbox("mini@a.test", 1).await;
 }
 
+/// security-audit-0.8.0 T-1: a BDAT chunk is held to the size limit by the size it announces, before
+/// any of it is kept, as DATA is while it streams. Mail within the limit still arrives in chunks.
+#[tokio::test(flavor = "multi_thread")]
+async fn bdat_chunks_are_held_to_the_size_limit() {
+    let config = SmtpConfig { max_message_size: 4096, ..SmtpConfig::default() };
+    let a = start_with("a.test", &["mini"], &[], config).await;
+    let mut session = RawSession::connect(a.mx).await;
+    assert!(session.command("EHLO mail.sender.test").await.contains("CHUNKING"));
+
+    async fn envelope(session: &mut RawSession) {
+        assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+        assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
+    }
+    // One chunk far past the limit.
+    envelope(&mut session).await;
+    let reply = session.bdat(&vec![b'x'; 64 * 1024], true).await;
+    assert!(reply.starts_with("552 5.3.4"), "{reply}");
+    // Chunks that fit one by one but not together.
+    envelope(&mut session).await;
+    assert!(session.bdat(&vec![b'x'; 3000], false).await.starts_with("250"));
+    assert!(session.bdat(&vec![b'x'; 3000], false).await.starts_with("250"), "read and thrown away");
+    let reply = session.bdat(b"", true).await;
+    assert!(reply.starts_with("552 5.3.4"), "{reply}");
+
+    // The session goes on, and a message within the limit arrives in two chunks.
+    envelope(&mut session).await;
+    assert!(session.bdat(b"From: news@sender.test\r\nSubject: In Teilen\r\n\r\n", false).await.starts_with("250"));
+    let reply = session.bdat(b"Hallo\r\n", true).await;
+    assert!(reply.starts_with("250"), "{reply}");
+    let inbox = a.wait_for_inbox("mini@a.test", 1).await;
+    assert!(a.raw(&inbox[0]).await.ends_with("Hallo\r\n"));
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn sender_checks_behind_a_trusted_relay_use_the_original_client() {
     let config = SmtpConfig { trusted_relays: vec!["127.0.0.1".into()], ..SmtpConfig::default() };
