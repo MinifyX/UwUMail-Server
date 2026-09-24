@@ -314,6 +314,64 @@ impl RawSession {
         self.reader.get_mut().write_all(format!("{command}\r\n").as_bytes()).await.unwrap();
         self.read_reply().await
     }
+
+    /// One BDAT chunk (RFC 3030) with exactly `data`.
+    async fn bdat(&mut self, data: &[u8], last: bool) -> String {
+        let last = if last { " LAST" } else { "" };
+        let stream = self.reader.get_mut();
+        stream.write_all(format!("BDAT {}{last}\r\n", data.len()).as_bytes()).await.unwrap();
+        stream.write_all(data).await.unwrap();
+        self.read_reply().await
+    }
+}
+
+/// Many clients end a chunked message with an empty last chunk; it is answered at once, not after
+/// another packet that never comes.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_chunked_message_may_end_with_an_empty_chunk() {
+    let a = start("a.test", &["mini"], &[]).await;
+    let mut session = RawSession::connect(a.mx).await;
+    assert!(session.command("EHLO mail.sender.test").await.starts_with("250"));
+    assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+    assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
+    let message = b"From: news@sender.test\r\nSubject: In Teilen\r\n\r\nHallo\r\n";
+    assert!(session.bdat(message, false).await.starts_with("250"));
+    let reply = tokio::time::timeout(Duration::from_secs(10), session.bdat(b"", true)).await.expect("an answer");
+    assert!(reply.starts_with("250"), "{reply}");
+    a.wait_for_inbox("mini@a.test", 1).await;
+}
+
+/// security-audit-0.8.0 T-1: a BDAT chunk is held to the size limit by the size it announces, before
+/// any of it is kept, as DATA is while it streams. Mail within the limit still arrives in chunks.
+#[tokio::test(flavor = "multi_thread")]
+async fn bdat_chunks_are_held_to_the_size_limit() {
+    let config = SmtpConfig { max_message_size: 4096, ..SmtpConfig::default() };
+    let a = start_with("a.test", &["mini"], &[], config).await;
+    let mut session = RawSession::connect(a.mx).await;
+    assert!(session.command("EHLO mail.sender.test").await.contains("CHUNKING"));
+
+    async fn envelope(session: &mut RawSession) {
+        assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+        assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
+    }
+    // One chunk far past the limit.
+    envelope(&mut session).await;
+    let reply = session.bdat(&vec![b'x'; 64 * 1024], true).await;
+    assert!(reply.starts_with("552 5.3.4"), "{reply}");
+    // Chunks that fit one by one but not together.
+    envelope(&mut session).await;
+    assert!(session.bdat(&vec![b'x'; 3000], false).await.starts_with("250"));
+    assert!(session.bdat(&vec![b'x'; 3000], false).await.starts_with("250"), "read and thrown away");
+    let reply = session.bdat(b"", true).await;
+    assert!(reply.starts_with("552 5.3.4"), "{reply}");
+
+    // The session goes on, and a message within the limit arrives in two chunks.
+    envelope(&mut session).await;
+    assert!(session.bdat(b"From: news@sender.test\r\nSubject: In Teilen\r\n\r\n", false).await.starts_with("250"));
+    let reply = session.bdat(b"Hallo\r\n", true).await;
+    assert!(reply.starts_with("250"), "{reply}");
+    let inbox = a.wait_for_inbox("mini@a.test", 1).await;
+    assert!(a.raw(&inbox[0]).await.ends_with("Hallo\r\n"));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -619,6 +677,36 @@ async fn forged_mail_from_a_domain_that_rejects_it_is_refused() {
     let reply = forged_bank_mail(&a, "v=DMARC1; p=reject").await;
     assert!(reply.starts_with("550 5.7.1"), "neither SPF nor DKIM aligns, so DMARC fails: {reply}");
     assert!(a.inbox("mini@a.test").await.is_empty());
+}
+
+/// security-audit-0.8.0 T-2: DMARC does not judge a From whose addresses lie in several domains, so a
+/// sender whose own SPF passes could name a domain that rejects forgeries next to itself. Such a
+/// message is refused; several authors of one domain are fine.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_from_with_addresses_in_several_domains_is_refused() {
+    let a = start("a.test", &["mini"], &[]).await;
+    a.smtp.dns_cache().pin_txt("sender.test", "v=spf1 ip4:127.0.0.1 -all").unwrap();
+    a.smtp.dns_cache().pin_txt("bank.test", "v=spf1 ip4:198.51.100.1 -all").unwrap();
+    a.smtp.dns_cache().pin_txt("_dmarc.bank.test", "v=DMARC1; p=reject").unwrap();
+    for name in ["_dmarc.sender.test", "mail.sender.test"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+    let send = async |from: &str| {
+        let mut session = RawSession::connect(a.mx).await;
+        assert!(session.command("EHLO mail.sender.test").await.starts_with("250"));
+        assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+        assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
+        assert!(session.command("DATA").await.starts_with("354"));
+        session.command(&format!("From: {from}\r\nSender: news@sender.test\r\nSubject: Konto\r\n\r\nHallo\r\n.")).await
+    };
+
+    let reply = send("news@sender.test, Bank <security@bank.test>").await;
+    assert!(reply.starts_with("550 5.7.1"), "{reply}");
+    assert!(a.inbox("mini@a.test").await.is_empty());
+
+    let reply = send("news@sender.test, Leni <leni@SENDER.test>").await;
+    assert!(reply.starts_with("250"), "{reply}");
+    a.wait_for_inbox("mini@a.test", 1).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

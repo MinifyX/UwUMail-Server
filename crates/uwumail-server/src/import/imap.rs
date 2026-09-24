@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use anyhow::{Context as _, anyhow, bail};
 use rustls_pki_types::ServerName;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
 use uwumail_store::{ImportProgress, IngestRequest, MailboxRole, MailboxTarget, Store};
@@ -24,6 +24,13 @@ const TIMEOUT: Duration = Duration::from_secs(120);
 /// whole server, which then crash-loops on the same account (security-audit-0.5.2 S-25). It also
 /// bounds a fetched message body, since that arrives as a literal.
 const MAX_LITERAL: usize = 64 * 1024 * 1024;
+/// The longest response line this reads. A line grows until its newline comes, so without a limit a
+/// provider that never sends one fills the memory (security-audit-0.8.0 T-7). Real lines are short;
+/// the longest are `SEARCH` answers, a dozen bytes per message.
+const MAX_LINE: usize = 16 * 1024 * 1024;
+/// What one command's answers may add up to, lines and literals together: a full batch of the
+/// largest messages and room besides. Without it a provider could keep answering for ever.
+const MAX_ANSWER: usize = BATCH * MAX_LITERAL + 4 * MAX_LINE;
 
 /// Where to copy from and how to log in.
 pub struct Source {
@@ -137,39 +144,12 @@ impl Connection {
             .await
             .with_context(|| format!("TLS with {} (checked as {name})", source.address))?;
         let mut connection = Connection { stream: BufReader::new(tls), next_tag: 1 };
-        let greeting = connection.read_response().await?;
+        let mut budget = MAX_ANSWER;
+        let greeting = read_response(&mut connection.stream, &mut budget).await?;
         if !greeting.text.starts_with("* OK") {
             bail!("the server did not greet: {}", greeting.text);
         }
         Ok(connection)
-    }
-
-    async fn read_response(&mut self) -> anyhow::Result<Response> {
-        let mut response = Response::default();
-        loop {
-            let mut line = Vec::new();
-            let read = tokio::time::timeout(TIMEOUT, self.stream.read_until(b'\n', &mut line))
-                .await
-                .context("the server stopped answering")??;
-            if read == 0 {
-                bail!("the server closed the connection");
-            }
-            let literal = tokenize(&line, &mut response.tokens);
-            let shown = match literal {
-                Some(_) => &line[..line.iter().rposition(|b| *b == b'{').unwrap_or(line.len())],
-                None => &line[..],
-            };
-            response.text.push_str(String::from_utf8_lossy(shown).trim_end_matches(['\r', '\n']));
-            let Some(size) = literal else { return Ok(response) };
-            if size > MAX_LITERAL {
-                bail!("the server announced a {size}-byte literal, more than this reads at once");
-            }
-            let mut bytes = vec![0; size];
-            tokio::time::timeout(TIMEOUT, self.stream.read_exact(&mut bytes))
-                .await
-                .context("the server stopped sending")??;
-            response.tokens.push(Token::String(bytes));
-        }
     }
 
     /// Sends a command and returns its untagged responses once it completed.
@@ -178,8 +158,9 @@ impl Connection {
         self.next_tag += 1;
         self.stream.get_mut().write_all(format!("{tag} {command}\r\n").as_bytes()).await?;
         let mut untagged = Vec::new();
+        let mut budget = MAX_ANSWER;
         loop {
-            let response = self.read_response().await?;
+            let response = read_response(&mut self.stream, &mut budget).await?;
             if let Some(status) = response.text.strip_prefix(&format!("{tag} ")) {
                 if status.starts_with("OK") {
                     return Ok(untagged);
@@ -189,6 +170,43 @@ impl Connection {
             }
             untagged.push(response);
         }
+    }
+}
+
+/// Reads one response with its literals, taking what it reads off `budget`.
+async fn read_response<R: AsyncBufRead + Unpin>(stream: &mut R, budget: &mut usize) -> anyhow::Result<Response> {
+    let mut response = Response::default();
+    loop {
+        let mut line = Vec::new();
+        let limit = MAX_LINE.min(*budget) as u64 + 1;
+        let read = tokio::time::timeout(TIMEOUT, (&mut *stream).take(limit).read_until(b'\n', &mut line))
+            .await
+            .context("the server stopped answering")??;
+        if read == 0 {
+            bail!("the server closed the connection");
+        }
+        // One byte more than allowed was let through, so the limit shows.
+        if read as u64 == limit {
+            bail!("the server sent more than this reads for one answer");
+        }
+        *budget -= read;
+        let literal = tokenize(&line, &mut response.tokens);
+        let shown = match literal {
+            Some(_) => &line[..line.iter().rposition(|b| *b == b'{').unwrap_or(line.len())],
+            None => &line[..],
+        };
+        response.text.push_str(String::from_utf8_lossy(shown).trim_end_matches(['\r', '\n']));
+        let Some(size) = literal else { return Ok(response) };
+        if size > MAX_LITERAL {
+            bail!("the server announced a {size}-byte literal, more than this reads at once");
+        }
+        if size > *budget {
+            bail!("the server sent more than this reads for one answer");
+        }
+        *budget -= size;
+        let mut bytes = vec![0; size];
+        tokio::time::timeout(TIMEOUT, stream.read_exact(&mut bytes)).await.context("the server stopped sending")??;
+        response.tokens.push(Token::String(bytes));
     }
 }
 
@@ -501,6 +519,32 @@ mod tests {
         let mut tokens = Vec::new();
         let size = tokenize(b"* OK {9223372036854775807}\r\n", &mut tokens).expect("a literal size");
         assert!(size > MAX_LITERAL);
+    }
+
+    /// security-audit-0.8.0 T-7: a line without an end, or answers without an end, are cut off at
+    /// their limits instead of being kept in memory; ordinary answers read as before.
+    #[tokio::test]
+    async fn endless_answers_are_cut_off() {
+        let mut budget = MAX_ANSWER;
+        let mut answer = &b"* 1 FETCH (UID 7 BODY[] {5}\r\nhello)\r\n"[..];
+        let response = read_response(&mut answer, &mut budget).await.unwrap();
+        assert_eq!(response.text, "* 1 FETCH (UID 7 BODY[] )");
+        assert!(response.tokens.contains(&Token::String(b"hello".to_vec())));
+        assert_eq!(budget, MAX_ANSWER - 37);
+
+        let mut endless = b"* OK ".to_vec();
+        endless.resize(MAX_LINE + 10, b'x');
+        let error = read_response(&mut &endless[..], &mut { MAX_ANSWER }).await.unwrap_err();
+        assert!(error.to_string().contains("more than this reads"), "{error}");
+
+        let many = "* 1 EXISTS\r\n".repeat(10);
+        let mut stream = many.as_bytes();
+        let mut budget = 30;
+        assert!(read_response(&mut stream, &mut budget).await.is_ok());
+        assert!(read_response(&mut stream, &mut budget).await.is_ok());
+        assert!(read_response(&mut stream, &mut budget).await.is_err(), "the third passes what the answer may take");
+        let mut literal = &b"* 1 FETCH (BODY[] {100}\r\n"[..];
+        assert!(read_response(&mut literal, &mut 50).await.is_err(), "a literal past the budget is not read");
     }
 
     #[test]

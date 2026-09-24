@@ -11,7 +11,9 @@ use serde_json::{Map, Value, json};
 use uwumail_store::{ContactCardRecord, ContactCardWrite, DAV_RESOURCE_MAX_BYTES, DavCollection, StoreError};
 
 use super::address_book::{address_books, check_enabled};
-use super::{Ctx, SetResponse, check_set_size, get_ids, if_in_state, pick, query_response};
+use super::{
+    Ctx, SetResponse, check_filter_size, check_set_size, get_ids, if_in_state, pick, query_response, request_deadline,
+};
 use crate::error::{MethodError, MethodResult, SetError};
 use crate::jscal::{apply_patch, format_utc, matches_terms, now, overlapping_paths, parse_utc, pointer_tokens};
 use crate::jscontact;
@@ -31,19 +33,27 @@ struct Loaded {
     card: Map<String, Value>,
 }
 
-async fn load(ctx: &Ctx<'_>, ids: Option<Vec<i64>>) -> MethodResult<Vec<Loaded>> {
+const OUT_OF_TIME: &str = "this request has used up its time for contact cards; send the rest in a new request";
+
+async fn load(ctx: &Ctx<'_>, ids: Option<Vec<i64>>, deadline: Instant) -> MethodResult<Vec<Loaded>> {
     let all = ids.is_none();
     let records = ctx.jmap.store.contact_cards(ctx.account.id, ids).await?;
     if all && records.len() > MAX_OBJECTS_IN_GET {
         return Err(MethodError::new("requestTooLarge", "too many cards to fetch at once; ask for ids"));
     }
     run_blocking(move || {
-        records
-            .into_iter()
-            .filter_map(|record| Some(Loaded { card: jscontact::from_vcard(&record.content)?, record }))
-            .collect()
+        let mut loaded = Vec::with_capacity(records.len());
+        for record in records {
+            if Instant::now() > deadline {
+                return Err(MethodError::new("serverUnavailable", OUT_OF_TIME));
+            }
+            if let Some(card) = jscontact::from_vcard(&record.content) {
+                loaded.push(Loaded { card, record });
+            }
+        }
+        Ok(loaded)
     })
-    .await
+    .await?
 }
 
 async fn run_blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> MethodResult<T> {
@@ -72,6 +82,12 @@ fn output(mut card: Map<String, Value>, properties: &Option<Vec<String>>) -> Val
 
 pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     check_enabled(ctx)?;
+    // Reading cards is converting vCards: bounded per request, like calendar events
+    // (security-audit-0.8.0 C-1).
+    let deadline = request_deadline(ctx);
+    if Instant::now() > deadline {
+        return Err(MethodError::new("serverUnavailable", OUT_OF_TIME));
+    }
     let state = ctx.state().await?;
     let properties = match args.get("properties") {
         None | Some(Value::Null) => None,
@@ -86,11 +102,14 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         }
     };
     let (loaded, requested) = match get_ids(args)? {
-        None => (load(ctx, None).await?, None),
+        None => (load(ctx, None, deadline).await?, None),
         Some(requested) => {
             let wanted: BTreeSet<i64> = requested.iter().filter_map(|id| ctx.parse_id('k', id)).collect();
-            let loaded =
-                if wanted.is_empty() { Vec::new() } else { load(ctx, Some(wanted.into_iter().collect())).await? };
+            let loaded = if wanted.is_empty() {
+                Vec::new()
+            } else {
+                load(ctx, Some(wanted.into_iter().collect()), deadline).await?
+            };
             (loaded, Some(requested))
         }
     };
@@ -167,10 +186,18 @@ fn convert(card: &Map<String, Value>) -> Result<String, SetError> {
 /// Everything a write needs from around it.
 struct Writer<'a> {
     books: Vec<DavCollection>,
+    deadline: Instant,
     ctx: &'a Ctx<'a>,
 }
 
 impl Writer<'_> {
+    fn in_time(&self) -> Result<(), SetError> {
+        if Instant::now() > self.deadline {
+            return Err(SetError::new("rateLimit", OUT_OF_TIME));
+        }
+        Ok(())
+    }
+
     /// Checks a card, turns it into a vCard and stores it.
     async fn store(
         &self,
@@ -308,7 +335,7 @@ impl Writer<'_> {
     }
 
     async fn load_one(&self, id: i64) -> Result<Loaded, SetError> {
-        let mut loaded = load(self.ctx, Some(vec![id]))
+        let mut loaded = load(self.ctx, Some(vec![id]), self.deadline)
             .await
             .map_err(|_| SetError::new("serverFail", "the card could not be read"))?;
         loaded.pop().ok_or_else(SetError::not_found)
@@ -321,13 +348,20 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let books = address_books(ctx).await?;
     let old_state = ctx.state().await?;
     if_in_state(args, &old_state)?;
+    // Every card written is converted to vCard and back: bounded per request, like calendar events
+    // (security-audit-0.8.0 C-1).
+    let deadline = request_deadline(ctx);
     let mut response = SetResponse::default();
     let mut created_ids: Vec<(String, String)> = Vec::new();
 
     {
-        let writer = Writer { books, ctx };
+        let writer = Writer { books, deadline, ctx };
         for (creation_id, object) in args.get("create").and_then(Value::as_object).into_iter().flatten() {
-            match writer.create(object).await {
+            let created = match writer.in_time() {
+                Ok(()) => writer.create(object).await,
+                Err(err) => Err(err),
+            };
+            match created {
                 Ok((id, server_set)) => {
                     created_ids.push((creation_id.clone(), ids::contact_card(id)));
                     response.created.insert(creation_id.clone(), Value::Object(server_set));
@@ -341,10 +375,11 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
     // Later updates in the same call may name the new cards by their creation ids.
     ctx.created_ids.extend(created_ids);
     let books = address_books(ctx).await?;
-    let writer = Writer { books, ctx };
+    let writer = Writer { books, deadline, ctx };
 
     for (id, patch) in args.get("update").and_then(Value::as_object).into_iter().flatten() {
         let result = async {
+            writer.in_time()?;
             let patch =
                 patch.as_object().ok_or_else(|| SetError::new("invalidPatch", "the patch must be an object"))?;
             let card_id = ctx.parse_id('k', id).ok_or_else(SetError::not_found)?;
@@ -524,13 +559,19 @@ fn sort_key(card: &Map<String, Value>, property: &str) -> String {
 pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     check_enabled(ctx)?;
     let state = ctx.state().await?;
+    check_filter_size(args.get("filter"))?;
     let filter = match args.get("filter") {
         None | Some(Value::Null) => None,
         Some(value) => Some(parse_filter(ctx, value)?),
     };
     let mut sort: Vec<(String, bool)> = Vec::new();
     if let Some(list) = args.get("sort").filter(|s| !s.is_null()) {
-        for comparator in list.as_array().ok_or_else(|| MethodError::invalid_arguments("sort must be a list"))? {
+        let list = list.as_array().ok_or_else(|| MethodError::invalid_arguments("sort must be a list"))?;
+        // Each comparator makes a key for every hit (security-audit-0.8.0 C-2).
+        if list.len() > SORTS.len() {
+            return Err(MethodError::new("unsupportedSort", format!("sort by at most {} properties", SORTS.len())));
+        }
+        for comparator in list {
             let property = comparator.get("property").and_then(Value::as_str).unwrap_or_default();
             if !SORTS.contains(&property) {
                 return Err(MethodError::new("unsupportedSort", format!("cannot sort by {property}")));
@@ -539,7 +580,8 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         }
     }
     let records = ctx.jmap.store.contact_cards(ctx.account.id, None).await?;
-    let deadline = Instant::now() + QUERY_TIME_LIMIT;
+    // A query's own limit, within what is left of the request's (security-audit-0.8.0 C-1).
+    let deadline = (Instant::now() + QUERY_TIME_LIMIT).min(request_deadline(ctx));
     let mut hits = run_blocking(move || -> MethodResult<Vec<(i64, Vec<String>)>> {
         let mut hits = Vec::new();
         for record in records {

@@ -27,7 +27,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use serde::Serialize;
-use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader};
 use tokio::net::TcpStream;
 
 use crate::dnscheck::DnsChecker;
@@ -39,6 +39,10 @@ const MAX_CONFIG_BYTES: usize = 64 * 1024;
 /// A provider that has not greeted us by then is not worth waiting for while somebody watches a
 /// spinner.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
+/// The longest line read from an IMAP server while trying it. Greetings and LOGIN answers are short.
+const MAX_IMAP_LINE: usize = 8 * 1024;
+/// Lines an IMAP server may send in answer to LOGIN before its tagged status.
+const MAX_IMAP_LINES: usize = 64;
 /// The usual ports, for guessing and for what a source leaves out.
 const IMAP_TLS_PORT: u16 = 993;
 const SUBMISSION_PORT: u16 = 587;
@@ -348,12 +352,44 @@ async fn imap_stream(
     let tls = tokio_rustls::TlsConnector::from(ctx.client_tls.verified.clone());
     let stream = tls.connect(name, tcp).await.map_err(|err| err.to_string())?;
     let mut reader = BufReader::new(stream);
-    let mut greeting = String::new();
-    reader.read_line(&mut greeting).await.map_err(|err| err.to_string())?;
+    let greeting = imap_line(&mut reader, host).await?.unwrap_or_default();
     if !greeting.starts_with("* OK") {
         return Err(format!("{host} did not greet us as an IMAP server"));
     }
     Ok(reader)
+}
+
+/// One line from an IMAP server, `None` once it closed the connection. The server is one the
+/// address's domain named, so whoever owns the domain decides what it sends: a line is read up to
+/// [`MAX_IMAP_LINE`] and no further, instead of until a newline that may never come
+/// (security-audit-0.8.0 W-3).
+async fn imap_line<R: AsyncBufRead + Unpin>(reader: &mut R, host: &str) -> Result<Option<String>, String> {
+    let mut line = Vec::new();
+    let read = (&mut *reader)
+        .take(MAX_IMAP_LINE as u64 + 1)
+        .read_until(b'\n', &mut line)
+        .await
+        .map_err(|err| err.to_string())?;
+    if read == 0 {
+        return Ok(None);
+    }
+    if read > MAX_IMAP_LINE {
+        return Err(format!("{host} sent a line longer than an IMAP server would"));
+    }
+    Ok(Some(String::from_utf8_lossy(&line).into_owned()))
+}
+
+/// Reads the answers to `a1 LOGIN` up to its tagged one: whether it said OK.
+async fn login_answer<R: AsyncBufRead + Unpin>(reader: &mut R, host: &str) -> Result<bool, String> {
+    for _ in 0..MAX_IMAP_LINES {
+        let Some(line) = imap_line(reader, host).await? else {
+            return Err(format!("{host} broke the connection off during the login"));
+        };
+        if let Some(rest) = line.strip_prefix("a1 ") {
+            return Ok(rest.starts_with("OK"));
+        }
+    }
+    Err(format!("{host} kept talking instead of answering the login"))
 }
 
 /// An IMAP string, with the two characters that need it escaped.
@@ -366,18 +402,9 @@ async fn imap_login(ctx: &Context, host: &str, port: u16, user: &str, password: 
     let mut stream = imap_stream(ctx, host, port).await?;
     let command = format!("a1 LOGIN {} {}\r\n", quoted(user), quoted(password));
     stream.get_mut().write_all(command.as_bytes()).await.map_err(|err| err.to_string())?;
-    let mut line = String::new();
-    loop {
-        line.clear();
-        let read = stream.read_line(&mut line).await.map_err(|err| err.to_string())?;
-        if read == 0 {
-            return Err(format!("{host} broke the connection off during the login"));
-        }
-        if let Some(rest) = line.strip_prefix("a1 ") {
-            let _ = stream.get_mut().write_all(b"a2 LOGOUT\r\n").await;
-            return Ok(rest.starts_with("OK"));
-        }
-    }
+    let accepted = login_answer(&mut stream, host).await?;
+    let _ = stream.get_mut().write_all(b"a2 LOGOUT\r\n").await;
+    Ok(accepted)
 }
 
 /// Logs in to the provider's outgoing server exactly the way the queue will later: the same
@@ -497,6 +524,25 @@ pub async fn discover(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// security-audit-0.8.0 W-3: a server that sends a line without an end, or keeps talking instead
+    /// of answering the login, is given up on at a limit; a real answer reads as before.
+    #[tokio::test]
+    async fn an_endless_imap_answer_is_given_up_on() {
+        let mut answer = &b"* CAPABILITY IMAP4rev1\r\na1 OK LOGIN completed\r\n"[..];
+        assert_eq!(login_answer(&mut answer, "imap.example.com").await, Ok(true));
+        let mut answer = &b"a1 NO [AUTHENTICATIONFAILED] wrong\r\n"[..];
+        assert_eq!(login_answer(&mut answer, "imap.example.com").await, Ok(false));
+
+        let mut endless = b"* OK ".to_vec();
+        endless.resize(1024 * 1024, b'x');
+        let error = imap_line(&mut &endless[..], "imap.example.com").await.unwrap_err();
+        assert!(error.contains("longer"), "{error}");
+
+        let chatter = "* OK still here\r\n".repeat(MAX_IMAP_LINES + 1) + "a1 OK\r\n";
+        let error = login_answer(&mut chatter.as_bytes(), "imap.example.com").await.unwrap_err();
+        assert!(error.contains("kept talking"), "{error}");
+    }
 
     const ICLOUD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
         <clientConfig version="1.1">
