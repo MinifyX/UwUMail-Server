@@ -379,7 +379,21 @@ impl SenderPictures {
     pub async fn get(&self, email: &str) -> Option<SenderPicture> {
         let domain = picture_domain(email)?;
         let lock = self.locks.lock().unwrap_or_else(|e| e.into_inner()).entry(domain.clone()).or_default().clone();
-        let _guard = lock.lock().await;
+        let picture = {
+            let _guard = lock.lock().await;
+            self.get_locked(domain.clone()).await
+        };
+        // Whoever still waits for the domain holds the lock itself; the map only has to find it for
+        // those who come later. Left behind on every answer from the cache, one entry per domain ever
+        // asked for piled up for as long as the server ran (security-audit-0.8.0 P-1).
+        let mut locks = self.locks.lock().unwrap_or_else(|e| e.into_inner());
+        if locks.get(&domain).is_some_and(|kept| Arc::ptr_eq(kept, &lock) && Arc::strong_count(&lock) == 2) {
+            locks.remove(&domain);
+        }
+        picture
+    }
+
+    async fn get_locked(&self, domain: String) -> Option<SenderPicture> {
         let stale = {
             let cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
             match cache.entries.get(&domain) {
@@ -398,15 +412,17 @@ impl SenderPictures {
         };
         let picture = match lookup {
             Lookup::Unreachable => {
-                self.unreachable.lock().unwrap_or_else(|e| e.into_inner()).insert(domain, Instant::now());
+                let mut unreachable = self.unreachable.lock().unwrap_or_else(|e| e.into_inner());
+                // Only the recent ones matter; the rest would pile up like the locks did (P-1).
+                unreachable.retain(|_, at| at.elapsed() < RETRY_UNREACHABLE_AFTER);
+                unreachable.insert(domain, Instant::now());
                 return stale;
             }
             Lookup::Nothing => None,
             Lookup::Found(picture) => Some(picture),
         };
         self.unreachable.lock().unwrap_or_else(|e| e.into_inner()).remove(&domain);
-        self.cache.lock().unwrap_or_else(|e| e.into_inner()).insert(domain.clone(), picture.clone());
-        self.locks.lock().unwrap_or_else(|e| e.into_inner()).remove(&domain);
+        self.cache.lock().unwrap_or_else(|e| e.into_inner()).insert(domain, picture.clone());
         picture
     }
 
@@ -623,5 +639,25 @@ mod tests {
         assert!(pictures.get("other@shop.de").await.is_some());
         assert_eq!(seen.lock().unwrap().len(), asked, "the second address of the same company asks nobody");
         assert!(pictures.get("friend@gmail.com").await.is_none());
+        assert!(pictures.locks.lock().unwrap().is_empty(), "no lock is left behind, not even by the cache");
+    }
+
+    /// security-audit-0.8.0 P-1: domains nothing answered for are remembered for as long as they
+    /// matter, not for good.
+    #[tokio::test]
+    async fn unreachable_domains_are_forgotten_in_time() {
+        let closed = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = closed.local_addr().unwrap();
+        drop(closed);
+        let certificate = rcgen::generate_simple_self_signed(vec!["shop.de".into()]).unwrap().cert.der().clone();
+        let pictures = SenderPictures::with_resolver(Egress::pinned_trusting(address, certificate), None);
+        let long_ago = Instant::now().checked_sub(RETRY_UNREACHABLE_AFTER * 2).unwrap();
+        pictures.unreachable.lock().unwrap().insert("old.example".into(), long_ago);
+
+        assert!(pictures.get("news@shop.de").await.is_none());
+        let unreachable = pictures.unreachable.lock().unwrap();
+        assert!(unreachable.contains_key("shop.de"));
+        assert!(!unreachable.contains_key("old.example"));
+        assert!(pictures.locks.lock().unwrap().is_empty());
     }
 }

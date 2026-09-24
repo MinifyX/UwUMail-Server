@@ -45,6 +45,18 @@ pub struct Verdict {
 
 /// A verdict that refuses the message outright, before any SPF/DKIM/DMARC result. Used for a header
 /// block that cannot be judged safely (more than one From, or a block a malformed line cut short).
+/// How many different domains the From addresses are in, compared as DMARC compares them.
+fn from_domains(addresses: &[String]) -> usize {
+    let mut domains: Vec<String> = addresses
+        .iter()
+        .filter_map(|address| address.rsplit_once('@'))
+        .map(|(_, domain)| domain.to_ascii_lowercase())
+        .collect();
+    domains.sort_unstable();
+    domains.dedup();
+    domains.len()
+}
+
 fn rejecting(hostname: &str, reason: &str) -> Verdict {
     Verdict {
         header: format!("Authentication-Results: {hostname}; none\r\n"),
@@ -82,6 +94,13 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
             from_verified: false,
         };
     };
+
+    // One From may name several mailboxes. DMARC exempts a From whose addresses lie in more than one
+    // domain (RFC 7489 section 6.6.1), so a policy domain written next to one's own would never be
+    // judged; such a message is refused like one with two From headers (security-audit-0.8.0 T-2).
+    if from_domains(&message.from) > 1 {
+        return rejecting(hostname, "a message may have From addresses in only one domain");
+    }
 
     let auth = &ctx.authenticator;
     let dkim = auth.verify_dkim(ctx.dns.params(&message)).await;

@@ -299,6 +299,33 @@ fn mailbox_full(answer: &str) -> bool {
     answer.split_whitespace().nth(1).is_some_and(|code| code.ends_with(".2.2"))
 }
 
+/// The client's HELO as this server writes it into its own Received header: a host name or an
+/// address literal, otherwise `unknown`. The HELO stands right before the `([address])` comment, and a
+/// server downstream that trusts this one reads the client's address from the first bracket inside
+/// the first parenthesis; a HELO with its own `([…])` would have chosen that address
+/// (security-audit-0.8.0 T-3, the writing half of 0.5.2 S-5).
+fn trace_helo(helo: &str) -> &str {
+    let inner = helo.strip_prefix('[').and_then(|rest| rest.strip_suffix(']')).unwrap_or(helo);
+    let plain = !inner.is_empty()
+        && inner.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b':'));
+    if plain { helo } else { "unknown" }
+}
+
+/// The `from` clause of this server's Received header. Without `peer` the client stays private: the
+/// name a mail app announces often is the device name or a local IP, so it is left out too.
+fn received_from(helo: &str, peer: Option<IpAddr>) -> String {
+    match peer {
+        Some(peer) => format!("from {} ([{peer}])", trace_helo(helo)),
+        None => "from localhost".to_owned(),
+    }
+}
+
+/// Whether a BDAT chunk of `size` bytes still fits behind the `buffered` ones. A chunk may announce
+/// any size up to `usize::MAX`, so the sum is checked, not assumed.
+fn chunk_fits(buffered: usize, size: usize, max_size: usize) -> bool {
+    buffered.checked_add(size).is_some_and(|total| total <= max_size)
+}
+
 /// Accepts connections until `shutdown` changes.
 pub async fn serve(smtp: Smtp, listener: TcpListener, kind: ListenerKind, mut shutdown: watch::Receiver<bool>) {
     loop {
@@ -419,24 +446,14 @@ impl Origin {
         let mut header = match self {
             Origin::Client { peer, helo, tls, submitted } => {
                 let private = *submitted && !ctx.live().smtp.reveal_client_ip;
-                // The name a mail app announces often is the device name or a local IP, so it stays
-                // private too.
-                let helo = if private {
-                    "localhost"
-                } else if helo.is_empty() {
-                    "unknown"
-                } else {
-                    helo.as_str()
-                };
                 let protocol = match (submitted, tls.is_some()) {
                     (true, true) => "ESMTPSA",
                     (true, false) => "ESMTPA",
                     (false, true) => "ESMTPS",
                     (false, false) => "ESMTP",
                 };
-                let client = if private { String::new() } else { format!(" ([{peer}])") };
-                let mut header =
-                    format!("Received: from {helo}{client}\r\n\tby {} (UwUMail) with {protocol}", ctx.hostname);
+                let from = received_from(helo, (!private).then_some(*peer));
+                let mut header = format!("Received: {from}\r\n\tby {} (UwUMail) with {protocol}", ctx.hostname);
                 if let Some(tls) = tls {
                     header.push_str(&format!("\r\n\t(using {tls})"));
                 }
@@ -467,6 +484,8 @@ enum State {
     Data(DataReceiver),
     DataDiscard(DummyDataReceiver),
     Bdat(BdatReceiver),
+    /// A chunk of a message that is already too big: read and thrown away. `true` for the last one.
+    BdatTooBig(DummyDataReceiver, bool),
     BdatDiscard(DummyDataReceiver),
     Auth(AuthStep, LineReceiver<()>),
 }
@@ -561,7 +580,18 @@ impl Session {
                                     self.message_too_big = false;
                                     state = State::Data(DataReceiver::new());
                                 }
-                                Next::Bdat { size, last } => state = State::Bdat(BdatReceiver::new(size, last)),
+                                Next::Bdat { size, last } => {
+                                    // Judged by the size the chunk announces, before any of it is read:
+                                    // the buffer never holds more than the limit, as with DATA
+                                    // (security-audit-0.8.0 T-1).
+                                    state = if !self.message_too_big && chunk_fits(self.message.len(), size, max_size) {
+                                        State::Bdat(BdatReceiver::new(size, last))
+                                    } else {
+                                        self.message = Vec::new();
+                                        self.message_too_big = true;
+                                        State::BdatTooBig(DummyDataReceiver::new_bdat(size), last)
+                                    };
+                                }
                                 Next::BdatDiscard(size) => {
                                     state = State::BdatDiscard(DummyDataReceiver::new_bdat(size))
                                 }
@@ -620,18 +650,25 @@ impl Session {
                         if receiver.ingest(&mut bytes, &mut self.message) {
                             let last = receiver.is_last;
                             state = State::Command(RequestReceiver::default());
-                            if self.message.len() > max_size {
-                                self.message = Vec::new();
-                                self.message_too_big = true;
-                            }
                             if !last {
                                 self.reply("250 2.0.0 Chunk received\r\n").await?;
-                            } else if self.message_too_big {
-                                self.reset_transaction();
-                                self.reply("552 5.3.4 Message too big\r\n").await?;
                             } else {
                                 let message = std::mem::take(&mut self.message);
                                 self.finish_message(message).await?;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                    State::BdatTooBig(receiver, last) => {
+                        if receiver.ingest(&mut bytes) {
+                            let last = *last;
+                            state = State::Command(RequestReceiver::default());
+                            if !last {
+                                self.reply("250 2.0.0 Chunk received\r\n").await?;
+                            } else {
+                                self.reset_transaction();
+                                self.reply("552 5.3.4 Message too big\r\n").await?;
                             }
                         } else {
                             break;
@@ -662,7 +699,10 @@ impl Session {
                         }
                     }
                 }
-                if bytes.as_slice().is_empty() {
+                // A BDAT chunk may be empty (`BDAT 0 LAST` ends many a message): it is complete
+                // without another byte, so it is taken now rather than after a read that never comes.
+                let chunk = matches!(state, State::Bdat(_) | State::BdatTooBig(..) | State::BdatDiscard(_));
+                if bytes.as_slice().is_empty() && !chunk {
                     break;
                 }
             }
@@ -1778,7 +1818,38 @@ fn decode_utf8(value: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::mailbox_full;
+    use std::net::IpAddr;
+
+    use super::{chunk_fits, mailbox_full, received_from, trace_helo};
+
+    /// security-audit-0.8.0 T-3: whatever the client greeted with, a server downstream that trusts
+    /// this one reads the address this server saw from its Received header.
+    #[test]
+    fn a_helo_cannot_name_the_client_address_downstream() {
+        let peer: IpAddr = "203.0.113.7".parse().unwrap();
+        for helo in ["x([192.0.2.1])", "([192.0.2.1])", "mx(x)[192.0.2.1]", "a[192.0.2.1]", ""] {
+            let raw = format!(
+                "Received: {}\r\n\tby mx.example.com (UwUMail) with ESMTP id 1;\r\n\tThu, 24 Sep 2026 10:00:00 +0000\r\n\
+                 Subject: x\r\n\r\nbody\r\n",
+                received_from(helo, Some(peer))
+            );
+            assert_eq!(crate::relay::original_client(raw.as_bytes(), &[]), Some((peer, "unknown".into())), "{helo}");
+        }
+        assert_eq!(trace_helo("mail.example.com"), "mail.example.com");
+        assert_eq!(trace_helo("[192.0.2.1]"), "[192.0.2.1]");
+        assert_eq!(trace_helo("[IPv6:2001:db8::1]"), "[IPv6:2001:db8::1]");
+        assert_eq!(received_from("laptop", None), "from localhost");
+    }
+
+    /// security-audit-0.8.0 T-1: a chunk is judged by the size it announces, before it is read.
+    #[test]
+    fn a_bdat_chunk_is_judged_before_it_is_read() {
+        assert!(chunk_fits(0, 1024, 1024), "exactly the limit");
+        assert!(chunk_fits(1000, 24, 1024));
+        assert!(!chunk_fits(1000, 25, 1024), "one byte past the limit");
+        assert!(!chunk_fits(0, usize::MAX - 1, 50 * 1024 * 1024), "a chunk announced as endless");
+        assert!(!chunk_fits(2, usize::MAX - 1, usize::MAX), "a sum that would overflow");
+    }
 
     /// A full mailbox must never read as a refusal for fetched mail: a refused message is cleared
     /// at the provider, and then a mailbox that ran out of room here would cost somebody their mail
