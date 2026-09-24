@@ -42,6 +42,8 @@ pub struct Source {
     pub roots: Option<rustls::RootCertStore>,
     pub master_user: Option<String>,
     pub password: String,
+    /// How to get there, when not straight: the admin can send fetching through the VPN.
+    pub dialer: Option<uwumail_smtp::egress::Dialer>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,7 +136,20 @@ impl Connection {
                 .with_safe_default_protocol_versions()?
                 .with_root_certificates(roots)
                 .with_no_client_auth();
-        let tcp = tokio::time::timeout(TIMEOUT, TcpStream::connect(&source.address))
+        let connect = async {
+            match &source.dialer {
+                Some(dialer) => {
+                    let (host, port) = source
+                        .address
+                        .rsplit_once(':')
+                        .and_then(|(host, port)| Some((host.trim_matches(['[', ']']), port.parse::<u16>().ok()?)))
+                        .ok_or_else(|| std::io::Error::other("the address has no port"))?;
+                    dialer.connect(host, port).await
+                }
+                None => TcpStream::connect(&source.address).await,
+            }
+        };
+        let tcp = tokio::time::timeout(TIMEOUT, connect)
             .await
             .context("connecting timed out")?
             .with_context(|| format!("connecting to {}", source.address))?;
@@ -622,6 +637,7 @@ mod tests {
             roots: Some(roots.clone()),
             master_user: None,
             password: password.into(),
+            dialer: None,
         };
         let (new, new_id) = store_with_person(&dir.path().join("new"), None).await;
         let right = source("katzenpfote-123");

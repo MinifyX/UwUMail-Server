@@ -221,6 +221,9 @@ mod tests {
             scope,
             created_at: 0,
             created_by: String::new(),
+            expires_at: None,
+            hits: 0,
+            last_hit_at: None,
         }
     }
 

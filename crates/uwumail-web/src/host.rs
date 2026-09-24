@@ -33,6 +33,29 @@ pub struct HostMachine {
     pub digest: String,
     pub compose_dir: String,
     pub checked_at: i64,
+    /// The helper's version; 2 and later know the VPN.
+    pub helper: String,
+    /// What the helper is willing to do.
+    pub verbs: Vec<String>,
+    /// The gluetun container, when the helper knows about it.
+    pub vpn: Option<HostVpn>,
+}
+
+/// The VPN container beside the server, as the helper sees it. Never any of its keys.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct HostVpn {
+    /// Whether `.env.vpn` exists.
+    pub configured: bool,
+    pub provider: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// Docker's word for it: `running`, `exited`, ..., or `missing` without a container.
+    pub state: String,
+    /// `healthy`, `starting`, `unhealthy` or empty.
+    pub health: String,
+    /// Whether it comes along with every `docker compose up -d`.
+    pub always: bool,
 }
 
 /// A job the helper is carrying out, or has.
@@ -66,7 +89,12 @@ pub type HostFuture<'a> = Pin<Box<dyn Future<Output = Result<String, String>> + 
 /// The helper on the machine, as the portal may use it.
 pub trait HostBackend: Send + Sync + 'static {
     fn view(&self) -> HostView;
-    /// Asks for `os-update` or `reboot`; the mail server itself is updated on the machine, with
-    /// update.sh. Returns the id of the job, to follow it with [`HostBackend::view`].
+    /// Asks for `os-update`, `reboot`, `vpn-apply` or `vpn-stop`; the mail server itself is updated on
+    /// the machine, with update.sh. Returns the id of the job, to follow it with [`HostBackend::view`].
     fn ask<'a>(&'a self, verb: &'a str) -> HostFuture<'a>;
+    /// Puts a file into the shared directory for the next job to read, e.g. `vpn.json`.
+    fn hand_over(&self, name: &'static str, contents: &str) -> Result<(), String> {
+        let _ = (name, contents);
+        Err("this helper takes no files".into())
+    }
 }

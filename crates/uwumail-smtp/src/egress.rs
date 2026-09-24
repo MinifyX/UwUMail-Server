@@ -6,15 +6,19 @@
 //! proxy set, they leave through it too, so the sender sees the address of a VPN rather than the server's:
 //! gluetun's HTTP proxy (OpenVPN, WireGuard, NordVPN and others), or a SOCKS5 proxy a VPN provider offers.
 //!
-//! Everything else — DNS, delivery, blocklists, list updates — keeps leaving directly: it says nothing about
-//! who reads what. Names are resolved here, before the proxy sees them, so a picture can't reach an address
-//! inside the network through it either.
+//! The admin can send two more kinds of request the same way: the check for new UwUMail versions, and
+//! fetching mail from mailboxes at other providers. Everything else — DNS, delivery, blocklists, list
+//! updates — keeps leaving directly. Names are resolved here, before the proxy sees them, so a request can't
+//! reach an address inside the network through it either.
+//!
+//! The proxy and the ways that take it can change while the server runs: the admin panel sets them, and every
+//! copy of an [`Egress`] sees the change with its next request.
 
 use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::task::Poll;
 use std::time::Duration;
 
@@ -48,7 +52,7 @@ const AGENT: &str = "Mozilla/5.0";
 const ADDRESS_ECHO: &str = "https://api.ipify.org/";
 
 /// `[egress]` in the configuration.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct EgressConfig {
     /// `http://host:port` for a proxy that tunnels with CONNECT (gluetun: `http://gluetun:8888`), or
@@ -56,6 +60,27 @@ pub struct EgressConfig {
     pub proxy: String,
     /// What happens when the proxy can't be reached or refuses the tunnel.
     pub fallback: Fallback,
+    /// Remote pictures and sender logos take the proxy. On unless switched off.
+    pub pictures: bool,
+    /// The check for new UwUMail versions takes the proxy.
+    pub updates: bool,
+    /// Fetching mail from mailboxes at other providers takes the proxy.
+    pub fetch: bool,
+}
+
+impl Default for EgressConfig {
+    fn default() -> Self {
+        EgressConfig { proxy: String::new(), fallback: Fallback::Block, pictures: true, updates: false, fetch: false }
+    }
+}
+
+/// What a request is for, which decides whether it takes the proxy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Purpose {
+    Pictures,
+    Updates,
+    Fetch,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
@@ -282,6 +307,30 @@ pub struct EgressStatus {
     pub proxy_failures: u64,
     pub fallbacks: u64,
     pub last_proxy_failure: Option<ProxyFailure>,
+    /// Which kinds of request take the proxy while one is set.
+    pub routes: Routes,
+}
+
+/// Which kinds of request take the proxy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct Routes {
+    pub pictures: bool,
+    pub updates: bool,
+    pub fetch: bool,
+}
+
+impl Routes {
+    fn of(config: &EgressConfig) -> Routes {
+        Routes { pictures: config.pictures, updates: config.updates, fetch: config.fetch }
+    }
+
+    fn takes(&self, purpose: Purpose) -> bool {
+        match purpose {
+            Purpose::Pictures => self.pictures,
+            Purpose::Updates => self.updates,
+            Purpose::Fetch => self.fetch,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -391,25 +440,107 @@ pub enum EgressError {
     Garbled,
 }
 
-#[derive(Clone)]
-pub struct Egress {
-    client: Client<HttpsConnector<Connector>, Empty<Bytes>>,
-    permits: Arc<Semaphore>,
+type HttpClient = Client<HttpsConnector<Connector>, Empty<Bytes>>;
+
+/// One configuration of the way out, replaced as a whole when the admin panel changes it.
+struct Setup {
     proxy: Option<Arc<Proxy>>,
     fallback: Fallback,
+    routes: Routes,
+    /// For pictures: through the proxy when they take it.
+    pictures: HttpClient,
+    /// Through the proxy whenever there is one, to test it.
+    probe: HttpClient,
+}
+
+struct Shared {
+    setup: RwLock<Arc<Setup>>,
+    permits: Semaphore,
     stats: Arc<Stats>,
+    roots: rustls::RootCertStore,
+    #[cfg(test)]
+    pinned: Option<SocketAddr>,
+}
+
+/// The way out. Cheap to clone; every clone sees a new configuration at once.
+#[derive(Clone)]
+pub struct Egress {
+    shared: Arc<Shared>,
+}
+
+/// Opens connections the way one kind of request leaves, for code that speaks its own protocol (IMAP) or
+/// has its own HTTP client.
+#[derive(Clone)]
+pub struct Dialer {
+    connector: Connector,
+}
+
+impl Dialer {
+    /// A connection to `host:port`, resolved here and only to a public address; through the proxy when the
+    /// dialer has one.
+    pub async fn connect(&self, host: &str, port: u16) -> std::io::Result<TcpStream> {
+        let uri: Uri =
+            format!("tcp://{}:{port}", if host.contains(':') { format!("[{host}]") } else { host.to_owned() })
+                .parse()
+                .map_err(|_| refused("not a host name"))?;
+        let mut last = None;
+        for target in self.connector.addresses(&uri).await? {
+            match self.connector.connect(target).await {
+                Ok(stream) => return Ok(stream),
+                Err(err) => last = Some(err),
+            }
+        }
+        Err(last.unwrap_or_else(|| refused("no address to connect to")))
+    }
+
+    /// Whether this leaves through a proxy.
+    pub fn proxied(&self) -> bool {
+        self.connector.proxy.is_some()
+    }
+
+    /// The same connections as a hyper connector, for an HTTPS client.
+    pub fn https_connector(&self, tls: rustls::ClientConfig) -> HttpsConnector<DialerConnector> {
+        hyper_rustls::HttpsConnectorBuilder::new()
+            .with_tls_config(tls)
+            .https_only()
+            .enable_http1()
+            .wrap_connector(DialerConnector(self.connector.clone()))
+    }
+}
+
+/// What [`Dialer::https_connector`] wraps.
+#[derive(Clone)]
+pub struct DialerConnector(Connector);
+
+impl tower::Service<Uri> for DialerConnector {
+    type Response = TokioIo<TcpStream>;
+    type Error = std::io::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, cx: &mut std::task::Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.0.poll_ready(cx)
+    }
+
+    fn call(&mut self, uri: Uri) -> Self::Future {
+        self.0.call(uri)
+    }
 }
 
 impl Egress {
     pub fn new(config: &EgressConfig) -> Result<Egress, String> {
-        let proxy = Proxy::parse(&config.proxy)?;
-        Ok(Egress::build(Connector {
-            proxy: proxy.map(Arc::new),
-            fallback: config.fallback,
-            stats: Arc::default(),
+        let roots = rustls::RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
+        let egress = Egress::empty(
+            roots,
             #[cfg(test)]
-            pinned: None,
-        }))
+            None,
+        );
+        egress.reconfigure(config)?;
+        Ok(egress)
+    }
+
+    /// Checks a configuration without putting it into effect.
+    pub fn check(config: &EgressConfig) -> Result<(), String> {
+        Proxy::parse(&config.proxy).map(|_| ())
     }
 
     /// Straight from the server, for tools and tests that have no configuration.
@@ -417,8 +548,33 @@ impl Egress {
         Egress::new(&EgressConfig::default()).expect("no proxy to get wrong")
     }
 
-    fn build(connector: Connector) -> Egress {
-        Egress::build_trusting(connector, rustls::RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() })
+    fn empty(roots: rustls::RootCertStore, #[cfg(test)] pinned: Option<SocketAddr>) -> Egress {
+        let stats: Arc<Stats> = Arc::default();
+        let direct = Connector {
+            proxy: None,
+            fallback: Fallback::Block,
+            stats: stats.clone(),
+            #[cfg(test)]
+            pinned,
+        };
+        let client = build_client(direct, &roots);
+        let setup = Setup {
+            proxy: None,
+            fallback: Fallback::Block,
+            routes: Routes::of(&EgressConfig::default()),
+            pictures: client.clone(),
+            probe: client,
+        };
+        Egress {
+            shared: Arc::new(Shared {
+                setup: RwLock::new(Arc::new(setup)),
+                permits: Semaphore::new(MAX_CONCURRENT),
+                stats,
+                roots,
+                #[cfg(test)]
+                pinned,
+            }),
+        }
     }
 
     /// Every name leads to `pinned`, whose certificate is trusted: websites for tests elsewhere in this crate.
@@ -429,120 +585,161 @@ impl Egress {
     ) -> Egress {
         let mut roots = rustls::RootCertStore::empty();
         roots.add(certificate).expect("a test certificate");
-        let connector =
-            Connector { proxy: None, fallback: Fallback::Block, stats: Arc::default(), pinned: Some(pinned) };
-        Egress::build_trusting(connector, roots)
+        Egress::empty(roots, Some(pinned))
     }
 
-    fn build_trusting(connector: Connector, roots: rustls::RootCertStore) -> Egress {
-        let (proxy, fallback, stats) = (connector.proxy.clone(), connector.fallback, connector.stats.clone());
-        let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
-        let tls = rustls::ClientConfig::builder_with_provider(provider)
-            .with_safe_default_protocol_versions()
-            .expect("the default TLS versions")
-            .with_root_certificates(roots)
-            .with_no_client_auth();
-        let https = hyper_rustls::HttpsConnectorBuilder::new()
-            .with_tls_config(tls)
-            .https_or_http()
-            .enable_http1()
-            .wrap_connector(connector);
-        Egress {
-            client: Client::builder(TokioExecutor::new()).build(https),
-            permits: Arc::new(Semaphore::new(MAX_CONCURRENT)),
+    fn connector(&self, proxy: Option<Arc<Proxy>>, fallback: Fallback) -> Connector {
+        Connector {
             proxy,
             fallback,
-            stats,
+            stats: self.shared.stats.clone(),
+            #[cfg(test)]
+            pinned: self.shared.pinned,
         }
+    }
+
+    /// Puts a new configuration into effect for every copy of this egress. Connections already open finish
+    /// the way they started.
+    pub fn reconfigure(&self, config: &EgressConfig) -> Result<(), String> {
+        let proxy = Proxy::parse(&config.proxy)?.map(Arc::new);
+        let routes = Routes::of(config);
+        let through = |takes: bool| if takes { proxy.clone() } else { None };
+        let setup = Setup {
+            pictures: build_client(self.connector(through(routes.pictures), config.fallback), &self.shared.roots),
+            probe: build_client(self.connector(proxy.clone(), config.fallback), &self.shared.roots),
+            proxy,
+            fallback: config.fallback,
+            routes,
+        };
+        *self.shared.setup.write().unwrap_or_else(|e| e.into_inner()) = Arc::new(setup);
+        Ok(())
+    }
+
+    fn setup(&self) -> Arc<Setup> {
+        self.shared.setup.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Whether requests leave through a proxy.
     pub fn proxied(&self) -> bool {
-        self.proxy.is_some()
+        self.setup().proxy.is_some()
+    }
+
+    /// How requests for `purpose` leave right now: through the proxy when one is set and this kind of request
+    /// takes it, otherwise straight from the server.
+    pub fn dialer(&self, purpose: Purpose) -> Dialer {
+        let setup = self.setup();
+        let proxy = setup.proxy.clone().filter(|_| setup.routes.takes(purpose));
+        Dialer { connector: self.connector(proxy, setup.fallback) }
     }
 
     pub fn status(&self) -> EgressStatus {
-        let stats = &self.stats;
+        let stats = &self.shared.stats;
+        let setup = self.setup();
         EgressStatus {
-            proxy: self.proxy.as_ref().map(|proxy| proxy.shown()),
-            fallback: self.fallback,
+            proxy: setup.proxy.as_ref().map(|proxy| proxy.shown()),
+            fallback: setup.fallback,
             fetched: stats.fetched.load(Ordering::Relaxed),
             failed: stats.failed.load(Ordering::Relaxed),
             proxy_failures: stats.proxy_failures.load(Ordering::Relaxed),
             fallbacks: stats.fallbacks.load(Ordering::Relaxed),
             last_proxy_failure: stats.last_proxy_failure.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            routes: setup.routes,
         }
     }
 
     /// GETs `url`, following a few redirects, and gives up past `max_bytes`. No cookies, no referrer, and an
     /// agent string that says nothing about this server.
     pub async fn get(&self, url: &str, accept: &str, max_bytes: usize) -> Result<Fetched, EgressError> {
-        let result = self.fetch(url, accept, max_bytes).await;
-        let counter = if result.is_ok() { &self.stats.fetched } else { &self.stats.failed };
+        let client = self.setup().pictures.clone();
+        let result = self.fetch(&client, url, accept, max_bytes).await;
+        let counter = if result.is_ok() { &self.shared.stats.fetched } else { &self.shared.stats.failed };
         counter.fetch_add(1, Ordering::Relaxed);
         result
     }
 
-    /// The address the senders of pictures see, asked of a public service the same way pictures go.
+    /// The address the other side sees through the proxy (or of the server, without one), asked of a public
+    /// service.
     pub async fn public_address(&self) -> Result<IpAddr, EgressError> {
         self.public_address_from(ADDRESS_ECHO).await
     }
 
     async fn public_address_from(&self, echo: &str) -> Result<IpAddr, EgressError> {
-        let answer = self.fetch(echo, "text/plain", 256).await?;
+        let client = self.setup().probe.clone();
+        let answer = self.fetch(&client, echo, "text/plain", 256).await?;
         std::str::from_utf8(&answer.body).ok().and_then(|text| text.trim().parse().ok()).ok_or(EgressError::Garbled)
     }
 
-    async fn fetch(&self, url: &str, accept: &str, max_bytes: usize) -> Result<Fetched, EgressError> {
-        let _permit = self.permits.acquire().await.map_err(|_| EgressError::Unreachable)?;
-        tokio::time::timeout(TIMEOUT, self.follow(url, accept, max_bytes)).await.map_err(|_| EgressError::Timeout)?
+    async fn fetch(
+        &self,
+        client: &HttpClient,
+        url: &str,
+        accept: &str,
+        max_bytes: usize,
+    ) -> Result<Fetched, EgressError> {
+        let _permit = self.shared.permits.acquire().await.map_err(|_| EgressError::Unreachable)?;
+        tokio::time::timeout(TIMEOUT, follow(client, url, accept, max_bytes)).await.map_err(|_| EgressError::Timeout)?
     }
+}
 
-    async fn follow(&self, url: &str, accept: &str, max_bytes: usize) -> Result<Fetched, EgressError> {
-        let mut current = check_url(url, true).map_err(EgressError::NotAllowed)?;
-        for _ in 0..=MAX_REDIRECTS {
-            let request = Request::get(current.as_str())
-                .header(USER_AGENT, AGENT)
-                .header(ACCEPT, accept)
-                .body(Empty::new())
-                .map_err(|_| EgressError::NotAllowed("that is not a web address".into()))?;
-            let response = self.client.request(request).await.map_err(|err| reason(&err))?;
-            let status = response.status();
-            if status.is_redirection() && status != StatusCode::NOT_MODIFIED {
-                let location = response
-                    .headers()
-                    .get(LOCATION)
-                    .and_then(|value| value.to_str().ok())
-                    .ok_or(EgressError::Status(status.as_u16()))?;
-                let next = current.join(location).map_err(|_| EgressError::Status(status.as_u16()))?;
-                current = check_url(next.as_str(), true).map_err(EgressError::NotAllowed)?;
-                continue;
-            }
-            if status != StatusCode::OK {
-                return Err(EgressError::Status(status.as_u16()));
-            }
-            let media_type = response
+fn build_client(connector: Connector, roots: &rustls::RootCertStore) -> HttpClient {
+    let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+    let tls = rustls::ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .expect("the default TLS versions")
+        .with_root_certificates(roots.clone())
+        .with_no_client_auth();
+    let https = hyper_rustls::HttpsConnectorBuilder::new()
+        .with_tls_config(tls)
+        .https_or_http()
+        .enable_http1()
+        .wrap_connector(connector);
+    Client::builder(TokioExecutor::new()).build(https)
+}
+
+async fn follow(client: &HttpClient, url: &str, accept: &str, max_bytes: usize) -> Result<Fetched, EgressError> {
+    let mut current = check_url(url, true).map_err(EgressError::NotAllowed)?;
+    for _ in 0..=MAX_REDIRECTS {
+        let request = Request::get(current.as_str())
+            .header(USER_AGENT, AGENT)
+            .header(ACCEPT, accept)
+            .body(Empty::new())
+            .map_err(|_| EgressError::NotAllowed("that is not a web address".into()))?;
+        let response = client.request(request).await.map_err(|err| reason(&err))?;
+        let status = response.status();
+        if status.is_redirection() && status != StatusCode::NOT_MODIFIED {
+            let location = response
                 .headers()
-                .get(CONTENT_TYPE)
+                .get(LOCATION)
                 .and_then(|value| value.to_str().ok())
-                .and_then(|value| value.split(';').next())
-                .map(|value| value.trim().to_ascii_lowercase())
-                .unwrap_or_default();
-            let body = Limited::new(response.into_body(), max_bytes)
-                .collect()
-                .await
-                .map_err(|err| {
-                    if err.is::<http_body_util::LengthLimitError>() {
-                        EgressError::TooLarge
-                    } else {
-                        EgressError::Unreachable
-                    }
-                })?
-                .to_bytes();
-            return Ok(Fetched { media_type, body, url: current });
+                .ok_or(EgressError::Status(status.as_u16()))?;
+            let next = current.join(location).map_err(|_| EgressError::Status(status.as_u16()))?;
+            current = check_url(next.as_str(), true).map_err(EgressError::NotAllowed)?;
+            continue;
         }
-        Err(EgressError::Redirects)
+        if status != StatusCode::OK {
+            return Err(EgressError::Status(status.as_u16()));
+        }
+        let media_type = response
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.split(';').next())
+            .map(|value| value.trim().to_ascii_lowercase())
+            .unwrap_or_default();
+        let body = Limited::new(response.into_body(), max_bytes)
+            .collect()
+            .await
+            .map_err(|err| {
+                if err.is::<http_body_util::LengthLimitError>() {
+                    EgressError::TooLarge
+                } else {
+                    EgressError::Unreachable
+                }
+            })?
+            .to_bytes();
+        return Ok(Fetched { media_type, body, url: current });
     }
+    Err(EgressError::Redirects)
 }
 
 fn reason(err: &(dyn std::error::Error + 'static)) -> EgressError {
@@ -567,8 +764,9 @@ mod tests {
     use super::*;
 
     fn egress(proxy: &str, fallback: Fallback, pinned: SocketAddr) -> Egress {
-        let proxy = Proxy::parse(proxy).unwrap();
-        Egress::build(Connector { proxy: proxy.map(Arc::new), fallback, stats: Arc::default(), pinned: Some(pinned) })
+        let egress = Egress::empty(rustls::RootCertStore::empty(), Some(pinned));
+        egress.reconfigure(&EgressConfig { proxy: proxy.into(), fallback, ..EgressConfig::default() }).unwrap();
+        egress
     }
 
     async fn read_head(stream: &mut TcpStream) -> String {
@@ -788,5 +986,57 @@ mod tests {
         assert_eq!(egress.status().fetched, 0, "not a picture");
         let garbled = egress.public_address_from("http://echo.example/pixel.gif").await;
         assert_eq!(garbled.unwrap_err(), EgressError::Garbled);
+    }
+
+    #[tokio::test]
+    async fn a_new_configuration_reaches_every_copy_at_once() {
+        let (server, _) = pictures().await;
+        let (proxy, asked) = http_proxy().await;
+        let egress = egress("", Fallback::Block, server);
+        let copy = egress.clone();
+        copy.get("http://pictures.example/pixel.gif", "image/*", 1024).await.unwrap();
+        assert!(asked.lock().unwrap().is_empty(), "straight out without a proxy");
+
+        let config = EgressConfig { proxy: format!("http://{proxy}"), ..EgressConfig::default() };
+        egress.reconfigure(&config).unwrap();
+        assert!(copy.proxied());
+        copy.get("http://pictures.example/pixel.gif", "image/*", 1024).await.unwrap();
+        assert_eq!(asked.lock().unwrap().len(), 1, "the copy took the new proxy");
+
+        assert!(egress.reconfigure(&EgressConfig { proxy: "ftp://x".into(), ..EgressConfig::default() }).is_err());
+        assert!(copy.proxied(), "a configuration that does not parse changes nothing");
+    }
+
+    #[tokio::test]
+    async fn each_kind_of_request_takes_the_proxy_only_when_told() {
+        let (server, _) = pictures().await;
+        let (proxy, asked) = http_proxy().await;
+        let egress = egress("", Fallback::Block, server);
+        let config = EgressConfig {
+            proxy: format!("http://{proxy}"),
+            pictures: false,
+            updates: false,
+            fetch: true,
+            ..EgressConfig::default()
+        };
+        egress.reconfigure(&config).unwrap();
+        assert_eq!(egress.status().routes, Routes { pictures: false, updates: false, fetch: true });
+        egress.get("http://pictures.example/pixel.gif", "image/*", 1024).await.unwrap();
+        assert!(asked.lock().unwrap().is_empty(), "pictures leave directly now");
+        assert!(!egress.dialer(Purpose::Updates).proxied());
+
+        let dialer = egress.dialer(Purpose::Fetch);
+        assert!(dialer.proxied());
+        let mut stream = dialer.connect("imap.example", 993).await.unwrap();
+        stream.write_all(b"GET /pixel.gif HTTP/1.1\r\nHost: x\r\n\r\n").await.unwrap();
+        assert_eq!(asked.lock().unwrap().len(), 1, "fetching took the proxy");
+        assert!(asked.lock().unwrap()[0].starts_with(&format!("CONNECT {server} ")));
+    }
+
+    #[tokio::test]
+    async fn a_dialer_never_reaches_into_the_network() {
+        let egress = Egress::direct();
+        let err = egress.dialer(Purpose::Fetch).connect("127.0.0.1", 993).await.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
     }
 }

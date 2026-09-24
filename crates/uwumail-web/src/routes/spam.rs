@@ -255,6 +255,7 @@ pub async fn account_add_sender(
             value: new.value,
             note: new.note,
             created_by: session.account.login.clone(),
+            expires_at: None,
         })
         .await?;
     Ok((StatusCode::CREATED, own_senders(&web, &session).await?))
@@ -295,6 +296,7 @@ pub async fn admin_add_sender(
             value: new.value,
             note: new.note,
             created_by: session.account.login.clone(),
+            expires_at: None,
         })
         .await?;
     let details = json!({ "list": entry.list, "kind": entry.kind, "domain": entry.domain });

@@ -149,10 +149,29 @@ the reader said they may be shown. The sender then sees the server, never the
 reader.
 
 With `egress.proxy` set, the server fetches them through a proxy too, so the
-sender sees a VPN instead of the server. Only these requests take that way:
-DNS, delivering mail, blocklists and list updates say nothing about who reads
-what and keep leaving directly. Outgoing mail on port 25 could not go through a
-VPN anyway; providers block it, and their addresses are on every blocklist.
+sender sees a VPN instead of the server. Two more kinds of request can take the
+same way, each switched on by itself: the check for new UwUMail versions
+(`egress.updates`, so GitHub does not learn where the server is) and fetching
+mail from mailboxes at other providers (`egress.fetch`; some providers refuse
+VPN addresses). Pictures (`egress.pictures`) take it unless switched off. DNS,
+delivering mail, blocklists and list updates keep leaving directly. Outgoing
+mail on port 25 could not go through a VPN anyway; providers block it, and
+their addresses are on every blocklist.
+
+**In the portal:** *Server → VPN & Proxy* sets all of it while the server runs.
+Pick a provider (NordVPN, Mullvad, Proton VPN, Surfshark, IVPN, AirVPN,
+Windscribe and every other provider gluetun knows, or your own WireGuard or
+OpenVPN server), paste the key or read the provider's WireGuard `.conf` or
+`.ovpn` file, choose countries or cities, and press *Save and connect*. With the
+machine's helper (`deploy/host`, version 2 or later) the portal writes `.env.vpn`,
+adds `vpn` to `COMPOSE_PROFILES` in `.env` and starts gluetun, then points the
+way out at `http://gluetun:8888`; *Switch the VPN off* stops it and lets
+everything go straight again. Without the helper the portal shows `.env.vpn`
+and the command to start it. The settings, keys included, are kept in the
+server's database and never sent back to the browser. The helper takes only
+gluetun's own variables, only values without quotes or line breaks, and an
+`.ovpn` file only without the directives that start programs or read files
+(`up`, `script-security`, `plugin`, `auth-user-pass <file>`, …).
 
 Two kinds of proxy work:
 
@@ -170,18 +189,25 @@ hands the proxy an address, which it checked is on the open internet, so no
 picture can reach a machine inside the network through the proxy.
 
 `egress.fallback` decides what happens while the proxy can't be reached or
-refuses the tunnel: `block` (the default) shows no pictures until it is back,
-`direct` fetches them from the server as if no proxy were set, and the sender
-sees the server for that time.
+refuses the tunnel: `block` (the default) waits until it is back (no pictures,
+no update check, no fetching), `direct` goes out from the server as if no proxy
+were set, and the other side sees the server for that time.
 
 ```toml
 [egress]
 proxy = "http://gluetun:8888"
 fallback = "block"
+pictures = true
+updates = false
+fetch = false
 ```
 
-As environment variables: `UWUMAIL_EGRESS__PROXY` and `UWUMAIL_EGRESS__FALLBACK`.
-A proxy login belongs in `.env`, not in a file anyone else reads.
+As environment variables: `UWUMAIL_EGRESS__PROXY`, `UWUMAIL_EGRESS__FALLBACK`,
+`UWUMAIL_EGRESS__PICTURES`, `UWUMAIL_EGRESS__UPDATES` and `UWUMAIL_EGRESS__FETCH`.
+What the config file or a non-empty variable sets is locked in the portal; the
+empty `UWUMAIL_EGRESS_PROXY=` and `UWUMAIL_EGRESS_FALLBACK=` that `compose.yaml`
+passes on leave them to the portal. A proxy login belongs in `.env` or the
+portal, not in a file anyone else reads.
 
 ## Accounts: people and services
 
@@ -319,6 +345,9 @@ code = ""              # the gateway's pairing code, used once; the pairing then
 [egress]
 proxy = ""             # "http://gluetun:8888" or "socks5://user:password@host:1080"; empty: straight out
 fallback = "block"     # block | direct: what happens while the proxy is away
+pictures = true        # remote pictures and sender logos take the proxy
+updates = false        # the check for new versions takes it
+fetch = false          # fetching from mailboxes at other providers takes it
 
 [tone]
 language = "de"        # de | en

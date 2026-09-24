@@ -13,8 +13,9 @@
 # This installs a small helper beside it that can, and a directory the two share.
 #
 # What the container may ask for is a verb from a fixed list -- install the system's updates,
-# restart the machine, pull a new UwUMail -- plus, for the last one, a version number that has to
-# look like one. Never a command, never a path, never an address. The docker socket stays where it
+# restart the machine, start or stop the VPN for pictures -- and, for the VPN, gluetun's settings,
+# which the helper checks against a fixed list of variables. Never a command, never a path, never
+# an address. The docker socket stays where it
 # is: handing that to a container is handing it the machine.
 set -uo pipefail
 

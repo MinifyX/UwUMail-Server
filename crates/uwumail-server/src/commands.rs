@@ -886,7 +886,15 @@ async fn add_sender(store: &Store, list: SenderList, args: SenderArgs) -> anyhow
         SenderKindArg::Domain => SenderKind::Domain,
         SenderKindArg::Pattern => SenderKind::Pattern,
     });
-    let new = NewSenderListEntry { scope, list, kind, value: args.value, note: args.note, created_by: "cli".into() };
+    let new = NewSenderListEntry {
+        scope,
+        list,
+        kind,
+        value: args.value,
+        note: args.note,
+        created_by: "cli".into(),
+        expires_at: None,
+    };
     let entry = store.add_sender_list_entry(new).await?;
     if !matches!(scope, ListScope::Account(_)) {
         audit(store, "spam.senderAdd", &entry.value, sender_details(&entry)).await;

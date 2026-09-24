@@ -101,11 +101,7 @@ async fn subscribe(
 
 fn owned_source(source: Option<WordSource>, owner: ListOwner, id: i64) -> ApiResult<WordSource> {
     source
-        .filter(|source| match (owner, source.scope) {
-            (ListOwner::Admin, ListScope::Server | ListScope::Domain(_)) => true,
-            (ListOwner::Account(owner), ListScope::Account(account)) => owner == account,
-            _ => false,
-        })
+        .filter(|source| owner.looks_after(source.scope))
         .ok_or_else(|| ApiError::NotFound(format!("subscribed list {id}")))
 }
 

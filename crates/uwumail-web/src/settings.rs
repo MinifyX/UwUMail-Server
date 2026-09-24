@@ -95,6 +95,12 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("log.loki.labels", SettingKind::List),
     spec("log.loki.level", SettingKind::Choice { options: &["error", "warn", "info", "debug"] }),
     spec("log.loki.gateway", SettingKind::Bool),
+    // The way out for requests that tell about readers: a proxy (often a VPN's) and which requests take it.
+    spec("egress.proxy", SettingKind::Secret),
+    spec("egress.fallback", SettingKind::Choice { options: &["block", "direct"] }),
+    spec("egress.pictures", SettingKind::Bool),
+    spec("egress.updates", SettingKind::Bool),
+    spec("egress.fetch", SettingKind::Bool),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

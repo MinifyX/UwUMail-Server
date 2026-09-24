@@ -35,6 +35,7 @@ mod password;
 mod query;
 mod queue;
 mod reports;
+mod rules;
 mod security;
 mod sender_lists;
 mod sieve;
@@ -92,6 +93,10 @@ pub use reports::{
     CachedStsPolicy, DMARC_REPORT_ADDRESS, DmarcRow, DmarcSource, DmarcSummary, MtaStsMode, MtaStsSettings,
     NewDmarcReport, NewTlsReport, REPORT_RETENTION_SECS, ReportEntry, ReportKind, ReportStored, ReportSummary,
     Reporter, TLS_REPORT_ADDRESS, TlsFailure, TlsFailureSummary, TlsSummary,
+};
+pub use rules::{
+    BulkAction, BulkReport, ImportReport, RULES_BULK_MAX, RULES_IMPORT_MAX, RULES_PAGE_MAX, Rule, RuleChange,
+    RuleImport, RuleList, RulePage, RuleQuery, RuleScope, RuleSort, RuleState, RuleType, ScopeFilter,
 };
 pub use security::{
     AppPassword, AppScope, CodeCheck, CreatedAppPassword, MailAuth, MailAuthDenied, NewAppPassword, Passkey,

@@ -563,6 +563,7 @@ impl Importer<'_> {
                         value: value.to_owned(),
                         note: "from mailcow".into(),
                         created_by: "import".into(),
+                        expires_at: None,
                     };
                     match self.store.add_sender_list_entry(entry).await {
                         Ok(_) => {}

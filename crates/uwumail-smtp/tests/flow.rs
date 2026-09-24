@@ -975,7 +975,15 @@ async fn the_bayes_filter_learns_and_a_person_can_see_it_differently() {
 }
 
 fn list_entry(scope: ListScope, list: SenderList, value: &str) -> NewSenderListEntry {
-    NewSenderListEntry { scope, list, kind: None, value: value.into(), note: String::new(), created_by: String::new() }
+    NewSenderListEntry {
+        scope,
+        list,
+        kind: None,
+        value: value.into(),
+        note: String::new(),
+        created_by: String::new(),
+        expires_at: None,
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1017,6 +1025,21 @@ async fn listed_senders_skip_the_filter_or_are_kept_out() {
         relay_message_to(&a, &both, "From: news@sender.test\r\nSubject: Letzte Chance\r\n\r\nAngebot\r\n").await;
     assert!(reply.starts_with("550 5.7.1"), "{reply}");
     assert_eq!(a.inbox("leni@a.test").await.len(), 2);
+
+    // Every entry remembers how often it decided: counted beside the message, so give it a moment.
+    let hits = |value: &'static str| async move {
+        let query = uwumail_store::RuleQuery { search: value.into(), limit: 10, ..Default::default() };
+        store.rules(query).await.unwrap().rules.iter().map(|rule| rule.hits).sum::<i64>()
+    };
+    for _ in 0..50 {
+        if hits("203.0.113.0/24").await >= 2 && hits("*.sender.test").await >= 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(hits("203.0.113.0/24").await, 2, "Leni's allowance decided her first two copies");
+    assert_eq!(hits("news@sender.test").await, 1);
+    assert_eq!(hits("*.sender.test").await, 1);
 }
 
 #[tokio::test(flavor = "multi_thread")]
