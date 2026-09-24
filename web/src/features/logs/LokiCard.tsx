@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ShieldAlert } from "lucide-react";
 import { useState } from "react";
+import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
 import { Field, Segmented, TextInput } from "@/components/ui/Field";
 import { ChoiceField, LockedHint, Section, TextField, ToggleField, type Form } from "@/features/settings/SettingsPage";
@@ -235,7 +236,8 @@ export function LokiCard() {
   const { t } = useT();
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ["admin", "settings"], queryFn: () => api<SettingsView>("/api/admin/settings") });
-  if (!query.data) return null;
+  if (query.isPending) return <Loading />;
+  if (query.isError) return <LoadError error={query.error} onRetry={() => void query.refetch()} />;
   return (
     <Section
       title={t("logs.loki.title")}

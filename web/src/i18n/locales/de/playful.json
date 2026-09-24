@@ -22,7 +22,15 @@
   },
   "admin": {
     "intro": "So geht es deinem Server. Ich passe mit auf (=^･ω･^=)",
-    "queueEmpty": "Nichts wartet, alles ist unterwegs ✉︎"
+    "queueEmpty": "Nichts wartet, alles ist unterwegs ✉︎",
+    "tiles": {
+      "mailFlow": {
+        "ok": "Mails flitzen rein und raus (=^･ω･^=)"
+      },
+      "changes": {
+        "none": "Hier ist noch alles wie am ersten Tag (´｡• ω •｡`)"
+      }
+    }
   },
   "errors": {
     "loadFailed": {

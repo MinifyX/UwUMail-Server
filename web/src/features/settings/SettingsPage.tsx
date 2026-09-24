@@ -3,7 +3,7 @@ import { Lock } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
-import { Card, PageHeader } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { Field, Segmented, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, type SettingsView, type SettingValue } from "@/lib/api";
@@ -273,7 +273,10 @@ export function TextField({
   );
 }
 
-export function SettingsPage() {
+/** The admin's settings, one tab per kind; VPN & proxy has a tab of its own beside these. */
+export type SettingsTab = "general" | "mail" | "apps";
+
+export function SettingsPage({ tab = "general" }: { tab?: SettingsTab }) {
   const { t } = useT();
   const query = useQuery({ queryKey: ["admin", "settings"], queryFn: () => api<SettingsView>("/api/admin/settings") });
 
@@ -285,74 +288,75 @@ export function SettingsPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader title={t("settings.title")} intro={t("settings.intro")} />
-      {
-        <p className="rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
-          {view.configFile ? t("settings.fileNote", { file: view.configFile }) : t("settings.envNote")}
-        </p>
-      }
-
-      <Section
-        title={t("settings.delivery.title")}
-        intro={t("settings.delivery.intro")}
-        view={view}
-        keys={[
-          "delivery.relay.host",
-          "delivery.relay.port",
-          "delivery.relay.security",
-          "delivery.relay.username",
-          "delivery.relay.password",
-          "delivery.require_tls",
-          "delivery.max_lifetime_hours",
-          "smtp.allow_external_forwarding",
-        ]}
-      >
-        {(form) => <DeliveryFields form={form} throughGateway={view.gateway.paired} />}
-      </Section>
-
-      <Section
-        title={t("settings.tone.title")}
-        intro={t("settings.tone.intro")}
-        view={view}
-        keys={["tone.language", "tone.internal", "tone.external"]}
-      >
-        {(form) => (
-          <>
-            <ChoiceField
-              form={form}
-              settingKey="tone.language"
-              label={t("settings.tone.language")}
-              options={choices(["de", "en"], "settings.tone.options")}
-            />
-            <ChoiceField
-              form={form}
-              settingKey="tone.internal"
-              label={t("settings.tone.internal")}
-              hint={t("settings.tone.internalHint")}
-              segmented
-              options={choices(["playful", "neutral"], "settings.tone.options")}
-            />
-            <ChoiceField
-              form={form}
-              settingKey="tone.external"
-              label={t("settings.tone.external")}
-              hint={t("settings.tone.externalHint")}
-              segmented
-              options={choices(["neutral", "light"], "settings.tone.options")}
-            />
-          </>
-        )}
-      </Section>
-
-      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
-        {t("settings.spamHint")}
-        <Link to="/admin/spam" className="font-semibold text-pink-ink hover:underline">
-          {t("settings.spamLink")}
-        </Link>
+      <p className="rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
+        {view.configFile ? t("settings.fileNote", { file: view.configFile }) : t("settings.envNote")}
       </p>
 
-      {
-        <div className="grid gap-5 lg:grid-cols-2">
+      {tab === "general" && (
+        <>
+          <Section
+            title={t("settings.tone.title")}
+            intro={t("settings.tone.intro")}
+            view={view}
+            keys={["tone.language", "tone.internal", "tone.external"]}
+          >
+            {(form) => (
+              <>
+                <ChoiceField
+                  form={form}
+                  settingKey="tone.language"
+                  label={t("settings.tone.language")}
+                  options={choices(["de", "en"], "settings.tone.options")}
+                />
+                <ChoiceField
+                  form={form}
+                  settingKey="tone.internal"
+                  label={t("settings.tone.internal")}
+                  hint={t("settings.tone.internalHint")}
+                  segmented
+                  options={choices(["playful", "neutral"], "settings.tone.options")}
+                />
+                <ChoiceField
+                  form={form}
+                  settingKey="tone.external"
+                  label={t("settings.tone.external")}
+                  hint={t("settings.tone.externalHint")}
+                  segmented
+                  options={choices(["neutral", "light"], "settings.tone.options")}
+                />
+              </>
+            )}
+          </Section>
+
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
+            {t("settings.spamHint")}
+            <Link to="/admin/spam" className="font-semibold text-pink-ink hover:underline">
+              {t("settings.spamLink")}
+            </Link>
+          </p>
+        </>
+      )}
+
+      {tab === "mail" && (
+        <>
+          <Section
+            title={t("settings.delivery.title")}
+            intro={t("settings.delivery.intro")}
+            view={view}
+            keys={[
+              "delivery.relay.host",
+              "delivery.relay.port",
+              "delivery.relay.security",
+              "delivery.relay.username",
+              "delivery.relay.password",
+              "delivery.require_tls",
+              "delivery.max_lifetime_hours",
+              "smtp.allow_external_forwarding",
+            ]}
+          >
+            {(form) => <DeliveryFields form={form} throughGateway={view.gateway.paired} />}
+          </Section>
+
           <Section
             title={t("settings.receiving.title")}
             intro={t("settings.receiving.intro")}
@@ -398,6 +402,11 @@ export function SettingsPage() {
               </>
             )}
           </Section>
+        </>
+      )}
+
+      {tab === "apps" && (
+        <div className="grid gap-5 lg:grid-cols-2">
           <Section
             title={t("settings.apps.title")}
             intro={t("settings.apps.intro")}
@@ -437,14 +446,7 @@ export function SettingsPage() {
             )}
           </Section>
         </div>
-      }
-
-      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
-        {t("settings.vpnHint")}
-        <Link to="/admin/vpn" className="font-semibold text-pink-ink hover:underline">
-          {t("settings.vpnLink")}
-        </Link>
-      </p>
+      )}
     </div>
   );
 }
@@ -679,7 +681,7 @@ export function DeliveryFields({
       {throughGateway && !relayOnly && (
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-control bg-pink-tint/50 px-3 py-2 text-[13px]">
           {t("settings.delivery.gatewayNote")}
-          <Link to="/admin/setup" className="font-semibold text-pink-ink hover:underline">
+          <Link to="/admin/mail-flow" className="font-semibold text-pink-ink hover:underline">
             {t("settings.delivery.gatewayLink")}
           </Link>
         </p>

@@ -3,11 +3,9 @@ import { Pause, Play, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
-import { PageHeader } from "@/components/ui/Card";
 import { Segmented, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api, ApiError, type LogLine } from "@/lib/api";
-import { LokiCard } from "./LokiCard";
 
 type Level = "all" | "warn" | "error";
 const MAX_LINES = 1000;
@@ -64,7 +62,6 @@ export function LogsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title={t("logs.title")} intro={t("logs.intro")} />
       <div className="flex flex-wrap items-center gap-3">
         <Segmented<Level>
           label={t("logs.level.label")}
@@ -98,14 +95,14 @@ export function LogsPage() {
       {unavailable ? (
         <EmptyState compact scene="loadError" title={t("logs.unavailable")} />
       ) : (
-        <div className="max-h-[calc(100svh-280px)] min-h-[320px] overflow-auto rounded-card border border-hairline bg-surface p-3 font-mono text-[12px] leading-5">
+        <div className="max-h-[calc(100svh-340px)] min-h-[320px] overflow-auto rounded-card border border-hairline bg-surface p-3 font-mono text-[12px] leading-5">
           {lines.length === 0 ? (
             <p className="p-4 text-center font-sans text-muted">{t("logs.empty")}</p>
           ) : (
             lines.map((line) => (
               <div key={line.seq} className="flex gap-3 rounded px-1 hover:bg-elevated">
                 <span className="shrink-0 text-faint">{time.format(new Date(line.at))}</span>
-                <span className={clsx("w-11 shrink-0 font-semibold uppercase", LEVEL_STYLES[line.level])}>
+                <span className={clsx("w-12 shrink-0 font-semibold uppercase", LEVEL_STYLES[line.level])}>
                   {line.level}
                 </span>
                 <span className="min-w-0 break-words">
@@ -128,7 +125,6 @@ export function LogsPage() {
         </div>
       )}
       <p className="text-[12px] text-faint">{live ? t("logs.live") : t("logs.paused")}</p>
-      {!unavailable && <LokiCard />}
     </div>
   );
 }

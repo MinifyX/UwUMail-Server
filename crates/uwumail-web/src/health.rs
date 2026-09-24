@@ -224,7 +224,7 @@ fn route_finding(summary: &DeliverySummary) -> Finding {
                     Level::Problem,
                     json!({ "host": host, "error": trouble.error, "at": trouble.at }),
                 )
-                .link("/admin/settings");
+                .link("/admin/settings/mail");
             }
             if let Some(probe) = failed_probe {
                 let code = match probe.stage {
@@ -237,7 +237,7 @@ fn route_finding(summary: &DeliverySummary) -> Finding {
                     Level::Problem,
                     json!({ "host": host, "error": probe.error, "at": probe.at }),
                 )
-                .link("/admin/settings");
+                .link("/admin/settings/mail");
             }
         }
         Route::Direct | Route::Gateway => {
@@ -246,7 +246,7 @@ fn route_finding(summary: &DeliverySummary) -> Finding {
                 let error = summary.last_trouble.as_ref().map(|trouble| trouble.error.clone());
                 let params = json!({ "count": summary.unreachable_domains, "error": error });
                 let code = if gateway { "gatewayOutboundBlocked" } else { "outboundBlocked" };
-                return Finding::new(code, Level::Problem, params).link("/admin/settings");
+                return Finding::new(code, Level::Problem, params).link("/admin/settings/mail");
             }
             if let Some(probe) = failed_probe {
                 let (code, level) = match probe.stage {
@@ -255,7 +255,7 @@ fn route_finding(summary: &DeliverySummary) -> Finding {
                     _ => ("port25Blocked", Level::Problem),
                 };
                 let params = json!({ "target": probe.target, "error": probe.error, "at": probe.at });
-                return Finding::new(code, level, params).link("/admin/settings");
+                return Finding::new(code, level, params).link("/admin/settings/mail");
             }
         }
     }
@@ -288,7 +288,7 @@ fn gateway_area(view: &GatewayView, now: i64) -> Option<Area> {
             Finding::new("gatewayDown", if down_for > GATEWAY_GRACE { Level::Problem } else { Level::Warning }, params)
         }
     };
-    Some(Area::new("gateway", vec![finding.link("/admin/setup")]))
+    Some(Area::new("gateway", vec![finding.link("/admin/mail-flow")]))
 }
 
 async fn delivery_area(web: &Web, now: i64) -> ApiResult<Area> {

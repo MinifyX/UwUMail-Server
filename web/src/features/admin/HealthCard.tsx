@@ -11,7 +11,7 @@ import { formatBytes, formatDate, formatDuration, formatRelative } from "@/lib/f
 import { Link } from "@/lib/router";
 import { toast } from "@/state/toasts";
 
-const LEVELS: Record<HealthLevel, { icon: LucideIcon; tint: string; dot: string; mood: NyuMood }> = {
+export const LEVELS: Record<HealthLevel, { icon: LucideIcon; tint: string; dot: string; mood: NyuMood }> = {
   ok: { icon: CircleCheck, tint: "bg-success-tint text-success", dot: "bg-success", mood: "happy" },
   unknown: { icon: CircleHelp, tint: "bg-elevated text-muted", dot: "bg-faint", mood: "puzzled" },
   warning: { icon: TriangleAlert, tint: "bg-warning-tint text-warning", dot: "bg-warning", mood: "puzzled" },

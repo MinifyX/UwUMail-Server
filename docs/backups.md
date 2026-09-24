@@ -1,7 +1,7 @@
 # Backups
 
 The server backs up to an SFTP server, for example a NAS, once a night and
-whenever I press *Jetzt sichern* under *Server → Backups*.
+whenever I press *Jetzt sichern* under *Server → Overview → Backups*.
 
 ## What is in a backup
 
@@ -25,7 +25,7 @@ Backups are encrypted by default (ChaCha20-Poly1305, with keyed names, so the
 backup server sees neither content nor which mails exist). When I set up the
 backups, the portal shows the **recovery key** once. Without it the backups
 cannot be read by anyone, so it belongs in a password manager, apart from the
-server. It can be shown again under *Server → Backups* after confirming the
+server. It can be shown again under *Server → Overview → Backups* after confirming the
 password.
 
 Unencrypted backups are possible for a backup server that is encrypted itself.
@@ -67,7 +67,7 @@ There are three ways in, and they differ only in where you are standing.
 
 ### From the portal, on a server that is running
 
-*Server → Backups → Snapshots*, then *Put back* beside the snapshot. The server
+*Server → Overview → Backups → Snapshots*, then *Put back* beside the snapshot. The server
 fetches it, stops itself, and the start after that puts the files in place —
 while it runs, the database it would replace is the one it is running on. Docker
 brings the container back by itself; it takes a few minutes.

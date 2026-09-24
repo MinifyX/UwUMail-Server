@@ -51,24 +51,19 @@
     "openMenu": "Menü öffnen",
     "closeMenu": "Menü schließen",
     "people": "Konten",
-    "log": "Protokoll",
     "domains": "Domains",
     "queue": "Warteschlange",
-    "logs": "Logs",
+    "logs": "Protokolle",
     "settings": "Einstellungen",
     "security": "Sicherheit",
     "mail": "Weiterleitung",
     "fetch": "Abrufkonten",
     "addresses": "Adressen",
-    "setup": "Einrichtung",
     "spamFilter": "Spamfilter",
-    "backups": "Backups",
     "reports": "Berichte",
-    "updates": "Updates",
     "collapse": "{{group}} einklappen",
     "expand": "{{group}} ausklappen",
-    "mailbox": "Postfach",
-    "vpn": "VPN & Proxy"
+    "mailbox": "Postfach"
   },
   "userMenu": {
     "open": "Kontomenü öffnen",
@@ -169,6 +164,46 @@
       "hostname": "Hostname",
       "version": "Version",
       "uptime": "Läuft seit"
+    },
+    "tab": "Bereich",
+    "tabs": {
+      "overview": "Übersicht",
+      "mailFlow": "Mailfluss",
+      "backups": "Backups",
+      "updates": "Updates"
+    },
+    "tiles": {
+      "news": "neu",
+      "loading": "Wird geladen …",
+      "mailFlow": {
+        "ok": "Senden und Empfangen klappen",
+        "warning": "Beim Versand braucht etwas einen Blick",
+        "problem": "Mail kommt gerade nicht durch",
+        "unknown": "Noch nicht geprüft"
+      },
+      "backups": {
+        "last": "Letztes Backup {{time}}",
+        "never": "Noch kein Backup",
+        "none": "Noch nicht eingerichtet",
+        "running": "Backup läuft gerade",
+        "failed": "Letztes Backup fehlgeschlagen",
+        "paused": "Pausiert"
+      },
+      "updates": {
+        "current": "Aktuell ({{version}})",
+        "available": "Version {{version}} ist da",
+        "edge_one": "{{count}} neuer Commit auf main",
+        "edge_other": "{{count}} neue Commits auf main",
+        "unknown": "Konnte nicht nachsehen",
+        "reboot": "Die Maschine möchte neu starten.",
+        "helper": "Für den Helfer gibt es ein Update.",
+        "system_one": "{{count}} Systemupdate wartet.",
+        "system_other": "{{count}} Systemupdates warten."
+      },
+      "changes": {
+        "title": "Letzte Änderung",
+        "none": "Noch nichts geändert"
+      }
     }
   },
   "duration": {
@@ -480,7 +515,6 @@
     }
   },
   "log": {
-    "title": "Änderungsprotokoll",
     "intro": "Wer wann was geändert hat.",
     "empty": {
       "title": "Noch keine Änderungen",
@@ -942,7 +976,7 @@
     }
   },
   "logs": {
-    "title": "Logs",
+    "title": "Protokolle",
     "intro": "Die neuesten Zeilen aus dem Server-Log, live.",
     "level": {
       "label": "Stufe",
@@ -1002,7 +1036,14 @@
         "error": "Loki nimmt gerade nichts an: {{error}}"
       }
     },
-    "gateway": "Gateway"
+    "gateway": "Gateway",
+    "tab": "Protokoll",
+    "tabs": {
+      "live": "Live-Log",
+      "changes": "Änderungen",
+      "shipping": "Log-Versand"
+    },
+    "shippingIntro": "Wohin der Server seine Logs zusätzlich schickt, damit sie auch nach einem Neustart und an einem Ort mit anderen Servern bleiben."
   },
   "settings": {
     "title": "Einstellungen",
@@ -1141,8 +1182,15 @@
       "testDirect": "Absender sehen {{address}}, die Adresse dieses Servers.",
       "testFailed": "Der Test hat nicht geklappt: {{error}}"
     },
-    "vpnHint": "Über welchen VPN oder Proxy der Server Bilder, Update-Abfragen und Postfach-Abrufe schickt, stellst du auf einer eigenen Seite ein.",
-    "vpnLink": "Zu VPN & Proxy"
+    "tab": "Bereich",
+    "tabs": {
+      "general": "Allgemein",
+      "mail": "Versand & Empfang",
+      "apps": "Apps & Webmail",
+      "vpn": "VPN & Proxy"
+    },
+    "mailIntro": "Wie Mail den Server verlässt und was er annimmt. Änderungen wirken sofort, ohne Neustart.",
+    "appsIntro": "Was für Mail-Apps und das Postfach im Browser gilt. Änderungen wirken sofort, ohne Neustart."
   },
   "health": {
     "loading": "Zustand wird geladen …",
@@ -1733,13 +1781,14 @@
       "open": "Zur Verwaltung"
     },
     "page": {
-      "title": "Einrichtung",
-      "intro": "Die Prüfungen aus dem Einrichtungs-Assistenten: Versand, Empfang, Reverse-DNS, Blocklisten und Test-Mail.",
+      "intro": "Wie Mail bei deinem Server ankommt und wie sie rausgeht: Erreichbarkeit, Gateway, Versandweg, Reverse-DNS, Blocklisten und eine Test-Mail.",
       "lastRun": "Geprüft {{time}}",
       "neverRun": "Noch nicht geprüft.",
       "domainsTitle": "DNS-Einträge",
       "domainsBody": "Die Einträge prüfst du bei jeder Domain. Liegt sie bei Cloudflare, kann ich sie dort eintragen.",
-      "wizard": "Assistenten öffnen"
+      "settingsHint": "Versandweg, Relay und Größenlimits stellst du in den Einstellungen ein.",
+      "settingsLink": "Zu Versand & Empfang",
+      "queueLink": "Zur Warteschlange"
     },
     "lines": {
       "directOk": "Der Server erreicht andere Mailserver direkt über Port 25 ({{target}}).",
@@ -1916,7 +1965,6 @@
     }
   },
   "updates": {
-    "title": "Updates",
     "intro": "Welche Version läuft, was es Neues gibt, und womit du es einspielst.",
     "open": "Öffnen",
     "running": "Läuft: Version {{version}}",
@@ -1948,7 +1996,6 @@
     "helperOld": "Der Helfer auf dieser Maschine ist zu alt für den Update-Knopf. Einmal noch auf der Maschine ausführen – das bringt auch den Helfer auf den neuesten Stand, danach aktualisierst du hier per Knopf:"
   },
   "backups": {
-    "title": "Backups",
     "intro": "Der Server sichert Mails, Einstellungen, Kalender und Kontakte jede Nacht auf einen SFTP-Server, zum Beispiel ein NAS. Nach dem ersten Mal wird nur hochgeladen, was neu ist.",
     "status": {
       "title": "Stand",
@@ -2505,7 +2552,6 @@
     }
   },
   "vpn": {
-    "title": "VPN & Proxy",
     "intro": "Wer ein Bild in einer Mail anzeigt, verrät dem Absender, wann und von wo. Der Server holt solche Bilder deshalb selbst, und mit einem VPN sieht der Absender nicht einmal den Server, sondern nur den VPN. Auf Wunsch gehen auch die Update-Abfrage und das Abholen fremder Postfächer darüber.",
     "status": {
       "title": "So gehen Anfragen gerade raus",

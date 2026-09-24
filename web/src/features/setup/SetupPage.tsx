@@ -1,19 +1,21 @@
-import { ChevronRight, RefreshCw, WandSparkles } from "lucide-react";
+import { ChevronRight, RefreshCw } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { NyuScene } from "@/components/nyu/scenes";
 import { Button } from "@/components/ui/Button";
-import { Card, PageHeader } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { useT } from "@/i18n";
 import type { Session } from "@/lib/api";
-import { Link, navigate } from "@/lib/router";
+import { Link } from "@/lib/router";
 import { DnsStatusPill } from "@/features/domains/DnsBits";
 import { useDomains } from "@/features/people/queries";
 import { GatewayPanel, ReachabilityChecks } from "./GatewayBits";
 import { AddressChecks, CheckedAt, Checking, DeliveryChecks, TestMailPanel } from "./SetupBits";
 import { useLastReachability, useLastServerCheck, useRunReachability, useRunServerCheck } from "./queries";
 
-/** Server → Setup: the checks of the setup assistant, whenever they are needed again. */
-export function SetupPage({ session }: { session: Session }) {
+/**
+ * Server → Overview → Mail flow: how mail reaches this server and leaves it, checked again whenever
+ * it is needed. The setup assistant itself is only for the very first start.
+ */
+export function MailFlowPage({ session }: { session: Session }) {
   const { t } = useT();
   const last = useLastServerCheck();
   const run = useRunServerCheck();
@@ -33,16 +35,15 @@ export function SetupPage({ session }: { session: Session }) {
 
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader
-        title={t("setup.page.title")}
-        intro={t("setup.page.intro")}
-        art={<NyuScene name="search" className="h-auto w-[150px]" />}
-      />
-      <div className="flex flex-wrap gap-2">
-        <Button icon={WandSparkles} onClick={() => navigate("/setup")}>
-          {t("setup.page.wizard")}
-        </Button>
-      </div>
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
+        {t("setup.page.settingsHint")}
+        <Link to="/admin/settings/mail" className="font-semibold text-pink-ink hover:underline">
+          {t("setup.page.settingsLink")}
+        </Link>
+        <Link to="/admin/queue" className="font-semibold text-pink-ink hover:underline">
+          {t("setup.page.queueLink")}
+        </Link>
+      </p>
 
       <div className="grid gap-5 lg:grid-cols-2">
         <Card
@@ -61,6 +62,7 @@ export function SetupPage({ session }: { session: Session }) {
                 <ReachabilityChecks reach={reach} explain={false} />
               </>
             )}
+            {!reach && !runReach.isPending && <p className="text-[13px] text-muted">{t("setup.page.neverRun")}</p>}
           </div>
         </Card>
         <Card title={t("setup.gateway.title")}>

@@ -17,7 +17,7 @@ import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
-import { Card, CopyButton, PageHeader } from "@/components/ui/Card";
+import { Card, CopyButton } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, Segmented, Select, TextInput } from "@/components/ui/Field";
 import { updateCommand } from "@/features/admin/host";
@@ -858,14 +858,12 @@ export function VpnPage() {
     return () => window.clearInterval(timer);
   }, [running, queryClient]);
 
-  const header = <PageHeader title={t("vpn.title")} intro={t("vpn.intro")} />;
   if (vpn.isPending || settings.isPending) return <Loading />;
   if (vpn.isError) return <LoadError error={vpn.error} onRetry={() => void vpn.refetch()} />;
   if (settings.isError) return <LoadError error={settings.error} onRetry={() => void settings.refetch()} />;
 
   return (
     <div className="flex flex-col gap-5">
-      {header}
       <StatusCard vpn={vpn.data} />
       <VpnCard key={JSON.stringify(vpn.data.config)} view={vpn.data} />
       <Section

@@ -1,10 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Download, ExternalLink, RefreshCw, RotateCw } from "lucide-react";
-import { NyuScene } from "@/components/nyu/scenes";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
-import { Card, CopyButton, PageHeader } from "@/components/ui/Card";
+import { Card, CopyButton } from "@/components/ui/Card";
+import { HostCard } from "@/features/admin/HostCard";
 import { Field, Segmented, Toggle } from "@/components/ui/Field";
 import { helperCan, helperOutdated, JobBox, jobBusy, updateCommand, useAskHost, useHost } from "@/features/admin/host";
 import { useT } from "@/i18n";
@@ -235,7 +235,6 @@ function CheckCard({ view }: { view: UpdatesView }) {
 }
 
 export function UpdatesPage() {
-  const { t } = useT();
   const query = useUpdates();
 
   if (query.isPending) return <Loading />;
@@ -244,13 +243,9 @@ export function UpdatesPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader
-        title={t("updates.title")}
-        intro={t("updates.intro")}
-        art={view.info.releases.length === 0 ? <NyuScene name="done" className="h-auto w-[130px]" /> : undefined}
-      />
       <VersionCard view={view} />
       <CheckCard view={view} />
+      <HostCard />
     </div>
   );
 }

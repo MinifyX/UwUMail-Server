@@ -3,6 +3,25 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.10.0
+
+**A tidier server menu.** The admin part of the portal had grown to thirteen entries. It now has
+eight, and the pages that belong together share one page with tabs, like the spam filter:
+
+- *Server → Overview* has the tabs *Overview*, *Mail flow*, *Backups* and *Updates*. The overview
+  shows a tile for each of them — whether mail gets through, when the last backup ran, whether a
+  new version or a system update is waiting — and the last change anyone made; a click opens the
+  tab. *Mail flow* is what used to be *Setup*: reachability, gateway, sending route, reverse DNS,
+  blocklists and a test message. The setup assistant itself is only for the first start now.
+  The card for the machine and its helper moved to *Updates*.
+- *Server → Logs* has the tabs *Live log*, *Changes* (the change log) and *Log shipping*
+  (Grafana Loki).
+- *Server → Settings* has the tabs *General*, *Sending & receiving*, *Apps & webmail* and
+  *VPN & proxy*, which used to be a page of its own.
+
+Every tab has its own address. Old bookmarks keep working: `/admin/setup`, `/admin/log` and
+`/admin/vpn` lead to their tabs, and the hints in the health overview open the right tab.
+
 ## 0.9.3
 
 **Everything from the portal.** Nothing about the VPN or an update needs the command line any more,

@@ -6,27 +6,22 @@ import { Toaster } from "@/components/ui/Toaster";
 import { AccountHome } from "@/features/account/AccountHome";
 import { FetchPage } from "@/features/fetch/FetchPage";
 import { AddressesPage } from "@/features/addresses/AddressesPage";
-import { AdminHome } from "@/features/admin/AdminHome";
+import { SERVER_PATHS, ServerPage, type ServerTab } from "@/features/admin/ServerPage";
 import { DomainPage } from "@/features/domains/DomainPage";
 import { DomainsPage } from "@/features/domains/DomainsPage";
-import { LogPage } from "@/features/log/LogPage";
 import { ForwardConfirmPage } from "@/features/mailbox/ForwardConfirmPage";
 import { MailboxPage } from "@/features/mailbox/MailboxPage";
-import { LogsPage } from "@/features/logs/LogsPage";
 import { LoginPage } from "@/features/login/LoginPage";
+import { PROTOCOLS_PATHS, ProtocolsPage, type ProtocolsTab } from "@/features/logs/ProtocolsPage";
 import { PasswordPage } from "@/features/password/PasswordPage";
 import { PeoplePage } from "@/features/people/PeoplePage";
 import { PersonPage } from "@/features/people/PersonPage";
 import { QueuePage } from "@/features/queue/QueuePage";
 import { ReportsPage } from "@/features/reports/ReportsPage";
 import { SecurityPage } from "@/features/security/SecurityPage";
-import { SettingsPage } from "@/features/settings/SettingsPage";
-import { UpdatesPage } from "@/features/updates/UpdatesPage";
-import { SetupPage } from "@/features/setup/SetupPage";
+import { AdminSettingsPage, SETTINGS_PATHS, type AdminSettingsTab } from "@/features/settings/AdminSettingsPage";
 import { SetupWizard } from "@/features/setup/SetupWizard";
 import { AccountSpamPage, AdminSpamPage, SPAM_TABS, type SpamTab } from "@/features/spam/SpamPage";
-import { VpnPage } from "@/features/vpn/VpnPage";
-import { BackupsPage } from "@/features/backups/BackupsPage";
 import { useSession } from "@/features/session/session";
 import { PortalShell } from "@/features/shell/PortalShell";
 import { useApplyLanguage, useT } from "@/i18n";
@@ -50,6 +45,24 @@ function NotFound() {
   );
 }
 
+/** An address that moved: replaced in the history, so going back does not land here again. */
+function Redirect({ to }: { to: string }) {
+  useEffect(() => navigate(to, { replace: true }), [to]);
+  return null;
+}
+
+/** Addresses from before pages were gathered into tabs, as bookmarks and old mails still have them. */
+const MOVED: Record<string, string> = {
+  "/admin/setup": SERVER_PATHS.mailFlow,
+  "/admin/log": PROTOCOLS_PATHS.changes,
+  "/admin/vpn": SETTINGS_PATHS.vpn,
+};
+
+/** Which tab of a tabbed page an address opens, if any. */
+function tabOf<T extends string>(paths: Record<T, string>, path: string): T | undefined {
+  return (Object.keys(paths) as T[]).find((tab) => matchPath(paths[tab], path));
+}
+
 /** Pages inside the portal; admin pages only exist for admins. */
 function page(path: string, session: Session): ReactNode {
   if (path === "/account") return <AccountHome session={session} />;
@@ -62,7 +75,10 @@ function page(path: string, session: Session): ReactNode {
   if (path === "/account/spam/learning") return <AccountSpamPage tab="learning" />;
   if (path === "/account/spam/waiting") return <AccountSpamPage tab="waiting" />;
   if (session.account.role !== "admin") return <NotFound />;
-  if (path === "/admin") return <AdminHome />;
+  const moved = MOVED[path];
+  if (moved) return <Redirect to={moved} />;
+  const serverTab = tabOf<ServerTab>(SERVER_PATHS, path);
+  if (serverTab) return <ServerPage tab={serverTab} session={session} />;
   if (matchPath("/admin/people", path)) return <PeoplePage session={session} />;
   const person = matchPath("/admin/people/:login", path);
   if (person?.login) return <PersonPage key={person.login} login={person.login} session={session} />;
@@ -74,13 +90,10 @@ function page(path: string, session: Session): ReactNode {
   if (matchPath("/admin/spam", path)) return <AdminSpamPage />;
   const spamTab = matchPath("/admin/spam/:tab", path)?.tab;
   if (spamTab && SPAM_TABS.includes(spamTab as SpamTab)) return <AdminSpamPage tab={spamTab as SpamTab} />;
-  if (matchPath("/admin/vpn", path)) return <VpnPage />;
-  if (matchPath("/admin/backups", path)) return <BackupsPage />;
-  if (matchPath("/admin/log", path)) return <LogPage />;
-  if (matchPath("/admin/logs", path)) return <LogsPage />;
-  if (matchPath("/admin/updates", path)) return <UpdatesPage />;
-  if (matchPath("/admin/settings", path)) return <SettingsPage />;
-  if (matchPath("/admin/setup", path)) return <SetupPage session={session} />;
+  const protocolsTab = tabOf<ProtocolsTab>(PROTOCOLS_PATHS, path);
+  if (protocolsTab) return <ProtocolsPage tab={protocolsTab} />;
+  const settingsTab = tabOf<AdminSettingsTab>(SETTINGS_PATHS, path);
+  if (settingsTab) return <AdminSettingsPage tab={settingsTab} />;
   return <NotFound />;
 }
 
