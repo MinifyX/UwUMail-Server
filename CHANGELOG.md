@@ -3,6 +3,64 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.8.0
+
+**Contacts over JMAP** (webmail [v0.8.0](https://github.com/MinifyX/UwUMail-Webmail/releases/tag/v0.8.0)).
+The address books people already keep over CardDAV are now JMAP Contacts too
+(`urn:ietf:params:jmap:contacts`, RFC 9610), the way the calendars became JMAP Calendars in 0.7.0:
+address books with a default one per account, and cards that travel as JSContact over JMAP and
+stay vCards on disk, so a phone over CardDAV and the webmail over JMAP see the same contacts, with
+changes and push for both. The webmail and the apps get a contacts section beside mail and
+calendar, with "add to contacts" for senders and attached vCards, and recipient suggestions name the
+address books first. Migration 34 gives every account a default address book. See
+[docs/jmap-contacts.md](docs/jmap-contacts.md).
+
+**Pictures in mail come through the server.** A picture loaded from its sender tells them the mail
+was opened, when and from where. The server now fetches a mail's remote pictures and a company
+sender's logo for its readers (`/jmap/image` and `/jmap/picture`, announced as
+`urn:uwumail:jmap:remote`, see [docs/jmap-remote.md](docs/jmap-remote.md)), and the webmail and
+the apps use it; the webmail's own policy no longer lets the browser load a picture from anywhere
+else. Only public addresses are fetched, redirects are checked again, and a picture has to be one.
+These requests — and only these — can go through a VPN: `compose.yaml` has an optional `gluetun`
+service behind the `vpn` profile, set up with the `UWUMAIL_EGRESS_*` values in `.env.example`, or
+any HTTP-CONNECT or SOCKS5 proxy under `[egress]`. While the proxy is away, pictures wait (`block`,
+the default) or go directly (`direct`). The admin panel shows it under Server settings → *Pictures
+in mail*, with a button that tests the way out. Mail delivery, DNS and blocklists keep leaving
+directly.
+
+**Reviewed before release.** Everything since 0.7.1, and a fresh read of the whole server, had a
+security review ([docs/security-audit-0.8.0.md](docs/security-audit-0.8.0.md)): two High and
+fourteen Medium findings, all fixed with a test, the Low ones listed with their reasons.
+
+- A backup target can no longer switch a backup's encryption off, or hand a restore a database of
+  its choosing: with a key configured, only encrypted objects are accepted, and every object is
+  checked against its own content. Names from the target's listing are checked and every read has
+  a limit, so a broken or hostile target can't bring the server down either.
+- A `BDAT` chunk is measured against the message size limit before it is read, as `DATA` always
+  was. `BDAT 0 LAST` is answered at once.
+- A `From` that names addresses in more than one domain is refused like two `From` headers are,
+  because DMARC has nothing to say about it. The client's `HELO` goes into this server's own
+  `Received` header only as a host name or an address literal.
+- Signing in: a successful login forgives only its own failures. After ten wrong passwords a login
+  gets one try every 30 seconds; after ten wrong second-factor codes the account's second factor
+  rests for 15 minutes and the owner gets a notice. Web, IMAP, SMTP and ManageSieve share this.
+- The web ports close connections that send nothing for 20 seconds and take at most 4096 at once,
+  128 from one network (behind a reverse proxy only the total counts).
+- The DNS check now recommends a CAA record that lets only this server's Let's Encrypt account
+  issue certificates for its name, so a compromised gateway VPS can't get one. The Cloudflare
+  button writes it only when ticked. [docs/gateway.md](docs/gateway.md) explains why.
+- The root helpers on the gateway and the host no longer touch files by name in directories the
+  other side can write to.
+- IMAP `LIST` patterns, mailbox discovery, the fetch worker, contact and calendar queries, and the
+  sender-picture cache all have limits now that could be run up before.
+- The webmail's review ([v0.8.0](https://github.com/MinifyX/UwUMail-Webmail/releases/tag/v0.8.0),
+  its docs/security-audit-2026-09.md) fixed two ways a crafted mail could freeze the tab.
+
+The webmail's attachment previews for text, tables, calendar files, contacts and PDFs now show on
+a real server: its policy blocked them before, which nobody had noticed because the demo has none.
+A reopened reply draft keeps its threading, and embedded pictures in the reader use their
+attachment directly.
+
 ## 0.7.1
 
 **Images follow dark mode** (webmail [v0.7.1](https://github.com/MinifyX/UwUMail-Webmail/releases/tag/v0.7.1)).
