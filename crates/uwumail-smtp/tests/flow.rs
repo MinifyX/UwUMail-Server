@@ -679,6 +679,36 @@ async fn forged_mail_from_a_domain_that_rejects_it_is_refused() {
     assert!(a.inbox("mini@a.test").await.is_empty());
 }
 
+/// security-audit-0.8.0 T-2: DMARC does not judge a From whose addresses lie in several domains, so a
+/// sender whose own SPF passes could name a domain that rejects forgeries next to itself. Such a
+/// message is refused; several authors of one domain are fine.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_from_with_addresses_in_several_domains_is_refused() {
+    let a = start("a.test", &["mini"], &[]).await;
+    a.smtp.dns_cache().pin_txt("sender.test", "v=spf1 ip4:127.0.0.1 -all").unwrap();
+    a.smtp.dns_cache().pin_txt("bank.test", "v=spf1 ip4:198.51.100.1 -all").unwrap();
+    a.smtp.dns_cache().pin_txt("_dmarc.bank.test", "v=DMARC1; p=reject").unwrap();
+    for name in ["_dmarc.sender.test", "mail.sender.test"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+    let send = async |from: &str| {
+        let mut session = RawSession::connect(a.mx).await;
+        assert!(session.command("EHLO mail.sender.test").await.starts_with("250"));
+        assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+        assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
+        assert!(session.command("DATA").await.starts_with("354"));
+        session.command(&format!("From: {from}\r\nSender: news@sender.test\r\nSubject: Konto\r\n\r\nHallo\r\n.")).await
+    };
+
+    let reply = send("news@sender.test, Bank <security@bank.test>").await;
+    assert!(reply.starts_with("550 5.7.1"), "{reply}");
+    assert!(a.inbox("mini@a.test").await.is_empty());
+
+    let reply = send("news@sender.test, Leni <leni@SENDER.test>").await;
+    assert!(reply.starts_with("250"), "{reply}");
+    a.wait_for_inbox("mini@a.test", 1).await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn forged_mail_from_a_domain_that_quarantines_it_goes_to_junk() {
     let a = start("a.test", &["mini"], &[]).await;
