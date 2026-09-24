@@ -420,15 +420,7 @@ async fn drafts_vacation_and_push() {
 
     // Push: wait for the next state change in the background.
     let router = server.router.clone();
-    let push = tokio::spawn(async move {
-        let request = Request::get("/jmap/eventsource/?types=*&closeafter=state&ping=0")
-            .header(header::AUTHORIZATION, basic("mini@example.de", PASSWORD))
-            .body(Body::empty())
-            .unwrap();
-        let response = router.oneshot(request).await.unwrap();
-        String::from_utf8(to_bytes(response.into_body(), 1024 * 1024).await.unwrap().to_vec()).unwrap()
-    });
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let push = open_push(router, "*").await;
 
     let responses = server
         .api(
@@ -713,21 +705,28 @@ async fn settings_sync_between_the_apps_the_webmail_and_the_portal() {
     assert_eq!(args(&theirs, 0, "UserSettings/get")["list"][0]["values"], json!({}));
 }
 
+/// Opens an event source and returns what it sends until the first state change. It is listening once
+/// this returns: the server subscribes before it answers, so no change can slip past, however busy
+/// the machine running the tests is.
+async fn open_push(router: Router, types: &str) -> tokio::task::JoinHandle<String> {
+    let request = Request::get(format!("/jmap/eventsource/?types={types}&closeafter=state&ping=0"))
+        .header(header::AUTHORIZATION, basic("mini@example.de", PASSWORD))
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    tokio::spawn(async move {
+        String::from_utf8(to_bytes(response.into_body(), 1024 * 1024).await.unwrap().to_vec()).unwrap()
+    })
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_settings_change_is_pushed_with_its_state() {
     let server = server().await;
     let login = "mini@example.de";
     let account = server.account_id(login).await;
     let router = server.router.clone();
-    let push = tokio::spawn(async move {
-        let request = Request::get("/jmap/eventsource/?types=UserSettings&closeafter=state&ping=0")
-            .header(header::AUTHORIZATION, basic("mini@example.de", PASSWORD))
-            .body(Body::empty())
-            .unwrap();
-        let response = router.oneshot(request).await.unwrap();
-        String::from_utf8(to_bytes(response.into_body(), 1024 * 1024).await.unwrap().to_vec()).unwrap()
-    });
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let push = open_push(router, "UserSettings").await;
 
     let update = json!({ "singleton": { "values/linkConfirm": true } });
     let responses =
