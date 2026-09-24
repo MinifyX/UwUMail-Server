@@ -2,13 +2,10 @@ import clsx from "clsx";
 import {
   AtSign,
   ChartNoAxesColumn,
-  EarthLock,
-  DatabaseBackup,
   ChevronsUpDown,
   Download,
   Forward,
   Globe,
-  History,
   Inbox,
   ScrollText,
   Send,
@@ -23,7 +20,6 @@ import {
   ShieldCheck,
   UserRound,
   Users,
-  WandSparkles,
   X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -42,6 +38,19 @@ interface NavItem {
   to: string;
   label: string;
   icon: LucideIcon;
+  /** Further addresses this entry stands for, such as the tabs of a page gathered under it. */
+  also?: string[];
+}
+
+/** Whether a menu entry is the page one is on, or the section it belongs to. */
+function isCurrent(item: NavItem, path: string): boolean {
+  // The overviews only light up on their own pages, sections also on their sub-pages.
+  const overview = item.to === "/admin" || item.to === "/account";
+  return (
+    path === item.to ||
+    (!overview && path.startsWith(`${item.to}/`)) ||
+    (item.also ?? []).some((also) => path === also || path.startsWith(`${also}/`))
+  );
 }
 
 const OPEN_SECTIONS_KEY = "uwumail-portal-nav";
@@ -89,7 +98,7 @@ function NavSection({
   startsOpen?: boolean;
 }) {
   const { t } = useT();
-  const here = items.some((item) => path === item.to || path.startsWith(`${item.to}/`));
+  const here = items.some((item) => isCurrent(item, path) || path.startsWith(`${item.to}/`));
   // What this browser last chose wins; otherwise the group opens if the current page is in it.
   const [open, setOpen] = useState(() => {
     const remembered = name ? storedOpen()[name] : undefined;
@@ -134,9 +143,7 @@ function NavSection({
       )}
       {open &&
         items.map((item) => {
-          // The overview only lights up on its own page, sections also on their sub-pages.
-          const overview = item.to === "/admin" || item.to === "/account";
-          const active = path === item.to || (!overview && path.startsWith(`${item.to}/`));
+          const active = isCurrent(item, path);
           return (
             <Link
               key={item.to}
@@ -219,18 +226,18 @@ export function PortalShell({ session, children }: { session: Session; children:
             startsOpen={false}
             onNavigate={() => setDrawer(false)}
             items={[
-              { to: "/admin", label: t("nav.overview"), icon: LayoutDashboard },
+              {
+                to: "/admin",
+                label: t("nav.overview"),
+                icon: LayoutDashboard,
+                also: ["/admin/mail-flow", "/admin/backups", "/admin/updates"],
+              },
               { to: "/admin/people", label: t("nav.people"), icon: Users },
               { to: "/admin/domains", label: t("nav.domains"), icon: Globe },
               { to: "/admin/reports", label: t("nav.reports"), icon: ChartNoAxesColumn },
               { to: "/admin/queue", label: t("nav.queue"), icon: Send },
               { to: "/admin/spam", label: t("nav.spamFilter"), icon: ShieldBan },
-              { to: "/admin/backups", label: t("nav.backups"), icon: DatabaseBackup },
-              { to: "/admin/updates", label: t("nav.updates"), icon: Download },
               { to: "/admin/settings", label: t("nav.settings"), icon: Settings },
-              { to: "/admin/vpn", label: t("nav.vpn"), icon: EarthLock },
-              { to: "/admin/setup", label: t("nav.setup"), icon: WandSparkles },
-              { to: "/admin/log", label: t("nav.log"), icon: History },
               { to: "/admin/logs", label: t("nav.logs"), icon: ScrollText },
             ]}
           />

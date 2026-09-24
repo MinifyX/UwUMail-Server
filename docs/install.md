@@ -191,7 +191,7 @@ is there. The server asks Let's Encrypt when it starts, so if
 `mail.example.com` didn't reach it on port 80 then, it tries again within the
 hour — `sudo docker compose restart uwumail` makes it try right away.
 
-Everything the assistant checked stays in the portal under *Server → Setup*.
+Everything the assistant checked stays in the portal under *Server → Overview → Mail flow*.
 More domains and people are added under *Domains* and *Accounts*.
 
 ### 1.7 Mail apps
@@ -209,7 +209,7 @@ Details, calendars and contacts: [deployment.md](deployment.md#mail-apps).
 
 ### 1.8 Backups
 
-Set them up before you rely on the server: *Server → Backups* backs up every
+Set them up before you rely on the server: *Server → Overview → Backups* backs up every
 night to an SFTP server such as a NAS, deduplicated and encrypted. Keep the
 recovery key somewhere else than the server. See [backups.md](backups.md).
 
@@ -748,7 +748,7 @@ address and its port. Two that come up often:
 
 ## Keeping it up to date
 
-*Server → Updates* in the portal shows when a new version is out and what
+*Server → Overview → Updates* in the portal shows when a new version is out and what
 changed. The update itself happens on the machine:
 
 ```bash
@@ -802,8 +802,8 @@ cd /opt/uwumail && sudo docker compose up -d
 
 What the container may ask the helper for is a verb from a fixed list: install
 the system's updates, restart the machine, bring UwUMail or the helper itself to
-the newest release (*Server → Updates*, *Server → Overview*), and start, stop or
-remove the VPN for pictures (*Server → VPN & Proxy*, see
+the newest release (*Server → Overview → Updates*, *Server → Overview*), and start, stop or
+remove the VPN for pictures (*Server → Settings → VPN & proxy*, see
 [configuration.md](configuration.md#remote-pictures-through-a-vpn)). Never a
 command, never a path, never an address, and never a version: an update always
 fetches the newest release from GitHub, checks it against its `sha256`, and runs
@@ -827,7 +827,7 @@ takes them with it.
 - `sudo docker compose logs --tail 100 uwumail` shows what the server is doing.
   On the gateway VPS: `sudo journalctl -u uwumail-gateway`.
 - The admin overview in the portal shows the health of DNS, certificate,
-  sending, storage, logins and the gateway; *Server → Setup* runs the checks
+  sending, storage, logins and the gateway; *Server → Overview → Mail flow* runs the checks
   again.
 - **`address already in use` or `port is already allocated`:** another program
   has one of the six ports. The installer asks about that before it starts

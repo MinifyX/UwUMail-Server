@@ -183,7 +183,7 @@ tunnel, where they stop before they reach the house at all.
 
 ### What it says, and where
 
-The portal shows it under *Server → Setup*: updates waiting on the gateway,
+The portal shows it under *Server → Overview → Mail flow*: updates waiting on the gateway,
 whether security updates install themselves, whether a restart is due, the
 firewall and jails, and the address the gateway keeps safe from bans. Logging in
 over SSH says the same thing, and `sudo bash install.sh --check` prints it on
@@ -291,7 +291,7 @@ network it belongs to and whether port 25 works, and recommends a gateway or
 sending directly. Choose *Through a gateway*, paste the code and pair; the
 panel shows when the tunnel is up and where the host name has to point. After a
 pairing from the configuration it shows the gateway as already paired. The
-same checks and the pairing stay under *Server → Setup*. Pairing and
+same checks and the pairing stay under *Server → Overview → Mail flow*. Pairing and
 forgetting ask for your password again.
 
 The token only works once: the gateway now knows your server by its

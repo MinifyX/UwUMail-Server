@@ -22,7 +22,15 @@
   },
   "admin": {
     "intro": "How your server is doing. I'm keeping an eye on it too (=^･ω･^=)",
-    "queueEmpty": "Nothing waiting, everything is on its way ✉︎"
+    "queueEmpty": "Nothing waiting, everything is on its way ✉︎",
+    "tiles": {
+      "mailFlow": {
+        "ok": "Mail zips in and out (=^･ω･^=)"
+      },
+      "changes": {
+        "none": "Everything is still like on day one (´｡• ω •｡`)"
+      }
+    }
   },
   "errors": {
     "loadFailed": {

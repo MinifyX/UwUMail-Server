@@ -3,14 +3,13 @@ import clsx from "clsx";
 import { AtSign, Globe, HardDrive, Send, ShieldCheck, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { Card, KeyValue, PageHeader } from "@/components/ui/Card";
+import { Card, KeyValue } from "@/components/ui/Card";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { useT } from "@/i18n";
 import { api, type Overview } from "@/lib/api";
 import { formatBytes, formatDuration } from "@/lib/format";
 import { HealthCard } from "./HealthCard";
-import { HostCard } from "./HostCard";
-import { UpdatesCard } from "./UpdatesCard";
+import { StatusTiles } from "./StatusTiles";
 
 function Stat({
   icon: Icon,
@@ -45,6 +44,7 @@ function Stat({
   );
 }
 
+/** Server → Overview → Overview: the health lights, a tile per tab beside it, and the numbers. */
 export function AdminHome() {
   const { t, i18n } = useT();
   const overview = useQuery({
@@ -58,18 +58,10 @@ export function AdminHome() {
   const { counts, server } = overview.data;
   const language = i18n.language;
 
-  const queueNote =
-    counts.deferredRecipients > 0
-      ? t("admin.queueDeferred", { count: counts.deferredRecipients })
-      : counts.queuedMessages > 0
-        ? t("admin.queueWaiting", { count: counts.queuedMessages })
-        : t("admin.queueEmpty");
-
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader title={t("admin.title")} intro={t("admin.intro")} />
-
       <HealthCard />
+      <StatusTiles counts={counts} />
 
       <div className={clsx("grid gap-4", "grid-cols-2 md:grid-cols-3 xl:grid-cols-6")}>
         <Stat
@@ -96,11 +88,7 @@ export function AdminHome() {
         <KeyValue label={t("admin.server.hostname")} value={server.hostname} copy={server.hostname} />
         <KeyValue label={t("admin.server.version")} value={server.version} />
         <KeyValue label={t("admin.server.uptime")} value={formatDuration(server.uptimeSeconds, t)} />
-        <KeyValue label={t("admin.cards.queue")} value={queueNote} />
       </Card>
-
-      <UpdatesCard />
-      <HostCard />
     </div>
   );
 }

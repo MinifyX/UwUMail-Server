@@ -91,7 +91,7 @@ the gateway's lines come along: it hands them to the server through the tunnel,
 and they go on with the label `source=gateway`. They also show up on the
 portal's *Logs* page, marked *Gateway*.
 
-Switch it on under *Server → Logs → Send to Grafana Loki*. The address is Loki's
+Switch it on under *Server → Logs → Log shipping*. The address is Loki's
 base address (`http://192.168.1.20:3100`, `https://loki.example.net`);
 `/loki/api/v1/push` is added when it has no path of its own, so an address
 behind a reverse proxy can name the whole path instead. Loki can be reached
@@ -158,7 +158,7 @@ delivering mail, blocklists and list updates keep leaving directly. Outgoing
 mail on port 25 could not go through a VPN anyway; providers block it, and
 their addresses are on every blocklist.
 
-**In the portal:** *Server → VPN & Proxy* sets all of it while the server runs.
+**In the portal:** *Server → Settings → VPN & proxy* sets all of it while the server runs.
 Pick a provider (NordVPN, Mullvad, Proton VPN, Surfshark, IVPN, AirVPN,
 Windscribe and every other provider gluetun knows, or your own WireGuard or
 OpenVPN server), paste the key or read the provider's WireGuard `.conf` or

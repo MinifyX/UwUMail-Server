@@ -1236,7 +1236,7 @@ function health(): Health {
 
 function gatewayArea(area: (name: HealthArea["area"], findings: HealthFinding[]) => HealthArea): HealthArea[] {
   const view = gatewayView();
-  const link = "/admin/setup";
+  const link = "/admin/mail-flow";
   switch (view.state) {
     case "none":
       return [];

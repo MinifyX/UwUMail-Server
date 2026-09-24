@@ -51,7 +51,6 @@
     "openMenu": "Open menu",
     "closeMenu": "Close menu",
     "people": "Accounts",
-    "log": "Change log",
     "domains": "Domains",
     "queue": "Queue",
     "logs": "Logs",
@@ -60,15 +59,11 @@
     "mail": "Forwarding",
     "fetch": "Fetched mail",
     "addresses": "Addresses",
-    "setup": "Setup",
     "spamFilter": "Spam filter",
-    "backups": "Backups",
     "reports": "Reports",
-    "updates": "Updates",
     "collapse": "Collapse {{group}}",
     "expand": "Expand {{group}}",
-    "mailbox": "Mailbox",
-    "vpn": "VPN & proxy"
+    "mailbox": "Mailbox"
   },
   "userMenu": {
     "open": "Open account menu",
@@ -169,6 +164,46 @@
       "hostname": "Host name",
       "version": "Version",
       "uptime": "Running for"
+    },
+    "tab": "Section",
+    "tabs": {
+      "overview": "Overview",
+      "mailFlow": "Mail flow",
+      "backups": "Backups",
+      "updates": "Updates"
+    },
+    "tiles": {
+      "news": "new",
+      "loading": "Loading …",
+      "mailFlow": {
+        "ok": "Sending and receiving work",
+        "warning": "Something about sending needs a look",
+        "problem": "Mail is not getting through",
+        "unknown": "Not checked yet"
+      },
+      "backups": {
+        "last": "Last backup {{time}}",
+        "never": "No backup yet",
+        "none": "Not set up yet",
+        "running": "Backing up right now",
+        "failed": "The last backup failed",
+        "paused": "Paused"
+      },
+      "updates": {
+        "current": "Up to date ({{version}})",
+        "available": "Version {{version}} is out",
+        "edge_one": "{{count}} new commit on main",
+        "edge_other": "{{count}} new commits on main",
+        "unknown": "Could not check",
+        "reboot": "The machine would like to restart.",
+        "helper": "There is an update for the helper.",
+        "system_one": "{{count}} system update is waiting.",
+        "system_other": "{{count}} system updates are waiting."
+      },
+      "changes": {
+        "title": "Last change",
+        "none": "Nothing changed yet"
+      }
     }
   },
   "duration": {
@@ -480,7 +515,6 @@
     }
   },
   "log": {
-    "title": "Change log",
     "intro": "Who changed what, and when.",
     "empty": {
       "title": "No changes yet",
@@ -1002,7 +1036,14 @@
         "error": "Loki isn't taking anything right now: {{error}}"
       }
     },
-    "gateway": "Gateway"
+    "gateway": "Gateway",
+    "tab": "Log",
+    "tabs": {
+      "live": "Live log",
+      "changes": "Changes",
+      "shipping": "Log shipping"
+    },
+    "shippingIntro": "Where the server also sends its logs, so they outlast a restart and sit in one place with other servers."
   },
   "settings": {
     "title": "Settings",
@@ -1141,8 +1182,15 @@
       "testDirect": "Senders see {{address}}, the address of this server.",
       "testFailed": "The test did not work: {{error}}"
     },
-    "vpnHint": "Which VPN or proxy the server sends pictures, update checks and mailbox fetching through has a page of its own.",
-    "vpnLink": "Go to VPN & proxy"
+    "tab": "Section",
+    "tabs": {
+      "general": "General",
+      "mail": "Sending & receiving",
+      "apps": "Apps & webmail",
+      "vpn": "VPN & proxy"
+    },
+    "mailIntro": "How mail leaves the server and what it accepts. Changes take effect at once, without a restart.",
+    "appsIntro": "What holds for mail apps and the mailbox in the browser. Changes take effect at once, without a restart."
   },
   "health": {
     "loading": "Loading the server's health …",
@@ -1733,13 +1781,14 @@
       "open": "Go to the admin area"
     },
     "page": {
-      "title": "Setup",
-      "intro": "The checks from the setup assistant: sending, receiving, reverse DNS, blocklists and a test message.",
+      "intro": "How mail reaches your server and how it leaves: reachability, gateway, sending route, reverse DNS, blocklists and a test message.",
       "lastRun": "Checked {{time}}",
       "neverRun": "Not checked yet.",
       "domainsTitle": "DNS records",
       "domainsBody": "Records are checked per domain. If a domain is at Cloudflare, I can add them there.",
-      "wizard": "Open the assistant"
+      "settingsHint": "The sending route, relay and size limits are in the settings.",
+      "settingsLink": "Go to sending & receiving",
+      "queueLink": "Go to the queue"
     },
     "lines": {
       "directOk": "The server reaches other mail servers directly on port 25 ({{target}}).",
@@ -1916,7 +1965,6 @@
     }
   },
   "updates": {
-    "title": "Updates",
     "intro": "Which version is running, what is new, and what installs it.",
     "open": "Open",
     "running": "Running: version {{version}}",
@@ -1948,7 +1996,6 @@
     "helperOld": "The helper on this machine is too old for the update button. Run this once on the machine -- it brings the helper up to date too, and from then on you update here with a click:"
   },
   "backups": {
-    "title": "Backups",
     "intro": "Every night the server backs up mail, settings, calendars and contacts to an SFTP server, like a NAS. After the first time it only uploads what is new.",
     "status": {
       "title": "Status",
@@ -2505,7 +2552,6 @@
     }
   },
   "vpn": {
-    "title": "VPN & proxy",
     "intro": "Showing a picture in a message tells its sender when and from where. So the server fetches those pictures itself, and with a VPN the sender does not even see the server, only the VPN. If you like, the update check and fetching other mailboxes go that way too.",
     "status": {
       "title": "How requests leave right now",

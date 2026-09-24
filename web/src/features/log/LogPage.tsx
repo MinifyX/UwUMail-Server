@@ -5,7 +5,6 @@ import { ChevronDown, History } from "lucide-react";
 import clsx from "clsx";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
-import { PageHeader } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useT } from "@/i18n";
 import { api, type AuditRecord } from "@/lib/api";
@@ -223,7 +222,6 @@ export function LogPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader title={t("log.title")} intro={t("log.intro")} />
       {records.length === 0 ? (
         <EmptyState scene="emptyFolder" title={t("log.empty.title")} body={t("log.empty.body")} compact />
       ) : (

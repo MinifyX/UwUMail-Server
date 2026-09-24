@@ -55,7 +55,7 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Queue (senders, recipients, errors, never subjects) with retry and delete; live server log
 - [x] Server settings in the admin panel, applied without a restart; config file and environment take precedence
 - [x] Health overview: DNS, certificate, outgoing mail (relay/port 25 probe, stuck mail, bounces), disk and mailbox space
-- [x] Setup assistant with a one-time code from the log: first domain and admin, DNS records (optionally added at Cloudflare), sending route and port 25 both ways, reverse DNS, blocklists on request, test mail with a reply from outside; the checks stay under Server → Setup
+- [x] Setup assistant with a one-time code from the log: first domain and admin, DNS records (optionally added at Cloudflare), sending route and port 25 both ways, reverse DNS, blocklists on request, test mail with a reply from outside; the checks stay under Server → Overview → Mail flow
 - [x] Admin panel, German and English, playful/neutral tone, Nyu
 - [x] HSTS on the server's own HTTPS once it has a real certificate
 - [x] Security in My account: password change, authenticator app with recovery codes, passkeys, app passwords with scopes and expiry, browser sessions, activity list and notice mails
@@ -106,7 +106,7 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Gateway program for a VPS: public mail and web ports, 421 while the server is away, mail ports only outwards, connection limits, systemd service with install script
 - [x] Server side: pairing from the configuration, connections through the tunnel, outgoing mail only through the gateway
 - [x] Setup assistant: detect a home connection (public address, Spamhaus PBL, reverse DNS, port 25, provider), recommend the gateway, pair with the code, DNS records with the gateway's addresses
-- [x] Gateway in the health overview and under Server → Setup, notes on providers that block port 25
+- [x] Gateway in the health overview and under Server → Overview → Mail flow, notes on providers that block port 25
 - [ ] Cloudflare button for the host name's A/AAAA records with the gateway's addresses
 - [ ] Tried on a real VPS with a test instance behind it
 

@@ -3,7 +3,7 @@ import { Check, DatabaseBackup, History, KeyRound, Plug, RefreshCw } from "lucid
 import { type FormEvent, useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
-import { Card, CopyButton, PageHeader } from "@/components/ui/Card";
+import { Card, CopyButton } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, Segmented, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
@@ -560,7 +560,6 @@ function SnapshotsCard({ view }: { view: BackupsView }) {
 
 /** Backups to an SFTP server: where to, when, and what is there. */
 export function BackupsPage() {
-  const { t } = useT();
   const query = useQuery({
     queryKey: key,
     queryFn: () => api<BackupsView>("/api/admin/backups"),
@@ -579,7 +578,6 @@ export function BackupsPage() {
   const view = query.data;
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader title={t("backups.title")} intro={t("backups.intro")} />
       <RestoreCard view={view} />
       <StatusCard view={view} />
       <SettingsCard view={view} onRecoveryKey={setRecoveryKey} />
