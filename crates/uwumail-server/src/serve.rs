@@ -224,18 +224,35 @@ pub async fn run(
     let https_tls = tls::https_server_config(certs.clone())?;
     let https = http::app(state.clone(), jmap.clone(), web.clone(), trusted_proxies.clone())
         .layer(axum::middleware::from_fn_with_state(certs.clone(), http::strict_transport_security));
+    let connections = http::Connections::new();
     if let Some(listener) = bind(&config.listen.http, "HTTP (certificate challenges, redirect to HTTPS)").await? {
-        tasks.spawn(http::serve(listener, None, redirect.clone(), shutdown_rx.clone()));
+        tasks.spawn(http::serve(listener, None, redirect.clone(), connections.clone(), true, shutdown_rx.clone()));
     }
     if let Some(listener) = bind(&config.listen.https, "HTTPS").await? {
-        tasks.spawn(http::serve(listener, Some(https_tls.clone()), https.clone(), shutdown_rx.clone()));
+        tasks.spawn(http::serve(
+            listener,
+            Some(https_tls.clone()),
+            https.clone(),
+            connections.clone(),
+            true,
+            shutdown_rx.clone(),
+        ));
     }
     if let Some(listener) = bind(&config.listen.proxy, "HTTP behind a reverse proxy").await? {
         let app = http::app(state.clone(), jmap.clone(), web.clone(), trusted_proxies.clone());
-        tasks.spawn(http::serve(listener, None, app, shutdown_rx.clone()));
+        // Every connection there comes from the proxy, so only the total counts.
+        tasks.spawn(http::serve(listener, None, app, connections.clone(), false, shutdown_rx.clone()));
     }
     // Connections that arrive through a UwUMail Gateway reach the same services.
-    let services = gateway::Services { smtp: smtp.clone(), imap, mail_tls, https_tls, https, http: redirect };
+    let services = gateway::Services {
+        smtp: smtp.clone(),
+        imap,
+        mail_tls,
+        https_tls,
+        https,
+        http: redirect,
+        http_connections: connections,
+    };
     gateway.start(services, &config.gateway).await;
 
     if let Some(code) = setup_code {

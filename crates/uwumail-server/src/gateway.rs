@@ -54,6 +54,8 @@ pub struct Services {
     pub https_tls: Arc<rustls::ServerConfig>,
     pub https: Router,
     pub http: Router,
+    /// Shared with the HTTP listeners: the gateway is one more way in, not a way around the limits.
+    pub http_connections: Arc<http::Connections>,
 }
 
 impl Inbound for Services {
@@ -64,12 +66,16 @@ impl Inbound for Services {
             Service::Submission => ListenerKind::Submission,
             Service::Submissions => ListenerKind::SubmissionTls,
             Service::Http => {
-                tokio::spawn(http::serve_connection(stream, client, None, self.http.clone()));
+                if let Some(admitted) = self.http_connections.admit(client.ip(), true) {
+                    tokio::spawn(http::serve_connection(stream, client, None, self.http.clone(), admitted));
+                }
                 return;
             }
             Service::Https => {
-                let acceptor = TlsAcceptor::from(self.https_tls.clone());
-                tokio::spawn(http::serve_connection(stream, client, Some(acceptor), self.https.clone()));
+                if let Some(admitted) = self.http_connections.admit(client.ip(), true) {
+                    let acceptor = TlsAcceptor::from(self.https_tls.clone());
+                    tokio::spawn(http::serve_connection(stream, client, Some(acceptor), self.https.clone(), admitted));
+                }
                 return;
             }
             Service::Imaps => {
@@ -619,6 +625,7 @@ mod tests {
             https_tls: Arc::new(tls),
             https: http::app(state.clone(), Router::new(), who, Arc::default()),
             http: http::redirect_app(state),
+            http_connections: http::Connections::new(),
         };
         (services, certificate.cert.der().to_vec())
     }
