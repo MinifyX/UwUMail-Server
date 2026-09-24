@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use tokio::io::AsyncReadExt;
+
 use crate::Error;
 use crate::sftp::Sftp;
 
@@ -11,16 +13,28 @@ pub enum Storage {
 }
 
 impl Storage {
-    /// The content of a file, `None` when it does not exist.
-    pub async fn read(&self, path: &str) -> Result<Option<Vec<u8>>, Error> {
-        match self {
-            Storage::Local(root) => match tokio::fs::read(root.join(path)).await {
-                Ok(bytes) => Ok(Some(bytes)),
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
-                Err(err) => Err(err.into()),
+    /// The content of a file, `None` when it does not exist. A file longer than `limit` is refused
+    /// after reading no more than one byte past it: the backup server decides how big its files are.
+    pub async fn read(&self, path: &str, limit: u64) -> Result<Option<Vec<u8>>, Error> {
+        let bytes = match self {
+            Storage::Local(root) => match tokio::fs::File::open(root.join(path)).await {
+                Ok(file) => {
+                    let mut bytes = Vec::new();
+                    file.take(limit.saturating_add(1)).read_to_end(&mut bytes).await?;
+                    bytes
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                Err(err) => return Err(err.into()),
             },
-            Storage::Sftp(sftp) => sftp.read(path).await,
+            Storage::Sftp(sftp) => match sftp.read(path, limit).await? {
+                Some(bytes) => bytes,
+                None => return Ok(None),
+            },
+        };
+        if bytes.len() as u64 > limit {
+            return Err(Error::Damaged(format!("{path} is bigger than the {limit} bytes it may have")));
         }
+        Ok(Some(bytes))
     }
 
     /// Writes a file completely or not at all: first under a temporary name, then renamed.

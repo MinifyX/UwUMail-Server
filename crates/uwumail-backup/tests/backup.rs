@@ -122,3 +122,34 @@ fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     }
     files
 }
+
+/// What a backup server lists and serves is its own to choose. Names that are not objects or
+/// snapshots are left alone, and a file larger than it may be is refused, not read whole
+/// (security-audit-0.8.0 INF-4).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_backup_server_cannot_crash_a_backup_with_what_it_lists() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, mini) = server(&dir.path().join("data")).await;
+    deliver(&store, mini, "Eins").await;
+    let repo_dir = dir.path().join("repo");
+    let repo = Repository::open(Storage::Local(repo_dir.clone()), Some(RepoKey::generate()), 0).await.unwrap();
+    uwumail_backup::backup(&store, &repo, "mail.example.de", "0.1.0", Retention::default(), 5).await.unwrap();
+
+    // A one-byte name, a name that is no id, a prefix that is no prefix and a snapshot that is none.
+    for stray in ["data/ab/x", "data/ab/é", "data/z/zz", "snapshots/x"] {
+        let path = repo_dir.join(stray);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"not ours").unwrap();
+    }
+    let none = Retention { daily: 0, weekly: 0, monthly: 0 };
+    let report = uwumail_backup::backup(&store, &repo, "mail.example.de", "0.1.0", none, 1_000_000).await.unwrap();
+    assert_eq!(repo.snapshots().await.unwrap(), vec![report.snapshot.clone()], "the stray snapshot is not one");
+    assert!(repo_dir.join("data/ab/x").exists(), "what is not ours is left alone");
+    assert!(matches!(repo.manifest("../uwumail-backup.json").await, Err(uwumail_backup::Error::Config(_))));
+
+    // Files are only read up to their limit.
+    std::fs::write(repo_dir.join("big"), vec![0u8; 100]).unwrap();
+    let storage = Storage::Local(repo_dir.clone());
+    assert_eq!(storage.read("big", 100).await.unwrap().unwrap().len(), 100);
+    assert!(matches!(storage.read("big", 99).await, Err(uwumail_backup::Error::Damaged(_))));
+}

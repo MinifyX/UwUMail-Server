@@ -146,7 +146,8 @@ impl Codec {
         Ok(object)
     }
 
-    pub fn decode(&self, object: &[u8]) -> Result<Vec<u8>, Error> {
+    /// The content of a stored object, refused when it would be longer than `limit` bytes.
+    pub fn decode(&self, object: &[u8], limit: u64) -> Result<Vec<u8>, Error> {
         let [version, flags, rest @ ..] = object else { return Err(Error::Damaged("an object is too short".into())) };
         if *version != OBJECT_VERSION {
             return Err(Error::Damaged(format!("unknown object version {version}")));
@@ -170,18 +171,43 @@ impl Codec {
         } else {
             rest.to_vec()
         };
+        let too_long = || Error::Damaged(format!("an object is longer than the {limit} bytes it may have"));
         if flags & FLAG_COMPRESSED == 0 {
-            return Ok(body);
+            return if body.len() as u64 > limit { Err(too_long()) } else { Ok(body) };
         }
+        // Inflated only up to the limit, so a small object cannot unpack into all the memory there is.
         let mut content = Vec::new();
-        flate2::read::DeflateDecoder::new(&body[..]).read_to_end(&mut content)?;
+        flate2::read::DeflateDecoder::new(&body[..]).take(limit.saturating_add(1)).read_to_end(&mut content)?;
+        if content.len() as u64 > limit {
+            return Err(too_long());
+        }
         Ok(content)
     }
 }
 
+/// Object ids and blob hashes are the hex of a SHA-256, keyed or plain, and nothing else may ever
+/// reach a path. The names a backup server lists, and what a snapshot names, are what a hostile
+/// server controls.
+pub fn checked_id(id: &str) -> Result<&str, Error> {
+    if id.len() == 64 && id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Ok(id);
+    }
+    Err(Error::Damaged(format!("the backup names something that is not an id: {}", id.escape_debug())))
+}
+
 /// The path of an object in the repository.
-pub fn object_path(id: &str) -> String {
-    format!("data/{}/{id}", &id[..2])
+pub fn object_path(id: &str) -> Result<String, Error> {
+    let id = checked_id(id)?;
+    Ok(format!("data/{}/{id}", &id[..2]))
+}
+
+/// Whether a name under `snapshots/` is one this server gives: the time, a dash and six hex digits.
+pub fn is_snapshot_name(name: &str) -> bool {
+    let Some((time, suffix)) = name.split_once('-') else { return false };
+    time.len() == 12
+        && time.bytes().all(|byte| byte.is_ascii_digit())
+        && suffix.len() == 6
+        && suffix.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 /// A file from the data directory besides the database and the mail blobs, e.g. certificates.
@@ -226,14 +252,14 @@ mod tests {
         let object = codec.encode(&content).unwrap();
         assert!(object.len() < content.len(), "compressed");
         assert!(!object.windows(5).any(|window| window == b"Hallo"), "encrypted");
-        assert_eq!(codec.decode(&object).unwrap(), content);
+        assert_eq!(codec.decode(&object, u64::MAX).unwrap(), content);
         let id = codec.id_for(&content);
         assert_ne!(id, hex::encode(Sha256::digest(&content)), "ids are keyed");
         assert_eq!(id, codec.id_for_hash(&hex::encode(Sha256::digest(&content))));
 
         let mut tampered = object.clone();
         *tampered.last_mut().unwrap() ^= 1;
-        assert!(matches!(codec.decode(&tampered), Err(Error::Damaged(_))));
+        assert!(matches!(codec.decode(&tampered, u64::MAX), Err(Error::Damaged(_))));
         let other = Codec::new(&Codec::config_for(Some(&RepoKey::generate()), 0), Some(RepoKey::generate()));
         assert!(matches!(other, Err(Error::WrongKey)));
         assert!(matches!(Codec::new(&config, Some(RepoKey::generate())), Err(Error::WrongKey)));
@@ -250,7 +276,32 @@ mod tests {
         let codec = Codec::new(&config, None).unwrap();
         let object = codec.encode(b"x").unwrap();
         assert_eq!(object, [OBJECT_VERSION, 0, b'x'], "not worth compressing");
-        assert_eq!(codec.decode(&object).unwrap(), b"x");
+        assert_eq!(codec.decode(&object, u64::MAX).unwrap(), b"x");
         assert_eq!(codec.id_for(b"x"), hex::encode(Sha256::digest(b"x")));
+    }
+
+    #[test]
+    fn objects_are_inflated_no_further_than_their_limit() {
+        let codec = Codec::new(&Codec::config_for(None, 0), None).unwrap();
+        // A megabyte of zeros deflates to about a kilobyte.
+        let object = codec.encode(&vec![0u8; 1024 * 1024]).unwrap();
+        assert!(object.len() < 4096);
+        assert_eq!(codec.decode(&object, 1024 * 1024).unwrap().len(), 1024 * 1024);
+        assert!(matches!(codec.decode(&object, 64 * 1024), Err(Error::Damaged(_))));
+        assert!(matches!(codec.decode(&[OBJECT_VERSION, 0, 1, 2, 3], 2), Err(Error::Damaged(_))));
+    }
+
+    #[test]
+    fn only_ids_and_snapshot_names_reach_a_path() {
+        let id = "ab".repeat(32);
+        assert_eq!(object_path(&id).unwrap(), format!("data/ab/{id}"));
+        for bad in ["x", "é", "", "../../etc/passwd", &"g".repeat(64), &format!("{id}0")] {
+            assert!(object_path(bad).is_err(), "{bad}");
+        }
+        assert!(is_snapshot_name("000001000000-0a1b2c"));
+        for bad in ["x", "000001000000-0a1b2", "00000100000a-0a1b2c", "../000001000000-0a1b2c", "000001000000-0a1b2c/"]
+        {
+            assert!(!is_snapshot_name(bad), "{bad}");
+        }
     }
 }
