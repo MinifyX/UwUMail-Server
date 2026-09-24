@@ -184,6 +184,55 @@ async fn apps_log_in_list_select_and_fetch() {
     assert!(done.contains("OK"));
 }
 
+/// A real S/MIME signed message from `MIME-Version` down; see `crates/testdata/README.md`.
+const SMIME_SIGNED: &str = include_str!("../../testdata/smime-signed.eml");
+
+/// What the signature covers: the first part, headers and all, between its delimiters.
+fn smime_signed_part() -> &'static str {
+    let delimiter = "\r\n------CB142669393DF1066D37793D9F43FD77";
+    let start = SMIME_SIGNED.find(&format!("{delimiter}\r\n")).unwrap() + delimiter.len() + 2;
+    let end = start + SMIME_SIGNED[start..].find(delimiter).unwrap();
+    &SMIME_SIGNED[start..end]
+}
+
+/// The data of the literal that follows `item` in a FETCH answer.
+fn literal_after<'a>(fetched: &'a str, item: &str) -> &'a str {
+    let size = number_after(fetched, &format!("{item} {{")) as usize;
+    let start = fetched.find(&format!("{item} {{{size}}}\r\n")).unwrap() + item.len() + size.to_string().len() + 5;
+    &fetched[start..start + size]
+}
+
+#[tokio::test]
+async fn signed_smime_mail_is_fetched_byte_for_byte() {
+    let server = server().await;
+    let raw = format!(
+        "From: Nyu <nyu@example.org>\r\nTo: Mini <mini@example.de>\r\nSubject: Signiert\r\nMessage-ID: <smime@example.org>\r\n{SMIME_SIGNED}"
+    );
+    let request = IngestRequest {
+        account_id: server.account,
+        raw: raw.clone().into_bytes(),
+        mailboxes: vec![MailboxTarget::Role(MailboxRole::Inbox)],
+        keywords: vec![],
+        received_at: None,
+    };
+    server.store.ingest(request).await.unwrap();
+
+    let mut client = Client::login(&server).await;
+    client.command("SELECT INBOX").await;
+    let (lines, _) = client.command("FETCH 1 (BODYSTRUCTURE BODY.PEEK[])").await;
+    let fetched = find(&lines, "FETCH");
+    assert!(fetched.contains("\"SIGNED\""), "{fetched}");
+    assert_eq!(literal_after(fetched, "BODY[]"), raw, "the whole message, as mail apps verify it");
+
+    // Apps that fetch the parts on their own verify the part's MIME header and body together.
+    let (lines, _) = client.command("FETCH 1 (BODY.PEEK[1.MIME] BODY.PEEK[1])").await;
+    let fetched = find(&lines, "FETCH");
+    let part = format!("{}{}", literal_after(fetched, "BODY[1.MIME]"), literal_after(fetched, "BODY[1]"));
+    assert_eq!(part, smime_signed_part());
+    let (lines, _) = client.command("FETCH 1 BODY.PEEK[2]").await;
+    assert!(literal_after(find(&lines, "FETCH"), "BODY[2]").starts_with("MIIDwwYJKoZIhvcNAQcCoIIDtDCCA7ACAQEx"));
+}
+
 #[tokio::test]
 async fn append_store_search_move_and_expunge() {
     let server = server().await;

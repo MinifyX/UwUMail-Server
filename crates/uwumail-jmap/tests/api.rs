@@ -373,6 +373,82 @@ async fn upload_import_and_send_like_the_uwumail_app() {
     assert_eq!(args(&responses, 0, "EmailSubmission/set")["notCreated"]["x"]["type"], "forbiddenMailFrom");
 }
 
+/// A real S/MIME signed message from `MIME-Version` down; see `crates/testdata/README.md`. The
+/// signature covers these bytes exactly, so a message that ends in them still verifies.
+const SMIME_SIGNED: &str = include_str!("../../testdata/smime-signed.eml");
+
+#[tokio::test(flavor = "multi_thread")]
+async fn signed_smime_mail_is_sent_and_downloaded_byte_for_byte() {
+    let server = server().await;
+    let login = "mini@example.de";
+    let account = server.account_id(login).await;
+    let nyu = server.account_id("nyu@example.de").await;
+
+    // The UwUMail app signs on the device and hands the finished message over as a blob.
+    let message =
+        format!("From: Mini <mini@example.de>\r\nTo: Nyu <nyu@example.de>\r\nSubject: Signiert\r\n{SMIME_SIGNED}");
+    let upload = Request::post(format!("/jmap/upload/{account}/"))
+        .header(header::AUTHORIZATION, basic(login, PASSWORD))
+        .header(header::CONTENT_TYPE, "message/rfc822")
+        .body(Body::from(message.clone()))
+        .unwrap();
+    let (status, body) = server.request(upload).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let blob_id = serde_json::from_slice::<Value>(&body).unwrap()["blobId"].as_str().unwrap().to_owned();
+
+    let responses = server
+        .api(
+            login,
+            json!([
+                ["Mailbox/query", { "accountId": account, "filter": { "role": "sent" } }, "0"],
+                ["Identity/get", { "accountId": account, "ids": null }, "1"],
+            ]),
+        )
+        .await;
+    let sent_id = args(&responses, 0, "Mailbox/query")["ids"][0].as_str().unwrap().to_owned();
+    let identity_id = args(&responses, 1, "Identity/get")["list"][0]["id"].clone();
+    let responses = server
+        .api(
+            login,
+            json!([
+                ["Email/import", { "accountId": account, "emails": { "signed": {
+                    "blobId": blob_id, "mailboxIds": { sent_id: true }, "keywords": { "$seen": true } } } }, "0"],
+                ["EmailSubmission/set", { "accountId": account,
+                    "create": { "send": { "identityId": identity_id, "emailId": "#signed" } } }, "1"],
+                ["Email/get", { "accountId": account, "ids": ["#signed"], "properties": ["blobId"] }, "2"],
+            ]),
+        )
+        .await;
+    assert_eq!(
+        args(&responses, 1, "EmailSubmission/set")["created"]["send"]["undoStatus"],
+        "final",
+        "{}",
+        responses[1]
+    );
+    let sent_blob = args(&responses, 2, "Email/get")["list"][0]["blobId"].as_str().unwrap().to_owned();
+    let (status, bytes) = server.get(&format!("/jmap/download/{account}/{sent_blob}/signiert.eml"), login).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(String::from_utf8(bytes).unwrap(), message, "the copy in Sent is the uploaded message");
+
+    let responses = server
+        .api(
+            "nyu@example.de",
+            json!([
+                ["Email/query", { "accountId": nyu }, "0"],
+                ["Email/get", { "accountId": nyu, "#ids": { "resultOf": "0", "name": "Email/query", "path": "/ids" },
+                    "properties": ["blobId"] }, "1"],
+            ]),
+        )
+        .await;
+    let received_blob = args(&responses, 1, "Email/get")["list"][0]["blobId"].as_str().unwrap().to_owned();
+    let (status, bytes) =
+        server.get(&format!("/jmap/download/{nyu}/{received_blob}/signiert.eml"), "nyu@example.de").await;
+    assert_eq!(status, StatusCode::OK);
+    let received = String::from_utf8(bytes).unwrap();
+    assert!(received.contains("DKIM-Signature:"), "{received}");
+    assert!(received.ends_with(SMIME_SIGNED), "the signed message is changed on delivery: {received}");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn drafts_vacation_and_push() {
     let server = server().await;

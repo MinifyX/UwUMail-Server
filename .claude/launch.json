@@ -6,6 +6,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--dir", "web", "dev:mock", "--port", "5174", "--strictPort"],
       "port": 5174
+    },
+    {
+      "name": "egress-portal-mock",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "../UwUMail-Server-egress/web", "dev:mock", "--port", "5185", "--strictPort"],
+      "port": 5185
     }
   ]
 }

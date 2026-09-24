@@ -223,6 +223,69 @@ async fn implicit_tls_submission_works() {
     assert_eq!(a.wait_for_inbox("ami@a.test", 1).await[0].subject, "Über 465");
 }
 
+/// A real S/MIME signed message from `MIME-Version` down; see `crates/testdata/README.md`. The
+/// signature covers these bytes exactly, so a message that ends in them still verifies.
+const SMIME_SIGNED: &str = include_str!("../../testdata/smime-signed.eml");
+
+fn smime_message(from: &str, to: &str, subject: &str) -> String {
+    format!(
+        "From: {from}\r\nTo: {to}\r\nSubject: {subject}\r\nDate: {date}\r\nMessage-ID: <{id}@smime.test>\r\n{SMIME_SIGNED}",
+        date = mail_builder::headers::date::Date::now().to_rfc822(),
+        id = subject.replace(' ', "-"),
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn signed_smime_mail_is_delivered_byte_for_byte() {
+    let b = start("b.test", &["nyu"], &[]).await;
+    let a = start("a.test", &["mini", "ami"], &[("b.test", b.mx)]).await;
+    for key in uwumail_smtp::dkim::ensure_domain_keys(a.smtp.store(), "a.test").await.unwrap() {
+        let (name, value) = key.dns_record();
+        b.smtp.dns_cache().pin_txt(&name, &value).unwrap();
+    }
+    for name in ["a.test", "mx.a.test", "_dmarc.a.test"] {
+        b.smtp.dns_cache().pin_no_txt(name);
+    }
+
+    let message = smime_message("Mini <mini@a.test>", "nyu@b.test, ami@a.test", "Signiert");
+    let envelope = lettre::address::Envelope::new(
+        Some("mini@a.test".parse().unwrap()),
+        vec!["nyu@b.test".parse().unwrap(), "ami@a.test".parse().unwrap()],
+    )
+    .unwrap();
+    // lettre always ends the data with its own CRLF before the dot, so it gets the message without one.
+    let data = message.strip_suffix("\r\n").unwrap();
+    a.mailer("mini@a.test", PASSWORD, false).send_raw(&envelope, data.as_bytes()).await.unwrap();
+
+    let local = a.wait_for_inbox("ami@a.test", 1).await;
+    let raw = a.raw(&local[0]).await;
+    assert!(raw.ends_with(SMIME_SIGNED), "the signed message is changed on local delivery: {raw}");
+
+    let remote = b.wait_for_inbox("nyu@b.test", 1).await;
+    let raw = b.raw(&remote[0]).await;
+    assert!(raw.contains("dkim=pass"), "{raw}");
+    assert!(raw.ends_with(SMIME_SIGNED), "the signed message is changed on the way out: {raw}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn signed_smime_mail_from_outside_passes_the_filter_unchanged() {
+    let a = spam_test_server(SpamConfig::default(), None).await;
+    // The relay helper sends the data as it is, so the dot-stuffing SMTP asks for is done here.
+    let message = smime_message("news@sender.test", "mini@a.test", "Signiert").replace("\r\n.", "\r\n..");
+
+    let mut reply = relay_message_from_outside(&a, &message).await;
+    if reply.starts_with("451") {
+        reply = relay_message_from_outside(&a, &message).await;
+    }
+    assert!(reply.starts_with("250"), "{reply}");
+    let mut delivered = a.inbox("mini@a.test").await;
+    delivered.extend(a.mailbox("mini@a.test", MailboxRole::Junk).await);
+    assert_eq!(delivered.len(), 1);
+    let raw = a.raw(&delivered[0]).await;
+    assert!(raw.contains("X-Spam-Status:"), "the filter did look at it: {raw}");
+    assert!(raw.ends_with(SMIME_SIGNED), "the filter changes the signed message: {raw}");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn unknown_remote_recipients_bounce_to_the_sender() {
     let b = start("b.test", &["nyu"], &[]).await;

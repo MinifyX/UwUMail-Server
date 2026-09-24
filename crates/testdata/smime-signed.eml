@@ -1,0 +1,52 @@
+MIME-Version: 1.0
+Content-Type: multipart/signed; protocol="application/x-pkcs7-signature"; micalg="sha-256"; boundary="----CB142669393DF1066D37793D9F43FD77"
+
+This is an S/MIME signed message
+
+------CB142669393DF1066D37793D9F43FD77
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+Hallo Nyu,
+
+diese Mail ist signiert, jedes Byte z=C3=A4hlt.
+.Eine Zeile mit einem Punkt am Anfang.
+..Und eine mit zweien.
+.
+From the start of a line, the way mbox likes to mangle it.
+Leerzeichen am Ende bleiben:   
+	Ein Tab am Anfang.
+
+Gr=C3=BC=C3=9Fe
+Mini
+
+
+------CB142669393DF1066D37793D9F43FD77
+Content-Type: application/x-pkcs7-signature; name="smime.p7s"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="smime.p7s"
+
+MIIDwwYJKoZIhvcNAQcCoIIDtDCCA7ACAQExDzANBglghkgBZQMEAgEFADALBgkq
+hkiG9w0BBwGgggHtMIIB6TCCAY6gAwIBAgIUPU1n5MVy4ZjLjw9zc0w4oHxp+JIw
+CgYIKoZIzj0EAwIwLzENMAsGA1UEAwwETWluaTEeMBwGCSqGSIb3DQEJARYPbWlu
+aUBleGFtcGxlLmRlMCAXDTI2MDkyMzA4MTUyMVoYDzIxMjYwODMwMDgxNTIxWjAv
+MQ0wCwYDVQQDDARNaW5pMR4wHAYJKoZIhvcNAQkBFg9taW5pQGV4YW1wbGUuZGUw
+WTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQsv/QInZN53uNBcqjNGutTO5TuOk6h
+9dsP7b8KCSKYqUqaHOfGHcLaBz59y22c9UCRglil9WTbqrbGU5MK8r6Mo4GFMIGC
+MB0GA1UdDgQWBBQ5tyJwYe7kNSmUeT1fLUwlCXuVzTAfBgNVHSMEGDAWgBQ5tyJw
+Ye7kNSmUeT1fLUwlCXuVzTAPBgNVHRMBAf8EBTADAQH/MBoGA1UdEQQTMBGBD21p
+bmlAZXhhbXBsZS5kZTATBgNVHSUEDDAKBggrBgEFBQcDBDAKBggqhkjOPQQDAgNJ
+ADBGAiEAyiaLG4RLWPAd7YQMfSe0mL56HfN5nTDYF7W4HCDtNg0CIQDUHLv6Lmhm
+g0Wk8kR7GAs5dgxlWUU/4t99rl+WNkb4jzGCAZowggGWAgEBMEcwLzENMAsGA1UE
+AwwETWluaTEeMBwGCSqGSIb3DQEJARYPbWluaUBleGFtcGxlLmRlAhQ9TWfkxXLh
+mMuPD3NzTDigfGn4kjANBglghkgBZQMEAgEFAKCB5DAYBgkqhkiG9w0BCQMxCwYJ
+KoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEPFw0yNjA5MjMwODE1MjFaMC8GCSqGSIb3
+DQEJBDEiBCCszqzoiLOA/JwS9FliyQIjhqUEQnwOdEmRSGo4Z6uSrDB5BgkqhkiG
+9w0BCQ8xbDBqMAsGCWCGSAFlAwQBKjALBglghkgBZQMEARYwCwYJYIZIAWUDBAEC
+MAoGCCqGSIb3DQMHMA4GCCqGSIb3DQMCAgIAgDANBggqhkiG9w0DAgIBQDAHBgUr
+DgMCBzANBggqhkiG9w0DAgIBKDAKBggqhkjOPQQDAgRGMEQCIGnhdxLpn/ee/N8r
+P6wGRF5McBihBztP4Phcxz8rpahRAiAi1vhQzevTDu6fQOmIxAJPrhSxmVJ+BqeN
+h1Bkuj+SIw==
+
+------CB142669393DF1066D37793D9F43FD77--
+
