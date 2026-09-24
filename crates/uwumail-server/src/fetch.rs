@@ -585,9 +585,9 @@ mod tests {
 
     async fn store_with_person(path: &std::path::Path, password: Option<&str>) -> (Store, i64) {
         let store = Store::open(path).await.unwrap();
-        store.create_domain("example.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
         let new = NewAccount {
-            address: "mini@example.de".into(),
+            address: "mini@example.org".into(),
             display_name: "Mini".into(),
             password: password.map(str::to_owned),
             role: Role::User,
@@ -627,7 +627,7 @@ mod tests {
         Smtp::new(
             store,
             SmtpSettings {
-                hostname: "mail.example.de".into(),
+                hostname: "mail.example.org".into(),
                 smtp: SmtpConfig { verify_senders: false, ..Default::default() },
                 spam: SpamConfig { enabled: false, ..Default::default() },
                 delivery: DeliveryConfig::default(),
@@ -671,7 +671,7 @@ mod tests {
                 port: 993,
                 security: FetchSecurity::Tls,
                 // The provider's server is ours, so the login is the one it knows.
-                username: "mini@example.de".into(),
+                username: "mini@example.org".into(),
                 password: PASSWORD.into(),
                 after_fetch: AfterFetch::MarkRead,
                 fetch_junk: true,
@@ -758,7 +758,7 @@ mod tests {
                     host: "imap.freemail.example".into(),
                     port: 993,
                     security: FetchSecurity::Tls,
-                    username: "mini@example.de".into(),
+                    username: "mini@example.org".into(),
                     password: PASSWORD.into(),
                     after_fetch,
                     fetch_junk: false,
@@ -830,7 +830,7 @@ mod tests {
 
         // One byte of room: anything at all fills it.
         rig.ours
-            .update_account("mini@example.de", AccountUpdate { quota_bytes: Some(1), ..Default::default() })
+            .update_account("mini@example.org", AccountUpdate { quota_bytes: Some(1), ..Default::default() })
             .await
             .unwrap();
         at_provider(&rig.provider, rig.provider_id, MailboxTarget::Role(MailboxRole::Inbox), "Wichtig").await;
@@ -842,7 +842,7 @@ mod tests {
 
         // Room again: the same message comes, and only now is it deleted there.
         rig.ours
-            .update_account("mini@example.de", AccountUpdate { quota_bytes: Some(0), ..Default::default() })
+            .update_account("mini@example.org", AccountUpdate { quota_bytes: Some(0), ..Default::default() })
             .await
             .unwrap();
         assert_eq!(rig.run().await, 1, "with room it comes over");
@@ -943,7 +943,7 @@ mod tests {
         assert_eq!(rig.run().await, 0, "the first run only writes down where the folders stand");
 
         rig.ours
-            .update_account("mini@example.de", AccountUpdate { quota_bytes: Some(1), ..Default::default() })
+            .update_account("mini@example.org", AccountUpdate { quota_bytes: Some(1), ..Default::default() })
             .await
             .unwrap();
         rig.ours.request_fetch_backlog(rig.our_id, rig.fetch_id).await.unwrap();
@@ -953,7 +953,7 @@ mod tests {
         assert!(waiting.backlog_at.is_some(), "and it is still waiting to come");
 
         rig.ours
-            .update_account("mini@example.de", AccountUpdate { quota_bytes: Some(0), ..Default::default() })
+            .update_account("mini@example.org", AccountUpdate { quota_bytes: Some(0), ..Default::default() })
             .await
             .unwrap();
         assert_eq!(rig.run().await, 1, "with room it comes");

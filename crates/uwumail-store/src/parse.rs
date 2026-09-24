@@ -135,22 +135,22 @@ mod tests {
     #[test]
     fn extracts_metadata() {
         let raw = concat!(
-            "From: Nyu <nyu@example.de>\r\n",
-            "To: Mini <mini@example.de>, ami@example.de\r\n",
+            "From: Nyu <nyu@example.org>\r\n",
+            "To: Mini <mini@example.org>, ami@example.org\r\n",
             "Subject: Re: Fwd: Katzenfutter\r\n",
             "Date: Mon, 14 Sep 2026 10:00:00 +0200\r\n",
-            "Message-ID: <abc@example.de>\r\n",
-            "In-Reply-To: <parent@example.de>\r\n",
-            "References: <root@example.de> <parent@example.de>\r\n",
+            "Message-ID: <abc@example.org>\r\n",
+            "In-Reply-To: <parent@example.org>\r\n",
+            "References: <root@example.org> <parent@example.org>\r\n",
             "\r\n",
             "Hallo   Mini,\r\n\r\nes gibt  Thunfisch.\r\n",
         );
         let meta = parse(raw.as_bytes());
-        assert_eq!(meta.message_id.as_deref(), Some("abc@example.de"));
-        assert_eq!(meta.in_reply_to, vec!["parent@example.de"]);
-        assert_eq!(meta.references, vec!["root@example.de", "parent@example.de"]);
+        assert_eq!(meta.message_id.as_deref(), Some("abc@example.org"));
+        assert_eq!(meta.in_reply_to, vec!["parent@example.org"]);
+        assert_eq!(meta.references, vec!["root@example.org", "parent@example.org"]);
         assert_eq!(meta.subject, "Re: Fwd: Katzenfutter");
-        assert_eq!(meta.from, vec![EmailAddress { name: Some("Nyu".into()), email: "nyu@example.de".into() }]);
+        assert_eq!(meta.from, vec![EmailAddress { name: Some("Nyu".into()), email: "nyu@example.org".into() }]);
         assert_eq!(meta.to.len(), 2);
         assert_eq!(meta.preview, "Hallo Mini, es gibt Thunfisch.");
         assert_eq!(meta.sent_at, Some(1_789_372_800));

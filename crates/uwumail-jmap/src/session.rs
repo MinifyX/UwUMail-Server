@@ -185,15 +185,15 @@ mod tests {
     #[test]
     fn follows_the_scheme_the_client_used() {
         let mut headers = HeaderMap::new();
-        headers.insert(header::HOST, HeaderValue::from_static("mail.example.de"));
-        assert_eq!(base_url(&headers, ClientInfo::default()), "http://mail.example.de");
-        assert_eq!(base_url(&headers, ClientInfo { https: true, ..ClientInfo::default() }), "https://mail.example.de");
+        headers.insert(header::HOST, HeaderValue::from_static("mail.example.org"));
+        assert_eq!(base_url(&headers, ClientInfo::default()), "http://mail.example.org");
+        assert_eq!(base_url(&headers, ClientInfo { https: true, ..ClientInfo::default() }), "https://mail.example.org");
 
         headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
-        assert_eq!(base_url(&headers, ClientInfo::default()), "https://mail.example.de");
+        assert_eq!(base_url(&headers, ClientInfo::default()), "https://mail.example.org");
 
         headers.remove("x-forwarded-proto");
-        headers.insert(header::FORWARDED, HeaderValue::from_static("for=192.0.2.1;proto=https;host=mail.example.de"));
-        assert_eq!(base_url(&headers, ClientInfo::default()), "https://mail.example.de");
+        headers.insert(header::FORWARDED, HeaderValue::from_static("for=192.0.2.1;proto=https;host=mail.example.org"));
+        assert_eq!(base_url(&headers, ClientInfo::default()), "https://mail.example.org");
     }
 }

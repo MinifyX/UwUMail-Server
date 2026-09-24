@@ -426,10 +426,10 @@ mod tests {
 
     #[test]
     fn profiles_escape_everything_they_carry() {
-        let profile = apple_profile("mail.example.de", "mini@example.de", "Mini <&> \"Katze\"", "abc&def");
+        let profile = apple_profile("mail.example.org", "mini@example.org", "Mini <&> \"Katze\"", "abc&def");
         assert!(profile.contains("<string>Mini &lt;&amp;&gt; &quot;Katze&quot;</string>"));
         assert!(profile.contains("<string>abc&amp;def</string>"));
-        assert!(profile.contains("<string>de.example.mail.uwumail.mini-example-de</string>"));
+        assert!(profile.contains("<string>org.example.mail.uwumail.mini-example-org</string>"));
         assert!(profile.contains("<integer>993</integer>"));
         let uuid = uuid();
         assert_eq!(uuid.len(), 36);

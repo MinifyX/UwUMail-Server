@@ -733,32 +733,32 @@ mod tests {
             END:VEVENT\r\nEND:VCALENDAR\r\n";
         let card = "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:erika-1\r\nFN:Erika Beispiel\r\nEND:VCARD\r\n";
         let lines = [
-            json!({ "type": "domain", "domain": "example.de", "active": 1 }),
-            json!({ "type": "domain", "domain": "verein.de", "active": 1 }),
-            json!({ "type": "domain", "domain": "alt.de", "active": 0 }),
-            json!({ "type": "mailbox", "username": "mini@example.de", "name": "Mini",
-                    "password": bcrypt("katzenpfote-123"), "quota": 0, "active": 1, "domain": "example.de" }),
-            json!({ "type": "mailbox", "username": "leni@verein.de", "name": null,
-                    "password": bcrypt("seifenblase-99"), "quota": 1048576, "active": 2, "domain": "verein.de" }),
-            json!({ "type": "alias", "address": "kontakt@example.de", "goto": "mini@example.de", "active": 1 }),
-            json!({ "type": "alias", "address": "mini@example.de", "goto": "mini@example.de,oma@example.org",
+            json!({ "type": "domain", "domain": "example.org", "active": 1 }),
+            json!({ "type": "domain", "domain": "verein.example", "active": 1 }),
+            json!({ "type": "domain", "domain": "alt.example", "active": 0 }),
+            json!({ "type": "mailbox", "username": "mini@example.org", "name": "Mini",
+                    "password": bcrypt("katzenpfote-123"), "quota": 0, "active": 1, "domain": "example.org" }),
+            json!({ "type": "mailbox", "username": "leni@verein.example", "name": null,
+                    "password": bcrypt("seifenblase-99"), "quota": 1048576, "active": 2, "domain": "verein.example" }),
+            json!({ "type": "alias", "address": "kontakt@example.org", "goto": "mini@example.org", "active": 1 }),
+            json!({ "type": "alias", "address": "mini@example.org", "goto": "mini@example.org,oma@example.net",
                     "active": 1 }),
-            json!({ "type": "alias", "address": "@verein.de", "goto": "leni@verein.de", "active": 1 }),
-            json!({ "type": "alias", "address": "kasse@verein.de", "goto": "kassenwart@example.org", "active": 1 }),
-            json!({ "type": "alias", "address": "spam@example.de", "goto": "null@localhost", "active": 1 }),
-            json!({ "type": "appPassword", "mailbox": "mini@example.de", "name": "Telefon",
+            json!({ "type": "alias", "address": "@verein.example", "goto": "leni@verein.example", "active": 1 }),
+            json!({ "type": "alias", "address": "kasse@verein.example", "goto": "kassenwart@example.net", "active": 1 }),
+            json!({ "type": "alias", "address": "spam@example.org", "goto": "null@localhost", "active": 1 }),
+            json!({ "type": "appPassword", "mailbox": "mini@example.org", "name": "Telefon",
                     "password": bcrypt("altes-app-pw"), "active": 1, "imap": 1, "smtp": 1, "dav": 0 }),
-            json!({ "type": "senderAcl", "loggedInAs": "mini@example.de", "sendAs": "@verein.de", "external": 0 }),
-            json!({ "type": "filter", "object": "mini@example.de", "option": "blacklist_from",
+            json!({ "type": "senderAcl", "loggedInAs": "mini@example.org", "sendAs": "@verein.example", "external": 0 }),
+            json!({ "type": "filter", "object": "mini@example.org", "option": "blacklist_from",
                     "value": "*@werbung.example" }),
-            json!({ "type": "filter", "object": "mini@example.de", "option": "whitelist_from",
-                    "value": "oma@example.org" }),
-            json!({ "type": "filter", "object": "mini@example.de", "option": "highspamlevel", "value": "20" }),
-            json!({ "type": "filter", "object": "mini@example.de", "option": "lowspamlevel", "value": "8" }),
-            json!({ "type": "dkim", "domain": "example.de", "selector": "dkim", "privateKey": dkim_pem() }),
-            json!({ "type": "davFolder", "id": 7, "owner": "mini@example.de", "path": "personal",
+            json!({ "type": "filter", "object": "mini@example.org", "option": "whitelist_from",
+                    "value": "oma@example.net" }),
+            json!({ "type": "filter", "object": "mini@example.org", "option": "highspamlevel", "value": "20" }),
+            json!({ "type": "filter", "object": "mini@example.org", "option": "lowspamlevel", "value": "8" }),
+            json!({ "type": "dkim", "domain": "example.org", "selector": "dkim", "privateKey": dkim_pem() }),
+            json!({ "type": "davFolder", "id": 7, "owner": "mini@example.org", "path": "personal",
                     "name": "Persönlich", "kind": "Appointment" }),
-            json!({ "type": "davFolder", "id": 8, "owner": "mini@example.de", "path": "family", "name": "Familie",
+            json!({ "type": "davFolder", "id": 8, "owner": "mini@example.org", "path": "family", "name": "Familie",
                     "kind": "Contact" }),
             json!({ "type": "davObject", "folder": 7, "name": "treffen-1.ics", "content": event }),
             json!({ "type": "davObject", "folder": 8, "name": "erika 1.vcf", "content": card }),
@@ -792,38 +792,38 @@ mod tests {
             created: BTreeSet::new(),
             keyed: BTreeSet::new(),
         };
-        dry.run(&entries, &["example.de".into(), "verein.de".into()].into()).await.unwrap();
+        dry.run(&entries, &["example.org".into(), "verein.example".into()].into()).await.unwrap();
         let missing: Vec<_> = dry.report.notes.iter().filter(|note| note.contains("no DKIM key")).collect();
-        assert_eq!(missing, ["verein.de had no DKIM key in mailcow: new keys need DNS records"]);
+        assert_eq!(missing, ["verein.example had no DKIM key in mailcow: new keys need DNS records"]);
         assert_eq!(dry.report.counts.get("calendar entries and contacts"), Some(&2), "a dry run counts DAV objects");
 
         mailcow(&store, dav(&store), &file, &[], false).await.unwrap();
         let names: Vec<_> = store.domains().await.unwrap().into_iter().map(|domain| domain.name).collect();
-        assert_eq!(names, ["example.de", "verein.de"], "inactive domains stay behind");
+        assert_eq!(names, ["example.org", "verein.example"], "inactive domains stay behind");
 
-        let mini = store.account("mini@example.de").await.unwrap().unwrap();
-        assert!(store.authenticate("mini@example.de", "katzenpfote-123").await.unwrap().is_some());
-        let leni = store.account("leni@verein.de").await.unwrap().unwrap();
+        let mini = store.account("mini@example.org").await.unwrap().unwrap();
+        assert!(store.authenticate("mini@example.org", "katzenpfote-123").await.unwrap().is_some());
+        let leni = store.account("leni@verein.example").await.unwrap().unwrap();
         assert!(leni.disabled && leni.quota_bytes == 1048576, "mailcow's login lock stays");
-        let app = store.authenticate_mail("mini@example.de", "altes-app-pw", AppScope::Smtp, "smtp", "").await;
+        let app = store.authenticate_mail("mini@example.org", "altes-app-pw", AppScope::Smtp, "smtp", "").await;
         assert!(matches!(app.unwrap(), MailAuth::Ok { app_password: Some(_), .. }));
 
-        assert_eq!(store.resolve_recipient("kontakt@example.de").await.unwrap(), Some(mini.id));
-        assert_eq!(store.resolve_recipient("irgendwer@verein.de").await.unwrap(), Some(leni.id), "catch-all");
-        let kasse = store.forward_address_targets("kasse@verein.de").await.unwrap().unwrap();
-        assert_eq!(kasse, [("kassenwart@example.org".to_owned(), None)]);
+        assert_eq!(store.resolve_recipient("kontakt@example.org").await.unwrap(), Some(mini.id));
+        assert_eq!(store.resolve_recipient("irgendwer@verein.example").await.unwrap(), Some(leni.id), "catch-all");
+        let kasse = store.forward_address_targets("kasse@verein.example").await.unwrap().unwrap();
+        assert_eq!(kasse, [("kassenwart@example.net".to_owned(), None)]);
         let forwarding = store.forwarding(mini.id).await.unwrap();
         assert!(forwarding.keep_copy);
         assert_eq!(forwarding.targets.len(), 1);
         assert!(forwarding.targets[0].confirmed_at.is_some(), "no confirmation mail for what mailcow already did");
 
-        assert!(store.account_owns_address(mini.id, "vorstand@verein.de").await.unwrap());
+        assert!(store.account_owns_address(mini.id, "vorstand@verein.example").await.unwrap());
         let senders = store.sender_list(ListScope::Account(mini.id)).await.unwrap();
         assert!(senders.iter().any(|entry| entry.kind == SenderKind::Pattern && entry.list == SenderList::Block));
         assert_eq!(senders.len(), 2);
         let limits = store.spam_limits(mini.id).await.unwrap();
         assert_eq!((limits.junk, limits.reject), (Some(8.0), Some(20.0)));
-        let keys = store.dkim_keys("example.de").await.unwrap();
+        let keys = store.dkim_keys("example.org").await.unwrap();
         assert_eq!(keys.iter().map(|key| key.selector.as_str()).collect::<Vec<_>>(), ["dkim"]);
 
         let calendars = store.dav_collections(mini.id, DavKind::Calendar, NewDavCollection::default()).await.unwrap();
@@ -836,11 +836,11 @@ mod tests {
 
         // Again: nothing doubles, and what people changed here stays.
         store.set_spam_limits(mini.id, SpamLimits { junk: Some(6.0), reject: None }).await.unwrap();
-        mailcow(&store, dav(&store), &file, &["example.de".into()], false).await.unwrap();
+        mailcow(&store, dav(&store), &file, &["example.org".into()], false).await.unwrap();
         assert_eq!(store.forwarding(mini.id).await.unwrap().targets.len(), 1);
         assert_eq!(store.spam_limits(mini.id).await.unwrap().junk, Some(6.0), "their own change stays");
         assert_eq!(store.sender_list(ListScope::Account(mini.id)).await.unwrap().len(), 2);
-        assert_eq!(store.dkim_keys("example.de").await.unwrap().len(), 1);
-        assert!(mailcow(&store, dav(&store), &file, &["unbekannt.de".into()], false).await.is_err());
+        assert_eq!(store.dkim_keys("example.org").await.unwrap().len(), 1);
+        assert!(mailcow(&store, dav(&store), &file, &["unbekannt.example".into()], false).await.is_err());
     }
 }

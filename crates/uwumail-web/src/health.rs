@@ -476,7 +476,7 @@ mod tests {
     fn cert(days: i64, automatic: bool) -> CertificateStatus {
         CertificateStatus {
             not_after: 1_000_000 + days * DAY,
-            names: vec!["*.example.de".into()],
+            names: vec!["*.example.org".into()],
             self_signed: false,
             automatic,
             lets_encrypt_account: None,
@@ -486,7 +486,7 @@ mod tests {
     #[test]
     fn certificates_warn_before_they_expire() {
         let codes = |area: Area| (area.level, area.findings.iter().map(|f| f.code).collect::<Vec<_>>());
-        let host = "mail.example.de";
+        let host = "mail.example.org";
         assert_eq!(
             codes(certificate_area(host, Some(cert(60, true)), 1_000_000)),
             (Level::Ok, vec!["certOkAutomatic"])
@@ -498,7 +498,7 @@ mod tests {
             (Level::Problem, vec!["certExpired"])
         );
         assert_eq!(
-            codes(certificate_area("mail.other.de", Some(cert(60, false)), 1_000_000)),
+            codes(certificate_area("mail.other.example", Some(cert(60, false)), 1_000_000)),
             (Level::Problem, vec!["certWrongName"])
         );
         assert_eq!(codes(certificate_area(host, None, 0)).0, Level::Problem);

@@ -464,10 +464,10 @@ mod tests {
 
     async fn setup() -> (Store, tempfile::TempDir, i64, i64, i64) {
         let (store, dir) = store().await;
-        store.create_domain("example.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
         let account = store
             .create_account(NewAccount {
-                address: "mini@example.de".into(),
+                address: "mini@example.org".into(),
                 display_name: String::new(),
                 password: None,
                 role: Role::User,

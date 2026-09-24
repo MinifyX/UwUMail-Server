@@ -1,7 +1,7 @@
 //! Sender pictures for company mail: the brand logo published with BIMI, or otherwise the icon of the
 //! sender's website — fetched here, so neither the webmail nor an app asks the sender for it.
 //!
-//! Only the registrable domain is asked (`news.mail.shop.example` becomes `shop.example`), through the
+//! Only the registrable domain is asked (`news.mail.example.org` becomes `example.org`), through the
 //! egress, and never for addresses at mail providers, which belong to people. What was found is kept in
 //! memory for a week and shared by everyone on the server, so a picture can't tell a sender who read
 //! which mail or when; a logo that changed shows up a week later at the latest.
@@ -531,7 +531,7 @@ mod tests {
     #[test]
     fn only_company_domains_get_a_picture() {
         assert_eq!(picture_domain("news@mail.shop.example.co.uk"), Some("example.co.uk".into()));
-        assert_eq!(picture_domain("Shop <news@news.shop.de>"), Some("shop.de".into()));
+        assert_eq!(picture_domain("Shop <news@news.example.org>"), Some("example.org".into()));
         assert_eq!(picture_domain("someone@gmail.com"), None);
         assert_eq!(picture_domain("someone@mail.gmx.net"), None);
         assert_eq!(picture_domain("root@localhost"), None);
@@ -541,15 +541,15 @@ mod tests {
 
     #[test]
     fn bimi_records_and_icon_links_are_read() {
-        let logo = bimi_logo("v=BIMI1; l=https://shop.example/logo.svg; a=;").unwrap();
-        assert_eq!(logo.as_str(), "https://shop.example/logo.svg");
-        assert!(bimi_logo("v=BIMI1; l=http://shop.example/logo.svg").is_none());
+        let logo = bimi_logo("v=BIMI1; l=https://example.org/logo.svg; a=;").unwrap();
+        assert_eq!(logo.as_str(), "https://example.org/logo.svg");
+        assert!(bimi_logo("v=BIMI1; l=http://example.org/logo.svg").is_none());
         assert!(bimi_logo("v=spf1 -all").is_none());
 
-        let base = Url::parse("https://www.shop.example/").unwrap();
-        let html = r#"<head><link rel="icon" href="/favicon.ico"><link rel="apple-touch-icon" sizes="180x180" href="/touch.png"><link rel="icon" type="image/svg+xml" href="http://cdn.shop.example/i.svg"></head>"#;
+        let base = Url::parse("https://www.example.org/").unwrap();
+        let html = r#"<head><link rel="icon" href="/favicon.ico"><link rel="apple-touch-icon" sizes="180x180" href="/touch.png"><link rel="icon" type="image/svg+xml" href="http://cdn.example.org/i.svg"></head>"#;
         let links = icon_links(html, &base);
-        assert_eq!(links[0].0.as_str(), "https://www.shop.example/touch.png");
+        assert_eq!(links[0].0.as_str(), "https://www.example.org/touch.png");
         assert_eq!(links[0].1, PictureKind::Logo);
         assert!(links.iter().all(|(url, _)| url.scheme() == "https"), "no plain http");
     }
@@ -580,7 +580,8 @@ mod tests {
 
     /// A website over TLS with an apple-touch-icon; remembers the paths it was asked for.
     async fn website() -> (Egress, Arc<Mutex<Vec<String>>>) {
-        let generated = rcgen::generate_simple_self_signed(vec!["shop.de".into(), "www.shop.de".into()]).unwrap();
+        let generated =
+            rcgen::generate_simple_self_signed(vec!["example.org".into(), "www.example.org".into()]).unwrap();
         let key = rustls_pki_types::PrivateKeyDer::Pkcs8(generated.signing_key.serialize_der().into());
         let tls = rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
             .with_safe_default_protocol_versions()
@@ -630,13 +631,13 @@ mod tests {
     async fn a_website_icon_is_fetched_once_and_then_remembered() {
         let (egress, seen) = website().await;
         let pictures = SenderPictures::with_resolver(egress, None);
-        let picture = pictures.get("news@mail.shop.de").await.unwrap();
+        let picture = pictures.get("news@mail.example.org").await.unwrap();
         assert_eq!(
             (picture.kind, picture.media_type, picture.domain.as_str()),
-            (PictureKind::Logo, "image/png", "shop.de")
+            (PictureKind::Logo, "image/png", "example.org")
         );
         let asked = seen.lock().unwrap().len();
-        assert!(pictures.get("other@shop.de").await.is_some());
+        assert!(pictures.get("other@example.org").await.is_some());
         assert_eq!(seen.lock().unwrap().len(), asked, "the second address of the same company asks nobody");
         assert!(pictures.get("friend@gmail.com").await.is_none());
         assert!(pictures.locks.lock().unwrap().is_empty(), "no lock is left behind, not even by the cache");
@@ -649,14 +650,14 @@ mod tests {
         let closed = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = closed.local_addr().unwrap();
         drop(closed);
-        let certificate = rcgen::generate_simple_self_signed(vec!["shop.de".into()]).unwrap().cert.der().clone();
+        let certificate = rcgen::generate_simple_self_signed(vec!["example.org".into()]).unwrap().cert.der().clone();
         let pictures = SenderPictures::with_resolver(Egress::pinned_trusting(address, certificate), None);
         let long_ago = Instant::now().checked_sub(RETRY_UNREACHABLE_AFTER * 2).unwrap();
         pictures.unreachable.lock().unwrap().insert("old.example".into(), long_ago);
 
-        assert!(pictures.get("news@shop.de").await.is_none());
+        assert!(pictures.get("news@example.org").await.is_none());
         let unreachable = pictures.unreachable.lock().unwrap();
-        assert!(unreachable.contains_key("shop.de"));
+        assert!(unreachable.contains_key("example.org"));
         assert!(!unreachable.contains_key("old.example"));
         assert!(pictures.locks.lock().unwrap().is_empty());
     }

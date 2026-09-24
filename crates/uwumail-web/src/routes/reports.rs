@@ -382,17 +382,20 @@ mod tests {
     #[test]
     fn hosts_come_from_the_uri_or_the_host_header() {
         let mut headers = HeaderMap::new();
-        headers.insert(header::HOST, "MTA-STS.Example.de:8443".parse().unwrap());
-        assert_eq!(request_host(&"/.well-known/mta-sts.txt".parse().unwrap(), &headers).unwrap(), "mta-sts.example.de");
-        let uri: Uri = "https://mta-sts.example.de/.well-known/mta-sts.txt".parse().unwrap();
-        assert_eq!(request_host(&uri, &HeaderMap::new()).unwrap(), "mta-sts.example.de");
+        headers.insert(header::HOST, "MTA-STS.Example.org:8443".parse().unwrap());
+        assert_eq!(
+            request_host(&"/.well-known/mta-sts.txt".parse().unwrap(), &headers).unwrap(),
+            "mta-sts.example.org"
+        );
+        let uri: Uri = "https://mta-sts.example.org/.well-known/mta-sts.txt".parse().unwrap();
+        assert_eq!(request_host(&uri, &HeaderMap::new()).unwrap(), "mta-sts.example.org");
         headers.insert(header::HOST, "[2001:db8::1]:443".parse().unwrap());
         assert_eq!(request_host(&"/".parse().unwrap(), &headers).unwrap(), "[2001:db8::1]");
     }
 
     #[test]
     fn policies_list_the_upstream_mx_hosts_too() {
-        assert_eq!(policy_mx("Mail.Example.de.", false, None), vec!["mail.example.de".to_owned()]);
+        assert_eq!(policy_mx("Mail.Example.org.", false, None), vec!["mail.example.org".to_owned()]);
     }
 
     #[test]
@@ -400,7 +403,7 @@ mod tests {
         let now = 100 * DAY;
         let settings = MtaStsSettings {
             mode: MtaStsMode::Testing,
-            mx: vec!["mail.example.de".into()],
+            mx: vec!["mail.example.org".into()],
             changed_at: now - 15 * DAY,
         };
         let clean_tls = TlsSummary { reports: 3, successful: 40, ..TlsSummary::default() };

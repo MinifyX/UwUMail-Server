@@ -76,10 +76,10 @@ impl SettingsBackend for FakeServer {
 async fn portal(verbs: &[&str]) -> (Router, Arc<FakeHost>, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
-    store.create_domain("example.de").await.unwrap();
+    store.create_domain("example.org").await.unwrap();
     store
         .create_account(NewAccount {
-            address: "nyu@example.de".into(),
+            address: "nyu@example.org".into(),
             display_name: "Nyu".into(),
             password: Some("katzenpfote-123".into()),
             role: Role::Admin,
@@ -89,7 +89,7 @@ async fn portal(verbs: &[&str]) -> (Router, Arc<FakeHost>, tempfile::TempDir) {
         .await
         .unwrap();
     let settings = SmtpSettings {
-        hostname: "mail.example.de".into(),
+        hostname: "mail.example.org".into(),
         smtp: Default::default(),
         spam: Default::default(),
         delivery: Default::default(),
@@ -100,7 +100,7 @@ async fn portal(verbs: &[&str]) -> (Router, Arc<FakeHost>, tempfile::TempDir) {
     let web = Web::new(
         Smtp::new(store.clone(), settings).unwrap(),
         WebSettings {
-            hostname: "mail.example.de".into(),
+            hostname: "mail.example.org".into(),
             started: Instant::now(),
             logs: None,
             loki: None,
@@ -122,7 +122,7 @@ async fn portal(verbs: &[&str]) -> (Router, Arc<FakeHost>, tempfile::TempDir) {
 async fn login(app: &Router) -> (String, String) {
     let mut request = Request::post("/api/auth/login")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "login": "nyu@example.de", "password": "katzenpfote-123" }).to_string()))
+        .body(Body::from(json!({ "login": "nyu@example.org", "password": "katzenpfote-123" }).to_string()))
         .unwrap();
     request.extensions_mut().insert(ClientInfo { https: true, ..ClientInfo::default() });
     let response = app.clone().oneshot(request).await.unwrap();

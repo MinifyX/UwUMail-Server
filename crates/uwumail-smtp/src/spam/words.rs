@@ -128,8 +128,8 @@ mod tests {
             word(ListScope::Server, None, "casino", 2.5, false),
             word(ListScope::Server, None, r"/\slottery\s/i", 4.0, true),
             word(ListScope::Server, None, "/(?=x)/", 9.0, false),
-            word(ListScope::Domain(1), Some("example.de"), "gewinn", 6.0, false),
-            word(ListScope::Domain(1), Some("example.de"), "jackpot", 6.0, false),
+            word(ListScope::Domain(1), Some("example.org"), "gewinn", 6.0, false),
+            word(ListScope::Domain(1), Some("example.org"), "jackpot", 6.0, false),
             word(ListScope::Account(7), None, "fußball", 1.0, false),
         ]);
         let subject = "Your LOTTERY win";
@@ -137,7 +137,7 @@ mod tests {
         let server = compiled.server.find(subject, text);
         assert_eq!(server.points, 6.5, "the subject-only entry counts once, the text lottery not at all");
         assert_eq!(server.detail(), "casino, /\\slottery\\s/i");
-        let domain = compiled.domains["example.de"].find(subject, text);
+        let domain = compiled.domains["example.org"].find(subject, text);
         assert_eq!(domain.points, WORD_POINTS_MAX, "capped");
         assert_eq!(compiled.accounts[&7].find("", "Fußball am Sonntag").points, 1.0);
     }

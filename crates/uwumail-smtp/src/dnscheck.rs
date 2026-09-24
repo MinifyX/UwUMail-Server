@@ -780,7 +780,7 @@ mod tests {
     fn key(active: bool) -> DkimKey {
         DkimKey {
             id: 1,
-            domain: "example.de".into(),
+            domain: "example.org".into(),
             selector: "uwu202609r".into(),
             algorithm: DkimKeyAlgorithm::RsaSha256,
             private_key: vec![],
@@ -793,14 +793,14 @@ mod tests {
 
     #[test]
     fn mx_points_here_or_upstream() {
-        let here = evaluate_mx("example.de", "Mail.Example.de.", false, Ok(vec![(10, "mail.example.de".into())]));
+        let here = evaluate_mx("example.org", "Mail.Example.org.", false, Ok(vec![(10, "mail.example.org".into())]));
         assert_eq!((here.status, here.note), (CheckStatus::Ok, None));
-        let elsewhere = evaluate_mx("example.de", "mail.example.de", false, Ok(vec![(0, "mx.other.de".into())]));
+        let elsewhere = evaluate_mx("example.org", "mail.example.org", false, Ok(vec![(0, "mx.other.example".into())]));
         assert_eq!((elsewhere.status, elsewhere.note), (CheckStatus::Wrong, Some("mxElsewhere")));
-        let upstream = evaluate_mx("example.de", "mail.example.de", true, Ok(vec![(0, "mx.other.de".into())]));
+        let upstream = evaluate_mx("example.org", "mail.example.org", true, Ok(vec![(0, "mx.other.example".into())]));
         assert_eq!((upstream.status, upstream.note), (CheckStatus::Ok, Some("mxUpstream")));
-        assert_eq!(evaluate_mx("example.de", "mail.example.de", true, Ok(vec![])).status, CheckStatus::Missing);
-        assert_eq!(evaluate_mx("example.de", "m", false, Err("timeout".into())).status, CheckStatus::Error);
+        assert_eq!(evaluate_mx("example.org", "mail.example.org", true, Ok(vec![])).status, CheckStatus::Missing);
+        assert_eq!(evaluate_mx("example.org", "m", false, Err("timeout".into())).status, CheckStatus::Error);
     }
 
     #[test]
@@ -809,17 +809,17 @@ mod tests {
         let account = "https://acme-v02.api.letsencrypt.org/acme/acct/123456";
         let issue = |value: &str| Caa { flags: 0, tag: "issue".into(), value: value.into() };
         let caa = |found: Vec<Caa>| {
-            let record = evaluate_caa("Mail.Example.de.", account, Ok(found));
+            let record = evaluate_caa("Mail.Example.org.", account, Ok(found));
             (record.status, record.note, record.optional)
         };
-        let expected = evaluate_caa("mail.example.de", account, Ok(vec![]));
-        assert_eq!(expected.name, "mail.example.de");
+        let expected = evaluate_caa("mail.example.org", account, Ok(vec![]));
+        assert_eq!(expected.name, "mail.example.org");
         assert_eq!(
             expected.expected,
             format!("0 issue \"letsencrypt.org; accounturi={account}; validationmethods=http-01\"")
         );
         assert_eq!(caa(vec![]), (CheckStatus::Missing, None, true), "recommended, not required");
-        let iodef = Caa { flags: 0, tag: "iodef".into(), value: "mailto:caa@example.de".into() };
+        let iodef = Caa { flags: 0, tag: "iodef".into(), value: "mailto:caa@example.org".into() };
         assert_eq!(caa(vec![iodef]), (CheckStatus::Missing, None, true), "no issue property, no restriction");
         assert_eq!(caa(vec![issue(&caa_value(account))]), (CheckStatus::Ok, None, true));
         assert_eq!(
@@ -845,64 +845,64 @@ mod tests {
     fn spf_record_shape() {
         let keys = [];
         let setup = DomainSetup {
-            domain: "example.de",
-            hostname: "mail.example.de",
-            relay_host: Some("relay.example.net"),
+            domain: "example.org",
+            hostname: "mail.example.org",
+            relay_host: Some("relay.example.com"),
             upstream_mx: false,
             dkim_keys: &keys,
             mta_sts: None,
             lets_encrypt_account: None,
         };
         let spf = |texts: &[&str]| {
-            evaluate_spf_record("example.de", &setup, Ok(texts.iter().map(|t| t.to_string()).collect()))
+            evaluate_spf_record("example.org", &setup, Ok(texts.iter().map(|t| t.to_string()).collect()))
         };
         assert_eq!(spf(&["google-site-verification=x"]).status, CheckStatus::Missing);
-        assert_eq!(spf(&["v=spf1 a:relay.example.net -all"]).status, CheckStatus::Ok);
-        assert_eq!(spf(&["v=spf1 a:relay.example.net -all"]).expected, "v=spf1 a:relay.example.net -all");
+        assert_eq!(spf(&["v=spf1 a:relay.example.com -all"]).status, CheckStatus::Ok);
+        assert_eq!(spf(&["v=spf1 a:relay.example.com -all"]).expected, "v=spf1 a:relay.example.com -all");
         assert_eq!(spf(&["v=spf1 +all"]).note, Some("spfTooLoose"));
         assert_eq!(spf(&["v=spf1 mx -all", "v=spf1 a -all"]).note, Some("spfMultiple"));
     }
 
     #[test]
     fn dmarc_policies() {
-        let dmarc = |texts: &[&str]| evaluate_dmarc("example.de", Ok(texts.iter().map(|t| t.to_string()).collect()));
+        let dmarc = |texts: &[&str]| evaluate_dmarc("example.org", Ok(texts.iter().map(|t| t.to_string()).collect()));
         assert_eq!(dmarc(&[]).status, CheckStatus::Missing);
-        assert_eq!(dmarc(&["v=DMARC1; p=none; rua=mailto:x@example.de"]).note, Some("dmarcNone"));
+        assert_eq!(dmarc(&["v=DMARC1; p=none; rua=mailto:x@example.org"]).note, Some("dmarcNone"));
         assert_eq!(dmarc(&["v=DMARC1; p=none"]).status, CheckStatus::Ok);
         assert_eq!(dmarc(&["v=DMARC1;p=reject"]).status, CheckStatus::Ok);
         assert_eq!(dmarc(&["v=DMARC1; p=maybe"]).status, CheckStatus::Wrong);
-        let elsewhere = dmarc(&["v=DMARC1; p=reject; rua=mailto:postmaster@example.de"]);
+        let elsewhere = dmarc(&["v=DMARC1; p=reject; rua=mailto:postmaster@example.org"]);
         assert_eq!((elsewhere.status, elsewhere.note), (CheckStatus::Ok, Some("dmarcReportsElsewhere")));
-        let ours = dmarc(&["v=DMARC1; p=reject; rua=mailto:dmarc-reports@example.de"]);
+        let ours = dmarc(&["v=DMARC1; p=reject; rua=mailto:dmarc-reports@example.org"]);
         assert_eq!((ours.status, ours.note), (CheckStatus::Ok, None));
     }
 
     #[test]
     fn recommended_records() {
         let srv = |found: Vec<(u16, u16, u16, String)>| {
-            evaluate_srv("jmap", "_jmap._tcp.example.de", "Mail.Example.de", 443, Ok(found))
+            evaluate_srv("jmap", "_jmap._tcp.example.org", "Mail.Example.org", 443, Ok(found))
         };
-        let fine = srv(vec![(0, 1, 443, "mail.example.de".into())]);
+        let fine = srv(vec![(0, 1, 443, "mail.example.org".into())]);
         assert_eq!(
             (fine.status, fine.optional, fine.expected.as_str()),
-            (CheckStatus::Ok, true, "0 1 443 mail.example.de")
+            (CheckStatus::Ok, true, "0 1 443 mail.example.org")
         );
-        assert_eq!(srv(vec![(0, 1, 8443, "mail.example.de".into())]).note, Some("srvElsewhere"));
+        assert_eq!(srv(vec![(0, 1, 8443, "mail.example.org".into())]).note, Some("srvElsewhere"));
         assert_eq!(srv(vec![]).status, CheckStatus::Missing);
 
         let tls = |required: bool, texts: &[&str]| {
-            evaluate_tls_rpt("example.de", required, Ok(texts.iter().map(|t| t.to_string()).collect()))
+            evaluate_tls_rpt("example.org", required, Ok(texts.iter().map(|t| t.to_string()).collect()))
         };
         assert!(tls(false, &[]).optional && !tls(true, &[]).optional);
-        assert_eq!(tls(false, &["v=TLSRPTv1; rua=mailto:tls-reports@example.de"]).status, CheckStatus::Ok);
+        assert_eq!(tls(false, &["v=TLSRPTv1; rua=mailto:tls-reports@example.org"]).status, CheckStatus::Ok);
         assert_eq!(tls(false, &["v=TLSRPTv1; rua=mailto:x@other.example"]).note, Some("tlsRptElsewhere"));
         assert_eq!(tls(false, &["v=TLSRPTv1; rua=a", "v=TLSRPTv1; rua=b"]).note, Some("tlsRptMultiple"));
     }
 
     #[test]
     fn records_that_work_but_read_differently_are_marked() {
-        let dmarc = |texts: &[&str]| evaluate_dmarc("example.de", Ok(texts.iter().map(|t| t.to_string()).collect()));
-        let ours = dmarc(&["v=DMARC1; p=quarantine; adkim=s; aspf=s; rua=mailto:dmarc-reports@example.de"]);
+        let dmarc = |texts: &[&str]| evaluate_dmarc("example.org", Ok(texts.iter().map(|t| t.to_string()).collect()));
+        let ours = dmarc(&["v=DMARC1; p=quarantine; adkim=s; aspf=s; rua=mailto:dmarc-reports@example.org"]);
         assert_eq!(ours.found, vec![ours.expected.clone()]);
         assert!(!differs_from_ours(&ours));
         // Fine as it is, so nothing to fix - but not how we would write it.
@@ -912,64 +912,64 @@ mod tests {
         assert!(!differs_from_ours(&dmarc(&[])));
 
         // A backup MX beside ours is another record, not another spelling.
-        let mx = evaluate_mx("example.de", "mail.example.de", false, Ok(vec![(10, "mail.example.de".into())]));
+        let mx = evaluate_mx("example.org", "mail.example.org", false, Ok(vec![(10, "mail.example.org".into())]));
         assert!(!differs_from_ours(&mx));
         let backup = evaluate_mx(
-            "example.de",
-            "mail.example.de",
+            "example.org",
+            "mail.example.org",
             false,
-            Ok(vec![(10, "mail.example.de".into()), (20, "backup.example.net".into())]),
+            Ok(vec![(10, "mail.example.org".into()), (20, "backup.example.com".into())]),
         );
         assert!(!differs_from_ours(&backup));
         let other_priority =
-            evaluate_mx("example.de", "mail.example.de", false, Ok(vec![(5, "mail.example.de".into())]));
+            evaluate_mx("example.org", "mail.example.org", false, Ok(vec![(5, "mail.example.org".into())]));
         assert!(differs_from_ours(&other_priority));
 
         // The policy file is compared by its meaning, not letter by letter.
-        let policy = Policy::ours(MtaStsMode::Testing, &["mail.example.de".into()]);
+        let policy = Policy::ours(MtaStsMode::Testing, &["mail.example.org".into()]);
         let served = Fetched { content_type: "text/plain".into(), body: policy.to_text().replace('\n', "\r\n") };
-        let published = evaluate_mta_sts_policy("example.de", &policy, Ok(served));
+        let published = evaluate_mta_sts_policy("example.org", &policy, Ok(served));
         assert_eq!(published.status, CheckStatus::Ok);
         assert!(!differs_from_ours(&published));
     }
 
     #[test]
     fn mta_sts_records_follow_the_policy() {
-        let policy = Policy::ours(MtaStsMode::Testing, &["mail.example.de".into()]);
-        let txt = |texts: Vec<String>| evaluate_mta_sts_record("example.de", &policy, Ok(texts));
+        let policy = Policy::ours(MtaStsMode::Testing, &["mail.example.org".into()]);
+        let txt = |texts: Vec<String>| evaluate_mta_sts_record("example.org", &policy, Ok(texts));
         assert_eq!(txt(vec![mta_sts::txt_record(&policy)]).status, CheckStatus::Ok);
         assert_eq!(txt(vec!["v=STSv1; id=old".into()]).note, Some("mtaStsOldId"));
         assert_eq!(txt(vec![]).status, CheckStatus::Missing);
 
-        let host = evaluate_mta_sts_host("example.de", "mail.example.de", Ok(vec![]), (vec![], vec![]));
+        let host = evaluate_mta_sts_host("example.org", "mail.example.org", Ok(vec![]), (vec![], vec![]));
         assert_eq!(host.status, CheckStatus::Missing);
         let host = evaluate_mta_sts_host(
-            "example.de",
-            "mail.example.de",
-            Ok(vec!["mail.example.de".into()]),
+            "example.org",
+            "mail.example.org",
+            Ok(vec!["mail.example.org".into()]),
             (vec![Ipv4Addr::new(192, 0, 2, 10)], vec![]),
         );
-        assert_eq!((host.status, host.found.clone()), (CheckStatus::Ok, vec!["mail.example.de".to_owned()]));
+        assert_eq!((host.status, host.found.clone()), (CheckStatus::Ok, vec!["mail.example.org".to_owned()]));
 
         let served = |body: String| Fetched { content_type: "text/plain".into(), body };
-        let ok = evaluate_mta_sts_policy("example.de", &policy, Ok(served(policy.to_text())));
+        let ok = evaluate_mta_sts_policy("example.org", &policy, Ok(served(policy.to_text())));
         assert_eq!((ok.status, ok.record_type), (CheckStatus::Ok, "HTTPS"));
-        let enforce = Policy::ours(MtaStsMode::Enforce, &["mail.example.de".into()]);
+        let enforce = Policy::ours(MtaStsMode::Enforce, &["mail.example.org".into()]);
         assert_eq!(
-            evaluate_mta_sts_policy("example.de", &policy, Ok(served(enforce.to_text()))).note,
+            evaluate_mta_sts_policy("example.org", &policy, Ok(served(enforce.to_text()))).note,
             Some("mtaStsPolicyDiffers")
         );
         assert_eq!(
-            evaluate_mta_sts_policy("example.de", &policy, Err("connection refused".into())).note,
+            evaluate_mta_sts_policy("example.org", &policy, Err("connection refused".into())).note,
             Some("mtaStsFetchFailed")
         );
     }
 
-    /// Asks real DNS; run with `UWUMAIL_DNSCHECK_DOMAIN=example.org cargo test -p uwumail-smtp live_check -- --ignored --nocapture`.
+    /// Asks real DNS; run with `UWUMAIL_DNSCHECK_DOMAIN=example.net cargo test -p uwumail-smtp live_check -- --ignored --nocapture`.
     #[tokio::test]
     #[ignore = "needs the internet"]
     async fn live_check() {
-        let domain = std::env::var("UWUMAIL_DNSCHECK_DOMAIN").unwrap_or_else(|_| "example.org".into());
+        let domain = std::env::var("UWUMAIL_DNSCHECK_DOMAIN").unwrap_or_else(|_| "example.net".into());
         let hostname = std::env::var("UWUMAIL_DNSCHECK_HOSTNAME").unwrap_or_else(|_| format!("mail.{domain}"));
         let relay = std::env::var("UWUMAIL_DNSCHECK_RELAY").ok();
         let checker = DnsChecker::new().unwrap();
@@ -1111,7 +1111,7 @@ fn reverse_name(ip: IpAddr) -> String {
 
 impl DnsChecker {
     /// Where a domain says its own clients should connect (RFC 6186), best first. `name` is the
-    /// whole service name, like `_imaps._tcp.example.com`. A single target of `.` is how a domain
+    /// whole service name, like `_imaps._tcp.example.test`. A single target of `.` is how a domain
     /// says it does not offer the service at all, and comes back as nothing.
     pub async fn service_hosts(&self, name: &str) -> Vec<(String, u16)> {
         let (lookups, _) = self.lookups(name).await;

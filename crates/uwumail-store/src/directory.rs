@@ -895,27 +895,27 @@ mod tests {
     #[tokio::test]
     async fn domains_and_accounts() {
         let (store, _dir) = store().await;
-        store.create_domain("Example.DE").await.unwrap();
-        assert!(matches!(store.create_domain("example.de").await, Err(StoreError::Conflict(_))));
-        assert!(matches!(store.create_account(person("mini@nowhere.de")).await, Err(StoreError::NotFound(_))));
+        store.create_domain("Example.org").await.unwrap();
+        assert!(matches!(store.create_domain("example.org").await, Err(StoreError::Conflict(_))));
+        assert!(matches!(store.create_account(person("mini@nowhere.invalid")).await, Err(StoreError::NotFound(_))));
 
-        let mini = store.create_account(person("Mini@example.de")).await.unwrap();
-        assert_eq!(mini.login, "mini@example.de");
-        assert!(matches!(store.create_account(person("mini@example.de")).await, Err(StoreError::Conflict(_))));
+        let mini = store.create_account(person("Mini@example.org")).await.unwrap();
+        assert_eq!(mini.login, "mini@example.org");
+        assert!(matches!(store.create_account(person("mini@example.org")).await, Err(StoreError::Conflict(_))));
         assert_eq!(store.accounts().await.unwrap().len(), 1);
-        assert!(matches!(store.delete_domain("example.de").await, Err(StoreError::Invalid(_))));
+        assert!(matches!(store.delete_domain("example.org").await, Err(StoreError::Invalid(_))));
 
-        assert!(store.authenticate("MINI@example.de", "katzenpfote").await.unwrap().is_some());
-        assert!(store.authenticate("mini@example.de", "wrong").await.unwrap().is_none());
-        assert!(store.authenticate("ghost@example.de", "katzenpfote").await.unwrap().is_none());
+        assert!(store.authenticate("MINI@example.org", "katzenpfote").await.unwrap().is_some());
+        assert!(store.authenticate("mini@example.org", "wrong").await.unwrap().is_none());
+        assert!(store.authenticate("ghost@example.org", "katzenpfote").await.unwrap().is_none());
 
-        store.set_password("mini@example.de", "neues-passwort").await.unwrap();
-        assert!(store.authenticate("mini@example.de", "neues-passwort").await.unwrap().is_some());
+        store.set_password("mini@example.org", "neues-passwort").await.unwrap();
+        assert!(store.authenticate("mini@example.org", "neues-passwort").await.unwrap().is_some());
 
-        store.set_account_disabled("mini@example.de", true).await.unwrap();
-        assert!(store.authenticate("mini@example.de", "neues-passwort").await.unwrap().is_none());
+        store.set_account_disabled("mini@example.org", true).await.unwrap();
+        assert!(store.authenticate("mini@example.org", "neues-passwort").await.unwrap().is_none());
         assert_eq!(
-            store.resolve_recipient("mini@example.de").await.unwrap(),
+            store.resolve_recipient("mini@example.org").await.unwrap(),
             Some(mini.id),
             "disabled people still get mail"
         );
@@ -924,47 +924,54 @@ mod tests {
     #[tokio::test]
     async fn recipient_resolution() {
         let (store, _dir) = store().await;
-        store.create_domain("example.de").await.unwrap();
-        let mini = store.create_account(person("mini@example.de")).await.unwrap();
-        let ami = store.create_account(NewAccount { role: Role::Admin, ..person("ami@example.de") }).await.unwrap();
-        store.add_alias("kontakt@example.de", "mini@example.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
+        let mini = store.create_account(person("mini@example.org")).await.unwrap();
+        let ami = store.create_account(NewAccount { role: Role::Admin, ..person("ami@example.org") }).await.unwrap();
+        store.add_alias("kontakt@example.org", "mini@example.org").await.unwrap();
 
-        assert_eq!(store.resolve_recipient("mini@example.de").await.unwrap(), Some(mini.id));
-        assert_eq!(store.resolve_recipient("<MINI+shop@Example.de>").await.unwrap(), Some(mini.id));
-        assert_eq!(store.resolve_recipient("kontakt@example.de").await.unwrap(), Some(mini.id));
-        assert_eq!(store.resolve_recipient("postmaster@example.de").await.unwrap(), Some(ami.id));
-        assert_eq!(store.resolve_recipient("ghost@example.de").await.unwrap(), None);
-        assert_eq!(store.resolve_recipient("mini@elsewhere.de").await.unwrap(), None);
+        assert_eq!(store.resolve_recipient("mini@example.org").await.unwrap(), Some(mini.id));
+        assert_eq!(store.resolve_recipient("<MINI+shop@Example.org>").await.unwrap(), Some(mini.id));
+        assert_eq!(store.resolve_recipient("kontakt@example.org").await.unwrap(), Some(mini.id));
+        assert_eq!(store.resolve_recipient("postmaster@example.org").await.unwrap(), Some(ami.id));
+        assert_eq!(store.resolve_recipient("ghost@example.org").await.unwrap(), None);
+        assert_eq!(store.resolve_recipient("mini@elsewhere.example").await.unwrap(), None);
 
-        store.set_catch_all("example.de", Some("ami@example.de")).await.unwrap();
-        assert_eq!(store.resolve_recipient("ghost@example.de").await.unwrap(), Some(ami.id));
+        store.set_catch_all("example.org", Some("ami@example.org")).await.unwrap();
+        assert_eq!(store.resolve_recipient("ghost@example.org").await.unwrap(), Some(ami.id));
 
-        assert!(store.account_owns_address(mini.id, "kontakt+x@example.de").await.unwrap());
-        assert!(!store.account_owns_address(mini.id, "ami@example.de").await.unwrap());
-        store.create_domain("verein.de").await.unwrap();
-        let domains = vec!["Verein.de".into(), "verein.de".into()];
-        assert_eq!(store.set_send_as_domains(mini.id, domains).await.unwrap(), vec!["verein.de"]);
-        assert!(store.account_owns_address(mini.id, "vorstand@verein.de").await.unwrap(), "any address of it");
-        assert!(!store.account_owns_address(mini.id, "ami@example.de").await.unwrap(), "not other domains");
-        assert!(store.set_send_as_domains(mini.id, vec!["elsewhere.de".into()]).await.is_err());
+        assert!(store.account_owns_address(mini.id, "kontakt+x@example.org").await.unwrap());
+        assert!(!store.account_owns_address(mini.id, "ami@example.org").await.unwrap());
+        store.create_domain("verein.example").await.unwrap();
+        let domains = vec!["Verein.example".into(), "verein.example".into()];
+        assert_eq!(store.set_send_as_domains(mini.id, domains).await.unwrap(), vec!["verein.example"]);
+        assert!(store.account_owns_address(mini.id, "vorstand@verein.example").await.unwrap(), "any address of it");
+        assert!(!store.account_owns_address(mini.id, "ami@example.org").await.unwrap(), "not other domains");
+        assert!(store.set_send_as_domains(mini.id, vec!["elsewhere.example".into()]).await.is_err());
         assert!(store.set_send_as_domains(mini.id, vec![]).await.unwrap().is_empty());
-        assert!(!store.account_owns_address(mini.id, "vorstand@verein.de").await.unwrap());
-        assert_eq!(store.addresses("mini@example.de").await.unwrap(), vec!["mini@example.de", "kontakt@example.de"]);
+        assert!(!store.account_owns_address(mini.id, "vorstand@verein.example").await.unwrap());
+        assert_eq!(store.addresses("mini@example.org").await.unwrap(), vec!["mini@example.org", "kontakt@example.org"]);
 
-        store.remove_alias("kontakt@example.de").await.unwrap();
-        assert_eq!(store.resolve_recipient("kontakt@example.de").await.unwrap(), Some(ami.id));
+        store.remove_alias("kontakt@example.org").await.unwrap();
+        assert_eq!(store.resolve_recipient("kontakt@example.org").await.unwrap(), Some(ami.id));
     }
 
     #[tokio::test]
     async fn dkim_keys_round_trip() {
         let (store, _dir) = store().await;
-        store.create_domain("example.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
         let key = store
-            .add_dkim_key("example.de", "uwu1", DkimKeyAlgorithm::Ed25519Sha256, vec![1, 2, 3], "cHVibGlj".into(), true)
+            .add_dkim_key(
+                "example.org",
+                "uwu1",
+                DkimKeyAlgorithm::Ed25519Sha256,
+                vec![1, 2, 3],
+                "cHVibGlj".into(),
+                true,
+            )
             .await
             .unwrap();
-        assert_eq!(key.dns_record(), ("uwu1._domainkey.example.de".into(), "v=DKIM1; k=ed25519; p=cHVibGlj".into()));
-        let keys = store.dkim_keys("example.de").await.unwrap();
+        assert_eq!(key.dns_record(), ("uwu1._domainkey.example.org".into(), "v=DKIM1; k=ed25519; p=cHVibGlj".into()));
+        let keys = store.dkim_keys("example.org").await.unwrap();
         assert_eq!(keys.len(), 1);
         assert_eq!(keys[0].private_key, vec![1, 2, 3]);
     }
@@ -972,30 +979,30 @@ mod tests {
     #[tokio::test]
     async fn dkim_rotation() {
         let (store, _dir) = store().await;
-        store.create_domain("example.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
         let add = |selector: &'static str, active| {
             let store = store.clone();
             async move {
                 store
-                    .add_dkim_key("example.de", selector, DkimKeyAlgorithm::RsaSha256, vec![1], "a2V5".into(), active)
+                    .add_dkim_key("example.org", selector, DkimKeyAlgorithm::RsaSha256, vec![1], "a2V5".into(), active)
                     .await
                     .unwrap()
             }
         };
         add("old", true).await;
-        let refused = store.activate_dkim_keys("example.de").await;
+        let refused = store.activate_dkim_keys("example.org").await;
         assert!(matches!(refused, Err(StoreError::Rule { code: "noPendingKeys", .. })));
         assert_eq!(add("new", false).await.state(), DkimKeyState::Pending);
 
-        store.activate_dkim_keys("example.de").await.unwrap();
-        let keys = store.dkim_keys("example.de").await.unwrap();
+        store.activate_dkim_keys("example.org").await.unwrap();
+        let keys = store.dkim_keys("example.org").await.unwrap();
         let states: Vec<_> = keys.iter().map(|k| (k.selector.as_str(), k.state())).collect();
         assert!(states.contains(&("new", DkimKeyState::Active)));
         assert!(states.contains(&("old", DkimKeyState::Retired)));
 
-        let refused = store.remove_dkim_key("example.de", "new").await;
+        let refused = store.remove_dkim_key("example.org", "new").await;
         assert!(matches!(refused, Err(StoreError::Rule { code: "keyActive", .. })));
-        store.remove_dkim_key("example.de", "old").await.unwrap();
-        assert_eq!(store.dkim_keys("example.de").await.unwrap().len(), 1);
+        store.remove_dkim_key("example.org", "old").await.unwrap();
+        assert_eq!(store.dkim_keys("example.org").await.unwrap().len(), 1);
     }
 }

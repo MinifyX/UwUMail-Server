@@ -238,10 +238,10 @@ mod tests {
     #[tokio::test]
     async fn filters_sorts_and_collapses() {
         let (store, _dir) = store().await;
-        store.create_domain("example.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
         let account = store
             .create_account(NewAccount {
-                address: "mini@example.de".into(),
+                address: "mini@example.org".into(),
                 display_name: String::new(),
                 password: None,
                 role: Role::User,
@@ -261,9 +261,9 @@ mod tests {
             .id;
         let mut ids = Vec::new();
         for (index, (subject, from, keywords, role, references)) in [
-            ("Katzenfutter", "Nyu <nyu@x.de>", vec!["$seen"], MailboxRole::Inbox, ""),
-            ("Re: Katzenfutter", "Ami <ami@x.de>", vec![], MailboxRole::Inbox, "m0@x"),
-            ("Rechnung", "Shop <shop@y.de>", vec!["$flagged"], MailboxRole::Archive, ""),
+            ("Katzenfutter", "Nyu <nyu@x.example>", vec!["$seen"], MailboxRole::Inbox, ""),
+            ("Re: Katzenfutter", "Ami <ami@x.example>", vec![], MailboxRole::Inbox, "m0@x"),
+            ("Rechnung", "Shop <shop@y.example>", vec!["$flagged"], MailboxRole::Archive, ""),
         ]
         .into_iter()
         .enumerate()

@@ -157,7 +157,7 @@ pub fn normalize_line_endings(raw: &[u8]) -> Vec<u8> {
 mod tests {
     use super::*;
 
-    const MESSAGE: &[u8] = b"Received: from a\r\n by b\r\nAuthentication-Results: mx.example.de; dkim=pass\r\nAuthentication-Results: other.example; spf=pass\r\nSubject: Hi\r\n\r\nbody\r\n";
+    const MESSAGE: &[u8] = b"Received: from a\r\n by b\r\nAuthentication-Results: mx.example.org; dkim=pass\r\nAuthentication-Results: other.example; spf=pass\r\nSubject: Hi\r\n\r\nbody\r\n";
 
     #[test]
     fn splits_folded_headers() {
@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn strips_only_our_auth_results() {
-        let stripped = strip_forged_auth_results(MESSAGE, "MX.example.de");
+        let stripped = strip_forged_auth_results(MESSAGE, "MX.example.org");
         let text = String::from_utf8(stripped).unwrap();
         assert!(!text.contains("dkim=pass"));
         assert!(text.contains("other.example; spf=pass"));
@@ -196,10 +196,10 @@ mod tests {
     fn strips_our_results_behind_quotes_a_comment_or_a_trailing_dot() {
         // A conformant reader ignores a quoted authserv-id, a leading comment or a trailing dot, so
         // a forgery hiding behind them is still ours to strip (security-audit-0.5.2 S-18).
-        for id in ["\"mx.example.de\"", "(by our filter) mx.example.de", "mx.example.de."] {
+        for id in ["\"mx.example.org\"", "(by our filter) mx.example.org", "mx.example.org."] {
             let message =
                 format!("Authentication-Results: {id}; dkim=pass header.d=evil.example\r\nSubject: Hi\r\n\r\nbody\r\n");
-            let stripped = String::from_utf8(strip_forged_auth_results(message.as_bytes(), "mx.example.de")).unwrap();
+            let stripped = String::from_utf8(strip_forged_auth_results(message.as_bytes(), "mx.example.org")).unwrap();
             assert!(!stripped.contains("dkim=pass"), "forgery behind {id} is removed: {stripped}");
         }
     }
@@ -207,15 +207,15 @@ mod tests {
     #[test]
     fn strips_our_results_even_with_a_version_number() {
         // RFC 8601 allows "authserv-id version"; a forged header must not slip through by adding one.
-        let message = b"Authentication-Results: mx.example.de 1; dkim=pass header.d=evil.example\r\n\
-Authentication-Results: mx.example.de; spf=pass\r\nSubject: Hi\r\n\r\nbody\r\n";
-        let stripped = String::from_utf8(strip_forged_auth_results(message, "mx.example.de")).unwrap();
+        let message = b"Authentication-Results: mx.example.org 1; dkim=pass header.d=evil.example\r\n\
+Authentication-Results: mx.example.org; spf=pass\r\nSubject: Hi\r\n\r\nbody\r\n";
+        let stripped = String::from_utf8(strip_forged_auth_results(message, "mx.example.org")).unwrap();
         assert!(!stripped.contains("dkim=pass"), "the versioned forgery is removed: {stripped}");
         assert!(!stripped.contains("spf=pass"), "the plain forgery is removed too");
         assert!(stripped.starts_with("Subject: Hi\r\n"));
         // A genuinely different authserv-id is kept.
-        assert!(claims_to_be("mx.example.de 1; dkim=pass", "mx.example.de"));
-        assert!(!claims_to_be("other.example; dkim=pass", "mx.example.de"));
+        assert!(claims_to_be("mx.example.org 1; dkim=pass", "mx.example.org"));
+        assert!(!claims_to_be("other.example; dkim=pass", "mx.example.org"));
     }
 
     #[test]

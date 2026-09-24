@@ -233,10 +233,10 @@ mod tests {
     use crate::{NewAccount, Role};
 
     async fn account(store: &crate::Store) -> crate::Account {
-        store.create_domain("example.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
         store
             .create_account(NewAccount {
-                address: "nyu@example.de".into(),
+                address: "nyu@example.org".into(),
                 display_name: "Nyu".into(),
                 password: Some("katzenpfote-123".into()),
                 role: Role::Admin,
@@ -254,13 +254,13 @@ mod tests {
 
         let session = store.create_web_session(nyu.id, 3600, "192.0.2.1", "Firefox").await.unwrap();
         let found = store.web_session(&session.token, 3600).await.unwrap().expect("session exists");
-        assert_eq!(found.account.login, "nyu@example.de");
+        assert_eq!(found.account.login, "nyu@example.org");
         assert_eq!(found.csrf_token, session.csrf_token);
         assert!(store.web_session("not-a-token", 3600).await.unwrap().is_none());
 
-        store.set_account_disabled("nyu@example.de", true).await.unwrap();
+        store.set_account_disabled("nyu@example.org", true).await.unwrap();
         assert!(store.web_session(&session.token, 3600).await.unwrap().is_none(), "disabled accounts are logged out");
-        store.set_account_disabled("nyu@example.de", false).await.unwrap();
+        store.set_account_disabled("nyu@example.org", false).await.unwrap();
 
         store.delete_web_session(&session.token).await.unwrap();
         assert!(store.web_session(&session.token, 3600).await.unwrap().is_none());
@@ -277,7 +277,7 @@ mod tests {
     async fn preferences_merge_and_counts_add_up() {
         let (store, _dir) = store().await;
         let nyu = account(&store).await;
-        store.add_alias("hallo@example.de", "nyu@example.de").await.unwrap();
+        store.add_alias("hallo@example.org", "nyu@example.org").await.unwrap();
 
         let changes = json!({ "language": "de", "mode": "pro" }).as_object().unwrap().clone();
         store.update_preferences(nyu.id, changes).await.unwrap();

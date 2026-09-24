@@ -3,6 +3,22 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.9.1
+
+**Only names nobody owns in examples.** Tests, docs, sample data and placeholders used
+`example.de`, `verein.de`, `shop.de` and a few other invented names under real endings, which
+somebody owns and whose mail servers would get anything sent there by mistake. They now use the
+names reserved for this (`example.com/net/org`, `.example`, `.test`, `.invalid`) and addresses from
+the documentation networks; [CONTRIBUTING.md](CONTRIBUTING.md) says so for the future. Real names
+stay only where they are real: provider lists, blocklists, public suffixes and the tests that check
+those.
+
+**A flaky test fixed.** The two JMAP push tests waited a fixed 200 ms for their event source, which
+was too short on a busy machine. They now wait for the server's answer, after which the
+subscription is guaranteed to be in place.
+
+Nothing changes for a running server.
+
 ## 0.9.0
 
 **VPN & proxy in the portal.** *Server → VPN & Proxy* sets up the VPN for remote pictures without

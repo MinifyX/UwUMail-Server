@@ -194,10 +194,10 @@ mod tests {
     #[tokio::test]
     async fn forwarding_addresses_pass_mail_on_and_keep_their_address_to_themselves() {
         let (store, _dir) = store().await;
-        store.create_domain("example.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
         let mini = store
             .create_account(NewAccount {
-                address: "mini@example.de".into(),
+                address: "mini@example.org".into(),
                 display_name: String::new(),
                 password: None,
                 role: Role::User,
@@ -207,30 +207,31 @@ mod tests {
             .await
             .unwrap();
 
-        let targets = vec!["Verein@Example.org".into(), "mini@example.de".into(), "verein@example.org".into()];
-        let created = store.set_forward_address("Kasse@example.de", targets, "Kassenwart").await.unwrap();
-        assert_eq!(created.targets, vec!["verein@example.org", "mini@example.de"]);
+        let targets = vec!["Verein@Example.net".into(), "mini@example.org".into(), "verein@example.net".into()];
+        let created = store.set_forward_address("Kasse@example.org", targets, "Kassenwart").await.unwrap();
+        assert_eq!(created.targets, vec!["verein@example.net", "mini@example.org"]);
         assert_eq!(
-            store.forward_address_targets("kasse+2026@example.de").await.unwrap(),
-            Some(vec![("verein@example.org".into(), None), ("mini@example.de".into(), Some(mini.id))])
+            store.forward_address_targets("kasse+2026@example.org").await.unwrap(),
+            Some(vec![("verein@example.net".into(), None), ("mini@example.org".into(), Some(mini.id))])
         );
-        assert_eq!(store.forward_address_targets("mini@example.de").await.unwrap(), None);
+        assert_eq!(store.forward_address_targets("mini@example.org").await.unwrap(), None);
 
         // A catch-all does not swallow it, and no mailbox or alias can take the address.
-        store.set_catch_all("example.de", Some("mini@example.de")).await.unwrap();
-        assert_eq!(store.resolve_recipient("kasse@example.de").await.unwrap(), None);
-        assert_eq!(store.resolve_recipient("irgendwer@example.de").await.unwrap(), Some(mini.id));
-        assert!(matches!(store.add_alias("kasse@example.de", "mini@example.de").await, Err(StoreError::Conflict(_))));
-        let refused = store.set_forward_address("mini@example.de", vec!["a@example.org".into()], "").await;
+        store.set_catch_all("example.org", Some("mini@example.org")).await.unwrap();
+        assert_eq!(store.resolve_recipient("kasse@example.org").await.unwrap(), None);
+        assert_eq!(store.resolve_recipient("irgendwer@example.org").await.unwrap(), Some(mini.id));
+        assert!(matches!(store.add_alias("kasse@example.org", "mini@example.org").await, Err(StoreError::Conflict(_))));
+        let refused = store.set_forward_address("mini@example.org", vec!["a@example.net".into()], "").await;
         assert!(matches!(refused, Err(StoreError::Conflict(_))));
-        let itself = store.set_forward_address("kasse@example.de", vec!["kasse@example.de".into()], "").await;
+        let itself = store.set_forward_address("kasse@example.org", vec!["kasse@example.org".into()], "").await;
         assert!(matches!(itself, Err(StoreError::Invalid(_))));
 
-        let replaced = store.set_forward_address("kasse@example.de", vec!["neu@example.org".into()], "").await.unwrap();
+        let replaced =
+            store.set_forward_address("kasse@example.org", vec!["neu@example.net".into()], "").await.unwrap();
         assert_eq!((replaced.targets.len(), replaced.created_at), (1, created.created_at));
-        assert_eq!(store.forward_addresses(Some("example.de".into())).await.unwrap(), vec![replaced]);
-        assert!(store.delete_domain("example.de").await.is_err(), "the domain is still in use");
-        store.remove_forward_address("kasse@example.de").await.unwrap();
+        assert_eq!(store.forward_addresses(Some("example.org".into())).await.unwrap(), vec![replaced]);
+        assert!(store.delete_domain("example.org").await.is_err(), "the domain is still in use");
+        store.remove_forward_address("kasse@example.org").await.unwrap();
         assert!(store.forward_addresses(None).await.unwrap().is_empty());
     }
 }

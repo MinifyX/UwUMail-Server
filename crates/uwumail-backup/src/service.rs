@@ -559,7 +559,7 @@ mod tests {
 
     fn a_backup_server() -> Target {
         Target {
-            host: "nas.example.de".into(),
+            host: "nas.example.org".into(),
             port: 22,
             user: "backup".into(),
             path: "uwumail".into(),

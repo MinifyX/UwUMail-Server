@@ -229,7 +229,7 @@ mod tests {
             .into_iter()
             .map(|k| DkimKey {
                 id: 0,
-                domain: "example.de".into(),
+                domain: "example.org".into(),
                 selector: k.selector,
                 algorithm: k.algorithm,
                 private_key: k.private_key,
@@ -239,7 +239,7 @@ mod tests {
                 retired_at: None,
             })
             .collect();
-        let headers = sign(b"From: mini@example.de\r\nSubject: hi\r\n\r\nhi\r\n", &keys).unwrap();
+        let headers = sign(b"From: mini@example.org\r\nSubject: hi\r\n\r\nhi\r\n", &keys).unwrap();
         assert_eq!(headers.matches("DKIM-Signature:").count(), 2);
         assert!(headers.contains("s=uwu202609e"));
         assert!(headers.contains("a=rsa-sha256"));

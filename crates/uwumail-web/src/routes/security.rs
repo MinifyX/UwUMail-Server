@@ -374,7 +374,7 @@ mod tests {
 
     #[test]
     fn qr_codes_are_square_module_strings() {
-        let qr = qr_code("otpauth://totp/UwUMail:leni%40example.de?secret=AAAABBBBCCCCDDDD");
+        let qr = qr_code("otpauth://totp/UwUMail:leni%40example.org?secret=AAAABBBBCCCCDDDD");
         let size = qr["size"].as_u64().unwrap() as usize;
         assert!(size >= 21);
         assert_eq!(qr["modules"].as_str().unwrap().len(), size * size);

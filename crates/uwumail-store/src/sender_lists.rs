@@ -155,7 +155,7 @@ fn parse_network(value: &str) -> Option<(IpAddr, u8)> {
     Some((address, prefix))
 }
 
-/// What a value most likely is: an address or network, a `*.` host name like `*.mail.example.com`,
+/// What a value most likely is: an address or network, a `*.` host name like `*.mail.example.test`,
 /// any other value with `*` a pattern, a full email address, otherwise a domain. A single host name
 /// needs to be asked for as a host.
 pub fn guess_sender_kind(value: &str) -> SenderKind {
@@ -476,31 +476,31 @@ mod tests {
         assert_eq!(normalized("::ffff:192.0.2.1"), (SenderKind::Ip, Ok("192.0.2.1".into())));
         assert_eq!(normalized("2001:DB8::1/48"), (SenderKind::Ip, Ok("2001:db8::/48".into())));
         assert!(normalized("10.0.0.0/4").1.is_err(), "too wide");
-        assert_eq!(normalized("Leni@Example.DE"), (SenderKind::Address, Ok("leni@example.de".into())));
-        assert_eq!(normalized("*.Mail.Example.com."), (SenderKind::Host, Ok("*.mail.example.com".into())));
-        assert_eq!(normalized("@bücher.de"), (SenderKind::Domain, Ok("xn--bcher-kva.de".into())));
+        assert_eq!(normalized("Leni@Example.org"), (SenderKind::Address, Ok("leni@example.org".into())));
+        assert_eq!(normalized("*.Mail.Example.test."), (SenderKind::Host, Ok("*.mail.example.test".into())));
+        assert_eq!(normalized("@bücher.example"), (SenderKind::Domain, Ok("xn--bcher-kva.example".into())));
         assert!(normalized("com").1.is_err(), "a bare top-level domain matches too much");
-        assert_eq!(normalized("*.RU"), (SenderKind::Pattern, Ok("*.ru".into())));
+        assert_eq!(normalized("*.TEST"), (SenderKind::Pattern, Ok("*.test".into())));
         assert_eq!(normalized("**Newsletter**"), (SenderKind::Pattern, Ok("*newsletter*".into())));
-        assert_eq!(normalized("*@Example.com"), (SenderKind::Pattern, Ok("*@example.com".into())));
+        assert_eq!(normalized("*@Example.test"), (SenderKind::Pattern, Ok("*@example.test".into())));
         assert!(normalized("*.c*").1.is_err(), "matches nearly everyone");
         assert!(normalized("*spam mail*").1.is_err());
-        assert!(normalize_sender(SenderKind::Pattern, "spam@example.com").is_err(), "no '*'");
+        assert!(normalize_sender(SenderKind::Pattern, "spam@example.test").is_err(), "no '*'");
         assert!(normalized("not an address@").1.is_err());
-        assert_eq!(normalize_sender(SenderKind::Host, "mx1.example.org").unwrap(), "mx1.example.org");
-        assert_eq!(normalize_sender(SenderKind::Domain, "*.example.org").unwrap(), "example.org");
+        assert_eq!(normalize_sender(SenderKind::Host, "mx1.example.net").unwrap(), "mx1.example.net");
+        assert_eq!(normalize_sender(SenderKind::Domain, "*.example.net").unwrap(), "example.net");
     }
 
     #[test]
     fn patterns_match_the_whole_text() {
-        assert!(pattern_matches("*.ru", "anna@shop.ru"));
-        assert!(!pattern_matches("*.ru", "anna@shop.ru.example.com"));
-        assert!(pattern_matches("*newsletter*", "newsletter@example.com"));
-        assert!(pattern_matches("*newsletter*", "news@newsletter.example.com"));
-        assert!(pattern_matches("*@example.com", "a@example.com"));
-        assert!(!pattern_matches("*@example.com", "a@mail.example.com"));
-        assert!(pattern_matches("info@*.example.com", "info@mail.example.com"));
-        assert!(!pattern_matches("info@*.example.com", "sales@mail.example.com"));
+        assert!(pattern_matches("*.test", "anna@shop.test"));
+        assert!(!pattern_matches("*.test", "anna@shop.test.example.org"));
+        assert!(pattern_matches("*newsletter*", "newsletter@example.test"));
+        assert!(pattern_matches("*newsletter*", "news@newsletter.example.test"));
+        assert!(pattern_matches("*@example.test", "a@example.test"));
+        assert!(!pattern_matches("*@example.test", "a@mail.example.test"));
+        assert!(pattern_matches("info@*.example.test", "info@mail.example.test"));
+        assert!(!pattern_matches("info@*.example.test", "sales@mail.example.test"));
         assert!(pattern_matches("a*a", "aa"), "the ends may not overlap in the middle");
         assert!(!pattern_matches("ab*ba", "aba"), "but they may not share letters either");
         assert!(pattern_matches("*spam*spam*", "spamxspam"));
@@ -511,10 +511,10 @@ mod tests {
     async fn entries_belong_to_their_scope() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path()).await.unwrap();
-        let domain = store.create_domain("example.de").await.unwrap();
-        store.create_domain("example.org").await.unwrap();
+        let domain = store.create_domain("example.org").await.unwrap();
+        store.create_domain("example.net").await.unwrap();
         let account = NewAccount {
-            address: "leni@example.de".into(),
+            address: "leni@example.org".into(),
             display_name: String::new(),
             password: None,
             role: Role::User,
@@ -533,25 +533,25 @@ mod tests {
         };
 
         store.add_sender_list_entry(add(ListScope::Server, SenderList::Block, "198.51.100.0/24")).await.unwrap();
-        let org = store.domain("example.org").await.unwrap().unwrap().id;
+        let org = store.domain("example.net").await.unwrap().unwrap().id;
         store.add_sender_list_entry(add(ListScope::Domain(org), SenderList::Allow, "news.example")).await.unwrap();
         let own = store
-            .add_sender_list_entry(add(ListScope::Account(leni), SenderList::Allow, "Oma@Example.net"))
+            .add_sender_list_entry(add(ListScope::Account(leni), SenderList::Allow, "Oma@Example.com"))
             .await
             .unwrap();
-        assert_eq!((own.kind, own.value.as_str()), (SenderKind::Address, "oma@example.net"));
+        assert_eq!((own.kind, own.value.as_str()), (SenderKind::Address, "oma@example.com"));
 
         let again =
-            store.add_sender_list_entry(add(ListScope::Account(leni), SenderList::Block, "oma@example.net")).await;
+            store.add_sender_list_entry(add(ListScope::Account(leni), SenderList::Block, "oma@example.com")).await;
         assert!(matches!(again, Err(StoreError::Rule { code: "senderListed", .. })));
         // Someone else's scope may list the same value.
         store
-            .add_sender_list_entry(add(ListScope::Domain(domain.id), SenderList::Block, "oma@example.net"))
+            .add_sender_list_entry(add(ListScope::Domain(domain.id), SenderList::Block, "oma@example.com"))
             .await
             .unwrap();
 
-        let for_leni = store.sender_lists_for(vec!["example.de".into()], vec![leni]).await.unwrap();
-        assert_eq!(for_leni.len(), 3, "the server's, example.de's and Leni's own, not example.org's");
+        let for_leni = store.sender_lists_for(vec!["example.org".into()], vec![leni]).await.unwrap();
+        assert_eq!(for_leni.len(), 3, "the server's, example.org's and Leni's own, not example.net's");
         assert!(store.sender_lists_for(vec![], vec![]).await.unwrap().len() == 1);
         assert_eq!(store.admin_sender_lists().await.unwrap().len(), 3);
         assert_eq!(store.sender_list(ListScope::Account(leni)).await.unwrap().len(), 1);
@@ -560,7 +560,7 @@ mod tests {
         assert!(matches!(stranger, Err(StoreError::NotFound(_))), "nobody removes someone else's entry");
         store.remove_sender_list_entry(ListOwner::Account(leni), own.id).await.unwrap();
 
-        store.delete_domain("example.org").await.unwrap();
+        store.delete_domain("example.net").await.unwrap();
         assert_eq!(store.admin_sender_lists().await.unwrap().len(), 2, "a removed domain takes its entries along");
     }
 }

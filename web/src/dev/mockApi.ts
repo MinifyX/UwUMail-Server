@@ -1321,7 +1321,7 @@ function reachability(): Reachability {
       ? {
           at,
           route: "gateway",
-          target: "gmail-smtp-in.l.google.com:25",
+          target: "mx.example.net:25",
           ok: false,
           stage: "connect",
           error: "timed out",
@@ -1329,7 +1329,7 @@ function reachability(): Reachability {
       : {
           at,
           route: "direct",
-          target: "gmail-smtp-in.l.google.com:25",
+          target: "mx.example.net:25",
           ok: false,
           stage: "connect",
           error: "timed out",
@@ -1378,7 +1378,7 @@ function serverCheck(blocklists: boolean): ServerCheck {
       : {
           at,
           route: "direct",
-          target: "gmail-smtp-in.l.google.com:25",
+          target: "mx.example.net:25",
           ok: false,
           stage: "connect",
           error: "timed out",

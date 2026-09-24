@@ -195,7 +195,7 @@ mod tests {
         let buffer = LogBuffer::new(3);
         let subscriber = tracing_subscriber::registry().with(buffer.layer());
         tracing::subscriber::with_default(subscriber, || {
-            tracing::info!(login = "leni@example.de", "web login");
+            tracing::info!(login = "leni@example.org", "web login");
             tracing::warn!(ip = "192.0.2.1", "failed web login");
             tracing::info!("ready");
             tracing::error!(error = "disk full", "writing failed");

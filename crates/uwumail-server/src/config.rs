@@ -268,11 +268,11 @@ mod tests {
         let path = dir.path().join("uwumail.toml");
         std::fs::write(
             &path,
-            "hostname = \"Mail.Example.DE.\"\n[tls]\nmode = \"self-signed\"\n[delivery.routes]\n\"b.test\" = \"127.0.0.1:2525\"\n",
+            "hostname = \"Mail.Example.org.\"\n[tls]\nmode = \"self-signed\"\n[delivery.routes]\n\"b.test\" = \"127.0.0.1:2525\"\n",
         )
         .unwrap();
         let config = Config::load(Some(&path)).unwrap();
-        assert_eq!(config.hostname, "mail.example.de");
+        assert_eq!(config.hostname, "mail.example.org");
         assert_eq!(config.tls.mode, TlsMode::SelfSigned);
         assert_eq!(config.delivery.routes["b.test"], "127.0.0.1:2525");
         assert_eq!(config.listen.smtp, "[::]:25");
@@ -284,7 +284,7 @@ mod tests {
     #[allow(clippy::result_large_err)]
     fn empty_egress_variables_leave_the_setting_to_the_admin_panel() {
         figment::Jail::expect_with(|jail| {
-            jail.set_env("UWUMAIL_HOSTNAME", "mail.example.de");
+            jail.set_env("UWUMAIL_HOSTNAME", "mail.example.org");
             jail.set_env("UWUMAIL_EGRESS__PROXY", "");
             jail.set_env("UWUMAIL_EGRESS__FALLBACK", "direct");
             let fixed = Config::file_and_environment(None).unwrap();
@@ -305,7 +305,7 @@ mod tests {
         let path = dir.path().join("uwumail.toml");
         std::fs::write(
             &path,
-            "hostname = \"mail.example.de\"
+            "hostname = \"mail.example.org\"
 [tone]
 language = \"de\"
 ",
@@ -331,7 +331,7 @@ language = \"de\"
     fn with_env_text(key: &str, text: &str) -> anyhow::Result<Config> {
         let value: figment::value::Value = text.parse().expect("any text is a value");
         Figment::new()
-            .merge(Serialized::default("hostname", "mail.example.de"))
+            .merge(Serialized::default("hostname", "mail.example.org"))
             .merge(Serialized::default(key, value))
             .extract()
             .context("the configuration is invalid")
@@ -380,7 +380,7 @@ language = \"de\"
     #[test]
     fn spam_thresholds_from_the_panel_have_to_stay_in_order() {
         let with = |spam: serde_json::Value| {
-            let overlay = serde_json::json!({ "hostname": "mail.example.de", "spam": spam });
+            let overlay = serde_json::json!({ "hostname": "mail.example.org", "spam": spam });
             Config::load_with_overlay(None, &overlay).unwrap()
         };
         let config = with(serde_json::json!({}));
@@ -402,7 +402,7 @@ language = \"de\"
     #[test]
     fn sending_the_log_to_loki_needs_an_address_and_the_privacy_consent() {
         let with = |loki: serde_json::Value| {
-            let overlay = serde_json::json!({ "hostname": "mail.example.de", "log": { "loki": loki } });
+            let overlay = serde_json::json!({ "hostname": "mail.example.org", "log": { "loki": loki } });
             Config::load_with_overlay(None, &overlay).unwrap()
         };
         assert!(with(serde_json::json!({})).validate().is_ok(), "off by default");

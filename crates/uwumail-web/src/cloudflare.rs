@@ -401,8 +401,8 @@ mod tests {
     }
 
     async fn zones(Query(query): Query<std::collections::HashMap<String, String>>) -> axum::Json<Value> {
-        let result = if query.get("name").map(String::as_str) == Some("example.de") {
-            json!([{ "id": "zone1", "name": "example.de" }])
+        let result = if query.get("name").map(String::as_str) == Some("example.org") {
+            json!([{ "id": "zone1", "name": "example.org" }])
         } else {
             json!([])
         };
@@ -491,13 +491,13 @@ mod tests {
         let key = format!("v=DKIM1; k=rsa; p={}", "A".repeat(300));
         let fake = Arc::new(Fake::default());
         fake.records.lock().unwrap().extend([
-            json!({ "id": "old", "type": "TXT", "name": "example.de", "content": "\"v=spf1 -all\"" }),
+            json!({ "id": "old", "type": "TXT", "name": "example.org", "content": "\"v=spf1 -all\"" }),
             // Exactly what we would publish, only without the quotes Cloudflare now asks for.
-            json!({ "id": "bare", "type": "TXT", "name": "_dmarc.example.de", "content": "v=DMARC1; p=quarantine" }),
+            json!({ "id": "bare", "type": "TXT", "name": "_dmarc.example.org", "content": "v=DMARC1; p=quarantine" }),
             json!({
                 "id": "tls",
                 "type": "TXT",
-                "name": "_smtp._tls.example.de",
+                "name": "_smtp._tls.example.org",
                 "content": "\"v=TLSRPTv1; rua=mailto:reports@other.example\"",
             }),
         ]);
@@ -511,25 +511,25 @@ mod tests {
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
 
         let report = DomainReport {
-            domain: "example.de".into(),
+            domain: "example.org".into(),
             checked_at: 0,
             source: "authoritative",
             nameservers: vec![],
             status: CheckStatus::Missing,
             records: vec![
-                check("mx", "MX", "example.de", "10 mail.example.de", CheckStatus::Missing),
-                check("spf", "TXT", "example.de", "v=spf1 a:mail.example.de -all", CheckStatus::Wrong),
-                check("dmarc", "TXT", "_dmarc.example.de", "v=DMARC1; p=quarantine", CheckStatus::Ok),
-                differing("tlsrpt", "TXT", "_smtp._tls.example.de", "v=TLSRPTv1; rua=mailto:tls@example.de"),
-                check("dkim", "TXT", "uwu._domainkey.example.de", &key, CheckStatus::Missing),
+                check("mx", "MX", "example.org", "10 mail.example.org", CheckStatus::Missing),
+                check("spf", "TXT", "example.org", "v=spf1 a:mail.example.org -all", CheckStatus::Wrong),
+                check("dmarc", "TXT", "_dmarc.example.org", "v=DMARC1; p=quarantine", CheckStatus::Ok),
+                differing("tlsrpt", "TXT", "_smtp._tls.example.org", "v=TLSRPTv1; rua=mailto:tls@example.org"),
+                check("dkim", "TXT", "uwu._domainkey.example.org", &key, CheckStatus::Missing),
             ],
         };
         let wanted = wanted_records(&report);
         assert_eq!(wanted.len(), 5);
-        assert_eq!((wanted[0].priority, wanted[0].content.as_str()), (Some(10), "mail.example.de"));
+        assert_eq!((wanted[0].priority, wanted[0].content.as_str()), (Some(10), "mail.example.org"));
 
         let cloudflare = Cloudflare::with_base("test-token", &base);
-        let results = cloudflare.apply("example.de", &wanted, &[], &[]).await.unwrap();
+        let results = cloudflare.apply("example.org", &wanted, &[], &[]).await.unwrap();
         // The missing ones go in, the broken and the differing one wait for a tick, and the
         // DMARC record that was right all along only gets its quotes.
         assert_eq!(
@@ -540,23 +540,23 @@ mod tests {
             let records = fake.records.lock().unwrap();
             let dmarc = records.iter().find(|r| r["id"] == "bare").unwrap();
             assert_eq!(dmarc["content"], "\"v=DMARC1; p=quarantine\"");
-            let dkim = records.iter().find(|r| r["name"] == "uwu._domainkey.example.de").unwrap();
+            let dkim = records.iter().find(|r| r["name"] == "uwu._domainkey.example.org").unwrap();
             assert_eq!(dkim["content"], format!("\"{}\" \"{}\"", &key[..255], &key[255..]));
             assert!(records.iter().any(|r| r["type"] == "MX" && r["priority"] == 10));
         }
 
         // A second run writes no duplicates, and the quoted DMARC record is left alone entirely.
-        let results = cloudflare.apply("example.de", &wanted, &[], &[]).await.unwrap();
+        let results = cloudflare.apply("example.org", &wanted, &[], &[]).await.unwrap();
         assert_eq!(results.iter().map(|r| r.outcome).collect::<Vec<_>>(), ["updated", "skipped", "skipped", "updated"]);
 
         let replace = ["spf".to_owned()];
         let tidy = ["tlsrpt".to_owned()];
-        let results = cloudflare.apply("example.de", &wanted[1..4], &replace, &tidy).await.unwrap();
+        let results = cloudflare.apply("example.org", &wanted[1..4], &replace, &tidy).await.unwrap();
         assert_eq!(results.iter().map(|r| r.outcome).collect::<Vec<_>>(), ["updated", "updated"]);
         {
             let records = fake.records.lock().unwrap();
-            assert!(records.iter().any(|r| r["content"] == "\"v=spf1 a:mail.example.de -all\"" && r["id"] == "old"));
-            assert!(records.iter().any(|r| r["content"] == "\"v=TLSRPTv1; rua=mailto:tls@example.de\""));
+            assert!(records.iter().any(|r| r["content"] == "\"v=spf1 a:mail.example.org -all\"" && r["id"] == "old"));
+            assert!(records.iter().any(|r| r["content"] == "\"v=TLSRPTv1; rua=mailto:tls@example.org\""));
         }
 
         let error = Cloudflare::with_base("test-token", &base).zone_for("elsewhere.example").await.unwrap_err();
@@ -584,21 +584,21 @@ mod tests {
         let account = "https://acme-v02.api.letsencrypt.org/acme/acct/1";
         let value = uwumail_smtp::dnscheck::caa_value(account);
         let report = |status| DomainReport {
-            domain: "example.de".into(),
+            domain: "example.org".into(),
             checked_at: 0,
             source: "authoritative",
             nameservers: vec![],
             status: CheckStatus::Ok,
-            records: vec![check("caa", "CAA", "mail.example.de", &format!("0 issue \"{value}\""), status)],
+            records: vec![check("caa", "CAA", "mail.example.org", &format!("0 issue \"{value}\""), status)],
         };
         let cloudflare = Cloudflare::with_base("test-token", &base);
         let wanted = wanted_records(&report(CheckStatus::Missing));
-        let results = cloudflare.apply("example.de", &wanted, &[], &[]).await.unwrap();
+        let results = cloudflare.apply("example.org", &wanted, &[], &[]).await.unwrap();
         assert_eq!(results.iter().map(|r| r.outcome).collect::<Vec<_>>(), ["skipped"], "missing, but not asked for");
         assert!(fake.records.lock().unwrap().is_empty());
 
         let caa = ["caa".to_owned()];
-        let results = cloudflare.apply("example.de", &wanted, &caa, &[]).await.unwrap();
+        let results = cloudflare.apply("example.org", &wanted, &caa, &[]).await.unwrap();
         assert_eq!(results.iter().map(|r| r.outcome).collect::<Vec<_>>(), ["created"]);
         {
             let records = fake.records.lock().unwrap();
@@ -608,13 +608,13 @@ mod tests {
 
         // One that lets others issue too is replaced, when asked, and the others go; an iodef stays.
         fake.records.lock().unwrap().extend([
-            json!({ "id": "other", "type": "CAA", "name": "mail.example.de", "data": { "flags": 0, "tag": "issue", "value": "sectigo.com" } }),
-            json!({ "id": "report", "type": "CAA", "name": "mail.example.de", "data": { "flags": 0, "tag": "iodef", "value": "mailto:caa@example.de" } }),
+            json!({ "id": "other", "type": "CAA", "name": "mail.example.org", "data": { "flags": 0, "tag": "issue", "value": "sectigo.com" } }),
+            json!({ "id": "report", "type": "CAA", "name": "mail.example.org", "data": { "flags": 0, "tag": "iodef", "value": "mailto:caa@example.org" } }),
         ]);
         let wanted = wanted_records(&report(CheckStatus::Warning));
-        let results = cloudflare.apply("example.de", &wanted, &[], &[]).await.unwrap();
+        let results = cloudflare.apply("example.org", &wanted, &[], &[]).await.unwrap();
         assert_eq!(results.iter().map(|r| r.outcome).collect::<Vec<_>>(), ["skipped"]);
-        let results = cloudflare.apply("example.de", &wanted, &caa, &[]).await.unwrap();
+        let results = cloudflare.apply("example.org", &wanted, &caa, &[]).await.unwrap();
         assert_eq!(results.iter().map(|r| r.outcome).collect::<Vec<_>>(), ["updated"]);
         let records = fake.records.lock().unwrap();
         assert_eq!(records.len(), 2, "{records:?}");

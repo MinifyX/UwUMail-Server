@@ -92,7 +92,7 @@ and they go on with the label `source=gateway`. They also show up on the
 portal's *Logs* page, marked *Gateway*.
 
 Switch it on under *Server → Logs → Send to Grafana Loki*. The address is Loki's
-base address (`http://192.168.1.20:3100`, `https://logs-prod-012.grafana.net`);
+base address (`http://192.168.1.20:3100`, `https://loki.example.net`);
 `/loki/api/v1/push` is added when it has no path of its own, so an address
 behind a reverse proxy can name the whole path instead. Loki can be reached
 without a login, with a username and password (Grafana Cloud: the user id and an

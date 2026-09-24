@@ -1870,7 +1870,7 @@ mod tests {
     #[test]
     fn a_full_mailbox_is_recognised_however_it_is_answered() {
         assert!(mailbox_full("552 5.2.2 Mailbox is full"), "how storing it answers");
-        assert!(mailbox_full("452 4.2.2 <mini@example.de>: Mailbox is full"), "how RCPT answers");
+        assert!(mailbox_full("452 4.2.2 <mini@example.org>: Mailbox is full"), "how RCPT answers");
         assert!(!mailbox_full("550 5.7.1 Message rejected as spam"), "a verdict is not a full mailbox");
         assert!(!mailbox_full("554 5.7.1 DMARC policy of the sender rejects it"));
         assert!(!mailbox_full("550 5.1.1 This address does not take mail"));

@@ -587,9 +587,9 @@ mod tests {
     async fn entries_and_subscribed_lists_belong_to_their_scope() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path()).await.unwrap();
-        let domain = store.create_domain("example.de").await.unwrap();
+        let domain = store.create_domain("example.org").await.unwrap();
         let account = NewAccount {
-            address: "leni@example.de".into(),
+            address: "leni@example.org".into(),
             display_name: String::new(),
             password: None,
             role: Role::User,
@@ -649,7 +649,7 @@ mod tests {
         let compiled = store.compiled_words().await.unwrap();
         assert_eq!(compiled.len(), 4);
         let viagra = compiled.iter().find(|word| word.pattern.contains("viagra")).unwrap();
-        assert_eq!((viagra.points, viagra.subject_only, viagra.domain.as_deref()), (3.0, true, Some("example.de")));
+        assert_eq!((viagra.points, viagra.subject_only, viagra.domain.as_deref()), (3.0, true, Some("example.org")));
         let own = compiled.iter().find(|word| word.scope == ListScope::Account(leni)).unwrap();
         assert_eq!(own.points, 5.0);
         let lottery = compiled.iter().find(|word| word.pattern == "lottery").unwrap();

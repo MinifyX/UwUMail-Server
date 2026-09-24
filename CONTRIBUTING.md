@@ -22,5 +22,13 @@ UwUMail Server is a hobby project I build for myself, just for fun (see
 - Protocol changes need an end-to-end test (see `crates/uwumail-smtp/tests/flow.rs`).
 - Code, comments and docs are English. Texts users read exist in German and
   English, in a playful and a neutral tone.
+- Examples, tests, sample data and placeholders only use names nobody can own:
+  `example.com`, `example.net`, `example.org` and names under `.example`,
+  `.test`, `.invalid` or `.localhost` (RFC 2606, RFC 6761), and addresses from
+  the documentation networks `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`
+  and `2001:db8::/32`. Never an invented name under a real ending like
+  `example.de`: someone owns it, and mail sent there by mistake reaches them.
+  Real names are only for things that really are them: providers, blocklists,
+  public suffixes.
 - Security issues: please don't open a public issue, see [SECURITY.md](SECURITY.md).
 - By contributing you agree that your work is licensed under the AGPL-3.0.

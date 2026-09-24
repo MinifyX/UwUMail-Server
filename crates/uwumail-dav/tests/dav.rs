@@ -20,11 +20,11 @@ struct Reply {
 async fn setup() -> (Router, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
-    store.create_domain("example.de").await.unwrap();
+    store.create_domain("example.org").await.unwrap();
     for login in ["mini", "leni"] {
         store
             .create_account(NewAccount {
-                address: format!("{login}@example.de"),
+                address: format!("{login}@example.org"),
                 display_name: login.to_uppercase(),
                 password: Some(PASSWORD.into()),
                 role: Role::User,
@@ -60,7 +60,7 @@ async fn send(app: &Router, method: &str, path: &str, headers: &[(&str, &str)], 
 }
 
 async fn as_mini(app: &Router, method: &str, path: &str, extra: &[(&str, &str)], body: &str) -> Reply {
-    let auth = basic("mini@example.de");
+    let auth = basic("mini@example.org");
     let mut headers = vec![("authorization", auth.as_str())];
     headers.extend_from_slice(extra);
     send(app, method, path, &headers, body).await
@@ -96,7 +96,7 @@ async fn an_iphone_finds_the_calendar_and_keeps_events_in_sync() {
     let root = as_mini(&app, "PROPFIND", "/dav/", &[("depth", "0")], PROPFIND_PRINCIPAL).await;
     assert_eq!(root.status, StatusCode::MULTI_STATUS, "{}", root.body);
     let principal = between(&root.body, "<d:current-user-principal><d:href>", "</d:href>").to_owned();
-    assert_eq!(principal, "/dav/principals/mini@example.de/");
+    assert_eq!(principal, "/dav/principals/mini@example.org/");
 
     let homes = as_mini(
         &app,
@@ -108,7 +108,7 @@ async fn an_iphone_finds_the_calendar_and_keeps_events_in_sync() {
     )
     .await;
     let home = between(&homes.body, "<c:calendar-home-set><d:href>", "</d:href>").to_owned();
-    assert_eq!(home, "/dav/calendars/mini@example.de/");
+    assert_eq!(home, "/dav/calendars/mini@example.org/");
     assert!(homes.body.contains("<d:displayname>MINI</d:displayname>"));
     assert!(homes.body.contains("<c:schedule-inbox-URL/>") && homes.body.contains("404 Not Found"), "{}", homes.body);
 
@@ -121,11 +121,15 @@ async fn an_iphone_finds_the_calendar_and_keeps_events_in_sync() {
 <prop><resourcetype/><displayname/><CS:getctag/><sync-token/><C:supported-calendar-component-set/><I:calendar-color/></prop></propfind>"#,
     )
     .await;
-    assert!(calendars.body.contains("<d:href>/dav/calendars/mini@example.de/personal/</d:href>"), "{}", calendars.body);
+    assert!(
+        calendars.body.contains("<d:href>/dav/calendars/mini@example.org/personal/</d:href>"),
+        "{}",
+        calendars.body
+    );
     assert!(calendars.body.contains("<d:resourcetype><d:collection/><c:calendar/></d:resourcetype>"));
     assert!(calendars.body.contains("<d:displayname>Kalender</d:displayname>"));
     assert!(calendars.body.contains("<c:comp name=\"VEVENT\"/><c:comp name=\"VTODO\"/>"));
-    let calendar = "/dav/calendars/mini@example.de/personal/";
+    let calendar = "/dav/calendars/mini@example.org/personal/";
 
     let created = as_mini(
         &app,
@@ -161,7 +165,7 @@ async fn an_iphone_finds_the_calendar_and_keeps_events_in_sync() {
     assert!(
         conflict
             .body
-            .contains("<c:no-uid-conflict><d:href>/dav/calendars/mini@example.de/personal/tierarzt.ics</d:href>")
+            .contains("<c:no-uid-conflict><d:href>/dav/calendars/mini@example.org/personal/tierarzt.ics</d:href>")
     );
 
     let fetched = as_mini(&app, "GET", &format!("{calendar}tierarzt.ics"), &[], "").await;
@@ -204,9 +208,9 @@ async fn an_iphone_finds_the_calendar_and_keeps_events_in_sync() {
         StatusCode::NO_CONTENT
     );
     let second = as_mini(&app, "REPORT", calendar, &[], &sync_body(&token)).await;
-    assert!(second.body.contains("<d:href>/dav/calendars/mini@example.de/personal/friseur.ics</d:href><d:propstat>"));
+    assert!(second.body.contains("<d:href>/dav/calendars/mini@example.org/personal/friseur.ics</d:href><d:propstat>"));
     assert!(second.body.contains(
-        "<d:href>/dav/calendars/mini@example.de/personal/tierarzt.ics</d:href><d:status>HTTP/1.1 404 Not Found</d:status>"
+        "<d:href>/dav/calendars/mini@example.org/personal/tierarzt.ics</d:href><d:status>HTTP/1.1 404 Not Found</d:status>"
     ));
     let bad_token = as_mini(&app, "REPORT", calendar, &[], &sync_body("urn:uwumail:dav:sync:999:1")).await;
     assert_eq!(bad_token.status, StatusCode::FORBIDDEN);
@@ -218,7 +222,7 @@ async fn an_iphone_finds_the_calendar_and_keeps_events_in_sync() {
         calendar,
         &[],
         r#"<C:calendar-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:prop><D:getetag/><C:calendar-data/></D:prop>
-<D:href>/dav/calendars/mini%40example.de/personal/friseur.ics</D:href><D:href>/dav/calendars/mini@example.de/personal/weg.ics</D:href></C:calendar-multiget>"#,
+<D:href>/dav/calendars/mini%40example.org/personal/friseur.ics</D:href><D:href>/dav/calendars/mini@example.org/personal/weg.ics</D:href></C:calendar-multiget>"#,
     )
     .await;
     assert!(multiget.body.contains("SUMMARY:Friseur"), "{}", multiget.body);
@@ -244,7 +248,7 @@ async fn calendars_come_and_go_and_contacts_have_their_own_home() {
     let made = as_mini(
         &app,
         "MKCALENDAR",
-        "/dav/calendars/mini@example.de/arbeit/",
+        "/dav/calendars/mini@example.org/arbeit/",
         &[],
         r#"<C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:I="http://apple.com/ns/ical/"><D:set><D:prop>
 <D:displayname>Arbeit</D:displayname><I:calendar-color>#00AAFFFF</I:calendar-color>
@@ -255,7 +259,7 @@ async fn calendars_come_and_go_and_contacts_have_their_own_home() {
     let patched = as_mini(
         &app,
         "PROPPATCH",
-        "/dav/calendars/mini@example.de/arbeit/",
+        "/dav/calendars/mini@example.org/arbeit/",
         &[],
         r#"<D:propertyupdate xmlns:D="DAV:" xmlns:X="urn:example"><D:set><D:prop><D:displayname>Büro</D:displayname><X:own>1</X:own></D:prop></D:set></D:propertyupdate>"#,
     )
@@ -264,7 +268,7 @@ async fn calendars_come_and_go_and_contacts_have_their_own_home() {
     let listed = as_mini(
         &app,
         "PROPFIND",
-        "/dav/calendars/mini@example.de/",
+        "/dav/calendars/mini@example.org/",
         &[("depth", "1")],
         r#"<propfind xmlns="DAV:" xmlns:I="http://apple.com/ns/ical/"><prop><displayname/><I:calendar-color/></prop></propfind>"#,
     )
@@ -277,24 +281,24 @@ async fn calendars_come_and_go_and_contacts_have_their_own_home() {
     let refused = as_mini(
         &app,
         "PUT",
-        "/dav/calendars/mini@example.de/arbeit/termin.ics",
+        "/dav/calendars/mini@example.org/arbeit/termin.ics",
         &[],
         &event("termin", "Termin", "20260920T090000Z", "20260920T100000Z"),
     )
     .await;
     assert!(refused.body.contains("supported-calendar-component"), "only tasks in this calendar");
     assert_eq!(
-        as_mini(&app, "DELETE", "/dav/calendars/mini@example.de/arbeit/", &[], "").await.status,
+        as_mini(&app, "DELETE", "/dav/calendars/mini@example.org/arbeit/", &[], "").await.status,
         StatusCode::NO_CONTENT
     );
 
-    let card = "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:nyu\r\nFN:Nyu Katze\r\nEMAIL:nyu@example.org\r\nEND:VCARD\r\n";
-    let stored = as_mini(&app, "PUT", "/dav/addressbooks/mini@example.de/contacts/nyu.vcf", &[], card).await;
+    let card = "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:nyu\r\nFN:Nyu Katze\r\nEMAIL:nyu@example.net\r\nEND:VCARD\r\n";
+    let stored = as_mini(&app, "PUT", "/dav/addressbooks/mini@example.org/contacts/nyu.vcf", &[], card).await;
     assert_eq!(stored.status, StatusCode::CREATED, "{}", stored.body);
     let books = as_mini(
         &app,
         "PROPFIND",
-        "/dav/addressbooks/mini@example.de/contacts/",
+        "/dav/addressbooks/mini@example.org/contacts/",
         &[("depth", "1")],
         r#"<propfind xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav"><prop><getetag/><C:address-data/></prop></propfind>"#,
     )
@@ -302,6 +306,6 @@ async fn calendars_come_and_go_and_contacts_have_their_own_home() {
     assert!(books.body.contains("FN:Nyu Katze"), "{}", books.body);
 
     // Leni's things are not Mini's business.
-    let foreign = as_mini(&app, "PROPFIND", "/dav/calendars/leni@example.de/", &[("depth", "1")], "").await;
+    let foreign = as_mini(&app, "PROPFIND", "/dav/calendars/leni@example.org/", &[("depth", "1")], "").await;
     assert_eq!(foreign.status, StatusCode::FORBIDDEN);
 }

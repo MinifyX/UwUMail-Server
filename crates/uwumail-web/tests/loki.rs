@@ -33,7 +33,7 @@ impl SettingsBackend for FakeServer {
     }
 
     fn apply(&self, overlay: &Value) -> Result<(), String> {
-        self.config(overlay)?.target("mail.example.de").map(|_| ())
+        self.config(overlay)?.target("mail.example.org").map(|_| ())
     }
 
     fn config_file(&self) -> Option<String> {
@@ -41,7 +41,7 @@ impl SettingsBackend for FakeServer {
     }
 
     fn loki_connection(&self, overlay: &Value) -> Result<LokiTarget, String> {
-        self.config(overlay)?.connection("mail.example.de")
+        self.config(overlay)?.connection("mail.example.org")
     }
 }
 
@@ -54,10 +54,10 @@ impl FakeServer {
 
 async fn portal(dir: &std::path::Path) -> (Router, (String, String), Store) {
     let store = Store::open(dir).await.unwrap();
-    store.create_domain("example.de").await.unwrap();
+    store.create_domain("example.org").await.unwrap();
     store
         .create_account(NewAccount {
-            address: "nyu@example.de".into(),
+            address: "nyu@example.org".into(),
             display_name: "Nyu".into(),
             password: Some("katzenpfote-123".into()),
             role: Role::Admin,
@@ -67,7 +67,7 @@ async fn portal(dir: &std::path::Path) -> (Router, (String, String), Store) {
         .await
         .unwrap();
     let smtp_settings = SmtpSettings {
-        hostname: "mail.example.de".into(),
+        hostname: "mail.example.org".into(),
         smtp: Default::default(),
         spam: Default::default(),
         delivery: Default::default(),
@@ -77,7 +77,7 @@ async fn portal(dir: &std::path::Path) -> (Router, (String, String), Store) {
     let web = Web::new(
         Smtp::new(store.clone(), smtp_settings).unwrap(),
         WebSettings {
-            hostname: "mail.example.de".into(),
+            hostname: "mail.example.org".into(),
             started: Instant::now(),
             logs: None,
             loki: Some(Loki::new()),
@@ -91,7 +91,7 @@ async fn portal(dir: &std::path::Path) -> (Router, (String, String), Store) {
         .method("POST")
         .uri("/api/auth/login")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "login": "nyu@example.de", "password": "katzenpfote-123" }).to_string()))
+        .body(Body::from(json!({ "login": "nyu@example.org", "password": "katzenpfote-123" }).to_string()))
         .unwrap();
     login.extensions_mut().insert(ClientInfo { https: true, ..ClientInfo::default() });
     let response = app.clone().oneshot(login).await.unwrap();

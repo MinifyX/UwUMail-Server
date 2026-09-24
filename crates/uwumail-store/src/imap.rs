@@ -448,10 +448,10 @@ mod tests {
 
     async fn setup() -> (Store, tempfile::TempDir, i64, BTreeMap<MailboxRole, i64>) {
         let (store, dir) = store().await;
-        store.create_domain("example.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
         let account = store
             .create_account(NewAccount {
-                address: "mini@example.de".into(),
+                address: "mini@example.org".into(),
                 display_name: "Mini".into(),
                 password: None,
                 role: Role::User,
@@ -472,7 +472,7 @@ mod tests {
     }
 
     async fn deliver(store: &Store, account: i64, subject: &str) -> u32 {
-        let raw = format!("From: nyu@example.org\r\nTo: mini@example.de\r\nSubject: {subject}\r\n\r\nHallo\r\n");
+        let raw = format!("From: nyu@example.net\r\nTo: mini@example.org\r\nSubject: {subject}\r\n\r\nHallo\r\n");
         let request = IngestRequest {
             account_id: account,
             raw: raw.into_bytes(),
@@ -558,7 +558,7 @@ mod tests {
         let (store, _dir, account, roles) = setup().await;
         let other = store
             .create_account(NewAccount {
-                address: "leni@example.de".into(),
+                address: "leni@example.org".into(),
                 display_name: String::new(),
                 password: None,
                 role: Role::User,

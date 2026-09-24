@@ -192,11 +192,11 @@ mod tests {
     async fn self_signed_certificates_are_created_and_reused() {
         let dir = tempfile::tempdir().unwrap();
         let config =
-            Config { hostname: "mail.example.de".into(), data_dir: dir.path().to_path_buf(), ..Config::default() };
+            Config { hostname: "mail.example.org".into(), data_dir: dir.path().to_path_buf(), ..Config::default() };
         let certs = CertStore::default();
         load_self_signed(&config, &certs).await.unwrap();
         let first = certs.info().unwrap();
-        assert!(first.names.contains(&"mail.example.de".to_string()));
+        assert!(first.names.contains(&"mail.example.org".to_string()));
         assert!(first.self_signed);
 
         let reloaded = CertStore::default();

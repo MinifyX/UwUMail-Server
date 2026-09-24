@@ -78,10 +78,10 @@ async fn inbox_subjects(store: &Store, account_id: i64) -> Vec<String> {
 async fn second_factors_app_passwords_and_notices() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
-    store.create_domain("example.de").await.unwrap();
+    store.create_domain("example.org").await.unwrap();
     let nyu = store
         .create_account(NewAccount {
-            address: "nyu@example.de".into(),
+            address: "nyu@example.org".into(),
             display_name: "Nyu".into(),
             password: Some(PASSWORD.into()),
             role: Role::Admin,
@@ -91,7 +91,7 @@ async fn second_factors_app_passwords_and_notices() {
         .await
         .unwrap();
     let settings = SmtpSettings {
-        hostname: "mail.example.de".into(),
+        hostname: "mail.example.org".into(),
         smtp: Default::default(),
         spam: Default::default(),
         delivery: Default::default(),
@@ -101,7 +101,7 @@ async fn second_factors_app_passwords_and_notices() {
     let web = Web::new(
         Smtp::new(store.clone(), settings).unwrap(),
         WebSettings {
-            hostname: "mail.example.de".into(),
+            hostname: "mail.example.org".into(),
             started: Instant::now(),
             logs: None,
             loki: None,
@@ -111,7 +111,7 @@ async fn second_factors_app_passwords_and_notices() {
         },
     );
     let app = web.router();
-    let credentials = json!({ "login": "nyu@example.de", "password": PASSWORD });
+    let credentials = json!({ "login": "nyu@example.org", "password": PASSWORD });
 
     // Without a second factor the password is enough.
     let auth = session(&call(&app, "POST", "/api/auth/login", Some(credentials.clone()), None).await);
@@ -125,7 +125,7 @@ async fn second_factors_app_passwords_and_notices() {
         setup.body["uri"]
             .as_str()
             .unwrap()
-            .starts_with("otpauth://totp/UwUMail%20%28mail.example.de%29:nyu%40example.de?")
+            .starts_with("otpauth://totp/UwUMail%20%28mail.example.org%29:nyu%40example.org?")
     );
     assert!(setup.body["qr"]["size"].as_u64().unwrap() >= 21);
     let secret = setup.body["secret"].as_str().unwrap().to_owned();
@@ -139,7 +139,7 @@ async fn second_factors_app_passwords_and_notices() {
     assert!(inbox_subjects(&store, nyu.id).await.iter().any(|s| s == "Authenticator-App eingeschaltet"));
 
     // The main password no longer works in mail apps; an app password does.
-    let denied = store.authenticate_mail("nyu@example.de", PASSWORD, AppScope::Smtp, "smtp", "192.0.2.1").await;
+    let denied = store.authenticate_mail("nyu@example.org", PASSWORD, AppScope::Smtp, "smtp", "192.0.2.1").await;
     assert!(matches!(denied.unwrap(), MailAuth::Denied(_)));
     let created = call(
         &app,
@@ -151,7 +151,7 @@ async fn second_factors_app_passwords_and_notices() {
     .await;
     assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
     let app_password = created.body["secret"].as_str().unwrap();
-    let allowed = store.authenticate_mail("nyu@example.de", app_password, AppScope::Smtp, "smtp", "192.0.2.1").await;
+    let allowed = store.authenticate_mail("nyu@example.org", app_password, AppScope::Smtp, "smtp", "192.0.2.1").await;
     assert!(matches!(allowed.unwrap(), MailAuth::Ok { app_password: Some(_), .. }));
 
     // Logging in again asks for the second factor before there is a session.
@@ -196,7 +196,7 @@ async fn second_factors_app_passwords_and_notices() {
     assert_eq!(call(&app, "GET", "/api/account", None, Some(&auth)).await.status, StatusCode::OK);
 
     // The admin view shows the second factor, and a reset needs one to exist.
-    let person = call(&app, "GET", "/api/admin/people/nyu@example.de", None, Some(&auth)).await.body;
+    let person = call(&app, "GET", "/api/admin/people/nyu@example.org", None, Some(&auth)).await.body;
     assert_eq!(person["security"]["secondFactor"], true);
     let health = call(&app, "GET", "/api/admin/health", None, Some(&auth)).await.body;
     let security_area = health["areas"].as_array().unwrap().iter().find(|a| a["area"] == "security").unwrap();

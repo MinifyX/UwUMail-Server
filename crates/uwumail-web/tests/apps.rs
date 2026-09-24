@@ -46,10 +46,10 @@ fn json_request(method: &str, path: &str, body: Value, auth: Option<&(String, St
 async fn setup() -> (Router, Store, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
-    store.create_domain("example.de").await.unwrap();
+    store.create_domain("example.org").await.unwrap();
     store
         .create_account(NewAccount {
-            address: "mini@example.de".into(),
+            address: "mini@example.org".into(),
             display_name: "Mini".into(),
             password: Some(PASSWORD.into()),
             role: Role::User,
@@ -59,7 +59,7 @@ async fn setup() -> (Router, Store, tempfile::TempDir) {
         .await
         .unwrap();
     let settings = SmtpSettings {
-        hostname: "mail.example.de".into(),
+        hostname: "mail.example.org".into(),
         smtp: Default::default(),
         spam: Default::default(),
         delivery: Default::default(),
@@ -69,7 +69,7 @@ async fn setup() -> (Router, Store, tempfile::TempDir) {
     let web = Web::new(
         Smtp::new(store.clone(), settings).unwrap(),
         WebSettings {
-            hostname: "mail.example.de".into(),
+            hostname: "mail.example.org".into(),
             started: Instant::now(),
             logs: None,
             loki: None,
@@ -86,18 +86,18 @@ async fn apps_find_their_settings() {
     let (app, _store, _dir) = setup().await;
 
     let get = |uri: &str| Request::builder().uri(uri).body(Body::empty()).unwrap();
-    let config = send(&app, get("/mail/config-v1.1.xml?emailaddress=mini%40example.de")).await;
+    let config = send(&app, get("/mail/config-v1.1.xml?emailaddress=mini%40example.org")).await;
     assert_eq!(config.status, StatusCode::OK);
     assert!(config.content_type.starts_with("application/xml"));
-    assert!(config.text.contains("<domain>example.de</domain>"), "{}", config.text);
+    assert!(config.text.contains("<domain>example.org</domain>"), "{}", config.text);
     assert!(
         config.text.contains(
-            "<hostname>mail.example.de</hostname>\n      <port>993</port>\n      <socketType>SSL</socketType>"
+            "<hostname>mail.example.org</hostname>\n      <port>993</port>\n      <socketType>SSL</socketType>"
         )
     );
     let config = send(&app, get("/.well-known/autoconfig/mail/config-v1.1.xml")).await;
     assert!(config.text.contains("<domain>%EMAILDOMAIN%</domain>"));
-    let unknown = send(&app, get("/mail/config-v1.1.xml?emailaddress=someone%40example.org")).await;
+    let unknown = send(&app, get("/mail/config-v1.1.xml?emailaddress=someone%40example.net")).await;
     assert_eq!(unknown.status, StatusCode::NOT_FOUND);
 
     let outlook = |address: &str| {
@@ -106,13 +106,13 @@ async fn apps_find_their_settings() {
         );
         Request::builder().method("POST").uri("/autodiscover/autodiscover.xml").body(Body::from(body)).unwrap()
     };
-    let found = send(&app, outlook("anyone@example.de")).await;
+    let found = send(&app, outlook("anyone@example.org")).await;
     assert_eq!(found.status, StatusCode::OK);
     assert!(
-        found.text.contains("<Type>IMAP</Type>\n        <Server>mail.example.de</Server>\n        <Port>993</Port>")
+        found.text.contains("<Type>IMAP</Type>\n        <Server>mail.example.org</Server>\n        <Port>993</Port>")
     );
-    assert!(found.text.contains("<LoginName>anyone@example.de</LoginName>"), "no difference for unknown people");
-    let elsewhere = send(&app, outlook("someone@example.org")).await;
+    assert!(found.text.contains("<LoginName>anyone@example.org</LoginName>"), "no difference for unknown people");
+    let elsewhere = send(&app, outlook("someone@example.net")).await;
     assert!(elsewhere.text.contains("<ErrorCode>600</ErrorCode>"));
 }
 
@@ -121,7 +121,7 @@ async fn apple_profiles_carry_a_new_app_password_and_open_as_a_profile() {
     let (app, store, _dir) = setup().await;
     let login = send(
         &app,
-        json_request("POST", "/api/auth/login", json!({ "login": "mini@example.de", "password": PASSWORD }), None),
+        json_request("POST", "/api/auth/login", json!({ "login": "mini@example.org", "password": PASSWORD }), None),
     )
     .await;
     assert_eq!(login.status, StatusCode::OK, "{}", login.text);
@@ -150,7 +150,7 @@ async fn apple_profiles_carry_a_new_app_password_and_open_as_a_profile() {
         .nth(1)
         .and_then(|rest| rest.split("</string>").next())
         .unwrap();
-    let auth_result = store.authenticate_mail("mini@example.de", secret, AppScope::Mail, "imap", "").await.unwrap();
+    let auth_result = store.authenticate_mail("mini@example.org", secret, AppScope::Mail, "imap", "").await.unwrap();
     assert!(
         matches!(auth_result, MailAuth::Ok { app_password: Some(_), .. }),
         "the profile's password is an app password"
@@ -159,10 +159,10 @@ async fn apple_profiles_carry_a_new_app_password_and_open_as_a_profile() {
     assert!(
         download
             .text
-            .contains("<key>CalDAVPrincipalURL</key>\n      <string>/dav/principals/mini@example.de/</string>")
+            .contains("<key>CalDAVPrincipalURL</key>\n      <string>/dav/principals/mini@example.org/</string>")
     );
     assert!(download.text.contains(&format!("<key>CardDAVPassword</key>\n      <string>{secret}</string>")));
-    let dav = store.authenticate_mail("mini@example.de", secret, AppScope::Dav, "dav", "").await.unwrap();
+    let dav = store.authenticate_mail("mini@example.org", secret, AppScope::Dav, "dav", "").await.unwrap();
     assert!(matches!(dav, MailAuth::Ok { .. }), "the app password may use CalDAV and CardDAV");
     // An iPhone asks for the link twice: once for the download, once to install what it downloaded.
     let again = send(&app, Request::builder().uri(url).body(Body::empty()).unwrap()).await;

@@ -51,13 +51,13 @@ async fn login(app: &Router, address: &str) -> (String, String) {
     (login["_cookie"].as_str().unwrap().to_owned(), login["csrfToken"].as_str().unwrap().to_owned())
 }
 
-/// A server with the domain example.de, the admin chef and Leni; returns their account ids.
+/// A server with the domain example.org, the admin chef and Leni; returns their account ids.
 async fn server() -> (tempfile::TempDir, Store, Vec<i64>) {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
-    store.create_domain("example.de").await.unwrap();
+    store.create_domain("example.org").await.unwrap();
     let mut ids = Vec::new();
-    for (address, role) in [("chef@example.de", Role::Admin), ("leni@example.de", Role::User)] {
+    for (address, role) in [("chef@example.org", Role::Admin), ("leni@example.org", Role::User)] {
         let account = NewAccount {
             address: address.into(),
             display_name: String::new(),
@@ -73,7 +73,7 @@ async fn server() -> (tempfile::TempDir, Store, Vec<i64>) {
 
 fn router(store: &Store) -> Router {
     let settings = SmtpSettings {
-        hostname: "mail.example.de".into(),
+        hostname: "mail.example.org".into(),
         smtp: Default::default(),
         spam: Default::default(),
         delivery: Default::default(),
@@ -83,7 +83,7 @@ fn router(store: &Store) -> Router {
     let web = Web::new(
         Smtp::new(store.clone(), settings).unwrap(),
         WebSettings {
-            hostname: "mail.example.de".into(),
+            hostname: "mail.example.org".into(),
             started: Instant::now(),
             logs: None,
             loki: None,
@@ -119,7 +119,7 @@ async fn people_and_admins_see_what_was_learned_and_can_learn_from_sorted_mail()
     }
     let app = router(&store);
 
-    let leni = login(&app, "leni@example.de").await;
+    let leni = login(&app, "leni@example.org").await;
     let (status, overview) = call(&app, "GET", "/api/account/spam", None, Some(&leni)).await;
     assert_eq!(status, StatusCode::OK, "{overview}");
     assert_eq!(overview["bayes"]["own"], json!({ "spam": 0, "ham": 0 }));
@@ -131,7 +131,7 @@ async fn people_and_admins_see_what_was_learned_and_can_learn_from_sorted_mail()
     let (status, _) = call(&app, "GET", "/api/admin/spam", None, Some(&leni)).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "the server's numbers are for admins");
 
-    let chef = login(&app, "chef@example.de").await;
+    let chef = login(&app, "chef@example.org").await;
     let (status, overview) = call(&app, "GET", "/api/admin/spam", None, Some(&chef)).await;
     assert_eq!(status, StatusCode::OK, "{overview}");
     assert_eq!(overview["bayes"]["queued"].as_i64(), Some(4), "each message for the server and for Leni");
@@ -150,7 +150,7 @@ fn now_secs() -> i64 {
 async fn people_set_their_own_spam_limits() {
     let (_dir, store, _ids) = server().await;
     let app = router(&store);
-    let leni = login(&app, "leni@example.de").await;
+    let leni = login(&app, "leni@example.org").await;
 
     let (status, overview) = call(&app, "GET", "/api/account/spam", None, Some(&leni)).await;
     assert_eq!(status, StatusCode::OK);
@@ -172,21 +172,21 @@ async fn people_set_their_own_spam_limits() {
 async fn people_keep_their_own_sender_lists_and_admins_those_of_the_server_and_domains() {
     let (_dir, store, _ids) = server().await;
     let app = router(&store);
-    let leni = login(&app, "leni@example.de").await;
-    let chef = login(&app, "chef@example.de").await;
+    let leni = login(&app, "leni@example.org").await;
+    let chef = login(&app, "chef@example.org").await;
 
-    let body = json!({ "list": "block", "value": "Werbung@Example.com", "note": "Newsletter" });
+    let body = json!({ "list": "block", "value": "Werbung@Example.test", "note": "Newsletter" });
     let (status, view) = call(&app, "POST", "/api/account/spam/senders", Some(body), Some(&leni)).await;
     assert_eq!(status, StatusCode::CREATED, "{view}");
     let entry = &view["entries"][0];
-    assert_eq!((entry["kind"].as_str(), entry["value"].as_str()), (Some("address"), Some("werbung@example.com")));
+    assert_eq!((entry["kind"].as_str(), entry["value"].as_str()), (Some("address"), Some("werbung@example.test")));
     assert_eq!(view["limit"].as_i64(), Some(1000));
     let id = entry["id"].as_i64().unwrap();
 
-    let body = json!({ "list": "allow", "value": "werbung@example.com" });
+    let body = json!({ "list": "allow", "value": "werbung@example.test" });
     let (status, error) = call(&app, "POST", "/api/account/spam/senders", Some(body), Some(&leni)).await;
     assert_eq!((status, error["code"].as_str()), (StatusCode::CONFLICT, Some("senderListed")));
-    let body = json!({ "list": "block", "kind": "ip", "value": "example.com" });
+    let body = json!({ "list": "block", "kind": "ip", "value": "example.test" });
     let (status, error) = call(&app, "POST", "/api/account/spam/senders", Some(body), Some(&leni)).await;
     assert_eq!((status, error["code"].as_str()), (StatusCode::CONFLICT, Some("senderInvalid")));
 
@@ -195,11 +195,11 @@ async fn people_keep_their_own_sender_lists_and_admins_those_of_the_server_and_d
     let (status, _) = call(&app, "GET", "/api/admin/spam/senders", None, Some(&leni)).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
-    let body = json!({ "list": "allow", "value": "192.0.2.10", "domain": "example.de" });
+    let body = json!({ "list": "allow", "value": "192.0.2.10", "domain": "example.org" });
     let (status, view) = call(&app, "POST", "/api/admin/spam/senders", Some(body), Some(&chef)).await;
     assert_eq!(status, StatusCode::CREATED, "{view}");
-    assert_eq!(view["entries"][0]["domain"].as_str(), Some("example.de"));
-    assert_eq!(view["domains"], json!(["example.de"]));
+    assert_eq!(view["entries"][0]["domain"].as_str(), Some("example.org"));
+    assert_eq!(view["domains"], json!(["example.org"]));
     let body = json!({ "list": "block", "value": "*.spam.example" });
     let (status, view) = call(&app, "POST", "/api/admin/spam/senders", Some(body), Some(&chef)).await;
     assert_eq!(status, StatusCode::CREATED, "{view}");
@@ -223,8 +223,8 @@ async fn people_keep_their_own_sender_lists_and_admins_those_of_the_server_and_d
 async fn people_and_admins_keep_word_lists_and_see_the_built_in_lists() {
     let (_dir, store, _ids) = server().await;
     let app = router(&store);
-    let leni = login(&app, "leni@example.de").await;
-    let chef = login(&app, "chef@example.de").await;
+    let leni = login(&app, "leni@example.org").await;
+    let chef = login(&app, "chef@example.org").await;
 
     let body = json!({ "text": "# meine Liste\nCasino\n/\\sjackpot\\s/i\ncasino\n/(?=x)/\n", "points": 3.0 });
     let (status, answer) = call(&app, "POST", "/api/account/spam/words", Some(body), Some(&leni)).await;
@@ -241,7 +241,7 @@ async fn people_and_admins_keep_word_lists_and_see_the_built_in_lists() {
     let (status, error) = call(&app, "POST", "/api/account/spam/words", Some(body), Some(&leni)).await;
     assert_eq!((status, error["code"].as_str()), (StatusCode::CONFLICT, Some("wordInvalid")));
 
-    for url in ["http://lists.example.org/bad.map", "https://127.0.0.1/bad.map", "https://localhost/bad.map"] {
+    for url in ["http://lists.example.net/bad.map", "https://127.0.0.1/bad.map", "https://localhost/bad.map"] {
         let (status, error) =
             call(&app, "POST", "/api/account/spam/word-sources", Some(json!({ "url": url })), Some(&leni)).await;
         assert_eq!((status, error["code"].as_str()), (StatusCode::CONFLICT, Some("wordSourceInvalid")), "{url}");
@@ -263,13 +263,13 @@ async fn people_and_admins_keep_word_lists_and_see_the_built_in_lists() {
     let (status, _) = call(&app, "GET", "/api/admin/spam/words", None, Some(&leni)).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
-    let body = json!({ "text": "lottery", "domain": "example.de" });
+    let body = json!({ "text": "lottery", "domain": "example.org" });
     let (status, answer) = call(&app, "POST", "/api/admin/spam/words", Some(body), Some(&chef)).await;
     assert_eq!(status, StatusCode::OK, "{answer}");
     let lists = &answer["lists"];
     assert_eq!(lists["entries"].as_array().map(Vec::len), Some(1), "Leni's entries are not the admins' business");
-    assert_eq!(lists["entries"][0]["domain"], "example.de");
-    assert_eq!(lists["domains"], json!(["example.de"]));
+    assert_eq!(lists["entries"][0]["domain"], "example.org");
+    assert_eq!(lists["domains"], json!(["example.org"]));
 
     let (status, feeds) = call(&app, "GET", "/api/admin/spam/feeds", None, Some(&chef)).await;
     assert_eq!(status, StatusCode::OK, "{feeds}");
@@ -290,21 +290,21 @@ async fn people_and_admins_keep_word_lists_and_see_the_built_in_lists() {
 async fn rules_are_one_table_for_admins_and_each_person() {
     let (_dir, store, _ids) = server().await;
     let app = router(&store);
-    let admin = login(&app, "chef@example.de").await;
-    let leni = login(&app, "leni@example.de").await;
+    let admin = login(&app, "chef@example.org").await;
+    let leni = login(&app, "leni@example.org").await;
 
     let text = (0..40).map(|n| format!("spam{n}@evil.example")).collect::<Vec<_>>().join("\n");
-    let import = json!({ "type": "sender", "list": "block", "text": text, "scope": "domain:example.de" });
+    let import = json!({ "type": "sender", "list": "block", "text": text, "scope": "domain:example.org" });
     let (status, report) = call(&app, "POST", "/api/admin/spam/rules/import", Some(import), Some(&admin)).await;
     assert_eq!((status, report["added"].as_u64()), (StatusCode::OK, Some(40)), "{report}");
     let word = json!({ "type": "word", "value": "casino", "points": 4.0 });
     let (status, casino) = call(&app, "POST", "/api/admin/spam/rules", Some(word), Some(&admin)).await;
     assert_eq!(status, StatusCode::CREATED, "{casino}");
     assert_eq!((casino["list"].as_str(), casino["scope"]["type"].as_str()), (Some("points"), Some("server")));
-    let own = json!({ "type": "sender", "list": "allow", "value": "oma@example.net", "scope": "domain:example.de" });
+    let own = json!({ "type": "sender", "list": "allow", "value": "oma@example.com", "scope": "domain:example.org" });
     let (status, oma) = call(&app, "POST", "/api/account/spam/rules", Some(own), Some(&leni)).await;
     assert_eq!(status, StatusCode::CREATED, "{oma}");
-    assert_eq!(oma["scope"]["name"], "leni@example.de", "a person's rule is always their own");
+    assert_eq!(oma["scope"]["name"], "leni@example.org", "a person's rule is always their own");
 
     let (_, page) = call(&app, "GET", "/api/admin/spam/rules?perPage=25&page=1", None, Some(&admin)).await;
     assert_eq!((page["total"].as_i64(), page["rules"].as_array().unwrap().len()), (Some(42), 17), "{page}");
@@ -313,14 +313,14 @@ async fn rules_are_one_table_for_admins_and_each_person() {
     let (_, page) = call(&app, "GET", "/api/account/spam/rules?scope=all", None, Some(&leni)).await;
     assert_eq!(page["total"], 1, "people only ever see their own");
     let (_, scopes) = call(&app, "GET", "/api/admin/spam/scopes?search=example", None, Some(&admin)).await;
-    let domain = scopes["scopes"].as_array().unwrap().iter().find(|s| s["key"] == "domain:example.de").unwrap();
+    let domain = scopes["scopes"].as_array().unwrap().iter().find(|s| s["key"] == "domain:example.org").unwrap();
     assert_eq!(domain["count"], 40);
 
     let path = format!("/api/admin/spam/rules/word/{}", casino["id"]);
-    let change = json!({ "points": null, "note": "Glücksspiel", "scope": "domain:example.de" });
+    let change = json!({ "points": null, "note": "Glücksspiel", "scope": "domain:example.org" });
     let (status, changed) = call(&app, "PATCH", &path, Some(change), Some(&admin)).await;
     assert_eq!(status, StatusCode::OK, "{changed}");
-    assert_eq!((changed["points"].clone(), changed["scope"]["name"].as_str()), (Value::Null, Some("example.de")));
+    assert_eq!((changed["points"].clone(), changed["scope"]["name"].as_str()), (Value::Null, Some("example.org")));
     let theirs = path.replace("/admin/", "/account/");
     let stranger = call(&app, "PATCH", &theirs, Some(json!({ "note": "x" })), Some(&leni)).await;
     assert_eq!(stranger.0, StatusCode::NOT_FOUND, "people cannot reach the server's rules");
@@ -355,7 +355,7 @@ async fn rules_are_one_table_for_admins_and_each_person() {
     assert_eq!(response.headers()[header::CONTENT_TYPE], "text/csv; charset=utf-8");
     let csv = String::from_utf8(axum::body::to_bytes(response.into_body(), 1 << 20).await.unwrap().to_vec()).unwrap();
     assert_eq!(csv.lines().count(), 2, "{csv}");
-    assert!(csv.contains("sender,allow,address,oma@example.net,account:leni@example.de"), "{csv}");
+    assert!(csv.contains("sender,allow,address,oma@example.com,account:leni@example.org"), "{csv}");
 }
 
 fn items_of(page: &Value) -> Vec<Value> {

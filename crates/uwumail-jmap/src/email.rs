@@ -604,8 +604,8 @@ mod tests {
     }
 
     const MESSAGE: &[u8] =
-        b"From: Nyu <nyu@example.de>\r\nTo: mini@example.de\r\nSubject: =?utf-8?q?Gr=C3=BC=C3=9Fe?=\r\n\
-X-Mood: happy\r\nList-Unsubscribe: <https://example.de/u>, <mailto:u@example.de>\r\n\
+        b"From: Nyu <nyu@example.org>\r\nTo: mini@example.org\r\nSubject: =?utf-8?q?Gr=C3=BC=C3=9Fe?=\r\n\
+X-Mood: happy\r\nList-Unsubscribe: <https://example.org/u>, <mailto:u@example.org>\r\n\
 Content-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nHallo Mini\r\n\
 --b\r\nContent-Type: application/pdf; name=rechnung.pdf\r\nContent-Disposition: attachment; filename=rechnung.pdf\r\n\
 Content-Transfer-Encoding: base64\r\n\r\nJVBERg==\r\n--b--\r\n";
@@ -632,9 +632,9 @@ Content-Transfer-Encoding: base64\r\n\r\nJVBERg==\r\n--b--\r\n";
         let options = BodyValueOptions { text: true, ..Default::default() };
         let json = to_json(None, Some(MESSAGE), &hash, &properties, &body_properties, options);
         assert_eq!(json["subject"], "Grüße");
-        assert_eq!(json["from"][0]["email"], "nyu@example.de");
+        assert_eq!(json["from"][0]["email"], "nyu@example.org");
         assert_eq!(json["header:X-Mood:asText"], "happy");
-        assert_eq!(json["header:List-Unsubscribe:asURLs"], json!(["https://example.de/u", "mailto:u@example.de"]));
+        assert_eq!(json["header:List-Unsubscribe:asURLs"], json!(["https://example.org/u", "mailto:u@example.org"]));
         assert_eq!(json["header:subject"], " =?utf-8?q?Gr=C3=BC=C3=9Fe?=");
         let attachment = &json["attachments"][0];
         assert_eq!(attachment["name"], "rechnung.pdf");
@@ -650,8 +650,8 @@ Content-Transfer-Encoding: base64\r\n\r\nJVBERg==\r\n--b--\r\n";
     #[test]
     fn builds_messages_from_json() {
         let object = json!({
-            "from": [{ "name": "Mini", "email": "mini@example.de" }],
-            "to": [{ "email": "nyu@example.de" }],
+            "from": [{ "name": "Mini", "email": "mini@example.org" }],
+            "to": [{ "email": "nyu@example.org" }],
             "subject": "Entwurf ✉",
             "header:X-Mood": " sleepy",
             "bodyValues": { "t": { "value": "Hallo Nyu" }, "h": { "value": "<p>Hallo Nyu</p>" } },

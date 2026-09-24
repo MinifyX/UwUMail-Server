@@ -3,7 +3,9 @@ import { matchPath } from "./router";
 
 describe("matchPath", () => {
   it("reads parameters and decodes them", () => {
-    expect(matchPath("/admin/people/:login", "/admin/people/leni%40verein.de")).toEqual({ login: "leni@verein.de" });
+    expect(matchPath("/admin/people/:login", "/admin/people/leni%40verein.example")).toEqual({
+      login: "leni@verein.example",
+    });
     expect(matchPath("/password/:token", "/password/abc123")).toEqual({ token: "abc123" });
   });
 

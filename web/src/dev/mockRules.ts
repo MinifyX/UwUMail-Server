@@ -35,7 +35,7 @@ const scopes: RuleScope[] = [
 const scopeKey = (scope: RuleScope) => (scope.type === "server" ? "server" : `${scope.type}:${scope.name}`);
 
 const SPAMMY = ["casino", "lottery", "viagra", "bitcoin", "crypto", "sweepstake", "winner", "prize", "loan", "seo"];
-const TLDS = ["xyz", "top", "click", "loan", "work", "ru", "cn"];
+const TLDS = ["example", "test", "invalid"];
 
 let nextId = 1;
 const rules: Rule[] = [];

@@ -153,7 +153,7 @@ fail2ban-client() {
 
   COMPOSE_DIR="$work/compose"
   mkdir -p "$COMPOSE_DIR"
-  printf 'UWUMAIL_HOSTNAME=mail.example.de\nCOMPOSE_PROFILES=antivirus\n' >"$COMPOSE_DIR/.env"
+  printf 'UWUMAIL_HOSTNAME=mail.example.org\nCOMPOSE_PROFILES=antivirus\n' >"$COMPOSE_DIR/.env"
   set_profile add vpn
   profiles_are() { [ "$(compose_profiles)" = "$1" ]; }
   check "host: the VPN joins the profiles already there" profiles_are antivirus,vpn

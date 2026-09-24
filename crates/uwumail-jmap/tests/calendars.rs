@@ -14,8 +14,8 @@ use uwumail_smtp::{DeliveryConfig, Smtp, SmtpConfig, SmtpSettings, ToneConfig};
 use uwumail_store::{NewAccount, Role, Store};
 
 const PASSWORD: &str = "katzenpfote-123";
-const MINI: &str = "mini@example.de";
-const NYU: &str = "nyu@example.de";
+const MINI: &str = "mini@example.org";
+const NYU: &str = "nyu@example.org";
 const USING: [&str; 2] = ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:calendars"];
 
 struct Server {
@@ -27,11 +27,11 @@ struct Server {
 async fn server() -> Server {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
-    store.create_domain("example.de").await.unwrap();
+    store.create_domain("example.org").await.unwrap();
     for user in ["mini", "nyu"] {
         store
             .create_account(NewAccount {
-                address: format!("{user}@example.de"),
+                address: format!("{user}@example.org"),
                 display_name: user.to_uppercase(),
                 password: Some(PASSWORD.into()),
                 role: Role::User,
@@ -44,7 +44,7 @@ async fn server() -> Server {
     let smtp = Smtp::new(
         store.clone(),
         SmtpSettings {
-            hostname: "mail.example.de".into(),
+            hostname: "mail.example.org".into(),
             smtp: SmtpConfig::default(),
             spam: Default::default(),
             delivery: DeliveryConfig::default(),
@@ -74,7 +74,7 @@ impl Server {
             .method(method)
             .uri(uri)
             .header(header::AUTHORIZATION, basic(login))
-            .header(header::HOST, "mail.example.de");
+            .header(header::HOST, "mail.example.org");
         for (name, value) in headers {
             request = request.header(*name, *value);
         }
@@ -168,7 +168,7 @@ async fn the_session_offers_calendars() {
         })
     );
     let identities = server.call(MINI, "ParticipantIdentity/get", json!({ "accountId": account })).await;
-    assert_eq!(identities["list"][0]["calendarAddress"], "mailto:mini@example.de");
+    assert_eq!(identities["list"][0]["calendarAddress"], "mailto:mini@example.org");
     assert_eq!(identities["list"][0]["name"], "MINI");
     assert_eq!(identities["list"][0]["isDefault"], true);
     let id = identities["list"][0]["id"].clone();
@@ -491,7 +491,7 @@ async fn queries_filter_sort_and_page() {
         let mut event = timed(calendar, title);
         event["start"] = json!(format!("{day}T18:00:00"));
         event["locations"] = json!({ "l": { "@type": "Location", "name": place } });
-        event["uid"] = json!(format!("{}@example.org", title.to_lowercase().replace(' ', "-")));
+        event["uid"] = json!(format!("{}@example.net", title.to_lowercase().replace(' ', "-")));
         ids.push(server.create_event(MINI, event).await);
     }
     let query = |filter: Value| json!({ "accountId": account, "filter": filter, "sort": [{ "property": "start" }] });
@@ -505,7 +505,7 @@ async fn queries_filter_sort_and_page() {
     assert_eq!(run(json!({ "location": "praxis" })).await, json!([&ids[0]]));
     assert_eq!(run(json!({ "text": "Impfung raum" })).await, json!([&ids[1]]));
     assert_eq!(run(json!({ "text": "\"mit Nyu\"" })).await, json!([&ids[2]]));
-    assert_eq!(run(json!({ "uid": "zahnarzt@example.org" })).await, json!([&ids[0]]));
+    assert_eq!(run(json!({ "uid": "zahnarzt@example.net" })).await, json!([&ids[0]]));
     assert_eq!(run(json!({ "after": "2026-10-06T00:00:00", "before": "2026-10-07T00:00:00" })).await, json!([&ids[1]]));
     assert_eq!(
         run(json!({ "operator": "OR", "conditions": [{ "title": "zahn" }, { "inCalendar": &work }] })).await,
@@ -534,7 +534,7 @@ async fn queries_filter_sort_and_page() {
 }
 
 const PHONE_EVENT: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example Phone//EN\r\nBEGIN:VEVENT\r\n\
-UID:phone-1@example.org\r\nDTSTAMP:20260917T080000Z\r\nDTSTART;TZID=Europe/Berlin:20261012T150000\r\n\
+UID:phone-1@example.net\r\nDTSTAMP:20260917T080000Z\r\nDTSTART;TZID=Europe/Berlin:20261012T150000\r\n\
 DTEND;TZID=Europe/Berlin:20261012T160000\r\nSUMMARY:Friseur\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
 
 const SYNC: &str = r#"<?xml version="1.0" encoding="utf-8"?>
@@ -552,7 +552,7 @@ async fn caldav_and_jmap_see_each_others_changes() {
     let server = server().await;
     let account = server.account_id(MINI).await;
     let calendar = server.default_calendar(MINI).await;
-    let collection = "/dav/calendars/mini@example.de/personal/";
+    let collection = "/dav/calendars/mini@example.org/personal/";
     let before = server.state(MINI).await;
 
     // A phone stores an event over CalDAV: JMAP clients hear about it and can read it.
@@ -585,7 +585,7 @@ async fn caldav_and_jmap_see_each_others_changes() {
     let phone_id = changes["created"][0].as_str().unwrap_or_else(|| panic!("{changes}")).to_owned();
     let event = server.get_event(MINI, &phone_id, Value::Null).await;
     assert_eq!(event["title"], "Friseur");
-    assert_eq!(event["uid"], "phone-1@example.org");
+    assert_eq!(event["uid"], "phone-1@example.net");
     assert_eq!(event["calendarIds"], json!({ &calendar: true }));
 
     // The webmail makes one: the phone's next sync brings it along, with data CalDAV accepts.
@@ -627,7 +627,7 @@ async fn caldav_and_jmap_see_each_others_changes() {
     let middle = server.state(MINI).await;
     let deleted = server.send(MINI, "DELETE", &format!("{collection}phone-1.ics"), &[], String::new()).await;
     assert_eq!(deleted.status, StatusCode::NO_CONTENT);
-    let made = server.send(MINI, "MKCALENDAR", "/dav/calendars/mini@example.de/sport/", &[], String::new()).await;
+    let made = server.send(MINI, "MKCALENDAR", "/dav/calendars/mini@example.org/sport/", &[], String::new()).await;
     assert_eq!(made.status, StatusCode::CREATED);
     let changes =
         server.call(MINI, "CalendarEvent/changes", json!({ "accountId": account, "sinceState": &middle })).await;
@@ -639,7 +639,7 @@ async fn caldav_and_jmap_see_each_others_changes() {
     let reminders = r#"<?xml version="1.0" encoding="utf-8"?>
 <c:mkcalendar xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:set><d:prop><d:displayname>Erinnerungen</d:displayname>
 <c:supported-calendar-component-set><c:comp name="VTODO"/></c:supported-calendar-component-set></d:prop></d:set></c:mkcalendar>"#;
-    let made = server.send(MINI, "MKCALENDAR", "/dav/calendars/mini@example.de/tasks/", &[], reminders.into()).await;
+    let made = server.send(MINI, "MKCALENDAR", "/dav/calendars/mini@example.org/tasks/", &[], reminders.into()).await;
     assert_eq!(made.status, StatusCode::CREATED);
     let list = server.call(MINI, "Calendar/get", json!({ "accountId": account })).await;
     let names: Vec<&str> = list["list"].as_array().unwrap().iter().filter_map(|c| c["name"].as_str()).collect();
@@ -701,7 +701,7 @@ async fn nobody_reaches_into_another_account() {
 
     // Over CalDAV, too, the other account's home stays closed.
     let dav = server
-        .send(NYU, "PROPFIND", "/dav/calendars/mini@example.de/personal/", &[("depth", "1")], String::new())
+        .send(NYU, "PROPFIND", "/dav/calendars/mini@example.org/personal/", &[("depth", "1")], String::new())
         .await;
     assert_eq!(dav.status, StatusCode::FORBIDDEN);
     let still = server.get_event(MINI, &id, json!(["title"])).await;
@@ -740,7 +740,7 @@ async fn events_stay_within_limits() {
     assert_eq!(set["created"], Value::Null, "{set}");
 
     let invite = with(json!({ "participants": {
-        "a": { "@type": "Participant", "calendarAddress": "mailto:someone@example.org", "roles": { "attendee": true } }
+        "a": { "@type": "Participant", "calendarAddress": "mailto:someone@example.net", "roles": { "attendee": true } }
     } }));
     let refused = server
         .call(

@@ -1,7 +1,7 @@
 //! Sender Rewriting Scheme for forwarded mail. The envelope sender becomes an address on our
 //! domain, so SPF passes at the next server, and bounces come back to us to be passed on.
 //!
-//! `SRS0=hash=tt=example.org=leni@our.domain`: `tt` is the day (two base32 characters), `hash`
+//! `SRS0=hash=tt=example.net=leni@our.domain`: `tt` is the day (two base32 characters), `hash`
 //! an HMAC over day, domain and local part, in lower case because some servers change the case
 //! of local parts.
 
@@ -93,14 +93,14 @@ mod tests {
     #[test]
     fn rewritten_senders_come_back_intact() {
         let secret = b"a test secret that is long enough";
-        let rewritten = rewrite(secret, "Oma.Heinz@example.org", "example.de");
-        assert!(rewritten.starts_with("SRS0=") && rewritten.ends_with("=example.org=Oma.Heinz@example.de"));
-        assert_eq!(reverse(secret, &rewritten).as_deref(), Some("Oma.Heinz@example.org"));
-        assert_eq!(reverse(secret, &rewritten.to_ascii_lowercase()).as_deref(), Some("oma.heinz@example.org"));
+        let rewritten = rewrite(secret, "Oma.Heinz@example.net", "example.org");
+        assert!(rewritten.starts_with("SRS0=") && rewritten.ends_with("=example.net=Oma.Heinz@example.org"));
+        assert_eq!(reverse(secret, &rewritten).as_deref(), Some("Oma.Heinz@example.net"));
+        assert_eq!(reverse(secret, &rewritten.to_ascii_lowercase()).as_deref(), Some("oma.heinz@example.net"));
         assert_eq!(reverse(b"another secret", &rewritten), None, "forged");
-        assert_eq!(reverse(secret, "SRS0=0000=aa=example.org=x@example.de"), None);
-        assert_eq!(reverse(secret, "leni@example.de"), None);
-        assert_eq!(rewrite(secret, "", "example.de"), "");
+        assert_eq!(reverse(secret, "SRS0=0000=aa=example.net=x@example.org"), None);
+        assert_eq!(reverse(secret, "leni@example.org"), None);
+        assert_eq!(rewrite(secret, "", "example.org"), "");
     }
 
     #[test]
