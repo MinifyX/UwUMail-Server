@@ -319,6 +319,41 @@ pub fn query_response(
 }
 
 /// Counts the objects of a /set call against the limit.
+/// How long one request may spend on calendar events and contact cards in all its method calls
+/// together: without it, each of the calls in a request would get a query's limit anew, and /get
+/// and /set none (security-audit-0.7.0 S-45, 0.8.0 C-1).
+const REQUEST_TIME_LIMIT: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// When the request's time for calendar and contact work is up.
+pub fn request_deadline(ctx: &Ctx<'_>) -> std::time::Instant {
+    ctx.started + REQUEST_TIME_LIMIT
+}
+
+/// The most a query filter may hold, operators and conditions together. Each condition is checked
+/// against every object, and a text condition reads the object's whole text, so a request-sized
+/// filter against one large object ran for hours without looking at the clock
+/// (security-audit-0.8.0 C-2). Search forms and apps use a handful.
+const MAX_FILTER_CONDITIONS: usize = 100;
+
+/// Refuses a filter with more than [`MAX_FILTER_CONDITIONS`] operators and conditions.
+pub fn check_filter_size(filter: Option<&Value>) -> MethodResult<()> {
+    fn count(value: &Value, total: &mut usize) -> bool {
+        *total += 1;
+        if *total > MAX_FILTER_CONDITIONS {
+            return false;
+        }
+        let conditions = value.get("conditions").and_then(Value::as_array).map_or(&[][..], Vec::as_slice);
+        conditions.iter().all(|condition| count(condition, total))
+    }
+    match filter {
+        Some(filter) if !filter.is_null() && !count(filter, &mut 0) => Err(MethodError::new(
+            "unsupportedFilter",
+            format!("a filter may have at most {MAX_FILTER_CONDITIONS} operators and conditions"),
+        )),
+        _ => Ok(()),
+    }
+}
+
 pub fn check_set_size(args: &Value) -> MethodResult<()> {
     let count = args.get("create").and_then(Value::as_object).map_or(0, Map::len)
         + args.get("update").and_then(Value::as_object).map_or(0, Map::len)

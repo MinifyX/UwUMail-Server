@@ -573,3 +573,32 @@ async fn cards_stay_within_limits() {
         server.api(MINI, json!([["ContactCard/set", { "accountId": account, "create": too_many }, "0"]])).await;
     assert_eq!(refused[0][1]["type"], "requestTooLarge");
 }
+
+/// security-audit-0.8.0 C-2/C-3: a request-sized filter, sort or patch is refused or checked at once
+/// instead of keeping the server busy, and ordinary ones still work.
+#[tokio::test(flavor = "multi_thread")]
+async fn huge_filters_sorts_and_patches_are_turned_away() {
+    let server = server().await;
+    let account = server.account_id(MINI).await;
+    let nyu = server.create_card(MINI, person("Nyu", "Katze", "nyu@example.org")).await;
+
+    let conditions: Vec<Value> = (0..100).map(|_| json!({ "text": "zz" })).collect();
+    let filter = json!({ "operator": "OR", "conditions": conditions });
+    let refused =
+        server.api(MINI, json!([["ContactCard/query", { "accountId": account, "filter": filter }, "0"]])).await;
+    assert_eq!(refused[0][1]["type"], "unsupportedFilter", "101 with the operator: {}", refused[0][1]);
+    let conditions: Vec<Value> = (0..98).map(|_| json!({ "text": "zz" })).chain([json!({ "text": "katze" })]).collect();
+    let filter = json!({ "operator": "OR", "conditions": conditions });
+    let found = server.call(MINI, "ContactCard/query", json!({ "accountId": account, "filter": filter })).await;
+    assert_eq!(found["ids"], json!([&nyu]), "{found}");
+
+    let sort: Vec<Value> = (0..6).map(|_| json!({ "property": "created" })).collect();
+    let refused = server.api(MINI, json!([["ContactCard/query", { "accountId": account, "sort": sort }, "0"]])).await;
+    assert_eq!(refused[0][1]["type"], "unsupportedSort");
+
+    let started = std::time::Instant::now();
+    let patch: serde_json::Map<String, Value> = (0..200_000).map(|n| (format!("x{n}"), Value::Null)).collect();
+    let set = server.call(MINI, "ContactCard/set", json!({ "accountId": account, "update": { &nyu: patch } })).await;
+    assert!(set["updated"][&nyu].is_object(), "nothing overlaps: {set}");
+    assert!(started.elapsed() < std::time::Duration::from_secs(30), "{:?}", started.elapsed());
+}

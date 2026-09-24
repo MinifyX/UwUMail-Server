@@ -13,7 +13,9 @@ use serde_json::{Map, Value, json};
 use uwumail_store::{CalendarEventRecord, CalendarEventWrite, DAV_RESOURCE_MAX_BYTES, DavCollection, StoreError};
 
 use super::calendar::{calendars, check_enabled};
-use super::{Ctx, SetResponse, check_set_size, get_ids, if_in_state, pick, query_response};
+use super::{
+    Ctx, SetResponse, check_filter_size, check_set_size, get_ids, if_in_state, pick, query_response, request_deadline,
+};
 use crate::error::{MethodError, MethodResult, SetError};
 use crate::jscal::{self, Parsed};
 use crate::{MAX_OBJECTS_IN_GET, ids};
@@ -35,14 +37,7 @@ const PER_USER: &[&str] = &[
 const MAX_QUERY_LIMIT: usize = 5000;
 /// How long one query may spend on expanding recurrences before it gives up.
 const QUERY_TIME_LIMIT: Duration = Duration::from_secs(5);
-/// How long one request may spend on calendar events in all its method calls together: without
-/// it, each of the calls in a request would get the query limit anew, and /get and /set none.
-const REQUEST_TIME_LIMIT: Duration = Duration::from_secs(15);
-
-/// When the request's time for calendar work is up.
-fn request_deadline(ctx: &Ctx<'_>) -> Instant {
-    ctx.started + REQUEST_TIME_LIMIT
-}
+const SORTS: &[&str] = &["start", "uid", "recurrenceId", "created", "updated"];
 
 fn out_of_time() -> MethodError {
     MethodError::new(
@@ -1093,6 +1088,7 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let state = ctx.state().await?;
     let floating = floating_zone(args)?;
     let expand = args.get("expandRecurrences").and_then(Value::as_bool).unwrap_or(false);
+    check_filter_size(args.get("filter"))?;
     let filter = match args.get("filter") {
         None | Some(Value::Null) => None,
         Some(value) => Some(parse_filter(ctx, value, floating)?),
@@ -1130,9 +1126,13 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     };
     let mut sort: Vec<(String, bool)> = Vec::new();
     if let Some(list) = args.get("sort").filter(|s| !s.is_null()) {
-        for comparator in list.as_array().ok_or_else(|| MethodError::invalid_arguments("sort must be a list"))? {
+        let list = list.as_array().ok_or_else(|| MethodError::invalid_arguments("sort must be a list"))?;
+        if list.len() > SORTS.len() {
+            return Err(MethodError::new("unsupportedSort", format!("sort by at most {} properties", SORTS.len())));
+        }
+        for comparator in list {
             let property = comparator.get("property").and_then(Value::as_str).unwrap_or_default();
-            if !["start", "uid", "recurrenceId", "created", "updated"].contains(&property) {
+            if !SORTS.contains(&property) {
                 return Err(MethodError::new("unsupportedSort", format!("cannot sort by {property}")));
             }
             sort.push((property.to_owned(), comparator.get("isAscending").and_then(Value::as_bool).unwrap_or(true)));
