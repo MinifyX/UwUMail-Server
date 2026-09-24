@@ -10,7 +10,6 @@ import { api, type SettingsView, type SettingValue } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { Link } from "@/lib/router";
 import { toast } from "@/state/toasts";
-import { EgressCard } from "./EgressCard";
 
 type Draft = Record<string, unknown>;
 const MB = 1024 * 1024;
@@ -66,7 +65,7 @@ export function Section({
     Object.entries(draft).filter(([key, value]) => {
       if (!keys.includes(key) || value === undefined) return false;
       // Secrets never come back: typing one sets it, null removes a stored one.
-      if (key.endsWith("password") || key.endsWith("_key") || key.endsWith("token"))
+      if (key.endsWith("password") || key.endsWith("_key") || key.endsWith("token") || key === "egress.proxy")
         return (typeof value === "string" && value !== "") || (value === null && byKey[key]?.set);
       return JSON.stringify(value) !== JSON.stringify(byKey[key]?.value);
     }),
@@ -440,7 +439,12 @@ export function SettingsPage() {
         </div>
       }
 
-      <EgressCard />
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
+        {t("settings.vpnHint")}
+        <Link to="/admin/vpn" className="font-semibold text-pink-ink hover:underline">
+          {t("settings.vpnLink")}
+        </Link>
+      </p>
     </div>
   );
 }

@@ -71,6 +71,7 @@ import type {
   WordsView,
 } from "@/lib/api";
 import { guessSenderKind } from "@/features/spam/senders";
+import { ruleRoutes } from "./mockRules";
 
 const now = Math.floor(Date.now() / 1000);
 const GB = 1024 ** 3;
@@ -536,7 +537,7 @@ function log(action: string, target: string, details: Record<string, unknown> = 
 const problem = (status: number, code: string): [number, unknown] => [status, { code, detail: code }];
 const link = () => ({ path: `/password/mock-${Math.random().toString(36).slice(2)}`, expiresAt: now + 7 * 86_400 });
 
-type Handler = (body: unknown, params: string[]) => [number, unknown];
+type Handler = (body: unknown, params: string[], search: URLSearchParams) => [number, unknown];
 
 const queue = [
   {
@@ -659,6 +660,11 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "spam.log.enabled": { value: true, source: "default" },
   "spam.log.clean_subjects": { value: false, source: "default" },
   "spam.log.retention_days": { value: 30, source: "default" },
+  "egress.proxy": { value: null, source: "database", set: true },
+  "egress.fallback": { value: "block", source: "default" },
+  "egress.pictures": { value: true, source: "default" },
+  "egress.updates": { value: true, source: "database" },
+  "egress.fetch": { value: false, source: "default" },
   "log.loki.enabled": { value: false, source: "default" },
   "log.loki.privacy_consent": { value: false, source: "default" },
   "log.loki.url": { value: null, source: "default" },
@@ -1582,6 +1588,8 @@ function reportsFor(name: string): ReportsView {
 }
 
 const routes: [string, RegExp, Handler][] = [
+  // First, so they win over the older routes for the same addresses.
+  ...ruleRoutes,
   ["GET", /^\/api\/admin\/health$/, () => [200, health()]],
   [
     "POST",
@@ -3175,7 +3183,7 @@ window.fetch = async (input, init) => {
   for (const [routeMethod, pattern, handler] of routes) {
     const match = routeMethod === method ? pattern.exec(url.pathname) : null;
     if (match) {
-      result = handler(body, match.slice(1).map(decodeURIComponent));
+      result = handler(body, match.slice(1).map(decodeURIComponent), url.searchParams);
       break;
     }
   }

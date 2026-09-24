@@ -18,12 +18,17 @@ export function usePath(): string {
   return useSyncExternalStore(subscribe, () => window.location.pathname);
 }
 
-export function navigate(to: string, { replace = false } = {}) {
+/** The query string, e.g. `?list=block`, so a page can keep its filters in the address. */
+export function useSearch(): string {
+  return useSyncExternalStore(subscribe, () => window.location.search);
+}
+
+export function navigate(to: string, { replace = false, scroll = true } = {}) {
   if (to === window.location.pathname + window.location.search) return;
   if (replace) window.history.replaceState(null, "", to);
   else window.history.pushState(null, "", to);
   window.dispatchEvent(new Event(NAVIGATE_EVENT));
-  window.scrollTo({ top: 0 });
+  if (scroll) window.scrollTo({ top: 0 });
 }
 
 export function Link({ to, onClick, ...rest }: AnchorHTMLAttributes<HTMLAnchorElement> & { to: string }) {
