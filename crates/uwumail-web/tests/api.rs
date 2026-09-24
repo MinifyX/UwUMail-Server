@@ -14,7 +14,7 @@ use uwumail_web::{CSRF_HEADER, Web, WebSettings};
 
 fn smtp(store: Store) -> Smtp {
     let settings = SmtpSettings {
-        hostname: "mail.example.de".into(),
+        hostname: "mail.example.org".into(),
         smtp: Default::default(),
         spam: Default::default(),
         delivery: Default::default(),
@@ -27,8 +27,8 @@ fn smtp(store: Store) -> Smtp {
 async fn setup() -> (Router, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
-    store.create_domain("example.de").await.unwrap();
-    for (address, role) in [("nyu@example.de", Role::Admin), ("leni@example.de", Role::User)] {
+    store.create_domain("example.org").await.unwrap();
+    for (address, role) in [("nyu@example.org", Role::Admin), ("leni@example.org", Role::User)] {
         store
             .create_account(NewAccount {
                 address: address.into(),
@@ -44,7 +44,7 @@ async fn setup() -> (Router, tempfile::TempDir) {
     let web = Web::new(
         smtp(store),
         WebSettings {
-            hostname: "mail.example.de".into(),
+            hostname: "mail.example.org".into(),
             started: Instant::now(),
             logs: None,
             loki: None,
@@ -119,27 +119,27 @@ async fn login_session_and_logout() {
 
     let (status, _, info) = call(&app, Call::get("/api/info")).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(info, json!({ "hostname": "mail.example.de", "setupRequired": false }));
+    assert_eq!(info, json!({ "hostname": "mail.example.org", "setupRequired": false }));
 
     let (status, _, body) = call(&app, Call::get("/api/session")).await;
     assert_eq!((status, body), (StatusCode::OK, Value::Null), "not logged in is a normal answer");
     let (status, _, body) = call(&app, Call::get("/api/account")).await;
     assert_eq!((status, body["code"].as_str()), (StatusCode::UNAUTHORIZED, Some("notLoggedIn")));
 
-    let wrong = json!({ "login": "nyu@example.de", "password": "falsch" });
+    let wrong = json!({ "login": "nyu@example.org", "password": "falsch" });
     let (status, _, body) = call(&app, Call::send("POST", "/api/auth/login", wrong)).await;
     assert_eq!((status, body["code"].as_str()), (StatusCode::UNAUTHORIZED, Some("invalidCredentials")));
 
-    let (cookie, csrf) = login(&app, "Nyu@Example.de").await;
+    let (cookie, csrf) = login(&app, "Nyu@Example.org").await;
     let (status, _, session) = call(&app, Call { cookie: Some(&cookie), ..Call::get("/api/session") }).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(session["account"]["login"], "nyu@example.de");
+    assert_eq!(session["account"]["login"], "nyu@example.org");
     assert_eq!(session["account"]["role"], "admin");
     assert_eq!(session["csrfToken"], csrf.as_str());
 
     let (status, _, profile) = call(&app, Call { cookie: Some(&cookie), ..Call::get("/api/account") }).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(profile["addresses"], json!(["nyu@example.de"]));
+    assert_eq!(profile["addresses"], json!(["nyu@example.org"]));
 
     // Logging out needs the CSRF token, then the cookie is gone for good.
     let (status, _, _) =
@@ -159,7 +159,7 @@ async fn login_session_and_logout() {
 #[tokio::test]
 async fn preferences_need_csrf_and_valid_values() {
     let (app, _dir) = setup().await;
-    let (cookie, csrf) = login(&app, "leni@example.de").await;
+    let (cookie, csrf) = login(&app, "leni@example.org").await;
     let change = json!({ "mode": "pro", "language": "de", "mailConversations": "off" });
 
     let (status, _, body) = call(
@@ -201,16 +201,16 @@ async fn preferences_need_csrf_and_valid_values() {
 #[tokio::test]
 async fn only_admins_see_the_server_area() {
     let (app, _dir) = setup().await;
-    let (leni, _) = login(&app, "leni@example.de").await;
+    let (leni, _) = login(&app, "leni@example.org").await;
     let (status, _, body) = call(&app, Call { cookie: Some(&leni), ..Call::get("/api/admin/overview") }).await;
     assert_eq!((status, body["code"].as_str()), (StatusCode::FORBIDDEN, Some("forbidden")));
 
-    let (nyu, _) = login(&app, "nyu@example.de").await;
+    let (nyu, _) = login(&app, "nyu@example.org").await;
     let (status, _, body) = call(&app, Call { cookie: Some(&nyu), ..Call::get("/api/admin/overview") }).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["counts"]["accounts"], 2);
     assert_eq!(body["counts"]["admins"], 1);
-    assert_eq!(body["server"]["hostname"], "mail.example.de");
+    assert_eq!(body["server"]["hostname"], "mail.example.org");
 
     let (status, _, body) = call(&app, Call::get("/api/nothing/here")).await;
     assert_eq!((status, body["code"].as_str()), (StatusCode::NOT_FOUND, Some("notFound")));
@@ -219,13 +219,13 @@ async fn only_admins_see_the_server_area() {
 #[tokio::test]
 async fn plain_http_gets_a_plain_cookie_and_logins_are_throttled() {
     let (app, _dir) = setup().await;
-    let body = json!({ "login": "leni@example.de", "password": "katzenpfote-123" });
+    let body = json!({ "login": "leni@example.org", "password": "katzenpfote-123" });
     let (status, response, _) = call(&app, Call { https: false, ..Call::send("POST", "/api/auth/login", body) }).await;
     assert_eq!(status, StatusCode::OK);
     let cookie = response.headers()[header::SET_COOKIE].to_str().unwrap();
     assert!(cookie.starts_with("uwumail=") && !cookie.contains("Secure"));
 
-    let wrong = json!({ "login": "leni@example.de", "password": "falsch" });
+    let wrong = json!({ "login": "leni@example.org", "password": "falsch" });
     let mut last = StatusCode::OK;
     for _ in 0..11 {
         (last, _, _) = call(&app, Call::send("POST", "/api/auth/login", wrong.clone())).await;
@@ -237,8 +237,8 @@ async fn plain_http_gets_a_plain_cookie_and_logins_are_throttled() {
 async fn logging_into_ones_own_account_does_not_reset_the_guesses_at_another() {
     // security-audit-0.8.0 W-1: a success used to clear its whole network's failures.
     let (app, _dir) = setup().await;
-    let wrong = json!({ "login": "nyu@example.de", "password": "falsch" });
-    let own = json!({ "login": "leni@example.de", "password": "katzenpfote-123" });
+    let wrong = json!({ "login": "nyu@example.org", "password": "falsch" });
+    let own = json!({ "login": "leni@example.org", "password": "katzenpfote-123" });
     for _ in 0..9 {
         let (status, _, _) = call(&app, Call::send("POST", "/api/auth/login", wrong.clone())).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);

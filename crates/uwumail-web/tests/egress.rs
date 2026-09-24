@@ -17,11 +17,11 @@ use uwumail_web::{CSRF_HEADER, Web, WebSettings};
 async fn portal() -> (Router, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
-    store.create_domain("example.de").await.unwrap();
+    store.create_domain("example.org").await.unwrap();
     for (user, role) in [("nyu", Role::Admin), ("mini", Role::User)] {
         store
             .create_account(NewAccount {
-                address: format!("{user}@example.de"),
+                address: format!("{user}@example.org"),
                 display_name: user.into(),
                 password: Some("katzenpfote-123".into()),
                 role,
@@ -32,7 +32,7 @@ async fn portal() -> (Router, tempfile::TempDir) {
             .unwrap();
     }
     let settings = SmtpSettings {
-        hostname: "mail.example.de".into(),
+        hostname: "mail.example.org".into(),
         smtp: Default::default(),
         spam: Default::default(),
         delivery: Default::default(),
@@ -43,7 +43,7 @@ async fn portal() -> (Router, tempfile::TempDir) {
     let web = Web::new(
         smtp,
         WebSettings {
-            hostname: "mail.example.de".into(),
+            hostname: "mail.example.org".into(),
             started: Instant::now(),
             logs: None,
             loki: None,
@@ -81,7 +81,7 @@ async fn call(app: &Router, method: &str, path: &str, auth: Option<&(String, Str
 }
 
 async fn login(app: &Router, user: &str) -> (String, String) {
-    let body = json!({ "login": format!("{user}@example.de"), "password": "katzenpfote-123" });
+    let body = json!({ "login": format!("{user}@example.org"), "password": "katzenpfote-123" });
     let request = Request::post("/api/auth/login")
         .header(header::CONTENT_TYPE, "application/json")
         .extension(ClientInfo { https: true, ..ClientInfo::default() })

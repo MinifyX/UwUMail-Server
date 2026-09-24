@@ -166,9 +166,9 @@ mod tests {
     fn criteria_combine() {
         let day = 86_400 * 20_000;
         let emails = [
-            email(1, "Katzenfutter", "nyu@example.org", &["$seen"], day),
+            email(1, "Katzenfutter", "nyu@example.net", &["$seen"], day),
             email(2, "Rechnung", "shop@example.com", &[], day + 86_400),
-            email(3, "Re: Katzenfutter", "leni@example.de", &["$flagged"], day + 2 * 86_400),
+            email(3, "Re: Katzenfutter", "leni@example.org", &["$flagged"], day + 2 * 86_400),
         ];
         let scope = Scope { largest_msn: 3, largest_uid: 3, now: day + 2 * 86_400 + 60 };
         let prepared = Prepared::default();

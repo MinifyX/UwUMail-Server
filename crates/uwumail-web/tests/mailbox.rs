@@ -48,8 +48,8 @@ async fn call(
 async fn forwarding_needs_confirmation_elsewhere_and_away_messages_need_text() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
-    store.create_domain("example.de").await.unwrap();
-    for (address, role) in [("leni@example.de", Role::User), ("ami@example.de", Role::User)] {
+    store.create_domain("example.org").await.unwrap();
+    for (address, role) in [("leni@example.org", Role::User), ("ami@example.org", Role::User)] {
         store
             .create_account(NewAccount {
                 address: address.into(),
@@ -63,7 +63,7 @@ async fn forwarding_needs_confirmation_elsewhere_and_away_messages_need_text() {
             .unwrap();
     }
     let settings = SmtpSettings {
-        hostname: "mail.example.de".into(),
+        hostname: "mail.example.org".into(),
         smtp: Default::default(),
         spam: Default::default(),
         delivery: Default::default(),
@@ -73,7 +73,7 @@ async fn forwarding_needs_confirmation_elsewhere_and_away_messages_need_text() {
     let web = Web::new(
         Smtp::new(store.clone(), settings).unwrap(),
         WebSettings {
-            hostname: "mail.example.de".into(),
+            hostname: "mail.example.org".into(),
             started: Instant::now(),
             logs: None,
             loki: None,
@@ -87,7 +87,7 @@ async fn forwarding_needs_confirmation_elsewhere_and_away_messages_need_text() {
         &app,
         "POST",
         "/api/auth/login",
-        Some(json!({ "login": "leni@example.de", "password": "katzenpfote-123" })),
+        Some(json!({ "login": "leni@example.org", "password": "katzenpfote-123" })),
         None,
     )
     .await;
@@ -95,7 +95,7 @@ async fn forwarding_needs_confirmation_elsewhere_and_away_messages_need_text() {
 
     let target = |address: &str| Some(json!({ "address": address }));
     let (status, forwarding) =
-        call(&app, "POST", "/api/account/forwarding/targets", target("Ami@Example.de"), Some(&auth)).await;
+        call(&app, "POST", "/api/account/forwarding/targets", target("Ami@Example.org"), Some(&auth)).await;
     assert_eq!(status, StatusCode::CREATED, "{forwarding}");
     assert!(forwarding["targets"][0]["confirmedAt"].is_number(), "people here need no confirmation");
 
@@ -111,11 +111,11 @@ async fn forwarding_needs_confirmation_elsewhere_and_away_messages_need_text() {
     let raw = String::from_utf8(store.blob(&entry.message.blob).await.unwrap()).unwrap();
     // Quoted-printable breaks long lines; the link is whole again without the soft breaks.
     let raw = raw.replace("=\r\n", "").replace("=\n", "");
-    let token = raw.split("https://mail.example.de/forwarding/").nth(1).unwrap()[..64].to_owned();
+    let token = raw.split("https://mail.example.org/forwarding/").nth(1).unwrap()[..64].to_owned();
     assert!(raw.contains("DKIM-Signature"), "{raw}");
 
     let (status, link) = call(&app, "GET", &format!("/api/forwarding-links/{token}"), None, None).await;
-    assert_eq!((status, link["from"].as_str()), (StatusCode::OK, Some("leni@example.de")));
+    assert_eq!((status, link["from"].as_str()), (StatusCode::OK, Some("leni@example.org")));
     let (status, _) =
         call(&app, "POST", &format!("/api/forwarding-links/{token}/confirm"), Some(json!({})), None).await;
     assert_eq!(status, StatusCode::OK);

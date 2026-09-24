@@ -320,7 +320,7 @@ mod tests {
         let (store, _dir) = store().await;
         let id = store
             .enqueue(
-                "mini@example.de",
+                "mini@example.org",
                 vec![recipient("a@gmx.de"), recipient("B@Web.de")],
                 b"Subject: hi\r\n\r\nhi\r\n",
                 None,

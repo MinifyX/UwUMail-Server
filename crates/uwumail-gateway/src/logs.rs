@@ -151,7 +151,7 @@ mod tests {
         let subscriber = tracing_subscriber::registry().with(queue.layer());
         tracing::subscriber::with_default(subscriber, || {
             tracing::info!("one");
-            tracing::info!(server = "mail.example.de", "the UwUMail server is connected");
+            tracing::info!(server = "mail.example.org", "the UwUMail server is connected");
             tracing::warn!(ip = %"192.0.2.7", "did not ban an address the server asked about");
             tracing::error!("four");
         });
@@ -161,7 +161,7 @@ mod tests {
             batch.iter().map(|line| line.message.as_str()).collect::<Vec<_>>(),
             ["the UwUMail server is connected", "did not ban an address the server asked about", "four"]
         );
-        assert_eq!(batch[0].fields, vec![("server".to_owned(), "mail.example.de".to_owned())]);
+        assert_eq!(batch[0].fields, vec![("server".to_owned(), "mail.example.org".to_owned())]);
         assert_eq!(batch[1].level, "warn");
         assert!(queue.take_batch().is_empty());
 

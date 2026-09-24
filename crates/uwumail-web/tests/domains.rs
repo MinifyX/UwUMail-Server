@@ -15,10 +15,10 @@ use uwumail_web::{CSRF_HEADER, Web, WebSettings};
 async fn portal() -> (Router, Store, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
-    store.create_domain("example.de").await.unwrap();
+    store.create_domain("example.org").await.unwrap();
     store
         .create_account(NewAccount {
-            address: "nyu@example.de".into(),
+            address: "nyu@example.org".into(),
             display_name: "Nyu".into(),
             password: Some("katzenpfote-123".into()),
             role: Role::Admin,
@@ -28,7 +28,7 @@ async fn portal() -> (Router, Store, tempfile::TempDir) {
         .await
         .unwrap();
     let settings = SmtpSettings {
-        hostname: "mail.example.de".into(),
+        hostname: "mail.example.org".into(),
         smtp: Default::default(),
         spam: Default::default(),
         delivery: Default::default(),
@@ -39,7 +39,7 @@ async fn portal() -> (Router, Store, tempfile::TempDir) {
     let web = Web::new(
         smtp,
         WebSettings {
-            hostname: "mail.example.de".into(),
+            hostname: "mail.example.org".into(),
             started: Instant::now(),
             logs: None,
             loki: None,
@@ -100,66 +100,76 @@ async fn domains_with_catch_all_and_key_rotation() {
         &app,
         "POST",
         "/api/auth/login",
-        Some(json!({ "login": "nyu@example.de", "password": "katzenpfote-123" })),
+        Some(json!({ "login": "nyu@example.org", "password": "katzenpfote-123" })),
         None,
     )
     .await;
     let auth = (login["_cookie"].as_str().unwrap().to_owned(), login["csrfToken"].as_str().unwrap().to_owned());
 
     let (status, created) =
-        call(&app, "POST", "/api/admin/domains", Some(json!({ "name": "Verein.DE" })), Some(&auth)).await;
+        call(&app, "POST", "/api/admin/domains", Some(json!({ "name": "Verein.example" })), Some(&auth)).await;
     assert_eq!(status, StatusCode::CREATED, "{created}");
-    assert_eq!(created["name"], "verein.de");
+    assert_eq!(created["name"], "verein.example");
     let first = states(&created);
     assert_eq!(first.len(), 2);
     assert!(first.iter().all(|(_, state)| state == "active"));
-    assert!(created["keys"][0]["dnsName"].as_str().unwrap().ends_with("._domainkey.verein.de"));
-    assert_eq!(created["setup"]["hostname"], "mail.example.de");
+    assert!(created["keys"][0]["dnsName"].as_str().unwrap().ends_with("._domainkey.verein.example"));
+    assert_eq!(created["setup"]["hostname"], "mail.example.org");
 
-    let (status, _) = call(&app, "POST", "/api/admin/domains", Some(json!({ "name": "verein.de" })), Some(&auth)).await;
+    let (status, _) =
+        call(&app, "POST", "/api/admin/domains", Some(json!({ "name": "verein.example" })), Some(&auth)).await;
     assert_eq!(status, StatusCode::CONFLICT);
 
     let (_, list) = call(&app, "GET", "/api/admin/domains", None, Some(&auth)).await;
     let names: Vec<_> = list.as_array().unwrap().iter().map(|d| (d["name"].clone(), d["people"].clone())).collect();
-    assert_eq!(names, vec![(json!("example.de"), json!(1)), (json!("verein.de"), json!(0))]);
+    assert_eq!(names, vec![(json!("example.org"), json!(1)), (json!("verein.example"), json!(0))]);
 
     // Catch-all to a person, then off again.
     let (status, domain) = call(
         &app,
         "PUT",
-        "/api/admin/domains/verein.de/catch-all",
-        Some(json!({ "login": "nyu@example.de" })),
+        "/api/admin/domains/verein.example/catch-all",
+        Some(json!({ "login": "nyu@example.org" })),
         Some(&auth),
     )
     .await;
-    assert_eq!((status, domain["catchAll"].as_str()), (StatusCode::OK, Some("nyu@example.de")));
-    assert!(store.resolve_recipient("irgendwer@verein.de").await.unwrap().is_some());
+    assert_eq!((status, domain["catchAll"].as_str()), (StatusCode::OK, Some("nyu@example.org")));
+    assert!(store.resolve_recipient("irgendwer@verein.example").await.unwrap().is_some());
     let (_, domain) =
-        call(&app, "PUT", "/api/admin/domains/verein.de/catch-all", Some(json!({ "login": null })), Some(&auth)).await;
+        call(&app, "PUT", "/api/admin/domains/verein.example/catch-all", Some(json!({ "login": null })), Some(&auth))
+            .await;
     assert_eq!(domain["catchAll"], Value::Null);
 
     // A forwarding address keeps the domain in use until it is gone.
-    let forward = json!({ "local": "Kasse", "targets": ["kassenwart@example.org"], "note": "Beiträge" });
-    let (status, domain) = call(&app, "PUT", "/api/admin/domains/verein.de/forwards", Some(forward), Some(&auth)).await;
+    let forward = json!({ "local": "Kasse", "targets": ["kassenwart@example.net"], "note": "Beiträge" });
+    let (status, domain) =
+        call(&app, "PUT", "/api/admin/domains/verein.example/forwards", Some(forward), Some(&auth)).await;
     assert_eq!(status, StatusCode::OK, "{domain}");
-    assert_eq!(domain["forwards"][0]["address"], "kasse@verein.de");
-    assert_eq!(domain["forwards"][0]["targets"], json!(["kassenwart@example.org"]));
-    let (status, refused) = call(&app, "DELETE", "/api/admin/domains/verein.de", None, Some(&auth)).await;
+    assert_eq!(domain["forwards"][0]["address"], "kasse@verein.example");
+    assert_eq!(domain["forwards"][0]["targets"], json!(["kassenwart@example.net"]));
+    let (status, refused) = call(&app, "DELETE", "/api/admin/domains/verein.example", None, Some(&auth)).await;
     assert_eq!((status, refused["code"].as_str()), (StatusCode::CONFLICT, Some("domainInUse")));
-    let (status, domain) = call(&app, "DELETE", "/api/admin/domains/verein.de/forwards/kasse", None, Some(&auth)).await;
+    let (status, domain) =
+        call(&app, "DELETE", "/api/admin/domains/verein.example/forwards/kasse", None, Some(&auth)).await;
     assert_eq!((status, domain["forwards"].as_array().map(Vec::len)), (StatusCode::OK, Some(0)));
 
     // Rotation: new keys wait, switch over (forced, no DNS in tests), the old ones retire and can go.
     let (_, rotating) =
-        call(&app, "POST", "/api/admin/domains/verein.de/dkim/rotate", Some(json!({})), Some(&auth)).await;
+        call(&app, "POST", "/api/admin/domains/verein.example/dkim/rotate", Some(json!({})), Some(&auth)).await;
     let pending: Vec<_> = states(&rotating).into_iter().filter(|(_, state)| state == "pending").collect();
     assert_eq!(pending.len(), 2, "{rotating}");
-    let (_, again) = call(&app, "POST", "/api/admin/domains/verein.de/dkim/rotate", Some(json!({})), Some(&auth)).await;
+    let (_, again) =
+        call(&app, "POST", "/api/admin/domains/verein.example/dkim/rotate", Some(json!({})), Some(&auth)).await;
     assert_eq!(states(&again).len(), 4, "preparing twice keeps the same new keys");
 
-    let (status, switched) =
-        call(&app, "POST", "/api/admin/domains/verein.de/dkim/activate", Some(json!({ "force": true })), Some(&auth))
-            .await;
+    let (status, switched) = call(
+        &app,
+        "POST",
+        "/api/admin/domains/verein.example/dkim/activate",
+        Some(json!({ "force": true })),
+        Some(&auth),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "{switched}");
     let after = states(&switched);
     assert_eq!(after.iter().filter(|(_, state)| state == "active").count(), 2);
@@ -168,16 +178,17 @@ async fn domains_with_catch_all_and_key_rotation() {
     assert_eq!(retired.len(), 2);
     let active = after.iter().find(|(_, state)| state == "active").unwrap().0.clone();
     let (status, body) =
-        call(&app, "DELETE", &format!("/api/admin/domains/verein.de/dkim/{active}"), None, Some(&auth)).await;
+        call(&app, "DELETE", &format!("/api/admin/domains/verein.example/dkim/{active}"), None, Some(&auth)).await;
     assert_eq!((status, body["code"].as_str()), (StatusCode::CONFLICT, Some("keyActive")));
     let (status, trimmed) =
-        call(&app, "DELETE", &format!("/api/admin/domains/verein.de/dkim/{}", retired[0]), None, Some(&auth)).await;
+        call(&app, "DELETE", &format!("/api/admin/domains/verein.example/dkim/{}", retired[0]), None, Some(&auth))
+            .await;
     assert_eq!((status, states(&trimmed).len()), (StatusCode::OK, 3));
 
     // Domains with addresses stay.
-    let (status, body) = call(&app, "DELETE", "/api/admin/domains/example.de", None, Some(&auth)).await;
+    let (status, body) = call(&app, "DELETE", "/api/admin/domains/example.org", None, Some(&auth)).await;
     assert_eq!((status, body["code"].as_str()), (StatusCode::CONFLICT, Some("domainInUse")));
-    let (status, _) = call(&app, "DELETE", "/api/admin/domains/verein.de", None, Some(&auth)).await;
+    let (status, _) = call(&app, "DELETE", "/api/admin/domains/verein.example", None, Some(&auth)).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 
     let (_, log) = call(&app, "GET", "/api/admin/audit?limit=20", None, Some(&auth)).await;
@@ -206,7 +217,7 @@ async fn mta_sts_policy_and_reports() {
         &app,
         "POST",
         "/api/auth/login",
-        Some(json!({ "login": "nyu@example.de", "password": "katzenpfote-123" })),
+        Some(json!({ "login": "nyu@example.org", "password": "katzenpfote-123" })),
         None,
     )
     .await;
@@ -223,18 +234,18 @@ async fn mta_sts_policy_and_reports() {
             (status, String::from_utf8(bytes.to_vec()).unwrap())
         }
     };
-    assert_eq!(fetch_policy("mta-sts.example.de").await.0, StatusCode::NOT_FOUND, "off by default");
+    assert_eq!(fetch_policy("mta-sts.example.org").await.0, StatusCode::NOT_FOUND, "off by default");
 
-    let path = "/api/admin/domains/example.de/mta-sts";
+    let path = "/api/admin/domains/example.org/mta-sts";
     let (status, detail) = call(&app, "PUT", path, Some(json!({ "mode": "testing" })), Some(&auth)).await;
     assert_eq!(status, StatusCode::OK, "{detail}");
     assert_eq!(
         (detail["mtaSts"]["mode"].clone(), detail["mtaSts"]["mx"].clone()),
-        (json!("testing"), json!(["mail.example.de"]))
+        (json!("testing"), json!(["mail.example.org"]))
     );
-    let (status, policy) = fetch_policy("MTA-STS.example.de:443").await;
+    let (status, policy) = fetch_policy("MTA-STS.example.org:443").await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(policy, "version: STSv1\r\nmode: testing\r\nmx: mail.example.de\r\nmax_age: 86400\r\n");
+    assert_eq!(policy, "version: STSv1\r\nmode: testing\r\nmx: mail.example.org\r\nmax_age: 86400\r\n");
     assert_eq!(policy, detail["mtaSts"]["policy"]);
     assert_eq!(fetch_policy("mta-sts.elsewhere.example").await.0, StatusCode::NOT_FOUND);
 
@@ -246,7 +257,7 @@ async fn mta_sts_policy_and_reports() {
 
     store
         .add_tls_report(uwumail_store::NewTlsReport {
-            domain: "example.de".into(),
+            domain: "example.org".into(),
             organization: "reporter.example".into(),
             report_id: "t1".into(),
             begin_at: 0,
@@ -259,7 +270,7 @@ async fn mta_sts_policy_and_reports() {
         })
         .await
         .unwrap();
-    let (status, reports) = call(&app, "GET", "/api/admin/domains/example.de/reports?days=7", None, Some(&auth)).await;
+    let (status, reports) = call(&app, "GET", "/api/admin/domains/example.org/reports?days=7", None, Some(&auth)).await;
     assert_eq!(status, StatusCode::OK, "{reports}");
     assert_eq!((reports["tls"]["successful"].clone(), reports["tls"]["failed"].clone()), (json!(5), json!(1)));
     assert_eq!((reports["days"].clone(), reports["suggestions"].clone()), (json!(7), json!([])));
@@ -268,12 +279,12 @@ async fn mta_sts_policy_and_reports() {
     let (status, overview) = call(&app, "GET", "/api/admin/reports?days=7", None, Some(&auth)).await;
     assert_eq!(status, StatusCode::OK, "{overview}");
     let first = &overview["domains"][0];
-    assert_eq!(first["name"], json!("example.de"));
+    assert_eq!(first["name"], json!("example.org"));
     assert_eq!(first["tls"]["successful"], json!(5));
     assert_eq!(first["reading"], json!({ "dmarc": true, "tls": true }));
 
     // And one report on its own, listed and then read.
-    let (status, listed) = call(&app, "GET", "/api/admin/domains/example.de/reports/tls", None, Some(&auth)).await;
+    let (status, listed) = call(&app, "GET", "/api/admin/domains/example.org/reports/tls", None, Some(&auth)).await;
     assert_eq!(status, StatusCode::OK, "{listed}");
     let entry = &listed["reports"][0];
     assert_eq!(
@@ -282,14 +293,15 @@ async fn mta_sts_policy_and_reports() {
     );
     let id = entry["id"].as_i64().unwrap();
     let (status, detail) =
-        call(&app, "GET", &format!("/api/admin/domains/example.de/reports/tls/{id}"), None, Some(&auth)).await;
+        call(&app, "GET", &format!("/api/admin/domains/example.org/reports/tls/{id}"), None, Some(&auth)).await;
     assert_eq!(status, StatusCode::OK, "{detail}");
     assert_eq!((detail["kind"].clone(), detail["report"]["reportId"].clone()), (json!("tls"), json!("t1")));
 
-    let (status, gone) = call(&app, "GET", "/api/admin/domains/example.de/reports/tls/999999", None, Some(&auth)).await;
+    let (status, gone) =
+        call(&app, "GET", "/api/admin/domains/example.org/reports/tls/999999", None, Some(&auth)).await;
     assert_eq!(status, StatusCode::NOT_FOUND, "{gone}");
     let (status, nonsense) =
-        call(&app, "GET", "/api/admin/domains/example.de/reports/nonsense", None, Some(&auth)).await;
+        call(&app, "GET", "/api/admin/domains/example.org/reports/nonsense", None, Some(&auth)).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{nonsense}");
 
     let (_, health) = call(&app, "GET", "/api/admin/health", None, Some(&auth)).await;

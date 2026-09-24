@@ -523,7 +523,7 @@ mod tests {
     use crate::{NewAccount, Protocols};
 
     async fn people(store: &Store) -> (Account, Account) {
-        store.create_domain("example.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
         let new = |address: &str, role| NewAccount {
             address: address.into(),
             display_name: "Someone".into(),
@@ -532,8 +532,8 @@ mod tests {
             quota_bytes: 0,
             protocols: None,
         };
-        let nyu = store.create_account(new("nyu@example.de", Role::Admin)).await.unwrap();
-        let leni = store.create_account(new("leni@example.de", Role::User)).await.unwrap();
+        let nyu = store.create_account(new("nyu@example.org", Role::Admin)).await.unwrap();
+        let leni = store.create_account(new("leni@example.org", Role::User)).await.unwrap();
         (nyu, leni)
     }
 
@@ -543,7 +543,7 @@ mod tests {
         let (_, leni) = people(&store).await;
         store
             .create_account(NewAccount {
-                address: "backup@example.de".into(),
+                address: "backup@example.org".into(),
                 display_name: "Backup".into(),
                 password: Some("katzenpfote-123".into()),
                 role: Role::User,
@@ -555,14 +555,14 @@ mod tests {
 
         // Becoming a service: the password it had keeps working as an app password, the portal
         // does not, and the mail stays where it is.
-        let service = store.set_account_role("backup@example.de", Role::Service).await.unwrap();
+        let service = store.set_account_role("backup@example.org", Role::Service).await.unwrap();
         assert!(service.is_service() && !service.can_use_portal() && service.can_log_in());
         assert!(service.has_mailbox(), "IMAP and JMAP stay on until someone switches them off");
         let passwords = store.app_passwords(service.id).await.unwrap();
         assert_eq!(passwords.len(), 1, "the old password lives on as one");
         assert!(passwords[0].expires_at.is_none(), "and it does not expire");
         assert!(
-            store.authenticate("backup@example.de", "katzenpfote-123").await.unwrap().is_none(),
+            store.authenticate("backup@example.org", "katzenpfote-123").await.unwrap().is_none(),
             "the portal password is gone"
         );
 
@@ -570,19 +570,19 @@ mod tests {
         // an address of this server -- but only to one that exists here.
         let only_smtp = AccountUpdate {
             protocols: Some(Protocols { smtp: true, imap: false, jmap: false, caldav: false, carddav: false }),
-            redirect_to: Some("leni@example.de".into()),
+            redirect_to: Some("leni@example.org".into()),
             ..Default::default()
         };
-        let sender = store.update_account("backup@example.de", only_smtp).await.unwrap();
+        let sender = store.update_account("backup@example.org", only_smtp).await.unwrap();
         assert!(!sender.has_mailbox());
         assert_eq!(sender.redirect_to, leni.login);
         let elsewhere = AccountUpdate { redirect_to: Some("someone@other.example".into()), ..Default::default() };
-        assert!(store.update_account("backup@example.de", elsewhere).await.is_err(), "no address of this server");
-        let itself = AccountUpdate { redirect_to: Some("backup@example.de".into()), ..Default::default() };
-        assert!(store.update_account("backup@example.de", itself).await.is_err(), "not back to itself");
+        assert!(store.update_account("backup@example.org", elsewhere).await.is_err(), "no address of this server");
+        let itself = AccountUpdate { redirect_to: Some("backup@example.org".into()), ..Default::default() };
+        assert!(store.update_account("backup@example.org", itself).await.is_err(), "not back to itself");
 
         // And back: a person again, with the folders it had.
-        let person = store.set_account_role("backup@example.de", Role::User).await.unwrap();
+        let person = store.set_account_role("backup@example.org", Role::User).await.unwrap();
         assert!(!person.is_service() && person.can_use_portal());
     }
 
@@ -592,7 +592,7 @@ mod tests {
         people(&store).await;
         let service = store
             .create_account(NewAccount {
-                address: "monitoring@example.de".into(),
+                address: "monitoring@example.org".into(),
                 display_name: "Monitoring".into(),
                 password: None,
                 role: Role::Service,
@@ -618,7 +618,7 @@ mod tests {
         assert!(store.trash_account(&nyu.login).await.is_err());
 
         let promote = AccountUpdate { role: Some(Role::Admin), quota_bytes: Some(1024), ..Default::default() };
-        let leni = store.update_account("leni@example.de", promote).await.unwrap();
+        let leni = store.update_account("leni@example.org", promote).await.unwrap();
         assert_eq!((leni.role, leni.quota_bytes), (Role::Admin, 1024));
         assert_eq!(store.update_account(&nyu.login, demote).await.unwrap().role, Role::User);
     }
@@ -627,24 +627,28 @@ mod tests {
     async fn the_trash_keeps_addresses_and_refuses_mail() {
         let (store, _dir) = store().await;
         let (_, leni) = people(&store).await;
-        store.add_alias("hallo@example.de", &leni.login).await.unwrap();
-        store.set_catch_all("example.de", Some(&leni.login)).await.unwrap();
+        store.add_alias("hallo@example.org", &leni.login).await.unwrap();
+        store.set_catch_all("example.org", Some(&leni.login)).await.unwrap();
 
         let trashed = store.trash_account(&leni.login).await.unwrap();
         assert!(trashed.deleted_at.is_some() && !trashed.can_log_in());
-        assert_eq!(store.resolve_recipient("leni@example.de").await.unwrap(), None);
-        assert_eq!(store.resolve_recipient("hallo@example.de").await.unwrap(), None);
-        assert!(matches!(store.add_alias("hallo@example.de", "nyu@example.de").await, Err(StoreError::Conflict(_))));
+        assert_eq!(store.resolve_recipient("leni@example.org").await.unwrap(), None);
+        assert_eq!(store.resolve_recipient("hallo@example.org").await.unwrap(), None);
+        assert!(matches!(store.add_alias("hallo@example.org", "nyu@example.org").await, Err(StoreError::Conflict(_))));
         assert_eq!(store.purge_trash(TRASH_RETENTION_SECS).await.unwrap(), Vec::<String>::new());
 
         store.restore_account(&leni.login).await.unwrap();
-        assert_eq!(store.resolve_recipient("hallo@example.de").await.unwrap(), Some(leni.id));
-        assert_eq!(store.domain("example.de").await.unwrap().unwrap().catch_all, None, "the catch-all is not restored");
+        assert_eq!(store.resolve_recipient("hallo@example.org").await.unwrap(), Some(leni.id));
+        assert_eq!(
+            store.domain("example.org").await.unwrap().unwrap().catch_all,
+            None,
+            "the catch-all is not restored"
+        );
 
         store.trash_account(&leni.login).await.unwrap();
-        assert_eq!(store.purge_trash(-1).await.unwrap(), vec!["leni@example.de".to_owned()]);
+        assert_eq!(store.purge_trash(-1).await.unwrap(), vec!["leni@example.org".to_owned()]);
         assert!(store.account(&leni.login).await.unwrap().is_none());
-        store.add_alias("hallo@example.de", "nyu@example.de").await.unwrap();
+        store.add_alias("hallo@example.org", "nyu@example.org").await.unwrap();
     }
 
     #[tokio::test]
@@ -661,7 +665,7 @@ mod tests {
         let link = store.password_link(&token).await.unwrap().unwrap();
         assert_eq!(
             (link.account.login.as_str(), link.purpose, link.expires_at),
-            ("leni@example.de", PasswordLinkPurpose::Invite, expires_at)
+            ("leni@example.org", PasswordLinkPurpose::Invite, expires_at)
         );
 
         store.use_password_link(&token, "ein-gutes-passwort").await.unwrap();
@@ -683,7 +687,7 @@ mod tests {
                     actor_id: None,
                     actor: "cli".into(),
                     action: "account.create".into(),
-                    target: format!("p{n}@example.de"),
+                    target: format!("p{n}@example.org"),
                     details: json!({ "role": "user" }),
                     ip: String::new(),
                 })
@@ -691,7 +695,7 @@ mod tests {
                 .unwrap();
         }
         let first = store.audit_log(2, None).await.unwrap();
-        assert_eq!(first.iter().map(|r| r.target.as_str()).collect::<Vec<_>>(), ["p2@example.de", "p1@example.de"]);
+        assert_eq!(first.iter().map(|r| r.target.as_str()).collect::<Vec<_>>(), ["p2@example.org", "p1@example.org"]);
         let next = store.audit_log(2, Some(first[1].id)).await.unwrap();
         assert_eq!(next.len(), 1);
         assert_eq!(next[0].details["role"], "user");

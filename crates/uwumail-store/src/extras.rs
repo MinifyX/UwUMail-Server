@@ -435,10 +435,10 @@ mod tests {
     #[tokio::test]
     async fn identities_uploads_and_vacation() {
         let (store, _dir) = store().await;
-        store.create_domain("example.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
         let account = store
             .create_account(NewAccount {
-                address: "mini@example.de".into(),
+                address: "mini@example.org".into(),
                 display_name: "Mini".into(),
                 password: None,
                 role: Role::User,
@@ -448,19 +448,19 @@ mod tests {
             .await
             .unwrap()
             .id;
-        store.add_alias("hallo@example.de", "mini@example.de").await.unwrap();
+        store.add_alias("hallo@example.org", "mini@example.org").await.unwrap();
 
         let identities = store.identities(account).await.unwrap();
         assert_eq!(
             identities.iter().map(|i| i.email.as_str()).collect::<Vec<_>>(),
-            ["mini@example.de", "hallo@example.de"]
+            ["mini@example.org", "hallo@example.org"]
         );
         assert_eq!(store.identities(account).await.unwrap().len(), 2);
         assert!(matches!(
-            store.create_identity(account, "X", "boss@bank.de").await,
+            store.create_identity(account, "X", "boss@bank.example").await,
             Err(StoreError::Rule { code: "forbiddenFrom", .. })
         ));
-        let extra = store.create_identity(account, "Mini Shop", "mini+shop@example.de").await.unwrap();
+        let extra = store.create_identity(account, "Mini Shop", "mini+shop@example.org").await.unwrap();
         store
             .update_identity(
                 account,
@@ -477,7 +477,7 @@ mod tests {
         assert_eq!(store.upload_media_type(account, &hash).await.unwrap().as_deref(), Some("text/plain"));
         assert!(!store.blob_accessible(account + 1, &hash).await.unwrap());
 
-        assert!(store.take_vacation_reply(account, "nyu@x.de").await.unwrap().is_none());
+        assert!(store.take_vacation_reply(account, "nyu@x.example").await.unwrap().is_none());
         store
             .set_vacation_response(
                 account,
@@ -485,7 +485,7 @@ mod tests {
             )
             .await
             .unwrap();
-        assert!(store.take_vacation_reply(account, "Nyu@x.de").await.unwrap().is_some());
-        assert!(store.take_vacation_reply(account, "nyu@x.de").await.unwrap().is_none());
+        assert!(store.take_vacation_reply(account, "Nyu@x.example").await.unwrap().is_some());
+        assert!(store.take_vacation_reply(account, "nyu@x.example").await.unwrap().is_none());
     }
 }

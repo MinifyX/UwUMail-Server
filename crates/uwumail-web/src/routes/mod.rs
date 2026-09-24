@@ -96,10 +96,10 @@ mod tests {
 
     #[test]
     fn passwords_need_some_length() {
-        assert!(check_password("kurz", "leni@example.de").is_err());
-        assert!(check_password("leni@example.de", "Leni@Example.de").is_err());
-        assert!(check_password("leni", "leni@example.de").is_err());
-        assert!(check_password("Seifenblase-Wanderweg", "leni@example.de").is_ok());
-        assert!(check_password(&"x".repeat(300), "leni@example.de").is_err());
+        assert!(check_password("kurz", "leni@example.org").is_err());
+        assert!(check_password("leni@example.org", "Leni@Example.org").is_err());
+        assert!(check_password("leni", "leni@example.org").is_err());
+        assert!(check_password("Seifenblase-Wanderweg", "leni@example.org").is_ok());
+        assert!(check_password(&"x".repeat(300), "leni@example.org").is_err());
     }
 }

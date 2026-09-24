@@ -372,40 +372,43 @@ mod tests {
 
     #[test]
     fn candidates_cover_mta_sts_and_the_names_mail_apps_use() {
-        let domains = ["example.de".to_owned(), "verein.de".to_owned()];
-        let names = candidate_names("mail.example.de", &domains[1..], &domains);
-        assert_eq!(names[0], "mta-sts.verein.de");
-        assert!(names.contains(&"imap.verein.de".to_owned()) && names.contains(&"autodiscover.example.de".to_owned()));
-        assert!(!names.contains(&"mail.example.de".to_owned()), "the server's own name comes first anyway");
+        let domains = ["example.org".to_owned(), "verein.example".to_owned()];
+        let names = candidate_names("mail.example.org", &domains[1..], &domains);
+        assert_eq!(names[0], "mta-sts.verein.example");
+        assert!(
+            names.contains(&"imap.verein.example".to_owned()) && names.contains(&"autodiscover.example.org".to_owned())
+        );
+        assert!(!names.contains(&"mail.example.org".to_owned()), "the server's own name comes first anyway");
         assert_eq!(names.len(), 1 + 2 * CLIENT_NAMES.len() - 1);
     }
 
     #[test]
     fn extra_names_join_unless_they_failed_lately() {
         let now = 1_000_000;
-        let extra = vec!["mta-sts.example.de".to_owned(), "mta-sts.verein.de".to_owned()];
-        let failed = HashMap::from([("mta-sts.verein.de".to_owned(), now - 3600)]);
+        let extra = vec!["mta-sts.example.org".to_owned(), "mta-sts.verein.example".to_owned()];
+        let failed = HashMap::from([("mta-sts.verein.example".to_owned(), now - 3600)]);
         assert_eq!(
-            names_to_request("mail.example.de", &extra, &failed, now),
-            ["mail.example.de", "mta-sts.example.de"]
+            names_to_request("mail.example.org", &extra, &failed, now),
+            ["mail.example.org", "mta-sts.example.org"]
         );
         let later = now + FAILED_NAME_PAUSE_SECS;
-        assert_eq!(names_to_request("mail.example.de", &extra, &failed, later).len(), 3, "tried again a day later");
+        assert_eq!(names_to_request("mail.example.org", &extra, &failed, later).len(), 3, "tried again a day later");
     }
 
     #[test]
     fn only_the_names_the_ca_refused_are_left_out() {
-        let names: Vec<String> = ["mail.example.de", "imap.example.de", "mta-sts.verein.de"].map(String::from).to_vec();
+        let names: Vec<String> =
+            ["mail.example.org", "imap.example.org", "mta-sts.verein.example"].map(String::from).to_vec();
         let refused = |list: &[&str]| list.iter().map(|name| name.to_string()).collect::<Vec<_>>();
         let (minute, hour) = (Duration::from_secs(60), Duration::from_secs(3600));
 
         // One of the extra names does not reach us yet: the rest is tried again soon.
         assert_eq!(
-            after_failed_order(&names, &refused(&["mta-sts.verein.de"])),
-            (refused(&["mta-sts.verein.de"]), minute)
+            after_failed_order(&names, &refused(&["mta-sts.verein.example"])),
+            (refused(&["mta-sts.verein.example"]), minute)
         );
         // The server itself was not reached, e.g. the tunnel was down: the other names keep their chance.
-        assert_eq!(after_failed_order(&names, &refused(&["mail.example.de"])), (Vec::new(), hour));
+        assert_eq!(after_failed_order(&names, &refused(&["mail.example.org"])), (Vec::new(), hour));
         assert_eq!(after_failed_order(&names, &names), (Vec::new(), hour), "behind a gateway they fail together");
         // The CA did not say which name: without the extra ones the order may still work.
         assert_eq!(after_failed_order(&names, &[]), (names[1..].to_vec(), minute));
@@ -428,11 +431,11 @@ mod tests {
     #[test]
     fn a_certificate_is_ordered_when_names_are_missing_or_it_expires() {
         let now = 1_000_000;
-        let names = ["mail.example.de".to_owned(), "mta-sts.example.de".to_owned()];
+        let names = ["mail.example.org".to_owned(), "mta-sts.example.org".to_owned()];
         assert!(needs_certificate(None, &names[..1], now));
-        assert!(!needs_certificate(Some(&info(&["mail.example.de"], 60, false)), &names[..1], now));
-        assert!(needs_certificate(Some(&info(&["mail.example.de"], 60, false)), &names, now), "a new name");
-        assert!(needs_certificate(Some(&info(&["mail.example.de", "mta-sts.example.de"], 10, false)), &names, now));
-        assert!(needs_certificate(Some(&info(&["mail.example.de"], 60, true)), &names[..1], now));
+        assert!(!needs_certificate(Some(&info(&["mail.example.org"], 60, false)), &names[..1], now));
+        assert!(needs_certificate(Some(&info(&["mail.example.org"], 60, false)), &names, now), "a new name");
+        assert!(needs_certificate(Some(&info(&["mail.example.org", "mta-sts.example.org"], 10, false)), &names, now));
+        assert!(needs_certificate(Some(&info(&["mail.example.org"], 60, true)), &names[..1], now));
     }
 }

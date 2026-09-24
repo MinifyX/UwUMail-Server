@@ -276,7 +276,7 @@ mod tests {
     use crate::{NewAccount, Role};
 
     async fn account(store: &Store, address: &str) -> i64 {
-        store.create_domain("example.de").await.ok();
+        store.create_domain("example.org").await.ok();
         store
             .create_account(NewAccount {
                 address: address.into(),
@@ -308,7 +308,7 @@ mod tests {
     #[tokio::test]
     async fn caldav_writes_reach_the_change_log() {
         let (store, _dir) = store().await;
-        let mini = account(&store, "mini@example.de").await;
+        let mini = account(&store, "mini@example.org").await;
         let start = store.account_modseq(mini).await.unwrap();
         let calendar =
             store.dav_collections(mini, DavKind::Calendar, NewDavCollection::default_calendar("K")).await.unwrap()[0]
@@ -343,8 +343,8 @@ mod tests {
     #[tokio::test]
     async fn events_move_between_calendars_and_leave_changes() {
         let (store, _dir) = store().await;
-        let mini = account(&store, "mini@example.de").await;
-        let leni = account(&store, "leni@example.de").await;
+        let mini = account(&store, "mini@example.org").await;
+        let leni = account(&store, "leni@example.org").await;
         let calendars =
             store.dav_collections(mini, DavKind::Calendar, NewDavCollection::default_calendar("K")).await.unwrap();
         let personal = &calendars[0];
@@ -360,20 +360,20 @@ mod tests {
             .unwrap();
         assert!(!work.is_default && !work.is_visible);
 
-        let (id, etag) = store.put_calendar_event(mini, event("a@example.org", personal.id, None)).await.unwrap();
-        let taken = store.put_calendar_event(mini, event("a@example.org", work.id, None)).await;
+        let (id, etag) = store.put_calendar_event(mini, event("a@example.net", personal.id, None)).await.unwrap();
+        let taken = store.put_calendar_event(mini, event("a@example.net", work.id, None)).await;
         assert!(matches!(taken, Err(StoreError::Rule { code: "alreadyExists", .. })));
         assert!(matches!(
-            store.put_calendar_event(leni, event("b@example.org", personal.id, None)).await,
+            store.put_calendar_event(leni, event("b@example.net", personal.id, None)).await,
             Err(StoreError::NotFound(_))
         ));
 
-        let stale = CalendarEventWrite { if_etag: Some("\"old\"".into()), ..event("a@example.org", work.id, Some(id)) };
+        let stale = CalendarEventWrite { if_etag: Some("\"old\"".into()), ..event("a@example.net", work.id, Some(id)) };
         assert!(matches!(store.put_calendar_event(mini, stale).await, Err(StoreError::Conflict(_))));
-        let moved = CalendarEventWrite { if_etag: Some(etag), ..event("a@example.org", work.id, Some(id)) };
+        let moved = CalendarEventWrite { if_etag: Some(etag), ..event("a@example.net", work.id, Some(id)) };
         assert_eq!(store.put_calendar_event(mini, moved).await.unwrap().0, id);
         let personal_changes = store.dav_changes(mini, personal.id, 0).await.unwrap();
-        assert_eq!(personal_changes.deleted, vec!["a@example.org.ics"]);
+        assert_eq!(personal_changes.deleted, vec!["a@example.net.ics"]);
         assert_eq!(store.dav_changes(mini, work.id, 0).await.unwrap().changed.len(), 1);
         assert_eq!(store.calendar_events(mini, Some(vec![id])).await.unwrap()[0].calendar_id, work.id);
         assert!(store.calendar_events(leni, Some(vec![id])).await.unwrap().is_empty());

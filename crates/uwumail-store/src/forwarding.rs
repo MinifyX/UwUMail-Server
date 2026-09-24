@@ -284,15 +284,15 @@ mod tests {
     async fn local_targets_work_at_once_and_others_after_confirmation() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path()).await.unwrap();
-        store.create_domain("example.de").await.unwrap();
-        let leni = account(&store, "leni@example.de").await;
-        let ami = account(&store, "ami@example.de").await;
+        store.create_domain("example.org").await.unwrap();
+        let leni = account(&store, "leni@example.org").await;
+        let ami = account(&store, "ami@example.org").await;
 
-        let injected = store.add_forward_target(leni.id, "oma@elsewhere.example\r\nBcc: x@example.org", true).await;
+        let injected = store.add_forward_target(leni.id, "oma@elsewhere.example\r\nBcc: x@example.net", true).await;
         assert!(matches!(injected, Err(StoreError::Invalid(_))), "no header injection through the address");
-        let self_target = store.add_forward_target(leni.id, "LENI@example.de", true).await;
+        let self_target = store.add_forward_target(leni.id, "LENI@example.org", true).await;
         assert!(matches!(self_target, Err(StoreError::Rule { code: "forwardToSelf", .. })));
-        let (local, token) = store.add_forward_target(leni.id, "ami@example.de", true).await.unwrap();
+        let (local, token) = store.add_forward_target(leni.id, "ami@example.org", true).await.unwrap();
         assert!(local.local && local.confirmed_at.is_some() && token.is_none());
         let blocked = store.add_forward_target(leni.id, "leni@elsewhere.example", false).await;
         assert!(matches!(blocked, Err(StoreError::Rule { code: "forwardingBlocked", .. })));
@@ -301,7 +301,7 @@ mod tests {
         let token = token.expect("a confirmation link");
         assert!(!external.local && external.confirmed_at.is_none());
         let active = store.active_forwarding(leni.id).await.unwrap();
-        assert_eq!(active.targets, vec![("ami@example.de".to_owned(), Some(ami.id))]);
+        assert_eq!(active.targets, vec![("ami@example.org".to_owned(), Some(ami.id))]);
 
         let (_, owner) = store.forward_link(&token).await.unwrap().unwrap();
         assert_eq!(owner.id, leni.id);

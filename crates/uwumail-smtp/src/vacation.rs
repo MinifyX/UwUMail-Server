@@ -150,14 +150,14 @@ mod tests {
 
     #[test]
     fn recognizes_automated_mail() {
-        assert!(is_automated_sender("MAILER-DAEMON@example.de"));
-        assert!(is_automated_sender("no-reply@shop.de"));
-        assert!(is_automated_sender("list-request@lists.org"));
-        assert!(!is_automated_sender("nyu@example.de"));
+        assert!(is_automated_sender("MAILER-DAEMON@example.org"));
+        assert!(is_automated_sender("no-reply@shop.example"));
+        assert!(is_automated_sender("list-request@lists.example.org"));
+        assert!(!is_automated_sender("nyu@example.org"));
         assert!(is_automated_message(b"Auto-Submitted: auto-replied\r\n\r\n"));
-        assert!(is_automated_message(b"List-Id: <cats.lists.org>\r\n\r\n"));
+        assert!(is_automated_message(b"List-Id: <cats.lists.example.org>\r\n\r\n"));
         assert!(is_automated_message(b"Precedence: bulk\r\n\r\n"));
         assert!(!is_automated_message(b"Auto-Submitted: no\r\nSubject: hi\r\n\r\n"));
-        assert_eq!(strip_tag("mini+shop@example.de"), "mini@example.de");
+        assert_eq!(strip_tag("mini+shop@example.org"), "mini@example.org");
     }
 }

@@ -95,10 +95,10 @@ async fn portal(gateway: Arc<FakeGateway>) -> Portal {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
     std::mem::forget(dir);
-    store.create_domain("example.de").await.unwrap();
+    store.create_domain("example.org").await.unwrap();
     store
         .create_account(NewAccount {
-            address: "nyu@example.de".into(),
+            address: "nyu@example.org".into(),
             display_name: "Nyu".into(),
             password: Some("katzenpfote-123".into()),
             role: Role::Admin,
@@ -108,7 +108,7 @@ async fn portal(gateway: Arc<FakeGateway>) -> Portal {
         .await
         .unwrap();
     let settings = SmtpSettings {
-        hostname: "mail.example.de".into(),
+        hostname: "mail.example.org".into(),
         smtp: Default::default(),
         spam: Default::default(),
         delivery: Default::default(),
@@ -118,7 +118,7 @@ async fn portal(gateway: Arc<FakeGateway>) -> Portal {
     let web = Web::new(
         Smtp::new(store, settings).unwrap(),
         WebSettings {
-            hostname: "mail.example.de".into(),
+            hostname: "mail.example.org".into(),
             started: Instant::now(),
             logs: None,
             loki: None,
@@ -134,7 +134,7 @@ async fn portal(gateway: Arc<FakeGateway>) -> Portal {
         .method("POST")
         .uri("/api/auth/login")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "login": "nyu@example.de", "password": "katzenpfote-123" }).to_string()))
+        .body(Body::from(json!({ "login": "nyu@example.org", "password": "katzenpfote-123" }).to_string()))
         .unwrap();
     login.extensions_mut().insert(ClientInfo { https: true, ..ClientInfo::default() });
     let response = app.clone().oneshot(login).await.unwrap();

@@ -20,10 +20,10 @@ fn codes(area: &Value) -> Vec<&str> {
 async fn health_lists_every_area_with_findings() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
-    store.create_domain("example.de").await.unwrap();
+    store.create_domain("example.org").await.unwrap();
     store
         .create_account(NewAccount {
-            address: "nyu@example.de".into(),
+            address: "nyu@example.org".into(),
             display_name: "Nyu".into(),
             password: Some("katzenpfote-123".into()),
             role: Role::Admin,
@@ -34,7 +34,7 @@ async fn health_lists_every_area_with_findings() {
         .unwrap();
     let mini = store
         .create_account(NewAccount {
-            address: "mini@example.de".into(),
+            address: "mini@example.org".into(),
             display_name: "Mini".into(),
             password: None,
             role: Role::User,
@@ -43,7 +43,7 @@ async fn health_lists_every_area_with_findings() {
         })
         .await
         .unwrap();
-    let raw = "From: a@example.org\r\nTo: mini@example.de\r\nSubject: Fast voll\r\n\r\nMiau miau miau miau miau\r\n";
+    let raw = "From: a@example.net\r\nTo: mini@example.org\r\nSubject: Fast voll\r\n\r\nMiau miau miau miau miau\r\n";
     store
         .ingest(IngestRequest {
             account_id: mini.id,
@@ -59,7 +59,7 @@ async fn health_lists_every_area_with_findings() {
     let smtp = Smtp::new(
         store.clone(),
         SmtpSettings {
-            hostname: "mail.example.de".into(),
+            hostname: "mail.example.org".into(),
             smtp: Default::default(),
             spam: Default::default(),
             delivery: Default::default(),
@@ -71,7 +71,7 @@ async fn health_lists_every_area_with_findings() {
     let web = Web::new(
         smtp,
         WebSettings {
-            hostname: "mail.example.de".into(),
+            hostname: "mail.example.org".into(),
             started: Instant::now(),
             logs: None,
             loki: None,
@@ -79,7 +79,7 @@ async fn health_lists_every_area_with_findings() {
             certificate: Some(Arc::new(move || {
                 Some(CertificateStatus {
                     not_after: now + 10 * 86_400,
-                    names: vec!["mail.example.de".into()],
+                    names: vec!["mail.example.org".into()],
                     self_signed: false,
                     automatic: true,
                     lets_encrypt_account: None,
@@ -94,7 +94,7 @@ async fn health_lists_every_area_with_findings() {
         .method("POST")
         .uri("/api/auth/login")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "login": "nyu@example.de", "password": "katzenpfote-123" }).to_string()))
+        .body(Body::from(json!({ "login": "nyu@example.org", "password": "katzenpfote-123" }).to_string()))
         .unwrap();
     login.extensions_mut().insert(ClientInfo { https: true, ..ClientInfo::default() });
     let response = app.clone().oneshot(login).await.unwrap();
@@ -123,7 +123,7 @@ async fn health_lists_every_area_with_findings() {
     let storage = area("storage");
     assert!(codes(&storage).contains(&"mailboxesNearlyFull"), "{storage}");
     let full = storage["findings"].as_array().unwrap().iter().find(|f| f["code"] == "mailboxesNearlyFull").unwrap();
-    assert_eq!(full["link"], "/admin/people/mini@example.de");
+    assert_eq!(full["link"], "/admin/people/mini@example.org");
     assert_eq!(health["level"], "warning");
     assert_eq!(health["checkedAt"], Value::Null);
 }

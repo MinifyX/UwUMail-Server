@@ -54,7 +54,7 @@ impl RuleScope {
         }
     }
 
-    /// `server`, `domain:example.de` or `account:leni@example.de`, as filters and exports write it.
+    /// `server`, `domain:example.org` or `account:leni@example.org`, as filters and exports write it.
     pub fn key(&self) -> String {
         match self {
             RuleScope::Server => "server".into(),
@@ -761,9 +761,9 @@ mod tests {
     async fn store() -> (Store, tempfile::TempDir, i64, i64) {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path()).await.unwrap();
-        let domain = store.create_domain("example.de").await.unwrap().id;
+        let domain = store.create_domain("example.org").await.unwrap().id;
         let account = NewAccount {
-            address: "leni@example.de".into(),
+            address: "leni@example.org".into(),
             display_name: String::new(),
             password: None,
             role: Role::User,
@@ -793,7 +793,8 @@ mod tests {
         let text = (0..60).map(|n| format!("spam{n}@evil.example")).collect::<Vec<_>>().join("\n");
         let report = store.import_rules(import(RuleType::Sender, ListScope::Server, &text)).await.unwrap();
         assert_eq!(report.added, 60);
-        let lines = "news.example.org, allow, the newsletter\n*.xyz\n# a comment\nnot valid@\nspam1@evil.example";
+        let lines =
+            "news.example.net, allow, the newsletter\n*.spam.example\n# a comment\nnot valid@\nspam1@evil.example";
         let report = store.import_rules(import(RuleType::Sender, ListScope::Domain(domain), lines)).await.unwrap();
         assert_eq!((report.added, report.refused_count, report.duplicates), (3, 1, 0));
         store.import_rules(import(RuleType::Word, ListScope::Account(leni), "casino\n/lotto/i")).await.unwrap();
@@ -808,17 +809,17 @@ mod tests {
         let page = store.rules(domain_only).await.unwrap();
         assert_eq!(page.total, 3);
         let allowed = page.rules.iter().find(|rule| rule.list == RuleList::Allow).unwrap();
-        assert_eq!((allowed.value.as_str(), allowed.note.as_str()), ("news.example.org", "the newsletter"));
-        assert_eq!(allowed.scope, RuleScope::Domain { id: domain, name: "example.de".into() });
+        assert_eq!((allowed.value.as_str(), allowed.note.as_str()), ("news.example.net", "the newsletter"));
+        assert_eq!(allowed.scope, RuleScope::Domain { id: domain, name: "example.org".into() });
 
         let search = RuleQuery { search: "SPAM1".into(), limit: 50, ..Default::default() };
-        assert_eq!(store.rules(search).await.unwrap().total, 12, "spam1, spam10..19 and example.de's spam1");
+        assert_eq!(store.rules(search).await.unwrap().total, 12, "spam1, spam10..19 and example.org's spam1");
         let words = RuleQuery { lists: vec![RuleList::Points], limit: 50, ..Default::default() };
         assert_eq!(store.rules(words).await.unwrap().total, 2);
         let own = RuleQuery { owner: Some(ListOwner::Account(leni)), limit: 50, ..Default::default() };
         let page = store.rules(own).await.unwrap();
         assert_eq!(page.total, 2, "a person sees their own rules only");
-        assert!(matches!(&page.rules[0].scope, RuleScope::Account { name, .. } if name == "leni@example.de"));
+        assert!(matches!(&page.rules[0].scope, RuleScope::Account { name, .. } if name == "leni@example.org"));
         let everything = store.all_rules(RuleQuery::default()).await.unwrap();
         assert_eq!(everything.len(), 65);
     }
@@ -863,7 +864,7 @@ mod tests {
         let stranger = store.change_rule(ListOwner::Account(leni), b.0, b.1, RuleChange::default()).await;
         assert!(matches!(stranger, Err(StoreError::NotFound(_))), "people only touch their own rules");
 
-        // Moving both server rules to example.de: b fits, a's value is new there too.
+        // Moving both server rules to example.org: b fits, a's value is new there too.
         let report = store
             .bulk_rules(ListOwner::Admin, vec![a, b], BulkAction::SetScope(ListScope::Domain(domain)))
             .await

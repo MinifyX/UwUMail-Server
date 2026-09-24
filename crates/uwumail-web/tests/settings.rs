@@ -84,10 +84,10 @@ async fn call(
 async fn settings_are_checked_locked_stored_and_logged() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
-    store.create_domain("example.de").await.unwrap();
+    store.create_domain("example.org").await.unwrap();
     store
         .create_account(NewAccount {
-            address: "nyu@example.de".into(),
+            address: "nyu@example.org".into(),
             display_name: "Nyu".into(),
             password: Some("katzenpfote-123".into()),
             role: Role::Admin,
@@ -97,7 +97,7 @@ async fn settings_are_checked_locked_stored_and_logged() {
         .await
         .unwrap();
     let smtp_settings = SmtpSettings {
-        hostname: "mail.example.de".into(),
+        hostname: "mail.example.org".into(),
         smtp: Default::default(),
         spam: Default::default(),
         delivery: Default::default(),
@@ -108,7 +108,7 @@ async fn settings_are_checked_locked_stored_and_logged() {
     let web = Web::new(
         Smtp::new(store.clone(), smtp_settings).unwrap(),
         WebSettings {
-            hostname: "mail.example.de".into(),
+            hostname: "mail.example.org".into(),
             started: Instant::now(),
             logs: None,
             loki: None,
@@ -124,7 +124,7 @@ async fn settings_are_checked_locked_stored_and_logged() {
         .method("POST")
         .uri("/api/auth/login")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(json!({ "login": "nyu@example.de", "password": "katzenpfote-123" }).to_string()))
+        .body(Body::from(json!({ "login": "nyu@example.org", "password": "katzenpfote-123" }).to_string()))
         .unwrap();
     login.extensions_mut().insert(ClientInfo { https: true, ..ClientInfo::default() });
     let response = app.clone().oneshot(login).await.unwrap();

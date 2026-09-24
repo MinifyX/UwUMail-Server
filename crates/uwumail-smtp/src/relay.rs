@@ -121,12 +121,12 @@ mod tests {
     #[test]
     fn finds_the_first_untrusted_hop() {
         let raw = b"Received: from mx.relay.local (mx.relay.local [192.168.1.20])\r\n\tby mail.example.net (Postfix) with ESMTP id AB;\r\n\tMon, 14 Sep 2026 10:00:01 +0200\r\n\
-Received: from mail-ej1-f41.google.com (mail-ej1-f41.google.com [209.85.218.41])\r\n\tby mx.relay.local (Postfix) with ESMTPS id CD\r\n\tfor <nyu@uwu.example>; Mon, 14 Sep 2026 10:00:00 +0200\r\n\
+Received: from mail.example.com (mail.example.com [203.0.113.41])\r\n\tby mx.relay.local (Postfix) with ESMTPS id CD\r\n\tfor <nyu@uwu.example>; Mon, 14 Sep 2026 10:00:00 +0200\r\n\
 Subject: hi\r\n\r\nbody\r\n";
         let trusted = parse_networks(&["192.168.1.0/24".into()]).unwrap();
         assert_eq!(
             original_client(raw, &trusted),
-            Some(("209.85.218.41".parse().unwrap(), "mail-ej1-f41.google.com".into()))
+            Some(("203.0.113.41".parse().unwrap(), "mail.example.com".into()))
         );
         assert_eq!(original_client(raw, &[]), Some(("192.168.1.20".parse().unwrap(), "mx.relay.local".into())));
     }

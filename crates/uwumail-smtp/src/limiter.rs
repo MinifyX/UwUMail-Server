@@ -81,7 +81,7 @@ fn key(ip: IpAddr) -> IpAddr {
     }
 }
 
-/// A login the way it is counted: `Mini@Example.de ` and `mini@example.de` are one.
+/// A login the way it is counted: `Mini@Example.org ` and `mini@example.org` are one.
 fn login_key(login: &str) -> String {
     login.trim().to_lowercase()
 }
@@ -204,11 +204,11 @@ mod tests {
         let neighbour: IpAddr = "2001:db8::2".parse().unwrap();
         for _ in 0..MAX_FAILURES {
             assert!(!limiter.is_blocked(ip));
-            limiter.record_failure(ip, "mini@example.de");
+            limiter.record_failure(ip, "mini@example.org");
         }
         assert!(limiter.is_blocked(neighbour));
         assert!(!limiter.is_blocked("192.0.2.1".parse().unwrap()));
-        limiter.record_success(ip, "Mini@Example.de");
+        limiter.record_success(ip, "Mini@Example.org");
         assert!(!limiter.is_blocked(ip), "someone's own mistakes are forgiven once they get in");
     }
 
@@ -219,24 +219,24 @@ mod tests {
         let limiter = AuthLimiter::default();
         let ip: IpAddr = "192.0.2.1".parse().unwrap();
         for _ in 0..MAX_FAILURES - 1 {
-            limiter.record_failure(ip, "admin@example.de");
+            limiter.record_failure(ip, "admin@example.org");
         }
-        limiter.record_success(ip, "mallory@example.de");
-        limiter.record_success(ip, "nyu@example.de");
+        limiter.record_success(ip, "mallory@example.org");
+        limiter.record_success(ip, "nyu@example.org");
         assert!(!limiter.is_blocked(ip));
-        limiter.record_failure(ip, "admin@example.de");
+        limiter.record_failure(ip, "admin@example.org");
         assert!(limiter.is_blocked(ip), "the tenth guess still blocks");
 
         // A neighbour's typo and success, on the other hand, take back only the neighbour's own.
         let office: IpAddr = "198.51.100.1".parse().unwrap();
         for _ in 0..MAX_FAILURES - 1 {
-            limiter.record_failure(office, "admin@example.de");
+            limiter.record_failure(office, "admin@example.org");
         }
-        limiter.record_failure(office, "nyu@example.de");
+        limiter.record_failure(office, "nyu@example.org");
         assert!(limiter.is_blocked(office));
-        limiter.record_success(office, "nyu@example.de");
+        limiter.record_success(office, "nyu@example.org");
         assert!(!limiter.is_blocked(office));
-        limiter.record_failure(office, "admin@example.de");
+        limiter.record_failure(office, "admin@example.org");
         assert!(limiter.is_blocked(office));
     }
 
@@ -244,15 +244,15 @@ mod tests {
     fn guesses_at_one_login_from_many_networks_are_spaced_out() {
         let limiter = AuthLimiter::default();
         for network in 0..ACCOUNT_FREE_FAILURES {
-            assert!(!limiter.account_throttled("admin@example.de"));
-            limiter.record_failure(format!("198.51.100.{network}").parse().unwrap(), "admin@example.de");
+            assert!(!limiter.account_throttled("admin@example.org"));
+            limiter.record_failure(format!("198.51.100.{network}").parse().unwrap(), "admin@example.org");
         }
-        assert!(limiter.account_throttled("ADMIN@example.de"), "no network is blocked, but the login waits");
-        assert!(!limiter.account_throttled("mini@example.de"), "other logins do not");
-        limiter.record_success("192.0.2.1".parse().unwrap(), "mallory@example.de");
-        assert!(limiter.account_throttled("admin@example.de"), "somebody else's success changes nothing");
-        limiter.record_success("192.0.2.1".parse().unwrap(), "admin@example.de");
-        assert!(!limiter.account_throttled("admin@example.de"), "its own success does");
+        assert!(limiter.account_throttled("ADMIN@example.org"), "no network is blocked, but the login waits");
+        assert!(!limiter.account_throttled("mini@example.org"), "other logins do not");
+        limiter.record_success("192.0.2.1".parse().unwrap(), "mallory@example.org");
+        assert!(limiter.account_throttled("admin@example.org"), "somebody else's success changes nothing");
+        limiter.record_success("192.0.2.1".parse().unwrap(), "admin@example.org");
+        assert!(!limiter.account_throttled("admin@example.org"), "its own success does");
     }
 
     #[test]
@@ -283,7 +283,7 @@ mod tests {
         // Someone typing their own password wrong that often is still let in.
         let typing: IpAddr = "192.0.2.8".parse().unwrap();
         for _ in 0..MAX_UNKNOWN {
-            limiter.record_failure(typing, "mini@example.de");
+            limiter.record_failure(typing, "mini@example.org");
         }
         assert!(!limiter.is_blocked(typing));
     }

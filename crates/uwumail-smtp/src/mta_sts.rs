@@ -198,12 +198,12 @@ mod tests {
 
     #[test]
     fn our_policy_round_trips_and_its_id_follows_the_content() {
-        let testing = Policy::ours(uwumail_store::MtaStsMode::Testing, &["Mail.Example.DE.".into()]);
+        let testing = Policy::ours(uwumail_store::MtaStsMode::Testing, &["Mail.Example.org.".into()]);
         let text = testing.to_text();
-        assert_eq!(text, "version: STSv1\r\nmode: testing\r\nmx: mail.example.de\r\nmax_age: 86400\r\n");
+        assert_eq!(text, "version: STSv1\r\nmode: testing\r\nmx: mail.example.org\r\nmax_age: 86400\r\n");
         assert_eq!(Policy::parse(&text).unwrap(), testing);
 
-        let enforce = Policy::ours(uwumail_store::MtaStsMode::Enforce, &["mail.example.de".into()]);
+        let enforce = Policy::ours(uwumail_store::MtaStsMode::Enforce, &["mail.example.org".into()]);
         assert_ne!(testing.id(), enforce.id());
         assert_eq!(testing.id().len(), 20);
         assert!(testing.id().chars().all(|c| c.is_ascii_alphanumeric()));
@@ -213,16 +213,16 @@ mod tests {
     #[test]
     fn policies_from_elsewhere_are_read_carefully() {
         let policy = Policy::parse(
-            "version: STSv1\nmode: enforce\nmx: *.mx.example.net\nmx: mail.example.net.\nmax_age: 999999999\n",
+            "version: STSv1\nmode: enforce\nmx: *.mx.example.com\nmx: mail.example.com.\nmax_age: 999999999\n",
         )
         .unwrap();
         assert_eq!(policy.mode, Mode::Enforce);
         assert_eq!(policy.max_age, 31_557_600, "capped at a year");
-        assert!(policy.allows("a.mx.example.net"));
-        assert!(policy.allows("MAIL.example.net."));
-        assert!(!policy.allows("mx.example.net"), "the wildcard needs one label");
-        assert!(!policy.allows("a.b.mx.example.net"), "and only one");
-        assert!(!policy.allows("evil.example.org"));
+        assert!(policy.allows("a.mx.example.com"));
+        assert!(policy.allows("MAIL.example.com."));
+        assert!(!policy.allows("mx.example.com"), "the wildcard needs one label");
+        assert!(!policy.allows("a.b.mx.example.com"), "and only one");
+        assert!(!policy.allows("evil.example.net"));
 
         assert!(Policy::parse("mode: enforce\nmx: a.example\nmax_age: 60").is_err(), "version is required");
         assert!(Policy::parse("version: STSv1\nmode: enforce\nmax_age: 60").is_err(), "enforce needs mx");
@@ -235,6 +235,6 @@ mod tests {
         };
         assert!(read_fetched(&fetched("text/plain; charset=utf-8")).is_ok());
         assert!(read_fetched(&fetched("text/html")).is_err());
-        assert_eq!(policy_url("Example.DE."), "https://mta-sts.example.de/.well-known/mta-sts.txt");
+        assert_eq!(policy_url("Example.org."), "https://mta-sts.example.org/.well-known/mta-sts.txt");
     }
 }

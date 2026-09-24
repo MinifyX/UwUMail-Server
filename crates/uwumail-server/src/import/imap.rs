@@ -581,9 +581,9 @@ mod tests {
 
     async fn store_with_person(dir: &std::path::Path, password: Option<&str>) -> (Store, i64) {
         let store = Store::open(dir).await.unwrap();
-        store.create_domain("example.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
         let new = uwumail_store::NewAccount {
-            address: "mini@example.de".into(),
+            address: "mini@example.org".into(),
             display_name: "Mini".into(),
             password: password.map(str::to_owned),
             role: uwumail_store::Role::User,
@@ -595,7 +595,7 @@ mod tests {
     }
 
     async fn deliver(store: &Store, account: i64, mailbox: MailboxTarget, subject: &str, keywords: &[&str]) {
-        let raw = format!("From: nyu@example.org\r\nTo: mini@example.de\r\nSubject: {subject}\r\n\r\nHallo\r\n");
+        let raw = format!("From: nyu@example.net\r\nTo: mini@example.org\r\nSubject: {subject}\r\n\r\nHallo\r\n");
         let request = IngestRequest {
             account_id: account,
             raw: raw.into_bytes(),
@@ -616,7 +616,7 @@ mod tests {
         let archive = old.create_mailbox(old_id, "Alt", Some(projects), None, 0, true).await.unwrap();
         deliver(&old, old_id, MailboxTarget::Id(archive), "Übergabe", &[]).await;
 
-        let generated = rcgen::generate_simple_self_signed(vec!["imap.example.de".to_owned()]).unwrap();
+        let generated = rcgen::generate_simple_self_signed(vec!["imap.example.org".to_owned()]).unwrap();
         let key = rustls_pki_types::PrivateKeyDer::Pkcs8(generated.signing_key.serialize_der().into());
         let tls = rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
             .with_safe_default_protocol_versions()
@@ -633,7 +633,7 @@ mod tests {
         roots.add(generated.cert.der().clone()).unwrap();
         let source = |password: &str| Source {
             address: address.clone(),
-            tls_name: Some("imap.example.de".into()),
+            tls_name: Some("imap.example.org".into()),
             roots: Some(roots.clone()),
             master_user: None,
             password: password.into(),
@@ -645,13 +645,13 @@ mod tests {
         let mut show = |line: &str| lines.push(line.to_owned());
 
         let wrong =
-            copy_mail(&new, &source("falsch-falsch"), "mini@example.de", "mini@example.de", false, &mut show).await;
+            copy_mail(&new, &source("falsch-falsch"), "mini@example.org", "mini@example.org", false, &mut show).await;
         assert!(wrong.is_err());
-        let counted = copy_mail(&new, &right, "mini@example.de", "mini@example.de", true, &mut show);
+        let counted = copy_mail(&new, &right, "mini@example.org", "mini@example.org", true, &mut show);
         assert_eq!(counted.await.unwrap().messages, 3);
         assert_eq!(new.mailboxes(new_id).await.unwrap().len(), 6, "a dry run creates no folders");
 
-        let copied = copy_mail(&new, &right, "mini@example.de", "mini@example.de", false, &mut show);
+        let copied = copy_mail(&new, &right, "mini@example.org", "mini@example.org", false, &mut show);
         assert_eq!(copied.await.unwrap().messages, 3);
         let mailboxes = new.mailboxes(new_id).await.unwrap();
         let inbox = mailboxes.iter().find(|mailbox| mailbox.role == Some(MailboxRole::Inbox)).unwrap();
@@ -665,7 +665,7 @@ mod tests {
         assert_eq!(emails[0].subject, "Eins");
 
         deliver(&old, old_id, MailboxTarget::Role(MailboxRole::Inbox), "Zwei", &[]).await;
-        let again = copy_mail(&new, &right, "mini@example.de", "mini@example.de", false, &mut show);
+        let again = copy_mail(&new, &right, "mini@example.org", "mini@example.org", false, &mut show);
         assert_eq!(again.await.unwrap().messages, 1, "only what arrived since");
         let inbox = new.mailboxes(new_id).await.unwrap().into_iter().find(|m| m.role == Some(MailboxRole::Inbox));
         assert_eq!(inbox.unwrap().total_emails, 2);

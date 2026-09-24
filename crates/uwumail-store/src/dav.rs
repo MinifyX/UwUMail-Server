@@ -840,7 +840,7 @@ mod tests {
     use crate::{NewAccount, Role};
 
     async fn account(store: &Store, address: &str) -> i64 {
-        store.create_domain("example.de").await.ok();
+        store.create_domain("example.org").await.ok();
         store
             .create_account(NewAccount {
                 address: address.into(),
@@ -880,7 +880,7 @@ mod tests {
     #[tokio::test]
     async fn entries_sync_with_etags_and_tombstones() {
         let (store, _dir) = store().await;
-        let mini = account(&store, "mini@example.de").await;
+        let mini = account(&store, "mini@example.org").await;
         let calendars = store.dav_collections(mini, DavKind::Calendar, calendar()).await.unwrap();
         assert_eq!(calendars.len(), 1, "a default calendar appears");
         let id = calendars[0].id;
@@ -919,8 +919,8 @@ mod tests {
     #[tokio::test]
     async fn collections_belong_to_their_account() {
         let (store, _dir) = store().await;
-        let mini = account(&store, "mini@example.de").await;
-        let leni = account(&store, "leni@example.de").await;
+        let mini = account(&store, "mini@example.org").await;
+        let leni = account(&store, "leni@example.org").await;
         let id = store.dav_collections(mini, DavKind::Calendar, calendar()).await.unwrap()[0].id;
         assert!(matches!(store.dav_resources(leni, id).await, Err(StoreError::NotFound(_))));
         assert!(matches!(

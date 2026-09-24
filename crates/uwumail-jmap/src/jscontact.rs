@@ -211,7 +211,7 @@ mod tests {
     use serde_json::json;
 
     const APPLE: &str = "BEGIN:VCARD\r\nVERSION:3.0\r\nPRODID:-//Apple Inc.//iOS 17//EN\r\nN:Katze;Nyu;;;\r\n\
-FN:Nyu Katze\r\nORG:Katzen GmbH;\r\nEMAIL;type=INTERNET;type=HOME;type=pref:nyu@example.de\r\n\
+FN:Nyu Katze\r\nORG:Katzen GmbH;\r\nEMAIL;type=INTERNET;type=HOME;type=pref:nyu@example.org\r\n\
 TEL;type=CELL;type=VOICE;type=pref:+49 170 1234567\r\nitem1.ADR;type=HOME;type=pref:;;Hauptstr. 1;Berlin;;10115;Germany\r\n\
 item1.X-ABADR:de\r\nBDAY:1990-05-17\r\nNOTE:mag Thunfisch\r\nX-APPLE-SPECIAL:bleibt\r\nUID:nyu-1\r\nEND:VCARD\r\n";
 
@@ -244,7 +244,7 @@ item1.X-ABADR:de\r\nBDAY:1990-05-17\r\nNOTE:mag Thunfisch\r\nX-APPLE-SPECIAL:ble
         let card = object(json!({
             "@type": "Card", "version": "1.0", "uid": "urn:uuid:1",
             "name": { "components": [{ "kind": "given", "value": "Leni" }, { "kind": "surname", "value": "Muster" }] },
-            "emails": { "e1": { "address": "leni@example.de" } },
+            "emails": { "e1": { "address": "leni@example.org" } },
             "id": "k1", "addressBookIds": { "b1": true }
         }));
         let written = to_vcard(&card).unwrap();
@@ -270,7 +270,7 @@ item1.X-ABADR:de\r\nBDAY:1990-05-17\r\nNOTE:mag Thunfisch\r\nX-APPLE-SPECIAL:ble
         assert_eq!(check(json!({ "phones": { "p": "0170" } })), Err(vec!["phones".into()]));
         let photo = |uri: &str| json!({ "media": { "m": { "kind": "photo", "uri": uri } } });
         assert!(check(photo("data:image/jpeg;base64,/9j/")).is_ok());
-        assert!(check(photo("https://example.org/nyu.jpg")).is_ok());
+        assert!(check(photo("https://example.net/nyu.jpg")).is_ok());
         assert_eq!(check(photo("data:text/html;base64,PGI+")), Err(vec!["media".into()]));
         assert_eq!(check(json!({ "media": { "m": { "kind": "photo", "blobId": "B1" } } })), Err(vec!["media".into()]));
     }
@@ -280,7 +280,7 @@ item1.X-ABADR:de\r\nBDAY:1990-05-17\r\nNOTE:mag Thunfisch\r\nX-APPLE-SPECIAL:ble
         let card = from_vcard(APPLE).unwrap();
         assert!(field_text(&card, "name").contains("Nyu Katze"));
         assert_eq!(field_text(&card, "name/given"), "Nyu\n");
-        assert!(field_text(&card, "email").contains("nyu@example.de"));
+        assert!(field_text(&card, "email").contains("nyu@example.org"));
         assert!(field_text(&card, "organization").contains("Katzen GmbH"));
         assert!(field_text(&card, "address").contains("Berlin"));
         assert!(all_text(&card).contains("Thunfisch"));

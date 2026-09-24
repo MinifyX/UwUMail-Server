@@ -266,12 +266,12 @@ mod tests {
 
     #[test]
     fn links_come_with_the_text_a_reader_sees() {
-        let html = r#"<p>Hallo <A HREF="https://evil.example/login?a=1&amp;b=2"><b>www.paypal.com</b></A> und
+        let html = r#"<p>Hallo <A HREF="https://evil.example/login?a=1&amp;b=2"><b>www.bank.example</b></A> und
             <a href=https://shop.example/>Zum&nbsp;Shop</a></p>"#;
         assert_eq!(
             anchors(html),
             vec![
-                ("https://evil.example/login?a=1&b=2".into(), "www.paypal.com".into()),
+                ("https://evil.example/login?a=1&b=2".into(), "www.bank.example".into()),
                 ("https://shop.example/".into(), "Zum Shop".into()),
             ]
         );

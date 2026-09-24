@@ -219,10 +219,10 @@ mod tests {
     #[tokio::test]
     async fn reads_records_threads_and_changes() {
         let (store, _dir) = store().await;
-        store.create_domain("example.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
         let account = store
             .create_account(NewAccount {
-                address: "mini@example.de".into(),
+                address: "mini@example.org".into(),
                 display_name: String::new(),
                 password: None,
                 role: Role::User,

@@ -509,17 +509,17 @@ mod tests {
             level,
             target: "uwumail_smtp".into(),
             message: message.into(),
-            fields: vec![("login".into(), "leni@example.de".into())],
+            fields: vec![("login".into(), "leni@example.org".into())],
         }
     }
 
     #[test]
     fn switching_on_needs_the_privacy_consent() {
-        assert!(LokiConfig::default().target("mail.example.de").unwrap().is_none(), "off by default");
+        assert!(LokiConfig::default().target("mail.example.org").unwrap().is_none(), "off by default");
         let without = LokiConfig { privacy_consent: false, ..config() };
-        assert!(without.target("mail.example.de").unwrap_err().contains("privacy_consent"));
-        assert!(without.connection("mail.example.de").is_ok(), "a test line needs no consent");
-        assert!(config().target("mail.example.de").unwrap().is_some());
+        assert!(without.target("mail.example.org").unwrap_err().contains("privacy_consent"));
+        assert!(without.connection("mail.example.org").is_ok(), "a test line needs no consent");
+        assert!(config().target("mail.example.org").unwrap().is_some());
     }
 
     #[test]
@@ -565,7 +565,7 @@ mod tests {
         assert_eq!(loki.status().queued, 0);
 
         let target = LokiConfig { level: "warn".into(), gateway: false, ..config() };
-        loki.set_target(target.target("mail.example.de").unwrap());
+        loki.set_target(target.target("mail.example.org").unwrap());
         loki.offer(&line(LogSource::Server, "info", "too chatty"));
         loki.offer(&line(LogSource::Server, "warn", "failed imap login"));
         loki.offer(&line(LogSource::Gateway, "error", "not asked for"));
@@ -587,7 +587,7 @@ mod tests {
     #[test]
     fn lines_go_out_as_the_servers_json_with_labels() {
         let target =
-            LokiConfig { labels: vec!["env=production".into()], ..config() }.connection("mail.example.de").unwrap();
+            LokiConfig { labels: vec!["env=production".into()], ..config() }.connection("mail.example.org").unwrap();
         let body: Value = serde_json::from_slice(&push_body(
             &target,
             &[
@@ -603,7 +603,7 @@ mod tests {
         assert_eq!(
             gateway["stream"],
             json!({
-                "app": "uwumail", "instance": "mail.example.de", "source": "gateway", "level": "info", "env": "production"
+                "app": "uwumail", "instance": "mail.example.org", "source": "gateway", "level": "info", "env": "production"
             })
         );
         let server = &streams[1];
@@ -612,7 +612,7 @@ mod tests {
         let text: Value = serde_json::from_str(server["values"][0][1].as_str().unwrap()).unwrap();
         assert_eq!(
             text,
-            json!({ "level": "WARN", "fields": { "message": "failed imap login", "login": "leni@example.de" } })
+            json!({ "level": "WARN", "fields": { "message": "failed imap login", "login": "leni@example.org" } })
         );
     }
 
@@ -658,7 +658,7 @@ mod tests {
         let (url, mut received) = fake_loki(vec![503, 204]).await;
         let loki = Loki::new();
         let config = LokiConfig { url, username: "u".into(), password: "p".into(), tenant: "home".into(), ..config() };
-        loki.set_target(config.target("mail.example.de").unwrap());
+        loki.set_target(config.target("mail.example.org").unwrap());
         let (_stop, stop) = watch::channel(false);
         tokio::spawn(loki.clone().run(stop));
         loki.offer(&line(LogSource::Server, "warn", "failed imap login"));

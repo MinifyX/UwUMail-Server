@@ -416,10 +416,10 @@ mod tests {
     use crate::{NewAccount, Role};
 
     async fn account(store: &Store) -> i64 {
-        store.create_domain("example.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
         store
             .create_account(NewAccount {
-                address: "mini@example.de".into(),
+                address: "mini@example.org".into(),
                 display_name: "Mini".into(),
                 password: None,
                 role: Role::User,
@@ -433,7 +433,7 @@ mod tests {
 
     fn message(id: &str, references: &str, subject: &str, body: &str) -> Vec<u8> {
         let mut raw = format!(
-            "From: Nyu <nyu@example.org>\r\nTo: mini@example.de\r\nSubject: {subject}\r\nMessage-ID: <{id}>\r\n"
+            "From: Nyu <nyu@example.net>\r\nTo: mini@example.org\r\nSubject: {subject}\r\nMessage-ID: <{id}>\r\n"
         );
         if !references.is_empty() {
             raw.push_str(&format!("In-Reply-To: <{references}>\r\nReferences: <{references}>\r\n"));
@@ -480,7 +480,7 @@ mod tests {
         assert_eq!((inbox_box.total_emails, inbox_box.unread_emails), (3, 3));
 
         assert_eq!(store.search_emails(id, "thunfisch").await.unwrap(), vec![first.id]);
-        assert_eq!(store.search_emails(id, "nyu@example.org").await.unwrap().len(), 3);
+        assert_eq!(store.search_emails(id, "nyu@example.net").await.unwrap().len(), 3);
 
         let listed = store.emails_in_mailbox(inbox_box.id, 10).await.unwrap();
         assert_eq!(listed.len(), 3);
@@ -500,10 +500,10 @@ mod tests {
     #[tokio::test]
     async fn quota_is_enforced() {
         let (store, _dir) = store().await;
-        store.create_domain("example.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
         let account = store
             .create_account(NewAccount {
-                address: "tiny@example.de".into(),
+                address: "tiny@example.org".into(),
                 display_name: String::new(),
                 password: None,
                 role: Role::User,
@@ -522,7 +522,7 @@ mod tests {
         let (store, _dir) = store().await;
         let id = account(&store).await;
         let email = store.ingest(inbox(id, message("a@x", "", "weg damit", ""))).await.unwrap();
-        store.delete_account("mini@example.de").await.unwrap();
+        store.delete_account("mini@example.org").await.unwrap();
         assert_eq!(store.collect_garbage(0).await.unwrap(), 1);
         assert!(matches!(store.blob(&email.blob).await, Err(StoreError::NotFound(_))));
     }

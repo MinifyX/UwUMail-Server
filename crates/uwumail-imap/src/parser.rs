@@ -1042,8 +1042,8 @@ mod tests {
     #[test]
     fn logins_accept_atoms_quoted_strings_and_literals() {
         assert_eq!(
-            parse("a1 LOGIN mini@example.de \"geheim \\\"passwort\\\"\"\r\n"),
-            CommandBody::Login { username: "mini@example.de".into(), password: "geheim \"passwort\"".into() }
+            parse("a1 LOGIN mini@example.org \"geheim \\\"passwort\\\"\"\r\n"),
+            CommandBody::Login { username: "mini@example.org".into(), password: "geheim \"passwort\"".into() }
         );
         assert_eq!(
             parse("a2 LOGIN {4}\r\nmini {6}\r\nkatze!\r\n"),

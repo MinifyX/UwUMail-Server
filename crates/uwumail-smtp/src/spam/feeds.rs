@@ -414,7 +414,10 @@ mod tests {
         let subjects = "/[0-9]+.+Mio.+Rekord.+Jackpot/i\n/.*/i\n/Hallo/\n/(?=x)/\n";
         assert_eq!(parse(Kind::Subjects, subjects).unwrap(), ["/[0-9]+.+Mio.+Rekord.+Jackpot/i"]);
 
-        assert_eq!(parse(Kind::Domains, "0815.ru\nMailinator.COM\ncom\n").unwrap(), ["0815.ru", "mailinator.com"]);
+        assert_eq!(
+            parse(Kind::Domains, "0815.example\nTrashmail.EXAMPLE\ncom\n").unwrap(),
+            ["0815.example", "trashmail.example"]
+        );
         assert!(parse(Kind::Domains, "<html>error</html>").is_err(), "an error page empties nothing");
     }
 
@@ -460,8 +463,8 @@ mod tests {
         config.disposable = false;
         assert!(!feed("disposable").unwrap().active(&config));
 
-        let set: HashSet<String> = ["mailinator.com".to_owned()].into();
-        assert_eq!(listed(&set, "eu.mailinator.com"), Some("mailinator.com"));
-        assert_eq!(listed(&set, "mailinator.com.evil.example"), None);
+        let set: HashSet<String> = ["trashmail.example".to_owned()].into();
+        assert_eq!(listed(&set, "eu.trashmail.example"), Some("trashmail.example"));
+        assert_eq!(listed(&set, "trashmail.example.evil.example"), None);
     }
 }

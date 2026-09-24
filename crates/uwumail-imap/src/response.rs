@@ -414,10 +414,10 @@ mod tests {
     }
 
     const MESSAGE: &str = "Date: Thu, 17 Sep 2026 10:00:00 +0200\r\n\
-From: Nyu <nyu@example.org>\r\n\
-To: Mini <mini@example.de>, leni@example.de\r\n\
+From: Nyu <nyu@example.net>\r\n\
+To: Mini <mini@example.org>, leni@example.org\r\n\
 Subject: Bilder\r\n\
-Message-ID: <1@example.org>\r\n\
+Message-ID: <1@example.net>\r\n\
 Content-Type: multipart/mixed; boundary=b\r\n\
 \r\n\
 --b\r\n\
@@ -438,9 +438,9 @@ iVBORw0KGgo=\r\n\
         let root = mime::parse(raw);
         assert_eq!(
             written(|o| envelope(o, raw, &root.header)),
-            "(\"Thu, 17 Sep 2026 10:00:00 +0200\" \"Bilder\" ((\"Nyu\" NIL \"nyu\" \"example.org\")) \
-((\"Nyu\" NIL \"nyu\" \"example.org\")) ((\"Nyu\" NIL \"nyu\" \"example.org\")) \
-((\"Mini\" NIL \"mini\" \"example.de\")(NIL NIL \"leni\" \"example.de\")) NIL NIL NIL \"<1@example.org>\")"
+            "(\"Thu, 17 Sep 2026 10:00:00 +0200\" \"Bilder\" ((\"Nyu\" NIL \"nyu\" \"example.net\")) \
+((\"Nyu\" NIL \"nyu\" \"example.net\")) ((\"Nyu\" NIL \"nyu\" \"example.net\")) \
+((\"Mini\" NIL \"mini\" \"example.org\")(NIL NIL \"leni\" \"example.org\")) NIL NIL NIL \"<1@example.net>\")"
         );
         assert_eq!(
             written(|o| body_structure(o, raw, &root, true)),
@@ -464,7 +464,7 @@ iVBORw0KGgo=\r\n\
         assert_eq!(get(section(vec![2], Some(SectionText::Mime))).lines().count(), 4);
         assert_eq!(
             get(section(vec![], Some(SectionText::HeaderFields(vec!["subject".into(), "FROM".into()])))),
-            "From: Nyu <nyu@example.org>\r\nSubject: Bilder\r\n\r\n"
+            "From: Nyu <nyu@example.net>\r\nSubject: Bilder\r\n\r\n"
         );
         assert!(get(section(vec![], Some(SectionText::Text))).starts_with("--b\r\n"));
         assert!(section_bytes(raw, &root, &section(vec![3], None)).is_none());

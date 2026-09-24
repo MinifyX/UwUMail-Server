@@ -374,7 +374,7 @@ mod tests {
             score: Some(score),
             hits: vec![SpamLogHit { rule: "BAYES_SPAM".into(), points: 3.5, detail: Some("92 %".into()) }],
             recipients: vec![SpamLogRecipient {
-                address: "nyu@example.de".into(),
+                address: "nyu@example.org".into(),
                 action: action.as_str().into(),
                 mailbox: action.held_back().then(|| "junk".into()),
             }],
@@ -385,7 +385,7 @@ mod tests {
     #[tokio::test]
     async fn the_history_keeps_what_the_filter_decided_and_can_be_filtered() {
         let (store, _dir) = store().await;
-        store.add_spam_log(entry("a1", SpamAction::Delivered, "freund@example.org", 0.5)).await.unwrap();
+        store.add_spam_log(entry("a1", SpamAction::Delivered, "freund@example.net", 0.5)).await.unwrap();
         store.add_spam_log(entry("a2", SpamAction::Junk, "werbung@shop.example", 6.0)).await.unwrap();
         store.add_spam_log(entry("a3", SpamAction::Reject, "boese@spammer.example", 14.0)).await.unwrap();
 
@@ -393,7 +393,7 @@ mod tests {
         assert_eq!(all.len(), 3);
         assert_eq!(all[0].smtp_id, "a3", "newest first");
         assert_eq!(all[0].hits[0].rule, "BAYES_SPAM");
-        assert_eq!(all[0].recipients[0].address, "nyu@example.de");
+        assert_eq!(all[0].recipients[0].address, "nyu@example.org");
         assert_eq!(all[2].subject, None, "mail that arrived normally keeps no subject");
         assert!(all[0].subject.is_some(), "what was held back does");
 

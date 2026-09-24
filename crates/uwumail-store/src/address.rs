@@ -64,11 +64,11 @@ mod tests {
 
     #[test]
     fn normalizes_addresses() {
-        assert_eq!(normalize_address(" <Mini@Example.DE> ").unwrap(), ("mini".into(), "example.de".into()));
-        assert_eq!(normalize_address("nyu@bücher.de").unwrap(), ("nyu".into(), "xn--bcher-kva.de".into()));
+        assert_eq!(normalize_address(" <Mini@Example.org> ").unwrap(), ("mini".into(), "example.org".into()));
+        assert_eq!(normalize_address("nyu@bücher.example").unwrap(), ("nyu".into(), "xn--bcher-kva.example".into()));
         assert!(normalize_address("no-at-sign").is_err());
-        assert!(normalize_address("a b@example.de").is_err());
-        assert!(normalize_address("mini@-bad-.de").is_err());
+        assert!(normalize_address("a b@example.org").is_err());
+        assert!(normalize_address("mini@-bad-.example").is_err());
     }
 
     #[test]

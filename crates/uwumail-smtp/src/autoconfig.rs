@@ -643,7 +643,7 @@ mod tests {
 
     #[test]
     fn a_domain_is_read_out_of_an_address() {
-        assert_eq!(domain_of("Someone@Mail.DE").as_deref(), Some("mail.de"));
+        assert_eq!(domain_of("Someone@Mail.Example.ORG").as_deref(), Some("mail.example.org"));
         assert_eq!(domain_of("someone@icloud.com.").as_deref(), Some("icloud.com"));
         assert_eq!(domain_of("someone@localhost"), None);
         assert_eq!(domain_of("nonsense"), None);
@@ -651,10 +651,10 @@ mod tests {
 
     #[test]
     fn the_database_is_only_asked_when_it_is_allowed() {
-        let with = config_urls("mail.de", true);
+        let with = config_urls("mail.example.org", true);
         assert_eq!(with.len(), 3);
         assert!(with[2].starts_with(DATABASE));
-        let without = config_urls("mail.de", false);
+        let without = config_urls("mail.example.org", false);
         assert_eq!(without.len(), 2);
         assert!(without.iter().all(|url| !url.contains("thunderbird")));
     }

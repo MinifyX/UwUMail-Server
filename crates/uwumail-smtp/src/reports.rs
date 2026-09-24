@@ -276,22 +276,22 @@ mod tests {
     <date_range><begin>1757894400</begin><end>1757980799</end></date_range>
   </report_metadata>
   <policy_published>
-    <domain>example.de</domain><adkim>s</adkim><aspf>s</aspf><p>quarantine</p><sp>quarantine</sp><pct>100</pct>
+    <domain>example.org</domain><adkim>s</adkim><aspf>s</aspf><p>quarantine</p><sp>quarantine</sp><pct>100</pct>
   </policy_published>
   <record>
     <row>
       <source_ip>192.0.2.10</source_ip><count>12</count>
       <policy_evaluated><disposition>none</disposition><dkim>pass</dkim><spf>fail</spf></policy_evaluated>
     </row>
-    <identifiers><header_from>example.de</header_from></identifiers>
-    <auth_results><dkim><domain>example.de</domain><result>pass</result><selector>uwu202609e</selector></dkim></auth_results>
+    <identifiers><header_from>example.org</header_from></identifiers>
+    <auth_results><dkim><domain>example.org</domain><result>pass</result><selector>uwu202609e</selector></dkim></auth_results>
   </record>
   <record>
     <row>
       <source_ip>198.51.100.7</source_ip><count>3</count>
       <policy_evaluated><disposition>quarantine</disposition><dkim>fail</dkim><spf>fail</spf></policy_evaluated>
     </row>
-    <identifiers><header_from>example.de</header_from></identifiers>
+    <identifiers><header_from>example.org</header_from></identifiers>
     <auth_results><spf><domain>spammer.example</domain><result>pass</result></spf></auth_results>
   </record>
 </feedback>"#;
@@ -304,15 +304,15 @@ mod tests {
       "policies": [{
         "policy": {
           "policy-type": "sts",
-          "policy-string": ["version: STSv1", "mode: testing", "mx: mail.example.de", "max_age: 86400"],
-          "policy-domain": "example.de",
-          "mx-host": ["mail.example.de"]
+          "policy-string": ["version: STSv1", "mode: testing", "mx: mail.example.org", "max_age: 86400"],
+          "policy-domain": "example.org",
+          "mx-host": ["mail.example.org"]
         },
         "summary": { "total-successful-session-count": 5326, "total-failure-session-count": 303 },
         "failure-details": [{
           "result-type": "certificate-expired",
           "sending-mta-ip": "2001:db8:abcd:0012::1",
-          "receiving-mx-hostname": "Mail.Example.de.",
+          "receiving-mx-hostname": "Mail.Example.org.",
           "failed-session-count": 100
         }, {
           "result-type": "starttls-not-supported",
@@ -329,7 +329,7 @@ mod tests {
     #[test]
     fn dmarc_reports_become_rows() {
         let report = Report::parse_xml(DMARC_XML.as_bytes()).unwrap();
-        let parsed = dmarc_report("example.de", report.clone(), true, DMARC_NOW).unwrap();
+        let parsed = dmarc_report("example.org", report.clone(), true, DMARC_NOW).unwrap();
         assert_eq!((parsed.organization.as_str(), parsed.policy.as_str()), ("google.com", "quarantine"));
         assert_eq!((parsed.begin_at, parsed.end_at), (1_757_894_400, 1_757_980_799));
         assert_eq!(parsed.rows.len(), 2);
@@ -341,9 +341,9 @@ mod tests {
                 dkim_aligned: true,
                 spf_aligned: false,
                 disposition: "none".into(),
-                header_from: "example.de".into(),
+                header_from: "example.org".into(),
                 // What the reporter checked, which used to be dropped on the floor.
-                dkim_domain: Some("example.de".into()),
+                dkim_domain: Some("example.org".into()),
                 dkim_selector: Some("uwu202609e".into()),
                 dkim_result: Some("pass".into()),
                 ..Default::default()
@@ -354,12 +354,12 @@ mod tests {
         // the mail is not aligned. Without these fields nothing could say that.
         assert_eq!(parsed.rows[1].spf_domain.as_deref(), Some("spammer.example"));
         assert_eq!(parsed.rows[1].spf_result.as_deref(), Some("pass"));
-        assert_eq!(parsed.reported_domain.as_deref(), Some("example.de"));
+        assert_eq!(parsed.reported_domain.as_deref(), Some("example.org"));
         assert_eq!(parsed.alignment.as_deref(), Some("adkim=strict aspf=strict"));
         assert_eq!(parsed.subdomain_policy.as_deref(), Some("quarantine"));
         assert_eq!(parsed.contact.as_deref(), Some("noreply-dmarc-support@google.com"));
         assert!(dmarc_report("other.example", report.clone(), true, DMARC_NOW).is_err(), "not our domain");
-        assert!(dmarc_report("example.de", report, true, DMARC_NOW + 500 * 24 * 3600).is_err(), "far too old");
+        assert!(dmarc_report("example.org", report, true, DMARC_NOW + 500 * 24 * 3600).is_err(), "far too old");
     }
 
     #[test]
@@ -376,13 +376,13 @@ mod tests {
     #[test]
     fn tls_reports_keep_the_failures() {
         let report = TlsReport::parse_json(TLS_JSON.as_bytes()).unwrap();
-        let parsed = tls_report("example.de", report.clone(), false, TLS_NOW).unwrap();
+        let parsed = tls_report("example.org", report.clone(), false, TLS_NOW).unwrap();
         assert_eq!((parsed.successful, parsed.failed), (5326, 303));
         assert_eq!(parsed.organization, "Company-X");
         assert_eq!(parsed.failures.len(), 2);
         assert_eq!(parsed.failures[0].result_type, "certificate-expired");
-        assert_eq!(parsed.failures[0].mx_host, "mail.example.de");
-        assert_eq!(parsed.failures[1].mx_host, "mail.example.de", "falls back to the policy's MX");
+        assert_eq!(parsed.failures[0].mx_host, "mail.example.org");
+        assert_eq!(parsed.failures[1].mx_host, "mail.example.org", "falls back to the policy's MX");
         assert_eq!(parsed.failures[1].sending_ip, "2001:db8:abcd:13::1");
         assert!(parsed.begin_at > 1_700_000_000 && parsed.end_at > parsed.begin_at);
         assert!(tls_report("other.example", report, false, TLS_NOW).is_err());

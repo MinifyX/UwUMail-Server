@@ -30,11 +30,11 @@ struct Server {
 async fn server() -> Server {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
-    store.create_domain("example.de").await.unwrap();
+    store.create_domain("example.org").await.unwrap();
     for user in ["mini", "nyu"] {
         store
             .create_account(NewAccount {
-                address: format!("{user}@example.de"),
+                address: format!("{user}@example.org"),
                 display_name: user.to_uppercase(),
                 password: Some(PASSWORD.into()),
                 role: Role::User,
@@ -47,7 +47,7 @@ async fn server() -> Server {
     let smtp = Smtp::new(
         store.clone(),
         SmtpSettings {
-            hostname: "mail.example.de".into(),
+            hostname: "mail.example.org".into(),
             smtp: SmtpConfig::default(),
             spam: Default::default(),
             delivery: DeliveryConfig::default(),
@@ -73,7 +73,7 @@ impl Server {
     async fn get(&self, uri: &str, login: &str) -> (StatusCode, Vec<u8>) {
         let request = Request::get(uri)
             .header(header::AUTHORIZATION, basic(login, PASSWORD))
-            .header(header::HOST, "mail.example.de")
+            .header(header::HOST, "mail.example.org")
             .body(Body::empty())
             .unwrap();
         self.request(request).await
@@ -105,48 +105,48 @@ fn args<'a>(responses: &'a [Value], index: usize, name: &str) -> &'a Value {
 #[tokio::test(flavor = "multi_thread")]
 async fn session_and_authentication() {
     let server = server().await;
-    let (status, body) = server.get("/.well-known/jmap", "mini@example.de").await;
+    let (status, body) = server.get("/.well-known/jmap", "mini@example.org").await;
     assert_eq!(status, StatusCode::OK);
     let session: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(session["apiUrl"], "http://mail.example.de/jmap/api");
-    assert_eq!(session["username"], "mini@example.de");
-    let account = server.account_id("mini@example.de").await;
+    assert_eq!(session["apiUrl"], "http://mail.example.org/jmap/api");
+    assert_eq!(session["username"], "mini@example.org");
+    let account = server.account_id("mini@example.org").await;
     assert_eq!(session["primaryAccounts"]["urn:ietf:params:jmap:mail"], account);
 
     let wrong = Request::get("/jmap/session")
-        .header(header::AUTHORIZATION, basic("mini@example.de", "nope"))
+        .header(header::AUTHORIZATION, basic("mini@example.org", "nope"))
         .body(Body::empty())
         .unwrap();
     assert_eq!(server.request(wrong).await.0, StatusCode::UNAUTHORIZED);
     let missing = Request::get("/jmap/session").body(Body::empty()).unwrap();
     assert_eq!(server.request(missing).await.0, StatusCode::UNAUTHORIZED);
 
-    let other = server.account_id("nyu@example.de").await;
-    let responses = server.api("mini@example.de", json!([["Mailbox/get", { "accountId": other }, "0"]])).await;
+    let other = server.account_id("nyu@example.org").await;
+    let responses = server.api("mini@example.org", json!([["Mailbox/get", { "accountId": other }, "0"]])).await;
     assert_eq!(responses[0][1]["type"], "accountNotFound");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn remote_pictures_are_fetched_only_for_their_account_and_never_from_inside() {
     let server = server().await;
-    let (_, body) = server.get("/jmap/session", "mini@example.de").await;
+    let (_, body) = server.get("/jmap/session", "mini@example.org").await;
     let session: Value = serde_json::from_slice(&body).unwrap();
-    let account = server.account_id("mini@example.de").await;
+    let account = server.account_id("mini@example.org").await;
     assert_eq!(
         session["capabilities"]["urn:uwumail:jmap:remote"]["imageUrl"],
-        "http://mail.example.de/jmap/image/{accountId}?url={url}"
+        "http://mail.example.org/jmap/image/{accountId}?url={url}"
     );
 
     let inside = format!("/jmap/image/{account}?url=http%3A%2F%2F127.0.0.1%2Fadmin");
-    let (status, body) = server.get(&inside, "mini@example.de").await;
+    let (status, body) = server.get(&inside, "mini@example.org").await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{}", String::from_utf8_lossy(&body));
     let (status, _) =
-        server.get(&format!("/jmap/image/{account}?url=file%3A%2F%2F%2Fetc%2Fpasswd"), "mini@example.de").await;
+        server.get(&format!("/jmap/image/{account}?url=file%3A%2F%2F%2Fetc%2Fpasswd"), "mini@example.org").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let long = format!("/jmap/image/{account}?url=https%3A%2F%2Fpictures.example%2F{}", "a".repeat(5000));
-    assert_eq!(server.get(&long, "mini@example.de").await.0, StatusCode::BAD_REQUEST);
+    assert_eq!(server.get(&long, "mini@example.org").await.0, StatusCode::BAD_REQUEST);
 
-    let (status, _) = server.get(&inside, "nyu@example.de").await;
+    let (status, _) = server.get(&inside, "nyu@example.org").await;
     assert_eq!(status, StatusCode::NOT_FOUND, "not someone else's account");
     let anonymous = Request::get(inside.as_str()).body(Body::empty()).unwrap();
     assert_eq!(server.request(anonymous).await.0, StatusCode::UNAUTHORIZED);
@@ -154,24 +154,24 @@ async fn remote_pictures_are_fetched_only_for_their_account_and_never_from_insid
     // Sender pictures: announced, and never asked of a mail provider on a person's behalf.
     assert_eq!(
         session["capabilities"]["urn:uwumail:jmap:remote"]["pictureUrl"],
-        "http://mail.example.de/jmap/picture/{accountId}?email={email}"
+        "http://mail.example.org/jmap/picture/{accountId}?email={email}"
     );
     let person = format!("/jmap/picture/{account}?email=friend%40gmail.com");
-    assert_eq!(server.get(&person, "mini@example.de").await.0, StatusCode::NOT_FOUND);
-    assert_eq!(server.get(&person, "nyu@example.de").await.0, StatusCode::NOT_FOUND, "not someone else's account");
+    assert_eq!(server.get(&person, "mini@example.org").await.0, StatusCode::NOT_FOUND);
+    assert_eq!(server.get(&person, "nyu@example.org").await.0, StatusCode::NOT_FOUND, "not someone else's account");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn switching_jmap_off_shuts_the_door_at_once() {
     let server = server().await;
-    assert_eq!(server.get("/.well-known/jmap", "mini@example.de").await.0, StatusCode::OK);
+    assert_eq!(server.get("/.well-known/jmap", "mini@example.org").await.0, StatusCode::OK);
 
     // The right password is remembered for a while, because checking it is slow on purpose. The
     // switch has to hold anyway, or it would only hold once that memory runs out.
     server
         .store
         .update_account(
-            "mini@example.de",
+            "mini@example.org",
             uwumail_store::AccountUpdate {
                 protocols: Some(uwumail_store::Protocols { jmap: false, ..Default::default() }),
                 ..Default::default()
@@ -179,31 +179,31 @@ async fn switching_jmap_off_shuts_the_door_at_once() {
         )
         .await
         .unwrap();
-    assert_eq!(server.get("/.well-known/jmap", "mini@example.de").await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(server.get("/.well-known/jmap", "mini@example.org").await.0, StatusCode::UNAUTHORIZED);
 
     // And back on again, without anybody having to type a new password.
     server
         .store
         .update_account(
-            "mini@example.de",
+            "mini@example.org",
             uwumail_store::AccountUpdate { protocols: Some(uwumail_store::Protocols::default()), ..Default::default() },
         )
         .await
         .unwrap();
-    assert_eq!(server.get("/.well-known/jmap", "mini@example.de").await.0, StatusCode::OK);
+    assert_eq!(server.get("/.well-known/jmap", "mini@example.org").await.0, StatusCode::OK);
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn reading_searching_and_changing_mail() {
     let server = server().await;
-    let login = "mini@example.de";
+    let login = "mini@example.org";
     let account = server.account_id(login).await;
     let account_number: i64 = account[1..].parse().unwrap();
 
     let first = server.api(login, json!([["Email/get", { "accountId": account, "ids": [] }, "0"]])).await;
     let start_state = args(&first, 0, "Email/get")["state"].as_str().unwrap().to_owned();
 
-    let raw = "From: Nyu <nyu@example.org>\r\nTo: Mini <mini@example.de>\r\nSubject: Katzenfutter\r\nMessage-ID: <k1@example.org>\r\n\
+    let raw = "From: Nyu <nyu@example.net>\r\nTo: Mini <mini@example.org>\r\nSubject: Katzenfutter\r\nMessage-ID: <k1@example.net>\r\n\
 MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=x\r\n\r\n--x\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n\
 Bitte Thunfisch kaufen\r\n--x\r\nContent-Type: text/csv; name=liste.csv\r\nContent-Disposition: attachment; filename=liste.csv\r\n\r\n\
 Thunfisch;2\r\n--x--\r\n";
@@ -260,8 +260,8 @@ Thunfisch;2\r\n--x--\r\n";
     let email = &args(&responses, 1, "Email/get")["list"][0];
     let email_id = email["id"].as_str().unwrap().to_owned();
     assert_eq!(email["subject"], "Katzenfutter");
-    assert_eq!(email["from"][0]["email"], "nyu@example.org");
-    assert_eq!(email["header:Message-ID:asMessageIds"], json!(["k1@example.org"]));
+    assert_eq!(email["from"][0]["email"], "nyu@example.net");
+    assert_eq!(email["header:Message-ID:asMessageIds"], json!(["k1@example.net"]));
     let text_part = email["textBody"][0]["partId"].as_str().unwrap();
     assert!(email["bodyValues"][text_part]["value"].as_str().unwrap().contains("Thunfisch kaufen"));
     assert_eq!(args(&responses, 2, "Thread/get")["list"][0]["emailIds"], json!([email_id]));
@@ -274,7 +274,7 @@ Thunfisch;2\r\n--x--\r\n";
         server.get(&format!("/jmap/download/{account}/{attachment_blob}/liste.csv?accept=text/csv"), login).await;
     assert_eq!(status, StatusCode::OK);
     assert!(String::from_utf8_lossy(&bytes).starts_with("Thunfisch;2"));
-    let (status, _) = server.get(&format!("/jmap/download/{account}/{attachment_blob}/x"), "nyu@example.de").await;
+    let (status, _) = server.get(&format!("/jmap/download/{account}/{attachment_blob}/x"), "nyu@example.org").await;
     assert_eq!(status, StatusCode::NOT_FOUND, "other accounts cannot download it");
 
     // Mark as read and archive.
@@ -325,9 +325,9 @@ Thunfisch;2\r\n--x--\r\n";
 #[tokio::test(flavor = "multi_thread")]
 async fn upload_import_and_send_like_the_uwumail_app() {
     let server = server().await;
-    let login = "mini@example.de";
+    let login = "mini@example.org";
     let account = server.account_id(login).await;
-    let nyu = server.account_id("nyu@example.de").await;
+    let nyu = server.account_id("nyu@example.org").await;
 
     let responses = server
         .api(login, json!([["Mailbox/get", { "accountId": account, "ids": null, "properties": ["id", "role"] }, "0"]]))
@@ -336,7 +336,7 @@ async fn upload_import_and_send_like_the_uwumail_app() {
     let sent_id = mailboxes.iter().find(|m| m["role"] == "sent").unwrap()["id"].as_str().unwrap().to_owned();
     let drafts_id = mailboxes.iter().find(|m| m["role"] == "drafts").unwrap()["id"].as_str().unwrap().to_owned();
 
-    let message = "From: Mini <mini@example.de>\r\nTo: Nyu <nyu@example.de>\r\nBcc: geheim@example.de\r\nSubject: Hallo Nyu\r\n\r\nMiau!\r\n";
+    let message = "From: Mini <mini@example.org>\r\nTo: Nyu <nyu@example.org>\r\nBcc: geheim@example.org\r\nSubject: Hallo Nyu\r\n\r\nMiau!\r\n";
     let upload = Request::post(format!("/jmap/upload/{account}/"))
         .header(header::AUTHORIZATION, basic(login, PASSWORD))
         .header(header::CONTENT_TYPE, "message/rfc822")
@@ -357,7 +357,7 @@ async fn upload_import_and_send_like_the_uwumail_app() {
         )
         .await;
     let identity = args(&responses, 0, "Identity/get")["list"][0].clone();
-    assert_eq!(identity["email"], "mini@example.de");
+    assert_eq!(identity["email"], "mini@example.org");
     let email_id = args(&responses, 1, "Email/import")["created"]["outgoing"]["id"].as_str().unwrap().to_owned();
 
     let responses = server
@@ -383,7 +383,7 @@ async fn upload_import_and_send_like_the_uwumail_app() {
     // Nyu got it, without the Bcc header.
     let responses = server
         .api(
-            "nyu@example.de",
+            "nyu@example.org",
             json!([
                 ["Email/query", { "accountId": nyu }, "0"],
                 ["Email/get", { "accountId": nyu, "#ids": { "resultOf": "0", "name": "Email/query", "path": "/ids" },
@@ -402,7 +402,7 @@ async fn upload_import_and_send_like_the_uwumail_app() {
             login,
             json!([["EmailSubmission/set", { "accountId": account, "create": { "x": {
                 "identityId": identity["id"], "emailId": email_id,
-                "envelope": { "mailFrom": { "email": "boss@bank.de" }, "rcptTo": [{ "email": "nyu@example.de" }] } } } }, "0"]]),
+                "envelope": { "mailFrom": { "email": "boss@bank.example" }, "rcptTo": [{ "email": "nyu@example.org" }] } } } }, "0"]]),
         )
         .await;
     assert_eq!(args(&responses, 0, "EmailSubmission/set")["notCreated"]["x"]["type"], "forbiddenMailFrom");
@@ -411,7 +411,7 @@ async fn upload_import_and_send_like_the_uwumail_app() {
 #[tokio::test(flavor = "multi_thread")]
 async fn drafts_vacation_and_push() {
     let server = server().await;
-    let login = "mini@example.de";
+    let login = "mini@example.org";
     let account = server.account_id(login).await;
     let responses = server
         .api(login, json!([["Mailbox/query", { "accountId": account, "filter": { "role": "drafts" } }, "0"]]))
@@ -429,8 +429,8 @@ async fn drafts_vacation_and_push() {
                 ["Email/set", { "accountId": account, "create": { "draft": {
                     "mailboxIds": { drafts.clone(): true },
                     "keywords": { "$draft": true },
-                    "from": [{ "name": "Mini", "email": "mini@example.de" }],
-                    "to": [{ "email": "nyu@example.de" }],
+                    "from": [{ "name": "Mini", "email": "mini@example.org" }],
+                    "to": [{ "email": "nyu@example.org" }],
                     "subject": "Entwurf",
                     "bodyValues": { "1": { "value": "Noch nicht fertig" } },
                     "textBody": [{ "partId": "1", "type": "text/plain" }]
@@ -459,21 +459,21 @@ async fn drafts_vacation_and_push() {
 #[tokio::test(flavor = "multi_thread")]
 async fn people_block_senders_on_the_server_like_the_uwumail_app() {
     let server = server().await;
-    let (_, body) = server.get("/.well-known/jmap", "mini@example.de").await;
+    let (_, body) = server.get("/.well-known/jmap", "mini@example.org").await;
     let session: Value = serde_json::from_slice(&body).unwrap();
-    let account = server.account_id("mini@example.de").await;
+    let account = server.account_id("mini@example.org").await;
     assert!(session["capabilities"]["urn:uwumail:jmap:senders"].is_object(), "{session}");
     assert_eq!(session["accounts"][&account]["accountCapabilities"]["urn:uwumail:jmap:senders"]["maxEntries"], 1000);
 
     let responses = server
         .api(
-            "mini@example.de",
+            "mini@example.org",
             json!([
                 ["SenderList/set", { "accountId": account, "create": {
                     "a": { "list": "block", "value": "Werbung@Shop.example" },
                     "b": { "list": "block", "kind": "domain", "value": "@newsletter.example" },
                     "c": { "list": "block", "value": "not an address@" },
-                    "d": { "list": "maybe", "value": "x@example.org" },
+                    "d": { "list": "maybe", "value": "x@example.net" },
                 } }, "0"],
                 ["SenderList/get", { "accountId": account }, "1"],
             ]),
@@ -494,22 +494,22 @@ async fn people_block_senders_on_the_server_like_the_uwumail_app() {
     let entries = server
         .store
         .sender_list(uwumail_store::ListScope::Account(
-            server.store.account("mini@example.de").await.unwrap().unwrap().id,
+            server.store.account("mini@example.org").await.unwrap().unwrap().id,
         ))
         .await
         .unwrap();
     assert_eq!(entries.len(), 2);
-    let other = server.account_id("nyu@example.de").await;
-    let theirs = server.api("nyu@example.de", json!([["SenderList/get", { "accountId": other }, "0"]])).await;
+    let other = server.account_id("nyu@example.org").await;
+    let theirs = server.api("nyu@example.org", json!([["SenderList/get", { "accountId": other }, "0"]])).await;
     assert_eq!(args(&theirs, 0, "SenderList/get")["list"], json!([]));
     let id = set["created"]["a"]["id"].as_str().unwrap();
     let stolen =
-        server.api("nyu@example.de", json!([["SenderList/set", { "accountId": other, "destroy": [id] }, "0"]])).await;
+        server.api("nyu@example.org", json!([["SenderList/set", { "accountId": other, "destroy": [id] }, "0"]])).await;
     assert_eq!(args(&stolen, 0, "SenderList/set")["notDestroyed"][id]["type"], "notFound");
 
     let responses = server
         .api(
-            "mini@example.de",
+            "mini@example.org",
             json!([
                 ["SenderList/set", { "accountId": account, "ifInState": "stale", "destroy": [id] }, "0"],
                 ["SenderList/set", { "accountId": account, "destroy": [id], "update": { "l1": { "note": "x" } } }, "1"],
@@ -524,7 +524,7 @@ async fn people_block_senders_on_the_server_like_the_uwumail_app() {
     // Without the capability in `using` the methods are unknown.
     let body = json!({ "using": ["urn:ietf:params:jmap:core"], "methodCalls": [["SenderList/get", { "accountId": account }, "0"]] });
     let request = Request::post("/jmap/api")
-        .header(header::AUTHORIZATION, basic("mini@example.de", PASSWORD))
+        .header(header::AUTHORIZATION, basic("mini@example.org", PASSWORD))
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(body.to_string()))
         .unwrap();
@@ -536,7 +536,7 @@ async fn people_block_senders_on_the_server_like_the_uwumail_app() {
 #[tokio::test(flavor = "multi_thread")]
 async fn settings_sync_between_the_apps_the_webmail_and_the_portal() {
     let server = server().await;
-    let login = "mini@example.de";
+    let login = "mini@example.org";
     let account = server.account_id(login).await;
     let (_, body) = server.get("/.well-known/jmap", login).await;
     let session: Value = serde_json::from_slice(&body).unwrap();
@@ -553,7 +553,7 @@ async fn settings_sync_between_the_apps_the_webmail_and_the_portal() {
     assert_eq!(get["list"], json!([{ "id": "singleton", "values": {} }]));
     let empty_state = get["state"].clone();
 
-    let signature = json!({ "email": "mini@example.de", "name": "Arbeit", "html": "<p>Mini</p>", "forNew": true, "forReplies": false });
+    let signature = json!({ "email": "mini@example.org", "name": "Arbeit", "html": "<p>Mini</p>", "forNew": true, "forReplies": false });
     let responses = server
         .api(
             login,
@@ -563,7 +563,7 @@ async fn settings_sync_between_the_apps_the_webmail_and_the_portal() {
                     "values/conversations": false,
                     "values/undoSendSeconds": 10,
                     "values/trustedSenders:@shop.example": true,
-                    "values/linkDomains:example.net": true,
+                    "values/linkDomains:example.com": true,
                     "values/signature:work": signature.clone(),
                 } } }, "0"],
                 ["UserSettings/get", { "accountId": account, "ids": ["singleton", "other"] }, "1"],
@@ -584,7 +584,7 @@ async fn settings_sync_between_the_apps_the_webmail_and_the_portal() {
             "conversations": false,
             "undoSendSeconds": 10,
             "trustedSenders:@shop.example": true,
-            "linkDomains:example.net": true,
+            "linkDomains:example.com": true,
             "signature:work": signature,
         })
     );
@@ -638,7 +638,7 @@ async fn settings_sync_between_the_apps_the_webmail_and_the_portal() {
     assert_eq!(set["updated"], json!({ "singleton": null }), "{set}");
     assert_eq!(responses[1][1]["type"], "stateMismatch", "the state moved with the first call");
     let values = &args(&responses, 2, "UserSettings/get")["list"][0]["values"];
-    assert_eq!(values, &json!({ "conversations": false, "undoSendSeconds": 10, "linkDomains:example.net": true }));
+    assert_eq!(values, &json!({ "conversations": false, "undoSendSeconds": 10, "linkDomains:example.com": true }));
     assert!(!server.store.preferences(id).await.unwrap().contains_key("theme"));
 
     // Limits: one value too large, too many keys.
@@ -689,7 +689,7 @@ async fn settings_sync_between_the_apps_the_webmail_and_the_portal() {
     assert_eq!(get["list"][0]["values"]["senderPictures"], false);
 
     // Somebody else's settings are out of reach.
-    let other = server.account_id("nyu@example.de").await;
+    let other = server.account_id("nyu@example.org").await;
     let responses = server
         .api(
             login,
@@ -701,7 +701,7 @@ async fn settings_sync_between_the_apps_the_webmail_and_the_portal() {
         .await;
     assert_eq!(responses[0][1]["type"], "accountNotFound");
     assert_eq!(responses[1][1]["type"], "accountNotFound");
-    let theirs = server.api("nyu@example.de", json!([["UserSettings/get", { "accountId": other }, "0"]])).await;
+    let theirs = server.api("nyu@example.org", json!([["UserSettings/get", { "accountId": other }, "0"]])).await;
     assert_eq!(args(&theirs, 0, "UserSettings/get")["list"][0]["values"], json!({}));
 }
 
@@ -710,7 +710,7 @@ async fn settings_sync_between_the_apps_the_webmail_and_the_portal() {
 /// the machine running the tests is.
 async fn open_push(router: Router, types: &str) -> tokio::task::JoinHandle<String> {
     let request = Request::get(format!("/jmap/eventsource/?types={types}&closeafter=state&ping=0"))
-        .header(header::AUTHORIZATION, basic("mini@example.de", PASSWORD))
+        .header(header::AUTHORIZATION, basic("mini@example.org", PASSWORD))
         .body(Body::empty())
         .unwrap();
     let response = router.oneshot(request).await.unwrap();
@@ -723,7 +723,7 @@ async fn open_push(router: Router, types: &str) -> tokio::task::JoinHandle<Strin
 #[tokio::test(flavor = "multi_thread")]
 async fn a_settings_change_is_pushed_with_its_state() {
     let server = server().await;
-    let login = "mini@example.de";
+    let login = "mini@example.org";
     let account = server.account_id(login).await;
     let router = server.router.clone();
     let push = open_push(router, "UserSettings").await;
@@ -742,17 +742,17 @@ async fn a_settings_change_is_pushed_with_its_state() {
 #[tokio::test(flavor = "multi_thread")]
 async fn the_webmail_sees_the_settings_capability_too() {
     let server = server().await;
-    let id = server.store.account("mini@example.de").await.unwrap().unwrap().id;
+    let id = server.store.account("mini@example.org").await.unwrap().unwrap().id;
     let web_session = server.store.create_web_session(id, 3600, "", "").await.unwrap();
     let request = Request::get("/jmap/session")
         .header(header::COOKIE, format!("{}={}", uwumail_jmap::auth::PLAIN_SESSION_COOKIE, web_session.token))
-        .header(header::HOST, "mail.example.de")
+        .header(header::HOST, "mail.example.org")
         .body(Body::empty())
         .unwrap();
     let (status, body) = server.request(request).await;
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
     let session: Value = serde_json::from_slice(&body).unwrap();
     assert!(session["capabilities"]["urn:uwumail:jmap:settings"].is_object(), "{session}");
-    let account = server.account_id("mini@example.de").await;
+    let account = server.account_id("mini@example.org").await;
     assert_eq!(session["accounts"][&account]["accountCapabilities"]["urn:uwumail:jmap:settings"]["maxKeys"], 5000);
 }

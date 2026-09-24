@@ -5,9 +5,9 @@ use uwumail_store::{IngestRequest, MailboxRole, MailboxTarget, NewAccount, Role,
 
 async fn server(dir: &std::path::Path) -> (Store, i64) {
     let store = Store::open(dir).await.unwrap();
-    store.create_domain("example.de").await.unwrap();
+    store.create_domain("example.org").await.unwrap();
     let new = NewAccount {
-        address: "mini@example.de".into(),
+        address: "mini@example.org".into(),
         display_name: "Mini".into(),
         password: Some("katzenpfote-123".into()),
         role: Role::User,
@@ -28,7 +28,7 @@ async fn deliver(store: &Store, account: i64, subject: &str) {
         body.push_str(&hex::encode(block));
         body.push_str("\r\n");
     }
-    let raw = format!("From: nyu@example.org\r\nTo: mini@example.de\r\nSubject: {subject}\r\n\r\n{body}\r\n");
+    let raw = format!("From: nyu@example.net\r\nTo: mini@example.org\r\nSubject: {subject}\r\n\r\n{body}\r\n");
     let request = IngestRequest {
         account_id: account,
         raw: raw.into_bytes(),
@@ -53,13 +53,13 @@ async fn backups_are_incremental_encrypted_and_restorable() {
     let repo_dir = dir.path().join("repo");
     let open = |key: Option<RepoKey>, now: i64| Repository::open(Storage::Local(repo_dir.clone()), key, now);
     let repo = open(Some(key.clone()), 1_000).await.unwrap();
-    let first = uwumail_backup::backup(&store, &repo, "mail.example.de", "0.1.0", Retention::default(), 1_000_000)
+    let first = uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 1_000_000)
         .await
         .unwrap();
     assert!(first.uploaded > 0);
 
     deliver(&store, mini, "Elf").await;
-    let second = uwumail_backup::backup(&store, &repo, "mail.example.de", "0.1.0", Retention::default(), 1_086_400)
+    let second = uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 1_086_400)
         .await
         .unwrap();
     assert!(second.uploaded * 3 < first.uploaded, "only what changed: {} after {}", second.uploaded, first.uploaded);
@@ -84,16 +84,16 @@ async fn backups_are_incremental_encrypted_and_restorable() {
     let typed = RepoKey::from_recovery_text(&key.recovery_text()).unwrap();
     let repo = open(Some(typed), 0).await.unwrap();
     let manifest = uwumail_backup::restore(&repo, &second.snapshot, &restored_dir).await.unwrap();
-    assert_eq!(manifest.hostname, "mail.example.de");
+    assert_eq!(manifest.hostname, "mail.example.org");
     assert_eq!(std::fs::read(restored_dir.join("tls/key.pem")).unwrap(), b"not really a key");
     let restored = Store::open(&restored_dir).await.unwrap();
-    let account = restored.authenticate("mini@example.de", "katzenpfote-123").await.unwrap().unwrap();
+    let account = restored.authenticate("mini@example.org", "katzenpfote-123").await.unwrap().unwrap();
     let inbox =
         restored.mailboxes(account.id).await.unwrap().into_iter().find(|m| m.role == Some(MailboxRole::Inbox)).unwrap();
     let emails = restored.emails_in_mailbox(inbox.id, 10).await.unwrap();
     assert_eq!(emails.len(), 10, "the first page of eleven");
     let blob = uwumail_store::BlobHash::parse(&emails[0].blob).unwrap();
-    assert!(restored.blob(&blob).await.unwrap().starts_with(b"From: nyu@example.org"));
+    assert!(restored.blob(&blob).await.unwrap().starts_with(b"From: nyu@example.net"));
     assert!(uwumail_backup::restore(&repo, &second.snapshot, &restored_dir).await.is_err(), "never over a server");
 }
 
@@ -105,10 +105,10 @@ async fn unencrypted_backups_work_too() {
     let repo = Repository::open(Storage::Local(dir.path().join("repo")), None, 0).await.unwrap();
     assert!(!repo.config.encrypted);
     let report =
-        uwumail_backup::backup(&store, &repo, "mail.example.de", "0.1.0", Retention::default(), 5).await.unwrap();
+        uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 5).await.unwrap();
     let restored = dir.path().join("restored");
     uwumail_backup::restore(&repo, &report.snapshot, &restored).await.unwrap();
-    assert!(Store::open(&restored).await.unwrap().account("mini@example.de").await.unwrap().is_some());
+    assert!(Store::open(&restored).await.unwrap().account("mini@example.org").await.unwrap().is_some());
 }
 
 fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
@@ -133,7 +133,7 @@ async fn a_backup_server_cannot_crash_a_backup_with_what_it_lists() {
     deliver(&store, mini, "Eins").await;
     let repo_dir = dir.path().join("repo");
     let repo = Repository::open(Storage::Local(repo_dir.clone()), Some(RepoKey::generate()), 0).await.unwrap();
-    uwumail_backup::backup(&store, &repo, "mail.example.de", "0.1.0", Retention::default(), 5).await.unwrap();
+    uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 5).await.unwrap();
 
     // A one-byte name, a name that is no id, a prefix that is no prefix and a snapshot that is none.
     for stray in ["data/ab/x", "data/ab/é", "data/z/zz", "snapshots/x"] {
@@ -142,7 +142,7 @@ async fn a_backup_server_cannot_crash_a_backup_with_what_it_lists() {
         std::fs::write(&path, b"not ours").unwrap();
     }
     let none = Retention { daily: 0, weekly: 0, monthly: 0 };
-    let report = uwumail_backup::backup(&store, &repo, "mail.example.de", "0.1.0", none, 1_000_000).await.unwrap();
+    let report = uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", none, 1_000_000).await.unwrap();
     assert_eq!(repo.snapshots().await.unwrap(), vec![report.snapshot.clone()], "the stray snapshot is not one");
     assert!(repo_dir.join("data/ab/x").exists(), "what is not ours is left alone");
     assert!(matches!(repo.manifest("../uwumail-backup.json").await, Err(uwumail_backup::Error::Config(_))));
@@ -169,7 +169,7 @@ async fn a_backup_server_cannot_turn_encryption_off_or_swap_what_it_holds() {
     let repo_dir = dir.path().join("repo");
     let storage = || Storage::Local(repo_dir.clone());
     let repo = Repository::open(storage(), Some(key.clone()), 0).await.unwrap();
-    let first = uwumail_backup::backup(&store, &repo, "mail.example.de", "0.1.0", Retention::default(), 1_000_000)
+    let first = uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 1_000_000)
         .await
         .unwrap();
 
@@ -203,7 +203,7 @@ async fn a_backup_server_cannot_turn_encryption_off_or_swap_what_it_holds() {
     assert!(restoring("genuine").await.is_ok());
 
     // An authentic manifest, under another snapshot's name.
-    let second = uwumail_backup::backup(&store, &repo, "mail.example.de", "0.1.0", Retention::default(), 1_086_400)
+    let second = uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 1_086_400)
         .await
         .unwrap();
     let snapshots = repo_dir.join("snapshots");

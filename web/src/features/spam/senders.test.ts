@@ -10,7 +10,7 @@ describe("guessSenderKind", () => {
     expect(guessSenderKind("@example.com")).toBe("domain");
     expect(guessSenderKind("*.mail.example.com")).toBe("host");
     expect(guessSenderKind("example.com")).toBe("domain");
-    expect(guessSenderKind("*.ru")).toBe("pattern");
+    expect(guessSenderKind("*.test")).toBe("pattern");
     expect(guessSenderKind("*newsletter*")).toBe("pattern");
     expect(guessSenderKind("*@example.com")).toBe("pattern");
     expect(guessSenderKind("*.mail.example.com*")).toBe("pattern");

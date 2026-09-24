@@ -15,10 +15,10 @@ use uwumail_web::{CSRF_HEADER, Web, WebSettings};
 async fn portal() -> (Router, Store, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
-    store.create_domain("example.de").await.unwrap();
+    store.create_domain("example.org").await.unwrap();
     store
         .create_account(NewAccount {
-            address: "nyu@example.de".into(),
+            address: "nyu@example.org".into(),
             display_name: "Nyu".into(),
             password: Some("katzenpfote-123".into()),
             role: Role::Admin,
@@ -28,7 +28,7 @@ async fn portal() -> (Router, Store, tempfile::TempDir) {
         .await
         .unwrap();
     let settings = SmtpSettings {
-        hostname: "mail.example.de".into(),
+        hostname: "mail.example.org".into(),
         smtp: Default::default(),
         spam: Default::default(),
         delivery: Default::default(),
@@ -39,7 +39,7 @@ async fn portal() -> (Router, Store, tempfile::TempDir) {
     let web = Web::new(
         smtp,
         WebSettings {
-            hostname: "mail.example.de".into(),
+            hostname: "mail.example.org".into(),
             started: Instant::now(),
             logs: None,
             loki: None,
@@ -48,7 +48,7 @@ async fn portal() -> (Router, Store, tempfile::TempDir) {
             webmail: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
         },
     );
-    web.set_backups(uwumail_backup::Backups::new(store.clone(), "mail.example.de", "0.1.0"));
+    web.set_backups(uwumail_backup::Backups::new(store.clone(), "mail.example.org", "0.1.0"));
     (web.router(), store, dir)
 }
 
@@ -86,7 +86,7 @@ async fn call(
 #[tokio::test]
 async fn backup_settings_keep_their_secrets_on_the_server() {
     let (app, _store, _dir) = portal().await;
-    let body = json!({ "login": "nyu@example.de", "password": "katzenpfote-123" });
+    let body = json!({ "login": "nyu@example.org", "password": "katzenpfote-123" });
     let (_, login) = call(&app, "POST", "/api/auth/login", Some(body), None).await;
     let auth = (login["_cookie"].as_str().unwrap().to_owned(), login["csrfToken"].as_str().unwrap().to_owned());
 
@@ -96,7 +96,7 @@ async fn backup_settings_keep_their_secrets_on_the_server() {
 
     let settings = json!({
         "enabled": true, "hour": 2, "retention": { "daily": 7, "weekly": 4, "monthly": 6 }, "encrypted": true,
-        "target": { "host": "nas.example.de", "port": 22, "user": "backup", "path": "/volume1/uwumail", "method": "key" },
+        "target": { "host": "nas.example.org", "port": 22, "user": "backup", "path": "/volume1/uwumail", "method": "key" },
     });
     let (status, saved) = call(&app, "PUT", "/api/admin/backups", Some(settings.clone()), Some(&auth)).await;
     assert_eq!(status, StatusCode::OK, "{saved}");
@@ -112,7 +112,7 @@ async fn backup_settings_keep_their_secrets_on_the_server() {
 
     let with_password = json!({
         "enabled": true, "hour": 2, "retention": { "daily": 7, "weekly": 4, "monthly": 6 }, "encrypted": true,
-        "target": { "host": "nas.example.de", "port": 22, "user": "backup", "path": "/volume1/uwumail",
+        "target": { "host": "nas.example.org", "port": 22, "user": "backup", "path": "/volume1/uwumail",
                     "method": "password", "password": "Synology-geheim" },
     });
     let (_, changed) = call(&app, "PUT", "/api/admin/backups", Some(with_password), Some(&auth)).await;

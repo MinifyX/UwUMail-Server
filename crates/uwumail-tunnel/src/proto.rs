@@ -425,11 +425,11 @@ mod tests {
 
     #[test]
     fn servers_without_a_service_list_take_the_first_services() {
-        let old: Hello = serde_json::from_str(r#"{"version":1,"hostname":"mail.example.de","software":"x"}"#).unwrap();
+        let old: Hello = serde_json::from_str(r#"{"version":1,"hostname":"mail.example.org","software":"x"}"#).unwrap();
         assert_eq!(old.services(), Service::FIRST);
         let hello = Hello {
             version: VERSION,
-            hostname: "mail.example.de".into(),
+            hostname: "mail.example.org".into(),
             software: "x".into(),
             token: None,
             services: Some(Service::ALL.to_vec()),
@@ -442,7 +442,7 @@ mod tests {
 
     #[test]
     fn sides_from_before_the_control_stream_stay_quiet() {
-        let old: Hello = serde_json::from_str(r#"{"version":1,"hostname":"mail.example.de","software":"x"}"#).unwrap();
+        let old: Hello = serde_json::from_str(r#"{"version":1,"hostname":"mail.example.org","software":"x"}"#).unwrap();
         assert!(!old.control, "an older server does not read the control stream");
         let old: Welcome =
             serde_json::from_str(r#"{"version":1,"software":"x","addresses":[],"services":[],"outboundPorts":[]}"#)
@@ -481,7 +481,7 @@ mod tests {
     #[test]
     fn log_lines_travel_only_when_asked_and_stay_small() {
         let old: Hello =
-            serde_json::from_str(r#"{"version":1,"hostname":"mail.example.de","software":"x","control":true}"#)
+            serde_json::from_str(r#"{"version":1,"hostname":"mail.example.org","software":"x","control":true}"#)
                 .unwrap();
         assert!(!old.logs, "an older server did not ask for the gateway's log");
 

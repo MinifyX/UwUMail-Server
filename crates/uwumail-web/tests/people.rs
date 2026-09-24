@@ -14,7 +14,7 @@ use uwumail_web::{CSRF_HEADER, Web, WebSettings};
 
 fn smtp(store: Store) -> Smtp {
     let settings = SmtpSettings {
-        hostname: "mail.example.de".into(),
+        hostname: "mail.example.org".into(),
         smtp: Default::default(),
         spam: Default::default(),
         delivery: Default::default(),
@@ -41,11 +41,11 @@ impl Portal {
     async fn new() -> Portal {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path()).await.unwrap();
-        store.create_domain("example.de").await.unwrap();
-        store.create_domain("verein.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
+        store.create_domain("verein.example").await.unwrap();
         store
             .create_account(NewAccount {
-                address: "nyu@example.de".into(),
+                address: "nyu@example.org".into(),
                 display_name: "Nyu".into(),
                 password: Some("katzenpfote-123".into()),
                 role: Role::Admin,
@@ -57,7 +57,7 @@ impl Portal {
         let web = Web::new(
             smtp(store.clone()),
             WebSettings {
-                hostname: "mail.example.de".into(),
+                hostname: "mail.example.org".into(),
                 started: Instant::now(),
                 logs: None,
                 loki: None,
@@ -110,18 +110,18 @@ impl Portal {
 #[tokio::test]
 async fn invite_a_person_who_then_chooses_a_password() {
     let portal = Portal::new().await;
-    let nyu = portal.login("nyu@example.de", "katzenpfote-123").await;
+    let nyu = portal.login("nyu@example.org", "katzenpfote-123").await;
 
     let (status, _, created) = portal
         .request(
             "POST",
             "/api/admin/people",
-            Some(json!({ "address": "Leni@Verein.de", "name": "Leni", "quotaBytes": 1048576 })),
+            Some(json!({ "address": "Leni@Verein.example", "name": "Leni", "quotaBytes": 1048576 })),
             Some(&nyu),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED, "{created}");
-    assert_eq!(created["person"]["login"], "leni@verein.de");
+    assert_eq!(created["person"]["login"], "leni@verein.example");
     assert_eq!(created["person"]["status"], "invited");
     let path = created["link"]["path"].as_str().unwrap();
     let token = path.strip_prefix("/password/").unwrap();
@@ -130,7 +130,7 @@ async fn invite_a_person_who_then_chooses_a_password() {
     let (status, _, link) = portal.request("GET", &format!("/api/password-links/{token}"), None, None).await;
     assert_eq!(
         (status, link["login"].as_str(), link["purpose"].as_str()),
-        (StatusCode::OK, Some("leni@verein.de"), Some("invite"))
+        (StatusCode::OK, Some("leni@verein.example"), Some("invite"))
     );
     let (status, _, body) = portal
         .request("POST", &format!("/api/password-links/{token}"), Some(json!({ "password": "kurz" })), None)
@@ -147,11 +147,11 @@ async fn invite_a_person_who_then_chooses_a_password() {
         .await;
     assert_eq!(status, StatusCode::OK, "{session}");
     assert!(cookie.unwrap().starts_with("__Host-uwumail="), "choosing a password logs you in");
-    assert_eq!(session["account"]["login"], "leni@verein.de");
+    assert_eq!(session["account"]["login"], "leni@verein.example");
 
     let (status, _, body) = portal.request("GET", &format!("/api/password-links/{token}"), None, None).await;
     assert_eq!((status, body["code"].as_str()), (StatusCode::CONFLICT, Some("linkInvalid")));
-    let leni = portal.login("leni@verein.de", "Seifenblase-Wanderweg").await;
+    let leni = portal.login("leni@verein.example", "Seifenblase-Wanderweg").await;
 
     // People are for admins only.
     let (status, _, _) = portal.request("GET", "/api/admin/people", None, Some(&leni)).await;
@@ -161,11 +161,15 @@ async fn invite_a_person_who_then_chooses_a_password() {
     assert_eq!(status, StatusCode::OK);
     let statuses: Vec<_> =
         people.as_array().unwrap().iter().map(|p| (p["login"].clone(), p["status"].clone())).collect();
-    assert_eq!(statuses, vec![(json!("leni@verein.de"), json!("active")), (json!("nyu@example.de"), json!("active"))]);
+    assert_eq!(
+        statuses,
+        vec![(json!("leni@verein.example"), json!("active")), (json!("nyu@example.org"), json!("active"))]
+    );
 
     // A reset link for someone with a password, and the change log has seen it all.
-    let (status, _, reset) =
-        portal.request("POST", "/api/admin/people/leni@verein.de/password-link", Some(json!({})), Some(&nyu)).await;
+    let (status, _, reset) = portal
+        .request("POST", "/api/admin/people/leni@verein.example/password-link", Some(json!({})), Some(&nyu))
+        .await;
     assert_eq!(status, StatusCode::OK);
     let reset_token = reset["path"].as_str().unwrap().strip_prefix("/password/").unwrap().to_owned();
     let (_, _, link) = portal.request("GET", &format!("/api/password-links/{reset_token}"), None, None).await;
@@ -180,25 +184,25 @@ async fn invite_a_person_who_then_chooses_a_password() {
 #[tokio::test]
 async fn change_lock_out_trash_and_restore() {
     let portal = Portal::new().await;
-    let nyu = portal.login("nyu@example.de", "katzenpfote-123").await;
-    let new = json!({ "address": "ami@example.de", "name": "Ami", "password": "Kirschbluete-Tastatur" });
+    let nyu = portal.login("nyu@example.org", "katzenpfote-123").await;
+    let new = json!({ "address": "ami@example.org", "name": "Ami", "password": "Kirschbluete-Tastatur" });
     let (status, _, created) = portal.request("POST", "/api/admin/people", Some(new), Some(&nyu)).await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(created["link"], Value::Null);
 
     let (status, _, body) =
-        portal.request("PATCH", "/api/admin/people/nyu@example.de", Some(json!({ "admin": false })), Some(&nyu)).await;
+        portal.request("PATCH", "/api/admin/people/nyu@example.org", Some(json!({ "admin": false })), Some(&nyu)).await;
     assert_eq!((status, body["code"].as_str()), (StatusCode::CONFLICT, Some("lastAdmin")));
     let (status, _, body) = portal
-        .request("PATCH", "/api/admin/people/nyu@example.de", Some(json!({ "disabled": true })), Some(&nyu))
+        .request("PATCH", "/api/admin/people/nyu@example.org", Some(json!({ "disabled": true })), Some(&nyu))
         .await;
     assert_eq!((status, body["code"].as_str()), (StatusCode::CONFLICT, Some("notYourself")));
 
-    let ami = portal.login("ami@example.de", "Kirschbluete-Tastatur").await;
+    let ami = portal.login("ami@example.org", "Kirschbluete-Tastatur").await;
     let (status, _, person) = portal
         .request(
             "PATCH",
-            "/api/admin/people/ami@example.de",
+            "/api/admin/people/ami@example.org",
             Some(json!({ "disabled": true, "quotaBytes": 5000 })),
             Some(&nyu),
         )
@@ -209,57 +213,58 @@ async fn change_lock_out_trash_and_restore() {
     );
     let (_, _, session) = portal.request("GET", "/api/session", None, Some(&ami)).await;
     assert_eq!(session, Value::Null, "locking someone out ends their sessions");
-    assert!(portal.store.resolve_recipient("ami@example.de").await.unwrap().is_some(), "mail still arrives");
+    assert!(portal.store.resolve_recipient("ami@example.org").await.unwrap().is_some(), "mail still arrives");
 
-    portal.request("PATCH", "/api/admin/people/ami@example.de", Some(json!({ "disabled": false })), Some(&nyu)).await;
+    portal.request("PATCH", "/api/admin/people/ami@example.org", Some(json!({ "disabled": false })), Some(&nyu)).await;
     let (status, _, alias) = portal
         .request(
             "POST",
-            "/api/admin/people/ami@example.de/aliases",
-            Some(json!({ "address": "info@verein.de" })),
+            "/api/admin/people/ami@example.org/aliases",
+            Some(json!({ "address": "info@verein.example" })),
             Some(&nyu),
         )
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(alias["addresses"][1]["address"], "info@verein.de");
+    assert_eq!(alias["addresses"][1]["address"], "info@verein.example");
     let (status, _, _) = portal
         .request(
             "POST",
-            "/api/admin/people/nyu@example.de/aliases",
-            Some(json!({ "address": "info@verein.de" })),
+            "/api/admin/people/nyu@example.org/aliases",
+            Some(json!({ "address": "info@verein.example" })),
             Some(&nyu),
         )
         .await;
     assert_eq!(status, StatusCode::CONFLICT, "an address belongs to one person");
 
-    let send_as = json!({ "domains": ["verein.de"] });
+    let send_as = json!({ "domains": ["verein.example"] });
     let (status, _, allowed) =
-        portal.request("PUT", "/api/admin/people/nyu@example.de/send-as-domains", Some(send_as), Some(&nyu)).await;
-    assert_eq!((status, allowed["domains"].clone()), (StatusCode::OK, json!(["verein.de"])));
-    let (_, _, detail) = portal.request("GET", "/api/admin/people/nyu@example.de", None, Some(&nyu)).await;
-    assert_eq!(detail["sendAsDomains"], json!(["verein.de"]));
-    let nyu_id = portal.store.account("nyu@example.de").await.unwrap().unwrap().id;
-    assert!(portal.store.account_owns_address(nyu_id, "vorstand@verein.de").await.unwrap());
+        portal.request("PUT", "/api/admin/people/nyu@example.org/send-as-domains", Some(send_as), Some(&nyu)).await;
+    assert_eq!((status, allowed["domains"].clone()), (StatusCode::OK, json!(["verein.example"])));
+    let (_, _, detail) = portal.request("GET", "/api/admin/people/nyu@example.org", None, Some(&nyu)).await;
+    assert_eq!(detail["sendAsDomains"], json!(["verein.example"]));
+    let nyu_id = portal.store.account("nyu@example.org").await.unwrap().unwrap().id;
+    assert!(portal.store.account_owns_address(nyu_id, "vorstand@verein.example").await.unwrap());
 
-    let (status, _, trashed) = portal.request("DELETE", "/api/admin/people/ami@example.de", None, Some(&nyu)).await;
+    let (status, _, trashed) = portal.request("DELETE", "/api/admin/people/ami@example.org", None, Some(&nyu)).await;
     assert_eq!((status, trashed["status"].as_str()), (StatusCode::OK, Some("deleted")));
     assert!(trashed["purgeAt"].as_i64().unwrap() > trashed["deletedAt"].as_i64().unwrap());
-    assert!(portal.store.resolve_recipient("info@verein.de").await.unwrap().is_none());
-    let (status, _, _) = portal.request("DELETE", "/api/admin/people/nyu@example.de", None, Some(&nyu)).await;
+    assert!(portal.store.resolve_recipient("info@verein.example").await.unwrap().is_none());
+    let (status, _, _) = portal.request("DELETE", "/api/admin/people/nyu@example.org", None, Some(&nyu)).await;
     assert_eq!(status, StatusCode::CONFLICT);
 
     let (status, _, restored) =
-        portal.request("POST", "/api/admin/people/ami@example.de/restore", Some(json!({})), Some(&nyu)).await;
+        portal.request("POST", "/api/admin/people/ami@example.org/restore", Some(json!({})), Some(&nyu)).await;
     assert_eq!((status, restored["status"].as_str()), (StatusCode::OK, Some("active")));
-    let (status, _, _) =
-        portal.request("DELETE", "/api/admin/people/ami@example.de/aliases/info@verein.de", None, Some(&nyu)).await;
+    let (status, _, _) = portal
+        .request("DELETE", "/api/admin/people/ami@example.org/aliases/info@verein.example", None, Some(&nyu))
+        .await;
     assert_eq!(status, StatusCode::OK);
 
     let (status, _, body) = portal
         .request(
             "POST",
-            "/api/admin/people/ami@example.de/purge",
-            Some(json!({ "confirm": "ami@verein.de" })),
+            "/api/admin/people/ami@example.org/purge",
+            Some(json!({ "confirm": "ami@verein.example" })),
             Some(&nyu),
         )
         .await;
@@ -267,13 +272,13 @@ async fn change_lock_out_trash_and_restore() {
     let (status, _, _) = portal
         .request(
             "POST",
-            "/api/admin/people/ami@example.de/purge",
-            Some(json!({ "confirm": "AMI@example.de" })),
+            "/api/admin/people/ami@example.org/purge",
+            Some(json!({ "confirm": "AMI@example.org" })),
             Some(&nyu),
         )
         .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
-    assert!(portal.store.account("ami@example.de").await.unwrap().is_none());
+    assert!(portal.store.account("ami@example.org").await.unwrap().is_none());
 
     let (_, _, log) = portal.request("GET", "/api/admin/audit?limit=3", None, Some(&nyu)).await;
     let actions: Vec<_> = log.as_array().unwrap().iter().map(|r| r["action"].as_str().unwrap().to_owned()).collect();

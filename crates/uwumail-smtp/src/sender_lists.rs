@@ -217,7 +217,7 @@ mod tests {
             kind,
             value: value.into(),
             note: String::new(),
-            domain: matches!(scope, ListScope::Domain(_)).then(|| "example.de".into()),
+            domain: matches!(scope, ListScope::Domain(_)).then(|| "example.org".into()),
             scope,
             created_at: 0,
             created_by: String::new(),
@@ -230,16 +230,16 @@ mod tests {
     fn sender(from: &str, verified: bool) -> Sender {
         Sender {
             ip: Some("192.0.2.25".parse().unwrap()),
-            envelope: Some("bounces@lists.example.net".into()),
+            envelope: Some("bounces@lists.example.com".into()),
             from: Some(from.into()),
             from_verified: verified,
         }
     }
 
-    /// The decision in words, e.g. "junk example.net".
+    /// The decision in words, e.g. "junk example.com".
     fn decided(entries: Vec<SenderListEntry>, sender: &Sender) -> Option<String> {
-        let lists = Lists { entries, hosts: vec!["mx2.mail.example.org".into()] };
-        let decision = lists.decide(sender, LENI, "example.de");
+        let lists = Lists { entries, hosts: vec!["mx2.mail.example.net".into()] };
+        let decision = lists.decide(sender, LENI, "example.org");
         let word = match &decision {
             Decision::None => return None,
             Decision::Allow(_) => "allow",
@@ -251,13 +251,13 @@ mod tests {
 
     #[test]
     fn allowing_by_from_needs_someone_to_vouch_for_it() {
-        let own = vec![entry(ListScope::Account(LENI), SenderList::Allow, SenderKind::Address, "oma@example.net")];
-        assert_eq!(decided(own.clone(), &sender("oma@example.net", true)).as_deref(), Some("allow oma@example.net"));
-        assert_eq!(decided(own, &sender("oma@example.net", false)), None, "a forged From is not allowed");
+        let own = vec![entry(ListScope::Account(LENI), SenderList::Allow, SenderKind::Address, "oma@example.com")];
+        assert_eq!(decided(own.clone(), &sender("oma@example.com", true)).as_deref(), Some("allow oma@example.com"));
+        assert_eq!(decided(own, &sender("oma@example.com", false)), None, "a forged From is not allowed");
 
         let server = vec![entry(ListScope::Server, SenderList::Allow, SenderKind::Ip, "192.0.2.0/24")];
         assert_eq!(
-            decided(server, &sender("anyone@example.com", false)).as_deref(),
+            decided(server, &sender("anyone@example.test", false)).as_deref(),
             Some("allow 192.0.2.0/24"),
             "the server's address needs no From"
         );
@@ -265,68 +265,68 @@ mod tests {
 
     #[test]
     fn blocks_match_the_envelope_and_subdomains_and_confirmed_hosts() {
-        let own = vec![entry(ListScope::Account(LENI), SenderList::Block, SenderKind::Domain, "example.net")];
-        assert_eq!(decided(own, &sender("x@example.com", false)).as_deref(), Some("junk example.net"));
+        let own = vec![entry(ListScope::Account(LENI), SenderList::Block, SenderKind::Domain, "example.com")];
+        assert_eq!(decided(own, &sender("x@example.test", false)).as_deref(), Some("junk example.com"));
 
-        let wildcard = vec![entry(ListScope::Server, SenderList::Block, SenderKind::Host, "*.example.org")];
-        assert_eq!(decided(wildcard, &sender("x@example.com", false)).as_deref(), Some("reject *.example.org"));
-        let exact = vec![entry(ListScope::Server, SenderList::Block, SenderKind::Host, "mail.example.org")];
-        assert_eq!(decided(exact, &sender("x@example.com", false)), None, "only the confirmed name itself");
+        let wildcard = vec![entry(ListScope::Server, SenderList::Block, SenderKind::Host, "*.example.net")];
+        assert_eq!(decided(wildcard, &sender("x@example.test", false)).as_deref(), Some("reject *.example.net"));
+        let exact = vec![entry(ListScope::Server, SenderList::Block, SenderKind::Host, "mail.example.net")];
+        assert_eq!(decided(exact, &sender("x@example.test", false)), None, "only the confirmed name itself");
     }
 
     #[test]
     fn admin_blocks_win_and_otherwise_the_nearest_scope_decides() {
-        let boss = sender("boss@example.com", true);
-        let other = sender("sales@example.com", true);
+        let boss = sender("boss@example.test", true);
+        let other = sender("sales@example.test", true);
 
         let own = vec![
-            entry(ListScope::Account(LENI), SenderList::Block, SenderKind::Domain, "example.com"),
-            entry(ListScope::Account(LENI), SenderList::Allow, SenderKind::Address, "boss@example.com"),
+            entry(ListScope::Account(LENI), SenderList::Block, SenderKind::Domain, "example.test"),
+            entry(ListScope::Account(LENI), SenderList::Allow, SenderKind::Address, "boss@example.test"),
         ];
-        assert_eq!(decided(own.clone(), &boss).as_deref(), Some("allow boss@example.com"), "the exception");
-        assert_eq!(decided(own, &other).as_deref(), Some("junk example.com"));
+        assert_eq!(decided(own.clone(), &boss).as_deref(), Some("allow boss@example.test"), "the exception");
+        assert_eq!(decided(own, &other).as_deref(), Some("junk example.test"));
 
         let domain_block = vec![
-            entry(ListScope::Domain(1), SenderList::Block, SenderKind::Domain, "example.com"),
-            entry(ListScope::Account(LENI), SenderList::Allow, SenderKind::Address, "boss@example.com"),
+            entry(ListScope::Domain(1), SenderList::Block, SenderKind::Domain, "example.test"),
+            entry(ListScope::Account(LENI), SenderList::Allow, SenderKind::Address, "boss@example.test"),
         ];
-        assert_eq!(decided(domain_block, &boss).as_deref(), Some("reject example.com"));
+        assert_eq!(decided(domain_block, &boss).as_deref(), Some("reject example.test"));
 
         let person_over_server = vec![
-            entry(ListScope::Server, SenderList::Allow, SenderKind::Domain, "example.com"),
-            entry(ListScope::Account(LENI), SenderList::Block, SenderKind::Domain, "example.com"),
+            entry(ListScope::Server, SenderList::Allow, SenderKind::Domain, "example.test"),
+            entry(ListScope::Account(LENI), SenderList::Block, SenderKind::Domain, "example.test"),
         ];
-        assert_eq!(decided(person_over_server, &other).as_deref(), Some("junk example.com"));
+        assert_eq!(decided(person_over_server, &other).as_deref(), Some("junk example.test"));
 
         let tie = vec![
-            entry(ListScope::Server, SenderList::Allow, SenderKind::Domain, "example.com"),
-            entry(ListScope::Server, SenderList::Block, SenderKind::Domain, "example.com"),
+            entry(ListScope::Server, SenderList::Allow, SenderKind::Domain, "example.test"),
+            entry(ListScope::Server, SenderList::Block, SenderKind::Domain, "example.test"),
         ];
-        assert_eq!(decided(tie, &other).as_deref(), Some("reject example.com"), "a tie goes to the block");
+        assert_eq!(decided(tie, &other).as_deref(), Some("reject example.test"), "a tie goes to the block");
     }
 
     #[test]
     fn patterns_are_the_loosest_entries() {
         let own = vec![
-            entry(ListScope::Account(LENI), SenderList::Block, SenderKind::Pattern, "*.com"),
-            entry(ListScope::Account(LENI), SenderList::Allow, SenderKind::Domain, "example.com"),
+            entry(ListScope::Account(LENI), SenderList::Block, SenderKind::Pattern, "*.invalid"),
+            entry(ListScope::Account(LENI), SenderList::Allow, SenderKind::Domain, "example.test"),
         ];
-        assert_eq!(decided(own.clone(), &sender("boss@example.com", true)).as_deref(), Some("allow example.com"));
-        assert_eq!(decided(own, &sender("x@shop.com", true)).as_deref(), Some("junk *.com"));
+        assert_eq!(decided(own.clone(), &sender("boss@example.test", true)).as_deref(), Some("allow example.test"));
+        assert_eq!(decided(own, &sender("x@shop.invalid", true)).as_deref(), Some("junk *.invalid"));
 
         let longer = vec![
             entry(ListScope::Account(LENI), SenderList::Block, SenderKind::Pattern, "*news*"),
-            entry(ListScope::Account(LENI), SenderList::Allow, SenderKind::Pattern, "*news@example.com"),
+            entry(ListScope::Account(LENI), SenderList::Allow, SenderKind::Pattern, "*news@example.test"),
         ];
         assert_eq!(
-            decided(longer, &sender("news@example.com", true)).as_deref(),
-            Some("allow *news@example.com"),
+            decided(longer, &sender("news@example.test", true)).as_deref(),
+            Some("allow *news@example.test"),
             "the longer pattern is the exception"
         );
 
         let envelope = vec![entry(ListScope::Server, SenderList::Block, SenderKind::Pattern, "bounces@*")];
-        assert_eq!(decided(envelope.clone(), &sender("x@example.com", false)).as_deref(), Some("reject bounces@*"));
-        let allowed = vec![entry(ListScope::Server, SenderList::Allow, SenderKind::Pattern, "*@example.com")];
-        assert_eq!(decided(allowed, &sender("x@example.com", false)), None, "allowing still needs a vouched From");
+        assert_eq!(decided(envelope.clone(), &sender("x@example.test", false)).as_deref(), Some("reject bounces@*"));
+        let allowed = vec![entry(ListScope::Server, SenderList::Allow, SenderKind::Pattern, "*@example.test")];
+        assert_eq!(decided(allowed, &sender("x@example.test", false)), None, "allowing still needs a vouched From");
     }
 }

@@ -811,7 +811,7 @@ mod tests {
 
     fn dmarc(report_id: &str, rows: Vec<DmarcRow>) -> NewDmarcReport {
         NewDmarcReport {
-            domain: "example.de".into(),
+            domain: "example.org".into(),
             organization: "google.com".into(),
             report_id: report_id.into(),
             begin_at: now() - 86_400,
@@ -830,7 +830,7 @@ mod tests {
             dkim_aligned: pass,
             spf_aligned: false,
             disposition: if pass { "none" } else { "quarantine" }.into(),
-            header_from: "Example.de".into(),
+            header_from: "Example.org".into(),
             ..Default::default()
         }
     }
@@ -838,15 +838,15 @@ mod tests {
     #[tokio::test]
     async fn report_addresses_are_ours_unless_someone_has_them() {
         let (store, _dir) = store().await;
-        store.create_domain("example.de").await.unwrap();
-        assert_eq!(store.report_recipient("tls-reports@example.de").await.unwrap(), Some(ReportKind::Tls));
-        assert_eq!(store.report_recipient("DMARC-Reports@example.de").await.unwrap(), Some(ReportKind::Dmarc));
+        store.create_domain("example.org").await.unwrap();
+        assert_eq!(store.report_recipient("tls-reports@example.org").await.unwrap(), Some(ReportKind::Tls));
+        assert_eq!(store.report_recipient("DMARC-Reports@example.org").await.unwrap(), Some(ReportKind::Dmarc));
         assert_eq!(store.report_recipient("dmarc-reports@elsewhere.example").await.unwrap(), None);
-        assert_eq!(store.report_recipient("postmaster@example.de").await.unwrap(), None);
+        assert_eq!(store.report_recipient("postmaster@example.org").await.unwrap(), None);
 
         store
             .create_account(NewAccount {
-                address: "leni@example.de".into(),
+                address: "leni@example.org".into(),
                 display_name: String::new(),
                 password: None,
                 role: Role::User,
@@ -855,22 +855,22 @@ mod tests {
             })
             .await
             .unwrap();
-        store.add_alias("dmarc-reports@example.de", "leni@example.de").await.unwrap();
-        assert_eq!(store.report_recipient("dmarc-reports@example.de").await.unwrap(), None);
+        store.add_alias("dmarc-reports@example.org", "leni@example.org").await.unwrap();
+        assert_eq!(store.report_recipient("dmarc-reports@example.org").await.unwrap(), None);
     }
 
     #[tokio::test]
     async fn mta_sts_settings_and_cached_policies() {
         let (store, _dir) = store().await;
-        store.create_domain("example.de").await.unwrap();
-        assert_eq!(store.mta_sts("example.de").await.unwrap(), None);
-        assert!(store.set_mta_sts("example.de", Some((MtaStsMode::Testing, vec![]))).await.is_err());
-        store.set_mta_sts("example.de", Some((MtaStsMode::Testing, vec!["mail.example.de".into()]))).await.unwrap();
-        let settings = store.mta_sts("example.de").await.unwrap().unwrap();
-        assert_eq!((settings.mode, settings.mx), (MtaStsMode::Testing, vec!["mail.example.de".to_owned()]));
-        assert_eq!(store.mta_sts_domains().await.unwrap(), vec!["example.de".to_owned()]);
-        store.set_mta_sts("example.de", None).await.unwrap();
-        assert_eq!(store.mta_sts("example.de").await.unwrap(), None);
+        store.create_domain("example.org").await.unwrap();
+        assert_eq!(store.mta_sts("example.org").await.unwrap(), None);
+        assert!(store.set_mta_sts("example.org", Some((MtaStsMode::Testing, vec![]))).await.is_err());
+        store.set_mta_sts("example.org", Some((MtaStsMode::Testing, vec!["mail.example.org".into()]))).await.unwrap();
+        let settings = store.mta_sts("example.org").await.unwrap().unwrap();
+        assert_eq!((settings.mode, settings.mx), (MtaStsMode::Testing, vec!["mail.example.org".to_owned()]));
+        assert_eq!(store.mta_sts_domains().await.unwrap(), vec!["example.org".to_owned()]);
+        store.set_mta_sts("example.org", None).await.unwrap();
+        assert_eq!(store.mta_sts("example.org").await.unwrap(), None);
 
         let policy = CachedStsPolicy {
             domain: "Other.example".into(),
@@ -889,7 +889,7 @@ mod tests {
     #[tokio::test]
     async fn reports_are_stored_once_and_summed_up() {
         let (store, _dir) = store().await;
-        store.create_domain("example.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
         let first = dmarc("r1", vec![row("192.0.2.10", 40, true), row("198.51.100.7", 3, false)]);
         assert_eq!(store.add_dmarc_report(first.clone()).await.unwrap(), ReportStored::Added);
         assert_eq!(store.add_dmarc_report(first).await.unwrap(), ReportStored::Duplicate);
@@ -898,7 +898,7 @@ mod tests {
 
         store
             .add_tls_report(NewTlsReport {
-                domain: "example.de".into(),
+                domain: "example.org".into(),
                 organization: "google.com".into(),
                 report_id: "t1".into(),
                 begin_at: now() - 86_400,
@@ -909,7 +909,7 @@ mod tests {
                 failures: vec![TlsFailure {
                     policy_type: "sts".into(),
                     result_type: "certificate-expired".into(),
-                    mx_host: "mail.example.de".into(),
+                    mx_host: "mail.example.org".into(),
                     sending_ip: "203.0.113.5".into(),
                     sessions: 2,
                     ..Default::default()
@@ -919,17 +919,17 @@ mod tests {
             .await
             .unwrap();
 
-        let summary = store.report_summary("example.de", now() - 7 * 86_400).await.unwrap();
+        let summary = store.report_summary("example.org", now() - 7 * 86_400).await.unwrap();
         assert_eq!((summary.dmarc.reports, summary.dmarc.messages, summary.dmarc.passed), (2, 53, 50));
         assert_eq!(summary.dmarc.sources[0].ip, "192.0.2.10");
         assert_eq!((summary.dmarc.sources[0].messages, summary.dmarc.sources[0].passed), (50, 50));
-        assert_eq!(summary.dmarc.sources[0].header_from, vec!["example.de".to_owned()]);
+        assert_eq!(summary.dmarc.sources[0].header_from, vec!["example.org".to_owned()]);
         assert_eq!(summary.dmarc.reporters[0].organization, "google.com");
         assert_eq!((summary.tls.successful, summary.tls.failed, summary.tls.unauthenticated), (12, 2, 1));
         assert_eq!(summary.tls.failures[0].result_type, "certificate-expired");
 
         assert_eq!(store.purge_reports(REPORT_RETENTION_SECS).await.unwrap(), 0);
         assert_eq!(store.purge_reports(-10).await.unwrap(), 3);
-        assert_eq!(store.report_summary("example.de", 0).await.unwrap().dmarc.reports, 0);
+        assert_eq!(store.report_summary("example.org", 0).await.unwrap().dmarc.reports, 0);
     }
 }

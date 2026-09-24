@@ -510,7 +510,7 @@ mod tests {
     use axum::http::Request;
 
     fn state() -> HttpState {
-        HttpState { hostname: "mail.example.de".into(), challenges: Arc::default(), started: Instant::now() }
+        HttpState { hostname: "mail.example.org".into(), challenges: Arc::default(), started: Instant::now() }
     }
 
     fn app(state: HttpState) -> Router {
@@ -525,7 +525,7 @@ mod tests {
         let response =
             redirect_app(state()).oneshot(Request::get("/login?x=1").body(Body::empty()).unwrap()).await.unwrap();
         assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);
-        assert_eq!(response.headers()[header::LOCATION], "https://mail.example.de/login?x=1");
+        assert_eq!(response.headers()[header::LOCATION], "https://mail.example.org/login?x=1");
 
         let response = app(state())
             .oneshot(Request::get("/.well-known/acme-challenge/unknown").body(Body::empty()).unwrap())

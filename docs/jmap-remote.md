@@ -57,8 +57,8 @@ The server fetches at most 32 pictures at a time, for all accounts together.
 
 `GET` on the filled-in `pictureUrl` (`email` percent-encoded) answers with the
 logo or website icon of a company sender, or `404` when there is none. Only the
-registrable domain of the address is asked (`news.mail.shop.de` becomes
-`shop.de`), and never for addresses at mail providers such as gmail.com or
+registrable domain of the address is asked (`news.mail.shop.example` becomes
+`shop.example`), and never for addresses at mail providers such as gmail.com or
 web.de, which belong to people.
 
 The server looks, in this order, for:

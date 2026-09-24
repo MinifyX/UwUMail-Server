@@ -18,10 +18,10 @@ struct Server {
 async fn server() -> Server {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
-    store.create_domain("example.de").await.unwrap();
+    store.create_domain("example.org").await.unwrap();
     let account = store
         .create_account(NewAccount {
-            address: "mini@example.de".into(),
+            address: "mini@example.org".into(),
             display_name: "Mini".into(),
             password: Some(PASSWORD.into()),
             role: Role::User,
@@ -36,7 +36,7 @@ async fn server() -> Server {
 
 async fn deliver(store: &Store, account: i64, subject: &str) -> u32 {
     let raw = format!(
-        "From: Nyu <nyu@example.org>\r\nTo: Mini <mini@example.de>\r\nSubject: {subject}\r\nMessage-ID: <{}@example.org>\r\n\
+        "From: Nyu <nyu@example.net>\r\nTo: Mini <mini@example.org>\r\nSubject: {subject}\r\nMessage-ID: <{}@example.net>\r\n\
 Content-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nHallo Mini, {subject}\r\n\
 --b\r\nContent-Type: image/png; name=nyu.png\r\nContent-Transfer-Encoding: base64\r\n\r\niVBORw0KGgo=\r\n--b--\r\n",
         subject.replace(' ', "-")
@@ -73,7 +73,7 @@ impl Client {
 
     async fn login(server: &Server) -> Client {
         let mut client = Client::connect(server).await;
-        let (_, done) = client.command(&format!("LOGIN mini@example.de \"{PASSWORD}\"")).await;
+        let (_, done) = client.command(&format!("LOGIN mini@example.org \"{PASSWORD}\"")).await;
         assert!(done.contains("OK [CAPABILITY"), "{done}");
         client
     }
@@ -140,12 +140,12 @@ fn number_after(text: &str, prefix: &str) -> u64 {
 async fn apps_log_in_list_select_and_fetch() {
     let server = server().await;
     let mut client = Client::connect(&server).await;
-    let (_, denied) = client.command("LOGIN mini@example.de falsch").await;
+    let (_, denied) = client.command("LOGIN mini@example.org falsch").await;
     assert!(denied.contains("NO [AUTHENTICATIONFAILED]"), "{denied}");
     let (_, early) = client.command("SELECT INBOX").await;
     assert!(early.contains("BAD"), "{early}");
     // AUTHENTICATE PLAIN with the initial response right away (SASL-IR).
-    let plain = base64_plain("mini@example.de", PASSWORD);
+    let plain = base64_plain("mini@example.org", PASSWORD);
     let (_, done) = client.command(&format!("AUTHENTICATE PLAIN {plain}")).await;
     assert!(done.contains("OK"), "{done}");
 
@@ -169,7 +169,7 @@ async fn apps_log_in_list_select_and_fetch() {
         .await;
     let fetched = find(&lines, "FETCH");
     assert!(fetched.starts_with(&format!("* 1 FETCH (UID {first} FLAGS () RFC822.SIZE ")), "{fetched}");
-    assert!(fetched.contains("\"Katzenfutter\" ((\"Nyu\" NIL \"nyu\" \"example.org\"))"), "{fetched}");
+    assert!(fetched.contains("\"Katzenfutter\" ((\"Nyu\" NIL \"nyu\" \"example.net\"))"), "{fetched}");
     assert!(fetched.contains("(\"TEXT\" \"PLAIN\" (\"CHARSET\" \"utf-8\")"), "{fetched}");
     assert!(fetched.contains("\"MIXED\" (\"BOUNDARY\" \"b\")"), "{fetched}");
     assert!(fetched.contains("BODY[HEADER.FIELDS (SUBJECT)] {25}\r\nSubject: Katzenfutter\r\n\r\n"), "{fetched}");
@@ -192,7 +192,7 @@ async fn append_store_search_move_and_expunge() {
     let mut client = Client::login(&server).await;
 
     // A synchronizing literal waits for the server's go-ahead.
-    let message = "From: mini@example.de\r\nTo: leni@example.de\r\nSubject: Entwurf\r\n\r\nNoch nicht fertig\r\n";
+    let message = "From: mini@example.org\r\nTo: leni@example.org\r\nSubject: Entwurf\r\n\r\nNoch nicht fertig\r\n";
     client.send(format!("a1 APPEND Drafts (\\Draft) {{{}}}\r\n", message.len()).as_bytes()).await;
     assert!(client.line().await.starts_with("+ "));
     client.send(format!("{message}\r\n").as_bytes()).await;

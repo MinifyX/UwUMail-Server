@@ -14,8 +14,8 @@ use uwumail_smtp::{DeliveryConfig, Smtp, SmtpConfig, SmtpSettings, ToneConfig};
 use uwumail_store::{NewAccount, Role, Store};
 
 const PASSWORD: &str = "katzenpfote-123";
-const MINI: &str = "mini@example.de";
-const NYU: &str = "nyu@example.de";
+const MINI: &str = "mini@example.org";
+const NYU: &str = "nyu@example.org";
 const USING: [&str; 2] = ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:contacts"];
 
 struct Server {
@@ -27,11 +27,11 @@ struct Server {
 async fn server() -> Server {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
-    store.create_domain("example.de").await.unwrap();
+    store.create_domain("example.org").await.unwrap();
     for user in ["mini", "nyu"] {
         store
             .create_account(NewAccount {
-                address: format!("{user}@example.de"),
+                address: format!("{user}@example.org"),
                 display_name: user.to_uppercase(),
                 password: Some(PASSWORD.into()),
                 role: Role::User,
@@ -44,7 +44,7 @@ async fn server() -> Server {
     let smtp = Smtp::new(
         store.clone(),
         SmtpSettings {
-            hostname: "mail.example.de".into(),
+            hostname: "mail.example.org".into(),
             smtp: SmtpConfig::default(),
             spam: Default::default(),
             delivery: DeliveryConfig::default(),
@@ -74,7 +74,7 @@ impl Server {
             .method(method)
             .uri(uri)
             .header(header::AUTHORIZATION, basic(login))
-            .header(header::HOST, "mail.example.de");
+            .header(header::HOST, "mail.example.org");
         for (name, value) in headers {
             request = request.header(*name, *value);
         }
@@ -145,7 +145,7 @@ fn person(given: &str, surname: &str, email: &str) -> Value {
 }
 
 const PHONE_CARD: &str = "BEGIN:VCARD\r\nVERSION:3.0\r\nPRODID:-//Apple Inc.//iPhone OS 17.0//EN\r\nN:Katze;Nyu;;;\r\n\
-FN:Nyu Katze\r\nEMAIL;type=INTERNET;type=HOME;type=pref:nyu@example.org\r\nTEL;type=CELL:+49 170 1234567\r\n\
+FN:Nyu Katze\r\nEMAIL;type=INTERNET;type=HOME;type=pref:nyu@example.net\r\nTEL;type=CELL:+49 170 1234567\r\n\
 X-ABSHOWAS:PERSON\r\nUID:phone-1\r\nEND:VCARD\r\n";
 
 const SYNC: &str = r#"<?xml version="1.0" encoding="utf-8"?>
@@ -252,7 +252,7 @@ async fn cards_are_made_changed_and_deleted() {
         .call(
             MINI,
             "ContactCard/set",
-            json!({ "accountId": account, "create": { "n": person("Nyu", "Katze", "nyu@example.org") } }),
+            json!({ "accountId": account, "create": { "n": person("Nyu", "Katze", "nyu@example.net") } }),
         )
         .await;
     let created = &set["created"]["n"];
@@ -265,7 +265,7 @@ async fn cards_are_made_changed_and_deleted() {
     let card = server.get_card(MINI, &id).await;
     assert_eq!(card["name"]["components"][0]["value"], "Nyu");
     assert_eq!(card["name"]["full"], "Nyu Katze", "a full name is derived for CardDAV: {card}");
-    assert_eq!(card["emails"]["e1"]["address"], "nyu@example.org");
+    assert_eq!(card["emails"]["e1"]["address"], "nyu@example.net");
     assert!(card.get("vCard").is_none(), "conversion hints only when asked for: {card}");
 
     let patch = json!({
@@ -327,7 +327,7 @@ async fn cards_move_between_address_books() {
         .call(MINI, "AddressBook/set", json!({ "accountId": account, "create": { "w": { "name": "Arbeit" } } }))
         .await;
     let work = set["created"]["w"]["id"].as_str().unwrap().to_owned();
-    let id = server.create_card(MINI, person("Leni", "Muster", "leni@example.org")).await;
+    let id = server.create_card(MINI, person("Leni", "Muster", "leni@example.net")).await;
     let moved = server
         .call(
             MINI,
@@ -352,8 +352,8 @@ async fn queries_filter_sort_and_page() {
     let server = server().await;
     let account = server.account_id(MINI).await;
     let book = server.default_book(MINI).await;
-    let nyu = server.create_card(MINI, person("Nyu", "Katze", "nyu@example.org")).await;
-    let leni = server.create_card(MINI, person("Leni", "Muster", "leni@example.org")).await;
+    let nyu = server.create_card(MINI, person("Nyu", "Katze", "nyu@example.net")).await;
+    let leni = server.create_card(MINI, person("Leni", "Muster", "leni@example.net")).await;
     let mut firm = person("Anna", "Berg", "anna@firma.example");
     firm["organizations"] = json!({ "o": { "name": "Katzenfutter AG" } });
     firm["phones"] = json!({ "p": { "number": "+49 89 555" } });
@@ -419,7 +419,7 @@ async fn carddav_and_jmap_see_each_others_changes() {
     let server = server().await;
     let account = server.account_id(MINI).await;
     let book = server.default_book(MINI).await;
-    let collection = "/dav/addressbooks/mini@example.de/contacts/";
+    let collection = "/dav/addressbooks/mini@example.org/contacts/";
     let before = server.state(MINI).await;
 
     // A phone stores a card over CardDAV: JMAP clients hear about it and can read it.
@@ -478,9 +478,9 @@ async fn carddav_and_jmap_see_each_others_changes() {
     assert_eq!(again.status, StatusCode::NO_CONTENT, "{}", again.body);
 
     // A card made over JMAP is a vCard 3.0 a phone can read.
-    let web_id = server.create_card(MINI, person("Leni", "Muster", "leni@example.org")).await;
+    let web_id = server.create_card(MINI, person("Leni", "Muster", "leni@example.net")).await;
     let sync = server.send(MINI, "REPORT", collection, &[("depth", "1")], SYNC.replace("TOKEN", &token)).await;
-    assert!(sync.body.contains("leni@example.org"), "{}", sync.body);
+    assert!(sync.body.contains("leni@example.net"), "{}", sync.body);
 
     // The phone deletes, a new address book appears: JMAP sees both.
     let middle = server.state(MINI).await;
@@ -489,7 +489,7 @@ async fn carddav_and_jmap_see_each_others_changes() {
     let mkcol = r#"<?xml version="1.0" encoding="utf-8"?>
 <d:mkcol xmlns:d="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav"><d:set><d:prop><d:resourcetype><d:collection/><card:addressbook/></d:resourcetype>
 <d:displayname>Verein</d:displayname></d:prop></d:set></d:mkcol>"#;
-    let made = server.send(MINI, "MKCOL", "/dav/addressbooks/mini@example.de/club/", &[], mkcol.into()).await;
+    let made = server.send(MINI, "MKCOL", "/dav/addressbooks/mini@example.org/club/", &[], mkcol.into()).await;
     assert_eq!(made.status, StatusCode::CREATED, "{}", made.body);
     let changes =
         server.call(MINI, "ContactCard/changes", json!({ "accountId": account, "sinceState": &middle })).await;
@@ -504,7 +504,7 @@ async fn nobody_reaches_into_another_account() {
     let server = server().await;
     let mini = server.account_id(MINI).await;
     let nyu = server.account_id(NYU).await;
-    let id = server.create_card(MINI, person("Geheim", "Kontakt", "geheim@example.org")).await;
+    let id = server.create_card(MINI, person("Geheim", "Kontakt", "geheim@example.net")).await;
     let mini_book = server.default_book(MINI).await;
 
     let foreign = server.api(NYU, json!([["ContactCard/get", { "accountId": &mini, "ids": [&id] }, "0"]])).await;
@@ -580,7 +580,7 @@ async fn cards_stay_within_limits() {
 async fn huge_filters_sorts_and_patches_are_turned_away() {
     let server = server().await;
     let account = server.account_id(MINI).await;
-    let nyu = server.create_card(MINI, person("Nyu", "Katze", "nyu@example.org")).await;
+    let nyu = server.create_card(MINI, person("Nyu", "Katze", "nyu@example.net")).await;
 
     let conditions: Vec<Value> = (0..100).map(|_| json!({ "text": "zz" })).collect();
     let filter = json!({ "operator": "OR", "conditions": conditions });

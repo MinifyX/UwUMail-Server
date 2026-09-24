@@ -1177,10 +1177,10 @@ mod tests {
     #[tokio::test]
     async fn a_switched_off_protocol_holds_every_password() {
         let (store, _dir) = crate::test_support::store().await;
-        store.create_domain("example.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
         let service = store
             .create_account(NewAccount {
-                address: "monitoring@example.de".into(),
+                address: "monitoring@example.org".into(),
                 display_name: "Monitoring".into(),
                 password: None,
                 role: Role::Service,
@@ -1218,25 +1218,25 @@ mod tests {
         let secret = created.secret.replace(' ', "");
 
         // Sending is what this one is for.
-        let sending = store.authenticate_mail("monitoring@example.de", &secret, AppScope::Smtp, "smtp", "").await;
+        let sending = store.authenticate_mail("monitoring@example.org", &secret, AppScope::Smtp, "smtp", "").await;
         assert!(matches!(sending, Ok(MailAuth::Ok { .. })), "{sending:?}");
 
         // IMAP is off for the account, so the password does not open it, right or not.
-        let reading = store.authenticate_mail("monitoring@example.de", &secret, AppScope::Mail, "imap", "").await;
+        let reading = store.authenticate_mail("monitoring@example.org", &secret, AppScope::Mail, "imap", "").await;
         assert!(matches!(reading, Ok(MailAuth::Denied(MailAuthDenied::ProtocolOff))), "{reading:?}");
-        let jmap = store.authenticate_mail("monitoring@example.de", &secret, AppScope::Mail, "jmap", "").await;
+        let jmap = store.authenticate_mail("monitoring@example.org", &secret, AppScope::Mail, "jmap", "").await;
         assert!(matches!(jmap, Ok(MailAuth::Denied(MailAuthDenied::ProtocolOff))), "{jmap:?}");
-        let dav = store.authenticate_mail("monitoring@example.de", &secret, AppScope::Dav, "dav", "").await;
+        let dav = store.authenticate_mail("monitoring@example.org", &secret, AppScope::Dav, "dav", "").await;
         assert!(matches!(dav, Ok(MailAuth::Denied(MailAuthDenied::ProtocolOff))), "{dav:?}");
 
         // And a protocol nobody taught the gate about is not quietly allowed either.
-        let unknown = store.authenticate_mail("monitoring@example.de", &secret, AppScope::Mail, "pop3", "").await;
+        let unknown = store.authenticate_mail("monitoring@example.org", &secret, AppScope::Mail, "pop3", "").await;
         assert!(matches!(unknown, Ok(MailAuth::Denied(MailAuthDenied::ProtocolOff))), "{unknown:?}");
 
         // Switching IMAP back on lets the same password in.
         store
             .update_account(
-                "monitoring@example.de",
+                "monitoring@example.org",
                 crate::AccountUpdate {
                     protocols: Some(crate::Protocols { imap: true, ..service.protocols }),
                     ..Default::default()
@@ -1244,16 +1244,16 @@ mod tests {
             )
             .await
             .unwrap();
-        let again = store.authenticate_mail("monitoring@example.de", &secret, AppScope::Mail, "imap", "").await;
+        let again = store.authenticate_mail("monitoring@example.org", &secret, AppScope::Mail, "imap", "").await;
         assert!(matches!(again, Ok(MailAuth::Ok { .. })), "{again:?}");
     }
 
     #[tokio::test]
     async fn passwords_and_app_passwords_from_mailcow_keep_working() {
         let (store, _dir) = crate::test_support::store().await;
-        store.create_domain("example.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
         let new = NewAccount {
-            address: "mini@example.de".into(),
+            address: "mini@example.org".into(),
             display_name: String::new(),
             password: None,
             role: Role::User,
@@ -1278,10 +1278,10 @@ mod tests {
                 .await
                 .unwrap()
         };
-        assert!(store.authenticate("mini@example.de", "falsch-falsch").await.unwrap().is_none());
-        assert!(store.authenticate("mini@example.de", "katzenpfote-123").await.unwrap().is_some());
+        assert!(store.authenticate("mini@example.org", "falsch-falsch").await.unwrap().is_none());
+        assert!(store.authenticate("mini@example.org", "katzenpfote-123").await.unwrap().is_some());
         assert!(stored(store.clone()).await.starts_with("$argon2"), "replaced by our own hash at the first login");
-        let auth = store.authenticate_mail("mini@example.de", "katzenpfote-123", AppScope::Mail, "imap", "").await;
+        let auth = store.authenticate_mail("mini@example.org", "katzenpfote-123", AppScope::Mail, "imap", "").await;
         assert!(matches!(auth.unwrap(), MailAuth::Ok { app_password: None, .. }));
 
         let phone =
@@ -1289,9 +1289,9 @@ mod tests {
         let phone = phone.unwrap();
         let again = store.import_app_password(mini.id, "iPhone", &bcrypt("anderes"), vec![AppScope::Smtp]).await;
         assert_eq!(again.unwrap().id, phone.id, "importing twice keeps the first");
-        let auth = store.authenticate_mail("mini@example.de", "mein-altes-app-pw", AppScope::Mail, "imap", "").await;
+        let auth = store.authenticate_mail("mini@example.org", "mein-altes-app-pw", AppScope::Mail, "imap", "").await;
         assert!(matches!(auth.unwrap(), MailAuth::Ok { app_password: Some(id), .. } if id == phone.id));
-        let auth = store.authenticate_mail("mini@example.de", "mein-altes-app-pw", AppScope::Smtp, "smtp", "").await;
+        let auth = store.authenticate_mail("mini@example.org", "mein-altes-app-pw", AppScope::Smtp, "smtp", "").await;
         assert!(matches!(auth.unwrap(), MailAuth::Denied(MailAuthDenied::WrongScope)));
     }
 
@@ -1304,14 +1304,14 @@ mod tests {
         assert_eq!(shown.len(), 19);
         assert_eq!(candidate("app", &shown.to_uppercase(), 16), Some(code_hash("app", &code)));
         assert_eq!(candidate("app", "not-an-app-password", 16), None);
-        assert_eq!(percent_encode("UwUMail (mail.example.de)"), "UwUMail%20%28mail.example.de%29");
+        assert_eq!(percent_encode("UwUMail (mail.example.org)"), "UwUMail%20%28mail.example.org%29");
     }
 
     async fn person(store: &Store) -> Account {
-        store.create_domain("example.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
         store
             .create_account(NewAccount {
-                address: "leni@example.de".into(),
+                address: "leni@example.org".into(),
                 display_name: "Leni".into(),
                 password: Some("Seifenblase-Wanderweg-17".into()),
                 role: Role::User,
@@ -1334,7 +1334,7 @@ mod tests {
         };
 
         let main =
-            store.authenticate_mail("leni@example.de", "Seifenblase-Wanderweg-17", AppScope::Smtp, "smtp", "").await;
+            store.authenticate_mail("leni@example.org", "Seifenblase-Wanderweg-17", AppScope::Smtp, "smtp", "").await;
         assert!(ok(&main.unwrap()), "without anything set up the main password works");
 
         let phone = store
@@ -1351,28 +1351,29 @@ mod tests {
             )
             .await
             .unwrap();
-        let auth = store.authenticate_mail("leni@example.de", &phone.secret, AppScope::Mail, "jmap", "192.0.2.7").await;
+        let auth =
+            store.authenticate_mail("leni@example.org", &phone.secret, AppScope::Mail, "jmap", "192.0.2.7").await;
         assert!(ok(&auth.unwrap()));
         let listed = store.app_passwords(leni.id).await.unwrap();
         let phone_row = listed.iter().find(|p| p.id == phone.app_password.id).unwrap();
         assert_eq!(phone_row.last_used_protocol.as_deref(), Some("jmap"));
         assert_eq!(phone_row.last_used_ip.as_deref(), Some("192.0.2.7"));
-        let auth = store.authenticate_mail("leni@example.de", &printer.secret, AppScope::Mail, "jmap", "").await;
+        let auth = store.authenticate_mail("leni@example.org", &printer.secret, AppScope::Mail, "jmap", "").await;
         assert_eq!(denied(auth.unwrap()), Some(MailAuthDenied::WrongScope));
 
         // An authenticator app makes the main password useless for mail apps.
-        let setup = store.begin_totp(leni.id, "UwUMail", "leni@example.de").await.unwrap();
-        assert!(setup.uri.starts_with("otpauth://totp/UwUMail:leni%40example.de?secret="));
+        let setup = store.begin_totp(leni.id, "UwUMail", "leni@example.org").await.unwrap();
+        assert!(setup.uri.starts_with("otpauth://totp/UwUMail:leni%40example.org?secret="));
         assert!(store.confirm_totp(leni.id, "abcdef").await.is_err());
         let secret = BASE32_NOPAD.decode(setup.secret.as_bytes()).unwrap();
         let code = format!("{:06}", totp_code(&secret, now() / TOTP_PERIOD));
         let codes = store.confirm_totp(leni.id, &code).await.unwrap().expect("first factor brings recovery codes");
         assert_eq!(codes.len(), 10);
-        let auth = store.authenticate_mail("leni@example.de", "Seifenblase-Wanderweg-17", AppScope::Smtp, "smtp", "");
+        let auth = store.authenticate_mail("leni@example.org", "Seifenblase-Wanderweg-17", AppScope::Smtp, "smtp", "");
         assert_eq!(denied(auth.await.unwrap()), Some(MailAuthDenied::AppPasswordRequired));
         let events = store.security_events(leni.id, 10).await.unwrap();
         assert_eq!(events[0].kind, "mainPasswordRefused");
-        let auth = store.authenticate_mail("leni@example.de", &phone.secret, AppScope::Smtp, "smtp", "").await;
+        let auth = store.authenticate_mail("leni@example.org", &phone.secret, AppScope::Smtp, "smtp", "").await;
         assert!(ok(&auth.unwrap()), "app passwords keep working");
 
         // Codes at login: the same TOTP code is spent, a recovery code works once.
@@ -1388,14 +1389,14 @@ mod tests {
         assert_eq!(overview.recovery_codes_left, 9);
 
         store.revoke_app_password(leni.id, phone.app_password.id).await.unwrap();
-        let auth = store.authenticate_mail("leni@example.de", &phone.secret, AppScope::Smtp, "smtp", "").await;
+        let auth = store.authenticate_mail("leni@example.org", &phone.secret, AppScope::Smtp, "smtp", "").await;
         assert_eq!(denied(auth.unwrap()), Some(MailAuthDenied::Invalid));
 
         store.disable_totp(leni.id).await.unwrap();
         let overview = store.security_overview(leni.id).await.unwrap();
         assert!(!overview.second_factor && overview.recovery_codes_left == 0);
         store.set_apps_need_app_password(leni.id, true).await.unwrap();
-        let auth = store.authenticate_mail("leni@example.de", "Seifenblase-Wanderweg-17", AppScope::Mail, "jmap", "");
+        let auth = store.authenticate_mail("leni@example.org", "Seifenblase-Wanderweg-17", AppScope::Mail, "jmap", "");
         assert_eq!(denied(auth.await.unwrap()), Some(MailAuthDenied::AppPasswordRequired));
         let changed = store.account_by_id(leni.id).await.unwrap().unwrap().credentials_changed_at;
         assert!(changed > 0);
@@ -1420,7 +1421,7 @@ mod tests {
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].id, Store::web_session_id(&here.token));
         assert!(store.web_session(&there.token, 3600).await.unwrap().is_none());
-        assert!(store.authenticate("leni@example.de", "Kirschbluete-Tastatur-42").await.unwrap().is_some());
+        assert!(store.authenticate("leni@example.org", "Kirschbluete-Tastatur-42").await.unwrap().is_some());
 
         store.end_web_session(leni.id, &Store::web_session_id(&here.token)).await.unwrap();
         assert!(store.web_sessions(leni.id).await.unwrap().is_empty());

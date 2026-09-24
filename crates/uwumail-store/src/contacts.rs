@@ -240,7 +240,7 @@ mod tests {
     use crate::{DavCollectionUpdate, NewAccount, Role};
 
     async fn account(store: &Store, address: &str) -> i64 {
-        store.create_domain("example.de").await.ok();
+        store.create_domain("example.org").await.ok();
         store
             .create_account(NewAccount {
                 address: address.into(),
@@ -272,7 +272,7 @@ mod tests {
     #[tokio::test]
     async fn carddav_writes_reach_the_change_log() {
         let (store, _dir) = store().await;
-        let mini = account(&store, "mini@example.de").await;
+        let mini = account(&store, "mini@example.org").await;
         let start = store.account_modseq(mini).await.unwrap();
         let book = store.dav_collections(mini, DavKind::Addressbook, contacts()).await.unwrap()[0].clone();
         assert!(book.is_default, "the first address book is the default");
@@ -303,8 +303,8 @@ mod tests {
     #[tokio::test]
     async fn cards_move_between_address_books() {
         let (store, _dir) = store().await;
-        let mini = account(&store, "mini@example.de").await;
-        let leni = account(&store, "leni@example.de").await;
+        let mini = account(&store, "mini@example.org").await;
+        let leni = account(&store, "leni@example.org").await;
         let personal = store.dav_collections(mini, DavKind::Addressbook, contacts()).await.unwrap()[0].clone();
         let start = store.account_modseq(mini).await.unwrap();
         let family = store

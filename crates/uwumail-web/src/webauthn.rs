@@ -352,11 +352,11 @@ mod tests {
         out
     }
 
-    /// A P-256 key and its signature over the login in `round_trip` (challenge 9…, counter 5),
-    /// made once: generating keys and ECDSA signatures needs the aws-lc random generator, which
+    /// A P-256 key and its signature over the login in `round_trip` (mail.example.org, challenge 9…,
+    /// counter 5), made once: generating keys and ECDSA signatures needs the aws-lc random generator, which
     /// crashes now and then in Windows test runs.
-    const ES256_POINT: &str = "04d4839f87c903b03505616c769e666f37d4e0ebf1a0ef660708c4518c0448a2b0a2e4668ab3e96ebd8dfb8f2e9906b710c4a13965efc874783394e5ac9bda7634";
-    const ES256_SIGNATURE: &str = "30450220311d6ae6dd8df9e89705d4df7378c5d917bed936ca51d07e08744b65d2ffe9d20221009a9f6b1a7d3a05d35aee215b4e9a9774ec2d642b7991721e614285e33a8041dc";
+    const ES256_POINT: &str = "04d96a5756d6f645cb162d204923f8c35dfbc81f68023b450fb8804b4a80a4f50e1af5a5443c0d4c075b54e4d37750985fa8dc00104441329ba8ef6102e09ed43b";
+    const ES256_SIGNATURE: &str = "304402203cd9eecd94c458d6123fe7afb4ee7964e0e8606d4de355d18e4b635d594cf6ef0220558edab798fd989bedab317e5efb60bc6406221dd0d71fd10725042f1516fa0b";
 
     fn unhex(value: &str) -> Vec<u8> {
         (0..value.len()).step_by(2).map(|i| u8::from_str_radix(&value[i..i + 2], 16).unwrap()).collect()
@@ -417,7 +417,7 @@ mod tests {
     }
 
     fn round_trip(key: SoftKey, uses_counter: bool) {
-        let rp = RelyingParty::for_hostname("mail.example.de");
+        let rp = RelyingParty::for_hostname("mail.example.org");
         let challenge = [7u8; 32];
         let credential_id = b"credential-one".to_vec();
         let cose = key.cose();
@@ -446,7 +446,7 @@ mod tests {
         let last = bad.len() - 1;
         bad[last] ^= 1;
         assert!(verify(&login_challenge, &got, 0, &bad).is_err(), "a changed signature");
-        let phishing = client_data("webauthn.get", &login_challenge, "https://mail.example.de.evil.test");
+        let phishing = client_data("webauthn.get", &login_challenge, "https://mail.example.org.evil.test");
         assert!(verify(&login_challenge, &phishing, 0, &sig).is_err(), "another origin");
         if uses_counter {
             assert!(verify(&login_challenge, &got, 5, &sig).is_err(), "a replayed counter");
@@ -465,7 +465,7 @@ mod tests {
 
     #[test]
     fn credentials_for_other_sites_are_refused() {
-        let rp = RelyingParty::for_hostname("mail.example.de");
+        let rp = RelyingParty::for_hostname("mail.example.org");
         let challenge = [1u8; 32];
         let cose = SoftKey::Es256.cose();
         let attestation = map(&[

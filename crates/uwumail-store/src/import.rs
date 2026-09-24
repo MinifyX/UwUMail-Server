@@ -58,9 +58,9 @@ mod tests {
     #[tokio::test]
     async fn progress_is_kept_per_folder() {
         let (store, _dir) = crate::test_support::store().await;
-        store.create_domain("example.de").await.unwrap();
+        store.create_domain("example.org").await.unwrap();
         let new = NewAccount {
-            address: "mini@example.de".into(),
+            address: "mini@example.org".into(),
             display_name: String::new(),
             password: None,
             role: Role::User,
@@ -68,12 +68,12 @@ mod tests {
             protocols: None,
         };
         let mini = store.create_account(new).await.unwrap().id;
-        assert_eq!(store.import_progress(mini, "old.example.de", "INBOX").await.unwrap(), None);
+        assert_eq!(store.import_progress(mini, "old.example.org", "INBOX").await.unwrap(), None);
         let first = ImportProgress { uid_validity: 17, last_uid: 40 };
-        store.set_import_progress(mini, "old.example.de", "INBOX", first).await.unwrap();
+        store.set_import_progress(mini, "old.example.org", "INBOX", first).await.unwrap();
         let later = ImportProgress { uid_validity: 17, last_uid: 55 };
-        store.set_import_progress(mini, "old.example.de", "INBOX", later).await.unwrap();
-        assert_eq!(store.import_progress(mini, "old.example.de", "INBOX").await.unwrap(), Some(later));
-        assert_eq!(store.import_progress(mini, "old.example.de", "Sent").await.unwrap(), None);
+        store.set_import_progress(mini, "old.example.org", "INBOX", later).await.unwrap();
+        assert_eq!(store.import_progress(mini, "old.example.org", "INBOX").await.unwrap(), Some(later));
+        assert_eq!(store.import_progress(mini, "old.example.org", "Sent").await.unwrap(), None);
     }
 }

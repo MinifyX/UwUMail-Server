@@ -346,34 +346,34 @@ mod tests {
     async fn own_aliases_follow_the_rules_and_stay_reserved() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path()).await.unwrap();
-        store.create_domain("example.de").await.unwrap();
-        let leni = account(&store, "leni@example.de").await;
-        let ami = account(&store, "ami@example.de").await;
+        store.create_domain("example.org").await.unwrap();
+        let leni = account(&store, "leni@example.org").await;
+        let ami = account(&store, "ami@example.org").await;
         let code = |result: Result<OwnAddress>| match result {
             Err(StoreError::Rule { code, .. }) => code,
             other => panic!("expected a rule, got {other:?}"),
         };
 
-        assert_eq!(code(store.create_own_alias(leni, "katze@example.de").await), "aliasDomain");
-        store.set_domain_self_service("example.de", true).await.unwrap();
-        assert_eq!(code(store.create_own_alias(leni, "postmaster@example.de").await), "aliasReserved");
-        assert_eq!(code(store.create_own_alias(leni, "ami@example.de").await), "addressTaken");
-        store.create_own_alias(leni, "Katze@example.de").await.unwrap();
+        assert_eq!(code(store.create_own_alias(leni, "katze@example.org").await), "aliasDomain");
+        store.set_domain_self_service("example.org", true).await.unwrap();
+        assert_eq!(code(store.create_own_alias(leni, "postmaster@example.org").await), "aliasReserved");
+        assert_eq!(code(store.create_own_alias(leni, "ami@example.org").await), "addressTaken");
+        store.create_own_alias(leni, "Katze@example.org").await.unwrap();
         store.set_alias_limit(leni, 1).await.unwrap();
-        assert_eq!(code(store.create_own_alias(leni, "hund@example.de").await), "aliasLimit");
-        assert_eq!(store.resolve_recipient("katze@example.de").await.unwrap(), Some(leni));
+        assert_eq!(code(store.create_own_alias(leni, "hund@example.org").await), "aliasLimit");
+        assert_eq!(store.resolve_recipient("katze@example.org").await.unwrap(), Some(leni));
 
-        store.delete_own_alias(leni, "katze@example.de").await.unwrap();
-        assert_eq!(store.resolve_recipient("katze@example.de").await.unwrap(), None);
-        assert_eq!(code(store.create_own_alias(ami, "katze@example.de").await), "addressTaken", "reserved for leni");
+        store.delete_own_alias(leni, "katze@example.org").await.unwrap();
+        assert_eq!(store.resolve_recipient("katze@example.org").await.unwrap(), None);
+        assert_eq!(code(store.create_own_alias(ami, "katze@example.org").await), "addressTaken", "reserved for leni");
         let own = store.own_addresses(leni).await.unwrap();
         assert_eq!((own.used, own.released.len()), (0, 1));
-        store.create_own_alias(leni, "katze@example.de").await.unwrap();
+        store.create_own_alias(leni, "katze@example.org").await.unwrap();
         assert!(store.own_addresses(leni).await.unwrap().released.is_empty(), "taken back");
 
-        store.add_alias("chef@example.de", "leni@example.de").await.unwrap();
+        store.add_alias("chef@example.org", "leni@example.org").await.unwrap();
         assert!(matches!(
-            store.delete_own_alias(leni, "chef@example.de").await,
+            store.delete_own_alias(leni, "chef@example.org").await,
             Err(StoreError::Rule { code: "aliasNotYours", .. })
         ));
     }
@@ -382,11 +382,11 @@ mod tests {
     async fn trash_empties_but_keeps_messages_filed_elsewhere() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path()).await.unwrap();
-        store.create_domain("example.de").await.unwrap();
-        let leni = account(&store, "leni@example.de").await;
+        store.create_domain("example.org").await.unwrap();
+        let leni = account(&store, "leni@example.org").await;
         let ingest = |targets: Vec<MailboxTarget>, subject: &str| IngestRequest {
             account_id: leni,
-            raw: format!("From: a@example.org\r\nSubject: {subject}\r\n\r\nHallo\r\n").into_bytes(),
+            raw: format!("From: a@example.net\r\nSubject: {subject}\r\n\r\nHallo\r\n").into_bytes(),
             mailboxes: targets,
             keywords: vec![],
             received_at: None,

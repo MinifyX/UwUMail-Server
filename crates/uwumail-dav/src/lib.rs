@@ -765,14 +765,14 @@ mod tests {
     #[test]
     fn paths() {
         assert_eq!(parse_path("/dav/"), Some(Path::Root));
-        assert_eq!(parse_path("/dav/principals/Mini%40example.de/"), Some(Path::Principal("mini@example.de".into())));
+        assert_eq!(parse_path("/dav/principals/Mini%40example.org/"), Some(Path::Principal("mini@example.org".into())));
         assert_eq!(
-            parse_path("/dav/calendars/mini@example.de/"),
-            Some(Path::Home(DavKind::Calendar, "mini@example.de".into()))
+            parse_path("/dav/calendars/mini@example.org/"),
+            Some(Path::Home(DavKind::Calendar, "mini@example.org".into()))
         );
         assert_eq!(
-            parse_path("/dav/addressbooks/mini@example.de/contacts/nyu.vcf"),
-            Some(Path::Resource(DavKind::Addressbook, "mini@example.de".into(), "contacts".into(), "nyu.vcf".into()))
+            parse_path("/dav/addressbooks/mini@example.org/contacts/nyu.vcf"),
+            Some(Path::Resource(DavKind::Addressbook, "mini@example.org".into(), "contacts".into(), "nyu.vcf".into()))
         );
         assert_eq!(parse_path("/dav/other/x/"), None);
         assert_eq!(parse_path("/dav/calendars/a/b/c/d"), None);

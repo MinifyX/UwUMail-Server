@@ -619,7 +619,7 @@
     "create": {
       "title": "Domain hinzufügen",
       "name": "Domain",
-      "placeholder": "familie-beispiel.de",
+      "placeholder": "familie-beispiel.example",
       "hint": "Die Domain muss dir gehören. Die nötigen DNS-Einträge zeigen wir dir im nächsten Schritt.",
       "submit": "Hinzufügen"
     },
@@ -962,7 +962,7 @@
       "privacyText": "Log-Zeilen enthalten personenbezogene Daten: Anmeldenamen und Mailadressen, IP-Adressen von Mail-Apps und anderen Servern, Absender empfangener Mails. Mit dem Einschalten verlassen diese Daten den Server und liegen danach in Loki – so lange, wie Loki sie aufbewahrt. Sorge dafür, dass das für alle Postfächer auf diesem Server in Ordnung ist.",
       "privacyConsent": "Ich habe das verstanden und erlaube, dass die Logs mit diesen Daten an die unten eingetragene Adresse gesendet werden.",
       "url": "Adresse von Loki",
-      "urlHint": "z. B. http://192.168.1.20:3100 oder https://logs-prod-012.grafana.net. /loki/api/v1/push wird ergänzt, wenn die Adresse keinen Pfad hat.",
+      "urlHint": "z. B. http://192.168.1.20:3100 oder https://loki.example.net. /loki/api/v1/push wird ergänzt, wenn die Adresse keinen Pfad hat.",
       "auth": "Anmeldung",
       "authNone": "Keine",
       "authBasic": "Benutzer & Passwort",
@@ -2459,7 +2459,7 @@
         "lines_one": "Eine Zeile",
         "lines_other": "{{formatted}} Zeilen",
         "senderHint": "Pro Zeile ein Absender. Optional nach einem Komma allow oder block und eine Notiz, z. B.: news@example.com, allow, Newsletter",
-        "senderPlaceholder": "spam@example.com\n*.xyz\n198.51.100.0/24\nnews.example.org, allow, Newsletter",
+        "senderPlaceholder": "spam@example.com\n*.spam.example\n198.51.100.0/24\nnews.example.org, allow, Newsletter",
         "file": "Datei einlesen",
         "notePlaceholder": "Notiz für alle Zeilen ohne eigene (optional)",
         "tooMany": "Höchstens {{max}} Zeilen auf einmal.",
