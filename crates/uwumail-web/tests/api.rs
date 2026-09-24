@@ -119,7 +119,14 @@ async fn login_session_and_logout() {
 
     let (status, _, info) = call(&app, Call::get("/api/info")).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(info, json!({ "hostname": "mail.example.org", "setupRequired": false }));
+    assert_eq!(
+        info,
+        json!({
+            "hostname": "mail.example.org",
+            "setupRequired": false,
+            "brand": { "name": "UwUMail", "custom": false, "color": null, "mascot": true, "logo": null },
+        })
+    );
 
     let (status, _, body) = call(&app, Call::get("/api/session")).await;
     assert_eq!((status, body), (StatusCode::OK, Value::Null), "not logged in is a normal answer");
