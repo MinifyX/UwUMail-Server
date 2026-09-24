@@ -23,12 +23,12 @@ pub const WORD_SOURCE_ENTRY_LIMIT: usize = 20_000;
 /// A subscribed list may be this big.
 pub const WORD_SOURCE_MAX_BYTES: usize = 1024 * 1024;
 const PATTERN_MAX_CHARS: usize = 1_000;
-const NOTE_MAX_CHARS: usize = 200;
+pub(crate) const NOTE_MAX_CHARS: usize = 200;
 /// A pattern may compile to this much, so a single one cannot eat the server's memory.
 pub const PATTERN_SIZE_LIMIT: usize = 1024 * 1024;
 /// How many refused lines an import reports.
 const MAX_REPORTED: usize = 20;
-const WORDS: &str = "words";
+pub(crate) const WORDS: &str = "words";
 
 fn invalid(message: String) -> StoreError {
     StoreError::Rule { code: "wordInvalid", message }
@@ -106,7 +106,7 @@ pub fn parse_word_lines(text: &str) -> (Vec<String>, Vec<(String, String)>) {
     (good, refused)
 }
 
-fn check_points(points: Option<f32>) -> Result<()> {
+pub(crate) fn check_points(points: Option<f32>) -> Result<()> {
     match points {
         Some(points) if !(0.1..=WORD_POINTS_MAX).contains(&points) => {
             Err(invalid(format!("points must be between 0.1 and {WORD_POINTS_MAX}")))
@@ -128,6 +128,9 @@ pub struct WordEntry {
     pub scope: ListScope,
     pub created_at: i64,
     pub created_by: String,
+    pub expires_at: Option<i64>,
+    pub hits: i64,
+    pub last_hit_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -171,6 +174,8 @@ pub struct RefusedWord {
 /// One entry as the SMTP side compiles it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompiledWord {
+    /// The entry, to count its hits; 0 for built-in lists.
+    pub id: i64,
     pub scope: ListScope,
     /// The domain of a domain-wide entry.
     pub domain: Option<String>,
@@ -179,7 +184,7 @@ pub struct CompiledWord {
     pub subject_only: bool,
 }
 
-fn scope_ids(scope: ListScope) -> (Option<i64>, Option<i64>) {
+pub(crate) fn scope_ids(scope: ListScope) -> (Option<i64>, Option<i64>) {
     match scope {
         ListScope::Server => (None, None),
         ListScope::Domain(id) => (None, Some(id)),
@@ -187,7 +192,7 @@ fn scope_ids(scope: ListScope) -> (Option<i64>, Option<i64>) {
     }
 }
 
-fn scope_of(account_id: Option<i64>, domain_id: Option<i64>) -> ListScope {
+pub(crate) fn scope_of(account_id: Option<i64>, domain_id: Option<i64>) -> ListScope {
     match (account_id, domain_id) {
         (Some(id), _) => ListScope::Account(id),
         (None, Some(id)) => ListScope::Domain(id),
@@ -196,7 +201,7 @@ fn scope_of(account_id: Option<i64>, domain_id: Option<i64>) -> ListScope {
 }
 
 /// `alias.account_id` and `alias.domain_id` for a scope, with its values.
-fn scope_filter(alias: &str, scope: ListScope) -> (String, Vec<Box<dyn ToSql>>) {
+pub(crate) fn scope_filter(alias: &str, scope: ListScope) -> (String, Vec<Box<dyn ToSql>>) {
     match scope {
         ListScope::Server => (format!("{alias}.account_id IS NULL AND {alias}.domain_id IS NULL"), vec![]),
         ListScope::Domain(id) => (format!("{alias}.domain_id = ?"), vec![Box::new(id)]),
@@ -205,14 +210,10 @@ fn scope_filter(alias: &str, scope: ListScope) -> (String, Vec<Box<dyn ToSql>>) 
 }
 
 fn owned_by(owner: ListOwner, scope: ListScope) -> bool {
-    match (owner, scope) {
-        (ListOwner::Admin, ListScope::Server | ListScope::Domain(_)) => true,
-        (ListOwner::Account(owner), ListScope::Account(account)) => owner == account,
-        _ => false,
-    }
+    owner.looks_after(scope)
 }
 
-fn bump_version(tx: &Transaction<'_>, name: &str) -> Result<()> {
+pub(crate) fn bump_version(tx: &Transaction<'_>, name: &str) -> Result<()> {
     tx.execute(
         "INSERT INTO list_versions (name, version) VALUES (?1, 1)
          ON CONFLICT (name) DO UPDATE SET version = version + 1",
@@ -222,7 +223,7 @@ fn bump_version(tx: &Transaction<'_>, name: &str) -> Result<()> {
 }
 
 const ENTRY_SELECT: &str = "SELECT w.id, w.pattern, w.points, w.note, d.name, w.account_id, w.domain_id, w.created_at,
-        w.created_by
+        w.created_by, w.expires_at, w.hits, w.last_hit_at
      FROM word_entries w LEFT JOIN domains d ON d.id = w.domain_id";
 
 fn entry(row: &Row<'_>) -> rusqlite::Result<WordEntry> {
@@ -235,6 +236,9 @@ fn entry(row: &Row<'_>) -> rusqlite::Result<WordEntry> {
         scope: scope_of(row.get(5)?, row.get(6)?),
         created_at: row.get(7)?,
         created_by: row.get(8)?,
+        expires_at: row.get(9)?,
+        hits: row.get(10)?,
+        last_hit_at: row.get(11)?,
     })
 }
 
@@ -302,6 +306,19 @@ impl Store {
         note: String,
         created_by: String,
     ) -> Result<WordImport> {
+        self.add_words_until(scope, text, points, note, created_by, None).await
+    }
+
+    /// Adds entries, one per line, that run out at `expires_at` (Unix seconds) when it is set.
+    pub async fn add_words_until(
+        &self,
+        scope: ListScope,
+        text: String,
+        points: Option<f32>,
+        note: String,
+        created_by: String,
+        expires_at: Option<i64>,
+    ) -> Result<WordImport> {
         check_points(points)?;
         let note = note.trim().to_owned();
         if note.chars().count() > NOTE_MAX_CHARS {
@@ -338,9 +355,10 @@ impl Store {
                     continue;
                 }
                 tx.execute(
-                    "INSERT INTO word_entries (account_id, domain_id, pattern, points, note, created_at, created_by)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                    params![account_id, domain_id, pattern, points.map(f64::from), note, now(), created_by],
+                    "INSERT INTO word_entries (account_id, domain_id, pattern, points, note, created_at, created_by,
+                                               expires_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    params![account_id, domain_id, pattern, points.map(f64::from), note, now(), created_by, expires_at],
                 )?;
                 count += 1;
                 report.added += 1;
@@ -510,13 +528,15 @@ impl Store {
         self.read(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT w.account_id, w.domain_id, d.name, w.pattern, COALESCE(w.points, s.points),
-                        COALESCE(s.subject_only, 0)
+                        COALESCE(s.subject_only, 0), w.id
                  FROM word_entries w
                  LEFT JOIN word_sources s ON s.id = w.source_id
-                 LEFT JOIN domains d ON d.id = w.domain_id",
+                 LEFT JOIN domains d ON d.id = w.domain_id
+                 WHERE w.expires_at IS NULL OR w.expires_at > strftime('%s', 'now')",
             )?;
             let rows = stmt.query_map([], |row| {
                 Ok(CompiledWord {
+                    id: row.get(6)?,
                     scope: scope_of(row.get(0)?, row.get(1)?),
                     domain: row.get(2)?,
                     pattern: row.get(3)?,
@@ -637,10 +657,10 @@ mod tests {
 
         let entry = store.word_entries(ListScope::Account(leni)).await.unwrap().remove(0);
         assert!(
-            store.remove_word_entry(ListOwner::Admin, entry.id).await.is_err(),
-            "admins keep out of personal lists"
+            store.remove_word_entry(ListOwner::Account(leni + 1), entry.id).await.is_err(),
+            "nobody else removes a person's entry"
         );
-        store.remove_word_entry(ListOwner::Account(leni), entry.id).await.unwrap();
+        store.remove_word_entry(ListOwner::Admin, entry.id).await.unwrap();
         store.remove_word_source(ListOwner::Admin, source.id).await.unwrap();
         assert_eq!(store.compiled_words().await.unwrap().len(), 2, "a list takes its entries along");
     }

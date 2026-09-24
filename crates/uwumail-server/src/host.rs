@@ -109,7 +109,7 @@ impl HostBackend for HostBridge {
 
     fn ask<'a>(&'a self, verb: &'a str) -> HostFuture<'a> {
         Box::pin(async move {
-            if !matches!(verb, "os-update" | "reboot") {
+            if !matches!(verb, "os-update" | "reboot" | "vpn-apply" | "vpn-stop") {
                 return Err(format!("this server does not ask for {verb}"));
             }
             // One at a time. Two updates at once is never what anyone meant.
@@ -136,5 +136,23 @@ impl HostBackend for HostBridge {
             tracing::info!(%verb, %id, "asked the machine's helper for a job");
             Ok(id)
         })
+    }
+
+    fn hand_over(&self, name: &'static str, contents: &str) -> Result<(), String> {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let path = self.dir.join(name);
+        let tmp = self.dir.join(format!("{name}.tmp"));
+        let _ = std::fs::remove_file(&tmp);
+        // Only the helper (root) and this container read it: it can hold a VPN's keys.
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&tmp)
+            .map_err(|err| format!("{name} could not be written: {err}"))?;
+        file.write_all(contents.as_bytes()).map_err(|err| format!("{name} could not be written: {err}"))?;
+        drop(file);
+        std::fs::rename(&tmp, &path).map_err(|err| format!("{name} could not be handed over: {err}"))
     }
 }

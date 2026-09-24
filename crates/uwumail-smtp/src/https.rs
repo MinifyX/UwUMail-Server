@@ -14,8 +14,25 @@ use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::rt::TokioExecutor;
 
 #[derive(Clone)]
+enum Inner {
+    Direct(Client<HttpsConnector<HttpConnector>, Empty<Bytes>>),
+    /// Through the egress, for requests the admin wants to leave through the VPN.
+    Egress(Client<HttpsConnector<crate::egress::DialerConnector>, Empty<Bytes>>),
+}
+
+#[derive(Clone)]
 pub struct Https {
-    client: Client<HttpsConnector<HttpConnector>, Empty<Bytes>>,
+    client: Inner,
+}
+
+fn tls_config() -> rustls::ClientConfig {
+    let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+    let roots = rustls::RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
+    rustls::ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .expect("the default TLS versions")
+        .with_root_certificates(roots)
+        .with_no_client_auth()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,16 +43,21 @@ pub struct Fetched {
 
 impl Https {
     pub fn new() -> Https {
-        let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
-        let roots = rustls::RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
-        let tls = rustls::ClientConfig::builder_with_provider(provider)
-            .with_safe_default_protocol_versions()
-            .expect("the default TLS versions")
-            .with_root_certificates(roots)
-            .with_no_client_auth();
-        let connector =
-            hyper_rustls::HttpsConnectorBuilder::new().with_tls_config(tls).https_only().enable_http1().build();
-        Https { client: Client::builder(TokioExecutor::new()).build(connector) }
+        let connector = hyper_rustls::HttpsConnectorBuilder::new()
+            .with_tls_config(tls_config())
+            .https_only()
+            .enable_http1()
+            .build();
+        Https { client: Inner::Direct(Client::builder(TokioExecutor::new()).build(connector)) }
+    }
+
+    /// Leaves the way the dialer does: through the proxy, when it has one, and only to public addresses.
+    pub fn through(dialer: &crate::egress::Dialer) -> Https {
+        if !dialer.proxied() {
+            return Https::new();
+        }
+        let connector = dialer.https_connector(tls_config());
+        Https { client: Inner::Egress(Client::builder(TokioExecutor::new()).build(connector)) }
     }
 
     /// GETs `url`. Anything but 200 is an error, and so is a body over `max_bytes`.
@@ -45,7 +67,11 @@ impl Https {
             .body(Empty::new())
             .map_err(|err| err.to_string())?;
         let fetch = async {
-            let response = self.client.request(request).await.map_err(|err| error_chain(&err))?;
+            let response = match &self.client {
+                Inner::Direct(client) => client.request(request).await,
+                Inner::Egress(client) => client.request(request).await,
+            }
+            .map_err(|err| error_chain(&err))?;
             let status = response.status();
             if status != hyper::StatusCode::OK {
                 return Err(format!("the server answered {status}"));

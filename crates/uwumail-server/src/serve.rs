@@ -110,8 +110,14 @@ pub async fn run(
     tasks.spawn(uwumail_smtp::run_queue(smtp.clone(), shutdown_rx.clone()));
     tasks.spawn(uwumail_smtp::run_learning(smtp.clone(), shutdown_rx.clone()));
     tasks.spawn(uwumail_smtp::run_list_updates(smtp.clone(), shutdown_rx.clone()));
+    // A message's remote pictures, fetched here instead of by the reader; through a VPN when one is set.
+    // The admin panel changes it while the server runs, and may send update checks and fetching there too.
+    let egress = uwumail_smtp::egress::Egress::new(&config.egress).map_err(anyhow::Error::msg)?;
+    if egress.proxied() {
+        tracing::info!(fallback = ?config.egress.fallback, "requests that tell about readers leave through the egress proxy");
+    }
     // Mailboxes at other providers, emptied into the mailboxes here that asked for them.
-    tasks.spawn(crate::fetch::run_fetchers(store.clone(), smtp.clone(), shutdown_rx.clone()));
+    tasks.spawn(crate::fetch::run_fetchers(store.clone(), smtp.clone(), egress.clone(), shutdown_rx.clone()));
 
     // Calendars and contacts (CalDAV, CardDAV) live next to JMAP on the same HTTPS port.
     let names = match config.tone.language {
@@ -125,11 +131,6 @@ pub async fn run(
     // One switch for the whole server, shared by everything that has to honour it: the page
     // under /mail, JMAP's session login, and the admin panel that flips it.
     let webmail = Arc::new(std::sync::atomic::AtomicBool::new(config.http.webmail));
-    // A message's remote pictures, fetched here instead of by the reader; through a VPN when one is set.
-    let egress = uwumail_smtp::egress::Egress::new(&config.egress).map_err(anyhow::Error::msg)?;
-    if egress.proxied() {
-        tracing::info!(fallback = ?config.egress.fallback, "remote pictures leave through the egress proxy");
-    }
     let jmap = uwumail_jmap::Jmap::with_webmail(smtp.clone(), webmail.clone())
         .with_egress(egress.clone())
         .router()
@@ -167,6 +168,7 @@ pub async fn run(
                 smtp: smtp.clone(),
                 loki,
                 webmail: webmail.clone(),
+                egress: egress.clone(),
             })),
             certificate: Some(certificate),
             webmail,

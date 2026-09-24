@@ -214,11 +214,75 @@ With `spam.bayes` off, the filter gives no points and does not learn clear
 cases, but it keeps learning from marks, so it is ready when it is turned on
 again.
 
+## The portal
+
+The spam filter has one page per thing to look after. Admins find it under
+*Server → Spamfilter*:
+
+| Tab | What is there |
+| --- | --- |
+| Übersicht | how many rules there are (blocked, allowed, running out, unused), which rules decide the most, the filter's state, and a line to block or allow a sender at once |
+| Regeln | every allowed and blocked sender and every word, for the whole server, each domain and each person, in one table |
+| Einstellungen | switches and scores, see [Settings](#settings) |
+| Listen | the built-in lists and word lists subscribed to by link |
+| Lernen | what the learning filter knows, and learning from mail already sorted |
+| Viren | the virus scanner |
+| Verlauf | what was decided, message by message |
+
+Everyone else has *Mein Konto → Spamfilter* with their own rules, their own
+subscribed lists, their limits and what greylisting holds back.
+
+### Rules
+
+Senders (see [below](#allowed-and-blocked-senders)) and words (see
+[Word lists](#word-lists)) are one table, searched, filtered, sorted and paged
+by the server, so it stays quick with thousands of entries across many domains
+and people:
+
+- **Search** looks at the value, the note, and the domain or person a rule
+  belongs to.
+- **Scope** (admins): all, the whole server, all domains, all people, or one
+  domain or person, picked from a searchable list that says how many rules
+  each has.
+- **Effect**: blocked, allowed, or words that give points; **kind**: address,
+  domain, pattern, IP or network, host name, word, expression.
+- **State**: rules that run out, rules that never decided anything, rules
+  without a hit in 90 days. **Sort** by value, date, hits, last hit or end date.
+
+The filters live in the address, so a filtered view can be bookmarked and the
+back button brings the last one back.
+
+Every rule can be changed in place: its value, what it does, whom it is for,
+its note, its points (words) and **when it runs out**: for good, for 1, 7, 30,
+90 or 365 days, or until a date. A rule that ran out stops counting at once and
+is removed within ten minutes. Every rule also counts its **hits**, how often
+it decided something and when last, so rules nobody needs any more are easy to
+find.
+
+Ticking rules gives the actions for all of them at once: allow, block, move to
+another scope (admins), set an end date, remove. What does not fit — a value
+already listed at the target, a full list — is skipped and reported, the rest
+changes.
+
+**Import** takes pasted lines or a text or CSV file, up to 20,000 lines: one
+value per line, for senders optionally `allow` or `block` and a note after a
+comma (`news@example.com, allow, newsletter`), all into one scope, with one end
+date. **Export** writes the rules the filters show as CSV
+(`type,list,kind,value,scope,note,points,expires_at,hits,last_hit_at,created_at,created_by`),
+which Import reads back.
+
+Admins look after people's own rules too, which the change log records. The
+API behind the table is `/api/admin/spam/rules` (and `/api/account/spam/rules`
+for one's own): `GET` with `search`, `scope`, `list`, `kind`, `state`, `sort`,
+`desc`, `page` and `perPage`; `POST` for one rule, `PATCH …/rules/{sender|word}/{id}`,
+`POST …/rules/bulk`, `…/rules/import` and `GET …/rules/export`.
+
 ## Allowed and blocked senders
 
 Everyone keeps their own list of allowed and blocked senders in the portal
 under *Mein Konto → Spamfilter*. Admins keep one for the whole server and one per
-domain under *Server → Spamfilter*, or on the command line.
+domain under *Server → Spamfilter → Regeln*, can change every person's too, or
+use the command line.
 
 | Kind | Example | Matches |
 | --- | --- | --- |

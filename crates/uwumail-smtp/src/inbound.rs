@@ -1275,6 +1275,19 @@ pub(crate) async fn receive(
             _ => Decision::None,
         })
         .collect();
+    // How often each entry decided something, so the portal can show which ones still matter.
+    let mut decided: Vec<i64> =
+        decisions.iter().filter_map(|decision| decision.entry().map(|entry| entry.id)).collect();
+    decided.sort_unstable();
+    decided.dedup();
+    if !decided.is_empty() {
+        let store = ctx.store.clone();
+        tokio::spawn(async move {
+            if let Err(err) = store.note_rule_hits(decided, Vec::new()).await {
+                tracing::debug!(%err, "counting sender list hits failed");
+            }
+        });
+    }
     if !decisions.is_empty() && decisions.iter().all(|decision| matches!(decision, Decision::Reject(_))) {
         let listed = decisions[0].entry().map(|entry| entry.value.as_str());
         tracing::info!(%id, from = %envelope.address, listed, "refused by a sender list");

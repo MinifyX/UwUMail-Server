@@ -123,7 +123,8 @@ async fn run(
                     line.trim_end_matches(['\r', '\n']).to_owned()
                 }
             };
-            let source = import::imap::Source { address: host, tls_name, roots: None, master_user, password };
+            let source =
+                import::imap::Source { address: host, tls_name, roots: None, master_user, password, dialer: None };
             import::imap(&store, source, &login, &domain, dry_run).await
         }
         Command::Queue(command) => commands::queue(&store, command).await,

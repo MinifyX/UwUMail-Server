@@ -255,8 +255,11 @@ async fn people_and_admins_keep_word_lists_and_see_the_built_in_lists() {
     assert_eq!((source["subjectOnly"].as_bool(), source["error"].is_string()), (Some(true), true));
 
     let entry_id = answer["lists"]["entries"][0]["id"].as_i64().unwrap();
+    let (status, _) =
+        call(&app, "DELETE", &format!("/api/account/spam/words/{}", entry_id + 1000), None, Some(&leni)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "nobody removes an entry that is not theirs");
     let (status, _) = call(&app, "DELETE", &format!("/api/admin/spam/words/{entry_id}"), None, Some(&chef)).await;
-    assert_eq!(status, StatusCode::NOT_FOUND, "admins keep out of personal lists");
+    assert_eq!(status, StatusCode::OK, "admins look after every list, people's too");
     let (status, _) = call(&app, "GET", "/api/admin/spam/words", None, Some(&leni)).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
@@ -281,4 +284,80 @@ async fn people_and_admins_keep_word_lists_and_see_the_built_in_lists() {
 
     let actions: Vec<String> = store.audit_log(10, None).await.unwrap().into_iter().map(|entry| entry.action).collect();
     assert!(actions.contains(&"spam.wordsAdd".to_owned()), "{actions:?}");
+}
+
+#[tokio::test]
+async fn rules_are_one_table_for_admins_and_each_person() {
+    let (_dir, store, _ids) = server().await;
+    let app = router(&store);
+    let admin = login(&app, "chef@example.de").await;
+    let leni = login(&app, "leni@example.de").await;
+
+    let text = (0..40).map(|n| format!("spam{n}@evil.example")).collect::<Vec<_>>().join("\n");
+    let import = json!({ "type": "sender", "list": "block", "text": text, "scope": "domain:example.de" });
+    let (status, report) = call(&app, "POST", "/api/admin/spam/rules/import", Some(import), Some(&admin)).await;
+    assert_eq!((status, report["added"].as_u64()), (StatusCode::OK, Some(40)), "{report}");
+    let word = json!({ "type": "word", "value": "casino", "points": 4.0 });
+    let (status, casino) = call(&app, "POST", "/api/admin/spam/rules", Some(word), Some(&admin)).await;
+    assert_eq!(status, StatusCode::CREATED, "{casino}");
+    assert_eq!((casino["list"].as_str(), casino["scope"]["type"].as_str()), (Some("points"), Some("server")));
+    let own = json!({ "type": "sender", "list": "allow", "value": "oma@example.net", "scope": "domain:example.de" });
+    let (status, oma) = call(&app, "POST", "/api/account/spam/rules", Some(own), Some(&leni)).await;
+    assert_eq!(status, StatusCode::CREATED, "{oma}");
+    assert_eq!(oma["scope"]["name"], "leni@example.de", "a person's rule is always their own");
+
+    let (_, page) = call(&app, "GET", "/api/admin/spam/rules?perPage=25&page=1", None, Some(&admin)).await;
+    assert_eq!((page["total"].as_i64(), page["rules"].as_array().unwrap().len()), (Some(42), 17), "{page}");
+    let (_, page) = call(&app, "GET", "/api/admin/spam/rules?scope=accounts&list=allow", None, Some(&admin)).await;
+    assert_eq!(page["total"], 1, "admins see people's rules too");
+    let (_, page) = call(&app, "GET", "/api/account/spam/rules?scope=all", None, Some(&leni)).await;
+    assert_eq!(page["total"], 1, "people only ever see their own");
+    let (_, scopes) = call(&app, "GET", "/api/admin/spam/scopes?search=example", None, Some(&admin)).await;
+    let domain = scopes["scopes"].as_array().unwrap().iter().find(|s| s["key"] == "domain:example.de").unwrap();
+    assert_eq!(domain["count"], 40);
+
+    let path = format!("/api/admin/spam/rules/word/{}", casino["id"]);
+    let change = json!({ "points": null, "note": "Glücksspiel", "scope": "domain:example.de" });
+    let (status, changed) = call(&app, "PATCH", &path, Some(change), Some(&admin)).await;
+    assert_eq!(status, StatusCode::OK, "{changed}");
+    assert_eq!((changed["points"].clone(), changed["scope"]["name"].as_str()), (Value::Null, Some("example.de")));
+    let theirs = path.replace("/admin/", "/account/");
+    let stranger = call(&app, "PATCH", &theirs, Some(json!({ "note": "x" })), Some(&leni)).await;
+    assert_eq!(stranger.0, StatusCode::NOT_FOUND, "people cannot reach the server's rules");
+
+    let (_, page) = call(&app, "GET", "/api/admin/spam/rules?search=spam1&perPage=50", None, Some(&admin)).await;
+    let items: Vec<Value> =
+        page["rules"].as_array().unwrap().iter().map(|rule| json!({ "type": "sender", "id": rule["id"] })).collect();
+    assert_eq!(items.len(), 11);
+    let bulk = json!({ "items": items, "action": "expiry", "expiresAt": 4_000_000_000i64 });
+    let (_, report) = call(&app, "POST", "/api/admin/spam/rules/bulk", Some(bulk), Some(&admin)).await;
+    assert_eq!(report["changed"], 11, "{report}");
+    let (_, page) = call(&app, "GET", "/api/admin/spam/rules?state=temporary", None, Some(&admin)).await;
+    assert_eq!(page["total"], 11);
+    let past = json!({ "items": [], "action": "expiry", "expiresAt": 1 });
+    assert_eq!(
+        call(&app, "POST", "/api/admin/spam/rules/bulk", Some(past), Some(&admin)).await.0,
+        StatusCode::CONFLICT
+    );
+    let moved = json!({ "items": [{ "type": "sender", "id": oma["id"] }], "action": "scope", "scope": "server" });
+    let (status, _) = call(&app, "POST", "/api/account/spam/rules/bulk", Some(moved), Some(&leni)).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "people cannot move rules out of their own list");
+    let delete = json!({ "items": items_of(&page), "action": "delete" });
+    let (_, report) = call(&app, "POST", "/api/admin/spam/rules/bulk", Some(delete), Some(&admin)).await;
+    assert_eq!(report["changed"], 11);
+
+    let request = Request::get("/api/admin/spam/rules/export?list=allow")
+        .header(header::COOKIE, &admin.0)
+        .extension(ClientInfo { https: true, ..ClientInfo::default() })
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "text/csv; charset=utf-8");
+    let csv = String::from_utf8(axum::body::to_bytes(response.into_body(), 1 << 20).await.unwrap().to_vec()).unwrap();
+    assert_eq!(csv.lines().count(), 2, "{csv}");
+    assert!(csv.contains("sender,allow,address,oma@example.net,account:leni@example.de"), "{csv}");
+}
+
+fn items_of(page: &Value) -> Vec<Value> {
+    page["rules"].as_array().unwrap().iter().map(|rule| json!({ "type": rule["type"], "id": rule["id"] })).collect()
 }

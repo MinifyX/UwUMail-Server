@@ -21,6 +21,7 @@ mod routes;
 mod session;
 pub mod settings;
 mod updates;
+pub mod vpn;
 mod webauthn;
 
 use std::collections::HashMap;
@@ -280,6 +281,11 @@ impl Web {
                 get(routes::spam::account_senders).post(routes::spam::account_add_sender),
             )
             .route("/api/account/spam/senders/{id}", delete(routes::spam::account_remove_sender))
+            .route("/api/account/spam/rules", get(routes::rules::account_list).post(routes::rules::account_create))
+            .route("/api/account/spam/rules/bulk", post(routes::rules::account_bulk))
+            .route("/api/account/spam/rules/import", post(routes::rules::account_import))
+            .route("/api/account/spam/rules/export", get(routes::rules::account_export))
+            .route("/api/account/spam/rules/{type}/{id}", patch(routes::rules::account_change))
             .route("/api/account/spam/words", get(routes::words::account_words).post(routes::words::account_add_words))
             .route("/api/account/spam/words/{id}", delete(routes::words::account_remove_word))
             .route("/api/account/spam/word-sources", post(routes::words::account_subscribe))
@@ -331,6 +337,11 @@ impl Web {
             .route("/api/admin/settings", get(routes::settings::show).patch(routes::settings::update))
             .route("/api/admin/egress", get(routes::egress::show))
             .route("/api/admin/egress/test", post(routes::egress::test))
+            .route("/api/admin/vpn", get(routes::vpn::show).put(routes::vpn::save))
+            .route("/api/admin/vpn/apply", post(routes::vpn::apply))
+            .route("/api/admin/vpn/stop", post(routes::vpn::stop))
+            .route("/api/admin/vpn/files", post(routes::vpn::files))
+            .route("/api/admin/vpn/use-gluetun", post(routes::vpn::use_gluetun))
             .route("/api/admin/spam", get(routes::spam::admin_overview))
             .route("/api/admin/spam/learn-folders", post(routes::spam::admin_learn))
             .route("/api/admin/spam/log", get(routes::spam::admin_log).delete(routes::spam::admin_clear_log))
@@ -339,6 +350,12 @@ impl Web {
                 get(routes::spam::admin_senders_view).post(routes::spam::admin_add_sender),
             )
             .route("/api/admin/spam/senders/{id}", delete(routes::spam::admin_remove_sender))
+            .route("/api/admin/spam/rules", get(routes::rules::admin_list).post(routes::rules::admin_create))
+            .route("/api/admin/spam/rules/bulk", post(routes::rules::admin_bulk))
+            .route("/api/admin/spam/rules/import", post(routes::rules::admin_import))
+            .route("/api/admin/spam/rules/export", get(routes::rules::admin_export))
+            .route("/api/admin/spam/rules/{type}/{id}", patch(routes::rules::admin_change))
+            .route("/api/admin/spam/scopes", get(routes::rules::admin_scopes))
             .route("/api/admin/spam/words", get(routes::words::admin_words).post(routes::words::admin_add_words))
             .route("/api/admin/spam/words/{id}", delete(routes::words::admin_remove_word))
             .route("/api/admin/spam/word-sources", post(routes::words::admin_subscribe))

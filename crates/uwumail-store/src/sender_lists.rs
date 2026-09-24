@@ -29,7 +29,7 @@ pub enum SenderList {
 }
 
 impl SenderList {
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             SenderList::Allow => "allow",
             SenderList::Block => "block",
@@ -50,7 +50,7 @@ pub enum SenderKind {
 }
 
 impl SenderKind {
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             SenderKind::Ip => "ip",
             SenderKind::Host => "host",
@@ -70,7 +70,7 @@ pub enum ListScope {
 }
 
 impl ListScope {
-    fn ids(self) -> (Option<i64>, Option<i64>) {
+    pub(crate) fn ids(self) -> (Option<i64>, Option<i64>) {
         match self {
             ListScope::Server => (None, None),
             ListScope::Domain(id) => (None, Some(id)),
@@ -78,7 +78,7 @@ impl ListScope {
         }
     }
 
-    fn limit(self) -> i64 {
+    pub(crate) fn limit(self) -> i64 {
         match self {
             ListScope::Account(_) => SENDER_LIST_PERSONAL_LIMIT,
             _ => SENDER_LIST_ADMIN_LIMIT,
@@ -86,11 +86,21 @@ impl ListScope {
     }
 }
 
-/// Who removes an entry: admins look after the server and domain lists, people after their own.
+/// Who changes an entry: admins look after every list, people after their own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListOwner {
     Admin,
     Account(i64),
+}
+
+impl ListOwner {
+    pub fn looks_after(self, scope: ListScope) -> bool {
+        match (self, scope) {
+            (ListOwner::Admin, _) => true,
+            (ListOwner::Account(owner), ListScope::Account(account)) => owner == account,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -107,6 +117,11 @@ pub struct SenderListEntry {
     pub scope: ListScope,
     pub created_at: i64,
     pub created_by: String,
+    /// When the entry runs out, in Unix seconds; `None` for good.
+    pub expires_at: Option<i64>,
+    /// How often it decided for a message, and when last.
+    pub hits: i64,
+    pub last_hit_at: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -118,6 +133,8 @@ pub struct NewSenderListEntry {
     pub value: String,
     pub note: String,
     pub created_by: String,
+    /// When the entry runs out, in Unix seconds; `None` for good.
+    pub expires_at: Option<i64>,
 }
 
 fn invalid(message: String) -> StoreError {
@@ -255,9 +272,95 @@ pub fn normalize_sender(kind: SenderKind, value: &str) -> Result<String> {
     }
 }
 
+/// The kind, value and note of a new entry, checked and normalized.
+pub(crate) fn checked(new: &NewSenderListEntry) -> Result<(SenderKind, String, String)> {
+    let kind = new.kind.unwrap_or_else(|| guess_sender_kind(&new.value));
+    let value = normalize_sender(kind, &new.value)?;
+    let note = new.note.trim().to_owned();
+    if note.chars().count() > NOTE_MAX_CHARS {
+        return Err(invalid(format!("the note is longer than {NOTE_MAX_CHARS} characters")));
+    }
+    Ok((kind, value, note))
+}
+
+/// Refuses a value already listed in the scope (on either list), leaving out the entry `except`.
+pub(crate) fn check_free(
+    tx: &rusqlite::Connection,
+    scope: ListScope,
+    kind: SenderKind,
+    value: &str,
+    except: Option<i64>,
+) -> Result<()> {
+    let (filter, mut values) = scope_filter(scope);
+    values.push(Box::new(kind.as_str()));
+    values.push(Box::new(value.to_owned()));
+    values.push(Box::new(except.unwrap_or(0)));
+    if let Some(existing) =
+        entries(tx, &format!("{filter} AND l.kind = ? AND l.value = ? AND l.id != ?"), values)?.pop()
+    {
+        let message = format!("{} is already on the {} list", existing.value, existing.list.as_str());
+        return Err(StoreError::Rule { code: "senderListed", message });
+    }
+    Ok(())
+}
+
+/// Refuses one more entry in a scope that is full.
+pub(crate) fn check_room(tx: &rusqlite::Connection, scope: ListScope) -> Result<()> {
+    let (filter, values) = scope_filter(scope);
+    let sql = format!("SELECT COUNT(*) FROM sender_lists l WHERE {filter}");
+    let count: i64 = tx.query_row(&sql, params_from_iter(values), |row| row.get(0))?;
+    if count >= scope.limit() {
+        let message = format!("the list already holds {count} entries");
+        return Err(StoreError::Rule { code: "senderListFull", message });
+    }
+    Ok(())
+}
+
+/// Inserts a checked entry and returns its id.
+pub(crate) fn insert(
+    tx: &Transaction<'_>,
+    new: &NewSenderListEntry,
+    kind: SenderKind,
+    value: &str,
+    note: &str,
+) -> Result<i64> {
+    check_free(tx, new.scope, kind, value, None)?;
+    check_room(tx, new.scope)?;
+    let (account_id, domain_id) = new.scope.ids();
+    tx.execute(
+        "INSERT INTO sender_lists (account_id, domain_id, list, kind, value, note, created_at, created_by, expires_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            account_id,
+            domain_id,
+            new.list.as_str(),
+            kind.as_str(),
+            value,
+            note,
+            now(),
+            new.created_by,
+            new.expires_at
+        ],
+    )?;
+    Ok(tx.last_insert_rowid())
+}
+
 const SELECT: &str = "SELECT l.id, l.list, l.kind, l.value, l.note, d.name, l.account_id, l.domain_id, l.created_at,
-        l.created_by
+        l.created_by, l.expires_at, l.hits, l.last_hit_at
      FROM sender_lists l LEFT JOIN domains d ON d.id = l.domain_id";
+
+/// Entries that have not run out yet.
+const CURRENT: &str = "(l.expires_at IS NULL OR l.expires_at > strftime('%s', 'now'))";
+
+pub(crate) fn kind_from(kind: &str) -> SenderKind {
+    match kind {
+        "ip" => SenderKind::Ip,
+        "host" => SenderKind::Host,
+        "address" => SenderKind::Address,
+        "pattern" => SenderKind::Pattern,
+        _ => SenderKind::Domain,
+    }
+}
 
 fn entry(row: &Row<'_>) -> rusqlite::Result<SenderListEntry> {
     let list: String = row.get(1)?;
@@ -267,13 +370,7 @@ fn entry(row: &Row<'_>) -> rusqlite::Result<SenderListEntry> {
     Ok(SenderListEntry {
         id: row.get(0)?,
         list: if list == "allow" { SenderList::Allow } else { SenderList::Block },
-        kind: match kind.as_str() {
-            "ip" => SenderKind::Ip,
-            "host" => SenderKind::Host,
-            "address" => SenderKind::Address,
-            "pattern" => SenderKind::Pattern,
-            _ => SenderKind::Domain,
-        },
+        kind: kind_from(&kind),
         value: row.get(3)?,
         note: row.get(4)?,
         domain: row.get(5)?,
@@ -284,6 +381,9 @@ fn entry(row: &Row<'_>) -> rusqlite::Result<SenderListEntry> {
         },
         created_at: row.get(8)?,
         created_by: row.get(9)?,
+        expires_at: row.get(10)?,
+        hits: row.get(11)?,
+        last_hit_at: row.get(12)?,
     })
 }
 
@@ -294,7 +394,7 @@ fn entries(tx: &rusqlite::Connection, filter: &str, values: Vec<Box<dyn ToSql>>)
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
-fn scope_filter(scope: ListScope) -> (&'static str, Vec<Box<dyn ToSql>>) {
+pub(crate) fn scope_filter(scope: ListScope) -> (&'static str, Vec<Box<dyn ToSql>>) {
     match scope {
         ListScope::Server => ("l.account_id IS NULL AND l.domain_id IS NULL", vec![]),
         ListScope::Domain(id) => ("l.domain_id = ?", vec![Box::new(id)]),
@@ -302,7 +402,7 @@ fn scope_filter(scope: ListScope) -> (&'static str, Vec<Box<dyn ToSql>>) {
     }
 }
 
-fn find(tx: &Transaction<'_>, id: i64) -> Result<Option<SenderListEntry>> {
+pub(crate) fn find(tx: &rusqlite::Connection, id: i64) -> Result<Option<SenderListEntry>> {
     Ok(entries(tx, "l.id = ?", vec![Box::new(id)])?.pop())
 }
 
@@ -326,7 +426,7 @@ impl Store {
         self.read(move |conn| {
             let marks = |count: usize| vec!["?"; count].join(", ");
             let filter = format!(
-                "(l.account_id IS NULL AND l.domain_id IS NULL) OR d.name IN ({}) OR l.account_id IN ({})",
+                "{CURRENT} AND ((l.account_id IS NULL AND l.domain_id IS NULL) OR d.name IN ({}) OR l.account_id IN ({}))",
                 marks(domains.len()),
                 marks(accounts.len())
             );
@@ -340,34 +440,10 @@ impl Store {
 
     /// Adds an entry. A value can only be on one of the two lists of a scope at a time.
     pub async fn add_sender_list_entry(&self, new: NewSenderListEntry) -> Result<SenderListEntry> {
-        let kind = new.kind.unwrap_or_else(|| guess_sender_kind(&new.value));
-        let value = normalize_sender(kind, &new.value)?;
-        let note = new.note.trim().to_owned();
-        if note.chars().count() > NOTE_MAX_CHARS {
-            return Err(invalid(format!("the note is longer than {NOTE_MAX_CHARS} characters")));
-        }
+        let (kind, value, note) = checked(&new)?;
         self.write(move |tx| {
-            let (account_id, domain_id) = new.scope.ids();
-            let (filter, mut values) = scope_filter(new.scope);
-            values.push(Box::new(kind.as_str()));
-            values.push(Box::new(value.clone()));
-            if let Some(existing) = entries(tx, &format!("{filter} AND l.kind = ? AND l.value = ?"), values)?.pop() {
-                let message = format!("{} is already on the {} list", existing.value, existing.list.as_str());
-                return Err(StoreError::Rule { code: "senderListed", message });
-            }
-            let (filter, values) = scope_filter(new.scope);
-            let sql = format!("SELECT COUNT(*) FROM sender_lists l WHERE {filter}");
-            let count: i64 = tx.query_row(&sql, params_from_iter(values), |row| row.get(0))?;
-            if count >= new.scope.limit() {
-                let message = format!("the list already holds {count} entries");
-                return Err(StoreError::Rule { code: "senderListFull", message });
-            }
-            tx.execute(
-                "INSERT INTO sender_lists (account_id, domain_id, list, kind, value, note, created_at, created_by)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                params![account_id, domain_id, new.list.as_str(), kind.as_str(), value, note, now(), new.created_by],
-            )?;
-            find(tx, tx.last_insert_rowid())?.ok_or_else(|| StoreError::Internal("the new entry vanished".into()))
+            let id = insert(tx, &new, kind, &value, &note)?;
+            find(tx, id)?.ok_or_else(|| StoreError::Internal("the new entry vanished".into()))
         })
         .await
     }
@@ -375,11 +451,7 @@ impl Store {
     /// Removes an entry its owner looks after and returns what it was.
     pub async fn remove_sender_list_entry(&self, owner: ListOwner, id: i64) -> Result<SenderListEntry> {
         self.write(move |tx| {
-            let entry = find(tx, id)?.filter(|entry| match (owner, entry.scope) {
-                (ListOwner::Admin, ListScope::Server | ListScope::Domain(_)) => true,
-                (ListOwner::Account(owner), ListScope::Account(account)) => owner == account,
-                _ => false,
-            });
+            let entry = find(tx, id)?.filter(|entry| owner.looks_after(entry.scope));
             let entry = entry.ok_or_else(|| StoreError::NotFound(format!("list entry {id}")))?;
             tx.execute("DELETE FROM sender_lists WHERE id = ?1", [id])?;
             Ok(entry)
@@ -457,6 +529,7 @@ mod tests {
             value: value.into(),
             note: String::new(),
             created_by: String::new(),
+            expires_at: None,
         };
 
         store.add_sender_list_entry(add(ListScope::Server, SenderList::Block, "198.51.100.0/24")).await.unwrap();
@@ -485,8 +558,6 @@ mod tests {
 
         let stranger = store.remove_sender_list_entry(ListOwner::Account(leni + 1), own.id).await;
         assert!(matches!(stranger, Err(StoreError::NotFound(_))), "nobody removes someone else's entry");
-        let by_admin = store.remove_sender_list_entry(ListOwner::Admin, own.id).await;
-        assert!(matches!(by_admin, Err(StoreError::NotFound(_))), "admins keep out of personal lists");
         store.remove_sender_list_entry(ListOwner::Account(leni), own.id).await.unwrap();
 
         store.delete_domain("example.org").await.unwrap();

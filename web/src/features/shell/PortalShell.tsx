@@ -2,6 +2,7 @@ import clsx from "clsx";
 import {
   AtSign,
   ChartNoAxesColumn,
+  EarthLock,
   DatabaseBackup,
   ChevronsUpDown,
   Download,
@@ -227,6 +228,7 @@ export function PortalShell({ session, children }: { session: Session; children:
               { to: "/admin/backups", label: t("nav.backups"), icon: DatabaseBackup },
               { to: "/admin/updates", label: t("nav.updates"), icon: Download },
               { to: "/admin/settings", label: t("nav.settings"), icon: Settings },
+              { to: "/admin/vpn", label: t("nav.vpn"), icon: EarthLock },
               { to: "/admin/setup", label: t("nav.setup"), icon: WandSparkles },
               { to: "/admin/log", label: t("nav.log"), icon: History },
               { to: "/admin/logs", label: t("nav.logs"), icon: ScrollText },

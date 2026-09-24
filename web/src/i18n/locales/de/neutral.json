@@ -67,7 +67,8 @@
     "updates": "Updates",
     "collapse": "{{group}} einklappen",
     "expand": "{{group}} ausklappen",
-    "mailbox": "Postfach"
+    "mailbox": "Postfach",
+    "vpn": "VPN & Proxy"
   },
   "userMenu": {
     "open": "Kontomenü öffnen",
@@ -1123,30 +1124,21 @@
       "enabledHint": "Wer im Portal angemeldet ist, kann sein Postfach hier öffnen. Jedes Konto hat unter Personen noch einen eigenen Schalter; Mail-Programme sind davon in beiden Fällen nicht betroffen."
     },
     "egress": {
-      "title": "Bilder in Mails",
-      "intro": "Bilder, die eine Mail von fremden Servern nachlädt, holt der Server selbst. So erfährt der Absender nie, wer die Mail wann und von wo liest. Mit einem Proxy, etwa einem VPN, sieht er auch diesen Server nicht.",
-      "state": {
-        "proxy": "Über Proxy",
-        "trouble": "Proxy macht Probleme",
+      "fallback": "Wenn VPN oder Proxy fehlt",
+      "fallbackOptions": {
+        "block": "Warten, bis er wieder da ist",
         "direct": "Direkt vom Server"
       },
-      "proxy": "Proxy",
-      "fallback": "Wenn der Proxy fehlt",
-      "fallbackOptions": {
-        "block": "Keine Bilder, bis er wieder da ist",
-        "direct": "Direkt vom Server laden"
-      },
-      "directHint": "Absender sehen die Adresse dieses Servers, aber nie die der Lesenden.",
       "counts": "Seit dem Start: {{fetched}} Bilder geladen, {{failed}} nicht.",
       "proxyFailed": "Der Proxy hat {{times}}-mal nicht funktioniert, zuletzt {{when}}: {{error}}",
       "fallbacks": "{{times}}-mal wurde deshalb direkt geladen.",
-      "configHint": "Eingestellt wird das in der Konfiguration oder in der .env (UWUMAIL_EGRESS_PROXY, UWUMAIL_EGRESS_FALLBACK), weil die Proxy-Adresse oft ein Passwort enthält. Mehr dazu in docs/configuration.md.",
       "test": "Weg testen",
-      "testHint": "Fragt api.ipify.org auf demselben Weg wie die Bilder, welche Adresse es sieht.",
       "testProxied": "Absender sehen {{address}}. Das sollte die Adresse des VPN sein.",
       "testDirect": "Absender sehen {{address}}, die Adresse dieses Servers.",
       "testFailed": "Der Test hat nicht geklappt: {{error}}"
-    }
+    },
+    "vpnHint": "Über welchen VPN oder Proxy der Server Bilder, Update-Abfragen und Postfach-Abrufe schickt, stellst du auf einer eigenen Seite ein.",
+    "vpnLink": "Zu VPN & Proxy"
   },
   "health": {
     "loading": "Zustand wird geladen …",
@@ -2032,9 +2024,10 @@
       "intro": "Absender, die du immer durchlässt oder aussortierst, und was der Spamfilter von dir gelernt hat.",
       "tab": "Ansicht",
       "tabs": {
-        "filter": "Filter",
         "waiting": "Wartet",
-        "waitingCount": "Wartet ({{count}})"
+        "rules": "Meine Regeln",
+        "lists": "Abonnierte Listen",
+        "learning": "Grenzwerte & Lernen"
       }
     },
     "greylist": {
@@ -2079,9 +2072,13 @@
       "settingsTitle": "Einstellungen",
       "tab": "Ansicht",
       "tabs": {
-        "filter": "Filter",
         "history": "Verlauf",
-        "antivirus": "Viren"
+        "antivirus": "Viren",
+        "overview": "Übersicht",
+        "rules": "Regeln",
+        "settings": "Einstellungen",
+        "lists": "Listen",
+        "learning": "Lernen"
       }
     },
     "log": {
@@ -2314,6 +2311,305 @@
       "agreedClean": "Beide durchgelassen",
       "agreedCleanHint": "Ganz gewöhnliche Mail.",
       "caveat": "Gezählt wird aus dem Spam-Verlauf, also nur solange der etwas hergibt. Der Anbieter ist kein Maßstab, sondern eine zweite Meinung."
+    },
+    "overview": {
+      "tiles": {
+        "all": "Regeln insgesamt",
+        "block": "Blockiert",
+        "allow": "Erlaubt",
+        "temporary": "Laufen ab",
+        "stale": "Seit 90 Tagen ohne Treffer"
+      },
+      "stateTitle": "So arbeitet der Filter",
+      "change": "Ändern",
+      "more": "Alle ansehen",
+      "on": "an",
+      "off": "aus",
+      "thresholds": "Schwellen",
+      "thresholdsDetail": "Spam-Ordner ab {{junk}} Punkten, Greylisting ab {{greylist}}",
+      "quickTitle": "Schnell eine Regel anlegen",
+      "quickIntro": "Einen Absender blockieren oder erlauben, oder ein Wort, das Punkte gibt. Alles Weitere, etwa ein Ablaufdatum, kannst du danach unter Regeln einstellen.",
+      "quickHint": "Adresse, Domain, IP-Adresse, Hostname, Muster mit * oder ein Wort",
+      "quickWord": "Als Wort mit Punkten",
+      "busiestTitle": "Regeln mit den meisten Treffern",
+      "busiestEmpty": "Noch hat keine Regel etwas entschieden. Treffer werden ab jetzt mitgezählt.",
+      "howItWorks": "Reihenfolge: Eine Blockade für den Server oder die Domain gilt immer zuerst, danach entscheidet die eigene Liste einer Person, dann die der Domain, zuletzt die des Servers. Wörter geben Punkte, die zur Bewertung dazukommen."
+    },
+    "rules": {
+      "title": "Meine Regeln",
+      "titleAdmin": "Regeln",
+      "intro": "Absender, die du immer durchlässt oder aussortierst, und Wörter, die eine Mail verdächtig machen. Was ein Admin für den Server oder deine Domain blockiert, kommt trotzdem nicht an.",
+      "introAdmin": "Alle erlaubten und blockierten Absender und alle Wörter, für den ganzen Server, jede Domain und jede Person. Such, filtere und ändere so viele auf einmal, wie du willst.",
+      "add": "Regel anlegen",
+      "added": "{{value}} ist eingetragen.",
+      "changed": "{{value}} ist geändert.",
+      "edit": "{{value}} bearbeiten",
+      "remove": "{{value}} entfernen",
+      "export": "Exportieren",
+      "search": "Suchen",
+      "searchAdmin": "Absender, Wort, Notiz, Domain oder Person suchen",
+      "clearSearch": "Suche leeren",
+      "moreFilters": "Mehr Filter",
+      "listFilter": "Nach Art der Regel filtern",
+      "resetFilters": "Filter zurücksetzen",
+      "found_one": "Eine Regel gefunden",
+      "found_other": "{{formatted}} Regeln gefunden",
+      "empty": "Noch keine Regeln",
+      "emptyHint": "Leg einen Absender an, der immer durchkommen oder immer draußen bleiben soll, oder ein Wort, das Spam verrät. Viele auf einmal gehen über Importieren.",
+      "emptyFiltered": "Keine Regel passt zu diesen Filtern",
+      "emptyFilteredHint": "Lockere die Suche oder setz die Filter zurück.",
+      "neverHit": "noch nie",
+      "hits_one": "Hat einmal entschieden",
+      "hits_other": "Hat {{count}}-mal entschieden",
+      "createdBy": "Angelegt von {{name}}",
+      "range": "{{from}}–{{to}} von {{total}}",
+      "perPage": "Pro Seite",
+      "previous": "Vorherige Seite",
+      "next": "Nächste Seite",
+      "pageOf": "Seite {{page}} von {{pages}}",
+      "noSubscribed": "Noch keine Liste abonniert.",
+      "subscribedIntro": "Wortlisten, die der Server über einen Link jeden Tag neu holt, etwa aus einem Rspamd-Regelsatz. Ihre Einträge gehören zur Liste und stehen deshalb nicht unter Regeln.",
+      "columns": {
+        "rule": "Regel",
+        "list": "Wirkung",
+        "scope": "Gilt für",
+        "hits": "Treffer",
+        "expires": "Läuft ab"
+      },
+      "types": {
+        "sender": "Absender",
+        "word": "Wort oder Ausdruck"
+      },
+      "lists": {
+        "all": "Alle",
+        "allow": "Erlauben",
+        "block": "Blockieren",
+        "points": "Punkte",
+        "allowPlural": "Erlaubt",
+        "blockPlural": "Blockiert",
+        "pointsPlural": "Wörter"
+      },
+      "kinds": {
+        "address": "Adresse",
+        "domain": "Domain",
+        "pattern": "Muster",
+        "ip": "IP / Netz",
+        "host": "Hostname",
+        "word": "Wort",
+        "regex": "Ausdruck"
+      },
+      "state": {
+        "label": "Zustand",
+        "all": "Alle",
+        "temporary": "Laufen irgendwann ab",
+        "unused": "Haben noch nie entschieden",
+        "stale": "Seit 90 Tagen ohne Treffer"
+      },
+      "sort": {
+        "label": "Sortieren nach",
+        "value": "Wert",
+        "created": "Angelegt",
+        "hits": "Treffern",
+        "lastHit": "Letztem Treffer",
+        "expires": "Ablaufdatum",
+        "ascending": "Aufsteigend",
+        "descending": "Absteigend"
+      },
+      "scope": {
+        "label": "Bereich",
+        "all": "Alle Bereiche",
+        "server": "Ganzer Server",
+        "domains": "Alle Domains",
+        "accounts": "Alle Personen",
+        "domain": "Domain {{name}}",
+        "account": "Person {{name}}",
+        "search": "Domain oder Person suchen",
+        "domainsTitle": "Domains",
+        "accountsTitle": "Personen",
+        "nothing": "Nichts gefunden."
+      },
+      "expiry": {
+        "label": "Gilt",
+        "forever": "Für immer",
+        "foreverShort": "nie",
+        "days_one": "Einen Tag",
+        "days_other": "{{count}} Tage",
+        "date": "Bis zu einem Datum",
+        "never": "Die Regel bleibt, bis jemand sie entfernt.",
+        "until": "Wird am {{date}} von selbst entfernt."
+      },
+      "dialog": {
+        "newTitle": "Neue Regel",
+        "editTitle": "Regel bearbeiten",
+        "type": "Art der Regel",
+        "what": "Was mit Mails von diesem Absender passiert",
+        "blockHint": "Wird abgewiesen oder landet im Spam-Ordner.",
+        "allowHint": "Landet immer im Posteingang, ohne Greylisting.",
+        "word": "Wort, Satz oder /Ausdruck/",
+        "wordPlaceholder": "z. B. casino oder /\\bgewinn(spiel)?\\b/i",
+        "pointsHint": "Leer: {{points}} Punkte. Alle Wörter zusammen geben höchstens {{max}}.",
+        "pointsInvalid": "Zwischen 0,1 und {{max}} Punkten.",
+        "kindKeep": "Bleibt: {{kind}}",
+        "add": "Anlegen"
+      },
+      "import": {
+        "button": "Importieren",
+        "title": "Viele Regeln auf einmal",
+        "intro": "Füge eine Regel pro Zeile ein oder lies eine Text- oder CSV-Datei ein. Zeilen mit # am Anfang werden übersprungen. Was schon eingetragen ist, wird gezählt, aber nicht doppelt angelegt.",
+        "lines_one": "Eine Zeile",
+        "lines_other": "{{formatted}} Zeilen",
+        "senderHint": "Pro Zeile ein Absender. Optional nach einem Komma allow oder block und eine Notiz, z. B.: news@example.com, allow, Newsletter",
+        "senderPlaceholder": "spam@example.com\n*.xyz\n198.51.100.0/24\nnews.example.org, allow, Newsletter",
+        "file": "Datei einlesen",
+        "notePlaceholder": "Notiz für alle Zeilen ohne eigene (optional)",
+        "tooMany": "Höchstens {{max}} Zeilen auf einmal.",
+        "submit_one": "Eine Regel importieren",
+        "submit_other": "{{count}} Regeln importieren"
+      },
+      "bulk": {
+        "selected_one": "Eine ausgewählt",
+        "selected_other": "{{count}} ausgewählt",
+        "select": "{{value}} auswählen",
+        "selectPage": "Alle auf dieser Seite auswählen",
+        "clear": "Auswahl aufheben",
+        "allow": "Erlauben",
+        "block": "Blockieren",
+        "move": "Verschieben",
+        "expiry": "Ablauf",
+        "delete": "Entfernen",
+        "moveTitle_one": "Eine Regel verschieben",
+        "moveTitle_other": "{{count}} Regeln verschieben",
+        "moveHint": "Für wen sollen die Regeln ab jetzt gelten? Was im Ziel schon steht, bleibt wie es ist und wird übersprungen.",
+        "expiryTitle_one": "Ablauf für eine Regel",
+        "expiryTitle_other": "Ablauf für {{count}} Regeln",
+        "deleteTitle_one": "Eine Regel entfernen?",
+        "deleteTitle_other": "{{count}} Regeln entfernen?",
+        "deleteHint": "Die Regeln gelten ab sofort nicht mehr. Das lässt sich nicht rückgängig machen, nur neu anlegen.",
+        "done_one": "Eine Regel geändert.",
+        "done_other": "{{count}} Regeln geändert.",
+        "doneSkipped": "{{changed}} geändert, {{skipped}} übersprungen."
+      },
+      "effect": {
+        "allow": "Erlaubt",
+        "block": "Blockiert",
+        "points": "Gibt Punkte"
+      }
+    }
+  },
+  "vpn": {
+    "title": "VPN & Proxy",
+    "intro": "Wer ein Bild in einer Mail anzeigt, verrät dem Absender, wann und von wo. Der Server holt solche Bilder deshalb selbst, und mit einem VPN sieht der Absender nicht einmal den Server, sondern nur den VPN. Auf Wunsch gehen auch die Update-Abfrage und das Abholen fremder Postfächer darüber.",
+    "status": {
+      "title": "So gehen Anfragen gerade raus",
+      "direct": "Direkt vom Server",
+      "vpn": "Über den VPN",
+      "proxy": "Über einen Proxy",
+      "starting": "VPN verbindet sich",
+      "vpnDown": "VPN antwortet nicht",
+      "container": "VPN-Container",
+      "containerMissing": "Noch nicht gestartet",
+      "containerState": "{{state}}, {{health}} ({{provider}})",
+      "through": "Darüber gehen",
+      "nothing": "Nichts, alles ist ausgeschaltet",
+      "pictures": "Bilder",
+      "testHint": "Fragt einen öffentlichen Dienst, welche Adresse er sieht, auf demselben Weg, den die Bilder nehmen."
+    },
+    "helper": {
+      "missing": "Auf diesem Rechner läuft kein UwUMail-Helfer. Du kannst den VPN hier trotzdem einrichten: Das Portal zeigt dir dann die Datei .env.vpn und den Befehl, mit dem du ihn startest. Mit dem Helfer (deploy/host) startet das Portal ihn selbst.",
+      "old": "Der Helfer auf diesem Rechner (Version {{version}}) kennt den VPN noch nicht. Installier ihn neu (sudo bash install.sh im Ordner uwumail-host der neuesten Version), dann startet das Portal den VPN selbst. Bis dahin kannst du ihn von Hand starten."
+    },
+    "form": {
+      "title": "VPN",
+      "intro": "Der VPN läuft als eigener Container (gluetun) neben dem Server. Nur die Anfragen, die du unten auswählst, gehen durch ihn. Mails, DNS und alles andere gehen weiter direkt raus.",
+      "provider": "Anbieter",
+      "withWireguard": "Mit WireGuard",
+      "openvpnOnly": "Nur OpenVPN",
+      "ownServer": "Eigener Server",
+      "custom": "Eigener WireGuard- oder OpenVPN-Server",
+      "kind": "Verbindung",
+      "readConf": "WireGuard-Datei (.conf) einlesen",
+      "readConfHint": "Übernimmt Schlüssel und Adressen aus der Datei deines Anbieters.",
+      "confRead": "Die WireGuard-Datei ist übernommen. Speichern nicht vergessen.",
+      "confUnreadable": "In der Datei steht kein PrivateKey.",
+      "privateKey": "Privater Schlüssel",
+      "privateKeyHint": "44 Zeichen, endet mit =. Steht bei deinem Anbieter unter manueller Einrichtung oder in der WireGuard-Datei.",
+      "addresses": "Adresse des Schlüssels",
+      "addressesHint": "Die Adresse, die dein Anbieter dem Schlüssel gegeben hat, z. B. 10.64.0.2/32 (Address in der WireGuard-Datei).",
+      "endpointIp": "Adresse des Servers",
+      "endpointIpHint": "Als IP-Adresse, nicht als Name.",
+      "endpointPort": "Port",
+      "publicKey": "Öffentlicher Schlüssel des Servers",
+      "presharedKey": "Preshared Key",
+      "presharedKeyHint": "Nur, wenn dein Anbieter einen vorgibt.",
+      "ovpn": "OpenVPN-Datei (.ovpn)",
+      "ovpnHint": "Nur die Verbindung: Direktiven, die Programme starten oder Dateien lesen (up, script-security, plugin, …), werden abgelehnt.",
+      "ovpnSet": "Eine Datei ist gespeichert. Eine neue ersetzt sie.",
+      "readOvpn": ".ovpn-Datei einlesen",
+      "user": "Benutzername für OpenVPN",
+      "userHint": "Die Zugangsdaten für manuelle Einrichtung, nicht dein Login beim Anbieter.",
+      "password": "Passwort für OpenVPN",
+      "countries": "Länder",
+      "countriesHint": "Englisch, mit Komma getrennt, z. B. Switzerland. Leer: der Anbieter wählt.",
+      "cities": "Städte",
+      "citiesHint": "Optional, z. B. Zurich.",
+      "regions": "Regionen",
+      "hostnames": "Server-Namen",
+      "hostnamesHint": "Nur diese Server des Anbieters, z. B. ch-zrh-wg-001.",
+      "moreOptions": "Mehr Optionen",
+      "lessOptions": "Weniger Optionen",
+      "secretSet": "Gespeichert, leer lassen zum Behalten",
+      "secretRemoved": "Wird beim Speichern entfernt",
+      "incomplete": "Damit verbindet sich der VPN noch nicht: {{reason}}",
+      "saved": "Der VPN ist gespeichert.",
+      "start": "Speichern und verbinden",
+      "restart": "Speichern und neu verbinden",
+      "stop": "VPN ausschalten",
+      "starting": "Der Helfer startet den VPN. Das dauert meist unter einer Minute.",
+      "stopping": "Der VPN wird ausgeschaltet, Anfragen gehen wieder direkt raus.",
+      "showFiles": "Dateien zum Einrichten zeigen",
+      "useGluetun": "Proxy auf den VPN stellen",
+      "proxySet": "Anfragen gehen jetzt über den VPN-Container.",
+      "proxyLocked": "Der Proxy ist in .env oder der Konfigurationsdatei festgelegt, das Portal ändert ihn deshalb nicht."
+    },
+    "keyHints": {
+      "nordvpn": "Bei NordVPN im Konto unter NordVPN → Manuelle Einrichtung → WireGuard. Eine Adresse braucht NordVPN nicht.",
+      "mullvad": "Bei Mullvad unter WireGuard-Konfiguration: eine Datei erzeugen und oben einlesen, oder PrivateKey und Address abschreiben.",
+      "protonvpn": "Bei Proton VPN unter Downloads → WireGuard-Konfiguration. Eine Adresse braucht Proton nicht.",
+      "surfshark": "Bei Surfshark unter Manuelle Einrichtung → Router → WireGuard, samt der Adresse des Schlüssels.",
+      "ivpn": "Bei IVPN unter WireGuard → Schlüssel erzeugen, samt der Adresse des Schlüssels.",
+      "airvpn": "Bei AirVPN im Config Generator eine WireGuard-Datei erzeugen und oben einlesen.",
+      "windscribe": "Bei Windscribe im Config Generator eine WireGuard-Datei erzeugen und oben einlesen."
+    },
+    "job": {
+      "running": "Der Helfer arbeitet …",
+      "waiting": "Wartet darauf, dass der Helfer anfängt.",
+      "done": "Zuletzt erledigt {{when}}",
+      "failed": "Hat nicht geklappt: {{error}}"
+    },
+    "files": {
+      "title": "VPN von Hand einrichten",
+      "intro": "Leg diese Datei als .env.vpn neben compose.yaml (meist /opt/uwumail). Sie enthält deinen Schlüssel, also nur für root lesbar machen (chmod 600).",
+      "then": "Dann starten",
+      "after": "Danach unten auf dieser Seite „Proxy auf den VPN stellen“ drücken. Mit COMPOSE_PROFILES=vpn in .env startet der VPN bei jedem docker compose up -d mit."
+    },
+    "routes": {
+      "title": "Was über VPN oder Proxy geht",
+      "intro": "Nur was hier an ist, geht über den VPN oder den Proxy. Ohne VPN und Proxy geht alles direkt vom Server raus.",
+      "pictures": "Bilder in Mails und Absender-Logos",
+      "picturesHint": "Die Absender sehen dann die Adresse des VPN statt die des Servers.",
+      "picturesShort": "Bilder",
+      "updates": "Abfrage nach neuen UwUMail-Versionen",
+      "updatesHint": "GitHub erfährt dann nicht, wo dein Server steht.",
+      "updatesShort": "Update-Abfrage",
+      "fetch": "Abholen aus fremden Postfächern",
+      "fetchHint": "Gmail, GMX und Co. sehen dann den VPN statt deines Servers. Manche Anbieter sperren VPN-Adressen, dann schlägt das Abholen fehl.",
+      "fetchShort": "Postfach-Abruf",
+      "fallbackHint": "Was passiert, solange der VPN oder Proxy nicht erreichbar ist.",
+      "proxy": "Eigener Proxy statt VPN",
+      "proxyHint": "http://host:port oder socks5://user:passwort@host:1080. Leer lassen, um nichts zu ändern.",
+      "proxyCurrent": "Gerade: {{proxy}}. Eine neue Adresse ersetzt ihn.",
+      "proxyRemoved": "Wird beim Speichern entfernt, dann geht alles direkt raus.",
+      "direct": "Direkt"
     }
   }
 }

@@ -225,7 +225,11 @@ impl Web {
     pub(crate) async fn check_updates(&self) -> UpdateInfo {
         let settings = self.update_settings().await;
         let build = build();
-        let https = uwumail_smtp::https::Https::new();
+        // Through the VPN when the admin asked for it: GitHub then does not learn where this server is.
+        let https = match self.egress() {
+            Some(egress) => uwumail_smtp::https::Https::through(&egress.dialer(uwumail_smtp::egress::Purpose::Updates)),
+            None => uwumail_smtp::https::Https::new(),
+        };
         let mut info = UpdateInfo { checked_at: Some(unix_now()), ..Default::default() };
         let timeout = Duration::from_secs(20);
         let result: Result<(), String> = async {

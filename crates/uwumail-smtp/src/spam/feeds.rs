@@ -376,6 +376,12 @@ pub async fn run_list_updates(smtp: Smtp, mut shutdown: watch::Receiver<bool>) {
     let ctx = smtp.inner.clone();
     loop {
         update_due(&ctx).await;
+        // Entries that were meant for a while only go once their time is up.
+        match ctx.store.remove_expired_rules().await {
+            Ok(0) => {}
+            Ok(removed) => tracing::info!(removed, "sender and word list entries ran out"),
+            Err(err) => tracing::warn!(%err, "removing list entries that ran out failed"),
+        }
         tokio::select! {
             _ = tokio::time::sleep(TICK) => {}
             _ = shutdown.changed() => return,

@@ -15,11 +15,13 @@ pub mod own;
 pub mod people;
 pub mod queue;
 pub mod reports;
+pub mod rules;
 pub mod security;
 pub mod settings;
 pub mod setup;
 pub mod spam;
 pub mod updates;
+pub mod vpn;
 pub mod webmail;
 pub mod words;
 

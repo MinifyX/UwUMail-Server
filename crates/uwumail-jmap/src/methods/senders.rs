@@ -99,6 +99,7 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                     value: value.to_owned(),
                     note: note.to_owned(),
                     created_by: login.clone(),
+                    expires_at: None,
                 };
                 Ok(store.add_sender_list_entry(entry).await?)
             }

@@ -104,6 +104,37 @@ pub async fn update(
     Ok(Json(view_json(&web, backend, &overlay)?))
 }
 
+/// Where a setting's value comes from right now, `None` on a server without settings.
+pub(crate) async fn setting_source(web: &Web, key: &str) -> ApiResult<Option<SettingSource>> {
+    let Some(backend) = web.settings().config.as_deref() else { return Ok(None) };
+    let overlay = load_overlay(web).await?;
+    let values = backend.view(&overlay).map_err(|_| ApiError::Internal)?;
+    Ok(values.iter().find(|setting| setting.key == key).map(|setting| setting.source))
+}
+
+/// Changes settings on behalf of another page of the portal (the VPN page sets the proxy). Settings the
+/// config file holds are left as they are; returns whether everything could be changed.
+pub(crate) async fn change_settings(
+    web: &Web,
+    session: &crate::session::Session,
+    changes: Map<String, Value>,
+) -> ApiResult<bool> {
+    let Some(backend) = web.settings().config.as_deref() else { return Ok(false) };
+    let mut overlay = load_overlay(web).await?;
+    let current = backend.view(&overlay).map_err(|_| ApiError::Internal)?;
+    let locked = |key: &str| current.iter().any(|setting| setting.key == key && setting.source == SettingSource::File);
+    let all = changes.keys().all(|key| !locked(key));
+    let changes: Map<String, Value> = changes.into_iter().filter(|(key, _)| !locked(key)).collect();
+    if changes.is_empty() {
+        return Ok(all);
+    }
+    let details = merge_changes(backend, &mut overlay, &changes)?;
+    backend.apply(&overlay).map_err(|err| ApiError::Rule("settingsInvalid", err))?;
+    web.store().set_setting(OVERLAY_KEY, &overlay.to_string()).await?;
+    audit(web, session, "settings.update", "", Value::Object(details)).await;
+    Ok(all)
+}
+
 /// How sending the log to Loki goes.
 pub async fn loki_status(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Value>> {
     let loki = web.settings().loki.as_ref().ok_or_else(|| ApiError::NotFound("sending logs to Loki".into()))?;

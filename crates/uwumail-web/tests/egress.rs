@@ -53,7 +53,11 @@ async fn portal() -> (Router, tempfile::TempDir) {
         },
     );
     // Nothing listens on the discard port, so the proxy is away.
-    let config = EgressConfig { proxy: "socks5://vpn:geheim@127.0.0.1:9".into(), fallback: Fallback::Block };
+    let config = EgressConfig {
+        proxy: "socks5://vpn:geheim@127.0.0.1:9".into(),
+        fallback: Fallback::Block,
+        ..EgressConfig::default()
+    };
     web.set_egress(Egress::new(&config).unwrap());
     (web.router(), dir)
 }

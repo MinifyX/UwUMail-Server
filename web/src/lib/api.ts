@@ -382,6 +382,23 @@ export interface HostMachine {
   digest: string;
   composeDir: string;
   checkedAt: number;
+  /** The helper's version; 2 and later can start the VPN. */
+  helper?: string;
+  verbs?: string[];
+  vpn?: HostVpn | null;
+}
+
+/** The VPN container beside the server, as the helper sees it. */
+export interface HostVpn {
+  configured: boolean;
+  provider: string;
+  type: string;
+  /** Docker's word: running, exited, ... or missing. */
+  state: string;
+  /** healthy, starting, unhealthy or empty. */
+  health: string;
+  /** Whether it comes along with every `docker compose up -d`. */
+  always: boolean;
 }
 
 export interface HostView {
@@ -714,6 +731,73 @@ export interface EgressView {
   fallbacks: number;
   /** In unix seconds. */
   lastProxyFailure: { at: number; error: string } | null;
+  /** Which kinds of request take the proxy while one is set. */
+  routes?: { pictures: boolean; updates: boolean; fetch: boolean };
+}
+
+export type VpnKind = "wireguard" | "openvpn";
+
+export interface VpnProvider {
+  id: string;
+  name: string;
+  wireguard: boolean;
+  openvpn: boolean;
+  /** WireGuard needs the address the provider gave the key. */
+  needsAddresses: boolean;
+}
+
+/** The VPN's settings; secrets are always empty here, `VpnView.secrets` says which are set. */
+export interface VpnConfig {
+  provider: string;
+  kind: VpnKind;
+  countries: string;
+  regions: string;
+  cities: string;
+  hostnames: string;
+  wireguardPrivateKey: string;
+  wireguardPresharedKey: string;
+  wireguardAddresses: string;
+  wireguardPublicKey: string;
+  wireguardEndpointIp: string;
+  wireguardEndpointPort: number | null;
+  openvpnUser: string;
+  openvpnPassword: string;
+  openvpnConfig: string;
+}
+
+/** A change to the VPN; a secret left out stays, an empty one is removed. */
+export type VpnChange = Omit<
+  VpnConfig,
+  "wireguardPrivateKey" | "wireguardPresharedKey" | "openvpnPassword" | "openvpnConfig"
+> & {
+  wireguardPrivateKey?: string;
+  wireguardPresharedKey?: string;
+  openvpnPassword?: string;
+  openvpnConfig?: string;
+};
+
+export interface VpnView {
+  config: VpnConfig;
+  secrets: {
+    wireguardPrivateKey: boolean;
+    wireguardPresharedKey: boolean;
+    openvpnPassword: boolean;
+    openvpnConfig: boolean;
+  };
+  /** Whether a VPN was saved at all. */
+  saved: boolean;
+  /** What is still missing to connect; null when complete. */
+  complete: string | null;
+  providers: VpnProvider[];
+  helper: { available: boolean; canVpn: boolean; version: string | null; vpn: HostVpn | null };
+  job: { id: string; state: string; error: string; at: number } | null;
+  log: string;
+  proxy: { current: string | null; gluetun: string; locked: boolean };
+}
+
+export interface VpnFiles {
+  envFile: string;
+  ovpn: string | null;
 }
 
 export interface EgressTest {
@@ -743,6 +827,86 @@ export interface SendersView {
   limit: number;
   /** Admins only: the domains an entry can be for. */
   domains?: string[];
+}
+
+/** The spam filter's rules: senders and word list entries as one table. */
+export type RuleType = "sender" | "word";
+export type RuleListName = "allow" | "block" | "points";
+export type RuleKind = SenderKind | "word" | "regex";
+export type RuleState = "temporary" | "unused" | "stale";
+export type RuleSort = "value" | "created" | "hits" | "lastHit" | "expires";
+
+export type RuleScope =
+  { type: "server" } | { type: "domain"; id: number; name: string } | { type: "account"; id: number; name: string };
+
+export interface Rule {
+  type: RuleType;
+  id: number;
+  list: RuleListName;
+  kind: RuleKind;
+  value: string;
+  note: string;
+  /** Words only; null for the default. */
+  points: number | null;
+  scope: RuleScope;
+  expiresAt: number | null;
+  hits: number;
+  lastHitAt: number | null;
+  createdAt: number;
+  createdBy: string;
+}
+
+export interface RulesView {
+  rules: Rule[];
+  total: number;
+  lists: Partial<Record<RuleListName, number>>;
+  kinds: Partial<Record<RuleKind, number>>;
+  page: number;
+  perPage: number;
+  pageSizes: number[];
+  defaultPoints: number;
+  maxPoints: number;
+}
+
+export interface RuleScopeCount {
+  /** server, domain:<name> or account:<login>. */
+  key: string;
+  scope: RuleScope;
+  count: number;
+}
+
+export interface NewRule {
+  type: RuleType;
+  list?: "allow" | "block";
+  kind?: SenderKind;
+  value: string;
+  note?: string;
+  points?: number | null;
+  scope?: string;
+  expiresAt?: number | null;
+}
+
+export interface RuleChange {
+  value?: string;
+  list?: "allow" | "block";
+  kind?: SenderKind;
+  note?: string;
+  points?: number | null;
+  expiresAt?: number | null;
+  scope?: string;
+}
+
+export interface RulesReport {
+  changed: number;
+  skipped: { line: string; reason: string }[];
+  skippedCount: number;
+}
+
+export interface RulesImport {
+  added: number;
+  duplicates: number;
+  refused: { line: string; reason: string }[];
+  refusedCount: number;
 }
 
 export interface NewSender {

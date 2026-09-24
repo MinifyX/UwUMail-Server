@@ -14,8 +14,16 @@ const NAMED: usize = 3;
 /// The entries of one scope.
 #[derive(Default)]
 pub(crate) struct Scope {
-    text: Vec<(RegexSet, Vec<(f32, String)>)>,
-    subject: Vec<(RegexSet, Vec<(f32, String)>)>,
+    text: Vec<(RegexSet, Vec<Word>)>,
+    subject: Vec<(RegexSet, Vec<Word>)>,
+}
+
+/// One compiled entry: its points, its pattern and its id (0 for built-in lists).
+#[derive(Clone)]
+struct Word {
+    points: f32,
+    pattern: String,
+    id: i64,
 }
 
 /// What a scope found: the points, and the first entries that matched.
@@ -23,6 +31,8 @@ pub(crate) struct Scope {
 pub(crate) struct Found {
     pub points: f32,
     pub entries: Vec<String>,
+    /// The ids of the entries that matched, to count their hits.
+    pub ids: Vec<i64>,
 }
 
 impl Found {
@@ -31,12 +41,10 @@ impl Found {
     }
 }
 
-fn compile(words: Vec<(f32, String)>) -> Vec<(RegexSet, Vec<(f32, String)>)> {
+fn compile(words: Vec<Word>) -> Vec<(RegexSet, Vec<Word>)> {
     let mut sets = Vec::new();
-    let usable: Vec<(String, (f32, String))> = words
-        .into_iter()
-        .filter_map(|(points, pattern)| Some((word_regex(&pattern).ok()?, (points, pattern))))
-        .collect();
+    let usable: Vec<(String, Word)> =
+        words.into_iter().filter_map(|word| Some((word_regex(&word.pattern).ok()?, word))).collect();
     for chunk in usable.chunks(CHUNK) {
         let sources = chunk.iter().map(|(source, _)| source.as_str());
         let limit = PATTERN_SIZE_LIMIT.saturating_mul(chunk.len()).min(256 * 1024 * 1024);
@@ -49,11 +57,11 @@ fn compile(words: Vec<(f32, String)>) -> Vec<(RegexSet, Vec<(f32, String)>)> {
 }
 
 impl Scope {
-    fn new(words: Vec<(f32, String, bool)>) -> Scope {
-        let (subject, text): (Vec<_>, Vec<_>) = words.into_iter().partition(|(_, _, subject_only)| *subject_only);
+    fn new(words: Vec<(Word, bool)>) -> Scope {
+        let (subject, text): (Vec<_>, Vec<_>) = words.into_iter().partition(|(_, subject_only)| *subject_only);
         Scope {
-            text: compile(text.into_iter().map(|(points, pattern, _)| (points, pattern)).collect()),
-            subject: compile(subject.into_iter().map(|(points, pattern, _)| (points, pattern)).collect()),
+            text: compile(text.into_iter().map(|(word, _)| word).collect()),
+            subject: compile(subject.into_iter().map(|(word, _)| word).collect()),
         }
     }
 
@@ -63,9 +71,12 @@ impl Scope {
         let sets = self.text.iter().map(|set| (set, text)).chain(self.subject.iter().map(|set| (set, subject)));
         for ((set, entries), haystack) in sets {
             for index in set.matches(haystack).iter() {
-                let (points, pattern) = &entries[index];
-                found.points += points;
-                found.entries.push(pattern.clone());
+                let word = &entries[index];
+                found.points += word.points;
+                found.entries.push(word.pattern.clone());
+                if word.id > 0 {
+                    found.ids.push(word.id);
+                }
             }
         }
         found.points = found.points.min(WORD_POINTS_MAX);
@@ -87,7 +98,7 @@ impl Compiled {
         let mut domains: HashMap<String, Vec<_>> = HashMap::new();
         let mut accounts: HashMap<i64, Vec<_>> = HashMap::new();
         for word in words {
-            let entry = (word.points, word.pattern, word.subject_only);
+            let entry = (Word { points: word.points, pattern: word.pattern, id: word.id }, word.subject_only);
             match (word.scope, word.domain) {
                 (ListScope::Server, _) => server.push(entry),
                 (ListScope::Domain(_), Some(domain)) => domains.entry(domain).or_default().push(entry),
@@ -108,7 +119,7 @@ mod tests {
     use super::*;
 
     fn word(scope: ListScope, domain: Option<&str>, pattern: &str, points: f32, subject_only: bool) -> CompiledWord {
-        CompiledWord { scope, domain: domain.map(str::to_owned), pattern: pattern.into(), points, subject_only }
+        CompiledWord { id: 1, scope, domain: domain.map(str::to_owned), pattern: pattern.into(), points, subject_only }
     }
 
     #[test]

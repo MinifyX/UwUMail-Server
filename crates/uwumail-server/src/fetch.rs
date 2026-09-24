@@ -57,7 +57,12 @@ pub(crate) struct Detour {
 }
 
 /// Fetches from every mailbox whose turn it is, until `shutdown` changes.
-pub async fn run_fetchers(store: Store, smtp: Smtp, mut shutdown: watch::Receiver<bool>) {
+pub async fn run_fetchers(
+    store: Store,
+    smtp: Smtp,
+    egress: uwumail_smtp::egress::Egress,
+    mut shutdown: watch::Receiver<bool>,
+) {
     loop {
         let due = match store.fetch_accounts_due().await {
             Ok(due) => due,
@@ -74,7 +79,10 @@ pub async fn run_fetchers(store: Store, smtp: Smtp, mut shutdown: watch::Receive
             let id = account.id;
             let owner = account.account_id;
             let backlog = account.backlog_at.is_some();
-            let run = tokio::time::timeout(RUN_LIMIT, run_once(&store, &smtp, account, None));
+            let run = tokio::time::timeout(
+                RUN_LIMIT,
+                run_once(&store, &smtp, account, None, Some(egress.dialer(uwumail_smtp::egress::Purpose::Fetch))),
+            );
             let (fetched, error) = match run.await {
                 Ok(Ok(fetched)) => (fetched, None),
                 Ok(Err(err)) => {
@@ -146,7 +154,13 @@ fn now() -> i64 {
 }
 
 /// Fetches from one mailbox and returns how many messages it brought.
-async fn run_once(store: &Store, smtp: &Smtp, account: FetchAccount, detour: Option<Detour>) -> anyhow::Result<i64> {
+async fn run_once(
+    store: &Store,
+    smtp: &Smtp,
+    account: FetchAccount,
+    detour: Option<Detour>,
+    dialer: Option<uwumail_smtp::egress::Dialer>,
+) -> anyhow::Result<i64> {
     if account.security == FetchSecurity::Starttls {
         bail!("this server fetches over TLS only, so far -- use the provider's TLS port, usually 993");
     }
@@ -179,6 +193,8 @@ async fn run_once(store: &Store, smtp: &Smtp, account: FetchAccount, detour: Opt
             roots: None,
             master_user: None,
             password,
+            // Only through the proxy when the admin wants fetching to take it; straight otherwise.
+            dialer: dialer.filter(|dialer| dialer.proxied()),
         },
         Some(detour) => Source {
             address: detour.address,
@@ -186,6 +202,7 @@ async fn run_once(store: &Store, smtp: &Smtp, account: FetchAccount, detour: Opt
             roots: Some(detour.roots),
             master_user: None,
             password,
+            dialer: None,
         },
     };
     let mut connection = Connection::open(&source).await?;
@@ -670,7 +687,7 @@ mod tests {
             let (store, smtp, detour) = (ours.clone(), smtp.clone(), detour.clone());
             async move {
                 let account = store.fetch_account(our_id, fetched.id).await.unwrap().unwrap();
-                run_once(&store, &smtp, account, Some(detour)).await.unwrap()
+                run_once(&store, &smtp, account, Some(detour), None).await.unwrap()
             }
         };
 
@@ -758,7 +775,7 @@ mod tests {
 
         async fn run(&self) -> i64 {
             let account = self.ours.fetch_account(self.our_id, self.fetch_id).await.unwrap().unwrap();
-            run_once(&self.ours, &self.smtp, account, Some(self.detour.clone())).await.unwrap()
+            run_once(&self.ours, &self.smtp, account, Some(self.detour.clone()), None).await.unwrap()
         }
 
         async fn inbox(store: &Store, id: i64) -> i64 {

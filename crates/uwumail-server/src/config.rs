@@ -194,7 +194,19 @@ impl Config {
             }
             figment = figment.merge(Toml::file(path));
         }
-        Ok(figment.merge(Env::prefixed("UWUMAIL_").split("__").ignore(&["config"])))
+        // compose.yaml hands the egress variables over even when .env leaves them empty. Empty there means
+        // "not set here", so the admin panel can still set them.
+        let empty: Vec<String> = std::env::vars()
+            .filter_map(|(name, value)| {
+                let key = name.strip_prefix("UWUMAIL_")?;
+                (key.to_ascii_uppercase().starts_with("EGRESS__") && value.trim().is_empty()).then(|| key.to_owned())
+            })
+            .collect();
+        let env = Env::prefixed("UWUMAIL_")
+            .filter(move |key| !empty.iter().any(|name| key.as_str().eq_ignore_ascii_case(name)))
+            .split("__")
+            .ignore(&["config"]);
+        Ok(figment.merge(env))
     }
 
     /// Checks what cannot be expressed in types.
@@ -235,7 +247,7 @@ impl Config {
         uwumail_smtp::IpNetwork::parse_list(&self.http.trusted_proxies)
             .map_err(|err| anyhow::anyhow!("`http.trusted_proxies`: {err}"))?;
         self.log.loki.target(&self.hostname).map_err(|err| anyhow::anyhow!(err))?;
-        uwumail_smtp::egress::Egress::new(&self.egress).map_err(|err| anyhow::anyhow!(err))?;
+        uwumail_smtp::egress::Egress::check(&self.egress).map_err(|err| anyhow::anyhow!(err))?;
         // Behind a reverse proxy the challenge arrives through the proxy listener instead of port 80.
         if self.tls.mode == TlsMode::Acme && self.listen.http.is_empty() && self.listen.proxy.is_empty() {
             bail!(
@@ -266,6 +278,25 @@ mod tests {
         assert_eq!(config.listen.smtp, "[::]:25");
         assert_eq!(config.listen.managesieve, "[::]:4190");
         config.validate().unwrap();
+    }
+
+    #[test]
+    #[allow(clippy::result_large_err)]
+    fn empty_egress_variables_leave_the_setting_to_the_admin_panel() {
+        figment::Jail::expect_with(|jail| {
+            jail.set_env("UWUMAIL_HOSTNAME", "mail.example.de");
+            jail.set_env("UWUMAIL_EGRESS__PROXY", "");
+            jail.set_env("UWUMAIL_EGRESS__FALLBACK", "direct");
+            let fixed = Config::file_and_environment(None).unwrap();
+            assert!(!fixed.contains("egress.proxy"), "empty means not set here");
+            assert!(fixed.contains("egress.fallback"));
+            let overlay = serde_json::json!({ "egress": { "proxy": "http://gluetun:8888", "fetch": true } });
+            let config = Config::load_with_overlay(None, &overlay).unwrap();
+            assert_eq!(config.egress.proxy, "http://gluetun:8888");
+            assert!(config.egress.fetch && config.egress.pictures && !config.egress.updates);
+            assert_eq!(config.egress.fallback, uwumail_smtp::egress::Fallback::Direct, "the environment wins");
+            Ok(())
+        });
     }
 
     #[test]

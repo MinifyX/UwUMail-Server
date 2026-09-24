@@ -456,6 +456,7 @@ pub async fn score(ctx: &Context, config: &SpamConfig, source: Source<'_>, raw: 
     let lists = lists::current(ctx).await;
     if !subject.is_empty() || !text.is_empty() {
         let found = lists.words.server.find(&subject, &text);
+        note_word_hits(ctx, found.ids.clone());
         if found.points > 0.0 {
             score.add("BAD_WORDS", tenths(found.points), Some(found.detail()));
         }
@@ -543,6 +544,19 @@ fn tenths(points: f32) -> f32 {
     (points * 10.0).round() / 10.0
 }
 
+/// Counts that these word list entries matched, without holding up the message.
+fn note_word_hits(ctx: &Context, ids: Vec<i64>) {
+    if ids.is_empty() {
+        return;
+    }
+    let store = ctx.store.clone();
+    tokio::spawn(async move {
+        if let Err(err) = store.note_rule_hits(Vec::new(), ids).await {
+            tracing::debug!(%err, "counting word list hits failed");
+        }
+    });
+}
+
 /// How many points a domain's and a person's own word lists add for one recipient, within what word lists
 /// may add together.
 pub(crate) async fn personal_word_points(ctx: &Context, score: &Score, account_id: i64, domain: &str) -> f32 {
@@ -550,11 +564,13 @@ pub(crate) async fn personal_word_points(ctx: &Context, score: &Score, account_i
         return 0.0;
     }
     let lists = lists::current(ctx).await;
-    let own = [lists.words.domains.get(domain), lists.words.accounts.get(&account_id)]
+    let found: Vec<_> = [lists.words.domains.get(domain), lists.words.accounts.get(&account_id)]
         .into_iter()
         .flatten()
-        .map(|scope| scope.find(&score.subject, &score.text).points)
-        .sum::<f32>();
+        .map(|scope| scope.find(&score.subject, &score.text))
+        .collect();
+    note_word_hits(ctx, found.iter().flat_map(|found| found.ids.iter().copied()).collect());
+    let own = found.iter().map(|found| found.points).sum::<f32>();
     let server: f32 = score.hits.iter().filter(|hit| hit.rule == "BAD_WORDS").map(|hit| hit.points).sum();
     tenths(own.min((uwumail_store::WORD_POINTS_MAX - server).max(0.0)))
 }

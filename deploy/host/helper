@@ -9,11 +9,18 @@
 #   jobs.jsonl     written by the server   one job per line, waiting to be carried out
 #   job-<id>.log   written here    what the job printed, while it runs
 #   job-<id>.json  written here    how it ended, which survives the container being replaced
+#   vpn.json       written by the server   the VPN's settings for the next vpn-apply; removed once read
 #
 # Nothing the server writes is ever run as a command. A job is one verb from a fixed list, and
 # nothing else: no command, no path, no address. A server somebody took over can ask for the
 # system's updates or a restart, and for nothing more. UwUMail itself is updated by update.sh,
 # which a person starts on this machine.
+#
+# The one job that takes data is the VPN (vpn-apply): the portal hands over the settings of the
+# gluetun container in vpn.json, and they end up in .env.vpn next to compose.yaml. Only the
+# variables named below get through, only values without quotes or control characters, and an
+# OpenVPN file only without the directives that run programs or touch files. The worst a server
+# somebody took over can do with it is point its own pictures at a different VPN.
 #
 # The container can write the shared directory, so it can put a symlink wherever a name is. Nothing
 # here therefore touches a name there after creating it: a file is made fresh with its final mode
@@ -37,7 +44,7 @@ config="${UWUMAIL_HOST_CONFIG:-/etc/uwumail-host/host.conf}"
 machine_file="$bridge/machine.json"
 jobs_file="$bridge/jobs.jsonl"
 # What this helper is willing to do at all.
-verbs="os-update reboot"
+verbs="os-update reboot vpn-apply vpn-stop"
 # A job older than this was meant for a different day; the server asks again if it still wants it.
 JOB_MAX_AGE=1800
 LOG_MAX_BYTES=65536
@@ -47,6 +54,40 @@ LOG_MAX_BYTES=65536
 [ -f "$config" ] && . "$config"
 COMPOSE_DIR="${COMPOSE_DIR:-/opt/uwumail}"
 SERVICE="${SERVICE:-uwumail}"
+VPN_SERVICE="${VPN_SERVICE:-gluetun}"
+vpn_request="$bridge/vpn.json"
+VPN_REQUEST_MAX_BYTES=262144
+OVPN_MAX_BYTES=65536
+VPN_HEALTH_WAIT="${VPN_HEALTH_WAIT:-120}"
+
+# The gluetun variables the portal may set, and the providers gluetun knows.
+vpn_keys="VPN_SERVICE_PROVIDER VPN_TYPE WIREGUARD_PRIVATE_KEY WIREGUARD_PRESHARED_KEY WIREGUARD_PUBLIC_KEY
+WIREGUARD_ADDRESSES WIREGUARD_ENDPOINT_IP WIREGUARD_ENDPOINT_PORT OPENVPN_USER OPENVPN_PASSWORD SERVER_COUNTRIES
+SERVER_REGIONS SERVER_CITIES SERVER_HOSTNAMES"
+vpn_providers="airvpn
+custom
+cyberghost
+expressvpn
+fastestvpn
+giganews
+hidemyass
+ipvanish
+ivpn
+mullvad
+nordvpn
+perfect privacy
+privado
+private internet access
+privatevpn
+protonvpn
+purevpn
+slickvpn
+surfshark
+torguard
+vpn unlimited
+vpnsecure
+vyprvpn
+windscribe"
 
 say() { logger -t uwumail-host "$1"; }
 
@@ -183,8 +224,12 @@ cmd_machine() {
   image="$found_image"
   digest="$found_digest"
 
+  local vpn
+  vpn=$(vpn_status)
+
   local tmp="$machine_file.tmp"
   jq -n \
+    --argjson vpn "$vpn" --arg verbs "$verbs" \
     --arg kind "$kind" --arg name "$name" --argjson updates "$updates" --argjson security "$security" \
     --argjson reboot "$reboot" --arg packages "$packages" --argjson alone "$alone" --arg others "$others" \
     --arg image "$image" --arg digest "$digest" --arg dir "$COMPOSE_DIR" \
@@ -192,12 +237,215 @@ cmd_machine() {
     '{kind: $kind, name: $name, updates: $updates, securityUpdates: $security,
       rebootRequired: $reboot, rebootPackages: ($packages | split(" ") | map(select(. != ""))),
       alone: $alone, others: ($others | split(" ") | map(select(. != ""))),
-      image: $image, digest: $digest, composeDir: $dir, checkedAt: $at, helper: $helper}' 2>/dev/null |
+      image: $image, digest: $digest, composeDir: $dir, checkedAt: $at, helper: $helper,
+      verbs: ($verbs | split(" ")), vpn: $vpn}' 2>/dev/null |
     safe_write "$tmp" && mv -fT "$tmp" "$machine_file"
 }
 
 helper_version() {
-  printf '%s' "${UWUMAIL_HOST_HELPER_VERSION:-1}"
+  printf '%s' "${UWUMAIL_HOST_HELPER_VERSION:-2}"
+}
+
+# ── the VPN for the pictures ──────────────────────────────────────────────────────────────────
+# How the gluetun container is doing, as JSON. Never any of its settings but the provider and the
+# type: the keys stay in .env.vpn.
+vpn_status() {
+  local env_file="$COMPOSE_DIR/.env.vpn" configured=false provider="" type="" state="missing" health=""
+  local container
+  if [ -f "$env_file" ]; then
+    configured=true
+    provider=$(sed -n "s/^VPN_SERVICE_PROVIDER='\{0,1\}\([^']*\)'\{0,1\}$/\1/p" "$env_file" | tail -1)
+    type=$(sed -n "s/^VPN_TYPE='\{0,1\}\([^']*\)'\{0,1\}$/\1/p" "$env_file" | tail -1)
+  fi
+  if command -v docker >/dev/null 2>&1; then
+    container=$(compose ps -a -q "$VPN_SERVICE" 2>/dev/null | head -1)
+    if [ -n "$container" ]; then
+      state=$(docker inspect --format '{{.State.Status}}' "$container" 2>/dev/null)
+      health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$container" 2>/dev/null)
+    fi
+  fi
+  jq -cn --argjson configured "$configured" --arg provider "$provider" --arg type "$type" \
+    --arg state "${state:-missing}" --arg health "$health" --arg profiles "$(compose_profiles)" \
+    '{configured: $configured, provider: $provider, type: $type, state: $state, health: $health,
+      always: ($profiles | split(",") | index("vpn") != null)}' 2>/dev/null ||
+    printf '{"configured":false,"provider":"","type":"","state":"missing","health":"","always":false}'
+}
+
+# Brings only the VPN part of machine.json up to date, without asking apt (which cmd_machine does,
+# and which takes a while).
+refresh_vpn_status() {
+  [ -f "$machine_file" ] && [ ! -L "$machine_file" ] || {
+    cmd_machine
+    return
+  }
+  local tmp="$machine_file.tmp" vpn
+  vpn=$(vpn_status)
+  jq --argjson vpn "$vpn" --arg verbs "$verbs" '.vpn = $vpn | .verbs = ($verbs | split(" "))' "$machine_file" 2>/dev/null |
+    safe_write "$tmp" && mv -fT "$tmp" "$machine_file"
+}
+
+# COMPOSE_PROFILES in .env, comma-separated.
+compose_profiles() {
+  [ -f "$COMPOSE_DIR/.env" ] || return 0
+  sed -n 's/^COMPOSE_PROFILES=//p' "$COMPOSE_DIR/.env" | tail -1 | tr -d "\"' "
+}
+
+# Adds or removes one profile in .env, so the VPN comes along with every `docker compose up -d`
+# (update.sh included) or stops doing so. The file keeps its owner and mode.
+set_profile() {
+  local action="$1" profile="$2" env_file="$COMPOSE_DIR/.env" current next item
+  [ -f "$env_file" ] || return 0
+  current=$(compose_profiles)
+  next=""
+  for item in ${current//,/ }; do
+    [ "$item" = "$profile" ] && continue
+    next="${next:+$next,}$item"
+  done
+  [ "$action" = add ] && next="${next:+$next,}$profile"
+  local tmp="$env_file.uwumail-host.tmp"
+  cp -p -- "$env_file" "$tmp" || return 1
+  if grep -q '^COMPOSE_PROFILES=' "$tmp"; then
+    if [ -n "$next" ]; then
+      sed -i "s/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=$next/" "$tmp"
+    else
+      sed -i '/^COMPOSE_PROFILES=/d' "$tmp"
+    fi
+  elif [ -n "$next" ]; then
+    printf 'COMPOSE_PROFILES=%s\n' "$next" >>"$tmp"
+  fi
+  mv -fT "$tmp" "$env_file"
+}
+
+# Reads vpn.json out of the shared directory and removes it: it holds the VPN's keys. The name is
+# opened once and the descriptor checked to be that very file, so a symlink the other side swaps in
+# can't make root read something else.
+take_vpn_request() {
+  [ -f "$vpn_request" ] && [ ! -L "$vpn_request" ] || return 1
+  exec 4<"$vpn_request" || return 1
+  if [ "$(readlink "/proc/$BASHPID/fd/4")" != "$vpn_request" ]; then
+    exec 4<&-
+    return 1
+  fi
+  head -c "$VPN_REQUEST_MAX_BYTES" <&4
+  exec 4<&-
+  rm -f -- "$vpn_request"
+}
+
+# Whether an OpenVPN file is only a connection: nothing that runs a program, loads a plugin, or
+# reads or writes a file of its own choosing.
+ovpn_is_harmless() {
+  ! grep -Eiq '^[[:space:]]*-{0,2}((up|down|route-up|route-pre-down|ipchange|client-connect|client-disconnect|learn-address|auth-user-pass-verify|tls-verify|script-security|plugin|management[a-z-]*|log|log-append|status|writepid|cd|chroot|daemon|config|askpass|tmp-dir|iproute|tls-crypt-v2-verify|tls-export-cert|setenv|setenv-safe|pull-filter|dhcp-option)([[:space:]]|$)|auth-user-pass[[:space:]]+[^[:space:]#;])'
+}
+
+# Turns the request into .env.vpn lines on standard output, or says what is wrong and fails.
+vpn_env_lines() {
+  local request="$1" key value
+  local keys
+  keys=$(printf '%s' "$request" | jq -r '.env | if type == "object" then keys[] else error("no env") end' 2>/dev/null) || {
+    echo "the settings are not readable" >&2
+    return 1
+  }
+  for key in $keys; do
+    case " $(printf '%s' "$vpn_keys" | tr '\n' ' ') " in *" $key "*) ;; *)
+      echo "$key is not a setting this helper passes on" >&2
+      return 1
+      ;;
+    esac
+    value=$(printf '%s' "$request" | jq -r --arg key "$key" '.env[$key] | if type == "string" then . else error("x") end' 2>/dev/null) || {
+      echo "$key is not text" >&2
+      return 1
+    }
+    if [ "${#value}" -gt 1024 ] || [[ "$value" == *"'"* ]] || [[ "$value" =~ [[:cntrl:]] ]]; then
+      echo "$key has a value this helper does not pass on" >&2
+      return 1
+    fi
+    case "$key" in
+      VPN_SERVICE_PROVIDER)
+        printf '%s\n' "$vpn_providers" | grep -Fxq -- "$value" || {
+          echo "gluetun does not know the provider $value" >&2
+          return 1
+        }
+        ;;
+      VPN_TYPE)
+        [[ "$value" =~ ^(wireguard|openvpn)$ ]] || {
+          echo "VPN_TYPE is wireguard or openvpn" >&2
+          return 1
+        }
+        ;;
+    esac
+    printf "%s='%s'\n" "$key" "$value"
+  done
+}
+
+do_vpn_apply() {
+  local id="$1" request lines ovpn env_file="$COMPOSE_DIR/.env.vpn"
+  if ! request=$(take_vpn_request); then
+    job_state "$id" failed "the portal did not hand over the VPN settings"
+    return 1
+  fi
+  if ! lines=$(vpn_env_lines "$request" 2>&1); then
+    printf '%s\n' "$lines" | job_log "$id"
+    job_state "$id" failed "$lines"
+    return 1
+  fi
+  ovpn=$(printf '%s' "$request" | jq -r '.ovpn // empty' 2>/dev/null)
+  if [ -n "$ovpn" ]; then
+    if [ "${#ovpn}" -gt "$OVPN_MAX_BYTES" ] || ! printf '%s\n' "$ovpn" | ovpn_is_harmless; then
+      job_state "$id" failed "the OpenVPN file asks for more than a connection (scripts, plugins or files)"
+      return 1
+    fi
+    install -d -m 0700 "$COMPOSE_DIR/vpn"
+    printf '%s\n' "$ovpn" | safe_write "$COMPOSE_DIR/vpn/custom.ovpn.tmp" &&
+      chmod 0600 "$COMPOSE_DIR/vpn/custom.ovpn.tmp" &&
+      mv -fT "$COMPOSE_DIR/vpn/custom.ovpn.tmp" "$COMPOSE_DIR/vpn/custom.ovpn"
+    lines="$lines"$'\n'"OPENVPN_CUSTOM_CONFIG='/gluetun/custom/custom.ovpn'"
+  fi
+  {
+    printf '# Written by the UwUMail portal (Settings -> VPN). Changes here are replaced the next time\n'
+    printf '# the VPN is saved there.\n'
+    printf '%s\n' "$lines"
+  } | (umask 077 && safe_write "$env_file.tmp") && chmod 0600 "$env_file.tmp" && mv -fT "$env_file.tmp" "$env_file"
+  set_profile add vpn
+  {
+    printf '== docker compose --profile vpn up -d %s\n' "$VPN_SERVICE"
+    compose --profile vpn up -d --force-recreate "$VPN_SERVICE"
+  } 2>&1 | job_log "$id"
+  if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+    refresh_vpn_status
+    job_state "$id" failed "the VPN container did not start"
+    return 1
+  fi
+  local waited=0 container health
+  container=$(compose ps -q "$VPN_SERVICE" 2>/dev/null | head -1)
+  while [ "$waited" -lt "$VPN_HEALTH_WAIT" ]; do
+    health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$container" 2>/dev/null)
+    [ "$health" = healthy ] && break
+    sleep 5
+    waited=$((waited + 5))
+  done
+  refresh_vpn_status
+  if [ "$health" = healthy ]; then
+    printf '\n== the VPN is up\n' | job_log "$id"
+    job_state "$id" "done"
+  else
+    {
+      printf '\n== the VPN did not come up in %s seconds; its last words:\n' "$VPN_HEALTH_WAIT"
+      docker logs --tail 40 "$container" 2>&1
+    } | job_log "$id"
+    job_state "$id" failed "the VPN did not connect; its log is below"
+  fi
+}
+
+do_vpn_stop() {
+  local id="$1"
+  set_profile remove vpn
+  {
+    printf '== docker compose stop %s\n' "$VPN_SERVICE"
+    compose --profile vpn stop "$VPN_SERVICE"
+    compose --profile vpn rm -f "$VPN_SERVICE"
+  } 2>&1 | job_log "$id"
+  refresh_vpn_status
+  job_state "$id" "done"
 }
 
 # Writes standard input to a file without following a symlink the other side may have planted in the
@@ -237,6 +485,8 @@ run_job() {
     case "$verb" in
       os-update) do_os_update "$id" ;;
       reboot) do_reboot "$id" ;;
+      vpn-apply) do_vpn_apply "$id" ;;
+      vpn-stop) do_vpn_stop "$id" ;;
     esac
   } 3>"$log"
   set +C

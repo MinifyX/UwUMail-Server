@@ -43,6 +43,7 @@ pub(crate) async fn current(ctx: &Context) -> Arc<Lists> {
         let mut words = words;
         // Spam subjects from a built-in list count like the whole server's own subject entries.
         words.extend(feeds.subjects.iter().map(|pattern| CompiledWord {
+            id: 0,
             scope: ListScope::Server,
             domain: None,
             pattern: pattern.clone(),

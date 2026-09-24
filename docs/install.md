@@ -800,11 +800,17 @@ sudo bash uwumail-host/install.sh --dir /opt/uwumail
 cd /opt/uwumail && sudo docker compose up -d
 ```
 
-What the container may ask the helper for is one of two things: install the
-system's updates, or restart the machine. Never a command, never a path, never
-an address, and never a version of anything — UwUMail itself is updated by
-`update.sh`, which a person starts. The docker socket stays where it is:
-handing that to a container is handing it the machine.
+What the container may ask the helper for is one of four things: install the
+system's updates, restart the machine, or start and stop the VPN for pictures
+(*Server → VPN & Proxy*, see [configuration.md](configuration.md#remote-pictures-through-a-vpn)).
+Never a command, never a path, never an address, and never a version of anything
+— UwUMail itself is updated by `update.sh`, which a person starts. The VPN is
+the one job that takes data: gluetun's settings, which the helper checks against
+a fixed list of variables and writes to `.env.vpn` itself. The docker socket
+stays where it is: handing that to a container is handing it the machine.
+
+A helper from before 0.9.0 does not know the VPN yet; running the commands above
+again brings it up to date, and the portal says so until it is.
 
 `sudo bash install.sh --check` says how things stand, `--remove` takes it back
 out. If anything else runs on this machine, the portal says so above the button
