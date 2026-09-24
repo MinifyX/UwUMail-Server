@@ -286,10 +286,16 @@ if [ ${#warnings[@]} -gt 0 ]; then
   for line in "${warnings[@]}"; do printf '  - %s\n' "$line"; done
   printf '\n'
 fi
-cat <<INFO
+# A container made before the directory was wired in does not see it until it is made again. One
+# that does see it -- the helper updating itself from the portal, say -- needs nothing more.
+if docker inspect "$service" --format '{{range .Mounts}}{{.Destination}} {{end}}' 2>/dev/null | grep -qw /host; then
+  echo "The portal shows this machine under Server, and can install what it needs (=^･ω･^=)"
+else
+  cat <<INFO
 Almost there. The container has to be recreated once to see the new directory:
 
   cd $compose_dir && docker compose up -d
 
 After that the portal shows this machine under Server, and can install what it needs.
 INFO
+fi

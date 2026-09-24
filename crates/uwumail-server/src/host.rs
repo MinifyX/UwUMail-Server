@@ -126,7 +126,10 @@ impl HostBackend for HostBridge {
 
     fn ask<'a>(&'a self, verb: &'a str) -> HostFuture<'a> {
         Box::pin(async move {
-            if !matches!(verb, "os-update" | "reboot" | "vpn-apply" | "vpn-stop") {
+            if !matches!(
+                verb,
+                "os-update" | "reboot" | "uwumail-update" | "helper-update" | "vpn-apply" | "vpn-stop" | "vpn-remove"
+            ) {
                 return Err(format!("this server does not ask for {verb}"));
             }
             // One at a time. Two updates at once is never what anyone meant.

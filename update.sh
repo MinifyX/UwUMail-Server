@@ -394,7 +394,8 @@ if ! $healthy; then
   printf '\n'
   warn "UwUMail runs on the version from before, and .env now says which one that is."
   warn "What went wrong: cd $dir && docker compose logs $service"
-  exit 1
+  # Its own number, so the portal's helper can tell "rolled back" from "stopped before starting".
+  exit 3
 fi
 
 {
@@ -406,6 +407,22 @@ fi
   fi
 } >"$state"
 chmod 0644 "$state"
+
+# ── the helper beside it ──────────────────────────────────────────────────────────────────────
+# Where the portal looks after this machine, its helper comes along, so what the new version asks
+# of it is there too. It is replaced under a new name, so a helper that started this run finishes
+# as it began.
+if [ -x /usr/local/lib/uwumail-host/helper ]; then
+  helper_tmp=$(mktemp -d)
+  if fetch_checked uwumail-host.tar.gz "$helper_tmp/uwumail-host.tar.gz" &&
+    tar -xzf "$helper_tmp/uwumail-host.tar.gz" -C "$helper_tmp" &&
+    bash "$helper_tmp/uwumail-host/install.sh" --dir "$dir" --service "$service" >/dev/null; then
+    step "the machine's helper is up to date"
+  else
+    warn "the machine's helper could not be brought up to date; the portal says so under Server"
+  fi
+  rm -rf "$helper_tmp"
+fi
 
 new_version=$(docker inspect "$service" \
   --format '{{index .Config.Labels "org.opencontainers.image.version"}}' 2>/dev/null)

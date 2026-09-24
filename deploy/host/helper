@@ -12,9 +12,10 @@
 #   vpn.json       written by the server   the VPN's settings for the next vpn-apply; removed once read
 #
 # Nothing the server writes is ever run as a command. A job is one verb from a fixed list, and
-# nothing else: no command, no path, no address. A server somebody took over can ask for the
-# system's updates or a restart, and for nothing more. UwUMail itself is updated by update.sh,
-# which a person starts on this machine.
+# nothing else: no command, no path, no address, no version. A server somebody took over can ask
+# for the system's updates, a restart, or for UwUMail and this helper to be brought to the newest
+# release -- which comes from GitHub, checked against its checksum, never from anywhere the server
+# names -- and for nothing more.
 #
 # The one job that takes data is the VPN (vpn-apply): the portal hands over the settings of the
 # gluetun container in vpn.json, and they end up in .env.vpn next to compose.yaml. Only the
@@ -44,7 +45,9 @@ config="${UWUMAIL_HOST_CONFIG:-/etc/uwumail-host/host.conf}"
 machine_file="$bridge/machine.json"
 jobs_file="$bridge/jobs.jsonl"
 # What this helper is willing to do at all.
-verbs="os-update reboot vpn-apply vpn-stop"
+verbs="os-update reboot uwumail-update helper-update vpn-apply vpn-stop vpn-remove"
+# Where a new UwUMail and a new helper come from. Fixed here, never taken from the server.
+releases="https://github.com/MinifyX/UwUMail-Server/releases/latest/download"
 # A job older than this was meant for a different day; the server asks again if it still wants it.
 JOB_MAX_AGE=1800
 LOG_MAX_BYTES=65536
@@ -243,7 +246,7 @@ cmd_machine() {
 }
 
 helper_version() {
-  printf '%s' "${UWUMAIL_HOST_HELPER_VERSION:-2}"
+  printf '%s' "${UWUMAIL_HOST_HELPER_VERSION:-3}"
 }
 
 # ── the VPN for the pictures ──────────────────────────────────────────────────────────────────
@@ -448,6 +451,91 @@ do_vpn_stop() {
   job_state "$id" "done"
 }
 
+# Takes the VPN out entirely: the container, its settings and the OpenVPN file. The portal forgets
+# its side of it at the same time.
+do_vpn_remove() {
+  local id="$1"
+  set_profile remove vpn
+  {
+    printf '== docker compose rm %s\n' "$VPN_SERVICE"
+    compose --profile vpn stop "$VPN_SERVICE"
+    compose --profile vpn rm -f "$VPN_SERVICE"
+    printf '\n== removing .env.vpn and the OpenVPN file\n'
+  } 2>&1 | job_log "$id"
+  rm -f -- "$COMPOSE_DIR/.env.vpn" "$COMPOSE_DIR/vpn/custom.ovpn" "$vpn_request"
+  refresh_vpn_status
+  job_state "$id" "done"
+}
+
+# ── new versions ──────────────────────────────────────────────────────────────────────────────
+fetch() {
+  local url="$1" target="$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --proto '=https' --tlsv1.2 -o "$target" "$url"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q --https-only -O "$target" "$url"
+  else
+    echo "neither curl nor wget is installed" >&2
+    return 1
+  fi
+}
+
+# A file of the newest release and the checksum next to it; nothing is used unless the two agree.
+fetch_checked() {
+  local name="$1" target="$2" want have
+  fetch "$releases/$name" "$target" && fetch "$releases/$name.sha256" "$target.sha256" || return 1
+  want=$(cut -d' ' -f1 <"$target.sha256")
+  have=$(sha256sum "$target" | cut -d' ' -f1)
+  rm -f -- "$target.sha256"
+  [ -n "$want" ] && [ "$want" = "$have" ] || {
+    echo "$name does not match its checksum" >&2
+    return 1
+  }
+}
+
+# UwUMail to the newest release, with the same update.sh a person would run here: backup first,
+# compose.yaml, images, and back to the old version when the new one does not come up. It recreates
+# the container that asked, which is why the answer is a file. update.sh brings this helper up to
+# date on its way out.
+do_uwumail_update() {
+  local id="$1" work result
+  work=$(mktemp -d)
+  {
+    printf '== fetching the newest update.sh\n'
+    fetch_checked update.sh "$work/update.sh" &&
+      install -m 0755 "$work/update.sh" "$COMPOSE_DIR/update.sh" &&
+      bash "$COMPOSE_DIR/update.sh" --dir "$COMPOSE_DIR" --no-self-update --no-antivirus --yes
+  } 2>&1 | job_log "$id"
+  result=${PIPESTATUS[0]}
+  rm -rf -- "$work"
+  case "$result" in
+    0) job_state "$id" "done" ;;
+    3) job_state "$id" rolledBack "the new version did not come up, so the one from before runs again" ;;
+    *) job_state "$id" failed "the update stopped; its log is below" ;;
+  esac
+}
+
+# This helper to the newest release. The running copy is replaced under a new inode, so it finishes
+# as it began; the next job is carried out by the new one.
+do_helper_update() {
+  local id="$1" work result
+  work=$(mktemp -d)
+  {
+    printf '== fetching the newest helper\n'
+    fetch_checked uwumail-host.tar.gz "$work/uwumail-host.tar.gz" &&
+      tar -xzf "$work/uwumail-host.tar.gz" -C "$work" &&
+      [ -f "$work/uwumail-host/install.sh" ] &&
+      bash "$work/uwumail-host/install.sh" --dir "$COMPOSE_DIR" --service "$SERVICE"
+  } 2>&1 | job_log "$id"
+  result=${PIPESTATUS[0]}
+  rm -rf -- "$work"
+  if [ "$result" -eq 0 ]; then
+    job_state "$id" "done"
+  else
+    job_state "$id" failed "the helper could not be brought up to date; its log is below"
+  fi
+}
+
 # Writes standard input to a file without following a symlink the other side may have planted in the
 # shared directory. The name is cleared first (removing a symlink, not its target), then opened with
 # noclobber (O_EXCL), so a symlink re-planted in the meantime makes the write fail rather than reach
@@ -487,6 +575,9 @@ run_job() {
       reboot) do_reboot "$id" ;;
       vpn-apply) do_vpn_apply "$id" ;;
       vpn-stop) do_vpn_stop "$id" ;;
+      vpn-remove) do_vpn_remove "$id" ;;
+      uwumail-update) do_uwumail_update "$id" ;;
+      helper-update) do_helper_update "$id" ;;
     esac
   } 3>"$log"
   set +C

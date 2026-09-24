@@ -340,6 +340,7 @@ impl Web {
             .route("/api/admin/vpn", get(routes::vpn::show).put(routes::vpn::save))
             .route("/api/admin/vpn/apply", post(routes::vpn::apply))
             .route("/api/admin/vpn/stop", post(routes::vpn::stop))
+            .route("/api/admin/vpn/remove", post(routes::vpn::remove))
             .route("/api/admin/vpn/files", post(routes::vpn::files))
             .route("/api/admin/vpn/use-gluetun", post(routes::vpn::use_gluetun))
             .route("/api/admin/spam", get(routes::spam::admin_overview))

@@ -166,8 +166,11 @@ OpenVPN server), paste the key or read the provider's WireGuard `.conf` or
 machine's helper (`deploy/host`, version 2 or later) the portal writes `.env.vpn`,
 adds `vpn` to `COMPOSE_PROFILES` in `.env` and starts gluetun, then points the
 way out at `http://gluetun:8888`; *Switch the VPN off* stops it and lets
-everything go straight again. Without the helper the portal shows `.env.vpn`
-and the command to start it. The settings, keys included, are kept in the
+everything go straight again, keeping its settings for the next time. *Remove
+VPN* takes it out entirely: the container, `.env.vpn`, the OpenVPN file and the
+keys stored in the portal (helper version 3; an older one only stops the
+container). Without the helper the portal shows `.env.vpn` and the command to
+start it. The settings, keys included, are kept in the
 server's database and never sent back to the browser. The helper takes only
 gluetun's own variables, only values without quotes or line breaks, and an
 `.ovpn` file only without the directives that start programs or read files

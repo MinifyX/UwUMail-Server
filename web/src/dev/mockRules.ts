@@ -328,6 +328,7 @@ const vpnSecrets = {
   openvpnConfig: false,
 };
 let vpnState: "running" | "missing" = "running";
+let vpnSaved = true;
 let proxy: string | null = "http://gluetun:8888";
 let job: VpnView["job"] = { id: "18c0ffee", state: "done", error: "", at: now - 3 * DAY };
 const PROVIDERS = [
@@ -348,8 +349,8 @@ function vpnView(): VpnView {
   return {
     config: vpnConfig,
     secrets: vpnSecrets,
-    saved: true,
-    complete: null,
+    saved: vpnSaved,
+    complete: vpnSaved ? null : "choose a VPN provider",
     providers: PROVIDERS.map(([id, name, wireguard, needsAddresses]) => ({
       id,
       name,
@@ -360,9 +361,11 @@ function vpnView(): VpnView {
     helper: {
       available: true,
       canVpn: true,
-      version: "2",
+      canRemove: true,
+      canUpdate: true,
+      version: "3",
       vpn: {
-        configured: true,
+        configured: vpnSaved,
         provider: vpnConfig.provider,
         type: vpnConfig.kind,
         state: vpnState,
@@ -432,6 +435,7 @@ export const ruleRoutes: [string, RegExp, Handler][] = [
         openvpnConfig: "",
       };
       if (change.wireguardPrivateKey) vpnSecrets.wireguardPrivateKey = true;
+      vpnSaved = true;
       return [200, vpnView()];
     },
   ],
@@ -451,6 +455,19 @@ export const ruleRoutes: [string, RegExp, Handler][] = [
     () => {
       vpnState = "missing";
       proxy = null;
+      return [200, vpnView()];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/vpn\/remove$/,
+    () => {
+      vpnState = "missing";
+      vpnSaved = false;
+      proxy = null;
+      vpnConfig = { ...vpnConfig, provider: "", countries: "" };
+      vpnSecrets.wireguardPrivateKey = false;
+      job = { id: `j${Date.now()}`, state: "done", error: "", at: Math.floor(Date.now() / 1000) };
       return [200, vpnView()];
     },
   ],

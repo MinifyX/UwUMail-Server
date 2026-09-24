@@ -148,7 +148,7 @@ fail2ban-client() {
 
   vpn_status() { printf '{"configured":true,"provider":"nordvpn","type":"wireguard","state":"running","health":"healthy","always":true}'; }
   refresh_vpn_status
-  vpn_written() { [ "$(jq -r '.vpn.provider + " " + (.verbs | join(","))' "$machine_file")" = "nordvpn os-update,reboot,vpn-apply,vpn-stop" ] && made_as_before "$machine_file"; }
+  vpn_written() { [ "$(jq -r '.vpn.provider + " " + (.verbs | join(","))' "$machine_file")" = "nordvpn os-update,reboot,uwumail-update,helper-update,vpn-apply,vpn-stop,vpn-remove" ] && made_as_before "$machine_file"; }
   check "host: the VPN's state is written into machine.json without asking apt" vpn_written
 
   COMPOSE_DIR="$work/compose"
@@ -163,6 +163,37 @@ fail2ban-client() {
   set_profile remove antivirus
   no_profiles_line() { ! grep -q COMPOSE_PROFILES "$COMPOSE_DIR/.env" && grep -q UWUMAIL_HOSTNAME "$COMPOSE_DIR/.env"; }
   check "host: without profiles the line goes, the rest stays" no_profiles_line
+
+  # Removing the VPN takes its settings and its OpenVPN file with it, and nothing else.
+  set_profile add vpn
+  mkdir -p "$COMPOSE_DIR/vpn"
+  printf "VPN_TYPE='wireguard'\n" >"$COMPOSE_DIR/.env.vpn"
+  printf 'client\n' >"$COMPOSE_DIR/vpn/custom.ovpn"
+  compose() { :; }
+  (exec 3>/dev/null && do_vpn_remove wxyz)
+  vpn_gone() {
+    [ ! -e "$COMPOSE_DIR/.env.vpn" ] && [ ! -e "$COMPOSE_DIR/vpn/custom.ovpn" ] && [ -z "$(compose_profiles)" ] &&
+      grep -q UWUMAIL_HOSTNAME "$COMPOSE_DIR/.env" && [ "$(jq -r .state "$bridge/job-wxyz.json")" = "done" ]
+  }
+  check "host: removing the VPN takes its settings, its file and its profile" vpn_gone
+
+  # A new release is only used when it matches its checksum; where it comes from is fixed here.
+  fetch() {
+    case "$1" in
+      "$releases/update.sh") printf 'echo new\n' >"$2" ;;
+      "$releases/update.sh.sha256") printf '%s  update.sh\n' "$(printf 'echo new\n' | sha256sum | cut -d' ' -f1)" >"$2" ;;
+      "$releases/bad.sh") printf 'echo evil\n' >"$2" ;;
+      "$releases/bad.sh.sha256") printf '%s  bad.sh\n' "$(printf 'echo new\n' | sha256sum | cut -d' ' -f1)" >"$2" ;;
+      *) return 1 ;;
+    esac
+  }
+  fetched() { fetch_checked update.sh "$work/fetched.sh" && [ "$(cat "$work/fetched.sh")" = "echo new" ]; }
+  check "host: a release file that matches its checksum is taken" fetched
+  refused_bad() { ! fetch_checked bad.sh "$work/bad.sh" 2>/dev/null; }
+  check "host: a release file that does not match its checksum is refused" refused_bad
+  update_from_github() { [ "$releases" = "https://github.com/MinifyX/UwUMail-Server/releases/latest/download" ]; }
+  check "host: new versions come from the project's releases, nowhere else" update_from_github
+  unset -f compose fetch
 
   losing_every_race
   new_canary

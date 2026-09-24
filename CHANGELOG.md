@@ -3,6 +3,32 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.9.3
+
+**Everything from the portal.** Nothing about the VPN or an update needs the command line any more,
+once the machine's helper is version 3:
+
+- *Server → Updates* has an *Update now* button. After the password the helper fetches `update.sh`
+  from the newest release, checks its checksum and runs it on the machine: backup, `compose.yaml`,
+  images, and back to the old version when the new one does not come up (shown as *rolled back*).
+  The page follows its output while the server is replaced and offers to reload once it is done.
+- The helper updates itself: *Server → Overview* offers *Update helper* when there is a newer one,
+  and `update.sh` now always takes the helper along, from the portal and from the command line.
+- *VPN & Proxy* has *Remove VPN* next to *Switch the VPN off*: it takes out the container,
+  `.env.vpn`, the OpenVPN file and the keys stored in the portal, and sends everything straight
+  again. Switching off keeps the settings for next time, as before.
+
+What the helper takes from the server stays a verb from a fixed list — never a command, a path, an
+address or a version. An update is always the newest release from GitHub, checked against its
+`sha256`, so a server somebody took over can ask for the newest UwUMail and nothing older or
+elsewhere. This revises A-6 of the 0.4.0 review, which kept updates to a person on the machine.
+
+**One last time on the machine:** a helper from before this release cannot update itself yet. The
+portal shows the command — `cd /opt/uwumail && sudo bash update.sh` — which brings UwUMail and the
+helper up to date together; after that everything happens in the portal.
+
+`update.sh` now ends with exit code 3 when it rolled back, instead of 1.
+
 ## 0.9.2
 
 **Provider files are recognised.** Reading a WireGuard `.conf` under *VPN & Proxy* now tells from

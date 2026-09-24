@@ -1,4 +1,5 @@
-//! Server → the machine this runs on: what it has waiting, and the buttons that install it.
+//! Server → the machine this runs on: what it has waiting, and the buttons that install it -- the
+//! system's updates, a new UwUMail, a new helper.
 //!
 //! Only reachable when a helper is installed beside the container (`deploy/host/`). Without one,
 //! [`show`] says so and the portal goes on showing the commands to copy.
@@ -22,7 +23,7 @@ pub async fn show(State(web): State<Web>, _admin: Admin) -> Json<HostView> {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Ask {
-    /// `os-update` or `reboot`. The mail server itself is updated on the machine, with update.sh.
+    /// `os-update`, `reboot`, `uwumail-update` or `helper-update`.
     verb: String,
     #[serde(default)]
     password: Option<String>,
@@ -32,8 +33,15 @@ pub struct Ask {
 /// again -- the same rule as pairing a gateway.
 pub async fn ask(State(web): State<Web>, Admin(session): Admin, Json(ask): Json<Ask>) -> ApiResult<Json<HostView>> {
     let host = web.host().ok_or_else(|| ApiError::NotFound("the helper on this machine".into()))?.clone();
-    if !matches!(ask.verb.as_str(), "os-update" | "reboot") {
+    if !matches!(ask.verb.as_str(), "os-update" | "reboot" | "uwumail-update" | "helper-update") {
         return Err(ApiError::Invalid(format!("unknown job: {}", ask.verb)));
+    }
+    // An older helper would only answer that it does not know the job; better to say so now.
+    if host.view().machine.is_some_and(|machine| !machine.can(&ask.verb)) {
+        return Err(ApiError::Rule(
+            "hostHelperOld",
+            format!("the helper on this machine cannot do {} yet; bring it up to date first", ask.verb),
+        ));
     }
     // Updating a machine that also runs other things restarts those too, and a restart takes them
     // with it. The portal says so above the button, plainly, and asks for the password before it

@@ -1,9 +1,10 @@
-//! Updates in the admin panel: the running version, what is newer, and the commands that install
-//! it.
+//! Updates in the admin panel: the running version, what is newer, and how it gets installed.
 //!
-//! Only that. Updating happens on the machine, with `update.sh` beside the compose file: it brings
-//! a new compose file along, which a container replacing itself never could, and a mail server that
-//! can install software from a web page is one more way in. The portal's job here is to know.
+//! The container never replaces itself: `update.sh` beside the compose file does, because it brings
+//! a new compose file along, which a container replacing itself never could. With the machine's
+//! helper the portal's button asks for that run (`uwumail-update`, see routes::host), and the helper
+//! fetches update.sh from the project's releases -- never from anywhere this server names. Without
+//! the helper the command is shown to run by hand.
 
 use axum::Json;
 use axum::extract::State;

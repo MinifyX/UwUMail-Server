@@ -253,3 +253,56 @@ async fn the_vpn_can_always_be_switched_off_and_a_named_server_is_looked_up() {
     let (status, body) = call(&app, "PUT", "/api/admin/vpn", Some(unknown), &auth).await;
     assert_eq!((status, body["code"].as_str()), (StatusCode::CONFLICT, Some("vpnInvalid")), "{body}");
 }
+
+#[tokio::test]
+async fn the_vpn_can_be_removed_with_its_keys() {
+    let verbs = ["vpn-apply", "vpn-stop", "vpn-remove", "helper-update"];
+    let (app, host, _dir) = portal(&verbs).await;
+    let auth = login(&app).await;
+    let nord = json!({ "provider": "nordvpn", "kind": "wireguard", "wireguardPrivateKey": KEY });
+    call(&app, "PUT", "/api/admin/vpn", Some(nord.clone()), &auth).await;
+    call(&app, "POST", "/api/admin/vpn/apply", None, &auth).await;
+
+    let (status, view) = call(&app, "POST", "/api/admin/vpn/remove", None, &auth).await;
+    assert_eq!(status, StatusCode::OK, "{view}");
+    assert_eq!(host.asked.lock().unwrap().last().unwrap(), "vpn-remove");
+    assert_eq!((view["saved"].as_bool(), view["secrets"]["wireguardPrivateKey"].as_bool()), (Some(false), Some(false)));
+    assert_eq!(view["proxy"]["current"], Value::Null, "straight again");
+    assert_eq!(
+        (view["helper"]["canRemove"].as_bool(), view["helper"]["canUpdate"].as_bool()),
+        (Some(true), Some(true))
+    );
+
+    // A helper from before vpn-remove still stops the container; the portal forgets its side anyway.
+    let (app, host, _dir) = portal(&["vpn-apply", "vpn-stop"]).await;
+    let auth = login(&app).await;
+    call(&app, "PUT", "/api/admin/vpn", Some(nord), &auth).await;
+    let (status, view) = call(&app, "POST", "/api/admin/vpn/remove", None, &auth).await;
+    assert_eq!((status, view["saved"].as_bool()), (StatusCode::OK, Some(false)), "{view}");
+    assert_eq!(host.asked.lock().unwrap().as_slice(), ["vpn-stop"]);
+}
+
+#[tokio::test]
+async fn uwumail_and_its_helper_are_updated_from_the_portal() {
+    let (app, host, _dir) = portal(&["os-update", "reboot", "uwumail-update", "helper-update"]).await;
+    let auth = login(&app).await;
+    let ask = |verb: &str, password: &str| json!({ "verb": verb, "password": password });
+
+    for verb in ["uwumail-update", "helper-update"] {
+        let (status, body) =
+            call(&app, "POST", "/api/admin/host/jobs", Some(ask(verb, "katzenpfote-123")), &auth).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    assert_eq!(host.asked.lock().unwrap().as_slice(), ["uwumail-update", "helper-update"]);
+    let (status, _) =
+        call(&app, "POST", "/api/admin/host/jobs", Some(ask("vpn-remove", "katzenpfote-123")), &auth).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "the VPN has its own routes");
+
+    // A helper from before this knows neither, and the portal says so instead of asking.
+    let (app, host, _dir) = portal(&["os-update", "reboot", "vpn-apply", "vpn-stop"]).await;
+    let auth = login(&app).await;
+    let (status, body) =
+        call(&app, "POST", "/api/admin/host/jobs", Some(ask("uwumail-update", "katzenpfote-123")), &auth).await;
+    assert_eq!((status, body["code"].as_str()), (StatusCode::CONFLICT, Some("hostHelperOld")), "{body}");
+    assert!(host.asked.lock().unwrap().is_empty());
+}

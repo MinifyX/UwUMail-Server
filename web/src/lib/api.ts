@@ -382,7 +382,7 @@ export interface HostMachine {
   digest: string;
   composeDir: string;
   checkedAt: number;
-  /** The helper's version; 2 and later can start the VPN. */
+  /** The helper's version; 2 and later can start the VPN, 3 and later update UwUMail and themselves. */
   helper?: string;
   verbs?: string[];
   vpn?: HostVpn | null;
@@ -789,7 +789,16 @@ export interface VpnView {
   /** What is still missing to connect; null when complete. */
   complete: string | null;
   providers: VpnProvider[];
-  helper: { available: boolean; canVpn: boolean; version: string | null; vpn: HostVpn | null };
+  helper: {
+    available: boolean;
+    canVpn: boolean;
+    /** Whether the helper takes the VPN out entirely; an older one only stops it. */
+    canRemove: boolean;
+    /** Whether the helper brings itself up to date from the portal. */
+    canUpdate: boolean;
+    version: string | null;
+    vpn: HostVpn | null;
+  };
   job: { id: string; state: string; error: string; at: number } | null;
   log: string;
   proxy: { current: string | null; gluetun: string; locked: boolean };

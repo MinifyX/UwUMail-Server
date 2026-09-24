@@ -11,6 +11,9 @@ use std::pin::Pin;
 
 use serde::{Deserialize, Serialize};
 
+/// The helper this server was released with. An older one is offered an update in the portal.
+pub const HELPER_VERSION: u32 = 3;
+
 /// What the helper wrote down about the machine.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -33,12 +36,19 @@ pub struct HostMachine {
     pub digest: String,
     pub compose_dir: String,
     pub checked_at: i64,
-    /// The helper's version; 2 and later know the VPN.
+    /// The helper's version; 2 and later know the VPN, 3 and later update UwUMail and themselves.
     pub helper: String,
     /// What the helper is willing to do.
     pub verbs: Vec<String>,
     /// The gluetun container, when the helper knows about it.
     pub vpn: Option<HostVpn>,
+}
+
+impl HostMachine {
+    /// Whether the helper is willing to do `verb`.
+    pub fn can(&self, verb: &str) -> bool {
+        self.verbs.iter().any(|known| known == verb)
+    }
 }
 
 /// The VPN container beside the server, as the helper sees it. Never any of its keys.
@@ -89,8 +99,9 @@ pub type HostFuture<'a> = Pin<Box<dyn Future<Output = Result<String, String>> + 
 /// The helper on the machine, as the portal may use it.
 pub trait HostBackend: Send + Sync + 'static {
     fn view(&self) -> HostView;
-    /// Asks for `os-update`, `reboot`, `vpn-apply` or `vpn-stop`; the mail server itself is updated on
-    /// the machine, with update.sh. Returns the id of the job, to follow it with [`HostBackend::view`].
+    /// Asks for one of the helper's verbs: `os-update`, `reboot`, `uwumail-update`, `helper-update`,
+    /// `vpn-apply`, `vpn-stop` or `vpn-remove`. Returns the id of the job, to follow it with
+    /// [`HostBackend::view`].
     fn ask<'a>(&'a self, verb: &'a str) -> HostFuture<'a>;
     /// Puts a file into the shared directory for the next job to read, e.g. `vpn.json`.
     fn hand_over(&self, name: &'static str, contents: &str) -> Result<(), String> {
