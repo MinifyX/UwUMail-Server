@@ -66,15 +66,37 @@ pub async fn show(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Value
     Ok(Json(view(&web).await?))
 }
 
+/// gluetun wants the address of an own WireGuard server; a provider's file often names it instead, so the
+/// name is looked up here. IPv4 first: a VPN container usually has no IPv6 route.
+async fn endpoint_address(name: &str, port: u16) -> ApiResult<String> {
+    let found: Vec<std::net::SocketAddr> = tokio::net::lookup_host((name, port))
+        .await
+        .map_err(|_| {
+            ApiError::Rule("vpnInvalid", format!("{name} could not be looked up; enter the server's IP address"))
+        })?
+        .collect();
+    found
+        .iter()
+        .find(|address| address.is_ipv4())
+        .or(found.first())
+        .map(|address| address.ip().to_string())
+        .ok_or_else(|| ApiError::Rule("vpnInvalid", format!("{name} has no address; enter the server's IP address")))
+}
+
 /// Stores the VPN's settings. Nothing is started; that is [`apply`].
 pub async fn save(
     State(web): State<Web>,
     Admin(session): Admin,
     Json(change): Json<VpnChange>,
 ) -> ApiResult<Json<Value>> {
-    let config = load(&web).await?.changed(change);
+    let mut config = load(&web).await?.changed(change);
     if config.provider().is_none() {
         return Err(ApiError::Rule("vpnInvalid", "choose a VPN provider".into()));
+    }
+    let endpoint = config.wireguard_endpoint_ip.clone();
+    if config.provider == "custom" && !endpoint.is_empty() && endpoint.parse::<std::net::IpAddr>().is_err() {
+        let port = config.wireguard_endpoint_port.unwrap_or(51820);
+        config.wireguard_endpoint_ip = endpoint_address(endpoint.trim_matches(['[', ']']), port).await?;
     }
     store(&web, &config).await?;
     let details = json!({ "provider": config.provider, "type": config.kind });
@@ -108,15 +130,18 @@ pub async fn apply(State(web): State<Web>, Admin(session): Admin) -> ApiResult<J
     Ok(Json(view(&web).await?))
 }
 
-/// Stops gluetun and lets the way out go straight again, so pictures don't wait for a VPN that is gone.
+/// Switches the VPN off: the way out goes straight again at once, so nothing waits for a VPN that is going
+/// away, and the helper (where there is one) stops gluetun and keeps it from coming back with the next
+/// `docker compose up -d`. Without a helper only the first half happens; the container is stopped by hand.
 pub async fn stop(State(web): State<Web>, Admin(session): Admin) -> ApiResult<Json<Value>> {
-    let host = web.host().ok_or_else(|| ApiError::NotFound("the helper on this machine".into()))?.clone();
-    if !helper_can(&web) {
-        return Err(ApiError::Rule("vpnHelperOld", "the helper on this machine does not know the VPN yet".into()));
-    }
-    let id = host.ask("vpn-stop").await.map_err(|message| ApiError::Rule("hostJobRefused", message))?;
     if web.egress().and_then(|egress| egress.status().proxy).as_deref() == Some(GLUETUN_PROXY) {
         change_settings(&web, &session, proxy_change(Value::Null)).await?;
+    }
+    let mut id = None;
+    if helper_can(&web)
+        && let Some(host) = web.host().cloned()
+    {
+        id = Some(host.ask("vpn-stop").await.map_err(|message| ApiError::Rule("hostJobRefused", message))?);
     }
     audit(&web, &session, "vpn.stop", "", json!({ "id": id })).await;
     Ok(Json(view(&web).await?))

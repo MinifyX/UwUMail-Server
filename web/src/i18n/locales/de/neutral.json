@@ -907,7 +907,8 @@
       "running": "läuft gerade …",
       "done": "fertig",
       "failed": "fehlgeschlagen",
-      "rolledBack": "zurückgerollt"
+      "rolledBack": "zurückgerollt",
+      "waiting": "wartet"
     }
   },
   "queue": {
@@ -2529,7 +2530,6 @@
       "kind": "Verbindung",
       "readConf": "WireGuard-Datei (.conf) einlesen",
       "readConfHint": "Übernimmt Schlüssel und Adressen aus der Datei deines Anbieters.",
-      "confRead": "Die WireGuard-Datei ist übernommen. Speichern nicht vergessen.",
       "confUnreadable": "In der Datei steht kein PrivateKey.",
       "privateKey": "Privater Schlüssel",
       "privateKeyHint": "44 Zeichen, endet mit =. Steht bei deinem Anbieter unter manueller Einrichtung oder in der WireGuard-Datei.",
@@ -2569,7 +2569,10 @@
       "showFiles": "Dateien zum Einrichten zeigen",
       "useGluetun": "Proxy auf den VPN stellen",
       "proxySet": "Anfragen gehen jetzt über den VPN-Container.",
-      "proxyLocked": "Der Proxy ist in .env oder der Konfigurationsdatei festgelegt, das Portal ändert ihn deshalb nicht."
+      "proxyLocked": "Der Proxy ist in .env oder der Konfigurationsdatei festgelegt, das Portal ändert ihn deshalb nicht.",
+      "confDetected": "{{provider}} erkannt ({{where}}). Schlüssel und Adresse sind übernommen, speichern nicht vergessen.",
+      "confCustom": "Kein bekannter Anbieter: als eigener Server übernommen, samt Schlüssel und Adresse des Servers. Speichern nicht vergessen.",
+      "stoppedByHand": "Anfragen gehen wieder direkt raus. Den Container stoppst du ohne Helfer von Hand: sudo docker compose --profile vpn stop gluetun"
     },
     "keyHints": {
       "nordvpn": "Bei NordVPN im Konto unter NordVPN → Manuelle Einrichtung → WireGuard. Eine Adresse braucht NordVPN nicht.",
@@ -2582,7 +2585,7 @@
     },
     "job": {
       "running": "Der Helfer arbeitet …",
-      "waiting": "Wartet darauf, dass der Helfer anfängt.",
+      "waiting": "Wartet darauf, dass der Helfer anfängt …",
       "done": "Zuletzt erledigt {{when}}",
       "failed": "Hat nicht geklappt: {{error}}"
     },

@@ -25,6 +25,8 @@ const LOG_MAX: usize = 64 * 1024;
 /// A machine report older than this means the helper stopped writing, and saying nothing is better
 /// than saying something a week old as if it were now.
 const STALE_SECS: i64 = 6 * 3600;
+/// A job the helper has not picked up within this long is not going to be; the helper drops it too.
+const WAITING_SECS: i64 = 1800;
 
 pub struct HostBridge {
     dir: PathBuf,
@@ -71,6 +73,12 @@ fn unix_now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |since| since.as_secs() as i64)
 }
 
+/// When a job was asked for, read back from its id.
+fn asked_at(id: &str) -> Option<i64> {
+    let nanos = u64::from_str_radix(id.get(..16)?, 16).ok()?;
+    Some((nanos / 1_000_000_000) as i64)
+}
+
 /// An id that names a file, so nothing but letters and digits. It only has to be one of a kind, not
 /// hard to guess: the shared directory belongs to root and this container, and whoever can write
 /// there already has everything this could protect. The helper checks the shape again anyway,
@@ -92,10 +100,19 @@ impl HostBackend for HostBridge {
                 machine.checked_at > 0 && unix_now() - machine.checked_at < STALE_SECS
             });
         let id = self.current.lock().expect("host job poisoned").clone();
-        let job: Option<HostJob> = id
-            .as_ref()
-            .and_then(|id| self.read(&format!("job-{id}.json")))
-            .and_then(|raw| serde_json::from_str(&raw).ok());
+        let job: Option<HostJob> = id.as_ref().and_then(|id| {
+            match self.read(&format!("job-{id}.json")).and_then(|raw| serde_json::from_str(&raw).ok()) {
+                Some(job) => Some(job),
+                // Asked for, but the helper has not started it yet: say so, so the portal keeps
+                // following it instead of showing the state from before.
+                None => asked_at(id).filter(|at| unix_now() - at < WAITING_SECS).map(|at| HostJob {
+                    id: id.clone(),
+                    state: "waiting".into(),
+                    error: String::new(),
+                    at,
+                }),
+            }
+        });
         let log = id
             .as_ref()
             .and_then(|id| self.read(&format!("job-{id}.log")))
@@ -154,5 +171,40 @@ impl HostBackend for HostBridge {
         file.write_all(contents.as_bytes()).map_err(|err| format!("{name} could not be written: {err}"))?;
         drop(file);
         std::fs::rename(&tmp, &path).map_err(|err| format!("{name} could not be handed over: {err}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_job_waits_until_the_helper_starts_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let bridge = HostBridge { dir: dir.path().to_owned(), current: Mutex::new(None) };
+        assert!(bridge.view().job.is_none());
+
+        let id = bridge.ask("vpn-stop").await.unwrap();
+        let job = bridge.view().job.unwrap();
+        assert_eq!((job.id.as_str(), job.state.as_str()), (id.as_str(), "waiting"), "asked, not started");
+        assert!((unix_now() - job.at).abs() < 5);
+        assert!(std::fs::read_to_string(dir.path().join("jobs.jsonl")).unwrap().contains("vpn-stop"));
+
+        let answer = serde_json::json!({ "id": id, "state": "done", "error": "", "at": unix_now() });
+        std::fs::write(dir.path().join(format!("job-{id}.json")), answer.to_string()).unwrap();
+        assert_eq!(bridge.view().job.unwrap().state, "done");
+        assert!(bridge.ask("reboot-everything").await.is_err(), "only known verbs");
+    }
+
+    #[test]
+    fn a_vpn_request_is_handed_over_for_the_helper_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let bridge = HostBridge { dir: dir.path().to_owned(), current: Mutex::new(None) };
+        bridge.hand_over("vpn.json", "{}").unwrap();
+        bridge.hand_over("vpn.json", "{\"env\":{}}").unwrap();
+        let file = dir.path().join("vpn.json");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "{\"env\":{}}", "replaced whole");
+        assert_eq!(std::fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o600);
     }
 }

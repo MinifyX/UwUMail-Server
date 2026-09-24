@@ -35,7 +35,7 @@ import {
 import { useErrorText } from "@/lib/errors";
 import { formatRelative } from "@/lib/format";
 import { toast } from "@/state/toasts";
-import { parseWireguardConf } from "./wireguard";
+import { detectProvider, parseWireguardConf } from "./wireguard";
 
 const vpnKey = ["admin", "vpn"] as const;
 const egressKey = ["admin", "egress"] as const;
@@ -256,9 +256,15 @@ function VpnCard({ view }: { view: VpnView }) {
   const set = (change: Partial<Draft>) => setDraft((current) => ({ ...current, ...change }));
   const dirty = JSON.stringify(draft) !== JSON.stringify(draftOf(view.config));
   const job = view.job;
-  const running = job?.state === "running" || (job !== null && !job.state);
+  const running = job?.state === "running" || job?.state === "waiting";
   const container = view.helper.vpn;
   const up = container?.state === "running";
+  // Anything of the VPN still there: a container in any state (also one that keeps restarting), one
+  // that would come back with the next start, or the way out still pointing at it.
+  const active =
+    (container !== null && container !== undefined && container.state !== "missing") ||
+    Boolean(container?.always) ||
+    view.proxy.current === view.proxy.gluetun;
 
   const saved = (next: VpnView) => {
     queryClient.setQueryData(vpnKey, next);
@@ -290,7 +296,7 @@ function VpnCard({ view }: { view: VpnView }) {
     mutationFn: () => api<VpnView>("/api/admin/vpn/stop", { method: "POST" }),
     onSuccess: (next) => {
       saved(next);
-      toast(t("vpn.form.stopping"), "info");
+      toast(t(view.helper.canVpn ? "vpn.form.stopping" : "vpn.form.stoppedByHand"), "info");
     },
     onError: (error) => toast(errorText(error), "error"),
   });
@@ -318,20 +324,36 @@ function VpnCard({ view }: { view: VpnView }) {
       toast(t("vpn.form.confUnreadable"), "error");
       return;
     }
+    // The file says whose it is: NordVPN's endpoints are *.nordhold.net, and so on. A file nobody
+    // knows is an own server, which gluetun then needs the server's key and address for.
+    const detected = detectProvider(parsed, file.name);
+    const provider = view.providers.find((item) => item.id === detected.provider && item.wireguard);
+    const target = provider?.id ?? "custom";
     set({
+      provider: target,
       kind: "wireguard",
       wireguardPrivateKey: parsed.privateKey,
       wireguardPresharedKey: parsed.presharedKey,
       wireguardAddresses: parsed.addresses,
-      ...(custom
+      ...(target === "custom"
         ? {
             wireguardPublicKey: parsed.publicKey,
             wireguardEndpointIp: parsed.endpointIp,
             wireguardEndpointPort: parsed.endpointPort,
+            countries: "",
+            cities: "",
           }
-        : {}),
+        : { countries: detected.country ?? draft.countries, cities: detected.country ? "" : draft.cities }),
     });
-    toast(t("vpn.form.confRead"), "success");
+    toast(
+      provider
+        ? t("vpn.form.confDetected", {
+            provider: provider.name,
+            where: [detected.server, detected.country].filter(Boolean).join(", ") || "–",
+          })
+        : t("vpn.form.confCustom"),
+      "success",
+    );
   };
   const readOvpn = async (file: File | undefined) => {
     if (!file) return;
@@ -626,29 +648,25 @@ function VpnCard({ view }: { view: VpnView }) {
               className="mr-auto inline-flex items-center gap-1.5 text-[13px] text-muted hover:text-ink"
             >
               <ScrollText className="size-4" aria-hidden />
-              {running
-                ? t("vpn.job.running")
-                : job.state === "done"
-                  ? t("vpn.job.done", { when: formatRelative(job.at, i18n.language) })
-                  : t("vpn.job.failed", { error: job.error })}
+              {job.state === "waiting"
+                ? t("vpn.job.waiting")
+                : running
+                  ? t("vpn.job.running")
+                  : job.state === "done"
+                    ? t("vpn.job.done", { when: formatRelative(job.at, i18n.language) })
+                    : t("vpn.job.failed", { error: job.error })}
             </button>
           )}
           <Button icon={Save} busy={save.isPending} disabled={!dirty} onClick={() => save.mutate()}>
             {t("common.save")}
           </Button>
+          {active && (
+            <Button variant="danger" icon={Power} busy={stop.isPending} onClick={() => stop.mutate()}>
+              {t("vpn.form.stop")}
+            </Button>
+          )}
           {view.helper.canVpn ? (
             <>
-              {up && (
-                <Button
-                  variant="danger"
-                  icon={Power}
-                  busy={stop.isPending}
-                  disabled={running}
-                  onClick={() => stop.mutate()}
-                >
-                  {t("vpn.form.stop")}
-                </Button>
-              )}
               <Button variant="primary" icon={Play} busy={apply.isPending || running} onClick={() => apply.mutate()}>
                 {up ? t("vpn.form.restart") : t("vpn.form.start")}
               </Button>
@@ -792,7 +810,7 @@ export function VpnPage() {
     queryFn: () => api<SettingsView>("/api/admin/settings"),
   });
   const job = vpn.data?.job;
-  const running = job !== null && job !== undefined && (job.state === "running" || !job.state);
+  const running = job?.state === "running" || job?.state === "waiting";
 
   // While the helper works, the page follows it.
   useEffect(() => {

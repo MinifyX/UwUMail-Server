@@ -29,7 +29,7 @@ export function HostCard() {
   const query = useQuery({
     queryKey: ["admin", "host"],
     queryFn: () => api<HostView>("/api/admin/host"),
-    refetchInterval: (query) => (query.state.data?.job?.state === "running" ? BUSY_MS : false),
+    refetchInterval: (query) => (["running", "waiting"].includes(query.state.data?.job?.state ?? "") ? BUSY_MS : false),
   });
 
   const ask = useMutation({

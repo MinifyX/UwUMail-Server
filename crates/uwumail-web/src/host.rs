@@ -63,7 +63,7 @@ pub struct HostVpn {
 #[serde(rename_all = "camelCase", default)]
 pub struct HostJob {
     pub id: String,
-    /// `running`, `done`, `failed` or `rolledBack`.
+    /// `waiting` (asked for, not started yet), `running`, `done`, `failed` or `rolledBack`.
     pub state: String,
     pub error: String,
     pub at: i64,
