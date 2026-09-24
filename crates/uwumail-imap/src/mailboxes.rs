@@ -72,22 +72,50 @@ pub fn normalize(path: &str) -> String {
 }
 
 /// Whether a path matches a LIST pattern: `*` matches anything, `%` anything but the separator.
+///
+/// Walks the path once, keeping the set of pattern positions reached so far, so the work is at most
+/// pattern length times path length. Trying every split for every wildcard, as this did before, took
+/// exponential time on a pattern like `*a*a*a…b` against a long name of `a`s: one LIST from a
+/// logged-in account held a worker thread for good (security-audit-0.8.0 A-1).
 pub fn matches(pattern: &str, path: &str) -> bool {
-    let pattern = normalize_pattern(pattern);
-    fn go(pattern: &[char], path: &[char]) -> bool {
-        match pattern.split_first() {
-            None => path.is_empty(),
-            Some(('*', rest)) => (0..=path.len()).any(|i| go(rest, &path[i..])),
-            Some(('%', rest)) => {
-                (0..=path.len()).take_while(|&i| i == 0 || path[i - 1] != SEPARATOR).any(|i| go(rest, &path[i..]))
-            }
-            Some((c, rest)) => path.first() == Some(c) && go(rest, &path[1..]),
-        }
+    let pattern: Vec<char> = normalize_pattern(pattern).chars().collect();
+    if pattern.len() > 255 {
+        return false;
     }
-    let pattern: Vec<char> = pattern.chars().collect();
-    let path: Vec<char> = path.chars().collect();
-    // Patterns like "***...": keep the work bounded.
-    pattern.len() <= 255 && go(&pattern, &path)
+    // `reached[i]`: the path read so far matches the first `i` characters of the pattern.
+    let mut reached = vec![false; pattern.len() + 1];
+    reached[0] = true;
+    let close = |reached: &mut [bool]| {
+        // A wildcard may also match nothing.
+        for i in 0..pattern.len() {
+            if reached[i] && matches!(pattern[i], '*' | '%') {
+                reached[i + 1] = true;
+            }
+        }
+    };
+    close(&mut reached);
+    let mut next = vec![false; pattern.len() + 1];
+    for c in path.chars() {
+        next.fill(false);
+        for (i, &p) in pattern.iter().enumerate() {
+            if !reached[i] {
+                continue;
+            }
+            match p {
+                '*' => next[i] = true,
+                '%' if c != SEPARATOR => next[i] = true,
+                '%' => {}
+                literal if literal == c => next[i + 1] = true,
+                _ => {}
+            }
+        }
+        close(&mut next);
+        if !next.contains(&true) {
+            return false;
+        }
+        std::mem::swap(&mut reached, &mut next);
+    }
+    reached[pattern.len()]
 }
 
 fn normalize_pattern(pattern: &str) -> String {
@@ -146,5 +174,58 @@ mod tests {
         assert!(!matches("Inboxen", "INBOX"));
         assert!(matches("P%e", "Projekte"));
         assert!(!matches("*".repeat(300).as_str(), "x"));
+    }
+
+    /// The matcher as it was: every split for every wildcard. Right, but exponential.
+    fn by_trying_every_split(pattern: &[char], path: &[char]) -> bool {
+        match pattern.split_first() {
+            None => path.is_empty(),
+            Some(('*', rest)) => (0..=path.len()).any(|i| by_trying_every_split(rest, &path[i..])),
+            Some(('%', rest)) => (0..=path.len())
+                .take_while(|&i| i == 0 || path[i - 1] != SEPARATOR)
+                .any(|i| by_trying_every_split(rest, &path[i..])),
+            Some((c, rest)) => path.first() == Some(c) && by_trying_every_split(rest, &path[1..]),
+        }
+    }
+
+    /// Every combination up to four characters, against the old matcher.
+    #[test]
+    fn patterns_match_as_before() {
+        fn all(alphabet: &[char], max: usize) -> Vec<String> {
+            let mut out = vec![String::new()];
+            let mut last = vec![String::new()];
+            for _ in 0..max {
+                last = last.iter().flat_map(|s| alphabet.iter().map(move |c| format!("{s}{c}"))).collect();
+                out.extend(last.iter().cloned());
+            }
+            out
+        }
+        let patterns = all(&['a', 'b', '/', '*', '%'], 4);
+        let paths = all(&['a', 'b', '/'], 4);
+        for pattern in &patterns {
+            let chars: Vec<char> = pattern.chars().collect();
+            for path in &paths {
+                let path_chars: Vec<char> = path.chars().collect();
+                assert_eq!(
+                    matches(pattern, path),
+                    by_trying_every_split(&chars, &path_chars),
+                    "{pattern:?} against {path:?}"
+                );
+            }
+        }
+    }
+
+    /// security-audit-0.8.0 A-1: the longest pattern a client may send, built to make the old matcher
+    /// backtrack, against a long name that almost matches. Answered at once.
+    #[test]
+    fn a_hostile_pattern_is_answered_at_once() {
+        let started = std::time::Instant::now();
+        let pattern = format!("{}b", "*a".repeat(127));
+        assert_eq!(pattern.len(), 255);
+        let name = "a".repeat(255);
+        assert!(!matches(&pattern, &name));
+        assert!(!matches(&"%a".repeat(127), &format!("{name}b")));
+        assert!(matches(&"*a".repeat(127), &name));
+        assert!(started.elapsed() < std::time::Duration::from_secs(1), "{:?}", started.elapsed());
     }
 }

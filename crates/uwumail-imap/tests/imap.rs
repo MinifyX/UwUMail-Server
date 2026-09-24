@@ -309,6 +309,19 @@ async fn mailbox_names_are_modified_utf7_until_the_client_takes_utf8() {
     assert!(done.contains("OK"), "{done}");
 }
 
+/// security-audit-0.8.0 A-1: a LIST pattern built to make a backtracking matcher run for ever, against
+/// a long name of the account's own, is answered in time.
+#[tokio::test]
+async fn a_hostile_list_pattern_is_answered_in_time() {
+    let server = server().await;
+    let mut client = Client::login(&server).await;
+    let (_, done) = client.command(&format!("CREATE \"{}\"", "a".repeat(255))).await;
+    assert!(done.contains("OK"), "{done}");
+    let (lines, done) = client.command(&format!("LIST \"\" \"{}b\"", "*a".repeat(127))).await;
+    assert!(done.contains("OK"), "{done}");
+    assert!(lines.is_empty(), "{lines:?}");
+}
+
 #[tokio::test]
 async fn broken_and_oversized_input_is_refused() {
     let server = server().await;
