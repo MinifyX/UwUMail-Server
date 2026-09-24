@@ -3,6 +3,49 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.9.0
+
+**VPN & proxy in the portal.** *Server → VPN & Proxy* sets up the VPN for remote pictures without
+touching a file: pick the provider (NordVPN, Mullvad, Proton VPN, Surfshark, IVPN, AirVPN,
+Windscribe, every other provider gluetun knows, or an own WireGuard or OpenVPN server), paste the
+key or read the provider's `.conf` or `.ovpn` file, choose countries or cities, and press *Save and
+connect*. The machine's helper (`deploy/host`, now version 2) writes `.env.vpn`, adds `vpn` to
+`COMPOSE_PROFILES` and starts gluetun; the portal follows it with the log and points the way out at
+it. Without the helper the portal shows `.env.vpn` and the command to copy. Keys are stored in the
+database and never sent back to the browser; the helper passes on only gluetun's own variables,
+only values without quotes or line breaks, and refuses `.ovpn` directives that start programs or
+read files.
+
+The way out can now be changed while the server runs, and each kind of request that tells about
+readers takes it by choice: remote pictures and sender logos (on), the check for new versions and
+fetching from other mailboxes (both off by default). A proxy of one's own (`http://` or
+`socks5://`) and the fallback are set on the same page. New settings `egress.pictures`,
+`egress.updates` and `egress.fetch`; the empty `UWUMAIL_EGRESS_*` variables `compose.yaml` passes on
+no longer lock the setting. See [docs/configuration.md](docs/configuration.md#remote-pictures-through-a-vpn).
+
+**The spam filter, rearranged.** The page that showed every setting and every list one below the
+other is now tabs — overview, rules, settings, lists, learning, viruses, history — and the overview
+says at a glance how many rules there are, which ones decide the most, and blocks or allows a
+sender in one line. Allowed and blocked senders and words are **one table of rules**, searched,
+filtered, sorted and paged by the server, so a server with many domains, people and thousands of
+entries stays usable:
+
+- search by value, note, domain or person; filter by scope (the whole server, all domains, all
+  people, or one of them from a searchable list with counts), effect, kind and state;
+- every rule can be edited in place and moved to another scope, and many at once can be allowed,
+  blocked, moved, given an end date or removed;
+- rules can **run out** (for 1, 7, 30, 90 or 365 days, or until a date) and are removed by
+  themselves;
+- every rule counts its **hits** and when it last decided something, so rules nobody needs any
+  more are easy to find;
+- **import** pasted lines or a text or CSV file (up to 20,000 lines, senders with `allow`/`block`
+  and a note per line) and **export** what the filters show as CSV;
+- admins look after people's own rules too.
+
+My account gets the same table for one's own rules. Migration 35 adds the end date and the hit
+counters. The API is `/api/admin/spam/rules` and `/api/account/spam/rules`, see
+[docs/spam-filter.md](docs/spam-filter.md#the-portal). The older sender and word endpoints stay.
+
 ## 0.8.0
 
 **Contacts over JMAP** (webmail [v0.8.0](https://github.com/MinifyX/UwUMail-Webmail/releases/tag/v0.8.0)).
