@@ -3,6 +3,39 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.11.0
+
+**Your own name, logo and colour.** *Server → Settings → Branding* turns UwUMail into your
+server's own ([docs/branding.md](docs/branding.md)):
+
+- **Logo:** PNG, JPEG, WebP or SVG up to 512 KB. It replaces Nyu in the sidebar, on the login
+  page, in the webmail and in the browser tab. It is kept in the database, so it is in every
+  backup, and served in a sandbox where an SVG cannot run scripts.
+- **Name:** shown instead of "UwUMail" in the portal and the webmail, and as the sender of the
+  mail the server writes (security notices, bounces to your own people, forwarding confirmations,
+  the test mail). Autoconfig, Apple profiles, authenticator apps and passkeys show it too.
+- **Accent colour:** pick one of eight presets or any colour. Every shade for the light and the
+  dark theme is worked out from it and moved until buttons and links read at WCAG 4.5:1 or
+  better; a preview shows both before saving. Without a chosen colour nothing changes, and the
+  pink stays exactly as it was.
+- **Nyu and the kaomoji** can be switched off: no cat anywhere, no faces, and the portal, the
+  webmail and the mail to your own people all in the plain tone.
+
+The settings are also `brand.name`, `brand.color` and `brand.mascot` in the config file and on the
+command line.
+
+**Six languages.** The portal, the webmail and the mail the server writes now also speak French,
+Dutch, Japanese and Simplified Chinese, beside German and English, in both tones. "Same as the
+browser" picks the first of the browser's languages the server speaks. Bounces, security notices,
+forwarding confirmations, the test mail, the names of the first calendar and address book and
+the pages on port 80 are translated too. The language setting under *Mail from the server* and
+the synced `language` preference take `fr`, `nl`, `ja` and `zh`.
+
+**Accounts & domains.** *Server → Accounts & domains* gathers *Accounts*, *Domains* and *Reports*
+under one entry with tabs, like the other pages since 0.10.0. The addresses stay the same.
+
+The webmail is [UwUMail Webmail 0.9.0](https://github.com/MinifyX/UwUMail-Webmail/tree/v0.9.0).
+
 ## 0.10.0
 
 **A tidier server menu.** The admin part of the portal had grown to thirteen entries. It now has

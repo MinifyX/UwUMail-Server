@@ -1,6 +1,7 @@
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, Segmented, Select } from "@/components/ui/Field";
-import { useT } from "@/i18n";
+import { LANGUAGE_NAMES, LANGUAGES, useT } from "@/i18n";
+import { useBrand } from "@/state/brand";
 import { useSavePrefs } from "@/features/session/session";
 import { usePrefs, type LanguageSetting, type MotionSetting, type ThemeSetting, type Tone } from "@/state/prefs";
 
@@ -8,6 +9,7 @@ export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: ()
   const { t } = useT();
   const prefs = usePrefs();
   const save = useSavePrefs();
+  const mascot = useBrand((s) => s.mascot);
 
   return (
     <Dialog open={open} onClose={onClose} title={t("appearance.title")} width="sm">
@@ -19,27 +21,31 @@ export function AppearanceDialog({ open, onClose }: { open: boolean; onClose: ()
               value={prefs.language}
               onChange={(event) => save.mutate({ language: event.target.value as LanguageSetting })}
             >
-              {(["system", "de", "en"] as const).map((language) => (
-                <option key={language} value={language}>
-                  {t(`appearance.language.${language}`)}
+              <option value="system">{t("appearance.language.system")}</option>
+              {LANGUAGES.map((language) => (
+                <option key={language} value={language} lang={language}>
+                  {LANGUAGE_NAMES[language]}
                 </option>
               ))}
             </Select>
           )}
         </Field>
-        <Field label={t("appearance.tone.label")} hint={t("appearance.tone.hint")}>
-          {() => (
-            <Segmented<Tone>
-              label={t("appearance.tone.label")}
-              value={prefs.tone}
-              onChange={(tone) => save.mutate({ tone })}
-              options={[
-                { value: "playful", label: t("appearance.tone.playful") },
-                { value: "neutral", label: t("appearance.tone.neutral") },
-              ]}
-            />
-          )}
-        </Field>
+        {/* Without the mascot everything is plain, so there is no tone to choose. */}
+        {mascot && (
+          <Field label={t("appearance.tone.label")} hint={t("appearance.tone.hint")}>
+            {() => (
+              <Segmented<Tone>
+                label={t("appearance.tone.label")}
+                value={prefs.tone}
+                onChange={(tone) => save.mutate({ tone })}
+                options={[
+                  { value: "playful", label: t("appearance.tone.playful") },
+                  { value: "neutral", label: t("appearance.tone.neutral") },
+                ]}
+              />
+            )}
+          </Field>
+        )}
         <Field label={t("appearance.theme.label")}>
           {() => (
             <Segmented<ThemeSetting>

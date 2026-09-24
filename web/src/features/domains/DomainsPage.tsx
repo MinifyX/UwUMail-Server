@@ -2,7 +2,6 @@ import { Globe, Plus, X } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button, IconButton } from "@/components/ui/Button";
-import { PageHeader } from "@/components/ui/Card";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -106,10 +105,7 @@ export function DomainsPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <PageHeader title={t("domains.title")} intro={!pro && t("domains.intro")} />
-        {domains.data.length > 0 && addButton}
-      </div>
+      {domains.data.length > 0 && <div className="flex justify-end">{addButton}</div>}
 
       {domains.data.length === 0 ? (
         <EmptyState

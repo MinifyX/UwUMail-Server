@@ -2,6 +2,7 @@ import clsx from "clsx";
 import { CircleAlert, CircleCheck, Mail, X } from "lucide-react";
 import { LogoSymbol } from "@/components/ui/Logo";
 import { useT } from "@/i18n";
+import { useBrand } from "@/state/brand";
 import { useToasts } from "@/state/toasts";
 
 const ICONS = { info: Mail, success: CircleCheck, error: CircleAlert } as const;
@@ -9,6 +10,7 @@ const ICONS = { info: Mail, success: CircleCheck, error: CircleAlert } as const;
 export function Toaster() {
   const { toasts, dismiss } = useToasts();
   const { t } = useT();
+  const mascot = useBrand((s) => s.mascot);
 
   return (
     <div
@@ -27,11 +29,13 @@ export function Toaster() {
               <Icon
                 className={clsx(
                   "size-[18px]",
-                  item.tone === "error" ? "text-[#ff8096] dark:text-danger" : "text-[#ff7fac] dark:text-pink-solid",
+                  item.tone === "error"
+                    ? "text-[#ff8096] dark:text-danger"
+                    : "text-(--uwu-toast-accent) dark:text-pink-solid",
                 )}
                 aria-hidden
               />
-              {item.effect === "sent" && (
+              {item.effect === "sent" && mascot && (
                 <LogoSymbol
                   mood="happy"
                   className="nyu-flyer animate-nyu-fly pointer-events-none absolute -top-2 -left-2 h-8 w-auto"
@@ -46,7 +50,7 @@ export function Toaster() {
                   dismiss(item.id);
                   item.action?.run();
                 }}
-                className="shrink-0 rounded-full px-3 py-1.5 text-[13px] font-bold text-[#ff7fac] hover:bg-white/10 dark:text-pink-ink dark:hover:bg-black/5"
+                className="shrink-0 rounded-full px-3 py-1.5 text-[13px] font-bold text-(--uwu-toast-accent) hover:bg-white/10 dark:text-pink-ink dark:hover:bg-black/5"
               >
                 {item.action.label}
               </button>

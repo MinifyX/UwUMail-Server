@@ -6,6 +6,7 @@
  * Production builds never include this file.
  */
 
+import type { Brand } from "@/state/brand";
 import type {
   AccountSpamView,
   AntivirusTest,
@@ -80,11 +81,50 @@ let setupOpen = startParams.has("setup");
 let loggedIn = !startParams.has("loggedOut") && !setupOpen;
 let preferences: Record<string, unknown> = {};
 
+/** The brand as the settings make it; `?brand` in the address starts with a made-up one. */
+let mockLogo: string | null = null;
+const brand = (): Brand => {
+  const name = String(settings["brand.name"]?.value ?? "").trim();
+  const color = String(settings["brand.color"]?.value ?? "")
+    .trim()
+    .toLowerCase();
+  const mascot = settings["brand.mascot"]?.value !== false;
+  return {
+    name: name || "UwUMail",
+    custom: Boolean(name || color || !mascot || mockLogo),
+    color: color || null,
+    mascot,
+    logo: mockLogo,
+  };
+};
+
+/** Roughly what the server derives; the mock only needs something to show. */
+function mockPalette(color: string) {
+  return {
+    light: {
+      "--uwu-pink": color,
+      "--uwu-pink-solid": color,
+      "--uwu-pink-solid-hover": color,
+      "--uwu-pink-ink": color,
+      "--uwu-pink-tint": `color-mix(in oklch, ${color} 12%, white)`,
+      "--uwu-pink-tint-strong": `color-mix(in oklch, ${color} 22%, white)`,
+    },
+    dark: {
+      "--uwu-pink": color,
+      "--uwu-pink-solid": color,
+      "--uwu-pink-solid-hover": color,
+      "--uwu-pink-ink": `color-mix(in oklch, ${color} 70%, white)`,
+      "--uwu-pink-tint": `color-mix(in oklch, ${color} 25%, #1c171f)`,
+      "--uwu-pink-tint-strong": `color-mix(in oklch, ${color} 35%, #1c171f)`,
+    },
+  };
+}
+
 const session = (): Session => ({
   account: { id: 1, login: "lorin@uwu.example", name: "Lorin", role: "admin" },
   csrfToken: "mock",
   preferences,
-  server: { hostname: "mail.uwu.example", version: "0.1.0" },
+  server: { hostname: "mail.uwu.example", version: "0.1.0", brand: brand() },
   webmail: true,
 });
 
@@ -675,6 +715,9 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "tone.language": { value: "de", source: "file" },
   "tone.internal": { value: "playful", source: "default" },
   "tone.external": { value: "neutral", source: "default" },
+  "brand.name": { value: startParams.has("brand") ? "Post & Co" : "", source: "default" },
+  "brand.color": { value: startParams.has("brand") ? "#0ea5e9" : "", source: "default" },
+  "brand.mascot": { value: !startParams.has("brand"), source: "default" },
   "delivery.relay.host": { value: "relay.example.net", source: "database" },
   "delivery.relay.port": { value: 587, source: "database" },
   "delivery.relay.security": { value: "starttls", source: "database" },
@@ -1752,7 +1795,29 @@ const routes: [string, RegExp, Handler][] = [
       return [200, { ok: true }];
     },
   ],
-  ["GET", /^\/api\/info$/, () => [200, { hostname: "mail.uwu.example", setupRequired: setupOpen } satisfies Info]],
+  [
+    "GET",
+    /^\/api\/info$/,
+    () => [200, { hostname: "mail.uwu.example", setupRequired: setupOpen, brand: brand() } satisfies Info],
+  ],
+  ["PUT", /^\/api\/admin\/branding\/logo$/, () => [200, brand()]],
+  [
+    "DELETE",
+    /^\/api\/admin\/branding\/logo$/,
+    () => {
+      mockLogo = null;
+      return [200, brand()];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/branding\/palette$/,
+    (_, __, query) => {
+      const color = query.get("color") ?? "";
+      if (!/^#[0-9a-f]{6}$/i.test(color)) return problem(409, "brandColor");
+      return [200, mockPalette(color)];
+    },
+  ],
   [
     "GET",
     /^\/api\/setup$/,
@@ -3212,6 +3277,10 @@ window.fetch = async (input, init) => {
   if (!url.pathname.startsWith("/api/")) return realFetch(input, init);
   const method = (init?.method ?? "GET").toUpperCase();
   const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
+  // An uploaded logo stays in this tab as an object URL.
+  if (init?.body instanceof Blob && url.pathname === "/api/admin/branding/logo") {
+    mockLogo = URL.createObjectURL(init.body);
+  }
   await new Promise((resolve) => setTimeout(resolve, 250));
   let result: [number, unknown] = problem(404, "notFound");
   for (const [routeMethod, pattern, handler] of routes) {

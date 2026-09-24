@@ -3,7 +3,6 @@ import { Search, UserPlus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
-import { PageHeader } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Select, TextInput } from "@/components/ui/Field";
 import { Pill } from "@/components/ui/Pill";
@@ -73,8 +72,7 @@ export function PeoplePage({ session }: { session: Session }) {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <PageHeader title={t("people.title")} />
+      <div className="flex justify-end">
         <Button variant="primary" icon={UserPlus} onClick={() => setCreating(true)}>
           {t("people.add")}
         </Button>

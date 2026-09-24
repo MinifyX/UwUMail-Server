@@ -22,10 +22,11 @@ pub async fn info(State(web): State<Web>) -> ApiResult<Json<Value>> {
     Ok(Json(json!({
         "hostname": web.settings().hostname,
         "setupRequired": counts.admins == 0,
+        "brand": super::branding::brand_json(&web).await,
     })))
 }
 
-pub(crate) fn session_body(web: &Web, account: &Account, csrf_token: &str, preferences: Value) -> Value {
+pub(crate) async fn session_body(web: &Web, account: &Account, csrf_token: &str, preferences: Value) -> Value {
     json!({
         "account": {
             "id": account.id,
@@ -41,6 +42,7 @@ pub(crate) fn session_body(web: &Web, account: &Account, csrf_token: &str, prefe
         "server": {
             "hostname": web.settings().hostname,
             "version": env!("CARGO_PKG_VERSION"),
+            "brand": super::branding::brand_json(web).await,
         },
     })
 }
@@ -60,7 +62,7 @@ pub async fn session(State(web): State<Web>, session: Result<Session, ApiError>)
         Err(err) => return Err(err),
     };
     let preferences = web.store().preferences(session.account.id).await?;
-    let body = session_body(&web, &session.account, &session.csrf_token, Value::Object(preferences));
+    let body = session_body(&web, &session.account, &session.csrf_token, Value::Object(preferences)).await;
     let mut response = Json(body).into_response();
     response.headers_mut().insert(header::SET_COOKIE, session::set_cookie(&session.token, session.client));
     Ok(no_store(response))
@@ -141,7 +143,7 @@ pub(crate) async fn complete_login(
     }
 
     let preferences = web.store().preferences(account.id).await?;
-    let body = session_body(web, account, &created.csrf_token, Value::Object(preferences));
+    let body = session_body(web, account, &created.csrf_token, Value::Object(preferences)).await;
     let mut response = Json(body).into_response();
     response.headers_mut().insert(header::SET_COOKIE, session::set_cookie(&created.token, client));
     Ok(no_store(response))

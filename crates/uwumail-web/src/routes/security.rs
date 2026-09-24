@@ -143,7 +143,7 @@ pub async fn start_totp(
 ) -> ApiResult<Json<Value>> {
     let confirmation = body.map(|Json(body)| body).unwrap_or_default();
     confirm_identity(&web, &session, confirmation.password.as_deref()).await?;
-    let issuer = format!("UwUMail ({})", web.settings().hostname);
+    let issuer = format!("{} ({})", web.smtp().brand().name(), web.settings().hostname);
     let setup = web.store().begin_totp(session.account.id, &issuer, &session.account.login).await?;
     Ok(Json(json!({ "secret": setup.secret, "uri": setup.uri, "qr": qr_code(&setup.uri) })))
 }
@@ -283,7 +283,7 @@ pub async fn passkey_options(
     let display_name = if account.display_name.trim().is_empty() { &account.login } else { &account.display_name };
     Ok(Json(json!({
         "challenge": webauthn::encode(&challenge),
-        "rp": { "id": web.settings().hostname, "name": "UwUMail" },
+        "rp": { "id": web.settings().hostname, "name": web.smtp().brand().name() },
         // The user handle only needs to be stable and private: the account number, not the address.
         "user": { "id": webauthn::encode(&account.id.to_be_bytes()), "name": account.login, "displayName": display_name },
         "pubKeyCredParams": [

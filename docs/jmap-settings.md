@@ -124,7 +124,7 @@ is handed to the others.
 | --- | --- |
 | `theme` | `"system"`, `"light"` or `"dark"` |
 | `tone` | `"playful"` or `"neutral"` |
-| `language` | `"system"`, `"de"` or `"en"` |
+| `language` | `"system"`, `"de"`, `"en"`, `"fr"`, `"nl"`, `"ja"` or `"zh"` (Simplified Chinese) |
 | `conversations` | `true` or `false` |
 | `remoteImages` | `"ask"` or `"always"` |
 | `mailAppearance` | `"auto"`, `"light"` or `"dark"` |

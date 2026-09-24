@@ -50,8 +50,6 @@
     "overview": "Übersicht",
     "openMenu": "Menü öffnen",
     "closeMenu": "Menü schließen",
-    "people": "Konten",
-    "domains": "Domains",
     "queue": "Warteschlange",
     "logs": "Protokolle",
     "settings": "Einstellungen",
@@ -60,10 +58,10 @@
     "fetch": "Abrufkonten",
     "addresses": "Adressen",
     "spamFilter": "Spamfilter",
-    "reports": "Berichte",
     "collapse": "{{group}} einklappen",
     "expand": "{{group}} ausklappen",
-    "mailbox": "Postfach"
+    "mailbox": "Postfach",
+    "directory": "Konten & Domains"
   },
   "userMenu": {
     "open": "Kontomenü öffnen",
@@ -78,9 +76,7 @@
     "title": "Darstellung und Sprache",
     "language": {
       "label": "Sprache",
-      "system": "Wie der Browser",
-      "de": "Deutsch",
-      "en": "English"
+      "system": "Wie der Browser"
     },
     "tone": {
       "label": "Ton",
@@ -303,7 +299,11 @@
       "lokiInvalid": "So geht das nicht an Loki: {{detail}}",
       "lokiUnreachable": "Loki hat die Testzeile nicht angenommen: {{detail}}",
       "providerNotFound": "Bei diesem Anbieter hat kein Server geantwortet. Trag die Servernamen hier selbst ein — sie stehen in der Hilfe des Anbieters.",
-      "fetchLimit": "Mehr Abrufkonten gehen nicht: {{detail}}"
+      "fetchLimit": "Mehr Abrufkonten gehen nicht: {{detail}}",
+      "logoEmpty": "Die Datei ist leer.",
+      "logoTooLarge": "Das Logo ist zu groß. Erlaubt sind höchstens 512 KB.",
+      "logoType": "Das ist kein Bild, das als Logo taugt. Erlaubt sind PNG, JPEG, WebP und SVG.",
+      "brandColor": "Das ist keine Farbe. Erwartet wird etwas wie #ff4d8d."
     }
   },
   "people": {
@@ -576,7 +576,9 @@
       "hostJob": "{{actor}} hat auf dem Server {{target}} ausgeführt",
       "spamLogCleared": "{{actor}} hat das Spam-Protokoll geleert",
       "spamVirusTest": "{{actor}} hat den Virenscanner getestet",
-      "updatesSettings": "{{actor}} hat die Update-Einstellungen geändert"
+      "updatesSettings": "{{actor}} hat die Update-Einstellungen geändert",
+      "brandLogo": "{{actor}} hat ein neues Logo hochgeladen",
+      "brandLogoRemoved": "{{actor}} hat das Logo entfernt"
     },
     "details": {
       "adminOn": "ist jetzt Admin",
@@ -1000,7 +1002,7 @@
       "privacyText": "Log-Zeilen enthalten personenbezogene Daten: Anmeldenamen und Mailadressen, IP-Adressen von Mail-Apps und anderen Servern, Absender empfangener Mails. Mit dem Einschalten verlassen diese Daten den Server und liegen danach in Loki – so lange, wie Loki sie aufbewahrt. Sorge dafür, dass das für alle Postfächer auf diesem Server in Ordnung ist.",
       "privacyConsent": "Ich habe das verstanden und erlaube, dass die Logs mit diesen Daten an die unten eingetragene Adresse gesendet werden.",
       "url": "Adresse von Loki",
-      "urlHint": "z. B. http://192.168.1.20:3100 oder https://loki.example.net. /loki/api/v1/push wird ergänzt, wenn die Adresse keinen Pfad hat.",
+      "urlHint": "z. B. http://192.0.2.20:3100 oder https://loki.example.net. /loki/api/v1/push wird ergänzt, wenn die Adresse keinen Pfad hat.",
       "auth": "Anmeldung",
       "authNone": "Keine",
       "authBasic": "Benutzer & Passwort",
@@ -1065,8 +1067,6 @@
       "external": "Ton nach außen",
       "externalHint": "Mails an alle anderen, zum Beispiel wenn eine Mail nicht zugestellt werden kann.",
       "options": {
-        "de": "Deutsch",
-        "en": "English",
         "playful": "Verspielt",
         "neutral": "Sachlich",
         "light": "Leicht verspielt"
@@ -1187,7 +1187,8 @@
       "general": "Allgemein",
       "mail": "Versand & Empfang",
       "apps": "Apps & Webmail",
-      "vpn": "VPN & Proxy"
+      "vpn": "VPN & Proxy",
+      "branding": "Erscheinungsbild"
     },
     "mailIntro": "Wie Mail den Server verlässt und was er annimmt. Änderungen wirken sofort, ohne Neustart.",
     "appsIntro": "Was für Mail-Apps und das Postfach im Browser gilt. Änderungen wirken sofort, ohne Neustart."
@@ -1889,7 +1890,7 @@
     "reach": {
       "title": "Wie ist dein Server erreichbar?",
       "cardTitle": "Erreichbarkeit",
-      "body": "Nyu schaut, wie andere Mailserver deinen Server sehen: öffentliche Adresse, Spamhaus, Netzbetreiber und Port 25. Danach entscheidest du, ob Mails direkt oder über ein UwUMail Gateway laufen.",
+      "body": "Hier siehst du, wie andere Mailserver deinen Server sehen: öffentliche Adresse, Spamhaus, Netzbetreiber und Port 25. Danach entscheidest du, ob Mails direkt oder über ein UwUMail Gateway laufen.",
       "start": "Prüfen",
       "run": "Erneut prüfen",
       "addressTitle": "Deine Verbindung",
@@ -1900,7 +1901,7 @@
       "docs": "Anleitung zum Gateway",
       "source": "Quellen:",
       "recommend": {
-        "gateway": "Nyu empfiehlt ein UwUMail Gateway: Von dieser Verbindung aus würden viele Mailserver deine Mails nicht annehmen.",
+        "gateway": "Empfohlen: ein UwUMail Gateway. Von dieser Verbindung aus würden viele Mailserver deine Mails nicht annehmen.",
         "direct": "Sieht gut aus: Dein Server kann Mails selbst senden und empfangen.",
         "unknown": "Deine öffentliche Adresse ließ sich nicht herausfinden. Prüfe die Verbindung und versuch es nochmal.",
         "paired": "Dein Server sendet und empfängt über das UwUMail Gateway."
@@ -1958,7 +1959,7 @@
       "warning": "Alles, was auf diesem Server ist, wird dabei ersetzt. Auf einem frisch aufgesetzten Server ist das nichts — genau dafür ist das hier.",
       "running": {
         "title": "Das Backup wird geholt",
-        "body": "Nyu packt den Stand aus. Das kann je nach Größe und Leitung ein paar Minuten dauern.",
+        "body": "Der Stand wird ausgepackt. Das kann je nach Größe und Leitung ein paar Minuten dauern.",
         "wait": "Der Server holt sich das Backup und startet danach neu. Diese Seite kannst du offen lassen.",
         "then": "Danach meldest du dich mit dem Konto an, das im Backup steht — nicht mit einem neuen."
       }
@@ -2587,7 +2588,7 @@
       "privateKey": "Privater Schlüssel",
       "privateKeyHint": "44 Zeichen, endet mit =. Steht bei deinem Anbieter unter manueller Einrichtung oder in der WireGuard-Datei.",
       "addresses": "Adresse des Schlüssels",
-      "addressesHint": "Die Adresse, die dein Anbieter dem Schlüssel gegeben hat, z. B. 10.64.0.2/32 (Address in der WireGuard-Datei).",
+      "addressesHint": "Die Adresse, die dein Anbieter dem Schlüssel gegeben hat, z. B. 198.51.100.2/32 (Address in der WireGuard-Datei).",
       "endpointIp": "Adresse des Servers",
       "endpointIpHint": "Als IP-Adresse, nicht als Name.",
       "endpointPort": "Port",
@@ -2674,6 +2675,60 @@
       "title": "VPN entfernen?",
       "body": "Der VPN-Container wird gestoppt und gelöscht, dazu .env.vpn, die OpenVPN-Datei und die hier gespeicherten Schlüssel. Anfragen gehen danach direkt vom Server raus. Zum Wiederverbinden musst du den VPN neu einrichten.",
       "confirm": "Entfernen"
+    }
+  },
+  "directory": {
+    "title": "Konten & Domains",
+    "tab": "Bereich"
+  },
+  "branding": {
+    "intro": "Wie der Server heißt und aussieht: im Portal, auf der Anmeldeseite, in der Web-Mail und in Mails, die er selbst schreibt.",
+    "look": {
+      "title": "Name, Farbe und Maskottchen",
+      "intro": "Aus einer Farbe werden alle Töne für hell und dunkel berechnet, immer gut lesbar. Leer lassen heißt: UwUMail wie ausgeliefert."
+    },
+    "name": {
+      "label": "Name",
+      "hint": "Erscheint statt „UwUMail“ im Browser-Tab, in der Seitenleiste und als Absender von Hinweis-Mails."
+    },
+    "color": {
+      "label": "Akzentfarbe",
+      "hint": "Für Knöpfe, Links und Markierungen. Pink ist UwUMail.",
+      "presets": "Vorlagen",
+      "picker": "Eigene Farbe wählen",
+      "preset": {
+        "pink": "Pink (UwUMail)",
+        "violet": "Violett",
+        "blue": "Blau",
+        "teal": "Petrol",
+        "green": "Grün",
+        "orange": "Orange",
+        "red": "Rot",
+        "slate": "Schiefergrau"
+      }
+    },
+    "mascot": {
+      "label": "Nyu und Kaomoji zeigen",
+      "hint": "Aus: keine Katze, keine Gesichter wie (=^･ω･^=), und alle Texte und Mails im sachlichen Ton."
+    },
+    "logo": {
+      "title": "Logo",
+      "intro": "Ersetzt Nyu in der Seitenleiste, auf der Anmeldeseite, in der Web-Mail und im Browser-Tab.",
+      "current": "Aktuelles Logo",
+      "upload": "Logo hochladen",
+      "replace": "Anderes Logo hochladen",
+      "remove": "Logo entfernen",
+      "formats": "PNG, JPEG, WebP oder SVG, höchstens 512 KB. Am besten quadratisch und mit durchsichtigem Hintergrund.",
+      "saved": "Logo gespeichert",
+      "removed": "Logo entfernt"
+    },
+    "preview": {
+      "label": "Vorschau",
+      "inbox": "Posteingang",
+      "button": "Speichern",
+      "link": "Ein Link",
+      "light": "Hell",
+      "dark": "Dunkel"
     }
   }
 }

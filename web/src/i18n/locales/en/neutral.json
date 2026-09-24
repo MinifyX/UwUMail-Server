@@ -50,8 +50,6 @@
     "overview": "Overview",
     "openMenu": "Open menu",
     "closeMenu": "Close menu",
-    "people": "Accounts",
-    "domains": "Domains",
     "queue": "Queue",
     "logs": "Logs",
     "settings": "Settings",
@@ -60,10 +58,10 @@
     "fetch": "Fetched mail",
     "addresses": "Addresses",
     "spamFilter": "Spam filter",
-    "reports": "Reports",
     "collapse": "Collapse {{group}}",
     "expand": "Expand {{group}}",
-    "mailbox": "Mailbox"
+    "mailbox": "Mailbox",
+    "directory": "Accounts & domains"
   },
   "userMenu": {
     "open": "Open account menu",
@@ -78,9 +76,7 @@
     "title": "Appearance and language",
     "language": {
       "label": "Language",
-      "system": "Same as the browser",
-      "de": "Deutsch",
-      "en": "English"
+      "system": "Same as the browser"
     },
     "tone": {
       "label": "Tone",
@@ -303,7 +299,11 @@
       "lokiInvalid": "That won't work for Loki: {{detail}}",
       "lokiUnreachable": "Loki didn't take the test line: {{detail}}",
       "providerNotFound": "No server of this provider answered. Fill the server names in here — the provider's own help page has them.",
-      "fetchLimit": "No room for another fetched mailbox: {{detail}}"
+      "fetchLimit": "No room for another fetched mailbox: {{detail}}",
+      "logoEmpty": "The file is empty.",
+      "logoTooLarge": "The logo is too big. It may be 512 KB at most.",
+      "logoType": "That is not a picture that works as a logo. PNG, JPEG, WebP and SVG are fine.",
+      "brandColor": "That is not a colour. Something like #ff4d8d is expected."
     }
   },
   "people": {
@@ -576,7 +576,9 @@
       "hostJob": "{{actor}} ran {{target}} on the server",
       "spamLogCleared": "{{actor}} emptied the spam log",
       "spamVirusTest": "{{actor}} tested the virus scanner",
-      "updatesSettings": "{{actor}} changed the update settings"
+      "updatesSettings": "{{actor}} changed the update settings",
+      "brandLogo": "{{actor}} uploaded a new logo",
+      "brandLogoRemoved": "{{actor}} removed the logo"
     },
     "details": {
       "adminOn": "is now an admin",
@@ -1000,7 +1002,7 @@
       "privacyText": "Log lines contain personal data: login names and email addresses, IP addresses of mail apps and other servers, senders of received mail. Switching this on sends that data off this server, and it stays in Loki for as long as Loki keeps it. Make sure that is fine for every mailbox on this server.",
       "privacyConsent": "I understand and allow the logs, with this data in them, to be sent to the address below.",
       "url": "Loki address",
-      "urlHint": "e.g. http://192.168.1.20:3100 or https://loki.example.net. /loki/api/v1/push is added when the address has no path.",
+      "urlHint": "e.g. http://192.0.2.20:3100 or https://loki.example.net. /loki/api/v1/push is added when the address has no path.",
       "auth": "Login",
       "authNone": "None",
       "authBasic": "Username & password",
@@ -1065,8 +1067,6 @@
       "external": "Tone for everyone else",
       "externalHint": "Mail to everyone else, e.g. when a message cannot be delivered.",
       "options": {
-        "de": "Deutsch",
-        "en": "English",
         "playful": "Playful",
         "neutral": "Neutral",
         "light": "A little playful"
@@ -1187,7 +1187,8 @@
       "general": "General",
       "mail": "Sending & receiving",
       "apps": "Apps & webmail",
-      "vpn": "VPN & proxy"
+      "vpn": "VPN & proxy",
+      "branding": "Branding"
     },
     "mailIntro": "How mail leaves the server and what it accepts. Changes take effect at once, without a restart.",
     "appsIntro": "What holds for mail apps and the mailbox in the browser. Changes take effect at once, without a restart."
@@ -1889,7 +1890,7 @@
     "reach": {
       "title": "How can your server be reached?",
       "cardTitle": "Reachability",
-      "body": "Nyu looks at how other mail servers see your server: public address, Spamhaus, network and port 25. Then you decide whether mail goes directly or through a UwUMail Gateway.",
+      "body": "This shows how other mail servers see your server: public address, Spamhaus, network and port 25. Then you decide whether mail goes directly or through a UwUMail Gateway.",
       "start": "Check",
       "run": "Check again",
       "addressTitle": "Your connection",
@@ -1900,7 +1901,7 @@
       "docs": "Gateway guide",
       "source": "Sources:",
       "recommend": {
-        "gateway": "Nyu recommends a UwUMail Gateway: many mail servers would not accept mail from this connection.",
+        "gateway": "Recommended: a UwUMail Gateway. Many mail servers would not accept mail from this connection.",
         "direct": "Looks good: your server can send and receive mail itself.",
         "unknown": "Your public address could not be found. Check the connection and try again.",
         "paired": "Your server sends and receives through the UwUMail Gateway."
@@ -1958,7 +1959,7 @@
       "warning": "Everything on this server is replaced by it. On a freshly set up server that is nothing — which is exactly what this is for.",
       "running": {
         "title": "Fetching the backup",
-        "body": "Nyu is unpacking the snapshot. Depending on its size and the line this takes a few minutes.",
+        "body": "The snapshot is being unpacked. Depending on its size and the line this takes a few minutes.",
         "wait": "The server fetches the backup and restarts afterwards. You can leave this page open.",
         "then": "After that, log in with the account that is in the backup — not with a new one."
       }
@@ -2587,7 +2588,7 @@
       "privateKey": "Private key",
       "privateKeyHint": "44 characters, ends with =. Your provider has it under manual setup, or in the WireGuard file.",
       "addresses": "Address of the key",
-      "addressesHint": "The address your provider gave the key, e.g. 10.64.0.2/32 (Address in the WireGuard file).",
+      "addressesHint": "The address your provider gave the key, e.g. 198.51.100.2/32 (Address in the WireGuard file).",
       "endpointIp": "Server address",
       "endpointIpHint": "As an IP address, not a name.",
       "endpointPort": "Port",
@@ -2674,6 +2675,60 @@
       "title": "Remove the VPN?",
       "body": "The VPN container is stopped and deleted, along with .env.vpn, the OpenVPN file and the keys stored here. Requests then leave the server directly. To connect again you set the VPN up anew.",
       "confirm": "Remove"
+    }
+  },
+  "directory": {
+    "title": "Accounts & domains",
+    "tab": "Section"
+  },
+  "branding": {
+    "intro": "What the server is called and how it looks: in the portal, on the login page, in the web mail and in mail it writes itself.",
+    "look": {
+      "title": "Name, colour and mascot",
+      "intro": "One colour gives every shade for light and dark, always readable. Leave it empty for UwUMail as it comes."
+    },
+    "name": {
+      "label": "Name",
+      "hint": "Shown instead of “UwUMail” in the browser tab, the sidebar and as the sender of notices."
+    },
+    "color": {
+      "label": "Accent colour",
+      "hint": "For buttons, links and highlights. Pink is UwUMail.",
+      "presets": "Presets",
+      "picker": "Pick a colour of your own",
+      "preset": {
+        "pink": "Pink (UwUMail)",
+        "violet": "Violet",
+        "blue": "Blue",
+        "teal": "Teal",
+        "green": "Green",
+        "orange": "Orange",
+        "red": "Red",
+        "slate": "Slate"
+      }
+    },
+    "mascot": {
+      "label": "Show Nyu and kaomoji",
+      "hint": "Off: no cat, no faces like (=^･ω･^=), and every text and mail in the plain tone."
+    },
+    "logo": {
+      "title": "Logo",
+      "intro": "Takes Nyu’s place in the sidebar, on the login page, in the web mail and in the browser tab.",
+      "current": "Current logo",
+      "upload": "Upload a logo",
+      "replace": "Upload another logo",
+      "remove": "Remove logo",
+      "formats": "PNG, JPEG, WebP or SVG, 512 KB at most. Square with a transparent background works best.",
+      "saved": "Logo saved",
+      "removed": "Logo removed"
+    },
+    "preview": {
+      "label": "Preview",
+      "inbox": "Inbox",
+      "button": "Save",
+      "link": "A link",
+      "light": "Light",
+      "dark": "Dark"
     }
   }
 }

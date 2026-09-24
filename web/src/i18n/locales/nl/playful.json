@@ -1,0 +1,144 @@
+{
+  "discardChanges": {
+    "title": "Alles weggooien? (・_・;)",
+    "body": "Dan vergeet ik alles wat je hier net hebt getypt."
+  },
+  "keepSecret": {
+    "title": "Al opgeschreven? (・・ )?",
+    "body": "Ik laat je dit maar één keer zien. Daarna ben ik het zelf ook kwijt."
+  },
+  "login": {
+    "title": "Hoi! Leuk je te zien",
+    "subtitle": "Ik ben Nyu. Log in met je e-mailadres en wachtwoord.",
+    "errors": {
+      "invalidCredentials": "Dat adres of wachtwoord klopt niet (・_・;)",
+      "tooManyAttempts": "Dat waren veel pogingen. Haal even adem en probeer het over een paar minuten opnieuw (˘ᵕ˘)",
+      "offline": "Ik kan de server nu niet bereiken (・_・;)"
+    }
+  },
+  "account": {
+    "greeting": "Hoi {{name}}!",
+    "intro": "Alles over je mailbox, gewoon hier (｡･ω･｡)"
+  },
+  "admin": {
+    "intro": "Hoe het met je server gaat. Ik houd hem ook in de gaten (=^･ω･^=)",
+    "queueEmpty": "Niets wacht, alles is onderweg ✉︎",
+    "tiles": {
+      "mailFlow": {
+        "ok": "Mail zoeft in en uit (=^･ω･^=)"
+      },
+      "changes": {
+        "none": "Alles is nog zoals op dag één (´｡• ω •｡`)"
+      }
+    }
+  },
+  "errors": {
+    "loadFailed": {
+      "title": "Oeps, dat lukte niet (╥﹏╥)"
+    },
+    "offline": {
+      "title": "De server antwoordt niet (・_・;)",
+      "body": "Ik wacht even en probeer het opnieuw."
+    },
+    "notFound": {
+      "title": "Hier is niets (・_・;)",
+      "body": "Ik heb overal gezocht, zelfs onder de bank."
+    }
+  },
+  "people": {
+    "empty": {
+      "title": "Tot nu toe ben jij de enige (˘ᵕ˘)",
+      "body": "Voeg de accounts toe die erbij moeten komen wonen. Ik maak een knusse mailbox voor ze."
+    },
+    "noResults": {
+      "title": "Niets gevonden (・_・;)"
+    },
+    "invite": {
+      "title": "{{name}} kan erbij komen wonen!"
+    }
+  },
+  "log": {
+    "empty": {
+      "title": "Tot nu toe is alles rustig (˘ᵕ˘)"
+    }
+  },
+  "password": {
+    "inviteTitle": "Hoi {{name}}, fijn dat je er bent!",
+    "invalid": {
+      "title": "Deze link is verlopen (・_・;)"
+    }
+  },
+  "domains": {
+    "empty": {
+      "title": "Nog geen domein (・_・;)"
+    },
+    "toasts": {
+      "checked": "DNS gecontroleerd, ik heb overal gekeken ✉︎"
+    },
+    "mtaSts": {
+      "ready": "Al 14 dagen geen TLS-problemen, alles spint (=^･ω･^=) Je kunt MTA-STS op afdwingen zetten."
+    }
+  },
+  "queue": {
+    "empty": {
+      "title": "Niets wacht, alles is onderweg ✉︎"
+    }
+  },
+  "health": {
+    "summary": {
+      "ok": "Alles spint (=^･ω･^=)",
+      "unknown": "Ik snuffel nog rond",
+      "warning_one": "Eén ding moet even bekeken worden (・_・;)",
+      "warning_other": "{{count}} dingen moeten even bekeken worden (・_・;)",
+      "problem_one": "Er zit iets vast (╥﹏╥)",
+      "problem_other": "{{count}} dingen zitten vast (╥﹏╥)"
+    },
+    "notChecked": "Ik controleer alles één keer meteen na de start.",
+    "checking": "Snuffelen …"
+  },
+  "secondFactor": {
+    "title": "Nog één klein stapje (・ω・)"
+  },
+  "security": {
+    "twoFactor": {
+      "on": "Aan. Je account zit nu dubbel op slot (=^･ω･^=)"
+    },
+    "recovery": {
+      "saved": "Veilig opgeborgen ✓"
+    }
+  },
+  "setup": {
+    "welcome": {
+      "title": "Hoi! Ik ben Nyu (=^･ω･^=)",
+      "body": "Ik help je je mailserver in te stellen. Eerst je beheerdersaccount en het domein, dan DNS, verzenden en aan het eind een testbericht. Dat gaat ons lukken!"
+    },
+    "sending": {
+      "running": "Ik snuffel rond op de server, dit kan tot een minuut duren …"
+    },
+    "testMail": {
+      "arrived": "Het is aangekomen! Je mailbox spint ✉︎"
+    },
+    "done": {
+      "title": "Helemaal klaar! (=^･ω･^=)"
+    },
+    "reach": {
+      "body": "Nyu kijkt hoe andere mailservers je server zien: publiek adres, Spamhaus, netwerk en poort 25. Daarna beslis jij of mail direct gaat of via een UwUMail Gateway.",
+      "recommend": {
+        "gateway": "Nyu raadt een UwUMail Gateway aan: veel mailservers zouden geen mail van deze verbinding aannemen."
+      }
+    },
+    "restore": {
+      "running": {
+        "body": "Nyu pakt de snapshot uit. Afhankelijk van de grootte en de verbinding duurt dit een paar minuten."
+      }
+    }
+  },
+  "updates": {
+    "intro": "Welke versie draait, wat er nieuw is, en de knop ervoor. Nyu pakt eerst alles in (=^･ω･^=)"
+  },
+  "logs": {
+    "loki": {
+      "testOk": "De testregel is bij Loki aangekomen (=^･ω･^=)"
+    }
+  }
+}

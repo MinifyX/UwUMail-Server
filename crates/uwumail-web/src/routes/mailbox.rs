@@ -116,28 +116,22 @@ pub async fn set_keep_copy(
     Ok(Json(forwarding_json(&web, session.account.id).await?))
 }
 
-fn language(web: &Web, preferences: &serde_json::Map<String, Value>) -> Language {
-    match preferences.get("language").and_then(Value::as_str) {
-        Some("de") => Language::De,
-        Some("en") => Language::En,
-        _ => web.smtp().tone().language,
-    }
-}
-
 /// Asks the owner of `target` whether they want the forwarded mail. Nothing is forwarded before.
 async fn send_confirmation(web: &Web, account: &Account, target: &str, token: &str) -> ApiResult<()> {
     let preferences = web.store().preferences(account.id).await.unwrap_or_default();
     let hostname = &web.settings().hostname;
     let link = format!("https://{hostname}/forwarding/{token}");
     let login = &account.login;
-    let (subject, body) = match language(web, &preferences) {
+    let brand = web.smtp().brand();
+    let brand = brand.name();
+    let (subject, body) = match crate::notices::language(web, &preferences) {
         Language::De => (
             format!("Weiterleitung bestätigen: {login}"),
             format!(
                 "Hallo,\n\n{login} möchte Mails an diese Adresse ({target}) weiterleiten.\n\n\
                  Wenn das in Ordnung ist, bestätige es hier:\n{link}\n\n\
                  Wenn nicht, musst du nichts tun: Ohne Bestätigung wird nichts weitergeleitet. \
-                 Der Link gilt sieben Tage.\n\nUwUMail auf {hostname}\n"
+                 Der Link gilt sieben Tage.\n\n{brand} auf {hostname}\n"
             ),
         ),
         Language::En => (
@@ -146,14 +140,50 @@ async fn send_confirmation(web: &Web, account: &Account, target: &str, token: &s
                 "Hello,\n\n{login} would like to forward mail to this address ({target}).\n\n\
                  If that is fine with you, confirm it here:\n{link}\n\n\
                  If not, you don't need to do anything: nothing is forwarded without confirmation. \
-                 The link works for seven days.\n\nUwUMail on {hostname}\n"
+                 The link works for seven days.\n\n{brand} on {hostname}\n"
+            ),
+        ),
+        Language::Fr => (
+            format!("Confirmer le transfert : {login}"),
+            format!(
+                "Bonjour,\n\n{login} souhaite transférer des e-mails vers cette adresse ({target}).\n\n\
+                 Si cela vous convient, confirmez-le ici :\n{link}\n\n\
+                 Sinon, vous n'avez rien à faire : rien n'est transféré sans confirmation. \
+                 Le lien est valable sept jours.\n\n{brand} sur {hostname}\n"
+            ),
+        ),
+        Language::Nl => (
+            format!("Doorsturen bevestigen: {login}"),
+            format!(
+                "Hallo,\n\n{login} wil mail doorsturen naar dit adres ({target}).\n\n\
+                 Als dat goed is, bevestig het dan hier:\n{link}\n\n\
+                 Zo niet, dan hoef je niets te doen: zonder bevestiging wordt niets doorgestuurd. \
+                 De link is zeven dagen geldig.\n\n{brand} op {hostname}\n"
+            ),
+        ),
+        Language::Ja => (
+            format!("転送の確認：{login}"),
+            format!(
+                "こんにちは。\n\n{login} が、このアドレス（{target}）へのメール転送を希望しています。\n\n\
+                 問題なければ、こちらで確認してください：\n{link}\n\n\
+                 心当たりがない場合は、何もする必要はありません。確認がなければ何も転送されません。\
+                 リンクの有効期限は7日間です。\n\n{brand}（{hostname}）\n"
+            ),
+        ),
+        Language::Zh => (
+            format!("确认转发：{login}"),
+            format!(
+                "你好：\n\n{login} 想把邮件转发到这个地址（{target}）。\n\n\
+                 如果你同意，请在这里确认：\n{link}\n\n\
+                 如果不同意，你什么都不用做：未经确认，不会转发任何邮件。\
+                 链接七天内有效。\n\n{brand}（{hostname}）\n"
             ),
         ),
     };
     let domain = login.rsplit_once('@').map(|(_, domain)| domain).unwrap_or(hostname).to_owned();
     let postmaster = format!("postmaster@{domain}");
     let message = MessageBuilder::new()
-        .from(("UwUMail".to_owned(), postmaster.clone()))
+        .from((brand.to_owned(), postmaster.clone()))
         .to(target.to_owned())
         .subject(subject)
         .date(Date::new(unix_now()))

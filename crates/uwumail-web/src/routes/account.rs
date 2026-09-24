@@ -26,7 +26,7 @@ pub async fn profile(State(web): State<Web>, session: Session) -> ApiResult<Json
 /// tone, theme and some of the webmail's are also synced to the apps as JMAP `UserSettings`
 /// (docs/jmap-settings.md), which checks the same values.
 const PREFERENCES: &[(&str, &[&str])] = &[
-    ("language", &["system", "de", "en"]),
+    ("language", &["system", "de", "en", "fr", "nl", "ja", "zh"]),
     ("tone", &["playful", "neutral"]),
     ("mode", &["simple", "pro"]),
     ("theme", &["system", "light", "dark"]),

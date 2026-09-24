@@ -1,0 +1,142 @@
+{
+  "discardChanges": {
+    "title": "全都扔掉吗？(・_・;)",
+    "body": "你刚才在这里输入的内容，我会全部忘掉哦。"
+  },
+  "keepSecret": {
+    "title": "已经记下来了吗？(・・ )?",
+    "body": "这个我只给你看这一次。之后连我也找不到它了。"
+  },
+  "login": {
+    "title": "嗨！很高兴见到你",
+    "subtitle": "我是 Nyu。用你的邮箱地址和密码登录吧。",
+    "errors": {
+      "invalidCredentials": "地址或密码对不上呢 (・_・;)",
+      "tooManyAttempts": "试了好多次啦。先深呼吸，过几分钟再试吧 (˘ᵕ˘)",
+      "offline": "我现在连不上服务器 (・_・;)"
+    }
+  },
+  "account": {
+    "greeting": "嗨，{{name}}！",
+    "intro": "关于你邮箱的一切，都在这里啦 (｡･ω･｡)"
+  },
+  "admin": {
+    "intro": "你的服务器运行状况。我也在帮你盯着呢 (=^･ω･^=)",
+    "queueEmpty": "没有等待中的邮件，全都已经上路啦 ✉︎",
+    "tiles": {
+      "mailFlow": {
+        "ok": "邮件嗖嗖地进进出出 (=^･ω･^=)"
+      },
+      "changes": {
+        "none": "一切都还和第一天一样 (´｡• ω •｡`)"
+      }
+    }
+  },
+  "errors": {
+    "loadFailed": {
+      "title": "哎呀，没成功 (╥﹏╥)"
+    },
+    "offline": {
+      "title": "服务器没有回应 (・_・;)",
+      "body": "我等一会儿再试试。"
+    },
+    "notFound": {
+      "title": "这里什么都没有 (・_・;)",
+      "body": "我到处都找过了，连沙发底下都翻过了。"
+    }
+  },
+  "people": {
+    "empty": {
+      "title": "目前只有你一个人 (˘ᵕ˘)",
+      "body": "添加要搬进来的账户吧。我会给他们准备一个舒适的邮箱。"
+    },
+    "noResults": {
+      "title": "什么都没找到 (・_・;)"
+    },
+    "invite": {
+      "title": "{{name}} 可以搬进来啦！"
+    }
+  },
+  "log": {
+    "empty": {
+      "title": "目前一切安静 (˘ᵕ˘)"
+    }
+  },
+  "password": {
+    "inviteTitle": "嗨，{{name}}，真高兴你来了！",
+    "invalid": {
+      "title": "这个链接已经过期了 (・_・;)"
+    }
+  },
+  "domains": {
+    "empty": {
+      "title": "还没有域名 (・_・;)"
+    },
+    "toasts": {
+      "checked": "DNS 检查完毕，我每个角落都看过了 ✉︎"
+    },
+    "mtaSts": {
+      "ready": "14 天都没有 TLS 问题，一切都在呼噜呼噜 (=^･ω･^=) 你可以把 MTA-STS 切换为强制模式了。"
+    }
+  },
+  "queue": {
+    "empty": {
+      "title": "没有等待中的邮件，全都已经上路啦 ✉︎"
+    }
+  },
+  "health": {
+    "summary": {
+      "ok": "一切都在呼噜呼噜 (=^･ω･^=)",
+      "unknown": "还在到处嗅嗅",
+      "warning_other": "有 {{count}} 项需要看一看 (・_・;)",
+      "problem_other": "有 {{count}} 项卡住了 (╥﹏╥)"
+    },
+    "notChecked": "启动后我会马上把所有东西检查一遍。",
+    "checking": "正在嗅嗅…"
+  },
+  "secondFactor": {
+    "title": "还差一小步 (・ω・)"
+  },
+  "security": {
+    "twoFactor": {
+      "on": "已开启。你的账户现在上了双重锁 (=^･ω･^=)"
+    },
+    "recovery": {
+      "saved": "已妥善收好 ✓"
+    }
+  },
+  "setup": {
+    "welcome": {
+      "title": "嗨！我是 Nyu (=^･ω･^=)",
+      "body": "我来帮你设置邮件服务器。先是管理员账户和域名，然后是 DNS、发信设置，最后发一封测试邮件。我们一定能搞定！"
+    },
+    "sending": {
+      "running": "正在服务器周围嗅嗅，最多可能需要一分钟…"
+    },
+    "testMail": {
+      "arrived": "收到了！你的邮箱在呼噜呼噜 ✉︎"
+    },
+    "done": {
+      "title": "全部完成！(=^･ω･^=)"
+    },
+    "reach": {
+      "body": "Nyu 会查看其他邮件服务器眼中的你的服务器：公网地址、Spamhaus、网络和端口 25。然后由你决定邮件是直接发送，还是经由 UwUMail Gateway。",
+      "recommend": {
+        "gateway": "Nyu 建议使用 UwUMail Gateway：许多邮件服务器不会接受来自此连接的邮件。"
+      }
+    },
+    "restore": {
+      "running": {
+        "body": "Nyu 正在解压快照。根据其大小和网络状况，这需要几分钟。"
+      }
+    }
+  },
+  "updates": {
+    "intro": "正在运行的版本、新内容，以及更新按钮。Nyu 会先把所有东西打包好 (=^･ω･^=)"
+  },
+  "logs": {
+    "loki": {
+      "testOk": "测试日志行成功到达 Loki 啦 (=^･ω･^=)"
+    }
+  }
+}

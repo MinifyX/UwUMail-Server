@@ -25,6 +25,8 @@ pub struct Config {
     pub spam: SpamConfig,
     pub delivery: DeliveryConfig,
     pub tone: ToneConfig,
+    /// Name, colour and mascot shown instead of UwUMail's own.
+    pub brand: uwumail_smtp::BrandConfig,
     pub gateway: GatewayConfig,
     /// How a message's remote pictures leave the server: straight, or through a VPN's proxy.
     pub egress: EgressConfig,
@@ -43,6 +45,7 @@ impl Default for Config {
             spam: SpamConfig::default(),
             delivery: DeliveryConfig::default(),
             tone: ToneConfig::default(),
+            brand: uwumail_smtp::BrandConfig::default(),
             gateway: GatewayConfig::default(),
             egress: EgressConfig::default(),
             log: LogConfig::default(),
@@ -216,6 +219,7 @@ impl Config {
         }
         uwumail_store::normalize_domain(&self.hostname)
             .map_err(|_| anyhow::anyhow!("`hostname` '{}' is not a valid host name", self.hostname))?;
+        self.brand.validate().map_err(|err| anyhow::anyhow!(err))?;
         if self.tls.mode == TlsMode::Files
             && (self.tls.cert_file.as_os_str().is_empty() || self.tls.key_file.as_os_str().is_empty())
         {

@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import { useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
-import { Card, PageHeader } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Segmented } from "@/components/ui/Field";
 import { useT } from "@/i18n";
@@ -129,7 +129,6 @@ export function ReportsPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader title={t("reports.title")} intro={t("reports.intro")} />
       <Segmented<string>
         label={t("reports.period")}
         value={String(days)}

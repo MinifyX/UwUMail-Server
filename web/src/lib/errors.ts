@@ -2,6 +2,10 @@ import { useT } from "@/i18n";
 import { ApiError } from "./api";
 
 const KNOWN = [
+  "logoEmpty",
+  "logoTooLarge",
+  "logoType",
+  "brandColor",
   "lastAdmin",
   "notYourself",
   "weakPassword",
