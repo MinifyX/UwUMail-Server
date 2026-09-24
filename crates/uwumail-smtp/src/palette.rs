@@ -136,6 +136,8 @@ pub fn palette(accent: Rgb) -> Palette {
     // A grey accent gives grey tints; everything else keeps its own hue.
     let at = |l: f64, c: f64| Oklch(l, c, hue);
 
+    // Worked out first: the light theme's dark toasts carry the dark theme's accent.
+    let dark_accent = readable_behind(at(lightness.max(0.74), chroma), INK, 0.01);
     let solid = readable_behind(at(lightness.min(0.62), chroma), WHITE, -0.01);
     let solid_lch = oklch(solid);
     let light: Tokens = vec![
@@ -148,9 +150,9 @@ pub fn palette(accent: Rgb) -> Palette {
         ("--uwu-pink-tint-strong", rgb(at(0.91, chroma.min(0.06))).hex()),
         ("--uwu-account-pink", accent.hex()),
         ("--uwu-focus", format!("0 0 0 3px rgb({} / 0.35)", accent.rgb_triplet())),
+        ("--uwu-toast-accent", dark_accent.hex()),
     ];
 
-    let dark_accent = readable_behind(at(lightness.max(0.74), chroma), INK, 0.01);
     let dark_lch = oklch(dark_accent);
     let dark: Tokens = vec![
         ("--uwu-pink", dark_accent.hex()),
@@ -230,5 +232,6 @@ mod tests {
         assert!(css.starts_with("html:root {"));
         assert!(css.contains("html:root[data-theme=\"dark\"]"));
         assert!(css.contains("--uwu-pink: #0ea5e9;"));
+        assert!(css.contains("--uwu-toast-accent: #"));
     }
 }
