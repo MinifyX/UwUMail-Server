@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
+use uwumail_smtp::Language;
 
 use axum::Router;
 use axum::extract::{Path, Request, State};
@@ -186,7 +187,8 @@ async fn redirect_to_https(State(state): State<HttpState>, uri: Uri, headers: He
 }
 
 fn proxy_at_redirect_port(headers: &HeaderMap, hostname: &str) -> (StatusCode, Html<String>) {
-    let (lang, title, text) = if prefers_german(headers) {
+    // Meant for whoever set up the proxy: German or English, like the docs it points to.
+    let (lang, title, text) = if language(headers) == Language::De {
         (
             "de",
             "Dieser Port leitet nur um (・_・;)",
@@ -206,30 +208,39 @@ fn proxy_at_redirect_port(headers: &HeaderMap, hostname: &str) -> (StatusCode, H
     (StatusCode::MISDIRECTED_REQUEST, Html(page(lang, title, text, hostname)))
 }
 
-fn prefers_german(headers: &HeaderMap) -> bool {
+/// The visitor's language as far as the server speaks it; German without a hint.
+fn language(headers: &HeaderMap) -> Language {
     headers
         .get(header::ACCEPT_LANGUAGE)
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.split(',').next())
-        .is_none_or(|first| first.trim().to_ascii_lowercase().starts_with("de"))
+        .and_then(Language::from_accept_language)
+        .unwrap_or(Language::De)
 }
 
 async fn landing(State(state): State<HttpState>, headers: HeaderMap) -> Html<String> {
-    let (lang, title, text) = if prefers_german(&headers) {
-        ("de", "Hier wohnt ein UwUMail-Server", "Er schnurrt schon. Die Verwaltung und die Web-Mail ziehen bald ein.")
-    } else {
-        ("en", "A UwUMail server lives here", "It's already purring. The admin panel and web mail are moving in soon.")
+    let language = language(&headers);
+    let (title, text) = match language {
+        Language::De => ("Hier wohnt ein Mailserver", "Das Portal und die Web-Mail sind über HTTPS erreichbar."),
+        Language::En => ("A mail server lives here", "The portal and the web mail are reachable over HTTPS."),
+        Language::Fr => ("Ici habite un serveur mail", "Le portail et le webmail sont accessibles en HTTPS."),
+        Language::Nl => ("Hier woont een mailserver", "Het portaal en de webmail zijn bereikbaar via HTTPS."),
+        Language::Ja => ("ここはメールサーバーです", "ポータルとウェブメールは HTTPS で利用できます。"),
+        Language::Zh => ("这里是一台邮件服务器", "门户和网页邮箱可通过 HTTPS 访问。"),
     };
-    Html(page(lang, title, text, &state.hostname))
+    Html(page(language.code(), title, text, &state.hostname))
 }
 
 async fn not_found(headers: HeaderMap) -> (StatusCode, Html<String>) {
-    let (lang, title, text) = if prefers_german(&headers) {
-        ("de", "Hier ist nichts (・_・;)", "Diese Seite gibt es nicht. Vielleicht hat sie sich unterm Sofa versteckt.")
-    } else {
-        ("en", "Nothing here (・_・;)", "This page does not exist. Maybe it is hiding under the sofa.")
+    let language = language(&headers);
+    let (title, text) = match language {
+        Language::De => ("Hier ist nichts", "Diese Seite gibt es nicht."),
+        Language::En => ("Nothing here", "This page does not exist."),
+        Language::Fr => ("Rien ici", "Cette page n'existe pas."),
+        Language::Nl => ("Hier is niets", "Deze pagina bestaat niet."),
+        Language::Ja => ("ページがありません", "このページは存在しません。"),
+        Language::Zh => ("这里什么也没有", "此页面不存在。"),
     };
-    (StatusCode::NOT_FOUND, Html(page(lang, title, text, "")))
+    (StatusCode::NOT_FOUND, Html(page(language.code(), title, text, "")))
 }
 
 fn page(lang: &str, title: &str, text: &str, hostname: &str) -> String {
@@ -247,7 +258,6 @@ fn page(lang: &str, title: &str, text: &str, hostname: &str) -> String {
          font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 0 16px; }}
   main {{ background: var(--card); border-radius: 24px; padding: 40px 32px; max-width: 420px; text-align: center;
          box-shadow: 0 12px 40px rgba(255, 77, 141, .15); }}
-  .face {{ font-size: 44px; color: var(--pink); margin-bottom: 8px; }}
   h1 {{ font-size: 22px; margin: 0 0 8px; }}
   p {{ margin: 0; color: var(--muted); }}
   small {{ display: block; margin-top: 20px; color: var(--muted); }}
@@ -255,7 +265,6 @@ fn page(lang: &str, title: &str, text: &str, hostname: &str) -> String {
 </head>
 <body>
 <main>
-  <div class="face" aria-hidden="true">(=^･ω･^=)</div>
   <h1>{title}</h1>
   <p>{text}</p>
   <small>{hostname}</small>

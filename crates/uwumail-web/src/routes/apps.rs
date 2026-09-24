@@ -64,13 +64,14 @@ pub async fn autoconfig(State(web): State<Web>, Query(query): Query<AutoconfigQu
         None => "%EMAILDOMAIN%".to_owned(),
     };
     let host = xml(&web.settings().hostname);
+    let brand = xml(web.smtp().brand().name());
     let body = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <clientConfig version="1.1">
   <emailProvider id="{host}">
     <domain>{domain}</domain>
-    <displayName>UwUMail</displayName>
-    <displayShortName>UwUMail</displayShortName>
+    <displayName>{brand}</displayName>
+    <displayShortName>{brand}</displayShortName>
     <incomingServer type="imap">
       <hostname>{host}</hostname>
       <port>{IMAP_PORT}</port>
@@ -186,8 +187,10 @@ fn identifier(hostname: &str, login: &str) -> String {
 }
 
 /// A configuration profile with mail, calendars and contacts, the app password inside.
-pub fn apple_profile(hostname: &str, login: &str, display_name: &str, secret: &str) -> String {
+/// `brand` names the profile and its organisation, e.g. UwUMail.
+pub fn apple_profile(hostname: &str, login: &str, display_name: &str, secret: &str, brand: &str) -> String {
     let (host, address, name, secret) = (xml(hostname), xml(login), xml(display_name), xml(secret));
+    let brand = xml(brand);
     let name = if name.is_empty() { address.clone() } else { name };
     let id = xml(&identifier(hostname, login));
     format!(
@@ -307,11 +310,11 @@ pub fn apple_profile(hostname: &str, login: &str, display_name: &str, secret: &s
   <key>PayloadDescription</key>
   <string>Sets up {address} from {host} with its own app password.</string>
   <key>PayloadDisplayName</key>
-  <string>UwUMail ({address})</string>
+  <string>{brand} ({address})</string>
   <key>PayloadIdentifier</key>
   <string>{id}</string>
   <key>PayloadOrganization</key>
-  <string>UwUMail</string>
+  <string>{brand}</string>
   <key>PayloadRemovalDisallowed</key>
   <false/>
   <key>PayloadType</key>
@@ -366,7 +369,9 @@ pub async fn create_apple_profile(
     notify(&web, &session.account, notice, Origin { actor: &actor, ip: &ip }).await;
 
     let account = &session.account;
-    let file = apple_profile(&web.settings().hostname, &account.login, &account.display_name, &created.secret);
+    let brand = web.smtp().brand();
+    let file =
+        apple_profile(&web.settings().hostname, &account.login, &account.display_name, &created.secret, brand.name());
     let token = random_token();
     web.keep_profile(
         token.clone(),
@@ -426,9 +431,11 @@ mod tests {
 
     #[test]
     fn profiles_escape_everything_they_carry() {
-        let profile = apple_profile("mail.example.org", "mini@example.org", "Mini <&> \"Katze\"", "abc&def");
+        let profile =
+            apple_profile("mail.example.org", "mini@example.org", "Mini <&> \"Katze\"", "abc&def", "Post & Co");
         assert!(profile.contains("<string>Mini &lt;&amp;&gt; &quot;Katze&quot;</string>"));
         assert!(profile.contains("<string>abc&amp;def</string>"));
+        assert!(profile.contains("<string>Post &amp; Co</string>"));
         assert!(profile.contains("<string>org.example.mail.uwumail.mini-example-org</string>"));
         assert!(profile.contains("<integer>993</integer>"));
         let uuid = uuid();

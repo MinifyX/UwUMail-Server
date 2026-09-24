@@ -32,10 +32,7 @@ const MAX_DESCRIPTION_BYTES: usize = 10_000;
 /// The account's calendars, the default one made the first time like CalDAV does. Lists that only
 /// hold tasks, like the reminders of Apple's devices, are not calendars of events and stay out.
 pub async fn calendars(ctx: &Ctx<'_>) -> MethodResult<Vec<DavCollection>> {
-    let name = match ctx.jmap.smtp.tone().language {
-        uwumail_smtp::Language::De => "Kalender",
-        _ => "Calendar",
-    };
+    let name = ctx.jmap.smtp.tone().language.collection_names().0;
     let all = ctx
         .jmap
         .store

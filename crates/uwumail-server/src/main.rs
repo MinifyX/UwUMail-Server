@@ -98,10 +98,7 @@ async fn run(
         Command::Alias(command) => commands::alias(&store, command).await,
         Command::Forward(command) => commands::forward(&store, command).await,
         Command::Import(crate::cli::ImportCommand::Mailcow { file, domain, dry_run }) => {
-            let names = match config.tone.language {
-                uwumail_smtp::Language::De => ("Kalender", "Kontakte"),
-                _ => ("Calendar", "Contacts"),
-            };
+            let names = config.tone.language.collection_names();
             let settings = uwumail_dav::DavSettings { calendar_name: names.0.into(), addressbook_name: names.1.into() };
             let dav = uwumail_dav::Dav::new(store.clone(), settings);
             import::mailcow(&store, dav, &file, &domain, dry_run).await

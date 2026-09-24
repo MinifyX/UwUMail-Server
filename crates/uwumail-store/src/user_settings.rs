@@ -181,7 +181,7 @@ pub fn validate_setting(key: &str, value: &Value) -> Result<(), SettingProblem> 
     match key {
         "theme" => return one_of(key, value, &["system", "light", "dark"]),
         "tone" => return one_of(key, value, &["playful", "neutral"]),
-        "language" => return one_of(key, value, &["system", "de", "en"]),
+        "language" => return one_of(key, value, &["system", "de", "en", "fr", "nl", "ja", "zh"]),
         "conversations" | "senderPictures" | "linkConfirm" | "darkImages" => return boolean(key, value),
         "remoteImages" => return one_of(key, value, &["ask", "always"]),
         "mailAppearance" => return one_of(key, value, &["auto", "light", "dark"]),
@@ -443,7 +443,7 @@ mod tests {
         for (key, good, bad) in [
             ("theme", json!("dark"), json!("pink")),
             ("tone", json!("playful"), json!("rude")),
-            ("language", json!("de"), json!("fr")),
+            ("language", json!("fr"), json!("klingon")),
             ("conversations", json!(true), json!("on")),
             ("remoteImages", json!("always"), json!("never")),
             ("mailAppearance", json!("auto"), json!("system")),

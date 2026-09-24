@@ -216,6 +216,9 @@ impl Web {
     pub fn router(&self) -> Router {
         let api = Router::new()
             .route("/api/info", get(routes::auth::info))
+            // The look of the portal and the webmail, for everyone, logged in or not.
+            .route("/branding.css", get(routes::branding::stylesheet))
+            .route("/branding/logo", get(routes::branding::logo))
             .route("/api/session", get(routes::auth::session))
             .route("/api/auth/login", post(routes::auth::login))
             .route("/api/auth/logout", post(routes::auth::logout))
@@ -335,6 +338,11 @@ impl Web {
             .route("/api/admin/logs/loki", get(routes::settings::loki_status))
             .route("/api/admin/logs/loki/test", post(routes::settings::loki_test))
             .route("/api/admin/settings", get(routes::settings::show).patch(routes::settings::update))
+            .route(
+                "/api/admin/branding/logo",
+                axum::routing::put(routes::branding::upload_logo).delete(routes::branding::remove_logo),
+            )
+            .route("/api/admin/branding/palette", get(routes::branding::preview))
             .route("/api/admin/egress", get(routes::egress::show))
             .route("/api/admin/egress/test", post(routes::egress::test))
             .route("/api/admin/vpn", get(routes::vpn::show).put(routes::vpn::save))

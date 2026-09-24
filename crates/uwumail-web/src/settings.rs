@@ -43,9 +43,13 @@ const fn spec(key: &'static str, kind: SettingKind) -> SettingSpec {
 
 /// Everything the admin panel may change. Keys follow the config file.
 pub const SETTINGS: &[SettingSpec] = &[
-    spec("tone.language", SettingKind::Choice { options: &["de", "en"] }),
+    spec("tone.language", SettingKind::Choice { options: &["de", "en", "fr", "nl", "ja", "zh"] }),
     spec("tone.internal", SettingKind::Choice { options: &["playful", "neutral"] }),
     spec("tone.external", SettingKind::Choice { options: &["neutral", "light"] }),
+    // What the server is called and how it looks; the logo is kept apart (routes/branding.rs).
+    spec("brand.name", SettingKind::Text),
+    spec("brand.color", SettingKind::Text),
+    spec("brand.mascot", SettingKind::Bool),
     spec("delivery.relay.host", SettingKind::Text),
     spec("delivery.relay.port", SettingKind::Integer { min: 1, max: 65_535 }),
     spec("delivery.relay.security", SettingKind::Choice { options: &["starttls", "tls", "none"] }),

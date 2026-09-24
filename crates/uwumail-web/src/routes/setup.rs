@@ -348,44 +348,75 @@ pub async fn send_test_mail(
         None => None,
     };
     let preferences = web.store().preferences(account.id).await.unwrap_or_default();
-    let language = match preferences.get("language").and_then(Value::as_str) {
-        Some("en") => Language::En,
-        Some("de") => Language::De,
-        _ => web.smtp().tone().language,
+    let language = crate::notices::language(&web, &preferences);
+    let brand = web.smtp().brand();
+    let face = if brand.mascot { " (=^･ω･^=)" } else { "" };
+    let hostname = &web.settings().hostname;
+    let reply_from = external.as_deref().unwrap_or_default();
+    // Subject, greeting, where it comes from, asking for a reply, and that it arrived.
+    let (label, hello, from, reply, arrived) = match language {
+        Language::De => (
+            "Test-Mail",
+            "Hallo!",
+            format!("Diese Mail kommt von deinem neuen Server {hostname}."),
+            format!(
+                "Antworte bitte von {reply_from} aus auf diese Mail. \
+                 Sobald die Antwort ankommt, weiß der Assistent, dass Mails von außen dich erreichen."
+            ),
+            "Sie ist angekommen",
+        ),
+        Language::En => (
+            "test message",
+            "Hello!",
+            format!("This message comes from your new server {hostname}."),
+            format!(
+                "Please reply to it from {reply_from}. \
+                 As soon as the reply arrives, the assistant knows mail from outside reaches you."
+            ),
+            "It arrived",
+        ),
+        Language::Fr => (
+            "message de test",
+            "Bonjour !",
+            format!("Ce message vient de votre nouveau serveur {hostname}."),
+            format!(
+                "Veuillez y répondre depuis {reply_from}. \
+                 Dès que la réponse arrive, l'assistant sait que les e-mails de l'extérieur vous parviennent."
+            ),
+            "Il est bien arrivé",
+        ),
+        Language::Nl => (
+            "testbericht",
+            "Hallo!",
+            format!("Dit bericht komt van je nieuwe server {hostname}."),
+            format!(
+                "Beantwoord het vanaf {reply_from}. \
+                 Zodra het antwoord binnenkomt, weet de assistent dat mail van buiten je bereikt."
+            ),
+            "Het is aangekomen",
+        ),
+        Language::Ja => (
+            "テストメール",
+            "こんにちは！",
+            format!("このメールは新しいサーバー {hostname} から送られています。"),
+            format!(
+                "{reply_from} からこのメールに返信してください。\
+                 返信が届いた時点で、外部からのメールが届くことをアシスタントが確認できます。"
+            ),
+            "無事に届きました",
+        ),
+        Language::Zh => (
+            "测试邮件",
+            "你好！",
+            format!("这封邮件来自你的新服务器 {hostname}。"),
+            format!("请从 {reply_from} 回复这封邮件。回复一到，助手就知道外部邮件能送达你了。"),
+            "已经送达",
+        ),
     };
-    let (subject, body) = match (language, external.is_some()) {
-        (Language::De, true) => (
-            "UwUMail: Test-Mail",
-            format!(
-                "Hallo!\n\nDiese Mail kommt von deinem neuen Server {}.\n\nAntworte bitte von {} aus auf diese Mail. \
-                 Sobald die Antwort ankommt, weiß der Assistent, dass Mails von außen dich erreichen.\n",
-                web.settings().hostname,
-                external.as_deref().unwrap_or_default()
-            ),
-        ),
-        (Language::De, false) => (
-            "UwUMail: Test-Mail",
-            format!(
-                "Hallo!\n\nDiese Mail kommt von deinem neuen Server {}. Sie ist angekommen (=^･ω･^=)\n",
-                web.settings().hostname
-            ),
-        ),
-        (Language::En, true) => (
-            "UwUMail: test message",
-            format!(
-                "Hello!\n\nThis message comes from your new server {}.\n\nPlease reply to it from {}. \
-                 As soon as the reply arrives, the assistant knows mail from outside reaches you.\n",
-                web.settings().hostname,
-                external.as_deref().unwrap_or_default()
-            ),
-        ),
-        (Language::En, false) => (
-            "UwUMail: test message",
-            format!(
-                "Hello!\n\nThis message comes from your new server {}. It arrived (=^･ω･^=)\n",
-                web.settings().hostname
-            ),
-        ),
+    let subject = format!("{}: {label}", brand.name());
+    let body = match &external {
+        Some(_) => format!("{hello}\n\n{from}\n\n{reply}\n"),
+        None => format!("{hello}\n\n{from} {arrived}{face}\n"),
     };
     let message_id = format!("{}.test@{domain}", crate::login::random_token()[..24].to_owned());
     let mut builder = MessageBuilder::new()

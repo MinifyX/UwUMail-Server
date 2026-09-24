@@ -249,6 +249,125 @@ pub enum Language {
     #[default]
     De,
     En,
+    Fr,
+    Nl,
+    Ja,
+    /// Chinese in simplified characters.
+    Zh,
+}
+
+impl Language {
+    /// Every language the server and the portal speak, in the order they are offered.
+    pub const ALL: [Language; 6] = [Language::De, Language::En, Language::Fr, Language::Nl, Language::Ja, Language::Zh];
+
+    /// The short code used in settings and preferences: "de", "en", "fr", "nl", "ja", "zh".
+    pub fn code(self) -> &'static str {
+        match self {
+            Language::De => "de",
+            Language::En => "en",
+            Language::Fr => "fr",
+            Language::Nl => "nl",
+            Language::Ja => "ja",
+            Language::Zh => "zh",
+        }
+    }
+
+    /// The language a code names. Also takes region tags as browsers send them ("fr-CH", "zh_CN").
+    pub fn from_code(code: &str) -> Option<Language> {
+        let base = code.trim().split(['-', '_']).next().unwrap_or_default().to_ascii_lowercase();
+        Language::ALL.into_iter().find(|language| language.code() == base)
+    }
+
+    /// Someone's own choice, or `fallback` when they left it to the system or chose nothing.
+    pub fn preferred(choice: Option<&str>, fallback: Language) -> Language {
+        choice.and_then(Language::from_code).unwrap_or(fallback)
+    }
+
+    /// What the first calendar and the first address book of a new account are called.
+    pub fn collection_names(self) -> (&'static str, &'static str) {
+        match self {
+            Language::De => ("Kalender", "Kontakte"),
+            Language::En => ("Calendar", "Contacts"),
+            Language::Fr => ("Agenda", "Contacts"),
+            Language::Nl => ("Agenda", "Contacten"),
+            Language::Ja => ("カレンダー", "連絡先"),
+            Language::Zh => ("日历", "通讯录"),
+        }
+    }
+
+    /// The first language of an `Accept-Language` header the server speaks, if any.
+    pub fn from_accept_language(header: &str) -> Option<Language> {
+        let mut ranked: Vec<(f32, Language)> = header
+            .split(',')
+            .filter_map(|part| {
+                let mut pieces = part.split(';');
+                let language = Language::from_code(pieces.next()?)?;
+                let quality = pieces
+                    .find_map(|piece| piece.trim().strip_prefix("q="))
+                    .and_then(|q| q.parse::<f32>().ok())
+                    .unwrap_or(1.0);
+                Some((quality, language))
+            })
+            .collect();
+        // Stable, so equal weights keep the order the browser sent them in.
+        ranked.sort_by(|a, b| b.0.total_cmp(&a.0));
+        ranked.first().map(|(_, language)| *language)
+    }
+}
+
+/// The name, colour and mascot the server shows people. Empty means the UwUMail defaults.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct BrandConfig {
+    /// Shown instead of "UwUMail" in the portal, the webmail and mail the server writes.
+    pub name: String,
+    /// The accent colour as `#rrggbb`; empty for the UwUMail pink.
+    pub color: String,
+    /// Whether Nyu the cat and the kaomoji of the playful tone appear. Off makes everything plain.
+    pub mascot: bool,
+}
+
+impl Default for BrandConfig {
+    fn default() -> Self {
+        BrandConfig { name: String::new(), color: String::new(), mascot: true }
+    }
+}
+
+impl BrandConfig {
+    pub const DEFAULT_NAME: &'static str = "UwUMail";
+
+    /// The name to show: the chosen one, or UwUMail.
+    pub fn name(&self) -> &str {
+        match self.name.trim() {
+            "" => Self::DEFAULT_NAME,
+            name => name,
+        }
+    }
+
+    /// Whether anything differs from UwUMail as it comes.
+    pub fn is_custom(&self) -> bool {
+        !self.name.trim().is_empty() || !self.color.trim().is_empty() || !self.mascot
+    }
+
+    /// Why this cannot be used, if it cannot.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.name.chars().count() > 40 {
+            return Err("brand.name: at most 40 characters".into());
+        }
+        if self.name.chars().any(char::is_control) {
+            return Err("brand.name: no control characters".into());
+        }
+        let color = self.color.trim();
+        if !color.is_empty() && crate::palette::parse_hex(color).is_none() {
+            return Err("brand.color: a colour like #ff4d8d".into());
+        }
+        Ok(())
+    }
+
+    /// The tone for mail to the server's own people: without the mascot, never playful.
+    pub fn internal_tone(&self, tone: InternalTone) -> InternalTone {
+        if self.mascot { tone } else { InternalTone::Neutral }
+    }
 }
 
 /// How mail to the server's own people sounds.

@@ -83,6 +83,7 @@ pub async fn run(
             server_tls: Some(tls::mail_server_config(certs.clone())?),
         },
     )?;
+    smtp.set_brand(config.brand.clone());
 
     let (shutdown, shutdown_rx) = watch::channel(false);
     let mut tasks = JoinSet::new();
@@ -120,10 +121,7 @@ pub async fn run(
     tasks.spawn(crate::fetch::run_fetchers(store.clone(), smtp.clone(), egress.clone(), shutdown_rx.clone()));
 
     // Calendars and contacts (CalDAV, CardDAV) live next to JMAP on the same HTTPS port.
-    let names = match config.tone.language {
-        uwumail_smtp::Language::De => ("Kalender", "Kontakte"),
-        _ => ("Calendar", "Contacts"),
-    };
+    let names = config.tone.language.collection_names();
     let dav = uwumail_dav::Dav::new(
         store.clone(),
         uwumail_dav::DavSettings { calendar_name: names.0.into(), addressbook_name: names.1.into() },

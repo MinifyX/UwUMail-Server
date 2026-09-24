@@ -17,10 +17,7 @@ const MAX_DESCRIPTION_BYTES: usize = 10_000;
 
 /// The account's address books, the default one made the first time like CardDAV does.
 pub async fn address_books(ctx: &Ctx<'_>) -> MethodResult<Vec<DavCollection>> {
-    let name = match ctx.jmap.smtp.tone().language {
-        uwumail_smtp::Language::De => "Kontakte",
-        _ => "Contacts",
-    };
+    let name = ctx.jmap.smtp.tone().language.collection_names().1;
     Ok(ctx
         .jmap
         .store

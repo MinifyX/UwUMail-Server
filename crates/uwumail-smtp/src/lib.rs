@@ -25,6 +25,7 @@ mod inbound;
 mod limiter;
 pub mod mta_sts;
 mod outbound;
+pub mod palette;
 pub mod pictures;
 pub mod reachability;
 mod relay;
@@ -50,8 +51,8 @@ use uwumail_store::Store;
 
 pub use client::{Connector, connect_directly};
 pub use config::{
-    AntivirusConfig, DeliveryConfig, ExternalTone, FeedsConfig, InternalTone, Language, RelayConfig, RelaySecurity,
-    SmtpConfig, SpamConfig, SpamLogConfig, ToneConfig,
+    AntivirusConfig, BrandConfig, DeliveryConfig, ExternalTone, FeedsConfig, InternalTone, Language, RelayConfig,
+    RelaySecurity, SmtpConfig, SpamConfig, SpamLogConfig, ToneConfig,
 };
 pub use dns::DnsCaches;
 pub use fetch::is_public;
@@ -118,6 +119,8 @@ pub(crate) struct Context {
     pub stats: health::DeliveryStats,
     /// Where connections to other servers start; `None` is this machine.
     connector: RwLock<Option<Arc<dyn Connector>>>,
+    /// Name, colour and mascot the server shows; changed in place from the admin panel.
+    brand: RwLock<Arc<BrandConfig>>,
 }
 
 /// The settings in effect right now. Take a snapshot per connection or delivery.
@@ -144,6 +147,16 @@ impl Context {
 
     pub fn connector(&self) -> Option<Arc<dyn Connector>> {
         self.connector.read().expect("connector poisoned").clone()
+    }
+
+    pub fn brand(&self) -> Arc<BrandConfig> {
+        self.brand.read().expect("brand poisoned").clone()
+    }
+
+    /// The tone as set, made plain when the mascot is switched off.
+    pub fn tone(&self) -> ToneConfig {
+        let tone = self.live().tone;
+        ToneConfig { internal: self.brand().internal_tone(tone.internal), ..tone }
     }
 
     /// The route of mail that does not go through a relay.
@@ -193,6 +206,7 @@ impl Smtp {
                 inflight: Mutex::new(HashSet::new()),
                 stats: health::DeliveryStats::default(),
                 connector: RwLock::new(None),
+                brand: RwLock::new(Arc::new(BrandConfig::default())),
             }),
         })
     }
@@ -281,9 +295,20 @@ impl Smtp {
         &self.inner.dns
     }
 
-    /// Language and tone of mail the server writes itself, as currently set.
+    /// Language and tone of mail the server writes itself, as currently set. Without the mascot the
+    /// internal tone is always neutral.
     pub fn tone(&self) -> ToneConfig {
-        self.inner.live().tone
+        self.inner.tone()
+    }
+
+    /// The name, colour and mascot as currently set.
+    pub fn brand(&self) -> Arc<BrandConfig> {
+        self.inner.brand()
+    }
+
+    /// Takes a new brand into use at once.
+    pub fn set_brand(&self, brand: BrandConfig) {
+        *self.inner.brand.write().expect("brand poisoned") = Arc::new(brand);
     }
 
     /// Whether people may forward mail to addresses on other servers.

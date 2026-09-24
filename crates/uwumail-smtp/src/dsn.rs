@@ -35,7 +35,7 @@ pub async fn bounce(ctx: &Context, return_path: &str, original: &[u8], failed: &
         Some(account_id) => ctx.store.delivery_target(account_id).await.ok().flatten(),
         None => None,
     };
-    let texts = texts::bounce(ctx.live().tone, local_account.is_some());
+    let texts = texts::bounce(ctx.tone(), local_account.is_some(), ctx.brand().name());
     let raw = match build(ctx, &texts, return_path, original, failed) {
         Ok(raw) => raw,
         Err(err) => {
@@ -96,7 +96,7 @@ fn build(
     let daemon = format!("MAILER-DAEMON@{host}");
 
     MessageBuilder::new()
-        .from((texts.sender_name, daemon.as_str()))
+        .from((texts.sender_name.as_str(), daemon.as_str()))
         .to(return_path)
         .subject(texts.subject)
         .date(Date::now())
