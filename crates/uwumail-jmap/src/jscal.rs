@@ -222,8 +222,15 @@ pub fn apply_patch(target: &mut Map<String, Value>, path: &str, value: Value) ->
 }
 
 /// Whether one path of a patch is a prefix of another, which RFC 8620 does not allow.
+///
+/// Sorted by their segments, a path is directly followed by one that lies inside it, if any does, so
+/// comparing neighbours is enough. Comparing every path with every other, as this did before, took
+/// the square of the patch's size on an async worker thread, before the object was even looked up
+/// (security-audit-0.8.0 C-3).
 pub fn overlapping_paths(paths: &[&str]) -> bool {
-    paths.iter().any(|a| paths.iter().any(|b| a != b && b.starts_with(a) && b.as_bytes().get(a.len()) == Some(&b'/')))
+    let mut split: Vec<Vec<&str>> = paths.iter().map(|path| path.split('/').collect()).collect();
+    split.sort_unstable();
+    split.windows(2).any(|pair| pair[1].len() > pair[0].len() && pair[1].starts_with(&pair[0]))
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -857,6 +864,23 @@ mod tests {
         assert!(apply_patch(&mut target, "a/b/c", json!(1)).is_err());
         assert!(overlapping_paths(&["a", "a/b"]));
         assert!(!overlapping_paths(&["a", "ab/c"]));
+        // Something that sorts between a path and the one inside it, by characters.
+        assert!(overlapping_paths(&["x/y", "x!", "x"]));
+        assert!(overlapping_paths(&["", "/x"]));
+        assert!(overlapping_paths(&["a/b", "a/b/"]));
+        assert!(!overlapping_paths(&["a/b", "a/c", "b"]));
+    }
+
+    /// security-audit-0.8.0 C-3: a patch with a great many paths is checked in about linear time.
+    #[test]
+    fn a_huge_patch_is_checked_at_once() {
+        let started = std::time::Instant::now();
+        let keys: Vec<String> = (0..200_000).map(|n| format!("k{n}")).collect();
+        let mut paths: Vec<&str> = keys.iter().map(String::as_str).collect();
+        assert!(!overlapping_paths(&paths));
+        paths.push("k199999/x");
+        assert!(overlapping_paths(&paths));
+        assert!(started.elapsed() < std::time::Duration::from_secs(10), "{:?}", started.elapsed());
     }
 
     const SERIES: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//DE\r\nBEGIN:VEVENT\r\nUID:yoga@example.org\r\n\
