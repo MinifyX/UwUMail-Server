@@ -663,7 +663,8 @@
         "jmap": "Lets apps like UwUMail find the server when you only enter your mail address.",
         "imaps": "Tells mail apps where to read mail (IMAP, port 993).",
         "submissions": "Tells mail apps where to send mail with TLS (port 465).",
-        "submission": "Tells mail apps where to send mail with STARTTLS (port 587)."
+        "submission": "Tells mail apps where to send mail with STARTTLS (port 587).",
+        "caa": "Lets only Let's Encrypt issue certificates for the server's name, and only to this server's own account. Keeps TLS private behind a UwUMail Gateway."
       },
       "notes": {
         "mxUpstream": "Points to the upstream mail server. That's fine.",
@@ -686,7 +687,10 @@
         "mtaStsMultiple": "There are several MTA-STS records. Only one is allowed.",
         "mtaStsFetchFailed": "The policy could not be fetched. Check the mta-sts name and the certificate.",
         "mtaStsPolicyDiffers": "A different policy is served there. Maybe another server answers for that name.",
-        "mtaStsPolicyInvalid": "No valid policy is served there."
+        "mtaStsPolicyInvalid": "No valid policy is served there.",
+        "caaWithoutAccount": "Allows other accounts or certificate authorities as well. With accounturi only this server gets certificates.",
+        "caaOtherAccount": "Names another Let's Encrypt account. This server cannot renew its certificate until the record names its own.",
+        "caaForbids": "Does not let this server get its certificate from Let's Encrypt. Renewing it will fail."
       },
       "catchAll": "Catch-all",
       "catchAllHint": "Mail to addresses that don't exist goes to this person. It also attracts more spam.",
@@ -726,7 +730,8 @@
         "jmap": "App discovery (JMAP)",
         "imaps": "Reading for mail apps (IMAP)",
         "submissions": "Sending for mail apps (TLS)",
-        "submission": "Sending for mail apps (STARTTLS)"
+        "submission": "Sending for mail apps (STARTTLS)",
+        "caa": "Certificates only for this server (CAA)"
       }
     },
     "forwards": {
@@ -1674,6 +1679,8 @@
       "tidy": "Bring the spelling in line with UwUMail",
       "tidyHint": "These records work. With a tick I write them the way UwUMail would publish them.",
       "tidyWarning": "Careful with MX and SPF: I write exactly my own value. Other senders or a mail server in front of this one that are listed there fall away.",
+      "caa": "Restrict certificates to this server",
+      "caaHint": "Only with a tick. Afterwards only this server's Let's Encrypt account gets certificates for the name. On a new server without the old data directory, or with another certificate authority, change the record first.",
       "quotesOnly": "Nothing is missing. I can still check whether the records sit in quotes at Cloudflare and add them where they do not.",
       "submit": "Add records",
       "nothing": "There was nothing to add.",

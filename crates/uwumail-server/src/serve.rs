@@ -144,13 +144,14 @@ pub async fn run(
     }
     tasks.spawn(loki.clone().run(shutdown_rx.clone()));
     let certificate: uwumail_web::CertificateSource = {
-        let (certs, automatic) = (certs.clone(), config.tls.mode == TlsMode::Acme);
+        let (certs, automatic, config) = (certs.clone(), config.tls.mode == TlsMode::Acme, config.clone());
         Arc::new(move || {
             certs.info().map(|info| uwumail_web::CertificateStatus {
                 not_after: info.not_after,
                 names: info.names,
                 self_signed: info.self_signed,
                 automatic,
+                lets_encrypt_account: crate::acme::lets_encrypt_account(&config),
             })
         })
     };

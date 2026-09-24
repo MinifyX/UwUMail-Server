@@ -42,6 +42,9 @@ pub struct CertificateStatus {
     pub self_signed: bool,
     /// The server renews it itself (Let's Encrypt).
     pub automatic: bool,
+    /// The URL of the Let's Encrypt account it is ordered with, for the CAA record the DNS check
+    /// recommends. `None` before there is one, and with any other CA.
+    pub lets_encrypt_account: Option<String>,
 }
 
 pub type CertificateSource = Arc<dyn Fn() -> Option<CertificateStatus> + Send + Sync>;
@@ -476,6 +479,7 @@ mod tests {
             names: vec!["*.example.de".into()],
             self_signed: false,
             automatic,
+            lets_encrypt_account: None,
         }
     }
 
