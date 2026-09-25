@@ -3,6 +3,16 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.12.1
+
+**Remote pictures through the VPN again.** With the VPN or a proxy set, the server looks up a
+picture's address itself and has the proxy connect there. On a machine with IPv6 the first
+addresses tried were IPv6 ones, often every one of them for a CDN. The VPN usually has no IPv6,
+and gluetun drops such a connection silently instead of refusing it, so each try waited ten
+seconds and the picture gave up: no remote pictures and no sender logos in the webmail or the apps
+while the VPN was on. Through a proxy IPv4 is now tried first, IPv6 only after it. Without a proxy
+nothing changes.
+
 ## 0.12.0
 
 **Programs sign in with a token.** An app password with the *mail* use now also works as
