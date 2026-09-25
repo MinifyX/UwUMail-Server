@@ -78,12 +78,11 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Content rules after Rspamd's example: phishing links and look-alike domains, faked display names, dangerous attachments (also inside zip archives), header and MIME oddities, Spamhaus DBL for link domains
 - [x] Word lists (words, phrases, Rspamd-style expressions) per person, domain and server, pasted or subscribed to by link
 - [x] Built-in lists: malware links and attachments (abuse.ch), spam subjects (mailcow), throwaway and freemail domains and link shorteners (Rspamd)
-- [ ] More content rules: SURBL/URIBL
+- [x] More content rules: SURBL/URIBL link blocklists (off by default)
 - [x] Bayes filter that learns from "Spam" / "Not spam", clear cases and once from sorted mail, with knowledge for the whole server and per person, tokens only as keyed hashes
 - [x] Allowed and blocked senders (IP address or network, confirmed host name, address, domain) per person, domain and server
 - [x] "Block" in the apps puts the sender on the person's list on the server (JMAP `SenderList`, see jmap-senders.md)
 - [x] Optional ClamAV beside the server: infected mail is turned away at the door, its own page in the portal, off until it is started (docs/antivirus.md)
-- [ ] Optional external Rspamd
 
 ## 5. IMAP
 
@@ -100,7 +99,6 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Remote pictures and sender pictures fetched by the server, optionally through a VPN, so senders never see who reads their mail (docs/jmap-remote.md)
 - [x] Fetched mailboxes: mail from another provider's IMAP mailbox, emptied into someone's own and judged here like any other, with rules of its own for what a fetched message can still be asked (docs/fetch.md)
 - [x] Sending as a fetched address, over the provider's own outgoing server
-- [ ] External mailboxes shown as extra JMAP accounts, with their folders and with changes going back
 
 ## UwUMail Gateway ✅ in progress
 
@@ -109,8 +107,8 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Server side: pairing from the configuration, connections through the tunnel, outgoing mail only through the gateway
 - [x] Setup assistant: detect a home connection (public address, Spamhaus PBL, reverse DNS, port 25, provider), recommend the gateway, pair with the code, DNS records with the gateway's addresses
 - [x] Gateway in the health overview and under Server → Overview → Mail flow, notes on providers that block port 25
-- [ ] Cloudflare button for the host name's A/AAAA records with the gateway's addresses
-- [ ] Tried on a real VPS with a test instance behind it
+- [x] Cloudflare button for the host name's A/AAAA records with the gateway's addresses
+- [x] Tried on a real VPS with a test instance behind it
 
 ## Later
 

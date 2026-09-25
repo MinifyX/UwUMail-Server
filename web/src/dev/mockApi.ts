@@ -40,6 +40,7 @@ import type {
   NewSender,
   SenderListEntry,
   SendersView,
+  GatewayHostChange,
   GatewayView,
   FeedsView,
   Info,
@@ -736,6 +737,7 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "smtp.allow_external_forwarding": { value: true, source: "default" },
   "spam.enabled": { value: true, source: "default" },
   "spam.blocklists": { value: true, source: "default" },
+  "spam.uri_blocklists": { value: false, source: "default" },
   "spam.junk_score": { value: 5, source: "default" },
   "spam.greylist_score": { value: 2, source: "default" },
   "spam.greylist_delay_secs": { value: 300, source: "default" },
@@ -1331,6 +1333,8 @@ const noGateway: GatewayView = {
 };
 let gateway: GatewayView = noGateway;
 let gatewayPairedAt = 0;
+/** Whether the pretend Cloudflare zone points at the gateway already. */
+let gatewayDns = false;
 
 let gatewayJobStartedAt = 0;
 
@@ -1904,6 +1908,81 @@ const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/api\/admin\/setup\/check$/, () => [200, lastServerCheck]],
   ["POST", /^\/api\/admin\/setup\/reachability$/, () => [200, reachability()]],
   ["GET", /^\/api\/admin\/gateway$/, () => [200, gatewayView()]],
+  [
+    "POST",
+    /^\/api\/admin\/gateway\/cloudflare$/,
+    (body) => {
+      const { token, apply, replace } = body as { token: string; apply?: boolean; replace?: boolean };
+      if (token === "wrong") return problem(409, "cloudflareFailed");
+      const view = gatewayView();
+      if (view.addresses.length === 0) return problem(409, "gatewayNoAddresses");
+      const v4 = view.addresses.filter((address) => !address.includes(":"));
+      const v6 = view.addresses.filter((address) => address.includes(":"));
+      // The pretend zone: the host name still points at the home connection, autoconfig is proxied.
+      const plan: GatewayHostChange[] = gatewayDns
+        ? [
+            {
+              name: "mail.uwu.example",
+              recordType: "A",
+              current: v4,
+              wanted: v4,
+              proxied: false,
+              action: "none",
+              note: null,
+            },
+            {
+              name: "mail.uwu.example",
+              recordType: "AAAA",
+              current: v6,
+              wanted: v6,
+              proxied: false,
+              action: "none",
+              note: null,
+            },
+          ]
+        : [
+            {
+              name: "mail.uwu.example",
+              recordType: "A",
+              current: ["198.51.100.7"],
+              wanted: v4,
+              proxied: false,
+              action: "replace",
+              note: null,
+            },
+            {
+              name: "mail.uwu.example",
+              recordType: "AAAA",
+              current: [],
+              wanted: v6,
+              proxied: false,
+              action: "create",
+              note: null,
+            },
+            {
+              name: "autoconfig.uwu.example",
+              recordType: "A",
+              current: v4,
+              wanted: v4,
+              proxied: true,
+              action: "update",
+              note: null,
+            },
+          ];
+      if (!apply) return [200, { plan }];
+      const results = plan
+        .filter((change) => change.action !== "none")
+        .map((change) => ({
+          name: change.name,
+          recordType: change.recordType,
+          outcome: change.action === "replace" && !replace ? "skipped" : change.current.length ? "updated" : "created",
+          error: null,
+        }));
+      if (replace) gatewayDns = true;
+      log("gateway.cloudflare", "");
+      return [200, { plan, results }];
+    },
+  ],
   [
     "POST",
     /^\/api\/admin\/gateway\/jobs$/,

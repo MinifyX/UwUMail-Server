@@ -374,6 +374,7 @@ function Overview({ view, settings }: { view: AdminSpamView; settings: SettingsV
             <ul className="flex flex-col gap-2">
               {state(enabled, t("settings.spam.enabled"))}
               {enabled && state(Boolean(value("spam.blocklists")), t("settings.spam.blocklists"))}
+              {enabled && state(Boolean(value("spam.uri_blocklists")), t("settings.spam.uriBlocklists"))}
               {enabled && state(Boolean(value("spam.bayes")), t("settings.spam.bayes"))}
               {enabled &&
                 state(

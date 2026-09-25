@@ -1362,9 +1362,26 @@ export interface TestMailStatus {
   replyFrom: string | null;
 }
 
+/** What pointing one host name at the gateway would change about its A or AAAA records. */
+export interface GatewayHostChange {
+  name: string;
+  recordType: "A" | "AAAA";
+  current: string[];
+  wanted: string[];
+  proxied: boolean;
+  /** "replace" means some addresses point elsewhere and only go when confirmed. */
+  action: "none" | "create" | "update" | "replace" | "skip";
+  note: "noZone" | "cname" | null;
+}
+
+export interface GatewayCloudflareAnswer {
+  plan: GatewayHostChange[];
+  results?: CloudflareResult[];
+}
+
 export interface CloudflareResult {
   name: string;
-  recordType: "MX" | "TXT" | "SRV" | "CNAME" | "CAA";
+  recordType: "MX" | "TXT" | "SRV" | "CNAME" | "CAA" | "A" | "AAAA";
   /** "requoted" means the value was right and only its quoting was put in order. */
   outcome: "created" | "updated" | "requoted" | "skipped" | "failed";
   error: string | null;

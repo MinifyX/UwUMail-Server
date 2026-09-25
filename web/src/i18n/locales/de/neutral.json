@@ -277,6 +277,7 @@
       "mtaStsCertificate": "Für den strengen Modus braucht der Server erst ein gültiges Zertifikat.",
       "gatewayCodeInvalid": "Der Kopplungs-Code stimmt nicht. Kopier ihn nochmal vollständig vom Gateway.",
       "gatewayForgetFailed": "Das Gateway ließ sich nicht vergessen.",
+      "gatewayNoAddresses": "Das Gateway hat seine öffentlichen Adressen noch nicht genannt. Warte, bis es verbunden ist.",
       "learningBusy": "Der Filter hat gerade noch sehr viele Mails zu lernen. Versuch es später wieder.",
       "senderInvalid": "Das sieht nicht nach Adresse, Domain, IP-Adresse oder Hostname aus. Netze dürfen höchstens /8 (IPv4) oder /16 (IPv6) groß sein, Domains brauchen mindestens einen Punkt.",
       "senderListed": "Dieser Absender steht schon auf der Liste. Um ihn umzustellen, entferne ihn zuerst.",
@@ -1128,6 +1129,8 @@
       "enabledHint": "Ausgeschaltet entscheidet nur noch DMARC, was in Spam landet.",
       "blocklists": "Blocklisten fragen",
       "blocklistsHint": "Fragt Spamhaus, SpamCop und Barracuda nach dem sendenden Server. Antwortet eine Liste nicht, zählt das nicht gegen den Absender.",
+      "uriBlocklists": "Link-Blocklisten fragen (SURBL, URIBL)",
+      "uriBlocklistsHint": "Fragt SURBL und URIBL nach den Domains, zu denen Links führen. Beide sind nur für kleine, nicht-kommerzielle Server kostenlos und antworten nicht über öffentliche Resolver wie 8.8.8.8 – eine verweigerte Antwort wird protokolliert und zählt nicht. Lies vor dem Einschalten ihre Nutzungsbedingungen.",
       "bayes": "Lernender Filter",
       "bayesHint": "Lernt aus Markierungen und eindeutigen Fällen, wie Spam aussieht, und gibt dafür Punkte. Zählt erst, wenn genug gelernt ist.",
       "junkScore": "Spam ab Punktzahl",
@@ -1944,6 +1947,31 @@
       "forgetTitle": "Gateway vergessen?",
       "forgetBody": "Danach sendet und empfängt dein Server wieder selbst. Stell auch die DNS-Einträge zurück, sonst kommen keine Mails mehr an.",
       "forgetConfirm": "Vergessen",
+      "cloudflare": {
+        "open": "Hostnamen über Cloudflare hierher zeigen lassen",
+        "title": "Hostnamen auf das Gateway zeigen lassen",
+        "body": "Liegt deine Domain bei Cloudflare, setze ich die A- und AAAA-Einträge von {{hostname}} auf die Adressen des Gateways, ohne Proxy. Andere Namen, die der Server braucht, etwa mta-sts oder autoconfig, ziehen mit, wenn sie ebenfalls A- oder AAAA-Einträge sind. Vorher zeige ich, was sich ändern würde. Der Token wird nur für diese Anfragen genutzt und nie gespeichert.",
+        "check": "Änderungen zeigen",
+        "apply": "Änderungen übernehmen",
+        "nothing": "Alles zeigt schon auf das Gateway.",
+        "current": "jetzt",
+        "none": "nichts",
+        "proxied": "über Proxy",
+        "actions": {
+          "none": "passt schon",
+          "create": "wird angelegt",
+          "update": "wird ergänzt, ohne Proxy",
+          "replace": "zeigt woandershin",
+          "skip": "bleibt, wie er ist"
+        },
+        "notes": {
+          "noZone": "der Token sieht keine Cloudflare-Zone dafür",
+          "cname": "das ist ein CNAME, ändere ihn selbst"
+        },
+        "replace": "Auch Adressen ersetzen, die woandershin zeigen",
+        "replaceHint": "Diese Einträge führen nicht zum Gateway, vielleicht zu deinem alten Anschluss. Ohne Haken bleiben sie, wie sie sind. Ein AAAA-Eintrag wird entfernt, wenn das Gateway keine IPv6-Adresse hat.",
+        "done": "Cloudflare hat die neuen Einträge. Bis DNS nachzieht, können ein paar Minuten vergehen."
+      },
       "fromConfig": "Diese Kopplung steht als gateway.code in der Konfiguration. Wenn du das Gateway hier vergisst, entferne auch den Code. Sonst versucht der Server beim nächsten Start, sich mit einem neuen Schlüssel erneut zu koppeln, das Gateway lehnt ihn ab, und Mail an andere Server wartet in der Warteschlange. Zum späteren Neukoppeln auf dem Gateway uwumail-gateway unpair ausführen und den neuen Code verwenden.",
       "paired": "Gekoppelt, der Tunnel baut sich auf.",
       "forgotten": "Gateway vergessen.",

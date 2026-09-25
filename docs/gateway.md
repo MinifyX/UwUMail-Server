@@ -324,6 +324,18 @@ Everything that pointed to your server now points to the gateway:
 | Reverse DNS of the gateway's addresses | `mail.example.com`, set at the VPS provider |
 | `mail.example.com CAA` (recommended) | `0 issue "letsencrypt.org; accounturi=…; validationmethods=http-01"` |
 
+If the domain is at Cloudflare, the portal can set the A and AAAA records for
+you: *Point host names here via Cloudflare* under the gateway, in the setup
+assistant and under *Server → Overview → Mail flow*. It needs an API token with
+"Zone → DNS → Edit", used only for that and never stored. It first shows what
+would change, then writes the records, never proxied (Cloudflare's proxy does
+not pass mail). Besides the host name it keeps `mta-sts.<domain>`,
+`autoconfig.<domain>`, `autodiscover.<domain>`, `imap.<domain>`,
+`smtp.<domain>` and `mail.<domain>` in step, but only where they already are
+A or AAAA records; a CNAME follows the host name by itself. Records that point
+somewhere else, such as your home connection, are only replaced after you tick
+that, and an AAAA record goes when the gateway has no IPv6 address.
+
 ### A CAA record, so only your server gets certificates
 
 Let's Encrypt checks that whoever asks for a certificate answers on port 80 of

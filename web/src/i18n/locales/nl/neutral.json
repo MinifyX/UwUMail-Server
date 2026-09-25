@@ -277,6 +277,7 @@
       "mtaStsCertificate": "De modus enforce heeft eerst een geldig certificaat op de server nodig.",
       "gatewayCodeInvalid": "De koppelcode klopt niet. Kopieer hem opnieuw, helemaal, uit de gateway.",
       "gatewayForgetFailed": "De gateway kon niet worden vergeten.",
+      "gatewayNoAddresses": "De gateway heeft zijn openbare adressen nog niet doorgegeven. Wacht tot hij verbonden is.",
       "learningBusy": "Het filter moet nog veel mail leren. Probeer het later opnieuw.",
       "senderInvalid": "Dat lijkt niet op een adres, domein, IP-adres of hostnaam. Netwerken mogen hoogstens /8 (IPv4) of /16 (IPv6) breed zijn, en domeinen hebben minstens één punt nodig.",
       "senderListed": "Deze afzender staat al op de lijst. Verwijder hem eerst om hem te wisselen.",
@@ -1128,6 +1129,8 @@
       "enabledHint": "Als het uit staat, beslist alleen DMARC wat naar spam gaat.",
       "blocklists": "Blokkeerlijsten raadplegen",
       "blocklistsHint": "Vraagt Spamhaus, SpamCop en Barracuda naar de verzendende server. Een lijst die niet antwoordt, telt niet tegen de afzender.",
+      "uriBlocklists": "Linkblokkeerlijsten raadplegen (SURBL, URIBL)",
+      "uriBlocklistsHint": "Vraagt SURBL en URIBL naar de domeinen waar links naartoe leiden. Beide zijn alleen gratis voor kleine, niet-commerciële servers en antwoorden niet via openbare resolvers zoals 8.8.8.8 — een geweigerde vraag wordt gelogd en telt niet. Lees hun voorwaarden voordat je dit aanzet.",
       "bayes": "Lerend filter",
       "bayesHint": "Leert van markeringen en duidelijke gevallen hoe spam eruitziet en beoordeelt ernaar. Het telt pas mee als het genoeg heeft geleerd.",
       "junkScore": "Spam vanaf score",
@@ -1944,6 +1947,31 @@
       "forgetTitle": "De gateway vergeten?",
       "forgetBody": "Je server verzendt en ontvangt mail dan weer zelf. Zet ook de DNS-records terug, anders komt er geen mail meer aan.",
       "forgetConfirm": "Vergeten",
+      "cloudflare": {
+        "open": "Hostnamen via Cloudflare hierheen laten wijzen",
+        "title": "Hostnamen naar de gateway laten wijzen",
+        "body": "Staat je domein bij Cloudflare, dan zet ik de A- en AAAA-records van {{hostname}} op de adressen van de gateway, zonder proxy. Andere namen die de server nodig heeft, zoals mta-sts of autoconfig, gaan mee als het ook A- of AAAA-records zijn. Eerst laat ik zien wat er zou veranderen. De token wordt alleen voor deze verzoeken gebruikt en nooit opgeslagen.",
+        "check": "Wijzigingen tonen",
+        "apply": "Wijzigingen doorvoeren",
+        "nothing": "Alles wijst al naar de gateway.",
+        "current": "nu",
+        "none": "niets",
+        "proxied": "via proxy",
+        "actions": {
+          "none": "klopt al",
+          "create": "wordt toegevoegd",
+          "update": "wordt aangevuld, zonder proxy",
+          "replace": "wijst ergens anders heen",
+          "skip": "blijft zoals het is"
+        },
+        "notes": {
+          "noZone": "de token ziet er geen Cloudflare-zone voor",
+          "cname": "dit is een CNAME, pas die zelf aan"
+        },
+        "replace": "Ook adressen vervangen die ergens anders heen wijzen",
+        "replaceHint": "Deze records leiden niet naar de gateway, misschien naar je oude aansluiting. Zonder vinkje blijven ze zoals ze zijn. Een AAAA-record wordt verwijderd als de gateway geen IPv6-adres heeft.",
+        "done": "Cloudflare heeft de nieuwe records. Het kan een paar minuten duren voordat DNS bijgewerkt is."
+      },
       "fromConfig": "Deze koppeling staat als gateway.code in de configuratie. Als je de gateway hier vergeet, verwijder dan ook de code. Anders probeert de server bij de volgende start opnieuw te koppelen met een nieuwe sleutel, weigert de gateway dat, en wacht mail aan andere servers in de wachtrij. Om later opnieuw te koppelen: voer uwumail-gateway unpair uit op de gateway en gebruik de nieuwe code.",
       "paired": "Gekoppeld, de tunnel komt op.",
       "forgotten": "Gateway vergeten.",

@@ -268,6 +268,7 @@
       "mtaStsCertificate": "强制模式要求服务器先拥有有效的证书。",
       "gatewayCodeInvalid": "配对码不正确。请从网关重新完整复制。",
       "gatewayForgetFailed": "无法移除该网关。",
+      "gatewayNoAddresses": "网关尚未告知其公网地址。请等待它连接成功。",
       "learningBusy": "过滤器还有很多邮件需要学习。请稍后再试。",
       "senderInvalid": "这看起来不像地址、域名、IP 地址或主机名。网段最大为 /8（IPv4）或 /16（IPv6），域名至少需要包含一个点。",
       "senderListed": "此发件人已在列表中。如需切换，请先将其移除。",
@@ -1100,6 +1101,8 @@
       "enabledHint": "关闭时，只由 DMARC 决定哪些邮件进入垃圾邮件。",
       "blocklists": "查询黑名单",
       "blocklistsHint": "向 Spamhaus、SpamCop 和 Barracuda 查询发信服务器。没有响应的列表不会对发件人不利。",
+      "uriBlocklists": "查询链接黑名单（SURBL、URIBL）",
+      "uriBlocklistsHint": "向 SURBL 和 URIBL 查询链接指向的域名。两者仅对小型非商业服务器免费，并且不会通过 8.8.8.8 等公共解析器应答——被拒绝的查询会记录到日志，不计分。启用前请先阅读它们的使用条款。",
       "bayes": "学习过滤器",
       "bayesHint": "从标记和明确的案例中学习垃圾邮件的特征并为其打分。只有学习到足够多之后才会生效。",
       "junkScore": "判为垃圾邮件的分数",
@@ -1896,6 +1899,31 @@
       "forgetTitle": "移除网关？",
       "forgetBody": "之后你的服务器将再次自行收发邮件。请同时把 DNS 记录改回来，否则邮件将无法送达。",
       "forgetConfirm": "移除",
+      "cloudflare": {
+        "open": "通过 Cloudflare 将主机名指向这里",
+        "title": "将主机名指向网关",
+        "body": "如果你的域名托管在 Cloudflare，我会把 {{hostname}} 的 A 和 AAAA 记录设为网关的地址（不经代理）。服务器需要的其他名称，例如 mta-sts 或 autoconfig，如果也是 A 或 AAAA 记录，会一并更新。我会先显示将要更改的内容。令牌只用于这些请求，绝不会保存。",
+        "check": "显示更改",
+        "apply": "应用更改",
+        "nothing": "所有记录都已指向网关。",
+        "current": "当前",
+        "none": "无",
+        "proxied": "经代理",
+        "actions": {
+          "none": "已正确",
+          "create": "将会添加",
+          "update": "将会补全，不经代理",
+          "replace": "指向其他地方",
+          "skip": "保持不变"
+        },
+        "notes": {
+          "noZone": "令牌看不到该名称的 Cloudflare 区域",
+          "cname": "这是 CNAME 记录，请自行修改"
+        },
+        "replace": "同时替换指向其他地方的地址",
+        "replaceHint": "这些记录没有指向网关，可能指向你以前的网络连接。不勾选则保持不变。如果网关没有 IPv6 地址，AAAA 记录将被删除。",
+        "done": "Cloudflare 已有新记录。DNS 生效可能需要几分钟。"
+      },
       "fromConfig": "此配对是在配置中通过 gateway.code 设置的。如果在这里移除网关，也请删除该代码。否则服务器会在下次启动时用新密钥尝试重新配对，网关会拒绝，发往其他服务器的邮件将在队列中等待。如果之后要重新配对，请在网关上运行 uwumail-gateway unpair，然后使用新的代码。",
       "paired": "已配对，隧道正在建立。",
       "forgotten": "网关已移除。",
