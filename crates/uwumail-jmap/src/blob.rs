@@ -40,8 +40,10 @@ pub async fn upload(
         .unwrap_or("application/octet-stream")
         .to_owned();
     match jmap.inner.store.upload(owner.id, &body, &media_type).await {
+        // 200, not 201: RFC 8620 (section 6.1) names no status, and go-jmap, the library behind
+        // aerc, takes anything but 200 as a failed upload (docs/jmap-clients.md).
         Ok(hash) => (
-            StatusCode::CREATED,
+            StatusCode::OK,
             Json(json!({ "accountId": account, "blobId": ids::blob(&hash), "type": media_type, "size": body.len() })),
         )
             .into_response(),

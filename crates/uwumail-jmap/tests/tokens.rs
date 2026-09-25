@@ -67,7 +67,7 @@ async fn an_app_password_works_as_basic_password_and_as_bearer_token_everywhere(
         .body(Body::from("purr"))
         .unwrap();
     let (status, body) = server.request(upload).await;
-    assert_eq!(status, StatusCode::CREATED, "{}", String::from_utf8_lossy(&body));
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
     let blob: Value = serde_json::from_slice(&body).unwrap();
     let download = Request::get(format!("/jmap/download/{account}/{}/purr.txt", blob["blobId"].as_str().unwrap()))
         .header(header::AUTHORIZATION, bearer(&created.secret))

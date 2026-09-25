@@ -107,7 +107,7 @@ impl Server {
             .body(Body::from(script.to_owned()))
             .unwrap();
         let (status, bytes, _) = self.request(request).await;
-        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(status, StatusCode::OK);
         let uploaded: Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(uploaded["type"], "application/sieve");
         uploaded["blobId"].as_str().unwrap().to_owned()

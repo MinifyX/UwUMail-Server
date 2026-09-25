@@ -351,7 +351,7 @@ async fn upload_import_and_send_like_the_uwumail_app() {
         .body(Body::from(message))
         .unwrap();
     let (status, body) = server.request(upload).await;
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::OK, "go-jmap (aerc) takes only 200 for a successful upload");
     let blob_id = serde_json::from_slice::<Value>(&body).unwrap()["blobId"].as_str().unwrap().to_owned();
 
     let responses = server
