@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use serde_json::{Map, Value, json};
 use uwumail_store::{Mailbox, MailboxRole, MailboxUpdate, StoreError};
 
-use super::{Ctx, SetResponse, check_set_size, get_ids, if_in_state, pick, properties};
+use super::{Ctx, SetResponse, check_set_size, get_ids, if_in_state, pick, properties, query_response};
 use crate::error::{MethodError, MethodResult, SetError};
 use crate::{ids, sharing};
 
@@ -111,62 +111,214 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     Ok(json!({ "accountId": ctx.account_id(), "state": state, "list": list, "notFound": not_found }))
 }
 
+/// A Mailbox/query filter (RFC 8621, section 2.3): conditions, or operators over them.
+enum MailboxFilter {
+    And(Vec<MailboxFilter>),
+    Or(Vec<MailboxFilter>),
+    Not(Vec<MailboxFilter>),
+    /// All of these must hold (the properties of one FilterCondition).
+    Condition(Vec<MailboxCondition>),
+}
+
+enum MailboxCondition {
+    ParentId(Option<i64>),
+    Name(String),
+    Role(Option<MailboxRole>),
+    HasAnyRole(bool),
+    IsSubscribed(bool),
+}
+
+fn parse_mailbox_filter(ctx: &Ctx<'_>, value: &Value) -> MethodResult<MailboxFilter> {
+    let unsupported = |description: String| MethodError::new("unsupportedFilter", description);
+    let object = value.as_object().ok_or_else(|| unsupported("a filter is an object".into()))?;
+    if let Some(operator) = object.get("operator") {
+        let conditions = object
+            .get("conditions")
+            .and_then(Value::as_array)
+            .ok_or_else(|| unsupported("an operator needs conditions".into()))?
+            .iter()
+            .map(|condition| parse_mailbox_filter(ctx, condition))
+            .collect::<MethodResult<Vec<_>>>()?;
+        return match operator.as_str() {
+            Some("AND") => Ok(MailboxFilter::And(conditions)),
+            Some("OR") => Ok(MailboxFilter::Or(conditions)),
+            Some("NOT") => Ok(MailboxFilter::Not(conditions)),
+            _ => Err(unsupported("operator must be AND, OR or NOT".into())),
+        };
+    }
+    let boolean =
+        |key: &str, value: &Value| value.as_bool().ok_or_else(|| unsupported(format!("{key} must be true or false")));
+    let mut conditions = Vec::new();
+    for (key, value) in object {
+        conditions.push(match key.as_str() {
+            // An id that is no mailbox matches nothing.
+            "parentId" => MailboxCondition::ParentId(match value {
+                Value::Null => None,
+                Value::String(id) => Some(ctx.parse_id('m', id).unwrap_or(-1)),
+                _ => return Err(unsupported("parentId must be a mailbox id or null".into())),
+            }),
+            "name" => MailboxCondition::Name(
+                value.as_str().ok_or_else(|| unsupported("name must be a string".into()))?.to_lowercase(),
+            ),
+            "role" => MailboxCondition::Role(match value {
+                Value::Null => None,
+                Value::String(role) => match MailboxRole::parse(&role.to_lowercase()) {
+                    Some(role) => Some(role),
+                    // A role this server does not know is on no mailbox.
+                    None => return Ok(MailboxFilter::Or(Vec::new())),
+                },
+                _ => return Err(unsupported("role must be a string or null".into())),
+            }),
+            "hasAnyRole" => MailboxCondition::HasAnyRole(boolean(key, value)?),
+            "isSubscribed" => MailboxCondition::IsSubscribed(boolean(key, value)?),
+            other => return Err(unsupported(format!("unknown filter {other}"))),
+        });
+    }
+    Ok(MailboxFilter::Condition(conditions))
+}
+
+fn mailbox_matches(ctx: &Ctx<'_>, mailbox: &Mailbox, filter: &MailboxFilter) -> bool {
+    match filter {
+        MailboxFilter::And(list) => list.iter().all(|f| mailbox_matches(ctx, mailbox, f)),
+        MailboxFilter::Or(list) => list.iter().any(|f| mailbox_matches(ctx, mailbox, f)),
+        MailboxFilter::Not(list) => !list.iter().any(|f| mailbox_matches(ctx, mailbox, f)),
+        MailboxFilter::Condition(conditions) => conditions.iter().all(|condition| match condition {
+            MailboxCondition::ParentId(parent) => {
+                let visible = |id: i64| ctx.shared.as_ref().is_none_or(|view| view.visible(id));
+                mailbox.parent_id.filter(|p| visible(*p)) == *parent
+            }
+            MailboxCondition::Name(needle) => mailbox.name.to_lowercase().contains(needle.as_str()),
+            MailboxCondition::Role(role) => mailbox.role == *role,
+            MailboxCondition::HasAnyRole(wanted) => mailbox.role.is_some() == *wanted,
+            // Someone else's folders are always subscribed, as in Mailbox/get.
+            MailboxCondition::IsSubscribed(wanted) => (mailbox.subscribed || ctx.shared.is_some()) == *wanted,
+        }),
+    }
+}
+
+/// Sorts by the comparators, in order; `name` compares without case.
+fn sort_mailboxes(mailboxes: &mut [Mailbox], sort: &[(bool, bool)]) {
+    mailboxes.sort_by(|a, b| {
+        for &(by_name, ascending) in sort {
+            let order = if by_name {
+                a.name.to_lowercase().cmp(&b.name.to_lowercase())
+            } else {
+                a.sort_order.cmp(&b.sort_order)
+            };
+            let order = if ascending { order } else { order.reverse() };
+            if order.is_ne() {
+                return order;
+            }
+        }
+        std::cmp::Ordering::Equal
+    });
+}
+
+/// The largest page a Mailbox/query answers with.
+const MAX_MAILBOX_QUERY_LIMIT: usize = 10_000;
+
 pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let state = ctx.state().await?;
-    let mut mailboxes = visible_mailboxes(ctx).await?;
-    if let Some(filter) = args.get("filter").filter(|f| !f.is_null()) {
-        let filter = filter
-            .as_object()
-            .ok_or_else(|| MethodError::new("unsupportedFilter", "only simple filters are supported"))?;
-        for (key, value) in filter {
-            match key.as_str() {
-                "parentId" => {
-                    let parent = value.as_str().and_then(|v| ctx.parse_id('m', v));
-                    let visible = |id: i64| ctx.shared.as_ref().is_none_or(|view| view.visible(id));
-                    mailboxes.retain(|m| m.parent_id.filter(|p| visible(*p)) == parent);
-                }
-                "name" => {
-                    let needle = value.as_str().unwrap_or_default().to_lowercase();
-                    mailboxes.retain(|m| m.name.to_lowercase().contains(&needle));
-                }
-                "role" => {
-                    let role = value.as_str().and_then(MailboxRole::parse);
-                    mailboxes.retain(|m| m.role == role);
-                }
-                "hasAnyRole" => {
-                    let wanted = value.as_bool().unwrap_or(false);
-                    mailboxes.retain(|m| m.role.is_some() == wanted);
-                }
-                "isSubscribed" => {
-                    let wanted = value.as_bool().unwrap_or(false);
-                    mailboxes.retain(|m| m.subscribed == wanted);
-                }
-                other => return Err(MethodError::new("unsupportedFilter", format!("unknown filter {other}"))),
-            }
-        }
-    }
-    if let Some(sort) = args.get("sort").and_then(Value::as_array) {
-        for comparator in sort.iter().rev() {
+    let mut all = visible_mailboxes(ctx).await?;
+    let filter = args.get("filter").filter(|f| !f.is_null()).map(|f| parse_mailbox_filter(ctx, f)).transpose()?;
+    let mut sort = Vec::new();
+    if let Some(list) = args.get("sort").filter(|s| !s.is_null()) {
+        let list = list.as_array().ok_or_else(|| MethodError::invalid_arguments("sort must be a list"))?;
+        for comparator in list {
             let ascending = comparator.get("isAscending").and_then(Value::as_bool).unwrap_or(true);
-            match comparator.get("property").and_then(Value::as_str) {
-                Some("name") => mailboxes.sort_by_key(|m| m.name.to_lowercase()),
-                Some("sortOrder") => mailboxes.sort_by_key(|m| m.sort_order),
-                _ => return Err(MethodError::kind("unsupportedSort")),
-            }
-            if !ascending {
-                mailboxes.reverse();
-            }
+            let by_name = match comparator.get("property").and_then(Value::as_str) {
+                Some("name") => true,
+                Some("sortOrder") => false,
+                other => return Err(MethodError::new("unsupportedSort", format!("cannot sort by {other:?}"))),
+            };
+            sort.push((by_name, ascending));
         }
     }
-    let ids: Vec<String> = mailboxes.iter().map(|m| ids::mailbox(m.id)).collect();
-    Ok(json!({
-        "accountId": ctx.account_id(),
-        "queryState": state,
-        "canCalculateChanges": false,
-        "position": 0,
-        "total": ids.len(),
-        "ids": ids,
-    }))
+    let flag = |key: &str| args.get(key).and_then(Value::as_bool).unwrap_or(false);
+    sort_mailboxes(&mut all, &sort);
+
+    let visible: HashMap<i64, &Mailbox> = all.iter().map(|m| (m.id, m)).collect();
+    let parent_of = |mailbox: &Mailbox| mailbox.parent_id.filter(|parent| visible.contains_key(parent));
+    let matches = |mailbox: &Mailbox| filter.as_ref().is_none_or(|filter| mailbox_matches(ctx, mailbox, filter));
+    let mut results: Vec<&Mailbox> = all.iter().filter(|m| matches(m)).collect();
+    if flag("filterAsTree") {
+        // Only mailboxes whose ancestors all match too.
+        results.retain(|mailbox| {
+            let mut parent = parent_of(mailbox);
+            let mut depth = 0;
+            while let Some(id) = parent {
+                let Some(ancestor) = visible.get(&id) else { break };
+                if !matches(ancestor) || depth > visible.len() {
+                    return false;
+                }
+                parent = parent_of(ancestor);
+                depth += 1;
+            }
+            true
+        });
+    }
+    if flag("sortAsTree") {
+        // Parents before their children; siblings in the order of the comparators.
+        let mut children: HashMap<Option<i64>, Vec<i64>> = HashMap::new();
+        for mailbox in &all {
+            children.entry(parent_of(mailbox)).or_default().push(mailbox.id);
+        }
+        let mut place: HashMap<i64, usize> = HashMap::new();
+        let mut stack: Vec<i64> =
+            children.get(&None).map(|roots| roots.iter().rev().copied().collect()).unwrap_or_default();
+        while let Some(id) = stack.pop() {
+            if place.contains_key(&id) {
+                continue;
+            }
+            place.insert(id, place.len());
+            if let Some(list) = children.get(&Some(id)) {
+                stack.extend(list.iter().rev());
+            }
+        }
+        results.sort_by_key(|mailbox| place.get(&mailbox.id).copied().unwrap_or(usize::MAX));
+    }
+    let ids: Vec<String> = results.iter().map(|m| ids::mailbox(m.id)).collect();
+    query_response(ctx, args, state, ids, MAX_MAILBOX_QUERY_LIMIT)
+}
+
+/// Properties only the server sets. A client may send them back (a whole object from Mailbox/get,
+/// say) as long as they keep their values (RFC 8620, section 5.3).
+const SERVER_SET: &[&str] = &["id", "totalEmails", "unreadEmails", "totalThreads", "unreadThreads", "myRights"];
+
+fn is_server_set(key: &str) -> bool {
+    SERVER_SET.contains(&key) || key.starts_with("myRights/")
+}
+
+/// The server-set properties of `object` whose values differ from `current`, as paths
+/// (`myRights/mayDelete` for a single right).
+fn changed_server_set(object: &Map<String, Value>, current: &Map<String, Value>) -> Vec<String> {
+    let mut changed = Vec::new();
+    for (key, value) in object {
+        if let Some(right) = key.strip_prefix("myRights/") {
+            if current.get("myRights").and_then(|rights| rights.get(right)) != Some(value) {
+                changed.push(key.clone());
+            }
+        } else if key == "myRights" {
+            let now = current.get("myRights").and_then(Value::as_object);
+            match (value.as_object(), now) {
+                (Some(given), Some(now)) => {
+                    let keys: std::collections::BTreeSet<&String> = given.keys().chain(now.keys()).collect();
+                    changed.extend(
+                        keys.into_iter().filter(|k| given.get(*k) != now.get(*k)).map(|k| format!("myRights/{k}")),
+                    );
+                }
+                _ => changed.push(key.clone()),
+            }
+        } else if SERVER_SET.contains(&key.as_str()) && current.get(key) != Some(value) {
+            changed.push(key.clone());
+        }
+    }
+    changed
+}
+
+fn server_set_error(changed: Vec<String>) -> SetError {
+    let properties: Vec<&str> = changed.iter().map(String::as_str).collect();
+    SetError::invalid_properties(&properties, "these properties are set by the server")
 }
 
 fn parent(ctx: &Ctx<'_>, value: &Value) -> Result<Option<i64>, SetError> {
@@ -215,7 +367,24 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
             ordered.push(pending.remove(ready));
         }
         for (creation_id, object) in ordered {
+            // What the server gives a new mailbox; a client may only send the same.
+            let my_rights = match &ctx.shared {
+                None => rights(true),
+                // A new folder is shared like its parent.
+                Some(view) => {
+                    let parent = object.get("parentId").and_then(Value::as_str).and_then(|p| ctx.parse_id('m', p));
+                    sharing::rights_json(parent.map_or("", |parent| view.rights_of(parent)), false, false)
+                }
+            };
             let result: Result<i64, SetError> = async {
+                let fresh = json!({ "totalEmails": 0, "unreadEmails": 0, "totalThreads": 0, "unreadThreads": 0,
+                                     "myRights": my_rights });
+                let given =
+                    object.as_object().ok_or_else(|| SetError::new("invalidProperties", "a mailbox is an object"))?;
+                let changed = changed_server_set(given, fresh.as_object().expect("an object literal"));
+                if !changed.is_empty() {
+                    return Err(server_set_error(changed));
+                }
                 let name = object
                     .get("name")
                     .and_then(Value::as_str)
@@ -245,15 +414,6 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                 Ok(id) => {
                     let jmap_id = ids::mailbox(id);
                     ctx.created_ids.insert(creation_id.clone(), jmap_id.clone());
-                    let my_rights = match &ctx.shared {
-                        None => rights(true),
-                        // A new folder is shared like its parent.
-                        Some(view) => {
-                            let parent =
-                                object.get("parentId").and_then(Value::as_str).and_then(|p| ctx.parse_id('m', p));
-                            sharing::rights_json(parent.map_or("", |parent| view.rights_of(parent)), false, false)
-                        }
-                    };
                     response.created.insert(
                         creation_id.clone(),
                         json!({ "id": jmap_id, "totalEmails": 0, "unreadEmails": 0, "totalThreads": 0,
@@ -268,6 +428,7 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
     }
 
     if let Some(update) = args.get("update").and_then(Value::as_object) {
+        let current = visible_mailboxes(ctx).await?;
         for (id, patch) in update {
             let result: Result<(), SetError> = async {
                 let mailbox_id = ctx.parse_id('m', id).ok_or_else(SetError::not_found)?;
@@ -276,10 +437,20 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                 if ctx.shared.as_ref().is_some_and(|view| !view.visible(mailbox_id)) {
                     return Err(SetError::not_found());
                 }
+                let Some(mailbox) = current.iter().find(|m| m.id == mailbox_id) else {
+                    return Err(SetError::not_found());
+                };
+                let changed = changed_server_set(patch, &to_json(ctx, mailbox, &HashMap::new()));
+                if !changed.is_empty() {
+                    return Err(server_set_error(changed));
+                }
                 let mut changes = MailboxUpdate::default();
                 let mut share_with: Option<Value> = None;
                 let mut share_patch: Vec<(String, Value)> = Vec::new();
                 for (key, value) in patch {
+                    if is_server_set(key) {
+                        continue;
+                    }
                     if key == "shareWith" {
                         share_with = Some(value.clone());
                         continue;
