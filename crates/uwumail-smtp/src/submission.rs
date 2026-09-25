@@ -120,8 +120,26 @@ impl Smtp {
     /// Checks the sender, completes and signs the message, delivers to local recipients and
     /// queues the rest. Failed local deliveries are bounced to the sender.
     pub async fn submit(&self, submission: Submission) -> Result<Submitted, SubmitError> {
-        let ctx = &self.inner;
+        self.check_submission(&submission).await?;
         let Submission { account, mail_from, recipients, raw, env_id, trace } = submission;
+        let raw = headers::normalize_line_endings(&raw);
+        let (from, _) = claimed_addresses(&raw)?;
+        // Our own people send viruses too, mostly without knowing. Turning one away here keeps it
+        // out of other people's mailboxes and our name off their scanner's report.
+        if let clamav::Checked::Found(name) = clamav::check(&self.inner.live().spam.antivirus, &raw).await {
+            tracing::info!(login = %account.login, virus = %name, "refused to send, the virus scanner found something");
+            return Err(SubmitError::Virus(name));
+        }
+        self.submit_checked(account, mail_from, recipients, raw, env_id, trace, from).await
+    }
+
+    /// The checks [`Smtp::submit`] makes before it touches the message: may this account send at
+    /// all, as this sender, to this many recipients, this much? For sending that is held back
+    /// (JMAP's undo window and send later), so a message that could never go is refused at once and
+    /// not only when its time comes. `submit` checks everything again.
+    pub async fn check_submission(&self, submission: &Submission) -> Result<(), SubmitError> {
+        let ctx = &self.inner;
+        let Submission { account, mail_from, recipients, raw, .. } = submission;
         if recipients.is_empty() {
             return Err(SubmitError::NoRecipients);
         }
@@ -140,10 +158,10 @@ impl Smtp {
         if raw.len() > live.smtp.max_message_size {
             return Err(SubmitError::TooLarge);
         }
-        if mail_from.is_empty() || !ctx.store.account_owns_address(account.id, &mail_from).await.unwrap_or(false) {
-            return Err(SubmitError::ForbiddenFrom(mail_from));
+        if mail_from.is_empty() || !ctx.store.account_owns_address(account.id, mail_from).await.unwrap_or(false) {
+            return Err(SubmitError::ForbiddenFrom(mail_from.clone()));
         }
-        let raw = headers::normalize_line_endings(&raw);
+        let raw = headers::normalize_line_endings(raw);
         let (from, sender) = claimed_addresses(&raw)?;
         // Every address the message shows as its author or submitter must belong to this account,
         // so a login cannot send mail that displays as someone else.
@@ -152,12 +170,26 @@ impl Smtp {
                 return Err(SubmitError::ForbiddenFrom(address.clone()));
             }
         }
-        // Our own people send viruses too, mostly without knowing. Turning one away here keeps it
-        // out of other people's mailboxes and our name off their scanner's report.
-        if let clamav::Checked::Found(name) = clamav::check(&self.inner.live().spam.antivirus, &raw).await {
-            tracing::info!(login = %account.login, virus = %name, "refused to send, the virus scanner found something");
-            return Err(SubmitError::Virus(name));
+        for recipient in recipients {
+            if uwumail_store::normalize_address(&recipient.address).is_err() {
+                return Err(SubmitError::InvalidRecipient(recipient.address.clone()));
+            }
         }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn submit_checked(
+        &self,
+        account: Account,
+        mail_from: String,
+        recipients: Vec<SubmissionRecipient>,
+        raw: Vec<u8>,
+        env_id: Option<String>,
+        trace: Option<String>,
+        from: Vec<String>,
+    ) -> Result<Submitted, SubmitError> {
+        let ctx = &self.inner;
         let from_domain = from[0].rsplit_once('@').map(|(_, d)| d.to_ascii_lowercase()).unwrap_or_default();
         let id = random_id();
 

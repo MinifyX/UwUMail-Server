@@ -9,7 +9,7 @@ use uwumail_store::Account;
 
 use crate::auth::ClientInfo;
 use crate::{
-    Jmap, MAX_CALLS_IN_REQUEST, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, MAX_REQUEST_BYTES, MAX_UPLOAD_BYTES, ids, jscal,
+    Jmap, MAX_CALLS_IN_REQUEST, MAX_DELAYED_SEND_SECS, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, MAX_REQUEST_BYTES, MAX_UPLOAD_BYTES, ids, jscal,
 };
 
 pub const CORE: &str = "urn:ietf:params:jmap:core";
@@ -118,7 +118,16 @@ pub fn document(account: &Account, base: &str) -> Value {
                         "emailQuerySortOptions": ["receivedAt", "sentAt", "size", "from", "to", "subject", "hasKeyword", "allInThreadHaveKeyword", "someInThreadHaveKeyword"],
                         "mayCreateTopLevelMailbox": true
                     },
-                    SUBMISSION: { "maxDelayedSend": 0, "submissionExtensions": {} },
+                    SUBMISSION: {
+                        "maxDelayedSend": MAX_DELAYED_SEND_SECS,
+                        // RFC 4865: the longest hold in seconds, and the latest date it may reach.
+                        "submissionExtensions": {
+                            "FUTURERELEASE": [
+                                MAX_DELAYED_SEND_SECS.to_string(),
+                                crate::dates::format(crate::methods::unix_now() + MAX_DELAYED_SEND_SECS)
+                            ]
+                        }
+                    },
                     VACATION: {},
                     SENDERS: { "maxEntries": uwumail_store::SENDER_LIST_PERSONAL_LIMIT },
                     SETTINGS: {

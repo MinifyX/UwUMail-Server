@@ -43,6 +43,8 @@ pub struct SubmissionRecord {
     pub envelope: String,
     pub send_at: i64,
     pub undo_status: String,
+    /// Why a held message could not be sent when its time came.
+    pub release_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
@@ -289,7 +291,7 @@ impl Store {
         let ids_json = ids.map(|ids| serde_json::to_string(&ids).unwrap_or_else(|_| "[]".into()));
         self.read(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, identity_id, email_id, thread_id, envelope, send_at, undo_status FROM email_submissions
+                "SELECT id, identity_id, email_id, thread_id, envelope, send_at, undo_status, release_error FROM email_submissions
                  WHERE account_id = ?1 AND (?2 IS NULL OR id IN (SELECT value FROM json_each(?2)))
                  ORDER BY send_at DESC, id DESC",
             )?;
@@ -302,6 +304,7 @@ impl Store {
                     envelope: row.get(4)?,
                     send_at: row.get(5)?,
                     undo_status: row.get(6)?,
+                    release_error: row.get(7)?,
                 })
             })?;
             Ok(rows.collect::<Result<_, _>>()?)

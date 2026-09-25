@@ -36,6 +36,8 @@ const PREFERENCES: &[(&str, &[&str])] = &[
     ("mailRemoteImages", &["ask", "always"]),
     ("mailAppearance", &["auto", "light", "dark"]),
     ("mailSenderPictures", &["on", "off"]),
+    // Seconds a message waits before it goes, so it can be taken back; the server applies it.
+    ("mailUndoSend", &["0", "5", "10", "20", "30"]),
     ("mailSwipeRight", &["read", "archive", "trash", "flag", "spam", "none"]),
     ("mailSwipeLeft", &["read", "archive", "trash", "flag", "spam", "none"]),
 ];

@@ -28,6 +28,7 @@ mod jscontact;
 mod methods;
 mod push;
 mod remote;
+mod scheduled;
 pub mod safe_html;
 mod session;
 mod token;
@@ -59,6 +60,8 @@ pub const MAX_REQUEST_BYTES: usize = 10 * 1024 * 1024;
 pub const MAX_CALLS_IN_REQUEST: usize = 64;
 pub const MAX_OBJECTS_IN_GET: usize = 500;
 pub const MAX_OBJECTS_IN_SET: usize = 500;
+/// The furthest ahead a message may be scheduled with EmailSubmission: 30 days (`maxDelayedSend`).
+pub const MAX_DELAYED_SEND_SECS: i64 = 30 * 24 * 3600;
 
 #[derive(Clone)]
 pub struct Jmap {
@@ -75,6 +78,8 @@ pub(crate) struct Inner {
     pub pictures: Arc<SenderPictures>,
     /// How a person hears of an app password created at `/jmap/token`.
     pub notice: Option<AppPasswordNotice>,
+    /// Wakes the sender of held submissions when one was added.
+    pub wake: tokio::sync::Notify,
 }
 
 impl Jmap {
@@ -90,7 +95,7 @@ impl Jmap {
         auth.watch_webmail(webmail);
         let egress = Egress::direct();
         let pictures = Arc::new(SenderPictures::new(egress.clone()));
-        Jmap { inner: Arc::new(Inner { auth, store, smtp, egress, pictures, notice: None }) }
+        Jmap { inner: Arc::new(Inner { auth, store, smtp, egress, pictures, notice: None, wake: tokio::sync::Notify::new() }) }
     }
 
     /// Remote pictures and sender pictures leave through `egress` instead of straight from the server.

@@ -23,6 +23,7 @@ mod fetch;
 mod forward_addresses;
 mod forwarding;
 mod greylist_hold;
+mod held;
 pub mod ical;
 mod imap;
 mod import;
@@ -78,6 +79,7 @@ pub use fetch::{
 };
 pub use forward_addresses::{FORWARD_ADDRESS_MAX_TARGETS, ForwardAddress};
 pub use forwarding::{ActiveForwarding, FORWARD_LINK_LIFETIME_SECS, ForwardTarget, Forwarding, MAX_FORWARD_TARGETS};
+pub use held::{HeldSubmission, NewHeldSubmission};
 pub use greylist_hold::{GreylistHold, GreylistHoldMessage, MAX_HELD_SIZE, NewGreylistHold, Returning, Settled};
 pub use imap::{DELETED_KEYWORD, FlagChange, ImapEmail, ImapMailbox, ImapMessage, ImapMessages, ImapStatus};
 pub use import::ImportProgress;
@@ -119,7 +121,7 @@ pub use spam_log::{
     SpamLogRecipient,
 };
 pub use user_settings::{
-    SettingProblem, SettingsChange, USER_SETTINGS_MAX_KEYS, USER_SETTINGS_MAX_SIZE, USER_SETTINGS_MAX_VALUE_SIZE,
+    DEFAULT_UNDO_SEND_SECONDS, SettingProblem, SettingsChange, USER_SETTINGS_MAX_KEYS, USER_SETTINGS_MAX_SIZE, USER_SETTINGS_MAX_VALUE_SIZE,
     UserSettings, validate_setting,
 };
 pub use web::{NewWebSession, ServerCounts, WebSession};
