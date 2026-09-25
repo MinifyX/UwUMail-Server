@@ -82,7 +82,8 @@ async fn requests_and_push_over_a_websocket() {
     assert!(response["sessionState"].is_string());
 
     // A broken request is a RequestError with the id.
-    send(&mut socket, json!({ "@type": "Request", "id": "r2", "using": ["urn:example:nope"], "methodCalls": [] })).await;
+    send(&mut socket, json!({ "@type": "Request", "id": "r2", "using": ["urn:example:nope"], "methodCalls": [] }))
+        .await;
     let error = receive(&mut socket).await;
     assert_eq!(error["@type"], "RequestError");
     assert_eq!(error["requestId"], "r2");
@@ -105,12 +106,18 @@ async fn requests_and_push_over_a_websocket() {
 
     // Switched off, nothing comes; a request still works and is the next message.
     send(&mut socket, json!({ "@type": "WebSocketPushDisable" })).await;
-    send(&mut socket, json!({ "@type": "Request", "id": "r3", "using": USING, "methodCalls": [["Core/echo", {}, "e"]] }))
-        .await;
+    send(
+        &mut socket,
+        json!({ "@type": "Request", "id": "r3", "using": USING, "methodCalls": [["Core/echo", {}, "e"]] }),
+    )
+    .await;
     assert_eq!(receive(&mut socket).await["requestId"], "r3");
     server.deliver("mini@example.org", "From: nyu@example.org\nTo: mini@example.org\nSubject: Two\n\nPurr\n").await;
-    send(&mut socket, json!({ "@type": "Request", "id": "r4", "using": USING, "methodCalls": [["Core/echo", {}, "e"]] }))
-        .await;
+    send(
+        &mut socket,
+        json!({ "@type": "Request", "id": "r4", "using": USING, "methodCalls": [["Core/echo", {}, "e"]] }),
+    )
+    .await;
     assert_eq!(receive(&mut socket).await["requestId"], "r4", "no push while it is disabled");
 
     // Enabling again with the last pushState catches up at once.

@@ -53,7 +53,8 @@ async fn subjects_for_nyu(server: &common::Server) -> Vec<String> {
 
 async fn submission(server: &common::Server, id: &str) -> Value {
     let account = server.account_id(MINI).await;
-    let responses = server.api(MINI, json!([["EmailSubmission/get", { "accountId": account, "ids": [id] }, "0"]])).await;
+    let responses =
+        server.api(MINI, json!([["EmailSubmission/get", { "accountId": account, "ids": [id] }, "0"]])).await;
     args(&responses, 0, "EmailSubmission/get")["list"][0].clone()
 }
 
@@ -61,15 +62,17 @@ async fn submission(server: &common::Server, id: &str) -> Value {
 async fn the_undo_window_holds_every_submission_and_cancelling_stops_it() {
     let server = server().await;
     let account = server.account_id(MINI).await;
-    let (_, body) = server.request(
-        axum::http::Request::get("/jmap/session")
-            .header("authorization", common::basic(MINI, common::PASSWORD))
-            .body(axum::body::Body::empty())
-            .unwrap(),
-    )
-    .await;
+    let (_, body) = server
+        .request(
+            axum::http::Request::get("/jmap/session")
+                .header("authorization", common::basic(MINI, common::PASSWORD))
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await;
     let session: Value = serde_json::from_slice(&body).unwrap();
-    let submission_capability = &session["accounts"][&account]["accountCapabilities"]["urn:ietf:params:jmap:submission"];
+    let submission_capability =
+        &session["accounts"][&account]["accountCapabilities"]["urn:ietf:params:jmap:submission"];
     assert_eq!(submission_capability["maxDelayedSend"], 2_592_000);
     assert_eq!(submission_capability["submissionExtensions"]["FUTURERELEASE"][0], "2592000");
 

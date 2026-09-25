@@ -58,7 +58,10 @@ async fn suggestions_come_from_the_address_book_and_recent_mail() {
     // Heard from, several times, and in the junk mailbox (never suggested).
     for n in 0..3 {
         server
-            .deliver(MINI, &format!("From: Karla Kater <karla@cats.example>\nTo: mini@example.org\nSubject: {n}\n\nMiau\n"))
+            .deliver(
+                MINI,
+                &format!("From: Karla Kater <karla@cats.example>\nTo: mini@example.org\nSubject: {n}\n\nMiau\n"),
+            )
             .await;
     }
     // Written to: a message in Sent.
@@ -103,7 +106,8 @@ async fn suggestions_come_from_the_address_book_and_recent_mail() {
     assert!(emails(&suggest(&server, "kevin", None).await).is_empty(), "junk is not a source");
 
     // The capability has to be asked for, and the arguments are checked.
-    let responses = server.api(MINI, json!([["AddressSuggestion/query", { "accountId": account, "text": "k" }, "0"]])).await;
+    let responses =
+        server.api(MINI, json!([["AddressSuggestion/query", { "accountId": account, "text": "k" }, "0"]])).await;
     assert_eq!(responses[0][1]["type"], "unknownMethod");
     let responses = server
         .api_using(MINI, &USING, json!([["AddressSuggestion/query", { "accountId": account, "limit": 0 }, "0"]]))

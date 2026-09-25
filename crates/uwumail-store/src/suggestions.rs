@@ -48,11 +48,7 @@ impl Store {
             let mut uses = Vec::new();
             for row in rows {
                 let (at, from, to, cc, bcc, sent) = row?;
-                let addresses = if sent {
-                    [parse(&to), parse(&cc), parse(&bcc)].concat()
-                } else {
-                    parse(&from)
-                };
+                let addresses = if sent { [parse(&to), parse(&cc), parse(&bcc)].concat() } else { parse(&from) };
                 uses.extend(addresses.into_iter().map(|address| AddressUse { address, sent, at }));
             }
             Ok(uses)

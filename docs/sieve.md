@@ -124,8 +124,8 @@ The capability in the session is `{"implementation": "UwUMail Server"}`; the acc
 ```
 
 Methods: `SieveScript/get`, `/changes`, `/set`, `/query` (filter `name`, `isActive`, with `AND`,
-`OR`, `NOT`; sort by `name` and `isActive`), `/validate`. `/queryChanges` answers
-`cannotCalculateChanges`. Push reports `SieveScript`.
+`OR`, `NOT`; sort by `name` and `isActive`), `/queryChanges`, `/validate`. Push reports
+`SieveScript`.
 
 The content goes through the normal upload (`POST /jmap/upload/{accountId}/` with
 `Content-Type: application/sieve`) and is named by its `blobId` in `SieveScript/set` and

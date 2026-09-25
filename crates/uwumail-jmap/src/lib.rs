@@ -28,8 +28,8 @@ mod jscontact;
 mod methods;
 mod push;
 mod remote;
-mod scheduled;
 pub mod safe_html;
+mod scheduled;
 mod session;
 mod token;
 mod ws;
@@ -95,7 +95,17 @@ impl Jmap {
         auth.watch_webmail(webmail);
         let egress = Egress::direct();
         let pictures = Arc::new(SenderPictures::new(egress.clone()));
-        Jmap { inner: Arc::new(Inner { auth, store, smtp, egress, pictures, notice: None, wake: tokio::sync::Notify::new() }) }
+        Jmap {
+            inner: Arc::new(Inner {
+                auth,
+                store,
+                smtp,
+                egress,
+                pictures,
+                notice: None,
+                wake: tokio::sync::Notify::new(),
+            }),
+        }
     }
 
     /// Remote pictures and sender pictures leave through `egress` instead of straight from the server.

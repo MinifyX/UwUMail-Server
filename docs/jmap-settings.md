@@ -2,7 +2,7 @@
 
 UwUMail Server keeps one settings document per account, so the webmail and the
 UwUMail apps on every device show the same choices: theme, tone, trusted
-senders, signatures and so on. Theme, tone, language and four of the
+senders, signatures and so on. Theme, tone, language and five of the
 webmail's mail choices are the same values the portal stores as preferences;
 a change in the portal shows up here, and a change here shows up in the
 portal.
@@ -129,7 +129,7 @@ is handed to the others.
 | `remoteImages` | `"ask"` or `"always"` |
 | `mailAppearance` | `"auto"`, `"light"` or `"dark"` |
 | `senderPictures` | `true` or `false` |
-| `undoSendSeconds` | `0`, `5`, `10`, `20` or `30` |
+| `undoSendSeconds` | `0`, `5`, `10`, `20` or `30`: how long a submission waits before it goes; the server applies it ([jmap-sending.md](jmap-sending.md)), 10 when not set |
 | `linkConfirm` | `true` or `false`: ask before opening links from mails |
 | `darkImages` | `true` or `false`: recolor light images when a mail is darkened |
 | `trustedSenders:<entry>` | `true`; `<entry>` is a lower-case address `a@b.c` or `@domain`, at most 254 characters |
@@ -160,6 +160,7 @@ where the two booleans are spelled `"on"`/`"off"`:
 | `remoteImages` | `mailRemoteImages` |
 | `mailAppearance` | `mailAppearance` |
 | `senderPictures` | `mailSenderPictures` |
+| `undoSendSeconds` | `mailUndoSend`, the number as a string (`"10"`) |
 
 Portal preferences that only concern one device (`motion`, `mailDensity`,
 `mailSwipeLeft`, `mailSwipeRight`, `mode`) are not part of the settings and

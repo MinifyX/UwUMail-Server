@@ -166,7 +166,9 @@ Sort by `created`, `updated`, `name/given`, `name/surname` or
 RFC 8620. A query that spends more than five seconds reading cards stops with
 `serverUnavailable`.
 
-`ContactCard/queryChanges` answers `cannotCalculateChanges`.
+`ContactCard/queryChanges` works as in RFC 8620 (`canCalculateChanges` is
+`true`): every card that changed since `sinceQueryState` is in `removed`, and
+those that match now are in `added` at their place.
 
 ### ContactCard/changes
 
@@ -182,8 +184,7 @@ mail and calendar types.
 
 - Sharing and principals (`shareWith`, `urn:ietf:params:jmap:principals`)
 - More than one address book per card
-- `ContactCard/copy` (there is one account per login) and
-  `ContactCard/queryChanges`
+- `ContactCard/copy` (there is one account per login)
 - Pictures as blobs: `media` with `blobId`, and `ContactCard/parse`
 
 ## Security

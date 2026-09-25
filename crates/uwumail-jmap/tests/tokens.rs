@@ -171,7 +171,10 @@ async fn the_token_endpoint_asks_for_the_second_factor() {
     assert_eq!(status, StatusCode::CREATED, "{body}");
     // The account password itself no longer opens JMAP for mail apps, the token does.
     let calls = json!([["Core/echo", {}, "0"]]);
-    assert_eq!(server.api_as(&basic("nyu@example.org", PASSWORD), &USING, calls.clone()).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        server.api_as(&basic("nyu@example.org", PASSWORD), &USING, calls.clone()).await.0,
+        StatusCode::UNAUTHORIZED
+    );
     assert_eq!(server.api_as(&bearer(body["token"].as_str().unwrap()), &USING, calls).await.0, StatusCode::OK);
 
     // A request with unknown fields or without a name is refused without counting as a login.

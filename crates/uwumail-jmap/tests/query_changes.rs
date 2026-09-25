@@ -66,7 +66,9 @@ async fn email_query_changes_replay_to_the_new_results() {
 
         // A new mail, a reply in an old thread, a flag, one deleted, one moved out of the inbox.
         server.deliver(MINI, &message(&format!("New {collapse}"), &format!("new-{collapse}@example.org"), None)).await;
-        server.deliver(MINI, &message("Re: One", &format!("re-one-{collapse}@example.org"), Some("one@example.org"))).await;
+        server
+            .deliver(MINI, &message("Re: One", &format!("re-one-{collapse}@example.org"), Some("one@example.org")))
+            .await;
         let archive = server.mailbox(MINI, "archive").await;
         let current = query(&server, "Email/query", arguments.clone()).await.0;
         let victim = current.iter().find(|id| **id != first && **id != second).unwrap().clone();
@@ -108,9 +110,11 @@ async fn email_query_changes_replay_to_the_new_results() {
     )
     .await;
     assert_eq!(result["type"], "tooManyChanges", "{result}");
-    let result = changes(&server, "Email/queryChanges", json!({ "accountId": account, "sinceQueryState": "nope" })).await;
+    let result =
+        changes(&server, "Email/queryChanges", json!({ "accountId": account, "sinceQueryState": "nope" })).await;
     assert_eq!(result["type"], "cannotCalculateChanges");
-    let result = changes(&server, "Email/queryChanges", json!({ "accountId": account, "sinceQueryState": "999999" })).await;
+    let result =
+        changes(&server, "Email/queryChanges", json!({ "accountId": account, "sinceQueryState": "999999" })).await;
     assert_eq!(result["type"], "cannotCalculateChanges");
 }
 
@@ -154,13 +158,16 @@ async fn email_copy_follows_the_rfc_for_accounts_it_cannot_read() {
     let email = server.deliver("nyu@example.org", &message("Hers", "hers@example.org", None)).await;
     let create = json!({ "c": { "id": email, "mailboxIds": { inbox: true } } });
 
-    let result = changes(&server, "Email/copy", json!({ "accountId": account, "fromAccountId": nyu, "create": create })).await;
+    let result =
+        changes(&server, "Email/copy", json!({ "accountId": account, "fromAccountId": nyu, "create": create })).await;
     assert_eq!(result["type"], "fromAccountNotFound", "another person's mail is not readable");
     let result =
-        changes(&server, "Email/copy", json!({ "accountId": account, "fromAccountId": account, "create": create })).await;
+        changes(&server, "Email/copy", json!({ "accountId": account, "fromAccountId": account, "create": create }))
+            .await;
     assert_eq!(result["type"], "invalidArguments", "copying needs two accounts");
     let result = changes(&server, "Email/copy", json!({ "accountId": account, "create": create })).await;
     assert_eq!(result["type"], "invalidArguments");
-    let result = changes(&server, "Email/copy", json!({ "accountId": nyu, "fromAccountId": account, "create": create })).await;
+    let result =
+        changes(&server, "Email/copy", json!({ "accountId": nyu, "fromAccountId": account, "create": create })).await;
     assert_eq!(result["type"], "accountNotFound");
 }

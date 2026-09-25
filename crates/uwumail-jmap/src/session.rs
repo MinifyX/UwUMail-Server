@@ -9,7 +9,8 @@ use uwumail_store::Account;
 
 use crate::auth::ClientInfo;
 use crate::{
-    Jmap, MAX_CALLS_IN_REQUEST, MAX_DELAYED_SEND_SECS, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, MAX_REQUEST_BYTES, MAX_UPLOAD_BYTES, ids, jscal,
+    Jmap, MAX_CALLS_IN_REQUEST, MAX_DELAYED_SEND_SECS, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, MAX_REQUEST_BYTES,
+    MAX_UPLOAD_BYTES, ids, jscal,
 };
 
 pub const CORE: &str = "urn:ietf:params:jmap:core";

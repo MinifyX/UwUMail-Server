@@ -23,12 +23,10 @@ use crate::ids;
 /// Whether `<type>/queryChanges` can answer for this /query method. The /query
 /// responses say so in `canCalculateChanges`.
 pub fn can_calculate(method: &str) -> bool {
-    match method {
-        "Email/query" | "Mailbox/query" | "EmailSubmission/query" | "SieveScript/query" | "ContactCard/query" => {
-            true
-        }
-        _ => false,
-    }
+    matches!(
+        method,
+        "Email/query" | "Mailbox/query" | "EmailSubmission/query" | "SieveScript/query" | "ContactCard/query"
+    )
 }
 
 /// The type a queryChanges method is for, with its change log kind and id prefix.
@@ -77,7 +75,8 @@ async fn current_results(
     let query = whole_query(args);
     let ids = match method {
         "Email/queryChanges" => {
-            let filter = query.get("filter").filter(|f| !f.is_null()).map(|f| email::parse_filter(ctx, f)).transpose()?;
+            let filter =
+                query.get("filter").filter(|f| !f.is_null()).map(|f| email::parse_filter(ctx, f)).transpose()?;
             let sort = email::parse_sort(query.get("sort"))?;
             let collapse = query.get("collapseThreads").and_then(Value::as_bool).unwrap_or(false);
             let by_thread = collapse
@@ -214,7 +213,8 @@ mod tests {
 
     #[test]
     fn a_window_is_dropped_for_the_whole_result() {
-        let query = whole_query(&json!({ "accountId": "a1", "position": 5, "limit": 10, "anchor": "e1", "filter": {} }));
+        let query =
+            whole_query(&json!({ "accountId": "a1", "position": 5, "limit": 10, "anchor": "e1", "filter": {} }));
         assert_eq!(query, json!({ "accountId": "a1", "filter": {}, "calculateTotal": true }));
     }
 
@@ -226,7 +226,8 @@ mod tests {
 
     #[test]
     fn thread_keyword_filters_are_found_inside_operators() {
-        let nested = EmailFilter::Not(vec![EmailFilter::And(vec![EmailFilter::SomeInThreadHaveKeyword("$flagged".into())])]);
+        let nested =
+            EmailFilter::Not(vec![EmailFilter::And(vec![EmailFilter::SomeInThreadHaveKeyword("$flagged".into())])]);
         assert!(filter_uses_threads(&nested));
         assert!(!filter_uses_threads(&EmailFilter::HasKeyword("$seen".into())));
     }

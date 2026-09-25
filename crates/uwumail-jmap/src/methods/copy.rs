@@ -65,7 +65,8 @@ pub async fn copy(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Outputs> {
             }
             _ => {}
         }
-        let results = ctx.jmap.store.destroy_emails(from_account, copied.iter().map(|(number, _)| *number).collect()).await?;
+        let results =
+            ctx.jmap.store.destroy_emails(from_account, copied.iter().map(|(number, _)| *number).collect()).await?;
         for ((_, id), result) in copied.into_iter().zip(results) {
             match result {
                 Ok(()) => response.destroyed.push(id),
@@ -85,7 +86,11 @@ pub async fn copy(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Outputs> {
 type Copied = (Map<String, Value>, Map<String, Value>, Vec<(i64, String)>);
 
 /// Copies each email of `create` from `from_account` into the login's own account.
-pub(super) async fn copy_emails(ctx: &mut Ctx<'_>, from_account: i64, create: &Map<String, Value>) -> MethodResult<Copied> {
+pub(super) async fn copy_emails(
+    ctx: &mut Ctx<'_>,
+    from_account: i64,
+    create: &Map<String, Value>,
+) -> MethodResult<Copied> {
     let mut created = Map::new();
     let mut not_created = Map::new();
     let mut copied = Vec::new();
@@ -94,7 +99,10 @@ pub(super) async fn copy_emails(ctx: &mut Ctx<'_>, from_account: i64, create: &M
             let object =
                 object.as_object().ok_or_else(|| SetError::new("invalidProperties", "the email must be an object"))?;
             if let Some(other) = object.keys().find(|key| !OVERRIDABLE.contains(&key.as_str())) {
-                return Err(SetError::invalid_properties(&[other.as_str()], format!("{other} cannot be set in a copy")));
+                return Err(SetError::invalid_properties(
+                    &[other.as_str()],
+                    format!("{other} cannot be set in a copy"),
+                ));
             }
             let id = object
                 .get("id")

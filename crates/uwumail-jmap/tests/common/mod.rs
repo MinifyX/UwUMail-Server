@@ -124,7 +124,8 @@ impl Server {
 
     /// The JMAP id of a person's mailbox with this role.
     pub async fn mailbox(&self, login: &str, role: &str) -> String {
-        let responses = self.api(login, json!([["Mailbox/get", { "accountId": self.account_id(login).await }, "0"]])).await;
+        let responses =
+            self.api(login, json!([["Mailbox/get", { "accountId": self.account_id(login).await }, "0"]])).await;
         let list = responses[0][1]["list"].as_array().unwrap();
         list.iter().find(|m| m["role"] == role).unwrap()["id"].as_str().unwrap().to_owned()
     }

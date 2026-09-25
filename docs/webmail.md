@@ -21,7 +21,8 @@ JMAP therefore accepts two ways of signing in:
 | | Who uses it | What it has to send |
 | --- | --- | --- |
 | `Authorization: Basic` | Mail apps, with the account password or an app password | Nothing else |
-| The portal's session cookie | The webmail | The CSRF token in `X-CSRF-Token`, for anything but `GET` and `HEAD` |
+| `Authorization: Bearer` | Mail apps, with an app password as a token ([jmap-tokens.md](jmap-tokens.md)) | Nothing else |
+| The portal's session cookie | The webmail | The CSRF token in `X-CSRF-Token`, for anything but `GET` and `HEAD`; for the WebSocket, `?csrf=` and the server's own `Origin` |
 
 Reading with the cookie alone is safe because the server sends no CORS headers
 and the cookie is `SameSite=Strict`: another site can neither read an answer nor
@@ -88,9 +89,19 @@ UWUMAIL_WEBMAIL_DIST=../UwUMail-Webmail/dist cargo build -p uwumail-server
 Without either, the server simply has no webmail: `/mail` is not routed, the
 portal offers no button, and everything else works as before.
 
+- **Holding mail back.** "Undo send" and "send later" are the server's: every
+  submission waits for the person's undo window (10 seconds unless they chose
+  otherwise) or its own `sendAt`, survives a restart while it waits, and is
+  cancelled with `undoStatus: canceled` ([jmap-sending.md](jmap-sending.md)).
+- **Signatures and address suggestions.** The signatures of the sending
+  addresses are `Identity` signatures kept on the server
+  ([jmap-sending.md](jmap-sending.md#signatures)); recipients are suggested
+  from the address books and the mail history with `AddressSuggestion/query`
+  ([jmap-suggest.md](jmap-suggest.md)).
+- **One connection.** Requests and push can share one WebSocket (RFC 8887,
+  [jmap-tokens.md](jmap-tokens.md#websocket-rfc-8887)) instead of the
+  EventSource plus separate requests.
+
 ## What is not there yet
 
-- Delayed sending, so "undo send" is real instead of a trick in one tab
-- Signatures on the server, shared by the webmail, the app and Android
-- Address suggestions from the address book and from mail history
 - Web Push, so new mail arrives with the browser closed

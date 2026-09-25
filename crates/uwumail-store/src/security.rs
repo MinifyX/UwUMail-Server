@@ -763,7 +763,13 @@ impl Store {
     /// names its account: nobody can hold another account's secret, and the 79 bits of an app
     /// password are too many to guess. Taken-over app passwords (only a hash from another server)
     /// cannot be looked up without a login, so they work with Basic authentication only.
-    pub async fn authenticate_bearer(&self, token: &str, scope: AppScope, protocol: &str, ip: &str) -> Result<MailAuth> {
+    pub async fn authenticate_bearer(
+        &self,
+        token: &str,
+        scope: AppScope,
+        protocol: &str,
+        ip: &str,
+    ) -> Result<MailAuth> {
         let Some(hash) = candidate("app", token, APP_PASSWORD_CHARS) else {
             return Ok(MailAuth::Denied(MailAuthDenied::Invalid));
         };

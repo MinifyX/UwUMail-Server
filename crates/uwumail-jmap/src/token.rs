@@ -39,7 +39,11 @@ fn problem(status: StatusCode, kind: &str, detail: &str) -> Response {
         "status": status.as_u16(),
         "detail": detail,
     });
-    (status, [(header::CONTENT_TYPE, "application/problem+json"), (header::CACHE_CONTROL, "no-store")], body.to_string())
+    (
+        status,
+        [(header::CONTENT_TYPE, "application/problem+json"), (header::CACHE_CONTROL, "no-store")],
+        body.to_string(),
+    )
         .into_response()
 }
 
@@ -99,11 +103,7 @@ pub async fn handle(
     let mut method = "password";
     if security.second_factor {
         if auth.second_factor_locked(account.id) {
-            return problem(
-                StatusCode::TOO_MANY_REQUESTS,
-                "tooManyAttempts",
-                "Too many wrong codes, try again later.",
-            );
+            return problem(StatusCode::TOO_MANY_REQUESTS, "tooManyAttempts", "Too many wrong codes, try again later.");
         }
         let Some(code) = request.code.as_deref().map(str::trim).filter(|code| !code.is_empty()) else {
             // The password was right; the program asks for the code and tries again.
@@ -178,6 +178,10 @@ pub async fn handle(
         "username": account.login,
         "sessionUrl": format!("{base}/jmap/session"),
     });
-    (StatusCode::CREATED, [(header::CONTENT_TYPE, "application/json"), (header::CACHE_CONTROL, "no-store")], body.to_string())
+    (
+        StatusCode::CREATED,
+        [(header::CONTENT_TYPE, "application/json"), (header::CACHE_CONTROL, "no-store")],
+        body.to_string(),
+    )
         .into_response()
 }

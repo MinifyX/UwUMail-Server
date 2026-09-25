@@ -105,7 +105,11 @@ fn card_addresses(card: &Map<String, Value>) -> (String, Vec<String>) {
         .get("emails")
         .and_then(Value::as_object)
         .map(|emails| {
-            emails.values().filter_map(|email| email.get("address").and_then(Value::as_str)).map(str::to_owned).collect()
+            emails
+                .values()
+                .filter_map(|email| email.get("address").and_then(Value::as_str))
+                .map(str::to_owned)
+                .collect()
         })
         .unwrap_or_default();
     (name, emails)
@@ -128,7 +132,8 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         },
     };
     let store = &ctx.jmap.store;
-    let own: Vec<String> = store.identities(ctx.account.id).await?.into_iter().map(|i| i.email.to_lowercase()).collect();
+    let own: Vec<String> =
+        store.identities(ctx.account.id).await?.into_iter().map(|i| i.email.to_lowercase()).collect();
     let mut candidates: HashMap<String, Candidate> = HashMap::new();
 
     // The address books, whether or not the account uses CardDAV: they are its own.
@@ -140,7 +145,9 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
             if key.is_empty() || !key.contains('@') {
                 continue;
             }
-            let candidate = candidates.entry(key).or_insert_with(|| Candidate { email: email.trim().to_owned(), ..Candidate::default() });
+            let candidate = candidates
+                .entry(key)
+                .or_insert_with(|| Candidate { email: email.trim().to_owned(), ..Candidate::default() });
             candidate.contact = true;
             if !name.is_empty() {
                 candidate.name = name.clone();
@@ -178,9 +185,7 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         .filter(|(fit, _, _)| *fit > 0)
         .collect();
     ranked.sort_by(|a, b| {
-        b.0.cmp(&a.0)
-            .then(b.1.total_cmp(&a.1))
-            .then_with(|| a.2.email.to_lowercase().cmp(&b.2.email.to_lowercase()))
+        b.0.cmp(&a.0).then(b.1.total_cmp(&a.1)).then_with(|| a.2.email.to_lowercase().cmp(&b.2.email.to_lowercase()))
     });
     let list: Vec<Value> = ranked
         .into_iter()

@@ -179,9 +179,8 @@ impl Store {
     ) -> Result<()> {
         let change = self
             .write(move |tx| {
-                let account_id: Option<i64> = tx
-                    .query_row("SELECT account_id FROM email_submissions WHERE id = ?1", [id], |row| row.get(0))
-                    .ok();
+                let account_id: Option<i64> =
+                    tx.query_row("SELECT account_id FROM email_submissions WHERE id = ?1", [id], |row| row.get(0)).ok();
                 // Destroyed while it was being sent: nothing left to record.
                 let Some(account_id) = account_id else { return Ok(None) };
                 let modseq = next_modseq(tx, account_id)?;

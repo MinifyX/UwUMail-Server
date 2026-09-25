@@ -82,9 +82,8 @@ pub use fetch::{
 };
 pub use forward_addresses::{FORWARD_ADDRESS_MAX_TARGETS, ForwardAddress};
 pub use forwarding::{ActiveForwarding, FORWARD_LINK_LIFETIME_SECS, ForwardTarget, Forwarding, MAX_FORWARD_TARGETS};
-pub use held::{HeldSubmission, NewHeldSubmission};
-pub use suggestions::AddressUse;
 pub use greylist_hold::{GreylistHold, GreylistHoldMessage, MAX_HELD_SIZE, NewGreylistHold, Returning, Settled};
+pub use held::{HeldSubmission, NewHeldSubmission};
 pub use imap::{DELETED_KEYWORD, FlagChange, ImapEmail, ImapMailbox, ImapMessage, ImapMessages, ImapStatus};
 pub use import::ImportProgress;
 pub use mail::{EmailSummary, IngestRequest, IngestedEmail, Mailbox, MailboxRole, MailboxTarget, TestMessageStatus};
@@ -124,9 +123,10 @@ pub use spam_log::{
     FetchedVerdicts, NewSpamLogEntry, SPAM_LOG_MAX_ROWS, SpamAction, SpamLogEntry, SpamLogFilter, SpamLogHit,
     SpamLogRecipient,
 };
+pub use suggestions::AddressUse;
 pub use user_settings::{
-    DEFAULT_UNDO_SEND_SECONDS, SettingProblem, SettingsChange, USER_SETTINGS_MAX_KEYS, USER_SETTINGS_MAX_SIZE, USER_SETTINGS_MAX_VALUE_SIZE,
-    UserSettings, validate_setting,
+    DEFAULT_UNDO_SEND_SECONDS, SettingProblem, SettingsChange, USER_SETTINGS_MAX_KEYS, USER_SETTINGS_MAX_SIZE,
+    USER_SETTINGS_MAX_VALUE_SIZE, UserSettings, validate_setting,
 };
 pub use web::{NewWebSession, ServerCounts, WebSession};
 pub use word_lists::{
