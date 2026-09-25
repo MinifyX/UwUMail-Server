@@ -3,6 +3,15 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.12.2
+
+**Remote pictures in Firefox.** The webmail showed no remote pictures at all in Firefox and the
+browsers built on it (Zen, LibreWolf, …): the server fetched them fine, but the frame a message is
+shown in allowed pictures from `'self'`, and Firefox reads `'self'` there as `about:srcdoc` rather
+than the webmail's own address, so it blocked every one. The frame now names the webmail's address
+itself. Chrome, Safari and the UwUMail apps were not affected. The webmail is pinned to its commit
+with the fix.
+
 ## 0.12.1
 
 **Remote pictures through the VPN again.** With the VPN or a proxy set, the server looks up a
