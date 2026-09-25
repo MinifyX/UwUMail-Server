@@ -236,6 +236,7 @@ impl Web {
                 get(routes::gateway::show).post(routes::gateway::pair).delete(routes::gateway::forget),
             )
             .route("/api/admin/gateway/jobs", post(routes::gateway::ask))
+            .route("/api/admin/gateway/cloudflare", post(routes::gateway::cloudflare))
             .route("/api/admin/setup/test-mail", post(routes::setup::send_test_mail))
             .route("/api/admin/setup/test-mail/{id}", get(routes::setup::test_mail_status))
             .route("/api/auth/passkey/options", post(routes::auth::passkey_options))

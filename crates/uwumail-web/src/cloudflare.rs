@@ -1,6 +1,8 @@
 //! Creating a domain's mail records at Cloudflare with an API token the admin types in once.
 //! The token is only used for the request at hand and never stored or logged.
 
+use std::collections::HashMap;
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -383,6 +385,226 @@ impl Cloudflare {
     }
 }
 
+/// A host name that has to lead to the UwUMail Gateway.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostName {
+    pub name: String,
+    /// The server's own name, created when it is missing. Every other name is only kept in step
+    /// when it already has A or AAAA records: a CNAME follows the server's name by itself, and a
+    /// name that is not there at all was never asked for.
+    pub required: bool,
+}
+
+/// A record Cloudflare holds for a host name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HeldRecord {
+    id: String,
+    content: String,
+    proxied: bool,
+}
+
+/// What would happen to one host name's A or AAAA records.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostChange {
+    pub name: String,
+    pub record_type: &'static str,
+    /// The addresses Cloudflare holds now.
+    pub current: Vec<String>,
+    /// The gateway's addresses of this type.
+    pub wanted: Vec<String>,
+    /// Some of the current records go through Cloudflare's proxy, which mail cannot pass.
+    pub proxied: bool,
+    /// `none`, `create`, `update` (add what is missing, stop proxying), `replace` (addresses that
+    /// point elsewhere go; only when confirmed) or `skip`.
+    pub action: &'static str,
+    /// Why a name is skipped: `noZone` (the token sees no zone for it) or `cname`.
+    pub note: Option<&'static str>,
+    #[serde(skip)]
+    zone: String,
+    #[serde(skip)]
+    held: Vec<HeldRecord>,
+}
+
+impl HostChange {
+    fn skipped(name: &str, note: &'static str) -> HostChange {
+        HostChange {
+            name: name.to_owned(),
+            record_type: "A",
+            current: Vec::new(),
+            wanted: Vec::new(),
+            proxied: false,
+            action: "skip",
+            note: Some(note),
+            zone: String::new(),
+            held: Vec::new(),
+        }
+    }
+}
+
+/// What to do with a host name's records of one type, given the gateway's addresses of that type.
+fn host_action(held: &[HeldRecord], wanted: &[String]) -> &'static str {
+    let elsewhere = held.iter().any(|record| !wanted.contains(&record.content));
+    let missing = wanted.iter().any(|address| !held.iter().any(|record| &record.content == address));
+    let proxied = held.iter().any(|record| record.proxied);
+    if elsewhere {
+        "replace"
+    } else if held.is_empty() && missing {
+        "create"
+    } else if missing || proxied {
+        "update"
+    } else {
+        "none"
+    }
+}
+
+impl Cloudflare {
+    /// The zone a name belongs to, or `None` when the token sees none; `seen` keeps the answers
+    /// for the names that share a zone.
+    async fn zone_of(&self, name: &str, seen: &mut HashMap<String, Option<String>>) -> Result<Option<String>, String> {
+        let labels: Vec<&str> = name.split('.').collect();
+        for start in 0..labels.len().saturating_sub(1) {
+            let candidate = labels[start..].join(".");
+            let id = match seen.get(&candidate) {
+                Some(id) => id.clone(),
+                None => {
+                    let found = self.call(Method::GET, &format!("/zones?name={candidate}"), None).await?;
+                    let id = found["result"]
+                        .as_array()
+                        .and_then(|zones| zones.first())
+                        .and_then(|zone| zone["id"].as_str())
+                        .map(str::to_owned);
+                    seen.insert(candidate, id.clone());
+                    id
+                }
+            };
+            if id.is_some() {
+                return Ok(id);
+            }
+        }
+        Ok(None)
+    }
+
+    /// What pointing `hosts` at the gateway's addresses would change, without changing anything.
+    pub async fn host_plan(
+        &self,
+        hosts: &[HostName],
+        v4: &[Ipv4Addr],
+        v6: &[Ipv6Addr],
+    ) -> Result<Vec<HostChange>, String> {
+        let v4: Vec<String> = v4.iter().map(ToString::to_string).collect();
+        let v6: Vec<String> = v6.iter().map(ToString::to_string).collect();
+        let mut zones = HashMap::new();
+        let mut plan = Vec::new();
+        for host in hosts {
+            let Some(zone) = self.zone_of(&host.name, &mut zones).await? else {
+                if host.required {
+                    plan.push(HostChange::skipped(&host.name, "noZone"));
+                }
+                continue;
+            };
+            let found = self.call(Method::GET, &format!("/zones/{zone}/dns_records?name={}", host.name), None).await?;
+            let records = found["result"].as_array().cloned().unwrap_or_default();
+            let of_type = |wanted: &str| -> Vec<HeldRecord> {
+                records
+                    .iter()
+                    .filter(|record| record["type"].as_str() == Some(wanted))
+                    .map(|record| HeldRecord {
+                        id: record["id"].as_str().unwrap_or_default().to_owned(),
+                        content: record["content"].as_str().unwrap_or_default().to_owned(),
+                        proxied: record["proxied"].as_bool().unwrap_or(false),
+                    })
+                    .collect()
+            };
+            if !of_type("CNAME").is_empty() {
+                if host.required {
+                    plan.push(HostChange::skipped(&host.name, "cname"));
+                }
+                continue;
+            }
+            let (a, aaaa) = (of_type("A"), of_type("AAAA"));
+            if !host.required && a.is_empty() && aaaa.is_empty() {
+                continue;
+            }
+            for (record_type, held, wanted) in [("A", a, &v4), ("AAAA", aaaa, &v6)] {
+                if held.is_empty() && wanted.is_empty() {
+                    continue;
+                }
+                plan.push(HostChange {
+                    name: host.name.clone(),
+                    record_type,
+                    current: held.iter().map(|record| record.content.clone()).collect(),
+                    proxied: held.iter().any(|record| record.proxied),
+                    action: host_action(&held, wanted),
+                    wanted: wanted.clone(),
+                    note: None,
+                    zone: zone.clone(),
+                    held,
+                });
+            }
+        }
+        Ok(plan)
+    }
+
+    /// Carries out a plan from [`Cloudflare::host_plan`]. Addresses that point elsewhere are only
+    /// replaced when `replace` confirms it; the records are never proxied, mail cannot pass that.
+    pub async fn apply_hosts(&self, plan: &[HostChange], replace: bool) -> Vec<Applied> {
+        let mut results = Vec::new();
+        for change in plan {
+            let applied = |outcome: &'static str, error: Option<String>| Applied {
+                name: change.name.clone(),
+                record_type: change.record_type,
+                outcome,
+                error,
+            };
+            match change.action {
+                "none" => continue,
+                "skip" => {
+                    results.push(applied("skipped", None));
+                    continue;
+                }
+                "replace" if !replace => {
+                    results.push(applied("skipped", None));
+                    continue;
+                }
+                _ => {}
+            }
+            let body = |content: &str| json!({ "type": change.record_type, "name": change.name, "content": content, "ttl": 1, "proxied": false });
+            let outcome = async {
+                let records = format!("/zones/{}/dns_records", change.zone);
+                let mut missing = change
+                    .wanted
+                    .iter()
+                    .filter(|address| !change.held.iter().any(|record| &record.content == *address));
+                for record in &change.held {
+                    let path = format!("{records}/{}", record.id);
+                    if change.wanted.contains(&record.content) {
+                        if record.proxied {
+                            self.call(Method::PUT, &path, Some(body(&record.content))).await?;
+                        }
+                    } else if let Some(address) = missing.next() {
+                        // Rewritten in place, so the name never goes without an address.
+                        self.call(Method::PUT, &path, Some(body(address))).await?;
+                    } else {
+                        self.call(Method::DELETE, &path, None).await?;
+                    }
+                }
+                for address in missing {
+                    self.call(Method::POST, &records, Some(body(address))).await?;
+                }
+                Ok::<_, String>(())
+            }
+            .await;
+            results.push(match outcome {
+                Ok(()) if change.current.is_empty() => applied("created", None),
+                Ok(()) => applied("updated", None),
+                Err(error) => applied("failed", Some(error)),
+            });
+        }
+        results
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;
@@ -416,7 +638,7 @@ mod tests {
         let records = fake.records.lock().unwrap();
         let result: Vec<Value> = records
             .iter()
-            .filter(|r| Some(r["type"].as_str().unwrap()) == query.get("type").map(String::as_str))
+            .filter(|r| query.get("type").is_none_or(|wanted| r["type"].as_str() == Some(wanted.as_str())))
             .filter(|r| Some(r["name"].as_str().unwrap()) == query.get("name").map(String::as_str))
             .cloned()
             .collect();
@@ -620,5 +842,97 @@ mod tests {
         assert_eq!(records.len(), 2, "{records:?}");
         assert!(records.iter().any(|r| r["data"]["value"] == json!(value)));
         assert!(records.iter().any(|r| r["id"] == "report"));
+    }
+
+    fn host(name: &str, required: bool) -> HostName {
+        HostName { name: name.to_owned(), required }
+    }
+
+    fn summary(plan: &[HostChange]) -> Vec<(String, &'static str, &'static str)> {
+        plan.iter().map(|change| (change.name.clone(), change.record_type, change.action)).collect()
+    }
+
+    #[tokio::test]
+    async fn host_names_follow_the_gateway_and_foreign_addresses_wait_for_a_yes() {
+        let fake = Arc::new(Fake::default());
+        fake.records.lock().unwrap().extend([
+            // The home connection the name pointed to before the gateway.
+            json!({ "id": "home", "type": "A", "name": "mail.example.org", "content": "198.51.100.7", "proxied": false }),
+            // The right address, but behind Cloudflare's proxy, which mail cannot pass.
+            json!({ "id": "auto", "type": "A", "name": "autoconfig.example.org", "content": "203.0.113.5", "proxied": true }),
+            // A CNAME follows the server's name by itself.
+            json!({ "id": "sts", "type": "CNAME", "name": "mta-sts.example.org", "content": "mail.example.org" }),
+        ]);
+        let app = Router::new()
+            .route("/zones", get(zones))
+            .route("/zones/{zone}/dns_records", get(list).post(create))
+            .route("/zones/{zone}/dns_records/{id}", put(update).delete(remove))
+            .with_state(fake.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let cloudflare = Cloudflare::with_base("test-token", &base);
+        let hosts = [
+            host("mail.example.org", true),
+            host("mta-sts.example.org", false),
+            host("autoconfig.example.org", false),
+            // Not there at all: never asked for, so left alone.
+            host("imap.example.org", false),
+            // In a zone the token cannot see.
+            host("autoconfig.elsewhere.example", false),
+        ];
+        let (v4, v6) = (["203.0.113.5".parse().unwrap()], ["2001:db8::5".parse().unwrap()]);
+        let plan = cloudflare.host_plan(&hosts, &v4, &v6).await.unwrap();
+        let name = |name: &str| name.to_owned();
+        assert_eq!(
+            summary(&plan),
+            [
+                (name("mail.example.org"), "A", "replace"),
+                (name("mail.example.org"), "AAAA", "create"),
+                (name("autoconfig.example.org"), "A", "update"),
+                (name("autoconfig.example.org"), "AAAA", "create"),
+            ]
+        );
+        assert_eq!(plan[0].current, ["198.51.100.7"]);
+        assert_eq!(plan[0].wanted, ["203.0.113.5"]);
+        assert!(plan[2].proxied);
+
+        // Without a yes, the address that points elsewhere stays.
+        let results = cloudflare.apply_hosts(&plan, false).await;
+        assert_eq!(results.iter().map(|r| r.outcome).collect::<Vec<_>>(), ["skipped", "created", "updated", "created"]);
+        {
+            let records = fake.records.lock().unwrap();
+            assert!(records.iter().any(|r| r["id"] == "home" && r["content"] == "198.51.100.7"));
+            let auto = records.iter().find(|r| r["id"] == "auto").unwrap();
+            assert_eq!(auto["proxied"], false);
+            assert!(records.iter().all(|r| r["proxied"] != true), "{records:?}");
+        }
+
+        let plan = cloudflare.host_plan(&hosts, &v4, &v6).await.unwrap();
+        assert_eq!(summary(&plan).iter().filter(|(_, _, action)| *action != "none").count(), 1);
+        let results = cloudflare.apply_hosts(&plan, true).await;
+        assert_eq!(results.iter().map(|r| r.outcome).collect::<Vec<_>>(), ["updated"]);
+        {
+            let records = fake.records.lock().unwrap();
+            // Rewritten in place rather than removed and added.
+            assert!(records.iter().any(|r| r["id"] == "home" && r["content"] == "203.0.113.5"));
+            assert!(!records.iter().any(|r| r["content"] == "198.51.100.7"));
+        }
+        let plan = cloudflare.host_plan(&hosts, &v4, &v6).await.unwrap();
+        assert!(plan.iter().all(|change| change.action == "none"), "{:?}", summary(&plan));
+
+        // A gateway without IPv6 means an AAAA record would lead around it: it goes, when confirmed.
+        let plan = cloudflare.host_plan(&hosts[..1], &v4, &[]).await.unwrap();
+        assert_eq!(
+            summary(&plan),
+            [(name("mail.example.org"), "A", "none"), (name("mail.example.org"), "AAAA", "replace")]
+        );
+        cloudflare.apply_hosts(&plan, true).await;
+        assert!(!fake.records.lock().unwrap().iter().any(|r| r["type"] == "AAAA" && r["name"] == "mail.example.org"));
+
+        // The server's own name in a zone the token cannot see is said so, not silently left out.
+        let plan = cloudflare.host_plan(&[host("mail.elsewhere.example", true)], &v4, &v6).await.unwrap();
+        assert_eq!((plan[0].action, plan[0].note), ("skip", Some("noZone")));
     }
 }

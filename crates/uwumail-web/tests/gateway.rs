@@ -175,3 +175,18 @@ async fn admins_pair_and_forget_the_gateway() {
     let (_, health) = portal.call("GET", "/api/admin/health", None).await;
     assert!(!health.to_string().contains("\"gateway\""), "no gateway area without a gateway");
 }
+
+#[tokio::test]
+async fn the_cloudflare_button_needs_a_token_and_the_gateways_addresses() {
+    let gateway = Arc::new(FakeGateway::default());
+    let portal = portal(gateway.clone()).await;
+
+    let (status, _) = portal.call("POST", "/api/admin/gateway/cloudflare", Some(json!({ "token": " " }))).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // Paired, but the gateway has not said where it can be reached yet.
+    *gateway.view.lock().unwrap() = GatewayView { state: GatewayState::Connecting, ..GatewayView::default() };
+    let (status, error) =
+        portal.call("POST", "/api/admin/gateway/cloudflare", Some(json!({ "token": "test-token" }))).await;
+    assert_eq!((status, error["code"].as_str()), (StatusCode::CONFLICT, Some("gatewayNoAddresses")));
+}
