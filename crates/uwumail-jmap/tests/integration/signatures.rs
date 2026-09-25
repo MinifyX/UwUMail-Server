@@ -1,6 +1,6 @@
 //! Signatures of sending identities (RFC 8621 Identity), shared with the portal.
 
-mod common;
+use crate::common;
 
 use common::{args, server};
 use serde_json::json;

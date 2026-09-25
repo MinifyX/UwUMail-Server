@@ -1,7 +1,7 @@
 //! RFC 8620/8621 details that third-party clients rely on, found by running Fastmail's
 //! JMAP-TestSuite and aerc against the server (docs/jmap-clients.md).
 
-mod common;
+use crate::common;
 
 use common::server;
 use serde_json::{Value, json};

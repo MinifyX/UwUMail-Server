@@ -199,7 +199,7 @@ What JMAP Contacts adds was reviewed with the same questions as JMAP Calendars
   signed-in account, and every SQL statement is scoped by `account_id`; a
   foreign id is `notFound`, a foreign `accountId` `accountNotFound`, and an
   address book of another account in `addressBookIds` is `invalidProperties`.
-  The tests in `crates/uwumail-jmap/tests/contacts.rs` try each of these.
+  The tests in `crates/uwumail-jmap/tests/integration/contacts.rs` try each of these.
 - **What reaches phones.** Every write goes through calcard both ways and must
   come back as a vCard with the same UID before it is stored, under the CardDAV
   size limit, so JMAP cannot store a card a phone would choke on or that CardDAV

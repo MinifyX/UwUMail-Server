@@ -1,7 +1,7 @@
 //! Delayed sending: the undo window, send later (sendAt, FUTURERELEASE), cancelling, and held
 //! mail that outlives a restart.
 
-mod common;
+use crate::common;
 
 use std::time::Duration;
 

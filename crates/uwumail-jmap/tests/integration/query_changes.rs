@@ -2,7 +2,7 @@
 //! results with the changes applied must be the new results. CalendarEvent/queryChanges too. And
 //! Email/copy's errors.
 
-mod common;
+use crate::common;
 
 use common::{args, server};
 use serde_json::{Value, json};

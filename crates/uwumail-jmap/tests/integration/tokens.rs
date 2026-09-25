@@ -1,6 +1,6 @@
 //! App passwords as JMAP bearer tokens, and the token endpoint that makes them.
 
-mod common;
+use crate::common;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};

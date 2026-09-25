@@ -1,6 +1,6 @@
 //! AddressSuggestion/query: addresses from the address book and recent mail, best first.
 
-mod common;
+use crate::common;
 
 use common::{args, server};
 use serde_json::{Value, json};

@@ -1,6 +1,6 @@
 //! JMAP over WebSocket (RFC 8887) against a real listener, as a client would connect.
 
-mod common;
+use crate::common;
 
 use std::time::Duration;
 

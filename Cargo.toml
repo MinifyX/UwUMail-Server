@@ -117,3 +117,11 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# Debug builds (and so the test binaries) keep line numbers for backtraces but no full debug
+# info, and none at all for dependencies: that keeps target/ a few times smaller.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
