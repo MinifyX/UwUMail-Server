@@ -106,10 +106,12 @@ submission: sender checks, DKIM, local delivery and the queue.
 
 ### `uwumail-imap`
 
-IMAP4rev1 on port 993 with its own parser. Flags are the email's keywords, the
-UIDs are the store's per-mailbox UIDs, and CONDSTORE/QRESYNC read the account's
-change sequence number and a table of UIDs that left a mailbox. IDLE listens to
-the store's broadcast channel like JMAP push.
+IMAP4rev1 and IMAP4rev2 on port 993 with its own parser. Flags are the email's
+keywords, the UIDs are the store's per-mailbox UIDs, and CONDSTORE/QRESYNC read
+the account's change sequence number and a table of UIDs that left a mailbox.
+IDLE listens to the store's broadcast channel like JMAP push. Folders others
+share with the account ([sharing](sharing.md)) show under `Shared/<login>/`
+and are read and written in the owner's account, within the ACL's rights.
 
 ### `uwumail-dav`
 
