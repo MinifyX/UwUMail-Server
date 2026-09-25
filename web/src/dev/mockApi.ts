@@ -68,6 +68,8 @@ import type {
   SetupStatus,
   ShareLevel,
   SharingView,
+  CalendarsView,
+  ShareRights,
   StorageView,
   VacationView,
   WordEntry,
@@ -1228,6 +1230,40 @@ const mockSharing: SharingView = {
   people: [
     { login: "mini@example.org", name: "Mini" },
     { login: "nyu@example.org", name: "Nyu" },
+  ],
+};
+
+/** People on the mock server calendars can be shared with, by address. */
+const mockPeople = [
+  { accountId: 2, address: "mini@example.org", name: "Mini" },
+  { accountId: 3, address: "nyu@example.org", name: "Nyu" },
+];
+
+const mockCalendars: CalendarsView = {
+  calendars: true,
+  contacts: true,
+  own: [
+    {
+      id: 1,
+      kind: "calendar",
+      name: "Persönlich",
+      color: "#FF4D8DFF",
+      entries: 42,
+      shares: [{ accountId: 3, address: "nyu@example.org", name: "Nyu", rights: "read" }],
+    },
+    { id: 2, kind: "calendar", name: "Verein", color: "#3BA7FFFF", entries: 7, shares: [] },
+    { id: 3, kind: "addressbook", name: "Kontakte", color: null, entries: 118, shares: [] },
+  ],
+  shared: [
+    {
+      id: 11,
+      kind: "calendar",
+      name: "Familie",
+      color: "#9B6BFFFF",
+      owner: "mini@example.org",
+      ownerName: "Mini",
+      rights: "write",
+    },
   ],
 };
 
@@ -2558,6 +2594,42 @@ const routes: [string, RegExp, Handler][] = [
       const folder = mockSharing.folders.find((entry) => entry.id === Number(id));
       if (folder) folder.shares = folder.shares.filter((entry) => entry.login !== login);
       return [200, mockSharing];
+    },
+  ],
+  ["GET", /^\/api\/account\/calendars$/, () => [200, mockCalendars]],
+  [
+    "PUT",
+    /^\/api\/account\/calendars\/(\d+)\/shares$/,
+    (body, [id]) => {
+      const { address, rights } = body as { address: string; rights: ShareRights };
+      const collection = mockCalendars.own.find((entry) => entry.id === Number(id));
+      if (!collection) return problem(404, "notFound");
+      const wanted = address.trim().toLowerCase();
+      if (wanted === session().account.login) return problem(409, "ownShare");
+      const person = mockPeople.find((entry) => entry.address === wanted);
+      if (!person) return problem(409, "unknownPerson");
+      collection.shares = [
+        ...collection.shares.filter((entry) => entry.accountId !== person.accountId),
+        { ...person, rights },
+      ];
+      return [200, mockCalendars];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/account\/calendars\/(\d+)\/shares\/(\d+)$/,
+    (_, [id, account]) => {
+      const collection = mockCalendars.own.find((entry) => entry.id === Number(id));
+      if (collection) collection.shares = collection.shares.filter((entry) => entry.accountId !== Number(account));
+      return [200, mockCalendars];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/account\/shared-calendars\/(\d+)$/,
+    (_, [id]) => {
+      mockCalendars.shared = mockCalendars.shared.filter((entry) => entry.id !== Number(id));
+      return [200, mockCalendars];
     },
   ],
   [

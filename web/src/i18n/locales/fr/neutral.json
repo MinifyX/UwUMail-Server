@@ -54,7 +54,7 @@
     "logs": "Journaux",
     "settings": "Paramètres",
     "security": "Sécurité",
-    "mail": "Transfert",
+    "mail": "Transfert et envoi",
     "fetch": "Courrier relevé",
     "addresses": "Adresses",
     "spamFilter": "Filtre antispam",
@@ -1690,7 +1690,7 @@
   },
   "addresses": {
     "pageTitle": "Adresses et stockage",
-    "intro": "Les adresses auxquelles vous recevez du courrier et la place qu'il occupe.",
+    "intro": "Les adresses auxquelles vous recevez du courrier, la place qu'il occupe et qui d'autre peut utiliser vos dossiers.",
     "title": "Vos adresses",
     "own": "Créée par vous",
     "fromAdmin": "Créée par un admin",

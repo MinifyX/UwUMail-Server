@@ -54,7 +54,7 @@
     "logs": "Logs",
     "settings": "Settings",
     "security": "Security",
-    "mail": "Forwarding",
+    "mail": "Forwarding & sending",
     "fetch": "Fetched mail",
     "addresses": "Addresses",
     "spamFilter": "Spam filter",
@@ -1645,7 +1645,7 @@
   },
   "addresses": {
     "pageTitle": "Addresses and storage",
-    "intro": "The addresses you get mail at and how much space it takes.",
+    "intro": "The addresses you get mail at, how much space it takes, and who else may use your folders.",
     "title": "Your addresses",
     "own": "Created by you",
     "fromAdmin": "Created by an admin",

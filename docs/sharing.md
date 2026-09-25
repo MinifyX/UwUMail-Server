@@ -58,7 +58,7 @@ shares.
 
 ## In the portal
 
-**My account → Addresses and storage → Shared folders** lists your folders. Share
+**My account → Addresses → Shared folders** lists your folders. Share
 opens a dialog with the people on the server and the level; each share can be
 changed or taken back in place. Below, *Shared with me* lists what others share
 with you and at which level.

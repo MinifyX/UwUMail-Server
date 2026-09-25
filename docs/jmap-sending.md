@@ -12,7 +12,7 @@ and not a trick in one browser tab. How long is the person's choice:
 | Where | Key | Values |
 | --- | --- | --- |
 | JMAP `UserSettings` ([jmap-settings.md](jmap-settings.md)) | `undoSendSeconds` | `0`, `5`, `10`, `20`, `30` (numbers) |
-| Portal preferences, My account → Forwarding, away and sending | `mailUndoSend` | `"0"`, `"5"`, `"10"`, `"20"`, `"30"` (strings) |
+| Portal preferences, My account → Forwarding & sending | `mailUndoSend` | `"0"`, `"5"`, `"10"`, `"20"`, `"30"` (strings) |
 
 Both are the same value; a change on one side shows up on the other and is
 pushed as a `UserSettings` change. Without a choice the window is **10

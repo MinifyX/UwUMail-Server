@@ -54,7 +54,7 @@
     "logs": "Protokolle",
     "settings": "Einstellungen",
     "security": "Sicherheit",
-    "mail": "Weiterleitung",
+    "mail": "Weiterleitung & Senden",
     "fetch": "Abrufkonten",
     "addresses": "Adressen",
     "spamFilter": "Spamfilter",
@@ -1645,7 +1645,7 @@
   },
   "addresses": {
     "pageTitle": "Adressen und Speicher",
-    "intro": "Unter welchen Adressen du Mails bekommst und wie viel Platz sie brauchen.",
+    "intro": "Unter welchen Adressen du Mails bekommst, wie viel Platz sie brauchen und wer deine Ordner mitbenutzen darf.",
     "title": "Deine Adressen",
     "own": "Von dir angelegt",
     "fromAdmin": "Vom Admin angelegt",

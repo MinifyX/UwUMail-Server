@@ -54,7 +54,7 @@
     "logs": "Logs",
     "settings": "Instellingen",
     "security": "Beveiliging",
-    "mail": "Doorsturen",
+    "mail": "Doorsturen en verzenden",
     "fetch": "Opgehaalde mail",
     "addresses": "Adressen",
     "spamFilter": "Spamfilter",
@@ -1645,7 +1645,7 @@
   },
   "addresses": {
     "pageTitle": "Adressen en opslag",
-    "intro": "De adressen waarop je mail krijgt en hoeveel ruimte die inneemt.",
+    "intro": "De adressen waarop je mail krijgt, hoeveel ruimte die inneemt en wie je mappen mag gebruiken.",
     "title": "Je adressen",
     "own": "Door jou aangemaakt",
     "fromAdmin": "Door een beheerder aangemaakt",
