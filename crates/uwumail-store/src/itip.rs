@@ -632,6 +632,29 @@ pub fn attendee_copy(request: &Component, current: Option<&Component>, own: &[St
     copy
 }
 
+/// Carries the attendees' answers from the stored copy into what an organizer's client stores with
+/// `If-Schedule-Tag-Match`: answers that came in meanwhile, which the client has not seen yet
+/// (RFC 6638, 3.2.10). The organizer's own answer stays as the client sent it.
+pub fn keep_answers(new: &mut Component, old: &Component, own: &[String]) {
+    for event in new.events_mut() {
+        let rid = event.recurrence_id();
+        let Some(stored) = old.event_for(&rid) else { continue };
+        for property in event.properties.iter_mut().filter(|p| p.name == "ATTENDEE") {
+            let Some(address) = property.address() else { continue };
+            if own.contains(&address) {
+                continue;
+            }
+            let answer = stored
+                .properties_named("ATTENDEE")
+                .find(|p| p.address().as_ref() == Some(&address))
+                .and_then(|p| p.param("PARTSTAT"));
+            if let Some(answer) = answer {
+                property.set_param("PARTSTAT", answer.to_owned());
+            }
+        }
+    }
+}
+
 /// Writes an attendee's answer into the organizer's copy. Only lines of `from` count, so nobody
 /// answers for someone else. Returns whether anything changed.
 pub fn apply_reply(copy: &mut Component, reply: &Component, from: &str) -> bool {

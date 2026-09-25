@@ -125,7 +125,9 @@ pub async fn run(
     let dav = uwumail_dav::Dav::new(
         store.clone(),
         uwumail_dav::DavSettings { calendar_name: names.0.into(), addressbook_name: names.1.into() },
-    );
+    )
+    // Changing an event one organizes or is invited to tells the others (docs/calendars.md).
+    .with_scheduling(smtp.clone());
     // One switch for the whole server, shared by everything that has to honour it: the page
     // under /mail, JMAP's session login, and the admin panel that flips it.
     let webmail = Arc::new(std::sync::atomic::AtomicBool::new(config.http.webmail));

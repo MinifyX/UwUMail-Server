@@ -4293,6 +4293,7 @@ dependencies = [
  "tower",
  "tracing",
  "uwumail-jmap",
+ "uwumail-smtp",
  "uwumail-store",
 ]
 
