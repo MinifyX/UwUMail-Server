@@ -152,7 +152,7 @@ fn rights(access: DavAccess, may_delete: bool) -> Value {
 }
 
 /// The level a CalendarRights object asks for: `None` when it grants nothing.
-fn level_of(rights: &Value) -> Result<Option<ShareRights>, ()> {
+pub(super) fn level_of(rights: &Value) -> Result<Option<ShareRights>, ()> {
     let Value::Object(map) = rights else { return Err(()) };
     let flag = |name: &str| map.get(name).and_then(Value::as_bool).unwrap_or(false);
     if map.values().any(|v| !v.is_boolean()) {
@@ -160,9 +160,9 @@ fn level_of(rights: &Value) -> Result<Option<ShareRights>, ()> {
     }
     Ok(if flag("mayShare") {
         Some(ShareRights::All)
-    } else if ["mayWriteAll", "mayWriteOwn", "mayUpdatePrivate", "mayRSVP"].iter().any(|f| flag(f)) {
+    } else if ["mayWriteAll", "mayWriteOwn", "mayUpdatePrivate", "mayRSVP", "mayWrite"].iter().any(|f| flag(f)) {
         Some(ShareRights::Write)
-    } else if flag("mayReadItems") || flag("mayReadFreeBusy") {
+    } else if flag("mayReadItems") || flag("mayReadFreeBusy") || flag("mayRead") {
         Some(ShareRights::Read)
     } else {
         None
@@ -246,11 +246,11 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
 }
 
 /// Who a calendar is to be shared with, and how: `None` takes someone off.
-type Sharing = Vec<(String, Option<ShareRights>)>;
+pub(super) type Sharing = Vec<(String, Option<ShareRights>)>;
 
 /// Reads `shareWith` or a `shareWith/<principal>` patch. Keys are principal ids (`a12`) or, as
 /// this server's own help for clients without principals, addresses of people of the server.
-fn parse_share_with(key: &str, value: &Value, sharing: &mut Option<(bool, Sharing)>) -> Result<(), ()> {
+pub(super) fn parse_share_with(key: &str, value: &Value, sharing: &mut Option<(bool, Sharing)>) -> Result<(), ()> {
     let principal_ok = |principal: &str| ids::parse('a', principal).is_some() || principal.contains('@');
     let entry = |value: &Value| -> Result<Option<ShareRights>, ()> {
         match value {
@@ -367,7 +367,12 @@ fn parse_all(
 }
 
 /// Applies `shareWith` to a calendar: all of it (`replace`), or single principals.
-async fn apply_sharing(ctx: &Ctx<'_>, calendar: &DavCollection, replace: bool, wanted: Sharing) -> Result<(), SetError> {
+pub(super) async fn apply_sharing(
+    ctx: &Ctx<'_>,
+    calendar: &DavCollection,
+    replace: bool,
+    wanted: Sharing,
+) -> Result<(), SetError> {
     let store = &ctx.jmap.store;
     let invalid = |message: &str| SetError::invalid_properties(&["shareWith"], message);
     // Principal ids and addresses, as account ids.

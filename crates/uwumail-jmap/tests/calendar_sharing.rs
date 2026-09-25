@@ -234,3 +234,44 @@ async fn invitations_and_answers_with_scheduling_messages() {
     let cancelled = server.call(NYU, "CalendarEvent/get", json!({ "ids": [&nyu_event] })).await;
     assert_eq!(cancelled["list"][0]["status"], "cancelled", "{cancelled}");
 }
+
+async fn contacts_call(server: &Server, login: &str, method: &str, mut arguments: Value) -> Value {
+    arguments["accountId"] = json!(server.account_id(login).await);
+    let using = ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:contacts"];
+    let body = json!({ "using": using, "methodCalls": [[method, arguments, "0"]] }).to_string();
+    let mut request = Request::builder()
+        .method("POST")
+        .uri("/jmap/api")
+        .header(header::AUTHORIZATION, format!("Basic {}", BASE64.encode(format!("{login}:{PASSWORD}"))))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body))
+        .unwrap();
+    request.extensions_mut().insert(ClientInfo { https: true, ..ClientInfo::default() });
+    let response = server.router.clone().oneshot(request).await.unwrap();
+    let bytes = to_bytes(response.into_body(), 1 << 24).await.unwrap();
+    let response: Value = serde_json::from_slice(&bytes).unwrap();
+    response["methodResponses"][0][1].clone()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn address_books_are_shared_the_same_way() {
+    let server = server().await;
+    let books = contacts_call(&server, MINI, "AddressBook/get", json!({})).await;
+    let book = books["list"][0]["id"].as_str().unwrap().to_owned();
+    let card = json!({ "@type": "Card", "addressBookIds": { &book: true }, "name": { "full": "Leni Katze" } });
+    let created = contacts_call(&server, MINI, "ContactCard/set", json!({ "create": { "c": card } })).await;
+    let card_id = created["created"]["c"]["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
+    let update = json!({ "update": { &book: { "shareWith": { NYU: { "mayRead": true } } } } });
+    let shared = contacts_call(&server, MINI, "AddressBook/set", update).await;
+    assert!(shared["updated"].get(&book).is_some(), "{shared}");
+
+    let theirs = contacts_call(&server, NYU, "AddressBook/get", json!({})).await;
+    let seen = theirs["list"].as_array().unwrap().iter().find(|b| b["id"] == book.as_str()).expect("listed");
+    assert_eq!(seen["myRights"]["mayWrite"], false);
+    let cards = contacts_call(&server, NYU, "ContactCard/get", json!({ "ids": [&card_id] })).await;
+    assert_eq!(cards["list"][0]["name"]["full"], "Leni Katze");
+    let refused = contacts_call(&server, NYU, "ContactCard/set", json!({ "destroy": [&card_id] })).await;
+    assert_eq!(refused["notDestroyed"][&card_id]["type"], "forbidden", "{refused}");
+    let left = contacts_call(&server, NYU, "AddressBook/set", json!({ "destroy": [&book] })).await;
+    assert_eq!(left["destroyed"], json!([&book]));
+}
