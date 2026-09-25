@@ -147,10 +147,10 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
     if name != "Core/echo" {
         ctx.check_account(&args)?;
     }
+    let can = query_changes::can_calculate(name, &args);
     let outputs = call(ctx, name, args).await?;
     // Every /query says whether its /queryChanges can answer.
     if name.ends_with("/query") {
-        let can = query_changes::can_calculate(name);
         return Ok(outputs
             .into_iter()
             .map(|(method, mut output)| {
@@ -175,8 +175,8 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         | "Email/queryChanges"
         | "EmailSubmission/queryChanges"
         | "SieveScript/queryChanges"
-        | "ContactCard/queryChanges" => single(query_changes::query_changes(ctx, name, &args).await?),
-        "CalendarEvent/queryChanges" => Err(MethodError::kind("cannotCalculateChanges")),
+        | "ContactCard/queryChanges"
+        | "CalendarEvent/queryChanges" => single(query_changes::query_changes(ctx, name, &args).await?),
         "Email/copy" => copy::copy(ctx, &args).await,
         "Mailbox/set" => single(mailbox::set(ctx, &args).await?),
         "Thread/get" => single(thread::get(ctx, &args).await?),

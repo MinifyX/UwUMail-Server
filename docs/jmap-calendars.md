@@ -322,7 +322,12 @@ What comes after is refused: `/get` with `serverUnavailable`, `/query` with
 `cannotCalculateOccurrences`, and each further object
 of `/set` with `rateLimit`, so a client sends the rest in a new request.
 
-`CalendarEvent/queryChanges` answers `cannotCalculateChanges`.
+`CalendarEvent/queryChanges` works as in RFC 8620 for queries without
+`expandRecurrences` (`canCalculateChanges: true`): every event that changed
+since the query state is removed, and added again at its place where it
+matches now. With `expandRecurrences` the instances are not objects of their
+own, so such a query says `canCalculateChanges: false` and `/queryChanges`
+answers `cannotCalculateChanges`.
 
 ### CalendarEvent/changes
 
@@ -353,4 +358,4 @@ EventSource, next to the mail types.
   zones, events that are single instances without their series
 - Per-user properties of shared calendars and events: colour, visibility and
   alerts are the owner's
-- `CalendarEvent/queryChanges`
+- `CalendarEvent/queryChanges` for queries with `expandRecurrences`

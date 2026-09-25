@@ -149,7 +149,8 @@ capability:
 you. The session state changes whenever a share appears, goes or changes
 between read-only and writable.
 
-In a shared account `Mailbox/get|query|changes|set`, `Email/get|query|changes|set|import|parse|copy`,
+In a shared account `Mailbox/get|query|queryChanges|changes|set`,
+`Email/get|query|queryChanges|changes|set|import|parse|copy`,
 `Thread/get|changes` and `SearchSnippet/get` work, limited to the shared
 folders:
 
@@ -160,7 +161,8 @@ folders:
   `maySubmit` = false, plus `mayAdmin` = `a`).
 - Email/query and Email/get see only mail in a shared mailbox you may read;
   `mailboxIds` lists only shared mailboxes. `*/changes` report what went out of
-  sight as destroyed.
+  sight as destroyed, and `*/queryChanges` as removed; they may name ids of
+  mail that changed in the owner's other folders, never anything more.
 - Email/set checks every keyword and mailbox change against the rights
   (`forbidden` otherwise). Replacing `mailboxIds` never takes a message out of
   the owner's unshared mailboxes. Destroying an email needs `t`+`e` on every

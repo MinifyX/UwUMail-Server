@@ -420,3 +420,66 @@ async fn email_copy_works_between_own_and_shared_accounts() {
     assert_eq!(responses[1][1]["accountId"], json!(nyu_account));
     assert_eq!(responses[1][1]["destroyed"], json!([format!("e{own_mail}")]), "{responses:?}");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn query_changes_in_a_shared_account_stay_within_the_shared_folders() {
+    let server = server().await;
+    let mini_account = format!("a{}", server.mini);
+    let inbox = server.mailbox(server.mini, MailboxRole::Inbox).await;
+    let archive = server.mailbox(server.mini, MailboxRole::Archive).await;
+    server
+        .call(
+            MINI,
+            "Mailbox/set",
+            json!({ "accountId": mini_account, "update": {
+                format!("m{inbox}"): { format!("shareWith/p{}", server.nyu): "read" } } }),
+        )
+        .await;
+    let first = server.deliver(server.mini, MailboxRole::Inbox, "eins").await;
+    server.deliver(server.mini, MailboxRole::Inbox, "zwei").await;
+    let arguments = json!({ "accountId": mini_account, "sort": [{ "property": "receivedAt", "isAscending": false }] });
+    let query = server.call(NYU, "Email/query", arguments.clone()).await;
+    assert_eq!(query["canCalculateChanges"], true);
+    let ids = |value: &Value| -> Vec<String> {
+        value.as_array().unwrap().iter().map(|id| id.as_str().unwrap().to_owned()).collect()
+    };
+    let old = ids(&query["ids"]);
+
+    // New mail in both folders, and one moved out of the shared one.
+    let private = server.deliver(server.mini, MailboxRole::Archive, "privat").await;
+    let fresh = server.deliver(server.mini, MailboxRole::Inbox, "neu").await;
+    server
+        .store
+        .update_emails(
+            server.mini,
+            vec![uwumail_store::EmailUpdate {
+                id: first,
+                mailboxes: uwumail_store::MailboxesChange::Replace(vec![archive]),
+                ..Default::default()
+            }],
+        )
+        .await
+        .unwrap();
+    let mut since = arguments.clone();
+    since["sinceQueryState"] = query["queryState"].clone();
+    let changes = server.call(NYU, "Email/queryChanges", since).await;
+    let added: Vec<String> =
+        changes["added"].as_array().unwrap().iter().map(|a| a["id"].as_str().unwrap().to_owned()).collect();
+    assert_eq!(added, vec![format!("e{fresh}")], "{changes}");
+    let removed = ids(&changes["removed"]);
+    assert!(removed.contains(&format!("e{first}")), "{changes}");
+    let mut replayed: Vec<String> = old.into_iter().filter(|id| !removed.contains(id)).collect();
+    replayed.insert(0, format!("e{fresh}"));
+    let now = server.call(NYU, "Email/query", arguments).await;
+    assert_eq!(replayed, ids(&now["ids"]));
+    assert!(!ids(&now["ids"]).contains(&format!("e{private}")));
+
+    // Mailbox queries work there too; queries of things that are not shared are not.
+    let mailboxes = server.call(NYU, "Mailbox/query", json!({ "accountId": mini_account })).await;
+    let mut since = json!({ "accountId": mini_account, "sinceQueryState": mailboxes["queryState"] });
+    let unchanged = server.call(NYU, "Mailbox/queryChanges", since.clone()).await;
+    assert_eq!(unchanged["added"], json!([]), "{unchanged}");
+    since["sinceQueryState"] = json!("0");
+    let refused = server.api(NYU, json!([["EmailSubmission/queryChanges", since, "0"]])).await;
+    assert_eq!(refused[0][1]["type"], "accountNotSupportedByMethod");
+}

@@ -235,21 +235,27 @@ pub(super) fn parse_sort(value: Option<&Value>) -> MethodResult<Vec<EmailSort>> 
         .collect()
 }
 
+/// A query's filter, in someone else's account limited to what is in a mailbox the caller may
+/// read.
+pub(super) fn scoped_filter(ctx: &Ctx<'_>, filter: Option<EmailFilter>) -> Option<EmailFilter> {
+    let Some(view) = &ctx.shared else {
+        return filter;
+    };
+    let mut readable: Vec<EmailFilter> = view.readable().into_iter().map(EmailFilter::InMailbox).collect();
+    if readable.is_empty() {
+        readable.push(EmailFilter::InMailbox(-1));
+    }
+    let scope = EmailFilter::Or(readable);
+    Some(match filter {
+        Some(filter) => EmailFilter::And(vec![scope, filter]),
+        None => scope,
+    })
+}
+
 pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let state = ctx.state().await?;
-    let mut filter = args.get("filter").filter(|f| !f.is_null()).map(|f| parse_filter(ctx, f)).transpose()?;
-    if let Some(view) = &ctx.shared {
-        // Only what is in a mailbox the caller may read.
-        let mut readable: Vec<EmailFilter> = view.readable().into_iter().map(EmailFilter::InMailbox).collect();
-        if readable.is_empty() {
-            readable.push(EmailFilter::InMailbox(-1));
-        }
-        let scope = EmailFilter::Or(readable);
-        filter = Some(match filter {
-            Some(filter) => EmailFilter::And(vec![scope, filter]),
-            None => scope,
-        });
-    }
+    let filter = args.get("filter").filter(|f| !f.is_null()).map(|f| parse_filter(ctx, f)).transpose()?;
+    let filter = scoped_filter(ctx, filter);
     let sort = parse_sort(args.get("sort"))?;
     let collapse = args.get("collapseThreads").and_then(Value::as_bool).unwrap_or(false);
     let results = ctx.jmap.store.query_emails(ctx.account.id, filter, sort, collapse).await?;

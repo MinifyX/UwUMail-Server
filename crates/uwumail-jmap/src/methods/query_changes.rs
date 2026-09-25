@@ -1,5 +1,5 @@
-//! /queryChanges (RFC 8620, section 5.6) for Email, Mailbox, EmailSubmission, SieveScript and
-//! ContactCard.
+//! /queryChanges (RFC 8620, section 5.6) for Email, Mailbox, EmailSubmission, SieveScript,
+//! ContactCard and CalendarEvent.
 //!
 //! The query state is the account's state, and the change log says which objects changed since.
 //! Every changed object is reported as `removed`, and those of them that are in the results now
@@ -7,26 +7,30 @@
 //! happened. That is exact as long as an object's place in the results depends only on the object
 //! itself. Where it also depends on others, their objects count as changed too: all mail of a
 //! thread in which something changed when threads are collapsed or matched by keyword, all
-//! mailboxes when they are sorted or filtered as a tree. Other queries (CalendarEvent, whose
-//! expanded recurrences are not objects of their own) say `canCalculateChanges: false` and get
-//! `cannotCalculateChanges` here.
+//! mailboxes when they are sorted or filtered as a tree. A CalendarEvent query with
+//! `expandRecurrences`, whose instances are not objects of their own, says
+//! `canCalculateChanges: false` and gets `cannotCalculateChanges` here.
+//!
+//! In an account shared with the login (docs/sharing.md) Email and Mailbox queries work within
+//! what may be seen there, like their /query; the others are not there.
 
 use std::collections::BTreeSet;
 
 use serde_json::{Map, Value, json};
 use uwumail_store::{EmailFilter, EmailSortProperty, StoreError};
 
-use super::{Ctx, address_book, contact_card, email, mailbox, sieve, submission};
+use super::{Ctx, address_book, calendar, calendar_event, contact_card, email, mailbox, sieve, submission};
 use crate::error::{MethodError, MethodResult};
 use crate::ids;
 
-/// Whether `<type>/queryChanges` can answer for this /query method. The /query
-/// responses say so in `canCalculateChanges`.
-pub fn can_calculate(method: &str) -> bool {
-    matches!(
-        method,
-        "Email/query" | "Mailbox/query" | "EmailSubmission/query" | "SieveScript/query" | "ContactCard/query"
-    )
+/// Whether `<type>/queryChanges` can answer for this /query method with these arguments. The
+/// /query responses say so in `canCalculateChanges`.
+pub fn can_calculate(method: &str, args: &Value) -> bool {
+    match method {
+        "Email/query" | "Mailbox/query" | "EmailSubmission/query" | "SieveScript/query" | "ContactCard/query" => true,
+        "CalendarEvent/query" => args.get("expandRecurrences").and_then(Value::as_bool) != Some(true),
+        _ => false,
+    }
 }
 
 /// The type a queryChanges method is for, with its change log kind and id prefix.
@@ -37,6 +41,7 @@ fn kind_of(method: &str) -> Option<(&'static str, char)> {
         "EmailSubmission/queryChanges" => ("EmailSubmission", 's'),
         "SieveScript/queryChanges" => ("SieveScript", 'r'),
         "ContactCard/queryChanges" => ("ContactCard", 'k'),
+        "CalendarEvent/queryChanges" => ("CalendarEvent", 'v'),
         _ => return None,
     })
 }
@@ -77,6 +82,7 @@ async fn current_results(
         "Email/queryChanges" => {
             let filter =
                 query.get("filter").filter(|f| !f.is_null()).map(|f| email::parse_filter(ctx, f)).transpose()?;
+            let filter = email::scoped_filter(ctx, filter);
             let sort = email::parse_sort(query.get("sort"))?;
             let collapse = query.get("collapseThreads").and_then(Value::as_bool).unwrap_or(false);
             let by_thread = collapse
@@ -103,7 +109,17 @@ async fn current_results(
                     threads.insert(record.thread_id);
                 }
                 let members = ctx.jmap.store.thread_emails(ctx.account.id, threads.into_iter().collect()).await?;
-                extra.extend(members.values().flatten().map(|id| ids::email(*id)));
+                let mut members: Vec<i64> = members.into_values().flatten().collect();
+                if let Some(view) = &ctx.shared {
+                    // In a shared account only mail the login may read.
+                    let records = ctx.jmap.store.emails_by_ids(ctx.account.id, members).await?;
+                    members = records
+                        .into_iter()
+                        .filter(|record| view.may_read_email(&record.mailbox_ids))
+                        .map(|record| record.id)
+                        .collect();
+                }
+                extra.extend(members.into_iter().map(ids::email));
             }
             results.into_iter().map(|(id, _)| ids::email(id)).collect()
         }
@@ -115,6 +131,10 @@ async fn current_results(
                 "ContactCard/queryChanges" => {
                     address_book::check_enabled(ctx)?;
                     contact_card::query(ctx, &query).await?
+                }
+                "CalendarEvent/queryChanges" => {
+                    calendar::check_enabled(ctx)?;
+                    calendar_event::query(ctx, &query).await?
                 }
                 _ => return Err(MethodError::kind("unknownMethod")),
             };
@@ -160,7 +180,7 @@ impl AllChanged for uwumail_store::Changes {
 pub async fn query_changes(ctx: &mut Ctx<'_>, method: &str, args: &Value) -> MethodResult<Value> {
     let (kind, prefix) = kind_of(method).ok_or_else(|| MethodError::kind("unknownMethod"))?;
     let query_method = method.replace("/queryChanges", "/query");
-    if !can_calculate(&query_method) {
+    if !can_calculate(&query_method, args) {
         return Err(MethodError::kind("cannotCalculateChanges"));
     }
     let since_text = args
@@ -219,9 +239,11 @@ mod tests {
     }
 
     #[test]
-    fn calendar_queries_cannot_be_calculated() {
-        assert!(can_calculate("Email/query"));
-        assert!(!can_calculate("CalendarEvent/query"));
+    fn expanded_calendar_queries_cannot_be_calculated() {
+        assert!(can_calculate("Email/query", &json!({})));
+        assert!(can_calculate("CalendarEvent/query", &json!({ "expandRecurrences": false })));
+        assert!(!can_calculate("CalendarEvent/query", &json!({ "expandRecurrences": true })));
+        assert!(!can_calculate("Principal/query", &json!({})));
     }
 
     #[test]
