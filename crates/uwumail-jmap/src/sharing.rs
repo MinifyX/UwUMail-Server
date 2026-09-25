@@ -31,6 +31,7 @@ const SHARED_METHODS: &[&str] = &[
     "Email/set",
     "Email/import",
     "Email/parse",
+    "Email/copy",
     "Thread/get",
     "Thread/changes",
     "SearchSnippet/get",
@@ -98,9 +99,8 @@ pub async fn enter(ctx: &mut Ctx<'_>, name: &str, args: &Value) -> MethodResult<
         return Ok(false);
     };
     let store = &ctx.jmap.store;
-    let shared: Vec<_> =
-        store.mailboxes_shared_with(ctx.account.id).await?.into_iter().filter(|m| m.owner_id == owner).collect();
-    if shared.is_empty() {
+    let rights = shared_rights(store, ctx.account.id, owner).await?;
+    if rights.is_empty() {
         // Not shared with us: the ordinary check answers accountNotFound.
         return Ok(false);
     }
@@ -110,10 +110,20 @@ pub async fn enter(ctx: &mut Ctx<'_>, name: &str, args: &Value) -> MethodResult<
     let Some(owner_account) = store.account_by_id(owner).await? else {
         return Ok(false);
     };
-    let rights = shared.into_iter().map(|m| (m.mailbox.id, m.rights)).collect();
     let me = std::mem::replace(&mut ctx.account, owner_account);
     ctx.shared = Some(SharedView { me, rights });
     Ok(true)
+}
+
+/// The rights of `grantee` per mailbox of `owner` shared with them; empty when nothing is.
+pub async fn shared_rights(store: &Store, grantee: i64, owner: i64) -> MethodResult<HashMap<i64, String>> {
+    Ok(store
+        .mailboxes_shared_with(grantee)
+        .await?
+        .into_iter()
+        .filter(|m| m.owner_id == owner)
+        .map(|m| (m.mailbox.id, m.rights))
+        .collect())
 }
 
 /// Back to the logged-in account after a call [`enter`] moved.

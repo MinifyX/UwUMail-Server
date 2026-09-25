@@ -1,17 +1,21 @@
-//! Email/copy (RFC 8620, section 5.4; RFC 8621, section 4.7): copies emails from another account
-//! this login can read into this one, optionally destroying the originals.
+//! Email/copy (RFC 8620, section 5.4; RFC 8621, section 4.7): copies emails between the login's
+//! own account and the accounts that share mailboxes with it (docs/sharing.md), optionally
+//! destroying the originals.
 //!
-//! Which other accounts a login can read is [`Ctx::readable_account`]; today that is none, so every
-//! copy ends in `fromAccountNotFound`, as the RFC asks. Once accounts are shared, copying works
-//! without changes here.
+//! Which accounts a login can read is [`Ctx::readable_account`]. From a shared account only mail
+//! in a mailbox the login may read (`r`) can be copied; everything else is `notFound`, like in
+//! Email/get. Into a shared account, every mailbox needs `i` and the keywords their rights, like
+//! Email/import there (the call runs in that account, see [`crate::sharing::enter`]). Destroying
+//! the originals is an Email/set in the source account, with its checks (`t` and `e`).
 
 use serde_json::{Map, Value, json};
 use uwumail_store::{IngestRequest, StoreError};
 
-use super::email::{created_json, keywords, mailbox_ids, received_at};
-use super::{Ctx, Outputs, SetResponse};
+use super::email::{check_shared_create, created_json, keywords, mailbox_ids, received_at};
+use super::{Ctx, Outputs};
 use crate::error::{MethodError, MethodResult, SetError};
 use crate::ids;
+use crate::sharing::SharedView;
 
 /// The only properties a copy may set; everything else comes from the original.
 const OVERRIDABLE: &[&str] = &["id", "mailboxIds", "keywords", "receivedAt"];
@@ -24,7 +28,8 @@ pub async fn copy(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Outputs> {
     if from == ctx.account_id() {
         return Err(MethodError::invalid_arguments("fromAccountId must be another account than accountId"));
     }
-    let from_account = ctx.readable_account(from).ok_or_else(|| MethodError::kind("fromAccountNotFound"))?;
+    let (from_account, from_view) =
+        ctx.readable_account(from).await?.ok_or_else(|| MethodError::kind("fromAccountNotFound"))?;
     let create = match args.get("create") {
         Some(Value::Object(create)) => create.clone(),
         _ => return Err(MethodError::invalid_arguments("create must be an object")),
@@ -40,7 +45,7 @@ pub async fn copy(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Outputs> {
     let old_state = ctx.state().await?;
     super::if_in_state(args, &old_state)?;
 
-    let (created, not_created, copied) = copy_emails(ctx, from_account, &create).await?;
+    let (created, not_created, copied) = copy_emails(ctx, from_account, from_view.as_ref(), &create).await?;
     let new_state = ctx.state().await?;
     let map_or_null = |map: Map<String, Value>| if map.is_empty() { Value::Null } else { Value::Object(map) };
     let mut outputs = vec![(
@@ -56,27 +61,18 @@ pub async fn copy(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Outputs> {
     )];
 
     if args.get("onSuccessDestroyOriginal").and_then(Value::as_bool).unwrap_or(false) {
-        let old_from_state = ctx.jmap.store.account_modseq(from_account).await?.to_string();
-        let mut response = SetResponse::default();
-        match args.get("destroyFromIfInState").and_then(Value::as_str) {
-            Some(expected) if expected != old_from_state => {
-                outputs.push(("error".to_owned(), MethodError::kind("stateMismatch").to_json()));
-                return Ok(outputs);
-            }
-            _ => {}
+        // An Email/set in the source account, as the login, with the checks it does there.
+        let mut destroy = json!({
+            "accountId": from,
+            "destroy": copied.iter().map(|(_, id)| id.clone()).collect::<Vec<_>>(),
+        });
+        if let Some(expected) = args.get("destroyFromIfInState").filter(|value| !value.is_null()) {
+            destroy["ifInState"] = expected.clone();
         }
-        let results =
-            ctx.jmap.store.destroy_emails(from_account, copied.iter().map(|(number, _)| *number).collect()).await?;
-        for ((_, id), result) in copied.into_iter().zip(results) {
-            match result {
-                Ok(()) => response.destroyed.push(id),
-                Err(err) => {
-                    response.not_destroyed.insert(id, SetError::from(err).to_json());
-                }
-            }
+        match ctx.dispatch_as_login("Email/set", destroy).await {
+            Ok(responses) => outputs.extend(responses),
+            Err(err) => outputs.push(("error".to_owned(), err.to_json())),
         }
-        let new_from_state = ctx.jmap.store.account_modseq(from_account).await?.to_string();
-        outputs.push(("Email/set".to_owned(), response.finish(from.to_owned(), old_from_state, new_from_state)));
     }
     Ok(outputs)
 }
@@ -85,10 +81,12 @@ pub async fn copy(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Outputs> {
 /// copied (number and JMAP id), for `onSuccessDestroyOriginal`.
 type Copied = (Map<String, Value>, Map<String, Value>, Vec<(i64, String)>);
 
-/// Copies each email of `create` from `from_account` into the login's own account.
+/// Copies each email of `create` from `from_account` into the account of the call. `from_view`
+/// says what the login may read there when it is someone else's.
 pub(super) async fn copy_emails(
     ctx: &mut Ctx<'_>,
     from_account: i64,
+    from_view: Option<&SharedView>,
     create: &Map<String, Value>,
 ) -> MethodResult<Copied> {
     let mut created = Map::new();
@@ -113,6 +111,10 @@ pub(super) async fn copy_emails(
                 StoreError::NotFound(_) => SetError::not_found(),
                 other => SetError::from(other),
             })?;
+            // Mail the login may not read there does not exist for it.
+            if from_view.is_some_and(|view| !view.may_read_email(&original.mailbox_ids)) {
+                return Err(SetError::not_found());
+            }
             let mailboxes = mailbox_ids(ctx, object.get("mailboxIds"))?;
             // Keywords and the time it arrived stay those of the original unless the copy says.
             let keywords = match object.get("keywords") {
@@ -123,6 +125,7 @@ pub(super) async fn copy_emails(
                 Some(value) => received_at(Some(value))?,
                 None => Some(original.received_at),
             };
+            check_shared_create(ctx, &mailboxes, &keywords)?;
             let raw = ctx.jmap.store.blob(&original.blob).await?;
             let email = ctx
                 .jmap
@@ -157,7 +160,7 @@ mod tests {
     use uwumail_smtp::{DeliveryConfig, Smtp, SmtpConfig, SmtpSettings, ToneConfig};
     use uwumail_store::{MailboxRole, MailboxTarget, NewAccount, Role, Store};
 
-    /// The copying itself, between two accounts, as it will run once one is shared with the other.
+    /// The copying itself, between two accounts; what may be copied is in tests/sharing.rs.
     #[tokio::test(flavor = "multi_thread")]
     async fn copies_between_accounts_and_keeps_what_the_copy_does_not_change() {
         let dir = tempfile::tempdir().unwrap();
@@ -212,7 +215,7 @@ mod tests {
             "c3": { "id": "e999999", "mailboxIds": { ids::mailbox(archive.id): true } },
         });
         let (created, not_created, copied) =
-            copy_emails(&mut ctx, accounts[0].id, create.as_object().unwrap()).await.unwrap();
+            copy_emails(&mut ctx, accounts[0].id, None, create.as_object().unwrap()).await.unwrap();
         assert_eq!(not_created["c2"]["type"], "invalidProperties");
         assert_eq!(not_created["c3"]["type"], "notFound");
         assert_eq!(copied, vec![(original.id, ids::email(original.id))]);

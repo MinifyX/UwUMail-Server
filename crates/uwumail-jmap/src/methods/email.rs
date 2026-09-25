@@ -112,7 +112,11 @@ fn check_shared_update(view: &SharedView, record: &EmailRecord, update: &mut Ema
 
 /// For a new email in someone else's account: every mailbox takes messages (`i`) and every
 /// keyword may be set there.
-fn check_shared_create(ctx: &Ctx<'_>, mailboxes: &[MailboxTarget], keywords: &[String]) -> Result<(), SetError> {
+pub(super) fn check_shared_create(
+    ctx: &Ctx<'_>,
+    mailboxes: &[MailboxTarget],
+    keywords: &[String],
+) -> Result<(), SetError> {
     let Some(view) = &ctx.shared else {
         return Ok(());
     };

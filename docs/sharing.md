@@ -149,7 +149,7 @@ capability:
 you. The session state changes whenever a share appears, goes or changes
 between read-only and writable.
 
-In a shared account `Mailbox/get|query|changes|set`, `Email/get|query|changes|set|import|parse`,
+In a shared account `Mailbox/get|query|changes|set`, `Email/get|query|changes|set|import|parse|copy`,
 `Thread/get|changes` and `SearchSnippet/get` work, limited to the shared
 folders:
 
@@ -165,6 +165,14 @@ folders:
   (`forbidden` otherwise). Replacing `mailboxIds` never takes a message out of
   the owner's unshared mailboxes. Destroying an email needs `t`+`e` on every
   mailbox it is in.
+- `Email/copy` copies between your own account and a shared one, either way
+  (and between two shared accounts). From a shared account only mail in a
+  folder you may read can be copied, anything else is `notFound`; into one,
+  every target folder needs `mayAddItems` (`i`) and the keywords their rights,
+  as for Email/import. `onSuccessDestroyOriginal` is an Email/set in the source
+  account with its checks, so moving out of a shared folder needs
+  `mayRemoveItems` there. Accounts that share nothing with you are
+  `fromAccountNotFound`.
 - Uploads to `/jmap/upload/{shared account}` are kept as yours and may be used
   by Email/import and Email/set there; `/jmap/download/{shared account}/…`
   serves the messages of the shared mailboxes you may read.

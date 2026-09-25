@@ -319,3 +319,104 @@ async fn shared_folders_are_accounts_of_their_own() {
     let refused = server.call(NYU, "Email/query", json!({ "accountId": mini_account })).await;
     assert_eq!(refused["type"], "accountNotFound");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn email_copy_works_between_own_and_shared_accounts() {
+    let server = server().await;
+    let (mini_account, nyu_account) = (format!("a{}", server.mini), format!("a{}", server.nyu));
+    let nyu_principal = format!("p{}", server.nyu);
+    let inbox = server.mailbox(server.mini, MailboxRole::Inbox).await;
+    let archive = server.mailbox(server.mini, MailboxRole::Archive).await;
+    let nyu_archive = server.mailbox(server.nyu, MailboxRole::Archive).await;
+    let shared_mail = server.deliver(server.mini, MailboxRole::Inbox, "geteilt").await;
+    let private = server.deliver(server.mini, MailboxRole::Archive, "privat").await;
+    let own_mail = server.deliver(server.nyu, MailboxRole::Inbox, "von nyu").await;
+    let share = |rights: Value| json!({ "accountId": mini_account, "update": { format!("m{inbox}"): { format!("shareWith/{nyu_principal}"): rights } } });
+    server.call(MINI, "Mailbox/set", share(json!({ "mayReadItems": true }))).await;
+
+    // Nothing is shared the other way: Nyu's account is nothing Mini may copy from.
+    let unshared = server
+        .call(
+            MINI,
+            "Email/copy",
+            json!({ "fromAccountId": nyu_account, "accountId": mini_account,
+                    "create": { "x": { "id": format!("e{own_mail}"), "mailboxIds": { format!("m{inbox}"): true } } } }),
+        )
+        .await;
+    assert_eq!(unshared["type"], "fromAccountNotFound", "{unshared}");
+
+    // Shared → own: only what Nyu may read; reading alone does not allow taking it away.
+    let responses = server
+        .api(
+            NYU,
+            json!([["Email/copy", {
+                "fromAccountId": mini_account, "accountId": nyu_account, "onSuccessDestroyOriginal": true,
+                "create": {
+                    "c1": { "id": format!("e{shared_mail}"), "mailboxIds": { format!("m{nyu_archive}"): true } },
+                    "c2": { "id": format!("e{private}"), "mailboxIds": { format!("m{nyu_archive}"): true } }
+                } }, "0"]]),
+        )
+        .await;
+    assert_eq!(responses.len(), 2, "{responses:?}");
+    let copied = &responses[0][1];
+    assert_eq!(responses[0][0], "Email/copy");
+    assert_eq!(copied["notCreated"]["c2"]["type"], "notFound", "unshared mail does not exist: {copied}");
+    let copy_id = copied["created"]["c1"]["id"].as_str().unwrap_or_else(|| panic!("{copied}")).to_owned();
+    assert_eq!(responses[1][0], "Email/set");
+    assert_eq!(responses[1][1]["accountId"], json!(mini_account));
+    assert_eq!(responses[1][1]["notDestroyed"][format!("e{shared_mail}")]["type"], "forbidden");
+    assert!(server.store.email(server.mini, shared_mail).await.is_ok(), "the original stays");
+    let copy = server
+        .call(
+            NYU,
+            "Email/get",
+            json!({ "accountId": nyu_account, "ids": [&copy_id], "properties": ["subject", "mailboxIds"] }),
+        )
+        .await;
+    assert_eq!(copy["list"][0]["subject"], "geteilt");
+    assert_eq!(copy["list"][0]["mailboxIds"], json!({ format!("m{nyu_archive}"): true }));
+
+    // Own → shared: needs `i` on the target mailbox.
+    let into = |mailbox: i64| {
+        json!({ "fromAccountId": nyu_account, "accountId": mini_account,
+                "create": { "x": { "id": format!("e{own_mail}"), "mailboxIds": { format!("m{mailbox}"): true } } } })
+    };
+    let refused = server.call(NYU, "Email/copy", into(inbox)).await;
+    assert_eq!(refused["notCreated"]["x"]["type"], "forbidden", "{refused}");
+    assert_eq!(refused["accountId"], json!(mini_account));
+
+    server.call(MINI, "Mailbox/set", share(json!("write"))).await;
+    let unshared_target = server.call(NYU, "Email/copy", into(archive)).await;
+    assert_eq!(unshared_target["notCreated"]["x"]["type"], "forbidden", "{unshared_target}");
+    let filed = server.call(NYU, "Email/copy", into(inbox)).await;
+    let filed_id = filed["created"]["x"]["id"].as_str().unwrap_or_else(|| panic!("{filed}")).to_owned();
+    let number: i64 = filed_id[1..].parse().unwrap();
+    let in_mini = server.store.email(server.mini, number).await.unwrap();
+    assert_eq!((in_mini.subject.as_str(), in_mini.mailbox_ids.clone()), ("von nyu", vec![inbox]));
+
+    // With the right to remove, copying out moves.
+    let responses = server
+        .api(
+            NYU,
+            json!([["Email/copy", {
+                "fromAccountId": mini_account, "accountId": nyu_account, "onSuccessDestroyOriginal": true,
+                "create": { "m": { "id": format!("e{shared_mail}"), "mailboxIds": { format!("m{nyu_archive}"): true } } } }, "0"]]),
+        )
+        .await;
+    assert!(responses[0][1]["created"].get("m").is_some(), "{responses:?}");
+    assert_eq!(responses[1][1]["destroyed"], json!([format!("e{shared_mail}")]), "{responses:?}");
+    assert!(server.store.email(server.mini, shared_mail).await.is_err(), "the original is gone");
+
+    // Moving out of one's own account into the shared one takes it from one's own.
+    let responses = server
+        .api(
+            NYU,
+            json!([["Email/copy", {
+                "fromAccountId": nyu_account, "accountId": mini_account, "onSuccessDestroyOriginal": true,
+                "create": { "o": { "id": format!("e{own_mail}"), "mailboxIds": { format!("m{inbox}"): true } } } }, "0"]]),
+        )
+        .await;
+    assert!(responses[0][1]["created"].get("o").is_some(), "{responses:?}");
+    assert_eq!(responses[1][1]["accountId"], json!(nyu_account));
+    assert_eq!(responses[1][1]["destroyed"], json!([format!("e{own_mail}")]), "{responses:?}");
+}

@@ -82,10 +82,33 @@ impl<'a> Ctx<'a> {
         }
     }
 
-    /// The account behind another account id this login may read, for /copy. Only its own so far;
-    /// shared accounts add theirs here.
-    pub fn readable_account(&self, id: &str) -> Option<i64> {
-        (id == self.account_id()).then_some(self.account.id)
+    /// The account behind an account id this login may read, for /copy: its own, or one that
+    /// shares mailboxes with it, then with what may be seen there.
+    pub async fn readable_account(&self, id: &str) -> MethodResult<Option<(i64, Option<SharedView>)>> {
+        let Some(account) = ids::parse('a', id) else {
+            return Ok(None);
+        };
+        let me = match &self.shared {
+            Some(view) => view.me.clone(),
+            None => self.account.clone(),
+        };
+        if account == me.id {
+            return Ok(Some((account, None)));
+        }
+        let rights = sharing::shared_rights(&self.jmap.store, me.id, account).await?;
+        Ok((!rights.is_empty()).then(|| (account, Some(SharedView { me, rights }))))
+    }
+
+    /// Runs a method call as the logged-in account, also while this call works in someone else's
+    /// account; the call may name any account the login may use.
+    pub async fn dispatch_as_login(&mut self, name: &str, args: Value) -> MethodResult<Outputs> {
+        let saved = self.shared.take().map(|view| (std::mem::replace(&mut self.account, view.me), view.rights));
+        let result = Box::pin(dispatch(self, name, args)).await;
+        if let Some((owner, rights)) = saved {
+            let me = std::mem::replace(&mut self.account, owner);
+            self.shared = Some(SharedView { me, rights });
+        }
+        result
     }
 
     pub fn parse_id(&self, prefix: char, value: &str) -> Option<i64> {
