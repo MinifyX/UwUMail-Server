@@ -61,7 +61,8 @@
     "collapse": "{{group}} inklappen",
     "expand": "{{group}} uitklappen",
     "mailbox": "Mailbox",
-    "directory": "Accounts & domeinen"
+    "directory": "Accounts & domeinen",
+    "calendars": "Agenda's en contacten"
   },
   "userMenu": {
     "open": "Accountmenu openen",
@@ -304,7 +305,10 @@
       "logoEmpty": "Het bestand is leeg.",
       "logoTooLarge": "Het logo is te groot. Maximaal 512 kB.",
       "logoType": "Dat is geen afbeelding die als logo werkt. PNG, JPEG, WebP en SVG mogen.",
-      "brandColor": "Dat is geen kleur. Verwacht wordt iets als #ff4d8d."
+      "brandColor": "Dat is geen kleur. Verwacht wordt iets als #ff4d8d.",
+      "unknownPerson": "Niemand op deze server heeft dit adres.",
+      "ownShare": "Met jezelf hoef je niets te delen.",
+      "tooManyShares": "Dit is al met te veel mensen gedeeld."
     }
   },
   "people": {
@@ -2808,5 +2812,35 @@
       "light": "Licht",
       "dark": "Donker"
     }
+  },
+  "calendars": {
+    "pageTitle": "Agenda's en contacten delen",
+    "intro": "Deel je agenda's en adresboeken met mensen op deze server. Ze verschijnen in hun agenda- en contacten-app en in de webmail.",
+    "notShared": "Met niemand gedeeld.",
+    "sharedWith": "Gedeeld met",
+    "shareWith": "Met iemand delen",
+    "addressPlaceholder": "adres@example.org",
+    "rightsLabel": "Rechten",
+    "rightsFor": "Rechten voor {{address}}",
+    "rights": {
+      "read": "Lezen",
+      "write": "Lezen en schrijven",
+      "all": "Alles"
+    },
+    "rightsHint": {
+      "read": "Ziet alle items, maar kan niets wijzigen.",
+      "write": "Kan items toevoegen, wijzigen en verwijderen.",
+      "all": "Kan ook naam en kleur wijzigen en verder delen. Alleen jij kunt het verwijderen."
+    },
+    "share": "Delen",
+    "sharedToast": "{{name}} is nu gedeeld met {{address}}",
+    "unshare": "Niet meer delen",
+    "unsharedToast": "{{name}} wordt niet meer gedeeld",
+    "sharedTitle": "Met jou gedeeld",
+    "sharedEmpty": "Nog niemand heeft iets met je gedeeld.",
+    "from": "Van {{owner}}",
+    "leave": "Verlaten",
+    "leftToast": "{{name}} verlaten",
+    "off": "Agenda's en contacten staan uit voor je account."
   }
 }

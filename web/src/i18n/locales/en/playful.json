@@ -149,5 +149,9 @@
   "sharing": {
     "withMeEmpty": "Nobody shares a folder with you yet (｡•ᴗ•｡)",
     "saved": "{{folder}} is shared with {{person}} (ﾉ◕ヮ◕)ﾉ"
+  },
+  "calendars": {
+    "intro": "Share your calendars and address books with people here on the server, and nobody misses a date again (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
+    "sharedEmpty": "Nobody has shared anything with you yet (・ω・)"
   }
 }

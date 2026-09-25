@@ -50,6 +50,10 @@ something a family, a club or a small team can run without being a mail admin:
 - **Shared folders.** Share a folder with people on your server — to read, to
   read and write, or everything — from My account, over JMAP or with IMAP ACLs;
   it shows in their mail app and webmail. See [sharing](docs/sharing.md).
+- **Shared calendars and invitations.** Share calendars and address books with
+  people on your server; invite anyone to an event and get their answers, in
+  the calendar app you already use ([how it works](docs/calendars.md)). iPhone,
+  iPad and Mac set everything up with one signed profile.
 - **Spam filter and, if you want, a virus scanner.** The filter learns, keeps
   sender and word lists and fetches known-bad lists by itself; an optional
   [ClamAV beside the server](docs/antivirus.md) turns infected mail away before

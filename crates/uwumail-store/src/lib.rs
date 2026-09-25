@@ -28,6 +28,7 @@ mod held;
 pub mod ical;
 mod imap;
 mod import;
+pub mod itip;
 mod mail;
 mod mutate;
 mod objects;
@@ -40,6 +41,7 @@ mod reports;
 mod rules;
 mod security;
 mod sender_lists;
+mod sharing;
 mod sieve;
 mod spam;
 mod spam_log;
@@ -113,6 +115,7 @@ pub use sender_lists::{
     ListOwner, ListScope, NewSenderListEntry, SENDER_LIST_ADMIN_LIMIT, SENDER_LIST_PERSONAL_LIMIT, SenderKind,
     SenderList, SenderListEntry, guess_sender_kind, normalize_sender, pattern_matches,
 };
+pub use sharing::{DAV_SHARES_PER_COLLECTION, DavAccess, DavShare, ShareRights, SharedDavCollection};
 pub use sieve::{
     SIEVE_MAX_NAME_SIZE, SIEVE_MAX_SCRIPT_SIZE, SIEVE_MAX_SCRIPTS, SieveActivation, SieveError, SieveScript,
     validate_sieve_name,

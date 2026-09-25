@@ -61,7 +61,8 @@
     "collapse": "{{group}} einklappen",
     "expand": "{{group}} ausklappen",
     "mailbox": "Postfach",
-    "directory": "Konten & Domains"
+    "directory": "Konten & Domains",
+    "calendars": "Kalender & Kontakte"
   },
   "userMenu": {
     "open": "Kontomenü öffnen",
@@ -304,7 +305,10 @@
       "logoEmpty": "Die Datei ist leer.",
       "logoTooLarge": "Das Logo ist zu groß. Erlaubt sind höchstens 512 KB.",
       "logoType": "Das ist kein Bild, das als Logo taugt. Erlaubt sind PNG, JPEG, WebP und SVG.",
-      "brandColor": "Das ist keine Farbe. Erwartet wird etwas wie #ff4d8d."
+      "brandColor": "Das ist keine Farbe. Erwartet wird etwas wie #ff4d8d.",
+      "unknownPerson": "Diese Adresse gehört niemandem auf diesem Server.",
+      "ownShare": "Mit dir selbst musst du nichts teilen.",
+      "tooManyShares": "Das ist schon mit zu vielen Leuten geteilt."
     }
   },
   "people": {
@@ -2808,5 +2812,35 @@
       "light": "Hell",
       "dark": "Dunkel"
     }
+  },
+  "calendars": {
+    "pageTitle": "Kalender und Kontakte teilen",
+    "intro": "Teile deine Kalender und Adressbücher mit Leuten auf diesem Server. Sie erscheinen bei ihnen in der Kalender- und Kontakte-App und im Webmail.",
+    "notShared": "Mit niemandem geteilt.",
+    "sharedWith": "Geteilt mit",
+    "shareWith": "Mit jemandem teilen",
+    "addressPlaceholder": "adresse@example.org",
+    "rightsLabel": "Rechte",
+    "rightsFor": "Rechte für {{address}}",
+    "rights": {
+      "read": "Lesen",
+      "write": "Lesen und schreiben",
+      "all": "Alles"
+    },
+    "rightsHint": {
+      "read": "Sieht alle Einträge, kann aber nichts ändern.",
+      "write": "Kann Einträge anlegen, ändern und löschen.",
+      "all": "Kann außerdem Name und Farbe ändern und weiter teilen. Löschen kannst nur du."
+    },
+    "share": "Teilen",
+    "sharedToast": "{{name}} ist jetzt mit {{address}} geteilt",
+    "unshare": "Nicht mehr teilen",
+    "unsharedToast": "{{name}} wird nicht mehr geteilt",
+    "sharedTitle": "Mit dir geteilt",
+    "sharedEmpty": "Noch hat niemand etwas mit dir geteilt.",
+    "from": "Von {{owner}}",
+    "leave": "Verlassen",
+    "leftToast": "{{name}} verlassen",
+    "off": "Kalender und Kontakte sind für dein Konto ausgeschaltet."
   }
 }

@@ -266,6 +266,10 @@ impl Smtp {
                             local_deliveries += 1;
                             // The sender is an authenticated local account, so it is verified.
                             vacation::maybe_reply(ctx, account_id, &mail_from, true, &signed).await;
+                            // Calendar apps that send invitations themselves reach people here too;
+                            // the From address was checked above to be the sender's own.
+                            let sender = crate::scheduling::Sender { verified_from: Some(&from[0]), local: true };
+                            crate::scheduling::incoming(ctx, account_id, &signed, sender).await;
                         }
                         Err(err) => failed.push(FailedRecipient {
                             address,

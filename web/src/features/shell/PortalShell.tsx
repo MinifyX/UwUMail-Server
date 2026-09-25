@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import {
   AtSign,
+  CalendarDays,
   ChevronsUpDown,
   Download,
   Forward,
@@ -208,6 +209,7 @@ export function PortalShell({ session, children }: { session: Session; children:
           items={[
             { to: "/account", label: t("nav.overview"), icon: LayoutDashboard },
             { to: "/account/addresses", label: t("nav.addresses"), icon: AtSign },
+            { to: "/account/calendars", label: t("nav.calendars"), icon: CalendarDays },
             { to: "/account/mail", label: t("nav.mail"), icon: Forward },
             { to: "/account/fetch", label: t("nav.fetch"), icon: Download },
             { to: "/account/spam", label: t("nav.spamFilter"), icon: MailWarning },

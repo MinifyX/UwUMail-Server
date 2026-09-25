@@ -6,7 +6,8 @@ in the RFC editor queue). The webmail and the UwUMail apps use it; phones and
 Thunderbird keep using CalDAV, and both see the same calendars and events.
 
 This page says what is supported and how the server behaves where the draft
-leaves room.
+leaves room. Sharing and invitations are explained for everyone in
+[calendars.md](calendars.md).
 
 ## Capability
 
@@ -53,6 +54,43 @@ are the ones calcard uses (`recurrenceRule` in the singular, `showWithoutTime`,
 - The first calendar is made the first time either side looks, with the same
   name ("Kalender" or "Calendar", after the server's language) and colour.
 
+## Shared calendars
+
+Calendars other people of the server share with the account are listed by
+`Calendar/get` next to its own, in the same account, with their own ids
+(`c12` is the same calendar for its owner and everyone it is shared with).
+Their events are in `CalendarEvent/get`, `/query` and `/changes`, and a change
+to them is pushed to everyone who sees the calendar. What the account may do is
+in `myRights`; writing where it may not is `forbidden`.
+
+| Shared with rights | `myRights` |
+| --- | --- |
+| read | `mayReadFreeBusy`, `mayReadItems` |
+| read and write | also `mayWriteAll`, `mayWriteOwn`, `mayUpdatePrivate`, `mayRSVP` |
+| all | also `mayShare`: name, colour, description, time zone and `shareWith` may change |
+
+`mayDelete` of a shared calendar is `true`: destroying it only leaves it, it
+stays its owner's. `isDefault` is always `false` for it, and its `isVisible`
+and `sortOrder` are the owner's and cannot change. A calendar shared with the
+account has an extra property naming its owner:
+
+```json
+"uwuSharedBy": { "email": "mini@example.org", "name": "Mini" }
+```
+
+(`null` for one's own calendars).
+
+`shareWith` of an own calendar (or one shared with all rights) is a map from
+principal id to CalendarRights, `null` when it is shared with nobody.
+Principals are the accounts of the server: a principal id is the account id,
+like `a12`. As long as a client has no Principal list at hand, an address of
+the server may stand for the principal id when writing (`{ "leni@example.org":
+{ "mayReadItems": true } }`); answers always use the id. Set the whole map, or
+one person with `shareWith/a12` (`null` takes them off). The rights asked for
+are rounded up to the three levels above: `mayShare` means all, any writing
+right means read and write, any other right means read. Someone who is not on
+the server is `invalidProperties` naming `shareWith`.
+
 ## Ids
 
 | Object | Id | |
@@ -75,9 +113,11 @@ Instance ids never show up in `/changes`; only the stored event does.
 | `isVisible` | whether the webmail and the apps show its events; kept on the server, CalDAV does not know it |
 | `isDefault` | exactly one calendar is the default |
 | `includeInAvailability` | always `"all"` |
-| `defaultAlertsWithTime`, `defaultAlertsWithoutTime`, `shareWith` | always `null` |
+| `defaultAlertsWithTime`, `defaultAlertsWithoutTime` | always `null` |
+| `shareWith` | who else sees it; see [Shared calendars](#shared-calendars) |
 | `timeZone` | an IANA name or `null`; stored as the CalDAV `calendar-timezone` |
-| `myRights` | everything `true` except `mayShare` (nothing is shared); `mayDelete` is `false` for the only calendar |
+| `myRights` | everything `true` for one's own calendars; `mayDelete` is `false` for the only own calendar. For shared ones see above |
+| `uwuSharedBy` | the owner of a calendar shared with the account, else `null` |
 
 `Calendar/get` and `Calendar/changes` are standard. `Calendar/set` creates,
 changes and destroys calendars with the properties above; a property with only
@@ -236,9 +276,23 @@ Checked before anything is stored (`invalidProperties` names the property):
 
 Everything else in an event is kept as data, unknown properties included.
 
-`sendSchedulingMessages: true` is refused with `noSupportedScheduleMethods`
-when the event has participants other than the account itself; without it,
-participants are simply stored.
+`sendSchedulingMessages: true` sends what the change means to the others
+(iTIP): an organizer's new or changed event invites its participants, someone
+taken off or a destroyed event cancels, and an attendee's changed
+`participationStatus` (or destroying the invitation, which declines it)
+answers the organizer. People of this server get it straight into their own
+calendars, everyone else by mail; see [calendars.md](calendars.md). A new
+event with participants and no `organizerCalendarAddress` gets the account's
+address as its organizer. Messages are only sent for events in the account's
+own calendars, never for calendars shared with it. Without
+`sendSchedulingMessages`, participants are simply stored and nobody hears
+about it, as the draft says.
+
+An invitation that reached the account shows up as an event of its default
+calendar with `isOrigin: false`, the organizer's `organizerCalendarAddress`
+and the account's participant at `participationStatus: "needs-action"`. To
+answer, patch that participant's `participationStatus` (`accepted`,
+`declined`, `tentative`) with `sendSchedulingMessages: true`.
 
 ### CalendarEvent/query
 
@@ -284,14 +338,17 @@ EventSource, next to the mail types.
 
 ## Not supported
 
-- Sharing, principals and `Principal/getAvailability`
-  (`urn:ietf:params:jmap:principals:availability`)
-- Scheduling: no invitations, replies or cancellations are sent (iTIP/iMIP)
+- Principals of their own (`Principal/get`) and `Principal/getAvailability`
+  (`urn:ietf:params:jmap:principals:availability`); principal ids are account
+  ids, see above
+- Calendars in other accounts: shared calendars are part of the account they
+  are shared with
 - `CalendarEventNotification`, `CalendarEvent/copy`, `CalendarEvent/parse`
   (`urn:ietf:params:jmap:calendars:parse`)
 - Default alerts, `useDefaultAlerts` and alerts pushed by the server; alerts
   are stored and handed to CalDAV clients, which ring them
 - Drafts (`isDraft: true`), more than one calendar per event, custom time
   zones, events that are single instances without their series
-- Per-user properties: there is one user per calendar anyway
+- Per-user properties of shared calendars and events: colour, visibility and
+  alerts are the owner's
 - `CalendarEvent/queryChanges`

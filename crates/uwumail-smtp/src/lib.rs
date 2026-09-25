@@ -31,6 +31,8 @@ pub mod reachability;
 mod relay;
 mod reports;
 mod rules;
+pub mod scheduling;
+mod scheduling_texts;
 mod sender_lists;
 pub mod servercheck;
 pub mod sieve;

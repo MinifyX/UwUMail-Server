@@ -4,6 +4,7 @@ pub mod apps;
 pub mod auth;
 pub mod backups;
 pub mod branding;
+pub mod calendars;
 pub mod domains;
 pub mod egress;
 pub mod fetch;

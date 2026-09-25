@@ -1186,6 +1186,35 @@ export interface OwnAddressesView {
   released: { address: string; releasedAt: number; reservedUntil: number }[];
 }
 
+/** What someone shared with others may do: see, see and change, or everything but deleting. */
+export type ShareRights = "read" | "write" | "all";
+
+export interface OwnCollection {
+  id: number;
+  kind: "calendar" | "addressbook";
+  name: string;
+  color: string | null;
+  entries: number;
+  shares: { accountId: number; address: string; name: string; rights: ShareRights }[];
+}
+
+export interface SharedCollection {
+  id: number;
+  kind: "calendar" | "addressbook";
+  name: string;
+  color: string | null;
+  owner: string;
+  ownerName: string;
+  rights: ShareRights;
+}
+
+export interface CalendarsView {
+  calendars: boolean;
+  contacts: boolean;
+  own: OwnCollection[];
+  shared: SharedCollection[];
+}
+
 export interface StorageView {
   usedBytes: number;
   quotaBytes: number;

@@ -4411,6 +4411,7 @@ dependencies = [
  "tower",
  "tracing",
  "uwumail-jmap",
+ "uwumail-smtp",
  "uwumail-store",
 ]
 
@@ -4620,6 +4621,7 @@ dependencies = [
  "hyper-util",
  "mail-builder",
  "qrcode",
+ "rcgen",
  "rustix",
  "rustls",
  "serde",

@@ -742,14 +742,17 @@ async fn events_stay_within_limits() {
     let invite = with(json!({ "participants": {
         "a": { "@type": "Participant", "calendarAddress": "mailto:someone@example.net", "roles": { "attendee": true } }
     } }));
-    let refused = server
+    let sent = server
         .call(
             MINI,
             "CalendarEvent/set",
             json!({ "accountId": account, "create": { "i": invite.clone() }, "sendSchedulingMessages": true }),
         )
         .await;
-    assert_eq!(refused["notCreated"]["i"]["type"], "noSupportedScheduleMethods");
+    assert!(sent["created"]["i"]["id"].is_string(), "{sent}");
+    let queue = server.store.queue_entries().await.unwrap();
+    assert_eq!(queue.len(), 1, "the invitation goes out by mail");
+    assert_eq!(queue[0].recipients[0].address, "someone@example.net");
     let stored =
         server.call(MINI, "CalendarEvent/set", json!({ "accountId": account, "create": { "i": invite } })).await;
     assert!(stored["created"]["i"]["id"].is_string(), "without scheduling it is just data: {stored}");
