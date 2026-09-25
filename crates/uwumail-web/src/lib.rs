@@ -17,6 +17,7 @@ mod login;
 mod logs;
 pub mod loki;
 mod notices;
+pub mod profile_signing;
 mod routes;
 mod session;
 pub mod settings;
@@ -90,6 +91,8 @@ struct Inner {
     backups: std::sync::OnceLock<uwumail_backup::Backups>,
     /// The way out for a message's remote pictures, once the server plugged it in.
     egress: std::sync::OnceLock<uwumail_smtp::egress::Egress>,
+    /// The certificate and key Apple configuration profiles are signed with, once plugged in.
+    profile_key: std::sync::OnceLock<profile_signing::ProfileKeySource>,
 }
 
 impl Web {
@@ -113,6 +116,7 @@ impl Web {
                 host: std::sync::OnceLock::new(),
                 backups: std::sync::OnceLock::new(),
                 egress: std::sync::OnceLock::new(),
+                profile_key: std::sync::OnceLock::new(),
             }),
         }
     }
@@ -176,6 +180,16 @@ impl Web {
     /// Lets the portal show how remote pictures leave the server. Only the first call counts.
     pub fn set_egress(&self, egress: uwumail_smtp::egress::Egress) {
         let _ = self.inner.egress.set(egress);
+    }
+
+    /// Lets Apple configuration profiles be signed with the server's certificate (docs/calendars.md
+    /// explains why it matters). Only the first call counts.
+    pub fn set_profile_key(&self, source: profile_signing::ProfileKeySource) {
+        let _ = self.inner.profile_key.set(source);
+    }
+
+    pub(crate) fn profile_key(&self) -> Option<&profile_signing::ProfileKeySource> {
+        self.inner.profile_key.get()
     }
 
     pub(crate) fn egress(&self) -> Option<&uwumail_smtp::egress::Egress> {

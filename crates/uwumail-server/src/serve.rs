@@ -173,6 +173,10 @@ pub async fn run(
         },
     );
     web.set_egress(egress);
+    {
+        let certs = certs.clone();
+        web.set_profile_key(Arc::new(move || certs.pem()));
+    }
     tasks.spawn(web.clone().run_health_checks(shutdown_rx.clone()));
     let setup_code = web.open_setup().await;
     let gateway = gateway::GatewayManager::new(

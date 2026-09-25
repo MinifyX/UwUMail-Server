@@ -4501,6 +4501,7 @@ dependencies = [
  "hyper-util",
  "mail-builder",
  "qrcode",
+ "rcgen",
  "rustix",
  "rustls",
  "serde",
