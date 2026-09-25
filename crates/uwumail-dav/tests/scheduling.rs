@@ -59,8 +59,9 @@ async fn server() -> Server {
         },
     )
     .unwrap();
-    let dav = Dav::new(store.clone(), DavSettings { calendar_name: "Kalender".into(), addressbook_name: "Kontakte".into() })
-        .with_scheduling(smtp);
+    let dav =
+        Dav::new(store.clone(), DavSettings { calendar_name: "Kalender".into(), addressbook_name: "Kontakte".into() })
+            .with_scheduling(smtp);
     Server { app: dav.router(), store, _dir: dir }
 }
 
@@ -138,7 +139,8 @@ async fn invitations_answers_and_cancellations_between_calendars() {
     assert_eq!(taken.status, StatusCode::METHOD_NOT_ALLOWED);
 
     // Mini invites Leni, who is on this server, and a guest from elsewhere.
-    let created = server.send(MINI, "PUT", CALENDAR, &[], &invitation("Kaffee", "20261001T150000Z", "NEEDS-ACTION")).await;
+    let created =
+        server.send(MINI, "PUT", CALENDAR, &[], &invitation("Kaffee", "20261001T150000Z", "NEEDS-ACTION")).await;
     assert_eq!(created.status, StatusCode::CREATED, "{}", created.body);
     let first_tag = created.schedule_tag.clone().expect("a Schedule-Tag");
     let leni_copy = server.copy(LENI, "kaffee@example.org").await.expect("the invitation is in Leni's calendar");
@@ -149,7 +151,10 @@ async fn invitations_answers_and_cancellations_between_calendars() {
     assert_eq!(queue[0].recipients[0].address, "gast@example.com");
     let raw = String::from_utf8(server.store.blob(&queue[0].message.blob).await.unwrap()).unwrap();
     assert!(raw.contains("method=\"REQUEST\"") && raw.contains("Einladung: Kaffee"), "{raw}");
-    assert!(raw.contains("From: \"MINI\" <mini@example.org>") || raw.contains("From: MINI <mini@example.org>"), "{raw}");
+    assert!(
+        raw.contains("From: \"MINI\" <mini@example.org>") || raw.contains("From: MINI <mini@example.org>"),
+        "{raw}"
+    );
 
     // Leni accepts in her calendar app; the answer lands in Mini's copy, which keeps its
     // Schedule-Tag although its ETag changes.
@@ -229,7 +234,8 @@ async fn shared_calendars_appear_in_the_home_of_those_they_are_shared_with() {
         .collect::<String>();
     assert_eq!(server.send(MINI, "PUT", CALENDAR, &[], &event).await.status, StatusCode::CREATED);
     let mini = server.store.account(MINI).await.unwrap().unwrap();
-    let calendar = server.store.dav_collection(mini.id, uwumail_store::DavKind::Calendar, "personal").await.unwrap().unwrap();
+    let calendar =
+        server.store.dav_collection(mini.id, uwumail_store::DavKind::Calendar, "personal").await.unwrap().unwrap();
     server.store.dav_share(mini.id, calendar.id, LENI, ShareRights::Read).await.unwrap();
 
     let shared_path = format!("/dav/calendars/leni@example.org/shared~{}/", calendar.id);
@@ -252,15 +258,25 @@ async fn shared_calendars_appear_in_the_home_of_those_they_are_shared_with() {
     assert!(listed.body.contains(&format!("{shared_path}kaffee.ics")), "{}", listed.body);
     let fetched = server.send(LENI, "GET", &format!("{shared_path}kaffee.ics"), &[], "").await;
     assert!(fetched.body.contains("SUMMARY:Kaffee"));
-    let refused = server.send(LENI, "PUT", &format!("{shared_path}neu.ics"), &[], &event.replace("kaffee@", "neu@")).await;
+    let refused =
+        server.send(LENI, "PUT", &format!("{shared_path}neu.ics"), &[], &event.replace("kaffee@", "neu@")).await;
     assert_eq!(refused.status, StatusCode::FORBIDDEN);
     assert!(refused.body.contains("need-privileges"));
-    let not_theirs = server.send(LENI, "PROPPATCH", &shared_path, &[], r#"<propertyupdate xmlns="DAV:"><set><prop><displayname>X</displayname></prop></set></propertyupdate>"#).await;
+    let not_theirs = server
+        .send(
+            LENI,
+            "PROPPATCH",
+            &shared_path,
+            &[],
+            r#"<propertyupdate xmlns="DAV:"><set><prop><displayname>X</displayname></prop></set></propertyupdate>"#,
+        )
+        .await;
     assert_eq!(not_theirs.status, StatusCode::FORBIDDEN);
 
     // With writing allowed, Leni's entries land in Mini's calendar.
     server.store.dav_share(mini.id, calendar.id, LENI, ShareRights::Write).await.unwrap();
-    let written = server.send(LENI, "PUT", &format!("{shared_path}neu.ics"), &[], &event.replace("kaffee@", "neu@")).await;
+    let written =
+        server.send(LENI, "PUT", &format!("{shared_path}neu.ics"), &[], &event.replace("kaffee@", "neu@")).await;
     assert_eq!(written.status, StatusCode::CREATED, "{}", written.body);
     let mine = server.send(MINI, "GET", "/dav/calendars/mini@example.org/personal/neu.ics", &[], "").await;
     assert_eq!(mine.status, StatusCode::OK);

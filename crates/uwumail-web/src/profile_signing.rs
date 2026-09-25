@@ -109,7 +109,7 @@ impl SigningIdentity {
         let digest_identifier = sequence(&oid(digest_oid));
         let content_digest = digest::digest(digest_algorithm, content);
 
-        let mut attributes = vec![
+        let mut attributes = [
             attribute(OID_CONTENT_TYPE, &oid(OID_DATA)),
             attribute(OID_SIGNING_TIME, &utc_time(now)),
             attribute(OID_MESSAGE_DIGEST, &tlv(0x04, content_digest.as_ref())),
@@ -213,13 +213,8 @@ fn utc_time(unix: i64) -> Vec<u8> {
     let day = doy - (153 * mp + 2) / 5 + 1;
     let month = if mp < 10 { mp + 3 } else { mp - 9 };
     let year = yoe + era * 400 + i64::from(month <= 2);
-    let text = format!(
-        "{:02}{month:02}{day:02}{:02}{:02}{:02}Z",
-        year % 100,
-        seconds / 3600,
-        seconds / 60 % 60,
-        seconds % 60
-    );
+    let text =
+        format!("{:02}{month:02}{day:02}{:02}{:02}{:02}Z", year % 100, seconds / 3600, seconds / 60 % 60, seconds % 60);
     tlv(0x17, text.as_bytes())
 }
 

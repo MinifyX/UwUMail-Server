@@ -257,7 +257,9 @@ impl Target {
                     .collect()
             }
             (CALSERVER, "getctag", Target::Collection(v)) => v.collection.change.to_string(),
-            (DAV, "sync-token", Target::Collection(v)) => xml::escape(&sync_token(v.collection.id, v.collection.change)),
+            (DAV, "sync-token", Target::Collection(v)) => {
+                xml::escape(&sync_token(v.collection.id, v.collection.change))
+            }
             (DAV, "getetag", Target::Collection(v)) => xml::escape(&format!("\"c{}\"", v.collection.change)),
             // Apple's way of saying who shares a calendar and how.
             (CALSERVER, "shared-url", Target::Collection(v)) if !v.access.is_owner() => href(&self.href(login)),

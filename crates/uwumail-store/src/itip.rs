@@ -264,11 +264,8 @@ fn parse_line(line: &str) -> Option<Property> {
                 }
             }
             let value = &after[..end];
-            let value = value
-                .strip_prefix('"')
-                .and_then(|v| v.strip_suffix('"'))
-                .filter(|v| !v.contains('"'))
-                .unwrap_or(value);
+            let value =
+                value.strip_prefix('"').and_then(|v| v.strip_suffix('"')).filter(|v| !v.contains('"')).unwrap_or(value);
             params.push((key.trim().to_ascii_uppercase(), value.to_owned()));
             rest = after.get(end + 1..).unwrap_or("");
         }
@@ -740,9 +737,8 @@ pub fn summary(calendar: &Component) -> Summary {
         .property("DTSTART")
         .map(|start| {
             let value = start.value.trim();
-            let date = |v: &str| {
-                v.get(..8).map(|d| format!("{}-{}-{}", &d[..4], &d[4..6], &d[6..8])).unwrap_or_default()
-            };
+            let date =
+                |v: &str| v.get(..8).map(|d| format!("{}-{}-{}", &d[..4], &d[4..6], &d[6..8])).unwrap_or_default();
             match value.split_once('T') {
                 None => date(value),
                 Some((day, time)) if time.len() >= 4 => {

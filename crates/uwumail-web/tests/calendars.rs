@@ -12,7 +12,13 @@ use uwumail_smtp::{Smtp, SmtpSettings};
 use uwumail_store::{NewAccount, Role, Store};
 use uwumail_web::{CSRF_HEADER, Web, WebSettings};
 
-async fn call(app: &Router, method: &str, path: &str, body: Option<Value>, auth: Option<&(String, String)>) -> (StatusCode, Value) {
+async fn call(
+    app: &Router,
+    method: &str,
+    path: &str,
+    body: Option<Value>,
+    auth: Option<&(String, String)>,
+) -> (StatusCode, Value) {
     let mut request = Request::builder().method(method).uri(path);
     if let Some((cookie, csrf)) = auth {
         request = request.header(header::COOKIE, cookie).header(CSRF_HEADER, csrf);

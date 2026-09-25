@@ -29,8 +29,8 @@ use uwumail_jmap::{Authenticator, ClientInfo};
 use uwumail_smtp::Smtp;
 use uwumail_store::itip::{self, Component};
 use uwumail_store::{
-    Account, AppScope, DavAccess, DavCollectionUpdate, DavKind, DavPrecondition, DavWrite,
-    DavWriteOutcome, NewDavCollection, Store, StoreError,
+    Account, AppScope, DavAccess, DavCollectionUpdate, DavKind, DavPrecondition, DavWrite, DavWriteOutcome,
+    NewDavCollection, Store, StoreError,
 };
 
 use crate::props::{Requested, Target, View, Who};
@@ -208,7 +208,12 @@ xmlns:card=\"urn:ietf:params:xml:ns:carddav\">{}</d:error>\n",
 
 /// Refused for lack of a privilege (RFC 3744, 7.1.1).
 fn not_allowed(privilege: &str) -> Response {
-    precondition(StatusCode::FORBIDDEN, DAV, "need-privileges", &format!("<d:resource><d:privilege>{privilege}</d:privilege></d:resource>"))
+    precondition(
+        StatusCode::FORBIDDEN,
+        DAV,
+        "need-privileges",
+        &format!("<d:resource><d:privilege>{privilege}</d:privilege></d:resource>"),
+    )
 }
 
 fn multistatus(responses: Vec<String>, extra: &str) -> Response {
@@ -331,7 +336,7 @@ struct Session<'a> {
 
 /// What a collection path names.
 enum Found {
-    Collection(View),
+    Collection(Box<View>),
     Inbox,
     Outbox,
 }
@@ -365,7 +370,11 @@ impl Session<'_> {
     async fn collection(&self, kind: DavKind, segment: &str) -> Result<Option<View>, StoreError> {
         if let Some(id) = segment.strip_prefix(SHARED_PREFIX) {
             let Ok(id) = id.parse::<i64>() else { return Ok(None) };
-            return Ok(self.collections(kind).await?.into_iter().find(|v| v.collection.id == id && v.segment == segment));
+            return Ok(self
+                .collections(kind)
+                .await?
+                .into_iter()
+                .find(|v| v.collection.id == id && v.segment == segment));
         }
         // Listing first makes the default collection exist before a client asks for it by name.
         self.store().dav_collections(self.account.id, kind, self.dav.default_collection(kind)).await?;
@@ -376,13 +385,17 @@ impl Session<'_> {
         match scheduling_box(kind, segment) {
             Some(INBOX) => Ok(Some(Found::Inbox)),
             Some(_) => Ok(Some(Found::Outbox)),
-            None => Ok(self.collection(kind, segment).await?.map(Found::Collection)),
+            None => Ok(self.collection(kind, segment).await?.map(|view| Found::Collection(Box::new(view)))),
         }
     }
 
     /// Where invitations go: the default calendar's URL.
     async fn default_calendar_href(&self) -> Option<String> {
-        let own = self.store().dav_collections(self.account.id, DavKind::Calendar, self.dav.default_collection(DavKind::Calendar)).await.ok()?;
+        let own = self
+            .store()
+            .dav_collections(self.account.id, DavKind::Calendar, self.dav.default_collection(DavKind::Calendar))
+            .await
+            .ok()?;
         let calendar = own.iter().find(|c| c.is_default).or(own.first())?;
         Some(collection_href(DavKind::Calendar, self.login, &calendar.slug))
     }
@@ -430,6 +443,7 @@ impl Session<'_> {
                     Some(Found::Inbox) => targets.push(Target::Inbox),
                     Some(Found::Outbox) => targets.push(Target::Outbox),
                     Some(Found::Collection(view)) => {
+                        let view = *view;
                         let owner = view.collection.account_id;
                         let id = view.collection.id;
                         targets.push(Target::Collection(view.clone()));
@@ -743,7 +757,10 @@ impl Session<'_> {
                 }
                 let old = if *kind == DavKind::Calendar { self.entry(&view, name).await.ok().flatten() } else { None };
                 let if_match = etag_header(headers, header::IF_MATCH);
-                match self.store().dav_delete(view.collection.account_id, view.collection.id, name, if_match.clone()).await
+                match self
+                    .store()
+                    .dav_delete(view.collection.account_id, view.collection.id, name, if_match.clone())
+                    .await
                 {
                     Ok(true) => {
                         self.schedule(&view, old.as_ref().map(|old| old.content.as_str()), None).await;
@@ -790,11 +807,8 @@ impl Session<'_> {
         if end <= start || end - start > MAX_FREE_BUSY_SECS {
             return precondition(StatusCode::FORBIDDEN, CALDAV, "valid-scheduling-message", "");
         }
-        let attendees: Vec<String> = query
-            .properties_named("ATTENDEE")
-            .filter_map(|p| p.address())
-            .take(MAX_FREE_BUSY_ATTENDEES)
-            .collect();
+        let attendees: Vec<String> =
+            query.properties_named("ATTENDEE").filter_map(|p| p.address()).take(MAX_FREE_BUSY_ATTENDEES).collect();
         let mut responses = String::new();
         for attendee in attendees {
             let busy = self.busy(&attendee, start, end).await;
@@ -815,15 +829,13 @@ impl Session<'_> {
                     answer.properties.push(itip::Property::new("DTSTART", itip::stamp(start)));
                     answer.properties.push(itip::Property::new("DTEND", itip::stamp(end)));
                     for (from, to) in periods {
-                        answer
-                            .properties
-                            .push(itip::Property::new("FREEBUSY", format!("{}/{}", itip::stamp(from), itip::stamp(to))));
+                        answer.properties.push(itip::Property::new(
+                            "FREEBUSY",
+                            format!("{}/{}", itip::stamp(from), itip::stamp(to)),
+                        ));
                     }
                     reply.components.push(answer);
-                    (
-                        "2.0;Success",
-                        format!("<c:calendar-data>{}</c:calendar-data>", xml::escape(&reply.to_ics())),
-                    )
+                    ("2.0;Success", format!("<c:calendar-data>{}</c:calendar-data>", xml::escape(&reply.to_ics())))
                 }
                 None => ("3.7;Invalid calendar user", String::new()),
             };

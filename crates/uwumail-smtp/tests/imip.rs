@@ -122,7 +122,9 @@ impl TestServer {
         let (read, mut write) = stream.into_split();
         let mut lines = BufReader::new(read).lines();
         reply_line(&mut lines).await;
-        for command in ["EHLO stranger.test".to_owned(), format!("MAIL FROM:<{from}>"), format!("RCPT TO:<{to}>"), "DATA".into()] {
+        for command in
+            ["EHLO stranger.test".to_owned(), format!("MAIL FROM:<{from}>"), format!("RCPT TO:<{to}>"), "DATA".into()]
+        {
             write.write_all(format!("{command}\r\n").as_bytes()).await.unwrap();
             reply_line(&mut lines).await;
         }
@@ -163,8 +165,12 @@ async fn invitations_travel_by_mail_and_answers_come_back() {
 
     // Mini keeps the event in her calendar, as her client would, and the invitation goes out.
     let mini = a.account("mini@a.test").await;
-    let calendars =
-        a.smtp.store().dav_collections(mini.id, DavKind::Calendar, NewDavCollection::default_calendar("K")).await.unwrap();
+    let calendars = a
+        .smtp
+        .store()
+        .dav_collections(mini.id, DavKind::Calendar, NewDavCollection::default_calendar("K"))
+        .await
+        .unwrap();
     let content = invitation("kaffee@a.test");
     let checked = uwumail_store::ical::check_calendar(&content, &[]).unwrap();
     let write = CalendarEventWrite {

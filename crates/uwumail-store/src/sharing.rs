@@ -102,7 +102,11 @@ fn share_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavShare> {
 const SHARE_COLUMNS: &str = "s.collection_id, s.account_id, a.login, a.display_name, s.rights";
 
 /// How `account_id` gets at a collection, if at all.
-pub(crate) fn access(conn: &Connection, account_id: i64, collection_id: i64) -> Result<Option<(DavCollection, DavAccess)>> {
+pub(crate) fn access(
+    conn: &Connection,
+    account_id: i64,
+    collection_id: i64,
+) -> Result<Option<(DavCollection, DavAccess)>> {
     let Some(collection) = collection_by_id(conn, collection_id).ok() else { return Ok(None) };
     if collection.account_id == account_id {
         return Ok(Some((collection, DavAccess::Owner)));
@@ -206,7 +210,10 @@ impl Store {
                     return Err(StoreError::NotFound(format!("collection {collection_id}")));
                 };
                 if !access.may_admin() {
-                    return Err(StoreError::Rule { code: "forbidden", message: "only its owner may share this".into() });
+                    return Err(StoreError::Rule {
+                        code: "forbidden",
+                        message: "only its owner may share this".into(),
+                    });
                 }
                 if grantee == collection.account_id {
                     return Err(StoreError::Rule {
@@ -214,11 +221,8 @@ impl Store {
                         message: "a calendar cannot be shared with its owner".into(),
                     });
                 }
-                let active: bool = tx.query_row(
-                    "SELECT deleted_at IS NULL FROM accounts WHERE id = ?1",
-                    [grantee],
-                    |row| row.get(0),
-                )?;
+                let active: bool =
+                    tx.query_row("SELECT deleted_at IS NULL FROM accounts WHERE id = ?1", [grantee], |row| row.get(0))?;
                 if !active {
                     return Err(StoreError::Rule { code: "unknownPerson", message: "that account is gone".into() });
                 }

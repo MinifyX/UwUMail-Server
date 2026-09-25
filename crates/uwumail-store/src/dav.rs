@@ -231,8 +231,7 @@ pub(crate) struct Logged(BTreeMap<i64, i64>);
 /// The accounts that see a collection: its owner and whoever it is shared with.
 pub(crate) fn audience(conn: &Connection, collection: &DavCollection) -> Result<Vec<i64>> {
     let mut stmt = conn.prepare_cached("SELECT account_id FROM dav_shares WHERE collection_id = ?1")?;
-    let mut accounts: Vec<i64> =
-        stmt.query_map([collection.id], |row| row.get(0))?.collect::<rusqlite::Result<_>>()?;
+    let mut accounts: Vec<i64> = stmt.query_map([collection.id], |row| row.get(0))?.collect::<rusqlite::Result<_>>()?;
     accounts.insert(0, collection.account_id);
     Ok(accounts)
 }

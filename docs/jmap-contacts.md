@@ -65,8 +65,12 @@ into JSContact when read and back into vCard when written, with the
 | `sortOrder` | 0 to 2³¹−1 |
 | `isDefault` | exactly one address book is the default |
 | `isSubscribed` | always `true` |
-| `shareWith` | always `null` |
-| `myRights` | `mayRead` and `mayWrite` are `true`, `mayShare` is `false` (nothing is shared), `mayDelete` is `false` for the only address book |
+| `shareWith` | who else sees it, as for calendars ([jmap-calendars.md](jmap-calendars.md#shared-calendars)): principal ids (`a12`) or addresses of the server to `{ "mayRead": true, "mayWrite": … }` |
+| `myRights` | everything `true` for one's own (`mayDelete` is `false` for the only one); for an address book shared with the account `mayWrite` and `mayShare` follow what it was shared with, and `mayDelete` only leaves it |
+
+Address books other people of the server share with the account are listed
+next to its own, with their cards in `ContactCard/get`, `/query` and
+`/changes`; see [calendars.md](calendars.md).
 
 `AddressBook/get` and `AddressBook/changes` are standard. `AddressBook/set`
 creates, changes and destroys address books with the properties above; a
@@ -180,7 +184,8 @@ mail and calendar types.
 
 ## Not supported
 
-- Sharing and principals (`shareWith`, `urn:ietf:params:jmap:principals`)
+- Principals of their own (`urn:ietf:params:jmap:principals`); principal ids
+  are account ids
 - More than one address book per card
 - `ContactCard/copy` (there is one account per login) and
   `ContactCard/queryChanges`

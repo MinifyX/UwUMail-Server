@@ -104,8 +104,10 @@ impl Smtp {
         let Some(organizer) = plan.organizer.clone() else { return report };
         if let Some(new) = &new {
             let message = itip::request(new, now);
-            let before: Vec<String> =
-                old.as_ref().map(|old| itip::attendees(old).into_iter().map(|a| a.address).collect()).unwrap_or_default();
+            let before: Vec<String> = old
+                .as_ref()
+                .map(|old| itip::attendees(old).into_iter().map(|a| a.address).collect())
+                .unwrap_or_default();
             for attendee in &plan.requests {
                 let kind = if before.contains(attendee) { Kind::Update } else { Kind::Invitation };
                 let delivery = self.deliver(account, &organizer, attendee, &message, kind, language).await;
@@ -173,7 +175,8 @@ impl Smtp {
         let method = itip::method(message).unwrap_or_else(|| "REQUEST".into());
         let summary = itip::summary(message);
         let name = if sender.display_name.trim().is_empty() { from } else { sender.display_name.trim() };
-        let texts = scheduling_texts::scheduling(language, kind, name, &summary.title, &summary.when, &summary.location);
+        let texts =
+            scheduling_texts::scheduling(language, kind, name, &summary.title, &summary.when, &summary.location);
         let ics = message.to_ics();
         let domain = from.rsplit_once('@').map(|(_, d)| d.to_owned()).unwrap_or_default();
         let calendar = |content_type: &str| {
@@ -250,6 +253,11 @@ pub(crate) async fn incoming(ctx: &Context, account_id: i64, raw: &[u8], sender:
 
 /// The first iCalendar part of a mail that carries a method.
 fn find_itip(raw: &[u8]) -> Option<String> {
+    // Most mail has no calendar part; it is not parsed a second time for nothing.
+    let mentions = |needle: &[u8]| raw.windows(needle.len()).any(|window| window.eq_ignore_ascii_case(needle));
+    if !mentions(b"text/calendar") && !mentions(b"application/ics") {
+        return None;
+    }
     let message = MessageParser::new().parse(raw)?;
     message.parts.iter().find_map(|part| {
         let content_type = part.content_type()?;

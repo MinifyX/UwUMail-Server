@@ -145,7 +145,8 @@ async fn calendars_are_shared_with_people_of_the_server() {
     let events = server.call(NYU, "CalendarEvent/get", json!({ "ids": [&event_id] })).await;
     assert_eq!(events["list"][0]["title"], "Tierarzt");
 
-    let refused = server.call(NYU, "CalendarEvent/set", json!({ "create": { "n": event(&personal, "Nyus Termin") } })).await;
+    let refused =
+        server.call(NYU, "CalendarEvent/set", json!({ "create": { "n": event(&personal, "Nyus Termin") } })).await;
     assert_eq!(refused["notCreated"]["n"]["type"], "forbidden", "{refused}");
     let renamed = server.call(NYU, "Calendar/set", json!({ "update": { &personal: { "name": "Meins" } } })).await;
     assert_eq!(renamed["notUpdated"][&personal]["type"], "forbidden");
@@ -158,7 +159,8 @@ async fn calendars_are_shared_with_people_of_the_server() {
             json!({ "update": { &personal: { format!("shareWith/{nyu_id}"): { "mayReadItems": true, "mayWriteAll": true } } } }),
         )
         .await;
-    let written = server.call(NYU, "CalendarEvent/set", json!({ "create": { "n": event(&personal, "Nyus Termin") } })).await;
+    let written =
+        server.call(NYU, "CalendarEvent/set", json!({ "create": { "n": event(&personal, "Nyus Termin") } })).await;
     let written_id = written["created"]["n"]["id"].as_str().unwrap_or_else(|| panic!("{written}")).to_owned();
     let for_mini = server.call(MINI, "CalendarEvent/get", json!({ "ids": [&written_id] })).await;
     assert_eq!(for_mini["list"][0]["title"], "Nyus Termin");
@@ -169,7 +171,11 @@ async fn calendars_are_shared_with_people_of_the_server() {
     assert!(server.calendars(NYU).await.iter().all(|c| c["id"] != personal.as_str()));
     assert_eq!(server.calendars(MINI).await[0]["shareWith"], Value::Null);
     let nobody = server
-        .call(MINI, "Calendar/set", json!({ "update": { &personal: { "shareWith": { "nobody@example.org": { "mayReadItems": true } } } } }))
+        .call(
+            MINI,
+            "Calendar/set",
+            json!({ "update": { &personal: { "shareWith": { "nobody@example.org": { "mayReadItems": true } } } } }),
+        )
         .await;
     assert_eq!(nobody["notUpdated"][&personal]["type"], "invalidProperties");
 }

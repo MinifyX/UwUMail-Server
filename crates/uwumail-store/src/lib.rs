@@ -24,9 +24,9 @@ mod forward_addresses;
 mod forwarding;
 mod greylist_hold;
 pub mod ical;
-pub mod itip;
 mod imap;
 mod import;
+pub mod itip;
 mod mail;
 mod mutate;
 mod objects;
@@ -70,7 +70,6 @@ pub use dav::{
     DavCollectionUpdate, DavKind, DavPrecondition, DavResource, DavResourceInfo, DavWrite, DavWriteOutcome,
     NewDavCollection, dav_etag,
 };
-pub use sharing::{DAV_SHARES_PER_COLLECTION, DavAccess, DavShare, ShareRights, SharedDavCollection};
 pub use directory::{Account, DkimKey, DkimKeyAlgorithm, DkimKeyState, Domain, NewAccount, Protocols, Role};
 pub use extras::{Identity, IdentityUpdate, SubmissionRecord, UPLOAD_LIFETIME_SECS, VacationResponse};
 pub use feeds::FeedState;
@@ -109,6 +108,7 @@ pub use sender_lists::{
     ListOwner, ListScope, NewSenderListEntry, SENDER_LIST_ADMIN_LIMIT, SENDER_LIST_PERSONAL_LIMIT, SenderKind,
     SenderList, SenderListEntry, guess_sender_kind, normalize_sender, pattern_matches,
 };
+pub use sharing::{DAV_SHARES_PER_COLLECTION, DavAccess, DavShare, ShareRights, SharedDavCollection};
 pub use sieve::{
     SIEVE_MAX_NAME_SIZE, SIEVE_MAX_SCRIPT_SIZE, SIEVE_MAX_SCRIPTS, SieveActivation, SieveError, SieveScript,
     validate_sieve_name,

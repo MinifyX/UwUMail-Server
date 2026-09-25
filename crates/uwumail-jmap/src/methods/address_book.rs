@@ -4,7 +4,9 @@
 use std::collections::BTreeMap;
 
 use serde_json::{Map, Value, json};
-use uwumail_store::{DavAccess, DavCollection, DavCollectionUpdate, DavKind, DavShare, NewDavCollection, ShareRights, StoreError};
+use uwumail_store::{
+    DavAccess, DavCollection, DavCollectionUpdate, DavKind, DavShare, NewDavCollection, ShareRights, StoreError,
+};
 
 use super::calendar::{Sharing, apply_sharing, parse_share_with};
 
@@ -231,7 +233,8 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
         for (id, patch) in update {
             let result: Result<(), SetError> = async {
                 let book_id = ctx.parse_id('b', id).ok_or_else(SetError::not_found)?;
-                let (book, access) = known.iter().find(|(book, _)| book.id == book_id).ok_or_else(SetError::not_found)?;
+                let (book, access) =
+                    known.iter().find(|(book, _)| book.id == book_id).ok_or_else(SetError::not_found)?;
                 let patch =
                     patch.as_object().ok_or_else(|| SetError::new("invalidPatch", "the patch must be an object"))?;
                 let (changes, sharing) = parse_all(patch, false)?;
