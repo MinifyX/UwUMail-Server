@@ -13,6 +13,7 @@ use super::calendar::{Sharing, apply_sharing, parse_share_with};
 use super::{Ctx, SetResponse, check_set_size, get_ids, if_in_state, pick, properties};
 use crate::error::{MethodError, MethodResult, SetError};
 use crate::ids;
+use crate::sharing::principal_id;
 
 const DEFAULTS: &[&str] =
     &["id", "name", "description", "sortOrder", "isDefault", "isSubscribed", "shareWith", "myRights"];
@@ -59,7 +60,7 @@ fn to_json(book: &DavCollection, access: DavAccess, only_one: bool, shares: &[Da
     let share_with = if shares.is_empty() || !access.may_admin() {
         Value::Null
     } else {
-        Value::Object(shares.iter().map(|s| (ids::account(s.account_id), book_rights(s.rights))).collect())
+        Value::Object(shares.iter().map(|s| (principal_id(s.account_id), book_rights(s.rights))).collect())
     };
     let my_rights = match access {
         DavAccess::Owner => json!({ "mayRead": true, "mayWrite": true, "mayShare": true, "mayDelete": !only_one }),

@@ -16,7 +16,8 @@ use uwumail_store::{NewAccount, Role, Store};
 const PASSWORD: &str = "katzenpfote-123";
 const MINI: &str = "mini@example.org";
 const NYU: &str = "nyu@example.org";
-const USING: [&str; 2] = ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:calendars"];
+const USING: [&str; 3] =
+    ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:calendars", "urn:ietf:params:jmap:principals"];
 
 struct Server {
     router: Router,
@@ -110,6 +111,8 @@ async fn calendars_are_shared_with_people_of_the_server() {
         server.call(MINI, "CalendarEvent/set", json!({ "create": { "e": event(&personal, "Tierarzt") } })).await;
     let event_id = created["created"]["e"]["id"].as_str().unwrap().to_owned();
     let nyu_id = server.account_id(NYU).await;
+    // Principal ids are the ones Principal/get gives, like for shared mailboxes.
+    let nyu_principal = nyu_id.replacen('a', "p", 1);
     let nyu_state = server.call(NYU, "Calendar/get", json!({ "ids": [] })).await["state"].as_str().unwrap().to_owned();
     let mut pushes = server.store.subscribe_changes();
 
@@ -130,8 +133,9 @@ async fn calendars_are_shared_with_people_of_the_server() {
     }
     assert!(heard, "Nyu hears about the new calendar");
     let mine = server.calendars(MINI).await;
-    assert_eq!(mine[0]["shareWith"][&nyu_id]["mayReadItems"], true);
-    assert_eq!(mine[0]["shareWith"][&nyu_id]["mayWriteAll"], false);
+    assert_eq!(mine[0]["shareWith"][&nyu_principal]["mayReadItems"], true, "{}", mine[0]);
+    assert_eq!(mine[0]["shareWith"][&nyu_principal]["mayWriteAll"], false);
+    assert_eq!(mine[0]["shareWith"].as_object().unwrap().len(), 1);
 
     let theirs = server.calendars(NYU).await;
     let seen = theirs.iter().find(|c| c["id"] == personal.as_str()).expect("the shared calendar is listed");
@@ -140,6 +144,10 @@ async fn calendars_are_shared_with_people_of_the_server() {
     assert_eq!(seen["isDefault"], false);
     assert_eq!(seen["uwuSharedBy"]["email"], MINI);
     assert_eq!(seen["shareWith"], Value::Null);
+    // The owner is a principal Nyu can look up.
+    let owner = seen["uwuSharedBy"]["principalId"].as_str().unwrap().to_owned();
+    let principals = server.call(NYU, "Principal/get", json!({ "ids": [&owner] })).await;
+    assert_eq!(principals["list"][0]["email"], MINI, "{principals}");
     let changes = server.call(NYU, "Calendar/changes", json!({ "sinceState": nyu_state })).await;
     assert_eq!(changes["created"], json!([&personal]));
     let events = server.call(NYU, "CalendarEvent/get", json!({ "ids": [&event_id] })).await;
@@ -156,9 +164,19 @@ async fn calendars_are_shared_with_people_of_the_server() {
         .call(
             MINI,
             "Calendar/set",
+            json!({ "update": { &personal: { format!("shareWith/{nyu_principal}"): { "mayReadItems": true, "mayWriteAll": true } } } }),
+        )
+        .await;
+    assert_eq!(server.calendars(MINI).await[0]["shareWith"][&nyu_principal]["mayWriteAll"], true);
+    // An account id still stands for the principal, as older clients sent it.
+    server
+        .call(
+            MINI,
+            "Calendar/set",
             json!({ "update": { &personal: { format!("shareWith/{nyu_id}"): { "mayReadItems": true, "mayWriteAll": true } } } }),
         )
         .await;
+    assert_eq!(server.calendars(MINI).await[0]["shareWith"].as_object().unwrap().len(), 1);
     let written =
         server.call(NYU, "CalendarEvent/set", json!({ "create": { "n": event(&personal, "Nyus Termin") } })).await;
     let written_id = written["created"]["n"]["id"].as_str().unwrap_or_else(|| panic!("{written}")).to_owned();
@@ -270,6 +288,10 @@ async fn address_books_are_shared_the_same_way() {
     let update = json!({ "update": { &book: { "shareWith": { NYU: { "mayRead": true } } } } });
     let shared = contacts_call(&server, MINI, "AddressBook/set", update).await;
     assert!(shared["updated"].get(&book).is_some(), "{shared}");
+
+    let mine = contacts_call(&server, MINI, "AddressBook/get", json!({})).await;
+    let nyu_principal = server.account_id(NYU).await.replacen('a', "p", 1);
+    assert_eq!(mine["list"][0]["shareWith"][&nyu_principal]["mayRead"], true, "{mine}");
 
     let theirs = contacts_call(&server, NYU, "AddressBook/get", json!({})).await;
     let seen = theirs["list"].as_array().unwrap().iter().find(|b| b["id"] == book.as_str()).expect("listed");

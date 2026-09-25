@@ -2,8 +2,9 @@
 //! and 4) on the account's CalDAV calendars and those shared with it. See docs/jmap-calendars.md.
 //!
 //! Calendars others share with the account appear among its own, with `myRights` saying what it
-//! may do; `shareWith` of an own calendar says who else sees it. Principals are the accounts of the
-//! server: their ids are the account ids (`a12`), and an address of the server may stand for one.
+//! may do; `shareWith` of an own calendar says who else sees it. Principals are the people of the
+//! server with the ids Principal/get gives them (`p12`, see [`crate::sharing`]); an account id
+//! (`a12`) or an address of the server may stand for one when writing.
 
 use std::collections::BTreeMap;
 
@@ -15,6 +16,7 @@ use uwumail_store::{
 use super::{Ctx, SetResponse, check_set_size, get_ids, if_in_state, pick, properties};
 use crate::error::{MethodError, MethodResult, SetError};
 use crate::ids;
+use crate::sharing::principal_id;
 
 const DEFAULTS: &[&str] = &[
     "id",
@@ -174,7 +176,7 @@ fn share_with(shares: &[DavShare]) -> Value {
         return Value::Null;
     }
     let map: Map<String, Value> =
-        shares.iter().map(|share| (ids::account(share.account_id), share_rights(share.rights))).collect();
+        shares.iter().map(|share| (principal_id(share.account_id), share_rights(share.rights))).collect();
     Value::Object(map)
 }
 
@@ -196,7 +198,9 @@ fn to_json(listed: &Listed, only_one: bool, shares: &[DavShare]) -> Map<String, 
         "timeZone": calendar.timezone.as_deref().and_then(uwumail_store::ical::timezone_id),
         "shareWith": if listed.access.may_admin() { share_with(shares) } else { Value::Null },
         "myRights": rights(listed.access, !(owner && only_one)),
-        "uwuSharedBy": listed.owner.as_ref().map(|(address, name)| json!({ "email": address, "name": name })),
+        "uwuSharedBy": listed.owner.as_ref().map(|(address, name)| {
+            json!({ "email": address, "name": name, "principalId": principal_id(calendar.account_id) })
+        }),
     }) else {
         unreachable!("json! of an object literal is an object")
     };
@@ -248,10 +252,17 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
 /// Who a calendar is to be shared with, and how: `None` takes someone off.
 pub(super) type Sharing = Vec<(String, Option<ShareRights>)>;
 
-/// Reads `shareWith` or a `shareWith/<principal>` patch. Keys are principal ids (`a12`) or, as
-/// this server's own help for clients without principals, addresses of people of the server.
+/// The account a principal of `shareWith` stands for when it is given by id: a principal id
+/// (`p12`) or, as older clients of this server sent, an account id (`a12`).
+pub(super) fn principal_account(principal: &str) -> Option<i64> {
+    ids::parse('p', principal).or_else(|| ids::parse('a', principal))
+}
+
+/// Reads `shareWith` or a `shareWith/<principal>` patch. Keys are principal ids (`p12`) or, as
+/// this server's own help for clients without principals, account ids and addresses of people of
+/// the server.
 pub(super) fn parse_share_with(key: &str, value: &Value, sharing: &mut Option<(bool, Sharing)>) -> Result<(), ()> {
-    let principal_ok = |principal: &str| ids::parse('a', principal).is_some() || principal.contains('@');
+    let principal_ok = |principal: &str| principal_account(principal).is_some() || principal.contains('@');
     let entry = |value: &Value| -> Result<Option<ShareRights>, ()> {
         match value {
             Value::Null => Ok(None),
@@ -378,7 +389,7 @@ pub(super) async fn apply_sharing(
     // Principal ids and addresses, as account ids.
     let mut resolved: Vec<(i64, Option<ShareRights>)> = Vec::new();
     for (principal, rights) in wanted {
-        let account = match ids::parse('a', &principal) {
+        let account = match principal_account(&principal) {
             Some(id) => Some(id),
             None if principal.contains('@') => store.resolve_recipient(&principal).await.map_err(SetError::from)?,
             None => None,

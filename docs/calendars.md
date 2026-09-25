@@ -33,6 +33,8 @@ Where shared things show up:
   read-only calendar shows as read-only.
 - **JMAP:** next to the person's own calendars and address books, with
   `myRights` saying what they may do and `uwuSharedBy` naming the owner.
+  `shareWith` names people by the principal ids of `Principal/get` (`p12`),
+  the same as for shared mail folders ([sharing.md](sharing.md)).
 - **Push:** every change to a shared calendar, whoever makes it, is pushed to
   everyone who sees it.
 

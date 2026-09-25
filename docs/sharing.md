@@ -224,6 +224,13 @@ when they share with you), otherwise `null`. Principal/query filters by
 principal id is `currentUserPrincipalId` in your account's principals
 capability.
 
+The same principal ids are the keys of `shareWith` for calendars and address
+books ([jmap-calendars.md](jmap-calendars.md#shared-calendars),
+[jmap-contacts.md](jmap-contacts.md)), and a calendar shared with you names its
+owner's principal in `uwuSharedBy.principalId`. Calendars and address books
+shared with you are part of your own account, not of the owner's shared
+account.
+
 ShareNotification objects are not kept.
 
 ## IMAP4rev2

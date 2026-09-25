@@ -75,18 +75,21 @@ and `sortOrder` are the owner's and cannot change. A calendar shared with the
 account has an extra property naming its owner:
 
 ```json
-"uwuSharedBy": { "email": "mini@example.org", "name": "Mini" }
+"uwuSharedBy": { "email": "mini@example.org", "name": "Mini", "principalId": "p3" }
 ```
 
 (`null` for one's own calendars).
 
 `shareWith` of an own calendar (or one shared with all rights) is a map from
 principal id to CalendarRights, `null` when it is shared with nobody.
-Principals are the accounts of the server: a principal id is the account id,
-like `a12`. As long as a client has no Principal list at hand, an address of
-the server may stand for the principal id when writing (`{ "leni@example.org":
-{ "mayReadItems": true } }`); answers always use the id. Set the whole map, or
-one person with `shareWith/a12` (`null` takes them off). The rights asked for
+Principals are the people of the server, the same ones `Principal/get` and
+`Principal/query` give (`urn:ietf:params:jmap:principals`, see
+[sharing.md](sharing.md#principals)): a principal id is `p` and the account
+number, like `p12`. As long as a client has no Principal list at hand, an
+address of the server may stand for the principal id when writing
+(`{ "leni@example.org": { "mayReadItems": true } }`), and so may the account id
+(`a12`) that clients of UwUMail 0.11 sent; answers always use the principal id.
+Set the whole map, or one person with `shareWith/p12` (`null` takes them off). The rights asked for
 are rounded up to the three levels above: `mayShare` means all, any writing
 right means read and write, any other right means read. Someone who is not on
 the server is `invalidProperties` naming `shareWith`.
@@ -338,9 +341,8 @@ EventSource, next to the mail types.
 
 ## Not supported
 
-- Principals of their own (`Principal/get`) and `Principal/getAvailability`
-  (`urn:ietf:params:jmap:principals:availability`); principal ids are account
-  ids, see above
+- `Principal/getAvailability` (`urn:ietf:params:jmap:principals:availability`);
+  the principals themselves are those of shared folders, see above
 - Calendars in other accounts: shared calendars are part of the account they
   are shared with
 - `CalendarEventNotification`, `CalendarEvent/copy`, `CalendarEvent/parse`
