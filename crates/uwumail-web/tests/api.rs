@@ -257,3 +257,66 @@ async fn logging_into_ones_own_account_does_not_reset_the_guesses_at_another() {
     let (status, _, _) = call(&app, Call::send("POST", "/api/auth/login", own)).await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "and the network waits, whoever it is");
 }
+
+#[tokio::test]
+async fn signatures_and_the_undo_window_are_set_in_my_account() {
+    let (app, _dir) = setup().await;
+    let (cookie, csrf) = login(&app, "leni@example.org").await;
+
+    let (status, _, list) = call(&app, Call { cookie: Some(&cookie), ..Call::get("/api/account/identities") }).await;
+    assert_eq!(status, StatusCode::OK);
+    let identity = &list[0];
+    assert_eq!(identity["email"], "leni@example.org");
+    assert_eq!(identity["textSignature"], "");
+    let path = format!("/api/account/identities/{}", identity["id"]);
+
+    let change = json!({ "textSignature": "Leni\nexample.org", "htmlSignature": "<p>Leni</p>" });
+    let (status, _, _) =
+        call(&app, Call { cookie: Some(&cookie), csrf: Some(&csrf), ..Call::send("PATCH", &path, change) }).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, _, list) = call(&app, Call { cookie: Some(&cookie), ..Call::get("/api/account/identities") }).await;
+    assert_eq!(list[0]["textSignature"], "Leni\nexample.org");
+    assert_eq!(list[0]["htmlSignature"], "<p>Leni</p>");
+
+    // Only signatures and the name; far too long is refused; another id is not found.
+    for (body, expected) in [
+        (json!({ "email": "boss@example.org" }), StatusCode::UNPROCESSABLE_ENTITY),
+        (json!({ "textSignature": "x".repeat(300 * 1024) }), StatusCode::UNPROCESSABLE_ENTITY),
+    ] {
+        let (status, _, _) =
+            call(&app, Call { cookie: Some(&cookie), csrf: Some(&csrf), ..Call::send("PATCH", &path, body) }).await;
+        assert!(status == expected || status == StatusCode::BAD_REQUEST, "{status}");
+    }
+    let (status, _, _) = call(
+        &app,
+        Call {
+            cookie: Some(&cookie),
+            csrf: Some(&csrf),
+            ..Call::send("PATCH", "/api/account/identities/999999", json!({ "name": "x" }))
+        },
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // The undo window is a preference with five choices.
+    let (status, _, body) = call(
+        &app,
+        Call {
+            cookie: Some(&cookie),
+            csrf: Some(&csrf),
+            ..Call::send("PATCH", "/api/account/preferences", json!({ "mailUndoSend": "20" }))
+        },
+    )
+    .await;
+    assert_eq!((status, &body["mailUndoSend"]), (StatusCode::OK, &json!("20")));
+    let (status, _, _) = call(
+        &app,
+        Call {
+            cookie: Some(&cookie),
+            csrf: Some(&csrf),
+            ..Call::send("PATCH", "/api/account/preferences", json!({ "mailUndoSend": "15" }))
+        },
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}

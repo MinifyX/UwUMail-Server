@@ -249,6 +249,8 @@ impl Web {
             .route("/api/auth/passkey", post(routes::auth::passkey_login))
             .route("/api/account", get(routes::account::profile))
             .route("/api/account/preferences", patch(routes::account::update_preferences))
+            .route("/api/account/identities", get(routes::account::identities))
+            .route("/api/account/identities/{id}", patch(routes::account::update_identity))
             .route("/api/account/webmail", get(routes::webmail::access))
             .route("/api/account/security", get(routes::security::overview))
             .route("/api/account/password", post(routes::security::change_password))

@@ -1568,8 +1568,8 @@
     }
   },
   "mailbox": {
-    "title": "Weiterleitung und Abwesenheit",
-    "intro": "Wohin deine Mails noch gehen, und was Absender hören, wenn du nicht da bist.",
+    "title": "Weiterleitung, Abwesenheit und Senden",
+    "intro": "Wohin deine Mails noch gehen, was Absender hören, wenn du nicht da bist, und wie deine Mails rausgehen.",
     "forwarding": {
       "title": "Weiterleitung",
       "explain": "Mails an dich gehen zusätzlich an diese Adressen. Adressen auf anderen Servern bekommen erst eine Mail und müssen die Weiterleitung bestätigen.",
@@ -1601,6 +1601,26 @@
       "save": "Speichern",
       "savedOn": "Abwesenheitsnotiz ist an",
       "savedOff": "Abwesenheitsnotiz gespeichert"
+    },
+    "sending": {
+      "title": "Senden",
+      "undo": "Senden rückgängig machen",
+      "undoHint": "So lange warten Nachrichten, bevor sie rausgehen – so lange kannst du sie noch zurückholen. Gilt für die Webmail und jede JMAP-App.",
+      "undoOff": "Aus, sofort senden",
+      "undoSeconds": "{{seconds}} Sekunden",
+      "saved": "Gespeichert"
+    },
+    "signatures": {
+      "title": "Signaturen",
+      "intro": "Mail-Apps und die Webmail fügen die Signatur der Adresse ein, von der du sendest.",
+      "loading": "Adressen werden geladen …",
+      "loadError": "Die Adressen konnten nicht geladen werden.",
+      "empty": "Es gibt noch keine Adresse, von der du senden kannst.",
+      "text": "Signatur",
+      "html": "Signatur als HTML",
+      "htmlHint": "Optional, für Apps, die formatierte Mails schreiben.",
+      "save": "Signatur speichern",
+      "saved": "Signatur gespeichert"
     }
   },
   "forwardConfirm": {

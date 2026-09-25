@@ -1612,8 +1612,8 @@
     }
   },
   "mailbox": {
-    "title": "Transfert et absence",
-    "intro": "Où va aussi votre courrier, et ce que les expéditeurs reçoivent comme réponse pendant votre absence.",
+    "title": "Transfert, absence et envoi",
+    "intro": "Où va aussi votre courrier, ce que les expéditeurs reçoivent pendant votre absence, et comment vos messages partent.",
     "forwarding": {
       "title": "Transfert",
       "explain": "Le courrier qui vous est destiné va aussi à ces adresses. Les adresses sur d'autres serveurs reçoivent d'abord un e-mail et doivent confirmer le transfert.",
@@ -1646,6 +1646,26 @@
       "save": "Enregistrer",
       "savedOn": "Le message d'absence est activé",
       "savedOff": "Message d'absence enregistré"
+    },
+    "sending": {
+      "title": "Envoi",
+      "undo": "Annuler l’envoi",
+      "undoHint": "Les messages attendent ce délai avant de partir, pour que vous puissiez encore les rattraper. Vaut pour le webmail et toutes les applications JMAP.",
+      "undoOff": "Désactivé, envoyer tout de suite",
+      "undoSeconds": "{{seconds}} secondes",
+      "saved": "Enregistré"
+    },
+    "signatures": {
+      "title": "Signatures",
+      "intro": "Les applications de messagerie et le webmail ajoutent la signature de l’adresse d’envoi.",
+      "loading": "Chargement des adresses …",
+      "loadError": "Impossible de charger les adresses.",
+      "empty": "Il n’y a encore aucune adresse d’envoi.",
+      "text": "Signature",
+      "html": "Signature en HTML",
+      "htmlHint": "Facultatif, pour les applications qui écrivent des messages mis en forme.",
+      "save": "Enregistrer la signature",
+      "saved": "Signature enregistrée"
     }
   },
   "forwardConfirm": {

@@ -1100,6 +1100,15 @@ export interface ForwardingView {
   maxTargets: number;
 }
 
+/** A sending address with its signatures, as JMAP's Identity has them. */
+export interface IdentityInfo {
+  id: number;
+  name: string;
+  email: string;
+  textSignature: string;
+  htmlSignature: string;
+}
+
 export interface VacationView {
   isEnabled: boolean;
   fromDate: number | null;

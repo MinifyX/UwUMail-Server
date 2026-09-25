@@ -140,5 +140,10 @@
     "loki": {
       "testOk": "The test line made it to Loki (=^･ω･^=)"
     }
+  },
+  "mailbox": {
+    "signatures": {
+      "saved": "Signature saved (ﾉ◕ヮ◕)ﾉ"
+    }
   }
 }

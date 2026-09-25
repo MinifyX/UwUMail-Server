@@ -140,5 +140,10 @@
     "loki": {
       "testOk": "De testregel is bij Loki aangekomen (=^･ω･^=)"
     }
+  },
+  "mailbox": {
+    "signatures": {
+      "saved": "Handtekening opgeslagen (ﾉ◕ヮ◕)ﾉ"
+    }
   }
 }

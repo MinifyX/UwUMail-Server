@@ -30,6 +30,7 @@ import type {
   Health,
   HealthArea,
   HealthFinding,
+  IdentityInfo,
   DkimKeyInfo,
   DomainDetail,
   DomainReport,
@@ -1155,6 +1156,17 @@ const mockForwarding: ForwardingView = {
     { id: 2, address: "lorin@elsewhere.example", local: false, createdAt: now - 3600, confirmedAt: null },
   ],
 };
+const mockIdentities: IdentityInfo[] = [
+  {
+    id: 1,
+    name: "Lorin",
+    email: "lorin@uwu.example",
+    textSignature: "Lorin\nuwu.example",
+    htmlSignature: "",
+  },
+  { id: 2, name: "UwU Verein", email: "verein@uwu.example", textSignature: "", htmlSignature: "" },
+];
+
 let mockVacation: VacationView = {
   isEnabled: false,
   fromDate: null,
@@ -2376,6 +2388,17 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["GET", /^\/api\/account\/vacation$/, () => [200, mockVacation]],
+  ["GET", /^\/api\/account\/identities$/, () => [200, mockIdentities]],
+  [
+    "PATCH",
+    /^\/api\/account\/identities\/(\d+)$/,
+    (body, match) => {
+      const identity = mockIdentities.find((entry) => entry.id === Number(match[0]));
+      if (!identity) return problem(404, "notFound");
+      Object.assign(identity, body as Partial<IdentityInfo>);
+      return [204, null];
+    },
+  ],
   ["GET", /^\/api\/account\/addresses$/, () => [200, mockAddresses]],
   [
     "POST",

@@ -10,6 +10,12 @@ use crate::{Result, Store, StoreError, now};
 
 /// Uploads are kept this long unless something else references their blob.
 pub const UPLOAD_LIFETIME_SECS: i64 = 24 * 3600;
+/// The most a signature of a sending identity may take, text and HTML each, in bytes. Room for a
+/// small picture as a `data:` URI.
+pub const IDENTITY_SIGNATURE_MAX_BYTES: usize = 256 * 1024;
+/// The longest name of a sending identity, in characters.
+const IDENTITY_NAME_MAX_CHARS: usize = 200;
+
 /// Vacation replies go to each sender at most once in this period.
 const VACATION_INTERVAL_SECS: i64 = 7 * 24 * 3600;
 
@@ -207,6 +213,16 @@ impl Store {
     }
 
     pub async fn update_identity(&self, account_id: i64, id: i64, update: IdentityUpdate) -> Result<()> {
+        if update.name.as_ref().is_some_and(|name| name.trim().chars().count() > IDENTITY_NAME_MAX_CHARS) {
+            return Err(StoreError::Invalid(format!("a name may have at most {IDENTITY_NAME_MAX_CHARS} characters")));
+        }
+        for signature in [&update.text_signature, &update.html_signature].into_iter().flatten() {
+            if signature.len() > IDENTITY_SIGNATURE_MAX_BYTES {
+                return Err(StoreError::Invalid(format!(
+                    "a signature may take at most {IDENTITY_SIGNATURE_MAX_BYTES} bytes"
+                )));
+            }
+        }
         let modseq = self
             .write(move |tx| {
                 let exists: bool = tx.query_row(

@@ -138,5 +138,10 @@
     "loki": {
       "testOk": "测试日志行成功到达 Loki 啦 (=^･ω･^=)"
     }
+  },
+  "mailbox": {
+    "signatures": {
+      "saved": "签名已保存 (ﾉ◕ヮ◕)ﾉ"
+    }
   }
 }

@@ -1568,8 +1568,8 @@
     }
   },
   "mailbox": {
-    "title": "Forwarding and away",
-    "intro": "Where else your mail goes, and what senders hear while you are away.",
+    "title": "Forwarding, away and sending",
+    "intro": "Where else your mail goes, what senders hear while you are away, and how your mail goes out.",
     "forwarding": {
       "title": "Forwarding",
       "explain": "Mail to you also goes to these addresses. Addresses on other servers get a mail first and have to confirm the forwarding.",
@@ -1601,6 +1601,26 @@
       "save": "Save",
       "savedOn": "Away message is on",
       "savedOff": "Away message saved"
+    },
+    "sending": {
+      "title": "Sending",
+      "undo": "Undo sending",
+      "undoHint": "Messages wait this long before they go, so you can still take them back. Applies to the webmail and every JMAP app.",
+      "undoOff": "Off, send at once",
+      "undoSeconds": "{{seconds}} seconds",
+      "saved": "Saved"
+    },
+    "signatures": {
+      "title": "Signatures",
+      "intro": "Mail apps and the webmail add the signature of the address you send from.",
+      "loading": "Loading addresses …",
+      "loadError": "The addresses could not be loaded.",
+      "empty": "There is no address to send from yet.",
+      "text": "Signature",
+      "html": "Signature as HTML",
+      "htmlHint": "Optional, for apps that write formatted mail.",
+      "save": "Save signature",
+      "saved": "Signature saved"
     }
   },
   "forwardConfirm": {

@@ -140,5 +140,10 @@
     "loki": {
       "testOk": "Die Testzeile ist in Loki angekommen (=^･ω･^=)"
     }
+  },
+  "mailbox": {
+    "signatures": {
+      "saved": "Signatur gespeichert (ﾉ◕ヮ◕)ﾉ"
+    }
   }
 }
