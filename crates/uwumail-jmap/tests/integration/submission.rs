@@ -195,7 +195,9 @@ async fn send_later_goes_when_its_time_comes() {
 async fn held_mail_survives_a_restart() {
     let server = server().await;
     let (email, identity) = draft(&server, "After the restart").await;
-    let soon = uwumail_jmap::dates::format(uwumail_store_now() + 1);
+    // A few seconds ahead: dates are whole seconds, and a slow machine must not reach the time
+    // before the submission is even made.
+    let soon = uwumail_jmap::dates::format(uwumail_store_now() + 4);
     let set = submit(&server, &email, &identity, json!({ "sendAt": soon })).await;
     assert_eq!(set["created"]["s"]["undoStatus"], "pending", "{set}");
 
@@ -205,7 +207,7 @@ async fn held_mail_survives_a_restart() {
     assert!(args(&responses, 0, "Email/set")["destroyed"].is_array());
 
     // Another server process on the same data, after the time has come.
-    tokio::time::sleep(Duration::from_millis(2100)).await;
+    tokio::time::sleep(Duration::from_millis(5100)).await;
     let store = Store::open(server.dir.path()).await.unwrap();
     let restarted = Jmap::new(common::smtp(&store));
     assert_eq!(restarted.release_due_submissions().await, 1);
