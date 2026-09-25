@@ -1155,6 +1155,8 @@
       "enabledHint": "Quand il est désactivé, seul DMARC décide de ce qui va en spam.",
       "blocklists": "Interroger des listes de blocage",
       "blocklistsHint": "Interroge Spamhaus, SpamCop et Barracuda sur le serveur d'envoi. Une liste qui ne répond pas ne compte pas contre l'expéditeur.",
+      "uriBlocklists": "Interroger des listes de blocage de liens (SURBL, URIBL)",
+      "uriBlocklistsHint": "Interroge SURBL et URIBL sur les domaines vers lesquels mènent les liens. Les deux ne sont gratuites que pour les petits serveurs non commerciaux et ne répondent pas via des résolveurs publics comme 8.8.8.8 — un refus est journalisé et ne compte pas. Consultez leurs conditions avant d'activer cette option.",
       "bayes": "Filtre à apprentissage",
       "bayesHint": "Apprend à partir des marquages et des cas évidents à quoi ressemble le spam, et l'évalue. Il ne compte qu'une fois qu'il a suffisamment appris.",
       "junkScore": "Spam à partir du score",

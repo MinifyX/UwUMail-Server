@@ -735,6 +735,7 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "smtp.allow_external_forwarding": { value: true, source: "default" },
   "spam.enabled": { value: true, source: "default" },
   "spam.blocklists": { value: true, source: "default" },
+  "spam.uri_blocklists": { value: false, source: "default" },
   "spam.junk_score": { value: 5, source: "default" },
   "spam.greylist_score": { value: 2, source: "default" },
   "spam.greylist_delay_secs": { value: 300, source: "default" },

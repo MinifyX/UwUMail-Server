@@ -52,6 +52,9 @@ pub struct SpamConfig {
     pub enabled: bool,
     /// Ask DNS blocklists about the sending server.
     pub blocklists: bool,
+    /// Ask SURBL and URIBL about the domains that links lead to. Off by default: both are free only
+    /// for small servers and do not answer through public resolvers such as 8.8.8.8.
+    pub uri_blocklists: bool,
     /// Learn from Spam / Not spam and clear cases, and let the Bayes filter score mail once it learned
     /// enough.
     pub bayes: bool,
@@ -89,6 +92,7 @@ impl Default for SpamConfig {
         SpamConfig {
             enabled: true,
             blocklists: true,
+            uri_blocklists: false,
             bayes: true,
             junk_score: 5.0,
             greylist_score: 2.0,

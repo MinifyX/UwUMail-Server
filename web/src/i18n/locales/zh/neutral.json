@@ -1100,6 +1100,8 @@
       "enabledHint": "关闭时，只由 DMARC 决定哪些邮件进入垃圾邮件。",
       "blocklists": "查询黑名单",
       "blocklistsHint": "向 Spamhaus、SpamCop 和 Barracuda 查询发信服务器。没有响应的列表不会对发件人不利。",
+      "uriBlocklists": "查询链接黑名单（SURBL、URIBL）",
+      "uriBlocklistsHint": "向 SURBL 和 URIBL 查询链接指向的域名。两者仅对小型非商业服务器免费，并且不会通过 8.8.8.8 等公共解析器应答——被拒绝的查询会记录到日志，不计分。启用前请先阅读它们的使用条款。",
       "bayes": "学习过滤器",
       "bayesHint": "从标记和明确的案例中学习垃圾邮件的特征并为其打分。只有学习到足够多之后才会生效。",
       "junkScore": "判为垃圾邮件的分数",

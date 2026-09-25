@@ -1128,6 +1128,8 @@
       "enabledHint": "Als het uit staat, beslist alleen DMARC wat naar spam gaat.",
       "blocklists": "Blokkeerlijsten raadplegen",
       "blocklistsHint": "Vraagt Spamhaus, SpamCop en Barracuda naar de verzendende server. Een lijst die niet antwoordt, telt niet tegen de afzender.",
+      "uriBlocklists": "Linkblokkeerlijsten raadplegen (SURBL, URIBL)",
+      "uriBlocklistsHint": "Vraagt SURBL en URIBL naar de domeinen waar links naartoe leiden. Beide zijn alleen gratis voor kleine, niet-commerciële servers en antwoorden niet via openbare resolvers zoals 8.8.8.8 — een geweigerde vraag wordt gelogd en telt niet. Lees hun voorwaarden voordat je dit aanzet.",
       "bayes": "Lerend filter",
       "bayesHint": "Leert van markeringen en duidelijke gevallen hoe spam eruitziet en beoordeelt ernaar. Het telt pas mee als het genoeg heeft geleerd.",
       "junkScore": "Spam vanaf score",

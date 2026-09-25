@@ -1128,6 +1128,8 @@
       "enabledHint": "When it is off, only DMARC decides what goes to spam.",
       "blocklists": "Ask blocklists",
       "blocklistsHint": "Asks Spamhaus, SpamCop and Barracuda about the sending server. A list that does not answer does not count against the sender.",
+      "uriBlocklists": "Ask link blocklists (SURBL, URIBL)",
+      "uriBlocklistsHint": "Asks SURBL and URIBL about the domains that links lead to. Both are free only for small, non-commercial servers, and neither answers through public resolvers such as 8.8.8.8 — a refused question is logged and does not count. Check their terms before you switch this on.",
       "bayes": "Learning filter",
       "bayesHint": "Learns from marks and clear cases what spam looks like and scores it. It only counts once it has learned enough.",
       "junkScore": "Spam from score",

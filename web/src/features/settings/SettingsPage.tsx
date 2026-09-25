@@ -536,6 +536,7 @@ export function AntivirusFields({ form }: { form: Form }) {
 export const SPAM_SETTING_KEYS = [
   "spam.enabled",
   "spam.blocklists",
+  "spam.uri_blocklists",
   "spam.bayes",
   "spam.junk_score",
   "spam.greylist_score",
@@ -565,6 +566,14 @@ export function SpamFields({ form }: { form: Form }) {
           settingKey="spam.blocklists"
           label={t("settings.spam.blocklists")}
           hint={t("settings.spam.blocklistsHint")}
+        />
+      )}
+      {enabled && (
+        <ToggleField
+          form={form}
+          settingKey="spam.uri_blocklists"
+          label={t("settings.spam.uriBlocklists")}
+          hint={t("settings.spam.uriBlocklistsHint")}
         />
       )}
       {enabled && (
