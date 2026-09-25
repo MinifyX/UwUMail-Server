@@ -96,7 +96,7 @@ impl<'a> Ctx<'a> {
             return Ok(Some((account, None)));
         }
         let rights = sharing::shared_rights(&self.jmap.store, me.id, account).await?;
-        Ok((!rights.is_empty()).then(|| (account, Some(SharedView { me, rights }))))
+        Ok((!rights.is_empty()).then_some((account, Some(SharedView { me, rights }))))
     }
 
     /// Runs a method call as the logged-in account, also while this call works in someone else's
