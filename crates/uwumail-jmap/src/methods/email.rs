@@ -26,7 +26,7 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         text: args.get("fetchTextBodyValues").and_then(Value::as_bool).unwrap_or(false),
         html: args.get("fetchHTMLBodyValues").and_then(Value::as_bool).unwrap_or(false),
         all: args.get("fetchAllBodyValues").and_then(Value::as_bool).unwrap_or(false),
-        max_bytes: args.get("maxBodyValueBytes").and_then(Value::as_u64).unwrap_or(0) as usize,
+        max_bytes: max_body_value_bytes(args)?,
     };
     let numbers: Vec<i64> = requested.iter().filter_map(|id| ctx.parse_id('e', id)).collect();
     let records = visible_records(ctx, ctx.jmap.store.emails_by_ids(ctx.account.id, numbers).await?);
@@ -129,6 +129,22 @@ pub(super) fn check_shared_create(
         return Err(SetError::new("forbidden", "you may not set these keywords in this shared mailbox"));
     }
     Ok(())
+}
+
+fn build_error(err: email_json::BuildError) -> SetError {
+    let properties: Vec<&str> = err.properties.iter().map(String::as_str).collect();
+    SetError::invalid_properties(&properties, err.description)
+}
+
+/// `maxBodyValueBytes`: an UnsignedInt, 0 (or none) for no limit.
+fn max_body_value_bytes(args: &Value) -> MethodResult<usize> {
+    match args.get("maxBodyValueBytes") {
+        None | Some(Value::Null) => Ok(0),
+        Some(value) => value
+            .as_u64()
+            .map(|max| max as usize)
+            .ok_or_else(|| MethodError::invalid_arguments("maxBodyValueBytes must be a number of bytes")),
+    }
 }
 
 fn keyword(value: &Value, name: &str) -> MethodResult<String> {
@@ -557,17 +573,26 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                 let keywords = keywords(object.get("keywords"))?;
                 check_shared_create(ctx, &mailboxes, &keywords)?;
                 let received_at = received_at(object.get("receivedAt"))?;
+                // The object's own mistakes first, before its blobs are looked for.
+                email_json::validate_create(object).map_err(build_error)?;
                 let mut blob_ids = Vec::new();
                 collect_blob_ids(&Value::Object(object.clone()), &mut blob_ids);
                 let mut loaded = HashMap::new();
+                let mut missing = Vec::new();
                 for blob_id in blob_ids {
-                    let bytes = read_blob(ctx, &blob_id)
-                        .await
-                        .ok_or_else(|| SetError::new("blobNotFound", format!("blob {blob_id} not found")))?;
-                    loaded.insert(blob_id, bytes);
+                    match read_blob(ctx, &blob_id).await {
+                        Some(bytes) => {
+                            loaded.insert(blob_id, bytes);
+                        }
+                        None if !missing.contains(&blob_id) => missing.push(blob_id),
+                        None => {}
+                    }
                 }
-                let raw = email_json::build_message(object, &LoadedBlobs(loaded))
-                    .map_err(|err| SetError::invalid_properties(&[err.property.as_str()], err.description))?;
+                if !missing.is_empty() {
+                    missing.sort();
+                    return Err(SetError::blob_not_found(missing));
+                }
+                let raw = email_json::build_message(object, &LoadedBlobs(loaded)).map_err(build_error)?;
                 ctx.jmap
                     .store
                     .ingest(IngestRequest { account_id: ctx.account.id, raw, mailboxes, keywords, received_at })
@@ -611,13 +636,19 @@ pub async fn import(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let mut not_created = Map::new();
     for (creation_id, object) in emails {
         let result: Result<uwumail_store::IngestedEmail, SetError> = async {
+            let missing: Vec<&str> = ["blobId", "mailboxIds"]
+                .into_iter()
+                .filter(|key| object.get(*key).is_none_or(Value::is_null))
+                .collect();
+            if !missing.is_empty() {
+                return Err(SetError::invalid_properties(&missing, format!("{} is required", missing.join(" and "))));
+            }
             let blob_id = object
                 .get("blobId")
                 .and_then(Value::as_str)
                 .ok_or_else(|| SetError::invalid_properties(&["blobId"], "blobId is required"))?;
-            let raw = read_blob(ctx, blob_id)
-                .await
-                .ok_or_else(|| SetError::new("blobNotFound", format!("blob {blob_id} not found")))?;
+            let raw =
+                read_blob(ctx, blob_id).await.ok_or_else(|| SetError::blob_not_found(vec![blob_id.to_owned()]))?;
             let mailboxes = mailbox_ids(ctx, object.get("mailboxIds"))?;
             let keywords = keywords(object.get("keywords"))?;
             check_shared_create(ctx, &mailboxes, &keywords)?;
@@ -671,7 +702,7 @@ pub async fn parse(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         text: args.get("fetchTextBodyValues").and_then(Value::as_bool).unwrap_or(false),
         html: args.get("fetchHTMLBodyValues").and_then(Value::as_bool).unwrap_or(false),
         all: args.get("fetchAllBodyValues").and_then(Value::as_bool).unwrap_or(false),
-        max_bytes: args.get("maxBodyValueBytes").and_then(Value::as_u64).unwrap_or(0) as usize,
+        max_bytes: max_body_value_bytes(args)?,
     };
     let mut parsed = Map::new();
     let mut not_parsable = Vec::new();
