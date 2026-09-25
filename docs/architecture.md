@@ -102,14 +102,24 @@ and uploads, `p<sha256>_<part>` for single MIME parts). States are the
 account's change sequence number, so every `/changes` call reads straight
 from the store's change log, and push listens to the same broadcast channel.
 `EmailSubmission/set` goes through `Smtp::submit`, exactly like SMTP
-submission: sender checks, DKIM, local delivery and the queue.
+submission: sender checks, DKIM, local delivery and the queue. Submissions
+wait for the undo window or their `sendAt` in `email_submissions` (with a
+reference to the message's blob) and a background task hands them over when
+they are due, so they survive restarts ([jmap-sending.md](jmap-sending.md)).
+`/queryChanges` reads the same change log: whatever changed since the query
+state is removed and, where it matches now, added again at its place.
+Requests and push also run over a WebSocket (`/jmap/ws`, RFC 8887), and
+programs can use an app password as a bearer token, made for them at
+`/jmap/token` ([jmap-tokens.md](jmap-tokens.md)).
 
 ### `uwumail-imap`
 
-IMAP4rev1 on port 993 with its own parser. Flags are the email's keywords, the
-UIDs are the store's per-mailbox UIDs, and CONDSTORE/QRESYNC read the account's
-change sequence number and a table of UIDs that left a mailbox. IDLE listens to
-the store's broadcast channel like JMAP push.
+IMAP4rev1 and IMAP4rev2 on port 993 with its own parser. Flags are the email's
+keywords, the UIDs are the store's per-mailbox UIDs, and CONDSTORE/QRESYNC read
+the account's change sequence number and a table of UIDs that left a mailbox.
+IDLE listens to the store's broadcast channel like JMAP push. Folders others
+share with the account ([sharing](sharing.md)) show under `Shared/<login>/`
+and are read and written in the owner's account, within the ACL's rights.
 
 ### `uwumail-dav`
 

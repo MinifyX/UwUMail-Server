@@ -293,6 +293,9 @@ impl<'a> Parser<'a> {
     }
 
     fn sequence_set(&mut self) -> Parsed<SequenceSet> {
+        if self.eat(b'$') {
+            return Ok(SequenceSet(vec![(SeqNum::Saved, SeqNum::Saved)]));
+        }
         let mut ranges = Vec::new();
         loop {
             let from = self.seq_num()?;
@@ -525,6 +528,8 @@ impl<'a> Parser<'a> {
                     );
                     self.sp()?;
                 }
+                // `~{n}`: a literal8 (BINARY, RFC 3516), which may hold any byte.
+                self.eat(b'~');
                 let message = self.literal()?.to_vec();
                 CommandBody::Append { mailbox, flags, date, message }
             }
@@ -548,6 +553,27 @@ impl<'a> Parser<'a> {
             "GETQUOTAROOT" => {
                 self.sp()?;
                 CommandBody::GetQuotaRoot { mailbox: self.mailbox()? }
+            }
+            "UNAUTHENTICATE" => CommandBody::Unauthenticate,
+            "GETACL" | "MYRIGHTS" => {
+                self.sp()?;
+                let mailbox = self.mailbox()?;
+                if name == "GETACL" { CommandBody::GetAcl { mailbox } } else { CommandBody::MyRights { mailbox } }
+            }
+            "SETACL" | "DELETEACL" | "LISTRIGHTS" => {
+                self.sp()?;
+                let mailbox = self.mailbox()?;
+                self.sp()?;
+                let identifier = self.astring()?;
+                match name.as_str() {
+                    "SETACL" => {
+                        self.sp()?;
+                        let rights = self.astring()?;
+                        CommandBody::SetAcl { mailbox, identifier, rights }
+                    }
+                    "DELETEACL" => CommandBody::DeleteAcl { mailbox, identifier },
+                    _ => CommandBody::ListRights { mailbox, identifier },
+                }
             }
             _ => return Err(format!("unknown command {name}")),
         };
@@ -757,6 +783,29 @@ impl<'a> Parser<'a> {
             "MODSEQ" => return Ok(FetchItem::ModSeq),
             "BODY" => ("BODY", false),
             "BODY.PEEK" => ("BODY", true),
+            "BINARY" | "BINARY.PEEK" | "BINARY.SIZE" => {
+                self.byte(b'[')?;
+                let mut part = Vec::new();
+                while self.peek().is_some_and(|b| b.is_ascii_digit()) {
+                    part.push(self.nz_number32()?);
+                    if !self.eat(b'.') {
+                        break;
+                    }
+                }
+                self.byte(b']')?;
+                if word == "BINARY.SIZE" {
+                    return Ok(FetchItem::BinarySize { part });
+                }
+                let mut partial = None;
+                if self.eat(b'<') {
+                    let origin = u32::try_from(self.number()?).map_err(|_| "the partial origin is too big")?;
+                    self.byte(b'.')?;
+                    let count = self.nz_number32()?;
+                    self.byte(b'>')?;
+                    partial = Some((origin, count));
+                }
+                return Ok(FetchItem::Binary { part, partial, peek: word == "BINARY.PEEK" });
+            }
             _ => return Err(format!("unknown FETCH item {word}")),
         };
         if self.peek() != Some(b'[') {
@@ -829,6 +878,7 @@ impl<'a> Parser<'a> {
                     "MAX" => SearchReturn::Max,
                     "ALL" => SearchReturn::All,
                     "COUNT" => SearchReturn::Count,
+                    "SAVE" => SearchReturn::Save,
                     other => return Err(format!("unknown SEARCH return option {other}")),
                 });
             }
@@ -879,7 +929,7 @@ impl<'a> Parser<'a> {
             self.byte(b')')?;
             return Ok(if keys.len() == 1 { keys.remove(0) } else { SearchKey::And(keys) });
         }
-        if self.peek().is_some_and(|b| b.is_ascii_digit() || b == b'*') {
+        if self.peek().is_some_and(|b| b.is_ascii_digit() || b == b'*' || b == b'$') {
             return self.sequence_set().map(SearchKey::SequenceSet);
         }
         let word = self.atom()?.to_ascii_uppercase();
@@ -1205,6 +1255,55 @@ mod tests {
             parse("e ENABLE CONDSTORE qresync\r\n"),
             CommandBody::Enable(vec!["CONDSTORE".into(), "QRESYNC".into()])
         );
+    }
+
+    #[test]
+    fn acl_commands() {
+        assert_eq!(
+            parse("a SETACL INBOX leni@example.org +lrs\r\n"),
+            CommandBody::SetAcl {
+                mailbox: "INBOX".into(),
+                identifier: "leni@example.org".into(),
+                rights: "+lrs".into()
+            }
+        );
+        assert_eq!(
+            parse("a DELETEACL \"Shared/mini@example.org/INBOX\" leni@example.org\r\n"),
+            CommandBody::DeleteAcl {
+                mailbox: "Shared/mini@example.org/INBOX".into(),
+                identifier: "leni@example.org".into()
+            }
+        );
+        assert_eq!(parse("a GETACL inbox\r\n"), CommandBody::GetAcl { mailbox: "INBOX".into() });
+        assert_eq!(parse("a MYRIGHTS Sent\r\n"), CommandBody::MyRights { mailbox: "Sent".into() });
+        assert!(matches!(parse("a LISTRIGHTS INBOX leni@example.org\r\n"), CommandBody::ListRights { .. }));
+        assert_eq!(parse("a UNAUTHENTICATE\r\n"), CommandBody::Unauthenticate);
+    }
+
+    #[test]
+    fn imap4rev2_syntax() {
+        let CommandBody::Fetch { items, .. } = parse("f FETCH 1 (BINARY.PEEK[1.2]<0.100> BINARY.SIZE[2] BINARY[])\r\n")
+        else {
+            panic!()
+        };
+        assert_eq!(
+            items,
+            vec![
+                FetchItem::Binary { part: vec![1, 2], partial: Some((0, 100)), peek: true },
+                FetchItem::BinarySize { part: vec![2] },
+                FetchItem::Binary { part: vec![], partial: None, peek: false },
+            ]
+        );
+        let CommandBody::Fetch { set, .. } = parse("f UID FETCH $ (UID)\r\n") else { panic!() };
+        assert!(set.uses_saved());
+        assert!(matches!(
+            parse("s SEARCH RETURN (SAVE MIN) $\r\n"),
+            CommandBody::Search { returns: Some(ref r), criteria: SearchKey::SequenceSet(_), .. } if r == &[SearchReturn::Save, SearchReturn::Min]
+        ));
+        assert!(matches!(
+            parse("a APPEND INBOX ~{5}\r\nHa\0lo\r\n"),
+            CommandBody::Append { ref message, .. } if message == b"Ha\0lo"
+        ));
     }
 
     #[test]

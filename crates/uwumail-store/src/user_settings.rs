@@ -33,6 +33,8 @@ enum Mirror {
     Text,
     /// A boolean here, `"on"`/`"off"` in the preferences.
     OnOff,
+    /// A whole number here, its digits as a string in the preferences.
+    Number,
 }
 
 /// Settings that live in the portal preferences: the key here, its name there, how it is spelled.
@@ -44,7 +46,12 @@ const MIRRORED: &[(&str, &str, Mirror)] = &[
     ("remoteImages", "mailRemoteImages", Mirror::Text),
     ("mailAppearance", "mailAppearance", Mirror::Text),
     ("senderPictures", "mailSenderPictures", Mirror::OnOff),
+    ("undoSendSeconds", "mailUndoSend", Mirror::Number),
 ];
+
+/// How long a message waits before it goes, when the person has not chosen: long enough to
+/// notice the typo in the address.
+pub const DEFAULT_UNDO_SEND_SECONDS: u64 = 10;
 
 /// Why a key or value is refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -284,6 +291,10 @@ fn read_values(conn: &Connection, account_id: i64, preferences: &Map<String, Val
                 "off" => Value::Bool(false),
                 _ => continue,
             },
+            Mirror::Number => match text.parse::<u64>() {
+                Ok(number) => Value::from(number),
+                Err(_) => continue,
+            },
         };
         if validate_setting(key, &value).is_ok() {
             values.insert((*key).to_owned(), value);
@@ -295,6 +306,7 @@ fn read_values(conn: &Connection, account_id: i64, preferences: &Map<String, Val
 fn to_preference(kind: Mirror, value: &Value) -> Value {
     match (kind, value) {
         (Mirror::OnOff, Value::Bool(on)) => Value::String(if *on { "on" } else { "off" }.into()),
+        (Mirror::Number, Value::Number(number)) => Value::String(number.to_string()),
         (_, other) => other.clone(),
     }
 }
@@ -309,6 +321,21 @@ impl Store {
             let (preferences, modseq) = account_row(conn, account_id)?;
             let values = read_values(conn, account_id, &preferences)?;
             Ok(UserSettings { state: modseq.to_string(), values })
+        })
+        .await
+    }
+
+    /// How many seconds a JMAP submission without its own `sendAt` waits, so it can still be
+    /// cancelled: the setting `undoSendSeconds`, [`DEFAULT_UNDO_SEND_SECONDS`] when there is none.
+    pub async fn undo_send_seconds(&self, account_id: i64) -> Result<u64> {
+        self.read(move |conn| {
+            let (preferences, _) = account_row(conn, account_id)?;
+            Ok(preferences
+                .get("mailUndoSend")
+                .and_then(Value::as_str)
+                .and_then(|text| text.parse::<u64>().ok())
+                .filter(|seconds| validate_setting("undoSendSeconds", &Value::from(*seconds)).is_ok())
+                .unwrap_or(DEFAULT_UNDO_SEND_SECONDS))
         })
         .await
     }

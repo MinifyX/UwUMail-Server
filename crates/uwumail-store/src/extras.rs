@@ -10,6 +10,12 @@ use crate::{Result, Store, StoreError, now};
 
 /// Uploads are kept this long unless something else references their blob.
 pub const UPLOAD_LIFETIME_SECS: i64 = 24 * 3600;
+/// The most a signature of a sending identity may take, text and HTML each, in bytes. Room for a
+/// small picture as a `data:` URI.
+pub const IDENTITY_SIGNATURE_MAX_BYTES: usize = 256 * 1024;
+/// The longest name of a sending identity, in characters.
+const IDENTITY_NAME_MAX_CHARS: usize = 200;
+
 /// Vacation replies go to each sender at most once in this period.
 const VACATION_INTERVAL_SECS: i64 = 7 * 24 * 3600;
 
@@ -43,6 +49,8 @@ pub struct SubmissionRecord {
     pub envelope: String,
     pub send_at: i64,
     pub undo_status: String,
+    /// Why a held message could not be sent when its time came.
+    pub release_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
@@ -205,6 +213,16 @@ impl Store {
     }
 
     pub async fn update_identity(&self, account_id: i64, id: i64, update: IdentityUpdate) -> Result<()> {
+        if update.name.as_ref().is_some_and(|name| name.trim().chars().count() > IDENTITY_NAME_MAX_CHARS) {
+            return Err(StoreError::Invalid(format!("a name may have at most {IDENTITY_NAME_MAX_CHARS} characters")));
+        }
+        for signature in [&update.text_signature, &update.html_signature].into_iter().flatten() {
+            if signature.len() > IDENTITY_SIGNATURE_MAX_BYTES {
+                return Err(StoreError::Invalid(format!(
+                    "a signature may take at most {IDENTITY_SIGNATURE_MAX_BYTES} bytes"
+                )));
+            }
+        }
         let modseq = self
             .write(move |tx| {
                 let exists: bool = tx.query_row(
@@ -289,7 +307,7 @@ impl Store {
         let ids_json = ids.map(|ids| serde_json::to_string(&ids).unwrap_or_else(|_| "[]".into()));
         self.read(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, identity_id, email_id, thread_id, envelope, send_at, undo_status FROM email_submissions
+                "SELECT id, identity_id, email_id, thread_id, envelope, send_at, undo_status, release_error FROM email_submissions
                  WHERE account_id = ?1 AND (?2 IS NULL OR id IN (SELECT value FROM json_each(?2)))
                  ORDER BY send_at DESC, id DESC",
             )?;
@@ -302,6 +320,7 @@ impl Store {
                     envelope: row.get(4)?,
                     send_at: row.get(5)?,
                     undo_status: row.get(6)?,
+                    release_error: row.get(7)?,
                 })
             })?;
             Ok(rows.collect::<Result<_, _>>()?)

@@ -54,14 +54,15 @@
     "logs": "Logs",
     "settings": "Instellingen",
     "security": "Beveiliging",
-    "mail": "Doorsturen",
+    "mail": "Doorsturen en verzenden",
     "fetch": "Opgehaalde mail",
     "addresses": "Adressen",
     "spamFilter": "Spamfilter",
     "collapse": "{{group}} inklappen",
     "expand": "{{group}} uitklappen",
     "mailbox": "Mailbox",
-    "directory": "Accounts & domeinen"
+    "directory": "Accounts & domeinen",
+    "calendars": "Agenda's en contacten"
   },
   "userMenu": {
     "open": "Accountmenu openen",
@@ -277,6 +278,7 @@
       "mtaStsCertificate": "De modus enforce heeft eerst een geldig certificaat op de server nodig.",
       "gatewayCodeInvalid": "De koppelcode klopt niet. Kopieer hem opnieuw, helemaal, uit de gateway.",
       "gatewayForgetFailed": "De gateway kon niet worden vergeten.",
+      "gatewayNoAddresses": "De gateway heeft zijn openbare adressen nog niet doorgegeven. Wacht tot hij verbonden is.",
       "learningBusy": "Het filter moet nog veel mail leren. Probeer het later opnieuw.",
       "senderInvalid": "Dat lijkt niet op een adres, domein, IP-adres of hostnaam. Netwerken mogen hoogstens /8 (IPv4) of /16 (IPv6) breed zijn, en domeinen hebben minstens één punt nodig.",
       "senderListed": "Deze afzender staat al op de lijst. Verwijder hem eerst om hem te wisselen.",
@@ -303,7 +305,10 @@
       "logoEmpty": "Het bestand is leeg.",
       "logoTooLarge": "Het logo is te groot. Maximaal 512 kB.",
       "logoType": "Dat is geen afbeelding die als logo werkt. PNG, JPEG, WebP en SVG mogen.",
-      "brandColor": "Dat is geen kleur. Verwacht wordt iets als #ff4d8d."
+      "brandColor": "Dat is geen kleur. Verwacht wordt iets als #ff4d8d.",
+      "unknownPerson": "Niemand op deze server heeft dit adres.",
+      "ownShare": "Met jezelf hoef je niets te delen.",
+      "tooManyShares": "Dit is al met te veel mensen gedeeld."
     }
   },
   "people": {
@@ -1128,6 +1133,8 @@
       "enabledHint": "Als het uit staat, beslist alleen DMARC wat naar spam gaat.",
       "blocklists": "Blokkeerlijsten raadplegen",
       "blocklistsHint": "Vraagt Spamhaus, SpamCop en Barracuda naar de verzendende server. Een lijst die niet antwoordt, telt niet tegen de afzender.",
+      "uriBlocklists": "Linkblokkeerlijsten raadplegen (SURBL, URIBL)",
+      "uriBlocklistsHint": "Vraagt SURBL en URIBL naar de domeinen waar links naartoe leiden. Beide zijn alleen gratis voor kleine, niet-commerciële servers en antwoorden niet via openbare resolvers zoals 8.8.8.8 — een geweigerde vraag wordt gelogd en telt niet. Lees hun voorwaarden voordat je dit aanzet.",
       "bayes": "Lerend filter",
       "bayesHint": "Leert van markeringen en duidelijke gevallen hoe spam eruitziet en beoordeelt ernaar. Het telt pas mee als het genoeg heeft geleerd.",
       "junkScore": "Spam vanaf score",
@@ -1568,8 +1575,8 @@
     }
   },
   "mailbox": {
-    "title": "Doorsturen en afwezigheid",
-    "intro": "Waar je mail nog meer naartoe gaat, en wat afzenders horen terwijl je weg bent.",
+    "title": "Doorsturen, afwezigheid en verzenden",
+    "intro": "Waar je mail nog meer naartoe gaat, wat afzenders horen terwijl je weg bent, en hoe je mail vertrekt.",
     "forwarding": {
       "title": "Doorsturen",
       "explain": "Mail aan jou gaat ook naar deze adressen. Adressen op andere servers krijgen eerst een mail en moeten het doorsturen bevestigen.",
@@ -1601,6 +1608,26 @@
       "save": "Opslaan",
       "savedOn": "Afwezigheidsbericht staat aan",
       "savedOff": "Afwezigheidsbericht opgeslagen"
+    },
+    "sending": {
+      "title": "Verzenden",
+      "undo": "Verzenden ongedaan maken",
+      "undoHint": "Zo lang wachten berichten voordat ze vertrekken, zodat je ze nog kunt terughalen. Geldt voor de webmail en elke JMAP-app.",
+      "undoOff": "Uit, meteen verzenden",
+      "undoSeconds": "{{seconds}} seconden",
+      "saved": "Opgeslagen"
+    },
+    "signatures": {
+      "title": "Handtekeningen",
+      "intro": "Mail-apps en de webmail voegen de handtekening toe van het adres waarmee je verstuurt.",
+      "loading": "Adressen laden …",
+      "loadError": "De adressen konden niet worden geladen.",
+      "empty": "Er is nog geen adres om vanaf te versturen.",
+      "text": "Handtekening",
+      "html": "Handtekening als HTML",
+      "htmlHint": "Optioneel, voor apps die opgemaakte mail schrijven.",
+      "save": "Handtekening opslaan",
+      "saved": "Handtekening opgeslagen"
     }
   },
   "forwardConfirm": {
@@ -1618,7 +1645,7 @@
   },
   "addresses": {
     "pageTitle": "Adressen en opslag",
-    "intro": "De adressen waarop je mail krijgt en hoeveel ruimte die inneemt.",
+    "intro": "De adressen waarop je mail krijgt, hoeveel ruimte die inneemt en wie je mappen mag gebruiken.",
     "title": "Je adressen",
     "own": "Door jou aangemaakt",
     "fromAdmin": "Door een beheerder aangemaakt",
@@ -1654,6 +1681,36 @@
       "junk": "Ongewenst",
       "trash": "Prullenbak"
     }
+  },
+  "sharing": {
+    "title": "Gedeelde mappen",
+    "intro": "Laat mensen op deze server je mappen gebruiken in hun mail-app en in de webmail. Wat ze erin zetten, telt mee voor jouw opslag.",
+    "none": "Niet gedeeld",
+    "sharedWith_one": "Gedeeld met {{count}} persoon",
+    "sharedWith_other": "Gedeeld met {{count}} personen",
+    "share": "Delen",
+    "shareTitle": "{{folder}} delen",
+    "person": "Persoon",
+    "personPlaceholder": "Kies iemand",
+    "level": "Mag",
+    "levels": {
+      "read": "Lezen",
+      "write": "Lezen en schrijven",
+      "all": "Alles"
+    },
+    "levelHints": {
+      "read": "De berichten zien.",
+      "write": "Ook berichten markeren, opbergen en verwijderen.",
+      "all": "Ook mappen erin maken, hem hernoemen of verwijderen en verder delen."
+    },
+    "remove": "Niet meer delen",
+    "saved": "{{folder}} is gedeeld met {{person}}",
+    "removed": "{{person}} ziet {{folder}} niet meer",
+    "noPeople": "Er is nog niemand anders op deze server om mee te delen.",
+    "withMeTitle": "Met mij gedeeld",
+    "withMeEmpty": "Nog niemand deelt een map met je.",
+    "withMeFrom": "van {{owner}}",
+    "withMeHint": "Ze staan in mail-apps onder ‘Shared’ en in de webmail als een eigen account."
   },
   "setup": {
     "title": "Set-up",
@@ -1924,6 +1981,31 @@
       "forgetTitle": "De gateway vergeten?",
       "forgetBody": "Je server verzendt en ontvangt mail dan weer zelf. Zet ook de DNS-records terug, anders komt er geen mail meer aan.",
       "forgetConfirm": "Vergeten",
+      "cloudflare": {
+        "open": "Hostnamen via Cloudflare hierheen laten wijzen",
+        "title": "Hostnamen naar de gateway laten wijzen",
+        "body": "Staat je domein bij Cloudflare, dan zet ik de A- en AAAA-records van {{hostname}} op de adressen van de gateway, zonder proxy. Andere namen die de server nodig heeft, zoals mta-sts of autoconfig, gaan mee als het ook A- of AAAA-records zijn. Eerst laat ik zien wat er zou veranderen. De token wordt alleen voor deze verzoeken gebruikt en nooit opgeslagen.",
+        "check": "Wijzigingen tonen",
+        "apply": "Wijzigingen doorvoeren",
+        "nothing": "Alles wijst al naar de gateway.",
+        "current": "nu",
+        "none": "niets",
+        "proxied": "via proxy",
+        "actions": {
+          "none": "klopt al",
+          "create": "wordt toegevoegd",
+          "update": "wordt aangevuld, zonder proxy",
+          "replace": "wijst ergens anders heen",
+          "skip": "blijft zoals het is"
+        },
+        "notes": {
+          "noZone": "de token ziet er geen Cloudflare-zone voor",
+          "cname": "dit is een CNAME, pas die zelf aan"
+        },
+        "replace": "Ook adressen vervangen die ergens anders heen wijzen",
+        "replaceHint": "Deze records leiden niet naar de gateway, misschien naar je oude aansluiting. Zonder vinkje blijven ze zoals ze zijn. Een AAAA-record wordt verwijderd als de gateway geen IPv6-adres heeft.",
+        "done": "Cloudflare heeft de nieuwe records. Het kan een paar minuten duren voordat DNS bijgewerkt is."
+      },
       "fromConfig": "Deze koppeling staat als gateway.code in de configuratie. Als je de gateway hier vergeet, verwijder dan ook de code. Anders probeert de server bij de volgende start opnieuw te koppelen met een nieuwe sleutel, weigert de gateway dat, en wacht mail aan andere servers in de wachtrij. Om later opnieuw te koppelen: voer uwumail-gateway unpair uit op de gateway en gebruik de nieuwe code.",
       "paired": "Gekoppeld, de tunnel komt op.",
       "forgotten": "Gateway vergeten.",
@@ -2730,5 +2812,35 @@
       "light": "Licht",
       "dark": "Donker"
     }
+  },
+  "calendars": {
+    "pageTitle": "Agenda's en contacten delen",
+    "intro": "Deel je agenda's en adresboeken met mensen op deze server. Ze verschijnen in hun agenda- en contacten-app en in de webmail.",
+    "notShared": "Met niemand gedeeld.",
+    "sharedWith": "Gedeeld met",
+    "shareWith": "Met iemand delen",
+    "addressPlaceholder": "adres@example.org",
+    "rightsLabel": "Rechten",
+    "rightsFor": "Rechten voor {{address}}",
+    "rights": {
+      "read": "Lezen",
+      "write": "Lezen en schrijven",
+      "all": "Alles"
+    },
+    "rightsHint": {
+      "read": "Ziet alle items, maar kan niets wijzigen.",
+      "write": "Kan items toevoegen, wijzigen en verwijderen.",
+      "all": "Kan ook naam en kleur wijzigen en verder delen. Alleen jij kunt het verwijderen."
+    },
+    "share": "Delen",
+    "sharedToast": "{{name}} is nu gedeeld met {{address}}",
+    "unshare": "Niet meer delen",
+    "unsharedToast": "{{name}} wordt niet meer gedeeld",
+    "sharedTitle": "Met jou gedeeld",
+    "sharedEmpty": "Nog niemand heeft iets met je gedeeld.",
+    "from": "Van {{owner}}",
+    "leave": "Verlaten",
+    "leftToast": "{{name}} verlaten",
+    "off": "Agenda's en contacten staan uit voor je account."
   }
 }

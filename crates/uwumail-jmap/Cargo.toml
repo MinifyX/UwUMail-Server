@@ -12,7 +12,7 @@ uwumail-smtp.workspace = true
 uwumail-store.workspace = true
 
 ammonia.workspace = true
-axum.workspace = true
+axum = { workspace = true, features = ["ws"] }
 base64.workspace = true
 # iCalendar <-> JSCalendar for JMAP Calendars, vCard <-> JSContact for JMAP Contacts.
 calcard = { workspace = true, features = ["jmap"] }
@@ -33,3 +33,4 @@ tracing.workspace = true
 uwumail-dav.workspace = true
 tempfile.workspace = true
 tower.workspace = true
+tokio-tungstenite.workspace = true

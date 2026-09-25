@@ -468,9 +468,12 @@ async fn recurring_events_expand_and_change_one_instance_at_a_time() {
         .await;
     assert_eq!(open[0][1]["type"], "invalidArguments");
     let cannot = server
-        .api(MINI, json!([["CalendarEvent/queryChanges", { "accountId": account, "sinceQueryState": "1" }, "0"]]))
+        .api(MINI, json!([["CalendarEvent/queryChanges", { "accountId": account, "sinceQueryState": "1",
+                "expandRecurrences": true, "filter": { "after": "2026-10-01T00:00:00", "before": "2026-12-01T00:00:00" } }, "0"]]))
         .await;
-    assert_eq!(cannot[0][1]["type"], "cannotCalculateChanges");
+    assert_eq!(cannot[0][1]["type"], "cannotCalculateChanges", "expanded instances are not objects of their own");
+    let expanded = server.call(MINI, "CalendarEvent/query", expand).await;
+    assert_eq!(expanded["canCalculateChanges"], false);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -742,14 +745,17 @@ async fn events_stay_within_limits() {
     let invite = with(json!({ "participants": {
         "a": { "@type": "Participant", "calendarAddress": "mailto:someone@example.net", "roles": { "attendee": true } }
     } }));
-    let refused = server
+    let sent = server
         .call(
             MINI,
             "CalendarEvent/set",
             json!({ "accountId": account, "create": { "i": invite.clone() }, "sendSchedulingMessages": true }),
         )
         .await;
-    assert_eq!(refused["notCreated"]["i"]["type"], "noSupportedScheduleMethods");
+    assert!(sent["created"]["i"]["id"].is_string(), "{sent}");
+    let queue = server.store.queue_entries().await.unwrap();
+    assert_eq!(queue.len(), 1, "the invitation goes out by mail");
+    assert_eq!(queue[0].recipients[0].address, "someone@example.net");
     let stored =
         server.call(MINI, "CalendarEvent/set", json!({ "accountId": account, "create": { "i": invite } })).await;
     assert!(stored["created"]["i"]["id"].is_string(), "without scheduling it is just data: {stored}");

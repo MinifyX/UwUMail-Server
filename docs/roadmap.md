@@ -38,10 +38,10 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Settings the webmail and the apps keep in sync, shared with the portal's preferences (JMAP `UserSettings`, see jmap-settings.md)
 - [x] JMAP Calendars on the CalDAV calendars: `Calendar`, `CalendarEvent` (query with expanded recurrences) and `ParticipantIdentity`, changes going both ways between JMAP and CalDAV (see jmap-calendars.md)
 - [x] JMAP Contacts on the CardDAV address books: `AddressBook`, `ContactCard` (query by name, email, phone and more), changes going both ways between JMAP and CardDAV (see jmap-contacts.md)
-- [ ] App passwords and Bearer tokens
-- [ ] WebSocket push, delayed sending (undo window), `Email/copy`, query changes
+- [x] App passwords and Bearer tokens
+- [x] WebSocket push, delayed sending (undo window), `Email/copy`, query changes
 - [x] The UwUMail app's JMAP integration test passes against this server (`dev/client-compat.sh`)
-- [ ] Tested with other JMAP clients
+- [x] Tested with other JMAP clients: aerc and Fastmail's JMAP-TestSuite (docs/jmap-clients.md)
 
 ## 3. Setup assistant and admin panel ✅ in progress
 
@@ -78,29 +78,27 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Content rules after Rspamd's example: phishing links and look-alike domains, faked display names, dangerous attachments (also inside zip archives), header and MIME oddities, Spamhaus DBL for link domains
 - [x] Word lists (words, phrases, Rspamd-style expressions) per person, domain and server, pasted or subscribed to by link
 - [x] Built-in lists: malware links and attachments (abuse.ch), spam subjects (mailcow), throwaway and freemail domains and link shorteners (Rspamd)
-- [ ] More content rules: SURBL/URIBL
+- [x] More content rules: SURBL/URIBL link blocklists (off by default)
 - [x] Bayes filter that learns from "Spam" / "Not spam", clear cases and once from sorted mail, with knowledge for the whole server and per person, tokens only as keyed hashes
 - [x] Allowed and blocked senders (IP address or network, confirmed host name, address, domain) per person, domain and server
 - [x] "Block" in the apps puts the sender on the person's list on the server (JMAP `SenderList`, see jmap-senders.md)
 - [x] Optional ClamAV beside the server: infected mail is turned away at the door, its own page in the portal, off until it is started (docs/antivirus.md)
-- [ ] Optional external Rspamd
 
 ## 5. IMAP
 
 - [x] IMAP4rev1 on port 993 (TLS) with IDLE, UIDPLUS, MOVE, SPECIAL-USE, LIST-EXTENDED, LIST-STATUS, ESEARCH, CONDSTORE, QRESYNC, QUOTA, UTF8=ACCEPT, also through the gateway
-- [ ] IMAP4rev2, ACL and shared folders
+- [x] IMAP4rev2, ACL and shared folders
 - [x] Autoconfig, Autodiscover and Apple configuration profiles with their own app password
 - [x] CalDAV and CardDAV with sync-collection, calendar-query and multiget, also in the Apple profile
-- [ ] Signed Apple configuration profiles, scheduling (iTIP), shared calendars
+- [x] Signed Apple configuration profiles, scheduling (iTIP), shared calendars
 
 ## 6. Web mail and external mailboxes ✅ in progress
 
 - [x] UwUMail webmail (its own repository, built from the app's interface) served at `/mail`, switchable for the server and per account (docs/webmail.md)
-- [ ] Delayed sending, signatures and address suggestions on the server, so the webmail stops doing without them
+- [x] Delayed sending, signatures and address suggestions on the server, so the webmail stops doing without them
 - [x] Remote pictures and sender pictures fetched by the server, optionally through a VPN, so senders never see who reads their mail (docs/jmap-remote.md)
 - [x] Fetched mailboxes: mail from another provider's IMAP mailbox, emptied into someone's own and judged here like any other, with rules of its own for what a fetched message can still be asked (docs/fetch.md)
 - [x] Sending as a fetched address, over the provider's own outgoing server
-- [ ] External mailboxes shown as extra JMAP accounts, with their folders and with changes going back
 
 ## UwUMail Gateway ✅ in progress
 
@@ -109,8 +107,8 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Server side: pairing from the configuration, connections through the tunnel, outgoing mail only through the gateway
 - [x] Setup assistant: detect a home connection (public address, Spamhaus PBL, reverse DNS, port 25, provider), recommend the gateway, pair with the code, DNS records with the gateway's addresses
 - [x] Gateway in the health overview and under Server → Overview → Mail flow, notes on providers that block port 25
-- [ ] Cloudflare button for the host name's A/AAAA records with the gateway's addresses
-- [ ] Tried on a real VPS with a test instance behind it
+- [x] Cloudflare button for the host name's A/AAAA records with the gateway's addresses
+- [x] Tried on a real VPS with a test instance behind it
 
 ## Later
 
@@ -118,7 +116,7 @@ Each step ships as its own commits, container image and test deployment.
 - [ ] OAuth 2 / OpenID Connect provider for mail apps; login via external OIDC or LDAP
 - [ ] Migration assistant (IMAP import from the old provider)
 - [ ] Groups, shared mailboxes, masked addresses
-- [ ] Settings sync for the UwUMail apps, send later and snooze on the server
+- [ ] Settings sync for the UwUMail apps, snooze on the server
 - [ ] Web Push / UnifiedPush
 - [x] Nightly backups to SFTP: deduplicated, encrypted by default, 7/4/6 retention, full restore from the command line
 - [ ] Restore per mailbox in the portal, backups to S3 or a mounted folder

@@ -72,6 +72,16 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                     .and_then(Value::as_str)
                     .ok_or_else(|| SetError::invalid_properties(&["email"], "email is required"))?;
                 let name = object.get("name").and_then(Value::as_str).unwrap_or_default();
+                // Checked before anything is created, so a refused identity leaves nothing behind.
+                for property in ["textSignature", "htmlSignature"] {
+                    if object
+                        .get(property)
+                        .and_then(Value::as_str)
+                        .is_some_and(|text| text.len() > uwumail_store::IDENTITY_SIGNATURE_MAX_BYTES)
+                    {
+                        return Err(SetError::invalid_properties(&[property], format!("{property} is too long")));
+                    }
+                }
                 let id = store.create_identity(account_id, name, email).await?;
                 let update = IdentityUpdate {
                     reply_to: object.get("replyTo").map(|v| addresses(v, "replyTo")).transpose()?,

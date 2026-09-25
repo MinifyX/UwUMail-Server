@@ -329,9 +329,17 @@ async fn upload_import_and_send_like_the_uwumail_app() {
     let account = server.account_id(login).await;
     let nyu = server.account_id("nyu@example.org").await;
 
+    // Straight out, without the undo window (tests/submission.rs has that).
     let responses = server
-        .api(login, json!([["Mailbox/get", { "accountId": account, "ids": null, "properties": ["id", "role"] }, "0"]]))
+        .api(
+            login,
+            json!([
+                ["UserSettings/set", { "accountId": account, "update": { "singleton": { "values/undoSendSeconds": 0 } } }, "s"],
+                ["Mailbox/get", { "accountId": account, "ids": null, "properties": ["id", "role"] }, "0"],
+            ]),
+        )
         .await;
+    let responses = responses[1..].to_vec();
     let mailboxes = args(&responses, 0, "Mailbox/get")["list"].as_array().unwrap().clone();
     let sent_id = mailboxes.iter().find(|m| m["role"] == "sent").unwrap()["id"].as_str().unwrap().to_owned();
     let drafts_id = mailboxes.iter().find(|m| m["role"] == "drafts").unwrap()["id"].as_str().unwrap().to_owned();
@@ -343,7 +351,7 @@ async fn upload_import_and_send_like_the_uwumail_app() {
         .body(Body::from(message))
         .unwrap();
     let (status, body) = server.request(upload).await;
-    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(status, StatusCode::OK, "go-jmap (aerc) takes only 200 for a successful upload");
     let blob_id = serde_json::from_slice::<Value>(&body).unwrap()["blobId"].as_str().unwrap().to_owned();
 
     let responses = server

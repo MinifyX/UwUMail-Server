@@ -610,12 +610,13 @@ mod tests {
                 format!("{} https={}", client.ip, client.https)
             }),
         );
+        let jmap = uwumail_jmap::Jmap::new(smtp.clone()).router();
         let services = Services {
             smtp,
             imap,
             mail_tls: Arc::new(mail_tls),
             https_tls: Arc::new(tls),
-            https: http::app(state.clone(), Router::new(), who, Arc::default()),
+            https: http::app(state.clone(), jmap, who, Arc::default()),
             http: http::redirect_app(state),
             http_connections: http::Connections::new(),
         };
@@ -625,9 +626,10 @@ mod tests {
     /// A gateway with web ports, and this server's services behind it.
     async fn web_behind_gateway(
         dir: &std::path::Path,
-    ) -> (uwumail_gateway::Running, TunnelClient, Vec<u8>, watch::Sender<bool>) {
+    ) -> (uwumail_gateway::Running, TunnelClient, Vec<u8>, watch::Sender<bool>, Store) {
         let (running, code, running_until) = test_gateway(dir).await;
         let (services, certificate) = test_services(dir).await;
+        let store = services.smtp.store().clone();
         let settings = ClientSettings {
             addresses: code.addresses.clone(),
             gateway: code.fingerprint,
@@ -644,7 +646,7 @@ mod tests {
             .await
             .expect("the tunnel comes up")
             .unwrap();
-        (running, client, certificate, running_until)
+        (running, client, certificate, running_until, store)
     }
 
     #[tokio::test]
@@ -711,7 +713,7 @@ mod tests {
     #[tokio::test]
     async fn web_requests_arrive_through_the_gateway() {
         let dir = tempfile::tempdir().unwrap();
-        let (gateway, _client, certificate, _running) = web_behind_gateway(dir.path()).await;
+        let (gateway, _client, certificate, _running, _store) = web_behind_gateway(dir.path()).await;
 
         // Port 80 sends browsers to HTTPS.
         let socket = tokio::net::TcpStream::connect(gateway.listener(Service::Http).unwrap()).await.unwrap();
@@ -748,6 +750,64 @@ mod tests {
         let mut bye = String::new();
         imap.read_line(&mut bye).await.unwrap();
         assert!(bye.starts_with("* BYE"), "{bye}");
+    }
+
+    /// JMAP over WebSocket upgrades an HTTPS connection; the gateway only carries bytes, so the
+    /// upgrade and the messages after it pass through untouched.
+    #[tokio::test]
+    async fn websockets_work_through_the_gateway() {
+        use futures_util::{SinkExt, StreamExt};
+        use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest, http::HeaderValue};
+
+        let dir = tempfile::tempdir().unwrap();
+        let (gateway, _client, certificate, _running, store) = web_behind_gateway(dir.path()).await;
+        store.create_domain("example.com").await.unwrap();
+        store
+            .create_account(uwumail_store::NewAccount {
+                address: "mini@example.com".into(),
+                display_name: "Mini".into(),
+                password: Some("katzenpfote-123".into()),
+                role: uwumail_store::Role::User,
+                quota_bytes: 0,
+                protocols: None,
+            })
+            .await
+            .unwrap();
+
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(rustls_pki_types::CertificateDer::from(certificate)).unwrap();
+        let config =
+            rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
+                .with_safe_default_protocol_versions()
+                .unwrap()
+                .with_root_certificates(roots)
+                .with_no_client_auth();
+        let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
+        let socket = tokio::net::TcpStream::connect(gateway.listener(Service::Https).unwrap()).await.unwrap();
+        let name = rustls_pki_types::ServerName::try_from("localhost").unwrap();
+        let tls = connector.connect(name, socket).await.unwrap();
+
+        let mut request = "wss://localhost/jmap/ws".into_client_request().unwrap();
+        let credentials =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, "mini@example.com:katzenpfote-123");
+        request.headers_mut().insert("authorization", HeaderValue::from_str(&format!("Basic {credentials}")).unwrap());
+        request.headers_mut().insert("sec-websocket-protocol", HeaderValue::from_static("jmap"));
+        let (mut socket, response) = tokio_tungstenite::client_async(request, tls).await.expect("the upgrade passes");
+        assert_eq!(response.headers()["sec-websocket-protocol"], "jmap");
+        let call = serde_json::json!({
+            "@type": "Request", "id": "r1", "using": ["urn:ietf:params:jmap:core"],
+            "methodCalls": [["Core/echo", { "purr": true }, "0"]]
+        });
+        socket.send(Message::Text(call.to_string().into())).await.unwrap();
+        let answer = loop {
+            let message = tokio::time::timeout(Duration::from_secs(10), socket.next()).await.unwrap().unwrap().unwrap();
+            if let Message::Text(text) = message {
+                break serde_json::from_str::<serde_json::Value>(&text).unwrap();
+            }
+        };
+        assert_eq!(answer["@type"], "Response", "{answer}");
+        assert_eq!(answer["requestId"], "r1");
+        assert_eq!(answer["methodResponses"][0][1]["purr"], true);
     }
 
     #[test]

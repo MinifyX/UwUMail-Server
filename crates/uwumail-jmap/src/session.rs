@@ -9,7 +9,8 @@ use uwumail_store::Account;
 
 use crate::auth::ClientInfo;
 use crate::{
-    Jmap, MAX_CALLS_IN_REQUEST, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, MAX_REQUEST_BYTES, MAX_UPLOAD_BYTES, ids, jscal,
+    Jmap, MAX_CALLS_IN_REQUEST, MAX_DELAYED_SEND_SECS, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, MAX_REQUEST_BYTES,
+    MAX_UPLOAD_BYTES, ids, jscal,
 };
 
 pub const CORE: &str = "urn:ietf:params:jmap:core";
@@ -30,6 +31,11 @@ pub const WEBMAIL: &str = "urn:uwumail:jmap:webmail";
 pub const REMOTE: &str = "urn:uwumail:jmap:remote";
 /// JMAP Calendars (draft-ietf-jmap-calendars) on the CalDAV calendars; see docs/jmap-calendars.md.
 pub const CALENDARS: &str = "urn:ietf:params:jmap:calendars";
+/// Our own extension: addresses to suggest while writing, from the address books and recent mail
+/// (docs/jmap-suggest.md).
+pub const SUGGEST: &str = "urn:uwumail:jmap:suggest";
+/// Requests and push over a WebSocket (RFC 8887).
+pub const WEBSOCKET: &str = "urn:ietf:params:jmap:websocket";
 /// JMAP Contacts (RFC 9610) on the CardDAV address books; see docs/jmap-contacts.md.
 pub const CONTACTS: &str = "urn:ietf:params:jmap:contacts";
 
@@ -58,6 +64,15 @@ pub fn base_url(headers: &HeaderMap, client: ClientInfo) -> String {
     format!("{scheme}://{host}")
 }
 
+/// The WebSocket endpoint for the origin the client used: `wss://` for `https://`.
+pub fn websocket_url(base: &str) -> String {
+    let origin = match base.strip_prefix("https://") {
+        Some(host) => format!("wss://{host}"),
+        None => format!("ws://{}", base.strip_prefix("http://").unwrap_or(base)),
+    };
+    format!("{origin}/jmap/ws")
+}
+
 pub fn session_state(account: &Account) -> String {
     // Changes whenever something in the session document would change.
     let calendars = if account.protocols.caldav { "-c" } else { "" };
@@ -81,9 +96,11 @@ pub fn document(account: &Account, base: &str) -> Value {
             },
             MAIL: {},
             SUBMISSION: {},
+            WEBSOCKET: { "url": websocket_url(base), "supportsPush": true },
             VACATION: {},
             SENDERS: {},
             SETTINGS: {},
+            SUGGEST: {},
             SIEVE: { "implementation": "UwUMail Server" },
             WEBMAIL: {},
             REMOTE: {
@@ -106,9 +123,19 @@ pub fn document(account: &Account, base: &str) -> Value {
                         "emailQuerySortOptions": ["receivedAt", "sentAt", "size", "from", "to", "subject", "hasKeyword", "allInThreadHaveKeyword", "someInThreadHaveKeyword"],
                         "mayCreateTopLevelMailbox": true
                     },
-                    SUBMISSION: { "maxDelayedSend": 0, "submissionExtensions": {} },
+                    SUBMISSION: {
+                        "maxDelayedSend": MAX_DELAYED_SEND_SECS,
+                        // RFC 4865: the longest hold in seconds, and the latest date it may reach.
+                        "submissionExtensions": {
+                            "FUTURERELEASE": [
+                                MAX_DELAYED_SEND_SECS.to_string(),
+                                crate::dates::format(crate::methods::unix_now() + MAX_DELAYED_SEND_SECS)
+                            ]
+                        }
+                    },
                     VACATION: {},
                     SENDERS: { "maxEntries": uwumail_store::SENDER_LIST_PERSONAL_LIMIT },
+                    SUGGEST: { "maxLimit": crate::methods::MAX_SUGGESTIONS },
                     SETTINGS: {
                         "maxKeys": uwumail_store::USER_SETTINGS_MAX_KEYS,
                         "maxSize": uwumail_store::USER_SETTINGS_MAX_SIZE,
@@ -132,6 +159,7 @@ pub fn document(account: &Account, base: &str) -> Value {
             VACATION: account_id.clone(),
             SENDERS: account_id.clone(),
             SETTINGS: account_id.clone(),
+            SUGGEST: account_id.clone(),
             SIEVE: account_id.clone()
         },
         "username": account.login,
@@ -171,7 +199,12 @@ pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInf
     match jmap.inner.auth.account_for(&headers, client, false).await {
         Ok(account) => {
             let base = base_url(&headers, client);
-            ([(header::CACHE_CONTROL, "no-cache, no-store")], Json(document(&account, &base))).into_response()
+            let mut document = document(&account, &base);
+            // Folders others share with this account, as accounts of their own (docs/sharing.md).
+            let shared = crate::sharing::shared_accounts(&jmap.inner.store, account.id).await;
+            crate::sharing::add_to_session(&mut document, &account, &shared);
+            document["state"] = json!(format!("{}{}", session_state(&account), crate::sharing::state_suffix(&shared)));
+            ([(header::CACHE_CONTROL, "no-cache, no-store")], Json(document)).into_response()
         }
         Err(err) => err.into_response(),
     }

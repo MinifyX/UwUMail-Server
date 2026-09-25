@@ -1,5 +1,6 @@
-//! HTTP authentication for JMAP: Basic with an app password or the account password. Logins with
-//! the account password are cached briefly, because checking it is slow on purpose.
+//! HTTP authentication for JMAP: Basic with an app password or the account password, or an app
+//! password alone as a bearer token. Logins with the account password are cached briefly, because
+//! checking it is slow on purpose.
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
@@ -107,6 +108,8 @@ pub struct Authenticator {
     /// Account id, when it was cached, and the same as a Unix time to compare with password changes.
     cache: Mutex<HashMap<[u8; 32], (i64, Instant, i64)>>,
     failures: Mutex<HashMap<IpAddr, (u32, Instant)>>,
+    /// Wrong second factors at the token endpoint, per account.
+    second_factor_failures: Mutex<HashMap<i64, (u32, Instant)>>,
 }
 
 fn network(ip: IpAddr) -> IpAddr {
@@ -139,6 +142,7 @@ impl Authenticator {
             secret,
             cache: Mutex::default(),
             failures: Mutex::default(),
+            second_factor_failures: Mutex::default(),
         }
     }
 
@@ -226,6 +230,9 @@ impl Authenticator {
     pub async fn account(&self, headers: &HeaderMap, client: ClientInfo) -> Result<Account, AuthError> {
         let value = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()).ok_or(AuthError::Missing)?;
         let (scheme, credentials) = value.split_once(' ').ok_or(AuthError::Invalid)?;
+        if scheme.eq_ignore_ascii_case("bearer") {
+            return self.bearer(credentials.trim(), client).await;
+        }
         if !scheme.eq_ignore_ascii_case("basic") {
             return Err(AuthError::Invalid);
         }
@@ -290,6 +297,61 @@ impl Authenticator {
                 Err(AuthError::Internal)
             }
         }
+    }
+
+    /// `Authorization: Bearer <app password>`: the app password alone, without the login. Wrong
+    /// tokens count against the network like wrong passwords.
+    async fn bearer(&self, token: &str, client: ClientInfo) -> Result<Account, AuthError> {
+        if self.blocked(client.ip) {
+            return Err(AuthError::Blocked);
+        }
+        let ip = client.ip.to_string();
+        match self.store.authenticate_bearer(token, self.scope, self.protocol, &ip).await {
+            Ok(MailAuth::Ok { account, .. }) => Ok(account),
+            Ok(MailAuth::Denied(reason)) => {
+                self.record_failure(client.ip);
+                tracing::warn!(ip = %client.ip, %reason, protocol = self.protocol, "failed bearer login");
+                Err(AuthError::Invalid)
+            }
+            Err(err) => {
+                tracing::error!(%err, protocol = self.protocol, "authentication failed internally");
+                Err(AuthError::Internal)
+            }
+        }
+    }
+
+    /// Whether logins from this client's network are refused for now.
+    pub fn is_blocked(&self, client: ClientInfo) -> bool {
+        self.blocked(client.ip)
+    }
+
+    /// Counts a failed login from this client's network.
+    pub fn failed(&self, client: ClientInfo) {
+        self.record_failure(client.ip);
+    }
+
+    /// Whether this account's second factor is locked after too many wrong codes, from any network.
+    pub fn second_factor_locked(&self, account_id: i64) -> bool {
+        let failures = self.second_factor_failures.lock().expect("second factor failures poisoned");
+        failures
+            .get(&account_id)
+            .is_some_and(|(count, since)| *count >= MAX_FAILURES && since.elapsed() < FAILURE_WINDOW)
+    }
+
+    /// Counts a wrong second factor for an account.
+    pub fn second_factor_failed(&self, account_id: i64) {
+        let mut failures = self.second_factor_failures.lock().expect("second factor failures poisoned");
+        failures.retain(|_, (_, since)| since.elapsed() < FAILURE_WINDOW);
+        let entry = failures.entry(account_id).or_insert((0, Instant::now()));
+        entry.0 += 1;
+    }
+
+    pub(crate) fn store(&self) -> &Store {
+        &self.store
+    }
+
+    pub(crate) fn scope(&self) -> AppScope {
+        self.scope
     }
 }
 

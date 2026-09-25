@@ -102,6 +102,13 @@ message.
 | `SPAMHAUS_DBL` | +4.0 | a link domain is on Spamhaus DBL as a spam domain |
 | `SPAMHAUS_DBL_MALICIOUS` | +6.0 | a link domain is on Spamhaus DBL for phishing, malware or a botnet |
 | `SPAMHAUS_DBL_ABUSED` | +1.5 | a link domain is on Spamhaus DBL as a real domain that spammers abuse |
+| `SURBL_PH` | +6.0 | a link's registrable domain is on SURBL's phishing list (only with `spam.uri_blocklists`) |
+| `SURBL_MW` | +6.0 | … on SURBL's malware list |
+| `SURBL_ABUSE` | +4.0 | … on SURBL's abuse list: spam sites, often on otherwise real hosting |
+| `SURBL_CR` | +2.0 | … on SURBL's list of cracked sites, real sites taken over |
+| `URIBL_BLACK` | +4.0 | … on URIBL black: domains used in spam |
+| `URIBL_RED` | +1.0 | … on URIBL red: new domains just seen in spam |
+| `URIBL_GREY` | +0.5 | … on URIBL grey: bulk senders people may well have signed up for |
 | `EXECUTABLE_ATTACHMENT` | +3.0 | a program, script, shortcut, installer or disk image is attached |
 | `MACRO_ATTACHMENT` | +2.0 | an Office file that can carry macros is attached |
 | `HTML_ATTACHMENT` | +1.5 | a web page is attached, a common way to bring in a fake login page |
@@ -455,6 +462,28 @@ free. Bigger or commercial setups need Spamhaus' own terms; UwUMail Server
 cannot use their paid query service yet. Turn `spam.blocklists` off if that
 applies to you.
 
+## SURBL and URIBL
+
+Two more lists of link domains, [SURBL](https://surbl.org) (`multi.surbl.org`)
+and [URIBL](https://uribl.com) (`multi.uribl.com`), are **off by default**.
+Switch them on with `spam.uri_blocklists` (or `UWUMAIL_SPAM__URI_BLOCKLISTS=true`)
+or in the portal under *Server → Spamfilter*, next to the other blocklists. Before you do:
+
+- Both are free only for small, non-commercial servers; everything else needs
+  their paid data feeds, which UwUMail Server does not use.
+- Neither answers queries that arrive through public resolvers such as
+  Google's 8.8.8.8 or Cloudflare's 1.1.1.1, and both refuse servers that ask
+  too much. The same local resolver as for Spamhaus (see above) helps.
+
+Each list is asked about the registrable domain of every link
+(`click.mailer.example.com` becomes `example.com`), at most 8 domains per
+message, and answers are reused for an hour. Their answer is a bit mask, and
+each bit is a sub-list with its own rule: SURBL's phishing, malware, abuse and
+cracked-site lists, URIBL's black, red and grey lists (see the table above).
+A "your query was refused" answer — URIBL's 127.0.0.1, or SURBL's with the
+lowest bit set, like 127.0.0.255 — is never a listing: it counts nothing and
+is logged once as a warning, so you can find out why the lists never fire.
+
 ## Settings
 
 All of these can be changed in the portal under *Server → Spamfilter*,
@@ -465,6 +494,7 @@ file:
 [spam]
 enabled = true              # score mail from other servers
 blocklists = true           # ask Spamhaus ZEN, SpamCop and Barracuda
+uri_blocklists = false      # ask SURBL and URIBL about link domains, see above
 bayes = true                # the learning filter
 junk_score = 5.0            # from here on: Junk
 greylist_score = 2.0        # from here to junk_score: hold back once

@@ -125,14 +125,13 @@ pub async fn run(
     let dav = uwumail_dav::Dav::new(
         store.clone(),
         uwumail_dav::DavSettings { calendar_name: names.0.into(), addressbook_name: names.1.into() },
-    );
+    )
+    // Changing an event one organizes or is invited to tells the others (docs/calendars.md).
+    .with_scheduling(smtp.clone());
     // One switch for the whole server, shared by everything that has to honour it: the page
     // under /mail, JMAP's session login, and the admin panel that flips it.
     let webmail = Arc::new(std::sync::atomic::AtomicBool::new(config.http.webmail));
-    let jmap = uwumail_jmap::Jmap::with_webmail(smtp.clone(), webmail.clone())
-        .with_egress(egress.clone())
-        .router()
-        .merge(dav.router());
+    let jmap = uwumail_jmap::Jmap::with_webmail(smtp.clone(), webmail.clone()).with_egress(egress.clone());
     // The log to Grafana Loki, when the config or the admin panel asks for it; the admin panel
     // switches it on, over and off while the server runs.
     let loki = uwumail_web::Loki::new();
@@ -173,6 +172,22 @@ pub async fn run(
         },
     );
     web.set_egress(egress);
+    {
+        let certs = certs.clone();
+        web.set_profile_key(Arc::new(move || certs.pem()));
+    }
+    // A program that trades a password for a JMAP token is announced like an app password made in
+    // the portal: by mail and in the activity list.
+    let jmap = {
+        let web = web.clone();
+        jmap.with_notice(Arc::new(move |account, name, ip| {
+            let web = web.clone();
+            Box::pin(async move { web.notify_app_password_created(&account, name, &ip).await })
+        }))
+    };
+    // Sending held back for the undo window or for later (EmailSubmission sendAt) is released here.
+    tasks.spawn(jmap.clone().run_scheduled_sending(shutdown_rx.clone()));
+    let jmap = jmap.router().merge(dav.router());
     tasks.spawn(web.clone().run_health_checks(shutdown_rx.clone()));
     let setup_code = web.open_setup().await;
     let gateway = gateway::GatewayManager::new(

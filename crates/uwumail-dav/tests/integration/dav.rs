@@ -110,7 +110,7 @@ async fn an_iphone_finds_the_calendar_and_keeps_events_in_sync() {
     let home = between(&homes.body, "<c:calendar-home-set><d:href>", "</d:href>").to_owned();
     assert_eq!(home, "/dav/calendars/mini@example.org/");
     assert!(homes.body.contains("<d:displayname>MINI</d:displayname>"));
-    assert!(homes.body.contains("<c:schedule-inbox-URL/>") && homes.body.contains("404 Not Found"), "{}", homes.body);
+    assert!(homes.body.contains("<c:schedule-inbox-URL><d:href>/dav/calendars/mini@example.org/inbox/</d:href>"));
 
     let calendars = as_mini(
         &app,

@@ -98,7 +98,27 @@ fn parse_forwarded_hop(hop: &str) -> Option<IpAddr> {
     hop.rsplit_once(':').and_then(|(host, _)| host.parse().ok())
 }
 
+/// HTTP/2 carries the host in the `:authority` pseudo-header, which hyper puts into the URI; there
+/// is no `Host` header then. Everything that builds URLs for the client (the JMAP session, the
+/// token answer) or compares origins (the WebSocket handshake) reads `Host`, and fell back to
+/// `localhost` for every HTTP/2 client. So the header is filled in from the authority, as
+/// RFC 9113 (section 8.3.1) describes for intermediaries.
+fn host_from_authority(request: &mut Request) {
+    if request.headers().contains_key(header::HOST) {
+        return;
+    }
+    let Some(authority) = request.uri().authority() else { return };
+    let host = match authority.port_u16() {
+        Some(port) => format!("{}:{port}", authority.host()),
+        None => authority.host().to_owned(),
+    };
+    if let Ok(value) = HeaderValue::from_str(&host) {
+        request.headers_mut().insert(header::HOST, value);
+    }
+}
+
 async fn client_info(State(trusted): State<Arc<Vec<IpNetwork>>>, mut request: Request, next: Next) -> Response {
+    host_from_authority(&mut request);
     let peer = request.extensions().get::<Peer>().copied();
     let mut info =
         peer.map_or_else(ClientInfo::default, |p| ClientInfo { ip: p.addr.ip().to_canonical(), https: p.tls });
@@ -524,6 +544,41 @@ mod tests {
 
     fn app(state: HttpState) -> Router {
         super::app(state, Router::new(), Router::new(), Arc::default())
+    }
+
+    #[tokio::test]
+    async fn an_http2_authority_becomes_the_host_header() {
+        let echo = Router::new().route(
+            "/host",
+            get(|headers: HeaderMap| async move {
+                headers.get(header::HOST).and_then(|h| h.to_str().ok()).unwrap_or("none").to_owned()
+            }),
+        );
+        let app = super::app(state(), echo, Router::new(), Arc::default());
+        let host = |request: Request<Body>| {
+            let app = app.clone();
+            async move {
+                let response = app.oneshot(request).await.unwrap();
+                let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+                String::from_utf8(body.to_vec()).unwrap()
+            }
+        };
+        // How hyper hands over an HTTP/2 request: the authority in the URI, no Host header.
+        assert_eq!(
+            host(Request::get("https://mail.example.org:8443/host").body(Body::empty()).unwrap()).await,
+            "mail.example.org:8443"
+        );
+        assert_eq!(
+            host(Request::get("https://mail.example.org/host").body(Body::empty()).unwrap()).await,
+            "mail.example.org"
+        );
+        assert_eq!(
+            host(Request::get("https://[2001:db8::1]:8443/host").body(Body::empty()).unwrap()).await,
+            "[2001:db8::1]:8443"
+        );
+        // HTTP/1.1 sends Host, which stays as it is.
+        let http1 = Request::get("/host").header(header::HOST, "mail.example.net").body(Body::empty()).unwrap();
+        assert_eq!(host(http1).await, "mail.example.net");
     }
 
     #[tokio::test]

@@ -54,14 +54,15 @@
     "logs": "Logs",
     "settings": "Settings",
     "security": "Security",
-    "mail": "Forwarding",
+    "mail": "Forwarding & sending",
     "fetch": "Fetched mail",
     "addresses": "Addresses",
     "spamFilter": "Spam filter",
     "collapse": "Collapse {{group}}",
     "expand": "Expand {{group}}",
     "mailbox": "Mailbox",
-    "directory": "Accounts & domains"
+    "directory": "Accounts & domains",
+    "calendars": "Calendars & contacts"
   },
   "userMenu": {
     "open": "Open account menu",
@@ -277,6 +278,7 @@
       "mtaStsCertificate": "Enforce mode needs a valid certificate on the server first.",
       "gatewayCodeInvalid": "The pairing code is not right. Copy it again, all of it, from the gateway.",
       "gatewayForgetFailed": "The gateway could not be forgotten.",
+      "gatewayNoAddresses": "The gateway has not told its public addresses yet. Wait until it is connected.",
       "learningBusy": "The filter still has a lot of mail to learn. Please try again later.",
       "senderInvalid": "That does not look like an address, domain, IP address or host name. Networks may be at most /8 (IPv4) or /16 (IPv6) wide, and domains need at least one dot.",
       "senderListed": "This sender is already on the list. To switch it, remove it first.",
@@ -303,7 +305,10 @@
       "logoEmpty": "The file is empty.",
       "logoTooLarge": "The logo is too big. It may be 512 KB at most.",
       "logoType": "That is not a picture that works as a logo. PNG, JPEG, WebP and SVG are fine.",
-      "brandColor": "That is not a colour. Something like #ff4d8d is expected."
+      "brandColor": "That is not a colour. Something like #ff4d8d is expected.",
+      "unknownPerson": "Nobody on this server has this address.",
+      "ownShare": "There is no need to share with yourself.",
+      "tooManyShares": "This is shared with too many people already."
     }
   },
   "people": {
@@ -1128,6 +1133,8 @@
       "enabledHint": "When it is off, only DMARC decides what goes to spam.",
       "blocklists": "Ask blocklists",
       "blocklistsHint": "Asks Spamhaus, SpamCop and Barracuda about the sending server. A list that does not answer does not count against the sender.",
+      "uriBlocklists": "Ask link blocklists (SURBL, URIBL)",
+      "uriBlocklistsHint": "Asks SURBL and URIBL about the domains that links lead to. Both are free only for small, non-commercial servers, and neither answers through public resolvers such as 8.8.8.8 — a refused question is logged and does not count. Check their terms before you switch this on.",
       "bayes": "Learning filter",
       "bayesHint": "Learns from marks and clear cases what spam looks like and scores it. It only counts once it has learned enough.",
       "junkScore": "Spam from score",
@@ -1568,8 +1575,8 @@
     }
   },
   "mailbox": {
-    "title": "Forwarding and away",
-    "intro": "Where else your mail goes, and what senders hear while you are away.",
+    "title": "Forwarding, away and sending",
+    "intro": "Where else your mail goes, what senders hear while you are away, and how your mail goes out.",
     "forwarding": {
       "title": "Forwarding",
       "explain": "Mail to you also goes to these addresses. Addresses on other servers get a mail first and have to confirm the forwarding.",
@@ -1601,6 +1608,26 @@
       "save": "Save",
       "savedOn": "Away message is on",
       "savedOff": "Away message saved"
+    },
+    "sending": {
+      "title": "Sending",
+      "undo": "Undo sending",
+      "undoHint": "Messages wait this long before they go, so you can still take them back. Applies to the webmail and every JMAP app.",
+      "undoOff": "Off, send at once",
+      "undoSeconds": "{{seconds}} seconds",
+      "saved": "Saved"
+    },
+    "signatures": {
+      "title": "Signatures",
+      "intro": "Mail apps and the webmail add the signature of the address you send from.",
+      "loading": "Loading addresses …",
+      "loadError": "The addresses could not be loaded.",
+      "empty": "There is no address to send from yet.",
+      "text": "Signature",
+      "html": "Signature as HTML",
+      "htmlHint": "Optional, for apps that write formatted mail.",
+      "save": "Save signature",
+      "saved": "Signature saved"
     }
   },
   "forwardConfirm": {
@@ -1618,7 +1645,7 @@
   },
   "addresses": {
     "pageTitle": "Addresses and storage",
-    "intro": "The addresses you get mail at and how much space it takes.",
+    "intro": "The addresses you get mail at, how much space it takes, and who else may use your folders.",
     "title": "Your addresses",
     "own": "Created by you",
     "fromAdmin": "Created by an admin",
@@ -1654,6 +1681,36 @@
       "junk": "Junk",
       "trash": "Trash"
     }
+  },
+  "sharing": {
+    "title": "Shared folders",
+    "intro": "Let people on this server use your folders in their mail app and in the webmail. Mail they file in counts against your storage.",
+    "none": "Not shared",
+    "sharedWith_one": "Shared with {{count}} person",
+    "sharedWith_other": "Shared with {{count}} people",
+    "share": "Share",
+    "shareTitle": "Share {{folder}}",
+    "person": "Person",
+    "personPlaceholder": "Choose someone",
+    "level": "They may",
+    "levels": {
+      "read": "Read",
+      "write": "Read and write",
+      "all": "Everything"
+    },
+    "levelHints": {
+      "read": "See the messages.",
+      "write": "Also mark, file in and delete messages.",
+      "all": "Also make folders inside it, rename or delete it, and share it on."
+    },
+    "remove": "Stop sharing",
+    "saved": "{{folder}} is shared with {{person}}",
+    "removed": "{{person}} no longer sees {{folder}}",
+    "noPeople": "There is nobody else on this server to share with yet.",
+    "withMeTitle": "Shared with me",
+    "withMeEmpty": "Nobody shares a folder with you yet.",
+    "withMeFrom": "from {{owner}}",
+    "withMeHint": "They show in mail apps under “Shared” and in the webmail as an account of their own."
   },
   "setup": {
     "title": "Setup",
@@ -1924,6 +1981,31 @@
       "forgetTitle": "Forget the gateway?",
       "forgetBody": "Your server then sends and receives mail itself again. Change the DNS records back too, or mail stops arriving.",
       "forgetConfirm": "Forget",
+      "cloudflare": {
+        "open": "Point host names here via Cloudflare",
+        "title": "Point host names at the gateway",
+        "body": "If your domain is at Cloudflare, I set the A and AAAA records of {{hostname}} to the gateway's addresses, not proxied. Other names the server needs, such as mta-sts or autoconfig, follow when they are A or AAAA records too. First I show what would change. The token is only used for these requests and never stored.",
+        "check": "Show changes",
+        "apply": "Apply changes",
+        "nothing": "Everything already points at the gateway.",
+        "current": "now",
+        "none": "nothing",
+        "proxied": "proxied",
+        "actions": {
+          "none": "already right",
+          "create": "will be added",
+          "update": "will be completed, not proxied",
+          "replace": "points elsewhere",
+          "skip": "left alone"
+        },
+        "notes": {
+          "noZone": "the token sees no Cloudflare zone for it",
+          "cname": "it is a CNAME, change it yourself"
+        },
+        "replace": "Also replace addresses that point elsewhere",
+        "replaceHint": "These records lead somewhere other than the gateway, perhaps to your old connection. Without a tick they stay as they are. An AAAA record with no IPv6 address at the gateway is removed.",
+        "done": "Cloudflare has the new records. DNS can take a few minutes to catch up."
+      },
       "fromConfig": "This pairing is set as gateway.code in the configuration. If you forget the gateway here, remove the code as well. Otherwise the server tries to pair again on the next start with a new key, the gateway refuses it, and mail to other servers waits in the queue. To pair again later, run uwumail-gateway unpair on the gateway and use the new code.",
       "paired": "Paired, the tunnel is coming up.",
       "forgotten": "Gateway forgotten.",
@@ -2730,5 +2812,35 @@
       "light": "Light",
       "dark": "Dark"
     }
+  },
+  "calendars": {
+    "pageTitle": "Share calendars and contacts",
+    "intro": "Share your calendars and address books with people on this server. They show up in their calendar and contacts apps and in the webmail.",
+    "notShared": "Not shared with anyone.",
+    "sharedWith": "Shared with",
+    "shareWith": "Share with someone",
+    "addressPlaceholder": "address@example.org",
+    "rightsLabel": "Rights",
+    "rightsFor": "Rights for {{address}}",
+    "rights": {
+      "read": "Read",
+      "write": "Read and write",
+      "all": "Everything"
+    },
+    "rightsHint": {
+      "read": "Sees every entry but cannot change anything.",
+      "write": "Can add, change and delete entries.",
+      "all": "Can also change the name and colour and share it further. Only you can delete it."
+    },
+    "share": "Share",
+    "sharedToast": "{{name}} is now shared with {{address}}",
+    "unshare": "Stop sharing",
+    "unsharedToast": "{{name}} is no longer shared",
+    "sharedTitle": "Shared with you",
+    "sharedEmpty": "Nobody has shared anything with you yet.",
+    "from": "From {{owner}}",
+    "leave": "Leave",
+    "leftToast": "Left {{name}}",
+    "off": "Calendars and contacts are switched off for your account."
   }
 }

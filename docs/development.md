@@ -12,7 +12,7 @@ On Windows, add `-- --test-threads=1`. aws-lc's key generation takes the whole
 test process down with `0xc0000409` when several tests make a key at the same
 time; one at a time they all pass. Linux, and with it CI, is not affected.
 
-`crates/uwumail-smtp/tests/flow.rs` starts two servers in the test process
+`crates/uwumail-smtp/tests/integration/flow.rs` starts two servers in the test process
 (`a.test` and `b.test`) with self-signed certificates and pinned DNS answers,
 and checks submission, DKIM verification across servers, bounces, relay
 protection and forged Authentication-Results.

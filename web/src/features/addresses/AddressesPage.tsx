@@ -11,6 +11,7 @@ import { api, type OwnAddressesView, type StorageView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatBytes, formatDate } from "@/lib/format";
 import { toast } from "@/state/toasts";
+import { SharingCard } from "./SharingCard";
 
 const addressesKey = ["account", "addresses"] as const;
 const storageKey = ["account", "storage"] as const;
@@ -299,6 +300,7 @@ export function AddressesPage() {
         <AddressesCard key={addresses.data.domains.join()} data={addresses.data} />
         <StorageCard storage={storage.data} />
       </div>
+      <SharingCard />
     </div>
   );
 }

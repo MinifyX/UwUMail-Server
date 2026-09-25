@@ -30,6 +30,7 @@ import type {
   Health,
   HealthArea,
   HealthFinding,
+  IdentityInfo,
   DkimKeyInfo,
   DomainDetail,
   DomainReport,
@@ -39,6 +40,7 @@ import type {
   NewSender,
   SenderListEntry,
   SendersView,
+  GatewayHostChange,
   GatewayView,
   FeedsView,
   Info,
@@ -64,6 +66,10 @@ import type {
   ServerCheck,
   Session,
   SetupStatus,
+  ShareLevel,
+  SharingView,
+  CalendarsView,
+  ShareRights,
   StorageView,
   VacationView,
   WordEntry,
@@ -735,6 +741,7 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "smtp.allow_external_forwarding": { value: true, source: "default" },
   "spam.enabled": { value: true, source: "default" },
   "spam.blocklists": { value: true, source: "default" },
+  "spam.uri_blocklists": { value: false, source: "default" },
   "spam.junk_score": { value: 5, source: "default" },
   "spam.greylist_score": { value: 2, source: "default" },
   "spam.greylist_delay_secs": { value: 300, source: "default" },
@@ -1155,6 +1162,17 @@ const mockForwarding: ForwardingView = {
     { id: 2, address: "lorin@elsewhere.example", local: false, createdAt: now - 3600, confirmedAt: null },
   ],
 };
+const mockIdentities: IdentityInfo[] = [
+  {
+    id: 1,
+    name: "Lorin",
+    email: "lorin@uwu.example",
+    textSignature: "Lorin\nuwu.example",
+    htmlSignature: "",
+  },
+  { id: 2, name: "UwU Verein", email: "verein@uwu.example", textSignature: "", htmlSignature: "" },
+];
+
 let mockVacation: VacationView = {
   isEnabled: false,
   fromDate: null,
@@ -1185,6 +1203,67 @@ const mockStorage: StorageView = {
     { id: 5, name: "Junk", role: "junk", emails: 57, sizeBytes: 12_000_000 },
     { id: 6, name: "Trash", role: "trash", emails: 133, sizeBytes: 38_000_000 },
     { id: 7, name: "Verein", role: null, emails: 44, sizeBytes: 9_500_000 },
+  ],
+};
+
+const mockSharing: SharingView = {
+  folders: mockStorage.mailboxes.map((mailbox) => ({
+    id: mailbox.id,
+    path: mailbox.name,
+    role: mailbox.role,
+    shares:
+      mailbox.name === "Verein"
+        ? [{ login: "nyu@example.org", name: "Nyu", level: "write" as const, rights: "lrswite" }]
+        : [],
+  })),
+  sharedWithMe: [
+    {
+      owner: "mini@example.org",
+      ownerName: "Mini",
+      id: 101,
+      path: "Rechnungen",
+      role: null,
+      level: "read",
+      rights: "lr",
+    },
+  ],
+  people: [
+    { login: "mini@example.org", name: "Mini" },
+    { login: "nyu@example.org", name: "Nyu" },
+  ],
+};
+
+/** People on the mock server calendars can be shared with, by address. */
+const mockPeople = [
+  { accountId: 2, address: "mini@example.org", name: "Mini" },
+  { accountId: 3, address: "nyu@example.org", name: "Nyu" },
+];
+
+const mockCalendars: CalendarsView = {
+  calendars: true,
+  contacts: true,
+  own: [
+    {
+      id: 1,
+      kind: "calendar",
+      name: "Persönlich",
+      color: "#FF4D8DFF",
+      entries: 42,
+      shares: [{ accountId: 3, address: "nyu@example.org", name: "Nyu", rights: "read" }],
+    },
+    { id: 2, kind: "calendar", name: "Verein", color: "#3BA7FFFF", entries: 7, shares: [] },
+    { id: 3, kind: "addressbook", name: "Kontakte", color: null, entries: 118, shares: [] },
+  ],
+  shared: [
+    {
+      id: 11,
+      kind: "calendar",
+      name: "Familie",
+      color: "#9B6BFFFF",
+      owner: "mini@example.org",
+      ownerName: "Mini",
+      rights: "write",
+    },
   ],
 };
 
@@ -1319,6 +1398,8 @@ const noGateway: GatewayView = {
 };
 let gateway: GatewayView = noGateway;
 let gatewayPairedAt = 0;
+/** Whether the pretend Cloudflare zone points at the gateway already. */
+let gatewayDns = false;
 
 let gatewayJobStartedAt = 0;
 
@@ -1894,6 +1975,81 @@ const routes: [string, RegExp, Handler][] = [
   ["GET", /^\/api\/admin\/gateway$/, () => [200, gatewayView()]],
   [
     "POST",
+    /^\/api\/admin\/gateway\/cloudflare$/,
+    (body) => {
+      const { token, apply, replace } = body as { token: string; apply?: boolean; replace?: boolean };
+      if (token === "wrong") return problem(409, "cloudflareFailed");
+      const view = gatewayView();
+      if (view.addresses.length === 0) return problem(409, "gatewayNoAddresses");
+      const v4 = view.addresses.filter((address) => !address.includes(":"));
+      const v6 = view.addresses.filter((address) => address.includes(":"));
+      // The pretend zone: the host name still points at the home connection, autoconfig is proxied.
+      const plan: GatewayHostChange[] = gatewayDns
+        ? [
+            {
+              name: "mail.uwu.example",
+              recordType: "A",
+              current: v4,
+              wanted: v4,
+              proxied: false,
+              action: "none",
+              note: null,
+            },
+            {
+              name: "mail.uwu.example",
+              recordType: "AAAA",
+              current: v6,
+              wanted: v6,
+              proxied: false,
+              action: "none",
+              note: null,
+            },
+          ]
+        : [
+            {
+              name: "mail.uwu.example",
+              recordType: "A",
+              current: ["198.51.100.7"],
+              wanted: v4,
+              proxied: false,
+              action: "replace",
+              note: null,
+            },
+            {
+              name: "mail.uwu.example",
+              recordType: "AAAA",
+              current: [],
+              wanted: v6,
+              proxied: false,
+              action: "create",
+              note: null,
+            },
+            {
+              name: "autoconfig.uwu.example",
+              recordType: "A",
+              current: v4,
+              wanted: v4,
+              proxied: true,
+              action: "update",
+              note: null,
+            },
+          ];
+      if (!apply) return [200, { plan }];
+      const results = plan
+        .filter((change) => change.action !== "none")
+        .map((change) => ({
+          name: change.name,
+          recordType: change.recordType,
+          outcome: change.action === "replace" && !replace ? "skipped" : change.current.length ? "updated" : "created",
+          error: null,
+        }));
+      if (replace) gatewayDns = true;
+      log("gateway.cloudflare", "");
+      return [200, { plan, results }];
+    },
+  ],
+  [
+    "POST",
     /^\/api\/admin\/gateway\/jobs$/,
     (body) => {
       const verb = (body as { verb?: string }).verb ?? "os-update";
@@ -2376,6 +2532,17 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["GET", /^\/api\/account\/vacation$/, () => [200, mockVacation]],
+  ["GET", /^\/api\/account\/identities$/, () => [200, mockIdentities]],
+  [
+    "PATCH",
+    /^\/api\/account\/identities\/(\d+)$/,
+    (body, match) => {
+      const identity = mockIdentities.find((entry) => entry.id === Number(match[0]));
+      if (!identity) return problem(404, "notFound");
+      Object.assign(identity, body as Partial<IdentityInfo>);
+      return [204, null];
+    },
+  ],
   ["GET", /^\/api\/account\/addresses$/, () => [200, mockAddresses]],
   [
     "POST",
@@ -2403,6 +2570,68 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["GET", /^\/api\/account\/storage$/, () => [200, mockStorage]],
+  ["GET", /^\/api\/account\/sharing$/, () => [200, mockSharing]],
+  [
+    "PUT",
+    /^\/api\/account\/sharing\/(\d+)$/,
+    (body, [id]) => {
+      const { login, level } = body as { login: string; level: ShareLevel };
+      const folder = mockSharing.folders.find((entry) => entry.id === Number(id));
+      const person = mockSharing.people.find((entry) => entry.login === login);
+      if (!folder || !person) return problem(404, "notFound");
+      const rights = { read: "lr", write: "lrswite", all: "lrswipkxtea" }[level];
+      folder.shares = [
+        ...folder.shares.filter((entry) => entry.login !== login),
+        { login, name: person.name, level, rights },
+      ];
+      return [200, mockSharing];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/account\/sharing\/(\d+)\/([^/]+)$/,
+    (_, [id, login]) => {
+      const folder = mockSharing.folders.find((entry) => entry.id === Number(id));
+      if (folder) folder.shares = folder.shares.filter((entry) => entry.login !== login);
+      return [200, mockSharing];
+    },
+  ],
+  ["GET", /^\/api\/account\/calendars$/, () => [200, mockCalendars]],
+  [
+    "PUT",
+    /^\/api\/account\/calendars\/(\d+)\/shares$/,
+    (body, [id]) => {
+      const { address, rights } = body as { address: string; rights: ShareRights };
+      const collection = mockCalendars.own.find((entry) => entry.id === Number(id));
+      if (!collection) return problem(404, "notFound");
+      const wanted = address.trim().toLowerCase();
+      if (wanted === session().account.login) return problem(409, "ownShare");
+      const person = mockPeople.find((entry) => entry.address === wanted);
+      if (!person) return problem(409, "unknownPerson");
+      collection.shares = [
+        ...collection.shares.filter((entry) => entry.accountId !== person.accountId),
+        { ...person, rights },
+      ];
+      return [200, mockCalendars];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/account\/calendars\/(\d+)\/shares\/(\d+)$/,
+    (_, [id, account]) => {
+      const collection = mockCalendars.own.find((entry) => entry.id === Number(id));
+      if (collection) collection.shares = collection.shares.filter((entry) => entry.accountId !== Number(account));
+      return [200, mockCalendars];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/account\/shared-calendars\/(\d+)$/,
+    (_, [id]) => {
+      mockCalendars.shared = mockCalendars.shared.filter((entry) => entry.id !== Number(id));
+      return [200, mockCalendars];
+    },
+  ],
   [
     "POST",
     /^\/api\/account\/mailboxes\/(trash|junk)\/empty$/,

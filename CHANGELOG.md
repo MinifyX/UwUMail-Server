@@ -3,6 +3,89 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.12.0
+
+**Programs sign in with a token.** An app password with the *mail* use now also works as
+`Authorization: Bearer <token>` on every JMAP endpoint (session, API, upload, download, push).
+Programs can get one themselves: `POST /jmap/token` trades login, password and, with two-factor
+authentication, a code for a new named app password. It shows up in *My account → Security* like
+any other, with the usual notice mail, and wrong tries are throttled like Basic logins
+([docs/jmap-tokens.md](docs/jmap-tokens.md)).
+
+**JMAP catches up.**
+
+- **Push over WebSocket** (RFC 8887) at `/jmap/ws`: requests, responses and push with
+  `WebSocketPushEnable`/`Disable` and `pushState`, also through the gateway.
+- **Undo send on the server:** every JMAP submission waits for the person's undo window (off, 5,
+  10, 20 or 30 seconds; default 10) and can be taken back with `undoStatus: canceled`. The window
+  is set in *My account → Forwarding & sending* or as `undoSendSeconds`.
+- **Send later:** `EmailSubmission` with `sendAt` or FUTURERELEASE (`HOLDFOR`/`HOLDUNTIL`) up to
+  30 days ahead. Held mail is kept in the database and survives restarts
+  ([docs/jmap-sending.md](docs/jmap-sending.md)).
+- **`Email/copy`** between your own account and accounts that share folders with you, within the
+  folder rights.
+- **`/queryChanges`** for Email, Mailbox, EmailSubmission, SieveScript, ContactCard and
+  CalendarEvent (without `expandRecurrences`), with `canCalculateChanges: true`.
+- **Signatures** of every sending address can be edited in the portal; they are the ones JMAP
+  `Identity` serves.
+- **Address suggestions** (`AddressSuggestion/query`, `urn:uwumail:jmap:suggest`): recipients
+  from the address books and recent mail, ranked ([docs/jmap-suggest.md](docs/jmap-suggest.md)).
+- **Tested with other programs:** aerc and Fastmail's JMAP-TestSuite
+  ([docs/jmap-clients.md](docs/jmap-clients.md)). That turned up and fixed: session URLs on
+  `https://localhost` for HTTP/2 clients, uploads answering `201` (aerc could not send; now `200`),
+  Mailbox/query without AND/OR/NOT filters, paging and tree options, Mailbox/set refusing unchanged
+  server-set properties, and several details of Email/get and Email/set (line endings, address
+  names, `us-ascii` for parts without a charset, grouped addresses, dates with offset, header forms
+  on create, `notFound` in `blobNotFound`).
+
+**IMAP4rev2 and shared folders.** IMAP speaks IMAP4rev2 (RFC 9051) beside IMAP4rev1: `ENABLE
+IMAP4rev2`, ESEARCH answers, no RECENT, UTF-8 mailbox names; also BINARY, UNAUTHENTICATE and
+SEARCHRES. Folders can be shared with people on your server — to read, to read and write, or
+everything — from *My account → Addresses and storage*, over JMAP (`shareWith`) or with IMAP ACLs
+(RFC 4314). IMAP shows them under `Shared/<person>/`, JMAP as an extra account per person with
+`myRights` and Principals, and the webmail as "Shared by …". Mail filed there counts against the
+owner's storage ([docs/sharing.md](docs/sharing.md)).
+
+**Calendars.**
+
+- **Invitations** (iTIP/iMIP): people on the server get invitations, updates and cancellations
+  straight into their calendars, everyone else by mail in the sender's language, and answers come
+  back into the organizer's event. Invitations arriving by mail land in the default calendar,
+  waiting for an answer; answers and cancellations only count when SPF/DKIM vouch for the sender.
+- **CalDAV scheduling** (RFC 6638) for Apple Calendar, Thunderbird and DAVx5, and
+  `sendSchedulingMessages` in JMAP Calendars.
+- **Shared calendars and address books** between people on the server (read, read and write,
+  everything) over CalDAV, CardDAV and JMAP, with push, from the new page *My account → Calendars &
+  contacts* ([docs/calendars.md](docs/calendars.md)). `shareWith` uses the principal ids of
+  Principal/get (`p12`) for mailboxes, calendars and address books alike.
+- **Signed Apple profiles:** the configuration profiles for iPhone, iPad and Mac are signed with
+  the server's certificate and show as "Verified". With a self-signed certificate they stay
+  unsigned.
+
+**Spam filter: SURBL and URIBL.** The link blocklists `multi.surbl.org` and `multi.uribl.com` can
+be switched on next to the other blocklists (`spam.uri_blocklists`, off by default: they are free
+only for small servers and do not answer through public resolvers). The registrable domain of up
+to 8 links per message is asked; the answers become `SURBL_PH`, `SURBL_MW`, `SURBL_ABUSE`,
+`SURBL_CR`, `URIBL_BLACK`, `URIBL_RED` and `URIBL_GREY`. "Query refused" answers never count and
+are logged once.
+
+**Gateway: one button for Cloudflare.** In the setup assistant and under *Server → Overview → Mail
+flow*, a button points the host name's A/AAAA records at the gateway's addresses (not proxied),
+along with `mta-sts`, `autoconfig`, `autodiscover`, `mail`, `imap` and `smtp` names that already
+are A/AAAA records. It shows what would change first and only replaces addresses that point
+elsewhere after you confirm.
+
+**Roadmap.** An optional external Rspamd and external mailboxes as JMAP accounts are no longer
+planned.
+
+Migrations 0036 (held submissions), 0037 (folder sharing) and 0038 (calendar sharing and
+Schedule-Tag) run by themselves on the first start.
+
+The webmail is [UwUMail Webmail 0.10.0](https://github.com/MinifyX/UwUMail-Webmail/tree/v0.10.0):
+undo send and send later from the server with a "Scheduled" view, signatures per sending address,
+recipient suggestions, folders and calendars others share, "Share…" for your own, push over
+WebSocket and Accept / Maybe / Decline for invitations.
+
 ## 0.11.0
 
 **Your own name, logo and colour.** *Server → Settings → Branding* turns UwUMail into your

@@ -376,7 +376,9 @@ pub async fn create_apple_profile(
     web.keep_profile(
         token.clone(),
         PendingProfile {
-            file: file.into_bytes(),
+            // Signed with the server's certificate when it has a real one, so the device shows
+            // the profile as verified.
+            file: crate::profile_signing::sign_profile(web.profile_key(), file.into_bytes()),
             filename: format!("{}.mobileconfig", account.login.replace(['@', '.'], "-")),
             created: Instant::now(),
         },

@@ -140,5 +140,18 @@
     "loki": {
       "testOk": "Die Testzeile ist in Loki angekommen (=^･ω･^=)"
     }
+  },
+  "mailbox": {
+    "signatures": {
+      "saved": "Signatur gespeichert (ﾉ◕ヮ◕)ﾉ"
+    }
+  },
+  "sharing": {
+    "withMeEmpty": "Noch teilt niemand einen Ordner mit dir (｡•ᴗ•｡)",
+    "saved": "{{folder}} ist mit {{person}} geteilt (ﾉ◕ヮ◕)ﾉ"
+  },
+  "calendars": {
+    "intro": "Teil deine Kalender und Adressbücher mit Leuten hier auf dem Server, dann verpasst keiner mehr einen Termin (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
+    "sharedEmpty": "Noch hat niemand etwas mit dir geteilt (・ω・)"
   }
 }

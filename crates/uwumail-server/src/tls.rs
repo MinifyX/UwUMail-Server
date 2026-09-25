@@ -24,6 +24,8 @@ pub struct CertificateInfo {
 #[derive(Debug, Default)]
 pub struct CertStore {
     current: RwLock<Option<(Arc<CertifiedKey>, CertificateInfo)>>,
+    /// The same certificate chain and key as PEM, for signing Apple configuration profiles.
+    pem: RwLock<Option<(Vec<u8>, Vec<u8>)>>,
 }
 
 impl ResolvesServerCert for CertStore {
@@ -47,7 +49,13 @@ impl CertStore {
             rustls::crypto::aws_lc_rs::sign::any_supported_type(&key).context("loading the private key")?;
         let certified = Arc::new(CertifiedKey::new(certs, signing_key));
         *self.current.write().expect("cert store poisoned") = Some((certified, info.clone()));
+        *self.pem.write().expect("cert store poisoned") = Some((cert_pem.to_vec(), key_pem.to_vec()));
         Ok(info)
+    }
+
+    /// The chain and key in use, as PEM.
+    pub fn pem(&self) -> Option<(Vec<u8>, Vec<u8>)> {
+        self.pem.read().expect("cert store poisoned").clone()
     }
 }
 

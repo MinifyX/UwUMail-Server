@@ -42,6 +42,9 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0033_sieve.sql"),
     include_str!("migrations/0034_jmap_contacts.sql"),
     include_str!("migrations/0035_rule_stats.sql"),
+    include_str!("migrations/0036_jmap_sending.sql"),
+    include_str!("migrations/0037_mailbox_acl.sql"),
+    include_str!("migrations/0038_calendar_sharing_itip.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 
@@ -152,4 +155,83 @@ pub fn record_change(
         params![account_id, modseq, kind, object_id, change],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// UwUMail 0.11.0 shipped with the first 35 migrations.
+    const RELEASED_0_11: usize = 35;
+
+    fn connection() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        conn
+    }
+
+    fn version(conn: &Connection) -> usize {
+        conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0)).unwrap() as usize
+    }
+
+    fn table_exists(conn: &Connection, name: &str) -> bool {
+        conn.query_row("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?1", [name], |row| {
+            row.get::<_, i64>(0)
+        })
+        .unwrap()
+            == 1
+    }
+
+    #[test]
+    fn a_fresh_database_gets_every_migration() {
+        let mut conn = connection();
+        migrate(&mut conn).unwrap();
+        assert_eq!(version(&conn), MIGRATIONS.len());
+        assert!(table_exists(&conn, "mailbox_acl") && table_exists(&conn, "dav_shares"));
+        // Running again changes nothing.
+        migrate(&mut conn).unwrap();
+        assert_eq!(version(&conn), MIGRATIONS.len());
+    }
+
+    #[test]
+    fn a_database_of_0_11_is_upgraded_with_its_data() {
+        let mut conn = connection();
+        for (index, sql) in MIGRATIONS[..RELEASED_0_11].iter().enumerate() {
+            conn.execute_batch(sql).unwrap();
+            conn.pragma_update(None, "user_version", (index + 1) as i64).unwrap();
+        }
+        conn.execute_batch(
+            "INSERT INTO accounts (id, login, created_at) VALUES (1, 'mini@example.org', 0), (2, 'nyu@example.org', 0);
+             INSERT INTO user_settings (account_id, key, value) VALUES (1, 'undoSendSeconds', '10'),
+                 (1, 'theme', '\"dark\"'), (2, 'undoSendSeconds', '99');
+             INSERT INTO dav_collections (id, account_id, kind, slug, created_at) VALUES (1, 1, 'calendar', 'personal', 0);
+             INSERT INTO dav_resources (collection_id, name, uid, etag, content, size, modified_at, change)
+                 VALUES (1, 'a.ics', 'a', '\"e1\"', 'BEGIN:VCALENDAR', 15, 0, 1);",
+        )
+        .unwrap();
+
+        migrate(&mut conn).unwrap();
+        assert_eq!(version(&conn), MIGRATIONS.len());
+        // The undo window moved into the preferences, where it was a value the portal offers.
+        let undo: Vec<Option<String>> = conn
+            .prepare("SELECT json_extract(preferences, '$.mailUndoSend') FROM accounts ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(undo, vec![Some("10".to_owned()), None]);
+        let left: i64 = conn
+            .query_row("SELECT count(*) FROM user_settings WHERE key = 'undoSendSeconds'", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(left, 0);
+        let theme: String =
+            conn.query_row("SELECT value FROM user_settings WHERE key = 'theme'", [], |row| row.get(0)).unwrap();
+        assert_eq!(theme, "\"dark\"");
+        // Existing events get a Schedule-Tag, and sharing starts empty.
+        let tag: String = conn.query_row("SELECT schedule_tag FROM dav_resources", [], |row| row.get(0)).unwrap();
+        assert_eq!(tag, "\"e1\"");
+        let shares: i64 = conn.query_row("SELECT count(*) FROM mailbox_acl", [], |row| row.get(0)).unwrap();
+        assert_eq!(shares, 0);
+    }
 }

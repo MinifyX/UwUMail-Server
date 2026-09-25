@@ -1,14 +1,17 @@
 //! Email objects: JSON from stored metadata and parsed MIME, and messages built from JSON.
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 
 use mail_builder::MessageBuilder;
+use mail_builder::headers::HeaderType;
 use mail_builder::headers::address::Address as BuilderAddress;
 use mail_builder::headers::content_type::ContentType as BuilderContentType;
 use mail_builder::headers::date::Date;
 use mail_builder::headers::message_id::MessageId;
 use mail_builder::headers::raw::Raw;
 use mail_builder::headers::text::Text;
+use mail_builder::headers::url::URL;
 use mail_builder::mime::{BodyPart, MimePart};
 use mail_parser::{Address, HeaderValue, Message, MessageParser, MimeHeaders, PartType};
 use serde_json::{Map, Value, json};
@@ -83,8 +86,12 @@ fn safe_html_of(message: &Message<'_>) -> Option<String> {
     Some(crate::safe_html::sanitize(html))
 }
 
+/// EmailAddress objects always have a `name`, `null` when there is none (RFC 8621, 4.1.2.3).
 fn addresses_or_null(list: &[EmailAddress]) -> Value {
-    if list.is_empty() { Value::Null } else { json!(list) }
+    if list.is_empty() {
+        return Value::Null;
+    }
+    list.iter().map(|address| json!({ "name": address.name, "email": address.email })).collect()
 }
 
 fn ids_or_null(list: &[String]) -> Value {
@@ -100,6 +107,25 @@ fn parsed_addresses(address: Option<&Address<'_>>) -> Value {
         })
         .unwrap_or_default();
     if list.is_empty() { Value::Null } else { Value::Array(list) }
+}
+
+/// `asGroupedAddresses`: groups with their names; addresses outside a group are a group with a
+/// `null` name (RFC 8621, 4.1.2.4).
+fn grouped_addresses(address: Option<&Address<'_>>) -> Value {
+    let addresses = |list: &[mail_parser::Addr<'_>]| -> Vec<Value> {
+        list.iter()
+            .filter_map(|addr| Some(json!({ "name": addr.name.as_deref(), "email": addr.address.as_deref()? })))
+            .collect()
+    };
+    let groups: Vec<Value> = match address {
+        None => Vec::new(),
+        Some(Address::List(list)) => vec![json!({ "name": null, "addresses": addresses(list) })],
+        Some(Address::Group(groups)) => groups
+            .iter()
+            .map(|group| json!({ "name": group.name.as_deref(), "addresses": addresses(&group.addresses) }))
+            .collect(),
+    };
+    if groups.is_empty() { Value::Null } else { Value::Array(groups) }
 }
 
 fn text_list(value: &HeaderValue<'_>) -> Value {
@@ -158,14 +184,12 @@ pub fn header_form(raw_value: &str, form: &str) -> Value {
     match form {
         "asText" => parse("Subject").and_then(|m| m.subject().map(|s| json!(s.trim()))).unwrap_or(Value::Null),
         "asAddresses" => parse("To").map(|m| parsed_addresses(m.to())).unwrap_or(Value::Null),
-        "asGroupedAddresses" => {
-            let addresses = parse("To").map(|m| parsed_addresses(m.to())).unwrap_or(Value::Null);
-            if addresses.is_null() { Value::Null } else { json!([{ "name": null, "addresses": addresses }]) }
-        }
+        "asGroupedAddresses" => parse("To").map(|m| grouped_addresses(m.to())).unwrap_or(Value::Null),
         "asMessageIds" => parse("References").map(|m| text_list(m.references())).unwrap_or(Value::Null),
-        "asDate" => {
-            parse("Date").and_then(|m| m.date().map(|d| json!(dates::format(d.to_timestamp())))).unwrap_or(Value::Null)
-        }
+        // A Date keeps the offset the header was written in (RFC 8620, section 1.4).
+        "asDate" => parse("Date")
+            .and_then(|m| m.date().filter(|d| d.is_valid()).map(|d| json!(d.to_rfc3339())))
+            .unwrap_or(Value::Null),
         "asURLs" => {
             let urls: Vec<String> = raw_value
                 .split('<')
@@ -243,11 +267,19 @@ fn body_part(message: &Message<'_>, hash: &BlobHash, index: usize, properties: &
             }
             "name" => json!(part.attachment_name()),
             "type" => json!(part_type(part)),
-            "charset" => {
-                json!(part.content_type().and_then(|ct| ct.attribute("charset")).map(str::to_owned).or_else(|| {
-                    matches!(part.body, PartType::Text(_) | PartType::Html(_)).then(|| "utf-8".to_owned())
-                }))
-            }
+            // Without a charset parameter a text part is US-ASCII, as MIME says (RFC 8621, 4.1.4).
+            "charset" => json!(
+                part.content_type().and_then(|ct| ct.attribute("charset")).map(str::to_owned).or_else(|| part_type(
+                    part
+                )
+                .starts_with("text/")
+                .then(|| "us-ascii".to_owned()))
+            ),
+            "subParts" => match part.body {
+                // Filled in below.
+                PartType::Multipart(_) if recurse => continue,
+                _ => Value::Null,
+            },
             "disposition" => json!(part.content_disposition().map(|d| d.c_type.to_lowercase())),
             "cid" => json!(part.content_id().map(|c| c.trim_matches(['<', '>']).to_owned())),
             "language" => text_list(part.content_language()),
@@ -288,7 +320,9 @@ fn body_values(message: &Message<'_>, options: BodyValueOptions) -> Value {
             PartType::Text(text) | PartType::Html(text) => (text.as_ref(), part.is_encoding_problem),
             _ => return,
         };
-        let (value, truncated) = truncate(text, options.max_bytes);
+        // The value has LF line endings, not the CRLF of the message (RFC 8621, 4.1.4).
+        let text = text.replace("\r\n", "\n");
+        let (value, truncated) = truncate(&text, options.max_bytes);
         values.insert(
             index.to_string(),
             json!({ "value": value, "isEncodingProblem": problem, "isTruncated": truncated }),
@@ -408,23 +442,29 @@ pub fn to_json(
 /// A problem with an Email object sent by a client.
 #[derive(Debug)]
 pub struct BuildError {
-    pub property: String,
+    pub properties: Vec<String>,
     pub description: String,
 }
 
 fn build_error(property: &str, description: impl Into<String>) -> BuildError {
-    BuildError { property: property.to_owned(), description: description.into() }
+    BuildError { properties: vec![property.to_owned()], description: description.into() }
+}
+
+fn build_errors(properties: Vec<String>, description: impl Into<String>) -> BuildError {
+    BuildError { properties, description: description.into() }
+}
+
+fn address_list(value: &Value, property: &str) -> Result<Vec<BuilderAddress<'static>>, BuildError> {
+    let list: Vec<EmailAddress> =
+        serde_json::from_value(value.clone()).map_err(|_| build_error(property, "must be a list of {name, email}"))?;
+    Ok(list.into_iter().map(|a| BuilderAddress::new_address(a.name.map(Cow::Owned), Cow::Owned(a.email))).collect())
 }
 
 fn builder_addresses(value: &Value, property: &str) -> Result<Option<BuilderAddress<'static>>, BuildError> {
     if value.is_null() {
         return Ok(None);
     }
-    let list: Vec<EmailAddress> =
-        serde_json::from_value(value.clone()).map_err(|_| build_error(property, "must be a list of {name, email}"))?;
-    let addresses: Vec<BuilderAddress<'static>> =
-        list.into_iter().map(|a| BuilderAddress::new_address(a.name.map(Cow::Owned), Cow::Owned(a.email))).collect();
-    Ok(Some(BuilderAddress::new_list(addresses)))
+    Ok(Some(BuilderAddress::new_list(address_list(value, property)?)))
 }
 
 fn builder_ids(value: &Value, property: &str) -> Result<Option<MessageId<'static>>, BuildError> {
@@ -434,6 +474,302 @@ fn builder_ids(value: &Value, property: &str) -> Result<Option<MessageId<'static
     let list: Vec<String> =
         serde_json::from_value(value.clone()).map_err(|_| build_error(property, "must be a list of ids"))?;
     Ok(Some(MessageId::new_list(list.into_iter().map(Cow::Owned))))
+}
+
+/// The spelling mail-builder and everyone else expect for the common header fields.
+fn canonical_header_name(name: &str) -> String {
+    const KNOWN: &[&str] = &[
+        "From",
+        "Sender",
+        "Reply-To",
+        "To",
+        "Cc",
+        "Bcc",
+        "Subject",
+        "Date",
+        "Message-ID",
+        "In-Reply-To",
+        "References",
+        "Comments",
+        "Keywords",
+        "Resent-Date",
+        "Resent-From",
+        "Resent-Sender",
+        "Resent-To",
+        "Resent-Cc",
+        "Resent-Bcc",
+        "Resent-Message-ID",
+        "List-Id",
+        "List-Help",
+        "List-Unsubscribe",
+        "List-Subscribe",
+        "List-Post",
+        "List-Owner",
+        "List-Archive",
+    ];
+    KNOWN.iter().find(|known| known.eq_ignore_ascii_case(name)).map_or_else(|| name.to_owned(), |k| (*k).to_owned())
+}
+
+/// The parsed forms a header field may be given in (RFC 8621, section 4.1.2); fields not listed
+/// there take any form.
+fn form_allowed(name: &str, form: &str) -> bool {
+    let is = |list: &[&str]| list.iter().any(|n| n.eq_ignore_ascii_case(name));
+    const ADDRESSES: &[&str] = &[
+        "From",
+        "Sender",
+        "Reply-To",
+        "To",
+        "Cc",
+        "Bcc",
+        "Resent-From",
+        "Resent-Sender",
+        "Resent-Reply-To",
+        "Resent-To",
+        "Resent-Cc",
+        "Resent-Bcc",
+    ];
+    const TEXT: &[&str] = &["Subject", "Comments", "Keywords", "List-Id"];
+    const IDS: &[&str] = &["Message-ID", "In-Reply-To", "References", "Resent-Message-ID"];
+    const DATES: &[&str] = &["Date", "Resent-Date"];
+    const URLS: &[&str] =
+        &["List-Help", "List-Unsubscribe", "List-Subscribe", "List-Post", "List-Owner", "List-Archive"];
+    let known = [ADDRESSES, TEXT, IDS, DATES, URLS].iter().any(|list| is(list));
+    match form {
+        "asRaw" => true,
+        _ if !known => true,
+        "asText" => is(TEXT),
+        "asAddresses" | "asGroupedAddresses" => is(ADDRESSES),
+        "asMessageIds" => is(IDS),
+        "asDate" => is(DATES),
+        "asURLs" => is(URLS),
+        _ => false,
+    }
+}
+
+/// A `header:Name[:asForm][:all]` property split into its name, form and whether it is `:all`.
+fn header_key(key: &str) -> Option<(String, &str, bool)> {
+    let rest = key.strip_prefix("header:")?;
+    let mut parts: Vec<&str> = rest.split(':').collect();
+    let all = parts.len() > 1 && parts.last() == Some(&"all");
+    if all {
+        parts.pop();
+    }
+    let form = if parts.len() > 1 && parts.last().is_some_and(|p| p.starts_with("as")) {
+        parts.pop().unwrap_or("asRaw")
+    } else {
+        "asRaw"
+    };
+    if parts.len() != 1 || parts[0].is_empty() {
+        return None;
+    }
+    Some((parts[0].to_owned(), form, all))
+}
+
+/// One header value in one of the parsed forms, for mail-builder.
+fn header_value(key: &str, form: &str, value: &Value) -> Result<HeaderType<'static>, BuildError> {
+    let wrong = || build_error(key, format!("not a valid value for {form}"));
+    Ok(match form {
+        // The raw value starts after the colon, usually with a space mail-builder writes itself.
+        "asRaw" => {
+            let raw = value.as_str().ok_or_else(wrong)?;
+            Raw::new(raw.strip_prefix([' ', '\t']).unwrap_or(raw).to_owned()).into()
+        }
+        "asText" => Text::new(value.as_str().ok_or_else(wrong)?.to_owned()).into(),
+        "asAddresses" => BuilderAddress::new_list(address_list(value, key)?).into(),
+        "asGroupedAddresses" => {
+            let groups = value.as_array().ok_or_else(wrong)?;
+            let mut list = Vec::new();
+            for group in groups {
+                let addresses = address_list(group.get("addresses").unwrap_or(&Value::Null), key)?;
+                match group.get("name").and_then(Value::as_str) {
+                    Some(name) => list.push(BuilderAddress::new_group(Some(name.to_owned()), addresses)),
+                    None => list.extend(addresses),
+                }
+            }
+            BuilderAddress::new_list(list).into()
+        }
+        "asMessageIds" => {
+            let ids: Vec<String> = serde_json::from_value(value.clone()).map_err(|_| wrong())?;
+            MessageId::new_list(ids.into_iter().map(Cow::Owned)).into()
+        }
+        "asDate" => Date::new(value.as_str().and_then(dates::parse).ok_or_else(wrong)?).into(),
+        "asURLs" => {
+            let urls: Vec<String> = serde_json::from_value(value.clone()).map_err(|_| wrong())?;
+            URL::new_list(urls.into_iter().map(Cow::Owned)).into()
+        }
+        _ => return Err(build_error(key, format!("unknown header form {form}"))),
+    })
+}
+
+/// The header fields given as `header:` properties of an Email or a body part, each with its
+/// values (several with `:all`).
+fn header_properties(object: &Map<String, Value>) -> Result<Vec<(String, Vec<HeaderType<'static>>)>, BuildError> {
+    let mut headers = Vec::new();
+    for (key, value) in object {
+        if !key.starts_with("header:") {
+            continue;
+        }
+        let (name, form, all) = header_key(key).ok_or_else(|| build_error(key, "not a header property"))?;
+        if !form_allowed(&name, form) {
+            return Err(build_error(key, format!("{name} cannot be given {form}")));
+        }
+        let values = if all {
+            let list = value.as_array().ok_or_else(|| build_error(key, ":all takes a list"))?;
+            list.iter().map(|v| header_value(key, form, v)).collect::<Result<Vec<_>, _>>()?
+        } else if value.is_null() {
+            Vec::new()
+        } else {
+            vec![header_value(key, form, value)?]
+        };
+        headers.push((canonical_header_name(&name), values));
+    }
+    Ok(headers)
+}
+
+/// Checks a create object against the rules of RFC 8621, section 4.6, before anything is built.
+pub fn validate_create(object: &Map<String, Value>) -> Result<(), BuildError> {
+    if object.contains_key("headers") {
+        return Err(build_error("headers", "give each header field as a header: property instead"));
+    }
+    // Every header field in one representation only.
+    let mut seen: HashMap<String, String> = HashMap::new();
+    let convenience = [
+        ("from", "From"),
+        ("sender", "Sender"),
+        ("replyTo", "Reply-To"),
+        ("to", "To"),
+        ("cc", "Cc"),
+        ("bcc", "Bcc"),
+        ("subject", "Subject"),
+        ("sentAt", "Date"),
+        ("messageId", "Message-ID"),
+        ("inReplyTo", "In-Reply-To"),
+        ("references", "References"),
+    ];
+    for (property, field) in convenience {
+        if object.contains_key(property) {
+            seen.insert(field.to_ascii_lowercase(), property.to_owned());
+        }
+    }
+    for key in object.keys() {
+        let Some((name, _, _)) = header_key(key) else { continue };
+        if name.to_ascii_lowercase().starts_with("content-") {
+            return Err(build_error(key, "Content-* header fields belong to body parts"));
+        }
+        if seen.insert(name.to_ascii_lowercase(), key.clone()).is_some() {
+            return Err(build_error(key, format!("{name} is given twice")));
+        }
+    }
+    let structural: Vec<String> = ["textBody", "htmlBody", "attachments"]
+        .iter()
+        .filter(|key| object.get(**key).is_some_and(|v| !v.is_null()))
+        .map(|key| (*key).to_owned())
+        .collect();
+    if object.get("bodyStructure").is_some_and(|v| !v.is_null()) && !structural.is_empty() {
+        return Err(build_errors(structural, "give either bodyStructure or textBody, htmlBody and attachments"));
+    }
+    for (key, wanted) in [("textBody", "text/plain"), ("htmlBody", "text/html")] {
+        let Some(list) = object.get(key).filter(|v| !v.is_null()) else { continue };
+        let list = list.as_array().ok_or_else(|| build_error(key, "must be a list of body parts"))?;
+        if list.len() > 1 {
+            return Err(build_error(key, "may have one part only"));
+        }
+        if let Some(kind) = list.first().and_then(|part| part.get("type")).and_then(Value::as_str)
+            && !kind.eq_ignore_ascii_case(wanted)
+        {
+            return Err(build_error(key, format!("the part must be {wanted}")));
+        }
+    }
+    if let Some(values) = object.get("bodyValues").and_then(Value::as_object) {
+        let mut flagged = Vec::new();
+        for (id, value) in values {
+            for flag in ["isEncodingProblem", "isTruncated"] {
+                if value.get(flag).and_then(Value::as_bool) == Some(true) {
+                    flagged.push(format!("bodyValues/{id}/{flag}"));
+                }
+            }
+        }
+        if !flagged.is_empty() {
+            return Err(build_errors(flagged, "isEncodingProblem and isTruncated must be false"));
+        }
+    }
+    let mut parts = Vec::new();
+    if let Some(structure) = object.get("bodyStructure").filter(|v| !v.is_null()) {
+        collect_parts(structure, "bodyStructure", &mut parts);
+    }
+    for key in ["textBody", "htmlBody", "attachments"] {
+        if let Some(list) = object.get(key).and_then(Value::as_array) {
+            for (index, part) in list.iter().enumerate() {
+                collect_parts(part, &format!("{key}/{index}"), &mut parts);
+            }
+        }
+    }
+    for (path, part) in parts {
+        validate_part(&path, part)?;
+    }
+    Ok(())
+}
+
+fn collect_parts<'a>(part: &'a Value, path: &str, out: &mut Vec<(String, &'a Value)>) {
+    out.push((path.to_owned(), part));
+    if let Some(children) = part.get("subParts").and_then(Value::as_array) {
+        for (index, child) in children.iter().enumerate() {
+            collect_parts(child, &format!("{path}/subParts/{index}"), out);
+        }
+    }
+}
+
+fn validate_part(path: &str, part: &Value) -> Result<(), BuildError> {
+    let object = part.as_object().ok_or_else(|| build_error(path, "a body part is an object"))?;
+    let at = |property: &str| format!("{path}/{property}");
+    if object.contains_key("headers") {
+        return Err(build_error(&at("headers"), "give each header field as a header: property instead"));
+    }
+    let mut seen: HashMap<String, String> = HashMap::new();
+    for (property, field) in [
+        ("type", "content-type"),
+        ("charset", "content-type"),
+        ("disposition", "content-disposition"),
+        ("name", "content-disposition"),
+        ("cid", "content-id"),
+        ("language", "content-language"),
+        ("location", "content-location"),
+    ] {
+        if object.get(property).is_some_and(|v| !v.is_null()) {
+            seen.insert(field.to_owned(), property.to_owned());
+        }
+    }
+    for key in object.keys() {
+        let Some((name, _, _)) = header_key(key) else { continue };
+        let lower = name.to_ascii_lowercase();
+        if lower == "content-transfer-encoding" {
+            return Err(build_error(&at(key), "the server chooses the Content-Transfer-Encoding"));
+        }
+        if lower.starts_with("content-") {
+            return Err(build_error(
+                &at(key),
+                "give Content-* fields as type, charset, disposition, name, cid, language and location",
+            ));
+        }
+        if seen.insert(lower, key.clone()).is_some() {
+            return Err(build_error(&at(key), format!("{name} is given twice")));
+        }
+    }
+    let is_multipart = object.get("subParts").is_some_and(|v| !v.is_null());
+    let has = |key: &str| object.get(key).is_some_and(|v| !v.is_null());
+    if !is_multipart {
+        if has("partId") && has("blobId") {
+            return Err(build_errors(vec![at("partId"), at("blobId")], "give a partId or a blobId, not both"));
+        }
+        if has("partId") {
+            for property in ["charset", "size"] {
+                if has(property) {
+                    return Err(build_error(&at(property), format!("{property} is set by the server for a partId")));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Resolves the bytes behind a body part given by `partId` (from `bodyValues`) or `blobId`.
@@ -456,6 +792,11 @@ fn leaf_part(
         BodyPart::Text(Cow::Owned(value.to_owned()))
     } else if let Some(blob_id) = part.get("blobId").and_then(Value::as_str) {
         let bytes = blobs.blob(blob_id).ok_or_else(|| build_error("blobId", format!("blob {blob_id} not found")))?;
+        if let Some(size) = part.get("size").and_then(Value::as_u64)
+            && size != bytes.len() as u64
+        {
+            return Err(build_error("size", format!("the blob has {} bytes", bytes.len())));
+        }
         BodyPart::Binary(Cow::Owned(bytes))
     } else {
         return Err(build_error("bodyStructure", "every part needs a partId or a blobId"));
@@ -464,11 +805,15 @@ fn leaf_part(
         BodyPart::Text(_) => "text/plain".into(),
         _ => "application/octet-stream".into(),
     });
-    let mut content_type = BuilderContentType::new(content_type.to_lowercase());
-    if matches!(body, BodyPart::Text(_)) {
-        content_type = content_type.attribute("charset", "utf-8");
+    let content_type = content_type.to_lowercase();
+    let mut builder_type = BuilderContentType::new(content_type.clone());
+    if let Some(charset) = part.get("charset").and_then(Value::as_str) {
+        builder_type = builder_type.attribute("charset", charset.to_owned());
+    } else if matches!(body, BodyPart::Text(_)) && content_type.starts_with("text/") {
+        // Text from bodyValues is written as UTF-8.
+        builder_type = builder_type.attribute("charset", "utf-8");
     }
-    let mut mime = MimePart::new(content_type, body);
+    let mut mime = MimePart::new(builder_type, body);
     match (part.get("disposition").and_then(Value::as_str), part.get("name").and_then(Value::as_str)) {
         (Some("inline"), _) => mime = mime.inline(),
         (Some("attachment"), name) | (None, name @ Some(_)) => {
@@ -478,6 +823,20 @@ fn leaf_part(
     }
     if let Some(cid) = part.get("cid").and_then(Value::as_str) {
         mime = mime.cid(cid.to_owned());
+    }
+    if let Some(language) = part.get("language").and_then(Value::as_array) {
+        let tags: Vec<&str> = language.iter().filter_map(Value::as_str).collect();
+        if !tags.is_empty() {
+            mime = mime.header("Content-Language", Raw::new(tags.join(", ")));
+        }
+    }
+    if let Some(location) = part.get("location").and_then(Value::as_str) {
+        mime = mime.header("Content-Location", Raw::new(location.to_owned()));
+    }
+    for (name, values) in header_properties(part.as_object().expect("validated as an object"))? {
+        for value in values {
+            mime = mime.header(name.clone(), value);
+        }
     }
     Ok(mime)
 }
@@ -494,7 +853,13 @@ fn structure_part(
                 .iter()
                 .map(|child| structure_part(child, body_values, blobs))
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(MimePart::new(BuilderContentType::new(content_type), children))
+            let mut mime = MimePart::new(BuilderContentType::new(content_type), children);
+            for (name, values) in header_properties(part.as_object().expect("validated as an object"))? {
+                for value in values {
+                    mime = mime.header(name.clone(), value);
+                }
+            }
+            Ok(mime)
         }
         None => leaf_part(part, body_values, blobs),
     }
@@ -502,6 +867,7 @@ fn structure_part(
 
 /// Builds an RFC 5322 message from a JMAP Email create object.
 pub fn build_message(object: &Map<String, Value>, blobs: &dyn BlobSource) -> Result<Vec<u8>, BuildError> {
+    validate_create(object)?;
     let empty = Map::new();
     let body_values = object.get("bodyValues").and_then(Value::as_object).unwrap_or(&empty);
     let mut builder = MessageBuilder::new();
@@ -529,11 +895,15 @@ pub fn build_message(object: &Map<String, Value>, blobs: &dyn BlobSource) -> Res
     if let Some(subject) = get("subject").as_str() {
         builder = builder.subject(subject.to_owned());
     }
-    let sent_at = match get("sentAt") {
-        Value::String(date) => dates::parse(date).ok_or_else(|| build_error("sentAt", "must be a date"))?,
-        _ => std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64),
-    };
-    builder = builder.date(Date::new(sent_at));
+    let headers = header_properties(object)?;
+    // A Date given as header:Date is the one; otherwise sentAt, or now.
+    if !headers.iter().any(|(name, _)| name == "Date") {
+        let sent_at = match get("sentAt") {
+            Value::String(date) => dates::parse(date).ok_or_else(|| build_error("sentAt", "must be a date"))?,
+            _ => std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64),
+        };
+        builder = builder.date(Date::new(sent_at));
+    }
     if let Some(ids) = builder_ids(get("messageId"), "messageId")? {
         builder = builder.message_id(ids);
     }
@@ -543,14 +913,8 @@ pub fn build_message(object: &Map<String, Value>, blobs: &dyn BlobSource) -> Res
     if let Some(ids) = builder_ids(get("references"), "references")? {
         builder = builder.references(ids);
     }
-    for (key, value) in object {
-        let Some(rest) = key.strip_prefix("header:") else { continue };
-        let name = rest.split(':').next().unwrap_or_default().to_owned();
-        match (rest.split(':').nth(1), value) {
-            (None | Some("asRaw"), Value::String(raw)) => builder = builder.header(name, Raw::new(raw.clone())),
-            (Some("asText"), Value::String(text)) => builder = builder.header(name, Text::new(text.clone())),
-            _ => return Err(build_error(key, "only asRaw and asText headers can be set")),
-        }
+    for (name, values) in headers {
+        builder = builder.headers(name, values);
     }
 
     if let Some(structure) = object.get("bodyStructure").filter(|v| !v.is_null()) {

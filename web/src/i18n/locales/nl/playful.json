@@ -140,5 +140,18 @@
     "loki": {
       "testOk": "De testregel is bij Loki aangekomen (=^･ω･^=)"
     }
+  },
+  "mailbox": {
+    "signatures": {
+      "saved": "Handtekening opgeslagen (ﾉ◕ヮ◕)ﾉ"
+    }
+  },
+  "sharing": {
+    "withMeEmpty": "Nog niemand deelt een map met je (｡•ᴗ•｡)",
+    "saved": "{{folder}} is gedeeld met {{person}} (ﾉ◕ヮ◕)ﾉ"
+  },
+  "calendars": {
+    "intro": "Deel je agenda's en adresboeken met mensen hier op de server, dan mist niemand meer een afspraak (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
+    "sharedEmpty": "Nog niemand heeft iets met je gedeeld (・ω・)"
   }
 }

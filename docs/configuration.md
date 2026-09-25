@@ -300,6 +300,7 @@ allow_external_forwarding = true  # people may forward to other servers (after t
 [spam]                        # see spam-filter.md
 enabled = true
 blocklists = true             # ask Spamhaus ZEN, SpamCop and Barracuda
+uri_blocklists = false        # ask SURBL and URIBL about link domains; free for small servers only, no public resolvers
 bayes = true                  # the learning filter
 junk_score = 5.0
 greylist_score = 2.0          # up to junk_score: suspicious senders retry once

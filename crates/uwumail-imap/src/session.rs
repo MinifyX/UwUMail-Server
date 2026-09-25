@@ -10,8 +10,8 @@ use base64::Engine as _;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::broadcast;
 use uwumail_store::{
-    Account, AppScope, DELETED_KEYWORD, FlagChange, ImapEmail, IngestRequest, MailAuth, MailAuthDenied, MailboxTarget,
-    Store, StoreError,
+    ALL_RIGHTS, Account, AppScope, DELETED_KEYWORD, FlagChange, ImapEmail, IngestRequest, MailAuth, MailAuthDenied,
+    MailboxTarget, Store, StoreError, normalize_rights,
 };
 
 use crate::command::*;
@@ -30,7 +30,9 @@ const IDLE_CLIENT_TIMEOUT: Duration = Duration::from_secs(31 * 60);
 const IDLE_LIMIT: Duration = Duration::from_secs(29 * 60);
 const MAX_AUTH_FAILURES: u32 = 3;
 
-pub const CAPABILITIES_BEFORE_LOGIN: &str = "IMAP4rev1 SASL-IR LITERAL+ ID ENABLE IDLE AUTH=PLAIN";
+/// IMAP4rev1 comes first: some clients only look at the first word. LITERAL+ covers what
+/// IMAP4rev2's LITERAL- asks for.
+pub const CAPABILITIES_BEFORE_LOGIN: &str = "IMAP4rev1 IMAP4rev2 SASL-IR LITERAL+ ID ENABLE IDLE AUTH=PLAIN";
 
 /// The text of the greeting. The UwUMail apps know a UwUMail server by it and then have their IMAP
 /// accounts' pictures fetched here (docs/jmap-remote.md), so it stays as it is.
@@ -38,9 +40,9 @@ pub const GREETING: &str = "UwUMail IMAP ready";
 
 pub fn capabilities_after_login(max_append: usize) -> String {
     format!(
-        "IMAP4rev1 LITERAL+ ID ENABLE IDLE NAMESPACE UIDPLUS MOVE UNSELECT CHILDREN SPECIAL-USE LIST-EXTENDED \
-         LIST-STATUS ESEARCH CONDSTORE QRESYNC QUOTA QUOTA=RES-STORAGE UTF8=ACCEPT STATUS=SIZE WITHIN \
-         APPENDLIMIT={max_append}"
+        "IMAP4rev1 IMAP4rev2 LITERAL+ ID ENABLE IDLE NAMESPACE UIDPLUS MOVE UNSELECT CHILDREN SPECIAL-USE \
+         LIST-EXTENDED LIST-STATUS ESEARCH SEARCHRES CONDSTORE QRESYNC QUOTA QUOTA=RES-STORAGE UTF8=ACCEPT \
+         STATUS=SIZE WITHIN BINARY UNAUTHENTICATE ACL RIGHTS=kxte APPENDLIMIT={max_append}"
     )
 }
 
@@ -48,6 +50,10 @@ pub fn capabilities_after_login(max_append: usize) -> String {
 /// `messages`.
 struct Selected {
     mailbox_id: i64,
+    /// The account the mailbox belongs to: the logged-in one, or whoever shared it.
+    owner: i64,
+    /// What the logged-in account may do in it (RFC 4314 letters).
+    rights: String,
     read_only: bool,
     messages: Vec<Known>,
     highest_modseq: u64,
@@ -111,7 +117,11 @@ pub struct Session<R, W> {
     /// The client uses modseqs: untagged FETCH answers carry MODSEQ.
     condstore: bool,
     qresync: bool,
+    /// The client enabled IMAP4rev2 (RFC 9051): ESEARCH answers, no RECENT, UTF-8 names.
+    rev2: bool,
     selected: Option<Selected>,
+    /// The UIDs `SEARCH RETURN (SAVE)` kept for `$` (RFC 5182).
+    saved: Vec<u32>,
     changes: Option<broadcast::Receiver<uwumail_store::StateChange>>,
 }
 
@@ -120,6 +130,10 @@ fn no(tag: &str, code: Option<&str>, text: &str) -> String {
         Some(code) => format!("{tag} NO [{code}] {text}\r\n"),
         None => format!("{tag} NO {text}\r\n"),
     }
+}
+
+fn no_permission(tag: &str) -> String {
+    no(tag, Some("NOPERM"), "You may not do that in this mailbox")
 }
 
 fn store_error(tag: &str, err: &StoreError) -> String {
@@ -156,7 +170,9 @@ where
             utf8: false,
             condstore: false,
             qresync: false,
+            rev2: false,
             selected: None,
+            saved: Vec::new(),
             changes: None,
         }
     }
@@ -305,7 +321,9 @@ where
             _ => {}
         }
 
-        let result = match command.body {
+        let body = self.fill_saved(command.body);
+        let close = matches!(body, CommandBody::Close);
+        let result = match body {
             CommandBody::Capability => {
                 let capabilities = match self.account {
                     Some(_) => capabilities_after_login(self.imap.max_append),
@@ -342,6 +360,13 @@ where
                             self.condstore = true;
                         }
                         "UTF8=ACCEPT" => self.utf8 = true,
+                        "IMAP4REV2" => {
+                            // IMAP4rev2 mailbox names are UTF-8, never modified UTF-7.
+                            self.rev2 = true;
+                            self.utf8 = true;
+                            enabled.push("IMAP4rev2".to_owned());
+                            continue;
+                        }
                         _ => continue,
                     }
                     enabled.push(capability);
@@ -351,9 +376,32 @@ where
                 Ok(format!("{tag} OK Enabled\r\n"))
             }
             CommandBody::Namespace => {
-                self.send(format!("* NAMESPACE ((\"\" \"{SEPARATOR}\")) NIL NIL\r\n").as_bytes()).await?;
+                let namespace = format!(
+                    "* NAMESPACE ((\"\" \"{SEPARATOR}\")) ((\"{}{SEPARATOR}\" \"{SEPARATOR}\")) NIL\r\n",
+                    mailboxes::SHARED_PREFIX
+                );
+                self.send(namespace.as_bytes()).await?;
                 Ok(format!("{tag} OK Namespace completed\r\n"))
             }
+            CommandBody::Unauthenticate => {
+                // Back to the start: nothing of the old login stays with the connection.
+                self.account = None;
+                self.selected = None;
+                self.saved.clear();
+                self.changes = None;
+                self.condstore = false;
+                self.qresync = false;
+                self.rev2 = false;
+                self.utf8 = false;
+                Ok(format!("{tag} OK Unauthenticate completed, log in again\r\n"))
+            }
+            CommandBody::GetAcl { mailbox } => self.get_acl(&tag, &mailbox).await,
+            CommandBody::SetAcl { mailbox, identifier, rights } => {
+                self.set_acl(&tag, &mailbox, &identifier, Some(&rights)).await
+            }
+            CommandBody::DeleteAcl { mailbox, identifier } => self.set_acl(&tag, &mailbox, &identifier, None).await,
+            CommandBody::ListRights { mailbox, identifier } => self.list_rights(&tag, &mailbox, &identifier).await,
+            CommandBody::MyRights { mailbox } => self.my_rights(&tag, &mailbox).await,
             CommandBody::Select { mailbox, read_only, condstore, qresync } => {
                 self.select(&tag, &mailbox, read_only, condstore, qresync).await
             }
@@ -379,16 +427,15 @@ where
             }
             CommandBody::Idle => return self.idle(&tag).await,
             CommandBody::Close | CommandBody::Unselect => {
-                let close = matches!(command.body, CommandBody::Close);
                 if let Some(selected) = self.selected.take()
                     && close
                     && !selected.read_only
+                    && selected.rights.contains('e')
+                    && let Err(err) = self.store.imap_expunge(selected.owner, selected.mailbox_id, None).await
                 {
-                    let account = self.account_id();
-                    if let Err(err) = self.store.imap_expunge(account, selected.mailbox_id, None).await {
-                        tracing::warn!(%err, "expunging on CLOSE failed");
-                    }
+                    tracing::warn!(%err, "expunging on CLOSE failed");
                 }
+                self.saved.clear();
                 if self.qresync {
                     self.send(b"* OK [CLOSED] Previous mailbox closed\r\n").await?;
                 }
@@ -419,8 +466,73 @@ where
         self.account.as_ref().map_or(0, |account| account.id)
     }
 
+    /// The account's own mailboxes, then those others share with it under `Shared/`.
     async fn named(&mut self) -> Result<Vec<Named>, StoreError> {
-        Ok(mailboxes::named(self.store.imap_mailboxes(self.account_id()).await?))
+        let me = self.account_id();
+        let mut named = mailboxes::named(self.store.imap_mailboxes(me).await?, me);
+        let shared = self.store.mailboxes_shared_with(me).await?;
+        if shared.is_empty() {
+            return Ok(named);
+        }
+        let mut trees = HashMap::new();
+        for entry in &shared {
+            if let std::collections::hash_map::Entry::Vacant(vacant) = trees.entry(entry.owner_id) {
+                vacant.insert(self.store.imap_mailboxes(entry.owner_id).await?);
+            }
+        }
+        for entry in mailboxes::shared_named(shared, &trees) {
+            // An own folder of the same name wins; the shared ones are still found below it.
+            if !named.iter().any(|own| own.path == entry.path) {
+                named.push(entry);
+            }
+        }
+        Ok(named)
+    }
+
+    /// Puts the saved search result in place of `$` (RFC 5182). The result is kept as UIDs; a
+    /// command with message sequence numbers gets their current numbers.
+    fn fill_saved(&self, body: CommandBody) -> CommandBody {
+        let Some(selected) = self.selected.as_ref() else {
+            return body;
+        };
+        let fill = |set: SequenceSet, uid: bool| -> SequenceSet {
+            if !set.uses_saved() {
+                return set;
+            }
+            let numbers: Vec<u32> = if uid {
+                self.saved.clone()
+            } else {
+                self.saved.iter().filter_map(|uid| selected.position(*uid)).map(|index| index as u32 + 1).collect()
+            };
+            SequenceSet(numbers.into_iter().map(|n| (SeqNum::Value(n), SeqNum::Value(n))).collect())
+        };
+        fn fill_key(key: SearchKey, fill: &dyn Fn(SequenceSet, bool) -> SequenceSet) -> SearchKey {
+            match key {
+                SearchKey::SequenceSet(set) => SearchKey::SequenceSet(fill(set, false)),
+                SearchKey::Uid(set) => SearchKey::Uid(fill(set, true)),
+                SearchKey::And(keys) => SearchKey::And(keys.into_iter().map(|key| fill_key(key, fill)).collect()),
+                SearchKey::Or(left, right) => {
+                    SearchKey::Or(Box::new(fill_key(*left, fill)), Box::new(fill_key(*right, fill)))
+                }
+                SearchKey::Not(inner) => SearchKey::Not(Box::new(fill_key(*inner, fill))),
+                other => other,
+            }
+        }
+        match body {
+            CommandBody::Fetch { uid, set, items, changed_since, vanished } => {
+                CommandBody::Fetch { uid, set: fill(set, uid), items, changed_since, vanished }
+            }
+            CommandBody::Store { uid, set, unchanged_since, action, silent, flags } => {
+                CommandBody::Store { uid, set: fill(set, uid), unchanged_since, action, silent, flags }
+            }
+            CommandBody::Copy { uid, set, mailbox } => CommandBody::Copy { uid, set: fill(set, uid), mailbox },
+            CommandBody::Move { uid, set, mailbox } => CommandBody::Move { uid, set: fill(set, uid), mailbox },
+            CommandBody::Expunge { uids: Some(set) } => CommandBody::Expunge { uids: Some(fill(set, true)) },
+            CommandBody::Search { uid, returns, criteria } => {
+                CommandBody::Search { uid, returns, criteria: fill_key(criteria, &fill) }
+            }
+            other => other,
+        }
     }
 
     // ---- logging in ----
@@ -523,54 +635,70 @@ where
         if mailboxes::find(&named, &path).is_some() {
             return Ok(no(tag, Some("ALREADYEXISTS"), "The mailbox exists already"));
         }
-        let account = self.account_id();
-        let mut parent: Option<i64> = None;
-        let mut current = String::new();
+        let me = self.account_id();
+        // The deepest level that exists already decides whose mailbox the new one becomes: inside
+        // a shared folder it is the owner's, if they allowed creating there (`k`).
         let levels: Vec<&str> = path.split(SEPARATOR).collect();
-        for (index, level) in levels.iter().enumerate() {
-            if !current.is_empty() {
-                current.push(SEPARATOR);
-            }
-            current.push_str(level);
-            if let Some(existing) = mailboxes::find(&named, &current) {
-                parent = Some(existing.mailbox.id);
-                continue;
-            }
-            let id = self.store.create_mailbox(account, level, parent, None, 0, true).await?;
-            parent = Some(id);
-            if index + 1 == levels.len() {
+        let mut start = 0;
+        let mut parent = None;
+        for depth in (1..levels.len()).rev() {
+            if let Some(found) = mailboxes::find(&named, &levels[..depth].join(&SEPARATOR.to_string())) {
+                parent = Some(found);
+                start = depth;
                 break;
             }
+        }
+        let (owner, mut parent_id) = match parent {
+            None => (me, None),
+            Some(found) if found.owner == me && !found.placeholder => (me, Some(found.mailbox.id)),
+            Some(found) if found.may("k") => (found.owner, Some(found.mailbox.id)),
+            Some(_) => return Ok(no_permission(tag)),
+        };
+        for level in &levels[start..] {
+            let id = self.store.create_mailbox(owner, level, parent_id, None, 0, true).await?;
+            parent_id = Some(id);
         }
         Ok(format!("{tag} OK Create completed\r\n"))
     }
 
+    /// Whether a mailbox is an inbox, its owner's or ours.
+    fn is_inbox(found: &Named) -> bool {
+        found.path == "INBOX" || mailboxes::split_shared(&found.path).is_some_and(|(_, inner)| inner == "INBOX")
+    }
+
     async fn delete(&mut self, tag: &str, path: &str) -> Result<String, StoreError> {
         let named = self.named().await?;
-        let Some(found) = mailboxes::find(&named, path) else {
+        let Some(found) = mailboxes::find(&named, path).filter(|found| !found.placeholder) else {
             return Ok(no(tag, Some("NONEXISTENT"), "No such mailbox"));
         };
-        if found.path == "INBOX" {
+        if !found.may("x") {
+            return Ok(no_permission(tag));
+        }
+        if Self::is_inbox(found) {
             return Ok(no(tag, Some("CANNOT"), "The INBOX cannot be deleted"));
         }
         if found.has_children {
             return Ok(no(tag, Some("INUSE"), "Delete the mailboxes inside it first"));
         }
-        let id = found.mailbox.id;
+        let (id, owner) = (found.mailbox.id, found.owner);
         if self.selected.as_ref().is_some_and(|selected| selected.mailbox_id == id) {
             self.selected = None;
         }
-        self.store.destroy_mailbox(self.account_id(), id, true).await?;
+        self.store.destroy_mailbox(owner, id, true).await?;
         Ok(format!("{tag} OK Delete completed\r\n"))
     }
 
     async fn rename(&mut self, tag: &str, from: &str, to: &str) -> Result<String, StoreError> {
         let named = self.named().await?;
-        let Some(source) = mailboxes::find(&named, from) else {
+        let me = self.account_id();
+        let Some(source) = mailboxes::find(&named, from).filter(|found| !found.placeholder) else {
             return Ok(no(tag, Some("NONEXISTENT"), "No such mailbox"));
         };
-        if source.path == "INBOX" {
+        if Self::is_inbox(source) {
             return Ok(no(tag, Some("CANNOT"), "The INBOX cannot be renamed"));
+        }
+        if !source.may("x") {
+            return Ok(no_permission(tag));
         }
         let target = mailboxes::normalize(to);
         if mailboxes::find(&named, &target).is_some() {
@@ -583,22 +711,38 @@ where
         if name.trim().is_empty() {
             return Ok(format!("{tag} BAD The mailbox name is empty\r\n"));
         }
+        let (source_id, owner) = (source.mailbox.id, source.owner);
+        // A mailbox stays with its owner: someone else's moves only within what they shared.
         let parent_id = match parent_path {
-            Some(parent_path) => {
-                if mailboxes::find(&named, &parent_path).is_none() {
+            Some(parent_path) => match mailboxes::find(&named, &parent_path) {
+                Some(parent) if !parent.placeholder && parent.owner == owner && (owner == me || parent.may("k")) => {
+                    Some(parent.mailbox.id)
+                }
+                Some(parent)
+                    if parent.placeholder
+                        && owner != me
+                        && parent.owner == owner
+                        && parent.path.matches(SEPARATOR).count() == 1 =>
+                {
+                    None
+                }
+                Some(_) => return Ok(no_permission(tag)),
+                None if owner == me => {
                     self.create(tag, &parent_path).await?;
+                    let named = self.named().await?;
+                    match mailboxes::find(&named, &parent_path).filter(|parent| parent.owner == me) {
+                        Some(parent) => Some(parent.mailbox.id),
+                        None => return Ok(no(tag, Some("CANNOT"), "The parent mailbox could not be created")),
+                    }
                 }
-                let named = self.named().await?;
-                match mailboxes::find(&named, &parent_path) {
-                    Some(parent) => Some(parent.mailbox.id),
-                    None => return Ok(no(tag, Some("CANNOT"), "The parent mailbox could not be created")),
-                }
-            }
-            None => None,
+                None => return Ok(no_permission(tag)),
+            },
+            None if owner == me => None,
+            None => return Ok(no_permission(tag)),
         };
         let update =
             uwumail_store::MailboxUpdate { name: Some(name), parent_id: Some(parent_id), ..Default::default() };
-        self.store.update_mailbox(self.account_id(), source.mailbox.id, update).await?;
+        self.store.update_mailbox(owner, source_id, update).await?;
         Ok(format!("{tag} OK Rename completed\r\n"))
     }
 
@@ -607,8 +751,11 @@ where
         let Some(found) = mailboxes::find(&named, path) else {
             return Ok(no(tag, Some("NONEXISTENT"), "No such mailbox"));
         };
-        let update = uwumail_store::MailboxUpdate { subscribed: Some(subscribed), ..Default::default() };
-        self.store.update_mailbox(self.account_id(), found.mailbox.id, update).await?;
+        // Someone else's folders are always subscribed: their flag is the owner's to set.
+        if found.owner == self.account_id() && !found.placeholder {
+            let update = uwumail_store::MailboxUpdate { subscribed: Some(subscribed), ..Default::default() };
+            self.store.update_mailbox(found.owner, found.mailbox.id, update).await?;
+        }
         Ok(format!("{tag} OK Done\r\n"))
     }
 
@@ -620,6 +767,9 @@ where
         }
         let named = self.named().await?;
         for mailbox in &named {
+            if !mailbox.placeholder && !mailbox.rights.contains('l') {
+                continue;
+            }
             let matched = list.patterns.iter().any(|pattern| {
                 let full = if list.reference.is_empty() {
                     pattern.clone()
@@ -636,6 +786,9 @@ where
                 continue;
             }
             let mut attributes = Vec::new();
+            if mailbox.placeholder {
+                attributes.push("\\Noselect");
+            }
             attributes.push(if mailbox.has_children { "\\HasChildren" } else { "\\HasNoChildren" });
             if mailbox.mailbox.subscribed && (list.subscribed || list.return_subscribed) {
                 attributes.push("\\Subscribed");
@@ -647,8 +800,10 @@ where
             out.raw(&format!("* {verb} ({}) \"{SEPARATOR}\" ", attributes.join(" ")))
                 .mailbox(&mailbox.path)
                 .raw("\r\n");
-            if let Some(items) = &list.return_status {
-                let status = self.store.imap_status(self.account_id(), mailbox.mailbox.id).await?;
+            if let Some(items) = &list.return_status
+                && mailbox.may("r")
+            {
+                let status = self.store.imap_status(mailbox.owner, mailbox.mailbox.id).await?;
                 out.raw("* STATUS ").mailbox(&mailbox.path).raw(&format!(" ({})\r\n", status_items(items, &status)));
             }
             self.send(&out.bytes).await.map_err(|err| StoreError::Internal(err.to_string()))?;
@@ -658,10 +813,13 @@ where
 
     async fn status(&mut self, tag: &str, path: &str, items: &[StatusItem]) -> Result<String, StoreError> {
         let named = self.named().await?;
-        let Some(found) = mailboxes::find(&named, path) else {
+        let Some(found) = mailboxes::find(&named, path).filter(|found| !found.placeholder) else {
             return Ok(no(tag, Some("NONEXISTENT"), "No such mailbox"));
         };
-        let status = self.store.imap_status(self.account_id(), found.mailbox.id).await?;
+        if !found.may("r") {
+            return Ok(no_permission(tag));
+        }
+        let status = self.store.imap_status(found.owner, found.mailbox.id).await?;
         let mut out = Out::new(self.utf8);
         out.raw("* STATUS ").mailbox(&found.path).raw(&format!(" ({})\r\n", status_items(items, &status)));
         self.send(&out.bytes).await.map_err(|err| StoreError::Internal(err.to_string()))?;
@@ -683,6 +841,12 @@ where
                 return Ok(no(tag, Some("NONEXISTENT"), "No such mailbox"));
             };
             let mut out = Out::new(self.utf8);
+            if found.owner != account.id {
+                // Shared mail counts against its owner's quota, which is theirs to see.
+                out.raw("* QUOTAROOT ").mailbox(&found.path).raw("\r\n");
+                self.send(&out.bytes).await.map_err(|err| StoreError::Internal(err.to_string()))?;
+                return Ok(format!("{tag} OK Quota completed\r\n"));
+            }
             out.raw("* QUOTAROOT ").mailbox(&found.path).raw(" \"\"\r\n");
             self.send(&out.bytes).await.map_err(|err| StoreError::Internal(err.to_string()))?;
         }
@@ -704,15 +868,23 @@ where
         message: Vec<u8>,
     ) -> Result<String, StoreError> {
         let named = self.named().await?;
-        let Some(found) = mailboxes::find(&named, path) else {
+        let Some(found) = mailboxes::find(&named, path).filter(|found| !found.placeholder) else {
             return Ok(no(tag, Some("TRYCREATE"), "No such mailbox"));
         };
+        if !found.may("i") {
+            return Ok(no_permission(tag));
+        }
         if message.is_empty() {
             return Ok(format!("{tag} BAD The message is empty\r\n"));
         }
-        let keywords: Vec<String> = flags.iter().filter_map(|flag| parser::keyword_of_flag(flag)).collect();
+        let keywords: Vec<String> = flags
+            .iter()
+            .filter_map(|flag| parser::keyword_of_flag(flag))
+            .filter(|keyword| may_set_keyword(&found.rights, keyword))
+            .collect();
         let request = IngestRequest {
-            account_id: self.account_id(),
+            // Mail filed into a shared folder is its owner's, and counts against their quota.
+            account_id: found.owner,
             raw: message,
             mailboxes: vec![MailboxTarget::Id(found.mailbox.id)],
             keywords,
@@ -732,18 +904,24 @@ where
         condstore: bool,
         qresync: Option<QresyncParams>,
     ) -> Result<String, StoreError> {
-        if self.selected.take().is_some() && self.qresync {
+        self.saved.clear();
+        if self.selected.take().is_some() && (self.qresync || self.rev2) {
             self.send(b"* OK [CLOSED] Previous mailbox closed\r\n").await.map_err(io_error)?;
         }
         if condstore || qresync.is_some() {
             self.condstore = true;
         }
         let named = self.named().await?;
-        let Some(found) = mailboxes::find(&named, path) else {
+        let Some(found) = mailboxes::find(&named, path).filter(|found| !found.placeholder) else {
             return Ok(no(tag, Some("NONEXISTENT"), "No such mailbox"));
         };
-        let account = self.account_id();
-        let state = self.store.imap_messages(account, found.mailbox.id).await?;
+        if !found.may("r") {
+            return Ok(no_permission(tag));
+        }
+        let (owner, rights) = (found.owner, found.rights.clone());
+        // Without a right to change anything, a mailbox opens read-only (RFC 4314, section 4).
+        let read_only = read_only || !rights.chars().any(|right| "stwe".contains(right));
+        let state = self.store.imap_messages(owner, found.mailbox.id).await?;
 
         let mut keywords: Vec<String> = state.messages.iter().flat_map(|m| m.keywords.iter().cloned()).collect();
         keywords.sort();
@@ -756,11 +934,17 @@ where
         if read_only {
             out.raw("* OK [PERMANENTFLAGS ()] Read-only mailbox\r\n");
         } else {
-            out.raw("* OK [PERMANENTFLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*)] Flags permitted\r\n");
+            out.raw(&format!("* OK [PERMANENTFLAGS ({})] Flags permitted\r\n", permanent_flags(&rights)));
         }
-        out.raw(&format!("* {} EXISTS\r\n* 0 RECENT\r\n", state.messages.len()));
-        if let Some(first) = first_unseen {
-            out.raw(&format!("* OK [UNSEEN {}] First unseen\r\n", first + 1));
+        out.raw(&format!("* {} EXISTS\r\n", state.messages.len()));
+        if self.rev2 {
+            // IMAP4rev2 has no \Recent, and names the mailbox it opened in a LIST answer.
+            out.raw(&format!("* LIST () \"{SEPARATOR}\" ")).mailbox(&found.path).raw("\r\n");
+        } else {
+            out.raw("* 0 RECENT\r\n");
+            if let Some(first) = first_unseen {
+                out.raw(&format!("* OK [UNSEEN {}] First unseen\r\n", first + 1));
+            }
         }
         out.raw(&format!("* OK [UIDVALIDITY {}] UIDs valid\r\n", state.uid_validity));
         out.raw(&format!("* OK [UIDNEXT {}] Predicted next UID\r\n", state.uid_next));
@@ -768,7 +952,7 @@ where
         if let Some(qresync) = &qresync
             && qresync.uid_validity == state.uid_validity
         {
-            let mut vanished = self.store.imap_vanished(account, found.mailbox.id, qresync.modseq).await?;
+            let mut vanished = self.store.imap_vanished(owner, found.mailbox.id, qresync.modseq).await?;
             if let Some(known) = &qresync.known_uids {
                 let largest = u32::MAX;
                 vanished.retain(|uid| known.contains(*uid, largest));
@@ -792,6 +976,8 @@ where
 
         self.selected = Some(Selected {
             mailbox_id: found.mailbox.id,
+            owner,
+            rights,
             read_only,
             highest_modseq: state.highest_modseq,
             messages: state
@@ -804,22 +990,162 @@ where
         Ok(format!("{tag} OK [{mode}] Select completed\r\n"))
     }
 
+    // ---- access control (RFC 4314) ----
+
+    /// A mailbox for an ACL command: one that exists and is not just a level of `Shared/`.
+    async fn acl_mailbox(&mut self, path: &str) -> Result<Option<Named>, StoreError> {
+        let named = self.named().await?;
+        Ok(mailboxes::find(&named, path).filter(|found| !found.placeholder).cloned())
+    }
+
+    async fn login_of(&mut self, account_id: i64) -> Result<String, StoreError> {
+        if let Some(account) = self.account.as_ref().filter(|account| account.id == account_id) {
+            return Ok(account.login.clone());
+        }
+        Ok(self.store.account_by_id(account_id).await?.map(|account| account.login).unwrap_or_default())
+    }
+
+    async fn get_acl(&mut self, tag: &str, path: &str) -> Result<String, StoreError> {
+        let Some(found) = self.acl_mailbox(path).await? else {
+            return Ok(no(tag, Some("NONEXISTENT"), "No such mailbox"));
+        };
+        if !found.may("a") {
+            return Ok(no_permission(tag));
+        }
+        let owner = self.login_of(found.owner).await?;
+        let entries = self.store.mailbox_acl(found.owner, found.mailbox.id).await?;
+        let mut out = Out::new(self.utf8);
+        out.raw("* ACL ").mailbox(&found.path).raw(" ").string(owner.as_bytes()).raw(&format!(" {ALL_RIGHTS}"));
+        for entry in entries {
+            out.raw(" ").string(entry.grantee_login.as_bytes()).raw(" ").string(entry.rights.as_bytes());
+        }
+        out.raw("\r\n");
+        self.send(&out.bytes).await.map_err(io_error)?;
+        Ok(format!("{tag} OK Getacl completed\r\n"))
+    }
+
+    /// SETACL with `rights`, DELETEACL without.
+    async fn set_acl(
+        &mut self,
+        tag: &str,
+        path: &str,
+        identifier: &str,
+        rights: Option<&str>,
+    ) -> Result<String, StoreError> {
+        let Some(found) = self.acl_mailbox(path).await? else {
+            return Ok(no(tag, Some("NONEXISTENT"), "No such mailbox"));
+        };
+        if !found.may("a") {
+            return Ok(no_permission(tag));
+        }
+        if identifier.starts_with('-') {
+            return Ok(no(tag, Some("CANNOT"), "Negative rights are not supported"));
+        }
+        if identifier.eq_ignore_ascii_case("anyone") || identifier.eq_ignore_ascii_case("authenticated") {
+            return Ok(no(tag, Some("CANNOT"), "Mailboxes are shared with people on this server, one by one"));
+        }
+        let owner = self.login_of(found.owner).await?;
+        if identifier.eq_ignore_ascii_case(&owner) {
+            return Ok(no(tag, Some("CANNOT"), "The owner always has every right"));
+        }
+        let current = self
+            .store
+            .mailbox_acl(found.owner, found.mailbox.id)
+            .await?
+            .into_iter()
+            .find(|entry| entry.grantee_login.eq_ignore_ascii_case(identifier))
+            .map(|entry| entry.rights)
+            .unwrap_or_default();
+        let wanted = match rights {
+            None => String::new(),
+            Some(rights) => match (rights.strip_prefix('+'), rights.strip_prefix('-')) {
+                (Some(added), _) => format!("{current}{added}"),
+                (_, Some(removed)) => {
+                    let Ok(removed) = normalize_rights(removed) else {
+                        return Ok(format!("{tag} BAD Unknown rights {rights}\r\n"));
+                    };
+                    current.chars().filter(|right| !removed.contains(*right)).collect()
+                }
+                _ => rights.to_owned(),
+            },
+        };
+        if normalize_rights(&wanted).is_err() {
+            return Ok(format!("{tag} BAD Unknown rights {wanted}\r\n"));
+        }
+        match self.store.set_mailbox_acl(found.owner, found.mailbox.id, identifier, &wanted).await {
+            Ok(_) => {}
+            Err(StoreError::NotFound(_)) => return Ok(no(tag, Some("CANNOT"), "No such person on this server")),
+            Err(err) => return Err(err),
+        }
+        let done = if rights.is_some() { "Setacl" } else { "Deleteacl" };
+        Ok(format!("{tag} OK {done} completed\r\n"))
+    }
+
+    async fn list_rights(&mut self, tag: &str, path: &str, identifier: &str) -> Result<String, StoreError> {
+        let Some(found) = self.acl_mailbox(path).await? else {
+            return Ok(no(tag, Some("NONEXISTENT"), "No such mailbox"));
+        };
+        if !found.may("a") {
+            return Ok(no_permission(tag));
+        }
+        let owner = self.login_of(found.owner).await?;
+        let mut out = Out::new(self.utf8);
+        out.raw("* LISTRIGHTS ").mailbox(&found.path).raw(" ").string(identifier.as_bytes());
+        if identifier.eq_ignore_ascii_case(&owner) {
+            out.raw(&format!(" {ALL_RIGHTS}"));
+        } else {
+            // Nothing is granted with anything else: every right may be given on its own.
+            out.raw(" \"\"");
+            for right in ALL_RIGHTS.chars() {
+                out.raw(&format!(" {right}"));
+            }
+        }
+        out.raw("\r\n");
+        self.send(&out.bytes).await.map_err(io_error)?;
+        Ok(format!("{tag} OK Listrights completed\r\n"))
+    }
+
+    async fn my_rights(&mut self, tag: &str, path: &str) -> Result<String, StoreError> {
+        let Some(found) = self.acl_mailbox(path).await? else {
+            return Ok(no(tag, Some("NONEXISTENT"), "No such mailbox"));
+        };
+        let mut out = Out::new(self.utf8);
+        out.raw("* MYRIGHTS ").mailbox(&found.path).raw(" ").string(found.rights.as_bytes()).raw("\r\n");
+        self.send(&out.bytes).await.map_err(io_error)?;
+        Ok(format!("{tag} OK Myrights completed\r\n"))
+    }
+
     // ---- changes ----
 
     /// Tells the client what changed in the selected mailbox. Expunges are only reported where
     /// the protocol allows them; until then the messages stay as placeholders.
     async fn refresh(&mut self, report_expunges: bool) -> io::Result<()> {
-        let account = self.account_id();
         let Some(selected) = self.selected.as_ref() else {
             return Ok(());
         };
+        let account = selected.owner;
         let pending_expunges = selected.messages.iter().any(|known| known.expunged);
         let modseq = self.store.account_modseq(account).await.map_err(io::Error::other)?.max(0) as u64;
         if modseq == selected.highest_modseq && !(report_expunges && pending_expunges) {
             return Ok(());
         }
         let mailbox_id = selected.mailbox_id;
+        let me = self.account_id();
+        // Someone else's mailbox is read only while it is still shared: taking the share back
+        // ends the selection like deleting the mailbox would.
+        let rights = if account == me {
+            None
+        } else {
+            let shared = self.store.shared_mailbox(me, mailbox_id).await.map_err(io::Error::other)?;
+            Some(shared.map(|shared| shared.rights).filter(|rights| rights.contains('r')).unwrap_or_default())
+        };
         let state = match self.store.imap_messages(account, mailbox_id).await {
+            Ok(_) if rights.as_deref() == Some("") => {
+                self.selected = None;
+                self.send(b"* BYE The selected mailbox is no longer shared with you\r\n").await?;
+                self.flush().await?;
+                return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "mailbox no longer shared"));
+            }
             Ok(state) => state,
             Err(StoreError::NotFound(_)) => {
                 self.selected = None;
@@ -829,8 +1155,12 @@ where
             }
             Err(err) => return Err(io::Error::other(err)),
         };
-        let (utf8, condstore, qresync) = (self.utf8, self.condstore, self.qresync);
+        let (utf8, condstore, qresync, rev2) = (self.utf8, self.condstore, self.qresync, self.rev2);
         let selected = self.selected.as_mut().expect("checked above");
+        if let Some(rights) = rights {
+            // The owner may have changed what is allowed; it counts from now on.
+            selected.rights = rights;
+        }
         let current: HashMap<u32, &uwumail_store::ImapMessage> = state.messages.iter().map(|m| (m.uid, m)).collect();
         let mut out = Out::new(utf8);
 
@@ -877,7 +1207,10 @@ where
             .collect();
         if !new.is_empty() {
             selected.messages.extend(new);
-            out.raw(&format!("* {} EXISTS\r\n* 0 RECENT\r\n", selected.messages.len()));
+            out.raw(&format!("* {} EXISTS\r\n", selected.messages.len()));
+            if !rev2 {
+                out.raw("* 0 RECENT\r\n");
+            }
         }
         selected.highest_modseq = state.highest_modseq;
         self.send(&out.bytes).await
@@ -888,6 +1221,8 @@ where
         self.send(b"+ idling\r\n").await?;
         self.flush().await?;
         let account = self.account_id();
+        // A shared mailbox changes with its owner's account.
+        let owner = self.selected.as_ref().map_or(account, |selected| selected.owner);
         let deadline = tokio::time::Instant::now() + IDLE_LIMIT;
         let mut changes = self.changes.take().unwrap_or_else(|| self.store.subscribe_changes());
         // Kept across wakeups: a change can interrupt a half-read line.
@@ -896,7 +1231,7 @@ where
             let event = tokio::select! {
                 read = read_idle_line(&mut self.reader, &mut line) => IdleEvent::Line(read),
                 change = changes.recv() => match change {
-                    Ok(change) if change.account_id != account => continue,
+                    Ok(change) if change.account_id != account && change.account_id != owner => continue,
                     Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => IdleEvent::Change,
                     Err(broadcast::error::RecvError::Closed) => IdleEvent::Timeout,
                 },
@@ -939,11 +1274,14 @@ where
         if selected.read_only {
             return Ok(no(tag, Some("CANNOT"), "The mailbox is read-only"));
         }
-        let (mailbox_id, largest) = (selected.mailbox_id, selected.largest_uid());
+        if !selected.rights.contains('e') {
+            return Ok(no_permission(tag));
+        }
+        let (mailbox_id, owner, largest) = (selected.mailbox_id, selected.owner, selected.largest_uid());
         let uid_list = uids.map(|set| {
             selected.messages.iter().map(|known| known.uid).filter(|uid| set.contains(*uid, largest)).collect()
         });
-        let removed = self.store.imap_expunge(self.account_id(), mailbox_id, uid_list).await?;
+        let removed = self.store.imap_expunge(owner, mailbox_id, uid_list).await?;
         self.report_removed(&removed).await.map_err(io_error)?;
         self.refresh(true).await.map_err(io_error)?;
         Ok(format!("{tag} OK Expunge completed\r\n"))
@@ -978,9 +1316,8 @@ where
         returns: Option<Vec<SearchReturn>>,
         criteria: SearchKey,
     ) -> Result<String, StoreError> {
-        let account = self.account_id();
         let selected = self.selected();
-        let mailbox_id = selected.mailbox_id;
+        let (account, mailbox_id) = (selected.owner, selected.mailbox_id);
         let uids: Vec<u32> = selected.messages.iter().filter(|known| !known.expunged).map(|known| known.uid).collect();
         let positions: HashMap<u32, u32> =
             selected.messages.iter().enumerate().map(|(index, known)| (known.uid, index as u32 + 1)).collect();
@@ -992,18 +1329,52 @@ where
         let emails = self.store.imap_emails(account, mailbox_id, uids).await?;
         let prepared = search::prepare(&self.store, account, &criteria, &emails).await?;
         let mut found = Vec::new();
+        let mut found_uids = Vec::new();
         let mut highest = 0;
         for email in &emails {
             let msn = positions[&email.uid];
             if search::matches(&criteria, &search::Target { msn, email }, &scope, &prepared) {
                 found.push(if uid { email.uid } else { msn });
+                found_uids.push(email.uid);
                 highest = highest.max(email.modseq);
             }
         }
         found.sort_unstable();
+        found_uids.sort_unstable();
         let with_modseq = search::uses_modseq(&criteria);
         if with_modseq {
             self.condstore = true;
+        }
+        // IMAP4rev2 always answers with ESEARCH; plain SEARCH means RETURN (ALL) there.
+        let mut returns = match returns {
+            None if self.rev2 => Some(vec![SearchReturn::All]),
+            other => other,
+        };
+        if let Some(options) = returns.as_mut()
+            && let Some(index) = options.iter().position(|option| *option == SearchReturn::Save)
+        {
+            options.remove(index);
+            // With only MIN or MAX (or both) beside SAVE, only those are kept (RFC 5182, section 2.4).
+            let only_ends = !options.is_empty()
+                && options.iter().all(|option| matches!(option, SearchReturn::Min | SearchReturn::Max));
+            self.saved = if only_ends && !found_uids.is_empty() {
+                let mut ends = Vec::new();
+                if options.contains(&SearchReturn::Min) {
+                    ends.push(found_uids[0]);
+                }
+                if options.contains(&SearchReturn::Max) {
+                    ends.push(found_uids[found_uids.len() - 1]);
+                }
+                ends.dedup();
+                ends
+            } else {
+                found_uids.clone()
+            };
+            if options.is_empty() {
+                // SAVE alone: nothing is sent but the tagged answer.
+                self.refresh(uid).await.map_err(io_error)?;
+                return Ok(format!("{tag} OK Search completed, result saved\r\n"));
+            }
         }
         let mut out = Out::new(self.utf8);
         match returns {
@@ -1029,6 +1400,7 @@ where
                             SearchReturn::Max => out.raw(&format!(" MAX {}", found[found.len() - 1])),
                             SearchReturn::All => out.raw(&format!(" ALL {}", response::sequence_set(&found))),
                             SearchReturn::Count => out.raw(&format!(" COUNT {}", found.len())),
+                            SearchReturn::Save => &mut out,
                         };
                     }
                     if with_modseq {
@@ -1055,7 +1427,7 @@ where
         changed_since: Option<u64>,
         vanished: bool,
     ) -> Result<String, StoreError> {
-        let account = self.account_id();
+        let account = self.selected().owner;
         if changed_since.is_some() {
             self.condstore = true;
             if !items.contains(&FetchItem::ModSeq) {
@@ -1070,7 +1442,8 @@ where
         }
         let selected = self.selected();
         let mailbox_id = selected.mailbox_id;
-        let read_only = selected.read_only;
+        // Reading marks a message seen only where the seen flag may be kept.
+        let read_only = selected.read_only || !selected.rights.contains('s');
         let mut out = Out::new(self.utf8);
 
         if vanished && let Some(since) = changed_since {
@@ -1099,11 +1472,19 @@ where
                     | FetchItem::Body
                     | FetchItem::BodyStructure
                     | FetchItem::BodySection { .. }
+                    | FetchItem::Binary { .. }
+                    | FetchItem::BinarySize { .. }
             )
         });
         let marks_seen = !read_only
             && items.iter().any(|item| {
-                matches!(item, FetchItem::Rfc822 | FetchItem::Rfc822Text | FetchItem::BodySection { peek: false, .. })
+                matches!(
+                    item,
+                    FetchItem::Rfc822
+                        | FetchItem::Rfc822Text
+                        | FetchItem::BodySection { peek: false, .. }
+                        | FetchItem::Binary { peek: false, .. }
+                )
             });
 
         let emails = self.store.imap_emails(account, mailbox_id, targets.iter().map(|(_, uid)| *uid).collect()).await?;
@@ -1126,6 +1507,7 @@ where
         }
 
         let condstore = self.condstore;
+        let mut unknown_encoding = false;
         for (index, uid) in targets {
             let Some(email) = by_uid.get(&uid) else { continue };
             if changed_since.is_some_and(|since| email.modseq <= since) {
@@ -1191,6 +1573,38 @@ where
                         };
                         out.raw(&response::section_label(section, origin)).raw(" ").literal(&bytes);
                     }
+                    FetchItem::Binary { part, partial, .. } => {
+                        let (raw, root) = (raw.as_deref().unwrap_or_default(), root.as_ref().expect("parsed"));
+                        let label = response::binary_label(part);
+                        match response::binary_bytes(raw, root, part) {
+                            Some(bytes) => {
+                                let (bytes, label) = match partial {
+                                    Some((origin, count)) => {
+                                        let start = (*origin as usize).min(bytes.len());
+                                        let end = start.saturating_add(*count as usize).min(bytes.len());
+                                        (bytes[start..end].to_vec(), format!("{label}<{origin}>"))
+                                    }
+                                    None => (bytes, label),
+                                };
+                                out.raw(&label).raw(" ").literal8(&bytes);
+                            }
+                            None => {
+                                unknown_encoding = true;
+                                out.raw(&label).raw(" NIL");
+                            }
+                        }
+                    }
+                    FetchItem::BinarySize { part } => {
+                        let (raw, root) = (raw.as_deref().unwrap_or_default(), root.as_ref().expect("parsed"));
+                        let size = match response::binary_bytes(raw, root, part) {
+                            Some(bytes) => bytes.len(),
+                            None => {
+                                unknown_encoding = true;
+                                0
+                            }
+                        };
+                        out.raw(&format!("BINARY.SIZE{} {size}", &response::binary_label(part)["BINARY".len()..]));
+                    }
                 }
             }
             if condstore && !modseq_sent && flags_sent {
@@ -1211,6 +1625,9 @@ where
         }
         self.send(&out.bytes).await.map_err(io_error)?;
         self.refresh(uid).await.map_err(io_error)?;
+        if unknown_encoding {
+            return Ok(no(tag, Some("UNKNOWN-CTE"), "A part has a transfer encoding this server cannot undo"));
+        }
         Ok(format!("{tag} OK Fetch completed\r\n"))
     }
 
@@ -1239,11 +1656,22 @@ where
                 None => return Ok(format!("{tag} BAD {flag} cannot be stored\r\n")),
             }
         }
+        // Flags the rights do not cover are left alone (RFC 4314, section 4). Replacing all flags
+        // needs every flag right, or it would clear the ones that may not be touched.
+        let rights = selected.rights.clone();
+        if action == StoreAction::Replace && !uwumail_store::has_rights(&rights, "swt") {
+            return Ok(no_permission(tag));
+        }
+        let asked = keywords.len();
+        keywords.retain(|keyword| may_set_keyword(&rights, keyword));
+        if asked > 0 && keywords.is_empty() {
+            return Ok(no_permission(tag));
+        }
         if unchanged_since.is_some() {
             self.condstore = true;
         }
         let selected = self.selected();
-        let mailbox_id = selected.mailbox_id;
+        let (mailbox_id, account) = (selected.mailbox_id, selected.owner);
         let targets: Vec<(usize, u32)> = selected
             .resolve(&set, uid)
             .into_iter()
@@ -1255,7 +1683,6 @@ where
             StoreAction::Remove => FlagChange::Remove(keywords),
             StoreAction::Replace => FlagChange::Replace(keywords),
         };
-        let account = self.account_id();
         let uids: Vec<u32> = targets.iter().map(|(_, uid)| *uid).collect();
         let skipped = self.store.imap_store_flags(account, mailbox_id, uids.clone(), change, unchanged_since).await?;
         let emails = self.store.imap_emails(account, mailbox_id, uids).await?;
@@ -1315,7 +1742,11 @@ where
         if remove_source && selected.read_only {
             return Ok(no(tag, Some("CANNOT"), "The mailbox is read-only"));
         }
-        let mailbox_id = selected.mailbox_id;
+        // Moving out deletes and expunges in the source (RFC 6851).
+        if remove_source && !uwumail_store::has_rights(&selected.rights, "te") {
+            return Ok(no_permission(tag));
+        }
+        let (mailbox_id, source_owner) = (selected.mailbox_id, selected.owner);
         let uids: Vec<u32> = selected
             .resolve(&set, uid)
             .into_iter()
@@ -1323,11 +1754,17 @@ where
             .map(|index| selected.messages[index].uid)
             .collect();
         let named = self.named().await?;
-        let Some(target) = mailboxes::find(&named, path) else {
+        let Some(target) = mailboxes::find(&named, path).filter(|found| !found.placeholder).cloned() else {
             return Ok(no(tag, Some("TRYCREATE"), "No such mailbox"));
         };
-        let account = self.account_id();
-        let pairs = self.store.imap_copy(account, mailbox_id, uids, target.mailbox.id, remove_source).await?;
+        if !target.may("i") {
+            return Ok(no_permission(tag));
+        }
+        let pairs = if target.owner == source_owner {
+            self.store.imap_copy(source_owner, mailbox_id, uids, target.mailbox.id, remove_source).await?
+        } else {
+            self.copy_across(source_owner, mailbox_id, uids, &target).await?
+        };
         let code = if pairs.is_empty() {
             String::new()
         } else {
@@ -1339,14 +1776,45 @@ where
             return Ok(format!("{tag} OK {code}Copy completed\r\n"));
         }
         if target.mailbox.id != mailbox_id {
+            let moved: Vec<u32> = pairs.iter().map(|(source, _)| *source).collect();
+            if target.owner != source_owner {
+                // Across accounts the copies are new emails: the originals leave the source here.
+                self.store.imap_remove(source_owner, mailbox_id, moved.clone()).await?;
+            }
             if !code.is_empty() {
                 self.send(format!("* OK {code}Moved\r\n").as_bytes()).await.map_err(io_error)?;
             }
-            let moved: Vec<u32> = pairs.iter().map(|(source, _)| *source).collect();
             self.report_removed(&moved).await.map_err(io_error)?;
         }
         self.refresh(true).await.map_err(io_error)?;
         Ok(format!("{tag} OK Move completed\r\n"))
+    }
+
+    /// Copies messages into another account's mailbox (one's own and a shared one, either way):
+    /// each becomes a new email there, in that account's quota, with the flags the target allows.
+    async fn copy_across(
+        &mut self,
+        source_owner: i64,
+        source: i64,
+        uids: Vec<u32>,
+        target: &Named,
+    ) -> Result<Vec<(u32, u32)>, StoreError> {
+        let mut pairs = Vec::new();
+        for email in self.store.imap_emails(source_owner, source, uids).await? {
+            let raw = self.store.blob(&email.blob).await?;
+            let keywords =
+                email.keywords.iter().filter(|keyword| may_set_keyword(&target.rights, keyword)).cloned().collect();
+            let request = IngestRequest {
+                account_id: target.owner,
+                raw,
+                mailboxes: vec![MailboxTarget::Id(target.mailbox.id)],
+                keywords,
+                received_at: Some(email.received_at),
+            };
+            let copied = self.store.ingest(request).await?;
+            pairs.push((email.uid, copied.uid as u32));
+        }
+        Ok(pairs)
     }
 }
 
@@ -1389,6 +1857,34 @@ fn io_error(err: io::Error) -> StoreError {
 
 fn is_system_keyword(keyword: &str) -> bool {
     ["$seen", "$answered", "$flagged", "$draft", DELETED_KEYWORD].contains(&keyword)
+}
+
+/// Whether rights allow setting a keyword: `\Seen` needs `s`, `\Deleted` `t`, everything else `w`.
+fn may_set_keyword(rights: &str, keyword: &str) -> bool {
+    let needed = match keyword {
+        "$seen" => 's',
+        DELETED_KEYWORD => 't',
+        _ => 'w',
+    };
+    rights.contains(needed)
+}
+
+/// The PERMANENTFLAGS of a writable mailbox with these rights.
+fn permanent_flags(rights: &str) -> String {
+    let mut flags = Vec::new();
+    if rights.contains('w') {
+        flags.extend(["\\Answered", "\\Flagged", "\\Draft"]);
+    }
+    if rights.contains('t') {
+        flags.push("\\Deleted");
+    }
+    if rights.contains('s') {
+        flags.push("\\Seen");
+    }
+    if rights.contains('w') {
+        flags.push("\\*");
+    }
+    flags.join(" ")
 }
 
 fn space_list(items: &[String]) -> String {

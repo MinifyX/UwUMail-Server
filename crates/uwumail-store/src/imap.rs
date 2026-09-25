@@ -387,17 +387,35 @@ impl Store {
     /// Removes the messages flagged `\Deleted` from a mailbox, only those in `uids` when given.
     /// Messages in no other mailbox are destroyed. Returns the removed UIDs.
     pub async fn imap_expunge(&self, account_id: i64, mailbox_id: i64, uids: Option<Vec<u32>>) -> Result<Vec<u32>> {
+        self.imap_take_out(account_id, mailbox_id, uids, true).await
+    }
+
+    /// Takes messages out of a mailbox whatever their flags, as moving them to another account's
+    /// mailbox does. Messages in no other mailbox are destroyed. Returns the removed UIDs.
+    pub async fn imap_remove(&self, account_id: i64, mailbox_id: i64, uids: Vec<u32>) -> Result<Vec<u32>> {
+        self.imap_take_out(account_id, mailbox_id, Some(uids), false).await
+    }
+
+    async fn imap_take_out(
+        &self,
+        account_id: i64,
+        mailbox_id: i64,
+        uids: Option<Vec<u32>>,
+        only_deleted: bool,
+    ) -> Result<Vec<u32>> {
         let (removed, modseq) = self
             .write(move |tx| {
                 own_mailbox(tx, account_id, mailbox_id)?;
                 let mut stmt = tx.prepare(
                     "SELECT em.uid, em.email_id, (SELECT count(*) FROM email_mailboxes o WHERE o.email_id = em.email_id)
                      FROM email_mailboxes em
-                     JOIN email_keywords k ON k.email_id = em.email_id AND k.keyword = ?2
-                     WHERE em.mailbox_id = ?1 ORDER BY em.uid",
+                     WHERE em.mailbox_id = ?1
+                       AND (?3 = 0 OR EXISTS (SELECT 1 FROM email_keywords k
+                                              WHERE k.email_id = em.email_id AND k.keyword = ?2))
+                     ORDER BY em.uid",
                 )?;
                 let flagged = stmt
-                    .query_map(params![mailbox_id, DELETED_KEYWORD], |row| {
+                    .query_map(params![mailbox_id, DELETED_KEYWORD, only_deleted], |row| {
                         Ok((row.get::<_, i64>(0)? as u32, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
                     })?
                     .collect::<Result<Vec<_>, _>>()?;

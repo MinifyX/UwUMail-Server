@@ -1100,6 +1100,15 @@ export interface ForwardingView {
   maxTargets: number;
 }
 
+/** A sending address with its signatures, as JMAP's Identity has them. */
+export interface IdentityInfo {
+  id: number;
+  name: string;
+  email: string;
+  textSignature: string;
+  htmlSignature: string;
+}
+
 export interface VacationView {
   isEnabled: boolean;
   fromDate: number | null;
@@ -1177,6 +1186,35 @@ export interface OwnAddressesView {
   released: { address: string; releasedAt: number; reservedUntil: number }[];
 }
 
+/** What someone shared with others may do: see, see and change, or everything but deleting. */
+export type ShareRights = "read" | "write" | "all";
+
+export interface OwnCollection {
+  id: number;
+  kind: "calendar" | "addressbook";
+  name: string;
+  color: string | null;
+  entries: number;
+  shares: { accountId: number; address: string; name: string; rights: ShareRights }[];
+}
+
+export interface SharedCollection {
+  id: number;
+  kind: "calendar" | "addressbook";
+  name: string;
+  color: string | null;
+  owner: string;
+  ownerName: string;
+  rights: ShareRights;
+}
+
+export interface CalendarsView {
+  calendars: boolean;
+  contacts: boolean;
+  own: OwnCollection[];
+  shared: SharedCollection[];
+}
+
 export interface StorageView {
   usedBytes: number;
   quotaBytes: number;
@@ -1187,6 +1225,31 @@ export interface StorageView {
     emails: number;
     sizeBytes: number;
   }[];
+}
+
+/** How much someone may do with a shared folder. */
+export type ShareLevel = "read" | "write" | "all";
+
+/** "Shared folders" in My account. */
+export interface SharingView {
+  folders: {
+    id: number;
+    /** Like `Projects/UwUMail`. */
+    path: string;
+    role: StorageView["mailboxes"][number]["role"];
+    shares: { login: string; name: string; level: ShareLevel; rights: string }[];
+  }[];
+  sharedWithMe: {
+    owner: string;
+    ownerName: string;
+    id: number;
+    path: string;
+    role: StorageView["mailboxes"][number]["role"];
+    level: ShareLevel;
+    rights: string;
+  }[];
+  /** Everyone on the server one may share with. */
+  people: { login: string; name: string }[];
 }
 
 /** The setup assistant before the first admin exists. */
@@ -1353,9 +1416,26 @@ export interface TestMailStatus {
   replyFrom: string | null;
 }
 
+/** What pointing one host name at the gateway would change about its A or AAAA records. */
+export interface GatewayHostChange {
+  name: string;
+  recordType: "A" | "AAAA";
+  current: string[];
+  wanted: string[];
+  proxied: boolean;
+  /** "replace" means some addresses point elsewhere and only go when confirmed. */
+  action: "none" | "create" | "update" | "replace" | "skip";
+  note: "noZone" | "cname" | null;
+}
+
+export interface GatewayCloudflareAnswer {
+  plan: GatewayHostChange[];
+  results?: CloudflareResult[];
+}
+
 export interface CloudflareResult {
   name: string;
-  recordType: "MX" | "TXT" | "SRV" | "CNAME" | "CAA";
+  recordType: "MX" | "TXT" | "SRV" | "CNAME" | "CAA" | "A" | "AAAA";
   /** "requoted" means the value was right and only its quoting was put in order. */
   outcome: "created" | "updated" | "requoted" | "skipped" | "failed";
   error: string | null;

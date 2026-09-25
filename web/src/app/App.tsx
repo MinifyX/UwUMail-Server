@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Toaster } from "@/components/ui/Toaster";
 import { AccountHome } from "@/features/account/AccountHome";
+import { CalendarsPage } from "@/features/calendars/CalendarsPage";
 import { FetchPage } from "@/features/fetch/FetchPage";
 import { AddressesPage } from "@/features/addresses/AddressesPage";
 import { SERVER_PATHS, ServerPage, type ServerTab } from "@/features/admin/ServerPage";
@@ -69,6 +70,7 @@ function page(path: string, session: Session): ReactNode {
   if (path === "/account/mail") return <MailboxPage />;
   if (path === "/account/fetch") return <FetchPage />;
   if (path === "/account/addresses") return <AddressesPage />;
+  if (path === "/account/calendars") return <CalendarsPage />;
   if (path === "/account/spam") return <AccountSpamPage />;
   if (path === "/account/spam/lists") return <AccountSpamPage tab="lists" />;
   if (path === "/account/spam/learning") return <AccountSpamPage tab="learning" />;

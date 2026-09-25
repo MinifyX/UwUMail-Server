@@ -54,14 +54,15 @@
     "logs": "Journaux",
     "settings": "Paramètres",
     "security": "Sécurité",
-    "mail": "Transfert",
+    "mail": "Transfert et envoi",
     "fetch": "Courrier relevé",
     "addresses": "Adresses",
     "spamFilter": "Filtre antispam",
     "collapse": "Replier {{group}}",
     "expand": "Déplier {{group}}",
     "mailbox": "Boîte mail",
-    "directory": "Comptes et domaines"
+    "directory": "Comptes et domaines",
+    "calendars": "Agendas et contacts"
   },
   "userMenu": {
     "open": "Ouvrir le menu du compte",
@@ -285,6 +286,7 @@
       "mtaStsCertificate": "Le mode strict nécessite d'abord un certificat valide sur le serveur.",
       "gatewayCodeInvalid": "Le code d'appairage n'est pas correct. Copiez-le à nouveau, en entier, depuis la passerelle.",
       "gatewayForgetFailed": "La passerelle n'a pas pu être oubliée.",
+      "gatewayNoAddresses": "La passerelle n'a pas encore indiqué ses adresses publiques. Attendez qu'elle soit connectée.",
       "learningBusy": "Le filtre a encore beaucoup de courrier à apprendre. Veuillez réessayer plus tard.",
       "senderInvalid": "Cela ne ressemble pas à une adresse, un domaine, une adresse IP ou un nom d'hôte. Les réseaux peuvent être au plus de /8 (IPv4) ou /16 (IPv6), et les domaines ont besoin d'au moins un point.",
       "senderListed": "Cet expéditeur est déjà sur la liste. Pour le changer, supprimez-le d'abord.",
@@ -311,7 +313,10 @@
       "logoEmpty": "Le fichier est vide.",
       "logoTooLarge": "Le logo est trop volumineux. 512 Ko au maximum.",
       "logoType": "Ce n'est pas une image utilisable comme logo. PNG, JPEG, WebP et SVG sont acceptés.",
-      "brandColor": "Ce n'est pas une couleur. Une valeur comme #ff4d8d est attendue."
+      "brandColor": "Ce n'est pas une couleur. Une valeur comme #ff4d8d est attendue.",
+      "unknownPerson": "Personne sur ce serveur n'a cette adresse.",
+      "ownShare": "Inutile de partager avec vous-même.",
+      "tooManyShares": "C'est déjà partagé avec trop de personnes."
     }
   },
   "people": {
@@ -1155,6 +1160,8 @@
       "enabledHint": "Quand il est désactivé, seul DMARC décide de ce qui va en spam.",
       "blocklists": "Interroger des listes de blocage",
       "blocklistsHint": "Interroge Spamhaus, SpamCop et Barracuda sur le serveur d'envoi. Une liste qui ne répond pas ne compte pas contre l'expéditeur.",
+      "uriBlocklists": "Interroger des listes de blocage de liens (SURBL, URIBL)",
+      "uriBlocklistsHint": "Interroge SURBL et URIBL sur les domaines vers lesquels mènent les liens. Les deux ne sont gratuites que pour les petits serveurs non commerciaux et ne répondent pas via des résolveurs publics comme 8.8.8.8 — un refus est journalisé et ne compte pas. Consultez leurs conditions avant d'activer cette option.",
       "bayes": "Filtre à apprentissage",
       "bayesHint": "Apprend à partir des marquages et des cas évidents à quoi ressemble le spam, et l'évalue. Il ne compte qu'une fois qu'il a suffisamment appris.",
       "junkScore": "Spam à partir du score",
@@ -1612,8 +1619,8 @@
     }
   },
   "mailbox": {
-    "title": "Transfert et absence",
-    "intro": "Où va aussi votre courrier, et ce que les expéditeurs reçoivent comme réponse pendant votre absence.",
+    "title": "Transfert, absence et envoi",
+    "intro": "Où va aussi votre courrier, ce que les expéditeurs reçoivent pendant votre absence, et comment vos messages partent.",
     "forwarding": {
       "title": "Transfert",
       "explain": "Le courrier qui vous est destiné va aussi à ces adresses. Les adresses sur d'autres serveurs reçoivent d'abord un e-mail et doivent confirmer le transfert.",
@@ -1646,6 +1653,26 @@
       "save": "Enregistrer",
       "savedOn": "Le message d'absence est activé",
       "savedOff": "Message d'absence enregistré"
+    },
+    "sending": {
+      "title": "Envoi",
+      "undo": "Annuler l’envoi",
+      "undoHint": "Les messages attendent ce délai avant de partir, pour que vous puissiez encore les rattraper. Vaut pour le webmail et toutes les applications JMAP.",
+      "undoOff": "Désactivé, envoyer tout de suite",
+      "undoSeconds": "{{seconds}} secondes",
+      "saved": "Enregistré"
+    },
+    "signatures": {
+      "title": "Signatures",
+      "intro": "Les applications de messagerie et le webmail ajoutent la signature de l’adresse d’envoi.",
+      "loading": "Chargement des adresses …",
+      "loadError": "Impossible de charger les adresses.",
+      "empty": "Il n’y a encore aucune adresse d’envoi.",
+      "text": "Signature",
+      "html": "Signature en HTML",
+      "htmlHint": "Facultatif, pour les applications qui écrivent des messages mis en forme.",
+      "save": "Enregistrer la signature",
+      "saved": "Signature enregistrée"
     }
   },
   "forwardConfirm": {
@@ -1663,7 +1690,7 @@
   },
   "addresses": {
     "pageTitle": "Adresses et stockage",
-    "intro": "Les adresses auxquelles vous recevez du courrier et la place qu'il occupe.",
+    "intro": "Les adresses auxquelles vous recevez du courrier, la place qu'il occupe et qui d'autre peut utiliser vos dossiers.",
     "title": "Vos adresses",
     "own": "Créée par vous",
     "fromAdmin": "Créée par un admin",
@@ -1701,6 +1728,37 @@
       "junk": "Courrier indésirable",
       "trash": "Corbeille"
     }
+  },
+  "sharing": {
+    "title": "Dossiers partagés",
+    "intro": "Permettez aux personnes de ce serveur d’utiliser vos dossiers dans leur application de messagerie et dans le webmail. Les messages qu’elles y déposent comptent dans votre espace.",
+    "none": "Non partagé",
+    "sharedWith_one": "Partagé avec {{count}} personne",
+    "sharedWith_many": "Partagé avec {{count}} personnes",
+    "sharedWith_other": "Partagé avec {{count}} personnes",
+    "share": "Partager",
+    "shareTitle": "Partager {{folder}}",
+    "person": "Personne",
+    "personPlaceholder": "Choisir quelqu’un",
+    "level": "Peut",
+    "levels": {
+      "read": "Lire",
+      "write": "Lire et écrire",
+      "all": "Tout"
+    },
+    "levelHints": {
+      "read": "Voir les messages.",
+      "write": "Aussi marquer, classer et supprimer des messages.",
+      "all": "Aussi y créer des dossiers, le renommer ou le supprimer, et le partager à son tour."
+    },
+    "remove": "Ne plus partager",
+    "saved": "{{folder}} est partagé avec {{person}}",
+    "removed": "{{person}} ne voit plus {{folder}}",
+    "noPeople": "Il n’y a encore personne d’autre sur ce serveur avec qui partager.",
+    "withMeTitle": "Partagés avec moi",
+    "withMeEmpty": "Personne ne partage encore de dossier avec vous.",
+    "withMeFrom": "de {{owner}}",
+    "withMeHint": "Ils apparaissent dans les applications de messagerie sous « Shared » et dans le webmail comme un compte à part."
   },
   "setup": {
     "title": "Installation",
@@ -1971,6 +2029,31 @@
       "forgetTitle": "Oublier la passerelle ?",
       "forgetBody": "Votre serveur envoie et reçoit alors de nouveau le courrier lui-même. Rétablissez aussi les enregistrements DNS, sinon le courrier n'arrivera plus.",
       "forgetConfirm": "Oublier",
+      "cloudflare": {
+        "open": "Faire pointer les noms d'hôte ici via Cloudflare",
+        "title": "Faire pointer les noms d'hôte vers la passerelle",
+        "body": "Si votre domaine est chez Cloudflare, je règle les enregistrements A et AAAA de {{hostname}} sur les adresses de la passerelle, sans proxy. Les autres noms dont le serveur a besoin, comme mta-sts ou autoconfig, suivent s'ils sont eux aussi des enregistrements A ou AAAA. Je montre d'abord ce qui changerait. Le jeton n'est utilisé que pour ces requêtes et n'est jamais enregistré.",
+        "check": "Afficher les changements",
+        "apply": "Appliquer les changements",
+        "nothing": "Tout pointe déjà vers la passerelle.",
+        "current": "actuellement",
+        "none": "rien",
+        "proxied": "via proxy",
+        "actions": {
+          "none": "déjà correct",
+          "create": "sera ajouté",
+          "update": "sera complété, sans proxy",
+          "replace": "pointe ailleurs",
+          "skip": "laissé tel quel"
+        },
+        "notes": {
+          "noZone": "le jeton ne voit aucune zone Cloudflare pour ce nom",
+          "cname": "c'est un CNAME, modifiez-le vous-même"
+        },
+        "replace": "Remplacer aussi les adresses qui pointent ailleurs",
+        "replaceHint": "Ces enregistrements ne mènent pas à la passerelle, peut-être à votre ancienne connexion. Sans coche, ils restent tels quels. Un enregistrement AAAA est supprimé si la passerelle n'a pas d'adresse IPv6.",
+        "done": "Cloudflare a les nouveaux enregistrements. Le DNS peut mettre quelques minutes à suivre."
+      },
       "fromConfig": "Cet appairage est défini comme gateway.code dans la configuration. Si vous oubliez la passerelle ici, supprimez aussi le code. Sinon, le serveur essaiera de s'appairer à nouveau au prochain démarrage avec une nouvelle clé, la passerelle le refusera, et le courrier vers les autres serveurs attendra dans la file d'attente. Pour appairer à nouveau plus tard, exécutez uwumail-gateway unpair sur la passerelle et utilisez le nouveau code.",
       "paired": "Appairée, le tunnel se met en place.",
       "forgotten": "Passerelle oubliée.",
@@ -2792,5 +2875,35 @@
       "light": "Clair",
       "dark": "Sombre"
     }
+  },
+  "calendars": {
+    "pageTitle": "Partager agendas et contacts",
+    "intro": "Partagez vos agendas et carnets d'adresses avec des personnes de ce serveur. Ils apparaissent dans leurs applications d'agenda et de contacts et dans le webmail.",
+    "notShared": "Partagé avec personne.",
+    "sharedWith": "Partagé avec",
+    "shareWith": "Partager avec quelqu'un",
+    "addressPlaceholder": "adresse@example.org",
+    "rightsLabel": "Droits",
+    "rightsFor": "Droits de {{address}}",
+    "rights": {
+      "read": "Lecture",
+      "write": "Lecture et écriture",
+      "all": "Tout"
+    },
+    "rightsHint": {
+      "read": "Voit toutes les entrées sans pouvoir rien modifier.",
+      "write": "Peut ajouter, modifier et supprimer des entrées.",
+      "all": "Peut aussi changer le nom et la couleur et le partager à son tour. Vous seul pouvez le supprimer."
+    },
+    "share": "Partager",
+    "sharedToast": "{{name}} est maintenant partagé avec {{address}}",
+    "unshare": "Ne plus partager",
+    "unsharedToast": "{{name}} n'est plus partagé",
+    "sharedTitle": "Partagés avec vous",
+    "sharedEmpty": "Personne n'a encore rien partagé avec vous.",
+    "from": "De {{owner}}",
+    "leave": "Quitter",
+    "leftToast": "{{name}} quitté",
+    "off": "Les agendas et les contacts sont désactivés pour votre compte."
   }
 }

@@ -15,6 +15,7 @@ mod feeds;
 mod html;
 pub(crate) mod links;
 mod lists;
+mod uri_lists;
 mod words;
 
 pub use bayes::run_learning;
@@ -45,6 +46,7 @@ const UNKNOWN_TTL: Duration = Duration::from_secs(600);
 
 pub(crate) type BlocklistCache = crate::dns::TtlCache<(IpAddr, &'static str), ListingStatus>;
 pub(crate) type DomainCache = crate::dns::TtlCache<String, DomainListing>;
+pub(crate) use uri_lists::UriCache;
 
 /// Spamhaus' list of domains seen in spam, phishing and malware, asked about link domains.
 const DBL_ZONE: &str = "dbl.spamhaus.org";
@@ -389,12 +391,14 @@ pub async fn score(ctx: &Context, config: &SpamConfig, source: Source<'_>, raw: 
         } else {
             content::Examination::default()
         };
-        let domains =
-            if config.blocklists { domain_listings(ctx, &examination.link_domains).await } else { Vec::new() };
+        let hosts = &examination.link_domains;
+        let dbl = async { if config.blocklists { domain_listings(ctx, hosts).await } else { Vec::new() } };
+        let uri = async { if config.uri_blocklists { uri_lists::listings(ctx, hosts).await } else { Vec::new() } };
+        let (domains, uri) = tokio::join!(dbl, uri);
         let chance = if examination.tokens.is_empty() { None } else { server_chance(ctx, &examination.tokens).await };
-        (examination, domains, chance)
+        (examination, domains, uri, chance)
     };
-    let (names, listed, (examination, domains, chance)) = tokio::join!(reverse, blocklists, message);
+    let (names, listed, (examination, domains, uri, chance)) = tokio::join!(reverse, blocklists, message);
     let content::Examination {
         hits: content_hits,
         tokens,
@@ -435,6 +439,13 @@ pub async fn score(ctx: &Context, config: &SpamConfig, source: Source<'_>, raw: 
             && !score.hits.iter().any(|hit| hit.rule == rule)
         {
             score.add(rule, points, Some(domain));
+        }
+    }
+    for (domain, list, answer) in uri {
+        for (rule, points) in list.rules(answer) {
+            if !score.hits.iter().any(|hit| hit.rule == rule) {
+                score.add(rule, points, Some(domain.clone()));
+            }
         }
     }
 

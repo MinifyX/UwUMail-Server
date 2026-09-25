@@ -4,6 +4,7 @@ import {
   type CloudflareResult,
   type DomainDetail,
   type DomainReport,
+  type GatewayCloudflareAnswer,
   type GatewayView,
   type Reachability,
   type ServerCheck,
@@ -155,6 +156,24 @@ export function useGatewayJob() {
 }
 
 export type GatewayVerb = "os-update" | "reboot" | "gateway-update";
+
+/**
+ * Points the server's host names at the gateway through Cloudflare. Without `apply` it only asks
+ * what would change; `replace` confirms replacing addresses that point elsewhere.
+ */
+export function useGatewayCloudflare() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { token: string; apply: boolean; replace: boolean }) =>
+      api<GatewayCloudflareAnswer>("/api/admin/gateway/cloudflare", { method: "POST", body: input }),
+    onSuccess: (_, input) => {
+      if (!input.apply) return;
+      void queryClient.invalidateQueries({ queryKey: ["admin", "domains"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
+      void queryClient.invalidateQueries({ queryKey: CHECK_KEY });
+    },
+  });
+}
 
 function useGatewayChanged() {
   const queryClient = useQueryClient();

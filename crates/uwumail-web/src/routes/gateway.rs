@@ -1,15 +1,18 @@
 //! Server → Setup: the UwUMail Gateway and where this server stands on the internet.
 
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
 use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use uwumail_smtp::reachability::Reachability;
 
 use super::audit;
 use super::security::confirm_identity;
 use crate::Web;
+use crate::cloudflare::{Cloudflare, HostName};
 use crate::error::{ApiError, ApiResult};
 use crate::gateway::GatewayView;
 use crate::session::Admin;
@@ -118,4 +121,81 @@ pub async fn reachability(State(web): State<Web>, _admin: Admin) -> ApiResult<Js
         return Err(ApiError::Rule("dnsUnavailable", "the server has no working DNS resolver".into()));
     };
     Ok(Json(web.smtp().check_reachability(dns).await))
+}
+
+/// The names mail apps try for every domain; the server's certificate covers them too once they
+/// lead here (see acme.rs in the server).
+const CLIENT_NAMES: [&str; 5] = ["mail", "imap", "smtp", "autoconfig", "autodiscover"];
+
+/// The host names that have to lead to the gateway: the server's own name first, then
+/// `mta-sts.<domain>` for the domains with MTA-STS and the names mail apps use for every domain.
+async fn gateway_host_names(web: &Web) -> ApiResult<Vec<HostName>> {
+    let hostname = web.settings().hostname.trim_end_matches('.').to_ascii_lowercase();
+    let mut hosts = vec![HostName { name: hostname, required: true }];
+    let mut add = |name: String| {
+        if !hosts.iter().any(|host| host.name == name) {
+            hosts.push(HostName { name, required: false });
+        }
+    };
+    for domain in web.store().mta_sts_domains().await? {
+        add(format!("mta-sts.{domain}"));
+    }
+    for domain in web.store().domains().await? {
+        for prefix in CLIENT_NAMES {
+            add(format!("{prefix}.{}", domain.name));
+        }
+    }
+    Ok(hosts)
+}
+
+#[derive(Deserialize)]
+pub struct CloudflareHosts {
+    token: String,
+    /// Carry the plan out; without it the portal only learns what would change.
+    #[serde(default)]
+    apply: bool,
+    /// Replace A and AAAA records that point somewhere else than the gateway.
+    #[serde(default)]
+    replace: bool,
+}
+
+/// Points the server's host names at the gateway's public addresses at Cloudflare, not proxied,
+/// with a token that is used for this request only. First it says what would change; records that
+/// point elsewhere are only replaced when the admin confirmed exactly that.
+pub async fn cloudflare(
+    State(web): State<Web>,
+    Admin(session): Admin,
+    Json(request): Json<CloudflareHosts>,
+) -> ApiResult<Json<Value>> {
+    if request.token.trim().is_empty() {
+        return Err(ApiError::Invalid("a Cloudflare API token is needed".into()));
+    }
+    let view = web.gateway().map(|gateway| gateway.view()).unwrap_or_default();
+    let addresses: Vec<IpAddr> = view.addresses.iter().filter_map(|address| address.parse().ok()).collect();
+    let v4: Vec<Ipv4Addr> =
+        addresses.iter().filter_map(|ip| if let IpAddr::V4(v4) = ip { Some(*v4) } else { None }).collect();
+    let v6: Vec<Ipv6Addr> =
+        addresses.iter().filter_map(|ip| if let IpAddr::V6(v6) = ip { Some(*v6) } else { None }).collect();
+    if v4.is_empty() && v6.is_empty() {
+        return Err(ApiError::Rule("gatewayNoAddresses", "the gateway has not told its public addresses yet".into()));
+    }
+    let hosts = gateway_host_names(&web).await?;
+    let cloudflare = Cloudflare::new(&request.token);
+    let plan =
+        cloudflare.host_plan(&hosts, &v4, &v6).await.map_err(|message| ApiError::Rule("cloudflareFailed", message))?;
+    if !request.apply {
+        return Ok(Json(json!({ "plan": plan })));
+    }
+    let results = cloudflare.apply_hosts(&plan, request.replace).await;
+    let changed: Vec<String> = results
+        .iter()
+        .filter(|result| matches!(result.outcome, "created" | "updated"))
+        .map(|result| format!("{} {}", result.record_type, result.name))
+        .collect();
+    audit(&web, &session, "gateway.cloudflare", "", json!({ "changed": changed, "replace": request.replace })).await;
+    // The DNS checks of every domain may read differently now.
+    for domain in web.store().domains().await.unwrap_or_default() {
+        web.forget_report(&domain.name);
+    }
+    Ok(Json(json!({ "plan": plan, "results": results })))
 }

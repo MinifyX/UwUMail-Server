@@ -138,5 +138,18 @@
     "loki": {
       "testOk": "测试日志行成功到达 Loki 啦 (=^･ω･^=)"
     }
+  },
+  "mailbox": {
+    "signatures": {
+      "saved": "签名已保存 (ﾉ◕ヮ◕)ﾉ"
+    }
+  },
+  "sharing": {
+    "withMeEmpty": "还没有人与你共享文件夹 (｡•ᴗ•｡)",
+    "saved": "已将{{folder}}与{{person}}共享 (ﾉ◕ヮ◕)ﾉ"
+  },
+  "calendars": {
+    "intro": "和服务器上的大家共享你的日历和通讯录，再也不会错过约会 (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
+    "sharedEmpty": "还没有人和你共享任何内容 (・ω・)"
   }
 }

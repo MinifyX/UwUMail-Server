@@ -31,6 +31,8 @@ pub mod reachability;
 mod relay;
 mod reports;
 mod rules;
+pub mod scheduling;
+mod scheduling_texts;
 mod sender_lists;
 pub mod servercheck;
 pub mod sieve;
@@ -103,6 +105,8 @@ pub(crate) struct Context {
     pub blocklist_cache: spam::BlocklistCache,
     /// Recent domain blocklist answers about link domains.
     pub domain_cache: spam::DomainCache,
+    /// Recent SURBL and URIBL answers about link domains.
+    pub(crate) uri_cache: spam::UriCache,
     /// The key Bayes tokens are hashed with, loaded or made on first use.
     pub bayes_key: tokio::sync::OnceCell<[u8; 32]>,
     /// The word lists and built-in lists, compiled again when they change.
@@ -200,6 +204,7 @@ impl Smtp {
                 auth_limiter: limiter::AuthLimiter::default(),
                 blocklist_cache: spam::BlocklistCache::default(),
                 domain_cache: spam::DomainCache::default(),
+                uri_cache: spam::UriCache::default(),
                 bayes_key: tokio::sync::OnceCell::new(),
                 lists: Default::default(),
                 fetcher: fetch::Fetcher::new(),

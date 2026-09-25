@@ -54,14 +54,15 @@
     "logs": "日志",
     "settings": "设置",
     "security": "安全",
-    "mail": "转发",
+    "mail": "转发与发送",
     "fetch": "收取的邮件",
     "addresses": "地址",
     "spamFilter": "垃圾邮件过滤器",
     "collapse": "折叠{{group}}",
     "expand": "展开{{group}}",
     "mailbox": "邮箱",
-    "directory": "账户与域名"
+    "directory": "账户与域名",
+    "calendars": "日历和通讯录"
   },
   "userMenu": {
     "open": "打开账户菜单",
@@ -268,6 +269,7 @@
       "mtaStsCertificate": "强制模式要求服务器先拥有有效的证书。",
       "gatewayCodeInvalid": "配对码不正确。请从网关重新完整复制。",
       "gatewayForgetFailed": "无法移除该网关。",
+      "gatewayNoAddresses": "网关尚未告知其公网地址。请等待它连接成功。",
       "learningBusy": "过滤器还有很多邮件需要学习。请稍后再试。",
       "senderInvalid": "这看起来不像地址、域名、IP 地址或主机名。网段最大为 /8（IPv4）或 /16（IPv6），域名至少需要包含一个点。",
       "senderListed": "此发件人已在列表中。如需切换，请先将其移除。",
@@ -294,7 +296,10 @@
       "logoEmpty": "文件是空的。",
       "logoTooLarge": "标志太大了，最大 512 KB。",
       "logoType": "这不是可用作标志的图片。支持 PNG、JPEG、WebP 和 SVG。",
-      "brandColor": "这不是颜色。请输入类似 #ff4d8d 的值。"
+      "brandColor": "这不是颜色。请输入类似 #ff4d8d 的值。",
+      "unknownPerson": "此服务器上没有人使用这个地址。",
+      "ownShare": "无需与自己共享。",
+      "tooManyShares": "已经与太多人共享了。"
     }
   },
   "people": {
@@ -1100,6 +1105,8 @@
       "enabledHint": "关闭时，只由 DMARC 决定哪些邮件进入垃圾邮件。",
       "blocklists": "查询黑名单",
       "blocklistsHint": "向 Spamhaus、SpamCop 和 Barracuda 查询发信服务器。没有响应的列表不会对发件人不利。",
+      "uriBlocklists": "查询链接黑名单（SURBL、URIBL）",
+      "uriBlocklistsHint": "向 SURBL 和 URIBL 查询链接指向的域名。两者仅对小型非商业服务器免费，并且不会通过 8.8.8.8 等公共解析器应答——被拒绝的查询会记录到日志，不计分。启用前请先阅读它们的使用条款。",
       "bayes": "学习过滤器",
       "bayesHint": "从标记和明确的案例中学习垃圾邮件的特征并为其打分。只有学习到足够多之后才会生效。",
       "junkScore": "判为垃圾邮件的分数",
@@ -1523,8 +1530,8 @@
     }
   },
   "mailbox": {
-    "title": "转发与离开",
-    "intro": "你的邮件还会发到哪里，以及你不在时发件人会收到什么回复。",
+    "title": "转发、离开与发送",
+    "intro": "你的邮件还会发到哪里、你不在时发件人会收到什么回复，以及邮件如何发出。",
     "forwarding": {
       "title": "转发",
       "explain": "发给你的邮件也会发到这些地址。其他服务器上的地址会先收到一封邮件，需要确认转发。",
@@ -1555,6 +1562,26 @@
       "save": "保存",
       "savedOn": "自动回复已开启",
       "savedOff": "自动回复已保存"
+    },
+    "sending": {
+      "title": "发送",
+      "undo": "撤销发送",
+      "undoHint": "邮件在发出前会等待这段时间，期间你仍可撤回。适用于网页邮箱和所有 JMAP 应用。",
+      "undoOff": "关闭，立即发送",
+      "undoSeconds": "{{seconds}} 秒",
+      "saved": "已保存"
+    },
+    "signatures": {
+      "title": "签名",
+      "intro": "邮件应用和网页邮箱会添加你所用发件地址的签名。",
+      "loading": "正在加载地址…",
+      "loadError": "无法加载地址。",
+      "empty": "还没有可用于发送的地址。",
+      "text": "签名",
+      "html": "HTML 签名",
+      "htmlHint": "可选，供撰写格式化邮件的应用使用。",
+      "save": "保存签名",
+      "saved": "签名已保存"
     }
   },
   "forwardConfirm": {
@@ -1572,7 +1599,7 @@
   },
   "addresses": {
     "pageTitle": "地址与存储空间",
-    "intro": "你用来接收邮件的地址，以及邮件占用了多少空间。",
+    "intro": "你用来接收邮件的地址、邮件占用了多少空间，以及还有谁可以使用你的文件夹。",
     "title": "你的地址",
     "own": "由你创建",
     "fromAdmin": "由管理员创建",
@@ -1606,6 +1633,35 @@
       "junk": "垃圾邮件",
       "trash": "已删除"
     }
+  },
+  "sharing": {
+    "title": "共享文件夹",
+    "intro": "让此服务器上的人在他们的邮件应用和网页邮箱中使用你的文件夹。他们放入的邮件计入你的存储空间。",
+    "none": "未共享",
+    "sharedWith_other": "已与 {{count}} 人共享",
+    "share": "共享",
+    "shareTitle": "共享{{folder}}",
+    "person": "对象",
+    "personPlaceholder": "选择一个人",
+    "level": "可以",
+    "levels": {
+      "read": "阅读",
+      "write": "阅读和编辑",
+      "all": "全部"
+    },
+    "levelHints": {
+      "read": "查看邮件。",
+      "write": "还可以标记、归档和删除邮件。",
+      "all": "还可以在其中新建文件夹、重命名或删除它，并继续共享。"
+    },
+    "remove": "停止共享",
+    "saved": "已将{{folder}}与{{person}}共享",
+    "removed": "{{person}}已看不到{{folder}}",
+    "noPeople": "此服务器上还没有可以共享的其他人。",
+    "withMeTitle": "与我共享",
+    "withMeEmpty": "还没有人与你共享文件夹。",
+    "withMeFrom": "来自 {{owner}}",
+    "withMeHint": "它们在邮件应用中显示在“Shared”下，在网页邮箱中显示为单独的账户。"
   },
   "setup": {
     "title": "设置向导",
@@ -1876,6 +1932,31 @@
       "forgetTitle": "移除网关？",
       "forgetBody": "之后你的服务器将再次自行收发邮件。请同时把 DNS 记录改回来，否则邮件将无法送达。",
       "forgetConfirm": "移除",
+      "cloudflare": {
+        "open": "通过 Cloudflare 将主机名指向这里",
+        "title": "将主机名指向网关",
+        "body": "如果你的域名托管在 Cloudflare，我会把 {{hostname}} 的 A 和 AAAA 记录设为网关的地址（不经代理）。服务器需要的其他名称，例如 mta-sts 或 autoconfig，如果也是 A 或 AAAA 记录，会一并更新。我会先显示将要更改的内容。令牌只用于这些请求，绝不会保存。",
+        "check": "显示更改",
+        "apply": "应用更改",
+        "nothing": "所有记录都已指向网关。",
+        "current": "当前",
+        "none": "无",
+        "proxied": "经代理",
+        "actions": {
+          "none": "已正确",
+          "create": "将会添加",
+          "update": "将会补全，不经代理",
+          "replace": "指向其他地方",
+          "skip": "保持不变"
+        },
+        "notes": {
+          "noZone": "令牌看不到该名称的 Cloudflare 区域",
+          "cname": "这是 CNAME 记录，请自行修改"
+        },
+        "replace": "同时替换指向其他地方的地址",
+        "replaceHint": "这些记录没有指向网关，可能指向你以前的网络连接。不勾选则保持不变。如果网关没有 IPv6 地址，AAAA 记录将被删除。",
+        "done": "Cloudflare 已有新记录。DNS 生效可能需要几分钟。"
+      },
       "fromConfig": "此配对是在配置中通过 gateway.code 设置的。如果在这里移除网关，也请删除该代码。否则服务器会在下次启动时用新密钥尝试重新配对，网关会拒绝，发往其他服务器的邮件将在队列中等待。如果之后要重新配对，请在网关上运行 uwumail-gateway unpair，然后使用新的代码。",
       "paired": "已配对，隧道正在建立。",
       "forgotten": "网关已移除。",
@@ -2667,5 +2748,35 @@
       "light": "浅色",
       "dark": "深色"
     }
+  },
+  "calendars": {
+    "pageTitle": "共享日历和通讯录",
+    "intro": "与此服务器上的人共享你的日历和通讯录。它们会出现在对方的日历和通讯录应用以及网页邮箱中。",
+    "notShared": "未与任何人共享。",
+    "sharedWith": "已共享给",
+    "shareWith": "与他人共享",
+    "addressPlaceholder": "address@example.org",
+    "rightsLabel": "权限",
+    "rightsFor": "{{address}} 的权限",
+    "rights": {
+      "read": "只读",
+      "write": "读写",
+      "all": "全部"
+    },
+    "rightsHint": {
+      "read": "可以看到所有条目，但不能更改。",
+      "write": "可以添加、更改和删除条目。",
+      "all": "还可以更改名称和颜色并继续共享。只有你可以删除它。"
+    },
+    "share": "共享",
+    "sharedToast": "{{name}} 已与 {{address}} 共享",
+    "unshare": "停止共享",
+    "unsharedToast": "{{name}} 已停止共享",
+    "sharedTitle": "与你共享的",
+    "sharedEmpty": "还没有人与你共享任何内容。",
+    "from": "来自 {{owner}}",
+    "leave": "退出",
+    "leftToast": "已退出 {{name}}",
+    "off": "你的账户已关闭日历和通讯录。"
   }
 }

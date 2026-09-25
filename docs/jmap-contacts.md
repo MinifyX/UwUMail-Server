@@ -65,8 +65,12 @@ into JSContact when read and back into vCard when written, with the
 | `sortOrder` | 0 to 2³¹−1 |
 | `isDefault` | exactly one address book is the default |
 | `isSubscribed` | always `true` |
-| `shareWith` | always `null` |
-| `myRights` | `mayRead` and `mayWrite` are `true`, `mayShare` is `false` (nothing is shared), `mayDelete` is `false` for the only address book |
+| `shareWith` | who else sees it, as for calendars ([jmap-calendars.md](jmap-calendars.md#shared-calendars)): principal ids (`p12`, as `Principal/get` gives them; `a12` and addresses of the server are accepted too) to `{ "mayRead": true, "mayWrite": … }` |
+| `myRights` | everything `true` for one's own (`mayDelete` is `false` for the only one); for an address book shared with the account `mayWrite` and `mayShare` follow what it was shared with, and `mayDelete` only leaves it |
+
+Address books other people of the server share with the account are listed
+next to its own, with their cards in `ContactCard/get`, `/query` and
+`/changes`; see [calendars.md](calendars.md).
 
 `AddressBook/get` and `AddressBook/changes` are standard. `AddressBook/set`
 creates, changes and destroys address books with the properties above; a
@@ -166,7 +170,9 @@ Sort by `created`, `updated`, `name/given`, `name/surname` or
 RFC 8620. A query that spends more than five seconds reading cards stops with
 `serverUnavailable`.
 
-`ContactCard/queryChanges` answers `cannotCalculateChanges`.
+`ContactCard/queryChanges` works as in RFC 8620 (`canCalculateChanges` is
+`true`): every card that changed since `sinceQueryState` is in `removed`, and
+those that match now are in `added` at their place.
 
 ### ContactCard/changes
 
@@ -180,10 +186,8 @@ mail and calendar types.
 
 ## Not supported
 
-- Sharing and principals (`shareWith`, `urn:ietf:params:jmap:principals`)
 - More than one address book per card
-- `ContactCard/copy` (there is one account per login) and
-  `ContactCard/queryChanges`
+- `ContactCard/copy` (shared address books are part of the account they are shared with)
 - Pictures as blobs: `media` with `blobId`, and `ContactCard/parse`
 
 ## Security
@@ -195,7 +199,7 @@ What JMAP Contacts adds was reviewed with the same questions as JMAP Calendars
   signed-in account, and every SQL statement is scoped by `account_id`; a
   foreign id is `notFound`, a foreign `accountId` `accountNotFound`, and an
   address book of another account in `addressBookIds` is `invalidProperties`.
-  The tests in `crates/uwumail-jmap/tests/contacts.rs` try each of these.
+  The tests in `crates/uwumail-jmap/tests/integration/contacts.rs` try each of these.
 - **What reaches phones.** Every write goes through calcard both ways and must
   come back as a vCard with the same UID before it is stored, under the CardDAV
   size limit, so JMAP cannot store a card a phone would choke on or that CardDAV

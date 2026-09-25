@@ -69,6 +69,30 @@ pub fn check_calendar(content: &str, allowed: &[String]) -> Result<Checked, Refu
     Ok(Checked { uid: uid.to_owned(), component, starts_at, ends_at })
 }
 
+/// The times an event keeps people busy within `[start, end)`: each occurrence, unless the event is
+/// transparent (it does not block time) or cancelled. For free-busy lookups (RFC 6638).
+pub fn busy_periods(content: &str, start: i64, end: i64) -> Vec<(i64, i64)> {
+    let Ok(calendar) = ICalendar::parse(content) else { return Vec::new() };
+    let unfolded = content.replace("\r\n ", "").replace("\n ", "").to_ascii_uppercase();
+    if unfolded.contains("\nTRANSP:TRANSPARENT") || unfolded.contains("\nSTATUS:CANCELLED") {
+        return Vec::new();
+    }
+    let expanded = calendar.expand_dates(Tz::Floating, EXPANSION_LIMIT);
+    expanded
+        .events
+        .iter()
+        .map(|event| {
+            let from = event.start.timestamp();
+            let to = match &event.end {
+                calcard::icalendar::dates::TimeOrDelta::Time(end) => end.timestamp(),
+                calcard::icalendar::dates::TimeOrDelta::Delta(delta) => from + delta.num_seconds(),
+            };
+            (from, to)
+        })
+        .filter(|(from, to)| *from < end && *to > start && to > from)
+        .collect()
+}
+
 /// A VCALENDAR with the VTIMEZONE of an IANA time zone, the way CalDAV keeps a calendar's time
 /// zone. `None` for names that are not in the time zone database.
 pub fn timezone_calendar(tz_id: &str, now: i64) -> Option<String> {

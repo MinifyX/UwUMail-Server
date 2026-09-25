@@ -1,13 +1,16 @@
-//! EmailSubmission/get, /query and /set (RFC 8621, section 7).
+//! EmailSubmission/get, /query and /set (RFC 8621, section 7), with delayed sending: every
+//! submission waits for the person's undo window (`undoSendSeconds`) unless it names its own time
+//! with `sendAt` or the FUTURERELEASE parameters `HOLDFOR`/`HOLDUNTIL` (RFC 4865). While it waits
+//! its `undoStatus` is `pending` and an update to `canceled` stops it.
 
 use serde_json::{Map, Value, json};
 use uwumail_smtp::{Submission, SubmissionRecipient, SubmitError};
-use uwumail_store::SubmissionRecord;
+use uwumail_store::{NewHeldSubmission, StoreError, SubmissionRecord};
 
 use super::email::{apply_destroys, apply_updates};
 use super::{Ctx, Outputs, SetResponse, check_set_size, get_ids, if_in_state, pick, properties};
 use crate::error::{MethodError, MethodResult, SetError};
-use crate::{dates, ids};
+use crate::{MAX_DELAYED_SEND_SECS, dates, ids};
 
 const DEFAULTS: &[&str] = &[
     "id",
@@ -22,8 +25,25 @@ const DEFAULTS: &[&str] = &[
     "mdnBlobIds",
 ];
 
+/// What became of each recipient, as far as the server knows: only a held message that could not
+/// be sent when its time came says something here.
+fn delivery_status(record: &SubmissionRecord, envelope: &Value) -> Value {
+    let Some(error) = &record.release_error else {
+        return Value::Null;
+    };
+    let mut status = Map::new();
+    for address in envelope.get("rcptTo").and_then(envelope_addresses).unwrap_or_default() {
+        status.insert(
+            address,
+            json!({ "smtpReply": format!("550 5.0.0 {error}"), "delivered": "no", "displayed": "unknown" }),
+        );
+    }
+    Value::Object(status)
+}
+
 fn to_json(record: &SubmissionRecord) -> Map<String, Value> {
     let envelope: Value = serde_json::from_str(&record.envelope).unwrap_or(Value::Null);
+    let delivery = delivery_status(record, &envelope);
     let Value::Object(map) = json!({
         "id": ids::submission(record.id),
         "identityId": ids::identity(record.identity_id),
@@ -32,7 +52,7 @@ fn to_json(record: &SubmissionRecord) -> Map<String, Value> {
         "envelope": envelope,
         "sendAt": dates::format(record.send_at),
         "undoStatus": record.undo_status,
-        "deliveryStatus": null,
+        "deliveryStatus": delivery,
         "dsnBlobIds": [],
         "mdnBlobIds": [],
     }) else {
@@ -105,7 +125,75 @@ fn envelope_addresses(value: &Value) -> Option<Vec<String>> {
         .map(|list| list.iter().filter_map(|a| a.get("email").and_then(Value::as_str).map(str::to_owned)).collect())
 }
 
-async fn create_one(ctx: &Ctx<'_>, object: &Map<String, Value>) -> Result<(i64, i64, String), SetError> {
+/// When the client wants the message to go: `sendAt`, or the FUTURERELEASE parameters of the
+/// envelope's `mailFrom` (RFC 4865: `HOLDFOR` seconds, `HOLDUNTIL` a date). `None` when it did
+/// not say.
+fn requested_send_at(object: &Map<String, Value>, now: i64) -> Result<Option<i64>, SetError> {
+    if let Some(value) = object.get("sendAt").filter(|v| !v.is_null()) {
+        let at = value
+            .as_str()
+            .and_then(dates::parse)
+            .ok_or_else(|| SetError::invalid_properties(&["sendAt"], "sendAt must be a UTCDate"))?;
+        return Ok(Some(at));
+    }
+    let parameters = object.get("envelope").and_then(|e| e.pointer("/mailFrom/parameters")).and_then(Value::as_object);
+    let Some(parameters) = parameters else { return Ok(None) };
+    let parameter = |name: &str| parameters.iter().find(|(key, _)| key.eq_ignore_ascii_case(name)).map(|(_, v)| v);
+    if let Some(value) = parameter("HOLDFOR") {
+        let seconds = value
+            .as_str()
+            .and_then(|v| v.trim().parse::<i64>().ok())
+            .or_else(|| value.as_i64())
+            .filter(|seconds| *seconds >= 0)
+            .ok_or_else(|| SetError::invalid_properties(&["envelope"], "HOLDFOR must be a number of seconds"))?;
+        return Ok(Some(now.saturating_add(seconds)));
+    }
+    if let Some(value) = parameter("HOLDUNTIL") {
+        let at = value
+            .as_str()
+            .and_then(dates::parse)
+            .ok_or_else(|| SetError::invalid_properties(&["envelope"], "HOLDUNTIL must be a date"))?;
+        return Ok(Some(at));
+    }
+    Ok(None)
+}
+
+fn submit_error(err: SubmitError, mail_from: &str) -> SetError {
+    match err {
+        SubmitError::NoFrom => SetError::new("invalidEmail", "the email has no From header"),
+        SubmitError::AmbiguousSender => SetError::new("invalidEmail", "a message may have only one Sender"),
+        SubmitError::ForbiddenFrom(address) if address == mail_from => {
+            SetError::new("forbiddenMailFrom", format!("you are not allowed to send as {address}"))
+        }
+        SubmitError::ForbiddenFrom(address) => {
+            SetError::new("forbiddenFrom", format!("you are not allowed to send as {address}"))
+        }
+        SubmitError::NoRecipients => SetError::new("noRecipients", "the email has no recipients"),
+        SubmitError::InvalidRecipient(address) => {
+            SetError::new("invalidRecipients", format!("{address} is not a valid address"))
+        }
+        SubmitError::NobodyAccepted => SetError::new("forbiddenToSend", "no recipient could take the message"),
+        SubmitError::SendingOff => {
+            SetError::new("forbiddenToSend", "sending through this server is switched off for this account")
+        }
+        SubmitError::TooManyRecipients => SetError::new("tooManyRecipients", "too many recipients"),
+        SubmitError::TooLarge => SetError::new("tooLarge", "the message is larger than this server accepts"),
+        SubmitError::Virus(name) => SetError::new("forbiddenToSend", format!("the message contains {name}")),
+        SubmitError::Queue(err) => SetError::from(err),
+    }
+}
+
+/// A created submission: its id, the thread, the email and whether it waits until `send_at`.
+struct Created {
+    id: i64,
+    thread_id: i64,
+    email_id: String,
+    send_at: i64,
+    pending: bool,
+}
+
+async fn create_one(ctx: &Ctx<'_>, object: &Map<String, Value>) -> Result<Created, SetError> {
+    let now = super::unix_now();
     let identity_id = object
         .get("identityId")
         .and_then(Value::as_str)
@@ -150,6 +238,19 @@ async fn create_one(ctx: &Ctx<'_>, object: &Map<String, Value>) -> Result<(i64, 
         return Err(SetError::new("noRecipients", "the email has no recipients"));
     }
 
+    let requested = requested_send_at(object, now)?;
+    if requested.is_some_and(|at| at > now + MAX_DELAYED_SEND_SECS) {
+        return Err(SetError::invalid_properties(
+            &["sendAt"],
+            format!("a message may be scheduled at most {MAX_DELAYED_SEND_SECS} seconds ahead"),
+        ));
+    }
+    // Without a time of its own the message waits for the person's undo window.
+    let send_at = match requested {
+        Some(at) => at.max(now),
+        None => now + ctx.jmap.store.undo_send_seconds(ctx.account.id).await? as i64,
+    };
+
     let raw = ctx.jmap.store.blob(&record.blob).await?;
     let submission = Submission {
         account: ctx.account.clone(),
@@ -159,33 +260,33 @@ async fn create_one(ctx: &Ctx<'_>, object: &Map<String, Value>) -> Result<(i64, 
         env_id: None,
         trace: None,
     };
-    let submitted = ctx.jmap.smtp.submit(submission).await.map_err(|err| match err {
-        SubmitError::NoFrom => SetError::new("invalidEmail", "the email has no From header"),
-        SubmitError::AmbiguousSender => SetError::new("invalidEmail", "a message may have only one Sender"),
-        SubmitError::ForbiddenFrom(address) if address == mail_from => {
-            SetError::new("forbiddenMailFrom", format!("you are not allowed to send as {address}"))
-        }
-        SubmitError::ForbiddenFrom(address) => {
-            SetError::new("forbiddenFrom", format!("you are not allowed to send as {address}"))
-        }
-        SubmitError::NoRecipients => SetError::new("noRecipients", "the email has no recipients"),
-        SubmitError::InvalidRecipient(address) => {
-            SetError::new("invalidRecipients", format!("{address} is not a valid address"))
-        }
-        SubmitError::NobodyAccepted => SetError::new("forbiddenToSend", "no recipient could take the message"),
-        SubmitError::SendingOff => {
-            SetError::new("forbiddenToSend", "sending through this server is switched off for this account")
-        }
-        SubmitError::TooManyRecipients => SetError::new("tooManyRecipients", "too many recipients"),
-        SubmitError::TooLarge => SetError::new("tooLarge", "the message is larger than this server accepts"),
-        SubmitError::Virus(name) => SetError::new("forbiddenToSend", format!("the message contains {name}")),
-        SubmitError::Queue(err) => SetError::from(err),
-    })?;
     let envelope_json = json!({
         "mailFrom": { "email": mail_from, "parameters": null },
         "rcptTo": rcpt_to.iter().map(|email| json!({ "email": email, "parameters": null })).collect::<Vec<_>>(),
     })
     .to_string();
+
+    if send_at > now {
+        // Refused now rather than when its time comes: a message that could never go.
+        ctx.jmap.smtp.check_submission(&submission).await.map_err(|err| submit_error(err, &mail_from))?;
+        let id = ctx
+            .jmap
+            .store
+            .hold_submission(NewHeldSubmission {
+                account_id: ctx.account.id,
+                identity_id,
+                email_id,
+                thread_id: record.thread_id,
+                envelope: envelope_json,
+                send_at,
+                blob: record.blob.clone(),
+            })
+            .await?;
+        ctx.jmap.wake.notify_one();
+        return Ok(Created { id, thread_id: record.thread_id, email_id: ids::email(email_id), send_at, pending: true });
+    }
+
+    let submitted = ctx.jmap.smtp.submit(submission).await.map_err(|err| submit_error(err, &mail_from))?;
     let id = ctx
         .jmap
         .store
@@ -198,7 +299,7 @@ async fn create_one(ctx: &Ctx<'_>, object: &Map<String, Value>) -> Result<(i64, 
             submitted.queue_message_id,
         )
         .await?;
-    Ok((id, record.thread_id, ids::email(email_id)))
+    Ok(Created { id, thread_id: record.thread_id, email_id: ids::email(email_id), send_at: now, pending: false })
 }
 
 pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Outputs> {
@@ -216,12 +317,17 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Outputs> {
                 None => Err(SetError::new("invalidProperties", "the submission must be an object")),
             };
             match result {
-                Ok((id, thread_id, email_id)) => {
+                Ok(Created { id, thread_id, email_id, send_at, pending }) => {
                     let jmap_id = ids::submission(id);
                     ctx.created_ids.insert(creation_id.clone(), jmap_id.clone());
                     response.created.insert(
                         creation_id.clone(),
-                        json!({ "id": jmap_id, "threadId": ids::thread(thread_id), "undoStatus": "final", "sendAt": dates::format(uwumail_now()) }),
+                        json!({
+                            "id": jmap_id,
+                            "threadId": ids::thread(thread_id),
+                            "undoStatus": if pending { "pending" } else { "final" },
+                            "sendAt": dates::format(send_at),
+                        }),
                     );
                     succeeded.push((format!("#{creation_id}"), email_id.clone()));
                     succeeded.push((jmap_id, email_id));
@@ -234,10 +340,16 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Outputs> {
     }
 
     if let Some(update) = args.get("update").and_then(Value::as_object) {
-        for id in update.keys() {
-            response
-                .not_updated
-                .insert(id.clone(), SetError::new("cannotUnsend", "the message was already sent").to_json());
+        for (id, patch) in update {
+            let result = cancel(ctx, id, patch).await;
+            match result {
+                Ok(()) => {
+                    response.updated.insert(id.clone(), Value::Null);
+                }
+                Err(err) => {
+                    response.not_updated.insert(id.clone(), err.to_json());
+                }
+            }
         }
     }
     if let Some(destroy) = args.get("destroy").and_then(Value::as_array) {
@@ -287,6 +399,23 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Outputs> {
     Ok(outputs)
 }
 
-fn uwumail_now() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
+/// The only change a submission takes: `undoStatus` to `canceled` while it is still pending.
+async fn cancel(ctx: &Ctx<'_>, id: &str, patch: &Value) -> Result<(), SetError> {
+    let number = ctx.parse_id('s', id).ok_or_else(SetError::not_found)?;
+    let patch = patch.as_object().ok_or_else(|| SetError::new("invalidPatch", "the patch must be an object"))?;
+    for (key, value) in patch {
+        if key != "undoStatus" {
+            return Err(SetError::invalid_properties(&[key.as_str()], format!("{key} cannot be changed")));
+        }
+        if value != "canceled" {
+            return Err(SetError::invalid_properties(&["undoStatus"], "undoStatus can only be set to canceled"));
+        }
+    }
+    match ctx.jmap.store.cancel_submission(ctx.account.id, number).await {
+        Ok(()) => Ok(()),
+        Err(StoreError::Rule { code: "cannotUnsend", .. }) => {
+            Err(SetError::new("cannotUnsend", "the message was already sent"))
+        }
+        Err(err) => Err(SetError::from(err)),
+    }
 }

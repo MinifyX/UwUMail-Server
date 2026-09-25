@@ -17,6 +17,7 @@ mod login;
 mod logs;
 pub mod loki;
 mod notices;
+pub mod profile_signing;
 mod routes;
 mod session;
 pub mod settings;
@@ -90,9 +91,18 @@ struct Inner {
     backups: std::sync::OnceLock<uwumail_backup::Backups>,
     /// The way out for a message's remote pictures, once the server plugged it in.
     egress: std::sync::OnceLock<uwumail_smtp::egress::Egress>,
+    /// The certificate and key Apple configuration profiles are signed with, once plugged in.
+    profile_key: std::sync::OnceLock<profile_signing::ProfileKeySource>,
 }
 
 impl Web {
+    /// Tells a person, by mail and in their activity list, that a program created an app password
+    /// for their account over JMAP (`/jmap/token`), exactly like one made in the portal.
+    pub async fn notify_app_password_created(&self, account: &uwumail_store::Account, name: String, ip: &str) {
+        let notice = notices::Notice::AppPasswordCreated { name };
+        notices::notify(self, account, notice, notices::Origin { actor: "", ip }).await;
+    }
+
     pub fn new(smtp: Smtp, settings: WebSettings) -> Web {
         let dns =
             DnsChecker::new().inspect_err(|err| tracing::warn!(%err, "DNS checks of domains are not available")).ok();
@@ -113,6 +123,7 @@ impl Web {
                 host: std::sync::OnceLock::new(),
                 backups: std::sync::OnceLock::new(),
                 egress: std::sync::OnceLock::new(),
+                profile_key: std::sync::OnceLock::new(),
             }),
         }
     }
@@ -178,6 +189,16 @@ impl Web {
         let _ = self.inner.egress.set(egress);
     }
 
+    /// Lets Apple configuration profiles be signed with the server's certificate (docs/calendars.md
+    /// explains why it matters). Only the first call counts.
+    pub fn set_profile_key(&self, source: profile_signing::ProfileKeySource) {
+        let _ = self.inner.profile_key.set(source);
+    }
+
+    pub(crate) fn profile_key(&self) -> Option<&profile_signing::ProfileKeySource> {
+        self.inner.profile_key.get()
+    }
+
     pub(crate) fn egress(&self) -> Option<&uwumail_smtp::egress::Egress> {
         self.inner.egress.get()
     }
@@ -236,12 +257,15 @@ impl Web {
                 get(routes::gateway::show).post(routes::gateway::pair).delete(routes::gateway::forget),
             )
             .route("/api/admin/gateway/jobs", post(routes::gateway::ask))
+            .route("/api/admin/gateway/cloudflare", post(routes::gateway::cloudflare))
             .route("/api/admin/setup/test-mail", post(routes::setup::send_test_mail))
             .route("/api/admin/setup/test-mail/{id}", get(routes::setup::test_mail_status))
             .route("/api/auth/passkey/options", post(routes::auth::passkey_options))
             .route("/api/auth/passkey", post(routes::auth::passkey_login))
             .route("/api/account", get(routes::account::profile))
             .route("/api/account/preferences", patch(routes::account::update_preferences))
+            .route("/api/account/identities", get(routes::account::identities))
+            .route("/api/account/identities/{id}", patch(routes::account::update_identity))
             .route("/api/account/webmail", get(routes::webmail::access))
             .route("/api/account/security", get(routes::security::overview))
             .route("/api/account/password", post(routes::security::change_password))
@@ -270,10 +294,17 @@ impl Web {
             .route("/api/account/fetch/{id}", patch(routes::fetch::update).delete(routes::fetch::delete))
             .route("/api/account/fetch/{id}/run", post(routes::fetch::fetch_now))
             .route("/api/account/fetch/{id}/existing", post(routes::fetch::take_existing))
+            .route("/api/account/calendars", get(routes::calendars::list))
+            .route("/api/account/calendars/{id}/shares", put(routes::calendars::share))
+            .route("/api/account/calendars/{id}/shares/{account}", delete(routes::calendars::unshare))
+            .route("/api/account/shared-calendars/{id}", delete(routes::calendars::leave))
             .route("/api/account/addresses", get(routes::own::addresses))
             .route("/api/account/aliases", post(routes::own::create_alias))
             .route("/api/account/aliases/{address}", delete(routes::own::delete_alias))
             .route("/api/account/storage", get(routes::own::storage))
+            .route("/api/account/sharing", get(routes::sharing::show))
+            .route("/api/account/sharing/{mailbox}", put(routes::sharing::share))
+            .route("/api/account/sharing/{mailbox}/{login}", delete(routes::sharing::unshare))
             .route("/api/account/greylist", get(routes::greylist::waiting))
             .route("/api/account/greylist/{id}", post(routes::greylist::decide))
             .route("/api/account/spam", get(routes::spam::account_overview))

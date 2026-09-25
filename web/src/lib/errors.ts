@@ -32,6 +32,7 @@ const KNOWN = [
   "hostJobRefused",
   "updateRefused",
   "gatewayForgetFailed",
+  "gatewayNoAddresses",
   "wrongPassword",
   "samePassword",
   "tooManyAttempts",
@@ -81,6 +82,9 @@ const KNOWN = [
   "lokiUnreachable",
   "providerNotFound",
   "fetchLimit",
+  "unknownPerson",
+  "ownShare",
+  "tooManyShares",
 ];
 
 /** Turns an API error into a sentence for the person in front of the screen. */

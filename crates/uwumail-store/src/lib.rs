@@ -8,6 +8,7 @@
 //! thread pool. One writer connection serializes writes; reads use a small
 //! pool of read-only connections.
 
+mod acl;
 mod address;
 mod admin;
 mod bayes;
@@ -23,9 +24,11 @@ mod fetch;
 mod forward_addresses;
 mod forwarding;
 mod greylist_hold;
+mod held;
 pub mod ical;
 mod imap;
 mod import;
+pub mod itip;
 mod mail;
 mod mutate;
 mod objects;
@@ -38,9 +41,11 @@ mod reports;
 mod rules;
 mod security;
 mod sender_lists;
+mod sharing;
 mod sieve;
 mod spam;
 mod spam_log;
+mod suggestions;
 mod user_settings;
 mod web;
 mod word_lists;
@@ -51,6 +56,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::sync::{Notify, broadcast};
 
+pub use acl::{ALL_RIGHTS, AclEntry, ShareLevel, SharePerson, SharedMailbox, has_rights, normalize_rights};
 pub use address::{EmailAddress, normalize_address, normalize_domain};
 pub use admin::{
     AccountUpdate, AddressInfo, AuditEntry, AuditRecord, PasswordLink, PasswordLinkPurpose, Person,
@@ -69,7 +75,9 @@ pub use dav::{
     NewDavCollection, dav_etag,
 };
 pub use directory::{Account, DkimKey, DkimKeyAlgorithm, DkimKeyState, Domain, NewAccount, Protocols, Role};
-pub use extras::{Identity, IdentityUpdate, SubmissionRecord, UPLOAD_LIFETIME_SECS, VacationResponse};
+pub use extras::{
+    IDENTITY_SIGNATURE_MAX_BYTES, Identity, IdentityUpdate, SubmissionRecord, UPLOAD_LIFETIME_SECS, VacationResponse,
+};
 pub use feeds::FeedState;
 pub use fetch::{
     AfterFetch, DEFAULT_FETCH_INTERVAL_SECS, FETCH_HOLD_LIMIT_SECS, FETCH_SEEN_SECS, FetchAccount, FetchAccountUpdate,
@@ -79,6 +87,7 @@ pub use fetch::{
 pub use forward_addresses::{FORWARD_ADDRESS_MAX_TARGETS, ForwardAddress};
 pub use forwarding::{ActiveForwarding, FORWARD_LINK_LIFETIME_SECS, ForwardTarget, Forwarding, MAX_FORWARD_TARGETS};
 pub use greylist_hold::{GreylistHold, GreylistHoldMessage, MAX_HELD_SIZE, NewGreylistHold, Returning, Settled};
+pub use held::{HeldSubmission, NewHeldSubmission};
 pub use imap::{DELETED_KEYWORD, FlagChange, ImapEmail, ImapMailbox, ImapMessage, ImapMessages, ImapStatus};
 pub use import::ImportProgress;
 pub use mail::{EmailSummary, IngestRequest, IngestedEmail, Mailbox, MailboxRole, MailboxTarget, TestMessageStatus};
@@ -106,6 +115,7 @@ pub use sender_lists::{
     ListOwner, ListScope, NewSenderListEntry, SENDER_LIST_ADMIN_LIMIT, SENDER_LIST_PERSONAL_LIMIT, SenderKind,
     SenderList, SenderListEntry, guess_sender_kind, normalize_sender, pattern_matches,
 };
+pub use sharing::{DAV_SHARES_PER_COLLECTION, DavAccess, DavShare, ShareRights, SharedDavCollection};
 pub use sieve::{
     SIEVE_MAX_NAME_SIZE, SIEVE_MAX_SCRIPT_SIZE, SIEVE_MAX_SCRIPTS, SieveActivation, SieveError, SieveScript,
     validate_sieve_name,
@@ -118,9 +128,10 @@ pub use spam_log::{
     FetchedVerdicts, NewSpamLogEntry, SPAM_LOG_MAX_ROWS, SpamAction, SpamLogEntry, SpamLogFilter, SpamLogHit,
     SpamLogRecipient,
 };
+pub use suggestions::AddressUse;
 pub use user_settings::{
-    SettingProblem, SettingsChange, USER_SETTINGS_MAX_KEYS, USER_SETTINGS_MAX_SIZE, USER_SETTINGS_MAX_VALUE_SIZE,
-    UserSettings, validate_setting,
+    DEFAULT_UNDO_SEND_SECONDS, SettingProblem, SettingsChange, USER_SETTINGS_MAX_KEYS, USER_SETTINGS_MAX_SIZE,
+    USER_SETTINGS_MAX_VALUE_SIZE, UserSettings, validate_setting,
 };
 pub use web::{NewWebSession, ServerCounts, WebSession};
 pub use word_lists::{
