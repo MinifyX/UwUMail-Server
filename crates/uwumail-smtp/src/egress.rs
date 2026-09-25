@@ -356,8 +356,7 @@ impl Connector {
             Ok(ip) => vec![SocketAddr::new(ip, port)],
             Err(_) => tokio::net::lookup_host((host, port)).await?.collect(),
         };
-        let public: Vec<SocketAddr> =
-            found.into_iter().filter(|address| is_public(address.ip())).take(MAX_ADDRESSES).collect();
+        let public = candidates(found, self.proxy.is_some());
         if public.is_empty() {
             return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "not a public address"));
         }
@@ -383,6 +382,18 @@ impl Connector {
         tracing::warn!(%err, "the egress proxy failed, the picture stays away");
         Err(err)
     }
+}
+
+/// The public addresses of a name, in the order they are tried. Through a proxy, IPv4 comes first: a VPN
+/// container usually has no IPv6 route, and gluetun's kill switch drops such a tunnel silently, so every
+/// IPv6 address the system put first would wait out [`CONNECT_TIMEOUT`] and the picture never came.
+fn candidates(found: Vec<SocketAddr>, proxied: bool) -> Vec<SocketAddr> {
+    let mut public: Vec<SocketAddr> = found.into_iter().filter(|address| is_public(address.ip())).collect();
+    if proxied {
+        public.sort_by_key(SocketAddr::is_ipv6);
+    }
+    public.truncate(MAX_ADDRESSES);
+    public
 }
 
 impl tower::Service<Uri> for Connector {
@@ -898,6 +909,30 @@ mod tests {
         assert!(Proxy::parse("gluetun:8888").is_err());
         assert!(Proxy::parse("https://proxy.example").is_err(), "a TLS proxy is not spoken");
         assert!(Proxy::parse(&format!("socks5://{}:x@proxy.example", "u".repeat(256))).is_err());
+    }
+
+    #[test]
+    fn through_a_proxy_ipv4_is_tried_first() {
+        let address = |text: &str| text.parse::<SocketAddr>().unwrap();
+        // How a CDN answers on a machine with IPv6: more AAAA than the three addresses that are tried.
+        let found = vec![
+            address("[2600:9000:1::1]:443"),
+            address("[2600:9000:2::1]:443"),
+            address("[2600:9000:3::1]:443"),
+            address("10.0.0.1:443"),
+            address("93.184.215.14:443"),
+            address("93.184.215.15:443"),
+        ];
+        assert_eq!(
+            candidates(found.clone(), true),
+            [address("93.184.215.14:443"), address("93.184.215.15:443"), address("[2600:9000:1::1]:443")],
+            "the VPN reaches IPv4; IPv6 only once that failed"
+        );
+        assert_eq!(
+            candidates(found, false),
+            [address("[2600:9000:1::1]:443"), address("[2600:9000:2::1]:443"), address("[2600:9000:3::1]:443")]
+        );
+        assert!(candidates(vec![address("10.0.0.1:443")], true).is_empty(), "never into the network");
     }
 
     #[tokio::test]
