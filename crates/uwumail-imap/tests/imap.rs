@@ -208,7 +208,7 @@ async fn append_store_search_move_and_expunge() {
     find(&lines, "* 2 EXISTS");
     let (lines, done) = client.command("STORE 1 +FLAGS (\\Flagged $Forwarded)").await;
     assert!(done.contains("OK"), "{done}");
-    assert!(find(&lines, "* 1 FETCH").contains("FLAGS (\\Draft \\Flagged $forwarded)"));
+    assert!(find(&lines, "* 1 FETCH").contains("FLAGS (\\Draft \\Flagged $Forwarded)"));
     let (lines, _) = client.command("SEARCH FLAGGED").await;
     assert_eq!(find(&lines, "* SEARCH"), "* SEARCH 1");
     let (lines, _) = client.command("UID SEARCH RETURN (COUNT ALL) SUBJECT entwurf").await;

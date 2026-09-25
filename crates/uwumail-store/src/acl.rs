@@ -320,11 +320,11 @@ impl Store {
     /// Accounts that share at least one mailbox with this one.
     pub async fn sharing_owners(&self, grantee_id: i64) -> Result<Vec<i64>> {
         self.read(move |conn| {
-            let mut stmt = conn.prepare(&format!(
+            let mut stmt = conn.prepare(
                 "SELECT DISTINCT o.id FROM mailbox_acl acl
                  JOIN accounts o ON o.id = acl.owner_id AND o.deleted_at IS NULL
-                 WHERE acl.grantee_id = ?1 ORDER BY o.id"
-            ))?;
+                 WHERE acl.grantee_id = ?1 ORDER BY o.id",
+            )?;
             let rows = stmt.query_map([grantee_id], |row| row.get(0))?;
             Ok(rows.collect::<Result<_, _>>()?)
         })
@@ -441,9 +441,9 @@ mod tests {
         let leni = person(&store, "leni@example.org").await;
         let nyu = person(&store, "nyu@example.org").await;
         let folder = store.create_mailbox(mini, "Projekte", None, None, 0, true).await.unwrap();
-        let inbox = inbox(&store, mini).await;
+        let mini_inbox = inbox(&store, mini).await;
         store.set_mailbox_acl(mini, folder, "leni@example.org", ShareLevel::Write.rights()).await.unwrap();
-        store.set_mailbox_acl(mini, inbox, "nyu@example.org", ShareLevel::Read.rights()).await.unwrap();
+        store.set_mailbox_acl(mini, mini_inbox, "nyu@example.org", ShareLevel::Read.rights()).await.unwrap();
         store.set_mailbox_acl(nyu, inbox(&store, nyu).await, "mini@example.org", "lr").await.unwrap();
 
         store.destroy_mailbox(mini, folder, true).await.unwrap();

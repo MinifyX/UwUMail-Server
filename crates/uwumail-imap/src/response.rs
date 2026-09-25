@@ -32,6 +32,16 @@ impl Out {
         self
     }
 
+    /// A literal8 (`~{n}`, RFC 3516) when the data holds a NUL, which no plain literal may.
+    pub fn literal8(&mut self, data: &[u8]) -> &mut Self {
+        if !data.contains(&0) {
+            return self.literal(data);
+        }
+        self.raw(&format!("~{{{}}}\r\n", data.len()));
+        self.bytes.extend_from_slice(data);
+        self
+    }
+
     /// A string as a quoted string when it can be one, as a literal otherwise.
     pub fn string(&mut self, data: &[u8]) -> &mut Self {
         let plain = data.iter().all(|&b| b != 0 && b != b'\r' && b != b'\n');
@@ -111,6 +121,14 @@ pub fn flags(keywords: &[String]) -> String {
             "$flagged" => "\\Flagged".to_owned(),
             "$draft" => "\\Draft".to_owned(),
             "$deleted" => "\\Deleted".to_owned(),
+            // Keywords are kept in lower case; the registered ones (RFC 9051, section 2.3.2) go out
+            // as they are written there.
+            "$forwarded" => "$Forwarded".to_owned(),
+            "$mdnsent" => "$MDNSent".to_owned(),
+            "$junk" => "$Junk".to_owned(),
+            "$notjunk" => "$NotJunk".to_owned(),
+            "$phishing" => "$Phishing".to_owned(),
+            "$important" => "$Important".to_owned(),
             other => other.to_owned(),
         })
         .collect();
@@ -327,6 +345,67 @@ pub fn section_bytes(raw: &[u8], root: &Part, section: &Section) -> Option<Vec<u
     })
 }
 
+/// `BINARY[1.2]`.
+pub fn binary_label(part: &[u32]) -> String {
+    let parts: Vec<String> = part.iter().map(u32::to_string).collect();
+    format!("BINARY[{}]", parts.join("."))
+}
+
+/// A part with its content transfer encoding undone (RFC 3516), empty when the message has no
+/// such part, `None` when the encoding is one this server does not know.
+pub fn binary_bytes(raw: &[u8], root: &Part, part: &[u32]) -> Option<Vec<u8>> {
+    if part.is_empty() {
+        return Some(raw.to_vec());
+    }
+    let Some(found) = root.find(part) else {
+        return Some(Vec::new());
+    };
+    let body = &raw[found.body.clone()];
+    match found.encoding.as_deref().map(str::to_ascii_lowercase).as_deref() {
+        None | Some("7bit" | "8bit" | "binary") => Some(body.to_vec()),
+        Some("base64") => {
+            use base64::Engine as _;
+            let clean: Vec<u8> = body.iter().copied().filter(|b| !b.is_ascii_whitespace()).collect();
+            let engine = base64::engine::GeneralPurpose::new(
+                &base64::alphabet::STANDARD,
+                base64::engine::GeneralPurposeConfig::new()
+                    .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent)
+                    .with_decode_allow_trailing_bits(true),
+            );
+            Some(engine.decode(clean).unwrap_or_default())
+        }
+        Some("quoted-printable") => Some(quoted_printable(body)),
+        Some(_) => None,
+    }
+}
+
+fn quoted_printable(body: &[u8]) -> Vec<u8> {
+    let hex = |b: u8| (b as char).to_digit(16).map(|d| d as u8);
+    let mut out = Vec::with_capacity(body.len());
+    let mut i = 0;
+    while i < body.len() {
+        if body[i] != b'=' {
+            out.push(body[i]);
+            i += 1;
+            continue;
+        }
+        match (body.get(i + 1).copied(), body.get(i + 2).copied()) {
+            // A soft line break.
+            (Some(b'\r'), Some(b'\n')) => i += 3,
+            (Some(b'\n'), _) => i += 2,
+            (Some(high), Some(low)) if hex(high).is_some() && hex(low).is_some() => {
+                out.push(hex(high).unwrap_or_default() << 4 | hex(low).unwrap_or_default());
+                i += 3;
+            }
+            _ => {
+                out.push(b'=');
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
 /// How a section is named in the answer, like `BODY[1.2.HEADER.FIELDS (FROM)]<0>`.
 pub fn section_label(section: &Section, origin: Option<u32>) -> String {
     let mut label = String::from("BODY[");
@@ -407,7 +486,7 @@ mod tests {
     #[test]
     fn numbers_flags_and_dates() {
         assert_eq!(sequence_set(&[1, 2, 3, 5, 7, 8]), "1:3,5,7:8");
-        assert_eq!(flags(&["$seen".into(), "$forwarded".into()]), "(\\Seen $forwarded)");
+        assert_eq!(flags(&["$seen".into(), "$forwarded".into()]), "(\\Seen $Forwarded)");
         assert_eq!(internal_date(0), "\"01-Jan-1970 00:00:00 +0000\"");
         assert_eq!(internal_date(1_789_634_096), "\"17-Sep-2026 08:34:56 +0000\"");
         assert_eq!(civil_from_days(crate::parser::days_from_civil(2024, 2, 29)), (2024, 2, 29));
