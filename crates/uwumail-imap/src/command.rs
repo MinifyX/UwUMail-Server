@@ -5,6 +5,9 @@
 pub enum SeqNum {
     Value(u32),
     Largest,
+    /// `$`: the result a `SEARCH RETURN (SAVE)` kept (RFC 5182). The session puts the saved
+    /// messages in its place before using the set; left alone it matches nothing.
+    Saved,
 }
 
 impl SeqNum {
@@ -12,6 +15,7 @@ impl SeqNum {
         match self {
             SeqNum::Value(value) => value,
             SeqNum::Largest => largest,
+            SeqNum::Saved => 0,
         }
     }
 }
@@ -27,6 +31,11 @@ impl SequenceSet {
             let (a, b) = (from.resolve(largest), to.resolve(largest));
             (a.min(b)..=a.max(b)).contains(&number)
         })
+    }
+
+    /// Whether the set is or holds `$`.
+    pub fn uses_saved(&self) -> bool {
+        self.0.iter().any(|(from, to)| *from == SeqNum::Saved || *to == SeqNum::Saved)
     }
 
     /// The ranges with `*` resolved, each with the smaller number first.
@@ -141,6 +150,28 @@ pub enum CommandBody {
     GetQuotaRoot {
         mailbox: String,
     },
+    /// Back to not being logged in (RFC 8437).
+    Unauthenticate,
+    // Access control lists (RFC 4314).
+    GetAcl {
+        mailbox: String,
+    },
+    SetAcl {
+        mailbox: String,
+        identifier: String,
+        rights: String,
+    },
+    DeleteAcl {
+        mailbox: String,
+        identifier: String,
+    },
+    ListRights {
+        mailbox: String,
+        identifier: String,
+    },
+    MyRights {
+        mailbox: String,
+    },
 }
 
 /// SELECT's QRESYNC parameter: what the client knew about the mailbox.
@@ -215,7 +246,20 @@ pub enum FetchItem {
     BodyStructure,
     Uid,
     ModSeq,
-    BodySection { section: Section, partial: Option<(u32, u32)>, peek: bool },
+    BodySection {
+        section: Section,
+        partial: Option<(u32, u32)>,
+        peek: bool,
+    },
+    /// A part with its content transfer encoding undone (RFC 3516).
+    Binary {
+        part: Vec<u32>,
+        partial: Option<(u32, u32)>,
+        peek: bool,
+    },
+    BinarySize {
+        part: Vec<u32>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -224,6 +268,8 @@ pub enum SearchReturn {
     Max,
     All,
     Count,
+    /// Keep the result for `$` (RFC 5182).
+    Save,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

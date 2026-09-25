@@ -1630,6 +1630,35 @@
       "trash": "已删除"
     }
   },
+  "sharing": {
+    "title": "共享文件夹",
+    "intro": "让此服务器上的人在他们的邮件应用和网页邮箱中使用你的文件夹。他们放入的邮件计入你的存储空间。",
+    "none": "未共享",
+    "sharedWith_other": "已与 {{count}} 人共享",
+    "share": "共享",
+    "shareTitle": "共享{{folder}}",
+    "person": "对象",
+    "personPlaceholder": "选择一个人",
+    "level": "可以",
+    "levels": {
+      "read": "阅读",
+      "write": "阅读和编辑",
+      "all": "全部"
+    },
+    "levelHints": {
+      "read": "查看邮件。",
+      "write": "还可以标记、归档和删除邮件。",
+      "all": "还可以在其中新建文件夹、重命名或删除它，并继续共享。"
+    },
+    "remove": "停止共享",
+    "saved": "已将{{folder}}与{{person}}共享",
+    "removed": "{{person}}已看不到{{folder}}",
+    "noPeople": "此服务器上还没有可以共享的其他人。",
+    "withMeTitle": "与我共享",
+    "withMeEmpty": "还没有人与你共享文件夹。",
+    "withMeFrom": "来自 {{owner}}",
+    "withMeHint": "它们在邮件应用中显示在“Shared”下，在网页邮箱中显示为单独的账户。"
+  },
   "setup": {
     "title": "设置向导",
     "progress": "第 {{step}} 步，共 {{count}} 步",

@@ -188,8 +188,8 @@ async fn serve(jmap: Jmap, account_id: i64, mut socket: WebSocket) {
             }
             change = watcher.wait(), if push => {
                 let Some(change) = change else { return };
-                if let Some(changed) = watcher.changed(change.modseq).await
-                    && !send(&mut socket, state_change(account_id, changed, change.modseq)).await
+                if let Some((changed_account, changed)) = watcher.changed_by(&change).await
+                    && !send(&mut socket, state_change(changed_account, changed, watcher.last_modseq)).await
                 {
                     return;
                 }

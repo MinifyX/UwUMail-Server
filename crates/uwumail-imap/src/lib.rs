@@ -1,5 +1,6 @@
-//! IMAP4rev1 with the extensions mail apps expect (IDLE, UIDPLUS, MOVE, SPECIAL-USE, CONDSTORE,
-//! QRESYNC, ESEARCH, QUOTA, UTF8=ACCEPT and more), on top of the store's mailboxes and messages.
+//! IMAP4rev1 and IMAP4rev2 with the extensions mail apps expect (IDLE, UIDPLUS, MOVE, SPECIAL-USE, CONDSTORE,
+//! QRESYNC, ESEARCH, QUOTA, UTF8=ACCEPT, ACL and more), on top of the store's mailboxes and messages,
+//! folders others share with the account among them (docs/sharing.md).
 //! Only implicit TLS (port 993) is offered. ManageSieve (RFC 5804, port 4190) lives here too: it
 //! shares the logins and the lockouts.
 

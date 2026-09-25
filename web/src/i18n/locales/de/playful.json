@@ -145,5 +145,9 @@
     "signatures": {
       "saved": "Signatur gespeichert (ﾉ◕ヮ◕)ﾉ"
     }
+  },
+  "sharing": {
+    "withMeEmpty": "Noch teilt niemand einen Ordner mit dir (｡•ᴗ•｡)",
+    "saved": "{{folder}} ist mit {{person}} geteilt (ﾉ◕ヮ◕)ﾉ"
   }
 }

@@ -8,6 +8,7 @@
 //! thread pool. One writer connection serializes writes; reads use a small
 //! pool of read-only connections.
 
+mod acl;
 mod address;
 mod admin;
 mod bayes;
@@ -53,6 +54,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::sync::{Notify, broadcast};
 
+pub use acl::{ALL_RIGHTS, AclEntry, ShareLevel, SharePerson, SharedMailbox, has_rights, normalize_rights};
 pub use address::{EmailAddress, normalize_address, normalize_domain};
 pub use admin::{
     AccountUpdate, AddressInfo, AuditEntry, AuditRecord, PasswordLink, PasswordLinkPurpose, Person,

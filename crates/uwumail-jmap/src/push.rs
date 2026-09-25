@@ -1,5 +1,6 @@
 //! Push over EventSource (RFC 8620, section 7.3), and what the WebSocket push shares with it.
 
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::time::Duration;
 
@@ -49,6 +50,8 @@ pub(crate) struct Watcher {
     changes: broadcast::Receiver<StateChange>,
     /// Everything up to here was reported.
     pub last_modseq: i64,
+    /// The last change pushed per account shared with this one.
+    shared_modseqs: HashMap<i64, i64>,
 }
 
 /// All push types, for a client that asks for everything.
@@ -60,16 +63,21 @@ impl Watcher {
     pub async fn new(store: Store, account_id: i64, types: Vec<String>) -> Watcher {
         let changes = store.subscribe_changes();
         let last_modseq = store.account_modseq(account_id).await.unwrap_or(0);
-        Watcher { store, account_id, types, changes, last_modseq }
+        Watcher { store, account_id, types, changes, last_modseq, shared_modseqs: HashMap::new() }
     }
 
-    /// Waits for the next change of this account. Safe to cancel: nothing is lost when it is.
-    /// `None` when the server shuts down.
+    /// Waits for the next change of this account or of an account that shares mail with it. Safe
+    /// to cancel: nothing is lost when it is. `None` when the server shuts down.
     pub async fn wait(&mut self) -> Option<StateChange> {
         loop {
             match self.changes.recv().await {
                 Ok(change) if change.account_id == self.account_id => return Some(change),
-                Ok(_) => continue,
+                Ok(change) => {
+                    let owners = self.store.sharing_owners(self.account_id).await.unwrap_or_default();
+                    if owners.contains(&change.account_id) {
+                        return Some(change);
+                    }
+                }
                 // Missed some changes: report everything as changed.
                 Err(broadcast::error::RecvError::Lagged(_)) => {
                     let modseq = self.store.account_modseq(self.account_id).await.unwrap_or(self.last_modseq);
@@ -102,10 +110,32 @@ impl Watcher {
         (!changed.is_empty()).then_some(changed)
     }
 
-    pub fn account_id(&self) -> i64 {
-        self.account_id
+    /// The account and `changed` map of a `StateChange` for a change [`Watcher::wait`] returned:
+    /// this account's own, or a change of someone sharing mail with it, pushed as a change of
+    /// their shared account (docs/sharing.md). `None` when nothing asked for changed.
+    pub async fn changed_by(&mut self, change: &StateChange) -> Option<(i64, Map<String, Value>)> {
+        if change.account_id == self.account_id {
+            return self.changed(change.modseq).await.map(|changed| (self.account_id, changed));
+        }
+        let owner = change.account_id;
+        let since = self.shared_modseqs.get(&owner).copied().unwrap_or(change.modseq - 1);
+        self.shared_modseqs.insert(owner, since.max(change.modseq));
+        let kinds = self.store.changed_kinds(owner, since).await.ok()?;
+        let mut changed = Map::new();
+        for kind in kinds.iter().filter(|k| SHARED_TYPES.contains(&k.as_str())) {
+            if self.types.iter().any(|t| t == kind) {
+                changed.insert(kind.clone(), json!(change.modseq.to_string()));
+            }
+        }
+        if kinds.iter().any(|k| k == "Email") && self.types.iter().any(|t| t == "EmailDelivery") {
+            changed.insert("EmailDelivery".into(), json!(change.modseq.to_string()));
+        }
+        (!changed.is_empty()).then_some((owner, changed))
     }
 }
+
+/// What a shared account has.
+const SHARED_TYPES: &[&str] = &["Mailbox", "Email", "Thread"];
 
 struct Listener {
     watcher: Watcher,
@@ -131,12 +161,12 @@ async fn next_event(mut listener: Listener) -> Option<(Result<Event, Infallible>
             None => listener.watcher.wait().await,
         };
         let change = received?;
-        let Some(changed) = listener.watcher.changed(change.modseq).await else {
+        let Some((account_id, changed)) = listener.watcher.changed_by(&change).await else {
             continue;
         };
         let data = json!({
             "@type": "StateChange",
-            "changed": { ids::account(listener.watcher.account_id()): Value::Object(changed) }
+            "changed": { ids::account(account_id): Value::Object(changed) }
         });
         listener.done = listener.close_after_state;
         return Some((Ok(Event::default().event("state").data(data.to_string())), listener));

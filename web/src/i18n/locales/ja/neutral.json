@@ -1630,6 +1630,35 @@
       "trash": "ゴミ箱"
     }
   },
+  "sharing": {
+    "title": "共有フォルダー",
+    "intro": "このサーバーの人が、メールアプリやウェブメールであなたのフォルダーを使えるようにします。そこに入れられたメールはあなたの容量に数えられます。",
+    "none": "共有していません",
+    "sharedWith_other": "{{count}}人と共有中",
+    "share": "共有",
+    "shareTitle": "{{folder}}を共有",
+    "person": "相手",
+    "personPlaceholder": "相手を選ぶ",
+    "level": "できること",
+    "levels": {
+      "read": "閲覧",
+      "write": "閲覧と編集",
+      "all": "すべて"
+    },
+    "levelHints": {
+      "read": "メッセージを見られます。",
+      "write": "メッセージの既読・整理・削除もできます。",
+      "all": "中にフォルダーを作る、名前の変更や削除、さらに共有することもできます。"
+    },
+    "remove": "共有をやめる",
+    "saved": "{{folder}}を{{person}}と共有しました",
+    "removed": "{{person}}は{{folder}}を見られなくなりました",
+    "noPeople": "このサーバーには、まだ共有できる相手がいません。",
+    "withMeTitle": "自分と共有されたもの",
+    "withMeEmpty": "まだ誰もフォルダーを共有していません。",
+    "withMeFrom": "{{owner}}から",
+    "withMeHint": "メールアプリでは「Shared」の下に、ウェブメールでは別のアカウントとして表示されます。"
+  },
   "setup": {
     "title": "セットアップ",
     "progress": "ステップ {{step}} / {{count}}",

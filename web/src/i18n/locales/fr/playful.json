@@ -147,5 +147,9 @@
     "signatures": {
       "saved": "Signature enregistrée (ﾉ◕ヮ◕)ﾉ"
     }
+  },
+  "sharing": {
+    "withMeEmpty": "Personne ne partage encore de dossier avec toi (｡•ᴗ•｡)",
+    "saved": "{{folder}} est partagé avec {{person}} (ﾉ◕ヮ◕)ﾉ"
   }
 }

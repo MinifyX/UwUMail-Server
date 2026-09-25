@@ -1678,6 +1678,36 @@
       "trash": "Papierkorb"
     }
   },
+  "sharing": {
+    "title": "Geteilte Ordner",
+    "intro": "Lass Leute auf diesem Server deine Ordner in ihrer Mail-App und im Webmail benutzen. Was sie dort ablegen, zählt zu deinem Speicher.",
+    "none": "Nicht geteilt",
+    "sharedWith_one": "Mit {{count}} Person geteilt",
+    "sharedWith_other": "Mit {{count}} Personen geteilt",
+    "share": "Teilen",
+    "shareTitle": "{{folder}} teilen",
+    "person": "Person",
+    "personPlaceholder": "Jemanden wählen",
+    "level": "Darf",
+    "levels": {
+      "read": "Lesen",
+      "write": "Lesen und schreiben",
+      "all": "Alles"
+    },
+    "levelHints": {
+      "read": "Die Nachrichten sehen.",
+      "write": "Auch Nachrichten markieren, ablegen und löschen.",
+      "all": "Auch Ordner darin anlegen, ihn umbenennen oder löschen und weiter teilen."
+    },
+    "remove": "Nicht mehr teilen",
+    "saved": "{{folder}} ist mit {{person}} geteilt",
+    "removed": "{{person}} sieht {{folder}} nicht mehr",
+    "noPeople": "Auf diesem Server ist noch niemand sonst, mit dem du teilen kannst.",
+    "withMeTitle": "Mit mir geteilt",
+    "withMeEmpty": "Noch teilt niemand einen Ordner mit dir.",
+    "withMeFrom": "von {{owner}}",
+    "withMeHint": "Sie erscheinen in Mail-Apps unter „Shared“ und im Webmail als eigenes Konto."
+  },
   "setup": {
     "title": "Einrichtung",
     "progress": "Schritt {{step}} von {{count}}",

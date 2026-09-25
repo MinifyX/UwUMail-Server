@@ -145,5 +145,9 @@
     "signatures": {
       "saved": "Handtekening opgeslagen (ﾉ◕ヮ◕)ﾉ"
     }
+  },
+  "sharing": {
+    "withMeEmpty": "Nog niemand deelt een map met je (｡•ᴗ•｡)",
+    "saved": "{{folder}} is gedeeld met {{person}} (ﾉ◕ヮ◕)ﾉ"
   }
 }

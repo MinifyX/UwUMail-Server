@@ -31,6 +31,7 @@ mod remote;
 pub mod safe_html;
 mod scheduled;
 mod session;
+mod sharing;
 mod token;
 mod ws;
 

@@ -20,6 +20,7 @@ pub mod rules;
 pub mod security;
 pub mod settings;
 pub mod setup;
+pub mod sharing;
 pub mod spam;
 pub mod updates;
 pub mod vpn;

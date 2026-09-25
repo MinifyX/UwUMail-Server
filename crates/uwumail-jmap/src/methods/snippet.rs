@@ -72,7 +72,7 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         search_terms(filter, &mut terms);
     }
     let numbers: Vec<i64> = email_ids.iter().filter_map(|id| ctx.parse_id('e', id)).collect();
-    let records = ctx.jmap.store.emails_by_ids(ctx.account.id, numbers).await?;
+    let records = super::email::visible_records(ctx, ctx.jmap.store.emails_by_ids(ctx.account.id, numbers).await?);
     let mut list = Vec::new();
     let mut not_found = Vec::new();
     for id in email_ids {

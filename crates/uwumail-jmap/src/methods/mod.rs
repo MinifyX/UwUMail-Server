@@ -8,6 +8,7 @@ mod copy;
 mod email;
 mod identity;
 mod mailbox;
+mod principal;
 mod query_changes;
 mod senders;
 mod settings;
@@ -28,10 +29,13 @@ use crate::error::{MethodError, MethodResult};
 use crate::session::{
     CALENDARS, CONTACTS, CORE, MAIL, SENDERS, SETTINGS, SIEVE, SUBMISSION, SUGGEST, VACATION, WEBMAIL, WEBSOCKET,
 };
+use crate::sharing::{self, PRINCIPALS, SharedView};
 use crate::{Inner, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, ids};
 
-pub const KNOWN_CAPABILITIES: &[&str] =
-    &[CORE, MAIL, SUBMISSION, VACATION, SENDERS, SETTINGS, SIEVE, WEBMAIL, CALENDARS, CONTACTS, WEBSOCKET, SUGGEST];
+pub const KNOWN_CAPABILITIES: &[&str] = &[
+    CORE, MAIL, SUBMISSION, VACATION, SENDERS, SETTINGS, SIEVE, WEBMAIL, CALENDARS, CONTACTS, WEBSOCKET, SUGGEST,
+    PRINCIPALS,
+];
 
 /// The most suggestions one `AddressSuggestion/query` returns.
 pub const MAX_SUGGESTIONS: usize = suggest::MAX_LIMIT;
@@ -47,11 +51,14 @@ pub struct Ctx<'a> {
     /// When the request began: work that has to be bounded per request (expanding calendar
     /// recurrences) counts from here, across all its method calls.
     pub started: std::time::Instant,
+    /// Set while a call works in someone else's account shared with the logged-in one: then
+    /// `account` is the owner's, and this says what may be seen and done (docs/sharing.md).
+    pub shared: Option<SharedView>,
 }
 
 impl<'a> Ctx<'a> {
     pub fn new(jmap: &'a Inner, account: Account, using: Vec<String>, created_ids: HashMap<String, String>) -> Ctx<'a> {
-        Ctx { jmap, account, using, created_ids, started: std::time::Instant::now() }
+        Ctx { jmap, account, using, created_ids, started: std::time::Instant::now(), shared: None }
     }
 
     pub fn account_id(&self) -> String {
@@ -91,7 +98,14 @@ impl<'a> Ctx<'a> {
 }
 
 pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Outputs> {
+    // A call for someone else's account shared with this one runs in that account.
+    if sharing::enter(ctx, name, &args).await? {
+        let result = Box::pin(dispatch(ctx, name, args)).await;
+        sharing::leave(ctx);
+        return result;
+    }
     let capability = match name.split('/').next().unwrap_or_default() {
+        "Principal" => PRINCIPALS,
         "Core" => CORE,
         "Mailbox" | "Email" | "Thread" | "SearchSnippet" => MAIL,
         "Identity" | "EmailSubmission" => SUBMISSION,
@@ -202,6 +216,10 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "SieveScript/query" => single(sieve::query(ctx, &args).await?),
         "SieveScript/validate" => single(sieve::validate(ctx, &args).await?),
         "AddressSuggestion/query" => single(suggest::query(ctx, &args).await?),
+        "Principal/get" => single(principal::get(ctx, &args).await?),
+        "Principal/query" => single(principal::query(ctx, &args).await?),
+        "Principal/changes" => single(principal::changes(ctx, &args).await?),
+        "Principal/queryChanges" => Err(MethodError::kind("cannotCalculateChanges")),
         _ => Err(MethodError::kind("unknownMethod")),
     }
 }
@@ -280,12 +298,13 @@ async fn changes(ctx: &Ctx<'_>, args: &Value, kind: &str, prefix: char) -> Metho
             Some(max) => max as usize,
         },
     };
-    let Changes { created, updated, destroyed, new_state, has_more } =
+    let Changes { mut created, mut updated, mut destroyed, new_state, has_more } =
         match ctx.jmap.store.changes(ctx.account.id, kind, since, max_changes).await {
             Ok(changes) => changes,
             Err(uwumail_store::StoreError::Invalid(_)) => return Err(MethodError::kind("cannotCalculateChanges")),
             Err(err) => return Err(err.into()),
         };
+    sharing::filter_changes(ctx, kind, &mut created, &mut updated, &mut destroyed).await?;
     let format = |list: Vec<i64>| list.into_iter().map(|id| format!("{prefix}{id}")).collect::<Vec<_>>();
     let mut response = json!({
         "accountId": ctx.account_id(),

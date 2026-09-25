@@ -143,5 +143,9 @@
     "signatures": {
       "saved": "署名を保存しました (ﾉ◕ヮ◕)ﾉ"
     }
+  },
+  "sharing": {
+    "withMeEmpty": "まだ誰もフォルダーを共有していません (｡•ᴗ•｡)",
+    "saved": "{{folder}}を{{person}}と共有しました (ﾉ◕ヮ◕)ﾉ"
   }
 }
