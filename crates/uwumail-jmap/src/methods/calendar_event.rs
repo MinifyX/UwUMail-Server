@@ -12,7 +12,7 @@ use chrono_tz::Tz;
 use serde_json::{Map, Value, json};
 use uwumail_store::{CalendarEventRecord, CalendarEventWrite, DAV_RESOURCE_MAX_BYTES, DavCollection, StoreError};
 
-use super::calendar::{calendars, check_enabled};
+use super::calendar::{calendars, check_enabled, owns};
 use super::{
     Ctx, SetResponse, check_filter_size, check_set_size, get_ids, if_in_state, pick, query_response, request_deadline,
 };
@@ -86,18 +86,6 @@ fn is_origin(event: &Map<String, Value>, own: &[String]) -> bool {
         None => true,
         Some(organizer) => own.contains(&organizer.to_lowercase()),
     }
-}
-
-/// Participants that would need a scheduling message, which this server does not send.
-fn has_others(event: &Map<String, Value>, own: &[String]) -> bool {
-    event.get("participants").and_then(Value::as_object).is_some_and(|participants| {
-        participants.values().any(|participant| {
-            participant
-                .get("calendarAddress")
-                .and_then(Value::as_str)
-                .is_none_or(|address| !own.contains(&address.to_lowercase()))
-        })
-    })
 }
 
 fn decorate(object: &mut Map<String, Value>, id: String, calendar_id: i64, base: Option<i64>, own: &[String]) {
@@ -400,7 +388,15 @@ impl Writer<'_> {
         })
     }
 
-    /// Checks an event, turns it into iCalendar and stores it.
+    /// Tells attendees or the organizer about a change, when the client asked for it
+    /// (`sendSchedulingMessages`) and the event is in one of the account's own calendars.
+    async fn schedule(&self, calendar_id: i64, old: Option<&str>, new: Option<&str>) {
+        if self.scheduling && owns(self.ctx, calendar_id).await {
+            self.ctx.jmap.smtp.schedule_change(&self.ctx.account, old, new).await;
+        }
+    }
+
+    /// Checks an event, turns it into iCalendar and stores it. Returns its id and what was stored.
     async fn store(
         &self,
         parsed: &Parsed,
@@ -408,17 +404,11 @@ impl Writer<'_> {
         id: Option<i64>,
         calendar_id: i64,
         if_etag: Option<String>,
-    ) -> Result<Result<i64, SetError>, ()> {
+    ) -> Result<Result<(i64, String), SetError>, ()> {
         let calendar = match self.calendar(calendar_id) {
             Ok(calendar) => calendar,
             Err(err) => return Ok(Err(err)),
         };
-        if self.scheduling && has_others(event, &self.own) {
-            return Ok(Err(SetError::new(
-                "noSupportedScheduleMethods",
-                "this server does not send invitations; store the event without sendSchedulingMessages",
-            )));
-        }
         // Checking and converting is work in proportion to the event: off the async threads.
         let (parsed, event, components) = (parsed.clone(), event.clone(), calendar.components.clone());
         let converted = run_blocking(move || convert(&parsed, &event, &components)).await;
@@ -430,7 +420,7 @@ impl Writer<'_> {
         let write = CalendarEventWrite {
             id,
             calendar_id,
-            content,
+            content: content.clone(),
             uid: checked.uid,
             starts_at: checked.starts_at,
             ends_at: checked.ends_at,
@@ -438,7 +428,7 @@ impl Writer<'_> {
             keep_schedule_tag: false,
         };
         match self.ctx.jmap.store.put_calendar_event(self.ctx.account.id, write).await {
-            Ok((id, _)) => Ok(Ok(id)),
+            Ok((id, _)) => Ok(Ok((id, content))),
             // Changed over CalDAV meanwhile: read it again.
             Err(StoreError::Conflict(_)) => Err(()),
             Err(StoreError::QuotaExceeded) => Ok(Err(SetError::new("overQuota", "the calendar is full"))),
@@ -479,6 +469,15 @@ impl Writer<'_> {
                 server_set.insert(property.into(), value);
             }
         }
+        // Inviting people makes the account the organizer, unless the client named one.
+        if self.scheduling
+            && event.get("participants").and_then(Value::as_object).is_some_and(|p| !p.is_empty())
+            && !event.contains_key("organizerCalendarAddress")
+        {
+            let organizer = json!(format!("mailto:{}", self.ctx.account.login.to_lowercase()));
+            event.insert("organizerCalendarAddress".into(), organizer.clone());
+            server_set.insert("organizerCalendarAddress".into(), organizer);
+        }
         // The server is the origin of what is made here, so it keeps the times.
         let created = match event.get("created").and_then(Value::as_str).and_then(jscal::parse_utc) {
             Some(created) if created <= jscal::now() => event["created"].clone(),
@@ -489,10 +488,11 @@ impl Writer<'_> {
         server_set.insert("created".into(), created);
         server_set.insert("updated".into(), json!(now));
         let parsed = Parsed::new_event();
-        let id = match self.store(&parsed, &event, None, calendar_id, None).await {
+        let (id, content) = match self.store(&parsed, &event, None, calendar_id, None).await {
             Ok(result) => result?,
             Err(()) => return Err(SetError::new("serverFail", "the event could not be stored")),
         };
+        self.schedule(calendar_id, None, Some(&content)).await;
         server_set.insert("id".into(), json!(ids::calendar_event(id)));
         server_set.insert("isDraft".into(), json!(false));
         server_set.insert("isOrigin".into(), json!(is_origin(&event, &self.own)));
@@ -575,7 +575,8 @@ impl Writer<'_> {
             }
             match self.store(&loaded.parsed, &event, Some(id), calendar_id, Some(loaded.record.etag.clone())).await {
                 Ok(result) => {
-                    result?;
+                    let (_, content) = result?;
+                    self.schedule(calendar_id, Some(&loaded.record.content), Some(&content)).await;
                     return Ok(Value::Object(server_set));
                 }
                 Err(()) => continue,
@@ -669,8 +670,13 @@ impl Writer<'_> {
                 event.insert("updated".into(), json!(jscal::format_utc(jscal::now())));
             }
             let etag = Some(loaded.record.etag.clone());
-            match self.store(&loaded.parsed, &event, Some(id), loaded.record.calendar_id, etag).await {
-                Ok(result) => return result.map(|_| ()),
+            let calendar_id = loaded.record.calendar_id;
+            match self.store(&loaded.parsed, &event, Some(id), calendar_id, etag).await {
+                Ok(result) => {
+                    let (_, content) = result?;
+                    self.schedule(calendar_id, Some(&loaded.record.content), Some(&content)).await;
+                    return Ok(());
+                }
                 Err(()) => continue,
             }
         }
@@ -757,14 +763,15 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
             let result = match parsed {
                 Err(err) => Err(err),
                 Ok(Some(EventId::Stored(n))) => {
-                    if scheduling
-                        && let Ok(loaded) = writer.load_one(n).await
-                        && has_others(loaded.parsed.event(), &writer.own)
+                    let old = if scheduling { writer.load_one(n).await.ok() } else { None };
+                    let destroyed =
+                        ctx.jmap.store.destroy_calendar_event(ctx.account.id, n, None).await.map_err(SetError::from);
+                    if destroyed.is_ok()
+                        && let Some(old) = old
                     {
-                        Err(SetError::new("noSupportedScheduleMethods", "this server does not send cancellations"))
-                    } else {
-                        ctx.jmap.store.destroy_calendar_event(ctx.account.id, n, None).await.map_err(SetError::from)
+                        writer.schedule(old.record.calendar_id, Some(&old.record.content), None).await;
                     }
+                    destroyed
                 }
                 Ok(Some(EventId::Instance(n, rid))) => writer.destroy_instance(n, &rid).await,
                 Ok(None) => Err(SetError::not_found()),
