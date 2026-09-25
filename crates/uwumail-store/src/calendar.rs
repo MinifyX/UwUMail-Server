@@ -10,6 +10,7 @@ use crate::dav::{
     NewDavCollection, apply_collection_update, delete_collection, delete_entry, move_entry, new_entry_name,
     own_collection, put_entry, set_default,
 };
+use crate::sharing::{VISIBLE, writable};
 use crate::{DAV_RESOURCE_MAX_BYTES, Result, Store, StoreError};
 
 /// An event as JMAP sees it: a VEVENT entry of one of the account's calendars.
@@ -66,14 +67,23 @@ fn own_calendar(tx: &Transaction<'_>, account_id: i64, calendar_id: i64) -> Resu
     Ok(collection)
 }
 
+/// A calendar of the account, or one shared with it for writing.
+fn writable_calendar(tx: &Transaction<'_>, account_id: i64, calendar_id: i64) -> Result<DavCollection> {
+    let collection = writable(tx, account_id, calendar_id)?;
+    if collection.kind != DavKind::Calendar {
+        return Err(StoreError::NotFound(format!("calendar {calendar_id}")));
+    }
+    Ok(collection)
+}
+
 impl Store {
-    /// Events of the account's calendars: the given ones, or all.
+    /// Events of the account's calendars and of those shared with it: the given ones, or all.
     pub async fn calendar_events(&self, account_id: i64, ids: Option<Vec<i64>>) -> Result<Vec<CalendarEventRecord>> {
         let ids_json = ids.map(|ids| serde_json::to_string(&ids).unwrap_or_else(|_| "[]".into()));
         self.read(move |conn| {
             let mut stmt = conn.prepare(&format!(
                 "SELECT {EVENT_COLUMNS} FROM dav_resources r JOIN dav_collections c ON c.id = r.collection_id
-                 WHERE c.account_id = ?1 AND c.kind = 'calendar' AND r.component = 'VEVENT'
+                 WHERE {VISIBLE} AND c.kind = 'calendar' AND r.component = 'VEVENT'
                    AND (?2 IS NULL OR r.id IN (SELECT value FROM json_each(?2)))
                  ORDER BY r.id"
             ))?;
@@ -95,7 +105,7 @@ impl Store {
         self.read(move |conn| {
             let mut stmt = conn.prepare(&format!(
                 "SELECT {EVENT_COLUMNS} FROM dav_resources r JOIN dav_collections c ON c.id = r.collection_id
-                 WHERE c.account_id = ?1 AND c.kind = 'calendar' AND r.component = 'VEVENT'
+                 WHERE {VISIBLE} AND c.kind = 'calendar' AND r.component = 'VEVENT'
                    AND (?2 IS NULL OR r.collection_id = ?2)
                    AND (?4 IS NULL OR r.starts_at IS NULL OR r.starts_at < ?4)
                    AND (?3 IS NULL OR r.ends_at IS NULL OR r.ends_at >= ?3)
@@ -173,7 +183,8 @@ impl Store {
     }
 
     /// Creates or changes an event, possibly moving it into another calendar. UIDs stay unique
-    /// across the account's calendars. Returns the event's id and new ETag.
+    /// across the calendars of the calendar's owner. Calendars shared with the account for writing
+    /// count as its own here. Returns the event's id and new ETag.
     pub async fn put_calendar_event(&self, account_id: i64, write: CalendarEventWrite) -> Result<(i64, String)> {
         if write.content.len() > DAV_RESOURCE_MAX_BYTES {
             return Err(StoreError::QuotaExceeded);
@@ -181,12 +192,12 @@ impl Store {
         let (result, modseq) = self
             .write(move |tx| {
                 let mut log = ChangeLog::new(account_id);
-                let target = own_calendar(tx, account_id, write.calendar_id)?;
+                let target = writable_calendar(tx, account_id, write.calendar_id)?;
                 let other: Option<i64> = tx
                     .query_row(
                         "SELECT r.id FROM dav_resources r JOIN dav_collections c ON c.id = r.collection_id
                          WHERE c.account_id = ?1 AND c.kind = 'calendar' AND r.uid = ?2 AND r.id <> ?3",
-                        params![account_id, write.uid, write.id.unwrap_or(-1)],
+                        params![target.account_id, write.uid, write.id.unwrap_or(-1)],
                         |row| row.get(0),
                     )
                     .optional()?;
@@ -214,14 +225,17 @@ impl Store {
                 };
                 let (source_id, name, etag): (i64, String, String) = tx
                     .query_row(
-                        "SELECT r.collection_id, r.name, r.etag FROM dav_resources r
-                         JOIN dav_collections c ON c.id = r.collection_id
-                         WHERE r.id = ?1 AND c.account_id = ?2 AND c.kind = 'calendar' AND r.component = 'VEVENT'",
-                        params![id, account_id],
+                        &format!(
+                            "SELECT r.collection_id, r.name, r.etag FROM dav_resources r
+                             JOIN dav_collections c ON c.id = r.collection_id
+                             WHERE r.id = ?2 AND {VISIBLE} AND c.kind = 'calendar' AND r.component = 'VEVENT'"
+                        ),
+                        params![account_id, id],
                         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                     )
                     .optional()?
                     .ok_or_else(|| StoreError::NotFound(format!("event {id}")))?;
+                writable_calendar(tx, account_id, source_id)?;
                 if write.if_etag.as_ref().is_some_and(|wanted| *wanted != etag) {
                     return Err(StoreError::Conflict(format!("event {id} changed meanwhile")));
                 }
@@ -249,15 +263,17 @@ impl Store {
                 let mut log = ChangeLog::new(account_id);
                 let (calendar_id, name): (i64, String) = tx
                     .query_row(
-                        "SELECT r.collection_id, r.name FROM dav_resources r
-                         JOIN dav_collections c ON c.id = r.collection_id
-                         WHERE r.id = ?1 AND c.account_id = ?2 AND c.kind = 'calendar' AND r.component = 'VEVENT'",
-                        params![id, account_id],
+                        &format!(
+                            "SELECT r.collection_id, r.name FROM dav_resources r
+                             JOIN dav_collections c ON c.id = r.collection_id
+                             WHERE r.id = ?2 AND {VISIBLE} AND c.kind = 'calendar' AND r.component = 'VEVENT'"
+                        ),
+                        params![account_id, id],
                         |row| Ok((row.get(0)?, row.get(1)?)),
                     )
                     .optional()?
                     .ok_or_else(|| StoreError::NotFound(format!("event {id}")))?;
-                let calendar = own_calendar(tx, account_id, calendar_id)?;
+                let calendar = writable_calendar(tx, account_id, calendar_id)?;
                 if !delete_entry(tx, &mut log, &calendar, &name, if_etag.as_deref())? {
                     return Err(StoreError::Conflict(format!("event {id} changed meanwhile")));
                 }

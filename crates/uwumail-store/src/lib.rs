@@ -24,6 +24,7 @@ mod forward_addresses;
 mod forwarding;
 mod greylist_hold;
 pub mod ical;
+pub mod itip;
 mod imap;
 mod import;
 mod mail;
@@ -38,6 +39,7 @@ mod reports;
 mod rules;
 mod security;
 mod sender_lists;
+mod sharing;
 mod sieve;
 mod spam;
 mod spam_log;
@@ -68,6 +70,7 @@ pub use dav::{
     DavCollectionUpdate, DavKind, DavPrecondition, DavResource, DavResourceInfo, DavWrite, DavWriteOutcome,
     NewDavCollection, dav_etag,
 };
+pub use sharing::{DAV_SHARES_PER_COLLECTION, DavAccess, DavShare, ShareRights, SharedDavCollection};
 pub use directory::{Account, DkimKey, DkimKeyAlgorithm, DkimKeyState, Domain, NewAccount, Protocols, Role};
 pub use extras::{Identity, IdentityUpdate, SubmissionRecord, UPLOAD_LIFETIME_SECS, VacationResponse};
 pub use feeds::FeedState;

@@ -5,6 +5,8 @@
 //! address book also goes into the account's change log (`Calendar`, `CalendarEvent`,
 //! `AddressBook`, `ContactCard`), whoever made it.
 
+use std::collections::BTreeMap;
+
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -27,7 +29,7 @@ pub enum DavKind {
 impl DavKind {
     /// The JMAP types of a collection of this kind and of the entries JMAP sees in it, with the
     /// component those entries have.
-    fn jmap_types(self) -> (&'static str, &'static str, &'static str) {
+    pub(crate) fn jmap_types(self) -> (&'static str, &'static str, &'static str) {
         match self {
             DavKind::Calendar => ("Calendar", "CalendarEvent", "VEVENT"),
             DavKind::Addressbook => ("AddressBook", "ContactCard", "VCARD"),
@@ -172,7 +174,7 @@ pub fn dav_etag(content: &str) -> String {
     format!("\"{}\"", hex::encode(&digest[..16]))
 }
 
-const COLLECTION_COLUMNS: &str = "c.id, c.account_id, c.kind, c.slug, c.display_name, c.description, c.color, \
+pub(crate) const COLLECTION_COLUMNS: &str = "c.id, c.account_id, c.kind, c.slug, c.display_name, c.description, c.color, \
      c.sort_order, c.components, c.timezone, c.change, (SELECT count(*) FROM dav_resources r WHERE r.collection_id = c.id), \
      c.is_visible, c.is_default";
 
@@ -210,27 +212,62 @@ fn info_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavResourceInfo> {
     })
 }
 
-/// The JMAP side of a write: which collections and entries it touched, all under one change number.
+/// The JMAP side of a write: which collections and entries it touched, all under one change number
+/// per account. A collection shared with other people of the server (migration 0038) is part of
+/// their accounts too, so what happens to it is logged for each of them and they hear about it.
 pub(crate) struct ChangeLog {
     account_id: i64,
-    modseq: Option<i64>,
+    modseqs: BTreeMap<i64, i64>,
+}
+
+/// The change numbers a write took, per account, to tell push listeners about once it is committed.
+#[derive(Debug, Default)]
+pub(crate) struct Logged(BTreeMap<i64, i64>);
+
+/// The accounts that see a collection: its owner and whoever it is shared with.
+pub(crate) fn audience(conn: &Connection, collection: &DavCollection) -> Result<Vec<i64>> {
+    let mut stmt = conn.prepare_cached("SELECT account_id FROM dav_shares WHERE collection_id = ?1")?;
+    let mut accounts: Vec<i64> =
+        stmt.query_map([collection.id], |row| row.get(0))?.collect::<rusqlite::Result<_>>()?;
+    accounts.insert(0, collection.account_id);
+    Ok(accounts)
 }
 
 impl ChangeLog {
     pub(crate) fn new(account_id: i64) -> ChangeLog {
-        ChangeLog { account_id, modseq: None }
+        ChangeLog { account_id, modseqs: BTreeMap::new() }
     }
 
+    /// A change of the account the log was made for.
     pub(crate) fn record(&mut self, conn: &Connection, kind: &str, object_id: i64, change: &str) -> Result<()> {
-        let modseq = match self.modseq {
-            Some(modseq) => modseq,
-            None => *self.modseq.insert(next_modseq(conn, self.account_id)?),
-        };
-        record_change(conn, self.account_id, modseq, kind, object_id, change)
+        self.record_for(conn, self.account_id, kind, object_id, change)
     }
 
+    pub(crate) fn record_for(
+        &mut self,
+        conn: &Connection,
+        account_id: i64,
+        kind: &str,
+        object_id: i64,
+        change: &str,
+    ) -> Result<()> {
+        let modseq = match self.modseqs.get(&account_id) {
+            Some(modseq) => *modseq,
+            None => {
+                let modseq = next_modseq(conn, account_id)?;
+                self.modseqs.insert(account_id, modseq);
+                modseq
+            }
+        };
+        record_change(conn, account_id, modseq, kind, object_id, change)
+    }
+
+    /// A change of a collection itself, for everyone who sees it.
     pub(crate) fn collection(&mut self, conn: &Connection, collection: &DavCollection, change: &str) -> Result<()> {
-        self.record(conn, collection.kind.jmap_types().0, collection.id, change)
+        for account_id in audience(conn, collection)? {
+            self.record_for(conn, account_id, collection.kind.jmap_types().0, collection.id, change)?;
+        }
+        Ok(())
     }
 
     /// An entry of a collection changed from one component to another (`None`: not there).
@@ -250,21 +287,81 @@ impl ChangeLog {
             (true, false) => "destroyed",
             (false, false) => return Ok(()),
         };
-        self.record(conn, entry_type, resource_id, change)
+        for account_id in audience(conn, collection)? {
+            self.record_for(conn, account_id, entry_type, resource_id, change)?;
+        }
+        Ok(())
     }
 
-    pub(crate) fn modseq(&self) -> Option<i64> {
-        self.modseq
+    /// An entry moved from one collection into another: whoever sees only one of them sees it
+    /// appear or go.
+    pub(crate) fn moved(
+        &mut self,
+        conn: &Connection,
+        source: &DavCollection,
+        target: &DavCollection,
+        resource_id: i64,
+        component: &str,
+    ) -> Result<()> {
+        let (_, entry_type, wanted) = target.kind.jmap_types();
+        if component != wanted {
+            return Ok(());
+        }
+        let before = audience(conn, source)?;
+        let after = audience(conn, target)?;
+        for account_id in &before {
+            let change = if after.contains(account_id) { "updated" } else { "destroyed" };
+            self.record_for(conn, *account_id, entry_type, resource_id, change)?;
+        }
+        for account_id in after.iter().filter(|account| !before.contains(account)) {
+            self.record_for(conn, *account_id, entry_type, resource_id, "created")?;
+        }
+        Ok(())
+    }
+
+    /// Everything a collection holds appearing for (`created`) or going away from (`destroyed`)
+    /// one account, as when it is shared with them or no longer is.
+    pub(crate) fn whole_collection(
+        &mut self,
+        conn: &Connection,
+        account_id: i64,
+        collection: &DavCollection,
+        change: &str,
+    ) -> Result<()> {
+        let (collection_type, entry_type, component) = collection.kind.jmap_types();
+        let mut stmt = conn.prepare("SELECT id FROM dav_resources WHERE collection_id = ?1 AND component = ?2")?;
+        let entries: Vec<i64> =
+            stmt.query_map(params![collection.id, component], |row| row.get(0))?.collect::<rusqlite::Result<_>>()?;
+        drop(stmt);
+        for entry in entries {
+            self.record_for(conn, account_id, entry_type, entry, change)?;
+        }
+        self.record_for(conn, account_id, collection_type, collection.id, change)
+    }
+
+    pub(crate) fn modseq(&self) -> Logged {
+        Logged(self.modseqs.clone())
     }
 }
 
 impl Store {
     /// Tells push listeners about a write's JMAP changes once it is committed.
-    pub(crate) fn notify_log(&self, account_id: i64, modseq: Option<i64>) {
-        if let Some(modseq) = modseq {
+    pub(crate) fn notify_log(&self, _account_id: i64, logged: Logged) {
+        for (account_id, modseq) in logged.0 {
             self.notify_change(account_id, modseq);
         }
     }
+}
+
+/// A collection by id, whoever owns it.
+pub(crate) fn collection_by_id(conn: &Connection, collection_id: i64) -> Result<DavCollection> {
+    conn.query_row(
+        &format!("SELECT {COLLECTION_COLUMNS} FROM dav_collections c WHERE c.id = ?1"),
+        [collection_id],
+        collection_row,
+    )
+    .optional()?
+    .ok_or_else(|| StoreError::NotFound(format!("collection {collection_id}")))
 }
 
 pub(crate) fn own_collection(conn: &Connection, account_id: i64, collection_id: i64) -> Result<DavCollection> {
@@ -387,15 +484,9 @@ pub(crate) fn set_default(tx: &Transaction<'_>, log: &mut ChangeLog, collection:
 
 /// Deletes a collection with everything in it, telling JMAP which collection and entries went away.
 pub(crate) fn delete_collection(tx: &Transaction<'_>, log: &mut ChangeLog, collection: &DavCollection) -> Result<()> {
-    let (_, entry_type, component) = collection.kind.jmap_types();
-    let mut stmt = tx.prepare("SELECT id FROM dav_resources WHERE collection_id = ?1 AND component = ?2")?;
-    let entries: Vec<i64> =
-        stmt.query_map(params![collection.id, component], |row| row.get(0))?.collect::<Result<_, _>>()?;
-    drop(stmt);
-    for entry in entries {
-        log.record(tx, entry_type, entry, "destroyed")?;
+    for account_id in audience(tx, collection)? {
+        log.whole_collection(tx, account_id, collection, "destroyed")?;
     }
-    log.collection(tx, collection, "destroyed")?;
     tx.execute("DELETE FROM dav_collections WHERE id = ?1", [collection.id])?;
     if collection.is_default {
         ensure_default(tx, log, collection.account_id, collection.kind)?;
@@ -459,7 +550,7 @@ pub(crate) fn move_entry(
     let etag = dav_etag(&write.content);
     tx.execute(
         "UPDATE dav_resources SET collection_id = ?1, name = ?2, uid = ?3, etag = ?4, content = ?5,
-             starts_at = ?6, ends_at = ?7, size = ?8, modified_at = ?9, change = ?10
+             starts_at = ?6, ends_at = ?7, size = ?8, modified_at = ?9, change = ?10, schedule_tag = ?4
          WHERE id = ?11",
         params![
             target.id,
@@ -476,7 +567,8 @@ pub(crate) fn move_entry(
         ],
     )?;
     tx.execute("DELETE FROM dav_tombstones WHERE collection_id = ?1 AND name = ?2", params![target.id, new_name])?;
-    log.entry(tx, target, id, Some(&write.component), Some(&write.component))?;
+    let source = collection_by_id(tx, source_id)?;
+    log.moved(tx, &source, target, id, &write.component)?;
     Ok(etag)
 }
 
@@ -764,12 +856,12 @@ pub(crate) fn put_entry(
     let change = next_change(tx, collection.id)?;
     let id: i64 = tx.query_row(
         "INSERT INTO dav_resources (collection_id, name, uid, etag, content, component, starts_at, ends_at, size,
-             modified_at, change)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             modified_at, change, schedule_tag)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?4)
          ON CONFLICT (collection_id, name) DO UPDATE SET uid = excluded.uid, etag = excluded.etag,
              content = excluded.content, component = excluded.component, starts_at = excluded.starts_at,
              ends_at = excluded.ends_at, size = excluded.size, modified_at = excluded.modified_at,
-             change = excluded.change
+             change = excluded.change, schedule_tag = excluded.schedule_tag
          RETURNING id",
         params![
             collection.id,

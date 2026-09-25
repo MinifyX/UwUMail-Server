@@ -42,6 +42,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0033_sieve.sql"),
     include_str!("migrations/0034_jmap_contacts.sql"),
     include_str!("migrations/0035_rule_stats.sql"),
+    include_str!("migrations/0038_calendar_sharing_itip.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 
