@@ -140,5 +140,9 @@
     "loki": {
       "testOk": "De testregel is bij Loki aangekomen (=^･ω･^=)"
     }
+  },
+  "calendars": {
+    "intro": "Deel je agenda's en adresboeken met mensen hier op de server, dan mist niemand meer een afspraak (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
+    "sharedEmpty": "Nog niemand heeft iets met je gedeeld (・ω・)"
   }
 }

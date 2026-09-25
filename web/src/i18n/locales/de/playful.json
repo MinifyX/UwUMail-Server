@@ -140,5 +140,9 @@
     "loki": {
       "testOk": "Die Testzeile ist in Loki angekommen (=^･ω･^=)"
     }
+  },
+  "calendars": {
+    "intro": "Teil deine Kalender und Adressbücher mit Leuten hier auf dem Server, dann verpasst keiner mehr einen Termin (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
+    "sharedEmpty": "Noch hat niemand etwas mit dir geteilt (・ω・)"
   }
 }

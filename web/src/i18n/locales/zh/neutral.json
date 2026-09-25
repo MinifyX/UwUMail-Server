@@ -61,7 +61,8 @@
     "collapse": "折叠{{group}}",
     "expand": "展开{{group}}",
     "mailbox": "邮箱",
-    "directory": "账户与域名"
+    "directory": "账户与域名",
+    "calendars": "日历和通讯录"
   },
   "userMenu": {
     "open": "打开账户菜单",
@@ -294,7 +295,10 @@
       "logoEmpty": "文件是空的。",
       "logoTooLarge": "标志太大了，最大 512 KB。",
       "logoType": "这不是可用作标志的图片。支持 PNG、JPEG、WebP 和 SVG。",
-      "brandColor": "这不是颜色。请输入类似 #ff4d8d 的值。"
+      "brandColor": "这不是颜色。请输入类似 #ff4d8d 的值。",
+      "unknownPerson": "此服务器上没有人使用这个地址。",
+      "ownShare": "无需与自己共享。",
+      "tooManyShares": "已经与太多人共享了。"
     }
   },
   "people": {
@@ -2667,5 +2671,35 @@
       "light": "浅色",
       "dark": "深色"
     }
+  },
+  "calendars": {
+    "pageTitle": "共享日历和通讯录",
+    "intro": "与此服务器上的人共享你的日历和通讯录。它们会出现在对方的日历和通讯录应用以及网页邮箱中。",
+    "notShared": "未与任何人共享。",
+    "sharedWith": "已共享给",
+    "shareWith": "与他人共享",
+    "addressPlaceholder": "address@example.org",
+    "rightsLabel": "权限",
+    "rightsFor": "{{address}} 的权限",
+    "rights": {
+      "read": "只读",
+      "write": "读写",
+      "all": "全部"
+    },
+    "rightsHint": {
+      "read": "可以看到所有条目，但不能更改。",
+      "write": "可以添加、更改和删除条目。",
+      "all": "还可以更改名称和颜色并继续共享。只有你可以删除它。"
+    },
+    "share": "共享",
+    "sharedToast": "{{name}} 已与 {{address}} 共享",
+    "unshare": "停止共享",
+    "unsharedToast": "{{name}} 已停止共享",
+    "sharedTitle": "与你共享的",
+    "sharedEmpty": "还没有人与你共享任何内容。",
+    "from": "来自 {{owner}}",
+    "leave": "退出",
+    "leftToast": "已退出 {{name}}",
+    "off": "你的账户已关闭日历和通讯录。"
   }
 }

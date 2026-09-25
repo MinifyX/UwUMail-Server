@@ -142,5 +142,9 @@
     "loki": {
       "testOk": "La ligne de test est bien arrivée dans Loki (=^･ω･^=)"
     }
+  },
+  "calendars": {
+    "intro": "Partage tes agendas et carnets d'adresses avec les gens de ce serveur, et plus personne ne rate un rendez-vous (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
+    "sharedEmpty": "Personne n'a encore rien partagé avec toi (・ω・)"
   }
 }

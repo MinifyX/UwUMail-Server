@@ -61,7 +61,8 @@
     "collapse": "Collapse {{group}}",
     "expand": "Expand {{group}}",
     "mailbox": "Mailbox",
-    "directory": "Accounts & domains"
+    "directory": "Accounts & domains",
+    "calendars": "Calendars & contacts"
   },
   "userMenu": {
     "open": "Open account menu",
@@ -303,7 +304,10 @@
       "logoEmpty": "The file is empty.",
       "logoTooLarge": "The logo is too big. It may be 512 KB at most.",
       "logoType": "That is not a picture that works as a logo. PNG, JPEG, WebP and SVG are fine.",
-      "brandColor": "That is not a colour. Something like #ff4d8d is expected."
+      "brandColor": "That is not a colour. Something like #ff4d8d is expected.",
+      "unknownPerson": "Nobody on this server has this address.",
+      "ownShare": "There is no need to share with yourself.",
+      "tooManyShares": "This is shared with too many people already."
     }
   },
   "people": {
@@ -2730,5 +2734,35 @@
       "light": "Light",
       "dark": "Dark"
     }
+  },
+  "calendars": {
+    "pageTitle": "Share calendars and contacts",
+    "intro": "Share your calendars and address books with people on this server. They show up in their calendar and contacts apps and in the webmail.",
+    "notShared": "Not shared with anyone.",
+    "sharedWith": "Shared with",
+    "shareWith": "Share with someone",
+    "addressPlaceholder": "address@example.org",
+    "rightsLabel": "Rights",
+    "rightsFor": "Rights for {{address}}",
+    "rights": {
+      "read": "Read",
+      "write": "Read and write",
+      "all": "Everything"
+    },
+    "rightsHint": {
+      "read": "Sees every entry but cannot change anything.",
+      "write": "Can add, change and delete entries.",
+      "all": "Can also change the name and colour and share it further. Only you can delete it."
+    },
+    "share": "Share",
+    "sharedToast": "{{name}} is now shared with {{address}}",
+    "unshare": "Stop sharing",
+    "unsharedToast": "{{name}} is no longer shared",
+    "sharedTitle": "Shared with you",
+    "sharedEmpty": "Nobody has shared anything with you yet.",
+    "from": "From {{owner}}",
+    "leave": "Leave",
+    "leftToast": "Left {{name}}",
+    "off": "Calendars and contacts are switched off for your account."
   }
 }

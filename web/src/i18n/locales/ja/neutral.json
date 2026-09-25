@@ -61,7 +61,8 @@
     "collapse": "{{group}}を折りたたむ",
     "expand": "{{group}}を展開",
     "mailbox": "メールボックス",
-    "directory": "アカウントとドメイン"
+    "directory": "アカウントとドメイン",
+    "calendars": "カレンダーと連絡先"
   },
   "userMenu": {
     "open": "アカウントメニューを開く",
@@ -294,7 +295,10 @@
       "logoEmpty": "ファイルが空です。",
       "logoTooLarge": "ロゴが大きすぎます。最大 512 KB までです。",
       "logoType": "ロゴとして使える画像ではありません。PNG、JPEG、WebP、SVG が使えます。",
-      "brandColor": "色ではありません。#ff4d8d のような値を入力してください。"
+      "brandColor": "色ではありません。#ff4d8d のような値を入力してください。",
+      "unknownPerson": "このサーバーにこのアドレスの人はいません。",
+      "ownShare": "自分と共有する必要はありません。",
+      "tooManyShares": "すでに共有している人が多すぎます。"
     }
   },
   "people": {
@@ -2667,5 +2671,35 @@
       "light": "ライト",
       "dark": "ダーク"
     }
+  },
+  "calendars": {
+    "pageTitle": "カレンダーと連絡先の共有",
+    "intro": "カレンダーとアドレス帳をこのサーバーの人と共有できます。相手のカレンダー・連絡先アプリとWebメールに表示されます。",
+    "notShared": "誰とも共有していません。",
+    "sharedWith": "共有相手",
+    "shareWith": "共有する相手",
+    "addressPlaceholder": "address@example.org",
+    "rightsLabel": "権限",
+    "rightsFor": "{{address}} の権限",
+    "rights": {
+      "read": "閲覧",
+      "write": "閲覧と編集",
+      "all": "すべて"
+    },
+    "rightsHint": {
+      "read": "すべての項目を見られますが、変更はできません。",
+      "write": "項目の追加・変更・削除ができます。",
+      "all": "名前や色の変更、さらに共有することもできます。削除できるのはあなただけです。"
+    },
+    "share": "共有",
+    "sharedToast": "{{name}} を {{address}} と共有しました",
+    "unshare": "共有をやめる",
+    "unsharedToast": "{{name}} の共有をやめました",
+    "sharedTitle": "あなたと共有されているもの",
+    "sharedEmpty": "まだ誰からも共有されていません。",
+    "from": "{{owner}} から",
+    "leave": "退出",
+    "leftToast": "{{name}} から退出しました",
+    "off": "このアカウントではカレンダーと連絡先がオフになっています。"
   }
 }

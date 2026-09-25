@@ -61,7 +61,8 @@
     "collapse": "Replier {{group}}",
     "expand": "Déplier {{group}}",
     "mailbox": "Boîte mail",
-    "directory": "Comptes et domaines"
+    "directory": "Comptes et domaines",
+    "calendars": "Agendas et contacts"
   },
   "userMenu": {
     "open": "Ouvrir le menu du compte",
@@ -311,7 +312,10 @@
       "logoEmpty": "Le fichier est vide.",
       "logoTooLarge": "Le logo est trop volumineux. 512 Ko au maximum.",
       "logoType": "Ce n'est pas une image utilisable comme logo. PNG, JPEG, WebP et SVG sont acceptés.",
-      "brandColor": "Ce n'est pas une couleur. Une valeur comme #ff4d8d est attendue."
+      "brandColor": "Ce n'est pas une couleur. Une valeur comme #ff4d8d est attendue.",
+      "unknownPerson": "Personne sur ce serveur n'a cette adresse.",
+      "ownShare": "Inutile de partager avec vous-même.",
+      "tooManyShares": "C'est déjà partagé avec trop de personnes."
     }
   },
   "people": {
@@ -2792,5 +2796,35 @@
       "light": "Clair",
       "dark": "Sombre"
     }
+  },
+  "calendars": {
+    "pageTitle": "Partager agendas et contacts",
+    "intro": "Partagez vos agendas et carnets d'adresses avec des personnes de ce serveur. Ils apparaissent dans leurs applications d'agenda et de contacts et dans le webmail.",
+    "notShared": "Partagé avec personne.",
+    "sharedWith": "Partagé avec",
+    "shareWith": "Partager avec quelqu'un",
+    "addressPlaceholder": "adresse@example.org",
+    "rightsLabel": "Droits",
+    "rightsFor": "Droits de {{address}}",
+    "rights": {
+      "read": "Lecture",
+      "write": "Lecture et écriture",
+      "all": "Tout"
+    },
+    "rightsHint": {
+      "read": "Voit toutes les entrées sans pouvoir rien modifier.",
+      "write": "Peut ajouter, modifier et supprimer des entrées.",
+      "all": "Peut aussi changer le nom et la couleur et le partager à son tour. Vous seul pouvez le supprimer."
+    },
+    "share": "Partager",
+    "sharedToast": "{{name}} est maintenant partagé avec {{address}}",
+    "unshare": "Ne plus partager",
+    "unsharedToast": "{{name}} n'est plus partagé",
+    "sharedTitle": "Partagés avec vous",
+    "sharedEmpty": "Personne n'a encore rien partagé avec vous.",
+    "from": "De {{owner}}",
+    "leave": "Quitter",
+    "leftToast": "{{name}} quitté",
+    "off": "Les agendas et les contacts sont désactivés pour votre compte."
   }
 }
