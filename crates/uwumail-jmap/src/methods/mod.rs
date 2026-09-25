@@ -22,11 +22,13 @@ use uwumail_store::{Account, Changes};
 
 use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
-use crate::session::{CALENDARS, CONTACTS, CORE, MAIL, SENDERS, SETTINGS, SIEVE, SUBMISSION, VACATION, WEBMAIL};
+use crate::session::{
+    CALENDARS, CONTACTS, CORE, MAIL, SENDERS, SETTINGS, SIEVE, SUBMISSION, VACATION, WEBMAIL, WEBSOCKET,
+};
 use crate::{Inner, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, ids};
 
 pub const KNOWN_CAPABILITIES: &[&str] =
-    &[CORE, MAIL, SUBMISSION, VACATION, SENDERS, SETTINGS, SIEVE, WEBMAIL, CALENDARS, CONTACTS];
+    &[CORE, MAIL, SUBMISSION, VACATION, SENDERS, SETTINGS, SIEVE, WEBMAIL, CALENDARS, CONTACTS, WEBSOCKET];
 
 /// One or more `(method name, arguments)` responses for a call.
 pub type Outputs = Vec<(String, Value)>;
@@ -390,4 +392,9 @@ impl SetResponse {
             "notDestroyed": map_or_null(self.not_destroyed),
         })
     }
+}
+
+/// Seconds since the Unix epoch.
+pub fn unix_now() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
 }

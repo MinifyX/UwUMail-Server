@@ -93,6 +93,13 @@ struct Inner {
 }
 
 impl Web {
+    /// Tells a person, by mail and in their activity list, that a program created an app password
+    /// for their account over JMAP (`/jmap/token`), exactly like one made in the portal.
+    pub async fn notify_app_password_created(&self, account: &uwumail_store::Account, name: String, ip: &str) {
+        let notice = notices::Notice::AppPasswordCreated { name };
+        notices::notify(self, account, notice, notices::Origin { actor: "", ip }).await;
+    }
+
     pub fn new(smtp: Smtp, settings: WebSettings) -> Web {
         let dns =
             DnsChecker::new().inspect_err(|err| tracing::warn!(%err, "DNS checks of domains are not available")).ok();

@@ -30,6 +30,8 @@ pub const WEBMAIL: &str = "urn:uwumail:jmap:webmail";
 pub const REMOTE: &str = "urn:uwumail:jmap:remote";
 /// JMAP Calendars (draft-ietf-jmap-calendars) on the CalDAV calendars; see docs/jmap-calendars.md.
 pub const CALENDARS: &str = "urn:ietf:params:jmap:calendars";
+/// Requests and push over a WebSocket (RFC 8887).
+pub const WEBSOCKET: &str = "urn:ietf:params:jmap:websocket";
 /// JMAP Contacts (RFC 9610) on the CardDAV address books; see docs/jmap-contacts.md.
 pub const CONTACTS: &str = "urn:ietf:params:jmap:contacts";
 
@@ -58,6 +60,15 @@ pub fn base_url(headers: &HeaderMap, client: ClientInfo) -> String {
     format!("{scheme}://{host}")
 }
 
+/// The WebSocket endpoint for the origin the client used: `wss://` for `https://`.
+pub fn websocket_url(base: &str) -> String {
+    let origin = match base.strip_prefix("https://") {
+        Some(host) => format!("wss://{host}"),
+        None => format!("ws://{}", base.strip_prefix("http://").unwrap_or(base)),
+    };
+    format!("{origin}/jmap/ws")
+}
+
 pub fn session_state(account: &Account) -> String {
     // Changes whenever something in the session document would change.
     let calendars = if account.protocols.caldav { "-c" } else { "" };
@@ -81,6 +92,7 @@ pub fn document(account: &Account, base: &str) -> Value {
             },
             MAIL: {},
             SUBMISSION: {},
+            WEBSOCKET: { "url": websocket_url(base), "supportsPush": true },
             VACATION: {},
             SENDERS: {},
             SETTINGS: {},

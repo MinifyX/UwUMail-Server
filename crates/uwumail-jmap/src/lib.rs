@@ -11,6 +11,8 @@
 //! | `POST /jmap/upload/{accountId}` | Blob upload |
 //! | `GET /jmap/download/{accountId}/{blobId}/{name}` | Blob download |
 //! | `GET /jmap/eventsource` | Push |
+//! | `GET /jmap/ws` | Requests and push over a WebSocket (RFC 8887) |
+//! | `POST /jmap/token` | A new app password for a program, to send as a bearer token |
 //! | `GET /jmap/image/{accountId}?url=` | A message's remote picture, fetched by the server |
 //! | `GET /jmap/picture/{accountId}?email=` | The logo or website icon of a company sender |
 
@@ -28,18 +30,29 @@ mod push;
 mod remote;
 pub mod safe_html;
 mod session;
+mod token;
+mod ws;
 
 use std::sync::Arc;
 
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
-use axum::routing::{get, post};
+use axum::routing::{any, get, post};
 use uwumail_smtp::Smtp;
 use uwumail_smtp::egress::Egress;
 use uwumail_smtp::pictures::SenderPictures;
 use uwumail_store::Store;
 
 pub use auth::{AuthError, Authenticator, ClientInfo};
+
+/// Tells a person that a program created an app password for their account at `/jmap/token`:
+/// account, the app password's name and the client's IP. The server hands in the portal's notice
+/// (a mail and the activity entry); without one only the activity entry is written.
+pub type AppPasswordNotice = Arc<
+    dyn Fn(uwumail_store::Account, String, String) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+        + Send
+        + Sync,
+>;
 
 pub const MAX_UPLOAD_BYTES: usize = 50 * 1024 * 1024;
 pub const MAX_REQUEST_BYTES: usize = 10 * 1024 * 1024;
@@ -60,6 +73,8 @@ pub(crate) struct Inner {
     pub egress: Egress,
     /// Logos and website icons of company senders, fetched the same way.
     pub pictures: Arc<SenderPictures>,
+    /// How a person hears of an app password created at `/jmap/token`.
+    pub notice: Option<AppPasswordNotice>,
 }
 
 impl Jmap {
@@ -75,7 +90,7 @@ impl Jmap {
         auth.watch_webmail(webmail);
         let egress = Egress::direct();
         let pictures = Arc::new(SenderPictures::new(egress.clone()));
-        Jmap { inner: Arc::new(Inner { auth, store, smtp, egress, pictures }) }
+        Jmap { inner: Arc::new(Inner { auth, store, smtp, egress, pictures, notice: None }) }
     }
 
     /// Remote pictures and sender pictures leave through `egress` instead of straight from the server.
@@ -84,6 +99,13 @@ impl Jmap {
         let inner = Arc::into_inner(self.inner).expect("the egress is set before anything else holds the JMAP service");
         let pictures = Arc::new(SenderPictures::new(egress.clone()));
         Jmap { inner: Arc::new(Inner { egress, pictures, ..inner }) }
+    }
+
+    /// Hands in how people hear of app passwords created at `/jmap/token`. Called before the router
+    /// is built.
+    pub fn with_notice(self, notice: AppPasswordNotice) -> Jmap {
+        let inner = Arc::into_inner(self.inner).expect("the notice is set before anything else holds the JMAP service");
+        Jmap { inner: Arc::new(Inner { notice: Some(notice), ..inner }) }
     }
 
     pub fn router(&self) -> Router {
@@ -97,6 +119,9 @@ impl Jmap {
             .route("/jmap/download/{account}/{blob}/{name}", get(blob::download))
             .route("/jmap/eventsource", get(push::handle))
             .route("/jmap/eventsource/", get(push::handle))
+            // `any`: HTTP/1.1 upgrades with GET, HTTP/2 WebSockets (RFC 8441) with CONNECT.
+            .route("/jmap/ws", any(ws::handle))
+            .route("/jmap/token", post(token::handle).layer(DefaultBodyLimit::max(16 * 1024)))
             .route("/jmap/image/{account}", get(remote::image))
             .route("/jmap/picture/{account}", get(remote::picture))
             .with_state(self.clone())

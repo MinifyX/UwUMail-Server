@@ -759,6 +759,67 @@ impl Store {
         Ok(MailAuth::Ok { account, app_password: None })
     }
 
+    /// Checks an app password handed over on its own, as an HTTP bearer token (JMAP). The token
+    /// names its account: nobody can hold another account's secret, and the 79 bits of an app
+    /// password are too many to guess. Taken-over app passwords (only a hash from another server)
+    /// cannot be looked up without a login, so they work with Basic authentication only.
+    pub async fn authenticate_bearer(&self, token: &str, scope: AppScope, protocol: &str, ip: &str) -> Result<MailAuth> {
+        let Some(hash) = candidate("app", token, APP_PASSWORD_CHARS) else {
+            return Ok(MailAuth::Denied(MailAuthDenied::Invalid));
+        };
+        let found = self
+            .read(move |conn| {
+                let row = conn
+                    .query_row(
+                        "SELECT account_id, id, scopes, expires_at FROM app_passwords
+                         WHERE secret_hash = ?1 AND imported_hash IS NULL",
+                        params![hash],
+                        |row| {
+                            Ok((
+                                row.get::<_, i64>(0)?,
+                                row.get::<_, i64>(1)?,
+                                row.get::<_, String>(2)?,
+                                row.get::<_, Option<i64>>(3)?,
+                            ))
+                        },
+                    )
+                    .optional()?;
+                Ok(row)
+            })
+            .await?;
+        let Some((account_id, id, scopes, expires_at)) = found else {
+            return Ok(MailAuth::Denied(MailAuthDenied::Invalid));
+        };
+        let Some(account) = self.account_by_id(account_id).await? else {
+            return Ok(MailAuth::Denied(MailAuthDenied::Invalid));
+        };
+        let now = now();
+        if !account.can_log_in() {
+            return Ok(MailAuth::Denied(MailAuthDenied::Invalid));
+        }
+        if !protocol_allowed(&account, protocol) {
+            return Ok(MailAuth::Denied(MailAuthDenied::ProtocolOff));
+        }
+        if expires_at.is_some_and(|at| at <= now) {
+            return Ok(MailAuth::Denied(MailAuthDenied::Expired));
+        }
+        if !AppScope::parse_list(&scopes).contains(&scope) {
+            return Ok(MailAuth::Denied(MailAuthDenied::WrongScope));
+        }
+        let (protocol, ip) = (protocol.to_owned(), ip.to_owned());
+        self.write(move |tx| {
+            tx.execute(
+                "UPDATE app_passwords SET last_used_at = ?1, last_used_protocol = ?2, last_used_ip = ?3
+                 WHERE id = ?4 AND (last_used_at IS NULL OR last_used_at < ?1 - 60
+                                    OR last_used_protocol IS NOT ?2 OR last_used_ip IS NOT ?3)",
+                params![now, protocol, ip, id],
+            )?;
+            Ok(())
+        })
+        .await?;
+        Ok(MailAuth::Ok { account, app_password: Some(id) })
+    }
+
     // Password
 
     /// Changes the password after checking the current one, and logs out every other browser.

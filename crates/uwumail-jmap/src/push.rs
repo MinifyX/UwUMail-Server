@@ -1,4 +1,4 @@
-//! Push over EventSource (RFC 8620, section 7.3).
+//! Push over EventSource (RFC 8620, section 7.3), and what the WebSocket push shares with it.
 
 use std::convert::Infallible;
 use std::time::Duration;
@@ -40,14 +40,77 @@ pub struct PushQuery {
     ping: Option<u64>,
 }
 
-struct Listener {
+/// Follows one account's changes for push, over EventSource and WebSocket alike.
+pub(crate) struct Watcher {
     store: Store,
     account_id: i64,
-    types: Vec<String>,
+    /// The data types asked for, `EmailDelivery` included.
+    pub types: Vec<String>,
+    changes: broadcast::Receiver<StateChange>,
+    /// Everything up to here was reported.
+    pub last_modseq: i64,
+}
+
+/// All push types, for a client that asks for everything.
+pub(crate) fn all_types() -> Vec<String> {
+    TYPES.iter().map(|t| t.to_string()).chain(["EmailDelivery".to_owned()]).collect()
+}
+
+impl Watcher {
+    pub async fn new(store: Store, account_id: i64, types: Vec<String>) -> Watcher {
+        let changes = store.subscribe_changes();
+        let last_modseq = store.account_modseq(account_id).await.unwrap_or(0);
+        Watcher { store, account_id, types, changes, last_modseq }
+    }
+
+    /// Waits for the next change of this account. Safe to cancel: nothing is lost when it is.
+    /// `None` when the server shuts down.
+    pub async fn wait(&mut self) -> Option<StateChange> {
+        loop {
+            match self.changes.recv().await {
+                Ok(change) if change.account_id == self.account_id => return Some(change),
+                Ok(_) => continue,
+                // Missed some changes: report everything as changed.
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    let modseq = self.store.account_modseq(self.account_id).await.unwrap_or(self.last_modseq);
+                    return Some(StateChange { account_id: self.account_id, modseq });
+                }
+                Err(broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    }
+
+    /// The `changed` map of a `StateChange` for everything since the last one, in the types asked
+    /// for; `None` when none of them changed.
+    pub async fn changed(&mut self, modseq: i64) -> Option<Map<String, Value>> {
+        let kinds = self.store.changed_kinds(self.account_id, self.last_modseq).await.unwrap_or_default();
+        self.last_modseq = self.last_modseq.max(modseq);
+        let mut changed = Map::new();
+        for kind in kinds.iter().filter(|k| self.types.iter().any(|t| t == *k)) {
+            // UserSettings has a state of its own (it does not move with mail), so the client can
+            // tell whether it already has it.
+            let state = if kind == "UserSettings" {
+                self.store.user_settings_state(self.account_id).await.unwrap_or_else(|_| modseq.to_string())
+            } else {
+                modseq.to_string()
+            };
+            changed.insert(kind.clone(), json!(state));
+        }
+        if kinds.iter().any(|k| k == "Email") && self.types.iter().any(|t| t == "EmailDelivery") {
+            changed.insert("EmailDelivery".into(), json!(modseq.to_string()));
+        }
+        (!changed.is_empty()).then_some(changed)
+    }
+
+    pub fn account_id(&self) -> i64 {
+        self.account_id
+    }
+}
+
+struct Listener {
+    watcher: Watcher,
     close_after_state: bool,
     ping: Option<Duration>,
-    changes: broadcast::Receiver<StateChange>,
-    last_modseq: i64,
     done: bool,
 }
 
@@ -57,7 +120,7 @@ async fn next_event(mut listener: Listener) -> Option<(Result<Event, Infallible>
     }
     loop {
         let received = match listener.ping {
-            Some(interval) => match tokio::time::timeout(interval, listener.changes.recv()).await {
+            Some(interval) => match tokio::time::timeout(interval, listener.watcher.wait()).await {
                 Ok(received) => received,
                 Err(_) => {
                     let event =
@@ -65,44 +128,15 @@ async fn next_event(mut listener: Listener) -> Option<(Result<Event, Infallible>
                     return Some((Ok(event), listener));
                 }
             },
-            None => listener.changes.recv().await,
+            None => listener.watcher.wait().await,
         };
-        let change = match received {
-            Ok(change) if change.account_id == listener.account_id => change,
-            Ok(_) => continue,
-            // Missed some changes: report everything as changed.
-            Err(broadcast::error::RecvError::Lagged(_)) => {
-                let modseq = listener.store.account_modseq(listener.account_id).await.unwrap_or(listener.last_modseq);
-                StateChange { account_id: listener.account_id, modseq }
-            }
-            Err(broadcast::error::RecvError::Closed) => return None,
-        };
-        let kinds = listener.store.changed_kinds(listener.account_id, listener.last_modseq).await.unwrap_or_default();
-        listener.last_modseq = listener.last_modseq.max(change.modseq);
-        let mut changed = Map::new();
-        for kind in kinds.iter().filter(|k| listener.types.iter().any(|t| t == *k)) {
-            // UserSettings has a state of its own (it does not move with mail), so the client can
-            // tell whether it already has it.
-            let state = if kind == "UserSettings" {
-                listener
-                    .store
-                    .user_settings_state(listener.account_id)
-                    .await
-                    .unwrap_or_else(|_| change.modseq.to_string())
-            } else {
-                change.modseq.to_string()
-            };
-            changed.insert(kind.clone(), json!(state));
-        }
-        if kinds.iter().any(|k| k == "Email") && listener.types.iter().any(|t| t == "EmailDelivery") {
-            changed.insert("EmailDelivery".into(), json!(change.modseq.to_string()));
-        }
-        if changed.is_empty() {
+        let change = received?;
+        let Some(changed) = listener.watcher.changed(change.modseq).await else {
             continue;
-        }
+        };
         let data = json!({
             "@type": "StateChange",
-            "changed": { ids::account(listener.account_id): Value::Object(changed) }
+            "changed": { ids::account(listener.watcher.account_id()): Value::Object(changed) }
         });
         listener.done = listener.close_after_state;
         return Some((Ok(Event::default().event("state").data(data.to_string())), listener));
@@ -124,25 +158,13 @@ pub async fn handle(
         Ok(account) => account,
         Err(err) => return err.into_response(),
     };
-    let store = jmap.inner.store.clone();
-    let changes = store.subscribe_changes();
-    let last_modseq = store.account_modseq(account.id).await.unwrap_or(0);
     let types: Vec<String> = match query.types.as_deref() {
-        None | Some("*") | Some("") => {
-            TYPES.iter().map(|t| t.to_string()).chain(["EmailDelivery".to_owned()]).collect()
-        }
+        None | Some("*") | Some("") => all_types(),
         Some(list) => list.split(',').map(|t| t.trim().to_owned()).collect(),
     };
     let ping = query.ping.filter(|p| *p > 0).map(|p| Duration::from_secs(p.clamp(30, 3600)));
-    let listener = Listener {
-        store,
-        account_id: account.id,
-        types,
-        close_after_state: query.closeafter.as_deref() == Some("state"),
-        ping,
-        changes,
-        last_modseq,
-        done: false,
-    };
+    let watcher = Watcher::new(jmap.inner.store.clone(), account.id, types).await;
+    let listener =
+        Listener { watcher, close_after_state: query.closeafter.as_deref() == Some("state"), ping, done: false };
     Sse::new(events(listener)).keep_alive(KeepAlive::new().interval(Duration::from_secs(300))).into_response()
 }

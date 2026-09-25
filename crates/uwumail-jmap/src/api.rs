@@ -9,6 +9,7 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Json, Response};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
+use uwumail_store::Account;
 
 use crate::auth::ClientInfo;
 use crate::error::MethodError;
@@ -33,10 +34,30 @@ struct ResultReference {
     path: String,
 }
 
-fn request_error(status: StatusCode, kind: &str, detail: &str) -> Response {
-    let body =
-        json!({ "type": format!("urn:ietf:params:jmap:error:{kind}"), "status": status.as_u16(), "detail": detail });
-    (status, [(header::CONTENT_TYPE, "application/problem+json")], body.to_string()).into_response()
+/// A request-level error (RFC 8620, section 3.6.1): the whole request failed, no method ran.
+pub struct RequestError {
+    pub status: StatusCode,
+    /// The problem details, `type` included.
+    pub body: Value,
+}
+
+impl RequestError {
+    pub fn new(status: StatusCode, kind: &str, detail: &str) -> RequestError {
+        RequestError {
+            status,
+            body: json!({
+                "type": format!("urn:ietf:params:jmap:error:{kind}"),
+                "status": status.as_u16(),
+                "detail": detail
+            }),
+        }
+    }
+}
+
+impl IntoResponse for RequestError {
+    fn into_response(self) -> Response {
+        (self.status, [(header::CONTENT_TYPE, "application/problem+json")], self.body.to_string()).into_response()
+    }
 }
 
 pub async fn handle(
@@ -52,23 +73,39 @@ pub async fn handle(
     };
     let value: Value = match serde_json::from_slice(&body) {
         Ok(value) => value,
-        Err(_) => return request_error(StatusCode::BAD_REQUEST, "notJSON", "The request is not valid JSON."),
+        Err(_) => {
+            return RequestError::new(StatusCode::BAD_REQUEST, "notJSON", "The request is not valid JSON.")
+                .into_response();
+        }
     };
-    let request: Request = match serde_json::from_value(value) {
-        Ok(request) => request,
-        Err(err) => return request_error(StatusCode::BAD_REQUEST, "notRequest", &err.to_string()),
-    };
+    match process(&jmap, account, value).await {
+        Ok(response) => ([(header::CACHE_CONTROL, "no-cache, no-store")], Json(response)).into_response(),
+        Err(err) => err.into_response(),
+    }
+}
+
+/// Runs the method calls of one request object and returns the response object. Shared by
+/// `POST /jmap/api` and the WebSocket (RFC 8887).
+pub async fn process(jmap: &Jmap, account: Account, value: Value) -> Result<Value, RequestError> {
+    let request: Request = serde_json::from_value(value)
+        .map_err(|err| RequestError::new(StatusCode::BAD_REQUEST, "notRequest", &err.to_string()))?;
     if let Some(unknown) = request.using.iter().find(|c| !methods::KNOWN_CAPABILITIES.contains(&c.as_str())) {
-        return request_error(StatusCode::BAD_REQUEST, "unknownCapability", &format!("Unknown capability {unknown}."));
+        return Err(RequestError::new(
+            StatusCode::BAD_REQUEST,
+            "unknownCapability",
+            &format!("Unknown capability {unknown}."),
+        ));
     }
     if request.method_calls.len() > MAX_CALLS_IN_REQUEST {
-        let body = json!({
-            "type": "urn:ietf:params:jmap:error:limit",
-            "limit": "maxCallsInRequest",
-            "status": 400,
-            "detail": "Too many method calls in one request."
+        return Err(RequestError {
+            status: StatusCode::BAD_REQUEST,
+            body: json!({
+                "type": "urn:ietf:params:jmap:error:limit",
+                "limit": "maxCallsInRequest",
+                "status": 400,
+                "detail": "Too many method calls in one request."
+            }),
         });
-        return (StatusCode::BAD_REQUEST, Json(body)).into_response();
     }
 
     let echo_created_ids = request.created_ids.is_some();
@@ -96,7 +133,7 @@ pub async fn handle(
         response.insert("createdIds".into(), json!(ctx.created_ids));
     }
     response.insert("sessionState".into(), json!(session::session_state(&ctx.account)));
-    ([(header::CACHE_CONTROL, "no-cache, no-store")], Json(Value::Object(response))).into_response()
+    Ok(Value::Object(response))
 }
 
 /// Replaces `#name` arguments with the value their result reference points at.
