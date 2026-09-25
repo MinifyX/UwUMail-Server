@@ -28,7 +28,9 @@ pub async fn upload(
         Ok(owner) => owner,
         Err(err) => return err.into_response(),
     };
-    if account != ids::account(owner.id) {
+    // An upload for someone else's shared account is kept as the caller's own: Email/import and
+    // Email/set there read the caller's uploads (docs/sharing.md).
+    if account != ids::account(owner.id) && shared_owner(&jmap, owner.id, &account).await.is_none() {
         return problem(StatusCode::NOT_FOUND, "Unknown account.");
     }
     let media_type = headers
@@ -77,13 +79,30 @@ pub async fn download(
         Ok(owner) => owner,
         Err(err) => return err.into_response(),
     };
-    if account != ids::account(owner.id) {
-        return problem(StatusCode::NOT_FOUND, "Unknown account.");
-    }
     let Some(reference) = ids::parse_blob(&blob_id) else {
         return problem(StatusCode::NOT_FOUND, "Unknown blob.");
     };
     let store = &jmap.inner.store;
+    if account != ids::account(owner.id) {
+        // Someone else's account: only a message in a mailbox they let the caller read.
+        let Some(readable) = shared_owner(&jmap, owner.id, &account).await else {
+            return problem(StatusCode::NOT_FOUND, "Unknown account.");
+        };
+        if !store.blob_in_mailboxes(reference.hash(), readable).await.unwrap_or(false) {
+            return problem(StatusCode::NOT_FOUND, "Unknown blob.");
+        }
+        let Ok(bytes) = store.blob(reference.hash()).await else {
+            return problem(StatusCode::NOT_FOUND, "Unknown blob.");
+        };
+        let (bytes, detected) = match reference {
+            ids::BlobRef::Whole(_) => (bytes, "message/rfc822".to_owned()),
+            ids::BlobRef::Part(_, index) => match email::part_content(&bytes, index) {
+                Some(part) => part,
+                None => return problem(StatusCode::NOT_FOUND, "Unknown blob."),
+            },
+        };
+        return blob_response(bytes, query.accept.filter(|t| t.contains('/')).unwrap_or(detected), &name);
+    }
     // A Sieve script's content lives with the script, not in the blob files (RFC 9661 section 2.2).
     let script = match &reference {
         ids::BlobRef::Whole(hash) => store.sieve_script_blob(owner.id, hash).await.ok().flatten(),
@@ -110,6 +129,21 @@ pub async fn download(
         }
     };
     let content_type = query.accept.filter(|t| t.contains('/')).unwrap_or(detected);
+    blob_response(bytes, content_type, &name)
+}
+
+/// The readable mailboxes of a shared account (`a<owner>`) for `me`, when it is one.
+async fn shared_owner(jmap: &Jmap, me: i64, account: &str) -> Option<Vec<i64>> {
+    let owner = ids::parse('a', account)?;
+    let shared = jmap.inner.store.mailboxes_shared_with(me).await.ok()?;
+    let mine: Vec<_> = shared.into_iter().filter(|m| m.owner_id == owner).collect();
+    if mine.is_empty() {
+        return None;
+    }
+    Some(mine.into_iter().filter(|m| m.rights.contains('r')).map(|m| m.mailbox.id).collect())
+}
+
+fn blob_response(bytes: Vec<u8>, content_type: String, name: &str) -> Response {
     let mut response = Response::new(Body::from(bytes));
     let headers = response.headers_mut();
     headers.insert(
@@ -119,7 +153,7 @@ pub async fn download(
     // Always set, even when the name will not go into a header: this is what keeps a blob whose
     // content type the caller chose from being rendered on the portal's own origin, and it must not
     // fall away quietly with the file name.
-    let disposition = HeaderValue::from_str(&format!("attachment; filename*=UTF-8''{}", encode_filename(&name)))
+    let disposition = HeaderValue::from_str(&format!("attachment; filename*=UTF-8''{}", encode_filename(name)))
         .unwrap_or(HeaderValue::from_static("attachment"));
     headers.insert(header::CONTENT_DISPOSITION, disposition);
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, immutable, max-age=31536000"));

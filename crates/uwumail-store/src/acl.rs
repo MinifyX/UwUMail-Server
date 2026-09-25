@@ -49,7 +49,7 @@ impl ShareLevel {
     pub fn rights(self) -> &'static str {
         match self {
             ShareLevel::Read => "lr",
-            ShareLevel::Write => "lrswipte",
+            ShareLevel::Write => "lrswite",
             ShareLevel::All => ALL_RIGHTS,
         }
     }
@@ -327,6 +327,25 @@ impl Store {
             )?;
             let rows = stmt.query_map([grantee_id], |row| row.get(0))?;
             Ok(rows.collect::<Result<_, _>>()?)
+        })
+        .await
+    }
+
+    /// Whether a blob is the message of an email in one of these mailboxes, for downloading from
+    /// a shared folder.
+    pub async fn blob_in_mailboxes(&self, hash: &crate::BlobHash, mailbox_ids: Vec<i64>) -> Result<bool> {
+        let key = hash.as_str().to_owned();
+        self.read(move |conn| {
+            let mut stmt = conn.prepare_cached(
+                "SELECT EXISTS (SELECT 1 FROM emails e JOIN email_mailboxes em ON em.email_id = e.id
+                                WHERE e.blob_hash = ?1 AND em.mailbox_id = ?2)",
+            )?;
+            for mailbox in mailbox_ids {
+                if stmt.query_row(params![key, mailbox], |row| row.get::<_, bool>(0))? {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
         })
         .await
     }

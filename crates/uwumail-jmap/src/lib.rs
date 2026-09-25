@@ -28,6 +28,7 @@ mod push;
 mod remote;
 pub mod safe_html;
 mod session;
+mod sharing;
 
 use std::sync::Arc;
 

@@ -171,7 +171,12 @@ pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInf
     match jmap.inner.auth.account_for(&headers, client, false).await {
         Ok(account) => {
             let base = base_url(&headers, client);
-            ([(header::CACHE_CONTROL, "no-cache, no-store")], Json(document(&account, &base))).into_response()
+            let mut document = document(&account, &base);
+            // Folders others share with this account, as accounts of their own (docs/sharing.md).
+            let shared = crate::sharing::shared_accounts(&jmap.inner.store, account.id).await;
+            crate::sharing::add_to_session(&mut document, &account, &shared);
+            document["state"] = json!(format!("{}{}", session_state(&account), crate::sharing::state_suffix(&shared)));
+            ([(header::CACHE_CONTROL, "no-cache, no-store")], Json(document)).into_response()
         }
         Err(err) => err.into_response(),
     }

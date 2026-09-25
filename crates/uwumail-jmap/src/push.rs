@@ -48,6 +48,8 @@ struct Listener {
     ping: Option<Duration>,
     changes: broadcast::Receiver<StateChange>,
     last_modseq: i64,
+    /// The last change pushed per account shared with the listener.
+    shared_modseqs: std::collections::HashMap<i64, i64>,
     done: bool,
 }
 
@@ -69,7 +71,13 @@ async fn next_event(mut listener: Listener) -> Option<(Result<Event, Infallible>
         };
         let change = match received {
             Ok(change) if change.account_id == listener.account_id => change,
-            Ok(_) => continue,
+            Ok(change) => match shared_change(&mut listener, change).await {
+                Some(data) => {
+                    listener.done = listener.close_after_state;
+                    return Some((Ok(Event::default().event("state").data(data.to_string())), listener));
+                }
+                None => continue,
+            },
             // Missed some changes: report everything as changed.
             Err(broadcast::error::RecvError::Lagged(_)) => {
                 let modseq = listener.store.account_modseq(listener.account_id).await.unwrap_or(listener.last_modseq);
@@ -109,6 +117,34 @@ async fn next_event(mut listener: Listener) -> Option<(Result<Event, Infallible>
     }
 }
 
+/// A change in someone else's account: pushed when they share mail with the listener, as a
+/// change of their shared account (docs/sharing.md).
+async fn shared_change(listener: &mut Listener, change: StateChange) -> Option<Value> {
+    let owner = change.account_id;
+    if !listener.store.sharing_owners(listener.account_id).await.ok()?.contains(&owner) {
+        return None;
+    }
+    let since = listener.shared_modseqs.get(&owner).copied().unwrap_or(change.modseq - 1);
+    listener.shared_modseqs.insert(owner, since.max(change.modseq));
+    let kinds = listener.store.changed_kinds(owner, since).await.ok()?;
+    let mut changed = Map::new();
+    for kind in kinds.iter().filter(|k| SHARED_TYPES.contains(&k.as_str())) {
+        if listener.types.iter().any(|t| t == kind) {
+            changed.insert(kind.clone(), json!(change.modseq.to_string()));
+        }
+    }
+    if kinds.iter().any(|k| k == "Email") && listener.types.iter().any(|t| t == "EmailDelivery") {
+        changed.insert("EmailDelivery".into(), json!(change.modseq.to_string()));
+    }
+    if changed.is_empty() {
+        return None;
+    }
+    Some(json!({ "@type": "StateChange", "changed": { ids::account(owner): Value::Object(changed) } }))
+}
+
+/// What a shared account has.
+const SHARED_TYPES: &[&str] = &["Mailbox", "Email", "Thread"];
+
 fn events(listener: Listener) -> impl Stream<Item = Result<Event, Infallible>> {
     stream::unfold(listener, next_event)
 }
@@ -142,6 +178,7 @@ pub async fn handle(
         ping,
         changes,
         last_modseq,
+        shared_modseqs: Default::default(),
         done: false,
     };
     Sse::new(events(listener)).keep_alive(KeepAlive::new().interval(Duration::from_secs(300))).into_response()

@@ -279,6 +279,10 @@ async fn folders_are_shared_by_acl_and_used_by_their_rights() {
     assert_eq!(server.store.imap_status(server.mini, mini_inbox).await.unwrap().messages, 2, "the owner's mail");
     leni.expect("CREATE \"Shared/mini@example.org/INBOX/Neu\"", "OK").await;
     assert!(server.store.imap_mailboxes(server.mini).await.unwrap().iter().any(|m| m.name == "Neu"));
+    // A new folder inside a shared one is shared the same way.
+    let lines = leni.expect("LIST \"\" \"Shared/*\"", "OK").await;
+    find(&lines, "\"Shared/mini@example.org/INBOX/Neu\"");
+    find(&lines, "(\\HasChildren) \"/\" \"Shared/mini@example.org/INBOX\"");
 
     // IDLE in the shared folder hears of the owner's new mail.
     leni.expect(&format!("SELECT {SHARED_INBOX}"), "OK").await;
@@ -298,6 +302,7 @@ async fn folders_are_shared_by_acl_and_used_by_their_rights() {
 
     // Taking the share back: gone from Leni's list, and no longer to be opened.
     mini.expect("DELETEACL INBOX leni@example.org", "OK").await;
+    mini.expect("DELETEACL INBOX/Neu leni@example.org", "OK").await;
     leni.expect("UNSELECT", "OK").await;
     let lines = leni.expect("LIST \"\" \"*\"", "OK").await;
     lacks(&lines, "Shared");

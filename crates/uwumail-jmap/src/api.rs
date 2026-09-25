@@ -95,7 +95,10 @@ pub async fn handle(
     if echo_created_ids {
         response.insert("createdIds".into(), json!(ctx.created_ids));
     }
-    response.insert("sessionState".into(), json!(session::session_state(&ctx.account)));
+    // The shared accounts are part of the session, so their changes change its state too.
+    let shared = crate::sharing::shared_accounts(&jmap.inner.store, ctx.account.id).await;
+    let state = format!("{}{}", session::session_state(&ctx.account), crate::sharing::state_suffix(&shared));
+    response.insert("sessionState".into(), json!(state));
     ([(header::CACHE_CONTROL, "no-cache, no-store")], Json(Value::Object(response))).into_response()
 }
 

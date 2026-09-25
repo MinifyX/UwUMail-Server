@@ -31,7 +31,7 @@ pub struct EmailUpdate {
     pub mailboxes: MailboxesChange,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MailboxUpdate {
     pub name: Option<String>,
     pub parent_id: Option<Option<i64>>,
@@ -359,6 +359,14 @@ impl Store {
                 )
                 .map_err(map_unique)?;
                 let id = tx.last_insert_rowid();
+                // A folder made inside a shared one is shared the same way (docs/sharing.md).
+                if let Some(parent) = parent_id {
+                    tx.execute(
+                        "INSERT INTO mailbox_acl (mailbox_id, owner_id, grantee_id, rights, created_at, updated_at)
+                         SELECT ?1, owner_id, grantee_id, rights, ?3, ?3 FROM mailbox_acl WHERE mailbox_id = ?2",
+                        params![id, parent, crate::now()],
+                    )?;
+                }
                 record_change(tx, account_id, modseq, "Mailbox", id, "created")?;
                 Ok((id, modseq))
             })

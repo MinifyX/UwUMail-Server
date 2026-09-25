@@ -1,12 +1,14 @@
 //! Email/get, Email/query, Email/set, Email/import and Email/parse (RFC 8621, section 4).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::{Map, Value, json};
 use uwumail_store::{
-    EmailFilter, EmailSort, EmailSortProperty, EmailUpdate, IngestRequest, KeywordsChange, MailboxTarget,
+    EmailFilter, EmailRecord, EmailSort, EmailSortProperty, EmailUpdate, IngestRequest, KeywordsChange, MailboxTarget,
     MailboxesChange, StoreError,
 };
+
+use crate::sharing::SharedView;
 
 use super::{Ctx, SetResponse, check_set_size, get_ids, if_in_state, properties};
 use crate::email::{self as email_json, BlobSource, BodyValueOptions, DEFAULT_BODY_PROPERTIES, DEFAULT_PROPERTIES};
@@ -27,7 +29,7 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         max_bytes: args.get("maxBodyValueBytes").and_then(Value::as_u64).unwrap_or(0) as usize,
     };
     let numbers: Vec<i64> = requested.iter().filter_map(|id| ctx.parse_id('e', id)).collect();
-    let records = ctx.jmap.store.emails_by_ids(ctx.account.id, numbers).await?;
+    let records = visible_records(ctx, ctx.jmap.store.emails_by_ids(ctx.account.id, numbers).await?);
     let needs_raw = email_json::needs_raw(&properties);
 
     let mut list = Vec::with_capacity(records.len());
@@ -48,6 +50,81 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         ));
     }
     Ok(json!({ "accountId": ctx.account_id(), "state": state, "list": list, "notFound": not_found }))
+}
+
+/// In someone else's account: only the emails the caller may read, each in only the mailboxes
+/// shared with them.
+pub fn visible_records(ctx: &Ctx<'_>, mut records: Vec<EmailRecord>) -> Vec<EmailRecord> {
+    if let Some(view) = &ctx.shared {
+        records.retain(|record| view.may_read_email(&record.mailbox_ids));
+        for record in &mut records {
+            record.mailbox_ids.retain(|mailbox| view.visible(*mailbox));
+        }
+    }
+    records
+}
+
+/// Checks an update to an email in someone else's account against the rights, and keeps it from
+/// touching the mailboxes the caller does not see.
+fn check_shared_update(view: &SharedView, record: &EmailRecord, update: &mut EmailUpdate) -> Result<(), SetError> {
+    if !view.may_read_email(&record.mailbox_ids) {
+        return Err(SetError::not_found());
+    }
+    let forbidden = |what: &str| SetError::new("forbidden", format!("you may not {what} in this shared mailbox"));
+    let changed: Vec<String> = match &update.keywords {
+        KeywordsChange::Keep => Vec::new(),
+        KeywordsChange::Patch(list) => {
+            list.iter().filter(|(k, on)| record.keywords.contains(k) != *on).map(|(k, _)| k.clone()).collect()
+        }
+        KeywordsChange::Replace(list) => {
+            let now: HashSet<&String> = list.iter().collect();
+            let before: HashSet<&String> = record.keywords.iter().collect();
+            now.symmetric_difference(&before).map(|k| (*k).clone()).collect()
+        }
+    };
+    if changed.iter().any(|keyword| !view.may_change_keyword(&record.mailbox_ids, keyword)) {
+        return Err(forbidden("change these keywords"));
+    }
+    let (added, removed): (Vec<i64>, Vec<i64>) = match &update.mailboxes {
+        MailboxesChange::Keep => (Vec::new(), Vec::new()),
+        MailboxesChange::Patch(list) => (
+            list.iter().filter(|(m, on)| *on && !record.mailbox_ids.contains(m)).map(|(m, _)| *m).collect(),
+            list.iter().filter(|(m, on)| !*on && record.mailbox_ids.contains(m)).map(|(m, _)| *m).collect(),
+        ),
+        MailboxesChange::Replace(list) => (
+            list.iter().filter(|m| !record.mailbox_ids.contains(m)).copied().collect(),
+            record.mailbox_ids.iter().filter(|m| view.visible(**m) && !list.contains(m)).copied().collect(),
+        ),
+    };
+    if added.iter().any(|mailbox| !view.may(*mailbox, "i")) {
+        return Err(forbidden("add messages"));
+    }
+    if removed.iter().any(|mailbox| !view.may(*mailbox, "te")) {
+        return Err(forbidden("remove messages"));
+    }
+    if matches!(update.mailboxes, MailboxesChange::Replace(_)) {
+        // Mailboxes of the owner that are not shared keep the email.
+        let patch = added.into_iter().map(|m| (m, true)).chain(removed.into_iter().map(|m| (m, false))).collect();
+        update.mailboxes = MailboxesChange::Patch(patch);
+    }
+    Ok(())
+}
+
+/// For a new email in someone else's account: every mailbox takes messages (`i`) and every
+/// keyword may be set there.
+fn check_shared_create(ctx: &Ctx<'_>, mailboxes: &[MailboxTarget], keywords: &[String]) -> Result<(), SetError> {
+    let Some(view) = &ctx.shared else {
+        return Ok(());
+    };
+    let ids: Vec<i64> =
+        mailboxes.iter().map(|target| if let MailboxTarget::Id(id) = target { *id } else { -1 }).collect();
+    if ids.iter().any(|mailbox| !view.may(*mailbox, "i")) {
+        return Err(SetError::new("forbidden", "you may not add messages to this shared mailbox"));
+    }
+    if keywords.iter().any(|keyword| !view.may_change_keyword(&ids, keyword)) {
+        return Err(SetError::new("forbidden", "you may not set these keywords in this shared mailbox"));
+    }
+    Ok(())
 }
 
 fn keyword(value: &Value, name: &str) -> MethodResult<String> {
@@ -156,7 +233,19 @@ fn parse_sort(value: Option<&Value>) -> MethodResult<Vec<EmailSort>> {
 
 pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let state = ctx.state().await?;
-    let filter = args.get("filter").filter(|f| !f.is_null()).map(|f| parse_filter(ctx, f)).transpose()?;
+    let mut filter = args.get("filter").filter(|f| !f.is_null()).map(|f| parse_filter(ctx, f)).transpose()?;
+    if let Some(view) = &ctx.shared {
+        // Only what is in a mailbox the caller may read.
+        let mut readable: Vec<EmailFilter> = view.readable().into_iter().map(EmailFilter::InMailbox).collect();
+        if readable.is_empty() {
+            readable.push(EmailFilter::InMailbox(-1));
+        }
+        let scope = EmailFilter::Or(readable);
+        filter = Some(match filter {
+            Some(filter) => EmailFilter::And(vec![scope, filter]),
+            None => scope,
+        });
+    }
     let sort = parse_sort(args.get("sort"))?;
     let collapse = args.get("collapseThreads").and_then(Value::as_bool).unwrap_or(false);
     let results = ctx.jmap.store.query_emails(ctx.account.id, filter, sort, collapse).await?;
@@ -223,7 +312,16 @@ fn collect_blob_ids(value: &Value, out: &mut Vec<String>) {
 /// Reads a blob the account may access: a whole blob or one part of a stored message.
 pub async fn read_blob(ctx: &Ctx<'_>, blob_id: &str) -> Option<Vec<u8>> {
     let reference = ids::parse_blob(ctx.resolve(blob_id)?)?;
-    if !ctx.jmap.store.blob_accessible(ctx.account.id, reference.hash()).await.ok()? {
+    let accessible = match &ctx.shared {
+        None => ctx.jmap.store.blob_accessible(ctx.account.id, reference.hash()).await.ok()?,
+        // In someone else's account: the caller's own uploads and mail, and what is in a mailbox
+        // they may read.
+        Some(view) => {
+            ctx.jmap.store.blob_accessible(view.me.id, reference.hash()).await.ok()?
+                || ctx.jmap.store.blob_in_mailboxes(reference.hash(), view.readable()).await.ok()?
+        }
+    };
+    if !accessible {
         return None;
     }
     let bytes = ctx.jmap.store.blob(reference.hash()).await.ok()?;
@@ -346,6 +444,27 @@ pub async fn apply_updates(ctx: &Ctx<'_>, update: &Map<String, Value>, response:
             }
         }
     }
+    if let Some(view) = &ctx.shared {
+        let records = ctx.jmap.store.emails_by_ids(ctx.account.id, updates.iter().map(|u| u.id).collect()).await?;
+        let mut allowed = Vec::new();
+        let mut allowed_ids = Vec::new();
+        for (mut update, id) in updates.into_iter().zip(update_ids) {
+            let checked = match records.iter().find(|record| record.id == update.id) {
+                Some(record) => check_shared_update(view, record, &mut update),
+                None => Err(SetError::not_found()),
+            };
+            match checked {
+                Ok(()) => {
+                    allowed.push(update);
+                    allowed_ids.push(id);
+                }
+                Err(err) => {
+                    response.not_updated.insert(id, err.to_json());
+                }
+            }
+        }
+        (updates, update_ids) = (allowed, allowed_ids);
+    }
     let results = ctx.jmap.store.update_emails(ctx.account.id, updates).await?;
     for (id, result) in update_ids.into_iter().zip(results) {
         match result {
@@ -374,6 +493,32 @@ pub async fn apply_destroys(ctx: &Ctx<'_>, destroy: &[String], response: &mut Se
             }
         }
     }
+    if let Some(view) = &ctx.shared {
+        // Destroying takes the email out of every mailbox: all of them have to be shared with the
+        // caller for removing.
+        let records = ctx.jmap.store.emails_by_ids(ctx.account.id, numbers.clone()).await?;
+        let mut allowed = Vec::new();
+        let mut allowed_ids = Vec::new();
+        for (number, id) in numbers.into_iter().zip(valid) {
+            match records.iter().find(|record| record.id == number) {
+                Some(record) if !view.may_read_email(&record.mailbox_ids) => {
+                    response.not_destroyed.insert(id, SetError::not_found().to_json());
+                }
+                Some(record) if record.mailbox_ids.iter().all(|mailbox| view.may(*mailbox, "te")) => {
+                    allowed.push(number);
+                    allowed_ids.push(id);
+                }
+                Some(_) => {
+                    let err = SetError::new("forbidden", "you may not remove this message from every mailbox");
+                    response.not_destroyed.insert(id, err.to_json());
+                }
+                None => {
+                    response.not_destroyed.insert(id, SetError::not_found().to_json());
+                }
+            }
+        }
+        (numbers, valid) = (allowed, allowed_ids);
+    }
     let results = ctx.jmap.store.destroy_emails(ctx.account.id, numbers).await?;
     for (id, result) in valid.into_iter().zip(results) {
         match result {
@@ -400,6 +545,7 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                     .ok_or_else(|| SetError::new("invalidProperties", "the email must be an object"))?;
                 let mailboxes = mailbox_ids(ctx, object.get("mailboxIds"))?;
                 let keywords = keywords(object.get("keywords"))?;
+                check_shared_create(ctx, &mailboxes, &keywords)?;
                 let received_at = received_at(object.get("receivedAt"))?;
                 let mut blob_ids = Vec::new();
                 collect_blob_ids(&Value::Object(object.clone()), &mut blob_ids);
@@ -464,6 +610,7 @@ pub async fn import(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                 .ok_or_else(|| SetError::new("blobNotFound", format!("blob {blob_id} not found")))?;
             let mailboxes = mailbox_ids(ctx, object.get("mailboxIds"))?;
             let keywords = keywords(object.get("keywords"))?;
+            check_shared_create(ctx, &mailboxes, &keywords)?;
             let received_at = received_at(object.get("receivedAt"))?;
             ctx.jmap
                 .store
