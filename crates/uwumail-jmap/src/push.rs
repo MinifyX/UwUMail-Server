@@ -52,6 +52,8 @@ pub(crate) struct Watcher {
     pub last_modseq: i64,
     /// The last change pushed per account shared with this one.
     shared_modseqs: HashMap<i64, i64>,
+    /// Changes still to hand out after missing some: those of the accounts sharing with this one.
+    pending: Vec<StateChange>,
 }
 
 /// All push types, for a client that asks for everything.
@@ -63,12 +65,22 @@ impl Watcher {
     pub async fn new(store: Store, account_id: i64, types: Vec<String>) -> Watcher {
         let changes = store.subscribe_changes();
         let last_modseq = store.account_modseq(account_id).await.unwrap_or(0);
-        Watcher { store, account_id, types, changes, last_modseq, shared_modseqs: HashMap::new() }
+        // Where each shared account stands now, so what comes later is measured from here.
+        let mut shared_modseqs = HashMap::new();
+        for owner in store.sharing_owners(account_id).await.unwrap_or_default() {
+            if let Ok(modseq) = store.account_modseq(owner).await {
+                shared_modseqs.insert(owner, modseq);
+            }
+        }
+        Watcher { store, account_id, types, changes, last_modseq, shared_modseqs, pending: Vec::new() }
     }
 
     /// Waits for the next change of this account or of an account that shares mail with it. Safe
     /// to cancel: nothing is lost when it is. `None` when the server shuts down.
     pub async fn wait(&mut self) -> Option<StateChange> {
+        if let Some(change) = self.pending.pop() {
+            return Some(change);
+        }
         loop {
             match self.changes.recv().await {
                 Ok(change) if change.account_id == self.account_id => return Some(change),
@@ -78,8 +90,13 @@ impl Watcher {
                         return Some(change);
                     }
                 }
-                // Missed some changes: report everything as changed.
+                // Missed some changes: report everything as changed, in the shared accounts too.
                 Err(broadcast::error::RecvError::Lagged(_)) => {
+                    for owner in self.store.sharing_owners(self.account_id).await.unwrap_or_default() {
+                        if let Ok(modseq) = self.store.account_modseq(owner).await {
+                            self.pending.push(StateChange { account_id: owner, modseq });
+                        }
+                    }
                     let modseq = self.store.account_modseq(self.account_id).await.unwrap_or(self.last_modseq);
                     return Some(StateChange { account_id: self.account_id, modseq });
                 }

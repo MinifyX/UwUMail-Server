@@ -127,3 +127,73 @@ async fn requests_and_push_over_a_websocket() {
     assert!(change["changed"][&account]["Email"].is_string());
     assert_ne!(change["pushState"], push_state);
 }
+
+/// The next StateChange that names this account and type, skipping others.
+async fn state_change_for(socket: &mut Socket, account: &str, kind: &str) -> Value {
+    loop {
+        let message = receive(socket).await;
+        assert_eq!(message["@type"], "StateChange", "{message}");
+        if message["changed"][account][kind].is_string() {
+            return message;
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn shared_folders_and_calendars_are_pushed_to_whom_they_are_shared_with() {
+    let server = server().await;
+    let url = listen(server.router.clone()).await;
+    let (mini, nyu) = (server.account_id("mini@example.org").await, server.account_id("nyu@example.org").await);
+    let nyu_principal = nyu.replacen('a', "p", 1);
+    let inbox = server.mailbox("mini@example.org", "inbox").await;
+    let using = [
+        "urn:ietf:params:jmap:core",
+        "urn:ietf:params:jmap:mail",
+        "urn:ietf:params:jmap:calendars",
+        "urn:ietf:params:jmap:principals",
+    ];
+    let shared = server
+        .api_using(
+            "mini@example.org",
+            &using,
+            json!([["Mailbox/set", { "accountId": mini, "update": { &inbox: { format!("shareWith/{nyu_principal}"): "read" } } }, "0"]]),
+        )
+        .await;
+    assert!(shared[0][1]["updated"].get(&inbox).is_some(), "{}", shared[0]);
+
+    let mut socket = connect(&url, Some(&basic("nyu@example.org", PASSWORD)), Some("jmap")).await.unwrap();
+    send(&mut socket, json!({ "@type": "WebSocketPushEnable", "dataTypes": null })).await;
+    send(&mut socket, json!({ "@type": "Request", "id": "sync", "using": USING, "methodCalls": [] })).await;
+    assert_eq!(receive(&mut socket).await["requestId"], "sync");
+
+    // Mail in Mini's shared inbox is pushed to Nyu as a change of Mini's shared account.
+    server.deliver("mini@example.org", "From: leni@example.net\nTo: mini@example.org\nSubject: Hi\n\nPurr\n").await;
+    let change = state_change_for(&mut socket, &mini, "Email").await;
+    assert!(change["changed"][&mini]["EmailDelivery"].is_string(), "{change}");
+    assert!(change["changed"][&mini].get("Calendar").is_none(), "only what a shared account has");
+
+    // A calendar shared with Nyu: sharing it and every event in it reach Nyu's own account.
+    let calendars = server
+        .api_using("mini@example.org", &using, json!([["Calendar/get", { "accountId": mini, "ids": null }, "0"]]))
+        .await;
+    let calendar = calendars[0][1]["list"][0]["id"].as_str().unwrap().to_owned();
+    server
+        .api_using(
+            "mini@example.org",
+            &using,
+            json!([["Calendar/set", { "accountId": mini, "update": { &calendar: { "shareWith": { &nyu_principal: { "mayReadItems": true } } } } }, "0"]]),
+        )
+        .await;
+    state_change_for(&mut socket, &nyu, "Calendar").await;
+    let created = server
+        .api_using(
+            "mini@example.org",
+            &using,
+            json!([["CalendarEvent/set", { "accountId": mini, "create": { "e": {
+                "calendarIds": { &calendar: true }, "title": "Tierarzt", "start": "2026-10-20T09:00:00",
+                "timeZone": "Europe/Berlin", "duration": "PT1H" } } }, "0"]]),
+        )
+        .await;
+    assert!(created[0][1]["created"].get("e").is_some(), "{}", created[0]);
+    state_change_for(&mut socket, &nyu, "CalendarEvent").await;
+}
