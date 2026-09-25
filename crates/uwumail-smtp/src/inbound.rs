@@ -1776,8 +1776,14 @@ pub(crate) async fn receive(
     // Verified enough that answering it is not backscatter to a forged sender. The same gate an
     // auto-reply and a bounce share (security-audit-0.5.2 S-16).
     let sender_verified = verdict.as_ref().is_none_or(|v| v.sender_verified);
+    // The From address, when SPF or DKIM vouch for it: only then may a calendar answer or
+    // cancellation in the message speak for that address.
+    let verified_from =
+        verdict.as_ref().filter(|v| v.from_verified || v.dmarc_passed).and_then(|v| v.from_address.clone());
     for account_id in inbox_accounts {
         vacation::maybe_reply(&ctx, account_id, &envelope.address, sender_verified, &message).await;
+        let sender = crate::scheduling::Sender { verified_from: verified_from.as_deref(), local: false };
+        crate::scheduling::incoming(&ctx, account_id, &message, sender).await;
     }
     if !failed.is_empty() && sender_verified {
         dsn::bounce(&ctx, &envelope.address, &message, &failed).await;

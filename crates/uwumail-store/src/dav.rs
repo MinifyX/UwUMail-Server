@@ -118,6 +118,9 @@ pub struct DavResourceInfo {
     pub modified_at: i64,
     pub starts_at: Option<i64>,
     pub ends_at: Option<i64>,
+    /// The CalDAV Schedule-Tag (RFC 6638): changes with the ETag, except when the server only
+    /// wrote an attendee's answer into the organizer's copy.
+    pub schedule_tag: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -197,7 +200,7 @@ pub(crate) fn collection_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavCol
     })
 }
 
-const INFO_COLUMNS: &str = "name, uid, etag, component, size, modified_at, starts_at, ends_at";
+const INFO_COLUMNS: &str = "name, uid, etag, component, size, modified_at, starts_at, ends_at, schedule_tag";
 
 fn info_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavResourceInfo> {
     Ok(DavResourceInfo {
@@ -209,6 +212,7 @@ fn info_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavResourceInfo> {
         modified_at: row.get(5)?,
         starts_at: row.get(6)?,
         ends_at: row.get(7)?,
+        schedule_tag: row.get(8)?,
     })
 }
 
@@ -722,7 +726,7 @@ impl Store {
     ) -> Result<Vec<DavResource>> {
         self.read(move |conn| {
             own_collection(conn, account_id, collection_id)?;
-            let read = |row: &rusqlite::Row<'_>| Ok(DavResource { info: info_row(row)?, content: row.get(8)? });
+            let read = |row: &rusqlite::Row<'_>| Ok(DavResource { info: info_row(row)?, content: row.get(9)? });
             let sql = format!("SELECT {INFO_COLUMNS}, content FROM dav_resources WHERE collection_id = ?1");
             match names {
                 None => {

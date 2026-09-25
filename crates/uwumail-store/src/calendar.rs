@@ -40,6 +40,9 @@ pub struct CalendarEventWrite {
     /// The ETag the event had when it was read: a write over a change made meanwhile fails with
     /// [`StoreError::Conflict`], so the caller can read it again.
     pub if_etag: Option<String>,
+    /// Keeps the CalDAV Schedule-Tag, as when the server only writes an attendee's answer into
+    /// the organizer's copy (RFC 6638, 3.2.10).
+    pub keep_schedule_tag: bool,
 }
 
 const EVENT_COLUMNS: &str =
@@ -215,6 +218,12 @@ impl Store {
                     starts_at: write.starts_at,
                     ends_at: write.ends_at,
                 };
+                let keep = |tx: &Transaction<'_>, id: i64, tag: Option<String>| -> Result<()> {
+                    if write.keep_schedule_tag {
+                        tx.execute("UPDATE dav_resources SET schedule_tag = ?1 WHERE id = ?2", params![tag, id])?;
+                    }
+                    Ok(())
+                };
                 let Some(id) = write.id else {
                     let name = new_entry_name(tx, target.id, &write.uid, "ics")?;
                     let condition = DavPrecondition { if_none_match_any: true, ..Default::default() };
@@ -223,15 +232,15 @@ impl Store {
                         other => Err(StoreError::Internal(format!("a new event could not be stored: {other:?}"))),
                     };
                 };
-                let (source_id, name, etag): (i64, String, String) = tx
+                let (source_id, name, etag, tag): (i64, String, String, Option<String>) = tx
                     .query_row(
                         &format!(
-                            "SELECT r.collection_id, r.name, r.etag FROM dav_resources r
+                            "SELECT r.collection_id, r.name, r.etag, r.schedule_tag FROM dav_resources r
                              JOIN dav_collections c ON c.id = r.collection_id
                              WHERE r.id = ?2 AND {VISIBLE} AND c.kind = 'calendar' AND r.component = 'VEVENT'"
                         ),
                         params![account_id, id],
-                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
                     )
                     .optional()?
                     .ok_or_else(|| StoreError::NotFound(format!("event {id}")))?;
@@ -242,7 +251,10 @@ impl Store {
                 if source_id == target.id {
                     let condition = DavPrecondition { if_match: Some(etag), ..Default::default() };
                     return match put_entry(tx, &mut log, &target, &entry(name), &condition)? {
-                        (DavWriteOutcome::Updated { etag }, _) => Ok(((id, etag), log.modseq())),
+                        (DavWriteOutcome::Updated { etag }, _) => {
+                            keep(tx, id, tag)?;
+                            Ok(((id, etag), log.modseq()))
+                        }
                         other => Err(StoreError::Internal(format!("an event could not be updated: {other:?}"))),
                     };
                 }
@@ -254,6 +266,26 @@ impl Store {
             .await?;
         self.notify_log(account_id, modseq);
         Ok(result)
+    }
+
+    /// The account's own event with this UID, in any of its calendars. Calendars shared with it
+    /// do not count: scheduling puts invitations into one's own calendars.
+    pub async fn own_calendar_event_by_uid(&self, account_id: i64, uid: &str) -> Result<Option<CalendarEventRecord>> {
+        let uid = uid.to_owned();
+        self.read(move |conn| {
+            Ok(conn
+                .query_row(
+                    &format!(
+                        "SELECT {EVENT_COLUMNS} FROM dav_resources r JOIN dav_collections c ON c.id = r.collection_id
+                         WHERE c.account_id = ?1 AND c.kind = 'calendar' AND r.component = 'VEVENT' AND r.uid = ?2
+                         ORDER BY r.id LIMIT 1"
+                    ),
+                    params![account_id, uid],
+                    event_row,
+                )
+                .optional()?)
+        })
+        .await
     }
 
     /// Deletes an event, unless it changed since it had `if_etag`.
@@ -318,6 +350,7 @@ mod tests {
             starts_at: None,
             ends_at: None,
             if_etag: None,
+            keep_schedule_tag: false,
         }
     }
 

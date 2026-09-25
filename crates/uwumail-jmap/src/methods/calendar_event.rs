@@ -435,6 +435,7 @@ impl Writer<'_> {
             starts_at: checked.starts_at,
             ends_at: checked.ends_at,
             if_etag,
+            keep_schedule_tag: false,
         };
         match self.ctx.jmap.store.put_calendar_event(self.ctx.account.id, write).await {
             Ok((id, _)) => Ok(Ok(id)),
