@@ -57,7 +57,7 @@ fn keyword(value: &Value, name: &str) -> MethodResult<String> {
         .ok_or_else(|| MethodError::new("unsupportedFilter", format!("{name} must be a string")))
 }
 
-fn parse_filter(ctx: &Ctx<'_>, value: &Value) -> MethodResult<EmailFilter> {
+pub(super) fn parse_filter(ctx: &Ctx<'_>, value: &Value) -> MethodResult<EmailFilter> {
     let object = value.as_object().ok_or_else(|| MethodError::new("unsupportedFilter", "filters must be objects"))?;
     if let Some(operator) = object.get("operator").and_then(Value::as_str) {
         let conditions = object
@@ -123,7 +123,7 @@ fn parse_filter(ctx: &Ctx<'_>, value: &Value) -> MethodResult<EmailFilter> {
     Ok(if conditions.len() == 1 { conditions.remove(0) } else { EmailFilter::And(conditions) })
 }
 
-fn parse_sort(value: Option<&Value>) -> MethodResult<Vec<EmailSort>> {
+pub(super) fn parse_sort(value: Option<&Value>) -> MethodResult<Vec<EmailSort>> {
     let Some(list) = value.and_then(Value::as_array) else {
         return Ok(Vec::new());
     };
@@ -233,7 +233,7 @@ pub async fn read_blob(ctx: &Ctx<'_>, blob_id: &str) -> Option<Vec<u8>> {
     }
 }
 
-fn mailbox_ids(ctx: &Ctx<'_>, value: Option<&Value>) -> Result<Vec<MailboxTarget>, SetError> {
+pub(super) fn mailbox_ids(ctx: &Ctx<'_>, value: Option<&Value>) -> Result<Vec<MailboxTarget>, SetError> {
     let map = value
         .and_then(Value::as_object)
         .ok_or_else(|| SetError::invalid_properties(&["mailboxIds"], "mailboxIds is required"))?;
@@ -253,7 +253,7 @@ fn mailbox_ids(ctx: &Ctx<'_>, value: Option<&Value>) -> Result<Vec<MailboxTarget
     Ok(targets)
 }
 
-fn keywords(value: Option<&Value>) -> Result<Vec<String>, SetError> {
+pub(super) fn keywords(value: Option<&Value>) -> Result<Vec<String>, SetError> {
     match value {
         None | Some(Value::Null) => Ok(Vec::new()),
         Some(Value::Object(map)) => {
@@ -263,7 +263,7 @@ fn keywords(value: Option<&Value>) -> Result<Vec<String>, SetError> {
     }
 }
 
-fn received_at(value: Option<&Value>) -> Result<Option<i64>, SetError> {
+pub(super) fn received_at(value: Option<&Value>) -> Result<Option<i64>, SetError> {
     match value {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(date)) => dates::parse(date)
@@ -273,7 +273,7 @@ fn received_at(value: Option<&Value>) -> Result<Option<i64>, SetError> {
     }
 }
 
-fn created_json(email: &uwumail_store::IngestedEmail) -> Value {
+pub(super) fn created_json(email: &uwumail_store::IngestedEmail) -> Value {
     json!({ "id": ids::email(email.id), "blobId": ids::blob(&email.blob), "threadId": ids::thread(email.thread_id), "size": email.size })
 }
 
