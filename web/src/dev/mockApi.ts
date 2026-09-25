@@ -64,6 +64,8 @@ import type {
   ServerCheck,
   Session,
   SetupStatus,
+  ShareLevel,
+  SharingView,
   StorageView,
   VacationView,
   WordEntry,
@@ -1185,6 +1187,33 @@ const mockStorage: StorageView = {
     { id: 5, name: "Junk", role: "junk", emails: 57, sizeBytes: 12_000_000 },
     { id: 6, name: "Trash", role: "trash", emails: 133, sizeBytes: 38_000_000 },
     { id: 7, name: "Verein", role: null, emails: 44, sizeBytes: 9_500_000 },
+  ],
+};
+
+const mockSharing: SharingView = {
+  folders: mockStorage.mailboxes.map((mailbox) => ({
+    id: mailbox.id,
+    path: mailbox.name,
+    role: mailbox.role,
+    shares:
+      mailbox.name === "Verein"
+        ? [{ login: "nyu@example.org", name: "Nyu", level: "write" as const, rights: "lrswite" }]
+        : [],
+  })),
+  sharedWithMe: [
+    {
+      owner: "mini@example.org",
+      ownerName: "Mini",
+      id: 101,
+      path: "Rechnungen",
+      role: null,
+      level: "read",
+      rights: "lr",
+    },
+  ],
+  people: [
+    { login: "mini@example.org", name: "Mini" },
+    { login: "nyu@example.org", name: "Nyu" },
   ],
 };
 
@@ -2403,6 +2432,32 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["GET", /^\/api\/account\/storage$/, () => [200, mockStorage]],
+  ["GET", /^\/api\/account\/sharing$/, () => [200, mockSharing]],
+  [
+    "PUT",
+    /^\/api\/account\/sharing\/(\d+)$/,
+    (body, [id]) => {
+      const { login, level } = body as { login: string; level: ShareLevel };
+      const folder = mockSharing.folders.find((entry) => entry.id === Number(id));
+      const person = mockSharing.people.find((entry) => entry.login === login);
+      if (!folder || !person) return problem(404, "notFound");
+      const rights = { read: "lr", write: "lrswite", all: "lrswipkxtea" }[level];
+      folder.shares = [
+        ...folder.shares.filter((entry) => entry.login !== login),
+        { login, name: person.name, level, rights },
+      ];
+      return [200, mockSharing];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/account\/sharing\/(\d+)\/([^/]+)$/,
+    (_, [id, login]) => {
+      const folder = mockSharing.folders.find((entry) => entry.id === Number(id));
+      if (folder) folder.shares = folder.shares.filter((entry) => entry.login !== login);
+      return [200, mockSharing];
+    },
+  ],
   [
     "POST",
     /^\/api\/account\/mailboxes\/(trash|junk)\/empty$/,

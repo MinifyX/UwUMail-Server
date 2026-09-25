@@ -1189,6 +1189,31 @@ export interface StorageView {
   }[];
 }
 
+/** How much someone may do with a shared folder. */
+export type ShareLevel = "read" | "write" | "all";
+
+/** "Shared folders" in My account. */
+export interface SharingView {
+  folders: {
+    id: number;
+    /** Like `Projects/UwUMail`. */
+    path: string;
+    role: StorageView["mailboxes"][number]["role"];
+    shares: { login: string; name: string; level: ShareLevel; rights: string }[];
+  }[];
+  sharedWithMe: {
+    owner: string;
+    ownerName: string;
+    id: number;
+    path: string;
+    role: StorageView["mailboxes"][number]["role"];
+    level: ShareLevel;
+    rights: string;
+  }[];
+  /** Everyone on the server one may share with. */
+  people: { login: string; name: string }[];
+}
+
 /** The setup assistant before the first admin exists. */
 export interface SetupStatus {
   open: boolean;

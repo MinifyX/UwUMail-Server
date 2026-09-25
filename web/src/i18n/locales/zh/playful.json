@@ -138,5 +138,9 @@
     "loki": {
       "testOk": "测试日志行成功到达 Loki 啦 (=^･ω･^=)"
     }
+  },
+  "sharing": {
+    "withMeEmpty": "还没有人与你共享文件夹 (｡•ᴗ•｡)",
+    "saved": "已将{{folder}}与{{person}}共享 (ﾉ◕ヮ◕)ﾉ"
   }
 }

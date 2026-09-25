@@ -140,5 +140,9 @@
     "loki": {
       "testOk": "De testregel is bij Loki aangekomen (=^･ω･^=)"
     }
+  },
+  "sharing": {
+    "withMeEmpty": "Nog niemand deelt een map met je (｡•ᴗ•｡)",
+    "saved": "{{folder}} is gedeeld met {{person}} (ﾉ◕ヮ◕)ﾉ"
   }
 }

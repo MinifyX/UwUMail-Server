@@ -1655,6 +1655,36 @@
       "trash": "Trash"
     }
   },
+  "sharing": {
+    "title": "Shared folders",
+    "intro": "Let people on this server use your folders in their mail app and in the webmail. Mail they file in counts against your storage.",
+    "none": "Not shared",
+    "sharedWith_one": "Shared with {{count}} person",
+    "sharedWith_other": "Shared with {{count}} people",
+    "share": "Share",
+    "shareTitle": "Share {{folder}}",
+    "person": "Person",
+    "personPlaceholder": "Choose someone",
+    "level": "They may",
+    "levels": {
+      "read": "Read",
+      "write": "Read and write",
+      "all": "Everything"
+    },
+    "levelHints": {
+      "read": "See the messages.",
+      "write": "Also mark, file in and delete messages.",
+      "all": "Also make folders inside it, rename or delete it, and share it on."
+    },
+    "remove": "Stop sharing",
+    "saved": "{{folder}} is shared with {{person}}",
+    "removed": "{{person}} no longer sees {{folder}}",
+    "noPeople": "There is nobody else on this server to share with yet.",
+    "withMeTitle": "Shared with me",
+    "withMeEmpty": "Nobody shares a folder with you yet.",
+    "withMeFrom": "from {{owner}}",
+    "withMeHint": "They show in mail apps under “Shared” and in the webmail as an account of their own."
+  },
   "setup": {
     "title": "Setup",
     "progress": "Step {{step}} of {{count}}",

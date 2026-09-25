@@ -140,5 +140,9 @@
     "loki": {
       "testOk": "The test line made it to Loki (=^･ω･^=)"
     }
+  },
+  "sharing": {
+    "withMeEmpty": "Nobody shares a folder with you yet (｡•ᴗ•｡)",
+    "saved": "{{folder}} is shared with {{person}} (ﾉ◕ヮ◕)ﾉ"
   }
 }

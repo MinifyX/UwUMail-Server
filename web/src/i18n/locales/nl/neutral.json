@@ -1655,6 +1655,36 @@
       "trash": "Prullenbak"
     }
   },
+  "sharing": {
+    "title": "Gedeelde mappen",
+    "intro": "Laat mensen op deze server je mappen gebruiken in hun mail-app en in de webmail. Wat ze erin zetten, telt mee voor jouw opslag.",
+    "none": "Niet gedeeld",
+    "sharedWith_one": "Gedeeld met {{count}} persoon",
+    "sharedWith_other": "Gedeeld met {{count}} personen",
+    "share": "Delen",
+    "shareTitle": "{{folder}} delen",
+    "person": "Persoon",
+    "personPlaceholder": "Kies iemand",
+    "level": "Mag",
+    "levels": {
+      "read": "Lezen",
+      "write": "Lezen en schrijven",
+      "all": "Alles"
+    },
+    "levelHints": {
+      "read": "De berichten zien.",
+      "write": "Ook berichten markeren, opbergen en verwijderen.",
+      "all": "Ook mappen erin maken, hem hernoemen of verwijderen en verder delen."
+    },
+    "remove": "Niet meer delen",
+    "saved": "{{folder}} is gedeeld met {{person}}",
+    "removed": "{{person}} ziet {{folder}} niet meer",
+    "noPeople": "Er is nog niemand anders op deze server om mee te delen.",
+    "withMeTitle": "Met mij gedeeld",
+    "withMeEmpty": "Nog niemand deelt een map met je.",
+    "withMeFrom": "van {{owner}}",
+    "withMeHint": "Ze staan in mail-apps onder ‘Shared’ en in de webmail als een eigen account."
+  },
   "setup": {
     "title": "Set-up",
     "progress": "Stap {{step}} van {{count}}",

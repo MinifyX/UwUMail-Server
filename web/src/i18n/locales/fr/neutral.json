@@ -1702,6 +1702,37 @@
       "trash": "Corbeille"
     }
   },
+  "sharing": {
+    "title": "Dossiers partagés",
+    "intro": "Permettez aux personnes de ce serveur d’utiliser vos dossiers dans leur application de messagerie et dans le webmail. Les messages qu’elles y déposent comptent dans votre espace.",
+    "none": "Non partagé",
+    "sharedWith_one": "Partagé avec {{count}} personne",
+    "sharedWith_many": "Partagé avec {{count}} personnes",
+    "sharedWith_other": "Partagé avec {{count}} personnes",
+    "share": "Partager",
+    "shareTitle": "Partager {{folder}}",
+    "person": "Personne",
+    "personPlaceholder": "Choisir quelqu’un",
+    "level": "Peut",
+    "levels": {
+      "read": "Lire",
+      "write": "Lire et écrire",
+      "all": "Tout"
+    },
+    "levelHints": {
+      "read": "Voir les messages.",
+      "write": "Aussi marquer, classer et supprimer des messages.",
+      "all": "Aussi y créer des dossiers, le renommer ou le supprimer, et le partager à son tour."
+    },
+    "remove": "Ne plus partager",
+    "saved": "{{folder}} est partagé avec {{person}}",
+    "removed": "{{person}} ne voit plus {{folder}}",
+    "noPeople": "Il n’y a encore personne d’autre sur ce serveur avec qui partager.",
+    "withMeTitle": "Partagés avec moi",
+    "withMeEmpty": "Personne ne partage encore de dossier avec vous.",
+    "withMeFrom": "de {{owner}}",
+    "withMeHint": "Ils apparaissent dans les applications de messagerie sous « Shared » et dans le webmail comme un compte à part."
+  },
   "setup": {
     "title": "Installation",
     "progress": "Étape {{step}} sur {{count}}",
