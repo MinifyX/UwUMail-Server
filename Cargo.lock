@@ -4379,7 +4379,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-backup"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "aws-lc-rs",
  "data-encoding",
@@ -4400,7 +4400,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-dav"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -4417,7 +4417,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-gateway"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -4434,7 +4434,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-imap"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "base64 0.23.1",
  "mail-parser",
@@ -4452,7 +4452,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-jmap"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "ammonia",
  "axum",
@@ -4480,7 +4480,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-server"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -4519,7 +4519,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-smtp"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
@@ -4566,7 +4566,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-store"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "argon2",
  "aws-lc-rs",
@@ -4590,7 +4590,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-tunnel"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "aws-lc-rs",
  "data-encoding",
@@ -4610,7 +4610,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-web"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "aws-lc-rs",
  "axum",

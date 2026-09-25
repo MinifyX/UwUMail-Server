@@ -38,10 +38,10 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Settings the webmail and the apps keep in sync, shared with the portal's preferences (JMAP `UserSettings`, see jmap-settings.md)
 - [x] JMAP Calendars on the CalDAV calendars: `Calendar`, `CalendarEvent` (query with expanded recurrences) and `ParticipantIdentity`, changes going both ways between JMAP and CalDAV (see jmap-calendars.md)
 - [x] JMAP Contacts on the CardDAV address books: `AddressBook`, `ContactCard` (query by name, email, phone and more), changes going both ways between JMAP and CardDAV (see jmap-contacts.md)
-- [ ] App passwords and Bearer tokens
-- [ ] WebSocket push, delayed sending (undo window), `Email/copy`, query changes
+- [x] App passwords and Bearer tokens
+- [x] WebSocket push, delayed sending (undo window), `Email/copy`, query changes
 - [x] The UwUMail app's JMAP integration test passes against this server (`dev/client-compat.sh`)
-- [ ] Tested with other JMAP clients
+- [x] Tested with other JMAP clients: aerc and Fastmail's JMAP-TestSuite (docs/jmap-clients.md)
 
 ## 3. Setup assistant and admin panel ✅ in progress
 
@@ -87,15 +87,15 @@ Each step ships as its own commits, container image and test deployment.
 ## 5. IMAP
 
 - [x] IMAP4rev1 on port 993 (TLS) with IDLE, UIDPLUS, MOVE, SPECIAL-USE, LIST-EXTENDED, LIST-STATUS, ESEARCH, CONDSTORE, QRESYNC, QUOTA, UTF8=ACCEPT, also through the gateway
-- [ ] IMAP4rev2, ACL and shared folders
+- [x] IMAP4rev2, ACL and shared folders
 - [x] Autoconfig, Autodiscover and Apple configuration profiles with their own app password
 - [x] CalDAV and CardDAV with sync-collection, calendar-query and multiget, also in the Apple profile
-- [ ] Signed Apple configuration profiles, scheduling (iTIP), shared calendars
+- [x] Signed Apple configuration profiles, scheduling (iTIP), shared calendars
 
 ## 6. Web mail and external mailboxes ✅ in progress
 
 - [x] UwUMail webmail (its own repository, built from the app's interface) served at `/mail`, switchable for the server and per account (docs/webmail.md)
-- [ ] Delayed sending, signatures and address suggestions on the server, so the webmail stops doing without them
+- [x] Delayed sending, signatures and address suggestions on the server, so the webmail stops doing without them
 - [x] Remote pictures and sender pictures fetched by the server, optionally through a VPN, so senders never see who reads their mail (docs/jmap-remote.md)
 - [x] Fetched mailboxes: mail from another provider's IMAP mailbox, emptied into someone's own and judged here like any other, with rules of its own for what a fetched message can still be asked (docs/fetch.md)
 - [x] Sending as a fetched address, over the provider's own outgoing server
@@ -116,7 +116,7 @@ Each step ships as its own commits, container image and test deployment.
 - [ ] OAuth 2 / OpenID Connect provider for mail apps; login via external OIDC or LDAP
 - [ ] Migration assistant (IMAP import from the old provider)
 - [ ] Groups, shared mailboxes, masked addresses
-- [ ] Settings sync for the UwUMail apps, send later and snooze on the server
+- [ ] Settings sync for the UwUMail apps, snooze on the server
 - [ ] Web Push / UnifiedPush
 - [x] Nightly backups to SFTP: deduplicated, encrypted by default, 7/4/6 retention, full restore from the command line
 - [ ] Restore per mailbox in the portal, backups to S3 or a mounted folder
