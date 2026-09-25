@@ -324,4 +324,10 @@ async fn a_shared_subfolder_shows_under_its_owners_path() {
     leni.expect("SELECT \"Shared/mini@example.org/Projekte\"", "NO [NONEXISTENT]").await;
     let lines = leni.expect("STATUS \"Shared/mini@example.org/Projekte/UwUMail\" (MESSAGES)", "OK").await;
     find(&lines, "MESSAGES 0");
+
+    // Taking the share back while it is open ends the session's hold on it.
+    leni.expect("SELECT \"Shared/mini@example.org/Projekte/UwUMail\"", "OK").await;
+    server.store.set_mailbox_acl(server.mini, uwu, "leni@example.org", "").await.unwrap();
+    leni.send(b"n NOOP\r\n").await;
+    assert_eq!(leni.line().await, "* BYE The selected mailbox is no longer shared with you");
 }

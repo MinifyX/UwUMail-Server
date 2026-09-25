@@ -1130,7 +1130,22 @@ where
             return Ok(());
         }
         let mailbox_id = selected.mailbox_id;
+        let me = self.account_id();
+        // Someone else's mailbox is read only while it is still shared: taking the share back
+        // ends the selection like deleting the mailbox would.
+        let rights = if account == me {
+            None
+        } else {
+            let shared = self.store.shared_mailbox(me, mailbox_id).await.map_err(io::Error::other)?;
+            Some(shared.map(|shared| shared.rights).filter(|rights| rights.contains('r')).unwrap_or_default())
+        };
         let state = match self.store.imap_messages(account, mailbox_id).await {
+            Ok(_) if rights.as_deref() == Some("") => {
+                self.selected = None;
+                self.send(b"* BYE The selected mailbox is no longer shared with you\r\n").await?;
+                self.flush().await?;
+                return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "mailbox no longer shared"));
+            }
             Ok(state) => state,
             Err(StoreError::NotFound(_)) => {
                 self.selected = None;
@@ -1142,6 +1157,10 @@ where
         };
         let (utf8, condstore, qresync, rev2) = (self.utf8, self.condstore, self.qresync, self.rev2);
         let selected = self.selected.as_mut().expect("checked above");
+        if let Some(rights) = rights {
+            // The owner may have changed what is allowed; it counts from now on.
+            selected.rights = rights;
+        }
         let current: HashMap<u32, &uwumail_store::ImapMessage> = state.messages.iter().map(|m| (m.uid, m)).collect();
         let mut out = Out::new(utf8);
 
