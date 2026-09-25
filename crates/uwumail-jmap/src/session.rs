@@ -30,6 +30,9 @@ pub const WEBMAIL: &str = "urn:uwumail:jmap:webmail";
 pub const REMOTE: &str = "urn:uwumail:jmap:remote";
 /// JMAP Calendars (draft-ietf-jmap-calendars) on the CalDAV calendars; see docs/jmap-calendars.md.
 pub const CALENDARS: &str = "urn:ietf:params:jmap:calendars";
+/// Our own extension: addresses to suggest while writing, from the address books and recent mail
+/// (docs/jmap-suggest.md).
+pub const SUGGEST: &str = "urn:uwumail:jmap:suggest";
 /// Requests and push over a WebSocket (RFC 8887).
 pub const WEBSOCKET: &str = "urn:ietf:params:jmap:websocket";
 /// JMAP Contacts (RFC 9610) on the CardDAV address books; see docs/jmap-contacts.md.
@@ -96,6 +99,7 @@ pub fn document(account: &Account, base: &str) -> Value {
             VACATION: {},
             SENDERS: {},
             SETTINGS: {},
+            SUGGEST: {},
             SIEVE: { "implementation": "UwUMail Server" },
             WEBMAIL: {},
             REMOTE: {
@@ -130,6 +134,7 @@ pub fn document(account: &Account, base: &str) -> Value {
                     },
                     VACATION: {},
                     SENDERS: { "maxEntries": uwumail_store::SENDER_LIST_PERSONAL_LIMIT },
+                    SUGGEST: { "maxLimit": crate::methods::MAX_SUGGESTIONS },
                     SETTINGS: {
                         "maxKeys": uwumail_store::USER_SETTINGS_MAX_KEYS,
                         "maxSize": uwumail_store::USER_SETTINGS_MAX_SIZE,
@@ -153,6 +158,7 @@ pub fn document(account: &Account, base: &str) -> Value {
             VACATION: account_id.clone(),
             SENDERS: account_id.clone(),
             SETTINGS: account_id.clone(),
+            SUGGEST: account_id.clone(),
             SIEVE: account_id.clone()
         },
         "username": account.login,

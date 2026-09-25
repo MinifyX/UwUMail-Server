@@ -14,6 +14,7 @@ mod settings;
 mod sieve;
 mod snippet;
 mod submission;
+mod suggest;
 mod thread;
 mod vacation;
 
@@ -25,12 +26,15 @@ use uwumail_store::{Account, Changes};
 use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
 use crate::session::{
-    CALENDARS, CONTACTS, CORE, MAIL, SENDERS, SETTINGS, SIEVE, SUBMISSION, VACATION, WEBMAIL, WEBSOCKET,
+    CALENDARS, CONTACTS, CORE, MAIL, SENDERS, SETTINGS, SIEVE, SUBMISSION, SUGGEST, VACATION, WEBMAIL, WEBSOCKET,
 };
 use crate::{Inner, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, ids};
 
 pub const KNOWN_CAPABILITIES: &[&str] =
-    &[CORE, MAIL, SUBMISSION, VACATION, SENDERS, SETTINGS, SIEVE, WEBMAIL, CALENDARS, CONTACTS, WEBSOCKET];
+    &[CORE, MAIL, SUBMISSION, VACATION, SENDERS, SETTINGS, SIEVE, WEBMAIL, CALENDARS, CONTACTS, WEBSOCKET, SUGGEST];
+
+/// The most suggestions one `AddressSuggestion/query` returns.
+pub const MAX_SUGGESTIONS: usize = suggest::MAX_LIMIT;
 
 /// One or more `(method name, arguments)` responses for a call.
 pub type Outputs = Vec<(String, Value)>;
@@ -97,6 +101,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "Calendar" | "CalendarEvent" | "ParticipantIdentity" => CALENDARS,
         "AddressBook" | "ContactCard" => CONTACTS,
         "SieveScript" => SIEVE,
+        "AddressSuggestion" => SUGGEST,
         _ => return Err(MethodError::kind("unknownMethod")),
     };
     if !requires(capability, &ctx.using) {
@@ -196,6 +201,7 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "SieveScript/set" => single(sieve::set(ctx, &args).await?),
         "SieveScript/query" => single(sieve::query(ctx, &args).await?),
         "SieveScript/validate" => single(sieve::validate(ctx, &args).await?),
+        "AddressSuggestion/query" => single(suggest::query(ctx, &args).await?),
         _ => Err(MethodError::kind("unknownMethod")),
     }
 }

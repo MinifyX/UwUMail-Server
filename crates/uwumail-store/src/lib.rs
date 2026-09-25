@@ -42,6 +42,7 @@ mod sender_lists;
 mod sieve;
 mod spam;
 mod spam_log;
+mod suggestions;
 mod user_settings;
 mod web;
 mod word_lists;
@@ -82,6 +83,7 @@ pub use fetch::{
 pub use forward_addresses::{FORWARD_ADDRESS_MAX_TARGETS, ForwardAddress};
 pub use forwarding::{ActiveForwarding, FORWARD_LINK_LIFETIME_SECS, ForwardTarget, Forwarding, MAX_FORWARD_TARGETS};
 pub use held::{HeldSubmission, NewHeldSubmission};
+pub use suggestions::AddressUse;
 pub use greylist_hold::{GreylistHold, GreylistHoldMessage, MAX_HELD_SIZE, NewGreylistHold, Returning, Settled};
 pub use imap::{DELETED_KEYWORD, FlagChange, ImapEmail, ImapMailbox, ImapMessage, ImapMessages, ImapStatus};
 pub use import::ImportProgress;
