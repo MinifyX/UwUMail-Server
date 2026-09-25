@@ -47,4 +47,6 @@ uwumail-gateway.workspace = true
 
 base64.workspace = true
 bcrypt.workspace = true
+futures-util.workspace = true
 tempfile.workspace = true
+tokio-tungstenite.workspace = true
