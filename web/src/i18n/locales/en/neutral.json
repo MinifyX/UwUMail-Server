@@ -277,6 +277,7 @@
       "mtaStsCertificate": "Enforce mode needs a valid certificate on the server first.",
       "gatewayCodeInvalid": "The pairing code is not right. Copy it again, all of it, from the gateway.",
       "gatewayForgetFailed": "The gateway could not be forgotten.",
+      "gatewayNoAddresses": "The gateway has not told its public addresses yet. Wait until it is connected.",
       "learningBusy": "The filter still has a lot of mail to learn. Please try again later.",
       "senderInvalid": "That does not look like an address, domain, IP address or host name. Networks may be at most /8 (IPv4) or /16 (IPv6) wide, and domains need at least one dot.",
       "senderListed": "This sender is already on the list. To switch it, remove it first.",
@@ -1926,6 +1927,31 @@
       "forgetTitle": "Forget the gateway?",
       "forgetBody": "Your server then sends and receives mail itself again. Change the DNS records back too, or mail stops arriving.",
       "forgetConfirm": "Forget",
+      "cloudflare": {
+        "open": "Point host names here via Cloudflare",
+        "title": "Point host names at the gateway",
+        "body": "If your domain is at Cloudflare, I set the A and AAAA records of {{hostname}} to the gateway's addresses, not proxied. Other names the server needs, such as mta-sts or autoconfig, follow when they are A or AAAA records too. First I show what would change. The token is only used for these requests and never stored.",
+        "check": "Show changes",
+        "apply": "Apply changes",
+        "nothing": "Everything already points at the gateway.",
+        "current": "now",
+        "none": "nothing",
+        "proxied": "proxied",
+        "actions": {
+          "none": "already right",
+          "create": "will be added",
+          "update": "will be completed, not proxied",
+          "replace": "points elsewhere",
+          "skip": "left alone"
+        },
+        "notes": {
+          "noZone": "the token sees no Cloudflare zone for it",
+          "cname": "it is a CNAME, change it yourself"
+        },
+        "replace": "Also replace addresses that point elsewhere",
+        "replaceHint": "These records lead somewhere other than the gateway, perhaps to your old connection. Without a tick they stay as they are. An AAAA record with no IPv6 address at the gateway is removed.",
+        "done": "Cloudflare has the new records. DNS can take a few minutes to catch up."
+      },
       "fromConfig": "This pairing is set as gateway.code in the configuration. If you forget the gateway here, remove the code as well. Otherwise the server tries to pair again on the next start with a new key, the gateway refuses it, and mail to other servers waits in the queue. To pair again later, run uwumail-gateway unpair on the gateway and use the new code.",
       "paired": "Paired, the tunnel is coming up.",
       "forgotten": "Gateway forgotten.",

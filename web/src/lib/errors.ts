@@ -32,6 +32,7 @@ const KNOWN = [
   "hostJobRefused",
   "updateRefused",
   "gatewayForgetFailed",
+  "gatewayNoAddresses",
   "wrongPassword",
   "samePassword",
   "tooManyAttempts",

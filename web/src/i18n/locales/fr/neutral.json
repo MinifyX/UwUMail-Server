@@ -285,6 +285,7 @@
       "mtaStsCertificate": "Le mode strict nécessite d'abord un certificat valide sur le serveur.",
       "gatewayCodeInvalid": "Le code d'appairage n'est pas correct. Copiez-le à nouveau, en entier, depuis la passerelle.",
       "gatewayForgetFailed": "La passerelle n'a pas pu être oubliée.",
+      "gatewayNoAddresses": "La passerelle n'a pas encore indiqué ses adresses publiques. Attendez qu'elle soit connectée.",
       "learningBusy": "Le filtre a encore beaucoup de courrier à apprendre. Veuillez réessayer plus tard.",
       "senderInvalid": "Cela ne ressemble pas à une adresse, un domaine, une adresse IP ou un nom d'hôte. Les réseaux peuvent être au plus de /8 (IPv4) ou /16 (IPv6), et les domaines ont besoin d'au moins un point.",
       "senderListed": "Cet expéditeur est déjà sur la liste. Pour le changer, supprimez-le d'abord.",
@@ -1973,6 +1974,31 @@
       "forgetTitle": "Oublier la passerelle ?",
       "forgetBody": "Votre serveur envoie et reçoit alors de nouveau le courrier lui-même. Rétablissez aussi les enregistrements DNS, sinon le courrier n'arrivera plus.",
       "forgetConfirm": "Oublier",
+      "cloudflare": {
+        "open": "Faire pointer les noms d'hôte ici via Cloudflare",
+        "title": "Faire pointer les noms d'hôte vers la passerelle",
+        "body": "Si votre domaine est chez Cloudflare, je règle les enregistrements A et AAAA de {{hostname}} sur les adresses de la passerelle, sans proxy. Les autres noms dont le serveur a besoin, comme mta-sts ou autoconfig, suivent s'ils sont eux aussi des enregistrements A ou AAAA. Je montre d'abord ce qui changerait. Le jeton n'est utilisé que pour ces requêtes et n'est jamais enregistré.",
+        "check": "Afficher les changements",
+        "apply": "Appliquer les changements",
+        "nothing": "Tout pointe déjà vers la passerelle.",
+        "current": "actuellement",
+        "none": "rien",
+        "proxied": "via proxy",
+        "actions": {
+          "none": "déjà correct",
+          "create": "sera ajouté",
+          "update": "sera complété, sans proxy",
+          "replace": "pointe ailleurs",
+          "skip": "laissé tel quel"
+        },
+        "notes": {
+          "noZone": "le jeton ne voit aucune zone Cloudflare pour ce nom",
+          "cname": "c'est un CNAME, modifiez-le vous-même"
+        },
+        "replace": "Remplacer aussi les adresses qui pointent ailleurs",
+        "replaceHint": "Ces enregistrements ne mènent pas à la passerelle, peut-être à votre ancienne connexion. Sans coche, ils restent tels quels. Un enregistrement AAAA est supprimé si la passerelle n'a pas d'adresse IPv6.",
+        "done": "Cloudflare a les nouveaux enregistrements. Le DNS peut mettre quelques minutes à suivre."
+      },
       "fromConfig": "Cet appairage est défini comme gateway.code dans la configuration. Si vous oubliez la passerelle ici, supprimez aussi le code. Sinon, le serveur essaiera de s'appairer à nouveau au prochain démarrage avec une nouvelle clé, la passerelle le refusera, et le courrier vers les autres serveurs attendra dans la file d'attente. Pour appairer à nouveau plus tard, exécutez uwumail-gateway unpair sur la passerelle et utilisez le nouveau code.",
       "paired": "Appairée, le tunnel se met en place.",
       "forgotten": "Passerelle oubliée.",

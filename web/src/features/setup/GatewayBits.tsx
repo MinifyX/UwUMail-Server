@@ -1,18 +1,39 @@
 import clsx from "clsx";
-import { BookOpen, Download, Globe, Link2, RefreshCw, RotateCcw, Server, Unplug } from "lucide-react";
+import {
+  BookOpen,
+  CircleCheck,
+  CircleHelp,
+  CirclePlus,
+  Cloud,
+  Download,
+  Globe,
+  Link2,
+  RefreshCw,
+  RotateCcw,
+  Server,
+  TriangleAlert,
+  Unplug,
+} from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field } from "@/components/ui/Field";
+import { Field, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
-import type { GatewayView, Reachability } from "@/lib/api";
+import type { CloudflareResult, GatewayHostChange, GatewayView, Reachability } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { toast } from "@/state/toasts";
 import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
 import { CheckLines, SubHeading } from "./SetupBits";
 import { gatewayLines, reachabilityLines, recommendation } from "./reach";
-import { useForgetGateway, useGateway, useGatewayJob, usePairGateway, type GatewayVerb } from "./queries";
+import {
+  useForgetGateway,
+  useGateway,
+  useGatewayCloudflare,
+  useGatewayJob,
+  usePairGateway,
+  type GatewayVerb,
+} from "./queries";
 
 export const GATEWAY_DOCS = "https://github.com/MinifyX/UwUMail-Server/blob/main/docs/gateway.md";
 
@@ -87,6 +108,177 @@ function GatewayMachineActions({ view }: { view: GatewayView }) {
       </p>
       {dialog}
     </div>
+  );
+}
+
+const CHANGE_ICONS = {
+  none: { icon: CircleCheck, className: "text-success" },
+  create: { icon: CirclePlus, className: "text-pink-ink" },
+  update: { icon: CirclePlus, className: "text-pink-ink" },
+  replace: { icon: TriangleAlert, className: "text-warning" },
+  skip: { icon: CircleHelp, className: "text-muted" },
+} as const;
+
+/**
+ * Points the server's host names at the gateway's addresses at Cloudflare: first what would change,
+ * then, on a second click, the change. Addresses that point elsewhere only go with a tick.
+ */
+function GatewayCloudflare({ hostname, explain }: { hostname: string; explain: boolean }) {
+  const { t } = useT();
+  const errorText = useErrorText();
+  const cloudflare = useGatewayCloudflare();
+  const [open, setOpen] = useState(false);
+  const [token, setToken] = useState("");
+  const [plan, setPlan] = useState<GatewayHostChange[] | null>(null);
+  const [replace, setReplace] = useState(false);
+  const [results, setResults] = useState<CloudflareResult[] | null>(null);
+
+  if (!open) {
+    return (
+      <Button size="sm" icon={Cloud} className="self-start" onClick={() => setOpen(true)}>
+        {t("setup.gateway.cloudflare.open")}
+      </Button>
+    );
+  }
+
+  const close = () => {
+    setOpen(false);
+    setToken("");
+    setPlan(null);
+    setResults(null);
+  };
+  const check = (event: FormEvent) => {
+    event.preventDefault();
+    setResults(null);
+    cloudflare.mutate(
+      { token, apply: false, replace: false },
+      {
+        onSuccess: (answer) => {
+          setPlan(answer.plan);
+          setReplace(false);
+        },
+        onError: (error) => toast(errorText(error), "error"),
+      },
+    );
+  };
+  const apply = () => {
+    cloudflare.mutate(
+      { token, apply: true, replace },
+      {
+        onSuccess: (answer) => {
+          setPlan(null);
+          setResults(answer.results ?? []);
+          // The token was only needed for these requests.
+          setToken("");
+          toast(t("setup.gateway.cloudflare.done"), "success");
+        },
+        onError: (error) => toast(errorText(error), "error"),
+      },
+    );
+  };
+
+  const elsewhere = plan?.some((change) => change.action === "replace") ?? false;
+  const changes =
+    plan?.filter((change) => change.action === "create" || change.action === "update" || change.action === "replace") ??
+    [];
+  const applicable = changes.some((change) => change.action !== "replace" || replace);
+
+  return (
+    <form className="flex flex-col gap-3 rounded-card border border-hairline bg-canvas p-4" onSubmit={check}>
+      <SubHeading icon={Cloud}>{t("setup.gateway.cloudflare.title")}</SubHeading>
+      <p className="text-[13px] text-muted">{t("setup.gateway.cloudflare.body", { hostname })}</p>
+      <Field label={t("setup.cloudflare.token")} hint={explain ? t("setup.cloudflare.tokenHint") : undefined}>
+        {(id) => (
+          <TextInput
+            id={id}
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            value={token}
+            onChange={(event) => {
+              setToken(event.target.value);
+              setPlan(null);
+            }}
+          />
+        )}
+      </Field>
+      {plan && (
+        <ul className="flex flex-col gap-1.5">
+          {changes.length === 0 && <li className="text-[13px] text-muted">{t("setup.gateway.cloudflare.nothing")}</li>}
+          {plan.map((change) => {
+            const { icon: Icon, className } = CHANGE_ICONS[change.action];
+            const current = change.current.length > 0 ? change.current.join(", ") : t("setup.gateway.cloudflare.none");
+            return (
+              <li key={`${change.recordType}-${change.name}`} className="flex gap-2 text-[13px]">
+                <Icon className={clsx("mt-0.5 size-4 shrink-0", className)} aria-hidden />
+                <span className="min-w-0 break-words">
+                  {change.action !== "skip" && <span className="font-semibold">{change.recordType} </span>}
+                  {change.name}: {t(`setup.gateway.cloudflare.actions.${change.action}`)}
+                  {change.note && (
+                    <span className="text-muted"> ({t(`setup.gateway.cloudflare.notes.${change.note}`)})</span>
+                  )}
+                  {change.action !== "skip" && change.action !== "none" && (
+                    <span className="block font-mono text-[12px] text-muted">
+                      {t("setup.gateway.cloudflare.current")}: {current}
+                      {change.proxied && ` (${t("setup.gateway.cloudflare.proxied")})`} →{" "}
+                      {change.wanted.length > 0 ? change.wanted.join(", ") : t("setup.gateway.cloudflare.none")}
+                    </span>
+                  )}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {elsewhere && (
+        <fieldset className="flex flex-col gap-1.5">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="size-4 accent-pink"
+              checked={replace}
+              onChange={(event) => setReplace(event.target.checked)}
+            />
+            <span className="font-semibold">{t("setup.gateway.cloudflare.replace")}</span>
+          </label>
+          <p className="rounded-control bg-warning-tint px-3 py-2 text-[12px] text-warning">
+            {t("setup.gateway.cloudflare.replaceHint")}
+          </p>
+        </fieldset>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {plan && changes.length > 0 ? (
+          <Button
+            variant="primary"
+            icon={Cloud}
+            busy={cloudflare.isPending}
+            disabled={!token.trim() || !applicable}
+            onClick={apply}
+          >
+            {t("setup.gateway.cloudflare.apply")}
+          </Button>
+        ) : (
+          <Button type="submit" variant="primary" icon={Cloud} busy={cloudflare.isPending} disabled={!token.trim()}>
+            {t("setup.gateway.cloudflare.check")}
+          </Button>
+        )}
+        <Button variant="ghost" onClick={close}>
+          {t("common.cancel")}
+        </Button>
+      </div>
+      {results && (
+        <ul className="flex flex-col gap-1.5">
+          {results.length === 0 && <li className="text-[13px] text-muted">{t("setup.gateway.cloudflare.nothing")}</li>}
+          {results.map((result) => (
+            <li key={`${result.recordType}-${result.name}`} className="text-[13px]">
+              <span className="font-semibold">{result.recordType}</span> {result.name}:{" "}
+              {t(`setup.cloudflare.outcome.${result.outcome}`)}
+              {result.error && <span className="text-muted"> ({result.error})</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </form>
   );
 }
 
@@ -222,6 +414,7 @@ export function GatewayPanel({ hostname, explain }: { hostname: string; explain:
           </Button>
         </div>
       )}
+      {!showForm && view.addresses.length > 0 && <GatewayCloudflare hostname={hostname} explain={explain} />}
       {!showForm && <GatewayMachineActions view={view} />}
       <Dialog open={forgetOpen} onClose={() => setForgetOpen(false)} title={t("setup.gateway.forgetTitle")} width="sm">
         <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
