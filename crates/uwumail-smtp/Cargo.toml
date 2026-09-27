@@ -52,5 +52,7 @@ uwumail-tunnel.workspace = true
 
 lettre.workspace = true
 rcgen.workspace = true
+# The test's own clock, for time limits measured in minutes.
+tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber.workspace = true
 tempfile.workspace = true

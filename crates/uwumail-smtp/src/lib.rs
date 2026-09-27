@@ -45,7 +45,8 @@ mod tls;
 pub mod tlsrpt;
 mod vacation;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -123,6 +124,8 @@ pub(crate) struct Context {
     pub(crate) fetcher: fetch::Fetcher,
     /// Sized at start; changing these limits takes a restart.
     pub connections: Arc<Semaphore>,
+    /// Connections open per client address (IPv4, or IPv6 /64), for `smtp.max_connections_per_client`.
+    pub(crate) clients: Arc<Mutex<HashMap<IpAddr, usize>>>,
     pub delivery_permits: Arc<Semaphore>,
     /// Unpacking and reading a report is the most work a stranger can ask for with one message, so
     /// only a few are read at a time and the rest are let go.
@@ -206,6 +209,7 @@ impl Smtp {
                 store,
                 hostname: hostname.to_ascii_lowercase(),
                 connections: Arc::new(Semaphore::new(smtp.max_connections.max(1))),
+                clients: Arc::default(),
                 delivery_permits: Arc::new(Semaphore::new(delivery.concurrency.max(1))),
                 reports: Arc::new(Semaphore::new(reports::AT_ONCE)),
                 live: RwLock::new(Arc::new(Live::new(smtp, spam, delivery, tone)?)),
