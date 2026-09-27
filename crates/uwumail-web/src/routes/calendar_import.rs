@@ -145,6 +145,8 @@ pub struct FileTarget {
     /// An own collection's id; a new one when left out.
     target: Option<i64>,
     name: Option<String>,
+    /// The file's name, for a new collection whose file names none.
+    file_name: Option<String>,
     color: Option<String>,
     /// `merge` (the default) or `onlyNew`.
     mode: Option<String>,
@@ -167,7 +169,10 @@ pub async fn import_file(
         return Err(ApiError::Rule("importEmpty", "the file is empty".into()));
     }
     let split = split_of(kind, &decode_text(&body), false)?;
-    let name = query.name.clone().filter(|name| !name.trim().is_empty()).or_else(|| split.meta.name.clone());
+    let name = [query.name.clone(), split.meta.name.clone(), query.file_name.clone()]
+        .into_iter()
+        .flatten()
+        .find(|name| !name.trim().is_empty());
     let new = NewImportCollection {
         name: name.unwrap_or_else(|| default_of(&web, kind).display_name),
         description: split.meta.description.clone().unwrap_or_default(),

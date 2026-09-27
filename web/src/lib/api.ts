@@ -44,7 +44,9 @@ export async function api<T>(path: string, options: { method?: string; body?: un
   const data: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     const problem = (data ?? {}) as { code?: string; detail?: string };
-    throw new ApiError(response.status, problem.code ?? "internal", problem.detail ?? response.statusText);
+    // A body too big is turned away before the API sees it, so it comes without a code.
+    const fallback = response.status === 413 ? "tooLarge" : "internal";
+    throw new ApiError(response.status, problem.code ?? fallback, problem.detail ?? response.statusText);
   }
   return data as T;
 }
@@ -1196,6 +1198,82 @@ export interface OwnCollection {
   color: string | null;
   entries: number;
   shares: { accountId: number; address: string; name: string; rights: ShareRights }[];
+  isDefault: boolean;
+  /** Set for a calendar filled from a subscribed feed: read-only everywhere. */
+  subscription: CalendarSubscription | null;
+}
+
+/** A subscribed calendar feed. Its address stays on the server; `source` is only its host. */
+export interface CalendarSubscription {
+  id: number;
+  collectionId: number;
+  source: string;
+  intervalSecs: number;
+  keepAlarms: boolean;
+  enabled: boolean;
+  nextRunAt: number;
+  lastRunAt: number | null;
+  lastOkAt: number | null;
+  /** A code like `feedNotFound`, empty when the last run went well. */
+  lastError: string;
+  failures: number;
+  entries: number;
+  createdAt: number;
+}
+
+export interface ImportProblem {
+  item: string;
+  reason: string;
+}
+
+/** What an import did: numbers and the entries it left out, with why. */
+export interface ImportReport {
+  total: number;
+  created: number;
+  updated: number;
+  unchanged: number;
+  skipped: number;
+  problems: ImportProblem[];
+  truncated: boolean;
+}
+
+export interface MirrorReport {
+  created: number;
+  updated: number;
+  deleted: number;
+  unchanged: number;
+  problems: ImportProblem[];
+  entries: number;
+}
+
+export interface ImportedCollection {
+  id: number;
+  kind: "calendar" | "addressbook";
+  name: string;
+}
+
+export interface ImportResult extends CalendarsView {
+  report: ImportReport;
+  collection: ImportedCollection;
+}
+
+export interface SubscribeResult extends CalendarsView {
+  report: MirrorReport;
+  collection: ImportedCollection;
+}
+
+/** One calendar or address book moved over from another provider, or why it was not. */
+export interface RemoteImportItem {
+  kind: "calendar" | "addressbook";
+  name: string;
+  collection?: ImportedCollection;
+  report?: ImportReport;
+  error?: string;
+}
+
+export interface RemoteImportResult extends CalendarsView {
+  provider: string | null;
+  results: RemoteImportItem[];
 }
 
 export interface SharedCollection {
@@ -1213,6 +1291,7 @@ export interface CalendarsView {
   contacts: boolean;
   own: OwnCollection[];
   shared: SharedCollection[];
+  limits: { uploadBytes: number; subscriptions: number; minIntervalSecs: number };
 }
 
 export interface StorageView {

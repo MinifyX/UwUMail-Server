@@ -1,16 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookUser, CalendarDays, LogOut, Share2, UserMinus } from "lucide-react";
+import { BookUser, CalendarDays, LogOut, RefreshCw, Rss, Share2, Trash2, Unlink, UserMinus } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
 import { Card, PageHeader } from "@/components/ui/Card";
 import { Field, Select, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
-import { api, type CalendarsView, type OwnCollection, type ShareRights, type SharedCollection } from "@/lib/api";
+import {
+  api,
+  type CalendarSubscription,
+  type CalendarsView,
+  type OwnCollection,
+  type ShareRights,
+  type SharedCollection,
+} from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
+import { formatRelative } from "@/lib/format";
 import { toast } from "@/state/toasts";
+import { calendarsKey, ImportCard, INTERVALS } from "./ImportDialogs";
 
-const calendarsKey = ["account", "calendars"] as const;
 const RIGHTS: ShareRights[] = ["read", "write", "all"];
 
 function KindIcon({ kind }: { kind: OwnCollection["kind"] }) {
@@ -26,6 +34,106 @@ function Swatch({ color }: { color: string | null }) {
       style={{ backgroundColor: color.slice(0, 7) }}
       aria-hidden
     />
+  );
+}
+
+/** Where a subscribed calendar comes from, how its last fetch went, and what can be done with it. */
+function SubscriptionInfo({
+  collection,
+  subscription,
+}: {
+  collection: OwnCollection;
+  subscription: CalendarSubscription;
+}) {
+  const { t, i18n } = useT();
+  const errorText = useErrorText();
+  const queryClient = useQueryClient();
+  const [ending, setEnding] = useState(false);
+  const base = `/api/account/calendar-subscriptions/${subscription.id}`;
+  const onError = (error: unknown) => toast(errorText(error), "error");
+  const refresh = useMutation({
+    mutationFn: () => api<CalendarsView>(`${base}/refresh`, { method: "POST" }),
+    onSuccess: (next) => queryClient.setQueryData(calendarsKey, next),
+    onError,
+  });
+  const change = useMutation({
+    mutationFn: (body: { intervalSecs?: number; enabled?: boolean }) =>
+      api<CalendarsView>(base, { method: "PATCH", body }),
+    onSuccess: (next) => queryClient.setQueryData(calendarsKey, next),
+    onError,
+  });
+  const end = useMutation({
+    mutationFn: (keep: boolean) => api<CalendarsView>(`${base}?keep=${keep}`, { method: "DELETE" }),
+    onSuccess: (next) => {
+      queryClient.setQueryData(calendarsKey, next);
+      toast(t("calendars.subscribe.endedToast", { name: collection.name }), "success");
+    },
+    onError,
+  });
+  const intervals: number[] = INTERVALS.includes(subscription.intervalSecs as (typeof INTERVALS)[number])
+    ? [...INTERVALS]
+    : [...INTERVALS, subscription.intervalSecs].sort((a, b) => a - b);
+
+  return (
+    <div className="flex flex-col gap-2 rounded-control bg-canvas p-3">
+      <p className="flex items-center gap-2 text-sm">
+        <Rss className="size-4 shrink-0 text-muted" aria-hidden />
+        <span className="min-w-0 flex-1 truncate">
+          {t("calendars.subscribe.from", { source: subscription.source })}
+        </span>
+      </p>
+      <p className="text-[13px] text-muted">{t("calendars.subscribe.readOnly")}</p>
+      {subscription.lastError ? (
+        <p className="text-[13px] text-danger">
+          {t("calendars.subscribe.failed", {
+            error: t(`errors.codes.${subscription.lastError}`, t("errors.codes.internal")),
+          })}
+        </p>
+      ) : (
+        subscription.lastOkAt && (
+          <p className="text-[13px] text-muted">
+            {t("calendars.subscribe.updated", { time: formatRelative(subscription.lastOkAt, i18n.language) })}
+          </p>
+        )
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          aria-label={t("calendars.subscribe.interval")}
+          className="w-auto"
+          value={subscription.intervalSecs}
+          onChange={(event) => change.mutate({ intervalSecs: Number(event.target.value) })}
+        >
+          {intervals.map((secs) => (
+            <option key={secs} value={secs}>
+              {t(`calendars.subscribe.every.${secs}`, t("calendars.subscribe.everyOther"))}
+            </option>
+          ))}
+        </Select>
+        <Button size="sm" icon={RefreshCw} busy={refresh.isPending} onClick={() => refresh.mutate()}>
+          {t("calendars.subscribe.refresh")}
+        </Button>
+        {ending ? (
+          <>
+            <Button size="sm" icon={Unlink} busy={end.isPending && end.variables} onClick={() => end.mutate(true)}>
+              {t("calendars.subscribe.endKeep")}
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              icon={Trash2}
+              busy={end.isPending && !end.variables}
+              onClick={() => end.mutate(false)}
+            >
+              {t("calendars.subscribe.endDelete")}
+            </Button>
+          </>
+        ) : (
+          <Button size="sm" variant="danger" icon={Unlink} onClick={() => setEnding(true)}>
+            {t("calendars.subscribe.end")}
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -76,6 +184,7 @@ function OwnCard({ collection }: { collection: OwnCollection }) {
       }
     >
       <div className="flex flex-col gap-4">
+        {collection.subscription && <SubscriptionInfo collection={collection} subscription={collection.subscription} />}
         {collection.shares.length === 0 ? (
           <p className="text-sm text-muted">{t("calendars.notShared")}</p>
         ) : (
@@ -238,6 +347,7 @@ export function CalendarsPage() {
         </Card>
       ) : (
         <div className="grid gap-5 lg:grid-cols-2">
+          <ImportCard view={data} />
           {data.own.map((collection) => (
             <OwnCard key={collection.id} collection={collection} />
           ))}

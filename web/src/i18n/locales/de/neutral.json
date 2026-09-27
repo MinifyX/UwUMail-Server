@@ -308,7 +308,24 @@
       "brandColor": "Das ist keine Farbe. Erwartet wird etwas wie #ff4d8d.",
       "unknownPerson": "Diese Adresse gehört niemandem auf diesem Server.",
       "ownShare": "Mit dir selbst musst du nichts teilen.",
-      "tooManyShares": "Das ist schon mit zu vielen Leuten geteilt."
+      "tooManyShares": "Das ist schon mit zu vielen Leuten geteilt.",
+      "tooLarge": "Die Datei ist zu groß.",
+      "davOff": "Kalender oder Kontakte sind für dein Konto ausgeschaltet.",
+      "readOnly": "Dieser Kalender wird über ein Abo gefüllt und lässt sich nicht ändern.",
+      "importEmpty": "Die Datei ist leer.",
+      "notICalendar": "Das ist kein Kalender (iCalendar).",
+      "notVCard": "Das ist keine Kontaktdatei (vCard).",
+      "urlNotAllowed": "Hier gehen nur https-Adressen im Internet.",
+      "providerUnreachable": "Der Server hat nicht geantwortet. Versuch es später nochmal.",
+      "providerError": "Der Server hat mit einem Fehler geantwortet.",
+      "providerNoDav": "Dieser Anbieter hat kein CalDAV oder CardDAV. Exportiere dort eine Datei und importiere sie hier.",
+      "feedTooLarge": "Der Kalender ist zu groß.",
+      "feedNotFound": "Unter dieser Adresse gibt es keinen Kalender (mehr).",
+      "redirectedElsewhere": "Der Server hat die Anmeldung an einen anderen Server weitergeschickt, deshalb wurde sie nicht gesendet.",
+      "googleUseIcs": "Google lässt nur seine eigenen Apps herein. Nimm für Kalender die geheime iCal-Adresse und für Kontakte einen vCard-Export.",
+      "subscriptionLimit": "Du hast schon so viele abonnierte Kalender wie möglich.",
+      "subscriptionExists": "Diesen Kalender hast du schon abonniert.",
+      "refreshPause": "Gerade erst geholt. Versuch es in einer Minute nochmal."
     }
   },
   "people": {
@@ -2814,8 +2831,8 @@
     }
   },
   "calendars": {
-    "pageTitle": "Kalender und Kontakte teilen",
-    "intro": "Teile deine Kalender und Adressbücher mit Leuten auf diesem Server. Sie erscheinen bei ihnen in der Kalender- und Kontakte-App und im Webmail.",
+    "pageTitle": "Kalender und Kontakte",
+    "intro": "Teile deine Kalender und Adressbücher mit Leuten auf diesem Server und hol sie von woanders her. Sie erscheinen in Kalender- und Kontakte-Apps und im Webmail.",
     "notShared": "Mit niemandem geteilt.",
     "sharedWith": "Geteilt mit",
     "shareWith": "Mit jemandem teilen",
@@ -2841,6 +2858,100 @@
     "from": "Von {{owner}}",
     "leave": "Verlassen",
     "leftToast": "{{name}} verlassen",
-    "off": "Kalender und Kontakte sind für dein Konto ausgeschaltet."
+    "off": "Kalender und Kontakte sind für dein Konto ausgeschaltet.",
+    "import": {
+      "title": "Herholen",
+      "intro": "Importiere eine Datei, abonniere einen Kalender über seine Adresse oder zieh alles von einem anderen Anbieter um.",
+      "fileButton": "Datei importieren",
+      "fileTitle": "Datei importieren",
+      "fileIntro": "Eine .ics-Datei für Kalender oder eine .vcf-Datei für Kontakte, wie andere Anbieter und Apps sie exportieren. Dieselbe Datei nochmal zu importieren ändert nichts doppelt.",
+      "file": "Datei",
+      "fileHint": "Bis zu {{size}}.",
+      "kind": "Was drin ist",
+      "kinds": {
+        "calendar": "Kalender",
+        "addressbook": "Kontakte"
+      },
+      "target": "Importieren in",
+      "newCollection": "Einen neuen",
+      "name": "Name",
+      "nameHint": "Leer gelassen: der Name in der Datei, sonst der Dateiname.",
+      "onlyNew": "Nur neue Einträge hinzufügen",
+      "onlyNewHint": "Einträge, die schon da sind, bleiben wie sie sind, statt überschrieben zu werden.",
+      "run": "Importieren",
+      "doneToast": "In {{name}} importiert",
+      "summary": "Neu: {{created}} · geändert: {{updated}} · gleich: {{unchanged}} · ausgelassen: {{skipped}}",
+      "problems": "Was ausgelassen wurde",
+      "reasons": {
+        "invalid": "nicht lesbar",
+        "tooLarge": "zu groß",
+        "unsupportedComponent": "kein Termin, keine Aufgabe, kein Kontakt",
+        "mixedComponents": "Termin und Aufgabe zugleich",
+        "uidElsewhere": "schon in einem anderen Kalender",
+        "duplicate": "doppelt in der Datei, der spätere zählt",
+        "collectionFull": "der Kalender ist voll",
+        "exists": "schon da",
+        "cutShort": "die Datei hört zu früh auf",
+        "tooMany": "zu viele Einträge"
+      }
+    },
+    "subscribe": {
+      "button": "Kalender abonnieren",
+      "title": "Kalender abonnieren",
+      "intro": "Die iCal-Adresse eines Kalenders (.ics oder webcal://): Feiertage, Vereinstermine oder dein eigener Google-Kalender über seine geheime Adresse. Er wird regelmäßig neu geholt und ist hier nur lesbar.",
+      "url": "Adresse",
+      "urlHint": "Google: Kalendereinstellungen → „Privatadresse im iCal-Format“. Außer diesem Server sieht sie niemand.",
+      "nameHint": "Leer gelassen kommt er aus dem Kalender.",
+      "once": "Stattdessen einmal importieren",
+      "onceHint": "Kopiert die Einträge jetzt in einen eigenen Kalender, den du ändern kannst. Später wird nichts mehr geholt.",
+      "interval": "Neu holen",
+      "every": {
+        "900": "alle 15 Minuten",
+        "3600": "jede Stunde",
+        "21600": "alle 6 Stunden",
+        "86400": "einmal am Tag"
+      },
+      "everyOther": "im Takt des Anbieters",
+      "keepAlarms": "Erinnerungen behalten",
+      "keepAlarmsHint": "Erinnerungen eines Abos klingeln auf jedem Gerät. Standardmäßig aus.",
+      "run": "Abonnieren",
+      "doneToast": "{{name}} ist abonniert",
+      "summary": "{{entries}} Einträge geholt.",
+      "from": "Abonniert von {{source}}",
+      "readOnly": "Wird nur über seine Adresse gefüllt: Einträge lassen sich hier und in Apps nicht ändern.",
+      "failed": "Das letzte Holen hat nicht geklappt: {{error}}",
+      "updated": "Aktualisiert {{time}}",
+      "refresh": "Jetzt holen",
+      "end": "Abo beenden",
+      "endKeep": "Einträge behalten",
+      "endDelete": "Kalender löschen",
+      "endedToast": "Abo von {{name}} beendet"
+    },
+    "remote": {
+      "button": "Von anderem Anbieter umziehen",
+      "title": "Von anderem Anbieter umziehen",
+      "intro": "Kalender und Kontakte von iCloud, WEB.DE, GMX, Posteo, mailbox.org, Nextcloud oder jedem anderen CalDAV/CardDAV-Server. Aus jedem wird hier ein neuer Kalender oder ein neues Adressbuch.",
+      "address": "Deine Adresse dort",
+      "password": "Passwort",
+      "passwordHint": "Meist ein App-Passwort des Anbieters. Es wird nur hierfür einmal benutzt und nicht gespeichert.",
+      "server": "Server",
+      "serverHint": "Nur nötig, wenn der Anbieter sich nicht über die Adresse finden lässt.",
+      "showServer": "Server selbst eintragen",
+      "calendars": "Kalender",
+      "contacts": "Kontakte",
+      "working": "Hole alles, das kann eine Minute dauern …",
+      "from": "Von {{provider}}",
+      "nothing": "Dort wurde nichts gefunden.",
+      "run": "Umziehen",
+      "doneToast": "Umgezogen",
+      "hints": {
+        "icloud": "iCloud braucht ein app-spezifisches Passwort: appleid.apple.com → Anmeldung und Sicherheit → App-spezifische Passwörter.",
+        "webde": "WEB.DE braucht ein App-Passwort, und jedes funktioniert nur einmal: Erstelle eins für Kalender und eins für Kontakte und zieh sie nacheinander um.",
+        "gmx": "Mit Zwei-Faktor-Authentifizierung braucht GMX ein App-Passwort statt deines normalen.",
+        "google": "Google lässt auf diesem Weg nur seine eigenen Apps herein. Abonniere deinen Kalender stattdessen über seine geheime iCal-Adresse (Kalendereinstellungen) und exportiere deine Kontakte auf contacts.google.com als vCard-Datei, um sie zu importieren.",
+        "outlook": "Outlook.com hat kein CalDAV oder CardDAV. Exportiere dort deinen Kalender als .ics-Datei und deine Kontakte als Datei und importiere sie hier.",
+        "appPassword": "Dieser Anbieter möchte ein App-Passwort, das du in seinen Einstellungen erstellst."
+      }
+    }
   }
 }

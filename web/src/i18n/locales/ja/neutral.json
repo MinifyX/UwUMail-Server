@@ -299,7 +299,24 @@
       "brandColor": "色ではありません。#ff4d8d のような値を入力してください。",
       "unknownPerson": "このサーバーにこのアドレスの人はいません。",
       "ownShare": "自分と共有する必要はありません。",
-      "tooManyShares": "すでに共有している人が多すぎます。"
+      "tooManyShares": "すでに共有している人が多すぎます。",
+      "tooLarge": "ファイルが大きすぎます。",
+      "davOff": "このアカウントではカレンダーまたは連絡先がオフになっています。",
+      "readOnly": "このカレンダーは購読で内容が入るため、変更できません。",
+      "importEmpty": "ファイルが空です。",
+      "notICalendar": "カレンダー（iCalendar）ではありません。",
+      "notVCard": "連絡先ファイル（vCard）ではありません。",
+      "urlNotAllowed": "ここではインターネット上の https アドレスのみ使えます。",
+      "providerUnreachable": "サーバーが応答しませんでした。後でもう一度お試しください。",
+      "providerError": "サーバーがエラーを返しました。",
+      "providerNoDav": "このプロバイダーにはCalDAVもCardDAVもありません。そちらでファイルを書き出し、ここで読み込んでください。",
+      "feedTooLarge": "カレンダーが大きすぎます。",
+      "feedNotFound": "そのアドレスにはカレンダーがありません。",
+      "redirectedElsewhere": "サーバーがログインを別のサーバーへ転送しようとしたため、送信しませんでした。",
+      "googleUseIcs": "Google は自社のアプリしか受け付けません。カレンダーは秘密のiCalアドレス、連絡先はvCardの書き出しを使ってください。",
+      "subscriptionLimit": "購読できるカレンダーの上限に達しています。",
+      "subscriptionExists": "このカレンダーはすでに購読しています。",
+      "refreshPause": "今取得したばかりです。1分後にもう一度お試しください。"
     }
   },
   "people": {
@@ -2750,8 +2767,8 @@
     }
   },
   "calendars": {
-    "pageTitle": "カレンダーと連絡先の共有",
-    "intro": "カレンダーとアドレス帳をこのサーバーの人と共有できます。相手のカレンダー・連絡先アプリとWebメールに表示されます。",
+    "pageTitle": "カレンダーと連絡先",
+    "intro": "カレンダーとアドレス帳をこのサーバーの人と共有したり、他の場所から取り込んだりできます。カレンダー・連絡先アプリとWebメールに表示されます。",
     "notShared": "誰とも共有していません。",
     "sharedWith": "共有相手",
     "shareWith": "共有する相手",
@@ -2777,6 +2794,100 @@
     "from": "{{owner}} から",
     "leave": "退出",
     "leftToast": "{{name}} から退出しました",
-    "off": "このアカウントではカレンダーと連絡先がオフになっています。"
+    "off": "このアカウントではカレンダーと連絡先がオフになっています。",
+    "import": {
+      "title": "取り込む",
+      "intro": "ファイルを読み込む、アドレスでカレンダーを購読する、または他のプロバイダーからすべてを移行できます。",
+      "fileButton": "ファイルを読み込む",
+      "fileTitle": "ファイルを読み込む",
+      "fileIntro": "他のプロバイダーやアプリが書き出すカレンダーの .ics ファイル、または連絡先の .vcf ファイルです。同じファイルをもう一度読み込んでも重複しません。",
+      "file": "ファイル",
+      "fileHint": "{{size}} まで。",
+      "kind": "内容",
+      "kinds": {
+        "calendar": "カレンダー",
+        "addressbook": "連絡先"
+      },
+      "target": "読み込み先",
+      "newCollection": "新規作成",
+      "name": "名前",
+      "nameHint": "空欄の場合：ファイル内の名前、なければファイル名。",
+      "onlyNew": "新しい項目だけを追加",
+      "onlyNewHint": "すでにある項目は上書きせず、そのままにします。",
+      "run": "読み込む",
+      "doneToast": "{{name}} に読み込みました",
+      "summary": "新規: {{created}} ・ 変更: {{updated}} ・ 同じ: {{unchanged}} ・ 省略: {{skipped}}",
+      "problems": "省略されたもの",
+      "reasons": {
+        "invalid": "読み取れません",
+        "tooLarge": "大きすぎます",
+        "unsupportedComponent": "予定・タスク・連絡先ではありません",
+        "mixedComponents": "予定とタスクが混在しています",
+        "uidElsewhere": "別のカレンダーにすでにあります",
+        "duplicate": "ファイル内で重複、後のものが有効",
+        "collectionFull": "カレンダーがいっぱいです",
+        "exists": "すでにあります",
+        "cutShort": "ファイルが途中で終わっています",
+        "tooMany": "項目が多すぎます"
+      }
+    },
+    "subscribe": {
+      "button": "カレンダーを購読",
+      "title": "カレンダーを購読",
+      "intro": "カレンダーのiCalアドレス（.ics または webcal://）：祝日、サークルの予定、または秘密のアドレスを使ったご自身のGoogleカレンダーなど。定期的に取得し直され、ここでは読み取り専用です。",
+      "url": "アドレス",
+      "urlHint": "Google：カレンダーの設定 →「iCal 形式の非公開 URL」。このサーバー以外には見えません。",
+      "nameHint": "空欄の場合はカレンダーから取ります。",
+      "once": "代わりに一度だけ読み込む",
+      "onceHint": "今の項目を、変更できる自分のカレンダーにコピーします。後から取得はしません。",
+      "interval": "取得し直す間隔",
+      "every": {
+        "900": "15分ごと",
+        "3600": "1時間ごと",
+        "21600": "6時間ごと",
+        "86400": "1日1回"
+      },
+      "everyOther": "配信元の間隔で",
+      "keepAlarms": "リマインダーを残す",
+      "keepAlarmsHint": "購読のリマインダーはすべての端末で鳴ります。既定ではオフです。",
+      "run": "購読する",
+      "doneToast": "{{name}} を購読しました",
+      "summary": "{{entries}} 件を取得しました。",
+      "from": "{{source}} から購読",
+      "readOnly": "アドレスからのみ内容が入ります：ここでもアプリでも項目は変更できません。",
+      "failed": "前回の取得に失敗しました：{{error}}",
+      "updated": "{{time}}に更新",
+      "refresh": "今すぐ取得",
+      "end": "購読をやめる",
+      "endKeep": "項目を残す",
+      "endDelete": "カレンダーを削除",
+      "endedToast": "{{name}} の購読をやめました"
+    },
+    "remote": {
+      "button": "他のプロバイダーから移行",
+      "title": "他のプロバイダーから移行",
+      "intro": "iCloud、WEB.DE、GMX、Posteo、mailbox.org、Nextcloud、その他のCalDAV/CardDAVサーバーのカレンダーと連絡先。それぞれがここで新しいカレンダーまたはアドレス帳になります。",
+      "address": "向こうでのアドレス",
+      "password": "パスワード",
+      "passwordHint": "通常はそのプロバイダーのアプリ用パスワードです。この1回だけ使い、保存しません。",
+      "server": "サーバー",
+      "serverHint": "アドレスからプロバイダーが見つからない場合のみ必要です。",
+      "showServer": "サーバーを自分で入力",
+      "calendars": "カレンダー",
+      "contacts": "連絡先",
+      "working": "すべて取得中です。1分ほどかかることがあります…",
+      "from": "{{provider}} から",
+      "nothing": "何も見つかりませんでした。",
+      "run": "移行する",
+      "doneToast": "移行しました",
+      "hints": {
+        "icloud": "iCloud にはApp用パスワードが必要です：appleid.apple.com →「サインインとセキュリティ」→「App用パスワード」。",
+        "webde": "WEB.DE にはアプリパスワードが必要で、それぞれ1回しか使えません。カレンダー用と連絡先用に1つずつ作り、順番に移行してください。",
+        "gmx": "2段階認証を使っている場合、GMX には通常のパスワードの代わりにアプリパスワードが必要です。",
+        "google": "Google はこの方法では自社のアプリしか受け付けません。代わりにカレンダーは秘密のiCalアドレス（カレンダーの設定）で購読し、連絡先は contacts.google.com からvCardファイルとして書き出して読み込んでください。",
+        "outlook": "Outlook.com にはCalDAVもCardDAVもありません。そちらでカレンダーを .ics ファイルに、連絡先をファイルに書き出し、ここで読み込んでください。",
+        "appPassword": "このプロバイダーは、設定で作成するアプリパスワードを必要とします。"
+      }
+    }
   }
 }

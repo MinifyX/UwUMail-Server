@@ -316,7 +316,24 @@
       "brandColor": "Ce n'est pas une couleur. Une valeur comme #ff4d8d est attendue.",
       "unknownPerson": "Personne sur ce serveur n'a cette adresse.",
       "ownShare": "Inutile de partager avec vous-même.",
-      "tooManyShares": "C'est déjà partagé avec trop de personnes."
+      "tooManyShares": "C'est déjà partagé avec trop de personnes.",
+      "tooLarge": "Le fichier est trop volumineux.",
+      "davOff": "Les agendas ou les contacts sont désactivés pour votre compte.",
+      "readOnly": "Cet agenda est rempli par un abonnement et ne peut pas être modifié.",
+      "importEmpty": "Le fichier est vide.",
+      "notICalendar": "Ce n'est pas un agenda (iCalendar).",
+      "notVCard": "Ce n'est pas un fichier de contacts (vCard).",
+      "urlNotAllowed": "Seules les adresses https sur Internet fonctionnent ici.",
+      "providerUnreachable": "Le serveur n'a pas répondu. Réessayez plus tard.",
+      "providerError": "Le serveur a répondu par une erreur.",
+      "providerNoDav": "Ce fournisseur n'a ni CalDAV ni CardDAV. Exportez-y un fichier et importez-le ici.",
+      "feedTooLarge": "L'agenda est trop volumineux.",
+      "feedNotFound": "Il n'y a pas (ou plus) d'agenda à cette adresse.",
+      "redirectedElsewhere": "Le serveur a renvoyé la connexion vers un autre serveur ; elle n'a donc pas été envoyée.",
+      "googleUseIcs": "Google ne laisse entrer que ses propres applications. Utilisez l'adresse iCal secrète pour les agendas et un export vCard pour les contacts.",
+      "subscriptionLimit": "Vous avez déjà le nombre maximal d'agendas abonnés.",
+      "subscriptionExists": "Vous êtes déjà abonné à cet agenda.",
+      "refreshPause": "Tout juste récupéré. Réessayez dans une minute."
     }
   },
   "people": {
@@ -2877,8 +2894,8 @@
     }
   },
   "calendars": {
-    "pageTitle": "Partager agendas et contacts",
-    "intro": "Partagez vos agendas et carnets d'adresses avec des personnes de ce serveur. Ils apparaissent dans leurs applications d'agenda et de contacts et dans le webmail.",
+    "pageTitle": "Agendas et contacts",
+    "intro": "Partagez vos agendas et carnets d'adresses avec des personnes de ce serveur, et importez-les d'ailleurs. Ils apparaissent dans les applications d'agenda et de contacts et dans le webmail.",
     "notShared": "Partagé avec personne.",
     "sharedWith": "Partagé avec",
     "shareWith": "Partager avec quelqu'un",
@@ -2904,6 +2921,100 @@
     "from": "De {{owner}}",
     "leave": "Quitter",
     "leftToast": "{{name}} quitté",
-    "off": "Les agendas et les contacts sont désactivés pour votre compte."
+    "off": "Les agendas et les contacts sont désactivés pour votre compte.",
+    "import": {
+      "title": "Importer",
+      "intro": "Importez un fichier, abonnez-vous à un agenda par son adresse ou transférez tout depuis un autre fournisseur.",
+      "fileButton": "Importer un fichier",
+      "fileTitle": "Importer un fichier",
+      "fileIntro": "Un fichier .ics pour les agendas ou .vcf pour les contacts, tels que les exportent d'autres fournisseurs et applications. Importer deux fois le même fichier ne crée pas de doublons.",
+      "file": "Fichier",
+      "fileHint": "Jusqu'à {{size}}.",
+      "kind": "Contenu",
+      "kinds": {
+        "calendar": "Agenda",
+        "addressbook": "Contacts"
+      },
+      "target": "Importer dans",
+      "newCollection": "Un nouveau",
+      "name": "Nom",
+      "nameHint": "S'il reste vide : le nom indiqué dans le fichier, sinon le nom du fichier.",
+      "onlyNew": "Ajouter uniquement les nouvelles entrées",
+      "onlyNewHint": "Les entrées déjà présentes restent telles quelles au lieu d'être remplacées.",
+      "run": "Importer",
+      "doneToast": "Importé dans {{name}}",
+      "summary": "Nouvelles : {{created}} · modifiées : {{updated}} · identiques : {{unchanged}} · ignorées : {{skipped}}",
+      "problems": "Ce qui a été ignoré",
+      "reasons": {
+        "invalid": "illisible",
+        "tooLarge": "trop grand",
+        "unsupportedComponent": "ni événement, ni tâche, ni contact",
+        "mixedComponents": "événement et tâche à la fois",
+        "uidElsewhere": "déjà dans un autre agenda",
+        "duplicate": "en double dans le fichier, le dernier compte",
+        "collectionFull": "l'agenda est plein",
+        "exists": "déjà présent",
+        "cutShort": "le fichier s'arrête trop tôt",
+        "tooMany": "trop d'entrées"
+      }
+    },
+    "subscribe": {
+      "button": "S'abonner à un agenda",
+      "title": "S'abonner à un agenda",
+      "intro": "L'adresse iCal d'un agenda (.ics ou webcal://) : jours fériés, dates d'une association ou votre propre agenda Google via son adresse secrète. Il est récupéré régulièrement et reste en lecture seule ici.",
+      "url": "Adresse",
+      "urlHint": "Google : paramètres de l'agenda → « Adresse secrète au format iCal ». Seul ce serveur la voit.",
+      "nameHint": "Repris de l'agenda s'il reste vide.",
+      "once": "Importer une seule fois",
+      "onceHint": "Copie maintenant les entrées dans un agenda à vous que vous pouvez modifier. Rien n'est récupéré ensuite.",
+      "interval": "Récupérer à nouveau",
+      "every": {
+        "900": "toutes les 15 minutes",
+        "3600": "toutes les heures",
+        "21600": "toutes les 6 heures",
+        "86400": "une fois par jour"
+      },
+      "everyOther": "au rythme de l'éditeur",
+      "keepAlarms": "Garder les rappels",
+      "keepAlarmsHint": "Les rappels d'un abonnement sonnent sur chaque appareil. Désactivé par défaut.",
+      "run": "S'abonner",
+      "doneToast": "Abonné à {{name}}",
+      "summary": "{{entries}} entrées récupérées.",
+      "from": "Abonnement de {{source}}",
+      "readOnly": "Rempli uniquement par son adresse : les entrées ne peuvent être modifiées ni ici ni dans les applications.",
+      "failed": "La dernière récupération a échoué : {{error}}",
+      "updated": "Mis à jour {{time}}",
+      "refresh": "Récupérer maintenant",
+      "end": "Mettre fin à l'abonnement",
+      "endKeep": "Garder les entrées",
+      "endDelete": "Supprimer l'agenda",
+      "endedToast": "Abonnement à {{name}} terminé"
+    },
+    "remote": {
+      "button": "Transférer depuis un autre fournisseur",
+      "title": "Transférer depuis un autre fournisseur",
+      "intro": "Agendas et contacts d'iCloud, WEB.DE, GMX, Posteo, mailbox.org, Nextcloud ou de tout autre serveur CalDAV/CardDAV. Chacun devient ici un nouvel agenda ou carnet d'adresses.",
+      "address": "Votre adresse là-bas",
+      "password": "Mot de passe",
+      "passwordHint": "Le plus souvent un mot de passe d'application de ce fournisseur. Il sert une seule fois et n'est pas conservé.",
+      "server": "Serveur",
+      "serverHint": "Seulement si le fournisseur ne peut pas être trouvé à partir de l'adresse.",
+      "showServer": "Saisir le serveur moi-même",
+      "calendars": "Agendas",
+      "contacts": "Contacts",
+      "working": "Récupération en cours, cela peut prendre une minute…",
+      "from": "De {{provider}}",
+      "nothing": "Rien n'a été trouvé là-bas.",
+      "run": "Transférer",
+      "doneToast": "Transfert terminé",
+      "hints": {
+        "icloud": "iCloud demande un mot de passe pour application : appleid.apple.com → Connexion et sécurité → Mots de passe pour app.",
+        "webde": "WEB.DE demande un mot de passe d'application, et chacun ne fonctionne qu'une fois : créez-en un pour les agendas et un pour les contacts, et transférez-les l'un après l'autre.",
+        "gmx": "Avec l'authentification à deux facteurs, GMX demande un mot de passe d'application au lieu du mot de passe habituel.",
+        "google": "Google ne laisse entrer que ses propres applications par ce chemin. Abonnez-vous plutôt à votre agenda via son adresse iCal secrète (paramètres de l'agenda) et exportez vos contacts sur contacts.google.com au format vCard pour les importer.",
+        "outlook": "Outlook.com n'a ni CalDAV ni CardDAV. Exportez-y votre agenda en fichier .ics et vos contacts en fichier, puis importez-les ici.",
+        "appPassword": "Ce fournisseur demande un mot de passe d'application, créé dans ses paramètres."
+      }
+    }
   }
 }

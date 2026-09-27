@@ -299,7 +299,24 @@
       "brandColor": "这不是颜色。请输入类似 #ff4d8d 的值。",
       "unknownPerson": "此服务器上没有人使用这个地址。",
       "ownShare": "无需与自己共享。",
-      "tooManyShares": "已经与太多人共享了。"
+      "tooManyShares": "已经与太多人共享了。",
+      "tooLarge": "文件太大。",
+      "davOff": "你的账户已关闭日历或通讯录。",
+      "readOnly": "此日历由订阅填充，无法更改。",
+      "importEmpty": "文件是空的。",
+      "notICalendar": "这不是日历（iCalendar）。",
+      "notVCard": "这不是通讯录文件（vCard）。",
+      "urlNotAllowed": "这里只能使用互联网上的 https 地址。",
+      "providerUnreachable": "服务器没有响应。请稍后再试。",
+      "providerError": "服务器返回了错误。",
+      "providerNoDav": "该服务商没有 CalDAV 或 CardDAV。请在那边导出文件并在这里导入。",
+      "feedTooLarge": "日历太大。",
+      "feedNotFound": "该地址下（已）没有日历。",
+      "redirectedElsewhere": "服务器把登录转发到了另一台服务器，因此没有发送。",
+      "googleUseIcs": "Google 只允许它自己的应用访问。日历请使用私密 iCal 地址，通讯录请使用 vCard 导出。",
+      "subscriptionLimit": "你订阅的日历数量已达上限。",
+      "subscriptionExists": "你已经订阅了这个日历。",
+      "refreshPause": "刚刚获取过。请一分钟后再试。"
     }
   },
   "people": {
@@ -2750,8 +2767,8 @@
     }
   },
   "calendars": {
-    "pageTitle": "共享日历和通讯录",
-    "intro": "与此服务器上的人共享你的日历和通讯录。它们会出现在对方的日历和通讯录应用以及网页邮箱中。",
+    "pageTitle": "日历和通讯录",
+    "intro": "与此服务器上的人共享你的日历和通讯录，或从其他地方导入。它们会出现在日历和通讯录应用以及网页邮箱中。",
     "notShared": "未与任何人共享。",
     "sharedWith": "已共享给",
     "shareWith": "与他人共享",
@@ -2777,6 +2794,100 @@
     "from": "来自 {{owner}}",
     "leave": "退出",
     "leftToast": "已退出 {{name}}",
-    "off": "你的账户已关闭日历和通讯录。"
+    "off": "你的账户已关闭日历和通讯录。",
+    "import": {
+      "title": "导入",
+      "intro": "导入文件、通过地址订阅日历，或从其他服务商整体迁移过来。",
+      "fileButton": "导入文件",
+      "fileTitle": "导入文件",
+      "fileIntro": "其他服务商和应用导出的日历 .ics 文件或通讯录 .vcf 文件。再次导入同一文件不会产生重复。",
+      "file": "文件",
+      "fileHint": "最大 {{size}}。",
+      "kind": "内容",
+      "kinds": {
+        "calendar": "日历",
+        "addressbook": "通讯录"
+      },
+      "target": "导入到",
+      "newCollection": "新建",
+      "name": "名称",
+      "nameHint": "留空时：使用文件中的名称，没有则用文件名。",
+      "onlyNew": "只添加新条目",
+      "onlyNewHint": "已存在的条目保持不变，不会被覆盖。",
+      "run": "导入",
+      "doneToast": "已导入到 {{name}}",
+      "summary": "新增：{{created}} · 更改：{{updated}} · 相同：{{unchanged}} · 跳过：{{skipped}}",
+      "problems": "被跳过的内容",
+      "reasons": {
+        "invalid": "无法读取",
+        "tooLarge": "太大",
+        "unsupportedComponent": "不是日程、任务或联系人",
+        "mixedComponents": "同时是日程和任务",
+        "uidElsewhere": "已在另一个日历中",
+        "duplicate": "文件中重复，以后者为准",
+        "collectionFull": "日历已满",
+        "exists": "已存在",
+        "cutShort": "文件提前结束",
+        "tooMany": "条目太多"
+      }
+    },
+    "subscribe": {
+      "button": "订阅日历",
+      "title": "订阅日历",
+      "intro": "日历的 iCal 地址（.ics 或 webcal://）：节假日、社团活动，或通过私密地址订阅你自己的 Google 日历。它会定期重新获取，在这里为只读。",
+      "url": "地址",
+      "urlHint": "Google：日历设置 →「iCal 格式的私密地址」。除了此服务器没有人能看到它。",
+      "nameHint": "留空则使用日历中的名称。",
+      "once": "改为只导入一次",
+      "onceHint": "现在把条目复制到你自己的可编辑日历中，之后不再获取。",
+      "interval": "重新获取",
+      "every": {
+        "900": "每 15 分钟",
+        "3600": "每小时",
+        "21600": "每 6 小时",
+        "86400": "每天一次"
+      },
+      "everyOther": "按发布者的间隔",
+      "keepAlarms": "保留提醒",
+      "keepAlarmsHint": "订阅中的提醒会在每台设备上响起。默认关闭。",
+      "run": "订阅",
+      "doneToast": "已订阅 {{name}}",
+      "summary": "已获取 {{entries}} 个条目。",
+      "from": "订阅自 {{source}}",
+      "readOnly": "只通过其地址填充：条目在这里和应用中都不能更改。",
+      "failed": "上次获取失败：{{error}}",
+      "updated": "更新于{{time}}",
+      "refresh": "立即获取",
+      "end": "结束订阅",
+      "endKeep": "保留条目",
+      "endDelete": "删除日历",
+      "endedToast": "已结束订阅 {{name}}"
+    },
+    "remote": {
+      "button": "从其他服务商迁移",
+      "title": "从其他服务商迁移",
+      "intro": "来自 iCloud、WEB.DE、GMX、Posteo、mailbox.org、Nextcloud 或任何其他 CalDAV/CardDAV 服务器的日历和通讯录。每一个都会在这里成为新的日历或通讯录。",
+      "address": "你在那边的地址",
+      "password": "密码",
+      "passwordHint": "通常是该服务商的应用专用密码。只为此使用一次，不会保存。",
+      "server": "服务器",
+      "serverHint": "仅在无法通过地址找到服务商时需要。",
+      "showServer": "自己填写服务器",
+      "calendars": "日历",
+      "contacts": "通讯录",
+      "working": "正在获取全部内容，可能需要一分钟……",
+      "from": "来自 {{provider}}",
+      "nothing": "那里什么也没找到。",
+      "run": "迁移",
+      "doneToast": "已迁移",
+      "hints": {
+        "icloud": "iCloud 需要 App 专用密码：appleid.apple.com → 登录与安全 → App 专用密码。",
+        "webde": "WEB.DE 需要应用密码，且每个只能使用一次：为日历和通讯录各创建一个，并依次迁移。",
+        "gmx": "开启两步验证后，GMX 需要应用密码而不是你平时的密码。",
+        "google": "Google 只允许它自己的应用通过这种方式访问。请改为通过私密 iCal 地址（日历设置）订阅你的日历，并在 contacts.google.com 将通讯录导出为 vCard 文件后导入。",
+        "outlook": "Outlook.com 没有 CalDAV 或 CardDAV。请在那边把日历导出为 .ics 文件、把通讯录导出为文件，然后在这里导入。",
+        "appPassword": "该服务商需要在其设置中创建的应用密码。"
+      }
+    }
   }
 }
