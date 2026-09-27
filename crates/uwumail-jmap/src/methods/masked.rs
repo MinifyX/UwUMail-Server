@@ -1,6 +1,9 @@
 //! MaskedEmail/get and MaskedEmail/set, following Fastmail's masked email extension
 //! (`https://www.fastmail.com/dev/maskedemail`): random addresses one makes per website, the same
 //! as under My account → Masked addresses in the portal. See docs/jmap-masked-email.md.
+//!
+//! UwUMail adds `domain` on create: one of the domains the account's MaskedEmail capability
+//! lists. Without it, the capability's `defaultDomain` is taken.
 
 use serde_json::{Map, Value, json};
 use uwumail_store::{MaskedAddress, MaskedState, MaskedUpdate, NewMaskedAddress, StoreError};
@@ -96,11 +99,13 @@ fn refused(err: StoreError) -> SetError {
 }
 
 const SERVER_SET: &[&str] = &["id", "email", "lastMessageAt", "createdAt", "createdBy"];
+/// Only given when one is made; `domain` is never returned, the address says it.
+const CREATE_ONLY: &[&str] = &["emailPrefix", "domain"];
 
 fn check_known(object: &Map<String, Value>, creating: bool) -> Result<(), SetError> {
     for key in object.keys() {
-        let known = DEFAULTS.contains(&key.as_str());
-        let settable = !SERVER_SET.contains(&key.as_str()) && (creating || key != "emailPrefix");
+        let known = DEFAULTS.contains(&key.as_str()) || key == "domain";
+        let settable = !SERVER_SET.contains(&key.as_str()) && (creating || !CREATE_ONLY.contains(&key.as_str()));
         if !known || !settable {
             return Err(SetError::invalid_properties(&[key.as_str()], format!("{key} cannot be set")));
         }
@@ -122,7 +127,7 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                 let object = object.as_object().ok_or_else(|| SetError::new("invalidProperties", "not an object"))?;
                 check_known(object, true)?;
                 let new = NewMaskedAddress {
-                    domain: None,
+                    domain: text(object, "domain")?.map(str::to_owned),
                     state: state(object)?,
                     for_domain: text(object, "forDomain")?.unwrap_or_default().to_owned(),
                     description: text(object, "description")?.unwrap_or_default().to_owned(),

@@ -1,10 +1,25 @@
 //! MaskedEmail/get and MaskedEmail/set (Fastmail's `https://www.fastmail.com/dev/maskedemail`).
 
 use serde_json::{Value, json};
+use uwumail_store::{AccountMaskedPolicy, DomainKind, DomainMaskedPolicy, MaskedMode};
 
-use crate::common::{args, server};
+use crate::common::{Server, args, server};
 
 const USING: [&str; 2] = ["urn:ietf:params:jmap:core", "https://www.fastmail.com/dev/maskedemail"];
+const MASKED: &str = "https://www.fastmail.com/dev/maskedemail";
+
+async fn session(server: &Server, login: &str) -> Value {
+    let request = axum::http::Request::get("/jmap/session")
+        .header(axum::http::header::AUTHORIZATION, crate::common::basic(login, crate::common::PASSWORD))
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let (_, body) = server.request(request).await;
+    serde_json::from_slice(&body).unwrap()
+}
+
+fn own_domain() -> DomainMaskedPolicy {
+    DomainMaskedPolicy { mode: MaskedMode::Own, ..Default::default() }
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn masked_email_get_and_set() {
@@ -20,21 +35,15 @@ async fn masked_email_get_and_set() {
         )
         .await;
     assert_eq!(args(&responses, 0, "MaskedEmail/set")["notCreated"]["a"]["type"], "forbidden");
-    server.store.set_domain_masked_addresses("example.org", true).await.unwrap();
+    server.store.set_domain_masked_policy("example.org", own_domain()).await.unwrap();
 
-    let session = server.request(
-        axum::http::Request::get("/jmap/session")
-            .header(
-                axum::http::header::AUTHORIZATION,
-                crate::common::basic("mini@example.org", crate::common::PASSWORD),
-            )
-            .body(axum::body::Body::empty())
-            .unwrap(),
+    let session = session(&server, "mini@example.org").await;
+    assert_eq!(session["capabilities"][MASKED], json!({}));
+    assert_eq!(session["primaryAccounts"][MASKED], json!(account));
+    assert_eq!(
+        session["accounts"][&account]["accountCapabilities"][MASKED],
+        json!({ "domains": ["example.org"], "defaultDomain": "example.org" })
     );
-    let (_, body) = session.await;
-    let session: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(session["capabilities"]["https://www.fastmail.com/dev/maskedemail"], json!({}));
-    assert_eq!(session["primaryAccounts"]["https://www.fastmail.com/dev/maskedemail"], json!(account));
 
     let responses = server
         .api_using(
@@ -132,4 +141,92 @@ async fn masked_email_get_and_set() {
     // Without the capability in `using` the methods are unknown.
     let responses = server.api("mini@example.org", json!([["MaskedEmail/get", { "accountId": account }, "0"]])).await;
     assert_eq!(args(&responses, 0, "error")["type"], "unknownMethod");
+}
+
+/// UwUMail's addition: the capability lists where the account may make masked addresses, and
+/// `domain` on create picks one of them (docs/jmap-masked-email.md).
+#[tokio::test(flavor = "multi_thread")]
+async fn masked_email_on_the_domains_the_policy_allows() {
+    let server = server().await;
+    let account = server.account_id("mini@example.org").await;
+    let before = session(&server, "mini@example.org").await;
+    assert_eq!(
+        before["accounts"][&account]["accountCapabilities"][MASKED],
+        json!({ "domains": [], "defaultDomain": null })
+    );
+
+    server.store.create_domain_with_kind("a.test", DomainKind::Masked).await.unwrap();
+    server.store.create_domain_with_kind("b.test", DomainKind::Masked).await.unwrap();
+    let policy = DomainMaskedPolicy {
+        mode: MaskedMode::Both,
+        masked_domains: vec!["a.test".into(), "b.test".into()],
+        default_domain: Some("b.test".into()),
+    };
+    server.store.set_domain_masked_policy("example.org", policy).await.unwrap();
+    let after = session(&server, "mini@example.org").await;
+    assert_eq!(
+        after["accounts"][&account]["accountCapabilities"][MASKED],
+        json!({ "domains": ["a.test", "b.test", "example.org"], "defaultDomain": "b.test" })
+    );
+    assert_ne!(after["state"], before["state"], "a changed policy changes the session");
+
+    let responses = server
+        .api_using(
+            "mini@example.org",
+            &USING,
+            json!([["MaskedEmail/set", { "accountId": account, "create": {
+                "default": { "forDomain": "https://shop.example.com" },
+                "chosen": { "domain": "A.test", "state": "enabled" },
+                "own": { "domain": "example.org" },
+                "elsewhere": { "domain": "example.net" },
+                "nonsense": { "domain": "not a domain" },
+                "wrong": { "domain": 7 }
+            } }, "0"]]),
+        )
+        .await;
+    let set = args(&responses, 0, "MaskedEmail/set");
+    let email = |key: &str| set["created"][key]["email"].as_str().unwrap().to_owned();
+    assert!(email("default").ends_with("@b.test"), "{set}");
+    assert!(email("chosen").ends_with("@a.test"));
+    assert!(email("own").ends_with("@example.org"));
+    assert_eq!(set["created"]["default"].get("domain"), None, "the address says it");
+    assert_eq!(set["notCreated"]["elsewhere"]["type"], "forbidden");
+    assert_eq!(set["notCreated"]["nonsense"]["type"], "forbidden");
+    assert_eq!(set["notCreated"]["wrong"]["type"], "invalidProperties");
+    let id = set["created"]["chosen"]["id"].as_str().unwrap().to_owned();
+
+    // The domain is made once; an update cannot move it.
+    let responses = server
+        .api_using(
+            "mini@example.org",
+            &USING,
+            json!([["MaskedEmail/set", { "accountId": account, "update": { (id.clone()): { "domain": "b.test" } } }, "0"]]),
+        )
+        .await;
+    assert_eq!(args(&responses, 0, "MaskedEmail/set")["notUpdated"][&id]["type"], "invalidProperties");
+
+    // An admin narrows Mini down to a.test: b.test is forbidden now, the addresses there keep working.
+    let mini = server.id("mini@example.org").await;
+    let custom = AccountMaskedPolicy {
+        mode: Some(MaskedMode::Dedicated),
+        masked_domains: Some(vec!["a.test".into()]),
+        default_domain: None,
+    };
+    server.store.set_account_masked_policy(mini, custom).await.unwrap();
+    let (status, response) = server
+        .api_as(
+            &crate::common::basic("mini@example.org", crate::common::PASSWORD),
+            &USING,
+            json!([["MaskedEmail/set", { "accountId": account, "create": {
+                "b": { "domain": "b.test" },
+                "default": {}
+            } }, "0"]]),
+        )
+        .await;
+    assert_eq!(status, axum::http::StatusCode::OK);
+    assert_ne!(response["sessionState"], after["state"]);
+    let set = &response["methodResponses"][0][1];
+    assert_eq!(set["notCreated"]["b"]["type"], "forbidden");
+    assert!(set["created"]["default"]["email"].as_str().unwrap().ends_with("@a.test"));
+    assert_eq!(server.store.resolve_recipient(&email("default")).await.unwrap(), Some(mini));
 }

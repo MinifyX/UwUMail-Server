@@ -141,7 +141,9 @@ pub async fn process(
     }
     // The shared accounts are part of the session, so their changes change its state too.
     let shared = crate::sharing::shared_accounts(&jmap.inner.store, ctx.account.id).await;
-    let state = format!("{}{}", session::session_state(&ctx.account), crate::sharing::state_suffix(&shared));
+    // So does where the account may make masked addresses.
+    let (_, masked) = session::masked_capability(&jmap.inner.store, ctx.account.id).await;
+    let state = format!("{}{}{masked}", session::session_state(&ctx.account), crate::sharing::state_suffix(&shared));
     response.insert("sessionState".into(), json!(state));
     Ok(Value::Object(response))
 }

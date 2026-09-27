@@ -624,7 +624,8 @@ async fn mail_to_a_disabled_masked_address_is_no_delivery() {
     const MASKED: [&str; 2] = [CORE, "https://www.fastmail.com/dev/maskedemail"];
     let mut setup = setup().await;
     let account = setup.server.account_id(MINI).await;
-    setup.server.store.set_domain_masked_addresses("example.org", true).await.unwrap();
+    let own = uwumail_store::DomainMaskedPolicy { mode: uwumail_store::MaskedMode::Own, ..Default::default() };
+    setup.server.store.set_domain_masked_policy("example.org", own).await.unwrap();
     let responses = setup
         .server
         .api_using(

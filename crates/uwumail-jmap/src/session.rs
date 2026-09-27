@@ -84,6 +84,26 @@ pub fn session_state(account: &Account) -> String {
     format!("{}-{}{calendars}{contacts}", account.id, account.login.len() + account.display_name.len())
 }
 
+/// What the account's MaskedEmail capability says (a UwUMail addition to Fastmail's extension):
+/// the domains it may make masked addresses on and the one a new one goes to without `domain`.
+/// The second part goes into the session state, so clients notice when an admin changes it.
+pub async fn masked_capability(store: &uwumail_store::Store, account_id: i64) -> (Value, String) {
+    let policy = match store.effective_masked_policy(account_id).await {
+        Ok(policy) => policy,
+        Err(err) => {
+            tracing::warn!(%err, account_id, "reading the masked address policy failed");
+            Default::default()
+        }
+    };
+    // FNV-1a over the names: short, and the same on every run.
+    let mut hash: u32 = 0x811c_9dc5;
+    for byte in policy.domains.iter().chain(&policy.default_domain).flat_map(|name| name.bytes().chain([0])) {
+        hash = (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193);
+    }
+    let capability = json!({ "domains": policy.domains, "defaultDomain": policy.default_domain });
+    (capability, format!("-x{hash:08x}"))
+}
+
 pub fn document(account: &Account, base: &str) -> Value {
     let account_id = ids::account(account.id);
     let mut document = json!({
@@ -210,12 +230,15 @@ pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInf
             // Folders others share with this account, as accounts of their own (docs/sharing.md).
             let shared = crate::sharing::shared_accounts(&jmap.inner.store, account.id).await;
             crate::sharing::add_to_session(&mut document, &account, &shared);
+            let (masked, masked_state) = masked_capability(&jmap.inner.store, account.id).await;
+            document["accounts"][ids::account(account.id)]["accountCapabilities"][MASKED] = masked;
             // The key a browser binds its push subscription to. It never changes, so the session
             // state need not say anything about it.
             if let Some(vapid) = jmap.inner.push.vapid().await {
                 document["capabilities"][WEBPUSH_VAPID] = json!({ "applicationServerKey": vapid.public_key() });
             }
-            document["state"] = json!(format!("{}{}", session_state(&account), crate::sharing::state_suffix(&shared)));
+            document["state"] =
+                json!(format!("{}{}{masked_state}", session_state(&account), crate::sharing::state_suffix(&shared)));
             ([(header::CACHE_CONTROL, "no-cache, no-store")], Json(document)).into_response()
         }
         Err(err) => err.into_response(),
