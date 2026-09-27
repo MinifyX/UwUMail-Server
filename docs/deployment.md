@@ -152,7 +152,11 @@ are kept, for 180 days.
 
 When delivering, UwUMail follows other domains' MTA-STS policies: with an
 enforced policy it only delivers to the MX hosts listed and only with a valid
-certificate, and otherwise tries again later.
+certificate, and otherwise tries again later. Domains that publish DANE records
+(TLSA, signed with DNSSEC) get their mail only over TLS with the certificate
+those records name, and domains that ask for TLS reports get one a day about
+our deliveries to them. With a DNSSEC-signed zone, the DNS check also
+recommends a TLSA record for this server. See [tls-reports.md](tls-reports.md).
 
 ## Mail apps
 
