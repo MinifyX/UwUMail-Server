@@ -584,6 +584,86 @@ async fn people_a_folder_is_shared_with_hear_of_new_mail_in_it() {
 }
 
 #[tokio::test]
+async fn members_of_a_shared_mailbox_hear_of_new_mail_in_it() {
+    let mut setup = setup().await;
+    let support = setup
+        .server
+        .store
+        .create_shared_mailbox(uwumail_store::NewSharedMailbox {
+            address: "support@example.org".into(),
+            name: "Support".into(),
+            quota_bytes: 0,
+            members: vec![(MINI.into(), true)],
+        })
+        .await
+        .unwrap();
+    let shared_account = format!("a{}", support.id);
+    // The member's session has the shared mailbox as an account of its own, under that id.
+    let responses = setup.call(MINI, json!([["Mailbox/get", { "accountId": shared_account, "ids": [] }, "0"]])).await;
+    assert_eq!(responses[0][0], "Mailbox/get", "{}", responses[0]);
+    setup.subscribe(MINI, "member", None, json!(["EmailDelivery"])).await;
+    setup.subscribe(NYU, "outsider", None, json!(["EmailDelivery"])).await;
+
+    setup.server.deliver(&support.login, &mail("Printer on fire")).await;
+    let pushed = setup.next_for("member").await;
+    let change: Value = serde_json::from_slice(&pushed.body).unwrap();
+    assert!(change["changed"][&shared_account]["EmailDelivery"].is_string(), "{change}");
+
+    // Someone who is not a member hears nothing of it: the next push they get is their own mail.
+    setup.server.deliver(NYU, &mail("Just for Nyu")).await;
+    let pushed = setup.next_for("outsider").await;
+    let change: Value = serde_json::from_slice(&pushed.body).unwrap();
+    let nyu = setup.server.account_id(NYU).await;
+    assert_eq!(change["changed"].as_object().unwrap().keys().collect::<Vec<_>>(), vec![&nyu], "{change}");
+}
+
+/// Mail to an enabled masked address is new mail; a disabled one files it into the Trash, read,
+/// and that is no news (docs/jmap-masked-email.md).
+#[tokio::test]
+async fn mail_to_a_disabled_masked_address_is_no_delivery() {
+    const MASKED: [&str; 2] = [CORE, "https://www.fastmail.com/dev/maskedemail"];
+    let mut setup = setup().await;
+    let account = setup.server.account_id(MINI).await;
+    setup.server.store.set_domain_masked_addresses("example.org", true).await.unwrap();
+    let responses = setup
+        .server
+        .api_using(
+            MINI,
+            &MASKED,
+            json!([["MaskedEmail/set", { "accountId": account, "create": { "m": { "state": "enabled" } } }, "0"]]),
+        )
+        .await;
+    let created = &responses[0][1]["created"]["m"];
+    let (masked_id, address) =
+        (created["id"].as_str().unwrap().to_owned(), created["email"].as_str().unwrap().to_owned());
+    setup.subscribe(MINI, "masked", None, json!(["EmailDelivery", "Email"])).await;
+
+    let smtp = smtp(&setup.server.store);
+    let nyu = setup.server.store.account(NYU).await.unwrap().unwrap();
+    let send = |subject: &str| uwumail_smtp::Submission {
+        account: nyu.clone(),
+        mail_from: NYU.into(),
+        recipients: vec![uwumail_smtp::SubmissionRecipient { address: address.clone(), notify_flags: 0, orcpt: None }],
+        raw: format!("From: Nyu <{NYU}>\r\nTo: <{address}>\r\nSubject: {subject}\r\n\r\nHallo\r\n").into_bytes(),
+        env_id: None,
+        trace: None,
+    };
+    smtp.submit(send("Your order")).await.unwrap();
+    let change: Value = serde_json::from_slice(&setup.next_for("masked").await.body).unwrap();
+    assert!(change["changed"][&account]["EmailDelivery"].is_string(), "{change}");
+
+    let disable = json!({ &masked_id: { "state": "disabled" } });
+    setup
+        .server
+        .api_using(MINI, &MASKED, json!([["MaskedEmail/set", { "accountId": account, "update": disable }, "0"]]))
+        .await;
+    smtp.submit(send("Another offer")).await.unwrap();
+    let change: Value = serde_json::from_slice(&setup.next_for("masked").await.body).unwrap();
+    assert!(change["changed"][&account]["Email"].is_string(), "{change}");
+    assert!(change["changed"][&account].get("EmailDelivery").is_none(), "into the Trash: {change}");
+}
+
+#[tokio::test]
 async fn changes_are_bundled_and_spaced_out() {
     let timing = PushTiming { debounce: Duration::from_millis(300), min_interval: Duration::from_millis(600) };
     let mut setup = setup_with(timing).await;

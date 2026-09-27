@@ -8,6 +8,7 @@ use aws_lc_rs::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use sha2::{Digest, Sha256};
 
+use crate::acl::GRANTS;
 use crate::db::{get_setting, set_setting};
 use crate::fetch::{seal, unseal};
 use crate::{Result, Store, StoreError, now, random_bytes};
@@ -352,14 +353,14 @@ impl Store {
     }
 
     /// Accounts whose push subscriptions hear of a change in `account_id`: itself, and everyone it
-    /// shares mailboxes with.
+    /// shares mailboxes with, one by one or as the members of a shared mailbox (docs/groups.md).
     pub async fn push_audience(&self, account_id: i64) -> Result<Vec<i64>> {
         self.read(move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT DISTINCT acl.grantee_id FROM mailbox_acl acl
+            let mut stmt = conn.prepare_cached(&format!(
+                "SELECT DISTINCT acl.grantee_id FROM {GRANTS} acl
                  JOIN accounts g ON g.id = acl.grantee_id AND g.deleted_at IS NULL
-                 WHERE acl.owner_id = ?1 AND acl.grantee_id != ?1 ORDER BY acl.grantee_id",
-            )?;
+                 WHERE acl.owner_id = ?1 AND acl.grantee_id != ?1 ORDER BY acl.grantee_id"
+            ))?;
             let mut accounts = vec![account_id];
             accounts.extend(stmt.query_map([account_id], |row| row.get::<_, i64>(0))?.collect::<Result<Vec<_>, _>>()?);
             Ok(accounts)
@@ -368,13 +369,14 @@ impl Store {
     }
 
     /// Who hears of new mail in `account_id` since state `since` (JMAP `EmailDelivery`): the account
-    /// itself, and those it shares a folder with that they may read. New mail is a message that
+    /// itself, and those who may read the folder it came into, shared one by one or as a member of
+    /// a shared mailbox. New mail is a message that
     /// arrived after `since`, is neither read nor a draft, and is not in the drafts, sent, junk or
     /// trash folder; a copy an app filed in Sent or a draft it saved is no news, and a browser has
     /// to show something for every push it gets.
     pub async fn push_deliveries(&self, account_id: i64, since: i64) -> Result<Vec<i64>> {
         self.read(move |conn| {
-            let mut stmt = conn.prepare_cached(
+            let mut stmt = conn.prepare_cached(&format!(
                 "WITH delivered AS (
                      SELECT DISTINCT em.mailbox_id FROM changes c
                      JOIN emails e ON e.id = c.object_id AND e.account_id = c.account_id
@@ -386,9 +388,10 @@ impl Store {
                                        WHERE k.email_id = e.id AND lower(k.keyword) IN ('$seen', '$draft')))
                  SELECT ?1 WHERE EXISTS (SELECT 1 FROM delivered)
                  UNION
-                 SELECT acl.grantee_id FROM mailbox_acl acl JOIN delivered d ON d.mailbox_id = acl.mailbox_id
-                 WHERE acl.owner_id = ?1 AND instr(acl.rights, 'r') > 0",
-            )?;
+                 SELECT acl.grantee_id FROM {GRANTS} acl JOIN delivered d ON d.mailbox_id = acl.mailbox_id
+                 JOIN accounts g ON g.id = acl.grantee_id AND g.deleted_at IS NULL
+                 WHERE acl.owner_id = ?1 AND instr(acl.rights, 'r') > 0"
+            ))?;
             let rows = stmt.query_map(params![account_id, since], |row| row.get::<_, i64>(0))?;
             Ok(rows.collect::<Result<_, _>>()?)
         })
@@ -766,5 +769,38 @@ mod tests {
         assert_eq!(store.push_deliveries(mini, since).await.unwrap(), vec![mini, nyu]);
         // Nothing new after that.
         assert!(store.push_deliveries(mini, store.account_modseq(mini).await.unwrap()).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn members_of_a_shared_mailbox_hear_of_it() {
+        let sorted = |mut ids: Vec<i64>| {
+            ids.sort_unstable();
+            ids
+        };
+        let (store, _dir) = store().await;
+        let mini = account(&store, "mini").await;
+        let nyu = account(&store, "nyu").await;
+        let support = store
+            .create_shared_mailbox(crate::NewSharedMailbox {
+                address: "support@example.org".into(),
+                name: "Support".into(),
+                quota_bytes: 0,
+                members: vec![("mini@example.org".into(), true)],
+            })
+            .await
+            .unwrap()
+            .id;
+        assert_eq!(store.push_audience(support).await.unwrap(), vec![support, mini]);
+        let since = ingest(&store, support, MailboxRole::Inbox, &[]).await;
+        assert_eq!(sorted(store.push_deliveries(support, since).await.unwrap()), sorted(vec![support, mini]));
+        // Junk is no news for the members either.
+        let since = ingest(&store, support, MailboxRole::Junk, &[]).await;
+        assert_eq!(store.push_deliveries(support, since).await.unwrap(), Vec::<i64>::new());
+
+        // Membership changes, and so does who hears of it.
+        store.set_shared_mailbox_members("support@example.org", vec![("nyu@example.org".into(), false)]).await.unwrap();
+        assert_eq!(store.push_audience(support).await.unwrap(), vec![support, nyu]);
+        let since = ingest(&store, support, MailboxRole::Inbox, &[]).await;
+        assert_eq!(sorted(store.push_deliveries(support, since).await.unwrap()), sorted(vec![support, nyu]));
     }
 }
