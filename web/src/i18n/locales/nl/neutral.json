@@ -62,7 +62,8 @@
     "expand": "{{group}} uitklappen",
     "mailbox": "Mailbox",
     "directory": "Accounts & domeinen",
-    "calendars": "Agenda's en contacten"
+    "calendars": "Agenda's en contacten",
+    "masked": "Gemaskeerde adressen"
   },
   "userMenu": {
     "open": "Accountmenu openen",
@@ -325,7 +326,12 @@
       "googleUseIcs": "Google laat alleen zijn eigen apps binnen. Gebruik het geheime iCal-adres voor agenda's en een vCard-export voor contacten.",
       "subscriptionLimit": "Je hebt al zo veel geabonneerde agenda's als mogelijk.",
       "subscriptionExists": "Je bent al op deze agenda geabonneerd.",
-      "refreshPause": "Net opgehaald. Probeer het over een minuut opnieuw."
+      "refreshPause": "Net opgehaald. Probeer het over een minuut opnieuw.",
+      "sharedMailbox": "Dit is een gedeelde mailbox: niemand logt erop in, de leden gebruiken hem vanuit hun eigen account.",
+      "maskedDomain": "Op deze server is nog geen domein open voor gemaskeerde adressen. Vraag het de beheerder.",
+      "maskedLimit": "Je hebt zoveel gemaskeerde adressen als deze server toestaat. Verwijder er een paar die je niet meer nodig hebt.",
+      "maskedPrefix": "Een voorvoegsel mag alleen letters a–z, cijfers en _ bevatten, hooguit 64.",
+      "maskedState": "Een gemaskeerd adres kan niet opnieuw op zijn eerste mail wachten."
     }
   },
   "people": {
@@ -534,6 +540,26 @@
       "revokeTitle": "{{name}} intrekken?",
       "revokeBody": "Wat dit wachtwoord gebruikt, komt dan niet meer binnen.",
       "createdTitle": "Nieuw app-wachtwoord"
+    }
+  },
+  "sharedMailboxes": {
+    "title": "Gedeelde mailboxen",
+    "explain": "Een mailbox die meerdere mensen gebruiken, zoals support@. Niemand logt erop in; de leden zien hem naast hun eigen mappen en mogen ermee antwoorden.",
+    "create": "Nieuwe gedeelde mailbox",
+    "createIntro": "Hij krijgt een eigen adres en eigen opslag; mail ernaartoe komt voor alle leden in zijn inbox.",
+    "name": "Naam",
+    "namePlaceholder": "bijvoorbeeld Support",
+    "address": "Adres",
+    "addressPlaceholder": "bijvoorbeeld support",
+    "members": "Leden",
+    "membersHint": "Iedereen die je kiest ziet alle mappen. Vink aan wie ook met het adres mag versturen.",
+    "membersIntro": "Leden zien elke map, ook nieuwe. Wie mag versturen vindt het adres tussen de eigen afzenders; een kopie van het verzondene blijft in zijn map Verzonden.",
+    "maySend": "mag versturen",
+    "save": "Leden opslaan",
+    "pill": "Gedeelde mailbox",
+    "toasts": {
+      "created": "{{address}} gemaakt",
+      "saved": "Leden opgeslagen"
     }
   },
   "log": {
@@ -891,6 +917,46 @@
       "unauthenticated_one": "Eén rapport kwam van een afzender die niet kon bewijzen wie hij is. De cijfers kunnen verzonnen zijn.",
       "unauthenticated_other": "{{count}} rapporten kwamen van afzenders die niet konden bewijzen wie ze zijn. De cijfers kunnen verzonnen zijn."
     }
+  },
+  "groups": {
+    "title": "Groepen",
+    "explain": "Eén adres voor meerdere mensen, zoals info@ of bestuur@ van een vereniging. Iedereen krijgt de mail in de eigen inbox, met eigen spamfilter en regels.",
+    "create": "Nieuwe groep",
+    "save": "Opslaan",
+    "address": "Adres",
+    "addressPlaceholder": "bijvoorbeeld bestuur",
+    "name": "Naam",
+    "namePlaceholder": "bijvoorbeeld Bestuur",
+    "whoMaySend": "Wie mag schrijven",
+    "who": {
+      "anyone": "Iedereen",
+      "members": "Alleen de leden",
+      "domain": "Alleen adressen van {{domain}}",
+      "anyoneHint": "Zoals elk ander adres, open voor iedereen.",
+      "membersHint": "Mail van anderen wordt aan de deur geweigerd.",
+      "domainHint": "Mensen van dit domein mogen schrijven, alle anderen worden geweigerd."
+    },
+    "sendAs": "Leden mogen als de groep versturen",
+    "sendAsHint": "Het adres staat dan tussen hun afzenderadressen.",
+    "sendAsShort": "leden versturen ermee",
+    "members": {
+      "title": "Leden",
+      "search": "Mensen zoeken",
+      "chosen_one": "{{count}} gekozen",
+      "chosen_other": "{{count}} gekozen",
+      "none": "Niemand gevonden."
+    },
+    "noMembers": "Nog geen leden: mail ernaartoe wordt geweigerd.",
+    "edit": "{{address}} wijzigen",
+    "remove": "{{address}} verwijderen",
+    "removeConfirm": "Groep {{address}} verwijderen? Mail ernaartoe wordt voortaan geweigerd.",
+    "toasts": {
+      "created": "Groep gemaakt",
+      "saved": "Groep opgeslagen",
+      "removed": "Groep verwijderd"
+    },
+    "masked": "Gemaskeerde adressen",
+    "maskedHint": "Mensen mogen op dit domein willekeurige adressen voor websites maken (Mijn account → Gemaskeerde adressen)."
   },
   "reports": {
     "title": "Rapporten",
@@ -1706,6 +1772,54 @@
     "releasedHint": "Mail aan deze adressen wordt geweigerd tot je ze terugneemt of de tijd om is.",
     "reservedUntil": "Gereserveerd tot {{date}}",
     "restore": "Terugnemen"
+  },
+  "memberships": {
+    "title": "Groepen en gedeelde mailboxen",
+    "intro": "Een beheerder heeft je hier toegevoegd. Mail aan een groep komt in je eigen inbox; een gedeelde mailbox staat naast je eigen mappen.",
+    "group": "Groep",
+    "shared": "Gedeelde mailbox",
+    "maySend": "je mag ermee versturen",
+    "sharedHint": "In mail-apps staat een gedeelde mailbox onder Shared/, in de webmail als eigen account. Wat je ermee verstuurt, komt ook in zijn map Verzonden."
+  },
+  "masked": {
+    "pageTitle": "Gemaskeerde adressen",
+    "intro": "Een willekeurig adres voor elke website. Krijgt er een spam, dan weet je wie het doorgaf en zet je het uit zonder je echte adres aan te raken.",
+    "new": "Nieuw gemaskeerd adres",
+    "closed": "Gemaskeerde adressen zijn op deze server nog niet open. Vraag de beheerder ze voor een domein aan te zetten.",
+    "description": "Waarvoor",
+    "descriptionPlaceholder": "bijvoorbeeld de nieuwsbrief van de bakker",
+    "site": "Website",
+    "siteHint": "Optioneel, zodat je weet waar je het gebruikte.",
+    "prefix": "Voorvoegsel",
+    "prefixHint": "Optioneel: letters a–z, cijfers en _ vóór het willekeurige deel.",
+    "prefixPlaceholder": "bijvoorbeeld shop",
+    "domain": "Domein",
+    "create": "Adres maken",
+    "created": "{{address}} is klaar en gekopieerd",
+    "listTitle": "Je gemaskeerde adressen",
+    "filter": {
+      "active": "In gebruik",
+      "deleted": "Verwijderd"
+    },
+    "empty": "Nog niets hier.",
+    "noNote": "Geen notitie",
+    "state": {
+      "pending": "Wacht op de eerste mail",
+      "enabled": "Aan",
+      "disabled": "Uit: mail gaat stil naar de prullenbak",
+      "deleted": "Verwijderd: mail wordt geweigerd"
+    },
+    "lastMessage": "laatste mail {{date}}",
+    "noMessage": "nog geen mail",
+    "enable": "Aanzetten",
+    "disable": "Uitzetten",
+    "delete": "Verwijderen",
+    "deleteConfirm": "{{address}} verwijderen? Mail ernaartoe wordt voortaan geweigerd. Je kunt het later weer aanzetten; niemand anders krijgt het ooit.",
+    "toasts": {
+      "enabled": "Aangezet",
+      "disabled": "Uitgezet, mail gaat naar de prullenbak",
+      "deleted": "Verwijderd, mail wordt geweigerd"
+    }
   },
   "storage": {
     "title": "Opslag",

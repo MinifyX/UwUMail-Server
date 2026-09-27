@@ -7,6 +7,9 @@ as far as the owner allows.
 
 Only people share with people. Services (see the admin panel) neither share nor
 receive shares, and an account in the trash takes no part until it is restored.
+The one exception is a shared mailbox ([groups.md](groups.md#shared-mailboxes)):
+every folder of it is shared with each of its members, the ones made later too,
+with every right, for as long as they are members.
 
 ## Levels and rights
 
@@ -228,7 +231,10 @@ services, not accounts in the trash) in your own account:
 ```
 
 `accounts` holds the account you can open for that person (your own, or theirs
-when they share with you), otherwise `null`. Principal/query filters by
+when they share with you), otherwise `null`. Groups are principals of
+`type: "group"` (id `g<number>`), and the shared mailboxes you are a member of
+are principals of `type: "other"` that Principal/get finds but
+Principal/query leaves out ([groups.md](groups.md)). Principal/query filters by
 `email`, `name`, `text`, `type` and `accountIds`. Principal/changes answers
 `cannotCalculateChanges` whenever someone joined, left or was renamed. Your own
 principal id is `currentUserPrincipalId` in your account's principals

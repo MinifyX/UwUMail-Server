@@ -188,7 +188,8 @@ pub async fn account(config: &Config, store: &Store, command: AccountCommand) ->
                 };
                 let flags = [
                     (account.role == Role::Admin).then_some("admin"),
-                    account.is_service().then_some("service"),
+                    account.shared_mailbox.then_some("shared mailbox"),
+                    (account.is_service() && !account.shared_mailbox).then_some("service"),
                     (account.is_service() && !account.has_mailbox()).then_some("sends only"),
                     account.disabled.then_some("disabled"),
                     account.deleted_at.is_some().then_some("in the trash"),

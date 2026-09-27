@@ -153,6 +153,12 @@
       "saved": "Signature enregistrée (ﾉ◕ヮ◕)ﾉ"
     }
   },
+  "memberships": {
+    "intro": "Vous en faites partie ! Le courrier des groupes arrive dans votre boîte, les boîtes partagées attendent à côté de vos dossiers (◕‿◕✿)"
+  },
+  "masked": {
+    "intro": "Une adresse secrète pour chaque site ! Si l'une reçoit du spam, vous savez qui a bavardé, et vous la coupez en un clin d'œil (｀・ω・´)"
+  },
   "sharing": {
     "withMeEmpty": "Personne ne partage encore de dossier avec toi (｡•ᴗ•｡)",
     "saved": "{{folder}} est partagé avec {{person}} (ﾉ◕ヮ◕)ﾉ"

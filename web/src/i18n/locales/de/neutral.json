@@ -62,7 +62,8 @@
     "expand": "{{group}} ausklappen",
     "mailbox": "Postfach",
     "directory": "Konten & Domains",
-    "calendars": "Kalender & Kontakte"
+    "calendars": "Kalender & Kontakte",
+    "masked": "Maskierte Adressen"
   },
   "userMenu": {
     "open": "Kontomenü öffnen",
@@ -325,7 +326,12 @@
       "googleUseIcs": "Google lässt nur seine eigenen Apps herein. Nimm für Kalender die geheime iCal-Adresse und für Kontakte einen vCard-Export.",
       "subscriptionLimit": "Du hast schon so viele abonnierte Kalender wie möglich.",
       "subscriptionExists": "Diesen Kalender hast du schon abonniert.",
-      "refreshPause": "Gerade erst geholt. Versuch es in einer Minute nochmal."
+      "refreshPause": "Gerade erst geholt. Versuch es in einer Minute nochmal.",
+      "sharedMailbox": "Das ist ein geteiltes Postfach: Niemand meldet sich dort an, die Mitglieder nutzen es aus ihrem eigenen Konto.",
+      "maskedDomain": "Auf diesem Server ist noch keine Domain für maskierte Adressen freigegeben. Frag den Admin.",
+      "maskedLimit": "Du hast so viele maskierte Adressen, wie dieser Server erlaubt. Lösch welche, die du nicht mehr brauchst.",
+      "maskedPrefix": "Ein Präfix darf nur Buchstaben a–z, Ziffern und _ haben, höchstens 64.",
+      "maskedState": "Eine maskierte Adresse kann nicht wieder auf ihre erste Mail warten."
     }
   },
   "people": {
@@ -534,6 +540,26 @@
       "revokeTitle": "{{name}} zurückziehen?",
       "revokeBody": "Was dieses Passwort benutzt, kommt danach nicht mehr rein.",
       "createdTitle": "Neues App-Passwort"
+    }
+  },
+  "sharedMailboxes": {
+    "title": "Geteilte Postfächer",
+    "explain": "Ein Postfach, das mehrere Leute nutzen, etwa support@. Niemand meldet sich dort an; die Mitglieder sehen es neben ihren eigenen Ordnern und dürfen damit antworten.",
+    "create": "Neues geteiltes Postfach",
+    "createIntro": "Es bekommt eine eigene Adresse und eigenen Speicher; Mail dorthin landet für alle Mitglieder in seinem Posteingang.",
+    "name": "Name",
+    "namePlaceholder": "zum Beispiel Support",
+    "address": "Adresse",
+    "addressPlaceholder": "zum Beispiel support",
+    "members": "Mitglieder",
+    "membersHint": "Alle Ausgewählten sehen alle Ordner. Hak an, wer auch mit der Adresse senden darf.",
+    "membersIntro": "Mitglieder sehen jeden Ordner, auch neue. Wer senden darf, findet die Adresse bei den eigenen Absendern; eine Kopie des Gesendeten bleibt in seinem Gesendet-Ordner.",
+    "maySend": "darf senden",
+    "save": "Mitglieder speichern",
+    "pill": "Geteiltes Postfach",
+    "toasts": {
+      "created": "{{address}} angelegt",
+      "saved": "Mitglieder gespeichert"
     }
   },
   "log": {
@@ -891,6 +917,46 @@
       "unauthenticated_one": "Ein Bericht kam von einem Absender, der sich nicht ausweisen konnte. Seine Zahlen könnten erfunden sein.",
       "unauthenticated_other": "{{count}} Berichte kamen von Absendern, die sich nicht ausweisen konnten. Ihre Zahlen könnten erfunden sein."
     }
+  },
+  "groups": {
+    "title": "Gruppen",
+    "explain": "Eine Adresse für mehrere Leute, etwa info@ oder vorstand@ eines Vereins. Alle bekommen die Mail in ihren eigenen Posteingang, mit eigenem Spamfilter und eigenen Regeln.",
+    "create": "Neue Gruppe",
+    "save": "Speichern",
+    "address": "Adresse",
+    "addressPlaceholder": "zum Beispiel vorstand",
+    "name": "Name",
+    "namePlaceholder": "zum Beispiel Vorstand",
+    "whoMaySend": "Wer darf schreiben",
+    "who": {
+      "anyone": "Alle",
+      "members": "Nur die Mitglieder",
+      "domain": "Nur Adressen von {{domain}}",
+      "anyoneHint": "Wie jede andere Adresse, offen für alle.",
+      "membersHint": "Mail von allen anderen wird an der Tür abgelehnt.",
+      "domainHint": "Leute dieser Domain dürfen schreiben, alle anderen werden abgelehnt."
+    },
+    "sendAs": "Mitglieder dürfen als Gruppe senden",
+    "sendAsHint": "Dann steht ihre Adresse bei den Absendern der Mitglieder.",
+    "sendAsShort": "Mitglieder senden damit",
+    "members": {
+      "title": "Mitglieder",
+      "search": "Leute suchen",
+      "chosen_one": "{{count}} ausgewählt",
+      "chosen_other": "{{count}} ausgewählt",
+      "none": "Niemand gefunden."
+    },
+    "noMembers": "Noch keine Mitglieder: Mail dorthin wird abgelehnt.",
+    "edit": "{{address}} ändern",
+    "remove": "{{address}} entfernen",
+    "removeConfirm": "Gruppe {{address}} entfernen? Mail dorthin wird ab jetzt abgelehnt.",
+    "toasts": {
+      "created": "Gruppe angelegt",
+      "saved": "Gruppe gespeichert",
+      "removed": "Gruppe entfernt"
+    },
+    "masked": "Maskierte Adressen",
+    "maskedHint": "Leute dürfen auf dieser Domain zufällige Adressen für Websites erzeugen (Mein Konto → Maskierte Adressen)."
   },
   "reports": {
     "title": "Berichte",
@@ -1706,6 +1772,54 @@
     "releasedHint": "Mails an diese Adressen werden abgelehnt, bis du sie zurückholst oder die Frist abläuft.",
     "reservedUntil": "Reserviert bis {{date}}",
     "restore": "Zurückholen"
+  },
+  "memberships": {
+    "title": "Gruppen und geteilte Postfächer",
+    "intro": "Ein Admin hat dich hier eingetragen. Mail an eine Gruppe landet in deinem eigenen Posteingang; ein geteiltes Postfach steht neben deinen eigenen Ordnern.",
+    "group": "Gruppe",
+    "shared": "Geteiltes Postfach",
+    "maySend": "du darfst damit senden",
+    "sharedHint": "In Mail-Apps steht ein geteiltes Postfach unter Shared/, im Webmail als eigenes Konto. Was du damit sendest, landet auch in seinem Gesendet-Ordner."
+  },
+  "masked": {
+    "pageTitle": "Maskierte Adressen",
+    "intro": "Eine zufällige Adresse für jede Website. Bekommt eine plötzlich Spam, weißt du, wer sie weitergegeben hat, und schaltest sie ab, ohne deine echte Adresse anzufassen.",
+    "new": "Neue maskierte Adresse",
+    "closed": "Maskierte Adressen sind auf diesem Server noch nicht freigegeben. Bitte den Admin, sie für eine Domain einzuschalten.",
+    "description": "Wofür",
+    "descriptionPlaceholder": "zum Beispiel Newsletter der Bäckerei",
+    "site": "Website",
+    "siteHint": "Freiwillig, damit du weißt, wo du sie benutzt hast.",
+    "prefix": "Präfix",
+    "prefixHint": "Freiwillig: Buchstaben a–z, Ziffern und _ vor dem zufälligen Teil.",
+    "prefixPlaceholder": "zum Beispiel shop",
+    "domain": "Domain",
+    "create": "Adresse erzeugen",
+    "created": "{{address}} ist fertig und kopiert",
+    "listTitle": "Deine maskierten Adressen",
+    "filter": {
+      "active": "In Gebrauch",
+      "deleted": "Gelöscht"
+    },
+    "empty": "Noch nichts hier.",
+    "noNote": "Keine Notiz",
+    "state": {
+      "pending": "Wartet auf die erste Mail",
+      "enabled": "An",
+      "disabled": "Aus: Mail landet still im Papierkorb",
+      "deleted": "Gelöscht: Mail wird abgelehnt"
+    },
+    "lastMessage": "letzte Mail {{date}}",
+    "noMessage": "noch keine Mail",
+    "enable": "Einschalten",
+    "disable": "Ausschalten",
+    "delete": "Löschen",
+    "deleteConfirm": "{{address}} löschen? Mail dorthin wird ab jetzt abgelehnt. Du kannst sie später wieder einschalten; niemand sonst bekommt sie je.",
+    "toasts": {
+      "enabled": "Eingeschaltet",
+      "disabled": "Ausgeschaltet, Mail landet im Papierkorb",
+      "deleted": "Gelöscht, Mail wird abgelehnt"
+    }
   },
   "storage": {
     "title": "Speicher",

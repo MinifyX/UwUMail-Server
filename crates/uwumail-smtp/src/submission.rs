@@ -2,7 +2,7 @@
 
 use mail_builder::headers::date::Date;
 use mail_parser::MessageParser;
-use uwumail_store::{Account, IngestRequest, MailboxRole, MailboxTarget, NewQueueRecipient, StoreError};
+use uwumail_store::{Account, IngestRequest, MailboxRole, MailboxTarget, MaskedState, NewQueueRecipient, StoreError};
 
 use crate::dsn::{self, FailedRecipient};
 use crate::{Smtp, clamav, dkim, forward, headers, random_id, vacation};
@@ -102,6 +102,13 @@ fn claimed_addresses(raw: &[u8]) -> Result<(Vec<String>, Vec<String>), SubmitErr
     Ok((from, claimed))
 }
 
+fn stored_error(err: StoreError) -> String {
+    match err {
+        StoreError::QuotaExceeded => "552 5.2.2 Mailbox is full".into(),
+        other => format!("451 4.3.0 {other}"),
+    }
+}
+
 /// Removes Bcc headers: blind copies must not show up for anyone.
 fn strip_bcc(raw: &[u8]) -> Vec<u8> {
     let (fields, _) = headers::split(raw);
@@ -193,13 +200,14 @@ impl Smtp {
         let from_domain = from[0].rsplit_once('@').map(|(_, d)| d.to_ascii_lowercase()).unwrap_or_default();
         let id = random_id();
 
-        let mut message = String::new().into_bytes();
+        let mut added = String::new().into_bytes();
         if headers::first_value(&raw, "Date").is_none() {
-            message.extend_from_slice(format!("Date: {}\r\n", Date::now().to_rfc822()).as_bytes());
+            added.extend_from_slice(format!("Date: {}\r\n", Date::now().to_rfc822()).as_bytes());
         }
         if headers::first_value(&raw, "Message-ID").is_none() {
-            message.extend_from_slice(format!("Message-ID: <{}@{from_domain}>\r\n", random_id()).as_bytes());
+            added.extend_from_slice(format!("Message-ID: <{}@{from_domain}>\r\n", random_id()).as_bytes());
         }
+        let mut message = added.clone();
         message.extend_from_slice(&strip_bcc(&raw));
 
         let signatures = match dkim::ensure_domain_keys(&ctx.store, &from_domain).await {
@@ -221,11 +229,50 @@ impl Smtp {
         let mut failed = Vec::new();
         let mut local_deliveries = 0;
         let mut remote = Vec::new();
+        // People here get a message once, however many of their addresses and groups it names.
+        let mut reached: Vec<i64> = Vec::new();
+        let delivered_to = headers::values(&signed, "Delivered-To");
         for recipient in &recipients {
             let Ok((local, domain)) = uwumail_store::normalize_address(&recipient.address) else {
                 return Err(SubmitError::InvalidRecipient(recipient.address.clone()));
             };
             let address = format!("{local}@{domain}");
+            // A group: the sender has to be allowed to write to it, and then every member gets it.
+            if let Some(group) = ctx.store.group_delivery(&address).await.ok().flatten() {
+                if !ctx.store.group_accepts(&group, &mail_from, Some(account.id)).await.unwrap_or(false) {
+                    failed.push(FailedRecipient {
+                        address: address.clone(),
+                        error: format!("550 5.7.1 <{address}>: You may not write to this group"),
+                    });
+                    continue;
+                }
+                if delivered_to.iter().any(|seen| seen.eq_ignore_ascii_case(&group.address)) {
+                    tracing::warn!(%id, group = %group.address, "not delivering a message to a group it went through before");
+                    local_deliveries += 1;
+                    continue;
+                }
+                let mut got_it = false;
+                let mut failure = None;
+                for member in &group.members {
+                    let Some(target) = ctx.store.delivery_target(*member).await.ok().flatten() else { continue };
+                    if reached.contains(&target) {
+                        got_it = true;
+                        continue;
+                    }
+                    reached.push(target);
+                    match self.deliver_locally(target, &address, &mail_from, &signed, &from[0], false).await {
+                        Ok(()) => got_it = true,
+                        Err(error) => failure = Some(error),
+                    }
+                }
+                if got_it {
+                    local_deliveries += 1;
+                } else {
+                    let error = failure.unwrap_or_else(|| "550 5.1.1 This address does not take mail".into());
+                    failed.push(FailedRecipient { address, error });
+                }
+                continue;
+            }
             // The recipient is looked up again here, so the mailbox-less service has to be
             // asked about again too: mail for it belongs to the address it hands its mail to.
             let resolved = match ctx.store.resolve_recipient(&address).await.ok().flatten() {
@@ -243,41 +290,22 @@ impl Smtp {
             };
             match resolved {
                 Some(account_id) => {
-                    let plan = forward::plan(ctx, account_id).await;
-                    if !plan.targets.is_empty()
-                        && let Ok(Some(target)) = ctx.store.account_by_id(account_id).await
-                    {
-                        let forwarder = forward::Forwarder { name: &target.login, account_id: Some(target.id) };
-                        forward::send(ctx, forwarder, &address, &mail_from, &signed, &plan.targets).await;
-                    }
-                    if !plan.keep_copy {
+                    if reached.contains(&account_id) {
                         local_deliveries += 1;
                         continue;
                     }
-                    let request = IngestRequest {
-                        account_id,
-                        raw: signed.clone(),
-                        mailboxes: vec![MailboxTarget::Role(MailboxRole::Inbox)],
-                        keywords: vec![],
-                        received_at: None,
-                    };
-                    match ctx.store.ingest(request).await {
-                        Ok(_) => {
-                            local_deliveries += 1;
-                            // The sender is an authenticated local account, so it is verified.
-                            vacation::maybe_reply(ctx, account_id, &mail_from, true, &signed).await;
-                            // Calendar apps that send invitations themselves reach people here too;
-                            // the From address was checked above to be the sender's own.
-                            let sender = crate::scheduling::Sender { verified_from: Some(&from[0]), local: true };
-                            crate::scheduling::incoming(ctx, account_id, &signed, sender).await;
-                        }
-                        Err(err) => failed.push(FailedRecipient {
-                            address,
-                            error: match err {
-                                StoreError::QuotaExceeded => "552 5.2.2 Mailbox is full".into(),
-                                other => format!("451 4.3.0 {other}"),
-                            },
-                        }),
+                    reached.push(account_id);
+                    // A disabled masked address takes the message into the Trash, as from anyone.
+                    let masked = ctx.store.masked_delivery(&address).await.ok().flatten();
+                    if let Some(masked) = masked
+                        && let Err(err) = ctx.store.note_masked_message(masked.id).await
+                    {
+                        tracing::warn!(%id, %err, "noting mail for a masked address failed");
+                    }
+                    let to_trash = masked.is_some_and(|masked| masked.state == MaskedState::Disabled);
+                    match self.deliver_locally(account_id, &address, &mail_from, &signed, &from[0], to_trash).await {
+                        Ok(()) => local_deliveries += 1,
+                        Err(error) => failed.push(FailedRecipient { address, error }),
                     }
                 }
                 None if ctx.store.is_local_domain(&domain).await.unwrap_or(false) => {
@@ -318,8 +346,74 @@ impl Smtp {
         if !failed.is_empty() {
             dsn::bounce(ctx, &mail_from, &signed, &failed).await;
         }
+        // Sent as a shared mailbox: its own Sent folder keeps a copy too, so everyone who uses it
+        // sees what was answered. The sender's own copy is up to their mail app, as always.
+        if let Some(shared) = ctx.store.shared_mailbox_sending_as(account.id, &from[0]).await.ok().flatten() {
+            let mut copy = added;
+            copy.extend_from_slice(&raw);
+            let request = IngestRequest {
+                account_id: shared,
+                raw: copy,
+                mailboxes: vec![MailboxTarget::Role(MailboxRole::Sent)],
+                keywords: vec!["$seen".into()],
+                received_at: None,
+            };
+            if let Err(err) = ctx.store.ingest(request).await {
+                tracing::warn!(%id, %err, shared, "keeping a copy in the shared mailbox's Sent folder failed");
+            }
+        }
         tracing::info!(%id, login = %account.login, local = local_deliveries, remote = remote_recipients, "submitted message");
         Ok(Submitted { id, queue_message_id, local_deliveries, remote_recipients })
+    }
+
+    /// Delivers a submitted message to someone here: their forwarding, then their Inbox (or the
+    /// Trash, for a disabled masked address), a vacation reply and calendar invitations. The error
+    /// is the answer for a bounce.
+    async fn deliver_locally(
+        &self,
+        account_id: i64,
+        address: &str,
+        mail_from: &str,
+        signed: &[u8],
+        author: &str,
+        to_trash: bool,
+    ) -> Result<(), String> {
+        let ctx = &self.inner;
+        if to_trash {
+            let request = IngestRequest {
+                account_id,
+                raw: signed.to_vec(),
+                mailboxes: vec![MailboxTarget::Role(MailboxRole::Trash)],
+                keywords: vec!["$seen".into()],
+                received_at: None,
+            };
+            return ctx.store.ingest(request).await.map(|_| ()).map_err(stored_error);
+        }
+        let plan = forward::plan(ctx, account_id).await;
+        if !plan.targets.is_empty()
+            && let Ok(Some(target)) = ctx.store.account_by_id(account_id).await
+        {
+            let forwarder = forward::Forwarder { name: &target.login, account_id: Some(target.id) };
+            forward::send(ctx, forwarder, address, mail_from, signed, &plan.targets).await;
+        }
+        if !plan.keep_copy {
+            return Ok(());
+        }
+        let request = IngestRequest {
+            account_id,
+            raw: signed.to_vec(),
+            mailboxes: vec![MailboxTarget::Role(MailboxRole::Inbox)],
+            keywords: vec![],
+            received_at: None,
+        };
+        ctx.store.ingest(request).await.map_err(stored_error)?;
+        // The sender is an authenticated local account, so it is verified.
+        vacation::maybe_reply(ctx, account_id, mail_from, true, signed).await;
+        // Calendar apps that send invitations themselves reach people here too; the From address
+        // was checked to be the sender's own.
+        let sender = crate::scheduling::Sender { verified_from: Some(author), local: true };
+        crate::scheduling::incoming(ctx, account_id, signed, sender).await;
+        Ok(())
     }
 }
 

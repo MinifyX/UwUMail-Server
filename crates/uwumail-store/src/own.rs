@@ -147,6 +147,8 @@ impl Store {
             let taken: bool = tx.query_row(
                 "SELECT EXISTS (SELECT 1 FROM addresses WHERE local_part = ?1 AND domain_id = ?2)
                      OR EXISTS (SELECT 1 FROM forward_addresses WHERE local_part = ?1 AND domain_id = ?2)
+                     OR EXISTS (SELECT 1 FROM groups WHERE local_part = ?1 AND domain_id = ?2)
+                     OR EXISTS (SELECT 1 FROM masked_addresses WHERE local_part = ?1 AND domain_id = ?2)
                      OR EXISTS (SELECT 1 FROM released_addresses WHERE local_part = ?1 AND domain_id = ?2 AND account_id != ?3)
                      OR EXISTS (SELECT 1 FROM accounts WHERE login = ?4)",
                 params![local, domain_id, account_id, format!("{local}@{domain}")],

@@ -483,3 +483,85 @@ async fn query_changes_in_a_shared_account_stay_within_the_shared_folders() {
     let refused = server.api(NYU, json!([["EmailSubmission/queryChanges", since, "0"]])).await;
     assert_eq!(refused[0][1]["type"], "accountNotSupportedByMethod");
 }
+
+/// A shared mailbox is an account every member has, with all its folders, new ones too; it is a
+/// principal members can look up, but nobody to share with. Groups are principals of their own.
+#[tokio::test(flavor = "multi_thread")]
+async fn shared_mailboxes_are_shared_accounts_of_their_members() {
+    let server = server().await;
+    let nyu_account = format!("a{}", server.nyu);
+    let support = server
+        .store
+        .create_shared_mailbox(uwumail_store::NewSharedMailbox {
+            address: "support@example.org".into(),
+            name: "Support".into(),
+            quota_bytes: 0,
+            members: vec![(NYU.into(), true)],
+        })
+        .await
+        .unwrap();
+    let support_account = format!("a{}", support.id);
+    server.deliver(support.id, MailboxRole::Inbox, "Hilfe").await;
+
+    let session = server.session(NYU).await;
+    let account = &session["accounts"][&support_account];
+    assert_eq!((account["name"].as_str(), account["isPersonal"].as_bool()), (Some("support@example.org"), Some(false)));
+    assert_eq!(account["isReadOnly"], false);
+    assert!(server.session(MINI).await["accounts"][&support_account].is_null(), "only for members");
+
+    let before = server.call(NYU, "Mailbox/get", json!({ "accountId": support_account })).await;
+    let folders = before["list"].as_array().unwrap().len();
+    assert_eq!(folders, server.store.mailboxes(support.id).await.unwrap().len());
+    assert!(before["list"].as_array().unwrap().iter().all(|m| m["myRights"]["mayAdmin"] == true));
+    let emails = server.call(NYU, "Email/query", json!({ "accountId": support_account })).await;
+    assert_eq!(emails["ids"].as_array().unwrap().len(), 1);
+
+    // A folder made later is there too, made by a member.
+    let inbox = server.mailbox(support.id, MailboxRole::Inbox).await;
+    let created = server
+        .call(
+            NYU,
+            "Mailbox/set",
+            json!({ "accountId": support_account, "create": { "f": { "name": "Erledigt", "parentId": format!("m{inbox}") } } }),
+        )
+        .await;
+    assert!(created["created"]["f"]["id"].is_string(), "{created}");
+    let after = server.call(NYU, "Mailbox/get", json!({ "accountId": support_account })).await;
+    assert_eq!(after["list"].as_array().unwrap().len(), folders + 1);
+
+    // Principals: the shared mailbox for its members, never to share with; groups for everyone.
+    server
+        .store
+        .create_group(uwumail_store::NewGroup {
+            address: "vorstand@example.org".into(),
+            name: "Vorstand".into(),
+            who_may_send: uwumail_store::WhoMaySend::Anyone,
+            members_may_send_as: false,
+            members: vec![MINI.into()],
+        })
+        .await
+        .unwrap();
+    let principals = server.call(NYU, "Principal/get", json!({ "accountId": nyu_account, "ids": null })).await;
+    let list = principals["list"].as_array().unwrap();
+    let shared = list.iter().find(|p| p["id"] == json!(format!("p{}", support.id))).unwrap();
+    assert_eq!((shared["type"].as_str(), shared["name"].as_str()), (Some("other"), Some("Support")));
+    assert!(shared["accounts"][&support_account].is_object());
+    let group = list.iter().find(|p| p["type"] == "group").unwrap();
+    assert_eq!((group["email"].as_str(), group["name"].as_str()), (Some("vorstand@example.org"), Some("Vorstand")));
+    let query = server.call(NYU, "Principal/query", json!({ "accountId": nyu_account })).await;
+    let ids: Vec<&str> = query["ids"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
+    assert!(!ids.contains(&format!("p{}", support.id).as_str()), "{ids:?}");
+    assert!(ids.contains(&group["id"].as_str().unwrap()));
+    let groups =
+        server.call(NYU, "Principal/query", json!({ "accountId": nyu_account, "filter": { "type": "group" } })).await;
+    assert_eq!(groups["ids"].as_array().unwrap().len(), 1);
+
+    // Sending from the shared account itself is not how it works: the member sends as it from their own.
+    let refused = server.call(NYU, "Identity/get", json!({ "accountId": support_account })).await;
+    assert_eq!(refused["type"], "accountNotSupportedByMethod");
+    assert!(server.store.identities(server.nyu).await.unwrap().iter().any(|i| i.email == "support@example.org"));
+
+    // Leaving takes the account away.
+    server.store.set_shared_mailbox_members("support@example.org", vec![]).await.unwrap();
+    assert!(server.session(NYU).await["accounts"][&support_account].is_null());
+}

@@ -16,6 +16,7 @@ import type {
   BackupSnapshot,
   BackupsView,
   ForwardAddress,
+  GroupInfo,
   GreylistHold,
   GreylistView,
   UpdatesView,
@@ -37,6 +38,8 @@ import type {
   DomainSummary,
   LearnedFromFolders,
   LokiStatus,
+  MaskedAddress,
+  MaskedState,
   NewSender,
   SenderListEntry,
   SendersView,
@@ -67,6 +70,8 @@ import type {
   ServerCheck,
   Session,
   SetupStatus,
+  SharedMailboxMember,
+  WhoMaySend,
   ShareLevel,
   SharingView,
   CalendarsView,
@@ -166,6 +171,12 @@ function person(login: string, name: string, extra: Partial<Person> = {}): Perso
 }
 
 const people: Person[] = [
+  person("support@uwu.example", "Support", {
+    role: "service",
+    protocols: serviceProtocols(),
+    sharedMailbox: true,
+    quotaBytes: 10 * GB,
+  }),
   person("lorin@uwu.example", "Lorin", {
     role: "admin",
     quotaBytes: 0,
@@ -252,6 +263,8 @@ interface MockDomain {
   published?: boolean;
   mtaSts?: MtaStsView | null;
   forwards?: ForwardAddress[];
+  groups?: GroupInfo[];
+  maskedAddresses?: boolean;
 }
 
 function mtaStsView(mode: MtaStsView["mode"], changedAt: number): MtaStsView {
@@ -446,6 +459,10 @@ const detail = (domain: MockDomain): DomainDetail => ({
   report: domain.report,
   mtaSts: domain.mtaSts ?? null,
   forwards: domain.forwards ?? [],
+  groups: domain.groups ?? [],
+  maskedAddresses: domain.maskedAddresses ?? domain.name === "uwu.example",
+  maskedInUse: mockMasked.filter((entry) => entry.state !== "deleted" && entry.email.endsWith(`@${domain.name}`))
+    .length,
   setup: { hostname: "mail.uwu.example", relayHost: null, upstreamMx: false },
 });
 
@@ -1205,7 +1222,56 @@ const mockAddresses: OwnAddressesView = {
   limit: 10,
   used: 1,
   released: [{ address: "alt-shop@uwu.example", releasedAt: now - 2 * 86_400, reservedUntil: now + 28 * 86_400 }],
+  groups: [{ address: "vorstand@verein.example", name: "Vorstand", maySendAs: true }],
+  sharedMailboxes: [{ id: 90, address: "support@uwu.example", name: "Support", maySend: true }],
 };
+
+const mockMasked: MaskedAddress[] = [
+  {
+    id: 1,
+    email: "maple.otter482@uwu.example",
+    state: "enabled",
+    forDomain: "https://shop.example.com",
+    description: "Online shop",
+    url: null,
+    emailPrefix: null,
+    createdBy: "Portal",
+    createdAt: now - 40 * 86_400,
+    lastMessageAt: now - 2 * 86_400,
+  },
+  {
+    id: 2,
+    email: "news.sunny.wren031@uwu.example",
+    state: "disabled",
+    forDomain: "https://news.example.net",
+    description: "",
+    url: null,
+    emailPrefix: "news",
+    createdBy: "JMAP",
+    createdAt: now - 90 * 86_400,
+    lastMessageAt: now - 86_400,
+  },
+];
+
+const MASKED_WORDS = ["maple", "otter", "cloud", "fern", "pebble", "sunny", "wren", "velvet"];
+
+function maskedView() {
+  const open = domains.filter((domain) => domain.maskedAddresses ?? domain.name === "uwu.example");
+  return { addresses: mockMasked, domains: open.map((domain) => domain.name) };
+}
+
+/** Members of the shared mailboxes, by their login. */
+const sharedMembers: Record<string, SharedMailboxMember[]> = {
+  "support@uwu.example": [{ id: 1, login: "lorin@uwu.example", name: "Lorin", maySend: true }],
+};
+
+function groupMembers(logins: string[]): GroupInfo["members"] {
+  return logins.map((login, index) => ({
+    id: index + 1,
+    login,
+    name: people.find((entry) => entry.login === login)?.name ?? "",
+  }));
+}
 const mockStorage: StorageView = {
   usedBytes: 1.3 * GB,
   quotaBytes: 5 * GB,
@@ -2635,6 +2701,57 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["GET", /^\/api\/account\/addresses$/, () => [200, mockAddresses]],
+  ["GET", /^\/api\/account\/masked$/, () => [200, maskedView()]],
+  [
+    "POST",
+    /^\/api\/account\/masked$/,
+    (body) => {
+      const input = body as { domain?: string; description: string; forDomain: string; emailPrefix: string | null };
+      const view = maskedView();
+      const domain = input.domain || view.domains[0];
+      if (!domain) return problem(409, "maskedDomain");
+      if (input.emailPrefix && !/^[a-z0-9_]{1,64}$/i.test(input.emailPrefix)) return problem(409, "maskedPrefix");
+      const word = () => MASKED_WORDS[Math.floor(Math.random() * MASKED_WORDS.length)]!;
+      const random = `${word()}.${word()}${String(Math.floor(Math.random() * 1000)).padStart(3, "0")}`;
+      const local = input.emailPrefix ? `${input.emailPrefix.toLowerCase()}.${random}` : random;
+      const created: MaskedAddress = {
+        id: Math.max(0, ...mockMasked.map((entry) => entry.id)) + 1,
+        email: `${local}@${domain}`,
+        state: "enabled",
+        forDomain: input.forDomain,
+        description: input.description,
+        url: null,
+        emailPrefix: input.emailPrefix,
+        createdBy: "Portal",
+        createdAt: Math.floor(Date.now() / 1000),
+        lastMessageAt: null,
+      };
+      mockMasked.unshift(created);
+      return [201, created];
+    },
+  ],
+  [
+    "PATCH",
+    /^\/api\/account\/masked\/(\d+)$/,
+    (body, [id]) => {
+      const found = mockMasked.find((entry) => entry.id === Number(id));
+      if (!found) return problem(404, "notFound");
+      const changes = body as { state?: MaskedState; description?: string; forDomain?: string };
+      if (changes.state === "pending") return problem(422, "invalid");
+      Object.assign(found, changes);
+      return [200, found];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/account\/masked\/(\d+)$/,
+    (_, [id]) => {
+      const found = mockMasked.find((entry) => entry.id === Number(id));
+      if (!found) return problem(404, "notFound");
+      found.state = "deleted";
+      return [200, maskedView()];
+    },
+  ],
   [
     "POST",
     /^\/api\/account\/aliases$/,
@@ -3105,7 +3222,14 @@ const routes: [string, RegExp, Handler][] = [
     (_, [name]) => {
       const index = domains.findIndex((d) => d.name === name);
       if (index < 0) return problem(404, "notFound");
-      if (addressCount(name!, "primary") + addressCount(name!, "alias") > 0) return problem(409, "domainInUse");
+      const found = domains[index]!;
+      const inUse =
+        addressCount(name!, "primary") +
+        addressCount(name!, "alias") +
+        (found.forwards?.length ?? 0) +
+        (found.groups?.length ?? 0) +
+        detail(found).maskedInUse!;
+      if (inUse > 0) return problem(409, "domainInUse");
       domains.splice(index, 1);
       log("domain.remove", name!);
       return [204, null];
@@ -3427,7 +3551,15 @@ const routes: [string, RegExp, Handler][] = [
       const appPasswordList = found.role === "service" ? (servicePasswords[found.login] ?? []) : undefined;
       return [
         200,
-        { ...found, security, forwarding, aliasLimit: me ? mockAddresses.limit : 10, sendAsDomains, appPasswordList },
+        {
+          ...found,
+          security,
+          forwarding,
+          aliasLimit: me ? mockAddresses.limit : 10,
+          sendAsDomains,
+          appPasswordList,
+          members: found.sharedMailbox ? (sharedMembers[found.login] ?? []) : undefined,
+        },
       ];
     },
   ],
@@ -3662,6 +3794,140 @@ const routes: [string, RegExp, Handler][] = [
       if (login === "lorin@uwu.example") mockAddresses.limit = (body as { limit: number }).limit;
       log("account.aliasLimit", login ?? "", body as Record<string, unknown>);
       return [204, null];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/domains\/([^/]+)\/groups$/,
+    (body, [name]) => {
+      const found = domains.find((d) => d.name === name);
+      if (!found) return problem(404, "notFound");
+      const input = body as {
+        local: string;
+        name: string;
+        whoMaySend: WhoMaySend;
+        membersMaySendAs: boolean;
+        members: string[];
+      };
+      const address = `${input.local.trim().toLowerCase()}@${name}`;
+      const taken =
+        people.some((p) => p.addresses.some((a) => a.address === address)) ||
+        (found.groups ?? []).some((group) => group.address === address) ||
+        (found.forwards ?? []).some((forward) => forward.address === address);
+      if (taken) return problem(409, "conflict");
+      const group: GroupInfo = {
+        id: Math.floor(Math.random() * 100_000),
+        address,
+        domain: name!,
+        name: input.name,
+        whoMaySend: input.whoMaySend,
+        membersMaySendAs: input.membersMaySendAs,
+        members: groupMembers(input.members),
+        createdAt: Math.floor(Date.now() / 1000),
+      };
+      found.groups = [...(found.groups ?? []), group].sort((a, b) => a.address.localeCompare(b.address));
+      log("group.create", address, { members: input.members });
+      return [201, group];
+    },
+  ],
+  [
+    "PATCH",
+    /^\/api\/admin\/domains\/([^/]+)\/groups\/([^/]+)$/,
+    (body, [name, local]) => {
+      const group = domains.find((d) => d.name === name)?.groups?.find((entry) => entry.address === `${local}@${name}`);
+      if (!group) return problem(404, "notFound");
+      const input = body as {
+        name?: string;
+        whoMaySend?: WhoMaySend;
+        membersMaySendAs?: boolean;
+        members?: string[];
+      };
+      if (input.name !== undefined) group.name = input.name;
+      if (input.whoMaySend) group.whoMaySend = input.whoMaySend;
+      if (input.membersMaySendAs !== undefined) group.membersMaySendAs = input.membersMaySendAs;
+      if (input.members) group.members = groupMembers(input.members);
+      log("group.update", group.address, input as Record<string, unknown>);
+      return [200, group];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/admin\/domains\/([^/]+)\/groups\/([^/]+)$/,
+    (_, [name, local]) => {
+      const found = domains.find((d) => d.name === name);
+      if (!found) return problem(404, "notFound");
+      found.groups = (found.groups ?? []).filter((group) => group.address !== `${local}@${name}`);
+      log("group.remove", `${local}@${name}`);
+      return [204, null];
+    },
+  ],
+  [
+    "PUT",
+    /^\/api\/admin\/domains\/([^/]+)\/masked-addresses$/,
+    (body, [name]) => {
+      const domain = domains.find((entry) => entry.name === name);
+      if (domain) domain.maskedAddresses = (body as { on: boolean }).on;
+      log("domain.maskedAddresses", name ?? "", body as Record<string, unknown>);
+      return [204, null];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/shared-mailboxes$/,
+    () => [
+      200,
+      people
+        .filter((entry) => entry.sharedMailbox)
+        .map((entry) => ({ login: entry.login, name: entry.name, members: sharedMembers[entry.login] ?? [] })),
+    ],
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/shared-mailboxes$/,
+    (body) => {
+      const input = body as {
+        address: string;
+        name: string;
+        quotaBytes: number;
+        members: { login: string; maySend: boolean }[];
+      };
+      const login = input.address.toLowerCase();
+      if (people.some((p) => p.addresses.some((a) => a.address === login))) return problem(409, "conflict");
+      const created = person(login, input.name, {
+        role: "service",
+        protocols: { ...serviceProtocols(), smtp: true },
+        quotaBytes: input.quotaBytes,
+        usedBytes: 0,
+        sharedMailbox: true,
+        createdAt: Math.floor(Date.now() / 1000),
+      });
+      people.push(created);
+      people.sort((a, b) => a.login.localeCompare(b.login));
+      sharedMembers[login] = input.members.map((member, index) => ({
+        id: index + 1,
+        login: member.login,
+        name: people.find((entry) => entry.login === member.login)?.name ?? "",
+        maySend: member.maySend,
+      }));
+      log("sharedMailbox.create", login, { members: input.members });
+      return [201, { person: created, members: sharedMembers[login] }];
+    },
+  ],
+  [
+    "PUT",
+    /^\/api\/admin\/shared-mailboxes\/([^/]+)\/members$/,
+    (body, [login]) => {
+      const found = people.find((entry) => entry.login === login && entry.sharedMailbox);
+      if (!found) return problem(404, "notFound");
+      const members = (body as { members: { login: string; maySend: boolean }[] }).members;
+      sharedMembers[found.login] = members.map((member, index) => ({
+        id: index + 1,
+        login: member.login,
+        name: people.find((entry) => entry.login === member.login)?.name ?? "",
+        maySend: member.maySend,
+      }));
+      log("sharedMailbox.members", found.login, { members });
+      return [200, sharedMembers[found.login]];
     },
   ],
   [

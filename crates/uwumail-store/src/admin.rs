@@ -194,6 +194,13 @@ impl Store {
                 after.display_name = name.trim().to_owned();
             }
             if let Some(role) = update.role {
+                // A shared mailbox stays one: nobody signs in to it, so it is no person or admin.
+                if before.shared_mailbox && role != Role::Service {
+                    return Err(StoreError::Rule {
+                        code: "sharedMailbox",
+                        message: format!("{login} is a shared mailbox, nobody signs in to it"),
+                    });
+                }
                 after.role = role;
             }
             if let Some(quota) = update.quota_bytes {

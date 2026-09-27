@@ -89,6 +89,10 @@ pub(crate) fn owns(conn: &rusqlite::Connection, account_id: i64, email: &str) ->
     // The third case is a mailbox elsewhere that this account fetches and may answer from. It hangs
     // on the account, not on the address: two people can fetch the same provider, and neither may
     // send as the other's. Without a server to send through it is no address to send from either.
+    //
+    // Then the addresses that come with a membership: a group whose members may send as it, a
+    // shared mailbox the account may send for, and the account's own masked addresses that are
+    // not deleted.
     Ok(conn.query_row(
         "SELECT EXISTS (SELECT 1 FROM addresses a JOIN domains d ON d.id = a.domain_id
                         WHERE a.account_id = ?1 AND d.name = ?2 AND a.local_part IN (?3, ?4))
@@ -96,7 +100,18 @@ pub(crate) fn owns(conn: &rusqlite::Connection, account_id: i64, email: &str) ->
                         WHERE s.account_id = ?1 AND d.name = ?2)
              OR EXISTS (SELECT 1 FROM fetch_accounts f
                         WHERE f.account_id = ?1 AND f.address = ?5
-                          AND f.send_enabled = 1 AND f.smtp_host <> '')",
+                          AND f.send_enabled = 1 AND f.smtp_host <> '')
+             OR EXISTS (SELECT 1 FROM groups g JOIN group_members m ON m.group_id = g.id
+                        JOIN domains d ON d.id = g.domain_id
+                        WHERE m.account_id = ?1 AND g.members_may_send_as = 1 AND d.name = ?2
+                          AND g.local_part IN (?3, ?4))
+             OR EXISTS (SELECT 1 FROM shared_mailbox_members s
+                        JOIN accounts acc ON acc.id = s.account_id AND acc.deleted_at IS NULL
+                        JOIN addresses a ON a.account_id = s.account_id JOIN domains d ON d.id = a.domain_id
+                        WHERE s.member_id = ?1 AND s.may_send = 1 AND d.name = ?2 AND a.local_part IN (?3, ?4))
+             OR EXISTS (SELECT 1 FROM masked_addresses x JOIN domains d ON d.id = x.domain_id
+                        WHERE x.account_id = ?1 AND d.name = ?2 AND x.local_part IN (?3, ?4)
+                          AND x.state <> 'deleted')",
         params![account_id, domain, local, base, full],
         |row| row.get(0),
     )?)
@@ -169,13 +184,22 @@ impl Store {
                     "SELECT a.local_part || '@' || d.name FROM addresses a JOIN domains d ON d.id = a.domain_id
                      WHERE a.account_id = ?1 ORDER BY a.kind = 'primary' DESC, a.id",
                 )?;
-                let mut addresses = stmt.query_map([account_id], |row| row.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?;
+                let mut addresses = stmt
+                    .query_map([account_id], |row| Ok((row.get::<_, String>(0)?, name.clone())))?
+                    .collect::<Result<Vec<_>, _>>()?;
                 drop(stmt);
                 if addresses.is_empty() {
-                    addresses.push(login);
+                    addresses.push((login, name.clone()));
+                }
+                // Groups and shared mailboxes it may send as come with an identity of their own.
+                for (email, granted_name) in crate::identity_grants::granted_addresses(tx, account_id)? {
+                    if !addresses.iter().any(|(known, _)| *known == email) {
+                        let name = if granted_name.trim().is_empty() { name.clone() } else { granted_name };
+                        addresses.push((email, name));
+                    }
                 }
                 let modseq = next_modseq(tx, account_id)?;
-                for email in addresses {
+                for (email, name) in addresses {
                     tx.execute(
                         "INSERT INTO identities (account_id, name, email, created_modseq, updated_modseq) VALUES (?1, ?2, ?3, ?4, ?4)",
                         params![account_id, name, email, modseq],

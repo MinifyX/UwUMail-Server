@@ -82,6 +82,11 @@ pub fn first_value(raw: &[u8], name: &str) -> Option<String> {
     split(raw).0.iter().find(|h| h.name.eq_ignore_ascii_case(name)).map(RawHeader::value)
 }
 
+/// Every value of a header field, in order.
+pub fn values(raw: &[u8], name: &str) -> Vec<String> {
+    split(raw).0.iter().filter(|h| h.name.eq_ignore_ascii_case(name)).map(RawHeader::value).collect()
+}
+
 /// The header block (for text/rfc822-headers in bounces).
 pub fn header_block(raw: &[u8]) -> &[u8] {
     let (_, body_start) = split(raw);

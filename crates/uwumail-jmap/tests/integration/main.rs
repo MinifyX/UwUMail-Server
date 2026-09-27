@@ -7,6 +7,7 @@ mod calendars;
 mod common;
 mod conformance;
 mod contacts;
+mod masked_email;
 mod query_changes;
 mod sharing;
 mod sieve;

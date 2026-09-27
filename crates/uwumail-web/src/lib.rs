@@ -354,6 +354,8 @@ impl Web {
             .route("/api/account/addresses", get(routes::own::addresses))
             .route("/api/account/aliases", post(routes::own::create_alias))
             .route("/api/account/aliases/{address}", delete(routes::own::delete_alias))
+            .route("/api/account/masked", get(routes::masked::list).post(routes::masked::create))
+            .route("/api/account/masked/{id}", patch(routes::masked::update).delete(routes::masked::delete))
             .route("/api/account/storage", get(routes::own::storage))
             .route("/api/account/sharing", get(routes::sharing::show))
             .route("/api/account/sharing/{mailbox}", put(routes::sharing::share))
@@ -476,6 +478,17 @@ impl Web {
             .route("/api/admin/people/{login}/app-passwords/{id}", delete(routes::people::revoke_app_password))
             .route("/api/admin/people/{login}/aliases", post(routes::people::add_alias))
             .route("/api/admin/people/{login}/aliases/{address}", delete(routes::people::remove_alias))
+            .route("/api/admin/domains/{name}/groups", post(routes::groups::create_group))
+            .route(
+                "/api/admin/domains/{name}/groups/{local}",
+                patch(routes::groups::update_group).delete(routes::groups::remove_group),
+            )
+            .route("/api/admin/domains/{name}/masked-addresses", put(routes::groups::set_masked_addresses))
+            .route(
+                "/api/admin/shared-mailboxes",
+                get(routes::groups::shared_mailboxes).post(routes::groups::create_shared_mailbox),
+            )
+            .route("/api/admin/shared-mailboxes/{login}/members", put(routes::groups::set_shared_mailbox_members))
             .route("/api", get(routes::not_found))
             .route(
                 "/api/{*rest}",

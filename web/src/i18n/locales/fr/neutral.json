@@ -62,7 +62,8 @@
     "expand": "Déplier {{group}}",
     "mailbox": "Boîte mail",
     "directory": "Comptes et domaines",
-    "calendars": "Agendas et contacts"
+    "calendars": "Agendas et contacts",
+    "masked": "Adresses masquées"
   },
   "userMenu": {
     "open": "Ouvrir le menu du compte",
@@ -333,7 +334,12 @@
       "googleUseIcs": "Google ne laisse entrer que ses propres applications. Utilisez l'adresse iCal secrète pour les agendas et un export vCard pour les contacts.",
       "subscriptionLimit": "Vous avez déjà le nombre maximal d'agendas abonnés.",
       "subscriptionExists": "Vous êtes déjà abonné à cet agenda.",
-      "refreshPause": "Tout juste récupéré. Réessayez dans une minute."
+      "refreshPause": "Tout juste récupéré. Réessayez dans une minute.",
+      "sharedMailbox": "C'est une boîte partagée : personne ne s'y connecte, ses membres l'utilisent depuis leur propre compte.",
+      "maskedDomain": "Aucun domaine de ce serveur n'est encore ouvert aux adresses masquées. Demandez à l'admin.",
+      "maskedLimit": "Vous avez autant d'adresses masquées que ce serveur le permet. Supprimez celles dont vous n'avez plus besoin.",
+      "maskedPrefix": "Un préfixe ne peut contenir que des lettres a–z, des chiffres et _, 64 au plus.",
+      "maskedState": "Une adresse masquée ne peut pas se remettre à attendre son premier message."
     }
   },
   "people": {
@@ -547,6 +553,26 @@
       "revokeTitle": "Révoquer {{name}} ?",
       "revokeBody": "Ce qui utilise ce mot de passe ne pourra plus entrer.",
       "createdTitle": "Nouveau mot de passe d'application"
+    }
+  },
+  "sharedMailboxes": {
+    "title": "Boîtes partagées",
+    "explain": "Une boîte utilisée par plusieurs personnes, comme support@. Personne ne s'y connecte ; ses membres la voient à côté de leurs dossiers et peuvent répondre avec.",
+    "create": "Nouvelle boîte partagée",
+    "createIntro": "Elle a sa propre adresse et son propre espace ; le courrier arrive dans sa boîte de réception pour tous les membres.",
+    "name": "Nom",
+    "namePlaceholder": "par exemple Support",
+    "address": "Adresse",
+    "addressPlaceholder": "par exemple support",
+    "members": "Membres",
+    "membersHint": "Toutes les personnes choisies voient tous ses dossiers. Cochez qui peut aussi envoyer avec son adresse.",
+    "membersIntro": "Les membres voient chacun de ses dossiers, les nouveaux aussi. Qui peut envoyer trouve son adresse parmi ses adresses d'envoi ; une copie reste dans son dossier Envoyés.",
+    "maySend": "peut envoyer",
+    "save": "Enregistrer les membres",
+    "pill": "Boîte partagée",
+    "toasts": {
+      "created": "{{address}} créée",
+      "saved": "Membres enregistrés"
     }
   },
   "log": {
@@ -912,6 +938,46 @@
       "unauthenticated_many": "{{count}} rapports provenaient d'expéditeurs qui n'ont pas pu prouver leur identité. Leurs chiffres pourraient être inventés.",
       "unauthenticated_other": "{{count}} rapports provenaient d'expéditeurs qui n'ont pas pu prouver leur identité. Leurs chiffres pourraient être inventés."
     }
+  },
+  "groups": {
+    "title": "Groupes",
+    "explain": "Une adresse pour plusieurs personnes, comme info@ ou bureau@ d'une association. Chacun reçoit le courrier dans sa propre boîte, avec son propre filtre et ses règles.",
+    "create": "Nouveau groupe",
+    "save": "Enregistrer",
+    "address": "Adresse",
+    "addressPlaceholder": "par exemple bureau",
+    "name": "Nom",
+    "namePlaceholder": "par exemple Bureau",
+    "whoMaySend": "Qui peut écrire",
+    "who": {
+      "anyone": "Tout le monde",
+      "members": "Seulement ses membres",
+      "domain": "Seulement les adresses de {{domain}}",
+      "anyoneHint": "Comme toute autre adresse, ouverte à tous.",
+      "membersHint": "Le courrier des autres est refusé à l'entrée.",
+      "domainHint": "Les personnes de ce domaine peuvent écrire, les autres sont refusées."
+    },
+    "sendAs": "Les membres peuvent envoyer au nom du groupe",
+    "sendAsHint": "Son adresse apparaît alors parmi leurs adresses d'envoi.",
+    "sendAsShort": "les membres envoient avec",
+    "members": {
+      "title": "Membres",
+      "search": "Chercher des personnes",
+      "chosen_one": "{{count}} choisi",
+      "chosen_other": "{{count}} choisis",
+      "none": "Personne trouvée."
+    },
+    "noMembers": "Pas encore de membres : le courrier y est refusé.",
+    "edit": "Modifier {{address}}",
+    "remove": "Retirer {{address}}",
+    "removeConfirm": "Retirer le groupe {{address}} ? Le courrier y est refusé désormais.",
+    "toasts": {
+      "created": "Groupe créé",
+      "saved": "Groupe enregistré",
+      "removed": "Groupe retiré"
+    },
+    "masked": "Adresses masquées",
+    "maskedHint": "Les personnes peuvent créer des adresses aléatoires sur ce domaine pour des sites web (Mon compte → Adresses masquées)."
   },
   "reports": {
     "title": "Rapports",
@@ -1752,6 +1818,54 @@
     "releasedHint": "Le courrier destiné à ces adresses est refusé jusqu'à ce que vous les repreniez ou que le délai expire.",
     "reservedUntil": "Réservée jusqu'au {{date}}",
     "restore": "Reprendre"
+  },
+  "memberships": {
+    "title": "Groupes et boîtes partagées",
+    "intro": "Un admin vous a ajouté ici. Le courrier d'un groupe arrive dans votre propre boîte ; une boîte partagée apparaît à côté de vos dossiers.",
+    "group": "Groupe",
+    "shared": "Boîte partagée",
+    "maySend": "vous pouvez envoyer avec",
+    "sharedHint": "Dans les applications de messagerie, une boîte partagée apparaît sous Shared/, dans le webmail comme un compte à part. Ce que vous envoyez avec est aussi gardé dans son dossier Envoyés."
+  },
+  "masked": {
+    "pageTitle": "Adresses masquées",
+    "intro": "Une adresse aléatoire pour chaque site. Si l'une reçoit du spam, vous savez qui l'a transmise, et vous la coupez sans toucher à votre vraie adresse.",
+    "new": "Nouvelle adresse masquée",
+    "closed": "Les adresses masquées ne sont pas encore ouvertes sur ce serveur. Demandez à l'admin de les activer pour un domaine.",
+    "description": "À quoi elle sert",
+    "descriptionPlaceholder": "par exemple la lettre de la boulangerie",
+    "site": "Site web",
+    "siteHint": "Facultatif, pour vous souvenir où vous l'avez utilisée.",
+    "prefix": "Préfixe",
+    "prefixHint": "Facultatif : lettres a–z, chiffres et _ devant la partie aléatoire.",
+    "prefixPlaceholder": "par exemple shop",
+    "domain": "Domaine",
+    "create": "Créer une adresse",
+    "created": "{{address}} est prête et copiée",
+    "listTitle": "Vos adresses masquées",
+    "filter": {
+      "active": "En service",
+      "deleted": "Supprimées"
+    },
+    "empty": "Rien pour l'instant.",
+    "noNote": "Pas de note",
+    "state": {
+      "pending": "Attend son premier message",
+      "enabled": "Active",
+      "disabled": "Coupée : le courrier va discrètement à la corbeille",
+      "deleted": "Supprimée : le courrier est refusé"
+    },
+    "lastMessage": "dernier message {{date}}",
+    "noMessage": "aucun message",
+    "enable": "Activer",
+    "disable": "Couper",
+    "delete": "Supprimer",
+    "deleteConfirm": "Supprimer {{address}} ? Le courrier y est refusé désormais. Vous pourrez la réactiver ; personne d'autre ne l'aura jamais.",
+    "toasts": {
+      "enabled": "Activée",
+      "disabled": "Coupée, le courrier va à la corbeille",
+      "deleted": "Supprimée, le courrier est refusé"
+    }
   },
   "storage": {
     "title": "Stockage",

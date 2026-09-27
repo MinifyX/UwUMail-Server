@@ -46,6 +46,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0037_mailbox_acl.sql"),
     include_str!("migrations/0038_calendar_sharing_itip.sql"),
     include_str!("migrations/0039_calendar_subscriptions.sql"),
+    include_str!("migrations/0041_groups_shared_mailboxes.sql"),
+    include_str!("migrations/0042_masked_addresses.sql"),
     include_str!("migrations/0043_tls_rpt.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
@@ -190,6 +192,8 @@ mod tests {
         migrate(&mut conn).unwrap();
         assert_eq!(version(&conn), MIGRATIONS.len());
         assert!(table_exists(&conn, "mailbox_acl") && table_exists(&conn, "dav_shares"));
+        assert!(table_exists(&conn, "groups") && table_exists(&conn, "group_members"));
+        assert!(table_exists(&conn, "shared_mailbox_members") && table_exists(&conn, "masked_addresses"));
         assert!(table_exists(&conn, "tls_rpt_sessions") && table_exists(&conn, "tls_rpt_sent"));
         // Running again changes nothing.
         migrate(&mut conn).unwrap();

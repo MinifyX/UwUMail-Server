@@ -31,6 +31,7 @@ import { toast } from "@/state/toasts";
 import { ConfirmCloseSecretDialog } from "@/components/ui/ConfirmCloseSecretDialog";
 import { LinkBox, QuotaSelect } from "./CreatePersonDialog";
 import { AdminPill, PersonAvatar, ServicePill, StatusPill, StorageLine } from "./PersonBits";
+import { SharedMailboxPill, SharedMembersCard } from "./SharedMailboxes";
 import {
   useAddAlias,
   useCreatePasswordLink,
@@ -241,7 +242,7 @@ function Addresses({ person, editable }: { person: Person; editable: boolean }) 
         </form>
       )}
       {editable && person.role !== "service" && <AliasLimit person={person} />}
-      {editable && <SendAsDomains person={person} />}
+      {editable && !person.sharedMailbox && <SendAsDomains person={person} />}
     </Card>
   );
 }
@@ -785,7 +786,7 @@ export function PersonPage({ login, session }: { login: string; session: Session
         <div className="flex flex-wrap gap-1.5">
           <StatusPill status={person.status} />
           {person.role === "admin" && <AdminPill />}
-          {person.role === "service" && <ServicePill />}
+          {person.sharedMailbox ? <SharedMailboxPill /> : person.role === "service" && <ServicePill />}
         </div>
       </header>
 
@@ -850,18 +851,28 @@ export function PersonPage({ login, session }: { login: string; session: Session
                 )}
               </Field>
               <StorageLine person={person} />
-              {!isMe && <Convert person={person} />}
+              {!isMe && !person.sharedMailbox && <Convert person={person} />}
             </div>
           )}
         </Card>
 
         <Addresses person={person} editable={!deleted} />
 
-        {!deleted && <ProtocolCard person={person} />}
+        {!deleted && person.sharedMailbox && (
+          // Starts again from what the server has whenever that changes.
+          <SharedMembersCard
+            key={`${person.login}:${(person.members ?? []).map((m) => `${m.login}=${m.maySend}`).join()}`}
+            person={person}
+          />
+        )}
 
-        {!deleted && (person.role === "service" ? <ServiceAccess person={person} /> : <Access person={person} />)}
+        {!deleted && !person.sharedMailbox && <ProtocolCard person={person} />}
 
-        {!deleted && <SecurityInfo person={person} isMe={isMe} />}
+        {!deleted &&
+          !person.sharedMailbox &&
+          (person.role === "service" ? <ServiceAccess person={person} /> : <Access person={person} />)}
+
+        {!deleted && !person.sharedMailbox && <SecurityInfo person={person} isMe={isMe} />}
 
         {!isMe && (
           <Card title={t("people.detail.danger")}>

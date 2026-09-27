@@ -159,6 +159,39 @@ export interface Person {
   sendAsDomains?: string[];
   /** Only for a service, which cannot open its own security page. */
   appPasswordList?: AppPasswordInfo[];
+  /** A mailbox several people use; stored as a service nobody signs in to. */
+  sharedMailbox?: boolean;
+  /** The people who use a shared mailbox; only in its detail view. */
+  members?: SharedMailboxMember[];
+}
+
+/** Someone who uses a shared mailbox, and whether they may send with its address. */
+export interface SharedMailboxMember {
+  id: number;
+  login: string;
+  name: string;
+  maySend: boolean;
+}
+
+export interface SharedMailboxInfo {
+  login: string;
+  name: string;
+  members: SharedMailboxMember[];
+}
+
+/** Who may write to a group: everyone, only its members, or only addresses of its domain. */
+export type WhoMaySend = "anyone" | "members" | "domain";
+
+/** An address of a domain that delivers to several people here. */
+export interface GroupInfo {
+  id: number;
+  address: string;
+  domain: string;
+  name: string;
+  whoMaySend: WhoMaySend;
+  membersMaySendAs: boolean;
+  members: { id: number; login: string; name: string }[];
+  createdAt: number;
 }
 
 /** An app password the moment it is made: the only time its secret is readable. */
@@ -254,7 +287,12 @@ export interface ForwardAddress {
 
 export interface DomainDetail extends Omit<DomainSummary, "dns"> {
   selfServiceAliases?: boolean;
+  /** Whether people may make masked addresses on this domain. */
+  maskedAddresses?: boolean;
+  /** Masked addresses people made on this domain that still take mail; they keep it in use. */
+  maskedInUse?: number;
   forwards: ForwardAddress[];
+  groups?: GroupInfo[];
   keys: DkimKeyInfo[];
   report: DomainReport | null;
   mtaSts: MtaStsView | null;
@@ -1211,6 +1249,32 @@ export interface OwnAddressesView {
   limit: number;
   used: number;
   released: { address: string; releasedAt: number; reservedUntil: number }[];
+  /** Groups one belongs to, and whether one may send with their address. */
+  groups?: { address: string; name: string; maySendAs: boolean }[];
+  /** Shared mailboxes one uses. */
+  sharedMailboxes?: { id: number; address: string; name: string; maySend: boolean }[];
+}
+
+export type MaskedState = "pending" | "enabled" | "disabled" | "deleted";
+
+/** A random address for one website (Fastmail's MaskedEmail). */
+export interface MaskedAddress {
+  id: number;
+  email: string;
+  state: MaskedState;
+  forDomain: string;
+  description: string;
+  url: string | null;
+  emailPrefix: string | null;
+  createdBy: string;
+  createdAt: number;
+  lastMessageAt: number | null;
+}
+
+export interface MaskedAddressesView {
+  addresses: MaskedAddress[];
+  /** Domains open for masked addresses; empty means none can be made. */
+  domains: string[];
 }
 
 /** What someone shared with others may do: see, see and change, or everything but deleting. */
