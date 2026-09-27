@@ -11,6 +11,7 @@
 mod acl;
 mod address;
 mod admin;
+mod alerts;
 mod bayes;
 mod blobs;
 mod calendar;
@@ -47,6 +48,7 @@ mod sharing;
 mod sieve;
 mod spam;
 mod spam_log;
+mod stats;
 mod suggestions;
 mod user_settings;
 mod web;
@@ -63,6 +65,10 @@ pub use address::{EmailAddress, normalize_address, normalize_domain};
 pub use admin::{
     AccountUpdate, AddressInfo, AuditEntry, AuditRecord, PasswordLink, PasswordLinkPurpose, Person,
     TRASH_RETENTION_SECS,
+};
+pub use alerts::{
+    ALERT_HISTORY_SECS, ALERT_REMINDER_SECS, ALERT_RESOLVE_AFTER_SECS, Alert, AlertEvent, AlertLevel, AlertNotice,
+    AlertObservation, CertificateOrders,
 };
 pub use bayes::{
     BAYES_FOLDER_LIMIT, BAYES_LEARNED_SECS, BAYES_MIN_LEARNED, BAYES_RARE_TOKEN_SECS, BAYES_WANTED_AFTER_SECS,
@@ -139,6 +145,7 @@ pub use spam_log::{
     FetchedVerdicts, NewSpamLogEntry, SPAM_LOG_MAX_ROWS, SpamAction, SpamLogEntry, SpamLogFilter, SpamLogHit,
     SpamLogRecipient,
 };
+pub use stats::{STATS_RETENTION_DAYS, Stat, Stats, StatsDay};
 pub use suggestions::AddressUse;
 pub use user_settings::{
     DEFAULT_UNDO_SEND_SECONDS, SettingProblem, SettingsChange, USER_SETTINGS_MAX_KEYS, USER_SETTINGS_MAX_SIZE,
@@ -195,6 +202,8 @@ struct Inner {
     changes: broadcast::Sender<StateChange>,
     queue_wakeup: Notify,
     data_dir: PathBuf,
+    /// What happened since the server started, for the statistics and the metrics.
+    stats: stats::Stats,
 }
 
 impl Store {
@@ -217,6 +226,7 @@ impl Store {
                 changes,
                 queue_wakeup: Notify::new(),
                 data_dir,
+                stats: stats::Stats::default(),
             }),
         })
     }

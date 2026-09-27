@@ -623,6 +623,21 @@ impl Store {
         protocol: &str,
         ip: &str,
     ) -> Result<MailAuth> {
+        let auth = self.check_mail_login(login, password, scope, protocol, ip).await;
+        if let Ok(MailAuth::Denied(_)) = &auth {
+            self.stats().count(crate::Stat::login_failed(protocol));
+        }
+        auth
+    }
+
+    async fn check_mail_login(
+        &self,
+        login: &str,
+        password: &str,
+        scope: AppScope,
+        protocol: &str,
+        ip: &str,
+    ) -> Result<MailAuth> {
         let login = login_key(login).unwrap_or_default();
         let app_hash = candidate("app", password, APP_PASSWORD_CHARS);
         let found = self
@@ -770,6 +785,14 @@ impl Store {
         protocol: &str,
         ip: &str,
     ) -> Result<MailAuth> {
+        let auth = self.check_bearer(token, scope, protocol, ip).await;
+        if let Ok(MailAuth::Denied(_)) = &auth {
+            self.stats().count(crate::Stat::login_failed(protocol));
+        }
+        auth
+    }
+
+    async fn check_bearer(&self, token: &str, scope: AppScope, protocol: &str, ip: &str) -> Result<MailAuth> {
         let Some(hash) = candidate("app", token, APP_PASSWORD_CHARS) else {
             return Ok(MailAuth::Denied(MailAuthDenied::Invalid));
         };
@@ -1299,6 +1322,13 @@ mod tests {
         // And a protocol nobody taught the gate about is not quietly allowed either.
         let unknown = store.authenticate_mail("monitoring@example.org", &secret, AppScope::Mail, "pop3", "").await;
         assert!(matches!(unknown, Ok(MailAuth::Denied(MailAuthDenied::ProtocolOff))), "{unknown:?}");
+        // Every refusal counts as a failed login of its protocol in the statistics; the success does not.
+        let failed: std::collections::HashMap<_, _> = store.stats().since_start().into_iter().collect();
+        assert_eq!(failed[&crate::Stat::LoginFailedImap], 1);
+        assert_eq!(failed[&crate::Stat::LoginFailedJmap], 1);
+        assert_eq!(failed[&crate::Stat::LoginFailedDav], 1);
+        assert_eq!(failed[&crate::Stat::LoginFailedOther], 1);
+        assert_eq!(failed[&crate::Stat::LoginFailedSmtp], 0);
 
         // Switching IMAP back on lets the same password in.
         store

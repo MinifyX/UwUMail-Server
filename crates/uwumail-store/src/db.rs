@@ -46,6 +46,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0037_mailbox_acl.sql"),
     include_str!("migrations/0038_calendar_sharing_itip.sql"),
     include_str!("migrations/0039_calendar_subscriptions.sql"),
+    include_str!("migrations/0045_stats_alerts.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 
@@ -189,6 +190,7 @@ mod tests {
         migrate(&mut conn).unwrap();
         assert_eq!(version(&conn), MIGRATIONS.len());
         assert!(table_exists(&conn, "mailbox_acl") && table_exists(&conn, "dav_shares"));
+        assert!(table_exists(&conn, "stats_daily") && table_exists(&conn, "alerts"));
         // Running again changes nothing.
         migrate(&mut conn).unwrap();
         assert_eq!(version(&conn), MIGRATIONS.len());
