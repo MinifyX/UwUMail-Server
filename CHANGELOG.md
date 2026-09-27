@@ -3,7 +3,7 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
-## Unreleased
+## 0.13.0
 
 **Calendars and contacts from elsewhere** ([docs/calendar-import.md](docs/calendar-import.md)), under
 *My account → Calendars & contacts → Bring them over*:
@@ -30,6 +30,11 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   per person and hour.
 
 Migration 0039 adds the table of subscribed calendars.
+
+**Updating.** `cd /opt/uwumail && sudo bash update.sh`, or *Update now* under *Server → Updates*,
+is all it takes: migration 0039 runs by itself when the server starts, and there is nothing to set.
+The webmail stays at the commit 0.12.2 pinned; it already shows subscribed calendars as read-only,
+since it follows `myRights`.
 
 ## 0.12.2
 
