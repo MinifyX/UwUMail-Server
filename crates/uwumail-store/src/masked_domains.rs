@@ -169,6 +169,21 @@ pub struct KindChange {
     pub removed_from_accounts: Vec<String>,
 }
 
+/// A number that goes up with every write that can change where anyone may make masked addresses:
+/// a domain's kind or policy, an account's own policy, a domain going away. Clients see it in the
+/// JMAP session state instead of a hash over each account's policy, which would cost several
+/// queries on every request.
+const VERSION_KEY: &str = "maskedPolicyVersion";
+
+pub(crate) fn bump_version(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, '1')
+         ON CONFLICT (key) DO UPDATE SET value = CAST(value AS INTEGER) + 1",
+        [VERSION_KEY],
+    )?;
+    Ok(())
+}
+
 fn rule(code: &'static str, message: impl Into<String>) -> StoreError {
     StoreError::Rule { code, message: message.into() }
 }
@@ -279,12 +294,16 @@ fn allowed(mode: MaskedMode, own: Option<&str>, masked_domains: &[String]) -> Ve
     domains
 }
 
-/// The stored default when it is still allowed; otherwise the own domain when allowed, else the
-/// first allowed one by name.
-fn pick_default(domains: &[String], own: Option<&str>, stored: Option<&str>) -> Option<String> {
+/// The first stored default that is still allowed (the account's own, then its domain's);
+/// otherwise the own domain when allowed, else the first allowed one by name.
+fn pick_default(domains: &[String], own: Option<&str>, stored: &[Option<&str>]) -> Option<String> {
+    let allowed = |name: &&str| domains.iter().any(|domain| domain == name);
     stored
-        .filter(|stored| domains.iter().any(|name| name == stored))
-        .or(own.filter(|own| domains.iter().any(|name| name == own)))
+        .iter()
+        .flatten()
+        .copied()
+        .find(allowed)
+        .or(own.filter(allowed))
         .or(domains.first().map(String::as_str))
         .map(str::to_owned)
 }
@@ -310,9 +329,9 @@ fn resolve(
     let own = own.map(|(_, name)| name);
     let mode = person.mode.unwrap_or(domain.mode);
     let masked_domains = person.masked_domains.unwrap_or(domain.masked_domains);
-    let stored = person.default_domain.or(domain.default_domain);
     let domains = allowed(mode, own.as_deref(), &masked_domains);
-    let default_domain = pick_default(&domains, own.as_deref(), stored.as_deref());
+    let stored = [person.default_domain.as_deref(), domain.default_domain.as_deref()];
+    let default_domain = pick_default(&domains, own.as_deref(), &stored);
     EffectiveMaskedPolicy { mode, masked_domains, domains, default_domain }
 }
 
@@ -333,6 +352,7 @@ fn users(conn: &Connection, domain_id: i64) -> Result<(Vec<String>, Vec<String>)
         "SELECT d.name FROM domains d WHERE d.id IN (
              SELECT domain_id FROM domain_masked_domains WHERE masked_domain_id = ?1
              UNION SELECT id FROM domains WHERE masked_default_domain_id = ?1)
+           AND d.id <> ?1
          ORDER BY d.name",
         domain_id,
     )?;
@@ -442,6 +462,7 @@ impl Store {
                     tx.execute("UPDATE domains SET kind = 'mail' WHERE id = ?1", [id])?;
                 }
             }
+            bump_version(tx)?;
             Ok(change)
         })
         .await
@@ -486,6 +507,7 @@ impl Store {
                     params![id, masked_id],
                 )?;
             }
+            bump_version(tx)?;
             load_domain_policy(tx, id)
         })
         .await
@@ -538,7 +560,16 @@ impl Store {
                     params![account_id, masked_id],
                 )?;
             }
+            bump_version(tx)?;
             load_account_policy(tx, account_id)
+        })
+        .await
+    }
+
+    /// Goes up whenever any masked address policy may have changed.
+    pub async fn masked_policy_version(&self) -> Result<i64> {
+        self.read(|conn| {
+            Ok(crate::db::get_setting(conn, VERSION_KEY)?.and_then(|value| value.parse().ok()).unwrap_or(0))
         })
         .await
     }
@@ -608,6 +639,16 @@ mod tests {
         // Only the default differs.
         let person = AccountMaskedPolicy { default_domain: Some("a.example".into()), ..Default::default() };
         assert_eq!(resolve(own.clone(), domain.clone(), person).default_domain.as_deref(), Some("a.example"));
+
+        // A person's default that is no longer allowed gives way to the domain's, then to automatic.
+        let person = AccountMaskedPolicy {
+            masked_domains: Some(vec!["b.example".into()]),
+            default_domain: Some("a.example".into()),
+            ..Default::default()
+        };
+        assert_eq!(resolve(own.clone(), domain.clone(), person.clone()).default_domain.as_deref(), Some("b.example"));
+        let other_default = policy(MaskedMode::Both, &["b.example"], Some("c.example"));
+        assert_eq!(resolve(own.clone(), other_default, person).default_domain.as_deref(), Some("example.org"));
 
         // Dedicated without an own domain in it: the first masked domain by name.
         let dedicated = policy(MaskedMode::Dedicated, &["b.example", "a.example"], None);
@@ -778,6 +819,7 @@ mod tests {
         let leni = person(&store, "leni@example.net").await;
 
         // Off by default: nowhere.
+        let version = store.masked_policy_version().await.unwrap();
         assert_eq!(code(store.create_masked_address(mini, NewMaskedAddress::default()).await), "maskedDomain");
         assert_eq!(store.effective_masked_policy(mini).await.unwrap(), EffectiveMaskedPolicy::default());
 
@@ -797,6 +839,7 @@ mod tests {
         let both = policy(MaskedMode::Both, &["b.example", "a.example"], Some("b.example"));
         let saved = store.set_domain_masked_policy("example.org", both).await.unwrap();
         assert_eq!(saved.masked_domains, vec!["a.example", "b.example"]);
+        assert!(store.masked_policy_version().await.unwrap() > version, "clients hear of it");
 
         let effective = store.effective_masked_policy(mini).await.unwrap();
         assert_eq!(effective.domains, vec!["a.example", "b.example", "example.org"]);
@@ -856,6 +899,28 @@ mod tests {
         assert_eq!(effective.domains, vec!["example.org"]);
         assert_eq!(effective.default_domain.as_deref(), Some("example.org"));
         assert_eq!(store.account_masked_policy(mini).await.unwrap().default_domain.as_deref(), Some("a.example"));
+
+        // With the domain's own default still allowed, that one comes first.
+        let both = policy(MaskedMode::Both, &["a.example", "b.example"], Some("b.example"));
+        store.set_domain_masked_policy("example.org", both).await.unwrap();
+        assert_eq!(store.effective_masked_policy(mini).await.unwrap().default_domain.as_deref(), Some("a.example"));
+        let narrowed = AccountMaskedPolicy { masked_domains: Some(vec!["b.example".into()]), ..Default::default() };
+        store.set_account_masked_policy(mini, narrowed).await.unwrap();
+        store
+            .write(move |tx| {
+                // As left behind when the list shrank after the default was chosen.
+                tx.execute(
+                    "UPDATE accounts SET masked_default_domain_id = (SELECT id FROM domains WHERE name = 'a.example')
+                     WHERE id = ?1",
+                    [mini],
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let effective = store.effective_masked_policy(mini).await.unwrap();
+        assert_eq!(effective.domains, vec!["b.example", "example.org"]);
+        assert_eq!(effective.default_domain.as_deref(), Some("b.example"), "the domain's default, not automatic");
     }
 
     #[tokio::test]

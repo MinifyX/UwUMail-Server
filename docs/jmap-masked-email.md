@@ -63,8 +63,9 @@ person → Masked addresses*); a part left "as the domain" follows the domain.
 What holds for an account is its own part where it has one, its domain's
 otherwise. The domains it may use are its own login domain for `own` and
 `both`, and the masked-only domains for `dedicated` and `both`. The default is
-the chosen one while it is allowed; otherwise, or when none is chosen, the
-account's own domain if allowed, else the first allowed domain by name. With no
+the account's own default while it is allowed, else its domain's default while
+that is allowed; otherwise, or when none is chosen, the account's own domain if
+allowed, else the first allowed domain by name. With no
 domain allowed, making one fails with `maskedDomain`.
 
 Only new masked addresses follow the policy. The ones already made keep

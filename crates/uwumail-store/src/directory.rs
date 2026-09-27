@@ -440,7 +440,8 @@ impl Store {
         Ok(self.domains().await?.into_iter().find(|d| d.name == name))
     }
 
-    /// Deletes a domain. Refuses while addresses still use it.
+    /// Deletes a domain. Refuses while addresses still use it. Policies that named it as a
+    /// masked-only domain stop doing so (see [`Store::masked_domain_users`]).
     pub async fn delete_domain(&self, name: &str) -> Result<()> {
         let name = normalize_domain(name)?;
         self.write(move |tx| {
@@ -459,6 +460,7 @@ impl Store {
                 return Err(StoreError::Invalid(format!("{in_use} addresses still use {name}, remove them first")));
             }
             tx.execute("DELETE FROM domains WHERE id = ?1", [id])?;
+            crate::masked_domains::bump_version(tx)?;
             Ok(())
         })
         .await
