@@ -132,6 +132,9 @@ pub(super) fn check_shared_create(
 }
 
 fn build_error(err: email_json::BuildError) -> SetError {
+    if err.too_large {
+        return SetError::new("tooLarge", err.description);
+    }
     let properties: Vec<&str> = err.properties.iter().map(String::as_str).collect();
     SetError::invalid_properties(&properties, err.description)
 }
@@ -317,8 +320,8 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
 struct LoadedBlobs(HashMap<String, Vec<u8>>);
 
 impl BlobSource for LoadedBlobs {
-    fn blob(&self, blob_id: &str) -> Option<Vec<u8>> {
-        self.0.get(blob_id).cloned()
+    fn blob(&self, blob_id: &str) -> Option<&[u8]> {
+        self.0.get(blob_id).map(Vec::as_slice)
     }
 }
 
@@ -577,22 +580,38 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                 email_json::validate_create(object).map_err(build_error)?;
                 let mut blob_ids = Vec::new();
                 collect_blob_ids(&Value::Object(object.clone()), &mut blob_ids);
+                blob_ids.sort();
+                blob_ids.dedup();
+                // Each blob is loaded once, and loading stops as soon as the blobs alone are more
+                // than a message may hold (security-audit-0.16.0 PROTOCOLS-2).
                 let mut loaded = HashMap::new();
+                let mut loaded_bytes = 0usize;
                 let mut missing = Vec::new();
                 for blob_id in blob_ids {
                     match read_blob(ctx, &blob_id).await {
                         Some(bytes) => {
+                            loaded_bytes = loaded_bytes.saturating_add(bytes.len());
+                            if loaded_bytes > crate::MAX_UPLOAD_BYTES {
+                                return Err(SetError::new(
+                                    "tooLarge",
+                                    format!("the blobs are more than {} bytes", crate::MAX_UPLOAD_BYTES),
+                                ));
+                            }
                             loaded.insert(blob_id, bytes);
                         }
-                        None if !missing.contains(&blob_id) => missing.push(blob_id),
-                        None => {}
+                        None => missing.push(blob_id),
                     }
                 }
                 if !missing.is_empty() {
-                    missing.sort();
                     return Err(SetError::blob_not_found(missing));
                 }
-                let raw = email_json::build_message(object, &LoadedBlobs(loaded)).map_err(build_error)?;
+                // Building writes every part out, base64 and all: work for a blocking thread.
+                let owned = object.clone();
+                let raw = tokio::task::spawn_blocking(move || {
+                    email_json::build_message(&owned, &LoadedBlobs(loaded)).map_err(build_error)
+                })
+                .await
+                .map_err(|err| SetError::new("serverFail", err.to_string()))??;
                 ctx.jmap
                     .store
                     .ingest(IngestRequest { account_id: ctx.account.id, raw, mailboxes, keywords, received_at })

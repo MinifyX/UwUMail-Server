@@ -30,6 +30,17 @@ The session's URLs follow the host and port the client used, over HTTP/1.1 and H
 Folders others share with the person are further accounts in the session (not the primary one);
 programs that only look at `primaryAccounts` do not see them ([sharing.md](sharing.md)).
 
+Limits on messages:
+
+- An email made with `Email/set` may have at most 1,000 body parts, and its parts together may
+  hold at most `maxSizeAttachmentsPerEmail` bytes (50 MB), counting a blob or body value as often
+  as parts name it. More is answered with `tooLarge`.
+- `bodyStructure` goes 32 levels deep; below that a multipart part comes without `subParts`, and
+  its parts are still there by `partId`.
+- A message nested more than 64 levels deep, or with more than 5,000 parts or 20,000 header
+  fields, is not stored: `Email/import` and `Email/set` answer `invalidEmail`, `Email/parse`
+  lists it under `notParsable` ([configuration.md](configuration.md#limits-on-the-shape-of-a-message)).
+
 ## aerc
 
 [aerc](https://aerc-mail.org) has a JMAP backend (`aerc-jmap(5)`) built on the go-jmap library.

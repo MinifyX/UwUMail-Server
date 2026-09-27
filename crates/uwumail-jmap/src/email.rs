@@ -461,14 +461,69 @@ pub fn to_json(
 pub struct BuildError {
     pub properties: Vec<String>,
     pub description: String,
+    /// The email would be larger than this server builds (`tooLarge`), rather than malformed.
+    pub too_large: bool,
 }
 
 fn build_error(property: &str, description: impl Into<String>) -> BuildError {
-    BuildError { properties: vec![property.to_owned()], description: description.into() }
+    BuildError { properties: vec![property.to_owned()], description: description.into(), too_large: false }
 }
 
 fn build_errors(properties: Vec<String>, description: impl Into<String>) -> BuildError {
-    BuildError { properties, description: description.into() }
+    BuildError { properties, description: description.into(), too_large: false }
+}
+
+fn too_large(description: impl Into<String>) -> BuildError {
+    BuildError { too_large: true, ..build_error("bodyStructure", description) }
+}
+
+/// Body parts one created email may have, multipart parts included.
+pub const MAX_BODY_PARTS: usize = 1_000;
+
+/// What the body parts of a create object will hold, before any of it is built: every blob and
+/// body value as often as a part names it, since each part is written out in full. A few
+/// kilobytes of JSON naming one big blob a hundred times would otherwise build a message of
+/// gigabytes (security-audit-0.16.0 PROTOCOLS-2). Blobs that are missing count nothing here; the
+/// builder names them.
+fn check_content_size(
+    object: &Map<String, Value>,
+    body_values: &Map<String, Value>,
+    blobs: &dyn BlobSource,
+) -> Result<(), BuildError> {
+    let mut work: Vec<&Value> = Vec::new();
+    match object.get("bodyStructure").filter(|v| !v.is_null()) {
+        Some(structure) => work.push(structure),
+        None => {
+            for key in ["textBody", "htmlBody"] {
+                work.extend(object.get(key).and_then(Value::as_array).and_then(|list| list.first()));
+            }
+            work.extend(object.get("attachments").and_then(Value::as_array).into_iter().flatten());
+        }
+    }
+    let mut parts = 0usize;
+    let mut bytes = 0usize;
+    while let Some(part) = work.pop() {
+        parts += 1;
+        if parts > MAX_BODY_PARTS {
+            return Err(too_large(format!("an email may have at most {MAX_BODY_PARTS} body parts")));
+        }
+        if let Some(children) = part.get("subParts").and_then(Value::as_array) {
+            work.extend(children);
+            continue;
+        }
+        let size = if let Some(part_id) = part.get("partId").and_then(Value::as_str) {
+            body_values.get(part_id).and_then(|v| v.get("value")).and_then(Value::as_str).map_or(0, str::len)
+        } else if let Some(blob_id) = part.get("blobId").and_then(Value::as_str) {
+            blobs.blob(blob_id).map_or(0, <[u8]>::len)
+        } else {
+            0
+        };
+        bytes = bytes.saturating_add(size);
+        if bytes > crate::MAX_UPLOAD_BYTES {
+            return Err(too_large(format!("the body parts would hold more than {} bytes", crate::MAX_UPLOAD_BYTES)));
+        }
+    }
+    Ok(())
 }
 
 fn address_list(value: &Value, property: &str) -> Result<Vec<BuilderAddress<'static>>, BuildError> {
@@ -789,18 +844,19 @@ fn validate_part(path: &str, part: &Value) -> Result<(), BuildError> {
     Ok(())
 }
 
-/// Resolves the bytes behind a body part given by `partId` (from `bodyValues`) or `blobId`.
+/// Resolves the bytes behind a body part given by `blobId`. The message is built from them in
+/// place, without a copy for every part that names a blob.
 pub trait BlobSource {
-    fn blob(&self, blob_id: &str) -> Option<Vec<u8>>;
+    fn blob(&self, blob_id: &str) -> Option<&[u8]>;
 }
 
-fn leaf_part(
+fn leaf_part<'x>(
     part: &Value,
     body_values: &Map<String, Value>,
-    blobs: &dyn BlobSource,
-) -> Result<MimePart<'static>, BuildError> {
+    blobs: &'x dyn BlobSource,
+) -> Result<MimePart<'x>, BuildError> {
     let content_type = part.get("type").and_then(Value::as_str);
-    let body: BodyPart<'static> = if let Some(part_id) = part.get("partId").and_then(Value::as_str) {
+    let body: BodyPart<'x> = if let Some(part_id) = part.get("partId").and_then(Value::as_str) {
         let value = body_values
             .get(part_id)
             .and_then(|v| v.get("value"))
@@ -814,7 +870,7 @@ fn leaf_part(
         {
             return Err(build_error("size", format!("the blob has {} bytes", bytes.len())));
         }
-        BodyPart::Binary(Cow::Owned(bytes))
+        BodyPart::Binary(Cow::Borrowed(bytes))
     } else {
         return Err(build_error("bodyStructure", "every part needs a partId or a blobId"));
     };
@@ -858,11 +914,11 @@ fn leaf_part(
     Ok(mime)
 }
 
-fn structure_part(
+fn structure_part<'x>(
     part: &Value,
     body_values: &Map<String, Value>,
-    blobs: &dyn BlobSource,
-) -> Result<MimePart<'static>, BuildError> {
+    blobs: &'x dyn BlobSource,
+) -> Result<MimePart<'x>, BuildError> {
     match part.get("subParts").and_then(Value::as_array) {
         Some(children) => {
             let content_type = part.get("type").and_then(Value::as_str).unwrap_or("multipart/mixed").to_lowercase();
@@ -887,6 +943,7 @@ pub fn build_message(object: &Map<String, Value>, blobs: &dyn BlobSource) -> Res
     validate_create(object)?;
     let empty = Map::new();
     let body_values = object.get("bodyValues").and_then(Value::as_object).unwrap_or(&empty);
+    check_content_size(object, body_values, blobs)?;
     let mut builder = MessageBuilder::new();
     let null = Value::Null;
     let get = |key: &str| object.get(key).unwrap_or(&null);
@@ -1039,9 +1096,47 @@ mod tests {
 
     struct NoBlobs;
     impl BlobSource for NoBlobs {
-        fn blob(&self, _: &str) -> Option<Vec<u8>> {
-            Some(b"%PDF".to_vec())
+        fn blob(&self, _: &str) -> Option<&[u8]> {
+            Some(b"%PDF")
         }
+    }
+
+    struct BigBlob(Vec<u8>);
+    impl BlobSource for BigBlob {
+        fn blob(&self, _: &str) -> Option<&[u8]> {
+            Some(&self.0)
+        }
+    }
+
+    /// Naming one blob over and over built a copy of it for every mention, so a few kilobytes of
+    /// JSON built gigabytes (security-audit-0.16.0 PROTOCOLS-2).
+    #[test]
+    fn a_blob_named_many_times_is_too_large() {
+        let blob = BigBlob(vec![b'x'; 1024 * 1024]);
+        let attachment = json!({ "blobId": "b1", "type": "application/octet-stream", "name": "a.bin" });
+        let object = json!({ "subject": "Kopien", "attachments": vec![attachment.clone(); 200] });
+        let err = build_message(object.as_object().unwrap(), &blob).unwrap_err();
+        assert!(err.too_large, "{err:?}");
+
+        // The same through bodyStructure, and with a body value instead of a blob.
+        let leaf = json!({ "partId": "t", "type": "text/plain" });
+        let object = json!({
+            "bodyStructure": { "type": "multipart/mixed", "subParts": vec![leaf; 200] },
+            "bodyValues": { "t": { "value": "x".repeat(1024 * 1024) } },
+        });
+        let err = build_message(object.as_object().unwrap(), &NoBlobs).unwrap_err();
+        assert!(err.too_large, "{err:?}");
+
+        // Many small parts are too many all the same.
+        let object = json!({ "attachments": vec![json!({ "blobId": "b1" }); MAX_BODY_PARTS + 1] });
+        let err = build_message(object.as_object().unwrap(), &NoBlobs).unwrap_err();
+        assert!(err.too_large, "{err:?}");
+
+        // Within the limits it is built, the blob written out as often as it is named.
+        let object = json!({ "attachments": vec![attachment; 3] });
+        let raw = build_message(object.as_object().unwrap(), &blob).unwrap();
+        let parsed = MessageParser::default().parse(&raw).unwrap();
+        assert_eq!(parsed.attachment_count(), 3);
     }
 
     const MESSAGE: &[u8] =
