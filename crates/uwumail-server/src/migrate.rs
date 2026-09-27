@@ -1,0 +1,363 @@
+//! Moving from another provider: copying a person's old mailbox over IMAP, in the background.
+//!
+//! The person starts it in the portal with the old address and its password (an app password
+//! where the provider wants one); the store keeps it as a job. This worker takes one queued job
+//! at a time and copies with the same IMAP client as the migration import (`import::imap`): every
+//! folder with its flags and dates, the special ones (sent, drafts, junk, trash, archive) into
+//! ours. It works in time slices, so one big mailbox does not hold up everybody else's, and every
+//! folder remembers the last message it took over, so a slice, a restart or "sync again" a week
+//! later all go on from where things stood.
+//!
+//! A message this mailbox holds already -- the same Message-ID, or the same bytes -- is not
+//! brought twice: the old provider may show one message in several folders (Gmail's labels), and
+//! some mail may have come here some other way already.
+//!
+//! Like fetched mailboxes, it only ever connects to public addresses, through the egress proxy
+//! when the admin sends fetching that way. A full mailbox or a refused password pauses the job
+//! with a reason the portal explains; nothing is retried behind the person's back.
+
+use std::future::Future;
+use std::pin::Pin;
+use std::time::Duration;
+
+use tokio::sync::watch;
+use uwumail_store::{MigrationJob, MigrationProgress, MigrationRun, Store, StoreError};
+
+use crate::fetch::Detour;
+use crate::import::imap::{Connection, CopyEnd, CopyEvent, CopyOptions, Source, copy_folders, quoted};
+
+/// How often the queue is looked at when it was empty.
+const TICK: Duration = Duration::from_secs(5);
+/// How long one job is worked on before the next one gets its turn.
+const RUN_LIMIT: Duration = Duration::from_secs(300);
+/// On top of the time slice: the portion that was being fetched when it ran out may still finish.
+const GRACE: Duration = Duration::from_secs(300);
+
+/// Works through the queued moves until `shutdown` changes.
+pub async fn run_migrations(store: Store, egress: uwumail_smtp::egress::Egress, mut shutdown: watch::Receiver<bool>) {
+    // Moves that were running when the server stopped go on where their folders stood.
+    match store.requeue_running_migrations().await {
+        Ok(0) => {}
+        Ok(count) => tracing::info!(count, "moves from other providers continue after the restart"),
+        Err(err) => tracing::warn!(%err, "looking for interrupted moves failed"),
+    }
+    loop {
+        loop {
+            if *shutdown.borrow() {
+                return;
+            }
+            let job = match store.take_migration_job().await {
+                Ok(Some(job)) => job,
+                Ok(None) => break,
+                Err(err) => {
+                    tracing::warn!(%err, "reading the queued moves failed");
+                    break;
+                }
+            };
+            let dialer = Some(egress.dialer(uwumail_smtp::egress::Purpose::Fetch));
+            let run = tokio::select! {
+                run = run_job(&store, &job, None, dialer, RUN_LIMIT) => run,
+                // Back in the queue; the next start goes on with it.
+                _ = shutdown.changed() => MigrationRun::Continue,
+            };
+            if let Err(err) = store.finish_migration_run(job.id, run).await {
+                tracing::warn!(address = %job.address, %err, "writing down how a move went failed");
+            }
+        }
+        tokio::select! {
+            _ = tokio::time::sleep(TICK) => {}
+            _ = shutdown.changed() => return,
+        }
+    }
+}
+
+fn paused(code: &str, detail: impl std::fmt::Display) -> MigrationRun {
+    MigrationRun::Paused { code: code.to_owned(), detail: detail.to_string() }
+}
+
+/// What `import_progress` remembers this old mailbox's folders under: its login at its host, so two
+/// old mailboxes at the same provider keep their folders apart.
+fn source_name(job: &MigrationJob) -> String {
+    format!("move:{}@{}", job.login, job.host)
+}
+
+/// Works on one move for up to `limit` and says how it ended. Never fails: whatever went wrong
+/// becomes a pause with a reason.
+pub(crate) async fn run_job(
+    store: &Store,
+    job: &MigrationJob,
+    detour: Option<Detour>,
+    dialer: Option<uwumail_smtp::egress::Dialer>,
+    limit: Duration,
+) -> MigrationRun {
+    if detour.is_none() {
+        // The host was checked when the move was set up; its name is checked again now, so it
+        // cannot have come to point at this machine or the local network since (as for fetched
+        // mailboxes, security-audit-0.5.2 S-10).
+        let public = tokio::net::lookup_host((job.host.as_str(), job.port))
+            .await
+            .map(|addrs| addrs.into_iter().any(|addr| uwumail_smtp::is_public(addr.ip())))
+            .unwrap_or(false);
+        if !public {
+            return paused("notPublic", format!("{} does not resolve to a public address", job.host));
+        }
+    }
+    let password = match store.migration_password(job.account_id, job.id).await {
+        Ok(Some(password)) => password,
+        Ok(None) => return MigrationRun::Continue,
+        Err(err) => return paused("failed", err),
+    };
+    match store.account_by_id(job.account_id).await {
+        Ok(Some(account)) if account.has_mailbox() => {}
+        Ok(_) => return paused("noMailbox", "this account has no mailbox to move into"),
+        Err(err) => return paused("failed", err),
+    }
+    let source = match detour {
+        None => Source {
+            address: format!("{}:{}", job.host, job.port),
+            tls_name: Some(job.host.clone()),
+            roots: None,
+            master_user: None,
+            password,
+            // Through the proxy when the admin wants fetching to take it; straight otherwise.
+            dialer: dialer.filter(|dialer| dialer.proxied()),
+        },
+        Some(detour) => Source {
+            address: detour.address,
+            tls_name: Some(detour.tls_name),
+            roots: Some(detour.roots),
+            master_user: None,
+            password,
+            dialer: None,
+        },
+    };
+    let mut connection = match Connection::open(&source).await {
+        Ok(connection) => connection,
+        Err(err) => return paused("unreachable", format!("{err:#}")),
+    };
+    if let Err(err) = connection.command(&format!("LOGIN {} {}", quoted(&job.login), quoted(&source.password))).await {
+        return paused("loginRefused", format!("{err:#}"));
+    }
+
+    let copy = copy(store, &mut connection, job, limit);
+    let run = match tokio::time::timeout(limit + GRACE, copy).await {
+        Ok(run) => run,
+        // A portion that never ended; the next turn starts it again.
+        Err(_) => MigrationRun::Continue,
+    };
+    let _ = tokio::time::timeout(Duration::from_secs(10), connection.command("LOGOUT")).await;
+    run
+}
+
+async fn copy(store: &Store, connection: &mut Connection, job: &MigrationJob, limit: Duration) -> MigrationRun {
+    // Earlier turns of this round count too.
+    let base = job.progress;
+    let options = CopyOptions { dry_run: false, skip_known: true, deadline: Some(tokio::time::Instant::now() + limit) };
+    let id = job.id;
+    let mut report = {
+        let store = store.clone();
+        let current = std::sync::Arc::new(std::sync::Mutex::new(base));
+        move |event: CopyEvent| -> Pin<Box<dyn Future<Output = bool> + Send>> {
+            let mut now = current.lock().expect("move progress poisoned");
+            match event {
+                CopyEvent::Planned { folders, messages } => {
+                    now.folders_done = 0;
+                    now.folders_total = folders as i64;
+                    now.messages_total = base.messages_done + messages as i64;
+                }
+                CopyEvent::Progress(copied) => {
+                    now.folders_done = copied.folders as i64;
+                    now.messages_done = base.messages_done + (copied.messages + copied.skipped) as i64;
+                    now.messages_skipped = base.messages_skipped + copied.skipped as i64;
+                    now.bytes_done = base.bytes_done + copied.bytes as i64;
+                }
+                CopyEvent::Renumbered { folder } => {
+                    tracing::info!(folder, "the old provider renumbered a folder; copying it again");
+                    return Box::pin(std::future::ready(true));
+                }
+                CopyEvent::Folder { .. } => return Box::pin(std::future::ready(true)),
+            }
+            let noted: MigrationProgress = *now;
+            let store = store.clone();
+            // `false` from the store: the person paused the move or ended it meanwhile.
+            Box::pin(async move { store.note_migration_progress(id, noted).await.unwrap_or(true) })
+        }
+    };
+    let result = copy_folders(store, connection, job.account_id, &source_name(job), options, &mut report).await;
+    match result {
+        Ok((copied, end)) => {
+            tracing::info!(
+                address = %job.address,
+                copied = copied.messages,
+                skipped = copied.skipped,
+                ?end,
+                "moved mail from another provider"
+            );
+            match end {
+                CopyEnd::Finished => MigrationRun::Done,
+                CopyEnd::OutOfTime | CopyEnd::Stopped => MigrationRun::Continue,
+            }
+        }
+        Err(err) if matches!(err.downcast_ref::<StoreError>(), Some(StoreError::QuotaExceeded)) => {
+            paused("quotaExceeded", "the mailbox here is full")
+        }
+        Err(err) => {
+            tracing::warn!(address = %job.address, err = %format!("{err:#}"), "moving mail failed");
+            paused("failed", format!("{err:#}"))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use uwumail_store::{IngestRequest, MailboxRole, MailboxTarget, MigrationState, NewAccount, NewMigrationJob, Role};
+
+    use super::*;
+
+    const PASSWORD: &str = "katzenpfote-123";
+
+    async fn store_with_person(path: &std::path::Path, password: Option<&str>, quota_bytes: i64) -> (Store, i64) {
+        let store = Store::open(path).await.unwrap();
+        store.create_domain("example.org").await.unwrap();
+        let new = NewAccount {
+            address: "mini@example.org".into(),
+            display_name: "Mini".into(),
+            password: password.map(str::to_owned),
+            role: Role::User,
+            quota_bytes,
+            protocols: None,
+        };
+        let id = store.create_account(new).await.unwrap().id;
+        (store, id)
+    }
+
+    async fn deliver(store: &Store, account: i64, mailbox: MailboxTarget, subject: &str, keywords: &[&str]) {
+        let raw = format!(
+            "From: nyu@example.net\r\nTo: mini@example.org\r\nSubject: {subject}\r\n\
+             Message-ID: <{subject}@example.net>\r\n\r\nHallo\r\n"
+        );
+        let request = IngestRequest {
+            account_id: account,
+            raw: raw.into_bytes(),
+            mailboxes: vec![mailbox],
+            keywords: keywords.iter().map(|keyword| keyword.to_string()).collect(),
+            received_at: Some(1_700_000_000),
+        };
+        store.ingest(request).await.unwrap();
+    }
+
+    /// The old provider: our own IMAP server on localhost, with a certificate it made itself.
+    async fn old_provider(old: &Store) -> (Detour, watch::Sender<bool>) {
+        let generated = rcgen::generate_simple_self_signed(vec!["imap.example.net".to_owned()]).unwrap();
+        let key = rustls_pki_types::PrivateKeyDer::Pkcs8(generated.signing_key.serialize_der().into());
+        let tls = rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(vec![generated.cert.der().clone()], key)
+            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        let (shutdown, shutdown_rx) = watch::channel(false);
+        tokio::spawn(uwumail_imap::Imap::new(old.clone(), 1 << 20).serve(listener, Arc::new(tls), shutdown_rx));
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(generated.cert.der().clone()).unwrap();
+        (Detour { address, tls_name: "imap.example.net".into(), roots }, shutdown)
+    }
+
+    async fn start(store: &Store, account_id: i64, password: &str) -> MigrationJob {
+        let new = NewMigrationJob {
+            account_id,
+            address: "mini@example.net".into(),
+            host: "imap.example.net".into(),
+            port: 993,
+            login: "mini@example.org".into(),
+            password: password.into(),
+        };
+        store.create_migration_job(new).await.unwrap();
+        store.take_migration_job().await.unwrap().expect("the move is queued")
+    }
+
+    /// One turn of the worker, as `run_migrations` takes it.
+    async fn turn(store: &Store, detour: &Detour, limit: Duration) -> MigrationJob {
+        let job = store.take_migration_job().await.unwrap().expect("the move is queued");
+        let run = run_job(store, &job, Some(detour.clone()), None, limit).await;
+        store.finish_migration_run(job.id, run).await.unwrap();
+        store.migration_job(job.account_id, job.id).await.unwrap().unwrap()
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_mailbox_moves_with_folders_and_flags_and_then_only_what_is_new() {
+        let dir = tempfile::tempdir().unwrap();
+        let (old, old_id) = store_with_person(&dir.path().join("old"), Some(PASSWORD), 0).await;
+        deliver(&old, old_id, MailboxTarget::Role(MailboxRole::Inbox), "Eins", &["$seen", "$flagged"]).await;
+        deliver(&old, old_id, MailboxTarget::Role(MailboxRole::Sent), "Gesendet", &["$seen"]).await;
+        let projects = old.create_mailbox(old_id, "Projekte", None, None, 0, true).await.unwrap();
+        let archive = old.create_mailbox(old_id, "Alt", Some(projects), None, 0, true).await.unwrap();
+        deliver(&old, old_id, MailboxTarget::Id(archive), "Übergabe", &["$answered"]).await;
+        // The same message in a second folder, the way Gmail shows a message with two labels.
+        deliver(&old, old_id, MailboxTarget::Id(projects), "Eins", &[]).await;
+        let (detour, _stop) = old_provider(&old).await;
+        let (new, new_id) = store_with_person(&dir.path().join("new"), None, 0).await;
+
+        // A wrong password pauses the move and says why.
+        let job = start(&new, new_id, "falsch-falsch").await;
+        let run = run_job(&new, &job, Some(detour.clone()), None, RUN_LIMIT).await;
+        assert!(matches!(&run, MigrationRun::Paused { code, .. } if code == "loginRefused"), "{run:?}");
+        new.finish_migration_run(job.id, run).await.unwrap();
+
+        // With the right one it goes on.
+        new.sync_migration_job(new_id, job.id, Some(PASSWORD.into())).await.unwrap();
+        // A time slice that is already over looks at the folders and stops before the first portion.
+        let sliced = turn(&new, &detour, Duration::ZERO).await;
+        assert_eq!(sliced.state, MigrationState::Queued, "{sliced:?}");
+        assert_eq!((sliced.progress.messages_total, sliced.progress.messages_done), (4, 0));
+        let done = turn(&new, &detour, RUN_LIMIT).await;
+        assert_eq!(done.state, MigrationState::Done, "{done:?}");
+        assert_eq!((done.progress.messages_done, done.progress.messages_skipped), (4, 1), "{done:?}");
+        assert_eq!(done.progress.folders_done, done.progress.folders_total);
+        assert!(done.progress.bytes_done > 0);
+
+        let mailboxes = new.mailboxes(new_id).await.unwrap();
+        let inbox = mailboxes.iter().find(|mailbox| mailbox.role == Some(MailboxRole::Inbox)).unwrap();
+        assert_eq!((inbox.total_emails, inbox.unread_emails), (1, 0), "flags come along");
+        let emails = new.emails_in_mailbox(inbox.id, 10).await.unwrap();
+        assert!(emails[0].keywords.contains(&"$flagged".to_owned()), "{:?}", emails[0].keywords);
+        let sent = mailboxes.iter().find(|mailbox| mailbox.role == Some(MailboxRole::Sent)).unwrap();
+        assert_eq!(sent.total_emails, 1);
+        let parent = mailboxes.iter().find(|mailbox| mailbox.name == "Projekte").unwrap();
+        let child = mailboxes.iter().find(|mailbox| mailbox.name == "Alt").unwrap();
+        assert_eq!((child.parent_id, child.total_emails), (Some(parent.id), 1));
+        assert_eq!(parent.total_emails, 0, "the second label of Eins is not a second copy");
+
+        // A week later: "sync again" brings only what arrived since.
+        deliver(&old, old_id, MailboxTarget::Role(MailboxRole::Inbox), "Zwei", &[]).await;
+        new.sync_migration_job(new_id, job.id, None).await.unwrap();
+        let again = turn(&new, &detour, RUN_LIMIT).await;
+        assert_eq!(again.state, MigrationState::Done);
+        assert_eq!((again.progress.messages_total, again.progress.messages_done), (1, 1), "{again:?}");
+        let inbox = new.mailboxes(new_id).await.unwrap().into_iter().find(|m| m.role == Some(MailboxRole::Inbox));
+        assert_eq!(inbox.unwrap().total_emails, 2);
+
+        // Done for good: the password goes with the job, the mail stays.
+        new.delete_migration_job(new_id, job.id).await.unwrap();
+        assert_eq!(new.migration_password(new_id, job.id).await.unwrap(), None);
+        assert_eq!(new.mailboxes(new_id).await.unwrap().iter().map(|m| m.total_emails).sum::<i64>(), 4);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_full_mailbox_pauses_the_move() {
+        let dir = tempfile::tempdir().unwrap();
+        let (old, old_id) = store_with_person(&dir.path().join("old"), Some(PASSWORD), 0).await;
+        for subject in ["Eins", "Zwei", "Drei"] {
+            deliver(&old, old_id, MailboxTarget::Role(MailboxRole::Inbox), subject, &[]).await;
+        }
+        let (detour, _stop) = old_provider(&old).await;
+        let (new, new_id) = store_with_person(&dir.path().join("new"), None, 1).await;
+        let job = start(&new, new_id, PASSWORD).await;
+        let run = run_job(&new, &job, Some(detour), None, RUN_LIMIT).await;
+        assert!(matches!(&run, MigrationRun::Paused { code, .. } if code == "quotaExceeded"), "{run:?}");
+    }
+}
