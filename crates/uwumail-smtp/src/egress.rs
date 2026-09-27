@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use bytes::Bytes;
-use http_body_util::{BodyExt, Empty, Limited};
+use http_body_util::{BodyExt, Empty, Full, Limited};
 use hyper::header::{ACCEPT, CONTENT_TYPE, LOCATION, USER_AGENT};
 use hyper::{Request, StatusCode, Uri};
 use hyper_rustls::HttpsConnector;
@@ -452,6 +452,8 @@ pub enum EgressError {
 }
 
 type HttpClient = Client<HttpsConnector<Connector>, Empty<Bytes>>;
+/// For POSTs: https only, straight from the server.
+type PostClient = Client<HttpsConnector<Connector>, Full<Bytes>>;
 
 /// One configuration of the way out, replaced as a whole when the admin panel changes it.
 struct Setup {
@@ -466,6 +468,8 @@ struct Setup {
 
 struct Shared {
     setup: RwLock<Arc<Setup>>,
+    /// Web Push messages to the push services of browsers and phones.
+    post: PostClient,
     permits: Semaphore,
     stats: Arc<Stats>,
     roots: rustls::RootCertStore,
@@ -568,6 +572,7 @@ impl Egress {
             #[cfg(test)]
             pinned,
         };
+        let post = build_post_client(direct.clone(), &roots);
         let client = build_client(direct, &roots);
         let setup = Setup {
             proxy: None,
@@ -579,6 +584,7 @@ impl Egress {
         Egress {
             shared: Arc::new(Shared {
                 setup: RwLock::new(Arc::new(setup)),
+                post,
                 permits: Semaphore::new(MAX_CONCURRENT),
                 stats,
                 roots,
@@ -668,6 +674,32 @@ impl Egress {
         result
     }
 
+    /// POSTs `body` to a public https address and answers the status, for Web Push (docs/jmap-push.md).
+    /// Straight from the server, never through the proxy: a push service learns nothing about readers, and
+    /// the address is checked the same way as a picture's, name and resolved address alike. Redirects are
+    /// not followed, and the answer's body is not read beyond a few kilobytes.
+    pub async fn post(&self, url: &str, headers: &[(String, String)], body: Vec<u8>) -> Result<u16, EgressError> {
+        let url = check_url(url, false).map_err(EgressError::NotAllowed)?;
+        let mut request = Request::post(url.as_str()).header(USER_AGENT, AGENT);
+        for (name, value) in headers {
+            request = request.header(name.as_str(), value.as_str());
+        }
+        let request = request
+            .body(Full::new(Bytes::from(body)))
+            .map_err(|_| EgressError::NotAllowed("that is not a web address".into()))?;
+        let _permit = self.shared.permits.acquire().await.map_err(|_| EgressError::Unreachable)?;
+        let client = self.shared.post.clone();
+        tokio::time::timeout(TIMEOUT, async move {
+            let response = client.request(request).await.map_err(|err| reason(&err))?;
+            let status = response.status().as_u16();
+            // Read what little there is, so the connection can be used again.
+            let _ = Limited::new(response.into_body(), 16 * 1024).collect().await;
+            Ok(status)
+        })
+        .await
+        .map_err(|_| EgressError::Timeout)?
+    }
+
     /// The address the other side sees through the proxy (or of the server, without one), asked of a public
     /// service.
     pub async fn public_address(&self) -> Result<IpAddr, EgressError> {
@@ -702,6 +734,21 @@ fn build_client(connector: Connector, roots: &rustls::RootCertStore) -> HttpClie
     let https = hyper_rustls::HttpsConnectorBuilder::new()
         .with_tls_config(tls)
         .https_or_http()
+        .enable_http1()
+        .wrap_connector(connector);
+    Client::builder(TokioExecutor::new()).build(https)
+}
+
+fn build_post_client(connector: Connector, roots: &rustls::RootCertStore) -> PostClient {
+    let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+    let tls = rustls::ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .expect("the default TLS versions")
+        .with_root_certificates(roots.clone())
+        .with_no_client_auth();
+    let https = hyper_rustls::HttpsConnectorBuilder::new()
+        .with_tls_config(tls)
+        .https_only()
         .enable_http1()
         .wrap_connector(connector);
     Client::builder(TokioExecutor::new()).build(https)
@@ -1066,6 +1113,66 @@ mod tests {
         stream.write_all(b"GET /pixel.gif HTTP/1.1\r\nHost: x\r\n\r\n").await.unwrap();
         assert_eq!(asked.lock().unwrap().len(), 1, "fetching took the proxy");
         assert!(asked.lock().unwrap()[0].starts_with(&format!("CONNECT {server} ")));
+    }
+
+    /// A push service over TLS that answers 201 and remembers what it got.
+    async fn push_service() -> (Egress, Arc<Mutex<Vec<String>>>) {
+        let generated = rcgen::generate_simple_self_signed(vec!["push.example".into()]).unwrap();
+        let key = rustls_pki_types::PrivateKeyDer::Pkcs8(generated.signing_key.serialize_der().into());
+        let tls = rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(vec![generated.cert.der().clone()], key)
+            .unwrap();
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tls));
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let log = seen.clone();
+        tokio::spawn(async move {
+            loop {
+                let (socket, _) = listener.accept().await.unwrap();
+                let (acceptor, log) = (acceptor.clone(), log.clone());
+                tokio::spawn(async move {
+                    let Ok(mut stream) = acceptor.accept(socket).await else { return };
+                    let mut head = Vec::new();
+                    let mut byte = [0u8; 1];
+                    while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).await.unwrap() == 1 {
+                        head.push(byte[0]);
+                    }
+                    let head = String::from_utf8(head).unwrap();
+                    let length: usize = head
+                        .lines()
+                        .find_map(|line| line.to_ascii_lowercase().strip_prefix("content-length:").map(str::to_owned))
+                        .and_then(|value| value.trim().parse().ok())
+                        .unwrap_or(0);
+                    let mut body = vec![0u8; length];
+                    stream.read_exact(&mut body).await.unwrap();
+                    log.lock().unwrap().push(format!("{head}{}", String::from_utf8_lossy(&body)));
+                    stream.write_all(b"HTTP/1.1 201 Created\r\nContent-Length: 0\r\n\r\n").await.unwrap();
+                    let _ = stream.shutdown().await;
+                });
+            }
+        });
+        (Egress::pinned_trusting(address, generated.cert.der().clone()), seen)
+    }
+
+    #[tokio::test]
+    async fn posts_go_to_https_addresses_only() {
+        let (egress, seen) = push_service().await;
+        let headers = vec![("ttl".to_owned(), "60".to_owned())];
+        let status = egress.post("https://push.example/send/abc", &headers, b"{}".to_vec()).await.unwrap();
+        assert_eq!(status, 201);
+        let request = seen.lock().unwrap()[0].clone();
+        assert!(request.starts_with("POST /send/abc HTTP/1.1"), "{request}");
+        assert!(request.to_ascii_lowercase().contains("ttl: 60"), "{request}");
+        assert!(request.ends_with("{}"), "{request}");
+
+        for refused in ["http://push.example/send", "https://127.0.0.1/send", "https://localhost/send"] {
+            let err = egress.post(refused, &headers, Vec::new()).await.unwrap_err();
+            assert!(matches!(err, EgressError::NotAllowed(_)), "{refused}: {err:?}");
+        }
     }
 
     #[tokio::test]
