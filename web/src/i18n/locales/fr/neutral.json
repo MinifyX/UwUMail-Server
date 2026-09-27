@@ -62,7 +62,8 @@
     "expand": "Déplier {{group}}",
     "mailbox": "Boîte mail",
     "directory": "Comptes et domaines",
-    "calendars": "Agendas et contacts"
+    "calendars": "Agendas et contacts",
+    "more": "Plus"
   },
   "userMenu": {
     "open": "Ouvrir le menu du compte",
@@ -170,7 +171,8 @@
       "overview": "Vue d'ensemble",
       "mailFlow": "Flux de courrier",
       "backups": "Sauvegardes",
-      "updates": "Mises à jour"
+      "updates": "Mises à jour",
+      "stats": "Statistiques"
     },
     "tiles": {
       "news": "nouveau",
@@ -206,6 +208,180 @@
         "title": "Dernière modification",
         "none": "Rien n'a encore changé"
       }
+    }
+  },
+  "adminView": {
+    "label": "Affichage",
+    "simple": "Simple",
+    "full": "Tout",
+    "hint": {
+      "simple": "Seulement le feu tricolore et ce qu'il faut faire. Tout le reste se trouve sous « Plus » dans le menu.",
+      "full": "Tous les chiffres et toutes les vérifications. « Simple » n'affiche que le feu tricolore."
+    },
+    "light": "Feu tricolore : {{level}}",
+    "headline": {
+      "ok": "Tout va bien",
+      "unknown": "Tout n'est pas encore vérifié",
+      "warning": "Quelque chose mérite un coup d'œil",
+      "problem": "Quelque chose ne fonctionne pas"
+    },
+    "sentence": {
+      "ok": "Les mails arrivent et partent, rien ne demande votre attention pour l'instant.",
+      "unknown": "Les premières vérifications ont lieu peu après le démarrage.",
+      "warning_one": "Un point ci-dessous mérite un coup d'œil quand vous aurez un moment.",
+      "warning_many": "{{count}} points ci-dessous méritent un coup d'œil quand vous aurez un moment.",
+      "warning_other": "{{count}} points ci-dessous méritent un coup d'œil quand vous aurez un moment.",
+      "problem_one": "Un point ci-dessous a bientôt besoin de votre aide.",
+      "problem_many": "{{count}} points ci-dessous ont bientôt besoin de votre aide.",
+      "problem_other": "{{count}} points ci-dessous ont bientôt besoin de votre aide."
+    },
+    "todo": "Que faire",
+    "quick": {
+      "title": "Accès rapide",
+      "people": "Personnes",
+      "addPerson": "Ajouter une personne",
+      "domains": "Domaines",
+      "backups": "Sauvegardes"
+    }
+  },
+  "alerts": {
+    "title": "Alertes",
+    "intro": "Ce que le serveur a signalé aux admins, et ce qui est revenu en ordre ensuite. Il vérifie toutes les cinq minutes.",
+    "loading": "Chargement des alertes …",
+    "none": "Aucune alerte ouverte.",
+    "openLabel": "Alertes ouvertes",
+    "history_one": "{{count}} alerte de nouveau en ordre",
+    "history_many": "{{count}} alertes de nouveau en ordre",
+    "history_other": "{{count}} alertes de nouveau en ordre",
+    "since": "Depuis {{time}}",
+    "resolvedAt": "De nouveau en ordre {{time}}",
+    "acknowledgedBy": "{{login}} est au courant",
+    "acknowledge": "Vu",
+    "acknowledgeHint": "Plus de rappel quotidien pour celle-ci. Vous serez quand même prévenu si elle s'aggrave ou se règle.",
+    "acknowledgedToast": "C'est noté. Plus de rappel pour celle-ci.",
+    "level": {
+      "info": "Information",
+      "warning": "À vérifier",
+      "problem": "Problème",
+      "resolved": "De nouveau en ordre"
+    },
+    "mail": {
+      "title": "Mails d'alerte",
+      "label": "Mails d'alerte pour moi",
+      "all": "Tous",
+      "problems": "Problèmes seulement",
+      "none": "Aucun",
+      "hint": "Chaque admin choisit pour soi. Un mail arrive quand quelque chose passe au jaune ou au rouge, une fois par jour tant que quelque chose reste rouge, et une dernière fois quand tout est de nouveau en ordre."
+    },
+    "codes": {
+      "certRenewalFailing": "Le renouvellement du certificat échoue toujours (premier échec {{since}}).",
+      "backupFailed": "La dernière sauvegarde a échoué.",
+      "backupOld": "La dernière sauvegarde réussie date de {{time}}.",
+      "updateAvailable": "La version {{version}} est sortie."
+    },
+    "hints": {
+      "certRenewalFailing": "Le journal du serveur indique pourquoi. Souvent, un nom ne pointe pas (encore) vers ce serveur, ou le port 80 n'est pas joignable de l'extérieur.",
+      "backupFailed": "La page des sauvegardes affiche l'erreur. Vérifiez la destination et lancez-en une à la main.",
+      "backupOld": "Les sauvegardes ont normalement lieu chaque nuit. La page des sauvegardes indique si elles sont en pause ou ce qui s'est mal passé.",
+      "updateAvailable": "La page des mises à jour montre les nouveautés et met à jour en un clic."
+    }
+  },
+  "stats": {
+    "intro": "Ce qui s'est passé sur votre serveur, jour après jour ou mois après mois.",
+    "utc": "Les jours sont comptés en UTC. Les chiffres commencent avec la version 0.14.",
+    "range": {
+      "label": "Période",
+      "days": "30 jours",
+      "months": "12 mois"
+    },
+    "total": {
+      "days": "sur 30 jours",
+      "months": "sur 12 mois"
+    },
+    "latest": "dernière mesure",
+    "chartSummary": "{{series}} : diagramme en barres, valeur maximale {{max}} ({{peak}}). Le tableau ci-dessous contient tous les chiffres.",
+    "chartEmpty": "{{series}} : rien n'a été compté sur cette période.",
+    "charts": {
+      "received": {
+        "title": "Mails reçus",
+        "hint": "Mails d'autres serveurs et de boîtes relevées qui ont atteint au moins une personne."
+      },
+      "refused": {
+        "title": "Mails refusés",
+        "hint": "Refusés à l'entrée : destinataires inconnus, spam, virus et règles comme DMARC."
+      },
+      "submitted": {
+        "title": "Mails envoyés",
+        "hint": "Messages envoyés par vos utilisateurs, depuis des applications mail, le webmail ou les applications UwUMail."
+      },
+      "delivered": {
+        "title": "Remis à d'autres serveurs",
+        "hint": "Destinataires sur d'autres serveurs qui ont accepté le mail."
+      },
+      "logins": {
+        "title": "Connexions échouées",
+        "hint": "Mauvais mots de passe et connexions refusées dans toutes les applications et dans le portail."
+      },
+      "storage": {
+        "title": "Espace utilisé",
+        "hint": "Toutes les boîtes mail ensemble, mesurées au fil de chaque jour."
+      }
+    },
+    "keys": {
+      "mail": {
+        "received": "Reçus",
+        "junk": "Dans les indésirables",
+        "submitted": "Envoyés",
+        "delivered": "Remis",
+        "deferred": "Réessayés plus tard",
+        "bounced": "Abandonnés"
+      },
+      "refused": {
+        "unknownRecipient": "Destinataire inconnu",
+        "spam": "Spam",
+        "virus": "Virus",
+        "policy": "Règles (DMARC, expéditeurs bloqués, relais)",
+        "greylisted": "Priés de revenir plus tard"
+      },
+      "loginFailed": {
+        "smtp": "SMTP",
+        "imap": "IMAP",
+        "jmap": "JMAP",
+        "dav": "CalDAV/CardDAV",
+        "managesieve": "ManageSieve",
+        "portal": "Portail",
+        "other": "Autres"
+      },
+      "gauge": {
+        "accounts": "Comptes",
+        "storageBytes": "Espace utilisé"
+      }
+    },
+    "table": {
+      "title": "Tous les chiffres en tableau",
+      "caption": "Statistiques par période",
+      "period": {
+        "days": "Jour",
+        "months": "Mois"
+      }
+    },
+    "metrics": {
+      "title": "Métriques Prometheus",
+      "intro": "Pour un système de supervision : les chiffres du serveur sous /metrics, au format Prometheus. Désactivé tant que vous ne l'activez pas.",
+      "enabled": "Fournir les métriques",
+      "enabledHint": "Nécessite un jeton, des réseaux autorisés ou les deux, pour que tout le monde ne puisse pas les lire.",
+      "token": "Jeton",
+      "tokenHint": "Prometheus l'envoie comme jeton bearer. Créez-en un ici.",
+      "tokenFresh": "Copiez-le maintenant : une fois enregistré, il ne sera plus jamais affiché.",
+      "tokenSet": "Un jeton est défini. Un nouveau le remplace.",
+      "tokenNew": "Créer un jeton",
+      "tokenReplace": "Nouveau jeton",
+      "tokenRemove": "Supprimer",
+      "copyToken": "Copier le jeton",
+      "networks": "Seulement depuis ces réseaux",
+      "networksHint": "Une adresse ou un réseau par ligne, par exemple 10.0.0.0/8. Vide : de partout, avec le jeton.",
+      "needsWayIn": "Créez d'abord un jeton ou indiquez un réseau, sinon les métriques seraient ouvertes à tous.",
+      "address": "Adresse pour Prometheus"
     }
   },
   "duration": {
@@ -333,7 +509,8 @@
       "googleUseIcs": "Google ne laisse entrer que ses propres applications. Utilisez l'adresse iCal secrète pour les agendas et un export vCard pour les contacts.",
       "subscriptionLimit": "Vous avez déjà le nombre maximal d'agendas abonnés.",
       "subscriptionExists": "Vous êtes déjà abonné à cet agenda.",
-      "refreshPause": "Tout juste récupéré. Réessayez dans une minute."
+      "refreshPause": "Tout juste récupéré. Réessayez dans une minute.",
+      "alertResolved": "Cette alerte est déjà de nouveau en ordre."
     }
   },
   "people": {

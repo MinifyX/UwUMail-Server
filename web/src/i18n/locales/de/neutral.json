@@ -62,7 +62,8 @@
     "expand": "{{group}} ausklappen",
     "mailbox": "Postfach",
     "directory": "Konten & Domains",
-    "calendars": "Kalender & Kontakte"
+    "calendars": "Kalender & Kontakte",
+    "more": "Mehr"
   },
   "userMenu": {
     "open": "Kontomenü öffnen",
@@ -167,7 +168,8 @@
       "overview": "Übersicht",
       "mailFlow": "Mailfluss",
       "backups": "Backups",
-      "updates": "Updates"
+      "updates": "Updates",
+      "stats": "Statistik"
     },
     "tiles": {
       "news": "neu",
@@ -201,6 +203,177 @@
         "title": "Letzte Änderung",
         "none": "Noch nichts geändert"
       }
+    }
+  },
+  "adminView": {
+    "label": "Ansicht",
+    "simple": "Einfach",
+    "full": "Alles",
+    "hint": {
+      "simple": "Nur die Ampel und was zu tun ist. Alles andere steht im Menü unter „Mehr“.",
+      "full": "Alle Zahlen und alle Prüfungen. „Einfach“ zeigt nur die Ampel."
+    },
+    "light": "Ampel: {{level}}",
+    "headline": {
+      "ok": "Alles in Ordnung",
+      "unknown": "Noch nicht alles geprüft",
+      "warning": "Etwas braucht einen Blick",
+      "problem": "Etwas funktioniert nicht"
+    },
+    "sentence": {
+      "ok": "Mails kommen und gehen, gerade braucht dich nichts.",
+      "unknown": "Die ersten Prüfungen laufen kurz nach dem Start.",
+      "warning_one": "Eine Sache unten solltest du dir bei Gelegenheit ansehen.",
+      "warning_other": "{{count}} Dinge unten solltest du dir bei Gelegenheit ansehen.",
+      "problem_one": "Eine Sache unten braucht bald deine Hilfe.",
+      "problem_other": "{{count}} Dinge unten brauchen bald deine Hilfe."
+    },
+    "todo": "Was zu tun ist",
+    "quick": {
+      "title": "Schnellzugriff",
+      "people": "Personen",
+      "addPerson": "Person hinzufügen",
+      "domains": "Domains",
+      "backups": "Backups"
+    }
+  },
+  "alerts": {
+    "title": "Alarme",
+    "intro": "Worüber der Server die Admins informiert hat und was danach wieder in Ordnung kam. Er schaut alle fünf Minuten nach.",
+    "loading": "Alarme werden geladen …",
+    "none": "Keine offenen Alarme.",
+    "openLabel": "Offene Alarme",
+    "history_one": "{{count}} Alarm, der wieder in Ordnung ist",
+    "history_other": "{{count}} Alarme, die wieder in Ordnung sind",
+    "since": "Seit {{time}}",
+    "resolvedAt": "Wieder in Ordnung {{time}}",
+    "acknowledgedBy": "{{login}} weiß Bescheid",
+    "acknowledge": "Gesehen",
+    "acknowledgeHint": "Keine täglichen Erinnerungen mehr dazu. Du hörst trotzdem davon, wenn es schlimmer oder wieder gut wird.",
+    "acknowledgedToast": "Notiert. Keine Erinnerungen mehr dazu.",
+    "level": {
+      "info": "Information",
+      "warning": "Bitte ansehen",
+      "problem": "Problem",
+      "resolved": "Wieder in Ordnung"
+    },
+    "mail": {
+      "title": "Alarm-Mails",
+      "label": "Mails an mich zu Alarmen",
+      "all": "Alle",
+      "problems": "Nur Probleme",
+      "none": "Keine",
+      "hint": "Jeder Admin wählt selbst. Eine Mail kommt, wenn etwas gelb oder rot wird, einmal am Tag, solange etwas rot bleibt, und noch einmal, wenn es wieder in Ordnung ist."
+    },
+    "codes": {
+      "certRenewalFailing": "Das Zertifikat lässt sich nicht erneuern (erster Fehlschlag {{since}}).",
+      "backupFailed": "Das letzte Backup ist fehlgeschlagen.",
+      "backupOld": "Das letzte erfolgreiche Backup war {{time}}.",
+      "updateAvailable": "Version {{version}} ist erschienen."
+    },
+    "hints": {
+      "certRenewalFailing": "Im Server-Log steht, warum. Oft zeigt ein Name (noch) nicht auf diesen Server oder Port 80 ist von außen nicht erreichbar.",
+      "backupFailed": "Auf der Backup-Seite steht der Fehler. Prüfe das Ziel und starte eins von Hand.",
+      "backupOld": "Backups laufen normalerweise jede Nacht. Auf der Backup-Seite siehst du, ob sie pausiert sind oder was schiefging.",
+      "updateAvailable": "Auf der Update-Seite steht, was neu ist, und ein Klick aktualisiert."
+    }
+  },
+  "stats": {
+    "intro": "Was auf deinem Server passiert ist, Tag für Tag oder Monat für Monat.",
+    "utc": "Tage zählen in UTC. Die Zahlen beginnen mit Version 0.14.",
+    "range": {
+      "label": "Zeitraum",
+      "days": "30 Tage",
+      "months": "12 Monate"
+    },
+    "total": {
+      "days": "in 30 Tagen",
+      "months": "in 12 Monaten"
+    },
+    "latest": "zuletzt gemessen",
+    "chartSummary": "{{series}}: Balkendiagramm, höchster Wert {{max}} ({{peak}}). Die Tabelle unten hat alle Zahlen.",
+    "chartEmpty": "{{series}}: In diesem Zeitraum wurde nichts gezählt.",
+    "charts": {
+      "received": {
+        "title": "Empfangene Mails",
+        "hint": "Mails von anderen Servern und abgeholten Postfächern, die mindestens eine Person erreicht haben."
+      },
+      "refused": {
+        "title": "Abgewiesene Mails",
+        "hint": "An der Tür abgelehnt: unbekannte Empfänger, Spam, Viren und Regeln wie DMARC."
+      },
+      "submitted": {
+        "title": "Gesendete Mails",
+        "hint": "Nachrichten, die deine Leute verschickt haben, aus Mail-Apps, der Webmail oder den UwUMail-Apps."
+      },
+      "delivered": {
+        "title": "An andere Server übergeben",
+        "hint": "Empfänger auf anderen Servern, die die Mail angenommen haben."
+      },
+      "logins": {
+        "title": "Fehlgeschlagene Anmeldungen",
+        "hint": "Falsche Passwörter und abgelehnte Anmeldungen in allen Apps und im Portal."
+      },
+      "storage": {
+        "title": "Belegter Speicher",
+        "hint": "Alle Postfächer zusammen, gemessen im Lauf jedes Tages."
+      }
+    },
+    "keys": {
+      "mail": {
+        "received": "Empfangen",
+        "junk": "In den Spam-Ordner",
+        "submitted": "Gesendet",
+        "delivered": "Zugestellt",
+        "deferred": "Später erneut versucht",
+        "bounced": "Aufgegeben"
+      },
+      "refused": {
+        "unknownRecipient": "Unbekannter Empfänger",
+        "spam": "Spam",
+        "virus": "Virus",
+        "policy": "Regeln (DMARC, gesperrte Absender, Relaying)",
+        "greylisted": "Um späteren Versuch gebeten"
+      },
+      "loginFailed": {
+        "smtp": "SMTP",
+        "imap": "IMAP",
+        "jmap": "JMAP",
+        "dav": "CalDAV/CardDAV",
+        "managesieve": "ManageSieve",
+        "portal": "Portal",
+        "other": "Andere"
+      },
+      "gauge": {
+        "accounts": "Konten",
+        "storageBytes": "Belegter Speicher"
+      }
+    },
+    "table": {
+      "title": "Alle Zahlen als Tabelle",
+      "caption": "Statistik pro Zeitraum",
+      "period": {
+        "days": "Tag",
+        "months": "Monat"
+      }
+    },
+    "metrics": {
+      "title": "Prometheus-Metriken",
+      "intro": "Für ein Monitoring: die Zahlen des Servers unter /metrics im Prometheus-Format. Aus, bis du sie einschaltest.",
+      "enabled": "Metriken bereitstellen",
+      "enabledHint": "Braucht ein Token, erlaubte Netze oder beides, damit nicht jeder sie lesen kann.",
+      "token": "Token",
+      "tokenHint": "Prometheus schickt es als Bearer-Token. Lass hier eins erzeugen.",
+      "tokenFresh": "Kopier es jetzt: Nach dem Speichern wird es nie wieder angezeigt.",
+      "tokenSet": "Ein Token ist gesetzt. Ein neues ersetzt es.",
+      "tokenNew": "Token erzeugen",
+      "tokenReplace": "Neues Token",
+      "tokenRemove": "Entfernen",
+      "copyToken": "Token kopieren",
+      "networks": "Nur aus diesen Netzen",
+      "networksHint": "Eine Adresse oder ein Netz pro Zeile, etwa 10.0.0.0/8. Leer: von überall, mit dem Token.",
+      "needsWayIn": "Erzeuge erst ein Token oder nenne ein Netz, sonst wären die Metriken für alle offen.",
+      "address": "Adresse für Prometheus"
     }
   },
   "duration": {
@@ -325,7 +498,8 @@
       "googleUseIcs": "Google lässt nur seine eigenen Apps herein. Nimm für Kalender die geheime iCal-Adresse und für Kontakte einen vCard-Export.",
       "subscriptionLimit": "Du hast schon so viele abonnierte Kalender wie möglich.",
       "subscriptionExists": "Diesen Kalender hast du schon abonniert.",
-      "refreshPause": "Gerade erst geholt. Versuch es in einer Minute nochmal."
+      "refreshPause": "Gerade erst geholt. Versuch es in einer Minute nochmal.",
+      "alertResolved": "Dieser Alarm ist schon wieder in Ordnung."
     }
   },
   "people": {

@@ -62,7 +62,8 @@
     "expand": "{{group}}を展開",
     "mailbox": "メールボックス",
     "directory": "アカウントとドメイン",
-    "calendars": "カレンダーと連絡先"
+    "calendars": "カレンダーと連絡先",
+    "more": "その他"
   },
   "userMenu": {
     "open": "アカウントメニューを開く",
@@ -163,7 +164,8 @@
       "overview": "概要",
       "mailFlow": "メールの流れ",
       "backups": "バックアップ",
-      "updates": "アップデート"
+      "updates": "アップデート",
+      "stats": "統計"
     },
     "tiles": {
       "news": "新着",
@@ -195,6 +197,174 @@
         "title": "最近の変更",
         "none": "まだ変更はありません"
       }
+    }
+  },
+  "adminView": {
+    "label": "表示",
+    "simple": "シンプル",
+    "full": "すべて",
+    "hint": {
+      "simple": "信号と、やるべきことだけを表示します。その他はメニューの「その他」にあります。",
+      "full": "すべての数値とチェックを表示します。「シンプル」では信号だけを表示します。"
+    },
+    "light": "信号：{{level}}",
+    "headline": {
+      "ok": "すべて正常です",
+      "unknown": "まだすべては確認できていません",
+      "warning": "確認が必要なことがあります",
+      "problem": "うまく動いていないものがあります"
+    },
+    "sentence": {
+      "ok": "メールは問題なく届いて送られています。今は何もする必要はありません。",
+      "unknown": "最初のチェックは起動してすぐに行われます。",
+      "warning_other": "下の{{count}}件を、時間のあるときに確認してください。",
+      "problem_other": "下の{{count}}件は、早めの対応が必要です。"
+    },
+    "todo": "やること",
+    "quick": {
+      "title": "クイックアクセス",
+      "people": "ユーザー",
+      "addPerson": "ユーザーを追加",
+      "domains": "ドメイン",
+      "backups": "バックアップ"
+    }
+  },
+  "alerts": {
+    "title": "アラート",
+    "intro": "サーバーが管理者に知らせたことと、その後解決したことです。5分ごとに確認しています。",
+    "loading": "アラートを読み込んでいます…",
+    "none": "未解決のアラートはありません。",
+    "openLabel": "未解決のアラート",
+    "history_other": "解決したアラート {{count}}件",
+    "since": "{{time}}から",
+    "resolvedAt": "{{time}}に解決",
+    "acknowledgedBy": "{{login}} が確認済み",
+    "acknowledge": "確認しました",
+    "acknowledgeHint": "このアラートの毎日のリマインダーを止めます。悪化したときと解決したときは引き続き知らせます。",
+    "acknowledgedToast": "了解しました。このアラートのリマインダーは送りません。",
+    "level": {
+      "info": "お知らせ",
+      "warning": "要確認",
+      "problem": "問題",
+      "resolved": "解決済み"
+    },
+    "mail": {
+      "title": "アラートメール",
+      "label": "自分宛てのアラートメール",
+      "all": "すべて",
+      "problems": "問題のみ",
+      "none": "受け取らない",
+      "hint": "管理者ごとに選べます。黄色または赤になったとき、赤が続いている間は1日1回、そして解決したときにもう一度メールが届きます。"
+    },
+    "codes": {
+      "certRenewalFailing": "証明書の更新が失敗し続けています（最初の失敗：{{since}}）。",
+      "backupFailed": "前回のバックアップが失敗しました。",
+      "backupOld": "最後に成功したバックアップは{{time}}です。",
+      "updateAvailable": "バージョン {{version}} が公開されました。"
+    },
+    "hints": {
+      "certRenewalFailing": "理由はサーバーのログにあります。名前がまだこのサーバーを指していないか、外部からポート 80 に届かないことがよくあります。",
+      "backupFailed": "エラーはバックアップのページに表示されます。保存先を確認して、手動で一度実行してください。",
+      "backupOld": "バックアップは通常毎晩行われます。一時停止中か、何が失敗したかはバックアップのページで確認できます。",
+      "updateAvailable": "アップデートのページで新しい内容を確認でき、ワンクリックで更新できます。"
+    }
+  },
+  "stats": {
+    "intro": "サーバーで起きたことを、日ごと・月ごとに表示します。",
+    "utc": "日付は UTC で数えます。数値はバージョン 0.14 から記録されています。",
+    "range": {
+      "label": "期間",
+      "days": "30日間",
+      "months": "12か月"
+    },
+    "total": {
+      "days": "30日間の合計",
+      "months": "12か月の合計"
+    },
+    "latest": "最新の測定値",
+    "chartSummary": "{{series}}：棒グラフ、最大値 {{max}}（{{peak}}）。すべての数値は下の表にあります。",
+    "chartEmpty": "{{series}}：この期間には何も記録されていません。",
+    "charts": {
+      "received": {
+        "title": "受信したメール",
+        "hint": "他のサーバーや取り込み元のメールボックスから届き、少なくとも1人に配信されたメールです。"
+      },
+      "refused": {
+        "title": "拒否したメール",
+        "hint": "入口で拒否したもの：存在しない宛先、スパム、ウイルス、DMARC などのルール。"
+      },
+      "submitted": {
+        "title": "送信したメール",
+        "hint": "ユーザーがメールアプリ、ウェブメール、UwUMail アプリから送ったメッセージです。"
+      },
+      "delivered": {
+        "title": "他のサーバーへの配送",
+        "hint": "他のサーバーが受け取った宛先の数です。"
+      },
+      "logins": {
+        "title": "失敗したログイン",
+        "hint": "すべてのアプリとポータルでの、間違ったパスワードや拒否されたログインです。"
+      },
+      "storage": {
+        "title": "使用中の容量",
+        "hint": "すべてのメールボックスの合計を、毎日測定したものです。"
+      }
+    },
+    "keys": {
+      "mail": {
+        "received": "受信",
+        "junk": "迷惑メールへ",
+        "submitted": "送信",
+        "delivered": "配送済み",
+        "deferred": "後で再試行",
+        "bounced": "配送を断念"
+      },
+      "refused": {
+        "unknownRecipient": "存在しない宛先",
+        "spam": "スパム",
+        "virus": "ウイルス",
+        "policy": "ルール（DMARC、ブロックした送信者、中継）",
+        "greylisted": "後で再送を依頼"
+      },
+      "loginFailed": {
+        "smtp": "SMTP",
+        "imap": "IMAP",
+        "jmap": "JMAP",
+        "dav": "CalDAV/CardDAV",
+        "managesieve": "ManageSieve",
+        "portal": "ポータル",
+        "other": "その他"
+      },
+      "gauge": {
+        "accounts": "アカウント",
+        "storageBytes": "使用中の容量"
+      }
+    },
+    "table": {
+      "title": "すべての数値を表で見る",
+      "caption": "期間ごとの統計",
+      "period": {
+        "days": "日",
+        "months": "月"
+      }
+    },
+    "metrics": {
+      "title": "Prometheus メトリクス",
+      "intro": "監視システム向けに、サーバーの数値を /metrics で Prometheus 形式で提供します。有効にするまではオフです。",
+      "enabled": "メトリクスを提供する",
+      "enabledHint": "誰でも読めないように、トークン、許可するネットワーク、またはその両方が必要です。",
+      "token": "トークン",
+      "tokenHint": "Prometheus はこれを Bearer トークンとして送ります。ここで作成してください。",
+      "tokenFresh": "今すぐコピーしてください。保存すると二度と表示されません。",
+      "tokenSet": "トークンは設定済みです。新しいトークンを作ると置き換わります。",
+      "tokenNew": "トークンを作成",
+      "tokenReplace": "新しいトークン",
+      "tokenRemove": "削除",
+      "copyToken": "トークンをコピー",
+      "networks": "これらのネットワークからのみ",
+      "networksHint": "1行に1つのアドレスまたはネットワーク（例：10.0.0.0/8）。空の場合はどこからでも、トークンがあれば読めます。",
+      "needsWayIn": "先にトークンを作るかネットワークを指定してください。そうしないと誰でもメトリクスを読めてしまいます。",
+      "address": "Prometheus 用のアドレス"
     }
   },
   "duration": {
@@ -316,7 +486,8 @@
       "googleUseIcs": "Google は自社のアプリしか受け付けません。カレンダーは秘密のiCalアドレス、連絡先はvCardの書き出しを使ってください。",
       "subscriptionLimit": "購読できるカレンダーの上限に達しています。",
       "subscriptionExists": "このカレンダーはすでに購読しています。",
-      "refreshPause": "今取得したばかりです。1分後にもう一度お試しください。"
+      "refreshPause": "今取得したばかりです。1分後にもう一度お試しください。",
+      "alertResolved": "このアラートはすでに解決しています。"
     }
   },
   "people": {

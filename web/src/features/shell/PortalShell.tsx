@@ -4,6 +4,7 @@ import {
   CalendarDays,
   ChevronsUpDown,
   Download,
+  Ellipsis,
   Forward,
   Inbox,
   ScrollText,
@@ -30,6 +31,7 @@ import { Menu } from "@/components/ui/Menu";
 import { useT } from "@/i18n";
 import type { Session } from "@/lib/api";
 import { Link, usePath } from "@/lib/router";
+import { adminViewOf, inCalmNav } from "@/features/admin/adminPrefs";
 import { useLogout } from "@/features/session/session";
 import { AppearanceDialog } from "./AppearanceDialog";
 
@@ -172,6 +174,25 @@ export function PortalShell({ session, children }: { session: Session; children:
   const [hops, setHops] = useState(0);
   const [appearance, setAppearance] = useState(false);
   const isAdmin = session.account.role === "admin";
+  const calm = isAdmin && adminViewOf(session.preferences) === "simple";
+  const serverItems: NavItem[] = [
+    {
+      to: "/admin",
+      label: t("nav.overview"),
+      icon: LayoutDashboard,
+      also: ["/admin/stats", "/admin/mail-flow", "/admin/backups", "/admin/updates"],
+    },
+    {
+      to: "/admin/people",
+      label: t("nav.directory"),
+      icon: Users,
+      also: ["/admin/domains", "/admin/reports"],
+    },
+    { to: "/admin/queue", label: t("nav.queue"), icon: Send },
+    { to: "/admin/spam", label: t("nav.spamFilter"), icon: ShieldBan },
+    { to: "/admin/settings", label: t("nav.settings"), icon: Settings },
+    { to: "/admin/logs", label: t("nav.logs"), icon: ScrollText },
+  ];
   useEffect(() => {
     if (!drawer) return;
     const onKey = (event: KeyboardEvent) => event.key === "Escape" && setDrawer(false);
@@ -225,24 +246,20 @@ export function PortalShell({ session, children }: { session: Session; children:
             collapsible
             startsOpen={false}
             onNavigate={() => setDrawer(false)}
-            items={[
-              {
-                to: "/admin",
-                label: t("nav.overview"),
-                icon: LayoutDashboard,
-                also: ["/admin/mail-flow", "/admin/backups", "/admin/updates"],
-              },
-              {
-                to: "/admin/people",
-                label: t("nav.directory"),
-                icon: Users,
-                also: ["/admin/domains", "/admin/reports"],
-              },
-              { to: "/admin/queue", label: t("nav.queue"), icon: Send },
-              { to: "/admin/spam", label: t("nav.spamFilter"), icon: ShieldBan },
-              { to: "/admin/settings", label: t("nav.settings"), icon: Settings },
-              { to: "/admin/logs", label: t("nav.logs"), icon: ScrollText },
-            ]}
+            items={calm ? serverItems.filter((item) => inCalmNav(item.to)) : serverItems}
+          />
+        )}
+        {isAdmin && calm && (
+          // The calm view keeps the rest one click away instead of hiding it.
+          <NavSection
+            name="serverMore"
+            title={t("nav.more")}
+            icon={Ellipsis}
+            path={path}
+            collapsible
+            startsOpen={false}
+            onNavigate={() => setDrawer(false)}
+            items={serverItems.filter((item) => !inCalmNav(item.to))}
           />
         )}
       </div>

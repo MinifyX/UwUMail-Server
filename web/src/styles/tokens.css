@@ -27,6 +27,9 @@
   --uwu-warning: #b86e00;
   --uwu-warning-tint: #fdf0d6;
 
+  /* Bars in the statistics: the brand colour, checked against the surface (L 0.65, 3:1 and more). */
+  --uwu-chart: #ff4d8d;
+
   --uwu-account-pink: #ff4d8d;
   --uwu-account-violet: #8b5cf6;
   --uwu-account-sky: #0ea5e9;
@@ -64,6 +67,9 @@
   --uwu-success-tint: #123a2a;
   --uwu-warning: #f5b94a;
   --uwu-warning-tint: #3a2a0c;
+
+  /* A step darker than the dark theme's pink, so bars do not glare on the dark surface (checked the same way). */
+  --uwu-chart: #e8588a;
 
   --uwu-shadow-float: 0 12px 32px rgb(0 0 0 / 0.45), 0 2px 8px rgb(0 0 0 / 0.3);
   --uwu-focus: 0 0 0 3px rgb(255 127 172 / 0.4);

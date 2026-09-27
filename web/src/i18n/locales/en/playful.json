@@ -32,6 +32,20 @@
       }
     }
   },
+  "adminView": {
+    "headline": {
+      "ok": "Everything purrs (=^･ω･^=)",
+      "unknown": "Still sniffing around",
+      "warning": "Something needs a look (・_・;)",
+      "problem": "Something is stuck (╥﹏╥)"
+    }
+  },
+  "alerts": {
+    "none": "Nothing to report, all quiet (=^･ω･^=)"
+  },
+  "stats": {
+    "intro": "What happened on your server, day by day. I counted everything (=^･ω･^=)"
+  },
   "errors": {
     "loadFailed": {
       "title": "Oops, that didn't work (╥﹏╥)"

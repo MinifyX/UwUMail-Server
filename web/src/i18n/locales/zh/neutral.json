@@ -62,7 +62,8 @@
     "expand": "展开{{group}}",
     "mailbox": "邮箱",
     "directory": "账户与域名",
-    "calendars": "日历和通讯录"
+    "calendars": "日历和通讯录",
+    "more": "更多"
   },
   "userMenu": {
     "open": "打开账户菜单",
@@ -163,7 +164,8 @@
       "overview": "概览",
       "mailFlow": "邮件流",
       "backups": "备份",
-      "updates": "更新"
+      "updates": "更新",
+      "stats": "统计"
     },
     "tiles": {
       "news": "新",
@@ -195,6 +197,174 @@
         "title": "最近更改",
         "none": "尚无更改"
       }
+    }
+  },
+  "adminView": {
+    "label": "视图",
+    "simple": "简洁",
+    "full": "全部",
+    "hint": {
+      "simple": "只显示信号灯和需要处理的事项。其他内容都在菜单的“更多”里。",
+      "full": "显示所有数字和所有检查。“简洁”只显示信号灯。"
+    },
+    "light": "信号灯：{{level}}",
+    "headline": {
+      "ok": "一切正常",
+      "unknown": "尚未全部检查",
+      "warning": "有需要查看的地方",
+      "problem": "有东西不工作了"
+    },
+    "sentence": {
+      "ok": "邮件收发正常，现在没有需要你处理的事。",
+      "unknown": "第一次检查会在启动后不久进行。",
+      "warning_other": "下面有 {{count}} 项，有空时请看一看。",
+      "problem_other": "下面有 {{count}} 项需要你尽快处理。"
+    },
+    "todo": "需要做的事",
+    "quick": {
+      "title": "快捷入口",
+      "people": "用户",
+      "addPerson": "添加用户",
+      "domains": "域名",
+      "backups": "备份"
+    }
+  },
+  "alerts": {
+    "title": "警报",
+    "intro": "服务器通知过管理员的事项，以及之后恢复正常的事项。服务器每五分钟检查一次。",
+    "loading": "正在加载警报…",
+    "none": "没有未解决的警报。",
+    "openLabel": "未解决的警报",
+    "history_other": "{{count}} 条已恢复正常的警报",
+    "since": "自 {{time}}",
+    "resolvedAt": "{{time}}恢复正常",
+    "acknowledgedBy": "{{login}} 已知悉",
+    "acknowledge": "知道了",
+    "acknowledgeHint": "不再为此每天提醒。情况变糟或恢复正常时仍会通知你。",
+    "acknowledgedToast": "已记下，不再为此提醒。",
+    "level": {
+      "info": "信息",
+      "warning": "需要查看",
+      "problem": "问题",
+      "resolved": "已恢复正常"
+    },
+    "mail": {
+      "title": "警报邮件",
+      "label": "发给我的警报邮件",
+      "all": "全部",
+      "problems": "仅问题",
+      "none": "不接收",
+      "hint": "每位管理员自行选择。当某项变黄或变红时会发邮件，红色持续期间每天一封，恢复正常时再发一封。"
+    },
+    "codes": {
+      "certRenewalFailing": "证书续期一直失败（第一次失败：{{since}}）。",
+      "backupFailed": "上一次备份失败了。",
+      "backupOld": "最近一次成功的备份是在{{time}}。",
+      "updateAvailable": "版本 {{version}} 已发布。"
+    },
+    "hints": {
+      "certRenewalFailing": "服务器日志里写着原因。常见情况是某个域名（还）没有指向这台服务器，或者外部无法访问 80 端口。",
+      "backupFailed": "备份页面上显示了错误。请检查备份目标，并手动运行一次。",
+      "backupOld": "备份通常每晚运行。在备份页面上可以看到是否已暂停或出了什么问题。",
+      "updateAvailable": "更新页面会显示新内容，点一下即可更新。"
+    }
+  },
+  "stats": {
+    "intro": "你的服务器上发生了什么，按天或按月显示。",
+    "utc": "日期按 UTC 计算。数字从 0.14 版本开始记录。",
+    "range": {
+      "label": "时间段",
+      "days": "30 天",
+      "months": "12 个月"
+    },
+    "total": {
+      "days": "30 天内",
+      "months": "12 个月内"
+    },
+    "latest": "最新读数",
+    "chartSummary": "{{series}}：柱状图，最高值 {{max}}（{{peak}}）。下方表格列出了所有数字。",
+    "chartEmpty": "{{series}}：这段时间内没有记录。",
+    "charts": {
+      "received": {
+        "title": "收到的邮件",
+        "hint": "来自其他服务器和收取邮箱、至少送达一个人的邮件。"
+      },
+      "refused": {
+        "title": "拒收的邮件",
+        "hint": "在门口被拒绝的：未知收件人、垃圾邮件、病毒以及 DMARC 等规则。"
+      },
+      "submitted": {
+        "title": "发出的邮件",
+        "hint": "你的用户通过邮件应用、网页邮箱或 UwUMail 应用发出的邮件。"
+      },
+      "delivered": {
+        "title": "交给其他服务器",
+        "hint": "其他服务器上接收了邮件的收件人。"
+      },
+      "logins": {
+        "title": "失败的登录",
+        "hint": "所有应用和门户中输错的密码和被拒绝的登录。"
+      },
+      "storage": {
+        "title": "已用空间",
+        "hint": "所有邮箱加在一起，每天测量。"
+      }
+    },
+    "keys": {
+      "mail": {
+        "received": "收到",
+        "junk": "放入垃圾邮件",
+        "submitted": "发出",
+        "delivered": "已投递",
+        "deferred": "稍后重试",
+        "bounced": "已放弃"
+      },
+      "refused": {
+        "unknownRecipient": "未知收件人",
+        "spam": "垃圾邮件",
+        "virus": "病毒",
+        "policy": "规则（DMARC、被屏蔽的发件人、中继）",
+        "greylisted": "请求稍后重发"
+      },
+      "loginFailed": {
+        "smtp": "SMTP",
+        "imap": "IMAP",
+        "jmap": "JMAP",
+        "dav": "CalDAV/CardDAV",
+        "managesieve": "ManageSieve",
+        "portal": "门户",
+        "other": "其他"
+      },
+      "gauge": {
+        "accounts": "账户",
+        "storageBytes": "已用空间"
+      }
+    },
+    "table": {
+      "title": "以表格查看所有数字",
+      "caption": "按时间段的统计",
+      "period": {
+        "days": "日期",
+        "months": "月份"
+      }
+    },
+    "metrics": {
+      "title": "Prometheus 指标",
+      "intro": "供监控系统使用：在 /metrics 下以 Prometheus 格式提供服务器的数字。开启之前是关闭的。",
+      "enabled": "提供指标",
+      "enabledHint": "需要令牌、允许的网络或两者兼有，这样不是所有人都能读取。",
+      "token": "令牌",
+      "tokenHint": "Prometheus 会把它作为 Bearer 令牌发送。在这里生成一个。",
+      "tokenFresh": "现在就复制：保存之后它不会再显示。",
+      "tokenSet": "已设置令牌。生成新的会替换它。",
+      "tokenNew": "生成令牌",
+      "tokenReplace": "新令牌",
+      "tokenRemove": "移除",
+      "copyToken": "复制令牌",
+      "networks": "仅限这些网络",
+      "networksHint": "每行一个地址或网络，例如 10.0.0.0/8。留空：任何地方都可以，但需要令牌。",
+      "needsWayIn": "请先生成令牌或填写网络，否则所有人都能读取指标。",
+      "address": "给 Prometheus 的地址"
     }
   },
   "duration": {
@@ -316,7 +486,8 @@
       "googleUseIcs": "Google 只允许它自己的应用访问。日历请使用私密 iCal 地址，通讯录请使用 vCard 导出。",
       "subscriptionLimit": "你订阅的日历数量已达上限。",
       "subscriptionExists": "你已经订阅了这个日历。",
-      "refreshPause": "刚刚获取过。请一分钟后再试。"
+      "refreshPause": "刚刚获取过。请一分钟后再试。",
+      "alertResolved": "这条警报已经恢复正常了。"
     }
   },
   "people": {
