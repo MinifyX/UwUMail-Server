@@ -141,7 +141,7 @@ pub(crate) const ACTIVE_PERSON: &str = "kind <> 'service' AND deleted_at IS NULL
 /// Every right anyone has on someone else's mailbox: the folders shared one by one, and every
 /// folder of a shared mailbox for its members, those created later included. Where a member also
 /// got a single folder shared the ordinary way, the membership decides.
-const GRANTS: &str =
+pub(crate) const GRANTS: &str =
     "(SELECT m.id AS mailbox_id, s.account_id AS owner_id, s.member_id AS grantee_id, s.rights AS rights
        FROM shared_mailbox_members s
        JOIN accounts sm ON sm.id = s.account_id AND sm.shared_mailbox = 1
