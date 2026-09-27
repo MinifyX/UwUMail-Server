@@ -3,6 +3,7 @@
 use mail_parser::{Address, HeaderValue, Message, MessageParser, MimeHeaders};
 
 use crate::address::EmailAddress;
+use crate::mime_limits::{self, MimeFault};
 
 const PREVIEW_CHARS: usize = 256;
 const MAX_INDEXED_BODY_BYTES: usize = 512 * 1024;
@@ -26,9 +27,12 @@ pub struct EmailMeta {
     pub search_body: String,
 }
 
-pub fn parse(raw: &[u8]) -> EmailMeta {
+/// The metadata of a message, or why [`mime_limits`](crate::mime_limits) refuses its structure.
+/// One that cannot be read at all has empty metadata.
+pub fn read(raw: &[u8]) -> Result<EmailMeta, MimeFault> {
+    mime_limits::check(raw)?;
     let Some(message) = MessageParser::default().parse(raw) else {
-        return EmailMeta::default();
+        return Ok(EmailMeta::default());
     };
 
     let subject = message.subject().unwrap_or_default().trim().to_owned();
@@ -46,7 +50,7 @@ pub fn parse(raw: &[u8]) -> EmailMeta {
         .collect::<Vec<_>>()
         .join(" ");
 
-    EmailMeta {
+    Ok(EmailMeta {
         message_id: message.message_id().map(clean_id).filter(|id| !id.is_empty()),
         in_reply_to: id_list(message.in_reply_to()),
         references: id_list(message.references()),
@@ -62,7 +66,7 @@ pub fn parse(raw: &[u8]) -> EmailMeta {
         to,
         cc,
         bcc,
-    }
+    })
 }
 
 fn addresses(address: Option<&Address<'_>>) -> Vec<EmailAddress> {
@@ -145,7 +149,7 @@ mod tests {
             "\r\n",
             "Hallo   Mini,\r\n\r\nes gibt  Thunfisch.\r\n",
         );
-        let meta = parse(raw.as_bytes());
+        let meta = read(raw.as_bytes()).unwrap();
         assert_eq!(meta.message_id.as_deref(), Some("abc@example.org"));
         assert_eq!(meta.in_reply_to, vec!["parent@example.org"]);
         assert_eq!(meta.references, vec!["root@example.org", "parent@example.org"]);
@@ -158,9 +162,29 @@ mod tests {
         assert!(!meta.has_attachment);
     }
 
+    /// A message wrapped in `message/rfc822` a hundred thousand times over, about 5 MB. Parsing it
+    /// used to succeed and then overflow the stack while the result was dropped, which aborts the
+    /// whole server (security-audit-0.16.0 SMTP-1). It runs on a thread with the 2 MiB stack every
+    /// Tokio thread has.
+    #[test]
+    fn deeply_nested_message_does_not_overflow_the_stack() {
+        let mut raw = Vec::new();
+        for _ in 0..100_000 {
+            raw.extend_from_slice(b"Subject: layer\r\nContent-Type: message/rfc822\r\n\r\n");
+        }
+        raw.extend_from_slice(b"Subject: bottom\r\n\r\nhi\r\n");
+        let meta = std::thread::Builder::new()
+            .stack_size(2 << 20)
+            .spawn(move || read(&raw))
+            .unwrap()
+            .join()
+            .expect("parsing must not panic");
+        assert_eq!(meta.unwrap_err(), MimeFault::TooDeep);
+    }
+
     #[test]
     fn survives_garbage() {
-        let meta = parse(b"\xff\xfe not a message");
+        let meta = read(b"\xff\xfe not a message").unwrap();
         assert!(meta.subject.is_empty());
     }
 }

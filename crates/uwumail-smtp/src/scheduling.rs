@@ -19,7 +19,7 @@ use mail_builder::MessageBuilder;
 use mail_builder::headers::content_type::ContentType;
 use mail_builder::headers::date::Date;
 use mail_builder::mime::{BodyPart, MimePart};
-use mail_parser::{MessageParser, MimeHeaders, PartType};
+use mail_parser::{MimeHeaders, PartType};
 use uwumail_store::itip::{self, Component, Role};
 use uwumail_store::{Account, CalendarEventWrite, DavKind, NewDavCollection, StoreError};
 
@@ -258,7 +258,7 @@ fn find_itip(raw: &[u8]) -> Option<String> {
     if !mentions(b"text/calendar") && !mentions(b"application/ics") {
         return None;
     }
-    let message = MessageParser::new().parse(raw)?;
+    let message = uwumail_store::mime_limits::parse_message(raw)?;
     message.parts.iter().find_map(|part| {
         let content_type = part.content_type()?;
         let full = match content_type.subtype() {

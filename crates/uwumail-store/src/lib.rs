@@ -38,6 +38,7 @@ pub mod itip;
 mod mail;
 mod masked;
 mod migration_jobs;
+pub mod mime_limits;
 mod mutate;
 mod oauth;
 mod objects;

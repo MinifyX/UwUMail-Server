@@ -6,7 +6,7 @@ use serde::Serialize;
 use crate::address::EmailAddress;
 use crate::blobs::BlobHash;
 use crate::db::{next_modseq, record_change};
-use crate::parse::{EmailMeta, parse};
+use crate::parse::{self, EmailMeta};
 use crate::{Result, Store, StoreError, now};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
@@ -220,12 +220,16 @@ impl Store {
             return Err(StoreError::QuotaExceeded);
         }
 
+        // A message nested too deep or made of too many parts is refused on every way in: SMTP,
+        // IMAP APPEND, JMAP, fetching, moving and restoring all store through here
+        // (security-audit-0.16.0 SMTP-1, SMTP-4).
         let meta = tokio::task::spawn_blocking({
             let raw = raw.clone();
-            move || parse(&raw)
+            move || parse::read(&raw)
         })
         .await
-        .map_err(|err| StoreError::Internal(err.to_string()))?;
+        .map_err(|err| StoreError::Internal(err.to_string()))?
+        .map_err(|fault| StoreError::Rule { code: "invalidEmail", message: fault.to_string() })?;
         let blob = self.put_blob(&raw).await?;
         drop(raw);
 
@@ -486,6 +490,24 @@ mod tests {
         assert_eq!(listed.len(), 3);
         assert_eq!(store.blob(&first.blob).await.unwrap(), message("root@x", "", "Katzenfutter", "Thunfisch bitte"));
         assert_eq!(store.account_by_id(id).await.unwrap().unwrap().used_bytes, first.size + reply.size + other.size);
+    }
+
+    /// Every way a message is stored ends here, so this is where a message too deeply nested to
+    /// be parsed safely is refused (security-audit-0.16.0 SMTP-1).
+    #[tokio::test]
+    async fn ingest_refuses_messages_nested_too_deep() {
+        let (store, _dir) = store().await;
+        let id = account(&store).await;
+        let mut raw = Vec::new();
+        for _ in 0..100_000 {
+            raw.extend_from_slice(b"Subject: layer\r\nContent-Type: message/rfc822\r\n\r\n");
+        }
+        raw.extend_from_slice(b"Subject: bottom\r\n\r\nhi\r\n");
+        let err = store.ingest(inbox(id, raw)).await.unwrap_err();
+        assert!(matches!(err, StoreError::Rule { code: "invalidEmail", .. }), "{err:?}");
+        let inbox_box =
+            store.mailboxes(id).await.unwrap().into_iter().find(|m| m.role == Some(MailboxRole::Inbox)).unwrap();
+        assert_eq!(inbox_box.total_emails, 0);
     }
 
     #[tokio::test]

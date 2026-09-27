@@ -712,7 +712,7 @@ pub async fn parse(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
             not_found.push(blob_id);
             continue;
         };
-        if mail_parser::MessageParser::default().parse(&raw).is_none() {
+        if uwumail_store::mime_limits::parse_message(&raw).is_none() {
             not_parsable.push(blob_id);
             continue;
         }

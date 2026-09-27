@@ -15,6 +15,7 @@ use mail_builder::headers::url::URL;
 use mail_builder::mime::{BodyPart, MimePart};
 use mail_parser::{Address, HeaderValue, Message, MessageParser, MimeHeaders, PartType};
 use serde_json::{Map, Value, json};
+use uwumail_store::mime_limits::parse_message;
 use uwumail_store::{BlobHash, EmailAddress, EmailRecord};
 
 use crate::{dates, ids};
@@ -229,7 +230,7 @@ fn part_size(part: &mail_parser::MessagePart<'_>) -> usize {
 
 /// Decoded content of a part, for downloads.
 pub fn part_content(raw: &[u8], index: usize) -> Option<(Vec<u8>, String)> {
-    let message = MessageParser::default().parse(raw)?;
+    let message = parse_message(raw)?;
     let part = message.parts.get(index)?;
     let content_type = part_type(part);
     let bytes = match &part.body {
@@ -352,7 +353,7 @@ pub fn to_json(
     body_properties: &[String],
     options: BodyValueOptions,
 ) -> Value {
-    let parsed = raw.and_then(|raw| MessageParser::default().parse(raw));
+    let parsed = raw.and_then(parse_message);
     let headers =
         parsed.as_ref().and_then(|m| m.parts.first().map(|root| raw_headers(&m.raw_message, root))).unwrap_or_default();
     let mut object = Map::new();

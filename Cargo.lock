@@ -4643,6 +4643,7 @@ dependencies = [
  "hex",
  "idna",
  "mail-parser",
+ "memchr",
  "regex",
  "rusqlite",
  "serde",
