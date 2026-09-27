@@ -658,7 +658,7 @@
       "convertToService": "Omzetten naar dienst",
       "convertToServiceHint": "Voor een mailbox die bij een programma hoort.",
       "convertToServiceTitle": "{{login}} omzetten naar een dienst?",
-      "convertToServiceBody": "Daarna is er geen portaallogin meer. Inloggen met twee factoren, passkeys en open sessies worden verwijderd; het huidige wachtwoord blijft bestaan als app-wachtwoord dat nooit verloopt. De mail blijft waar hij is.",
+      "convertToServiceBody": "Daarna is er geen portaallogin meer. Inloggen met twee factoren, passkeys en open sessies worden verwijderd; het huidige wachtwoord blijft bestaan als app-wachtwoord dat nooit verloopt. De mail blijft waar hij is. Doorsturen, opgehaalde mailboxen, verhuizingen van andere aanbieders, agenda-abonnementen en de actieve mailregel stoppen, en gemaskeerde adressen worden uitgeschakeld.",
       "convertToPerson": "Omzetten naar persoon",
       "convertToPersonHint": "Voor een mailbox die toch bij iemand hoort.",
       "convertToPersonTitle": "{{login}} omzetten naar een persoon?",
@@ -783,7 +783,7 @@
     "convert": "Omzetten in gedeelde mailbox",
     "convertHint": "Meerdere mensen gebruiken hem vanuit hun eigen account. De mail blijft.",
     "convertTitle": "{{login}} omzetten in een gedeelde mailbox?",
-    "convertBodyPerson": "Mail, mappen en adressen blijven. Niemand logt er nog mee in op het portaal of de webmail: inloggen met twee factoren, passkeys en open sessies worden verwijderd, en het huidige wachtwoord blijft bestaan als app-wachtwoord dat nooit verloopt, zodat mailprogramma's blijven werken. Mappen die anderen ermee deelden en gedeelde mailboxen die hij gebruikte, vervallen.",
+    "convertBodyPerson": "Mail, mappen en adressen blijven. Niemand logt er nog mee in op het portaal of de webmail: inloggen met twee factoren, passkeys en open sessies worden verwijderd, en het huidige wachtwoord blijft bestaan als app-wachtwoord dat nooit verloopt, zodat mailprogramma's blijven werken. Mappen die anderen ermee deelden en gedeelde mailboxen die hij gebruikte, vervallen. Doorsturen, opgehaalde mailboxen, verhuizingen van andere aanbieders, agenda-abonnementen en de actieve mailregel stoppen, en gemaskeerde adressen worden uitgeschakeld.",
     "convertBodyService": "Mail, mappen, adressen en app-wachtwoorden blijven. De leden zien alle mappen vanuit hun eigen account.",
     "end": "Terug naar een dienst",
     "endHint": "De leden zien hem niet meer. Mail, adressen en app-wachtwoorden blijven.",
@@ -1768,7 +1768,7 @@
       "scopeSmtp": "Mail verzenden (SMTP)",
       "scopeSmtpHint": "Voor apps, printers of scripts die alleen verzenden.",
       "scopeDav": "Agenda's en contacten",
-      "scopeDavHint": "Voor apps die CalDAV en CardDAV gebruiken, zoals Agenda en Contacten op een iPhone.",
+      "scopeDavHint": "Voor apps die CalDAV en CardDAV gebruiken, zoals Agenda en Contacten op een iPhone, en voor agenda's en contacten in JMAP-apps.",
       "expiry": "Geldig",
       "never": "Verloopt niet",
       "days_one": "{{count}} dag",
@@ -1886,7 +1886,7 @@
     "scopes": {
       "mail": {
         "title": "Je mail lezen en ordenen",
-        "hint": "Mail, mappen en filterregels, via IMAP, JMAP en ManageSieve."
+        "hint": "Mail, mappen en filterregels, via IMAP, JMAP en ManageSieve. Via JMAP hoort verzenden daar ook bij."
       },
       "smtp": {
         "title": "Mail versturen namens jou",
@@ -1894,7 +1894,7 @@
       },
       "dav": {
         "title": "Je agenda's en contacten gebruiken",
-        "hint": "Lezen en wijzigen, via CalDAV en CardDAV."
+        "hint": "Lezen en wijzigen, via CalDAV, CardDAV en JMAP."
       },
       "openid": {
         "title": "Weten dat jij het bent",

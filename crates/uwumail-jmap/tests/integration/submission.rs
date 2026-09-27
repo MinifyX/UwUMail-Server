@@ -218,3 +218,42 @@ async fn held_mail_survives_a_restart() {
 fn uwumail_store_now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64
 }
+
+/// Held mail belongs to the login that held it: revoking that app password stops it
+/// (security audit 0.16.0 PROTOCOLS-10).
+#[tokio::test(flavor = "multi_thread")]
+async fn held_mail_ends_with_the_app_password_that_held_it() {
+    let server = server().await;
+    let (email, identity) = draft(&server, "Spam from a stolen password").await;
+    let mini = server.id(MINI).await;
+    let app = server
+        .store
+        .create_app_password(
+            mini,
+            uwumail_store::NewAppPassword {
+                name: "phone".into(),
+                scopes: vec![uwumail_store::AppScope::Mail],
+                expires_at: None,
+            },
+        )
+        .await
+        .unwrap();
+    let account = server.account_id(MINI).await;
+    let later = uwumail_jmap::dates::format(uwumail_store_now() + 3600);
+    let using = ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:mail", "urn:ietf:params:jmap:submission"];
+    let create = json!({ "identityId": identity, "emailId": email, "sendAt": later });
+    let (_, response) = server
+        .api_as(
+            &format!("Bearer {}", app.secret),
+            &using,
+            json!([["EmailSubmission/set", { "accountId": account, "create": { "s": create } }, "0"]]),
+        )
+        .await;
+    let created = &response["methodResponses"][0][1]["created"]["s"];
+    assert_eq!(created["undoStatus"], "pending", "{response}");
+    let id = created["id"].as_str().unwrap().to_owned();
+
+    server.store.revoke_app_password(mini, app.app_password.id).await.unwrap();
+    assert_eq!(submission(&server, &id).await["undoStatus"], "canceled");
+    assert_eq!(server.jmap.release_due_submissions().await, 0);
+}

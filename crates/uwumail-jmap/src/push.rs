@@ -13,7 +13,7 @@ use futures_util::stream::{self, Stream};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use tokio::sync::broadcast;
-use uwumail_store::{StateChange, Store};
+use uwumail_store::{LiveLogin, StateChange, Store};
 
 use crate::auth::ClientInfo;
 use crate::{Jmap, ids};
@@ -172,6 +172,9 @@ pub(crate) async fn type_states(
 }
 
 struct Listener {
+    jmap: Jmap,
+    /// The login the stream was opened with: it ends with it.
+    login: LiveLogin,
     watcher: Watcher,
     close_after_state: bool,
     ping: Option<Duration>,
@@ -187,6 +190,7 @@ async fn next_event(mut listener: Listener) -> Option<(Result<Event, Infallible>
             Some(interval) => match tokio::time::timeout(interval, listener.watcher.wait()).await {
                 Ok(received) => received,
                 Err(_) => {
+                    listener.jmap.inner.auth.still_valid(&listener.login).await?;
                     let event =
                         Event::default().event("ping").data(json!({ "interval": interval.as_secs() }).to_string());
                     return Some((Ok(event), listener));
@@ -198,6 +202,8 @@ async fn next_event(mut listener: Listener) -> Option<(Result<Event, Infallible>
         let Some((account_id, changed)) = listener.watcher.changed_by(&change).await else {
             continue;
         };
+        // A login that ended hears nothing more: the stream closes, and opening it again fails.
+        listener.jmap.inner.auth.still_valid(&listener.login).await?;
         let data = json!({
             "@type": "StateChange",
             "changed": { ids::account(account_id): Value::Object(changed) }
@@ -218,17 +224,24 @@ pub async fn handle(
     headers: HeaderMap,
 ) -> Response {
     let client = client.map(|Extension(c)| c).unwrap_or_default();
-    let account = match jmap.inner.auth.account_for(&headers, client, false).await {
-        Ok(account) => account,
+    let login = match jmap.inner.auth.login_for(&headers, client, false).await {
+        Ok(login) => login,
         Err(err) => return err.into_response(),
     };
+    let account = &login.account;
     let types: Vec<String> = match query.types.as_deref() {
         None | Some("*") | Some("") => all_types(),
         Some(list) => list.split(',').map(|t| t.trim().to_owned()).collect(),
     };
     let ping = query.ping.filter(|p| *p > 0).map(|p| Duration::from_secs(p.clamp(30, 3600)));
     let watcher = Watcher::new(jmap.inner.store.clone(), account.id, types).await;
-    let listener =
-        Listener { watcher, close_after_state: query.closeafter.as_deref() == Some("state"), ping, done: false };
+    let listener = Listener {
+        jmap: jmap.clone(),
+        login: login.live(),
+        watcher,
+        close_after_state: query.closeafter.as_deref() == Some("state"),
+        ping,
+        done: false,
+    };
     Sse::new(events(listener)).keep_alive(KeepAlive::new().interval(Duration::from_secs(300))).into_response()
 }

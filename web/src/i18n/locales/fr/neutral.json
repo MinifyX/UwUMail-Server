@@ -671,7 +671,7 @@
       "convertToService": "Transformer en service",
       "convertToServiceHint": "Pour une boîte mail qui appartient à un programme.",
       "convertToServiceTitle": "Transformer {{login}} en service ?",
-      "convertToServiceBody": "Il n'y aura plus de connexion au portail ensuite. La connexion à deux facteurs, les clés d'accès et les sessions ouvertes sont supprimées ; le mot de passe actuel subsiste comme mot de passe d'application qui n'expire jamais. Le courrier reste où il est.",
+      "convertToServiceBody": "Il n'y aura plus de connexion au portail ensuite. La connexion à deux facteurs, les clés d'accès et les sessions ouvertes sont supprimées ; le mot de passe actuel subsiste comme mot de passe d'application qui n'expire jamais. Le courrier reste où il est. Les transferts, les boîtes relevées, les déménagements depuis d'autres fournisseurs, les abonnements d'agenda et la règle de courrier active s'arrêtent, et les adresses masquées sont désactivées.",
       "convertToPerson": "Transformer en personne",
       "convertToPersonHint": "Pour une boîte mail qui appartient finalement à quelqu'un.",
       "convertToPersonTitle": "Transformer {{login}} en personne ?",
@@ -799,7 +799,7 @@
     "convert": "Transformer en boîte partagée",
     "convertHint": "Plusieurs personnes l'utilisent depuis leur propre compte. Le courrier reste.",
     "convertTitle": "Transformer {{login}} en boîte partagée ?",
-    "convertBodyPerson": "Le courrier, les dossiers et les adresses restent. Plus personne ne se connecte avec elle au portail ou au webmail : la connexion à deux facteurs, les clés d'accès et les sessions ouvertes sont supprimées, et le mot de passe actuel subsiste comme mot de passe d'application qui n'expire jamais, pour que les logiciels de messagerie continuent de fonctionner. Les dossiers que d'autres ont partagés avec elle et les boîtes partagées qu'elle utilisait disparaissent.",
+    "convertBodyPerson": "Le courrier, les dossiers et les adresses restent. Plus personne ne se connecte avec elle au portail ou au webmail : la connexion à deux facteurs, les clés d'accès et les sessions ouvertes sont supprimées, et le mot de passe actuel subsiste comme mot de passe d'application qui n'expire jamais, pour que les logiciels de messagerie continuent de fonctionner. Les dossiers que d'autres ont partagés avec elle et les boîtes partagées qu'elle utilisait disparaissent. Les transferts, les boîtes relevées, les déménagements depuis d'autres fournisseurs, les abonnements d'agenda et la règle de courrier active s'arrêtent, et les adresses masquées sont désactivées.",
     "convertBodyService": "Le courrier, les dossiers, les adresses et les mots de passe d'application restent. Ses membres voient tous ses dossiers depuis leur propre compte.",
     "end": "Refaire un simple service",
     "endHint": "Ses membres ne la voient plus. Le courrier, les adresses et les mots de passe d'application restent.",
@@ -1811,7 +1811,7 @@
       "scopeSmtp": "Envoyer du courrier (SMTP)",
       "scopeSmtpHint": "Pour les applis, imprimantes ou scripts qui ne font qu'envoyer.",
       "scopeDav": "Calendriers et contacts",
-      "scopeDavHint": "Pour les applis en CalDAV et CardDAV, comme Calendrier et Contacts sur un iPhone.",
+      "scopeDavHint": "Pour les applis en CalDAV et CardDAV, comme Calendrier et Contacts sur un iPhone, et pour les agendas et contacts des applis JMAP.",
       "expiry": "Validité",
       "never": "Sans expiration",
       "days_one": "{{count}} jour",
@@ -1934,7 +1934,7 @@
     "scopes": {
       "mail": {
         "title": "Lire et ranger votre courrier",
-        "hint": "Messages, dossiers et règles de filtrage, via IMAP, JMAP et ManageSieve."
+        "hint": "Messages, dossiers et règles de filtrage, via IMAP, JMAP et ManageSieve. Via JMAP, cela inclut l'envoi."
       },
       "smtp": {
         "title": "Envoyer des e-mails en votre nom",
@@ -1942,7 +1942,7 @@
       },
       "dav": {
         "title": "Utiliser vos agendas et contacts",
-        "hint": "Les lire et les modifier, via CalDAV et CardDAV."
+        "hint": "Les lire et les modifier, via CalDAV, CardDAV et JMAP."
       },
       "openid": {
         "title": "Savoir que c'est vous",

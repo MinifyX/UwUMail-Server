@@ -126,9 +126,9 @@ forgets that.
 
 | Scope | What it opens |
 | --- | --- |
-| `mail` | IMAP, JMAP and ManageSieve (mail and mail rules) |
+| `mail` | IMAP, JMAP and ManageSieve (mail and mail rules); over JMAP this includes sending |
 | `smtp` | Sending through submission (ports 587 and 465) |
-| `dav` | Calendars and contacts (CalDAV, CardDAV) |
+| `dav` | Calendars and contacts (CalDAV, CardDAV, and over JMAP) |
 | `openid` | An ID token, and `/oauth/userinfo` |
 | `email` | The address in the ID token and userinfo |
 | `profile` | The name in the ID token and userinfo |

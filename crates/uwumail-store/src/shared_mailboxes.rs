@@ -393,6 +393,89 @@ mod tests {
             .id
     }
 
+    /// A person who leaves and whose mailbox becomes a shared one used to keep what they set up for
+    /// themselves: their forwarding went on sending the mailbox's mail to their private address
+    /// (security audit 0.16.0 STORE-3).
+    #[tokio::test]
+    async fn what_a_person_set_up_for_their_own_mail_stops_when_it_becomes_a_shared_mailbox() {
+        let (store, _dir) = store().await;
+        store.create_domain("example.org").await.unwrap();
+        person(&store, "mini@example.org").await;
+        let leaver = person(&store, "leaver@example.org").await;
+        let (script, _) = store.put_sieve_script(leaver, "rules", b"keep;").await.unwrap();
+        store.activate_sieve_script(leaver, Some(script.id)).await.unwrap();
+        store
+            .write(move |tx| {
+                tx.execute(
+                    "INSERT INTO forward_targets (account_id, address, created_at, confirmed_at)
+                     VALUES (?1, 'private@example.net', 0, 0)",
+                    [leaver],
+                )?;
+                tx.execute("UPDATE accounts SET forward_keep_copy = 0 WHERE id = ?1", [leaver])?;
+                tx.execute(
+                    "INSERT INTO fetch_accounts (account_id, address, host, username, password, created_at)
+                     VALUES (?1, 'private@example.net', 'imap.example.net', 'private', x'00', 0)",
+                    [leaver],
+                )?;
+                tx.execute(
+                    "INSERT INTO migration_jobs (account_id, address, host, login, password_sealed, created_at)
+                     VALUES (?1, 'old@example.net', 'imap.example.net', 'old', x'00', 0)",
+                    [leaver],
+                )?;
+                tx.execute(
+                    "INSERT INTO dav_collections (id, account_id, kind, slug, created_at)
+                     VALUES (4242, ?1, 'calendar', 'feed', 0)",
+                    [leaver],
+                )?;
+                tx.execute(
+                    "INSERT INTO calendar_subscriptions (account_id, collection_id, url, url_digest, url_shown, created_at)
+                     VALUES (?1, 4242, x'00', 'd', 'calendar.example.net', 0)",
+                    [leaver],
+                )?;
+                let domain: i64 = tx.query_row("SELECT id FROM domains WHERE name = 'example.org'", [], |r| r.get(0))?;
+                tx.execute(
+                    "INSERT INTO masked_addresses (account_id, local_part, domain_id, state, created_at)
+                     VALUES (?1, 'shop.x7', ?2, 'enabled', 0), (?1, 'news.k2', ?2, 'deleted', 0)",
+                    params![leaver, domain],
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+
+        store.make_shared_mailbox("leaver@example.org", vec![("mini@example.org".into(), true)]).await.unwrap();
+
+        let left = store
+            .read(move |conn| {
+                let count = |sql: &str| conn.query_row(sql, [leaver], |row| row.get::<_, i64>(0));
+                Ok((
+                    count("SELECT count(*) FROM forward_targets WHERE account_id = ?1")?,
+                    count("SELECT forward_keep_copy FROM accounts WHERE id = ?1")?,
+                    count("SELECT count(*) FROM fetch_accounts WHERE account_id = ?1")?,
+                    count("SELECT count(*) FROM migration_jobs WHERE account_id = ?1")?,
+                    count("SELECT count(*) FROM calendar_subscriptions WHERE account_id = ?1 AND enabled")?,
+                    count("SELECT count(*) FROM calendar_subscriptions WHERE account_id = ?1")?,
+                    count("SELECT count(*) FROM sieve_scripts WHERE account_id = ?1")?,
+                ))
+            })
+            .await
+            .unwrap();
+        // Forwards, keep a copy, fetched mailboxes, moves, subscriptions on, subscriptions, scripts.
+        assert_eq!(left, (0, 1, 0, 0, 0, 1, 1));
+        assert!(store.active_sieve_script(leaver).await.unwrap().is_none(), "the script stays, switched off");
+        let states: String = store
+            .read(move |conn| {
+                Ok(conn.query_row(
+                    "SELECT group_concat(state, ' ') FROM (SELECT state FROM masked_addresses WHERE account_id = ?1 ORDER BY local_part)",
+                    [leaver],
+                    |row| row.get(0),
+                )?)
+            })
+            .await
+            .unwrap();
+        assert_eq!(states, "deleted disabled", "masked addresses stay the mailbox's, switched off");
+    }
+
     #[tokio::test]
     async fn members_reach_every_folder_of_a_shared_mailbox() {
         let (store, _dir) = store().await;

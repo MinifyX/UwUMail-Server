@@ -93,6 +93,21 @@ delivery, the queue). If it cannot go then — the account was switched off
 meanwhile, for example — `deliveryStatus` has an entry per recipient with
 `delivered: "no"` and the reason in `smtpReply`.
 
+Waiting mail belongs to the login that held it back, so that someone who had
+an account in their hands for a moment cannot leave a month of mail behind.
+It is not sent, but turns `canceled` (with the reason kept as its release
+error), when:
+
+- the account is disabled or moved to the trash — even if it is switched back
+  on before the time comes;
+- the app password or the OAuth app it was held with is revoked;
+- the password changes, for what was held with the password or from the
+  webmail. Changing one's own password in the portal keeps what that very
+  browser session scheduled; an admin setting the password, or a reset link,
+  stops all of it.
+
+Logging out of the webmail stops nothing: scheduled mail survives the session.
+
 ## Signatures
 
 Every sending address is an `Identity` with `textSignature` and

@@ -103,7 +103,9 @@ pub async fn masked_state(store: &uwumail_store::Store) -> String {
     format!("-x{}", store.masked_policy_version().await.unwrap_or(0))
 }
 
-pub fn document(account: &Account, base: &str) -> Value {
+/// The session document. `may_use_dav` is whether the login's credential may reach calendars and
+/// address books (see [`crate::auth::Login::scopes`]); without it they are left out.
+pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
     let account_id = ids::account(account.id);
     let mut document = json!({
         "capabilities": {
@@ -196,7 +198,7 @@ pub fn document(account: &Account, base: &str) -> Value {
         "state": session_state(account)
     });
     // Calendars are there when the account may use them, as over CalDAV.
-    if account.protocols.caldav {
+    if account.protocols.caldav && may_use_dav {
         document["capabilities"][CALENDARS] = json!({});
         document["accounts"][&account_id]["accountCapabilities"][CALENDARS] = json!({
             "maxCalendarsPerEvent": 1,
@@ -209,7 +211,7 @@ pub fn document(account: &Account, base: &str) -> Value {
         document["primaryAccounts"][CALENDARS] = json!(account_id);
     }
     // Address books too, as over CardDAV.
-    if account.protocols.carddav {
+    if account.protocols.carddav && may_use_dav {
         document["capabilities"][CONTACTS] = json!({});
         document["accounts"][&account_id]["accountCapabilities"][CONTACTS] = json!({
             "maxAddressBooksPerCard": 1,
@@ -222,10 +224,12 @@ pub fn document(account: &Account, base: &str) -> Value {
 
 pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInfo>>, headers: HeaderMap) -> Response {
     let client = client.map(|Extension(c)| c).unwrap_or_default();
-    match jmap.inner.auth.account_for(&headers, client, false).await {
-        Ok(account) => {
+    match jmap.inner.auth.login_for(&headers, client, false).await {
+        Ok(login) => {
             let base = base_url(&headers, client);
-            let mut document = document(&account, &base);
+            let may_use_dav = login.may_use_dav();
+            let account = login.account;
+            let mut document = document(&account, &base, may_use_dav);
             // Folders others share with this account, as accounts of their own (docs/sharing.md).
             let shared = crate::sharing::shared_accounts(&jmap.inner.store, account.id).await;
             crate::sharing::add_to_session(&mut document, &account, &shared);

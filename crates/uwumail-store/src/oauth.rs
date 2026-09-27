@@ -459,11 +459,11 @@ impl Store {
                     params![account_id, client_id],
                     |row| row.get(0),
                 )?;
+                let grant_id = crate::db::next_id(tx, "oauth_grants")?;
                 tx.execute(
-                    "INSERT INTO oauth_grants (account_id, client_id, scopes, created_at) VALUES (?1, ?2, ?3, ?4)",
-                    params![account_id, client_id, scopes, now],
+                    "INSERT INTO oauth_grants (id, account_id, client_id, scopes, created_at) VALUES (?5, ?1, ?2, ?3, ?4)",
+                    params![account_id, client_id, scopes, now, grant_id],
                 )?;
-                let grant_id = tx.last_insert_rowid();
                 insert_tokens(tx, grant_id, &access_hash, &refresh_hash, now)?;
                 let client_name: String =
                     tx.query_row("SELECT name FROM oauth_clients WHERE id = ?1", [client_id], |row| row.get(0))?;
@@ -693,7 +693,9 @@ impl Store {
             Ok(())
         })
         .await?;
-        Ok((MailAuth::Ok { account, app_password: None }, Some(grant_id)))
+        let credential = crate::push_credential_for_oauth_grant(grant_id);
+        let scopes = AppScope::parse_list(&scopes);
+        Ok((MailAuth::Ok { account, app_password: None, credential, scopes }, Some(grant_id)))
     }
 
     /// The apps signed in to an account with OAuth, newest first.
@@ -868,7 +870,7 @@ fn insert_tokens(conn: &Connection, grant_id: i64, access: &[u8], refresh: &[u8]
 
 /// Removes a grant with its tokens, and the consent for its app when no other grant of the same app
 /// remains: revoking an app means it has to ask again.
-fn forget_grant(conn: &Connection, grant_id: i64) -> rusqlite::Result<()> {
+fn forget_grant(conn: &Connection, grant_id: i64) -> Result<()> {
     let owner: Option<(i64, i64)> = conn
         .query_row("SELECT account_id, client_id FROM oauth_grants WHERE id = ?1", [grant_id], |row| {
             Ok((row.get(0)?, row.get(1)?))
@@ -876,6 +878,14 @@ fn forget_grant(conn: &Connection, grant_id: i64) -> rusqlite::Result<()> {
         .optional()?;
     conn.execute("DELETE FROM oauth_grants WHERE id = ?1", [grant_id])?;
     if let Some((account_id, client_id)) = owner {
+        let credential = crate::push_credential_for_oauth_grant(grant_id);
+        crate::push::forget_push_credential(conn, account_id, &credential)?;
+        crate::held::cancel_held(
+            conn,
+            account_id,
+            crate::held::HeldBy::Credential(&credential),
+            crate::held::NOT_SENT_REVOKED,
+        )?;
         conn.execute(
             "DELETE FROM oauth_consents WHERE account_id = ?1 AND client_id = ?2
                AND NOT EXISTS (SELECT 1 FROM oauth_grants WHERE account_id = ?1 AND client_id = ?2)",
@@ -891,10 +901,15 @@ fn purge(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM oauth_codes WHERE expires_at <= ?1", [now])?;
     // Used refresh tokens stay while they would still be valid, to notice them coming back.
     conn.execute("DELETE FROM oauth_tokens WHERE expires_at <= ?1", [now])?;
+    let unused = "NOT EXISTS (SELECT 1 FROM oauth_tokens t WHERE t.grant_id = oauth_grants.id)";
     conn.execute(
-        "DELETE FROM oauth_grants WHERE NOT EXISTS (SELECT 1 FROM oauth_tokens t WHERE t.grant_id = oauth_grants.id)",
+        &format!(
+            "DELETE FROM push_subscriptions WHERE credential IN
+                 (SELECT 'oauth:' || id FROM oauth_grants WHERE {unused})"
+        ),
         [],
     )?;
+    conn.execute(&format!("DELETE FROM oauth_grants WHERE {unused}"), [])?;
     conn.execute(
         "DELETE FROM oauth_clients WHERE coalesce(last_used_at, created_at) < ?1
            AND NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id = oauth_clients.id)",

@@ -14,7 +14,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use crate::api::{self, RequestError};
-use crate::auth::{AuthError, CSRF_HEADER, ClientInfo};
+use crate::auth::{AuthError, CSRF_HEADER, ClientInfo, Login};
 use crate::push::{Watcher, all_types};
 use crate::{Jmap, MAX_REQUEST_BYTES, ids};
 
@@ -77,7 +77,7 @@ pub async fn handle(
     upgrade
         .protocols([SUBPROTOCOL])
         .max_message_size(MAX_REQUEST_BYTES)
-        .on_upgrade(move |socket| serve(jmap, login.account.id, login.credential, socket))
+        .on_upgrade(move |socket| serve(jmap, login, socket))
 }
 
 fn request_error(request_id: Option<&Value>, error: RequestError) -> Value {
@@ -92,11 +92,19 @@ fn request_error(request_id: Option<&Value>, error: RequestError) -> Value {
     Value::Object(body)
 }
 
+/// Ends the connection because its login no longer holds (RFC 6455 close code 1008, policy).
+async fn close(mut socket: WebSocket) {
+    let frame = axum::extract::ws::CloseFrame { code: 1008, reason: "the login is no longer valid".into() };
+    let _ = socket.send(Message::Close(Some(frame))).await;
+}
+
 async fn send(socket: &mut WebSocket, value: Value) -> bool {
     socket.send(Message::Text(value.to_string().into())).await.is_ok()
 }
 
-async fn serve(jmap: Jmap, account_id: i64, credential: String, mut socket: WebSocket) {
+async fn serve(jmap: Jmap, login: Login, mut socket: WebSocket) {
+    let account_id = login.account.id;
+    let live = login.live();
     let store = jmap.inner.store.clone();
     let mut watcher = Watcher::new(store.clone(), account_id, all_types()).await;
     let mut push = false;
@@ -126,13 +134,15 @@ async fn serve(jmap: Jmap, account_id: i64, credential: String, mut socket: WebS
                 let request_id = object.remove("id");
                 let reply = match kind.as_str() {
                     "Request" => {
-                        // Every request sees the account as it is now: a login that was switched off
-                        // or a protocol that was taken away ends the connection.
-                        let account = match store.account_by_id(account_id).await {
-                            Ok(Some(account)) if account.can_log_in() => account,
-                            _ => return,
+                        // Every request sees the account as it is now, and only while the login
+                        // still holds: a revoked app password or OAuth app, an ended session, a new
+                        // password, a disabled or deleted account or JMAP switched off ends the
+                        // connection.
+                        let Some(account) = jmap.inner.auth.still_valid(&live).await else {
+                            return close(socket).await;
                         };
-                        match api::process(&jmap, account, Some(credential.clone()), Value::Object(object)).await {
+                        let login = Login { account, ..login.clone() };
+                        match api::process(&jmap, login, Value::Object(object)).await {
                             Ok(Value::Object(mut response)) => {
                                 response.insert("@type".into(), json!("Response"));
                                 if let Some(id) = &request_id {
@@ -188,10 +198,14 @@ async fn serve(jmap: Jmap, account_id: i64, credential: String, mut socket: WebS
             }
             change = watcher.wait(), if push => {
                 let Some(change) = change else { return };
-                if let Some((changed_account, changed)) = watcher.changed_by(&change).await
-                    && !send(&mut socket, state_change(changed_account, changed, watcher.last_modseq)).await
-                {
-                    return;
+                if let Some((changed_account, changed)) = watcher.changed_by(&change).await {
+                    // Nothing is pushed any more to a login that ended.
+                    if jmap.inner.auth.still_valid(&live).await.is_none() {
+                        return close(socket).await;
+                    }
+                    if !send(&mut socket, state_change(changed_account, changed, watcher.last_modseq)).await {
+                        return;
+                    }
                 }
             }
         }

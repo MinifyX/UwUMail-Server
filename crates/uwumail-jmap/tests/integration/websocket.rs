@@ -197,3 +197,61 @@ async fn shared_folders_and_calendars_are_pushed_to_whom_they_are_shared_with() 
     assert!(created[0][1]["created"].get("e").is_some(), "{}", created[0]);
     state_change_for(&mut socket, &nyu, "CalendarEvent").await;
 }
+
+/// Whether the server ended the connection: a close frame or the end of the stream, before any
+/// answer.
+async fn closed(socket: &mut Socket) -> bool {
+    loop {
+        match tokio::time::timeout(Duration::from_secs(10), socket.next()).await.unwrap() {
+            None | Some(Err(_)) | Some(Ok(Message::Close(_))) => return true,
+            Some(Ok(Message::Text(text))) => panic!("answered after the login ended: {text}"),
+            Some(Ok(_)) => continue,
+        }
+    }
+}
+
+/// A WebSocket is a request channel of its own: it has to end with the login it was opened with,
+/// as docs/jmap-tokens.md promises. Every request used to check only whether the account could
+/// still log in (security audit 0.16.0 STORE-5, PROTOCOLS-L1).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_websocket_ends_with_its_login() {
+    let server = server().await;
+    let url = listen(server.router.clone()).await;
+    let id = server.id("mini@example.org").await;
+    let app = server
+        .store
+        .create_app_password(
+            id,
+            uwumail_store::NewAppPassword {
+                name: "phone".into(),
+                scopes: vec![uwumail_store::AppScope::Mail],
+                expires_at: None,
+            },
+        )
+        .await
+        .unwrap();
+    let echo =
+        |id: &str| json!({ "@type": "Request", "id": id, "using": USING, "methodCalls": [["Core/echo", {}, "e"]] });
+
+    // The app password revoked: the next request closes the connection.
+    let mut socket = connect(&url, Some(&format!("Bearer {}", app.secret)), Some("jmap")).await.unwrap();
+    send(&mut socket, echo("r1")).await;
+    assert_eq!(receive(&mut socket).await["requestId"], "r1");
+    server.store.revoke_app_password(id, app.app_password.id).await.unwrap();
+    send(&mut socket, echo("r2")).await;
+    assert!(closed(&mut socket).await);
+
+    // JMAP switched off for the account.
+    let mut socket = connect(&url, Some(&basic("mini@example.org", PASSWORD)), Some("jmap")).await.unwrap();
+    send(&mut socket, echo("r3")).await;
+    assert_eq!(receive(&mut socket).await["requestId"], "r3");
+    let account = server.store.account_by_id(id).await.unwrap().unwrap();
+    let off = uwumail_store::Protocols { jmap: false, ..account.protocols };
+    server
+        .store
+        .update_account("mini@example.org", uwumail_store::AccountUpdate { protocols: Some(off), ..Default::default() })
+        .await
+        .unwrap();
+    send(&mut socket, echo("r4")).await;
+    assert!(closed(&mut socket).await);
+}

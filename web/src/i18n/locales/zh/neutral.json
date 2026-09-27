@@ -644,7 +644,7 @@
       "convertToService": "转换为服务",
       "convertToServiceHint": "适用于属于某个程序的邮箱。",
       "convertToServiceTitle": "将 {{login}} 转换为服务？",
-      "convertToServiceBody": "转换后将无法登录门户。双重验证登录、通行密钥和已打开的会话都会被移除；当前的密码会保留为一个永不过期的应用专用密码。邮件保持不变。",
+      "convertToServiceBody": "转换后将无法登录门户。双重验证登录、通行密钥和已打开的会话都会被移除；当前的密码会保留为一个永不过期的应用专用密码。邮件保持不变。转发、从其他服务商收取的邮箱和迁移、日历订阅以及启用中的邮件规则都会停止，隐藏地址会被停用。",
       "convertToPerson": "转换为个人",
       "convertToPersonHint": "适用于实际上属于某个人的邮箱。",
       "convertToPersonTitle": "将 {{login}} 转换为个人？",
@@ -766,7 +766,7 @@
     "convert": "转换为共享邮箱",
     "convertHint": "多人从自己的账户使用它。邮件保持不变。",
     "convertTitle": "将 {{login}} 转换为共享邮箱？",
-    "convertBodyPerson": "邮件、文件夹和地址保持不变。之后没有人能再用它登录门户或网页邮箱：双重验证登录、通行密钥和已打开的会话都会被移除，当前的密码会保留为一个永不过期的应用专用密码，邮件应用可以继续使用。别人与它共享的文件夹以及它使用过的共享邮箱都会失去。",
+    "convertBodyPerson": "邮件、文件夹和地址保持不变。之后没有人能再用它登录门户或网页邮箱：双重验证登录、通行密钥和已打开的会话都会被移除，当前的密码会保留为一个永不过期的应用专用密码，邮件应用可以继续使用。别人与它共享的文件夹以及它使用过的共享邮箱都会失去。转发、从其他服务商收取的邮箱和迁移、日历订阅以及启用中的邮件规则都会停止，隐藏地址会被停用。",
     "convertBodyService": "邮件、文件夹、地址和应用专用密码保持不变。成员可以从自己的账户看到它的所有文件夹。",
     "end": "改回普通服务",
     "endHint": "成员将不再看到它。邮件、地址和应用专用密码保持不变。",
@@ -1723,7 +1723,7 @@
       "scopeSmtp": "发送邮件（SMTP）",
       "scopeSmtpHint": "用于只发信的应用、打印机或脚本。",
       "scopeDav": "日历和通讯录",
-      "scopeDavHint": "用于使用 CalDAV 和 CardDAV 的应用，例如 iPhone 上的“日历”和“通讯录”。",
+      "scopeDavHint": "用于使用 CalDAV 和 CardDAV 的应用，例如 iPhone 上的“日历”和“通讯录”，以及 JMAP 应用中的日历和联系人。",
       "expiry": "有效期",
       "never": "永不过期",
       "days_other": "{{count}} 天",
@@ -1836,7 +1836,7 @@
     "scopes": {
       "mail": {
         "title": "读取和整理你的邮件",
-        "hint": "邮件、文件夹和过滤规则，通过 IMAP、JMAP 和 ManageSieve。"
+        "hint": "邮件、文件夹和过滤规则，通过 IMAP、JMAP 和 ManageSieve。通过 JMAP 还可以发信。"
       },
       "smtp": {
         "title": "以你的身份发送邮件",
@@ -1844,7 +1844,7 @@
       },
       "dav": {
         "title": "使用你的日历和联系人",
-        "hint": "读取和更改，通过 CalDAV 和 CardDAV。"
+        "hint": "读取和更改，通过 CalDAV、CardDAV 和 JMAP。"
       },
       "openid": {
         "title": "确认是你本人",

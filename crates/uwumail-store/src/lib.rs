@@ -128,7 +128,7 @@ pub use masked_domains::{
 pub use migration_jobs::{
     MAX_MIGRATION_JOBS, MigrationJob, MigrationProgress, MigrationRun, MigrationState, NewMigrationJob,
 };
-pub use mutate::{EmailUpdate, KeywordsChange, MailboxUpdate, MailboxesChange};
+pub use mutate::{EmailUpdate, KeywordsChange, MailboxUpdate, MailboxesChange, valid_keyword};
 pub use oauth::{
     NewOAuthCode, OAUTH_ACCESS_TOKEN_SECS, OAUTH_CODE_SECS, OAUTH_REFRESH_TOKEN_SECS, OAUTH_SCOPES, OAuthClient,
     OAuthGrant, OAuthRefusal, OAuthTokens, is_oauth_access_token, oauth_scopes, oauth_scopes_usable, pkce_matches,
@@ -156,8 +156,9 @@ pub use rules::{
 };
 pub use sasl::{SaslBearer, parse_oauthbearer, parse_xoauth2, sasl_bearer_error, sasl_user_matches};
 pub use security::{
-    AppPassword, AppScope, CodeCheck, CreatedAppPassword, MailAuth, MailAuthDenied, NewAppPassword, Passkey,
-    SecurityEvent, SecurityEventRecord, SecurityOverview, TotpSetup, WebSessionInfo, scopes_for,
+    ALL_SCOPES, AppPassword, AppScope, CodeCheck, CreatedAppPassword, LiveLogin, MailAuth, MailAuthDenied,
+    NewAppPassword, Passkey, SecurityEvent, SecurityEventRecord, SecurityOverview, TotpSetup, WebSessionInfo,
+    scopes_for,
 };
 pub use sender_lists::{
     ListOwner, ListScope, NewSenderListEntry, SENDER_LIST_ADMIN_LIMIT, SENDER_LIST_PERSONAL_LIMIT, SenderKind,

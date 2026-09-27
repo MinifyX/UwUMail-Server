@@ -658,7 +658,7 @@
       "convertToService": "Turn into a service",
       "convertToServiceHint": "For a mailbox that belongs to a program.",
       "convertToServiceTitle": "Turn {{login}} into a service?",
-      "convertToServiceBody": "There is no portal login afterwards. Two-factor sign-in, passkeys and open sessions are removed; the password so far lives on as an app password that never expires. The mail stays where it is.",
+      "convertToServiceBody": "There is no portal login afterwards. Two-factor sign-in, passkeys and open sessions are removed; the password so far lives on as an app password that never expires. The mail stays where it is. Forwarding, fetched mailboxes, moves from other providers, calendar subscriptions and the active mail rule stop, and masked addresses are switched off.",
       "convertToPerson": "Turn into a person",
       "convertToPersonHint": "For a mailbox that belongs to someone after all.",
       "convertToPersonTitle": "Turn {{login}} into a person?",
@@ -783,7 +783,7 @@
     "convert": "Turn into a shared mailbox",
     "convertHint": "Several people use it from their own accounts. The mail stays.",
     "convertTitle": "Turn {{login}} into a shared mailbox?",
-    "convertBodyPerson": "The mail, folders and addresses stay. Nobody signs in to the portal or the webmail as it anymore: two-factor sign-in, passkeys and open sessions are removed, and the password so far lives on as an app password that never expires, so mail apps keep working. Folders others shared with it and shared mailboxes it used are gone.",
+    "convertBodyPerson": "The mail, folders and addresses stay. Nobody signs in to the portal or the webmail as it anymore: two-factor sign-in, passkeys and open sessions are removed, and the password so far lives on as an app password that never expires, so mail apps keep working. Folders others shared with it and shared mailboxes it used are gone. Forwarding, fetched mailboxes, moves from other providers, calendar subscriptions and the active mail rule stop, and masked addresses are switched off.",
     "convertBodyService": "The mail, folders, addresses and app passwords stay. Its members see every folder of it from their own accounts.",
     "end": "Make it a plain service",
     "endHint": "Its members no longer see it. Mail, addresses and app passwords stay.",
@@ -1768,7 +1768,7 @@
       "scopeSmtp": "Send mail (SMTP)",
       "scopeSmtpHint": "For apps, printers or scripts that only send.",
       "scopeDav": "Calendars and contacts",
-      "scopeDavHint": "For apps using CalDAV and CardDAV, like Calendar and Contacts on an iPhone.",
+      "scopeDavHint": "For apps using CalDAV and CardDAV, like Calendar and Contacts on an iPhone, and for calendars and contacts in JMAP apps.",
       "expiry": "Valid",
       "never": "No expiry",
       "days_one": "{{count}} day",
@@ -1886,7 +1886,7 @@
     "scopes": {
       "mail": {
         "title": "Read and organize your mail",
-        "hint": "Mail, folders and filter rules, with IMAP, JMAP and ManageSieve."
+        "hint": "Mail, folders and filter rules, with IMAP, JMAP and ManageSieve. Over JMAP this includes sending."
       },
       "smtp": {
         "title": "Send mail as you",
@@ -1894,7 +1894,7 @@
       },
       "dav": {
         "title": "Use your calendars and contacts",
-        "hint": "Read and change them, with CalDAV and CardDAV."
+        "hint": "Read and change them, with CalDAV, CardDAV and JMAP."
       },
       "openid": {
         "title": "Know that it is you",

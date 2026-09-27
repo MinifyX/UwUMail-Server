@@ -7,6 +7,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::directory::{ACCOUNT_COLUMN_COUNT, ACCOUNT_COLUMNS, account_from_row, account_id, login_key};
+use crate::held::HeldBy;
 use crate::identity_grants::{Granted, granted_addresses, revoke_identities};
 use crate::{Account, Protocols, Result, Role, Store, StoreError, now, password, random_bytes};
 
@@ -52,9 +53,17 @@ pub(crate) fn become_service(tx: &Connection, account: &Account, granted: &mut G
                 // Never matches a typed code: only the hash taken over is checked for this one.
                 let unmatchable = crate::random_bytes::<32>().to_vec();
                 tx.execute(
-                    "INSERT INTO app_passwords (account_id, name, secret_hash, scopes, created_at, imported_hash)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![account.id, "Former password", unmatchable, names, now(), hash],
+                    "INSERT INTO app_passwords (id, account_id, name, secret_hash, scopes, created_at, imported_hash)
+                     VALUES (?7, ?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![
+                        account.id,
+                        "Former password",
+                        unmatchable,
+                        names,
+                        now(),
+                        hash,
+                        crate::db::next_id(tx, "app_passwords")?
+                    ],
                 )?;
             }
         }
@@ -73,8 +82,58 @@ pub(crate) fn become_service(tx: &Connection, account: &Account, granted: &mut G
     ] {
         tx.execute(&format!("DELETE FROM {table} WHERE account_id = ?1"), [account.id])?;
     }
+    // Push subscriptions of the sessions and app sign-ins just ended end with them.
+    tx.execute(
+        "DELETE FROM push_subscriptions WHERE account_id = ?1 AND (credential LIKE 'session:%' OR credential LIKE 'oauth:%')",
+        [account.id],
+    )?;
     tx.execute("UPDATE accounts SET credentials_changed_at = ?1 WHERE id = ?2", params![now(), account.id])?;
+    stop_personal_mail_setup(tx, account.id, granted)?;
     leave_sharing(tx, account.id, granted)
+}
+
+/// What a person set up for their own mail stops when the account stops being theirs (it becomes
+/// a service or a shared mailbox, and stays in use by others): an employee who leaves must not
+/// keep getting its mail forwarded, nor have their private mailboxes elsewhere fetched into it
+/// (security audit 0.16.0 STORE-3). The mail, folders, addresses and scripts themselves stay.
+///
+/// - forwarding: the targets go, and a copy is kept again;
+/// - fetched mailboxes and moves from another provider go, with the passwords for them;
+/// - subscribed calendars stop updating (the calendars stay);
+/// - the active Sieve script is switched off;
+/// - masked addresses are switched off: they stay the account's and can be switched on again.
+///
+/// Send-as domains stay: an admin gives those to the account, not the person.
+fn stop_personal_mail_setup(tx: &Connection, account_id: i64, granted: &mut Granted) -> Result<()> {
+    tx.execute("DELETE FROM forward_targets WHERE account_id = ?1", [account_id])?;
+    tx.execute("UPDATE accounts SET forward_keep_copy = 1 WHERE id = ?1", [account_id])?;
+    tx.execute("DELETE FROM fetch_accounts WHERE account_id = ?1", [account_id])?;
+    tx.execute("DELETE FROM migration_jobs WHERE account_id = ?1", [account_id])?;
+    tx.execute("UPDATE calendar_subscriptions SET enabled = 0 WHERE account_id = ?1", [account_id])?;
+    let active: Option<i64> = tx
+        .query_row("SELECT id FROM sieve_scripts WHERE account_id = ?1 AND is_active", [account_id], |row| row.get(0))
+        .optional()?;
+    let masked: Vec<i64> = tx
+        .prepare("SELECT id FROM masked_addresses WHERE account_id = ?1 AND state IN ('pending', 'enabled')")?
+        .query_map([account_id], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    if active.is_none() && masked.is_empty() {
+        return Ok(());
+    }
+    let modseq = crate::db::next_modseq(tx, account_id)?;
+    if let Some(script) = active {
+        tx.execute("UPDATE sieve_scripts SET is_active = 0 WHERE id = ?1", [script])?;
+        crate::db::record_change(tx, account_id, modseq, "SieveScript", script, "updated")?;
+    }
+    for id in masked {
+        tx.execute(
+            "UPDATE masked_addresses SET state = 'disabled', updated_modseq = ?1 WHERE id = ?2",
+            params![modseq, id],
+        )?;
+        crate::db::record_change(tx, account_id, modseq, "MaskedEmail", id, "updated")?;
+    }
+    granted.push(account_id, modseq);
+    Ok(())
 }
 
 /// Only people share with people: an account that stops being one no longer sees the folders others
@@ -311,6 +370,7 @@ impl Store {
                 }
                 if after.disabled && !before.disabled {
                     tx.execute("DELETE FROM web_sessions WHERE account_id = ?1", [after.id])?;
+                    crate::held::cancel_held(tx, after.id, HeldBy::Anyone, crate::held::NOT_SENT_DISABLED)?;
                 }
                 // Becoming a service: the password it had becomes an app password that does not expire,
                 // and everything that only makes sense for a person in front of a browser goes.
@@ -342,6 +402,7 @@ impl Store {
             let at = now();
             tx.execute("UPDATE accounts SET deleted_at = ?1 WHERE id = ?2", params![at, account.id])?;
             tx.execute("DELETE FROM web_sessions WHERE account_id = ?1", [account.id])?;
+            crate::held::cancel_held(tx, account.id, HeldBy::Anyone, crate::held::NOT_SENT_DISABLED)?;
             tx.execute("DELETE FROM password_links WHERE account_id = ?1", [account.id])?;
             tx.execute("UPDATE domains SET catch_all_account_id = NULL WHERE catch_all_account_id = ?1", [account.id])?;
             // Stop pulling (and, with delete, destroying) the person's provider mail while they are
@@ -469,6 +530,12 @@ impl Store {
             tx.execute(
                 "UPDATE accounts SET password_hash = ?1, credentials_changed_at = ?2 WHERE id = ?3",
                 params![hash, now(), link.account.id],
+            )?;
+            crate::held::cancel_held(
+                tx,
+                link.account.id,
+                HeldBy::Password { keep: None },
+                crate::held::NOT_SENT_PASSWORD,
             )?;
             tx.execute("DELETE FROM password_links WHERE account_id = ?1", [link.account.id])?;
             tx.execute("DELETE FROM web_sessions WHERE account_id = ?1", [link.account.id])?;

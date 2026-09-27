@@ -17,10 +17,14 @@ endpoints — accepts:
 
 A bearer token is an ordinary app password (My account → Security → App
 passwords) that may be used for mail (the `mail` use, which covers JMAP and
-IMAP). It is sent as it was shown — `abcd-efgh-jkmn-pqrs` — or without the
-dashes, in any case. The password names its account, so there is no login to
-send with it. It stops working when it expires, is revoked, when the account
-may no longer log in, or when an admin switches JMAP off for the account.
+IMAP, and sending over JMAP). Calendars and address books over JMAP need the
+`dav` use as well, as they do over CalDAV and CardDAV; without it the session
+leaves them out. It is sent as it was shown — `abcd-efgh-jkmn-pqrs` — or
+without the dashes, in any case. The password names its account, so there is
+no login to send with it. It stops working when it expires, is revoked, when
+the account may no longer log in, or when an admin switches JMAP off for the
+account — also on a WebSocket or an EventSource that is already open (see
+below).
 
 Wrong passwords and wrong tokens count against the client's network together:
 after 10 failures in 15 minutes (per IPv4 address or IPv6 /64) every login from
@@ -40,7 +44,10 @@ that needs the login to be found, so they work with Basic only.
 A program that has the person's login and password can trade them for an app
 password of its own, instead of keeping the password. The program names it —
 that name is what the person sees in the list of app passwords, where they can
-revoke it like any other.
+revoke it like any other. It may be used for mail, and for calendars and
+contacts (`dav`) when the account has them, so that it covers everything JMAP
+offers. Tokens made before UwUMail 0.16.0 were for mail only; a program that
+needs calendars or contacts asks for a new one.
 
 ```http
 POST /jmap/token HTTP/1.1
@@ -121,8 +128,12 @@ Messages are JSON text frames, handled in the order they arrive:
   JMAP request, answered with `{"@type": "Response", "requestId": "r1", …}`
   (the usual response object). A request that fails as a whole is answered
   with `{"@type": "RequestError", "requestId": "r1", "type": …, "status": …,
-  "detail": …}`. Each request checks the account again; one that may no longer
-  log in ends the connection.
+  "detail": …}`. Each request checks the login again, and so does each push
+  before it goes out: when the app password or the OAuth app was revoked, the
+  webmail session ended, the password changed, the account was disabled,
+  moved to the trash or deleted, or JMAP (for the webmail: the webmail) was
+  switched off, the server closes the connection (close code 1008) instead of
+  answering. The EventSource ends the same way at its next event or ping.
 - `{"@type": "WebSocketPushEnable", "dataTypes": ["Email", "Mailbox"] | null,
   "pushState": "…"}` — from now on, changes of those types (all with `null`)
   arrive as `{"@type": "StateChange", "changed": {"a3": {"Email": "…"}},

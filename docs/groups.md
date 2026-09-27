@@ -128,7 +128,14 @@ mail, the folders, the addresses and the storage limit stay.
   password turns into an app password that does not expire, so their mail apps
   keep working, and their second factors, passkeys, sessions, password links,
   apps signed in with OAuth and the tie to an LDAP directory or OpenID Connect
-  provider go.
+  provider go. What they set up for their own mail stops as well, so that
+  nothing of the mailbox keeps going to them: their forwarding (a copy stays
+  here again), the mailboxes they fetched from other providers and moves from
+  another provider (with the passwords for those), updates of subscribed
+  calendars (the calendars stay), and their active mail rule (the scripts
+  stay, switched off). Their masked addresses are switched off; they stay with
+  the mailbox and can be switched on again. Send-as domains an admin gave the
+  account stay.
 - **A service** keeps its app passwords. One without a mailbox (sending only)
   gets IMAP and JMAP switched on and its folders.
 - Either way it leaves what it used as a person: folders others shared with it

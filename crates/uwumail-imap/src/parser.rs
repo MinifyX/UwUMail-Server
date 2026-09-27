@@ -71,6 +71,8 @@ pub fn keyword_of_flag(flag: &str) -> Option<String> {
         "\\draft" => Some("$draft".into()),
         "\\deleted" => Some("$deleted".into()),
         _ if lower.starts_with('\\') => None,
+        // Flags from another server (fetching, moving) are no atoms by force.
+        _ if !uwumail_store::valid_keyword(&lower) => None,
         _ => Some(lower),
     }
 }

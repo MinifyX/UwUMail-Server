@@ -10,7 +10,7 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::json;
-use uwumail_store::{CodeCheck, NewAppPassword, SecurityEvent, StoreError};
+use uwumail_store::{AppScope, CodeCheck, NewAppPassword, SecurityEvent, StoreError};
 
 use crate::auth::ClientInfo;
 use crate::session::base_url;
@@ -131,7 +131,13 @@ pub async fn handle(
     }
 
     let expires_at = expires_in_days.map(|days| crate::methods::unix_now() + days as i64 * 86_400);
-    let new = NewAppPassword { name: name.to_owned(), scopes: vec![auth.scope()], expires_at };
+    // A token for JMAP covers what JMAP offers: mail, and calendars and contacts where the account
+    // has them, which need the `dav` use (the password it was traded for opens all of that anyway).
+    let mut scopes = vec![auth.scope()];
+    if account.may_use("dav") {
+        scopes.push(AppScope::Dav);
+    }
+    let new = NewAppPassword { name: name.to_owned(), scopes, expires_at };
     let created = match store.create_app_password(account.id, new).await {
         Ok(created) => created,
         Err(StoreError::Rule { code, message }) => return problem(StatusCode::CONFLICT, code, &message),

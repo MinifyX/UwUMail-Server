@@ -341,7 +341,8 @@ pub async fn restore_mailbox(
                 account_id,
                 raw: content,
                 mailboxes: targets,
-                keywords: mail.keywords,
+                // A snapshot from before 0.16.0 may hold keywords the store no longer takes.
+                keywords: mail.keywords.into_iter().filter(|keyword| uwumail_store::valid_keyword(keyword)).collect(),
                 received_at: Some(mail.received_at),
             };
             match store.ingest(request).await {

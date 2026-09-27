@@ -456,13 +456,14 @@ async fn subscriptions_belong_to_the_login_that_made_them_and_end_with_it() {
         setup.call_as(&as_tablet, json!([["PushSubscription/set", { "destroy": [from_phone.clone()] }, "0"]])).await;
     assert_eq!(responses[0][1]["notDestroyed"][&from_phone]["type"], "notFound");
 
-    // The phone's app password is removed: its subscription gets nothing more and is dropped.
+    // The phone's app password is removed: its subscription gets nothing more and is dropped at
+    // once, not at the next clean-up.
     setup.server.store.revoke_app_password(mini, phone.app_password.id).await.unwrap();
     setup.server.deliver(MINI, &mail("After")).await;
     let mut names = vec![setup.next().await.name, setup.next().await.name];
     names.sort();
     assert_eq!(names, vec!["password", "tablet"]);
-    assert_eq!(setup.server.store.purge_push_subscriptions().await.unwrap(), 1);
+    assert_eq!(setup.server.store.purge_push_subscriptions().await.unwrap(), 0);
     assert_eq!(setup.listed(&as_tablet).await, vec![from_tablet]);
     assert_eq!(setup.listed(&as_password).await, vec![from_password]);
     // (A new password ends what the old one made: see the store's tests.)
