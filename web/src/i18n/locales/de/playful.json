@@ -38,6 +38,20 @@
       }
     }
   },
+  "adminView": {
+    "headline": {
+      "ok": "Alles schnurrt (=^･ω･^=)",
+      "unknown": "Ich schnupper noch an allem herum",
+      "warning": "Schau dir mal was an (・_・;)",
+      "problem": "Hier klemmt was (╥﹏╥)"
+    }
+  },
+  "alerts": {
+    "none": "Nichts zu melden, alles ruhig (=^･ω･^=)"
+  },
+  "stats": {
+    "intro": "Was auf deinem Server passiert ist, Tag für Tag. Ich hab alles mitgezählt (=^･ω･^=)"
+  },
   "errors": {
     "loadFailed": {
       "title": "Hoppla, das hat nicht geklappt (╥﹏╥)"

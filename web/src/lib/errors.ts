@@ -116,6 +116,7 @@ const KNOWN = [
   "moveNotRunning",
   "moveNoMailbox",
   "moveWrongPassword",
+  "alertResolved",
 ];
 
 /** Turns an API error into a sentence for the person in front of the screen. */

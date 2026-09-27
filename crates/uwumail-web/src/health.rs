@@ -345,13 +345,13 @@ async fn antivirus_area(web: &Web, now: i64) -> Option<Area> {
 }
 
 #[cfg(unix)]
-fn disk_space(path: &Path) -> Option<(u64, u64)> {
+pub(crate) fn disk_space(path: &Path) -> Option<(u64, u64)> {
     let stat = rustix::fs::statvfs(path).ok()?;
     Some((stat.f_bavail.saturating_mul(stat.f_frsize), stat.f_blocks.saturating_mul(stat.f_frsize)))
 }
 
 #[cfg(not(unix))]
-fn disk_space(_path: &Path) -> Option<(u64, u64)> {
+pub(crate) fn disk_space(_path: &Path) -> Option<(u64, u64)> {
     None
 }
 
@@ -421,6 +421,7 @@ impl Web {
         // Let the listeners come up first.
         let mut next_dns = unix_now() + 30;
         let mut next_probe = unix_now() + 60;
+        let mut next_alerts = unix_now() + crate::alerts::ALERT_FIRST_AFTER;
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_secs(30)) => {}
@@ -441,6 +442,10 @@ impl Web {
                 }
                 next_probe = now + interval;
                 self.mark_health_checked();
+            }
+            if now >= next_alerts {
+                self.check_alerts().await;
+                next_alerts = unix_now() + crate::alerts::ALERT_INTERVAL;
             }
         }
     }

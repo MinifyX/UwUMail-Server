@@ -1,5 +1,6 @@
 pub mod account;
 pub mod admin;
+pub mod alerts;
 pub mod apps;
 pub mod auth;
 pub mod backups;
@@ -27,6 +28,7 @@ pub mod settings;
 pub mod setup;
 pub mod sharing;
 pub mod spam;
+pub mod stats;
 pub mod updates;
 pub mod vpn;
 pub mod webmail;

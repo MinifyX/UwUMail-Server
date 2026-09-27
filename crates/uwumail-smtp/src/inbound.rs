@@ -1080,6 +1080,7 @@ impl Session {
                     Ok(Next::Continue)
                 }
                 None => {
+                    store.stats().count(uwumail_store::Stat::RefusedUnknownRecipient);
                     let text = format!("550 5.1.1 <{address}>: No such mailbox here\r\n");
                     self.error(&text).await?;
                     Ok(Next::Continue)
@@ -1166,11 +1167,13 @@ impl Session {
         };
         if local_account.is_none() {
             if store.is_local_domain(&domain).await.unwrap_or(false) {
+                store.stats().count(uwumail_store::Stat::RefusedUnknownRecipient);
                 let text = format!("550 5.1.1 <{address}>: No such mailbox here\r\n");
                 self.error(&text).await?;
                 return Ok(Next::Continue);
             }
             if !self.kind.is_submission() {
+                store.stats().count(uwumail_store::Stat::RefusedPolicy);
                 self.error("550 5.7.1 Relaying denied\r\n").await?;
                 return Ok(Next::Continue);
             }
@@ -1184,6 +1187,7 @@ impl Session {
             // the door, so the other side hears it at once instead of guessing.
             if !account.has_mailbox() {
                 let Some(target) = store.delivery_target(account.id).await.ok().flatten() else {
+                    store.stats().count(uwumail_store::Stat::RefusedUnknownRecipient);
                     let text = format!("550 5.1.1 <{address}>: This address does not take mail\r\n");
                     self.error(&text).await?;
                     return Ok(Next::Continue);
@@ -1363,6 +1367,7 @@ pub(crate) async fn receive(
             virus: None,
         };
         note_spam(&ctx, &live.spam.log, note).await;
+        ctx.store.stats().count(uwumail_store::Stat::RefusedPolicy);
         return format!("550 5.7.1 {reason}\r\n");
     }
 
@@ -1417,6 +1422,7 @@ pub(crate) async fn receive(
             virus: None,
         };
         note_spam(&ctx, &live.spam.log, note).await;
+        ctx.store.stats().count(uwumail_store::Stat::RefusedPolicy);
         return "550 5.7.1 Mail from this sender is not accepted here\r\n".into();
     }
     let allowed = decisions.iter().any(|decision| matches!(decision, Decision::Allow(_)));
@@ -1439,6 +1445,7 @@ pub(crate) async fn receive(
             virus: Some(name),
         };
         note_spam(&ctx, &live.spam.log, note).await;
+        ctx.store.stats().count(uwumail_store::Stat::RefusedVirus);
         return format!("554 5.7.0 This message contains {name}\r\n");
     }
 
@@ -1531,6 +1538,7 @@ pub(crate) async fn receive(
             virus: None,
         };
         note_spam(&ctx, &live.spam.log, note).await;
+        ctx.store.stats().count(uwumail_store::Stat::RefusedSpam);
         return "550 5.7.1 This message looks like spam\r\n".into();
     }
     // What a retry of this message hashes to. Taken before our own headers go on top, so the
@@ -1632,6 +1640,7 @@ pub(crate) async fn receive(
                 )
                 .await;
             }
+            ctx.store.stats().count(uwumail_store::Stat::RefusedGreylisted);
             return format!("451 4.7.1 Please try again in {minutes} minutes\r\n");
         }
     }
@@ -1930,6 +1939,10 @@ pub(crate) async fn receive(
     // The history of what the filter decided, for the admin page. Mail that reached nobody has
     // its own entry above; this is the one for mail that arrived.
     if delivered > 0 {
+        ctx.store.stats().count(uwumail_store::Stat::Received);
+        if noted.iter().any(|to| to.action == SpamAction::Junk.as_str()) {
+            ctx.store.stats().count(uwumail_store::Stat::Junk);
+        }
         let note = SpamNote {
             id: &id,
             action: if noted.iter().any(|to| to.action == SpamAction::Junk.as_str()) {

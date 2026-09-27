@@ -38,6 +38,20 @@
       }
     }
   },
+  "adminView": {
+    "headline": {
+      "ok": "Tout ronronne (=^･ω･^=)",
+      "unknown": "Je renifle encore un peu partout",
+      "warning": "Quelque chose mérite un coup d'œil (・_・;)",
+      "problem": "Quelque chose coince (╥﹏╥)"
+    }
+  },
+  "alerts": {
+    "none": "Rien à signaler, tout est calme (=^･ω･^=)"
+  },
+  "stats": {
+    "intro": "Ce qui s'est passé sur votre serveur, jour après jour. J'ai tout compté (=^･ω･^=)"
+  },
   "errors": {
     "loadFailed": {
       "title": "Oups, ça n'a pas marché (╥﹏╥)"

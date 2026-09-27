@@ -89,6 +89,7 @@ pub async fn login(
     let found = web.store().authenticate(request.login.trim(), &request.password).await?;
     let Some(account) = found.filter(Account::can_use_portal) else {
         web.limiter().record_failure(client.ip, &request.login);
+        web.store().stats().count(uwumail_store::Stat::LoginFailedPortal);
         tracing::warn!(login = %request.login, ip = %client.ip, "failed web login");
         return Err(ApiError::InvalidCredentials);
     };

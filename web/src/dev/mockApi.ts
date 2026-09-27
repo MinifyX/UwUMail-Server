@@ -9,6 +9,10 @@
 import type { Brand } from "@/state/brand";
 import type {
   AccountSpamView,
+  AdminAlert,
+  AlertsView,
+  StatsRange,
+  StatsView,
   AntivirusTest,
   AntivirusView,
   EgressTest,
@@ -870,6 +874,9 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "log.loki.labels": { value: [], source: "default" },
   "log.loki.level": { value: "info", source: "default" },
   "log.loki.gateway": { value: true, source: "default" },
+  "metrics.enabled": { value: false, source: "default" },
+  "metrics.token": { value: null, source: "default", set: false },
+  "metrics.allowed_networks": { value: [], source: "default" },
 };
 
 const settingsView = () => ({
@@ -2045,9 +2052,127 @@ function reportsFor(name: string): ReportsView {
   };
 }
 
+/** Admin alerts: a certificate that should have been renewed, a new version, and a full disk that is fine again. */
+const mockAlert = (id: number, kind: string, code: string, level: AdminAlert["level"], extra: Partial<AdminAlert>) => ({
+  id,
+  kind,
+  key: code,
+  code,
+  level,
+  params: {},
+  link: null,
+  firstSeen: now - 3 * 3600,
+  lastSeen: now - 60,
+  resolvedAt: null,
+  notifiedAt: level === "info" ? null : now - 3 * 3600,
+  notifiedLevel: level === "info" ? null : level,
+  acknowledgedAt: null,
+  acknowledgedBy: null,
+  ...extra,
+});
+const mockAlerts: AdminAlert[] = [
+  mockAlert(3, "certificate", "certRenewalFailing", "warning", {
+    params: { since: now - 30 * 3600, error: "the ACME server could not reach http://mail.uwu.example" },
+    link: "/admin/logs",
+  }),
+  mockAlert(4, "update", "updateAvailable", "info", { params: { version: "0.14.1" }, link: "/admin/updates" }),
+  mockAlert(1, "storage", "diskLow", "problem", {
+    params: { freeBytes: 0.4 * GB, totalBytes: 32 * GB },
+    firstSeen: now - 6 * 86_400,
+    lastSeen: now - 5 * 86_400,
+    resolvedAt: now - 5 * 86_400 + 900,
+  }),
+];
+const alertsView = (): AlertsView => ({
+  open: mockAlerts.filter((alert) => alert.resolvedAt === null),
+  resolved: mockAlerts.filter((alert) => alert.resolvedAt !== null),
+});
+
+/** Statistics that look like a small family server: a little mail every day, busier on weekdays. */
+function mockStats(range: StatsRange): StatsView {
+  const DAY = 86_400;
+  const dayOf = (at: number) => new Date(at * 1000).toISOString().slice(0, 10);
+  const days = Array.from({ length: 366 }, (_, index) => {
+    const at = now - (365 - index) * DAY;
+    const weekday = new Date(at * 1000).getUTCDay();
+    const busy = weekday === 0 || weekday === 6 ? 0.5 : 1;
+    const wave = (n: number) => Math.round(n * busy * (0.7 + 0.3 * Math.sin(index * 1.7 + n)));
+    // The counting started some weeks ago; before that there is nothing.
+    const values: Record<string, number> =
+      index < 365 - 200
+        ? {}
+        : {
+            "mail.received": wave(42),
+            "mail.junk": wave(6),
+            "refused.unknownRecipient": wave(3),
+            "refused.spam": wave(9),
+            "refused.virus": index % 23 === 0 ? 1 : 0,
+            "refused.policy": wave(2),
+            "refused.greylisted": wave(5),
+            "mail.submitted": wave(12),
+            "mail.delivered": wave(15),
+            "mail.deferred": index % 9 === 0 ? 3 : 0,
+            "mail.bounced": index % 17 === 0 ? 1 : 0,
+            "loginFailed.imap": wave(4),
+            "loginFailed.smtp": wave(7),
+            "loginFailed.portal": index % 5 === 0 ? 1 : 0,
+            "gauge.accounts": 7,
+            "gauge.storageBytes": Math.round((3.1 + index * 0.004) * GB),
+          };
+    return { day: dayOf(at), values };
+  });
+  const periods =
+    range === "days"
+      ? days.slice(-30).map(({ day, values }) => ({ period: day, values }))
+      : days
+          .reduce<StatsView["periods"]>((months, { day, values }) => {
+            const month = day.slice(0, 7);
+            let last = months[months.length - 1];
+            if (last?.period !== month) {
+              last = { period: month, values: {} };
+              months.push(last);
+            }
+            for (const [key, value] of Object.entries(values)) {
+              last.values[key] = key.startsWith("gauge.") ? value : (last.values[key] ?? 0) + value;
+            }
+            return months;
+          }, [])
+          .slice(-12);
+  const totals: Record<string, number> = {};
+  for (const { values } of periods) {
+    for (const [key, value] of Object.entries(values)) {
+      if (!key.startsWith("gauge.")) totals[key] = (totals[key] ?? 0) + value;
+    }
+  }
+  return { range, periods, totals };
+}
+
 const routes: [string, RegExp, Handler][] = [
   // First, so they win over the older routes for the same addresses.
   ...ruleRoutes,
+  ["GET", /^\/api\/admin\/alerts$/, () => [200, alertsView()]],
+  [
+    "POST",
+    /^\/api\/admin\/alerts\/(\d+)\/acknowledge$/,
+    (_body, [id]) => {
+      const alert = mockAlerts.find((candidate) => candidate.id === Number(id));
+      if (!alert) return problem(404, "notFound");
+      if (alert.resolvedAt !== null) return problem(409, "alertResolved");
+      alert.acknowledgedAt = Math.floor(Date.now() / 1000);
+      alert.acknowledgedBy = "lorin@uwu.example";
+      log("alert.acknowledge", alert.key, { kind: alert.kind, code: alert.code });
+      return [200, alert];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/stats$/,
+    (_body, _match, query) => {
+      const range = query.get("range") ?? "days";
+      if (range !== "days" && range !== "months") return problem(422, "invalid");
+      return [200, mockStats(range)];
+    },
+  ],
   ["GET", /^\/api\/admin\/health$/, () => [200, health()]],
   [
     "POST",

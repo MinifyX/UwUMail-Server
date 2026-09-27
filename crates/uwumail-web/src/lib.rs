@@ -7,6 +7,8 @@
 //!   `/forwarding/{token}` serve the React app from `web/`, embedded into the binary at build time.
 //! - `/mail` serves the webmail, built from its own repository, when the build has one and it is on.
 
+mod alert_texts;
+mod alerts;
 mod assets;
 mod cloudflare;
 mod error;
@@ -16,6 +18,7 @@ pub mod host;
 mod login;
 mod logs;
 pub mod loki;
+pub mod metrics;
 mod notices;
 pub mod profile_signing;
 mod routes;
@@ -39,6 +42,7 @@ pub use error::{ApiError, ApiResult};
 pub use health::{CertificateSource, CertificateStatus};
 pub use logs::{LogBuffer, LogLine, LogSource};
 pub use loki::{Loki, LokiConfig};
+pub use metrics::{MetricsConfig, MetricsGate};
 pub use routes::settings::OVERLAY_KEY as SETTINGS_OVERLAY_KEY;
 pub use session::{Admin, CSRF_HEADER, SESSION_LIFETIME_SECS, Session};
 
@@ -98,6 +102,10 @@ struct Inner {
     dav_transport: std::sync::OnceLock<Arc<dyn uwumail_dav::client::Transport>>,
     /// When each account last asked other providers for calendars, to keep that polite.
     remote_calls: Mutex<HashMap<i64, Vec<i64>>>,
+    /// Admin alerts: the last health overview and the lock around a look.
+    alerts: alerts::AlertState,
+    /// Who may read `/metrics`, once the server plugged it in.
+    metrics: std::sync::OnceLock<Arc<metrics::MetricsGate>>,
 }
 
 impl Web {
@@ -131,6 +139,8 @@ impl Web {
                 profile_key: std::sync::OnceLock::new(),
                 dav_transport: std::sync::OnceLock::new(),
                 remote_calls: Mutex::default(),
+                alerts: alerts::AlertState::default(),
+                metrics: std::sync::OnceLock::new(),
             }),
         }
     }
@@ -243,6 +253,16 @@ impl Web {
         true
     }
 
+    /// Serves `/metrics` to whom `gate` lets in; the server changes the gate with the settings.
+    /// Only the first call counts; without one `/metrics` does not exist.
+    pub fn set_metrics_gate(&self, gate: Arc<metrics::MetricsGate>) {
+        let _ = self.inner.metrics.set(gate);
+    }
+
+    pub(crate) fn metrics_gate(&self) -> Option<&Arc<metrics::MetricsGate>> {
+        self.inner.metrics.get()
+    }
+
     pub(crate) fn gateway(&self) -> Option<&Arc<dyn gateway::GatewayBackend>> {
         self.inner.gateway.get()
     }
@@ -280,6 +300,8 @@ impl Web {
             // The look of the portal and the webmail, for everyone, logged in or not.
             .route("/branding.css", get(routes::branding::stylesheet))
             .route("/branding/logo", get(routes::branding::logo))
+            // For Prometheus, off unless switched on (docs/metrics.md).
+            .route("/metrics", get(metrics::handler))
             .route("/api/session", get(routes::auth::session))
             .route("/api/auth/login", post(routes::auth::login))
             .route("/api/auth/logout", post(routes::auth::logout))
@@ -392,6 +414,9 @@ impl Web {
             .route("/api/account/passkeys/{id}", delete(routes::security::remove_passkey))
             .route("/api/password-links/{token}", get(routes::links::show).post(routes::links::choose))
             .route("/api/admin/overview", get(routes::admin::overview))
+            .route("/api/admin/alerts", get(routes::alerts::list))
+            .route("/api/admin/alerts/{id}/acknowledge", post(routes::alerts::acknowledge))
+            .route("/api/admin/stats", get(routes::stats::show))
             .route("/api/admin/health", get(routes::admin::health))
             .route("/api/admin/health/check", post(routes::admin::check_health))
             .route("/api/admin/updates", get(routes::updates::show).put(routes::updates::save))

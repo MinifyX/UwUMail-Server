@@ -114,13 +114,16 @@ async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, re
             Outcome::Delivered(reply) => {
                 tracing::info!(message = message.id, to = %recipient.address, %reply, "delivered");
                 ctx.stats.record(DeliveryEvent::Delivered);
+                ctx.store.stats().count(uwumail_store::Stat::Delivered);
                 ctx.store.mark_recipient_delivered(recipient.id, reply).await
             }
             Outcome::Deferred(error) => {
                 ctx.stats.record(DeliveryEvent::Deferred);
+                ctx.store.stats().count(uwumail_store::Stat::Deferred);
                 let next = now() + retry_delay(recipient.attempts + 1);
                 if next > message.expires_at {
                     tracing::warn!(message = message.id, to = %recipient.address, %error, "giving up after retries");
+                    ctx.store.stats().count(uwumail_store::Stat::Bounced);
                     failed.push(FailedRecipient { address: recipient.address.clone(), error: error.clone() });
                     ctx.store.mark_recipient_failed(recipient.id, error).await
                 } else {
@@ -131,6 +134,7 @@ async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, re
             Outcome::Failed(error) => {
                 tracing::warn!(message = message.id, to = %recipient.address, %error, "delivery failed");
                 ctx.stats.record(DeliveryEvent::Failed);
+                ctx.store.stats().count(uwumail_store::Stat::Bounced);
                 if recipient.notify_flags & RCPT_NOTIFY_NEVER == 0 {
                     failed.push(FailedRecipient { address: recipient.address.clone(), error: error.clone() });
                 }

@@ -64,7 +64,8 @@
     "directory": "Accounts & domains",
     "calendars": "Calendars & contacts",
     "masked": "Masked addresses",
-    "moving": "Moving"
+    "moving": "Moving",
+    "more": "More"
   },
   "userMenu": {
     "open": "Open account menu",
@@ -169,7 +170,8 @@
       "overview": "Overview",
       "mailFlow": "Mail flow",
       "backups": "Backups",
-      "updates": "Updates"
+      "updates": "Updates",
+      "stats": "Statistics"
     },
     "tiles": {
       "news": "new",
@@ -203,6 +205,177 @@
         "title": "Last change",
         "none": "Nothing changed yet"
       }
+    }
+  },
+  "adminView": {
+    "label": "View",
+    "simple": "Simple",
+    "full": "Everything",
+    "hint": {
+      "simple": "Only the traffic light and what needs doing. Everything else is under More in the menu.",
+      "full": "Every number and every check. Simple shows just the traffic light."
+    },
+    "light": "Traffic light: {{level}}",
+    "headline": {
+      "ok": "All is well",
+      "unknown": "Not everything is checked yet",
+      "warning": "Something needs a look",
+      "problem": "Something is not working"
+    },
+    "sentence": {
+      "ok": "Mail comes and goes, and nothing needs you right now.",
+      "unknown": "The first checks run shortly after the start.",
+      "warning_one": "One thing below needs a look when you have a moment.",
+      "warning_other": "{{count}} things below need a look when you have a moment.",
+      "problem_one": "One thing below needs your help soon.",
+      "problem_other": "{{count}} things below need your help soon."
+    },
+    "todo": "What to do",
+    "quick": {
+      "title": "Quick access",
+      "people": "People",
+      "addPerson": "Add a person",
+      "domains": "Domains",
+      "backups": "Backups"
+    }
+  },
+  "alerts": {
+    "title": "Alerts",
+    "intro": "What the server told the admins about, and what was fine again later. It looks every five minutes.",
+    "loading": "Loading the alerts …",
+    "none": "No open alerts.",
+    "openLabel": "Open alerts",
+    "history_one": "{{count}} alert that is fine again",
+    "history_other": "{{count}} alerts that are fine again",
+    "since": "Since {{time}}",
+    "resolvedAt": "Fine again {{time}}",
+    "acknowledgedBy": "{{login}} knows about it",
+    "acknowledge": "Got it",
+    "acknowledgeHint": "No more daily reminders for this one. You still hear when it gets worse or is fine again.",
+    "acknowledgedToast": "Noted. No more reminders for this one.",
+    "level": {
+      "info": "Information",
+      "warning": "Needs a look",
+      "problem": "Problem",
+      "resolved": "Fine again"
+    },
+    "mail": {
+      "title": "Alert mails",
+      "label": "Mails to me about alerts",
+      "all": "All",
+      "problems": "Only problems",
+      "none": "None",
+      "hint": "Each admin chooses for themselves. A mail comes when something turns yellow or red, once a day while something stays red, and once more when it is fine again."
+    },
+    "codes": {
+      "certRenewalFailing": "Renewing the certificate keeps failing (first failure {{since}}).",
+      "backupFailed": "The last backup failed.",
+      "backupOld": "The last successful backup was {{time}}.",
+      "updateAvailable": "Version {{version}} is out."
+    },
+    "hints": {
+      "certRenewalFailing": "The server log says why. Often a name does not point to this server (yet), or port 80 cannot be reached from outside.",
+      "backupFailed": "The backups page shows the error. Check the target and start one by hand.",
+      "backupOld": "Backups normally run every night. The backups page shows whether they are paused or what went wrong.",
+      "updateAvailable": "The updates page shows what is new and updates with one click."
+    }
+  },
+  "stats": {
+    "intro": "What happened on your server, day by day or month by month.",
+    "utc": "Days are counted in UTC. The numbers start with version 0.14.",
+    "range": {
+      "label": "Period",
+      "days": "30 days",
+      "months": "12 months"
+    },
+    "total": {
+      "days": "in 30 days",
+      "months": "in 12 months"
+    },
+    "latest": "latest reading",
+    "chartSummary": "{{series}}: bar chart, highest value {{max}} ({{peak}}). The table below has every number.",
+    "chartEmpty": "{{series}}: nothing counted in this period.",
+    "charts": {
+      "received": {
+        "title": "Mail received",
+        "hint": "Mail from other servers and fetched mailboxes that reached at least one person."
+      },
+      "refused": {
+        "title": "Mail turned away",
+        "hint": "Refused at the door: unknown recipients, spam, viruses and rules such as DMARC."
+      },
+      "submitted": {
+        "title": "Mail sent",
+        "hint": "Messages your people sent, from mail apps, the webmail or the UwUMail apps."
+      },
+      "delivered": {
+        "title": "Handed to other servers",
+        "hint": "Recipients on other servers that took the mail."
+      },
+      "logins": {
+        "title": "Failed logins",
+        "hint": "Wrong passwords and refused logins in every app and in the portal."
+      },
+      "storage": {
+        "title": "Storage used",
+        "hint": "All mailboxes together, as read during each day."
+      }
+    },
+    "keys": {
+      "mail": {
+        "received": "Received",
+        "junk": "Into Junk",
+        "submitted": "Sent",
+        "delivered": "Delivered",
+        "deferred": "Tried again later",
+        "bounced": "Given up"
+      },
+      "refused": {
+        "unknownRecipient": "Unknown recipient",
+        "spam": "Spam",
+        "virus": "Virus",
+        "policy": "Rules (DMARC, blocked senders, relaying)",
+        "greylisted": "Asked to come back later"
+      },
+      "loginFailed": {
+        "smtp": "SMTP",
+        "imap": "IMAP",
+        "jmap": "JMAP",
+        "dav": "CalDAV/CardDAV",
+        "managesieve": "ManageSieve",
+        "portal": "Portal",
+        "other": "Other"
+      },
+      "gauge": {
+        "accounts": "Accounts",
+        "storageBytes": "Storage used"
+      }
+    },
+    "table": {
+      "title": "All numbers as a table",
+      "caption": "Statistics per period",
+      "period": {
+        "days": "Day",
+        "months": "Month"
+      }
+    },
+    "metrics": {
+      "title": "Prometheus metrics",
+      "intro": "For a monitoring system: the server's numbers under /metrics, in the Prometheus format. Off until you switch it on.",
+      "enabled": "Serve metrics",
+      "enabledHint": "Needs a token, allowed networks or both, so not everyone can read them.",
+      "token": "Token",
+      "tokenHint": "Prometheus sends it as a bearer token. Make one here.",
+      "tokenFresh": "Copy it now: once saved, it is never shown again.",
+      "tokenSet": "A token is set. A new one replaces it.",
+      "tokenNew": "Make a token",
+      "tokenReplace": "New token",
+      "tokenRemove": "Remove",
+      "copyToken": "Copy token",
+      "networks": "Only from these networks",
+      "networksHint": "One address or network per line, such as 10.0.0.0/8. Empty: from anywhere, with the token.",
+      "needsWayIn": "Make a token or name a network first, or the metrics would be open to everyone.",
+      "address": "Address for Prometheus"
     }
   },
   "duration": {
@@ -341,7 +514,8 @@
       "moveRunning": "This move is still running.",
       "moveNotRunning": "This move is not running.",
       "moveNoMailbox": "Your account has no mailbox that mail could move into.",
-      "moveWrongPassword": "The old provider refused this password. Many providers want an app password for this."
+      "moveWrongPassword": "The old provider refused this password. Many providers want an app password for this.",
+      "alertResolved": "This alert is already fine again."
     }
   },
   "people": {

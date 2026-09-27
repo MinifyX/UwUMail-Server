@@ -108,6 +108,10 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("egress.fetch", SettingKind::Bool),
     // Daily TLS reports (RFC 8460) to the domains mail went to, when they ask for them.
     spec("reports.send_tls_reports", SettingKind::Bool),
+    // Prometheus metrics under /metrics (docs/metrics.md).
+    spec("metrics.enabled", SettingKind::Bool),
+    spec("metrics.token", SettingKind::Secret),
+    spec("metrics.allowed_networks", SettingKind::List),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

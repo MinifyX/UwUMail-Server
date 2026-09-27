@@ -38,6 +38,20 @@
       }
     }
   },
+  "adminView": {
+    "headline": {
+      "ok": "Alles spint (=^･ω･^=)",
+      "unknown": "Ik snuffel nog rond",
+      "warning": "Iets moet even bekeken worden (・_・;)",
+      "problem": "Er zit iets vast (╥﹏╥)"
+    }
+  },
+  "alerts": {
+    "none": "Niets te melden, alles rustig (=^･ω･^=)"
+  },
+  "stats": {
+    "intro": "Wat er op je server gebeurd is, dag na dag. Ik heb alles meegeteld (=^･ω･^=)"
+  },
   "errors": {
     "loadFailed": {
       "title": "Oeps, dat lukte niet (╥﹏╥)"

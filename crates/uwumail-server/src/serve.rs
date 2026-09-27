@@ -159,6 +159,11 @@ pub async fn run(
             })
         })
     };
+    // Prometheus metrics, off unless the config or the admin panel switches them on.
+    let metrics = Arc::new(uwumail_web::MetricsGate::default());
+    if let Err(err) = metrics.configure(&config.metrics) {
+        tracing::warn!(%err, "not serving /metrics");
+    }
     let web = uwumail_web::Web::new(
         smtp.clone(),
         uwumail_web::WebSettings {
@@ -172,12 +177,14 @@ pub async fn run(
                 loki,
                 webmail: webmail.clone(),
                 egress: egress.clone(),
+                metrics: metrics.clone(),
             })),
             certificate: Some(certificate),
             webmail,
         },
     );
     web.set_egress(egress);
+    web.set_metrics_gate(metrics);
     {
         let certs = certs.clone();
         web.set_profile_key(Arc::new(move || certs.pem()));
@@ -316,6 +323,7 @@ pub async fn run(
     tasks.spawn(collect_garbage(store.clone(), smtp.clone(), shutdown_rx.clone()));
     // Once a day is over, the domains mail went to hear how TLS went (RFC 8460).
     tasks.spawn(uwumail_smtp::run_tls_reports(smtp.clone(), tls_report_egress, shutdown_rx.clone()));
+    tasks.spawn(flush_stats(store.clone(), shutdown_rx.clone()));
     tasks.spawn(backups.clone().run(shutdown_rx.clone()));
 
     tracing::info!("ready ✉");
@@ -323,7 +331,24 @@ pub async fn run(
     tracing::info!("shutting down, see you soon");
     let _ = shutdown.send(true);
     let _ = tokio::time::timeout(Duration::from_secs(10), async { while tasks.join_next().await.is_some() {} }).await;
+    // What was counted while everything stopped.
+    if let Err(err) = store.flush_stats().await {
+        tracing::warn!(%err, "writing down the statistics failed");
+    }
     Ok(())
+}
+
+/// Writes the statistics' counters into the day's numbers every minute.
+async fn flush_stats(store: Store, mut shutdown: watch::Receiver<bool>) {
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(60)) => {}
+            _ = shutdown.changed() => return,
+        }
+        if let Err(err) = store.flush_stats().await {
+            tracing::warn!(%err, "writing down the statistics failed");
+        }
+    }
 }
 
 async fn collect_garbage(store: Store, smtp: uwumail_smtp::Smtp, mut shutdown: watch::Receiver<bool>) {

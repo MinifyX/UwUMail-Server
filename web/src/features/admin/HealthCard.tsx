@@ -18,7 +18,7 @@ export const LEVELS: Record<HealthLevel, { icon: LucideIcon; tint: string; dot: 
   problem: { icon: CircleX, tint: "bg-danger-tint text-danger", dot: "bg-danger", mood: "sad" },
 };
 
-function useFindingText() {
+export function useFindingText() {
   const { t, i18n } = useT();
   const language = i18n.language;
   return (finding: HealthFinding) => {

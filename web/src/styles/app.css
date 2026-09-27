@@ -30,6 +30,7 @@
   --color-success-tint: var(--uwu-success-tint);
   --color-warning: var(--uwu-warning);
   --color-warning-tint: var(--uwu-warning-tint);
+  --color-chart: var(--uwu-chart);
 
   --shadow-float: var(--uwu-shadow-float);
   --shadow-focus: var(--uwu-focus);

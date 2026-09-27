@@ -116,6 +116,42 @@ export interface Overview {
   server: { hostname: string; version: string; uptimeSeconds: number };
 }
 
+export type AlertLevel = "info" | "warning" | "problem";
+
+/** Something the admins were told about (docs/admin-alerts.md). */
+export interface AdminAlert {
+  id: number;
+  /** A health area (`dns`, `delivery`, …) or `backup`, `certificate`, `update`. */
+  kind: string;
+  key: string;
+  /** The finding code; the text comes from `health.findings` or `alerts.codes`. */
+  code: string;
+  level: AlertLevel;
+  params: Record<string, unknown> | null;
+  link: string | null;
+  firstSeen: number;
+  lastSeen: number;
+  resolvedAt: number | null;
+  notifiedAt: number | null;
+  notifiedLevel: AlertLevel | null;
+  acknowledgedAt: number | null;
+  acknowledgedBy: string | null;
+}
+
+export interface AlertsView {
+  open: AdminAlert[];
+  resolved: AdminAlert[];
+}
+
+export type StatsRange = "days" | "months";
+
+/** Server → Statistics: per day or month, counters summed, `gauge.*` as last read. */
+export interface StatsView {
+  range: StatsRange;
+  periods: { period: string; values: Record<string, number> }[];
+  totals: Record<string, number>;
+}
+
 export type PersonStatus = "active" | "invited" | "disabled" | "deleted";
 
 export interface AddressInfo {

@@ -18,7 +18,7 @@ use uwumail_smtp::{
 };
 use uwumail_store::{
     BayesTotals, EmailSummary, EmailUpdate, IngestRequest, KeywordsChange, ListScope, MailboxRole, MailboxTarget,
-    MailboxesChange, NewAccount, NewSenderListEntry, Role, SenderList, SpamLimits, Store,
+    MailboxesChange, NewAccount, NewSenderListEntry, Role, SenderList, SpamLimits, Stat, Store,
 };
 
 pub(crate) const PASSWORD: &str = "katzenpfote-123";
@@ -141,6 +141,11 @@ impl TestServer {
         }
     }
 
+    /// How often `stat` was counted for the statistics since the server started.
+    fn counted(&self, stat: Stat) -> u64 {
+        self.smtp.store().stats().since_start().into_iter().find(|(counted, _)| *counted == stat).unwrap().1
+    }
+
     pub(crate) async fn raw(&self, email: &EmailSummary) -> String {
         let hash = uwumail_store::BlobHash::parse(&email.blob).unwrap();
         String::from_utf8(self.smtp.store().blob(&hash).await.unwrap()).unwrap()
@@ -214,6 +219,10 @@ async fn submitted_mail_reaches_local_and_remote_people_with_dkim() {
         assert!(started.elapsed() < Duration::from_secs(10), "queue did not drain");
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+
+    // The statistics saw it leave one server and arrive at the other.
+    assert_eq!((a.counted(Stat::Submitted), a.counted(Stat::Delivered), a.counted(Stat::Received)), (1, 1, 0));
+    assert_eq!((b.counted(Stat::Received), b.counted(Stat::Submitted)), (1, 0));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -239,6 +248,8 @@ async fn unknown_remote_recipients_bounce_to_the_sender() {
     assert!(raw.contains("ghost@b.test"));
     assert!(raw.contains("5.1.1"));
     assert!(raw.contains("multipart/report"));
+    assert_eq!(b.counted(Stat::RefusedUnknownRecipient), 1);
+    assert_eq!((a.counted(Stat::Bounced), a.counted(Stat::Delivered)), (1, 0));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -247,6 +258,7 @@ async fn submission_rules() {
 
     // Wrong password.
     assert!(a.mailer("mini@a.test", "falsch", false).send(mail("mini@a.test", &["ami@a.test"], "x")).await.is_err());
+    assert_eq!((a.counted(Stat::LoginFailedSmtp), a.counted(Stat::LoginFailedImap)), (1, 0));
     // Sending as someone else.
     assert!(a.mailer("mini@a.test", PASSWORD, false).send(mail("ami@a.test", &["ami@a.test"], "x")).await.is_err());
 
@@ -270,6 +282,7 @@ async fn mx_refuses_relaying_and_strips_forged_results() {
     assert!(session.command("MAIL FROM:<someone@elsewhere.test>").await.starts_with("250"));
     assert!(session.command("RCPT TO:<ghost@a.test>").await.starts_with("550 5.1.1"));
     assert!(session.command("RCPT TO:<friend@gmail.com>").await.starts_with("550 5.7.1"));
+    assert_eq!((a.counted(Stat::RefusedUnknownRecipient), a.counted(Stat::RefusedPolicy)), (1, 1));
     assert!(session.command("RCPT TO:<MINI+katzen@a.test>").await.starts_with("250"));
     assert!(session.command("DATA").await.starts_with("354"));
     let reply = session
@@ -806,6 +819,7 @@ async fn suspicious_mail_is_greylisted_once_and_then_delivered_with_its_score() 
 
     let retry = relay_from_outside(&a).await;
     assert!(retry.starts_with("250"), "the retry is let through: {retry}");
+    assert_eq!((a.counted(Stat::RefusedGreylisted), a.counted(Stat::Received), a.counted(Stat::Junk)), (1, 1, 0));
     let inbox = a.inbox("mini@a.test").await;
     assert_eq!(inbox.len(), 1);
     let raw = a.raw(&inbox[0]).await;
@@ -828,6 +842,7 @@ async fn mail_over_the_junk_score_is_filed_as_junk_and_counts_against_the_sender
     let raw = a.raw(&junk[0]).await;
     assert!(raw.contains("X-Spam-Status: Yes, score="), "{raw}");
     assert!(raw.contains("DMARC_FAIL"), "{raw}");
+    assert_eq!((a.counted(Stat::Received), a.counted(Stat::Junk)), (1, 1));
 
     // The sender is not vouched for by DMARC, so its network carries the count.
     let store = a.smtp.store();
@@ -856,6 +871,7 @@ async fn mail_is_only_refused_once_a_reject_score_is_set() {
     let reply = relay_from_outside(&a).await;
     assert!(reply.starts_with("550 5.7.1"), "{reply}");
     assert!(a.mailbox("mini@a.test", MailboxRole::Junk).await.is_empty());
+    assert_eq!((a.counted(Stat::RefusedSpam), a.counted(Stat::Received)), (1, 0));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1169,6 +1185,7 @@ async fn a_message_with_a_virus_is_turned_away_and_a_scanner_that_is_away_never_
     let entries =
         found.smtp.store().spam_log(uwumail_store::SpamLogFilter { limit: 10, ..Default::default() }).await.unwrap();
     assert_eq!(entries.first().map(|entry| entry.action.as_str()), Some("virus"));
+    assert_eq!((found.counted(Stat::RefusedVirus), found.counted(Stat::Received)), (1, 0));
 
     // A scanner nobody can reach must not stop the post; the message says that nobody looked, and
     // whatever the sender claimed about a scan of their own is gone.

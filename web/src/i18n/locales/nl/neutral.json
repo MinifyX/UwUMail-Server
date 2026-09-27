@@ -64,7 +64,8 @@
     "directory": "Accounts & domeinen",
     "calendars": "Agenda's en contacten",
     "masked": "Gemaskeerde adressen",
-    "moving": "Verhuizen"
+    "moving": "Verhuizen",
+    "more": "Meer"
   },
   "userMenu": {
     "open": "Accountmenu openen",
@@ -169,7 +170,8 @@
       "overview": "Overzicht",
       "mailFlow": "Mailverkeer",
       "backups": "Back-ups",
-      "updates": "Updates"
+      "updates": "Updates",
+      "stats": "Statistieken"
     },
     "tiles": {
       "news": "nieuw",
@@ -203,6 +205,177 @@
         "title": "Laatste wijziging",
         "none": "Nog niets gewijzigd"
       }
+    }
+  },
+  "adminView": {
+    "label": "Weergave",
+    "simple": "Eenvoudig",
+    "full": "Alles",
+    "hint": {
+      "simple": "Alleen het stoplicht en wat er te doen is. De rest staat in het menu onder ‘Meer’.",
+      "full": "Alle cijfers en alle controles. ‘Eenvoudig’ toont alleen het stoplicht."
+    },
+    "light": "Stoplicht: {{level}}",
+    "headline": {
+      "ok": "Alles is in orde",
+      "unknown": "Nog niet alles is gecontroleerd",
+      "warning": "Iets moet even bekeken worden",
+      "problem": "Er werkt iets niet"
+    },
+    "sentence": {
+      "ok": "Mail komt binnen en gaat de deur uit, er is nu niets voor jou te doen.",
+      "unknown": "De eerste controles lopen kort na de start.",
+      "warning_one": "Eén ding hieronder moet je bekijken als je even tijd hebt.",
+      "warning_other": "{{count}} dingen hieronder moet je bekijken als je even tijd hebt.",
+      "problem_one": "Eén ding hieronder heeft binnenkort je hulp nodig.",
+      "problem_other": "{{count}} dingen hieronder hebben binnenkort je hulp nodig."
+    },
+    "todo": "Wat te doen",
+    "quick": {
+      "title": "Snel naar",
+      "people": "Personen",
+      "addPerson": "Persoon toevoegen",
+      "domains": "Domeinen",
+      "backups": "Back-ups"
+    }
+  },
+  "alerts": {
+    "title": "Meldingen",
+    "intro": "Waarover de server de admins heeft ingelicht, en wat daarna weer in orde kwam. Hij kijkt elke vijf minuten.",
+    "loading": "Meldingen laden …",
+    "none": "Geen open meldingen.",
+    "openLabel": "Open meldingen",
+    "history_one": "{{count}} melding die weer in orde is",
+    "history_other": "{{count}} meldingen die weer in orde zijn",
+    "since": "Sinds {{time}}",
+    "resolvedAt": "Weer in orde {{time}}",
+    "acknowledgedBy": "{{login}} weet ervan",
+    "acknowledge": "Gezien",
+    "acknowledgeHint": "Geen dagelijkse herinneringen meer hierover. Je hoort het nog wel als het erger wordt of weer goed is.",
+    "acknowledgedToast": "Genoteerd. Geen herinneringen meer hierover.",
+    "level": {
+      "info": "Informatie",
+      "warning": "Even kijken",
+      "problem": "Probleem",
+      "resolved": "Weer in orde"
+    },
+    "mail": {
+      "title": "Meldingsmails",
+      "label": "Mails aan mij over meldingen",
+      "all": "Alle",
+      "problems": "Alleen problemen",
+      "none": "Geen",
+      "hint": "Elke admin kiest zelf. Er komt een mail als iets geel of rood wordt, één keer per dag zolang iets rood blijft, en nog één keer als het weer in orde is."
+    },
+    "codes": {
+      "certRenewalFailing": "Het certificaat vernieuwen blijft mislukken (eerste keer {{since}}).",
+      "backupFailed": "De laatste back-up is mislukt.",
+      "backupOld": "De laatste geslaagde back-up was {{time}}.",
+      "updateAvailable": "Versie {{version}} is uit."
+    },
+    "hints": {
+      "certRenewalFailing": "In het serverlog staat waarom. Vaak wijst een naam (nog) niet naar deze server, of is poort 80 van buitenaf niet bereikbaar.",
+      "backupFailed": "Op de back-uppagina staat de fout. Controleer het doel en start er één met de hand.",
+      "backupOld": "Back-ups lopen normaal elke nacht. Op de back-uppagina zie je of ze gepauzeerd zijn of wat er misging.",
+      "updateAvailable": "Op de updatepagina staat wat er nieuw is, en één klik werkt bij."
+    }
+  },
+  "stats": {
+    "intro": "Wat er op je server gebeurd is, dag na dag of maand na maand.",
+    "utc": "Dagen tellen in UTC. De cijfers beginnen bij versie 0.14.",
+    "range": {
+      "label": "Periode",
+      "days": "30 dagen",
+      "months": "12 maanden"
+    },
+    "total": {
+      "days": "in 30 dagen",
+      "months": "in 12 maanden"
+    },
+    "latest": "laatst gemeten",
+    "chartSummary": "{{series}}: staafdiagram, hoogste waarde {{max}} ({{peak}}). De tabel hieronder heeft alle cijfers.",
+    "chartEmpty": "{{series}}: in deze periode is niets geteld.",
+    "charts": {
+      "received": {
+        "title": "Ontvangen mail",
+        "hint": "Mail van andere servers en opgehaalde postvakken die minstens één persoon bereikte."
+      },
+      "refused": {
+        "title": "Geweigerde mail",
+        "hint": "Aan de deur geweigerd: onbekende ontvangers, spam, virussen en regels zoals DMARC."
+      },
+      "submitted": {
+        "title": "Verzonden mail",
+        "hint": "Berichten die je mensen verstuurden, uit mailapps, de webmail of de UwUMail-apps."
+      },
+      "delivered": {
+        "title": "Aan andere servers overgedragen",
+        "hint": "Ontvangers op andere servers die de mail aannamen."
+      },
+      "logins": {
+        "title": "Mislukte aanmeldingen",
+        "hint": "Verkeerde wachtwoorden en geweigerde aanmeldingen in alle apps en in het portaal."
+      },
+      "storage": {
+        "title": "Gebruikte opslag",
+        "hint": "Alle postvakken samen, gemeten in de loop van elke dag."
+      }
+    },
+    "keys": {
+      "mail": {
+        "received": "Ontvangen",
+        "junk": "In de spammap",
+        "submitted": "Verzonden",
+        "delivered": "Afgeleverd",
+        "deferred": "Later opnieuw geprobeerd",
+        "bounced": "Opgegeven"
+      },
+      "refused": {
+        "unknownRecipient": "Onbekende ontvanger",
+        "spam": "Spam",
+        "virus": "Virus",
+        "policy": "Regels (DMARC, geblokkeerde afzenders, relaying)",
+        "greylisted": "Gevraagd later terug te komen"
+      },
+      "loginFailed": {
+        "smtp": "SMTP",
+        "imap": "IMAP",
+        "jmap": "JMAP",
+        "dav": "CalDAV/CardDAV",
+        "managesieve": "ManageSieve",
+        "portal": "Portaal",
+        "other": "Overig"
+      },
+      "gauge": {
+        "accounts": "Accounts",
+        "storageBytes": "Gebruikte opslag"
+      }
+    },
+    "table": {
+      "title": "Alle cijfers als tabel",
+      "caption": "Statistieken per periode",
+      "period": {
+        "days": "Dag",
+        "months": "Maand"
+      }
+    },
+    "metrics": {
+      "title": "Prometheus-metrics",
+      "intro": "Voor een monitoringsysteem: de cijfers van de server onder /metrics, in het Prometheus-formaat. Uit tot je ze aanzet.",
+      "enabled": "Metrics aanbieden",
+      "enabledHint": "Heeft een token, toegestane netwerken of beide nodig, zodat niet iedereen ze kan lezen.",
+      "token": "Token",
+      "tokenHint": "Prometheus stuurt het als bearer-token mee. Maak er hier een.",
+      "tokenFresh": "Kopieer het nu: na het opslaan wordt het nooit meer getoond.",
+      "tokenSet": "Er is een token ingesteld. Een nieuw token vervangt het.",
+      "tokenNew": "Token maken",
+      "tokenReplace": "Nieuw token",
+      "tokenRemove": "Verwijderen",
+      "copyToken": "Token kopiëren",
+      "networks": "Alleen vanuit deze netwerken",
+      "networksHint": "Eén adres of netwerk per regel, zoals 10.0.0.0/8. Leeg: van overal, met het token.",
+      "needsWayIn": "Maak eerst een token of noem een netwerk, anders staan de metrics voor iedereen open.",
+      "address": "Adres voor Prometheus"
     }
   },
   "duration": {
@@ -341,7 +514,8 @@
       "moveRunning": "Deze verhuizing loopt nog.",
       "moveNotRunning": "Deze verhuizing loopt niet.",
       "moveNoMailbox": "Je account heeft geen mailbox waar mail naartoe kan verhuizen.",
-      "moveWrongPassword": "De oude provider heeft dit wachtwoord geweigerd. Veel providers willen hiervoor een app-wachtwoord."
+      "moveWrongPassword": "De oude provider heeft dit wachtwoord geweigerd. Veel providers willen hiervoor een app-wachtwoord.",
+      "alertResolved": "Deze melding is al weer in orde."
     }
   },
   "people": {

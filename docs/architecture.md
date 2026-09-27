@@ -177,6 +177,14 @@ successfully in that time. For a relay, the probe logs in and quits. For direct
 delivery, it reads the greeting of Gmail's MX on port 25 and quits. It never
 sends mail. Admins can run all checks at once with "Check now".
 
+Every five minutes the same look, plus backups and certificate renewals, turns
+into admin alerts: kept per finding in the store, mailed to the admins when
+they are new, worse, still red a day later or fine again
+([admin-alerts.md](admin-alerts.md)). What happens (mail in and out, refusals,
+failed logins) is counted in memory, written into a table of days every minute
+for the statistics page, and served to Prometheus under `/metrics` when that is
+switched on ([metrics.md](metrics.md)).
+
 ### `uwumail-server`
 
 The binary: configuration (`figment`: TOML + `UWUMAIL_*` environment),

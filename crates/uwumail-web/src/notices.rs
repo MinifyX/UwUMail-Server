@@ -522,7 +522,7 @@ fn sentence_case(sentence: String) -> String {
     }
 }
 
-fn hex_id() -> String {
+pub(crate) fn hex_id() -> String {
     let mut bytes = [0u8; 8];
     getrandom::fill(&mut bytes).expect("the system RNG failed");
     bytes.iter().map(|b| format!("{b:02x}")).collect()
