@@ -1768,6 +1768,7 @@
       "forwardingConfirmationSent": "{{address}}に確認メールを送信",
       "oauthGranted": "アプリ「{{name}}」が OAuth でログイン（{{scopes}}）",
       "oauthRevoked": "アプリ「{{name}}」をログアウト",
+      "oauthTokenReused": "アプリ「{{name}}」の古いトークンが再び使われたため、アプリをログアウトしました",
       "oidcLinked": "{{issuer}} のログインと連携"
     },
     "loginMethods": {

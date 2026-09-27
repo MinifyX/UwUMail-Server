@@ -1817,6 +1817,7 @@
       "forwardingConfirmationSent": "Bevestigingsmail naar {{address}} gestuurd",
       "oauthGranted": "App ‘{{name}}’ ingelogd met OAuth ({{scopes}})",
       "oauthRevoked": "App ‘{{name}}’ uitgelogd",
+      "oauthTokenReused": "Een oud token van de app ‘{{name}}’ kwam een tweede keer terug: de app is uitgelogd",
       "oidcLinked": "Gekoppeld aan de login bij {{issuer}}"
     },
     "loginMethods": {

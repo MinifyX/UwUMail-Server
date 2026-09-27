@@ -1817,6 +1817,7 @@
       "forwardingConfirmationSent": "Confirmation mail sent to {{address}}",
       "oauthGranted": "App “{{name}}” signed in with OAuth ({{scopes}})",
       "oauthRevoked": "App “{{name}}” signed out",
+      "oauthTokenReused": "An old token of the app “{{name}}” came back a second time: the app was signed out",
       "oidcLinked": "Linked with the login at {{issuer}}"
     },
     "loginMethods": {

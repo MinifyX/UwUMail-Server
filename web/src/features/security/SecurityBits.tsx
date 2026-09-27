@@ -136,6 +136,7 @@ const KNOWN_EVENTS = [
   "forwardingConfirmationSent",
   "oauthGranted",
   "oauthRevoked",
+  "oauthTokenReused",
   "oidcLinked",
 ];
 

@@ -1768,6 +1768,7 @@
       "forwardingConfirmationSent": "已向 {{address}} 发送确认邮件",
       "oauthGranted": "应用“{{name}}”通过 OAuth 登录（{{scopes}}）",
       "oauthRevoked": "应用“{{name}}”已退出登录",
+      "oauthTokenReused": "应用“{{name}}”的旧令牌被再次使用，该应用已退出登录",
       "oidcLinked": "已关联 {{issuer}} 的登录"
     },
     "loginMethods": {

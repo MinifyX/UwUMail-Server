@@ -1817,6 +1817,7 @@
       "forwardingConfirmationSent": "Bestätigungs-Mail an {{address}} verschickt",
       "oauthGranted": "App „{{name}}“ mit OAuth angemeldet ({{scopes}})",
       "oauthRevoked": "App „{{name}}“ abgemeldet",
+      "oauthTokenReused": "Ein altes Token der App „{{name}}“ kam ein zweites Mal: die App wurde abgemeldet",
       "oidcLinked": "Mit der Anmeldung bei {{issuer}} verknüpft"
     },
     "loginMethods": {

@@ -1864,6 +1864,7 @@
       "forwardingConfirmationSent": "E-mail de confirmation envoyé à {{address}}",
       "oauthGranted": "Appli « {{name}} » connectée avec OAuth ({{scopes}})",
       "oauthRevoked": "Appli « {{name}} » déconnectée",
+      "oauthTokenReused": "Un ancien jeton de l'appli « {{name}} » a servi une deuxième fois : l'appli a été déconnectée",
       "oidcLinked": "Associé à la connexion chez {{issuer}}"
     },
     "loginMethods": {
