@@ -13,8 +13,10 @@ use crate::mime;
 pub struct Prepared {
     /// Email ids per full-text term.
     text: HashMap<String, HashSet<i64>>,
-    /// Header bytes per email id, only when a HEADER key asks for them.
-    headers: HashMap<i64, Vec<u8>>,
+    /// The header fields per email id, name and value in lower case, only when a HEADER key asks
+    /// for them. Read once per message, not once per key and message (security-audit-0.16.0
+    /// PANIC-4).
+    headers: HashMap<i64, Vec<(String, String)>>,
 }
 
 fn walk<'a>(key: &'a SearchKey, visit: &mut impl FnMut(&'a SearchKey)) {
@@ -56,7 +58,11 @@ pub async fn prepare(
         for email in emails {
             let raw = store.blob(&email.blob).await?;
             let root = mime::parse(&raw);
-            prepared.headers.insert(email.email_id, raw[root.header].to_vec());
+            let fields = mime::fields(&raw, &root.header)
+                .into_iter()
+                .map(|field| (field.name.to_ascii_lowercase(), field.value.to_lowercase()))
+                .collect();
+            prepared.headers.insert(email.email_id, fields);
         }
     }
     Ok(prepared)
@@ -110,9 +116,9 @@ pub fn matches(key: &SearchKey, target: &Target<'_>, scope: &Scope, prepared: &P
         SearchKey::Body(text) | SearchKey::Text(text) => {
             text.trim().is_empty() || prepared.text.get(text).is_some_and(|ids| ids.contains(&email.email_id))
         }
-        SearchKey::Header(field, text) => prepared.headers.get(&email.email_id).is_some_and(|header| {
-            let range = 0..header.len();
-            mime::fields(header, &range).iter().any(|f| f.name.eq_ignore_ascii_case(field) && contains(&f.value, text))
+        SearchKey::Header(field, text) => prepared.headers.get(&email.email_id).is_some_and(|fields| {
+            let text = text.to_lowercase();
+            fields.iter().any(|(name, value)| name.eq_ignore_ascii_case(field) && value.contains(&text))
         }),
         SearchKey::Before(d) => day(email.received_at) < *d,
         SearchKey::On(d) => day(email.received_at) == *d,

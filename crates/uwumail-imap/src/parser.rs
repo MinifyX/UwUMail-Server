@@ -38,6 +38,10 @@ pub fn literal_announcement(line: &[u8]) -> Option<(usize, bool)> {
 ///
 /// Real clients nest two or three levels. Thunderbird's widest saved search is nowhere near this.
 const MAX_SEARCH_DEPTH: usize = 32;
+/// Keys in one SEARCH, all levels together. Each is checked against every message of the mailbox,
+/// so thousands of them made one command take the server's time (security-audit-0.16.0 PANIC-4);
+/// mail apps send a handful.
+pub const MAX_SEARCH_KEYS: usize = 100;
 
 struct Parser<'a> {
     input: &'a [u8],
@@ -46,6 +50,8 @@ struct Parser<'a> {
     utf8: bool,
     /// How many SEARCH keys deep we are, against [`MAX_SEARCH_DEPTH`].
     depth: usize,
+    /// SEARCH keys read so far, against [`MAX_SEARCH_KEYS`].
+    search_keys: usize,
 }
 
 const MONTHS: [&str; 12] = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
@@ -928,6 +934,11 @@ impl<'a> Parser<'a> {
             self.depth -= 1;
             return Err("the search is nested too deeply".into());
         }
+        self.search_keys += 1;
+        if self.search_keys > MAX_SEARCH_KEYS {
+            self.depth -= 1;
+            return Err("the search has too many keys".into());
+        }
         let key = self.nested_search_key();
         self.depth -= 1;
         key
@@ -1076,7 +1087,7 @@ pub fn parse_date_time(text: &str) -> Option<i64> {
 
 /// Parses one complete command. `utf8` says whether the client enabled UTF8=ACCEPT.
 pub fn parse_command(input: &[u8], utf8: bool) -> Result<Command, ParseError> {
-    let mut parser = Parser { input, pos: 0, utf8, depth: 0 };
+    let mut parser = Parser { input, pos: 0, utf8, depth: 0, search_keys: 0 };
     let tag = match parser.word(false) {
         Ok(tag) if !tag.contains('+') => tag.to_owned(),
         _ => return Err(ParseError { tag: None, message: "a command starts with a tag".into() }),
@@ -1350,6 +1361,15 @@ mod tests {
         assert_eq!(parse_date_time("17-Sep-2026 -1:00:00 +0200"), None);
         assert_eq!(parse_date_time("17-Sep-2026 10:00:00 +02:0"), None);
         assert_eq!(parse_date_time("17-Sep-2026 1\u{e9}:00 +0200"), None);
+    }
+
+    #[test]
+    fn a_search_has_a_limited_number_of_keys() {
+        let keys = |count: usize| format!("a SEARCH {}\r\n", vec!["HEADER X-A b"; count].join(" "));
+        assert!(parse_command(keys(MAX_SEARCH_KEYS).as_bytes(), false).is_ok());
+        assert!(parse_command(keys(MAX_SEARCH_KEYS + 1).as_bytes(), false).is_err());
+        let nested = format!("a SEARCH OR ({}) ALL\r\n", vec!["SEEN"; MAX_SEARCH_KEYS].join(" "));
+        assert!(parse_command(nested.as_bytes(), false).is_err(), "keys at every level count");
     }
 
     #[test]

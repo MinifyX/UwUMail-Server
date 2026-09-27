@@ -215,6 +215,11 @@ async fn append_store_search_move_and_expunge() {
     assert!(find(&lines, "ESEARCH").ends_with(") UID COUNT 2 ALL 1:2"));
     let (lines, _) = client.command("SEARCH TEXT fertig").await;
     assert_eq!(find(&lines, "* SEARCH"), "* SEARCH 1");
+    let (lines, _) = client.command("SEARCH HEADER TO LENI HEADER subject ENTWURF").await;
+    assert_eq!(find(&lines, "* SEARCH"), "* SEARCH 1");
+    // More keys than any mail app sends are refused (security-audit-0.16.0 PANIC-4).
+    let (_, done) = client.command(&format!("SEARCH {}", vec!["HEADER X-A b"; 101].join(" "))).await;
+    assert!(done.contains("BAD"), "{done}");
 
     let (_, done) = client.command("CREATE Projekte/UwUMail").await;
     assert!(done.contains("OK"), "{done}");

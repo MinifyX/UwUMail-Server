@@ -1382,17 +1382,25 @@ where
         };
         let emails = self.store.imap_emails(account, mailbox_id, uids).await?;
         let prepared = search::prepare(&self.store, account, &criteria, &emails).await?;
-        let mut found = Vec::new();
-        let mut found_uids = Vec::new();
-        let mut highest = 0;
-        for email in &emails {
-            let msn = positions[&email.uid];
-            if search::matches(&criteria, &search::Target { msn, email }, &scope, &prepared) {
-                found.push(if uid { email.uid } else { msn });
-                found_uids.push(email.uid);
-                highest = highest.max(email.modseq);
+        // Every key against every message of the mailbox: work for a blocking thread, not for the
+        // thread every other session shares (security-audit-0.16.0 PANIC-4).
+        let checked = criteria.clone();
+        let (mut found, mut found_uids, highest) = tokio::task::spawn_blocking(move || {
+            let mut found = Vec::new();
+            let mut found_uids = Vec::new();
+            let mut highest = 0;
+            for email in &emails {
+                let msn = positions[&email.uid];
+                if search::matches(&checked, &search::Target { msn, email }, &scope, &prepared) {
+                    found.push(if uid { email.uid } else { msn });
+                    found_uids.push(email.uid);
+                    highest = highest.max(email.modseq);
+                }
             }
-        }
+            (found, found_uids, highest)
+        })
+        .await
+        .map_err(|err| StoreError::Internal(err.to_string()))?;
         found.sort_unstable();
         found_uids.sort_unstable();
         let with_modseq = search::uses_modseq(&criteria);
