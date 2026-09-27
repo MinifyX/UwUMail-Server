@@ -129,8 +129,8 @@ pub fn matches(key: &SearchKey, target: &Target<'_>, scope: &Scope, prepared: &P
         SearchKey::Larger(size) => email.size > *size,
         SearchKey::Smaller(size) => email.size < *size,
         SearchKey::ModSeq(modseq) => email.modseq >= *modseq,
-        SearchKey::Younger(seconds) => scope.now - email.received_at <= *seconds as i64,
-        SearchKey::Older(seconds) => scope.now - email.received_at > *seconds as i64,
+        SearchKey::Younger(seconds) => scope.now.saturating_sub(email.received_at) <= *seconds as i64,
+        SearchKey::Older(seconds) => scope.now.saturating_sub(email.received_at) > *seconds as i64,
     }
 }
 
@@ -196,6 +196,9 @@ mod tests {
         assert_eq!(found(SearchKey::Since(20_001)), vec![2, 3]);
         assert_eq!(found(SearchKey::On(20_000)), vec![1]);
         assert_eq!(found(SearchKey::Younger(3600)), vec![3]);
+        // A received time far out of range overflowed the subtraction (security-audit-0.16.0 PANIC-I1).
+        let odd = email(4, "Zeitreise", "nyu@example.net", &[], i64::MIN);
+        assert!(!matches(&SearchKey::Younger(3600), &Target { msn: 4, email: &odd }, &scope, &prepared));
         assert_eq!(found(SearchKey::SequenceSet(SequenceSet(vec![(SeqNum::Value(2), SeqNum::Largest)]))), vec![2, 3]);
         assert_eq!(
             found(SearchKey::Not(Box::new(SearchKey::Uid(SequenceSet(vec![(SeqNum::Largest, SeqNum::Largest)]))))),

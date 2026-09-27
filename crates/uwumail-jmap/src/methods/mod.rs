@@ -382,8 +382,7 @@ pub fn query_response(
     let mut position = match args.get("anchor").and_then(Value::as_str) {
         Some(anchor) => {
             let index = ids.iter().position(|id| id == anchor).ok_or_else(|| MethodError::kind("anchorNotFound"))?;
-            let offset = args.get("anchorOffset").and_then(Value::as_i64).unwrap_or(0);
-            (index as i64 + offset).max(0) as usize
+            anchored(index, args.get("anchorOffset").and_then(Value::as_i64).unwrap_or(0))
         }
         None => match args.get("position").and_then(Value::as_i64).unwrap_or(0) {
             p if p < 0 => total.saturating_sub(p.unsigned_abs() as usize),
@@ -494,7 +493,27 @@ impl SetResponse {
     }
 }
 
+/// Where a page starts that begins `offset` places from the anchor at `index`, never before the
+/// start. `anchorOffset` is whatever the client sends; `i64::MAX` overflowed the addition
+/// (security-audit-0.16.0 PANIC-I1).
+pub fn anchored(index: usize, offset: i64) -> usize {
+    usize::try_from((index as i64).saturating_add(offset).max(0)).unwrap_or(usize::MAX)
+}
+
 /// Seconds since the Unix epoch.
 pub fn unix_now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
+}
+
+#[cfg(test)]
+mod anchor_tests {
+    use super::anchored;
+
+    #[test]
+    fn anchor_offsets_of_any_size() {
+        assert_eq!(anchored(5, -2), 3);
+        assert_eq!(anchored(5, -20), 0);
+        assert_eq!(anchored(5, i64::MIN), 0);
+        assert_eq!(anchored(5, i64::MAX), i64::MAX as usize);
+    }
 }

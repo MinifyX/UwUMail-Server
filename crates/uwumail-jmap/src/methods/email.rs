@@ -289,8 +289,7 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
                 .iter()
                 .position(|(id, _)| *id == anchor_id)
                 .ok_or_else(|| MethodError::kind("anchorNotFound"))?;
-            let offset = args.get("anchorOffset").and_then(Value::as_i64).unwrap_or(0);
-            (index as i64 + offset).max(0) as usize
+            super::anchored(index, args.get("anchorOffset").and_then(Value::as_i64).unwrap_or(0))
         }
         None => {
             let requested = args.get("position").and_then(Value::as_i64).unwrap_or(0);

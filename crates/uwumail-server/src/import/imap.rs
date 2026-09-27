@@ -512,7 +512,9 @@ async fn plan(
             Vec::new()
         } else {
             let mut uids: Vec<u32> = connection
-                .command(&format!("UID SEARCH UID {}:*", last_uid + 1))
+                // The last UID came from the other server; u32::MAX would overflow
+                // (security-audit-0.16.0 PANIC-I1).
+                .command(&format!("UID SEARCH UID {}:*", last_uid.saturating_add(1)))
                 .await?
                 .iter()
                 .filter(|response| response.tokens.get(1) == Some(&Token::Atom("SEARCH".into())))
