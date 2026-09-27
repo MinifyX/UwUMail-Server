@@ -65,7 +65,18 @@ const KNOWN_ACTIONS = new Set([
   "spamWordRemove",
   "spamWordSourceAdd",
   "spamWordSourceRemove",
+  "accountAuthSource",
+  "accountOauthRevoked",
+  "alertAcknowledge",
+  "domainMaskedAddresses",
+  "groupCreate",
+  "groupUpdate",
+  "groupRemove",
+  "sharedMailboxCreate",
+  "sharedMailboxMembers",
 ]);
+
+const AUTH_SOURCES = ["local", "ldap", "oidc"];
 
 function actorName(actor: string, t: TFunction) {
   return actor === "cli" || actor === "system" ? t(`log.actors.${actor}`) : actor;
@@ -106,8 +117,14 @@ export function detailText(record: AuditRecord, t: TFunction, language: string):
   }
   if (typeof details.name === "string" && record.action.startsWith("account.appPassword")) {
     parts.push(t("log.details.appPassword", { value: details.name }));
+  } else if (typeof details.name === "string" && record.action === "account.oauthRevoked") {
+    parts.push(t("log.details.oauthApp", { value: details.name }));
   } else if (typeof details.name === "string") {
     parts.push(t("log.details.name", { value: details.name }));
+  }
+  if (typeof details.on === "boolean") parts.push(t(details.on ? "log.details.switchedOn" : "log.details.switchedOff"));
+  if (typeof details.source === "string" && AUTH_SOURCES.includes(details.source)) {
+    parts.push(t("log.details.authSource", { value: t(`people.authSource.${details.source}`) }));
   }
   if (details.invited === true) parts.push(t("log.details.invited"));
   if (details.reason === "trash") parts.push(t("log.details.reasonTrash"));

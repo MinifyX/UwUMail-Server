@@ -845,7 +845,16 @@
       "updatesSettings": "{{actor}} hat die Update-Einstellungen geändert",
       "brandLogo": "{{actor}} hat ein neues Logo hochgeladen",
       "brandLogoRemoved": "{{actor}} hat das Logo entfernt",
-      "backupRestoreMailbox": "{{actor}} hat Mails von {{target}} aus einem Backup zurückgeholt"
+      "backupRestoreMailbox": "{{actor}} hat Mails von {{target}} aus einem Backup zurückgeholt",
+      "accountAuthSource": "{{actor}} hat geändert, wo das Passwort von {{target}} geprüft wird",
+      "accountOauthRevoked": "{{actor}} hat eine App von {{target}} abgemeldet",
+      "alertAcknowledge": "{{actor}} hat beim Alarm {{target}} auf „Gesehen“ geklickt",
+      "domainMaskedAddresses": "{{actor}} hat maskierte Adressen auf {{target}} geändert",
+      "groupCreate": "{{actor}} hat die Gruppe {{target}} angelegt",
+      "groupUpdate": "{{actor}} hat die Gruppe {{target}} geändert",
+      "groupRemove": "{{actor}} hat die Gruppe {{target}} entfernt",
+      "sharedMailboxCreate": "{{actor}} hat das geteilte Postfach {{target}} angelegt",
+      "sharedMailboxMembers": "{{actor}} hat die Mitglieder des geteilten Postfachs {{target}} geändert"
     },
     "details": {
       "adminOn": "ist jetzt Admin",
@@ -868,7 +877,11 @@
       "protocolsNone": "alle Protokolle aus",
       "redirectTo": "Mail geht an {{address}}",
       "redirectNone": "Mail wird abgewiesen",
-      "appPassword": "App-Passwort „{{value}}“"
+      "appPassword": "App-Passwort „{{value}}“",
+      "switchedOn": "eingeschaltet",
+      "switchedOff": "ausgeschaltet",
+      "authSource": "jetzt: {{value}}",
+      "oauthApp": "App „{{value}}“"
     },
     "entry": {
       "actor": "Wer",

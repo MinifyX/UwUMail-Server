@@ -845,7 +845,16 @@
       "updatesSettings": "{{actor}} heeft de update-instellingen gewijzigd",
       "brandLogo": "{{actor}} heeft een nieuw logo geüpload",
       "brandLogoRemoved": "{{actor}} heeft het logo verwijderd",
-      "backupRestoreMailbox": "{{actor}} heeft mail van {{target}} uit een back-up teruggehaald"
+      "backupRestoreMailbox": "{{actor}} heeft mail van {{target}} uit een back-up teruggehaald",
+      "accountAuthSource": "{{actor}} heeft gewijzigd waar het wachtwoord van {{target}} wordt gecontroleerd",
+      "accountOauthRevoked": "{{actor}} heeft een app van {{target}} uitgelogd",
+      "alertAcknowledge": "{{actor}} heeft bij de melding {{target}} op ‘Gezien’ geklikt",
+      "domainMaskedAddresses": "{{actor}} heeft gemaskeerde adressen op {{target}} gewijzigd",
+      "groupCreate": "{{actor}} heeft de groep {{target}} aangemaakt",
+      "groupUpdate": "{{actor}} heeft de groep {{target}} gewijzigd",
+      "groupRemove": "{{actor}} heeft de groep {{target}} verwijderd",
+      "sharedMailboxCreate": "{{actor}} heeft de gedeelde mailbox {{target}} aangemaakt",
+      "sharedMailboxMembers": "{{actor}} heeft de leden van de gedeelde mailbox {{target}} gewijzigd"
     },
     "details": {
       "adminOn": "is nu beheerder",
@@ -868,7 +877,11 @@
       "protocolsNone": "alle protocollen uit",
       "redirectTo": "mail gaat naar {{address}}",
       "redirectNone": "mail wordt geweigerd",
-      "appPassword": "app-wachtwoord ‘{{value}}’"
+      "appPassword": "app-wachtwoord ‘{{value}}’",
+      "switchedOn": "aangezet",
+      "switchedOff": "uitgezet",
+      "authSource": "nu: {{value}}",
+      "oauthApp": "app ‘{{value}}’"
     },
     "entry": {
       "actor": "Wie",

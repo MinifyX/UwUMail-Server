@@ -828,7 +828,16 @@
       "updatesSettings": "{{actor}}がアップデート設定を変更しました",
       "brandLogo": "{{actor}} が新しいロゴをアップロードしました",
       "brandLogoRemoved": "{{actor}} がロゴを削除しました",
-      "backupRestoreMailbox": "{{actor}} が {{target}} のメールをバックアップから戻しました"
+      "backupRestoreMailbox": "{{actor}} が {{target}} のメールをバックアップから戻しました",
+      "accountAuthSource": "{{actor}} が {{target}} のパスワードの確認先を変更しました",
+      "accountOauthRevoked": "{{actor}} が {{target}} のアプリをログアウトしました",
+      "alertAcknowledge": "{{actor}} がアラート {{target}} を確認済みにしました",
+      "domainMaskedAddresses": "{{actor}} が {{target}} のマスクアドレスを変更しました",
+      "groupCreate": "{{actor}} がグループ {{target}} を作成しました",
+      "groupUpdate": "{{actor}} がグループ {{target}} を変更しました",
+      "groupRemove": "{{actor}} がグループ {{target}} を削除しました",
+      "sharedMailboxCreate": "{{actor}} が共有メールボックス {{target}} を作成しました",
+      "sharedMailboxMembers": "{{actor}} が共有メールボックス {{target}} のメンバーを変更しました"
     },
     "details": {
       "adminOn": "管理者になりました",
@@ -850,7 +859,11 @@
       "protocolsNone": "すべてのプロトコルがオフ",
       "redirectTo": "メールは{{address}}へ",
       "redirectNone": "メールは拒否",
-      "appPassword": "アプリパスワード「{{value}}」"
+      "appPassword": "アプリパスワード「{{value}}」",
+      "switchedOn": "オン",
+      "switchedOff": "オフ",
+      "authSource": "変更後：{{value}}",
+      "oauthApp": "アプリ「{{value}}」"
     },
     "entry": {
       "actor": "誰が",

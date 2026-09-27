@@ -861,7 +861,16 @@
       "updatesSettings": "{{actor}} a modifié les paramètres de mise à jour",
       "brandLogo": "{{actor}} a téléversé un nouveau logo",
       "brandLogoRemoved": "{{actor}} a supprimé le logo",
-      "backupRestoreMailbox": "{{actor}} a restauré le courrier de {{target}} depuis une sauvegarde"
+      "backupRestoreMailbox": "{{actor}} a restauré le courrier de {{target}} depuis une sauvegarde",
+      "accountAuthSource": "{{actor}} a changé où le mot de passe de {{target}} est vérifié",
+      "accountOauthRevoked": "{{actor}} a déconnecté une appli de {{target}}",
+      "alertAcknowledge": "{{actor}} a cliqué sur « Vu » pour l'alerte {{target}}",
+      "domainMaskedAddresses": "{{actor}} a modifié les adresses masquées de {{target}}",
+      "groupCreate": "{{actor}} a créé le groupe {{target}}",
+      "groupUpdate": "{{actor}} a modifié le groupe {{target}}",
+      "groupRemove": "{{actor}} a supprimé le groupe {{target}}",
+      "sharedMailboxCreate": "{{actor}} a créé la boîte partagée {{target}}",
+      "sharedMailboxMembers": "{{actor}} a modifié les membres de la boîte partagée {{target}}"
     },
     "details": {
       "adminOn": "est maintenant admin",
@@ -885,7 +894,11 @@
       "protocolsNone": "tous les protocoles désactivés",
       "redirectTo": "le courrier va à {{address}}",
       "redirectNone": "le courrier est refusé",
-      "appPassword": "mot de passe d'application « {{value}} »"
+      "appPassword": "mot de passe d'application « {{value}} »",
+      "switchedOn": "activé",
+      "switchedOff": "désactivé",
+      "authSource": "désormais : {{value}}",
+      "oauthApp": "appli « {{value}} »"
     },
     "entry": {
       "actor": "Qui",

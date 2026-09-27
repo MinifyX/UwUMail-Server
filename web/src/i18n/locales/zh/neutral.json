@@ -828,7 +828,16 @@
       "updatesSettings": "{{actor}} 更改了更新设置",
       "brandLogo": "{{actor}} 上传了新标志",
       "brandLogoRemoved": "{{actor}} 移除了标志",
-      "backupRestoreMailbox": "{{actor}} 从备份中取回了 {{target}} 的邮件"
+      "backupRestoreMailbox": "{{actor}} 从备份中取回了 {{target}} 的邮件",
+      "accountAuthSource": "{{actor}} 更改了 {{target}} 的密码验证位置",
+      "accountOauthRevoked": "{{actor}} 让 {{target}} 的一个应用退出了登录",
+      "alertAcknowledge": "{{actor}} 已确认警报 {{target}}",
+      "domainMaskedAddresses": "{{actor}} 更改了 {{target}} 的隐藏地址设置",
+      "groupCreate": "{{actor}} 创建了群组 {{target}}",
+      "groupUpdate": "{{actor}} 更改了群组 {{target}}",
+      "groupRemove": "{{actor}} 删除了群组 {{target}}",
+      "sharedMailboxCreate": "{{actor}} 创建了共享邮箱 {{target}}",
+      "sharedMailboxMembers": "{{actor}} 更改了共享邮箱 {{target}} 的成员"
     },
     "details": {
       "adminOn": "现在是管理员",
@@ -850,7 +859,11 @@
       "protocolsNone": "所有协议均已关闭",
       "redirectTo": "邮件转到 {{address}}",
       "redirectNone": "邮件被拒收",
-      "appPassword": "应用专用密码“{{value}}”"
+      "appPassword": "应用专用密码“{{value}}”",
+      "switchedOn": "已开启",
+      "switchedOff": "已关闭",
+      "authSource": "现在：{{value}}",
+      "oauthApp": "应用“{{value}}”"
     },
     "entry": {
       "actor": "操作者",
