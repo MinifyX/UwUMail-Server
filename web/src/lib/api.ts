@@ -567,16 +567,7 @@ export interface BackupsView {
   minute: number;
   retention: { daily: number; weekly: number; monthly: number };
   encrypted: boolean;
-  target: {
-    host: string;
-    port: number;
-    user: string;
-    path: string;
-    method: "key" | "password";
-    publicKey: string | null;
-    passwordSet: boolean;
-    hostKey: string | null;
-  } | null;
+  target: BackupTarget | null;
   status: {
     lastAttemptAt: number | null;
     lastSuccessAt: number | null;
@@ -588,6 +579,76 @@ export interface BackupsView {
   };
   running: boolean;
   restore: RestoreView;
+  mailboxRestore: MailboxRestoreView;
+}
+
+/** Where backups go. Secrets never come back: only whether one is set. */
+export type BackupTarget =
+  | {
+      kind: "sftp";
+      host: string;
+      port: number;
+      user: string;
+      path: string;
+      method: "key" | "password";
+      publicKey: string | null;
+      passwordSet: boolean;
+      hostKey: string | null;
+    }
+  | {
+      kind: "s3";
+      endpoint: string;
+      region: string;
+      bucket: string;
+      prefix: string;
+      accessKey: string;
+      secretKeySet: boolean;
+      pathStyle: boolean;
+    }
+  | { kind: "folder"; path: string };
+
+/** A folder of a person in a snapshot, with the names from the top down. */
+export interface SnapshotFolder {
+  id: number;
+  parentId: number | null;
+  path: string[];
+  role: string | null;
+  emails: number;
+}
+
+export interface SnapshotPerson {
+  login: string;
+  name: string;
+  emails: number;
+  folders: SnapshotFolder[];
+}
+
+/** Taking one person's mail out of a snapshot, while the server keeps running. */
+export interface MailboxRestoreView {
+  /** Empty while no snapshot is open. */
+  state: "" | "opening" | "open" | "restoring" | "failed" | string;
+  snapshot: string;
+  createdAt: number;
+  error: string;
+  doneBytes: number;
+  totalBytes: number;
+  people: SnapshotPerson[];
+  /** Whose mail is coming back right now, and how far it got. */
+  account: string;
+  total: number;
+  done: number;
+  restored: number;
+  skipped: number;
+  last: {
+    account: string;
+    into: string;
+    folder: string;
+    restored: number;
+    skipped: number;
+    /** Empty when it went well. */
+    error: string;
+    finishedAt: number;
+  } | null;
 }
 
 /** Putting a backup back over everything this server has. */
@@ -622,6 +683,35 @@ export interface RestoreView {
     error: string;
     keptGateway: boolean;
   } | null;
+}
+
+/** A move from another provider, as My account → Moving shows it. */
+export interface MoveJob {
+  id: number;
+  address: string;
+  host: string;
+  port: number;
+  login: string;
+  state: "queued" | "running" | "paused" | "done";
+  /** Why it paused: quotaExceeded, loginRefused, unreachable, notPublic, noMailbox, stopped, failed. */
+  error: string;
+  errorDetail: string;
+  foldersDone: number;
+  foldersTotal: number;
+  messagesDone: number;
+  messagesTotal: number;
+  messagesSkipped: number;
+  bytesDone: number;
+  createdAt: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+  lastRunAt: number | null;
+}
+
+export interface MovingView {
+  jobs: MoveJob[];
+  max: number;
+  hasMailbox: boolean;
 }
 
 export interface BackupSnapshot {

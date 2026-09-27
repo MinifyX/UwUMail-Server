@@ -13,6 +13,7 @@ mod gateway;
 mod health;
 mod loki;
 mod mailbox;
+mod moving;
 mod people;
 mod security;
 mod settings;

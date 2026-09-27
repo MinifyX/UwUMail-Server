@@ -20,6 +20,12 @@
     "greeting": "Hallo {{name}}!",
     "intro": "Hier ist alles rund um dein Postfach (｡･ω･｡)"
   },
+  "moving": {
+    "intro": "Pack dein altes Postfach ein und hol alles nach Hause: jeden Ordner, jede Markierung, jedes Datum. Der Server trägt die Kisten im Hintergrund (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
+    "toasts": {
+      "finished": "Fertig eingezogen! Die alten Zugangsdaten sind weg (◕‿◕✿)"
+    }
+  },
   "admin": {
     "intro": "So geht es deinem Server. Ich passe mit auf (=^･ω･^=)",
     "queueEmpty": "Nichts wartet, alles ist unterwegs ✉︎",

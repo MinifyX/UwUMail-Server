@@ -20,6 +20,12 @@
     "greeting": "Hoi {{name}}!",
     "intro": "Alles over je mailbox, gewoon hier (｡･ω･｡)"
   },
+  "moving": {
+    "intro": "Pak je oude mailbox in en breng alles naar huis: elke map, elke markering, elke datum. De server sjouwt de dozen op de achtergrond (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
+    "toasts": {
+      "finished": "Helemaal verhuisd! De oude inloggegevens zijn weg (◕‿◕✿)"
+    }
+  },
   "admin": {
     "intro": "Hoe het met je server gaat. Ik houd hem ook in de gaten (=^･ω･^=)",
     "queueEmpty": "Niets wacht, alles is onderweg ✉︎",

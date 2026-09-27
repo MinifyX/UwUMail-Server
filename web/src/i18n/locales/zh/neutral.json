@@ -62,7 +62,8 @@
     "expand": "展开{{group}}",
     "mailbox": "邮箱",
     "directory": "账户与域名",
-    "calendars": "日历和通讯录"
+    "calendars": "日历和通讯录",
+    "moving": "搬家"
   },
   "userMenu": {
     "open": "打开账户菜单",
@@ -316,7 +317,16 @@
       "googleUseIcs": "Google 只允许它自己的应用访问。日历请使用私密 iCal 地址，通讯录请使用 vCard 导出。",
       "subscriptionLimit": "你订阅的日历数量已达上限。",
       "subscriptionExists": "你已经订阅了这个日历。",
-      "refreshPause": "刚刚获取过。请一分钟后再试。"
+      "refreshPause": "刚刚获取过。请一分钟后再试。",
+      "backupBusy": "现在已有任务在使用备份：一次备份，或正在恢复的邮箱。请等它完成后再试。({{detail}})",
+      "backupFolderInData": "备份文件夹必须位于服务器数据目录之外，否则备份会和服务器一起丢失。",
+      "moveExists": "这个地址已经在搬家中。",
+      "moveFromHere": "这个地址已经在本服务器上，没有什么需要搬的。",
+      "moveLimit": "最多可同时搬五个邮箱。请先完成其他的搬家。",
+      "moveRunning": "这次搬家仍在进行中。",
+      "moveNotRunning": "这次搬家没有在进行。",
+      "moveNoMailbox": "你的账户没有可以接收邮件的邮箱。",
+      "moveWrongPassword": "原服务商拒绝了这个密码。很多服务商在这里需要应用专用密码。"
     }
   },
   "people": {
@@ -586,7 +596,8 @@
       "spamVirusTest": "{{actor}} 测试了病毒扫描器",
       "updatesSettings": "{{actor}} 更改了更新设置",
       "brandLogo": "{{actor}} 上传了新标志",
-      "brandLogoRemoved": "{{actor}} 移除了标志"
+      "brandLogoRemoved": "{{actor}} 移除了标志",
+      "backupRestoreMailbox": "{{actor}} 从备份中取回了 {{target}} 的邮件"
     },
     "details": {
       "adminOn": "现在是管理员",
@@ -1546,6 +1557,80 @@
       "password": "密码只进不出。服务器需要它来登录服务商，并会将其加密保存。"
     }
   },
+  "moving": {
+    "title": "搬家",
+    "intro": "把邮件从原来的服务商搬过来：每个文件夹、原来的已读或未读状态和日期都保留。服务器在后台复制，所以你可以关闭此页面。",
+    "noMailbox": {
+      "title": "这里没有邮箱",
+      "body": "你的账户没有可以接收邮件的邮箱。请联系管理员。"
+    },
+    "form": {
+      "title": "搬一个邮箱",
+      "explain": "只需要原来的地址和它的密码：服务器会自己找到服务商的 IMAP 服务器，并登录一次以确认。",
+      "address": "原来的地址",
+      "addressHint": "你在原服务商的地址。",
+      "password": "密码",
+      "passwordHint": "通常是服务商的应用专用密码，而不是你的登录密码。在你完成之前它会被加密保存。",
+      "manual": "自己填写服务器",
+      "host": "IMAP 服务器",
+      "hostHint": "使用 TLS，通常是端口 993。",
+      "port": "端口",
+      "login": "用户名",
+      "loginHint": "如果就是地址本身，请留空。",
+      "searching": "正在查找服务商的服务器 …",
+      "start": "开始搬家",
+      "started": "搬家已开始，会在后台继续。"
+    },
+    "hints": {
+      "gmail": "Gmail 只允许其他服务器使用应用专用密码登录：先在 Google 账户中开启两步验证，然后在 myaccount.google.com/apppasswords 创建一个。Gmail 的 IMAP 始终开启。那里的标签就是文件夹；带多个标签的邮件只会搬一次，放到最先找到它的文件夹中。",
+      "outlook": "Outlook.com 和 Hotmail 只允许通过 Microsoft 登录的应用，自己的服务器无法替你做到。请改用邮件程序复制：添加两个邮箱，然后把文件夹拖过去。",
+      "gmx": "GMX 需要你先允许其他服务器访问：在 GMX 设置中的 E-Mail → POP3/IMAP Abruf 下开启 IMAP 访问。如果开启了双重验证，需要使用应用专用密码。",
+      "webde": "WEB.DE 需要你先允许其他服务器访问：在 WEB.DE 设置中的 E-Mail → POP3/IMAP Abruf 下开启 IMAP 访问。如果开启了双重验证，需要使用应用专用密码。"
+    },
+    "job": {
+      "from": "来自 {{host}}，用户 {{login}}",
+      "queued": "正在排队 …",
+      "running": "正在复制 …",
+      "looking": "正在查看文件夹 …",
+      "progress": "{{done}} / {{total}} 封邮件 · {{size}}",
+      "progressLabel": "搬家进度",
+      "folders": "文件夹 {{done}} / {{total}}",
+      "skipped": "{{count}} 封邮件已经存在，已跳过",
+      "skipped_other": "{{count}} 封邮件已经存在，已跳过",
+      "done": "全部到齐了。",
+      "doneAt": "截至 {{date}}，原来的内容已全部在这里。"
+    },
+    "errors": {
+      "quotaExceeded": "你在这里的邮箱已满。请腾出空间或向管理员申请更多空间，然后继续：会从停下的地方接着进行。",
+      "loginRefused": "原服务商拒绝了密码。请输入新密码（通常是应用专用密码）后继续。",
+      "unreachable": "无法连接到原服务商。请稍后再试。",
+      "notPublic": "据本服务器判断，原服务商的服务器不在互联网上。",
+      "noMailbox": "你的账户没有可以接收邮件的邮箱。",
+      "stopped": "已暂停。随时可以继续，会从停下的地方接着进行。",
+      "failed": "出了点问题。点击继续以重试。"
+    },
+    "actions": {
+      "pause": "暂停",
+      "continue": "继续",
+      "syncAgain": "再次同步",
+      "finish": "完成并删除登录信息",
+      "finishConfirm": "{{address}} 搬家完成了吗？原邮箱的密码将被删除；已搬来的邮件会保留。",
+      "newPassword": "新密码"
+    },
+    "toasts": {
+      "queued": "马上继续。",
+      "finished": "完成。原邮箱的登录信息已删除。"
+    },
+    "about": {
+      "title": "须知",
+      "what": "每个文件夹都会搬过来，特殊文件夹（已发送、草稿、垃圾邮件、废纸篓、归档）会进入你对应的文件夹，每封邮件都保留日期以及已读、旗标或已回复状态。",
+      "twice": "不会重复：根据 Message-ID 或内容判断已经存在的邮件会被跳过。",
+      "switch": "不用着急：现在先搬一次，告诉大家你的新地址，之后随时使用“再次同步”。它只会获取之后到达原服务商的邮件。",
+      "password": "密码只用于复制，会被加密保存，并在你点击“完成并删除登录信息”后立即删除。",
+      "calendars": "日历和通讯录需要单独搬：",
+      "calendarsLink": "日历和通讯录 → 从其他服务商迁移"
+    }
+  },
   "mailbox": {
     "title": "转发、离开与发送",
     "intro": "你的邮件还会发到哪里、你不在时发件人会收到什么回复，以及邮件如何发出。",
@@ -2046,7 +2131,7 @@
     "helperOld": "这台机器上的助手程序太旧，无法使用更新按钮。请在机器上运行一次以下命令——它也会把助手程序更新到最新，之后你就可以在这里一键更新了："
   },
   "backups": {
-    "intro": "每天晚上，服务器会将邮件、设置、日历和通讯录备份到一台 SFTP 服务器，例如 NAS。首次备份之后，只会上传新增的内容。",
+    "intro": "每天晚上，服务器会备份邮件、设置、日历和通讯录：备份到 SFTP 服务器（例如 NAS）、S3 存储桶，或一个文件夹（例如挂载的磁盘）。首次备份之后，只会上传新增的内容。",
     "status": {
       "title": "状态",
       "running": "正在备份…",
@@ -2060,7 +2145,7 @@
       "started": "备份即将开始"
     },
     "target": {
-      "title": "备份服务器",
+      "title": "备份位置",
       "explain": "备份的存放位置。如果文件夹不存在，会自动创建；每台服务器请使用单独的文件夹。",
       "host": "地址",
       "port": "端口",
@@ -2078,7 +2163,28 @@
       "test": "测试连接",
       "testOk": "连接正常",
       "testFirst": "连接正常。服务器提供的密钥是 {{hostKey}}；从现在起必须是这个密钥。",
-      "trustNewKey": "信任新密钥"
+      "trustNewKey": "信任新密钥",
+      "kind": "备份到",
+      "kindSftp": "SFTP 服务器",
+      "kindS3": "S3 存储桶",
+      "kindFolder": "文件夹",
+      "explainS3": "Amazon S3 或任何兼容其接口的服务器：MinIO、Backblaze B2、Hetzner Object Storage、Wasabi 等。请为本服务器单独使用一个存储桶，或存储桶中的一个文件夹。",
+      "explainFolder": "本机上的一个文件夹：第二块磁盘，或挂载到容器中的 NAS 共享。它必须已经存在，并且位于服务器数据目录之外。",
+      "endpoint": "S3 地址",
+      "endpointHint": "只填服务器，不含存储桶，例如 https://s3.eu-central-1.amazonaws.com。http:// 只能在你自己的网络中使用。",
+      "bucket": "存储桶",
+      "prefix": "存储桶中的文件夹",
+      "prefixHint": "留空表示整个存储桶",
+      "region": "区域",
+      "regionHint": "例如 eu-central-1；留空为 us-east-1",
+      "accessKey": "访问密钥",
+      "secretKey": "私密密钥",
+      "secretKeyKept": "留空以保留已保存的密钥。",
+      "pathStyle": "存储桶放在路径中",
+      "pathStyleHint": "使用 https://server/bucket 而不是 https://bucket.server。MinIO 和很多本地网络中的服务器需要这样。",
+      "folder": "文件夹",
+      "folderHint": "完整路径，例如 /backup",
+      "testWritable": "连接正常：已写入、读回并删除了一个测试文件。"
     },
     "schedule": {
       "enabled": "每晚备份",
@@ -2121,6 +2227,32 @@
       "keptGateway": "保留了这台机器的网关配对，而不是备份中的配对。",
       "oldDatabase": "之前的数据库以 uwumail.db.replaced.* 的形式保存在数据目录中。确认无误后再将其删除。",
       "forget": "知道了"
+    },
+    "mailbox": {
+      "title": "恢复单个邮箱",
+      "explain": "在服务器继续运行的同时，从快照中取出某个人的邮件。邮件会放在现有内容旁边的新文件夹“Restored <日期>”中，原来的文件夹在它下面。邮箱中仍然存在的邮件会被跳过。",
+      "snapshot": "快照",
+      "latest": "最新的",
+      "open": "打开",
+      "openFailed": "无法打开快照：{{error}}",
+      "opening": "正在获取快照的数据库：{{done}} / {{total}} …",
+      "opened": "已打开：{{time}} 的快照。",
+      "restoring": "正在取回 {{account}} 的邮件：{{done}} / {{total}} …",
+      "lastDone": "{{count}} 封邮件已回到 {{account}} 的文件夹“{{folder}}”中；{{skipped}} 封原本还在。",
+      "lastDone_other": "{{count}} 封邮件已回到 {{account}} 的文件夹“{{folder}}”中；{{skipped}} 封原本还在。",
+      "lastFailed": "恢复到 {{account}} 的过程已停止：{{error}}。在此之前已取回 {{count}} 封邮件。",
+      "nobody": "这个快照中没有人拥有邮箱。",
+      "person": "用户",
+      "personLine": "{{login}}（{{count}}）",
+      "into": "放入此人的邮箱",
+      "intoHint": "留空表示同一地址。用于之后更换了地址的人。",
+      "which": "文件夹",
+      "allFolders": "所有文件夹",
+      "someFolders": "选择文件夹",
+      "inbox": "收件箱",
+      "how": "现有的内容不会被更改或替换。备份会等到这里完成后再运行。",
+      "restore": "恢复",
+      "close": "关闭快照"
     }
   },
   "spam": {

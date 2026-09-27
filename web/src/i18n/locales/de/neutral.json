@@ -62,7 +62,8 @@
     "expand": "{{group}} ausklappen",
     "mailbox": "Postfach",
     "directory": "Konten & Domains",
-    "calendars": "Kalender & Kontakte"
+    "calendars": "Kalender & Kontakte",
+    "moving": "Umzug"
   },
   "userMenu": {
     "open": "Kontomenü öffnen",
@@ -325,7 +326,16 @@
       "googleUseIcs": "Google lässt nur seine eigenen Apps herein. Nimm für Kalender die geheime iCal-Adresse und für Kontakte einen vCard-Export.",
       "subscriptionLimit": "Du hast schon so viele abonnierte Kalender wie möglich.",
       "subscriptionExists": "Diesen Kalender hast du schon abonniert.",
-      "refreshPause": "Gerade erst geholt. Versuch es in einer Minute nochmal."
+      "refreshPause": "Gerade erst geholt. Versuch es in einer Minute nochmal.",
+      "backupBusy": "Gerade arbeitet schon etwas mit den Backups: ein Backup oder ein Postfach, das zurückkommt. Versuch es noch mal, wenn es fertig ist. ({{detail}})",
+      "backupFolderInData": "Der Backup-Ordner muss außerhalb des Datenverzeichnisses des Servers liegen, sonst ginge das Backup zusammen mit dem Server verloren.",
+      "moveExists": "Diese Adresse wird schon umgezogen.",
+      "moveFromHere": "Diese Adresse liegt schon auf diesem Server, da gibt es nichts umzuziehen.",
+      "moveLimit": "Höchstens fünf Postfächer können gleichzeitig umziehen. Schließ erst einen der anderen Umzüge ab.",
+      "moveRunning": "Dieser Umzug läuft noch.",
+      "moveNotRunning": "Dieser Umzug läuft gerade nicht.",
+      "moveNoMailbox": "Dein Konto hat kein Postfach, in das Mails umziehen könnten.",
+      "moveWrongPassword": "Der alte Anbieter hat das Passwort abgelehnt. Viele Anbieter wollen hierfür ein App-Passwort."
     }
   },
   "people": {
@@ -600,7 +610,8 @@
       "spamVirusTest": "{{actor}} hat den Virenscanner getestet",
       "updatesSettings": "{{actor}} hat die Update-Einstellungen geändert",
       "brandLogo": "{{actor}} hat ein neues Logo hochgeladen",
-      "brandLogoRemoved": "{{actor}} hat das Logo entfernt"
+      "brandLogoRemoved": "{{actor}} hat das Logo entfernt",
+      "backupRestoreMailbox": "{{actor}} hat Mails von {{target}} aus einem Backup zurückgeholt"
     },
     "details": {
       "adminOn": "ist jetzt Admin",
@@ -1591,6 +1602,80 @@
       "password": "Das Passwort geht hier nur hinein und kommt nie wieder heraus. Der Server braucht es, um sich beim Anbieter anzumelden, und verwahrt es verschlüsselt."
     }
   },
+  "moving": {
+    "title": "Umzug",
+    "intro": "Hol deine Mails von deinem alten Anbieter her: jeden Ordner, gelesen oder ungelesen wie dort, mit Datum. Der Server kopiert im Hintergrund, du kannst die Seite also schließen.",
+    "noMailbox": {
+      "title": "Kein Postfach hier",
+      "body": "Dein Konto hat kein Postfach, in das Mails umziehen könnten. Frag deinen Admin."
+    },
+    "form": {
+      "title": "Postfach umziehen",
+      "explain": "Mehr als deine alte Adresse und ihr Passwort braucht es nicht: Der Server findet den IMAP-Server deines Anbieters selbst und meldet sich zur Probe einmal an.",
+      "address": "Alte Adresse",
+      "addressHint": "Die Adresse bei deinem alten Anbieter.",
+      "password": "Passwort",
+      "passwordHint": "Oft ein App-Passwort des Anbieters, nicht das, mit dem du dich anmeldest. Es bleibt versiegelt gespeichert, bis du fertig bist.",
+      "manual": "Server selbst eintragen",
+      "host": "IMAP-Server",
+      "hostHint": "Mit TLS, meist Port 993.",
+      "port": "Port",
+      "login": "Benutzername",
+      "loginHint": "Leer, wenn es die Adresse selbst ist.",
+      "searching": "Suche den Server deines Anbieters …",
+      "start": "Umzug starten",
+      "started": "Der Umzug hat begonnen und läuft im Hintergrund weiter."
+    },
+    "hints": {
+      "gmail": "Gmail lässt andere Server nur mit einem App-Passwort herein: Schalte in deinem Google-Konto die Bestätigung in zwei Schritten ein und erstelle dann eins unter myaccount.google.com/apppasswords. IMAP ist bei Gmail immer an. Labels sind dort Ordner; eine Mail mit mehreren Labels kommt einmal, in den ersten Ordner, in dem sie gefunden wird.",
+      "outlook": "Outlook.com und Hotmail lassen nur Apps herein, die sich über Microsoft anmelden, und das kann ein eigener Server nicht für dich tun. Kopier die Mails stattdessen mit einem Mailprogramm: Richte beide Postfächer ein und zieh die Ordner hinüber.",
+      "gmx": "GMX lässt andere Server erst herein, wenn du es erlaubst: In den GMX-Einstellungen unter E-Mail → POP3/IMAP Abruf den Zugriff per IMAP einschalten. Mit Zwei-Faktor-Authentifizierung brauchst du ein App-Passwort.",
+      "webde": "WEB.DE lässt andere Server erst herein, wenn du es erlaubst: In den WEB.DE-Einstellungen unter E-Mail → POP3/IMAP Abruf den Zugriff per IMAP einschalten. Mit Zwei-Faktor-Authentifizierung brauchst du ein App-Passwort."
+    },
+    "job": {
+      "from": "von {{host}} als {{login}}",
+      "queued": "Wartet, bis es dran ist …",
+      "running": "Kopiere …",
+      "looking": "Schaue die Ordner durch …",
+      "progress": "{{done}} von {{total}} Mails · {{size}}",
+      "progressLabel": "Wie weit der Umzug ist",
+      "folders": "Ordner {{done}} von {{total}}",
+      "skipped": "{{count}} Mail war schon da und wurde ausgelassen",
+      "skipped_other": "{{count}} Mails waren schon da und wurden ausgelassen",
+      "done": "Alles ist da.",
+      "doneAt": "Alles, was dort war, ist hier, Stand {{date}}."
+    },
+    "errors": {
+      "quotaExceeded": "Dein Postfach hier ist voll. Schaff Platz oder frag deinen Admin nach mehr, dann mach weiter: Es geht dort weiter, wo es aufgehört hat.",
+      "loginRefused": "Der alte Anbieter hat das Passwort abgelehnt. Gib ein neues ein (oft ein App-Passwort) und mach weiter.",
+      "unreachable": "Der alte Anbieter war nicht erreichbar. Versuch es später noch mal.",
+      "notPublic": "Der Server des alten Anbieters ist nicht im Internet, soweit dieser Server das sehen kann.",
+      "noMailbox": "Dein Konto hat kein Postfach, in das Mails umziehen könnten.",
+      "stopped": "Pausiert. Mach weiter, wann du willst; es geht dort weiter, wo es aufgehört hat.",
+      "failed": "Etwas ist schiefgegangen. Mach weiter, um es noch mal zu versuchen."
+    },
+    "actions": {
+      "pause": "Pausieren",
+      "continue": "Weitermachen",
+      "syncAgain": "Nochmal abgleichen",
+      "finish": "Fertig, Zugangsdaten löschen",
+      "finishConfirm": "Fertig mit {{address}}? Das Passwort für das alte Postfach wird gelöscht; die Mails, die gekommen sind, bleiben.",
+      "newPassword": "Neues Passwort"
+    },
+    "toasts": {
+      "queued": "Es geht gleich weiter.",
+      "finished": "Fertig. Die Zugangsdaten für das alte Postfach sind gelöscht."
+    },
+    "about": {
+      "title": "Gut zu wissen",
+      "what": "Jeder Ordner kommt mit, die besonderen (Gesendet, Entwürfe, Spam, Papierkorb, Archiv) in deine, und jede Mail mit ihrem Datum und gelesen, markiert oder beantwortet wie dort.",
+      "twice": "Nichts kommt doppelt: Eine Mail, die schon hier ist, nach ihrer Message-ID oder ihrem Inhalt, wird ausgelassen.",
+      "switch": "Lass dir Zeit: Zieh jetzt einmal um, sag den Leuten deine neue Adresse und nimm „Nochmal abgleichen“, wann immer du willst. Es holt nur, was seitdem beim alten Anbieter angekommen ist.",
+      "password": "Das Passwort wird nur zum Kopieren benutzt, versiegelt gespeichert und gelöscht, sobald du auf „Fertig, Zugangsdaten löschen“ klickst.",
+      "calendars": "Kalender und Kontakte ziehen getrennt um:",
+      "calendarsLink": "Kalender & Kontakte → Von anderem Anbieter umziehen"
+    }
+  },
   "mailbox": {
     "title": "Weiterleitung, Abwesenheit und Senden",
     "intro": "Wohin deine Mails noch gehen, was Absender hören, wenn du nicht da bist, und wie deine Mails rausgehen.",
@@ -2096,7 +2181,7 @@
     "helperOld": "Der Helfer auf dieser Maschine ist zu alt für den Update-Knopf. Einmal noch auf der Maschine ausführen – das bringt auch den Helfer auf den neuesten Stand, danach aktualisierst du hier per Knopf:"
   },
   "backups": {
-    "intro": "Der Server sichert Mails, Einstellungen, Kalender und Kontakte jede Nacht auf einen SFTP-Server, zum Beispiel ein NAS. Nach dem ersten Mal wird nur hochgeladen, was neu ist.",
+    "intro": "Der Server sichert Mails, Einstellungen, Kalender und Kontakte jede Nacht: auf einen SFTP-Server wie ein NAS, in einen S3-Bucket oder in einen Ordner, etwa eine eingehängte Platte. Nach dem ersten Mal wird nur hochgeladen, was neu ist.",
     "status": {
       "title": "Stand",
       "running": "Das Backup läuft gerade …",
@@ -2110,7 +2195,7 @@
       "started": "Das Backup startet"
     },
     "target": {
-      "title": "Backup-Server",
+      "title": "Wohin gesichert wird",
       "explain": "Wohin gesichert wird. Der Ordner wird angelegt, wenn es ihn noch nicht gibt; nimm für jeden Server einen eigenen.",
       "host": "Adresse",
       "port": "Port",
@@ -2128,7 +2213,28 @@
       "test": "Verbindung testen",
       "testOk": "Verbindung klappt",
       "testFirst": "Verbindung klappt. Der Server hat sich mit {{hostKey}} gemeldet; ab jetzt muss es dieser Schlüssel sein.",
-      "trustNewKey": "Neuem Schlüssel vertrauen"
+      "trustNewKey": "Neuem Schlüssel vertrauen",
+      "kind": "Sichern auf",
+      "kindSftp": "SFTP-Server",
+      "kindS3": "S3-Bucket",
+      "kindFolder": "Ordner",
+      "explainS3": "Amazon S3 oder jeder Server, der dessen Sprache spricht: MinIO, Backblaze B2, Hetzner Object Storage, Wasabi und andere. Nimm einen Bucket oder einen Ordner darin nur für diesen Server.",
+      "explainFolder": "Ein Ordner auf diesem Rechner: eine zweite Platte oder eine NAS-Freigabe, die in den Container eingehängt ist. Er muss schon da sein und außerhalb des Datenverzeichnisses des Servers liegen.",
+      "endpoint": "S3-Adresse",
+      "endpointHint": "Nur der Server, ohne Bucket, z. B. https://s3.eu-central-1.amazonaws.com. http:// geht nur im eigenen Netz.",
+      "bucket": "Bucket",
+      "prefix": "Ordner im Bucket",
+      "prefixHint": "Leer für den ganzen Bucket",
+      "region": "Region",
+      "regionHint": "z. B. eu-central-1; leer heißt us-east-1",
+      "accessKey": "Access Key",
+      "secretKey": "Secret Key",
+      "secretKeyKept": "Leer lassen, um den gespeicherten Schlüssel zu behalten.",
+      "pathStyle": "Bucket im Pfad",
+      "pathStyleHint": "https://server/bucket statt https://bucket.server. So wollen es MinIO und viele Server im eigenen Netz.",
+      "folder": "Ordner",
+      "folderHint": "Ein vollständiger Pfad, z. B. /backup",
+      "testWritable": "Verbindung klappt: Eine Testdatei wurde geschrieben, wieder gelesen und entfernt."
     },
     "schedule": {
       "enabled": "Jede Nacht sichern",
@@ -2171,6 +2277,32 @@
       "keptGateway": "Die Gateway-Kopplung dieser Maschine wurde behalten, nicht die aus dem Backup.",
       "oldDatabase": "Die Datenbank von vorher liegt als uwumail.db.replaced.* im Datenverzeichnis. Lösch sie, wenn du sicher bist.",
       "forget": "Verstanden"
+    },
+    "mailbox": {
+      "title": "Ein Postfach wiederherstellen",
+      "explain": "Holt die Mails einer Person aus einem gesicherten Stand, während der Server weiterläuft. Sie kommen neben das, was jetzt da ist, in einen neuen Ordner „Restored <Datum>“ mit den alten Ordnern darunter. Mails, die das Postfach noch hat, werden ausgelassen.",
+      "snapshot": "Stand",
+      "latest": "Der neueste",
+      "open": "Öffnen",
+      "openFailed": "Der Stand ließ sich nicht öffnen: {{error}}",
+      "opening": "Hole die Datenbank des Stands: {{done}} von {{total}} …",
+      "opened": "Geöffnet: der Stand vom {{time}}.",
+      "restoring": "Hole die Mails von {{account}} zurück: {{done}} von {{total}} …",
+      "lastDone": "{{count}} Mail ist zurück bei {{account}}, im Ordner „{{folder}}“; {{skipped}} waren noch da.",
+      "lastDone_other": "{{count}} Mails sind zurück bei {{account}}, im Ordner „{{folder}}“; {{skipped}} waren noch da.",
+      "lastFailed": "Das Zurückholen zu {{account}} hat aufgehört: {{error}}. Bis dahin sind {{count}} Mails zurückgekommen.",
+      "nobody": "In diesem Stand hatte niemand ein Postfach.",
+      "person": "Person",
+      "personLine": "{{login}} ({{count}})",
+      "into": "In das Postfach von",
+      "intoHint": "Leer für dieselbe Adresse. Für jemanden, dessen Adresse sich seitdem geändert hat.",
+      "which": "Ordner",
+      "allFolders": "Alle Ordner",
+      "someFolders": "Ordner auswählen",
+      "inbox": "Posteingang",
+      "how": "Nichts, was jetzt da ist, wird geändert oder ersetzt. Ein Backup wartet, bis das hier fertig ist.",
+      "restore": "Wiederherstellen",
+      "close": "Stand schließen"
     }
   },
   "spam": {

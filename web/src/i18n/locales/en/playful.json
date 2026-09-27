@@ -20,6 +20,12 @@
     "greeting": "Hi {{name}}!",
     "intro": "Everything about your mailbox, right here (｡･ω･｡)"
   },
+  "moving": {
+    "intro": "Pack up your old mailbox and bring everything home: every folder, every flag, every date. The server carries the boxes in the background (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
+    "toasts": {
+      "finished": "All moved in! The old login is gone (◕‿◕✿)"
+    }
+  },
   "admin": {
     "intro": "How your server is doing. I'm keeping an eye on it too (=^･ω･^=)",
     "queueEmpty": "Nothing waiting, everything is on its way ✉︎",

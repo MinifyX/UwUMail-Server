@@ -15,6 +15,10 @@ import type {
   EgressView,
   BackupSnapshot,
   BackupsView,
+  BackupTarget,
+  MailboxRestoreView,
+  MoveJob,
+  MovingView,
   ForwardAddress,
   GreylistHold,
   GreylistView,
@@ -522,6 +526,7 @@ const mockBackups: BackupsView = {
   retention: { daily: 7, weekly: 4, monthly: 6 },
   encrypted: true,
   target: {
+    kind: "sftp",
     host: "nas.uwu.example",
     port: 22,
     user: "backup",
@@ -553,9 +558,67 @@ const mockBackups: BackupsView = {
     staged: null,
     last: null,
   },
+  mailboxRestore: {
+    state: "",
+    snapshot: "",
+    createdAt: 0,
+    error: "",
+    doneBytes: 0,
+    totalBytes: 0,
+    people: [],
+    account: "",
+    total: 0,
+    done: 0,
+    restored: 0,
+    skipped: 0,
+    last: null,
+  },
 };
 
 let restoreStartedAt = 0;
+let mailboxStartedAt = 0;
+
+/** The people of a snapshot in the mock, with a few folders each. */
+function snapshotPeople(): MailboxRestoreView["people"] {
+  const folders = (base: number) => [
+    { id: base + 1, parentId: null, path: ["Inbox"], role: "inbox", emails: 812 },
+    { id: base + 2, parentId: null, path: ["Sent"], role: "sent", emails: 240 },
+    { id: base + 3, parentId: null, path: ["Verein"], role: null, emails: 96 },
+    { id: base + 4, parentId: base + 3, path: ["Verein", "2025"], role: null, emails: 41 },
+    { id: base + 5, parentId: null, path: ["Trash"], role: "trash", emails: 12 },
+  ];
+  return [
+    { login: "lorin@uwu.example", name: "Lorin", emails: 1201, folders: folders(0) },
+    { login: "mini@uwu.example", name: "Mini", emails: 433, folders: folders(10) },
+  ];
+}
+
+/** Opening a snapshot and restoring a mailbox take a few seconds in the mock, like a small real one. */
+function stepMailbox() {
+  const job = mockBackups.mailboxRestore;
+  const elapsed = Date.now() - mailboxStartedAt;
+  if (job.state === "opening") {
+    job.doneBytes = Math.min(job.totalBytes, Math.round((job.totalBytes * elapsed) / 4000));
+    if (elapsed > 4000) Object.assign(job, { state: "open", people: snapshotPeople() });
+  } else if (job.state === "restoring") {
+    job.done = Math.min(job.total, Math.round((job.total * elapsed) / 5000));
+    job.skipped = Math.round(job.done * 0.1);
+    job.restored = job.done - job.skipped;
+    if (elapsed > 5000) {
+      job.state = "open";
+      const day = new Date(job.createdAt * 1000).toISOString().slice(0, 10);
+      job.last = {
+        account: job.account,
+        into: job.account,
+        folder: `Restored ${day}`,
+        restored: job.restored,
+        skipped: job.skipped,
+        error: "",
+        finishedAt: Math.floor(Date.now() / 1000),
+      };
+    }
+  }
+}
 
 /**
  * A restore in the mock walks through fetching and then waits, which is where a real one leaves the
@@ -1138,6 +1201,69 @@ const mockFetchAccounts: FetchAccountInfo[] = [
     backlogAt: null,
   },
 ];
+
+/** Moves from other providers: one finished a while ago and one on its way, which the mock walks forward. */
+const mockMoves: MoveJob[] = [
+  {
+    id: 2,
+    address: "lorin.alt@gmx.example",
+    host: "imap.gmx.example",
+    port: 993,
+    login: "lorin.alt@gmx.example",
+    state: "running",
+    error: "",
+    errorDetail: "",
+    foldersDone: 3,
+    foldersTotal: 9,
+    messagesDone: 1840,
+    messagesTotal: 5210,
+    messagesSkipped: 12,
+    bytesDone: 212_000_000,
+    createdAt: now - 1200,
+    startedAt: now - 1200,
+    finishedAt: null,
+    lastRunAt: now - 60,
+  },
+  {
+    id: 1,
+    address: "lorin@oldmail.example",
+    host: "imap.oldmail.example",
+    port: 993,
+    login: "lorin@oldmail.example",
+    state: "done",
+    error: "",
+    errorDetail: "",
+    foldersDone: 6,
+    foldersTotal: 6,
+    messagesDone: 734,
+    messagesTotal: 734,
+    messagesSkipped: 0,
+    bytesDone: 61_000_000,
+    createdAt: now - 9 * 86_400,
+    startedAt: now - 9 * 86_400,
+    finishedAt: now - 9 * 86_400 + 900,
+    lastRunAt: now - 9 * 86_400 + 600,
+  },
+];
+let nextMoveId = 3;
+const moveStartedAt = new Map<number, number>([[2, Date.now()]]);
+
+/** Every look at the page moves the running moves on a little, and finishes them after a while. */
+function stepMoves(): MovingView {
+  for (const job of mockMoves) {
+    if (job.state !== "queued" && job.state !== "running") continue;
+    const elapsed = Date.now() - (moveStartedAt.get(job.id) ?? Date.now());
+    if (job.messagesTotal === 0)
+      Object.assign(job, { messagesTotal: 1260, foldersTotal: 7, startedAt: Math.floor(Date.now() / 1000) });
+    job.state = "running";
+    const share = Math.min(1, elapsed / 20_000);
+    job.messagesDone = Math.max(job.messagesDone, Math.round(job.messagesTotal * share));
+    job.foldersDone = Math.max(job.foldersDone, Math.round(job.foldersTotal * share));
+    job.bytesDone = job.messagesDone * 110_000;
+    if (share >= 1) Object.assign(job, { state: "done", finishedAt: Math.floor(Date.now() / 1000) });
+  }
+  return { jobs: mockMoves, max: 5, hasMailbox: true };
+}
 
 const mockFetchView = (): FetchView => ({
   accounts: mockFetchAccounts,
@@ -2459,6 +2585,82 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/admin\/spam\/learn-folders$/,
     () => [200, { spam: 40, ham: 310, people: 3 } satisfies LearnedFromFolders],
   ],
+  ["GET", /^\/api\/account\/moving$/, () => [200, stepMoves()]],
+  [
+    "POST",
+    /^\/api\/account\/moving$/,
+    (body) => {
+      const given = body as { address: string; password: string; host?: string; login?: string };
+      const address = given.address.trim().toLowerCase();
+      if (!address.includes("@")) return problem(409, "senderInvalid");
+      if (address.endsWith("@uwu.example")) return problem(409, "moveFromHere");
+      if (given.password === "wrong") return problem(409, "moveWrongPassword");
+      if (address.endsWith("@unknown.example") && !given.host) return problem(409, "providerNotFound");
+      if (mockMoves.some((job) => job.address === address)) return problem(409, "moveExists");
+      if (mockMoves.length >= 5) return problem(409, "moveLimit");
+      const job: MoveJob = {
+        id: nextMoveId++,
+        address,
+        host: given.host?.trim() || `imap.${address.split("@")[1]}`,
+        port: 993,
+        login: given.login?.trim() || address,
+        state: "queued",
+        error: "",
+        errorDetail: "",
+        foldersDone: 0,
+        foldersTotal: 0,
+        messagesDone: 0,
+        messagesTotal: 0,
+        messagesSkipped: 0,
+        bytesDone: 0,
+        createdAt: Math.floor(Date.now() / 1000),
+        startedAt: null,
+        finishedAt: null,
+        lastRunAt: null,
+      };
+      mockMoves.unshift(job);
+      moveStartedAt.set(job.id, Date.now());
+      return [201, job];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/account\/moving\/(\d+)\/sync$/,
+    (body, [id]) => {
+      const job = mockMoves.find((candidate) => candidate.id === Number(id));
+      if (!job) return problem(404, "notFound");
+      if (job.state === "queued" || job.state === "running") return problem(409, "moveRunning");
+      if (job.state === "done") {
+        Object.assign(job, { foldersDone: 0, messagesDone: 0, messagesTotal: 0, messagesSkipped: 0, bytesDone: 0 });
+        Object.assign(job, { startedAt: null, finishedAt: null });
+      }
+      void body;
+      Object.assign(job, { state: "queued", error: "", errorDetail: "" });
+      moveStartedAt.set(job.id, Date.now());
+      return [200, job];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/account\/moving\/(\d+)\/pause$/,
+    (_, [id]) => {
+      const job = mockMoves.find((candidate) => candidate.id === Number(id));
+      if (!job) return problem(404, "notFound");
+      if (job.state !== "queued" && job.state !== "running") return problem(409, "moveNotRunning");
+      Object.assign(job, { state: "paused", error: "stopped" });
+      return [200, job];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/account\/moving\/(\d+)$/,
+    (_, [id]) => {
+      const at = mockMoves.findIndex((candidate) => candidate.id === Number(id));
+      if (at < 0) return problem(404, "notFound");
+      mockMoves.splice(at, 1);
+      return [204, null];
+    },
+  ],
   ["GET", /^\/api\/account\/fetch$/, () => [200, mockFetchView()]],
   [
     // The real one asks DNS, the provider and Mozilla and then logs in; here two addresses stand
@@ -3490,7 +3692,70 @@ const routes: [string, RegExp, Handler][] = [
       return [200, mockUpdates];
     },
   ],
-  ["GET", /^\/api\/admin\/backups$/, () => [200, stepRestore()]],
+  [
+    "GET",
+    /^\/api\/admin\/backups$/,
+    () => {
+      stepMailbox();
+      return [200, stepRestore()];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/backups\/mailbox\/open$/,
+    (body) => {
+      const job = mockBackups.mailboxRestore;
+      if (job.state === "opening" || job.state === "restoring") return problem(409, "backupBusy");
+      mailboxStartedAt = Date.now();
+      Object.assign(job, {
+        state: "opening",
+        snapshot: (body as { snapshot?: string }).snapshot ?? "latest",
+        createdAt: Math.floor(Date.now() / 1000) - 86_400,
+        error: "",
+        doneBytes: 0,
+        totalBytes: 48_000_000,
+        people: [],
+        last: null,
+      });
+      return [200, mockBackups];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/backups\/mailbox\/restore$/,
+    (body) => {
+      const job = mockBackups.mailboxRestore;
+      const { account, folders } = body as { account: string; folders: number[] | null };
+      if (job.state !== "open") return problem(422, "invalid");
+      const person = job.people.find((candidate) => candidate.login === account);
+      if (!person) return problem(422, "invalid");
+      mailboxStartedAt = Date.now();
+      const total = folders
+        ? person.folders.filter((folder) => folders.includes(folder.id)).reduce((sum, folder) => sum + folder.emails, 0)
+        : person.emails;
+      Object.assign(job, { state: "restoring", account, total, done: 0, restored: 0, skipped: 0 });
+      log("backup.restoreMailbox", account);
+      return [200, mockBackups];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/admin\/backups\/mailbox$/,
+    () => {
+      Object.assign(mockBackups.mailboxRestore, {
+        state: "",
+        snapshot: "",
+        createdAt: 0,
+        error: "",
+        people: [],
+        account: "",
+        total: 0,
+        done: 0,
+        last: null,
+      });
+      return [200, mockBackups];
+    },
+  ],
   [
     "POST",
     /^\/api\/admin\/backups\/restore$/,
@@ -3535,16 +3800,43 @@ const routes: [string, RegExp, Handler][] = [
         minute: number;
         encrypted: boolean;
         retention: BackupsView["retention"];
-        target: { host: string; port: number; user: string; path: string; method: "key" | "password" };
+        target: Record<string, unknown> & { kind: BackupTarget["kind"] };
       };
       const newKey = next.encrypted && !mockBackups.encrypted;
+      const given = next.target;
+      const target: BackupTarget =
+        given.kind === "s3"
+          ? {
+              kind: "s3",
+              endpoint: String(given.endpoint ?? ""),
+              region: String(given.region || "us-east-1"),
+              bucket: String(given.bucket ?? ""),
+              prefix: String(given.prefix ?? ""),
+              accessKey: String(given.accessKey ?? ""),
+              secretKeySet: true,
+              pathStyle: Boolean(given.pathStyle),
+            }
+          : given.kind === "folder"
+            ? { kind: "folder", path: String(given.path ?? "") }
+            : {
+                kind: "sftp",
+                host: String(given.host ?? ""),
+                port: Number(given.port ?? 22),
+                user: String(given.user ?? ""),
+                path: String(given.path ?? ""),
+                method: given.method === "password" ? "password" : "key",
+                publicKey:
+                  "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExample uwumail-backup@mail.uwu.example",
+                passwordSet: given.method === "password",
+                hostKey: "SHA256:uwuExampleHostKeyFingerprint0000000000000000",
+              };
       Object.assign(mockBackups, {
         enabled: next.enabled,
         hour: next.hour,
         minute: next.minute,
         retention: next.retention,
         encrypted: next.encrypted,
-        target: { ...mockBackups.target!, ...next.target, passwordSet: next.target.method === "password" },
+        target,
       });
       log("backup.settings", "server");
       return [
@@ -3555,7 +3847,14 @@ const routes: [string, RegExp, Handler][] = [
       ];
     },
   ],
-  ["POST", /^\/api\/admin\/backups\/test$/, () => [200, { hostKey: mockBackups.target!.hostKey, known: true }]],
+  [
+    "POST",
+    /^\/api\/admin\/backups\/test$/,
+    () => {
+      const target = mockBackups.target!;
+      return [200, { kind: target.kind, hostKey: target.kind === "sftp" ? target.hostKey : null, known: true }];
+    },
+  ],
   [
     "POST",
     /^\/api\/admin\/backups\/run$/,

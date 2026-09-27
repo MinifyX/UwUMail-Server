@@ -14,6 +14,7 @@ pub mod greylist;
 pub mod host;
 pub mod links;
 pub mod mailbox;
+pub mod moving;
 pub mod own;
 pub mod people;
 pub mod queue;

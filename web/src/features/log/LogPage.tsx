@@ -25,6 +25,7 @@ const KNOWN_ACTIONS = new Set([
   "backupSettings",
   "backupShowRecoveryKey",
   "backupForgetHostKey",
+  "backupRestoreMailbox",
   "domainCloudflare",
   "domainMtaSts",
   "domainForwardAddress",

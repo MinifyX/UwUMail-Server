@@ -17,6 +17,7 @@ import {
   Server,
   ShieldBan,
   ShieldCheck,
+  Truck,
   UserRound,
   Users,
   X,
@@ -212,6 +213,7 @@ export function PortalShell({ session, children }: { session: Session; children:
             { to: "/account/calendars", label: t("nav.calendars"), icon: CalendarDays },
             { to: "/account/mail", label: t("nav.mail"), icon: Forward },
             { to: "/account/fetch", label: t("nav.fetch"), icon: Download },
+            { to: "/account/moving", label: t("nav.moving"), icon: Truck },
             { to: "/account/spam", label: t("nav.spamFilter"), icon: MailWarning },
             { to: "/account/security", label: t("nav.security"), icon: ShieldCheck },
           ]}
