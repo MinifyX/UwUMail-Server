@@ -29,6 +29,7 @@ md-5.workspace = true
 psl.workspace = true
 quick-xml.workspace = true
 regex.workspace = true
+regex-automata.workspace = true
 rustls.workspace = true
 ruzstd.workspace = true
 rustls-pki-types.workspace = true

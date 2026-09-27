@@ -370,6 +370,13 @@ pattern: a list cannot slow the server down. In exchange, look-around and
 back-references are not supported, and an expression that matches an empty
 text is refused, because it would match every message.
 
+Compiled, one person's lists (own entries and subscribed lists together) may
+take 16 MiB, the whole server's and each domain's 128 MiB. Plain words take
+little; a big expression like `/\w{50}/` takes a lot. What does not fit any
+more is left out, in the order the entries were added, and the log says so. A
+change compiles only the lists of the scope it belongs to again, in the
+background: mail arriving meanwhile is judged by the lists as they were.
+
 Entries can be typed in one per line, or a whole list can be pasted, for
 example an Rspamd map. Lines starting with `#` are skipped; the portal and
 the command line report what was added, what was already on the list and which

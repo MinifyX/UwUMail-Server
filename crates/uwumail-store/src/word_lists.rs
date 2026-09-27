@@ -532,7 +532,8 @@ impl Store {
                  FROM word_entries w
                  LEFT JOIN word_sources s ON s.id = w.source_id
                  LEFT JOIN domains d ON d.id = w.domain_id
-                 WHERE w.expires_at IS NULL OR w.expires_at > strftime('%s', 'now')",
+                 WHERE w.expires_at IS NULL OR w.expires_at > strftime('%s', 'now')
+                 ORDER BY w.id",
             )?;
             let rows = stmt.query_map([], |row| {
                 Ok(CompiledWord {

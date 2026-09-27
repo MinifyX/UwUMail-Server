@@ -166,7 +166,7 @@ pub struct Score {
 }
 
 /// The compiled word lists and built-in lists, kept between messages.
-pub(crate) type CompiledLists = tokio::sync::Mutex<Option<std::sync::Arc<lists::Lists>>>;
+pub(crate) type CompiledLists = lists::Cache;
 
 impl Score {
     fn add(&mut self, rule: &'static str, points: f32, detail: Option<String>) {

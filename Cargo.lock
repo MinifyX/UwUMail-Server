@@ -4607,6 +4607,7 @@ dependencies = [
  "quick-xml",
  "rcgen",
  "regex",
+ "regex-automata",
  "rustls",
  "rustls-pki-types",
  "ruzstd",
