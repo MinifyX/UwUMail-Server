@@ -171,7 +171,10 @@ app or passkey), or when switched on under *Security* in the portal, mail apps
 need an app password instead; the main password then only works in the portal.
 JMAP apps (like UwUMail) only need
 `https://mail.example.com`; they find everything else at `/.well-known/jmap`.
-IMAP is only offered with TLS on port 993, not with STARTTLS on 143.
+IMAP is only offered with TLS on port 993, not with STARTTLS on 143. An IMAP
+connection that stays a minute without a command before logging in, or 31
+minutes after, is closed, and so is one that has not logged in after three
+minutes, however busy it keeps itself.
 
 Most apps find these settings themselves:
 

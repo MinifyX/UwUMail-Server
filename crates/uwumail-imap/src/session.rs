@@ -25,6 +25,10 @@ const MAX_LINE: usize = 64 * 1024;
 /// Everything but APPEND: login data, mailbox names, search words.
 const MAX_COMMAND: usize = 256 * 1024;
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(60);
+/// How long a connection may stay without logging in, however busy it keeps: NOOP after NOOP, or
+/// an AUTHENTICATE challenge nobody answers, held a connection slot for ever
+/// (security-audit-0.16.0 PROTOCOLS-17, the IMAP side of 0.7.0 S-47).
+const PRE_LOGIN_LIMIT: Duration = Duration::from_secs(3 * 60);
 /// RFC 3501 asks for at least 30 minutes before logging out an idle client.
 const IDLE_CLIENT_TIMEOUT: Duration = Duration::from_secs(31 * 60);
 const IDLE_LIMIT: Duration = Duration::from_secs(29 * 60);
@@ -124,6 +128,8 @@ pub struct Session<R, W> {
     /// The UIDs `SEARCH RETURN (SAVE)` kept for `$` (RFC 5182).
     saved: Vec<u32>,
     changes: Option<broadcast::Receiver<uwumail_store::StateChange>>,
+    /// Since when the connection is without a login: since it opened, or since UNAUTHENTICATE.
+    unauthenticated_since: tokio::time::Instant,
 }
 
 fn no(tag: &str, code: Option<&str>, text: &str) -> String {
@@ -175,6 +181,28 @@ where
             selected: None,
             saved: Vec::new(),
             changes: None,
+            unauthenticated_since: tokio::time::Instant::now(),
+        }
+    }
+
+    /// How long the next command (or answer to a challenge) may take to arrive. Before logging
+    /// in, also no longer than what is left of [`PRE_LOGIN_LIMIT`].
+    fn read_limit(&self) -> Duration {
+        if self.account.is_some() {
+            return IDLE_CLIENT_TIMEOUT;
+        }
+        LOGIN_TIMEOUT.min(PRE_LOGIN_LIMIT.saturating_sub(self.unauthenticated_since.elapsed()))
+    }
+
+    /// Reads the answer to a SASL challenge under the same clock as a command. `None` when the
+    /// time is up: the connection is told so and is to be closed.
+    async fn read_answer(&mut self) -> io::Result<Option<Vec<u8>>> {
+        match tokio::time::timeout(self.read_limit(), self.read_line(MAX_LINE)).await {
+            Ok(line) => line.map(Some),
+            Err(_) => {
+                self.send(b"* BYE Autologout, you were idle for too long\r\n").await?;
+                Ok(None)
+            }
         }
     }
 
@@ -191,7 +219,7 @@ where
         self.send(greeting.as_bytes()).await?;
         self.flush().await?;
         loop {
-            let limit = if self.account.is_some() { IDLE_CLIENT_TIMEOUT } else { LOGIN_TIMEOUT };
+            let limit = self.read_limit();
             let command = match tokio::time::timeout(limit, self.read_command()).await {
                 Ok(Ok(Some(command))) => command,
                 Ok(Ok(None)) => return Ok(()),
@@ -387,6 +415,7 @@ where
             CommandBody::Unauthenticate => {
                 // Back to the start: nothing of the old login stays with the connection.
                 self.account = None;
+                self.unauthenticated_since = tokio::time::Instant::now();
                 self.selected = None;
                 self.saved.clear();
                 self.changes = None;
@@ -585,7 +614,9 @@ where
                     self.send(format!("+ {encoded}\r\n").as_bytes()).await?;
                     self.flush().await?;
                     // Whatever comes back (RFC 7628 wants a single ^A) only ends the exchange.
-                    let _ = self.read_line(MAX_LINE).await?;
+                    if self.read_answer().await?.is_none() {
+                        return Ok(Flow::Logout);
+                    }
                 }
                 let text = match reason {
                     MailAuthDenied::AppPasswordRequired => "This account needs an app password for mail apps",
@@ -619,7 +650,9 @@ where
             None => {
                 self.send(b"+ \r\n").await?;
                 self.flush().await?;
-                let line = self.read_line(MAX_LINE).await?;
+                let Some(line) = self.read_answer().await? else {
+                    return Ok(Flow::Logout);
+                };
                 match parser::parse_continuation(&line) {
                     Some(response) => response.to_owned(),
                     None => {

@@ -172,6 +172,32 @@ async fn guesses_at_one_login_from_many_networks_are_spaced_out() {
 }
 
 #[tokio::test]
+async fn a_connection_that_does_not_log_in_is_closed_in_time() {
+    // security-audit-0.16.0 PROTOCOLS-17: a NOOP every minute, or an AUTHENTICATE challenge nobody
+    // answers, kept a connection slot before login for ever. The clock is the test's own.
+    let server = server().await;
+    tokio::time::pause();
+    let mut busy = Client::connect(&server).await;
+    // A NOOP a little less than a minute apart each, for three minutes; half a minute after the
+    // last one the three minutes are over, long before a minute without a command would be.
+    for wait in [59, 59, 59, 30] {
+        busy.send(b"n NOOP\r\n").await;
+        let answer = busy.line().await;
+        assert!(answer.starts_with("n OK"), "{answer}");
+        tokio::time::advance(Duration::from_secs(wait)).await;
+    }
+    let bye = busy.line().await;
+    assert!(bye.starts_with("* BYE"), "NOOP after NOOP kept the connection: {bye}");
+
+    let mut silent = Client::connect(&server).await;
+    silent.send(b"a AUTHENTICATE PLAIN\r\n").await;
+    assert_eq!(silent.line().await, "+");
+    tokio::time::advance(Duration::from_secs(61)).await;
+    let bye = silent.line().await;
+    assert!(bye.starts_with("* BYE"), "{bye}");
+}
+
+#[tokio::test]
 async fn apps_log_in_list_select_and_fetch() {
     let server = server().await;
     let mut client = Client::connect(&server).await;
