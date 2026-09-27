@@ -14,8 +14,9 @@ use tokio::sync::watch;
 use tokio::time::timeout;
 use tokio_rustls::TlsAcceptor;
 use uwumail_store::{
-    Account, AppScope, IngestRequest, MailAuth, MailAuthDenied, MailboxRole, MailboxTarget, NewQueueRecipient,
-    NewSpamLogEntry, ReportKind, SpamAction, SpamLogHit, SpamLogRecipient, StoreError,
+    Account, AppScope, GroupDelivery, IngestRequest, MailAuth, MailAuthDenied, MailboxRole, MailboxTarget,
+    MaskedDelivery, MaskedState, NewQueueRecipient, NewSpamLogEntry, ReportKind, SpamAction, SpamLogHit,
+    SpamLogRecipient, StoreError, WhoMaySend,
 };
 
 use crate::checks::{self, Action};
@@ -59,14 +60,18 @@ struct SpamNote<'a> {
 
 /// Every recipient with the same outcome, for the decisions that apply to the whole message.
 fn all_recipients(recipients: &[Recipient], action: SpamAction) -> Vec<SpamLogRecipient> {
-    recipients
-        .iter()
-        .map(|recipient| SpamLogRecipient {
-            address: recipient.address.clone(),
-            action: action.as_str().to_owned(),
-            mailbox: None,
-        })
-        .collect()
+    let mut list: Vec<SpamLogRecipient> = Vec::new();
+    // A group stands once for all its members.
+    for recipient in recipients {
+        if !list.iter().any(|known| known.address == recipient.address) {
+            list.push(SpamLogRecipient {
+                address: recipient.address.clone(),
+                action: action.as_str().to_owned(),
+                mailbox: None,
+            });
+        }
+    }
+    list
 }
 
 /// Writes down what the filter decided, for the history under Server → Spam filter.
@@ -272,6 +277,8 @@ pub async fn deliver_fetched(
         report: None,
         forward_to: None,
         trap: false,
+        group: None,
+        masked: None,
         notify_flags: 0,
         orcpt: None,
     }];
@@ -401,8 +408,22 @@ pub(crate) struct Recipient {
     forward_to: Option<Vec<(String, Option<i64>)>>,
     /// An address that exists only to catch spam: taken, learned from, never delivered.
     trap: bool,
+    /// The group this entry delivers to one member of. A group has one entry per member, all with
+    /// the address the message was sent to.
+    group: Option<GroupEntry>,
+    /// A masked address: noted when mail arrives, and a disabled one files it into the Trash.
+    masked: Option<MaskedDelivery>,
     notify_flags: u64,
     orcpt: Option<String>,
+}
+
+/// A group a recipient entry belongs to.
+#[derive(Debug, Clone)]
+pub(crate) struct GroupEntry {
+    /// The group's own address, without a `+tag`.
+    address: String,
+    /// Only certain senders may write to it, so a sender from elsewhere has to be verified too.
+    restricted: bool,
 }
 
 /// Where a message reached this server.
@@ -1045,6 +1066,8 @@ impl Session {
                             report: None,
                             forward_to: None,
                             trap: false,
+                            group: None,
+                            masked: None,
                             notify_flags: to.flags,
                             orcpt: to.orcpt,
                         });
@@ -1074,6 +1097,8 @@ impl Session {
                     report: Some(kind),
                     forward_to: None,
                     trap: false,
+                    group: None,
+                    masked: None,
                     notify_flags: to.flags,
                     orcpt: to.orcpt,
                 });
@@ -1092,6 +1117,8 @@ impl Session {
                     report: None,
                     forward_to: None,
                     trap: true,
+                    group: None,
+                    masked: None,
                     notify_flags: to.flags,
                     orcpt: to.orcpt,
                 });
@@ -1109,6 +1136,8 @@ impl Session {
                     report: None,
                     forward_to: Some(targets),
                     trap: false,
+                    group: None,
+                    masked: None,
                     notify_flags: to.flags,
                     orcpt: to.orcpt,
                 });
@@ -1116,6 +1145,17 @@ impl Session {
             self.reply("250 2.1.5 Recipient OK\r\n").await?;
             return Ok(Next::Continue);
         }
+        match store.group_delivery(&address).await {
+            Ok(Some(group)) => return self.group_rcpt(address, group, to).await,
+            Ok(None) => {}
+            Err(err) => {
+                tracing::error!(%err, "group lookup failed");
+                self.reply("451 4.3.0 Temporary lookup failure\r\n").await?;
+                return Ok(Next::Continue);
+            }
+        }
+        // A deleted masked address is gone for good; the lookup below finds nobody for it either.
+        let masked = store.masked_delivery(&address).await.ok().flatten();
         let local_account = match store.resolve_recipient(&address).await {
             Ok(found) => found,
             Err(err) => {
@@ -1165,8 +1205,81 @@ impl Session {
                 report: None,
                 forward_to: None,
                 trap: false,
+                group: None,
+                masked: masked.filter(|masked| masked.delivers_to().is_some()),
                 notify_flags: to.flags,
                 orcpt: to.orcpt,
+            });
+        }
+        self.reply("250 2.1.5 Recipient OK\r\n").await?;
+        Ok(Next::Continue)
+    }
+
+    /// RCPT for a group: the sender has to be allowed to write to it, and then every member gets
+    /// an entry of their own, so each is delivered to the way their own mail is. A full mailbox
+    /// of one member is theirs alone to miss out on; the group still takes the message.
+    async fn group_rcpt(&mut self, address: String, group: GroupDelivery, to: RcptTo<String>) -> std::io::Result<Next> {
+        let smtp = self.smtp.clone();
+        let store = &smtp.inner.store;
+        let sender = self.envelope.as_ref().map(|envelope| envelope.address.clone()).unwrap_or_default();
+        let account = self.account.as_ref().map(|account| account.id);
+        match store.group_accepts(&group, &sender, account).await {
+            Ok(true) => {}
+            Ok(false) => {
+                let text = match group.who_may_send {
+                    WhoMaySend::Domain => {
+                        let domain = group.address.rsplit_once('@').map_or("", |(_, domain)| domain);
+                        format!("550 5.7.1 <{address}>: Only addresses of {domain} may write to this group\r\n")
+                    }
+                    _ => format!("550 5.7.1 <{address}>: Only members of this group may write to it\r\n"),
+                };
+                self.error(&text).await?;
+                return Ok(Next::Continue);
+            }
+            Err(err) => {
+                tracing::error!(%err, "group check failed");
+                self.reply("451 4.3.0 Temporary lookup failure\r\n").await?;
+                return Ok(Next::Continue);
+            }
+        }
+        if self.recipients.iter().any(|r| r.address == address) {
+            self.reply("250 2.1.5 Recipient OK\r\n").await?;
+            return Ok(Next::Continue);
+        }
+        let mut entries = Vec::new();
+        for member in &group.members {
+            // On submission the members are looked up again when the message is handed on.
+            if self.kind.is_submission() {
+                break;
+            }
+            if let Ok(Some(target)) = store.delivery_target(*member).await
+                && !entries.contains(&target)
+            {
+                entries.push(target);
+            }
+        }
+        if !self.kind.is_submission() && entries.is_empty() {
+            let text = format!("550 5.1.1 <{address}>: This address does not take mail\r\n");
+            self.error(&text).await?;
+            return Ok(Next::Continue);
+        }
+        let local_accounts: Vec<Option<i64>> =
+            if self.kind.is_submission() { vec![None] } else { entries.into_iter().map(Some).collect() };
+        for local_account in local_accounts {
+            self.recipients.push(Recipient {
+                address: address.clone(),
+                local_account,
+                srs_return: None,
+                report: None,
+                forward_to: None,
+                trap: false,
+                group: Some(GroupEntry {
+                    address: group.address.clone(),
+                    restricted: group.who_may_send != WhoMaySend::Anyone,
+                }),
+                masked: None,
+                notify_flags: to.flags,
+                orcpt: to.orcpt.clone(),
             });
         }
         self.reply("250 2.1.5 Recipient OK\r\n").await?;
@@ -1529,10 +1642,27 @@ pub(crate) async fn receive(
     let mut temporary = false;
     let mut seen_accounts = Vec::new();
     let mut returned = Vec::new();
+    // Groups at least one member got the message through, and what went wrong for the others: a
+    // group only fails as a whole when nobody could have it.
+    let mut groups_reached: Vec<String> = Vec::new();
+    let mut groups_failed: Vec<(String, FailedRecipient)> = Vec::new();
+    let mut group_refused = false;
+    // A group that has seen the message before passes it on no more (a member forwarding it back
+    // to the group, or a mail loop through other servers).
+    let delivered_to = headers::values(&raw, "Delivered-To");
+    // Mail for a group that only takes certain senders must come from who it says, or it would be
+    // enough to claim a member's address.
+    let sender_verified_for_groups = verdict.as_ref().is_none_or(|verdict| verdict.sender_verified);
     // What happened for each of them, for the history. The message as a whole is one decision,
     // but a sender list or someone's own filter can send it two ways at once.
     let mut noted: Vec<SpamLogRecipient> = Vec::new();
     let mut note_for = |address: &str, action: SpamAction, mailbox: Option<&str>| {
+        // The members of a group are one line of history, as long as they fared alike.
+        if noted.iter().any(|known| {
+            known.address == address && known.action == action.as_str() && known.mailbox.as_deref() == mailbox
+        }) {
+            return;
+        }
         noted.push(SpamLogRecipient {
             address: address.to_owned(),
             action: action.as_str().to_owned(),
@@ -1583,7 +1713,27 @@ pub(crate) async fn receive(
             note_for(&recipient.address, SpamAction::Reject, None);
             continue;
         }
+        if let Some(group) = &recipient.group {
+            if delivered_to
+                .iter()
+                .any(|seen| seen.eq_ignore_ascii_case(&group.address) || seen.eq_ignore_ascii_case(&recipient.address))
+            {
+                tracing::warn!(%id, group = %group.address, "not delivering a message to a group it went through before");
+                groups_reached.push(group.address.clone());
+                delivered += 1;
+                continue;
+            }
+            if group.restricted && !sender_verified_for_groups {
+                tracing::info!(%id, from = %envelope.address, group = %group.address, "the sender of a message for a closed group could not be verified");
+                group_refused = true;
+                continue;
+            }
+        }
         if seen_accounts.contains(&account_id) {
+            // Reached twice, directly and through a group, or through two groups: once is enough.
+            if let Some(group) = &recipient.group {
+                groups_reached.push(group.address.clone());
+            }
             continue;
         }
         seen_accounts.push(account_id);
@@ -1602,9 +1752,48 @@ pub(crate) async fn receive(
                     );
                     note_for(&recipient.address, SpamAction::Settled, None);
                     delivered += 1;
+                    if let Some(group) = &recipient.group {
+                        groups_reached.push(group.address.clone());
+                    }
                     continue;
                 }
                 Err(err) => tracing::warn!(%id, account = account_id, %err, "looking up a held message failed"),
+            }
+        }
+        if let Some(masked) = &recipient.masked {
+            // The first message turns a pending masked address on, and each one is its last.
+            if let Err(err) = ctx.store.note_masked_message(masked.id).await {
+                tracing::warn!(%id, %err, "noting mail for a masked address failed");
+            }
+            // A disabled one takes its mail without a word and files it into the Trash, read,
+            // past the person's rules and forwarding: they turned it off.
+            if masked.state == MaskedState::Disabled {
+                let request = IngestRequest {
+                    account_id,
+                    raw: message.clone(),
+                    mailboxes: vec![MailboxTarget::Role(MailboxRole::Trash)],
+                    keywords: vec!["$seen".into()],
+                    received_at: None,
+                };
+                match ctx.store.ingest(request).await {
+                    Ok(_) => {
+                        note_for(&recipient.address, SpamAction::Delivered, Some("trash"));
+                        delivered += 1;
+                    }
+                    Err(StoreError::QuotaExceeded) => failed.push(FailedRecipient {
+                        address: recipient.address.clone(),
+                        error: "552 5.2.2 Mailbox is full".into(),
+                    }),
+                    Err(err) => {
+                        tracing::error!(%id, %err, "storing an incoming message failed");
+                        temporary = true;
+                        failed.push(FailedRecipient {
+                            address: recipient.address.clone(),
+                            error: "451 4.3.0 Temporary storage failure".into(),
+                        });
+                    }
+                }
+                continue;
             }
         }
         // A listed sender goes where the list says, even out of a DMARC quarantine. Otherwise what a
@@ -1645,6 +1834,9 @@ pub(crate) async fn receive(
             note_for(&recipient.address, SpamAction::Delivered, None);
             delivered += 1;
             inbox_accounts.push(account_id);
+            if let Some(group) = &recipient.group {
+                groups_reached.push(group.address.clone());
+            }
             continue;
         }
         // What stays is sorted by the person's own rules, if they have some. Junk stays in Junk: the
@@ -1678,19 +1870,34 @@ pub(crate) async fn receive(
                 if !junk && kept {
                     inbox_accounts.push(account_id);
                 }
+                if let Some(group) = &recipient.group {
+                    groups_reached.push(group.address.clone());
+                }
             }
-            Err(StoreError::QuotaExceeded) => failed.push(FailedRecipient {
-                address: recipient.address.clone(),
-                error: "552 5.2.2 Mailbox is full".into(),
-            }),
             Err(err) => {
-                tracing::error!(%id, %err, "storing an incoming message failed");
-                temporary = true;
-                failed.push(FailedRecipient {
-                    address: recipient.address.clone(),
-                    error: "451 4.3.0 Temporary storage failure".into(),
-                });
+                let error = match err {
+                    StoreError::QuotaExceeded => "552 5.2.2 Mailbox is full".to_owned(),
+                    err => {
+                        tracing::error!(%id, %err, "storing an incoming message failed");
+                        temporary = true;
+                        "451 4.3.0 Temporary storage failure".to_owned()
+                    }
+                };
+                let failure = FailedRecipient { address: recipient.address.clone(), error };
+                match &recipient.group {
+                    Some(group) => {
+                        tracing::info!(%id, group = %group.address, account = account_id, error = %failure.error, "a group member could not get the message");
+                        groups_failed.push((group.address.clone(), failure));
+                    }
+                    None => failed.push(failure),
+                }
             }
+        }
+    }
+    // A group nobody could get the message through fails like one person would.
+    for (group, failure) in groups_failed {
+        if !groups_reached.contains(&group) && !failed.iter().any(|known| known.address == failure.address) {
+            failed.push(failure);
         }
     }
 
@@ -1769,6 +1976,8 @@ pub(crate) async fn receive(
     if delivered == 0 {
         return if temporary {
             "451 4.3.0 Temporary storage failure, please try again later\r\n".into()
+        } else if group_refused {
+            "550 5.7.1 This group only takes mail from certain senders, and this one could not be verified\r\n".into()
         } else {
             "552 5.2.2 Mailbox is full\r\n".into()
         };
