@@ -4,6 +4,7 @@ import {
   type AppPasswordCreated,
   type AppPasswordInfo,
   type DomainSummary,
+  type OAuthGrantInfo,
   type PasswordLinkCreated,
   type Person,
   type Protocols,
@@ -222,5 +223,34 @@ export function useSetPassword(login: string) {
   return useMutation({
     mutationFn: (password: string) => api<void>(`${personPath(login)}/password`, { method: "PUT", body: { password } }),
     onSuccess: () => updated(),
+  });
+}
+
+/** Signs one of a person's OAuth apps out, e.g. for a lost phone. */
+export function useRevokePersonGrant(login: string, success: (name: string) => string) {
+  const queryClient = useQueryClient();
+  const errorText = useErrorText();
+  return useMutation({
+    mutationFn: (grant: OAuthGrantInfo) =>
+      api<void>(`${personPath(login)}/oauth-grants/${grant.id}`, { method: "DELETE" }),
+    onSuccess: (_result, grant) => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "people", login] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
+      toast(success(grant.clientName), "success");
+    },
+    onError: (error) => toast(errorText(error), "error"),
+  });
+}
+
+/** Where the person's password is checked: here or at the LDAP directory. */
+export function useSetAuthSource(login: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (source: "local" | "ldap") =>
+      api<void>(`${personPath(login)}/auth-source`, { method: "PUT", body: { source } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "people"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
+    },
   });
 }

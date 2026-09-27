@@ -109,6 +109,11 @@
       "saved": "Bien rangé en lieu sûr ✓"
     }
   },
+  "oauth": {
+    "title": "« {{name}} » aimerait entrer (・ω・)",
+    "signingIn": "J'ouvre la porte à l'appli … (=^･ω･^=)",
+    "invalidTitle": "Je ne peux pas laisser entrer cette appli (・_・;)"
+  },
   "setup": {
     "welcome": {
       "title": "Coucou ! Je suis Nyu (=^･ω･^=)",

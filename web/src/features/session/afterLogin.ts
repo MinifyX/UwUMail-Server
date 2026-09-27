@@ -14,7 +14,9 @@ export function safeNext(next: string | null | undefined): string | null {
   // A path, never a host: "//elsewhere.example" and "https://elsewhere.example" are both refused,
   // and so is anything a browser might read as one after unescaping.
   if (!value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) return null;
-  if (value.length > 512) return null;
+  // Long enough for the consent page of an app signing in with OAuth, which carries its whole
+  // request in the query.
+  if (value.length > 2048) return null;
   // No backslashes, and no control characters: a newline in a redirect is how header splitting
   // starts, and a backslash is how some browsers read a path as a host.
   if (value.includes("\\")) return null;

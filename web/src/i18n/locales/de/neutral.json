@@ -41,6 +41,19 @@
       "tooManyAttempts": "Zu viele Fehlversuche. Bitte warte ein paar Minuten.",
       "offline": "Der Server ist gerade nicht erreichbar.",
       "internal": "Auf dem Server ist etwas schiefgelaufen."
+    },
+    "or": "oder",
+    "oidcButton": "Mit {{provider}} anmelden",
+    "oidcButtonGeneric": "Mit Single Sign-on anmelden",
+    "oidcErrors": {
+      "unavailable": "Der Anmeldedienst ist gerade nicht erreichbar. Versuch es später noch mal oder melde dich mit deinem Passwort an.",
+      "expired": "Die Anmeldung hat zu lange gedauert oder wurde in einem anderen Browser begonnen. Bitte versuch es noch mal.",
+      "refused": "Die Anmeldung wurde beim Anmeldedienst abgebrochen oder abgelehnt.",
+      "failed": "Die Antwort des Anmeldedienstes war nicht in Ordnung. Bitte versuch es noch mal.",
+      "emailNotVerified": "Der Anmeldedienst hat deine Mail-Adresse nicht bestätigt, darum kann er dich hier nicht anmelden.",
+      "domainNotAllowed": "Für diese Adresse gibt es kein Konto, und in ihrer Domain darf keins angelegt werden.",
+      "noAccount": "Für diese Anmeldung gibt es auf diesem Server kein Konto, und es darf keins angelegt werden.",
+      "alreadyLinked": "Dieses Konto gehört beim Anmeldedienst schon zu einer anderen Anmeldung."
     }
   },
   "nav": {
@@ -325,7 +338,14 @@
       "googleUseIcs": "Google lässt nur seine eigenen Apps herein. Nimm für Kalender die geheime iCal-Adresse und für Kontakte einen vCard-Export.",
       "subscriptionLimit": "Du hast schon so viele abonnierte Kalender wie möglich.",
       "subscriptionExists": "Diesen Kalender hast du schon abonniert.",
-      "refreshPause": "Gerade erst geholt. Versuch es in einer Minute nochmal."
+      "refreshPause": "Gerade erst geholt. Versuch es in einer Minute nochmal.",
+      "confirmByLogin": "Zum Bestätigen melde dich ab und wieder an und versuch es dann noch mal.",
+      "passwordInDirectory": "Dieses Passwort wird im Verzeichnis deiner Organisation (LDAP) verwaltet und dort geändert.",
+      "serviceAccount": "Ein Dienst meldet sich nur mit App-Passwörtern an.",
+      "oauthClientUnknown": "Diese App ist auf diesem Server nicht registriert.",
+      "oauthRedirectInvalid": "Die App möchte an eine Adresse zurück, die sie nicht registriert hat.",
+      "oidcFailed": "Mit dem Anmeldedienst hat es nicht geklappt: {{detail}}",
+      "ldapFailed": "Mit dem Verzeichnis hat es nicht geklappt: {{detail}}"
     }
   },
   "people": {
@@ -534,6 +554,20 @@
       "revokeTitle": "{{name}} zurückziehen?",
       "revokeBody": "Was dieses Passwort benutzt, kommt danach nicht mehr rein.",
       "createdTitle": "Neues App-Passwort"
+    },
+    "authSource": {
+      "label": "Passwort wird geprüft",
+      "hint": "Beim Wechsel zum Verzeichnis wird das hier gespeicherte Passwort gelöscht. Zurück heißt: Du setzt ein neues Passwort oder schickst einen Link.",
+      "oidcHint": "Meldet sich beim OpenID-Connect-Anbieter an. Du kannst trotzdem auf ein Passwort hier oder im Verzeichnis wechseln.",
+      "local": "Hier auf diesem Server",
+      "ldap": "Im LDAP-Verzeichnis",
+      "oidc": "Beim OpenID-Connect-Anbieter",
+      "toLdapTitle": "Passwort von {{login}} im Verzeichnis prüfen?",
+      "toLdapBody": "Das hier gespeicherte Passwort wird gelöscht. Ab jetzt meldet sich die Person mit ihrem Verzeichnis-Passwort an, im Portal und in Mail-Apps. App-Passwörter bleiben.",
+      "toLocalTitle": "Passwort von {{login}} hier prüfen?",
+      "toLocalBody": "Die Person hat danach hier kein Passwort. Setz ein neues oder schick einen Link, um eins zu wählen.",
+      "switch": "Wechseln",
+      "inDirectory": "Das Passwort wird im LDAP-Verzeichnis geprüft und dort geändert."
     }
   },
   "log": {
@@ -1212,7 +1246,8 @@
       "mail": "Versand & Empfang",
       "apps": "Apps & Webmail",
       "vpn": "VPN & Proxy",
-      "branding": "Erscheinungsbild"
+      "branding": "Erscheinungsbild",
+      "login": "Anmeldung"
     },
     "mailIntro": "Wie Mail den Server verlässt und was er annimmt. Änderungen wirken sofort, ohne Neustart.",
     "appsIntro": "Was für Mail-Apps und das Postfach im Browser gilt. Änderungen wirken sofort, ohne Neustart."
@@ -1452,7 +1487,10 @@
       "repeat": "Neues Passwort wiederholen",
       "hint": "Mindestens 10 Zeichen. Ein Satz aus mehreren Wörtern ist gut zu merken.",
       "submit": "Passwort ändern",
-      "changed": "Passwort geändert. Andere Browser wurden abgemeldet."
+      "changed": "Passwort geändert. Andere Browser wurden abgemeldet.",
+      "managedTitle": "Passwort",
+      "inDirectory": "Dein Passwort wird im Verzeichnis deiner Organisation (LDAP) verwaltet. Ändere es dort, das neue gilt hier sofort.",
+      "atProvider": "Du meldest dich beim Anmeldedienst deiner Organisation an und hast hier kein Passwort. Mail-Apps melden sich mit OAuth oder einem App-Passwort an."
     },
     "sessions": {
       "title": "Angemeldete Browser",
@@ -1499,13 +1537,129 @@
       "forwardingRemoved": "Weiterleitung an {{address}} entfernt",
       "forwardingConfirmed": "{{address}} hat die Weiterleitung bestätigt",
       "forwardingDeclined": "{{address}} hat die Weiterleitung abgelehnt",
-      "forwardingConfirmationSent": "Bestätigungs-Mail an {{address}} verschickt"
+      "forwardingConfirmationSent": "Bestätigungs-Mail an {{address}} verschickt",
+      "oauthGranted": "App „{{name}}“ mit OAuth angemeldet ({{scopes}})",
+      "oauthRevoked": "App „{{name}}“ abgemeldet",
+      "oidcLinked": "Mit der Anmeldung bei {{issuer}} verknüpft"
     },
     "loginMethods": {
       "password": "Passwort",
       "totp": "Passwort und App",
       "recoveryCode": "Passwort und Wiederherstellungscode",
-      "passkey": "Passwort und Passkey"
+      "passkey": "Passwort und Passkey",
+      "oidc": "Single Sign-on"
+    },
+    "oauthApps": {
+      "title": "Mit OAuth angemeldete Apps",
+      "none": "Keine App ist mit OAuth angemeldet. Mail-Apps, die das können, melden sich hier im Browser an, statt ein App-Passwort zu nutzen.",
+      "staysSignedIn": "Bleibt angemeldet",
+      "since": "Angemeldet am {{date}}",
+      "signOut": "Abmelden",
+      "signOutTitle": "„{{name}}“ abmelden?",
+      "signOutBody": "Die App kommt nicht mehr an das Postfach, bis sich jemand erneut damit anmeldet.",
+      "signedOut": "„{{name}}“ abgemeldet"
+    }
+  },
+  "oauth": {
+    "title": "„{{name}}“ möchte auf dein Konto zugreifen",
+    "account": "Angemeldet als",
+    "nameClaim": "Die App nennt sich selbst „{{name}}“. Erlaube das nur, wenn du gerade selbst die Anmeldung in dieser App begonnen hast.",
+    "returnsTo": "Danach geht es zurück zu {{host}}.",
+    "returnsToDevice": "Danach geht es zurück zur App auf diesem Gerät ({{host}}).",
+    "scopesTitle": "Die App darf",
+    "scopes": {
+      "mail": {
+        "title": "Deine Mails lesen und ordnen",
+        "hint": "Mails, Ordner und Filterregeln, über IMAP, JMAP und ManageSieve."
+      },
+      "smtp": {
+        "title": "Mails in deinem Namen senden",
+        "hint": "Von deinen Adressen, über SMTP."
+      },
+      "dav": {
+        "title": "Deine Kalender und Kontakte nutzen",
+        "hint": "Lesen und ändern, über CalDAV und CardDAV."
+      },
+      "openid": {
+        "title": "Wissen, dass du es bist",
+        "hint": "Dein Konto auf diesem Server."
+      },
+      "profile": {
+        "title": "Deinen Namen sehen",
+        "hint": "Den Namen in deinem Konto."
+      },
+      "email": {
+        "title": "Deine Mail-Adresse sehen",
+        "hint": "Deine Hauptadresse."
+      },
+      "offline_access": {
+        "title": "Angemeldet bleiben",
+        "hint": "Bis du die App abmeldest, ohne dich erneut zu fragen."
+      }
+    },
+    "revokeHint": "Du kannst die App jederzeit unter Mein Konto → Sicherheit abmelden.",
+    "allow": "Erlauben",
+    "deny": "Ablehnen",
+    "otherAccount": "Nicht {{login}}? Mit einem anderen Konto anmelden",
+    "signingIn": "Anmeldung läuft …",
+    "invalidTitle": "Diese App kann sich hier nicht anmelden",
+    "invalid": {
+      "oauthClientUnknown": "Diese App ist auf diesem Server nicht registriert. Richte das Konto in der App neu ein.",
+      "oauthRedirectInvalid": "Die App möchte an eine Adresse zurück, die sie nicht registriert hat. Zur Sicherheit wurde nichts gesendet."
+    },
+    "toPortal": "Zum Portal"
+  },
+  "externalLogin": {
+    "intro": "Anmeldung am Portal bei einem anderen Anbieter (OpenID Connect) oder Passwortprüfung in einem LDAP-Verzeichnis. Änderungen gelten sofort, ohne Neustart.",
+    "docs": "Anleitung: OpenID Connect und LDAP",
+    "oauthDocs": "Anleitung: Mail-Apps mit OAuth",
+    "test": "Verbindung testen",
+    "testOk": "Klappt: {{detail}}",
+    "autoCreate": "Konto bei der ersten Anmeldung anlegen",
+    "allowedDomains": "Domains für neue Konten",
+    "allowedDomainsHint": "Eine pro Zeile, jeweils eine Domain dieses Servers. Leer: keine neuen Konten.",
+    "oidc": {
+      "title": "OpenID Connect",
+      "intro": "Ein Button auf der Anmeldeseite führt zu eurem Anmeldedienst, etwa Authentik, Keycloak oder Microsoft Entra ID.",
+      "enabled": "Anmeldung über einen OpenID-Connect-Anbieter",
+      "enabledHint": "Hier gesetzte Passwörter funktionieren weiterhin daneben.",
+      "redirectUri": "Diese Redirect-URI beim Anbieter eintragen",
+      "issuer": "Issuer",
+      "issuerHint": "Die Adresse des Anbieters. Den Rest liest UwUMail aus seiner /.well-known/openid-configuration.",
+      "clientId": "Client-ID",
+      "clientSecret": "Client-Secret",
+      "buttonLabel": "Name auf dem Button",
+      "buttonLabelHint": "Der Button heißt dann „Mit Authentik anmelden“. Leer: „Mit Single Sign-on anmelden“.",
+      "autoCreateHint": "Nur wenn der Anbieter die Adresse bestätigt und ihre Domain unten erlaubt ist.",
+      "adminClaim": "Admin-Claim",
+      "adminClaimHint": "Der Claim in der Antwort des Anbieters, der Gruppen oder Rollen auflistet.",
+      "adminValue": "Admin-Wert",
+      "adminValueHint": "Neue Konten, deren Claim diesen Wert enthält, werden Admins."
+    },
+    "ldap": {
+      "title": "LDAP-Verzeichnis",
+      "intro": "Konten, die aufs Verzeichnis gestellt sind, melden sich mit ihrem Verzeichnis-Passwort an, im Portal und in Mail-Apps. Alle anderen behalten ihr Passwort hier.",
+      "enabled": "Passwörter im LDAP-Verzeichnis prüfen",
+      "enabledHint": "Welche Konten das nutzen, stellst du auf der Seite der jeweiligen Person ein. Aus dem Verzeichnis angelegte Konten nutzen es sofort.",
+      "url": "Adresse des Verzeichnisses",
+      "urlHint": "ldaps://… oder ldap://… mit STARTTLS.",
+      "starttls": "STARTTLS bei ldap://",
+      "starttlsHint": "Verschlüsselt die Verbindung, bevor ein Passwort gesendet wird.",
+      "insecureLocalhost": "ldap:// ohne Verschlüsselung auf diesem Rechner erlauben",
+      "insecureLocalhostHint": "Nur für ein Verzeichnis auf genau diesem Rechner (localhost), nie über ein Netzwerk.",
+      "bindDn": "Dienstkonto (Bind-DN)",
+      "bindDnHint": "Sucht im Verzeichnis nach der Person, die sich anmeldet.",
+      "bindPassword": "Passwort des Dienstkontos",
+      "userDnTemplate": "DN-Vorlage",
+      "userDnTemplateHint": "Mit Vorlage wird nicht gesucht: Der DN der Person entsteht aus der Adresse. {user} ist der Teil vor dem @, {email} die ganze Adresse.",
+      "baseDn": "Suchbasis",
+      "userFilter": "Suchfilter",
+      "userFilterHint": "{email} ist die ganze bei der Anmeldung eingegebene Adresse, {user} der Teil vor dem @.",
+      "mailAttribute": "Attribut für die Adresse",
+      "nameAttribute": "Attribut für den Namen",
+      "adminGroupDn": "Admin-Gruppe",
+      "adminGroupDnHint": "Neue Konten, die Mitglied dieser Gruppe sind (memberOf), werden Admins.",
+      "autoCreateHint": "Wenn das Verzeichnis die Adresse kennt und ihre Domain unten erlaubt ist."
     }
   },
   "fetch": {

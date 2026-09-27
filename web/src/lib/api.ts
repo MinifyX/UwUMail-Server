@@ -57,7 +57,34 @@ export interface Info {
   hostname: string;
   setupRequired: boolean;
   brand: Brand;
+  /** The button for logging in at an OpenID Connect provider; null when there is none. */
+  oidc?: { label: string } | null;
 }
+
+/** Where an account's password is checked: here, at an LDAP directory, or at an OpenID Connect provider. */
+export type AuthSource = "local" | "ldap" | "oidc";
+
+/** An app signed in with OAuth instead of an app password (docs/oauth.md). */
+export interface OAuthGrantInfo {
+  id: number;
+  clientName: string;
+  scopes: string[];
+  createdAt: number;
+  lastUsedAt: number | null;
+  lastUsedProtocol: string | null;
+  lastUsedIp: string | null;
+}
+
+/** What the consent page learns about an app asking to sign in. */
+export type OAuthRequest =
+  | { redirect: string }
+  | {
+      /** The name is the app's own claim; nobody checked it. */
+      client: { name: string; clientId: string; redirectHost: string };
+      scopes: string[];
+      /** Allowed before with these scopes, so no question is needed. */
+      consented: boolean;
+    };
 
 export interface Session {
   account: { id: number; login: string; name: string; role: Role };
@@ -159,6 +186,9 @@ export interface Person {
   sendAsDomains?: string[];
   /** Only for a service, which cannot open its own security page. */
   appPasswordList?: AppPasswordInfo[];
+  /** Only in the detail view. */
+  oauthGrants?: OAuthGrantInfo[];
+  authSource?: AuthSource;
 }
 
 /** An app password the moment it is made: the only time its secret is readable. */
@@ -1071,6 +1101,10 @@ export interface SecurityView {
   appPasswords: AppPasswordInfo[];
   sessions: WebSessionInfo[];
   events: SecurityEventInfo[];
+  oauthGrants: OAuthGrantInfo[];
+  authSource: AuthSource;
+  /** False for someone who only ever signs in at an OpenID Connect provider. */
+  hasPassword: boolean;
 }
 
 export interface TotpSetup {

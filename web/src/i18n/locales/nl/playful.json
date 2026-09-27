@@ -107,6 +107,11 @@
       "saved": "Veilig opgeborgen ✓"
     }
   },
+  "oauth": {
+    "title": "‘{{name}}’ wil graag binnenkomen (・ω・)",
+    "signingIn": "Ik doe de deur open voor de app … (=^･ω･^=)",
+    "invalidTitle": "Deze app kan ik niet binnenlaten (・_・;)"
+  },
   "setup": {
     "welcome": {
       "title": "Hoi! Ik ben Nyu (=^･ω･^=)",

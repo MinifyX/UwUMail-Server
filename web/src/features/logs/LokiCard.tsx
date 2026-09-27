@@ -27,7 +27,7 @@ export const LOKI_SETTING_KEYS = [
 type Auth = "none" | "basic" | "token";
 
 /** A password or token: never shown, only whether one is set; typing replaces it. */
-function SecretField({ form, settingKey, label }: { form: Form; settingKey: string; label: string }) {
+export function SecretField({ form, settingKey, label }: { form: Form; settingKey: string; label: string }) {
   const { t } = useT();
   const locked = form.locked(settingKey);
   const stored = form.setting(settingKey);

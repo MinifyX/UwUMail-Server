@@ -3,6 +3,11 @@
  * and no password needed. Add `?loggedOut` to the URL to see the login page; the password
  * page works with any token except "expired". `?setup` starts on a server without an admin:
  * every setup code except one starting with "wrong" works, and the Cloudflare token "wrong" fails.
+ * A login at the OpenID Connect provider is a page of its own and cannot be played here, but what
+ * the server sends back can: `/login?oidcError=refused` or `/login?pending=mock&methods=totp,recovery`.
+ * `/oauth/authorize?client_id=uwu-thunderbird&redirect_uri=http://127.0.0.1:5000/&scope=openid+mail+smtp`
+ * shows the consent page of an app; the client id "uwu-unknown" is not registered, "uwu-known" was
+ * allowed before.
  * Production builds never include this file.
  */
 
@@ -23,6 +28,7 @@ import type {
   SpamLimitsView,
   AdminSpamView,
   AppPasswordInfo,
+  AuthSource,
   FetchAccountInfo,
   FetchView,
   ForwardingView,
@@ -45,6 +51,8 @@ import type {
   FeedsView,
   Info,
   MtaStsView,
+  OAuthGrantInfo,
+  OAuthRequest,
   OwnAddressesView,
   Overview,
   AppPasswordCreated,
@@ -438,6 +446,34 @@ const detail = (domain: MockDomain): DomainDetail => ({
 
 const mockSendAs: Record<string, string[]> = {};
 
+/** Where each person's password is checked; everyone not in here has it on this server. */
+const mockAuthSources: Record<string, AuthSource> = {
+  "leni@uwu.example": "ldap",
+  "ami@uwu.example": "oidc",
+};
+
+const oauthGrant = (id: number, clientName: string, scopes: string[], daysAgo: number): OAuthGrantInfo => ({
+  id,
+  clientName,
+  scopes,
+  createdAt: now - daysAgo * 86_400,
+  lastUsedAt: daysAgo > 20 ? null : now - 900,
+  lastUsedProtocol: daysAgo > 20 ? null : "imap",
+  lastUsedIp: daysAgo > 20 ? null : "198.51.100.23",
+});
+
+/** Apps signed in with OAuth, per person; the logged-in admin's own are on the security page. */
+const mockPersonGrants: Record<string, OAuthGrantInfo[]> = {
+  "leni@uwu.example": [oauthGrant(31, "Thunderbird", ["openid", "email", "offline_access", "mail", "smtp"], 3)],
+};
+let nextGrantId = 200;
+
+/** The apps registered with the OAuth provider, by client id. */
+const mockOAuthClients: Record<string, string> = {
+  "uwu-thunderbird": "Thunderbird",
+  "uwu-known": "K-9 Mail",
+};
+
 // The machine's helper: a job runs for a few seconds, printing as it goes, then is done.
 let hostJob: { verb: string; asked: number } | null = null;
 const JOB_LINES: Record<string, string[]> = {
@@ -776,6 +812,29 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "log.loki.labels": { value: [], source: "default" },
   "log.loki.level": { value: "info", source: "default" },
   "log.loki.gateway": { value: true, source: "default" },
+  "auth.oidc.enabled": { value: true, source: "database" },
+  "auth.oidc.issuer": { value: "https://auth.example.com/application/o/uwumail/", source: "database" },
+  "auth.oidc.client_id": { value: "uwumail", source: "database" },
+  "auth.oidc.client_secret": { value: null, source: "database", set: true },
+  "auth.oidc.button_label": { value: "Authentik", source: "database" },
+  "auth.oidc.auto_create": { value: false, source: "default" },
+  "auth.oidc.allowed_domains": { value: [], source: "default" },
+  "auth.oidc.admin_group_claim": { value: null, source: "default" },
+  "auth.oidc.admin_group_value": { value: null, source: "default" },
+  "auth.ldap.enabled": { value: true, source: "database" },
+  "auth.ldap.url": { value: "ldaps://ldap.example.com", source: "database" },
+  "auth.ldap.starttls": { value: true, source: "default" },
+  "auth.ldap.insecure_localhost": { value: false, source: "default" },
+  "auth.ldap.bind_dn": { value: "cn=uwumail,ou=services,dc=example,dc=com", source: "database" },
+  "auth.ldap.bind_password": { value: null, source: "database", set: true },
+  "auth.ldap.user_dn_template": { value: null, source: "default" },
+  "auth.ldap.base_dn": { value: "ou=people,dc=example,dc=com", source: "database" },
+  "auth.ldap.user_filter": { value: "(&(objectClass=person)(mail={email}))", source: "default" },
+  "auth.ldap.mail_attribute": { value: "mail", source: "default" },
+  "auth.ldap.name_attribute": { value: "cn", source: "default" },
+  "auth.ldap.admin_group_dn": { value: null, source: "default" },
+  "auth.ldap.auto_create": { value: false, source: "default" },
+  "auth.ldap.allowed_domains": { value: [], source: "default" },
 };
 
 const settingsView = () => ({
@@ -978,6 +1037,19 @@ const mockSecurity: SecurityView = {
   appsNeedAppPassword: false,
   appPasswordScopes: ["mail", "smtp", "dav"] as AppScope[],
   appPasswordsRequired: false,
+  oauthGrants: [
+    {
+      id: 21,
+      clientName: "Thunderbird",
+      scopes: ["openid", "email", "profile", "offline_access", "mail", "smtp", "dav"],
+      createdAt: now - 26 * 3600,
+      lastUsedAt: now - 120,
+      lastUsedProtocol: "imap",
+      lastUsedIp: "192.0.2.10",
+    },
+  ],
+  authSource: "local",
+  hasPassword: true,
   appPasswords: [
     {
       id: 1,
@@ -1020,7 +1092,24 @@ const mockSecurity: SecurityView = {
     },
   ],
   events: [
+    { id: 6, at: now - 1800, kind: "login", actor: "", ip: "192.0.2.10", details: { method: "oidc" } },
+    {
+      id: 5,
+      at: now - 2400,
+      kind: "oidcLinked",
+      actor: "",
+      ip: "192.0.2.10",
+      details: { issuer: "https://auth.example.com" },
+    },
     { id: 4, at: now - 3600, kind: "login", actor: "", ip: "192.0.2.10", details: { method: "password" } },
+    {
+      id: 7,
+      at: now - 26 * 3600,
+      kind: "oauthGranted",
+      actor: "",
+      ip: "192.0.2.10",
+      details: { name: "Thunderbird", scopes: ["openid", "email", "profile", "offline_access", "mail", "smtp", "dav"] },
+    },
     {
       id: 3,
       at: now - 2 * 86_400,
@@ -1839,6 +1928,40 @@ function reportsFor(name: string): ReportsView {
   };
 }
 
+/** Where the browser goes back to the app, with the answer in the query as OAuth has it. */
+function oauthAnswer(redirectUri: string | null | undefined, answer: Record<string, string>, state?: string | null) {
+  // Without an address of the app's own, the mock lands back in the portal, to try again.
+  const target = new URL(redirectUri || "/account/security", window.location.origin);
+  for (const [key, value] of Object.entries(answer)) target.searchParams.set(key, value);
+  if (state) target.searchParams.set("state", state);
+  return target.href;
+}
+
+/** Checks an app's request the way the server does, roughly: known app, and where it goes back. */
+function oauthRequest(params: Record<string, string | undefined>): [number, unknown] {
+  const name = mockOAuthClients[params.client_id ?? ""];
+  if (!name) return problem(409, "oauthClientUnknown");
+  const redirectUri = params.redirect_uri ?? "";
+  if (redirectUri.includes("evil")) return problem(409, "oauthRedirectInvalid");
+  if (params.response_type !== "code") {
+    return [200, { redirect: oauthAnswer(redirectUri, { error: "unsupported_response_type" }, params.state) }];
+  }
+  const allowed = ["openid", "email", "profile", "offline_access", "mail", "smtp", "dav"];
+  const asked = (params.scope ?? "").split(/\s+/).filter((scope) => allowed.includes(scope));
+  let redirectHost = "127.0.0.1";
+  try {
+    if (redirectUri) redirectHost = new URL(redirectUri).hostname;
+  } catch {
+    return problem(409, "oauthRedirectInvalid");
+  }
+  const answer: OAuthRequest = {
+    client: { name, clientId: params.client_id!, redirectHost },
+    scopes: asked.length > 0 ? asked : ["openid", "mail", "smtp"],
+    consented: params.client_id === "uwu-known" && params.prompt !== "consent",
+  };
+  return [200, answer];
+}
+
 const routes: [string, RegExp, Handler][] = [
   // First, so they win over the older routes for the same addresses.
   ...ruleRoutes,
@@ -1862,7 +1985,7 @@ const routes: [string, RegExp, Handler][] = [
         const entry = settings[key];
         if (!entry) return problem(422, "invalid");
         if (entry.source === "file") return problem(409, "settingLocked");
-        if (key.endsWith("password") || key.endsWith("token")) {
+        if (key.endsWith("password") || key.endsWith("token") || key.endsWith("secret")) {
           settings[key] = { value: null, source: value === null ? "default" : "database", set: value !== null };
         } else {
           settings[key] = { value, source: value === null ? "default" : "database" };
@@ -1876,7 +1999,9 @@ const routes: [string, RegExp, Handler][] = [
       const logged = Object.fromEntries(
         Object.entries(changes).map(([key, value]) => [
           key,
-          (key.endsWith("password") || key.endsWith("token")) && value !== null ? "•••" : value,
+          (key.endsWith("password") || key.endsWith("token") || key.endsWith("secret")) && value !== null
+            ? "•••"
+            : value,
         ]),
       );
       log("settings.update", "", logged);
@@ -1954,9 +2079,51 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   [
+    "POST",
+    /^\/api\/admin\/auth\/oidc\/test$/,
+    (body) => {
+      // "down" anywhere in the issuer plays a provider that does not answer.
+      const changes = (body as { changes: Record<string, unknown> }).changes;
+      const issuer = String(changes["auth.oidc.issuer"] ?? settings["auth.oidc.issuer"]?.value ?? "");
+      if (!issuer.startsWith("https://")) return problem(409, "settingsInvalid");
+      if (issuer.includes("down")) return problem(409, "oidcFailed");
+      return [
+        200,
+        {
+          ok: true,
+          detail: `${new URL(issuer).origin} answers, with 2 signing keys`,
+          redirectUri: "https://mail.uwu.example/api/auth/oidc/callback",
+        },
+      ];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/auth\/ldap\/test$/,
+    (body) => {
+      // "down" anywhere in the address plays a directory that does not answer.
+      const changes = (body as { changes: Record<string, unknown> }).changes;
+      const url = String(changes["auth.ldap.url"] ?? settings["auth.ldap.url"]?.value ?? "");
+      if (!/^ldaps?:\/\//.test(url)) return problem(409, "settingsInvalid");
+      if (url.includes("down")) return problem(409, "ldapFailed");
+      const base = String(changes["auth.ldap.base_dn"] ?? settings["auth.ldap.base_dn"]?.value ?? "dc=example,dc=com");
+      return [200, { ok: true, detail: `connected, and ${base} can be searched` }];
+    },
+  ],
+  [
     "GET",
     /^\/api\/info$/,
-    () => [200, { hostname: "mail.uwu.example", setupRequired: setupOpen, brand: brand() } satisfies Info],
+    () => [
+      200,
+      {
+        hostname: "mail.uwu.example",
+        setupRequired: setupOpen,
+        brand: brand(),
+        oidc: settings["auth.oidc.enabled"]?.value
+          ? { label: String(settings["auth.oidc.button_label"]?.value ?? "").trim() }
+          : null,
+      } satisfies Info,
+    ],
   ],
   ["PUT", /^\/api\/admin\/branding\/logo$/, () => [200, brand()]],
   [
@@ -2255,6 +2422,54 @@ const routes: [string, RegExp, Handler][] = [
   ],
   ["POST", /^\/api\/auth\/passkey\/options$/, () => problem(409, "loginExpired")],
   ["GET", /^\/api\/account\/security$/, () => [200, mockSecurity]],
+  ["GET", /^\/api\/account\/oauth-grants$/, () => [200, mockSecurity.oauthGrants]],
+  [
+    "DELETE",
+    /^\/api\/account\/oauth-grants\/(\d+)$/,
+    (_, [id]) => {
+      const found = mockSecurity.oauthGrants.find((grant) => String(grant.id) === id);
+      if (!found) return problem(404, "notFound");
+      mockSecurity.oauthGrants = mockSecurity.oauthGrants.filter((grant) => grant !== found);
+      securityEvent("oauthRevoked", { name: found.clientName });
+      return [204, null];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/oauth\/authorize$/,
+    (_, __, query) => {
+      if (!loggedIn) return problem(401, "unauthorized");
+      const request = oauthRequest(Object.fromEntries(query));
+      if (request[0] !== 200 || query.get("prompt") !== "none") return request;
+      const answer = request[1] as OAuthRequest;
+      if ("redirect" in answer || answer.consented) return request;
+      return [
+        200,
+        { redirect: oauthAnswer(query.get("redirect_uri"), { error: "consent_required" }, query.get("state")) },
+      ];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/oauth\/authorize$/,
+    (body) => {
+      if (!loggedIn) return problem(401, "unauthorized");
+      const { approve, ...fields } = body as Record<string, string> & { approve: boolean };
+      const request = oauthRequest(fields);
+      if (request[0] !== 200) return request;
+      const answer = request[1] as OAuthRequest;
+      if ("redirect" in answer) return request;
+      if (!approve) {
+        return [200, { redirect: oauthAnswer(fields.redirect_uri, { error: "access_denied" }, fields.state) }];
+      }
+      if (!answer.consented) {
+        const grant = { ...oauthGrant(nextGrantId++, answer.client.name, answer.scopes, 0), createdAt: now };
+        mockSecurity.oauthGrants.unshift({ ...grant, lastUsedAt: null, lastUsedProtocol: null, lastUsedIp: null });
+        securityEvent("oauthGranted", { name: answer.client.name, scopes: answer.scopes });
+      }
+      return [200, { redirect: oauthAnswer(fields.redirect_uri, { code: "mock-code" }, fields.state) }];
+    },
+  ],
   [
     "GET",
     /^\/api\/account\/spam$/,
@@ -3368,9 +3583,20 @@ const routes: [string, RegExp, Handler][] = [
         : { externalBlocked: found.login === "opa@verein.example", targets: 0, external: 0 };
       const sendAsDomains = mockSendAs[found.login] ?? [];
       const appPasswordList = found.role === "service" ? (servicePasswords[found.login] ?? []) : undefined;
+      const oauthGrants = me ? mockSecurity.oauthGrants : (mockPersonGrants[found.login] ?? []);
+      const authSource = me ? mockSecurity.authSource : (mockAuthSources[found.login] ?? "local");
       return [
         200,
-        { ...found, security, forwarding, aliasLimit: me ? mockAddresses.limit : 10, sendAsDomains, appPasswordList },
+        {
+          ...found,
+          security,
+          forwarding,
+          aliasLimit: me ? mockAddresses.limit : 10,
+          sendAsDomains,
+          appPasswordList,
+          oauthGrants,
+          authSource,
+        },
       ];
     },
   ],
@@ -3470,6 +3696,35 @@ const routes: [string, RegExp, Handler][] = [
       if (at < 0) return problem(404, "notFound");
       log("account.appPasswordRevoked", login!, { name: list[at]!.name });
       list.splice(at, 1);
+      return [204, null];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/admin\/people\/([^/]+)\/oauth-grants\/(\d+)$/,
+    (_, [login, id]) => {
+      const list = login === "lorin@uwu.example" ? mockSecurity.oauthGrants : (mockPersonGrants[login!] ?? []);
+      const at = list.findIndex((grant) => grant.id === Number(id));
+      if (at < 0) return problem(404, "notFound");
+      log("account.oauthRevoked", login!, { name: list[at]!.clientName });
+      list.splice(at, 1);
+      return [204, null];
+    },
+  ],
+  [
+    "PUT",
+    /^\/api\/admin\/people\/([^/]+)\/auth-source$/,
+    (body, [login]) => {
+      const found = people.find((p) => p.login === login);
+      if (!found) return problem(404, "notFound");
+      if (found.role === "service") return problem(409, "serviceAccount");
+      const { source } = body as { source: string };
+      if (source !== "local" && source !== "ldap") return problem(422, "invalid");
+      if (login === "lorin@uwu.example") {
+        mockSecurity.authSource = source;
+        if (source === "ldap") mockSecurity.hasPassword = false;
+      } else mockAuthSources[login!] = source;
+      log("account.authSource", login!, { source });
       return [204, null];
     },
   ],

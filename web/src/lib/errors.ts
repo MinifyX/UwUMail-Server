@@ -102,6 +102,13 @@ const KNOWN = [
   "subscriptionLimit",
   "subscriptionExists",
   "refreshPause",
+  "confirmByLogin",
+  "passwordInDirectory",
+  "serviceAccount",
+  "oauthClientUnknown",
+  "oauthRedirectInvalid",
+  "oidcFailed",
+  "ldapFailed",
 ];
 
 /** Turns an API error into a sentence for the person in front of the screen. */
