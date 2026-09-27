@@ -237,8 +237,10 @@ write:
 A message that passes one of them is not read at all: over SMTP it is refused
 with `554 5.6.0`, fetched from another provider it counts as refused (and is
 cleared there like any other refused message), IMAP `APPEND` answers `NO`, and
-JMAP `Email/import` answers `invalidEmail`. A message made of parts whose
-boundary never comes, over and over, is refused the same way.
+JMAP `Email/import` answers `invalidEmail`; moving mail over from another
+server and restoring a backup leave it out, say so in the log, and go on with
+the rest. A message made of parts whose boundary never comes, over and over, is
+refused the same way.
 
 The reason is the server itself: a message nested tens of thousands of times
 over used to take the whole server down while it was read, and millions of tiny

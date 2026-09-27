@@ -345,13 +345,19 @@ pub async fn restore_mailbox(
                 received_at: Some(mail.received_at),
             };
             match store.ingest(request).await {
-                Ok(_) => {}
+                Ok(_) => {
+                    report.restored += 1;
+                    report.bytes += size;
+                    state.restored += 1;
+                }
                 Err(StoreError::QuotaExceeded) => return Err(Error::Store(StoreError::QuotaExceeded)),
+                // Nested too deep or made of too many parts to be read safely
+                // (uwumail_store::mime_limits): left out, and the rest is restored.
+                Err(StoreError::Rule { code: "invalidEmail", message }) => {
+                    tracing::warn!(blob = %mail.blob, %message, "a message was left out of the restore");
+                }
                 Err(err) => return Err(err.into()),
             }
-            report.restored += 1;
-            report.bytes += size;
-            state.restored += 1;
         }
         state.done += 1;
         progress(state);

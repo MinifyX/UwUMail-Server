@@ -16,7 +16,7 @@ use rustls_pki_types::ServerName;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
-use uwumail_store::{BlobHash, ImportProgress, IngestRequest, MailboxRole, MailboxTarget, Store};
+use uwumail_store::{BlobHash, ImportProgress, IngestRequest, MailboxRole, MailboxTarget, Store, StoreError};
 
 /// Messages fetched per request.
 const BATCH: usize = 25;
@@ -626,7 +626,20 @@ pub(crate) async fn copy_folders(
                     keywords,
                     received_at: fetched.internal_date,
                 };
-                store.ingest(request).await.with_context(|| format!("storing message {uid} of {}", folder.raw))?;
+                match store.ingest(request).await {
+                    Ok(_) => {}
+                    // Nested too deep or made of too many parts to be read safely
+                    // (uwumail_store::mime_limits): left out, and the move goes on with the rest.
+                    Err(StoreError::Rule { code: "invalidEmail", message }) => {
+                        tracing::warn!(uid, folder = %folder.raw, %message, "a message was left out");
+                        continue;
+                    }
+                    Err(err) => {
+                        return Err(
+                            anyhow::Error::from(err).context(format!("storing message {uid} of {}", folder.raw))
+                        );
+                    }
+                }
                 copied.messages += 1;
                 copied.bytes += size;
             }
