@@ -344,6 +344,12 @@ async fn collect_garbage(store: Store, smtp: uwumail_smtp::Smtp, mut shutdown: w
             }
             Err(err) => tracing::warn!(%err, "emptying the trash failed"),
         }
+        // Masked addresses nobody ever wrote to within a day are deleted; their names stay taken.
+        match store.retire_pending_masked_addresses().await {
+            Ok(0) => {}
+            Ok(retired) => tracing::info!(retired, "deleted pending masked addresses that never got mail"),
+            Err(err) => tracing::warn!(%err, "cleaning up pending masked addresses failed"),
+        }
         match store.purge_reports(uwumail_store::REPORT_RETENTION_SECS).await {
             Ok(0) => {}
             Ok(removed) => tracing::info!(removed, "removed old DMARC and TLS reports"),

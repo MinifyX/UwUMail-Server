@@ -13,7 +13,22 @@ use crate::error::{ApiError, ApiResult};
 use crate::session::{Admin, Session};
 
 pub async fn addresses(State(web): State<Web>, session: Session) -> ApiResult<Json<Value>> {
-    Ok(Json(json!(web.store().own_addresses(session.account.id).await?)))
+    Ok(Json(addresses_json(&web, session.account.id).await?))
+}
+
+/// One's own addresses, and the groups and shared mailboxes one belongs to.
+async fn addresses_json(web: &Web, account_id: i64) -> ApiResult<Value> {
+    let mut value = json!(web.store().own_addresses(account_id).await?);
+    let groups: Vec<Value> = web
+        .store()
+        .account_groups(account_id)
+        .await?
+        .into_iter()
+        .map(|group| json!({ "address": group.address, "name": group.name, "maySendAs": group.members_may_send_as }))
+        .collect();
+    value["groups"] = json!(groups);
+    value["sharedMailboxes"] = json!(web.store().shared_memberships(account_id).await?);
+    Ok(value)
 }
 
 #[derive(Deserialize)]
@@ -28,7 +43,7 @@ pub async fn create_alias(
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let created = web.store().create_own_alias(session.account.id, new.address.trim()).await?;
     tracing::info!(login = %session.account.login, alias = %created.address, "created an own alias");
-    Ok((StatusCode::CREATED, Json(json!(web.store().own_addresses(session.account.id).await?))))
+    Ok((StatusCode::CREATED, Json(addresses_json(&web, session.account.id).await?)))
 }
 
 pub async fn delete_alias(
@@ -38,7 +53,7 @@ pub async fn delete_alias(
 ) -> ApiResult<Json<Value>> {
     web.store().delete_own_alias(session.account.id, &address).await?;
     tracing::info!(login = %session.account.login, alias = %address, "deleted an own alias");
-    Ok(Json(json!(web.store().own_addresses(session.account.id).await?)))
+    Ok(Json(addresses_json(&web, session.account.id).await?))
 }
 
 pub async fn storage(State(web): State<Web>, session: Session) -> ApiResult<Json<Value>> {
