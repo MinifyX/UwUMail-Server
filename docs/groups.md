@@ -6,7 +6,8 @@ Two ways for several people to use one address:
   to each member's own mailbox, as if it had been sent to them.
 - A **shared mailbox** (`support@`) is a mailbox of its own that several people
   use together. Mail to it stays in it. Its members see all of its folders next
-  to their own and can answer as it.
+  to their own and can answer as it. An existing person or service can be turned
+  into one.
 
 Admins set both up. People see what they belong to under
 *My account → Addresses → Groups and shared mailboxes*.
@@ -99,12 +100,56 @@ nobody one can share a folder with; `shareWith` takes people only.
 name, an address, a storage limit and the members. For each member a switch
 says whether they may **send** with its address.
 
-A shared mailbox is an account of its own (the portal marks it *Shared
+A shared mailbox is a **service with members** (the portal marks it *Shared
 mailbox*). It has its folders, its storage limit and its addresses, and admins
-can add aliases to it like to anyone else's account. Nobody signs in to it:
-it has no password, it cannot get one or an app password, and it cannot be
-turned into a person. Its members use it with their own logins. Only people
-can be members; a service or another shared mailbox cannot.
+can add aliases to it like to anyone else's account. Nobody signs in to the
+portal or the webmail as it: it has no password and cannot get one. Its members
+use it with their own logins. Only people can be members; a service or another
+shared mailbox cannot, and a shared mailbox is never a member of itself.
+
+Like any service it has **app passwords** and **protocol switches**, on its
+page in the portal. A scanner, a shop or a mail app set up with its own address
+logs in with one of them over SMTP, IMAP, JMAP or CalDAV/CardDAV, as far as its
+switches allow; the members see the same mail. IMAP or JMAP has to stay on,
+since without them no mail is kept for it (`sharedMailboxNeedsMailbox`). What
+it sends itself this way is filed by the mail app, as for anyone.
+
+A shared mailbox may be a member of a [group](#groups): mail to the group then
+lands once in the shared mailbox, where all its members see it.
+
+### Turning an account into one
+
+An existing person or service becomes a shared mailbox with *Turn into a shared
+mailbox* on its page (not your own), which asks for the members right away. The
+mail, the folders, the addresses and the storage limit stay.
+
+- **A person** becomes a service on the way, as in
+  [configuration.md](configuration.md#accounts-people-and-services): their
+  password turns into an app password that does not expire, so their mail apps
+  keep working, and their second factors, passkeys, sessions, password links,
+  apps signed in with OAuth and the tie to an LDAP directory or OpenID Connect
+  provider go.
+- **A service** keeps its app passwords. One without a mailbox (sending only)
+  gets IMAP and JMAP switched on and its folders.
+- Either way it leaves what it used as a person: folders others shared with it
+  and the shared mailboxes it was a member of, with the sending addresses those
+  gave. Its own folders stay shared as they were, and its groups stay.
+
+*Make it a plain service* on the page of a shared mailbox is the way back: the
+members lose its folders and its sending addresses, and the mail, the addresses
+and the app passwords stay. From there it can become a person again the usual
+way.
+
+The same from the terminal:
+
+```bash
+docker compose exec uwumail uwumail-server account shared info@example.com on \
+  --member mini@example.com --sender leni@example.com
+docker compose exec uwumail uwumail-server account shared info@example.com off
+```
+
+`--member` gives a member who reaches every folder, `--sender` one who may also
+send with its addresses; both may be given more than once.
 
 ### Its folders
 
@@ -166,10 +211,14 @@ Admins (session cookie and CSRF header, as the rest of the portal):
 | `GET /api/admin/shared-mailboxes` | `[{ login, name, members: [{ id, login, name, maySend }] }]` |
 | `POST /api/admin/shared-mailboxes` with `{ address, name, quotaBytes, members: [{ login, maySend }] }` | creates one, `201` with `{ person, members }` |
 | `PUT /api/admin/shared-mailboxes/{login}/members` with `{ members: [{ login, maySend }] }` | replaces the members |
+| `POST /api/admin/people/{login}/shared-mailbox` with `{ members: [{ login, maySend }] }` | turns a person or a service into a shared mailbox, `{ person, members }` |
+| `DELETE /api/admin/people/{login}/shared-mailbox` | turns a shared mailbox back into a plain service, answers with the person |
+| `POST /api/admin/people/{login}/app-passwords` with `{ name }` | an app password for a service or shared mailbox, as for any service |
 | `GET /api/admin/people/{login}` | for a shared mailbox, `sharedMailbox: true` and its `members` |
 
 Each change is written to the admin log (`group.create`, `group.update`,
-`group.remove`, `sharedMailbox.create`, `sharedMailbox.members`).
+`group.remove`, `sharedMailbox.create`, `sharedMailbox.members`,
+`sharedMailbox.convert` with `from: "person" | "service"`, `sharedMailbox.end`).
 
 For everyone, `GET /api/account/addresses` also returns
 `groups: [{ address, name, maySendAs }]` and

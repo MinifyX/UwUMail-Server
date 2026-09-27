@@ -3,6 +3,32 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.15.0
+
+**Turning accounts into shared mailboxes** ([docs/groups.md](docs/groups.md#turning-an-account-into-one)):
+
+- An existing person or service becomes a shared mailbox with *Turn into a shared mailbox* on its
+  page, members chosen right there; mail, folders, addresses and storage limit stay. A person's
+  password lives on as an app password, so their mail apps keep working.
+  `uwumail-server account shared <address> on --member … --sender …` does the same.
+- *Make it a plain service* turns a shared mailbox back into a service: the members lose it, mail,
+  addresses and app passwords stay.
+- A shared mailbox is a service with members now: it has **app passwords** and protocol switches, so
+  a scanner, a shop or a mail app can log in as it over SMTP, IMAP, JMAP and DAV, while nobody
+  signs in to the portal or the webmail as it. IMAP or JMAP has to stay on.
+- A shared mailbox may be a member of a group.
+
+**Services stay out of the portal, harder** ([docs/configuration.md](docs/configuration.md#accounts-people-and-services)):
+
+- A service never takes a password kept at an LDAP directory, for the portal or for mail apps.
+  Before, a person from the directory turned into a service still got into IMAP, SMTP and JMAP with
+  the directory's password.
+- Setting a password for a service is refused (`serviceAccount`); services get app passwords only.
+- Becoming a service also removes password links, apps signed in with OAuth and the tie to an LDAP
+  directory or OpenID Connect provider, and the folders and shared mailboxes others shared with the
+  account (only people share with people).
+- Tests for every way in: portal, webmail, OpenID Connect, LDAP and OAuth.
+
 ## 0.14.0
 
 The "Later" list of the roadmap, almost all of it in one release.

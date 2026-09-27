@@ -31,7 +31,8 @@ carries the CSRF token, exactly like the portal's own JSON API.
 
 Signing in this way is only for the webmail: it works while the webmail is
 switched on, for accounts whose own switch is on, and never for a service
-account. It deliberately does **not** look at the JMAP protocol switch — that
+account or a shared mailbox — not even with a session cookie made some other
+way. Their members open a shared mailbox in their own webmail. It deliberately does **not** look at the JMAP protocol switch — that
 one decides what other mail programs may do with this account's password, and
 taking someone's mail apps away should not quietly take away the browser too.
 
