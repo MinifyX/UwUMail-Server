@@ -80,6 +80,7 @@ pub async fn handle(
         Ok(Some(account)) => account,
         Ok(None) => {
             auth.failed(client);
+            store.stats().count(uwumail_store::Stat::LoginFailedJmap);
             tracing::warn!(login = %request.username, ip = %client.ip, "failed JMAP token login");
             return wrong_login();
         }

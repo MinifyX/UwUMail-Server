@@ -319,6 +319,7 @@ impl Smtp {
             dsn::bounce(ctx, &mail_from, &signed, &failed).await;
         }
         tracing::info!(%id, login = %account.login, local = local_deliveries, remote = remote_recipients, "submitted message");
+        ctx.store.stats().count(uwumail_store::Stat::Submitted);
         Ok(Submitted { id, queue_message_id, local_deliveries, remote_recipients })
     }
 }
