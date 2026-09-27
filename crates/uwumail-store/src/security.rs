@@ -450,6 +450,13 @@ impl Store {
             .account_by_id(account_id)
             .await?
             .ok_or_else(|| StoreError::NotFound(format!("account {account_id}")))?;
+        // Its members reach a shared mailbox with their own logins; it has none of its own.
+        if account.shared_mailbox {
+            return Err(StoreError::Rule {
+                code: "sharedMailbox",
+                message: format!("{} is a shared mailbox, its members sign in as themselves", account.login),
+            });
+        }
         let usable = scopes_for(account.protocols);
         if !scopes.iter().any(|scope| usable.contains(scope)) {
             return Err(StoreError::Invalid(
