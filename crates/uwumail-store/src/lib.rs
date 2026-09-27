@@ -37,6 +37,7 @@ mod objects;
 mod own;
 mod parse;
 mod password;
+mod push;
 mod query;
 mod queue;
 mod reports;
@@ -107,6 +108,11 @@ pub use objects::{Changes, EmailRecord};
 pub use own::{MailboxUsage, OwnAddress, OwnAddresses, RELEASED_ADDRESS_SECS, ReleasedAddress};
 /// Checks a password hash from another server (bcrypt or Argon2) and returns how it would be stored.
 pub use password::import_hash as normalize_imported_password_hash;
+pub use push::{
+    MAX_PUSH_SUBSCRIPTIONS, NewPushSubscription, PUSH_CREDENTIAL_PASSWORD, PUSH_MAX_FAILURES, PUSH_MAX_VERIFY_ATTEMPTS,
+    PUSH_SUBSCRIPTION_MAX_SECS, PushKeys, PushSubscription, PushSubscriptionUpdate, PushTarget,
+    push_credential_for_app_password, push_credential_for_session,
+};
 pub use query::{EmailFilter, EmailSort, EmailSortProperty};
 pub use queue::{NewQueueRecipient, QueueEntry, QueueRecipient, QueueRecipientStatus, QueuedMessage};
 pub use reports::{
