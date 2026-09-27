@@ -678,6 +678,17 @@ impl Session<'_> {
                 }
             }
         }
+        // One change may not send more scheduling messages than one mail may have recipients
+        // (security-audit-0.16.0 PROTOCOLS-5); refused before anything is stored.
+        if *kind == DavKind::Calendar
+            && view.access.is_owner()
+            && let Some(smtp) = &self.dav.inner.smtp
+            && let Err(refused) =
+                smtp.check_schedule(self.account, old.as_ref().map(|old| old.content.as_str()), Some(&content)).await
+        {
+            tracing::info!(login = %self.account.login, %refused, "calendar entry refused");
+            return precondition(StatusCode::FORBIDDEN, CALDAV, "max-attendees-per-instance", "");
+        }
         let write = DavWrite {
             name: name.clone(),
             content: content.clone(),
