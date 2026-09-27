@@ -146,6 +146,12 @@
       "saved": "Handtekening opgeslagen (ﾉ◕ヮ◕)ﾉ"
     }
   },
+  "memberships": {
+    "intro": "Hier hoor je bij! Groepsmail komt in je eigen inbox, gedeelde mailboxen wachten naast je mappen (◕‿◕✿)"
+  },
+  "masked": {
+    "intro": "Een geheim adres voor elke website! Krijgt er een spam, dan weet je wie er klikte, en zet je het in een tel uit (｀・ω・´)"
+  },
   "sharing": {
     "withMeEmpty": "Nog niemand deelt een map met je (｡•ᴗ•｡)",
     "saved": "{{folder}} is gedeeld met {{person}} (ﾉ◕ヮ◕)ﾉ"

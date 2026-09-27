@@ -146,6 +146,12 @@
       "saved": "Signature saved (ﾉ◕ヮ◕)ﾉ"
     }
   },
+  "memberships": {
+    "intro": "You are part of these! Group mail lands in your own inbox, shared mailboxes wait right next to your folders (◕‿◕✿)"
+  },
+  "masked": {
+    "intro": "A secret address for every website! If one starts getting spam, you know who blabbed, and you switch it off in a blink (｀・ω・´)"
+  },
   "sharing": {
     "withMeEmpty": "Nobody shares a folder with you yet (｡•ᴗ•｡)",
     "saved": "{{folder}} is shared with {{person}} (ﾉ◕ヮ◕)ﾉ"

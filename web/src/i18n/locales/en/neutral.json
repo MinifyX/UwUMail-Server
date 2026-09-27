@@ -62,7 +62,8 @@
     "expand": "Expand {{group}}",
     "mailbox": "Mailbox",
     "directory": "Accounts & domains",
-    "calendars": "Calendars & contacts"
+    "calendars": "Calendars & contacts",
+    "masked": "Masked addresses"
   },
   "userMenu": {
     "open": "Open account menu",
@@ -325,7 +326,12 @@
       "googleUseIcs": "Google only lets its own apps in. Use the secret iCal address for calendars and a vCard export for contacts.",
       "subscriptionLimit": "You have as many subscribed calendars as possible.",
       "subscriptionExists": "You are subscribed to this calendar already.",
-      "refreshPause": "Just fetched. Try again in a minute."
+      "refreshPause": "Just fetched. Try again in a minute.",
+      "sharedMailbox": "This is a shared mailbox: nobody signs in to it, its members use it from their own accounts.",
+      "maskedDomain": "No domain on this server is open for masked addresses yet. Ask the admin.",
+      "maskedLimit": "You have as many masked addresses as this server allows. Delete some you no longer need.",
+      "maskedPrefix": "A prefix may only have letters a–z, digits and _, up to 64 of them.",
+      "maskedState": "A masked address cannot go back to waiting for its first mail."
     }
   },
   "people": {
@@ -534,6 +540,26 @@
       "revokeTitle": "Revoke {{name}}?",
       "revokeBody": "Whatever uses this password stops getting in.",
       "createdTitle": "New app password"
+    }
+  },
+  "sharedMailboxes": {
+    "title": "Shared mailboxes",
+    "explain": "A mailbox several people use, like support@. Nobody signs in to it; its members see it next to their own folders and may answer as it.",
+    "create": "New shared mailbox",
+    "createIntro": "It gets its own address and storage; mail to it lands in its inbox for all members.",
+    "name": "Name",
+    "namePlaceholder": "for example Support",
+    "address": "Address",
+    "addressPlaceholder": "for example support",
+    "members": "Members",
+    "membersHint": "Everyone chosen sees all its folders. Tick who may also send with its address.",
+    "membersIntro": "Members see every folder of it, new ones too. Who may send finds its address among their sending addresses; a copy of what they send stays in its Sent folder.",
+    "maySend": "may send",
+    "save": "Save members",
+    "pill": "Shared mailbox",
+    "toasts": {
+      "created": "{{address}} created",
+      "saved": "Members saved"
     }
   },
   "log": {
@@ -883,6 +909,46 @@
       "unauthenticated_one": "One report came from a sender that could not prove who it is. Its numbers could be made up.",
       "unauthenticated_other": "{{count}} reports came from senders that could not prove who they are. Their numbers could be made up."
     }
+  },
+  "groups": {
+    "title": "Groups",
+    "explain": "One address for several people, like info@ or board@ of a club. Everyone gets the mail in their own inbox, with their own spam filter and rules.",
+    "create": "New group",
+    "save": "Save",
+    "address": "Address",
+    "addressPlaceholder": "for example board",
+    "name": "Name",
+    "namePlaceholder": "for example Board",
+    "whoMaySend": "Who may write to it",
+    "who": {
+      "anyone": "Anyone",
+      "members": "Only its members",
+      "domain": "Only addresses of {{domain}}",
+      "anyoneHint": "Like any other address, open to everyone.",
+      "membersHint": "Mail from anyone else is refused at the door.",
+      "domainHint": "People of this domain may write, everyone else is refused."
+    },
+    "sendAs": "Members may send as the group",
+    "sendAsHint": "Its address then shows up among their sending addresses.",
+    "sendAsShort": "members send as it",
+    "members": {
+      "title": "Members",
+      "search": "Find people",
+      "chosen_one": "{{count}} chosen",
+      "chosen_other": "{{count}} chosen",
+      "none": "Nobody found."
+    },
+    "noMembers": "No members yet: mail to it is refused.",
+    "edit": "Change {{address}}",
+    "remove": "Remove {{address}}",
+    "removeConfirm": "Remove the group {{address}}? Mail to it is refused from now on.",
+    "toasts": {
+      "created": "Group created",
+      "saved": "Group saved",
+      "removed": "Group removed"
+    },
+    "masked": "Masked addresses",
+    "maskedHint": "People may make random addresses on this domain for websites (My account → Masked addresses)."
   },
   "reports": {
     "title": "Reports",
@@ -1680,6 +1746,54 @@
     "releasedHint": "Mail to these addresses is refused until you take them back or the time runs out.",
     "reservedUntil": "Reserved until {{date}}",
     "restore": "Take back"
+  },
+  "memberships": {
+    "title": "Groups and shared mailboxes",
+    "intro": "An admin added you to these. Mail to a group reaches you in your own inbox; a shared mailbox shows next to your own folders.",
+    "group": "Group",
+    "shared": "Shared mailbox",
+    "maySend": "you may send as it",
+    "sharedHint": "In mail apps a shared mailbox shows under Shared/, in the webmail as an account of its own. What you send as it is kept in its Sent folder too."
+  },
+  "masked": {
+    "pageTitle": "Masked addresses",
+    "intro": "A random address for each website. If one starts getting spam, you know who passed it on, and you turn it off without touching your real address.",
+    "new": "New masked address",
+    "closed": "Masked addresses are not open on this server yet. Ask the admin to switch them on for a domain.",
+    "description": "What it is for",
+    "descriptionPlaceholder": "for example the bakery's newsletter",
+    "site": "Website",
+    "siteHint": "Optional, so you remember where you used it.",
+    "prefix": "Prefix",
+    "prefixHint": "Optional: letters a–z, digits and _ in front of the random part.",
+    "prefixPlaceholder": "for example shop",
+    "domain": "Domain",
+    "create": "Make an address",
+    "created": "{{address}} is ready and copied",
+    "listTitle": "Your masked addresses",
+    "filter": {
+      "active": "In use",
+      "deleted": "Deleted"
+    },
+    "empty": "Nothing here yet.",
+    "noNote": "No note",
+    "state": {
+      "pending": "Waiting for its first mail",
+      "enabled": "On",
+      "disabled": "Off: mail goes quietly to the Trash",
+      "deleted": "Deleted: mail is refused"
+    },
+    "lastMessage": "last mail {{date}}",
+    "noMessage": "no mail yet",
+    "enable": "Turn on",
+    "disable": "Turn off",
+    "delete": "Delete",
+    "deleteConfirm": "Delete {{address}}? Mail to it is refused from now on. You can turn it on again later; nobody else ever gets it.",
+    "toasts": {
+      "enabled": "Turned on",
+      "disabled": "Turned off, mail goes to the Trash",
+      "deleted": "Deleted, mail is refused"
+    }
   },
   "storage": {
     "title": "Storage",

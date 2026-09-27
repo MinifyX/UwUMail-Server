@@ -62,7 +62,8 @@
     "expand": "展开{{group}}",
     "mailbox": "邮箱",
     "directory": "账户与域名",
-    "calendars": "日历和通讯录"
+    "calendars": "日历和通讯录",
+    "masked": "隐藏地址"
   },
   "userMenu": {
     "open": "打开账户菜单",
@@ -316,7 +317,12 @@
       "googleUseIcs": "Google 只允许它自己的应用访问。日历请使用私密 iCal 地址，通讯录请使用 vCard 导出。",
       "subscriptionLimit": "你订阅的日历数量已达上限。",
       "subscriptionExists": "你已经订阅了这个日历。",
-      "refreshPause": "刚刚获取过。请一分钟后再试。"
+      "refreshPause": "刚刚获取过。请一分钟后再试。",
+      "sharedMailbox": "这是共享邮箱：没有人登录它，成员从自己的账户使用它。",
+      "maskedDomain": "此服务器还没有开放用于隐藏地址的域名。请联系管理员。",
+      "maskedLimit": "你的隐藏地址已达到此服务器允许的上限。请删除一些不再需要的。",
+      "maskedPrefix": "前缀只能包含字母 a–z、数字和 _，最多 64 个。",
+      "maskedState": "隐藏地址不能再回到等待第一封邮件的状态。"
     }
   },
   "people": {
@@ -520,6 +526,26 @@
       "revokeTitle": "撤销 {{name}}？",
       "revokeBody": "使用此密码的程序将无法再访问。",
       "createdTitle": "新的应用专用密码"
+    }
+  },
+  "sharedMailboxes": {
+    "title": "共享邮箱",
+    "explain": "多人使用的邮箱，比如 support@。没有人登录它；成员在自己的文件夹旁边看到它，并可以用它回复。",
+    "create": "新建共享邮箱",
+    "createIntro": "它有自己的地址和存储空间；发给它的邮件会进入它的收件箱，所有成员都能看到。",
+    "name": "名称",
+    "namePlaceholder": "例如 支持",
+    "address": "地址",
+    "addressPlaceholder": "例如 support",
+    "members": "成员",
+    "membersHint": "选中的人可以看到它的所有文件夹。勾选谁还可以用它的地址发信。",
+    "membersIntro": "成员可以看到它的每个文件夹，包括新建的。可以发信的人会在自己的发件地址中看到它；发出邮件的副本保存在它的已发送文件夹中。",
+    "maySend": "可以发信",
+    "save": "保存成员",
+    "pill": "共享邮箱",
+    "toasts": {
+      "created": "{{address}} 已创建",
+      "saved": "成员已保存"
     }
   },
   "log": {
@@ -861,6 +887,45 @@
       },
       "unauthenticated_other": "有 {{count}} 份报告来自无法证明自身身份的发送方。其中的数据可能是捏造的。"
     }
+  },
+  "groups": {
+    "title": "群组",
+    "explain": "一个地址对应多个人，比如社团的 info@ 或 board@。每个人都在自己的收件箱收到邮件，使用自己的垃圾邮件过滤和规则。",
+    "create": "新建群组",
+    "save": "保存",
+    "address": "地址",
+    "addressPlaceholder": "例如 board",
+    "name": "名称",
+    "namePlaceholder": "例如 理事会",
+    "whoMaySend": "谁可以发信",
+    "who": {
+      "anyone": "任何人",
+      "members": "仅成员",
+      "domain": "仅 {{domain}} 的地址",
+      "anyoneHint": "和其他地址一样，对所有人开放。",
+      "membersHint": "其他人的邮件在门口就被拒收。",
+      "domainHint": "此域名的人可以发信，其他人被拒收。"
+    },
+    "sendAs": "成员可以以群组身份发信",
+    "sendAsHint": "群组地址会出现在成员的发件地址中。",
+    "sendAsShort": "成员可用它发信",
+    "members": {
+      "title": "成员",
+      "search": "查找人员",
+      "chosen_other": "已选 {{count}} 人",
+      "none": "没有找到。"
+    },
+    "noMembers": "还没有成员：发往它的邮件被拒收。",
+    "edit": "修改 {{address}}",
+    "remove": "删除 {{address}}",
+    "removeConfirm": "删除群组 {{address}}？从现在起发往它的邮件将被拒收。",
+    "toasts": {
+      "created": "群组已创建",
+      "saved": "群组已保存",
+      "removed": "群组已删除"
+    },
+    "masked": "隐藏地址",
+    "maskedHint": "允许用户在此域名上为网站生成随机地址（我的账户 → 隐藏地址）。"
   },
   "reports": {
     "title": "报告",
@@ -1634,6 +1699,54 @@
     "releasedHint": "在你收回这些地址或保留期结束之前，发往它们的邮件会被拒收。",
     "reservedUntil": "保留至 {{date}}",
     "restore": "收回"
+  },
+  "memberships": {
+    "title": "群组和共享邮箱",
+    "intro": "管理员把你加到了这里。发给群组的邮件会到你自己的收件箱；共享邮箱显示在你自己的文件夹旁边。",
+    "group": "群组",
+    "shared": "共享邮箱",
+    "maySend": "你可以用它发信",
+    "sharedHint": "在邮件应用中，共享邮箱显示在 Shared/ 下，在网页邮箱中显示为单独的账户。你用它发出的邮件也会保存在它的已发送文件夹中。"
+  },
+  "masked": {
+    "pageTitle": "隐藏地址",
+    "intro": "为每个网站使用一个随机地址。如果某个地址开始收到垃圾邮件，你就知道是谁泄露的，并且可以在不影响真实地址的情况下关掉它。",
+    "new": "新建隐藏地址",
+    "closed": "此服务器还没有开放隐藏地址。请管理员为某个域名开启。",
+    "description": "用途",
+    "descriptionPlaceholder": "例如面包店的通讯",
+    "site": "网站",
+    "siteHint": "可选，方便记住在哪里用过。",
+    "prefix": "前缀",
+    "prefixHint": "可选：放在随机部分前面的字母 a–z、数字和 _。",
+    "prefixPlaceholder": "例如 shop",
+    "domain": "域名",
+    "create": "生成地址",
+    "created": "{{address}} 已就绪并已复制",
+    "listTitle": "你的隐藏地址",
+    "filter": {
+      "active": "使用中",
+      "deleted": "已删除"
+    },
+    "empty": "这里还没有内容。",
+    "noNote": "没有备注",
+    "state": {
+      "pending": "等待第一封邮件",
+      "enabled": "开启",
+      "disabled": "关闭：邮件静默进入废纸篓",
+      "deleted": "已删除：邮件被拒收"
+    },
+    "lastMessage": "最后一封邮件 {{date}}",
+    "noMessage": "还没有邮件",
+    "enable": "开启",
+    "disable": "关闭",
+    "delete": "删除",
+    "deleteConfirm": "删除 {{address}}？从现在起发往它的邮件将被拒收。你以后可以重新开启；其他人永远不会得到它。",
+    "toasts": {
+      "enabled": "已开启",
+      "disabled": "已关闭，邮件进入废纸篓",
+      "deleted": "已删除，邮件被拒收"
+    }
   },
   "storage": {
     "title": "存储空间",

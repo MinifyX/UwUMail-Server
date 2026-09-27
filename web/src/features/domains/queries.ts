@@ -1,5 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type DomainDetail, type DomainReport, type MtaStsMode, type ReportsView } from "@/lib/api";
+import {
+  api,
+  type DomainDetail,
+  type DomainReport,
+  type GroupInfo,
+  type MtaStsMode,
+  type ReportsView,
+  type WhoMaySend,
+} from "@/lib/api";
 import { useT } from "@/i18n";
 import { useErrorText } from "@/lib/errors";
 import { toast } from "@/state/toasts";
@@ -147,4 +155,64 @@ export function useRemoveKey(name: string, success: string) {
       api<DomainDetail>(`${domainPath(name)}/dkim/${encodeURIComponent(selector)}`, { method: "DELETE" }),
     success,
   );
+}
+
+export interface GroupBody {
+  name?: string;
+  whoMaySend?: WhoMaySend;
+  membersMaySendAs?: boolean;
+  members?: string[];
+}
+
+/** Creates, changes or removes a group of the domain, then loads the domain again. */
+export function useGroupAction<Input>(name: string, run: (input: Input) => Promise<unknown>, success: string) {
+  const queryClient = useQueryClient();
+  const errorText = useErrorText();
+  return useMutation({
+    mutationFn: run,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "domains", name] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
+      toast(success, "success");
+    },
+    onError: (error) => toast(errorText(error), "error"),
+  });
+}
+
+export function useCreateGroup(name: string, success: string) {
+  return useGroupAction(
+    name,
+    (body: GroupBody & { local: string }) => api<GroupInfo>(`${domainPath(name)}/groups`, { method: "POST", body }),
+    success,
+  );
+}
+
+export function useUpdateGroup(name: string, success: string) {
+  return useGroupAction(
+    name,
+    ({ local, ...body }: GroupBody & { local: string }) =>
+      api<GroupInfo>(`${domainPath(name)}/groups/${encodeURIComponent(local)}`, { method: "PATCH", body }),
+    success,
+  );
+}
+
+export function useRemoveGroup(name: string, success: string) {
+  return useGroupAction(
+    name,
+    (local: string) => api<void>(`${domainPath(name)}/groups/${encodeURIComponent(local)}`, { method: "DELETE" }),
+    success,
+  );
+}
+
+export function useSetMaskedAddresses(name: string) {
+  const queryClient = useQueryClient();
+  const errorText = useErrorText();
+  return useMutation({
+    mutationFn: (on: boolean) => api<void>(`${domainPath(name)}/masked-addresses`, { method: "PUT", body: { on } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "domains", name] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
+    },
+    onError: (error) => toast(errorText(error), "error"),
+  });
 }

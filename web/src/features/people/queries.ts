@@ -7,6 +7,7 @@ import {
   type PasswordLinkCreated,
   type Person,
   type Protocols,
+  type SharedMailboxMember,
 } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { toast } from "@/state/toasts";
@@ -222,5 +223,43 @@ export function useSetPassword(login: string) {
   return useMutation({
     mutationFn: (password: string) => api<void>(`${personPath(login)}/password`, { method: "PUT", body: { password } }),
     onSuccess: () => updated(),
+  });
+}
+
+export interface NewSharedMailbox {
+  address: string;
+  name: string;
+  quotaBytes: number;
+  members: { login: string; maySend: boolean }[];
+}
+
+export function useCreateSharedMailbox() {
+  const updated = usePersonUpdated();
+  return useMutation({
+    mutationFn: (shared: NewSharedMailbox) =>
+      api<{ person: Person; members: SharedMailboxMember[] }>("/api/admin/shared-mailboxes", {
+        method: "POST",
+        body: shared,
+      }),
+    // The detail view starts from this answer, members included.
+    onSuccess: (result) => updated({ ...result.person, members: result.members }),
+  });
+}
+
+export function useSetSharedMembers(login: string, success: string) {
+  const queryClient = useQueryClient();
+  const errorText = useErrorText();
+  return useMutation({
+    mutationFn: (members: { login: string; maySend: boolean }[]) =>
+      api<SharedMailboxMember[]>(`/api/admin/shared-mailboxes/${encodeURIComponent(login)}/members`, {
+        method: "PUT",
+        body: { members },
+      }),
+    onSuccess: (members) => {
+      queryClient.setQueryData<Person>(["admin", "people", login], (old) => old && { ...old, members });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
+      toast(success, "success");
+    },
+    onError: (error) => toast(errorText(error), "error"),
   });
 }

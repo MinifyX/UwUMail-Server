@@ -102,6 +102,11 @@ const KNOWN = [
   "subscriptionLimit",
   "subscriptionExists",
   "refreshPause",
+  "sharedMailbox",
+  "maskedDomain",
+  "maskedLimit",
+  "maskedPrefix",
+  "maskedState",
 ];
 
 /** Turns an API error into a sentence for the person in front of the screen. */

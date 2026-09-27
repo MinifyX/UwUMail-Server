@@ -7,6 +7,7 @@ import { AccountHome } from "@/features/account/AccountHome";
 import { CalendarsPage } from "@/features/calendars/CalendarsPage";
 import { FetchPage } from "@/features/fetch/FetchPage";
 import { AddressesPage } from "@/features/addresses/AddressesPage";
+import { MaskedPage } from "@/features/masked/MaskedPage";
 import { SERVER_PATHS, ServerPage, type ServerTab } from "@/features/admin/ServerPage";
 import { DomainPage } from "@/features/domains/DomainPage";
 import { ForwardConfirmPage } from "@/features/mailbox/ForwardConfirmPage";
@@ -70,6 +71,7 @@ function page(path: string, session: Session): ReactNode {
   if (path === "/account/mail") return <MailboxPage />;
   if (path === "/account/fetch") return <FetchPage />;
   if (path === "/account/addresses") return <AddressesPage />;
+  if (path === "/account/masked") return <MaskedPage />;
   if (path === "/account/calendars") return <CalendarsPage />;
   if (path === "/account/spam") return <AccountSpamPage />;
   if (path === "/account/spam/lists") return <AccountSpamPage tab="lists" />;

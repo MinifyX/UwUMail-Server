@@ -12,6 +12,7 @@ import { usePeople } from "@/features/people/queries";
 import { CloudflarePanel } from "@/features/setup/SetupBits";
 import { DnsStatusPill, RecordList } from "./DnsBits";
 import { ForwardsCard } from "./ForwardsCard";
+import { GroupsCard } from "./GroupsCard";
 import { MtaStsCard, ReportsCard } from "./MtaStsCards";
 import {
   useActivateKeys,
@@ -21,6 +22,7 @@ import {
   useRemoveKey,
   useRotateKeys,
   useSetCatchAll,
+  useSetMaskedAddresses,
   useSetSelfService,
 } from "./queries";
 
@@ -81,6 +83,7 @@ function CatchAllCard({ domain }: { domain: DomainDetail }) {
   const people = usePeople();
   const save = useSetCatchAll(domain.name, t("domains.toasts.catchAll"));
   const selfService = useSetSelfService(domain.name);
+  const masked = useSetMaskedAddresses(domain.name);
   const choices = (people.data ?? []).filter((person) => person.status !== "deleted");
   return (
     <Card title={t("domains.detail.catchAll")}>
@@ -107,6 +110,14 @@ function CatchAllCard({ domain }: { domain: DomainDetail }) {
           onChange={(on) => selfService.mutate(on)}
           label={t("domains.detail.selfService")}
           description={t("domains.detail.selfServiceHint")}
+        />
+      </div>
+      <div className="mt-4 border-t border-hairline pt-4">
+        <Toggle
+          checked={Boolean(domain.maskedAddresses)}
+          onChange={(on) => masked.mutate(on)}
+          label={t("groups.masked")}
+          description={t("groups.maskedHint")}
         />
       </div>
     </Card>
@@ -193,7 +204,13 @@ export function DomainPage({ name }: { name: string }) {
   if (query.isPending) return <Loading />;
   if (query.isError) return <LoadError error={query.error} onRetry={() => void query.refetch()} />;
   const domain = query.data;
-  const unused = domain.people + domain.aliases + domain.forwards.length === 0;
+  const unused =
+    domain.people +
+      domain.aliases +
+      domain.forwards.length +
+      (domain.groups?.length ?? 0) +
+      (domain.maskedInUse ?? 0) ===
+    0;
 
   return (
     <div className="flex flex-col gap-5">
@@ -227,6 +244,7 @@ export function DomainPage({ name }: { name: string }) {
         </div>
         <div className="flex flex-col gap-5">
           <CatchAllCard domain={domain} />
+          <GroupsCard domain={domain} />
           <ForwardsCard domain={domain} />
           <Card title={t("domains.detail.remove")}>
             <div className="flex flex-col items-start gap-3">
