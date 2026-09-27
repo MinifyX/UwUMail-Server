@@ -1660,6 +1660,12 @@ where
                         out.raw(&format!("BINARY.SIZE{} {size}", &response::binary_label(part)["BINARY".len()..]));
                     }
                 }
+                // Sent as it grows, also within one message: every item can be a whole message
+                // (security-audit-0.16.0 PROTOCOLS-15).
+                if out.bytes.len() > 256 * 1024 {
+                    self.send(&out.bytes).await.map_err(io_error)?;
+                    out.bytes.clear();
+                }
             }
             if condstore && !modseq_sent && flags_sent {
                 out.raw(&format!(" MODSEQ ({})", email.modseq));

@@ -700,6 +700,19 @@ impl<'a> Parser<'a> {
                         }
                     }
                 };
+                // Each item asked for twice is sent twice, a whole message each time for BODY[]:
+                // repeats are dropped, and a list longer than any client sends is refused
+                // (security-audit-0.16.0 PROTOCOLS-15).
+                let mut distinct: Vec<FetchItem> = Vec::new();
+                for item in items {
+                    if !distinct.contains(&item) {
+                        if distinct.len() == MAX_FETCH_ITEMS {
+                            return Err("too many FETCH items".into());
+                        }
+                        distinct.push(item);
+                    }
+                }
+                let items = distinct;
                 let (mut changed_since, mut vanished) = (None, false);
                 if self.eat(b' ') {
                     self.byte(b'(')?;
@@ -1032,6 +1045,9 @@ pub fn parse_date(text: &str) -> Option<i64> {
     Some(days_from_civil(year, month, day))
 }
 
+/// Different items one FETCH may ask for.
+pub const MAX_FETCH_ITEMS: usize = 100;
+
 /// `17-Sep-2026 10:00:00 +0200` (the day may have a leading space) as a Unix time.
 pub fn parse_date_time(text: &str) -> Option<i64> {
     let text = text.trim_start();
@@ -1334,6 +1350,19 @@ mod tests {
         assert_eq!(parse_date_time("17-Sep-2026 -1:00:00 +0200"), None);
         assert_eq!(parse_date_time("17-Sep-2026 10:00:00 +02:0"), None);
         assert_eq!(parse_date_time("17-Sep-2026 1\u{e9}:00 +0200"), None);
+    }
+
+    #[test]
+    fn repeated_fetch_items_are_asked_for_once() {
+        let command = format!("a FETCH 1 (UID {}FLAGS)\r\n", "BODY.PEEK[] ".repeat(1_000));
+        let Ok(Command { body: CommandBody::Fetch { items, .. }, .. }) = parse_command(command.as_bytes(), false)
+        else {
+            panic!("a FETCH");
+        };
+        assert_eq!(items.len(), 3);
+        let distinct: String = (0..=MAX_FETCH_ITEMS).map(|n| format!("BODY.PEEK[]<{n}.10> ")).collect();
+        let command = format!("a FETCH 1 ({}UID)\r\n", distinct);
+        assert!(parse_command(command.as_bytes(), false).is_err());
     }
 
     /// The same date in an APPEND, which a stranger can send before logging in.
