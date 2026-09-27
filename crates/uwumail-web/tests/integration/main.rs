@@ -7,6 +7,7 @@ mod backups;
 mod branding;
 mod calendar_import;
 mod calendars;
+mod directory;
 mod domains;
 mod egress;
 mod gateway;

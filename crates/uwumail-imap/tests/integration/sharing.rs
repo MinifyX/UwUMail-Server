@@ -331,3 +331,55 @@ async fn a_shared_subfolder_shows_under_its_owners_path() {
     leni.send(b"n NOOP\r\n").await;
     assert_eq!(leni.line().await, "* BYE The selected mailbox is no longer shared with you");
 }
+
+/// A shared mailbox (docs/groups.md): every folder of it shows for its members, new ones too, with
+/// every right; mail filed there stays in its own quota; nobody logs in as it.
+#[tokio::test]
+async fn a_shared_mailbox_shows_all_its_folders_to_its_members() {
+    let server = server().await;
+    let support = server
+        .store
+        .create_shared_mailbox(uwumail_store::NewSharedMailbox {
+            address: "support@example.org".into(),
+            name: "Support".into(),
+            quota_bytes: 0,
+            members: vec![("leni@example.org".into(), false)],
+        })
+        .await
+        .unwrap();
+    deliver(&server.store, support.id, "Hilfe").await;
+    let mut leni = Client::login(&server, "leni@example.org").await;
+    let mut mini = Client::login(&server, "mini@example.org").await;
+
+    let lines = leni.expect("LIST \"\" \"Shared/*\"", "OK").await;
+    find(&lines, "\"Shared/support@example.org/INBOX\"");
+    find(&lines, "\"Shared/support@example.org/Sent\"");
+    let lines = leni.expect("MYRIGHTS \"Shared/support@example.org/INBOX\"", "OK").await;
+    find(&lines, "\"lrswipkxtea\"");
+    let lines = leni.expect("SELECT \"Shared/support@example.org/INBOX\"", "OK [READ-WRITE]").await;
+    find(&lines, "* 1 EXISTS");
+    leni.expect("STORE 1 +FLAGS (\\Flagged)", "OK").await;
+
+    // A folder made later is the members' too, and what is filed there counts for the shared mailbox.
+    leni.expect("CREATE \"Shared/support@example.org/INBOX/Erledigt\"", "OK").await;
+    server.store.create_mailbox(support.id, "Archiv 2026", None, None, 0, true).await.unwrap();
+    let lines = leni.expect("LIST \"\" \"Shared/*\"", "OK").await;
+    find(&lines, "\"Shared/support@example.org/INBOX/Erledigt\"");
+    find(&lines, "\"Shared/support@example.org/Archiv 2026\"");
+    let (_, done) = leni.command("COPY 1 \"Shared/support@example.org/INBOX/Erledigt\"").await;
+    assert!(done.contains("OK"), "{done}");
+    let used = server.store.account_by_id(support.id).await.unwrap().unwrap().used_bytes;
+    assert!(used > 0);
+    assert_eq!(server.store.account_by_id(server.leni).await.unwrap().unwrap().used_bytes, 0);
+
+    // Not a member, nothing to see; and the shared mailbox itself has no login.
+    let lines = mini.expect("LIST \"\" \"*\"", "OK").await;
+    lacks(&lines, "support@example.org");
+    let (client, connection) = tokio::io::duplex(64 * 1024);
+    let imap = server.imap.clone();
+    tokio::spawn(async move { imap.serve_connection(connection, "192.0.2.7:40001".parse().unwrap()).await });
+    let (reader, writer) = tokio::io::split(client);
+    let mut anyone = Client { reader: BufReader::new(reader), writer, next_tag: 1 };
+    anyone.line().await;
+    anyone.expect(&format!("LOGIN support@example.org \"{PASSWORD}\""), "NO").await;
+}

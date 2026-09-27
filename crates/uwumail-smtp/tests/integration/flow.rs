@@ -21,11 +21,11 @@ use uwumail_store::{
     MailboxesChange, NewAccount, NewSenderListEntry, Role, SenderList, SpamLimits, Store,
 };
 
-const PASSWORD: &str = "katzenpfote-123";
+pub(crate) const PASSWORD: &str = "katzenpfote-123";
 
-struct TestServer {
-    smtp: Smtp,
-    mx: SocketAddr,
+pub(crate) struct TestServer {
+    pub(crate) smtp: Smtp,
+    pub(crate) mx: SocketAddr,
     submission: SocketAddr,
     submission_tls: SocketAddr,
     _shutdown: watch::Sender<bool>,
@@ -45,7 +45,7 @@ fn server_tls(names: &[&str]) -> Arc<rustls::ServerConfig> {
     Arc::new(config)
 }
 
-async fn start(domain: &str, users: &[&str], routes: &[(&str, SocketAddr)]) -> TestServer {
+pub(crate) async fn start(domain: &str, users: &[&str], routes: &[(&str, SocketAddr)]) -> TestServer {
     start_with(domain, users, routes, SmtpConfig::default()).await
 }
 
@@ -118,18 +118,18 @@ async fn start_with_spam(
 }
 
 impl TestServer {
-    async fn inbox(&self, login: &str) -> Vec<EmailSummary> {
+    pub(crate) async fn inbox(&self, login: &str) -> Vec<EmailSummary> {
         self.mailbox(login, MailboxRole::Inbox).await
     }
 
-    async fn mailbox(&self, login: &str, role: MailboxRole) -> Vec<EmailSummary> {
+    pub(crate) async fn mailbox(&self, login: &str, role: MailboxRole) -> Vec<EmailSummary> {
         let store = self.smtp.store();
         let account = store.account(login).await.unwrap().unwrap();
         let mailbox = store.mailboxes(account.id).await.unwrap().into_iter().find(|m| m.role == Some(role)).unwrap();
         store.emails_in_mailbox(mailbox.id, 50).await.unwrap()
     }
 
-    async fn wait_for_inbox(&self, login: &str, count: usize) -> Vec<EmailSummary> {
+    pub(crate) async fn wait_for_inbox(&self, login: &str, count: usize) -> Vec<EmailSummary> {
         let started = Instant::now();
         loop {
             let emails = self.inbox(login).await;
@@ -141,12 +141,12 @@ impl TestServer {
         }
     }
 
-    async fn raw(&self, email: &EmailSummary) -> String {
+    pub(crate) async fn raw(&self, email: &EmailSummary) -> String {
         let hash = uwumail_store::BlobHash::parse(&email.blob).unwrap();
         String::from_utf8(self.smtp.store().blob(&hash).await.unwrap()).unwrap()
     }
 
-    fn mailer(&self, login: &str, password: &str, implicit_tls: bool) -> AsyncSmtpTransport<Tokio1Executor> {
+    pub(crate) fn mailer(&self, login: &str, password: &str, implicit_tls: bool) -> AsyncSmtpTransport<Tokio1Executor> {
         let tls =
             TlsParameters::builder("localhost".into()).dangerous_accept_invalid_certs(true).build_rustls().unwrap();
         let (port, tls) = if implicit_tls {
@@ -163,7 +163,7 @@ impl TestServer {
     }
 }
 
-fn mail(from: &str, to: &[&str], subject: &str) -> Message {
+pub(crate) fn mail(from: &str, to: &[&str], subject: &str) -> Message {
     let mut builder = Message::builder().from(from.parse::<LettreMailbox>().unwrap()).subject(subject);
     for recipient in to {
         builder = builder.to(recipient.parse::<LettreMailbox>().unwrap());
@@ -287,12 +287,12 @@ async fn mx_refuses_relaying_and_strips_forged_results() {
     assert!(raw.contains("Authentication-Results: mx.a.test"), "{raw}");
 }
 
-struct RawSession {
+pub(crate) struct RawSession {
     reader: BufReader<TcpStream>,
 }
 
 impl RawSession {
-    async fn connect(addr: SocketAddr) -> RawSession {
+    pub(crate) async fn connect(addr: SocketAddr) -> RawSession {
         let mut session = RawSession { reader: BufReader::new(TcpStream::connect(addr).await.unwrap()) };
         assert!(session.read_reply().await.starts_with("220"));
         session
@@ -310,7 +310,7 @@ impl RawSession {
         }
     }
 
-    async fn command(&mut self, command: &str) -> String {
+    pub(crate) async fn command(&mut self, command: &str) -> String {
         self.reader.get_mut().write_all(format!("{command}\r\n").as_bytes()).await.unwrap();
         self.read_reply().await
     }
