@@ -141,8 +141,12 @@ shared account, as over the EventSource.
 `EmailDelivery` is only in a push when new mail arrived: a message that is
 neither read nor a draft and did not land in the drafts, sent, junk or trash
 folder. A message marked as read or moved, a draft the app saved and the copy
-it filed in Sent are changes of `Email`, but no delivery. In a shared account,
-only those who may read the folder the mail came into hear of the delivery. A
+it filed in Sent are changes of `Email`, but no delivery; neither is mail to a
+disabled masked address, which goes into the Trash
+([jmap-masked-email.md](jmap-masked-email.md)). In a shared account, only
+those who may read the folder the mail came into hear of the delivery: people
+a folder was shared with, and every member of a shared mailbox
+([groups.md](groups.md)). A
 browser has to show something for every push it gets, so the webmail asks for
 `EmailDelivery` alone.
 
