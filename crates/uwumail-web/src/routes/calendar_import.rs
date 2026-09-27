@@ -402,14 +402,20 @@ pub async fn import_remote(
     if request.password.is_empty() {
         return Err(ApiError::Invalid("the password is missing".into()));
     }
+    // What is fetched is held until all of it is stored: one move per account at a time, with one
+    // byte budget for all its collections together.
+    let Some(_running) = web.start_remote_import(session.account.id) else {
+        return Err(ApiError::Rule("importRunning", "a move from another provider is running already".into()));
+    };
     polite(&web, &session)?;
     let transport = web.dav_transport();
     let work = async {
         let mut remote = Remote::with_login(transport.as_ref(), &address, &request.password);
         let found = client::discover(&mut remote, web.dns(), &address, request.server.as_deref(), &kinds).await?;
         let mut fetched = Vec::with_capacity(found.collections.len());
+        let mut budget = client::MAX_IMPORT_BYTES;
         for remote_collection in &found.collections {
-            match client::fetch_collection(&mut remote.fork(), remote_collection).await {
+            match client::fetch_collection(&mut remote.fork(), remote_collection, &mut budget).await {
                 Err(err @ (RemoteError::WrongPassword | RemoteError::RedirectedElsewhere)) => return Err(err),
                 other => fetched.push(other),
             }

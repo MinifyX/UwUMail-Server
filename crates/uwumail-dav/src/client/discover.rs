@@ -34,6 +34,9 @@ pub struct Discovered {
     pub collections: Vec<RemoteCollection>,
 }
 
+/// The most calendars and address books one move takes over, together.
+pub const MAX_COLLECTIONS: usize = 100;
+
 const HOME_PROPS: &str =
     "<d:current-user-principal/><d:resourcetype/><c:calendar-home-set/><card:addressbook-home-set/>";
 const COLLECTION_PROPS: &str = "<d:resourcetype/><d:displayname/><c:supported-calendar-component-set/>\
@@ -182,6 +185,7 @@ pub async fn discover(
                     found_any = true;
                     if let Some(listed) = listed {
                         discovered.collections.extend(collections(&listed, kind));
+                        discovered.collections.truncate(MAX_COLLECTIONS);
                     }
                     break;
                 }
@@ -283,13 +287,21 @@ DTSTART:20261001T100000Z\r\nSUMMARY:{summary}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n
         assert_eq!(calendar.name, "Kalender");
         assert!(calendar.components.contains(&"VEVENT".to_owned()));
         let mut fetching = remote.fork();
-        let texts = fetch_collection(&mut fetching, calendar).await.unwrap();
+        let mut budget = super::super::fetch::MAX_IMPORT_BYTES;
+        let texts = fetch_collection(&mut fetching, calendar, &mut budget).await.unwrap();
+        let fetched = texts.iter().map(String::len).sum::<usize>();
+        assert_eq!(budget, super::super::fetch::MAX_IMPORT_BYTES - fetched, "what came is taken off the budget");
         let split = split_ics(&texts.concat(), false);
         let mut uids: Vec<&str> = split.objects.iter().map(|o| o.uid.as_str()).collect();
         uids.sort_unstable();
         assert_eq!(uids, vec!["a", "b"]);
         let book = found.collections.iter().find(|c| c.kind == DavKind::Addressbook).unwrap();
-        let texts = fetch_collection(&mut remote.fork(), book).await.unwrap();
+        // security-audit-0.16.0 PROTOCOLS-12: the whole move has one budget; once it is spent, the
+        // next collection is refused instead of being held as well.
+        let mut spent = fetched - 1;
+        assert_eq!(fetch_collection(&mut remote.fork(), calendar, &mut spent).await, Err(RemoteError::TooLarge));
+        assert_eq!(spent, fetched - 1, "a refused collection takes nothing off");
+        let texts = fetch_collection(&mut remote.fork(), book, &mut budget).await.unwrap();
         assert_eq!(split_vcf(&texts.concat()).objects[0].label, "Nyu");
 
         let mut wrong = Remote::with_login(&transport, "leni@example.org", "falsch");

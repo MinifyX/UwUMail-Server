@@ -106,6 +106,8 @@ struct Inner {
     dav_transport: std::sync::OnceLock<Arc<dyn uwumail_dav::client::Transport>>,
     /// When each account last asked other providers for calendars, to keep that polite.
     remote_calls: Mutex<HashMap<i64, Vec<i64>>>,
+    /// Accounts moving calendars and contacts over from another provider right now.
+    remote_imports: Arc<Mutex<std::collections::HashSet<i64>>>,
     /// Admin alerts: the last health overview and the lock around a look.
     alerts: alerts::AlertState,
     /// Who may read `/metrics`, once the server plugged it in.
@@ -116,6 +118,18 @@ struct Inner {
     oidc_transport: std::sync::OnceLock<Arc<dyn uwumail_dav::client::Transport>>,
     /// When each network registered OAuth apps, or was refused a code or token (routes/oauth.rs).
     oauth_attempts: Mutex<HashMap<(&'static str, std::net::IpAddr), Vec<i64>>>,
+}
+
+/// A move from another provider under way, from [`Web::start_remote_import`].
+pub(crate) struct RemoteImportGuard {
+    running: Arc<Mutex<std::collections::HashSet<i64>>>,
+    account_id: i64,
+}
+
+impl Drop for RemoteImportGuard {
+    fn drop(&mut self) {
+        self.running.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).remove(&self.account_id);
+    }
 }
 
 impl Web {
@@ -150,6 +164,7 @@ impl Web {
                 profile_key: std::sync::OnceLock::new(),
                 dav_transport: std::sync::OnceLock::new(),
                 remote_calls: Mutex::default(),
+                remote_imports: Arc::default(),
                 alerts: alerts::AlertState::default(),
                 metrics: std::sync::OnceLock::new(),
                 external_login: std::sync::OnceLock::new(),
@@ -265,6 +280,17 @@ impl Web {
         }
         times.push(now);
         true
+    }
+
+    /// Marks a move from another provider as running for this account until the guard is dropped,
+    /// or `None` when one is running already: each holds what it fetched in memory until it is
+    /// stored (security-audit-0.16.0 PROTOCOLS-12).
+    pub(crate) fn start_remote_import(&self, account_id: i64) -> Option<RemoteImportGuard> {
+        let running = self.inner.remote_imports.clone();
+        if !running.lock().expect("remote imports poisoned").insert(account_id) {
+            return None;
+        }
+        Some(RemoteImportGuard { running, account_id })
     }
 
     /// Serves `/metrics` to whom `gate` lets in; the server changes the gate with the settings.
