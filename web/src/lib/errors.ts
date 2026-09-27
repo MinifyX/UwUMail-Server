@@ -103,6 +103,7 @@ const KNOWN = [
   "subscriptionExists",
   "refreshPause",
   "sharedMailbox",
+  "sharedMailboxNeedsMailbox",
   "maskedDomain",
   "maskedLimit",
   "maskedPrefix",

@@ -450,13 +450,6 @@ impl Store {
             .account_by_id(account_id)
             .await?
             .ok_or_else(|| StoreError::NotFound(format!("account {account_id}")))?;
-        // Its members reach a shared mailbox with their own logins; it has none of its own.
-        if account.shared_mailbox {
-            return Err(StoreError::Rule {
-                code: "sharedMailbox",
-                message: format!("{} is a shared mailbox, its members sign in as themselves", account.login),
-            });
-        }
         let usable = scopes_for(account.protocols);
         if !scopes.iter().any(|scope| usable.contains(scope)) {
             return Err(StoreError::Invalid(
@@ -740,7 +733,10 @@ impl Store {
             return Ok(MailAuth::Ok { account, app_password: Some(id) });
         }
 
-        let valid = if directory {
+        let valid = if account.is_service() {
+            // A service has no password of its own, wherever it was kept before it became one.
+            false
+        } else if directory {
             // The directory's password, checked there: only while main passwords are allowed at
             // all, which the check below says. An unreachable directory is a temporary failure.
             self.check_external_password(&account.login, password).await?

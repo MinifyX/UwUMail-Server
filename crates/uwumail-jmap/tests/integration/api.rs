@@ -764,3 +764,39 @@ async fn the_webmail_sees_the_settings_capability_too() {
     let account = server.account_id("mini@example.org").await;
     assert_eq!(session["accounts"][&account]["accountCapabilities"]["urn:uwumail:jmap:settings"]["maxKeys"], 5000);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_shared_mailbox_takes_app_passwords_and_never_the_webmail() {
+    let server = server().await;
+    let mini = server.store.account("mini@example.org").await.unwrap().unwrap();
+    let cookie = |token: &str| format!("{}={token}", uwumail_jmap::auth::PLAIN_SESSION_COOKIE);
+    let session_with = |value: String| {
+        Request::get("/jmap/session")
+            .header(header::COOKIE, value)
+            .header(header::HOST, "mail.example.org")
+            .body(Body::empty())
+            .unwrap()
+    };
+    let web_session = server.store.create_web_session(mini.id, 3600, "", "").await.unwrap();
+    let (status, _) = server.request(session_with(cookie(&web_session.token))).await;
+    assert_eq!(status, StatusCode::OK, "mini opens the webmail as a person");
+
+    server.store.make_shared_mailbox("mini@example.org", vec![("nyu@example.org".into(), true)]).await.unwrap();
+    let (status, _) = server.request(session_with(cookie(&web_session.token))).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "the session went with the person");
+    // Not even a session made behind the portal's back opens the webmail of a service.
+    let forged = server.store.create_web_session(mini.id, 3600, "", "").await.unwrap();
+    let (status, _) = server.request(session_with(cookie(&forged.token))).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // Mail apps keep getting in: the password it had is an app password now.
+    let (status, body) = server.get("/jmap/session", "mini@example.org").await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let session: Value = serde_json::from_slice(&body).unwrap();
+    let account = server.account_id("mini@example.org").await;
+    assert_eq!(session["accounts"][&account]["isPersonal"], true, "its own account: {session}");
+    // And its member finds it next to her own.
+    let (_, body) = server.get("/jmap/session", "nyu@example.org").await;
+    let session: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(session["accounts"][&account]["isPersonal"], false, "{session}");
+}

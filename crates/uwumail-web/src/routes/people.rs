@@ -47,7 +47,7 @@ pub fn person_json(person: &Person) -> Value {
         "webmail": account.webmail,
         // A service with neither IMAP nor JMAP has no mailbox at all.
         "hasMailbox": account.has_mailbox(),
-        // A mailbox several people use; it is stored as a service nobody signs in to.
+        // A mailbox several people use: a service with members.
         "sharedMailbox": account.shared_mailbox,
     })
 }
@@ -80,8 +80,10 @@ pub async fn detail(State(web): State<Web>, _admin: Admin, Path(login): Path<Str
     });
     if person.account.shared_mailbox {
         value["members"] = json!(web.store().shared_mailbox_members(person.account.id).await?);
-    } else if person.account.is_service() {
-        // A service cannot open its own security page, so the admin sees the list here.
+    }
+    if person.account.is_service() {
+        // A service (a shared mailbox too) cannot open its own security page, so the admin sees
+        // the list here.
         value["appPasswordList"] = json!(web.store().app_passwords(person.account.id).await?);
     }
     // Apps signed in with OAuth, which the admin can sign out, and where the password is checked.
@@ -372,7 +374,7 @@ pub async fn set_password(
 ) -> ApiResult<StatusCode> {
     let person = load(&web, &login).await?;
     if person.account.shared_mailbox {
-        return Err(ApiError::Rule("sharedMailbox", "nobody signs in to a shared mailbox".into()));
+        return Err(ApiError::Rule("sharedMailbox", "a shared mailbox has app passwords, never a password".into()));
     }
     in_directory(&web, &person.account).await?;
     check_password(&new.password, &person.account.login)?;

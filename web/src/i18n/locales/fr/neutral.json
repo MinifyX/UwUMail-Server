@@ -525,7 +525,8 @@
       "subscriptionLimit": "Vous avez déjà le nombre maximal d'agendas abonnés.",
       "subscriptionExists": "Vous êtes déjà abonné à cet agenda.",
       "refreshPause": "Tout juste récupéré. Réessayez dans une minute.",
-      "sharedMailbox": "C'est une boîte partagée : personne ne s'y connecte, ses membres l'utilisent depuis leur propre compte.",
+      "sharedMailbox": "C'est une boîte partagée : elle a des mots de passe d'application mais pas de mot de passe, et ses membres l'utilisent depuis leur propre compte.",
+      "sharedMailboxNeedsMailbox": "Une boîte partagée garde son courrier : IMAP ou JMAP doit rester activé.",
       "maskedDomain": "Aucun domaine de ce serveur n'est encore ouvert aux adresses masquées. Demandez à l'admin.",
       "maskedLimit": "Vous avez autant d'adresses masquées que ce serveur le permet. Supprimez celles dont vous n'avez plus besoin.",
       "maskedPrefix": "Un préfixe ne peut contenir que des lettres a–z, des chiffres et _, 64 au plus.",
@@ -778,7 +779,7 @@
   },
   "sharedMailboxes": {
     "title": "Boîtes partagées",
-    "explain": "Une boîte utilisée par plusieurs personnes, comme support@. Personne ne s'y connecte ; ses membres la voient à côté de leurs dossiers et peuvent répondre avec.",
+    "explain": "Une boîte utilisée par plusieurs personnes, comme support@. Personne ne se connecte avec elle au portail ou au webmail ; ses membres la voient à côté de leurs dossiers et peuvent répondre avec, et les programmes y accèdent avec des mots de passe d'application.",
     "create": "Nouvelle boîte partagée",
     "createIntro": "Elle a sa propre adresse et son propre espace ; le courrier arrive dans sa boîte de réception pour tous les membres.",
     "name": "Nom",
@@ -791,9 +792,20 @@
     "maySend": "peut envoyer",
     "save": "Enregistrer les membres",
     "pill": "Boîte partagée",
+    "convert": "Transformer en boîte partagée",
+    "convertHint": "Plusieurs personnes l'utilisent depuis leur propre compte. Le courrier reste.",
+    "convertTitle": "Transformer {{login}} en boîte partagée ?",
+    "convertBodyPerson": "Le courrier, les dossiers et les adresses restent. Plus personne ne se connecte avec elle au portail ou au webmail : la connexion à deux facteurs, les clés d'accès et les sessions ouvertes sont supprimées, et le mot de passe actuel subsiste comme mot de passe d'application qui n'expire jamais, pour que les logiciels de messagerie continuent de fonctionner. Les dossiers que d'autres ont partagés avec elle et les boîtes partagées qu'elle utilisait disparaissent.",
+    "convertBodyService": "Le courrier, les dossiers, les adresses et les mots de passe d'application restent. Ses membres voient tous ses dossiers depuis leur propre compte.",
+    "end": "Refaire un simple service",
+    "endHint": "Ses membres ne la voient plus. Le courrier, les adresses et les mots de passe d'application restent.",
+    "endTitle": "Refaire de {{login}} un simple service ?",
+    "endBody": "Ses membres perdent ses dossiers et ne peuvent plus envoyer avec ses adresses. Le courrier, les adresses et les mots de passe d'application restent ; vous pouvez la retransformer en boîte partagée à tout moment.",
     "toasts": {
       "created": "{{address}} créée",
-      "saved": "Membres enregistrés"
+      "saved": "Membres enregistrés",
+      "converted": "{{login}} est maintenant une boîte partagée",
+      "ended": "{{login}} est de nouveau un simple service"
     }
   },
   "log": {
@@ -870,7 +882,9 @@
       "groupUpdate": "{{actor}} a modifié le groupe {{target}}",
       "groupRemove": "{{actor}} a supprimé le groupe {{target}}",
       "sharedMailboxCreate": "{{actor}} a créé la boîte partagée {{target}}",
-      "sharedMailboxMembers": "{{actor}} a modifié les membres de la boîte partagée {{target}}"
+      "sharedMailboxMembers": "{{actor}} a modifié les membres de la boîte partagée {{target}}",
+      "sharedMailboxConvert": "{{actor}} a transformé {{target}} en boîte partagée",
+      "sharedMailboxEnd": "{{actor}} a refait de la boîte partagée {{target}} un simple service"
     },
     "details": {
       "adminOn": "est maintenant admin",

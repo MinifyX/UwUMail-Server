@@ -335,6 +335,18 @@ async fn logging_in_at_the_provider() {
     let reply = get_page(&setup.app, &callback, Some(&cookie)).await;
     assert_eq!(onward(&reply.body), "/account");
     assert!(setup.web.external_login().config().oidc.enabled);
+
+    // Leni's mailbox becomes a service, then a shared mailbox: the provider opens neither.
+    setup.store.set_account_role("leni@example.org", Role::Service).await.unwrap();
+    let reply = finish(&setup, identity("sub-leni", "leni@example.org")).await;
+    assert_eq!(onward(&reply.body), "/login?oidcError=noAccount");
+    assert!(cookies(&reply.headers).iter().all(|c| !c.starts_with("__Host-uwumail=")), "no session");
+    let me: Value = serde_json::from_str(&get_page(&setup.app, "/api/session", Some(&session)).await.body).unwrap();
+    assert!(me["account"].is_null(), "the old session went: {me}");
+    setup.store.make_shared_mailbox("leni@example.org", Vec::new()).await.unwrap();
+    let reply = finish(&setup, identity("sub-leni", "leni@example.org")).await;
+    assert_eq!(onward(&reply.body), "/login?oidcError=noAccount");
+    assert_eq!(setup.store.account("leni@example.org").await.unwrap().map(|a| a.shared_mailbox), Some(true));
 }
 
 fn totp(secret: &str) -> String {

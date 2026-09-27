@@ -94,9 +94,10 @@ export function MemberPicker({
   );
 }
 
-/** People who can be members: not in the trash, not a shared mailbox, and (unless allowed) no services. */
+/**
+ * Who can be a member: nobody in the trash, and people only unless services are allowed. A shared
+ * mailbox is a service, so it may be in a group but never a member of another shared mailbox.
+ */
 export function memberChoices(people: Person[] | undefined, services: boolean): Person[] {
-  return (people ?? []).filter(
-    (person) => person.status !== "deleted" && !person.sharedMailbox && (services || person.role !== "service"),
-  );
+  return (people ?? []).filter((person) => person.status !== "deleted" && (services || person.role !== "service"));
 }

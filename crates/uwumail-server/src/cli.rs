@@ -362,6 +362,18 @@ pub enum AccountCommand {
         address: String,
         state: Switch,
     },
+    /// Turn a person or a service into a shared mailbox its members use from their own accounts,
+    /// or a shared mailbox back into a plain service. Mail, addresses and app passwords stay.
+    Shared {
+        address: String,
+        state: Switch,
+        /// A member who reaches every folder of it. May be given more than once.
+        #[arg(long = "member")]
+        members: Vec<String>,
+        /// A member who may also send with its addresses. May be given more than once.
+        #[arg(long = "sender")]
+        senders: Vec<String>,
+    },
     /// Which protocols an account may use, and where its mail goes when it has no mailbox.
     Protocols {
         address: String,

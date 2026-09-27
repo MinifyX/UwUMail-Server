@@ -14,7 +14,7 @@ const record = (action: string, details: Record<string, unknown> = {}): AuditRec
   ip: "",
 });
 
-// The change log's actions of 0.14; each one has its own sentence instead of the raw key.
+// The change log's actions of 0.14 and 0.15; each one has its own sentence instead of the raw key.
 const ACTIONS = [
   "account.authSource",
   "account.oauthRevoked",
@@ -25,6 +25,8 @@ const ACTIONS = [
   "group.remove",
   "sharedMailbox.create",
   "sharedMailbox.members",
+  "sharedMailbox.convert",
+  "sharedMailbox.end",
 ];
 
 describe("the change log", () => {

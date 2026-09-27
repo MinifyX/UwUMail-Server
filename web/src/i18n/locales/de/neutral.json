@@ -514,7 +514,8 @@
       "subscriptionLimit": "Du hast schon so viele abonnierte Kalender wie möglich.",
       "subscriptionExists": "Diesen Kalender hast du schon abonniert.",
       "refreshPause": "Gerade erst geholt. Versuch es in einer Minute nochmal.",
-      "sharedMailbox": "Das ist ein geteiltes Postfach: Niemand meldet sich dort an, die Mitglieder nutzen es aus ihrem eigenen Konto.",
+      "sharedMailbox": "Das ist ein geteiltes Postfach: Es hat App-Passwörter, aber kein Passwort, und die Mitglieder nutzen es aus ihrem eigenen Konto.",
+      "sharedMailboxNeedsMailbox": "Ein geteiltes Postfach behält seine Mails: IMAP oder JMAP muss an bleiben.",
       "maskedDomain": "Auf diesem Server ist noch keine Domain für maskierte Adressen freigegeben. Frag den Admin.",
       "maskedLimit": "Du hast so viele maskierte Adressen, wie dieser Server erlaubt. Lösch welche, die du nicht mehr brauchst.",
       "maskedPrefix": "Ein Präfix darf nur Buchstaben a–z, Ziffern und _ haben, höchstens 64.",
@@ -762,7 +763,7 @@
   },
   "sharedMailboxes": {
     "title": "Geteilte Postfächer",
-    "explain": "Ein Postfach, das mehrere Leute nutzen, etwa support@. Niemand meldet sich dort an; die Mitglieder sehen es neben ihren eigenen Ordnern und dürfen damit antworten.",
+    "explain": "Ein Postfach, das mehrere Leute nutzen, etwa support@. Niemand meldet sich damit im Portal oder in der Webmail an; die Mitglieder sehen es neben ihren eigenen Ordnern und dürfen damit antworten, und Programme erreichen es mit App-Passwörtern.",
     "create": "Neues geteiltes Postfach",
     "createIntro": "Es bekommt eine eigene Adresse und eigenen Speicher; Mail dorthin landet für alle Mitglieder in seinem Posteingang.",
     "name": "Name",
@@ -775,9 +776,20 @@
     "maySend": "darf senden",
     "save": "Mitglieder speichern",
     "pill": "Geteiltes Postfach",
+    "convert": "In ein geteiltes Postfach umwandeln",
+    "convertHint": "Mehrere Leute nutzen es aus ihrem eigenen Konto. Die Mails bleiben.",
+    "convertTitle": "{{login}} in ein geteiltes Postfach umwandeln?",
+    "convertBodyPerson": "Mails, Ordner und Adressen bleiben. Niemand meldet sich damit mehr im Portal oder in der Webmail an: Zwei-Faktor-Anmeldung, Passkeys und offene Sitzungen werden entfernt, und das bisherige Passwort lebt als unbefristetes App-Passwort weiter, damit Mailprogramme weiterlaufen. Ordner, die andere damit geteilt haben, und geteilte Postfächer, die es genutzt hat, fallen weg.",
+    "convertBodyService": "Mails, Ordner, Adressen und App-Passwörter bleiben. Die Mitglieder sehen alle Ordner aus ihrem eigenen Konto.",
+    "end": "Zurück in einen Dienst",
+    "endHint": "Die Mitglieder sehen es nicht mehr. Mails, Adressen und App-Passwörter bleiben.",
+    "endTitle": "{{login}} wieder zu einem einfachen Dienst machen?",
+    "endBody": "Die Mitglieder verlieren die Ordner und können nicht mehr mit den Adressen senden. Mails, Adressen und App-Passwörter bleiben; Mitglieder lassen sich jederzeit wieder eintragen, indem du es erneut in ein geteiltes Postfach umwandelst.",
     "toasts": {
       "created": "{{address}} angelegt",
-      "saved": "Mitglieder gespeichert"
+      "saved": "Mitglieder gespeichert",
+      "converted": "{{login}} ist jetzt ein geteiltes Postfach",
+      "ended": "{{login}} ist wieder ein einfacher Dienst"
     }
   },
   "log": {
@@ -854,7 +866,9 @@
       "groupUpdate": "{{actor}} hat die Gruppe {{target}} geändert",
       "groupRemove": "{{actor}} hat die Gruppe {{target}} entfernt",
       "sharedMailboxCreate": "{{actor}} hat das geteilte Postfach {{target}} angelegt",
-      "sharedMailboxMembers": "{{actor}} hat die Mitglieder des geteilten Postfachs {{target}} geändert"
+      "sharedMailboxMembers": "{{actor}} hat die Mitglieder des geteilten Postfachs {{target}} geändert",
+      "sharedMailboxConvert": "{{actor}} hat {{target}} in ein geteiltes Postfach umgewandelt",
+      "sharedMailboxEnd": "{{actor}} hat das geteilte Postfach {{target}} wieder zu einem Dienst gemacht"
     },
     "details": {
       "adminOn": "ist jetzt Admin",

@@ -502,7 +502,8 @@
       "subscriptionLimit": "你订阅的日历数量已达上限。",
       "subscriptionExists": "你已经订阅了这个日历。",
       "refreshPause": "刚刚获取过。请一分钟后再试。",
-      "sharedMailbox": "这是共享邮箱：没有人登录它，成员从自己的账户使用它。",
+      "sharedMailbox": "这是共享邮箱：它有应用专用密码但没有密码，成员从自己的账户使用它。",
+      "sharedMailboxNeedsMailbox": "共享邮箱要保留邮件：IMAP 或 JMAP 必须保持开启。",
       "maskedDomain": "此服务器还没有开放用于隐藏地址的域名。请联系管理员。",
       "maskedLimit": "你的隐藏地址已达到此服务器允许的上限。请删除一些不再需要的。",
       "maskedPrefix": "前缀只能包含字母 a–z、数字和 _，最多 64 个。",
@@ -745,7 +746,7 @@
   },
   "sharedMailboxes": {
     "title": "共享邮箱",
-    "explain": "多人使用的邮箱，比如 support@。没有人登录它；成员在自己的文件夹旁边看到它，并可以用它回复。",
+    "explain": "多人使用的邮箱，比如 support@。没有人用它登录门户或网页邮箱；成员在自己的文件夹旁边看到它，并可以用它回复，程序则用应用专用密码访问它。",
     "create": "新建共享邮箱",
     "createIntro": "它有自己的地址和存储空间；发给它的邮件会进入它的收件箱，所有成员都能看到。",
     "name": "名称",
@@ -758,9 +759,20 @@
     "maySend": "可以发信",
     "save": "保存成员",
     "pill": "共享邮箱",
+    "convert": "转换为共享邮箱",
+    "convertHint": "多人从自己的账户使用它。邮件保持不变。",
+    "convertTitle": "将 {{login}} 转换为共享邮箱？",
+    "convertBodyPerson": "邮件、文件夹和地址保持不变。之后没有人能再用它登录门户或网页邮箱：双重验证登录、通行密钥和已打开的会话都会被移除，当前的密码会保留为一个永不过期的应用专用密码，邮件应用可以继续使用。别人与它共享的文件夹以及它使用过的共享邮箱都会失去。",
+    "convertBodyService": "邮件、文件夹、地址和应用专用密码保持不变。成员可以从自己的账户看到它的所有文件夹。",
+    "end": "改回普通服务",
+    "endHint": "成员将不再看到它。邮件、地址和应用专用密码保持不变。",
+    "endTitle": "将 {{login}} 改回普通服务？",
+    "endBody": "成员将失去它的文件夹，也不能再用它的地址发信。邮件、地址和应用专用密码保持不变；随时可以再次把它转换为共享邮箱。",
     "toasts": {
       "created": "{{address}} 已创建",
-      "saved": "成员已保存"
+      "saved": "成员已保存",
+      "converted": "{{login}} 现在是共享邮箱",
+      "ended": "{{login}} 已改回普通服务"
     }
   },
   "log": {
@@ -837,7 +849,9 @@
       "groupUpdate": "{{actor}} 更改了群组 {{target}}",
       "groupRemove": "{{actor}} 删除了群组 {{target}}",
       "sharedMailboxCreate": "{{actor}} 创建了共享邮箱 {{target}}",
-      "sharedMailboxMembers": "{{actor}} 更改了共享邮箱 {{target}} 的成员"
+      "sharedMailboxMembers": "{{actor}} 更改了共享邮箱 {{target}} 的成员",
+      "sharedMailboxConvert": "{{actor}} 将 {{target}} 转换为共享邮箱",
+      "sharedMailboxEnd": "{{actor}} 将共享邮箱 {{target}} 改回了普通服务"
     },
     "details": {
       "adminOn": "现在是管理员",

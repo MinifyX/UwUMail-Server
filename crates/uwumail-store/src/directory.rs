@@ -199,7 +199,7 @@ pub struct Account {
 impl Account {
     /// Whether a password of this account counts at all, for any protocol.
     pub fn can_log_in(&self) -> bool {
-        !self.disabled && self.deleted_at.is_none() && !self.shared_mailbox
+        !self.disabled && self.deleted_at.is_none()
     }
 
     pub fn is_service(&self) -> bool {
@@ -207,7 +207,8 @@ impl Account {
     }
 
     /// The web portal, and with it webmail, calendars and address books in the browser. A service
-    /// never gets in: it has no password of its own, and this says so a second time.
+    /// (a shared mailbox too) never gets in: it has no password of its own, and this says so a
+    /// second time.
     pub fn can_use_portal(&self) -> bool {
         self.can_log_in() && !self.is_service()
     }
@@ -603,7 +604,8 @@ impl Store {
         if new.quota_bytes < 0 {
             return Err(StoreError::Invalid("the quota cannot be negative".into()));
         }
-        let password_hash = match new.password {
+        // A service never has a password of its own, only app passwords.
+        let password_hash = match new.password.filter(|_| new.role != Role::Service) {
             Some(password) => Some(
                 tokio::task::spawn_blocking(move || password::hash(&password))
                     .await
@@ -764,13 +766,21 @@ impl Store {
             .await
             .map_err(|err| StoreError::Internal(err.to_string()))??;
         self.write(move |tx| {
-            let changed = tx.execute(
+            let service: bool = tx
+                .query_row("SELECT kind = 'service' FROM accounts WHERE login = ?1", [&login], |row| row.get(0))
+                .optional()?
+                .ok_or_else(|| StoreError::NotFound(format!("account {login}")))?;
+            // It would open nothing: a service gets in with app passwords only.
+            if service {
+                return Err(StoreError::Rule {
+                    code: "serviceAccount",
+                    message: format!("{login} is a service, it only ever gets app passwords"),
+                });
+            }
+            tx.execute(
                 "UPDATE accounts SET password_hash = ?1, credentials_changed_at = ?2 WHERE login = ?3",
                 params![hash, now(), login],
             )?;
-            if changed == 0 {
-                return Err(StoreError::NotFound(format!("account {login}")));
-            }
             Ok(())
         })
         .await
@@ -811,6 +821,7 @@ impl Store {
             .await?;
         if let Some((account, _, source)) = &found
             && source == "ldap"
+            && !account.is_service()
         {
             // Unreachable is no reason to let anyone in; the check itself logged why.
             let valid = self.check_external_password(&account.login, password).await.unwrap_or(false);

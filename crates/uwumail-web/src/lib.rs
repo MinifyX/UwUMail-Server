@@ -598,6 +598,10 @@ impl Web {
                 get(routes::groups::shared_mailboxes).post(routes::groups::create_shared_mailbox),
             )
             .route("/api/admin/shared-mailboxes/{login}/members", put(routes::groups::set_shared_mailbox_members))
+            .route(
+                "/api/admin/people/{login}/shared-mailbox",
+                post(routes::groups::make_shared_mailbox).delete(routes::groups::end_shared_mailbox),
+            )
             .route("/api", get(routes::not_found))
             .route(
                 "/api/{*rest}",
