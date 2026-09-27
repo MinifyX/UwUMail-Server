@@ -312,7 +312,7 @@ fn check_interval(secs: i64) -> Result<i64> {
 /// Whether an IP address is on the open internet, not this machine, the local network or a reserved
 /// range. A fetched mailbox and its outgoing server live somewhere else, so a private or loopback
 /// address would only point the worker at this host or the LAN (security-audit-0.5.2 S-10).
-fn is_public_ip(ip: std::net::IpAddr) -> bool {
+pub fn is_public_ip(ip: std::net::IpAddr) -> bool {
     match ip.to_canonical() {
         std::net::IpAddr::V4(v4) => {
             let [a, b, ..] = v4.octets();
@@ -337,7 +337,7 @@ fn is_public_ip(ip: std::net::IpAddr) -> bool {
     }
 }
 
-fn check_host(host: &str) -> Result<String> {
+pub(crate) fn check_host(host: &str) -> Result<String> {
     let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
     if host.is_empty() || !host.contains('.') || host.contains(char::is_whitespace) {
         return Err(StoreError::Invalid(format!("'{host}' is not a server name")));
