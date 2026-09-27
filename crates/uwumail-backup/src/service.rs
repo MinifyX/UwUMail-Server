@@ -109,7 +109,7 @@ pub struct Look {
 
 /// Where a restore has got to, in this process. It lives in memory on purpose: the whole point of
 /// the exercise is that the process ends, and after that the file beside the data speaks for it.
-#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Fetching {
     /// `idle`, `fetching`, `ready` or `failed`.
@@ -120,6 +120,21 @@ pub struct Fetching {
     /// How much of the snapshot is here, in bytes, and how much there is.
     pub done_bytes: u64,
     pub total_bytes: u64,
+}
+
+// Not derived: the portal hides the restore card while the state is `idle`, and an empty state would
+// show it with nothing in it.
+impl Default for Fetching {
+    fn default() -> Self {
+        Self {
+            state: "idle".into(),
+            snapshot: String::new(),
+            error: String::new(),
+            started_at: 0,
+            done_bytes: 0,
+            total_bytes: 0,
+        }
+    }
 }
 
 /// Taking one person's mail out of a snapshot: first the snapshot is opened (its database fetched),
@@ -952,6 +967,13 @@ mod tests {
             login: Login::Password { password: "geheim".into() },
             host_key: None,
         })
+    }
+
+    #[test]
+    fn no_restore_under_way_reads_as_idle() {
+        // The portal shows its restore card for anything but `idle`.
+        let json = serde_json::to_value(Fetching::default()).unwrap();
+        assert_eq!(json["state"], "idle");
     }
 
     #[test]
