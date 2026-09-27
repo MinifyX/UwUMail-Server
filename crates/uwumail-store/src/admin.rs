@@ -52,9 +52,17 @@ pub(crate) fn become_service(tx: &Connection, account: &Account, granted: &mut G
                 // Never matches a typed code: only the hash taken over is checked for this one.
                 let unmatchable = crate::random_bytes::<32>().to_vec();
                 tx.execute(
-                    "INSERT INTO app_passwords (account_id, name, secret_hash, scopes, created_at, imported_hash)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![account.id, "Former password", unmatchable, names, now(), hash],
+                    "INSERT INTO app_passwords (id, account_id, name, secret_hash, scopes, created_at, imported_hash)
+                     VALUES (?7, ?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![
+                        account.id,
+                        "Former password",
+                        unmatchable,
+                        names,
+                        now(),
+                        hash,
+                        crate::db::next_id(tx, "app_passwords")?
+                    ],
                 )?;
             }
         }
@@ -73,6 +81,11 @@ pub(crate) fn become_service(tx: &Connection, account: &Account, granted: &mut G
     ] {
         tx.execute(&format!("DELETE FROM {table} WHERE account_id = ?1"), [account.id])?;
     }
+    // Push subscriptions of the sessions and app sign-ins just ended end with them.
+    tx.execute(
+        "DELETE FROM push_subscriptions WHERE account_id = ?1 AND (credential LIKE 'session:%' OR credential LIKE 'oauth:%')",
+        [account.id],
+    )?;
     tx.execute("UPDATE accounts SET credentials_changed_at = ?1 WHERE id = ?2", params![now(), account.id])?;
     leave_sharing(tx, account.id, granted)
 }

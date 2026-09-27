@@ -476,12 +476,13 @@ impl Store {
                         message: format!("at most {MAX_APP_PASSWORDS} app passwords"),
                     });
                 }
+                let id = crate::db::next_id(tx, "app_passwords")?;
                 tx.execute(
-                    "INSERT INTO app_passwords (account_id, name, secret_hash, scopes, created_at, expires_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![account_id, name, hash, scope_list, created_at, expires_at],
+                    "INSERT INTO app_passwords (id, account_id, name, secret_hash, scopes, created_at, expires_at)
+                     VALUES (?7, ?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![account_id, name, hash, scope_list, created_at, expires_at, id],
                 )?;
-                Ok(tx.last_insert_rowid())
+                Ok(id)
             })
             .await?;
         Ok(CreatedAppPassword {
@@ -545,12 +546,12 @@ impl Store {
             }
             // Never matches a typed code: only the imported hash is checked for this one.
             let unmatchable = random_bytes::<32>().to_vec();
+            let id = crate::db::next_id(tx, "app_passwords")?;
             tx.execute(
-                "INSERT INTO app_passwords (account_id, name, secret_hash, scopes, created_at, imported_hash)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![account_id, name, unmatchable, scope_list, now(), stored],
+                "INSERT INTO app_passwords (id, account_id, name, secret_hash, scopes, created_at, imported_hash)
+                 VALUES (?7, ?1, ?2, ?3, ?4, ?5, ?6)",
+                params![account_id, name, unmatchable, scope_list, now(), stored, id],
             )?;
-            let id = tx.last_insert_rowid();
             Ok(tx.query_row(
                 &format!("SELECT {APP_PASSWORD_COLUMNS} FROM app_passwords WHERE id = ?1"),
                 [id],
@@ -606,6 +607,7 @@ impl Store {
                 .optional()?
                 .ok_or_else(|| StoreError::NotFound(format!("app password {id}")))?;
             tx.execute("DELETE FROM app_passwords WHERE id = ?1", [id])?;
+            crate::push::forget_push_credential(tx, account_id, &crate::push_credential_for_app_password(id))?;
             credentials_changed(tx, account_id)?;
             Ok(found)
         })

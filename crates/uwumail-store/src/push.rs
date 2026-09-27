@@ -515,6 +515,16 @@ fn read_vapid_key(conn: &Connection) -> Result<Option<Vec<u8>>> {
     Ok(Some(key))
 }
 
+/// Ends the push subscriptions made with a credential that goes away now: `app:<id>` when the app
+/// password is revoked, `oauth:<id>` when the app is signed out. They would never be pushed to
+/// again anyway, but need not wait for the next clean-up.
+pub(crate) fn forget_push_credential(conn: &Connection, account_id: i64, credential: &str) -> rusqlite::Result<usize> {
+    conn.execute(
+        "DELETE FROM push_subscriptions WHERE account_id = ?1 AND credential = ?2",
+        params![account_id, credential],
+    )
+}
+
 fn purge(conn: &Connection, now: i64) -> Result<usize> {
     Ok(conn.execute(
         &format!(
@@ -674,6 +684,8 @@ mod tests {
 
         store.delete_web_session(&session.token).await.unwrap();
         store.revoke_app_password(mini, app.app_password.id).await.unwrap();
+        // Revoking the app password ends its subscriptions right away, not at the next clean-up.
+        assert!(store.push_subscriptions(mini, app_credential).await.unwrap().is_empty());
         let left = store.push_targets(vec![mini]).await.unwrap();
         assert_eq!(left.iter().map(|t| t.url.as_str()).collect::<Vec<_>>(), vec!["https://push.example.net/password"]);
         // A new password (or second factor) ends what the password made; within the same second
@@ -688,7 +700,7 @@ mod tests {
             .await
             .unwrap();
         assert!(store.push_targets(vec![mini]).await.unwrap().is_empty());
-        assert_eq!(store.purge_push_subscriptions().await.unwrap(), 3);
+        assert_eq!(store.purge_push_subscriptions().await.unwrap(), 2);
     }
 
     #[tokio::test]

@@ -53,6 +53,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0044_oauth.sql"),
     include_str!("migrations/0045_stats_alerts.sql"),
     include_str!("migrations/0046_push_subscriptions.sql"),
+    include_str!("migrations/0048_never_reused_ids.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 
@@ -141,6 +142,13 @@ pub fn delete_setting(conn: &Connection, key: &str) -> Result<bool> {
     Ok(conn.execute("DELETE FROM settings WHERE key = ?1", [key])? > 0)
 }
 
+/// The id for a new row of `accounts`, `app_passwords` or `oauth_grants`: one above the highest
+/// that table ever had. Those ids stand for a person or a credential, so they are never handed out
+/// twice, and the table refuses any other (migration 0048). Call it in the transaction that inserts.
+pub(crate) fn next_id(conn: &Connection, table: &str) -> Result<i64> {
+    Ok(conn.query_row("SELECT value + 1 FROM id_high_water WHERE name = ?1", [table], |row| row.get(0))?)
+}
+
 /// Increments and returns the account's change sequence number.
 pub fn next_modseq(conn: &Connection, account_id: i64) -> Result<i64> {
     conn.query_row("UPDATE accounts SET modseq = modseq + 1 WHERE id = ?1 RETURNING modseq", [account_id], |row| {
@@ -171,6 +179,8 @@ mod tests {
 
     /// UwUMail 0.11.0 shipped with the first 35 migrations.
     const RELEASED_0_11: usize = 35;
+    /// UwUMail 0.15.0 shipped with the first 46 migrations.
+    const RELEASED_0_15: usize = 46;
 
     fn connection() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -248,5 +258,57 @@ mod tests {
         assert_eq!(tag, "\"e1\"");
         let shares: i64 = conn.query_row("SELECT count(*) FROM mailbox_acl", [], |row| row.get(0)).unwrap();
         assert_eq!(shares, 0);
+    }
+
+    #[test]
+    fn ids_in_use_or_still_named_are_not_handed_out_after_upgrading_0_15() {
+        let mut conn = connection();
+        for (index, sql) in MIGRATIONS[..RELEASED_0_15].iter().enumerate() {
+            conn.execute_batch(sql).unwrap();
+            conn.pragma_update(None, "user_version", (index + 1) as i64).unwrap();
+        }
+        // Account 7 was purged: its learned words stayed behind. App password 5 was revoked, and a
+        // push subscription made with it was still waiting for the clean-up.
+        conn.execute_batch(
+            "INSERT INTO accounts (id, login, created_at) VALUES (1, 'mini@example.org', 0), (3, 'nyu@example.org', 0);
+             INSERT INTO bayes_totals (account_id, spam, ham) VALUES (0, 1, 1), (1, 1, 1), (7, 1, 1);
+             INSERT INTO bayes_tokens (account_id, token, spam, updated_at) VALUES (7, 1, 1, 0), (1, 1, 1, 0);
+             INSERT INTO app_passwords (id, account_id, name, secret_hash, scopes, created_at)
+                 VALUES (2, 1, 'phone', x'01', 'mail', 0);
+             INSERT INTO push_subscriptions (account_id, credential, device_client_id, url, url_digest, url_shown,
+                     verification_code, expires, created_at)
+                 VALUES (1, 'app:5', 'phone', x'00', 'a', 'push.example.net', 'code', 0, 0),
+                        (1, 'app:2', 'phone', x'00', 'b', 'push.example.net', 'code', 0, 0);",
+        )
+        .unwrap();
+        migrate(&mut conn).unwrap();
+        let high = |name: &str| -> i64 {
+            conn.query_row("SELECT value FROM id_high_water WHERE name = ?1", [name], |row| row.get(0)).unwrap()
+        };
+        assert_eq!(high("accounts"), 7);
+        assert_eq!(high("app_passwords"), 5);
+        assert_eq!(high("oauth_grants"), 0);
+        assert_eq!(next_id(&conn, "accounts").unwrap(), 8);
+        let orphans: i64 = conn
+            .query_row(
+                "SELECT (SELECT count(*) FROM bayes_totals WHERE account_id = 7)
+                      + (SELECT count(*) FROM bayes_tokens WHERE account_id = 7)",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(orphans, 0);
+        let kept: i64 = conn
+            .query_row("SELECT count(*) FROM bayes_totals WHERE account_id IN (0, 1)", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(kept, 2, "the server's and living people's learned words stay");
+        let credentials: Vec<String> = conn
+            .prepare("SELECT credential FROM push_subscriptions")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(credentials, vec!["app:2".to_owned()]);
     }
 }
