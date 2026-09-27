@@ -116,6 +116,7 @@ Each step ships as its own commits, container image and test deployment.
 - [x] OAuth 2 / OpenID Connect provider for mail apps (OAUTHBEARER/XOAUTH2 for IMAP, SMTP and ManageSieve, Bearer for JMAP and DAV); portal login via external OIDC or LDAP (docs/oauth.md, docs/login-oidc-ldap.md)
 - [x] Moving assistant in the portal: IMAP import from the old provider with its own password, synced again on request (docs/moving.md)
 - [x] Groups, shared mailboxes, masked addresses with Fastmail's JMAP MaskedEmail (docs/groups.md, docs/jmap-masked-email.md)
+- [x] Turning people and services into shared mailboxes and back, shared mailboxes with app passwords (docs/groups.md)
 - [x] Web Push / UnifiedPush through JMAP `PushSubscription`, used by the webmail and the Android app (docs/jmap-push.md)
 - [x] Nightly backups to SFTP: deduplicated, encrypted by default, 7/4/6 retention, full restore from the command line
 - [x] Restore per mailbox in the portal, backups to S3 or a mounted folder (docs/backups.md)

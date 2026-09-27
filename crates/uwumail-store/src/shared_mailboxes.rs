@@ -1,7 +1,9 @@
-//! Shared mailboxes: a mailbox several people use, such as support@ (docs/groups.md). It is an
-//! account of its own that nobody signs in to; its members reach all of its folders from their
-//! own accounts, the way a shared folder is reached (docs/sharing.md), and those who may send
-//! answer with its address.
+//! Shared mailboxes: a mailbox several people use, such as support@ (docs/groups.md). It is a
+//! service with members: nobody signs in to the portal or the webmail as it, programs and mail apps
+//! may reach it with app passwords, and its members reach all of its folders from their own
+//! accounts, the way a shared folder is reached (docs/sharing.md). Those who may send answer with
+//! its address. A person or a service can become one, and a shared mailbox can become a plain
+//! service again.
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
@@ -183,7 +185,7 @@ fn shared_account(conn: &Connection, login: &str) -> Result<i64> {
 }
 
 impl Store {
-    /// Creates a shared mailbox: an account without a password of its own, with its members.
+    /// Creates a shared mailbox: a service without a password of its own, with its members.
     pub async fn create_shared_mailbox(&self, new: NewSharedMailbox) -> Result<Account> {
         let account = self
             .create_account(NewAccount {
@@ -216,6 +218,77 @@ impl Store {
                 Err(err)
             }
         }
+    }
+
+    /// Turns a person or a service into a shared mailbox with these members. The mail, the folders
+    /// and the addresses stay. A person becomes a service first, the way [`Store::update_account`]
+    /// does it: their password turns into an app password, so their mail apps keep working, and
+    /// everything of the portal goes. A service without a mailbox gets one.
+    pub async fn make_shared_mailbox(&self, login: &str, members: Vec<(String, bool)>) -> Result<Account> {
+        let login = login_key(login)?;
+        let (account, granted) = self
+            .write(move |tx| {
+                let before = crate::admin::load_account(tx, &login)?;
+                if before.deleted_at.is_some() {
+                    return Err(StoreError::Invalid(format!("{login} is in the trash; restore it first")));
+                }
+                if before.shared_mailbox {
+                    return Err(StoreError::Rule {
+                        code: "sharedMailbox",
+                        message: format!("{login} is a shared mailbox already"),
+                    });
+                }
+                if members.iter().any(|(member, _)| login_key(member).is_ok_and(|member| member == login)) {
+                    return Err(StoreError::Invalid("a shared mailbox cannot be its own member".into()));
+                }
+                crate::admin::keep_an_admin(tx, &before, false)?;
+                let mut protocols = before.protocols;
+                if !protocols.has_mailbox() {
+                    protocols.imap = true;
+                    protocols.jmap = true;
+                }
+                tx.execute(
+                    "UPDATE accounts SET role = 'user', kind = 'service', shared_mailbox = 1, imap_enabled = ?1,
+                            jmap_enabled = ?2 WHERE id = ?3",
+                    params![protocols.imap, protocols.jmap, before.id],
+                )?;
+                let mailboxes: i64 =
+                    tx.query_row("SELECT count(*) FROM mailboxes WHERE account_id = ?1", [before.id], |row| {
+                        row.get(0)
+                    })?;
+                if mailboxes == 0 {
+                    crate::mail::create_default_mailboxes(tx, before.id)?;
+                }
+                let after = crate::admin::load_account(tx, &login)?;
+                let mut granted = Granted::default();
+                if before.is_service() {
+                    crate::admin::leave_sharing(tx, after.id, &mut granted)?;
+                } else {
+                    crate::admin::become_service(tx, &after, &mut granted)?;
+                }
+                replace_members(tx, after.id, &members, &mut granted)?;
+                Ok((after, granted))
+            })
+            .await?;
+        self.notify_granted(granted);
+        Ok(account)
+    }
+
+    /// Turns a shared mailbox back into a plain service: its members lose its folders and the
+    /// identities for its addresses. Its mail, addresses and app passwords stay.
+    pub async fn end_shared_mailbox(&self, login: &str) -> Result<Account> {
+        let login = login_key(login)?;
+        let (account, granted) = self
+            .write(move |tx| {
+                let id = shared_account(tx, &login)?;
+                let mut granted = Granted::default();
+                replace_members(tx, id, &[], &mut granted)?;
+                tx.execute("UPDATE accounts SET shared_mailbox = 0 WHERE id = ?1", [id])?;
+                Ok((crate::admin::load_account(tx, &login)?, granted))
+            })
+            .await?;
+        self.notify_granted(granted);
+        Ok(account)
     }
 
     /// Replaces the members of a shared mailbox.
@@ -336,7 +409,7 @@ mod tests {
             })
             .await
             .unwrap();
-        assert!(support.shared_mailbox && support.is_service() && !support.can_log_in());
+        assert!(support.shared_mailbox && support.is_service() && support.can_log_in() && !support.can_use_portal());
         assert_eq!(store.resolve_recipient("support@example.org").await.unwrap(), Some(support.id));
 
         // Every folder, a new one too, with every right.
@@ -351,7 +424,8 @@ mod tests {
         let inbox = shared.iter().find(|m| m.mailbox.role == Some(MailboxRole::Inbox)).unwrap().mailbox.id;
         assert!(store.shared_mailbox(mini, inbox).await.unwrap().is_some());
 
-        // It is never someone one shares with, and it has no login of its own.
+        // It is never someone one shares with. Like any service it has no password, but app
+        // passwords open it to programs and mail apps.
         assert!(!store.share_people().await.unwrap().iter().any(|p| p.id == support.id));
         let mini_inbox = store.imap_mailboxes(mini).await.unwrap()[0].id;
         assert!(store.set_mailbox_acl(mini, mini_inbox, "support@example.org", "lr").await.is_err());
@@ -360,8 +434,17 @@ mod tests {
                 support.id,
                 crate::NewAppPassword { name: "x".into(), scopes: vec![crate::AppScope::Mail], expires_at: None },
             )
-            .await;
-        assert!(matches!(app, Err(StoreError::Rule { code: "sharedMailbox", .. })));
+            .await
+            .unwrap();
+        let login =
+            store.authenticate_mail("support@example.org", &app.secret, crate::AppScope::Mail, "imap", "").await;
+        assert!(matches!(login.unwrap(), crate::MailAuth::Ok { account, .. } if account.id == support.id));
+        let no_mailbox = crate::AccountUpdate {
+            protocols: Some(Protocols { smtp: true, imap: false, jmap: false, caldav: false, carddav: false }),
+            ..Default::default()
+        };
+        let refused = store.update_account("support@example.org", no_mailbox).await;
+        assert!(matches!(refused, Err(StoreError::Rule { code: "sharedMailboxNeedsMailbox", .. })), "{refused:?}");
         let role = store.set_account_role("support@example.org", Role::User).await;
         assert!(matches!(role, Err(StoreError::Rule { code: "sharedMailbox", .. })));
 
@@ -401,5 +484,133 @@ mod tests {
         store.delete_account("support@example.org").await.unwrap();
         assert_eq!(emails(store.identities(leni).await.unwrap()), vec!["leni@example.org".to_owned()]);
         assert!(store.shared_mailboxes().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_person_becomes_a_shared_mailbox_and_a_service_again() {
+        let (store, _dir) = store().await;
+        store.create_domain("example.org").await.unwrap();
+        let mini = person(&store, "mini@example.org").await;
+        let leni = person(&store, "leni@example.org").await;
+        let info = store
+            .create_account(NewAccount {
+                address: "info@example.org".into(),
+                display_name: "Info".into(),
+                password: Some("katzenpfote-123".into()),
+                role: Role::User,
+                quota_bytes: 0,
+                protocols: None,
+            })
+            .await
+            .unwrap();
+        store.add_alias("hallo@example.org", "info@example.org").await.unwrap();
+        let inbox = store.imap_mailboxes(info.id).await.unwrap()[0].id;
+        // As a person it had a folder of leni's and a shared mailbox of its own to use.
+        let leni_inbox = store.imap_mailboxes(leni).await.unwrap()[0].id;
+        store.set_mailbox_acl(leni, leni_inbox, "info@example.org", "lr").await.unwrap();
+        store
+            .create_shared_mailbox(NewSharedMailbox {
+                address: "support@example.org".into(),
+                name: "Support".into(),
+                quota_bytes: 0,
+                members: vec![("info@example.org".into(), true)],
+            })
+            .await
+            .unwrap();
+        assert!(store.identities(info.id).await.unwrap().iter().any(|i| i.email == "support@example.org"));
+
+        // Not a member of itself.
+        let itself = store.make_shared_mailbox("info@example.org", vec![("INFO@example.org".into(), true)]).await;
+        assert!(matches!(itself, Err(StoreError::Invalid(_))), "{itself:?}");
+        assert!(!store.account_by_id(info.id).await.unwrap().unwrap().shared_mailbox, "nothing changed");
+
+        let shared = store
+            .make_shared_mailbox(
+                "info@example.org",
+                vec![("mini@example.org".into(), true), ("leni@example.org".into(), false)],
+            )
+            .await
+            .unwrap();
+        assert!(shared.shared_mailbox && shared.is_service() && !shared.can_use_portal());
+        // Its folders are the members' now, the mail stays where it was.
+        assert!(store.shared_mailbox(mini, inbox).await.unwrap().is_some());
+        assert!(store.shared_mailbox(leni, inbox).await.unwrap().is_some());
+        let emails = |list: Vec<crate::Identity>| list.into_iter().map(|i| i.email).collect::<Vec<_>>();
+        let mini_emails = emails(store.identities(mini).await.unwrap());
+        assert!(
+            mini_emails.contains(&"info@example.org".to_owned())
+                && mini_emails.contains(&"hallo@example.org".to_owned())
+        );
+        assert!(!emails(store.identities(leni).await.unwrap()).contains(&"info@example.org".to_owned()));
+        // The password it had opens its mail apps as an app password, never the portal.
+        assert!(store.authenticate("info@example.org", "katzenpfote-123").await.unwrap().is_none());
+        let login =
+            store.authenticate_mail("info@example.org", "katzenpfote-123", crate::AppScope::Mail, "imap", "").await;
+        assert!(matches!(login.unwrap(), crate::MailAuth::Ok { app_password: Some(_), .. }));
+        // What it used as a person is gone: shares, the other shared mailbox, its identity there.
+        assert!(store.mailboxes_shared_with(info.id).await.unwrap().is_empty());
+        assert!(store.shared_memberships(info.id).await.unwrap().is_empty());
+        assert!(!emails(store.identities(info.id).await.unwrap()).contains(&"support@example.org".to_owned()));
+        assert!(store.mailbox_acl(leni, leni_inbox).await.unwrap().is_empty());
+        let again = store.make_shared_mailbox("info@example.org", Vec::new()).await;
+        assert!(matches!(again, Err(StoreError::Rule { code: "sharedMailbox", .. })));
+
+        // Back to a plain service: the members lose it, the app password stays.
+        let service = store.end_shared_mailbox("info@example.org").await.unwrap();
+        assert!(!service.shared_mailbox && service.is_service());
+        assert!(store.mailboxes_shared_with(mini).await.unwrap().is_empty());
+        assert!(!emails(store.identities(mini).await.unwrap()).contains(&"info@example.org".to_owned()));
+        assert_eq!(store.app_passwords(service.id).await.unwrap().len(), 1);
+        assert!(matches!(store.end_shared_mailbox("info@example.org").await, Err(StoreError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn a_service_becomes_a_shared_mailbox_with_its_app_passwords() {
+        let (store, _dir) = store().await;
+        store.create_domain("example.org").await.unwrap();
+        let mini = person(&store, "mini@example.org").await;
+        // A service that only sends has no mailbox yet; it gets one.
+        let scanner = store
+            .create_account(NewAccount {
+                address: "scanner@example.org".into(),
+                display_name: "Scanner".into(),
+                password: None,
+                role: Role::Service,
+                quota_bytes: 0,
+                protocols: Some(Protocols { smtp: true, imap: false, jmap: false, caldav: false, carddav: false }),
+            })
+            .await
+            .unwrap();
+        let app = store
+            .create_app_password(
+                scanner.id,
+                crate::NewAppPassword { name: "Scanner".into(), scopes: vec![crate::AppScope::Smtp], expires_at: None },
+            )
+            .await
+            .unwrap();
+        store
+            .create_group(crate::NewGroup {
+                address: "alle@example.org".into(),
+                name: "Alle".into(),
+                who_may_send: crate::WhoMaySend::Anyone,
+                members_may_send_as: false,
+                members: vec!["scanner@example.org".into()],
+            })
+            .await
+            .unwrap();
+
+        let shared =
+            store.make_shared_mailbox("scanner@example.org", vec![("mini@example.org".into(), true)]).await.unwrap();
+        assert!(shared.shared_mailbox && shared.has_mailbox() && shared.protocols.smtp);
+        assert!(!store.imap_mailboxes(shared.id).await.unwrap().is_empty());
+        assert_eq!(
+            store.mailboxes_shared_with(mini).await.unwrap().len(),
+            store.imap_mailboxes(shared.id).await.unwrap().len()
+        );
+        let login =
+            store.authenticate_mail("scanner@example.org", &app.secret, crate::AppScope::Smtp, "smtp", "").await;
+        assert!(matches!(login.unwrap(), crate::MailAuth::Ok { .. }), "its programs keep sending");
+        let group = store.group_delivery("alle@example.org").await.unwrap().unwrap();
+        assert_eq!(group.members, vec![shared.id], "it stays in its groups");
     }
 }

@@ -449,6 +449,21 @@ async fn directory_passwords_for_the_portal_and_mail_apps() {
     let broken = LdapConfig { bind_password: "falsch".into(), ..config(address) };
     let refused = ldap::test(&broken).await.unwrap_err();
     assert!(refused.contains("service account"), "{refused}");
+
+    // Nyu's mailbox becomes a service: the directory's password opens nothing anymore.
+    let (status, _, _) =
+        call(&app, "PATCH", "/api/admin/people/nyu@example.org", json!({ "service": true }), Some(&leni)).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _, _) = call(&app, "GET", "/api/account/addresses", Value::Null, Some(&nyu)).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "her session went");
+    assert!(login(&app, "nyu@example.org", NYU_PASSWORD).await.is_none());
+    for protocol in ["imap", "smtp", "jmap"] {
+        let mail =
+            store.authenticate_mail("nyu@example.org", NYU_PASSWORD, AppScope::Mail, protocol, "192.0.2.1").await;
+        assert!(matches!(mail.unwrap(), MailAuth::Denied(MailAuthDenied::Invalid)), "{protocol}");
+    }
+    let (_, person, _) = call(&app, "GET", "/api/admin/people/nyu@example.org", Value::Null, Some(&leni)).await;
+    assert_eq!(person["authSource"], "local");
 }
 
 #[tokio::test]

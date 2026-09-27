@@ -514,7 +514,8 @@
       "subscriptionLimit": "Je hebt al zo veel geabonneerde agenda's als mogelijk.",
       "subscriptionExists": "Je bent al op deze agenda geabonneerd.",
       "refreshPause": "Net opgehaald. Probeer het over een minuut opnieuw.",
-      "sharedMailbox": "Dit is een gedeelde mailbox: niemand logt erop in, de leden gebruiken hem vanuit hun eigen account.",
+      "sharedMailbox": "Dit is een gedeelde mailbox: hij heeft app-wachtwoorden maar geen wachtwoord, en de leden gebruiken hem vanuit hun eigen account.",
+      "sharedMailboxNeedsMailbox": "Een gedeelde mailbox houdt zijn mail: IMAP of JMAP moet aan blijven.",
       "maskedDomain": "Op deze server is nog geen domein open voor gemaskeerde adressen. Vraag het de beheerder.",
       "maskedLimit": "Je hebt zoveel gemaskeerde adressen als deze server toestaat. Verwijder er een paar die je niet meer nodig hebt.",
       "maskedPrefix": "Een voorvoegsel mag alleen letters a–z, cijfers en _ bevatten, hooguit 64.",
@@ -762,7 +763,7 @@
   },
   "sharedMailboxes": {
     "title": "Gedeelde mailboxen",
-    "explain": "Een mailbox die meerdere mensen gebruiken, zoals support@. Niemand logt erop in; de leden zien hem naast hun eigen mappen en mogen ermee antwoorden.",
+    "explain": "Een mailbox die meerdere mensen gebruiken, zoals support@. Niemand logt ermee in op het portaal of de webmail; de leden zien hem naast hun eigen mappen en mogen ermee antwoorden, en programma's bereiken hem met app-wachtwoorden.",
     "create": "Nieuwe gedeelde mailbox",
     "createIntro": "Hij krijgt een eigen adres en eigen opslag; mail ernaartoe komt voor alle leden in zijn inbox.",
     "name": "Naam",
@@ -775,9 +776,20 @@
     "maySend": "mag versturen",
     "save": "Leden opslaan",
     "pill": "Gedeelde mailbox",
+    "convert": "Omzetten in gedeelde mailbox",
+    "convertHint": "Meerdere mensen gebruiken hem vanuit hun eigen account. De mail blijft.",
+    "convertTitle": "{{login}} omzetten in een gedeelde mailbox?",
+    "convertBodyPerson": "Mail, mappen en adressen blijven. Niemand logt er nog mee in op het portaal of de webmail: inloggen met twee factoren, passkeys en open sessies worden verwijderd, en het huidige wachtwoord blijft bestaan als app-wachtwoord dat nooit verloopt, zodat mailprogramma's blijven werken. Mappen die anderen ermee deelden en gedeelde mailboxen die hij gebruikte, vervallen.",
+    "convertBodyService": "Mail, mappen, adressen en app-wachtwoorden blijven. De leden zien alle mappen vanuit hun eigen account.",
+    "end": "Terug naar een dienst",
+    "endHint": "De leden zien hem niet meer. Mail, adressen en app-wachtwoorden blijven.",
+    "endTitle": "{{login}} weer een gewone dienst maken?",
+    "endBody": "De leden verliezen de mappen en kunnen niet meer met de adressen versturen. Mail, adressen en app-wachtwoorden blijven; je kunt hem altijd weer omzetten in een gedeelde mailbox.",
     "toasts": {
       "created": "{{address}} gemaakt",
-      "saved": "Leden opgeslagen"
+      "saved": "Leden opgeslagen",
+      "converted": "{{login}} is nu een gedeelde mailbox",
+      "ended": "{{login}} is weer een gewone dienst"
     }
   },
   "log": {
@@ -854,7 +866,9 @@
       "groupUpdate": "{{actor}} heeft de groep {{target}} gewijzigd",
       "groupRemove": "{{actor}} heeft de groep {{target}} verwijderd",
       "sharedMailboxCreate": "{{actor}} heeft de gedeelde mailbox {{target}} aangemaakt",
-      "sharedMailboxMembers": "{{actor}} heeft de leden van de gedeelde mailbox {{target}} gewijzigd"
+      "sharedMailboxMembers": "{{actor}} heeft de leden van de gedeelde mailbox {{target}} gewijzigd",
+      "sharedMailboxConvert": "{{actor}} heeft {{target}} omgezet in een gedeelde mailbox",
+      "sharedMailboxEnd": "{{actor}} heeft de gedeelde mailbox {{target}} weer een dienst gemaakt"
     },
     "details": {
       "adminOn": "is nu beheerder",

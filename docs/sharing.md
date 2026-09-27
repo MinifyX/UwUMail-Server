@@ -9,7 +9,9 @@ Only people share with people. Services (see the admin panel) neither share nor
 receive shares, and an account in the trash takes no part until it is restored.
 The one exception is a shared mailbox ([groups.md](groups.md#shared-mailboxes)):
 every folder of it is shared with each of its members, the ones made later too,
-with every right, for as long as they are members.
+with every right, for as long as they are members. A person who becomes a
+service or a shared mailbox loses what was shared with them; what they shared
+stays.
 
 ## Levels and rights
 

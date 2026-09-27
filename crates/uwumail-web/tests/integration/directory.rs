@@ -269,3 +269,103 @@ async fn people_make_masked_addresses_where_a_domain_allows() {
     let (_, domain) = call(&app, "GET", "/api/admin/domains/example.org", None, &admin).await;
     assert_eq!(domain["maskedInUse"], 0);
 }
+
+#[tokio::test]
+async fn admins_turn_people_and_services_into_shared_mailboxes() {
+    let (app, store, _dir) = portal().await;
+    let admin = login(&app, "nyu@example.org").await;
+    let leni = login(&app, "leni@example.org").await;
+    let mini = login(&app, "mini@example.org").await;
+
+    // Only admins, never their own account, never a member of itself.
+    let members = json!({ "members": [{ "login": "mini@example.org", "maySend": true }] });
+    let path = "/api/admin/people/leni@example.org/shared-mailbox";
+    let (status, _) = call(&app, "POST", path, Some(members.clone()), &mini).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, refused) =
+        call(&app, "POST", "/api/admin/people/nyu@example.org/shared-mailbox", Some(members.clone()), &admin).await;
+    assert_eq!((status, refused["code"].as_str()), (StatusCode::CONFLICT, Some("notYourself")), "{refused}");
+    let itself = json!({ "members": [{ "login": "leni@example.org" }] });
+    let (status, _) = call(&app, "POST", path, Some(itself), &admin).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // Leni's mailbox becomes one Mini uses; Leni's portal session is over.
+    let (status, converted) = call(&app, "POST", path, Some(members), &admin).await;
+    assert_eq!(status, StatusCode::OK, "{converted}");
+    assert_eq!(converted["person"]["sharedMailbox"], true);
+    assert_eq!(converted["members"][0]["login"], "mini@example.org");
+    let (status, _) = call(&app, "GET", "/api/account/addresses", None, &leni).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (_, addresses) = call(&app, "GET", "/api/account/addresses", None, &mini).await;
+    assert_eq!(addresses["sharedMailboxes"][0]["address"], "leni@example.org");
+    // Its old password lives on as an app password, which the admin sees and manages.
+    let (_, detail) = call(&app, "GET", "/api/admin/people/leni@example.org", None, &admin).await;
+    assert_eq!(detail["appPasswordList"].as_array().map(Vec::len), Some(1), "{detail}");
+    let (status, created) = call(
+        &app,
+        "POST",
+        "/api/admin/people/leni@example.org/app-passwords",
+        Some(json!({ "name": "Scanner" })),
+        &admin,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let secret = created["secret"].as_str().unwrap();
+    let auth = store.authenticate_mail("leni@example.org", secret, uwumail_store::AppScope::Mail, "imap", "").await;
+    assert!(matches!(auth.unwrap(), uwumail_store::MailAuth::Ok { .. }));
+    // Never a portal login, never a password.
+    let body = json!({ "login": "leni@example.org", "password": "katzenpfote-123" });
+    let mut request = Request::post("/api/auth/login")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    request.extensions_mut().insert(ClientInfo { https: true, ..ClientInfo::default() });
+    assert_eq!(app.clone().oneshot(request).await.unwrap().status(), StatusCode::UNAUTHORIZED);
+    let (status, refused) = call(
+        &app,
+        "PUT",
+        "/api/admin/people/leni@example.org/password",
+        Some(json!({ "password": "ein-langes-passwort-123" })),
+        &admin,
+    )
+    .await;
+    assert_eq!((status, refused["code"].as_str()), (StatusCode::CONFLICT, Some("sharedMailbox")));
+    let (status, refused) = call(&app, "POST", path, Some(json!({ "members": [] })), &admin).await;
+    assert_eq!((status, refused["code"].as_str()), (StatusCode::CONFLICT, Some("sharedMailbox")), "already one");
+
+    // Back to a plain service: Mini loses it, the app passwords stay.
+    let (status, service) = call(&app, "DELETE", path, None, &admin).await;
+    assert_eq!(status, StatusCode::OK, "{service}");
+    assert_eq!((service["sharedMailbox"].as_bool(), service["role"].as_str()), (Some(false), Some("service")));
+    let (_, addresses) = call(&app, "GET", "/api/account/addresses", None, &mini).await;
+    assert_eq!(addresses["sharedMailboxes"], json!([]));
+    let (_, detail) = call(&app, "GET", "/api/admin/people/leni@example.org", None, &admin).await;
+    assert_eq!(detail["appPasswordList"].as_array().map(Vec::len), Some(2));
+    // A service never gets a password either.
+    let (status, refused) = call(
+        &app,
+        "PUT",
+        "/api/admin/people/leni@example.org/password",
+        Some(json!({ "password": "ein-langes-passwort-123" })),
+        &admin,
+    )
+    .await;
+    assert_eq!((status, refused["code"].as_str()), (StatusCode::CONFLICT, Some("serviceAccount")), "{refused}");
+
+    // A service becomes one too, and the change log says what happened.
+    let (status, _) = call(&app, "POST", path, Some(json!({ "members": [] })), &admin).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, log) = call(&app, "GET", "/api/admin/audit", None, &admin).await;
+    let entries: Vec<(&str, &str)> = log
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["target"] == "leni@example.org")
+        .filter_map(|entry| Some((entry["action"].as_str()?, entry["details"]["from"].as_str().unwrap_or(""))))
+        .filter(|(action, _)| action.starts_with("sharedMailbox"))
+        .collect();
+    assert_eq!(
+        entries,
+        [("sharedMailbox.convert", "service"), ("sharedMailbox.end", ""), ("sharedMailbox.convert", "person")]
+    );
+}

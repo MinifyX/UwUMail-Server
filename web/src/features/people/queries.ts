@@ -265,6 +265,32 @@ export function useSetSharedMembers(login: string, success: string) {
   });
 }
 
+/** Turns a person or a service into a shared mailbox with these members. */
+export function useMakeSharedMailbox(login: string, success: string) {
+  const queryClient = useQueryClient();
+  const errorText = useErrorText();
+  return useMutation({
+    mutationFn: (members: { login: string; maySend: boolean }[]) =>
+      api<{ person: Person; members: SharedMailboxMember[] }>(`${personPath(login)}/shared-mailbox`, {
+        method: "POST",
+        body: { members },
+      }),
+    onSuccess: () => {
+      // Its app passwords and members come with the detail view, so fetch that again.
+      void queryClient.invalidateQueries({ queryKey: ["admin", "people"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "overview"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
+      toast(success, "success");
+    },
+    onError: (error) => toast(errorText(error), "error"),
+  });
+}
+
+/** Turns a shared mailbox back into a plain service. */
+export function useEndSharedMailbox(login: string, success: () => string) {
+  return usePersonAction(() => api<Person>(`${personPath(login)}/shared-mailbox`, { method: "DELETE" }), success);
+}
+
 /** Signs one of a person's OAuth apps out, e.g. for a lost phone. */
 export function useRevokePersonGrant(login: string, success: (name: string) => string) {
   const queryClient = useQueryClient();

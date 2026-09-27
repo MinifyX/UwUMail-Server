@@ -208,3 +208,37 @@ pub async fn set_shared_mailbox_members(
     audit(&web, &session, "sharedMailbox.members", &login.to_lowercase(), details).await;
     Ok(Json(json!(members)))
 }
+
+/// Turns a person or a service into a shared mailbox with these members.
+pub async fn make_shared_mailbox(
+    State(web): State<Web>,
+    Admin(session): Admin,
+    Path(login): Path<String>,
+    Json(body): Json<MembersBody>,
+) -> ApiResult<Json<Value>> {
+    if login.eq_ignore_ascii_case(&session.account.login) {
+        return Err(ApiError::Rule("notYourself", "you cannot turn your own account into a shared mailbox".into()));
+    }
+    let before = web.store().person(&login).await?.ok_or_else(|| ApiError::NotFound(format!("person {login}")))?;
+    let account = web.store().make_shared_mailbox(&login, members(body.members)).await?;
+    let members = web.store().shared_mailbox_members(account.id).await?;
+    let details = json!({
+        "from": if before.account.is_service() { "service" } else { "person" },
+        "members": members.iter().map(|m| json!({ "login": m.login, "maySend": m.may_send })).collect::<Vec<_>>(),
+    });
+    audit(&web, &session, "sharedMailbox.convert", &account.login, details).await;
+    let person = web.store().person(&account.login).await?.ok_or(ApiError::Internal)?;
+    Ok(Json(json!({ "person": super::people::person_json(&person), "members": members })))
+}
+
+/// Turns a shared mailbox back into a plain service.
+pub async fn end_shared_mailbox(
+    State(web): State<Web>,
+    Admin(session): Admin,
+    Path(login): Path<String>,
+) -> ApiResult<Json<Value>> {
+    let account = web.store().end_shared_mailbox(&login).await?;
+    audit(&web, &session, "sharedMailbox.end", &account.login, json!({})).await;
+    let person = web.store().person(&account.login).await?.ok_or(ApiError::Internal)?;
+    Ok(Json(super::people::person_json(&person)))
+}

@@ -227,8 +227,11 @@ scrape it.
 *Server → Accounts* holds both. A **person** signs in to the portal and may use
 everything. A **service** is a mailbox that belongs to a program: a backup
 script that sends a report, a shop that sends receipts, a monitoring job. It
-never signs in to the portal, never has a password of its own, and gets in only
-with app passwords, which an admin creates on its page.
+never signs in to the portal, the admin panel or the webmail, never has a
+password of its own (setting one is refused with `serviceAccount`), and gets in
+only with app passwords, which an admin creates on its page. Not even a
+password kept at an LDAP directory counts for a service. A
+[shared mailbox](groups.md#shared-mailboxes) is a service with members.
 
 Every account has five switches, under *Protocols*:
 
@@ -253,9 +256,13 @@ sends: no mailbox to fill up, and an answer that lands somewhere a person reads.
 
 Turning a person into a service keeps the mail and turns the password they had
 into an app password that does not expire, so what already works keeps working;
-their second factors, passkeys and open sessions go, since none of them has
-anything left to sign in to. The way back is the same button, and afterwards the
-account needs a new password or an invitation link.
+their second factors, passkeys, open sessions, password links and apps signed in
+with OAuth go, since none of them has anything left to sign in to, and so does
+the tie to an LDAP directory or OpenID Connect provider. So do the folders
+others shared with them and the shared mailboxes they were a member of: only
+people share with people. The way back is the same button, and afterwards the
+account needs a new password or an invitation link. How a person or a service
+becomes a shared mailbox is in [groups.md](groups.md#turning-an-account-into-one).
 
 The same from the terminal:
 
@@ -264,6 +271,7 @@ docker compose exec uwumail uwumail-server account add reports@example.com --ser
 docker compose exec uwumail uwumail-server account protocols reports@example.com \
   --imap off --jmap off --redirect me@example.com
 docker compose exec uwumail uwumail-server account service someone@example.com on
+docker compose exec uwumail uwumail-server account shared someone@example.com on --sender me@example.com
 ```
 
 `account list` marks a service as such, and says `sends only` when it has no

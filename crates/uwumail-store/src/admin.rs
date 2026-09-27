@@ -7,6 +7,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::directory::{ACCOUNT_COLUMN_COUNT, ACCOUNT_COLUMNS, account_from_row, account_id, login_key};
+use crate::identity_grants::{Granted, granted_addresses, revoke_identities};
 use crate::{Account, Protocols, Result, Role, Store, StoreError, now, password, random_bytes};
 
 /// People stay in the trash this long before they are removed for good.
@@ -32,8 +33,11 @@ fn redirect_target(tx: &Connection, account: &Account, wanted: &str) -> Result<S
 }
 
 /// What becoming a service does to the way in: the portal password turns into an app password that
-/// does not expire, and the second factors, passkeys and sessions of a person go.
-fn become_service(tx: &Connection, account: &Account) -> Result<()> {
+/// does not expire, and everything that only served a person in front of a browser goes: second
+/// factors, passkeys, sessions, links to choose a password, apps signed in with OAuth and the tie to
+/// an LDAP directory or another OpenID Connect provider. A service only ever gets in with app
+/// passwords. Shares and shared mailboxes it used as a person go as well (see [`leave_sharing`]).
+pub(crate) fn become_service(tx: &Connection, account: &Account, granted: &mut Granted) -> Result<()> {
     let hash: Option<String> =
         tx.query_row("SELECT password_hash FROM accounts WHERE id = ?1", [account.id], |row| row.get(0))?;
     if let Some(hash) = hash.filter(|hash| !hash.trim().is_empty()) {
@@ -55,11 +59,51 @@ fn become_service(tx: &Connection, account: &Account) -> Result<()> {
             }
         }
     }
-    tx.execute("UPDATE accounts SET password_hash = NULL WHERE id = ?1", [account.id])?;
-    for table in ["web_sessions", "totp_secrets", "recovery_codes", "passkeys"] {
+    tx.execute("UPDATE accounts SET password_hash = NULL, auth_source = 'local' WHERE id = ?1", [account.id])?;
+    for table in [
+        "web_sessions",
+        "totp_secrets",
+        "recovery_codes",
+        "passkeys",
+        "password_links",
+        "oauth_codes",
+        "oauth_grants",
+        "oauth_consents",
+        "external_identities",
+    ] {
         tx.execute(&format!("DELETE FROM {table} WHERE account_id = ?1"), [account.id])?;
     }
     tx.execute("UPDATE accounts SET credentials_changed_at = ?1 WHERE id = ?2", params![now(), account.id])?;
+    leave_sharing(tx, account.id, granted)
+}
+
+/// Only people share with people: an account that stops being one no longer sees the folders others
+/// shared with it, nor the shared mailboxes it was a member of, and loses the identities those gave.
+/// Its own folders stay shared as they are. Groups are no sharing: it stays in them.
+pub(crate) fn leave_sharing(tx: &Connection, account_id: i64, granted: &mut Granted) -> Result<()> {
+    let owners: Vec<(i64, i64)> = tx
+        .prepare("SELECT owner_id, mailbox_id FROM mailbox_acl WHERE grantee_id = ?1")?
+        .query_map([account_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    tx.execute("DELETE FROM mailbox_acl WHERE grantee_id = ?1", [account_id])?;
+    for (owner, mailbox) in owners {
+        let modseq = crate::db::next_modseq(tx, owner)?;
+        crate::db::record_change(tx, owner, modseq, "Mailbox", mailbox, "updated")?;
+        granted.push(owner, modseq);
+    }
+    let shared: Vec<i64> = tx
+        .prepare("SELECT account_id FROM shared_mailbox_members WHERE member_id = ?1")?
+        .query_map([account_id], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    let addresses = granted_addresses(tx, account_id)?;
+    tx.execute("DELETE FROM shared_mailbox_members WHERE member_id = ?1", [account_id])?;
+    for (address, _) in addresses {
+        revoke_identities(tx, account_id, &address, granted)?;
+    }
+    for mailbox in shared {
+        let modseq = crate::db::next_modseq(tx, mailbox)?;
+        granted.push(mailbox, modseq);
+    }
     Ok(())
 }
 
@@ -150,7 +194,7 @@ fn token_hash(token: &str) -> Vec<u8> {
     Sha256::digest(token.as_bytes()).to_vec()
 }
 
-fn load_account(conn: &Connection, login: &str) -> Result<Account> {
+pub(crate) fn load_account(conn: &Connection, login: &str) -> Result<Account> {
     conn.query_row(&format!("SELECT {ACCOUNT_COLUMNS} FROM accounts WHERE login = ?1"), [login], account_from_row)
         .optional()?
         .ok_or_else(|| StoreError::NotFound(format!("account {login}")))
@@ -161,7 +205,7 @@ fn active_admin(account: &Account) -> bool {
 }
 
 /// Refuses a change that would leave the server without anyone who can manage it.
-fn keep_an_admin(conn: &Connection, before: &Account, after_is_active_admin: bool) -> Result<()> {
+pub(crate) fn keep_an_admin(conn: &Connection, before: &Account, after_is_active_admin: bool) -> Result<()> {
     if !active_admin(before) || after_is_active_admin {
         return Ok(());
     }
@@ -185,85 +229,99 @@ impl Store {
         if update.quota_bytes.is_some_and(|quota| quota < 0) {
             return Err(StoreError::Invalid("the quota cannot be negative".into()));
         }
-        self.write(move |tx| {
-            let before = load_account(tx, &login)?;
-            if before.deleted_at.is_some() {
-                return Err(StoreError::Invalid(format!("{login} is in the trash; restore it first")));
-            }
-            let mut after = before.clone();
-            if let Some(name) = &update.display_name {
-                after.display_name = name.trim().to_owned();
-            }
-            if let Some(role) = update.role {
-                // A shared mailbox stays one: nobody signs in to it, so it is no person or admin.
-                if before.shared_mailbox && role != Role::Service {
-                    return Err(StoreError::Rule {
-                        code: "sharedMailbox",
-                        message: format!("{login} is a shared mailbox, nobody signs in to it"),
-                    });
+        let (after, granted) = self
+            .write(move |tx| {
+                let before = load_account(tx, &login)?;
+                if before.deleted_at.is_some() {
+                    return Err(StoreError::Invalid(format!("{login} is in the trash; restore it first")));
                 }
-                after.role = role;
-            }
-            if let Some(quota) = update.quota_bytes {
-                after.quota_bytes = quota;
-            }
-            if let Some(disabled) = update.disabled {
-                after.disabled = disabled;
-            }
-            if let Some(protocols) = update.protocols {
-                after.protocols = protocols;
-            }
-            if let Some(target) = &update.redirect_to {
-                after.redirect_to = redirect_target(tx, &after, target)?;
-            }
-            if let Some(webmail) = update.webmail {
-                after.webmail = webmail;
-            }
-            // A service is never an admin: it cannot reach the portal at all.
-            if after.role == Role::Service && before.role == Role::Admin {
-                after.role = Role::Service;
-            }
-            keep_an_admin(tx, &before, active_admin(&after))?;
-            tx.execute(
-                "UPDATE accounts SET display_name = ?1, role = ?2, kind = ?3, quota_bytes = ?4, disabled = ?5,
+                let mut granted = Granted::default();
+                let mut after = before.clone();
+                if let Some(name) = &update.display_name {
+                    after.display_name = name.trim().to_owned();
+                }
+                if let Some(role) = update.role {
+                    // A shared mailbox is a service with members: nobody signs in to the portal as it,
+                    // so it is no person or admin. It becomes a plain service first.
+                    if before.shared_mailbox && role != Role::Service {
+                        return Err(StoreError::Rule {
+                            code: "sharedMailbox",
+                            message: format!("{login} is a shared mailbox; make it a service first"),
+                        });
+                    }
+                    after.role = role;
+                }
+                if let Some(quota) = update.quota_bytes {
+                    after.quota_bytes = quota;
+                }
+                if let Some(disabled) = update.disabled {
+                    after.disabled = disabled;
+                }
+                if let Some(protocols) = update.protocols {
+                    // Its members read it from their own accounts, but only while mail is kept for it.
+                    if before.shared_mailbox && !protocols.has_mailbox() {
+                        return Err(StoreError::Rule {
+                            code: "sharedMailboxNeedsMailbox",
+                            message: format!("{login} is a shared mailbox; IMAP or JMAP has to stay on"),
+                        });
+                    }
+                    after.protocols = protocols;
+                }
+                if let Some(target) = &update.redirect_to {
+                    after.redirect_to = redirect_target(tx, &after, target)?;
+                }
+                if let Some(webmail) = update.webmail {
+                    after.webmail = webmail;
+                }
+                // A service is never an admin: it cannot reach the portal at all.
+                if after.role == Role::Service && before.role == Role::Admin {
+                    after.role = Role::Service;
+                }
+                keep_an_admin(tx, &before, active_admin(&after))?;
+                tx.execute(
+                    "UPDATE accounts SET display_name = ?1, role = ?2, kind = ?3, quota_bytes = ?4, disabled = ?5,
                         smtp_enabled = ?6, imap_enabled = ?7, jmap_enabled = ?8, caldav_enabled = ?9,
                         carddav_enabled = ?10, redirect_to = ?11, webmail_enabled = ?12
                  WHERE id = ?13",
-                params![
-                    after.display_name,
-                    if after.role == Role::Admin { "admin" } else { "user" },
-                    if after.role == Role::Service { "service" } else { "person" },
-                    after.quota_bytes,
-                    after.disabled,
-                    after.protocols.smtp,
-                    after.protocols.imap,
-                    after.protocols.jmap,
-                    after.protocols.caldav,
-                    after.protocols.carddav,
-                    after.redirect_to,
-                    after.webmail,
-                    after.id
-                ],
-            )?;
-            // Switching a protocol back on for an account that never had folders gives it some.
-            if after.has_mailbox() {
-                let mailboxes: i64 =
-                    tx.query_row("SELECT count(*) FROM mailboxes WHERE account_id = ?1", [after.id], |row| row.get(0))?;
-                if mailboxes == 0 {
-                    crate::mail::create_default_mailboxes(tx, after.id)?;
+                    params![
+                        after.display_name,
+                        if after.role == Role::Admin { "admin" } else { "user" },
+                        if after.role == Role::Service { "service" } else { "person" },
+                        after.quota_bytes,
+                        after.disabled,
+                        after.protocols.smtp,
+                        after.protocols.imap,
+                        after.protocols.jmap,
+                        after.protocols.caldav,
+                        after.protocols.carddav,
+                        after.redirect_to,
+                        after.webmail,
+                        after.id
+                    ],
+                )?;
+                // Switching a protocol back on for an account that never had folders gives it some.
+                if after.has_mailbox() {
+                    let mailboxes: i64 =
+                        tx.query_row("SELECT count(*) FROM mailboxes WHERE account_id = ?1", [after.id], |row| {
+                            row.get(0)
+                        })?;
+                    if mailboxes == 0 {
+                        crate::mail::create_default_mailboxes(tx, after.id)?;
+                    }
                 }
-            }
-            if after.disabled && !before.disabled {
-                tx.execute("DELETE FROM web_sessions WHERE account_id = ?1", [after.id])?;
-            }
-            // Becoming a service: the password it had becomes an app password that does not expire,
-            // and everything that only makes sense for a person in front of a browser goes.
-            if after.role == Role::Service && before.role != Role::Service {
-                become_service(tx, &after)?;
-            }
-            Ok(after)
-        })
-        .await
+                if after.disabled && !before.disabled {
+                    tx.execute("DELETE FROM web_sessions WHERE account_id = ?1", [after.id])?;
+                }
+                // Becoming a service: the password it had becomes an app password that does not expire,
+                // and everything that only makes sense for a person in front of a browser goes.
+                if after.role == Role::Service && before.role != Role::Service {
+                    become_service(tx, &after, &mut granted)?;
+                }
+                Ok((after, granted))
+            })
+            .await?;
+        self.notify_granted(granted);
+        Ok(after)
     }
 
     /// Turns a service back into a person, or a person into a service. The mail stays either way;

@@ -74,6 +74,8 @@ const KNOWN_ACTIONS = new Set([
   "groupRemove",
   "sharedMailboxCreate",
   "sharedMailboxMembers",
+  "sharedMailboxConvert",
+  "sharedMailboxEnd",
 ]);
 
 const AUTH_SOURCES = ["local", "ldap", "oidc"];

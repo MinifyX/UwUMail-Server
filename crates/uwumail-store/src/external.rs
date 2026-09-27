@@ -93,4 +93,41 @@ mod tests {
         let mail = store.authenticate_mail("leni@example.org", "aus-dem-verzeichnis", AppScope::Mail, "imap", "").await;
         assert!(mail.is_err());
     }
+
+    #[tokio::test]
+    async fn a_service_never_takes_the_directory_password() {
+        let (store, _dir) = crate::test_support::store().await;
+        store.create_domain("example.org").await.unwrap();
+        store
+            .create_account(NewAccount {
+                address: "leni@example.org".into(),
+                display_name: "Leni".into(),
+                password: None,
+                role: Role::User,
+                quota_bytes: 0,
+                protocols: None,
+            })
+            .await
+            .unwrap();
+        store.set_auth_source("leni@example.org", "ldap").await.unwrap();
+        store.set_external_passwords(Arc::new(Directory { reachable: true }));
+
+        // Becoming a service cuts the tie to the directory.
+        let service = store.set_account_role("leni@example.org", Role::Service).await.unwrap();
+        assert_eq!(store.auth_source(service.id).await.unwrap(), "local");
+        // A service that became one before that still had the tie: it counts for nothing.
+        store
+            .write(move |tx| {
+                tx.execute("UPDATE accounts SET auth_source = 'ldap' WHERE id = ?1", [service.id])?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        assert!(store.authenticate("leni@example.org", "aus-dem-verzeichnis").await.unwrap().is_none());
+        for protocol in ["imap", "smtp", "jmap", "managesieve"] {
+            let mail =
+                store.authenticate_mail("leni@example.org", "aus-dem-verzeichnis", AppScope::Mail, protocol, "").await;
+            assert!(matches!(mail.unwrap(), MailAuth::Denied(MailAuthDenied::Invalid)), "{protocol}");
+        }
+    }
 }

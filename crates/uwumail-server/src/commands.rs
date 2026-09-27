@@ -292,6 +292,29 @@ pub async fn account(config: &Config, store: &Store, command: AccountCommand) ->
                 println!("{} is a person again. Give them a password with: account password", account.login);
             }
         }
+        AccountCommand::Shared { address, state: Switch::On, members, senders } => {
+            let mut list: Vec<(String, bool)> = members.into_iter().map(|member| (member, false)).collect();
+            list.extend(senders.into_iter().map(|member| (member, true)));
+            let from = match store.account(&address).await? {
+                Some(account) if account.is_service() => "service",
+                Some(_) => "person",
+                None => bail!("there is no account {address}"),
+            };
+            let account = store.make_shared_mailbox(&address, list).await?;
+            let members = store.shared_mailbox_members(account.id).await?;
+            let details = json!({
+                "from": from,
+                "members": members.iter().map(|m| json!({ "login": m.login, "maySend": m.may_send })).collect::<Vec<_>>(),
+            });
+            audit(store, "sharedMailbox.convert", &account.login, details).await;
+            println!("{} is a shared mailbox now, with {} member(s).", account.login, members.len());
+            println!("Nobody signs in to the portal as it; its app passwords keep working.");
+        }
+        AccountCommand::Shared { address, state: Switch::Off, .. } => {
+            let account = store.end_shared_mailbox(&address).await?;
+            audit(store, "sharedMailbox.end", &account.login, json!({})).await;
+            println!("{} is a plain service again; its members no longer see it.", account.login);
+        }
         AccountCommand::Protocols { address, smtp, imap, jmap, calendar, contacts, redirect } => {
             let account = store.account(&address).await?.ok_or_else(|| anyhow::anyhow!("no account {address}"))?;
             let switch = |wanted: Option<Switch>, current: bool| wanted.map_or(current, |state| state == Switch::On);

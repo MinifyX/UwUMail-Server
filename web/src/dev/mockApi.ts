@@ -4603,6 +4603,45 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   [
+    "POST",
+    /^\/api\/admin\/people\/([^/]+)\/shared-mailbox$/,
+    (body, [login]) => {
+      const found = people.find((entry) => entry.login === login);
+      if (!found) return problem(404, "notFound");
+      if (login === "lorin@uwu.example") return problem(409, "notYourself");
+      if (found.sharedMailbox) return problem(409, "sharedMailbox");
+      const members = (body as { members: { login: string; maySend: boolean }[] }).members;
+      if (members.some((member) => member.login === found.login)) return problem(422, "invalid");
+      const from = found.role === "service" ? "service" : "person";
+      found.role = "service";
+      found.sharedMailbox = true;
+      if (!found.hasMailbox) {
+        found.protocols = { ...found.protocols, imap: true, jmap: true };
+        found.hasMailbox = true;
+      }
+      sharedMembers[found.login] = members.map((member, index) => ({
+        id: index + 1,
+        login: member.login,
+        name: people.find((entry) => entry.login === member.login)?.name ?? "",
+        maySend: member.maySend,
+      }));
+      log("sharedMailbox.convert", found.login, { from, members });
+      return [200, { person: found, members: sharedMembers[found.login] }];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/admin\/people\/([^/]+)\/shared-mailbox$/,
+    (_body, [login]) => {
+      const found = people.find((entry) => entry.login === login && entry.sharedMailbox);
+      if (!found) return problem(404, "notFound");
+      found.sharedMailbox = false;
+      delete sharedMembers[found.login];
+      log("sharedMailbox.end", found.login, {});
+      return [200, found];
+    },
+  ],
+  [
     "PUT",
     /^\/api\/admin\/domains\/([^/]+)\/self-service$/,
     (body, [name]) => {

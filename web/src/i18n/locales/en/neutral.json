@@ -514,7 +514,8 @@
       "subscriptionLimit": "You have as many subscribed calendars as possible.",
       "subscriptionExists": "You are subscribed to this calendar already.",
       "refreshPause": "Just fetched. Try again in a minute.",
-      "sharedMailbox": "This is a shared mailbox: nobody signs in to it, its members use it from their own accounts.",
+      "sharedMailbox": "This is a shared mailbox: it has app passwords but no password, and its members use it from their own accounts.",
+      "sharedMailboxNeedsMailbox": "A shared mailbox keeps its mail: IMAP or JMAP has to stay on.",
       "maskedDomain": "No domain on this server is open for masked addresses yet. Ask the admin.",
       "maskedLimit": "You have as many masked addresses as this server allows. Delete some you no longer need.",
       "maskedPrefix": "A prefix may only have letters a–z, digits and _, up to 64 of them.",
@@ -762,7 +763,7 @@
   },
   "sharedMailboxes": {
     "title": "Shared mailboxes",
-    "explain": "A mailbox several people use, like support@. Nobody signs in to it; its members see it next to their own folders and may answer as it.",
+    "explain": "A mailbox several people use, like support@. Nobody signs in to the portal or the webmail as it; its members see it next to their own folders and may answer as it, and programs reach it with app passwords.",
     "create": "New shared mailbox",
     "createIntro": "It gets its own address and storage; mail to it lands in its inbox for all members.",
     "name": "Name",
@@ -775,9 +776,20 @@
     "maySend": "may send",
     "save": "Save members",
     "pill": "Shared mailbox",
+    "convert": "Turn into a shared mailbox",
+    "convertHint": "Several people use it from their own accounts. The mail stays.",
+    "convertTitle": "Turn {{login}} into a shared mailbox?",
+    "convertBodyPerson": "The mail, folders and addresses stay. Nobody signs in to the portal or the webmail as it anymore: two-factor sign-in, passkeys and open sessions are removed, and the password so far lives on as an app password that never expires, so mail apps keep working. Folders others shared with it and shared mailboxes it used are gone.",
+    "convertBodyService": "The mail, folders, addresses and app passwords stay. Its members see every folder of it from their own accounts.",
+    "end": "Make it a plain service",
+    "endHint": "Its members no longer see it. Mail, addresses and app passwords stay.",
+    "endTitle": "Make {{login}} a plain service again?",
+    "endBody": "Its members lose its folders and can no longer send with its addresses. The mail, the addresses and the app passwords stay; members can be added again any time by turning it back into a shared mailbox.",
     "toasts": {
       "created": "{{address}} created",
-      "saved": "Members saved"
+      "saved": "Members saved",
+      "converted": "{{login}} is a shared mailbox now",
+      "ended": "{{login}} is a plain service again"
     }
   },
   "log": {
@@ -854,7 +866,9 @@
       "groupUpdate": "{{actor}} changed the group {{target}}",
       "groupRemove": "{{actor}} removed the group {{target}}",
       "sharedMailboxCreate": "{{actor}} created the shared mailbox {{target}}",
-      "sharedMailboxMembers": "{{actor}} changed the members of the shared mailbox {{target}}"
+      "sharedMailboxMembers": "{{actor}} changed the members of the shared mailbox {{target}}",
+      "sharedMailboxConvert": "{{actor}} turned {{target}} into a shared mailbox",
+      "sharedMailboxEnd": "{{actor}} made the shared mailbox {{target}} a plain service"
     },
     "details": {
       "adminOn": "is now an admin",

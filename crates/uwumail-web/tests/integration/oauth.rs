@@ -412,3 +412,31 @@ async fn refused_codes_and_tokens_are_counted_per_network() {
     // Logging in to the portal from the same network is another matter.
     login(&app).await;
 }
+
+#[tokio::test]
+async fn apps_signed_in_with_oauth_end_when_the_mailbox_becomes_a_service() {
+    let (app, store, _dir) = setup().await;
+    let (_, client) = register(&app, json!([REDIRECT])).await;
+    let client_id = client["client_id"].as_str().unwrap().to_owned();
+    let auth = login(&app).await;
+    let query = authorize_query(&client_id, &[]);
+    let code = allow(&app, &auth, &query).await;
+    let (_, tokens) = redeem(&app, &client_id, &code, VERIFIER, "http://127.0.0.1:41234/callback").await;
+    let access = tokens["access_token"].as_str().unwrap().to_owned();
+    let refresh = tokens["refresh_token"].as_str().unwrap().to_owned();
+    assert_eq!(bearer(&app, "/oauth/userinfo", &access).await.0, StatusCode::OK);
+
+    let mini = store.make_shared_mailbox("mini@example.org", Vec::new()).await.unwrap();
+    assert!(store.oauth_grants(mini.id).await.unwrap().is_empty(), "the grants went with the person");
+    assert_eq!(bearer(&app, "/oauth/userinfo", &access).await.0, StatusCode::UNAUTHORIZED);
+    let (status, _) = form(
+        &app,
+        "/oauth/token",
+        &[("grant_type", "refresh_token"), ("client_id", &client_id), ("refresh_token", &refresh)],
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    // Nor does the consent page open for it: the portal session is gone.
+    let (status, _) = portal(&app, "GET", &format!("/api/oauth/authorize?{query}"), Value::Null, &auth).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}

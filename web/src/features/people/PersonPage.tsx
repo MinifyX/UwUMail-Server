@@ -43,7 +43,7 @@ import { toast } from "@/state/toasts";
 import { ConfirmCloseSecretDialog } from "@/components/ui/ConfirmCloseSecretDialog";
 import { LinkBox, QuotaSelect } from "./CreatePersonDialog";
 import { AdminPill, PersonAvatar, ServicePill, StatusPill, StorageLine } from "./PersonBits";
-import { SharedMailboxPill, SharedMembersCard } from "./SharedMailboxes";
+import { ConvertToShared, EndShared, SharedMailboxPill, SharedMembersCard } from "./SharedMailboxes";
 import {
   useAddAlias,
   useCreatePasswordLink,
@@ -980,6 +980,8 @@ export function PersonPage({ login, session }: { login: string; session: Session
               </Field>
               <StorageLine person={person} />
               {!isMe && !person.sharedMailbox && <Convert person={person} />}
+              {!isMe && !person.sharedMailbox && <ConvertToShared person={person} />}
+              {person.sharedMailbox && <EndShared person={person} />}
             </div>
           )}
         </Card>
@@ -994,13 +996,12 @@ export function PersonPage({ login, session }: { login: string; session: Session
           />
         )}
 
-        {!deleted && !person.sharedMailbox && <ProtocolCard person={person} />}
+        {!deleted && <ProtocolCard person={person} />}
 
-        {!deleted &&
-          !person.sharedMailbox &&
-          (person.role === "service" ? <ServiceAccess person={person} /> : <Access person={person} />)}
+        {/* A shared mailbox is a service with members: programs get in with its app passwords. */}
+        {!deleted && (person.role === "service" ? <ServiceAccess person={person} /> : <Access person={person} />)}
 
-        {!deleted && !person.sharedMailbox && <SecurityInfo person={person} isMe={isMe} />}
+        {!deleted && <SecurityInfo person={person} isMe={isMe} />}
 
         {!deleted && person.role !== "service" && <PersonOAuthApps person={person} />}
 

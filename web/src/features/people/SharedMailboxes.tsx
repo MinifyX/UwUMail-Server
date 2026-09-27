@@ -1,4 +1,4 @@
-import { Inbox, Plus, Save } from "lucide-react";
+import { Bot, Inbox, Plus, Save } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -12,7 +12,14 @@ import { toast } from "@/state/toasts";
 import { QuotaSelect } from "./CreatePersonDialog";
 import { MemberPicker, memberChoices, type PickedMember } from "./MemberPicker";
 import { PersonAvatar, StorageLine } from "./PersonBits";
-import { useCreateSharedMailbox, useDomains, usePeople, useSetSharedMembers } from "./queries";
+import {
+  useCreateSharedMailbox,
+  useDomains,
+  useEndSharedMailbox,
+  useMakeSharedMailbox,
+  usePeople,
+  useSetSharedMembers,
+} from "./queries";
 
 const personUrl = (login: string) => `/admin/people/${encodeURIComponent(login)}`;
 
@@ -123,7 +130,7 @@ function CreateSharedMailboxDialog({ open, onClose }: { open: boolean; onClose: 
   );
 }
 
-/** Shared mailboxes, apart from the people: nobody signs in to them, their members use them. */
+/** Shared mailboxes, apart from the people: nobody signs in to the portal as them, their members use them. */
 export function SharedMailboxesSection({ people }: { people: Person[] }) {
   const { t } = useT();
   const [creating, setCreating] = useState(false);
@@ -196,5 +203,108 @@ export function SharedMembersCard({ person }: { person: Person }) {
         </div>
       </div>
     </Card>
+  );
+}
+
+/** Turns a person or a service into a shared mailbox. The mail, folders and addresses stay. */
+export function ConvertToShared({ person }: { person: Person }) {
+  const { t } = useT();
+  const errorText = useErrorText();
+  const people = usePeople();
+  const [asking, setAsking] = useState(false);
+  const [members, setMembers] = useState<PickedMember[]>([]);
+  const convert = useMakeSharedMailbox(person.login, t("sharedMailboxes.toasts.converted", { login: person.login }));
+  const from = person.role === "service" ? "Service" : "Person";
+  const close = () => {
+    setAsking(false);
+    setMembers([]);
+    convert.reset();
+  };
+  return (
+    <div className="flex flex-col items-start gap-2 border-t border-hairline pt-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <p className="min-w-0 flex-1 text-[13px] text-muted">{t("sharedMailboxes.convertHint")}</p>
+      <Button icon={Inbox} onClick={() => setAsking(true)}>
+        {t("sharedMailboxes.convert")}
+      </Button>
+      <Dialog
+        open={asking}
+        onClose={close}
+        title={t("sharedMailboxes.convertTitle", { login: person.login })}
+        closeOnOutsideClick={false}
+      >
+        <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
+          <p className="text-sm text-muted">{t(`sharedMailboxes.convertBody${from}`)}</p>
+          <Field label={t("sharedMailboxes.members")} hint={t("sharedMailboxes.membersHint")}>
+            {() => (
+              <MemberPicker
+                // Never a member of itself.
+                people={memberChoices(people.data, false).filter((choice) => choice.login !== person.login)}
+                value={members}
+                onChange={setMembers}
+                sendLabel={t("sharedMailboxes.maySend")}
+              />
+            )}
+          </Field>
+          {convert.isError && (
+            <p role="alert" className="text-[13px] text-danger">
+              {errorText(convert.error)}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button onClick={close}>{t("common.cancel")}</Button>
+            <Button
+              variant="primary"
+              icon={Inbox}
+              busy={convert.isPending}
+              onClick={() => convert.mutate(members, { onSuccess: close })}
+            >
+              {t("sharedMailboxes.convert")}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    </div>
+  );
+}
+
+/** Turns a shared mailbox back into a plain service: the members lose it, its app passwords stay. */
+export function EndShared({ person }: { person: Person }) {
+  const { t } = useT();
+  const errorText = useErrorText();
+  const [asking, setAsking] = useState(false);
+  const end = useEndSharedMailbox(person.login, () => t("sharedMailboxes.toasts.ended", { login: person.login }));
+  return (
+    <div className="flex flex-col items-start gap-2 border-t border-hairline pt-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <p className="min-w-0 flex-1 text-[13px] text-muted">{t("sharedMailboxes.endHint")}</p>
+      <Button icon={Bot} onClick={() => setAsking(true)}>
+        {t("sharedMailboxes.end")}
+      </Button>
+      <Dialog
+        open={asking}
+        onClose={() => setAsking(false)}
+        title={t("sharedMailboxes.endTitle", { login: person.login })}
+        width="sm"
+      >
+        <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
+          <p className="text-sm text-muted">{t("sharedMailboxes.endBody")}</p>
+          {end.isError && (
+            <p role="alert" className="text-[13px] text-danger">
+              {errorText(end.error)}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setAsking(false)}>{t("common.cancel")}</Button>
+            <Button
+              variant="primary"
+              icon={Bot}
+              busy={end.isPending}
+              onClick={() => end.mutate(undefined, { onSuccess: () => setAsking(false) })}
+            >
+              {t("sharedMailboxes.end")}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    </div>
   );
 }
