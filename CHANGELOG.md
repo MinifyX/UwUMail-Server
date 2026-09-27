@@ -3,6 +3,162 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.14.0
+
+The "Later" list of the roadmap, almost all of it in one release.
+
+**Moving from another provider** ([docs/moving.md](docs/moving.md)), under *My account → Moving*:
+the old address and its password (an app password where the provider wants one) are all it takes.
+The server finds the provider's IMAP server the way fetched mailboxes do, logs in once, and copies
+every folder in the background with its dates and read, flagged and answered marks. The special
+folders go into ours, and nothing comes twice (by Message-ID or content, so a Gmail message with
+several labels comes once). It works in five-minute turns, continues after a restart, and pauses
+with a plain reason when the mailbox here is full or the password was refused. *Sync again* later
+fetches only what arrived since, and *Done, delete login* forgets the sealed password. Gmail,
+Outlook.com, GMX and WEB.DE get hints about app passwords and switching IMAP on. It connects only
+over TLS to public addresses, through the egress proxy when fetching takes it, and starting or
+continuing a move is limited to ten an hour per person.
+
+**Groups, shared mailboxes and masked addresses** ([docs/groups.md](docs/groups.md),
+[docs/jmap-masked-email.md](docs/jmap-masked-email.md)):
+
+- **Groups** (*Accounts & domains → a domain → Groups*): one address such as `info@` or `vorstand@`
+  for several people.
+  - Every member gets the mail in their own mailbox, with their own spam filter, sender lists, Sieve
+    rules and forwarding. A full mailbox is only that member's loss.
+  - A group can be open to anyone, only to its members, or only to its domain. Other senders are
+    refused with `550 5.7.1`, and mail from elsewhere must pass SPF or DKIM to claim a member's
+    address.
+  - Members can be allowed to send as the group, and find its address among their identities.
+  - Over JMAP, groups are principals of type `group`.
+- **Shared mailboxes** (*Accounts → Shared mailboxes → New shared mailbox*): a mailbox such as
+  `support@` with its own storage that nobody signs in to.
+  - Its members see every folder of it, new ones included: in mail apps under `Shared/<address>/`,
+    and in the webmail as an account of its own.
+  - Members who may send answer with its address, and a copy lands in its Sent folder.
+- **Masked addresses** (*My account → Masked addresses*, once an admin opens a domain for them): a
+  random address like `maple.otter482@example.org` for each website.
+  - On, it delivers to the Inbox. Off, mail goes quietly to the Trash. Deleted, mail is refused, and
+    the address is never handed out again.
+  - Password managers can make them through Fastmail's JMAP MaskedEmail extension
+    (`https://www.fastmail.com/dev/maskedemail`). Addresses they made that get no mail within a day
+    go away by themselves.
+  - One can reply as a masked address.
+
+**Signing in with OAuth** ([docs/oauth.md](docs/oauth.md)): mail apps that speak OAuth sign in
+without an app password. The server is an OAuth 2.0 / OpenID Connect provider: apps register
+themselves (public clients only), open the portal, where the person logs in as always – second
+factor and passkey included – and agrees, and get an access token for an hour and a refresh token
+that is swapped on every use; one that comes back after it was swapped ends the sign-in and the
+person gets a mail. PKCE (S256) is required, redirect addresses are https, the device itself or
+an app scheme, and tokens are kept as hashes only. IMAP, SMTP submission and ManageSieve take the
+token as OAUTHBEARER or XOAUTH2, JMAP, CalDAV and CardDAV as a Bearer token, each within the
+scopes `mail`, `smtp` and `dav`. Every app shows up under *My account → Security* and on the
+person's page for admins, and can be signed out there.
+
+**Logging in with OpenID Connect or LDAP** ([docs/login-oidc-ldap.md](docs/login-oidc-ldap.md)),
+under *Server → Settings → Login*:
+
+- **OpenID Connect:** a *Log in with …* button for Authentik, Keycloak, Authelia and the like.
+  The code flow with PKCE, state and nonce; the ID token is checked against the provider's keys.
+  A login finds its account by the provider's subject, the first time by a verified address, and
+  can make new accounts in chosen domains, admins by a group claim. A second factor set up here
+  is still asked for. Requests leave over https to public addresses only.
+- **LDAP:** the directory's password in the normal login form (ldaps or STARTTLS), found by a DN
+  template or a search with a service account, with filters and names escaped and empty passwords
+  never sent. Accounts can be made at the first login or moved to the directory by an admin; mail
+  apps may use the directory password as long as main passwords are allowed.
+- Both have a *Test connection* button. Secrets from the admin panel (these, and the relay, Loki
+  and proxy passwords) are now stored sealed in the database.
+
+**New mail with the app or the browser closed** ([docs/jmap-push.md](docs/jmap-push.md)): the server
+now speaks JMAP `PushSubscription` (RFC 8620, 7.2). The webmail uses it for notifications with the
+tab closed, and the Android app uses it through a UnifiedPush distributor instead of a foreground
+service.
+
+- **What leaves the server:** only which data changed and its new state, never a sender or a
+  subject. The message is encrypted for the device (RFC 8291) and signed with the server's own key
+  (VAPID, RFC 8292), which the JMAP session announces (RFC 9749).
+- **How subscriptions work:** each new subscription must first send back a code the server pushed to
+  it. It lasts a week at a time and is renewed by the app. It belongs to the login that made it (the
+  webmail's session, an app password or the password) and ends with it.
+- **When pushes go out:** changes are bundled for two seconds, with at most one push every five
+  seconds. New mail (unread, not in drafts, sent, junk or trash) arrives as `EmailDelivery` with
+  high urgency.
+- **Where they go:** only to public `https://` addresses, straight from the server, without
+  redirects. A push service that no longer knows a subscription (404, 410) ends it; other failures
+  are tried again later.
+- **Webmail files:** its service worker is served at `/mail/sw.js`, always fresh and allowed to talk
+  to this server only.
+
+**Backups to S3 or a folder, and single mailboxes back** ([docs/backups.md](docs/backups.md)):
+besides an SFTP server, backups now go to an S3 bucket (Amazon, MinIO, Backblaze B2, Hetzner Object
+Storage, Wasabi and others; free endpoint, path or virtual-host style, Signature Version 4, plain
+http only inside the own network) or to a folder such as a mounted disk. Settings from before stay
+SFTP. Under *Server → Overview → Backups → Restore one mailbox* an admin opens a snapshot, picks a
+person and all or some folders, and their mail comes back while the server keeps running, into a new
+folder "Restored <date>" next to what is there, checked against its hash and without anything the
+mailbox still has. For admins the same as `uwumail-server backup restore-mailbox --account LOGIN
+[--folder …]`. `backup restore` also takes `--s3 s3://bucket/folder` and `--folder PATH`.
+
+**A calmer server overview, alerts and statistics** ([docs/admin-alerts.md](docs/admin-alerts.md)):
+
+- **Simple or everything:** each admin chooses at the top of *Server → Overview*. *Simple* is one
+  traffic light made of every health area and open alert, only what is yellow or red with what to
+  do about it, and shortcuts to people, domains and backups; the rest of the menu folds away under
+  *More*. Admins who never chose keep seeing everything.
+- **Alerts:** every five minutes the server looks at itself — the health areas (DNS, TLS and DMARC
+  reports, certificate, sending, queue, disk, virus scanner, second factors) plus failed or old
+  backups and certificate renewals failing for a day — and keeps what it finds as alerts. Admins
+  get a mail in their own language and tone when something is new or gets worse, once a day while
+  it stays red (until someone clicks *Got it*), and once more when it is fine again; each admin
+  picks all, only problems, or none.
+- **Statistics** under *Server → Statistics*: mail received and turned away (unknown recipients,
+  spam, viruses, rules, greylisting), sent, delivered, retried and given up, failed logins per
+  protocol and storage, for 30 days or 12 months as bar charts and as a table. Only numbers per
+  day are kept, for 400 days.
+- **Prometheus metrics** ([docs/metrics.md](docs/metrics.md)): `GET /metrics` with accounts,
+  domains, storage and disk, queue, the statistics' counters, health per area, open alerts,
+  certificate expiry, last backup, uptime and version. Off by default; switched on under
+  *Server → Statistics* or with `[metrics]`, it needs a bearer token (`metrics.token`), allowed
+  networks (`metrics.allowed_networks`) or both, and never answers everyone.
+
+**TLS reports to other domains and DANE** ([docs/tls-reports.md](docs/tls-reports.md)):
+
+- **Reports we send:** every delivery to another domain's mail server counts by the day, with the
+  policy it followed (MTA-STS, DANE or none) and whether TLS worked. Once the day is over, domains
+  that ask for it with a `_smtp._tls` record get a TLS report (RFC 8460): by mail from
+  `noreply-tls-reports@` your domain, DKIM-signed, or posted to their https address, to public
+  addresses only. Your own domains never get one. *Accounts & domains → Reports → Reports we send*
+  lists what went out and why a report could not be sent; `[reports] send_tls_reports` (on) switches
+  it off.
+- **DANE for mail we send:** domains whose MX records and TLSA records validate with DNSSEC get
+  their
+  mail only over STARTTLS with the certificate those records name (DANE-EE or DANE-TA, before
+  MTA-STS). Records that do not validate hold the mail back instead of sending it unchecked; a
+  resolver that strips DNSSEC only turns DANE off, with a note in the log.
+- **DANE for mail to us:** in a DNSSEC-signed zone the DNS check recommends `TLSA 3 1 1` for the
+  server's key, and Let's Encrypt renewals now keep that key so the record stays valid. A published
+  record that no longer matches the certificate turns the overview red, and the portal reminds you
+  to publish the new record before the key ever changes.
+
+Migrations 0040 to 0046 add the tables of moves from other providers (0040), groups and shared
+mailboxes (0041), masked addresses (0042), TLS report counts and sent reports (0043), OAuth apps,
+sign-ins, tokens and logins at other providers (0044), daily statistics and alerts (0045) and push
+subscriptions (0046).
+
+**Updating.** `cd /opt/uwumail && sudo bash update.sh`, or *Update now* under *Server → Updates*, is
+all it takes: the migrations run by themselves when the server starts, and there is nothing to set.
+A few things work from the start: the statistics count, admins get alert mails (the first look after
+the update may send one about what was already yellow or red; each admin picks *All*, *Only
+problems* or *None* below the alerts on the overview), mail to domains with DANE records is sent
+DANE-checked, and domains that ask for TLS reports get them (`[reports] send_tls_reports` turns that
+off). Everything else waits to be switched on or used. Secrets saved in the admin panel from now on
+are stored sealed, so going back to 0.13 afterwards means entering them again. The webmail moves to
+the merge commit of its pull request #9, which brings notifications with the tab closed, also for
+mail in shared mailboxes. The UwUMail app 0.5.0-beta.4 uses the new push on Android through
+UnifiedPush.
+
 ## 0.13.0
 
 **Calendars and contacts from elsewhere** ([docs/calendar-import.md](docs/calendar-import.md)), under

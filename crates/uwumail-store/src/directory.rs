@@ -191,12 +191,15 @@ pub struct Account {
     /// Whether this account may open its mailbox in the browser. Its own switch, not a protocol:
     /// see migration 0028.
     pub webmail: bool,
+    /// A mailbox several people use (docs/groups.md). Stored as a service; nobody signs in to it,
+    /// its members reach its folders from their own accounts.
+    pub shared_mailbox: bool,
 }
 
 impl Account {
     /// Whether a password of this account counts at all, for any protocol.
     pub fn can_log_in(&self) -> bool {
-        !self.disabled && self.deleted_at.is_none()
+        !self.disabled && self.deleted_at.is_none() && !self.shared_mailbox
     }
 
     pub fn is_service(&self) -> bool {
@@ -246,9 +249,9 @@ pub struct NewAccount {
 
 pub(crate) const ACCOUNT_COLUMNS: &str = "id, login, display_name, role, quota_bytes, used_bytes, disabled, \
      created_at, deleted_at, credentials_changed_at, kind, smtp_enabled, imap_enabled, jmap_enabled, \
-     caldav_enabled, carddav_enabled, redirect_to, webmail_enabled";
+     caldav_enabled, carddav_enabled, redirect_to, webmail_enabled, shared_mailbox";
 /// Number of columns in [`ACCOUNT_COLUMNS`]; extra columns of a query start here.
-pub(crate) const ACCOUNT_COLUMN_COUNT: usize = 18;
+pub(crate) const ACCOUNT_COLUMN_COUNT: usize = 19;
 
 pub(crate) fn account_from_row(row: &Row<'_>) -> rusqlite::Result<Account> {
     Ok(Account {
@@ -271,6 +274,7 @@ pub(crate) fn account_from_row(row: &Row<'_>) -> rusqlite::Result<Account> {
         },
         redirect_to: row.get(16)?,
         webmail: row.get(17)?,
+        shared_mailbox: row.get(18)?,
     })
 }
 
@@ -284,6 +288,31 @@ pub(crate) fn account_id(conn: &Connection, login: &str) -> Result<i64> {
     conn.query_row("SELECT id FROM accounts WHERE login = ?1", [login], |row| row.get(0))
         .optional()?
         .ok_or_else(|| StoreError::NotFound(format!("account {login}")))
+}
+
+/// Refuses an address someone deleted themselves recently: it stays theirs for a while. `for_account`
+/// is the account that would take it, which may take its own back.
+pub(crate) fn check_not_released(
+    conn: &Connection,
+    local: &str,
+    domain_id: i64,
+    for_account: Option<i64>,
+) -> Result<()> {
+    let reserved_for: Option<i64> = conn
+        .query_row(
+            "SELECT account_id FROM released_addresses WHERE local_part = ?1 AND domain_id = ?2 AND released_at >= ?3",
+            params![local, domain_id, now() - crate::RELEASED_ADDRESS_SECS],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if reserved_for.is_some_and(|owner| Some(owner) != for_account) {
+        let domain: String = conn.query_row("SELECT name FROM domains WHERE id = ?1", [domain_id], |row| row.get(0))?;
+        return Err(StoreError::Rule {
+            code: "addressReserved",
+            message: format!("{local}@{domain} was deleted recently and is still reserved"),
+        });
+    }
+    Ok(())
 }
 
 pub(crate) fn login_key(address: &str) -> Result<String> {
@@ -329,6 +358,15 @@ pub(crate) fn resolve(conn: &Connection, address: &str) -> Result<Option<i64>> {
         && let Some(id) = lookup(base)?
     {
         return Ok(Some(id));
+    }
+    // A masked address delivers to its owner until it is deleted; a deleted one takes nothing,
+    // and no catch-all takes its mail either, or it would not be gone.
+    if let Some(masked) = crate::masked::find(conn, &local, domain_id)? {
+        return Ok(masked.delivers_to());
+    }
+    // A group has no account of its own: its members are looked up where mail is delivered.
+    if crate::groups::find(conn, &local, domain_id)?.is_some() {
+        return Ok(None);
     }
     if crate::forward_addresses::forward_targets(conn, &local, domain_id)?.is_some() {
         return Ok(None);
@@ -389,9 +427,13 @@ impl Store {
         let name = normalize_domain(name)?;
         self.write(move |tx| {
             let id = domain_id(tx, &name)?;
+            // Deleted masked addresses only keep their name from being handed out again; they
+            // go with the domain.
             let in_use: i64 = tx.query_row(
                 "SELECT (SELECT count(*) FROM addresses WHERE domain_id = ?1)
-                      + (SELECT count(*) FROM forward_addresses WHERE domain_id = ?1)",
+                      + (SELECT count(*) FROM forward_addresses WHERE domain_id = ?1)
+                      + (SELECT count(*) FROM groups WHERE domain_id = ?1)
+                      + (SELECT count(*) FROM masked_addresses WHERE domain_id = ?1 AND state <> 'deleted')",
                 [id],
                 |r| r.get(0),
             )?;
@@ -633,6 +675,7 @@ impl Store {
                 protocols,
                 redirect_to: String::new(),
                 webmail: true,
+                shared_mailbox: false,
             })
         })
         .await
@@ -693,14 +736,25 @@ impl Store {
 
     pub async fn delete_account(&self, login: &str) -> Result<()> {
         let login = login_key(login)?;
-        self.write(move |tx| {
-            let id = account_id(tx, &login)?;
-            // Threads are only referenced by emails of the same account.
-            tx.execute("DELETE FROM emails WHERE account_id = ?1", [id])?;
-            tx.execute("DELETE FROM accounts WHERE id = ?1", [id])?;
-            Ok(())
-        })
-        .await
+        let granted = self
+            .write(move |tx| {
+                let id = account_id(tx, &login)?;
+                // The members of a shared mailbox lose the identities it gave them, once it is gone.
+                let members = crate::shared_mailboxes::sending_members(tx, id)?;
+                // Threads are only referenced by emails of the same account.
+                tx.execute("DELETE FROM emails WHERE account_id = ?1", [id])?;
+                tx.execute("DELETE FROM accounts WHERE id = ?1", [id])?;
+                let mut granted = crate::identity_grants::Granted::default();
+                for (member, addresses) in members {
+                    for address in addresses {
+                        crate::identity_grants::revoke_identities(tx, member, &address, &mut granted)?;
+                    }
+                }
+                Ok(granted)
+            })
+            .await?;
+        self.notify_granted(granted);
+        Ok(())
     }
 
     pub async fn set_password(&self, login: &str, new_password: &str) -> Result<()> {
@@ -734,25 +788,39 @@ impl Store {
         .await
     }
 
-    /// Checks a login and password. Unknown logins take as long as wrong passwords.
+    /// Checks a login and password. Unknown logins take as long as wrong passwords. Accounts whose
+    /// password lives in the directory (`auth_source = 'ldap'`) are checked there.
     pub async fn authenticate(&self, login: &str, password: &str) -> Result<Option<Account>> {
         let login = login_key(login).unwrap_or_default();
         let found = self
             .read(move |conn| {
                 Ok(conn
                     .query_row(
-                        &format!("SELECT {ACCOUNT_COLUMNS}, password_hash FROM accounts WHERE login = ?1"),
+                        &format!("SELECT {ACCOUNT_COLUMNS}, password_hash, auth_source FROM accounts WHERE login = ?1"),
                         [login],
-                        |row| Ok((account_from_row(row)?, row.get::<_, Option<String>>(ACCOUNT_COLUMN_COUNT)?)),
+                        |row| {
+                            Ok((
+                                account_from_row(row)?,
+                                row.get::<_, Option<String>>(ACCOUNT_COLUMN_COUNT)?,
+                                row.get::<_, String>(ACCOUNT_COLUMN_COUNT + 1)?,
+                            ))
+                        },
                     )
                     .optional()?)
             })
             .await?;
-        let (typed, stored) = (password.to_owned(), found.as_ref().and_then(|(_, hash)| hash.clone()));
+        if let Some((account, _, source)) = &found
+            && source == "ldap"
+        {
+            // Unreachable is no reason to let anyone in; the check itself logged why.
+            let valid = self.check_external_password(&account.login, password).await.unwrap_or(false);
+            return Ok((valid && account.can_log_in()).then(|| account.clone()));
+        }
+        let (typed, stored) = (password.to_owned(), found.as_ref().and_then(|(_, hash, _)| hash.clone()));
         let valid = tokio::task::spawn_blocking(move || password::verify(&typed, stored.as_deref()))
             .await
             .map_err(|err| StoreError::Internal(err.to_string()))?;
-        let Some((account, hash)) = found.filter(|(account, _)| valid && account.can_log_in()) else {
+        let Some((account, hash, _)) = found.filter(|(account, _, _)| valid && account.can_log_in()) else {
             return Ok(None);
         };
         if let Some(old) = hash.filter(|hash| password::is_imported(hash)) {
@@ -767,20 +835,7 @@ impl Store {
         self.write(move |tx| {
             let domain_id = domain_id(tx, &domain)?;
             let account_id = account_id(tx, &login)?;
-            // Someone who deleted this alias themselves keeps it for a while.
-            let reserved_for: Option<i64> = tx
-                .query_row(
-                    "SELECT account_id FROM released_addresses WHERE local_part = ?1 AND domain_id = ?2 AND released_at >= ?3",
-                    params![local, domain_id, now() - crate::RELEASED_ADDRESS_SECS],
-                    |row| row.get(0),
-                )
-                .optional()?;
-            if reserved_for.is_some_and(|owner| owner != account_id) {
-                return Err(StoreError::Rule {
-                    code: "addressReserved",
-                    message: format!("{local}@{domain} was deleted recently and is still reserved"),
-                });
-            }
+            check_not_released(tx, &local, domain_id, Some(account_id))?;
             if crate::forward_addresses::address_in_use(tx, &local, domain_id)? {
                 return Err(StoreError::Conflict(format!("address {local}@{domain}")));
             }
@@ -795,25 +850,42 @@ impl Store {
                 }
                 other => other.into(),
             })?;
-            Ok(())
+            // Members who send for a shared mailbox answer from its new address too.
+            let mut granted = crate::identity_grants::Granted::default();
+            crate::shared_mailboxes::address_changed(tx, account_id, &format!("{local}@{domain}"), true, &mut granted)?;
+            Ok(granted)
         })
         .await
+        .map(|granted| self.notify_granted(granted))
     }
 
     pub async fn remove_alias(&self, address: &str) -> Result<()> {
         let (local, domain) = normalize_address(address)?;
-        self.write(move |tx| {
-            let domain_id = domain_id(tx, &domain)?;
-            let removed = tx.execute(
-                "DELETE FROM addresses WHERE local_part = ?1 AND domain_id = ?2 AND kind = 'alias'",
-                params![local, domain_id],
-            )?;
-            if removed == 0 {
-                return Err(StoreError::NotFound(format!("alias {local}@{domain}")));
-            }
-            Ok(())
-        })
-        .await
+        let granted = self
+            .write(move |tx| {
+                let domain_id = domain_id(tx, &domain)?;
+                let Some(account_id): Option<i64> = tx
+                    .query_row(
+                        "SELECT account_id FROM addresses WHERE local_part = ?1 AND domain_id = ?2 AND kind = 'alias'",
+                        params![local, domain_id],
+                        |row| row.get(0),
+                    )
+                    .optional()?
+                else {
+                    return Err(StoreError::NotFound(format!("alias {local}@{domain}")));
+                };
+                tx.execute(
+                    "DELETE FROM addresses WHERE local_part = ?1 AND domain_id = ?2 AND kind = 'alias'",
+                    params![local, domain_id],
+                )?;
+                let mut granted = crate::identity_grants::Granted::default();
+                let address = format!("{local}@{domain}");
+                crate::shared_mailboxes::address_changed(tx, account_id, &address, false, &mut granted)?;
+                Ok(granted)
+            })
+            .await?;
+        self.notify_granted(granted);
+        Ok(())
     }
 
     /// All addresses of an account, primary address first.

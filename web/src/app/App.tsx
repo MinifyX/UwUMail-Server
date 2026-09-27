@@ -6,12 +6,15 @@ import { Toaster } from "@/components/ui/Toaster";
 import { AccountHome } from "@/features/account/AccountHome";
 import { CalendarsPage } from "@/features/calendars/CalendarsPage";
 import { FetchPage } from "@/features/fetch/FetchPage";
+import { MovingPage } from "@/features/moving/MovingPage";
 import { AddressesPage } from "@/features/addresses/AddressesPage";
+import { MaskedPage } from "@/features/masked/MaskedPage";
 import { SERVER_PATHS, ServerPage, type ServerTab } from "@/features/admin/ServerPage";
 import { DomainPage } from "@/features/domains/DomainPage";
 import { ForwardConfirmPage } from "@/features/mailbox/ForwardConfirmPage";
 import { MailboxPage } from "@/features/mailbox/MailboxPage";
 import { LoginPage } from "@/features/login/LoginPage";
+import { OAuthConsentPage } from "@/features/oauth/OAuthConsentPage";
 import { PROTOCOLS_PATHS, ProtocolsPage, type ProtocolsTab } from "@/features/logs/ProtocolsPage";
 import { PasswordPage } from "@/features/password/PasswordPage";
 import { DIRECTORY_PATHS, DirectoryPage, type DirectoryTab } from "@/features/people/DirectoryPage";
@@ -69,7 +72,9 @@ function page(path: string, session: Session): ReactNode {
   if (path === "/account/security") return <SecurityPage session={session} />;
   if (path === "/account/mail") return <MailboxPage />;
   if (path === "/account/fetch") return <FetchPage />;
+  if (path === "/account/moving") return <MovingPage />;
   if (path === "/account/addresses") return <AddressesPage />;
+  if (path === "/account/masked") return <MaskedPage />;
   if (path === "/account/calendars") return <CalendarsPage />;
   if (path === "/account/spam") return <AccountSpamPage />;
   if (path === "/account/spam/lists") return <AccountSpamPage tab="lists" />;
@@ -127,6 +132,11 @@ function Routes() {
         <LoadError error={session.error} onRetry={() => void session.refetch()} />
       </main>
     );
+  }
+  // An app asking to sign in with OAuth: after the login (if needed) the question comes up at this
+  // same address, its request still in the query.
+  if (matchPath("/oauth/authorize", path)) {
+    return session.data ? <OAuthConsentPage session={session.data} /> : <LoginPage />;
   }
   // The assistant stays on screen while its second step logs the new admin in.
   if (path === "/setup") return <SetupWizard session={session.data} />;

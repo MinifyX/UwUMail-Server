@@ -214,6 +214,14 @@ empty `UWUMAIL_EGRESS_PROXY=` and `UWUMAIL_EGRESS_FALLBACK=` that `compose.yaml`
 passes on leave them to the portal. A proxy login belongs in `.env` or the
 portal, not in a file anyone else reads.
 
+## Prometheus metrics
+
+`GET /metrics` answers in the Prometheus format once it is switched on, under
+*Server → Statistics* or in the `[metrics]` section (`enabled`, `token`,
+`allowed_networks`). It stays off by default and never answers without a token
+or an allowed network. [metrics.md](metrics.md) lists what it serves and how to
+scrape it.
+
 ## Accounts: people and services
 
 *Server → Accounts* holds both. A **person** signs in to the portal and may use
@@ -355,6 +363,10 @@ pictures = true        # remote pictures and sender logos take the proxy
 updates = false        # the check for new versions takes it
 fetch = false          # fetching from other providers (mailboxes, calendars, contacts) takes it
 
+# Daily TLS reports (RFC 8460) to the domains mail went to, see docs/tls-reports.md.
+[reports]
+send_tls_reports = true
+
 [tone]
 language = "de"        # de | en | fr | nl | ja | zh
 internal = "playful"   # playful | neutral: mail to our own people
@@ -372,4 +384,20 @@ level = "info"
 # Sending the log to Grafana Loki: see "Sending the log to Grafana Loki" above.
 # [log.loki]
 # enabled = false
+
+# Prometheus metrics under /metrics, see docs/metrics.md. Off unless switched on.
+# [metrics]
+# enabled = true
+# token = "a-long-random-token"      # sent as "Authorization: Bearer …"
+# allowed_networks = ["10.0.0.0/8"]  # when set, only from these networks
+
+# Logging in to the portal at an OpenID Connect provider or with an LDAP directory's
+# password, see docs/login-oidc-ldap.md.
+# [auth.oidc]
+# enabled = false
+# issuer = "https://auth.example.com/application/o/uwumail/"
+# client_id = "uwumail"
+# [auth.ldap]
+# enabled = false
+# url = "ldaps://ldap.example.com"
 ```

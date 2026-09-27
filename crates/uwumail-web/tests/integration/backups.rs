@@ -131,3 +131,109 @@ async fn backup_settings_keep_their_secrets_on_the_server() {
     let (status, _) = call(&app, "POST", "/api/admin/backups/run", Some(json!({})), Some(&auth)).await;
     assert_eq!(status, StatusCode::ACCEPTED);
 }
+
+#[tokio::test]
+async fn backups_go_to_s3_or_a_folder_too() {
+    let (app, store, dir) = portal().await;
+    let body = json!({ "login": "nyu@example.org", "password": "katzenpfote-123" });
+    let (_, login) = call(&app, "POST", "/api/auth/login", Some(body), None).await;
+    let auth = (login["_cookie"].as_str().unwrap().to_owned(), login["csrfToken"].as_str().unwrap().to_owned());
+    let settings = |target: Value| {
+        json!({
+            "enabled": true, "hour": 2, "retention": { "daily": 7, "weekly": 4, "monthly": 6 }, "encrypted": true,
+            "target": target,
+        })
+    };
+
+    let s3 = json!({
+        "kind": "s3", "endpoint": "https://s3.example.com/", "region": "", "bucket": "backups", "prefix": "/uwumail/",
+        "accessKey": "AKIDEXAMPLE", "secretKey": "s3-geheim", "pathStyle": true,
+    });
+    let (status, saved) = call(&app, "PUT", "/api/admin/backups", Some(settings(s3)), Some(&auth)).await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    let target = &saved["target"];
+    assert_eq!(
+        (target["kind"].as_str(), target["endpoint"].as_str(), target["region"].as_str(), target["prefix"].as_str()),
+        (Some("s3"), Some("https://s3.example.com"), Some("us-east-1"), Some("uwumail"))
+    );
+    assert_eq!(target["secretKeySet"].as_bool(), Some(true));
+    assert!(!saved.to_string().contains("s3-geheim"), "the secret stays on the server");
+
+    // Saved again without the secret, it is kept for the same access key -- and needed for another.
+    let again = json!({ "kind": "s3", "endpoint": "https://s3.example.com", "bucket": "backups",
+                        "accessKey": "AKIDEXAMPLE", "pathStyle": false });
+    let (status, kept) = call(&app, "PUT", "/api/admin/backups", Some(settings(again)), Some(&auth)).await;
+    assert_eq!((status, kept["target"]["secretKeySet"].as_bool()), (StatusCode::OK, Some(true)), "{kept}");
+    let raw = store.setting("backup.settings").await.unwrap().unwrap();
+    assert!(raw.contains(r#""secretKey":"s3-geheim""#), "{raw}");
+    let other =
+        json!({ "kind": "s3", "endpoint": "https://s3.example.com", "bucket": "backups", "accessKey": "OTHER" });
+    let (status, _) = call(&app, "PUT", "/api/admin/backups", Some(settings(other)), Some(&auth)).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    let broken = json!({ "kind": "s3", "endpoint": "https://s3.example.com/bucket", "bucket": "backups",
+                         "accessKey": "AKIDEXAMPLE", "secretKey": "x" });
+    let (status, _) = call(&app, "PUT", "/api/admin/backups", Some(settings(broken)), Some(&auth)).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "the bucket does not go into the address");
+
+    // A folder: not inside the data directory, and it has to be there to test it.
+    let inside = json!({ "kind": "folder", "path": dir.path().join("backup").display().to_string() });
+    let (status, refused) = call(&app, "PUT", "/api/admin/backups", Some(settings(inside)), Some(&auth)).await;
+    assert_eq!((status, refused["code"].as_str()), (StatusCode::CONFLICT, Some("backupFolderInData")));
+    let outside = tempfile::tempdir().unwrap();
+    let folder = json!({ "kind": "folder", "path": outside.path().join("nas").display().to_string() });
+    let (status, saved) = call(&app, "PUT", "/api/admin/backups", Some(settings(folder)), Some(&auth)).await;
+    assert_eq!((status, saved["target"]["kind"].as_str()), (StatusCode::OK, Some("folder")));
+    let (status, _) = call(&app, "POST", "/api/admin/backups/test", Some(json!({})), Some(&auth)).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "no such folder yet");
+    std::fs::create_dir(outside.path().join("nas")).unwrap();
+    let (status, tested) = call(&app, "POST", "/api/admin/backups/test", Some(json!({})), Some(&auth)).await;
+    assert_eq!((status, tested["kind"].as_str()), (StatusCode::OK, Some("folder")), "{tested}");
+
+    // Back up there, open the snapshot, and put a mailbox back.
+    let (status, _) = call(
+        &app,
+        "POST",
+        "/api/admin/backups/mailbox/restore",
+        Some(json!({ "account": "nyu@example.org" })),
+        Some(&auth),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "no snapshot is open");
+    let backups = uwumail_backup::Backups::new(store.clone(), "mail.example.org", "0.1.0");
+    backups.run_now().await.unwrap();
+    let (status, opened) =
+        call(&app, "POST", "/api/admin/backups/mailbox/open", Some(json!({ "snapshot": "latest" })), Some(&auth)).await;
+    assert_eq!(status, StatusCode::OK, "{opened}");
+    let mut view = opened;
+    for _ in 0..100 {
+        if view["mailboxRestore"]["state"] != "opening" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        view = call(&app, "GET", "/api/admin/backups", None, Some(&auth)).await.1;
+    }
+    assert_eq!(view["mailboxRestore"]["state"], "open", "{view}");
+    assert_eq!(view["mailboxRestore"]["people"][0]["login"], "nyu@example.org");
+    let body = json!({ "account": "nyu@example.org", "folders": [] });
+    let (status, _) = call(&app, "POST", "/api/admin/backups/mailbox/restore", Some(body), Some(&auth)).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "no folders is nothing to do");
+    let (status, restoring) = call(
+        &app,
+        "POST",
+        "/api/admin/backups/mailbox/restore",
+        Some(json!({ "account": "nyu@example.org" })),
+        Some(&auth),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{restoring}");
+    for _ in 0..100 {
+        view = call(&app, "GET", "/api/admin/backups", None, Some(&auth)).await.1;
+        if view["mailboxRestore"]["state"] == "open" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert_eq!(view["mailboxRestore"]["last"]["error"], "", "{view}");
+    let (status, closed) = call(&app, "DELETE", "/api/admin/backups/mailbox", None, Some(&auth)).await;
+    assert_eq!((status, closed["mailboxRestore"]["state"].as_str()), (StatusCode::OK, Some("")));
+}

@@ -131,7 +131,7 @@ async fn a_managesieve_session_manages_the_scripts_delivery_runs() {
     assert!(greeting.contains("\"SASL\" \"\""), "no mechanisms before TLS: {greeting}");
     assert!(greeting.contains("\"VERSION\" \"1.0\""), "{greeting}");
     assert!(greeting.contains("\"SIEVE\" \"body "), "{greeting}");
-    assert!(capabilities.contains("\"SASL\" \"PLAIN\""), "{capabilities}");
+    assert!(capabilities.contains("\"SASL\" \"PLAIN OAUTHBEARER XOAUTH2\""), "{capabilities}");
     assert!(!capabilities.contains("STARTTLS"), "{capabilities}");
 
     assert!(client.command("LISTSCRIPTS").await.starts_with("NO"), "not before logging in");
@@ -292,4 +292,40 @@ async fn a_connection_that_does_not_log_in_is_closed_in_time() {
     let answer = answer.expect("the server keeps waiting for an answer to its challenge");
     assert!(answer.contains("BYE"), "{answer:?}");
     assert!(started.elapsed() < Duration::from_secs(4), "{:?}", started.elapsed());
+}
+
+/// Apps that signed in with OAuth manage their rules with the same token (docs/oauth.md).
+#[tokio::test(flavor = "multi_thread")]
+async fn oauth_tokens_log_in_as_well() {
+    let (store, address, certificate, _shutdown, _dir) = setup().await;
+    let mini = store.account("mini@example.com").await.unwrap().unwrap();
+    let token = crate::imap::oauth_token(&store, mini.id, vec!["mail"]).await;
+
+    let (mut client, _, _) = secure(address, &certificate).await;
+    let message = crate::imap::base64(&format!("n,a=mini@example.com,\x01auth=Bearer {token}\x01\x01"));
+    let login = client.command(&format!("AUTHENTICATE \"OAUTHBEARER\" \"{message}\"")).await;
+    assert!(login.starts_with("OK"), "{login}");
+    assert!(client.command("CAPABILITY").await.contains("\"OWNER\" \"mini@example.com\""));
+
+    let (mut client, _, _) = secure(address, &certificate).await;
+    let message = crate::imap::base64(&format!("user=mini@example.com\x01auth=Bearer {token}\x01\x01"));
+    assert!(client.command(&format!("AUTHENTICATE \"XOAUTH2\" \"{message}\"")).await.starts_with("OK"));
+
+    // A wrong token: the error challenge, the app's answer, then NO.
+    let (mut client, _, _) = secure(address, &certificate).await;
+    let message = crate::imap::base64(&format!("n,,\x01auth=Bearer {token}-wrong\x01\x01"));
+    client
+        .stream
+        .get_mut()
+        .write_all(format!("AUTHENTICATE \"OAUTHBEARER\" \"{message}\"\r\n").as_bytes())
+        .await
+        .unwrap();
+    let mut challenge = String::new();
+    client.stream.read_line(&mut challenge).await.unwrap();
+    let challenge = challenge.trim().trim_matches('"');
+    let error: serde_json::Value =
+        serde_json::from_slice(&base64::engine::general_purpose::STANDARD.decode(challenge).unwrap()).unwrap();
+    assert_eq!(error["status"], "invalid_token");
+    let refused = client.command("\"AQ==\"").await;
+    assert!(refused.starts_with("NO"), "{refused}");
 }

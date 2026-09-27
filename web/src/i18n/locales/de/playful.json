@@ -20,6 +20,12 @@
     "greeting": "Hallo {{name}}!",
     "intro": "Hier ist alles rund um dein Postfach (｡･ω･｡)"
   },
+  "moving": {
+    "intro": "Pack dein altes Postfach ein und hol alles nach Hause: jeden Ordner, jede Markierung, jedes Datum. Der Server trägt die Kisten im Hintergrund (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
+    "toasts": {
+      "finished": "Fertig eingezogen! Die alten Zugangsdaten sind weg (◕‿◕✿)"
+    }
+  },
   "admin": {
     "intro": "So geht es deinem Server. Ich passe mit auf (=^･ω･^=)",
     "queueEmpty": "Nichts wartet, alles ist unterwegs ✉︎",
@@ -31,6 +37,20 @@
         "none": "Hier ist noch alles wie am ersten Tag (´｡• ω •｡`)"
       }
     }
+  },
+  "adminView": {
+    "headline": {
+      "ok": "Alles schnurrt (=^･ω･^=)",
+      "unknown": "Ich schnupper noch an allem herum",
+      "warning": "Schau dir mal was an (・_・;)",
+      "problem": "Hier klemmt was (╥﹏╥)"
+    }
+  },
+  "alerts": {
+    "none": "Nichts zu melden, alles ruhig (=^･ω･^=)"
+  },
+  "stats": {
+    "intro": "Was auf deinem Server passiert ist, Tag für Tag. Ich hab alles mitgezählt (=^･ω･^=)"
   },
   "errors": {
     "loadFailed": {
@@ -79,6 +99,11 @@
       "ready": "Seit 14 Tagen keine TLS-Probleme, alles schnurrt (=^･ω･^=) Du kannst MTA-STS auf streng stellen."
     }
   },
+  "reports": {
+    "sent": {
+      "empty": "Noch nichts verschickt. Sobald Post bei einer Domain war, die Berichte möchte, schicke ich ihr am nächsten Tag einen (=^･ω･^=)"
+    }
+  },
   "queue": {
     "empty": {
       "title": "Nichts wartet, alles ist unterwegs ✉︎"
@@ -106,6 +131,11 @@
     "recovery": {
       "saved": "Sicher verstaut ✓"
     }
+  },
+  "oauth": {
+    "title": "„{{name}}“ möchte gern rein (・ω・)",
+    "signingIn": "Ich mache der App die Tür auf … (=^･ω･^=)",
+    "invalidTitle": "Diese App kann ich nicht reinlassen (・_・;)"
   },
   "setup": {
     "welcome": {
@@ -145,6 +175,12 @@
     "signatures": {
       "saved": "Signatur gespeichert (ﾉ◕ヮ◕)ﾉ"
     }
+  },
+  "memberships": {
+    "intro": "Hier bist du dabei! Gruppenmail landet in deinem eigenen Posteingang, geteilte Postfächer warten direkt neben deinen Ordnern (◕‿◕✿)"
+  },
+  "masked": {
+    "intro": "Eine geheime Adresse für jede Website! Bekommt eine plötzlich Spam, weißt du, wer gepetzt hat, und schaltest sie im Nu ab (｀・ω・´)"
   },
   "sharing": {
     "withMeEmpty": "Noch teilt niemand einen Ordner mit dir (｡•ᴗ•｡)",

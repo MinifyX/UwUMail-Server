@@ -13,6 +13,7 @@ import { usePhone } from "@/lib/media";
 import { Link } from "@/lib/router";
 import { CreatePersonDialog } from "./CreatePersonDialog";
 import { AdminPill, PersonAvatar, ServicePill, StatusPill, StorageLine } from "./PersonBits";
+import { SharedMailboxesSection } from "./SharedMailboxes";
 import { usePeople } from "./queries";
 
 type Filter = "all" | PersonStatus;
@@ -28,6 +29,8 @@ const domainOf = (login: string) => login.split("@")[1] ?? "";
 export const personUrl = (login: string) => `/admin/people/${encodeURIComponent(login)}`;
 
 function matches(person: Person, filter: Filter, kind: Kind, domain: string, search: string) {
+  // Shared mailboxes have a list of their own, below; in the trash they show with everyone.
+  if (person.sharedMailbox && person.status !== "deleted") return false;
   // The trash only shows up when asked for.
   if (filter === "all" ? person.status === "deleted" : person.status !== filter) return false;
   if (kind !== "all" && kindOf(person) !== kind) return false;
@@ -223,6 +226,7 @@ export function PeoplePage({ session }: { session: Session }) {
           )}
         </>
       )}
+      <SharedMailboxesSection people={people.data} />
       <CreatePersonDialog open={creating} onClose={() => setCreating(false)} />
     </div>
   );

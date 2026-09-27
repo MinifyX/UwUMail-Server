@@ -43,6 +43,10 @@ const PREFERENCES: &[(&str, &[&str])] = &[
     ("mailUndoSend", &["0", "5", "10", "20", "30"]),
     ("mailSwipeRight", &["read", "archive", "trash", "flag", "spam", "none"]),
     ("mailSwipeLeft", &["read", "archive", "trash", "flag", "spam", "none"]),
+    // Admins only: the calm view with just the traffic light, or everything (docs/admin-alerts.md).
+    ("adminView", &["simple", "full"]),
+    // Admins only: which alert mails they get.
+    ("adminAlerts", &["all", "problems", "none"]),
 ];
 
 pub async fn update_preferences(

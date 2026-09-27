@@ -42,6 +42,8 @@ pub struct CertificateStatus {
     pub self_signed: bool,
     /// The server renews it itself (Let's Encrypt).
     pub automatic: bool,
+    /// The chain as served, leaf first (DER), for the TLSA record (DANE) the DNS check recommends.
+    pub chain: Vec<Vec<u8>>,
     /// The URL of the Let's Encrypt account it is ordered with, for the CAA record the DNS check
     /// recommends. `None` before there is one, and with any other CA.
     pub lets_encrypt_account: Option<String>,
@@ -343,13 +345,13 @@ async fn antivirus_area(web: &Web, now: i64) -> Option<Area> {
 }
 
 #[cfg(unix)]
-fn disk_space(path: &Path) -> Option<(u64, u64)> {
+pub(crate) fn disk_space(path: &Path) -> Option<(u64, u64)> {
     let stat = rustix::fs::statvfs(path).ok()?;
     Some((stat.f_bavail.saturating_mul(stat.f_frsize), stat.f_blocks.saturating_mul(stat.f_frsize)))
 }
 
 #[cfg(not(unix))]
-fn disk_space(_path: &Path) -> Option<(u64, u64)> {
+pub(crate) fn disk_space(_path: &Path) -> Option<(u64, u64)> {
     None
 }
 
@@ -419,6 +421,7 @@ impl Web {
         // Let the listeners come up first.
         let mut next_dns = unix_now() + 30;
         let mut next_probe = unix_now() + 60;
+        let mut next_alerts = unix_now() + crate::alerts::ALERT_FIRST_AFTER;
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_secs(30)) => {}
@@ -439,6 +442,10 @@ impl Web {
                 }
                 next_probe = now + interval;
                 self.mark_health_checked();
+            }
+            if now >= next_alerts {
+                self.check_alerts().await;
+                next_alerts = unix_now() + crate::alerts::ALERT_INTERVAL;
             }
         }
     }
@@ -479,6 +486,7 @@ mod tests {
             names: vec!["*.example.org".into()],
             self_signed: false,
             automatic,
+            chain: Vec::new(),
             lets_encrypt_account: None,
         }
     }

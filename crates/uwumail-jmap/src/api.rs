@@ -67,8 +67,8 @@ pub async fn handle(
     body: Bytes,
 ) -> Response {
     let client = client.map(|Extension(c)| c).unwrap_or_default();
-    let account = match jmap.inner.auth.account_for(&headers, client, true).await {
-        Ok(account) => account,
+    let login = match jmap.inner.auth.login_for(&headers, client, true).await {
+        Ok(login) => login,
         Err(err) => return err.into_response(),
     };
     let value: Value = match serde_json::from_slice(&body) {
@@ -78,15 +78,21 @@ pub async fn handle(
                 .into_response();
         }
     };
-    match process(&jmap, account, value).await {
+    match process(&jmap, login.account, Some(login.credential), value).await {
         Ok(response) => ([(header::CACHE_CONTROL, "no-cache, no-store")], Json(response)).into_response(),
         Err(err) => err.into_response(),
     }
 }
 
 /// Runs the method calls of one request object and returns the response object. Shared by
-/// `POST /jmap/api` and the WebSocket (RFC 8887).
-pub async fn process(jmap: &Jmap, account: Account, value: Value) -> Result<Value, RequestError> {
+/// `POST /jmap/api` and the WebSocket (RFC 8887). `credential` is what the login used, for push
+/// subscriptions; without it they cannot be used.
+pub async fn process(
+    jmap: &Jmap,
+    account: Account,
+    credential: Option<String>,
+    value: Value,
+) -> Result<Value, RequestError> {
     let request: Request = serde_json::from_value(value)
         .map_err(|err| RequestError::new(StatusCode::BAD_REQUEST, "notRequest", &err.to_string()))?;
     if let Some(unknown) = request.using.iter().find(|c| !methods::KNOWN_CAPABILITIES.contains(&c.as_str())) {
@@ -110,6 +116,7 @@ pub async fn process(jmap: &Jmap, account: Account, value: Value) -> Result<Valu
 
     let echo_created_ids = request.created_ids.is_some();
     let mut ctx = Ctx::new(&jmap.inner, account, request.using, request.created_ids.unwrap_or_default());
+    ctx.credential = credential;
     let mut responses: Vec<(String, Value, String)> = Vec::with_capacity(request.method_calls.len());
 
     for (name, arguments, call_id) in request.method_calls {

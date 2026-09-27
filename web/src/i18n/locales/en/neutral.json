@@ -41,6 +41,19 @@
       "tooManyAttempts": "Too many failed attempts. Please wait a few minutes.",
       "offline": "The server cannot be reached right now.",
       "internal": "Something went wrong on the server."
+    },
+    "or": "or",
+    "oidcButton": "Log in with {{provider}}",
+    "oidcButtonGeneric": "Log in with single sign-on",
+    "oidcErrors": {
+      "unavailable": "The login service cannot be reached right now. Try again later, or log in with your password.",
+      "expired": "The login took too long or was started in another browser. Please try again.",
+      "refused": "The login was cancelled or refused at the login service.",
+      "failed": "The answer from the login service did not check out. Please try again.",
+      "emailNotVerified": "The login service did not confirm your email address, so it cannot log you in here.",
+      "domainNotAllowed": "There is no account for this address, and none may be created in its domain.",
+      "noAccount": "There is no account on this server for this login, and none may be created.",
+      "alreadyLinked": "This account already belongs to another login at the login service."
     }
   },
   "nav": {
@@ -62,7 +75,10 @@
     "expand": "Expand {{group}}",
     "mailbox": "Mailbox",
     "directory": "Accounts & domains",
-    "calendars": "Calendars & contacts"
+    "calendars": "Calendars & contacts",
+    "masked": "Masked addresses",
+    "moving": "Moving",
+    "more": "More"
   },
   "userMenu": {
     "open": "Open account menu",
@@ -167,7 +183,8 @@
       "overview": "Overview",
       "mailFlow": "Mail flow",
       "backups": "Backups",
-      "updates": "Updates"
+      "updates": "Updates",
+      "stats": "Statistics"
     },
     "tiles": {
       "news": "new",
@@ -201,6 +218,177 @@
         "title": "Last change",
         "none": "Nothing changed yet"
       }
+    }
+  },
+  "adminView": {
+    "label": "View",
+    "simple": "Simple",
+    "full": "Everything",
+    "hint": {
+      "simple": "Only the traffic light and what needs doing. Everything else is under More in the menu.",
+      "full": "Every number and every check. Simple shows just the traffic light."
+    },
+    "light": "Traffic light: {{level}}",
+    "headline": {
+      "ok": "All is well",
+      "unknown": "Not everything is checked yet",
+      "warning": "Something needs a look",
+      "problem": "Something is not working"
+    },
+    "sentence": {
+      "ok": "Mail comes and goes, and nothing needs you right now.",
+      "unknown": "The first checks run shortly after the start.",
+      "warning_one": "One thing below needs a look when you have a moment.",
+      "warning_other": "{{count}} things below need a look when you have a moment.",
+      "problem_one": "One thing below needs your help soon.",
+      "problem_other": "{{count}} things below need your help soon."
+    },
+    "todo": "What to do",
+    "quick": {
+      "title": "Quick access",
+      "people": "People",
+      "addPerson": "Add a person",
+      "domains": "Domains",
+      "backups": "Backups"
+    }
+  },
+  "alerts": {
+    "title": "Alerts",
+    "intro": "What the server told the admins about, and what was fine again later. It looks every five minutes.",
+    "loading": "Loading the alerts …",
+    "none": "No open alerts.",
+    "openLabel": "Open alerts",
+    "history_one": "{{count}} alert that is fine again",
+    "history_other": "{{count}} alerts that are fine again",
+    "since": "Since {{time}}",
+    "resolvedAt": "Fine again {{time}}",
+    "acknowledgedBy": "{{login}} knows about it",
+    "acknowledge": "Got it",
+    "acknowledgeHint": "No more daily reminders for this one. You still hear when it gets worse or is fine again.",
+    "acknowledgedToast": "Noted. No more reminders for this one.",
+    "level": {
+      "info": "Information",
+      "warning": "Needs a look",
+      "problem": "Problem",
+      "resolved": "Fine again"
+    },
+    "mail": {
+      "title": "Alert mails",
+      "label": "Mails to me about alerts",
+      "all": "All",
+      "problems": "Only problems",
+      "none": "None",
+      "hint": "Each admin chooses for themselves. A mail comes when something turns yellow or red, once a day while something stays red, and once more when it is fine again."
+    },
+    "codes": {
+      "certRenewalFailing": "Renewing the certificate keeps failing (first failure {{since}}).",
+      "backupFailed": "The last backup failed.",
+      "backupOld": "The last successful backup was {{time}}.",
+      "updateAvailable": "Version {{version}} is out."
+    },
+    "hints": {
+      "certRenewalFailing": "The server log says why. Often a name does not point to this server (yet), or port 80 cannot be reached from outside.",
+      "backupFailed": "The backups page shows the error. Check the target and start one by hand.",
+      "backupOld": "Backups normally run every night. The backups page shows whether they are paused or what went wrong.",
+      "updateAvailable": "The updates page shows what is new and updates with one click."
+    }
+  },
+  "stats": {
+    "intro": "What happened on your server, day by day or month by month.",
+    "utc": "Days are counted in UTC. The numbers start with version 0.14.",
+    "range": {
+      "label": "Period",
+      "days": "30 days",
+      "months": "12 months"
+    },
+    "total": {
+      "days": "in 30 days",
+      "months": "in 12 months"
+    },
+    "latest": "latest reading",
+    "chartSummary": "{{series}}: bar chart, highest value {{max}} ({{peak}}). The table below has every number.",
+    "chartEmpty": "{{series}}: nothing counted in this period.",
+    "charts": {
+      "received": {
+        "title": "Mail received",
+        "hint": "Mail from other servers and fetched mailboxes that reached at least one person."
+      },
+      "refused": {
+        "title": "Mail turned away",
+        "hint": "Refused at the door: unknown recipients, spam, viruses and rules such as DMARC."
+      },
+      "submitted": {
+        "title": "Mail sent",
+        "hint": "Messages your people sent, from mail apps, the webmail or the UwUMail apps."
+      },
+      "delivered": {
+        "title": "Handed to other servers",
+        "hint": "Recipients on other servers that took the mail."
+      },
+      "logins": {
+        "title": "Failed logins",
+        "hint": "Wrong passwords and refused logins in every app and in the portal."
+      },
+      "storage": {
+        "title": "Storage used",
+        "hint": "All mailboxes together, as read during each day."
+      }
+    },
+    "keys": {
+      "mail": {
+        "received": "Received",
+        "junk": "Into Junk",
+        "submitted": "Sent",
+        "delivered": "Delivered",
+        "deferred": "Tried again later",
+        "bounced": "Given up"
+      },
+      "refused": {
+        "unknownRecipient": "Unknown recipient",
+        "spam": "Spam",
+        "virus": "Virus",
+        "policy": "Rules (DMARC, blocked senders, relaying)",
+        "greylisted": "Asked to come back later"
+      },
+      "loginFailed": {
+        "smtp": "SMTP",
+        "imap": "IMAP",
+        "jmap": "JMAP",
+        "dav": "CalDAV/CardDAV",
+        "managesieve": "ManageSieve",
+        "portal": "Portal",
+        "other": "Other"
+      },
+      "gauge": {
+        "accounts": "Accounts",
+        "storageBytes": "Storage used"
+      }
+    },
+    "table": {
+      "title": "All numbers as a table",
+      "caption": "Statistics per period",
+      "period": {
+        "days": "Day",
+        "months": "Month"
+      }
+    },
+    "metrics": {
+      "title": "Prometheus metrics",
+      "intro": "For a monitoring system: the server's numbers under /metrics, in the Prometheus format. Off until you switch it on.",
+      "enabled": "Serve metrics",
+      "enabledHint": "Needs a token, allowed networks or both, so not everyone can read them.",
+      "token": "Token",
+      "tokenHint": "Prometheus sends it as a bearer token. Make one here.",
+      "tokenFresh": "Copy it now: once saved, it is never shown again.",
+      "tokenSet": "A token is set. A new one replaces it.",
+      "tokenNew": "Make a token",
+      "tokenReplace": "New token",
+      "tokenRemove": "Remove",
+      "copyToken": "Copy token",
+      "networks": "Only from these networks",
+      "networksHint": "One address or network per line, such as 10.0.0.0/8. Empty: from anywhere, with the token.",
+      "needsWayIn": "Make a token or name a network first, or the metrics would be open to everyone.",
+      "address": "Address for Prometheus"
     }
   },
   "duration": {
@@ -325,7 +513,29 @@
       "googleUseIcs": "Google only lets its own apps in. Use the secret iCal address for calendars and a vCard export for contacts.",
       "subscriptionLimit": "You have as many subscribed calendars as possible.",
       "subscriptionExists": "You are subscribed to this calendar already.",
-      "refreshPause": "Just fetched. Try again in a minute."
+      "refreshPause": "Just fetched. Try again in a minute.",
+      "sharedMailbox": "This is a shared mailbox: nobody signs in to it, its members use it from their own accounts.",
+      "maskedDomain": "No domain on this server is open for masked addresses yet. Ask the admin.",
+      "maskedLimit": "You have as many masked addresses as this server allows. Delete some you no longer need.",
+      "maskedPrefix": "A prefix may only have letters a–z, digits and _, up to 64 of them.",
+      "maskedState": "A masked address cannot go back to waiting for its first mail.",
+      "backupBusy": "Something else is using the backups right now: a backup, or a mailbox coming back. Try again once it is done. ({{detail}})",
+      "backupFolderInData": "The backup folder has to be outside the server's data directory; otherwise the backup would be lost together with the server.",
+      "moveExists": "This address is being moved already.",
+      "moveFromHere": "This address is on this server already, so there is nothing to move.",
+      "moveLimit": "At most five mailboxes can move at once. Finish one of the others first.",
+      "moveRunning": "This move is still running.",
+      "moveNotRunning": "This move is not running.",
+      "moveNoMailbox": "Your account has no mailbox that mail could move into.",
+      "moveWrongPassword": "The old provider refused this password. Many providers want an app password for this.",
+      "alertResolved": "This alert is already fine again.",
+      "confirmByLogin": "To confirm this, log out and log in again, then try once more.",
+      "passwordInDirectory": "This password is managed by your organisation's directory (LDAP) and is changed there.",
+      "serviceAccount": "A service signs in with app passwords only.",
+      "oauthClientUnknown": "This app is not registered on this server.",
+      "oauthRedirectInvalid": "The app asked to be sent somewhere it did not register.",
+      "oidcFailed": "The login service did not work out: {{detail}}",
+      "ldapFailed": "The directory did not work out: {{detail}}"
     }
   },
   "people": {
@@ -534,6 +744,40 @@
       "revokeTitle": "Revoke {{name}}?",
       "revokeBody": "Whatever uses this password stops getting in.",
       "createdTitle": "New app password"
+    },
+    "authSource": {
+      "label": "Password is checked",
+      "hint": "Switching to the directory removes the password stored here. Switching back means you set a new password or send a link.",
+      "oidcHint": "Logs in at the OpenID Connect provider. You can still switch to a password here or at the directory.",
+      "local": "Here on this server",
+      "ldap": "At the LDAP directory",
+      "oidc": "At the OpenID Connect provider",
+      "toLdapTitle": "Check the password of {{login}} at the directory?",
+      "toLdapBody": "The password stored here is removed. From now on the person logs in with their directory password, in the portal and in mail apps. App passwords stay.",
+      "toLocalTitle": "Check the password of {{login}} here?",
+      "toLocalBody": "The person has no password here afterwards. Set a new one or send a link to choose one.",
+      "switch": "Switch",
+      "inDirectory": "The password is checked at the LDAP directory and changed there."
+    }
+  },
+  "sharedMailboxes": {
+    "title": "Shared mailboxes",
+    "explain": "A mailbox several people use, like support@. Nobody signs in to it; its members see it next to their own folders and may answer as it.",
+    "create": "New shared mailbox",
+    "createIntro": "It gets its own address and storage; mail to it lands in its inbox for all members.",
+    "name": "Name",
+    "namePlaceholder": "for example Support",
+    "address": "Address",
+    "addressPlaceholder": "for example support",
+    "members": "Members",
+    "membersHint": "Everyone chosen sees all its folders. Tick who may also send with its address.",
+    "membersIntro": "Members see every folder of it, new ones too. Who may send finds its address among their sending addresses; a copy of what they send stays in its Sent folder.",
+    "maySend": "may send",
+    "save": "Save members",
+    "pill": "Shared mailbox",
+    "toasts": {
+      "created": "{{address}} created",
+      "saved": "Members saved"
     }
   },
   "log": {
@@ -600,7 +844,17 @@
       "spamVirusTest": "{{actor}} tested the virus scanner",
       "updatesSettings": "{{actor}} changed the update settings",
       "brandLogo": "{{actor}} uploaded a new logo",
-      "brandLogoRemoved": "{{actor}} removed the logo"
+      "brandLogoRemoved": "{{actor}} removed the logo",
+      "backupRestoreMailbox": "{{actor}} brought mail of {{target}} back from a backup",
+      "accountAuthSource": "{{actor}} changed where the password of {{target}} is checked",
+      "accountOauthRevoked": "{{actor}} signed out an app of {{target}}",
+      "alertAcknowledge": "{{actor}} clicked “Got it” on the alert {{target}}",
+      "domainMaskedAddresses": "{{actor}} changed masked addresses on {{target}}",
+      "groupCreate": "{{actor}} created the group {{target}}",
+      "groupUpdate": "{{actor}} changed the group {{target}}",
+      "groupRemove": "{{actor}} removed the group {{target}}",
+      "sharedMailboxCreate": "{{actor}} created the shared mailbox {{target}}",
+      "sharedMailboxMembers": "{{actor}} changed the members of the shared mailbox {{target}}"
     },
     "details": {
       "adminOn": "is now an admin",
@@ -623,7 +877,11 @@
       "protocolsNone": "every protocol off",
       "redirectTo": "mail goes to {{address}}",
       "redirectNone": "mail is refused",
-      "appPassword": "app password “{{value}}”"
+      "appPassword": "app password “{{value}}”",
+      "switchedOn": "switched on",
+      "switchedOff": "switched off",
+      "authSource": "now: {{value}}",
+      "oauthApp": "app “{{value}}”"
     },
     "entry": {
       "actor": "Who",
@@ -723,7 +981,8 @@
         "imaps": "Tells mail apps where to read mail (IMAP, port 993).",
         "submissions": "Tells mail apps where to send mail with TLS (port 465).",
         "submission": "Tells mail apps where to send mail with STARTTLS (port 587).",
-        "caa": "Lets only Let's Encrypt issue certificates for the server's name, and only to this server's own account. Keeps TLS private behind a UwUMail Gateway."
+        "caa": "Lets only Let's Encrypt issue certificates for the server's name, and only to this server's own account. Keeps TLS private behind a UwUMail Gateway.",
+        "tlsa": "Tells sending servers which key this server's certificate has, so they only deliver over an encrypted connection to it (DANE). Needs a zone signed with DNSSEC."
       },
       "notes": {
         "mxUpstream": "Points to the upstream mail server. That's fine.",
@@ -749,7 +1008,12 @@
         "mtaStsPolicyInvalid": "No valid policy is served there.",
         "caaWithoutAccount": "Allows other accounts or certificate authorities as well. With accounturi only this server gets certificates.",
         "caaOtherAccount": "Names another Let's Encrypt account. This server cannot renew its certificate until the record names its own.",
-        "caaForbids": "Does not let this server get its certificate from Let's Encrypt. Renewing it will fail."
+        "caaForbids": "Does not let this server get its certificate from Let's Encrypt. Renewing it will fail.",
+        "tlsaRecommended": "The zone is signed with DNSSEC, so servers that check DANE can make sure they really reach this server. The server keeps its key when it renews the certificate, so the record stays valid.",
+        "tlsaKeyKept": "Matches the server's key. The key stays the same when the certificate is renewed.",
+        "tlsaMismatch": "Matches no certificate this server presents. Servers that check DANE hold mail for your domains back until the record names the current key.",
+        "tlsaUnsigned": "The zone is not signed with DNSSEC, so no server looks at this record yet.",
+        "dnssecBogus": "The DNSSEC signatures of the server's name do not validate. Servers that check them cannot reach the server at all."
       },
       "catchAll": "Catch-all",
       "catchAllHint": "Mail to addresses that don't exist goes to this person. It also attracts more spam.",
@@ -790,8 +1054,10 @@
         "imaps": "Reading for mail apps (IMAP)",
         "submissions": "Sending for mail apps (TLS)",
         "submission": "Sending for mail apps (STARTTLS)",
-        "caa": "Certificates only for this server (CAA)"
-      }
+        "caa": "Certificates only for this server (CAA)",
+        "tlsa": "DANE (TLSA)"
+      },
+      "tlsaKeyChange": "Before the server's key changes (your own certificate files, a move to another server, or deleting data/tls/acme/key.pem), publish the record for the new key next to this one and wait a day. Otherwise servers that check DANE hold mail for you back."
     },
     "forwards": {
       "title": "Forwarding addresses",
@@ -884,6 +1150,46 @@
       "unauthenticated_other": "{{count}} reports came from senders that could not prove who they are. Their numbers could be made up."
     }
   },
+  "groups": {
+    "title": "Groups",
+    "explain": "One address for several people, like info@ or board@ of a club. Everyone gets the mail in their own inbox, with their own spam filter and rules.",
+    "create": "New group",
+    "save": "Save",
+    "address": "Address",
+    "addressPlaceholder": "for example board",
+    "name": "Name",
+    "namePlaceholder": "for example Board",
+    "whoMaySend": "Who may write to it",
+    "who": {
+      "anyone": "Anyone",
+      "members": "Only its members",
+      "domain": "Only addresses of {{domain}}",
+      "anyoneHint": "Like any other address, open to everyone.",
+      "membersHint": "Mail from anyone else is refused at the door.",
+      "domainHint": "People of this domain may write, everyone else is refused."
+    },
+    "sendAs": "Members may send as the group",
+    "sendAsHint": "Its address then shows up among their sending addresses.",
+    "sendAsShort": "members send as it",
+    "members": {
+      "title": "Members",
+      "search": "Find people",
+      "chosen_one": "{{count}} chosen",
+      "chosen_other": "{{count}} chosen",
+      "none": "Nobody found."
+    },
+    "noMembers": "No members yet: mail to it is refused.",
+    "edit": "Change {{address}}",
+    "remove": "Remove {{address}}",
+    "removeConfirm": "Remove the group {{address}}? Mail to it is refused from now on.",
+    "toasts": {
+      "created": "Group created",
+      "saved": "Group saved",
+      "removed": "Group removed"
+    },
+    "masked": "Masked addresses",
+    "maskedHint": "People may make random addresses on this domain for websites (My account → Masked addresses)."
+  },
   "reports": {
     "title": "Reports",
     "intro": "What other mail servers report back about your domains.",
@@ -944,6 +1250,24 @@
     "noDomains": {
       "title": "No domain yet",
       "body": "Reports arrive once a domain is set up and mail has gone out in its name."
+    },
+    "sent": {
+      "title": "Reports we send",
+      "intro": "Once a day the server tells the domains it delivered mail to how encryption went (TLS reports, RFC 8460), if they ask for it with a _smtp._tls record. By mail they come from {{sender}}, signed with DKIM. Your own domains get none.",
+      "toggle": "Send TLS reports",
+      "toggleHint": "Counts every delivery to another domain's mail server by the day: whether TLS worked, and under which policy (MTA-STS, DANE or none).",
+      "listTitle": "Sent in the last {{days}} days",
+      "empty": "No report has gone out yet. The first ones go out the day after mail reached a domain that asks for them.",
+      "sessions": "{{successful}} encrypted connections, {{failed}} failed",
+      "to": "To: {{destinations}}",
+      "quiet_one": "One more domain asked for no reports, or is one of ours.",
+      "quiet_other": "{{count}} more domains asked for no reports, or are ours.",
+      "status": {
+        "sent": "Sent",
+        "failed": "Not sent",
+        "none": "Not wanted",
+        "skipped": "Skipped"
+      }
     }
   },
   "host": {
@@ -1212,7 +1536,8 @@
       "mail": "Sending & receiving",
       "apps": "Apps & webmail",
       "vpn": "VPN & proxy",
-      "branding": "Branding"
+      "branding": "Branding",
+      "login": "Login"
     },
     "mailIntro": "How mail leaves the server and what it accepts. Changes take effect at once, without a restart.",
     "appsIntro": "What holds for mail apps and the mailbox in the browser. Changes take effect at once, without a restart."
@@ -1452,7 +1777,10 @@
       "repeat": "Repeat new password",
       "hint": "At least 10 characters. A sentence of several words is easy to remember.",
       "submit": "Change password",
-      "changed": "Password changed. Other browsers were logged out."
+      "changed": "Password changed. Other browsers were logged out.",
+      "managedTitle": "Password",
+      "inDirectory": "Your password is managed by your organisation's directory (LDAP). Change it there; the new one works here right away.",
+      "atProvider": "You log in at your organisation's login service and have no password here. Mail apps sign in with OAuth or an app password."
     },
     "sessions": {
       "title": "Logged-in browsers",
@@ -1499,13 +1827,130 @@
       "forwardingRemoved": "Forwarding to {{address}} removed",
       "forwardingConfirmed": "{{address}} confirmed the forwarding",
       "forwardingDeclined": "{{address}} declined the forwarding",
-      "forwardingConfirmationSent": "Confirmation mail sent to {{address}}"
+      "forwardingConfirmationSent": "Confirmation mail sent to {{address}}",
+      "oauthGranted": "App “{{name}}” signed in with OAuth ({{scopes}})",
+      "oauthRevoked": "App “{{name}}” signed out",
+      "oauthTokenReused": "An old token of the app “{{name}}” came back a second time: the app was signed out",
+      "oidcLinked": "Linked with the login at {{issuer}}"
     },
     "loginMethods": {
       "password": "password",
       "totp": "password and app",
       "recoveryCode": "password and recovery code",
-      "passkey": "password and passkey"
+      "passkey": "password and passkey",
+      "oidc": "single sign-on"
+    },
+    "oauthApps": {
+      "title": "Apps signed in with OAuth",
+      "none": "No app is signed in with OAuth. Mail apps that support it sign in here in the browser instead of using an app password.",
+      "staysSignedIn": "Stays signed in",
+      "since": "Signed in on {{date}}",
+      "signOut": "Sign out",
+      "signOutTitle": "Sign out “{{name}}”?",
+      "signOutBody": "The app can no longer reach the mailbox until someone signs in with it again.",
+      "signedOut": "“{{name}}” signed out"
+    }
+  },
+  "oauth": {
+    "title": "“{{name}}” wants to access your account",
+    "account": "Logged in as",
+    "nameClaim": "The app calls itself “{{name}}”. Only allow this if you just started signing in to it yourself.",
+    "returnsTo": "Afterwards you go back to {{host}}.",
+    "returnsToDevice": "Afterwards you go back to the app on this device ({{host}}).",
+    "scopesTitle": "The app may",
+    "scopes": {
+      "mail": {
+        "title": "Read and organize your mail",
+        "hint": "Mail, folders and filter rules, with IMAP, JMAP and ManageSieve."
+      },
+      "smtp": {
+        "title": "Send mail as you",
+        "hint": "From your addresses, with SMTP."
+      },
+      "dav": {
+        "title": "Use your calendars and contacts",
+        "hint": "Read and change them, with CalDAV and CardDAV."
+      },
+      "openid": {
+        "title": "Know that it is you",
+        "hint": "Your account on this server."
+      },
+      "profile": {
+        "title": "See your name",
+        "hint": "The name on your account."
+      },
+      "email": {
+        "title": "See your email address",
+        "hint": "Your main address."
+      },
+      "offline_access": {
+        "title": "Stay signed in",
+        "hint": "Until you sign the app out, without asking you again."
+      }
+    },
+    "revokeHint": "You can sign the app out any time under My account → Security.",
+    "allow": "Allow",
+    "deny": "Deny",
+    "otherAccount": "Not {{login}}? Log in with another account",
+    "signingIn": "Signing in …",
+    "invalidTitle": "This app cannot sign in here",
+    "invalid": {
+      "oauthClientUnknown": "This app is not registered on this server. Set up the account in the app again.",
+      "oauthRedirectInvalid": "The app asked to be sent somewhere it did not register. To be safe, nothing was sent."
+    },
+    "toPortal": "To the portal"
+  },
+  "externalLogin": {
+    "intro": "Log in to the portal at another provider (OpenID Connect), or check passwords at an LDAP directory. Changes take effect at once, without a restart.",
+    "docs": "Guide: OpenID Connect and LDAP",
+    "oauthDocs": "Guide: mail apps with OAuth",
+    "test": "Test connection",
+    "testOk": "Works: {{detail}}",
+    "autoCreate": "Create an account on the first login",
+    "allowedDomains": "Domains for new accounts",
+    "allowedDomainsHint": "One per line, each a domain of this server. Empty: no new accounts.",
+    "oidc": {
+      "title": "OpenID Connect",
+      "intro": "A button on the login page leads to your login service, such as Authentik, Keycloak or Microsoft Entra ID.",
+      "enabled": "Log in with an OpenID Connect provider",
+      "enabledHint": "Passwords set here keep working next to it.",
+      "redirectUri": "Register this redirect URI at the provider",
+      "issuer": "Issuer",
+      "issuerHint": "The provider's address. UwUMail reads the rest from its /.well-known/openid-configuration.",
+      "clientId": "Client ID",
+      "clientSecret": "Client secret",
+      "buttonLabel": "Button name",
+      "buttonLabelHint": "The button then reads “Log in with Authentik”. Empty: “Log in with single sign-on”.",
+      "autoCreateHint": "Only when the provider vouches for the address and its domain is allowed below.",
+      "adminClaim": "Admin claim",
+      "adminClaimHint": "The claim in the provider's answer that lists groups or roles.",
+      "adminValue": "Admin value",
+      "adminValueHint": "New accounts whose claim contains this value become admins."
+    },
+    "ldap": {
+      "title": "LDAP directory",
+      "intro": "Accounts set to the directory log in with their directory password, in the portal and in mail apps. Everyone else keeps their password here.",
+      "enabled": "Check passwords at an LDAP directory",
+      "enabledHint": "Which accounts use it is set on each person's page. Accounts created from the directory use it right away.",
+      "url": "Directory address",
+      "urlHint": "ldaps://…, or ldap://… with STARTTLS.",
+      "starttls": "STARTTLS on ldap://",
+      "starttlsHint": "Encrypts the connection before any password is sent.",
+      "insecureLocalhost": "Allow ldap:// without encryption on this machine",
+      "insecureLocalhostHint": "Only for a directory on this very machine (localhost), never across a network.",
+      "bindDn": "Service account (bind DN)",
+      "bindDnHint": "Searches the directory for the person logging in.",
+      "bindPassword": "Service account password",
+      "userDnTemplate": "DN template",
+      "userDnTemplateHint": "With a template nobody searches: the person's DN is made from the address. {user} is the part before the @, {email} the whole address.",
+      "baseDn": "Search base",
+      "userFilter": "Search filter",
+      "userFilterHint": "{email} is the whole address typed at the login, {user} the part before the @.",
+      "mailAttribute": "Address attribute",
+      "nameAttribute": "Name attribute",
+      "adminGroupDn": "Admin group",
+      "adminGroupDnHint": "New accounts that are members of this group (memberOf) become admins.",
+      "autoCreateHint": "When the directory knows the address and its domain is allowed below."
     }
   },
   "fetch": {
@@ -1589,6 +2034,80 @@
       "spam": "Fetched mail is judged again here. What the provider thought was spam counts as a hint and does not decide on its own.",
       "first": "What is already in the mailbox only comes when you want it to: with “Bring over the mail already there” when adding it, or later with the clock button in its row. It comes with the provider's date, not as a heap of new mail from today.",
       "password": "The password only goes in and never comes out again. The server needs it to sign in at the provider and keeps it sealed."
+    }
+  },
+  "moving": {
+    "title": "Moving",
+    "intro": "Bring your mail over from your old provider: every folder, read or unread as it was, with its date. The server copies in the background, so you can close this page.",
+    "noMailbox": {
+      "title": "No mailbox here",
+      "body": "Your account has no mailbox that mail could move into. Ask your admin."
+    },
+    "form": {
+      "title": "Move a mailbox",
+      "explain": "Your old address and its password are all it takes: the server finds your provider's IMAP server itself and logs in once to be sure.",
+      "address": "Old address",
+      "addressHint": "The address at your old provider.",
+      "password": "Password",
+      "passwordHint": "Often an app password of the provider, not the one you sign in with. It is kept sealed until you are done.",
+      "manual": "Enter the server myself",
+      "host": "IMAP server",
+      "hostHint": "With TLS, usually port 993.",
+      "port": "Port",
+      "login": "User name",
+      "loginHint": "Empty when it is the address itself.",
+      "searching": "Looking for your provider's server …",
+      "start": "Start moving",
+      "started": "The move has started and goes on in the background."
+    },
+    "hints": {
+      "gmail": "Gmail only lets other servers in with an app password: turn on 2-step verification in your Google account, then create one at myaccount.google.com/apppasswords. IMAP is always on at Gmail. Labels are folders there; a message with several labels comes once, into the first folder it is found in.",
+      "outlook": "Outlook.com and Hotmail only let in apps that sign in through Microsoft, which a server of your own cannot do for you. Copy the mail with a mail program instead: add both mailboxes and drag the folders over.",
+      "gmx": "GMX only lets other servers in once you allow it: in the GMX settings under E-Mail → POP3/IMAP Abruf, switch on access over IMAP. With two-factor authentication you need an app password.",
+      "webde": "WEB.DE only lets other servers in once you allow it: in the WEB.DE settings under E-Mail → POP3/IMAP Abruf, switch on access over IMAP. With two-factor authentication you need an app password."
+    },
+    "job": {
+      "from": "from {{host}} as {{login}}",
+      "queued": "Waiting for its turn …",
+      "running": "Copying …",
+      "looking": "Looking through the folders …",
+      "progress": "{{done}} of {{total}} messages · {{size}}",
+      "progressLabel": "How far the move got",
+      "folders": "folder {{done}} of {{total}}",
+      "skipped": "{{count}} message was here already and was left out",
+      "skipped_other": "{{count}} messages were here already and were left out",
+      "done": "Everything is here.",
+      "doneAt": "Everything that was there is here, as of {{date}}."
+    },
+    "errors": {
+      "quotaExceeded": "Your mailbox here is full. Make room or ask your admin for more, then continue: it goes on where it stopped.",
+      "loginRefused": "The old provider refused the password. Enter a new one (often an app password) and continue.",
+      "unreachable": "The old provider could not be reached. Try again later.",
+      "notPublic": "The old provider's server is not on the internet, as far as this server can tell.",
+      "noMailbox": "Your account has no mailbox that mail could move into.",
+      "stopped": "Paused. Continue whenever you like; it goes on where it stopped.",
+      "failed": "Something went wrong. Continue to try again."
+    },
+    "actions": {
+      "pause": "Pause",
+      "continue": "Continue",
+      "syncAgain": "Sync again",
+      "finish": "Done, delete login",
+      "finishConfirm": "Done with {{address}}? The password for the old mailbox is deleted; the mail that came stays.",
+      "newPassword": "New password"
+    },
+    "toasts": {
+      "queued": "It goes on in a moment.",
+      "finished": "Done. The login for the old mailbox is deleted."
+    },
+    "about": {
+      "title": "Worth knowing",
+      "what": "Every folder comes along, the special ones (sent, drafts, junk, trash, archive) into yours, and every message with its date and read, flagged or answered as it was.",
+      "twice": "Nothing comes twice: a message that is here already, by its Message-ID or by its content, is left out.",
+      "switch": "Take your time: move once now, tell people your new address, and use “Sync again” whenever you like. It only fetches what arrived at the old provider since.",
+      "password": "The password is only used for copying, kept sealed, and deleted as soon as you click “Done, delete login”.",
+      "calendars": "Calendars and contacts move separately:",
+      "calendarsLink": "Calendars & contacts → Move from another provider"
     }
   },
   "mailbox": {
@@ -1680,6 +2199,54 @@
     "releasedHint": "Mail to these addresses is refused until you take them back or the time runs out.",
     "reservedUntil": "Reserved until {{date}}",
     "restore": "Take back"
+  },
+  "memberships": {
+    "title": "Groups and shared mailboxes",
+    "intro": "An admin added you to these. Mail to a group reaches you in your own inbox; a shared mailbox shows next to your own folders.",
+    "group": "Group",
+    "shared": "Shared mailbox",
+    "maySend": "you may send as it",
+    "sharedHint": "In mail apps a shared mailbox shows under Shared/, in the webmail as an account of its own. What you send as it is kept in its Sent folder too."
+  },
+  "masked": {
+    "pageTitle": "Masked addresses",
+    "intro": "A random address for each website. If one starts getting spam, you know who passed it on, and you turn it off without touching your real address.",
+    "new": "New masked address",
+    "closed": "Masked addresses are not open on this server yet. Ask the admin to switch them on for a domain.",
+    "description": "What it is for",
+    "descriptionPlaceholder": "for example the bakery's newsletter",
+    "site": "Website",
+    "siteHint": "Optional, so you remember where you used it.",
+    "prefix": "Prefix",
+    "prefixHint": "Optional: letters a–z, digits and _ in front of the random part.",
+    "prefixPlaceholder": "for example shop",
+    "domain": "Domain",
+    "create": "Make an address",
+    "created": "{{address}} is ready and copied",
+    "listTitle": "Your masked addresses",
+    "filter": {
+      "active": "In use",
+      "deleted": "Deleted"
+    },
+    "empty": "Nothing here yet.",
+    "noNote": "No note",
+    "state": {
+      "pending": "Waiting for its first mail",
+      "enabled": "On",
+      "disabled": "Off: mail goes quietly to the Trash",
+      "deleted": "Deleted: mail is refused"
+    },
+    "lastMessage": "last mail {{date}}",
+    "noMessage": "no mail yet",
+    "enable": "Turn on",
+    "disable": "Turn off",
+    "delete": "Delete",
+    "deleteConfirm": "Delete {{address}}? Mail to it is refused from now on. You can turn it on again later; nobody else ever gets it.",
+    "toasts": {
+      "enabled": "Turned on",
+      "disabled": "Turned off, mail goes to the Trash",
+      "deleted": "Deleted, mail is refused"
+    }
   },
   "storage": {
     "title": "Storage",
@@ -2096,7 +2663,7 @@
     "helperOld": "The helper on this machine is too old for the update button. Run this once on the machine -- it brings the helper up to date too, and from then on you update here with a click:"
   },
   "backups": {
-    "intro": "Every night the server backs up mail, settings, calendars and contacts to an SFTP server, like a NAS. After the first time it only uploads what is new.",
+    "intro": "Every night the server backs up mail, settings, calendars and contacts: to an SFTP server such as a NAS, to an S3 bucket, or into a folder such as a mounted disk. After the first time it only uploads what is new.",
     "status": {
       "title": "Status",
       "running": "The backup is running …",
@@ -2110,7 +2677,7 @@
       "started": "The backup is starting"
     },
     "target": {
-      "title": "Backup server",
+      "title": "Where backups go",
       "explain": "Where backups go. The folder is created if it does not exist; use one per server.",
       "host": "Address",
       "port": "Port",
@@ -2128,7 +2695,28 @@
       "test": "Test connection",
       "testOk": "The connection works",
       "testFirst": "The connection works. The server presented {{hostKey}}; from now on it has to be this key.",
-      "trustNewKey": "Trust the new key"
+      "trustNewKey": "Trust the new key",
+      "kind": "Backups go to",
+      "kindSftp": "SFTP server",
+      "kindS3": "S3 bucket",
+      "kindFolder": "Folder",
+      "explainS3": "Amazon S3 or any server that speaks its language: MinIO, Backblaze B2, Hetzner Object Storage, Wasabi and others. Use a bucket, or a folder in one, for this server alone.",
+      "explainFolder": "A folder on this machine: a second disk, or a NAS share mounted into the container. It has to exist already, outside the server's data directory.",
+      "endpoint": "S3 address",
+      "endpointHint": "Only the server, without the bucket, e.g. https://s3.eu-central-1.amazonaws.com. http:// only works inside your own network.",
+      "bucket": "Bucket",
+      "prefix": "Folder in the bucket",
+      "prefixHint": "Empty for the whole bucket",
+      "region": "Region",
+      "regionHint": "e.g. eu-central-1; us-east-1 when empty",
+      "accessKey": "Access key",
+      "secretKey": "Secret key",
+      "secretKeyKept": "Leave empty to keep the stored key.",
+      "pathStyle": "Bucket in the path",
+      "pathStyleHint": "https://server/bucket instead of https://bucket.server. MinIO and many servers in your own network want this.",
+      "folder": "Folder",
+      "folderHint": "A full path, e.g. /backup",
+      "testWritable": "The connection works: a test file was written, read back and removed."
     },
     "schedule": {
       "enabled": "Back up every night",
@@ -2171,6 +2759,35 @@
       "keptGateway": "This machine's gateway pairing was kept, not the one from the backup.",
       "oldDatabase": "The database from before is in the data directory as uwumail.db.replaced.*. Delete it once you are sure.",
       "forget": "Got it"
+    },
+    "mailbox": {
+      "title": "Restore one mailbox",
+      "explain": "Takes one person's mail out of a snapshot while the server keeps running. It comes back next to what is there now, into a new folder “Restored <date>” with the old folders below it. Messages the mailbox still has are left out.",
+      "snapshot": "Snapshot",
+      "latest": "The newest one",
+      "open": "Open",
+      "openFailed": "The snapshot could not be opened: {{error}}",
+      "opening": "Fetching the snapshot's database: {{done}} of {{total}} …",
+      "opened": "Open: the snapshot of {{time}}.",
+      "restoring": "Bringing back the mail of {{account}}: {{done}} of {{total}} …",
+      "lastDone": "{{count}} message is back in {{account}}, in the folder “{{folder}}”; {{skipped}} were still there.",
+      "lastDone_other": "{{count}} messages are back in {{account}}, in the folder “{{folder}}”; {{skipped}} were still there.",
+      "lastFailed": "Bringing mail back into {{account}} stopped: {{error}}. {{count}} messages had come back until then.",
+      "nobody": "Nobody in this snapshot had a mailbox.",
+      "person": "Person",
+      "personLine": "{{login}} ({{count}})",
+      "into": "Into the mailbox of",
+      "intoHint": "Empty for the same address. For someone whose address has changed since.",
+      "which": "Folders",
+      "allFolders": "All folders",
+      "someFolders": "Choose folders",
+      "inbox": "Inbox",
+      "how": "Nothing that is there now is changed or replaced. A backup waits until this is done.",
+      "restore": "Restore",
+      "close": "Close snapshot",
+      "nothingMissing": "Nothing was missing: the message from the snapshot is still in {{account}}, so nothing had to come back.",
+      "nothingMissing_other": "Nothing was missing: all {{count}} messages from the snapshot are still in {{account}}, so nothing had to come back.",
+      "nothingThere": "The snapshot had no mail for {{account}} in these folders, so nothing came back."
     }
   },
   "spam": {

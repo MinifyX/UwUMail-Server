@@ -10,6 +10,7 @@ import { formatNumber } from "@/lib/format";
 import { Link } from "@/lib/router";
 import { useReports } from "./queries";
 import { ReportList } from "./ReportList";
+import { SentReports } from "./SentReports";
 
 const PERIODS = [7, 30, 90, 180];
 
@@ -121,7 +122,8 @@ function DomainCard({ domain, days }: { domain: DomainReports; days: number }) {
   );
 }
 
-/** What other mail servers report about our domains: DMARC results and TLS to our MX. */
+/** What other mail servers report about our domains (DMARC results and TLS to our MX), and the
+ * TLS reports this server sends them in turn. */
 export function ReportsPage() {
   const { t } = useT();
   const [days, setDays] = useState(30);
@@ -144,6 +146,7 @@ export function ReportsPage() {
       ) : (
         query.data.domains.map((domain) => <DomainCard key={domain.name} domain={domain} days={days} />)
       )}
+      <SentReports days={days} />
     </div>
   );
 }

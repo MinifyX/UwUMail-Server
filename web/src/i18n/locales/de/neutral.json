@@ -41,6 +41,19 @@
       "tooManyAttempts": "Zu viele Fehlversuche. Bitte warte ein paar Minuten.",
       "offline": "Der Server ist gerade nicht erreichbar.",
       "internal": "Auf dem Server ist etwas schiefgelaufen."
+    },
+    "or": "oder",
+    "oidcButton": "Mit {{provider}} anmelden",
+    "oidcButtonGeneric": "Mit Single Sign-on anmelden",
+    "oidcErrors": {
+      "unavailable": "Der Anmeldedienst ist gerade nicht erreichbar. Versuch es später noch mal oder melde dich mit deinem Passwort an.",
+      "expired": "Die Anmeldung hat zu lange gedauert oder wurde in einem anderen Browser begonnen. Bitte versuch es noch mal.",
+      "refused": "Die Anmeldung wurde beim Anmeldedienst abgebrochen oder abgelehnt.",
+      "failed": "Die Antwort des Anmeldedienstes war nicht in Ordnung. Bitte versuch es noch mal.",
+      "emailNotVerified": "Der Anmeldedienst hat deine Mail-Adresse nicht bestätigt, darum kann er dich hier nicht anmelden.",
+      "domainNotAllowed": "Für diese Adresse gibt es kein Konto, und in ihrer Domain darf keins angelegt werden.",
+      "noAccount": "Für diese Anmeldung gibt es auf diesem Server kein Konto, und es darf keins angelegt werden.",
+      "alreadyLinked": "Dieses Konto gehört beim Anmeldedienst schon zu einer anderen Anmeldung."
     }
   },
   "nav": {
@@ -62,7 +75,10 @@
     "expand": "{{group}} ausklappen",
     "mailbox": "Postfach",
     "directory": "Konten & Domains",
-    "calendars": "Kalender & Kontakte"
+    "calendars": "Kalender & Kontakte",
+    "masked": "Maskierte Adressen",
+    "moving": "Umzug",
+    "more": "Mehr"
   },
   "userMenu": {
     "open": "Kontomenü öffnen",
@@ -167,7 +183,8 @@
       "overview": "Übersicht",
       "mailFlow": "Mailfluss",
       "backups": "Backups",
-      "updates": "Updates"
+      "updates": "Updates",
+      "stats": "Statistik"
     },
     "tiles": {
       "news": "neu",
@@ -201,6 +218,177 @@
         "title": "Letzte Änderung",
         "none": "Noch nichts geändert"
       }
+    }
+  },
+  "adminView": {
+    "label": "Ansicht",
+    "simple": "Einfach",
+    "full": "Alles",
+    "hint": {
+      "simple": "Nur die Ampel und was zu tun ist. Alles andere steht im Menü unter „Mehr“.",
+      "full": "Alle Zahlen und alle Prüfungen. „Einfach“ zeigt nur die Ampel."
+    },
+    "light": "Ampel: {{level}}",
+    "headline": {
+      "ok": "Alles in Ordnung",
+      "unknown": "Noch nicht alles geprüft",
+      "warning": "Etwas braucht einen Blick",
+      "problem": "Etwas funktioniert nicht"
+    },
+    "sentence": {
+      "ok": "Mails kommen und gehen, gerade braucht dich nichts.",
+      "unknown": "Die ersten Prüfungen laufen kurz nach dem Start.",
+      "warning_one": "Eine Sache unten solltest du dir bei Gelegenheit ansehen.",
+      "warning_other": "{{count}} Dinge unten solltest du dir bei Gelegenheit ansehen.",
+      "problem_one": "Eine Sache unten braucht bald deine Hilfe.",
+      "problem_other": "{{count}} Dinge unten brauchen bald deine Hilfe."
+    },
+    "todo": "Was zu tun ist",
+    "quick": {
+      "title": "Schnellzugriff",
+      "people": "Personen",
+      "addPerson": "Person hinzufügen",
+      "domains": "Domains",
+      "backups": "Backups"
+    }
+  },
+  "alerts": {
+    "title": "Alarme",
+    "intro": "Worüber der Server die Admins informiert hat und was danach wieder in Ordnung kam. Er schaut alle fünf Minuten nach.",
+    "loading": "Alarme werden geladen …",
+    "none": "Keine offenen Alarme.",
+    "openLabel": "Offene Alarme",
+    "history_one": "{{count}} Alarm, der wieder in Ordnung ist",
+    "history_other": "{{count}} Alarme, die wieder in Ordnung sind",
+    "since": "Seit {{time}}",
+    "resolvedAt": "Wieder in Ordnung {{time}}",
+    "acknowledgedBy": "{{login}} weiß Bescheid",
+    "acknowledge": "Gesehen",
+    "acknowledgeHint": "Keine täglichen Erinnerungen mehr dazu. Du hörst trotzdem davon, wenn es schlimmer oder wieder gut wird.",
+    "acknowledgedToast": "Notiert. Keine Erinnerungen mehr dazu.",
+    "level": {
+      "info": "Information",
+      "warning": "Bitte ansehen",
+      "problem": "Problem",
+      "resolved": "Wieder in Ordnung"
+    },
+    "mail": {
+      "title": "Alarm-Mails",
+      "label": "Mails an mich zu Alarmen",
+      "all": "Alle",
+      "problems": "Nur Probleme",
+      "none": "Keine",
+      "hint": "Jeder Admin wählt selbst. Eine Mail kommt, wenn etwas gelb oder rot wird, einmal am Tag, solange etwas rot bleibt, und noch einmal, wenn es wieder in Ordnung ist."
+    },
+    "codes": {
+      "certRenewalFailing": "Das Zertifikat lässt sich nicht erneuern (erster Fehlschlag {{since}}).",
+      "backupFailed": "Das letzte Backup ist fehlgeschlagen.",
+      "backupOld": "Das letzte erfolgreiche Backup war {{time}}.",
+      "updateAvailable": "Version {{version}} ist erschienen."
+    },
+    "hints": {
+      "certRenewalFailing": "Im Server-Log steht, warum. Oft zeigt ein Name (noch) nicht auf diesen Server oder Port 80 ist von außen nicht erreichbar.",
+      "backupFailed": "Auf der Backup-Seite steht der Fehler. Prüfe das Ziel und starte eins von Hand.",
+      "backupOld": "Backups laufen normalerweise jede Nacht. Auf der Backup-Seite siehst du, ob sie pausiert sind oder was schiefging.",
+      "updateAvailable": "Auf der Update-Seite steht, was neu ist, und ein Klick aktualisiert."
+    }
+  },
+  "stats": {
+    "intro": "Was auf deinem Server passiert ist, Tag für Tag oder Monat für Monat.",
+    "utc": "Tage zählen in UTC. Die Zahlen beginnen mit Version 0.14.",
+    "range": {
+      "label": "Zeitraum",
+      "days": "30 Tage",
+      "months": "12 Monate"
+    },
+    "total": {
+      "days": "in 30 Tagen",
+      "months": "in 12 Monaten"
+    },
+    "latest": "zuletzt gemessen",
+    "chartSummary": "{{series}}: Balkendiagramm, höchster Wert {{max}} ({{peak}}). Die Tabelle unten hat alle Zahlen.",
+    "chartEmpty": "{{series}}: In diesem Zeitraum wurde nichts gezählt.",
+    "charts": {
+      "received": {
+        "title": "Empfangene Mails",
+        "hint": "Mails von anderen Servern und abgeholten Postfächern, die mindestens eine Person erreicht haben."
+      },
+      "refused": {
+        "title": "Abgewiesene Mails",
+        "hint": "An der Tür abgelehnt: unbekannte Empfänger, Spam, Viren und Regeln wie DMARC."
+      },
+      "submitted": {
+        "title": "Gesendete Mails",
+        "hint": "Nachrichten, die deine Leute verschickt haben, aus Mail-Apps, der Webmail oder den UwUMail-Apps."
+      },
+      "delivered": {
+        "title": "An andere Server übergeben",
+        "hint": "Empfänger auf anderen Servern, die die Mail angenommen haben."
+      },
+      "logins": {
+        "title": "Fehlgeschlagene Anmeldungen",
+        "hint": "Falsche Passwörter und abgelehnte Anmeldungen in allen Apps und im Portal."
+      },
+      "storage": {
+        "title": "Belegter Speicher",
+        "hint": "Alle Postfächer zusammen, gemessen im Lauf jedes Tages."
+      }
+    },
+    "keys": {
+      "mail": {
+        "received": "Empfangen",
+        "junk": "In den Spam-Ordner",
+        "submitted": "Gesendet",
+        "delivered": "Zugestellt",
+        "deferred": "Später erneut versucht",
+        "bounced": "Aufgegeben"
+      },
+      "refused": {
+        "unknownRecipient": "Unbekannter Empfänger",
+        "spam": "Spam",
+        "virus": "Virus",
+        "policy": "Regeln (DMARC, gesperrte Absender, Relaying)",
+        "greylisted": "Um späteren Versuch gebeten"
+      },
+      "loginFailed": {
+        "smtp": "SMTP",
+        "imap": "IMAP",
+        "jmap": "JMAP",
+        "dav": "CalDAV/CardDAV",
+        "managesieve": "ManageSieve",
+        "portal": "Portal",
+        "other": "Andere"
+      },
+      "gauge": {
+        "accounts": "Konten",
+        "storageBytes": "Belegter Speicher"
+      }
+    },
+    "table": {
+      "title": "Alle Zahlen als Tabelle",
+      "caption": "Statistik pro Zeitraum",
+      "period": {
+        "days": "Tag",
+        "months": "Monat"
+      }
+    },
+    "metrics": {
+      "title": "Prometheus-Metriken",
+      "intro": "Für ein Monitoring: die Zahlen des Servers unter /metrics im Prometheus-Format. Aus, bis du sie einschaltest.",
+      "enabled": "Metriken bereitstellen",
+      "enabledHint": "Braucht ein Token, erlaubte Netze oder beides, damit nicht jeder sie lesen kann.",
+      "token": "Token",
+      "tokenHint": "Prometheus schickt es als Bearer-Token. Lass hier eins erzeugen.",
+      "tokenFresh": "Kopier es jetzt: Nach dem Speichern wird es nie wieder angezeigt.",
+      "tokenSet": "Ein Token ist gesetzt. Ein neues ersetzt es.",
+      "tokenNew": "Token erzeugen",
+      "tokenReplace": "Neues Token",
+      "tokenRemove": "Entfernen",
+      "copyToken": "Token kopieren",
+      "networks": "Nur aus diesen Netzen",
+      "networksHint": "Eine Adresse oder ein Netz pro Zeile, etwa 10.0.0.0/8. Leer: von überall, mit dem Token.",
+      "needsWayIn": "Erzeuge erst ein Token oder nenne ein Netz, sonst wären die Metriken für alle offen.",
+      "address": "Adresse für Prometheus"
     }
   },
   "duration": {
@@ -325,7 +513,29 @@
       "googleUseIcs": "Google lässt nur seine eigenen Apps herein. Nimm für Kalender die geheime iCal-Adresse und für Kontakte einen vCard-Export.",
       "subscriptionLimit": "Du hast schon so viele abonnierte Kalender wie möglich.",
       "subscriptionExists": "Diesen Kalender hast du schon abonniert.",
-      "refreshPause": "Gerade erst geholt. Versuch es in einer Minute nochmal."
+      "refreshPause": "Gerade erst geholt. Versuch es in einer Minute nochmal.",
+      "sharedMailbox": "Das ist ein geteiltes Postfach: Niemand meldet sich dort an, die Mitglieder nutzen es aus ihrem eigenen Konto.",
+      "maskedDomain": "Auf diesem Server ist noch keine Domain für maskierte Adressen freigegeben. Frag den Admin.",
+      "maskedLimit": "Du hast so viele maskierte Adressen, wie dieser Server erlaubt. Lösch welche, die du nicht mehr brauchst.",
+      "maskedPrefix": "Ein Präfix darf nur Buchstaben a–z, Ziffern und _ haben, höchstens 64.",
+      "maskedState": "Eine maskierte Adresse kann nicht wieder auf ihre erste Mail warten.",
+      "backupBusy": "Gerade arbeitet schon etwas mit den Backups: ein Backup oder ein Postfach, das zurückkommt. Versuch es noch mal, wenn es fertig ist. ({{detail}})",
+      "backupFolderInData": "Der Backup-Ordner muss außerhalb des Datenverzeichnisses des Servers liegen, sonst ginge das Backup zusammen mit dem Server verloren.",
+      "moveExists": "Diese Adresse wird schon umgezogen.",
+      "moveFromHere": "Diese Adresse liegt schon auf diesem Server, da gibt es nichts umzuziehen.",
+      "moveLimit": "Höchstens fünf Postfächer können gleichzeitig umziehen. Schließ erst einen der anderen Umzüge ab.",
+      "moveRunning": "Dieser Umzug läuft noch.",
+      "moveNotRunning": "Dieser Umzug läuft gerade nicht.",
+      "moveNoMailbox": "Dein Konto hat kein Postfach, in das Mails umziehen könnten.",
+      "moveWrongPassword": "Der alte Anbieter hat das Passwort abgelehnt. Viele Anbieter wollen hierfür ein App-Passwort.",
+      "alertResolved": "Dieser Alarm ist schon wieder in Ordnung.",
+      "confirmByLogin": "Zum Bestätigen melde dich ab und wieder an und versuch es dann noch mal.",
+      "passwordInDirectory": "Dieses Passwort wird im Verzeichnis deiner Organisation (LDAP) verwaltet und dort geändert.",
+      "serviceAccount": "Ein Dienst meldet sich nur mit App-Passwörtern an.",
+      "oauthClientUnknown": "Diese App ist auf diesem Server nicht registriert.",
+      "oauthRedirectInvalid": "Die App möchte an eine Adresse zurück, die sie nicht registriert hat.",
+      "oidcFailed": "Mit dem Anmeldedienst hat es nicht geklappt: {{detail}}",
+      "ldapFailed": "Mit dem Verzeichnis hat es nicht geklappt: {{detail}}"
     }
   },
   "people": {
@@ -534,6 +744,40 @@
       "revokeTitle": "{{name}} zurückziehen?",
       "revokeBody": "Was dieses Passwort benutzt, kommt danach nicht mehr rein.",
       "createdTitle": "Neues App-Passwort"
+    },
+    "authSource": {
+      "label": "Passwort wird geprüft",
+      "hint": "Beim Wechsel zum Verzeichnis wird das hier gespeicherte Passwort gelöscht. Zurück heißt: Du setzt ein neues Passwort oder schickst einen Link.",
+      "oidcHint": "Meldet sich beim OpenID-Connect-Anbieter an. Du kannst trotzdem auf ein Passwort hier oder im Verzeichnis wechseln.",
+      "local": "Hier auf diesem Server",
+      "ldap": "Im LDAP-Verzeichnis",
+      "oidc": "Beim OpenID-Connect-Anbieter",
+      "toLdapTitle": "Passwort von {{login}} im Verzeichnis prüfen?",
+      "toLdapBody": "Das hier gespeicherte Passwort wird gelöscht. Ab jetzt meldet sich die Person mit ihrem Verzeichnis-Passwort an, im Portal und in Mail-Apps. App-Passwörter bleiben.",
+      "toLocalTitle": "Passwort von {{login}} hier prüfen?",
+      "toLocalBody": "Die Person hat danach hier kein Passwort. Setz ein neues oder schick einen Link, um eins zu wählen.",
+      "switch": "Wechseln",
+      "inDirectory": "Das Passwort wird im LDAP-Verzeichnis geprüft und dort geändert."
+    }
+  },
+  "sharedMailboxes": {
+    "title": "Geteilte Postfächer",
+    "explain": "Ein Postfach, das mehrere Leute nutzen, etwa support@. Niemand meldet sich dort an; die Mitglieder sehen es neben ihren eigenen Ordnern und dürfen damit antworten.",
+    "create": "Neues geteiltes Postfach",
+    "createIntro": "Es bekommt eine eigene Adresse und eigenen Speicher; Mail dorthin landet für alle Mitglieder in seinem Posteingang.",
+    "name": "Name",
+    "namePlaceholder": "zum Beispiel Support",
+    "address": "Adresse",
+    "addressPlaceholder": "zum Beispiel support",
+    "members": "Mitglieder",
+    "membersHint": "Alle Ausgewählten sehen alle Ordner. Hak an, wer auch mit der Adresse senden darf.",
+    "membersIntro": "Mitglieder sehen jeden Ordner, auch neue. Wer senden darf, findet die Adresse bei den eigenen Absendern; eine Kopie des Gesendeten bleibt in seinem Gesendet-Ordner.",
+    "maySend": "darf senden",
+    "save": "Mitglieder speichern",
+    "pill": "Geteiltes Postfach",
+    "toasts": {
+      "created": "{{address}} angelegt",
+      "saved": "Mitglieder gespeichert"
     }
   },
   "log": {
@@ -600,7 +844,17 @@
       "spamVirusTest": "{{actor}} hat den Virenscanner getestet",
       "updatesSettings": "{{actor}} hat die Update-Einstellungen geändert",
       "brandLogo": "{{actor}} hat ein neues Logo hochgeladen",
-      "brandLogoRemoved": "{{actor}} hat das Logo entfernt"
+      "brandLogoRemoved": "{{actor}} hat das Logo entfernt",
+      "backupRestoreMailbox": "{{actor}} hat Mails von {{target}} aus einem Backup zurückgeholt",
+      "accountAuthSource": "{{actor}} hat geändert, wo das Passwort von {{target}} geprüft wird",
+      "accountOauthRevoked": "{{actor}} hat eine App von {{target}} abgemeldet",
+      "alertAcknowledge": "{{actor}} hat beim Alarm {{target}} auf „Gesehen“ geklickt",
+      "domainMaskedAddresses": "{{actor}} hat maskierte Adressen auf {{target}} geändert",
+      "groupCreate": "{{actor}} hat die Gruppe {{target}} angelegt",
+      "groupUpdate": "{{actor}} hat die Gruppe {{target}} geändert",
+      "groupRemove": "{{actor}} hat die Gruppe {{target}} entfernt",
+      "sharedMailboxCreate": "{{actor}} hat das geteilte Postfach {{target}} angelegt",
+      "sharedMailboxMembers": "{{actor}} hat die Mitglieder des geteilten Postfachs {{target}} geändert"
     },
     "details": {
       "adminOn": "ist jetzt Admin",
@@ -623,7 +877,11 @@
       "protocolsNone": "alle Protokolle aus",
       "redirectTo": "Mail geht an {{address}}",
       "redirectNone": "Mail wird abgewiesen",
-      "appPassword": "App-Passwort „{{value}}“"
+      "appPassword": "App-Passwort „{{value}}“",
+      "switchedOn": "eingeschaltet",
+      "switchedOff": "ausgeschaltet",
+      "authSource": "jetzt: {{value}}",
+      "oauthApp": "App „{{value}}“"
     },
     "entry": {
       "actor": "Wer",
@@ -723,7 +981,8 @@
         "imaps": "Sagt Mail-Apps, wo sie Mails abrufen (IMAP, Port 993).",
         "submissions": "Sagt Mail-Apps, wo sie Mails verschlüsselt verschicken (Port 465).",
         "submission": "Sagt Mail-Apps, wo sie Mails mit STARTTLS verschicken (Port 587).",
-        "caa": "Erlaubt Zertifikate für den Namen des Servers nur von Let's Encrypt und nur für das eigene Konto dieses Servers. Hält TLS hinter einem UwUMail Gateway privat."
+        "caa": "Erlaubt Zertifikate für den Namen des Servers nur von Let's Encrypt und nur für das eigene Konto dieses Servers. Hält TLS hinter einem UwUMail Gateway privat.",
+        "tlsa": "Sagt sendenden Servern, welchen Schlüssel das Zertifikat dieses Servers hat, damit sie nur verschlüsselt an ihn zustellen (DANE). Braucht eine mit DNSSEC signierte Zone."
       },
       "notes": {
         "mxUpstream": "Zeigt auf den vorgeschalteten Mailserver. Das passt so.",
@@ -749,7 +1008,12 @@
         "mtaStsPolicyInvalid": "Dort steht keine gültige Richtlinie.",
         "caaWithoutAccount": "Erlaubt auch andere Konten oder Zertifizierungsstellen. Mit accounturi bekommt nur dieser Server Zertifikate.",
         "caaOtherAccount": "Nennt ein anderes Let's-Encrypt-Konto. Dieser Server kann sein Zertifikat erst verlängern, wenn der Eintrag sein eigenes nennt.",
-        "caaForbids": "Erlaubt diesem Server kein Zertifikat von Let's Encrypt. Das Verlängern schlägt fehl."
+        "caaForbids": "Erlaubt diesem Server kein Zertifikat von Let's Encrypt. Das Verlängern schlägt fehl.",
+        "tlsaRecommended": "Die Zone ist mit DNSSEC signiert, also können Server, die DANE prüfen, sicherstellen, dass sie wirklich diesen Server erreichen. Der Server behält beim Verlängern des Zertifikats seinen Schlüssel, der Eintrag bleibt also gültig.",
+        "tlsaKeyKept": "Passt zum Schlüssel des Servers. Der Schlüssel bleibt beim Verlängern des Zertifikats derselbe.",
+        "tlsaMismatch": "Passt zu keinem Zertifikat, das dieser Server vorzeigt. Server, die DANE prüfen, halten Post für deine Domains zurück, bis der Eintrag den aktuellen Schlüssel nennt.",
+        "tlsaUnsigned": "Die Zone ist nicht mit DNSSEC signiert, deshalb schaut sich noch kein Server diesen Eintrag an.",
+        "dnssecBogus": "Die DNSSEC-Signaturen für den Namen des Servers stimmen nicht. Server, die sie prüfen, erreichen den Server gar nicht."
       },
       "catchAll": "Sammeladresse",
       "catchAllHint": "Mails an Adressen, die es nicht gibt, gehen an diese Person. Das zieht auch mehr Spam an.",
@@ -790,8 +1054,10 @@
         "imaps": "Abruf für Mail-Apps (IMAP)",
         "submissions": "Versand für Mail-Apps (TLS)",
         "submission": "Versand für Mail-Apps (STARTTLS)",
-        "caa": "Zertifikate nur für diesen Server (CAA)"
-      }
+        "caa": "Zertifikate nur für diesen Server (CAA)",
+        "tlsa": "DANE (TLSA)"
+      },
+      "tlsaKeyChange": "Bevor sich der Schlüssel des Servers ändert (eigene Zertifikatsdateien, Umzug auf einen anderen Server oder data/tls/acme/key.pem gelöscht), veröffentliche den Eintrag für den neuen Schlüssel neben diesem und warte einen Tag. Sonst halten Server, die DANE prüfen, Post für dich zurück."
     },
     "forwards": {
       "title": "Weiterleitungs-Adressen",
@@ -884,6 +1150,46 @@
       "unauthenticated_other": "{{count}} Berichte kamen von Absendern, die sich nicht ausweisen konnten. Ihre Zahlen könnten erfunden sein."
     }
   },
+  "groups": {
+    "title": "Gruppen",
+    "explain": "Eine Adresse für mehrere Leute, etwa info@ oder vorstand@ eines Vereins. Alle bekommen die Mail in ihren eigenen Posteingang, mit eigenem Spamfilter und eigenen Regeln.",
+    "create": "Neue Gruppe",
+    "save": "Speichern",
+    "address": "Adresse",
+    "addressPlaceholder": "zum Beispiel vorstand",
+    "name": "Name",
+    "namePlaceholder": "zum Beispiel Vorstand",
+    "whoMaySend": "Wer darf schreiben",
+    "who": {
+      "anyone": "Alle",
+      "members": "Nur die Mitglieder",
+      "domain": "Nur Adressen von {{domain}}",
+      "anyoneHint": "Wie jede andere Adresse, offen für alle.",
+      "membersHint": "Mail von allen anderen wird an der Tür abgelehnt.",
+      "domainHint": "Leute dieser Domain dürfen schreiben, alle anderen werden abgelehnt."
+    },
+    "sendAs": "Mitglieder dürfen als Gruppe senden",
+    "sendAsHint": "Dann steht ihre Adresse bei den Absendern der Mitglieder.",
+    "sendAsShort": "Mitglieder senden damit",
+    "members": {
+      "title": "Mitglieder",
+      "search": "Leute suchen",
+      "chosen_one": "{{count}} ausgewählt",
+      "chosen_other": "{{count}} ausgewählt",
+      "none": "Niemand gefunden."
+    },
+    "noMembers": "Noch keine Mitglieder: Mail dorthin wird abgelehnt.",
+    "edit": "{{address}} ändern",
+    "remove": "{{address}} entfernen",
+    "removeConfirm": "Gruppe {{address}} entfernen? Mail dorthin wird ab jetzt abgelehnt.",
+    "toasts": {
+      "created": "Gruppe angelegt",
+      "saved": "Gruppe gespeichert",
+      "removed": "Gruppe entfernt"
+    },
+    "masked": "Maskierte Adressen",
+    "maskedHint": "Leute dürfen auf dieser Domain zufällige Adressen für Websites erzeugen (Mein Konto → Maskierte Adressen)."
+  },
   "reports": {
     "title": "Berichte",
     "intro": "Was andere Mailserver über deine Domains zurückmelden.",
@@ -944,6 +1250,24 @@
     "noDomains": {
       "title": "Noch keine Domain",
       "body": "Berichte kommen erst, wenn eine Domain eingerichtet ist und Post in ihrem Namen unterwegs war."
+    },
+    "sent": {
+      "title": "Berichte, die wir senden",
+      "intro": "Einmal am Tag sagt der Server den Domains, an die er Post zugestellt hat, wie die Verschlüsselung lief (TLS-Berichte, RFC 8460), wenn sie das mit einem _smtp._tls-Eintrag wünschen. Per Mail kommen sie von {{sender}}, mit DKIM signiert. Deine eigenen Domains bekommen keine.",
+      "toggle": "TLS-Berichte senden",
+      "toggleHint": "Zählt jede Zustellung an den Mailserver einer anderen Domain pro Tag: ob TLS klappte und unter welcher Richtlinie (MTA-STS, DANE oder keine).",
+      "listTitle": "Gesendet in den letzten {{days}} Tagen",
+      "empty": "Bisher ging noch kein Bericht raus. Die ersten gehen am Tag, nachdem Post an eine Domain ging, die sie haben will.",
+      "sessions": "{{successful}} verschlüsselte Verbindungen, {{failed}} gescheitert",
+      "to": "An: {{destinations}}",
+      "quiet_one": "Eine weitere Domain wollte keine Berichte oder gehört uns.",
+      "quiet_other": "{{count}} weitere Domains wollten keine Berichte oder gehören uns.",
+      "status": {
+        "sent": "Gesendet",
+        "failed": "Nicht gesendet",
+        "none": "Nicht gewünscht",
+        "skipped": "Übersprungen"
+      }
     }
   },
   "host": {
@@ -1212,7 +1536,8 @@
       "mail": "Versand & Empfang",
       "apps": "Apps & Webmail",
       "vpn": "VPN & Proxy",
-      "branding": "Erscheinungsbild"
+      "branding": "Erscheinungsbild",
+      "login": "Anmeldung"
     },
     "mailIntro": "Wie Mail den Server verlässt und was er annimmt. Änderungen wirken sofort, ohne Neustart.",
     "appsIntro": "Was für Mail-Apps und das Postfach im Browser gilt. Änderungen wirken sofort, ohne Neustart."
@@ -1452,7 +1777,10 @@
       "repeat": "Neues Passwort wiederholen",
       "hint": "Mindestens 10 Zeichen. Ein Satz aus mehreren Wörtern ist gut zu merken.",
       "submit": "Passwort ändern",
-      "changed": "Passwort geändert. Andere Browser wurden abgemeldet."
+      "changed": "Passwort geändert. Andere Browser wurden abgemeldet.",
+      "managedTitle": "Passwort",
+      "inDirectory": "Dein Passwort wird im Verzeichnis deiner Organisation (LDAP) verwaltet. Ändere es dort, das neue gilt hier sofort.",
+      "atProvider": "Du meldest dich beim Anmeldedienst deiner Organisation an und hast hier kein Passwort. Mail-Apps melden sich mit OAuth oder einem App-Passwort an."
     },
     "sessions": {
       "title": "Angemeldete Browser",
@@ -1499,13 +1827,130 @@
       "forwardingRemoved": "Weiterleitung an {{address}} entfernt",
       "forwardingConfirmed": "{{address}} hat die Weiterleitung bestätigt",
       "forwardingDeclined": "{{address}} hat die Weiterleitung abgelehnt",
-      "forwardingConfirmationSent": "Bestätigungs-Mail an {{address}} verschickt"
+      "forwardingConfirmationSent": "Bestätigungs-Mail an {{address}} verschickt",
+      "oauthGranted": "App „{{name}}“ mit OAuth angemeldet ({{scopes}})",
+      "oauthRevoked": "App „{{name}}“ abgemeldet",
+      "oauthTokenReused": "Ein altes Token der App „{{name}}“ kam ein zweites Mal: die App wurde abgemeldet",
+      "oidcLinked": "Mit der Anmeldung bei {{issuer}} verknüpft"
     },
     "loginMethods": {
       "password": "Passwort",
       "totp": "Passwort und App",
       "recoveryCode": "Passwort und Wiederherstellungscode",
-      "passkey": "Passwort und Passkey"
+      "passkey": "Passwort und Passkey",
+      "oidc": "Single Sign-on"
+    },
+    "oauthApps": {
+      "title": "Mit OAuth angemeldete Apps",
+      "none": "Keine App ist mit OAuth angemeldet. Mail-Apps, die das können, melden sich hier im Browser an, statt ein App-Passwort zu nutzen.",
+      "staysSignedIn": "Bleibt angemeldet",
+      "since": "Angemeldet am {{date}}",
+      "signOut": "Abmelden",
+      "signOutTitle": "„{{name}}“ abmelden?",
+      "signOutBody": "Die App kommt nicht mehr an das Postfach, bis sich jemand erneut damit anmeldet.",
+      "signedOut": "„{{name}}“ abgemeldet"
+    }
+  },
+  "oauth": {
+    "title": "„{{name}}“ möchte auf dein Konto zugreifen",
+    "account": "Angemeldet als",
+    "nameClaim": "Die App nennt sich selbst „{{name}}“. Erlaube das nur, wenn du gerade selbst die Anmeldung in dieser App begonnen hast.",
+    "returnsTo": "Danach geht es zurück zu {{host}}.",
+    "returnsToDevice": "Danach geht es zurück zur App auf diesem Gerät ({{host}}).",
+    "scopesTitle": "Die App darf",
+    "scopes": {
+      "mail": {
+        "title": "Deine Mails lesen und ordnen",
+        "hint": "Mails, Ordner und Filterregeln, über IMAP, JMAP und ManageSieve."
+      },
+      "smtp": {
+        "title": "Mails in deinem Namen senden",
+        "hint": "Von deinen Adressen, über SMTP."
+      },
+      "dav": {
+        "title": "Deine Kalender und Kontakte nutzen",
+        "hint": "Lesen und ändern, über CalDAV und CardDAV."
+      },
+      "openid": {
+        "title": "Wissen, dass du es bist",
+        "hint": "Dein Konto auf diesem Server."
+      },
+      "profile": {
+        "title": "Deinen Namen sehen",
+        "hint": "Den Namen in deinem Konto."
+      },
+      "email": {
+        "title": "Deine Mail-Adresse sehen",
+        "hint": "Deine Hauptadresse."
+      },
+      "offline_access": {
+        "title": "Angemeldet bleiben",
+        "hint": "Bis du die App abmeldest, ohne dich erneut zu fragen."
+      }
+    },
+    "revokeHint": "Du kannst die App jederzeit unter Mein Konto → Sicherheit abmelden.",
+    "allow": "Erlauben",
+    "deny": "Ablehnen",
+    "otherAccount": "Nicht {{login}}? Mit einem anderen Konto anmelden",
+    "signingIn": "Anmeldung läuft …",
+    "invalidTitle": "Diese App kann sich hier nicht anmelden",
+    "invalid": {
+      "oauthClientUnknown": "Diese App ist auf diesem Server nicht registriert. Richte das Konto in der App neu ein.",
+      "oauthRedirectInvalid": "Die App möchte an eine Adresse zurück, die sie nicht registriert hat. Zur Sicherheit wurde nichts gesendet."
+    },
+    "toPortal": "Zum Portal"
+  },
+  "externalLogin": {
+    "intro": "Anmeldung am Portal bei einem anderen Anbieter (OpenID Connect) oder Passwortprüfung in einem LDAP-Verzeichnis. Änderungen gelten sofort, ohne Neustart.",
+    "docs": "Anleitung: OpenID Connect und LDAP",
+    "oauthDocs": "Anleitung: Mail-Apps mit OAuth",
+    "test": "Verbindung testen",
+    "testOk": "Klappt: {{detail}}",
+    "autoCreate": "Konto bei der ersten Anmeldung anlegen",
+    "allowedDomains": "Domains für neue Konten",
+    "allowedDomainsHint": "Eine pro Zeile, jeweils eine Domain dieses Servers. Leer: keine neuen Konten.",
+    "oidc": {
+      "title": "OpenID Connect",
+      "intro": "Ein Button auf der Anmeldeseite führt zu eurem Anmeldedienst, etwa Authentik, Keycloak oder Microsoft Entra ID.",
+      "enabled": "Anmeldung über einen OpenID-Connect-Anbieter",
+      "enabledHint": "Hier gesetzte Passwörter funktionieren weiterhin daneben.",
+      "redirectUri": "Diese Redirect-URI beim Anbieter eintragen",
+      "issuer": "Issuer",
+      "issuerHint": "Die Adresse des Anbieters. Den Rest liest UwUMail aus seiner /.well-known/openid-configuration.",
+      "clientId": "Client-ID",
+      "clientSecret": "Client-Secret",
+      "buttonLabel": "Name auf dem Button",
+      "buttonLabelHint": "Der Button heißt dann „Mit Authentik anmelden“. Leer: „Mit Single Sign-on anmelden“.",
+      "autoCreateHint": "Nur wenn der Anbieter die Adresse bestätigt und ihre Domain unten erlaubt ist.",
+      "adminClaim": "Admin-Claim",
+      "adminClaimHint": "Der Claim in der Antwort des Anbieters, der Gruppen oder Rollen auflistet.",
+      "adminValue": "Admin-Wert",
+      "adminValueHint": "Neue Konten, deren Claim diesen Wert enthält, werden Admins."
+    },
+    "ldap": {
+      "title": "LDAP-Verzeichnis",
+      "intro": "Konten, die aufs Verzeichnis gestellt sind, melden sich mit ihrem Verzeichnis-Passwort an, im Portal und in Mail-Apps. Alle anderen behalten ihr Passwort hier.",
+      "enabled": "Passwörter im LDAP-Verzeichnis prüfen",
+      "enabledHint": "Welche Konten das nutzen, stellst du auf der Seite der jeweiligen Person ein. Aus dem Verzeichnis angelegte Konten nutzen es sofort.",
+      "url": "Adresse des Verzeichnisses",
+      "urlHint": "ldaps://… oder ldap://… mit STARTTLS.",
+      "starttls": "STARTTLS bei ldap://",
+      "starttlsHint": "Verschlüsselt die Verbindung, bevor ein Passwort gesendet wird.",
+      "insecureLocalhost": "ldap:// ohne Verschlüsselung auf diesem Rechner erlauben",
+      "insecureLocalhostHint": "Nur für ein Verzeichnis auf genau diesem Rechner (localhost), nie über ein Netzwerk.",
+      "bindDn": "Dienstkonto (Bind-DN)",
+      "bindDnHint": "Sucht im Verzeichnis nach der Person, die sich anmeldet.",
+      "bindPassword": "Passwort des Dienstkontos",
+      "userDnTemplate": "DN-Vorlage",
+      "userDnTemplateHint": "Mit Vorlage wird nicht gesucht: Der DN der Person entsteht aus der Adresse. {user} ist der Teil vor dem @, {email} die ganze Adresse.",
+      "baseDn": "Suchbasis",
+      "userFilter": "Suchfilter",
+      "userFilterHint": "{email} ist die ganze bei der Anmeldung eingegebene Adresse, {user} der Teil vor dem @.",
+      "mailAttribute": "Attribut für die Adresse",
+      "nameAttribute": "Attribut für den Namen",
+      "adminGroupDn": "Admin-Gruppe",
+      "adminGroupDnHint": "Neue Konten, die Mitglied dieser Gruppe sind (memberOf), werden Admins.",
+      "autoCreateHint": "Wenn das Verzeichnis die Adresse kennt und ihre Domain unten erlaubt ist."
     }
   },
   "fetch": {
@@ -1589,6 +2034,80 @@
       "spam": "Geholte Mail wird hier neu bewertet. Was der Anbieter für Spam hielt, zählt als Hinweis und entscheidet nicht allein.",
       "first": "Was schon im Postfach liegt, kommt nur, wenn du es willst: beim Hinzufügen mit „Vorhandene Mails übernehmen“, oder später mit dem Uhr-Knopf in der Zeile. Es kommt mit dem Datum vom Anbieter, nicht als Stapel neuer Mail von heute.",
       "password": "Das Passwort geht hier nur hinein und kommt nie wieder heraus. Der Server braucht es, um sich beim Anbieter anzumelden, und verwahrt es verschlüsselt."
+    }
+  },
+  "moving": {
+    "title": "Umzug",
+    "intro": "Hol deine Mails von deinem alten Anbieter her: jeden Ordner, gelesen oder ungelesen wie dort, mit Datum. Der Server kopiert im Hintergrund, du kannst die Seite also schließen.",
+    "noMailbox": {
+      "title": "Kein Postfach hier",
+      "body": "Dein Konto hat kein Postfach, in das Mails umziehen könnten. Frag deinen Admin."
+    },
+    "form": {
+      "title": "Postfach umziehen",
+      "explain": "Mehr als deine alte Adresse und ihr Passwort braucht es nicht: Der Server findet den IMAP-Server deines Anbieters selbst und meldet sich zur Probe einmal an.",
+      "address": "Alte Adresse",
+      "addressHint": "Die Adresse bei deinem alten Anbieter.",
+      "password": "Passwort",
+      "passwordHint": "Oft ein App-Passwort des Anbieters, nicht das, mit dem du dich anmeldest. Es bleibt versiegelt gespeichert, bis du fertig bist.",
+      "manual": "Server selbst eintragen",
+      "host": "IMAP-Server",
+      "hostHint": "Mit TLS, meist Port 993.",
+      "port": "Port",
+      "login": "Benutzername",
+      "loginHint": "Leer, wenn es die Adresse selbst ist.",
+      "searching": "Suche den Server deines Anbieters …",
+      "start": "Umzug starten",
+      "started": "Der Umzug hat begonnen und läuft im Hintergrund weiter."
+    },
+    "hints": {
+      "gmail": "Gmail lässt andere Server nur mit einem App-Passwort herein: Schalte in deinem Google-Konto die Bestätigung in zwei Schritten ein und erstelle dann eins unter myaccount.google.com/apppasswords. IMAP ist bei Gmail immer an. Labels sind dort Ordner; eine Mail mit mehreren Labels kommt einmal, in den ersten Ordner, in dem sie gefunden wird.",
+      "outlook": "Outlook.com und Hotmail lassen nur Apps herein, die sich über Microsoft anmelden, und das kann ein eigener Server nicht für dich tun. Kopier die Mails stattdessen mit einem Mailprogramm: Richte beide Postfächer ein und zieh die Ordner hinüber.",
+      "gmx": "GMX lässt andere Server erst herein, wenn du es erlaubst: In den GMX-Einstellungen unter E-Mail → POP3/IMAP Abruf den Zugriff per IMAP einschalten. Mit Zwei-Faktor-Authentifizierung brauchst du ein App-Passwort.",
+      "webde": "WEB.DE lässt andere Server erst herein, wenn du es erlaubst: In den WEB.DE-Einstellungen unter E-Mail → POP3/IMAP Abruf den Zugriff per IMAP einschalten. Mit Zwei-Faktor-Authentifizierung brauchst du ein App-Passwort."
+    },
+    "job": {
+      "from": "von {{host}} als {{login}}",
+      "queued": "Wartet, bis es dran ist …",
+      "running": "Kopiere …",
+      "looking": "Schaue die Ordner durch …",
+      "progress": "{{done}} von {{total}} Mails · {{size}}",
+      "progressLabel": "Wie weit der Umzug ist",
+      "folders": "Ordner {{done}} von {{total}}",
+      "skipped": "{{count}} Mail war schon da und wurde ausgelassen",
+      "skipped_other": "{{count}} Mails waren schon da und wurden ausgelassen",
+      "done": "Alles ist da.",
+      "doneAt": "Alles, was dort war, ist hier, Stand {{date}}."
+    },
+    "errors": {
+      "quotaExceeded": "Dein Postfach hier ist voll. Schaff Platz oder frag deinen Admin nach mehr, dann mach weiter: Es geht dort weiter, wo es aufgehört hat.",
+      "loginRefused": "Der alte Anbieter hat das Passwort abgelehnt. Gib ein neues ein (oft ein App-Passwort) und mach weiter.",
+      "unreachable": "Der alte Anbieter war nicht erreichbar. Versuch es später noch mal.",
+      "notPublic": "Der Server des alten Anbieters ist nicht im Internet, soweit dieser Server das sehen kann.",
+      "noMailbox": "Dein Konto hat kein Postfach, in das Mails umziehen könnten.",
+      "stopped": "Pausiert. Mach weiter, wann du willst; es geht dort weiter, wo es aufgehört hat.",
+      "failed": "Etwas ist schiefgegangen. Mach weiter, um es noch mal zu versuchen."
+    },
+    "actions": {
+      "pause": "Pausieren",
+      "continue": "Weitermachen",
+      "syncAgain": "Nochmal abgleichen",
+      "finish": "Fertig, Zugangsdaten löschen",
+      "finishConfirm": "Fertig mit {{address}}? Das Passwort für das alte Postfach wird gelöscht; die Mails, die gekommen sind, bleiben.",
+      "newPassword": "Neues Passwort"
+    },
+    "toasts": {
+      "queued": "Es geht gleich weiter.",
+      "finished": "Fertig. Die Zugangsdaten für das alte Postfach sind gelöscht."
+    },
+    "about": {
+      "title": "Gut zu wissen",
+      "what": "Jeder Ordner kommt mit, die besonderen (Gesendet, Entwürfe, Spam, Papierkorb, Archiv) in deine, und jede Mail mit ihrem Datum und gelesen, markiert oder beantwortet wie dort.",
+      "twice": "Nichts kommt doppelt: Eine Mail, die schon hier ist, nach ihrer Message-ID oder ihrem Inhalt, wird ausgelassen.",
+      "switch": "Lass dir Zeit: Zieh jetzt einmal um, sag den Leuten deine neue Adresse und nimm „Nochmal abgleichen“, wann immer du willst. Es holt nur, was seitdem beim alten Anbieter angekommen ist.",
+      "password": "Das Passwort wird nur zum Kopieren benutzt, versiegelt gespeichert und gelöscht, sobald du auf „Fertig, Zugangsdaten löschen“ klickst.",
+      "calendars": "Kalender und Kontakte ziehen getrennt um:",
+      "calendarsLink": "Kalender & Kontakte → Von anderem Anbieter umziehen"
     }
   },
   "mailbox": {
@@ -1680,6 +2199,54 @@
     "releasedHint": "Mails an diese Adressen werden abgelehnt, bis du sie zurückholst oder die Frist abläuft.",
     "reservedUntil": "Reserviert bis {{date}}",
     "restore": "Zurückholen"
+  },
+  "memberships": {
+    "title": "Gruppen und geteilte Postfächer",
+    "intro": "Ein Admin hat dich hier eingetragen. Mail an eine Gruppe landet in deinem eigenen Posteingang; ein geteiltes Postfach steht neben deinen eigenen Ordnern.",
+    "group": "Gruppe",
+    "shared": "Geteiltes Postfach",
+    "maySend": "du darfst damit senden",
+    "sharedHint": "In Mail-Apps steht ein geteiltes Postfach unter Shared/, im Webmail als eigenes Konto. Was du damit sendest, landet auch in seinem Gesendet-Ordner."
+  },
+  "masked": {
+    "pageTitle": "Maskierte Adressen",
+    "intro": "Eine zufällige Adresse für jede Website. Bekommt eine plötzlich Spam, weißt du, wer sie weitergegeben hat, und schaltest sie ab, ohne deine echte Adresse anzufassen.",
+    "new": "Neue maskierte Adresse",
+    "closed": "Maskierte Adressen sind auf diesem Server noch nicht freigegeben. Bitte den Admin, sie für eine Domain einzuschalten.",
+    "description": "Wofür",
+    "descriptionPlaceholder": "zum Beispiel Newsletter der Bäckerei",
+    "site": "Website",
+    "siteHint": "Freiwillig, damit du weißt, wo du sie benutzt hast.",
+    "prefix": "Präfix",
+    "prefixHint": "Freiwillig: Buchstaben a–z, Ziffern und _ vor dem zufälligen Teil.",
+    "prefixPlaceholder": "zum Beispiel shop",
+    "domain": "Domain",
+    "create": "Adresse erzeugen",
+    "created": "{{address}} ist fertig und kopiert",
+    "listTitle": "Deine maskierten Adressen",
+    "filter": {
+      "active": "In Gebrauch",
+      "deleted": "Gelöscht"
+    },
+    "empty": "Noch nichts hier.",
+    "noNote": "Keine Notiz",
+    "state": {
+      "pending": "Wartet auf die erste Mail",
+      "enabled": "An",
+      "disabled": "Aus: Mail landet still im Papierkorb",
+      "deleted": "Gelöscht: Mail wird abgelehnt"
+    },
+    "lastMessage": "letzte Mail {{date}}",
+    "noMessage": "noch keine Mail",
+    "enable": "Einschalten",
+    "disable": "Ausschalten",
+    "delete": "Löschen",
+    "deleteConfirm": "{{address}} löschen? Mail dorthin wird ab jetzt abgelehnt. Du kannst sie später wieder einschalten; niemand sonst bekommt sie je.",
+    "toasts": {
+      "enabled": "Eingeschaltet",
+      "disabled": "Ausgeschaltet, Mail landet im Papierkorb",
+      "deleted": "Gelöscht, Mail wird abgelehnt"
+    }
   },
   "storage": {
     "title": "Speicher",
@@ -2096,7 +2663,7 @@
     "helperOld": "Der Helfer auf dieser Maschine ist zu alt für den Update-Knopf. Einmal noch auf der Maschine ausführen – das bringt auch den Helfer auf den neuesten Stand, danach aktualisierst du hier per Knopf:"
   },
   "backups": {
-    "intro": "Der Server sichert Mails, Einstellungen, Kalender und Kontakte jede Nacht auf einen SFTP-Server, zum Beispiel ein NAS. Nach dem ersten Mal wird nur hochgeladen, was neu ist.",
+    "intro": "Der Server sichert Mails, Einstellungen, Kalender und Kontakte jede Nacht: auf einen SFTP-Server wie ein NAS, in einen S3-Bucket oder in einen Ordner, etwa eine eingehängte Platte. Nach dem ersten Mal wird nur hochgeladen, was neu ist.",
     "status": {
       "title": "Stand",
       "running": "Das Backup läuft gerade …",
@@ -2110,7 +2677,7 @@
       "started": "Das Backup startet"
     },
     "target": {
-      "title": "Backup-Server",
+      "title": "Wohin gesichert wird",
       "explain": "Wohin gesichert wird. Der Ordner wird angelegt, wenn es ihn noch nicht gibt; nimm für jeden Server einen eigenen.",
       "host": "Adresse",
       "port": "Port",
@@ -2128,7 +2695,28 @@
       "test": "Verbindung testen",
       "testOk": "Verbindung klappt",
       "testFirst": "Verbindung klappt. Der Server hat sich mit {{hostKey}} gemeldet; ab jetzt muss es dieser Schlüssel sein.",
-      "trustNewKey": "Neuem Schlüssel vertrauen"
+      "trustNewKey": "Neuem Schlüssel vertrauen",
+      "kind": "Sichern auf",
+      "kindSftp": "SFTP-Server",
+      "kindS3": "S3-Bucket",
+      "kindFolder": "Ordner",
+      "explainS3": "Amazon S3 oder jeder Server, der dessen Sprache spricht: MinIO, Backblaze B2, Hetzner Object Storage, Wasabi und andere. Nimm einen Bucket oder einen Ordner darin nur für diesen Server.",
+      "explainFolder": "Ein Ordner auf diesem Rechner: eine zweite Platte oder eine NAS-Freigabe, die in den Container eingehängt ist. Er muss schon da sein und außerhalb des Datenverzeichnisses des Servers liegen.",
+      "endpoint": "S3-Adresse",
+      "endpointHint": "Nur der Server, ohne Bucket, z. B. https://s3.eu-central-1.amazonaws.com. http:// geht nur im eigenen Netz.",
+      "bucket": "Bucket",
+      "prefix": "Ordner im Bucket",
+      "prefixHint": "Leer für den ganzen Bucket",
+      "region": "Region",
+      "regionHint": "z. B. eu-central-1; leer heißt us-east-1",
+      "accessKey": "Access Key",
+      "secretKey": "Secret Key",
+      "secretKeyKept": "Leer lassen, um den gespeicherten Schlüssel zu behalten.",
+      "pathStyle": "Bucket im Pfad",
+      "pathStyleHint": "https://server/bucket statt https://bucket.server. So wollen es MinIO und viele Server im eigenen Netz.",
+      "folder": "Ordner",
+      "folderHint": "Ein vollständiger Pfad, z. B. /backup",
+      "testWritable": "Verbindung klappt: Eine Testdatei wurde geschrieben, wieder gelesen und entfernt."
     },
     "schedule": {
       "enabled": "Jede Nacht sichern",
@@ -2171,6 +2759,35 @@
       "keptGateway": "Die Gateway-Kopplung dieser Maschine wurde behalten, nicht die aus dem Backup.",
       "oldDatabase": "Die Datenbank von vorher liegt als uwumail.db.replaced.* im Datenverzeichnis. Lösch sie, wenn du sicher bist.",
       "forget": "Verstanden"
+    },
+    "mailbox": {
+      "title": "Ein Postfach wiederherstellen",
+      "explain": "Holt die Mails einer Person aus einem gesicherten Stand, während der Server weiterläuft. Sie kommen neben das, was jetzt da ist, in einen neuen Ordner „Restored <Datum>“ mit den alten Ordnern darunter. Mails, die das Postfach noch hat, werden ausgelassen.",
+      "snapshot": "Stand",
+      "latest": "Der neueste",
+      "open": "Öffnen",
+      "openFailed": "Der Stand ließ sich nicht öffnen: {{error}}",
+      "opening": "Hole die Datenbank des Stands: {{done}} von {{total}} …",
+      "opened": "Geöffnet: der Stand vom {{time}}.",
+      "restoring": "Hole die Mails von {{account}} zurück: {{done}} von {{total}} …",
+      "lastDone": "{{count}} Mail ist zurück bei {{account}}, im Ordner „{{folder}}“; {{skipped}} waren noch da.",
+      "lastDone_other": "{{count}} Mails sind zurück bei {{account}}, im Ordner „{{folder}}“; {{skipped}} waren noch da.",
+      "lastFailed": "Das Zurückholen zu {{account}} hat aufgehört: {{error}}. Bis dahin sind {{count}} Mails zurückgekommen.",
+      "nobody": "In diesem Stand hatte niemand ein Postfach.",
+      "person": "Person",
+      "personLine": "{{login}} ({{count}})",
+      "into": "In das Postfach von",
+      "intoHint": "Leer für dieselbe Adresse. Für jemanden, dessen Adresse sich seitdem geändert hat.",
+      "which": "Ordner",
+      "allFolders": "Alle Ordner",
+      "someFolders": "Ordner auswählen",
+      "inbox": "Posteingang",
+      "how": "Nichts, was jetzt da ist, wird geändert oder ersetzt. Ein Backup wartet, bis das hier fertig ist.",
+      "restore": "Wiederherstellen",
+      "close": "Stand schließen",
+      "nothingMissing": "Es fehlte nichts: Die Mail aus dem Stand ist noch bei {{account}}, also musste nichts zurückkommen.",
+      "nothingMissing_other": "Es fehlte nichts: Alle {{count}} Mails aus dem Stand sind noch bei {{account}}, also musste nichts zurückkommen.",
+      "nothingThere": "Der Stand hatte in diesen Ordnern keine Mails für {{account}}, also kam nichts zurück."
     }
   },
   "spam": {

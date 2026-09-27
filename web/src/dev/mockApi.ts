@@ -3,19 +3,33 @@
  * and no password needed. Add `?loggedOut` to the URL to see the login page; the password
  * page works with any token except "expired". `?setup` starts on a server without an admin:
  * every setup code except one starting with "wrong" works, and the Cloudflare token "wrong" fails.
+ * A login at the OpenID Connect provider is a page of its own and cannot be played here, but what
+ * the server sends back can: `/login?oidcError=refused` or `/login?pending=mock&methods=totp,recovery`.
+ * `/oauth/authorize?client_id=uwu-thunderbird&redirect_uri=http://127.0.0.1:5000/&scope=openid+mail+smtp`
+ * shows the consent page of an app; the client id "uwu-unknown" is not registered, "uwu-known" was
+ * allowed before.
  * Production builds never include this file.
  */
 
 import type { Brand } from "@/state/brand";
 import type {
   AccountSpamView,
+  AdminAlert,
+  AlertsView,
+  StatsRange,
+  StatsView,
   AntivirusTest,
   AntivirusView,
   EgressTest,
   EgressView,
   BackupSnapshot,
   BackupsView,
+  BackupTarget,
+  MailboxRestoreView,
+  MoveJob,
+  MovingView,
   ForwardAddress,
+  GroupInfo,
   GreylistHold,
   GreylistView,
   UpdatesView,
@@ -23,6 +37,7 @@ import type {
   SpamLimitsView,
   AdminSpamView,
   AppPasswordInfo,
+  AuthSource,
   FetchAccountInfo,
   FetchView,
   ForwardingView,
@@ -37,6 +52,8 @@ import type {
   DomainSummary,
   LearnedFromFolders,
   LokiStatus,
+  MaskedAddress,
+  MaskedState,
   NewSender,
   SenderListEntry,
   SendersView,
@@ -45,6 +62,8 @@ import type {
   FeedsView,
   Info,
   MtaStsView,
+  OAuthGrantInfo,
+  OAuthRequest,
   OwnAddressesView,
   Overview,
   AppPasswordCreated,
@@ -60,12 +79,15 @@ import type {
   ReportKind,
   ReportsOverview,
   ReportsView,
+  SentTlsReports,
   SpamLogEntry,
   SpamLogView,
   SecurityView,
   ServerCheck,
   Session,
   SetupStatus,
+  SharedMailboxMember,
+  WhoMaySend,
   ShareLevel,
   SharingView,
   CalendarsView,
@@ -165,6 +187,12 @@ function person(login: string, name: string, extra: Partial<Person> = {}): Perso
 }
 
 const people: Person[] = [
+  person("support@uwu.example", "Support", {
+    role: "service",
+    protocols: serviceProtocols(),
+    sharedMailbox: true,
+    quotaBytes: 10 * GB,
+  }),
   person("lorin@uwu.example", "Lorin", {
     role: "admin",
     quotaBytes: 0,
@@ -251,6 +279,8 @@ interface MockDomain {
   published?: boolean;
   mtaSts?: MtaStsView | null;
   forwards?: ForwardAddress[];
+  groups?: GroupInfo[];
+  maskedAddresses?: boolean;
 }
 
 function mtaStsView(mode: MtaStsView["mode"], changedAt: number): MtaStsView {
@@ -367,6 +397,18 @@ function report(domain: MockDomain, healthy: boolean): DomainReport {
       }),
     );
   }
+  // The host name's domain is in a signed zone: DANE for mail to this server.
+  if (domain.name === "uwu.example") {
+    const tlsa = "3 1 1 8d02536c887482bc34ff54e41d2ba659bf85b341a0a20afadb5813dcfbcf286d";
+    records.push(
+      record("tlsa", "_25._tcp.mail.uwu.example", tlsa, healthy ? [tlsa] : [], {
+        recordType: "TLSA",
+        status: healthy ? "ok" : "missing",
+        note: healthy ? "tlsaKeyKept" : "tlsaRecommended",
+        optional: true,
+      }),
+    );
+  }
   const order = ["ok", "warning", "missing", "wrong", "error"];
   const status = records
     .filter((r) => !r.optional)
@@ -433,10 +475,42 @@ const detail = (domain: MockDomain): DomainDetail => ({
   report: domain.report,
   mtaSts: domain.mtaSts ?? null,
   forwards: domain.forwards ?? [],
+  groups: domain.groups ?? [],
+  maskedAddresses: domain.maskedAddresses ?? domain.name === "uwu.example",
+  maskedInUse: mockMasked.filter((entry) => entry.state !== "deleted" && entry.email.endsWith(`@${domain.name}`))
+    .length,
   setup: { hostname: "mail.uwu.example", relayHost: null, upstreamMx: false },
 });
 
 const mockSendAs: Record<string, string[]> = {};
+
+/** Where each person's password is checked; everyone not in here has it on this server. */
+const mockAuthSources: Record<string, AuthSource> = {
+  "leni@uwu.example": "ldap",
+  "ami@uwu.example": "oidc",
+};
+
+const oauthGrant = (id: number, clientName: string, scopes: string[], daysAgo: number): OAuthGrantInfo => ({
+  id,
+  clientName,
+  scopes,
+  createdAt: now - daysAgo * 86_400,
+  lastUsedAt: daysAgo > 20 ? null : now - 900,
+  lastUsedProtocol: daysAgo > 20 ? null : "imap",
+  lastUsedIp: daysAgo > 20 ? null : "198.51.100.23",
+});
+
+/** Apps signed in with OAuth, per person; the logged-in admin's own are on the security page. */
+const mockPersonGrants: Record<string, OAuthGrantInfo[]> = {
+  "leni@uwu.example": [oauthGrant(31, "Thunderbird", ["openid", "email", "offline_access", "mail", "smtp"], 3)],
+};
+let nextGrantId = 200;
+
+/** The apps registered with the OAuth provider, by client id. */
+const mockOAuthClients: Record<string, string> = {
+  "uwu-thunderbird": "Thunderbird",
+  "uwu-known": "K-9 Mail",
+};
 
 // The machine's helper: a job runs for a few seconds, printing as it goes, then is done.
 let hostJob: { verb: string; asked: number } | null = null;
@@ -522,6 +596,7 @@ const mockBackups: BackupsView = {
   retention: { daily: 7, weekly: 4, monthly: 6 },
   encrypted: true,
   target: {
+    kind: "sftp",
     host: "nas.uwu.example",
     port: 22,
     user: "backup",
@@ -553,9 +628,67 @@ const mockBackups: BackupsView = {
     staged: null,
     last: null,
   },
+  mailboxRestore: {
+    state: "",
+    snapshot: "",
+    createdAt: 0,
+    error: "",
+    doneBytes: 0,
+    totalBytes: 0,
+    people: [],
+    account: "",
+    total: 0,
+    done: 0,
+    restored: 0,
+    skipped: 0,
+    last: null,
+  },
 };
 
 let restoreStartedAt = 0;
+let mailboxStartedAt = 0;
+
+/** The people of a snapshot in the mock, with a few folders each. */
+function snapshotPeople(): MailboxRestoreView["people"] {
+  const folders = (base: number) => [
+    { id: base + 1, parentId: null, path: ["Inbox"], role: "inbox", emails: 812 },
+    { id: base + 2, parentId: null, path: ["Sent"], role: "sent", emails: 240 },
+    { id: base + 3, parentId: null, path: ["Verein"], role: null, emails: 96 },
+    { id: base + 4, parentId: base + 3, path: ["Verein", "2025"], role: null, emails: 41 },
+    { id: base + 5, parentId: null, path: ["Trash"], role: "trash", emails: 12 },
+  ];
+  return [
+    { login: "lorin@uwu.example", name: "Lorin", emails: 1201, folders: folders(0) },
+    { login: "mini@uwu.example", name: "Mini", emails: 433, folders: folders(10) },
+  ];
+}
+
+/** Opening a snapshot and restoring a mailbox take a few seconds in the mock, like a small real one. */
+function stepMailbox() {
+  const job = mockBackups.mailboxRestore;
+  const elapsed = Date.now() - mailboxStartedAt;
+  if (job.state === "opening") {
+    job.doneBytes = Math.min(job.totalBytes, Math.round((job.totalBytes * elapsed) / 4000));
+    if (elapsed > 4000) Object.assign(job, { state: "open", people: snapshotPeople() });
+  } else if (job.state === "restoring") {
+    job.done = Math.min(job.total, Math.round((job.total * elapsed) / 5000));
+    job.skipped = Math.round(job.done * 0.1);
+    job.restored = job.done - job.skipped;
+    if (elapsed > 5000) {
+      job.state = "open";
+      const day = new Date(job.createdAt * 1000).toISOString().slice(0, 10);
+      job.last = {
+        account: job.account,
+        into: job.account,
+        folder: `Restored ${day}`,
+        restored: job.restored,
+        skipped: job.skipped,
+        error: "",
+        finishedAt: Math.floor(Date.now() / 1000),
+      };
+    }
+  }
+}
 
 /**
  * A restore in the mock walks through fetching and then waits, which is where a real one leaves the
@@ -766,6 +899,7 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "egress.pictures": { value: true, source: "default" },
   "egress.updates": { value: true, source: "database" },
   "egress.fetch": { value: false, source: "default" },
+  "reports.send_tls_reports": { value: true, source: "default" },
   "log.loki.enabled": { value: false, source: "default" },
   "log.loki.privacy_consent": { value: false, source: "default" },
   "log.loki.url": { value: null, source: "default" },
@@ -776,6 +910,32 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "log.loki.labels": { value: [], source: "default" },
   "log.loki.level": { value: "info", source: "default" },
   "log.loki.gateway": { value: true, source: "default" },
+  "metrics.enabled": { value: false, source: "default" },
+  "metrics.token": { value: null, source: "default", set: false },
+  "metrics.allowed_networks": { value: [], source: "default" },
+  "auth.oidc.enabled": { value: true, source: "database" },
+  "auth.oidc.issuer": { value: "https://auth.example.com/application/o/uwumail/", source: "database" },
+  "auth.oidc.client_id": { value: "uwumail", source: "database" },
+  "auth.oidc.client_secret": { value: null, source: "database", set: true },
+  "auth.oidc.button_label": { value: "Authentik", source: "database" },
+  "auth.oidc.auto_create": { value: false, source: "default" },
+  "auth.oidc.allowed_domains": { value: [], source: "default" },
+  "auth.oidc.admin_group_claim": { value: null, source: "default" },
+  "auth.oidc.admin_group_value": { value: null, source: "default" },
+  "auth.ldap.enabled": { value: true, source: "database" },
+  "auth.ldap.url": { value: "ldaps://ldap.example.com", source: "database" },
+  "auth.ldap.starttls": { value: true, source: "default" },
+  "auth.ldap.insecure_localhost": { value: false, source: "default" },
+  "auth.ldap.bind_dn": { value: "cn=uwumail,ou=services,dc=example,dc=com", source: "database" },
+  "auth.ldap.bind_password": { value: null, source: "database", set: true },
+  "auth.ldap.user_dn_template": { value: null, source: "default" },
+  "auth.ldap.base_dn": { value: "ou=people,dc=example,dc=com", source: "database" },
+  "auth.ldap.user_filter": { value: "(&(objectClass=person)(mail={email}))", source: "default" },
+  "auth.ldap.mail_attribute": { value: "mail", source: "default" },
+  "auth.ldap.name_attribute": { value: "cn", source: "default" },
+  "auth.ldap.admin_group_dn": { value: null, source: "default" },
+  "auth.ldap.auto_create": { value: false, source: "default" },
+  "auth.ldap.allowed_domains": { value: [], source: "default" },
 };
 
 const settingsView = () => ({
@@ -978,6 +1138,19 @@ const mockSecurity: SecurityView = {
   appsNeedAppPassword: false,
   appPasswordScopes: ["mail", "smtp", "dav"] as AppScope[],
   appPasswordsRequired: false,
+  oauthGrants: [
+    {
+      id: 21,
+      clientName: "Thunderbird",
+      scopes: ["openid", "email", "profile", "offline_access", "mail", "smtp", "dav"],
+      createdAt: now - 26 * 3600,
+      lastUsedAt: now - 120,
+      lastUsedProtocol: "imap",
+      lastUsedIp: "192.0.2.10",
+    },
+  ],
+  authSource: "local",
+  hasPassword: true,
   appPasswords: [
     {
       id: 1,
@@ -1020,7 +1193,24 @@ const mockSecurity: SecurityView = {
     },
   ],
   events: [
+    { id: 6, at: now - 1800, kind: "login", actor: "", ip: "192.0.2.10", details: { method: "oidc" } },
+    {
+      id: 5,
+      at: now - 2400,
+      kind: "oidcLinked",
+      actor: "",
+      ip: "192.0.2.10",
+      details: { issuer: "https://auth.example.com" },
+    },
     { id: 4, at: now - 3600, kind: "login", actor: "", ip: "192.0.2.10", details: { method: "password" } },
+    {
+      id: 7,
+      at: now - 26 * 3600,
+      kind: "oauthGranted",
+      actor: "",
+      ip: "192.0.2.10",
+      details: { name: "Thunderbird", scopes: ["openid", "email", "profile", "offline_access", "mail", "smtp", "dav"] },
+    },
     {
       id: 3,
       at: now - 2 * 86_400,
@@ -1139,6 +1329,69 @@ const mockFetchAccounts: FetchAccountInfo[] = [
   },
 ];
 
+/** Moves from other providers: one finished a while ago and one on its way, which the mock walks forward. */
+const mockMoves: MoveJob[] = [
+  {
+    id: 2,
+    address: "lorin.alt@gmx.example",
+    host: "imap.gmx.example",
+    port: 993,
+    login: "lorin.alt@gmx.example",
+    state: "running",
+    error: "",
+    errorDetail: "",
+    foldersDone: 3,
+    foldersTotal: 9,
+    messagesDone: 1840,
+    messagesTotal: 5210,
+    messagesSkipped: 12,
+    bytesDone: 212_000_000,
+    createdAt: now - 1200,
+    startedAt: now - 1200,
+    finishedAt: null,
+    lastRunAt: now - 60,
+  },
+  {
+    id: 1,
+    address: "lorin@oldmail.example",
+    host: "imap.oldmail.example",
+    port: 993,
+    login: "lorin@oldmail.example",
+    state: "done",
+    error: "",
+    errorDetail: "",
+    foldersDone: 6,
+    foldersTotal: 6,
+    messagesDone: 734,
+    messagesTotal: 734,
+    messagesSkipped: 0,
+    bytesDone: 61_000_000,
+    createdAt: now - 9 * 86_400,
+    startedAt: now - 9 * 86_400,
+    finishedAt: now - 9 * 86_400 + 900,
+    lastRunAt: now - 9 * 86_400 + 600,
+  },
+];
+let nextMoveId = 3;
+const moveStartedAt = new Map<number, number>([[2, Date.now()]]);
+
+/** Every look at the page moves the running moves on a little, and finishes them after a while. */
+function stepMoves(): MovingView {
+  for (const job of mockMoves) {
+    if (job.state !== "queued" && job.state !== "running") continue;
+    const elapsed = Date.now() - (moveStartedAt.get(job.id) ?? Date.now());
+    if (job.messagesTotal === 0)
+      Object.assign(job, { messagesTotal: 1260, foldersTotal: 7, startedAt: Math.floor(Date.now() / 1000) });
+    job.state = "running";
+    const share = Math.min(1, elapsed / 20_000);
+    job.messagesDone = Math.max(job.messagesDone, Math.round(job.messagesTotal * share));
+    job.foldersDone = Math.max(job.foldersDone, Math.round(job.foldersTotal * share));
+    job.bytesDone = job.messagesDone * 110_000;
+    if (share >= 1) Object.assign(job, { state: "done", finishedAt: Math.floor(Date.now() / 1000) });
+  }
+  return { jobs: mockMoves, max: 5, hasMailbox: true };
+}
+
 const mockFetchView = (): FetchView => ({
   accounts: mockFetchAccounts,
   max: 10,
@@ -1191,7 +1444,56 @@ const mockAddresses: OwnAddressesView = {
   limit: 10,
   used: 1,
   released: [{ address: "alt-shop@uwu.example", releasedAt: now - 2 * 86_400, reservedUntil: now + 28 * 86_400 }],
+  groups: [{ address: "vorstand@verein.example", name: "Vorstand", maySendAs: true }],
+  sharedMailboxes: [{ id: 90, address: "support@uwu.example", name: "Support", maySend: true }],
 };
+
+const mockMasked: MaskedAddress[] = [
+  {
+    id: 1,
+    email: "maple.otter482@uwu.example",
+    state: "enabled",
+    forDomain: "https://shop.example.com",
+    description: "Online shop",
+    url: null,
+    emailPrefix: null,
+    createdBy: "Portal",
+    createdAt: now - 40 * 86_400,
+    lastMessageAt: now - 2 * 86_400,
+  },
+  {
+    id: 2,
+    email: "news.sunny.wren031@uwu.example",
+    state: "disabled",
+    forDomain: "https://news.example.net",
+    description: "",
+    url: null,
+    emailPrefix: "news",
+    createdBy: "JMAP",
+    createdAt: now - 90 * 86_400,
+    lastMessageAt: now - 86_400,
+  },
+];
+
+const MASKED_WORDS = ["maple", "otter", "cloud", "fern", "pebble", "sunny", "wren", "velvet"];
+
+function maskedView() {
+  const open = domains.filter((domain) => domain.maskedAddresses ?? domain.name === "uwu.example");
+  return { addresses: mockMasked, domains: open.map((domain) => domain.name) };
+}
+
+/** Members of the shared mailboxes, by their login. */
+const sharedMembers: Record<string, SharedMailboxMember[]> = {
+  "support@uwu.example": [{ id: 1, login: "lorin@uwu.example", name: "Lorin", maySend: true }],
+};
+
+function groupMembers(logins: string[]): GroupInfo["members"] {
+  return logins.map((login, index) => ({
+    id: index + 1,
+    login,
+    name: people.find((entry) => entry.login === login)?.name ?? "",
+  }));
+}
 const mockStorage: StorageView = {
   usedBytes: 1.3 * GB,
   quotaBytes: 5 * GB,
@@ -1839,9 +2141,161 @@ function reportsFor(name: string): ReportsView {
   };
 }
 
+/** Admin alerts: a certificate that should have been renewed, a new version, and a full disk that is fine again. */
+const mockAlert = (id: number, kind: string, code: string, level: AdminAlert["level"], extra: Partial<AdminAlert>) => ({
+  id,
+  kind,
+  key: code,
+  code,
+  level,
+  params: {},
+  link: null,
+  firstSeen: now - 3 * 3600,
+  lastSeen: now - 60,
+  resolvedAt: null,
+  notifiedAt: level === "info" ? null : now - 3 * 3600,
+  notifiedLevel: level === "info" ? null : level,
+  acknowledgedAt: null,
+  acknowledgedBy: null,
+  ...extra,
+});
+const mockAlerts: AdminAlert[] = [
+  mockAlert(3, "certificate", "certRenewalFailing", "warning", {
+    params: { since: now - 30 * 3600, error: "the ACME server could not reach http://mail.uwu.example" },
+    link: "/admin/logs",
+  }),
+  mockAlert(4, "update", "updateAvailable", "info", { params: { version: "0.14.1" }, link: "/admin/updates" }),
+  mockAlert(1, "storage", "diskLow", "problem", {
+    params: { freeBytes: 0.4 * GB, totalBytes: 32 * GB },
+    firstSeen: now - 6 * 86_400,
+    lastSeen: now - 5 * 86_400,
+    resolvedAt: now - 5 * 86_400 + 900,
+  }),
+];
+const alertsView = (): AlertsView => ({
+  open: mockAlerts.filter((alert) => alert.resolvedAt === null),
+  resolved: mockAlerts.filter((alert) => alert.resolvedAt !== null),
+});
+
+/** Statistics that look like a small family server: a little mail every day, busier on weekdays. */
+function mockStats(range: StatsRange): StatsView {
+  const DAY = 86_400;
+  const dayOf = (at: number) => new Date(at * 1000).toISOString().slice(0, 10);
+  const days = Array.from({ length: 366 }, (_, index) => {
+    const at = now - (365 - index) * DAY;
+    const weekday = new Date(at * 1000).getUTCDay();
+    const busy = weekday === 0 || weekday === 6 ? 0.5 : 1;
+    const wave = (n: number) => Math.round(n * busy * (0.7 + 0.3 * Math.sin(index * 1.7 + n)));
+    // The counting started some weeks ago; before that there is nothing.
+    const values: Record<string, number> =
+      index < 365 - 200
+        ? {}
+        : {
+            "mail.received": wave(42),
+            "mail.junk": wave(6),
+            "refused.unknownRecipient": wave(3),
+            "refused.spam": wave(9),
+            "refused.virus": index % 23 === 0 ? 1 : 0,
+            "refused.policy": wave(2),
+            "refused.greylisted": wave(5),
+            "mail.submitted": wave(12),
+            "mail.delivered": wave(15),
+            "mail.deferred": index % 9 === 0 ? 3 : 0,
+            "mail.bounced": index % 17 === 0 ? 1 : 0,
+            "loginFailed.imap": wave(4),
+            "loginFailed.smtp": wave(7),
+            "loginFailed.portal": index % 5 === 0 ? 1 : 0,
+            "gauge.accounts": 7,
+            "gauge.storageBytes": Math.round((3.1 + index * 0.004) * GB),
+          };
+    return { day: dayOf(at), values };
+  });
+  const periods =
+    range === "days"
+      ? days.slice(-30).map(({ day, values }) => ({ period: day, values }))
+      : days
+          .reduce<StatsView["periods"]>((months, { day, values }) => {
+            const month = day.slice(0, 7);
+            let last = months[months.length - 1];
+            if (last?.period !== month) {
+              last = { period: month, values: {} };
+              months.push(last);
+            }
+            for (const [key, value] of Object.entries(values)) {
+              last.values[key] = key.startsWith("gauge.") ? value : (last.values[key] ?? 0) + value;
+            }
+            return months;
+          }, [])
+          .slice(-12);
+  const totals: Record<string, number> = {};
+  for (const { values } of periods) {
+    for (const [key, value] of Object.entries(values)) {
+      if (!key.startsWith("gauge.")) totals[key] = (totals[key] ?? 0) + value;
+    }
+  }
+  return { range, periods, totals };
+}
+
+/** Where the browser goes back to the app, with the answer in the query as OAuth has it. */
+function oauthAnswer(redirectUri: string | null | undefined, answer: Record<string, string>, state?: string | null) {
+  // Without an address of the app's own, the mock lands back in the portal, to try again.
+  const target = new URL(redirectUri || "/account/security", window.location.origin);
+  for (const [key, value] of Object.entries(answer)) target.searchParams.set(key, value);
+  if (state) target.searchParams.set("state", state);
+  return target.href;
+}
+
+/** Checks an app's request the way the server does, roughly: known app, and where it goes back. */
+function oauthRequest(params: Record<string, string | undefined>): [number, unknown] {
+  const name = mockOAuthClients[params.client_id ?? ""];
+  if (!name) return problem(409, "oauthClientUnknown");
+  const redirectUri = params.redirect_uri ?? "";
+  if (redirectUri.includes("evil")) return problem(409, "oauthRedirectInvalid");
+  if (params.response_type !== "code") {
+    return [200, { redirect: oauthAnswer(redirectUri, { error: "unsupported_response_type" }, params.state) }];
+  }
+  const allowed = ["openid", "email", "profile", "offline_access", "mail", "smtp", "dav"];
+  const asked = (params.scope ?? "").split(/\s+/).filter((scope) => allowed.includes(scope));
+  let redirectHost = "127.0.0.1";
+  try {
+    if (redirectUri) redirectHost = new URL(redirectUri).hostname;
+  } catch {
+    return problem(409, "oauthRedirectInvalid");
+  }
+  const answer: OAuthRequest = {
+    client: { name, clientId: params.client_id!, redirectHost },
+    scopes: asked.length > 0 ? asked : ["openid", "mail", "smtp"],
+    consented: params.client_id === "uwu-known" && params.prompt !== "consent",
+  };
+  return [200, answer];
+}
+
 const routes: [string, RegExp, Handler][] = [
   // First, so they win over the older routes for the same addresses.
   ...ruleRoutes,
+  ["GET", /^\/api\/admin\/alerts$/, () => [200, alertsView()]],
+  [
+    "POST",
+    /^\/api\/admin\/alerts\/(\d+)\/acknowledge$/,
+    (_body, [id]) => {
+      const alert = mockAlerts.find((candidate) => candidate.id === Number(id));
+      if (!alert) return problem(404, "notFound");
+      if (alert.resolvedAt !== null) return problem(409, "alertResolved");
+      alert.acknowledgedAt = Math.floor(Date.now() / 1000);
+      alert.acknowledgedBy = "lorin@uwu.example";
+      log("alert.acknowledge", alert.key, { kind: alert.kind, code: alert.code });
+      return [200, alert];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/stats$/,
+    (_body, _match, query) => {
+      const range = query.get("range") ?? "days";
+      if (range !== "days" && range !== "months") return problem(422, "invalid");
+      return [200, mockStats(range)];
+    },
+  ],
   ["GET", /^\/api\/admin\/health$/, () => [200, health()]],
   [
     "POST",
@@ -1862,7 +2316,7 @@ const routes: [string, RegExp, Handler][] = [
         const entry = settings[key];
         if (!entry) return problem(422, "invalid");
         if (entry.source === "file") return problem(409, "settingLocked");
-        if (key.endsWith("password") || key.endsWith("token")) {
+        if (key.endsWith("password") || key.endsWith("token") || key.endsWith("secret")) {
           settings[key] = { value: null, source: value === null ? "default" : "database", set: value !== null };
         } else {
           settings[key] = { value, source: value === null ? "default" : "database" };
@@ -1876,7 +2330,9 @@ const routes: [string, RegExp, Handler][] = [
       const logged = Object.fromEntries(
         Object.entries(changes).map(([key, value]) => [
           key,
-          (key.endsWith("password") || key.endsWith("token")) && value !== null ? "•••" : value,
+          (key.endsWith("password") || key.endsWith("token") || key.endsWith("secret")) && value !== null
+            ? "•••"
+            : value,
         ]),
       );
       log("settings.update", "", logged);
@@ -1954,9 +2410,51 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   [
+    "POST",
+    /^\/api\/admin\/auth\/oidc\/test$/,
+    (body) => {
+      // "down" anywhere in the issuer plays a provider that does not answer.
+      const changes = (body as { changes: Record<string, unknown> }).changes;
+      const issuer = String(changes["auth.oidc.issuer"] ?? settings["auth.oidc.issuer"]?.value ?? "");
+      if (!issuer.startsWith("https://")) return problem(409, "settingsInvalid");
+      if (issuer.includes("down")) return problem(409, "oidcFailed");
+      return [
+        200,
+        {
+          ok: true,
+          detail: `${new URL(issuer).origin} answers, with 2 signing keys`,
+          redirectUri: "https://mail.uwu.example/api/auth/oidc/callback",
+        },
+      ];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/auth\/ldap\/test$/,
+    (body) => {
+      // "down" anywhere in the address plays a directory that does not answer.
+      const changes = (body as { changes: Record<string, unknown> }).changes;
+      const url = String(changes["auth.ldap.url"] ?? settings["auth.ldap.url"]?.value ?? "");
+      if (!/^ldaps?:\/\//.test(url)) return problem(409, "settingsInvalid");
+      if (url.includes("down")) return problem(409, "ldapFailed");
+      const base = String(changes["auth.ldap.base_dn"] ?? settings["auth.ldap.base_dn"]?.value ?? "dc=example,dc=com");
+      return [200, { ok: true, detail: `connected, and ${base} can be searched` }];
+    },
+  ],
+  [
     "GET",
     /^\/api\/info$/,
-    () => [200, { hostname: "mail.uwu.example", setupRequired: setupOpen, brand: brand() } satisfies Info],
+    () => [
+      200,
+      {
+        hostname: "mail.uwu.example",
+        setupRequired: setupOpen,
+        brand: brand(),
+        oidc: settings["auth.oidc.enabled"]?.value
+          ? { label: String(settings["auth.oidc.button_label"]?.value ?? "").trim() }
+          : null,
+      } satisfies Info,
+    ],
   ],
   ["PUT", /^\/api\/admin\/branding\/logo$/, () => [200, brand()]],
   [
@@ -2255,6 +2753,54 @@ const routes: [string, RegExp, Handler][] = [
   ],
   ["POST", /^\/api\/auth\/passkey\/options$/, () => problem(409, "loginExpired")],
   ["GET", /^\/api\/account\/security$/, () => [200, mockSecurity]],
+  ["GET", /^\/api\/account\/oauth-grants$/, () => [200, mockSecurity.oauthGrants]],
+  [
+    "DELETE",
+    /^\/api\/account\/oauth-grants\/(\d+)$/,
+    (_, [id]) => {
+      const found = mockSecurity.oauthGrants.find((grant) => String(grant.id) === id);
+      if (!found) return problem(404, "notFound");
+      mockSecurity.oauthGrants = mockSecurity.oauthGrants.filter((grant) => grant !== found);
+      securityEvent("oauthRevoked", { name: found.clientName });
+      return [204, null];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/oauth\/authorize$/,
+    (_, __, query) => {
+      if (!loggedIn) return problem(401, "unauthorized");
+      const request = oauthRequest(Object.fromEntries(query));
+      if (request[0] !== 200 || query.get("prompt") !== "none") return request;
+      const answer = request[1] as OAuthRequest;
+      if ("redirect" in answer || answer.consented) return request;
+      return [
+        200,
+        { redirect: oauthAnswer(query.get("redirect_uri"), { error: "consent_required" }, query.get("state")) },
+      ];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/oauth\/authorize$/,
+    (body) => {
+      if (!loggedIn) return problem(401, "unauthorized");
+      const { approve, ...fields } = body as Record<string, string> & { approve: boolean };
+      const request = oauthRequest(fields);
+      if (request[0] !== 200) return request;
+      const answer = request[1] as OAuthRequest;
+      if ("redirect" in answer) return request;
+      if (!approve) {
+        return [200, { redirect: oauthAnswer(fields.redirect_uri, { error: "access_denied" }, fields.state) }];
+      }
+      if (!answer.consented) {
+        const grant = { ...oauthGrant(nextGrantId++, answer.client.name, answer.scopes, 0), createdAt: now };
+        mockSecurity.oauthGrants.unshift({ ...grant, lastUsedAt: null, lastUsedProtocol: null, lastUsedIp: null });
+        securityEvent("oauthGranted", { name: answer.client.name, scopes: answer.scopes });
+      }
+      return [200, { redirect: oauthAnswer(fields.redirect_uri, { code: "mock-code" }, fields.state) }];
+    },
+  ],
   [
     "GET",
     /^\/api\/account\/spam$/,
@@ -2459,6 +3005,82 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/admin\/spam\/learn-folders$/,
     () => [200, { spam: 40, ham: 310, people: 3 } satisfies LearnedFromFolders],
   ],
+  ["GET", /^\/api\/account\/moving$/, () => [200, stepMoves()]],
+  [
+    "POST",
+    /^\/api\/account\/moving$/,
+    (body) => {
+      const given = body as { address: string; password: string; host?: string; login?: string };
+      const address = given.address.trim().toLowerCase();
+      if (!address.includes("@")) return problem(409, "senderInvalid");
+      if (address.endsWith("@uwu.example")) return problem(409, "moveFromHere");
+      if (given.password === "wrong") return problem(409, "moveWrongPassword");
+      if (address.endsWith("@unknown.example") && !given.host) return problem(409, "providerNotFound");
+      if (mockMoves.some((job) => job.address === address)) return problem(409, "moveExists");
+      if (mockMoves.length >= 5) return problem(409, "moveLimit");
+      const job: MoveJob = {
+        id: nextMoveId++,
+        address,
+        host: given.host?.trim() || `imap.${address.split("@")[1]}`,
+        port: 993,
+        login: given.login?.trim() || address,
+        state: "queued",
+        error: "",
+        errorDetail: "",
+        foldersDone: 0,
+        foldersTotal: 0,
+        messagesDone: 0,
+        messagesTotal: 0,
+        messagesSkipped: 0,
+        bytesDone: 0,
+        createdAt: Math.floor(Date.now() / 1000),
+        startedAt: null,
+        finishedAt: null,
+        lastRunAt: null,
+      };
+      mockMoves.unshift(job);
+      moveStartedAt.set(job.id, Date.now());
+      return [201, job];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/account\/moving\/(\d+)\/sync$/,
+    (body, [id]) => {
+      const job = mockMoves.find((candidate) => candidate.id === Number(id));
+      if (!job) return problem(404, "notFound");
+      if (job.state === "queued" || job.state === "running") return problem(409, "moveRunning");
+      if (job.state === "done") {
+        Object.assign(job, { foldersDone: 0, messagesDone: 0, messagesTotal: 0, messagesSkipped: 0, bytesDone: 0 });
+        Object.assign(job, { startedAt: null, finishedAt: null });
+      }
+      void body;
+      Object.assign(job, { state: "queued", error: "", errorDetail: "" });
+      moveStartedAt.set(job.id, Date.now());
+      return [200, job];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/account\/moving\/(\d+)\/pause$/,
+    (_, [id]) => {
+      const job = mockMoves.find((candidate) => candidate.id === Number(id));
+      if (!job) return problem(404, "notFound");
+      if (job.state !== "queued" && job.state !== "running") return problem(409, "moveNotRunning");
+      Object.assign(job, { state: "paused", error: "stopped" });
+      return [200, job];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/account\/moving\/(\d+)$/,
+    (_, [id]) => {
+      const at = mockMoves.findIndex((candidate) => candidate.id === Number(id));
+      if (at < 0) return problem(404, "notFound");
+      mockMoves.splice(at, 1);
+      return [204, null];
+    },
+  ],
   ["GET", /^\/api\/account\/fetch$/, () => [200, mockFetchView()]],
   [
     // The real one asks DNS, the provider and Mozilla and then logs in; here two addresses stand
@@ -2621,6 +3243,57 @@ const routes: [string, RegExp, Handler][] = [
     },
   ],
   ["GET", /^\/api\/account\/addresses$/, () => [200, mockAddresses]],
+  ["GET", /^\/api\/account\/masked$/, () => [200, maskedView()]],
+  [
+    "POST",
+    /^\/api\/account\/masked$/,
+    (body) => {
+      const input = body as { domain?: string; description: string; forDomain: string; emailPrefix: string | null };
+      const view = maskedView();
+      const domain = input.domain || view.domains[0];
+      if (!domain) return problem(409, "maskedDomain");
+      if (input.emailPrefix && !/^[a-z0-9_]{1,64}$/i.test(input.emailPrefix)) return problem(409, "maskedPrefix");
+      const word = () => MASKED_WORDS[Math.floor(Math.random() * MASKED_WORDS.length)]!;
+      const random = `${word()}.${word()}${String(Math.floor(Math.random() * 1000)).padStart(3, "0")}`;
+      const local = input.emailPrefix ? `${input.emailPrefix.toLowerCase()}.${random}` : random;
+      const created: MaskedAddress = {
+        id: Math.max(0, ...mockMasked.map((entry) => entry.id)) + 1,
+        email: `${local}@${domain}`,
+        state: "enabled",
+        forDomain: input.forDomain,
+        description: input.description,
+        url: null,
+        emailPrefix: input.emailPrefix,
+        createdBy: "Portal",
+        createdAt: Math.floor(Date.now() / 1000),
+        lastMessageAt: null,
+      };
+      mockMasked.unshift(created);
+      return [201, created];
+    },
+  ],
+  [
+    "PATCH",
+    /^\/api\/account\/masked\/(\d+)$/,
+    (body, [id]) => {
+      const found = mockMasked.find((entry) => entry.id === Number(id));
+      if (!found) return problem(404, "notFound");
+      const changes = body as { state?: MaskedState; description?: string; forDomain?: string };
+      if (changes.state === "pending") return problem(422, "invalid");
+      Object.assign(found, changes);
+      return [200, found];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/account\/masked\/(\d+)$/,
+    (_, [id]) => {
+      const found = mockMasked.find((entry) => entry.id === Number(id));
+      if (!found) return problem(404, "notFound");
+      found.state = "deleted";
+      return [200, maskedView()];
+    },
+  ],
   [
     "POST",
     /^\/api\/account\/aliases$/,
@@ -3091,7 +3764,14 @@ const routes: [string, RegExp, Handler][] = [
     (_, [name]) => {
       const index = domains.findIndex((d) => d.name === name);
       if (index < 0) return problem(404, "notFound");
-      if (addressCount(name!, "primary") + addressCount(name!, "alias") > 0) return problem(409, "domainInUse");
+      const found = domains[index]!;
+      const inUse =
+        addressCount(name!, "primary") +
+        addressCount(name!, "alias") +
+        (found.forwards?.length ?? 0) +
+        (found.groups?.length ?? 0) +
+        detail(found).maskedInUse!;
+      if (inUse > 0) return problem(409, "domainInUse");
       domains.splice(index, 1);
       log("domain.remove", name!);
       return [204, null];
@@ -3204,6 +3884,49 @@ const routes: [string, RegExp, Handler][] = [
         } satisfies ReportDetail,
       ];
     },
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/reports\/sent$/,
+    () => [
+      200,
+      {
+        days: 30,
+        sender: "noreply-tls-reports@uwu.example",
+        reports: [
+          {
+            day: Math.floor(now / 86_400) * 86_400 - 86_400,
+            domain: "example.com",
+            status: "sent",
+            destinations: ["mailto:tls-reports@example.com"],
+            error: "",
+            successful: 42,
+            failed: 0,
+            updatedAt: now - 3600,
+          },
+          {
+            day: Math.floor(now / 86_400) * 86_400 - 86_400,
+            domain: "example.net",
+            status: "failed",
+            destinations: ["https://tlsrpt.example.net/v1"],
+            error: "https://tlsrpt.example.net/v1: the answer was 503 Service Unavailable",
+            successful: 7,
+            failed: 2,
+            updatedAt: now - 3600,
+          },
+          {
+            day: Math.floor(now / 86_400) * 86_400 - 2 * 86_400,
+            domain: "example.org",
+            status: "none",
+            destinations: [],
+            error: "",
+            successful: 3,
+            failed: 0,
+            updatedAt: now - 86_400 - 3600,
+          },
+        ],
+      } satisfies SentTlsReports,
+    ],
   ],
   [
     "GET",
@@ -3368,9 +4091,21 @@ const routes: [string, RegExp, Handler][] = [
         : { externalBlocked: found.login === "opa@verein.example", targets: 0, external: 0 };
       const sendAsDomains = mockSendAs[found.login] ?? [];
       const appPasswordList = found.role === "service" ? (servicePasswords[found.login] ?? []) : undefined;
+      const oauthGrants = me ? mockSecurity.oauthGrants : (mockPersonGrants[found.login] ?? []);
+      const authSource = me ? mockSecurity.authSource : (mockAuthSources[found.login] ?? "local");
       return [
         200,
-        { ...found, security, forwarding, aliasLimit: me ? mockAddresses.limit : 10, sendAsDomains, appPasswordList },
+        {
+          ...found,
+          security,
+          forwarding,
+          aliasLimit: me ? mockAddresses.limit : 10,
+          sendAsDomains,
+          appPasswordList,
+          members: found.sharedMailbox ? (sharedMembers[found.login] ?? []) : undefined,
+          oauthGrants,
+          authSource,
+        },
       ];
     },
   ],
@@ -3473,6 +4208,35 @@ const routes: [string, RegExp, Handler][] = [
       return [204, null];
     },
   ],
+  [
+    "DELETE",
+    /^\/api\/admin\/people\/([^/]+)\/oauth-grants\/(\d+)$/,
+    (_, [login, id]) => {
+      const list = login === "lorin@uwu.example" ? mockSecurity.oauthGrants : (mockPersonGrants[login!] ?? []);
+      const at = list.findIndex((grant) => grant.id === Number(id));
+      if (at < 0) return problem(404, "notFound");
+      log("account.oauthRevoked", login!, { name: list[at]!.clientName });
+      list.splice(at, 1);
+      return [204, null];
+    },
+  ],
+  [
+    "PUT",
+    /^\/api\/admin\/people\/([^/]+)\/auth-source$/,
+    (body, [login]) => {
+      const found = people.find((p) => p.login === login);
+      if (!found) return problem(404, "notFound");
+      if (found.role === "service") return problem(409, "serviceAccount");
+      const { source } = body as { source: string };
+      if (source !== "local" && source !== "ldap") return problem(422, "invalid");
+      if (login === "lorin@uwu.example") {
+        mockSecurity.authSource = source;
+        if (source === "ldap") mockSecurity.hasPassword = false;
+      } else mockAuthSources[login!] = source;
+      log("account.authSource", login!, { source });
+      return [204, null];
+    },
+  ],
   ["GET", /^\/api\/admin\/updates$/, () => [200, mockUpdates]],
   [
     "PUT",
@@ -3490,7 +4254,70 @@ const routes: [string, RegExp, Handler][] = [
       return [200, mockUpdates];
     },
   ],
-  ["GET", /^\/api\/admin\/backups$/, () => [200, stepRestore()]],
+  [
+    "GET",
+    /^\/api\/admin\/backups$/,
+    () => {
+      stepMailbox();
+      return [200, stepRestore()];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/backups\/mailbox\/open$/,
+    (body) => {
+      const job = mockBackups.mailboxRestore;
+      if (job.state === "opening" || job.state === "restoring") return problem(409, "backupBusy");
+      mailboxStartedAt = Date.now();
+      Object.assign(job, {
+        state: "opening",
+        snapshot: (body as { snapshot?: string }).snapshot ?? "latest",
+        createdAt: Math.floor(Date.now() / 1000) - 86_400,
+        error: "",
+        doneBytes: 0,
+        totalBytes: 48_000_000,
+        people: [],
+        last: null,
+      });
+      return [200, mockBackups];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/backups\/mailbox\/restore$/,
+    (body) => {
+      const job = mockBackups.mailboxRestore;
+      const { account, folders } = body as { account: string; folders: number[] | null };
+      if (job.state !== "open") return problem(422, "invalid");
+      const person = job.people.find((candidate) => candidate.login === account);
+      if (!person) return problem(422, "invalid");
+      mailboxStartedAt = Date.now();
+      const total = folders
+        ? person.folders.filter((folder) => folders.includes(folder.id)).reduce((sum, folder) => sum + folder.emails, 0)
+        : person.emails;
+      Object.assign(job, { state: "restoring", account, total, done: 0, restored: 0, skipped: 0 });
+      log("backup.restoreMailbox", account);
+      return [200, mockBackups];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/admin\/backups\/mailbox$/,
+    () => {
+      Object.assign(mockBackups.mailboxRestore, {
+        state: "",
+        snapshot: "",
+        createdAt: 0,
+        error: "",
+        people: [],
+        account: "",
+        total: 0,
+        done: 0,
+        last: null,
+      });
+      return [200, mockBackups];
+    },
+  ],
   [
     "POST",
     /^\/api\/admin\/backups\/restore$/,
@@ -3535,16 +4362,43 @@ const routes: [string, RegExp, Handler][] = [
         minute: number;
         encrypted: boolean;
         retention: BackupsView["retention"];
-        target: { host: string; port: number; user: string; path: string; method: "key" | "password" };
+        target: Record<string, unknown> & { kind: BackupTarget["kind"] };
       };
       const newKey = next.encrypted && !mockBackups.encrypted;
+      const given = next.target;
+      const target: BackupTarget =
+        given.kind === "s3"
+          ? {
+              kind: "s3",
+              endpoint: String(given.endpoint ?? ""),
+              region: String(given.region || "us-east-1"),
+              bucket: String(given.bucket ?? ""),
+              prefix: String(given.prefix ?? ""),
+              accessKey: String(given.accessKey ?? ""),
+              secretKeySet: true,
+              pathStyle: Boolean(given.pathStyle),
+            }
+          : given.kind === "folder"
+            ? { kind: "folder", path: String(given.path ?? "") }
+            : {
+                kind: "sftp",
+                host: String(given.host ?? ""),
+                port: Number(given.port ?? 22),
+                user: String(given.user ?? ""),
+                path: String(given.path ?? ""),
+                method: given.method === "password" ? "password" : "key",
+                publicKey:
+                  "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleExampleExampleExampleExampleExample uwumail-backup@mail.uwu.example",
+                passwordSet: given.method === "password",
+                hostKey: "SHA256:uwuExampleHostKeyFingerprint0000000000000000",
+              };
       Object.assign(mockBackups, {
         enabled: next.enabled,
         hour: next.hour,
         minute: next.minute,
         retention: next.retention,
         encrypted: next.encrypted,
-        target: { ...mockBackups.target!, ...next.target, passwordSet: next.target.method === "password" },
+        target,
       });
       log("backup.settings", "server");
       return [
@@ -3555,7 +4409,14 @@ const routes: [string, RegExp, Handler][] = [
       ];
     },
   ],
-  ["POST", /^\/api\/admin\/backups\/test$/, () => [200, { hostKey: mockBackups.target!.hostKey, known: true }]],
+  [
+    "POST",
+    /^\/api\/admin\/backups\/test$/,
+    () => {
+      const target = mockBackups.target!;
+      return [200, { kind: target.kind, hostKey: target.kind === "sftp" ? target.hostKey : null, known: true }];
+    },
+  ],
   [
     "POST",
     /^\/api\/admin\/backups\/run$/,
@@ -3605,6 +4466,140 @@ const routes: [string, RegExp, Handler][] = [
       if (login === "lorin@uwu.example") mockAddresses.limit = (body as { limit: number }).limit;
       log("account.aliasLimit", login ?? "", body as Record<string, unknown>);
       return [204, null];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/domains\/([^/]+)\/groups$/,
+    (body, [name]) => {
+      const found = domains.find((d) => d.name === name);
+      if (!found) return problem(404, "notFound");
+      const input = body as {
+        local: string;
+        name: string;
+        whoMaySend: WhoMaySend;
+        membersMaySendAs: boolean;
+        members: string[];
+      };
+      const address = `${input.local.trim().toLowerCase()}@${name}`;
+      const taken =
+        people.some((p) => p.addresses.some((a) => a.address === address)) ||
+        (found.groups ?? []).some((group) => group.address === address) ||
+        (found.forwards ?? []).some((forward) => forward.address === address);
+      if (taken) return problem(409, "conflict");
+      const group: GroupInfo = {
+        id: Math.floor(Math.random() * 100_000),
+        address,
+        domain: name!,
+        name: input.name,
+        whoMaySend: input.whoMaySend,
+        membersMaySendAs: input.membersMaySendAs,
+        members: groupMembers(input.members),
+        createdAt: Math.floor(Date.now() / 1000),
+      };
+      found.groups = [...(found.groups ?? []), group].sort((a, b) => a.address.localeCompare(b.address));
+      log("group.create", address, { members: input.members });
+      return [201, group];
+    },
+  ],
+  [
+    "PATCH",
+    /^\/api\/admin\/domains\/([^/]+)\/groups\/([^/]+)$/,
+    (body, [name, local]) => {
+      const group = domains.find((d) => d.name === name)?.groups?.find((entry) => entry.address === `${local}@${name}`);
+      if (!group) return problem(404, "notFound");
+      const input = body as {
+        name?: string;
+        whoMaySend?: WhoMaySend;
+        membersMaySendAs?: boolean;
+        members?: string[];
+      };
+      if (input.name !== undefined) group.name = input.name;
+      if (input.whoMaySend) group.whoMaySend = input.whoMaySend;
+      if (input.membersMaySendAs !== undefined) group.membersMaySendAs = input.membersMaySendAs;
+      if (input.members) group.members = groupMembers(input.members);
+      log("group.update", group.address, input as Record<string, unknown>);
+      return [200, group];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/admin\/domains\/([^/]+)\/groups\/([^/]+)$/,
+    (_, [name, local]) => {
+      const found = domains.find((d) => d.name === name);
+      if (!found) return problem(404, "notFound");
+      found.groups = (found.groups ?? []).filter((group) => group.address !== `${local}@${name}`);
+      log("group.remove", `${local}@${name}`);
+      return [204, null];
+    },
+  ],
+  [
+    "PUT",
+    /^\/api\/admin\/domains\/([^/]+)\/masked-addresses$/,
+    (body, [name]) => {
+      const domain = domains.find((entry) => entry.name === name);
+      if (domain) domain.maskedAddresses = (body as { on: boolean }).on;
+      log("domain.maskedAddresses", name ?? "", body as Record<string, unknown>);
+      return [204, null];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/shared-mailboxes$/,
+    () => [
+      200,
+      people
+        .filter((entry) => entry.sharedMailbox)
+        .map((entry) => ({ login: entry.login, name: entry.name, members: sharedMembers[entry.login] ?? [] })),
+    ],
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/shared-mailboxes$/,
+    (body) => {
+      const input = body as {
+        address: string;
+        name: string;
+        quotaBytes: number;
+        members: { login: string; maySend: boolean }[];
+      };
+      const login = input.address.toLowerCase();
+      if (people.some((p) => p.addresses.some((a) => a.address === login))) return problem(409, "conflict");
+      const created = person(login, input.name, {
+        role: "service",
+        protocols: { ...serviceProtocols(), smtp: true },
+        quotaBytes: input.quotaBytes,
+        usedBytes: 0,
+        sharedMailbox: true,
+        createdAt: Math.floor(Date.now() / 1000),
+      });
+      people.push(created);
+      people.sort((a, b) => a.login.localeCompare(b.login));
+      sharedMembers[login] = input.members.map((member, index) => ({
+        id: index + 1,
+        login: member.login,
+        name: people.find((entry) => entry.login === member.login)?.name ?? "",
+        maySend: member.maySend,
+      }));
+      log("sharedMailbox.create", login, { members: input.members });
+      return [201, { person: created, members: sharedMembers[login] }];
+    },
+  ],
+  [
+    "PUT",
+    /^\/api\/admin\/shared-mailboxes\/([^/]+)\/members$/,
+    (body, [login]) => {
+      const found = people.find((entry) => entry.login === login && entry.sharedMailbox);
+      if (!found) return problem(404, "notFound");
+      const members = (body as { members: { login: string; maySend: boolean }[] }).members;
+      sharedMembers[found.login] = members.map((member, index) => ({
+        id: index + 1,
+        login: member.login,
+        name: people.find((entry) => entry.login === member.login)?.name ?? "",
+        maySend: member.maySend,
+      }));
+      log("sharedMailbox.members", found.login, { members });
+      return [200, sharedMembers[found.login]];
     },
   ],
   [

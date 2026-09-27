@@ -41,6 +41,19 @@
       "tooManyAttempts": "Te veel mislukte pogingen. Wacht een paar minuten.",
       "offline": "De server is op dit moment niet bereikbaar.",
       "internal": "Er ging iets mis op de server."
+    },
+    "or": "of",
+    "oidcButton": "Inloggen met {{provider}}",
+    "oidcButtonGeneric": "Inloggen met single sign-on",
+    "oidcErrors": {
+      "unavailable": "De inlogdienst is op dit moment niet bereikbaar. Probeer het later opnieuw of log in met je wachtwoord.",
+      "expired": "Het inloggen duurde te lang of is in een andere browser begonnen. Probeer het opnieuw.",
+      "refused": "Het inloggen is bij de inlogdienst afgebroken of geweigerd.",
+      "failed": "Het antwoord van de inlogdienst klopte niet. Probeer het opnieuw.",
+      "emailNotVerified": "De inlogdienst heeft je e-mailadres niet bevestigd, dus kan je hier niet mee inloggen.",
+      "domainNotAllowed": "Er is geen account voor dit adres, en in dit domein mag er geen worden aangemaakt.",
+      "noAccount": "Er is op deze server geen account voor deze login, en er mag er geen worden aangemaakt.",
+      "alreadyLinked": "Dit account hoort bij de inlogdienst al bij een andere login."
     }
   },
   "nav": {
@@ -62,7 +75,10 @@
     "expand": "{{group}} uitklappen",
     "mailbox": "Mailbox",
     "directory": "Accounts & domeinen",
-    "calendars": "Agenda's en contacten"
+    "calendars": "Agenda's en contacten",
+    "masked": "Gemaskeerde adressen",
+    "moving": "Verhuizen",
+    "more": "Meer"
   },
   "userMenu": {
     "open": "Accountmenu openen",
@@ -167,7 +183,8 @@
       "overview": "Overzicht",
       "mailFlow": "Mailverkeer",
       "backups": "Back-ups",
-      "updates": "Updates"
+      "updates": "Updates",
+      "stats": "Statistieken"
     },
     "tiles": {
       "news": "nieuw",
@@ -201,6 +218,177 @@
         "title": "Laatste wijziging",
         "none": "Nog niets gewijzigd"
       }
+    }
+  },
+  "adminView": {
+    "label": "Weergave",
+    "simple": "Eenvoudig",
+    "full": "Alles",
+    "hint": {
+      "simple": "Alleen het stoplicht en wat er te doen is. De rest staat in het menu onder ‘Meer’.",
+      "full": "Alle cijfers en alle controles. ‘Eenvoudig’ toont alleen het stoplicht."
+    },
+    "light": "Stoplicht: {{level}}",
+    "headline": {
+      "ok": "Alles is in orde",
+      "unknown": "Nog niet alles is gecontroleerd",
+      "warning": "Iets moet even bekeken worden",
+      "problem": "Er werkt iets niet"
+    },
+    "sentence": {
+      "ok": "Mail komt binnen en gaat de deur uit, er is nu niets voor jou te doen.",
+      "unknown": "De eerste controles lopen kort na de start.",
+      "warning_one": "Eén ding hieronder moet je bekijken als je even tijd hebt.",
+      "warning_other": "{{count}} dingen hieronder moet je bekijken als je even tijd hebt.",
+      "problem_one": "Eén ding hieronder heeft binnenkort je hulp nodig.",
+      "problem_other": "{{count}} dingen hieronder hebben binnenkort je hulp nodig."
+    },
+    "todo": "Wat te doen",
+    "quick": {
+      "title": "Snel naar",
+      "people": "Personen",
+      "addPerson": "Persoon toevoegen",
+      "domains": "Domeinen",
+      "backups": "Back-ups"
+    }
+  },
+  "alerts": {
+    "title": "Meldingen",
+    "intro": "Waarover de server de admins heeft ingelicht, en wat daarna weer in orde kwam. Hij kijkt elke vijf minuten.",
+    "loading": "Meldingen laden …",
+    "none": "Geen open meldingen.",
+    "openLabel": "Open meldingen",
+    "history_one": "{{count}} melding die weer in orde is",
+    "history_other": "{{count}} meldingen die weer in orde zijn",
+    "since": "Sinds {{time}}",
+    "resolvedAt": "Weer in orde {{time}}",
+    "acknowledgedBy": "{{login}} weet ervan",
+    "acknowledge": "Gezien",
+    "acknowledgeHint": "Geen dagelijkse herinneringen meer hierover. Je hoort het nog wel als het erger wordt of weer goed is.",
+    "acknowledgedToast": "Genoteerd. Geen herinneringen meer hierover.",
+    "level": {
+      "info": "Informatie",
+      "warning": "Even kijken",
+      "problem": "Probleem",
+      "resolved": "Weer in orde"
+    },
+    "mail": {
+      "title": "Meldingsmails",
+      "label": "Mails aan mij over meldingen",
+      "all": "Alle",
+      "problems": "Alleen problemen",
+      "none": "Geen",
+      "hint": "Elke admin kiest zelf. Er komt een mail als iets geel of rood wordt, één keer per dag zolang iets rood blijft, en nog één keer als het weer in orde is."
+    },
+    "codes": {
+      "certRenewalFailing": "Het certificaat vernieuwen blijft mislukken (eerste keer {{since}}).",
+      "backupFailed": "De laatste back-up is mislukt.",
+      "backupOld": "De laatste geslaagde back-up was {{time}}.",
+      "updateAvailable": "Versie {{version}} is uit."
+    },
+    "hints": {
+      "certRenewalFailing": "In het serverlog staat waarom. Vaak wijst een naam (nog) niet naar deze server, of is poort 80 van buitenaf niet bereikbaar.",
+      "backupFailed": "Op de back-uppagina staat de fout. Controleer het doel en start er één met de hand.",
+      "backupOld": "Back-ups lopen normaal elke nacht. Op de back-uppagina zie je of ze gepauzeerd zijn of wat er misging.",
+      "updateAvailable": "Op de updatepagina staat wat er nieuw is, en één klik werkt bij."
+    }
+  },
+  "stats": {
+    "intro": "Wat er op je server gebeurd is, dag na dag of maand na maand.",
+    "utc": "Dagen tellen in UTC. De cijfers beginnen bij versie 0.14.",
+    "range": {
+      "label": "Periode",
+      "days": "30 dagen",
+      "months": "12 maanden"
+    },
+    "total": {
+      "days": "in 30 dagen",
+      "months": "in 12 maanden"
+    },
+    "latest": "laatst gemeten",
+    "chartSummary": "{{series}}: staafdiagram, hoogste waarde {{max}} ({{peak}}). De tabel hieronder heeft alle cijfers.",
+    "chartEmpty": "{{series}}: in deze periode is niets geteld.",
+    "charts": {
+      "received": {
+        "title": "Ontvangen mail",
+        "hint": "Mail van andere servers en opgehaalde postvakken die minstens één persoon bereikte."
+      },
+      "refused": {
+        "title": "Geweigerde mail",
+        "hint": "Aan de deur geweigerd: onbekende ontvangers, spam, virussen en regels zoals DMARC."
+      },
+      "submitted": {
+        "title": "Verzonden mail",
+        "hint": "Berichten die je mensen verstuurden, uit mailapps, de webmail of de UwUMail-apps."
+      },
+      "delivered": {
+        "title": "Aan andere servers overgedragen",
+        "hint": "Ontvangers op andere servers die de mail aannamen."
+      },
+      "logins": {
+        "title": "Mislukte aanmeldingen",
+        "hint": "Verkeerde wachtwoorden en geweigerde aanmeldingen in alle apps en in het portaal."
+      },
+      "storage": {
+        "title": "Gebruikte opslag",
+        "hint": "Alle postvakken samen, gemeten in de loop van elke dag."
+      }
+    },
+    "keys": {
+      "mail": {
+        "received": "Ontvangen",
+        "junk": "In de spammap",
+        "submitted": "Verzonden",
+        "delivered": "Afgeleverd",
+        "deferred": "Later opnieuw geprobeerd",
+        "bounced": "Opgegeven"
+      },
+      "refused": {
+        "unknownRecipient": "Onbekende ontvanger",
+        "spam": "Spam",
+        "virus": "Virus",
+        "policy": "Regels (DMARC, geblokkeerde afzenders, relaying)",
+        "greylisted": "Gevraagd later terug te komen"
+      },
+      "loginFailed": {
+        "smtp": "SMTP",
+        "imap": "IMAP",
+        "jmap": "JMAP",
+        "dav": "CalDAV/CardDAV",
+        "managesieve": "ManageSieve",
+        "portal": "Portaal",
+        "other": "Overig"
+      },
+      "gauge": {
+        "accounts": "Accounts",
+        "storageBytes": "Gebruikte opslag"
+      }
+    },
+    "table": {
+      "title": "Alle cijfers als tabel",
+      "caption": "Statistieken per periode",
+      "period": {
+        "days": "Dag",
+        "months": "Maand"
+      }
+    },
+    "metrics": {
+      "title": "Prometheus-metrics",
+      "intro": "Voor een monitoringsysteem: de cijfers van de server onder /metrics, in het Prometheus-formaat. Uit tot je ze aanzet.",
+      "enabled": "Metrics aanbieden",
+      "enabledHint": "Heeft een token, toegestane netwerken of beide nodig, zodat niet iedereen ze kan lezen.",
+      "token": "Token",
+      "tokenHint": "Prometheus stuurt het als bearer-token mee. Maak er hier een.",
+      "tokenFresh": "Kopieer het nu: na het opslaan wordt het nooit meer getoond.",
+      "tokenSet": "Er is een token ingesteld. Een nieuw token vervangt het.",
+      "tokenNew": "Token maken",
+      "tokenReplace": "Nieuw token",
+      "tokenRemove": "Verwijderen",
+      "copyToken": "Token kopiëren",
+      "networks": "Alleen vanuit deze netwerken",
+      "networksHint": "Eén adres of netwerk per regel, zoals 10.0.0.0/8. Leeg: van overal, met het token.",
+      "needsWayIn": "Maak eerst een token of noem een netwerk, anders staan de metrics voor iedereen open.",
+      "address": "Adres voor Prometheus"
     }
   },
   "duration": {
@@ -325,7 +513,29 @@
       "googleUseIcs": "Google laat alleen zijn eigen apps binnen. Gebruik het geheime iCal-adres voor agenda's en een vCard-export voor contacten.",
       "subscriptionLimit": "Je hebt al zo veel geabonneerde agenda's als mogelijk.",
       "subscriptionExists": "Je bent al op deze agenda geabonneerd.",
-      "refreshPause": "Net opgehaald. Probeer het over een minuut opnieuw."
+      "refreshPause": "Net opgehaald. Probeer het over een minuut opnieuw.",
+      "sharedMailbox": "Dit is een gedeelde mailbox: niemand logt erop in, de leden gebruiken hem vanuit hun eigen account.",
+      "maskedDomain": "Op deze server is nog geen domein open voor gemaskeerde adressen. Vraag het de beheerder.",
+      "maskedLimit": "Je hebt zoveel gemaskeerde adressen als deze server toestaat. Verwijder er een paar die je niet meer nodig hebt.",
+      "maskedPrefix": "Een voorvoegsel mag alleen letters a–z, cijfers en _ bevatten, hooguit 64.",
+      "maskedState": "Een gemaskeerd adres kan niet opnieuw op zijn eerste mail wachten.",
+      "backupBusy": "Er is al iets met de back-ups bezig: een back-up, of een mailbox die wordt teruggezet. Probeer het opnieuw als dat klaar is. ({{detail}})",
+      "backupFolderInData": "De back-upmap moet buiten de datamap van de server liggen; anders gaat de back-up samen met de server verloren.",
+      "moveExists": "Dit adres wordt al verhuisd.",
+      "moveFromHere": "Dit adres staat al op deze server, er valt niets te verhuizen.",
+      "moveLimit": "Er kunnen hoogstens vijf mailboxen tegelijk verhuizen. Rond eerst een van de andere af.",
+      "moveRunning": "Deze verhuizing loopt nog.",
+      "moveNotRunning": "Deze verhuizing loopt niet.",
+      "moveNoMailbox": "Je account heeft geen mailbox waar mail naartoe kan verhuizen.",
+      "moveWrongPassword": "De oude provider heeft dit wachtwoord geweigerd. Veel providers willen hiervoor een app-wachtwoord.",
+      "alertResolved": "Deze melding is al weer in orde.",
+      "confirmByLogin": "Log uit en weer in om dit te bevestigen, en probeer het dan nog eens.",
+      "passwordInDirectory": "Dit wachtwoord wordt beheerd in de directory van je organisatie (LDAP) en daar gewijzigd.",
+      "serviceAccount": "Een dienst logt alleen in met app-wachtwoorden.",
+      "oauthClientUnknown": "Deze app is niet geregistreerd op deze server.",
+      "oauthRedirectInvalid": "De app wil terug naar een adres dat hij niet heeft geregistreerd.",
+      "oidcFailed": "Het lukte niet met de inlogdienst: {{detail}}",
+      "ldapFailed": "Het lukte niet met de directory: {{detail}}"
     }
   },
   "people": {
@@ -534,6 +744,40 @@
       "revokeTitle": "{{name}} intrekken?",
       "revokeBody": "Wat dit wachtwoord gebruikt, komt dan niet meer binnen.",
       "createdTitle": "Nieuw app-wachtwoord"
+    },
+    "authSource": {
+      "label": "Wachtwoord wordt gecontroleerd",
+      "hint": "Overstappen op de directory verwijdert het wachtwoord dat hier is opgeslagen. Terugzetten betekent dat je een nieuw wachtwoord instelt of een link stuurt.",
+      "oidcHint": "Logt in bij de OpenID Connect-aanbieder. Je kunt toch overstappen op een wachtwoord hier of in de directory.",
+      "local": "Hier op deze server",
+      "ldap": "In de LDAP-directory",
+      "oidc": "Bij de OpenID Connect-aanbieder",
+      "toLdapTitle": "Wachtwoord van {{login}} in de directory controleren?",
+      "toLdapBody": "Het wachtwoord dat hier is opgeslagen wordt verwijderd. Voortaan logt de persoon in met het directory-wachtwoord, in het portaal en in mail-apps. App-wachtwoorden blijven.",
+      "toLocalTitle": "Wachtwoord van {{login}} hier controleren?",
+      "toLocalBody": "De persoon heeft daarna hier geen wachtwoord. Stel een nieuw in of stuur een link om er een te kiezen.",
+      "switch": "Overstappen",
+      "inDirectory": "Het wachtwoord wordt in de LDAP-directory gecontroleerd en daar gewijzigd."
+    }
+  },
+  "sharedMailboxes": {
+    "title": "Gedeelde mailboxen",
+    "explain": "Een mailbox die meerdere mensen gebruiken, zoals support@. Niemand logt erop in; de leden zien hem naast hun eigen mappen en mogen ermee antwoorden.",
+    "create": "Nieuwe gedeelde mailbox",
+    "createIntro": "Hij krijgt een eigen adres en eigen opslag; mail ernaartoe komt voor alle leden in zijn inbox.",
+    "name": "Naam",
+    "namePlaceholder": "bijvoorbeeld Support",
+    "address": "Adres",
+    "addressPlaceholder": "bijvoorbeeld support",
+    "members": "Leden",
+    "membersHint": "Iedereen die je kiest ziet alle mappen. Vink aan wie ook met het adres mag versturen.",
+    "membersIntro": "Leden zien elke map, ook nieuwe. Wie mag versturen vindt het adres tussen de eigen afzenders; een kopie van het verzondene blijft in zijn map Verzonden.",
+    "maySend": "mag versturen",
+    "save": "Leden opslaan",
+    "pill": "Gedeelde mailbox",
+    "toasts": {
+      "created": "{{address}} gemaakt",
+      "saved": "Leden opgeslagen"
     }
   },
   "log": {
@@ -600,7 +844,17 @@
       "spamVirusTest": "{{actor}} heeft de virusscanner getest",
       "updatesSettings": "{{actor}} heeft de update-instellingen gewijzigd",
       "brandLogo": "{{actor}} heeft een nieuw logo geüpload",
-      "brandLogoRemoved": "{{actor}} heeft het logo verwijderd"
+      "brandLogoRemoved": "{{actor}} heeft het logo verwijderd",
+      "backupRestoreMailbox": "{{actor}} heeft mail van {{target}} uit een back-up teruggehaald",
+      "accountAuthSource": "{{actor}} heeft gewijzigd waar het wachtwoord van {{target}} wordt gecontroleerd",
+      "accountOauthRevoked": "{{actor}} heeft een app van {{target}} uitgelogd",
+      "alertAcknowledge": "{{actor}} heeft bij de melding {{target}} op ‘Gezien’ geklikt",
+      "domainMaskedAddresses": "{{actor}} heeft gemaskeerde adressen op {{target}} gewijzigd",
+      "groupCreate": "{{actor}} heeft de groep {{target}} aangemaakt",
+      "groupUpdate": "{{actor}} heeft de groep {{target}} gewijzigd",
+      "groupRemove": "{{actor}} heeft de groep {{target}} verwijderd",
+      "sharedMailboxCreate": "{{actor}} heeft de gedeelde mailbox {{target}} aangemaakt",
+      "sharedMailboxMembers": "{{actor}} heeft de leden van de gedeelde mailbox {{target}} gewijzigd"
     },
     "details": {
       "adminOn": "is nu beheerder",
@@ -623,7 +877,11 @@
       "protocolsNone": "alle protocollen uit",
       "redirectTo": "mail gaat naar {{address}}",
       "redirectNone": "mail wordt geweigerd",
-      "appPassword": "app-wachtwoord ‘{{value}}’"
+      "appPassword": "app-wachtwoord ‘{{value}}’",
+      "switchedOn": "aangezet",
+      "switchedOff": "uitgezet",
+      "authSource": "nu: {{value}}",
+      "oauthApp": "app ‘{{value}}’"
     },
     "entry": {
       "actor": "Wie",
@@ -723,7 +981,8 @@
         "imaps": "Vertelt mailapps waar ze mail kunnen lezen (IMAP, poort 993).",
         "submissions": "Vertelt mailapps waar ze mail met TLS kunnen verzenden (poort 465).",
         "submission": "Vertelt mailapps waar ze mail met STARTTLS kunnen verzenden (poort 587).",
-        "caa": "Laat alleen Let's Encrypt certificaten uitgeven voor de naam van de server, en alleen aan het eigen account van deze server. Houdt TLS privé achter een UwUMail Gateway."
+        "caa": "Laat alleen Let's Encrypt certificaten uitgeven voor de naam van de server, en alleen aan het eigen account van deze server. Houdt TLS privé achter een UwUMail Gateway.",
+        "tlsa": "Vertelt verzendende servers welke sleutel het certificaat van deze server heeft, zodat ze alleen versleuteld bij hem afleveren (DANE). Vereist een met DNSSEC ondertekende zone."
       },
       "notes": {
         "mxUpstream": "Verwijst naar de voorliggende mailserver. Dat is in orde.",
@@ -749,7 +1008,12 @@
         "mtaStsPolicyInvalid": "Daar wordt geen geldig beleid uitgeleverd.",
         "caaWithoutAccount": "Staat ook andere accounts of certificaatautoriteiten toe. Met accounturi krijgt alleen deze server certificaten.",
         "caaOtherAccount": "Noemt een ander Let's Encrypt-account. Deze server kan zijn certificaat pas vernieuwen als het record zijn eigen account noemt.",
-        "caaForbids": "Laat deze server zijn certificaat niet bij Let's Encrypt ophalen. Vernieuwen zal mislukken."
+        "caaForbids": "Laat deze server zijn certificaat niet bij Let's Encrypt ophalen. Vernieuwen zal mislukken.",
+        "tlsaRecommended": "De zone is ondertekend met DNSSEC, dus servers die DANE controleren kunnen zeker weten dat ze echt deze server bereiken. De server houdt zijn sleutel bij het vernieuwen van het certificaat, dus het record blijft geldig.",
+        "tlsaKeyKept": "Past bij de sleutel van de server. De sleutel blijft hetzelfde als het certificaat wordt vernieuwd.",
+        "tlsaMismatch": "Past bij geen enkel certificaat dat deze server laat zien. Servers die DANE controleren houden mail voor je domeinen tegen tot het record de huidige sleutel noemt.",
+        "tlsaUnsigned": "De zone is niet ondertekend met DNSSEC, dus nog geen enkele server kijkt naar dit record.",
+        "dnssecBogus": "De DNSSEC-handtekeningen van de naam van de server kloppen niet. Servers die ze controleren bereiken de server helemaal niet."
       },
       "catchAll": "Catch-all",
       "catchAllHint": "Mail aan adressen die niet bestaan, gaat naar deze persoon. Dat trekt ook meer spam aan.",
@@ -790,8 +1054,10 @@
         "imaps": "Lezen voor mailapps (IMAP)",
         "submissions": "Verzenden voor mailapps (TLS)",
         "submission": "Verzenden voor mailapps (STARTTLS)",
-        "caa": "Certificaten alleen voor deze server (CAA)"
-      }
+        "caa": "Certificaten alleen voor deze server (CAA)",
+        "tlsa": "DANE (TLSA)"
+      },
+      "tlsaKeyChange": "Voordat de sleutel van de server verandert (eigen certificaatbestanden, een verhuizing naar een andere server of het verwijderen van data/tls/acme/key.pem), publiceer je het record voor de nieuwe sleutel naast dit record en wacht je een dag. Anders houden servers die DANE controleren mail voor je tegen."
     },
     "forwards": {
       "title": "Doorstuuradressen",
@@ -884,6 +1150,46 @@
       "unauthenticated_other": "{{count}} rapporten kwamen van afzenders die niet konden bewijzen wie ze zijn. De cijfers kunnen verzonnen zijn."
     }
   },
+  "groups": {
+    "title": "Groepen",
+    "explain": "Eén adres voor meerdere mensen, zoals info@ of bestuur@ van een vereniging. Iedereen krijgt de mail in de eigen inbox, met eigen spamfilter en regels.",
+    "create": "Nieuwe groep",
+    "save": "Opslaan",
+    "address": "Adres",
+    "addressPlaceholder": "bijvoorbeeld bestuur",
+    "name": "Naam",
+    "namePlaceholder": "bijvoorbeeld Bestuur",
+    "whoMaySend": "Wie mag schrijven",
+    "who": {
+      "anyone": "Iedereen",
+      "members": "Alleen de leden",
+      "domain": "Alleen adressen van {{domain}}",
+      "anyoneHint": "Zoals elk ander adres, open voor iedereen.",
+      "membersHint": "Mail van anderen wordt aan de deur geweigerd.",
+      "domainHint": "Mensen van dit domein mogen schrijven, alle anderen worden geweigerd."
+    },
+    "sendAs": "Leden mogen als de groep versturen",
+    "sendAsHint": "Het adres staat dan tussen hun afzenderadressen.",
+    "sendAsShort": "leden versturen ermee",
+    "members": {
+      "title": "Leden",
+      "search": "Mensen zoeken",
+      "chosen_one": "{{count}} gekozen",
+      "chosen_other": "{{count}} gekozen",
+      "none": "Niemand gevonden."
+    },
+    "noMembers": "Nog geen leden: mail ernaartoe wordt geweigerd.",
+    "edit": "{{address}} wijzigen",
+    "remove": "{{address}} verwijderen",
+    "removeConfirm": "Groep {{address}} verwijderen? Mail ernaartoe wordt voortaan geweigerd.",
+    "toasts": {
+      "created": "Groep gemaakt",
+      "saved": "Groep opgeslagen",
+      "removed": "Groep verwijderd"
+    },
+    "masked": "Gemaskeerde adressen",
+    "maskedHint": "Mensen mogen op dit domein willekeurige adressen voor websites maken (Mijn account → Gemaskeerde adressen)."
+  },
   "reports": {
     "title": "Rapporten",
     "intro": "Wat andere mailservers terugmelden over je domeinen.",
@@ -944,6 +1250,24 @@
     "noDomains": {
       "title": "Nog geen domein",
       "body": "Rapporten komen binnen zodra een domein is ingesteld en er mail uit zijn naam is verstuurd."
+    },
+    "sent": {
+      "title": "Rapporten die wij versturen",
+      "intro": "Eén keer per dag vertelt de server de domeinen waar hij mail heeft afgeleverd hoe de versleuteling ging (TLS-rapporten, RFC 8460), als ze daarom vragen met een _smtp._tls-record. Per mail komen ze van {{sender}}, ondertekend met DKIM. Je eigen domeinen krijgen er geen.",
+      "toggle": "TLS-rapporten versturen",
+      "toggleHint": "Telt per dag elke aflevering bij de mailserver van een ander domein: of TLS lukte en onder welk beleid (MTA-STS, DANE of geen).",
+      "listTitle": "Verstuurd in de afgelopen {{days}} dagen",
+      "empty": "Er is nog geen rapport verstuurd. De eerste gaan de dag nadat er mail naar een domein ging dat erom vraagt.",
+      "sessions": "{{successful}} versleutelde verbindingen, {{failed}} mislukt",
+      "to": "Aan: {{destinations}}",
+      "quiet_one": "Nog één domein wilde geen rapporten, of is van ons.",
+      "quiet_other": "Nog {{count}} domeinen wilden geen rapporten, of zijn van ons.",
+      "status": {
+        "sent": "Verstuurd",
+        "failed": "Niet verstuurd",
+        "none": "Niet gewenst",
+        "skipped": "Overgeslagen"
+      }
     }
   },
   "host": {
@@ -1212,7 +1536,8 @@
       "mail": "Verzenden & ontvangen",
       "apps": "Apps & webmail",
       "vpn": "VPN & proxy",
-      "branding": "Uiterlijk"
+      "branding": "Uiterlijk",
+      "login": "Inloggen"
     },
     "mailIntro": "Hoe mail de server verlaat en wat hij aanneemt. Wijzigingen werken meteen, zonder herstart.",
     "appsIntro": "Wat geldt voor mailapps en de mailbox in de browser. Wijzigingen werken meteen, zonder herstart."
@@ -1452,7 +1777,10 @@
       "repeat": "Nieuw wachtwoord herhalen",
       "hint": "Minstens 10 tekens. Een zin van een paar woorden is makkelijk te onthouden.",
       "submit": "Wachtwoord wijzigen",
-      "changed": "Wachtwoord gewijzigd. Andere browsers zijn uitgelogd."
+      "changed": "Wachtwoord gewijzigd. Andere browsers zijn uitgelogd.",
+      "managedTitle": "Wachtwoord",
+      "inDirectory": "Je wachtwoord wordt beheerd in de directory van je organisatie (LDAP). Wijzig het daar; het nieuwe werkt hier meteen.",
+      "atProvider": "Je logt in bij de inlogdienst van je organisatie en hebt hier geen wachtwoord. Mail-apps loggen in met OAuth of een app-wachtwoord."
     },
     "sessions": {
       "title": "Ingelogde browsers",
@@ -1499,13 +1827,130 @@
       "forwardingRemoved": "Doorsturen naar {{address}} verwijderd",
       "forwardingConfirmed": "{{address}} heeft het doorsturen bevestigd",
       "forwardingDeclined": "{{address}} heeft het doorsturen afgewezen",
-      "forwardingConfirmationSent": "Bevestigingsmail naar {{address}} gestuurd"
+      "forwardingConfirmationSent": "Bevestigingsmail naar {{address}} gestuurd",
+      "oauthGranted": "App ‘{{name}}’ ingelogd met OAuth ({{scopes}})",
+      "oauthRevoked": "App ‘{{name}}’ uitgelogd",
+      "oauthTokenReused": "Een oud token van de app ‘{{name}}’ kwam een tweede keer terug: de app is uitgelogd",
+      "oidcLinked": "Gekoppeld aan de login bij {{issuer}}"
     },
     "loginMethods": {
       "password": "wachtwoord",
       "totp": "wachtwoord en app",
       "recoveryCode": "wachtwoord en herstelcode",
-      "passkey": "wachtwoord en passkey"
+      "passkey": "wachtwoord en passkey",
+      "oidc": "single sign-on"
+    },
+    "oauthApps": {
+      "title": "Met OAuth ingelogde apps",
+      "none": "Er is geen app met OAuth ingelogd. Mailapps die dit ondersteunen, loggen hier in de browser in in plaats van een app-wachtwoord te gebruiken.",
+      "staysSignedIn": "Blijft ingelogd",
+      "since": "Ingelogd op {{date}}",
+      "signOut": "Uitloggen",
+      "signOutTitle": "‘{{name}}’ uitloggen?",
+      "signOutBody": "De app kan niet meer bij de mailbox tot iemand er opnieuw mee inlogt.",
+      "signedOut": "‘{{name}}’ uitgelogd"
+    }
+  },
+  "oauth": {
+    "title": "‘{{name}}’ wil toegang tot je account",
+    "account": "Ingelogd als",
+    "nameClaim": "De app noemt zichzelf ‘{{name}}’. Sta dit alleen toe als je zelf net bent begonnen met inloggen in deze app.",
+    "returnsTo": "Daarna ga je terug naar {{host}}.",
+    "returnsToDevice": "Daarna ga je terug naar de app op dit apparaat ({{host}}).",
+    "scopesTitle": "De app mag",
+    "scopes": {
+      "mail": {
+        "title": "Je mail lezen en ordenen",
+        "hint": "Mail, mappen en filterregels, via IMAP, JMAP en ManageSieve."
+      },
+      "smtp": {
+        "title": "Mail versturen namens jou",
+        "hint": "Vanaf je adressen, via SMTP."
+      },
+      "dav": {
+        "title": "Je agenda's en contacten gebruiken",
+        "hint": "Lezen en wijzigen, via CalDAV en CardDAV."
+      },
+      "openid": {
+        "title": "Weten dat jij het bent",
+        "hint": "Je account op deze server."
+      },
+      "profile": {
+        "title": "Je naam zien",
+        "hint": "De naam van je account."
+      },
+      "email": {
+        "title": "Je e-mailadres zien",
+        "hint": "Je hoofdadres."
+      },
+      "offline_access": {
+        "title": "Ingelogd blijven",
+        "hint": "Tot je de app uitlogt, zonder het opnieuw te vragen."
+      }
+    },
+    "revokeHint": "Je kunt de app altijd uitloggen onder Mijn account → Beveiliging.",
+    "allow": "Toestaan",
+    "deny": "Weigeren",
+    "otherAccount": "Niet {{login}}? Inloggen met een ander account",
+    "signingIn": "Bezig met inloggen …",
+    "invalidTitle": "Deze app kan hier niet inloggen",
+    "invalid": {
+      "oauthClientUnknown": "Deze app is niet geregistreerd op deze server. Stel het account in de app opnieuw in.",
+      "oauthRedirectInvalid": "De app wil terug naar een adres dat hij niet heeft geregistreerd. Voor de veiligheid is er niets verstuurd."
+    },
+    "toPortal": "Naar het portaal"
+  },
+  "externalLogin": {
+    "intro": "Inloggen op het portaal bij een andere aanbieder (OpenID Connect), of wachtwoorden controleren in een LDAP-directory. Wijzigingen gelden meteen, zonder herstart.",
+    "docs": "Handleiding: OpenID Connect en LDAP",
+    "oauthDocs": "Handleiding: mail-apps met OAuth",
+    "test": "Verbinding testen",
+    "testOk": "Werkt: {{detail}}",
+    "autoCreate": "Account aanmaken bij de eerste login",
+    "allowedDomains": "Domeinen voor nieuwe accounts",
+    "allowedDomainsHint": "Eén per regel, elk een domein van deze server. Leeg: geen nieuwe accounts.",
+    "oidc": {
+      "title": "OpenID Connect",
+      "intro": "Een knop op de inlogpagina leidt naar jullie inlogdienst, zoals Authentik, Keycloak of Microsoft Entra ID.",
+      "enabled": "Inloggen via een OpenID Connect-aanbieder",
+      "enabledHint": "Wachtwoorden die hier zijn ingesteld blijven daarnaast werken.",
+      "redirectUri": "Registreer deze redirect-URI bij de aanbieder",
+      "issuer": "Issuer",
+      "issuerHint": "Het adres van de aanbieder. De rest leest UwUMail uit zijn /.well-known/openid-configuration.",
+      "clientId": "Client-ID",
+      "clientSecret": "Client-secret",
+      "buttonLabel": "Naam op de knop",
+      "buttonLabelHint": "De knop heet dan ‘Inloggen met Authentik’. Leeg: ‘Inloggen met single sign-on’.",
+      "autoCreateHint": "Alleen als de aanbieder het adres bevestigt en het domein hieronder is toegestaan.",
+      "adminClaim": "Admin-claim",
+      "adminClaimHint": "De claim in het antwoord van de aanbieder die groepen of rollen opsomt.",
+      "adminValue": "Admin-waarde",
+      "adminValueHint": "Nieuwe accounts waarvan de claim deze waarde bevat, worden admin."
+    },
+    "ldap": {
+      "title": "LDAP-directory",
+      "intro": "Accounts die op de directory staan, loggen in met hun directory-wachtwoord, in het portaal en in mail-apps. Alle anderen houden hun wachtwoord hier.",
+      "enabled": "Wachtwoorden controleren in een LDAP-directory",
+      "enabledHint": "Welke accounts dit gebruiken, stel je in op de pagina van elke persoon. Accounts die uit de directory zijn aangemaakt gebruiken het meteen.",
+      "url": "Adres van de directory",
+      "urlHint": "ldaps://…, of ldap://… met STARTTLS.",
+      "starttls": "STARTTLS bij ldap://",
+      "starttlsHint": "Versleutelt de verbinding voordat er een wachtwoord wordt verstuurd.",
+      "insecureLocalhost": "ldap:// zonder versleuteling op deze machine toestaan",
+      "insecureLocalhostHint": "Alleen voor een directory op precies deze machine (localhost), nooit via een netwerk.",
+      "bindDn": "Serviceaccount (bind-DN)",
+      "bindDnHint": "Zoekt in de directory naar de persoon die inlogt.",
+      "bindPassword": "Wachtwoord van het serviceaccount",
+      "userDnTemplate": "DN-sjabloon",
+      "userDnTemplateHint": "Met een sjabloon wordt er niet gezocht: de DN van de persoon wordt uit het adres gemaakt. {user} is het deel vóór de @, {email} het hele adres.",
+      "baseDn": "Zoekbasis",
+      "userFilter": "Zoekfilter",
+      "userFilterHint": "{email} is het hele adres dat bij het inloggen is ingevoerd, {user} het deel vóór de @.",
+      "mailAttribute": "Attribuut voor het adres",
+      "nameAttribute": "Attribuut voor de naam",
+      "adminGroupDn": "Admin-groep",
+      "adminGroupDnHint": "Nieuwe accounts die lid zijn van deze groep (memberOf), worden admin.",
+      "autoCreateHint": "Als de directory het adres kent en het domein hieronder is toegestaan."
     }
   },
   "fetch": {
@@ -1589,6 +2034,80 @@
       "spam": "Opgehaalde mail wordt hier opnieuw beoordeeld. Wat de provider voor spam hield, telt als hint en beslist niet in zijn eentje.",
       "first": "Wat al in de mailbox staat, komt alleen als jij dat wilt: met ‘Bestaande mail meenemen’ bij het toevoegen, of later met de klokknop in de rij ervan. Het komt met de datum van de provider, niet als een berg nieuwe mail van vandaag.",
       "password": "Het wachtwoord gaat er alleen in en komt er nooit meer uit. De server heeft het nodig om bij de provider in te loggen en bewaart het verzegeld."
+    }
+  },
+  "moving": {
+    "title": "Verhuizen",
+    "intro": "Haal je mail over van je oude provider: elke map, gelezen of ongelezen zoals het was, met de datum. De server kopieert op de achtergrond, dus je kunt deze pagina sluiten.",
+    "noMailbox": {
+      "title": "Geen mailbox hier",
+      "body": "Je account heeft geen mailbox waar mail naartoe kan verhuizen. Vraag het je beheerder."
+    },
+    "form": {
+      "title": "Een mailbox verhuizen",
+      "explain": "Je oude adres en het wachtwoord zijn genoeg: de server zoekt zelf de IMAP-server van je provider en logt één keer in om het te controleren.",
+      "address": "Oud adres",
+      "addressHint": "Het adres bij je oude provider.",
+      "password": "Wachtwoord",
+      "passwordHint": "Vaak een app-wachtwoord van de provider, niet het wachtwoord waarmee je inlogt. Het blijft verzegeld bewaard tot je klaar bent.",
+      "manual": "Server zelf invullen",
+      "host": "IMAP-server",
+      "hostHint": "Met TLS, meestal poort 993.",
+      "port": "Poort",
+      "login": "Gebruikersnaam",
+      "loginHint": "Leeg als het het adres zelf is.",
+      "searching": "Server van je provider zoeken …",
+      "start": "Verhuizing starten",
+      "started": "De verhuizing is begonnen en gaat op de achtergrond verder."
+    },
+    "hints": {
+      "gmail": "Gmail laat andere servers alleen binnen met een app-wachtwoord: zet verificatie in twee stappen aan in je Google-account en maak er dan een aan op myaccount.google.com/apppasswords. IMAP staat bij Gmail altijd aan. Labels zijn daar mappen; een bericht met meerdere labels komt één keer, in de eerste map waarin het wordt gevonden.",
+      "outlook": "Outlook.com en Hotmail laten alleen apps binnen die via Microsoft inloggen, en dat kan een eigen server niet voor je doen. Kopieer de mail in plaats daarvan met een mailprogramma: voeg beide mailboxen toe en sleep de mappen over.",
+      "gmx": "GMX laat andere servers pas binnen als je het toestaat: zet in de instellingen van GMX onder E-Mail → POP3/IMAP Abruf de toegang via IMAP aan. Met tweestapsverificatie heb je een app-wachtwoord nodig.",
+      "webde": "WEB.DE laat andere servers pas binnen als je het toestaat: zet in de instellingen van WEB.DE onder E-Mail → POP3/IMAP Abruf de toegang via IMAP aan. Met tweestapsverificatie heb je een app-wachtwoord nodig."
+    },
+    "job": {
+      "from": "van {{host}} als {{login}}",
+      "queued": "Wacht op zijn beurt …",
+      "running": "Kopiëren …",
+      "looking": "Mappen doorlopen …",
+      "progress": "{{done}} van {{total}} berichten · {{size}}",
+      "progressLabel": "Hoe ver de verhuizing is",
+      "folders": "map {{done}} van {{total}}",
+      "skipped": "{{count}} bericht was er al en is overgeslagen",
+      "skipped_other": "{{count}} berichten waren er al en zijn overgeslagen",
+      "done": "Alles is er.",
+      "doneAt": "Alles wat daar was, is hier, stand {{date}}."
+    },
+    "errors": {
+      "quotaExceeded": "Je mailbox hier is vol. Maak ruimte of vraag je beheerder om meer en ga dan verder: het gaat verder waar het stopte.",
+      "loginRefused": "De oude provider heeft het wachtwoord geweigerd. Vul een nieuw in (vaak een app-wachtwoord) en ga verder.",
+      "unreachable": "De oude provider was niet bereikbaar. Probeer het later opnieuw.",
+      "notPublic": "De server van de oude provider staat niet op internet, voor zover deze server kan zien.",
+      "noMailbox": "Je account heeft geen mailbox waar mail naartoe kan verhuizen.",
+      "stopped": "Gepauzeerd. Ga verder wanneer je wilt; het gaat verder waar het stopte.",
+      "failed": "Er ging iets mis. Ga verder om het opnieuw te proberen."
+    },
+    "actions": {
+      "pause": "Pauzeren",
+      "continue": "Verdergaan",
+      "syncAgain": "Opnieuw synchroniseren",
+      "finish": "Klaar, inloggegevens wissen",
+      "finishConfirm": "Klaar met {{address}}? Het wachtwoord van de oude mailbox wordt gewist; de mail die is gekomen, blijft.",
+      "newPassword": "Nieuw wachtwoord"
+    },
+    "toasts": {
+      "queued": "Het gaat zo verder.",
+      "finished": "Klaar. De inloggegevens van de oude mailbox zijn gewist."
+    },
+    "about": {
+      "title": "Goed om te weten",
+      "what": "Elke map komt mee, de speciale (verzonden, concepten, spam, prullenbak, archief) in de jouwe, en elk bericht met de datum en gelezen, gemarkeerd of beantwoord zoals het was.",
+      "twice": "Niets komt dubbel: een bericht dat er al is, op basis van de Message-ID of de inhoud, wordt overgeslagen.",
+      "switch": "Neem de tijd: verhuis nu één keer, geef mensen je nieuwe adres en gebruik „Opnieuw synchroniseren” wanneer je wilt. Het haalt alleen op wat sindsdien bij de oude provider is binnengekomen.",
+      "password": "Het wachtwoord wordt alleen gebruikt om te kopiëren, verzegeld bewaard en gewist zodra je op „Klaar, inloggegevens wissen” klikt.",
+      "calendars": "Agenda's en contacten verhuizen apart:",
+      "calendarsLink": "Agenda's en contacten → Verhuizen van een andere provider"
     }
   },
   "mailbox": {
@@ -1680,6 +2199,54 @@
     "releasedHint": "Mail aan deze adressen wordt geweigerd tot je ze terugneemt of de tijd om is.",
     "reservedUntil": "Gereserveerd tot {{date}}",
     "restore": "Terugnemen"
+  },
+  "memberships": {
+    "title": "Groepen en gedeelde mailboxen",
+    "intro": "Een beheerder heeft je hier toegevoegd. Mail aan een groep komt in je eigen inbox; een gedeelde mailbox staat naast je eigen mappen.",
+    "group": "Groep",
+    "shared": "Gedeelde mailbox",
+    "maySend": "je mag ermee versturen",
+    "sharedHint": "In mail-apps staat een gedeelde mailbox onder Shared/, in de webmail als eigen account. Wat je ermee verstuurt, komt ook in zijn map Verzonden."
+  },
+  "masked": {
+    "pageTitle": "Gemaskeerde adressen",
+    "intro": "Een willekeurig adres voor elke website. Krijgt er een spam, dan weet je wie het doorgaf en zet je het uit zonder je echte adres aan te raken.",
+    "new": "Nieuw gemaskeerd adres",
+    "closed": "Gemaskeerde adressen zijn op deze server nog niet open. Vraag de beheerder ze voor een domein aan te zetten.",
+    "description": "Waarvoor",
+    "descriptionPlaceholder": "bijvoorbeeld de nieuwsbrief van de bakker",
+    "site": "Website",
+    "siteHint": "Optioneel, zodat je weet waar je het gebruikte.",
+    "prefix": "Voorvoegsel",
+    "prefixHint": "Optioneel: letters a–z, cijfers en _ vóór het willekeurige deel.",
+    "prefixPlaceholder": "bijvoorbeeld shop",
+    "domain": "Domein",
+    "create": "Adres maken",
+    "created": "{{address}} is klaar en gekopieerd",
+    "listTitle": "Je gemaskeerde adressen",
+    "filter": {
+      "active": "In gebruik",
+      "deleted": "Verwijderd"
+    },
+    "empty": "Nog niets hier.",
+    "noNote": "Geen notitie",
+    "state": {
+      "pending": "Wacht op de eerste mail",
+      "enabled": "Aan",
+      "disabled": "Uit: mail gaat stil naar de prullenbak",
+      "deleted": "Verwijderd: mail wordt geweigerd"
+    },
+    "lastMessage": "laatste mail {{date}}",
+    "noMessage": "nog geen mail",
+    "enable": "Aanzetten",
+    "disable": "Uitzetten",
+    "delete": "Verwijderen",
+    "deleteConfirm": "{{address}} verwijderen? Mail ernaartoe wordt voortaan geweigerd. Je kunt het later weer aanzetten; niemand anders krijgt het ooit.",
+    "toasts": {
+      "enabled": "Aangezet",
+      "disabled": "Uitgezet, mail gaat naar de prullenbak",
+      "deleted": "Verwijderd, mail wordt geweigerd"
+    }
   },
   "storage": {
     "title": "Opslag",
@@ -2096,7 +2663,7 @@
     "helperOld": "De helper op deze machine is te oud voor de updateknop. Voer dit één keer uit op de machine -- het werkt ook de helper bij, en vanaf dan werk je hier bij met een klik:"
   },
   "backups": {
-    "intro": "Elke nacht maakt de server een back-up van mail, instellingen, agenda's en contacten op een SFTP-server, zoals een NAS. Na de eerste keer uploadt hij alleen wat nieuw is.",
+    "intro": "Elke nacht maakt de server een back-up van mail, instellingen, agenda's en contacten: op een SFTP-server zoals een NAS, in een S3-bucket of in een map, bijvoorbeeld een gekoppelde schijf. Na de eerste keer uploadt hij alleen wat nieuw is.",
     "status": {
       "title": "Status",
       "running": "De back-up loopt …",
@@ -2110,7 +2677,7 @@
       "started": "De back-up start"
     },
     "target": {
-      "title": "Back-upserver",
+      "title": "Waar back-ups heen gaan",
       "explain": "Waar back-ups naartoe gaan. De map wordt aangemaakt als hij niet bestaat; gebruik er één per server.",
       "host": "Adres",
       "port": "Poort",
@@ -2128,7 +2695,28 @@
       "test": "Verbinding testen",
       "testOk": "De verbinding werkt",
       "testFirst": "De verbinding werkt. De server toonde {{hostKey}}; vanaf nu moet het deze sleutel zijn.",
-      "trustNewKey": "De nieuwe sleutel vertrouwen"
+      "trustNewKey": "De nieuwe sleutel vertrouwen",
+      "kind": "Back-up naar",
+      "kindSftp": "SFTP-server",
+      "kindS3": "S3-bucket",
+      "kindFolder": "Map",
+      "explainS3": "Amazon S3 of elke server die dezelfde taal spreekt: MinIO, Backblaze B2, Hetzner Object Storage, Wasabi en andere. Gebruik een bucket, of een map daarin, alleen voor deze server.",
+      "explainFolder": "Een map op deze machine: een tweede schijf, of een NAS-share die in de container is gekoppeld. Hij moet al bestaan, buiten de datamap van de server.",
+      "endpoint": "S3-adres",
+      "endpointHint": "Alleen de server, zonder bucket, bijv. https://s3.eu-central-1.amazonaws.com. http:// werkt alleen in je eigen netwerk.",
+      "bucket": "Bucket",
+      "prefix": "Map in de bucket",
+      "prefixHint": "Leeg voor de hele bucket",
+      "region": "Regio",
+      "regionHint": "bijv. eu-central-1; us-east-1 als leeg",
+      "accessKey": "Access key",
+      "secretKey": "Secret key",
+      "secretKeyKept": "Laat leeg om de opgeslagen sleutel te houden.",
+      "pathStyle": "Bucket in het pad",
+      "pathStyleHint": "https://server/bucket in plaats van https://bucket.server. MinIO en veel servers in je eigen netwerk willen dit.",
+      "folder": "Map",
+      "folderHint": "Een volledig pad, bijv. /backup",
+      "testWritable": "De verbinding werkt: een testbestand is geschreven, teruggelezen en verwijderd."
     },
     "schedule": {
       "enabled": "Elke nacht een back-up maken",
@@ -2171,6 +2759,35 @@
       "keptGateway": "De gatewaykoppeling van deze machine is behouden, niet die uit de back-up.",
       "oldDatabase": "De database van ervoor staat in de datamap als uwumail.db.replaced.*. Verwijder hem zodra je het zeker weet.",
       "forget": "Begrepen"
+    },
+    "mailbox": {
+      "title": "Eén mailbox terugzetten",
+      "explain": "Haalt de mail van één persoon uit een snapshot terwijl de server blijft draaien. Die komt naast wat er nu is, in een nieuwe map „Restored <datum>” met de oude mappen eronder. Berichten die de mailbox nog heeft, worden overgeslagen.",
+      "snapshot": "Snapshot",
+      "latest": "De nieuwste",
+      "open": "Openen",
+      "openFailed": "De snapshot kon niet worden geopend: {{error}}",
+      "opening": "Database van de snapshot ophalen: {{done}} van {{total}} …",
+      "opened": "Geopend: de snapshot van {{time}}.",
+      "restoring": "Mail van {{account}} terugzetten: {{done}} van {{total}} …",
+      "lastDone": "{{count}} bericht is terug bij {{account}}, in de map „{{folder}}”; {{skipped}} waren er nog.",
+      "lastDone_other": "{{count}} berichten zijn terug bij {{account}}, in de map „{{folder}}”; {{skipped}} waren er nog.",
+      "lastFailed": "Terugzetten naar {{account}} is gestopt: {{error}}. Tot dan waren {{count}} berichten teruggekomen.",
+      "nobody": "Niemand in deze snapshot had een mailbox.",
+      "person": "Persoon",
+      "personLine": "{{login}} ({{count}})",
+      "into": "In de mailbox van",
+      "intoHint": "Leeg voor hetzelfde adres. Voor iemand van wie het adres sindsdien is veranderd.",
+      "which": "Mappen",
+      "allFolders": "Alle mappen",
+      "someFolders": "Mappen kiezen",
+      "inbox": "Inbox",
+      "how": "Niets van wat er nu is, wordt gewijzigd of vervangen. Een back-up wacht tot dit klaar is.",
+      "restore": "Terugzetten",
+      "close": "Snapshot sluiten",
+      "nothingMissing": "Er ontbrak niets: het bericht uit de snapshot is nog bij {{account}}, dus er hoefde niets terug te komen.",
+      "nothingMissing_other": "Er ontbrak niets: alle {{count}} berichten uit de snapshot zijn nog bij {{account}}, dus er hoefde niets terug te komen.",
+      "nothingThere": "De snapshot had in deze mappen geen mail voor {{account}}, dus er kwam niets terug."
     }
   },
   "spam": {

@@ -8,7 +8,9 @@ mod copy;
 mod email;
 mod identity;
 mod mailbox;
+mod masked;
 mod principal;
+mod push_subscription;
 mod query_changes;
 mod senders;
 mod settings;
@@ -27,14 +29,28 @@ use uwumail_store::{Account, Changes};
 use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
 use crate::session::{
-    CALENDARS, CONTACTS, CORE, MAIL, SENDERS, SETTINGS, SIEVE, SUBMISSION, SUGGEST, VACATION, WEBMAIL, WEBSOCKET,
+    CALENDARS, CONTACTS, CORE, MAIL, MASKED, SENDERS, SETTINGS, SIEVE, SUBMISSION, SUGGEST, VACATION, WEBMAIL,
+    WEBPUSH_VAPID, WEBSOCKET,
 };
 use crate::sharing::{self, PRINCIPALS, SharedView};
 use crate::{Inner, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, ids};
 
 pub const KNOWN_CAPABILITIES: &[&str] = &[
-    CORE, MAIL, SUBMISSION, VACATION, SENDERS, SETTINGS, SIEVE, WEBMAIL, CALENDARS, CONTACTS, WEBSOCKET, SUGGEST,
+    CORE,
+    MAIL,
+    SUBMISSION,
+    VACATION,
+    SENDERS,
+    SETTINGS,
+    SIEVE,
+    WEBMAIL,
+    CALENDARS,
+    CONTACTS,
+    WEBSOCKET,
+    SUGGEST,
     PRINCIPALS,
+    MASKED,
+    WEBPUSH_VAPID,
 ];
 
 /// The most suggestions one `AddressSuggestion/query` returns.
@@ -54,11 +70,13 @@ pub struct Ctx<'a> {
     /// Set while a call works in someone else's account shared with the logged-in one: then
     /// `account` is the owner's, and this says what may be seen and done (docs/sharing.md).
     pub shared: Option<SharedView>,
+    /// The credential the request logged in with, for push subscriptions (RFC 8620, 7.2).
+    pub credential: Option<String>,
 }
 
 impl<'a> Ctx<'a> {
     pub fn new(jmap: &'a Inner, account: Account, using: Vec<String>, created_ids: HashMap<String, String>) -> Ctx<'a> {
-        Ctx { jmap, account, using, created_ids, started: std::time::Instant::now(), shared: None }
+        Ctx { jmap, account, using, created_ids, started: std::time::Instant::now(), shared: None, credential: None }
     }
 
     pub fn account_id(&self) -> String {
@@ -129,7 +147,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
     }
     let capability = match name.split('/').next().unwrap_or_default() {
         "Principal" => PRINCIPALS,
-        "Core" => CORE,
+        "Core" | "PushSubscription" => CORE,
         "Mailbox" | "Email" | "Thread" | "SearchSnippet" => MAIL,
         "Identity" | "EmailSubmission" => SUBMISSION,
         "VacationResponse" => VACATION,
@@ -139,12 +157,14 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "AddressBook" | "ContactCard" => CONTACTS,
         "SieveScript" => SIEVE,
         "AddressSuggestion" => SUGGEST,
+        "MaskedEmail" => MASKED,
         _ => return Err(MethodError::kind("unknownMethod")),
     };
     if !requires(capability, &ctx.using) {
         return Err(MethodError::new("unknownMethod", format!("add {capability} to `using` to call {name}")));
     }
-    if name != "Core/echo" {
+    // Push subscriptions belong to the login, not to an account (RFC 8620, 7.2.1).
+    if name != "Core/echo" && !name.starts_with("PushSubscription/") {
         ctx.check_account(&args)?;
     }
     let can = query_changes::can_calculate(name, &args);
@@ -168,6 +188,8 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
     let single = |value: Value| Ok(vec![(name.to_owned(), value)]);
     match name {
         "Core/echo" => single(args),
+        "PushSubscription/get" => single(push_subscription::get(ctx, &args).await?),
+        "PushSubscription/set" => single(push_subscription::set(ctx, &args).await?),
         "Mailbox/get" => single(mailbox::get(ctx, &args).await?),
         "Mailbox/changes" => single(changes(ctx, &args, "Mailbox", 'm').await?),
         "Mailbox/query" => single(mailbox::query(ctx, &args).await?),
@@ -243,6 +265,9 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "Principal/query" => single(principal::query(ctx, &args).await?),
         "Principal/changes" => single(principal::changes(ctx, &args).await?),
         "Principal/queryChanges" => Err(MethodError::kind("cannotCalculateChanges")),
+        "MaskedEmail/get" => single(masked::get(ctx, &args).await?),
+        "MaskedEmail/changes" => single(changes(ctx, &args, "MaskedEmail", 'x').await?),
+        "MaskedEmail/set" => single(masked::set(ctx, &args).await?),
         _ => Err(MethodError::kind("unknownMethod")),
     }
 }

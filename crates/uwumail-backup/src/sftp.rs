@@ -30,10 +30,10 @@ pub enum Login {
     },
 }
 
-/// Where the backups go.
+/// An SFTP server the backups go to.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct Target {
+pub struct SftpTarget {
     pub host: String,
     pub port: u16,
     pub user: String,
@@ -97,7 +97,7 @@ fn not_found(err: &russh_sftp::client::error::Error) -> bool {
 }
 
 impl Sftp {
-    pub async fn connect(target: &Target) -> Result<Sftp, Error> {
+    pub async fn connect(target: &SftpTarget) -> Result<Sftp, Error> {
         let config = client::Config {
             inactivity_timeout: Some(Duration::from_secs(300)),
             keepalive_interval: Some(Duration::from_secs(30)),

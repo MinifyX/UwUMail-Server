@@ -14,7 +14,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.13.0"
+version = "0.14.0"
 edition = "2024"
 license = "AGPL-3.0-only"
 repository = "https://github.com/MinifyX/UwUMail-Server"
@@ -43,10 +43,18 @@ base64 = "0.23"
 clap = { version = "4", features = ["derive", "env"] }
 data-encoding = "2"
 futures-util = "0.3"
+# Packing the TLS reports this server sends; the version mail-auth uses.
+flate2 = "1"
 figment = { version = "0.10", features = ["toml", "env"] }
 hex = "0.4"
-# The same version mail-auth uses; "recursor" resolves from the root servers for DNS checks.
-hickory-resolver = { version = "0.26", default-features = false, features = ["tokio", "recursor"] }
+# The same version mail-auth uses; "recursor" resolves from the root servers for DNS checks, and
+# "dnssec-aws-lc-rs" validates answers for DANE (mail-auth switches it on as well).
+hickory-resolver = { version = "0.26", default-features = false, features = [
+    "tokio",
+    "recursor",
+    "system-config",
+    "dnssec-aws-lc-rs",
+] }
 hyper = "1"
 # Link hosts in spam checks: turning punycode back into the letters a reader sees.
 idna = "1"
@@ -61,6 +69,8 @@ chrono = { version = "0.4", default-features = false, features = ["std"] }
 chrono-tz = "0.10"
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "service", "client-legacy", "http1"] }
 instant-acme = { version = "0.8", features = ["rcgen"] }
+# Portal and mail logins checked against an LDAP directory (docs/login-oidc-ldap.md), over rustls.
+ldap3 = { version = "0.12", default-features = false, features = ["tls-rustls-aws-lc-rs"] }
 mail-auth = "0.13"
 mail-builder = "1"
 mail-parser = "0.11"
@@ -83,6 +93,8 @@ ruzstd = "0.9"
 rusqlite = { version = "0.40", features = ["bundled"] }
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "tls12", "logging"] }
 rustls-pki-types = "1"
+# The system's certificate authorities as well, for an LDAP directory behind an organisation's own CA.
+rustls-native-certs = "0.8"
 # Free disk space for the health overview.
 rustix = { version = "1", default-features = false, features = ["std", "fs"] }
 serde = { version = "1", features = ["derive"] }

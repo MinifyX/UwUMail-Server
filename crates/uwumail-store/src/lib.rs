@@ -11,6 +11,7 @@
 mod acl;
 mod address;
 mod admin;
+mod alerts;
 mod bayes;
 mod blobs;
 mod calendar;
@@ -20,34 +21,45 @@ mod dav;
 mod dav_import;
 mod db;
 mod directory;
+mod external;
 mod extras;
 mod feeds;
 mod fetch;
 mod forward_addresses;
 mod forwarding;
 mod greylist_hold;
+mod groups;
 mod held;
 pub mod ical;
+mod identity_grants;
 mod imap;
 mod import;
 pub mod itip;
 mod mail;
+mod masked;
+mod migration_jobs;
 mod mutate;
+mod oauth;
 mod objects;
 mod own;
 mod parse;
 mod password;
+mod push;
 mod query;
 mod queue;
 mod reports;
 mod rules;
+mod sasl;
 mod security;
 mod sender_lists;
+mod shared_mailboxes;
 mod sharing;
 mod sieve;
 mod spam;
 mod spam_log;
+mod stats;
 mod suggestions;
+mod tls_rpt;
 mod user_settings;
 mod web;
 mod word_lists;
@@ -63,6 +75,10 @@ pub use address::{EmailAddress, normalize_address, normalize_domain};
 pub use admin::{
     AccountUpdate, AddressInfo, AuditEntry, AuditRecord, PasswordLink, PasswordLinkPurpose, Person,
     TRASH_RETENTION_SECS,
+};
+pub use alerts::{
+    ALERT_HISTORY_SECS, ALERT_REMINDER_SECS, ALERT_RESOLVE_AFTER_SECS, Alert, AlertEvent, AlertLevel, AlertNotice,
+    AlertObservation, CertificateOrders,
 };
 pub use bayes::{
     BAYES_FOLDER_LIMIT, BAYES_LEARNED_SECS, BAYES_MIN_LEARNED, BAYES_RARE_TOKEN_SECS, BAYES_WANTED_AFTER_SECS,
@@ -86,6 +102,7 @@ pub use dav_import::{
     NewImportCollection, Split, SplitObject, dav_color, decode_text, split_ics, split_vcf,
 };
 pub use directory::{Account, DkimKey, DkimKeyAlgorithm, DkimKeyState, Domain, NewAccount, Protocols, Role};
+pub use external::{BoxFuture as ExternalFuture, ExternalPasswords};
 pub use extras::{
     IDENTITY_SIGNATURE_MAX_BYTES, Identity, IdentityUpdate, SubmissionRecord, UPLOAD_LIFETIME_SECS, VacationResponse,
 };
@@ -93,20 +110,35 @@ pub use feeds::FeedState;
 pub use fetch::{
     AfterFetch, DEFAULT_FETCH_INTERVAL_SECS, FETCH_HOLD_LIMIT_SECS, FETCH_SEEN_SECS, FetchAccount, FetchAccountUpdate,
     FetchFolder, FetchSecurity, FetchSender, MAX_FETCH_ACCOUNTS, MAX_FETCH_INTERVAL_SECS, MIN_FETCH_INTERVAL_SECS,
-    NewFetchAccount, SendSecurity,
+    NewFetchAccount, SendSecurity, is_public_ip,
 };
 pub use forward_addresses::{FORWARD_ADDRESS_MAX_TARGETS, ForwardAddress};
 pub use forwarding::{ActiveForwarding, FORWARD_LINK_LIFETIME_SECS, ForwardTarget, Forwarding, MAX_FORWARD_TARGETS};
 pub use greylist_hold::{GreylistHold, GreylistHoldMessage, MAX_HELD_SIZE, NewGreylistHold, Returning, Settled};
+pub use groups::{GROUP_MAX_MEMBERS, Group, GroupDelivery, GroupMember, GroupUpdate, NewGroup, WhoMaySend};
 pub use held::{HeldSubmission, NewHeldSubmission};
 pub use imap::{DELETED_KEYWORD, FlagChange, ImapEmail, ImapMailbox, ImapMessage, ImapMessages, ImapStatus};
 pub use import::ImportProgress;
 pub use mail::{EmailSummary, IngestRequest, IngestedEmail, Mailbox, MailboxRole, MailboxTarget, TestMessageStatus};
+pub use masked::{MASKED_PENDING_SECS, MaskedAddress, MaskedDelivery, MaskedState, MaskedUpdate, NewMaskedAddress};
+pub use migration_jobs::{
+    MAX_MIGRATION_JOBS, MigrationJob, MigrationProgress, MigrationRun, MigrationState, NewMigrationJob,
+};
 pub use mutate::{EmailUpdate, KeywordsChange, MailboxUpdate, MailboxesChange};
+pub use oauth::{
+    NewOAuthCode, OAUTH_ACCESS_TOKEN_SECS, OAUTH_CODE_SECS, OAUTH_REFRESH_TOKEN_SECS, OAUTH_SCOPES, OAuthClient,
+    OAuthGrant, OAuthRefusal, OAuthTokens, is_oauth_access_token, oauth_scopes, oauth_scopes_usable, pkce_matches,
+    redirect_uri_registered, valid_pkce_challenge, valid_redirect_uri,
+};
 pub use objects::{Changes, EmailRecord};
 pub use own::{MailboxUsage, OwnAddress, OwnAddresses, RELEASED_ADDRESS_SECS, ReleasedAddress};
 /// Checks a password hash from another server (bcrypt or Argon2) and returns how it would be stored.
 pub use password::import_hash as normalize_imported_password_hash;
+pub use push::{
+    MAX_PUSH_SUBSCRIPTIONS, NewPushSubscription, PUSH_CREDENTIAL_PASSWORD, PUSH_MAX_FAILURES, PUSH_MAX_VERIFY_ATTEMPTS,
+    PUSH_SUBSCRIPTION_MAX_SECS, PushKeys, PushSubscription, PushSubscriptionUpdate, PushTarget,
+    push_credential_for_app_password, push_credential_for_oauth_grant, push_credential_for_session,
+};
 pub use query::{EmailFilter, EmailSort, EmailSortProperty};
 pub use queue::{NewQueueRecipient, QueueEntry, QueueRecipient, QueueRecipientStatus, QueuedMessage};
 pub use reports::{
@@ -118,6 +150,7 @@ pub use rules::{
     BulkAction, BulkReport, ImportReport, RULES_BULK_MAX, RULES_IMPORT_MAX, RULES_PAGE_MAX, Rule, RuleChange,
     RuleImport, RuleList, RulePage, RuleQuery, RuleScope, RuleSort, RuleState, RuleType, ScopeFilter,
 };
+pub use sasl::{SaslBearer, parse_oauthbearer, parse_xoauth2, sasl_bearer_error, sasl_user_matches};
 pub use security::{
     AppPassword, AppScope, CodeCheck, CreatedAppPassword, MailAuth, MailAuthDenied, NewAppPassword, Passkey,
     SecurityEvent, SecurityEventRecord, SecurityOverview, TotpSetup, WebSessionInfo, scopes_for,
@@ -126,6 +159,7 @@ pub use sender_lists::{
     ListOwner, ListScope, NewSenderListEntry, SENDER_LIST_ADMIN_LIMIT, SENDER_LIST_PERSONAL_LIMIT, SenderKind,
     SenderList, SenderListEntry, guess_sender_kind, normalize_sender, pattern_matches,
 };
+pub use shared_mailboxes::{NewSharedMailbox, SharedMailboxInfo, SharedMailboxMember, SharedMembership};
 pub use sharing::{DAV_SHARES_PER_COLLECTION, DavAccess, DavShare, ShareRights, SharedDavCollection};
 pub use sieve::{
     SIEVE_MAX_NAME_SIZE, SIEVE_MAX_SCRIPT_SIZE, SIEVE_MAX_SCRIPTS, SieveActivation, SieveError, SieveScript,
@@ -139,7 +173,11 @@ pub use spam_log::{
     FetchedVerdicts, NewSpamLogEntry, SPAM_LOG_MAX_ROWS, SpamAction, SpamLogEntry, SpamLogFilter, SpamLogHit,
     SpamLogRecipient,
 };
+pub use stats::{STATS_RETENTION_DAYS, Stat, Stats, StatsDay};
 pub use suggestions::AddressUse;
+pub use tls_rpt::{
+    TLS_RPT_MAX_AGE_DAYS, TlsRptDue, TlsRptOutcome, TlsRptSent, TlsSession, TlsSessionCount, tls_rpt_day,
+};
 pub use user_settings::{
     DEFAULT_UNDO_SEND_SECONDS, SettingProblem, SettingsChange, USER_SETTINGS_MAX_KEYS, USER_SETTINGS_MAX_SIZE,
     USER_SETTINGS_MAX_VALUE_SIZE, UserSettings, validate_setting,
@@ -195,6 +233,10 @@ struct Inner {
     changes: broadcast::Sender<StateChange>,
     queue_wakeup: Notify,
     data_dir: PathBuf,
+    /// What happened since the server started, for the statistics and the metrics.
+    stats: stats::Stats,
+    /// Where passwords of directory (LDAP) accounts are checked, once the server plugged it in.
+    external: std::sync::RwLock<Option<Arc<dyn ExternalPasswords>>>,
 }
 
 impl Store {
@@ -217,6 +259,8 @@ impl Store {
                 changes,
                 queue_wakeup: Notify::new(),
                 data_dir,
+                stats: stats::Stats::default(),
+                external: std::sync::RwLock::new(None),
             }),
         })
     }

@@ -4,9 +4,11 @@ import {
   type AppPasswordCreated,
   type AppPasswordInfo,
   type DomainSummary,
+  type OAuthGrantInfo,
   type PasswordLinkCreated,
   type Person,
   type Protocols,
+  type SharedMailboxMember,
 } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { toast } from "@/state/toasts";
@@ -222,5 +224,72 @@ export function useSetPassword(login: string) {
   return useMutation({
     mutationFn: (password: string) => api<void>(`${personPath(login)}/password`, { method: "PUT", body: { password } }),
     onSuccess: () => updated(),
+  });
+}
+
+export interface NewSharedMailbox {
+  address: string;
+  name: string;
+  quotaBytes: number;
+  members: { login: string; maySend: boolean }[];
+}
+
+export function useCreateSharedMailbox() {
+  const updated = usePersonUpdated();
+  return useMutation({
+    mutationFn: (shared: NewSharedMailbox) =>
+      api<{ person: Person; members: SharedMailboxMember[] }>("/api/admin/shared-mailboxes", {
+        method: "POST",
+        body: shared,
+      }),
+    // The detail view starts from this answer, members included.
+    onSuccess: (result) => updated({ ...result.person, members: result.members }),
+  });
+}
+
+export function useSetSharedMembers(login: string, success: string) {
+  const queryClient = useQueryClient();
+  const errorText = useErrorText();
+  return useMutation({
+    mutationFn: (members: { login: string; maySend: boolean }[]) =>
+      api<SharedMailboxMember[]>(`/api/admin/shared-mailboxes/${encodeURIComponent(login)}/members`, {
+        method: "PUT",
+        body: { members },
+      }),
+    onSuccess: (members) => {
+      queryClient.setQueryData<Person>(["admin", "people", login], (old) => old && { ...old, members });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
+      toast(success, "success");
+    },
+    onError: (error) => toast(errorText(error), "error"),
+  });
+}
+
+/** Signs one of a person's OAuth apps out, e.g. for a lost phone. */
+export function useRevokePersonGrant(login: string, success: (name: string) => string) {
+  const queryClient = useQueryClient();
+  const errorText = useErrorText();
+  return useMutation({
+    mutationFn: (grant: OAuthGrantInfo) =>
+      api<void>(`${personPath(login)}/oauth-grants/${grant.id}`, { method: "DELETE" }),
+    onSuccess: (_result, grant) => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "people", login] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
+      toast(success(grant.clientName), "success");
+    },
+    onError: (error) => toast(errorText(error), "error"),
+  });
+}
+
+/** Where the person's password is checked: here or at the LDAP directory. */
+export function useSetAuthSource(login: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (source: "local" | "ldap") =>
+      api<void>(`${personPath(login)}/auth-source`, { method: "PUT", body: { source } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "people"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
+    },
   });
 }

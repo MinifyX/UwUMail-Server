@@ -188,7 +188,8 @@ pub async fn account(config: &Config, store: &Store, command: AccountCommand) ->
                 };
                 let flags = [
                     (account.role == Role::Admin).then_some("admin"),
-                    account.is_service().then_some("service"),
+                    account.shared_mailbox.then_some("shared mailbox"),
+                    (account.is_service() && !account.shared_mailbox).then_some("service"),
                     (account.is_service() && !account.has_mailbox()).then_some("sends only"),
                     account.disabled.then_some("disabled"),
                     account.deleted_at.is_some().then_some("in the trash"),
@@ -419,11 +420,7 @@ pub async fn backup(config: &Config, store: &Store, command: BackupCommand) -> a
         BackupCommand::Check => {
             let snapshots = backups.snapshots().await?;
             let Some((name, _)) = snapshots.first() else { anyhow::bail!("there are no snapshots yet") };
-            let mut settings = backups.settings().await?;
-            let target = settings.target.take().ok_or_else(|| anyhow::anyhow!("no backup server is set up"))?;
-            let key = settings.key.as_deref().map(uwumail_backup::RepoKey::from_recovery_text).transpose()?;
-            let sftp = uwumail_backup::sftp::Sftp::connect(&target).await?;
-            let repo = uwumail_backup::Repository::open_existing(uwumail_backup::Storage::Sftp(sftp), key).await?;
+            let repo = backups.repository().await?;
             let missing = uwumail_backup::check(&repo, name).await;
             repo.storage.close().await;
             let missing = missing?;
@@ -431,6 +428,28 @@ pub async fn backup(config: &Config, store: &Store, command: BackupCommand) -> a
                 anyhow::bail!("{} parts of snapshot {name} are missing on the backup server", missing.len());
             }
             println!("Snapshot {name} is complete (=^･ω･^=)");
+        }
+        BackupCommand::RestoreMailbox { account, into, snapshot, folders } => {
+            let report = backups
+                .restore_mailbox_now(&snapshot, &account, into.as_deref(), &folders, &mut |line, progress| {
+                    if !line.is_empty() {
+                        println!("{line}");
+                    } else if progress.done > 0 && (progress.done % 100 == 0 || progress.done == progress.total) {
+                        println!("{} of {} messages", progress.done, progress.total);
+                    }
+                })
+                .await?;
+            audit(
+                store,
+                "backup.restoreMailbox",
+                &account,
+                json!({ "snapshot": snapshot, "into": into, "restored": report.restored, "skipped": report.skipped }),
+            )
+            .await;
+            println!(
+                "{} messages are back in \"{}\"; {} were still there (=^･ω･^=)",
+                report.restored, report.folder, report.skipped
+            );
         }
         BackupCommand::Restore { .. } => unreachable!("restore runs before the store is opened"),
     }
@@ -440,23 +459,70 @@ pub async fn backup(config: &Config, store: &Store, command: BackupCommand) -> a
 /// Puts a snapshot back into an empty data directory. This one runs without a store, and has to:
 /// opening one would leave a fresh database in the directory the restore wants empty.
 pub async fn backup_restore(command: BackupCommand) -> anyhow::Result<()> {
-    let BackupCommand::Restore { sftp, port, ssh_key, host_key, snapshot, into } = command else {
+    let BackupCommand::Restore {
+        sftp,
+        port,
+        ssh_key,
+        host_key,
+        s3,
+        endpoint,
+        region,
+        path_style,
+        folder,
+        snapshot,
+        into,
+    } = command
+    else {
         unreachable!("only restore comes here")
     };
-    let (user, rest) = sftp.split_once('@').ok_or_else(|| anyhow::anyhow!("--sftp needs user@host:/path"))?;
-    let (host, path) = rest.split_once(':').ok_or_else(|| anyhow::anyhow!("--sftp needs user@host:/path"))?;
-    let login = match ssh_key {
-        Some(file) => uwumail_backup::Login::Key { private_key: std::fs::read_to_string(file)? },
-        None => uwumail_backup::Login::Password {
-            password: std::env::var("UWUMAIL_BACKUP_SFTP_PASSWORD")
-                .map_err(|_| anyhow::anyhow!("give --ssh-key or set UWUMAIL_BACKUP_SFTP_PASSWORD"))?,
-        },
+    let target = match (sftp, s3, folder) {
+        (Some(sftp), _, _) => {
+            let (user, rest) = sftp.split_once('@').ok_or_else(|| anyhow::anyhow!("--sftp needs user@host:/path"))?;
+            let (host, path) = rest.split_once(':').ok_or_else(|| anyhow::anyhow!("--sftp needs user@host:/path"))?;
+            let login = match ssh_key {
+                Some(file) => uwumail_backup::Login::Key { private_key: std::fs::read_to_string(file)? },
+                None => uwumail_backup::Login::Password {
+                    password: std::env::var("UWUMAIL_BACKUP_SFTP_PASSWORD")
+                        .map_err(|_| anyhow::anyhow!("give --ssh-key or set UWUMAIL_BACKUP_SFTP_PASSWORD"))?,
+                },
+            };
+            uwumail_backup::Target::Sftp(uwumail_backup::SftpTarget {
+                host: host.into(),
+                port,
+                user: user.into(),
+                path: path.into(),
+                login,
+                host_key,
+            })
+        }
+        (None, Some(s3), _) => {
+            let rest = s3.strip_prefix("s3://").ok_or_else(|| anyhow::anyhow!("--s3 needs s3://bucket/folder"))?;
+            let (bucket, prefix) = rest.split_once('/').unwrap_or((rest, ""));
+            let key = |name: &str| {
+                std::env::var(name)
+                    .map_err(|_| anyhow::anyhow!("set UWUMAIL_BACKUP_S3_ACCESS_KEY and UWUMAIL_BACKUP_S3_SECRET_KEY"))
+            };
+            uwumail_backup::Target::S3(uwumail_backup::S3Target {
+                endpoint,
+                region,
+                bucket: bucket.into(),
+                prefix: prefix.trim_matches('/').into(),
+                access_key: key("UWUMAIL_BACKUP_S3_ACCESS_KEY")?,
+                secret_key: key("UWUMAIL_BACKUP_S3_SECRET_KEY")?,
+                path_style,
+            })
+        }
+        (None, None, Some(folder)) => {
+            let folder = std::path::absolute(&folder)?;
+            uwumail_backup::Target::Folder(uwumail_backup::FolderTarget { path: folder.display().to_string() })
+        }
+        (None, None, None) => anyhow::bail!("say where the backups are: --sftp, --s3 or --folder"),
     };
-    let target =
-        uwumail_backup::Target { host: host.into(), port, user: user.into(), path: path.into(), login, host_key };
-    let connection = uwumail_backup::sftp::Sftp::connect(&target).await?;
-    println!("Connected to {host}, host key {}", connection.host_key);
-    let storage = uwumail_backup::Storage::Sftp(connection);
+    let storage = uwumail_backup::Storage::open(&target).await?;
+    match storage.host_key() {
+        Some(host_key) => println!("Connected to {}, host key {host_key}", target.shown()),
+        None => println!("Reading from {}", target.shown()),
+    }
     // Whether the backup is encrypted is what the backup server says, and it may lie to turn the
     // check of what comes back off. So a key in UWUMAIL_BACKUP_KEY is always used, and a backup that
     // calls itself unencrypted still gets asked for one (security-audit-0.8.0 INF-1).
@@ -577,11 +643,7 @@ fn source_word(source: SettingSource) -> &'static str {
 /// A running server keeps the settings it started with, so a change made here reaches it when it
 /// next starts — which is what the installer wants, because it sets things before the first start.
 pub async fn settings(path: Option<&std::path::Path>, store: &Store, command: SettingsCommand) -> anyhow::Result<()> {
-    let mut overlay: Value = store
-        .setting(uwumail_web::SETTINGS_OVERLAY_KEY)
-        .await?
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_else(|| json!({}));
+    let mut overlay: Value = uwumail_web::settings::load_overlay(store).await?;
     let view = crate::settings::view_settings(path, &overlay).map_err(|err| anyhow::anyhow!(err))?;
     let of = |key: &str| view.iter().find(|setting| setting.key == key);
 
@@ -653,7 +715,7 @@ async fn save(
     // must not be written in the first place.
     let config = crate::config::Config::load_with_overlay(path, &overlay).map_err(|err| anyhow::anyhow!("{err:#}"))?;
     config.validate()?;
-    store.set_setting(uwumail_web::SETTINGS_OVERLAY_KEY, &overlay.to_string()).await?;
+    uwumail_web::settings::save_overlay(store, &overlay).await?;
     // Passwords never go into the change log.
     let logged =
         if matches!(kind, SettingKind::Secret) && !value.is_null() { json!("•••") } else { value.clone() };

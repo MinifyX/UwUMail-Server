@@ -32,6 +32,7 @@ const TYPES: &[&str] = &[
     "AddressBook",
     "ContactCard",
     "SieveScript",
+    "MaskedEmail",
 ];
 
 #[derive(Deserialize)]
@@ -110,20 +111,10 @@ impl Watcher {
     pub async fn changed(&mut self, modseq: i64) -> Option<Map<String, Value>> {
         let kinds = self.store.changed_kinds(self.account_id, self.last_modseq).await.unwrap_or_default();
         self.last_modseq = self.last_modseq.max(modseq);
-        let mut changed = Map::new();
-        for kind in kinds.iter().filter(|k| self.types.iter().any(|t| t == *k)) {
-            // UserSettings has a state of its own (it does not move with mail), so the client can
-            // tell whether it already has it.
-            let state = if kind == "UserSettings" {
-                self.store.user_settings_state(self.account_id).await.unwrap_or_else(|_| modseq.to_string())
-            } else {
-                modseq.to_string()
-            };
-            changed.insert(kind.clone(), json!(state));
-        }
-        if kinds.iter().any(|k| k == "Email") && self.types.iter().any(|t| t == "EmailDelivery") {
-            changed.insert("EmailDelivery".into(), json!(modseq.to_string()));
-        }
+        let changed = type_states(&self.store, self.account_id, &kinds, modseq, false, |kind| {
+            self.types.iter().any(|t| t == kind)
+        })
+        .await;
         (!changed.is_empty()).then_some(changed)
     }
 
@@ -138,21 +129,47 @@ impl Watcher {
         let since = self.shared_modseqs.get(&owner).copied().unwrap_or(change.modseq - 1);
         self.shared_modseqs.insert(owner, since.max(change.modseq));
         let kinds = self.store.changed_kinds(owner, since).await.ok()?;
-        let mut changed = Map::new();
-        for kind in kinds.iter().filter(|k| SHARED_TYPES.contains(&k.as_str())) {
-            if self.types.iter().any(|t| t == kind) {
-                changed.insert(kind.clone(), json!(change.modseq.to_string()));
-            }
-        }
-        if kinds.iter().any(|k| k == "Email") && self.types.iter().any(|t| t == "EmailDelivery") {
-            changed.insert("EmailDelivery".into(), json!(change.modseq.to_string()));
-        }
+        let changed =
+            type_states(&self.store, owner, &kinds, change.modseq, true, |kind| self.types.iter().any(|t| t == kind))
+                .await;
         (!changed.is_empty()).then_some((owner, changed))
     }
 }
 
 /// What a shared account has.
 const SHARED_TYPES: &[&str] = &["Mailbox", "Email", "Thread"];
+
+/// The TypeState of a `StateChange` (RFC 8620, 7.1) for `kinds` that changed in an account, as of
+/// `modseq`: every kind in the account's own view, only mail when it is someone else's account
+/// shared with the viewer (`shared`). `EmailDelivery` comes along with `Email`. Only the types
+/// `wanted` says yes to are in it.
+pub(crate) async fn type_states(
+    store: &Store,
+    account_id: i64,
+    kinds: &[String],
+    modseq: i64,
+    shared: bool,
+    wanted: impl Fn(&str) -> bool,
+) -> Map<String, Value> {
+    let mut changed = Map::new();
+    for kind in kinds {
+        if (shared && !SHARED_TYPES.contains(&kind.as_str())) || !wanted(kind) {
+            continue;
+        }
+        // UserSettings has a state of its own (it does not move with mail), so the client can
+        // tell whether it already has it.
+        let state = if kind == "UserSettings" {
+            store.user_settings_state(account_id).await.unwrap_or_else(|_| modseq.to_string())
+        } else {
+            modseq.to_string()
+        };
+        changed.insert(kind.clone(), json!(state));
+    }
+    if kinds.iter().any(|k| k == "Email") && wanted("EmailDelivery") {
+        changed.insert("EmailDelivery".into(), json!(modseq.to_string()));
+    }
+    changed
+}
 
 struct Listener {
     watcher: Watcher,

@@ -171,7 +171,12 @@ async fn settings_are_checked_locked_stored_and_logged() {
     );
     let stored: Value = serde_json::from_str(&store.setting("config.overlay").await.unwrap().unwrap()).unwrap();
     assert_eq!(stored["delivery"]["relay"]["port"], 465);
-    assert_eq!(server.applied.lock().unwrap().as_ref(), Some(&stored));
+    // Secrets are sealed in the database, and open again for the server.
+    let sealed = stored["delivery"]["relay"]["password"].as_str().unwrap();
+    assert!(sealed.starts_with("sealed:") && !sealed.contains("geheim"), "{sealed}");
+    let opened = uwumail_web::settings::load_overlay(&store).await.unwrap();
+    assert_eq!(opened["delivery"]["relay"]["password"], "geheim-und-lang");
+    assert_eq!(server.applied.lock().unwrap().as_ref(), Some(&opened));
 
     // Removing the host removes the whole relay.
     let (_, _) =

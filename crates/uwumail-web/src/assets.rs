@@ -59,12 +59,26 @@ pub fn has_webmail() -> bool {
     webmail_index().is_some()
 }
 
+/// The webmail's service worker, for Web Push (docs/jmap-push.md). At `/mail/sw.js` its scope is the
+/// whole webmail without a `Service-Worker-Allowed` header.
+const WEBMAIL_SERVICE_WORKER: &str = "/sw.js";
+
+/// What the service worker may do: talk to this server and nothing else.
+const SERVICE_WORKER_CONTENT_SECURITY_POLICY: &str = "default-src 'none'; connect-src 'self'; img-src 'self'";
+
 pub fn webmail_respond(asset: &'static Asset) -> Response {
     let mut response = respond(asset);
     if asset.path == "/index.html" {
         response
             .headers_mut()
             .insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(WEBMAIL_CONTENT_SECURITY_POLICY));
+    }
+    if asset.path == WEBMAIL_SERVICE_WORKER {
+        // A new webmail's worker is picked up at the next visit, not an hour later.
+        let headers = response.headers_mut();
+        headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+        headers
+            .insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(SERVICE_WORKER_CONTENT_SECURITY_POLICY));
     }
     response
 }
@@ -101,6 +115,17 @@ mod tests {
             let images = policy.split(';').map(str::trim).find(|part| part.starts_with("img-src")).unwrap();
             assert_eq!(images, "img-src 'self' data: blob:", "{policy}");
         }
+    }
+
+    #[test]
+    fn the_service_worker_is_always_fresh_and_kept_to_this_server() {
+        static WORKER: Asset = Asset { path: "/sw.js", content_type: "text/javascript; charset=utf-8", bytes: b"" };
+        let response = webmail_respond(&WORKER);
+        let headers = response.headers();
+        assert_eq!(headers[header::CONTENT_TYPE], "text/javascript; charset=utf-8");
+        assert_eq!(headers[header::CACHE_CONTROL], "no-cache");
+        assert!(headers[header::CONTENT_SECURITY_POLICY].to_str().unwrap().contains("connect-src 'self'"));
+        assert!(headers.get("service-worker-allowed").is_none(), "its own folder is scope enough");
     }
 
     #[test]

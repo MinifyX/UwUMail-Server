@@ -41,6 +41,19 @@
       "tooManyAttempts": "失败次数过多，请等待几分钟。",
       "offline": "当前无法连接到服务器。",
       "internal": "服务器出了点问题。"
+    },
+    "or": "或",
+    "oidcButton": "使用 {{provider}} 登录",
+    "oidcButtonGeneric": "使用单点登录",
+    "oidcErrors": {
+      "unavailable": "登录服务当前无法访问。请稍后再试，或使用密码登录。",
+      "expired": "登录耗时过长，或是在另一个浏览器中开始的。请重试。",
+      "refused": "登录在登录服务处被取消或拒绝。",
+      "failed": "登录服务的应答未通过校验。请重试。",
+      "emailNotVerified": "登录服务未确认你的邮箱地址，因此无法让你在这里登录。",
+      "domainNotAllowed": "该地址没有账户，且不允许在其域名下创建账户。",
+      "noAccount": "此服务器上没有与该登录对应的账户，也不允许创建。",
+      "alreadyLinked": "该账户已属于登录服务中的另一个登录。"
     }
   },
   "nav": {
@@ -62,7 +75,10 @@
     "expand": "展开{{group}}",
     "mailbox": "邮箱",
     "directory": "账户与域名",
-    "calendars": "日历和通讯录"
+    "calendars": "日历和通讯录",
+    "masked": "隐藏地址",
+    "moving": "搬家",
+    "more": "更多"
   },
   "userMenu": {
     "open": "打开账户菜单",
@@ -163,7 +179,8 @@
       "overview": "概览",
       "mailFlow": "邮件流",
       "backups": "备份",
-      "updates": "更新"
+      "updates": "更新",
+      "stats": "统计"
     },
     "tiles": {
       "news": "新",
@@ -195,6 +212,174 @@
         "title": "最近更改",
         "none": "尚无更改"
       }
+    }
+  },
+  "adminView": {
+    "label": "视图",
+    "simple": "简洁",
+    "full": "全部",
+    "hint": {
+      "simple": "只显示信号灯和需要处理的事项。其他内容都在菜单的“更多”里。",
+      "full": "显示所有数字和所有检查。“简洁”只显示信号灯。"
+    },
+    "light": "信号灯：{{level}}",
+    "headline": {
+      "ok": "一切正常",
+      "unknown": "尚未全部检查",
+      "warning": "有需要查看的地方",
+      "problem": "有东西不工作了"
+    },
+    "sentence": {
+      "ok": "邮件收发正常，现在没有需要你处理的事。",
+      "unknown": "第一次检查会在启动后不久进行。",
+      "warning_other": "下面有 {{count}} 项，有空时请看一看。",
+      "problem_other": "下面有 {{count}} 项需要你尽快处理。"
+    },
+    "todo": "需要做的事",
+    "quick": {
+      "title": "快捷入口",
+      "people": "用户",
+      "addPerson": "添加用户",
+      "domains": "域名",
+      "backups": "备份"
+    }
+  },
+  "alerts": {
+    "title": "警报",
+    "intro": "服务器通知过管理员的事项，以及之后恢复正常的事项。服务器每五分钟检查一次。",
+    "loading": "正在加载警报…",
+    "none": "没有未解决的警报。",
+    "openLabel": "未解决的警报",
+    "history_other": "{{count}} 条已恢复正常的警报",
+    "since": "自 {{time}}",
+    "resolvedAt": "{{time}}恢复正常",
+    "acknowledgedBy": "{{login}} 已知悉",
+    "acknowledge": "知道了",
+    "acknowledgeHint": "不再为此每天提醒。情况变糟或恢复正常时仍会通知你。",
+    "acknowledgedToast": "已记下，不再为此提醒。",
+    "level": {
+      "info": "信息",
+      "warning": "需要查看",
+      "problem": "问题",
+      "resolved": "已恢复正常"
+    },
+    "mail": {
+      "title": "警报邮件",
+      "label": "发给我的警报邮件",
+      "all": "全部",
+      "problems": "仅问题",
+      "none": "不接收",
+      "hint": "每位管理员自行选择。当某项变黄或变红时会发邮件，红色持续期间每天一封，恢复正常时再发一封。"
+    },
+    "codes": {
+      "certRenewalFailing": "证书续期一直失败（第一次失败：{{since}}）。",
+      "backupFailed": "上一次备份失败了。",
+      "backupOld": "最近一次成功的备份是在{{time}}。",
+      "updateAvailable": "版本 {{version}} 已发布。"
+    },
+    "hints": {
+      "certRenewalFailing": "服务器日志里写着原因。常见情况是某个域名（还）没有指向这台服务器，或者外部无法访问 80 端口。",
+      "backupFailed": "备份页面上显示了错误。请检查备份目标，并手动运行一次。",
+      "backupOld": "备份通常每晚运行。在备份页面上可以看到是否已暂停或出了什么问题。",
+      "updateAvailable": "更新页面会显示新内容，点一下即可更新。"
+    }
+  },
+  "stats": {
+    "intro": "你的服务器上发生了什么，按天或按月显示。",
+    "utc": "日期按 UTC 计算。数字从 0.14 版本开始记录。",
+    "range": {
+      "label": "时间段",
+      "days": "30 天",
+      "months": "12 个月"
+    },
+    "total": {
+      "days": "30 天内",
+      "months": "12 个月内"
+    },
+    "latest": "最新读数",
+    "chartSummary": "{{series}}：柱状图，最高值 {{max}}（{{peak}}）。下方表格列出了所有数字。",
+    "chartEmpty": "{{series}}：这段时间内没有记录。",
+    "charts": {
+      "received": {
+        "title": "收到的邮件",
+        "hint": "来自其他服务器和收取邮箱、至少送达一个人的邮件。"
+      },
+      "refused": {
+        "title": "拒收的邮件",
+        "hint": "在门口被拒绝的：未知收件人、垃圾邮件、病毒以及 DMARC 等规则。"
+      },
+      "submitted": {
+        "title": "发出的邮件",
+        "hint": "你的用户通过邮件应用、网页邮箱或 UwUMail 应用发出的邮件。"
+      },
+      "delivered": {
+        "title": "交给其他服务器",
+        "hint": "其他服务器上接收了邮件的收件人。"
+      },
+      "logins": {
+        "title": "失败的登录",
+        "hint": "所有应用和门户中输错的密码和被拒绝的登录。"
+      },
+      "storage": {
+        "title": "已用空间",
+        "hint": "所有邮箱加在一起，每天测量。"
+      }
+    },
+    "keys": {
+      "mail": {
+        "received": "收到",
+        "junk": "放入垃圾邮件",
+        "submitted": "发出",
+        "delivered": "已投递",
+        "deferred": "稍后重试",
+        "bounced": "已放弃"
+      },
+      "refused": {
+        "unknownRecipient": "未知收件人",
+        "spam": "垃圾邮件",
+        "virus": "病毒",
+        "policy": "规则（DMARC、被屏蔽的发件人、中继）",
+        "greylisted": "请求稍后重发"
+      },
+      "loginFailed": {
+        "smtp": "SMTP",
+        "imap": "IMAP",
+        "jmap": "JMAP",
+        "dav": "CalDAV/CardDAV",
+        "managesieve": "ManageSieve",
+        "portal": "门户",
+        "other": "其他"
+      },
+      "gauge": {
+        "accounts": "账户",
+        "storageBytes": "已用空间"
+      }
+    },
+    "table": {
+      "title": "以表格查看所有数字",
+      "caption": "按时间段的统计",
+      "period": {
+        "days": "日期",
+        "months": "月份"
+      }
+    },
+    "metrics": {
+      "title": "Prometheus 指标",
+      "intro": "供监控系统使用：在 /metrics 下以 Prometheus 格式提供服务器的数字。开启之前是关闭的。",
+      "enabled": "提供指标",
+      "enabledHint": "需要令牌、允许的网络或两者兼有，这样不是所有人都能读取。",
+      "token": "令牌",
+      "tokenHint": "Prometheus 会把它作为 Bearer 令牌发送。在这里生成一个。",
+      "tokenFresh": "现在就复制：保存之后它不会再显示。",
+      "tokenSet": "已设置令牌。生成新的会替换它。",
+      "tokenNew": "生成令牌",
+      "tokenReplace": "新令牌",
+      "tokenRemove": "移除",
+      "copyToken": "复制令牌",
+      "networks": "仅限这些网络",
+      "networksHint": "每行一个地址或网络，例如 10.0.0.0/8。留空：任何地方都可以，但需要令牌。",
+      "needsWayIn": "请先生成令牌或填写网络，否则所有人都能读取指标。",
+      "address": "给 Prometheus 的地址"
     }
   },
   "duration": {
@@ -316,7 +501,29 @@
       "googleUseIcs": "Google 只允许它自己的应用访问。日历请使用私密 iCal 地址，通讯录请使用 vCard 导出。",
       "subscriptionLimit": "你订阅的日历数量已达上限。",
       "subscriptionExists": "你已经订阅了这个日历。",
-      "refreshPause": "刚刚获取过。请一分钟后再试。"
+      "refreshPause": "刚刚获取过。请一分钟后再试。",
+      "sharedMailbox": "这是共享邮箱：没有人登录它，成员从自己的账户使用它。",
+      "maskedDomain": "此服务器还没有开放用于隐藏地址的域名。请联系管理员。",
+      "maskedLimit": "你的隐藏地址已达到此服务器允许的上限。请删除一些不再需要的。",
+      "maskedPrefix": "前缀只能包含字母 a–z、数字和 _，最多 64 个。",
+      "maskedState": "隐藏地址不能再回到等待第一封邮件的状态。",
+      "backupBusy": "现在已有任务在使用备份：一次备份，或正在恢复的邮箱。请等它完成后再试。({{detail}})",
+      "backupFolderInData": "备份文件夹必须位于服务器数据目录之外，否则备份会和服务器一起丢失。",
+      "moveExists": "这个地址已经在搬家中。",
+      "moveFromHere": "这个地址已经在本服务器上，没有什么需要搬的。",
+      "moveLimit": "最多可同时搬五个邮箱。请先完成其他的搬家。",
+      "moveRunning": "这次搬家仍在进行中。",
+      "moveNotRunning": "这次搬家没有在进行。",
+      "moveNoMailbox": "你的账户没有可以接收邮件的邮箱。",
+      "moveWrongPassword": "原服务商拒绝了这个密码。很多服务商在这里需要应用专用密码。",
+      "alertResolved": "这条警报已经恢复正常了。",
+      "confirmByLogin": "如需确认，请退出并重新登录，然后再试一次。",
+      "passwordInDirectory": "该密码由你所在组织的目录（LDAP）管理，需要在那里更改。",
+      "serviceAccount": "服务只能使用应用专用密码登录。",
+      "oauthClientUnknown": "该应用未在此服务器上注册。",
+      "oauthRedirectInvalid": "该应用要求跳转到一个它未注册的地址。",
+      "oidcFailed": "登录服务出现问题：{{detail}}",
+      "ldapFailed": "目录出现问题：{{detail}}"
     }
   },
   "people": {
@@ -520,6 +727,40 @@
       "revokeTitle": "撤销 {{name}}？",
       "revokeBody": "使用此密码的程序将无法再访问。",
       "createdTitle": "新的应用专用密码"
+    },
+    "authSource": {
+      "label": "密码校验位置",
+      "hint": "切换到目录后，这里保存的密码会被删除。切换回来时，你需要设置新密码或发送链接。",
+      "oidcHint": "在 OpenID Connect 提供商处登录。你仍可以切换为这里的密码或目录密码。",
+      "local": "在此服务器上",
+      "ldap": "在 LDAP 目录中",
+      "oidc": "在 OpenID Connect 提供商处",
+      "toLdapTitle": "在目录中校验 {{login}} 的密码？",
+      "toLdapBody": "这里保存的密码会被删除。此后此人在门户和邮件应用中都使用目录密码登录。应用专用密码保留。",
+      "toLocalTitle": "在这里校验 {{login}} 的密码？",
+      "toLocalBody": "切换后此人在这里没有密码。请设置新密码，或发送用于选择密码的链接。",
+      "switch": "切换",
+      "inDirectory": "密码在 LDAP 目录中校验，也在那里更改。"
+    }
+  },
+  "sharedMailboxes": {
+    "title": "共享邮箱",
+    "explain": "多人使用的邮箱，比如 support@。没有人登录它；成员在自己的文件夹旁边看到它，并可以用它回复。",
+    "create": "新建共享邮箱",
+    "createIntro": "它有自己的地址和存储空间；发给它的邮件会进入它的收件箱，所有成员都能看到。",
+    "name": "名称",
+    "namePlaceholder": "例如 支持",
+    "address": "地址",
+    "addressPlaceholder": "例如 support",
+    "members": "成员",
+    "membersHint": "选中的人可以看到它的所有文件夹。勾选谁还可以用它的地址发信。",
+    "membersIntro": "成员可以看到它的每个文件夹，包括新建的。可以发信的人会在自己的发件地址中看到它；发出邮件的副本保存在它的已发送文件夹中。",
+    "maySend": "可以发信",
+    "save": "保存成员",
+    "pill": "共享邮箱",
+    "toasts": {
+      "created": "{{address}} 已创建",
+      "saved": "成员已保存"
     }
   },
   "log": {
@@ -586,7 +827,17 @@
       "spamVirusTest": "{{actor}} 测试了病毒扫描器",
       "updatesSettings": "{{actor}} 更改了更新设置",
       "brandLogo": "{{actor}} 上传了新标志",
-      "brandLogoRemoved": "{{actor}} 移除了标志"
+      "brandLogoRemoved": "{{actor}} 移除了标志",
+      "backupRestoreMailbox": "{{actor}} 从备份中取回了 {{target}} 的邮件",
+      "accountAuthSource": "{{actor}} 更改了 {{target}} 的密码验证位置",
+      "accountOauthRevoked": "{{actor}} 让 {{target}} 的一个应用退出了登录",
+      "alertAcknowledge": "{{actor}} 已确认警报 {{target}}",
+      "domainMaskedAddresses": "{{actor}} 更改了 {{target}} 的隐藏地址设置",
+      "groupCreate": "{{actor}} 创建了群组 {{target}}",
+      "groupUpdate": "{{actor}} 更改了群组 {{target}}",
+      "groupRemove": "{{actor}} 删除了群组 {{target}}",
+      "sharedMailboxCreate": "{{actor}} 创建了共享邮箱 {{target}}",
+      "sharedMailboxMembers": "{{actor}} 更改了共享邮箱 {{target}} 的成员"
     },
     "details": {
       "adminOn": "现在是管理员",
@@ -608,7 +859,11 @@
       "protocolsNone": "所有协议均已关闭",
       "redirectTo": "邮件转到 {{address}}",
       "redirectNone": "邮件被拒收",
-      "appPassword": "应用专用密码“{{value}}”"
+      "appPassword": "应用专用密码“{{value}}”",
+      "switchedOn": "已开启",
+      "switchedOff": "已关闭",
+      "authSource": "现在：{{value}}",
+      "oauthApp": "应用“{{value}}”"
     },
     "entry": {
       "actor": "操作者",
@@ -705,7 +960,8 @@
         "imaps": "告诉邮件应用在哪里收信（IMAP，端口 993）。",
         "submissions": "告诉邮件应用在哪里通过 TLS 发信（端口 465）。",
         "submission": "告诉邮件应用在哪里通过 STARTTLS 发信（端口 587）。",
-        "caa": "只允许 Let's Encrypt 为服务器的名称签发证书，且只签发给此服务器自己的账户。让 TLS 在 UwUMail Gateway 之后保持私密。"
+        "caa": "只允许 Let's Encrypt 为服务器的名称签发证书，且只签发给此服务器自己的账户。让 TLS 在 UwUMail Gateway 之后保持私密。",
+        "tlsa": "告诉发送方服务器这台服务器的证书使用哪个密钥，让它们只通过加密连接投递 (DANE)。需要使用 DNSSEC 签名的区域。"
       },
       "notes": {
         "mxUpstream": "指向上游邮件服务器。没问题。",
@@ -731,7 +987,12 @@
         "mtaStsPolicyInvalid": "那里没有提供有效的策略。",
         "caaWithoutAccount": "也允许其他账户或证书颁发机构。加上 accounturi 后，只有此服务器才能获得证书。",
         "caaOtherAccount": "指定了另一个 Let's Encrypt 账户。在记录指定此服务器自己的账户之前，它无法续期证书。",
-        "caaForbids": "不允许此服务器从 Let's Encrypt 获取证书。续期将会失败。"
+        "caaForbids": "不允许此服务器从 Let's Encrypt 获取证书。续期将会失败。",
+        "tlsaRecommended": "该区域已使用 DNSSEC 签名，因此检查 DANE 的服务器可以确认自己确实连到了这台服务器。服务器续期证书时会保留密钥，所以记录会一直有效。",
+        "tlsaKeyKept": "与服务器的密钥匹配。续期证书时密钥保持不变。",
+        "tlsaMismatch": "与这台服务器出示的任何证书都不匹配。检查 DANE 的服务器会暂扣发往你的域名的邮件，直到记录指向当前的密钥。",
+        "tlsaUnsigned": "该区域没有使用 DNSSEC 签名，所以还没有服务器会查看这条记录。",
+        "dnssecBogus": "服务器名称的 DNSSEC 签名无法验证。检查签名的服务器完全无法连到这台服务器。"
       },
       "catchAll": "全收（Catch-all）",
       "catchAllHint": "发往不存在地址的邮件会转给此人。这也会招来更多垃圾邮件。",
@@ -772,8 +1033,10 @@
         "imaps": "邮件应用收信（IMAP）",
         "submissions": "邮件应用发信（TLS）",
         "submission": "邮件应用发信（STARTTLS）",
-        "caa": "仅限此服务器的证书（CAA）"
-      }
+        "caa": "仅限此服务器的证书（CAA）",
+        "tlsa": "DANE (TLSA)"
+      },
+      "tlsaKeyChange": "在服务器的密钥改变之前 (使用自己的证书文件、迁移到另一台服务器，或删除 data/tls/acme/key.pem)，请先在这条记录旁边发布新密钥的记录并等待一天。否则检查 DANE 的服务器会暂扣发给你的邮件。"
     },
     "forwards": {
       "title": "转发地址",
@@ -862,6 +1125,45 @@
       "unauthenticated_other": "有 {{count}} 份报告来自无法证明自身身份的发送方。其中的数据可能是捏造的。"
     }
   },
+  "groups": {
+    "title": "群组",
+    "explain": "一个地址对应多个人，比如社团的 info@ 或 board@。每个人都在自己的收件箱收到邮件，使用自己的垃圾邮件过滤和规则。",
+    "create": "新建群组",
+    "save": "保存",
+    "address": "地址",
+    "addressPlaceholder": "例如 board",
+    "name": "名称",
+    "namePlaceholder": "例如 理事会",
+    "whoMaySend": "谁可以发信",
+    "who": {
+      "anyone": "任何人",
+      "members": "仅成员",
+      "domain": "仅 {{domain}} 的地址",
+      "anyoneHint": "和其他地址一样，对所有人开放。",
+      "membersHint": "其他人的邮件在门口就被拒收。",
+      "domainHint": "此域名的人可以发信，其他人被拒收。"
+    },
+    "sendAs": "成员可以以群组身份发信",
+    "sendAsHint": "群组地址会出现在成员的发件地址中。",
+    "sendAsShort": "成员可用它发信",
+    "members": {
+      "title": "成员",
+      "search": "查找人员",
+      "chosen_other": "已选 {{count}} 人",
+      "none": "没有找到。"
+    },
+    "noMembers": "还没有成员：发往它的邮件被拒收。",
+    "edit": "修改 {{address}}",
+    "remove": "删除 {{address}}",
+    "removeConfirm": "删除群组 {{address}}？从现在起发往它的邮件将被拒收。",
+    "toasts": {
+      "created": "群组已创建",
+      "saved": "群组已保存",
+      "removed": "群组已删除"
+    },
+    "masked": "隐藏地址",
+    "maskedHint": "允许用户在此域名上为网站生成随机地址（我的账户 → 隐藏地址）。"
+  },
   "reports": {
     "title": "报告",
     "intro": "其他邮件服务器反馈的关于你域名的情况。",
@@ -919,6 +1221,23 @@
     "noDomains": {
       "title": "还没有域名",
       "body": "设置好域名并以其名义发出邮件后，就会收到报告。"
+    },
+    "sent": {
+      "title": "我们发送的报告",
+      "intro": "服务器每天一次告诉它投递过邮件的域名加密情况如何 (TLS 报告，RFC 8460)，前提是对方用 _smtp._tls 记录提出要求。通过邮件发送时，报告来自 {{sender}}，并带有 DKIM 签名。你自己的域名不会收到。",
+      "toggle": "发送 TLS 报告",
+      "toggleHint": "按天统计每次向其他域名邮件服务器的投递：TLS 是否成功，以及遵循了哪种策略 (MTA-STS、DANE 或无)。",
+      "listTitle": "最近 {{days}} 天发送的报告",
+      "empty": "还没有发出任何报告。邮件送达要求报告的域名后，第二天会发出第一份。",
+      "sessions": "{{successful}} 个加密连接，{{failed}} 个失败",
+      "to": "发往：{{destinations}}",
+      "quiet_other": "另有 {{count}} 个域名不需要报告，或者是我们自己的域名。",
+      "status": {
+        "sent": "已发送",
+        "failed": "未发送",
+        "none": "不需要",
+        "skipped": "已跳过"
+      }
     }
   },
   "host": {
@@ -1184,7 +1503,8 @@
       "mail": "发信与收信",
       "apps": "应用与网页邮箱",
       "vpn": "VPN 与代理",
-      "branding": "品牌外观"
+      "branding": "品牌外观",
+      "login": "登录"
     },
     "mailIntro": "邮件如何离开服务器，以及服务器接收哪些邮件。更改会立即生效，无需重启。",
     "appsIntro": "适用于邮件应用和浏览器中邮箱的设置。更改会立即生效，无需重启。"
@@ -1412,7 +1732,10 @@
       "repeat": "重复新密码",
       "hint": "至少 10 个字符。由几个词组成的句子很好记。",
       "submit": "更改密码",
-      "changed": "密码已更改。其他浏览器已退出登录。"
+      "changed": "密码已更改。其他浏览器已退出登录。",
+      "managedTitle": "密码",
+      "inDirectory": "你的密码由所在组织的目录（LDAP）管理。请在那里更改，新密码在这里立即生效。",
+      "atProvider": "你通过所在组织的登录服务登录，在这里没有密码。邮件应用使用 OAuth 或应用专用密码登录。"
     },
     "sessions": {
       "title": "已登录的浏览器",
@@ -1455,13 +1778,130 @@
       "forwardingRemoved": "已移除到 {{address}} 的转发",
       "forwardingConfirmed": "{{address}} 已确认转发",
       "forwardingDeclined": "{{address}} 拒绝了转发",
-      "forwardingConfirmationSent": "已向 {{address}} 发送确认邮件"
+      "forwardingConfirmationSent": "已向 {{address}} 发送确认邮件",
+      "oauthGranted": "应用“{{name}}”通过 OAuth 登录（{{scopes}}）",
+      "oauthRevoked": "应用“{{name}}”已退出登录",
+      "oauthTokenReused": "应用“{{name}}”的旧令牌被再次使用，该应用已退出登录",
+      "oidcLinked": "已关联 {{issuer}} 的登录"
     },
     "loginMethods": {
       "password": "密码",
       "totp": "密码和应用",
       "recoveryCode": "密码和恢复代码",
-      "passkey": "密码和通行密钥"
+      "passkey": "密码和通行密钥",
+      "oidc": "单点登录"
+    },
+    "oauthApps": {
+      "title": "通过 OAuth 登录的应用",
+      "none": "没有通过 OAuth 登录的应用。支持此功能的邮件应用可以在浏览器中于此登录，而无需使用应用专用密码。",
+      "staysSignedIn": "保持登录",
+      "since": "登录于 {{date}}",
+      "signOut": "退出登录",
+      "signOutTitle": "让“{{name}}”退出登录？",
+      "signOutBody": "在有人再次用它登录之前，该应用将无法访问邮箱。",
+      "signedOut": "“{{name}}”已退出登录"
+    }
+  },
+  "oauth": {
+    "title": "“{{name}}”想要访问你的账户",
+    "account": "当前登录账户：",
+    "nameClaim": "“{{name}}”是应用的自称。只有在你刚刚亲自在该应用中开始登录时才允许。",
+    "returnsTo": "之后将返回 {{host}}。",
+    "returnsToDevice": "之后将返回此设备上的应用（{{host}}）。",
+    "scopesTitle": "该应用将可以",
+    "scopes": {
+      "mail": {
+        "title": "读取和整理你的邮件",
+        "hint": "邮件、文件夹和过滤规则，通过 IMAP、JMAP 和 ManageSieve。"
+      },
+      "smtp": {
+        "title": "以你的身份发送邮件",
+        "hint": "从你的地址发送，通过 SMTP。"
+      },
+      "dav": {
+        "title": "使用你的日历和联系人",
+        "hint": "读取和更改，通过 CalDAV 和 CardDAV。"
+      },
+      "openid": {
+        "title": "确认是你本人",
+        "hint": "你在此服务器上的账户。"
+      },
+      "profile": {
+        "title": "查看你的姓名",
+        "hint": "你账户中的姓名。"
+      },
+      "email": {
+        "title": "查看你的邮箱地址",
+        "hint": "你的主地址。"
+      },
+      "offline_access": {
+        "title": "保持登录",
+        "hint": "直到你让该应用退出登录，期间不再询问。"
+      }
+    },
+    "revokeHint": "你可以随时在“我的账户 → 安全”中让该应用退出登录。",
+    "allow": "允许",
+    "deny": "拒绝",
+    "otherAccount": "不是 {{login}}？使用其他账户登录",
+    "signingIn": "正在登录…",
+    "invalidTitle": "该应用无法在此登录",
+    "invalid": {
+      "oauthClientUnknown": "该应用未在此服务器上注册。请在应用中重新设置账户。",
+      "oauthRedirectInvalid": "该应用要求跳转到一个它未注册的地址。为安全起见，未发送任何内容。"
+    },
+    "toPortal": "前往门户"
+  },
+  "externalLogin": {
+    "intro": "通过其他提供商（OpenID Connect）登录门户，或在 LDAP 目录中校验密码。更改立即生效，无需重启。",
+    "docs": "指南：OpenID Connect 和 LDAP",
+    "oauthDocs": "指南：使用 OAuth 的邮件应用",
+    "test": "测试连接",
+    "testOk": "成功：{{detail}}",
+    "autoCreate": "首次登录时创建账户",
+    "allowedDomains": "新账户的域名",
+    "allowedDomainsHint": "每行一个，均须为此服务器的域名。留空：不创建新账户。",
+    "oidc": {
+      "title": "OpenID Connect",
+      "intro": "登录页上的按钮会跳转到你们的登录服务，例如 Authentik、Keycloak 或 Microsoft Entra ID。",
+      "enabled": "通过 OpenID Connect 提供商登录",
+      "enabledHint": "在这里设置的密码仍可同时使用。",
+      "redirectUri": "请在提供商处登记此重定向 URI",
+      "issuer": "Issuer",
+      "issuerHint": "提供商的地址。其余信息由 UwUMail 从其 /.well-known/openid-configuration 读取。",
+      "clientId": "客户端 ID",
+      "clientSecret": "客户端密钥",
+      "buttonLabel": "按钮名称",
+      "buttonLabelHint": "按钮将显示为“使用 Authentik 登录”。留空：“使用单点登录”。",
+      "autoCreateHint": "仅当提供商担保该地址且其域名在下方被允许时。",
+      "adminClaim": "管理员声明",
+      "adminClaimHint": "提供商应答中列出组或角色的声明。",
+      "adminValue": "管理员值",
+      "adminValueHint": "声明中包含此值的新账户将成为管理员。"
+    },
+    "ldap": {
+      "title": "LDAP 目录",
+      "intro": "设为目录的账户在门户和邮件应用中都使用目录密码登录。其他人继续使用这里的密码。",
+      "enabled": "在 LDAP 目录中校验密码",
+      "enabledHint": "哪些账户使用它，在每个人的页面上设置。从目录创建的账户会立即使用它。",
+      "url": "目录地址",
+      "urlHint": "ldaps://…，或带 STARTTLS 的 ldap://…。",
+      "starttls": "在 ldap:// 上使用 STARTTLS",
+      "starttlsHint": "在发送任何密码之前加密连接。",
+      "insecureLocalhost": "允许在本机上使用不加密的 ldap://",
+      "insecureLocalhostHint": "仅适用于就在这台机器上（localhost）的目录，切勿跨网络使用。",
+      "bindDn": "服务账户（bind DN）",
+      "bindDnHint": "在目录中查找正在登录的人。",
+      "bindPassword": "服务账户密码",
+      "userDnTemplate": "DN 模板",
+      "userDnTemplateHint": "使用模板时不进行搜索：此人的 DN 由地址生成。{user} 是 @ 之前的部分，{email} 是完整地址。",
+      "baseDn": "搜索基准",
+      "userFilter": "搜索过滤器",
+      "userFilterHint": "{email} 是登录时输入的完整地址，{user} 是 @ 之前的部分。",
+      "mailAttribute": "地址属性",
+      "nameAttribute": "姓名属性",
+      "adminGroupDn": "管理员组",
+      "adminGroupDnHint": "属于该组（memberOf）的新账户将成为管理员。",
+      "autoCreateHint": "当目录知道该地址且其域名在下方被允许时。"
     }
   },
   "fetch": {
@@ -1544,6 +1984,80 @@
       "spam": "收取的邮件会在这里重新判断。服务商认定的垃圾邮件只作为参考，不会单独决定结果。",
       "first": "邮箱中已有的邮件只有在你需要时才会迁移：添加时勾选“迁移已有的邮件”，或之后点击该行中的时钟按钮。它们会保留服务商处的日期，而不是变成一堆今天的新邮件。",
       "password": "密码只进不出。服务器需要它来登录服务商，并会将其加密保存。"
+    }
+  },
+  "moving": {
+    "title": "搬家",
+    "intro": "把邮件从原来的服务商搬过来：每个文件夹、原来的已读或未读状态和日期都保留。服务器在后台复制，所以你可以关闭此页面。",
+    "noMailbox": {
+      "title": "这里没有邮箱",
+      "body": "你的账户没有可以接收邮件的邮箱。请联系管理员。"
+    },
+    "form": {
+      "title": "搬一个邮箱",
+      "explain": "只需要原来的地址和它的密码：服务器会自己找到服务商的 IMAP 服务器，并登录一次以确认。",
+      "address": "原来的地址",
+      "addressHint": "你在原服务商的地址。",
+      "password": "密码",
+      "passwordHint": "通常是服务商的应用专用密码，而不是你的登录密码。在你完成之前它会被加密保存。",
+      "manual": "自己填写服务器",
+      "host": "IMAP 服务器",
+      "hostHint": "使用 TLS，通常是端口 993。",
+      "port": "端口",
+      "login": "用户名",
+      "loginHint": "如果就是地址本身，请留空。",
+      "searching": "正在查找服务商的服务器 …",
+      "start": "开始搬家",
+      "started": "搬家已开始，会在后台继续。"
+    },
+    "hints": {
+      "gmail": "Gmail 只允许其他服务器使用应用专用密码登录：先在 Google 账户中开启两步验证，然后在 myaccount.google.com/apppasswords 创建一个。Gmail 的 IMAP 始终开启。那里的标签就是文件夹；带多个标签的邮件只会搬一次，放到最先找到它的文件夹中。",
+      "outlook": "Outlook.com 和 Hotmail 只允许通过 Microsoft 登录的应用，自己的服务器无法替你做到。请改用邮件程序复制：添加两个邮箱，然后把文件夹拖过去。",
+      "gmx": "GMX 需要你先允许其他服务器访问：在 GMX 设置中的 E-Mail → POP3/IMAP Abruf 下开启 IMAP 访问。如果开启了双重验证，需要使用应用专用密码。",
+      "webde": "WEB.DE 需要你先允许其他服务器访问：在 WEB.DE 设置中的 E-Mail → POP3/IMAP Abruf 下开启 IMAP 访问。如果开启了双重验证，需要使用应用专用密码。"
+    },
+    "job": {
+      "from": "来自 {{host}}，用户 {{login}}",
+      "queued": "正在排队 …",
+      "running": "正在复制 …",
+      "looking": "正在查看文件夹 …",
+      "progress": "{{done}} / {{total}} 封邮件 · {{size}}",
+      "progressLabel": "搬家进度",
+      "folders": "文件夹 {{done}} / {{total}}",
+      "skipped": "{{count}} 封邮件已经存在，已跳过",
+      "skipped_other": "{{count}} 封邮件已经存在，已跳过",
+      "done": "全部到齐了。",
+      "doneAt": "截至 {{date}}，原来的内容已全部在这里。"
+    },
+    "errors": {
+      "quotaExceeded": "你在这里的邮箱已满。请腾出空间或向管理员申请更多空间，然后继续：会从停下的地方接着进行。",
+      "loginRefused": "原服务商拒绝了密码。请输入新密码（通常是应用专用密码）后继续。",
+      "unreachable": "无法连接到原服务商。请稍后再试。",
+      "notPublic": "据本服务器判断，原服务商的服务器不在互联网上。",
+      "noMailbox": "你的账户没有可以接收邮件的邮箱。",
+      "stopped": "已暂停。随时可以继续，会从停下的地方接着进行。",
+      "failed": "出了点问题。点击继续以重试。"
+    },
+    "actions": {
+      "pause": "暂停",
+      "continue": "继续",
+      "syncAgain": "再次同步",
+      "finish": "完成并删除登录信息",
+      "finishConfirm": "{{address}} 搬家完成了吗？原邮箱的密码将被删除；已搬来的邮件会保留。",
+      "newPassword": "新密码"
+    },
+    "toasts": {
+      "queued": "马上继续。",
+      "finished": "完成。原邮箱的登录信息已删除。"
+    },
+    "about": {
+      "title": "须知",
+      "what": "每个文件夹都会搬过来，特殊文件夹（已发送、草稿、垃圾邮件、废纸篓、归档）会进入你对应的文件夹，每封邮件都保留日期以及已读、旗标或已回复状态。",
+      "twice": "不会重复：根据 Message-ID 或内容判断已经存在的邮件会被跳过。",
+      "switch": "不用着急：现在先搬一次，告诉大家你的新地址，之后随时使用“再次同步”。它只会获取之后到达原服务商的邮件。",
+      "password": "密码只用于复制，会被加密保存，并在你点击“完成并删除登录信息”后立即删除。",
+      "calendars": "日历和通讯录需要单独搬：",
+      "calendarsLink": "日历和通讯录 → 从其他服务商迁移"
     }
   },
   "mailbox": {
@@ -1634,6 +2148,54 @@
     "releasedHint": "在你收回这些地址或保留期结束之前，发往它们的邮件会被拒收。",
     "reservedUntil": "保留至 {{date}}",
     "restore": "收回"
+  },
+  "memberships": {
+    "title": "群组和共享邮箱",
+    "intro": "管理员把你加到了这里。发给群组的邮件会到你自己的收件箱；共享邮箱显示在你自己的文件夹旁边。",
+    "group": "群组",
+    "shared": "共享邮箱",
+    "maySend": "你可以用它发信",
+    "sharedHint": "在邮件应用中，共享邮箱显示在 Shared/ 下，在网页邮箱中显示为单独的账户。你用它发出的邮件也会保存在它的已发送文件夹中。"
+  },
+  "masked": {
+    "pageTitle": "隐藏地址",
+    "intro": "为每个网站使用一个随机地址。如果某个地址开始收到垃圾邮件，你就知道是谁泄露的，并且可以在不影响真实地址的情况下关掉它。",
+    "new": "新建隐藏地址",
+    "closed": "此服务器还没有开放隐藏地址。请管理员为某个域名开启。",
+    "description": "用途",
+    "descriptionPlaceholder": "例如面包店的通讯",
+    "site": "网站",
+    "siteHint": "可选，方便记住在哪里用过。",
+    "prefix": "前缀",
+    "prefixHint": "可选：放在随机部分前面的字母 a–z、数字和 _。",
+    "prefixPlaceholder": "例如 shop",
+    "domain": "域名",
+    "create": "生成地址",
+    "created": "{{address}} 已就绪并已复制",
+    "listTitle": "你的隐藏地址",
+    "filter": {
+      "active": "使用中",
+      "deleted": "已删除"
+    },
+    "empty": "这里还没有内容。",
+    "noNote": "没有备注",
+    "state": {
+      "pending": "等待第一封邮件",
+      "enabled": "开启",
+      "disabled": "关闭：邮件静默进入废纸篓",
+      "deleted": "已删除：邮件被拒收"
+    },
+    "lastMessage": "最后一封邮件 {{date}}",
+    "noMessage": "还没有邮件",
+    "enable": "开启",
+    "disable": "关闭",
+    "delete": "删除",
+    "deleteConfirm": "删除 {{address}}？从现在起发往它的邮件将被拒收。你以后可以重新开启；其他人永远不会得到它。",
+    "toasts": {
+      "enabled": "已开启",
+      "disabled": "已关闭，邮件进入废纸篓",
+      "deleted": "已删除，邮件被拒收"
+    }
   },
   "storage": {
     "title": "存储空间",
@@ -2046,7 +2608,7 @@
     "helperOld": "这台机器上的助手程序太旧，无法使用更新按钮。请在机器上运行一次以下命令——它也会把助手程序更新到最新，之后你就可以在这里一键更新了："
   },
   "backups": {
-    "intro": "每天晚上，服务器会将邮件、设置、日历和通讯录备份到一台 SFTP 服务器，例如 NAS。首次备份之后，只会上传新增的内容。",
+    "intro": "每天晚上，服务器会备份邮件、设置、日历和通讯录：备份到 SFTP 服务器（例如 NAS）、S3 存储桶，或一个文件夹（例如挂载的磁盘）。首次备份之后，只会上传新增的内容。",
     "status": {
       "title": "状态",
       "running": "正在备份…",
@@ -2060,7 +2622,7 @@
       "started": "备份即将开始"
     },
     "target": {
-      "title": "备份服务器",
+      "title": "备份位置",
       "explain": "备份的存放位置。如果文件夹不存在，会自动创建；每台服务器请使用单独的文件夹。",
       "host": "地址",
       "port": "端口",
@@ -2078,7 +2640,28 @@
       "test": "测试连接",
       "testOk": "连接正常",
       "testFirst": "连接正常。服务器提供的密钥是 {{hostKey}}；从现在起必须是这个密钥。",
-      "trustNewKey": "信任新密钥"
+      "trustNewKey": "信任新密钥",
+      "kind": "备份到",
+      "kindSftp": "SFTP 服务器",
+      "kindS3": "S3 存储桶",
+      "kindFolder": "文件夹",
+      "explainS3": "Amazon S3 或任何兼容其接口的服务器：MinIO、Backblaze B2、Hetzner Object Storage、Wasabi 等。请为本服务器单独使用一个存储桶，或存储桶中的一个文件夹。",
+      "explainFolder": "本机上的一个文件夹：第二块磁盘，或挂载到容器中的 NAS 共享。它必须已经存在，并且位于服务器数据目录之外。",
+      "endpoint": "S3 地址",
+      "endpointHint": "只填服务器，不含存储桶，例如 https://s3.eu-central-1.amazonaws.com。http:// 只能在你自己的网络中使用。",
+      "bucket": "存储桶",
+      "prefix": "存储桶中的文件夹",
+      "prefixHint": "留空表示整个存储桶",
+      "region": "区域",
+      "regionHint": "例如 eu-central-1；留空为 us-east-1",
+      "accessKey": "访问密钥",
+      "secretKey": "私密密钥",
+      "secretKeyKept": "留空以保留已保存的密钥。",
+      "pathStyle": "存储桶放在路径中",
+      "pathStyleHint": "使用 https://server/bucket 而不是 https://bucket.server。MinIO 和很多本地网络中的服务器需要这样。",
+      "folder": "文件夹",
+      "folderHint": "完整路径，例如 /backup",
+      "testWritable": "连接正常：已写入、读回并删除了一个测试文件。"
     },
     "schedule": {
       "enabled": "每晚备份",
@@ -2121,6 +2704,35 @@
       "keptGateway": "保留了这台机器的网关配对，而不是备份中的配对。",
       "oldDatabase": "之前的数据库以 uwumail.db.replaced.* 的形式保存在数据目录中。确认无误后再将其删除。",
       "forget": "知道了"
+    },
+    "mailbox": {
+      "title": "恢复单个邮箱",
+      "explain": "在服务器继续运行的同时，从快照中取出某个人的邮件。邮件会放在现有内容旁边的新文件夹“Restored <日期>”中，原来的文件夹在它下面。邮箱中仍然存在的邮件会被跳过。",
+      "snapshot": "快照",
+      "latest": "最新的",
+      "open": "打开",
+      "openFailed": "无法打开快照：{{error}}",
+      "opening": "正在获取快照的数据库：{{done}} / {{total}} …",
+      "opened": "已打开：{{time}} 的快照。",
+      "restoring": "正在取回 {{account}} 的邮件：{{done}} / {{total}} …",
+      "lastDone": "{{count}} 封邮件已回到 {{account}} 的文件夹“{{folder}}”中；{{skipped}} 封原本还在。",
+      "lastDone_other": "{{count}} 封邮件已回到 {{account}} 的文件夹“{{folder}}”中；{{skipped}} 封原本还在。",
+      "lastFailed": "恢复到 {{account}} 的过程已停止：{{error}}。在此之前已取回 {{count}} 封邮件。",
+      "nobody": "这个快照中没有人拥有邮箱。",
+      "person": "用户",
+      "personLine": "{{login}}（{{count}}）",
+      "into": "放入此人的邮箱",
+      "intoHint": "留空表示同一地址。用于之后更换了地址的人。",
+      "which": "文件夹",
+      "allFolders": "所有文件夹",
+      "someFolders": "选择文件夹",
+      "inbox": "收件箱",
+      "how": "现有的内容不会被更改或替换。备份会等到这里完成后再运行。",
+      "restore": "恢复",
+      "close": "关闭快照",
+      "nothingMissing": "没有缺少任何邮件：快照中的 {{count}} 封邮件都还在 {{account}} 中，因此无需恢复。",
+      "nothingMissing_other": "没有缺少任何邮件：快照中的 {{count}} 封邮件都还在 {{account}} 中，因此无需恢复。",
+      "nothingThere": "快照中这些文件夹里没有 {{account}} 的邮件，因此没有恢复任何内容。"
     }
   },
   "spam": {

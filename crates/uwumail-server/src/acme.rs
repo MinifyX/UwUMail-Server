@@ -100,6 +100,8 @@ pub async fn run(
         let extra = extra_names(&config.hostname, &store).await;
         let names = names_to_request(&config.hostname, &extra, &failed_names, now);
         if !needs_certificate(certs.info().as_ref(), &names, now) {
+            // Whatever failed before, the certificate in use is what it should be now.
+            let _ = store.note_certificate_order(None).await;
             wait = Duration::from_secs(NAME_CHECK_SECS);
             continue;
         }
@@ -107,11 +109,13 @@ pub async fn run(
         match order(&config, &certs, &challenges, &names).await {
             Ok(()) => {
                 tracing::info!(names = %names.join(", "), "got a fresh certificate (=^･ω･^=)");
+                let _ = store.note_certificate_order(None).await;
                 wait = Duration::from_secs(NAME_CHECK_SECS);
             }
             Err(err) => {
                 let refused = err.downcast_ref::<Refused>().map(|refused| refused.0.clone()).unwrap_or_default();
                 let (paused, retry) = after_failed_order(&names, &refused);
+                let _ = store.note_certificate_order(Some(format!("{err:#}"))).await;
                 if paused.is_empty() {
                     tracing::warn!(error = %format!("{err:#}"), "getting a certificate failed, retrying in an hour");
                 } else {
@@ -347,15 +351,37 @@ async fn order(config: &Config, certs: &CertStore, challenges: &Challenges, name
         );
         return Err(with_refused(error, refused_names(&mut order).await));
     }
-    let key_pem = order.finalize().await?;
+    let dir = tls_dir(config).join("acme");
+    let key = kept_key(&dir.join("key.pem")).await;
+    order.finalize_csr(&signing_request(names, &key)?).await?;
     let cert_pem = order.poll_certificate(&retries).await?;
+    let key_pem = key.serialize_pem();
 
     certs.set_pem(cert_pem.as_bytes(), key_pem.as_bytes())?;
-    let dir = tls_dir(config).join("acme");
     tokio::fs::create_dir_all(&dir).await?;
     write_private(&dir.join("key.pem"), key_pem.as_bytes()).await?;
     tokio::fs::write(dir.join("cert.pem"), cert_pem.as_bytes()).await?;
     Ok(())
+}
+
+/// The key a new certificate is for: the one the certificate before had, so a TLSA record that
+/// names it (DANE, `3 1 1`) stays valid across renewals. A new one only when there is none yet
+/// or it cannot be read; removing `acme/key.pem` makes the next certificate come with a new key.
+async fn kept_key(path: &std::path::Path) -> rcgen::KeyPair {
+    if let Ok(pem) = tokio::fs::read_to_string(path).await {
+        match rcgen::KeyPair::from_pem(&pem) {
+            Ok(key) => return key,
+            Err(err) => tracing::warn!(%err, "the key of the last certificate cannot be used, making a new one"),
+        }
+    }
+    rcgen::KeyPair::generate().expect("generating a key")
+}
+
+/// The certificate signing request for `names`, signed with `key`.
+fn signing_request(names: &[String], key: &rcgen::KeyPair) -> anyhow::Result<Vec<u8>> {
+    let mut params = rcgen::CertificateParams::new(names.to_vec()).context("naming the certificate")?;
+    params.distinguished_name = rcgen::DistinguishedName::new();
+    Ok(params.serialize_request(key).context("writing the certificate request")?.der().to_vec())
 }
 
 #[cfg(test)]
@@ -367,7 +393,22 @@ mod tests {
             not_after: 1_000_000 + days_left * 24 * 3600,
             names: names.iter().map(|name| name.to_string()).collect(),
             self_signed,
+            chain: Vec::new(),
         }
+    }
+
+    #[tokio::test]
+    async fn renewals_keep_the_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("key.pem");
+        let first = kept_key(&path).await;
+        write_private(&path, first.serialize_pem().as_bytes()).await.unwrap();
+        let again = kept_key(&path).await;
+        assert_eq!(again.public_key_pem(), first.public_key_pem(), "the same key for the next certificate");
+        assert!(!signing_request(&["mail.example.org".into()], &again).unwrap().is_empty());
+
+        tokio::fs::write(&path, "not a key").await.unwrap();
+        assert_ne!(kept_key(&path).await.public_key_pem(), first.public_key_pem(), "a new one when unreadable");
     }
 
     #[test]

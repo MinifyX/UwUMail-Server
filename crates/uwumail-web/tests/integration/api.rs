@@ -125,6 +125,8 @@ async fn login_session_and_logout() {
             "hostname": "mail.example.org",
             "setupRequired": false,
             "brand": { "name": "UwUMail", "custom": false, "color": null, "mascot": true, "logo": null },
+            // No button for logging in elsewhere unless it is set up.
+            "oidc": null,
         })
     );
 

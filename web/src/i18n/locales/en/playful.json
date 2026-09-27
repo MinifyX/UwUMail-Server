@@ -20,6 +20,12 @@
     "greeting": "Hi {{name}}!",
     "intro": "Everything about your mailbox, right here (｡･ω･｡)"
   },
+  "moving": {
+    "intro": "Pack up your old mailbox and bring everything home: every folder, every flag, every date. The server carries the boxes in the background (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
+    "toasts": {
+      "finished": "All moved in! The old login is gone (◕‿◕✿)"
+    }
+  },
   "admin": {
     "intro": "How your server is doing. I'm keeping an eye on it too (=^･ω･^=)",
     "queueEmpty": "Nothing waiting, everything is on its way ✉︎",
@@ -31,6 +37,20 @@
         "none": "Everything is still like on day one (´｡• ω •｡`)"
       }
     }
+  },
+  "adminView": {
+    "headline": {
+      "ok": "Everything purrs (=^･ω･^=)",
+      "unknown": "Still sniffing around",
+      "warning": "Something needs a look (・_・;)",
+      "problem": "Something is stuck (╥﹏╥)"
+    }
+  },
+  "alerts": {
+    "none": "Nothing to report, all quiet (=^･ω･^=)"
+  },
+  "stats": {
+    "intro": "What happened on your server, day by day. I counted everything (=^･ω･^=)"
   },
   "errors": {
     "loadFailed": {
@@ -79,6 +99,11 @@
       "ready": "No TLS problems for 14 days, everything purrs (=^･ω･^=) You can switch MTA-STS to enforce."
     }
   },
+  "reports": {
+    "sent": {
+      "empty": "Nothing sent yet. Once mail reached a domain that wants reports, it gets one from me the next day (=^･ω･^=)"
+    }
+  },
   "queue": {
     "empty": {
       "title": "Nothing waiting, everything is on its way ✉︎"
@@ -106,6 +131,11 @@
     "recovery": {
       "saved": "Safely tucked away ✓"
     }
+  },
+  "oauth": {
+    "title": "“{{name}}” would like to come in (・ω・)",
+    "signingIn": "Opening the door for the app … (=^･ω･^=)",
+    "invalidTitle": "I can't let this app in (・_・;)"
   },
   "setup": {
     "welcome": {
@@ -145,6 +175,12 @@
     "signatures": {
       "saved": "Signature saved (ﾉ◕ヮ◕)ﾉ"
     }
+  },
+  "memberships": {
+    "intro": "You are part of these! Group mail lands in your own inbox, shared mailboxes wait right next to your folders (◕‿◕✿)"
+  },
+  "masked": {
+    "intro": "A secret address for every website! If one starts getting spam, you know who blabbed, and you switch it off in a blink (｀・ω・´)"
   },
   "sharing": {
     "withMeEmpty": "Nobody shares a folder with you yet (｡•ᴗ•｡)",

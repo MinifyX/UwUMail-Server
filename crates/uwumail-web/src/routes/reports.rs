@@ -319,6 +319,17 @@ pub async fn overview(
     Ok(Json(json!({ "days": days, "since": since, "domains": domains })))
 }
 
+/// The TLS reports this server sent to other domains (RFC 8460), newest first, and the address
+/// they come from.
+pub async fn sent(State(web): State<Web>, _admin: Admin, Query(query): Query<ReportQuery>) -> ApiResult<Json<Value>> {
+    let days = query.days.unwrap_or(30).clamp(1, 60);
+    let store = web.store();
+    let reports = store.tls_rpt_sent(days, 500).await?;
+    let domains: Vec<String> = store.domains().await?.into_iter().map(|domain| domain.name).collect();
+    let sender = uwumail_smtp::tlsrpt::report_sender(&web.settings().hostname, &domains);
+    Ok(Json(json!({ "days": days, "sender": sender, "reports": reports })))
+}
+
 pub async fn domain_reports(
     State(web): State<Web>,
     _admin: Admin,

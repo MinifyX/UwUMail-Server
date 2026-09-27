@@ -9,6 +9,7 @@ mod gateway;
 mod host;
 mod http;
 mod import;
+mod migrate;
 mod restore;
 mod serve;
 mod settings;

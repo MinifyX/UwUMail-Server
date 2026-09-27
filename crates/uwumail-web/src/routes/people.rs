@@ -47,6 +47,8 @@ pub fn person_json(person: &Person) -> Value {
         "webmail": account.webmail,
         // A service with neither IMAP nor JMAP has no mailbox at all.
         "hasMailbox": account.has_mailbox(),
+        // A mailbox several people use; it is stored as a service nobody signs in to.
+        "sharedMailbox": account.shared_mailbox,
     })
 }
 
@@ -76,10 +78,15 @@ pub async fn detail(State(web): State<Web>, _admin: Admin, Path(login): Path<Str
         "appPasswords": app_passwords,
         "appPasswordsRequired": security.app_passwords_required(),
     });
-    if person.account.is_service() {
+    if person.account.shared_mailbox {
+        value["members"] = json!(web.store().shared_mailbox_members(person.account.id).await?);
+    } else if person.account.is_service() {
         // A service cannot open its own security page, so the admin sees the list here.
         value["appPasswordList"] = json!(web.store().app_passwords(person.account.id).await?);
     }
+    // Apps signed in with OAuth, which the admin can sign out, and where the password is checked.
+    value["oauthGrants"] = json!(web.store().oauth_grants(person.account.id).await?);
+    value["authSource"] = json!(web.store().auth_source(person.account.id).await?);
     value["aliasLimit"] = json!(web.store().own_addresses(person.account.id).await?.limit);
     value["sendAsDomains"] = json!(web.store().send_as_domains(person.account.id).await?);
     value["forwarding"] = json!({
@@ -327,12 +334,21 @@ pub async fn purge(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// A password here means nothing for someone whose password the LDAP directory checks.
+async fn in_directory(web: &Web, account: &uwumail_store::Account) -> ApiResult<()> {
+    if web.store().auth_source(account.id).await? == "ldap" {
+        return Err(ApiError::Rule("passwordInDirectory", "this password is changed at the directory".into()));
+    }
+    Ok(())
+}
+
 pub async fn password_link(
     State(web): State<Web>,
     Admin(session): Admin,
     Path(login): Path<String>,
 ) -> ApiResult<Json<Value>> {
     let person = load(&web, &login).await?;
+    in_directory(&web, &person.account).await?;
     let purpose = if person.has_password { PasswordLinkPurpose::Reset } else { PasswordLinkPurpose::Invite };
     let (token, expires_at) = web
         .store()
@@ -355,6 +371,10 @@ pub async fn set_password(
     Json(new): Json<NewPassword>,
 ) -> ApiResult<StatusCode> {
     let person = load(&web, &login).await?;
+    if person.account.shared_mailbox {
+        return Err(ApiError::Rule("sharedMailbox", "nobody signs in to a shared mailbox".into()));
+    }
+    in_directory(&web, &person.account).await?;
     check_password(&new.password, &person.account.login)?;
     web.store().set_password(&person.account.login, &new.password).await?;
     web.store().delete_web_sessions(person.account.id).await?;

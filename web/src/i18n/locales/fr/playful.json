@@ -20,6 +20,12 @@
     "greeting": "Coucou {{name}} !",
     "intro": "Tout ce qui concerne votre boîte mail, juste ici (｡･ω･｡)"
   },
+  "moving": {
+    "intro": "Emballez votre ancienne boîte et ramenez tout à la maison : chaque dossier, chaque marque, chaque date. Le serveur porte les cartons en arrière-plan (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
+    "toasts": {
+      "finished": "Emménagement terminé ! Les anciens identifiants ont disparu (◕‿◕✿)"
+    }
+  },
   "admin": {
     "intro": "L'état de votre serveur. Je garde un œil dessus, moi aussi (=^･ω･^=)",
     "queueEmpty": "Rien n'attend, tout est en route ✉︎",
@@ -31,6 +37,20 @@
         "none": "Tout est encore comme au premier jour (´｡• ω •｡`)"
       }
     }
+  },
+  "adminView": {
+    "headline": {
+      "ok": "Tout ronronne (=^･ω･^=)",
+      "unknown": "Je renifle encore un peu partout",
+      "warning": "Quelque chose mérite un coup d'œil (・_・;)",
+      "problem": "Quelque chose coince (╥﹏╥)"
+    }
+  },
+  "alerts": {
+    "none": "Rien à signaler, tout est calme (=^･ω･^=)"
+  },
+  "stats": {
+    "intro": "Ce qui s'est passé sur votre serveur, jour après jour. J'ai tout compté (=^･ω･^=)"
   },
   "errors": {
     "loadFailed": {
@@ -79,6 +99,11 @@
       "ready": "Aucun problème TLS depuis 14 jours, tout ronronne (=^･ω･^=) Vous pouvez passer MTA-STS en mode strict."
     }
   },
+  "reports": {
+    "sent": {
+      "empty": "Rien d'envoyé pour l'instant. Dès que du courrier arrive chez un domaine qui veut des rapports, je lui en envoie un le lendemain (=^･ω･^=)"
+    }
+  },
   "queue": {
     "empty": {
       "title": "Rien n'attend, tout est en route ✉︎"
@@ -108,6 +133,11 @@
     "recovery": {
       "saved": "Bien rangé en lieu sûr ✓"
     }
+  },
+  "oauth": {
+    "title": "« {{name}} » aimerait entrer (・ω・)",
+    "signingIn": "J'ouvre la porte à l'appli … (=^･ω･^=)",
+    "invalidTitle": "Je ne peux pas laisser entrer cette appli (・_・;)"
   },
   "setup": {
     "welcome": {
@@ -147,6 +177,12 @@
     "signatures": {
       "saved": "Signature enregistrée (ﾉ◕ヮ◕)ﾉ"
     }
+  },
+  "memberships": {
+    "intro": "Vous en faites partie ! Le courrier des groupes arrive dans votre boîte, les boîtes partagées attendent à côté de vos dossiers (◕‿◕✿)"
+  },
+  "masked": {
+    "intro": "Une adresse secrète pour chaque site ! Si l'une reçoit du spam, vous savez qui a bavardé, et vous la coupez en un clin d'œil (｀・ω・´)"
   },
   "sharing": {
     "withMeEmpty": "Personne ne partage encore de dossier avec toi (｡•ᴗ•｡)",

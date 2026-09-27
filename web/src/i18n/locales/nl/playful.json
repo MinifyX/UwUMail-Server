@@ -20,6 +20,12 @@
     "greeting": "Hoi {{name}}!",
     "intro": "Alles over je mailbox, gewoon hier (｡･ω･｡)"
   },
+  "moving": {
+    "intro": "Pak je oude mailbox in en breng alles naar huis: elke map, elke markering, elke datum. De server sjouwt de dozen op de achtergrond (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
+    "toasts": {
+      "finished": "Helemaal verhuisd! De oude inloggegevens zijn weg (◕‿◕✿)"
+    }
+  },
   "admin": {
     "intro": "Hoe het met je server gaat. Ik houd hem ook in de gaten (=^･ω･^=)",
     "queueEmpty": "Niets wacht, alles is onderweg ✉︎",
@@ -31,6 +37,20 @@
         "none": "Alles is nog zoals op dag één (´｡• ω •｡`)"
       }
     }
+  },
+  "adminView": {
+    "headline": {
+      "ok": "Alles spint (=^･ω･^=)",
+      "unknown": "Ik snuffel nog rond",
+      "warning": "Iets moet even bekeken worden (・_・;)",
+      "problem": "Er zit iets vast (╥﹏╥)"
+    }
+  },
+  "alerts": {
+    "none": "Niets te melden, alles rustig (=^･ω･^=)"
+  },
+  "stats": {
+    "intro": "Wat er op je server gebeurd is, dag na dag. Ik heb alles meegeteld (=^･ω･^=)"
   },
   "errors": {
     "loadFailed": {
@@ -79,6 +99,11 @@
       "ready": "Al 14 dagen geen TLS-problemen, alles spint (=^･ω･^=) Je kunt MTA-STS op afdwingen zetten."
     }
   },
+  "reports": {
+    "sent": {
+      "empty": "Nog niets verstuurd. Zodra er mail bij een domein was dat rapporten wil, stuur ik het de volgende dag een (=^･ω･^=)"
+    }
+  },
   "queue": {
     "empty": {
       "title": "Niets wacht, alles is onderweg ✉︎"
@@ -106,6 +131,11 @@
     "recovery": {
       "saved": "Veilig opgeborgen ✓"
     }
+  },
+  "oauth": {
+    "title": "‘{{name}}’ wil graag binnenkomen (・ω・)",
+    "signingIn": "Ik doe de deur open voor de app … (=^･ω･^=)",
+    "invalidTitle": "Deze app kan ik niet binnenlaten (・_・;)"
   },
   "setup": {
     "welcome": {
@@ -145,6 +175,12 @@
     "signatures": {
       "saved": "Handtekening opgeslagen (ﾉ◕ヮ◕)ﾉ"
     }
+  },
+  "memberships": {
+    "intro": "Hier hoor je bij! Groepsmail komt in je eigen inbox, gedeelde mailboxen wachten naast je mappen (◕‿◕✿)"
+  },
+  "masked": {
+    "intro": "Een geheim adres voor elke website! Krijgt er een spam, dan weet je wie er klikte, en zet je het in een tel uit (｀・ω・´)"
   },
   "sharing": {
     "withMeEmpty": "Nog niemand deelt een map met je (｡•ᴗ•｡)",

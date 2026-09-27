@@ -41,6 +41,19 @@
       "tooManyAttempts": "Trop de tentatives échouées. Veuillez patienter quelques minutes.",
       "offline": "Le serveur est injoignable pour le moment.",
       "internal": "Une erreur s'est produite sur le serveur."
+    },
+    "or": "ou",
+    "oidcButton": "Se connecter avec {{provider}}",
+    "oidcButtonGeneric": "Se connecter avec l'authentification unique",
+    "oidcErrors": {
+      "unavailable": "Le service de connexion est injoignable pour le moment. Réessayez plus tard ou connectez-vous avec votre mot de passe.",
+      "expired": "La connexion a pris trop de temps ou a été commencée dans un autre navigateur. Veuillez réessayer.",
+      "refused": "La connexion a été annulée ou refusée par le service de connexion.",
+      "failed": "La réponse du service de connexion n'est pas valable. Veuillez réessayer.",
+      "emailNotVerified": "Le service de connexion n'a pas confirmé votre adresse e-mail, il ne peut donc pas vous connecter ici.",
+      "domainNotAllowed": "Il n'existe aucun compte pour cette adresse, et aucun ne peut être créé dans son domaine.",
+      "noAccount": "Il n'existe aucun compte sur ce serveur pour cette connexion, et aucun ne peut être créé.",
+      "alreadyLinked": "Ce compte appartient déjà à une autre connexion auprès du service de connexion."
     }
   },
   "nav": {
@@ -62,7 +75,10 @@
     "expand": "Déplier {{group}}",
     "mailbox": "Boîte mail",
     "directory": "Comptes et domaines",
-    "calendars": "Agendas et contacts"
+    "calendars": "Agendas et contacts",
+    "masked": "Adresses masquées",
+    "moving": "Déménagement",
+    "more": "Plus"
   },
   "userMenu": {
     "open": "Ouvrir le menu du compte",
@@ -170,7 +186,8 @@
       "overview": "Vue d'ensemble",
       "mailFlow": "Flux de courrier",
       "backups": "Sauvegardes",
-      "updates": "Mises à jour"
+      "updates": "Mises à jour",
+      "stats": "Statistiques"
     },
     "tiles": {
       "news": "nouveau",
@@ -206,6 +223,180 @@
         "title": "Dernière modification",
         "none": "Rien n'a encore changé"
       }
+    }
+  },
+  "adminView": {
+    "label": "Affichage",
+    "simple": "Simple",
+    "full": "Tout",
+    "hint": {
+      "simple": "Seulement le feu tricolore et ce qu'il faut faire. Tout le reste se trouve sous « Plus » dans le menu.",
+      "full": "Tous les chiffres et toutes les vérifications. « Simple » n'affiche que le feu tricolore."
+    },
+    "light": "Feu tricolore : {{level}}",
+    "headline": {
+      "ok": "Tout va bien",
+      "unknown": "Tout n'est pas encore vérifié",
+      "warning": "Quelque chose mérite un coup d'œil",
+      "problem": "Quelque chose ne fonctionne pas"
+    },
+    "sentence": {
+      "ok": "Les mails arrivent et partent, rien ne demande votre attention pour l'instant.",
+      "unknown": "Les premières vérifications ont lieu peu après le démarrage.",
+      "warning_one": "Un point ci-dessous mérite un coup d'œil quand vous aurez un moment.",
+      "warning_many": "{{count}} points ci-dessous méritent un coup d'œil quand vous aurez un moment.",
+      "warning_other": "{{count}} points ci-dessous méritent un coup d'œil quand vous aurez un moment.",
+      "problem_one": "Un point ci-dessous a bientôt besoin de votre aide.",
+      "problem_many": "{{count}} points ci-dessous ont bientôt besoin de votre aide.",
+      "problem_other": "{{count}} points ci-dessous ont bientôt besoin de votre aide."
+    },
+    "todo": "Que faire",
+    "quick": {
+      "title": "Accès rapide",
+      "people": "Personnes",
+      "addPerson": "Ajouter une personne",
+      "domains": "Domaines",
+      "backups": "Sauvegardes"
+    }
+  },
+  "alerts": {
+    "title": "Alertes",
+    "intro": "Ce que le serveur a signalé aux admins, et ce qui est revenu en ordre ensuite. Il vérifie toutes les cinq minutes.",
+    "loading": "Chargement des alertes …",
+    "none": "Aucune alerte ouverte.",
+    "openLabel": "Alertes ouvertes",
+    "history_one": "{{count}} alerte de nouveau en ordre",
+    "history_many": "{{count}} alertes de nouveau en ordre",
+    "history_other": "{{count}} alertes de nouveau en ordre",
+    "since": "Depuis {{time}}",
+    "resolvedAt": "De nouveau en ordre {{time}}",
+    "acknowledgedBy": "{{login}} est au courant",
+    "acknowledge": "Vu",
+    "acknowledgeHint": "Plus de rappel quotidien pour celle-ci. Vous serez quand même prévenu si elle s'aggrave ou se règle.",
+    "acknowledgedToast": "C'est noté. Plus de rappel pour celle-ci.",
+    "level": {
+      "info": "Information",
+      "warning": "À vérifier",
+      "problem": "Problème",
+      "resolved": "De nouveau en ordre"
+    },
+    "mail": {
+      "title": "Mails d'alerte",
+      "label": "Mails d'alerte pour moi",
+      "all": "Tous",
+      "problems": "Problèmes seulement",
+      "none": "Aucun",
+      "hint": "Chaque admin choisit pour soi. Un mail arrive quand quelque chose passe au jaune ou au rouge, une fois par jour tant que quelque chose reste rouge, et une dernière fois quand tout est de nouveau en ordre."
+    },
+    "codes": {
+      "certRenewalFailing": "Le renouvellement du certificat échoue toujours (premier échec {{since}}).",
+      "backupFailed": "La dernière sauvegarde a échoué.",
+      "backupOld": "La dernière sauvegarde réussie date de {{time}}.",
+      "updateAvailable": "La version {{version}} est sortie."
+    },
+    "hints": {
+      "certRenewalFailing": "Le journal du serveur indique pourquoi. Souvent, un nom ne pointe pas (encore) vers ce serveur, ou le port 80 n'est pas joignable de l'extérieur.",
+      "backupFailed": "La page des sauvegardes affiche l'erreur. Vérifiez la destination et lancez-en une à la main.",
+      "backupOld": "Les sauvegardes ont normalement lieu chaque nuit. La page des sauvegardes indique si elles sont en pause ou ce qui s'est mal passé.",
+      "updateAvailable": "La page des mises à jour montre les nouveautés et met à jour en un clic."
+    }
+  },
+  "stats": {
+    "intro": "Ce qui s'est passé sur votre serveur, jour après jour ou mois après mois.",
+    "utc": "Les jours sont comptés en UTC. Les chiffres commencent avec la version 0.14.",
+    "range": {
+      "label": "Période",
+      "days": "30 jours",
+      "months": "12 mois"
+    },
+    "total": {
+      "days": "sur 30 jours",
+      "months": "sur 12 mois"
+    },
+    "latest": "dernière mesure",
+    "chartSummary": "{{series}} : diagramme en barres, valeur maximale {{max}} ({{peak}}). Le tableau ci-dessous contient tous les chiffres.",
+    "chartEmpty": "{{series}} : rien n'a été compté sur cette période.",
+    "charts": {
+      "received": {
+        "title": "Mails reçus",
+        "hint": "Mails d'autres serveurs et de boîtes relevées qui ont atteint au moins une personne."
+      },
+      "refused": {
+        "title": "Mails refusés",
+        "hint": "Refusés à l'entrée : destinataires inconnus, spam, virus et règles comme DMARC."
+      },
+      "submitted": {
+        "title": "Mails envoyés",
+        "hint": "Messages envoyés par vos utilisateurs, depuis des applications mail, le webmail ou les applications UwUMail."
+      },
+      "delivered": {
+        "title": "Remis à d'autres serveurs",
+        "hint": "Destinataires sur d'autres serveurs qui ont accepté le mail."
+      },
+      "logins": {
+        "title": "Connexions échouées",
+        "hint": "Mauvais mots de passe et connexions refusées dans toutes les applications et dans le portail."
+      },
+      "storage": {
+        "title": "Espace utilisé",
+        "hint": "Toutes les boîtes mail ensemble, mesurées au fil de chaque jour."
+      }
+    },
+    "keys": {
+      "mail": {
+        "received": "Reçus",
+        "junk": "Dans les indésirables",
+        "submitted": "Envoyés",
+        "delivered": "Remis",
+        "deferred": "Réessayés plus tard",
+        "bounced": "Abandonnés"
+      },
+      "refused": {
+        "unknownRecipient": "Destinataire inconnu",
+        "spam": "Spam",
+        "virus": "Virus",
+        "policy": "Règles (DMARC, expéditeurs bloqués, relais)",
+        "greylisted": "Priés de revenir plus tard"
+      },
+      "loginFailed": {
+        "smtp": "SMTP",
+        "imap": "IMAP",
+        "jmap": "JMAP",
+        "dav": "CalDAV/CardDAV",
+        "managesieve": "ManageSieve",
+        "portal": "Portail",
+        "other": "Autres"
+      },
+      "gauge": {
+        "accounts": "Comptes",
+        "storageBytes": "Espace utilisé"
+      }
+    },
+    "table": {
+      "title": "Tous les chiffres en tableau",
+      "caption": "Statistiques par période",
+      "period": {
+        "days": "Jour",
+        "months": "Mois"
+      }
+    },
+    "metrics": {
+      "title": "Métriques Prometheus",
+      "intro": "Pour un système de supervision : les chiffres du serveur sous /metrics, au format Prometheus. Désactivé tant que vous ne l'activez pas.",
+      "enabled": "Fournir les métriques",
+      "enabledHint": "Nécessite un jeton, des réseaux autorisés ou les deux, pour que tout le monde ne puisse pas les lire.",
+      "token": "Jeton",
+      "tokenHint": "Prometheus l'envoie comme jeton bearer. Créez-en un ici.",
+      "tokenFresh": "Copiez-le maintenant : une fois enregistré, il ne sera plus jamais affiché.",
+      "tokenSet": "Un jeton est défini. Un nouveau le remplace.",
+      "tokenNew": "Créer un jeton",
+      "tokenReplace": "Nouveau jeton",
+      "tokenRemove": "Supprimer",
+      "copyToken": "Copier le jeton",
+      "networks": "Seulement depuis ces réseaux",
+      "networksHint": "Une adresse ou un réseau par ligne, par exemple 10.0.0.0/8. Vide : de partout, avec le jeton.",
+      "needsWayIn": "Créez d'abord un jeton ou indiquez un réseau, sinon les métriques seraient ouvertes à tous.",
+      "address": "Adresse pour Prometheus"
     }
   },
   "duration": {
@@ -333,7 +524,29 @@
       "googleUseIcs": "Google ne laisse entrer que ses propres applications. Utilisez l'adresse iCal secrète pour les agendas et un export vCard pour les contacts.",
       "subscriptionLimit": "Vous avez déjà le nombre maximal d'agendas abonnés.",
       "subscriptionExists": "Vous êtes déjà abonné à cet agenda.",
-      "refreshPause": "Tout juste récupéré. Réessayez dans une minute."
+      "refreshPause": "Tout juste récupéré. Réessayez dans une minute.",
+      "sharedMailbox": "C'est une boîte partagée : personne ne s'y connecte, ses membres l'utilisent depuis leur propre compte.",
+      "maskedDomain": "Aucun domaine de ce serveur n'est encore ouvert aux adresses masquées. Demandez à l'admin.",
+      "maskedLimit": "Vous avez autant d'adresses masquées que ce serveur le permet. Supprimez celles dont vous n'avez plus besoin.",
+      "maskedPrefix": "Un préfixe ne peut contenir que des lettres a–z, des chiffres et _, 64 au plus.",
+      "maskedState": "Une adresse masquée ne peut pas se remettre à attendre son premier message.",
+      "backupBusy": "Quelque chose utilise déjà les sauvegardes : une sauvegarde, ou une boîte aux lettres en cours de restauration. Réessayez quand ce sera terminé. ({{detail}})",
+      "backupFolderInData": "Le dossier de sauvegarde doit se trouver en dehors du répertoire de données du serveur ; sinon la sauvegarde serait perdue avec le serveur.",
+      "moveExists": "Cette adresse est déjà en cours de déménagement.",
+      "moveFromHere": "Cette adresse est déjà sur ce serveur, il n'y a rien à déménager.",
+      "moveLimit": "Cinq boîtes aux lettres au plus peuvent déménager en même temps. Terminez d'abord l'un des autres déménagements.",
+      "moveRunning": "Ce déménagement est encore en cours.",
+      "moveNotRunning": "Ce déménagement n'est pas en cours.",
+      "moveNoMailbox": "Votre compte n'a pas de boîte aux lettres dans laquelle le courrier pourrait arriver.",
+      "moveWrongPassword": "L'ancien fournisseur a refusé ce mot de passe. Beaucoup de fournisseurs demandent ici un mot de passe d'application.",
+      "alertResolved": "Cette alerte est déjà de nouveau en ordre.",
+      "confirmByLogin": "Pour confirmer, déconnectez-vous puis reconnectez-vous, et réessayez.",
+      "passwordInDirectory": "Ce mot de passe est géré par l'annuaire de votre organisation (LDAP) et se change là-bas.",
+      "serviceAccount": "Un service se connecte uniquement avec des mots de passe d'application.",
+      "oauthClientUnknown": "Cette appli n'est pas enregistrée sur ce serveur.",
+      "oauthRedirectInvalid": "L'appli demande à être renvoyée vers une adresse qu'elle n'a pas enregistrée.",
+      "oidcFailed": "Le service de connexion n'a pas fonctionné : {{detail}}",
+      "ldapFailed": "L'annuaire n'a pas fonctionné : {{detail}}"
     }
   },
   "people": {
@@ -547,6 +760,40 @@
       "revokeTitle": "Révoquer {{name}} ?",
       "revokeBody": "Ce qui utilise ce mot de passe ne pourra plus entrer.",
       "createdTitle": "Nouveau mot de passe d'application"
+    },
+    "authSource": {
+      "label": "Le mot de passe est vérifié",
+      "hint": "Passer à l'annuaire supprime le mot de passe enregistré ici. Revenir en arrière signifie définir un nouveau mot de passe ou envoyer un lien.",
+      "oidcHint": "Se connecte auprès du fournisseur OpenID Connect. Vous pouvez tout de même passer à un mot de passe ici ou dans l'annuaire.",
+      "local": "Ici, sur ce serveur",
+      "ldap": "Dans l'annuaire LDAP",
+      "oidc": "Auprès du fournisseur OpenID Connect",
+      "toLdapTitle": "Vérifier le mot de passe de {{login}} dans l'annuaire ?",
+      "toLdapBody": "Le mot de passe enregistré ici est supprimé. Désormais, la personne se connecte avec son mot de passe de l'annuaire, dans le portail et dans les applis de messagerie. Les mots de passe d'application restent.",
+      "toLocalTitle": "Vérifier le mot de passe de {{login}} ici ?",
+      "toLocalBody": "La personne n'aura ensuite pas de mot de passe ici. Définissez-en un nouveau ou envoyez un lien pour en choisir un.",
+      "switch": "Changer",
+      "inDirectory": "Le mot de passe est vérifié dans l'annuaire LDAP et s'y change."
+    }
+  },
+  "sharedMailboxes": {
+    "title": "Boîtes partagées",
+    "explain": "Une boîte utilisée par plusieurs personnes, comme support@. Personne ne s'y connecte ; ses membres la voient à côté de leurs dossiers et peuvent répondre avec.",
+    "create": "Nouvelle boîte partagée",
+    "createIntro": "Elle a sa propre adresse et son propre espace ; le courrier arrive dans sa boîte de réception pour tous les membres.",
+    "name": "Nom",
+    "namePlaceholder": "par exemple Support",
+    "address": "Adresse",
+    "addressPlaceholder": "par exemple support",
+    "members": "Membres",
+    "membersHint": "Toutes les personnes choisies voient tous ses dossiers. Cochez qui peut aussi envoyer avec son adresse.",
+    "membersIntro": "Les membres voient chacun de ses dossiers, les nouveaux aussi. Qui peut envoyer trouve son adresse parmi ses adresses d'envoi ; une copie reste dans son dossier Envoyés.",
+    "maySend": "peut envoyer",
+    "save": "Enregistrer les membres",
+    "pill": "Boîte partagée",
+    "toasts": {
+      "created": "{{address}} créée",
+      "saved": "Membres enregistrés"
     }
   },
   "log": {
@@ -613,7 +860,17 @@
       "spamVirusTest": "{{actor}} a testé l'antivirus",
       "updatesSettings": "{{actor}} a modifié les paramètres de mise à jour",
       "brandLogo": "{{actor}} a téléversé un nouveau logo",
-      "brandLogoRemoved": "{{actor}} a supprimé le logo"
+      "brandLogoRemoved": "{{actor}} a supprimé le logo",
+      "backupRestoreMailbox": "{{actor}} a restauré le courrier de {{target}} depuis une sauvegarde",
+      "accountAuthSource": "{{actor}} a changé où le mot de passe de {{target}} est vérifié",
+      "accountOauthRevoked": "{{actor}} a déconnecté une appli de {{target}}",
+      "alertAcknowledge": "{{actor}} a cliqué sur « Vu » pour l'alerte {{target}}",
+      "domainMaskedAddresses": "{{actor}} a modifié les adresses masquées de {{target}}",
+      "groupCreate": "{{actor}} a créé le groupe {{target}}",
+      "groupUpdate": "{{actor}} a modifié le groupe {{target}}",
+      "groupRemove": "{{actor}} a supprimé le groupe {{target}}",
+      "sharedMailboxCreate": "{{actor}} a créé la boîte partagée {{target}}",
+      "sharedMailboxMembers": "{{actor}} a modifié les membres de la boîte partagée {{target}}"
     },
     "details": {
       "adminOn": "est maintenant admin",
@@ -637,7 +894,11 @@
       "protocolsNone": "tous les protocoles désactivés",
       "redirectTo": "le courrier va à {{address}}",
       "redirectNone": "le courrier est refusé",
-      "appPassword": "mot de passe d'application « {{value}} »"
+      "appPassword": "mot de passe d'application « {{value}} »",
+      "switchedOn": "activé",
+      "switchedOff": "désactivé",
+      "authSource": "désormais : {{value}}",
+      "oauthApp": "appli « {{value}} »"
     },
     "entry": {
       "actor": "Qui",
@@ -740,7 +1001,8 @@
         "imaps": "Indique aux applis de messagerie où lire le courrier (IMAP, port 993).",
         "submissions": "Indique aux applis de messagerie où envoyer le courrier avec TLS (port 465).",
         "submission": "Indique aux applis de messagerie où envoyer le courrier avec STARTTLS (port 587).",
-        "caa": "Seul Let's Encrypt peut délivrer des certificats pour le nom du serveur, et uniquement au compte propre de ce serveur. Garde TLS privé derrière une UwUMail Gateway."
+        "caa": "Seul Let's Encrypt peut délivrer des certificats pour le nom du serveur, et uniquement au compte propre de ce serveur. Garde TLS privé derrière une UwUMail Gateway.",
+        "tlsa": "Indique aux serveurs expéditeurs quelle clé porte le certificat de ce serveur, pour qu'ils ne lui livrent le courrier que de façon chiffrée (DANE). Nécessite une zone signée avec DNSSEC."
       },
       "notes": {
         "mxUpstream": "Pointe vers le serveur de messagerie en amont. C'est correct.",
@@ -766,7 +1028,12 @@
         "mtaStsPolicyInvalid": "Aucune politique valide n'y est servie.",
         "caaWithoutAccount": "Autorise aussi d'autres comptes ou autorités de certification. Avec accounturi, seul ce serveur obtient des certificats.",
         "caaOtherAccount": "Désigne un autre compte Let's Encrypt. Ce serveur ne pourra pas renouveler son certificat tant que l'enregistrement ne désigne pas le sien.",
-        "caaForbids": "N'autorise pas ce serveur à obtenir son certificat auprès de Let's Encrypt. Le renouvellement échouera."
+        "caaForbids": "N'autorise pas ce serveur à obtenir son certificat auprès de Let's Encrypt. Le renouvellement échouera.",
+        "tlsaRecommended": "La zone est signée avec DNSSEC : les serveurs qui vérifient DANE peuvent s'assurer qu'ils atteignent bien ce serveur. Le serveur garde sa clé en renouvelant le certificat, l'enregistrement reste donc valable.",
+        "tlsaKeyKept": "Correspond à la clé du serveur. La clé reste la même quand le certificat est renouvelé.",
+        "tlsaMismatch": "Ne correspond à aucun certificat présenté par ce serveur. Les serveurs qui vérifient DANE retiennent le courrier pour vos domaines jusqu'à ce que l'enregistrement indique la clé actuelle.",
+        "tlsaUnsigned": "La zone n'est pas signée avec DNSSEC, aucun serveur ne regarde donc encore cet enregistrement.",
+        "dnssecBogus": "Les signatures DNSSEC du nom du serveur ne sont pas valides. Les serveurs qui les vérifient ne peuvent pas du tout joindre le serveur."
       },
       "catchAll": "Catch-all",
       "catchAllHint": "Le courrier destiné à des adresses inexistantes va à cette personne. Cela attire aussi plus de spam.",
@@ -807,8 +1074,10 @@
         "imaps": "Lecture pour les applis de messagerie (IMAP)",
         "submissions": "Envoi pour les applis de messagerie (TLS)",
         "submission": "Envoi pour les applis de messagerie (STARTTLS)",
-        "caa": "Certificats uniquement pour ce serveur (CAA)"
-      }
+        "caa": "Certificats uniquement pour ce serveur (CAA)",
+        "tlsa": "DANE (TLSA)"
+      },
+      "tlsaKeyChange": "Avant que la clé du serveur change (vos propres fichiers de certificat, un déménagement vers un autre serveur ou la suppression de data/tls/acme/key.pem), publiez l'enregistrement de la nouvelle clé à côté de celui-ci et attendez un jour. Sinon, les serveurs qui vérifient DANE retiennent le courrier qui vous est destiné."
     },
     "forwards": {
       "title": "Adresses de transfert",
@@ -905,6 +1174,46 @@
       "unauthenticated_other": "{{count}} rapports provenaient d'expéditeurs qui n'ont pas pu prouver leur identité. Leurs chiffres pourraient être inventés."
     }
   },
+  "groups": {
+    "title": "Groupes",
+    "explain": "Une adresse pour plusieurs personnes, comme info@ ou bureau@ d'une association. Chacun reçoit le courrier dans sa propre boîte, avec son propre filtre et ses règles.",
+    "create": "Nouveau groupe",
+    "save": "Enregistrer",
+    "address": "Adresse",
+    "addressPlaceholder": "par exemple bureau",
+    "name": "Nom",
+    "namePlaceholder": "par exemple Bureau",
+    "whoMaySend": "Qui peut écrire",
+    "who": {
+      "anyone": "Tout le monde",
+      "members": "Seulement ses membres",
+      "domain": "Seulement les adresses de {{domain}}",
+      "anyoneHint": "Comme toute autre adresse, ouverte à tous.",
+      "membersHint": "Le courrier des autres est refusé à l'entrée.",
+      "domainHint": "Les personnes de ce domaine peuvent écrire, les autres sont refusées."
+    },
+    "sendAs": "Les membres peuvent envoyer au nom du groupe",
+    "sendAsHint": "Son adresse apparaît alors parmi leurs adresses d'envoi.",
+    "sendAsShort": "les membres envoient avec",
+    "members": {
+      "title": "Membres",
+      "search": "Chercher des personnes",
+      "chosen_one": "{{count}} choisi",
+      "chosen_other": "{{count}} choisis",
+      "none": "Personne trouvée."
+    },
+    "noMembers": "Pas encore de membres : le courrier y est refusé.",
+    "edit": "Modifier {{address}}",
+    "remove": "Retirer {{address}}",
+    "removeConfirm": "Retirer le groupe {{address}} ? Le courrier y est refusé désormais.",
+    "toasts": {
+      "created": "Groupe créé",
+      "saved": "Groupe enregistré",
+      "removed": "Groupe retiré"
+    },
+    "masked": "Adresses masquées",
+    "maskedHint": "Les personnes peuvent créer des adresses aléatoires sur ce domaine pour des sites web (Mon compte → Adresses masquées)."
+  },
   "reports": {
     "title": "Rapports",
     "intro": "Ce que les autres serveurs de messagerie rapportent sur vos domaines.",
@@ -968,6 +1277,25 @@
     "noDomains": {
       "title": "Aucun domaine pour l'instant",
       "body": "Les rapports arrivent une fois qu'un domaine est configuré et que du courrier est parti en son nom."
+    },
+    "sent": {
+      "title": "Rapports que nous envoyons",
+      "intro": "Une fois par jour, le serveur indique aux domaines auxquels il a livré du courrier comment s'est passé le chiffrement (rapports TLS, RFC 8460), s'ils le demandent avec un enregistrement _smtp._tls. Par e-mail, ils viennent de {{sender}}, signés avec DKIM. Vos propres domaines n'en reçoivent pas.",
+      "toggle": "Envoyer des rapports TLS",
+      "toggleHint": "Compte chaque livraison vers le serveur de messagerie d'un autre domaine, par jour : si TLS a fonctionné et selon quelle politique (MTA-STS, DANE ou aucune).",
+      "listTitle": "Envoyés ces {{days}} derniers jours",
+      "empty": "Aucun rapport n'est encore parti. Les premiers partent le lendemain du jour où du courrier a atteint un domaine qui en demande.",
+      "sessions": "{{successful}} connexions chiffrées, {{failed}} échouées",
+      "to": "À : {{destinations}}",
+      "quiet_one": "Un autre domaine ne voulait pas de rapport, ou est l'un des nôtres.",
+      "quiet_many": "{{count}} autres domaines ne voulaient pas de rapport, ou sont les nôtres.",
+      "quiet_other": "{{count}} autres domaines ne voulaient pas de rapport, ou sont les nôtres.",
+      "status": {
+        "sent": "Envoyé",
+        "failed": "Non envoyé",
+        "none": "Non souhaité",
+        "skipped": "Ignoré"
+      }
     }
   },
   "host": {
@@ -1239,7 +1567,8 @@
       "mail": "Envoi et réception",
       "apps": "Applis et webmail",
       "vpn": "VPN et proxy",
-      "branding": "Apparence"
+      "branding": "Apparence",
+      "login": "Connexion"
     },
     "mailIntro": "Comment le courrier quitte le serveur et ce qu'il accepte. Les modifications s'appliquent immédiatement, sans redémarrage.",
     "appsIntro": "Ce qui vaut pour les applis de messagerie et la boîte mail dans le navigateur. Les modifications s'appliquent immédiatement, sans redémarrage."
@@ -1491,7 +1820,10 @@
       "repeat": "Répéter le nouveau mot de passe",
       "hint": "Au moins 10 caractères. Une phrase de plusieurs mots est facile à retenir.",
       "submit": "Changer le mot de passe",
-      "changed": "Mot de passe changé. Les autres navigateurs ont été déconnectés."
+      "changed": "Mot de passe changé. Les autres navigateurs ont été déconnectés.",
+      "managedTitle": "Mot de passe",
+      "inDirectory": "Votre mot de passe est géré par l'annuaire de votre organisation (LDAP). Changez-le là-bas ; le nouveau fonctionne ici immédiatement.",
+      "atProvider": "Vous vous connectez via le service de connexion de votre organisation et n'avez pas de mot de passe ici. Les applis de messagerie se connectent avec OAuth ou un mot de passe d'application."
     },
     "sessions": {
       "title": "Navigateurs connectés",
@@ -1542,13 +1874,130 @@
       "forwardingRemoved": "Transfert vers {{address}} supprimé",
       "forwardingConfirmed": "{{address}} a confirmé le transfert",
       "forwardingDeclined": "{{address}} a refusé le transfert",
-      "forwardingConfirmationSent": "E-mail de confirmation envoyé à {{address}}"
+      "forwardingConfirmationSent": "E-mail de confirmation envoyé à {{address}}",
+      "oauthGranted": "Appli « {{name}} » connectée avec OAuth ({{scopes}})",
+      "oauthRevoked": "Appli « {{name}} » déconnectée",
+      "oauthTokenReused": "Un ancien jeton de l'appli « {{name}} » a servi une deuxième fois : l'appli a été déconnectée",
+      "oidcLinked": "Associé à la connexion chez {{issuer}}"
     },
     "loginMethods": {
       "password": "mot de passe",
       "totp": "mot de passe et appli",
       "recoveryCode": "mot de passe et code de récupération",
-      "passkey": "mot de passe et clé d'accès"
+      "passkey": "mot de passe et clé d'accès",
+      "oidc": "authentification unique"
+    },
+    "oauthApps": {
+      "title": "Applis connectées avec OAuth",
+      "none": "Aucune appli n'est connectée avec OAuth. Les applis de messagerie qui le permettent se connectent ici dans le navigateur au lieu d'utiliser un mot de passe d'application.",
+      "staysSignedIn": "Reste connectée",
+      "since": "Connectée le {{date}}",
+      "signOut": "Déconnecter",
+      "signOutTitle": "Déconnecter « {{name}} » ?",
+      "signOutBody": "L'appli n'aura plus accès à la boîte aux lettres jusqu'à ce que quelqu'un s'y connecte à nouveau.",
+      "signedOut": "« {{name}} » déconnectée"
+    }
+  },
+  "oauth": {
+    "title": "« {{name}} » souhaite accéder à votre compte",
+    "account": "Connecté en tant que",
+    "nameClaim": "L'appli se présente elle-même comme « {{name}} ». N'autorisez ceci que si vous venez vous-même de lancer la connexion dans cette appli.",
+    "returnsTo": "Vous retournerez ensuite à {{host}}.",
+    "returnsToDevice": "Vous retournerez ensuite à l'appli sur cet appareil ({{host}}).",
+    "scopesTitle": "L'appli pourra",
+    "scopes": {
+      "mail": {
+        "title": "Lire et ranger votre courrier",
+        "hint": "Messages, dossiers et règles de filtrage, via IMAP, JMAP et ManageSieve."
+      },
+      "smtp": {
+        "title": "Envoyer des e-mails en votre nom",
+        "hint": "Depuis vos adresses, via SMTP."
+      },
+      "dav": {
+        "title": "Utiliser vos agendas et contacts",
+        "hint": "Les lire et les modifier, via CalDAV et CardDAV."
+      },
+      "openid": {
+        "title": "Savoir que c'est vous",
+        "hint": "Votre compte sur ce serveur."
+      },
+      "profile": {
+        "title": "Voir votre nom",
+        "hint": "Le nom de votre compte."
+      },
+      "email": {
+        "title": "Voir votre adresse e-mail",
+        "hint": "Votre adresse principale."
+      },
+      "offline_access": {
+        "title": "Rester connectée",
+        "hint": "Jusqu'à ce que vous déconnectiez l'appli, sans vous redemander."
+      }
+    },
+    "revokeHint": "Vous pouvez déconnecter l'appli à tout moment sous Mon compte → Sécurité.",
+    "allow": "Autoriser",
+    "deny": "Refuser",
+    "otherAccount": "Vous n'êtes pas {{login}} ? Se connecter avec un autre compte",
+    "signingIn": "Connexion en cours …",
+    "invalidTitle": "Cette appli ne peut pas se connecter ici",
+    "invalid": {
+      "oauthClientUnknown": "Cette appli n'est pas enregistrée sur ce serveur. Configurez à nouveau le compte dans l'appli.",
+      "oauthRedirectInvalid": "L'appli demande à être renvoyée vers une adresse qu'elle n'a pas enregistrée. Par sécurité, rien n'a été envoyé."
+    },
+    "toPortal": "Vers le portail"
+  },
+  "externalLogin": {
+    "intro": "Connexion au portail auprès d'un autre fournisseur (OpenID Connect), ou vérification des mots de passe dans un annuaire LDAP. Les modifications s'appliquent immédiatement, sans redémarrage.",
+    "docs": "Guide : OpenID Connect et LDAP",
+    "oauthDocs": "Guide : applis de messagerie avec OAuth",
+    "test": "Tester la connexion",
+    "testOk": "Ça marche : {{detail}}",
+    "autoCreate": "Créer un compte à la première connexion",
+    "allowedDomains": "Domaines pour les nouveaux comptes",
+    "allowedDomainsHint": "Un par ligne, chacun un domaine de ce serveur. Vide : aucun nouveau compte.",
+    "oidc": {
+      "title": "OpenID Connect",
+      "intro": "Un bouton sur la page de connexion mène à votre service de connexion, par exemple Authentik, Keycloak ou Microsoft Entra ID.",
+      "enabled": "Connexion via un fournisseur OpenID Connect",
+      "enabledHint": "Les mots de passe définis ici continuent de fonctionner à côté.",
+      "redirectUri": "Enregistrez cette URI de redirection chez le fournisseur",
+      "issuer": "Émetteur (issuer)",
+      "issuerHint": "L'adresse du fournisseur. UwUMail lit le reste dans son /.well-known/openid-configuration.",
+      "clientId": "ID client",
+      "clientSecret": "Secret client",
+      "buttonLabel": "Nom du bouton",
+      "buttonLabelHint": "Le bouton affiche alors « Se connecter avec Authentik ». Vide : « Se connecter avec l'authentification unique ».",
+      "autoCreateHint": "Uniquement si le fournisseur garantit l'adresse et que son domaine est autorisé ci-dessous.",
+      "adminClaim": "Claim admin",
+      "adminClaimHint": "Le claim de la réponse du fournisseur qui liste les groupes ou rôles.",
+      "adminValue": "Valeur admin",
+      "adminValueHint": "Les nouveaux comptes dont le claim contient cette valeur deviennent admins."
+    },
+    "ldap": {
+      "title": "Annuaire LDAP",
+      "intro": "Les comptes réglés sur l'annuaire se connectent avec leur mot de passe de l'annuaire, dans le portail et dans les applis de messagerie. Les autres gardent leur mot de passe ici.",
+      "enabled": "Vérifier les mots de passe dans un annuaire LDAP",
+      "enabledHint": "Les comptes concernés se règlent sur la page de chaque personne. Les comptes créés depuis l'annuaire l'utilisent tout de suite.",
+      "url": "Adresse de l'annuaire",
+      "urlHint": "ldaps://…, ou ldap://… avec STARTTLS.",
+      "starttls": "STARTTLS sur ldap://",
+      "starttlsHint": "Chiffre la connexion avant l'envoi de tout mot de passe.",
+      "insecureLocalhost": "Autoriser ldap:// sans chiffrement sur cette machine",
+      "insecureLocalhostHint": "Uniquement pour un annuaire sur cette même machine (localhost), jamais à travers un réseau.",
+      "bindDn": "Compte de service (bind DN)",
+      "bindDnHint": "Recherche dans l'annuaire la personne qui se connecte.",
+      "bindPassword": "Mot de passe du compte de service",
+      "userDnTemplate": "Modèle de DN",
+      "userDnTemplateHint": "Avec un modèle, aucune recherche : le DN de la personne est construit à partir de l'adresse. {user} est la partie avant le @, {email} l'adresse entière.",
+      "baseDn": "Base de recherche",
+      "userFilter": "Filtre de recherche",
+      "userFilterHint": "{email} est l'adresse entière saisie à la connexion, {user} la partie avant le @.",
+      "mailAttribute": "Attribut de l'adresse",
+      "nameAttribute": "Attribut du nom",
+      "adminGroupDn": "Groupe admin",
+      "adminGroupDnHint": "Les nouveaux comptes membres de ce groupe (memberOf) deviennent admins.",
+      "autoCreateHint": "Si l'annuaire connaît l'adresse et que son domaine est autorisé ci-dessous."
     }
   },
   "fetch": {
@@ -1633,6 +2082,80 @@
       "spam": "Le courrier relevé est réévalué ici. Ce que le fournisseur considérait comme du spam compte comme indice et ne décide pas à lui seul.",
       "first": "Ce qui est déjà dans la boîte mail n'arrive que si vous le voulez : avec « Récupérer le courrier déjà présent » lors de l'ajout, ou plus tard avec le bouton horloge sur sa ligne. Il arrive avec la date du fournisseur, pas comme une pile de nouveaux messages datés d'aujourd'hui.",
       "password": "Le mot de passe ne fait qu'entrer et ne ressort jamais. Le serveur en a besoin pour se connecter chez le fournisseur et le garde scellé."
+    }
+  },
+  "moving": {
+    "title": "Déménagement",
+    "intro": "Apportez votre courrier de votre ancien fournisseur : chaque dossier, lu ou non lu comme avant, avec sa date. Le serveur copie en arrière-plan, vous pouvez donc fermer cette page.",
+    "noMailbox": {
+      "title": "Pas de boîte aux lettres ici",
+      "body": "Votre compte n'a pas de boîte aux lettres dans laquelle le courrier pourrait arriver. Demandez à votre administrateur."
+    },
+    "form": {
+      "title": "Déménager une boîte aux lettres",
+      "explain": "Votre ancienne adresse et son mot de passe suffisent : le serveur trouve lui-même le serveur IMAP de votre fournisseur et s'y connecte une fois pour vérifier.",
+      "address": "Ancienne adresse",
+      "addressHint": "L'adresse chez votre ancien fournisseur.",
+      "password": "Mot de passe",
+      "passwordHint": "Souvent un mot de passe d'application du fournisseur, pas celui avec lequel vous vous connectez. Il reste scellé jusqu'à ce que vous ayez terminé.",
+      "manual": "Saisir le serveur moi-même",
+      "host": "Serveur IMAP",
+      "hostHint": "Avec TLS, généralement le port 993.",
+      "port": "Port",
+      "login": "Nom d'utilisateur",
+      "loginHint": "Vide si c'est l'adresse elle-même.",
+      "searching": "Recherche du serveur de votre fournisseur …",
+      "start": "Commencer le déménagement",
+      "started": "Le déménagement a commencé et se poursuit en arrière-plan."
+    },
+    "hints": {
+      "gmail": "Gmail ne laisse entrer d'autres serveurs qu'avec un mot de passe d'application : activez la validation en deux étapes dans votre compte Google, puis créez-en un sur myaccount.google.com/apppasswords. IMAP est toujours activé chez Gmail. Les libellés y sont des dossiers ; un message avec plusieurs libellés arrive une seule fois, dans le premier dossier où il est trouvé.",
+      "outlook": "Outlook.com et Hotmail ne laissent entrer que des applications qui se connectent via Microsoft, ce qu'un serveur personnel ne peut pas faire pour vous. Copiez plutôt le courrier avec un logiciel de messagerie : ajoutez les deux boîtes et faites glisser les dossiers.",
+      "gmx": "GMX ne laisse entrer d'autres serveurs qu'après votre autorisation : dans les paramètres de GMX, sous E-Mail → POP3/IMAP Abruf, activez l'accès IMAP. Avec l'authentification à deux facteurs, il faut un mot de passe d'application.",
+      "webde": "WEB.DE ne laisse entrer d'autres serveurs qu'après votre autorisation : dans les paramètres de WEB.DE, sous E-Mail → POP3/IMAP Abruf, activez l'accès IMAP. Avec l'authentification à deux facteurs, il faut un mot de passe d'application."
+    },
+    "job": {
+      "from": "depuis {{host}} en tant que {{login}}",
+      "queued": "En attente de son tour …",
+      "running": "Copie en cours …",
+      "looking": "Examen des dossiers …",
+      "progress": "{{done}} sur {{total}} messages · {{size}}",
+      "progressLabel": "Avancement du déménagement",
+      "folders": "dossier {{done}} sur {{total}}",
+      "skipped": "{{count}} message était déjà là et a été ignoré",
+      "skipped_other": "{{count}} messages étaient déjà là et ont été ignorés",
+      "done": "Tout est là.",
+      "doneAt": "Tout ce qui s'y trouvait est ici, au {{date}}."
+    },
+    "errors": {
+      "quotaExceeded": "Votre boîte aux lettres ici est pleine. Faites de la place ou demandez-en plus à votre administrateur, puis continuez : cela reprend là où cela s'est arrêté.",
+      "loginRefused": "L'ancien fournisseur a refusé le mot de passe. Saisissez-en un nouveau (souvent un mot de passe d'application) et continuez.",
+      "unreachable": "L'ancien fournisseur n'a pas pu être joint. Réessayez plus tard.",
+      "notPublic": "Le serveur de l'ancien fournisseur n'est pas sur Internet, pour autant que ce serveur puisse en juger.",
+      "noMailbox": "Votre compte n'a pas de boîte aux lettres dans laquelle le courrier pourrait arriver.",
+      "stopped": "En pause. Continuez quand vous voulez ; cela reprend là où cela s'est arrêté.",
+      "failed": "Quelque chose s'est mal passé. Continuez pour réessayer."
+    },
+    "actions": {
+      "pause": "Mettre en pause",
+      "continue": "Continuer",
+      "syncAgain": "Synchroniser à nouveau",
+      "finish": "Terminé, supprimer les identifiants",
+      "finishConfirm": "Terminé avec {{address}} ? Le mot de passe de l'ancienne boîte est supprimé ; le courrier arrivé reste.",
+      "newPassword": "Nouveau mot de passe"
+    },
+    "toasts": {
+      "queued": "Cela reprend dans un instant.",
+      "finished": "Terminé. Les identifiants de l'ancienne boîte sont supprimés."
+    },
+    "about": {
+      "title": "Bon à savoir",
+      "what": "Chaque dossier est repris, les dossiers spéciaux (envoyés, brouillons, indésirables, corbeille, archives) dans les vôtres, et chaque message avec sa date, lu, marqué ou répondu comme avant.",
+      "twice": "Rien n'arrive deux fois : un message déjà présent ici, selon son Message-ID ou son contenu, est ignoré.",
+      "switch": "Prenez votre temps : déménagez une fois maintenant, donnez votre nouvelle adresse et utilisez « Synchroniser à nouveau » quand vous voulez. Seul ce qui est arrivé chez l'ancien fournisseur depuis est récupéré.",
+      "password": "Le mot de passe ne sert qu'à copier, il est gardé scellé et supprimé dès que vous cliquez sur « Terminé, supprimer les identifiants ».",
+      "calendars": "Les calendriers et les contacts déménagent séparément :",
+      "calendarsLink": "Agendas et contacts → Transférer depuis un autre fournisseur"
     }
   },
   "mailbox": {
@@ -1725,6 +2248,54 @@
     "releasedHint": "Le courrier destiné à ces adresses est refusé jusqu'à ce que vous les repreniez ou que le délai expire.",
     "reservedUntil": "Réservée jusqu'au {{date}}",
     "restore": "Reprendre"
+  },
+  "memberships": {
+    "title": "Groupes et boîtes partagées",
+    "intro": "Un admin vous a ajouté ici. Le courrier d'un groupe arrive dans votre propre boîte ; une boîte partagée apparaît à côté de vos dossiers.",
+    "group": "Groupe",
+    "shared": "Boîte partagée",
+    "maySend": "vous pouvez envoyer avec",
+    "sharedHint": "Dans les applications de messagerie, une boîte partagée apparaît sous Shared/, dans le webmail comme un compte à part. Ce que vous envoyez avec est aussi gardé dans son dossier Envoyés."
+  },
+  "masked": {
+    "pageTitle": "Adresses masquées",
+    "intro": "Une adresse aléatoire pour chaque site. Si l'une reçoit du spam, vous savez qui l'a transmise, et vous la coupez sans toucher à votre vraie adresse.",
+    "new": "Nouvelle adresse masquée",
+    "closed": "Les adresses masquées ne sont pas encore ouvertes sur ce serveur. Demandez à l'admin de les activer pour un domaine.",
+    "description": "À quoi elle sert",
+    "descriptionPlaceholder": "par exemple la lettre de la boulangerie",
+    "site": "Site web",
+    "siteHint": "Facultatif, pour vous souvenir où vous l'avez utilisée.",
+    "prefix": "Préfixe",
+    "prefixHint": "Facultatif : lettres a–z, chiffres et _ devant la partie aléatoire.",
+    "prefixPlaceholder": "par exemple shop",
+    "domain": "Domaine",
+    "create": "Créer une adresse",
+    "created": "{{address}} est prête et copiée",
+    "listTitle": "Vos adresses masquées",
+    "filter": {
+      "active": "En service",
+      "deleted": "Supprimées"
+    },
+    "empty": "Rien pour l'instant.",
+    "noNote": "Pas de note",
+    "state": {
+      "pending": "Attend son premier message",
+      "enabled": "Active",
+      "disabled": "Coupée : le courrier va discrètement à la corbeille",
+      "deleted": "Supprimée : le courrier est refusé"
+    },
+    "lastMessage": "dernier message {{date}}",
+    "noMessage": "aucun message",
+    "enable": "Activer",
+    "disable": "Couper",
+    "delete": "Supprimer",
+    "deleteConfirm": "Supprimer {{address}} ? Le courrier y est refusé désormais. Vous pourrez la réactiver ; personne d'autre ne l'aura jamais.",
+    "toasts": {
+      "enabled": "Activée",
+      "disabled": "Coupée, le courrier va à la corbeille",
+      "deleted": "Supprimée, le courrier est refusé"
+    }
   },
   "storage": {
     "title": "Stockage",
@@ -2145,7 +2716,7 @@
     "helperOld": "L'assistant sur cette machine est trop ancien pour le bouton de mise à jour. Exécutez ceci une fois sur la machine — cela met aussi l'assistant à jour, et ensuite vous mettez à jour ici d'un clic :"
   },
   "backups": {
-    "intro": "Chaque nuit, le serveur sauvegarde le courrier, les paramètres, les calendriers et les contacts sur un serveur SFTP, comme un NAS. Après la première fois, il n'envoie que ce qui est nouveau.",
+    "intro": "Chaque nuit, le serveur sauvegarde le courrier, les paramètres, les calendriers et les contacts : sur un serveur SFTP comme un NAS, dans un bucket S3 ou dans un dossier, par exemple un disque monté. Après la première fois, il n'envoie que ce qui est nouveau.",
     "status": {
       "title": "État",
       "running": "La sauvegarde est en cours …",
@@ -2159,7 +2730,7 @@
       "started": "La sauvegarde démarre"
     },
     "target": {
-      "title": "Serveur de sauvegarde",
+      "title": "Destination des sauvegardes",
       "explain": "Où vont les sauvegardes. Le dossier est créé s'il n'existe pas ; utilisez-en un par serveur.",
       "host": "Adresse",
       "port": "Port",
@@ -2177,7 +2748,28 @@
       "test": "Tester la connexion",
       "testOk": "La connexion fonctionne",
       "testFirst": "La connexion fonctionne. Le serveur a présenté {{hostKey}} ; désormais, ce doit être cette clé.",
-      "trustNewKey": "Faire confiance à la nouvelle clé"
+      "trustNewKey": "Faire confiance à la nouvelle clé",
+      "kind": "Sauvegarder vers",
+      "kindSftp": "Serveur SFTP",
+      "kindS3": "Bucket S3",
+      "kindFolder": "Dossier",
+      "explainS3": "Amazon S3 ou tout serveur qui parle sa langue : MinIO, Backblaze B2, Hetzner Object Storage, Wasabi et d'autres. Utilisez un bucket, ou un dossier dans un bucket, pour ce serveur seul.",
+      "explainFolder": "Un dossier sur cette machine : un second disque, ou un partage NAS monté dans le conteneur. Il doit déjà exister, en dehors du répertoire de données du serveur.",
+      "endpoint": "Adresse S3",
+      "endpointHint": "Seulement le serveur, sans le bucket, par ex. https://s3.eu-central-1.amazonaws.com. http:// ne fonctionne que dans votre propre réseau.",
+      "bucket": "Bucket",
+      "prefix": "Dossier dans le bucket",
+      "prefixHint": "Vide pour tout le bucket",
+      "region": "Région",
+      "regionHint": "par ex. eu-central-1 ; us-east-1 si vide",
+      "accessKey": "Clé d'accès",
+      "secretKey": "Clé secrète",
+      "secretKeyKept": "Laissez vide pour garder la clé enregistrée.",
+      "pathStyle": "Bucket dans le chemin",
+      "pathStyleHint": "https://serveur/bucket au lieu de https://bucket.serveur. MinIO et beaucoup de serveurs du réseau local le demandent.",
+      "folder": "Dossier",
+      "folderHint": "Un chemin complet, par ex. /backup",
+      "testWritable": "La connexion fonctionne : un fichier de test a été écrit, relu puis supprimé."
     },
     "schedule": {
       "enabled": "Sauvegarder chaque nuit",
@@ -2220,6 +2812,35 @@
       "keptGateway": "L'appairage de passerelle de cette machine a été conservé, pas celui de la sauvegarde.",
       "oldDatabase": "L'ancienne base de données se trouve dans le dossier de données sous uwumail.db.replaced.*. Supprimez-la une fois que vous en êtes sûr.",
       "forget": "Compris"
+    },
+    "mailbox": {
+      "title": "Restaurer une boîte aux lettres",
+      "explain": "Reprend le courrier d'une personne dans un instantané pendant que le serveur continue de tourner. Il revient à côté de ce qui s'y trouve maintenant, dans un nouveau dossier « Restored <date> » avec les anciens dossiers en dessous. Les messages que la boîte contient encore sont ignorés.",
+      "snapshot": "Instantané",
+      "latest": "Le plus récent",
+      "open": "Ouvrir",
+      "openFailed": "Impossible d'ouvrir l'instantané : {{error}}",
+      "opening": "Récupération de la base de données de l'instantané : {{done}} sur {{total}} …",
+      "opened": "Ouvert : l'instantané du {{time}}.",
+      "restoring": "Restauration du courrier de {{account}} : {{done}} sur {{total}} …",
+      "lastDone": "{{count}} message est revenu chez {{account}}, dans le dossier « {{folder}} » ; {{skipped}} y étaient encore.",
+      "lastDone_other": "{{count}} messages sont revenus chez {{account}}, dans le dossier « {{folder}} » ; {{skipped}} y étaient encore.",
+      "lastFailed": "La restauration vers {{account}} s'est arrêtée : {{error}}. {{count}} messages étaient revenus jusque-là.",
+      "nobody": "Personne n'avait de boîte aux lettres dans cet instantané.",
+      "person": "Personne",
+      "personLine": "{{login}} ({{count}})",
+      "into": "Dans la boîte aux lettres de",
+      "intoHint": "Vide pour la même adresse. Pour quelqu'un dont l'adresse a changé depuis.",
+      "which": "Dossiers",
+      "allFolders": "Tous les dossiers",
+      "someFolders": "Choisir des dossiers",
+      "inbox": "Boîte de réception",
+      "how": "Rien de ce qui s'y trouve maintenant n'est modifié ni remplacé. Une sauvegarde attend que ce soit terminé.",
+      "restore": "Restaurer",
+      "close": "Fermer l'instantané",
+      "nothingMissing": "Rien ne manquait : le message de l'instantané est toujours chez {{account}}, rien n'avait donc à revenir.",
+      "nothingMissing_other": "Rien ne manquait : les {{count}} messages de l'instantané sont tous encore chez {{account}}, rien n'avait donc à revenir.",
+      "nothingThere": "L'instantané n'avait aucun message pour {{account}} dans ces dossiers, rien n'est donc revenu."
     }
   },
   "spam": {

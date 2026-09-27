@@ -1,5 +1,6 @@
 //! Backups of a UwUMail server: the database, every mail blob and the other files of the data
-//! directory, deduplicated and (by default) encrypted, on an SFTP server.
+//! directory, deduplicated and (by default) encrypted, on an SFTP server, in an S3 bucket or in a
+//! folder of this machine.
 //!
 //! The first backup uploads everything; later ones only what is new. Mail blobs are already stored
 //! by content, so each one is uploaded once. The database copy is cut into content-defined chunks,
@@ -7,10 +8,13 @@
 //! objects no snapshot needs anymore go with them.
 
 pub mod format;
+pub mod mailbox;
 pub mod retention;
+pub mod s3;
 pub mod service;
 pub mod sftp;
 pub mod storage;
+pub mod target;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -19,10 +23,15 @@ use serde::Serialize;
 use uwumail_store::{BlobHash, Store};
 
 pub use format::{Codec, Manifest, RepoConfig, RepoKey};
+pub use mailbox::{MailboxProgress, MailboxRestoreReport, SnapshotFolder, SnapshotPerson};
 pub use retention::Retention;
-pub use service::{BackupSettings, BackupStatus, Backups, Fetching, Look, READY_FILE, STAGING_DIR, Staged};
-pub use sftp::{Login, Target};
+pub use service::{
+    BackupSettings, BackupStatus, Backups, Fetching, Look, MailboxRestore, MailboxRestoreDone, READY_FILE, STAGING_DIR,
+    Staged,
+};
+pub use sftp::{Login, SftpTarget};
 pub use storage::Storage;
+pub use target::{FolderTarget, S3Target, Target};
 
 use crate::format::{CONFIG_PATH, FileEntry, checked_id, is_snapshot_name, object_path};
 
@@ -61,6 +70,9 @@ pub enum Error {
     HostKeyChanged { expected: String, seen: String },
     #[error("{0}")]
     Config(String),
+    /// Something else has the backup server right now: a backup, a restore. Try again later.
+    #[error("{0}")]
+    Busy(String),
     #[error("file error: {0}")]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -384,13 +396,7 @@ pub async fn restore(repo: &Repository, snapshot: &str, data_dir: &Path) -> Resu
     tokio::fs::create_dir_all(data_dir).await?;
 
     let partial = data_dir.join("uwumail.db.restoring");
-    let mut database = tokio::fs::File::create(&partial).await?;
-    for id in &manifest.database {
-        let chunk = repo.get(checked_id(id)?, CHUNK_MAX as u64).await?;
-        tokio::io::AsyncWriteExt::write_all(&mut database, &chunk).await?;
-    }
-    tokio::io::AsyncWriteExt::flush(&mut database).await?;
-    drop(database);
+    write_database(repo, &manifest, &partial, &mut |_| {}).await?;
 
     for hash in &manifest.blobs {
         let path = data_dir.join("blobs").join(&checked_id(hash)?[0..2]).join(&hash[2..4]).join(hash);
@@ -417,6 +423,25 @@ pub async fn restore(repo: &Repository, snapshot: &str, data_dir: &Path) -> Resu
     }
     tokio::fs::rename(partial, data_dir.join("uwumail.db")).await?;
     Ok(manifest)
+}
+
+/// Puts a snapshot's database together from its chunks, telling `progress` how many bytes are there.
+pub(crate) async fn write_database(
+    repo: &Repository,
+    manifest: &Manifest,
+    path: &Path,
+    progress: &mut (dyn FnMut(u64) + Send),
+) -> Result<(), Error> {
+    let mut database = tokio::fs::File::create(path).await?;
+    let mut written = 0;
+    for id in &manifest.database {
+        let chunk = repo.get(checked_id(id)?, CHUNK_MAX as u64).await?;
+        tokio::io::AsyncWriteExt::write_all(&mut database, &chunk).await?;
+        written += chunk.len() as u64;
+        progress(written);
+    }
+    tokio::io::AsyncWriteExt::flush(&mut database).await?;
+    Ok(())
 }
 
 /// Whether this build can put a snapshot back. A newer server's database carries migrations this

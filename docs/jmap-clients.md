@@ -9,7 +9,7 @@ app and the webmail can use it. This page says how to connect them and what was 
 | --- | --- |
 | Session URL | `https://mail.example.com/.well-known/jmap` (or `/jmap/session`) |
 | WebSocket | `wss://mail.example.com/jmap/ws`, subprotocol `jmap` ([jmap-tokens.md](jmap-tokens.md#websocket-rfc-8887)) |
-| Push | EventSource from the session's `eventSourceUrl`, or over the WebSocket |
+| Push | EventSource from the session's `eventSourceUrl`, or over the WebSocket; with the app closed, Web Push or UnifiedPush through `PushSubscription` ([jmap-push.md](jmap-push.md)) |
 
 Two ways to sign in ([jmap-tokens.md](jmap-tokens.md)):
 

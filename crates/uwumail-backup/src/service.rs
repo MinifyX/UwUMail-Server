@@ -3,13 +3,14 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, Notify, watch};
 use uwumail_store::Store;
 
-use crate::sftp::Sftp;
+use crate::mailbox::{MailboxProgress, MailboxRestoreReport, SnapshotPerson};
 use crate::{BackupReport, Error, Manifest, RepoKey, Repository, Retention, Storage, Target};
 
 const SETTINGS_KEY: &str = "backup.settings";
@@ -23,6 +24,8 @@ const RETRY_SECS: i64 = 3600;
 /// A run that has not finished after this long was cut short by a restart, not still going. Without
 /// the limit a single kill would keep `blocks` saying "a backup is running" forever.
 const RUN_MAX_SECS: i64 = 6 * 3600;
+/// Where the database of a snapshot is put together to take one mailbox out of it.
+const MAILBOX_DIR: &str = "backup-tmp/restore-mailbox";
 
 fn now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |since| since.as_secs() as i64)
@@ -96,8 +99,9 @@ impl Default for Staged {
 /// A look at a backup server, before anything is decided.
 #[derive(Debug, Clone)]
 pub struct Look {
-    /// The fingerprint of the backup server's host key, to check against what you expect.
-    pub host_key: String,
+    /// The fingerprint of the backup server's host key, to check against what you expect. Only
+    /// SFTP servers have one.
+    pub host_key: Option<String>,
     pub encrypted: bool,
     /// Newest first. Empty for an encrypted repository nobody gave the key for.
     pub snapshots: Vec<(String, Manifest)>,
@@ -105,7 +109,7 @@ pub struct Look {
 
 /// Where a restore has got to, in this process. It lives in memory on purpose: the whole point of
 /// the exercise is that the process ends, and after that the file beside the data speaks for it.
-#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Fetching {
     /// `idle`, `fetching`, `ready` or `failed`.
@@ -118,12 +122,74 @@ pub struct Fetching {
     pub total_bytes: u64,
 }
 
+// Not derived: the portal hides the restore card while the state is `idle`, and an empty state would
+// show it with nothing in it.
+impl Default for Fetching {
+    fn default() -> Self {
+        Self {
+            state: "idle".into(),
+            snapshot: String::new(),
+            error: String::new(),
+            started_at: 0,
+            done_bytes: 0,
+            total_bytes: 0,
+        }
+    }
+}
+
+/// Taking one person's mail out of a snapshot: first the snapshot is opened (its database fetched),
+/// then the admin picks a person and folders, then their mail comes back. Lives in memory, like
+/// [`Fetching`]; the snapshot's database waits in the data directory until it is closed.
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MailboxRestore {
+    /// `idle`, `opening`, `open`, `restoring` or `failed`.
+    pub state: String,
+    pub snapshot: String,
+    /// When the snapshot was made.
+    pub created_at: i64,
+    pub error: String,
+    /// How much of the snapshot's database is here while it is opened, and how much there is.
+    pub done_bytes: u64,
+    pub total_bytes: u64,
+    /// Everybody in the snapshot, once it is open.
+    pub people: Vec<SnapshotPerson>,
+    /// Whose mail is coming back right now, and how far it got.
+    pub account: String,
+    pub total: u64,
+    pub done: u64,
+    pub restored: u64,
+    pub skipped: u64,
+    /// How the last restore of a mailbox from this snapshot went.
+    pub last: Option<MailboxRestoreDone>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MailboxRestoreDone {
+    /// The person in the snapshot, and the account here it went into.
+    pub account: String,
+    pub into: String,
+    pub folder: String,
+    pub restored: u64,
+    pub skipped: u64,
+    /// Empty when it went well.
+    pub error: String,
+    pub finished_at: i64,
+}
+
 struct Inner {
     store: Store,
     hostname: String,
     version: String,
     wakeup: Notify,
-    running: Mutex<()>,
+    /// Held while anything reads or writes the backup server at length: a backup, or taking a
+    /// mailbox out of a snapshot. A backup prunes what no snapshot needs, and must not do that
+    /// under a restore that is reading it.
+    running: Arc<Mutex<()>>,
+    /// Whether the one holding `running` is a backup.
+    backing_up: AtomicBool,
+    mailbox: std::sync::Mutex<MailboxRestore>,
     /// Where the server keeps its data. Only set when a restore is possible at all -- the command
     /// line and the tests have no use for it.
     data_dir: std::sync::OnceLock<PathBuf>,
@@ -145,7 +211,9 @@ impl Backups {
                 hostname: hostname.to_owned(),
                 version: version.to_owned(),
                 wakeup: Notify::new(),
-                running: Mutex::new(()),
+                running: Arc::new(Mutex::new(())),
+                backing_up: AtomicBool::new(false),
+                mailbox: std::sync::Mutex::default(),
                 data_dir: std::sync::OnceLock::new(),
                 stop: std::sync::OnceLock::new(),
                 fetching: std::sync::Mutex::default(),
@@ -161,9 +229,9 @@ impl Backups {
     /// recovery key answers `(true, [])` rather than an error: "there is something here, and you
     /// need the key" is a more useful thing to show than a failure.
     pub async fn look_at(target: &Target, key: Option<&str>) -> Result<Look, Error> {
-        let sftp = Sftp::connect(target).await?;
-        let mut look = Look { host_key: sftp.host_key.clone(), encrypted: false, snapshots: Vec::new() };
-        let storage = Storage::Sftp(sftp);
+        let storage = Storage::open(target).await?;
+        let mut look =
+            Look { host_key: storage.host_key().map(str::to_owned), encrypted: false, snapshots: Vec::new() };
         let encrypted = match Repository::is_encrypted(&storage).await {
             Ok(encrypted) => encrypted,
             Err(err) => {
@@ -239,7 +307,10 @@ impl Backups {
             return Err(Error::Config("a restore is already waiting; restart the server to put it in place".into()));
         }
         if self.is_running() {
-            return Err(Error::Config("a backup is running right now".into()));
+            return Err(Error::Busy("a backup is running right now".into()));
+        }
+        if self.mailbox_busy() {
+            return Err(Error::Busy("a mailbox is being restored right now".into()));
         }
         // Claimed here, under the lock and before anything is awaited. Checking first and setting
         // after would let two clicks a moment apart both get through, and the second one empties the
@@ -247,7 +318,7 @@ impl Backups {
         {
             let mut progress = self.inner.fetching.lock().expect("restore progress poisoned");
             if progress.state == "fetching" {
-                return Err(Error::Config("a restore is already being fetched".into()));
+                return Err(Error::Busy("a restore is already being fetched".into()));
             }
             *progress = Fetching {
                 state: "fetching".into(),
@@ -387,7 +458,7 @@ impl Backups {
     }
 
     pub fn is_running(&self) -> bool {
-        self.inner.running.try_lock().is_err()
+        self.inner.backing_up.load(Ordering::SeqCst)
     }
 
     /// Asks the scheduler to back up right away.
@@ -395,22 +466,36 @@ impl Backups {
         self.inner.wakeup.notify_one();
     }
 
-    /// Opens the repository, remembering the host key the first time.
+    /// Opens the repository, remembering an SFTP server's host key the first time.
     async fn open(&self, settings: &mut BackupSettings) -> Result<Repository, Error> {
         let target = settings.target.as_mut().ok_or_else(|| Error::Config("no backup server is set up".into()))?;
-        let sftp = Sftp::connect(target).await?;
-        if target.host_key.is_none() {
-            target.host_key = Some(sftp.host_key.clone());
+        let storage = Storage::open(target).await?;
+        if let (Some(sftp), Some(seen)) = (target.as_sftp_mut(), storage.host_key())
+            && sftp.host_key.is_none()
+        {
+            sftp.host_key = Some(seen.to_owned());
             self.save_settings(settings).await?;
         }
         let key = settings.key.as_deref().map(RepoKey::from_recovery_text).transpose()?;
-        Repository::open(Storage::Sftp(sftp), key, now()).await
+        Repository::open(storage, key, now()).await
+    }
+
+    /// The repository the settings name, for the command line. Close its storage when done.
+    pub async fn repository(&self) -> Result<Repository, Error> {
+        let mut settings = self.settings().await?;
+        self.open(&mut settings).await
     }
 
     /// Backs up now, unless one is running already.
     pub async fn run_now(&self) -> Result<BackupReport, Error> {
-        let _running =
-            self.inner.running.try_lock().map_err(|_| Error::Config("a backup is running already".into()))?;
+        let _running = self.inner.running.try_lock().map_err(|_| {
+            Error::Busy(if self.mailbox_busy() {
+                "a mailbox is being restored from a snapshot right now".into()
+            } else {
+                "a backup is running already".into()
+            })
+        })?;
+        let _flag = RunningFlag::raise(&self.inner.backing_up);
         let mut status = self.status().await;
         let started = now();
         status.last_attempt_at = Some(started);
@@ -468,6 +553,304 @@ impl Backups {
         result
     }
 
+    /// Where taking a mailbox out of a snapshot stands.
+    pub fn mailbox_restore(&self) -> MailboxRestore {
+        self.inner.mailbox.lock().expect("mailbox restore poisoned").clone()
+    }
+
+    /// Whether a snapshot is being opened or a mailbox restored right now.
+    pub fn mailbox_busy(&self) -> bool {
+        matches!(self.mailbox_restore().state.as_str(), "opening" | "restoring")
+    }
+
+    fn set_mailbox(&self, change: impl FnOnce(&mut MailboxRestore)) {
+        change(&mut self.inner.mailbox.lock().expect("mailbox restore poisoned"));
+    }
+
+    fn mailbox_database(&self) -> PathBuf {
+        self.inner.store.data_dir().join(MAILBOX_DIR).join("uwumail.db")
+    }
+
+    /// Opens a snapshot to take mailboxes out of it: fetches its database and reads who is in it.
+    /// Returns as soon as the fetching has begun; `latest` takes the newest snapshot.
+    pub async fn open_snapshot(&self, snapshot: &str) -> Result<(), Error> {
+        let running = self.claim_mailbox("opening", |job| {
+            *job = MailboxRestore { state: "opening".into(), snapshot: snapshot.to_owned(), ..Default::default() };
+        })?;
+        let this = self.clone();
+        let snapshot = snapshot.to_owned();
+        tokio::spawn(async move {
+            let opened = this.fetch_snapshot_database(&snapshot).await;
+            drop(running);
+            match opened {
+                Ok((name, manifest, people)) => this.set_mailbox(|job| {
+                    job.state = "open".into();
+                    job.snapshot = name;
+                    job.created_at = manifest.created_at;
+                    job.people = people;
+                    job.done_bytes = job.total_bytes;
+                }),
+                Err(err) => {
+                    tracing::warn!(%err, "opening a snapshot to restore a mailbox failed");
+                    let _ = tokio::fs::remove_dir_all(this.inner.store.data_dir().join(MAILBOX_DIR)).await;
+                    this.set_mailbox(|job| {
+                        job.state = "failed".into();
+                        job.error = err.to_string();
+                        job.people.clear();
+                    });
+                }
+            }
+        });
+        Ok(())
+    }
+
+    /// Takes the slot for a job on a snapshot: the backup server to itself, and the state moved on.
+    fn claim_mailbox(
+        &self,
+        state: &str,
+        start: impl FnOnce(&mut MailboxRestore),
+    ) -> Result<tokio::sync::OwnedMutexGuard<()>, Error> {
+        if self.staged().is_some() || self.fetching().state == "fetching" {
+            return Err(Error::Busy("the whole server is being restored".into()));
+        }
+        let mut job = self.inner.mailbox.lock().expect("mailbox restore poisoned");
+        if matches!(job.state.as_str(), "opening" | "restoring") {
+            return Err(Error::Busy("a mailbox is being restored already".into()));
+        }
+        if state == "restoring" && job.state != "open" {
+            return Err(Error::Config("open a snapshot first".into()));
+        }
+        let running = self
+            .inner
+            .running
+            .clone()
+            .try_lock_owned()
+            .map_err(|_| Error::Busy("a backup is running right now".into()))?;
+        start(&mut job);
+        Ok(running)
+    }
+
+    async fn fetch_snapshot_database(&self, snapshot: &str) -> Result<(String, Manifest, Vec<SnapshotPerson>), Error> {
+        let mut settings = self.settings().await?;
+        let repo = self.open(&mut settings).await?;
+        let path = self.mailbox_database();
+        let fetched = async {
+            let name = match snapshot {
+                "latest" => repo
+                    .snapshots()
+                    .await?
+                    .pop()
+                    .ok_or_else(|| Error::Config("there are no snapshots on the backup server".into()))?,
+                name => name.to_owned(),
+            };
+            let manifest = repo.manifest(&name).await?;
+            self.set_mailbox(|job| {
+                job.snapshot = name.clone();
+                job.created_at = manifest.created_at;
+                job.total_bytes = manifest.database_size;
+            });
+            let this = self.clone();
+            let manifest = crate::mailbox::fetch_database(&repo, &name, &path, &mut move |bytes| {
+                this.set_mailbox(|job| job.done_bytes = bytes)
+            })
+            .await?;
+            Ok::<_, Error>((name, manifest))
+        }
+        .await;
+        repo.storage.close().await;
+        let (name, manifest) = fetched?;
+        let people = crate::mailbox::people(&path).await?;
+        Ok((name, manifest, people))
+    }
+
+    /// Puts one person's mail from the open snapshot back, into the account with the same login
+    /// here -- or into `into`, for a person who has another address by now. Only the chosen folders
+    /// of the snapshot when `folders` names them. Returns as soon as it has begun.
+    pub async fn start_mailbox_restore(
+        &self,
+        login: &str,
+        into: Option<&str>,
+        folders: Option<Vec<i64>>,
+        by: &str,
+    ) -> Result<(), Error> {
+        let target = into.map(str::trim).filter(|into| !into.is_empty()).unwrap_or(login);
+        let account = self
+            .inner
+            .store
+            .account(target)
+            .await?
+            .filter(|account| account.deleted_at.is_none() && account.has_mailbox())
+            .ok_or_else(|| {
+                Error::Config(format!("there is no mailbox {target} on this server to put the mail into"))
+            })?;
+        {
+            let job = self.mailbox_restore();
+            if job.state == "open" && !job.people.iter().any(|person| person.login == login) {
+                return Err(Error::Config(format!("{login} is not in this snapshot")));
+            }
+        }
+        let running = self.claim_mailbox("restoring", |job| {
+            job.state = "restoring".into();
+            job.account = login.to_owned();
+            job.error.clear();
+            (job.total, job.done, job.restored, job.skipped) = (0, 0, 0, 0);
+        })?;
+        let this = self.clone();
+        let (login, into, by) = (login.to_owned(), account.login.clone(), by.to_owned());
+        tokio::spawn(async move {
+            let created_at = this.mailbox_restore().created_at;
+            let result = this.restore_into(&login, account.id, created_at, folders).await;
+            drop(running);
+            let done = match result {
+                Ok(report) => {
+                    tracing::info!(%login, %into, restored = report.restored, skipped = report.skipped, %by, "a mailbox was restored from a snapshot");
+                    MailboxRestoreDone {
+                        account: login,
+                        into,
+                        folder: report.folder,
+                        restored: report.restored,
+                        skipped: report.skipped,
+                        error: String::new(),
+                        finished_at: now(),
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!(%login, %err, "restoring a mailbox from a snapshot failed");
+                    let job = this.mailbox_restore();
+                    MailboxRestoreDone {
+                        account: login,
+                        into,
+                        folder: crate::mailbox::restored_folder_name(created_at),
+                        restored: job.restored,
+                        skipped: job.skipped,
+                        error: err.to_string(),
+                        finished_at: now(),
+                    }
+                }
+            };
+            this.set_mailbox(|job| {
+                job.state = "open".into();
+                job.last = Some(done);
+            });
+        });
+        Ok(())
+    }
+
+    async fn restore_into(
+        &self,
+        login: &str,
+        account_id: i64,
+        created_at: i64,
+        folders: Option<Vec<i64>>,
+    ) -> Result<MailboxRestoreReport, Error> {
+        let mut settings = self.settings().await?;
+        let repo = self.open(&mut settings).await?;
+        let this = self.clone();
+        let mut progress = move |state: MailboxProgress| {
+            this.set_mailbox(|job| {
+                (job.total, job.done, job.restored, job.skipped) =
+                    (state.total, state.done, state.restored, state.skipped);
+            })
+        };
+        let result = crate::mailbox::restore_mailbox(
+            &self.inner.store,
+            &repo,
+            &self.mailbox_database(),
+            created_at,
+            login,
+            account_id,
+            folders,
+            &mut progress,
+        )
+        .await;
+        repo.storage.close().await;
+        result
+    }
+
+    /// Closes the open snapshot and removes its database.
+    pub async fn close_snapshot(&self) -> Result<(), Error> {
+        {
+            let mut job = self.inner.mailbox.lock().expect("mailbox restore poisoned");
+            if matches!(job.state.as_str(), "opening" | "restoring") {
+                return Err(Error::Busy("wait until the mailbox is back".into()));
+            }
+            *job = MailboxRestore::default();
+        }
+        let _ = tokio::fs::remove_dir_all(self.inner.store.data_dir().join(MAILBOX_DIR)).await;
+        Ok(())
+    }
+
+    /// Puts one person's mail from a snapshot back, from start to end, for the command line.
+    /// `folders` are paths like `Inbox` or `Projects/2025`, each with the folders inside it.
+    pub async fn restore_mailbox_now(
+        &self,
+        snapshot: &str,
+        login: &str,
+        into: Option<&str>,
+        folders: &[String],
+        progress: &mut (dyn FnMut(&str, MailboxProgress) + Send),
+    ) -> Result<MailboxRestoreReport, Error> {
+        let target = into.unwrap_or(login);
+        let account = self
+            .inner
+            .store
+            .account(target)
+            .await?
+            .filter(|account| account.deleted_at.is_none() && account.has_mailbox())
+            .ok_or_else(|| {
+                Error::Config(format!("there is no mailbox {target} on this server to put the mail into"))
+            })?;
+        let _running = self
+            .inner
+            .running
+            .clone()
+            .try_lock_owned()
+            .map_err(|_| Error::Busy("a backup is running right now".into()))?;
+        let dir = self.inner.store.data_dir().join(crate::TEMP_DIR).join("restore-mailbox-cli");
+        let path = dir.join("uwumail.db");
+        let result = async {
+            let mut settings = self.settings().await?;
+            let repo = self.open(&mut settings).await?;
+            let restored = async {
+                let name = match snapshot {
+                    "latest" => repo
+                        .snapshots()
+                        .await?
+                        .pop()
+                        .ok_or_else(|| Error::Config("there are no snapshots on the backup server".into()))?,
+                    name => name.to_owned(),
+                };
+                progress(&format!("fetching the database of snapshot {name}"), MailboxProgress::default());
+                let manifest = crate::mailbox::fetch_database(&repo, &name, &path, &mut |_| {}).await?;
+                let people = crate::mailbox::people(&path).await?;
+                let person = people
+                    .iter()
+                    .find(|person| person.login.eq_ignore_ascii_case(login))
+                    .ok_or_else(|| Error::Config(format!("{login} is not in snapshot {name}")))?;
+                let chosen =
+                    if folders.is_empty() { None } else { Some(crate::mailbox::folders_named(person, folders)?) };
+                let person_login = person.login.clone();
+                crate::mailbox::restore_mailbox(
+                    &self.inner.store,
+                    &repo,
+                    &path,
+                    manifest.created_at,
+                    &person_login,
+                    account.id,
+                    chosen,
+                    &mut |state| progress("", state),
+                )
+                .await
+            }
+            .await;
+            repo.storage.close().await;
+            restored
+        }
+        .await;
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+        result
+    }
+
     /// Whether the daily run is due.
     fn due(settings: &BackupSettings, status: &BackupStatus, now: i64) -> bool {
         if !settings.enabled || settings.target.is_none() {
@@ -509,6 +892,8 @@ impl Backups {
 
     /// Runs backups when they are due or asked for, until shutdown.
     pub async fn run(self, mut shutdown: watch::Receiver<bool>) {
+        // A snapshot opened before a restart is not open any more; its database goes.
+        let _ = tokio::fs::remove_dir_all(self.inner.store.data_dir().join(MAILBOX_DIR)).await;
         loop {
             let asked = tokio::select! {
                 _ = tokio::time::sleep(Duration::from_secs(60)) => false,
@@ -526,6 +911,22 @@ impl Backups {
                 let _ = self.run_now().await;
             }
         }
+    }
+}
+
+/// Says "a backup is running" for as long as it lives.
+struct RunningFlag<'a>(&'a AtomicBool);
+
+impl<'a> RunningFlag<'a> {
+    fn raise(flag: &'a AtomicBool) -> RunningFlag<'a> {
+        flag.store(true, Ordering::SeqCst);
+        RunningFlag(flag)
+    }
+}
+
+impl Drop for RunningFlag<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
     }
 }
 
@@ -555,17 +956,24 @@ fn succeeded_today(status: &BackupStatus, now: i64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Login;
+    use crate::{Login, SftpTarget};
 
     fn a_backup_server() -> Target {
-        Target {
+        Target::Sftp(SftpTarget {
             host: "nas.example.org".into(),
             port: 22,
             user: "backup".into(),
             path: "uwumail".into(),
             login: Login::Password { password: "geheim".into() },
             host_key: None,
-        }
+        })
+    }
+
+    #[test]
+    fn no_restore_under_way_reads_as_idle() {
+        // The portal shows its restore card for anything but `idle`.
+        let json = serde_json::to_value(Fetching::default()).unwrap();
+        assert_eq!(json["state"], "idle");
     }
 
     #[test]

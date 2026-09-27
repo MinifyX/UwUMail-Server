@@ -18,14 +18,14 @@ use uwumail_smtp::{
 };
 use uwumail_store::{
     BayesTotals, EmailSummary, EmailUpdate, IngestRequest, KeywordsChange, ListScope, MailboxRole, MailboxTarget,
-    MailboxesChange, NewAccount, NewSenderListEntry, Role, SenderList, SpamLimits, Store,
+    MailboxesChange, NewAccount, NewSenderListEntry, Role, SenderList, SpamLimits, Stat, Store,
 };
 
-const PASSWORD: &str = "katzenpfote-123";
+pub(crate) const PASSWORD: &str = "katzenpfote-123";
 
-struct TestServer {
-    smtp: Smtp,
-    mx: SocketAddr,
+pub(crate) struct TestServer {
+    pub(crate) smtp: Smtp,
+    pub(crate) mx: SocketAddr,
     submission: SocketAddr,
     submission_tls: SocketAddr,
     _shutdown: watch::Sender<bool>,
@@ -45,7 +45,7 @@ fn server_tls(names: &[&str]) -> Arc<rustls::ServerConfig> {
     Arc::new(config)
 }
 
-async fn start(domain: &str, users: &[&str], routes: &[(&str, SocketAddr)]) -> TestServer {
+pub(crate) async fn start(domain: &str, users: &[&str], routes: &[(&str, SocketAddr)]) -> TestServer {
     start_with(domain, users, routes, SmtpConfig::default()).await
 }
 
@@ -118,18 +118,18 @@ async fn start_with_spam(
 }
 
 impl TestServer {
-    async fn inbox(&self, login: &str) -> Vec<EmailSummary> {
+    pub(crate) async fn inbox(&self, login: &str) -> Vec<EmailSummary> {
         self.mailbox(login, MailboxRole::Inbox).await
     }
 
-    async fn mailbox(&self, login: &str, role: MailboxRole) -> Vec<EmailSummary> {
+    pub(crate) async fn mailbox(&self, login: &str, role: MailboxRole) -> Vec<EmailSummary> {
         let store = self.smtp.store();
         let account = store.account(login).await.unwrap().unwrap();
         let mailbox = store.mailboxes(account.id).await.unwrap().into_iter().find(|m| m.role == Some(role)).unwrap();
         store.emails_in_mailbox(mailbox.id, 50).await.unwrap()
     }
 
-    async fn wait_for_inbox(&self, login: &str, count: usize) -> Vec<EmailSummary> {
+    pub(crate) async fn wait_for_inbox(&self, login: &str, count: usize) -> Vec<EmailSummary> {
         let started = Instant::now();
         loop {
             let emails = self.inbox(login).await;
@@ -141,12 +141,17 @@ impl TestServer {
         }
     }
 
-    async fn raw(&self, email: &EmailSummary) -> String {
+    /// How often `stat` was counted for the statistics since the server started.
+    fn counted(&self, stat: Stat) -> u64 {
+        self.smtp.store().stats().since_start().into_iter().find(|(counted, _)| *counted == stat).unwrap().1
+    }
+
+    pub(crate) async fn raw(&self, email: &EmailSummary) -> String {
         let hash = uwumail_store::BlobHash::parse(&email.blob).unwrap();
         String::from_utf8(self.smtp.store().blob(&hash).await.unwrap()).unwrap()
     }
 
-    fn mailer(&self, login: &str, password: &str, implicit_tls: bool) -> AsyncSmtpTransport<Tokio1Executor> {
+    pub(crate) fn mailer(&self, login: &str, password: &str, implicit_tls: bool) -> AsyncSmtpTransport<Tokio1Executor> {
         let tls =
             TlsParameters::builder("localhost".into()).dangerous_accept_invalid_certs(true).build_rustls().unwrap();
         let (port, tls) = if implicit_tls {
@@ -163,7 +168,7 @@ impl TestServer {
     }
 }
 
-fn mail(from: &str, to: &[&str], subject: &str) -> Message {
+pub(crate) fn mail(from: &str, to: &[&str], subject: &str) -> Message {
     let mut builder = Message::builder().from(from.parse::<LettreMailbox>().unwrap()).subject(subject);
     for recipient in to {
         builder = builder.to(recipient.parse::<LettreMailbox>().unwrap());
@@ -214,6 +219,10 @@ async fn submitted_mail_reaches_local_and_remote_people_with_dkim() {
         assert!(started.elapsed() < Duration::from_secs(10), "queue did not drain");
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+
+    // The statistics saw it leave one server and arrive at the other.
+    assert_eq!((a.counted(Stat::Submitted), a.counted(Stat::Delivered), a.counted(Stat::Received)), (1, 1, 0));
+    assert_eq!((b.counted(Stat::Received), b.counted(Stat::Submitted)), (1, 0));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -239,6 +248,8 @@ async fn unknown_remote_recipients_bounce_to_the_sender() {
     assert!(raw.contains("ghost@b.test"));
     assert!(raw.contains("5.1.1"));
     assert!(raw.contains("multipart/report"));
+    assert_eq!(b.counted(Stat::RefusedUnknownRecipient), 1);
+    assert_eq!((a.counted(Stat::Bounced), a.counted(Stat::Delivered)), (1, 0));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -247,6 +258,7 @@ async fn submission_rules() {
 
     // Wrong password.
     assert!(a.mailer("mini@a.test", "falsch", false).send(mail("mini@a.test", &["ami@a.test"], "x")).await.is_err());
+    assert_eq!((a.counted(Stat::LoginFailedSmtp), a.counted(Stat::LoginFailedImap)), (1, 0));
     // Sending as someone else.
     assert!(a.mailer("mini@a.test", PASSWORD, false).send(mail("ami@a.test", &["ami@a.test"], "x")).await.is_err());
 
@@ -270,6 +282,7 @@ async fn mx_refuses_relaying_and_strips_forged_results() {
     assert!(session.command("MAIL FROM:<someone@elsewhere.test>").await.starts_with("250"));
     assert!(session.command("RCPT TO:<ghost@a.test>").await.starts_with("550 5.1.1"));
     assert!(session.command("RCPT TO:<friend@gmail.com>").await.starts_with("550 5.7.1"));
+    assert_eq!((a.counted(Stat::RefusedUnknownRecipient), a.counted(Stat::RefusedPolicy)), (1, 1));
     assert!(session.command("RCPT TO:<MINI+katzen@a.test>").await.starts_with("250"));
     assert!(session.command("DATA").await.starts_with("354"));
     let reply = session
@@ -287,12 +300,12 @@ async fn mx_refuses_relaying_and_strips_forged_results() {
     assert!(raw.contains("Authentication-Results: mx.a.test"), "{raw}");
 }
 
-struct RawSession {
+pub(crate) struct RawSession {
     reader: BufReader<TcpStream>,
 }
 
 impl RawSession {
-    async fn connect(addr: SocketAddr) -> RawSession {
+    pub(crate) async fn connect(addr: SocketAddr) -> RawSession {
         let mut session = RawSession { reader: BufReader::new(TcpStream::connect(addr).await.unwrap()) };
         assert!(session.read_reply().await.starts_with("220"));
         session
@@ -310,7 +323,7 @@ impl RawSession {
         }
     }
 
-    async fn command(&mut self, command: &str) -> String {
+    pub(crate) async fn command(&mut self, command: &str) -> String {
         self.reader.get_mut().write_all(format!("{command}\r\n").as_bytes()).await.unwrap();
         self.read_reply().await
     }
@@ -806,6 +819,7 @@ async fn suspicious_mail_is_greylisted_once_and_then_delivered_with_its_score() 
 
     let retry = relay_from_outside(&a).await;
     assert!(retry.starts_with("250"), "the retry is let through: {retry}");
+    assert_eq!((a.counted(Stat::RefusedGreylisted), a.counted(Stat::Received), a.counted(Stat::Junk)), (1, 1, 0));
     let inbox = a.inbox("mini@a.test").await;
     assert_eq!(inbox.len(), 1);
     let raw = a.raw(&inbox[0]).await;
@@ -828,6 +842,7 @@ async fn mail_over_the_junk_score_is_filed_as_junk_and_counts_against_the_sender
     let raw = a.raw(&junk[0]).await;
     assert!(raw.contains("X-Spam-Status: Yes, score="), "{raw}");
     assert!(raw.contains("DMARC_FAIL"), "{raw}");
+    assert_eq!((a.counted(Stat::Received), a.counted(Stat::Junk)), (1, 1));
 
     // The sender is not vouched for by DMARC, so its network carries the count.
     let store = a.smtp.store();
@@ -856,6 +871,7 @@ async fn mail_is_only_refused_once_a_reject_score_is_set() {
     let reply = relay_from_outside(&a).await;
     assert!(reply.starts_with("550 5.7.1"), "{reply}");
     assert!(a.mailbox("mini@a.test", MailboxRole::Junk).await.is_empty());
+    assert_eq!((a.counted(Stat::RefusedSpam), a.counted(Stat::Received)), (1, 0));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1169,6 +1185,7 @@ async fn a_message_with_a_virus_is_turned_away_and_a_scanner_that_is_away_never_
     let entries =
         found.smtp.store().spam_log(uwumail_store::SpamLogFilter { limit: 10, ..Default::default() }).await.unwrap();
     assert_eq!(entries.first().map(|entry| entry.action.as_str()), Some("virus"));
+    assert_eq!((found.counted(Stat::RefusedVirus), found.counted(Stat::Received)), (1, 0));
 
     // A scanner nobody can reach must not stop the post; the message says that nobody looked, and
     // whatever the sender claimed about a scan of their own is gone.
@@ -1525,4 +1542,76 @@ fileinto :create "Extra/One";
     assert!(deliver_to(&a, "mini@a.test", "Kurz/Weg").await.starts_with("250"));
     assert_eq!(folder(&a, "mini@a.test", &["Kurz", "Weg"]).await.map(|m| m.len()), Some(1));
     assert_eq!(folder(&a, "mini@a.test", &["Extra", "One"]).await.map(|m| m.len()), Some(1));
+}
+
+/// An OAuth access token for `login`, as an app gets it through the portal (docs/oauth.md).
+async fn oauth_token(server: &TestServer, login: &str, scopes: Vec<&'static str>) -> String {
+    // RFC 7636 appendix B.
+    let (verifier, challenge) =
+        ("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
+    let store = server.smtp.store();
+    let account = store.account(login).await.unwrap().unwrap();
+    let client = store.register_oauth_client("Test app", vec!["http://127.0.0.1/cb".into()]).await.unwrap();
+    let code = store
+        .create_oauth_code(uwumail_store::NewOAuthCode {
+            client_id: client.id,
+            account_id: account.id,
+            redirect_uri: "http://127.0.0.1/cb".into(),
+            scopes,
+            code_challenge: challenge.into(),
+            nonce: None,
+            auth_time: 0,
+        })
+        .await
+        .unwrap();
+    store.redeem_oauth_code(&code, client.id, "http://127.0.0.1/cb", verifier).await.unwrap().unwrap().access_token
+}
+
+/// Mail apps that signed in with OAuth send with their access token: XOAUTH2 and OAUTHBEARER.
+#[tokio::test(flavor = "multi_thread")]
+async fn apps_send_with_oauth_tokens() {
+    use base64::Engine as _;
+    let base64 = |text: &str| base64::engine::general_purpose::STANDARD.encode(text);
+    let config = SmtpConfig { require_tls_for_auth: false, ..SmtpConfig::default() };
+    let a = start_with("a.test", &["mini", "nyu"], &[], config).await;
+    let token = oauth_token(&a, "mini@a.test", vec!["smtp"]).await;
+
+    // lettre speaks XOAUTH2, over implicit TLS.
+    let mailer = AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous("127.0.0.1")
+        .port(a.submission_tls.port())
+        .tls(Tls::Wrapper(
+            TlsParameters::builder("localhost".into()).dangerous_accept_invalid_certs(true).build_rustls().unwrap(),
+        ))
+        .credentials(Credentials::new("mini@a.test".into(), token.clone()))
+        .authentication(vec![lettre::transport::smtp::authentication::Mechanism::Xoauth2])
+        .timeout(Some(Duration::from_secs(10)))
+        .build();
+    mailer.send(mail("mini@a.test", &["nyu@a.test"], "Mit Token")).await.unwrap();
+    a.wait_for_inbox("nyu@a.test", 1).await;
+
+    let mut session = RawSession::connect(a.submission).await;
+    let ehlo = session.command("EHLO client.test").await;
+    assert!(ehlo.contains("AUTH PLAIN LOGIN OAUTHBEARER XOAUTH2"), "{ehlo}");
+    // A refused token: the JSON error challenge, the app's answer, then 535.
+    let wrong = base64(&format!("n,,\x01auth=Bearer {token}x\x01\x01"));
+    let challenge = session.command(&format!("AUTH OAUTHBEARER {wrong}")).await;
+    let encoded = challenge.trim().strip_prefix("334 ").expect("an error challenge");
+    let error: serde_json::Value =
+        serde_json::from_slice(&base64::engine::general_purpose::STANDARD.decode(encoded).unwrap()).unwrap();
+    assert_eq!((error["status"].as_str(), error["scope"].as_str()), (Some("invalid_token"), Some("smtp")));
+    assert_eq!(error["openid-configuration"], "https://mx.a.test/.well-known/openid-configuration");
+    assert!(session.command("AQ==").await.starts_with("535"));
+    // A token for reading mail only does not send.
+    let reading = oauth_token(&a, "mini@a.test", vec!["mail"]).await;
+    let reply = session
+        .command(&format!("AUTH OAUTHBEARER {}", base64(&format!("n,,\x01auth=Bearer {reading}\x01\x01"))))
+        .await;
+    assert!(reply.starts_with("334 "), "{reply}");
+    assert!(session.command("AQ==").await.starts_with("535"));
+    // The right token after the empty challenge.
+    assert!(session.command("AUTH OAUTHBEARER").await.starts_with("334"));
+    let right = base64(&format!("n,a=mini@a.test,\x01auth=Bearer {token}\x01\x01"));
+    let reply = session.command(&right).await;
+    assert!(reply.starts_with("235"), "{reply}");
+    assert!(session.command("MAIL FROM:<mini@a.test>").await.starts_with("250"));
 }

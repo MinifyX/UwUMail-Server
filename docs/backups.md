@@ -1,7 +1,13 @@
 # Backups
 
-The server backs up to an SFTP server, for example a NAS, once a night and
-whenever I press *Jetzt sichern* under *Server → Overview → Backups*.
+The server backs up once a night, and whenever I press *Back up now* under
+*Server → Overview → Backups*, to one of three places:
+
+- an **SFTP server**, for example a NAS;
+- an **S3 bucket**, at Amazon or any service that speaks the S3 API (MinIO,
+  Backblaze B2, Hetzner Object Storage, Wasabi, Garage, …);
+- a **folder** on the machine, for example a second disk or a NAS share mounted
+  into the container.
 
 ## What is in a backup
 
@@ -39,7 +45,9 @@ name, or a snapshot stored under another snapshot's name. An unencrypted backup
 has no such protection: its content is checked against its names, which
 catches damage, but whoever controls the backup server can change both.
 
-## The backup server
+## Where backups go
+
+### An SFTP server
 
 - **SSH key** (recommended): the server makes its own key. Put the line the
   portal shows into `~/.ssh/authorized_keys` of the backup user.
@@ -53,6 +61,37 @@ A dedicated user with access to just the backup folder is a good idea. RSA
 keys are not supported; the backup server needs an Ed25519 or ECDSA host key,
 which current systems have.
 
+### An S3 bucket
+
+The server needs the S3 address without the bucket (such as
+`https://s3.eu-central-1.amazonaws.com` or `https://fsn1.your-objectstorage.com`),
+the bucket, the region the provider signs requests for, an access key and a
+secret key. A folder in the bucket keeps several servers apart. *Bucket in the
+path* sends `https://server/bucket/…` instead of `https://bucket.server/…`, which
+MinIO and most servers in the own network want.
+
+Requests are signed with AWS Signature Version 4; the secret key itself never
+travels. Each object is written in one piece, so an interrupted upload leaves
+nothing half-written behind. A bucket that answers *SlowDown* or is briefly
+unavailable is asked again a few times.
+
+Plain `http://` works only for addresses in the own network (a MinIO next to
+the server): the backups and the signed requests would otherwise cross the
+internet unencrypted. For anything on the internet, use `https://`.
+
+A key with the rights to list, read, write and delete objects in that bucket
+(or that folder) is all it needs. *Test connection* writes a small file, reads
+it back and removes it.
+
+### A folder
+
+A full path such as `/backup`. It has to exist already: a disk or share that is
+not mounted must not quietly turn into a folder on the disk the server runs
+from. It also has to be outside the data directory, or the backup would be
+lost together with the server. In Docker, mount it into the container, for
+example with `- /mnt/nas/uwumail:/backup` under `volumes:`, and make it writable
+for user 10001.
+
 ## From the command line
 
 ```sh
@@ -60,6 +99,43 @@ docker compose exec uwumail uwumail-server backup run     # back up now
 docker compose exec uwumail uwumail-server backup list    # snapshots
 docker compose exec uwumail uwumail-server backup check   # is the newest one complete?
 ```
+
+## Restoring one mailbox
+
+When someone deleted a folder they still needed, the whole server does not
+have to go back in time. *Server → Overview → Backups → Restore one mailbox*
+takes one person's mail out of a snapshot while the server keeps running:
+
+1. **Open** a snapshot. Only its database is fetched, into a scratch folder in
+   the data directory, and read without ever being opened as the server's own
+   (it would be migrated otherwise). The page then lists everybody in it who had
+   a mailbox.
+2. Pick the **person**, and **all folders or some**. *Into the mailbox of* puts
+   the mail into another account, for someone whose address changed since.
+3. **Restore.** Each message is taken from this server's own mail store when it
+   still has it and fetched from the backup otherwise, checked against its hash,
+   and stored again the ordinary way: into a new folder `Restored <date of the
+   snapshot>`, with the old folders below it, read and flagged as it was.
+   Messages the mailbox still has (the same Message-ID, or the same content) are
+   left out, so restoring twice brings nothing twice. Nothing that is there now
+   is changed.
+
+A full mailbox stops it; what came back until then stays. While a snapshot is
+being opened or a mailbox restored, the nightly backup waits, and the other way
+round: a backup deletes what no snapshot needs, and must not do that under a
+restore that is reading it. *Close snapshot* removes the fetched database; a
+restart does too.
+
+The same from the command line, with the backup settings of the server:
+
+```sh
+docker compose exec uwumail uwumail-server backup restore-mailbox \
+  --account mini@example.org --folder Inbox --folder Projects/2025
+```
+
+`--snapshot` picks another snapshot than the newest, `--into` another mailbox;
+without `--folder` every folder comes back. A folder brings the folders inside
+it along.
 
 ## Restoring the whole server
 
@@ -110,6 +186,19 @@ docker run --rm -it -v uwumail-data:/data \
   ghcr.io/minifyx/uwumail-server:latest \
   backup restore --sftp backup@nas.example.com:uwumail --ssh-key /key --into /data
 ```
+
+Backups in an S3 bucket or a folder are named the same way:
+
+```sh
+# S3: the keys come from the environment, never from the command line.
+UWUMAIL_BACKUP_S3_ACCESS_KEY=… UWUMAIL_BACKUP_S3_SECRET_KEY=… \
+  uwumail-server backup restore --s3 s3://my-bucket/uwumail \
+  --endpoint https://s3.eu-central-1.amazonaws.com --region eu-central-1 --into /data
+# A folder, mounted into the container:
+uwumail-server backup restore --folder /backup --into /data
+```
+
+`--path-style` is for MinIO and similar servers.
 
 The command asks for the recovery key (or reads `UWUMAIL_BACKUP_KEY`), also when
 the backup server says the backup is not encrypted: if yours is, enter the key

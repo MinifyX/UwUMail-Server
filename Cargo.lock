@@ -2072,6 +2072,41 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
+name = "lber"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cbcf559624bfd9fe8d488329a8959766335a43a9b8b2cdd6a2c379fca02909a5"
+dependencies = [
+ "bytes",
+ "nom 7.1.3",
+]
+
+[[package]]
+name = "ldap3"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01fe89f5e7cfb7e4701e3a38ff9f00358e026a9aee940355d88ee9d81e5c7503"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "futures-util",
+ "lber",
+ "log",
+ "nom 7.1.3",
+ "percent-encoding",
+ "rustls",
+ "rustls-native-certs",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+ "tokio-stream",
+ "tokio-util",
+ "url",
+ "x509-parser",
+]
+
+[[package]]
 name = "lettre"
 version = "0.11.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4096,6 +4131,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-stream"
+version = "0.1.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a3d06f0b082ba57c26b79407372e57cf2a1e28124f78e9479fe80322cf53420b"
+dependencies = [
+ "futures-core",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
 name = "tokio-tungstenite"
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4379,15 +4425,22 @@ dependencies = [
 
 [[package]]
 name = "uwumail-backup"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "aws-lc-rs",
+ "bytes",
  "data-encoding",
  "fastcdc",
  "flate2",
  "hex",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-util",
+ "rusqlite",
  "russh",
  "russh-sftp",
+ "rustls",
  "serde",
  "serde_json",
  "sha2",
@@ -4395,12 +4448,14 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "url",
  "uwumail-store",
+ "webpki-roots",
 ]
 
 [[package]]
 name = "uwumail-dav"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -4426,7 +4481,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-gateway"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -4443,7 +4498,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-imap"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "base64 0.23.1",
  "mail-parser",
@@ -4461,9 +4516,10 @@ dependencies = [
 
 [[package]]
 name = "uwumail-jmap"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "ammonia",
+ "aws-lc-rs",
  "axum",
  "base64 0.23.1",
  "calcard",
@@ -4489,7 +4545,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-server"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -4528,11 +4584,12 @@ dependencies = [
 
 [[package]]
 name = "uwumail-smtp"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
  "bytes",
+ "flate2",
  "getrandom 0.4.3",
  "hex",
  "hickory-resolver",
@@ -4575,7 +4632,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-store"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "argon2",
  "aws-lc-rs",
@@ -4599,7 +4656,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-tunnel"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "aws-lc-rs",
  "data-encoding",
@@ -4619,7 +4676,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-web"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "aws-lc-rs",
  "axum",
@@ -4630,11 +4687,13 @@ dependencies = [
  "hyper",
  "hyper-rustls",
  "hyper-util",
+ "ldap3",
  "mail-builder",
  "qrcode",
  "rcgen",
  "rustix",
  "rustls",
+ "rustls-native-certs",
  "serde",
  "serde_json",
  "tempfile",
@@ -4642,6 +4701,7 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uwumail-backup",
  "uwumail-dav",
  "uwumail-jmap",

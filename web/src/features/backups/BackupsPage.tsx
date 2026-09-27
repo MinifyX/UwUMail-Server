@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, DatabaseBackup, History, KeyRound, Plug, RefreshCw } from "lucide-react";
+import { ArchiveRestore, Check, DatabaseBackup, FolderOpen, History, KeyRound, Plug, RefreshCw, X } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
@@ -8,7 +8,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Field, Segmented, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
 import { useT } from "@/i18n";
-import { ApiError, api, type BackupSnapshot, type BackupsView } from "@/lib/api";
+import { ApiError, api, type BackupSnapshot, type BackupTarget, type BackupsView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { localTime, minuteOptions, utcTime } from "@/lib/time";
@@ -105,12 +105,23 @@ function SettingsCard({ view, onRecoveryKey }: { view: BackupsView; onRecoveryKe
   const errorText = useErrorText();
   const queryClient = useQueryClient();
   const target = view.target;
-  const [host, setHost] = useState(target?.host ?? "");
-  const [port, setPort] = useState(String(target?.port ?? 22));
-  const [user, setUser] = useState(target?.user ?? "");
-  const [path, setPath] = useState(target?.path ?? "uwumail-backup");
-  const [method, setMethod] = useState<"key" | "password">(target?.method ?? "key");
+  const sftp = target?.kind === "sftp" ? target : null;
+  const s3 = target?.kind === "s3" ? target : null;
+  const [kind, setKind] = useState<BackupTarget["kind"]>(target?.kind ?? "sftp");
+  const [host, setHost] = useState(sftp?.host ?? "");
+  const [port, setPort] = useState(String(sftp?.port ?? 22));
+  const [user, setUser] = useState(sftp?.user ?? "");
+  const [path, setPath] = useState(sftp?.path ?? "uwumail-backup");
+  const [method, setMethod] = useState<"key" | "password">(sftp?.method ?? "key");
   const [password, setPassword] = useState("");
+  const [endpoint, setEndpoint] = useState(s3?.endpoint ?? "");
+  const [region, setRegion] = useState(s3?.region ?? "");
+  const [bucket, setBucket] = useState(s3?.bucket ?? "");
+  const [prefix, setPrefix] = useState(s3?.prefix ?? "uwumail");
+  const [accessKey, setAccessKey] = useState(s3?.accessKey ?? "");
+  const [secretKey, setSecretKey] = useState("");
+  const [pathStyle, setPathStyle] = useState(s3?.pathStyle ?? false);
+  const [folder, setFolder] = useState(target?.kind === "folder" ? target.path : "/backup");
   const [enabled, setEnabled] = useState(view.target ? view.enabled : true);
   const [time, setTime] = useState(localTime(view.hour, view.minute));
   const [encrypted, setEncrypted] = useState(view.target ? view.encrypted : true);
@@ -128,29 +139,53 @@ function SettingsCard({ view, onRecoveryKey }: { view: BackupsView; onRecoveryKe
           minute: utcTime(time) % 60,
           retention: { daily: Number(daily), weekly: Number(weekly), monthly: Number(monthly) },
           encrypted,
-          target: {
-            host: host.trim(),
-            port: Number(port),
-            user: user.trim(),
-            path: path.trim(),
-            method,
-            ...(method === "password" && password ? { password } : {}),
-          },
+          target:
+            kind === "s3"
+              ? {
+                  kind,
+                  endpoint: endpoint.trim(),
+                  region: region.trim(),
+                  bucket: bucket.trim(),
+                  prefix: prefix.trim(),
+                  accessKey: accessKey.trim(),
+                  pathStyle,
+                  ...(secretKey ? { secretKey } : {}),
+                }
+              : kind === "folder"
+                ? { kind, path: folder.trim() }
+                : {
+                    kind,
+                    host: host.trim(),
+                    port: Number(port),
+                    user: user.trim(),
+                    path: path.trim(),
+                    method,
+                    ...(method === "password" && password ? { password } : {}),
+                  },
         },
       }),
     onSuccess: (next) => {
       queryClient.setQueryData(key, next);
       setPassword("");
+      setSecretKey("");
       toast(t("common.saved"), "success");
       if (next.recoveryKey) onRecoveryKey(next.recoveryKey);
     },
   });
   const test = useMutation({
-    mutationFn: () => api<{ hostKey: string; known: boolean }>("/api/admin/backups/test", { method: "POST", body: {} }),
+    mutationFn: () =>
+      api<{ kind: BackupTarget["kind"]; hostKey: string | null; known: boolean }>("/api/admin/backups/test", {
+        method: "POST",
+        body: {},
+      }),
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: key });
       toast(
-        result.known ? t("backups.target.testOk") : t("backups.target.testFirst", { hostKey: result.hostKey }),
+        result.kind !== "sftp"
+          ? t("backups.target.testWritable")
+          : result.known
+            ? t("backups.target.testOk")
+            : t("backups.target.testFirst", { hostKey: result.hostKey }),
         "success",
       );
     },
@@ -180,96 +215,227 @@ function SettingsCard({ view, onRecoveryKey }: { view: BackupsView; onRecoveryKe
   return (
     <Card title={t("backups.target.title")}>
       <form className="flex flex-col gap-4" onSubmit={submit}>
-        <p className="-mt-1 text-[13px] text-muted">{t("backups.target.explain")}</p>
-        <div className="grid gap-3 sm:grid-cols-[1fr_110px]">
-          <Field label={t("backups.target.host")}>
-            {(id) => (
-              <TextInput
-                id={id}
-                required
-                autoCapitalize="none"
-                spellCheck={false}
-                placeholder="nas.example.com"
-                value={host}
-                onChange={(event) => setHost(event.target.value)}
-              />
-            )}
-          </Field>
-          <Field label={t("backups.target.port")}>
-            {(id) => (
-              <TextInput
-                id={id}
-                type="number"
-                min={1}
-                max={65535}
-                required
-                value={port}
-                onChange={(event) => setPort(event.target.value)}
-              />
-            )}
-          </Field>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label={t("backups.target.user")}>
-            {(id) => (
-              <TextInput
-                id={id}
-                required
-                autoCapitalize="none"
-                spellCheck={false}
-                value={user}
-                onChange={(event) => setUser(event.target.value)}
-              />
-            )}
-          </Field>
-          <Field label={t("backups.target.path")} hint={t("backups.target.pathHint")}>
-            {(id) => (
-              <TextInput id={id} spellCheck={false} value={path} onChange={(event) => setPath(event.target.value)} />
-            )}
-          </Field>
-        </div>
         <Segmented
-          label={t("backups.target.method")}
-          value={method}
-          onChange={setMethod}
+          label={t("backups.target.kind")}
+          value={kind}
+          onChange={setKind}
           options={[
-            { value: "key", label: t("backups.target.methodKey") },
-            { value: "password", label: t("backups.target.methodPassword") },
+            { value: "sftp", label: t("backups.target.kindSftp") },
+            { value: "s3", label: t("backups.target.kindS3") },
+            { value: "folder", label: t("backups.target.kindFolder") },
           ]}
         />
-        {method === "key" ? (
-          target?.method === "key" && target.publicKey ? (
-            <div className="flex flex-col gap-1.5">
-              <p className="text-[13px] text-muted">{t("backups.target.publicKeyHint")}</p>
-              <div className="flex items-center gap-2 rounded-control bg-canvas px-3 py-2">
-                <code className="flex-1 font-mono text-[12px] break-all">{target.publicKey}</code>
-                <CopyButton value={target.publicKey} />
-              </div>
+        <p className="-mt-1 text-[13px] text-muted">
+          {kind === "s3"
+            ? t("backups.target.explainS3")
+            : kind === "folder"
+              ? t("backups.target.explainFolder")
+              : t("backups.target.explain")}
+        </p>
+        {kind === "sftp" && (
+          <>
+            <div className="grid gap-3 sm:grid-cols-[1fr_110px]">
+              <Field label={t("backups.target.host")}>
+                {(id) => (
+                  <TextInput
+                    id={id}
+                    required
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    placeholder="nas.example.com"
+                    value={host}
+                    onChange={(event) => setHost(event.target.value)}
+                  />
+                )}
+              </Field>
+              <Field label={t("backups.target.port")}>
+                {(id) => (
+                  <TextInput
+                    id={id}
+                    type="number"
+                    min={1}
+                    max={65535}
+                    required
+                    value={port}
+                    onChange={(event) => setPort(event.target.value)}
+                  />
+                )}
+              </Field>
             </div>
-          ) : (
-            <p className="text-[13px] text-muted">{t("backups.target.keyAfterSave")}</p>
-          )
-        ) : (
-          <Field
-            label={t("backups.target.password")}
-            hint={target?.passwordSet ? t("backups.target.passwordKept") : undefined}
-          >
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label={t("backups.target.user")}>
+                {(id) => (
+                  <TextInput
+                    id={id}
+                    required
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    value={user}
+                    onChange={(event) => setUser(event.target.value)}
+                  />
+                )}
+              </Field>
+              <Field label={t("backups.target.path")} hint={t("backups.target.pathHint")}>
+                {(id) => (
+                  <TextInput
+                    id={id}
+                    spellCheck={false}
+                    value={path}
+                    onChange={(event) => setPath(event.target.value)}
+                  />
+                )}
+              </Field>
+            </div>
+            <Segmented
+              label={t("backups.target.method")}
+              value={method}
+              onChange={setMethod}
+              options={[
+                { value: "key", label: t("backups.target.methodKey") },
+                { value: "password", label: t("backups.target.methodPassword") },
+              ]}
+            />
+            {method === "key" ? (
+              sftp?.method === "key" && sftp.publicKey ? (
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-[13px] text-muted">{t("backups.target.publicKeyHint")}</p>
+                  <div className="flex items-center gap-2 rounded-control bg-canvas px-3 py-2">
+                    <code className="flex-1 font-mono text-[12px] break-all">{sftp.publicKey}</code>
+                    <CopyButton value={sftp.publicKey} />
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[13px] text-muted">{t("backups.target.keyAfterSave")}</p>
+              )
+            ) : (
+              <Field
+                label={t("backups.target.password")}
+                hint={sftp?.passwordSet ? t("backups.target.passwordKept") : undefined}
+              >
+                {(id) => (
+                  <TextInput
+                    id={id}
+                    type="password"
+                    autoComplete="new-password"
+                    required={!sftp?.passwordSet}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                  />
+                )}
+              </Field>
+            )}
+            {sftp?.hostKey && (
+              <p className="text-[12px] text-muted">
+                {t("backups.target.hostKey")} <code className="font-mono break-all">{sftp.hostKey}</code>
+              </p>
+            )}
+          </>
+        )}
+        {kind === "s3" && (
+          <>
+            <Field label={t("backups.target.endpoint")} hint={t("backups.target.endpointHint")}>
+              {(id) => (
+                <TextInput
+                  id={id}
+                  required
+                  type="url"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  placeholder="https://s3.example.com"
+                  value={endpoint}
+                  onChange={(event) => setEndpoint(event.target.value)}
+                />
+              )}
+            </Field>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Field label={t("backups.target.bucket")}>
+                {(id) => (
+                  <TextInput
+                    id={id}
+                    required
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    value={bucket}
+                    onChange={(event) => setBucket(event.target.value)}
+                  />
+                )}
+              </Field>
+              <Field label={t("backups.target.prefix")} hint={t("backups.target.prefixHint")}>
+                {(id) => (
+                  <TextInput
+                    id={id}
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    value={prefix}
+                    onChange={(event) => setPrefix(event.target.value)}
+                  />
+                )}
+              </Field>
+              <Field label={t("backups.target.region")} hint={t("backups.target.regionHint")}>
+                {(id) => (
+                  <TextInput
+                    id={id}
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    placeholder="us-east-1"
+                    value={region}
+                    onChange={(event) => setRegion(event.target.value)}
+                  />
+                )}
+              </Field>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label={t("backups.target.accessKey")}>
+                {(id) => (
+                  <TextInput
+                    id={id}
+                    required
+                    autoCapitalize="none"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={accessKey}
+                    onChange={(event) => setAccessKey(event.target.value)}
+                  />
+                )}
+              </Field>
+              <Field
+                label={t("backups.target.secretKey")}
+                hint={s3?.secretKeySet ? t("backups.target.secretKeyKept") : undefined}
+              >
+                {(id) => (
+                  <TextInput
+                    id={id}
+                    type="password"
+                    autoComplete="new-password"
+                    required={!s3?.secretKeySet}
+                    value={secretKey}
+                    onChange={(event) => setSecretKey(event.target.value)}
+                  />
+                )}
+              </Field>
+            </div>
+            <Toggle
+              checked={pathStyle}
+              onChange={setPathStyle}
+              label={t("backups.target.pathStyle")}
+              description={t("backups.target.pathStyleHint")}
+            />
+          </>
+        )}
+        {kind === "folder" && (
+          <Field label={t("backups.target.folder")} hint={t("backups.target.folderHint")}>
             {(id) => (
               <TextInput
                 id={id}
-                type="password"
-                autoComplete="new-password"
-                required={!target?.passwordSet}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
+                required
+                autoCapitalize="none"
+                spellCheck={false}
+                placeholder="/backup"
+                value={folder}
+                onChange={(event) => setFolder(event.target.value)}
               />
             )}
           </Field>
-        )}
-        {target?.hostKey && (
-          <p className="text-[12px] text-muted">
-            {t("backups.target.hostKey")} <code className="font-mono break-all">{target.hostKey}</code>
-          </p>
         )}
 
         <div className="flex flex-col gap-3 border-t border-hairline pt-4">
@@ -429,6 +595,273 @@ function RestoreCard({ view }: { view: BackupsView }) {
   );
 }
 
+/** The command that puts a snapshot back on a machine without a running server. */
+function restoreCommand(target: BackupTarget | null): string {
+  if (target?.kind === "s3") {
+    const where = `s3://${target.bucket}${target.prefix ? `/${target.prefix}` : ""}`;
+    const style = target.pathStyle ? " --path-style" : "";
+    return (
+      "UWUMAIL_BACKUP_S3_ACCESS_KEY=… UWUMAIL_BACKUP_S3_SECRET_KEY=… uwumail-server backup restore " +
+      `--s3 ${where} --endpoint ${target.endpoint} --region ${target.region}${style} --into /data`
+    );
+  }
+  if (target?.kind === "folder") return `uwumail-server backup restore --folder ${target.path} --into /data`;
+  return "uwumail-server backup restore --sftp user@host:/path --into /data";
+}
+
+function ProgressBar({ done, total, label }: { done: number; total: number; label: string }) {
+  const share = total > 0 ? Math.min(1, done / total) : 0;
+  return (
+    <div
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(share * 100)}
+      className="h-2.5 overflow-hidden rounded-full bg-canvas"
+    >
+      <div className="h-full rounded-full bg-pink transition-[width]" style={{ width: `${share * 100}%` }} />
+    </div>
+  );
+}
+
+/**
+ * One person's mail out of a snapshot, next to what they have now: open a snapshot (its database
+ * comes here), pick a person and folders, and the mail comes back into a folder "Restored <date>".
+ */
+function MailboxRestoreCard({ view }: { view: BackupsView }) {
+  const { t, i18n } = useT();
+  const errorText = useErrorText();
+  const queryClient = useQueryClient();
+  const job = view.mailboxRestore;
+  const [choosing, setChoosing] = useState(false);
+  const [snapshot, setSnapshot] = useState("latest");
+  const [login, setLogin] = useState("");
+  const [into, setInto] = useState("");
+  const [everything, setEverything] = useState(true);
+  const [chosen, setChosen] = useState<number[]>([]);
+  const snapshots = useQuery({
+    queryKey: [...key, "snapshots"],
+    queryFn: () => api<BackupSnapshot[]>("/api/admin/backups/snapshots"),
+    enabled: choosing,
+  });
+  const open = useMutation({
+    mutationFn: () => api<BackupsView>("/api/admin/backups/mailbox/open", { method: "POST", body: { snapshot } }),
+    onSuccess: (next) => queryClient.setQueryData(key, next),
+    onError: (error) => toast(errorText(error), "error"),
+  });
+  const restore = useMutation({
+    mutationFn: () =>
+      api<BackupsView>("/api/admin/backups/mailbox/restore", {
+        method: "POST",
+        body: { account: person?.login, into: into.trim() || null, folders: everything ? null : chosen },
+      }),
+    onSuccess: (next) => queryClient.setQueryData(key, next),
+    onError: (error) => toast(errorText(error), "error"),
+  });
+  const close = useMutation({
+    mutationFn: () => api<BackupsView>("/api/admin/backups/mailbox", { method: "DELETE" }),
+    onSuccess: (next) => {
+      queryClient.setQueryData(key, next);
+      setLogin("");
+      setChosen([]);
+      setEverything(true);
+    },
+    onError: (error) => toast(errorText(error), "error"),
+  });
+
+  const people = job.people;
+  const person = people.find((candidate) => candidate.login === login) ?? people[0];
+  const busy = job.state === "opening" || job.state === "restoring";
+  const toggle = (id: number) =>
+    setChosen((current) => (current.includes(id) ? current.filter((other) => other !== id) : [...current, id]));
+  const folderName = (path: string[], role: string | null) =>
+    role === "inbox" ? t("backups.mailbox.inbox") : (path[path.length - 1] ?? "");
+
+  return (
+    <Card title={t("backups.mailbox.title")}>
+      <div className="flex flex-col gap-3">
+        <p className="-mt-1 text-[13px] text-muted">{t("backups.mailbox.explain")}</p>
+        {(job.state === "" || job.state === "failed") && (
+          <>
+            {job.state === "failed" && (
+              <p role="alert" className="rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning">
+                {t("backups.mailbox.openFailed", { error: job.error })}
+              </p>
+            )}
+            <div className="flex flex-wrap items-end gap-2">
+              <Field label={t("backups.mailbox.snapshot")} className="min-w-[220px] flex-1">
+                {(id) => (
+                  <Select
+                    id={id}
+                    value={snapshot}
+                    onFocus={() => setChoosing(true)}
+                    onChange={(event) => setSnapshot(event.target.value)}
+                  >
+                    <option value="latest">{t("backups.mailbox.latest")}</option>
+                    {(snapshots.data ?? [])
+                      .slice()
+                      .reverse()
+                      .map((entry) => (
+                        <option key={entry.name} value={entry.name}>
+                          {formatDateTime(entry.createdAt, i18n.language)}
+                        </option>
+                      ))}
+                  </Select>
+                )}
+              </Field>
+              <Button
+                icon={FolderOpen}
+                disabled={!view.target || view.running}
+                busy={open.isPending}
+                onClick={() => open.mutate()}
+              >
+                {t("backups.mailbox.open")}
+              </Button>
+            </div>
+          </>
+        )}
+        {job.state === "opening" && (
+          <div className="flex flex-col gap-2">
+            <p className="text-[13px]">
+              {t("backups.mailbox.opening", {
+                done: formatBytes(job.doneBytes, i18n.language),
+                total: formatBytes(job.totalBytes, i18n.language),
+              })}
+            </p>
+            <ProgressBar done={job.doneBytes} total={job.totalBytes} label={t("backups.mailbox.title")} />
+          </div>
+        )}
+        {(job.state === "open" || job.state === "restoring") && (
+          <p className="text-sm">
+            {t("backups.mailbox.opened", { time: formatDateTime(job.createdAt, i18n.language) })}
+          </p>
+        )}
+        {job.state === "restoring" && (
+          <div className="flex flex-col gap-2">
+            <p className="text-[13px]">
+              {t("backups.mailbox.restoring", { account: job.account, done: job.done, total: job.total })}
+            </p>
+            <ProgressBar done={job.done} total={job.total} label={t("backups.mailbox.title")} />
+          </div>
+        )}
+        {job.last && !busy && (
+          <p
+            className={
+              job.last.error
+                ? "rounded-control bg-warning-tint px-3 py-2 text-[13px] text-warning"
+                : "rounded-control bg-success-tint px-3 py-2 text-[13px] text-success"
+            }
+          >
+            {job.last.error
+              ? t("backups.mailbox.lastFailed", {
+                  account: job.last.into,
+                  error: job.last.error,
+                  count: job.last.restored,
+                })
+              : job.last.restored === 0
+                ? // Nothing came back, so no folder was made either: say so instead of naming one.
+                  job.last.skipped > 0
+                  ? t("backups.mailbox.nothingMissing", { count: job.last.skipped, account: job.last.into })
+                  : t("backups.mailbox.nothingThere", { account: job.last.into })
+                : t("backups.mailbox.lastDone", {
+                    count: job.last.restored,
+                    skipped: job.last.skipped,
+                    account: job.last.into,
+                    folder: job.last.folder,
+                  })}
+          </p>
+        )}
+        {job.state === "open" && people.length === 0 && (
+          <p className="text-sm text-muted">{t("backups.mailbox.nobody")}</p>
+        )}
+        {job.state === "open" && person && (
+          <div className="flex flex-col gap-3 border-t border-hairline pt-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label={t("backups.mailbox.person")}>
+                {(id) => (
+                  <Select
+                    id={id}
+                    value={person.login}
+                    onChange={(event) => {
+                      setLogin(event.target.value);
+                      setChosen([]);
+                    }}
+                  >
+                    {people.map((candidate) => (
+                      <option key={candidate.login} value={candidate.login}>
+                        {t("backups.mailbox.personLine", { login: candidate.login, count: candidate.emails })}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              <Field label={t("backups.mailbox.into")} hint={t("backups.mailbox.intoHint")}>
+                {(id) => (
+                  <TextInput
+                    id={id}
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    placeholder={person.login}
+                    value={into}
+                    onChange={(event) => setInto(event.target.value)}
+                  />
+                )}
+              </Field>
+            </div>
+            <Segmented
+              label={t("backups.mailbox.which")}
+              value={everything ? "all" : "some"}
+              onChange={(value) => setEverything(value === "all")}
+              options={[
+                { value: "all", label: t("backups.mailbox.allFolders") },
+                { value: "some", label: t("backups.mailbox.someFolders") },
+              ]}
+            />
+            {!everything && (
+              <ul className="flex max-h-72 flex-col gap-1 overflow-y-auto rounded-control bg-canvas p-2">
+                {person.folders.map((entry) => (
+                  <li key={entry.id} style={{ paddingLeft: `${(entry.path.length - 1) * 16}px` }}>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-pink"
+                        checked={chosen.includes(entry.id)}
+                        onChange={() => toggle(entry.id)}
+                      />
+                      <span className="min-w-0 flex-1 truncate">{folderName(entry.path, entry.role)}</span>
+                      <span className="text-[12px] text-muted">{entry.emails}</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="text-[13px] text-muted">{t("backups.mailbox.how")}</p>
+          </div>
+        )}
+        {(job.state === "open" || job.state === "restoring") && (
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="ghost" icon={X} disabled={busy} busy={close.isPending} onClick={() => close.mutate()}>
+              {t("backups.mailbox.close")}
+            </Button>
+            {person && (
+              <Button
+                variant="primary"
+                icon={ArchiveRestore}
+                disabled={busy || view.running || (!everything && chosen.length === 0)}
+                busy={restore.isPending || job.state === "restoring"}
+                onClick={() => restore.mutate()}
+              >
+                {t("backups.mailbox.restore")}
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 function SnapshotsCard({ view }: { view: BackupsView }) {
   const { t, i18n } = useT();
   const [open, setOpen] = useState(false);
@@ -479,7 +912,7 @@ function SnapshotsCard({ view }: { view: BackupsView }) {
         </p>
         {/* Still worth showing: it is the way back on a machine that has no server running yet. */}
         <code className="rounded-control bg-canvas px-3 py-2 font-mono text-[12px] break-all">
-          uwumail-server backup restore --sftp user@host:/path --into /data
+          {restoreCommand(view.target)}
         </code>
         <div className="flex flex-wrap gap-2">
           {!open && (
@@ -558,7 +991,7 @@ function SnapshotsCard({ view }: { view: BackupsView }) {
   );
 }
 
-/** Backups to an SFTP server: where to, when, and what is there. */
+/** Backups to an SFTP server, an S3 bucket or a folder: where to, when, and what is there. */
 export function BackupsPage() {
   const query = useQuery({
     queryKey: key,
@@ -567,6 +1000,8 @@ export function BackupsPage() {
       const data = current.state.data;
       // While a snapshot is being fetched the server is about to stop under us, so keep asking.
       if (data?.restore.fetching.state === "fetching") return 2000;
+      const mailbox = data?.mailboxRestore.state;
+      if (mailbox === "opening" || mailbox === "restoring") return 1500;
       return data?.running ? 3000 : false;
     },
     retry: (count, error) => !(error instanceof ApiError && error.status < 500) && count < 40,
@@ -582,6 +1017,7 @@ export function BackupsPage() {
       <StatusCard view={view} />
       <SettingsCard view={view} onRecoveryKey={setRecoveryKey} />
       <SnapshotsCard view={view} />
+      {view.target && <MailboxRestoreCard view={view} />}
       <RecoveryKeyDialog key={recoveryKey ?? ""} recoveryKey={recoveryKey} onClose={() => setRecoveryKey(null)} />
     </div>
   );

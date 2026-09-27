@@ -57,7 +57,34 @@ export interface Info {
   hostname: string;
   setupRequired: boolean;
   brand: Brand;
+  /** The button for logging in at an OpenID Connect provider; null when there is none. */
+  oidc?: { label: string } | null;
 }
+
+/** Where an account's password is checked: here, at an LDAP directory, or at an OpenID Connect provider. */
+export type AuthSource = "local" | "ldap" | "oidc";
+
+/** An app signed in with OAuth instead of an app password (docs/oauth.md). */
+export interface OAuthGrantInfo {
+  id: number;
+  clientName: string;
+  scopes: string[];
+  createdAt: number;
+  lastUsedAt: number | null;
+  lastUsedProtocol: string | null;
+  lastUsedIp: string | null;
+}
+
+/** What the consent page learns about an app asking to sign in. */
+export type OAuthRequest =
+  | { redirect: string }
+  | {
+      /** The name is the app's own claim; nobody checked it. */
+      client: { name: string; clientId: string; redirectHost: string };
+      scopes: string[];
+      /** Allowed before with these scopes, so no question is needed. */
+      consented: boolean;
+    };
 
 export interface Session {
   account: { id: number; login: string; name: string; role: Role };
@@ -116,6 +143,42 @@ export interface Overview {
   server: { hostname: string; version: string; uptimeSeconds: number };
 }
 
+export type AlertLevel = "info" | "warning" | "problem";
+
+/** Something the admins were told about (docs/admin-alerts.md). */
+export interface AdminAlert {
+  id: number;
+  /** A health area (`dns`, `delivery`, …) or `backup`, `certificate`, `update`. */
+  kind: string;
+  key: string;
+  /** The finding code; the text comes from `health.findings` or `alerts.codes`. */
+  code: string;
+  level: AlertLevel;
+  params: Record<string, unknown> | null;
+  link: string | null;
+  firstSeen: number;
+  lastSeen: number;
+  resolvedAt: number | null;
+  notifiedAt: number | null;
+  notifiedLevel: AlertLevel | null;
+  acknowledgedAt: number | null;
+  acknowledgedBy: string | null;
+}
+
+export interface AlertsView {
+  open: AdminAlert[];
+  resolved: AdminAlert[];
+}
+
+export type StatsRange = "days" | "months";
+
+/** Server → Statistics: per day or month, counters summed, `gauge.*` as last read. */
+export interface StatsView {
+  range: StatsRange;
+  periods: { period: string; values: Record<string, number> }[];
+  totals: Record<string, number>;
+}
+
 export type PersonStatus = "active" | "invited" | "disabled" | "deleted";
 
 export interface AddressInfo {
@@ -159,6 +222,42 @@ export interface Person {
   sendAsDomains?: string[];
   /** Only for a service, which cannot open its own security page. */
   appPasswordList?: AppPasswordInfo[];
+  /** A mailbox several people use; stored as a service nobody signs in to. */
+  sharedMailbox?: boolean;
+  /** The people who use a shared mailbox; only in its detail view. */
+  members?: SharedMailboxMember[];
+  /** Only in the detail view. */
+  oauthGrants?: OAuthGrantInfo[];
+  authSource?: AuthSource;
+}
+
+/** Someone who uses a shared mailbox, and whether they may send with its address. */
+export interface SharedMailboxMember {
+  id: number;
+  login: string;
+  name: string;
+  maySend: boolean;
+}
+
+export interface SharedMailboxInfo {
+  login: string;
+  name: string;
+  members: SharedMailboxMember[];
+}
+
+/** Who may write to a group: everyone, only its members, or only addresses of its domain. */
+export type WhoMaySend = "anyone" | "members" | "domain";
+
+/** An address of a domain that delivers to several people here. */
+export interface GroupInfo {
+  id: number;
+  address: string;
+  domain: string;
+  name: string;
+  whoMaySend: WhoMaySend;
+  membersMaySendAs: boolean;
+  members: { id: number; login: string; name: string }[];
+  createdAt: number;
 }
 
 /** An app password the moment it is made: the only time its secret is readable. */
@@ -205,13 +304,14 @@ export type RecordKind =
   | "imaps"
   | "submissions"
   | "submission"
-  | "caa";
+  | "caa"
+  | "tlsa";
 
 export interface RecordCheck {
   kind: RecordKind;
   name: string;
   /** HTTPS is the MTA-STS policy file, not a DNS record. */
-  recordType: "MX" | "TXT" | "SRV" | "CNAME" | "CAA" | "HTTPS";
+  recordType: "MX" | "TXT" | "SRV" | "CNAME" | "CAA" | "TLSA" | "HTTPS";
   expected: string;
   found: string[];
   status: CheckStatus;
@@ -253,7 +353,12 @@ export interface ForwardAddress {
 
 export interface DomainDetail extends Omit<DomainSummary, "dns"> {
   selfServiceAliases?: boolean;
+  /** Whether people may make masked addresses on this domain. */
+  maskedAddresses?: boolean;
+  /** Masked addresses people made on this domain that still take mail; they keep it in use. */
+  maskedInUse?: number;
   forwards: ForwardAddress[];
+  groups?: GroupInfo[];
   keys: DkimKeyInfo[];
   report: DomainReport | null;
   mtaSts: MtaStsView | null;
@@ -317,6 +422,30 @@ export interface DomainReports {
   ownFailing: number;
   /** False when someone claimed dmarc-reports@ or tls-reports@ as a mailbox or alias. */
   reading: { dmarc: boolean; tls: boolean };
+}
+
+/** How dealing with one day's TLS report to another domain went. */
+export type SentTlsReportStatus = "sent" | "failed" | "none" | "skipped";
+
+/** A TLS report (RFC 8460) this server sent, or meant to send, to another domain. */
+export interface SentTlsReport {
+  /** The first second of the (UTC) day it covers. */
+  day: number;
+  domain: string;
+  status: SentTlsReportStatus;
+  /** mailto: and https: addresses it went to. */
+  destinations: string[];
+  error: string;
+  successful: number;
+  failed: number;
+  updatedAt: number;
+}
+
+export interface SentTlsReports {
+  days: number;
+  /** The address reports by mail come from. */
+  sender: string;
+  reports: SentTlsReport[];
 }
 
 export interface ReportsOverview {
@@ -567,16 +696,7 @@ export interface BackupsView {
   minute: number;
   retention: { daily: number; weekly: number; monthly: number };
   encrypted: boolean;
-  target: {
-    host: string;
-    port: number;
-    user: string;
-    path: string;
-    method: "key" | "password";
-    publicKey: string | null;
-    passwordSet: boolean;
-    hostKey: string | null;
-  } | null;
+  target: BackupTarget | null;
   status: {
     lastAttemptAt: number | null;
     lastSuccessAt: number | null;
@@ -588,6 +708,76 @@ export interface BackupsView {
   };
   running: boolean;
   restore: RestoreView;
+  mailboxRestore: MailboxRestoreView;
+}
+
+/** Where backups go. Secrets never come back: only whether one is set. */
+export type BackupTarget =
+  | {
+      kind: "sftp";
+      host: string;
+      port: number;
+      user: string;
+      path: string;
+      method: "key" | "password";
+      publicKey: string | null;
+      passwordSet: boolean;
+      hostKey: string | null;
+    }
+  | {
+      kind: "s3";
+      endpoint: string;
+      region: string;
+      bucket: string;
+      prefix: string;
+      accessKey: string;
+      secretKeySet: boolean;
+      pathStyle: boolean;
+    }
+  | { kind: "folder"; path: string };
+
+/** A folder of a person in a snapshot, with the names from the top down. */
+export interface SnapshotFolder {
+  id: number;
+  parentId: number | null;
+  path: string[];
+  role: string | null;
+  emails: number;
+}
+
+export interface SnapshotPerson {
+  login: string;
+  name: string;
+  emails: number;
+  folders: SnapshotFolder[];
+}
+
+/** Taking one person's mail out of a snapshot, while the server keeps running. */
+export interface MailboxRestoreView {
+  /** Empty while no snapshot is open. */
+  state: "" | "opening" | "open" | "restoring" | "failed" | string;
+  snapshot: string;
+  createdAt: number;
+  error: string;
+  doneBytes: number;
+  totalBytes: number;
+  people: SnapshotPerson[];
+  /** Whose mail is coming back right now, and how far it got. */
+  account: string;
+  total: number;
+  done: number;
+  restored: number;
+  skipped: number;
+  last: {
+    account: string;
+    into: string;
+    folder: string;
+    restored: number;
+    skipped: number;
+    /** Empty when it went well. */
+    error: string;
+    finishedAt: number;
+  } | null;
 }
 
 /** Putting a backup back over everything this server has. */
@@ -622,6 +812,35 @@ export interface RestoreView {
     error: string;
     keptGateway: boolean;
   } | null;
+}
+
+/** A move from another provider, as My account → Moving shows it. */
+export interface MoveJob {
+  id: number;
+  address: string;
+  host: string;
+  port: number;
+  login: string;
+  state: "queued" | "running" | "paused" | "done";
+  /** Why it paused: quotaExceeded, loginRefused, unreachable, notPublic, noMailbox, stopped, failed. */
+  error: string;
+  errorDetail: string;
+  foldersDone: number;
+  foldersTotal: number;
+  messagesDone: number;
+  messagesTotal: number;
+  messagesSkipped: number;
+  bytesDone: number;
+  createdAt: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+  lastRunAt: number | null;
+}
+
+export interface MovingView {
+  jobs: MoveJob[];
+  max: number;
+  hasMailbox: boolean;
 }
 
 export interface BackupSnapshot {
@@ -1071,6 +1290,10 @@ export interface SecurityView {
   appPasswords: AppPasswordInfo[];
   sessions: WebSessionInfo[];
   events: SecurityEventInfo[];
+  oauthGrants: OAuthGrantInfo[];
+  authSource: AuthSource;
+  /** False for someone who only ever signs in at an OpenID Connect provider. */
+  hasPassword: boolean;
 }
 
 export interface TotpSetup {
@@ -1186,6 +1409,32 @@ export interface OwnAddressesView {
   limit: number;
   used: number;
   released: { address: string; releasedAt: number; reservedUntil: number }[];
+  /** Groups one belongs to, and whether one may send with their address. */
+  groups?: { address: string; name: string; maySendAs: boolean }[];
+  /** Shared mailboxes one uses. */
+  sharedMailboxes?: { id: number; address: string; name: string; maySend: boolean }[];
+}
+
+export type MaskedState = "pending" | "enabled" | "disabled" | "deleted";
+
+/** A random address for one website (Fastmail's MaskedEmail). */
+export interface MaskedAddress {
+  id: number;
+  email: string;
+  state: MaskedState;
+  forDomain: string;
+  description: string;
+  url: string | null;
+  emailPrefix: string | null;
+  createdBy: string;
+  createdAt: number;
+  lastMessageAt: number | null;
+}
+
+export interface MaskedAddressesView {
+  addresses: MaskedAddress[];
+  /** Domains open for masked addresses; empty means none can be made. */
+  domains: string[];
 }
 
 /** What someone shared with others may do: see, see and change, or everything but deleting. */

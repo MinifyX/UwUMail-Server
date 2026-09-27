@@ -75,12 +75,22 @@ Design choices that matter later:
   deliver to. Those are fetched over HTTPS with a valid certificate and cached
   until they expire; an enforced policy limits delivery to the MX hosts it lists
   and requires a certificate valid for the host.
+- `dane`: DNSSEC-validated lookups of the MX and TLSA records of domains we
+  deliver to (RFC 7672). Usable TLSA records make STARTTLS mandatory and replace
+  the certificate check with theirs (DANE-EE: the key or certificate, DANE-TA:
+  the chain up to it); DANE comes before MTA-STS, and answers that do not
+  validate hold the mail back.
+- `tlsrpt`: every delivery session to another domain's MX counts by the day
+  with its policy and TLS result (`tls_rpt_sessions`); once the day is over,
+  domains with a `_smtp._tls` record get a gzipped RFC 8460 report by mail
+  (queued and DKIM-signed) or HTTPS POST. See [tls-reports.md](tls-reports.md).
 - `reports`: DMARC aggregate and TLS reports addressed to `dmarc-reports@` and
   `tls-reports@` a hosted domain are unpacked (capped), checked to be about the
   domain and stored as numbers instead of landing in a mailbox.
 - `dnscheck`: the records a domain needs (MX, SPF, DMARC, DKIM) and the
-  recommended ones (TLS reporting, SRV, MTA-STS including the policy file),
-  resolved from the root servers down.
+  recommended ones (TLS reporting, SRV, MTA-STS including the policy file, CAA,
+  and in a DNSSEC-signed zone the TLSA record for the server's key), resolved
+  from the root servers down.
 - `dkim`: RSA-2048 and Ed25519 keys per domain; submitted mail is signed with both.
 - `forward` + `srs`: after local delivery, mail also goes to a person's confirmed
   forwarding addresses. Mail to other servers gets an SRS envelope sender on
@@ -110,7 +120,9 @@ they are due, so they survive restarts ([jmap-sending.md](jmap-sending.md)).
 state is removed and, where it matches now, added again at its place.
 Requests and push also run over a WebSocket (`/jmap/ws`, RFC 8887), and
 programs can use an app password as a bearer token, made for them at
-`/jmap/token` ([jmap-tokens.md](jmap-tokens.md)).
+`/jmap/token` ([jmap-tokens.md](jmap-tokens.md)). Apps that are closed get the
+same `StateChange` as Web Push through their push subscriptions, encrypted and
+signed with the server's VAPID key ([jmap-push.md](jmap-push.md)).
 
 ### `uwumail-imap`
 
@@ -164,6 +176,14 @@ every six hours for direct delivery, and only when no mail went out
 successfully in that time. For a relay, the probe logs in and quits. For direct
 delivery, it reads the greeting of Gmail's MX on port 25 and quits. It never
 sends mail. Admins can run all checks at once with "Check now".
+
+Every five minutes the same look, plus backups and certificate renewals, turns
+into admin alerts: kept per finding in the store, mailed to the admins when
+they are new, worse, still red a day later or fine again
+([admin-alerts.md](admin-alerts.md)). What happens (mail in and out, refusals,
+failed logins) is counted in memory, written into a table of days every minute
+for the statistics page, and served to Prometheus under `/metrics` when that is
+switched on ([metrics.md](metrics.md)).
 
 ### `uwumail-server`
 

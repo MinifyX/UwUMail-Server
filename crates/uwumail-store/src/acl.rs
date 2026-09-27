@@ -133,8 +133,23 @@ pub struct SharePerson {
     pub display_name: String,
 }
 
-/// Accounts that take part in sharing: people, not services, and not in the trash.
-const ACTIVE_PERSON: &str = "kind <> 'service' AND deleted_at IS NULL";
+/// Accounts that take part in sharing: people, not services, and not in the trash. A shared
+/// mailbox is stored as a service, so it is never someone a folder is shared with; it is only ever
+/// an owner, through its members (see [`GRANTS`]).
+pub(crate) const ACTIVE_PERSON: &str = "kind <> 'service' AND deleted_at IS NULL";
+
+/// Every right anyone has on someone else's mailbox: the folders shared one by one, and every
+/// folder of a shared mailbox for its members, those created later included. Where a member also
+/// got a single folder shared the ordinary way, the membership decides.
+pub(crate) const GRANTS: &str =
+    "(SELECT m.id AS mailbox_id, s.account_id AS owner_id, s.member_id AS grantee_id, s.rights AS rights
+       FROM shared_mailbox_members s
+       JOIN accounts sm ON sm.id = s.account_id AND sm.shared_mailbox = 1
+       JOIN mailboxes m ON m.account_id = s.account_id
+     UNION ALL
+     SELECT a.mailbox_id, a.owner_id, a.grantee_id, a.rights FROM mailbox_acl a
+     WHERE NOT EXISTS (SELECT 1 FROM shared_mailbox_members s
+                       WHERE s.account_id = a.owner_id AND s.member_id = a.grantee_id))";
 
 fn owned_mailbox(conn: &Connection, owner_id: i64, mailbox_id: i64) -> Result<()> {
     conn.query_row("SELECT 1 FROM mailboxes WHERE id = ?1 AND account_id = ?2", params![mailbox_id, owner_id], |_| {
@@ -159,10 +174,14 @@ const ENTRY_QUERY: &str = "SELECT acl.mailbox_id, acl.grantee_id, g.login, g.dis
 
 const SHARED_QUERY: &str = "SELECT o.id, o.login, o.display_name, m.id, m.parent_id, m.name, m.role, m.subscribed,
             m.uid_validity, m.uid_next, acl.rights
-     FROM mailbox_acl acl
+     FROM {GRANTS} acl
      JOIN mailboxes m ON m.id = acl.mailbox_id
      JOIN accounts o ON o.id = acl.owner_id AND o.deleted_at IS NULL
      JOIN accounts g ON g.id = acl.grantee_id AND g.deleted_at IS NULL";
+
+fn shared_query() -> String {
+    SHARED_QUERY.replace("{GRANTS}", GRANTS)
+}
 
 fn shared_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SharedMailbox> {
     Ok(SharedMailbox {
@@ -295,7 +314,8 @@ impl Store {
     pub async fn mailboxes_shared_with(&self, grantee_id: i64) -> Result<Vec<SharedMailbox>> {
         self.read(move |conn| {
             let mut stmt = conn.prepare(&format!(
-                "{SHARED_QUERY} WHERE acl.grantee_id = ?1 ORDER BY o.login, m.sort_order, m.name, m.id"
+                "{} WHERE acl.grantee_id = ?1 ORDER BY o.login, m.sort_order, m.name, m.id",
+                shared_query()
             ))?;
             let rows = stmt.query_map([grantee_id], shared_row)?;
             Ok(rows.collect::<Result<_, _>>()?)
@@ -308,7 +328,7 @@ impl Store {
         self.read(move |conn| {
             Ok(conn
                 .query_row(
-                    &format!("{SHARED_QUERY} WHERE acl.grantee_id = ?1 AND acl.mailbox_id = ?2"),
+                    &format!("{} WHERE acl.grantee_id = ?1 AND acl.mailbox_id = ?2", shared_query()),
                     params![grantee_id, mailbox_id],
                     shared_row,
                 )
@@ -320,11 +340,11 @@ impl Store {
     /// Accounts that share at least one mailbox with this one.
     pub async fn sharing_owners(&self, grantee_id: i64) -> Result<Vec<i64>> {
         self.read(move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT DISTINCT o.id FROM mailbox_acl acl
+            let mut stmt = conn.prepare(&format!(
+                "SELECT DISTINCT o.id FROM {GRANTS} acl
                  JOIN accounts o ON o.id = acl.owner_id AND o.deleted_at IS NULL
-                 WHERE acl.grantee_id = ?1 ORDER BY o.id",
-            )?;
+                 WHERE acl.grantee_id = ?1 ORDER BY o.id"
+            ))?;
             let rows = stmt.query_map([grantee_id], |row| row.get(0))?;
             Ok(rows.collect::<Result<_, _>>()?)
         })

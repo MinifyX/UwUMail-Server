@@ -278,11 +278,7 @@ impl Store {
             else {
                 return Ok(None);
             };
-            let taken: bool = conn.query_row(
-                "SELECT EXISTS (SELECT 1 FROM addresses WHERE local_part = ?1 AND domain_id = ?2)",
-                params![local, domain_id],
-                |row| row.get(0),
-            )?;
+            let taken = crate::forward_addresses::address_in_use(conn, &local, domain_id)?;
             Ok((!taken).then_some(kind))
         })
         .await

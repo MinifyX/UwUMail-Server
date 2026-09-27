@@ -57,6 +57,10 @@ pub(crate) async fn detail_json(web: &Web, name: &str) -> ApiResult<Value> {
         "people": people,
         "aliases": aliases,
         "forwards": web.store().forward_addresses(Some(domain.name.clone())).await?,
+        "groups": web.store().groups(Some(domain.name.clone())).await?,
+        "maskedAddresses": web.store().domain_masked_addresses(&domain.name).await?,
+        // Masked addresses people made on the domain that still take mail; they keep it in use.
+        "maskedInUse": web.store().domain_masked_address_count(&domain.name).await?,
         "keys": keys.iter().map(|key| {
             let (dns_name, dns_value) = key.dns_record();
             json!({
@@ -107,7 +111,9 @@ pub async fn remove(State(web): State<Web>, Admin(session): Admin, Path(name): P
     let domain = load(&web, &name).await?;
     let (people, aliases) = web.store().domain_address_counts().await?.get(&domain.name).copied().unwrap_or_default();
     let forwards = web.store().forward_addresses(Some(domain.name.clone())).await?.len() as i64;
-    let in_use = people + aliases + forwards;
+    let groups = web.store().groups(Some(domain.name.clone())).await?.len() as i64;
+    let masked = web.store().domain_masked_address_count(&domain.name).await?;
+    let in_use = people + aliases + forwards + groups + masked;
     if in_use > 0 {
         return Err(ApiError::Rule("domainInUse", format!("{in_use} addresses still use {}", domain.name)));
     }
@@ -194,10 +200,12 @@ pub async fn run_check(web: &Web, domain: &str) -> ApiResult<uwumail_smtp::dnsch
     let keys = web.store().dkim_keys(domain).await?;
     let relay_host = web.smtp().relay_host();
     let policy = web.store().mta_sts(domain).await?.map(|settings| Policy::ours(settings.mode, &settings.mx));
-    let account = web.settings().certificate.as_ref().and_then(|source| source()).and_then(|status| {
-        // A self-signed stand-in says nothing about the account the real one comes from.
-        status.lets_encrypt_account.filter(|_| status.automatic && !status.self_signed)
-    });
+    let certificate = web.settings().certificate.as_ref().and_then(|source| source());
+    // A self-signed stand-in says nothing about the account the real one comes from, nor about
+    // the key it will have.
+    let lasting = certificate.filter(|status| !(status.automatic && status.self_signed));
+    let account = lasting.as_ref().and_then(|status| status.lets_encrypt_account.clone().filter(|_| status.automatic));
+    let chain = lasting.map(|status| status.chain).filter(|chain| !chain.is_empty());
     let report = checker
         .check(DomainSetup {
             domain,
@@ -207,6 +215,7 @@ pub async fn run_check(web: &Web, domain: &str) -> ApiResult<uwumail_smtp::dnsch
             dkim_keys: &keys,
             mta_sts: policy.as_ref(),
             lets_encrypt_account: account.as_deref(),
+            certificate: chain.as_deref(),
         })
         .await;
     web.keep_report(report.clone());

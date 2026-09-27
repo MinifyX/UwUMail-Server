@@ -23,12 +23,23 @@ pub struct ForwardAddress {
     pub created_at: i64,
 }
 
-/// Whether an address of one of our domains is already used by a mailbox, an alias or a forwarding
-/// address.
+/// Whether an address of one of our domains is already used by a mailbox, an alias, a forwarding
+/// address, a group or a masked address. A deleted masked address counts too: it is never handed
+/// out again.
 pub(crate) fn address_in_use(conn: &Connection, local: &str, domain_id: i64) -> Result<bool> {
     Ok(conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM forward_addresses WHERE local_part = ?1 AND domain_id = ?2)",
+        params![local, domain_id],
+        |row| row.get::<_, bool>(0),
+    )? || taken_by_other_than_forwarding(conn, local, domain_id)?)
+}
+
+/// Whether a mailbox, an alias, a group or a masked address (even a deleted one) has the address.
+pub(crate) fn taken_by_other_than_forwarding(conn: &Connection, local: &str, domain_id: i64) -> Result<bool> {
+    Ok(conn.query_row(
         "SELECT EXISTS (SELECT 1 FROM addresses WHERE local_part = ?1 AND domain_id = ?2)
-             OR EXISTS (SELECT 1 FROM forward_addresses WHERE local_part = ?1 AND domain_id = ?2)",
+             OR EXISTS (SELECT 1 FROM groups WHERE local_part = ?1 AND domain_id = ?2)
+             OR EXISTS (SELECT 1 FROM masked_addresses WHERE local_part = ?1 AND domain_id = ?2)",
         params![local, domain_id],
         |row| row.get(0),
     )?)
@@ -116,12 +127,7 @@ impl Store {
         }
         self.write(move |tx| {
             let domain_id = domain_id(tx, &domain)?;
-            let mailbox: bool = tx.query_row(
-                "SELECT EXISTS (SELECT 1 FROM addresses WHERE local_part = ?1 AND domain_id = ?2)",
-                params![local, domain_id],
-                |row| row.get(0),
-            )?;
-            if mailbox {
+            if taken_by_other_than_forwarding(tx, &local, domain_id)? {
                 return Err(StoreError::Conflict(format!("address {own}")));
             }
             let created_at = now();

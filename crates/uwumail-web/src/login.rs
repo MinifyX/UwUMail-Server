@@ -24,6 +24,8 @@ pub struct PendingLogin {
     attempts: u32,
     /// The WebAuthn challenge handed out for this login, if any.
     pub challenge: Option<Vec<u8>>,
+    /// Where the first step happened: `password` here, or `oidc` at another provider.
+    pub via: &'static str,
 }
 
 #[derive(Default)]
@@ -49,11 +51,16 @@ pub fn random_token() -> String {
 impl LoginState {
     /// Remembers a login whose password was right. The token goes to the browser.
     pub fn start(&self, account_id: i64) -> String {
+        self.start_via(account_id, "password")
+    }
+
+    /// Remembers a login whose first step happened `via` somewhere else than the password here.
+    pub fn start_via(&self, account_id: i64, via: &'static str) -> String {
         let token = random_token();
         let mut pending = self.pending.lock().expect("pending logins poisoned");
         pending.retain(|_, login| login.created.elapsed() < PENDING_LIFETIME);
-        pending
-            .insert(token.clone(), PendingLogin { account_id, created: Instant::now(), attempts: 0, challenge: None });
+        let login = PendingLogin { account_id, created: Instant::now(), attempts: 0, challenge: None, via };
+        pending.insert(token.clone(), login);
         token
     }
 

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AtSign, Folder, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { AtSign, Folder, Inbox, Plus, RotateCcw, Trash2, UsersRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
@@ -169,6 +169,56 @@ function AddressesCard({ data }: { data: OwnAddressesView }) {
   );
 }
 
+/** The groups and shared mailboxes one belongs to, which an admin set up. */
+function MembershipsCard({ data }: { data: OwnAddressesView }) {
+  const { t } = useT();
+  const groups = data.groups ?? [];
+  const shared = data.sharedMailboxes ?? [];
+  if (groups.length === 0 && shared.length === 0) return null;
+  return (
+    <Card title={t("memberships.title")}>
+      <div className="flex flex-col gap-3">
+        <p className="-mt-1 text-[13px] text-muted">{t("memberships.intro")}</p>
+        <ul className="flex flex-col">
+          {groups.map((group) => (
+            <li
+              key={group.address}
+              className="flex min-h-11 items-center gap-3 border-b border-hairline py-1.5 last:border-b-0"
+            >
+              <UsersRound className="size-4 shrink-0 text-muted" aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold">{group.address}</span>
+                <span className="block text-[12px] text-muted">
+                  {group.name ? `${t("memberships.group")} · ${group.name}` : t("memberships.group")}
+                  {group.maySendAs && ` · ${t("memberships.maySend")}`}
+                </span>
+              </span>
+              <CopyButton value={group.address} />
+            </li>
+          ))}
+          {shared.map((mailbox) => (
+            <li
+              key={mailbox.address}
+              className="flex min-h-11 items-center gap-3 border-b border-hairline py-1.5 last:border-b-0"
+            >
+              <Inbox className="size-4 shrink-0 text-muted" aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold">{mailbox.address}</span>
+                <span className="block text-[12px] text-muted">
+                  {mailbox.name ? `${t("memberships.shared")} · ${mailbox.name}` : t("memberships.shared")}
+                  {mailbox.maySend && ` · ${t("memberships.maySend")}`}
+                </span>
+              </span>
+              <CopyButton value={mailbox.address} />
+            </li>
+          ))}
+        </ul>
+        {shared.length > 0 && <p className="text-[12px] text-muted">{t("memberships.sharedHint")}</p>}
+      </div>
+    </Card>
+  );
+}
+
 function StorageCard({ storage }: { storage: StorageView }) {
   const { t, i18n } = useT();
   const errorText = useErrorText();
@@ -300,6 +350,7 @@ export function AddressesPage() {
         <AddressesCard key={addresses.data.domains.join()} data={addresses.data} />
         <StorageCard storage={storage.data} />
       </div>
+      <MembershipsCard data={addresses.data} />
       <SharingCard />
     </div>
   );

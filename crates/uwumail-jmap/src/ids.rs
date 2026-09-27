@@ -30,6 +30,11 @@ pub fn sender(id: i64) -> String {
     format!("l{id}")
 }
 
+/// A push subscription (RFC 8620, 7.2).
+pub fn push_subscription(id: i64) -> String {
+    format!("w{id}")
+}
+
 pub fn calendar(id: i64) -> String {
     format!("c{id}")
 }
@@ -81,6 +86,11 @@ pub fn participant(account_id: i64) -> String {
 /// A Sieve script: `r` for rules.
 pub fn sieve_script(id: i64) -> String {
     format!("r{id}")
+}
+
+/// A masked address: `x`, as nothing else needs it.
+pub fn masked_email(id: i64) -> String {
+    format!("x{id}")
 }
 
 /// Parses an id with the given type letter.

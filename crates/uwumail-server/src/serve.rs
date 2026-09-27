@@ -57,11 +57,7 @@ pub async fn run(
         crate::restore::after(&store, done, pairing_here, &config.hostname).await;
     }
     // Settings changed in the admin panel, underneath the config file and environment.
-    let overlay = store
-        .setting(uwumail_web::SETTINGS_OVERLAY_KEY)
-        .await?
-        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
-        .unwrap_or_default();
+    let overlay = uwumail_web::settings::load_overlay(&store).await?;
     let config = match Config::load_with_overlay(config_path.as_deref(), &overlay) {
         Ok(merged) => merged,
         Err(err) => {
@@ -84,6 +80,7 @@ pub async fn run(
         },
     )?;
     smtp.set_brand(config.brand.clone());
+    smtp.set_reports(&config.reports);
 
     let (shutdown, shutdown_rx) = watch::channel(false);
     let mut tasks = JoinSet::new();
@@ -97,8 +94,14 @@ pub async fn run(
             tasks.spawn(uwumail_smtp::serve(smtp.clone(), listener, kind, shutdown_rx.clone()));
         }
     }
-    // Mail apps may append messages as big as they may send.
-    let imap = uwumail_imap::Imap::new(store.clone(), config.smtp.max_message_size);
+    // Accounts whose password lives in an LDAP directory are checked there, by every protocol; the
+    // admin panel changes the settings while the server runs (docs/login-oidc-ldap.md).
+    let external = Arc::new(uwumail_web::ExternalLogin::new());
+    external.configure(config.auth.clone());
+    store.set_external_passwords(external.clone());
+    // Mail apps may append messages as big as they may send. A refused OAuth token points the app
+    // to this server's OpenID configuration.
+    let imap = uwumail_imap::Imap::new(store.clone(), config.smtp.max_message_size).with_hostname(&config.hostname);
     let mail_tls = tls::mail_server_config(certs.clone())?;
     if let Some(listener) = bind(&config.listen.imaps, "mail apps (IMAP with TLS)").await? {
         tasks.spawn(imap.clone().serve(listener, mail_tls.clone(), shutdown_rx.clone()));
@@ -119,8 +122,10 @@ pub async fn run(
     }
     // Mailboxes at other providers, emptied into the mailboxes here that asked for them.
     tasks.spawn(crate::fetch::run_fetchers(store.clone(), smtp.clone(), egress.clone(), shutdown_rx.clone()));
+    tasks.spawn(crate::migrate::run_migrations(store.clone(), egress.clone(), shutdown_rx.clone()));
     // Subscribed calendars, fetched again when their turn comes, the same way out as fetched mail.
     tasks.spawn(uwumail_dav::client::run_subscriptions(store.clone(), egress.clone(), shutdown_rx.clone()));
+    let tls_report_egress = egress.clone();
 
     // Calendars and contacts (CalDAV, CardDAV) live next to JMAP on the same HTTPS port.
     let names = config.tone.language.collection_names();
@@ -150,11 +155,17 @@ pub async fn run(
                 not_after: info.not_after,
                 names: info.names,
                 self_signed: info.self_signed,
+                chain: info.chain,
                 automatic,
                 lets_encrypt_account: crate::acme::lets_encrypt_account(&config),
             })
         })
     };
+    // Prometheus metrics, off unless the config or the admin panel switches them on.
+    let metrics = Arc::new(uwumail_web::MetricsGate::default());
+    if let Err(err) = metrics.configure(&config.metrics) {
+        tracing::warn!(%err, "not serving /metrics");
+    }
     let web = uwumail_web::Web::new(
         smtp.clone(),
         uwumail_web::WebSettings {
@@ -168,12 +179,16 @@ pub async fn run(
                 loki,
                 webmail: webmail.clone(),
                 egress: egress.clone(),
+                metrics: metrics.clone(),
+                external: external.clone(),
             })),
             certificate: Some(certificate),
             webmail,
         },
     );
     web.set_egress(egress);
+    web.set_metrics_gate(metrics);
+    web.set_external_login(external);
     {
         let certs = certs.clone();
         web.set_profile_key(Arc::new(move || certs.pem()));
@@ -189,6 +204,8 @@ pub async fn run(
     };
     // Sending held back for the undo window or for later (EmailSubmission sendAt) is released here.
     tasks.spawn(jmap.clone().run_scheduled_sending(shutdown_rx.clone()));
+    // Changes go out to the push subscriptions of browsers and phones (Web Push, docs/jmap-push.md).
+    tasks.spawn(jmap.clone().run_web_push(shutdown_rx.clone()));
     let jmap = jmap.router().merge(dav.router());
     tasks.spawn(web.clone().run_health_checks(shutdown_rx.clone()));
     let setup_code = web.open_setup().await;
@@ -308,6 +325,9 @@ pub async fn run(
     }
 
     tasks.spawn(collect_garbage(store.clone(), smtp.clone(), shutdown_rx.clone()));
+    // Once a day is over, the domains mail went to hear how TLS went (RFC 8460).
+    tasks.spawn(uwumail_smtp::run_tls_reports(smtp.clone(), tls_report_egress, shutdown_rx.clone()));
+    tasks.spawn(flush_stats(store.clone(), shutdown_rx.clone()));
     tasks.spawn(backups.clone().run(shutdown_rx.clone()));
 
     tracing::info!("ready ✉");
@@ -315,7 +335,24 @@ pub async fn run(
     tracing::info!("shutting down, see you soon");
     let _ = shutdown.send(true);
     let _ = tokio::time::timeout(Duration::from_secs(10), async { while tasks.join_next().await.is_some() {} }).await;
+    // What was counted while everything stopped.
+    if let Err(err) = store.flush_stats().await {
+        tracing::warn!(%err, "writing down the statistics failed");
+    }
     Ok(())
+}
+
+/// Writes the statistics' counters into the day's numbers every minute.
+async fn flush_stats(store: Store, mut shutdown: watch::Receiver<bool>) {
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(60)) => {}
+            _ = shutdown.changed() => return,
+        }
+        if let Err(err) = store.flush_stats().await {
+            tracing::warn!(%err, "writing down the statistics failed");
+        }
+    }
 }
 
 async fn collect_garbage(store: Store, smtp: uwumail_smtp::Smtp, mut shutdown: watch::Receiver<bool>) {
@@ -343,6 +380,12 @@ async fn collect_garbage(store: Store, smtp: uwumail_smtp::Smtp, mut shutdown: w
                 }
             }
             Err(err) => tracing::warn!(%err, "emptying the trash failed"),
+        }
+        // Masked addresses nobody ever wrote to within a day are deleted; their names stay taken.
+        match store.retire_pending_masked_addresses().await {
+            Ok(0) => {}
+            Ok(retired) => tracing::info!(retired, "deleted pending masked addresses that never got mail"),
+            Err(err) => tracing::warn!(%err, "cleaning up pending masked addresses failed"),
         }
         match store.purge_reports(uwumail_store::REPORT_RETENTION_SECS).await {
             Ok(0) => {}

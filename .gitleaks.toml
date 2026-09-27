@@ -13,4 +13,12 @@ regexes = [
   '''^Kirschbluete-Tastatur(-42!?)?$''',
   '''^Seifenblase-Wanderweg(-17!?)?$''',
   '''^geheim-und-lang$''',
+  '''^ein-ganz-neues-passwort-17$''',
+  '''^ein-langes-passwort-123$''',
+  '''^0123456789abcdef0123$''',
+  '''^scrape-me-gently-0123456789$''',
+  # The OAUTHBEARER example token of RFC 7628, section 4.1.
+  '''^vF9dft4qmTc2Nvb3RlckBhbHRhdmlzdGEuY29tCg==$''',
+  # Not a secret: the letters the portal draws metrics tokens from.
+  '''^abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789$''',
 ]

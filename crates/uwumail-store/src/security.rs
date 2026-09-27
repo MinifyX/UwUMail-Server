@@ -450,6 +450,13 @@ impl Store {
             .account_by_id(account_id)
             .await?
             .ok_or_else(|| StoreError::NotFound(format!("account {account_id}")))?;
+        // Its members reach a shared mailbox with their own logins; it has none of its own.
+        if account.shared_mailbox {
+            return Err(StoreError::Rule {
+                code: "sharedMailbox",
+                message: format!("{} is a shared mailbox, its members sign in as themselves", account.login),
+            });
+        }
         let usable = scopes_for(account.protocols);
         if !scopes.iter().any(|scope| usable.contains(scope)) {
             return Err(StoreError::Invalid(
@@ -623,6 +630,21 @@ impl Store {
         protocol: &str,
         ip: &str,
     ) -> Result<MailAuth> {
+        let auth = self.check_mail_login(login, password, scope, protocol, ip).await;
+        if let Ok(MailAuth::Denied(_)) = &auth {
+            self.stats().count(crate::Stat::login_failed(protocol));
+        }
+        auth
+    }
+
+    async fn check_mail_login(
+        &self,
+        login: &str,
+        password: &str,
+        scope: AppScope,
+        protocol: &str,
+        ip: &str,
+    ) -> Result<MailAuth> {
         let login = login_key(login).unwrap_or_default();
         let app_hash = candidate("app", password, APP_PASSWORD_CHARS);
         let found = self
@@ -630,7 +652,8 @@ impl Store {
                 let row = conn
                     .query_row(
                         &format!(
-                            "SELECT {ACCOUNT_COLUMNS}, password_hash, apps_need_app_password FROM accounts WHERE login = ?1"
+                            "SELECT {ACCOUNT_COLUMNS}, password_hash, apps_need_app_password, auth_source
+                             FROM accounts WHERE login = ?1"
                         ),
                         [login],
                         |row| {
@@ -638,11 +661,12 @@ impl Store {
                                 account_from_row(row)?,
                                 row.get::<_, Option<String>>(ACCOUNT_COLUMN_COUNT)?,
                                 row.get::<_, bool>(ACCOUNT_COLUMN_COUNT + 1)?,
+                                row.get::<_, String>(ACCOUNT_COLUMN_COUNT + 2)? == "ldap",
                             ))
                         },
                     )
                     .optional()?;
-                let Some((account, hash, flag)) = row else {
+                let Some((account, hash, flag, directory)) = row else {
                     return Ok(None);
                 };
                 let required = flag || has_second_factor(conn, account.id)?;
@@ -668,11 +692,11 @@ impl Store {
                     })?;
                     imported = rows.collect::<rusqlite::Result<Vec<_>>>()?;
                 }
-                Ok(Some((account, hash, required, app, imported)))
+                Ok(Some((account, hash, required, app, imported, directory)))
             })
             .await?;
 
-        let Some((account, hash, required, mut app, imported)) = found else {
+        let Some((account, hash, required, mut app, imported, directory)) = found else {
             // The hashing happens anyway, against nothing: without it this answer would come back
             // faster than a wrong password does, and the clock alone would say which names exist.
             let password = password.to_owned();
@@ -716,10 +740,16 @@ impl Store {
             return Ok(MailAuth::Ok { account, app_password: Some(id) });
         }
 
-        let (typed, stored) = (password.to_owned(), hash.clone());
-        let valid = tokio::task::spawn_blocking(move || password::verify(&typed, stored.as_deref()))
-            .await
-            .map_err(|err| StoreError::Internal(err.to_string()))?;
+        let valid = if directory {
+            // The directory's password, checked there: only while main passwords are allowed at
+            // all, which the check below says. An unreachable directory is a temporary failure.
+            self.check_external_password(&account.login, password).await?
+        } else {
+            let (typed, stored) = (password.to_owned(), hash.clone());
+            tokio::task::spawn_blocking(move || password::verify(&typed, stored.as_deref()))
+                .await
+                .map_err(|err| StoreError::Internal(err.to_string()))?
+        };
         if !valid || !account.can_log_in() {
             return Ok(MailAuth::Denied(MailAuthDenied::Invalid));
         }
@@ -770,6 +800,14 @@ impl Store {
         protocol: &str,
         ip: &str,
     ) -> Result<MailAuth> {
+        let auth = self.check_bearer(token, scope, protocol, ip).await;
+        if let Ok(MailAuth::Denied(_)) = &auth {
+            self.stats().count(crate::Stat::login_failed(protocol));
+        }
+        auth
+    }
+
+    async fn check_bearer(&self, token: &str, scope: AppScope, protocol: &str, ip: &str) -> Result<MailAuth> {
         let Some(hash) = candidate("app", token, APP_PASSWORD_CHARS) else {
             return Ok(MailAuth::Denied(MailAuthDenied::Invalid));
         };
@@ -1299,6 +1337,13 @@ mod tests {
         // And a protocol nobody taught the gate about is not quietly allowed either.
         let unknown = store.authenticate_mail("monitoring@example.org", &secret, AppScope::Mail, "pop3", "").await;
         assert!(matches!(unknown, Ok(MailAuth::Denied(MailAuthDenied::ProtocolOff))), "{unknown:?}");
+        // Every refusal counts as a failed login of its protocol in the statistics; the success does not.
+        let failed: std::collections::HashMap<_, _> = store.stats().since_start().into_iter().collect();
+        assert_eq!(failed[&crate::Stat::LoginFailedImap], 1);
+        assert_eq!(failed[&crate::Stat::LoginFailedJmap], 1);
+        assert_eq!(failed[&crate::Stat::LoginFailedDav], 1);
+        assert_eq!(failed[&crate::Stat::LoginFailedOther], 1);
+        assert_eq!(failed[&crate::Stat::LoginFailedSmtp], 0);
 
         // Switching IMAP back on lets the same password in.
         store

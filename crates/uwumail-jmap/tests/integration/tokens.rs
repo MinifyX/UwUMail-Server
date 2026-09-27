@@ -181,3 +181,52 @@ async fn the_token_endpoint_asks_for_the_second_factor() {
     let (status, _) = token_request(&server, json!({ "username": "nyu@example.org", "password": PASSWORD })).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+/// An OAuth access token (docs/oauth.md) is a bearer token too, within the scopes it was given.
+#[tokio::test(flavor = "multi_thread")]
+async fn oauth_access_tokens_work_as_bearer_tokens() {
+    let server = server().await;
+    let id = server.id("mini@example.org").await;
+    // RFC 7636 appendix B.
+    let (verifier, challenge) =
+        ("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
+    let client = server.store.register_oauth_client("Test app", vec!["http://127.0.0.1/cb".into()]).await.unwrap();
+    let token = |scopes: Vec<&'static str>| {
+        let store = server.store.clone();
+        let client = client.clone();
+        async move {
+            let code = store
+                .create_oauth_code(uwumail_store::NewOAuthCode {
+                    client_id: client.id,
+                    account_id: id,
+                    redirect_uri: "http://127.0.0.1/cb".into(),
+                    scopes,
+                    code_challenge: challenge.into(),
+                    nonce: None,
+                    auth_time: 0,
+                })
+                .await
+                .unwrap();
+            store.redeem_oauth_code(&code, client.id, "http://127.0.0.1/cb", verifier).await.unwrap().unwrap()
+        }
+    };
+    let calls = json!([["Core/echo", { "hello": true }, "0"]]);
+    let mail = token(vec!["openid", "mail"]).await;
+    let (status, response) = server.api_as(&bearer(&mail.access_token), &USING, calls.clone()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(response["methodResponses"][0][1]["hello"], true);
+    let grants = server.store.oauth_grants(id).await.unwrap();
+    assert_eq!(grants[0].last_used_protocol.as_deref(), Some("jmap"));
+
+    // A token for sending only is no way into the mailboxes; neither is the refresh token.
+    let sending = token(vec!["smtp"]).await;
+    let (status, _) = server.api_as(&bearer(&sending.access_token), &USING, calls.clone()).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, _) = server.api_as(&bearer(&mail.refresh_token), &USING, calls.clone()).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // Signed out in the portal, the token stops working at once.
+    server.store.revoke_oauth_grant(id, mail.grant_id).await.unwrap();
+    let (status, _) = server.api_as(&bearer(&mail.access_token), &USING, calls).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}

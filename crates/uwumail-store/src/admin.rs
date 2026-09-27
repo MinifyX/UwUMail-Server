@@ -117,7 +117,8 @@ pub struct AddressInfo {
 #[derive(Debug, Clone)]
 pub struct Person {
     pub account: Account,
-    /// False until an invited person chose their password.
+    /// False until an invited person chose their password. True for someone who logs in at an
+    /// LDAP directory or another OpenID Connect provider: nobody waits for them.
     pub has_password: bool,
     pub addresses: Vec<AddressInfo>,
 }
@@ -194,6 +195,13 @@ impl Store {
                 after.display_name = name.trim().to_owned();
             }
             if let Some(role) = update.role {
+                // A shared mailbox stays one: nobody signs in to it, so it is no person or admin.
+                if before.shared_mailbox && role != Role::Service {
+                    return Err(StoreError::Rule {
+                        code: "sharedMailbox",
+                        message: format!("{login} is a shared mailbox, nobody signs in to it"),
+                    });
+                }
                 after.role = role;
             }
             if let Some(quota) = update.quota_bytes {
@@ -412,7 +420,7 @@ impl Store {
     pub async fn people(&self) -> Result<Vec<Person>> {
         self.read(|conn| {
             let mut stmt = conn.prepare(&format!(
-                "SELECT {ACCOUNT_COLUMNS}, password_hash IS NOT NULL FROM accounts ORDER BY login"
+                "SELECT {ACCOUNT_COLUMNS}, password_hash IS NOT NULL OR auth_source <> 'local' FROM accounts ORDER BY login"
             ))?;
             let accounts = stmt
                 .query_map([], |row| Ok((account_from_row(row)?, row.get::<_, bool>(ACCOUNT_COLUMN_COUNT)?)))?

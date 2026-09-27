@@ -11,9 +11,11 @@ use uwumail_store::{QueueRecipient, QueuedMessage};
 
 use crate::client::{Client, Reply};
 use crate::config::{RelayConfig, RelaySecurity};
+use crate::dane::{self, Dane, Security};
 use crate::dsn::{self, FailedRecipient};
 use crate::health::{DeliveryEvent, ProbeStage, Route};
 use crate::mta_sts;
+use crate::tlsrpt::{self, PolicyType, ReportPolicy, ResultType};
 use crate::{Context, Smtp, now};
 
 /// How long claimed recipients stay reserved for one delivery attempt.
@@ -112,13 +114,16 @@ async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, re
             Outcome::Delivered(reply) => {
                 tracing::info!(message = message.id, to = %recipient.address, %reply, "delivered");
                 ctx.stats.record(DeliveryEvent::Delivered);
+                ctx.store.stats().count(uwumail_store::Stat::Delivered);
                 ctx.store.mark_recipient_delivered(recipient.id, reply).await
             }
             Outcome::Deferred(error) => {
                 ctx.stats.record(DeliveryEvent::Deferred);
+                ctx.store.stats().count(uwumail_store::Stat::Deferred);
                 let next = now() + retry_delay(recipient.attempts + 1);
                 if next > message.expires_at {
                     tracing::warn!(message = message.id, to = %recipient.address, %error, "giving up after retries");
+                    ctx.store.stats().count(uwumail_store::Stat::Bounced);
                     failed.push(FailedRecipient { address: recipient.address.clone(), error: error.clone() });
                     ctx.store.mark_recipient_failed(recipient.id, error).await
                 } else {
@@ -129,6 +134,7 @@ async fn deliver_group(ctx: &Context, message: QueuedMessage, domain: String, re
             Outcome::Failed(error) => {
                 tracing::warn!(message = message.id, to = %recipient.address, %error, "delivery failed");
                 ctx.stats.record(DeliveryEvent::Failed);
+                ctx.store.stats().count(uwumail_store::Stat::Bounced);
                 if recipient.notify_flags & RCPT_NOTIFY_NEVER == 0 {
                     failed.push(FailedRecipient { address: recipient.address.clone(), error: error.clone() });
                 }
@@ -167,6 +173,18 @@ struct Target {
     via: Via,
     /// The domain's MTA-STS policy is enforced: TLS with a valid certificate for `host`, or nothing.
     verified_tls: bool,
+    /// The domain's MTA-STS policy is being tested: certificate problems are reported, not enforced.
+    sts_testing: bool,
+    /// TLSA records of the host, which come before MTA-STS.
+    dane: Dane,
+    /// What the domain's TLS reports say about sessions to this host; only for MX hosts.
+    report: Option<ReportPolicy>,
+}
+
+impl Target {
+    fn elsewhere(host: String, addrs: Vec<SocketAddr>, via: Via) -> Target {
+        Target { host, addrs, via, verified_tls: false, sts_testing: false, dane: Dane::Off, report: None }
+    }
 }
 
 async fn lookup(host: &str, port: u16) -> Vec<SocketAddr> {
@@ -214,7 +232,7 @@ async fn sender_route(ctx: &Context, account_id: Option<i64>, return_path: &str)
     if addrs.is_empty() {
         tracing::warn!(host = %relay.host, "the outgoing server of a fetched address is not a public host");
     }
-    Some(Target { host: relay.host.clone(), addrs, via: Via::Relay(relay), verified_tls: false })
+    Some(Target::elsewhere(relay.host.clone(), addrs, Via::Relay(relay)))
 }
 
 async fn resolve_targets(
@@ -230,7 +248,7 @@ async fn resolve_targets(
             .and_then(|(host, port)| Some((host.trim_matches(['[', ']']).to_owned(), port.parse::<u16>().ok()?)))
             .ok_or_else(|| Outcome::Deferred(format!("the route for {domain} is not host:port")))?;
         let addrs = lookup(&host, port).await;
-        return Ok(vec![Target { host, addrs, via: Via::Route, verified_tls: false }]);
+        return Ok(vec![Target::elsewhere(host, addrs, Via::Route)]);
     }
     // Before the server's own smarthost: whose account it comes from, together with the address,
     // decides where it may leave.
@@ -239,12 +257,7 @@ async fn resolve_targets(
     }
     if let Some(relay) = &live.delivery.relay {
         let addrs = lookup(&relay.host, relay.port).await;
-        return Ok(vec![Target {
-            host: relay.host.clone(),
-            addrs,
-            via: Via::Relay(relay.clone()),
-            verified_tls: false,
-        }]);
+        return Ok(vec![Target::elsewhere(relay.host.clone(), addrs, Via::Relay(relay.clone()))]);
     }
 
     let auth = &ctx.authenticator;
@@ -266,9 +279,11 @@ async fn resolve_targets(
     };
 
     // An enforced MTA-STS policy limits the hosts and requires TLS with a valid certificate.
-    let enforced = mta_sts::policy_for(ctx, domain).await.filter(|policy| policy.mode == mta_sts::Mode::Enforce);
-    let hosts: Vec<String> = match &enforced {
-        Some(policy) => {
+    let sts = mta_sts::policy_for(ctx, domain).await;
+    let policy = sts.policy.filter(|policy| policy.mode != mta_sts::Mode::None);
+    let enforced = policy.as_ref().is_some_and(|policy| policy.mode == mta_sts::Mode::Enforce);
+    let hosts: Vec<String> = match &policy {
+        Some(policy) if enforced => {
             let allowed: Vec<String> = hosts.into_iter().filter(|host| policy.allows(host)).collect();
             if allowed.is_empty() {
                 return Err(Outcome::Deferred(format!(
@@ -277,8 +292,21 @@ async fn resolve_targets(
             }
             allowed
         }
-        None => hosts,
+        _ => hosts,
     };
+
+    // DANE needs MX records that validate; TLSA records of their hosts then come before MTA-STS.
+    let mx_security = if implicit { Security::Insecure } else { dane::mx_security(ctx, domain).await };
+    if mx_security == Security::Bogus {
+        let report = ReportPolicy {
+            kind: PolicyType::Tlsa,
+            strings: Vec::new(),
+            mx: Vec::new(),
+            failure: Some(ResultType::DnssecInvalid),
+        };
+        tlsrpt::record(ctx, domain, &report, None, "", None, None).await;
+        return Err(Outcome::Deferred(format!("DNSSEC: the MX records of {domain} do not validate")));
+    }
 
     let mut targets = Vec::new();
     for host in hosts.into_iter().take(MAX_HOSTS) {
@@ -294,7 +322,20 @@ async fn resolve_targets(
         {
             Ok(ips) => {
                 let addrs = ips.into_iter().map(|ip| SocketAddr::new(ip, live.delivery.mx_port)).collect();
-                targets.push(Target { host, addrs, via: Via::Mx, verified_tls: enforced.is_some() });
+                let dane = match mx_security {
+                    Security::Secure => Dane::of(dane::host_tlsa(ctx, &host).await),
+                    _ => Dane::Off,
+                };
+                let report = ReportPolicy::of(&host, &dane, policy.as_ref(), sts.failure);
+                targets.push(Target {
+                    verified_tls: enforced && !dane.applies(),
+                    sts_testing: policy.is_some() && !enforced && !dane.applies(),
+                    host,
+                    addrs,
+                    via: Via::Mx,
+                    dane,
+                    report: Some(report),
+                });
             }
             Err(mail_auth::Error::Dns(DnsError::RecordNotFound(_))) if implicit => {
                 return Err(Outcome::Failed(format!("550 5.1.2 The domain {domain} does not exist")));
@@ -319,6 +360,14 @@ async fn deliver_domain(
     };
     let mut last_error = format!("no mail server for {domain} could be reached");
     for target in &targets {
+        if target.dane == Dane::Bogus {
+            // RFC 7672, section 2.2: an MX host whose TLSA records do not validate is not used.
+            if let Some(report) = &target.report {
+                tlsrpt::record(ctx, domain, report, None, &target.host, None, None).await;
+            }
+            last_error = format!("{}: DNSSEC: its TLSA records do not validate", target.host);
+            continue;
+        }
         for addr in &target.addrs {
             match session(ctx, target, *addr, message, raw, recipients).await {
                 Ok(outcomes) => return outcomes,
@@ -387,30 +436,62 @@ async fn session(
             matches!(relay.security, RelaySecurity::Starttls | RelaySecurity::None),
             relay.security == RelaySecurity::Starttls,
         ),
-        None => (true, settings.require_tls || target.verified_tls),
+        None => (true, settings.require_tls || target.verified_tls || target.dane.applies()),
+    };
+    // Sessions to MX hosts count for the domain's TLS reports, once it is clear how TLS went.
+    let domain = recipients.first().map(|recipient| recipient.domain.as_str()).unwrap_or_default();
+    let local_ip = client.local_ip();
+    let report = |result: Option<ResultType>| async move {
+        if let Some(policy) = &target.report {
+            tlsrpt::record(ctx, domain, policy, result, &target.host, Some(addr.ip()), local_ip).await;
+        }
     };
     if want_tls && !client.is_tls() {
         if caps.starttls {
             let reply = client.send("STARTTLS\r\n").await.map_err(io)?;
             if reply.code == 220 {
+                let mut testing = None;
                 // A "none" relay uses the non-verifying config: it may carry a self-signed
                 // certificate on the local network, so encrypt without demanding a valid one.
-                let config = if relay.is_some_and(|r| r.security != RelaySecurity::None) || target.verified_tls {
-                    ctx.client_tls.verified.clone()
-                } else {
-                    ctx.client_tls.opportunistic.clone()
+                let config = match &target.dane {
+                    Dane::Verify(records) if relay.is_none() => {
+                        ctx.client_tls.dane(records.clone(), &[target.host.as_str(), domain])?
+                    }
+                    _ if relay.is_some_and(|r| r.security != RelaySecurity::None) || target.verified_tls => {
+                        ctx.client_tls.verified.clone()
+                    }
+                    _ if target.sts_testing => {
+                        let (config, verifier) = ctx.client_tls.report_only()?;
+                        testing = Some(verifier);
+                        config
+                    }
+                    _ => ctx.client_tls.opportunistic.clone(),
                 };
-                client = client.tls_handshake(config, &target.host).await.map_err(|e| format!("TLS: {e}"))?;
+                client = match client.tls_handshake(config, &target.host).await {
+                    Ok(client) => client,
+                    Err(e) => {
+                        report(Some(crate::tls::result_type(&e))).await;
+                        return Err(format!("TLS: {e}"));
+                    }
+                };
+                let problem = testing.and_then(|verifier| verifier.problem());
+                report(problem.as_ref().map(crate::tls::certificate_result)).await;
                 let (reply, new_caps) = client.ehlo(&ctx.hostname).await.map_err(io)?;
                 if !reply.is_positive() {
                     return Err(format!("EHLO after STARTTLS: {reply}"));
                 }
                 caps = new_caps;
-            } else if must_tls {
-                return Err(format!("STARTTLS refused: {reply}"));
+            } else {
+                report(Some(ResultType::StarttlsNotSupported)).await;
+                if must_tls {
+                    return Err(format!("STARTTLS refused: {reply}"));
+                }
             }
-        } else if must_tls {
-            return Err("the server does not offer STARTTLS".into());
+        } else {
+            report(Some(ResultType::StarttlsNotSupported)).await;
+            if must_tls {
+                return Err("the server does not offer STARTTLS".into());
+            }
         }
     }
 
@@ -421,7 +502,6 @@ async fn session(
         if !reply.is_positive() {
             client.quit().await;
             let error = format!("the relay refused our login: {reply}");
-            let domain = recipients.first().map(|recipient| recipient.domain.as_str()).unwrap_or_default();
             ctx.stats.trouble(domain, Route::Relay, ProbeStage::Login, error.clone());
             return Ok(everyone(Outcome::Deferred(error)));
         }

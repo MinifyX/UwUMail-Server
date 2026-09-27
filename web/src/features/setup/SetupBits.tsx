@@ -345,13 +345,15 @@ export function CloudflarePanel({
   const [tidy, setTidy] = useState<string[]>([]);
   const [caa, setCaa] = useState(false);
   // The MTA-STS policy is a file this server serves, not a DNS record. The CAA record is only ever
-  // set when asked for: it decides who may issue certificates for the name.
+  // set when asked for: it decides who may issue certificates for the name. The TLSA record for
+  // DANE is left to the admin, who has to keep it in step with the server's key.
   const missing = report.records.filter(
     (record) =>
       record.status === "missing" &&
       record.keyState !== "pending" &&
       record.recordType !== "HTTPS" &&
-      record.kind !== "caa",
+      record.kind !== "caa" &&
+      record.kind !== "tlsa",
   );
   const caaOffered = report.records.some(
     (record) => record.kind === "caa" && record.status !== "ok" && record.status !== "error",

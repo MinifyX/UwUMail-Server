@@ -4,18 +4,23 @@
 //!   Requests that change something need the session's CSRF token in the
 //!   `X-CSRF-Token` header.
 //! - `/`, `/login`, `/account/...`, `/admin/...`, `/setup`, `/password/{token}` and
-//!   `/forwarding/{token}` serve the React app from `web/`, embedded into the binary at build time.
+//!   `/forwarding/{token}` and `/oauth/authorize` serve the React app from `web/`, embedded into the binary at build time.
 //! - `/mail` serves the webmail, built from its own repository, when the build has one and it is on.
 
+mod alert_texts;
+mod alerts;
 mod assets;
 mod cloudflare;
 mod error;
+pub mod external;
 pub mod gateway;
 mod health;
 pub mod host;
+mod jwt;
 mod login;
 mod logs;
 pub mod loki;
+pub mod metrics;
 mod notices;
 pub mod profile_signing;
 mod routes;
@@ -36,9 +41,11 @@ use uwumail_smtp::{AuthLimiter, Smtp};
 use uwumail_store::Store;
 
 pub use error::{ApiError, ApiResult};
+pub use external::{AuthConfig, ExternalLogin, LdapConfig, OidcConfig};
 pub use health::{CertificateSource, CertificateStatus};
 pub use logs::{LogBuffer, LogLine, LogSource};
 pub use loki::{Loki, LokiConfig};
+pub use metrics::{MetricsConfig, MetricsGate};
 pub use routes::settings::OVERLAY_KEY as SETTINGS_OVERLAY_KEY;
 pub use session::{Admin, CSRF_HEADER, SESSION_LIFETIME_SECS, Session};
 
@@ -98,6 +105,16 @@ struct Inner {
     dav_transport: std::sync::OnceLock<Arc<dyn uwumail_dav::client::Transport>>,
     /// When each account last asked other providers for calendars, to keep that polite.
     remote_calls: Mutex<HashMap<i64, Vec<i64>>>,
+    /// Admin alerts: the last health overview and the lock around a look.
+    alerts: alerts::AlertState,
+    /// Who may read `/metrics`, once the server plugged it in.
+    metrics: std::sync::OnceLock<Arc<metrics::MetricsGate>>,
+    /// Logging in elsewhere (OpenID Connect, LDAP), once plugged in or first needed.
+    external_login: std::sync::OnceLock<Arc<external::ExternalLogin>>,
+    /// How the OpenID Connect provider is asked, when not over the egress (tests hand in their own).
+    oidc_transport: std::sync::OnceLock<Arc<dyn uwumail_dav::client::Transport>>,
+    /// When each network registered OAuth apps, or was refused a code or token (routes/oauth.rs).
+    oauth_attempts: Mutex<HashMap<(&'static str, std::net::IpAddr), Vec<i64>>>,
 }
 
 impl Web {
@@ -131,6 +148,11 @@ impl Web {
                 profile_key: std::sync::OnceLock::new(),
                 dav_transport: std::sync::OnceLock::new(),
                 remote_calls: Mutex::default(),
+                alerts: alerts::AlertState::default(),
+                metrics: std::sync::OnceLock::new(),
+                external_login: std::sync::OnceLock::new(),
+                oidc_transport: std::sync::OnceLock::new(),
+                oauth_attempts: Mutex::default(),
             }),
         }
     }
@@ -243,6 +265,59 @@ impl Web {
         true
     }
 
+    /// Serves `/metrics` to whom `gate` lets in; the server changes the gate with the settings.
+    /// Only the first call counts; without one `/metrics` does not exist.
+    pub fn set_metrics_gate(&self, gate: Arc<metrics::MetricsGate>) {
+        let _ = self.inner.metrics.set(gate);
+    }
+
+    pub(crate) fn metrics_gate(&self) -> Option<&Arc<metrics::MetricsGate>> {
+        self.inner.metrics.get()
+    }
+
+    /// Hands the portal the settings for logging in elsewhere, shared with the server's settings,
+    /// and lets the store check directory passwords with them. Only the first call counts.
+    pub fn set_external_login(&self, external: Arc<external::ExternalLogin>) {
+        if self.inner.external_login.set(external.clone()).is_ok() {
+            self.store().set_external_passwords(external);
+        }
+    }
+
+    /// Logging in elsewhere: what was plugged in, or settings of its own that start switched off.
+    pub fn external_login(&self) -> Arc<external::ExternalLogin> {
+        self.inner
+            .external_login
+            .get_or_init(|| {
+                let external = Arc::new(external::ExternalLogin::new());
+                self.store().set_external_passwords(external.clone());
+                external
+            })
+            .clone()
+    }
+
+    /// Asks the OpenID Connect provider through `transport` instead of the egress. Only the first
+    /// call counts.
+    pub fn set_oidc_transport(&self, transport: Arc<dyn uwumail_dav::client::Transport>) {
+        let _ = self.inner.oidc_transport.set(transport);
+    }
+
+    /// The way to the OpenID Connect provider: the egress's route for the server's own requests,
+    /// https to public addresses only.
+    pub(crate) fn oidc_transport(&self) -> Arc<dyn uwumail_dav::client::Transport> {
+        if let Some(transport) = self.inner.oidc_transport.get() {
+            return transport.clone();
+        }
+        let dialer = match self.egress() {
+            Some(egress) => egress.dialer(uwumail_smtp::egress::Purpose::Updates),
+            None => uwumail_smtp::egress::Egress::direct().dialer(uwumail_smtp::egress::Purpose::Updates),
+        };
+        Arc::new(uwumail_dav::client::HttpsTransport::new(&dialer))
+    }
+
+    pub(crate) fn oauth_attempts(&self) -> &Mutex<HashMap<(&'static str, std::net::IpAddr), Vec<i64>>> {
+        &self.inner.oauth_attempts
+    }
+
     pub(crate) fn gateway(&self) -> Option<&Arc<dyn gateway::GatewayBackend>> {
         self.inner.gateway.get()
     }
@@ -280,6 +355,8 @@ impl Web {
             // The look of the portal and the webmail, for everyone, logged in or not.
             .route("/branding.css", get(routes::branding::stylesheet))
             .route("/branding/logo", get(routes::branding::logo))
+            // For Prometheus, off unless switched on (docs/metrics.md).
+            .route("/metrics", get(metrics::handler))
             .route("/api/session", get(routes::auth::session))
             .route("/api/auth/login", post(routes::auth::login))
             .route("/api/auth/logout", post(routes::auth::logout))
@@ -302,6 +379,15 @@ impl Web {
             .route("/api/admin/setup/test-mail/{id}", get(routes::setup::test_mail_status))
             .route("/api/auth/passkey/options", post(routes::auth::passkey_options))
             .route("/api/auth/passkey", post(routes::auth::passkey_login))
+            .route("/api/auth/oidc/start", get(routes::external_login::oidc_start))
+            .route("/api/auth/oidc/callback", get(routes::external_login::oidc_callback))
+            .route("/api/oauth/authorize", get(routes::oauth::authorize_info).post(routes::oauth::authorize_decide))
+            .route("/api/account/oauth-grants", get(routes::oauth::grants))
+            .route("/api/account/oauth-grants/{id}", delete(routes::oauth::revoke_grant))
+            .route("/api/admin/people/{login}/oauth-grants/{id}", delete(routes::oauth::admin_revoke_grant))
+            .route("/api/admin/people/{login}/auth-source", put(routes::external_login::set_auth_source))
+            .route("/api/admin/auth/ldap/test", post(routes::external_login::test_ldap))
+            .route("/api/admin/auth/oidc/test", post(routes::external_login::test_oidc))
             .route("/api/account", get(routes::account::profile))
             .route("/api/account/preferences", patch(routes::account::update_preferences))
             .route("/api/account/identities", get(routes::account::identities))
@@ -321,6 +407,19 @@ impl Web {
             .route("/.well-known/autoconfig/mail/config-v1.1.xml", get(routes::apps::autoconfig))
             .route("/autodiscover/autodiscover.xml", post(routes::apps::autodiscover))
             .route("/Autodiscover/Autodiscover.xml", post(routes::apps::autodiscover))
+            .route(
+                "/.well-known/oauth-authorization-server",
+                get(routes::oauth::metadata).options(routes::oauth::preflight),
+            )
+            .route("/.well-known/openid-configuration", get(routes::oauth::metadata).options(routes::oauth::preflight))
+            .route("/oauth/token", post(routes::oauth::token).options(routes::oauth::preflight))
+            .route("/oauth/register", post(routes::oauth::register).options(routes::oauth::preflight))
+            .route("/oauth/revoke", post(routes::oauth::revoke).options(routes::oauth::preflight))
+            .route("/oauth/jwks", get(routes::oauth::jwks).options(routes::oauth::preflight))
+            .route(
+                "/oauth/userinfo",
+                get(routes::oauth::userinfo).post(routes::oauth::userinfo).options(routes::oauth::preflight),
+            )
             .route("/api/account/sessions/{id}", delete(routes::security::end_session))
             .route("/api/account/sessions/end-others", post(routes::security::end_other_sessions))
             .route("/api/account/passkeys/options", post(routes::security::passkey_options))
@@ -334,6 +433,10 @@ impl Web {
             .route("/api/account/fetch/{id}", patch(routes::fetch::update).delete(routes::fetch::delete))
             .route("/api/account/fetch/{id}/run", post(routes::fetch::fetch_now))
             .route("/api/account/fetch/{id}/existing", post(routes::fetch::take_existing))
+            .route("/api/account/moving", get(routes::moving::list).post(routes::moving::create))
+            .route("/api/account/moving/{id}", delete(routes::moving::finish))
+            .route("/api/account/moving/{id}/sync", post(routes::moving::sync))
+            .route("/api/account/moving/{id}/pause", post(routes::moving::pause))
             .route("/api/account/calendars", get(routes::calendars::list))
             .route("/api/account/calendars/{id}/shares", put(routes::calendars::share))
             .route("/api/account/calendars/{id}/shares/{account}", delete(routes::calendars::unshare))
@@ -354,6 +457,8 @@ impl Web {
             .route("/api/account/addresses", get(routes::own::addresses))
             .route("/api/account/aliases", post(routes::own::create_alias))
             .route("/api/account/aliases/{address}", delete(routes::own::delete_alias))
+            .route("/api/account/masked", get(routes::masked::list).post(routes::masked::create))
+            .route("/api/account/masked/{id}", patch(routes::masked::update).delete(routes::masked::delete))
             .route("/api/account/storage", get(routes::own::storage))
             .route("/api/account/sharing", get(routes::sharing::show))
             .route("/api/account/sharing/{mailbox}", put(routes::sharing::share))
@@ -386,6 +491,9 @@ impl Web {
             .route("/api/account/passkeys/{id}", delete(routes::security::remove_passkey))
             .route("/api/password-links/{token}", get(routes::links::show).post(routes::links::choose))
             .route("/api/admin/overview", get(routes::admin::overview))
+            .route("/api/admin/alerts", get(routes::alerts::list))
+            .route("/api/admin/alerts/{id}/acknowledge", post(routes::alerts::acknowledge))
+            .route("/api/admin/stats", get(routes::stats::show))
             .route("/api/admin/health", get(routes::admin::health))
             .route("/api/admin/health/check", post(routes::admin::check_health))
             .route("/api/admin/updates", get(routes::updates::show).put(routes::updates::save))
@@ -397,6 +505,9 @@ impl Web {
             .route("/api/admin/backups/snapshots", get(routes::backups::snapshots))
             .route("/api/admin/backups/restore", post(routes::backups::restore).delete(routes::backups::forget_restore))
             .route("/api/admin/backups/recovery-key", post(routes::backups::recovery_key))
+            .route("/api/admin/backups/mailbox", delete(routes::backups::close_snapshot))
+            .route("/api/admin/backups/mailbox/open", post(routes::backups::open_snapshot))
+            .route("/api/admin/backups/mailbox/restore", post(routes::backups::restore_mailbox))
             .route("/api/admin/domains", get(routes::domains::list).post(routes::domains::create))
             .route("/api/admin/domains/{name}", get(routes::domains::detail).delete(routes::domains::remove))
             .route("/api/admin/domains/{name}/catch-all", put(routes::domains::set_catch_all))
@@ -407,6 +518,7 @@ impl Web {
             .route("/api/admin/domains/{name}/mta-sts", put(routes::reports::set_mode))
             .route("/api/admin/domains/{name}/reports", get(routes::reports::domain_reports))
             .route("/api/admin/reports", get(routes::reports::overview))
+            .route("/api/admin/reports/sent", get(routes::reports::sent))
             .route("/api/admin/domains/{name}/reports/{kind}", get(routes::reports::list))
             .route("/api/admin/domains/{name}/reports/{kind}/{id}", get(routes::reports::detail))
             .route("/.well-known/mta-sts.txt", get(routes::reports::policy))
@@ -475,6 +587,17 @@ impl Web {
             .route("/api/admin/people/{login}/app-passwords/{id}", delete(routes::people::revoke_app_password))
             .route("/api/admin/people/{login}/aliases", post(routes::people::add_alias))
             .route("/api/admin/people/{login}/aliases/{address}", delete(routes::people::remove_alias))
+            .route("/api/admin/domains/{name}/groups", post(routes::groups::create_group))
+            .route(
+                "/api/admin/domains/{name}/groups/{local}",
+                patch(routes::groups::update_group).delete(routes::groups::remove_group),
+            )
+            .route("/api/admin/domains/{name}/masked-addresses", put(routes::groups::set_masked_addresses))
+            .route(
+                "/api/admin/shared-mailboxes",
+                get(routes::groups::shared_mailboxes).post(routes::groups::create_shared_mailbox),
+            )
+            .route("/api/admin/shared-mailboxes/{login}/members", put(routes::groups::set_shared_mailbox_members))
             .route("/api", get(routes::not_found))
             .route(
                 "/api/{*rest}",
@@ -494,6 +617,8 @@ impl Web {
                 "/setup",
                 "/password/{token}",
                 "/forwarding/{token}",
+                // The consent page of the OAuth provider (docs/oauth.md).
+                "/oauth/authorize",
                 "/account",
                 "/account/{*rest}",
                 "/admin",

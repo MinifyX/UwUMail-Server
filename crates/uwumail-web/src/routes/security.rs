@@ -25,6 +25,12 @@ pub(crate) async fn confirm_identity(web: &Web, session: &Session, password: Opt
         return Ok(());
     }
     let Some(password) = password.filter(|password| !password.is_empty()) else {
+        // Someone who only ever logs in at another provider has no password to confirm with here.
+        if web.store().auth_source(session.account.id).await? == "oidc"
+            && !web.store().has_password(session.account.id).await?
+        {
+            return Err(ApiError::Rule("confirmByLogin", "log out and in again to confirm this".into()));
+        }
         return Err(ApiError::Rule("confirmPassword", "confirm this with your password".into()));
     };
     let ip = session.client.ip;
@@ -94,6 +100,11 @@ pub async fn overview(State(web): State<Web>, session: Session) -> ApiResult<Jso
         "appPasswordScopes": uwumail_store::scopes_for(session.account.protocols),
         "sessions": sessions,
         "events": store.security_events(id, 50).await?,
+        // Apps signed in with OAuth (docs/oauth.md), next to the app passwords.
+        "oauthGrants": store.oauth_grants(id).await?,
+        // Where the password is checked: `ldap` passwords change at the directory, not here.
+        "authSource": store.auth_source(id).await?,
+        "hasPassword": store.has_password(id).await?,
     })))
 }
 
@@ -114,6 +125,9 @@ pub async fn change_password(
     session: Session,
     Json(change): Json<PasswordChange>,
 ) -> ApiResult<StatusCode> {
+    if web.store().auth_source(session.account.id).await? == "ldap" {
+        return Err(ApiError::Rule("passwordInDirectory", "this password is changed at the directory".into()));
+    }
     check_password(&change.new, &session.account.login)?;
     if change.new == change.current {
         return Err(ApiError::Rule("samePassword", "choose a password you did not use just now".into()));
