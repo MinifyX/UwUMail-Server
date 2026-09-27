@@ -1,6 +1,6 @@
 //! JMAP for the UwUMail server: RFC 8620 (core), RFC 8621 (mail, submission,
 //! vacation responses), RFC 9661 (Sieve scripts), JMAP Calendars on the CalDAV calendars, RFC 9610
-//! (JMAP Contacts) on the CardDAV address books and push over EventSource.
+//! (JMAP Contacts) on the CardDAV address books, push over EventSource and Web Push (RFC 8030).
 //!
 //! [`Jmap::router`] serves:
 //!
@@ -15,6 +15,8 @@
 //! | `POST /jmap/token` | A new app password for a program, to send as a bearer token |
 //! | `GET /jmap/image/{accountId}?url=` | A message's remote picture, fetched by the server |
 //! | `GET /jmap/picture/{accountId}?email=` | The logo or website icon of a company sender |
+//!
+//! [`Jmap::run_web_push`] pushes changes to the push subscriptions (RFC 8620, 7.2) over Web Push.
 
 mod api;
 pub mod auth;
@@ -33,6 +35,7 @@ mod scheduled;
 mod session;
 mod sharing;
 mod token;
+mod webpush;
 mod ws;
 
 use std::sync::Arc;
@@ -45,7 +48,8 @@ use uwumail_smtp::egress::Egress;
 use uwumail_smtp::pictures::SenderPictures;
 use uwumail_store::Store;
 
-pub use auth::{AuthError, Authenticator, ClientInfo};
+pub use auth::{AuthError, Authenticator, ClientInfo, Login};
+pub use webpush::{PushMessage, PushTiming, PushTransport};
 
 /// Tells a person that a program created an app password for their account at `/jmap/token`:
 /// account, the app password's name and the client's IP. The server hands in the portal's notice
@@ -81,6 +85,8 @@ pub(crate) struct Inner {
     pub notice: Option<AppPasswordNotice>,
     /// Wakes the sender of held submissions when one was added.
     pub wake: tokio::sync::Notify,
+    /// Push subscriptions: the VAPID key and the way out to push services.
+    pub push: webpush::WebPush,
 }
 
 impl Jmap {
@@ -96,6 +102,7 @@ impl Jmap {
         auth.watch_webmail(webmail);
         let egress = Egress::direct();
         let pictures = Arc::new(SenderPictures::new(egress.clone()));
+        let push = webpush::WebPush::new(store.clone(), egress.clone(), smtp.hostname());
         Jmap {
             inner: Arc::new(Inner {
                 auth,
@@ -105,6 +112,7 @@ impl Jmap {
                 pictures,
                 notice: None,
                 wake: tokio::sync::Notify::new(),
+                push,
             }),
         }
     }
@@ -114,7 +122,26 @@ impl Jmap {
     pub fn with_egress(self, egress: Egress) -> Jmap {
         let inner = Arc::into_inner(self.inner).expect("the egress is set before anything else holds the JMAP service");
         let pictures = Arc::new(SenderPictures::new(egress.clone()));
-        Jmap { inner: Arc::new(Inner { egress, pictures, ..inner }) }
+        let push = inner.push.clone().with_egress(egress.clone());
+        Jmap { inner: Arc::new(Inner { egress, pictures, push, ..inner }) }
+    }
+
+    /// Push messages (docs/jmap-push.md) leave through `transport` instead of the egress, which
+    /// reaches public https addresses only. For tests with a push service on the same machine;
+    /// called after [`Jmap::with_egress`] and before the router is built.
+    pub fn with_push_transport(self, transport: Arc<dyn PushTransport>) -> Jmap {
+        let inner =
+            Arc::into_inner(self.inner).expect("the transport is set before anything else holds the JMAP service");
+        let push = inner.push.clone().with_transport(transport);
+        Jmap { inner: Arc::new(Inner { push, ..inner }) }
+    }
+
+    /// Bundles pushes with other waits than the usual two seconds and five seconds between pushes:
+    /// for tests. Called before the router is built.
+    pub fn with_push_timing(self, timing: PushTiming) -> Jmap {
+        let inner = Arc::into_inner(self.inner).expect("the timing is set before anything else holds the JMAP service");
+        let push = inner.push.clone().with_timing(timing);
+        Jmap { inner: Arc::new(Inner { push, ..inner }) }
     }
 
     /// Hands in how people hear of app passwords created at `/jmap/token`. Called before the router

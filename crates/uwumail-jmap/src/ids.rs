@@ -30,6 +30,11 @@ pub fn sender(id: i64) -> String {
     format!("l{id}")
 }
 
+/// A push subscription (RFC 8620, 7.2).
+pub fn push_subscription(id: i64) -> String {
+    format!("w{id}")
+}
+
 pub fn calendar(id: i64) -> String {
     format!("c{id}")
 }
