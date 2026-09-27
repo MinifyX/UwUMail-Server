@@ -110,7 +110,9 @@ they are due, so they survive restarts ([jmap-sending.md](jmap-sending.md)).
 state is removed and, where it matches now, added again at its place.
 Requests and push also run over a WebSocket (`/jmap/ws`, RFC 8887), and
 programs can use an app password as a bearer token, made for them at
-`/jmap/token` ([jmap-tokens.md](jmap-tokens.md)).
+`/jmap/token` ([jmap-tokens.md](jmap-tokens.md)). Apps that are closed get the
+same `StateChange` as Web Push through their push subscriptions, encrypted and
+signed with the server's VAPID key ([jmap-push.md](jmap-push.md)).
 
 ### `uwumail-imap`
 

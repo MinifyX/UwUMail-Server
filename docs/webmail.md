@@ -101,7 +101,12 @@ portal offers no button, and everything else works as before.
 - **One connection.** Requests and push can share one WebSocket (RFC 8887,
   [jmap-tokens.md](jmap-tokens.md#websocket-rfc-8887)) instead of the
   EventSource plus separate requests.
-
-## What is not there yet
-
-- Web Push, so new mail arrives with the browser closed
+- **New mail with the browser closed.** Switched on in the webmail's settings,
+  the browser subscribes to Web Push for the server's VAPID key and registers
+  the subscription with `PushSubscription/set` ([jmap-push.md](jmap-push.md)).
+  The webmail's service worker (`/mail/sw.js`, served with `Cache-Control:
+  no-cache`, its scope all of `/mail/`) sends the verification code back and,
+  when a push says new mail was delivered, asks the server with the session
+  cookie what is new and unread in the inbox and shows it. The subscription
+  belongs to the session and ends with it; the webmail renews it on every
+  start.
