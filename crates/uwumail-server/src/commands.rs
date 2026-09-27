@@ -3,16 +3,16 @@
 use anyhow::{Context as _, bail};
 use serde_json::{Value, json};
 use uwumail_store::{
-    AccountUpdate, AuditEntry, ListOwner, ListScope, NewAccount, NewSenderListEntry, PasswordLinkPurpose, Role,
-    SenderKind, SenderList, SenderListEntry, Store,
+    AccountUpdate, AuditEntry, DomainKind, ListOwner, ListScope, NewAccount, NewSenderListEntry, PasswordLinkPurpose,
+    Role, SenderKind, SenderList, SenderListEntry, Store,
 };
 use uwumail_web::settings::{
     SettingKind, SettingSource, SettingSpec, SettingValue, check_value, set_path, spec_for, tidy,
 };
 
 use crate::cli::{
-    AccountCommand, AliasCommand, BackupCommand, DomainCommand, ForwardCommand, GatewayCommand, QueueCommand,
-    SenderArgs, SenderKindArg, SettingsCommand, SpamCommand, Switch, WordTarget, WordsCommand,
+    AccountCommand, AliasCommand, BackupCommand, DomainCommand, DomainKindArg, ForwardCommand, GatewayCommand,
+    QueueCommand, SenderArgs, SenderKindArg, SettingsCommand, SpamCommand, Switch, WordTarget, WordsCommand,
 };
 use crate::config::Config;
 
@@ -61,20 +61,57 @@ fn generate_password() -> String {
 
 pub async fn domain(config: &Config, store: &Store, command: DomainCommand) -> anyhow::Result<()> {
     match command {
-        DomainCommand::Add { name } => {
-            let domain = store.create_domain(&name).await?;
+        DomainCommand::Add { name, masked } => {
+            let kind = if masked { DomainKind::Masked } else { DomainKind::Mail };
+            let domain = store.create_domain_with_kind(&name, kind).await?;
             uwumail_smtp::dkim::ensure_domain_keys(store, &domain.name).await?;
-            audit(store, "domain.create", &domain.name, json!({})).await;
-            println!("Added {} (=^･ω･^=)", domain.name);
+            audit(store, "domain.create", &domain.name, json!({ "kind": domain.kind })).await;
+            match kind {
+                DomainKind::Mail => println!("Added {} (=^･ω･^=)", domain.name),
+                DomainKind::Masked => println!("Added {} for masked addresses only (=^･ω･^=)", domain.name),
+            }
             println!();
             print_dns(config, store, &domain.name).await?;
         }
         DomainCommand::List => {
             for domain in store.domains().await? {
-                match domain.catch_all {
-                    Some(target) => println!("{}  (catch-all: {target})", domain.name),
-                    None => println!("{}", domain.name),
+                let mut notes = Vec::new();
+                if domain.kind == DomainKind::Masked {
+                    notes.push("masked addresses only".to_owned());
                 }
+                if let Some(target) = domain.catch_all {
+                    notes.push(format!("catch-all: {target}"));
+                }
+                if notes.is_empty() {
+                    println!("{}", domain.name);
+                } else {
+                    println!("{}  ({})", domain.name, notes.join(", "));
+                }
+            }
+        }
+        DomainCommand::Kind { name, kind } => {
+            let kind = match kind {
+                DomainKindArg::Mail => DomainKind::Mail,
+                DomainKindArg::Masked => DomainKind::Masked,
+            };
+            let before = store.domain_kind(&name).await?;
+            let change = store.set_domain_kind(&name, kind).await?;
+            let name = uwumail_store::normalize_domain(&name)?;
+            if before != kind {
+                let details = json!({
+                    "kind": change.kind,
+                    "removedFromDomains": change.removed_from_domains,
+                    "removedFromAccounts": change.removed_from_accounts,
+                });
+                audit(store, "domain.kind", &name, details).await;
+            }
+            match kind {
+                DomainKind::Mail => println!("{name} is a mail domain"),
+                DomainKind::Masked => println!("{name} only carries masked addresses now"),
+            }
+            if !change.removed_from_domains.is_empty() || !change.removed_from_accounts.is_empty() {
+                let names = [change.removed_from_domains, change.removed_from_accounts].concat().join(", ");
+                println!("No longer offered for masked addresses to: {names}");
             }
         }
         DomainCommand::Remove { name } => {

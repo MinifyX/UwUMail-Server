@@ -283,13 +283,29 @@ pub enum GatewayCommand {
     Forget,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum DomainKindArg {
+    /// People, aliases, groups and everything else.
+    Mail,
+    /// Only masked addresses (docs/jmap-masked-email.md).
+    Masked,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum DomainCommand {
     /// Add a domain and create its DKIM keys.
     Add {
         name: String,
+        /// Only for masked addresses: no people, aliases, groups or catch-all there.
+        #[arg(long)]
+        masked: bool,
     },
     List,
+    /// Make a domain one only for masked addresses (while nothing else is on it), or a mail domain again.
+    Kind {
+        name: String,
+        kind: DomainKindArg,
+    },
     /// Remove a domain that no address uses anymore.
     Remove {
         name: String,

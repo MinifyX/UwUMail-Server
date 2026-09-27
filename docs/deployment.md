@@ -90,6 +90,10 @@ A mailbox for a program rather than a person gets `--service`: no portal login,
 app passwords only, and the protocols it may use are switches of their own. See
 [configuration.md](configuration.md#accounts-people-and-services).
 
+A domain only for masked addresses gets `domain add masked.example --masked`;
+`domain kind <domain> mail|masked` changes an existing one. See
+[jmap-masked-email.md](jmap-masked-email.md#switching-it-on).
+
 `domain add` prints the DNS records to create:
 
 | Record | Purpose |
