@@ -30,11 +30,14 @@ The session's URLs follow the host and port the client used, over HTTP/1.1 and H
 Folders others share with the person are further accounts in the session (not the primary one);
 programs that only look at `primaryAccounts` do not see them ([sharing.md](sharing.md)).
 
-Limits on messages:
+Limits:
 
 - An email made with `Email/set` may have at most 1,000 body parts, and its parts together may
   hold at most `maxSizeAttachmentsPerEmail` bytes (50 MB), counting a blob or body value as often
   as parts name it. More is answered with `tooLarge`.
+- Result references (`#ids` and the like) may copy at most 10 MB in one request, all together, and a
+  method call may have at most 16 of them; more is answered with `requestTooLarge` or
+  `invalidArguments`.
 - `bodyStructure` goes 32 levels deep; below that a multipart part comes without `subParts`, and
   its parts are still there by `partId`.
 - A message nested more than 64 levels deep, or with more than 5,000 parts or 20,000 header
