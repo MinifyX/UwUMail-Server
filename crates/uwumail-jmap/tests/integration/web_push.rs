@@ -674,6 +674,7 @@ async fn changes_are_bundled_and_spaced_out() {
     // Three changes in a row, well within the wait: one push, with the last state.
     let create = json!({ "a": { "name": "One" }, "b": { "name": "Two" }, "c": { "name": "Three" } });
     let before = setup.server.store.account_modseq(mini).await.unwrap();
+    let started = Instant::now();
     setup.call(MINI, json!([["Mailbox/set", { "accountId": account, "create": create }, "0"]])).await;
     let last = setup.server.store.account_modseq(mini).await.unwrap();
     assert!(last >= before + 3, "three changes, not one");
@@ -689,7 +690,11 @@ async fn changes_are_bundled_and_spaced_out() {
     let second = setup.next().await;
     let change: Value = serde_json::from_slice(&second.body).unwrap();
     assert_eq!(change["changed"][&account]["Mailbox"], newest.to_string());
-    assert!(second.at.duration_since(first.at) >= timing.min_interval, "spaced out");
+    // The first push leaves no sooner than `debounce` after the changes, and the second no sooner
+    // than `min_interval` after the first left. When a push arrives says little about when it left,
+    // so the bound counts from the changes: without the spacing the second would come after
+    // hardly more than two debounces.
+    assert!(second.at.duration_since(started) >= timing.debounce + timing.min_interval, "spaced out");
 }
 
 #[tokio::test]
