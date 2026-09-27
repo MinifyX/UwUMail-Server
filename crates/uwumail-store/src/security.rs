@@ -630,7 +630,8 @@ impl Store {
                 let row = conn
                     .query_row(
                         &format!(
-                            "SELECT {ACCOUNT_COLUMNS}, password_hash, apps_need_app_password FROM accounts WHERE login = ?1"
+                            "SELECT {ACCOUNT_COLUMNS}, password_hash, apps_need_app_password, auth_source
+                             FROM accounts WHERE login = ?1"
                         ),
                         [login],
                         |row| {
@@ -638,11 +639,12 @@ impl Store {
                                 account_from_row(row)?,
                                 row.get::<_, Option<String>>(ACCOUNT_COLUMN_COUNT)?,
                                 row.get::<_, bool>(ACCOUNT_COLUMN_COUNT + 1)?,
+                                row.get::<_, String>(ACCOUNT_COLUMN_COUNT + 2)? == "ldap",
                             ))
                         },
                     )
                     .optional()?;
-                let Some((account, hash, flag)) = row else {
+                let Some((account, hash, flag, directory)) = row else {
                     return Ok(None);
                 };
                 let required = flag || has_second_factor(conn, account.id)?;
@@ -668,11 +670,11 @@ impl Store {
                     })?;
                     imported = rows.collect::<rusqlite::Result<Vec<_>>>()?;
                 }
-                Ok(Some((account, hash, required, app, imported)))
+                Ok(Some((account, hash, required, app, imported, directory)))
             })
             .await?;
 
-        let Some((account, hash, required, mut app, imported)) = found else {
+        let Some((account, hash, required, mut app, imported, directory)) = found else {
             // The hashing happens anyway, against nothing: without it this answer would come back
             // faster than a wrong password does, and the clock alone would say which names exist.
             let password = password.to_owned();
@@ -716,10 +718,16 @@ impl Store {
             return Ok(MailAuth::Ok { account, app_password: Some(id) });
         }
 
-        let (typed, stored) = (password.to_owned(), hash.clone());
-        let valid = tokio::task::spawn_blocking(move || password::verify(&typed, stored.as_deref()))
-            .await
-            .map_err(|err| StoreError::Internal(err.to_string()))?;
+        let valid = if directory {
+            // The directory's password, checked there: only while main passwords are allowed at
+            // all, which the check below says. An unreachable directory is a temporary failure.
+            self.check_external_password(&account.login, password).await?
+        } else {
+            let (typed, stored) = (password.to_owned(), hash.clone());
+            tokio::task::spawn_blocking(move || password::verify(&typed, stored.as_deref()))
+                .await
+                .map_err(|err| StoreError::Internal(err.to_string()))?
+        };
         if !valid || !account.can_log_in() {
             return Ok(MailAuth::Denied(MailAuthDenied::Invalid));
         }
