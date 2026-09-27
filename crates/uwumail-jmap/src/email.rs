@@ -242,7 +242,21 @@ pub fn part_content(raw: &[u8], index: usize) -> Option<(Vec<u8>, String)> {
     Some((bytes, content_type))
 }
 
-fn body_part(message: &Message<'_>, hash: &BlobHash, index: usize, properties: &[String], recurse: bool) -> Value {
+/// How deep `bodyStructure` goes; below this a multipart part is shown without its `subParts`,
+/// as the IMAP BODYSTRUCTURE does (`uwumail-imap` `mime::MAX_DEPTH`). The parts themselves stay
+/// reachable by their `partId` (security-audit-0.16.0 PROTOCOLS-1).
+const MAX_STRUCTURE_DEPTH: usize = 32;
+
+/// One part as a JMAP EmailBodyPart. `depth` is how far below the top it is; `None` leaves out
+/// the `subParts` of multipart parts.
+fn body_part(
+    message: &Message<'_>,
+    hash: &BlobHash,
+    index: usize,
+    properties: &[String],
+    depth: Option<usize>,
+) -> Value {
+    let recurse = depth.is_some_and(|depth| depth < MAX_STRUCTURE_DEPTH);
     let Some(part) = message.parts.get(index) else {
         return Value::Null;
     };
@@ -295,8 +309,10 @@ fn body_part(message: &Message<'_>, hash: &BlobHash, index: usize, properties: &
     if let PartType::Multipart(children) = &part.body
         && recurse
     {
-        let sub: Vec<Value> =
-            children.iter().map(|child| body_part(message, hash, *child as usize, properties, true)).collect();
+        let sub: Vec<Value> = children
+            .iter()
+            .map(|child| body_part(message, hash, *child as usize, properties, depth.map(|d| d + 1)))
+            .collect();
         object.insert("subParts".into(), Value::Array(sub));
     }
     Value::Object(object)
@@ -410,18 +426,18 @@ pub fn to_json(
             ("headers", _, Some(_)) => {
                 json!(headers.iter().map(|(n, v)| json!({ "name": n, "value": v })).collect::<Vec<_>>())
             }
-            ("bodyStructure", _, Some(m)) => body_part(m, hash, 0, body_properties, true),
+            ("bodyStructure", _, Some(m)) => body_part(m, hash, 0, body_properties, Some(0)),
             ("textBody", _, Some(m)) => json!(
-                m.text_body.iter().map(|i| body_part(m, hash, *i as usize, body_properties, false)).collect::<Vec<_>>()
+                m.text_body.iter().map(|i| body_part(m, hash, *i as usize, body_properties, None)).collect::<Vec<_>>()
             ),
             ("htmlBody", _, Some(m)) => json!(
-                m.html_body.iter().map(|i| body_part(m, hash, *i as usize, body_properties, false)).collect::<Vec<_>>()
+                m.html_body.iter().map(|i| body_part(m, hash, *i as usize, body_properties, None)).collect::<Vec<_>>()
             ),
             ("attachments", _, Some(m)) => {
                 json!(
                     m.attachments
                         .iter()
-                        .map(|i| body_part(m, hash, *i as usize, body_properties, false))
+                        .map(|i| body_part(m, hash, *i as usize, body_properties, None))
                         .collect::<Vec<_>>()
                 )
             }
@@ -960,6 +976,66 @@ pub fn build_message(object: &Map<String, Value>, blobs: &dyn BlobSource) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A multipart nested `levels` deep, with one text part at the bottom.
+    fn nested_multipart(levels: usize) -> Vec<u8> {
+        let mut raw = b"From: nyu@example.org\r\nSubject: deep\r\n".to_vec();
+        for level in 0..levels {
+            raw.extend_from_slice(
+                format!("Content-Type: multipart/mixed; boundary=b{level}\r\n\r\n--b{level}\r\n").as_bytes(),
+            );
+        }
+        raw.extend_from_slice(b"Content-Type: text/plain\r\n\r\nbottom\r\n");
+        raw
+    }
+
+    fn structure_of(raw: Vec<u8>) -> Value {
+        std::thread::Builder::new()
+            .stack_size(2 << 20)
+            .spawn(move || {
+                let hash = BlobHash::of(&raw);
+                let body_properties: Vec<String> = DEFAULT_BODY_PROPERTIES.iter().map(|s| s.to_string()).collect();
+                let json = to_json(
+                    None,
+                    Some(&raw),
+                    &hash,
+                    &["bodyStructure".to_owned()],
+                    &body_properties,
+                    Default::default(),
+                );
+                // Serialising walks the whole value as well.
+                serde_json::to_string(&json).unwrap();
+                json["bodyStructure"].clone()
+            })
+            .unwrap()
+            .join()
+            .unwrap()
+    }
+
+    /// `bodyStructure` followed every level down, so a deeply nested message overflowed the stack
+    /// and took the server down with it (security-audit-0.16.0 PROTOCOLS-1).
+    #[test]
+    fn body_structure_of_deep_nesting_stops() {
+        let depth = |mut part: &Value| {
+            let mut levels = 0;
+            while let Some(first) = part["subParts"].get(0) {
+                part = first;
+                levels += 1;
+            }
+            (levels, part.clone())
+        };
+        let (levels, bottom) = depth(&structure_of(nested_multipart(40)));
+        assert_eq!(levels, MAX_STRUCTURE_DEPTH);
+        assert_eq!(bottom["type"], "multipart/mixed");
+        assert_eq!(bottom["subParts"], Value::Null);
+
+        let (levels, bottom) = depth(&structure_of(nested_multipart(3)));
+        assert_eq!(levels, 3);
+        assert_eq!(bottom["type"], "text/plain");
+
+        // Far deeper than any mail: not read at all.
+        assert_eq!(structure_of(nested_multipart(50_000)), Value::Null);
+    }
 
     struct NoBlobs;
     impl BlobSource for NoBlobs {
