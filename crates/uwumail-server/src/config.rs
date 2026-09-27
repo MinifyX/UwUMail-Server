@@ -31,6 +31,8 @@ pub struct Config {
     /// How a message's remote pictures leave the server: straight, or through a VPN's proxy.
     pub egress: EgressConfig,
     pub log: LogConfig,
+    /// What the server reports to other domains: daily TLS reports (RFC 8460).
+    pub reports: uwumail_smtp::ReportsConfig,
 }
 
 impl Default for Config {
@@ -49,6 +51,7 @@ impl Default for Config {
             gateway: GatewayConfig::default(),
             egress: EgressConfig::default(),
             log: LogConfig::default(),
+            reports: uwumail_smtp::ReportsConfig::default(),
         }
     }
 }
