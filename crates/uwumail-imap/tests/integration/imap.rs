@@ -364,3 +364,88 @@ async fn before_a_login_a_literal_may_not_be_bigger_than_a_command() {
     let ready = member.line().await;
     assert!(ready.starts_with("+ "), "a member was refused their own message: {ready}");
 }
+
+/// An OAuth access token for `account`, as an app gets it through the portal (docs/oauth.md).
+pub(crate) async fn oauth_token(store: &Store, account: i64, scopes: Vec<&'static str>) -> String {
+    // RFC 7636 appendix B.
+    let (verifier, challenge) =
+        ("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
+    let client = store.register_oauth_client("Test app", vec!["http://127.0.0.1/cb".into()]).await.unwrap();
+    let code = store
+        .create_oauth_code(uwumail_store::NewOAuthCode {
+            client_id: client.id,
+            account_id: account,
+            redirect_uri: "http://127.0.0.1/cb".into(),
+            scopes,
+            code_challenge: challenge.into(),
+            nonce: None,
+            auth_time: 0,
+        })
+        .await
+        .unwrap();
+    let tokens = store.redeem_oauth_code(&code, client.id, "http://127.0.0.1/cb", verifier).await.unwrap().unwrap();
+    tokens.access_token
+}
+
+pub(crate) fn base64(text: &str) -> String {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD.encode(text)
+}
+
+/// Mail apps sign in with an OAuth access token: OAUTHBEARER (RFC 7628) and XOAUTH2.
+#[tokio::test]
+async fn apps_sign_in_with_oauth_tokens() {
+    let server = server().await;
+    let token = oauth_token(&server.store, server.account, vec!["mail"]).await;
+
+    let mut client = Client::connect(&server).await;
+    let (untagged, _) = client.command("CAPABILITY").await;
+    let listed = find(&untagged, "* CAPABILITY");
+    assert!(listed.contains("AUTH=OAUTHBEARER") && listed.contains("AUTH=XOAUTH2"), "{listed}");
+    let message =
+        base64(&format!("n,a=mini@example.org,\x01host=mail.example.org\x01port=993\x01auth=Bearer {token}\x01\x01"));
+    let (_, done) = client.command(&format!("AUTHENTICATE OAUTHBEARER {message}")).await;
+    assert!(done.contains("OK"), "{done}");
+    let (_, selected) = client.command("SELECT INBOX").await;
+    assert!(selected.contains("OK"), "{selected}");
+
+    // XOAUTH2, with the token after the continuation.
+    let mut client = Client::connect(&server).await;
+    client.send(b"x1 AUTHENTICATE XOAUTH2\r\n").await;
+    assert!(client.line().await.starts_with('+'));
+    client
+        .send(format!("{}\r\n", base64(&format!("user=Mini@example.org\x01auth=Bearer {token}\x01\x01"))).as_bytes())
+        .await;
+    let (_, done) = client.until_tagged("x1").await;
+    assert!(done.contains("OK"), "{done}");
+
+    // A refused token gets the error challenge first, then NO once the app answered it.
+    let mut client = Client::connect(&server).await;
+    let message = base64(&format!("n,,\x01auth=Bearer {token}x\x01\x01"));
+    client.send(format!("x2 AUTHENTICATE OAUTHBEARER {message}\r\n").as_bytes()).await;
+    let challenge = client.line().await;
+    let challenge = challenge.strip_prefix("+ ").expect("a challenge");
+    use base64::Engine as _;
+    let error: serde_json::Value =
+        serde_json::from_slice(&base64::engine::general_purpose::STANDARD.decode(challenge).unwrap()).unwrap();
+    assert_eq!(error["status"], "invalid_token");
+    assert_eq!(error["scope"], "mail");
+    client.send(b"AQ==\r\n").await;
+    let (_, refused) = client.until_tagged("x2").await;
+    assert!(refused.contains("NO [AUTHENTICATIONFAILED]"), "{refused}");
+
+    // A token names its own account: another login in the message does not fit it, and a token
+    // for sending only does not open mailboxes.
+    let sending = oauth_token(&server.store, server.account, vec!["smtp"]).await;
+    for message in [
+        format!("n,a=nyu@example.org,\x01auth=Bearer {token}\x01\x01"),
+        format!("n,,\x01auth=Bearer {sending}\x01\x01"),
+    ] {
+        let mut client = Client::connect(&server).await;
+        client.send(format!("x3 AUTHENTICATE OAUTHBEARER {}\r\n", base64(&message)).as_bytes()).await;
+        assert!(client.line().await.starts_with("+ "));
+        client.send(b"AQ==\r\n").await;
+        let (_, refused) = client.until_tagged("x3").await;
+        assert!(refused.contains("NO"), "{refused}");
+    }
+}

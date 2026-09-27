@@ -1526,3 +1526,75 @@ fileinto :create "Extra/One";
     assert_eq!(folder(&a, "mini@a.test", &["Kurz", "Weg"]).await.map(|m| m.len()), Some(1));
     assert_eq!(folder(&a, "mini@a.test", &["Extra", "One"]).await.map(|m| m.len()), Some(1));
 }
+
+/// An OAuth access token for `login`, as an app gets it through the portal (docs/oauth.md).
+async fn oauth_token(server: &TestServer, login: &str, scopes: Vec<&'static str>) -> String {
+    // RFC 7636 appendix B.
+    let (verifier, challenge) =
+        ("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
+    let store = server.smtp.store();
+    let account = store.account(login).await.unwrap().unwrap();
+    let client = store.register_oauth_client("Test app", vec!["http://127.0.0.1/cb".into()]).await.unwrap();
+    let code = store
+        .create_oauth_code(uwumail_store::NewOAuthCode {
+            client_id: client.id,
+            account_id: account.id,
+            redirect_uri: "http://127.0.0.1/cb".into(),
+            scopes,
+            code_challenge: challenge.into(),
+            nonce: None,
+            auth_time: 0,
+        })
+        .await
+        .unwrap();
+    store.redeem_oauth_code(&code, client.id, "http://127.0.0.1/cb", verifier).await.unwrap().unwrap().access_token
+}
+
+/// Mail apps that signed in with OAuth send with their access token: XOAUTH2 and OAUTHBEARER.
+#[tokio::test(flavor = "multi_thread")]
+async fn apps_send_with_oauth_tokens() {
+    use base64::Engine as _;
+    let base64 = |text: &str| base64::engine::general_purpose::STANDARD.encode(text);
+    let config = SmtpConfig { require_tls_for_auth: false, ..SmtpConfig::default() };
+    let a = start_with("a.test", &["mini", "nyu"], &[], config).await;
+    let token = oauth_token(&a, "mini@a.test", vec!["smtp"]).await;
+
+    // lettre speaks XOAUTH2, over implicit TLS.
+    let mailer = AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous("127.0.0.1")
+        .port(a.submission_tls.port())
+        .tls(Tls::Wrapper(
+            TlsParameters::builder("localhost".into()).dangerous_accept_invalid_certs(true).build_rustls().unwrap(),
+        ))
+        .credentials(Credentials::new("mini@a.test".into(), token.clone()))
+        .authentication(vec![lettre::transport::smtp::authentication::Mechanism::Xoauth2])
+        .timeout(Some(Duration::from_secs(10)))
+        .build();
+    mailer.send(mail("mini@a.test", &["nyu@a.test"], "Mit Token")).await.unwrap();
+    a.wait_for_inbox("nyu@a.test", 1).await;
+
+    let mut session = RawSession::connect(a.submission).await;
+    let ehlo = session.command("EHLO client.test").await;
+    assert!(ehlo.contains("AUTH PLAIN LOGIN OAUTHBEARER XOAUTH2"), "{ehlo}");
+    // A refused token: the JSON error challenge, the app's answer, then 535.
+    let wrong = base64(&format!("n,,\x01auth=Bearer {token}x\x01\x01"));
+    let challenge = session.command(&format!("AUTH OAUTHBEARER {wrong}")).await;
+    let encoded = challenge.trim().strip_prefix("334 ").expect("an error challenge");
+    let error: serde_json::Value =
+        serde_json::from_slice(&base64::engine::general_purpose::STANDARD.decode(encoded).unwrap()).unwrap();
+    assert_eq!((error["status"].as_str(), error["scope"].as_str()), (Some("invalid_token"), Some("smtp")));
+    assert_eq!(error["openid-configuration"], "https://mx.a.test/.well-known/openid-configuration");
+    assert!(session.command("AQ==").await.starts_with("535"));
+    // A token for reading mail only does not send.
+    let reading = oauth_token(&a, "mini@a.test", vec!["mail"]).await;
+    let reply = session
+        .command(&format!("AUTH OAUTHBEARER {}", base64(&format!("n,,\x01auth=Bearer {reading}\x01\x01"))))
+        .await;
+    assert!(reply.starts_with("334 "), "{reply}");
+    assert!(session.command("AQ==").await.starts_with("535"));
+    // The right token after the empty challenge.
+    assert!(session.command("AUTH OAUTHBEARER").await.starts_with("334"));
+    let right = base64(&format!("n,a=mini@a.test,\x01auth=Bearer {token}\x01\x01"));
+    let reply = session.command(&right).await;
+    assert!(reply.starts_with("235"), "{reply}");
+    assert!(session.command("MAIL FROM:<mini@a.test>").await.starts_with("250"));
+}
