@@ -4,8 +4,9 @@
 use lettre::AsyncTransport;
 
 use uwumail_store::{
-    GroupUpdate, IngestRequest, ListScope, MailboxRole, MailboxTarget, MaskedState, MaskedUpdate, NewAccount, NewGroup,
-    NewMaskedAddress, NewSenderListEntry, NewSharedMailbox, Role, SenderList, WhoMaySend,
+    DomainKind, DomainMaskedPolicy, GroupUpdate, IngestRequest, ListScope, MailboxRole, MailboxTarget, MaskedMode,
+    MaskedState, MaskedUpdate, NewAccount, NewGroup, NewMaskedAddress, NewSenderListEntry, NewSharedMailbox, Role,
+    SenderList, WhoMaySend,
 };
 
 use crate::flow::{PASSWORD, RawSession, TestServer, mail, start};
@@ -231,7 +232,8 @@ async fn a_shared_mailbox_takes_mail_and_its_members_answer_as_it() {
 async fn masked_addresses_follow_their_state() {
     let a = server(&["mini", "leni"]).await;
     let store = a.smtp.store().clone();
-    store.set_domain_masked_addresses("a.test", true).await.unwrap();
+    let own = DomainMaskedPolicy { mode: MaskedMode::Own, ..Default::default() };
+    store.set_domain_masked_policy("a.test", own).await.unwrap();
     store.set_catch_all("a.test", Some("leni@a.test")).await.unwrap();
     let mini = store.account("mini@a.test").await.unwrap().unwrap();
     let masked = store.create_masked_address(mini.id, NewMaskedAddress::default()).await.unwrap();
@@ -281,4 +283,51 @@ async fn masked_addresses_follow_their_state() {
     };
     store.ingest(request).await.unwrap();
     assert_eq!(a.inbox("mini@a.test").await.len(), 2);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_masked_only_domain_takes_mail_for_its_masked_addresses_only() {
+    let b = start("b.test", &["nyu"], &[]).await;
+    let a = start("a.test", &["mini", "leni"], &[("b.test", b.mx)]).await;
+    for name in ["sender.test", "client.sender.test", "_dmarc.sender.test"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+    let store = a.smtp.store().clone();
+    store.create_domain_with_kind("m.test", DomainKind::Masked).await.unwrap();
+    let keys = uwumail_smtp::dkim::ensure_domain_keys(&store, "m.test").await.unwrap();
+    let policy =
+        DomainMaskedPolicy { mode: MaskedMode::Dedicated, masked_domains: vec!["m.test".into()], ..Default::default() };
+    store.set_domain_masked_policy("a.test", policy).await.unwrap();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap();
+    let enabled = NewMaskedAddress { state: Some(MaskedState::Enabled), ..Default::default() };
+    let masked = store.create_masked_address(mini.id, enabled).await.unwrap();
+    assert!(masked.email.ends_with("@m.test"), "{}", masked.email);
+    assert!(store.set_catch_all("m.test", Some("leni@a.test")).await.is_err(), "no catch-all there");
+
+    // Its masked address takes mail, with a +tag too; nothing else there does, not even a person's name.
+    let reply = from_outside(&a, &[&masked.email], "", "Willkommen").await;
+    assert!(reply.starts_with("250"), "{reply}");
+    let (local, domain) = masked.email.split_once('@').unwrap();
+    let reply = from_outside(&a, &[&format!("{local}+news@{domain}")], "", "Neuigkeiten").await;
+    assert!(reply.starts_with("250"), "{reply}");
+    assert_eq!(a.inbox("mini@a.test").await.len(), 2);
+    for nobody in ["ghost@m.test", "mini@m.test", "info@m.test"] {
+        let reply = from_outside(&a, &[nobody], "", "Hallo").await;
+        assert!(reply.starts_with("550 5.1.1"), "{nobody}: {reply}");
+    }
+
+    // Answering as it: signed with m.test's own key, which b.test finds and verifies.
+    for key in &keys {
+        let (name, value) = key.dns_record();
+        b.smtp.dns_cache().pin_txt(&name, &value).unwrap();
+    }
+    for name in ["m.test", "mx.a.test", "_dmarc.m.test"] {
+        b.smtp.dns_cache().pin_no_txt(name);
+    }
+    a.mailer("mini@a.test", PASSWORD, false).send(mail(&masked.email, &["nyu@b.test"], "Antwort")).await.unwrap();
+    let remote = b.wait_for_inbox("nyu@b.test", 1).await;
+    let raw = b.raw(&remote[0]).await;
+    assert!(raw.contains("d=m.test"), "{raw}");
+    assert_eq!(raw.matches("dkim=pass").count(), 2, "both signatures verify: {raw}");
+    assert!(!raw.contains("mini@a.test"), "the real address stays hidden: {raw}");
 }
