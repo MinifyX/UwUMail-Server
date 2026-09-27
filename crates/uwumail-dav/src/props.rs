@@ -126,14 +126,19 @@ const WRITE: &[&str] = &["<d:write-content/>", "<d:bind/>", "<d:unbind/>"];
 const ADMIN: &[&str] = &["<d:all/>", "<d:write/>", "<d:write-properties/>"];
 
 /// What the account may do with a collection and its entries, as WebDAV privileges. Clients
-/// show a calendar shared for reading as read-only by this.
-fn privileges_of(access: DavAccess) -> String {
+/// show a calendar shared for reading as read-only by this. A subscribed calendar keeps its name
+/// and colour editable, but its entries are the feed's.
+fn privileges_of(access: DavAccess, subscribed: bool) -> String {
     let mut names: Vec<&str> = READ.to_vec();
-    if access.may_write() {
+    if access.may_write() && !subscribed {
         names.extend(WRITE);
     }
     if access.may_admin() {
-        names.extend(ADMIN);
+        if subscribed {
+            names.push("<d:write-properties/>");
+        } else {
+            names.extend(ADMIN);
+        }
     }
     privileges(&names)
 }
@@ -205,7 +210,7 @@ impl Target {
             (DAV, "owner", Target::Home(_) | Target::Inbox | Target::Outbox) => href(&principal_href(login)),
             (DAV, "owner", Target::Collection(v) | Target::Resource(v, ..)) => href(&principal_href(&v.owner_login)),
             (DAV, "current-user-privilege-set", Target::Collection(v) | Target::Resource(v, ..)) => {
-                privileges_of(v.access)
+                privileges_of(v.access, v.collection.subscribed)
             }
             (DAV, "current-user-privilege-set", Target::Inbox) => {
                 privileges(&["<d:read/>", "<d:unbind/>", "<c:schedule-deliver/>", "<c:schedule-deliver-invite/>"])
@@ -213,7 +218,7 @@ impl Target {
             (DAV, "current-user-privilege-set", Target::Outbox) => {
                 privileges(&["<d:read/>", "<c:schedule-send/>", "<c:schedule-send-freebusy/>"])
             }
-            (DAV, "current-user-privilege-set", _) => privileges_of(DavAccess::Owner),
+            (DAV, "current-user-privilege-set", _) => privileges_of(DavAccess::Owner, false),
             (CALDAV, "calendar-home-set", Target::Principal | Target::Root) => {
                 href(&home_href(DavKind::Calendar, login))
             }
@@ -447,10 +452,13 @@ mod tests {
 
     #[test]
     fn privileges_follow_the_rights() {
-        let read = privileges_of(DavAccess::Shared(ShareRights::Read));
+        let read = privileges_of(DavAccess::Shared(ShareRights::Read), false);
         assert!(read.contains("<d:read/>") && !read.contains("write"));
-        let write = privileges_of(DavAccess::Shared(ShareRights::Write));
+        let write = privileges_of(DavAccess::Shared(ShareRights::Write), false);
         assert!(write.contains("<d:write-content/>") && !write.contains("<d:write-properties/>"));
-        assert!(privileges_of(DavAccess::Owner).contains("<d:all/>"));
+        assert!(privileges_of(DavAccess::Owner, false).contains("<d:all/>"));
+        let subscribed = privileges_of(DavAccess::Owner, true);
+        assert!(subscribed.contains("<d:write-properties/>"));
+        assert!(!subscribed.contains("<d:write-content/>") && !subscribed.contains("<d:all/>"));
     }
 }

@@ -115,11 +115,11 @@ Instance ids never show up in `/changes`; only the stored event does.
 | `isSubscribed` | always `true` |
 | `isVisible` | whether the webmail and the apps show its events; kept on the server, CalDAV does not know it |
 | `isDefault` | exactly one calendar is the default |
-| `includeInAvailability` | always `"all"` |
+| `includeInAvailability` | `"all"`, and `"none"` for a subscribed calendar, which never makes anyone busy |
 | `defaultAlertsWithTime`, `defaultAlertsWithoutTime` | always `null` |
 | `shareWith` | who else sees it; see [Shared calendars](#shared-calendars) |
 | `timeZone` | an IANA name or `null`; stored as the CalDAV `calendar-timezone` |
-| `myRights` | everything `true` for one's own calendars; `mayDelete` is `false` for the only own calendar. For shared ones see above |
+| `myRights` | everything `true` for one's own calendars; `mayDelete` is `false` for the only own calendar. A subscribed calendar ([calendar-import.md](calendar-import.md)) has `mayWriteAll`, `mayWriteOwn`, `mayUpdatePrivate` and `mayRSVP` `false`: only its feed changes its events. For shared ones see above |
 | `uwuSharedBy` | the owner of a calendar shared with the account, else `null` |
 
 `Calendar/get` and `Calendar/changes` are standard. `Calendar/set` creates,

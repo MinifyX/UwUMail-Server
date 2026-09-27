@@ -8,7 +8,9 @@
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
-use crate::dav::{COLLECTION_COLUMNS, ChangeLog, DavCollection, DavKind, collection_by_id, collection_row};
+use crate::dav::{
+    COLLECTION_COLUMN_COUNT, COLLECTION_COLUMNS, ChangeLog, DavCollection, DavKind, collection_by_id, collection_row,
+};
 use crate::{Result, Store, StoreError, now};
 
 /// People one collection may be shared with. More would be a mailing list, not a calendar.
@@ -68,6 +70,14 @@ impl DavAccess {
     }
 }
 
+impl DavCollection {
+    /// Whether `access` lets one add, change and delete entries of this collection: never for a
+    /// subscribed calendar, whose entries are its feed's.
+    pub fn entries_writable(&self, access: DavAccess) -> bool {
+        access.may_write() && !self.subscribed
+    }
+}
+
 /// One person a collection is shared with.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -124,6 +134,10 @@ pub(crate) fn access(
 /// A collection `account_id` may write entries into, or why not.
 pub(crate) fn writable(conn: &Connection, account_id: i64, collection_id: i64) -> Result<DavCollection> {
     match access(conn, account_id, collection_id)? {
+        Some((collection, _)) if collection.subscribed => {
+            crate::dav::check_entries_writable(&collection)?;
+            Ok(collection)
+        }
         Some((collection, access)) if access.may_write() => Ok(collection),
         Some(_) => Err(StoreError::Rule { code: "forbidden", message: "this is shared with you to read only".into() }),
         None => Err(StoreError::NotFound(format!("collection {collection_id}"))),
@@ -154,9 +168,10 @@ impl Store {
             let rows = stmt.query_map(params![account_id, kind.as_str()], |row| {
                 Ok(SharedDavCollection {
                     collection: collection_row(row)?,
-                    owner_login: row.get(14)?,
-                    owner_name: row.get(15)?,
-                    rights: ShareRights::parse(&row.get::<_, String>(16)?).unwrap_or(ShareRights::Read),
+                    owner_login: row.get(COLLECTION_COLUMN_COUNT)?,
+                    owner_name: row.get(COLLECTION_COLUMN_COUNT + 1)?,
+                    rights: ShareRights::parse(&row.get::<_, String>(COLLECTION_COLUMN_COUNT + 2)?)
+                        .unwrap_or(ShareRights::Read),
                 })
             })?;
             Ok(rows.collect::<rusqlite::Result<_>>()?)

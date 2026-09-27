@@ -621,7 +621,7 @@ impl Session<'_> {
             Ok(None) => return simple(StatusCode::CONFLICT, "The calendar or address book does not exist"),
             Err(err) => return store_failure(err),
         };
-        if !view.access.may_write() {
+        if !view.collection.entries_writable(view.access) {
             return not_allowed("<d:write-content/>");
         }
         let Ok(mut content) = String::from_utf8(body.to_vec()) else {
@@ -752,7 +752,7 @@ impl Session<'_> {
                     Ok(None) => return simple(StatusCode::NOT_FOUND, "Not found"),
                     Err(err) => return store_failure(err),
                 };
-                if !view.access.may_write() {
+                if !view.collection.entries_writable(view.access) {
                     return not_allowed("<d:unbind/>");
                 }
                 let old = if *kind == DavKind::Calendar { self.entry(&view, name).await.ok().flatten() } else { None };
@@ -852,7 +852,8 @@ xmlns:c=\"urn:ietf:params:xml:ns:caldav\">{responses}</c:schedule-response>\n"
     }
 
     /// When someone of this server is busy between `start` and `end`, merged; `None` for anyone
-    /// else. Only one's own calendars count, not those shared with them.
+    /// else. Only one's own calendars count, not those shared with them, nor subscribed ones: a
+    /// holiday calendar does not make anyone busy.
     async fn busy(&self, address: &str, start: i64, end: i64) -> Option<Vec<(i64, i64)>> {
         let id = self.store().resolve_recipient(address).await.ok()??;
         let id = self.store().delivery_target(id).await.ok()??;
@@ -866,6 +867,7 @@ xmlns:c=\"urn:ietf:params:xml:ns:caldav\">{responses}</c:schedule-response>\n"
             .await
             .ok()?
             .into_iter()
+            .filter(|c| !c.subscribed)
             .map(|c| c.id)
             .collect();
         let events = self.store().calendar_events_between(id, None, Some(start), Some(end)).await.ok()?;

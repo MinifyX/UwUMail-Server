@@ -153,6 +153,16 @@ fn rights(access: DavAccess, may_delete: bool) -> Value {
     }
 }
 
+/// Rights without writing entries, for a subscribed calendar: its feed fills it.
+fn read_only_if(mut rights: Value, subscribed: bool) -> Value {
+    if subscribed {
+        for flag in ["mayWriteAll", "mayWriteOwn", "mayUpdatePrivate", "mayRSVP"] {
+            rights[flag] = json!(false);
+        }
+    }
+    rights
+}
+
 /// The level a CalendarRights object asks for: `None` when it grants nothing.
 pub(super) fn level_of(rights: &Value) -> Result<Option<ShareRights>, ()> {
     let Value::Object(map) = rights else { return Err(()) };
@@ -192,12 +202,12 @@ fn to_json(listed: &Listed, only_one: bool, shares: &[DavShare]) -> Map<String, 
         "isSubscribed": true,
         "isVisible": calendar.is_visible,
         "isDefault": owner && calendar.is_default,
-        "includeInAvailability": "all",
+        "includeInAvailability": if calendar.subscribed { "none" } else { "all" },
         "defaultAlertsWithTime": null,
         "defaultAlertsWithoutTime": null,
         "timeZone": calendar.timezone.as_deref().and_then(uwumail_store::ical::timezone_id),
         "shareWith": if listed.access.may_admin() { share_with(shares) } else { Value::Null },
-        "myRights": rights(listed.access, !(owner && only_one)),
+        "myRights": read_only_if(rights(listed.access, !(owner && only_one)), calendar.subscribed),
         "uwuSharedBy": listed.owner.as_ref().map(|(address, name)| {
             json!({ "email": address, "name": name, "principalId": principal_id(calendar.account_id) })
         }),
@@ -362,7 +372,8 @@ fn parse_all(
             },
             // What this server has only one answer to may be sent with that answer.
             "isSubscribed" if value == &Value::Bool(true) => {}
-            "includeInAvailability" if value.as_str() == Some("all") => {}
+            // "none" is what subscribed calendars say; sending it back changes nothing.
+            "includeInAvailability" if matches!(value.as_str(), Some("all" | "none")) => {}
             "defaultAlertsWithTime" | "defaultAlertsWithoutTime" if value.is_null() => {}
             _ => bad.push(key.as_str()),
         }

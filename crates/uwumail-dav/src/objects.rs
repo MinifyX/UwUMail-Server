@@ -1,17 +1,9 @@
 //! Checks what clients store: one iCalendar object or one vCard, with one UID, and for calendars the
 //! time the object covers, so calendar queries can pick events by date.
 //!
-//! The calendar check lives in the store, where JMAP Calendars uses it too.
+//! The checks live in the store, where JMAP and the importers use them too.
 
-use calcard::vcard::VCard;
-pub use uwumail_store::ical::{Checked, Refused, check_calendar};
-
-/// A vCard. One without a UID gets the resource name as its UID, as some older clients leave it out.
-pub fn check_contact(content: &str, name: &str) -> Result<Checked, Refused> {
-    let card = VCard::parse(content).map_err(|_| Refused::InvalidData("not a vCard".into()))?;
-    let uid = card.uid().map(str::to_owned).unwrap_or_else(|| name.trim_end_matches(".vcf").to_owned());
-    Ok(Checked { uid, component: "VCARD".into(), starts_at: None, ends_at: None })
-}
+pub use uwumail_store::ical::{Checked, Refused, check_calendar, check_contact};
 
 /// Whether an object overlaps `[start, end)` (RFC 4791, 9.9). A missing start means unknown, a
 /// missing end open-ended: both match.

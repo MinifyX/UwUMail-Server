@@ -11,6 +11,9 @@ use crate::dav::{
     own_collection, put_entry, set_default,
 };
 use crate::sharing::{VISIBLE, writable};
+
+/// The SQL condition for a subscribed calendar `c`: one whose entries only its feed writes.
+pub(crate) const SUBSCRIBED: &str = "EXISTS (SELECT 1 FROM calendar_subscriptions s WHERE s.collection_id = c.id)";
 use crate::{DAV_RESOURCE_MAX_BYTES, Result, Store, StoreError};
 
 /// An event as JMAP sees it: a VEVENT entry of one of the account's calendars.
@@ -145,6 +148,7 @@ impl Store {
             .write(move |tx| {
                 let mut log = ChangeLog::new(account_id);
                 let calendar = own_calendar(tx, account_id, calendar_id)?;
+                crate::dav::check_entries_writable(&calendar)?;
                 set_default(tx, &mut log, &calendar)?;
                 Ok(log.modseq())
             })
@@ -198,8 +202,11 @@ impl Store {
                 let target = writable_calendar(tx, account_id, write.calendar_id)?;
                 let other: Option<i64> = tx
                     .query_row(
-                        "SELECT r.id FROM dav_resources r JOIN dav_collections c ON c.id = r.collection_id
-                         WHERE c.account_id = ?1 AND c.kind = 'calendar' AND r.uid = ?2 AND r.id <> ?3",
+                        &format!(
+                            "SELECT r.id FROM dav_resources r JOIN dav_collections c ON c.id = r.collection_id
+                         WHERE c.account_id = ?1 AND c.kind = 'calendar' AND r.uid = ?2 AND r.id <> ?3
+                           AND NOT {SUBSCRIBED}"
+                        ),
                         params![target.account_id, write.uid, write.id.unwrap_or(-1)],
                         |row| row.get(0),
                     )
@@ -269,7 +276,8 @@ impl Store {
     }
 
     /// The account's own event with this UID, in any of its calendars. Calendars shared with it
-    /// do not count: scheduling puts invitations into one's own calendars.
+    /// do not count: scheduling puts invitations into one's own calendars. Subscribed calendars do
+    /// not either: a copy of one's own calendar elsewhere holds the same events, read-only.
     pub async fn own_calendar_event_by_uid(&self, account_id: i64, uid: &str) -> Result<Option<CalendarEventRecord>> {
         let uid = uid.to_owned();
         self.read(move |conn| {
@@ -278,6 +286,7 @@ impl Store {
                     &format!(
                         "SELECT {EVENT_COLUMNS} FROM dav_resources r JOIN dav_collections c ON c.id = r.collection_id
                          WHERE c.account_id = ?1 AND c.kind = 'calendar' AND r.component = 'VEVENT' AND r.uid = ?2
+                           AND NOT {SUBSCRIBED}
                          ORDER BY r.id LIMIT 1"
                     ),
                     params![account_id, uid],
