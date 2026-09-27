@@ -4603,6 +4603,7 @@ dependencies = [
  "mail-builder",
  "mail-parser",
  "md-5",
+ "memchr",
  "psl",
  "quick-xml",
  "rcgen",
