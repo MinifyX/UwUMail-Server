@@ -83,6 +83,11 @@ pub fn sieve_script(id: i64) -> String {
     format!("r{id}")
 }
 
+/// A masked address: `x`, as nothing else needs it.
+pub fn masked_email(id: i64) -> String {
+    format!("x{id}")
+}
+
 /// Parses an id with the given type letter.
 pub fn parse(prefix: char, value: &str) -> Option<i64> {
     let rest = value.strip_prefix(prefix)?;

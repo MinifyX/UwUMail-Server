@@ -8,6 +8,7 @@ mod copy;
 mod email;
 mod identity;
 mod mailbox;
+mod masked;
 mod principal;
 mod query_changes;
 mod senders;
@@ -27,14 +28,15 @@ use uwumail_store::{Account, Changes};
 use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
 use crate::session::{
-    CALENDARS, CONTACTS, CORE, MAIL, SENDERS, SETTINGS, SIEVE, SUBMISSION, SUGGEST, VACATION, WEBMAIL, WEBSOCKET,
+    CALENDARS, CONTACTS, CORE, MAIL, MASKED, SENDERS, SETTINGS, SIEVE, SUBMISSION, SUGGEST, VACATION, WEBMAIL,
+    WEBSOCKET,
 };
 use crate::sharing::{self, PRINCIPALS, SharedView};
 use crate::{Inner, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, ids};
 
 pub const KNOWN_CAPABILITIES: &[&str] = &[
     CORE, MAIL, SUBMISSION, VACATION, SENDERS, SETTINGS, SIEVE, WEBMAIL, CALENDARS, CONTACTS, WEBSOCKET, SUGGEST,
-    PRINCIPALS,
+    PRINCIPALS, MASKED,
 ];
 
 /// The most suggestions one `AddressSuggestion/query` returns.
@@ -139,6 +141,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "AddressBook" | "ContactCard" => CONTACTS,
         "SieveScript" => SIEVE,
         "AddressSuggestion" => SUGGEST,
+        "MaskedEmail" => MASKED,
         _ => return Err(MethodError::kind("unknownMethod")),
     };
     if !requires(capability, &ctx.using) {
@@ -243,6 +246,9 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "Principal/query" => single(principal::query(ctx, &args).await?),
         "Principal/changes" => single(principal::changes(ctx, &args).await?),
         "Principal/queryChanges" => Err(MethodError::kind("cannotCalculateChanges")),
+        "MaskedEmail/get" => single(masked::get(ctx, &args).await?),
+        "MaskedEmail/changes" => single(changes(ctx, &args, "MaskedEmail", 'x').await?),
+        "MaskedEmail/set" => single(masked::set(ctx, &args).await?),
         _ => Err(MethodError::kind("unknownMethod")),
     }
 }

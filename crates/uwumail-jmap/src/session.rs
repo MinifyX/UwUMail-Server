@@ -38,6 +38,8 @@ pub const SUGGEST: &str = "urn:uwumail:jmap:suggest";
 pub const WEBSOCKET: &str = "urn:ietf:params:jmap:websocket";
 /// JMAP Contacts (RFC 9610) on the CardDAV address books; see docs/jmap-contacts.md.
 pub const CONTACTS: &str = "urn:ietf:params:jmap:contacts";
+/// Fastmail's masked email extension: random addresses per website (docs/jmap-masked-email.md).
+pub const MASKED: &str = "https://www.fastmail.com/dev/maskedemail";
 
 /// Origin the client used, so every URL in the session works from where it is.
 ///
@@ -102,6 +104,7 @@ pub fn document(account: &Account, base: &str) -> Value {
             SETTINGS: {},
             SUGGEST: {},
             SIEVE: { "implementation": "UwUMail Server" },
+            MASKED: {},
             WEBMAIL: {},
             REMOTE: {
                 "imageUrl": format!("{base}/jmap/image/{{accountId}}?url={{url}}"),
@@ -134,6 +137,7 @@ pub fn document(account: &Account, base: &str) -> Value {
                         }
                     },
                     VACATION: {},
+                    MASKED: {},
                     SENDERS: { "maxEntries": uwumail_store::SENDER_LIST_PERSONAL_LIMIT },
                     SUGGEST: { "maxLimit": crate::methods::MAX_SUGGESTIONS },
                     SETTINGS: {
@@ -160,7 +164,8 @@ pub fn document(account: &Account, base: &str) -> Value {
             SENDERS: account_id.clone(),
             SETTINGS: account_id.clone(),
             SUGGEST: account_id.clone(),
-            SIEVE: account_id.clone()
+            SIEVE: account_id.clone(),
+            MASKED: account_id.clone()
         },
         "username": account.login,
         "apiUrl": format!("{base}/jmap/api"),

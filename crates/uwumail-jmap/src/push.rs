@@ -32,6 +32,7 @@ const TYPES: &[&str] = &[
     "AddressBook",
     "ContactCard",
     "SieveScript",
+    "MaskedEmail",
 ];
 
 #[derive(Deserialize)]
