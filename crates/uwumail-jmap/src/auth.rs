@@ -67,6 +67,27 @@ impl Default for ClientInfo {
     }
 }
 
+/// Who logged in, and with what.
+#[derive(Debug, Clone)]
+pub struct Login {
+    pub account: Account,
+    /// The credential, as push subscriptions record it: `session:<hash>`, `app:<id>` or `password`.
+    pub credential: String,
+}
+
+impl Login {
+    fn new(account: Account, app_password: Option<i64>) -> Login {
+        match app_password {
+            Some(id) => Login { account, credential: uwumail_store::push_credential_for_app_password(id) },
+            None => Login::password(account),
+        }
+    }
+
+    fn password(account: Account) -> Login {
+        Login { account, credential: uwumail_store::PUSH_CREDENTIAL_PASSWORD.to_owned() }
+    }
+}
+
 #[derive(Debug)]
 pub enum AuthError {
     Missing,
@@ -191,10 +212,18 @@ impl Authenticator {
         client: ClientInfo,
         changes: bool,
     ) -> Result<Account, AuthError> {
+        self.login_for(headers, client, changes).await.map(|login| login.account)
+    }
+
+    /// The same, and which credential it was: push subscriptions belong to that (RFC 8620, 7.2).
+    pub async fn login_for(&self, headers: &HeaderMap, client: ClientInfo, changes: bool) -> Result<Login, AuthError> {
         if headers.get(header::AUTHORIZATION).is_none() {
-            return self.session_account(headers, client.https, changes).await;
+            let account = self.session_account(headers, client.https, changes).await?;
+            // session_account only answers with a cookie there.
+            let token = session_cookie(headers, client.https).unwrap_or_default();
+            return Ok(Login { account, credential: uwumail_store::push_credential_for_session(&token) });
         }
-        self.account(headers, client).await
+        self.login(headers, client).await
     }
 
     /// The portal's session as a JMAP login: only for people whose webmail is switched on.
@@ -228,6 +257,10 @@ impl Authenticator {
     }
 
     pub async fn account(&self, headers: &HeaderMap, client: ClientInfo) -> Result<Account, AuthError> {
+        self.login(headers, client).await.map(|login| login.account)
+    }
+
+    async fn login(&self, headers: &HeaderMap, client: ClientInfo) -> Result<Login, AuthError> {
         let value = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()).ok_or(AuthError::Missing)?;
         let (scheme, credentials) = value.split_once(' ').ok_or(AuthError::Invalid)?;
         if scheme.eq_ignore_ascii_case("bearer") {
@@ -254,7 +287,7 @@ impl Authenticator {
                         && account.credentials_changed_at < cached_at
                         && account.may_use(self.protocol) =>
                 {
-                    return Ok(account);
+                    return Ok(Login::password(account));
                 }
                 Ok(_) => {
                     self.cache.lock().expect("auth cache poisoned").remove(&key);
@@ -282,7 +315,7 @@ impl Authenticator {
                     }
                     cache.insert(key, (account.id, started, started_unix));
                 }
-                Ok(account)
+                Ok(Login::new(account, app_password))
             }
             Ok(MailAuth::Denied(reason)) => {
                 // A phone still using the right account password should not lock out its network.
@@ -301,13 +334,13 @@ impl Authenticator {
 
     /// `Authorization: Bearer <app password>`: the app password alone, without the login. Wrong
     /// tokens count against the network like wrong passwords.
-    async fn bearer(&self, token: &str, client: ClientInfo) -> Result<Account, AuthError> {
+    async fn bearer(&self, token: &str, client: ClientInfo) -> Result<Login, AuthError> {
         if self.blocked(client.ip) {
             return Err(AuthError::Blocked);
         }
         let ip = client.ip.to_string();
         match self.store.authenticate_bearer(token, self.scope, self.protocol, &ip).await {
-            Ok(MailAuth::Ok { account, .. }) => Ok(account),
+            Ok(MailAuth::Ok { account, app_password }) => Ok(Login::new(account, app_password)),
             Ok(MailAuth::Denied(reason)) => {
                 self.record_failure(client.ip);
                 tracing::warn!(ip = %client.ip, %reason, protocol = self.protocol, "failed bearer login");

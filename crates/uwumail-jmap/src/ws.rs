@@ -57,8 +57,8 @@ pub async fn handle(
         return RequestError::new(StatusCode::BAD_REQUEST, "notRequest", "Ask for the WebSocket subprotocol jmap.")
             .into_response();
     }
-    let account = if headers.contains_key(header::AUTHORIZATION) {
-        jmap.inner.auth.account_for(&headers, client, true).await
+    let login = if headers.contains_key(header::AUTHORIZATION) {
+        jmap.inner.auth.login_for(&headers, client, true).await
     } else if !same_origin(&headers) {
         Err(AuthError::Missing)
     } else {
@@ -68,16 +68,16 @@ pub async fn handle(
         if let Some(csrf) = query.csrf.as_deref().and_then(|csrf| HeaderValue::from_str(csrf).ok()) {
             headers.insert(CSRF_HEADER, csrf);
         }
-        jmap.inner.auth.account_for(&headers, client, true).await
+        jmap.inner.auth.login_for(&headers, client, true).await
     };
-    let account = match account {
-        Ok(account) => account,
+    let login = match login {
+        Ok(login) => login,
         Err(err) => return err.into_response(),
     };
     upgrade
         .protocols([SUBPROTOCOL])
         .max_message_size(MAX_REQUEST_BYTES)
-        .on_upgrade(move |socket| serve(jmap, account.id, socket))
+        .on_upgrade(move |socket| serve(jmap, login.account.id, login.credential, socket))
 }
 
 fn request_error(request_id: Option<&Value>, error: RequestError) -> Value {
@@ -96,7 +96,7 @@ async fn send(socket: &mut WebSocket, value: Value) -> bool {
     socket.send(Message::Text(value.to_string().into())).await.is_ok()
 }
 
-async fn serve(jmap: Jmap, account_id: i64, mut socket: WebSocket) {
+async fn serve(jmap: Jmap, account_id: i64, credential: String, mut socket: WebSocket) {
     let store = jmap.inner.store.clone();
     let mut watcher = Watcher::new(store.clone(), account_id, all_types()).await;
     let mut push = false;
@@ -132,7 +132,7 @@ async fn serve(jmap: Jmap, account_id: i64, mut socket: WebSocket) {
                             Ok(Some(account)) if account.can_log_in() => account,
                             _ => return,
                         };
-                        match api::process(&jmap, account, Value::Object(object)).await {
+                        match api::process(&jmap, account, Some(credential.clone()), Value::Object(object)).await {
                             Ok(Value::Object(mut response)) => {
                                 response.insert("@type".into(), json!("Response"));
                                 if let Some(id) = &request_id {

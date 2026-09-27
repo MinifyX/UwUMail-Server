@@ -40,6 +40,8 @@ pub const WEBSOCKET: &str = "urn:ietf:params:jmap:websocket";
 pub const CONTACTS: &str = "urn:ietf:params:jmap:contacts";
 /// Fastmail's masked email extension: random addresses per website (docs/jmap-masked-email.md).
 pub const MASKED: &str = "https://www.fastmail.com/dev/maskedemail";
+/// The server's VAPID key for Web Push subscriptions (RFC 9749); see docs/jmap-push.md.
+pub const WEBPUSH_VAPID: &str = "urn:ietf:params:jmap:webpush-vapid";
 
 /// Origin the client used, so every URL in the session works from where it is.
 ///
@@ -208,6 +210,11 @@ pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInf
             // Folders others share with this account, as accounts of their own (docs/sharing.md).
             let shared = crate::sharing::shared_accounts(&jmap.inner.store, account.id).await;
             crate::sharing::add_to_session(&mut document, &account, &shared);
+            // The key a browser binds its push subscription to. It never changes, so the session
+            // state need not say anything about it.
+            if let Some(vapid) = jmap.inner.push.vapid().await {
+                document["capabilities"][WEBPUSH_VAPID] = json!({ "applicationServerKey": vapid.public_key() });
+            }
             document["state"] = json!(format!("{}{}", session_state(&account), crate::sharing::state_suffix(&shared)));
             ([(header::CACHE_CONTROL, "no-cache, no-store")], Json(document)).into_response()
         }
