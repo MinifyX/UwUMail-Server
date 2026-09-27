@@ -39,6 +39,8 @@ pub enum Notice {
     /// An app signed in with OAuth for the first time (docs/oauth.md).
     OAuthGranted {
         name: String,
+        /// What the app may do, for the activity list.
+        scopes: Vec<String>,
     },
     /// A refresh token came back after it was traded in: the grant ended.
     OAuthTokenReused {
@@ -73,10 +75,10 @@ impl Notice {
             Notice::PasskeyAdded { name }
             | Notice::PasskeyRemoved { name }
             | Notice::AppPasswordCreated { name }
-            | Notice::OAuthGranted { name }
             | Notice::OAuthTokenReused { name } => {
                 serde_json::json!({ "name": name })
             }
+            Notice::OAuthGranted { name, scopes } => serde_json::json!({ "name": name, "scopes": scopes }),
             Notice::RecoveryCodeUsed { left } => serde_json::json!({ "left": left }),
             Notice::ForwardingAdded { address } => serde_json::json!({ "address": address }),
             _ => Value::Object(Default::default()),
@@ -134,7 +136,7 @@ impl Notice {
                     "Zwei-Faktor-Anmeldung zurückgesetzt",
                     format!("{actor} hat die Zwei-Faktor-Anmeldung deines Kontos zurückgesetzt. Du meldest dich jetzt nur mit deinem Passwort an."),
                 ),
-                Notice::OAuthGranted { name } => ("Neue App mit OAuth angemeldet", format!("die App „{name}“ hat sich mit OAuth bei deinem Konto angemeldet. Du findest sie unter Sicherheit und kannst sie dort abmelden.")),
+                Notice::OAuthGranted { name, .. } => ("Neue App mit OAuth angemeldet", format!("die App „{name}“ hat sich mit OAuth bei deinem Konto angemeldet. Du findest sie unter Sicherheit und kannst sie dort abmelden.")),
                 Notice::OAuthTokenReused { name } => ("App-Anmeldung beendet", format!("ein altes Anmelde-Token der App „{name}“ wurde ein zweites Mal benutzt. Weil es kopiert worden sein kann, ist die Anmeldung der App beendet; sie muss sich neu anmelden.")),
                 Notice::SecondFactorLocked => (
                     "Anmeldung vorübergehend gesperrt",
@@ -186,7 +188,7 @@ impl Notice {
                     "Two-factor login reset",
                     format!("{actor} reset the two-factor login of your account. You now log in with your password only."),
                 ),
-                Notice::OAuthGranted { name } => ("New app signed in with OAuth", format!("the app “{name}” signed in to your account with OAuth. You find it under Security, where you can sign it out.")),
+                Notice::OAuthGranted { name, .. } => ("New app signed in with OAuth", format!("the app “{name}” signed in to your account with OAuth. You find it under Security, where you can sign it out.")),
                 Notice::OAuthTokenReused { name } => ("App signed out", format!("an old sign-in token of the app “{name}” was used a second time. As it may have been copied, the app was signed out and has to sign in again.")),
                 Notice::SecondFactorLocked => (
                     "Logging in paused",
@@ -244,7 +246,7 @@ impl Notice {
                     "Connexion à deux facteurs réinitialisée",
                     format!("{actor} a réinitialisé la connexion à deux facteurs de votre compte. Vous vous connectez désormais uniquement avec votre mot de passe."),
                 ),
-                Notice::OAuthGranted { name } => ("Nouvelle application connectée avec OAuth", format!("l'application « {name} » s'est connectée à votre compte avec OAuth. Vous la trouvez sous Sécurité, où vous pouvez la déconnecter.")),
+                Notice::OAuthGranted { name, .. } => ("Nouvelle application connectée avec OAuth", format!("l'application « {name} » s'est connectée à votre compte avec OAuth. Vous la trouvez sous Sécurité, où vous pouvez la déconnecter.")),
                 Notice::OAuthTokenReused { name } => ("Application déconnectée", format!("un ancien jeton de connexion de l'application « {name} » a été utilisé une deuxième fois. Comme il a pu être copié, l'application a été déconnectée et doit se reconnecter.")),
                 Notice::SecondFactorLocked => (
                     "Connexion temporairement bloquée",
@@ -299,7 +301,7 @@ impl Notice {
                     "Tweestapsaanmelding teruggezet",
                     format!("{actor} heeft de tweestapsaanmelding van je account teruggezet. Je logt nu alleen nog in met je wachtwoord."),
                 ),
-                Notice::OAuthGranted { name } => ("Nieuwe app aangemeld met OAuth", format!("de app ‘{name}’ heeft zich met OAuth aangemeld bij je account. Je vindt hem onder Beveiliging, waar je hem kunt afmelden.")),
+                Notice::OAuthGranted { name, .. } => ("Nieuwe app aangemeld met OAuth", format!("de app ‘{name}’ heeft zich met OAuth aangemeld bij je account. Je vindt hem onder Beveiliging, waar je hem kunt afmelden.")),
                 Notice::OAuthTokenReused { name } => ("App afgemeld", format!("een oud aanmeldtoken van de app ‘{name}’ is een tweede keer gebruikt. Omdat het gekopieerd kan zijn, is de app afgemeld en moet hij zich opnieuw aanmelden.")),
                 Notice::SecondFactorLocked => (
                     "Inloggen tijdelijk geblokkeerd",
@@ -355,7 +357,7 @@ impl Notice {
                     "2段階認証がリセットされました",
                     format!("{actor} がアカウントの2段階認証をリセットしました。今後はパスワードだけでログインします。"),
                 ),
-                Notice::OAuthGranted { name } => ("OAuth で新しいアプリがサインインしました", format!("アプリ「{name}」が OAuth でアカウントにサインインしました。「セキュリティ」で確認でき、サインアウトもできます。")),
+                Notice::OAuthGranted { name, .. } => ("OAuth で新しいアプリがサインインしました", format!("アプリ「{name}」が OAuth でアカウントにサインインしました。「セキュリティ」で確認でき、サインアウトもできます。")),
                 Notice::OAuthTokenReused { name } => ("アプリをサインアウトしました", format!("アプリ「{name}」の古いサインイン用トークンが再度使われました。コピーされた可能性があるため、このアプリはサインアウトされ、もう一度サインインする必要があります。")),
                 Notice::SecondFactorLocked => (
                     "ログインが一時的にロックされました",
@@ -407,7 +409,7 @@ impl Notice {
                     "两步登录已重置",
                     format!("{actor} 重置了你账户的两步登录。现在你只用密码登录。"),
                 ),
-                Notice::OAuthGranted { name } => ("新应用通过 OAuth 登录", format!("应用“{name}”已通过 OAuth 登录你的账户。你可以在“安全”中找到它，并在那里将其退出登录。")),
+                Notice::OAuthGranted { name, .. } => ("新应用通过 OAuth 登录", format!("应用“{name}”已通过 OAuth 登录你的账户。你可以在“安全”中找到它，并在那里将其退出登录。")),
                 Notice::OAuthTokenReused { name } => ("应用已退出登录", format!("应用“{name}”的一个旧登录令牌被再次使用。由于它可能已被复制，该应用已退出登录，需要重新登录。")),
                 Notice::SecondFactorLocked => (
                     "登录已暂时锁定",

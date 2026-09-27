@@ -351,7 +351,14 @@ async fn the_code_flow_with_pkce_rotation_and_revocation() {
     let account = store.account("mini@example.org").await.unwrap().unwrap();
     let events = store.security_events(account.id, 20).await.unwrap();
     let kinds: Vec<&str> = events.iter().map(|event| event.kind.as_str()).collect();
-    assert!(kinds.contains(&"oauthGranted"), "{kinds:?}");
+    // One entry per sign-in, with what the app may do.
+    let granted: Vec<_> = events.iter().filter(|event| event.kind == "oauthGranted").collect();
+    assert_eq!(granted.len(), 1, "{kinds:?}");
+    assert!(
+        granted[0].details["scopes"].as_array().is_some_and(|scopes| !scopes.is_empty()),
+        "{:?}",
+        granted[0].details
+    );
 
     // The person sees the app under Security and can sign it out.
     let code = allow(&app, &auth, &query).await;

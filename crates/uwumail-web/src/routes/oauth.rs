@@ -540,20 +540,12 @@ pub async fn token(
     match result {
         Ok(Ok(tokens)) => {
             if tokens.new_grant {
+                // notify() writes the activity entry too; a second one here would list the app twice.
                 let ip = ip.to_string();
-                let event = SecurityEvent {
-                    kind: "oauthGranted".into(),
-                    actor: String::new(),
-                    ip: ip.clone(),
-                    details: json!({ "name": client.name, "scopes": tokens.scopes }),
-                };
-                if let Err(err) = web.store().record_security_event(tokens.account.id, event).await {
-                    tracing::error!(%err, "writing the security activity failed");
-                }
                 notify(
                     &web,
                     &tokens.account,
-                    Notice::OAuthGranted { name: client.name.clone() },
+                    Notice::OAuthGranted { name: client.name.clone(), scopes: tokens.scopes.clone() },
                     Origin { actor: "", ip: &ip },
                 )
                 .await;
