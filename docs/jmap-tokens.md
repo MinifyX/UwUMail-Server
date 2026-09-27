@@ -13,6 +13,7 @@ endpoints — accepts:
 | --- | --- |
 | `Basic base64(login:password)` | The account password, or an app password |
 | `Bearer <app password>` | An app password on its own |
+| `Bearer <OAuth access token>` | A token of an app signed in with OAuth ([oauth.md](oauth.md)) |
 
 A bearer token is an ordinary app password (My account → Security → App
 passwords) that may be used for mail (the `mail` use, which covers JMAP and

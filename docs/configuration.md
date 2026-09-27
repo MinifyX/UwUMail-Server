@@ -372,4 +372,14 @@ level = "info"
 # Sending the log to Grafana Loki: see "Sending the log to Grafana Loki" above.
 # [log.loki]
 # enabled = false
+
+# Logging in to the portal at an OpenID Connect provider or with an LDAP directory's
+# password, see docs/login-oidc-ldap.md.
+# [auth.oidc]
+# enabled = false
+# issuer = "https://auth.example.com/application/o/uwumail/"
+# client_id = "uwumail"
+# [auth.ldap]
+# enabled = false
+# url = "ldaps://ldap.example.com"
 ```
