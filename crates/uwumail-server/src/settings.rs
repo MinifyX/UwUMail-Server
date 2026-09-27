@@ -22,6 +22,8 @@ pub struct ServerSettings {
     pub webmail: Arc<AtomicBool>,
     /// The way out for pictures, update checks and fetching; changed in place.
     pub egress: uwumail_smtp::egress::Egress,
+    /// Logging in elsewhere (OpenID Connect, LDAP), shared with the portal and the store.
+    pub external: Arc<uwumail_web::ExternalLogin>,
 }
 
 /// The effective value and origin of every setting, for an overlay. Used by the admin panel and
@@ -38,6 +40,7 @@ pub fn view_settings(path: Option<&std::path::Path>, overlay: &Value) -> Result<
         "http": { "webmail": config.http.webmail },
         "log": { "loki": config.log.loki },
         "egress": config.egress,
+        "auth": config.auth,
     });
     Ok(SETTINGS
         .iter()
@@ -72,6 +75,7 @@ impl SettingsBackend for ServerSettings {
         self.smtp.set_brand(config.brand.clone());
         self.loki.set_target(config.log.loki.target(&config.hostname)?);
         self.egress.reconfigure(&config.egress)?;
+        self.external.configure(config.auth);
         tracing::info!("settings from the admin panel are in effect");
         Ok(())
     }
@@ -83,5 +87,10 @@ impl SettingsBackend for ServerSettings {
     fn loki_connection(&self, overlay: &Value) -> Result<LokiTarget, String> {
         let config = Config::load_with_overlay(self.path.as_deref(), overlay).map_err(|err| format!("{err:#}"))?;
         config.log.loki.connection(&config.hostname)
+    }
+
+    fn auth_config(&self, overlay: &Value) -> Result<uwumail_web::AuthConfig, String> {
+        let config = Config::load_with_overlay(self.path.as_deref(), overlay).map_err(|err| format!("{err:#}"))?;
+        Ok(config.auth)
     }
 }

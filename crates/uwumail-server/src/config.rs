@@ -31,6 +31,9 @@ pub struct Config {
     /// How a message's remote pictures leave the server: straight, or through a VPN's proxy.
     pub egress: EgressConfig,
     pub log: LogConfig,
+    /// Logging in to the portal at an OpenID Connect provider or with an LDAP directory's password
+    /// (docs/login-oidc-ldap.md).
+    pub auth: uwumail_web::AuthConfig,
 }
 
 impl Default for Config {
@@ -49,6 +52,7 @@ impl Default for Config {
             gateway: GatewayConfig::default(),
             egress: EgressConfig::default(),
             log: LogConfig::default(),
+            auth: uwumail_web::AuthConfig::default(),
         }
     }
 }
@@ -252,6 +256,7 @@ impl Config {
             .map_err(|err| anyhow::anyhow!("`http.trusted_proxies`: {err}"))?;
         self.log.loki.target(&self.hostname).map_err(|err| anyhow::anyhow!(err))?;
         uwumail_smtp::egress::Egress::check(&self.egress).map_err(|err| anyhow::anyhow!(err))?;
+        self.auth.validate().map_err(|err| anyhow::anyhow!(err))?;
         // Behind a reverse proxy the challenge arrives through the proxy listener instead of port 80.
         if self.tls.mode == TlsMode::Acme && self.listen.http.is_empty() && self.listen.proxy.is_empty() {
             bail!(

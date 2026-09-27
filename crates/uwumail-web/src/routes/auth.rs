@@ -19,10 +19,13 @@ use crate::webauthn::{self, RelyingParty};
 /// Public facts for the login page.
 pub async fn info(State(web): State<Web>) -> ApiResult<Json<Value>> {
     let counts = web.store().server_counts().await?;
+    let auth = web.external_login().config();
     Ok(Json(json!({
         "hostname": web.settings().hostname,
         "setupRequired": counts.admins == 0,
         "brand": super::branding::brand_json(&web).await,
+        // The button for logging in at another provider (docs/login-oidc-ldap.md), when there is one.
+        "oidc": auth.oidc.enabled.then(|| json!({ "label": auth.oidc.button_label.trim() })),
     })))
 }
 
@@ -47,7 +50,7 @@ pub(crate) async fn session_body(web: &Web, account: &Account, csrf_token: &str,
     })
 }
 
-fn no_store(mut response: Response) -> Response {
+pub(crate) fn no_store(mut response: Response) -> Response {
     response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
 }
@@ -86,7 +89,11 @@ pub async fn login(
     }
     // A service account has no password here at all, but the answer must not say which of the
     // two it was: the same refusal, and the same time spent, as a wrong password.
-    let found = web.store().authenticate(request.login.trim(), &request.password).await?;
+    let found = match web.store().authenticate(request.login.trim(), &request.password).await? {
+        Some(account) => Some(account),
+        // Someone the directory knows, without an account here yet (docs/login-oidc-ldap.md).
+        None => super::external_login::ldap_account(&web, request.login.trim(), &request.password).await?,
+    };
     let Some(account) = found.filter(Account::can_use_portal) else {
         web.limiter().record_failure(client.ip, &request.login);
         tracing::warn!(login = %request.login, ip = %client.ip, "failed web login");
@@ -120,14 +127,14 @@ pub(crate) async fn begin_login(
     Ok(no_store(Json(body).into_response()))
 }
 
-/// Creates the browser session. `method` is how the login was confirmed, for the activity list.
-pub(crate) async fn complete_login(
+/// Creates the browser session and notes the login. Returns the cookie to set and the CSRF token.
+pub(crate) async fn start_session(
     web: &Web,
     account: &Account,
     client: ClientInfo,
     headers: &HeaderMap,
     method: &str,
-) -> ApiResult<Response> {
+) -> ApiResult<(HeaderValue, String)> {
     let user_agent = headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or_default();
     let created =
         web.store().create_web_session(account.id, SESSION_LIFETIME_SECS, &client.ip.to_string(), user_agent).await?;
@@ -141,11 +148,22 @@ pub(crate) async fn complete_login(
     if let Err(err) = web.store().record_security_event(account.id, event).await {
         tracing::error!(%err, "writing the security activity failed");
     }
+    Ok((session::set_cookie(&created.token, client), created.csrf_token))
+}
 
+/// Creates the browser session. `method` is how the login was confirmed, for the activity list.
+pub(crate) async fn complete_login(
+    web: &Web,
+    account: &Account,
+    client: ClientInfo,
+    headers: &HeaderMap,
+    method: &str,
+) -> ApiResult<Response> {
+    let (cookie, csrf_token) = start_session(web, account, client, headers, method).await?;
     let preferences = web.store().preferences(account.id).await?;
-    let body = session_body(web, account, &created.csrf_token, Value::Object(preferences)).await;
+    let body = session_body(web, account, &csrf_token, Value::Object(preferences)).await;
     let mut response = Json(body).into_response();
-    response.headers_mut().insert(header::SET_COOKIE, session::set_cookie(&created.token, client));
+    response.headers_mut().insert(header::SET_COOKIE, cookie);
     Ok(no_store(response))
 }
 
@@ -249,7 +267,9 @@ pub async fn passkey_login(
     web.store().touch_passkey(passkey.id, i64::from(count)).await?;
     web.login_state().second_factor_passed(account.id);
     web.limiter().record_success(client.ip, &account.login);
-    complete_login(&web, &account, client, &headers, "passkey").await
+    // After a login at another provider the activity list says so, whatever the second factor was.
+    let method = if pending.via == "oidc" { "oidc" } else { "passkey" };
+    complete_login(&web, &account, client, &headers, method).await
 }
 
 /// A wrong second factor counts for the network, the pending login and the account. When it is the
@@ -297,6 +317,7 @@ pub async fn second_factor(
         }
         _ => "totp",
     };
+    let method = if pending.via == "oidc" { "oidc" } else { method };
     complete_login(&web, &account, client, &headers, method).await
 }
 

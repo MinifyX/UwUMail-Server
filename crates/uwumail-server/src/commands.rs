@@ -577,11 +577,7 @@ fn source_word(source: SettingSource) -> &'static str {
 /// A running server keeps the settings it started with, so a change made here reaches it when it
 /// next starts — which is what the installer wants, because it sets things before the first start.
 pub async fn settings(path: Option<&std::path::Path>, store: &Store, command: SettingsCommand) -> anyhow::Result<()> {
-    let mut overlay: Value = store
-        .setting(uwumail_web::SETTINGS_OVERLAY_KEY)
-        .await?
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_else(|| json!({}));
+    let mut overlay: Value = uwumail_web::settings::load_overlay(store).await?;
     let view = crate::settings::view_settings(path, &overlay).map_err(|err| anyhow::anyhow!(err))?;
     let of = |key: &str| view.iter().find(|setting| setting.key == key);
 
@@ -653,7 +649,7 @@ async fn save(
     // must not be written in the first place.
     let config = crate::config::Config::load_with_overlay(path, &overlay).map_err(|err| anyhow::anyhow!("{err:#}"))?;
     config.validate()?;
-    store.set_setting(uwumail_web::SETTINGS_OVERLAY_KEY, &overlay.to_string()).await?;
+    uwumail_web::settings::save_overlay(store, &overlay).await?;
     // Passwords never go into the change log.
     let logged =
         if matches!(kind, SettingKind::Secret) && !value.is_null() { json!("•••") } else { value.clone() };

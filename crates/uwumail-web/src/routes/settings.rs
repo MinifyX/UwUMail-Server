@@ -11,20 +11,14 @@ use crate::error::{ApiError, ApiResult};
 use crate::session::Admin;
 use crate::settings::{SETTINGS, SettingKind, SettingSource, SettingsBackend, check_value, set_path, spec_for, tidy};
 
-/// The settings key the database overlay is stored under.
-pub const OVERLAY_KEY: &str = "config.overlay";
+pub use crate::settings::OVERLAY_KEY;
 
 fn backend(web: &Web) -> ApiResult<&dyn SettingsBackend> {
     web.settings().config.as_deref().ok_or_else(|| ApiError::NotFound("server settings".into()))
 }
 
 pub async fn load_overlay(web: &Web) -> ApiResult<Value> {
-    Ok(web
-        .store()
-        .setting(OVERLAY_KEY)
-        .await?
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_else(|| json!({})))
+    Ok(crate::settings::load_overlay(web.store()).await?)
 }
 
 /// Whether a gateway is paired. Outgoing mail leaves through it from that moment, whatever the
@@ -59,7 +53,7 @@ pub struct Changes {
 
 /// Puts `changes` into `overlay` the way the admin panel may: known settings, valid values, none the
 /// config file holds. Returns what goes into the change log, passwords hidden.
-fn merge_changes(
+pub(crate) fn merge_changes(
     backend: &dyn SettingsBackend,
     overlay: &mut Value,
     changes: &Map<String, Value>,
@@ -99,7 +93,7 @@ pub async fn update(
     let details = merge_changes(backend, &mut overlay, &request.changes)?;
 
     backend.apply(&overlay).map_err(|err| ApiError::Rule("settingsInvalid", err))?;
-    web.store().set_setting(OVERLAY_KEY, &overlay.to_string()).await?;
+    crate::settings::save_overlay(web.store(), &overlay).await?;
     audit(&web, &session, "settings.update", "", Value::Object(details)).await;
     Ok(Json(view_json(&web, backend, &overlay)?))
 }
@@ -130,7 +124,7 @@ pub(crate) async fn change_settings(
     }
     let details = merge_changes(backend, &mut overlay, &changes)?;
     backend.apply(&overlay).map_err(|err| ApiError::Rule("settingsInvalid", err))?;
-    web.store().set_setting(OVERLAY_KEY, &overlay.to_string()).await?;
+    crate::settings::save_overlay(web.store(), &overlay).await?;
     audit(web, session, "settings.update", "", Value::Object(details)).await;
     Ok(all)
 }

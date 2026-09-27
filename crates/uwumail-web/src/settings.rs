@@ -5,7 +5,14 @@
 //! but locked. The server applies the result right away.
 
 use serde::Serialize;
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
+use uwumail_store::{Store, StoreError};
+
+/// The settings key the database overlay is stored under.
+pub const OVERLAY_KEY: &str = "config.overlay";
+
+/// How a secret looks in the stored overlay: sealed with the store's key, as hex behind this.
+const SEALED: &str = "sealed:";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
@@ -106,6 +113,30 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("egress.pictures", SettingKind::Bool),
     spec("egress.updates", SettingKind::Bool),
     spec("egress.fetch", SettingKind::Bool),
+    // Logging in to the portal elsewhere (docs/login-oidc-ldap.md).
+    spec("auth.oidc.enabled", SettingKind::Bool),
+    spec("auth.oidc.issuer", SettingKind::Text),
+    spec("auth.oidc.client_id", SettingKind::Text),
+    spec("auth.oidc.client_secret", SettingKind::Secret),
+    spec("auth.oidc.button_label", SettingKind::Text),
+    spec("auth.oidc.auto_create", SettingKind::Bool),
+    spec("auth.oidc.allowed_domains", SettingKind::List),
+    spec("auth.oidc.admin_group_claim", SettingKind::Text),
+    spec("auth.oidc.admin_group_value", SettingKind::Text),
+    spec("auth.ldap.enabled", SettingKind::Bool),
+    spec("auth.ldap.url", SettingKind::Text),
+    spec("auth.ldap.starttls", SettingKind::Bool),
+    spec("auth.ldap.insecure_localhost", SettingKind::Bool),
+    spec("auth.ldap.bind_dn", SettingKind::Text),
+    spec("auth.ldap.bind_password", SettingKind::Secret),
+    spec("auth.ldap.user_dn_template", SettingKind::Text),
+    spec("auth.ldap.base_dn", SettingKind::Text),
+    spec("auth.ldap.user_filter", SettingKind::Text),
+    spec("auth.ldap.mail_attribute", SettingKind::Text),
+    spec("auth.ldap.name_attribute", SettingKind::Text),
+    spec("auth.ldap.admin_group_dn", SettingKind::Text),
+    spec("auth.ldap.auto_create", SettingKind::Bool),
+    spec("auth.ldap.allowed_domains", SettingKind::List),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -140,6 +171,11 @@ pub trait SettingsBackend: Send + Sync + 'static {
     fn loki_connection(&self, overlay: &Value) -> Result<crate::loki::LokiTarget, String> {
         let _ = overlay;
         Err("this server cannot send its logs to Loki".into())
+    }
+    /// Logging in elsewhere (`auth.*`) with this overlay, to try the settings before saving them.
+    fn auth_config(&self, overlay: &Value) -> Result<crate::external::AuthConfig, String> {
+        let _ = overlay;
+        Err("this server cannot log in elsewhere".into())
     }
 }
 
@@ -192,6 +228,42 @@ pub fn set_path(root: &mut Value, key: &str, value: Value) {
 
 pub fn get_path<'a>(root: &'a Value, key: &str) -> Option<&'a Value> {
     key.split('.').try_fold(root, |current, part| current.get(part))
+}
+
+/// The overlay the admin panel and the command line wrote, with its secrets opened. Secrets written
+/// before they were sealed are read as they are and sealed the next time the overlay is saved.
+pub async fn load_overlay(store: &Store) -> Result<Value, StoreError> {
+    let mut overlay = store
+        .setting(OVERLAY_KEY)
+        .await?
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({}));
+    for spec in SETTINGS.iter().filter(|spec| matches!(spec.kind, SettingKind::Secret)) {
+        let Some(sealed) = get_path(&overlay, spec.key).and_then(Value::as_str).and_then(|v| v.strip_prefix(SEALED))
+        else {
+            continue;
+        };
+        match store.unseal_secret(sealed).await {
+            Ok(plain) => set_path(&mut overlay, spec.key, Value::String(plain)),
+            Err(err) => tracing::warn!(key = spec.key, %err, "a sealed setting could not be opened"),
+        }
+    }
+    Ok(overlay)
+}
+
+/// Stores the overlay with every secret in it sealed: a copy of the database alone does not give
+/// away a relay's password or a directory's bind password.
+pub async fn save_overlay(store: &Store, overlay: &Value) -> Result<(), StoreError> {
+    let mut stored = overlay.clone();
+    for spec in SETTINGS.iter().filter(|spec| matches!(spec.kind, SettingKind::Secret)) {
+        let Some(plain) = get_path(&stored, spec.key).and_then(Value::as_str).filter(|v| !v.is_empty()) else {
+            continue;
+        };
+        let sealed = format!("{SEALED}{}", store.seal_secret(plain).await?);
+        set_path(&mut stored, spec.key, Value::String(sealed));
+    }
+    store.set_setting(OVERLAY_KEY, &stored.to_string()).await
 }
 
 /// Removes empty objects, and a relay without a host (it would not be usable), unless
