@@ -275,6 +275,12 @@ impl Shared {
         }
     }
 
+    /// Whether a tunnel comes from the paired server itself, or from the address its tunnel uses.
+    fn is_own_server(&self, fingerprint: Fingerprint, ip: IpAddr) -> bool {
+        self.machine.is_trusted(ip)
+            || self.state.pairing().ok().flatten().is_some_and(|pairing| pairing.server == fingerprint)
+    }
+
     fn refused_too_often(&self, ip: IpAddr) -> bool {
         let refusals = self.refusals.lock().expect("refusals poisoned");
         refusals.get(&ip).is_some_and(|(count, since)| since.elapsed() < REFUSAL_WINDOW && *count >= MAX_REFUSALS)
@@ -335,15 +341,16 @@ async fn accept_tunnels(shared: Arc<Shared>, endpoint: Endpoint, mut shutdown: w
 
 async fn handle_tunnel(shared: Arc<Shared>, incoming: Incoming) {
     let remote = incoming.remote_address();
-    if shared.refused_too_often(remote.ip()) {
-        incoming.refuse();
-        return;
-    }
+    let ip = remote.ip().to_canonical();
+    // A handshake that fails is not held against the address it claims to come from. QUIC answers
+    // the very first packet before its sender has shown that it can receive anything there, so a
+    // forged first packet per attempt -- or a neighbour behind the same carrier-grade NAT -- could
+    // otherwise run the count up and lock the paired server out of its own gateway
+    // (security-audit-0.16.0 GW-1).
     let connection = match timeout(HANDSHAKE_TIMEOUT, incoming).await {
         Ok(Ok(connection)) => connection,
         Ok(Err(err)) => {
             tracing::debug!(%remote, %err, "a tunnel handshake failed");
-            shared.record_refusal(remote.ip());
             return;
         }
         Err(_) => return,
@@ -352,6 +359,13 @@ async fn handle_tunnel(shared: Arc<Shared>, incoming: Incoming) {
         connection.close(CLOSE_REFUSED, b"no certificate");
         return;
     };
+    // Asked only now: a finished handshake proves the address, and the certificate says who it is.
+    // The paired server, and whoever comes from the address its tunnel uses, are never kept out
+    // by what strangers did from the same address.
+    if shared.refused_too_often(ip) && !shared.is_own_server(fingerprint, ip) {
+        connection.close(CLOSE_REFUSED, b"refused too often, try again later");
+        return;
+    }
     let (send, recv) = match timeout(HELLO_TIMEOUT, connection.accept_bi()).await {
         Ok(Ok(streams)) => streams,
         _ => {
@@ -375,7 +389,7 @@ async fn handle_tunnel(shared: Arc<Shared>, incoming: Incoming) {
                 .await
         }
         Err((reason, message)) => {
-            shared.record_refusal(remote.ip());
+            shared.record_refusal(ip);
             tracing::warn!(%remote, ?reason, %fingerprint, "refused a tunnel");
             let _ = proto::write_message(&mut control, &HelloReply::Refused { reason, message }).await;
             let _ = control.shutdown().await;
