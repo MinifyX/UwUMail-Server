@@ -90,17 +90,12 @@ pub(crate) async fn run_job(
     dialer: Option<uwumail_smtp::egress::Dialer>,
     limit: Duration,
 ) -> MigrationRun {
-    if detour.is_none() {
-        // The host was checked when the move was set up; its name is checked again now, so it
-        // cannot have come to point at this machine or the local network since (as for fetched
-        // mailboxes, security-audit-0.5.2 S-10).
-        let public = tokio::net::lookup_host((job.host.as_str(), job.port))
-            .await
-            .map(|addrs| addrs.into_iter().any(|addr| uwumail_smtp::is_public(addr.ip())))
-            .unwrap_or(false);
-        if !public {
-            return paused("notPublic", format!("{} does not resolve to a public address", job.host));
-        }
+    // The host was checked when the move was set up; its name is checked again now, so it cannot
+    // have come to point at this machine or the local network since (as for fetched mailboxes,
+    // security-audit-0.5.2 S-10). The connection itself is only ever made to a public address the
+    // dialer found (Source::remote).
+    if detour.is_none() && !crate::import::imap::resolves_publicly(&job.host, job.port).await {
+        return paused("notPublic", format!("{} does not resolve to a public address", job.host));
     }
     let password = match store.migration_password(job.account_id, job.id).await {
         Ok(Some(password)) => password,
@@ -113,15 +108,8 @@ pub(crate) async fn run_job(
         Err(err) => return paused("failed", err),
     }
     let source = match detour {
-        None => Source {
-            address: format!("{}:{}", job.host, job.port),
-            tls_name: Some(job.host.clone()),
-            roots: None,
-            master_user: None,
-            password,
-            // Through the proxy when the admin wants fetching to take it; straight otherwise.
-            dialer: dialer.filter(|dialer| dialer.proxied()),
-        },
+        // Through the proxy when the admin wants fetching to take it; straight otherwise.
+        None => Source::remote(&job.host, job.port, password, dialer),
         Some(detour) => Source {
             address: detour.address,
             tls_name: Some(detour.tls_name),

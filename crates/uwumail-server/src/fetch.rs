@@ -164,17 +164,12 @@ async fn run_once(
     if account.security == FetchSecurity::Starttls {
         bail!("this server fetches over TLS only, so far -- use the provider's TLS port, usually 993");
     }
-    if detour.is_none() {
-        // The host is re-checked here so a public-looking name cannot resolve to this machine or the
-        // local network (security-audit-0.5.2 S-10). The detour is used only by tests against a
-        // local server, and is exempt.
-        let public = tokio::net::lookup_host((account.host.as_str(), account.port))
-            .await
-            .map(|addrs| addrs.into_iter().any(|addr| uwumail_smtp::is_public(addr.ip())))
-            .unwrap_or(false);
-        if !public {
-            bail!("{} does not resolve to a public address", account.host);
-        }
+    // The host is re-checked here so a public-looking name cannot resolve to this machine or the
+    // local network (security-audit-0.5.2 S-10); the connection itself is only ever made to a
+    // public address the dialer found (Source::remote). The detour is used only by tests against a
+    // local server, and is exempt.
+    if detour.is_none() && !crate::import::imap::resolves_publicly(&account.host, account.port).await {
+        bail!("{} does not resolve to a public address", account.host);
     }
     let password = store
         .fetch_password(account.account_id, account.id)
@@ -187,15 +182,8 @@ async fn run_once(
         .login;
 
     let source = match detour {
-        None => Source {
-            address: format!("{}:{}", account.host, account.port),
-            tls_name: Some(account.host.clone()),
-            roots: None,
-            master_user: None,
-            password,
-            // Only through the proxy when the admin wants fetching to take it; straight otherwise.
-            dialer: dialer.filter(|dialer| dialer.proxied()),
-        },
+        // Through the proxy when the admin wants fetching to take it; straight otherwise.
+        None => Source::remote(&account.host, account.port, password, dialer),
         Some(detour) => Source {
             address: detour.address,
             tls_name: Some(detour.tls_name),

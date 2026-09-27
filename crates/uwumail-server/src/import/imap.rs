@@ -48,6 +48,45 @@ pub struct Source {
     pub dialer: Option<uwumail_smtp::egress::Dialer>,
 }
 
+impl Source {
+    /// A provider a person named, for a fetched mailbox or a move: `host:port`, checked against the
+    /// host's certificate. The connection always goes through a dialer, which resolves the name
+    /// once and connects only to the public addresses it found: through the proxy when the admin
+    /// routes fetching there, straight otherwise. Connecting by name instead would resolve it again
+    /// and try every address in turn, and a name that also points at this machine or its network
+    /// (or has come to since it was checked) would make the server knock there on the person's
+    /// behalf (security-audit-0.5.2 S-10, security-audit-0.16.0 PLAT-2).
+    pub(crate) fn remote(
+        host: &str,
+        port: u16,
+        password: String,
+        dialer: Option<uwumail_smtp::egress::Dialer>,
+    ) -> Source {
+        Source {
+            address: format!("{host}:{port}"),
+            tls_name: Some(host.to_owned()),
+            roots: None,
+            master_user: None,
+            password,
+            dialer: Some(dialer.unwrap_or_else(|| {
+                uwumail_smtp::egress::Egress::direct().dialer(uwumail_smtp::egress::Purpose::Fetch)
+            })),
+        }
+    }
+}
+
+/// Whether every address `host` resolves to is a public one. Said before anything else is done, so
+/// a person who typed a local name hears why; the dialer that connects checks again.
+pub(crate) async fn resolves_publicly(host: &str, port: u16) -> bool {
+    match tokio::net::lookup_host((host, port)).await {
+        Ok(found) => {
+            let found: Vec<_> = found.collect();
+            !found.is_empty() && found.iter().all(|address| uwumail_smtp::is_public(address.ip()))
+        }
+        Err(_) => false,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Token {
     Atom(String),
@@ -817,5 +856,27 @@ mod tests {
         assert_eq!(role_of(&[], &path("Papierkorb")), Some(MailboxRole::Trash));
         assert_eq!(role_of(&[], &["Archiv".into(), "2025".into()]), None);
         assert_eq!(quoted("a\"b\\c"), "\"a\\\"b\\\\c\"");
+    }
+
+    /// A name a person typed that also leads to this machine: nothing from the fetch or the move
+    /// may ever arrive here, whether the admin routes fetching through a proxy or not.
+    #[tokio::test]
+    async fn a_person_s_provider_never_leads_to_this_machine() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let egress = uwumail_smtp::egress::Egress::direct();
+        for dialer in [Some(egress.dialer(uwumail_smtp::egress::Purpose::Fetch)), None] {
+            let source = Source::remote("localhost", port, "katzenpfote-123".into(), dialer);
+            // Refused straight away; a connection that got through would wait for a TLS answer.
+            let opened = tokio::time::timeout(Duration::from_secs(10), Connection::open(&source)).await;
+            assert!(matches!(opened, Ok(Err(_))), "the provider's name was not refused");
+            let knocked = listener.accept();
+            assert!(
+                matches!(&knocked, Err(err) if err.kind() == std::io::ErrorKind::WouldBlock),
+                "a connection reached this machine: {knocked:?}"
+            );
+        }
+        assert!(!resolves_publicly("localhost", port).await);
     }
 }
