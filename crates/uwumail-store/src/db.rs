@@ -278,7 +278,14 @@ mod tests {
              INSERT INTO push_subscriptions (account_id, credential, device_client_id, url, url_digest, url_shown,
                      verification_code, expires, created_at)
                  VALUES (1, 'app:5', 'phone', x'00', 'a', 'push.example.net', 'code', 0, 0),
-                        (1, 'app:2', 'phone', x'00', 'b', 'push.example.net', 'code', 0, 0);",
+                        (1, 'app:2', 'phone', x'00', 'b', 'push.example.net', 'code', 0, 0);
+             INSERT INTO blobs (hash, size, created_at) VALUES ('ab', 1, 0);
+             INSERT INTO threads (id, account_id) VALUES (1, 1);
+             INSERT INTO emails (id, account_id, thread_id, blob_hash, size, received_at, created_modseq, updated_modseq)
+                 VALUES (1, 1, 1, 'ab', 1, 0, 0, 0);
+             INSERT INTO email_keywords (email_id, keyword) VALUES (1, '$seen'), (1, 'project-x'),
+                 (1, 'a' || char(13, 10) || '* BYE x'), (1, 'two words'), (1, 'x)'), (1, 'x]'), (1, 'x\\'),
+                 (1, 'ümlaut');",
         )
         .unwrap();
         migrate(&mut conn).unwrap();
@@ -310,5 +317,14 @@ mod tests {
             .collect::<std::result::Result<_, _>>()
             .unwrap();
         assert_eq!(credentials, vec!["app:2".to_owned()]);
+        // Keywords that are no IMAP atom go.
+        let keywords: Vec<String> = conn
+            .prepare("SELECT keyword FROM email_keywords ORDER BY keyword")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(keywords, vec!["$seen".to_owned(), "project-x".to_owned()]);
     }
 }

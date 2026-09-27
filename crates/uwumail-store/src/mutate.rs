@@ -73,7 +73,11 @@ fn email_keywords(conn: &Connection, email_id: i64) -> Result<BTreeSet<String>> 
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-fn valid_keyword(keyword: &str) -> bool {
+/// Whether a keyword may be stored: 1 to 255 IMAP atom characters (RFC 8621 section 4.1.1, RFC
+/// 3501 `flag-keyword`): printable ASCII without space, `( ) { ] % * " \`. Keywords reach IMAP
+/// clients as they are, so anything else could end the FLAGS list and write answers of its own
+/// into another person's session.
+pub fn valid_keyword(keyword: &str) -> bool {
     !keyword.is_empty()
         && keyword.len() <= 255
         && keyword.bytes().all(|b| (0x21..=0x7e).contains(&b) && !b"()]{%*\"\\".contains(&b))

@@ -203,6 +203,16 @@ impl Store {
     /// index and change log. Fails with [`StoreError::QuotaExceeded`] when the account is full.
     pub async fn ingest(&self, request: IngestRequest) -> Result<IngestedEmail> {
         let IngestRequest { account_id, raw, mailboxes, keywords, received_at } = request;
+        // Every way in (JMAP create, import and copy, IMAP APPEND and COPY, delivery, fetching,
+        // moving, restoring) stores keywords here, so this is where a bad one is stopped
+        // (security audit 0.16.0 PROTOCOLS-16).
+        let keywords: Vec<String> = keywords.into_iter().map(|k| k.to_lowercase()).collect();
+        if let Some(bad) = keywords.iter().find(|keyword| !crate::mutate::valid_keyword(keyword)) {
+            return Err(StoreError::Rule {
+                code: "invalidProperties",
+                message: format!("{bad:?} is not a valid keyword"),
+            });
+        }
         let size = raw.len() as i64;
 
         let quota_ok = self
@@ -231,7 +241,6 @@ impl Store {
 
         let blob_key = blob.as_str().to_owned();
         let received_at = received_at.unwrap_or_else(now);
-        let keywords: Vec<String> = keywords.into_iter().map(|k| k.to_lowercase()).collect();
 
         let (email, modseq) = self
             .write(move |tx| {

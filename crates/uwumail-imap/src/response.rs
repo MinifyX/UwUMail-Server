@@ -112,9 +112,13 @@ pub fn sequence_set(numbers: &[u32]) -> String {
 }
 
 /// IMAP flags for stored keywords.
+///
+/// A keyword that is no IMAP atom is left out, whatever the store holds: written as it is, it
+/// could end the list and add answers of its own to the session.
 pub fn flags(keywords: &[String]) -> String {
     let flags: Vec<String> = keywords
         .iter()
+        .filter(|keyword| uwumail_store::valid_keyword(keyword))
         .map(|keyword| match keyword.as_str() {
             "$seen" => "\\Seen".to_owned(),
             "$answered" => "\\Answered".to_owned(),
@@ -445,6 +449,12 @@ fn quote_field(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn flags_leave_out_keywords_that_are_no_atoms() {
+        let stored = ["$seen", "a\r\n* BYE x", "x)", "project-x", "two words"].map(String::from);
+        assert_eq!(flags(&stored), "(\\Seen project-x)");
+    }
 
     fn written(f: impl FnOnce(&mut Out)) -> String {
         let mut out = Out::new(false);

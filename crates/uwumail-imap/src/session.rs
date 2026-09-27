@@ -1014,7 +1014,8 @@ where
         let mut keywords: Vec<String> = state.messages.iter().flat_map(|m| m.keywords.iter().cloned()).collect();
         keywords.sort();
         keywords.dedup();
-        let custom: Vec<String> = keywords.into_iter().filter(|k| !is_system_keyword(k)).collect();
+        let custom: Vec<String> =
+            keywords.into_iter().filter(|k| !is_system_keyword(k) && uwumail_store::valid_keyword(k)).collect();
         let first_unseen = state.messages.iter().position(|m| !m.keywords.iter().any(|k| k == "$seen"));
 
         let mut out = Out::new(self.utf8);

@@ -325,3 +325,45 @@ async fn email_set_creates_every_header_form_and_checks_the_rules() {
     assert_eq!(result["notCreated"]["b"]["type"], "blobNotFound", "{result}");
     assert_eq!(result["notCreated"]["b"]["notFound"], json!(["nope"]), "{result}");
 }
+
+/// Keywords are IMAP atoms (RFC 8621 section 4.1.1). Any string used to be stored, and IMAP wrote
+/// it into FLAGS as it was: `a\r\n* BYE x` filed into a shared folder closed the owner's mail app
+/// (security audit 0.16.0 PROTOCOLS-16).
+#[tokio::test(flavor = "multi_thread")]
+async fn keywords_that_are_no_imap_atoms_are_refused() {
+    let server = server().await;
+    let account = server.account_id(MINI).await;
+    let email = server.deliver(MINI, "From: nyu@example.org\nTo: mini@example.org\nSubject: Hi\n\nPurr\n").await;
+    let inbox = server.mailbox(MINI, "inbox").await;
+    let got =
+        call(&server, "Email/get", json!({ "accountId": account, "ids": [email], "properties": ["blobId"] })).await;
+    let blob = got["list"][0]["blobId"].as_str().unwrap().to_owned();
+    for bad in ["a\r\n* BYE x", "two words", "x)", "x]", "", "ümlaut"] {
+        let result = call(
+            &server,
+            "Email/import",
+            json!({ "accountId": account, "emails": { "i": {
+                "blobId": blob, "mailboxIds": { &inbox: true }, "keywords": { bad: true } } } }),
+        )
+        .await;
+        assert_eq!(result["notCreated"]["i"]["type"], "invalidProperties", "{bad:?}: {result}");
+        let result = call(
+            &server,
+            "Email/set",
+            json!({ "accountId": account, "create": { "n": {
+                "mailboxIds": { &inbox: true }, "keywords": { bad: true }, "subject": "x",
+                "bodyValues": { "b": { "value": "x" } }, "textBody": [{ "partId": "b", "type": "text/plain" }] } } }),
+        )
+        .await;
+        assert_eq!(result["notCreated"]["n"]["type"], "invalidProperties", "{bad:?}: {result}");
+    }
+    // A proper one, in capitals too, is fine.
+    let result = call(
+        &server,
+        "Email/import",
+        json!({ "accountId": account, "emails": { "i": {
+            "blobId": blob, "mailboxIds": { &inbox: true }, "keywords": { "$Forwarded": true, "Project-X": true } } } }),
+    )
+    .await;
+    assert!(result["created"]["i"].is_object(), "{result}");
+}

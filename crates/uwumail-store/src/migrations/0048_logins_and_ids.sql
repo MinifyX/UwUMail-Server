@@ -85,3 +85,10 @@ DELETE FROM push_subscriptions
 -- revoked, the password changes, or the account is disabled or moved to the trash (security audit
 -- 0.16.0, PROTOCOLS-10). NULL, for what was held before, counts as the account password.
 ALTER TABLE email_submissions ADD COLUMN credential TEXT;
+
+-- Keywords that are no IMAP atom (security audit 0.16.0, PROTOCOLS-16). JMAP stored any keyword
+-- it was given, and IMAP wrote them into FLAGS as they were: a CR LF, a space or a bracket in one
+-- let whoever could file mail into a shared folder add answers of their own to other people's
+-- IMAP sessions. Such keywords are refused now; those already stored go.
+DELETE FROM email_keywords
+ WHERE keyword = '' OR length(keyword) > 255 OR keyword GLOB '*[^!-~]*' OR keyword GLOB '*[](){%*"\]*';

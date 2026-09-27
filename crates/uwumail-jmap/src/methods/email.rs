@@ -381,6 +381,11 @@ pub(super) fn keywords(value: Option<&Value>) -> Result<Vec<String>, SetError> {
     match value {
         None | Some(Value::Null) => Ok(Vec::new()),
         Some(Value::Object(map)) => {
+            // RFC 8621 section 4.1.1: IMAP atom characters only. They reach IMAP clients as they
+            // are, the store refuses anything else as well.
+            if let Some(bad) = map.keys().find(|keyword| !uwumail_store::valid_keyword(&keyword.to_lowercase())) {
+                return Err(SetError::invalid_properties(&["keywords"], format!("{bad:?} is not a valid keyword")));
+            }
             Ok(map.iter().filter(|(_, v)| **v == Value::Bool(true)).map(|(k, _)| k.clone()).collect())
         }
         Some(_) => Err(SetError::invalid_properties(&["keywords"], "keywords must be an object")),
