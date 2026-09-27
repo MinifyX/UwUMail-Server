@@ -1038,18 +1038,23 @@ pub fn parse_date_time(text: &str) -> Option<i64> {
     let (date, rest) = text.split_once(' ')?;
     let (time, zone) = rest.split_once(' ')?;
     let days = parse_date(date)?;
-    let mut clock = time.split(':').map(|part| part.parse::<i64>().ok());
+    // Two digits for each number, checked as bytes before anything is cut: the zone used to be
+    // cut at byte offsets after only its length was checked, and `+0é0` panicked there, before
+    // login (security-audit-0.16.0 PROTOCOLS-14).
+    let number = |part: &[u8]| {
+        (!part.is_empty() && part.len() <= 2 && part.iter().all(u8::is_ascii_digit))
+            .then(|| part.iter().fold(0i64, |n, digit| n * 10 + i64::from(digit - b'0')))
+    };
+    let mut clock = time.as_bytes().split(|&b| b == b':').map(number);
     let (h, m, s) = (clock.next()??, clock.next()??, clock.next()??);
-    if clock.next().is_some() || h > 23 || m > 59 || s > 60 || zone.len() != 5 {
+    if clock.next().is_some() || h > 23 || m > 59 || s > 60 {
         return None;
     }
-    let sign = match zone.as_bytes()[0] {
-        b'+' => 1,
-        b'-' => -1,
+    let (sign, zone_h, zone_m) = match zone.as_bytes() {
+        [b'+', rest @ ..] if rest.len() == 4 => (1, number(&rest[..2])?, number(&rest[2..])?),
+        [b'-', rest @ ..] if rest.len() == 4 => (-1, number(&rest[..2])?, number(&rest[2..])?),
         _ => return None,
     };
-    let zone_h: i64 = zone[1..3].parse().ok()?;
-    let zone_m: i64 = zone[3..5].parse().ok()?;
     Some(days * 86_400 + h * 3600 + m * 60 + s - sign * (zone_h * 3600 + zone_m * 60))
 }
 
@@ -1319,6 +1324,23 @@ mod tests {
         assert_eq!(parse_date("29-Feb-2024"), Some(days_from_civil(2024, 2, 29)));
         assert_eq!(parse_date_time(" 1-Jan-2000 00:00:00 +0100"), Some(days_from_civil(2000, 1, 1) * 86_400 - 3600));
         assert_eq!(parse_date("32-Jan-2000"), None);
+        assert_eq!(
+            parse_date_time("17-Sep-2026 10:00:00 +0200"),
+            Some(days_from_civil(2026, 9, 17) * 86_400 + 8 * 3600)
+        );
+        // A multi-byte character in the zone panicked (security-audit-0.16.0 PROTOCOLS-14).
+        assert_eq!(parse_date_time("17-Sep-2026 10:00:00 +0\u{e9}0"), None);
+        assert_eq!(parse_date_time("17-Sep-2026 10:00:00 \u{e9}020"), None);
+        assert_eq!(parse_date_time("17-Sep-2026 -1:00:00 +0200"), None);
+        assert_eq!(parse_date_time("17-Sep-2026 10:00:00 +02:0"), None);
+        assert_eq!(parse_date_time("17-Sep-2026 1\u{e9}:00 +0200"), None);
+    }
+
+    /// The same date in an APPEND, which a stranger can send before logging in.
+    #[test]
+    fn an_append_with_a_broken_date_is_an_error() {
+        let command = "a APPEND INBOX \"17-Sep-2026 10:00:00 +0\u{e9}0\" {1}\r\nx\r\n";
+        assert!(parse_command(command.as_bytes(), false).is_err());
     }
 }
 

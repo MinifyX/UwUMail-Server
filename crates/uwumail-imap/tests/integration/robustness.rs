@@ -51,6 +51,7 @@ const CORPUS: &[&str] = &[
     "b3 UID SEARCH RETURN (MIN MAX COUNT) UNDELETED\r\n",
     "b4 STORE 1:4 +FLAGS.SILENT (\\Seen \\Answered)\r\n",
     "b5 APPEND INBOX (\\Seen) \"1-Jan-2026 10:00:00 +0100\" {12}\r\nHello there!\r\n",
+    "b5 APPEND INBOX \"17-Sep-2026 10:00:00 +0\u{e9}0\" {12}\r\nHello there!\r\n",
     "b6 COPY 2:4 Archive\r\n",
     "b7 UID MOVE 7 \"Trash\"\r\n",
     "b8 IDLE\r\n",
