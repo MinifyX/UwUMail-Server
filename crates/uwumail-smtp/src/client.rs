@@ -1,7 +1,7 @@
 //! A small SMTP client for delivering to other servers and relays.
 
 use std::future::Future;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
@@ -31,11 +31,15 @@ pub trait Connector: Send + Sync {
 
 /// A plain TCP connection from this machine.
 pub async fn connect_directly(address: SocketAddr, limit: Duration) -> std::io::Result<BoxIo> {
+    Ok(Box::new(tcp(address, limit).await?))
+}
+
+async fn tcp(address: SocketAddr, limit: Duration) -> std::io::Result<TcpStream> {
     let socket = timeout(limit, TcpStream::connect(address)).await.map_err(|_| {
         std::io::Error::new(std::io::ErrorKind::TimedOut, format!("connecting to {address} timed out"))
     })??;
     let _ = socket.set_nodelay(true);
-    Ok(Box::new(socket))
+    Ok(socket)
 }
 
 #[derive(Debug, Clone)]
@@ -74,6 +78,8 @@ pub struct Client {
     stream: Stream,
     pending: Vec<u8>,
     command_timeout: Duration,
+    /// The address the connection leaves from, when it starts on this machine.
+    local_ip: Option<IpAddr>,
 }
 
 impl Client {
@@ -84,11 +90,20 @@ impl Client {
         connect_timeout: Duration,
         command_timeout: Duration,
     ) -> std::io::Result<Client> {
-        let stream = match ctx.connector() {
-            Some(connector) => connector.connect(addr, connect_timeout).await?,
-            None => connect_directly(addr, connect_timeout).await?,
+        let (stream, local_ip) = match ctx.connector() {
+            Some(connector) => (connector.connect(addr, connect_timeout).await?, None),
+            None => {
+                let socket = tcp(addr, connect_timeout).await?;
+                let local_ip = socket.local_addr().ok().map(|local| local.ip());
+                (Box::new(socket) as BoxIo, local_ip)
+            }
         };
-        Ok(Client { stream: Stream::Plain(stream), pending: Vec::new(), command_timeout })
+        Ok(Client { stream: Stream::Plain(stream), pending: Vec::new(), command_timeout, local_ip })
+    }
+
+    /// The address the connection leaves from, if it starts on this machine.
+    pub fn local_ip(&self) -> Option<IpAddr> {
+        self.local_ip
     }
 
     pub fn is_tls(&self) -> bool {
@@ -97,9 +112,9 @@ impl Client {
 
     /// Upgrades the connection to TLS (after STARTTLS, or right away for implicit TLS).
     pub async fn tls_handshake(self, config: Arc<ClientConfig>, host: &str) -> std::io::Result<Client> {
-        let Client { stream, pending, command_timeout } = self;
+        let Client { stream, pending, command_timeout, local_ip } = self;
         let Stream::Plain(socket) = stream else {
-            return Ok(Client { stream, pending, command_timeout });
+            return Ok(Client { stream, pending, command_timeout, local_ip });
         };
         let name = ServerName::try_from(host.trim_end_matches('.').to_owned())
             .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
@@ -107,7 +122,7 @@ impl Client {
             .await
             .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "TLS handshake timed out"))??;
         // Nothing the server sent before the handshake may be trusted afterwards.
-        Ok(Client { stream: Stream::Client(Box::new(tls)), pending: Vec::new(), command_timeout })
+        Ok(Client { stream: Stream::Client(Box::new(tls)), pending: Vec::new(), command_timeout, local_ip })
     }
 
     /// Reads one complete (possibly multi-line) reply.
