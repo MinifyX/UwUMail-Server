@@ -79,6 +79,11 @@
       "ready": "No TLS problems for 14 days, everything purrs (=^･ω･^=) You can switch MTA-STS to enforce."
     }
   },
+  "reports": {
+    "sent": {
+      "empty": "Nothing sent yet. Once mail reached a domain that wants reports, it gets one from me the next day (=^･ω･^=)"
+    }
+  },
   "queue": {
     "empty": {
       "title": "Nothing waiting, everything is on its way ✉︎"

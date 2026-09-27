@@ -79,6 +79,11 @@
       "ready": "Seit 14 Tagen keine TLS-Probleme, alles schnurrt (=^･ω･^=) Du kannst MTA-STS auf streng stellen."
     }
   },
+  "reports": {
+    "sent": {
+      "empty": "Noch nichts verschickt. Sobald Post bei einer Domain war, die Berichte möchte, schicke ich ihr am nächsten Tag einen (=^･ω･^=)"
+    }
+  },
   "queue": {
     "empty": {
       "title": "Nichts wartet, alles ist unterwegs ✉︎"

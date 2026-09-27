@@ -740,7 +740,8 @@
         "imaps": "Indique aux applis de messagerie où lire le courrier (IMAP, port 993).",
         "submissions": "Indique aux applis de messagerie où envoyer le courrier avec TLS (port 465).",
         "submission": "Indique aux applis de messagerie où envoyer le courrier avec STARTTLS (port 587).",
-        "caa": "Seul Let's Encrypt peut délivrer des certificats pour le nom du serveur, et uniquement au compte propre de ce serveur. Garde TLS privé derrière une UwUMail Gateway."
+        "caa": "Seul Let's Encrypt peut délivrer des certificats pour le nom du serveur, et uniquement au compte propre de ce serveur. Garde TLS privé derrière une UwUMail Gateway.",
+        "tlsa": "Indique aux serveurs expéditeurs quelle clé porte le certificat de ce serveur, pour qu'ils ne lui livrent le courrier que de façon chiffrée (DANE). Nécessite une zone signée avec DNSSEC."
       },
       "notes": {
         "mxUpstream": "Pointe vers le serveur de messagerie en amont. C'est correct.",
@@ -766,7 +767,12 @@
         "mtaStsPolicyInvalid": "Aucune politique valide n'y est servie.",
         "caaWithoutAccount": "Autorise aussi d'autres comptes ou autorités de certification. Avec accounturi, seul ce serveur obtient des certificats.",
         "caaOtherAccount": "Désigne un autre compte Let's Encrypt. Ce serveur ne pourra pas renouveler son certificat tant que l'enregistrement ne désigne pas le sien.",
-        "caaForbids": "N'autorise pas ce serveur à obtenir son certificat auprès de Let's Encrypt. Le renouvellement échouera."
+        "caaForbids": "N'autorise pas ce serveur à obtenir son certificat auprès de Let's Encrypt. Le renouvellement échouera.",
+        "tlsaRecommended": "La zone est signée avec DNSSEC : les serveurs qui vérifient DANE peuvent s'assurer qu'ils atteignent bien ce serveur. Le serveur garde sa clé en renouvelant le certificat, l'enregistrement reste donc valable.",
+        "tlsaKeyKept": "Correspond à la clé du serveur. La clé reste la même quand le certificat est renouvelé.",
+        "tlsaMismatch": "Ne correspond à aucun certificat présenté par ce serveur. Les serveurs qui vérifient DANE retiennent le courrier pour vos domaines jusqu'à ce que l'enregistrement indique la clé actuelle.",
+        "tlsaUnsigned": "La zone n'est pas signée avec DNSSEC, aucun serveur ne regarde donc encore cet enregistrement.",
+        "dnssecBogus": "Les signatures DNSSEC du nom du serveur ne sont pas valides. Les serveurs qui les vérifient ne peuvent pas du tout joindre le serveur."
       },
       "catchAll": "Catch-all",
       "catchAllHint": "Le courrier destiné à des adresses inexistantes va à cette personne. Cela attire aussi plus de spam.",
@@ -807,8 +813,10 @@
         "imaps": "Lecture pour les applis de messagerie (IMAP)",
         "submissions": "Envoi pour les applis de messagerie (TLS)",
         "submission": "Envoi pour les applis de messagerie (STARTTLS)",
-        "caa": "Certificats uniquement pour ce serveur (CAA)"
-      }
+        "caa": "Certificats uniquement pour ce serveur (CAA)",
+        "tlsa": "DANE (TLSA)"
+      },
+      "tlsaKeyChange": "Avant que la clé du serveur change (vos propres fichiers de certificat, un déménagement vers un autre serveur ou la suppression de data/tls/acme/key.pem), publiez l'enregistrement de la nouvelle clé à côté de celui-ci et attendez un jour. Sinon, les serveurs qui vérifient DANE retiennent le courrier qui vous est destiné."
     },
     "forwards": {
       "title": "Adresses de transfert",
@@ -968,6 +976,25 @@
     "noDomains": {
       "title": "Aucun domaine pour l'instant",
       "body": "Les rapports arrivent une fois qu'un domaine est configuré et que du courrier est parti en son nom."
+    },
+    "sent": {
+      "title": "Rapports que nous envoyons",
+      "intro": "Une fois par jour, le serveur indique aux domaines auxquels il a livré du courrier comment s'est passé le chiffrement (rapports TLS, RFC 8460), s'ils le demandent avec un enregistrement _smtp._tls. Par e-mail, ils viennent de {{sender}}, signés avec DKIM. Vos propres domaines n'en reçoivent pas.",
+      "toggle": "Envoyer des rapports TLS",
+      "toggleHint": "Compte chaque livraison vers le serveur de messagerie d'un autre domaine, par jour : si TLS a fonctionné et selon quelle politique (MTA-STS, DANE ou aucune).",
+      "listTitle": "Envoyés ces {{days}} derniers jours",
+      "empty": "Aucun rapport n'est encore parti. Les premiers partent le lendemain du jour où du courrier a atteint un domaine qui en demande.",
+      "sessions": "{{successful}} connexions chiffrées, {{failed}} échouées",
+      "to": "À : {{destinations}}",
+      "quiet_one": "Un autre domaine ne voulait pas de rapport, ou est l'un des nôtres.",
+      "quiet_many": "{{count}} autres domaines ne voulaient pas de rapport, ou sont les nôtres.",
+      "quiet_other": "{{count}} autres domaines ne voulaient pas de rapport, ou sont les nôtres.",
+      "status": {
+        "sent": "Envoyé",
+        "failed": "Non envoyé",
+        "none": "Non souhaité",
+        "skipped": "Ignoré"
+      }
     }
   },
   "host": {

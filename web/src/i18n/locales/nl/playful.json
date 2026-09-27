@@ -79,6 +79,11 @@
       "ready": "Al 14 dagen geen TLS-problemen, alles spint (=^･ω･^=) Je kunt MTA-STS op afdwingen zetten."
     }
   },
+  "reports": {
+    "sent": {
+      "empty": "Nog niets verstuurd. Zodra er mail bij een domein was dat rapporten wil, stuur ik het de volgende dag een (=^･ω･^=)"
+    }
+  },
   "queue": {
     "empty": {
       "title": "Niets wacht, alles is onderweg ✉︎"

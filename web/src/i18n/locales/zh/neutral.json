@@ -705,7 +705,8 @@
         "imaps": "告诉邮件应用在哪里收信（IMAP，端口 993）。",
         "submissions": "告诉邮件应用在哪里通过 TLS 发信（端口 465）。",
         "submission": "告诉邮件应用在哪里通过 STARTTLS 发信（端口 587）。",
-        "caa": "只允许 Let's Encrypt 为服务器的名称签发证书，且只签发给此服务器自己的账户。让 TLS 在 UwUMail Gateway 之后保持私密。"
+        "caa": "只允许 Let's Encrypt 为服务器的名称签发证书，且只签发给此服务器自己的账户。让 TLS 在 UwUMail Gateway 之后保持私密。",
+        "tlsa": "告诉发送方服务器这台服务器的证书使用哪个密钥，让它们只通过加密连接投递 (DANE)。需要使用 DNSSEC 签名的区域。"
       },
       "notes": {
         "mxUpstream": "指向上游邮件服务器。没问题。",
@@ -731,7 +732,12 @@
         "mtaStsPolicyInvalid": "那里没有提供有效的策略。",
         "caaWithoutAccount": "也允许其他账户或证书颁发机构。加上 accounturi 后，只有此服务器才能获得证书。",
         "caaOtherAccount": "指定了另一个 Let's Encrypt 账户。在记录指定此服务器自己的账户之前，它无法续期证书。",
-        "caaForbids": "不允许此服务器从 Let's Encrypt 获取证书。续期将会失败。"
+        "caaForbids": "不允许此服务器从 Let's Encrypt 获取证书。续期将会失败。",
+        "tlsaRecommended": "该区域已使用 DNSSEC 签名，因此检查 DANE 的服务器可以确认自己确实连到了这台服务器。服务器续期证书时会保留密钥，所以记录会一直有效。",
+        "tlsaKeyKept": "与服务器的密钥匹配。续期证书时密钥保持不变。",
+        "tlsaMismatch": "与这台服务器出示的任何证书都不匹配。检查 DANE 的服务器会暂扣发往你的域名的邮件，直到记录指向当前的密钥。",
+        "tlsaUnsigned": "该区域没有使用 DNSSEC 签名，所以还没有服务器会查看这条记录。",
+        "dnssecBogus": "服务器名称的 DNSSEC 签名无法验证。检查签名的服务器完全无法连到这台服务器。"
       },
       "catchAll": "全收（Catch-all）",
       "catchAllHint": "发往不存在地址的邮件会转给此人。这也会招来更多垃圾邮件。",
@@ -772,8 +778,10 @@
         "imaps": "邮件应用收信（IMAP）",
         "submissions": "邮件应用发信（TLS）",
         "submission": "邮件应用发信（STARTTLS）",
-        "caa": "仅限此服务器的证书（CAA）"
-      }
+        "caa": "仅限此服务器的证书（CAA）",
+        "tlsa": "DANE (TLSA)"
+      },
+      "tlsaKeyChange": "在服务器的密钥改变之前 (使用自己的证书文件、迁移到另一台服务器，或删除 data/tls/acme/key.pem)，请先在这条记录旁边发布新密钥的记录并等待一天。否则检查 DANE 的服务器会暂扣发给你的邮件。"
     },
     "forwards": {
       "title": "转发地址",
@@ -919,6 +927,23 @@
     "noDomains": {
       "title": "还没有域名",
       "body": "设置好域名并以其名义发出邮件后，就会收到报告。"
+    },
+    "sent": {
+      "title": "我们发送的报告",
+      "intro": "服务器每天一次告诉它投递过邮件的域名加密情况如何 (TLS 报告，RFC 8460)，前提是对方用 _smtp._tls 记录提出要求。通过邮件发送时，报告来自 {{sender}}，并带有 DKIM 签名。你自己的域名不会收到。",
+      "toggle": "发送 TLS 报告",
+      "toggleHint": "按天统计每次向其他域名邮件服务器的投递：TLS 是否成功，以及遵循了哪种策略 (MTA-STS、DANE 或无)。",
+      "listTitle": "最近 {{days}} 天发送的报告",
+      "empty": "还没有发出任何报告。邮件送达要求报告的域名后，第二天会发出第一份。",
+      "sessions": "{{successful}} 个加密连接，{{failed}} 个失败",
+      "to": "发往：{{destinations}}",
+      "quiet_other": "另有 {{count}} 个域名不需要报告，或者是我们自己的域名。",
+      "status": {
+        "sent": "已发送",
+        "failed": "未发送",
+        "none": "不需要",
+        "skipped": "已跳过"
+      }
     }
   },
   "host": {

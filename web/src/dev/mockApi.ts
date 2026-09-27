@@ -60,6 +60,7 @@ import type {
   ReportKind,
   ReportsOverview,
   ReportsView,
+  SentTlsReports,
   SpamLogEntry,
   SpamLogView,
   SecurityView,
@@ -363,6 +364,18 @@ function report(domain: MockDomain, healthy: boolean): DomainReport {
       record(kind, `${service}.${domain.name}`, value, present ? [value] : [], {
         recordType: "SRV",
         status: present ? "ok" : "missing",
+        optional: true,
+      }),
+    );
+  }
+  // The host name's domain is in a signed zone: DANE for mail to this server.
+  if (domain.name === "uwu.example") {
+    const tlsa = "3 1 1 8d02536c887482bc34ff54e41d2ba659bf85b341a0a20afadb5813dcfbcf286d";
+    records.push(
+      record("tlsa", "_25._tcp.mail.uwu.example", tlsa, healthy ? [tlsa] : [], {
+        recordType: "TLSA",
+        status: healthy ? "ok" : "missing",
+        note: healthy ? "tlsaKeyKept" : "tlsaRecommended",
         optional: true,
       }),
     );
@@ -766,6 +779,7 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "egress.pictures": { value: true, source: "default" },
   "egress.updates": { value: true, source: "database" },
   "egress.fetch": { value: false, source: "default" },
+  "reports.send_tls_reports": { value: true, source: "default" },
   "log.loki.enabled": { value: false, source: "default" },
   "log.loki.privacy_consent": { value: false, source: "default" },
   "log.loki.url": { value: null, source: "default" },
@@ -3204,6 +3218,49 @@ const routes: [string, RegExp, Handler][] = [
         } satisfies ReportDetail,
       ];
     },
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/reports\/sent$/,
+    () => [
+      200,
+      {
+        days: 30,
+        sender: "noreply-tls-reports@uwu.example",
+        reports: [
+          {
+            day: Math.floor(now / 86_400) * 86_400 - 86_400,
+            domain: "example.com",
+            status: "sent",
+            destinations: ["mailto:tls-reports@example.com"],
+            error: "",
+            successful: 42,
+            failed: 0,
+            updatedAt: now - 3600,
+          },
+          {
+            day: Math.floor(now / 86_400) * 86_400 - 86_400,
+            domain: "example.net",
+            status: "failed",
+            destinations: ["https://tlsrpt.example.net/v1"],
+            error: "https://tlsrpt.example.net/v1: the answer was 503 Service Unavailable",
+            successful: 7,
+            failed: 2,
+            updatedAt: now - 3600,
+          },
+          {
+            day: Math.floor(now / 86_400) * 86_400 - 2 * 86_400,
+            domain: "example.org",
+            status: "none",
+            destinations: [],
+            error: "",
+            successful: 3,
+            failed: 0,
+            updatedAt: now - 86_400 - 3600,
+          },
+        ],
+      } satisfies SentTlsReports,
+    ],
   ],
   [
     "GET",

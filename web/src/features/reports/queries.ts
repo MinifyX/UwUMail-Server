@@ -1,5 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { api, type ReportDetail, type ReportEntry, type ReportKind, type ReportsOverview } from "@/lib/api";
+import {
+  api,
+  type ReportDetail,
+  type ReportEntry,
+  type ReportKind,
+  type ReportsOverview,
+  type SentTlsReports,
+} from "@/lib/api";
 
 export function useReports(days: number) {
   return useQuery({
@@ -25,5 +32,13 @@ export function useReportDetail(domain: string, kind: ReportKind, id: number | n
     queryKey: ["admin", "reports", domain, kind, id],
     queryFn: () => api<ReportDetail>(`${reportPath(domain, kind)}/${id}`),
     enabled: id !== null,
+  });
+}
+
+/** The TLS reports this server sent to other domains. */
+export function useSentReports(days: number) {
+  return useQuery({
+    queryKey: ["admin", "reports", "sent", days],
+    queryFn: () => api<SentTlsReports>(`/api/admin/reports/sent?days=${days}`),
   });
 }
