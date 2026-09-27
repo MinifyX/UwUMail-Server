@@ -319,6 +319,20 @@ impl Language {
     }
 }
 
+/// `[reports]`: what the server reports to other domains.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ReportsConfig {
+    /// Daily TLS reports (RFC 8460) to the domains mail was delivered to, when they ask for them.
+    pub send_tls_reports: bool,
+}
+
+impl Default for ReportsConfig {
+    fn default() -> Self {
+        ReportsConfig { send_tls_reports: true }
+    }
+}
+
 /// The name, colour and mascot the server shows people. Empty means the UwUMail defaults.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]

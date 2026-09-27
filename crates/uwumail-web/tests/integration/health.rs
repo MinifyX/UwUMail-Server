@@ -82,6 +82,7 @@ async fn health_lists_every_area_with_findings() {
                     names: vec!["mail.example.org".into()],
                     self_signed: false,
                     automatic: true,
+                    chain: Vec::new(),
                     lets_encrypt_account: None,
                 })
             })),

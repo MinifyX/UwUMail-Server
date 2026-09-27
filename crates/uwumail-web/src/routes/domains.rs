@@ -194,10 +194,12 @@ pub async fn run_check(web: &Web, domain: &str) -> ApiResult<uwumail_smtp::dnsch
     let keys = web.store().dkim_keys(domain).await?;
     let relay_host = web.smtp().relay_host();
     let policy = web.store().mta_sts(domain).await?.map(|settings| Policy::ours(settings.mode, &settings.mx));
-    let account = web.settings().certificate.as_ref().and_then(|source| source()).and_then(|status| {
-        // A self-signed stand-in says nothing about the account the real one comes from.
-        status.lets_encrypt_account.filter(|_| status.automatic && !status.self_signed)
-    });
+    let certificate = web.settings().certificate.as_ref().and_then(|source| source());
+    // A self-signed stand-in says nothing about the account the real one comes from, nor about
+    // the key it will have.
+    let lasting = certificate.filter(|status| !(status.automatic && status.self_signed));
+    let account = lasting.as_ref().and_then(|status| status.lets_encrypt_account.clone().filter(|_| status.automatic));
+    let chain = lasting.map(|status| status.chain).filter(|chain| !chain.is_empty());
     let report = checker
         .check(DomainSetup {
             domain,
@@ -207,6 +209,7 @@ pub async fn run_check(web: &Web, domain: &str) -> ApiResult<uwumail_smtp::dnsch
             dkim_keys: &keys,
             mta_sts: policy.as_ref(),
             lets_encrypt_account: account.as_deref(),
+            certificate: chain.as_deref(),
         })
         .await;
     web.keep_report(report.clone());

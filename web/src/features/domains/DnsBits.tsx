@@ -62,6 +62,11 @@ const KNOWN_NOTES = [
   "caaWithoutAccount",
   "caaOtherAccount",
   "caaForbids",
+  "tlsaRecommended",
+  "tlsaKeyKept",
+  "tlsaMismatch",
+  "tlsaUnsigned",
+  "dnssecBogus",
 ];
 
 function Value({ value, label }: { value: string; label: string }) {
@@ -109,6 +114,12 @@ export function RecordRow({ record, domain, explain }: { record: RecordCheck; do
         <p className={clsx("text-[13px]", record.status === "ok" ? "text-muted" : "font-medium text-ink")}>{note}</p>
       )}
       {record.differs && <p className="text-[13px] text-muted">{t("domains.detail.differs")}</p>}
+      {record.kind === "tlsa" && record.found.length > 0 && record.status !== "warning" && (
+        // Servers that check DANE stop delivering the moment the key no longer matches.
+        <p className="rounded-control bg-danger-tint px-3 py-2 text-[13px] font-medium text-danger">
+          {t("domains.detail.tlsaKeyChange")}
+        </p>
+      )}
       <div className="grid gap-2 md:grid-cols-[120px_1fr] md:items-start">
         <span className="pt-1.5 text-[12px] font-semibold text-muted">
           {isDns ? t("domains.detail.name") : t("domains.detail.address")}

@@ -48,6 +48,7 @@ mod sieve;
 mod spam;
 mod spam_log;
 mod suggestions;
+mod tls_rpt;
 mod user_settings;
 mod web;
 mod word_lists;
@@ -140,6 +141,9 @@ pub use spam_log::{
     SpamLogRecipient,
 };
 pub use suggestions::AddressUse;
+pub use tls_rpt::{
+    TLS_RPT_MAX_AGE_DAYS, TlsRptDue, TlsRptOutcome, TlsRptSent, TlsSession, TlsSessionCount, tls_rpt_day,
+};
 pub use user_settings::{
     DEFAULT_UNDO_SEND_SECONDS, SettingProblem, SettingsChange, USER_SETTINGS_MAX_KEYS, USER_SETTINGS_MAX_SIZE,
     USER_SETTINGS_MAX_VALUE_SIZE, UserSettings, validate_setting,

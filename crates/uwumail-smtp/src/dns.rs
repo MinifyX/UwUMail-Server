@@ -11,8 +11,11 @@ use mail_auth::common::parse::TxtRecordParser;
 use mail_auth::common::verify::DomainKey;
 use mail_auth::dmarc::Dmarc;
 use mail_auth::hickory_resolver::proto::op::ResponseCode;
+use mail_auth::mta_sts::TlsRpt;
 use mail_auth::spf::Spf;
 use mail_auth::{DnsError, DnssecStatus, MX, Parameters, RecordSet, ResolverCache, Txt};
+
+use crate::dane::{HostTlsa, Security, Tlsa, tlsa_name};
 
 const CAPACITY: usize = 10_000;
 
@@ -79,6 +82,10 @@ pub struct DnsCaches {
     pub(crate) ipv4: Ipv4Cache,
     pub(crate) ipv6: Ipv6Cache,
     pub(crate) ptr: PtrCache,
+    /// Whether a domain's MX records validate with DNSSEC, for DANE.
+    pub(crate) dane_mx: TtlCache<Box<str>, Security>,
+    /// The validated TLSA records at `_25._tcp.<host>`.
+    pub(crate) tlsa: TtlCache<Box<str>, HostTlsa>,
 }
 
 fn fqdn(name: &str) -> Box<str> {
@@ -110,6 +117,8 @@ impl DnsCaches {
             Txt::Spf(Arc::new(Spf::parse(bytes).map_err(|e| e.to_string())?))
         } else if record.starts_with("v=DMARC1") {
             Txt::Dmarc(Arc::new(Dmarc::parse(bytes).map_err(|e| e.to_string())?))
+        } else if record.starts_with("v=TLSRPTv1") {
+            Txt::TlsRpt(Arc::new(TlsRpt::parse(bytes).map_err(|e| e.to_string())?))
         } else {
             Txt::DomainKey(Arc::new(DomainKey::parse(bytes).map_err(|e| e.to_string())?))
         };
@@ -123,6 +132,7 @@ impl DnsCaches {
         self.txt.insert(fqdn(name), Txt::Error(error), far_future());
     }
 
+    /// Pins MX records that are not signed, so DANE does not apply.
     pub fn pin_mx(&self, domain: &str, exchanges: &[(u16, &str)]) {
         let records: Arc<[MX]> = exchanges
             .iter()
@@ -133,6 +143,35 @@ impl DnsCaches {
             RecordSet { rrset: records, dnssec_status: DnssecStatus::Indeterminate },
             far_future(),
         );
+        self.dane_mx.insert(fqdn(domain), Security::Insecure, far_future());
+    }
+
+    /// Pins MX records that validate with DNSSEC, so the TLSA records of their hosts count.
+    pub fn pin_signed_mx(&self, domain: &str, exchanges: &[(u16, &str)]) {
+        self.pin_mx(domain, exchanges);
+        self.dane_mx.insert(fqdn(domain), Security::Secure, far_future());
+    }
+
+    /// Pins MX records whose signatures do not validate.
+    pub fn pin_bogus_mx(&self, domain: &str, exchanges: &[(u16, &str)]) {
+        self.pin_mx(domain, exchanges);
+        self.dane_mx.insert(fqdn(domain), Security::Bogus, far_future());
+    }
+
+    /// Pins the validated TLSA records of an MX host, e.g. `["3 1 1 0a1b…"]`; none means it has none.
+    pub fn pin_tlsa(&self, host: &str, records: &[&str]) -> Result<(), String> {
+        let records: Arc<[Tlsa]> = records
+            .iter()
+            .map(|record| Tlsa::parse(record).ok_or_else(|| format!("\"{record}\" is not a TLSA record")))
+            .collect::<Result<_, _>>()?;
+        let found = if records.is_empty() { HostTlsa::None } else { HostTlsa::Records(records) };
+        self.tlsa.insert(fqdn(&tlsa_name(host)), found, far_future());
+        Ok(())
+    }
+
+    /// Pins TLSA records whose signatures do not validate.
+    pub fn pin_bogus_tlsa(&self, host: &str) {
+        self.tlsa.insert(fqdn(&tlsa_name(host)), HostTlsa::Bogus, far_future());
     }
 
     pub fn pin_ipv6(&self, host: &str, addresses: &[Ipv6Addr]) {

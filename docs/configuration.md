@@ -355,6 +355,10 @@ pictures = true        # remote pictures and sender logos take the proxy
 updates = false        # the check for new versions takes it
 fetch = false          # fetching from other providers (mailboxes, calendars, contacts) takes it
 
+# Daily TLS reports (RFC 8460) to the domains mail went to, see docs/tls-reports.md.
+[reports]
+send_tls_reports = true
+
 [tone]
 language = "de"        # de | en | fr | nl | ja | zh
 internal = "playful"   # playful | neutral: mail to our own people

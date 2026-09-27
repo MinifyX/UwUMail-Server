@@ -519,7 +519,7 @@ mod tests {
 
     #[test]
     fn hsts_needs_a_trusted_certificate() {
-        let info = |self_signed| Some(CertificateInfo { not_after: 0, names: vec![], self_signed });
+        let info = |self_signed| Some(CertificateInfo { not_after: 0, names: vec![], self_signed, chain: vec![] });
         assert!(hsts_allowed(info(false)));
         assert!(!hsts_allowed(info(true)));
         assert!(!hsts_allowed(None));

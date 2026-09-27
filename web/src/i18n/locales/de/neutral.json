@@ -723,7 +723,8 @@
         "imaps": "Sagt Mail-Apps, wo sie Mails abrufen (IMAP, Port 993).",
         "submissions": "Sagt Mail-Apps, wo sie Mails verschlüsselt verschicken (Port 465).",
         "submission": "Sagt Mail-Apps, wo sie Mails mit STARTTLS verschicken (Port 587).",
-        "caa": "Erlaubt Zertifikate für den Namen des Servers nur von Let's Encrypt und nur für das eigene Konto dieses Servers. Hält TLS hinter einem UwUMail Gateway privat."
+        "caa": "Erlaubt Zertifikate für den Namen des Servers nur von Let's Encrypt und nur für das eigene Konto dieses Servers. Hält TLS hinter einem UwUMail Gateway privat.",
+        "tlsa": "Sagt sendenden Servern, welchen Schlüssel das Zertifikat dieses Servers hat, damit sie nur verschlüsselt an ihn zustellen (DANE). Braucht eine mit DNSSEC signierte Zone."
       },
       "notes": {
         "mxUpstream": "Zeigt auf den vorgeschalteten Mailserver. Das passt so.",
@@ -749,7 +750,12 @@
         "mtaStsPolicyInvalid": "Dort steht keine gültige Richtlinie.",
         "caaWithoutAccount": "Erlaubt auch andere Konten oder Zertifizierungsstellen. Mit accounturi bekommt nur dieser Server Zertifikate.",
         "caaOtherAccount": "Nennt ein anderes Let's-Encrypt-Konto. Dieser Server kann sein Zertifikat erst verlängern, wenn der Eintrag sein eigenes nennt.",
-        "caaForbids": "Erlaubt diesem Server kein Zertifikat von Let's Encrypt. Das Verlängern schlägt fehl."
+        "caaForbids": "Erlaubt diesem Server kein Zertifikat von Let's Encrypt. Das Verlängern schlägt fehl.",
+        "tlsaRecommended": "Die Zone ist mit DNSSEC signiert, also können Server, die DANE prüfen, sicherstellen, dass sie wirklich diesen Server erreichen. Der Server behält beim Verlängern des Zertifikats seinen Schlüssel, der Eintrag bleibt also gültig.",
+        "tlsaKeyKept": "Passt zum Schlüssel des Servers. Der Schlüssel bleibt beim Verlängern des Zertifikats derselbe.",
+        "tlsaMismatch": "Passt zu keinem Zertifikat, das dieser Server vorzeigt. Server, die DANE prüfen, halten Post für deine Domains zurück, bis der Eintrag den aktuellen Schlüssel nennt.",
+        "tlsaUnsigned": "Die Zone ist nicht mit DNSSEC signiert, deshalb schaut sich noch kein Server diesen Eintrag an.",
+        "dnssecBogus": "Die DNSSEC-Signaturen für den Namen des Servers stimmen nicht. Server, die sie prüfen, erreichen den Server gar nicht."
       },
       "catchAll": "Sammeladresse",
       "catchAllHint": "Mails an Adressen, die es nicht gibt, gehen an diese Person. Das zieht auch mehr Spam an.",
@@ -790,8 +796,10 @@
         "imaps": "Abruf für Mail-Apps (IMAP)",
         "submissions": "Versand für Mail-Apps (TLS)",
         "submission": "Versand für Mail-Apps (STARTTLS)",
-        "caa": "Zertifikate nur für diesen Server (CAA)"
-      }
+        "caa": "Zertifikate nur für diesen Server (CAA)",
+        "tlsa": "DANE (TLSA)"
+      },
+      "tlsaKeyChange": "Bevor sich der Schlüssel des Servers ändert (eigene Zertifikatsdateien, Umzug auf einen anderen Server oder data/tls/acme/key.pem gelöscht), veröffentliche den Eintrag für den neuen Schlüssel neben diesem und warte einen Tag. Sonst halten Server, die DANE prüfen, Post für dich zurück."
     },
     "forwards": {
       "title": "Weiterleitungs-Adressen",
@@ -944,6 +952,24 @@
     "noDomains": {
       "title": "Noch keine Domain",
       "body": "Berichte kommen erst, wenn eine Domain eingerichtet ist und Post in ihrem Namen unterwegs war."
+    },
+    "sent": {
+      "title": "Berichte, die wir senden",
+      "intro": "Einmal am Tag sagt der Server den Domains, an die er Post zugestellt hat, wie die Verschlüsselung lief (TLS-Berichte, RFC 8460), wenn sie das mit einem _smtp._tls-Eintrag wünschen. Per Mail kommen sie von {{sender}}, mit DKIM signiert. Deine eigenen Domains bekommen keine.",
+      "toggle": "TLS-Berichte senden",
+      "toggleHint": "Zählt jede Zustellung an den Mailserver einer anderen Domain pro Tag: ob TLS klappte und unter welcher Richtlinie (MTA-STS, DANE oder keine).",
+      "listTitle": "Gesendet in den letzten {{days}} Tagen",
+      "empty": "Bisher ging noch kein Bericht raus. Die ersten gehen am Tag, nachdem Post an eine Domain ging, die sie haben will.",
+      "sessions": "{{successful}} verschlüsselte Verbindungen, {{failed}} gescheitert",
+      "to": "An: {{destinations}}",
+      "quiet_one": "Eine weitere Domain wollte keine Berichte oder gehört uns.",
+      "quiet_other": "{{count}} weitere Domains wollten keine Berichte oder gehören uns.",
+      "status": {
+        "sent": "Gesendet",
+        "failed": "Nicht gesendet",
+        "none": "Nicht gewünscht",
+        "skipped": "Übersprungen"
+      }
     }
   },
   "host": {

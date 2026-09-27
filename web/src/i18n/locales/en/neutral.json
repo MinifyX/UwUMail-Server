@@ -723,7 +723,8 @@
         "imaps": "Tells mail apps where to read mail (IMAP, port 993).",
         "submissions": "Tells mail apps where to send mail with TLS (port 465).",
         "submission": "Tells mail apps where to send mail with STARTTLS (port 587).",
-        "caa": "Lets only Let's Encrypt issue certificates for the server's name, and only to this server's own account. Keeps TLS private behind a UwUMail Gateway."
+        "caa": "Lets only Let's Encrypt issue certificates for the server's name, and only to this server's own account. Keeps TLS private behind a UwUMail Gateway.",
+        "tlsa": "Tells sending servers which key this server's certificate has, so they only deliver over an encrypted connection to it (DANE). Needs a zone signed with DNSSEC."
       },
       "notes": {
         "mxUpstream": "Points to the upstream mail server. That's fine.",
@@ -749,7 +750,12 @@
         "mtaStsPolicyInvalid": "No valid policy is served there.",
         "caaWithoutAccount": "Allows other accounts or certificate authorities as well. With accounturi only this server gets certificates.",
         "caaOtherAccount": "Names another Let's Encrypt account. This server cannot renew its certificate until the record names its own.",
-        "caaForbids": "Does not let this server get its certificate from Let's Encrypt. Renewing it will fail."
+        "caaForbids": "Does not let this server get its certificate from Let's Encrypt. Renewing it will fail.",
+        "tlsaRecommended": "The zone is signed with DNSSEC, so servers that check DANE can make sure they really reach this server. The server keeps its key when it renews the certificate, so the record stays valid.",
+        "tlsaKeyKept": "Matches the server's key. The key stays the same when the certificate is renewed.",
+        "tlsaMismatch": "Matches no certificate this server presents. Servers that check DANE hold mail for your domains back until the record names the current key.",
+        "tlsaUnsigned": "The zone is not signed with DNSSEC, so no server looks at this record yet.",
+        "dnssecBogus": "The DNSSEC signatures of the server's name do not validate. Servers that check them cannot reach the server at all."
       },
       "catchAll": "Catch-all",
       "catchAllHint": "Mail to addresses that don't exist goes to this person. It also attracts more spam.",
@@ -790,8 +796,10 @@
         "imaps": "Reading for mail apps (IMAP)",
         "submissions": "Sending for mail apps (TLS)",
         "submission": "Sending for mail apps (STARTTLS)",
-        "caa": "Certificates only for this server (CAA)"
-      }
+        "caa": "Certificates only for this server (CAA)",
+        "tlsa": "DANE (TLSA)"
+      },
+      "tlsaKeyChange": "Before the server's key changes (your own certificate files, a move to another server, or deleting data/tls/acme/key.pem), publish the record for the new key next to this one and wait a day. Otherwise servers that check DANE hold mail for you back."
     },
     "forwards": {
       "title": "Forwarding addresses",
@@ -944,6 +952,24 @@
     "noDomains": {
       "title": "No domain yet",
       "body": "Reports arrive once a domain is set up and mail has gone out in its name."
+    },
+    "sent": {
+      "title": "Reports we send",
+      "intro": "Once a day the server tells the domains it delivered mail to how encryption went (TLS reports, RFC 8460), if they ask for it with a _smtp._tls record. By mail they come from {{sender}}, signed with DKIM. Your own domains get none.",
+      "toggle": "Send TLS reports",
+      "toggleHint": "Counts every delivery to another domain's mail server by the day: whether TLS worked, and under which policy (MTA-STS, DANE or none).",
+      "listTitle": "Sent in the last {{days}} days",
+      "empty": "No report has gone out yet. The first ones go out the day after mail reached a domain that asks for them.",
+      "sessions": "{{successful}} encrypted connections, {{failed}} failed",
+      "to": "To: {{destinations}}",
+      "quiet_one": "One more domain asked for no reports, or is one of ours.",
+      "quiet_other": "{{count}} more domains asked for no reports, or are ours.",
+      "status": {
+        "sent": "Sent",
+        "failed": "Not sent",
+        "none": "Not wanted",
+        "skipped": "Skipped"
+      }
     }
   },
   "host": {

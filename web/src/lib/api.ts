@@ -205,13 +205,14 @@ export type RecordKind =
   | "imaps"
   | "submissions"
   | "submission"
-  | "caa";
+  | "caa"
+  | "tlsa";
 
 export interface RecordCheck {
   kind: RecordKind;
   name: string;
   /** HTTPS is the MTA-STS policy file, not a DNS record. */
-  recordType: "MX" | "TXT" | "SRV" | "CNAME" | "CAA" | "HTTPS";
+  recordType: "MX" | "TXT" | "SRV" | "CNAME" | "CAA" | "TLSA" | "HTTPS";
   expected: string;
   found: string[];
   status: CheckStatus;
@@ -317,6 +318,30 @@ export interface DomainReports {
   ownFailing: number;
   /** False when someone claimed dmarc-reports@ or tls-reports@ as a mailbox or alias. */
   reading: { dmarc: boolean; tls: boolean };
+}
+
+/** How dealing with one day's TLS report to another domain went. */
+export type SentTlsReportStatus = "sent" | "failed" | "none" | "skipped";
+
+/** A TLS report (RFC 8460) this server sent, or meant to send, to another domain. */
+export interface SentTlsReport {
+  /** The first second of the (UTC) day it covers. */
+  day: number;
+  domain: string;
+  status: SentTlsReportStatus;
+  /** mailto: and https: addresses it went to. */
+  destinations: string[];
+  error: string;
+  successful: number;
+  failed: number;
+  updatedAt: number;
+}
+
+export interface SentTlsReports {
+  days: number;
+  /** The address reports by mail come from. */
+  sender: string;
+  reports: SentTlsReport[];
 }
 
 export interface ReportsOverview {

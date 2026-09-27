@@ -75,12 +75,22 @@ Design choices that matter later:
   deliver to. Those are fetched over HTTPS with a valid certificate and cached
   until they expire; an enforced policy limits delivery to the MX hosts it lists
   and requires a certificate valid for the host.
+- `dane`: DNSSEC-validated lookups of the MX and TLSA records of domains we
+  deliver to (RFC 7672). Usable TLSA records make STARTTLS mandatory and replace
+  the certificate check with theirs (DANE-EE: the key or certificate, DANE-TA:
+  the chain up to it); DANE comes before MTA-STS, and answers that do not
+  validate hold the mail back.
+- `tlsrpt`: every delivery session to another domain's MX counts by the day
+  with its policy and TLS result (`tls_rpt_sessions`); once the day is over,
+  domains with a `_smtp._tls` record get a gzipped RFC 8460 report by mail
+  (queued and DKIM-signed) or HTTPS POST. See [tls-reports.md](tls-reports.md).
 - `reports`: DMARC aggregate and TLS reports addressed to `dmarc-reports@` and
   `tls-reports@` a hosted domain are unpacked (capped), checked to be about the
   domain and stored as numbers instead of landing in a mailbox.
 - `dnscheck`: the records a domain needs (MX, SPF, DMARC, DKIM) and the
-  recommended ones (TLS reporting, SRV, MTA-STS including the policy file),
-  resolved from the root servers down.
+  recommended ones (TLS reporting, SRV, MTA-STS including the policy file, CAA,
+  and in a DNSSEC-signed zone the TLSA record for the server's key), resolved
+  from the root servers down.
 - `dkim`: RSA-2048 and Ed25519 keys per domain; submitted mail is signed with both.
 - `forward` + `srs`: after local delivery, mail also goes to a person's confirmed
   forwarding addresses. Mail to other servers gets an SRS envelope sender on

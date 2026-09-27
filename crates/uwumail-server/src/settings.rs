@@ -38,6 +38,7 @@ pub fn view_settings(path: Option<&std::path::Path>, overlay: &Value) -> Result<
         "http": { "webmail": config.http.webmail },
         "log": { "loki": config.log.loki },
         "egress": config.egress,
+        "reports": config.reports,
     });
     Ok(SETTINGS
         .iter()
@@ -70,6 +71,7 @@ impl SettingsBackend for ServerSettings {
             .update_settings(config.smtp, config.spam, config.delivery, config.tone)
             .map_err(|err| err.to_string())?;
         self.smtp.set_brand(config.brand.clone());
+        self.smtp.set_reports(&config.reports);
         self.loki.set_target(config.log.loki.target(&config.hostname)?);
         self.egress.reconfigure(&config.egress)?;
         tracing::info!("settings from the admin panel are in effect");

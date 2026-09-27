@@ -723,7 +723,8 @@
         "imaps": "Vertelt mailapps waar ze mail kunnen lezen (IMAP, poort 993).",
         "submissions": "Vertelt mailapps waar ze mail met TLS kunnen verzenden (poort 465).",
         "submission": "Vertelt mailapps waar ze mail met STARTTLS kunnen verzenden (poort 587).",
-        "caa": "Laat alleen Let's Encrypt certificaten uitgeven voor de naam van de server, en alleen aan het eigen account van deze server. Houdt TLS privé achter een UwUMail Gateway."
+        "caa": "Laat alleen Let's Encrypt certificaten uitgeven voor de naam van de server, en alleen aan het eigen account van deze server. Houdt TLS privé achter een UwUMail Gateway.",
+        "tlsa": "Vertelt verzendende servers welke sleutel het certificaat van deze server heeft, zodat ze alleen versleuteld bij hem afleveren (DANE). Vereist een met DNSSEC ondertekende zone."
       },
       "notes": {
         "mxUpstream": "Verwijst naar de voorliggende mailserver. Dat is in orde.",
@@ -749,7 +750,12 @@
         "mtaStsPolicyInvalid": "Daar wordt geen geldig beleid uitgeleverd.",
         "caaWithoutAccount": "Staat ook andere accounts of certificaatautoriteiten toe. Met accounturi krijgt alleen deze server certificaten.",
         "caaOtherAccount": "Noemt een ander Let's Encrypt-account. Deze server kan zijn certificaat pas vernieuwen als het record zijn eigen account noemt.",
-        "caaForbids": "Laat deze server zijn certificaat niet bij Let's Encrypt ophalen. Vernieuwen zal mislukken."
+        "caaForbids": "Laat deze server zijn certificaat niet bij Let's Encrypt ophalen. Vernieuwen zal mislukken.",
+        "tlsaRecommended": "De zone is ondertekend met DNSSEC, dus servers die DANE controleren kunnen zeker weten dat ze echt deze server bereiken. De server houdt zijn sleutel bij het vernieuwen van het certificaat, dus het record blijft geldig.",
+        "tlsaKeyKept": "Past bij de sleutel van de server. De sleutel blijft hetzelfde als het certificaat wordt vernieuwd.",
+        "tlsaMismatch": "Past bij geen enkel certificaat dat deze server laat zien. Servers die DANE controleren houden mail voor je domeinen tegen tot het record de huidige sleutel noemt.",
+        "tlsaUnsigned": "De zone is niet ondertekend met DNSSEC, dus nog geen enkele server kijkt naar dit record.",
+        "dnssecBogus": "De DNSSEC-handtekeningen van de naam van de server kloppen niet. Servers die ze controleren bereiken de server helemaal niet."
       },
       "catchAll": "Catch-all",
       "catchAllHint": "Mail aan adressen die niet bestaan, gaat naar deze persoon. Dat trekt ook meer spam aan.",
@@ -790,8 +796,10 @@
         "imaps": "Lezen voor mailapps (IMAP)",
         "submissions": "Verzenden voor mailapps (TLS)",
         "submission": "Verzenden voor mailapps (STARTTLS)",
-        "caa": "Certificaten alleen voor deze server (CAA)"
-      }
+        "caa": "Certificaten alleen voor deze server (CAA)",
+        "tlsa": "DANE (TLSA)"
+      },
+      "tlsaKeyChange": "Voordat de sleutel van de server verandert (eigen certificaatbestanden, een verhuizing naar een andere server of het verwijderen van data/tls/acme/key.pem), publiceer je het record voor de nieuwe sleutel naast dit record en wacht je een dag. Anders houden servers die DANE controleren mail voor je tegen."
     },
     "forwards": {
       "title": "Doorstuuradressen",
@@ -944,6 +952,24 @@
     "noDomains": {
       "title": "Nog geen domein",
       "body": "Rapporten komen binnen zodra een domein is ingesteld en er mail uit zijn naam is verstuurd."
+    },
+    "sent": {
+      "title": "Rapporten die wij versturen",
+      "intro": "Eén keer per dag vertelt de server de domeinen waar hij mail heeft afgeleverd hoe de versleuteling ging (TLS-rapporten, RFC 8460), als ze daarom vragen met een _smtp._tls-record. Per mail komen ze van {{sender}}, ondertekend met DKIM. Je eigen domeinen krijgen er geen.",
+      "toggle": "TLS-rapporten versturen",
+      "toggleHint": "Telt per dag elke aflevering bij de mailserver van een ander domein: of TLS lukte en onder welk beleid (MTA-STS, DANE of geen).",
+      "listTitle": "Verstuurd in de afgelopen {{days}} dagen",
+      "empty": "Er is nog geen rapport verstuurd. De eerste gaan de dag nadat er mail naar een domein ging dat erom vraagt.",
+      "sessions": "{{successful}} versleutelde verbindingen, {{failed}} mislukt",
+      "to": "Aan: {{destinations}}",
+      "quiet_one": "Nog één domein wilde geen rapporten, of is van ons.",
+      "quiet_other": "Nog {{count}} domeinen wilden geen rapporten, of zijn van ons.",
+      "status": {
+        "sent": "Verstuurd",
+        "failed": "Niet verstuurd",
+        "none": "Niet gewenst",
+        "skipped": "Overgeslagen"
+      }
     }
   },
   "host": {

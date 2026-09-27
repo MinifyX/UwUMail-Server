@@ -7,6 +7,7 @@ use aws_lc_rs::digest;
 use mail_auth::mta_sts::MtaSts;
 use uwumail_store::CachedStsPolicy;
 
+use crate::tlsrpt::ResultType;
 use crate::{Context, now};
 
 /// How long senders keep our policy: short while testing, a week once it is enforced.
@@ -151,25 +152,41 @@ impl From<&CachedStsPolicy> for Policy {
     }
 }
 
-/// The policy to follow when delivering to `domain`, or `None` when it has none.
+/// What looking for a domain's MTA-STS policy found.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Lookup {
+    /// The policy to follow, if there is one.
+    pub policy: Option<Policy>,
+    /// The domain announces a policy that could not be had, which its TLS reports hear about.
+    pub failure: Option<ResultType>,
+}
+
+/// The policy to follow when delivering to `domain`, or none when it has none.
 ///
 /// A cached policy is used while its id matches the TXT record and it has not expired. When
 /// fetching a new one fails, a cached policy that has not expired still applies (RFC 8461 §5.1).
-pub(crate) async fn policy_for(ctx: &Context, domain: &str) -> Option<Policy> {
+pub(crate) async fn policy_for(ctx: &Context, domain: &str) -> Lookup {
     let domain = domain.trim_end_matches('.').to_ascii_lowercase();
     let cached = ctx.store.cached_sts_policy(&domain).await.ok().flatten().filter(|cached| !cached.expired(now()));
     let record = ctx.authenticator.txt_lookup::<MtaSts>(format!("_mta-sts.{domain}."), Some(&ctx.dns.txt)).await;
     let id = match record {
         Ok(record) => record.id.clone(),
         // No record: the domain has no policy, unless one we saw before is still valid.
-        Err(_) => return cached.as_ref().map(Policy::from),
+        Err(_) => return Lookup { policy: cached.as_ref().map(Policy::from), failure: None },
     };
     if let Some(cached) = &cached
         && cached.policy_id == id
     {
-        return Some(Policy::from(cached));
+        return Lookup { policy: Some(Policy::from(cached)), failure: None };
     }
-    match ctx.https.get(&policy_url(&domain), MAX_POLICY_BYTES, FETCH_TIMEOUT).await.and_then(|f| read_fetched(&f)) {
+    let fetched = ctx.https.get(&policy_url(&domain), MAX_POLICY_BYTES, FETCH_TIMEOUT).await;
+    let failure = match &fetched {
+        Ok(_) => ResultType::StsPolicyInvalid,
+        // The policy host's certificate did not pass (RFC 8460, section 4.3.2.2).
+        Err(error) if error.contains("certificate") => ResultType::StsWebpkiInvalid,
+        Err(_) => ResultType::StsPolicyFetchError,
+    };
+    match fetched.and_then(|f| read_fetched(&f)) {
         Ok(policy) => {
             let entry = CachedStsPolicy {
                 domain: domain.clone(),
@@ -182,11 +199,14 @@ pub(crate) async fn policy_for(ctx: &Context, domain: &str) -> Option<Policy> {
             if let Err(err) = ctx.store.cache_sts_policy(entry).await {
                 tracing::warn!(%err, %domain, "caching an MTA-STS policy failed");
             }
-            Some(policy)
+            Lookup { policy: Some(policy), failure: None }
         }
         Err(error) => {
             tracing::info!(%domain, %error, "fetching the MTA-STS policy failed");
-            cached.as_ref().map(Policy::from)
+            match cached {
+                Some(cached) => Lookup { policy: Some(Policy::from(&cached)), failure: None },
+                None => Lookup { policy: None, failure: Some(failure) },
+            }
         }
     }
 }

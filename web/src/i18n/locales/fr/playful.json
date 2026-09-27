@@ -79,6 +79,11 @@
       "ready": "Aucun problème TLS depuis 14 jours, tout ronronne (=^･ω･^=) Vous pouvez passer MTA-STS en mode strict."
     }
   },
+  "reports": {
+    "sent": {
+      "empty": "Rien d'envoyé pour l'instant. Dès que du courrier arrive chez un domaine qui veut des rapports, je lui en envoie un le lendemain (=^･ω･^=)"
+    }
+  },
   "queue": {
     "empty": {
       "title": "Rien n'attend, tout est en route ✉︎"

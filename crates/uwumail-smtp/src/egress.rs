@@ -643,6 +643,17 @@ impl Egress {
         Dialer { connector: self.connector(proxy, setup.fallback) }
     }
 
+    /// Straight from the server, whatever the proxy says: for requests between servers that name this one
+    /// anyway, like the TLS reports it posts. Still only to public addresses.
+    pub fn direct_dialer(&self) -> Dialer {
+        Dialer { connector: self.connector(None, Fallback::Block) }
+    }
+
+    /// The certificate authorities requests through this egress trust.
+    pub(crate) fn roots(&self) -> rustls::RootCertStore {
+        self.shared.roots.clone()
+    }
+
     pub fn status(&self) -> EgressStatus {
         let stats = &self.shared.stats;
         let setup = self.setup();

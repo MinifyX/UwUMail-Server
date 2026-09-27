@@ -18,6 +18,8 @@ pub struct CertificateInfo {
     pub not_after: i64,
     pub names: Vec<String>,
     pub self_signed: bool,
+    /// The chain as served, leaf first (DER): what a TLSA record for this server has to match.
+    pub chain: Vec<Vec<u8>>,
 }
 
 /// The certificate currently served. ACME renewals and file reloads replace it in place.
@@ -43,7 +45,8 @@ impl CertStore {
         let certs: Vec<CertificateDer<'static>> =
             CertificateDer::pem_slice_iter(cert_pem).collect::<Result<_, _>>().context("reading the certificate")?;
         let leaf = certs.first().ok_or_else(|| anyhow!("the certificate file contains no certificate"))?;
-        let info = inspect(leaf)?;
+        let mut info = inspect(leaf)?;
+        info.chain = certs.iter().map(|cert| cert.to_vec()).collect();
         let key = PrivateKeyDer::from_pem_slice(key_pem).context("reading the private key")?;
         let signing_key =
             rustls::crypto::aws_lc_rs::sign::any_supported_type(&key).context("loading the private key")?;
@@ -80,6 +83,7 @@ fn inspect(cert: &CertificateDer<'_>) -> anyhow::Result<CertificateInfo> {
         not_after: parsed.validity().not_after.timestamp(),
         names,
         self_signed: parsed.issuer() == parsed.subject(),
+        chain: Vec::new(),
     })
 }
 

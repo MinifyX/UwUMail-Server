@@ -1,6 +1,7 @@
 //! Checks the DNS records a hosted domain needs: MX, SPF, DMARC and DKIM, plus the
-//! recommended ones: TLS reports, MTA-STS when it is on, and SRV records that let apps find
-//! the server.
+//! recommended ones: TLS reports, MTA-STS when it is on, SRV records that let apps find the
+//! server, and for the domain the host name belongs to CAA and, in a zone signed with DNSSEC,
+//! the TLSA record for DANE.
 //!
 //! Records are resolved from the root servers down to the domain's own
 //! nameservers, without the system resolver. A freshly published record shows
@@ -23,6 +24,7 @@ use mail_auth::{MessageAuthenticator, SpfResult};
 use serde::Serialize;
 use uwumail_store::{DMARC_REPORT_ADDRESS, DkimKey, DkimKeyState, TLS_REPORT_ADDRESS};
 
+use crate::dane::{Security, Tlsa, Validator, dane_ee_record, tlsa_name};
 use crate::dns::DnsCaches;
 use crate::https::{Fetched, Https};
 use crate::mta_sts::{self, Policy};
@@ -107,6 +109,10 @@ pub struct DomainSetup<'a> {
     /// one. With it, the domain the host name belongs to is told the CAA record that binds the
     /// name's certificates to that account.
     pub lets_encrypt_account: Option<&'a str>,
+    /// The certificate chain the mail ports present, leaf first (DER), when it is there to stay
+    /// (not a stand-in waiting for Let's Encrypt). With it, the domain the host name belongs to is
+    /// told the TLSA record for its key (DANE, RFC 7672) and whether a published one matches.
+    pub certificate: Option<&'a [Vec<u8>]>,
 }
 
 /// One CAA property as published (RFC 8659).
@@ -129,6 +135,8 @@ pub fn caa_value(account: &str) -> String {
 pub struct DnsChecker {
     system: MessageAuthenticator,
     https: Https,
+    /// Tells whether the host name's zone is signed, which TLSA records need to count.
+    validator: Validator,
 }
 
 fn fqdn(name: &str) -> String {
@@ -219,6 +227,23 @@ impl Lookups<'_> {
             .collect())
     }
 
+    async fn tlsa(&self, name: &str) -> Answer<Tlsa> {
+        Ok(self
+            .records(name, RecordType::TLSA)
+            .await?
+            .into_iter()
+            .filter_map(|data| match data {
+                RData::TLSA(tlsa) => Some(Tlsa {
+                    usage: tlsa.cert_usage.into(),
+                    selector: tlsa.selector.into(),
+                    matching: tlsa.matching.into(),
+                    data: tlsa.cert_data,
+                }),
+                _ => None,
+            })
+            .collect())
+    }
+
     /// The CAA records that apply to `name`: its own, or else those of the nearest parent up to
     /// `domain` that has any (RFC 8659 section 3).
     async fn caa(&self, name: &str, domain: &str) -> Answer<Caa> {
@@ -284,7 +309,7 @@ impl DnsChecker {
         let system = MessageAuthenticator::new_system_conf()
             .or_else(|_| MessageAuthenticator::new_quad9_tls())
             .map_err(|err| crate::SmtpError::Dns(err.to_string()))?;
-        Ok(DnsChecker { system, https: Https::new() })
+        Ok(DnsChecker { system, https: Https::new(), validator: Validator::default() })
     }
 
     /// Resolving from the root servers, if outgoing DNS works here; otherwise the system resolver.
@@ -352,10 +377,20 @@ impl DnsChecker {
         }
         // The host name's CAA record belongs to the domain the name is in, if it is one of ours.
         let host = setup.hostname.trim_end_matches('.').to_ascii_lowercase();
+        let hosts_here = host == domain || host.ends_with(&format!(".{domain}"));
         if let Some(account) = setup.lets_encrypt_account
-            && (host == domain || host.ends_with(&format!(".{domain}")))
+            && hosts_here
         {
             records.push(evaluate_caa(&host, account, lookups.caa(&host, &domain).await));
+        }
+        // So is the TLSA record for DANE, which only counts in a zone signed with DNSSEC.
+        if let Some(chain) = setup.certificate
+            && hosts_here
+        {
+            let signed = self.validator.security(&host, RecordType::A).await;
+            if let Some(record) = evaluate_tlsa(&host, chain, signed, lookups.tlsa(&tlsa_name(&host)).await) {
+                records.push(record);
+            }
         }
 
         for record in &mut records {
@@ -663,6 +698,73 @@ pub fn evaluate_caa(hostname: &str, account: &str, answer: Answer<Caa>) -> Recor
     record
 }
 
+/// Whether one of `records` names the certificate `chain` (leaf first) presents, the way a
+/// sending server checks it: DANE-EE the leaf, DANE-TA a certificate above it. PKIX records do not
+/// count for mail (RFC 7672, section 3.1.3).
+pub fn tlsa_matches(records: &[Tlsa], chain: &[Vec<u8>]) -> bool {
+    fn certificate(der: &[u8]) -> rustls_pki_types::CertificateDer<'_> {
+        rustls_pki_types::CertificateDer::from(der)
+    }
+    records.iter().filter(|record| record.usable()).any(|record| match record.usage {
+        3 => chain.first().is_some_and(|leaf| record.matches(&certificate(leaf))),
+        _ => chain.iter().skip(1).any(|above| record.matches(&certificate(above))),
+    })
+}
+
+/// The TLSA record at `_25._tcp.<hostname>` (DANE for mail to us, RFC 7672): recommended as
+/// `3 1 1`, the hash of the server's key, once the zone is signed with DNSSEC; the server keeps
+/// that key when it renews its certificate. A published record that matches no certificate the
+/// server presents is wrong, and not optional: servers that check DANE hold mail for us back.
+///
+/// `signed` is what DNSSEC says about the host name, `None` when that could not be found out.
+/// Without a published record in an unsigned zone there is nothing to say.
+pub fn evaluate_tlsa(
+    hostname: &str,
+    chain: &[Vec<u8>],
+    signed: Option<Security>,
+    answer: Answer<Tlsa>,
+) -> Option<RecordCheck> {
+    let leaf = rustls_pki_types::CertificateDer::from(chain.first()?.as_slice());
+    let expected = dane_ee_record(&leaf)?;
+    let mut record = check("tlsa", &tlsa_name(hostname), "TLSA", expected.to_string());
+    record.optional = true;
+    let found = match answer {
+        Ok(found) => found,
+        Err(error) => return Some(failed(record, &error)),
+    };
+    record.found = found.iter().map(ToString::to_string).collect();
+    if signed == Some(Security::Bogus) {
+        // Validating resolvers see nothing of the name at all, DANE or not.
+        record.status = CheckStatus::Wrong;
+        record.optional = false;
+        record.note = Some("dnssecBogus");
+        return Some(record);
+    }
+    if found.is_empty() {
+        if signed != Some(Security::Secure) {
+            return None;
+        }
+        record.status = CheckStatus::Missing;
+        record.note = Some("tlsaRecommended");
+        return Some(record);
+    }
+    let matches = tlsa_matches(&found, chain);
+    match (signed, matches) {
+        // Without DNSSEC nobody looks at them, so a stale one breaks nothing yet.
+        (Some(Security::Insecure), _) => {
+            record.status = CheckStatus::Warning;
+            record.note = Some(if matches { "tlsaUnsigned" } else { "tlsaMismatch" });
+        }
+        (_, true) => record.note = Some("tlsaKeyKept"),
+        (_, false) => {
+            record.status = CheckStatus::Wrong;
+            record.optional = false;
+            record.note = Some("tlsaMismatch");
+        }
+    }
+    Some(record)
+}
+
 /// Where other servers send reports about TLS connections to us. Required once MTA-STS is on.
 pub fn evaluate_tls_rpt(domain: &str, required: bool, answer: Answer<String>) -> RecordCheck {
     let address = format!("{TLS_REPORT_ADDRESS}@{domain}");
@@ -852,6 +954,7 @@ mod tests {
             dkim_keys: &keys,
             mta_sts: None,
             lets_encrypt_account: None,
+            certificate: None,
         };
         let spf = |texts: &[&str]| {
             evaluate_spf_record("example.org", &setup, Ok(texts.iter().map(|t| t.to_string()).collect()))
@@ -982,10 +1085,69 @@ mod tests {
                 dkim_keys: &[],
                 mta_sts: None,
                 lets_encrypt_account: None,
+                certificate: None,
             })
             .await;
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
         assert_eq!(report.records.len(), 8, "MX, SPF, DMARC, TLS reports and four SRV records");
+    }
+
+    #[test]
+    fn tlsa_records_are_recommended_in_signed_zones_and_must_match() {
+        use rcgen::{BasicConstraints, CertificateParams, IsCa, Issuer, KeyPair};
+        let ca_key = KeyPair::generate().unwrap();
+        let mut ca_params = CertificateParams::new(Vec::<String>::new()).unwrap();
+        ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        let ca = ca_params.self_signed(&ca_key).unwrap();
+        let issuer = Issuer::new(ca_params, ca_key);
+        let key = KeyPair::generate().unwrap();
+        let leaf =
+            CertificateParams::new(vec!["mail.example.org".to_owned()]).unwrap().signed_by(&key, &issuer).unwrap();
+        let chain = vec![leaf.der().to_vec(), ca.der().to_vec()];
+        let ours = dane_ee_record(leaf.der()).unwrap();
+        let tlsa = |signed, found: &[&str]| {
+            let found = found.iter().map(|text| Tlsa::parse(text).unwrap()).collect();
+            evaluate_tlsa("mail.example.org", &chain, signed, Ok(found))
+        };
+        let summary = |record: Option<RecordCheck>| record.map(|r| (r.status, r.note, r.optional));
+
+        let recommended = tlsa(Some(Security::Secure), &[]).unwrap();
+        assert_eq!((recommended.name.as_str(), recommended.record_type), ("_25._tcp.mail.example.org", "TLSA"));
+        assert_eq!(recommended.expected, ours.to_string());
+        assert!(recommended.expected.starts_with("3 1 1 "));
+        assert_eq!(summary(Some(recommended)), Some((CheckStatus::Missing, Some("tlsaRecommended"), true)));
+        assert!(tlsa(Some(Security::Insecure), &[]).is_none(), "no DNSSEC, no DANE");
+        assert!(tlsa(None, &[]).is_none());
+
+        let published = ours.to_string();
+        assert_eq!(
+            summary(tlsa(Some(Security::Secure), &[&published])),
+            Some((CheckStatus::Ok, Some("tlsaKeyKept"), true))
+        );
+        // A new key without the record for it first: mail from servers that check DANE stops.
+        let stale = format!("3 1 1 {}", "ab".repeat(32));
+        assert_eq!(
+            summary(tlsa(Some(Security::Secure), &[&stale])),
+            Some((CheckStatus::Wrong, Some("tlsaMismatch"), false))
+        );
+        assert_eq!(summary(tlsa(None, &[&stale])), Some((CheckStatus::Wrong, Some("tlsaMismatch"), false)));
+        // The old and the new record side by side, as for a key change, is fine.
+        assert_eq!(tlsa(Some(Security::Secure), &[&stale, &published]).unwrap().status, CheckStatus::Ok);
+        assert_eq!(
+            summary(tlsa(Some(Security::Insecure), &[&published])),
+            Some((CheckStatus::Warning, Some("tlsaUnsigned"), true))
+        );
+        assert_eq!(summary(tlsa(Some(Security::Bogus), &[])), Some((CheckStatus::Wrong, Some("dnssecBogus"), false)));
+
+        // DANE-TA names the issuer; PKIX usages do not count for mail.
+        let ta = Tlsa { usage: 2, ..dane_ee_record(ca.der()).unwrap() };
+        assert!(tlsa_matches(std::slice::from_ref(&ta), &chain));
+        assert!(!tlsa_matches(&[Tlsa { usage: 2, ..ours.clone() }], &chain), "the leaf is no trust anchor");
+        assert!(!tlsa_matches(&[Tlsa { usage: 1, ..ours.clone() }], &chain));
+        // A renewal with the same key keeps matching.
+        let renewed =
+            CertificateParams::new(vec!["mail.example.org".to_owned()]).unwrap().signed_by(&key, &issuer).unwrap();
+        assert!(tlsa_matches(std::slice::from_ref(&ours), &[renewed.der().to_vec()]));
     }
 
     #[test]
