@@ -260,7 +260,11 @@ their second factors, passkeys, open sessions, password links and apps signed in
 with OAuth go, since none of them has anything left to sign in to, and so does
 the tie to an LDAP directory or OpenID Connect provider. So do the folders
 others shared with them and the shared mailboxes they were a member of: only
-people share with people. The way back is the same button, and afterwards the
+people share with people. What the person set up for their own mail stops too
+— forwarding, fetched mailboxes, moves from another provider, updates of
+subscribed calendars and the active mail rule — and their masked addresses are
+switched off (they stay with the account); see
+[groups.md](groups.md#turning-an-account-into-one). The way back is the same button, and afterwards the
 account needs a new password or an invitation link. How a person or a service
 becomes a shared mailbox is in [groups.md](groups.md#turning-an-account-into-one).
 

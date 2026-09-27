@@ -88,7 +88,52 @@ pub(crate) fn become_service(tx: &Connection, account: &Account, granted: &mut G
         [account.id],
     )?;
     tx.execute("UPDATE accounts SET credentials_changed_at = ?1 WHERE id = ?2", params![now(), account.id])?;
+    stop_personal_mail_setup(tx, account.id, granted)?;
     leave_sharing(tx, account.id, granted)
+}
+
+/// What a person set up for their own mail stops when the account stops being theirs (it becomes
+/// a service or a shared mailbox, and stays in use by others): an employee who leaves must not
+/// keep getting its mail forwarded, nor have their private mailboxes elsewhere fetched into it
+/// (security audit 0.16.0 STORE-3). The mail, folders, addresses and scripts themselves stay.
+///
+/// - forwarding: the targets go, and a copy is kept again;
+/// - fetched mailboxes and moves from another provider go, with the passwords for them;
+/// - subscribed calendars stop updating (the calendars stay);
+/// - the active Sieve script is switched off;
+/// - masked addresses are switched off: they stay the account's and can be switched on again.
+///
+/// Send-as domains stay: an admin gives those to the account, not the person.
+fn stop_personal_mail_setup(tx: &Connection, account_id: i64, granted: &mut Granted) -> Result<()> {
+    tx.execute("DELETE FROM forward_targets WHERE account_id = ?1", [account_id])?;
+    tx.execute("UPDATE accounts SET forward_keep_copy = 1 WHERE id = ?1", [account_id])?;
+    tx.execute("DELETE FROM fetch_accounts WHERE account_id = ?1", [account_id])?;
+    tx.execute("DELETE FROM migration_jobs WHERE account_id = ?1", [account_id])?;
+    tx.execute("UPDATE calendar_subscriptions SET enabled = 0 WHERE account_id = ?1", [account_id])?;
+    let active: Option<i64> = tx
+        .query_row("SELECT id FROM sieve_scripts WHERE account_id = ?1 AND is_active", [account_id], |row| row.get(0))
+        .optional()?;
+    let masked: Vec<i64> = tx
+        .prepare("SELECT id FROM masked_addresses WHERE account_id = ?1 AND state IN ('pending', 'enabled')")?
+        .query_map([account_id], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    if active.is_none() && masked.is_empty() {
+        return Ok(());
+    }
+    let modseq = crate::db::next_modseq(tx, account_id)?;
+    if let Some(script) = active {
+        tx.execute("UPDATE sieve_scripts SET is_active = 0 WHERE id = ?1", [script])?;
+        crate::db::record_change(tx, account_id, modseq, "SieveScript", script, "updated")?;
+    }
+    for id in masked {
+        tx.execute(
+            "UPDATE masked_addresses SET state = 'disabled', updated_modseq = ?1 WHERE id = ?2",
+            params![modseq, id],
+        )?;
+        crate::db::record_change(tx, account_id, modseq, "MaskedEmail", id, "updated")?;
+    }
+    granted.push(account_id, modseq);
+    Ok(())
 }
 
 /// Only people share with people: an account that stops being one no longer sees the folders others
