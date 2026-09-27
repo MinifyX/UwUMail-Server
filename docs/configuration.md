@@ -214,6 +214,14 @@ empty `UWUMAIL_EGRESS_PROXY=` and `UWUMAIL_EGRESS_FALLBACK=` that `compose.yaml`
 passes on leave them to the portal. A proxy login belongs in `.env` or the
 portal, not in a file anyone else reads.
 
+## Prometheus metrics
+
+`GET /metrics` answers in the Prometheus format once it is switched on, under
+*Server → Statistics* or in the `[metrics]` section (`enabled`, `token`,
+`allowed_networks`). It stays off by default and never answers without a token
+or an allowed network. [metrics.md](metrics.md) lists what it serves and how to
+scrape it.
+
 ## Accounts: people and services
 
 *Server → Accounts* holds both. A **person** signs in to the portal and may use
@@ -372,4 +380,10 @@ level = "info"
 # Sending the log to Grafana Loki: see "Sending the log to Grafana Loki" above.
 # [log.loki]
 # enabled = false
+
+# Prometheus metrics under /metrics, see docs/metrics.md. Off unless switched on.
+# [metrics]
+# enabled = true
+# token = "a-long-random-token"      # sent as "Authorization: Bearer …"
+# allowed_networks = ["10.0.0.0/8"]  # when set, only from these networks
 ```
