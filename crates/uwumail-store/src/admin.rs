@@ -358,6 +358,9 @@ impl Store {
         let login = login_key(login)?;
         self.write(move |tx| {
             let mut account = load_account(tx, &login)?;
+            // A domain only becomes masked-only without anyone in the trash; this holds even so.
+            let domain = login.rsplit_once('@').map(|(_, domain)| domain).unwrap_or_default();
+            crate::masked_domains::ensure_mail_domain(tx, crate::directory::domain_id(tx, domain)?)?;
             tx.execute("UPDATE accounts SET deleted_at = NULL WHERE id = ?1", [account.id])?;
             account.deleted_at = None;
             Ok(account)

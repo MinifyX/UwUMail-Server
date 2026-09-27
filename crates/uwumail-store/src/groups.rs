@@ -247,6 +247,7 @@ impl Store {
         let (group, granted) = self
             .write(move |tx| {
                 let domain_id = domain_id(tx, &domain)?;
+                crate::masked_domains::ensure_mail_domain(tx, domain_id)?;
                 crate::directory::check_not_released(tx, &local, domain_id, None)?;
                 let login_taken: bool = tx.query_row(
                     "SELECT EXISTS (SELECT 1 FROM accounts WHERE login = ?1)",

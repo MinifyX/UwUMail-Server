@@ -53,6 +53,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0044_oauth.sql"),
     include_str!("migrations/0045_stats_alerts.sql"),
     include_str!("migrations/0046_push_subscriptions.sql"),
+    include_str!("migrations/0047_masked_domains.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 
@@ -171,6 +172,8 @@ mod tests {
 
     /// UwUMail 0.11.0 shipped with the first 35 migrations.
     const RELEASED_0_11: usize = 35;
+    /// UwUMail 0.15.0 shipped with the first 46 migrations.
+    const RELEASED_0_15: usize = 46;
 
     fn connection() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -248,5 +251,52 @@ mod tests {
         assert_eq!(tag, "\"e1\"");
         let shares: i64 = conn.query_row("SELECT count(*) FROM mailbox_acl", [], |row| row.get(0)).unwrap();
         assert_eq!(shares, 0);
+    }
+
+    #[test]
+    fn a_domain_open_for_masked_addresses_keeps_them_for_its_own_people() {
+        let mut conn = connection();
+        for (index, sql) in MIGRATIONS[..RELEASED_0_15].iter().enumerate() {
+            conn.execute_batch(sql).unwrap();
+            conn.pragma_update(None, "user_version", (index + 1) as i64).unwrap();
+        }
+        conn.execute_batch(
+            "INSERT INTO domains (id, name, created_at, masked_addresses) VALUES (1, 'example.org', 0, 1),
+                 (2, 'example.net', 0, 0);
+             INSERT INTO accounts (id, login, created_at) VALUES (1, 'leni@example.net', 0);
+             INSERT INTO masked_addresses (account_id, local_part, domain_id, created_at)
+                 VALUES (1, 'maple.otter482', 1, 0);",
+        )
+        .unwrap();
+
+        migrate(&mut conn).unwrap();
+        assert_eq!(version(&conn), MIGRATIONS.len());
+        let domains: Vec<(String, String, String)> = conn
+            .prepare("SELECT name, kind, masked_mode FROM domains ORDER BY id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            domains,
+            vec![
+                ("example.org".to_owned(), "mail".to_owned(), "own".to_owned()),
+                ("example.net".to_owned(), "mail".to_owned(), "off".to_owned())
+            ]
+        );
+        // The old switch is gone, and the masked address Leni made there stays hers.
+        let old: i64 = conn
+            .query_row("SELECT count(*) FROM pragma_table_info('domains') WHERE name = 'masked_addresses'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(old, 0);
+        let owner: i64 = conn.query_row("SELECT account_id FROM masked_addresses", [], |row| row.get(0)).unwrap();
+        assert_eq!(owner, 1);
+        let custom: Option<String> =
+            conn.query_row("SELECT masked_mode FROM accounts WHERE id = 1", [], |row| row.get(0)).unwrap();
+        assert_eq!(custom, None);
+        assert!(table_exists(&conn, "domain_masked_domains") && table_exists(&conn, "account_masked_domains"));
     }
 }

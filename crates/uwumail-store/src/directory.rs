@@ -4,6 +4,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::Serialize;
 
 use crate::address::{base_local_part, normalize_address, normalize_domain};
+use crate::masked_domains::{DomainKind, ensure_mail_domain};
 use crate::{Result, Store, StoreError, mail, now, password};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -81,6 +82,8 @@ pub struct Domain {
     /// Login of the account that receives mail for unknown addresses.
     pub catch_all: Option<String>,
     pub created_at: i64,
+    /// A mail domain, or one only for masked addresses.
+    pub kind: DomainKind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -389,7 +392,12 @@ pub(crate) fn resolve(conn: &Connection, address: &str) -> Result<Option<i64>> {
 }
 
 impl Store {
+    /// Adds a mail domain.
     pub async fn create_domain(&self, name: &str) -> Result<Domain> {
+        self.create_domain_with_kind(name, DomainKind::Mail).await
+    }
+
+    pub async fn create_domain_with_kind(&self, name: &str, kind: DomainKind) -> Result<Domain> {
         let name = normalize_domain(name)?;
         self.write(move |tx| {
             let exists: bool =
@@ -398,8 +406,11 @@ impl Store {
                 return Err(StoreError::Conflict(format!("domain {name}")));
             }
             let created_at = now();
-            tx.execute("INSERT INTO domains (name, created_at) VALUES (?1, ?2)", params![name, created_at])?;
-            Ok(Domain { id: tx.last_insert_rowid(), name, catch_all: None, created_at })
+            tx.execute(
+                "INSERT INTO domains (name, created_at, kind) VALUES (?1, ?2, ?3)",
+                params![name, created_at, kind.as_str()],
+            )?;
+            Ok(Domain { id: tx.last_insert_rowid(), name, catch_all: None, created_at, kind })
         })
         .await
     }
@@ -407,11 +418,17 @@ impl Store {
     pub async fn domains(&self) -> Result<Vec<Domain>> {
         self.read(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT d.id, d.name, a.login, d.created_at FROM domains d
+                "SELECT d.id, d.name, a.login, d.created_at, d.kind FROM domains d
                  LEFT JOIN accounts a ON a.id = d.catch_all_account_id ORDER BY d.name",
             )?;
             let rows = stmt.query_map([], |row| {
-                Ok(Domain { id: row.get(0)?, name: row.get(1)?, catch_all: row.get(2)?, created_at: row.get(3)? })
+                Ok(Domain {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    catch_all: row.get(2)?,
+                    created_at: row.get(3)?,
+                    kind: DomainKind::parse(&row.get::<_, String>(4)?).unwrap_or_default(),
+                })
             })?;
             Ok(rows.collect::<Result<_, _>>()?)
         })
@@ -514,6 +531,9 @@ impl Store {
         let login = login.map(login_key).transpose()?;
         self.write(move |tx| {
             let domain_id = domain_id(tx, &domain)?;
+            if login.is_some() {
+                ensure_mail_domain(tx, domain_id)?;
+            }
             let account = login.as_deref().map(|login| account_id(tx, login)).transpose()?;
             tx.execute("UPDATE domains SET catch_all_account_id = ?1 WHERE id = ?2", params![account, domain_id])?;
             Ok(())
@@ -621,6 +641,7 @@ impl Store {
         });
         self.write(move |tx| {
             let domain_id = domain_id(tx, &domain)?;
+            ensure_mail_domain(tx, domain_id)?;
             let login = format!("{local}@{domain}");
             let taken: bool = tx.query_row(
                 "SELECT EXISTS (SELECT 1 FROM accounts WHERE login = ?1)",
@@ -845,6 +866,7 @@ impl Store {
         let login = login_key(login)?;
         self.write(move |tx| {
             let domain_id = domain_id(tx, &domain)?;
+            ensure_mail_domain(tx, domain_id)?;
             let account_id = account_id(tx, &login)?;
             check_not_released(tx, &local, domain_id, Some(account_id))?;
             if crate::forward_addresses::address_in_use(tx, &local, domain_id)? {
@@ -945,6 +967,10 @@ impl Store {
         let domains = domains.iter().map(|name| normalize_domain(name)).collect::<Result<Vec<_>>>()?;
         self.write(move |tx| {
             let ids = domains.iter().map(|name| domain_id(tx, name)).collect::<Result<Vec<_>>>()?;
+            // Any address of a masked-only domain is someone's masked address, or one nobody may use.
+            for id in &ids {
+                ensure_mail_domain(tx, *id)?;
+            }
             tx.execute("DELETE FROM send_as_domains WHERE account_id = ?1", [account_id])?;
             for id in ids {
                 tx.execute(

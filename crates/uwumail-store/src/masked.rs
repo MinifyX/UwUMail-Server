@@ -84,7 +84,7 @@ pub struct MaskedAddress {
 
 #[derive(Debug, Clone, Default)]
 pub struct NewMaskedAddress {
-    /// One of the domains open for masked addresses; left out, the account's own if it is open.
+    /// One of the domains the account may use (see masked_domains.rs); left out, its default one.
     pub domain: Option<String>,
     /// `Pending` (the default) or `Enabled`.
     pub state: Option<MaskedState>,
@@ -251,38 +251,6 @@ impl Store {
         .await
     }
 
-    /// The domains open for masked addresses.
-    pub async fn masked_domains(&self) -> Result<Vec<String>> {
-        self.read(|conn| {
-            let mut stmt = conn.prepare("SELECT name FROM domains WHERE masked_addresses = 1 ORDER BY name")?;
-            let rows = stmt.query_map([], |row| row.get(0))?;
-            Ok(rows.collect::<rusqlite::Result<_>>()?)
-        })
-        .await
-    }
-
-    pub async fn set_domain_masked_addresses(&self, domain: &str, on: bool) -> Result<()> {
-        let domain = normalize_domain(domain)?;
-        self.write(move |tx| {
-            if tx.execute("UPDATE domains SET masked_addresses = ?1 WHERE name = ?2", params![on, domain])? == 0 {
-                return Err(StoreError::NotFound(format!("domain {domain}")));
-            }
-            Ok(())
-        })
-        .await
-    }
-
-    pub async fn domain_masked_addresses(&self, domain: &str) -> Result<bool> {
-        let domain = normalize_domain(domain)?;
-        self.read(move |conn| {
-            Ok(conn
-                .query_row("SELECT masked_addresses FROM domains WHERE name = ?1", [domain], |row| row.get(0))
-                .optional()?
-                .unwrap_or(false))
-        })
-        .await
-    }
-
     /// How many masked addresses of a domain still take mail (all but the deleted ones): a domain
     /// cannot go while there are any.
     pub async fn domain_masked_address_count(&self, domain: &str) -> Result<i64> {
@@ -309,27 +277,40 @@ impl Store {
         let url = check_url(new.url.as_deref())?;
         let prefix = check_prefix(new.email_prefix.as_deref())?;
         let created_by = limited(&new.created_by, CREATED_BY_MAX_CHARS, "the creator")?;
-        let wanted = new.domain.as_deref().map(normalize_domain).transpose()?;
+        // A name that is no domain at all is no domain the account may use either.
+        let wanted = match new.domain.as_deref().map(str::trim).filter(|domain| !domain.is_empty()) {
+            Some(domain) => Some(
+                normalize_domain(domain)
+                    .map_err(|_| rule("maskedDomain", format!("{domain} is not a domain for masked addresses")))?,
+            ),
+            None => None,
+        };
         let (created, modseq) = self
             .write(move |tx| {
-                let login: String = tx
-                    .query_row("SELECT login FROM accounts WHERE id = ?1 AND deleted_at IS NULL", [account_id], |row| {
-                        row.get(0)
-                    })
-                    .optional()?
-                    .ok_or_else(|| StoreError::NotFound(format!("account {account_id}")))?;
-                let open: Vec<(i64, String)> = tx
-                    .prepare("SELECT id, name FROM domains WHERE masked_addresses = 1 ORDER BY name")?
-                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-                    .collect::<rusqlite::Result<_>>()?;
-                let own_domain = login.rsplit_once('@').map(|(_, domain)| domain).unwrap_or_default();
-                let domain = match &wanted {
-                    Some(wanted) => open.iter().find(|(_, name)| name == wanted),
-                    None => open.iter().find(|(_, name)| name == own_domain).or(open.first()),
+                let live: bool = tx.query_row(
+                    "SELECT EXISTS (SELECT 1 FROM accounts WHERE id = ?1 AND deleted_at IS NULL)",
+                    [account_id],
+                    |row| row.get(0),
+                )?;
+                if !live {
+                    return Err(StoreError::NotFound(format!("account {account_id}")));
+                }
+                // Where the account may make one: its own domain's policy, or what an admin set for it.
+                let policy = crate::masked_domains::effective(tx, account_id)?;
+                let domain_name = match &wanted {
+                    Some(wanted) => policy.domains.iter().find(|name| *name == wanted),
+                    None => policy.default_domain.as_ref(),
                 };
-                let Some((domain_id, domain_name)) = domain else {
-                    return Err(rule("maskedDomain", "no domain is open for masked addresses"));
+                let Some(domain_name) = domain_name else {
+                    return Err(rule(
+                        "maskedDomain",
+                        match &wanted {
+                            Some(wanted) => format!("masked addresses on {wanted} are not allowed for this account"),
+                            None => "masked addresses are not switched on for this account".into(),
+                        },
+                    ));
                 };
+                let domain_id = crate::directory::domain_id(tx, domain_name)?;
                 let count: i64 = tx.query_row(
                     "SELECT count(*) FROM masked_addresses WHERE account_id = ?1 AND state <> 'deleted'",
                     [account_id],
@@ -353,7 +334,7 @@ impl Store {
                     )?;
                     if !login_taken
                         && !released
-                        && !crate::forward_addresses::address_in_use(tx, &candidate, *domain_id)?
+                        && !crate::forward_addresses::address_in_use(tx, &candidate, domain_id)?
                     {
                         local = Some(candidate);
                         break;
@@ -503,7 +484,7 @@ impl Store {
 mod tests {
     use super::*;
     use crate::test_support::store;
-    use crate::{NewAccount, Role};
+    use crate::{DomainKind, DomainMaskedPolicy, MaskedMode, NewAccount, Role};
 
     async fn person(store: &Store, address: &str) -> i64 {
         store
@@ -542,12 +523,17 @@ mod tests {
     async fn masked_addresses_live_and_stay_reserved() {
         let (store, _dir) = store().await;
         store.create_domain("example.org").await.unwrap();
-        store.create_domain("masked.example").await.unwrap();
+        store.create_domain_with_kind("masked.example", DomainKind::Masked).await.unwrap();
         let mini = person(&store, "mini@example.org").await;
         let leni = person(&store, "leni@example.org").await;
         assert_eq!(code(store.create_masked_address(mini, NewMaskedAddress::default()).await), "maskedDomain");
-        store.set_domain_masked_addresses("masked.example", true).await.unwrap();
-        assert_eq!(store.masked_domains().await.unwrap(), vec!["masked.example"]);
+        let policy = DomainMaskedPolicy {
+            mode: MaskedMode::Dedicated,
+            masked_domains: vec!["masked.example".into()],
+            default_domain: None,
+        };
+        store.set_domain_masked_policy("example.org", policy).await.unwrap();
+        assert_eq!(store.effective_masked_policy(mini).await.unwrap().domains, vec!["masked.example"]);
         assert_eq!(store.domain_masked_address_count("masked.example").await.unwrap(), 0);
 
         let before = store.account_modseq(mini).await.unwrap();
@@ -589,8 +575,7 @@ mod tests {
             Err(StoreError::NotFound(_))
         ));
 
-        // Deleted: no mail, not even for a catch-all, and never handed out again.
-        store.set_catch_all("masked.example", Some("leni@example.org")).await.unwrap();
+        // Deleted: no mail, and never handed out again.
         store.create_identity(mini, "Shop", &masked.email).await.unwrap();
         let deleted = MaskedUpdate { state: Some(MaskedState::Deleted), ..Default::default() };
         store.update_masked_address(mini, masked.id, deleted).await.unwrap();
@@ -604,10 +589,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn no_catch_all_takes_mail_of_a_deleted_one() {
+        let (store, _dir) = store().await;
+        store.create_domain("example.org").await.unwrap();
+        let policy = DomainMaskedPolicy { mode: MaskedMode::Own, ..Default::default() };
+        store.set_domain_masked_policy("example.org", policy).await.unwrap();
+        let mini = person(&store, "mini@example.org").await;
+        let leni = person(&store, "leni@example.org").await;
+        let masked = store.create_masked_address(mini, NewMaskedAddress::default()).await.unwrap();
+        assert!(masked.email.ends_with("@example.org"));
+        store.set_catch_all("example.org", Some("leni@example.org")).await.unwrap();
+        assert_eq!(store.resolve_recipient("ghost@example.org").await.unwrap(), Some(leni));
+        let deleted = MaskedUpdate { state: Some(MaskedState::Deleted), ..Default::default() };
+        store.update_masked_address(mini, masked.id, deleted).await.unwrap();
+        assert_eq!(store.resolve_recipient(&masked.email).await.unwrap(), None);
+    }
+
+    #[tokio::test]
     async fn pending_addresses_without_mail_go_after_a_day() {
         let (store, _dir) = store().await;
         store.create_domain("example.org").await.unwrap();
-        store.set_domain_masked_addresses("example.org", true).await.unwrap();
+        let policy = DomainMaskedPolicy { mode: MaskedMode::Own, ..Default::default() };
+        store.set_domain_masked_policy("example.org", policy).await.unwrap();
         let mini = person(&store, "mini@example.org").await;
         let old = store.create_masked_address(mini, NewMaskedAddress::default()).await.unwrap();
         let fresh = store.create_masked_address(mini, NewMaskedAddress::default()).await.unwrap();

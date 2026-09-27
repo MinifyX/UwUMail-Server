@@ -37,6 +37,7 @@ mod import;
 pub mod itip;
 mod mail;
 mod masked;
+mod masked_domains;
 mod migration_jobs;
 mod mutate;
 mod oauth;
@@ -121,6 +122,9 @@ pub use imap::{DELETED_KEYWORD, FlagChange, ImapEmail, ImapMailbox, ImapMessage,
 pub use import::ImportProgress;
 pub use mail::{EmailSummary, IngestRequest, IngestedEmail, Mailbox, MailboxRole, MailboxTarget, TestMessageStatus};
 pub use masked::{MASKED_PENDING_SECS, MaskedAddress, MaskedDelivery, MaskedState, MaskedUpdate, NewMaskedAddress};
+pub use masked_domains::{
+    AccountMaskedPolicy, DomainKind, DomainMaskedPolicy, EffectiveMaskedPolicy, KindBlockers, KindChange, MaskedMode,
+};
 pub use migration_jobs::{
     MAX_MIGRATION_JOBS, MigrationJob, MigrationProgress, MigrationRun, MigrationState, NewMigrationJob,
 };

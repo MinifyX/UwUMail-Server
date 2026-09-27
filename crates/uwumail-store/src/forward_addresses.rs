@@ -127,6 +127,7 @@ impl Store {
         }
         self.write(move |tx| {
             let domain_id = domain_id(tx, &domain)?;
+            crate::masked_domains::ensure_mail_domain(tx, domain_id)?;
             if taken_by_other_than_forwarding(tx, &local, domain_id)? {
                 return Err(StoreError::Conflict(format!("address {own}")));
             }
