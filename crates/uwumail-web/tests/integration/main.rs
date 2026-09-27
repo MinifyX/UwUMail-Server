@@ -5,6 +5,7 @@ mod api;
 mod apps;
 mod backups;
 mod branding;
+mod calendar_import;
 mod calendars;
 mod domains;
 mod egress;

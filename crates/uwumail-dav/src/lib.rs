@@ -13,6 +13,7 @@
 //! Changing an event one organizes or is invited to tells the others (implicit scheduling): see
 //! `uwumail_smtp::scheduling`.
 
+pub mod client;
 pub mod objects;
 mod props;
 pub mod xml;

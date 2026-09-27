@@ -103,6 +103,14 @@ async fn run(
             let dav = uwumail_dav::Dav::new(store.clone(), settings);
             import::mailcow(&store, dav, &file, &domain, dry_run).await
         }
+        Command::Import(crate::cli::ImportCommand::Ics { file, account, calendar, name, only_new, dry_run }) => {
+            let target = import::DavTarget { account, collection: calendar, name, only_new, dry_run };
+            import::dav_file(&store, config.tone.language, uwumail_store::DavKind::Calendar, &file, target).await
+        }
+        Command::Import(crate::cli::ImportCommand::Vcf { file, account, address_book, name, only_new, dry_run }) => {
+            let target = import::DavTarget { account, collection: address_book, name, only_new, dry_run };
+            import::dav_file(&store, config.tone.language, uwumail_store::DavKind::Addressbook, &file, target).await
+        }
         Command::Import(crate::cli::ImportCommand::Imap {
             host,
             tls_name,

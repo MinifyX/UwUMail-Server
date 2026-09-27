@@ -401,6 +401,48 @@ pub enum ImportCommand {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Import an iCalendar file (.ics) into someone's calendar. Safe to run again: entries are
+    /// matched by their UID.
+    Ics {
+        /// The file, or - to read it from standard input.
+        file: std::path::PathBuf,
+        /// Whose calendar: the person's login.
+        #[arg(long)]
+        account: String,
+        /// The calendar to import into, by its URL name (e.g. personal). A new one when left out.
+        #[arg(long, conflicts_with = "name")]
+        calendar: Option<String>,
+        /// The name of the new calendar; the one in the file or the file name when left out.
+        #[arg(long)]
+        name: Option<String>,
+        /// Leave entries alone whose UID is there already, instead of overwriting them.
+        #[arg(long)]
+        only_new: bool,
+        /// Only count what would be imported.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Import a vCard file (.vcf) into someone's address book. Safe to run again: cards are
+    /// matched by their UID.
+    Vcf {
+        /// The file, or - to read it from standard input.
+        file: std::path::PathBuf,
+        /// Whose address book: the person's login.
+        #[arg(long)]
+        account: String,
+        /// The address book to import into, by its URL name (e.g. contacts). A new one when left out.
+        #[arg(long, conflicts_with = "name")]
+        address_book: Option<String>,
+        /// The name of the new address book; the file name when left out.
+        #[arg(long)]
+        name: Option<String>,
+        /// Leave cards alone whose UID is there already, instead of overwriting them.
+        #[arg(long)]
+        only_new: bool,
+        /// Only count what would be imported.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Copy mail over IMAP with TLS. Running it again only fetches what arrived since.
     Imap {
         /// The old server, e.g. 192.0.2.10:993.

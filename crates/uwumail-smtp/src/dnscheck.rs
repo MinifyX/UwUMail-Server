@@ -1124,6 +1124,15 @@ impl DnsChecker {
             .collect()
     }
 
+    /// The `path=` of a service's TXT record (RFC 6764, 4), like `/dav/` for `_caldavs._tcp`.
+    pub async fn service_path(&self, name: &str) -> Option<String> {
+        let (lookups, _) = self.lookups(name).await;
+        let records = lookups.txt(name).await.ok()?;
+        records
+            .iter()
+            .find_map(|record| record.split_whitespace().find_map(|part| part.strip_prefix("path=")).map(str::to_owned))
+    }
+
     /// The addresses a host name points to, as the rest of the internet sees them.
     pub async fn host_addresses(&self, host: &str) -> Vec<IpAddr> {
         let (lookups, _) = self.lookups(host).await;

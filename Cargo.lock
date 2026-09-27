@@ -4404,15 +4404,24 @@ version = "0.12.2"
 dependencies = [
  "axum",
  "base64 0.23.1",
- "calcard",
+ "bytes",
+ "http-body-util",
+ "hyper-rustls",
+ "hyper-util",
+ "psl",
  "quick-xml",
+ "rustls",
+ "serde",
  "tempfile",
+ "thiserror",
  "tokio",
  "tower",
  "tracing",
+ "url",
  "uwumail-jmap",
  "uwumail-smtp",
  "uwumail-store",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -4634,6 +4643,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uwumail-backup",
+ "uwumail-dav",
  "uwumail-jmap",
  "uwumail-smtp",
  "uwumail-store",

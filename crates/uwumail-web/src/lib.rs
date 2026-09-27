@@ -93,6 +93,11 @@ struct Inner {
     egress: std::sync::OnceLock<uwumail_smtp::egress::Egress>,
     /// The certificate and key Apple configuration profiles are signed with, once plugged in.
     profile_key: std::sync::OnceLock<profile_signing::ProfileKeySource>,
+    /// How calendars and contacts are fetched from other providers, when not over the egress
+    /// (tests hand in a server of their own).
+    dav_transport: std::sync::OnceLock<Arc<dyn uwumail_dav::client::Transport>>,
+    /// When each account last asked other providers for calendars, to keep that polite.
+    remote_calls: Mutex<HashMap<i64, Vec<i64>>>,
 }
 
 impl Web {
@@ -124,6 +129,8 @@ impl Web {
                 backups: std::sync::OnceLock::new(),
                 egress: std::sync::OnceLock::new(),
                 profile_key: std::sync::OnceLock::new(),
+                dav_transport: std::sync::OnceLock::new(),
+                remote_calls: Mutex::default(),
             }),
         }
     }
@@ -201,6 +208,39 @@ impl Web {
 
     pub(crate) fn egress(&self) -> Option<&uwumail_smtp::egress::Egress> {
         self.inner.egress.get()
+    }
+
+    /// Fetches calendars and contacts from elsewhere through `transport` instead of the egress.
+    /// Only the first call counts.
+    pub fn set_dav_transport(&self, transport: Arc<dyn uwumail_dav::client::Transport>) {
+        let _ = self.inner.dav_transport.set(transport);
+    }
+
+    /// The way to other providers' calendars: the egress's route for fetching, like fetched
+    /// mailboxes, or straight out when the server plugged in no egress.
+    pub(crate) fn dav_transport(&self) -> Arc<dyn uwumail_dav::client::Transport> {
+        if let Some(transport) = self.inner.dav_transport.get() {
+            return transport.clone();
+        }
+        let dialer = match self.egress() {
+            Some(egress) => egress.dialer(uwumail_smtp::egress::Purpose::Fetch),
+            None => uwumail_smtp::egress::Egress::direct().dialer(uwumail_smtp::egress::Purpose::Fetch),
+        };
+        Arc::new(uwumail_dav::client::HttpsTransport::new(&dialer))
+    }
+
+    /// Counts one request of an account to another provider; `false` past `per_hour` of them.
+    pub(crate) fn allow_remote_call(&self, account_id: i64, per_hour: usize) -> bool {
+        let now = health::unix_now();
+        let mut calls = self.inner.remote_calls.lock().expect("remote calls poisoned");
+        calls.retain(|_, times| times.last().is_some_and(|last| now - last < 3600));
+        let times = calls.entry(account_id).or_default();
+        times.retain(|at| now - at < 3600);
+        if times.len() >= per_hour {
+            return false;
+        }
+        times.push(now);
+        true
     }
 
     pub(crate) fn gateway(&self) -> Option<&Arc<dyn gateway::GatewayBackend>> {
@@ -298,6 +338,19 @@ impl Web {
             .route("/api/account/calendars/{id}/shares", put(routes::calendars::share))
             .route("/api/account/calendars/{id}/shares/{account}", delete(routes::calendars::unshare))
             .route("/api/account/shared-calendars/{id}", delete(routes::calendars::leave))
+            .route(
+                "/api/account/calendars/import",
+                post(routes::calendar_import::import_file)
+                    .layer(axum::extract::DefaultBodyLimit::max(routes::calendar_import::MAX_UPLOAD_BYTES)),
+            )
+            .route("/api/account/calendars/import-url", post(routes::calendar_import::import_url))
+            .route("/api/account/calendars/remote", post(routes::calendar_import::import_remote))
+            .route("/api/account/calendar-subscriptions", post(routes::calendar_import::subscribe))
+            .route(
+                "/api/account/calendar-subscriptions/{id}",
+                patch(routes::calendar_import::update_subscription).delete(routes::calendar_import::unsubscribe),
+            )
+            .route("/api/account/calendar-subscriptions/{id}/refresh", post(routes::calendar_import::refresh))
             .route("/api/account/addresses", get(routes::own::addresses))
             .route("/api/account/aliases", post(routes::own::create_alias))
             .route("/api/account/aliases/{address}", delete(routes::own::delete_alias))

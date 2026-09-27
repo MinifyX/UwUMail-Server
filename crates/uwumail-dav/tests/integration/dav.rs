@@ -309,3 +309,73 @@ async fn calendars_come_and_go_and_contacts_have_their_own_home() {
     let foreign = as_mini(&app, "PROPFIND", "/dav/calendars/leni@example.org/", &[("depth", "1")], "").await;
     assert_eq!(foreign.status, StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn subscribed_calendars_are_read_only_over_caldav() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path()).await.unwrap();
+    store.create_domain("example.org").await.unwrap();
+    let mini = store
+        .create_account(NewAccount {
+            address: "mini@example.org".into(),
+            display_name: "Mini".into(),
+            password: Some(PASSWORD.into()),
+            role: Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        })
+        .await
+        .unwrap()
+        .id;
+    let (feed, _) = store
+        .create_calendar_subscription(
+            mini,
+            uwumail_store::NewCalendarSubscription {
+                collection: uwumail_store::NewDavCollection {
+                    slug: "ferien".into(),
+                    display_name: "Ferien".into(),
+                    components: vec!["VEVENT".into()],
+                    ..Default::default()
+                },
+                url: "https://feeds.example.net/ferien.ics".into(),
+                interval_secs: 3600,
+                keep_alarms: false,
+            },
+            uwumail_store::NewDavCollection::default_calendar("Kalender"),
+        )
+        .await
+        .unwrap();
+    let split =
+        uwumail_store::split_ics(&event("herbst", "Herbstferien", "20261012T000000Z", "20261024T000000Z"), false);
+    store.dav_mirror(mini, feed.id, split.objects).await.unwrap();
+    let dav = Dav::new(store, DavSettings { calendar_name: "Kalender".into(), addressbook_name: "Kontakte".into() });
+    let app = dav.router();
+
+    let base = "/dav/calendars/mini@example.org/ferien/";
+    let listed = as_mini(&app, "PROPFIND", base, &[("depth", "1")], "").await;
+    assert_eq!(listed.status, StatusCode::MULTI_STATUS);
+    assert!(listed.body.contains("herbst"), "{}", listed.body);
+    let rights = as_mini(
+        &app,
+        "PROPFIND",
+        base,
+        &[("depth", "0")],
+        r#"<d:propfind xmlns:d="DAV:"><d:prop><d:current-user-privilege-set/></d:prop></d:propfind>"#,
+    )
+    .await;
+    assert!(rights.body.contains("<d:read/>") && !rights.body.contains("write-content"), "{}", rights.body);
+
+    let put = as_mini(
+        &app,
+        "PUT",
+        &format!("{base}neu.ics"),
+        &[],
+        &event("neu", "Neu", "20261101T100000Z", "20261101T110000Z"),
+    )
+    .await;
+    assert_eq!(put.status, StatusCode::FORBIDDEN);
+    let delete = as_mini(&app, "DELETE", &format!("{base}herbst.ics"), &[], "").await;
+    assert_eq!(delete.status, StatusCode::FORBIDDEN);
+    let still = as_mini(&app, "GET", &format!("{base}herbst.ics"), &[], "").await;
+    assert_eq!(still.status, StatusCode::OK);
+}

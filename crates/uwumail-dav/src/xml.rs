@@ -55,6 +55,12 @@ impl Element {
 
 /// Reads a request body. `Ok(None)` for an empty body.
 pub fn parse(body: &[u8]) -> Result<Option<Element>, String> {
+    parse_with(body, MAX_ELEMENTS)
+}
+
+/// [`parse`] with room for more elements, for the answers of other servers: a multistatus of a
+/// few hundred entries has tens of thousands.
+pub fn parse_with(body: &[u8], max_elements: usize) -> Result<Option<Element>, String> {
     let text = std::str::from_utf8(body).map_err(|_| "the body is not UTF-8".to_owned())?;
     if text.trim().is_empty() {
         return Ok(None);
@@ -74,7 +80,7 @@ pub fn parse(body: &[u8]) -> Result<Option<Element>, String> {
         match event {
             Event::Start(start) | Event::Empty(start) if root.is_none() => {
                 elements += 1;
-                if elements > MAX_ELEMENTS || stack.len() >= MAX_DEPTH {
+                if elements > max_elements || stack.len() >= MAX_DEPTH {
                     return Err("the XML is too big or too deep".into());
                 }
                 let name = start.local_name().as_ref().to_owned();
