@@ -40,6 +40,12 @@ programs that only look at `primaryAccounts` do not see them ([sharing.md](shari
   more than the account's storage quota when it has one. An upload beyond that is answered with
   `413`; older uploads make room again as they reach their day. Uploading the same file again takes
   no more room.
+- Mail methods have the bounds calendars and contacts have: `Email/parse` and `SearchSnippet/get`
+  take at most 500 ids (`maxObjectsInGet`, else `requestTooLarge`); a query filter (`Email/query`,
+  `Mailbox/query`, `SearchSnippet/get`) at most 100 operators and conditions (`unsupportedFilter`);
+  a sort at most 10 comparators (`unsupportedSort`). Parsing messages for `Email/get` and
+  `Email/parse` shares the request's 15 seconds with calendar and contact work; once they are used
+  up the call answers `serverUnavailable`, and the rest can be asked for in a new request.
 
 ## aerc
 

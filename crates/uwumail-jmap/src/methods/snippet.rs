@@ -67,6 +67,11 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         .iter()
         .filter_map(|v| v.as_str().map(str::to_owned))
         .collect();
+    // Every term is looked for in every email: the same bounds as Email/get and Email/query.
+    if email_ids.len() > crate::MAX_OBJECTS_IN_GET {
+        return Err(MethodError::kind("requestTooLarge"));
+    }
+    super::check_filter_size(args.get("filter"))?;
     let mut terms = Vec::new();
     if let Some(filter) = args.get("filter") {
         search_terms(filter, &mut terms);
