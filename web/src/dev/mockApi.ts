@@ -2234,6 +2234,8 @@ function mockStats(range: StatsRange): StatsView {
     }
   }
   return { range, periods, totals };
+}
+
 /** Where the browser goes back to the app, with the answer in the query as OAuth has it. */
 function oauthAnswer(redirectUri: string | null | undefined, answer: Record<string, string>, state?: string | null) {
   // Without an address of the app's own, the mock lands back in the portal, to try again.
