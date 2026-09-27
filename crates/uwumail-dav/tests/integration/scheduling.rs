@@ -218,6 +218,31 @@ ORGANIZER:mailto:{MINI}\r\nATTENDEE:mailto:{LENI}\r\nATTENDEE:mailto:gast@exampl
 }
 
 #[tokio::test]
+async fn free_busy_looks_at_each_calendar_once() {
+    // security-audit-0.16.0 PROTOCOLS-13: the same attendee a hundred times meant a hundred full
+    // expansions of their calendar, on the async workers.
+    let server = server().await;
+    let attendees: String = (0..100)
+        .map(|n| {
+            if n % 2 == 0 {
+                format!("ATTENDEE:mailto:{LENI}\r\n")
+            } else {
+                "ATTENDEE:mailto:LENI@Example.org\r\n".into()
+            }
+        })
+        .collect();
+    let request = format!(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//DE\r\nMETHOD:REQUEST\r\nBEGIN:VFREEBUSY\r\n\
+UID:fb-2\r\nDTSTAMP:20260917T080000Z\r\nDTSTART:20261001T000000Z\r\nDTEND:20261002T000000Z\r\n\
+ORGANIZER:mailto:{MINI}\r\n{attendees}END:VFREEBUSY\r\nEND:VCALENDAR\r\n"
+    );
+    let outbox = "/dav/calendars/mini@example.org/outbox/";
+    let answer = server.send(MINI, "POST", outbox, &[("content-type", "text/calendar")], &request).await;
+    assert_eq!(answer.status, StatusCode::OK, "{}", answer.body);
+    assert_eq!(answer.body.matches("<c:response>").count(), 1, "{}", answer.body);
+}
+
+#[tokio::test]
 async fn one_change_mails_no_more_people_than_one_message_may_reach() {
     // security-audit-0.16.0 PROTOCOLS-5: every attendee got a message of their own, so the limit on
     // recipients per message (smtp.max_recipients) never counted them.

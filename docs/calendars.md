@@ -112,7 +112,10 @@ takes into a calendar:
   `schedule-default-calendar-URL` names the default calendar.
 - A `POST` of a `VFREEBUSY` request to the outbox answers when people of the
   server are busy (from their own calendars, not those shared with them), as
-  Apple Calendar asks when attendees are added. Others are "unknown".
+  Apple Calendar asks when attendees are added. Others are "unknown". One
+  request asks about at most 100 people (each once, however often named) over
+  at most 400 days, and has 10 seconds for all of them; anyone left when they
+  are up is answered "5.1 service unavailable", to be asked again.
 - Events have a `Schedule-Tag` (header and `schedule-tag` property). It stays
   the same when the server only writes an answer into the organizer's copy,
   so a client storing with `If-Schedule-Tag-Match` keeps the answers that came
