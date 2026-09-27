@@ -1,7 +1,7 @@
 //! Blob upload and download (RFC 8620, section 6).
 
 use axum::Extension;
-use axum::body::{Body, Bytes};
+use axum::body::Body;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Json, Response};
@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::auth::ClientInfo;
-use crate::{Jmap, email, ids};
+use crate::{Jmap, MAX_UPLOAD_BYTES, email, ids};
 
 fn problem(status: StatusCode, detail: &str) -> Response {
     let body = json!({ "type": "about:blank", "status": status.as_u16(), "detail": detail });
@@ -21,12 +21,17 @@ pub async fn upload(
     Path(account): Path<String>,
     client: Option<Extension<ClientInfo>>,
     headers: HeaderMap,
-    body: Bytes,
+    body: Body,
 ) -> Response {
     let client = client.map(|Extension(c)| c).unwrap_or_default();
     let owner = match jmap.inner.auth.account_for(&headers, client, true).await {
         Ok(owner) => owner,
         Err(err) => return err.into_response(),
+    };
+    // Read only now: before the login, a stranger could make the server hold 50 MB per request,
+    // for as long as they liked to trickle it (security-audit-0.16.0 PROTOCOLS-6).
+    let Ok(body) = axum::body::to_bytes(body, MAX_UPLOAD_BYTES).await else {
+        return problem(StatusCode::PAYLOAD_TOO_LARGE, "The upload is too big or was cut off.");
     };
     // An upload for someone else's shared account is kept as the caller's own: Email/import and
     // Email/set there read the caller's uploads (docs/sharing.md).

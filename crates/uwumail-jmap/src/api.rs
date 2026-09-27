@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use axum::Extension;
-use axum::body::Bytes;
+use axum::body::Body;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Json, Response};
@@ -15,7 +15,7 @@ use crate::auth::ClientInfo;
 use crate::error::MethodError;
 use crate::methods::{self, Ctx};
 use crate::session::{self, CORE};
-use crate::{Jmap, MAX_CALLS_IN_REQUEST};
+use crate::{Jmap, MAX_CALLS_IN_REQUEST, MAX_REQUEST_BYTES};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,12 +64,25 @@ pub async fn handle(
     State(jmap): State<Jmap>,
     client: Option<Extension<ClientInfo>>,
     headers: HeaderMap,
-    body: Bytes,
+    body: Body,
 ) -> Response {
     let client = client.map(|Extension(c)| c).unwrap_or_default();
     let login = match jmap.inner.auth.login_for(&headers, client, true).await {
         Ok(login) => login,
         Err(err) => return err.into_response(),
+    };
+    // Read only after the login (security-audit-0.16.0 PROTOCOLS-6).
+    let Ok(body) = axum::body::to_bytes(body, MAX_REQUEST_BYTES).await else {
+        return RequestError {
+            status: StatusCode::PAYLOAD_TOO_LARGE,
+            body: json!({
+                "type": "urn:ietf:params:jmap:error:limit",
+                "limit": "maxSizeRequest",
+                "status": 413,
+                "detail": "The request is too big or was cut off."
+            }),
+        }
+        .into_response();
     };
     let value: Value = match serde_json::from_slice(&body) {
         Ok(value) => value,

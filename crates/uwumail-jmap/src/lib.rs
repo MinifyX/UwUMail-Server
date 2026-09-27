@@ -151,14 +151,16 @@ impl Jmap {
         Jmap { inner: Arc::new(Inner { notice: Some(notice), ..inner }) }
     }
 
+    /// The API and uploads read their bodies themselves, after the login and up to
+    /// [`MAX_REQUEST_BYTES`] and [`MAX_UPLOAD_BYTES`].
     pub fn router(&self) -> Router {
         Router::new()
             .route("/.well-known/jmap", get(session::handle))
             .route("/jmap/session", get(session::handle))
-            .route("/jmap/api", post(api::handle).layer(DefaultBodyLimit::max(MAX_REQUEST_BYTES)))
-            .route("/jmap/api/", post(api::handle).layer(DefaultBodyLimit::max(MAX_REQUEST_BYTES)))
-            .route("/jmap/upload/{account}", post(blob::upload).layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES)))
-            .route("/jmap/upload/{account}/", post(blob::upload).layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES)))
+            .route("/jmap/api", post(api::handle))
+            .route("/jmap/api/", post(api::handle))
+            .route("/jmap/upload/{account}", post(blob::upload))
+            .route("/jmap/upload/{account}/", post(blob::upload))
             .route("/jmap/download/{account}/{blob}/{name}", get(blob::download))
             .route("/jmap/eventsource", get(push::handle))
             .route("/jmap/eventsource/", get(push::handle))
