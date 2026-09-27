@@ -38,6 +38,10 @@ pub fn literal_announcement(line: &[u8]) -> Option<(usize, bool)> {
 ///
 /// Real clients nest two or three levels. Thunderbird's widest saved search is nowhere near this.
 const MAX_SEARCH_DEPTH: usize = 32;
+/// Keys in one SEARCH, all levels together. Each is checked against every message of the mailbox,
+/// so thousands of them made one command take the server's time (security-audit-0.16.0 PANIC-4);
+/// mail apps send a handful.
+pub const MAX_SEARCH_KEYS: usize = 100;
 
 struct Parser<'a> {
     input: &'a [u8],
@@ -46,6 +50,8 @@ struct Parser<'a> {
     utf8: bool,
     /// How many SEARCH keys deep we are, against [`MAX_SEARCH_DEPTH`].
     depth: usize,
+    /// SEARCH keys read so far, against [`MAX_SEARCH_KEYS`].
+    search_keys: usize,
 }
 
 const MONTHS: [&str; 12] = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
@@ -702,6 +708,19 @@ impl<'a> Parser<'a> {
                         }
                     }
                 };
+                // Each item asked for twice is sent twice, a whole message each time for BODY[]:
+                // repeats are dropped, and a list longer than any client sends is refused
+                // (security-audit-0.16.0 PROTOCOLS-15).
+                let mut distinct: Vec<FetchItem> = Vec::new();
+                for item in items {
+                    if !distinct.contains(&item) {
+                        if distinct.len() == MAX_FETCH_ITEMS {
+                            return Err("too many FETCH items".into());
+                        }
+                        distinct.push(item);
+                    }
+                }
+                let items = distinct;
                 let (mut changed_since, mut vanished) = (None, false);
                 if self.eat(b' ') {
                     self.byte(b'(')?;
@@ -917,6 +936,11 @@ impl<'a> Parser<'a> {
             self.depth -= 1;
             return Err("the search is nested too deeply".into());
         }
+        self.search_keys += 1;
+        if self.search_keys > MAX_SEARCH_KEYS {
+            self.depth -= 1;
+            return Err("the search has too many keys".into());
+        }
         let key = self.nested_search_key();
         self.depth -= 1;
         key
@@ -1034,30 +1058,38 @@ pub fn parse_date(text: &str) -> Option<i64> {
     Some(days_from_civil(year, month, day))
 }
 
+/// Different items one FETCH may ask for.
+pub const MAX_FETCH_ITEMS: usize = 100;
+
 /// `17-Sep-2026 10:00:00 +0200` (the day may have a leading space) as a Unix time.
 pub fn parse_date_time(text: &str) -> Option<i64> {
     let text = text.trim_start();
     let (date, rest) = text.split_once(' ')?;
     let (time, zone) = rest.split_once(' ')?;
     let days = parse_date(date)?;
-    let mut clock = time.split(':').map(|part| part.parse::<i64>().ok());
+    // Two digits for each number, checked as bytes before anything is cut: the zone used to be
+    // cut at byte offsets after only its length was checked, and `+0é0` panicked there, before
+    // login (security-audit-0.16.0 PROTOCOLS-14).
+    let number = |part: &[u8]| {
+        (!part.is_empty() && part.len() <= 2 && part.iter().all(u8::is_ascii_digit))
+            .then(|| part.iter().fold(0i64, |n, digit| n * 10 + i64::from(digit - b'0')))
+    };
+    let mut clock = time.as_bytes().split(|&b| b == b':').map(number);
     let (h, m, s) = (clock.next()??, clock.next()??, clock.next()??);
-    if clock.next().is_some() || h > 23 || m > 59 || s > 60 || zone.len() != 5 {
+    if clock.next().is_some() || h > 23 || m > 59 || s > 60 {
         return None;
     }
-    let sign = match zone.as_bytes()[0] {
-        b'+' => 1,
-        b'-' => -1,
+    let (sign, zone_h, zone_m) = match zone.as_bytes() {
+        [b'+', rest @ ..] if rest.len() == 4 => (1, number(&rest[..2])?, number(&rest[2..])?),
+        [b'-', rest @ ..] if rest.len() == 4 => (-1, number(&rest[..2])?, number(&rest[2..])?),
         _ => return None,
     };
-    let zone_h: i64 = zone[1..3].parse().ok()?;
-    let zone_m: i64 = zone[3..5].parse().ok()?;
     Some(days * 86_400 + h * 3600 + m * 60 + s - sign * (zone_h * 3600 + zone_m * 60))
 }
 
 /// Parses one complete command. `utf8` says whether the client enabled UTF8=ACCEPT.
 pub fn parse_command(input: &[u8], utf8: bool) -> Result<Command, ParseError> {
-    let mut parser = Parser { input, pos: 0, utf8, depth: 0 };
+    let mut parser = Parser { input, pos: 0, utf8, depth: 0, search_keys: 0 };
     let tag = match parser.word(false) {
         Ok(tag) if !tag.contains('+') => tag.to_owned(),
         _ => return Err(ParseError { tag: None, message: "a command starts with a tag".into() }),
@@ -1321,6 +1353,45 @@ mod tests {
         assert_eq!(parse_date("29-Feb-2024"), Some(days_from_civil(2024, 2, 29)));
         assert_eq!(parse_date_time(" 1-Jan-2000 00:00:00 +0100"), Some(days_from_civil(2000, 1, 1) * 86_400 - 3600));
         assert_eq!(parse_date("32-Jan-2000"), None);
+        assert_eq!(
+            parse_date_time("17-Sep-2026 10:00:00 +0200"),
+            Some(days_from_civil(2026, 9, 17) * 86_400 + 8 * 3600)
+        );
+        // A multi-byte character in the zone panicked (security-audit-0.16.0 PROTOCOLS-14).
+        assert_eq!(parse_date_time("17-Sep-2026 10:00:00 +0\u{e9}0"), None);
+        assert_eq!(parse_date_time("17-Sep-2026 10:00:00 \u{e9}020"), None);
+        assert_eq!(parse_date_time("17-Sep-2026 -1:00:00 +0200"), None);
+        assert_eq!(parse_date_time("17-Sep-2026 10:00:00 +02:0"), None);
+        assert_eq!(parse_date_time("17-Sep-2026 1\u{e9}:00 +0200"), None);
+    }
+
+    #[test]
+    fn a_search_has_a_limited_number_of_keys() {
+        let keys = |count: usize| format!("a SEARCH {}\r\n", vec!["HEADER X-A b"; count].join(" "));
+        assert!(parse_command(keys(MAX_SEARCH_KEYS).as_bytes(), false).is_ok());
+        assert!(parse_command(keys(MAX_SEARCH_KEYS + 1).as_bytes(), false).is_err());
+        let nested = format!("a SEARCH OR ({}) ALL\r\n", vec!["SEEN"; MAX_SEARCH_KEYS].join(" "));
+        assert!(parse_command(nested.as_bytes(), false).is_err(), "keys at every level count");
+    }
+
+    #[test]
+    fn repeated_fetch_items_are_asked_for_once() {
+        let command = format!("a FETCH 1 (UID {}FLAGS)\r\n", "BODY.PEEK[] ".repeat(1_000));
+        let Ok(Command { body: CommandBody::Fetch { items, .. }, .. }) = parse_command(command.as_bytes(), false)
+        else {
+            panic!("a FETCH");
+        };
+        assert_eq!(items.len(), 3);
+        let distinct: String = (0..=MAX_FETCH_ITEMS).map(|n| format!("BODY.PEEK[]<{n}.10> ")).collect();
+        let command = format!("a FETCH 1 ({}UID)\r\n", distinct);
+        assert!(parse_command(command.as_bytes(), false).is_err());
+    }
+
+    /// The same date in an APPEND, which a stranger can send before logging in.
+    #[test]
+    fn an_append_with_a_broken_date_is_an_error() {
+        let command = "a APPEND INBOX \"17-Sep-2026 10:00:00 +0\u{e9}0\" {1}\r\nx\r\n";
+        assert!(parse_command(command.as_bytes(), false).is_err());
     }
 }
 

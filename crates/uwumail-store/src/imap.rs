@@ -4,7 +4,7 @@
 //! IMAP flags are the email's keywords (`\Seen` is `$seen`, `\Deleted` is `$deleted`), so a flag
 //! set in IMAP shows in every mailbox the email is in and in JMAP too.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
@@ -403,6 +403,9 @@ impl Store {
         uids: Option<Vec<u32>>,
         only_deleted: bool,
     ) -> Result<Vec<u32>> {
+        // A set, not a list: it is asked once for every message of the mailbox, inside the write
+        // transaction that holds up every other write (security-audit-0.16.0 PANIC-6).
+        let uids: Option<HashSet<u32>> = uids.map(|uids| uids.into_iter().collect());
         let (removed, modseq) = self
             .write(move |tx| {
                 own_mailbox(tx, account_id, mailbox_id)?;

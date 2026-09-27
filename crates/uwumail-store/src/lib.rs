@@ -39,6 +39,7 @@ mod mail;
 mod masked;
 mod masked_domains;
 mod migration_jobs;
+pub mod mime_limits;
 mod mutate;
 mod oauth;
 mod objects;

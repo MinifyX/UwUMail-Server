@@ -91,7 +91,10 @@ Mail in Junk is never forwarded to other addresses.
 The message is read once, on a thread of its own: messages up to 25 MB, the
 first 2 MB of their HTML, at most 10 link domains asked about, and zip archives
 up to 25 MB looked into without unpacking them. Each rule counts once per
-message.
+message. Reading takes time in proportion to the size of the message, whatever
+it holds, and at most one message per processor core is read at a time; the
+others wait their turn, so a burst of big messages cannot take every core from
+delivery and the mail apps.
 
 | Rule | Points | When |
 | --- | --- | --- |

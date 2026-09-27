@@ -234,6 +234,11 @@ only to its mail ports on public addresses.
 
 ## Security notes
 
+- Every message from outside passes `uwumail_store::mime_limits` before
+  anything parses it in full: at most 64 levels of nesting, 5,000 parts and
+  20,000 header fields (see [configuration.md](configuration.md#limits-on-the-shape-of-a-message)).
+  SMTP checks it at the door, `Store::ingest` for every other way in, and the
+  spam filter, JMAP and iMIP only parse through `mime_limits::parse_message`.
 - Submission requires TLS before AUTH (configurable), limits login failures
   per network (/64 for IPv6), and checks both the envelope sender and every
   From address against the account's addresses.

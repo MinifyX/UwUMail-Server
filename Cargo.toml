@@ -74,6 +74,8 @@ ldap3 = { version = "0.12", default-features = false, features = ["tls-rustls-aw
 mail-auth = "0.13"
 mail-builder = "1"
 mail-parser = "0.11"
+# Fast substring search: boundaries in the MIME structure check, links in the spam filter.
+memchr = "2"
 # MalwareBazaar lists attachments by their MD5 or SHA-256.
 md-5 = "0.11"
 # The public suffix list, so a sender picture is asked of `shop.example` and never of `news.mail.shop.example`.

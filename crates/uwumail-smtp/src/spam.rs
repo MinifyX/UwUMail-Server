@@ -39,6 +39,14 @@ use crate::fetched;
 use crate::reachability::generic_reverse_name;
 use crate::servercheck::is_private;
 
+/// Content examinations running at once, one per core.
+fn examinations() -> &'static tokio::sync::Semaphore {
+    static EXAMINATIONS: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
+    EXAMINATIONS.get_or_init(|| {
+        tokio::sync::Semaphore::new(std::thread::available_parallelism().map_or(2, std::num::NonZero::get))
+    })
+}
+
 /// How long a blocklist answer is reused, so a sender delivering a lot is not looked up again and
 /// again. An unusable answer is retried sooner, because it is usually a resolver problem here.
 const LISTING_TTL: Duration = Duration::from_secs(3600);
@@ -385,6 +393,9 @@ pub async fn score(ctx: &Context, config: &SpamConfig, source: Source<'_>, raw: 
             let (raw, now) = (raw.to_vec(), crate::now());
             let dmarc_passed = verdict.is_some_and(|verdict| verdict.dmarc_passed);
             let key = if config.bayes { bayes::context_key(ctx).await } else { None };
+            // One reading per core at most: a burst of big messages waits its turn instead of
+            // taking every core from delivery, IMAP and JMAP (security-audit-0.16.0 SMTP-2).
+            let _turn = examinations().acquire().await;
             tokio::task::spawn_blocking(move || content::examine(&raw, now, dmarc_passed, key.as_ref()))
                 .await
                 .unwrap_or_default()

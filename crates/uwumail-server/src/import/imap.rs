@@ -16,7 +16,7 @@ use rustls_pki_types::ServerName;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
-use uwumail_store::{BlobHash, ImportProgress, IngestRequest, MailboxRole, MailboxTarget, Store};
+use uwumail_store::{BlobHash, ImportProgress, IngestRequest, MailboxRole, MailboxTarget, Store, StoreError};
 
 /// Messages fetched per request.
 const BATCH: usize = 25;
@@ -227,6 +227,31 @@ async fn read_response<R: AsyncBufRead + Unpin>(stream: &mut R, budget: &mut usi
     }
 }
 
+/// One answer to LIST: `* LIST (attributes) delimiter name`.
+#[derive(Debug, PartialEq, Eq)]
+struct ListEntry {
+    attributes: Vec<String>,
+    /// Empty for NIL.
+    delimiter: String,
+    raw: String,
+}
+
+/// Reads one LIST answer; `None` for one of any other shape, which is passed over. The server is
+/// whatever the person typed in: `* LIST` with nothing after it used to cut the tokens at 3..2,
+/// which panicked, and since the fetch account stayed due the server crashed again right after
+/// every start (security-audit-0.16.0 PLAT-1).
+fn list_entry(tokens: &[Token]) -> Option<ListEntry> {
+    if tokens.get(1) != Some(&Token::Atom("LIST".into())) || tokens.get(2) != Some(&Token::Open) {
+        return None;
+    }
+    let close = 3 + tokens.get(3..)?.iter().position(|token| *token == Token::Close)?;
+    Some(ListEntry {
+        attributes: tokens[3..close].iter().filter_map(Token::text).collect(),
+        delimiter: tokens.get(close + 1).and_then(Token::text).unwrap_or_default(),
+        raw: tokens.get(close + 2).and_then(Token::text)?,
+    })
+}
+
 pub(crate) fn quoted(text: &str) -> String {
     format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
 }
@@ -300,17 +325,10 @@ pub(crate) async fn folders(connection: &mut Connection) -> anyhow::Result<Vec<F
 
     let mut found = Vec::new();
     for response in connection.command("LIST \"\" \"*\"").await? {
-        let tokens = &response.tokens;
-        if tokens.get(1) != Some(&Token::Atom("LIST".into())) {
-            continue;
-        }
-        let close = tokens.iter().position(|token| *token == Token::Close).unwrap_or(2);
-        let attributes: Vec<String> = tokens[3..close].iter().filter_map(Token::text).collect();
+        let Some(ListEntry { attributes, delimiter, raw }) = list_entry(&response.tokens) else { continue };
         if attributes.iter().any(|a| a.eq_ignore_ascii_case("\\Noselect") || a.eq_ignore_ascii_case("\\NonExistent")) {
             continue;
         }
-        let delimiter = tokens.get(close + 1).and_then(Token::text).unwrap_or_default();
-        let Some(raw) = tokens.get(close + 2).and_then(Token::text) else { continue };
         if shared_prefixes.iter().any(|prefix| raw.starts_with(prefix.as_str())) {
             continue;
         }
@@ -494,7 +512,9 @@ async fn plan(
             Vec::new()
         } else {
             let mut uids: Vec<u32> = connection
-                .command(&format!("UID SEARCH UID {}:*", last_uid + 1))
+                // The last UID came from the other server; u32::MAX would overflow
+                // (security-audit-0.16.0 PANIC-I1).
+                .command(&format!("UID SEARCH UID {}:*", last_uid.saturating_add(1)))
                 .await?
                 .iter()
                 .filter(|response| response.tokens.get(1) == Some(&Token::Atom("SEARCH".into())))
@@ -606,7 +626,20 @@ pub(crate) async fn copy_folders(
                     keywords,
                     received_at: fetched.internal_date,
                 };
-                store.ingest(request).await.with_context(|| format!("storing message {uid} of {}", folder.raw))?;
+                match store.ingest(request).await {
+                    Ok(_) => {}
+                    // Nested too deep or made of too many parts to be read safely
+                    // (uwumail_store::mime_limits): left out, and the move goes on with the rest.
+                    Err(StoreError::Rule { code: "invalidEmail", message }) => {
+                        tracing::warn!(uid, folder = %folder.raw, %message, "a message was left out");
+                        continue;
+                    }
+                    Err(err) => {
+                        return Err(
+                            anyhow::Error::from(err).context(format!("storing message {uid} of {}", folder.raw))
+                        );
+                    }
+                }
                 copied.messages += 1;
                 copied.bytes += size;
             }
@@ -665,6 +698,67 @@ pub async fn copy_mail(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn tokens(line: &str) -> Vec<Token> {
+        let mut tokens = Vec::new();
+        tokenize(line.as_bytes(), &mut tokens);
+        tokens
+    }
+
+    #[test]
+    fn list_answers_of_any_shape() {
+        for broken in
+            ["* LIST", "* LIST )", "* LIST foo", "* LIST (\\Noselect", "* LIST ()", "* LIST (\\HasChildren) \"/\""]
+        {
+            assert_eq!(list_entry(&tokens(broken)), None, "{broken}");
+        }
+        assert_eq!(
+            list_entry(&tokens("* LIST (\\HasNoChildren \\Sent) \"/\" \"Gesendet\"")),
+            Some(ListEntry {
+                attributes: vec!["\\HasNoChildren".into(), "\\Sent".into()],
+                delimiter: "/".into(),
+                raw: "Gesendet".into()
+            })
+        );
+        assert_eq!(list_entry(&tokens("* LIST () NIL INBOX")).map(|entry| entry.delimiter), Some(String::new()));
+    }
+
+    /// The readers of what a user-chosen IMAP server answers, over noise and mangled answers: none
+    /// of them may panic (security-audit-0.16.0 PLAT-1).
+    #[test]
+    fn the_answer_readers_survive_nonsense() {
+        const ANSWERS: &[&[u8]] = &[
+            b"* LIST (\\HasNoChildren) \"/\" \"INBOX\"\r\n",
+            b"* 1 FETCH (UID 7 FLAGS (\\Seen) INTERNALDATE \"17-Sep-2026 10:00:00 +0200\" BODY[] {5}\r\n",
+            b"* NAMESPACE ((\"\" \"/\")) NIL ((\"Shared/\" \"/\"))\r\n",
+            b"* 3 EXISTS\r\n",
+            b"* OK [UIDVALIDITY 7] ok\r\n",
+        ];
+        let mut state = 0x5eed_0016_0000_0001u64;
+        let mut next = move || {
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            state.wrapping_mul(0x2545_f491_4f6c_dd1d)
+        };
+        for _ in 0..5_000 {
+            let mut line = ANSWERS[next() as usize % ANSWERS.len()].to_vec();
+            for _ in 0..1 + next() % 4 {
+                let at = next() as usize % (line.len() + 1);
+                match next() % 3 {
+                    0 => line.truncate(at),
+                    1 => line.insert(at, b"()\"{} \xc3\xa9"[next() as usize % 8]),
+                    _ if at < line.len() => line[at] = next() as u8,
+                    _ => {}
+                }
+            }
+            let mut response = Response::default();
+            let _ = tokenize(&line, &mut response.tokens);
+            let _ = list_entry(&response.tokens);
+            let _ = parse_fetch(&response);
+            let _ = examined_exists(std::slice::from_ref(&response));
+        }
+    }
 
     #[test]
     fn a_huge_literal_is_past_the_cap_read_response_enforces() {

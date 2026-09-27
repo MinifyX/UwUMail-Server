@@ -15,6 +15,7 @@ use mail_builder::headers::url::URL;
 use mail_builder::mime::{BodyPart, MimePart};
 use mail_parser::{Address, HeaderValue, Message, MessageParser, MimeHeaders, PartType};
 use serde_json::{Map, Value, json};
+use uwumail_store::mime_limits::parse_message;
 use uwumail_store::{BlobHash, EmailAddress, EmailRecord};
 
 use crate::{dates, ids};
@@ -229,7 +230,7 @@ fn part_size(part: &mail_parser::MessagePart<'_>) -> usize {
 
 /// Decoded content of a part, for downloads.
 pub fn part_content(raw: &[u8], index: usize) -> Option<(Vec<u8>, String)> {
-    let message = MessageParser::default().parse(raw)?;
+    let message = parse_message(raw)?;
     let part = message.parts.get(index)?;
     let content_type = part_type(part);
     let bytes = match &part.body {
@@ -241,7 +242,21 @@ pub fn part_content(raw: &[u8], index: usize) -> Option<(Vec<u8>, String)> {
     Some((bytes, content_type))
 }
 
-fn body_part(message: &Message<'_>, hash: &BlobHash, index: usize, properties: &[String], recurse: bool) -> Value {
+/// How deep `bodyStructure` goes; below this a multipart part is shown without its `subParts`,
+/// as the IMAP BODYSTRUCTURE does (`uwumail-imap` `mime::MAX_DEPTH`). The parts themselves stay
+/// reachable by their `partId` (security-audit-0.16.0 PROTOCOLS-1).
+const MAX_STRUCTURE_DEPTH: usize = 32;
+
+/// One part as a JMAP EmailBodyPart. `depth` is how far below the top it is; `None` leaves out
+/// the `subParts` of multipart parts.
+fn body_part(
+    message: &Message<'_>,
+    hash: &BlobHash,
+    index: usize,
+    properties: &[String],
+    depth: Option<usize>,
+) -> Value {
+    let recurse = depth.is_some_and(|depth| depth < MAX_STRUCTURE_DEPTH);
     let Some(part) = message.parts.get(index) else {
         return Value::Null;
     };
@@ -294,8 +309,10 @@ fn body_part(message: &Message<'_>, hash: &BlobHash, index: usize, properties: &
     if let PartType::Multipart(children) = &part.body
         && recurse
     {
-        let sub: Vec<Value> =
-            children.iter().map(|child| body_part(message, hash, *child as usize, properties, true)).collect();
+        let sub: Vec<Value> = children
+            .iter()
+            .map(|child| body_part(message, hash, *child as usize, properties, depth.map(|d| d + 1)))
+            .collect();
         object.insert("subParts".into(), Value::Array(sub));
     }
     Value::Object(object)
@@ -352,7 +369,7 @@ pub fn to_json(
     body_properties: &[String],
     options: BodyValueOptions,
 ) -> Value {
-    let parsed = raw.and_then(|raw| MessageParser::default().parse(raw));
+    let parsed = raw.and_then(parse_message);
     let headers =
         parsed.as_ref().and_then(|m| m.parts.first().map(|root| raw_headers(&m.raw_message, root))).unwrap_or_default();
     let mut object = Map::new();
@@ -409,18 +426,18 @@ pub fn to_json(
             ("headers", _, Some(_)) => {
                 json!(headers.iter().map(|(n, v)| json!({ "name": n, "value": v })).collect::<Vec<_>>())
             }
-            ("bodyStructure", _, Some(m)) => body_part(m, hash, 0, body_properties, true),
+            ("bodyStructure", _, Some(m)) => body_part(m, hash, 0, body_properties, Some(0)),
             ("textBody", _, Some(m)) => json!(
-                m.text_body.iter().map(|i| body_part(m, hash, *i as usize, body_properties, false)).collect::<Vec<_>>()
+                m.text_body.iter().map(|i| body_part(m, hash, *i as usize, body_properties, None)).collect::<Vec<_>>()
             ),
             ("htmlBody", _, Some(m)) => json!(
-                m.html_body.iter().map(|i| body_part(m, hash, *i as usize, body_properties, false)).collect::<Vec<_>>()
+                m.html_body.iter().map(|i| body_part(m, hash, *i as usize, body_properties, None)).collect::<Vec<_>>()
             ),
             ("attachments", _, Some(m)) => {
                 json!(
                     m.attachments
                         .iter()
-                        .map(|i| body_part(m, hash, *i as usize, body_properties, false))
+                        .map(|i| body_part(m, hash, *i as usize, body_properties, None))
                         .collect::<Vec<_>>()
                 )
             }
@@ -444,14 +461,69 @@ pub fn to_json(
 pub struct BuildError {
     pub properties: Vec<String>,
     pub description: String,
+    /// The email would be larger than this server builds (`tooLarge`), rather than malformed.
+    pub too_large: bool,
 }
 
 fn build_error(property: &str, description: impl Into<String>) -> BuildError {
-    BuildError { properties: vec![property.to_owned()], description: description.into() }
+    BuildError { properties: vec![property.to_owned()], description: description.into(), too_large: false }
 }
 
 fn build_errors(properties: Vec<String>, description: impl Into<String>) -> BuildError {
-    BuildError { properties, description: description.into() }
+    BuildError { properties, description: description.into(), too_large: false }
+}
+
+fn too_large(description: impl Into<String>) -> BuildError {
+    BuildError { too_large: true, ..build_error("bodyStructure", description) }
+}
+
+/// Body parts one created email may have, multipart parts included.
+pub const MAX_BODY_PARTS: usize = 1_000;
+
+/// What the body parts of a create object will hold, before any of it is built: every blob and
+/// body value as often as a part names it, since each part is written out in full. A few
+/// kilobytes of JSON naming one big blob a hundred times would otherwise build a message of
+/// gigabytes (security-audit-0.16.0 PROTOCOLS-2). Blobs that are missing count nothing here; the
+/// builder names them.
+fn check_content_size(
+    object: &Map<String, Value>,
+    body_values: &Map<String, Value>,
+    blobs: &dyn BlobSource,
+) -> Result<(), BuildError> {
+    let mut work: Vec<&Value> = Vec::new();
+    match object.get("bodyStructure").filter(|v| !v.is_null()) {
+        Some(structure) => work.push(structure),
+        None => {
+            for key in ["textBody", "htmlBody"] {
+                work.extend(object.get(key).and_then(Value::as_array).and_then(|list| list.first()));
+            }
+            work.extend(object.get("attachments").and_then(Value::as_array).into_iter().flatten());
+        }
+    }
+    let mut parts = 0usize;
+    let mut bytes = 0usize;
+    while let Some(part) = work.pop() {
+        parts += 1;
+        if parts > MAX_BODY_PARTS {
+            return Err(too_large(format!("an email may have at most {MAX_BODY_PARTS} body parts")));
+        }
+        if let Some(children) = part.get("subParts").and_then(Value::as_array) {
+            work.extend(children);
+            continue;
+        }
+        let size = if let Some(part_id) = part.get("partId").and_then(Value::as_str) {
+            body_values.get(part_id).and_then(|v| v.get("value")).and_then(Value::as_str).map_or(0, str::len)
+        } else if let Some(blob_id) = part.get("blobId").and_then(Value::as_str) {
+            blobs.blob(blob_id).map_or(0, <[u8]>::len)
+        } else {
+            0
+        };
+        bytes = bytes.saturating_add(size);
+        if bytes > crate::MAX_UPLOAD_BYTES {
+            return Err(too_large(format!("the body parts would hold more than {} bytes", crate::MAX_UPLOAD_BYTES)));
+        }
+    }
+    Ok(())
 }
 
 fn address_list(value: &Value, property: &str) -> Result<Vec<BuilderAddress<'static>>, BuildError> {
@@ -772,18 +844,19 @@ fn validate_part(path: &str, part: &Value) -> Result<(), BuildError> {
     Ok(())
 }
 
-/// Resolves the bytes behind a body part given by `partId` (from `bodyValues`) or `blobId`.
+/// Resolves the bytes behind a body part given by `blobId`. The message is built from them in
+/// place, without a copy for every part that names a blob.
 pub trait BlobSource {
-    fn blob(&self, blob_id: &str) -> Option<Vec<u8>>;
+    fn blob(&self, blob_id: &str) -> Option<&[u8]>;
 }
 
-fn leaf_part(
+fn leaf_part<'x>(
     part: &Value,
     body_values: &Map<String, Value>,
-    blobs: &dyn BlobSource,
-) -> Result<MimePart<'static>, BuildError> {
+    blobs: &'x dyn BlobSource,
+) -> Result<MimePart<'x>, BuildError> {
     let content_type = part.get("type").and_then(Value::as_str);
-    let body: BodyPart<'static> = if let Some(part_id) = part.get("partId").and_then(Value::as_str) {
+    let body: BodyPart<'x> = if let Some(part_id) = part.get("partId").and_then(Value::as_str) {
         let value = body_values
             .get(part_id)
             .and_then(|v| v.get("value"))
@@ -797,7 +870,7 @@ fn leaf_part(
         {
             return Err(build_error("size", format!("the blob has {} bytes", bytes.len())));
         }
-        BodyPart::Binary(Cow::Owned(bytes))
+        BodyPart::Binary(Cow::Borrowed(bytes))
     } else {
         return Err(build_error("bodyStructure", "every part needs a partId or a blobId"));
     };
@@ -841,11 +914,11 @@ fn leaf_part(
     Ok(mime)
 }
 
-fn structure_part(
+fn structure_part<'x>(
     part: &Value,
     body_values: &Map<String, Value>,
-    blobs: &dyn BlobSource,
-) -> Result<MimePart<'static>, BuildError> {
+    blobs: &'x dyn BlobSource,
+) -> Result<MimePart<'x>, BuildError> {
     match part.get("subParts").and_then(Value::as_array) {
         Some(children) => {
             let content_type = part.get("type").and_then(Value::as_str).unwrap_or("multipart/mixed").to_lowercase();
@@ -870,6 +943,7 @@ pub fn build_message(object: &Map<String, Value>, blobs: &dyn BlobSource) -> Res
     validate_create(object)?;
     let empty = Map::new();
     let body_values = object.get("bodyValues").and_then(Value::as_object).unwrap_or(&empty);
+    check_content_size(object, body_values, blobs)?;
     let mut builder = MessageBuilder::new();
     let null = Value::Null;
     let get = |key: &str| object.get(key).unwrap_or(&null);
@@ -960,11 +1034,109 @@ pub fn build_message(object: &Map<String, Value>, blobs: &dyn BlobSource) -> Res
 mod tests {
     use super::*;
 
+    /// A multipart nested `levels` deep, with one text part at the bottom.
+    fn nested_multipart(levels: usize) -> Vec<u8> {
+        let mut raw = b"From: nyu@example.org\r\nSubject: deep\r\n".to_vec();
+        for level in 0..levels {
+            raw.extend_from_slice(
+                format!("Content-Type: multipart/mixed; boundary=b{level}\r\n\r\n--b{level}\r\n").as_bytes(),
+            );
+        }
+        raw.extend_from_slice(b"Content-Type: text/plain\r\n\r\nbottom\r\n");
+        raw
+    }
+
+    fn structure_of(raw: Vec<u8>) -> Value {
+        std::thread::Builder::new()
+            .stack_size(2 << 20)
+            .spawn(move || {
+                let hash = BlobHash::of(&raw);
+                let body_properties: Vec<String> = DEFAULT_BODY_PROPERTIES.iter().map(|s| s.to_string()).collect();
+                let json = to_json(
+                    None,
+                    Some(&raw),
+                    &hash,
+                    &["bodyStructure".to_owned()],
+                    &body_properties,
+                    Default::default(),
+                );
+                // Serialising walks the whole value as well.
+                serde_json::to_string(&json).unwrap();
+                json["bodyStructure"].clone()
+            })
+            .unwrap()
+            .join()
+            .unwrap()
+    }
+
+    /// `bodyStructure` followed every level down, so a deeply nested message overflowed the stack
+    /// and took the server down with it (security-audit-0.16.0 PROTOCOLS-1).
+    #[test]
+    fn body_structure_of_deep_nesting_stops() {
+        let depth = |mut part: &Value| {
+            let mut levels = 0;
+            while let Some(first) = part["subParts"].get(0) {
+                part = first;
+                levels += 1;
+            }
+            (levels, part.clone())
+        };
+        let (levels, bottom) = depth(&structure_of(nested_multipart(40)));
+        assert_eq!(levels, MAX_STRUCTURE_DEPTH);
+        assert_eq!(bottom["type"], "multipart/mixed");
+        assert_eq!(bottom["subParts"], Value::Null);
+
+        let (levels, bottom) = depth(&structure_of(nested_multipart(3)));
+        assert_eq!(levels, 3);
+        assert_eq!(bottom["type"], "text/plain");
+
+        // Far deeper than any mail: not read at all.
+        assert_eq!(structure_of(nested_multipart(50_000)), Value::Null);
+    }
+
     struct NoBlobs;
     impl BlobSource for NoBlobs {
-        fn blob(&self, _: &str) -> Option<Vec<u8>> {
-            Some(b"%PDF".to_vec())
+        fn blob(&self, _: &str) -> Option<&[u8]> {
+            Some(b"%PDF")
         }
+    }
+
+    struct BigBlob(Vec<u8>);
+    impl BlobSource for BigBlob {
+        fn blob(&self, _: &str) -> Option<&[u8]> {
+            Some(&self.0)
+        }
+    }
+
+    /// Naming one blob over and over built a copy of it for every mention, so a few kilobytes of
+    /// JSON built gigabytes (security-audit-0.16.0 PROTOCOLS-2).
+    #[test]
+    fn a_blob_named_many_times_is_too_large() {
+        let blob = BigBlob(vec![b'x'; 1024 * 1024]);
+        let attachment = json!({ "blobId": "b1", "type": "application/octet-stream", "name": "a.bin" });
+        let object = json!({ "subject": "Kopien", "attachments": vec![attachment.clone(); 200] });
+        let err = build_message(object.as_object().unwrap(), &blob).unwrap_err();
+        assert!(err.too_large, "{err:?}");
+
+        // The same through bodyStructure, and with a body value instead of a blob.
+        let leaf = json!({ "partId": "t", "type": "text/plain" });
+        let object = json!({
+            "bodyStructure": { "type": "multipart/mixed", "subParts": vec![leaf; 200] },
+            "bodyValues": { "t": { "value": "x".repeat(1024 * 1024) } },
+        });
+        let err = build_message(object.as_object().unwrap(), &NoBlobs).unwrap_err();
+        assert!(err.too_large, "{err:?}");
+
+        // Many small parts are too many all the same.
+        let object = json!({ "attachments": vec![json!({ "blobId": "b1" }); MAX_BODY_PARTS + 1] });
+        let err = build_message(object.as_object().unwrap(), &NoBlobs).unwrap_err();
+        assert!(err.too_large, "{err:?}");
+
+        // Within the limits it is built, the blob written out as often as it is named.
+        let object = json!({ "attachments": vec![attachment; 3] });
+        let raw = build_message(object.as_object().unwrap(), &blob).unwrap();
+        let parsed = MessageParser::default().parse(&raw).unwrap();
+        assert_eq!(parsed.attachment_count(), 3);
     }
 
     const MESSAGE: &[u8] =

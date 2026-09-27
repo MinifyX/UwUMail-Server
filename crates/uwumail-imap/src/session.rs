@@ -1,7 +1,7 @@
 //! One IMAP connection: reading commands, answering them, and telling the client about changes
 //! other connections and deliveries made.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -92,6 +92,19 @@ impl Selected {
 
     fn position(&self, uid: u32) -> Option<usize> {
         self.messages.binary_search_by_key(&uid, |known| known.uid).ok()
+    }
+
+    /// Forgets the messages with these UIDs in one pass and returns where they were, last first:
+    /// the order EXPUNGE responses name them in. Taking them out one by one moved the rest of the
+    /// list each time, which with tens of thousands of messages took minutes
+    /// (security-audit-0.16.0 PANIC-6).
+    fn forget(&mut self, uids: &[u32]) -> Vec<usize> {
+        let gone: HashSet<u32> = uids.iter().copied().collect();
+        let mut positions: Vec<usize> =
+            self.messages.iter().enumerate().filter(|(_, known)| gone.contains(&known.uid)).map(|(at, _)| at).collect();
+        positions.reverse();
+        self.messages.retain(|known| !gone.contains(&known.uid));
+        positions
     }
 }
 
@@ -1387,15 +1400,12 @@ where
         let qresync = self.qresync;
         let selected = self.selected.as_mut().expect("selected");
         let mut out = Out::new(false);
+        let positions = selected.forget(uids);
         if qresync {
             out.raw(&format!("* VANISHED {}\r\n", response::sequence_set(uids)));
-            selected.messages.retain(|known| !uids.contains(&known.uid));
         } else {
-            let mut positions: Vec<usize> = uids.iter().filter_map(|uid| selected.position(*uid)).collect();
-            positions.sort_unstable();
-            for index in positions.into_iter().rev() {
+            for index in positions {
                 out.raw(&format!("* {} EXPUNGE\r\n", index + 1));
-                selected.messages.remove(index);
             }
         }
         self.send(&out.bytes).await
@@ -1420,17 +1430,25 @@ where
         };
         let emails = self.store.imap_emails(account, mailbox_id, uids).await?;
         let prepared = search::prepare(&self.store, account, &criteria, &emails).await?;
-        let mut found = Vec::new();
-        let mut found_uids = Vec::new();
-        let mut highest = 0;
-        for email in &emails {
-            let msn = positions[&email.uid];
-            if search::matches(&criteria, &search::Target { msn, email }, &scope, &prepared) {
-                found.push(if uid { email.uid } else { msn });
-                found_uids.push(email.uid);
-                highest = highest.max(email.modseq);
+        // Every key against every message of the mailbox: work for a blocking thread, not for the
+        // thread every other session shares (security-audit-0.16.0 PANIC-4).
+        let checked = criteria.clone();
+        let (mut found, mut found_uids, highest) = tokio::task::spawn_blocking(move || {
+            let mut found = Vec::new();
+            let mut found_uids = Vec::new();
+            let mut highest = 0;
+            for email in &emails {
+                let msn = positions[&email.uid];
+                if search::matches(&checked, &search::Target { msn, email }, &scope, &prepared) {
+                    found.push(if uid { email.uid } else { msn });
+                    found_uids.push(email.uid);
+                    highest = highest.max(email.modseq);
+                }
             }
-        }
+            (found, found_uids, highest)
+        })
+        .await
+        .map_err(|err| StoreError::Internal(err.to_string()))?;
         found.sort_unstable();
         found_uids.sort_unstable();
         let with_modseq = search::uses_modseq(&criteria);
@@ -1698,6 +1716,12 @@ where
                         out.raw(&format!("BINARY.SIZE{} {size}", &response::binary_label(part)["BINARY".len()..]));
                     }
                 }
+                // Sent as it grows, also within one message: every item can be a whole message
+                // (security-audit-0.16.0 PROTOCOLS-15).
+                if out.bytes.len() > 256 * 1024 {
+                    self.send(&out.bytes).await.map_err(io_error)?;
+                    out.bytes.clear();
+                }
             }
             if condstore && !modseq_sent && flags_sent {
                 out.raw(&format!(" MODSEQ ({})", email.modseq));
@@ -1777,6 +1801,7 @@ where
         };
         let uids: Vec<u32> = targets.iter().map(|(_, uid)| *uid).collect();
         let skipped = self.store.imap_store_flags(account, mailbox_id, uids.clone(), change, unchanged_since).await?;
+        let skipped_set: HashSet<u32> = skipped.iter().copied().collect();
         let emails = self.store.imap_emails(account, mailbox_id, uids).await?;
         let by_uid: HashMap<u32, &ImapEmail> = emails.iter().map(|email| (email.uid, email)).collect();
 
@@ -1789,7 +1814,7 @@ where
             let changed = known.keywords != email.keywords || known.modseq != email.modseq;
             known.keywords = email.keywords.clone();
             known.modseq = email.modseq;
-            if skipped.contains(&message_uid) || (silent && !(condstore && changed)) {
+            if skipped_set.contains(&message_uid) || (silent && !(condstore && changed)) {
                 continue;
             }
             out.raw(&format!("* {} FETCH (", index + 1));
@@ -2002,4 +2027,32 @@ fn status_items(items: &[StatusItem], status: &uwumail_store::ImapStatus) -> Str
 
 fn now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Half of a big mailbox expunged at once: taking the messages out one by one moved the rest
+    /// of the list every time (security-audit-0.16.0 PANIC-6).
+    #[test]
+    fn a_big_expunge_is_forgotten_in_one_pass() {
+        let known = |uid: u32| Known { uid, modseq: 1, keywords: Vec::new(), expunged: false };
+        let mut selected = Selected {
+            mailbox_id: 1,
+            owner: 1,
+            rights: String::new(),
+            read_only: false,
+            messages: (1..=200_000).map(known).collect(),
+            highest_modseq: 1,
+        };
+        let gone: Vec<u32> = (1..=200_000).filter(|uid| uid % 2 == 0).chain([300_000]).collect();
+        let started = std::time::Instant::now();
+        let positions = selected.forget(&gone);
+        assert!(started.elapsed() < Duration::from_secs(1), "took {:?}", started.elapsed());
+        assert_eq!(positions.len(), 100_000);
+        assert_eq!(positions[..2], [199_999, 199_997], "last first, as EXPUNGE names them");
+        assert_eq!(selected.messages.len(), 100_000);
+        assert!(selected.messages.iter().all(|known| known.uid % 2 == 1));
+    }
 }

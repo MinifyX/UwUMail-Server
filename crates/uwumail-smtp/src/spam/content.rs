@@ -2,9 +2,10 @@
 //! built, what its links claim, and its attachments. Plain functions over the bytes, so they run on a
 //! blocking thread and are easy to test.
 
-use mail_parser::{Address, Encoding, Message, MessageParser, MimeHeaders, PartType};
+use mail_parser::{Address, Encoding, Message, MimeHeaders, PartType};
 use md5::{Digest, Md5};
 use sha2::Sha256;
+use uwumail_store::mime_limits::parse_message;
 
 use super::links::{self, Link, Target};
 use super::{Hit, attachments, bayes, html};
@@ -95,7 +96,7 @@ pub(crate) fn learning_tokens(raw: &[u8], key: &[u8; 32]) -> Vec<i64> {
     if raw.len() > MAX_MESSAGE {
         return Vec::new();
     }
-    let Some(message) = MessageParser::default().parse(raw) else { return Vec::new() };
+    let Some(message) = parse_message(raw) else { return Vec::new() };
     let body = read_body(&message);
     bayes::hashed(key, &bayes::tokens(&message, &link_sites(&body.links)))
 }
@@ -107,7 +108,7 @@ pub(crate) fn examine(raw: &[u8], now: i64, dmarc_passed: bool, key: Option<&[u8
     if raw.len() > MAX_MESSAGE {
         return Examination::default();
     }
-    let Some(message) = MessageParser::default().parse(raw) else { return Examination::default() };
+    let Some(message) = parse_message(raw) else { return Examination::default() };
     let mut hits = Vec::new();
     headers(&message, now, &mut hits);
     from_name(&message, &mut hits);
@@ -295,7 +296,7 @@ TVo=
 
     fn now() -> i64 {
         let raw = format!("Date: {DATE}\r\n\r\n");
-        MessageParser::default().parse(raw.as_bytes()).unwrap().date().unwrap().to_timestamp()
+        mail_parser::MessageParser::default().parse(raw.as_bytes()).unwrap().date().unwrap().to_timestamp()
     }
 
     fn rules(raw: &str, dmarc_passed: bool) -> Vec<&'static str> {

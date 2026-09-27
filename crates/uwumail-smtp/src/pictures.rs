@@ -172,15 +172,28 @@ pub fn bimi_logo(record: &str) -> Option<Url> {
     Url::parse(location).ok().filter(|url| url.scheme() == "https")
 }
 
+/// `<link>` tags looked at on one page; real pages have a handful.
+const MAX_LINK_TAGS: usize = 200;
+
 /// Icon links of a web page, best first, resolved against `base`.
+///
+/// Each tag is read only up to the next `<` or `>`: read to the end of the head, a page of
+/// `<link` without a `>` took time with the square of its size, and anyone signed in can make the
+/// server fetch any page (security-audit-0.16.0 PANIC-5).
 pub fn icon_links(html: &str, base: &Url) -> Vec<(Url, PictureKind)> {
     let lower = html.to_ascii_lowercase();
     let end = lower.find("</head").unwrap_or(lower.len());
     let mut found: Vec<(i32, Url, PictureKind)> = Vec::new();
     let mut offset = 0;
+    let mut tags = 0;
     while let Some(start) = lower[offset..end].find("<link") {
+        tags += 1;
+        if tags > MAX_LINK_TAGS {
+            break;
+        }
         let tag_start = offset + start + "<link".len();
-        let attributes = attributes(&html[tag_start..end]);
+        let tag_end = lower[tag_start..end].find(['<', '>']).map_or(end, |at| tag_start + at);
+        let attributes = attributes(&html[tag_start..tag_end]);
         offset = tag_start;
         let get = |name: &str| attributes.iter().find(|(key, _)| key == name).map(|(_, value)| value.as_str());
         let (Some(rel), Some(href)) = (get("rel"), get("href")) else { continue };
@@ -552,6 +565,20 @@ mod tests {
         assert_eq!(links[0].0.as_str(), "https://www.example.org/touch.png");
         assert_eq!(links[0].1, PictureKind::Logo);
         assert!(links.iter().all(|(url, _)| url.scheme() == "https"), "no plain http");
+    }
+
+    /// `<link` over and over without a `>`: every tag was read to the end of the head
+    /// (security-audit-0.16.0 PANIC-5).
+    #[test]
+    fn a_page_of_unclosed_links_is_read_quickly() {
+        let base = Url::parse("https://www.example.org/").unwrap();
+        let html = format!("<head>{}", "<link rel=\"icon\" href=\"/a.png\" ".repeat(20_000));
+        assert!(html.len() < 1024 * 1024);
+        let started = std::time::Instant::now();
+        let links = icon_links(&html, &base);
+        assert!(started.elapsed() < std::time::Duration::from_secs(1), "took {:?}", started.elapsed());
+        assert_eq!(links.len(), 1, "the same link counts once");
+        assert_eq!(links[0].0.as_str(), "https://www.example.org/a.png");
     }
 
     #[test]

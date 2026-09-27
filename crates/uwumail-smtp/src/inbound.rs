@@ -253,6 +253,11 @@ pub async fn deliver_fetched(
     to: String,
     raw: Vec<u8>,
 ) -> Taken {
+    // Refused, and so cleared at the provider: kept there, it would be offered again every run.
+    let raw = match mime_structure(raw).await {
+        Ok(raw) => raw,
+        Err(answer) => return Taken::Refused(answer.trim().to_owned()),
+    };
     let raw = headers::normalize_line_endings(&raw);
     if headers::count(&raw, "Received") > MAX_HOPS {
         return Taken::Refused("554 5.4.6 Too many hops, possible mail loop".into());
@@ -297,6 +302,29 @@ pub async fn deliver_fetched(
         Some(b'2') => Taken::Kept,
         Some(b'4') => Taken::Later(answer),
         _ => Taken::Refused(answer),
+    }
+}
+
+/// The MIME structure check of [`uwumail_store::mime_limits`], before anything else reads the
+/// message: one nested too deep takes the server down while it is parsed, and one of millions of
+/// tiny header fields or parts costs gigabytes (security-audit-0.16.0 SMTP-1, SMTP-4). Gives the
+/// message back, or the SMTP answer that refuses it.
+async fn mime_structure(raw: Vec<u8>) -> Result<Vec<u8>, String> {
+    let checked = tokio::task::spawn_blocking(move || {
+        let fault = uwumail_store::mime_limits::check(&raw).err();
+        (raw, fault)
+    })
+    .await;
+    match checked {
+        Ok((raw, None)) => Ok(raw),
+        Ok((raw, Some(fault))) => {
+            tracing::info!(%fault, size = raw.len(), "refused a message by its MIME structure");
+            Err(format!("554 5.6.0 Refused: {fault}\r\n"))
+        }
+        Err(err) => {
+            tracing::error!(%err, "checking the MIME structure failed");
+            Err("451 4.3.0 Temporary server error\r\n".into())
+        }
     }
 }
 
@@ -1363,6 +1391,10 @@ impl Session {
         let recipients = std::mem::take(&mut self.recipients);
         let Some(envelope) = envelope else {
             return self.reply("503 5.5.1 Send MAIL first\r\n").await;
+        };
+        let raw = match mime_structure(raw).await {
+            Ok(raw) => raw,
+            Err(answer) => return self.reply(&answer).await,
         };
         if headers::count(&raw, "Received") > MAX_HOPS {
             return self.reply("554 5.4.6 Too many hops, possible mail loop\r\n").await;

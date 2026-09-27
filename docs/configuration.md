@@ -222,6 +222,30 @@ portal, not in a file anyone else reads.
 or an allowed network. [metrics.md](metrics.md) lists what it serves and how to
 scrape it.
 
+## Limits on the shape of a message
+
+Besides its size (`smtp.max_message_size`), a message has to keep to a few
+limits on its structure. They are fixed, and far above what mail programs
+write:
+
+| Limit | |
+| --- | --- |
+| Nesting | 64 levels of parts inside parts (a multipart part or a forwarded message counts as one level each) |
+| Parts | 5,000 in the whole message, those of forwarded messages included |
+| Header fields | 20,000 in the whole message, those of every part included |
+
+A message that passes one of them is not read at all: over SMTP it is refused
+with `554 5.6.0`, fetched from another provider it counts as refused (and is
+cleared there like any other refused message), IMAP `APPEND` answers `NO`, and
+JMAP `Email/import` answers `invalidEmail`; moving mail over from another
+server and restoring a backup leave it out, say so in the log, and go on with
+the rest. A message made of parts whose boundary never comes, over and over, is
+refused the same way.
+
+The reason is the server itself: a message nested tens of thousands of times
+over used to take the whole server down while it was read, and millions of tiny
+header fields or parts cost gigabytes of memory.
+
 ## Accounts: people and services
 
 *Server → Accounts* holds both. A **person** signs in to the portal and may use

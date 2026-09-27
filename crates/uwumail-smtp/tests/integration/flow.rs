@@ -788,6 +788,30 @@ async fn relay_message_to(server: &TestServer, recipients: &[&str], message: &st
         .await
 }
 
+/// A message wrapped in message/rfc822 thousands of times over overflowed the stack while it was
+/// parsed and dropped, which took the whole server down, every time the sender retried
+/// (security-audit-0.16.0 SMTP-1). It is refused at the door now, and the server stays up.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_message_nested_too_deep_is_refused_and_the_server_stays_up() {
+    let a = spam_test_server(SpamConfig::default(), None).await;
+    let mut message = String::from("From: news@sender.test\r\nSubject: Matroschka\r\n");
+    for _ in 0..2_000 {
+        message.push_str("Content-Type: message/rfc822\r\n\r\nSubject: layer\r\n");
+    }
+    message.push_str("\r\nbottom\r\n");
+    let reply = relay_message_from_outside(&a, &message).await;
+    assert!(reply.starts_with("554 5.6.0"), "{reply}");
+
+    // Too many header fields are refused the same way (SMTP-4).
+    let fields = "X-A: b\r\n".repeat(uwumail_store::mime_limits::MAX_HEADER_FIELDS + 1);
+    let reply = relay_message_from_outside(&a, &format!("From: news@sender.test\r\n{fields}\r\nHallo\r\n")).await;
+    assert!(reply.starts_with("554 5.6.0"), "{reply}");
+    assert!(a.inbox("mini@a.test").await.is_empty());
+
+    let mut session = RawSession::connect(a.mx).await;
+    assert!(session.command("EHLO relay.local").await.starts_with("250"));
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_phishing_mail_is_judged_by_what_it_contains() {
     let a = spam_test_server(SpamConfig::default(), None).await;
