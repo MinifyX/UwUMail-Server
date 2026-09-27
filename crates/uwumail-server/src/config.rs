@@ -31,6 +31,8 @@ pub struct Config {
     /// How a message's remote pictures leave the server: straight, or through a VPN's proxy.
     pub egress: EgressConfig,
     pub log: LogConfig,
+    /// Prometheus metrics under `/metrics`; the admin panel can change this part.
+    pub metrics: uwumail_web::MetricsConfig,
 }
 
 impl Default for Config {
@@ -49,6 +51,7 @@ impl Default for Config {
             gateway: GatewayConfig::default(),
             egress: EgressConfig::default(),
             log: LogConfig::default(),
+            metrics: uwumail_web::MetricsConfig::default(),
         }
     }
 }
@@ -252,6 +255,7 @@ impl Config {
             .map_err(|err| anyhow::anyhow!("`http.trusted_proxies`: {err}"))?;
         self.log.loki.target(&self.hostname).map_err(|err| anyhow::anyhow!(err))?;
         uwumail_smtp::egress::Egress::check(&self.egress).map_err(|err| anyhow::anyhow!(err))?;
+        self.metrics.check().map_err(|err| anyhow::anyhow!(err))?;
         // Behind a reverse proxy the challenge arrives through the proxy listener instead of port 80.
         if self.tls.mode == TlsMode::Acme && self.listen.http.is_empty() && self.listen.proxy.is_empty() {
             bail!(
@@ -354,6 +358,24 @@ language = \"de\"
         assert_eq!(with_env_text("listen.proxy", "[::]:8080").unwrap().listen.proxy, "[::]:8080");
         assert_eq!(with_env_text("gateway.code", "").unwrap().gateway.code, "");
         assert_eq!(with_env_text("listen.managesieve", "").unwrap().listen.managesieve, "", "switched off");
+    }
+
+    #[test]
+    fn metrics_need_a_token_or_networks_once_they_are_on() {
+        let with = |metrics: serde_json::Value| {
+            let overlay = serde_json::json!({ "hostname": "mail.example.org", "metrics": metrics });
+            Config::load_with_overlay(None, &overlay).unwrap()
+        };
+        assert!(!with(serde_json::json!({})).metrics.enabled, "off unless switched on");
+        let error = with(serde_json::json!({ "enabled": true })).validate().unwrap_err().to_string();
+        assert!(error.contains("metrics.token"), "{error}");
+        with(serde_json::json!({ "enabled": true, "token": "a-long-enough-metrics-token" })).validate().unwrap();
+        let networks = with(serde_json::json!({ "enabled": true, "allowed_networks": ["127.0.0.1/32"] }));
+        networks.validate().unwrap();
+        let error = with(serde_json::json!({ "allowed_networks": ["10.0.0.0/40"] })).validate().unwrap_err();
+        assert!(error.to_string().contains("allowed_networks"), "{error}");
+        let from_env = with_env_text("metrics.allowed_networks", "[10.0.0.0/8]").unwrap();
+        assert_eq!(from_env.metrics.allowed_networks, ["10.0.0.0/8"]);
     }
 
     #[test]

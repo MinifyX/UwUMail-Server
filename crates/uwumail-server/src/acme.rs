@@ -100,6 +100,8 @@ pub async fn run(
         let extra = extra_names(&config.hostname, &store).await;
         let names = names_to_request(&config.hostname, &extra, &failed_names, now);
         if !needs_certificate(certs.info().as_ref(), &names, now) {
+            // Whatever failed before, the certificate in use is what it should be now.
+            let _ = store.note_certificate_order(None).await;
             wait = Duration::from_secs(NAME_CHECK_SECS);
             continue;
         }
@@ -107,11 +109,13 @@ pub async fn run(
         match order(&config, &certs, &challenges, &names).await {
             Ok(()) => {
                 tracing::info!(names = %names.join(", "), "got a fresh certificate (=^･ω･^=)");
+                let _ = store.note_certificate_order(None).await;
                 wait = Duration::from_secs(NAME_CHECK_SECS);
             }
             Err(err) => {
                 let refused = err.downcast_ref::<Refused>().map(|refused| refused.0.clone()).unwrap_or_default();
                 let (paused, retry) = after_failed_order(&names, &refused);
+                let _ = store.note_certificate_order(Some(format!("{err:#}"))).await;
                 if paused.is_empty() {
                     tracing::warn!(error = %format!("{err:#}"), "getting a certificate failed, retrying in an hour");
                 } else {

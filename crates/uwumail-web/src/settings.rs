@@ -106,6 +106,10 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("egress.pictures", SettingKind::Bool),
     spec("egress.updates", SettingKind::Bool),
     spec("egress.fetch", SettingKind::Bool),
+    // Prometheus metrics under /metrics (docs/metrics.md).
+    spec("metrics.enabled", SettingKind::Bool),
+    spec("metrics.token", SettingKind::Secret),
+    spec("metrics.allowed_networks", SettingKind::List),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
