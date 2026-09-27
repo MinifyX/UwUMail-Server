@@ -789,6 +789,13 @@ impl Store {
                 "UPDATE accounts SET password_hash = ?1, credentials_changed_at = ?2 WHERE login = ?3",
                 params![hash, now(), login],
             )?;
+            let id = account_id(tx, &login)?;
+            crate::held::cancel_held(
+                tx,
+                id,
+                crate::held::HeldBy::Password { keep: None },
+                crate::held::NOT_SENT_PASSWORD,
+            )?;
             Ok(())
         })
         .await
@@ -800,6 +807,10 @@ impl Store {
             let changed = tx.execute("UPDATE accounts SET disabled = ?1 WHERE login = ?2", params![disabled, login])?;
             if changed == 0 {
                 return Err(StoreError::NotFound(format!("account {login}")));
+            }
+            if disabled {
+                let id = account_id(tx, &login)?;
+                crate::held::cancel_held(tx, id, crate::held::HeldBy::Anyone, crate::held::NOT_SENT_DISABLED)?;
             }
             Ok(())
         })

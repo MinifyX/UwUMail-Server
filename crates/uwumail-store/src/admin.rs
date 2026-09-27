@@ -7,6 +7,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::directory::{ACCOUNT_COLUMN_COUNT, ACCOUNT_COLUMNS, account_from_row, account_id, login_key};
+use crate::held::HeldBy;
 use crate::identity_grants::{Granted, granted_addresses, revoke_identities};
 use crate::{Account, Protocols, Result, Role, Store, StoreError, now, password, random_bytes};
 
@@ -324,6 +325,7 @@ impl Store {
                 }
                 if after.disabled && !before.disabled {
                     tx.execute("DELETE FROM web_sessions WHERE account_id = ?1", [after.id])?;
+                    crate::held::cancel_held(tx, after.id, HeldBy::Anyone, crate::held::NOT_SENT_DISABLED)?;
                 }
                 // Becoming a service: the password it had becomes an app password that does not expire,
                 // and everything that only makes sense for a person in front of a browser goes.
@@ -355,6 +357,7 @@ impl Store {
             let at = now();
             tx.execute("UPDATE accounts SET deleted_at = ?1 WHERE id = ?2", params![at, account.id])?;
             tx.execute("DELETE FROM web_sessions WHERE account_id = ?1", [account.id])?;
+            crate::held::cancel_held(tx, account.id, HeldBy::Anyone, crate::held::NOT_SENT_DISABLED)?;
             tx.execute("DELETE FROM password_links WHERE account_id = ?1", [account.id])?;
             tx.execute("UPDATE domains SET catch_all_account_id = NULL WHERE catch_all_account_id = ?1", [account.id])?;
             // Stop pulling (and, with delete, destroying) the person's provider mail while they are
@@ -479,6 +482,12 @@ impl Store {
             tx.execute(
                 "UPDATE accounts SET password_hash = ?1, credentials_changed_at = ?2 WHERE id = ?3",
                 params![hash, now(), link.account.id],
+            )?;
+            crate::held::cancel_held(
+                tx,
+                link.account.id,
+                HeldBy::Password { keep: None },
+                crate::held::NOT_SENT_PASSWORD,
             )?;
             tx.execute("DELETE FROM password_links WHERE account_id = ?1", [link.account.id])?;
             tx.execute("DELETE FROM web_sessions WHERE account_id = ?1", [link.account.id])?;

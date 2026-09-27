@@ -53,7 +53,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0044_oauth.sql"),
     include_str!("migrations/0045_stats_alerts.sql"),
     include_str!("migrations/0046_push_subscriptions.sql"),
-    include_str!("migrations/0048_never_reused_ids.sql"),
+    include_str!("migrations/0048_logins_and_ids.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 

@@ -79,3 +79,9 @@ DELETE FROM push_subscriptions
             WHERE ap.id = CAST(substr(credential, 5) AS INTEGER) AND ap.account_id = push_subscriptions.account_id))
     OR (credential LIKE 'oauth:%' AND NOT EXISTS (SELECT 1 FROM oauth_grants g
             WHERE g.id = CAST(substr(credential, 7) AS INTEGER) AND g.account_id = push_subscriptions.account_id));
+
+-- Which login held a submission back (JMAP's undo window and send later), named like a push
+-- subscription's `credential`. Held mail stays unsent when that app password or OAuth app is
+-- revoked, the password changes, or the account is disabled or moved to the trash (security audit
+-- 0.16.0, PROTOCOLS-10). NULL, for what was held before, counts as the account password.
+ALTER TABLE email_submissions ADD COLUMN credential TEXT;

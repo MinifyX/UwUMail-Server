@@ -647,7 +647,14 @@ impl Store {
                 .optional()?
                 .ok_or_else(|| StoreError::NotFound(format!("app password {id}")))?;
             tx.execute("DELETE FROM app_passwords WHERE id = ?1", [id])?;
-            crate::push::forget_push_credential(tx, account_id, &crate::push_credential_for_app_password(id))?;
+            let credential = crate::push_credential_for_app_password(id);
+            crate::push::forget_push_credential(tx, account_id, &credential)?;
+            crate::held::cancel_held(
+                tx,
+                account_id,
+                crate::held::HeldBy::Credential(&credential),
+                crate::held::NOT_SENT_REVOKED,
+            )?;
             credentials_changed(tx, account_id)?;
             Ok(found)
         })
@@ -969,9 +976,17 @@ impl Store {
         .await
         .map_err(|err| StoreError::Internal(err.to_string()))??;
         let keep = crate::web::token_hash(keep_token);
+        // What this very browser session scheduled is still the person's own.
+        let keep_credential = crate::push_credential_for_session(keep_token);
         self.write(move |tx| {
             tx.execute("UPDATE accounts SET password_hash = ?1 WHERE id = ?2", params![hash, account_id])?;
             credentials_changed(tx, account_id)?;
+            crate::held::cancel_held(
+                tx,
+                account_id,
+                crate::held::HeldBy::Password { keep: Some(&keep_credential) },
+                crate::held::NOT_SENT_PASSWORD,
+            )?;
             tx.execute(
                 "DELETE FROM web_sessions WHERE account_id = ?1 AND token_hash != ?2",
                 params![account_id, keep],

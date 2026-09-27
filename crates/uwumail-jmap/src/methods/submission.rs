@@ -176,6 +176,7 @@ fn submit_error(err: SubmitError, mail_from: &str) -> SetError {
         SubmitError::SendingOff => {
             SetError::new("forbiddenToSend", "sending through this server is switched off for this account")
         }
+        SubmitError::AccountLocked => SetError::new("forbiddenToSend", "this account is disabled or in the trash"),
         SubmitError::TooManyRecipients => SetError::new("tooManyRecipients", "too many recipients"),
         SubmitError::TooLarge => SetError::new("tooLarge", "the message is larger than this server accepts"),
         SubmitError::Virus(name) => SetError::new("forbiddenToSend", format!("the message contains {name}")),
@@ -280,6 +281,8 @@ async fn create_one(ctx: &Ctx<'_>, object: &Map<String, Value>) -> Result<Create
                 envelope: envelope_json,
                 send_at,
                 blob: record.blob.clone(),
+                // Held mail stays unsent when this login is revoked (see the store).
+                credential: ctx.credential.clone(),
             })
             .await?;
         ctx.jmap.wake.notify_one();

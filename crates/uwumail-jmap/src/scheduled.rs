@@ -71,7 +71,8 @@ impl Jmap {
     async fn send_held(&self, held: HeldSubmission) -> Result<Option<i64>, String> {
         let store = &self.inner.store;
         let account = match store.account_by_id(held.account_id).await {
-            Ok(Some(account)) => account,
+            Ok(Some(account)) if account.can_log_in() => account,
+            Ok(Some(_)) => return Err("not sent: the account may no longer log in".into()),
             Ok(None) => return Err("the account no longer exists".into()),
             Err(err) => return Err(err.to_string()),
         };

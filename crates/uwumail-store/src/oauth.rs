@@ -870,7 +870,7 @@ fn insert_tokens(conn: &Connection, grant_id: i64, access: &[u8], refresh: &[u8]
 
 /// Removes a grant with its tokens, and the consent for its app when no other grant of the same app
 /// remains: revoking an app means it has to ask again.
-fn forget_grant(conn: &Connection, grant_id: i64) -> rusqlite::Result<()> {
+fn forget_grant(conn: &Connection, grant_id: i64) -> Result<()> {
     let owner: Option<(i64, i64)> = conn
         .query_row("SELECT account_id, client_id FROM oauth_grants WHERE id = ?1", [grant_id], |row| {
             Ok((row.get(0)?, row.get(1)?))
@@ -878,7 +878,14 @@ fn forget_grant(conn: &Connection, grant_id: i64) -> rusqlite::Result<()> {
         .optional()?;
     conn.execute("DELETE FROM oauth_grants WHERE id = ?1", [grant_id])?;
     if let Some((account_id, client_id)) = owner {
-        crate::push::forget_push_credential(conn, account_id, &crate::push_credential_for_oauth_grant(grant_id))?;
+        let credential = crate::push_credential_for_oauth_grant(grant_id);
+        crate::push::forget_push_credential(conn, account_id, &credential)?;
+        crate::held::cancel_held(
+            conn,
+            account_id,
+            crate::held::HeldBy::Credential(&credential),
+            crate::held::NOT_SENT_REVOKED,
+        )?;
         conn.execute(
             "DELETE FROM oauth_consents WHERE account_id = ?1 AND client_id = ?2
                AND NOT EXISTS (SELECT 1 FROM oauth_grants WHERE account_id = ?1 AND client_id = ?2)",
