@@ -115,9 +115,14 @@ pub async fn domain(config: &Config, store: &Store, command: DomainCommand) -> a
             }
         }
         DomainCommand::Remove { name } => {
+            let (domains, accounts) = store.masked_domain_users(&name).await?;
             store.delete_domain(&name).await?;
-            audit(store, "domain.remove", &name, json!({})).await;
+            let details = json!({ "removedFromDomains": &domains, "removedFromAccounts": &accounts });
+            audit(store, "domain.remove", &name, details).await;
             println!("Removed {name}");
+            if !domains.is_empty() || !accounts.is_empty() {
+                println!("No longer offered for masked addresses to: {}", [domains, accounts].concat().join(", "));
+            }
         }
         DomainCommand::Dns { name } => print_dns(config, store, &name).await?,
         DomainCommand::CatchAll { domain, account } => {

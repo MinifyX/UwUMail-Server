@@ -485,4 +485,23 @@ async fn admins_keep_masked_only_domains_and_say_who_uses_them() {
         call(&app, "PUT", "/api/admin/domains/masked.test/kind", Some(json!({ "kind": "masked" })), &admin).await;
     assert_eq!(status, StatusCode::OK, "{domain}");
     assert_eq!(domain["kind"], "masked");
+
+    // Removing a masked-only domain takes it out of the policies too, and the log says which.
+    let (status, _) =
+        call(&app, "POST", "/api/admin/domains", Some(json!({ "name": "spare.test", "kind": "masked" })), &admin).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let policy = json!({ "mode": "dedicated", "maskedDomains": ["spare.test"], "defaultDomain": "spare.test" });
+    let (status, _) = call(&app, "PUT", "/api/admin/domains/example.org/masked-policy", Some(policy), &admin).await;
+    assert_eq!(status, StatusCode::OK);
+    let custom = json!({ "mode": "dedicated", "maskedDomains": ["spare.test"] });
+    let (status, _) = call(&app, "PUT", path, Some(custom), &admin).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = call(&app, "DELETE", "/api/admin/domains/spare.test", None, &admin).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, log) = call(&app, "GET", "/api/admin/audit?limit=5", None, &admin).await;
+    let entry = log.as_array().unwrap().iter().find(|entry| entry["action"] == "domain.remove").unwrap();
+    assert_eq!(entry["details"]["removedFromDomains"], json!(["example.org"]));
+    assert_eq!(entry["details"]["removedFromAccounts"], json!(["leni@example.org"]));
+    let (_, org) = call(&app, "GET", "/api/admin/domains/example.org", None, &admin).await;
+    assert_eq!(org["maskedPolicy"], json!({ "mode": "dedicated", "maskedDomains": [], "defaultDomain": null }));
 }

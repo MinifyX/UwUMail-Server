@@ -3666,7 +3666,8 @@
       "custom": "Own choice",
       "none": "none",
       "result": "May make masked addresses on {{domains}}; new ones go to {{domain}}.",
-      "resultNone": "May not make masked addresses."
+      "resultNone": "May not make masked addresses.",
+      "staleDefault": "The default chosen earlier, {{domain}}, is no longer allowed, so the domain's default or an automatic one is used."
     }
   }
 }

@@ -3590,7 +3590,8 @@
       "custom": "单独选择",
       "none": "无",
       "result": "可以在 {{domains}} 上创建隐藏地址；新地址放在 {{domain}}。",
-      "resultNone": "不能创建隐藏地址。"
+      "resultNone": "不能创建隐藏地址。",
+      "staleDefault": "之前选择的默认域名 {{domain}} 已不再允许，因此使用域名的默认值或自动选择的域名。"
     }
   }
 }

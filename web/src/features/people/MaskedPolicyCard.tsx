@@ -27,12 +27,17 @@ function PolicyForm({ login, policy }: { login: string; policy: PersonMaskedPoli
   const effectiveList = custom ?? domain.maskedDomains;
   const allowed = allowedDomains(effectiveMode, policy.domain ? own : null, effectiveList);
   const defaultDomain = allowed.includes(fallback) ? fallback : AS_DOMAIN;
+  // A default chosen earlier that the domains allowed now leave out counts as none: the server
+  // skips it too, so it is no change to save, only something to say.
+  const stale = policy.custom.defaultDomain && !allowed.includes(policy.custom.defaultDomain);
   const changed =
     (mode || null) !== policy.custom.mode ||
     JSON.stringify(custom) !== JSON.stringify(policy.custom.maskedDomains) ||
-    (defaultDomain || null) !== policy.custom.defaultDomain;
-  const stored = defaultDomain || domain.defaultDomain;
-  const result = stored && allowed.includes(stored) ? stored : allowed.includes(own) ? own : (allowed[0] ?? null);
+    (defaultDomain || null) !== (stale ? null : policy.custom.defaultDomain);
+  // The first default still allowed, the person's then the domain's; else their own domain, else the first.
+  const result =
+    [defaultDomain || null, domain.defaultDomain].find((name) => name !== null && allowed.includes(name)) ??
+    (allowed.includes(own) ? own : (allowed[0] ?? null));
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -100,6 +105,11 @@ function PolicyForm({ login, policy }: { login: string; policy: PersonMaskedPoli
             </Select>
           )}
         </Field>
+      )}
+      {stale && fallback === policy.custom.defaultDomain && (
+        <p className="text-[13px] text-muted">
+          {t("maskedDomains.person.staleDefault", { domain: policy.custom.defaultDomain })}
+        </p>
       )}
       <p className="rounded-control bg-canvas px-3 py-2 text-[13px] text-muted">
         {allowed.length === 0

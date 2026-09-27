@@ -1553,9 +1553,8 @@ function effectiveMasked(login: string): EffectiveMaskedPolicy {
   if ((mode === "own" || mode === "both") && own) allowed.add(own.name);
   if (mode === "dedicated" || mode === "both") maskedDomains.forEach((name) => allowed.add(name));
   const list = [...allowed].sort();
-  const stored = custom.defaultDomain ?? domain.defaultDomain;
   const defaultDomain =
-    (stored && list.includes(stored) ? stored : null) ??
+    [custom.defaultDomain, domain.defaultDomain].find((name) => name !== null && list.includes(name)) ??
     (own && list.includes(own.name) ? own.name : (list[0] ?? null));
   return { mode, maskedDomains, domains: list, defaultDomain };
 }
@@ -3869,8 +3868,18 @@ const routes: [string, RegExp, Handler][] = [
         (found.groups?.length ?? 0) +
         detail(found).maskedInUse!;
       if (inUse > 0) return problem(409, "domainInUse");
+      const usedBy = maskedUsedBy(name!);
+      for (const other of domains) {
+        if (!other.maskedPolicy) continue;
+        other.maskedPolicy.maskedDomains = other.maskedPolicy.maskedDomains.filter((entry) => entry !== name);
+        if (other.maskedPolicy.defaultDomain === name) other.maskedPolicy.defaultDomain = null;
+      }
+      for (const custom of Object.values(mockMaskedCustom)) {
+        if (custom.maskedDomains) custom.maskedDomains = custom.maskedDomains.filter((entry) => entry !== name);
+        if (custom.defaultDomain === name) custom.defaultDomain = null;
+      }
       domains.splice(index, 1);
-      log("domain.remove", name!);
+      log("domain.remove", name!, { removedFromDomains: usedBy.domains, removedFromAccounts: usedBy.accounts });
       return [204, null];
     },
   ],

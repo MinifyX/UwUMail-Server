@@ -3666,7 +3666,8 @@
       "custom": "Eigen keuze",
       "none": "geen",
       "result": "Mag gemaskeerde adressen maken op {{domains}}; nieuwe komen op {{domain}}.",
-      "resultNone": "Mag geen gemaskeerde adressen maken."
+      "resultNone": "Mag geen gemaskeerde adressen maken.",
+      "staleDefault": "Het eerder gekozen standaarddomein {{domain}} is niet meer toegestaan, dus geldt dat van het domein of een automatisch gekozen domein."
     }
   }
 }

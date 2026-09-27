@@ -152,9 +152,13 @@ pub async fn remove(State(web): State<Web>, Admin(session): Admin, Path(name): P
     if in_use > 0 {
         return Err(ApiError::Rule("domainInUse", format!("{in_use} addresses still use {}", domain.name)));
     }
+    // The policies that offered it as a masked-only domain lose it with it, as when it turns back
+    // into a mail domain.
+    let (removed_from_domains, removed_from_accounts) = web.store().masked_domain_users(&domain.name).await?;
     web.store().delete_domain(&domain.name).await?;
     web.forget_report(&domain.name);
-    audit(&web, &session, "domain.remove", &domain.name, json!({})).await;
+    let details = json!({ "removedFromDomains": removed_from_domains, "removedFromAccounts": removed_from_accounts });
+    audit(&web, &session, "domain.remove", &domain.name, details).await;
     Ok(StatusCode::NO_CONTENT)
 }
 

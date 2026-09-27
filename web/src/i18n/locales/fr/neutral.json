@@ -3740,7 +3740,8 @@
       "custom": "Choix personnel",
       "none": "aucun",
       "result": "Peut créer des adresses masquées sur {{domains}} ; les nouvelles vont sur {{domain}}.",
-      "resultNone": "Ne peut pas créer d’adresses masquées."
+      "resultNone": "Ne peut pas créer d’adresses masquées.",
+      "staleDefault": "Le domaine par défaut choisi auparavant, {{domain}}, n’est plus autorisé : celui du domaine ou un choix automatique s’applique."
     }
   }
 }

@@ -263,7 +263,13 @@ export function DomainPage({ name }: { name: string }) {
                 disabled={!unused}
                 busy={remove.isPending}
                 onClick={() => {
-                  if (!window.confirm(t("domains.detail.removeConfirm", { domain: domain.name }))) return;
+                  // Policies that offer it as a masked-only domain lose it, as when it turns into a mail domain.
+                  const usedBy = [...(domain.maskedUsedBy?.domains ?? []), ...(domain.maskedUsedBy?.accounts ?? [])];
+                  const text = [
+                    t("domains.detail.removeConfirm", { domain: domain.name }),
+                    usedBy.length > 0 ? t("maskedDomains.only.backConfirmUsed", { names: usedBy.join(", ") }) : "",
+                  ].join(" ");
+                  if (!window.confirm(text.trim())) return;
                   remove.mutate(undefined, {
                     onSuccess: () => {
                       toast(t("domains.toasts.removed", { domain: domain.name }), "success");

@@ -3666,7 +3666,8 @@
       "custom": "Eigene Auswahl",
       "none": "keine",
       "result": "Darf maskierte Adressen auf {{domains}} erzeugen; neue landen auf {{domain}}.",
-      "resultNone": "Darf keine maskierten Adressen erzeugen."
+      "resultNone": "Darf keine maskierten Adressen erzeugen.",
+      "staleDefault": "Die früher gewählte Standard-Domain {{domain}} ist nicht mehr erlaubt, deshalb gilt die der Domain oder eine automatische."
     }
   }
 }
