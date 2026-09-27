@@ -52,6 +52,10 @@ pub async fn upload(
             Json(json!({ "accountId": account, "blobId": ids::blob(&hash), "type": media_type, "size": body.len() })),
         )
             .into_response(),
+        Err(uwumail_store::StoreError::QuotaExceeded) => problem(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "Your uploads of the last day, with this one, would not fit your storage (docs/jmap-clients.md).",
+        ),
         Err(err) => {
             tracing::error!(%err, "storing an upload failed");
             problem(StatusCode::INTERNAL_SERVER_ERROR, "The upload could not be stored.")

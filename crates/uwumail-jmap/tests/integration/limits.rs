@@ -43,3 +43,24 @@ async fn nothing_is_read_before_the_login() {
         assert!(!polled.load(Ordering::SeqCst), "{uri}: the body was read before the login");
     }
 }
+
+async fn upload(server: &common::Server, account: &str, bytes: Vec<u8>) -> StatusCode {
+    let request = Request::post(format!("/jmap/upload/{account}/"))
+        .header(header::AUTHORIZATION, common::basic("mini@example.org", common::PASSWORD))
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .body(Body::from(bytes))
+        .unwrap();
+    server.request(request).await.0
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn uploads_count_against_the_storage() {
+    // security-audit-0.16.0 PROTOCOLS-7: uploads were counted nowhere.
+    let server = server().await;
+    let update = uwumail_store::AccountUpdate { quota_bytes: Some(4096), ..Default::default() };
+    server.store.update_account("mini@example.org", update).await.unwrap();
+    let account = server.account_id("mini@example.org").await;
+    assert_eq!(upload(&server, &account, vec![b'a'; 3000]).await, StatusCode::OK);
+    assert_eq!(upload(&server, &account, vec![b'b'; 3000]).await, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(upload(&server, &account, vec![b'a'; 3000]).await, StatusCode::OK, "the same file again");
+}

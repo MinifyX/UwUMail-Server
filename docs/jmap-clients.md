@@ -30,6 +30,17 @@ The session's URLs follow the host and port the client used, over HTTP/1.1 and H
 Folders others share with the person are further accounts in the session (not the primary one);
 programs that only look at `primaryAccounts` do not see them ([sharing.md](sharing.md)).
 
+### Limits
+
+- A request to `/jmap/api` may carry up to 10 MB, an upload up to 50 MB (`maxSizeRequest` and
+  `maxSizeUpload` in the session). The server reads neither before the login was checked; without
+  one the answer is `401` at once.
+- Uploads are kept for a day, so an email can be made from them, and are not part of the mailbox
+  until then. Together, one account's uploads of the last 24 hours may take up to 1 GiB, and never
+  more than the account's storage quota when it has one. An upload beyond that is answered with
+  `413`; older uploads make room again as they reach their day. Uploading the same file again takes
+  no more room.
+
 ## aerc
 
 [aerc](https://aerc-mail.org) has a JMAP backend (`aerc-jmap(5)`) built on the go-jmap library.

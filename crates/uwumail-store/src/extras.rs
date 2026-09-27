@@ -10,6 +10,10 @@ use crate::{Result, Store, StoreError, now};
 
 /// Uploads are kept this long unless something else references their blob.
 pub const UPLOAD_LIFETIME_SECS: i64 = 24 * 3600;
+/// The most an account's uploads of the last [`UPLOAD_LIFETIME_SECS`] may take together, in bytes;
+/// never more than its quota, when it has one. Uploads are kept a day and are not part of the
+/// mailbox, so without a budget one login could fill the disk with them.
+pub const UPLOAD_BUDGET_BYTES: i64 = 1024 * 1024 * 1024;
 /// The most a signature of a sending identity may take, text and HTML each, in bytes. Room for a
 /// small picture as a `data:` URI.
 pub const IDENTITY_SIGNATURE_MAX_BYTES: usize = 256 * 1024;
@@ -117,12 +121,43 @@ pub(crate) fn owns(conn: &rusqlite::Connection, account_id: i64, email: &str) ->
     )?)
 }
 
+/// Whether `size` more bytes of uploads fit the account's budget. `same` is the upload's own blob,
+/// which counts once however often it is uploaded.
+fn upload_fits(conn: &rusqlite::Connection, account_id: i64, same: Option<&str>, size: i64) -> Result<bool> {
+    let quota: i64 = conn
+        .query_row("SELECT quota_bytes FROM accounts WHERE id = ?1", [account_id], |row| row.get(0))
+        .optional()?
+        .ok_or_else(|| StoreError::NotFound(format!("account {account_id}")))?;
+    let live: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(b.size), 0) FROM uploads u JOIN blobs b ON b.hash = u.blob_hash
+         WHERE u.account_id = ?1 AND u.created_at > ?2 AND u.blob_hash IS NOT ?3",
+        params![account_id, now() - UPLOAD_LIFETIME_SECS, same],
+        |row| row.get(0),
+    )?;
+    let budget = if quota > 0 { quota.min(UPLOAD_BUDGET_BYTES) } else { UPLOAD_BUDGET_BYTES };
+    Ok(live + size <= budget)
+}
+
 impl Store {
     /// Stores uploaded bytes for an account and returns the blob id.
+    /// Fails with [`StoreError::QuotaExceeded`] when it would take the account's live uploads over
+    /// [`UPLOAD_BUDGET_BYTES`] or its quota (security-audit-0.16.0 PROTOCOLS-7).
     pub async fn upload(&self, account_id: i64, bytes: &[u8], media_type: &str) -> Result<BlobHash> {
+        let size = bytes.len() as i64;
+        // Checked before the file is written, and again where the upload is recorded. Only when it
+        // does not fit is it worth hashing first: the same bytes again take no more room.
+        if !self.read(move |conn| upload_fits(conn, account_id, None, size)).await? {
+            let same = BlobHash::of(bytes).as_str().to_owned();
+            if !self.read(move |conn| upload_fits(conn, account_id, Some(&same), size)).await? {
+                return Err(StoreError::QuotaExceeded);
+            }
+        }
         let hash = self.put_blob(bytes).await?;
         let (key, media_type) = (hash.as_str().to_owned(), media_type.to_owned());
         self.write(move |tx| {
+            if !upload_fits(tx, account_id, Some(&key), size)? {
+                return Err(StoreError::QuotaExceeded);
+            }
             tx.execute(
                 "INSERT INTO uploads (account_id, blob_hash, media_type, created_at) VALUES (?1, ?2, ?3, ?4)
                  ON CONFLICT (account_id, blob_hash) DO UPDATE SET created_at = excluded.created_at, media_type = excluded.media_type",
@@ -474,6 +509,44 @@ mod tests {
     use super::*;
     use crate::test_support::store;
     use crate::{NewAccount, Role};
+
+    #[tokio::test]
+    async fn uploads_count_against_a_budget() {
+        // security-audit-0.16.0 PROTOCOLS-7 / STORE-2: uploads were kept for a day and counted
+        // nowhere, so one login could fill the disk with them, quota or not.
+        let (store, _dir) = store().await;
+        store.create_domain("example.org").await.unwrap();
+        let account = store
+            .create_account(NewAccount {
+                address: "mini@example.org".into(),
+                display_name: "Mini".into(),
+                password: None,
+                role: Role::User,
+                quota_bytes: 1000,
+                protocols: None,
+            })
+            .await
+            .unwrap()
+            .id;
+        let first = store.upload(account, &[b'a'; 600], "text/plain").await.unwrap();
+        assert!(matches!(store.upload(account, &[b'b'; 600], "text/plain").await, Err(StoreError::QuotaExceeded)));
+        store.upload(account, &[b'a'; 600], "text/plain").await.expect("the same upload again takes no more room");
+        store.upload(account, &[b'c'; 400], "text/plain").await.expect("what is left fits");
+
+        // Uploads older than their lifetime no longer count, whether or not they were cleaned up.
+        let key = first.as_str().to_owned();
+        store
+            .write(move |tx| {
+                tx.execute(
+                    "UPDATE uploads SET created_at = ?1 WHERE blob_hash = ?2",
+                    params![now() - UPLOAD_LIFETIME_SECS - 1, key],
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        store.upload(account, &[b'b'; 600], "text/plain").await.expect("the old upload made room");
+    }
 
     #[tokio::test]
     async fn identities_uploads_and_vacation() {
