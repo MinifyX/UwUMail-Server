@@ -10,6 +10,7 @@ mod checks;
 pub mod clamav;
 mod client;
 pub mod config;
+pub mod dane;
 pub mod dkim;
 mod dns;
 pub mod dnscheck;
@@ -42,9 +43,11 @@ mod stream;
 mod submission;
 mod texts;
 mod tls;
+pub mod tlsrpt;
 mod vacation;
 
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use mail_auth::MessageAuthenticator;
@@ -54,7 +57,7 @@ use uwumail_store::Store;
 pub use client::{Connector, connect_directly};
 pub use config::{
     AntivirusConfig, BrandConfig, DeliveryConfig, ExternalTone, FeedsConfig, InternalTone, Language, RelayConfig,
-    RelaySecurity, SmtpConfig, SpamConfig, SpamLogConfig, ToneConfig,
+    RelaySecurity, ReportsConfig, SmtpConfig, SpamConfig, SpamLogConfig, ToneConfig,
 };
 pub use dns::DnsCaches;
 pub use fetch::is_public;
@@ -68,6 +71,7 @@ pub use relay::IpNetwork;
 pub use spam::{FEEDS, Feed, feed, run_learning, run_list_updates};
 pub use stream::{BoxIo, Io};
 pub use submission::{Submission, SubmissionRecipient, SubmitError, Submitted};
+pub use tlsrpt::run_tls_reports;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SmtpError {
@@ -100,6 +104,10 @@ pub(crate) struct Context {
     pub https: https::Https,
     pub authenticator: MessageAuthenticator,
     pub dns: DnsCaches,
+    /// DNSSEC-validated lookups for DANE.
+    pub validator: dane::Validator,
+    /// Whether delivery sessions are counted and other domains get TLS reports about them.
+    send_tls_reports: AtomicBool,
     pub auth_limiter: limiter::AuthLimiter,
     /// Recent blocklist answers about sending servers.
     pub blocklist_cache: spam::BlocklistCache,
@@ -157,6 +165,10 @@ impl Context {
         self.brand.read().expect("brand poisoned").clone()
     }
 
+    pub fn sends_tls_reports(&self) -> bool {
+        self.send_tls_reports.load(Ordering::Relaxed)
+    }
+
     /// The tone as set, made plain when the mascot is switched off.
     pub fn tone(&self) -> ToneConfig {
         let tone = self.live().tone;
@@ -201,6 +213,8 @@ impl Smtp {
                 https: https::Https::new(),
                 authenticator,
                 dns: DnsCaches::default(),
+                validator: dane::Validator::default(),
+                send_tls_reports: AtomicBool::new(ReportsConfig::default().send_tls_reports),
                 auth_limiter: limiter::AuthLimiter::default(),
                 blocklist_cache: spam::BlocklistCache::default(),
                 domain_cache: spam::DomainCache::default(),
@@ -314,6 +328,17 @@ impl Smtp {
     /// Takes a new brand into use at once.
     pub fn set_brand(&self, brand: BrandConfig) {
         *self.inner.brand.write().expect("brand poisoned") = Arc::new(brand);
+    }
+
+    /// Takes the report settings into use at once (`[reports]`).
+    pub fn set_reports(&self, reports: &ReportsConfig) {
+        self.inner.send_tls_reports.store(reports.send_tls_reports, Ordering::Relaxed);
+    }
+
+    /// Sends the TLS reports of the finished days before `today` (days since 1970) that are due,
+    /// right away. Returns how many went out.
+    pub async fn send_tls_reports(&self, egress: &egress::Egress, today: i64) -> usize {
+        tlsrpt::send_due(&self.inner, egress, today).await
     }
 
     /// Whether people may forward mail to addresses on other servers.
