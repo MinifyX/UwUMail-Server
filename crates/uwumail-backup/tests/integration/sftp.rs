@@ -6,15 +6,15 @@
 //! ```
 
 use uwumail_backup::sftp::Sftp;
-use uwumail_backup::{Login, RepoKey, Repository, Retention, Storage, Target};
+use uwumail_backup::{Login, RepoKey, Repository, Retention, SftpTarget, Storage};
 use uwumail_store::{IngestRequest, MailboxRole, MailboxTarget, NewAccount, Role, Store};
 
-fn target(host_key: Option<String>) -> Target {
+fn target(host_key: Option<String>) -> SftpTarget {
     let spec = std::env::var("UWUMAIL_TEST_SFTP").expect("UWUMAIL_TEST_SFTP=user@host:/path");
     let (user, rest) = spec.split_once('@').expect("user@host:/path");
     let (host, path) = rest.split_once(':').expect("user@host:/path");
     let key_file = std::env::var("UWUMAIL_TEST_SFTP_KEY").expect("UWUMAIL_TEST_SFTP_KEY=path to an OpenSSH key");
-    Target {
+    SftpTarget {
         host: host.into(),
         port: 22,
         user: user.into(),

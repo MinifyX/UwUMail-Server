@@ -48,7 +48,7 @@ pub enum Command {
     /// Server settings, the same ones the admin panel changes.
     #[command(subcommand)]
     Settings(SettingsCommand),
-    /// Backups to an SFTP server, set up in the admin panel.
+    /// Backups to an SFTP server, an S3 bucket or a folder, set up in the admin panel.
     #[command(subcommand)]
     Backup(BackupCommand),
 }
@@ -62,12 +62,15 @@ pub enum BackupCommand {
     /// Check that every part of the newest snapshot is on the backup server.
     Check,
     /// Restore a snapshot into an empty data directory, e.g. on a new machine. Needs no settings:
-    /// the SSH password comes from UWUMAIL_BACKUP_SFTP_PASSWORD, the recovery key from
-    /// UWUMAIL_BACKUP_KEY or the first line of standard input.
+    /// the backups are named with --sftp, --s3 or --folder. The SSH password comes from
+    /// UWUMAIL_BACKUP_SFTP_PASSWORD, the S3 keys from UWUMAIL_BACKUP_S3_ACCESS_KEY and
+    /// UWUMAIL_BACKUP_S3_SECRET_KEY, the recovery key from UWUMAIL_BACKUP_KEY or the first line of
+    /// standard input.
+    #[command(group(clap::ArgGroup::new("from").required(true).args(["sftp", "s3", "folder"])))]
     Restore {
-        /// Where the backups are: user@host:/path.
+        /// Where the backups are on an SFTP server: user@host:/path.
         #[arg(long)]
-        sftp: String,
+        sftp: Option<String>,
         #[arg(long, default_value_t = 22)]
         port: u16,
         /// An OpenSSH private key to log in with, instead of a password.
@@ -76,12 +79,44 @@ pub enum BackupCommand {
         /// The host key's SHA256 fingerprint, to be sure it is the right server.
         #[arg(long)]
         host_key: Option<String>,
+        /// Where the backups are in an S3 bucket: s3://bucket/folder.
+        #[arg(long)]
+        s3: Option<String>,
+        /// The S3 server, e.g. https://s3.eu-central-1.amazonaws.com or http://minio.lan:9000.
+        #[arg(long, default_value = "https://s3.amazonaws.com")]
+        endpoint: String,
+        #[arg(long, default_value = "us-east-1")]
+        region: String,
+        /// Put the bucket into the path (https://host/bucket/…), as MinIO wants it.
+        #[arg(long)]
+        path_style: bool,
+        /// Where the backups are in a folder of this machine, e.g. a mounted disk.
+        #[arg(long)]
+        folder: Option<std::path::PathBuf>,
         /// A snapshot name from `backup list`, or `latest`.
         #[arg(long, default_value = "latest")]
         snapshot: String,
         /// The empty data directory to restore into.
         #[arg(long)]
         into: std::path::PathBuf,
+    },
+    /// Put one person's mail back from a snapshot, next to what they have now: into a new folder
+    /// "Restored <date>" of their mailbox, with the folders below it as they were. Mail that is
+    /// still there is not brought twice. Uses the backup settings of this server.
+    RestoreMailbox {
+        /// The person, by the address they logged in with when the snapshot was made.
+        #[arg(long)]
+        account: String,
+        /// The mailbox here the mail goes into, when that is not the same address any more.
+        #[arg(long)]
+        into: Option<String>,
+        /// A snapshot name from `backup list`, or `latest`.
+        #[arg(long, default_value = "latest")]
+        snapshot: String,
+        /// Only this folder and the folders inside it, e.g. `Inbox` or `Projects/2025`. May be
+        /// given more than once; all folders when left out.
+        #[arg(long = "folder")]
+        folders: Vec<String>,
     },
 }
 

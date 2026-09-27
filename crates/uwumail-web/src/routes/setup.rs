@@ -148,6 +148,10 @@ fn twenty_two() -> u16 {
 
 impl BackupServer {
     fn target(&self) -> ApiResult<uwumail_backup::Target> {
+        Ok(uwumail_backup::Target::Sftp(self.sftp()?))
+    }
+
+    fn sftp(&self) -> ApiResult<uwumail_backup::SftpTarget> {
         let login = match self.method.as_str() {
             "key" => uwumail_backup::Login::Key {
                 private_key: self
@@ -165,7 +169,7 @@ impl BackupServer {
             },
             other => return Err(ApiError::Invalid(format!("unknown login: {other}"))),
         };
-        Ok(uwumail_backup::Target {
+        Ok(uwumail_backup::SftpTarget {
             host: self.host.trim().to_owned(),
             port: self.port,
             user: self.user.trim().to_owned(),
