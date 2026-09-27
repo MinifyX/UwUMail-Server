@@ -63,7 +63,8 @@
     "mailbox": "Boîte mail",
     "directory": "Comptes et domaines",
     "calendars": "Agendas et contacts",
-    "masked": "Adresses masquées"
+    "masked": "Adresses masquées",
+    "moving": "Déménagement"
   },
   "userMenu": {
     "open": "Ouvrir le menu du compte",
@@ -339,7 +340,16 @@
       "maskedDomain": "Aucun domaine de ce serveur n'est encore ouvert aux adresses masquées. Demandez à l'admin.",
       "maskedLimit": "Vous avez autant d'adresses masquées que ce serveur le permet. Supprimez celles dont vous n'avez plus besoin.",
       "maskedPrefix": "Un préfixe ne peut contenir que des lettres a–z, des chiffres et _, 64 au plus.",
-      "maskedState": "Une adresse masquée ne peut pas se remettre à attendre son premier message."
+      "maskedState": "Une adresse masquée ne peut pas se remettre à attendre son premier message.",
+      "backupBusy": "Quelque chose utilise déjà les sauvegardes : une sauvegarde, ou une boîte aux lettres en cours de restauration. Réessayez quand ce sera terminé. ({{detail}})",
+      "backupFolderInData": "Le dossier de sauvegarde doit se trouver en dehors du répertoire de données du serveur ; sinon la sauvegarde serait perdue avec le serveur.",
+      "moveExists": "Cette adresse est déjà en cours de déménagement.",
+      "moveFromHere": "Cette adresse est déjà sur ce serveur, il n'y a rien à déménager.",
+      "moveLimit": "Cinq boîtes aux lettres au plus peuvent déménager en même temps. Terminez d'abord l'un des autres déménagements.",
+      "moveRunning": "Ce déménagement est encore en cours.",
+      "moveNotRunning": "Ce déménagement n'est pas en cours.",
+      "moveNoMailbox": "Votre compte n'a pas de boîte aux lettres dans laquelle le courrier pourrait arriver.",
+      "moveWrongPassword": "L'ancien fournisseur a refusé ce mot de passe. Beaucoup de fournisseurs demandent ici un mot de passe d'application."
     }
   },
   "people": {
@@ -639,7 +649,8 @@
       "spamVirusTest": "{{actor}} a testé l'antivirus",
       "updatesSettings": "{{actor}} a modifié les paramètres de mise à jour",
       "brandLogo": "{{actor}} a téléversé un nouveau logo",
-      "brandLogoRemoved": "{{actor}} a supprimé le logo"
+      "brandLogoRemoved": "{{actor}} a supprimé le logo",
+      "backupRestoreMailbox": "{{actor}} a restauré le courrier de {{target}} depuis une sauvegarde"
     },
     "details": {
       "adminOn": "est maintenant admin",
@@ -1728,6 +1739,80 @@
       "password": "Le mot de passe ne fait qu'entrer et ne ressort jamais. Le serveur en a besoin pour se connecter chez le fournisseur et le garde scellé."
     }
   },
+  "moving": {
+    "title": "Déménagement",
+    "intro": "Apportez votre courrier de votre ancien fournisseur : chaque dossier, lu ou non lu comme avant, avec sa date. Le serveur copie en arrière-plan, vous pouvez donc fermer cette page.",
+    "noMailbox": {
+      "title": "Pas de boîte aux lettres ici",
+      "body": "Votre compte n'a pas de boîte aux lettres dans laquelle le courrier pourrait arriver. Demandez à votre administrateur."
+    },
+    "form": {
+      "title": "Déménager une boîte aux lettres",
+      "explain": "Votre ancienne adresse et son mot de passe suffisent : le serveur trouve lui-même le serveur IMAP de votre fournisseur et s'y connecte une fois pour vérifier.",
+      "address": "Ancienne adresse",
+      "addressHint": "L'adresse chez votre ancien fournisseur.",
+      "password": "Mot de passe",
+      "passwordHint": "Souvent un mot de passe d'application du fournisseur, pas celui avec lequel vous vous connectez. Il reste scellé jusqu'à ce que vous ayez terminé.",
+      "manual": "Saisir le serveur moi-même",
+      "host": "Serveur IMAP",
+      "hostHint": "Avec TLS, généralement le port 993.",
+      "port": "Port",
+      "login": "Nom d'utilisateur",
+      "loginHint": "Vide si c'est l'adresse elle-même.",
+      "searching": "Recherche du serveur de votre fournisseur …",
+      "start": "Commencer le déménagement",
+      "started": "Le déménagement a commencé et se poursuit en arrière-plan."
+    },
+    "hints": {
+      "gmail": "Gmail ne laisse entrer d'autres serveurs qu'avec un mot de passe d'application : activez la validation en deux étapes dans votre compte Google, puis créez-en un sur myaccount.google.com/apppasswords. IMAP est toujours activé chez Gmail. Les libellés y sont des dossiers ; un message avec plusieurs libellés arrive une seule fois, dans le premier dossier où il est trouvé.",
+      "outlook": "Outlook.com et Hotmail ne laissent entrer que des applications qui se connectent via Microsoft, ce qu'un serveur personnel ne peut pas faire pour vous. Copiez plutôt le courrier avec un logiciel de messagerie : ajoutez les deux boîtes et faites glisser les dossiers.",
+      "gmx": "GMX ne laisse entrer d'autres serveurs qu'après votre autorisation : dans les paramètres de GMX, sous E-Mail → POP3/IMAP Abruf, activez l'accès IMAP. Avec l'authentification à deux facteurs, il faut un mot de passe d'application.",
+      "webde": "WEB.DE ne laisse entrer d'autres serveurs qu'après votre autorisation : dans les paramètres de WEB.DE, sous E-Mail → POP3/IMAP Abruf, activez l'accès IMAP. Avec l'authentification à deux facteurs, il faut un mot de passe d'application."
+    },
+    "job": {
+      "from": "depuis {{host}} en tant que {{login}}",
+      "queued": "En attente de son tour …",
+      "running": "Copie en cours …",
+      "looking": "Examen des dossiers …",
+      "progress": "{{done}} sur {{total}} messages · {{size}}",
+      "progressLabel": "Avancement du déménagement",
+      "folders": "dossier {{done}} sur {{total}}",
+      "skipped": "{{count}} message était déjà là et a été ignoré",
+      "skipped_other": "{{count}} messages étaient déjà là et ont été ignorés",
+      "done": "Tout est là.",
+      "doneAt": "Tout ce qui s'y trouvait est ici, au {{date}}."
+    },
+    "errors": {
+      "quotaExceeded": "Votre boîte aux lettres ici est pleine. Faites de la place ou demandez-en plus à votre administrateur, puis continuez : cela reprend là où cela s'est arrêté.",
+      "loginRefused": "L'ancien fournisseur a refusé le mot de passe. Saisissez-en un nouveau (souvent un mot de passe d'application) et continuez.",
+      "unreachable": "L'ancien fournisseur n'a pas pu être joint. Réessayez plus tard.",
+      "notPublic": "Le serveur de l'ancien fournisseur n'est pas sur Internet, pour autant que ce serveur puisse en juger.",
+      "noMailbox": "Votre compte n'a pas de boîte aux lettres dans laquelle le courrier pourrait arriver.",
+      "stopped": "En pause. Continuez quand vous voulez ; cela reprend là où cela s'est arrêté.",
+      "failed": "Quelque chose s'est mal passé. Continuez pour réessayer."
+    },
+    "actions": {
+      "pause": "Mettre en pause",
+      "continue": "Continuer",
+      "syncAgain": "Synchroniser à nouveau",
+      "finish": "Terminé, supprimer les identifiants",
+      "finishConfirm": "Terminé avec {{address}} ? Le mot de passe de l'ancienne boîte est supprimé ; le courrier arrivé reste.",
+      "newPassword": "Nouveau mot de passe"
+    },
+    "toasts": {
+      "queued": "Cela reprend dans un instant.",
+      "finished": "Terminé. Les identifiants de l'ancienne boîte sont supprimés."
+    },
+    "about": {
+      "title": "Bon à savoir",
+      "what": "Chaque dossier est repris, les dossiers spéciaux (envoyés, brouillons, indésirables, corbeille, archives) dans les vôtres, et chaque message avec sa date, lu, marqué ou répondu comme avant.",
+      "twice": "Rien n'arrive deux fois : un message déjà présent ici, selon son Message-ID ou son contenu, est ignoré.",
+      "switch": "Prenez votre temps : déménagez une fois maintenant, donnez votre nouvelle adresse et utilisez « Synchroniser à nouveau » quand vous voulez. Seul ce qui est arrivé chez l'ancien fournisseur depuis est récupéré.",
+      "password": "Le mot de passe ne sert qu'à copier, il est gardé scellé et supprimé dès que vous cliquez sur « Terminé, supprimer les identifiants ».",
+      "calendars": "Les calendriers et les contacts déménagent séparément :",
+      "calendarsLink": "Agendas et contacts → Transférer depuis un autre fournisseur"
+    }
+  },
   "mailbox": {
     "title": "Transfert, absence et envoi",
     "intro": "Où va aussi votre courrier, ce que les expéditeurs reçoivent pendant votre absence, et comment vos messages partent.",
@@ -2286,7 +2371,7 @@
     "helperOld": "L'assistant sur cette machine est trop ancien pour le bouton de mise à jour. Exécutez ceci une fois sur la machine — cela met aussi l'assistant à jour, et ensuite vous mettez à jour ici d'un clic :"
   },
   "backups": {
-    "intro": "Chaque nuit, le serveur sauvegarde le courrier, les paramètres, les calendriers et les contacts sur un serveur SFTP, comme un NAS. Après la première fois, il n'envoie que ce qui est nouveau.",
+    "intro": "Chaque nuit, le serveur sauvegarde le courrier, les paramètres, les calendriers et les contacts : sur un serveur SFTP comme un NAS, dans un bucket S3 ou dans un dossier, par exemple un disque monté. Après la première fois, il n'envoie que ce qui est nouveau.",
     "status": {
       "title": "État",
       "running": "La sauvegarde est en cours …",
@@ -2300,7 +2385,7 @@
       "started": "La sauvegarde démarre"
     },
     "target": {
-      "title": "Serveur de sauvegarde",
+      "title": "Destination des sauvegardes",
       "explain": "Où vont les sauvegardes. Le dossier est créé s'il n'existe pas ; utilisez-en un par serveur.",
       "host": "Adresse",
       "port": "Port",
@@ -2318,7 +2403,28 @@
       "test": "Tester la connexion",
       "testOk": "La connexion fonctionne",
       "testFirst": "La connexion fonctionne. Le serveur a présenté {{hostKey}} ; désormais, ce doit être cette clé.",
-      "trustNewKey": "Faire confiance à la nouvelle clé"
+      "trustNewKey": "Faire confiance à la nouvelle clé",
+      "kind": "Sauvegarder vers",
+      "kindSftp": "Serveur SFTP",
+      "kindS3": "Bucket S3",
+      "kindFolder": "Dossier",
+      "explainS3": "Amazon S3 ou tout serveur qui parle sa langue : MinIO, Backblaze B2, Hetzner Object Storage, Wasabi et d'autres. Utilisez un bucket, ou un dossier dans un bucket, pour ce serveur seul.",
+      "explainFolder": "Un dossier sur cette machine : un second disque, ou un partage NAS monté dans le conteneur. Il doit déjà exister, en dehors du répertoire de données du serveur.",
+      "endpoint": "Adresse S3",
+      "endpointHint": "Seulement le serveur, sans le bucket, par ex. https://s3.eu-central-1.amazonaws.com. http:// ne fonctionne que dans votre propre réseau.",
+      "bucket": "Bucket",
+      "prefix": "Dossier dans le bucket",
+      "prefixHint": "Vide pour tout le bucket",
+      "region": "Région",
+      "regionHint": "par ex. eu-central-1 ; us-east-1 si vide",
+      "accessKey": "Clé d'accès",
+      "secretKey": "Clé secrète",
+      "secretKeyKept": "Laissez vide pour garder la clé enregistrée.",
+      "pathStyle": "Bucket dans le chemin",
+      "pathStyleHint": "https://serveur/bucket au lieu de https://bucket.serveur. MinIO et beaucoup de serveurs du réseau local le demandent.",
+      "folder": "Dossier",
+      "folderHint": "Un chemin complet, par ex. /backup",
+      "testWritable": "La connexion fonctionne : un fichier de test a été écrit, relu puis supprimé."
     },
     "schedule": {
       "enabled": "Sauvegarder chaque nuit",
@@ -2361,6 +2467,32 @@
       "keptGateway": "L'appairage de passerelle de cette machine a été conservé, pas celui de la sauvegarde.",
       "oldDatabase": "L'ancienne base de données se trouve dans le dossier de données sous uwumail.db.replaced.*. Supprimez-la une fois que vous en êtes sûr.",
       "forget": "Compris"
+    },
+    "mailbox": {
+      "title": "Restaurer une boîte aux lettres",
+      "explain": "Reprend le courrier d'une personne dans un instantané pendant que le serveur continue de tourner. Il revient à côté de ce qui s'y trouve maintenant, dans un nouveau dossier « Restored <date> » avec les anciens dossiers en dessous. Les messages que la boîte contient encore sont ignorés.",
+      "snapshot": "Instantané",
+      "latest": "Le plus récent",
+      "open": "Ouvrir",
+      "openFailed": "Impossible d'ouvrir l'instantané : {{error}}",
+      "opening": "Récupération de la base de données de l'instantané : {{done}} sur {{total}} …",
+      "opened": "Ouvert : l'instantané du {{time}}.",
+      "restoring": "Restauration du courrier de {{account}} : {{done}} sur {{total}} …",
+      "lastDone": "{{count}} message est revenu chez {{account}}, dans le dossier « {{folder}} » ; {{skipped}} y étaient encore.",
+      "lastDone_other": "{{count}} messages sont revenus chez {{account}}, dans le dossier « {{folder}} » ; {{skipped}} y étaient encore.",
+      "lastFailed": "La restauration vers {{account}} s'est arrêtée : {{error}}. {{count}} messages étaient revenus jusque-là.",
+      "nobody": "Personne n'avait de boîte aux lettres dans cet instantané.",
+      "person": "Personne",
+      "personLine": "{{login}} ({{count}})",
+      "into": "Dans la boîte aux lettres de",
+      "intoHint": "Vide pour la même adresse. Pour quelqu'un dont l'adresse a changé depuis.",
+      "which": "Dossiers",
+      "allFolders": "Tous les dossiers",
+      "someFolders": "Choisir des dossiers",
+      "inbox": "Boîte de réception",
+      "how": "Rien de ce qui s'y trouve maintenant n'est modifié ni remplacé. Une sauvegarde attend que ce soit terminé.",
+      "restore": "Restaurer",
+      "close": "Fermer l'instantané"
     }
   },
   "spam": {

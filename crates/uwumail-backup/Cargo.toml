@@ -1,6 +1,6 @@
 [package]
 name = "uwumail-backup"
-description = "Deduplicated, encrypted backups of a UwUMail server to SFTP"
+description = "Deduplicated, encrypted backups of a UwUMail server to SFTP, S3 or a folder"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,10 +11,17 @@ rust-version.workspace = true
 uwumail-store.workspace = true
 
 aws-lc-rs.workspace = true
+bytes.workspace = true
 data-encoding.workspace = true
 fastcdc = "5"
 flate2 = "1"
 hex.workspace = true
+http-body-util.workspace = true
+hyper.workspace = true
+hyper-rustls.workspace = true
+hyper-util.workspace = true
+rusqlite.workspace = true
+rustls.workspace = true
 russh = { version = "0.63", default-features = false, features = ["aws-lc-rs", "flate2"] }
 russh-sftp = "3"
 serde.workspace = true
@@ -23,6 +30,9 @@ sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+url.workspace = true
+webpki-roots.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+hyper = { workspace = true, features = ["server"] }

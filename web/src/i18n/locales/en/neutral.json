@@ -63,7 +63,8 @@
     "mailbox": "Mailbox",
     "directory": "Accounts & domains",
     "calendars": "Calendars & contacts",
-    "masked": "Masked addresses"
+    "masked": "Masked addresses",
+    "moving": "Moving"
   },
   "userMenu": {
     "open": "Open account menu",
@@ -331,7 +332,16 @@
       "maskedDomain": "No domain on this server is open for masked addresses yet. Ask the admin.",
       "maskedLimit": "You have as many masked addresses as this server allows. Delete some you no longer need.",
       "maskedPrefix": "A prefix may only have letters a–z, digits and _, up to 64 of them.",
-      "maskedState": "A masked address cannot go back to waiting for its first mail."
+      "maskedState": "A masked address cannot go back to waiting for its first mail.",
+      "backupBusy": "Something else is using the backups right now: a backup, or a mailbox coming back. Try again once it is done. ({{detail}})",
+      "backupFolderInData": "The backup folder has to be outside the server's data directory; otherwise the backup would be lost together with the server.",
+      "moveExists": "This address is being moved already.",
+      "moveFromHere": "This address is on this server already, so there is nothing to move.",
+      "moveLimit": "At most five mailboxes can move at once. Finish one of the others first.",
+      "moveRunning": "This move is still running.",
+      "moveNotRunning": "This move is not running.",
+      "moveNoMailbox": "Your account has no mailbox that mail could move into.",
+      "moveWrongPassword": "The old provider refused this password. Many providers want an app password for this."
     }
   },
   "people": {
@@ -626,7 +636,8 @@
       "spamVirusTest": "{{actor}} tested the virus scanner",
       "updatesSettings": "{{actor}} changed the update settings",
       "brandLogo": "{{actor}} uploaded a new logo",
-      "brandLogoRemoved": "{{actor}} removed the logo"
+      "brandLogoRemoved": "{{actor}} removed the logo",
+      "backupRestoreMailbox": "{{actor}} brought mail of {{target}} back from a backup"
     },
     "details": {
       "adminOn": "is now an admin",
@@ -1683,6 +1694,80 @@
       "password": "The password only goes in and never comes out again. The server needs it to sign in at the provider and keeps it sealed."
     }
   },
+  "moving": {
+    "title": "Moving",
+    "intro": "Bring your mail over from your old provider: every folder, read or unread as it was, with its date. The server copies in the background, so you can close this page.",
+    "noMailbox": {
+      "title": "No mailbox here",
+      "body": "Your account has no mailbox that mail could move into. Ask your admin."
+    },
+    "form": {
+      "title": "Move a mailbox",
+      "explain": "Your old address and its password are all it takes: the server finds your provider's IMAP server itself and logs in once to be sure.",
+      "address": "Old address",
+      "addressHint": "The address at your old provider.",
+      "password": "Password",
+      "passwordHint": "Often an app password of the provider, not the one you sign in with. It is kept sealed until you are done.",
+      "manual": "Enter the server myself",
+      "host": "IMAP server",
+      "hostHint": "With TLS, usually port 993.",
+      "port": "Port",
+      "login": "User name",
+      "loginHint": "Empty when it is the address itself.",
+      "searching": "Looking for your provider's server …",
+      "start": "Start moving",
+      "started": "The move has started and goes on in the background."
+    },
+    "hints": {
+      "gmail": "Gmail only lets other servers in with an app password: turn on 2-step verification in your Google account, then create one at myaccount.google.com/apppasswords. IMAP is always on at Gmail. Labels are folders there; a message with several labels comes once, into the first folder it is found in.",
+      "outlook": "Outlook.com and Hotmail only let in apps that sign in through Microsoft, which a server of your own cannot do for you. Copy the mail with a mail program instead: add both mailboxes and drag the folders over.",
+      "gmx": "GMX only lets other servers in once you allow it: in the GMX settings under E-Mail → POP3/IMAP Abruf, switch on access over IMAP. With two-factor authentication you need an app password.",
+      "webde": "WEB.DE only lets other servers in once you allow it: in the WEB.DE settings under E-Mail → POP3/IMAP Abruf, switch on access over IMAP. With two-factor authentication you need an app password."
+    },
+    "job": {
+      "from": "from {{host}} as {{login}}",
+      "queued": "Waiting for its turn …",
+      "running": "Copying …",
+      "looking": "Looking through the folders …",
+      "progress": "{{done}} of {{total}} messages · {{size}}",
+      "progressLabel": "How far the move got",
+      "folders": "folder {{done}} of {{total}}",
+      "skipped": "{{count}} message was here already and was left out",
+      "skipped_other": "{{count}} messages were here already and were left out",
+      "done": "Everything is here.",
+      "doneAt": "Everything that was there is here, as of {{date}}."
+    },
+    "errors": {
+      "quotaExceeded": "Your mailbox here is full. Make room or ask your admin for more, then continue: it goes on where it stopped.",
+      "loginRefused": "The old provider refused the password. Enter a new one (often an app password) and continue.",
+      "unreachable": "The old provider could not be reached. Try again later.",
+      "notPublic": "The old provider's server is not on the internet, as far as this server can tell.",
+      "noMailbox": "Your account has no mailbox that mail could move into.",
+      "stopped": "Paused. Continue whenever you like; it goes on where it stopped.",
+      "failed": "Something went wrong. Continue to try again."
+    },
+    "actions": {
+      "pause": "Pause",
+      "continue": "Continue",
+      "syncAgain": "Sync again",
+      "finish": "Done, delete login",
+      "finishConfirm": "Done with {{address}}? The password for the old mailbox is deleted; the mail that came stays.",
+      "newPassword": "New password"
+    },
+    "toasts": {
+      "queued": "It goes on in a moment.",
+      "finished": "Done. The login for the old mailbox is deleted."
+    },
+    "about": {
+      "title": "Worth knowing",
+      "what": "Every folder comes along, the special ones (sent, drafts, junk, trash, archive) into yours, and every message with its date and read, flagged or answered as it was.",
+      "twice": "Nothing comes twice: a message that is here already, by its Message-ID or by its content, is left out.",
+      "switch": "Take your time: move once now, tell people your new address, and use “Sync again” whenever you like. It only fetches what arrived at the old provider since.",
+      "password": "The password is only used for copying, kept sealed, and deleted as soon as you click “Done, delete login”.",
+      "calendars": "Calendars and contacts move separately:",
+      "calendarsLink": "Calendars & contacts → Move from another provider"
+    }
+  },
   "mailbox": {
     "title": "Forwarding, away and sending",
     "intro": "Where else your mail goes, what senders hear while you are away, and how your mail goes out.",
@@ -2236,7 +2321,7 @@
     "helperOld": "The helper on this machine is too old for the update button. Run this once on the machine -- it brings the helper up to date too, and from then on you update here with a click:"
   },
   "backups": {
-    "intro": "Every night the server backs up mail, settings, calendars and contacts to an SFTP server, like a NAS. After the first time it only uploads what is new.",
+    "intro": "Every night the server backs up mail, settings, calendars and contacts: to an SFTP server such as a NAS, to an S3 bucket, or into a folder such as a mounted disk. After the first time it only uploads what is new.",
     "status": {
       "title": "Status",
       "running": "The backup is running …",
@@ -2250,7 +2335,7 @@
       "started": "The backup is starting"
     },
     "target": {
-      "title": "Backup server",
+      "title": "Where backups go",
       "explain": "Where backups go. The folder is created if it does not exist; use one per server.",
       "host": "Address",
       "port": "Port",
@@ -2268,7 +2353,28 @@
       "test": "Test connection",
       "testOk": "The connection works",
       "testFirst": "The connection works. The server presented {{hostKey}}; from now on it has to be this key.",
-      "trustNewKey": "Trust the new key"
+      "trustNewKey": "Trust the new key",
+      "kind": "Backups go to",
+      "kindSftp": "SFTP server",
+      "kindS3": "S3 bucket",
+      "kindFolder": "Folder",
+      "explainS3": "Amazon S3 or any server that speaks its language: MinIO, Backblaze B2, Hetzner Object Storage, Wasabi and others. Use a bucket, or a folder in one, for this server alone.",
+      "explainFolder": "A folder on this machine: a second disk, or a NAS share mounted into the container. It has to exist already, outside the server's data directory.",
+      "endpoint": "S3 address",
+      "endpointHint": "Only the server, without the bucket, e.g. https://s3.eu-central-1.amazonaws.com. http:// only works inside your own network.",
+      "bucket": "Bucket",
+      "prefix": "Folder in the bucket",
+      "prefixHint": "Empty for the whole bucket",
+      "region": "Region",
+      "regionHint": "e.g. eu-central-1; us-east-1 when empty",
+      "accessKey": "Access key",
+      "secretKey": "Secret key",
+      "secretKeyKept": "Leave empty to keep the stored key.",
+      "pathStyle": "Bucket in the path",
+      "pathStyleHint": "https://server/bucket instead of https://bucket.server. MinIO and many servers in your own network want this.",
+      "folder": "Folder",
+      "folderHint": "A full path, e.g. /backup",
+      "testWritable": "The connection works: a test file was written, read back and removed."
     },
     "schedule": {
       "enabled": "Back up every night",
@@ -2311,6 +2417,32 @@
       "keptGateway": "This machine's gateway pairing was kept, not the one from the backup.",
       "oldDatabase": "The database from before is in the data directory as uwumail.db.replaced.*. Delete it once you are sure.",
       "forget": "Got it"
+    },
+    "mailbox": {
+      "title": "Restore one mailbox",
+      "explain": "Takes one person's mail out of a snapshot while the server keeps running. It comes back next to what is there now, into a new folder “Restored <date>” with the old folders below it. Messages the mailbox still has are left out.",
+      "snapshot": "Snapshot",
+      "latest": "The newest one",
+      "open": "Open",
+      "openFailed": "The snapshot could not be opened: {{error}}",
+      "opening": "Fetching the snapshot's database: {{done}} of {{total}} …",
+      "opened": "Open: the snapshot of {{time}}.",
+      "restoring": "Bringing back the mail of {{account}}: {{done}} of {{total}} …",
+      "lastDone": "{{count}} message is back in {{account}}, in the folder “{{folder}}”; {{skipped}} were still there.",
+      "lastDone_other": "{{count}} messages are back in {{account}}, in the folder “{{folder}}”; {{skipped}} were still there.",
+      "lastFailed": "Bringing mail back into {{account}} stopped: {{error}}. {{count}} messages had come back until then.",
+      "nobody": "Nobody in this snapshot had a mailbox.",
+      "person": "Person",
+      "personLine": "{{login}} ({{count}})",
+      "into": "Into the mailbox of",
+      "intoHint": "Empty for the same address. For someone whose address has changed since.",
+      "which": "Folders",
+      "allFolders": "All folders",
+      "someFolders": "Choose folders",
+      "inbox": "Inbox",
+      "how": "Nothing that is there now is changed or replaced. A backup waits until this is done.",
+      "restore": "Restore",
+      "close": "Close snapshot"
     }
   },
   "spam": {

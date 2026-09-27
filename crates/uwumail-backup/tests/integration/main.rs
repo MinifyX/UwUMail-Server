@@ -2,4 +2,6 @@
 //! `target/` small and linking fast. Add new test files as modules here.
 
 mod backup;
+mod mailbox;
+mod s3;
 mod sftp;

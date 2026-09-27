@@ -107,6 +107,15 @@ const KNOWN = [
   "maskedLimit",
   "maskedPrefix",
   "maskedState",
+  "backupBusy",
+  "backupFolderInData",
+  "moveExists",
+  "moveFromHere",
+  "moveLimit",
+  "moveRunning",
+  "moveNotRunning",
+  "moveNoMailbox",
+  "moveWrongPassword",
 ];
 
 /** Turns an API error into a sentence for the person in front of the screen. */

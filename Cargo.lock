@@ -4382,12 +4382,19 @@ name = "uwumail-backup"
 version = "0.13.0"
 dependencies = [
  "aws-lc-rs",
+ "bytes",
  "data-encoding",
  "fastcdc",
  "flate2",
  "hex",
+ "http-body-util",
+ "hyper",
+ "hyper-rustls",
+ "hyper-util",
+ "rusqlite",
  "russh",
  "russh-sftp",
+ "rustls",
  "serde",
  "serde_json",
  "sha2",
@@ -4395,7 +4402,9 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "url",
  "uwumail-store",
+ "webpki-roots",
 ]
 
 [[package]]

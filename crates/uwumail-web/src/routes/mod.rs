@@ -16,6 +16,7 @@ pub mod host;
 pub mod links;
 pub mod mailbox;
 pub mod masked;
+pub mod moving;
 pub mod own;
 pub mod people;
 pub mod queue;

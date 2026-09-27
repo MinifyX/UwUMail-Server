@@ -6,6 +6,8 @@
 //! the login is `person*master` with the master password.
 
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -14,7 +16,7 @@ use rustls_pki_types::ServerName;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
-use uwumail_store::{ImportProgress, IngestRequest, MailboxRole, MailboxTarget, Store};
+use uwumail_store::{BlobHash, ImportProgress, IngestRequest, MailboxRole, MailboxTarget, Store};
 
 /// Messages fetched per request.
 const BATCH: usize = 25;
@@ -331,7 +333,7 @@ pub(crate) async fn folders(connection: &mut Connection) -> anyhow::Result<Vec<F
 }
 
 /// Finds or creates the mailbox a folder goes into.
-async fn mailbox_for(store: &Store, account_id: i64, folder: &Folder) -> anyhow::Result<i64> {
+pub(crate) async fn mailbox_for(store: &Store, account_id: i64, folder: &Folder) -> anyhow::Result<i64> {
     let mailboxes = store.mailboxes(account_id).await?;
     if let Some(role) = folder.role
         && let Some(mailbox) = mailboxes.iter().find(|mailbox| mailbox.role == Some(role))
@@ -413,52 +415,77 @@ pub(crate) fn parse_fetch(response: &Response) -> Option<Fetched> {
 pub struct Copied {
     pub folders: usize,
     pub messages: usize,
+    /// Messages the mailbox here held already, left out (only when asked to look).
+    pub skipped: usize,
     pub bytes: usize,
 }
 
-/// Copies the mail of `login` on the old server into `account` here.
-pub async fn copy_mail(
+/// What a copy tells whoever started it, as it goes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CopyEvent {
+    /// Every folder was looked at: how many there are, and how many messages are new in them.
+    Planned { folders: usize, messages: usize },
+    /// The old server renumbered a folder, so it is copied again from the start.
+    Renumbered { folder: String },
+    /// A folder is next: its name there, its path here, and how many of its messages are new.
+    Folder { name: String, path: String, new: usize, exists: usize },
+    /// How far the copy got, after every portion and every folder.
+    Progress(Copied),
+}
+
+/// Whoever started a copy hears of it here. The answer says whether to go on: `false` stops the
+/// copy after the portion that was just stored.
+pub type Report<'a> = &'a mut (dyn FnMut(CopyEvent) -> Pin<Box<dyn Future<Output = bool> + Send>> + Send);
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CopyOptions {
+    /// Only count what would be copied.
+    pub dry_run: bool,
+    /// Leave out messages the mailbox here holds already: by their Message-ID, by their bytes when
+    /// they have none. For a move, where the old provider may show one message in several folders
+    /// (Gmail's labels) and mail may have come here some other way already.
+    pub skip_known: bool,
+    /// Stop after the first portion that ends past this; the next copy goes on from there.
+    pub deadline: Option<tokio::time::Instant>,
+}
+
+/// How a copy ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CopyEnd {
+    /// Everything there was is here.
+    Finished,
+    /// The deadline passed; there is more.
+    OutOfTime,
+    /// The one who started it said stop.
+    Stopped,
+}
+
+/// A folder with what is new in it.
+struct Planned {
+    folder: Folder,
+    uid_validity: u32,
+    exists: usize,
+    uids: Vec<u32>,
+}
+
+/// Looks at every folder: what is new in it since the last copy.
+async fn plan(
     store: &Store,
-    source: &Source,
-    login: &str,
-    account: &str,
-    dry_run: bool,
-    progress: &mut dyn FnMut(&str),
-) -> anyhow::Result<Copied> {
-    let account = store.account(account).await?.ok_or_else(|| anyhow!("{account} does not exist here"))?;
-    let mut connection = Connection::open(source).await?;
-    let user = match &source.master_user {
-        Some(master) => format!("{login}*{master}"),
-        None => login.to_owned(),
-    };
-    connection.command(&format!("LOGIN {} {}", quoted(&user), quoted(&source.password))).await?;
-
-    let source_name = source.tls_name.clone().unwrap_or_else(|| source.address.clone());
-    let mut copied = Copied::default();
-    for folder in folders(&mut connection).await? {
+    connection: &mut Connection,
+    account_id: i64,
+    source_name: &str,
+    report: Report<'_>,
+) -> anyhow::Result<Vec<Planned>> {
+    let mut planned = Vec::new();
+    for folder in folders(connection).await? {
         let responses = connection.command(&format!("EXAMINE {}", quoted(&folder.raw))).await?;
-        let status = |code: &str| {
-            responses.iter().find_map(|response| {
-                let rest = response.text.split_once(&format!("[{code} "))?.1;
-                rest.split(']').next()?.trim().parse::<u32>().ok()
-            })
-        };
-        let uid_validity = status("UIDVALIDITY").unwrap_or(0);
-        let exists = responses
-            .iter()
-            .find_map(|response| match &response.tokens[..] {
-                [_, Token::Atom(count), Token::Atom(word), ..] if word.eq_ignore_ascii_case("EXISTS") => {
-                    count.parse::<usize>().ok()
-                }
-                _ => None,
-            })
-            .unwrap_or(0);
-
-        let known = store.import_progress(account.id, &source_name, &folder.raw).await?;
-        let mut last_uid = match known {
+        let uid_validity = examined_status(&responses, "UIDVALIDITY").unwrap_or(0);
+        let exists = examined_exists(&responses);
+        let known = store.import_progress(account_id, source_name, &folder.raw).await?;
+        let last_uid = match known {
             Some(known) if known.uid_validity == uid_validity => known.last_uid,
             Some(_) => {
-                progress(&format!("{}: the old server renumbered this folder, copying it again", folder.raw));
+                report(CopyEvent::Renumbered { folder: folder.raw.clone() }).await;
                 0
             }
             None => 0,
@@ -466,7 +493,7 @@ pub async fn copy_mail(
         let uids: Vec<u32> = if exists == 0 {
             Vec::new()
         } else {
-            connection
+            let mut uids: Vec<u32> = connection
                 .command(&format!("UID SEARCH UID {}:*", last_uid + 1))
                 .await?
                 .iter()
@@ -474,21 +501,83 @@ pub async fn copy_mail(
                 .flat_map(|response| response.tokens.iter().skip(2).filter_map(Token::text))
                 .filter_map(|uid| uid.parse::<u32>().ok())
                 .filter(|uid| *uid > last_uid)
-                .collect()
+                .collect();
+            uids.sort_unstable();
+            uids.dedup();
+            uids
         };
-        copied.folders += 1;
+        planned.push(Planned { folder, uid_validity, exists, uids });
+    }
+    // The inbox first: a message the old server shows in several folders comes into the first one
+    // it is found in, when the mailbox here is asked to leave out what it holds already.
+    planned.sort_by_key(|planned| (planned.folder.role != Some(MailboxRole::Inbox), planned.folder.path.len()));
+    Ok(planned)
+}
+
+fn examined_status(responses: &[Response], code: &str) -> Option<u32> {
+    responses.iter().find_map(|response| {
+        let rest = response.text.split_once(&format!("[{code} "))?.1;
+        rest.split(']').next()?.trim().parse::<u32>().ok()
+    })
+}
+
+fn examined_exists(responses: &[Response]) -> usize {
+    responses
+        .iter()
+        .find_map(|response| match &response.tokens[..] {
+            [_, Token::Atom(count), Token::Atom(word), ..] if word.eq_ignore_ascii_case("EXISTS") => {
+                count.parse::<usize>().ok()
+            }
+            _ => None,
+        })
+        .unwrap_or(0)
+}
+
+/// Copies every folder of a logged-in connection into `account_id` here, what is new since the
+/// last copy from `source_name`, telling `report` how it goes.
+///
+/// A full mailbox here ends it with [`uwumail_store::StoreError::QuotaExceeded`] inside the error;
+/// what was stored until then stays, and the next copy goes on from the last finished portion.
+pub(crate) async fn copy_folders(
+    store: &Store,
+    connection: &mut Connection,
+    account_id: i64,
+    source_name: &str,
+    options: CopyOptions,
+    report: Report<'_>,
+) -> anyhow::Result<(Copied, CopyEnd)> {
+    let planned = plan(store, connection, account_id, source_name, report).await?;
+    let messages = planned.iter().map(|planned| planned.uids.len()).sum();
+    if !report(CopyEvent::Planned { folders: planned.len(), messages }).await {
+        return Ok((Copied::default(), CopyEnd::Stopped));
+    }
+    let mut copied = Copied::default();
+    for Planned { folder, uid_validity, exists, uids } in planned {
         if uids.is_empty() {
+            copied.folders += 1;
             continue;
         }
-        progress(&format!("{} → {}: {} new of {exists}", folder.raw, folder.path.join("/"), uids.len()));
-        if dry_run {
+        let event =
+            CopyEvent::Folder { name: folder.raw.clone(), path: folder.path.join("/"), new: uids.len(), exists };
+        if !report(event).await {
+            return Ok((copied, CopyEnd::Stopped));
+        }
+        if options.dry_run {
+            copied.folders += 1;
             copied.messages += uids.len();
             continue;
         }
-        let mailbox = mailbox_for(store, account.id, &folder).await?;
-        let mut sorted = uids;
-        sorted.sort_unstable();
-        for batch in sorted.chunks(BATCH) {
+        let responses = connection.command(&format!("EXAMINE {}", quoted(&folder.raw))).await?;
+        if examined_status(&responses, "UIDVALIDITY").unwrap_or(0) != uid_validity {
+            // Renumbered between looking and copying: the next copy sees it and starts it over.
+            copied.folders += 1;
+            continue;
+        }
+        let mailbox = mailbox_for(store, account_id, &folder).await?;
+        for batch in uids.chunks(BATCH) {
+            if options.deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline) {
+                return Ok((copied, CopyEnd::OutOfTime));
+            }
             let set = batch.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
             let responses =
                 connection.command(&format!("UID FETCH {set} (UID FLAGS INTERNALDATE BODY.PEEK[])")).await?;
@@ -500,11 +589,18 @@ pub async fn copy_mail(
                 if fetched.flags.iter().any(|flag| flag.eq_ignore_ascii_case("\\Deleted")) {
                     continue;
                 }
+                if options.skip_known {
+                    let message_id = uwumail_smtp::header_value(&body, "Message-ID");
+                    if store.holds_message(account_id, message_id, BlobHash::of(&body)).await? {
+                        copied.skipped += 1;
+                        continue;
+                    }
+                }
                 let keywords =
                     fetched.flags.iter().filter_map(|flag| uwumail_imap::parser::keyword_of_flag(flag)).collect();
-                copied.bytes += body.len();
+                let size = body.len();
                 let request = IngestRequest {
-                    account_id: account.id,
+                    account_id,
                     raw: body,
                     mailboxes: vec![MailboxTarget::Id(mailbox)],
                     keywords,
@@ -512,13 +608,56 @@ pub async fn copy_mail(
                 };
                 store.ingest(request).await.with_context(|| format!("storing message {uid} of {}", folder.raw))?;
                 copied.messages += 1;
+                copied.bytes += size;
             }
-            last_uid = *batch.last().expect("chunks are never empty");
+            let last_uid = *batch.last().expect("chunks are never empty");
             store
-                .set_import_progress(account.id, &source_name, &folder.raw, ImportProgress { uid_validity, last_uid })
+                .set_import_progress(account_id, source_name, &folder.raw, ImportProgress { uid_validity, last_uid })
                 .await?;
+            if !report(CopyEvent::Progress(copied)).await {
+                return Ok((copied, CopyEnd::Stopped));
+            }
+        }
+        copied.folders += 1;
+        if !report(CopyEvent::Progress(copied)).await {
+            return Ok((copied, CopyEnd::Stopped));
         }
     }
+    Ok((copied, CopyEnd::Finished))
+}
+
+/// Copies the mail of `login` on the old server into `account` here.
+pub async fn copy_mail(
+    store: &Store,
+    source: &Source,
+    login: &str,
+    account: &str,
+    dry_run: bool,
+    progress: &mut (dyn FnMut(&str) + Send),
+) -> anyhow::Result<Copied> {
+    let account = store.account(account).await?.ok_or_else(|| anyhow!("{account} does not exist here"))?;
+    let mut connection = Connection::open(source).await?;
+    let user = match &source.master_user {
+        Some(master) => format!("{login}*{master}"),
+        None => login.to_owned(),
+    };
+    connection.command(&format!("LOGIN {} {}", quoted(&user), quoted(&source.password))).await?;
+
+    let source_name = source.tls_name.clone().unwrap_or_else(|| source.address.clone());
+    let mut report = |event: CopyEvent| -> Pin<Box<dyn Future<Output = bool> + Send>> {
+        match event {
+            CopyEvent::Renumbered { folder } => {
+                progress(&format!("{folder}: the old server renumbered this folder, copying it again"));
+            }
+            CopyEvent::Folder { name, path, new, exists } => {
+                progress(&format!("{name} → {path}: {new} new of {exists}"))
+            }
+            CopyEvent::Planned { .. } | CopyEvent::Progress(_) => {}
+        }
+        Box::pin(std::future::ready(true))
+    };
+    let options = CopyOptions { dry_run, ..CopyOptions::default() };
+    let (copied, _) = copy_folders(store, &mut connection, account.id, &source_name, options, &mut report).await?;
     let _ = connection.command("LOGOUT").await;
     Ok(copied)
 }

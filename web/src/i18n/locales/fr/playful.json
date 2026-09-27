@@ -20,6 +20,12 @@
     "greeting": "Coucou {{name}} !",
     "intro": "Tout ce qui concerne votre boîte mail, juste ici (｡･ω･｡)"
   },
+  "moving": {
+    "intro": "Emballez votre ancienne boîte et ramenez tout à la maison : chaque dossier, chaque marque, chaque date. Le serveur porte les cartons en arrière-plan (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
+    "toasts": {
+      "finished": "Emménagement terminé ! Les anciens identifiants ont disparu (◕‿◕✿)"
+    }
+  },
   "admin": {
     "intro": "L'état de votre serveur. Je garde un œil dessus, moi aussi (=^･ω･^=)",
     "queueEmpty": "Rien n'attend, tout est en route ✉︎",

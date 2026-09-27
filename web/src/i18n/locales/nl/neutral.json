@@ -63,7 +63,8 @@
     "mailbox": "Mailbox",
     "directory": "Accounts & domeinen",
     "calendars": "Agenda's en contacten",
-    "masked": "Gemaskeerde adressen"
+    "masked": "Gemaskeerde adressen",
+    "moving": "Verhuizen"
   },
   "userMenu": {
     "open": "Accountmenu openen",
@@ -331,7 +332,16 @@
       "maskedDomain": "Op deze server is nog geen domein open voor gemaskeerde adressen. Vraag het de beheerder.",
       "maskedLimit": "Je hebt zoveel gemaskeerde adressen als deze server toestaat. Verwijder er een paar die je niet meer nodig hebt.",
       "maskedPrefix": "Een voorvoegsel mag alleen letters a–z, cijfers en _ bevatten, hooguit 64.",
-      "maskedState": "Een gemaskeerd adres kan niet opnieuw op zijn eerste mail wachten."
+      "maskedState": "Een gemaskeerd adres kan niet opnieuw op zijn eerste mail wachten.",
+      "backupBusy": "Er is al iets met de back-ups bezig: een back-up, of een mailbox die wordt teruggezet. Probeer het opnieuw als dat klaar is. ({{detail}})",
+      "backupFolderInData": "De back-upmap moet buiten de datamap van de server liggen; anders gaat de back-up samen met de server verloren.",
+      "moveExists": "Dit adres wordt al verhuisd.",
+      "moveFromHere": "Dit adres staat al op deze server, er valt niets te verhuizen.",
+      "moveLimit": "Er kunnen hoogstens vijf mailboxen tegelijk verhuizen. Rond eerst een van de andere af.",
+      "moveRunning": "Deze verhuizing loopt nog.",
+      "moveNotRunning": "Deze verhuizing loopt niet.",
+      "moveNoMailbox": "Je account heeft geen mailbox waar mail naartoe kan verhuizen.",
+      "moveWrongPassword": "De oude provider heeft dit wachtwoord geweigerd. Veel providers willen hiervoor een app-wachtwoord."
     }
   },
   "people": {
@@ -626,7 +636,8 @@
       "spamVirusTest": "{{actor}} heeft de virusscanner getest",
       "updatesSettings": "{{actor}} heeft de update-instellingen gewijzigd",
       "brandLogo": "{{actor}} heeft een nieuw logo geüpload",
-      "brandLogoRemoved": "{{actor}} heeft het logo verwijderd"
+      "brandLogoRemoved": "{{actor}} heeft het logo verwijderd",
+      "backupRestoreMailbox": "{{actor}} heeft mail van {{target}} uit een back-up teruggehaald"
     },
     "details": {
       "adminOn": "is nu beheerder",
@@ -1683,6 +1694,80 @@
       "password": "Het wachtwoord gaat er alleen in en komt er nooit meer uit. De server heeft het nodig om bij de provider in te loggen en bewaart het verzegeld."
     }
   },
+  "moving": {
+    "title": "Verhuizen",
+    "intro": "Haal je mail over van je oude provider: elke map, gelezen of ongelezen zoals het was, met de datum. De server kopieert op de achtergrond, dus je kunt deze pagina sluiten.",
+    "noMailbox": {
+      "title": "Geen mailbox hier",
+      "body": "Je account heeft geen mailbox waar mail naartoe kan verhuizen. Vraag het je beheerder."
+    },
+    "form": {
+      "title": "Een mailbox verhuizen",
+      "explain": "Je oude adres en het wachtwoord zijn genoeg: de server zoekt zelf de IMAP-server van je provider en logt één keer in om het te controleren.",
+      "address": "Oud adres",
+      "addressHint": "Het adres bij je oude provider.",
+      "password": "Wachtwoord",
+      "passwordHint": "Vaak een app-wachtwoord van de provider, niet het wachtwoord waarmee je inlogt. Het blijft verzegeld bewaard tot je klaar bent.",
+      "manual": "Server zelf invullen",
+      "host": "IMAP-server",
+      "hostHint": "Met TLS, meestal poort 993.",
+      "port": "Poort",
+      "login": "Gebruikersnaam",
+      "loginHint": "Leeg als het het adres zelf is.",
+      "searching": "Server van je provider zoeken …",
+      "start": "Verhuizing starten",
+      "started": "De verhuizing is begonnen en gaat op de achtergrond verder."
+    },
+    "hints": {
+      "gmail": "Gmail laat andere servers alleen binnen met een app-wachtwoord: zet verificatie in twee stappen aan in je Google-account en maak er dan een aan op myaccount.google.com/apppasswords. IMAP staat bij Gmail altijd aan. Labels zijn daar mappen; een bericht met meerdere labels komt één keer, in de eerste map waarin het wordt gevonden.",
+      "outlook": "Outlook.com en Hotmail laten alleen apps binnen die via Microsoft inloggen, en dat kan een eigen server niet voor je doen. Kopieer de mail in plaats daarvan met een mailprogramma: voeg beide mailboxen toe en sleep de mappen over.",
+      "gmx": "GMX laat andere servers pas binnen als je het toestaat: zet in de instellingen van GMX onder E-Mail → POP3/IMAP Abruf de toegang via IMAP aan. Met tweestapsverificatie heb je een app-wachtwoord nodig.",
+      "webde": "WEB.DE laat andere servers pas binnen als je het toestaat: zet in de instellingen van WEB.DE onder E-Mail → POP3/IMAP Abruf de toegang via IMAP aan. Met tweestapsverificatie heb je een app-wachtwoord nodig."
+    },
+    "job": {
+      "from": "van {{host}} als {{login}}",
+      "queued": "Wacht op zijn beurt …",
+      "running": "Kopiëren …",
+      "looking": "Mappen doorlopen …",
+      "progress": "{{done}} van {{total}} berichten · {{size}}",
+      "progressLabel": "Hoe ver de verhuizing is",
+      "folders": "map {{done}} van {{total}}",
+      "skipped": "{{count}} bericht was er al en is overgeslagen",
+      "skipped_other": "{{count}} berichten waren er al en zijn overgeslagen",
+      "done": "Alles is er.",
+      "doneAt": "Alles wat daar was, is hier, stand {{date}}."
+    },
+    "errors": {
+      "quotaExceeded": "Je mailbox hier is vol. Maak ruimte of vraag je beheerder om meer en ga dan verder: het gaat verder waar het stopte.",
+      "loginRefused": "De oude provider heeft het wachtwoord geweigerd. Vul een nieuw in (vaak een app-wachtwoord) en ga verder.",
+      "unreachable": "De oude provider was niet bereikbaar. Probeer het later opnieuw.",
+      "notPublic": "De server van de oude provider staat niet op internet, voor zover deze server kan zien.",
+      "noMailbox": "Je account heeft geen mailbox waar mail naartoe kan verhuizen.",
+      "stopped": "Gepauzeerd. Ga verder wanneer je wilt; het gaat verder waar het stopte.",
+      "failed": "Er ging iets mis. Ga verder om het opnieuw te proberen."
+    },
+    "actions": {
+      "pause": "Pauzeren",
+      "continue": "Verdergaan",
+      "syncAgain": "Opnieuw synchroniseren",
+      "finish": "Klaar, inloggegevens wissen",
+      "finishConfirm": "Klaar met {{address}}? Het wachtwoord van de oude mailbox wordt gewist; de mail die is gekomen, blijft.",
+      "newPassword": "Nieuw wachtwoord"
+    },
+    "toasts": {
+      "queued": "Het gaat zo verder.",
+      "finished": "Klaar. De inloggegevens van de oude mailbox zijn gewist."
+    },
+    "about": {
+      "title": "Goed om te weten",
+      "what": "Elke map komt mee, de speciale (verzonden, concepten, spam, prullenbak, archief) in de jouwe, en elk bericht met de datum en gelezen, gemarkeerd of beantwoord zoals het was.",
+      "twice": "Niets komt dubbel: een bericht dat er al is, op basis van de Message-ID of de inhoud, wordt overgeslagen.",
+      "switch": "Neem de tijd: verhuis nu één keer, geef mensen je nieuwe adres en gebruik „Opnieuw synchroniseren” wanneer je wilt. Het haalt alleen op wat sindsdien bij de oude provider is binnengekomen.",
+      "password": "Het wachtwoord wordt alleen gebruikt om te kopiëren, verzegeld bewaard en gewist zodra je op „Klaar, inloggegevens wissen” klikt.",
+      "calendars": "Agenda's en contacten verhuizen apart:",
+      "calendarsLink": "Agenda's en contacten → Verhuizen van een andere provider"
+    }
+  },
   "mailbox": {
     "title": "Doorsturen, afwezigheid en verzenden",
     "intro": "Waar je mail nog meer naartoe gaat, wat afzenders horen terwijl je weg bent, en hoe je mail vertrekt.",
@@ -2236,7 +2321,7 @@
     "helperOld": "De helper op deze machine is te oud voor de updateknop. Voer dit één keer uit op de machine -- het werkt ook de helper bij, en vanaf dan werk je hier bij met een klik:"
   },
   "backups": {
-    "intro": "Elke nacht maakt de server een back-up van mail, instellingen, agenda's en contacten op een SFTP-server, zoals een NAS. Na de eerste keer uploadt hij alleen wat nieuw is.",
+    "intro": "Elke nacht maakt de server een back-up van mail, instellingen, agenda's en contacten: op een SFTP-server zoals een NAS, in een S3-bucket of in een map, bijvoorbeeld een gekoppelde schijf. Na de eerste keer uploadt hij alleen wat nieuw is.",
     "status": {
       "title": "Status",
       "running": "De back-up loopt …",
@@ -2250,7 +2335,7 @@
       "started": "De back-up start"
     },
     "target": {
-      "title": "Back-upserver",
+      "title": "Waar back-ups heen gaan",
       "explain": "Waar back-ups naartoe gaan. De map wordt aangemaakt als hij niet bestaat; gebruik er één per server.",
       "host": "Adres",
       "port": "Poort",
@@ -2268,7 +2353,28 @@
       "test": "Verbinding testen",
       "testOk": "De verbinding werkt",
       "testFirst": "De verbinding werkt. De server toonde {{hostKey}}; vanaf nu moet het deze sleutel zijn.",
-      "trustNewKey": "De nieuwe sleutel vertrouwen"
+      "trustNewKey": "De nieuwe sleutel vertrouwen",
+      "kind": "Back-up naar",
+      "kindSftp": "SFTP-server",
+      "kindS3": "S3-bucket",
+      "kindFolder": "Map",
+      "explainS3": "Amazon S3 of elke server die dezelfde taal spreekt: MinIO, Backblaze B2, Hetzner Object Storage, Wasabi en andere. Gebruik een bucket, of een map daarin, alleen voor deze server.",
+      "explainFolder": "Een map op deze machine: een tweede schijf, of een NAS-share die in de container is gekoppeld. Hij moet al bestaan, buiten de datamap van de server.",
+      "endpoint": "S3-adres",
+      "endpointHint": "Alleen de server, zonder bucket, bijv. https://s3.eu-central-1.amazonaws.com. http:// werkt alleen in je eigen netwerk.",
+      "bucket": "Bucket",
+      "prefix": "Map in de bucket",
+      "prefixHint": "Leeg voor de hele bucket",
+      "region": "Regio",
+      "regionHint": "bijv. eu-central-1; us-east-1 als leeg",
+      "accessKey": "Access key",
+      "secretKey": "Secret key",
+      "secretKeyKept": "Laat leeg om de opgeslagen sleutel te houden.",
+      "pathStyle": "Bucket in het pad",
+      "pathStyleHint": "https://server/bucket in plaats van https://bucket.server. MinIO en veel servers in je eigen netwerk willen dit.",
+      "folder": "Map",
+      "folderHint": "Een volledig pad, bijv. /backup",
+      "testWritable": "De verbinding werkt: een testbestand is geschreven, teruggelezen en verwijderd."
     },
     "schedule": {
       "enabled": "Elke nacht een back-up maken",
@@ -2311,6 +2417,32 @@
       "keptGateway": "De gatewaykoppeling van deze machine is behouden, niet die uit de back-up.",
       "oldDatabase": "De database van ervoor staat in de datamap als uwumail.db.replaced.*. Verwijder hem zodra je het zeker weet.",
       "forget": "Begrepen"
+    },
+    "mailbox": {
+      "title": "Eén mailbox terugzetten",
+      "explain": "Haalt de mail van één persoon uit een snapshot terwijl de server blijft draaien. Die komt naast wat er nu is, in een nieuwe map „Restored <datum>” met de oude mappen eronder. Berichten die de mailbox nog heeft, worden overgeslagen.",
+      "snapshot": "Snapshot",
+      "latest": "De nieuwste",
+      "open": "Openen",
+      "openFailed": "De snapshot kon niet worden geopend: {{error}}",
+      "opening": "Database van de snapshot ophalen: {{done}} van {{total}} …",
+      "opened": "Geopend: de snapshot van {{time}}.",
+      "restoring": "Mail van {{account}} terugzetten: {{done}} van {{total}} …",
+      "lastDone": "{{count}} bericht is terug bij {{account}}, in de map „{{folder}}”; {{skipped}} waren er nog.",
+      "lastDone_other": "{{count}} berichten zijn terug bij {{account}}, in de map „{{folder}}”; {{skipped}} waren er nog.",
+      "lastFailed": "Terugzetten naar {{account}} is gestopt: {{error}}. Tot dan waren {{count}} berichten teruggekomen.",
+      "nobody": "Niemand in deze snapshot had een mailbox.",
+      "person": "Persoon",
+      "personLine": "{{login}} ({{count}})",
+      "into": "In de mailbox van",
+      "intoHint": "Leeg voor hetzelfde adres. Voor iemand van wie het adres sindsdien is veranderd.",
+      "which": "Mappen",
+      "allFolders": "Alle mappen",
+      "someFolders": "Mappen kiezen",
+      "inbox": "Inbox",
+      "how": "Niets van wat er nu is, wordt gewijzigd of vervangen. Een back-up wacht tot dit klaar is.",
+      "restore": "Terugzetten",
+      "close": "Snapshot sluiten"
     }
   },
   "spam": {

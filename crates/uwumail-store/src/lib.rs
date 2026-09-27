@@ -35,6 +35,7 @@ mod import;
 pub mod itip;
 mod mail;
 mod masked;
+mod migration_jobs;
 mod mutate;
 mod objects;
 mod own;
@@ -99,7 +100,7 @@ pub use feeds::FeedState;
 pub use fetch::{
     AfterFetch, DEFAULT_FETCH_INTERVAL_SECS, FETCH_HOLD_LIMIT_SECS, FETCH_SEEN_SECS, FetchAccount, FetchAccountUpdate,
     FetchFolder, FetchSecurity, FetchSender, MAX_FETCH_ACCOUNTS, MAX_FETCH_INTERVAL_SECS, MIN_FETCH_INTERVAL_SECS,
-    NewFetchAccount, SendSecurity,
+    NewFetchAccount, SendSecurity, is_public_ip,
 };
 pub use forward_addresses::{FORWARD_ADDRESS_MAX_TARGETS, ForwardAddress};
 pub use forwarding::{ActiveForwarding, FORWARD_LINK_LIFETIME_SECS, ForwardTarget, Forwarding, MAX_FORWARD_TARGETS};
@@ -110,6 +111,9 @@ pub use imap::{DELETED_KEYWORD, FlagChange, ImapEmail, ImapMailbox, ImapMessage,
 pub use import::ImportProgress;
 pub use mail::{EmailSummary, IngestRequest, IngestedEmail, Mailbox, MailboxRole, MailboxTarget, TestMessageStatus};
 pub use masked::{MASKED_PENDING_SECS, MaskedAddress, MaskedDelivery, MaskedState, MaskedUpdate, NewMaskedAddress};
+pub use migration_jobs::{
+    MAX_MIGRATION_JOBS, MigrationJob, MigrationProgress, MigrationRun, MigrationState, NewMigrationJob,
+};
 pub use mutate::{EmailUpdate, KeywordsChange, MailboxUpdate, MailboxesChange};
 pub use objects::{Changes, EmailRecord};
 pub use own::{MailboxUsage, OwnAddress, OwnAddresses, RELEASED_ADDRESS_SECS, ReleasedAddress};
