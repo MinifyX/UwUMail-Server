@@ -315,6 +315,9 @@ async fn a_masked_only_domain_takes_mail_for_its_masked_addresses_only() {
         let reply = from_outside(&a, &[nobody], "", "Hallo").await;
         assert!(reply.starts_with("550 5.1.1"), "{nobody}: {reply}");
     }
+    // RFC 5321 wants postmaster at every domain that takes mail; it reaches the admins as anywhere.
+    let reply = from_outside(&a, &["postmaster@m.test"], "", "Hallo").await;
+    assert!(reply.starts_with("250"), "{reply}");
 
     // Answering as it: signed with m.test's own key, which b.test finds and verifies.
     for key in &keys {
