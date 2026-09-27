@@ -42,6 +42,8 @@ pub struct CertificateStatus {
     pub self_signed: bool,
     /// The server renews it itself (Let's Encrypt).
     pub automatic: bool,
+    /// The chain as served, leaf first (DER), for the TLSA record (DANE) the DNS check recommends.
+    pub chain: Vec<Vec<u8>>,
     /// The URL of the Let's Encrypt account it is ordered with, for the CAA record the DNS check
     /// recommends. `None` before there is one, and with any other CA.
     pub lets_encrypt_account: Option<String>,
@@ -479,6 +481,7 @@ mod tests {
             names: vec!["*.example.org".into()],
             self_signed: false,
             automatic,
+            chain: Vec::new(),
             lets_encrypt_account: None,
         }
     }

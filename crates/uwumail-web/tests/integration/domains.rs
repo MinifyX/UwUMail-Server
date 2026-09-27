@@ -304,6 +304,33 @@ async fn mta_sts_policy_and_reports() {
         call(&app, "GET", "/api/admin/domains/example.org/reports/nonsense", None, Some(&auth)).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{nonsense}");
 
+    // The reports this server sent to others, and the address they come from.
+    let day = uwumail_store::tls_rpt_day(
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64,
+    ) - 1;
+    store
+        .tls_rpt_done(uwumail_store::TlsRptOutcome {
+            day,
+            policy_domain: "example.com".into(),
+            report_id: "r1".into(),
+            status: "sent".into(),
+            destinations: vec!["mailto:tls@example.com".into()],
+            error: String::new(),
+            successful: 12,
+            failed: 1,
+        })
+        .await
+        .unwrap();
+    let (status, sent) = call(&app, "GET", "/api/admin/reports/sent?days=7", None, Some(&auth)).await;
+    assert_eq!(status, StatusCode::OK, "{sent}");
+    assert_eq!(sent["sender"], json!("noreply-tls-reports@example.org"));
+    let first = &sent["reports"][0];
+    assert_eq!(
+        (first["domain"].clone(), first["status"].clone(), first["successful"].clone(), first["day"].clone()),
+        (json!("example.com"), json!("sent"), json!(12), json!(day * 86_400))
+    );
+    assert_eq!(call(&app, "GET", "/api/admin/reports/sent", None, None).await.0, StatusCode::UNAUTHORIZED);
+
     let (_, health) = call(&app, "GET", "/api/admin/health", None, Some(&auth)).await;
     let dns = health["areas"].as_array().unwrap().iter().find(|area| area["area"] == "dns").unwrap();
     assert!(dns["findings"].as_array().unwrap().iter().any(|f| f["code"] == "tlsFailures"), "{dns}");

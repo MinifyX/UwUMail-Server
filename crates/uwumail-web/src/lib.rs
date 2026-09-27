@@ -407,6 +407,7 @@ impl Web {
             .route("/api/admin/domains/{name}/mta-sts", put(routes::reports::set_mode))
             .route("/api/admin/domains/{name}/reports", get(routes::reports::domain_reports))
             .route("/api/admin/reports", get(routes::reports::overview))
+            .route("/api/admin/reports/sent", get(routes::reports::sent))
             .route("/api/admin/domains/{name}/reports/{kind}", get(routes::reports::list))
             .route("/api/admin/domains/{name}/reports/{kind}/{id}", get(routes::reports::detail))
             .route("/.well-known/mta-sts.txt", get(routes::reports::policy))

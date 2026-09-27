@@ -106,6 +106,8 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("egress.pictures", SettingKind::Bool),
     spec("egress.updates", SettingKind::Bool),
     spec("egress.fetch", SettingKind::Bool),
+    // Daily TLS reports (RFC 8460) to the domains mail went to, when they ask for them.
+    spec("reports.send_tls_reports", SettingKind::Bool),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
