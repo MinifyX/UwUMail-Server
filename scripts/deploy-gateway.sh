@@ -9,6 +9,11 @@
 # From CI it takes the "Gateway binary" of the newest successful run on main (needs the GitHub CLI)
 # and checks its SHA-256 sum. CI builds only for amd64; arm64 servers need the local build.
 #
+# Only a run of this repository's CI for a push to main is taken, and only while its commit is part
+# of main. CI also runs for pull requests from forks, and such a run reports the fork's branch name
+# -- `main` as often as not -- while its artifact is built from whatever the fork contains. The
+# binary ends up running as root on the gateway (security-audit-0.16.0 GW-3).
+#
 # Everything goes over one SSH connection: some providers refuse connections that come in quick
 # succession.
 set -euo pipefail
@@ -24,10 +29,42 @@ if [ "${UWUMAIL_GATEWAY_BUILD:-ci}" = "local" ]; then
   docker build --platform "$platform" -f "$root/docker/Dockerfile.gateway" --output "type=local,dest=$out" "$root"
   arch="$([ "$platform" = linux/arm64 ] && echo aarch64 || echo x86_64)"
 else
-  run="${UWUMAIL_GATEWAY_RUN:-$(gh run list --repo MinifyX/UwUMail-Server --workflow CI --branch main \
-    --status success --limit 1 --json databaseId --jq '.[0].databaseId')}"
+  repo=MinifyX/UwUMail-Server
+  # Whether run $1 is this repository's CI, successful, for a push to main, of a commit main still
+  # holds. The event is what tells a push to this repository from a fork's pull request; the
+  # comparison with main is asked of GitHub rather than of a local clone that may be out of date.
+  from_main() {
+    local run="$1" sha status
+    [[ "$run" =~ ^[0-9]{1,20}$ ]] || return 1
+    sha=$(gh run view "$run" --repo "$repo" --json event,headBranch,headSha,conclusion,workflowName --jq \
+      'select(.event == "push" and .headBranch == "main" and .conclusion == "success" and .workflowName == "CI") | .headSha') ||
+      return 1
+    [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || return 1
+    status=$(gh api "repos/$repo/compare/$sha...main" --jq .status) || return 1
+    [ "$status" = identical ] || [ "$status" = ahead ]
+  }
+  if [ -n "${UWUMAIL_GATEWAY_RUN:-}" ]; then
+    run="$UWUMAIL_GATEWAY_RUN"
+    from_main "$run" || {
+      echo "CI run $run is not a successful run for a push to main of $repo; not taking its gateway" >&2
+      exit 1
+    }
+  else
+    run=""
+    for candidate in $(gh run list --repo "$repo" --workflow CI --branch main --event push --status success \
+      --limit 20 --json databaseId --jq '.[].databaseId'); do
+      if from_main "$candidate"; then
+        run="$candidate"
+        break
+      fi
+    done
+    [ -n "$run" ] || {
+      echo "found no successful CI run for a push to main of $repo" >&2
+      exit 1
+    }
+  fi
   echo "taking the gateway from CI run $run"
-  gh run download "$run" --repo MinifyX/UwUMail-Server --name uwumail-gateway-linux-amd64 --dir "$out"
+  gh run download "$run" --repo "$repo" --name uwumail-gateway-linux-amd64 --dir "$out"
   (cd "$out" && sha256sum --check --strict uwumail-gateway.sha256)
   arch=x86_64
 fi

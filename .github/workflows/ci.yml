@@ -53,6 +53,8 @@ jobs:
           shellcheck --severity=warning $scripts
       - name: The root helpers never follow a symlink
         run: bash deploy/tests/helpers.sh
+      - name: The gateway deploy script only takes builds of main
+        run: bash deploy/tests/deploy-gateway.sh
 
   audit:
     name: Dependency audit
