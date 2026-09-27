@@ -50,7 +50,10 @@ get one report per day, as JSON packed with gzip:
 
 A report that could not be sent is tried once more the next day, with the same
 report id. At most five addresses per domain get one; a domain's own list with
-more is cut there. Days older than three days are not reported any more, e.g.
+more is cut there. Each `mailto:` names exactly one address, as RFC 8460 has
+it: one that packs several into itself (`mailto:a@x,b@y`, or the same hidden
+behind `=2C`) is skipped whole, so a record cannot turn one report into mail to
+a crowd of strangers. Days older than three days are not reported any more, e.g.
 after the server was off. Our own domains never get a report, and neither do
 addresses at them.
 
