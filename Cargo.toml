@@ -137,3 +137,12 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
+
+# Password hashing is slow on purpose, and unoptimised it is slower still: tests that log in
+# would spend most of their time in it, and wait for each other at the server's limit on
+# password checks running at once.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3

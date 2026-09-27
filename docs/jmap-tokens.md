@@ -22,9 +22,15 @@ dashes, in any case. The password names its account, so there is no login to
 send with it. It stops working when it expires, is revoked, when the account
 may no longer log in, or when an admin switches JMAP off for the account.
 
-Wrong passwords and wrong tokens count against the client's network together:
-after 10 failures in 15 minutes (per IPv4 address or IPv6 /64) every login from
-there is answered with `429` until the window has passed.
+Wrong passwords and wrong tokens count against the client's network, together
+with failed logins over every other protocol (portal, IMAP, SMTP, ManageSieve,
+CalDAV/CardDAV): after 10 failures in 15 minutes (per IPv4 address or IPv6
+/64), or 3 logins that do not exist, every login from there is answered with
+`429` until the window has passed. A login that had 10 wrong passwords from
+anywhere gets one try every 30 seconds, also answered with `429` in between.
+When the server is busy checking too many passwords at once, the answer is
+`503`; try again a moment later (see
+[deployment.md](deployment.md#failed-logins)).
 
 Once a person has two-factor authentication (or chose "mail apps need app
 passwords"), the account password no longer opens JMAP for programs: they

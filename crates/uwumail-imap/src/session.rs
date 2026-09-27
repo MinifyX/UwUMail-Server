@@ -539,12 +539,15 @@ where
     // ---- logging in ----
 
     async fn login(&mut self, tag: &str, username: &str, password: &str) -> io::Result<Flow> {
-        if self.imap.limiter.is_blocked(self.peer.ip()) {
+        // The network's and the login's counts, shared with every other protocol; a check that is
+        // still running counts as well, so a burst of logins cannot all get past them.
+        let Some(attempt) = self.imap.limiter.begin(self.peer.ip(), username) else {
             self.send(no(tag, Some("UNAVAILABLE"), "Too many failed logins, try again later").as_bytes()).await?;
             return Ok(Flow::Continue);
-        }
+        };
         let peer = self.peer.to_string();
         let checked = self.store.authenticate_mail(username, password, AppScope::Mail, "imap", &peer).await;
+        drop(attempt);
         self.finish_login(tag, username, checked, None).await
     }
 

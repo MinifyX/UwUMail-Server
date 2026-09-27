@@ -44,6 +44,14 @@ impl Failures {
     }
 }
 
+/// What a failed try was.
+enum Tried {
+    /// A login that does not exist here.
+    Unknown,
+    /// A wrong secret, for this login if it named one.
+    Wrong(Option<String>),
+}
+
 /// Wrong passwords for one login, from wherever they came.
 struct AccountFailures {
     count: u32,
@@ -53,16 +61,32 @@ struct AccountFailures {
 /// Told when a network is turned away, so it can be kept away further out than this server.
 pub type Reporter = Arc<dyn Fn(IpAddr, &str) + Send + Sync>;
 
+/// Password checks under way, per network and per login.
+#[derive(Default)]
+struct InFlight {
+    networks: HashMap<IpAddr, u32>,
+    logins: HashMap<String, u32>,
+}
+
 /// Blocks login attempts from networks with too many recent failures, and spaces out the tries at
 /// a login that has had too many from anywhere.
 ///
 /// A success only takes back the failures of the login that succeeded. Clearing its whole network
 /// let anyone with an account of their own reset the count between guesses at somebody else's
 /// (security-audit-0.8.0 W-1).
+///
+/// One limiter serves the whole server: the portal, IMAP, ManageSieve, SMTP, JMAP and DAV all count
+/// into it, so guesses spread over several protocols are counted together. The store holds it
+/// ([`crate::Store::auth_limiter`]).
 #[derive(Default)]
 pub struct AuthLimiter {
     failures: Mutex<HashMap<IpAddr, (Failures, Instant)>>,
     accounts: Mutex<HashMap<String, AccountFailures>>,
+    /// Checks that have started and not ended yet. They count like failures until they end: the
+    /// failures above are only known once a check is over, and a burst of tries that all start
+    /// before the first one ends would otherwise all get past a count that still says nothing
+    /// (security-audit-0.16.0 WEB-1).
+    in_flight: Mutex<InFlight>,
     /// Where a new block is reported, when someone listens. The UwUMail Gateway does: it keeps the
     /// address off the machine in front, so the next try does not reach the house at all.
     reporter: RwLock<Option<Reporter>>,
@@ -120,6 +144,55 @@ impl AuthLimiter {
         }
     }
 
+    /// Lets one password check for `login` from `ip` begin, or says no (`None`) when the network is
+    /// blocked or the login has to wait. Unlike [`Self::is_blocked`] and
+    /// [`Self::account_throttled`], checks that are still running count as failures here, until
+    /// the returned [`Attempt`] is dropped: at most [`MAX_FAILURES`] checks from one network, and
+    /// [`ACCOUNT_FREE_FAILURES`] for one login, can be under way at once, fewer the more have
+    /// failed lately. Once a login is spaced out, only one try at it runs at a time.
+    ///
+    /// Record the outcome with `record_*` as before; the attempt only ends the reservation.
+    pub fn begin(self: &Arc<Self>, ip: IpAddr, login: &str) -> Option<Attempt> {
+        let network = key(ip);
+        let login = login_key(login);
+        let wrong = {
+            let mut failures = self.failures.lock().expect("limiter poisoned");
+            match failures.get(&network) {
+                Some((_, since)) if since.elapsed() > WINDOW => {
+                    failures.remove(&network);
+                    0
+                }
+                Some((counted, _)) if counted.over_the_line() => return None,
+                Some((counted, _)) => counted.wrong,
+                None => 0,
+            }
+        };
+        let (count, last) = {
+            let mut accounts = self.accounts.lock().expect("limiter poisoned");
+            match accounts.get(&login) {
+                Some(account) if account.last.elapsed() > WINDOW => {
+                    accounts.remove(&login);
+                    (0, None)
+                }
+                Some(account) => (account.count, Some(account.last)),
+                None => (0, None),
+            }
+        };
+        let mut in_flight = self.in_flight.lock().expect("limiter poisoned");
+        let from_network = in_flight.networks.get(&network).copied().unwrap_or(0);
+        let for_login = in_flight.logins.get(&login).copied().unwrap_or(0);
+        if wrong + from_network >= MAX_FAILURES {
+            return None;
+        }
+        let spaced_out = count + for_login >= ACCOUNT_FREE_FAILURES;
+        if spaced_out && (for_login > 0 || last.is_some_and(|last| last.elapsed() < ACCOUNT_SPACING)) {
+            return None;
+        }
+        *in_flight.networks.entry(network).or_default() += 1;
+        *in_flight.logins.entry(login.clone()).or_default() += 1;
+        Some(Attempt { limiter: self.clone(), network, login })
+    }
+
     /// A login that exists, with the wrong password (or the wrong second factor).
     pub fn record_failure(&self, ip: IpAddr, login: &str) {
         let login = login_key(login);
@@ -135,17 +208,22 @@ impl AuthLimiter {
             account.count += 1;
             account.last = Instant::now();
         }
-        self.record(ip, Some(login));
+        self.record(ip, Tried::Wrong(Some(login)));
+    }
+
+    /// A wrong secret that names no login by itself, like a bearer token (an app password or an
+    /// OAuth token alone). It counts for the network like a wrong password.
+    pub fn record_wrong_token(&self, ip: IpAddr) {
+        self.record(ip, Tried::Wrong(None));
     }
 
     /// A login that does not exist here. Counted apart, and much more strictly.
     pub fn record_unknown_login(&self, ip: IpAddr) {
-        self.record(ip, None);
+        self.record(ip, Tried::Unknown);
     }
 
-    /// `login` is `None` for a login that does not exist.
-    fn record(&self, ip: IpAddr, login: Option<String>) {
-        let unknown = login.is_none();
+    fn record(&self, ip: IpAddr, tried: Tried) {
+        let unknown = matches!(tried, Tried::Unknown);
         let crossed = {
             let mut failures = self.failures.lock().expect("limiter poisoned");
             if failures.len() > MAX_ENTRIES {
@@ -156,9 +234,10 @@ impl AuthLimiter {
                 *entry = (Failures::default(), Instant::now());
             }
             let before = entry.0.over_the_line();
-            match login {
-                None => entry.0.unknown += 1,
-                Some(login) => {
+            match tried {
+                Tried::Unknown => entry.0.unknown += 1,
+                Tried::Wrong(None) => entry.0.wrong += 1,
+                Tried::Wrong(Some(login)) => {
                     entry.0.wrong += 1;
                     let known = entry.0.by_login.len();
                     if let Some(own) = entry.0.by_login.get_mut(&login) {
@@ -189,6 +268,31 @@ impl AuthLimiter {
             && let Some(own) = counted.by_login.remove(&login)
         {
             counted.wrong = counted.wrong.saturating_sub(own);
+        }
+    }
+}
+
+/// A password check under way, from [`AuthLimiter::begin`]. It counts until it is dropped.
+pub struct Attempt {
+    limiter: Arc<AuthLimiter>,
+    network: IpAddr,
+    login: String,
+}
+
+impl Drop for Attempt {
+    fn drop(&mut self) {
+        let mut in_flight = self.limiter.in_flight.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(count) = in_flight.networks.get_mut(&self.network) {
+            *count -= 1;
+            if *count == 0 {
+                in_flight.networks.remove(&self.network);
+            }
+        }
+        if let Some(count) = in_flight.logins.get_mut(&self.login) {
+            *count -= 1;
+            if *count == 0 {
+                in_flight.logins.remove(&self.login);
+            }
         }
     }
 }
@@ -286,6 +390,50 @@ mod tests {
             limiter.record_failure(typing, "mini@example.org");
         }
         assert!(!limiter.is_blocked(typing));
+    }
+
+    #[test]
+    fn checks_under_way_count_before_they_end() {
+        // security-audit-0.16.0 WEB-1: a burst of tries that all start before the first one ends
+        // must not all get through a count that only sees finished failures.
+        let limiter = Arc::new(AuthLimiter::default());
+        let ip: IpAddr = "2001:db8::1".parse().unwrap();
+        let running: Vec<Attempt> = (0..MAX_FAILURES)
+            .map(|n| limiter.begin(ip, &format!("user{n}@example.org")).expect("room for this one"))
+            .collect();
+        assert!(limiter.begin("2001:db8::2".parse().unwrap(), "other@example.org").is_none(), "the /64 is full");
+        assert!(limiter.begin("192.0.2.1".parse().unwrap(), "other@example.org").is_some(), "other networks are not");
+        drop(running);
+        assert!(limiter.begin(ip, "user0@example.org").is_some(), "ended checks give their place back");
+
+        // Failures that did finish leave fewer places.
+        for _ in 0..MAX_FAILURES - 2 {
+            limiter.record_failure(ip, "mini@example.org");
+        }
+        let first = limiter.begin(ip, "mini@example.org").expect("two places left");
+        let second = limiter.begin(ip, "nyu@example.org").expect("one place left");
+        assert!(limiter.begin(ip, "admin@example.org").is_none());
+        drop((first, second));
+        assert!(limiter.begin(ip, "admin@example.org").is_some());
+    }
+
+    #[test]
+    fn a_spaced_out_login_gets_one_try_at_a_time() {
+        let limiter = Arc::new(AuthLimiter::default());
+        for network in 0..ACCOUNT_FREE_FAILURES {
+            limiter.record_failure(format!("198.51.100.{network}").parse().unwrap(), "admin@example.org");
+        }
+        assert!(limiter.begin("203.0.113.1".parse().unwrap(), "admin@example.org").is_none(), "too soon");
+        assert!(limiter.begin("203.0.113.1".parse().unwrap(), "mini@example.org").is_some());
+
+        // Under the line, concurrent tries at one login are bounded by what is left of it.
+        let limiter = Arc::new(AuthLimiter::default());
+        let running: Vec<Attempt> = (0..ACCOUNT_FREE_FAILURES)
+            .map(|n| limiter.begin(format!("198.51.100.{n}").parse().unwrap(), "admin@example.org").unwrap())
+            .collect();
+        assert!(limiter.begin("203.0.113.1".parse().unwrap(), "admin@example.org").is_none());
+        drop(running);
+        assert!(limiter.begin("203.0.113.1".parse().unwrap(), "admin@example.org").is_some());
     }
 
     #[test]

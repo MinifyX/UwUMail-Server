@@ -35,6 +35,7 @@ mod identity_grants;
 mod imap;
 mod import;
 pub mod itip;
+mod limiter;
 mod mail;
 mod masked;
 mod migration_jobs;
@@ -119,6 +120,7 @@ pub use groups::{GROUP_MAX_MEMBERS, Group, GroupDelivery, GroupMember, GroupUpda
 pub use held::{HeldSubmission, NewHeldSubmission};
 pub use imap::{DELETED_KEYWORD, FlagChange, ImapEmail, ImapMailbox, ImapMessage, ImapMessages, ImapStatus};
 pub use import::ImportProgress;
+pub use limiter::{Attempt, AuthLimiter, Reporter as BlockReporter};
 pub use mail::{EmailSummary, IngestRequest, IngestedEmail, Mailbox, MailboxRole, MailboxTarget, TestMessageStatus};
 pub use masked::{MASKED_PENDING_SECS, MaskedAddress, MaskedDelivery, MaskedState, MaskedUpdate, NewMaskedAddress};
 pub use migration_jobs::{
@@ -208,6 +210,10 @@ pub enum StoreError {
     Io(#[from] std::io::Error),
     #[error("internal error: {0}")]
     Internal(String),
+    /// Too much of something slow is running at once (password checks); the same request may
+    /// work in a moment. Protocols answer with their "try again later".
+    #[error("the server is busy, try again in a moment")]
+    Busy,
 }
 
 pub type Result<T, E = StoreError> = std::result::Result<T, E>;
@@ -237,6 +243,10 @@ struct Inner {
     stats: stats::Stats,
     /// Where passwords of directory (LDAP) accounts are checked, once the server plugged it in.
     external: std::sync::RwLock<Option<Arc<dyn ExternalPasswords>>>,
+    /// The failed-login counts every protocol checks and adds to.
+    auth_limiter: Arc<AuthLimiter>,
+    /// How many password hashes are checked at once.
+    hashing: password::Gate,
 }
 
 impl Store {
@@ -261,8 +271,16 @@ impl Store {
                 data_dir,
                 stats: stats::Stats::default(),
                 external: std::sync::RwLock::new(None),
+                auth_limiter: Arc::default(),
+                hashing: password::Gate::new(),
             }),
         })
+    }
+
+    /// The failed-login counts of the whole server. Every login path checks it before a password
+    /// check ([`AuthLimiter::begin`]) and records how the check ended.
+    pub fn auth_limiter(&self) -> &Arc<AuthLimiter> {
+        &self.inner.auth_limiter
     }
 
     pub fn data_dir(&self) -> &Path {

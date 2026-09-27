@@ -1030,7 +1030,15 @@ impl Session {
         let smtp = self.smtp.clone();
         let ctx = &smtp.inner;
         let peer = self.peer.to_string();
-        match ctx.store.authenticate_mail(login, password, AppScope::Smtp, "smtp", &peer).await {
+        // The network was checked when AUTH began; the login is only known now. Checks still
+        // running count too, shared with every other protocol.
+        let Some(attempt) = ctx.auth_limiter.begin(self.peer, login) else {
+            self.reply("454 4.7.0 Too many failed logins, try again later\r\n").await?;
+            return Ok(Next::Continue);
+        };
+        let checked = ctx.store.authenticate_mail(login, password, AppScope::Smtp, "smtp", &peer).await;
+        drop(attempt);
+        match checked {
             Ok(MailAuth::Ok { account, app_password }) => {
                 ctx.auth_limiter.record_success(self.peer, login);
                 tracing::info!(login = %account.login, peer = %self.peer, app_password = app_password.is_some(), "smtp login");

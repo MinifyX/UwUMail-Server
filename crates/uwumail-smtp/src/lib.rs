@@ -23,7 +23,6 @@ mod headers;
 pub mod health;
 pub mod https;
 mod inbound;
-mod limiter;
 pub mod mta_sts;
 mod outbound;
 pub mod palette;
@@ -65,13 +64,13 @@ pub use fetched::Mailbox as FetchedMailbox;
 /// The value of one header of a raw message, for callers that fetch mail and hand it in here.
 pub use headers::first_value as header_value;
 pub use inbound::{ListenerKind, Taken, deliver_fetched, serve, serve_stream};
-pub use limiter::{AuthLimiter, Reporter};
 pub use outbound::run_queue;
 pub use relay::IpNetwork;
 pub use spam::{FEEDS, Feed, feed, run_learning, run_list_updates};
 pub use stream::{BoxIo, Io};
 pub use submission::{Submission, SubmissionRecipient, SubmitError, Submitted};
 pub use tlsrpt::run_tls_reports;
+pub use uwumail_store::{AuthLimiter, BlockReporter as Reporter};
 
 #[derive(Debug, thiserror::Error)]
 pub enum SmtpError {
@@ -108,7 +107,8 @@ pub(crate) struct Context {
     pub validator: dane::Validator,
     /// Whether delivery sessions are counted and other domains get TLS reports about them.
     send_tls_reports: AtomicBool,
-    pub auth_limiter: limiter::AuthLimiter,
+    /// The store's, shared with every other protocol.
+    pub auth_limiter: Arc<AuthLimiter>,
     /// Recent blocklist answers about sending servers.
     pub blocklist_cache: spam::BlocklistCache,
     /// Recent domain blocklist answers about link domains.
@@ -200,6 +200,7 @@ impl Smtp {
             })
             .map_err(|err| SmtpError::Dns(err.to_string()))?;
         let SmtpSettings { hostname, smtp, spam, delivery, tone, server_tls } = settings;
+        let auth_limiter = store.auth_limiter().clone();
         Ok(Smtp {
             inner: Arc::new(Context {
                 store,
@@ -215,7 +216,7 @@ impl Smtp {
                 dns: DnsCaches::default(),
                 validator: dane::Validator::default(),
                 send_tls_reports: AtomicBool::new(ReportsConfig::default().send_tls_reports),
-                auth_limiter: limiter::AuthLimiter::default(),
+                auth_limiter,
                 blocklist_cache: spam::BlocklistCache::default(),
                 domain_cache: spam::DomainCache::default(),
                 uri_cache: spam::UriCache::default(),

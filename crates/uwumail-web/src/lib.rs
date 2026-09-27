@@ -75,7 +75,8 @@ pub struct Web {
 struct Inner {
     smtp: Smtp,
     settings: WebSettings,
-    limiter: AuthLimiter,
+    /// The store's, shared with every mail protocol.
+    limiter: Arc<AuthLimiter>,
     dns: Option<DnsChecker>,
     /// The latest DNS check of each domain.
     reports: Mutex<HashMap<String, DomainReport>>,
@@ -128,11 +129,12 @@ impl Web {
     pub fn new(smtp: Smtp, settings: WebSettings) -> Web {
         let dns =
             DnsChecker::new().inspect_err(|err| tracing::warn!(%err, "DNS checks of domains are not available")).ok();
+        let limiter = smtp.store().auth_limiter().clone();
         Web {
             inner: Arc::new(Inner {
                 smtp,
                 settings,
-                limiter: AuthLimiter::default(),
+                limiter,
                 dns,
                 reports: Mutex::default(),
                 last_health_check: Mutex::default(),
@@ -339,7 +341,7 @@ impl Web {
         &self.inner.login
     }
 
-    pub(crate) fn limiter(&self) -> &AuthLimiter {
+    pub(crate) fn limiter(&self) -> &Arc<AuthLimiter> {
         &self.inner.limiter
     }
 

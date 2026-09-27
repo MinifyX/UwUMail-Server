@@ -579,12 +579,15 @@ impl Session {
 
     async fn login(&mut self, username: &str, password: &str) -> io::Result<Flow> {
         let limiter = self.sieve.limiter.clone();
-        if limiter.is_blocked(self.peer.ip()) {
+        let Some(attempt) = limiter.begin(self.peer.ip(), username) else {
             self.send(&no(Some("TRYLATER"), "Too many failed logins, try again later")).await?;
             return Ok(Flow::Continue);
-        }
+        };
         let peer = self.peer.to_string();
-        match self.sieve.store.authenticate_mail(username, password, AppScope::Mail, "managesieve", &peer).await {
+        let checked =
+            self.sieve.store.authenticate_mail(username, password, AppScope::Mail, "managesieve", &peer).await;
+        drop(attempt);
+        match checked {
             Ok(MailAuth::Ok { account, app_password }) => {
                 limiter.record_success(self.peer.ip(), username);
                 tracing::info!(login = %account.login, peer = %self.peer, app_password = app_password.is_some(), "managesieve login");

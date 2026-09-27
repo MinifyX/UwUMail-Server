@@ -206,6 +206,22 @@ async fn wrong_passwords_are_counted_and_scripts_are_per_account() {
     assert!(store.active_sieve_script(nyu).await.unwrap().is_none());
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn a_login_guessed_at_elsewhere_waits_here_too() {
+    // security-audit-0.16.0 PROTOCOLS-8: the per-login spacing is the server's, not the portal's
+    // alone. Ten wrong passwords from ten networks, wherever they came in, and ManageSieve makes
+    // the next try wait too, before any password is checked.
+    let (store, address, certificate, _shutdown, _dir) = setup().await;
+    for network in 0..10 {
+        store.auth_limiter().record_failure(format!("198.51.100.{network}").parse().unwrap(), "mini@example.com");
+    }
+    let (mut client, _, _) = secure(address, &certificate).await;
+    let refused = client.command(&format!("AUTHENTICATE \"PLAIN\" \"{}\"", plain_login("mini@example.com"))).await;
+    assert!(refused.starts_with("NO (TRYLATER)"), "{refused}");
+    let other = client.command(&format!("AUTHENTICATE \"PLAIN\" \"{}\"", plain_login("nyu@example.com"))).await;
+    assert!(other.starts_with("OK"), "other logins are not held up: {other}");
+}
+
 /// Sends one command made of `count` literals of `size` bytes each and returns what the server
 /// answers, ending in `(closed)` when it hung up.
 async fn many_literals<S: AsyncRead + AsyncWrite + Unpin>(client: &mut Client<S>, count: usize, size: usize) -> String {

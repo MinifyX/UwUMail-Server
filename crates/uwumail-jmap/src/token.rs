@@ -59,9 +59,6 @@ pub async fn handle(
 ) -> Response {
     let client = client.map(|Extension(c)| c).unwrap_or_default();
     let auth = &jmap.inner.auth;
-    if auth.is_blocked(client) {
-        return problem(StatusCode::TOO_MANY_REQUESTS, "tooManyAttempts", "Too many failed logins, try again later.");
-    }
     let request: TokenRequest = match serde_json::from_slice(&body) {
         Ok(request) => request,
         Err(err) => return problem(StatusCode::BAD_REQUEST, "invalidRequest", &err.to_string()),
@@ -76,13 +73,22 @@ pub async fn handle(
     }
 
     let store = auth.store();
-    let account = match store.authenticate(&request.username, &request.password).await {
+    // The counts every login path shares, checked before the slow password check starts.
+    let Some(attempt) = auth.begin(client, &request.username) else {
+        return problem(StatusCode::TOO_MANY_REQUESTS, "tooManyAttempts", "Too many failed logins, try again later.");
+    };
+    let checked = store.authenticate(&request.username, &request.password).await;
+    drop(attempt);
+    let account = match checked {
         Ok(Some(account)) => account,
         Ok(None) => {
-            auth.failed(client);
+            auth.failed(client, &request.username);
             store.stats().count(uwumail_store::Stat::LoginFailedJmap);
             tracing::warn!(login = %request.username, ip = %client.ip, "failed JMAP token login");
             return wrong_login();
+        }
+        Err(StoreError::Busy) => {
+            return problem(StatusCode::SERVICE_UNAVAILABLE, "busy", "The server is busy, try again in a moment.");
         }
         Err(err) => {
             tracing::error!(%err, "JMAP token login failed internally");
@@ -116,7 +122,7 @@ pub async fn handle(
         };
         match store.check_second_factor_code(account.id, code).await {
             Ok(CodeCheck::Invalid) => {
-                auth.failed(client);
+                auth.failed(client, &account.login);
                 auth.second_factor_failed(account.id);
                 tracing::warn!(login = %account.login, ip = %client.ip, "wrong second factor for a JMAP token");
                 return problem(StatusCode::UNAUTHORIZED, "invalidCode", "The code is wrong or was used before.");
@@ -166,6 +172,7 @@ pub async fn handle(
             }
         }
     }
+    auth.succeeded(client, &account.login);
     tracing::info!(login = %account.login, ip = %client.ip, "JMAP token created");
 
     let base = base_url(&headers, client);

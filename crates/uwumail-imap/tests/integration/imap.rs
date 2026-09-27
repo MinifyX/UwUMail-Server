@@ -59,9 +59,14 @@ struct Client {
 
 impl Client {
     async fn connect(server: &Server) -> Client {
+        Client::connect_from(server, "192.0.2.7:40000").await
+    }
+
+    async fn connect_from(server: &Server, peer: &str) -> Client {
         let (client, connection) = tokio::io::duplex(4 * 1024 * 1024);
         let imap = server.imap.clone();
-        tokio::spawn(async move { imap.serve_connection(connection, "192.0.2.7:40000".parse().unwrap()).await });
+        let peer = peer.parse().unwrap();
+        tokio::spawn(async move { imap.serve_connection(connection, peer).await });
         let (reader, writer) = tokio::io::split(client);
         let mut client = Client { reader: BufReader::new(reader), writer, next_tag: 1 };
         let greeting = client.line().await;
@@ -134,6 +139,36 @@ fn find<'a>(lines: &'a [String], needle: &str) -> &'a str {
 fn number_after(text: &str, prefix: &str) -> u64 {
     let start = text.find(prefix).unwrap_or_else(|| panic!("{prefix} not in {text}")) + prefix.len();
     text[start..].chars().take_while(char::is_ascii_digit).collect::<String>().parse().unwrap()
+}
+
+#[tokio::test]
+async fn guesses_at_one_login_from_many_networks_are_spaced_out() {
+    // security-audit-0.16.0 PROTOCOLS-8: ten wrong passwords for one login, each from a network of
+    // its own, and the next try waits, even with the right password and from yet another network.
+    let server = server().await;
+    // At once, so the pause after each wrong password is waited out only once.
+    let mut guesses = tokio::task::JoinSet::new();
+    for network in 0..10 {
+        let mut client = Client::connect_from(&server, &format!("198.51.100.{network}:40000")).await;
+        guesses.spawn(async move { client.command("LOGIN mini@example.org wrong-password").await.1 });
+    }
+    while let Some(denied) = guesses.join_next().await {
+        let denied = denied.unwrap();
+        assert!(denied.contains("NO [AUTHENTICATIONFAILED]"), "{denied}");
+    }
+    let mut client = Client::connect_from(&server, "203.0.113.9:40000").await;
+    let (_, refused) = client.command(&format!("LOGIN mini@example.org \"{PASSWORD}\"")).await;
+    assert!(refused.contains("NO [UNAVAILABLE]"), "{refused}");
+
+    // The count is the server's, not IMAP's own: wrong passwords at the portal or over SMTP count
+    // here as well.
+    let store = &server.store;
+    let before = (0..10).map(|n| format!("2001:db8:{n}::1").parse().unwrap());
+    for ip in before {
+        store.auth_limiter().record_failure(ip, "nyu@example.org");
+    }
+    let (_, refused) = client.command("LOGIN nyu@example.org whatever-password").await;
+    assert!(refused.contains("NO [UNAVAILABLE]"), "{refused}");
 }
 
 #[tokio::test]

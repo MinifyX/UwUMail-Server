@@ -270,6 +270,21 @@ async fn submission_rules() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_login_guessed_at_elsewhere_waits_here_too() {
+    // security-audit-0.16.0 PROTOCOLS-8: ten wrong passwords for one login from ten networks,
+    // over any protocol, and SMTP makes the next try wait as well, without checking the password.
+    let a = start("a.test", &["mini", "ami"], &[]).await;
+    for network in 0..10 {
+        a.smtp.store().auth_limiter().record_failure(format!("198.51.100.{network}").parse().unwrap(), "mini@a.test");
+    }
+    let refused = a.mailer("mini@a.test", PASSWORD, false).send(mail("mini@a.test", &["ami@a.test"], "x")).await;
+    let refused = refused.expect_err("the login waits");
+    assert!(refused.to_string().contains("Too many failed logins"), "{refused}");
+    assert_eq!(a.counted(Stat::LoginFailedSmtp), 0, "no password was checked");
+    a.mailer("ami@a.test", PASSWORD, false).send(mail("ami@a.test", &["mini@a.test"], "x")).await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn mx_refuses_relaying_and_strips_forged_results() {
     let a = start("a.test", &["mini"], &[]).await;
     for name in ["elsewhere.test", "client.elsewhere.test", "_dmarc.elsewhere.test"] {

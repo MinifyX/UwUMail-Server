@@ -84,9 +84,10 @@ pub async fn login(
     Json(request): Json<LoginRequest>,
 ) -> ApiResult<Response> {
     let client = client.map(|Extension(c)| c).unwrap_or_default();
-    if web.limiter().is_blocked(client.ip) || web.limiter().account_throttled(&request.login) {
+    // Counted from before the check starts, so a burst of tries cannot all slip through at once.
+    let Some(_attempt) = web.limiter().begin(client.ip, &request.login) else {
         return Err(ApiError::TooManyAttempts);
-    }
+    };
     // A service account has no password here at all, but the answer must not say which of the
     // two it was: the same refusal, and the same time spent, as a wrong password.
     let found = match web.store().authenticate(request.login.trim(), &request.password).await? {
