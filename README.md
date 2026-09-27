@@ -47,9 +47,15 @@ something a family, a club or a small team can run without being a mail admin:
   CardDAV for calendars and contacts, and the same calendars and address books
   as JMAP Calendars and JMAP Contacts for the webmail and the apps; [Sieve mail rules](docs/sieve.md) over JMAP and
   ManageSieve. IMAP speaks IMAP4rev2 as well as IMAP4rev1.
-- **Shared folders.** Share a folder with people on your server — to read, to
-  read and write, or everything — from My account, over JMAP or with IMAP ACLs;
-  it shows in their mail app and webmail. See [sharing](docs/sharing.md).
+- **Shared folders, groups and shared mailboxes.** Share a folder with people
+  on your server — to read, to read and write, or everything — from My account,
+  over JMAP or with IMAP ACLs; it shows in their mail app and webmail. Groups
+  like `info@` reach several people, shared mailboxes like `support@` are used
+  by a team, and masked addresses keep your real one away from websites. See
+  [sharing](docs/sharing.md) and [groups](docs/groups.md).
+- **Moving in made easy.** Give the old address and its password under My
+  account → Moving, and the server copies every folder over in the background
+  ([how](docs/moving.md)).
 - **Shared calendars and invitations.** Share calendars and address books with
   people on your server; invite anyone to an event and get their answers, in
   the calendar app you already use ([how it works](docs/calendars.md)). iPhone,
@@ -63,11 +69,17 @@ something a family, a club or a small team can run without being a mail admin:
   [ClamAV beside the server](docs/antivirus.md) turns infected mail away before
   it is taken.
 - **Backups and updates built in.** Nightly deduplicated, encrypted backups to
-  SFTP, and the portal tells you when a new version is out.
+  SFTP, an S3 bucket or a folder, single mailboxes restored from the portal,
+  and the portal tells you when a new version is out.
+- **Push to closed apps.** The webmail notifies with its tab closed, and the
+  Android app gets new mail through UnifiedPush ([JMAP push](docs/jmap-push.md)).
 - **Everything in one panel.** Accounts, domains, queue, logs, spam and
   settings, in German, English, French, Dutch, Japanese or Chinese, in a playful
   or a plain tone — and with [your own name, logo and colour](docs/branding.md)
-  instead of UwUMail's if you like.
+  instead of UwUMail's if you like. A calm view with just the traffic light,
+  alert mails, statistics and [Prometheus metrics](docs/metrics.md) for admins;
+  login through your own [OIDC or LDAP](docs/login-oidc-ldap.md), and
+  [OAuth](docs/oauth.md) for mail apps.
 - **Private by default.** No telemetry. Your mail stays on your hardware.
 
 > **Status:** early, but I run my own mail on it. Set up backups, and remember

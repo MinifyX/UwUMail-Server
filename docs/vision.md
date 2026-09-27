@@ -30,9 +30,9 @@ These are the rules I build by.
    the server says what and how to fix it.
 2. **Everything there, said plainly.** The admin panel shows the whole
    server — accounts, domains, queue, logs, DKIM, spam scores, raw settings —
-   and explains each of them in a sentence instead of hiding them. A calmer
-   view for people who only want the traffic light may come back later, once
-   there is a full set of features to choose from.
+   and explains each of them in a sentence instead of hiding them. Admins who
+   only want the traffic light switch to a calmer view that shows just what
+   needs doing, and get a mail when something goes wrong.
 3. **Modern protocols, no lock-in.** JMAP is the primary protocol and powers
    the UwUMail apps and web mail. IMAP, SMTP submission, CalDAV, CardDAV and
    ManageSieve keep every other app working.
@@ -59,7 +59,7 @@ yourself, UwUMail Server might suit you too.
 | "My server lives at home" | Gateway for port 25 and a fixed IP, good deliverability |
 | "I run infrastructure anyway" | Reverse proxy mode, OIDC/LDAP login, Prometheus metrics, backups to S3 |
 
-Much of this is still on the [roadmap](roadmap.md).
+All of this is built now; what's next is on the [roadmap](roadmap.md).
 
 ## Size
 

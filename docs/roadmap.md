@@ -24,7 +24,6 @@ Each step ships as its own commits, container image and test deployment.
 - [x] TLS: Let's Encrypt (HTTP-01), certificate files with reload, self-signed for testing
 - [x] Command line: domains, DNS records, accounts, aliases, queue
 - [x] Container image (amd64 + arm64), compose file, local two-server test stack
-- [ ] Public test instance
 
 ## 2. JMAP ✅ in progress
 
@@ -114,13 +113,12 @@ Each step ships as its own commits, container image and test deployment.
 ## Later
 
 - [x] Sieve filters and ManageSieve: mail rules per account, run at delivery, managed over JMAP (RFC 9661) and ManageSieve (RFC 5804) (docs/sieve.md)
-- [ ] OAuth 2 / OpenID Connect provider for mail apps; login via external OIDC or LDAP
-- [ ] Migration assistant (IMAP import from the old provider)
-- [ ] Groups, shared mailboxes, masked addresses
-- [ ] Settings sync for the UwUMail apps, snooze on the server
-- [ ] Web Push / UnifiedPush
+- [x] OAuth 2 / OpenID Connect provider for mail apps (OAUTHBEARER/XOAUTH2 for IMAP, SMTP and ManageSieve, Bearer for JMAP and DAV); portal login via external OIDC or LDAP (docs/oauth.md, docs/login-oidc-ldap.md)
+- [x] Moving assistant in the portal: IMAP import from the old provider with its own password, synced again on request (docs/moving.md)
+- [x] Groups, shared mailboxes, masked addresses with Fastmail's JMAP MaskedEmail (docs/groups.md, docs/jmap-masked-email.md)
+- [x] Web Push / UnifiedPush through JMAP `PushSubscription`, used by the webmail and the Android app (docs/jmap-push.md)
 - [x] Nightly backups to SFTP: deduplicated, encrypted by default, 7/4/6 retention, full restore from the command line
-- [ ] Restore per mailbox in the portal, backups to S3 or a mounted folder
-- [ ] A calmer view of the admin panel for people who only want the traffic light
-- [ ] Admin alerts, statistics, Prometheus metrics
-- [ ] Sending TLS reports to other domains, DANE
+- [x] Restore per mailbox in the portal, backups to S3 or a mounted folder (docs/backups.md)
+- [x] A calmer view of the admin panel for people who only want the traffic light (docs/admin-alerts.md)
+- [x] Admin alerts, statistics, Prometheus metrics (docs/admin-alerts.md, docs/metrics.md)
+- [x] Sending TLS reports to other domains, DANE (docs/tls-reports.md)
