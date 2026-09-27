@@ -21,6 +21,10 @@ use uwumail_store::{BlobHash, ImportProgress, IngestRequest, MailboxRole, Mailbo
 /// Messages fetched per request.
 const BATCH: usize = 25;
 const TIMEOUT: Duration = Duration::from_secs(120);
+/// The longest one command's whole answer may take.
+const COMMAND_LIMIT: Duration = Duration::from_secs(5 * 60);
+/// The same for a batch of messages, which may be large.
+const FETCH_LIMIT: Duration = Duration::from_secs(30 * 60);
 /// The largest literal this reads before allocating for it. A hostile or broken provider could
 /// otherwise announce something like `{9223372036854775808}` and make the allocation abort the
 /// whole server, which then crash-loops on the same account (security-audit-0.5.2 S-25). It also
@@ -172,9 +176,10 @@ impl Connection {
             .context("connecting timed out")?
             .with_context(|| format!("connecting to {}", source.address))?;
         let server_name = ServerName::try_from(name.clone()).map_err(|_| anyhow!("{name} is not a valid TLS name"))?;
-        let tls = tokio_rustls::TlsConnector::from(Arc::new(config))
-            .connect(server_name, tcp)
+        let handshake = tokio_rustls::TlsConnector::from(Arc::new(config)).connect(server_name, tcp);
+        let tls = tokio::time::timeout(TIMEOUT, handshake)
             .await
+            .context("the TLS handshake timed out")?
             .with_context(|| format!("TLS with {} (checked as {name})", source.address))?;
         let mut connection = Connection { stream: BufReader::new(tls), next_tag: 1 };
         let mut budget = MAX_SMALL_ANSWER;
@@ -185,8 +190,18 @@ impl Connection {
         Ok(connection)
     }
 
-    /// Sends a command and returns its untagged responses once it completed.
+    /// Sends a command and returns its untagged responses once it completed. Every line has
+    /// [`TIMEOUT`] to come, and the whole answer [`COMMAND_LIMIT`] ([`FETCH_LIMIT`] for a batch of
+    /// messages): an untagged line now and then must not keep a command going for ever.
     pub(crate) async fn command(&mut self, command: &str) -> anyhow::Result<Vec<Response>> {
+        let limit = if command.starts_with("UID FETCH") { FETCH_LIMIT } else { COMMAND_LIMIT };
+        let shown = if command.starts_with("LOGIN") { "LOGIN" } else { command }.to_owned();
+        tokio::time::timeout(limit, self.command_untimed(command))
+            .await
+            .map_err(|_| anyhow!("{shown}: the server did not finish answering in time"))?
+    }
+
+    async fn command_untimed(&mut self, command: &str) -> anyhow::Result<Vec<Response>> {
         let tag = format!("u{}", self.next_tag);
         self.next_tag += 1;
         self.stream.get_mut().write_all(format!("{tag} {command}\r\n").as_bytes()).await?;
