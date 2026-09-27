@@ -13,6 +13,7 @@
 
 import type { Brand } from "@/state/brand";
 import type {
+  AccountMaskedPolicy,
   AccountSpamView,
   AdminAlert,
   AlertsView,
@@ -48,8 +49,11 @@ import type {
   IdentityInfo,
   DkimKeyInfo,
   DomainDetail,
+  DomainKind,
+  DomainMaskedPolicy,
   DomainReport,
   DomainSummary,
+  EffectiveMaskedPolicy,
   LearnedFromFolders,
   LokiStatus,
   MaskedAddress,
@@ -280,7 +284,8 @@ interface MockDomain {
   mtaSts?: MtaStsView | null;
   forwards?: ForwardAddress[];
   groups?: GroupInfo[];
-  maskedAddresses?: boolean;
+  kind?: DomainKind;
+  maskedPolicy?: DomainMaskedPolicy;
 }
 
 function mtaStsView(mode: MtaStsView["mode"], changedAt: number): MtaStsView {
@@ -449,8 +454,20 @@ const domains: MockDomain[] = [
     ],
     report: null,
   },
+  {
+    name: "masked.example",
+    kind: "masked",
+    catchAll: null,
+    createdAt: now - 10 * 86_400,
+    keys: [
+      key("masked.example", "uwu202609r", "active", "rsa-sha256"),
+      key("masked.example", "uwu202609e", "active", "ed25519-sha256"),
+    ],
+    report: null,
+  },
 ];
 domains[0]!.report = report(domains[0]!, true);
+domains[0]!.maskedPolicy = { mode: "both", maskedDomains: ["masked.example"], defaultDomain: null };
 let rotationChecks = 0;
 
 const addressCount = (domain: string, kind: "primary" | "alias") =>
@@ -461,6 +478,7 @@ const addressCount = (domain: string, kind: "primary" | "alias") =>
 
 const summary = (domain: MockDomain): DomainSummary => ({
   name: domain.name,
+  kind: domain.kind ?? "mail",
   catchAll: domain.catchAll,
   createdAt: domain.createdAt,
   people: addressCount(domain.name, "primary"),
@@ -476,7 +494,10 @@ const detail = (domain: MockDomain): DomainDetail => ({
   mtaSts: domain.mtaSts ?? null,
   forwards: domain.forwards ?? [],
   groups: domain.groups ?? [],
-  maskedAddresses: domain.maskedAddresses ?? domain.name === "uwu.example",
+  maskedPolicy: domain.kind === "masked" ? null : domainPolicy(domain),
+  maskedDomainChoices: maskedDomainNames(),
+  kindBlockers: domain.kind === "masked" ? null : kindBlockers(domain),
+  maskedUsedBy: domain.kind === "masked" ? maskedUsedBy(domain.name) : null,
   maskedInUse: mockMasked.filter((entry) => entry.state !== "deleted" && entry.email.endsWith(`@${domain.name}`))
     .length,
   setup: { hostname: "mail.uwu.example", relayHost: null, upstreamMx: false },
@@ -1477,9 +1498,82 @@ const mockMasked: MaskedAddress[] = [
 
 const MASKED_WORDS = ["maple", "otter", "cloud", "fern", "pebble", "sunny", "wren", "velvet"];
 
+/** What admins set for single accounts; everyone else goes by their domain. */
+const mockMaskedCustom: Record<string, AccountMaskedPolicy> = {};
+const NO_CUSTOM: AccountMaskedPolicy = { mode: null, maskedDomains: null, defaultDomain: null };
+
+function domainPolicy(domain: MockDomain): DomainMaskedPolicy {
+  return domain.maskedPolicy ?? { mode: "off", maskedDomains: [], defaultDomain: null };
+}
+
+function maskedDomainNames() {
+  return domains.filter((domain) => domain.kind === "masked").map((domain) => domain.name);
+}
+
+function kindBlockers(domain: MockDomain) {
+  return {
+    accounts: people.filter((p) => p.login.endsWith(`@${domain.name}`)).length,
+    aliases: addressCount(domain.name, "alias"),
+    groups: domain.groups?.length ?? 0,
+    forwards: domain.forwards?.length ?? 0,
+    catchAll: domain.catchAll !== null,
+    sendAs: Object.values(mockSendAs).filter((list) => list.includes(domain.name)).length,
+  };
+}
+
+function maskedUsedBy(name: string) {
+  return {
+    domains: domains
+      .filter(
+        (domain) => domain.maskedPolicy?.maskedDomains.includes(name) || domain.maskedPolicy?.defaultDomain === name,
+      )
+      .map((domain) => domain.name),
+    accounts: Object.entries(mockMaskedCustom)
+      .filter(([, custom]) => custom.maskedDomains?.includes(name) || custom.defaultDomain === name)
+      .map(([login]) => login)
+      .sort(),
+  };
+}
+
+/** Whether something other than a masked address may go on this domain. */
+function maskedOnly(address: string) {
+  const name = address.slice(address.lastIndexOf("@") + 1).toLowerCase();
+  return domains.some((domain) => domain.name === name && domain.kind === "masked");
+}
+
+/** The account's policy in the end, worked out as the server does. */
+function effectiveMasked(login: string): EffectiveMaskedPolicy {
+  const ownName = login.slice(login.lastIndexOf("@") + 1);
+  const own = domains.find((domain) => domain.name === ownName && domain.kind !== "masked");
+  const domain = own ? domainPolicy(own) : { mode: "off" as const, maskedDomains: [], defaultDomain: null };
+  const custom = mockMaskedCustom[login] ?? NO_CUSTOM;
+  const mode = custom.mode ?? domain.mode;
+  const maskedDomains = custom.maskedDomains ?? domain.maskedDomains;
+  const allowed = new Set<string>();
+  if ((mode === "own" || mode === "both") && own) allowed.add(own.name);
+  if (mode === "dedicated" || mode === "both") maskedDomains.forEach((name) => allowed.add(name));
+  const list = [...allowed].sort();
+  const stored = custom.defaultDomain ?? domain.defaultDomain;
+  const defaultDomain =
+    (stored && list.includes(stored) ? stored : null) ??
+    (own && list.includes(own.name) ? own.name : (list[0] ?? null));
+  return { mode, maskedDomains, domains: list, defaultDomain };
+}
+
+function personMaskedPolicy(login: string) {
+  const ownName = login.slice(login.lastIndexOf("@") + 1);
+  const own = domains.find((domain) => domain.name === ownName && domain.kind !== "masked");
+  return {
+    custom: mockMaskedCustom[login] ?? NO_CUSTOM,
+    domain: own ? domainPolicy(own) : null,
+    effective: effectiveMasked(login),
+    choices: maskedDomainNames(),
+  };
+}
+
 function maskedView() {
-  const open = domains.filter((domain) => domain.maskedAddresses ?? domain.name === "uwu.example");
-  return { addresses: mockMasked, domains: open.map((domain) => domain.name) };
+  const policy = effectiveMasked(session().account.login);
+  return { addresses: mockMasked, domains: policy.domains, defaultDomain: policy.defaultDomain };
 }
 
 /** Members of the shared mailboxes, by their login. */
@@ -3250,8 +3344,8 @@ const routes: [string, RegExp, Handler][] = [
     (body) => {
       const input = body as { domain?: string; description: string; forDomain: string; emailPrefix: string | null };
       const view = maskedView();
-      const domain = input.domain || view.domains[0];
-      if (!domain) return problem(409, "maskedDomain");
+      const domain = input.domain || view.defaultDomain;
+      if (!domain || !view.domains.includes(domain)) return problem(409, "maskedDomain");
       if (input.emailPrefix && !/^[a-z0-9_]{1,64}$/i.test(input.emailPrefix)) return problem(409, "maskedPrefix");
       const word = () => MASKED_WORDS[Math.floor(Math.random() * MASKED_WORDS.length)]!;
       const random = `${word()}.${word()}${String(Math.floor(Math.random() * 1000)).padStart(3, "0")}`;
@@ -3736,17 +3830,20 @@ const routes: [string, RegExp, Handler][] = [
     "POST",
     /^\/api\/admin\/domains$/,
     (body) => {
-      const name = (body as { name: string }).name.toLowerCase();
+      const input = body as { name: string; kind?: DomainKind };
+      const name = input.name.toLowerCase();
       if (domains.some((d) => d.name === name)) return problem(409, "conflict");
       const created: MockDomain = {
         name,
+        kind: input.kind ?? "mail",
         catchAll: null,
         createdAt: Math.floor(Date.now() / 1000),
         keys: [key(name, "uwu202609r", "active", "rsa-sha256"), key(name, "uwu202609e", "active", "ed25519-sha256")],
         report: null,
       };
       domains.push(created);
-      log("domain.create", name);
+      domains.sort((a, b) => a.name.localeCompare(b.name));
+      log("domain.create", name, { kind: created.kind });
       return [201, detail(created)];
     },
   ],
@@ -3956,7 +4053,9 @@ const routes: [string, RegExp, Handler][] = [
     (body, [name]) => {
       const found = domains.find((d) => d.name === name);
       if (!found) return problem(404, "notFound");
-      found.catchAll = (body as { login: string | null }).login;
+      const login = (body as { login: string | null }).login;
+      if (login && found.kind === "masked") return problem(409, "maskedOnlyDomain");
+      found.catchAll = login;
       log("domain.catchAll", name!, { account: found.catchAll });
       return [200, detail(found)];
     },
@@ -3968,6 +4067,7 @@ const routes: [string, RegExp, Handler][] = [
       const found = domains.find((d) => d.name === name);
       if (!found) return problem(404, "notFound");
       const { local, targets, note } = body as { local: string; targets: string[]; note: string };
+      if (found.kind === "masked") return problem(409, "maskedOnlyDomain");
       if (targets.length === 0 || targets.some((target) => !target.includes("@"))) return problem(422, "invalid");
       const address = `${local.toLowerCase()}@${name}`;
       const others = (found.forwards ?? []).filter((forward) => forward.address !== address);
@@ -4052,6 +4152,7 @@ const routes: [string, RegExp, Handler][] = [
         password?: string;
       };
       const login = input.address.toLowerCase();
+      if (maskedOnly(login)) return problem(409, "maskedOnlyDomain");
       if (people.some((p) => p.addresses.some((a) => a.address === login))) return problem(409, "conflict");
       const created = person(login, input.name, {
         role: input.service ? "service" : input.admin ? "admin" : "user",
@@ -4105,6 +4206,7 @@ const routes: [string, RegExp, Handler][] = [
           members: found.sharedMailbox ? (sharedMembers[found.login] ?? []) : undefined,
           oauthGrants,
           authSource,
+          maskedPolicy: personMaskedPolicy(found.login),
         },
       ];
     },
@@ -4454,6 +4556,7 @@ const routes: [string, RegExp, Handler][] = [
     /^\/api\/admin\/people\/([^/]+)\/send-as-domains$/,
     (body, [login]) => {
       const { domains: chosen } = body as { domains: string[] };
+      if (chosen.some((name) => maskedOnly(`x@${name}`))) return problem(409, "maskedOnlyDomain");
       mockSendAs[login!] = [...new Set(chosen)].sort();
       log("account.sendAsDomains", login!, { domains: mockSendAs[login!] });
       return [200, { domains: mockSendAs[login!] }];
@@ -4482,6 +4585,7 @@ const routes: [string, RegExp, Handler][] = [
         members: string[];
       };
       const address = `${input.local.trim().toLowerCase()}@${name}`;
+      if (found.kind === "masked") return problem(409, "maskedOnlyDomain");
       const taken =
         people.some((p) => p.addresses.some((a) => a.address === address)) ||
         (found.groups ?? []).some((group) => group.address === address) ||
@@ -4535,12 +4639,92 @@ const routes: [string, RegExp, Handler][] = [
   ],
   [
     "PUT",
-    /^\/api\/admin\/domains\/([^/]+)\/masked-addresses$/,
+    /^\/api\/admin\/domains\/([^/]+)\/masked-policy$/,
     (body, [name]) => {
       const domain = domains.find((entry) => entry.name === name);
-      if (domain) domain.maskedAddresses = (body as { on: boolean }).on;
-      log("domain.maskedAddresses", name ?? "", body as Record<string, unknown>);
-      return [204, null];
+      if (!domain) return problem(404, "notFound");
+      if (domain.kind === "masked") return problem(409, "maskedOnlyDomain");
+      const input = body as DomainMaskedPolicy;
+      const maskedDomains = [...new Set(input.maskedDomains)].sort();
+      if (maskedDomains.some((entry) => !maskedDomainNames().includes(entry))) return problem(409, "notMaskedDomain");
+      const allowed = [
+        ...(input.mode === "own" || input.mode === "both" ? [domain.name] : []),
+        ...(input.mode === "dedicated" || input.mode === "both" ? maskedDomains : []),
+      ];
+      if (input.defaultDomain && !allowed.includes(input.defaultDomain)) return problem(409, "maskedDefault");
+      domain.maskedPolicy = { mode: input.mode, maskedDomains, defaultDomain: input.defaultDomain ?? null };
+      log("domain.maskedPolicy", domain.name, { ...domain.maskedPolicy });
+      return [200, detail(domain)];
+    },
+  ],
+  [
+    "PUT",
+    /^\/api\/admin\/domains\/([^/]+)\/kind$/,
+    (body, [name]) => {
+      const domain = domains.find((entry) => entry.name === name);
+      if (!domain) return problem(404, "notFound");
+      const kind = (body as { kind: DomainKind }).kind;
+      if ((domain.kind ?? "mail") === kind) return [200, detail(domain)];
+      if (kind === "masked") {
+        const blockers = kindBlockers(domain);
+        if (Object.values(blockers).some((value) => value === true || (typeof value === "number" && value > 0))) {
+          return [409, { code: "kindChangeBlocked", detail: "kindChangeBlocked", blockers }];
+        }
+        domain.kind = "masked";
+        domain.maskedPolicy = undefined;
+        domain.selfServiceAliases = false;
+        log("domain.kind", domain.name, { kind, removedFromDomains: [], removedFromAccounts: [] });
+      } else {
+        const usedBy = maskedUsedBy(domain.name);
+        for (const other of domains) {
+          const policy = other.maskedPolicy;
+          if (!policy) continue;
+          policy.maskedDomains = policy.maskedDomains.filter((entry) => entry !== domain.name);
+          if (policy.defaultDomain === domain.name) policy.defaultDomain = null;
+        }
+        for (const custom of Object.values(mockMaskedCustom)) {
+          if (custom.maskedDomains)
+            custom.maskedDomains = custom.maskedDomains.filter((entry) => entry !== domain.name);
+          if (custom.defaultDomain === domain.name) custom.defaultDomain = null;
+        }
+        domain.kind = "mail";
+        log("domain.kind", domain.name, {
+          kind,
+          removedFromDomains: usedBy.domains,
+          removedFromAccounts: usedBy.accounts,
+        });
+      }
+      return [200, detail(domain)];
+    },
+  ],
+  [
+    "PUT",
+    /^\/api\/admin\/people\/([^/]+)\/masked-policy$/,
+    (body, [login]) => {
+      const found = people.find((entry) => entry.login === login);
+      if (!found) return problem(404, "notFound");
+      const input = body as AccountMaskedPolicy;
+      if (input.maskedDomains?.some((entry) => !maskedDomainNames().includes(entry))) {
+        return problem(409, "notMaskedDomain");
+      }
+      const custom: AccountMaskedPolicy = {
+        mode: input.mode ?? null,
+        maskedDomains: input.maskedDomains ? [...new Set(input.maskedDomains)].sort() : null,
+        defaultDomain: null,
+      };
+      const before = mockMaskedCustom[found.login];
+      mockMaskedCustom[found.login] = custom;
+      if (input.defaultDomain) {
+        // Refused as a whole, as the server does.
+        if (!effectiveMasked(found.login).domains.includes(input.defaultDomain)) {
+          if (before) mockMaskedCustom[found.login] = before;
+          else delete mockMaskedCustom[found.login];
+          return problem(409, "maskedDefault");
+        }
+        custom.defaultDomain = input.defaultDomain;
+      }
+      log("account.maskedPolicy", found.login, { ...custom });
+      return [200, personMaskedPolicy(found.login)];
     },
   ],
   [
@@ -4564,6 +4748,7 @@ const routes: [string, RegExp, Handler][] = [
         members: { login: string; maySend: boolean }[];
       };
       const login = input.address.toLowerCase();
+      if (maskedOnly(login)) return problem(409, "maskedOnlyDomain");
       if (people.some((p) => p.addresses.some((a) => a.address === login))) return problem(409, "conflict");
       const created = person(login, input.name, {
         role: "service",
@@ -4679,6 +4864,7 @@ const routes: [string, RegExp, Handler][] = [
       const found = people.find((p) => p.login === login);
       const value = (body as { address: string }).address.toLowerCase();
       if (!found) return problem(404, "notFound");
+      if (maskedOnly(value)) return problem(409, "maskedOnlyDomain");
       if (people.some((p) => p.addresses.some((a) => a.address === value))) return problem(409, "conflict");
       found.addresses.push(address(value, "alias"));
       log("alias.add", value, { account: login });

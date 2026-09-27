@@ -20,6 +20,9 @@ const ACTIONS = [
   "account.oauthRevoked",
   "alert.acknowledge",
   "domain.maskedAddresses",
+  "domain.maskedPolicy",
+  "domain.kind",
+  "account.maskedPolicy",
   "group.create",
   "group.update",
   "group.remove",
@@ -44,5 +47,16 @@ describe("the change log", () => {
     expect(detailText(record("domain.maskedAddresses", { on: false }), t, "en")).toBe("switched off");
     expect(detailText(record("account.authSource", { source: "ldap" }), t, "en")).toBe("now: At the LDAP directory");
     expect(detailText(record("account.oauthRevoked", { name: "Mail" }), t, "en")).toBe("app “Mail”");
+  });
+
+  it("says what changed about masked addresses", () => {
+    const t = i18n.getFixedT("en", "neutral");
+    const kind = record("domain.kind", { kind: "mail", removedFromDomains: ["example.org"], removedFromAccounts: [] });
+    expect(detailText(kind, t, "en")).toBe("now a mail domain · taken out of 1 masked address setting");
+    expect(detailText(record("domain.create", { kind: "mail" }), t, "en")).toBe("");
+    expect(detailText(record("domain.create", { kind: "masked" }), t, "en")).toBe("only for masked addresses");
+    const policy = record("domain.maskedPolicy", { mode: "dedicated", maskedDomains: ["masked.example"] });
+    expect(detailText(policy, t, "en")).toBe("masked addresses: Masked-only domains");
+    expect(detailText(record("account.maskedPolicy", { mode: null }), t, "en")).toBe("masked addresses: as the domain");
   });
 });

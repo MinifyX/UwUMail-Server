@@ -516,7 +516,7 @@
       "refreshPause": "Just fetched. Try again in a minute.",
       "sharedMailbox": "This is a shared mailbox: it has app passwords but no password, and its members use it from their own accounts.",
       "sharedMailboxNeedsMailbox": "A shared mailbox keeps its mail: IMAP or JMAP has to stay on.",
-      "maskedDomain": "No domain on this server is open for masked addresses yet. Ask the admin.",
+      "maskedDomain": "Masked addresses are not switched on for you on this domain. Ask the admin.",
       "maskedLimit": "You have as many masked addresses as this server allows. Delete some you no longer need.",
       "maskedPrefix": "A prefix may only have letters a–z, digits and _, up to 64 of them.",
       "maskedState": "A masked address cannot go back to waiting for its first mail.",
@@ -536,7 +536,11 @@
       "oauthClientUnknown": "This app is not registered on this server.",
       "oauthRedirectInvalid": "The app asked to be sent somewhere it did not register.",
       "oidcFailed": "The login service did not work out: {{detail}}",
-      "ldapFailed": "The directory did not work out: {{detail}}"
+      "ldapFailed": "The directory did not work out: {{detail}}",
+      "maskedOnlyDomain": "This domain carries only masked addresses: no people, aliases, groups, forwarding addresses or catch-all.",
+      "notMaskedDomain": "Only domains for masked addresses can be chosen here.",
+      "maskedDefault": "The default domain has to be one of the allowed domains.",
+      "kindChangeBlocked": "Something other than masked addresses is still on this domain. Remove it first."
     }
   },
   "people": {
@@ -868,7 +872,10 @@
       "sharedMailboxCreate": "{{actor}} created the shared mailbox {{target}}",
       "sharedMailboxMembers": "{{actor}} changed the members of the shared mailbox {{target}}",
       "sharedMailboxConvert": "{{actor}} turned {{target}} into a shared mailbox",
-      "sharedMailboxEnd": "{{actor}} made the shared mailbox {{target}} a plain service"
+      "sharedMailboxEnd": "{{actor}} made the shared mailbox {{target}} a plain service",
+      "domainMaskedPolicy": "{{actor}} changed where the people of {{target}} may make masked addresses",
+      "domainKind": "{{actor}} changed the kind of the domain {{target}}",
+      "accountMaskedPolicy": "{{actor}} changed where {{target}} may make masked addresses"
     },
     "details": {
       "adminOn": "is now an admin",
@@ -895,7 +902,13 @@
       "switchedOn": "switched on",
       "switchedOff": "switched off",
       "authSource": "now: {{value}}",
-      "oauthApp": "app “{{value}}”"
+      "oauthApp": "app “{{value}}”",
+      "kindMasked": "only for masked addresses",
+      "kindMail": "now a mail domain",
+      "maskedMode": "masked addresses: {{value}}",
+      "maskedAsDomain": "masked addresses: as the domain",
+      "maskedRemovedFrom_one": "taken out of {{count}} masked address setting",
+      "maskedRemovedFrom_other": "taken out of {{count}} masked address settings"
     },
     "entry": {
       "actor": "Who",
@@ -1200,9 +1213,7 @@
       "created": "Group created",
       "saved": "Group saved",
       "removed": "Group removed"
-    },
-    "masked": "Masked addresses",
-    "maskedHint": "People may make random addresses on this domain for websites (My account → Masked addresses)."
+    }
   },
   "reports": {
     "title": "Reports",
@@ -2226,7 +2237,7 @@
     "pageTitle": "Masked addresses",
     "intro": "A random address for each website. If one starts getting spam, you know who passed it on, and you turn it off without touching your real address.",
     "new": "New masked address",
-    "closed": "Masked addresses are not open on this server yet. Ask the admin to switch them on for a domain.",
+    "closed": "Masked addresses are not switched on for you. Ask the admin.",
     "description": "What it is for",
     "descriptionPlaceholder": "for example the bakery's newsletter",
     "site": "Website",
@@ -3583,6 +3594,79 @@
         "outlook": "Outlook.com has no CalDAV or CardDAV. Export your calendar as an .ics file and your contacts as a file there, and import them here.",
         "appPassword": "This provider wants an app password, made in its settings."
       }
+    }
+  },
+  "maskedDomains": {
+    "pill": "Masked addresses only",
+    "kind": {
+      "label": "Kind of domain",
+      "mail": "Mail domain",
+      "mailHint": "For people, aliases, groups and everything else.",
+      "masked": "Only masked addresses",
+      "maskedHint": "Carries masked addresses and nothing else: no people, aliases, groups, forwarding addresses or catch-all. Choose on a mail domain whose people may use it."
+    },
+    "modes": {
+      "off": "Off",
+      "own": "Own domain",
+      "dedicated": "Masked-only domains",
+      "both": "Own domain and masked-only domains"
+    },
+    "policy": {
+      "title": "Masked addresses",
+      "intro": "Where the people of {{domain}} may make masked addresses: in the portal under My account → Masked addresses, and in password managers.",
+      "mode": "Masked addresses",
+      "domains": "Masked-only domains",
+      "domainsHint": "Which domains only for masked addresses they may use.",
+      "noChoices": "There is no domain only for masked addresses yet. Add one under Domains with the kind “Only masked addresses”.",
+      "default": "Default domain",
+      "defaultHint": "Taken when an app names no domain, and preselected in the portal. Automatic: their own domain if allowed, else the first masked-only domain.",
+      "automatic": "Automatic",
+      "existing": "Masked addresses that already exist keep working whatever is set here.",
+      "saved": "Saved"
+    },
+    "convert": {
+      "title": "Only masked addresses",
+      "hint": "Turns {{domain}} into a domain that carries masked addresses and nothing else. Only possible while nothing else is on it.",
+      "blocked": "Still on it:",
+      "blockers": {
+        "accounts_one": "{{count}} account (the trash counts too)",
+        "accounts_other": "{{count}} accounts (the trash counts too)",
+        "aliases_one": "{{count}} additional address",
+        "aliases_other": "{{count}} additional addresses",
+        "groups_one": "{{count}} group",
+        "groups_other": "{{count}} groups",
+        "forwards_one": "{{count}} forwarding address",
+        "forwards_other": "{{count}} forwarding addresses",
+        "catchAll": "the catch-all",
+        "sendAs_one": "{{count}} person may send as any of its addresses",
+        "sendAs_other": "{{count}} people may send as any of its addresses"
+      },
+      "action": "Make it masked-only",
+      "confirm": "Make {{domain}} a domain only for masked addresses? Its masked address settings go, and so do aliases people make themselves there. Its masked addresses keep working.",
+      "done": "{{domain}} now carries only masked addresses"
+    },
+    "only": {
+      "title": "Only masked addresses",
+      "body": "This domain carries masked addresses and nothing else: no people, aliases, groups, forwarding addresses or catch-all. Mail to any other address there is refused. DNS, DKIM keys, MTA-STS and reports work as for every domain.",
+      "count_one": "{{count}} masked address takes mail here",
+      "count_other": "{{count}} masked addresses take mail here",
+      "unused": "Nobody may make masked addresses here yet. Choose it on a mail domain under Masked addresses.",
+      "usedByDomains": "Offered to the people of: {{domains}}",
+      "usedByAccounts": "Offered by their own settings to: {{accounts}}",
+      "backHint": "As a mail domain it takes people and aliases again. Its masked addresses keep working.",
+      "back": "Make it a mail domain",
+      "backConfirm": "Make {{domain}} a mail domain again? Its masked addresses keep working.",
+      "backConfirmUsed": "It is taken out of the masked address settings of: {{names}}.",
+      "backDone": "{{domain}} is a mail domain again"
+    },
+    "person": {
+      "title": "Masked addresses",
+      "intro": "Each part goes by the domain unless you choose something else here.",
+      "asDomain": "As the domain ({{value}})",
+      "custom": "Own choice",
+      "none": "none",
+      "result": "May make masked addresses on {{domains}}; new ones go to {{domain}}.",
+      "resultNone": "May not make masked addresses."
     }
   }
 }

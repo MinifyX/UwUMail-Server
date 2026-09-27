@@ -7,7 +7,8 @@ import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useT } from "@/i18n";
-import { api, type AuditRecord } from "@/lib/api";
+import { api, type AuditRecord, type MaskedMode } from "@/lib/api";
+import { MASKED_MODES } from "@/features/domains/MaskedCards";
 import { dayKey, formatBytes, formatDate, formatDateTime, formatTime } from "@/lib/format";
 
 const PAGE = 50;
@@ -69,6 +70,9 @@ const KNOWN_ACTIONS = new Set([
   "accountOauthRevoked",
   "alertAcknowledge",
   "domainMaskedAddresses",
+  "domainMaskedPolicy",
+  "domainKind",
+  "accountMaskedPolicy",
   "groupCreate",
   "groupUpdate",
   "groupRemove",
@@ -129,6 +133,25 @@ export function detailText(record: AuditRecord, t: TFunction, language: string):
     parts.push(t("log.details.authSource", { value: t(`people.authSource.${details.source}`) }));
   }
   if (details.invited === true) parts.push(t("log.details.invited"));
+  // A new mail domain is nothing to mention; a new masked-only one and every change of kind are.
+  if (
+    details.kind === "masked"
+      ? record.action.startsWith("domain.")
+      : details.kind === "mail" && record.action === "domain.kind"
+  ) {
+    parts.push(t(details.kind === "masked" ? "log.details.kindMasked" : "log.details.kindMail"));
+  }
+  if (record.action.endsWith(".maskedPolicy")) {
+    parts.push(
+      typeof details.mode === "string" && MASKED_MODES.includes(details.mode as MaskedMode)
+        ? t("log.details.maskedMode", { value: t(`maskedDomains.modes.${details.mode}`) })
+        : t("log.details.maskedAsDomain"),
+    );
+  }
+  const removedFrom = [details.removedFromDomains, details.removedFromAccounts]
+    .filter(Array.isArray)
+    .reduce((sum, list) => sum + (list as unknown[]).length, 0);
+  if (removedFrom > 0) parts.push(t("log.details.maskedRemovedFrom", { count: removedFrom }));
   if (details.reason === "trash") parts.push(t("log.details.reasonTrash"));
   if (record.action.startsWith("spam.word")) {
     if (typeof details.added === "number") parts.push(t("log.details.wordsAdded", { count: details.added }));

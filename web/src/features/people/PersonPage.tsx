@@ -42,6 +42,7 @@ import { Link, navigate } from "@/lib/router";
 import { toast } from "@/state/toasts";
 import { ConfirmCloseSecretDialog } from "@/components/ui/ConfirmCloseSecretDialog";
 import { LinkBox, QuotaSelect } from "./CreatePersonDialog";
+import { PersonMaskedPolicyCard } from "./MaskedPolicyCard";
 import { AdminPill, PersonAvatar, ServicePill, StatusPill, StorageLine } from "./PersonBits";
 import { ConvertToShared, EndShared, SharedMailboxPill, SharedMembersCard } from "./SharedMailboxes";
 import {
@@ -49,7 +50,7 @@ import {
   useCreatePasswordLink,
   useCreateServicePassword,
   useRevokeServicePassword,
-  useDomains,
+  useMailDomains,
   usePerson,
   usePurgePerson,
   useRemoveAlias,
@@ -150,7 +151,7 @@ function AliasLimit({ person }: { person: Person }) {
 function SendAsDomains({ person }: { person: Person }) {
   const { t } = useT();
   const errorText = useErrorText();
-  const domains = useDomains();
+  const domains = useMailDomains();
   const save = useSetSendAsDomains(person.login);
   const chosen = person.sendAsDomains;
   if (chosen === undefined || !domains.data) return null;
@@ -181,7 +182,7 @@ function SendAsDomains({ person }: { person: Person }) {
 
 function Addresses({ person, editable }: { person: Person; editable: boolean }) {
   const { t } = useT();
-  const domains = useDomains();
+  const domains = useMailDomains();
   const [localPart, setLocalPart] = useState("");
   const [domain, setDomain] = useState("");
   const add = useAddAlias(person.login, (address) => t("people.toasts.aliasAdded", { address }));
@@ -997,6 +998,8 @@ export function PersonPage({ login, session }: { login: string; session: Session
         )}
 
         {!deleted && <ProtocolCard person={person} />}
+
+        {!deleted && <PersonMaskedPolicyCard person={person} />}
 
         {/* A shared mailbox is a service with members: programs get in with its app passwords. */}
         {!deleted && (person.role === "service" ? <ServiceAccess person={person} /> : <Access person={person} />)}

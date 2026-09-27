@@ -1,12 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
+  type AccountMaskedPolicy,
   type AppPasswordCreated,
   type AppPasswordInfo,
   type DomainSummary,
   type OAuthGrantInfo,
   type PasswordLinkCreated,
   type Person,
+  type PersonMaskedPolicy,
   type Protocols,
   type SharedMailboxMember,
 } from "@/lib/api";
@@ -25,6 +27,15 @@ export function usePerson(login: string) {
 
 export function useDomains() {
   return useQuery({ queryKey: ["admin", "domains"], queryFn: () => api<DomainSummary[]>("/api/admin/domains") });
+}
+
+/** The domains people, aliases and groups can go on: every one but those only for masked addresses. */
+export function useMailDomains() {
+  return useQuery({
+    queryKey: ["admin", "domains"],
+    queryFn: () => api<DomainSummary[]>("/api/admin/domains"),
+    select: (domains) => domains.filter((domain) => domain.kind !== "masked"),
+  });
 }
 
 /** Keeps list, detail and overview in step after a change to one person. */
@@ -186,6 +197,19 @@ export function useSetSendAsDomains(login: string) {
       api<{ domains: string[] }>(`${personPath(login)}/send-as-domains`, { method: "PUT", body: { domains } }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin", "people", login] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
+    },
+  });
+}
+
+/** Where one account may make masked addresses; null parts go by its domain. */
+export function useSetPersonMaskedPolicy(login: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (policy: AccountMaskedPolicy) =>
+      api<PersonMaskedPolicy>(`${personPath(login)}/masked-policy`, { method: "PUT", body: policy }),
+    onSuccess: (maskedPolicy) => {
+      queryClient.setQueryData<Person>(["admin", "people", login], (old) => old && { ...old, maskedPolicy });
       void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
     },
   });

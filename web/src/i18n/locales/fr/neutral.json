@@ -527,7 +527,7 @@
       "refreshPause": "Tout juste récupéré. Réessayez dans une minute.",
       "sharedMailbox": "C'est une boîte partagée : elle a des mots de passe d'application mais pas de mot de passe, et ses membres l'utilisent depuis leur propre compte.",
       "sharedMailboxNeedsMailbox": "Une boîte partagée garde son courrier : IMAP ou JMAP doit rester activé.",
-      "maskedDomain": "Aucun domaine de ce serveur n'est encore ouvert aux adresses masquées. Demandez à l'admin.",
+      "maskedDomain": "Les adresses masquées ne sont pas activées pour vous sur ce domaine. Demandez à l’administration.",
       "maskedLimit": "Vous avez autant d'adresses masquées que ce serveur le permet. Supprimez celles dont vous n'avez plus besoin.",
       "maskedPrefix": "Un préfixe ne peut contenir que des lettres a–z, des chiffres et _, 64 au plus.",
       "maskedState": "Une adresse masquée ne peut pas se remettre à attendre son premier message.",
@@ -547,7 +547,11 @@
       "oauthClientUnknown": "Cette appli n'est pas enregistrée sur ce serveur.",
       "oauthRedirectInvalid": "L'appli demande à être renvoyée vers une adresse qu'elle n'a pas enregistrée.",
       "oidcFailed": "Le service de connexion n'a pas fonctionné : {{detail}}",
-      "ldapFailed": "L'annuaire n'a pas fonctionné : {{detail}}"
+      "ldapFailed": "L'annuaire n'a pas fonctionné : {{detail}}",
+      "maskedOnlyDomain": "Ce domaine ne porte que des adresses masquées : ni personnes, ni alias, ni groupes, ni adresses de transfert, ni catch-all.",
+      "notMaskedDomain": "Seuls des domaines réservés aux adresses masquées peuvent être choisis ici.",
+      "maskedDefault": "Le domaine par défaut doit faire partie des domaines autorisés.",
+      "kindChangeBlocked": "Ce domaine porte encore autre chose que des adresses masquées. Retirez-le d’abord."
     }
   },
   "people": {
@@ -884,7 +888,10 @@
       "sharedMailboxCreate": "{{actor}} a créé la boîte partagée {{target}}",
       "sharedMailboxMembers": "{{actor}} a modifié les membres de la boîte partagée {{target}}",
       "sharedMailboxConvert": "{{actor}} a transformé {{target}} en boîte partagée",
-      "sharedMailboxEnd": "{{actor}} a refait de la boîte partagée {{target}} un simple service"
+      "sharedMailboxEnd": "{{actor}} a refait de la boîte partagée {{target}} un simple service",
+      "domainMaskedPolicy": "{{actor}} a modifié où les personnes de {{target}} peuvent créer des adresses masquées",
+      "domainKind": "{{actor}} a modifié le type du domaine {{target}}",
+      "accountMaskedPolicy": "{{actor}} a modifié où {{target}} peut créer des adresses masquées"
     },
     "details": {
       "adminOn": "est maintenant admin",
@@ -912,7 +919,14 @@
       "switchedOn": "activé",
       "switchedOff": "désactivé",
       "authSource": "désormais : {{value}}",
-      "oauthApp": "appli « {{value}} »"
+      "oauthApp": "appli « {{value}} »",
+      "kindMasked": "réservé aux adresses masquées",
+      "kindMail": "désormais domaine de messagerie",
+      "maskedMode": "adresses masquées : {{value}}",
+      "maskedAsDomain": "adresses masquées : comme le domaine",
+      "maskedRemovedFrom_one": "retiré de {{count}} réglage d’adresses masquées",
+      "maskedRemovedFrom_many": "retiré de {{count}} réglages d’adresses masquées",
+      "maskedRemovedFrom_other": "retiré de {{count}} réglages d’adresses masquées"
     },
     "entry": {
       "actor": "Qui",
@@ -1224,9 +1238,7 @@
       "created": "Groupe créé",
       "saved": "Groupe enregistré",
       "removed": "Groupe retiré"
-    },
-    "masked": "Adresses masquées",
-    "maskedHint": "Les personnes peuvent créer des adresses aléatoires sur ce domaine pour des sites web (Mon compte → Adresses masquées)."
+    }
   },
   "reports": {
     "title": "Rapports",
@@ -2275,7 +2287,7 @@
     "pageTitle": "Adresses masquées",
     "intro": "Une adresse aléatoire pour chaque site. Si l'une reçoit du spam, vous savez qui l'a transmise, et vous la coupez sans toucher à votre vraie adresse.",
     "new": "Nouvelle adresse masquée",
-    "closed": "Les adresses masquées ne sont pas encore ouvertes sur ce serveur. Demandez à l'admin de les activer pour un domaine.",
+    "closed": "Les adresses masquées ne sont pas activées pour vous. Demandez à l’administration.",
     "description": "À quoi elle sert",
     "descriptionPlaceholder": "par exemple la lettre de la boulangerie",
     "site": "Site web",
@@ -3650,6 +3662,85 @@
         "outlook": "Outlook.com n'a ni CalDAV ni CardDAV. Exportez-y votre agenda en fichier .ics et vos contacts en fichier, puis importez-les ici.",
         "appPassword": "Ce fournisseur demande un mot de passe d'application, créé dans ses paramètres."
       }
+    }
+  },
+  "maskedDomains": {
+    "pill": "Adresses masquées uniquement",
+    "kind": {
+      "label": "Type de domaine",
+      "mail": "Domaine de messagerie",
+      "mailHint": "Pour les personnes, les alias, les groupes et tout le reste.",
+      "masked": "Adresses masquées uniquement",
+      "maskedHint": "Ne porte que des adresses masquées : ni personnes, ni alias, ni groupes, ni adresses de transfert, ni catch-all. Sur un domaine de messagerie, choisissez qui peut l’utiliser."
+    },
+    "modes": {
+      "off": "Désactivées",
+      "own": "Sur leur propre domaine",
+      "dedicated": "Sur des domaines réservés aux adresses masquées",
+      "both": "Sur leur propre domaine et des domaines réservés aux adresses masquées"
+    },
+    "policy": {
+      "title": "Adresses masquées",
+      "intro": "Où les personnes de {{domain}} peuvent créer des adresses masquées : dans le portail sous Mon compte → Adresses masquées, et dans les gestionnaires de mots de passe.",
+      "mode": "Adresses masquées",
+      "domains": "Domaines réservés aux adresses masquées",
+      "domainsHint": "Les domaines réservés aux adresses masquées qu’elles peuvent utiliser.",
+      "noChoices": "Il n’y a pas encore de domaine réservé aux adresses masquées. Ajoutez-en un sous Domaines avec le type « Adresses masquées uniquement ».",
+      "default": "Domaine par défaut",
+      "defaultHint": "Utilisé quand une application ne nomme aucun domaine, et présélectionné dans le portail. Automatique : leur propre domaine s’il est autorisé, sinon le premier domaine réservé aux adresses masquées.",
+      "automatic": "Automatique",
+      "existing": "Les adresses masquées déjà créées continuent de fonctionner, quel que soit ce réglage.",
+      "saved": "Enregistré"
+    },
+    "convert": {
+      "title": "Adresses masquées uniquement",
+      "hint": "Fait de {{domain}} un domaine qui ne porte que des adresses masquées. Possible seulement tant que rien d’autre ne s’y trouve.",
+      "blocked": "Encore présent :",
+      "blockers": {
+        "accounts_one": "{{count}} compte (corbeille comprise)",
+        "accounts_many": "{{count}} comptes (corbeille comprise)",
+        "accounts_other": "{{count}} comptes (corbeille comprise)",
+        "aliases_one": "{{count}} adresse supplémentaire",
+        "aliases_many": "{{count}} adresses supplémentaires",
+        "aliases_other": "{{count}} adresses supplémentaires",
+        "groups_one": "{{count}} groupe",
+        "groups_many": "{{count}} groupes",
+        "groups_other": "{{count}} groupes",
+        "forwards_one": "{{count}} adresse de transfert",
+        "forwards_many": "{{count}} adresses de transfert",
+        "forwards_other": "{{count}} adresses de transfert",
+        "catchAll": "le catch-all",
+        "sendAs_one": "{{count}} personne peut envoyer avec n’importe laquelle de ses adresses",
+        "sendAs_many": "{{count}} personnes peuvent envoyer avec n’importe laquelle de ses adresses",
+        "sendAs_other": "{{count}} personnes peuvent envoyer avec n’importe laquelle de ses adresses"
+      },
+      "action": "Réserver aux adresses masquées",
+      "confirm": "Réserver {{domain}} aux adresses masquées ? Ses réglages d’adresses masquées disparaissent, tout comme les alias que les personnes y créent elles-mêmes. Ses adresses masquées continuent de fonctionner.",
+      "done": "{{domain}} ne porte plus que des adresses masquées"
+    },
+    "only": {
+      "title": "Adresses masquées uniquement",
+      "body": "Ce domaine ne porte que des adresses masquées : ni personnes, ni alias, ni groupes, ni adresses de transfert, ni catch-all. Le courrier vers toute autre adresse y est refusé. DNS, clés DKIM, MTA-STS et rapports fonctionnent comme pour tout domaine.",
+      "count_one": "{{count}} adresse masquée reçoit du courrier ici",
+      "count_many": "{{count}} adresses masquées reçoivent du courrier ici",
+      "count_other": "{{count}} adresses masquées reçoivent du courrier ici",
+      "unused": "Personne ne peut encore créer d’adresses masquées ici. Choisissez-le sur un domaine de messagerie sous Adresses masquées.",
+      "usedByDomains": "Proposé aux personnes de : {{domains}}",
+      "usedByAccounts": "Proposé par des réglages personnels à : {{accounts}}",
+      "backHint": "En domaine de messagerie, il accepte de nouveau des personnes et des alias. Ses adresses masquées continuent de fonctionner.",
+      "back": "En faire un domaine de messagerie",
+      "backConfirm": "Refaire de {{domain}} un domaine de messagerie ? Ses adresses masquées continuent de fonctionner.",
+      "backConfirmUsed": "Il est retiré des réglages d’adresses masquées de : {{names}}.",
+      "backDone": "{{domain}} est de nouveau un domaine de messagerie"
+    },
+    "person": {
+      "title": "Adresses masquées",
+      "intro": "Chaque partie suit le domaine, sauf si vous choisissez autre chose ici.",
+      "asDomain": "Comme le domaine ({{value}})",
+      "custom": "Choix personnel",
+      "none": "aucun",
+      "result": "Peut créer des adresses masquées sur {{domains}} ; les nouvelles vont sur {{domain}}.",
+      "resultNone": "Ne peut pas créer d’adresses masquées."
     }
   }
 }

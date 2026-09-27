@@ -516,7 +516,7 @@
       "refreshPause": "Net opgehaald. Probeer het over een minuut opnieuw.",
       "sharedMailbox": "Dit is een gedeelde mailbox: hij heeft app-wachtwoorden maar geen wachtwoord, en de leden gebruiken hem vanuit hun eigen account.",
       "sharedMailboxNeedsMailbox": "Een gedeelde mailbox houdt zijn mail: IMAP of JMAP moet aan blijven.",
-      "maskedDomain": "Op deze server is nog geen domein open voor gemaskeerde adressen. Vraag het de beheerder.",
+      "maskedDomain": "Gemaskeerde adressen staan voor jou op dit domein niet aan. Vraag het de beheerder.",
       "maskedLimit": "Je hebt zoveel gemaskeerde adressen als deze server toestaat. Verwijder er een paar die je niet meer nodig hebt.",
       "maskedPrefix": "Een voorvoegsel mag alleen letters a–z, cijfers en _ bevatten, hooguit 64.",
       "maskedState": "Een gemaskeerd adres kan niet opnieuw op zijn eerste mail wachten.",
@@ -536,7 +536,11 @@
       "oauthClientUnknown": "Deze app is niet geregistreerd op deze server.",
       "oauthRedirectInvalid": "De app wil terug naar een adres dat hij niet heeft geregistreerd.",
       "oidcFailed": "Het lukte niet met de inlogdienst: {{detail}}",
-      "ldapFailed": "Het lukte niet met de directory: {{detail}}"
+      "ldapFailed": "Het lukte niet met de directory: {{detail}}",
+      "maskedOnlyDomain": "Dit domein draagt alleen gemaskeerde adressen: geen mensen, aliassen, groepen, doorstuuradressen of catch-all.",
+      "notMaskedDomain": "Hier kun je alleen domeinen voor gemaskeerde adressen kiezen.",
+      "maskedDefault": "Het standaarddomein moet een van de toegestane domeinen zijn.",
+      "kindChangeBlocked": "Op dit domein staat nog iets anders dan gemaskeerde adressen. Verwijder dat eerst."
     }
   },
   "people": {
@@ -868,7 +872,10 @@
       "sharedMailboxCreate": "{{actor}} heeft de gedeelde mailbox {{target}} aangemaakt",
       "sharedMailboxMembers": "{{actor}} heeft de leden van de gedeelde mailbox {{target}} gewijzigd",
       "sharedMailboxConvert": "{{actor}} heeft {{target}} omgezet in een gedeelde mailbox",
-      "sharedMailboxEnd": "{{actor}} heeft de gedeelde mailbox {{target}} weer een dienst gemaakt"
+      "sharedMailboxEnd": "{{actor}} heeft de gedeelde mailbox {{target}} weer een dienst gemaakt",
+      "domainMaskedPolicy": "{{actor}} heeft gewijzigd waar de mensen van {{target}} gemaskeerde adressen mogen maken",
+      "domainKind": "{{actor}} heeft de soort van het domein {{target}} gewijzigd",
+      "accountMaskedPolicy": "{{actor}} heeft gewijzigd waar {{target}} gemaskeerde adressen mag maken"
     },
     "details": {
       "adminOn": "is nu beheerder",
@@ -895,7 +902,13 @@
       "switchedOn": "aangezet",
       "switchedOff": "uitgezet",
       "authSource": "nu: {{value}}",
-      "oauthApp": "app ‘{{value}}’"
+      "oauthApp": "app ‘{{value}}’",
+      "kindMasked": "alleen voor gemaskeerde adressen",
+      "kindMail": "nu een maildomein",
+      "maskedMode": "gemaskeerde adressen: {{value}}",
+      "maskedAsDomain": "gemaskeerde adressen: zoals het domein",
+      "maskedRemovedFrom_one": "uit {{count}} instelling voor gemaskeerde adressen gehaald",
+      "maskedRemovedFrom_other": "uit {{count}} instellingen voor gemaskeerde adressen gehaald"
     },
     "entry": {
       "actor": "Wie",
@@ -1200,9 +1213,7 @@
       "created": "Groep gemaakt",
       "saved": "Groep opgeslagen",
       "removed": "Groep verwijderd"
-    },
-    "masked": "Gemaskeerde adressen",
-    "maskedHint": "Mensen mogen op dit domein willekeurige adressen voor websites maken (Mijn account → Gemaskeerde adressen)."
+    }
   },
   "reports": {
     "title": "Rapporten",
@@ -2226,7 +2237,7 @@
     "pageTitle": "Gemaskeerde adressen",
     "intro": "Een willekeurig adres voor elke website. Krijgt er een spam, dan weet je wie het doorgaf en zet je het uit zonder je echte adres aan te raken.",
     "new": "Nieuw gemaskeerd adres",
-    "closed": "Gemaskeerde adressen zijn op deze server nog niet open. Vraag de beheerder ze voor een domein aan te zetten.",
+    "closed": "Gemaskeerde adressen staan voor jou niet aan. Vraag het de beheerder.",
     "description": "Waarvoor",
     "descriptionPlaceholder": "bijvoorbeeld de nieuwsbrief van de bakker",
     "site": "Website",
@@ -3583,6 +3594,79 @@
         "outlook": "Outlook.com heeft geen CalDAV of CardDAV. Exporteer daar je agenda als .ics-bestand en je contacten als bestand en importeer ze hier.",
         "appPassword": "Deze provider wil een app-wachtwoord, dat je in zijn instellingen maakt."
       }
+    }
+  },
+  "maskedDomains": {
+    "pill": "Alleen gemaskeerde adressen",
+    "kind": {
+      "label": "Soort domein",
+      "mail": "Maildomein",
+      "mailHint": "Voor mensen, aliassen, groepen en al het andere.",
+      "masked": "Alleen gemaskeerde adressen",
+      "maskedHint": "Draagt gemaskeerde adressen en verder niets: geen mensen, aliassen, groepen, doorstuuradressen of catch-all. Op een maildomein kies je wiens mensen het mogen gebruiken."
+    },
+    "modes": {
+      "off": "Uit",
+      "own": "Op hun eigen domein",
+      "dedicated": "Op domeinen alleen voor gemaskeerde adressen",
+      "both": "Op hun eigen domein en domeinen alleen voor gemaskeerde adressen"
+    },
+    "policy": {
+      "title": "Gemaskeerde adressen",
+      "intro": "Waar de mensen van {{domain}} gemaskeerde adressen mogen maken: in het portaal onder Mijn account → Gemaskeerde adressen, en in wachtwoordmanagers.",
+      "mode": "Gemaskeerde adressen",
+      "domains": "Domeinen alleen voor gemaskeerde adressen",
+      "domainsHint": "Welke domeinen alleen voor gemaskeerde adressen ze mogen gebruiken.",
+      "noChoices": "Er is nog geen domein alleen voor gemaskeerde adressen. Voeg er een toe onder Domeinen met de soort ‘Alleen gemaskeerde adressen’.",
+      "default": "Standaarddomein",
+      "defaultHint": "Wordt gebruikt als een app geen domein noemt, en is in het portaal voorgeselecteerd. Automatisch: hun eigen domein als dat mag, anders het eerste domein alleen voor gemaskeerde adressen.",
+      "automatic": "Automatisch",
+      "existing": "Gemaskeerde adressen die al bestaan blijven werken, wat hier ook staat.",
+      "saved": "Opgeslagen"
+    },
+    "convert": {
+      "title": "Alleen gemaskeerde adressen",
+      "hint": "Maakt van {{domain}} een domein dat gemaskeerde adressen draagt en verder niets. Dat kan alleen zolang er niets anders op staat.",
+      "blocked": "Staat er nog op:",
+      "blockers": {
+        "accounts_one": "{{count}} account (ook in de prullenbak)",
+        "accounts_other": "{{count}} accounts (ook in de prullenbak)",
+        "aliases_one": "{{count}} extra adres",
+        "aliases_other": "{{count}} extra adressen",
+        "groups_one": "{{count}} groep",
+        "groups_other": "{{count}} groepen",
+        "forwards_one": "{{count}} doorstuuradres",
+        "forwards_other": "{{count}} doorstuuradressen",
+        "catchAll": "de catch-all",
+        "sendAs_one": "{{count}} persoon mag met elk van zijn adressen versturen",
+        "sendAs_other": "{{count}} mensen mogen met elk van zijn adressen versturen"
+      },
+      "action": "Alleen voor gemaskeerde adressen maken",
+      "confirm": "{{domain}} een domein alleen voor gemaskeerde adressen maken? De instellingen voor gemaskeerde adressen vervallen, net als aliassen die mensen daar zelf maken. De gemaskeerde adressen blijven werken.",
+      "done": "{{domain}} draagt nu alleen gemaskeerde adressen"
+    },
+    "only": {
+      "title": "Alleen gemaskeerde adressen",
+      "body": "Dit domein draagt gemaskeerde adressen en verder niets: geen mensen, aliassen, groepen, doorstuuradressen of catch-all. Mail naar elk ander adres daar wordt geweigerd. DNS, DKIM-sleutels, MTA-STS en rapporten werken zoals bij elk domein.",
+      "count_one": "{{count}} gemaskeerd adres ontvangt hier mail",
+      "count_other": "{{count}} gemaskeerde adressen ontvangen hier mail",
+      "unused": "Nog niemand mag hier gemaskeerde adressen maken. Kies het op een maildomein onder Gemaskeerde adressen.",
+      "usedByDomains": "Aangeboden aan de mensen van: {{domains}}",
+      "usedByAccounts": "Via eigen instellingen aangeboden aan: {{accounts}}",
+      "backHint": "Als maildomein neemt het weer mensen en aliassen op. De gemaskeerde adressen blijven werken.",
+      "back": "Maildomein maken",
+      "backConfirm": "{{domain}} weer een maildomein maken? De gemaskeerde adressen blijven werken.",
+      "backConfirmUsed": "Het wordt verwijderd uit de instellingen voor gemaskeerde adressen van: {{names}}.",
+      "backDone": "{{domain}} is weer een maildomein"
+    },
+    "person": {
+      "title": "Gemaskeerde adressen",
+      "intro": "Elk deel volgt het domein, tenzij je hier iets anders kiest.",
+      "asDomain": "Zoals het domein ({{value}})",
+      "custom": "Eigen keuze",
+      "none": "geen",
+      "result": "Mag gemaskeerde adressen maken op {{domains}}; nieuwe komen op {{domain}}.",
+      "resultNone": "Mag geen gemaskeerde adressen maken."
     }
   }
 }

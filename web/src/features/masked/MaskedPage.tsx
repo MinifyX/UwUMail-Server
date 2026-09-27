@@ -14,14 +14,14 @@ import { toast } from "@/state/toasts";
 
 const maskedKey = ["account", "masked"] as const;
 
-function CreateCard({ domains }: { domains: string[] }) {
+function CreateCard({ domains, defaultDomain }: { domains: string[]; defaultDomain: string | null }) {
   const { t } = useT();
   const errorText = useErrorText();
   const queryClient = useQueryClient();
   const [description, setDescription] = useState("");
   const [site, setSite] = useState("");
   const [prefix, setPrefix] = useState("");
-  const [domain, setDomain] = useState(domains[0] ?? "");
+  const [domain, setDomain] = useState(defaultDomain ?? domains[0] ?? "");
   const create = useMutation({
     mutationFn: () =>
       api<MaskedAddress>("/api/account/masked", {
@@ -244,7 +244,11 @@ export function MaskedPage() {
         }
         intro={t("masked.intro")}
       />
-      <CreateCard key={query.data.domains.join()} domains={query.data.domains} />
+      <CreateCard
+        key={`${query.data.domains.join()}:${query.data.defaultDomain ?? ""}`}
+        domains={query.data.domains}
+        defaultDomain={query.data.defaultDomain}
+      />
       <AddressList addresses={query.data.addresses} />
     </div>
   );
