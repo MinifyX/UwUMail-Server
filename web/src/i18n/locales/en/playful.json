@@ -132,6 +132,11 @@
       "saved": "Safely tucked away ✓"
     }
   },
+  "oauth": {
+    "title": "“{{name}}” would like to come in (・ω・)",
+    "signingIn": "Opening the door for the app … (=^･ω･^=)",
+    "invalidTitle": "I can't let this app in (・_・;)"
+  },
   "setup": {
     "welcome": {
       "title": "Hi! I'm Nyu (=^･ω･^=)",

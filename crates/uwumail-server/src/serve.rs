@@ -57,11 +57,7 @@ pub async fn run(
         crate::restore::after(&store, done, pairing_here, &config.hostname).await;
     }
     // Settings changed in the admin panel, underneath the config file and environment.
-    let overlay = store
-        .setting(uwumail_web::SETTINGS_OVERLAY_KEY)
-        .await?
-        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
-        .unwrap_or_default();
+    let overlay = uwumail_web::settings::load_overlay(&store).await?;
     let config = match Config::load_with_overlay(config_path.as_deref(), &overlay) {
         Ok(merged) => merged,
         Err(err) => {
@@ -98,8 +94,14 @@ pub async fn run(
             tasks.spawn(uwumail_smtp::serve(smtp.clone(), listener, kind, shutdown_rx.clone()));
         }
     }
-    // Mail apps may append messages as big as they may send.
-    let imap = uwumail_imap::Imap::new(store.clone(), config.smtp.max_message_size);
+    // Accounts whose password lives in an LDAP directory are checked there, by every protocol; the
+    // admin panel changes the settings while the server runs (docs/login-oidc-ldap.md).
+    let external = Arc::new(uwumail_web::ExternalLogin::new());
+    external.configure(config.auth.clone());
+    store.set_external_passwords(external.clone());
+    // Mail apps may append messages as big as they may send. A refused OAuth token points the app
+    // to this server's OpenID configuration.
+    let imap = uwumail_imap::Imap::new(store.clone(), config.smtp.max_message_size).with_hostname(&config.hostname);
     let mail_tls = tls::mail_server_config(certs.clone())?;
     if let Some(listener) = bind(&config.listen.imaps, "mail apps (IMAP with TLS)").await? {
         tasks.spawn(imap.clone().serve(listener, mail_tls.clone(), shutdown_rx.clone()));
@@ -178,6 +180,7 @@ pub async fn run(
                 webmail: webmail.clone(),
                 egress: egress.clone(),
                 metrics: metrics.clone(),
+                external: external.clone(),
             })),
             certificate: Some(certificate),
             webmail,
@@ -185,6 +188,7 @@ pub async fn run(
     );
     web.set_egress(egress);
     web.set_metrics_gate(metrics);
+    web.set_external_login(external);
     {
         let certs = certs.clone();
         web.set_profile_key(Arc::new(move || certs.pem()));

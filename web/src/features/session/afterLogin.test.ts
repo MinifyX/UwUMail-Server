@@ -8,13 +8,18 @@ describe("safeNext", () => {
     expect(safeNext("/mail/?x=1")).toBe("/mail/?x=1");
   });
 
+  it("keeps the consent page of an app with its whole request", () => {
+    const consent = `/oauth/authorize?response_type=code&client_id=uwu-${"x".repeat(32)}&state=${"s".repeat(300)}`;
+    expect(safeNext(consent)).toBe(consent);
+  });
+
   it("refuses anything that could lead somewhere else", () => {
     expect(safeNext("//evil.example")).toBeNull();
     expect(safeNext("https://evil.example")).toBeNull();
     expect(safeNext("/\\evil.example")).toBeNull();
     expect(safeNext("mail")).toBeNull();
     expect(safeNext("/mail\nSet-Cookie: x=1")).toBeNull();
-    expect(safeNext(`/${"a".repeat(600)}`)).toBeNull();
+    expect(safeNext(`/${"a".repeat(3000)}`)).toBeNull();
     expect(safeNext(null)).toBeNull();
     expect(safeNext("")).toBeNull();
   });

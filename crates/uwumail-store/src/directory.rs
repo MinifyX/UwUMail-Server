@@ -788,25 +788,39 @@ impl Store {
         .await
     }
 
-    /// Checks a login and password. Unknown logins take as long as wrong passwords.
+    /// Checks a login and password. Unknown logins take as long as wrong passwords. Accounts whose
+    /// password lives in the directory (`auth_source = 'ldap'`) are checked there.
     pub async fn authenticate(&self, login: &str, password: &str) -> Result<Option<Account>> {
         let login = login_key(login).unwrap_or_default();
         let found = self
             .read(move |conn| {
                 Ok(conn
                     .query_row(
-                        &format!("SELECT {ACCOUNT_COLUMNS}, password_hash FROM accounts WHERE login = ?1"),
+                        &format!("SELECT {ACCOUNT_COLUMNS}, password_hash, auth_source FROM accounts WHERE login = ?1"),
                         [login],
-                        |row| Ok((account_from_row(row)?, row.get::<_, Option<String>>(ACCOUNT_COLUMN_COUNT)?)),
+                        |row| {
+                            Ok((
+                                account_from_row(row)?,
+                                row.get::<_, Option<String>>(ACCOUNT_COLUMN_COUNT)?,
+                                row.get::<_, String>(ACCOUNT_COLUMN_COUNT + 1)?,
+                            ))
+                        },
                     )
                     .optional()?)
             })
             .await?;
-        let (typed, stored) = (password.to_owned(), found.as_ref().and_then(|(_, hash)| hash.clone()));
+        if let Some((account, _, source)) = &found
+            && source == "ldap"
+        {
+            // Unreachable is no reason to let anyone in; the check itself logged why.
+            let valid = self.check_external_password(&account.login, password).await.unwrap_or(false);
+            return Ok((valid && account.can_log_in()).then(|| account.clone()));
+        }
+        let (typed, stored) = (password.to_owned(), found.as_ref().and_then(|(_, hash, _)| hash.clone()));
         let valid = tokio::task::spawn_blocking(move || password::verify(&typed, stored.as_deref()))
             .await
             .map_err(|err| StoreError::Internal(err.to_string()))?;
-        let Some((account, hash)) = found.filter(|(account, _)| valid && account.can_log_in()) else {
+        let Some((account, hash, _)) = found.filter(|(account, _, _)| valid && account.can_log_in()) else {
             return Ok(None);
         };
         if let Some(old) = hash.filter(|hash| password::is_imported(hash)) {

@@ -41,6 +41,19 @@
       "tooManyAttempts": "失败次数过多，请等待几分钟。",
       "offline": "当前无法连接到服务器。",
       "internal": "服务器出了点问题。"
+    },
+    "or": "或",
+    "oidcButton": "使用 {{provider}} 登录",
+    "oidcButtonGeneric": "使用单点登录",
+    "oidcErrors": {
+      "unavailable": "登录服务当前无法访问。请稍后再试，或使用密码登录。",
+      "expired": "登录耗时过长，或是在另一个浏览器中开始的。请重试。",
+      "refused": "登录在登录服务处被取消或拒绝。",
+      "failed": "登录服务的应答未通过校验。请重试。",
+      "emailNotVerified": "登录服务未确认你的邮箱地址，因此无法让你在这里登录。",
+      "domainNotAllowed": "该地址没有账户，且不允许在其域名下创建账户。",
+      "noAccount": "此服务器上没有与该登录对应的账户，也不允许创建。",
+      "alreadyLinked": "该账户已属于登录服务中的另一个登录。"
     }
   },
   "nav": {
@@ -503,7 +516,14 @@
       "moveNotRunning": "这次搬家没有在进行。",
       "moveNoMailbox": "你的账户没有可以接收邮件的邮箱。",
       "moveWrongPassword": "原服务商拒绝了这个密码。很多服务商在这里需要应用专用密码。",
-      "alertResolved": "这条警报已经恢复正常了。"
+      "alertResolved": "这条警报已经恢复正常了。",
+      "confirmByLogin": "如需确认，请退出并重新登录，然后再试一次。",
+      "passwordInDirectory": "该密码由你所在组织的目录（LDAP）管理，需要在那里更改。",
+      "serviceAccount": "服务只能使用应用专用密码登录。",
+      "oauthClientUnknown": "该应用未在此服务器上注册。",
+      "oauthRedirectInvalid": "该应用要求跳转到一个它未注册的地址。",
+      "oidcFailed": "登录服务出现问题：{{detail}}",
+      "ldapFailed": "目录出现问题：{{detail}}"
     }
   },
   "people": {
@@ -707,6 +727,20 @@
       "revokeTitle": "撤销 {{name}}？",
       "revokeBody": "使用此密码的程序将无法再访问。",
       "createdTitle": "新的应用专用密码"
+    },
+    "authSource": {
+      "label": "密码校验位置",
+      "hint": "切换到目录后，这里保存的密码会被删除。切换回来时，你需要设置新密码或发送链接。",
+      "oidcHint": "在 OpenID Connect 提供商处登录。你仍可以切换为这里的密码或目录密码。",
+      "local": "在此服务器上",
+      "ldap": "在 LDAP 目录中",
+      "oidc": "在 OpenID Connect 提供商处",
+      "toLdapTitle": "在目录中校验 {{login}} 的密码？",
+      "toLdapBody": "这里保存的密码会被删除。此后此人在门户和邮件应用中都使用目录密码登录。应用专用密码保留。",
+      "toLocalTitle": "在这里校验 {{login}} 的密码？",
+      "toLocalBody": "切换后此人在这里没有密码。请设置新密码，或发送用于选择密码的链接。",
+      "switch": "切换",
+      "inDirectory": "密码在 LDAP 目录中校验，也在那里更改。"
     }
   },
   "sharedMailboxes": {
@@ -1456,7 +1490,8 @@
       "mail": "发信与收信",
       "apps": "应用与网页邮箱",
       "vpn": "VPN 与代理",
-      "branding": "品牌外观"
+      "branding": "品牌外观",
+      "login": "登录"
     },
     "mailIntro": "邮件如何离开服务器，以及服务器接收哪些邮件。更改会立即生效，无需重启。",
     "appsIntro": "适用于邮件应用和浏览器中邮箱的设置。更改会立即生效，无需重启。"
@@ -1684,7 +1719,10 @@
       "repeat": "重复新密码",
       "hint": "至少 10 个字符。由几个词组成的句子很好记。",
       "submit": "更改密码",
-      "changed": "密码已更改。其他浏览器已退出登录。"
+      "changed": "密码已更改。其他浏览器已退出登录。",
+      "managedTitle": "密码",
+      "inDirectory": "你的密码由所在组织的目录（LDAP）管理。请在那里更改，新密码在这里立即生效。",
+      "atProvider": "你通过所在组织的登录服务登录，在这里没有密码。邮件应用使用 OAuth 或应用专用密码登录。"
     },
     "sessions": {
       "title": "已登录的浏览器",
@@ -1727,13 +1765,129 @@
       "forwardingRemoved": "已移除到 {{address}} 的转发",
       "forwardingConfirmed": "{{address}} 已确认转发",
       "forwardingDeclined": "{{address}} 拒绝了转发",
-      "forwardingConfirmationSent": "已向 {{address}} 发送确认邮件"
+      "forwardingConfirmationSent": "已向 {{address}} 发送确认邮件",
+      "oauthGranted": "应用“{{name}}”通过 OAuth 登录（{{scopes}}）",
+      "oauthRevoked": "应用“{{name}}”已退出登录",
+      "oidcLinked": "已关联 {{issuer}} 的登录"
     },
     "loginMethods": {
       "password": "密码",
       "totp": "密码和应用",
       "recoveryCode": "密码和恢复代码",
-      "passkey": "密码和通行密钥"
+      "passkey": "密码和通行密钥",
+      "oidc": "单点登录"
+    },
+    "oauthApps": {
+      "title": "通过 OAuth 登录的应用",
+      "none": "没有通过 OAuth 登录的应用。支持此功能的邮件应用可以在浏览器中于此登录，而无需使用应用专用密码。",
+      "staysSignedIn": "保持登录",
+      "since": "登录于 {{date}}",
+      "signOut": "退出登录",
+      "signOutTitle": "让“{{name}}”退出登录？",
+      "signOutBody": "在有人再次用它登录之前，该应用将无法访问邮箱。",
+      "signedOut": "“{{name}}”已退出登录"
+    }
+  },
+  "oauth": {
+    "title": "“{{name}}”想要访问你的账户",
+    "account": "当前登录账户：",
+    "nameClaim": "“{{name}}”是应用的自称。只有在你刚刚亲自在该应用中开始登录时才允许。",
+    "returnsTo": "之后将返回 {{host}}。",
+    "returnsToDevice": "之后将返回此设备上的应用（{{host}}）。",
+    "scopesTitle": "该应用将可以",
+    "scopes": {
+      "mail": {
+        "title": "读取和整理你的邮件",
+        "hint": "邮件、文件夹和过滤规则，通过 IMAP、JMAP 和 ManageSieve。"
+      },
+      "smtp": {
+        "title": "以你的身份发送邮件",
+        "hint": "从你的地址发送，通过 SMTP。"
+      },
+      "dav": {
+        "title": "使用你的日历和联系人",
+        "hint": "读取和更改，通过 CalDAV 和 CardDAV。"
+      },
+      "openid": {
+        "title": "确认是你本人",
+        "hint": "你在此服务器上的账户。"
+      },
+      "profile": {
+        "title": "查看你的姓名",
+        "hint": "你账户中的姓名。"
+      },
+      "email": {
+        "title": "查看你的邮箱地址",
+        "hint": "你的主地址。"
+      },
+      "offline_access": {
+        "title": "保持登录",
+        "hint": "直到你让该应用退出登录，期间不再询问。"
+      }
+    },
+    "revokeHint": "你可以随时在“我的账户 → 安全”中让该应用退出登录。",
+    "allow": "允许",
+    "deny": "拒绝",
+    "otherAccount": "不是 {{login}}？使用其他账户登录",
+    "signingIn": "正在登录…",
+    "invalidTitle": "该应用无法在此登录",
+    "invalid": {
+      "oauthClientUnknown": "该应用未在此服务器上注册。请在应用中重新设置账户。",
+      "oauthRedirectInvalid": "该应用要求跳转到一个它未注册的地址。为安全起见，未发送任何内容。"
+    },
+    "toPortal": "前往门户"
+  },
+  "externalLogin": {
+    "intro": "通过其他提供商（OpenID Connect）登录门户，或在 LDAP 目录中校验密码。更改立即生效，无需重启。",
+    "docs": "指南：OpenID Connect 和 LDAP",
+    "oauthDocs": "指南：使用 OAuth 的邮件应用",
+    "test": "测试连接",
+    "testOk": "成功：{{detail}}",
+    "autoCreate": "首次登录时创建账户",
+    "allowedDomains": "新账户的域名",
+    "allowedDomainsHint": "每行一个，均须为此服务器的域名。留空：不创建新账户。",
+    "oidc": {
+      "title": "OpenID Connect",
+      "intro": "登录页上的按钮会跳转到你们的登录服务，例如 Authentik、Keycloak 或 Microsoft Entra ID。",
+      "enabled": "通过 OpenID Connect 提供商登录",
+      "enabledHint": "在这里设置的密码仍可同时使用。",
+      "redirectUri": "请在提供商处登记此重定向 URI",
+      "issuer": "Issuer",
+      "issuerHint": "提供商的地址。其余信息由 UwUMail 从其 /.well-known/openid-configuration 读取。",
+      "clientId": "客户端 ID",
+      "clientSecret": "客户端密钥",
+      "buttonLabel": "按钮名称",
+      "buttonLabelHint": "按钮将显示为“使用 Authentik 登录”。留空：“使用单点登录”。",
+      "autoCreateHint": "仅当提供商担保该地址且其域名在下方被允许时。",
+      "adminClaim": "管理员声明",
+      "adminClaimHint": "提供商应答中列出组或角色的声明。",
+      "adminValue": "管理员值",
+      "adminValueHint": "声明中包含此值的新账户将成为管理员。"
+    },
+    "ldap": {
+      "title": "LDAP 目录",
+      "intro": "设为目录的账户在门户和邮件应用中都使用目录密码登录。其他人继续使用这里的密码。",
+      "enabled": "在 LDAP 目录中校验密码",
+      "enabledHint": "哪些账户使用它，在每个人的页面上设置。从目录创建的账户会立即使用它。",
+      "url": "目录地址",
+      "urlHint": "ldaps://…，或带 STARTTLS 的 ldap://…。",
+      "starttls": "在 ldap:// 上使用 STARTTLS",
+      "starttlsHint": "在发送任何密码之前加密连接。",
+      "insecureLocalhost": "允许在本机上使用不加密的 ldap://",
+      "insecureLocalhostHint": "仅适用于就在这台机器上（localhost）的目录，切勿跨网络使用。",
+      "bindDn": "服务账户（bind DN）",
+      "bindDnHint": "在目录中查找正在登录的人。",
+      "bindPassword": "服务账户密码",
+      "userDnTemplate": "DN 模板",
+      "userDnTemplateHint": "使用模板时不进行搜索：此人的 DN 由地址生成。{user} 是 @ 之前的部分，{email} 是完整地址。",
+      "baseDn": "搜索基准",
+      "userFilter": "搜索过滤器",
+      "userFilterHint": "{email} 是登录时输入的完整地址，{user} 是 @ 之前的部分。",
+      "mailAttribute": "地址属性",
+      "nameAttribute": "姓名属性",
+      "adminGroupDn": "管理员组",
+      "adminGroupDnHint": "属于该组（memberOf）的新账户将成为管理员。",
+      "autoCreateHint": "当目录知道该地址且其域名在下方被允许时。"
     }
   },
   "fetch": {

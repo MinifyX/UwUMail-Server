@@ -130,6 +130,11 @@
       "saved": "已妥善收好 ✓"
     }
   },
+  "oauth": {
+    "title": "“{{name}}”想进来 (・ω・)",
+    "signingIn": "正在为应用开门… (=^･ω･^=)",
+    "invalidTitle": "我不能让这个应用进来 (・_・;)"
+  },
   "setup": {
     "welcome": {
       "title": "嗨！我是 Nyu (=^･ω･^=)",

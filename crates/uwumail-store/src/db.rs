@@ -50,6 +50,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0041_groups_shared_mailboxes.sql"),
     include_str!("migrations/0042_masked_addresses.sql"),
     include_str!("migrations/0043_tls_rpt.sql"),
+    include_str!("migrations/0044_oauth.sql"),
     include_str!("migrations/0045_stats_alerts.sql"),
     include_str!("migrations/0046_push_subscriptions.sql"),
 ];
@@ -201,6 +202,7 @@ mod tests {
         assert!(table_exists(&conn, "push_subscriptions"));
         assert!(table_exists(&conn, "migration_jobs"));
         assert!(table_exists(&conn, "stats_daily") && table_exists(&conn, "alerts"));
+        assert!(table_exists(&conn, "oauth_grants") && table_exists(&conn, "external_identities"));
         // Running again changes nothing.
         migrate(&mut conn).unwrap();
         assert_eq!(version(&conn), MIGRATIONS.len());

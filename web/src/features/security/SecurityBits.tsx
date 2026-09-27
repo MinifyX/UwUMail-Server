@@ -134,14 +134,25 @@ const KNOWN_EVENTS = [
   "forwardingConfirmed",
   "forwardingDeclined",
   "forwardingConfirmationSent",
+  "oauthGranted",
+  "oauthRevoked",
+  "oidcLinked",
 ];
+
+const LOGIN_METHODS = ["password", "totp", "recoveryCode", "passkey", "oidc"];
 
 export function useEventText() {
   const { t } = useT();
   return (event: SecurityEventInfo) => {
     const kind = KNOWN_EVENTS.includes(event.kind) ? event.kind : "other";
     const details = event.details ?? {};
-    const method = typeof details.method === "string" ? details.method : "password";
+    const method =
+      typeof details.method === "string" && LOGIN_METHODS.includes(details.method) ? details.method : "password";
+    const scopes = Array.isArray(details.scopes)
+      ? details.scopes.filter((scope): scope is string => typeof scope === "string").join(", ")
+      : typeof details.scopes === "string"
+        ? details.scopes
+        : "";
     return t(`security.events.${kind}`, {
       name: typeof details.name === "string" ? details.name : "",
       count: typeof details.count === "number" ? details.count : typeof details.left === "number" ? details.left : 0,
@@ -149,6 +160,8 @@ export function useEventText() {
       protocol: typeof details.protocol === "string" ? details.protocol.toUpperCase() : "",
       actor: event.actor,
       address: typeof details.address === "string" ? details.address : "",
+      scopes,
+      issuer: typeof details.issuer === "string" ? details.issuer : "",
     });
   };
 }

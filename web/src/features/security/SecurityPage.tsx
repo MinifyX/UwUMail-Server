@@ -11,13 +11,31 @@ import { formatDateTime, formatRelative } from "@/lib/format";
 import { toast } from "@/state/toasts";
 import { AppPasswordsCard } from "./AppPasswordsCard";
 import { usePasswordConfirmation } from "./ConfirmPassword";
+import { OAuthAppsCard } from "./OAuthAppsCard";
 import { useSecurity, useSecurityAction } from "./queries";
 import { describeDevice, useEventText } from "./SecurityBits";
 import { TwoFactorCard } from "./TwoFactorCard";
 
 const MIN_CHARS = 10;
 
-function PasswordCard({ login }: { login: string }) {
+/** The password is checked elsewhere, or there is none here: nothing to change on this page. */
+function PasswordCard({ login, security }: { login: string; security: SecurityView }) {
+  const { t } = useT();
+  const elsewhere =
+    security.authSource === "ldap"
+      ? t("security.password.inDirectory")
+      : security.authSource === "oidc" && !security.hasPassword
+        ? t("security.password.atProvider")
+        : null;
+  if (elsewhere === null) return <PasswordForm login={login} />;
+  return (
+    <Card title={t("security.password.managedTitle")}>
+      <p className="text-sm text-muted">{elsewhere}</p>
+    </Card>
+  );
+}
+
+function PasswordForm({ login }: { login: string }) {
   const { t } = useT();
   const errorText = useErrorText();
   const [current, setCurrent] = useState("");
@@ -224,10 +242,11 @@ export function SecurityPage({ session }: { session: Session }) {
       <div className="grid gap-5 lg:grid-cols-2">
         <div className="flex flex-col gap-5">
           <TwoFactorCard security={data} session={session} confirmed={confirmed} />
-          <PasswordCard login={session.account.login} />
+          <PasswordCard login={session.account.login} security={data} />
         </div>
         <div className="flex flex-col gap-5">
           <AppPasswordsCard security={data} session={session} confirmed={confirmed} />
+          <OAuthAppsCard security={data} />
           <SessionsCard security={data} />
           <ActivityCard security={data} />
         </div>

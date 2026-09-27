@@ -132,6 +132,11 @@
       "saved": "Sicher verstaut ✓"
     }
   },
+  "oauth": {
+    "title": "„{{name}}“ möchte gern rein (・ω・)",
+    "signingIn": "Ich mache der App die Tür auf … (=^･ω･^=)",
+    "invalidTitle": "Diese App kann ich nicht reinlassen (・_・;)"
+  },
   "setup": {
     "welcome": {
       "title": "Hi! Ich bin Nyu (=^･ω･^=)",

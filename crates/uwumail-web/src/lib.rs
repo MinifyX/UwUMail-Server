@@ -4,7 +4,7 @@
 //!   Requests that change something need the session's CSRF token in the
 //!   `X-CSRF-Token` header.
 //! - `/`, `/login`, `/account/...`, `/admin/...`, `/setup`, `/password/{token}` and
-//!   `/forwarding/{token}` serve the React app from `web/`, embedded into the binary at build time.
+//!   `/forwarding/{token}` and `/oauth/authorize` serve the React app from `web/`, embedded into the binary at build time.
 //! - `/mail` serves the webmail, built from its own repository, when the build has one and it is on.
 
 mod alert_texts;
@@ -12,9 +12,11 @@ mod alerts;
 mod assets;
 mod cloudflare;
 mod error;
+pub mod external;
 pub mod gateway;
 mod health;
 pub mod host;
+mod jwt;
 mod login;
 mod logs;
 pub mod loki;
@@ -39,6 +41,7 @@ use uwumail_smtp::{AuthLimiter, Smtp};
 use uwumail_store::Store;
 
 pub use error::{ApiError, ApiResult};
+pub use external::{AuthConfig, ExternalLogin, LdapConfig, OidcConfig};
 pub use health::{CertificateSource, CertificateStatus};
 pub use logs::{LogBuffer, LogLine, LogSource};
 pub use loki::{Loki, LokiConfig};
@@ -106,6 +109,12 @@ struct Inner {
     alerts: alerts::AlertState,
     /// Who may read `/metrics`, once the server plugged it in.
     metrics: std::sync::OnceLock<Arc<metrics::MetricsGate>>,
+    /// Logging in elsewhere (OpenID Connect, LDAP), once plugged in or first needed.
+    external_login: std::sync::OnceLock<Arc<external::ExternalLogin>>,
+    /// How the OpenID Connect provider is asked, when not over the egress (tests hand in their own).
+    oidc_transport: std::sync::OnceLock<Arc<dyn uwumail_dav::client::Transport>>,
+    /// When each network registered OAuth apps, or was refused a code or token (routes/oauth.rs).
+    oauth_attempts: Mutex<HashMap<(&'static str, std::net::IpAddr), Vec<i64>>>,
 }
 
 impl Web {
@@ -141,6 +150,9 @@ impl Web {
                 remote_calls: Mutex::default(),
                 alerts: alerts::AlertState::default(),
                 metrics: std::sync::OnceLock::new(),
+                external_login: std::sync::OnceLock::new(),
+                oidc_transport: std::sync::OnceLock::new(),
+                oauth_attempts: Mutex::default(),
             }),
         }
     }
@@ -263,6 +275,49 @@ impl Web {
         self.inner.metrics.get()
     }
 
+    /// Hands the portal the settings for logging in elsewhere, shared with the server's settings,
+    /// and lets the store check directory passwords with them. Only the first call counts.
+    pub fn set_external_login(&self, external: Arc<external::ExternalLogin>) {
+        if self.inner.external_login.set(external.clone()).is_ok() {
+            self.store().set_external_passwords(external);
+        }
+    }
+
+    /// Logging in elsewhere: what was plugged in, or settings of its own that start switched off.
+    pub fn external_login(&self) -> Arc<external::ExternalLogin> {
+        self.inner
+            .external_login
+            .get_or_init(|| {
+                let external = Arc::new(external::ExternalLogin::new());
+                self.store().set_external_passwords(external.clone());
+                external
+            })
+            .clone()
+    }
+
+    /// Asks the OpenID Connect provider through `transport` instead of the egress. Only the first
+    /// call counts.
+    pub fn set_oidc_transport(&self, transport: Arc<dyn uwumail_dav::client::Transport>) {
+        let _ = self.inner.oidc_transport.set(transport);
+    }
+
+    /// The way to the OpenID Connect provider: the egress's route for the server's own requests,
+    /// https to public addresses only.
+    pub(crate) fn oidc_transport(&self) -> Arc<dyn uwumail_dav::client::Transport> {
+        if let Some(transport) = self.inner.oidc_transport.get() {
+            return transport.clone();
+        }
+        let dialer = match self.egress() {
+            Some(egress) => egress.dialer(uwumail_smtp::egress::Purpose::Updates),
+            None => uwumail_smtp::egress::Egress::direct().dialer(uwumail_smtp::egress::Purpose::Updates),
+        };
+        Arc::new(uwumail_dav::client::HttpsTransport::new(&dialer))
+    }
+
+    pub(crate) fn oauth_attempts(&self) -> &Mutex<HashMap<(&'static str, std::net::IpAddr), Vec<i64>>> {
+        &self.inner.oauth_attempts
+    }
+
     pub(crate) fn gateway(&self) -> Option<&Arc<dyn gateway::GatewayBackend>> {
         self.inner.gateway.get()
     }
@@ -324,6 +379,15 @@ impl Web {
             .route("/api/admin/setup/test-mail/{id}", get(routes::setup::test_mail_status))
             .route("/api/auth/passkey/options", post(routes::auth::passkey_options))
             .route("/api/auth/passkey", post(routes::auth::passkey_login))
+            .route("/api/auth/oidc/start", get(routes::external_login::oidc_start))
+            .route("/api/auth/oidc/callback", get(routes::external_login::oidc_callback))
+            .route("/api/oauth/authorize", get(routes::oauth::authorize_info).post(routes::oauth::authorize_decide))
+            .route("/api/account/oauth-grants", get(routes::oauth::grants))
+            .route("/api/account/oauth-grants/{id}", delete(routes::oauth::revoke_grant))
+            .route("/api/admin/people/{login}/oauth-grants/{id}", delete(routes::oauth::admin_revoke_grant))
+            .route("/api/admin/people/{login}/auth-source", put(routes::external_login::set_auth_source))
+            .route("/api/admin/auth/ldap/test", post(routes::external_login::test_ldap))
+            .route("/api/admin/auth/oidc/test", post(routes::external_login::test_oidc))
             .route("/api/account", get(routes::account::profile))
             .route("/api/account/preferences", patch(routes::account::update_preferences))
             .route("/api/account/identities", get(routes::account::identities))
@@ -343,6 +407,19 @@ impl Web {
             .route("/.well-known/autoconfig/mail/config-v1.1.xml", get(routes::apps::autoconfig))
             .route("/autodiscover/autodiscover.xml", post(routes::apps::autodiscover))
             .route("/Autodiscover/Autodiscover.xml", post(routes::apps::autodiscover))
+            .route(
+                "/.well-known/oauth-authorization-server",
+                get(routes::oauth::metadata).options(routes::oauth::preflight),
+            )
+            .route("/.well-known/openid-configuration", get(routes::oauth::metadata).options(routes::oauth::preflight))
+            .route("/oauth/token", post(routes::oauth::token).options(routes::oauth::preflight))
+            .route("/oauth/register", post(routes::oauth::register).options(routes::oauth::preflight))
+            .route("/oauth/revoke", post(routes::oauth::revoke).options(routes::oauth::preflight))
+            .route("/oauth/jwks", get(routes::oauth::jwks).options(routes::oauth::preflight))
+            .route(
+                "/oauth/userinfo",
+                get(routes::oauth::userinfo).post(routes::oauth::userinfo).options(routes::oauth::preflight),
+            )
             .route("/api/account/sessions/{id}", delete(routes::security::end_session))
             .route("/api/account/sessions/end-others", post(routes::security::end_other_sessions))
             .route("/api/account/passkeys/options", post(routes::security::passkey_options))
@@ -540,6 +617,8 @@ impl Web {
                 "/setup",
                 "/password/{token}",
                 "/forwarding/{token}",
+                // The consent page of the OAuth provider (docs/oauth.md).
+                "/oauth/authorize",
                 "/account",
                 "/account/{*rest}",
                 "/admin",

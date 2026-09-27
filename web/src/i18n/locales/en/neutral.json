@@ -41,6 +41,19 @@
       "tooManyAttempts": "Too many failed attempts. Please wait a few minutes.",
       "offline": "The server cannot be reached right now.",
       "internal": "Something went wrong on the server."
+    },
+    "or": "or",
+    "oidcButton": "Log in with {{provider}}",
+    "oidcButtonGeneric": "Log in with single sign-on",
+    "oidcErrors": {
+      "unavailable": "The login service cannot be reached right now. Try again later, or log in with your password.",
+      "expired": "The login took too long or was started in another browser. Please try again.",
+      "refused": "The login was cancelled or refused at the login service.",
+      "failed": "The answer from the login service did not check out. Please try again.",
+      "emailNotVerified": "The login service did not confirm your email address, so it cannot log you in here.",
+      "domainNotAllowed": "There is no account for this address, and none may be created in its domain.",
+      "noAccount": "There is no account on this server for this login, and none may be created.",
+      "alreadyLinked": "This account already belongs to another login at the login service."
     }
   },
   "nav": {
@@ -515,7 +528,14 @@
       "moveNotRunning": "This move is not running.",
       "moveNoMailbox": "Your account has no mailbox that mail could move into.",
       "moveWrongPassword": "The old provider refused this password. Many providers want an app password for this.",
-      "alertResolved": "This alert is already fine again."
+      "alertResolved": "This alert is already fine again.",
+      "confirmByLogin": "To confirm this, log out and log in again, then try once more.",
+      "passwordInDirectory": "This password is managed by your organisation's directory (LDAP) and is changed there.",
+      "serviceAccount": "A service signs in with app passwords only.",
+      "oauthClientUnknown": "This app is not registered on this server.",
+      "oauthRedirectInvalid": "The app asked to be sent somewhere it did not register.",
+      "oidcFailed": "The login service did not work out: {{detail}}",
+      "ldapFailed": "The directory did not work out: {{detail}}"
     }
   },
   "people": {
@@ -724,6 +744,20 @@
       "revokeTitle": "Revoke {{name}}?",
       "revokeBody": "Whatever uses this password stops getting in.",
       "createdTitle": "New app password"
+    },
+    "authSource": {
+      "label": "Password is checked",
+      "hint": "Switching to the directory removes the password stored here. Switching back means you set a new password or send a link.",
+      "oidcHint": "Logs in at the OpenID Connect provider. You can still switch to a password here or at the directory.",
+      "local": "Here on this server",
+      "ldap": "At the LDAP directory",
+      "oidc": "At the OpenID Connect provider",
+      "toLdapTitle": "Check the password of {{login}} at the directory?",
+      "toLdapBody": "The password stored here is removed. From now on the person logs in with their directory password, in the portal and in mail apps. App passwords stay.",
+      "toLocalTitle": "Check the password of {{login}} here?",
+      "toLocalBody": "The person has no password here afterwards. Set a new one or send a link to choose one.",
+      "switch": "Switch",
+      "inDirectory": "The password is checked at the LDAP directory and changed there."
     }
   },
   "sharedMailboxes": {
@@ -1489,7 +1523,8 @@
       "mail": "Sending & receiving",
       "apps": "Apps & webmail",
       "vpn": "VPN & proxy",
-      "branding": "Branding"
+      "branding": "Branding",
+      "login": "Login"
     },
     "mailIntro": "How mail leaves the server and what it accepts. Changes take effect at once, without a restart.",
     "appsIntro": "What holds for mail apps and the mailbox in the browser. Changes take effect at once, without a restart."
@@ -1729,7 +1764,10 @@
       "repeat": "Repeat new password",
       "hint": "At least 10 characters. A sentence of several words is easy to remember.",
       "submit": "Change password",
-      "changed": "Password changed. Other browsers were logged out."
+      "changed": "Password changed. Other browsers were logged out.",
+      "managedTitle": "Password",
+      "inDirectory": "Your password is managed by your organisation's directory (LDAP). Change it there; the new one works here right away.",
+      "atProvider": "You log in at your organisation's login service and have no password here. Mail apps sign in with OAuth or an app password."
     },
     "sessions": {
       "title": "Logged-in browsers",
@@ -1776,13 +1814,129 @@
       "forwardingRemoved": "Forwarding to {{address}} removed",
       "forwardingConfirmed": "{{address}} confirmed the forwarding",
       "forwardingDeclined": "{{address}} declined the forwarding",
-      "forwardingConfirmationSent": "Confirmation mail sent to {{address}}"
+      "forwardingConfirmationSent": "Confirmation mail sent to {{address}}",
+      "oauthGranted": "App “{{name}}” signed in with OAuth ({{scopes}})",
+      "oauthRevoked": "App “{{name}}” signed out",
+      "oidcLinked": "Linked with the login at {{issuer}}"
     },
     "loginMethods": {
       "password": "password",
       "totp": "password and app",
       "recoveryCode": "password and recovery code",
-      "passkey": "password and passkey"
+      "passkey": "password and passkey",
+      "oidc": "single sign-on"
+    },
+    "oauthApps": {
+      "title": "Apps signed in with OAuth",
+      "none": "No app is signed in with OAuth. Mail apps that support it sign in here in the browser instead of using an app password.",
+      "staysSignedIn": "Stays signed in",
+      "since": "Signed in on {{date}}",
+      "signOut": "Sign out",
+      "signOutTitle": "Sign out “{{name}}”?",
+      "signOutBody": "The app can no longer reach the mailbox until someone signs in with it again.",
+      "signedOut": "“{{name}}” signed out"
+    }
+  },
+  "oauth": {
+    "title": "“{{name}}” wants to access your account",
+    "account": "Logged in as",
+    "nameClaim": "The app calls itself “{{name}}”. Only allow this if you just started signing in to it yourself.",
+    "returnsTo": "Afterwards you go back to {{host}}.",
+    "returnsToDevice": "Afterwards you go back to the app on this device ({{host}}).",
+    "scopesTitle": "The app may",
+    "scopes": {
+      "mail": {
+        "title": "Read and organize your mail",
+        "hint": "Mail, folders and filter rules, with IMAP, JMAP and ManageSieve."
+      },
+      "smtp": {
+        "title": "Send mail as you",
+        "hint": "From your addresses, with SMTP."
+      },
+      "dav": {
+        "title": "Use your calendars and contacts",
+        "hint": "Read and change them, with CalDAV and CardDAV."
+      },
+      "openid": {
+        "title": "Know that it is you",
+        "hint": "Your account on this server."
+      },
+      "profile": {
+        "title": "See your name",
+        "hint": "The name on your account."
+      },
+      "email": {
+        "title": "See your email address",
+        "hint": "Your main address."
+      },
+      "offline_access": {
+        "title": "Stay signed in",
+        "hint": "Until you sign the app out, without asking you again."
+      }
+    },
+    "revokeHint": "You can sign the app out any time under My account → Security.",
+    "allow": "Allow",
+    "deny": "Deny",
+    "otherAccount": "Not {{login}}? Log in with another account",
+    "signingIn": "Signing in …",
+    "invalidTitle": "This app cannot sign in here",
+    "invalid": {
+      "oauthClientUnknown": "This app is not registered on this server. Set up the account in the app again.",
+      "oauthRedirectInvalid": "The app asked to be sent somewhere it did not register. To be safe, nothing was sent."
+    },
+    "toPortal": "To the portal"
+  },
+  "externalLogin": {
+    "intro": "Log in to the portal at another provider (OpenID Connect), or check passwords at an LDAP directory. Changes take effect at once, without a restart.",
+    "docs": "Guide: OpenID Connect and LDAP",
+    "oauthDocs": "Guide: mail apps with OAuth",
+    "test": "Test connection",
+    "testOk": "Works: {{detail}}",
+    "autoCreate": "Create an account on the first login",
+    "allowedDomains": "Domains for new accounts",
+    "allowedDomainsHint": "One per line, each a domain of this server. Empty: no new accounts.",
+    "oidc": {
+      "title": "OpenID Connect",
+      "intro": "A button on the login page leads to your login service, such as Authentik, Keycloak or Microsoft Entra ID.",
+      "enabled": "Log in with an OpenID Connect provider",
+      "enabledHint": "Passwords set here keep working next to it.",
+      "redirectUri": "Register this redirect URI at the provider",
+      "issuer": "Issuer",
+      "issuerHint": "The provider's address. UwUMail reads the rest from its /.well-known/openid-configuration.",
+      "clientId": "Client ID",
+      "clientSecret": "Client secret",
+      "buttonLabel": "Button name",
+      "buttonLabelHint": "The button then reads “Log in with Authentik”. Empty: “Log in with single sign-on”.",
+      "autoCreateHint": "Only when the provider vouches for the address and its domain is allowed below.",
+      "adminClaim": "Admin claim",
+      "adminClaimHint": "The claim in the provider's answer that lists groups or roles.",
+      "adminValue": "Admin value",
+      "adminValueHint": "New accounts whose claim contains this value become admins."
+    },
+    "ldap": {
+      "title": "LDAP directory",
+      "intro": "Accounts set to the directory log in with their directory password, in the portal and in mail apps. Everyone else keeps their password here.",
+      "enabled": "Check passwords at an LDAP directory",
+      "enabledHint": "Which accounts use it is set on each person's page. Accounts created from the directory use it right away.",
+      "url": "Directory address",
+      "urlHint": "ldaps://…, or ldap://… with STARTTLS.",
+      "starttls": "STARTTLS on ldap://",
+      "starttlsHint": "Encrypts the connection before any password is sent.",
+      "insecureLocalhost": "Allow ldap:// without encryption on this machine",
+      "insecureLocalhostHint": "Only for a directory on this very machine (localhost), never across a network.",
+      "bindDn": "Service account (bind DN)",
+      "bindDnHint": "Searches the directory for the person logging in.",
+      "bindPassword": "Service account password",
+      "userDnTemplate": "DN template",
+      "userDnTemplateHint": "With a template nobody searches: the person's DN is made from the address. {user} is the part before the @, {email} the whole address.",
+      "baseDn": "Search base",
+      "userFilter": "Search filter",
+      "userFilterHint": "{email} is the whole address typed at the login, {user} the part before the @.",
+      "mailAttribute": "Address attribute",
+      "nameAttribute": "Name attribute",
+      "adminGroupDn": "Admin group",
+      "adminGroupDnHint": "New accounts that are members of this group (memberOf) become admins.",
+      "autoCreateHint": "When the directory knows the address and its domain is allowed below."
     }
   },
   "fetch": {

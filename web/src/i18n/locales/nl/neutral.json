@@ -41,6 +41,19 @@
       "tooManyAttempts": "Te veel mislukte pogingen. Wacht een paar minuten.",
       "offline": "De server is op dit moment niet bereikbaar.",
       "internal": "Er ging iets mis op de server."
+    },
+    "or": "of",
+    "oidcButton": "Inloggen met {{provider}}",
+    "oidcButtonGeneric": "Inloggen met single sign-on",
+    "oidcErrors": {
+      "unavailable": "De inlogdienst is op dit moment niet bereikbaar. Probeer het later opnieuw of log in met je wachtwoord.",
+      "expired": "Het inloggen duurde te lang of is in een andere browser begonnen. Probeer het opnieuw.",
+      "refused": "Het inloggen is bij de inlogdienst afgebroken of geweigerd.",
+      "failed": "Het antwoord van de inlogdienst klopte niet. Probeer het opnieuw.",
+      "emailNotVerified": "De inlogdienst heeft je e-mailadres niet bevestigd, dus kan je hier niet mee inloggen.",
+      "domainNotAllowed": "Er is geen account voor dit adres, en in dit domein mag er geen worden aangemaakt.",
+      "noAccount": "Er is op deze server geen account voor deze login, en er mag er geen worden aangemaakt.",
+      "alreadyLinked": "Dit account hoort bij de inlogdienst al bij een andere login."
     }
   },
   "nav": {
@@ -515,7 +528,14 @@
       "moveNotRunning": "Deze verhuizing loopt niet.",
       "moveNoMailbox": "Je account heeft geen mailbox waar mail naartoe kan verhuizen.",
       "moveWrongPassword": "De oude provider heeft dit wachtwoord geweigerd. Veel providers willen hiervoor een app-wachtwoord.",
-      "alertResolved": "Deze melding is al weer in orde."
+      "alertResolved": "Deze melding is al weer in orde.",
+      "confirmByLogin": "Log uit en weer in om dit te bevestigen, en probeer het dan nog eens.",
+      "passwordInDirectory": "Dit wachtwoord wordt beheerd in de directory van je organisatie (LDAP) en daar gewijzigd.",
+      "serviceAccount": "Een dienst logt alleen in met app-wachtwoorden.",
+      "oauthClientUnknown": "Deze app is niet geregistreerd op deze server.",
+      "oauthRedirectInvalid": "De app wil terug naar een adres dat hij niet heeft geregistreerd.",
+      "oidcFailed": "Het lukte niet met de inlogdienst: {{detail}}",
+      "ldapFailed": "Het lukte niet met de directory: {{detail}}"
     }
   },
   "people": {
@@ -724,6 +744,20 @@
       "revokeTitle": "{{name}} intrekken?",
       "revokeBody": "Wat dit wachtwoord gebruikt, komt dan niet meer binnen.",
       "createdTitle": "Nieuw app-wachtwoord"
+    },
+    "authSource": {
+      "label": "Wachtwoord wordt gecontroleerd",
+      "hint": "Overstappen op de directory verwijdert het wachtwoord dat hier is opgeslagen. Terugzetten betekent dat je een nieuw wachtwoord instelt of een link stuurt.",
+      "oidcHint": "Logt in bij de OpenID Connect-aanbieder. Je kunt toch overstappen op een wachtwoord hier of in de directory.",
+      "local": "Hier op deze server",
+      "ldap": "In de LDAP-directory",
+      "oidc": "Bij de OpenID Connect-aanbieder",
+      "toLdapTitle": "Wachtwoord van {{login}} in de directory controleren?",
+      "toLdapBody": "Het wachtwoord dat hier is opgeslagen wordt verwijderd. Voortaan logt de persoon in met het directory-wachtwoord, in het portaal en in mail-apps. App-wachtwoorden blijven.",
+      "toLocalTitle": "Wachtwoord van {{login}} hier controleren?",
+      "toLocalBody": "De persoon heeft daarna hier geen wachtwoord. Stel een nieuw in of stuur een link om er een te kiezen.",
+      "switch": "Overstappen",
+      "inDirectory": "Het wachtwoord wordt in de LDAP-directory gecontroleerd en daar gewijzigd."
     }
   },
   "sharedMailboxes": {
@@ -1489,7 +1523,8 @@
       "mail": "Verzenden & ontvangen",
       "apps": "Apps & webmail",
       "vpn": "VPN & proxy",
-      "branding": "Uiterlijk"
+      "branding": "Uiterlijk",
+      "login": "Inloggen"
     },
     "mailIntro": "Hoe mail de server verlaat en wat hij aanneemt. Wijzigingen werken meteen, zonder herstart.",
     "appsIntro": "Wat geldt voor mailapps en de mailbox in de browser. Wijzigingen werken meteen, zonder herstart."
@@ -1729,7 +1764,10 @@
       "repeat": "Nieuw wachtwoord herhalen",
       "hint": "Minstens 10 tekens. Een zin van een paar woorden is makkelijk te onthouden.",
       "submit": "Wachtwoord wijzigen",
-      "changed": "Wachtwoord gewijzigd. Andere browsers zijn uitgelogd."
+      "changed": "Wachtwoord gewijzigd. Andere browsers zijn uitgelogd.",
+      "managedTitle": "Wachtwoord",
+      "inDirectory": "Je wachtwoord wordt beheerd in de directory van je organisatie (LDAP). Wijzig het daar; het nieuwe werkt hier meteen.",
+      "atProvider": "Je logt in bij de inlogdienst van je organisatie en hebt hier geen wachtwoord. Mail-apps loggen in met OAuth of een app-wachtwoord."
     },
     "sessions": {
       "title": "Ingelogde browsers",
@@ -1776,13 +1814,129 @@
       "forwardingRemoved": "Doorsturen naar {{address}} verwijderd",
       "forwardingConfirmed": "{{address}} heeft het doorsturen bevestigd",
       "forwardingDeclined": "{{address}} heeft het doorsturen afgewezen",
-      "forwardingConfirmationSent": "Bevestigingsmail naar {{address}} gestuurd"
+      "forwardingConfirmationSent": "Bevestigingsmail naar {{address}} gestuurd",
+      "oauthGranted": "App ‘{{name}}’ ingelogd met OAuth ({{scopes}})",
+      "oauthRevoked": "App ‘{{name}}’ uitgelogd",
+      "oidcLinked": "Gekoppeld aan de login bij {{issuer}}"
     },
     "loginMethods": {
       "password": "wachtwoord",
       "totp": "wachtwoord en app",
       "recoveryCode": "wachtwoord en herstelcode",
-      "passkey": "wachtwoord en passkey"
+      "passkey": "wachtwoord en passkey",
+      "oidc": "single sign-on"
+    },
+    "oauthApps": {
+      "title": "Met OAuth ingelogde apps",
+      "none": "Er is geen app met OAuth ingelogd. Mailapps die dit ondersteunen, loggen hier in de browser in in plaats van een app-wachtwoord te gebruiken.",
+      "staysSignedIn": "Blijft ingelogd",
+      "since": "Ingelogd op {{date}}",
+      "signOut": "Uitloggen",
+      "signOutTitle": "‘{{name}}’ uitloggen?",
+      "signOutBody": "De app kan niet meer bij de mailbox tot iemand er opnieuw mee inlogt.",
+      "signedOut": "‘{{name}}’ uitgelogd"
+    }
+  },
+  "oauth": {
+    "title": "‘{{name}}’ wil toegang tot je account",
+    "account": "Ingelogd als",
+    "nameClaim": "De app noemt zichzelf ‘{{name}}’. Sta dit alleen toe als je zelf net bent begonnen met inloggen in deze app.",
+    "returnsTo": "Daarna ga je terug naar {{host}}.",
+    "returnsToDevice": "Daarna ga je terug naar de app op dit apparaat ({{host}}).",
+    "scopesTitle": "De app mag",
+    "scopes": {
+      "mail": {
+        "title": "Je mail lezen en ordenen",
+        "hint": "Mail, mappen en filterregels, via IMAP, JMAP en ManageSieve."
+      },
+      "smtp": {
+        "title": "Mail versturen namens jou",
+        "hint": "Vanaf je adressen, via SMTP."
+      },
+      "dav": {
+        "title": "Je agenda's en contacten gebruiken",
+        "hint": "Lezen en wijzigen, via CalDAV en CardDAV."
+      },
+      "openid": {
+        "title": "Weten dat jij het bent",
+        "hint": "Je account op deze server."
+      },
+      "profile": {
+        "title": "Je naam zien",
+        "hint": "De naam van je account."
+      },
+      "email": {
+        "title": "Je e-mailadres zien",
+        "hint": "Je hoofdadres."
+      },
+      "offline_access": {
+        "title": "Ingelogd blijven",
+        "hint": "Tot je de app uitlogt, zonder het opnieuw te vragen."
+      }
+    },
+    "revokeHint": "Je kunt de app altijd uitloggen onder Mijn account → Beveiliging.",
+    "allow": "Toestaan",
+    "deny": "Weigeren",
+    "otherAccount": "Niet {{login}}? Inloggen met een ander account",
+    "signingIn": "Bezig met inloggen …",
+    "invalidTitle": "Deze app kan hier niet inloggen",
+    "invalid": {
+      "oauthClientUnknown": "Deze app is niet geregistreerd op deze server. Stel het account in de app opnieuw in.",
+      "oauthRedirectInvalid": "De app wil terug naar een adres dat hij niet heeft geregistreerd. Voor de veiligheid is er niets verstuurd."
+    },
+    "toPortal": "Naar het portaal"
+  },
+  "externalLogin": {
+    "intro": "Inloggen op het portaal bij een andere aanbieder (OpenID Connect), of wachtwoorden controleren in een LDAP-directory. Wijzigingen gelden meteen, zonder herstart.",
+    "docs": "Handleiding: OpenID Connect en LDAP",
+    "oauthDocs": "Handleiding: mail-apps met OAuth",
+    "test": "Verbinding testen",
+    "testOk": "Werkt: {{detail}}",
+    "autoCreate": "Account aanmaken bij de eerste login",
+    "allowedDomains": "Domeinen voor nieuwe accounts",
+    "allowedDomainsHint": "Eén per regel, elk een domein van deze server. Leeg: geen nieuwe accounts.",
+    "oidc": {
+      "title": "OpenID Connect",
+      "intro": "Een knop op de inlogpagina leidt naar jullie inlogdienst, zoals Authentik, Keycloak of Microsoft Entra ID.",
+      "enabled": "Inloggen via een OpenID Connect-aanbieder",
+      "enabledHint": "Wachtwoorden die hier zijn ingesteld blijven daarnaast werken.",
+      "redirectUri": "Registreer deze redirect-URI bij de aanbieder",
+      "issuer": "Issuer",
+      "issuerHint": "Het adres van de aanbieder. De rest leest UwUMail uit zijn /.well-known/openid-configuration.",
+      "clientId": "Client-ID",
+      "clientSecret": "Client-secret",
+      "buttonLabel": "Naam op de knop",
+      "buttonLabelHint": "De knop heet dan ‘Inloggen met Authentik’. Leeg: ‘Inloggen met single sign-on’.",
+      "autoCreateHint": "Alleen als de aanbieder het adres bevestigt en het domein hieronder is toegestaan.",
+      "adminClaim": "Admin-claim",
+      "adminClaimHint": "De claim in het antwoord van de aanbieder die groepen of rollen opsomt.",
+      "adminValue": "Admin-waarde",
+      "adminValueHint": "Nieuwe accounts waarvan de claim deze waarde bevat, worden admin."
+    },
+    "ldap": {
+      "title": "LDAP-directory",
+      "intro": "Accounts die op de directory staan, loggen in met hun directory-wachtwoord, in het portaal en in mail-apps. Alle anderen houden hun wachtwoord hier.",
+      "enabled": "Wachtwoorden controleren in een LDAP-directory",
+      "enabledHint": "Welke accounts dit gebruiken, stel je in op de pagina van elke persoon. Accounts die uit de directory zijn aangemaakt gebruiken het meteen.",
+      "url": "Adres van de directory",
+      "urlHint": "ldaps://…, of ldap://… met STARTTLS.",
+      "starttls": "STARTTLS bij ldap://",
+      "starttlsHint": "Versleutelt de verbinding voordat er een wachtwoord wordt verstuurd.",
+      "insecureLocalhost": "ldap:// zonder versleuteling op deze machine toestaan",
+      "insecureLocalhostHint": "Alleen voor een directory op precies deze machine (localhost), nooit via een netwerk.",
+      "bindDn": "Serviceaccount (bind-DN)",
+      "bindDnHint": "Zoekt in de directory naar de persoon die inlogt.",
+      "bindPassword": "Wachtwoord van het serviceaccount",
+      "userDnTemplate": "DN-sjabloon",
+      "userDnTemplateHint": "Met een sjabloon wordt er niet gezocht: de DN van de persoon wordt uit het adres gemaakt. {user} is het deel vóór de @, {email} het hele adres.",
+      "baseDn": "Zoekbasis",
+      "userFilter": "Zoekfilter",
+      "userFilterHint": "{email} is het hele adres dat bij het inloggen is ingevoerd, {user} het deel vóór de @.",
+      "mailAttribute": "Attribuut voor het adres",
+      "nameAttribute": "Attribuut voor de naam",
+      "adminGroupDn": "Admin-groep",
+      "adminGroupDnHint": "Nieuwe accounts die lid zijn van deze groep (memberOf), worden admin.",
+      "autoCreateHint": "Als de directory het adres kent en het domein hieronder is toegestaan."
     }
   },
   "fetch": {

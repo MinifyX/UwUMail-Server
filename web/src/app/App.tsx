@@ -14,6 +14,7 @@ import { DomainPage } from "@/features/domains/DomainPage";
 import { ForwardConfirmPage } from "@/features/mailbox/ForwardConfirmPage";
 import { MailboxPage } from "@/features/mailbox/MailboxPage";
 import { LoginPage } from "@/features/login/LoginPage";
+import { OAuthConsentPage } from "@/features/oauth/OAuthConsentPage";
 import { PROTOCOLS_PATHS, ProtocolsPage, type ProtocolsTab } from "@/features/logs/ProtocolsPage";
 import { PasswordPage } from "@/features/password/PasswordPage";
 import { DIRECTORY_PATHS, DirectoryPage, type DirectoryTab } from "@/features/people/DirectoryPage";
@@ -131,6 +132,11 @@ function Routes() {
         <LoadError error={session.error} onRetry={() => void session.refetch()} />
       </main>
     );
+  }
+  // An app asking to sign in with OAuth: after the login (if needed) the question comes up at this
+  // same address, its request still in the query.
+  if (matchPath("/oauth/authorize", path)) {
+    return session.data ? <OAuthConsentPage session={session.data} /> : <LoginPage />;
   }
   // The assistant stays on screen while its second step logs the new admin in.
   if (path === "/setup") return <SetupWizard session={session.data} />;

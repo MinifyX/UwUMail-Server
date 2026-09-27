@@ -21,6 +21,7 @@ mod dav;
 mod dav_import;
 mod db;
 mod directory;
+mod external;
 mod extras;
 mod feeds;
 mod fetch;
@@ -38,6 +39,7 @@ mod mail;
 mod masked;
 mod migration_jobs;
 mod mutate;
+mod oauth;
 mod objects;
 mod own;
 mod parse;
@@ -47,6 +49,7 @@ mod query;
 mod queue;
 mod reports;
 mod rules;
+mod sasl;
 mod security;
 mod sender_lists;
 mod shared_mailboxes;
@@ -99,6 +102,7 @@ pub use dav_import::{
     NewImportCollection, Split, SplitObject, dav_color, decode_text, split_ics, split_vcf,
 };
 pub use directory::{Account, DkimKey, DkimKeyAlgorithm, DkimKeyState, Domain, NewAccount, Protocols, Role};
+pub use external::{BoxFuture as ExternalFuture, ExternalPasswords};
 pub use extras::{
     IDENTITY_SIGNATURE_MAX_BYTES, Identity, IdentityUpdate, SubmissionRecord, UPLOAD_LIFETIME_SECS, VacationResponse,
 };
@@ -121,6 +125,11 @@ pub use migration_jobs::{
     MAX_MIGRATION_JOBS, MigrationJob, MigrationProgress, MigrationRun, MigrationState, NewMigrationJob,
 };
 pub use mutate::{EmailUpdate, KeywordsChange, MailboxUpdate, MailboxesChange};
+pub use oauth::{
+    NewOAuthCode, OAUTH_ACCESS_TOKEN_SECS, OAUTH_CODE_SECS, OAUTH_REFRESH_TOKEN_SECS, OAUTH_SCOPES, OAuthClient,
+    OAuthGrant, OAuthRefusal, OAuthTokens, is_oauth_access_token, oauth_scopes, oauth_scopes_usable, pkce_matches,
+    redirect_uri_registered, valid_pkce_challenge, valid_redirect_uri,
+};
 pub use objects::{Changes, EmailRecord};
 pub use own::{MailboxUsage, OwnAddress, OwnAddresses, RELEASED_ADDRESS_SECS, ReleasedAddress};
 /// Checks a password hash from another server (bcrypt or Argon2) and returns how it would be stored.
@@ -128,7 +137,7 @@ pub use password::import_hash as normalize_imported_password_hash;
 pub use push::{
     MAX_PUSH_SUBSCRIPTIONS, NewPushSubscription, PUSH_CREDENTIAL_PASSWORD, PUSH_MAX_FAILURES, PUSH_MAX_VERIFY_ATTEMPTS,
     PUSH_SUBSCRIPTION_MAX_SECS, PushKeys, PushSubscription, PushSubscriptionUpdate, PushTarget,
-    push_credential_for_app_password, push_credential_for_session,
+    push_credential_for_app_password, push_credential_for_oauth_grant, push_credential_for_session,
 };
 pub use query::{EmailFilter, EmailSort, EmailSortProperty};
 pub use queue::{NewQueueRecipient, QueueEntry, QueueRecipient, QueueRecipientStatus, QueuedMessage};
@@ -141,6 +150,7 @@ pub use rules::{
     BulkAction, BulkReport, ImportReport, RULES_BULK_MAX, RULES_IMPORT_MAX, RULES_PAGE_MAX, Rule, RuleChange,
     RuleImport, RuleList, RulePage, RuleQuery, RuleScope, RuleSort, RuleState, RuleType, ScopeFilter,
 };
+pub use sasl::{SaslBearer, parse_oauthbearer, parse_xoauth2, sasl_bearer_error, sasl_user_matches};
 pub use security::{
     AppPassword, AppScope, CodeCheck, CreatedAppPassword, MailAuth, MailAuthDenied, NewAppPassword, Passkey,
     SecurityEvent, SecurityEventRecord, SecurityOverview, TotpSetup, WebSessionInfo, scopes_for,
@@ -225,6 +235,8 @@ struct Inner {
     data_dir: PathBuf,
     /// What happened since the server started, for the statistics and the metrics.
     stats: stats::Stats,
+    /// Where passwords of directory (LDAP) accounts are checked, once the server plugged it in.
+    external: std::sync::RwLock<Option<Arc<dyn ExternalPasswords>>>,
 }
 
 impl Store {
@@ -248,6 +260,7 @@ impl Store {
                 queue_wakeup: Notify::new(),
                 data_dir,
                 stats: stats::Stats::default(),
+                external: std::sync::RwLock::new(None),
             }),
         })
     }

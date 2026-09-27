@@ -122,9 +122,10 @@ Asking for `url` or `keys` is `forbidden`.
 - At most 50 subscriptions per account, and 30 new ones per account and hour.
 - A subscription belongs to the login that made it and is only listed for that
   login: the webmail's session cookie, an app password (as a bearer token or in
-  Basic), or the account password. It ends with it: with the session when
-  someone signs out or it runs out, when the app password is removed or
-  expires, and for the account password when the password, a second factor or
+  Basic), an app signed in with [OAuth](oauth.md), or the account password. It
+  ends with it: with the session when someone signs out or it runs out, when
+  the app password is removed or expires, when the OAuth app is signed out, and
+  for the account password when the password, a second factor or
   the person's app password rule changes. From then on nothing is pushed to it,
   and it is dropped with the next hourly cleanup. An account that is switched
   off or deleted gets no pushes.

@@ -41,6 +41,19 @@
       "tooManyAttempts": "失敗した試行が多すぎます。数分待ってからお試しください。",
       "offline": "現在サーバーに接続できません。",
       "internal": "サーバーでエラーが発生しました。"
+    },
+    "or": "または",
+    "oidcButton": "{{provider}}でログイン",
+    "oidcButtonGeneric": "シングルサインオンでログイン",
+    "oidcErrors": {
+      "unavailable": "現在ログインサービスに接続できません。後でもう一度お試しいただくか、パスワードでログインしてください。",
+      "expired": "ログインに時間がかかりすぎたか、別のブラウザーで開始されました。もう一度お試しください。",
+      "refused": "ログインサービスでログインがキャンセルまたは拒否されました。",
+      "failed": "ログインサービスからの応答を確認できませんでした。もう一度お試しください。",
+      "emailNotVerified": "ログインサービスがメールアドレスを確認していないため、ここにはログインできません。",
+      "domainNotAllowed": "このアドレスのアカウントはなく、このドメインではアカウントを作成できません。",
+      "noAccount": "このログインに対応するアカウントはこのサーバーになく、作成することもできません。",
+      "alreadyLinked": "このアカウントは、ログインサービスの別のログインにすでに紐付いています。"
     }
   },
   "nav": {
@@ -503,7 +516,14 @@
       "moveNotRunning": "この引っ越しは実行されていません。",
       "moveNoMailbox": "あなたのアカウントには、メールを移せるメールボックスがありません。",
       "moveWrongPassword": "以前のプロバイダーがこのパスワードを拒否しました。多くのプロバイダーではアプリパスワードが必要です。",
-      "alertResolved": "このアラートはすでに解決しています。"
+      "alertResolved": "このアラートはすでに解決しています。",
+      "confirmByLogin": "確認するには、一度ログアウトして再度ログインし、もう一度お試しください。",
+      "passwordInDirectory": "このパスワードは組織のディレクトリー（LDAP）で管理されており、そちらで変更します。",
+      "serviceAccount": "サービスはアプリパスワードでのみログインします。",
+      "oauthClientUnknown": "このアプリはこのサーバーに登録されていません。",
+      "oauthRedirectInvalid": "アプリが、登録していない場所への戻り先を求めています。",
+      "oidcFailed": "ログインサービスとの連携がうまくいきませんでした：{{detail}}",
+      "ldapFailed": "ディレクトリーとの連携がうまくいきませんでした：{{detail}}"
     }
   },
   "people": {
@@ -707,6 +727,20 @@
       "revokeTitle": "{{name}}を取り消しますか？",
       "revokeBody": "このパスワードを使っているものはアクセスできなくなります。",
       "createdTitle": "新しいアプリパスワード"
+    },
+    "authSource": {
+      "label": "パスワードの確認先",
+      "hint": "ディレクトリーに切り替えると、ここに保存されたパスワードは削除されます。元に戻す場合は、新しいパスワードを設定するかリンクを送ってください。",
+      "oidcHint": "OpenID Connect プロバイダーでログインします。ここのパスワードやディレクトリーに切り替えることもできます。",
+      "local": "このサーバー",
+      "ldap": "LDAP ディレクトリー",
+      "oidc": "OpenID Connect プロバイダー",
+      "toLdapTitle": "{{login}} のパスワードをディレクトリーで確認しますか？",
+      "toLdapBody": "ここに保存されたパスワードは削除されます。今後はポータルでもメールアプリでも、ディレクトリーのパスワードでログインします。アプリパスワードはそのまま残ります。",
+      "toLocalTitle": "{{login}} のパスワードをここで確認しますか？",
+      "toLocalBody": "切り替え後、この人にはここでのパスワードがありません。新しいパスワードを設定するか、パスワードを選ぶためのリンクを送ってください。",
+      "switch": "切り替える",
+      "inDirectory": "パスワードは LDAP ディレクトリーで確認され、そちらで変更します。"
     }
   },
   "sharedMailboxes": {
@@ -1456,7 +1490,8 @@
       "mail": "送信と受信",
       "apps": "アプリとウェブメール",
       "vpn": "VPN とプロキシ",
-      "branding": "ブランディング"
+      "branding": "ブランディング",
+      "login": "ログイン"
     },
     "mailIntro": "メールがサーバーから出ていく方法と、受け付ける内容です。変更は再起動なしですぐに反映されます。",
     "appsIntro": "メールアプリとブラウザーのメールボックスに適用される設定です。変更は再起動なしですぐに反映されます。"
@@ -1684,7 +1719,10 @@
       "repeat": "新しいパスワードを再入力",
       "hint": "10文字以上。いくつかの単語からなる文は覚えやすいです。",
       "submit": "パスワードを変更",
-      "changed": "パスワードを変更しました。他のブラウザーはログアウトされました。"
+      "changed": "パスワードを変更しました。他のブラウザーはログアウトされました。",
+      "managedTitle": "パスワード",
+      "inDirectory": "パスワードは組織のディレクトリー（LDAP）で管理されています。そちらで変更すると、ここでもすぐに有効になります。",
+      "atProvider": "組織のログインサービスでログインしているため、ここにはパスワードがありません。メールアプリは OAuth またはアプリパスワードでログインします。"
     },
     "sessions": {
       "title": "ログイン中のブラウザー",
@@ -1727,13 +1765,129 @@
       "forwardingRemoved": "{{address}}への転送を削除",
       "forwardingConfirmed": "{{address}}が転送を承認",
       "forwardingDeclined": "{{address}}が転送を拒否",
-      "forwardingConfirmationSent": "{{address}}に確認メールを送信"
+      "forwardingConfirmationSent": "{{address}}に確認メールを送信",
+      "oauthGranted": "アプリ「{{name}}」が OAuth でログイン（{{scopes}}）",
+      "oauthRevoked": "アプリ「{{name}}」をログアウト",
+      "oidcLinked": "{{issuer}} のログインと連携"
     },
     "loginMethods": {
       "password": "パスワード",
       "totp": "パスワードとアプリ",
       "recoveryCode": "パスワードと復元コード",
-      "passkey": "パスワードとパスキー"
+      "passkey": "パスワードとパスキー",
+      "oidc": "シングルサインオン"
+    },
+    "oauthApps": {
+      "title": "OAuth でログイン中のアプリ",
+      "none": "OAuth でログインしているアプリはありません。対応しているメールアプリは、アプリパスワードの代わりにブラウザーでここにログインできます。",
+      "staysSignedIn": "ログイン状態を維持",
+      "since": "{{date}}にログイン",
+      "signOut": "ログアウト",
+      "signOutTitle": "「{{name}}」をログアウトしますか？",
+      "signOutBody": "誰かが再びこのアプリでログインするまで、アプリはメールボックスにアクセスできなくなります。",
+      "signedOut": "「{{name}}」をログアウトしました"
+    }
+  },
+  "oauth": {
+    "title": "「{{name}}」があなたのアカウントへのアクセスを求めています",
+    "account": "ログイン中のアカウント：",
+    "nameClaim": "「{{name}}」はアプリ自身が名乗っている名前です。このアプリでのログインを今ご自身で始めた場合にのみ許可してください。",
+    "returnsTo": "その後、{{host}} に戻ります。",
+    "returnsToDevice": "その後、このデバイス上のアプリ（{{host}}）に戻ります。",
+    "scopesTitle": "アプリに許可されること",
+    "scopes": {
+      "mail": {
+        "title": "メールの閲覧と整理",
+        "hint": "メール、フォルダー、フィルタールール（IMAP、JMAP、ManageSieve）。"
+      },
+      "smtp": {
+        "title": "あなたとしてメールを送信",
+        "hint": "あなたのアドレスから（SMTP）。"
+      },
+      "dav": {
+        "title": "カレンダーと連絡先の利用",
+        "hint": "閲覧と変更（CalDAV、CardDAV）。"
+      },
+      "openid": {
+        "title": "あなたであることの確認",
+        "hint": "このサーバー上のあなたのアカウント。"
+      },
+      "profile": {
+        "title": "名前の表示",
+        "hint": "アカウントに登録された名前。"
+      },
+      "email": {
+        "title": "メールアドレスの表示",
+        "hint": "あなたのメインアドレス。"
+      },
+      "offline_access": {
+        "title": "ログイン状態の維持",
+        "hint": "アプリをログアウトするまで、再確認なしで。"
+      }
+    },
+    "revokeHint": "アプリは「マイアカウント → セキュリティ」からいつでもログアウトできます。",
+    "allow": "許可する",
+    "deny": "拒否する",
+    "otherAccount": "{{login}} ではありませんか？別のアカウントでログイン",
+    "signingIn": "ログインしています…",
+    "invalidTitle": "このアプリはここにログインできません",
+    "invalid": {
+      "oauthClientUnknown": "このアプリはこのサーバーに登録されていません。アプリでアカウントをもう一度設定してください。",
+      "oauthRedirectInvalid": "アプリが、登録していない場所への戻り先を求めています。安全のため、何も送信していません。"
+    },
+    "toPortal": "ポータルへ"
+  },
+  "externalLogin": {
+    "intro": "別のプロバイダー（OpenID Connect）でポータルにログインしたり、LDAP ディレクトリーでパスワードを確認したりします。変更は再起動なしですぐに反映されます。",
+    "docs": "ガイド：OpenID Connect と LDAP",
+    "oauthDocs": "ガイド：OAuth を使うメールアプリ",
+    "test": "接続をテスト",
+    "testOk": "成功：{{detail}}",
+    "autoCreate": "初回ログイン時にアカウントを作成",
+    "allowedDomains": "新しいアカウントのドメイン",
+    "allowedDomainsHint": "1行に1つ、このサーバーのドメインを入力します。空欄：新しいアカウントは作成しません。",
+    "oidc": {
+      "title": "OpenID Connect",
+      "intro": "ログインページのボタンから、Authentik、Keycloak、Microsoft Entra ID などのログインサービスに移動します。",
+      "enabled": "OpenID Connect プロバイダーでログイン",
+      "enabledHint": "ここで設定したパスワードも引き続き使えます。",
+      "redirectUri": "このリダイレクト URI をプロバイダーに登録してください",
+      "issuer": "Issuer",
+      "issuerHint": "プロバイダーのアドレス。残りは /.well-known/openid-configuration から UwUMail が読み取ります。",
+      "clientId": "クライアント ID",
+      "clientSecret": "クライアントシークレット",
+      "buttonLabel": "ボタンの名前",
+      "buttonLabelHint": "ボタンは「Authentikでログイン」と表示されます。空欄：「シングルサインオンでログイン」。",
+      "autoCreateHint": "プロバイダーがアドレスを保証し、そのドメインが下で許可されている場合のみ。",
+      "adminClaim": "管理者クレーム",
+      "adminClaimHint": "プロバイダーの応答のうち、グループやロールを列挙するクレーム。",
+      "adminValue": "管理者の値",
+      "adminValueHint": "クレームにこの値を含む新しいアカウントは管理者になります。"
+    },
+    "ldap": {
+      "title": "LDAP ディレクトリー",
+      "intro": "ディレクトリーに設定されたアカウントは、ポータルでもメールアプリでもディレクトリーのパスワードでログインします。それ以外の人はここのパスワードを使い続けます。",
+      "enabled": "LDAP ディレクトリーでパスワードを確認",
+      "enabledHint": "どのアカウントが使うかは、各人のページで設定します。ディレクトリーから作成されたアカウントはすぐに使います。",
+      "url": "ディレクトリーのアドレス",
+      "urlHint": "ldaps://…、または STARTTLS 付きの ldap://…。",
+      "starttls": "ldap:// で STARTTLS を使う",
+      "starttlsHint": "パスワードを送る前に接続を暗号化します。",
+      "insecureLocalhost": "このマシン上では暗号化なしの ldap:// を許可",
+      "insecureLocalhostHint": "このマシン自体（localhost）のディレクトリー専用です。ネットワーク越しには決して使わないでください。",
+      "bindDn": "サービスアカウント（bind DN）",
+      "bindDnHint": "ログインする人をディレクトリーで検索します。",
+      "bindPassword": "サービスアカウントのパスワード",
+      "userDnTemplate": "DN テンプレート",
+      "userDnTemplateHint": "テンプレートがあると検索はしません。その人の DN はアドレスから作られます。{user} は @ より前の部分、{email} はアドレス全体です。",
+      "baseDn": "検索ベース",
+      "userFilter": "検索フィルター",
+      "userFilterHint": "{email} はログイン時に入力されたアドレス全体、{user} は @ より前の部分です。",
+      "mailAttribute": "アドレスの属性",
+      "nameAttribute": "名前の属性",
+      "adminGroupDn": "管理者グループ",
+      "adminGroupDnHint": "このグループのメンバー（memberOf）である新しいアカウントは管理者になります。",
+      "autoCreateHint": "ディレクトリーがアドレスを知っていて、そのドメインが下で許可されている場合。"
     }
   },
   "fetch": {

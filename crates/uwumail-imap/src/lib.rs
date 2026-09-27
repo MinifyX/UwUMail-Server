@@ -38,6 +38,8 @@ pub struct Imap {
     /// The biggest message APPEND takes, like the biggest message SMTP takes.
     max_append: usize,
     connections: Arc<Semaphore>,
+    /// The server's name, for the address of the OpenID configuration a failed token login points to.
+    hostname: Option<String>,
 }
 
 impl Imap {
@@ -47,7 +49,14 @@ impl Imap {
             limiter: Arc::new(AuthLimiter::default()),
             max_append,
             connections: Arc::new(Semaphore::new(MAX_CONNECTIONS)),
+            hostname: None,
         }
+    }
+
+    /// The server's name: apps whose token was refused learn where to get a new one.
+    pub fn with_hostname(mut self, hostname: &str) -> Imap {
+        self.hostname = Some(hostname.to_owned());
+        self
     }
 
     /// Hands every network this turns away to `reporter` as well, so it can be kept out further

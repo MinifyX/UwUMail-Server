@@ -353,6 +353,20 @@ pub(crate) fn check_host(host: &str) -> Result<String> {
 }
 
 impl Store {
+    /// Seals a secret of the server's settings (a provider's client secret, a directory's bind
+    /// password) with the same key as provider passwords, as hex for a JSON text.
+    pub async fn seal_secret(&self, plain: &str) -> Result<String> {
+        let plain = plain.to_owned();
+        self.write(move |tx| Ok(hex::encode(seal(tx, &plain)?))).await
+    }
+
+    /// Opens what [`Store::seal_secret`] sealed.
+    pub async fn unseal_secret(&self, sealed: &str) -> Result<String> {
+        let sealed =
+            hex::decode(sealed.trim()).map_err(|_| StoreError::Internal("a sealed setting is not hex".into()))?;
+        self.read(move |conn| unseal(conn, &sealed)).await
+    }
+
     /// The fetch accounts of one person, or of everyone.
     pub async fn fetch_accounts(&self, account_id: Option<i64>) -> Result<Vec<FetchAccount>> {
         self.read(move |conn| {

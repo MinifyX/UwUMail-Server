@@ -1,5 +1,5 @@
 //! HTTP authentication for JMAP: Basic with an app password or the account password, or an app
-//! password alone as a bearer token. Logins with the account password are cached briefly, because
+//! password or OAuth access token (docs/oauth.md) alone as a bearer token. Logins with the account password are cached briefly, because
 //! checking it is slow on purpose.
 
 use std::collections::HashMap;
@@ -71,7 +71,8 @@ impl Default for ClientInfo {
 #[derive(Debug, Clone)]
 pub struct Login {
     pub account: Account,
-    /// The credential, as push subscriptions record it: `session:<hash>`, `app:<id>` or `password`.
+    /// The credential, as push subscriptions record it: `session:<hash>`, `app:<id>`, `oauth:<grant>`
+    /// or `password`.
     pub credential: String,
 }
 
@@ -111,6 +112,10 @@ impl IntoResponse for AuthError {
             response
                 .headers_mut()
                 .insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Basic realm=\"UwUMail\""));
+            // Apps signed in with OAuth learn from the second challenge that a token works too.
+            response
+                .headers_mut()
+                .append(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer realm=\"UwUMail\""));
         }
         response
     }
@@ -332,16 +337,24 @@ impl Authenticator {
         }
     }
 
-    /// `Authorization: Bearer <app password>`: the app password alone, without the login. Wrong
-    /// tokens count against the network like wrong passwords.
+    /// `Authorization: Bearer <app password or OAuth access token>`: the secret alone, without the
+    /// login. Wrong tokens count against the network like wrong passwords.
     async fn bearer(&self, token: &str, client: ClientInfo) -> Result<Login, AuthError> {
         if self.blocked(client.ip) {
             return Err(AuthError::Blocked);
         }
         let ip = client.ip.to_string();
-        match self.store.authenticate_bearer(token, self.scope, self.protocol, &ip).await {
-            Ok(MailAuth::Ok { account, app_password }) => Ok(Login::new(account, app_password)),
-            Ok(MailAuth::Denied(reason)) => {
+        let checked = if uwumail_store::is_oauth_access_token(token) {
+            self.store.authenticate_oauth_grant(token, self.scope, self.protocol, &ip).await
+        } else {
+            self.store.authenticate_bearer(token, self.scope, self.protocol, &ip).await.map(|auth| (auth, None))
+        };
+        match checked {
+            Ok((MailAuth::Ok { account, .. }, Some(grant))) => {
+                Ok(Login { account, credential: uwumail_store::push_credential_for_oauth_grant(grant) })
+            }
+            Ok((MailAuth::Ok { account, app_password }, None)) => Ok(Login::new(account, app_password)),
+            Ok((MailAuth::Denied(reason), _)) => {
                 self.record_failure(client.ip);
                 tracing::warn!(ip = %client.ip, %reason, protocol = self.protocol, "failed bearer login");
                 Err(AuthError::Invalid)

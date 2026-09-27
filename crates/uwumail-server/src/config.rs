@@ -35,6 +35,9 @@ pub struct Config {
     pub reports: uwumail_smtp::ReportsConfig,
     /// Prometheus metrics under `/metrics`; the admin panel can change this part.
     pub metrics: uwumail_web::MetricsConfig,
+    /// Logging in to the portal at an OpenID Connect provider or with an LDAP directory's password
+    /// (docs/login-oidc-ldap.md).
+    pub auth: uwumail_web::AuthConfig,
 }
 
 impl Default for Config {
@@ -55,6 +58,7 @@ impl Default for Config {
             log: LogConfig::default(),
             reports: uwumail_smtp::ReportsConfig::default(),
             metrics: uwumail_web::MetricsConfig::default(),
+            auth: uwumail_web::AuthConfig::default(),
         }
     }
 }
@@ -259,6 +263,7 @@ impl Config {
         self.log.loki.target(&self.hostname).map_err(|err| anyhow::anyhow!(err))?;
         uwumail_smtp::egress::Egress::check(&self.egress).map_err(|err| anyhow::anyhow!(err))?;
         self.metrics.check().map_err(|err| anyhow::anyhow!(err))?;
+        self.auth.validate().map_err(|err| anyhow::anyhow!(err))?;
         // Behind a reverse proxy the challenge arrives through the proxy listener instead of port 80.
         if self.tls.mode == TlsMode::Acme && self.listen.http.is_empty() && self.listen.proxy.is_empty() {
             bail!(

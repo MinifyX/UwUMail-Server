@@ -65,7 +65,13 @@ export function Section({
     Object.entries(draft).filter(([key, value]) => {
       if (!keys.includes(key) || value === undefined) return false;
       // Secrets never come back: typing one sets it, null removes a stored one.
-      if (key.endsWith("password") || key.endsWith("_key") || key.endsWith("token") || key === "egress.proxy")
+      if (
+        key.endsWith("password") ||
+        key.endsWith("_key") ||
+        key.endsWith("token") ||
+        key.endsWith("secret") ||
+        key === "egress.proxy"
+      )
         return (typeof value === "string" && value !== "") || (value === null && byKey[key]?.set);
       return JSON.stringify(value) !== JSON.stringify(byKey[key]?.value);
     }),
@@ -248,11 +254,16 @@ export function TextField({
   settingKey,
   label,
   hint,
+  placeholder,
+  keepSpaces = false,
 }: {
   form: Form;
   settingKey: string;
   label: string;
   hint?: string;
+  placeholder?: string;
+  /** Keeps spaces while typing, for values that may have them inside, such as names or DNs. */
+  keepSpaces?: boolean;
 }) {
   const locked = form.locked(settingKey);
   return (
@@ -261,12 +272,14 @@ export function TextField({
         <TextInput
           id={id}
           disabled={locked}
+          placeholder={placeholder}
           autoCapitalize="none"
           spellCheck={false}
           value={String(form.value(settingKey) ?? "")}
-          onChange={(event) =>
-            form.set(settingKey, event.target.value.trim() === "" ? null : event.target.value.trim())
-          }
+          onChange={(event) => {
+            const typed = event.target.value;
+            form.set(settingKey, typed.trim() === "" ? null : keepSpaces ? typed : typed.trim());
+          }}
         />
       )}
     </Field>

@@ -2,7 +2,7 @@
 //! JMAP shows as `SieveScript` (docs/sieve.md).
 //!
 //! The connection starts in plain text and has to switch to TLS with STARTTLS before AUTHENTICATE
-//! PLAIN is offered at all. Logins go through the same checks, app passwords and lockouts as IMAP:
+//! (PLAIN, or OAUTHBEARER and XOAUTH2 with an OAuth access token) is offered at all. Logins go through the same checks, app passwords and lockouts as IMAP:
 //! the limiter is shared, so a network that guesses passwords here is shut out there too.
 
 use std::io;
@@ -53,6 +53,7 @@ pub struct ManageSieve {
     connections: Arc<Semaphore>,
     /// [`LOGIN_TIMEOUT`] and [`PRE_LOGIN_LIMIT`]; shorter in tests.
     login_timeouts: (Duration, Duration),
+    hostname: Option<String>,
 }
 
 impl ManageSieve {
@@ -63,6 +64,7 @@ impl ManageSieve {
             limiter: imap.limiter.clone(),
             connections: Arc::new(Semaphore::new(MAX_CONNECTIONS)),
             login_timeouts: (LOGIN_TIMEOUT, PRE_LOGIN_LIMIT),
+            hostname: imap.hostname.clone(),
         }
     }
 
@@ -265,7 +267,7 @@ impl Session {
         let mut lines = vec![
             format!("\"IMPLEMENTATION\" {}", string(IMPLEMENTATION)),
             format!("\"SIEVE\" {}", string(&uwumail_smtp::sieve::EXTENSIONS.join(" "))),
-            format!("\"SASL\" {}", string(if self.encrypted { "PLAIN" } else { "" })),
+            format!("\"SASL\" {}", string(if self.encrypted { "PLAIN OAUTHBEARER XOAUTH2" } else { "" })),
             format!("\"MAXREDIRECTS\" \"{}\"", uwumail_smtp::sieve::MAX_REDIRECTS),
             "\"VERSION\" \"1.0\"".to_owned(),
             "\"UNAUTHENTICATE\"".to_owned(),
@@ -467,9 +469,9 @@ impl Session {
     }
 
     async fn authenticate(&mut self, params: &[Arg]) -> io::Result<Flow> {
-        let mechanism = params.first().and_then(Arg::utf8).unwrap_or_default();
-        if !mechanism.eq_ignore_ascii_case("PLAIN") {
-            self.send(&no(None, "Only PLAIN is supported")).await?;
+        let mechanism = params.first().and_then(Arg::utf8).unwrap_or_default().to_ascii_uppercase();
+        if !matches!(mechanism.as_str(), "PLAIN" | "OAUTHBEARER" | "XOAUTH2") {
+            self.send(&no(None, "Only PLAIN, OAUTHBEARER and XOAUTH2 are supported")).await?;
             return Ok(Flow::Continue);
         }
         if !self.encrypted {
@@ -496,6 +498,9 @@ impl Session {
             return Ok(Flow::Continue);
         };
         let decoded = base64::engine::general_purpose::STANDARD.decode(response.trim_ascii()).ok();
+        if mechanism != "PLAIN" {
+            return self.bearer_login(&decoded.unwrap_or_default(), mechanism == "XOAUTH2").await;
+        }
         let parts: Option<Vec<String>> = decoded.and_then(|bytes| {
             let parts: Vec<&[u8]> = bytes.split(|&b| b == 0).collect();
             (parts.len() == 3).then(|| parts.iter().map(|p| String::from_utf8_lossy(p).into_owned()).collect())
@@ -509,6 +514,67 @@ impl Session {
             return Ok(Flow::Continue);
         }
         self.login(&parts[1], &parts[2]).await
+    }
+
+    /// The client's answer to a SASL challenge: a string, read under the same clock as a command.
+    async fn read_response(&mut self) -> io::Result<Option<Vec<u8>>> {
+        let Ok(read) = tokio::time::timeout(self.read_limit(), self.read_command()).await else {
+            return Ok(None);
+        };
+        Ok(match read? {
+            Read::Command(args) => args.first().and_then(Arg::text).map(<[u8]>::to_vec),
+            Read::TooBig | Read::Closed => None,
+        })
+    }
+
+    /// OAUTHBEARER or XOAUTH2 with an OAuth access token. A refused token gets the SASL error
+    /// challenge (RFC 7628 section 3.2.2) before the final NO.
+    async fn bearer_login(&mut self, message: &[u8], xoauth2: bool) -> io::Result<Flow> {
+        let parsed =
+            if xoauth2 { uwumail_store::parse_xoauth2(message) } else { uwumail_store::parse_oauthbearer(message) };
+        let Some(parsed) = parsed else {
+            self.send(&no(None, "Invalid token data")).await?;
+            return Ok(Flow::Continue);
+        };
+        let limiter = self.sieve.limiter.clone();
+        if limiter.is_blocked(self.peer.ip()) {
+            self.send(&no(Some("TRYLATER"), "Too many failed logins, try again later")).await?;
+            return Ok(Flow::Continue);
+        }
+        let peer = self.peer.to_string();
+        let username = parsed.user.clone().unwrap_or_default();
+        match self.sieve.store.authenticate_oauth(&parsed.token, AppScope::Mail, "managesieve", &peer).await {
+            Ok(MailAuth::Ok { account, .. })
+                if uwumail_store::sasl_user_matches(parsed.user.as_deref(), &account.login) =>
+            {
+                limiter.record_success(self.peer.ip(), &username);
+                tracing::info!(login = %account.login, peer = %self.peer, oauth = true, "managesieve login");
+                self.account = Some(account);
+                self.send(&ok("Logged in, hi")).await?;
+                Ok(Flow::Continue)
+            }
+            Ok(_) => {
+                limiter.record_failure(self.peer.ip(), &username);
+                self.auth_failures += 1;
+                tracing::warn!(login = %username, peer = %self.peer, "failed managesieve token login");
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                let challenge = uwumail_store::sasl_bearer_error(xoauth2, "mail", self.sieve.hostname.as_deref());
+                let encoded = base64::engine::general_purpose::STANDARD.encode(challenge);
+                self.send(&format!("{}\r\n", string(&encoded))).await?;
+                let _ = self.read_response().await?;
+                if self.auth_failures >= MAX_AUTH_FAILURES {
+                    self.send(&format!("BYE {}\r\n", string("Too many failed logins"))).await?;
+                    return Ok(Flow::Close);
+                }
+                self.send(&no(None, "The token is not valid")).await?;
+                Ok(Flow::Continue)
+            }
+            Err(err) => {
+                tracing::error!(%err, "managesieve authentication failed internally");
+                self.send(&no(Some("TRYLATER"), "Temporary authentication failure")).await?;
+                Ok(Flow::Continue)
+            }
+        }
     }
 
     async fn login(&mut self, username: &str, password: &str) -> io::Result<Flow> {

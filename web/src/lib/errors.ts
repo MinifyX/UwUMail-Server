@@ -117,6 +117,13 @@ const KNOWN = [
   "moveNoMailbox",
   "moveWrongPassword",
   "alertResolved",
+  "confirmByLogin",
+  "passwordInDirectory",
+  "serviceAccount",
+  "oauthClientUnknown",
+  "oauthRedirectInvalid",
+  "oidcFailed",
+  "ldapFailed",
 ];
 
 /** Turns an API error into a sentence for the person in front of the screen. */

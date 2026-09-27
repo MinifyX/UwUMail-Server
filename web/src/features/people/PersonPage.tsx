@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
   ArrowLeft,
@@ -22,8 +23,19 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Field, Select, TextInput, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { AppPasswordRow } from "@/features/security/AppPasswordsCard";
+import { OAuthGrantRow, SignOutAppDialog } from "@/features/security/OAuthAppsCard";
 import { SecretBox } from "@/features/security/SecurityBits";
-import type { AppPasswordCreated, AppPasswordInfo, PasswordLinkCreated, Person, Protocols, Session } from "@/lib/api";
+import {
+  api,
+  type AppPasswordCreated,
+  type AppPasswordInfo,
+  type OAuthGrantInfo,
+  type PasswordLinkCreated,
+  type Person,
+  type Protocols,
+  type Session,
+  type SettingsView,
+} from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { formatDate } from "@/lib/format";
 import { Link, navigate } from "@/lib/router";
@@ -46,6 +58,8 @@ import {
   useSetExternalForwarding,
   useSetSendAsDomains,
   useRestorePerson,
+  useRevokePersonGrant,
+  useSetAuthSource,
   useSetPassword,
   useTrashPerson,
   useUpdatePerson,
@@ -504,6 +518,111 @@ function ServiceAccess({ person }: { person: Person }) {
   );
 }
 
+/**
+ * Where the person's password is checked (docs/login-oidc-ldap.md): here or at the LDAP directory.
+ * Only shown once a directory is set up, or when the person does not sign in here anyway.
+ */
+function PasswordSource({ person }: { person: Person }) {
+  const { t } = useT();
+  const errorText = useErrorText();
+  const settings = useQuery({
+    queryKey: ["admin", "settings"],
+    queryFn: () => api<SettingsView>("/api/admin/settings"),
+  });
+  const setSource = useSetAuthSource(person.login);
+  const [asking, setAsking] = useState<"local" | "ldap" | null>(null);
+  const source = person.authSource ?? "local";
+  const ldap = Boolean(settings.data?.settings.find((setting) => setting.key === "auth.ldap.enabled")?.value);
+  if (!ldap && source === "local") return null;
+
+  return (
+    <div className="mb-4 flex flex-col gap-2 border-b border-hairline pb-4">
+      <Field
+        label={t("people.authSource.label")}
+        hint={source === "oidc" ? t("people.authSource.oidcHint") : t("people.authSource.hint")}
+      >
+        {(id) => (
+          <Select
+            id={id}
+            value={source}
+            disabled={setSource.isPending}
+            onChange={(event) => setAsking(event.target.value === "ldap" ? "ldap" : "local")}
+          >
+            <option value="local">{t("people.authSource.local")}</option>
+            <option value="ldap">{t("people.authSource.ldap")}</option>
+            {source === "oidc" && (
+              <option value="oidc" disabled>
+                {t("people.authSource.oidc")}
+              </option>
+            )}
+          </Select>
+        )}
+      </Field>
+      <Dialog
+        open={asking !== null}
+        onClose={() => setAsking(null)}
+        title={t(asking === "ldap" ? "people.authSource.toLdapTitle" : "people.authSource.toLocalTitle", {
+          login: person.login,
+        })}
+        width="sm"
+      >
+        <div className="flex flex-col gap-4 px-6 pt-1 pb-6">
+          <p className="text-sm text-muted">
+            {t(asking === "ldap" ? "people.authSource.toLdapBody" : "people.authSource.toLocalBody")}
+          </p>
+          {setSource.isError && (
+            <p role="alert" className="text-[13px] text-danger">
+              {errorText(setSource.error)}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setAsking(null)}>{t("common.cancel")}</Button>
+            <Button
+              variant="primary"
+              busy={setSource.isPending}
+              onClick={() =>
+                asking &&
+                setSource.mutate(asking, {
+                  onSuccess: () => {
+                    toast(t("people.toasts.saved"), "success");
+                    setAsking(null);
+                  },
+                })
+              }
+            >
+              {t("people.authSource.switch")}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    </div>
+  );
+}
+
+/** Apps the person signed in with OAuth; an admin can sign one out, e.g. for a lost phone. */
+function PersonOAuthApps({ person }: { person: Person }) {
+  const { t } = useT();
+  const revoke = useRevokePersonGrant(person.login, (name) => t("security.oauthApps.signedOut", { name }));
+  const [revoking, setRevoking] = useState<OAuthGrantInfo | null>(null);
+  const grants = person.oauthGrants ?? [];
+  if (grants.length === 0) return null;
+  return (
+    <Card title={t("security.oauthApps.title")}>
+      <ul className="flex flex-col">
+        {grants.map((grant) => (
+          <OAuthGrantRow key={grant.id} grant={grant} onRevoke={() => setRevoking(grant)} />
+        ))}
+      </ul>
+      <SignOutAppDialog
+        grant={revoking}
+        busy={revoke.isPending}
+        onClose={() => setRevoking(null)}
+        onConfirm={(grant) => revoke.mutate(grant, { onSuccess: () => setRevoking(null) })}
+      />
+    </Card>
+  );
+}
+
 function Access({ person }: { person: Person }) {
   const { t } = useT();
   const errorText = useErrorText();
@@ -512,8 +631,17 @@ function Access({ person }: { person: Person }) {
   const [link, setLink] = useState<PasswordLinkCreated | null>(null);
   const [password, setPasswordValue] = useState("");
 
+  if (person.authSource === "ldap") {
+    return (
+      <Card title={t("people.detail.access")}>
+        <PasswordSource person={person} />
+        <p className="text-[13px] text-muted">{t("people.authSource.inDirectory")}</p>
+      </Card>
+    );
+  }
   return (
     <Card title={t("people.detail.access")}>
+      <PasswordSource person={person} />
       <p className="mb-3 text-[13px] text-muted">{t("people.detail.accessHint")}</p>
       {link ? (
         <LinkBox link={link} />
@@ -873,6 +1001,8 @@ export function PersonPage({ login, session }: { login: string; session: Session
           (person.role === "service" ? <ServiceAccess person={person} /> : <Access person={person} />)}
 
         {!deleted && !person.sharedMailbox && <SecurityInfo person={person} isMe={isMe} />}
+
+        {!deleted && person.role !== "service" && <PersonOAuthApps person={person} />}
 
         {!isMe && (
           <Card title={t("people.detail.danger")}>

@@ -390,4 +390,14 @@ level = "info"
 # enabled = true
 # token = "a-long-random-token"      # sent as "Authorization: Bearer …"
 # allowed_networks = ["10.0.0.0/8"]  # when set, only from these networks
+
+# Logging in to the portal at an OpenID Connect provider or with an LDAP directory's
+# password, see docs/login-oidc-ldap.md.
+# [auth.oidc]
+# enabled = false
+# issuer = "https://auth.example.com/application/o/uwumail/"
+# client_id = "uwumail"
+# [auth.ldap]
+# enabled = false
+# url = "ldaps://ldap.example.com"
 ```

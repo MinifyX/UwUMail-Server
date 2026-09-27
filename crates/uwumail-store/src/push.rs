@@ -103,6 +103,11 @@ pub fn push_credential_for_app_password(id: i64) -> String {
     format!("app:{id}")
 }
 
+/// The credential of an app signed in with OAuth: its grant, which ends when the app is signed out.
+pub fn push_credential_for_oauth_grant(id: i64) -> String {
+    format!("oauth:{id}")
+}
+
 /// The credential of the account password.
 pub const PUSH_CREDENTIAL_PASSWORD: &str = "password";
 
@@ -113,6 +118,8 @@ const STILL_VALID: &str = "a.disabled = 0 AND a.deleted_at IS NULL AND CASE
     WHEN p.credential LIKE 'app:%' THEN EXISTS (SELECT 1 FROM app_passwords ap
         WHERE ap.id = CAST(substr(p.credential, 5) AS INTEGER) AND ap.account_id = p.account_id
           AND (ap.expires_at IS NULL OR ap.expires_at > ?1))
+    WHEN p.credential LIKE 'oauth:%' THEN EXISTS (SELECT 1 FROM oauth_grants g
+        WHERE g.id = CAST(substr(p.credential, 7) AS INTEGER) AND g.account_id = p.account_id)
     WHEN p.credential LIKE 'session:%' THEN EXISTS (SELECT 1 FROM web_sessions s
         WHERE lower(hex(s.token_hash)) = substr(p.credential, 9) AND s.account_id = p.account_id
           AND s.expires_at > ?1)
