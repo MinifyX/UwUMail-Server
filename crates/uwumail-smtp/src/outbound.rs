@@ -11,7 +11,7 @@ use uwumail_store::{QueueRecipient, QueuedMessage};
 
 use crate::client::{Client, Reply};
 use crate::config::{RelayConfig, RelaySecurity};
-use crate::dane::{self, Dane, Security};
+use crate::dane::{self, Dane, Security, ValidatedMx};
 use crate::dsn::{self, FailedRecipient};
 use crate::health::{DeliveryEvent, ProbeStage, Route};
 use crate::mta_sts;
@@ -269,14 +269,34 @@ async fn resolve_targets(
                 .flat_map(|mx| mx.exchanges.iter())
                 .map(|host| host.trim_end_matches('.').to_owned())
                 .collect();
-            if hosts.len() == 1 && hosts[0].is_empty() {
-                return Err(Outcome::Failed(format!("556 5.1.10 {domain} does not accept mail (null MX)")));
-            }
             if hosts.is_empty() { (vec![domain.to_owned()], true) } else { (hosts, false) }
         }
         Err(mail_auth::Error::Dns(DnsError::RecordNotFound(_))) => (vec![domain.to_owned()], true),
         Err(err) => return Err(Outcome::Deferred(format!("DNS lookup for {domain} failed: {err}"))),
     };
+
+    // DANE needs MX records that validate, and then the hosts they name, not the ones an ordinary
+    // resolver answered: that answer, or its "there are none", is what an attacker on the path would
+    // forge to lead the mail to a host without TLSA records (RFC 7672, section 2.2.1).
+    let validated = dane::validated_mx(ctx, domain).await;
+    let mx_security = validated.security();
+    if mx_security == Security::Bogus {
+        let report = ReportPolicy {
+            kind: PolicyType::Tlsa,
+            strings: Vec::new(),
+            mx: Vec::new(),
+            failure: Some(ResultType::DnssecInvalid),
+        };
+        tlsrpt::record(ctx, domain, &report, None, "", None, None).await;
+        return Err(Outcome::Deferred(format!("DNSSEC: the MX records of {domain} do not validate")));
+    }
+    let (hosts, implicit) = match validated {
+        ValidatedMx::Secure(validated) => (validated.to_vec(), false),
+        _ => (hosts, implicit),
+    };
+    if hosts.len() == 1 && hosts[0].is_empty() {
+        return Err(Outcome::Failed(format!("556 5.1.10 {domain} does not accept mail (null MX)")));
+    }
 
     // An enforced MTA-STS policy limits the hosts and requires TLS with a valid certificate.
     let sts = mta_sts::policy_for(ctx, domain).await;
@@ -295,19 +315,7 @@ async fn resolve_targets(
         _ => hosts,
     };
 
-    // DANE needs MX records that validate; TLSA records of their hosts then come before MTA-STS.
-    let mx_security = if implicit { Security::Insecure } else { dane::mx_security(ctx, domain).await };
-    if mx_security == Security::Bogus {
-        let report = ReportPolicy {
-            kind: PolicyType::Tlsa,
-            strings: Vec::new(),
-            mx: Vec::new(),
-            failure: Some(ResultType::DnssecInvalid),
-        };
-        tlsrpt::record(ctx, domain, &report, None, "", None, None).await;
-        return Err(Outcome::Deferred(format!("DNSSEC: the MX records of {domain} do not validate")));
-    }
-
+    // With validated MX records, the TLSA records of their hosts come before MTA-STS.
     let mut targets = Vec::new();
     for host in hosts.into_iter().take(MAX_HOSTS) {
         match auth

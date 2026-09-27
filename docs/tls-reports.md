@@ -79,6 +79,12 @@ of each MX host at `_25._tcp.<host>`, again with validation. The answers are
 validated on this server itself, against the root zone's trust anchor, so a
 resolver that does not validate is fine as long as it passes the signatures on.
 
+When the MX records validate, the mail goes to the hosts that validated answer
+names, whatever the ordinary lookup said. The validating lookup is asked even
+when the ordinary one found no MX records at all. So a forged plain answer, one
+that names another host or says there is none, cannot lead the mail away from
+the hosts whose TLSA records protect it.
+
 What happens then:
 
 | What DNS says | Delivery |
