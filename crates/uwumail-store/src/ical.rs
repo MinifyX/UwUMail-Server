@@ -4,6 +4,7 @@
 
 use calcard::common::timezone::Tz;
 use calcard::icalendar::{ICalendar, ICalendarComponentType};
+use calcard::vcard::VCard;
 
 /// Occurrences of a repeating event looked at to find where it ends. Beyond, it counts as open-ended.
 const EXPANSION_LIMIT: usize = 3000;
@@ -67,6 +68,13 @@ pub fn check_calendar(content: &str, allowed: &[String]) -> Result<Checked, Refu
             .max()
     };
     Ok(Checked { uid: uid.to_owned(), component, starts_at, ends_at })
+}
+
+/// A vCard. One without a UID gets the resource name as its UID, as some older clients leave it out.
+pub fn check_contact(content: &str, name: &str) -> Result<Checked, Refused> {
+    let card = VCard::parse(content).map_err(|_| Refused::InvalidData("not a vCard".into()))?;
+    let uid = card.uid().map(str::to_owned).unwrap_or_else(|| name.trim_end_matches(".vcf").to_owned());
+    Ok(Checked { uid, component: "VCARD".into(), starts_at: None, ends_at: None })
 }
 
 /// The times an event keeps people busy within `[start, end)`: each occurrence, unless the event is

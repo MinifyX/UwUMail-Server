@@ -85,6 +85,23 @@ const KNOWN = [
   "unknownPerson",
   "ownShare",
   "tooManyShares",
+  "tooLarge",
+  "davOff",
+  "readOnly",
+  "importEmpty",
+  "notICalendar",
+  "notVCard",
+  "urlNotAllowed",
+  "providerUnreachable",
+  "providerError",
+  "providerNoDav",
+  "feedTooLarge",
+  "feedNotFound",
+  "redirectedElsewhere",
+  "googleUseIcs",
+  "subscriptionLimit",
+  "subscriptionExists",
+  "refreshPause",
 ];
 
 /** Turns an API error into a sentence for the person in front of the screen. */

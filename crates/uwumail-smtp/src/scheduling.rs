@@ -387,8 +387,9 @@ async fn default_calendar(ctx: &Context, account_id: i64) -> Result<i64, StoreEr
     let name = ctx.tone().language.collection_names().0;
     let calendars =
         ctx.store.dav_collections(account_id, DavKind::Calendar, NewDavCollection::default_calendar(name)).await?;
-    let holds_events =
-        |c: &&uwumail_store::DavCollection| c.components.is_empty() || c.components.iter().any(|k| k == "VEVENT");
+    let holds_events = |c: &&uwumail_store::DavCollection| {
+        !c.subscribed && (c.components.is_empty() || c.components.iter().any(|k| k == "VEVENT"))
+    };
     calendars
         .iter()
         .filter(holds_events)

@@ -119,6 +119,8 @@ pub async fn run(
     }
     // Mailboxes at other providers, emptied into the mailboxes here that asked for them.
     tasks.spawn(crate::fetch::run_fetchers(store.clone(), smtp.clone(), egress.clone(), shutdown_rx.clone()));
+    // Subscribed calendars, fetched again when their turn comes, the same way out as fetched mail.
+    tasks.spawn(uwumail_dav::client::run_subscriptions(store.clone(), egress.clone(), shutdown_rx.clone()));
 
     // Calendars and contacts (CalDAV, CardDAV) live next to JMAP on the same HTTPS port.
     let names = config.tone.language.collection_names();

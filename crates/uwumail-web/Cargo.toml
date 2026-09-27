@@ -10,6 +10,7 @@ build = "build.rs"
 
 [dependencies]
 uwumail-backup.workspace = true
+uwumail-dav.workspace = true
 uwumail-jmap.workspace = true
 uwumail-smtp.workspace = true
 uwumail-store.workspace = true

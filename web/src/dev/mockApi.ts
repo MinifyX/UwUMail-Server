@@ -1250,9 +1250,53 @@ const mockCalendars: CalendarsView = {
       color: "#FF4D8DFF",
       entries: 42,
       shares: [{ accountId: 3, address: "nyu@example.org", name: "Nyu", rights: "read" }],
+      isDefault: true,
+      subscription: null,
     },
-    { id: 2, kind: "calendar", name: "Verein", color: "#3BA7FFFF", entries: 7, shares: [] },
-    { id: 3, kind: "addressbook", name: "Kontakte", color: null, entries: 118, shares: [] },
+    {
+      id: 2,
+      kind: "calendar",
+      name: "Verein",
+      color: "#3BA7FFFF",
+      entries: 7,
+      shares: [],
+      isDefault: false,
+      subscription: null,
+    },
+    {
+      id: 4,
+      kind: "calendar",
+      name: "Schulferien",
+      color: "#33B679FF",
+      entries: 12,
+      shares: [],
+      isDefault: false,
+      subscription: {
+        id: 1,
+        collectionId: 4,
+        source: "calendar.google.com/…",
+        intervalSecs: 3600,
+        keepAlarms: false,
+        enabled: true,
+        nextRunAt: Math.floor(Date.now() / 1000) + 1800,
+        lastRunAt: Math.floor(Date.now() / 1000) - 1800,
+        lastOkAt: Math.floor(Date.now() / 1000) - 1800,
+        lastError: "",
+        failures: 0,
+        entries: 12,
+        createdAt: Math.floor(Date.now() / 1000) - 86_400,
+      },
+    },
+    {
+      id: 3,
+      kind: "addressbook",
+      name: "Kontakte",
+      color: null,
+      entries: 118,
+      shares: [],
+      isDefault: true,
+      subscription: null,
+    },
   ],
   shared: [
     {
@@ -1265,7 +1309,40 @@ const mockCalendars: CalendarsView = {
       rights: "write",
     },
   ],
+  limits: { uploadBytes: 20 * 1024 * 1024, subscriptions: 20, minIntervalSecs: 900 },
 };
+
+let mockCollectionId = 100;
+
+/** A collection the mock "imports" into, with a made-up report. */
+function mockImport(kind: "calendar" | "addressbook", name: string, target?: number) {
+  const existing = target ? mockCalendars.own.find((entry) => entry.id === target) : undefined;
+  const collection = existing ?? {
+    id: ++mockCollectionId,
+    kind,
+    name,
+    color: null,
+    entries: 0,
+    shares: [],
+    isDefault: false,
+    subscription: null,
+  };
+  if (!existing) mockCalendars.own.push(collection);
+  collection.entries += 23;
+  const report = {
+    total: 25,
+    created: 23,
+    updated: 0,
+    unchanged: 0,
+    skipped: 2,
+    problems: [
+      { item: "Geburtstag Oma", reason: "uidElsewhere" },
+      { item: "VFREEBUSY", reason: "unsupportedComponent" },
+    ],
+    truncated: false,
+  };
+  return { report, collection: { id: collection.id, kind, name: collection.name } };
+}
 
 function refreshAddresses() {
   mockAddresses.used = mockAddresses.addresses.filter((entry) => entry.own).length;
@@ -2622,6 +2699,122 @@ const routes: [string, RegExp, Handler][] = [
       const collection = mockCalendars.own.find((entry) => entry.id === Number(id));
       if (collection) collection.shares = collection.shares.filter((entry) => entry.accountId !== Number(account));
       return [200, mockCalendars];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/account\/calendars\/import$/,
+    (_, __, query) => {
+      const kind = query?.get("kind") === "addressbook" ? "addressbook" : "calendar";
+      const target = query?.get("target");
+      const imported = mockImport(
+        kind,
+        query?.get("name") || query?.get("fileName") || "Import",
+        target ? Number(target) : undefined,
+      );
+      return [200, { ...mockCalendars, ...imported }];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/account\/calendars\/import-url$/,
+    (body) => {
+      const { url, name } = body as { url: string; name?: string };
+      if (!/^(https|webcals?):\/\//i.test(url.trim())) return problem(409, "urlNotAllowed");
+      return [200, { ...mockCalendars, ...mockImport("calendar", name || "Kalender") }];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/account\/calendar-subscriptions$/,
+    (body) => {
+      const { url, name, intervalSecs } = body as { url: string; name?: string; intervalSecs?: number };
+      if (!/^(https|webcals?):\/\//i.test(url.trim())) return problem(409, "urlNotAllowed");
+      const now = Math.floor(Date.now() / 1000);
+      const id = ++mockCollectionId;
+      const source = `${url.replace(/^[a-z]+:\/\//i, "").split("/")[0]}/…`;
+      mockCalendars.own.push({
+        id,
+        kind: "calendar",
+        name: name || "Abo",
+        color: "#F6BF26FF",
+        entries: 8,
+        shares: [],
+        isDefault: false,
+        subscription: {
+          id,
+          collectionId: id,
+          source,
+          intervalSecs: intervalSecs ?? 3600,
+          keepAlarms: false,
+          enabled: true,
+          nextRunAt: now + 3600,
+          lastRunAt: now,
+          lastOkAt: now,
+          lastError: "",
+          failures: 0,
+          entries: 8,
+          createdAt: now,
+        },
+      });
+      const report = { created: 8, updated: 0, deleted: 0, unchanged: 0, problems: [], entries: 8 };
+      return [200, { ...mockCalendars, report, collection: { id, kind: "calendar", name: name || "Abo" } }];
+    },
+  ],
+  [
+    "PATCH",
+    /^\/api\/account\/calendar-subscriptions\/(\d+)$/,
+    (body, [id]) => {
+      const collection = mockCalendars.own.find((entry) => entry.subscription?.id === Number(id));
+      if (!collection?.subscription) return problem(404, "notFound");
+      const change = body as { intervalSecs?: number; enabled?: boolean; name?: string };
+      if (change.intervalSecs) collection.subscription.intervalSecs = change.intervalSecs;
+      if (change.enabled !== undefined) collection.subscription.enabled = change.enabled;
+      if (change.name) collection.name = change.name;
+      return [200, mockCalendars];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/account\/calendar-subscriptions\/(\d+)\/refresh$/,
+    (_, [id]) => {
+      const collection = mockCalendars.own.find((entry) => entry.subscription?.id === Number(id));
+      if (!collection?.subscription) return problem(404, "notFound");
+      const now = Math.floor(Date.now() / 1000);
+      if (collection.subscription.lastRunAt && now - collection.subscription.lastRunAt < 60) {
+        return problem(409, "refreshPause");
+      }
+      collection.subscription.lastRunAt = now;
+      collection.subscription.lastOkAt = now;
+      return [200, mockCalendars];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/account\/calendar-subscriptions\/(\d+)$/,
+    (_, [id], query) => {
+      const collection = mockCalendars.own.find((entry) => entry.subscription?.id === Number(id));
+      if (!collection) return problem(404, "notFound");
+      if (query?.get("keep") === "true") collection.subscription = null;
+      else mockCalendars.own = mockCalendars.own.filter((entry) => entry !== collection);
+      return [200, mockCalendars];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/account\/calendars\/remote$/,
+    (body) => {
+      const { address, password, kinds } = body as { address: string; password: string; kinds: string[] };
+      const domain = address.split("@")[1] ?? "";
+      if (["gmail.com", "googlemail.com"].includes(domain)) return problem(409, "googleUseIcs");
+      if (password === "falsch") return problem(409, "wrongPassword");
+      const results = [];
+      if (kinds.includes("calendar"))
+        results.push({ kind: "calendar", name: "Privat", ...mockImport("calendar", "Privat") });
+      if (kinds.includes("addressbook")) {
+        results.push({ kind: "addressbook", name: "Kontakte", ...mockImport("addressbook", "Kontakte (alt)") });
+      }
+      return [200, { ...mockCalendars, provider: domain === "icloud.com" ? "iCloud" : null, results }];
     },
   ],
   [

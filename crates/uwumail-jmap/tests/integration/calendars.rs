@@ -862,3 +862,60 @@ async fn exact_durations_end_on_time_when_the_clocks_change() {
     let got = server.get_event(MINI, &instance, json!(["utcEnd"])).await;
     assert_eq!(got["utcEnd"], "2026-10-25T02:30:00Z", "{got}");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn subscribed_calendars_are_read_only_in_jmap() {
+    let server = server().await;
+    let account = server.account_id(MINI).await;
+    let personal = server.default_calendar(MINI).await;
+    let mini = server.store.account(MINI).await.unwrap().unwrap().id;
+    let (feed, _) = server
+        .store
+        .create_calendar_subscription(
+            mini,
+            uwumail_store::NewCalendarSubscription {
+                collection: uwumail_store::NewDavCollection {
+                    slug: "ferien".into(),
+                    display_name: "Ferien".into(),
+                    ..Default::default()
+                },
+                url: "https://feeds.example.net/ferien.ics".into(),
+                interval_secs: 3600,
+                keep_alarms: false,
+            },
+            uwumail_store::NewDavCollection::default_calendar("Kalender"),
+        )
+        .await
+        .unwrap();
+    let feed_id = format!("c{}", feed.id);
+    let calendars = server.call(MINI, "Calendar/get", json!({ "accountId": account })).await;
+    let listed = calendars["list"].as_array().unwrap().iter().find(|c| c["id"] == feed_id.as_str()).unwrap().clone();
+    assert_eq!(listed["myRights"]["mayWriteAll"], false, "{listed}");
+    assert_eq!(listed["myRights"]["mayRSVP"], false);
+    assert_eq!(listed["includeInAvailability"], "none");
+    assert_eq!(listed["isDefault"], false);
+
+    let set = server
+        .call(MINI, "CalendarEvent/set", json!({ "accountId": account, "create": { "e": timed(&feed_id, "Nope") } }))
+        .await;
+    assert!(set["notCreated"]["e"].is_object(), "{set}");
+    // An own event cannot be moved into it either, and renaming the calendar is still fine.
+    let own = server.create_event(MINI, timed(&personal, "Tierarzt")).await;
+    let moved = server
+        .call(
+            MINI,
+            "CalendarEvent/set",
+            json!({ "accountId": account, "update": { own.clone(): { "calendarIds": { feed_id.clone(): true } } } }),
+        )
+        .await;
+    assert!(moved["notUpdated"][&own].is_object(), "{moved}");
+    let renamed = server
+        .call(
+            MINI,
+            "Calendar/set",
+            json!({ "accountId": account, "update": { feed_id.clone(): { "name": "Schulferien", "includeInAvailability": "none" } } }),
+        )
+        .await;
+    assert!(renamed["updated"][&feed_id].is_object() || renamed["updated"][&feed_id].is_null(), "{renamed}");
+    assert!(renamed["notUpdated"].is_null() || renamed["notUpdated"].as_object().unwrap().is_empty(), "{renamed}");
+}

@@ -1,5 +1,6 @@
 //! "Calendars" in My account: sharing one's calendars and address books with people of this
-//! server, and the ones others share with oneself (docs/calendars.md).
+//! server, and the ones others share with oneself (docs/calendars.md). Importing and subscribing
+//! is in `calendar_import.rs`.
 //!
 //! Everything here answers for the logged-in account. The same shares are made over JMAP
 //! (`shareWith`) by the webmail and the apps; this is the page for everyone else.
@@ -20,7 +21,7 @@ pub struct ShareRequest {
     rights: ShareRights,
 }
 
-fn kinds(session: &Session) -> Vec<DavKind> {
+pub(crate) fn kinds(session: &Session) -> Vec<DavKind> {
     let protocols = &session.account.protocols;
     let mut kinds = Vec::new();
     if protocols.caldav {
@@ -32,11 +33,13 @@ fn kinds(session: &Session) -> Vec<DavKind> {
     kinds
 }
 
-async fn view(web: &Web, session: &Session) -> ApiResult<Json<Value>> {
+pub(crate) async fn view(web: &Web, session: &Session) -> ApiResult<Json<Value>> {
     let store = web.store();
     let account = session.account.id;
     let names = web.smtp().tone().language.collection_names();
     let shares = store.dav_shares(account, None).await?;
+    let subscriptions =
+        if session.account.protocols.caldav { store.calendar_subscriptions(account).await? } else { Vec::new() };
     let mut own = Vec::new();
     let mut shared = Vec::new();
     for kind in kinds(session) {
@@ -64,6 +67,8 @@ async fn view(web: &Web, session: &Session) -> ApiResult<Json<Value>> {
                 "color": collection.color,
                 "entries": collection.resources,
                 "shares": with,
+                "isDefault": collection.is_default,
+                "subscription": subscriptions.iter().find(|sub| sub.collection_id == collection.id),
             }));
         }
         for item in store.dav_shared_with(account, kind).await? {
@@ -84,6 +89,11 @@ async fn view(web: &Web, session: &Session) -> ApiResult<Json<Value>> {
         "contacts": session.account.protocols.carddav,
         "own": own,
         "shared": shared,
+        "limits": {
+            "uploadBytes": crate::routes::calendar_import::MAX_UPLOAD_BYTES,
+            "subscriptions": uwumail_store::MAX_CALENDAR_SUBSCRIPTIONS,
+            "minIntervalSecs": uwumail_store::MIN_SUBSCRIPTION_INTERVAL_SECS,
+        },
     })))
 }
 

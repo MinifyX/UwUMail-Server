@@ -15,7 +15,7 @@ mod dns;
 pub mod dnscheck;
 mod dsn;
 pub mod egress;
-mod fetch;
+pub mod fetch;
 mod fetched;
 mod forward;
 mod headers;

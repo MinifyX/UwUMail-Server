@@ -5,7 +5,9 @@ CalDAV and CardDAV (Apple Calendar and Contacts, Thunderbird, DAVx5 on
 Android) and over JMAP (the webmail and the UwUMail apps). This page explains
 the two things that connect people: sharing calendars and address books, and
 inviting people to events. The JMAP details are in
-[jmap-calendars.md](jmap-calendars.md) and [jmap-contacts.md](jmap-contacts.md).
+[jmap-calendars.md](jmap-calendars.md) and [jmap-contacts.md](jmap-contacts.md);
+bringing calendars and contacts over from files, feeds and other providers is
+in [calendar-import.md](calendar-import.md).
 
 ## Sharing
 

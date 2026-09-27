@@ -266,7 +266,7 @@ fn cipher(key: &[u8; 32]) -> Result<LessSafeKey> {
 }
 
 /// Seals a password: a fresh nonce, then the sealed bytes behind it.
-fn seal(conn: &Connection, password: &str) -> Result<Vec<u8>> {
+pub(crate) fn seal(conn: &Connection, password: &str) -> Result<Vec<u8>> {
     let key = cipher(&secret_key(conn)?)?;
     let nonce = random_bytes::<NONCE_LEN>();
     let mut sealed = password.as_bytes().to_vec();
@@ -277,7 +277,7 @@ fn seal(conn: &Connection, password: &str) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-fn unseal(conn: &Connection, sealed: &[u8]) -> Result<String> {
+pub(crate) fn unseal(conn: &Connection, sealed: &[u8]) -> Result<String> {
     if sealed.len() <= NONCE_LEN {
         return Err(StoreError::Internal("a stored provider password is too short to be one".into()));
     }

@@ -68,6 +68,9 @@ pub struct DavCollection {
     /// The calendar new events go into by default, or the address book for new cards; one of each
     /// per account.
     pub is_default: bool,
+    /// Filled from a subscribed feed (migration 0039): only the feed writes its entries, CalDAV
+    /// and JMAP read them.
+    pub subscribed: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -177,9 +180,24 @@ pub fn dav_etag(content: &str) -> String {
     format!("\"{}\"", hex::encode(&digest[..16]))
 }
 
+/// The number of columns [`COLLECTION_COLUMNS`] reads, for queries that select more behind them.
+pub(crate) const COLLECTION_COLUMN_COUNT: usize = 15;
+
+/// Refuses writes into a subscribed calendar: its entries are the feed's.
+pub(crate) fn check_entries_writable(collection: &DavCollection) -> Result<()> {
+    if collection.subscribed {
+        return Err(StoreError::Rule {
+            code: "readOnly",
+            message: "this calendar is filled from a subscription and cannot be changed".into(),
+        });
+    }
+    Ok(())
+}
+
 pub(crate) const COLLECTION_COLUMNS: &str = "c.id, c.account_id, c.kind, c.slug, c.display_name, c.description, c.color, \
      c.sort_order, c.components, c.timezone, c.change, (SELECT count(*) FROM dav_resources r WHERE r.collection_id = c.id), \
-     c.is_visible, c.is_default";
+     c.is_visible, c.is_default, \
+     EXISTS (SELECT 1 FROM calendar_subscriptions s WHERE s.collection_id = c.id)";
 
 pub(crate) fn collection_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavCollection> {
     Ok(DavCollection {
@@ -197,6 +215,7 @@ pub(crate) fn collection_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavCol
         resources: row.get(11)?,
         is_visible: row.get(12)?,
         is_default: row.get(13)?,
+        subscribed: row.get(14)?,
     })
 }
 
@@ -453,7 +472,9 @@ pub(crate) fn ensure_default(tx: &Transaction<'_>, log: &mut ChangeLog, account_
     }
     let first: Option<i64> = tx
         .query_row(
-            "SELECT id FROM dav_collections WHERE account_id = ?1 AND kind = ?2 ORDER BY sort_order, id LIMIT 1",
+            "SELECT id FROM dav_collections c WHERE account_id = ?1 AND kind = ?2
+                 AND NOT EXISTS (SELECT 1 FROM calendar_subscriptions s WHERE s.collection_id = c.id)
+             ORDER BY sort_order, id LIMIT 1",
             params![account_id, kind.as_str()],
             |row| row.get(0),
         )
@@ -532,6 +553,8 @@ pub(crate) fn move_entry(
     write: &DavWrite,
     extension: &str,
 ) -> Result<String> {
+    check_entries_writable(target)?;
+    check_entries_writable(&collection_by_id(tx, source_id)?)?;
     let name = write.name.as_str();
     let count: i64 =
         tx.query_row("SELECT count(*) FROM dav_resources WHERE collection_id = ?1", [target.id], |row| row.get(0))?;
@@ -813,8 +836,20 @@ impl Store {
 }
 
 /// Stores an entry of a collection that is known to belong to the account. Returns the outcome and,
-/// when it was written, the entry's row id.
+/// when it was written, the entry's row id. Subscribed calendars refuse.
 pub(crate) fn put_entry(
+    tx: &Transaction<'_>,
+    log: &mut ChangeLog,
+    collection: &DavCollection,
+    write: &DavWrite,
+    condition: &DavPrecondition,
+) -> Result<(DavWriteOutcome, Option<i64>)> {
+    check_entries_writable(collection)?;
+    put_entry_unchecked(tx, log, collection, write, condition)
+}
+
+/// [`put_entry`] for the one writer a subscribed calendar has: its feed.
+pub(crate) fn put_entry_unchecked(
     tx: &Transaction<'_>,
     log: &mut ChangeLog,
     collection: &DavCollection,
@@ -899,8 +934,20 @@ pub(crate) fn put_entry(
 }
 
 /// Deletes an entry and leaves a tombstone for sync-collection. `false` when it is not there or
-/// the condition does not hold.
+/// the condition does not hold. Subscribed calendars refuse.
 pub(crate) fn delete_entry(
+    tx: &Transaction<'_>,
+    log: &mut ChangeLog,
+    collection: &DavCollection,
+    name: &str,
+    if_match: Option<&str>,
+) -> Result<bool> {
+    check_entries_writable(collection)?;
+    delete_entry_unchecked(tx, log, collection, name, if_match)
+}
+
+/// [`delete_entry`] for a subscription's feed.
+pub(crate) fn delete_entry_unchecked(
     tx: &Transaction<'_>,
     log: &mut ChangeLog,
     collection: &DavCollection,

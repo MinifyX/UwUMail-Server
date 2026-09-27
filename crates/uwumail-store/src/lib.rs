@@ -14,8 +14,10 @@ mod admin;
 mod bayes;
 mod blobs;
 mod calendar;
+mod calendar_subscriptions;
 mod contacts;
 mod dav;
+mod dav_import;
 mod db;
 mod directory;
 mod extras;
@@ -68,11 +70,20 @@ pub use bayes::{
 };
 pub use blobs::{BlobCleanupPause, BlobHash};
 pub use calendar::{CalendarEventRecord, CalendarEventWrite};
+pub use calendar_subscriptions::{
+    CalendarSubscription, CalendarSubscriptionUpdate, DEFAULT_SUBSCRIPTION_INTERVAL_SECS, MAX_CALENDAR_SUBSCRIPTIONS,
+    MAX_SUBSCRIPTION_INTERVAL_SECS, MIN_SUBSCRIPTION_INTERVAL_SECS, NewCalendarSubscription,
+    SUBSCRIPTION_REFRESH_PAUSE_SECS, SubscriptionRun, shown_url,
+};
 pub use contacts::{ContactCardRecord, ContactCardWrite};
 pub use dav::{
     DAV_COLLECTIONS_PER_ACCOUNT, DAV_RESOURCE_MAX_BYTES, DAV_RESOURCES_PER_COLLECTION, DavChanges, DavCollection,
     DavCollectionUpdate, DavKind, DavPrecondition, DavResource, DavResourceInfo, DavWrite, DavWriteOutcome,
     NewDavCollection, dav_etag,
+};
+pub use dav_import::{
+    DavImportMode, DavImportReport, DavMirrorReport, IMPORT_MAX_OBJECTS, IMPORT_MAX_PROBLEMS, IcsMeta, ImportProblem,
+    NewImportCollection, Split, SplitObject, dav_color, decode_text, split_ics, split_vcf,
 };
 pub use directory::{Account, DkimKey, DkimKeyAlgorithm, DkimKeyState, Domain, NewAccount, Protocols, Role};
 pub use extras::{

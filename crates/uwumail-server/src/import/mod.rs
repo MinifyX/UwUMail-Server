@@ -1,8 +1,10 @@
 //! Moving to UwUMail from another mail server.
 
+mod dav_files;
 pub mod imap;
 mod mailcow;
 
+pub use dav_files::{DavTarget, dav_file};
 pub use mailcow::mailcow;
 
 use uwumail_store::Store;

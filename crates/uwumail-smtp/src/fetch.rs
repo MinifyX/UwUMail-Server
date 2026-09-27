@@ -168,7 +168,7 @@ impl Default for Fetcher {
 }
 
 /// A link a list may be fetched from: http(s) only, no credentials, and not an address inside the network.
-pub(crate) fn check_url(url: &str, allow_http: bool) -> Result<Url, String> {
+pub fn check_url(url: &str, allow_http: bool) -> Result<Url, String> {
     let parsed = Url::parse(url.trim()).map_err(|_| "that is not a web address".to_owned())?;
     match parsed.scheme() {
         "https" => {}

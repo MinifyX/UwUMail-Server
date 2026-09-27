@@ -308,7 +308,24 @@
       "brandColor": "That is not a colour. Something like #ff4d8d is expected.",
       "unknownPerson": "Nobody on this server has this address.",
       "ownShare": "There is no need to share with yourself.",
-      "tooManyShares": "This is shared with too many people already."
+      "tooManyShares": "This is shared with too many people already.",
+      "tooLarge": "The file is too large.",
+      "davOff": "Calendars or contacts are switched off for your account.",
+      "readOnly": "This calendar is filled from a subscription and cannot be changed.",
+      "importEmpty": "The file is empty.",
+      "notICalendar": "That is not a calendar (iCalendar).",
+      "notVCard": "That is not a contacts file (vCard).",
+      "urlNotAllowed": "Only https addresses on the internet work here.",
+      "providerUnreachable": "The server did not answer. Try again later.",
+      "providerError": "The server answered with an error.",
+      "providerNoDav": "This provider has no CalDAV or CardDAV. Export a file there and import it here.",
+      "feedTooLarge": "The calendar is too large.",
+      "feedNotFound": "There is no calendar at that address (any more).",
+      "redirectedElsewhere": "The server sent the login on to another server, so it was not sent.",
+      "googleUseIcs": "Google only lets its own apps in. Use the secret iCal address for calendars and a vCard export for contacts.",
+      "subscriptionLimit": "You have as many subscribed calendars as possible.",
+      "subscriptionExists": "You are subscribed to this calendar already.",
+      "refreshPause": "Just fetched. Try again in a minute."
     }
   },
   "people": {
@@ -2814,8 +2831,8 @@
     }
   },
   "calendars": {
-    "pageTitle": "Share calendars and contacts",
-    "intro": "Share your calendars and address books with people on this server. They show up in their calendar and contacts apps and in the webmail.",
+    "pageTitle": "Calendars and contacts",
+    "intro": "Share your calendars and address books with people on this server, and bring them over from elsewhere. They show up in calendar and contacts apps and in the webmail.",
     "notShared": "Not shared with anyone.",
     "sharedWith": "Shared with",
     "shareWith": "Share with someone",
@@ -2841,6 +2858,100 @@
     "from": "From {{owner}}",
     "leave": "Leave",
     "leftToast": "Left {{name}}",
-    "off": "Calendars and contacts are switched off for your account."
+    "off": "Calendars and contacts are switched off for your account.",
+    "import": {
+      "title": "Bring them over",
+      "intro": "Import a file, subscribe to a calendar by its address, or move everything over from another provider.",
+      "fileButton": "Import a file",
+      "fileTitle": "Import a file",
+      "fileIntro": "An .ics file for calendars or a .vcf file for contacts, as other providers and apps export them. Importing the same file again changes nothing twice.",
+      "file": "File",
+      "fileHint": "Up to {{size}}.",
+      "kind": "What it holds",
+      "kinds": {
+        "calendar": "Calendar",
+        "addressbook": "Contacts"
+      },
+      "target": "Import into",
+      "newCollection": "A new one",
+      "name": "Name",
+      "nameHint": "When left empty: the name in the file, or else the file's name.",
+      "onlyNew": "Only add new entries",
+      "onlyNewHint": "Entries that are already there stay as they are instead of being overwritten.",
+      "run": "Import",
+      "doneToast": "Imported into {{name}}",
+      "summary": "New: {{created}} · changed: {{updated}} · the same: {{unchanged}} · left out: {{skipped}}",
+      "problems": "What was left out",
+      "reasons": {
+        "invalid": "not readable",
+        "tooLarge": "too large",
+        "unsupportedComponent": "not an event, task or contact",
+        "mixedComponents": "event and task at once",
+        "uidElsewhere": "already in another calendar",
+        "duplicate": "twice in the file, the later one counts",
+        "collectionFull": "the calendar is full",
+        "exists": "already there",
+        "cutShort": "the file ends too early",
+        "tooMany": "too many entries"
+      }
+    },
+    "subscribe": {
+      "button": "Subscribe to a calendar",
+      "title": "Subscribe to a calendar",
+      "intro": "A calendar's iCal address (.ics or webcal://): holidays, a club's dates, or your own Google calendar through its secret address. It is fetched again regularly and stays read-only here.",
+      "url": "Address",
+      "urlHint": "Google: calendar settings → \"Secret address in iCal format\". Nobody but this server sees it.",
+      "nameHint": "Taken from the calendar when left empty.",
+      "once": "Import once instead",
+      "onceHint": "Copies the entries now into a calendar of your own that you can change. Nothing is fetched later.",
+      "interval": "Fetch again",
+      "every": {
+        "900": "every 15 minutes",
+        "3600": "every hour",
+        "21600": "every 6 hours",
+        "86400": "once a day"
+      },
+      "everyOther": "at the publisher's interval",
+      "keepAlarms": "Keep reminders",
+      "keepAlarmsHint": "Reminders of a feed ring on every device. Off by default.",
+      "run": "Subscribe",
+      "doneToast": "{{name}} is subscribed",
+      "summary": "{{entries}} entries fetched.",
+      "from": "Subscribed from {{source}}",
+      "readOnly": "Filled by its address only: entries cannot be changed here or in apps.",
+      "failed": "The last fetch did not work: {{error}}",
+      "updated": "Updated {{time}}",
+      "refresh": "Fetch now",
+      "end": "End subscription",
+      "endKeep": "Keep entries",
+      "endDelete": "Delete calendar",
+      "endedToast": "Subscription to {{name}} ended"
+    },
+    "remote": {
+      "button": "Move from another provider",
+      "title": "Move from another provider",
+      "intro": "Calendars and contacts from iCloud, WEB.DE, GMX, Posteo, mailbox.org, Nextcloud or any other CalDAV/CardDAV server. Each one becomes a new calendar or address book here.",
+      "address": "Your address there",
+      "password": "Password",
+      "passwordHint": "Usually an app password of that provider. It is used once for this and not kept.",
+      "server": "Server",
+      "serverHint": "Only needed when the provider cannot be found from the address.",
+      "showServer": "Enter the server myself",
+      "calendars": "Calendars",
+      "contacts": "Contacts",
+      "working": "Fetching everything, this can take a minute…",
+      "from": "From {{provider}}",
+      "nothing": "Nothing was found there.",
+      "run": "Move over",
+      "doneToast": "Moved over",
+      "hints": {
+        "icloud": "iCloud needs an app-specific password: appleid.apple.com → Sign-In and Security → App-Specific Passwords.",
+        "webde": "WEB.DE needs an app password, and one works only once: make one for calendars and another for contacts, and move them over one at a time.",
+        "gmx": "With two-factor authentication, GMX needs an app password instead of your usual one.",
+        "google": "Google lets nobody but its own apps in this way. Subscribe to your calendar by its secret iCal address instead (calendar settings), and export your contacts at contacts.google.com as a vCard file to import it.",
+        "outlook": "Outlook.com has no CalDAV or CardDAV. Export your calendar as an .ics file and your contacts as a file there, and import them here.",
+        "appPassword": "This provider wants an app password, made in its settings."
+      }
+    }
   }
 }

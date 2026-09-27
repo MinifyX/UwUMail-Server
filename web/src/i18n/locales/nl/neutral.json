@@ -308,7 +308,24 @@
       "brandColor": "Dat is geen kleur. Verwacht wordt iets als #ff4d8d.",
       "unknownPerson": "Niemand op deze server heeft dit adres.",
       "ownShare": "Met jezelf hoef je niets te delen.",
-      "tooManyShares": "Dit is al met te veel mensen gedeeld."
+      "tooManyShares": "Dit is al met te veel mensen gedeeld.",
+      "tooLarge": "Het bestand is te groot.",
+      "davOff": "Agenda's of contacten staan uit voor je account.",
+      "readOnly": "Deze agenda wordt via een abonnement gevuld en kan niet worden gewijzigd.",
+      "importEmpty": "Het bestand is leeg.",
+      "notICalendar": "Dat is geen agenda (iCalendar).",
+      "notVCard": "Dat is geen contactenbestand (vCard).",
+      "urlNotAllowed": "Hier werken alleen https-adressen op internet.",
+      "providerUnreachable": "De server antwoordde niet. Probeer het later opnieuw.",
+      "providerError": "De server antwoordde met een fout.",
+      "providerNoDav": "Deze provider heeft geen CalDAV of CardDAV. Exporteer daar een bestand en importeer het hier.",
+      "feedTooLarge": "De agenda is te groot.",
+      "feedNotFound": "Op dat adres staat geen agenda (meer).",
+      "redirectedElsewhere": "De server stuurde de login door naar een andere server, daarom is hij niet verstuurd.",
+      "googleUseIcs": "Google laat alleen zijn eigen apps binnen. Gebruik het geheime iCal-adres voor agenda's en een vCard-export voor contacten.",
+      "subscriptionLimit": "Je hebt al zo veel geabonneerde agenda's als mogelijk.",
+      "subscriptionExists": "Je bent al op deze agenda geabonneerd.",
+      "refreshPause": "Net opgehaald. Probeer het over een minuut opnieuw."
     }
   },
   "people": {
@@ -2814,8 +2831,8 @@
     }
   },
   "calendars": {
-    "pageTitle": "Agenda's en contacten delen",
-    "intro": "Deel je agenda's en adresboeken met mensen op deze server. Ze verschijnen in hun agenda- en contacten-app en in de webmail.",
+    "pageTitle": "Agenda's en contacten",
+    "intro": "Deel je agenda's en adresboeken met mensen op deze server en haal ze van elders hierheen. Ze verschijnen in agenda- en contacten-apps en in de webmail.",
     "notShared": "Met niemand gedeeld.",
     "sharedWith": "Gedeeld met",
     "shareWith": "Met iemand delen",
@@ -2841,6 +2858,100 @@
     "from": "Van {{owner}}",
     "leave": "Verlaten",
     "leftToast": "{{name}} verlaten",
-    "off": "Agenda's en contacten staan uit voor je account."
+    "off": "Agenda's en contacten staan uit voor je account.",
+    "import": {
+      "title": "Hierheen halen",
+      "intro": "Importeer een bestand, abonneer je op een agenda via zijn adres of verhuis alles van een andere provider.",
+      "fileButton": "Bestand importeren",
+      "fileTitle": "Bestand importeren",
+      "fileIntro": "Een .ics-bestand voor agenda's of een .vcf-bestand voor contacten, zoals andere providers en apps ze exporteren. Hetzelfde bestand opnieuw importeren levert niets dubbel op.",
+      "file": "Bestand",
+      "fileHint": "Tot {{size}}.",
+      "kind": "Wat erin staat",
+      "kinds": {
+        "calendar": "Agenda",
+        "addressbook": "Contacten"
+      },
+      "target": "Importeren in",
+      "newCollection": "Een nieuwe",
+      "name": "Naam",
+      "nameHint": "Leeg gelaten: de naam in het bestand, anders de bestandsnaam.",
+      "onlyNew": "Alleen nieuwe items toevoegen",
+      "onlyNewHint": "Items die er al zijn blijven zoals ze zijn in plaats van overschreven te worden.",
+      "run": "Importeren",
+      "doneToast": "Geïmporteerd in {{name}}",
+      "summary": "Nieuw: {{created}} · gewijzigd: {{updated}} · gelijk: {{unchanged}} · overgeslagen: {{skipped}}",
+      "problems": "Wat is overgeslagen",
+      "reasons": {
+        "invalid": "niet leesbaar",
+        "tooLarge": "te groot",
+        "unsupportedComponent": "geen afspraak, taak of contact",
+        "mixedComponents": "afspraak en taak tegelijk",
+        "uidElsewhere": "al in een andere agenda",
+        "duplicate": "dubbel in het bestand, de laatste telt",
+        "collectionFull": "de agenda is vol",
+        "exists": "er al",
+        "cutShort": "het bestand houdt te vroeg op",
+        "tooMany": "te veel items"
+      }
+    },
+    "subscribe": {
+      "button": "Abonneren op een agenda",
+      "title": "Abonneren op een agenda",
+      "intro": "Het iCal-adres van een agenda (.ics of webcal://): feestdagen, de data van een vereniging of je eigen Google-agenda via zijn geheime adres. Hij wordt regelmatig opnieuw opgehaald en is hier alleen-lezen.",
+      "url": "Adres",
+      "urlHint": "Google: agenda-instellingen → 'Geheim adres in iCal-indeling'. Niemand behalve deze server ziet het.",
+      "nameHint": "Leeg gelaten komt hij uit de agenda.",
+      "once": "In plaats daarvan één keer importeren",
+      "onceHint": "Kopieert de items nu naar een eigen agenda die je kunt wijzigen. Later wordt er niets meer opgehaald.",
+      "interval": "Opnieuw ophalen",
+      "every": {
+        "900": "elke 15 minuten",
+        "3600": "elk uur",
+        "21600": "elke 6 uur",
+        "86400": "één keer per dag"
+      },
+      "everyOther": "in het ritme van de uitgever",
+      "keepAlarms": "Herinneringen behouden",
+      "keepAlarmsHint": "Herinneringen van een abonnement gaan af op elk apparaat. Standaard uit.",
+      "run": "Abonneren",
+      "doneToast": "{{name}} is geabonneerd",
+      "summary": "{{entries}} items opgehaald.",
+      "from": "Geabonneerd van {{source}}",
+      "readOnly": "Wordt alleen via zijn adres gevuld: items kunnen hier en in apps niet worden gewijzigd.",
+      "failed": "Het laatste ophalen is mislukt: {{error}}",
+      "updated": "Bijgewerkt {{time}}",
+      "refresh": "Nu ophalen",
+      "end": "Abonnement beëindigen",
+      "endKeep": "Items behouden",
+      "endDelete": "Agenda verwijderen",
+      "endedToast": "Abonnement op {{name}} beëindigd"
+    },
+    "remote": {
+      "button": "Verhuizen van een andere provider",
+      "title": "Verhuizen van een andere provider",
+      "intro": "Agenda's en contacten van iCloud, WEB.DE, GMX, Posteo, mailbox.org, Nextcloud of elke andere CalDAV/CardDAV-server. Elk wordt hier een nieuwe agenda of een nieuw adresboek.",
+      "address": "Je adres daar",
+      "password": "Wachtwoord",
+      "passwordHint": "Meestal een app-wachtwoord van die provider. Het wordt hier één keer voor gebruikt en niet bewaard.",
+      "server": "Server",
+      "serverHint": "Alleen nodig als de provider niet via het adres te vinden is.",
+      "showServer": "Server zelf invullen",
+      "calendars": "Agenda's",
+      "contacts": "Contacten",
+      "working": "Alles wordt opgehaald, dat kan een minuut duren…",
+      "from": "Van {{provider}}",
+      "nothing": "Daar is niets gevonden.",
+      "run": "Verhuizen",
+      "doneToast": "Verhuisd",
+      "hints": {
+        "icloud": "iCloud heeft een app-specifiek wachtwoord nodig: appleid.apple.com → Inloggen en beveiliging → App-specifieke wachtwoorden.",
+        "webde": "WEB.DE heeft een app-wachtwoord nodig, en elk werkt maar één keer: maak er een voor agenda's en een voor contacten en verhuis ze na elkaar.",
+        "gmx": "Met tweestapsverificatie heeft GMX een app-wachtwoord nodig in plaats van je gewone wachtwoord.",
+        "google": "Google laat via deze weg alleen zijn eigen apps binnen. Abonneer je in plaats daarvan op je agenda via zijn geheime iCal-adres (agenda-instellingen) en exporteer je contacten op contacts.google.com als vCard-bestand om ze te importeren.",
+        "outlook": "Outlook.com heeft geen CalDAV of CardDAV. Exporteer daar je agenda als .ics-bestand en je contacten als bestand en importeer ze hier.",
+        "appPassword": "Deze provider wil een app-wachtwoord, dat je in zijn instellingen maakt."
+      }
+    }
   }
 }

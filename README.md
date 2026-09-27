@@ -54,6 +54,10 @@ something a family, a club or a small team can run without being a mail admin:
   people on your server; invite anyone to an event and get their answers, in
   the calendar app you already use ([how it works](docs/calendars.md)). iPhone,
   iPad and Mac set everything up with one signed profile.
+- **Bring your calendars along.** Import `.ics` and `.vcf` files, subscribe to
+  calendars by their iCal address (Google's secret address too), or move
+  everything over from iCloud, WEB.DE, GMX, Posteo and other CalDAV/CardDAV
+  providers in one go ([how](docs/calendar-import.md)).
 - **Spam filter and, if you want, a virus scanner.** The filter learns, keeps
   sender and word lists and fetches known-bad lists by itself; an optional
   [ClamAV beside the server](docs/antivirus.md) turns infected mail away before

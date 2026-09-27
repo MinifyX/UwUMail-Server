@@ -13,12 +13,21 @@ uwumail-smtp.workspace = true
 uwumail-store.workspace = true
 
 axum.workspace = true
-calcard.workspace = true
+base64.workspace = true
+bytes.workspace = true
+http-body-util.workspace = true
+hyper-rustls.workspace = true
+hyper-util.workspace = true
+psl.workspace = true
 quick-xml.workspace = true
+rustls.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
 tracing.workspace = true
+url.workspace = true
+webpki-roots.workspace = true
 
 [dev-dependencies]
-base64.workspace = true
 tempfile.workspace = true
-tokio.workspace = true
 tower.workspace = true

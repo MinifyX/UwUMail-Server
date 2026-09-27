@@ -153,7 +153,7 @@
     "saved": "{{folder}} est partagé avec {{person}} (ﾉ◕ヮ◕)ﾉ"
   },
   "calendars": {
-    "intro": "Partage tes agendas et carnets d'adresses avec les gens de ce serveur, et plus personne ne rate un rendez-vous (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
+    "intro": "Partage tes agendas et carnets d'adresses avec les gens de ce serveur ou ramène-les d'ailleurs, et plus personne ne rate un rendez-vous (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
     "sharedEmpty": "Personne n'a encore rien partagé avec toi (・ω・)"
   }
 }
