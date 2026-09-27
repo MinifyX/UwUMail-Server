@@ -7,7 +7,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use mail_builder::headers::date::Date;
 use smtp_proto::request::receiver::{BdatReceiver, DataReceiver, DummyDataReceiver, LineReceiver, RequestReceiver};
-use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN, MailFrom, RcptTo, Request};
+use smtp_proto::{AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2, MailFrom, RcptTo, Request};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
@@ -477,6 +477,10 @@ enum AuthStep {
     PlainResponse,
     LoginUsername,
     LoginPassword(String),
+    /// The token message of OAUTHBEARER (`false`) or XOAUTH2 (`true`), after an empty challenge.
+    BearerResponse(bool),
+    /// A refused token got its error challenge; the app's answer only ends the exchange.
+    BearerFailed,
 }
 
 enum State {
@@ -815,7 +819,7 @@ impl Session {
             lines.push("STARTTLS".into());
         }
         if self.auth_available() && self.account.is_none() {
-            lines.push("AUTH PLAIN LOGIN".into());
+            lines.push("AUTH PLAIN LOGIN OAUTHBEARER XOAUTH2".into());
         }
         let mut response = String::new();
         for (index, line) in lines.iter().enumerate() {
@@ -885,6 +889,11 @@ impl Session {
                     Ok(Next::Continue)
                 }
             },
+            AUTH_OAUTHBEARER | AUTH_XOAUTH2 if initial.is_empty() => {
+                self.reply("334 \r\n").await?;
+                Ok(Next::Auth(AuthStep::BearerResponse(mechanism == AUTH_XOAUTH2)))
+            }
+            AUTH_OAUTHBEARER | AUTH_XOAUTH2 => self.auth_bearer(initial, mechanism == AUTH_XOAUTH2).await,
             _ => {
                 self.error("504 5.5.4 Authentication mechanism not supported\r\n").await?;
                 Ok(Next::Continue)
@@ -893,6 +902,9 @@ impl Session {
     }
 
     async fn auth_line(&mut self, step: AuthStep, line: &str) -> std::io::Result<Next> {
+        if matches!(step, AuthStep::BearerFailed) {
+            return self.auth_refused().await;
+        }
         if line == "*" {
             self.error("501 5.0.0 Authentication cancelled\r\n").await?;
             return Ok(Next::Continue);
@@ -916,7 +928,63 @@ impl Session {
                     Ok(Next::Continue)
                 }
             },
+            AuthStep::BearerResponse(xoauth2) => self.auth_bearer(line, xoauth2).await,
+            AuthStep::BearerFailed => self.auth_refused().await,
         }
+    }
+
+    /// OAUTHBEARER (RFC 7628) or XOAUTH2 with an OAuth access token (docs/oauth.md). A refused
+    /// token gets the JSON error challenge first; the final 535 follows the app's answer to it.
+    async fn auth_bearer(&mut self, response: &str, xoauth2: bool) -> std::io::Result<Next> {
+        let Some(message) = BASE64.decode(response.trim()).ok() else {
+            self.error("501 5.5.2 Invalid base64 data\r\n").await?;
+            return Ok(Next::Continue);
+        };
+        let parsed =
+            if xoauth2 { uwumail_store::parse_xoauth2(&message) } else { uwumail_store::parse_oauthbearer(&message) };
+        let Some(parsed) = parsed else {
+            self.error("501 5.5.2 Invalid token authentication data\r\n").await?;
+            return Ok(Next::Continue);
+        };
+        let smtp = self.smtp.clone();
+        let ctx = &smtp.inner;
+        let peer = self.peer.to_string();
+        let username = parsed.user.clone().unwrap_or_default();
+        match ctx.store.authenticate_oauth(&parsed.token, AppScope::Smtp, "smtp", &peer).await {
+            Ok(MailAuth::Ok { account, .. })
+                if uwumail_store::sasl_user_matches(parsed.user.as_deref(), &account.login) =>
+            {
+                ctx.auth_limiter.record_success(self.peer, &username);
+                tracing::info!(login = %account.login, peer = %self.peer, oauth = true, "smtp login");
+                self.account = Some(account);
+                self.reply("235 2.7.0 Authentication succeeded\r\n").await?;
+                Ok(Next::Continue)
+            }
+            Ok(_) => {
+                ctx.auth_limiter.record_failure(self.peer, &username);
+                self.auth_failures += 1;
+                tracing::warn!(login = %username, peer = %self.peer, "failed smtp token login");
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                let challenge = uwumail_store::sasl_bearer_error(xoauth2, "smtp", Some(&ctx.hostname));
+                self.reply(&format!("334 {}\r\n", BASE64.encode(challenge))).await?;
+                Ok(Next::Auth(AuthStep::BearerFailed))
+            }
+            Err(err) => {
+                tracing::error!(%err, "authentication failed internally");
+                self.reply("454 4.7.0 Temporary authentication failure\r\n").await?;
+                Ok(Next::Continue)
+            }
+        }
+    }
+
+    /// The end of a refused token login, after the app answered the error challenge.
+    async fn auth_refused(&mut self) -> std::io::Result<Next> {
+        if self.auth_failures >= MAX_AUTH_FAILURES {
+            self.reply("421 4.7.0 Too many failed logins, closing connection\r\n").await?;
+            return Ok(Next::Quit);
+        }
+        self.reply("535 5.7.8 Authentication credentials invalid\r\n").await?;
+        Ok(Next::Continue)
     }
 
     async fn auth_plain(&mut self, response: &str) -> std::io::Result<Next> {

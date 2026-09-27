@@ -32,7 +32,8 @@ const MAX_AUTH_FAILURES: u32 = 3;
 
 /// IMAP4rev1 comes first: some clients only look at the first word. LITERAL+ covers what
 /// IMAP4rev2's LITERAL- asks for.
-pub const CAPABILITIES_BEFORE_LOGIN: &str = "IMAP4rev1 IMAP4rev2 SASL-IR LITERAL+ ID ENABLE IDLE AUTH=PLAIN";
+pub const CAPABILITIES_BEFORE_LOGIN: &str =
+    "IMAP4rev1 IMAP4rev2 SASL-IR LITERAL+ ID ENABLE IDLE AUTH=PLAIN AUTH=OAUTHBEARER AUTH=XOAUTH2";
 
 /// The text of the greeting. The UwUMail apps know a UwUMail server by it and then have their IMAP
 /// accounts' pictures fetched here (docs/jmap-remote.md), so it stays as it is.
@@ -543,10 +544,23 @@ where
             return Ok(Flow::Continue);
         }
         let peer = self.peer.to_string();
-        match self.store.authenticate_mail(username, password, AppScope::Mail, "imap", &peer).await {
+        let checked = self.store.authenticate_mail(username, password, AppScope::Mail, "imap", &peer).await;
+        self.finish_login(tag, username, checked, None).await
+    }
+
+    /// Answers a login: logged in, or refused. A refused token login first hands the app the
+    /// SASL error challenge (RFC 7628 section 3.2.2) and waits for its dummy answer.
+    async fn finish_login(
+        &mut self,
+        tag: &str,
+        username: &str,
+        checked: Result<MailAuth, StoreError>,
+        challenge: Option<String>,
+    ) -> io::Result<Flow> {
+        match checked {
             Ok(MailAuth::Ok { account, app_password }) => {
                 self.imap.limiter.record_success(self.peer.ip(), username);
-                tracing::info!(login = %account.login, peer = %self.peer, app_password = app_password.is_some(), "imap login");
+                tracing::info!(login = %account.login, peer = %self.peer, app_password = app_password.is_some(), oauth = challenge.is_some(), "imap login");
                 self.changes = Some(self.store.subscribe_changes());
                 self.account = Some(account);
                 let capabilities = capabilities_after_login(self.imap.max_append);
@@ -563,8 +577,16 @@ where
                 self.auth_failures += 1;
                 tracing::warn!(login = %username, peer = %self.peer, %reason, "failed imap login");
                 tokio::time::sleep(Duration::from_secs(1)).await;
+                if let Some(challenge) = challenge {
+                    let encoded = base64::engine::general_purpose::STANDARD.encode(challenge);
+                    self.send(format!("+ {encoded}\r\n").as_bytes()).await?;
+                    self.flush().await?;
+                    // Whatever comes back (RFC 7628 wants a single ^A) only ends the exchange.
+                    let _ = self.read_line(MAX_LINE).await?;
+                }
                 let text = match reason {
                     MailAuthDenied::AppPasswordRequired => "This account needs an app password for mail apps",
+                    MailAuthDenied::Expired => "The token or app password has expired",
                     _ => "Wrong login or password",
                 };
                 self.send(no(tag, Some("AUTHENTICATIONFAILED"), text).as_bytes()).await?;
@@ -582,9 +604,11 @@ where
         }
     }
 
+    /// PLAIN with a login and a password, or OAUTHBEARER (RFC 7628) and XOAUTH2 with an OAuth
+    /// access token (docs/oauth.md). SASL-IR or the continuation, whichever the app uses.
     async fn authenticate(&mut self, tag: &str, mechanism: &str, initial: Option<String>) -> io::Result<Flow> {
-        if mechanism != "PLAIN" {
-            self.send(no(tag, Some("CANNOT"), "Only PLAIN is supported").as_bytes()).await?;
+        if !matches!(mechanism, "PLAIN" | "OAUTHBEARER" | "XOAUTH2") {
+            self.send(no(tag, Some("CANNOT"), "Only PLAIN, OAUTHBEARER and XOAUTH2 are supported").as_bytes()).await?;
             return Ok(Flow::Continue);
         }
         let response = match initial {
@@ -607,6 +631,9 @@ where
         } else {
             base64::engine::general_purpose::STANDARD.decode(response.trim()).ok()
         };
+        if mechanism != "PLAIN" {
+            return self.bearer_login(tag, decoded.unwrap_or_default(), mechanism == "XOAUTH2").await;
+        }
         let parts: Option<Vec<String>> = decoded.and_then(|bytes| {
             let parts: Vec<&[u8]> = bytes.split(|&b| b == 0).collect();
             (parts.len() == 3).then(|| parts.iter().map(|p| String::from_utf8_lossy(p).into_owned()).collect())
@@ -622,6 +649,33 @@ where
         }
         let (username, password) = (parts[1].clone(), parts[2].clone());
         self.login(tag, &username, &password).await
+    }
+
+    /// A login with an OAuth access token. The login the app names, if any, has to be the token's.
+    async fn bearer_login(&mut self, tag: &str, message: Vec<u8>, xoauth2: bool) -> io::Result<Flow> {
+        let parsed =
+            if xoauth2 { uwumail_store::parse_xoauth2(&message) } else { uwumail_store::parse_oauthbearer(&message) };
+        let Some(parsed) = parsed else {
+            let mechanism = if xoauth2 { "XOAUTH2" } else { "OAUTHBEARER" };
+            self.send(format!("{tag} BAD Invalid {mechanism} data\r\n").as_bytes()).await?;
+            return Ok(Flow::Continue);
+        };
+        if self.imap.limiter.is_blocked(self.peer.ip()) {
+            self.send(no(tag, Some("UNAVAILABLE"), "Too many failed logins, try again later").as_bytes()).await?;
+            return Ok(Flow::Continue);
+        }
+        let peer = self.peer.to_string();
+        let username = parsed.user.clone().unwrap_or_default();
+        let checked = match self.store.authenticate_oauth(&parsed.token, AppScope::Mail, "imap", &peer).await {
+            Ok(MailAuth::Ok { account, .. })
+                if !uwumail_store::sasl_user_matches(parsed.user.as_deref(), &account.login) =>
+            {
+                Ok(MailAuth::Denied(MailAuthDenied::Invalid))
+            }
+            other => other,
+        };
+        let challenge = uwumail_store::sasl_bearer_error(xoauth2, "mail", self.imap.hostname.as_deref());
+        self.finish_login(tag, &username, checked, Some(challenge)).await
     }
 
     // ---- mailboxes ----

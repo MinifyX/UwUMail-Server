@@ -1,5 +1,5 @@
 //! HTTP authentication for JMAP: Basic with an app password or the account password, or an app
-//! password alone as a bearer token. Logins with the account password are cached briefly, because
+//! password or OAuth access token (docs/oauth.md) alone as a bearer token. Logins with the account password are cached briefly, because
 //! checking it is slow on purpose.
 
 use std::collections::HashMap;
@@ -90,6 +90,10 @@ impl IntoResponse for AuthError {
             response
                 .headers_mut()
                 .insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Basic realm=\"UwUMail\""));
+            // Apps signed in with OAuth learn from the second challenge that a token works too.
+            response
+                .headers_mut()
+                .append(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer realm=\"UwUMail\""));
         }
         response
     }
@@ -299,14 +303,19 @@ impl Authenticator {
         }
     }
 
-    /// `Authorization: Bearer <app password>`: the app password alone, without the login. Wrong
-    /// tokens count against the network like wrong passwords.
+    /// `Authorization: Bearer <app password or OAuth access token>`: the secret alone, without the
+    /// login. Wrong tokens count against the network like wrong passwords.
     async fn bearer(&self, token: &str, client: ClientInfo) -> Result<Account, AuthError> {
         if self.blocked(client.ip) {
             return Err(AuthError::Blocked);
         }
         let ip = client.ip.to_string();
-        match self.store.authenticate_bearer(token, self.scope, self.protocol, &ip).await {
+        let checked = if uwumail_store::is_oauth_access_token(token) {
+            self.store.authenticate_oauth(token, self.scope, self.protocol, &ip).await
+        } else {
+            self.store.authenticate_bearer(token, self.scope, self.protocol, &ip).await
+        };
+        match checked {
             Ok(MailAuth::Ok { account, .. }) => Ok(account),
             Ok(MailAuth::Denied(reason)) => {
                 self.record_failure(client.ip);
