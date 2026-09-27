@@ -2837,7 +2837,10 @@
       "inbox": "Boîte de réception",
       "how": "Rien de ce qui s'y trouve maintenant n'est modifié ni remplacé. Une sauvegarde attend que ce soit terminé.",
       "restore": "Restaurer",
-      "close": "Fermer l'instantané"
+      "close": "Fermer l'instantané",
+      "nothingMissing": "Rien ne manquait : le message de l'instantané est toujours chez {{account}}, rien n'avait donc à revenir.",
+      "nothingMissing_other": "Rien ne manquait : les {{count}} messages de l'instantané sont tous encore chez {{account}}, rien n'avait donc à revenir.",
+      "nothingThere": "L'instantané n'avait aucun message pour {{account}} dans ces dossiers, rien n'est donc revenu."
     }
   },
   "spam": {

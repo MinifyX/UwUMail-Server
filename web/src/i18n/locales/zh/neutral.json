@@ -2729,7 +2729,10 @@
       "inbox": "收件箱",
       "how": "现有的内容不会被更改或替换。备份会等到这里完成后再运行。",
       "restore": "恢复",
-      "close": "关闭快照"
+      "close": "关闭快照",
+      "nothingMissing": "没有缺少任何邮件：快照中的 {{count}} 封邮件都还在 {{account}} 中，因此无需恢复。",
+      "nothingMissing_other": "没有缺少任何邮件：快照中的 {{count}} 封邮件都还在 {{account}} 中，因此无需恢复。",
+      "nothingThere": "快照中这些文件夹里没有 {{account}} 的邮件，因此没有恢复任何内容。"
     }
   },
   "spam": {

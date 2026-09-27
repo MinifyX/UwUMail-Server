@@ -2784,7 +2784,10 @@
       "inbox": "Inbox",
       "how": "Niets van wat er nu is, wordt gewijzigd of vervangen. Een back-up wacht tot dit klaar is.",
       "restore": "Terugzetten",
-      "close": "Snapshot sluiten"
+      "close": "Snapshot sluiten",
+      "nothingMissing": "Er ontbrak niets: het bericht uit de snapshot is nog bij {{account}}, dus er hoefde niets terug te komen.",
+      "nothingMissing_other": "Er ontbrak niets: alle {{count}} berichten uit de snapshot zijn nog bij {{account}}, dus er hoefde niets terug te komen.",
+      "nothingThere": "De snapshot had in deze mappen geen mail voor {{account}}, dus er kwam niets terug."
     }
   },
   "spam": {

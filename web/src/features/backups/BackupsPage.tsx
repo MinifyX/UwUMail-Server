@@ -759,12 +759,17 @@ function MailboxRestoreCard({ view }: { view: BackupsView }) {
                   error: job.last.error,
                   count: job.last.restored,
                 })
-              : t("backups.mailbox.lastDone", {
-                  count: job.last.restored,
-                  skipped: job.last.skipped,
-                  account: job.last.into,
-                  folder: job.last.folder,
-                })}
+              : job.last.restored === 0
+                ? // Nothing came back, so no folder was made either: say so instead of naming one.
+                  job.last.skipped > 0
+                  ? t("backups.mailbox.nothingMissing", { count: job.last.skipped, account: job.last.into })
+                  : t("backups.mailbox.nothingThere", { account: job.last.into })
+                : t("backups.mailbox.lastDone", {
+                    count: job.last.restored,
+                    skipped: job.last.skipped,
+                    account: job.last.into,
+                    folder: job.last.folder,
+                  })}
           </p>
         )}
         {job.state === "open" && people.length === 0 && (

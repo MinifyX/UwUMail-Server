@@ -2784,7 +2784,10 @@
       "inbox": "Posteingang",
       "how": "Nichts, was jetzt da ist, wird geändert oder ersetzt. Ein Backup wartet, bis das hier fertig ist.",
       "restore": "Wiederherstellen",
-      "close": "Stand schließen"
+      "close": "Stand schließen",
+      "nothingMissing": "Es fehlte nichts: Die Mail aus dem Stand ist noch bei {{account}}, also musste nichts zurückkommen.",
+      "nothingMissing_other": "Es fehlte nichts: Alle {{count}} Mails aus dem Stand sind noch bei {{account}}, also musste nichts zurückkommen.",
+      "nothingThere": "Der Stand hatte in diesen Ordnern keine Mails für {{account}}, also kam nichts zurück."
     }
   },
   "spam": {

@@ -2784,7 +2784,10 @@
       "inbox": "Inbox",
       "how": "Nothing that is there now is changed or replaced. A backup waits until this is done.",
       "restore": "Restore",
-      "close": "Close snapshot"
+      "close": "Close snapshot",
+      "nothingMissing": "Nothing was missing: the message from the snapshot is still in {{account}}, so nothing had to come back.",
+      "nothingMissing_other": "Nothing was missing: all {{count}} messages from the snapshot are still in {{account}}, so nothing had to come back.",
+      "nothingThere": "The snapshot had no mail for {{account}} in these folders, so nothing came back."
     }
   },
   "spam": {
