@@ -592,7 +592,9 @@ impl Web {
                 "/api/admin/domains/{name}/groups/{local}",
                 patch(routes::groups::update_group).delete(routes::groups::remove_group),
             )
-            .route("/api/admin/domains/{name}/masked-addresses", put(routes::groups::set_masked_addresses))
+            .route("/api/admin/domains/{name}/masked-policy", put(routes::domains::set_masked_policy))
+            .route("/api/admin/domains/{name}/kind", put(routes::domains::set_kind))
+            .route("/api/admin/people/{login}/masked-policy", put(routes::people::set_masked_policy))
             .route(
                 "/api/admin/shared-mailboxes",
                 get(routes::groups::shared_mailboxes).post(routes::groups::create_shared_mailbox),

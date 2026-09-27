@@ -6,7 +6,8 @@ use axum::http::StatusCode;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uwumail_store::{
-    AccountUpdate, NewAccount, NewAppPassword, PasswordLinkPurpose, Person, Role, TRASH_RETENTION_SECS, scopes_for,
+    AccountMaskedPolicy, AccountUpdate, NewAccount, NewAppPassword, PasswordLinkPurpose, Person, Role,
+    TRASH_RETENTION_SECS, scopes_for,
 };
 
 use super::{audit, check_password};
@@ -91,12 +92,44 @@ pub async fn detail(State(web): State<Web>, _admin: Admin, Path(login): Path<Str
     value["authSource"] = json!(web.store().auth_source(person.account.id).await?);
     value["aliasLimit"] = json!(web.store().own_addresses(person.account.id).await?.limit);
     value["sendAsDomains"] = json!(web.store().send_as_domains(person.account.id).await?);
+    value["maskedPolicy"] = masked_policy_json(&web, &person.account).await?;
     value["forwarding"] = json!({
         "externalBlocked": forwarding.external_blocked,
         "targets": forwarding.targets.len(),
         "external": forwarding.targets.iter().filter(|target| !target.local).count(),
     });
     Ok(Json(value))
+}
+
+/// Where someone may make masked addresses: what an admin set for them (`custom`, `null` parts go
+/// by the domain), what their domain says, and what holds in the end.
+async fn masked_policy_json(web: &Web, account: &uwumail_store::Account) -> ApiResult<Value> {
+    let own = account.login.rsplit_once('@').map(|(_, domain)| domain).unwrap_or_default();
+    let domain = match web.store().domain_kind(own).await {
+        Ok(uwumail_store::DomainKind::Mail) => json!(web.store().domain_masked_policy(own).await?),
+        _ => Value::Null,
+    };
+    Ok(json!({
+        "custom": web.store().account_masked_policy(account.id).await?,
+        "domain": domain,
+        "effective": web.store().effective_masked_policy(account.id).await?,
+        "choices": super::domains::masked_domain_names(web).await?,
+    }))
+}
+
+/// Sets where one account may make masked addresses, part by part; `null` goes by its domain.
+pub async fn set_masked_policy(
+    State(web): State<Web>,
+    Admin(session): Admin,
+    Path(login): Path<String>,
+    Json(policy): Json<AccountMaskedPolicy>,
+) -> ApiResult<Json<Value>> {
+    let person = load(&web, &login).await?;
+    let policy =
+        AccountMaskedPolicy { default_domain: policy.default_domain.filter(|name| !name.trim().is_empty()), ..policy };
+    let saved = web.store().set_account_masked_policy(person.account.id, policy).await?;
+    audit(&web, &session, "account.maskedPolicy", &person.account.login, json!(saved)).await;
+    Ok(Json(masked_policy_json(&web, &person.account).await?))
 }
 
 /// For someone who lost their phone and their recovery codes: they log in with the password again.
