@@ -1031,7 +1031,7 @@ impl Session {
         let ctx = &smtp.inner;
         let peer = self.peer.to_string();
         match ctx.store.authenticate_mail(login, password, AppScope::Smtp, "smtp", &peer).await {
-            Ok(MailAuth::Ok { account, app_password }) => {
+            Ok(MailAuth::Ok { account, app_password, .. }) => {
                 ctx.auth_limiter.record_success(self.peer, login);
                 tracing::info!(login = %account.login, peer = %self.peer, app_password = app_password.is_some(), "smtp login");
                 self.account = Some(account);

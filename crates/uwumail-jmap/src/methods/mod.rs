@@ -53,6 +53,9 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     WEBPUSH_VAPID,
 ];
 
+/// The data types of calendars and address books: only for credentials with the `dav` scope.
+const DAV_TYPES: &[&str] = &["Calendar", "CalendarEvent", "ParticipantIdentity", "AddressBook", "ContactCard"];
+
 /// The most suggestions one `AddressSuggestion/query` returns.
 pub const MAX_SUGGESTIONS: usize = suggest::MAX_LIMIT;
 
@@ -72,11 +75,24 @@ pub struct Ctx<'a> {
     pub shared: Option<SharedView>,
     /// The credential the request logged in with, for push subscriptions (RFC 8620, 7.2).
     pub credential: Option<String>,
+    /// Whether that credential may reach calendars and address books: an app password or OAuth app
+    /// with the `dav` scope, the account password or the webmail. One limited to `mail` gets
+    /// neither, over JMAP as over CalDAV and CardDAV.
+    pub may_use_dav: bool,
 }
 
 impl<'a> Ctx<'a> {
     pub fn new(jmap: &'a Inner, account: Account, using: Vec<String>, created_ids: HashMap<String, String>) -> Ctx<'a> {
-        Ctx { jmap, account, using, created_ids, started: std::time::Instant::now(), shared: None, credential: None }
+        Ctx {
+            jmap,
+            account,
+            using,
+            created_ids,
+            started: std::time::Instant::now(),
+            shared: None,
+            credential: None,
+            may_use_dav: true,
+        }
     }
 
     pub fn account_id(&self) -> String {
@@ -139,6 +155,14 @@ impl<'a> Ctx<'a> {
 }
 
 pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Outputs> {
+    // Calendars and address books need a credential allowed them (the `dav` scope), whichever
+    // account the call is for.
+    if !ctx.may_use_dav && DAV_TYPES.contains(&name.split('/').next().unwrap_or_default()) {
+        return Err(MethodError::new(
+            "forbidden",
+            "this app password or app sign-in is not allowed calendars and contacts (scope dav)",
+        ));
+    }
     // A call for someone else's account shared with this one runs in that account.
     if sharing::enter(ctx, name, &args).await? {
         let result = Box::pin(dispatch(ctx, name, args)).await;

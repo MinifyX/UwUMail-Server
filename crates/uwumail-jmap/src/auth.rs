@@ -14,7 +14,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use uwumail_store::{Account, AppScope, MailAuth, MailAuthDenied, Store};
+use uwumail_store::{ALL_SCOPES, Account, AppScope, LiveLogin, MailAuth, MailAuthDenied, Store};
 
 const CACHE_LIFETIME: Duration = Duration::from_secs(300);
 const FAILURE_WINDOW: Duration = Duration::from_secs(15 * 60);
@@ -74,18 +74,25 @@ pub struct Login {
     /// The credential, as push subscriptions record it: `session:<hash>`, `app:<id>`, `oauth:<grant>`
     /// or `password`.
     pub credential: String,
+    /// What the credential may be used for. An app password or an OAuth app limited to `mail`
+    /// reads and sends mail; calendars and address books need `dav`, over JMAP as over CalDAV and
+    /// CardDAV. The account password and the webmail's session may do everything.
+    pub scopes: Vec<AppScope>,
 }
 
 impl Login {
-    fn new(account: Account, app_password: Option<i64>) -> Login {
-        match app_password {
-            Some(id) => Login { account, credential: uwumail_store::push_credential_for_app_password(id) },
-            None => Login::password(account),
-        }
+    fn password(account: Account) -> Login {
+        Login { account, credential: uwumail_store::PUSH_CREDENTIAL_PASSWORD.to_owned(), scopes: ALL_SCOPES.to_vec() }
     }
 
-    fn password(account: Account) -> Login {
-        Login { account, credential: uwumail_store::PUSH_CREDENTIAL_PASSWORD.to_owned() }
+    /// Whether this login may reach calendars and address books.
+    pub fn may_use_dav(&self) -> bool {
+        self.scopes.contains(&AppScope::Dav)
+    }
+
+    /// The login as a connection that stays open keeps it, to check it again later.
+    pub fn live(&self) -> LiveLogin {
+        LiveLogin::new(&self.account, self.credential.clone())
     }
 }
 
@@ -226,7 +233,11 @@ impl Authenticator {
             let account = self.session_account(headers, client.https, changes).await?;
             // session_account only answers with a cookie there.
             let token = session_cookie(headers, client.https).unwrap_or_default();
-            return Ok(Login { account, credential: uwumail_store::push_credential_for_session(&token) });
+            return Ok(Login {
+                account,
+                credential: uwumail_store::push_credential_for_session(&token),
+                scopes: ALL_SCOPES.to_vec(),
+            });
         }
         self.login(headers, client).await
     }
@@ -311,7 +322,7 @@ impl Authenticator {
         let started = Instant::now();
         let started_unix = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
         match self.store.authenticate_mail(login, password, self.scope, self.protocol, &ip).await {
-            Ok(MailAuth::Ok { account, app_password }) => {
+            Ok(MailAuth::Ok { account, app_password, credential, scopes }) => {
                 // App passwords are a quick lookup; only the slow account password is worth caching.
                 if app_password.is_none() {
                     let mut cache = self.cache.lock().expect("auth cache poisoned");
@@ -320,7 +331,7 @@ impl Authenticator {
                     }
                     cache.insert(key, (account.id, started, started_unix));
                 }
-                Ok(Login::new(account, app_password))
+                Ok(Login { account, credential, scopes })
             }
             Ok(MailAuth::Denied(reason)) => {
                 // A phone still using the right account password should not lock out its network.
@@ -350,10 +361,7 @@ impl Authenticator {
             self.store.authenticate_bearer(token, self.scope, self.protocol, &ip).await.map(|auth| (auth, None))
         };
         match checked {
-            Ok((MailAuth::Ok { account, .. }, Some(grant))) => {
-                Ok(Login { account, credential: uwumail_store::push_credential_for_oauth_grant(grant) })
-            }
-            Ok((MailAuth::Ok { account, app_password }, None)) => Ok(Login::new(account, app_password)),
+            Ok((MailAuth::Ok { account, credential, scopes, .. }, _)) => Ok(Login { account, credential, scopes }),
             Ok((MailAuth::Denied(reason), _)) => {
                 self.record_failure(client.ip);
                 tracing::warn!(ip = %client.ip, %reason, protocol = self.protocol, "failed bearer login");
@@ -364,6 +372,30 @@ impl Authenticator {
                 Err(AuthError::Internal)
             }
         }
+    }
+
+    /// The account behind a login made earlier, as it is now, while that login still holds: the
+    /// credential is still there (app password, OAuth app, webmail session, unchanged password),
+    /// the account may still log in and still use JMAP, or for the webmail's session still has its
+    /// webmail, and the webmail is still on. A WebSocket and an event stream ask this before each
+    /// request and each event, so they end with the login instead of outliving it.
+    pub async fn still_valid(&self, login: &LiveLogin) -> Option<Account> {
+        let webmail = login.credential.starts_with("session:");
+        if webmail && !self.webmail.load(Ordering::Relaxed) {
+            return None;
+        }
+        let protocol = (!webmail).then_some(self.protocol);
+        let account = match self.store.live_login(login, protocol).await {
+            Ok(account) => account?,
+            Err(err) => {
+                tracing::error!(%err, protocol = self.protocol, "checking a login again failed");
+                return None;
+            }
+        };
+        if webmail && (!account.can_use_portal() || !account.webmail || !account.has_mailbox()) {
+            return None;
+        }
+        Some(account)
     }
 
     /// Whether logins from this client's network are refused for now.

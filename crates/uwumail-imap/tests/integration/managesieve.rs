@@ -329,3 +329,17 @@ async fn oauth_tokens_log_in_as_well() {
     let refused = client.command("\"AQ==\"").await;
     assert!(refused.starts_with("NO"), "{refused}");
 }
+
+/// The connection ends with its login: here the account is disabled while it is open
+/// (security audit 0.16.0 STORE-1).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_connection_ends_with_its_login() {
+    let (store, address, certificate, _shutdown, _dir) = setup().await;
+    let (mut client, _, _) = secure(address, &certificate).await;
+    let login = client.command(&format!("AUTHENTICATE \"PLAIN\" \"{}\"", plain_login("mini@example.com"))).await;
+    assert!(login.starts_with("OK"), "{login}");
+    assert!(client.command("LISTSCRIPTS").await.starts_with("OK"));
+    store.set_account_disabled("mini@example.com", true).await.unwrap();
+    let bye = client.command("LISTSCRIPTS").await;
+    assert!(bye.starts_with("BYE"), "{bye}");
+}

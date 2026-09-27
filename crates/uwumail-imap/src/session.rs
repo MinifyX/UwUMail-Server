@@ -10,8 +10,8 @@ use base64::Engine as _;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::broadcast;
 use uwumail_store::{
-    ALL_RIGHTS, Account, AppScope, DELETED_KEYWORD, FlagChange, ImapEmail, IngestRequest, MailAuth, MailAuthDenied,
-    MailboxTarget, Store, StoreError, normalize_rights,
+    ALL_RIGHTS, Account, AppScope, DELETED_KEYWORD, FlagChange, ImapEmail, IngestRequest, LiveLogin, MailAuth,
+    MailAuthDenied, MailboxTarget, Store, StoreError, normalize_rights,
 };
 
 use crate::command::*;
@@ -113,6 +113,8 @@ pub struct Session<R, W> {
     reader: BufReader<R>,
     writer: W,
     account: Option<Account>,
+    /// What the account logged in with, checked again before every command.
+    login: Option<LiveLogin>,
     auth_failures: u32,
     utf8: bool,
     /// The client uses modseqs: untagged FETCH answers carry MODSEQ.
@@ -167,6 +169,7 @@ where
             reader: BufReader::new(reader),
             writer,
             account: None,
+            login: None,
             auth_failures: 0,
             utf8: false,
             condstore: false,
@@ -321,6 +324,9 @@ where
             }
             _ => {}
         }
+        if authenticated && !matches!(command.body, CommandBody::Logout) && !self.login_holds().await {
+            return self.login_ended().await;
+        }
 
         let body = self.fill_saved(command.body);
         let close = matches!(body, CommandBody::Close);
@@ -387,6 +393,7 @@ where
             CommandBody::Unauthenticate => {
                 // Back to the start: nothing of the old login stays with the connection.
                 self.account = None;
+                self.login = None;
                 self.selected = None;
                 self.saved.clear();
                 self.changes = None;
@@ -465,6 +472,32 @@ where
 
     fn account_id(&self) -> i64 {
         self.account.as_ref().map_or(0, |account| account.id)
+    }
+
+    /// Whether the login of this connection still holds, and the account as it is now if so. A
+    /// connection stays open for hours; a revoked app password, a new password, IMAP switched off
+    /// or the account disabled, trashed or deleted has to end it, not only the next login.
+    async fn login_holds(&mut self) -> bool {
+        let Some(login) = &self.login else { return true };
+        match self.store.live_login(login, Some("imap")).await {
+            Ok(Some(account)) => {
+                self.account = Some(account);
+                true
+            }
+            Ok(None) => {
+                tracing::info!(account = login.account_id, peer = %self.peer, "imap login no longer valid, closing");
+                false
+            }
+            Err(err) => {
+                tracing::error!(%err, "checking an imap login again failed");
+                false
+            }
+        }
+    }
+
+    async fn login_ended(&mut self) -> io::Result<Flow> {
+        self.send(b"* BYE Your login is no longer valid, please log in again\r\n").await?;
+        Ok(Flow::Logout)
     }
 
     /// The account's own mailboxes, then those others share with it under `Shared/`.
@@ -558,10 +591,11 @@ where
         challenge: Option<String>,
     ) -> io::Result<Flow> {
         match checked {
-            Ok(MailAuth::Ok { account, app_password }) => {
+            Ok(MailAuth::Ok { account, app_password, credential, .. }) => {
                 self.imap.limiter.record_success(self.peer.ip(), username);
                 tracing::info!(login = %account.login, peer = %self.peer, app_password = app_password.is_some(), oauth = challenge.is_some(), "imap login");
                 self.changes = Some(self.store.subscribe_changes());
+                self.login = Some(LiveLogin::new(&account, credential));
                 self.account = Some(account);
                 let capabilities = capabilities_after_login(self.imap.max_append);
                 self.send(format!("{tag} OK [CAPABILITY {capabilities}] Logged in, hi\r\n").as_bytes()).await?;
@@ -1293,6 +1327,9 @@ where
             };
             match event {
                 IdleEvent::Change => {
+                    if !self.login_holds().await {
+                        break self.login_ended().await;
+                    }
                     self.refresh(true).await?;
                     self.flush().await?;
                 }

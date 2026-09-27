@@ -30,6 +30,13 @@ for an account (services have it off from the start), the capability is gone
 from its session and every calendar method answers
 `accountNotSupportedByMethod`.
 
+The login has to be allowed calendars too. An app password or an OAuth app
+limited to `mail` reads and sends mail, but calendars need the `dav` use, over
+JMAP just as over CalDAV: for such a login the capability is left out of the
+session, and calendar methods answer `forbidden`. The account password, the
+webmail and tokens from `/jmap/token` ([jmap-tokens.md](jmap-tokens.md)) may
+use them.
+
 ## One store for CalDAV and JMAP
 
 There is no second copy. A Calendar is a CalDAV calendar collection, a

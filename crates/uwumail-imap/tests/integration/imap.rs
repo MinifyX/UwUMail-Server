@@ -449,3 +449,43 @@ async fn apps_sign_in_with_oauth_tokens() {
         assert!(refused.contains("NO"), "{refused}");
     }
 }
+
+/// A connection stays open for hours: it has to end with its login, not outlive it. It used to go
+/// on after the app password was revoked, the account trashed, or even purged and its row id given
+/// to someone else (security audit 0.16.0 STORE-1).
+#[tokio::test]
+async fn a_connection_ends_with_its_login() {
+    let server = server().await;
+    let app = server
+        .store
+        .create_app_password(
+            server.account,
+            uwumail_store::NewAppPassword {
+                name: "phone".into(),
+                scopes: vec![uwumail_store::AppScope::Mail],
+                expires_at: None,
+            },
+        )
+        .await
+        .unwrap();
+    let mut phone = Client::connect(&server).await;
+    let (_, done) = phone.command(&format!("LOGIN mini@example.org \"{}\"", app.secret)).await;
+    assert!(done.contains("OK [CAPABILITY"), "{done}");
+    let mut laptop = Client::login(&server).await;
+    let (_, done) = phone.command("SELECT INBOX").await;
+    assert!(done.contains("OK"), "{done}");
+
+    // Revoking the app password ends the phone's connection at its next command, not the laptop's.
+    server.store.revoke_app_password(server.account, app.app_password.id).await.unwrap();
+    phone.send(b"t9 NOOP\r\n").await;
+    let bye = phone.line().await;
+    assert!(bye.starts_with("* BYE"), "{bye}");
+    let (_, done) = laptop.command("NOOP").await;
+    assert!(done.contains("OK"), "{done}");
+
+    // Moving the account to the trash ends the rest.
+    server.store.trash_account("mini@example.org").await.unwrap();
+    laptop.send(b"t9 SELECT INBOX\r\n").await;
+    let bye = laptop.line().await;
+    assert!(bye.starts_with("* BYE"), "{bye}");
+}

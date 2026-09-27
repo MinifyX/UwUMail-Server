@@ -1713,7 +1713,7 @@
       "scopeSmtp": "メール送信（SMTP）",
       "scopeSmtpHint": "送信だけを行うアプリ、プリンター、スクリプト用です。",
       "scopeDav": "カレンダーと連絡先",
-      "scopeDavHint": "iPhone のカレンダーや連絡先など、CalDAV と CardDAV を使うアプリ用です。",
+      "scopeDavHint": "iPhone のカレンダーや連絡先など、CalDAV と CardDAV を使うアプリ用です。JMAP アプリのカレンダーと連絡先にも必要です。",
       "expiry": "有効期間",
       "never": "無期限",
       "days_other": "{{count}}日",
@@ -1826,7 +1826,7 @@
     "scopes": {
       "mail": {
         "title": "メールの閲覧と整理",
-        "hint": "メール、フォルダー、フィルタールール（IMAP、JMAP、ManageSieve）。"
+        "hint": "メール、フォルダー、フィルタールール（IMAP、JMAP、ManageSieve）。JMAP では送信もできます。"
       },
       "smtp": {
         "title": "あなたとしてメールを送信",
@@ -1834,7 +1834,7 @@
       },
       "dav": {
         "title": "カレンダーと連絡先の利用",
-        "hint": "閲覧と変更（CalDAV、CardDAV）。"
+        "hint": "閲覧と変更（CalDAV、CardDAV、JMAP）。"
       },
       "openid": {
         "title": "あなたであることの確認",

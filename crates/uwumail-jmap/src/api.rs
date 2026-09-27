@@ -9,9 +9,8 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Json, Response};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
-use uwumail_store::Account;
 
-use crate::auth::ClientInfo;
+use crate::auth::{ClientInfo, Login};
 use crate::error::MethodError;
 use crate::methods::{self, Ctx};
 use crate::session::{self, CORE};
@@ -78,21 +77,16 @@ pub async fn handle(
                 .into_response();
         }
     };
-    match process(&jmap, login.account, Some(login.credential), value).await {
+    match process(&jmap, login, value).await {
         Ok(response) => ([(header::CACHE_CONTROL, "no-cache, no-store")], Json(response)).into_response(),
         Err(err) => err.into_response(),
     }
 }
 
 /// Runs the method calls of one request object and returns the response object. Shared by
-/// `POST /jmap/api` and the WebSocket (RFC 8887). `credential` is what the login used, for push
-/// subscriptions; without it they cannot be used.
-pub async fn process(
-    jmap: &Jmap,
-    account: Account,
-    credential: Option<String>,
-    value: Value,
-) -> Result<Value, RequestError> {
+/// `POST /jmap/api` and the WebSocket (RFC 8887). The login's credential is what push
+/// subscriptions belong to, and its scopes say whether calendars and contacts may be used.
+pub async fn process(jmap: &Jmap, login: Login, value: Value) -> Result<Value, RequestError> {
     let request: Request = serde_json::from_value(value)
         .map_err(|err| RequestError::new(StatusCode::BAD_REQUEST, "notRequest", &err.to_string()))?;
     if let Some(unknown) = request.using.iter().find(|c| !methods::KNOWN_CAPABILITIES.contains(&c.as_str())) {
@@ -115,8 +109,10 @@ pub async fn process(
     }
 
     let echo_created_ids = request.created_ids.is_some();
-    let mut ctx = Ctx::new(&jmap.inner, account, request.using, request.created_ids.unwrap_or_default());
-    ctx.credential = credential;
+    let may_use_dav = login.may_use_dav();
+    let mut ctx = Ctx::new(&jmap.inner, login.account, request.using, request.created_ids.unwrap_or_default());
+    ctx.credential = Some(login.credential);
+    ctx.may_use_dav = may_use_dav;
     let mut responses: Vec<(String, Value, String)> = Vec::with_capacity(request.method_calls.len());
 
     for (name, arguments, call_id) in request.method_calls {

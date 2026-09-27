@@ -1757,7 +1757,7 @@
       "scopeSmtp": "Mail verzenden (SMTP)",
       "scopeSmtpHint": "Voor apps, printers of scripts die alleen verzenden.",
       "scopeDav": "Agenda's en contacten",
-      "scopeDavHint": "Voor apps die CalDAV en CardDAV gebruiken, zoals Agenda en Contacten op een iPhone.",
+      "scopeDavHint": "Voor apps die CalDAV en CardDAV gebruiken, zoals Agenda en Contacten op een iPhone, en voor agenda's en contacten in JMAP-apps.",
       "expiry": "Geldig",
       "never": "Verloopt niet",
       "days_one": "{{count}} dag",
@@ -1875,7 +1875,7 @@
     "scopes": {
       "mail": {
         "title": "Je mail lezen en ordenen",
-        "hint": "Mail, mappen en filterregels, via IMAP, JMAP en ManageSieve."
+        "hint": "Mail, mappen en filterregels, via IMAP, JMAP en ManageSieve. Via JMAP hoort verzenden daar ook bij."
       },
       "smtp": {
         "title": "Mail versturen namens jou",
@@ -1883,7 +1883,7 @@
       },
       "dav": {
         "title": "Je agenda's en contacten gebruiken",
-        "hint": "Lezen en wijzigen, via CalDAV en CardDAV."
+        "hint": "Lezen en wijzigen, via CalDAV, CardDAV en JMAP."
       },
       "openid": {
         "title": "Weten dat jij het bent",

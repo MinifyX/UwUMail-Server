@@ -1713,7 +1713,7 @@
       "scopeSmtp": "发送邮件（SMTP）",
       "scopeSmtpHint": "用于只发信的应用、打印机或脚本。",
       "scopeDav": "日历和通讯录",
-      "scopeDavHint": "用于使用 CalDAV 和 CardDAV 的应用，例如 iPhone 上的“日历”和“通讯录”。",
+      "scopeDavHint": "用于使用 CalDAV 和 CardDAV 的应用，例如 iPhone 上的“日历”和“通讯录”，以及 JMAP 应用中的日历和联系人。",
       "expiry": "有效期",
       "never": "永不过期",
       "days_other": "{{count}} 天",
@@ -1826,7 +1826,7 @@
     "scopes": {
       "mail": {
         "title": "读取和整理你的邮件",
-        "hint": "邮件、文件夹和过滤规则，通过 IMAP、JMAP 和 ManageSieve。"
+        "hint": "邮件、文件夹和过滤规则，通过 IMAP、JMAP 和 ManageSieve。通过 JMAP 还可以发信。"
       },
       "smtp": {
         "title": "以你的身份发送邮件",
@@ -1834,7 +1834,7 @@
       },
       "dav": {
         "title": "使用你的日历和联系人",
-        "hint": "读取和更改，通过 CalDAV 和 CardDAV。"
+        "hint": "读取和更改，通过 CalDAV、CardDAV 和 JMAP。"
       },
       "openid": {
         "title": "确认是你本人",

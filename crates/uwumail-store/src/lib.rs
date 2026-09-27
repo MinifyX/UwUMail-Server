@@ -152,8 +152,9 @@ pub use rules::{
 };
 pub use sasl::{SaslBearer, parse_oauthbearer, parse_xoauth2, sasl_bearer_error, sasl_user_matches};
 pub use security::{
-    AppPassword, AppScope, CodeCheck, CreatedAppPassword, MailAuth, MailAuthDenied, NewAppPassword, Passkey,
-    SecurityEvent, SecurityEventRecord, SecurityOverview, TotpSetup, WebSessionInfo, scopes_for,
+    ALL_SCOPES, AppPassword, AppScope, CodeCheck, CreatedAppPassword, LiveLogin, MailAuth, MailAuthDenied,
+    NewAppPassword, Passkey, SecurityEvent, SecurityEventRecord, SecurityOverview, TotpSetup, WebSessionInfo,
+    scopes_for,
 };
 pub use sender_lists::{
     ListOwner, ListScope, NewSenderListEntry, SENDER_LIST_ADMIN_LIMIT, SENDER_LIST_PERSONAL_LIMIT, SenderKind,

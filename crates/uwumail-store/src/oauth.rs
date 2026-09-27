@@ -693,7 +693,9 @@ impl Store {
             Ok(())
         })
         .await?;
-        Ok((MailAuth::Ok { account, app_password: None }, Some(grant_id)))
+        let credential = crate::push_credential_for_oauth_grant(grant_id);
+        let scopes = AppScope::parse_list(&scopes);
+        Ok((MailAuth::Ok { account, app_password: None, credential, scopes }, Some(grant_id)))
     }
 
     /// The apps signed in to an account with OAuth, newest first.

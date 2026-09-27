@@ -1757,7 +1757,7 @@
       "scopeSmtp": "Send mail (SMTP)",
       "scopeSmtpHint": "For apps, printers or scripts that only send.",
       "scopeDav": "Calendars and contacts",
-      "scopeDavHint": "For apps using CalDAV and CardDAV, like Calendar and Contacts on an iPhone.",
+      "scopeDavHint": "For apps using CalDAV and CardDAV, like Calendar and Contacts on an iPhone, and for calendars and contacts in JMAP apps.",
       "expiry": "Valid",
       "never": "No expiry",
       "days_one": "{{count}} day",
@@ -1875,7 +1875,7 @@
     "scopes": {
       "mail": {
         "title": "Read and organize your mail",
-        "hint": "Mail, folders and filter rules, with IMAP, JMAP and ManageSieve."
+        "hint": "Mail, folders and filter rules, with IMAP, JMAP and ManageSieve. Over JMAP this includes sending."
       },
       "smtp": {
         "title": "Send mail as you",
@@ -1883,7 +1883,7 @@
       },
       "dav": {
         "title": "Use your calendars and contacts",
-        "hint": "Read and change them, with CalDAV and CardDAV."
+        "hint": "Read and change them, with CalDAV, CardDAV and JMAP."
       },
       "openid": {
         "title": "Know that it is you",

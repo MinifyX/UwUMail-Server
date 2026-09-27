@@ -101,7 +101,7 @@ impl AppScope {
         }
     }
 
-    fn parse_list(value: &str) -> Vec<AppScope> {
+    pub(crate) fn parse_list(value: &str) -> Vec<AppScope> {
         value
             .split_whitespace()
             .filter_map(|scope| match scope {
@@ -179,10 +179,50 @@ impl std::fmt::Display for MailAuthDenied {
     }
 }
 
+// A login is the answer that matters and is moved once; boxing it would only cost every caller.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum MailAuth {
-    Ok { account: Account, app_password: Option<i64> },
+    Ok {
+        account: Account,
+        app_password: Option<i64>,
+        /// What the login used, as push subscriptions and [`LiveLogin`] name it: `password`,
+        /// `app:<id>` or `oauth:<grant>`.
+        credential: String,
+        /// What that credential may be used for: an app password's or an OAuth app's scopes, all of
+        /// them for the account password.
+        scopes: Vec<AppScope>,
+    },
     Denied(MailAuthDenied),
+}
+
+/// Every scope: what the account password (and the webmail's session) may do.
+pub const ALL_SCOPES: [AppScope; 3] = [AppScope::Mail, AppScope::Smtp, AppScope::Dav];
+
+/// A login made by a connection that stays open: an IMAP or ManageSieve session, a JMAP WebSocket.
+/// [`Store::live_login`] checks it again before each command, so the connection ends with the
+/// login instead of outliving it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LiveLogin {
+    pub account_id: i64,
+    /// When the account was made. Ids are never handed out twice (migration 0048); this makes sure
+    /// a second time that the id still names the same account.
+    pub account_created_at: i64,
+    /// `password`, `app:<id>`, `oauth:<grant>` or `session:<hash>`, as push subscriptions have it.
+    pub credential: String,
+    /// When the login happened (Unix time): a password changed after it ends it.
+    pub at: i64,
+}
+
+impl LiveLogin {
+    pub fn new(account: &Account, credential: impl Into<String>) -> LiveLogin {
+        LiveLogin {
+            account_id: account.id,
+            account_created_at: account.created_at,
+            credential: credential.into(),
+            at: now(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -614,6 +654,36 @@ impl Store {
         .await
     }
 
+    /// The account behind a [`LiveLogin`] as it is now, while that login still holds: the same
+    /// account, still allowed to log in (not disabled, not in the trash, not purged), and the
+    /// credential still there — the app password not revoked or expired, the OAuth app not signed
+    /// out, the webmail session not ended, the password not changed since (the same rule push
+    /// subscriptions follow). With `protocol`, the account must also still be allowed that one.
+    ///
+    /// Connections that stay open ask this before each command, so revoking a credential, a new
+    /// password, disabling or deleting the account ends them too.
+    pub async fn live_login(&self, login: &LiveLogin, protocol: Option<&str>) -> Result<Option<Account>> {
+        let login = login.clone();
+        let account = self
+            .read(move |conn| {
+                let columns = ACCOUNT_COLUMNS.split(", ").map(|c| format!("a.{c}")).collect::<Vec<_>>().join(", ");
+                Ok(conn
+                    .query_row(
+                        &format!(
+                            "SELECT {columns} FROM accounts a,
+                                 (SELECT ?2 AS credential, ?3 AS account_id, ?4 AS created_at) p
+                             WHERE a.id = ?3 AND a.created_at = ?5 AND {}",
+                            crate::push::STILL_VALID
+                        ),
+                        params![now(), login.credential, login.account_id, login.at, login.account_created_at],
+                        account_from_row,
+                    )
+                    .optional()?)
+            })
+            .await?;
+        Ok(account.filter(|account| protocol.is_none_or(|protocol| account.may_use(protocol))))
+    }
+
     /// Checks a login from a mail app (JMAP, SMTP, later IMAP). App passwords always work within
     /// their scope; the main password only while the person does not require app passwords.
     /// Unknown logins and wrong passwords take as long as right ones.
@@ -732,7 +802,13 @@ impl Store {
                 Ok(())
             })
             .await?;
-            return Ok(MailAuth::Ok { account, app_password: Some(id) });
+            let credential = crate::push_credential_for_app_password(id);
+            return Ok(MailAuth::Ok {
+                account,
+                app_password: Some(id),
+                credential,
+                scopes: AppScope::parse_list(&scopes),
+            });
         }
 
         let valid = if account.is_service() {
@@ -784,7 +860,12 @@ impl Store {
             .await?;
             return Ok(MailAuth::Denied(MailAuthDenied::AppPasswordRequired));
         }
-        Ok(MailAuth::Ok { account, app_password: None })
+        Ok(MailAuth::Ok {
+            account,
+            app_password: None,
+            credential: crate::PUSH_CREDENTIAL_PASSWORD.to_owned(),
+            scopes: ALL_SCOPES.to_vec(),
+        })
     }
 
     /// Checks an app password handed over on its own, as an HTTP bearer token (JMAP). The token
@@ -859,7 +940,8 @@ impl Store {
             Ok(())
         })
         .await?;
-        Ok(MailAuth::Ok { account, app_password: Some(id) })
+        let credential = crate::push_credential_for_app_password(id);
+        Ok(MailAuth::Ok { account, app_password: Some(id), credential, scopes: AppScope::parse_list(&scopes) })
     }
 
     // Password
@@ -1356,6 +1438,84 @@ mod tests {
             .unwrap();
         let again = store.authenticate_mail("monitoring@example.org", &secret, AppScope::Mail, "imap", "").await;
         assert!(matches!(again, Ok(MailAuth::Ok { .. })), "{again:?}");
+    }
+
+    /// A connection that stays open is checked again before each command: it ends with the login
+    /// it was made with (security audit 0.16.0 STORE-1, STORE-5).
+    #[tokio::test]
+    async fn a_live_login_ends_with_its_credential_and_its_account() {
+        let (store, _dir) = crate::test_support::store().await;
+        store.create_domain("example.org").await.unwrap();
+        let new = |user: &str| NewAccount {
+            address: format!("{user}@example.org"),
+            display_name: String::new(),
+            password: Some("katzenpfote-123".into()),
+            role: Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        };
+        let mini = store.create_account(new("mini")).await.unwrap();
+        let login = |auth: Result<MailAuth>| match auth.unwrap() {
+            MailAuth::Ok { account, credential, .. } => LiveLogin::new(&account, credential),
+            denied => panic!("{denied:?}"),
+        };
+        let by_password =
+            login(store.authenticate_mail("mini@example.org", "katzenpfote-123", AppScope::Mail, "imap", "").await);
+        assert_eq!(by_password.credential, "password");
+        let created = store
+            .create_app_password(
+                mini.id,
+                NewAppPassword { name: "phone".into(), scopes: vec![AppScope::Mail], expires_at: None },
+            )
+            .await
+            .unwrap();
+        let by_app =
+            login(store.authenticate_mail("mini@example.org", &created.secret, AppScope::Mail, "imap", "").await);
+        assert_eq!(by_app.credential, format!("app:{}", created.app_password.id));
+        let holds = |login: LiveLogin, protocol: Option<&'static str>| {
+            let store = store.clone();
+            async move { store.live_login(&login, protocol).await.unwrap().is_some() }
+        };
+        assert!(holds(by_password.clone(), Some("imap")).await);
+        assert!(holds(by_app.clone(), Some("imap")).await);
+
+        // The app password revoked: its connections end, the password's go on.
+        store.revoke_app_password(mini.id, created.app_password.id).await.unwrap();
+        assert!(!holds(by_app.clone(), None).await);
+        // A new password (dated a moment later: within the same second it still counts).
+        store
+            .write(move |tx| {
+                Ok(tx.execute(
+                    "UPDATE accounts SET credentials_changed_at = ?1 WHERE id = ?2",
+                    params![now() + 5, mini.id],
+                )?)
+            })
+            .await
+            .unwrap();
+        assert!(!holds(by_password.clone(), None).await);
+
+        // A fresh login; then the protocol switched off, the account disabled, in the trash, purged.
+        let fresh = LiveLogin { at: now() + 5, ..by_password };
+        assert!(holds(fresh.clone(), Some("imap")).await);
+        let off = crate::Protocols { imap: false, ..mini.protocols };
+        store
+            .update_account("mini@example.org", crate::AccountUpdate { protocols: Some(off), ..Default::default() })
+            .await
+            .unwrap();
+        assert!(!holds(fresh.clone(), Some("imap")).await);
+        assert!(holds(fresh.clone(), Some("jmap")).await);
+        store.set_account_disabled("mini@example.org", true).await.unwrap();
+        assert!(!holds(fresh.clone(), None).await);
+        store.set_account_disabled("mini@example.org", false).await.unwrap();
+        assert!(holds(fresh.clone(), None).await);
+        store.create_account(new("nyu")).await.unwrap();
+        store.trash_account("mini@example.org").await.unwrap();
+        assert!(!holds(fresh.clone(), None).await);
+        store.delete_account("mini@example.org").await.unwrap();
+        assert!(!holds(fresh.clone(), None).await);
+        // Even if a row with the same id came back, it would be another account.
+        let other = LiveLogin { account_created_at: mini.created_at - 1, ..fresh };
+        assert!(!holds(other, None).await);
     }
 
     #[tokio::test]

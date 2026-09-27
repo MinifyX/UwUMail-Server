@@ -1799,7 +1799,7 @@
       "scopeSmtp": "Envoyer du courrier (SMTP)",
       "scopeSmtpHint": "Pour les applis, imprimantes ou scripts qui ne font qu'envoyer.",
       "scopeDav": "Calendriers et contacts",
-      "scopeDavHint": "Pour les applis en CalDAV et CardDAV, comme Calendrier et Contacts sur un iPhone.",
+      "scopeDavHint": "Pour les applis en CalDAV et CardDAV, comme Calendrier et Contacts sur un iPhone, et pour les agendas et contacts des applis JMAP.",
       "expiry": "Validité",
       "never": "Sans expiration",
       "days_one": "{{count}} jour",
@@ -1922,7 +1922,7 @@
     "scopes": {
       "mail": {
         "title": "Lire et ranger votre courrier",
-        "hint": "Messages, dossiers et règles de filtrage, via IMAP, JMAP et ManageSieve."
+        "hint": "Messages, dossiers et règles de filtrage, via IMAP, JMAP et ManageSieve. Via JMAP, cela inclut l'envoi."
       },
       "smtp": {
         "title": "Envoyer des e-mails en votre nom",
@@ -1930,7 +1930,7 @@
       },
       "dav": {
         "title": "Utiliser vos agendas et contacts",
-        "hint": "Les lire et les modifier, via CalDAV et CardDAV."
+        "hint": "Les lire et les modifier, via CalDAV, CardDAV et JMAP."
       },
       "openid": {
         "title": "Savoir que c'est vous",

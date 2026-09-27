@@ -113,7 +113,7 @@ pub const PUSH_CREDENTIAL_PASSWORD: &str = "password";
 
 /// Whether the login behind a subscription `p` (joined with its account `a`) still holds: the
 /// account may log in, and the session, app password or password is the one it was made with.
-const STILL_VALID: &str = "a.disabled = 0 AND a.deleted_at IS NULL AND CASE
+pub(crate) const STILL_VALID: &str = "a.disabled = 0 AND a.deleted_at IS NULL AND CASE
     WHEN p.credential = 'password' THEN a.credentials_changed_at <= p.created_at
     WHEN p.credential LIKE 'app:%' THEN EXISTS (SELECT 1 FROM app_passwords ap
         WHERE ap.id = CAST(substr(p.credential, 5) AS INTEGER) AND ap.account_id = p.account_id

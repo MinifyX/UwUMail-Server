@@ -59,7 +59,8 @@ the more recently, the higher.
 Where the addresses come from:
 
 - **Address books**: every card with an email, in every address book of the
-  account.
+  account. Not for an app password or OAuth app limited to `mail`: address
+  books need the `dav` use.
 - **Sent**: the recipients (`To`, `Cc`, `Bcc`) of messages in the Sent
   mailbox.
 - **Received**: the senders of all other messages, except those in Junk and
