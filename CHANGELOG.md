@@ -3,6 +3,34 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## Unreleased
+
+**Calendars and contacts from elsewhere** ([docs/calendar-import.md](docs/calendar-import.md)), under
+*My account → Calendars & contacts → Bring them over*:
+
+- **Files:** `.ics` and `.vcf` files up to 20 MB go into a new or an existing calendar or address
+  book. They are cut into single entries the way CalDAV keeps them (an event with its exceptions and
+  time zones), vCard 2.1 becomes 3.0, and entries without a UID get a lasting one, so importing a
+  file twice changes nothing twice. A report lists what was left out and why. For admins the same as
+  `uwumail-server import ics|vcf FILE --account LOGIN`.
+- **Subscribed calendars:** an iCal address (`https://` or `webcal://`), such as holidays, a club's
+  dates or a Google calendar's secret address, fills a calendar the server fetches again every 15
+  minutes to once a day, asking only for news (ETag, Last-Modified). Such a calendar is read-only
+  over CalDAV (403, no `write-content` privilege) and JMAP (`myRights`), stays out of free-busy,
+  invitations and the default, and keeps its entries when the feed answers with an error or anything
+  that is not a calendar. The address is stored sealed and only its host is ever shown or logged.
+  Reminders of feeds are dropped unless asked for.
+- **Moving from another provider:** the address and an app password find the CalDAV and CardDAV
+  servers (known providers such as iCloud, WEB.DE, GMX, Posteo, mailbox.org and Fastmail, the
+  domain's SRV/TXT records, `.well-known`) and take every calendar and address book over in one
+  request; the password is kept nowhere. Google and Outlook.com, which offer no way in for a server
+  of one's own, are recognized and explained.
+- All of it leaves like fetched mail (`egress.fetch`), over https to public addresses only, with
+  every redirect checked again; a login never follows a redirect to another site. 30 such requests
+  per person and hour.
+
+Migration 0039 adds the table of subscribed calendars.
+
 ## 0.12.2
 
 **Remote pictures in Firefox.** The webmail showed no remote pictures at all in Firefox and the
