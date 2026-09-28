@@ -27,6 +27,7 @@ pub mod mta_sts;
 mod outbound;
 pub mod palette;
 pub mod pictures;
+pub mod profile_pictures;
 pub mod reachability;
 mod relay;
 mod reports;
