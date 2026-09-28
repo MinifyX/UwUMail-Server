@@ -248,6 +248,7 @@ pub async fn apply(store: &Store, owner: i64, calendar_id: i64) -> Result<(), St
             ends_at: checked.ends_at,
             if_etag: Some(record.etag),
             keep_schedule_tag: true,
+            draft: None,
         };
         match store.put_calendar_event(owner, write).await {
             Ok(_) | Err(StoreError::Conflict(_)) => {}

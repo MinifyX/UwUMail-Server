@@ -199,7 +199,7 @@ Standard `/get` with the draft's `timeZone` argument (IANA, default
 events.
 
 Without `properties` every stored property comes back except `iCalendar`; with
-`properties` only those. `id`, `calendarIds`, `isDraft` (always `false`),
+`properties` only those. `id`, `calendarIds`, `isDraft`,
 `isOrigin` and `baseEventId` are always there. `utcStart` and `utcEnd` are
 computed when asked for (not together with `recurrenceOverrides`). `isOrigin`
 is `true` unless `organizerCalendarAddress` names someone who is not one of
@@ -330,7 +330,7 @@ Checked before anything is stored (`invalidProperties` names the property):
 - An override may not change what belongs to the series (`uid`,
   `recurrenceRule`, `privacy`, …); a series has at most 1000 changed or
   excluded instances.
-- `isDraft` may only be `false`.
+- `isDraft` may only be `true` when the event is created.
 
 Everything else in an event is kept as data, unknown properties included.
 
@@ -351,6 +351,13 @@ calendar with `isOrigin: false`, the organizer's `organizerCalendarAddress`
 and the account's participant at `participationStatus: "needs-action"`. To
 answer, patch that participant's `participationStatus` (`accepted`,
 `declined`, `tentative`) with `sendSchedulingMessages: true`.
+
+A new event with `isDraft: true` is a draft: it is stored and CalDAV clients
+see it like any other event, but no scheduling message goes out for it, over
+JMAP or CalDAV, whatever changes it. Setting `isDraft` to `false` makes it an
+event, and with `sendSchedulingMessages` its participants are then invited as
+for a new one. A draft stays one until then; an event never becomes a draft
+again (`invalidProperties`). Deleting a draft tells nobody either.
 
 ### CalendarEvent/query
 
@@ -409,6 +416,6 @@ EventSource, next to the mail types.
   (`urn:ietf:params:jmap:calendars:parse`)
 - Alerts pushed by the server; alerts are stored and handed to CalDAV
   clients, which ring them
-- Drafts (`isDraft: true`), more than one calendar per event, custom time
-  zones, events that are single instances without their series
+- More than one calendar per event, custom time zones, events that are single
+  instances without their series
 - `CalendarEvent/queryChanges` for queries with `expandRecurrences`

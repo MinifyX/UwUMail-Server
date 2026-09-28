@@ -303,3 +303,64 @@ async fn default_alerts_reach_events_and_caldav() {
     assert!(theirs["alerts"].get("d1").is_none());
     assert_eq!(server.event(MINI, &id).await["alerts"]["d1"]["trigger"]["offset"], "-PT30M");
 }
+
+fn with_nyu(mut event: Value) -> Value {
+    event["participants"] = json!({
+        "mini": { "@type": "Participant", "calendarAddress": format!("mailto:{MINI}"), "roles": { "owner": true, "attendee": true }, "participationStatus": "accepted" },
+        "nyu": { "@type": "Participant", "calendarAddress": format!("mailto:{NYU}"), "roles": { "attendee": true }, "participationStatus": "needs-action", "expectReply": true }
+    });
+    event
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn drafts_tell_nobody_until_they_are_events() {
+    let server = server().await;
+    let calendar = server.default_calendar(MINI).await;
+    let mut draft = with_nyu(timed(&calendar, "Planung"));
+    draft["isDraft"] = json!(true);
+    let created = server
+        .call(MINI, "CalendarEvent/set", json!({ "create": { "d": draft }, "sendSchedulingMessages": true }))
+        .await;
+    assert_eq!(created["created"]["d"]["isDraft"], true, "{created}");
+    let id = created["created"]["d"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(server.event(MINI, &id).await["isDraft"], true);
+    let invited =
+        || async { server.call(NYU, "CalendarEvent/query", json!({ "filter": { "title": "Planung" } })).await };
+    assert_eq!(invited().await["ids"], json!([]), "Nyu hears nothing of a draft");
+
+    // CalDAV clients see it as an event; what they store sends nothing either.
+    let uid = server.event(MINI, &id).await["uid"].as_str().unwrap().to_owned();
+    let ics = server.caldav_object(MINI, &uid).await;
+    assert!(ics.contains("SUMMARY:Planung"));
+    let name = server.store.calendar_events(server.store.account(MINI).await.unwrap().unwrap().id, None).await.unwrap()
+        [0]
+    .name
+    .clone();
+    let changed = ics.replace("SUMMARY:Planung", "SUMMARY:Planung 2");
+    let put = server
+        .send(
+            MINI,
+            "PUT",
+            &format!("/dav/calendars/{MINI}/personal/{name}"),
+            &[("content-type", "text/calendar")],
+            changed,
+        )
+        .await;
+    assert!(put.status.is_success(), "{}", put.body);
+    assert_eq!(invited().await["ids"], json!([]));
+    assert_eq!(server.event(MINI, &id).await["isDraft"], true, "still a draft");
+
+    let back = server.call(MINI, "CalendarEvent/set", json!({ "update": { &id: { "isDraft": true } } })).await;
+    assert!(back["updated"].get(&id).is_some(), "a draft stays one: {back}");
+    let published = server
+        .call(
+            MINI,
+            "CalendarEvent/set",
+            json!({ "update": { &id: { "isDraft": false } }, "sendSchedulingMessages": true }),
+        )
+        .await;
+    assert_eq!(published["updated"][&id]["isDraft"], false, "{published}");
+    assert_eq!(invited().await["ids"].as_array().unwrap().len(), 1, "now Nyu is invited");
+    let again = server.call(MINI, "CalendarEvent/set", json!({ "update": { &id: { "isDraft": true } } })).await;
+    assert_eq!(again["notUpdated"][&id]["type"], "invalidProperties", "{again}");
+}

@@ -752,8 +752,11 @@ impl Session<'_> {
         }
         // One change may not send more scheduling messages than one mail may have recipients
         // (security-audit-0.16.0 PROTOCOLS-5); refused before anything is stored.
+        // Nobody hears about a draft of JMAP Calendars, whoever changes it.
+        let draft = old.as_ref().is_some_and(|old| old.info.draft);
         if *kind == DavKind::Calendar
             && view.access.is_owner()
+            && !draft
             && let Some(smtp) = &self.dav.inner.smtp
             && let Err(refused) =
                 smtp.check_schedule(self.account, old.as_ref().map(|old| old.content.as_str()), Some(&content)).await
@@ -797,7 +800,9 @@ impl Session<'_> {
             }
             Err(err) => return store_failure(err),
         };
-        self.schedule(&view, old.as_ref().map(|old| old.content.as_str()), Some(&content)).await;
+        if !draft {
+            self.schedule(&view, old.as_ref().map(|old| old.content.as_str()), Some(&content)).await;
+        }
         let mut response = status.into_response();
         // What was stored is not what the client sent when answers were merged in: without an
         // ETag it reads the entry again.
@@ -840,6 +845,7 @@ impl Session<'_> {
                     return not_allowed("<d:unbind/>");
                 }
                 let old = if *kind == DavKind::Calendar { self.entry(&view, name).await.ok().flatten() } else { None };
+                let old = old.filter(|old| !old.info.draft);
                 let if_match = etag_header(headers, header::IF_MATCH);
                 match self
                     .store()

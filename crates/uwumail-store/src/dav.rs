@@ -124,6 +124,8 @@ pub struct DavResourceInfo {
     /// The CalDAV Schedule-Tag (RFC 6638): changes with the ETag, except when the server only
     /// wrote an attendee's answer into the organizer's copy.
     pub schedule_tag: Option<String>,
+    /// A draft event of JMAP Calendars: no scheduling message goes out for it.
+    pub draft: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -219,7 +221,7 @@ pub(crate) fn collection_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavCol
     })
 }
 
-const INFO_COLUMNS: &str = "name, uid, etag, component, size, modified_at, starts_at, ends_at, schedule_tag";
+const INFO_COLUMNS: &str = "name, uid, etag, component, size, modified_at, starts_at, ends_at, schedule_tag, draft";
 
 fn info_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavResourceInfo> {
     Ok(DavResourceInfo {
@@ -232,6 +234,7 @@ fn info_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavResourceInfo> {
         starts_at: row.get(6)?,
         ends_at: row.get(7)?,
         schedule_tag: row.get(8)?,
+        draft: row.get(9)?,
     })
 }
 
@@ -748,7 +751,7 @@ impl Store {
     ) -> Result<Vec<DavResource>> {
         self.read(move |conn| {
             own_collection(conn, account_id, collection_id)?;
-            let read = |row: &rusqlite::Row<'_>| Ok(DavResource { info: info_row(row)?, content: row.get(9)? });
+            let read = |row: &rusqlite::Row<'_>| Ok(DavResource { info: info_row(row)?, content: row.get(10)? });
             let sql = format!("SELECT {INFO_COLUMNS}, content FROM dav_resources WHERE collection_id = ?1");
             match names {
                 None => {

@@ -450,6 +450,7 @@ async fn write(
         ends_at: checked.ends_at,
         if_etag: existing.map(|record| record.etag.clone()),
         keep_schedule_tag,
+        draft: None,
     };
     ctx.store.put_calendar_event(account.id, write).await.map(|_| ())
 }

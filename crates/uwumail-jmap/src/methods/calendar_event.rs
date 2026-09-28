@@ -90,11 +90,17 @@ fn is_origin(event: &Map<String, Value>, own: &[String]) -> bool {
     }
 }
 
-fn decorate(object: &mut Map<String, Value>, id: String, calendar_id: i64, base: Option<i64>, own: &[String]) {
+fn decorate(
+    object: &mut Map<String, Value>,
+    id: String,
+    record: &CalendarEventRecord,
+    base: Option<i64>,
+    own: &[String],
+) {
     let origin = is_origin(object, own);
     object.insert("id".into(), json!(id));
-    object.insert("calendarIds".into(), json!({ ids::calendar(calendar_id): true }));
-    object.insert("isDraft".into(), json!(false));
+    object.insert("calendarIds".into(), json!({ ids::calendar(record.calendar_id): true }));
+    object.insert("isDraft".into(), json!(record.is_draft));
     object.insert("isOrigin".into(), json!(origin));
     object.insert("baseEventId".into(), json!(base.map(ids::calendar_event)));
 }
@@ -309,7 +315,7 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         let by_id: HashMap<i64, &Loaded> = loaded.iter().map(|l| (l.record.id, l)).collect();
         let stored = |loaded: &Loaded| {
             let mut object = loaded.view();
-            decorate(&mut object, ids::calendar_event(loaded.record.id), loaded.record.calendar_id, None, &own);
+            decorate(&mut object, ids::calendar_event(loaded.record.id), &loaded.record, None, &own);
             output(object, &properties, floating)
         };
         let Some(wanted) = wanted else {
@@ -332,7 +338,7 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
                         return None;
                     }
                     let mut object = jscal::instance(&loaded.view(), rid)?;
-                    decorate(&mut object, text.clone(), loaded.record.calendar_id, Some(*n), &own);
+                    decorate(&mut object, text.clone(), &loaded.record, Some(*n), &own);
                     Some(output(object, &properties, floating))
                 }),
                 None => None,
@@ -499,7 +505,9 @@ impl Writer<'_> {
         }
     }
 
-    /// Checks an event, turns it into iCalendar and stores it. Returns its id and what was stored.
+    /// Checks an event, turns it into iCalendar and stores it, making it a draft or not with
+    /// `draft`; `draft_after` says whether it is one afterwards. Returns its id and what was stored.
+    #[allow(clippy::too_many_arguments)]
     async fn store(
         &self,
         parsed: &Parsed,
@@ -508,6 +516,7 @@ impl Writer<'_> {
         calendar_id: i64,
         if_etag: Option<String>,
         old: Option<&str>,
+        (draft, draft_after): (Option<bool>, bool),
     ) -> Result<Result<(i64, String), SetError>, ()> {
         let calendar = match self.calendar(calendar_id) {
             Ok(calendar) => calendar,
@@ -534,6 +543,7 @@ impl Writer<'_> {
         // One change may not send more scheduling messages than one mail may have recipients
         // (security-audit-0.16.0 PROTOCOLS-5); refused before anything is stored.
         if self.scheduling
+            && !draft_after
             && owns(self.ctx, calendar_id).await
             && let Err(refused) = self.ctx.jmap.smtp.check_schedule(&self.ctx.account, old, Some(&content)).await
         {
@@ -548,6 +558,7 @@ impl Writer<'_> {
             ends_at: checked.ends_at,
             if_etag,
             keep_schedule_tag: false,
+            draft,
         };
         match self.ctx.jmap.store.put_calendar_event(self.ctx.account.id, write).await {
             Ok((id, _)) => Ok(Ok((id, content))),
@@ -573,9 +584,11 @@ impl Writer<'_> {
             }
         }
         let calendar_id = calendar_of(self.ctx, &event.remove("calendarIds").unwrap_or(Value::Null), &self.calendars)?;
-        if event.remove("isDraft").is_some_and(|draft| draft != Value::Bool(false)) {
-            return Err(SetError::invalid_properties(&["isDraft"], "drafts are not supported"));
-        }
+        let draft = match event.remove("isDraft") {
+            None | Some(Value::Bool(false)) => false,
+            Some(Value::Bool(true)) => true,
+            Some(_) => return Err(SetError::invalid_properties(&["isDraft"], "must be true or false")),
+        };
         let mut server_set: Map<String, Value> = Map::new();
         let (utc_start, utc_end) = (event.remove("utcStart"), event.remove("utcEnd"));
         let (start_given, duration_given) = (event.contains_key("start"), event.contains_key("duration"));
@@ -613,7 +626,8 @@ impl Writer<'_> {
         let shared = self.calendar(calendar_id)?.account_id != self.ctx.account.id;
         let (event, prefs) = if shared { jscal::split_per_user(&event, &Map::new()) } else { (event, Map::new()) };
         let parsed = Parsed::new_event();
-        let (id, content) = match self.store(&parsed, &event, None, calendar_id, None, None).await {
+        let (id, content) = match self.store(&parsed, &event, None, calendar_id, None, None, (Some(draft), draft)).await
+        {
             Ok(result) => result?,
             Err(()) => return Err(SetError::new("serverFail", "the event could not be stored")),
         };
@@ -623,9 +637,12 @@ impl Writer<'_> {
                 tracing::warn!(%err, "one's own properties of a new event could not be kept");
             }
         }
-        self.schedule(calendar_id, None, Some(&content)).await;
+        // Nobody hears about a draft.
+        if !draft {
+            self.schedule(calendar_id, None, Some(&content)).await;
+        }
         server_set.insert("id".into(), json!(ids::calendar_event(id)));
-        server_set.insert("isDraft".into(), json!(false));
+        server_set.insert("isDraft".into(), json!(draft));
         server_set.insert("isOrigin".into(), json!(is_origin(&event, &self.own)));
         server_set.insert("baseEventId".into(), Value::Null);
         Ok((id, server_set))
@@ -643,6 +660,7 @@ impl Writer<'_> {
             let mut calendars: BTreeSet<i64> = BTreeSet::from([loaded.record.calendar_id]);
             let (mut utc_start, mut utc_end) = (None, None);
             let mut new_version = false;
+            let mut publish = false;
             for (path, value) in patch {
                 let tokens = jscal::pointer_tokens(path)
                     .ok_or_else(|| SetError::new("invalidPatch", format!("{path} is not a pointer")))?;
@@ -666,7 +684,12 @@ impl Writer<'_> {
                             _ => return Err(SetError::invalid_properties(&["calendarIds"], "values must be true")),
                         }
                     }
-                    "isDraft" if tokens.len() == 1 && matches!(value, Value::Bool(false) | Value::Null) => {}
+                    // A draft may become an event, never the other way round.
+                    "isDraft" if tokens.len() == 1 && value == &Value::Bool(loaded.record.is_draft) => {}
+                    "isDraft" if tokens.len() == 1 && value == &Value::Bool(false) => publish = true,
+                    "isDraft" if tokens.len() == 1 && value == &Value::Bool(true) => {
+                        return Err(SetError::invalid_properties(&["isDraft"], "only a new event can be a draft"));
+                    }
                     "uid" | "@type" if tokens.len() == 1 && event.get(top) == Some(value) => {}
                     "utcStart" if tokens.len() == 1 => utc_start = Some(value.clone()),
                     "utcEnd" if tokens.len() == 1 => utc_end = Some(value.clone()),
@@ -693,7 +716,7 @@ impl Writer<'_> {
                 server_set.insert(property.into(), event[property].clone());
             }
             let asked = patch.get("sequence").and_then(Value::as_u64);
-            if let Some(set) = self.commit(&loaded, event, calendar_id, new_version, asked).await? {
+            if let Some(set) = self.commit(&loaded, event, calendar_id, new_version, asked, publish).await? {
                 server_set.extend(set);
                 return Ok(Value::Object(server_set));
             }
@@ -712,6 +735,7 @@ impl Writer<'_> {
         calendar_id: i64,
         new_version: bool,
         asked_sequence: Option<u64>,
+        publish: bool,
     ) -> Result<Option<Map<String, Value>>, SetError> {
         let owner = loaded.parsed.event();
         let (mut stored, prefs) = if loaded.shared {
@@ -729,7 +753,8 @@ impl Writer<'_> {
             (event, None)
         };
         let mut server_set = Map::new();
-        let owner_changed = !loaded.shared || stored != *owner || calendar_id != loaded.record.calendar_id;
+        let owner_changed = !loaded.shared || publish || stored != *owner || calendar_id != loaded.record.calendar_id;
+        let draft_after = loaded.record.is_draft && !publish;
         if owner_changed {
             let current = owner.get("sequence").and_then(Value::as_u64).unwrap_or(0);
             if new_version && asked_sequence.is_none_or(|asked| asked <= current) {
@@ -741,14 +766,22 @@ impl Writer<'_> {
                 stored.insert("updated".into(), now.clone());
                 server_set.insert("updated".into(), now);
             }
-            let (etag, old) = (Some(loaded.record.etag.clone()), Some(loaded.record.content.as_str()));
-            match self.store(&loaded.parsed, &stored, Some(loaded.record.id), calendar_id, etag, old).await {
+            // A draft that becomes an event is new to everyone in it.
+            let etag = Some(loaded.record.etag.clone());
+            let old = (!publish).then_some(loaded.record.content.as_str());
+            let draft = (publish.then_some(false), draft_after);
+            match self.store(&loaded.parsed, &stored, Some(loaded.record.id), calendar_id, etag, old, draft).await {
                 Ok(result) => {
                     let (_, content) = result?;
-                    self.schedule(calendar_id, Some(&loaded.record.content), Some(&content)).await;
+                    if !draft_after {
+                        self.schedule(calendar_id, old, Some(&content)).await;
+                    }
                 }
                 Err(()) => return Ok(None),
             }
+        }
+        if publish {
+            server_set.insert("isDraft".into(), json!(false));
         }
         if let Some(prefs) = prefs {
             let current = loaded.prefs.as_ref().map(|(prefs, _)| prefs.clone()).unwrap_or_default();
@@ -851,7 +884,7 @@ impl Writer<'_> {
             }
             overrides[rid] = patch;
             let calendar_id = loaded.record.calendar_id;
-            if self.commit(&loaded, event, calendar_id, new_version, None).await?.is_some() {
+            if self.commit(&loaded, event, calendar_id, new_version, None, false).await?.is_some() {
                 return Ok(());
             }
         }
@@ -942,7 +975,7 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                     let destroyed =
                         ctx.jmap.store.destroy_calendar_event(ctx.account.id, n, None).await.map_err(SetError::from);
                     if destroyed.is_ok()
-                        && let Some(old) = old
+                        && let Some(old) = old.filter(|old| !old.record.is_draft)
                     {
                         writer.schedule(old.record.calendar_id, Some(&old.record.content), None).await;
                     }

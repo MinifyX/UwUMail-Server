@@ -731,7 +731,7 @@ async fn events_stay_within_limits() {
         ("method", with(json!({ "method": "request" })), "invalidProperties"),
         ("big", with(json!({ "description": "Katzen ".repeat(200_000) })), "tooLarge"),
         ("rule", with(json!({ "recurrenceRule": { "frequency": "daily", "interval": 0 } })), "invalidProperties"),
-        ("draft", with(json!({ "isDraft": true })), "invalidProperties"),
+        ("draft", with(json!({ "isDraft": "yes" })), "invalidProperties"),
         ("two", with(json!({ "calendarIds": { &calendar: true, "c999999": true } })), "invalidProperties"),
         ("none", with(json!({ "calendarIds": {} })), "invalidProperties"),
     ];

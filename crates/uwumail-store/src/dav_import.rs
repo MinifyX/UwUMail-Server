@@ -1184,6 +1184,7 @@ DTSTART:20260105T180000Z\r\nSUMMARY:{summary}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n
                     ends_at: None,
                     if_etag: None,
                     keep_schedule_tag: false,
+                    draft: None,
                 },
             )
             .await
@@ -1253,6 +1254,7 @@ DTSTART:20260105T180000Z\r\nSUMMARY:{summary}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n
             ends_at: None,
             if_etag: None,
             keep_schedule_tag: false,
+            draft: None,
         };
         assert!(matches!(store.put_calendar_event(mini, moved).await, Err(StoreError::Rule { code: "readOnly", .. })));
         assert!(matches!(
