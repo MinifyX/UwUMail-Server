@@ -400,7 +400,7 @@ mod tests {
         assert_eq!(keywords, vec!["$seen".to_owned(), "project-x".to_owned()]);
     }
 
-    /// Cards with a photo from before 0049 are found by their addresses once the server started.
+    /// Cards with a photo from before 0055 are found by their addresses once the server started.
     #[test]
     fn existing_contact_photos_are_indexed_after_the_upgrade() {
         const RELEASED_0_16: usize = 48;
