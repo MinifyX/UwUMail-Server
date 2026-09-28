@@ -449,12 +449,14 @@ What comes after is refused: `/get` with `serverUnavailable`, `/query` with
 `cannotCalculateOccurrences`, and each further object
 of `/set` with `rateLimit`, so a client sends the rest in a new request.
 
-`CalendarEvent/queryChanges` works as in RFC 8620 for queries without
-`expandRecurrences` (`canCalculateChanges: true`): every event that changed
-since the query state is removed, and added again at its place where it
-matches now. With `expandRecurrences` the instances are not objects of their
-own, so such a query says `canCalculateChanges: false` and `/queryChanges`
-answers `cannotCalculateChanges`.
+`CalendarEvent/queryChanges` works as in RFC 8620 (`canCalculateChanges:
+true`): every event that changed since the query state is removed, and added
+again at its place where it matches now. With `expandRecurrences` the same
+holds for instances: those a changed event has now are removed and added
+again, and those it had at the query state are removed too. For that the
+server keeps what recurring events were before each change, for 30 days (and
+at most 2000 changes per account); a query state older than that, or from
+before 0.17, answers `cannotCalculateChanges`, and the client queries anew.
 
 ### CalendarEvent/parse
 
@@ -523,4 +525,3 @@ types.
   are shared with
 - Alerts pushed by the server; alerts are stored and handed to CalDAV
   clients, which ring them
-- `CalendarEvent/queryChanges` for queries with `expandRecurrences`

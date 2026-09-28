@@ -275,6 +275,11 @@ impl ChangeLog {
         self.account_id
     }
 
+    /// The change number this write took for an account, once something was logged for it.
+    pub(crate) fn modseq_of(&self, account_id: i64) -> Option<i64> {
+        self.modseqs.get(&account_id).copied()
+    }
+
     /// A change of the account the log was made for.
     pub(crate) fn record(&mut self, conn: &Connection, kind: &str, object_id: i64, change: &str) -> Result<()> {
         self.record_for(conn, self.account_id, kind, object_id, change)
@@ -366,12 +371,20 @@ impl ChangeLog {
         change: &str,
     ) -> Result<()> {
         let (collection_type, entry_type, component) = collection.kind.jmap_types();
-        let mut stmt = conn.prepare("SELECT id FROM dav_resources WHERE collection_id = ?1 AND component = ?2")?;
-        let entries: Vec<i64> =
-            stmt.query_map(params![collection.id, component], |row| row.get(0))?.collect::<rusqlite::Result<_>>()?;
+        // What a recurring event was, for the queries of the account that no longer sees it.
+        let versions = change == "destroyed" && collection.kind == DavKind::Calendar;
+        let mut stmt = conn.prepare(
+            "SELECT id, CASE WHEN ?3 THEN content END FROM dav_resources WHERE collection_id = ?1 AND component = ?2",
+        )?;
+        let entries: Vec<(i64, Option<String>)> = stmt
+            .query_map(params![collection.id, component, versions], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
         drop(stmt);
-        for entry in entries {
+        for (entry, content) in entries {
             self.record_for(conn, account_id, entry_type, entry, change)?;
+            if let Some(content) = content {
+                crate::calendar_versions::note(conn, self, &[account_id], entry, Some(&content), None)?;
+            }
         }
         self.record_for(conn, account_id, collection_type, collection.id, change)
     }
@@ -626,6 +639,11 @@ pub(crate) fn move_entry(
     let before = crate::calendar_notifications::Side { component: &write.component, content: &old_content };
     let after = crate::calendar_notifications::Side { component: &write.component, content: &write.content };
     crate::calendar_notifications::entry_changed(tx, log, &source, Some(target), id, Some(before), Some(after))?;
+    if write.component == "VEVENT" {
+        let mut everyone = audience(tx, &source)?;
+        everyone.extend(audience(tx, target)?);
+        crate::calendar_versions::note(tx, log, &everyone, id, Some(&old_content), Some(&write.content))?;
+    }
     Ok(etag)
 }
 
@@ -990,6 +1008,12 @@ pub(crate) fn put_entry_unchecked(
     });
     let after = Some(crate::calendar_notifications::Side { component: &write.component, content: &write.content });
     crate::calendar_notifications::entry_changed(tx, log, collection, None, id, before, after)?;
+    if collection.kind == DavKind::Calendar {
+        let old =
+            current.as_ref().filter(|(_, _, component, _)| component == "VEVENT").and_then(|(_, _, _, c)| c.as_deref());
+        let new = (write.component == "VEVENT").then_some(write.content.as_str());
+        crate::calendar_versions::note(tx, log, &audience(tx, collection)?, id, old, new)?;
+    }
     Ok((
         if current.is_some() { DavWriteOutcome::Updated { etag } } else { DavWriteOutcome::Created { etag } },
         Some(id),
@@ -1040,6 +1064,9 @@ pub(crate) fn delete_entry_unchecked(
         params![collection.id, name, change],
     )?;
     log.entry(tx, collection, id, Some(&component), None)?;
+    if collection.kind == DavKind::Calendar && component == "VEVENT" {
+        crate::calendar_versions::note(tx, log, &audience(tx, collection)?, id, content.as_deref(), None)?;
+    }
     Ok(true)
 }
 

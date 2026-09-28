@@ -197,7 +197,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
     if name != "Core/echo" && !name.starts_with("PushSubscription/") {
         ctx.check_account(&args)?;
     }
-    let can = query_changes::can_calculate(name, &args);
+    let can = query_changes::can_calculate(name);
     let outputs = call(ctx, name, args).await?;
     // Every /query says whether its /queryChanges can answer.
     if name.ends_with("/query") {

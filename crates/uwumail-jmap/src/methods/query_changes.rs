@@ -8,8 +8,9 @@
 //! itself. Where it also depends on others, their objects count as changed too: all mail of a
 //! thread in which something changed when threads are collapsed or matched by keyword, all
 //! mailboxes when they are sorted or filtered as a tree. A CalendarEvent query with
-//! `expandRecurrences`, whose instances are not objects of their own, says
-//! `canCalculateChanges: false` and gets `cannotCalculateChanges` here.
+//! `expandRecurrences` lists instances: for each changed event, the instances it has now and those
+//! it had at the query state (from the event as it was, calendar_versions.rs in the store) count as
+//! changed, which only fails for a state older than the versions kept.
 //!
 //! In an account shared with the login (docs/sharing.md) Email and Mailbox queries work within
 //! what may be seen there, like their /query; the others are not there.
@@ -25,19 +26,19 @@ use super::{
 use crate::error::{MethodError, MethodResult};
 use crate::ids;
 
-/// Whether `<type>/queryChanges` can answer for this /query method with these arguments. The
+/// Whether `<type>/queryChanges` can answer for this /query method. The
 /// /query responses say so in `canCalculateChanges`.
-pub fn can_calculate(method: &str, args: &Value) -> bool {
-    match method {
+pub fn can_calculate(method: &str) -> bool {
+    matches!(
+        method,
         "Email/query"
-        | "Mailbox/query"
-        | "EmailSubmission/query"
-        | "SieveScript/query"
-        | "ContactCard/query"
-        | "CalendarEventNotification/query" => true,
-        "CalendarEvent/query" => args.get("expandRecurrences").and_then(Value::as_bool) != Some(true),
-        _ => false,
-    }
+            | "Mailbox/query"
+            | "EmailSubmission/query"
+            | "SieveScript/query"
+            | "ContactCard/query"
+            | "CalendarEvent/query"
+            | "CalendarEventNotification/query"
+    )
 }
 
 /// The type a queryChanges method is for, with its change log kind and id prefix.
@@ -166,6 +167,11 @@ async fn current_results(
     Ok((ids, extra))
 }
 
+/// The event an instance id (`v12_20261027T090000`) belongs to.
+fn instance_base(id: &str) -> Option<i64> {
+    ids::parse('v', id.split_once('_')?.0)
+}
+
 fn changes_error(err: StoreError) -> MethodError {
     match err {
         StoreError::Invalid(_) => MethodError::kind("cannotCalculateChanges"),
@@ -189,7 +195,7 @@ impl AllChanged for uwumail_store::Changes {
 pub async fn query_changes(ctx: &mut Ctx<'_>, method: &str, args: &Value) -> MethodResult<Value> {
     let (kind, prefix) = kind_of(method).ok_or_else(|| MethodError::kind("unknownMethod"))?;
     let query_method = method.replace("/queryChanges", "/query");
-    if !can_calculate(&query_method, args) {
+    if !can_calculate(&query_method) {
         return Err(MethodError::kind("cannotCalculateChanges"));
     }
     let since_text = args
@@ -208,8 +214,30 @@ pub async fn query_changes(ctx: &mut Ctx<'_>, method: &str, args: &Value) -> Met
     // Read before the results, like /query: what changes in between is reported again next time.
     let new_state = ctx.state().await?;
     let changes = ctx.jmap.store.changes(ctx.account.id, kind, since, 0).await.map_err(changes_error)?;
+    let expanded =
+        method == "CalendarEvent/queryChanges" && args.get("expandRecurrences").and_then(Value::as_bool) == Some(true);
+    // The instances changed events had at the query state.
+    let mut before = Vec::new();
+    if expanded {
+        if ctx.jmap.store.calendar_versions_since(ctx.account.id).await? > since {
+            return Err(MethodError::kind("cannotCalculateChanges"));
+        }
+        let mut old = Vec::new();
+        for id in changes.updated.iter().chain(&changes.destroyed) {
+            if let Some(Some(content)) = ctx.jmap.store.calendar_event_version(ctx.account.id, *id, since).await? {
+                old.push((*id, content));
+            }
+        }
+        before = calendar_event::expanded_ids_of(ctx, args, old).await?;
+    }
+    let bases: BTreeSet<i64> = changes.clone().into_iter_all().collect();
     let changed: BTreeSet<String> = changes.into_iter_all().map(|id| format!("{prefix}{id}")).collect();
-    let (results, extra) = current_results(ctx, method, args, &changed, since).await?;
+    let (results, mut extra) = current_results(ctx, method, args, &changed, since).await?;
+    if expanded {
+        // The instances of changed events, now and then.
+        extra.extend(results.iter().filter(|id| instance_base(id).is_some_and(|base| bases.contains(&base))).cloned());
+        extra.extend(before);
+    }
 
     let removed: BTreeSet<String> = changed.into_iter().chain(extra).collect();
     let added: Vec<Value> = results
@@ -248,11 +276,12 @@ mod tests {
     }
 
     #[test]
-    fn expanded_calendar_queries_cannot_be_calculated() {
-        assert!(can_calculate("Email/query", &json!({})));
-        assert!(can_calculate("CalendarEvent/query", &json!({ "expandRecurrences": false })));
-        assert!(!can_calculate("CalendarEvent/query", &json!({ "expandRecurrences": true })));
-        assert!(!can_calculate("Principal/query", &json!({})));
+    fn which_queries_can_be_calculated() {
+        assert!(can_calculate("Email/query"));
+        assert!(can_calculate("CalendarEvent/query"));
+        assert!(!can_calculate("Principal/query"));
+        assert_eq!(instance_base("v12_20261027T090000"), Some(12));
+        assert_eq!(instance_base("v12"), None);
     }
 
     #[test]

@@ -1464,6 +1464,49 @@ impl Evaluator {
     }
 }
 
+/// The instance ids a query that expands recurrences (`args`) finds in events as they were
+/// (`old`, by event id), for /queryChanges. Their calendar is not looked at: what the client
+/// never had it ignores.
+pub(super) async fn expanded_ids_of(ctx: &Ctx<'_>, args: &Value, old: Vec<(i64, String)>) -> MethodResult<Vec<String>> {
+    if old.is_empty() {
+        return Ok(Vec::new());
+    }
+    let floating = floating_zone(args)?;
+    let Some(Filter::Condition(mut condition)) =
+        args.get("filter").filter(|f| !f.is_null()).map(|f| parse_filter(ctx, f, floating)).transpose()?
+    else {
+        return Err(MethodError::invalid_arguments("expandRecurrences needs a filter condition with after and before"));
+    };
+    condition.calendar = None;
+    let deadline = (Instant::now() + QUERY_TIME_LIMIT).min(request_deadline(ctx));
+    let evaluator = Evaluator { floating, deadline };
+    let me = ctx.account.id;
+    run_blocking(move || -> MethodResult<Vec<String>> {
+        let mut ids = Vec::new();
+        for (id, content) in old {
+            evaluator.check_time()?;
+            let Some(parsed) = jscal::from_icalendar(&content) else { continue };
+            let record = CalendarEventRecord {
+                id,
+                calendar_id: 0,
+                owner_id: me,
+                name: String::new(),
+                uid: String::new(),
+                etag: String::new(),
+                content,
+                starts_at: None,
+                ends_at: None,
+                modified_at: 0,
+                is_draft: false,
+            };
+            let loaded = Loaded { record, parsed, shared: false, prefs: None, defaults: (None, None) };
+            ids.extend(evaluator.expanded_hits(&condition, &loaded)?.into_iter().map(|hit| hit.id));
+        }
+        Ok(ids)
+    })
+    .await?
+}
+
 pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     check_enabled(ctx)?;
     let state = ctx.state().await?;

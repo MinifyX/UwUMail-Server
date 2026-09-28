@@ -18,6 +18,7 @@ mod calendar;
 mod calendar_notifications;
 mod calendar_prefs;
 mod calendar_subscriptions;
+mod calendar_versions;
 mod contacts;
 mod dav;
 mod dav_import;
