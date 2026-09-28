@@ -80,7 +80,11 @@ Content-Type: application/json
   cut to 80 characters. The consent page says clearly that the name is the
   app's own claim, and shows where the answer goes.
 - 30 registrations per network (IPv4 address or IPv6 /64) and hour. An app
-  that registered but never signed anyone in is forgotten after 7 days.
+  nobody ever allowed in is forgotten after a day, one nobody uses any more
+  after 7 days. The server keeps at most 10,000 apps; when that is full, a new
+  registration pushes out the oldest app nobody ever allowed in, so
+  registrations alone cannot keep a real app out. Apps in use are never
+  pushed out.
 
 ## Signing in: `/oauth/authorize`
 

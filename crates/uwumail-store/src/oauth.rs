@@ -23,8 +23,11 @@ pub const OAUTH_ACCESS_TOKEN_SECS: i64 = 3600;
 pub const OAUTH_REFRESH_TOKEN_SECS: i64 = 90 * 24 * 3600;
 /// An authorization code is traded in right away by the app that asked for it.
 pub const OAUTH_CODE_SECS: i64 = 120;
-/// Apps that registered themselves but never signed anyone in are forgotten after this long.
+/// Apps that registered themselves and nobody uses any more are forgotten after this long.
 const UNUSED_CLIENT_SECS: i64 = 7 * 24 * 3600;
+/// Apps that nobody ever allowed in are forgotten after a day: a mail app registers while an
+/// account is set up in it and asks for the person's consent right after.
+const NEVER_USED_CLIENT_SECS: i64 = 24 * 3600;
 const MAX_REDIRECT_URIS: usize = 10;
 const MAX_REDIRECT_URI_LEN: usize = 500;
 const MAX_CLIENTS: i64 = 10_000;
@@ -292,7 +295,18 @@ impl Store {
             .write(move |tx| {
                 purge(tx)?;
                 let count: i64 = tx.query_row("SELECT COUNT(*) FROM oauth_clients", [], |row| row.get(0))?;
-                if count >= MAX_CLIENTS {
+                // A full table makes room by forgetting the oldest app nobody ever allowed in, so
+                // registrations alone cannot keep new apps out (WEB-2). Apps in use are never
+                // pushed out.
+                if count >= MAX_CLIENTS
+                    && tx.execute(
+                        "DELETE FROM oauth_clients WHERE id IN
+                             (SELECT id FROM oauth_clients WHERE last_used_at IS NULL
+                                AND NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id = oauth_clients.id)
+                              ORDER BY created_at, id LIMIT ?1)",
+                        [count - MAX_CLIENTS + 1],
+                    )? == 0
+                {
                     return Err(StoreError::Rule {
                         code: "temporarily_unavailable",
                         message: "too many apps are registered here right now".into(),
@@ -915,6 +929,11 @@ fn purge(conn: &Connection) -> rusqlite::Result<()> {
            AND NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id = oauth_clients.id)",
         [now - UNUSED_CLIENT_SECS],
     )?;
+    conn.execute(
+        "DELETE FROM oauth_clients WHERE last_used_at IS NULL AND created_at < ?1
+           AND NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id = oauth_clients.id)",
+        [now - NEVER_USED_CLIENT_SECS],
+    )?;
     Ok(())
 }
 
@@ -1047,6 +1066,42 @@ mod tests {
         // The signing key stays the same once made.
         let key = store.oauth_signing_key().await.unwrap();
         assert_eq!(store.oauth_signing_key().await.unwrap(), key);
+    }
+
+    #[tokio::test]
+    async fn registrations_cannot_keep_new_apps_out() {
+        let (store, _dir) = crate::test_support::store().await;
+        let used = store.register_oauth_client("In use", vec!["http://127.0.0.1/".into()]).await.unwrap();
+        let stale = now() - NEVER_USED_CLIENT_SECS - 60;
+        store
+            .write(move |tx| {
+                tx.execute("UPDATE oauth_clients SET created_at = ?1, last_used_at = ?2", params![stale - 10, now()])?;
+                let mut insert = tx.prepare(
+                    "INSERT INTO oauth_clients (client_id, name, redirect_uris, created_at) VALUES (?1, 'Filler', 'http://127.0.0.1/', ?2)",
+                )?;
+                // One that ran out, the rest registered just now and never allowed in.
+                insert.execute(params!["filler-old", stale])?;
+                for n in 1..MAX_CLIENTS {
+                    insert.execute(params![format!("filler-{n}"), now()])?;
+                }
+                Ok(())
+            })
+            .await
+            .unwrap();
+
+        // The table is full of unused apps: a new one still gets in, and the app in use stays.
+        let fresh = store.register_oauth_client("Fresh", vec!["http://127.0.0.1/".into()]).await.unwrap();
+        assert!(store.oauth_client(&fresh.client_id).await.unwrap().is_some());
+        assert!(store.oauth_client(&used.client_id).await.unwrap().is_some());
+        assert!(store.oauth_client("filler-old").await.unwrap().is_none(), "never used for a day: forgotten");
+        let count: i64 = store
+            .read(|conn| Ok(conn.query_row("SELECT COUNT(*) FROM oauth_clients", [], |row| row.get(0))?))
+            .await
+            .unwrap();
+        assert!(count <= MAX_CLIENTS);
+        store.register_oauth_client("Next", vec!["http://127.0.0.1/".into()]).await.unwrap();
+        assert!(store.oauth_client("filler-1").await.unwrap().is_none(), "the oldest unused app made room");
+        assert!(store.oauth_client(&used.client_id).await.unwrap().is_some());
     }
 
     #[tokio::test]
