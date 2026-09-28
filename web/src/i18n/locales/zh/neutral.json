@@ -1605,7 +1605,8 @@
       "gatewayPort25Blocked": "网关无法通过端口 25 连接到其他邮件服务器。",
       "gatewayOutboundBlocked": "无法通过网关连接到其他邮件服务器（涉及 {{count}} 个域名）。",
       "virusScannerAway": "病毒扫描器没有响应。在其恢复之前，邮件将不经检查直接投递，并在邮件头中注明。",
-      "virusSignaturesOld": "病毒特征库已有 {{since}} 未更新。扫描器已不再获取新的特征库。"
+      "virusSignaturesOld": "病毒特征库已有 {{since}} 未更新。扫描器已不再获取新的特征库。",
+      "maskedStranded_other": "{{domain}} 上有 {{count}} 个隐藏地址，但没有人能在那里创建新的。"
     },
     "hints": {
       "noDomains": "没有域名，服务器就无法接收邮件。",
@@ -1631,7 +1632,8 @@
       "gatewayDown": "在此期间，邮件会在队列中等待。请检查网关是否在运行，以及你的服务器能否向它发送 UDP。",
       "gatewayRefused": "请在“服务器 → 设置向导”中重新配对网关。",
       "gatewayPort25Blocked": "许多 VPS 服务商会屏蔽外发端口 25。请联系其客服开放；在此之前可以使用中继。",
-      "gatewayOutboundBlocked": "许多 VPS 服务商会屏蔽外发端口 25。请联系其客服开放；在此之前可以使用中继。"
+      "gatewayOutboundBlocked": "许多 VPS 服务商会屏蔽外发端口 25。请联系其客服开放；在此之前可以使用中继。",
+      "maskedStranded": "自 0.16.0 起，没有人登录的域名不会向任何人提供隐藏地址。请在该域名的页面上将其设为仅用于隐藏地址，并为应使用它的域名选中它。现有的地址在任何情况下都会继续可用。"
     }
   },
   "secondFactor": {

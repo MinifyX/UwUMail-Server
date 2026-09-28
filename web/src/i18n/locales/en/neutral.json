@@ -1649,7 +1649,9 @@
       "gatewayPort25Blocked": "The gateway cannot reach other mail servers on port 25.",
       "gatewayOutboundBlocked": "Other mail servers cannot be reached through the gateway ({{count}} domains affected).",
       "virusScannerAway": "The virus scanner does not answer. Until it is back, mail is delivered unchecked and says so in its headers.",
-      "virusSignaturesOld": "The virus signatures are {{since}} old. The scanner is not fetching new ones any more."
+      "virusSignaturesOld": "The virus signatures are {{since}} old. The scanner is not fetching new ones any more.",
+      "maskedStranded_one": "{{domain}} holds a masked address, but nobody can make new ones there.",
+      "maskedStranded_other": "{{domain}} holds {{count}} masked addresses, but nobody can make new ones there."
     },
     "hints": {
       "noDomains": "Without a domain the server cannot receive mail.",
@@ -1675,7 +1677,8 @@
       "gatewayDown": "Mail waits in the queue meanwhile. Check that the gateway is running and that your server may send UDP to it.",
       "gatewayRefused": "Pair the gateway again under Server → Setup.",
       "gatewayPort25Blocked": "Many VPS providers block outgoing port 25. Ask their support to open it; a relay helps until then.",
-      "gatewayOutboundBlocked": "Many VPS providers block outgoing port 25. Ask their support to open it; a relay helps until then."
+      "gatewayOutboundBlocked": "Many VPS providers block outgoing port 25. Ask their support to open it; a relay helps until then.",
+      "maskedStranded": "Since 0.16.0 a domain nobody logs in on offers masked addresses to nobody. On its page, make it masked-only and choose it for the domains whose people should use it. The addresses there keep working either way."
     }
   },
   "secondFactor": {

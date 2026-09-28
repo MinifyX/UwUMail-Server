@@ -1649,7 +1649,9 @@
       "gatewayPort25Blocked": "Das Gateway erreicht andere Mailserver nicht über Port 25.",
       "gatewayOutboundBlocked": "Über das Gateway sind andere Mailserver nicht erreichbar ({{count}} Domains betroffen).",
       "virusScannerAway": "Der Virenscanner antwortet nicht. Bis er wieder da ist, wird Post ungeprüft zugestellt und trägt einen Vermerk im Kopf.",
-      "virusSignaturesOld": "Die Virensignaturen sind {{since}} alt. Der Scanner holt sich offenbar keine neuen mehr."
+      "virusSignaturesOld": "Die Virensignaturen sind {{since}} alt. Der Scanner holt sich offenbar keine neuen mehr.",
+      "maskedStranded_one": "{{domain}} hat eine maskierte Adresse, aber niemand kann dort neue anlegen.",
+      "maskedStranded_other": "{{domain}} hat {{count}} maskierte Adressen, aber niemand kann dort neue anlegen."
     },
     "hints": {
       "noDomains": "Ohne Domain kann der Server keine Mails annehmen.",
@@ -1675,7 +1677,8 @@
       "gatewayDown": "Mails warten so lange in der Warteschlange. Prüfe, ob das Gateway läuft und ob dein Server UDP zum Gateway senden darf.",
       "gatewayRefused": "Koppel das Gateway unter Server → Einrichtung neu.",
       "gatewayPort25Blocked": "Viele VPS-Anbieter sperren Port 25 ausgehend. Frag den Support, ob er ihn freischaltet; bis dahin hilft ein Relay.",
-      "gatewayOutboundBlocked": "Viele VPS-Anbieter sperren Port 25 ausgehend. Frag den Support, ob er ihn freischaltet; bis dahin hilft ein Relay."
+      "gatewayOutboundBlocked": "Viele VPS-Anbieter sperren Port 25 ausgehend. Frag den Support, ob er ihn freischaltet; bis dahin hilft ein Relay.",
+      "maskedStranded": "Seit 0.16.0 bietet eine Domain, auf der sich niemand anmeldet, niemandem maskierte Adressen an. Mach sie auf ihrer Seite zu einer Domain nur für maskierte Adressen und wähle sie für die Domains aus, deren Leute sie nutzen sollen. Die Adressen dort funktionieren so oder so weiter."
     }
   },
   "secondFactor": {
