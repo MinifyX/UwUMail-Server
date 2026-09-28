@@ -537,6 +537,9 @@ for, and not again once `acknowledged` covers it. Drafts ring for nobody.
   types include `CalendarAlert` (or are `null`).
 - An alert with `"action": "email"` puts a short reminder mail into the
   account's inbox, in the language it chose, from `postmaster@` its domain.
+  One event sends at most one such mail in four minutes, and one account gets
+  at most 100 a day, so a series that repeats every minute cannot fill an
+  inbox.
 
 The server looks every 20 seconds and rings at most 20 alerts of one event
 for one account at a time, the earliest. An alert that should have gone off more

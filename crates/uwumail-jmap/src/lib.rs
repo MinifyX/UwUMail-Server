@@ -104,6 +104,8 @@ pub(crate) struct Inner {
     pub unsubscribes: methods::unsubscribe::Unsubscribes,
     /// Where they go instead of the egress, in tests.
     pub unsubscribe_transport: Option<Arc<dyn UnsubscribeTransport>>,
+    /// Reminder mails of calendar alerts sent lately, for their limits.
+    pub reminders: calendar_alerts::ReminderLimits,
 }
 
 impl Jmap {
@@ -135,6 +137,7 @@ impl Jmap {
                 push,
                 unsubscribes: Default::default(),
                 unsubscribe_transport: None,
+                reminders: Default::default(),
             }),
         }
     }
