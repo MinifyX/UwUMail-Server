@@ -129,8 +129,15 @@ owner keeps it.
 
 An event the owner marks `"privacy": "private"` shows others only its times
 and the like (RFC 8984, section 4.4.3), is not found by their text searches
-and cannot be changed by them, not even their own properties of it. A
-`"secret"` one is not there for them at all.
+and cannot be changed or deleted by them, not even their own properties of it.
+A `"secret"` one is not there for them at all.
+
+The same holds over CalDAV, where the two are `CLASS:PRIVATE` and
+`CLASS:CONFIDENTIAL` (and any other class but `PUBLIC`): the person a calendar
+is shared with gets only the times of such an entry, without its title,
+description, people or alarms, and may neither store over it nor delete it.
+A confidential entry still shows its times there, as a CalDAV collection has
+no way to leave an entry out of its listings.
 
 ## Availability
 

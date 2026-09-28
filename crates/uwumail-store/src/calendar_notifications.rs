@@ -71,9 +71,9 @@ fn event_of<'a>(side: &Option<Side<'a>>) -> Option<&'a str> {
     side.as_ref().filter(|side| side.component == "VEVENT").map(|side| side.content)
 }
 
+/// Read as iCalendar, parameters, folding and unknown classes included, as CalDAV and JMAP read it.
 fn private(content: &str) -> bool {
-    let unfolded = content.replace("\r\n ", "").replace("\n ", "").to_ascii_uppercase();
-    unfolded.contains("\nCLASS:PRIVATE") || unfolded.contains("\nCLASS:CONFIDENTIAL")
+    crate::itip::has_private(content)
 }
 
 fn author_of(conn: &Connection, account_id: i64) -> Result<EventAuthor> {

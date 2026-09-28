@@ -237,6 +237,43 @@ async fn shared_calendars_and_events_keep_per_user_properties_apart() {
     assert!(server.event(NYU, &id).await.get("color").is_none());
 }
 
+/// What the owner keeps private shows only its times over CalDAV too, and stays the owner's to
+/// change and delete, even for someone who may write into the calendar.
+#[tokio::test(flavor = "multi_thread")]
+async fn private_events_stay_private_over_caldav_and_to_writers() {
+    let server = server().await;
+    let rights = json!({ "mayReadItems": true, "mayWriteAll": true, "mayWriteOwn": true, "mayUpdatePrivate": true, "mayRSVP": true });
+    let calendar = server.share_with_nyu(rights).await;
+    let mut private = timed(&calendar, "Arzt");
+    private["privacy"] = json!("private");
+    private["description"] = json!("Befund");
+    let id = server.create(MINI, private).await;
+    let uid = server.event(MINI, &id).await["uid"].as_str().unwrap().to_owned();
+    let account = server.store.account(MINI).await.unwrap().unwrap().id;
+    let events = server.store.calendar_events(account, None).await.unwrap();
+    let name = events.into_iter().find(|e| e.uid == uid).unwrap().name;
+    let shared = format!("/dav/calendars/{NYU}/shared~{}/", &calendar[1..]);
+
+    let query = "<?xml version=\"1.0\"?><c:calendar-query xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">\
+                 <d:prop><c:calendar-data/></d:prop><c:filter><c:comp-filter name=\"VCALENDAR\"/></c:filter></c:calendar-query>";
+    let report = server.send(NYU, "REPORT", &shared, &[("depth", "1")], query.into()).await;
+    assert!(report.body.contains("DTSTART"), "{}", report.body);
+    assert!(!report.body.contains("Befund") && !report.body.contains("Arzt"), "{}", report.body);
+    let got = server.send(NYU, "GET", &format!("{shared}{name}"), &[], String::new()).await;
+    assert_eq!(got.status, StatusCode::OK);
+    assert!(got.body.contains("DTSTART") && !got.body.contains("Befund") && !got.body.contains("Arzt"), "{}", got.body);
+
+    let put = server.send(NYU, "PUT", &format!("{shared}{name}"), &[("content-type", "text/calendar")], got.body).await;
+    assert_eq!(put.status, StatusCode::FORBIDDEN, "storing the times would overwrite the rest");
+    let delete = server.send(NYU, "DELETE", &format!("{shared}{name}"), &[], String::new()).await;
+    assert_eq!(delete.status, StatusCode::FORBIDDEN);
+    let refused = server.call(NYU, "CalendarEvent/set", json!({ "destroy": [&id] })).await;
+    assert_eq!(refused["notDestroyed"][&id]["type"], "forbidden", "{refused}");
+
+    let owners = server.caldav_object(MINI, &uid).await;
+    assert!(owners.contains("Befund"), "the owner keeps it all: {owners}");
+}
+
 fn alert(offset: &str) -> Value {
     json!({ "@type": "Alert", "trigger": { "@type": "OffsetTrigger", "offset": offset }, "action": "display" })
 }

@@ -1206,17 +1206,26 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
             let parsed = writer.in_time().map(|()| EventId::parse(ctx, id));
             let result = match parsed {
                 Err(err) => Err(err),
-                Ok(Some(EventId::Stored(n))) => {
-                    let old = if scheduling { writer.load_one(n).await.ok() } else { None };
-                    let destroyed =
-                        ctx.jmap.store.destroy_calendar_event(ctx.account.id, n, None).await.map_err(SetError::from);
-                    if destroyed.is_ok()
-                        && let Some(old) = old.filter(|old| !old.record.is_draft)
-                    {
-                        writer.schedule(old.record.calendar_id, Some(&old.record.content), None).await;
+                Ok(Some(EventId::Stored(n))) => match writer.load_one(n).await {
+                    Err(err) => Err(err),
+                    // What the owner keeps private is theirs to delete, as it is theirs to change; a
+                    // secret one is not there for others at all (load_one does not find it).
+                    Ok(old) if old.shared && privacy(old.parsed.event()) != "public" => {
+                        Err(SetError::new("forbidden", "the owner keeps this event private"))
                     }
-                    destroyed
-                }
+                    Ok(old) => {
+                        let destroyed = ctx
+                            .jmap
+                            .store
+                            .destroy_calendar_event(ctx.account.id, n, None)
+                            .await
+                            .map_err(SetError::from);
+                        if destroyed.is_ok() && scheduling && !old.record.is_draft {
+                            writer.schedule(old.record.calendar_id, Some(&old.record.content), None).await;
+                        }
+                        destroyed
+                    }
+                },
                 Ok(Some(EventId::Instance(n, rid))) => match writer.destroy_other_instance(n, &rid).await {
                     Some(result) => result,
                     None => writer.destroy_instance(n, &rid).await,
