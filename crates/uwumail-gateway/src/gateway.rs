@@ -142,7 +142,11 @@ pub async fn start_with_logs(
     let hostname = state.pairing()?.map(|pairing| pairing.hostname).unwrap_or_else(|| NO_HOSTNAME.into());
     let (active, _) = watch::channel(None);
     let shared = Arc::new(Shared {
-        limits: Limits::new(config.limits.max_connections, config.limits.max_connections_per_ip),
+        limits: Limits::new(
+            config.limits.max_connections,
+            config.limits.max_connections_per_ip,
+            config.limits.max_connections_per_ipv6_site,
+        ),
         machine: Machine::new(&config.state_dir),
         config,
         active,

@@ -117,11 +117,13 @@ pub struct LimitsConfig {
     pub max_connections: usize,
     /// Connections at once from one IPv4 address or IPv6 /64.
     pub max_connections_per_ip: usize,
+    /// Connections at once from one IPv6 /48, however many /64s they come from.
+    pub max_connections_per_ipv6_site: usize,
 }
 
 impl Default for LimitsConfig {
     fn default() -> Self {
-        LimitsConfig { max_connections: 1000, max_connections_per_ip: 50 }
+        LimitsConfig { max_connections: 1000, max_connections_per_ip: 50, max_connections_per_ipv6_site: 100 }
     }
 }
 
@@ -179,7 +181,10 @@ impl GatewayConfig {
         if self.outbound.ports.is_empty() {
             bail!("`outbound.ports` is empty, so the server could not send any mail");
         }
-        if self.limits.max_connections == 0 || self.limits.max_connections_per_ip == 0 {
+        if self.limits.max_connections == 0
+            || self.limits.max_connections_per_ip == 0
+            || self.limits.max_connections_per_ipv6_site == 0
+        {
             bail!("the connection limits must be at least 1");
         }
         Ok(())

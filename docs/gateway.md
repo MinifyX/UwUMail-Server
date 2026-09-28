@@ -178,7 +178,10 @@ Three things keep that from happening:
 Port 25 has no jail on purpose. The gateway carries TLS it cannot read and never
 sees a login, so a jail there could only count connections — and banning a mail
 server for connecting often means losing its mail. The gateway's own per-network
-limit holds that line instead.
+limit holds that line instead: at most 1,000 connections at once, 50 from one
+IPv4 address or IPv6 /64, and 100 from one IPv6 /48 however many /64s they come
+from (`[limits]` in `gateway.toml`: `max_connections`, `max_connections_per_ip`,
+`max_connections_per_ipv6_site`).
 
 What the gateway *can* do is act on what your server sees. Your server reads the
 failed logins, and hands the addresses worth keeping out to the gateway over the
