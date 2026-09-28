@@ -960,6 +960,47 @@ impl Store {
         self.read(move |conn| resolve(conn, &address)).await
     }
 
+    /// The account whose calendars say when `address` is busy, for a free-busy lookup by `viewer`
+    /// (RFC 6638). Only an address of the account itself counts (its login or an alias, or a
+    /// sub-address of one), never a masked address, a group, a forwarding address or a catch-all:
+    /// a masked address must not lead to its owner. And only people the viewer may know of: in one
+    /// of the viewer's own domains, or sharing a calendar with them (security-audit-0.16.0
+    /// PROTOCOLS-L4). Everyone else is nobody here.
+    pub async fn free_busy_owner(&self, viewer: i64, address: &str) -> Result<Option<i64>> {
+        let Ok((local, domain)) = normalize_address(address) else {
+            return Ok(None);
+        };
+        self.read(move |conn| {
+            let lookup = |local: &str| -> rusqlite::Result<Option<(i64, i64)>> {
+                conn.query_row(
+                    "SELECT a.account_id, a.domain_id FROM addresses a JOIN domains d ON d.id = a.domain_id
+                     JOIN accounts acc ON acc.id = a.account_id
+                     WHERE a.local_part = ?1 AND d.name = ?2 AND acc.deleted_at IS NULL",
+                    params![local, domain],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()
+            };
+            let found = match lookup(&local)? {
+                Some(found) => Some(found),
+                None => lookup(base_local_part(&local))?,
+            };
+            let Some((owner, domain_id)) = found else {
+                return Ok(None);
+            };
+            let visible: bool = conn.query_row(
+                "SELECT ?1 = ?2
+                     OR EXISTS (SELECT 1 FROM addresses WHERE account_id = ?2 AND domain_id = ?3)
+                     OR EXISTS (SELECT 1 FROM dav_shares s JOIN dav_collections c ON c.id = s.collection_id
+                                WHERE c.account_id = ?1 AND s.account_id = ?2 AND c.kind = 'calendar')",
+                params![owner, viewer, domain_id],
+                |row| row.get(0),
+            )?;
+            Ok(visible.then_some(owner))
+        })
+        .await
+    }
+
     /// Whether the account may send as `address`: its own addresses and their sub-addresses, and every
     /// address of the domains it may send as.
     pub async fn account_owns_address(&self, account_id: i64, address: &str) -> Result<bool> {

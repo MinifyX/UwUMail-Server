@@ -912,9 +912,11 @@ xmlns:c=\"urn:ietf:params:xml:ns:caldav\">{responses}</c:schedule-response>\n"
         found
     }
 
-    /// The account whose calendars answer for `address`, when it uses calendars.
+    /// The account whose calendars answer for `address`, when it uses calendars and this account
+    /// may know of it: not through a masked address, only in its own domains or when a calendar is
+    /// shared with it ([`Store::free_busy_owner`]).
     async fn calendar_owner(&self, address: &str) -> Option<i64> {
-        let id = self.store().resolve_recipient(address).await.ok()??;
+        let id = self.store().free_busy_owner(self.account.id, address).await.ok()??;
         let id = self.store().delivery_target(id).await.ok()??;
         let account = self.store().account_by_id(id).await.ok()??;
         account.protocols.caldav.then_some(id)

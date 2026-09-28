@@ -112,7 +112,11 @@ takes into a calendar:
   `schedule-default-calendar-URL` names the default calendar.
 - A `POST` of a `VFREEBUSY` request to the outbox answers when people of the
   server are busy (from their own calendars, not those shared with them), as
-  Apple Calendar asks when attendees are added. Others are "unknown". One
+  Apple Calendar asks when attendees are added. It answers for people in your
+  own domains and for people who share a calendar with you, by their login, an
+  alias or a sub-address of one; never for a masked address, which must not
+  lead to its owner, nor for groups, forwarding addresses or a catch-all.
+  Everyone else is "unknown", like people elsewhere. One
   request asks about at most 100 people (each once, however often named) over
   at most 400 days, and has 10 seconds for all of them; anyone left when they
   are up is answered "5.1 service unavailable", to be asked again.
