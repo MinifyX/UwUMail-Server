@@ -105,6 +105,35 @@ fail2ban-client() {
   exit "$failed"
 ) || failed=1
 
+# ── the gateway's installer ───────────────────────────────────────────────────────────────────
+# install.sh runs as root, also from a job whose log the gateway reads, and ends with a report that
+# quotes the gateway's own `trusted` file (security-audit-0.16.0 GW-2).
+(
+  # shellcheck source=deploy/gateway/install.sh
+  . "$deploy/gateway/install.sh"
+  state="$work/installer"
+  mkdir -p "$state"
+  # shellcheck disable=SC2034 # read by report()
+  harden=false
+  uwumail-gateway() { :; }
+
+  new_canary
+  ln -s "$canary" "$state/trusted"
+  not_leaked() { ! report | grep -q canary; }
+  check "installer: the report does not read the trusted addresses through a symlink" not_leaked
+
+  rm -f -- "$state/trusted"
+  printf '192.0.2.1 0 192.0.2.1/32\n\033]0;owned\007 0 x\nroot:$6$salt$hash:19000:0 0 x\n2001:db8::1 0 2001:db8::/64\n' >"$state/trusted"
+  only_addresses() {
+    local shown
+    shown=$(report)
+    printf '%s\n' "$shown" | grep -q 'protected *192\.0\.2\.1 2001:db8::1$' &&
+      ! printf '%s\n' "$shown" | grep -q -e root: -e owned -e $'\033'
+  }
+  check "installer: the report shows addresses from the trusted file and nothing else" only_addresses
+  exit "$failed"
+) || failed=1
+
 # ── the host ──────────────────────────────────────────────────────────────────────────────────
 (
   export UWUMAIL_HOST_STATE="$work/host" UWUMAIL_HOST_CONFIG="$work/no-such-host.conf"

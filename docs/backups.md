@@ -92,6 +92,13 @@ lost together with the server. In Docker, mount it into the container, for
 example with `- /mnt/nas/uwumail:/backup` under `volumes:`, and make it writable
 for user 10001.
 
+Inside the folder the server never follows a symbolic link. Whoever else can
+write to a share could otherwise plant one that leads a backup, a clean-up of
+old snapshots or *Test connection* to the server's own mail or database. Links
+inside the folder are skipped when it is listed, and a backup that would have
+to write through one stops with an error that names it. The folder itself may
+be a link, since that is your own setting.
+
 ## From the command line
 
 ```sh

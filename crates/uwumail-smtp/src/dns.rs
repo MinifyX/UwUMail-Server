@@ -15,7 +15,7 @@ use mail_auth::mta_sts::TlsRpt;
 use mail_auth::spf::Spf;
 use mail_auth::{DnsError, DnssecStatus, MX, Parameters, RecordSet, ResolverCache, Txt};
 
-use crate::dane::{HostTlsa, Security, Tlsa, tlsa_name};
+use crate::dane::{HostTlsa, Tlsa, ValidatedMx, tlsa_name};
 
 const CAPACITY: usize = 10_000;
 
@@ -82,8 +82,8 @@ pub struct DnsCaches {
     pub(crate) ipv4: Ipv4Cache,
     pub(crate) ipv6: Ipv6Cache,
     pub(crate) ptr: PtrCache,
-    /// Whether a domain's MX records validate with DNSSEC, for DANE.
-    pub(crate) dane_mx: TtlCache<Box<str>, Security>,
+    /// A domain's MX records as the DNSSEC-validating resolver answers, for DANE.
+    pub(crate) dane_mx: TtlCache<Box<str>, ValidatedMx>,
     /// The validated TLSA records at `_25._tcp.<host>`.
     pub(crate) tlsa: TtlCache<Box<str>, HostTlsa>,
 }
@@ -134,6 +134,13 @@ impl DnsCaches {
 
     /// Pins MX records that are not signed, so DANE does not apply.
     pub fn pin_mx(&self, domain: &str, exchanges: &[(u16, &str)]) {
+        self.pin_unvalidated_mx(domain, exchanges);
+        self.dane_mx.insert(fqdn(domain), ValidatedMx::Insecure, far_future());
+    }
+
+    /// Pins what the ordinary, non-validating resolver answers for a domain's MX records (none:
+    /// "no MX"), and leaves what the validating one says alone: a forged answer, in tests.
+    pub fn pin_unvalidated_mx(&self, domain: &str, exchanges: &[(u16, &str)]) {
         let records: Arc<[MX]> = exchanges
             .iter()
             .map(|(preference, host)| MX { preference: *preference, exchanges: vec![fqdn(host)].into_boxed_slice() })
@@ -143,19 +150,21 @@ impl DnsCaches {
             RecordSet { rrset: records, dnssec_status: DnssecStatus::Indeterminate },
             far_future(),
         );
-        self.dane_mx.insert(fqdn(domain), Security::Insecure, far_future());
     }
 
     /// Pins MX records that validate with DNSSEC, so the TLSA records of their hosts count.
     pub fn pin_signed_mx(&self, domain: &str, exchanges: &[(u16, &str)]) {
-        self.pin_mx(domain, exchanges);
-        self.dane_mx.insert(fqdn(domain), Security::Secure, far_future());
+        self.pin_unvalidated_mx(domain, exchanges);
+        let mut sorted = exchanges.to_vec();
+        sorted.sort_by_key(|(preference, _)| *preference);
+        let hosts = sorted.iter().map(|(_, host)| host.trim_end_matches('.').to_owned()).collect();
+        self.dane_mx.insert(fqdn(domain), ValidatedMx::Secure(hosts), far_future());
     }
 
     /// Pins MX records whose signatures do not validate.
     pub fn pin_bogus_mx(&self, domain: &str, exchanges: &[(u16, &str)]) {
-        self.pin_mx(domain, exchanges);
-        self.dane_mx.insert(fqdn(domain), Security::Bogus, far_future());
+        self.pin_unvalidated_mx(domain, exchanges);
+        self.dane_mx.insert(fqdn(domain), ValidatedMx::Bogus, far_future());
     }
 
     /// Pins the validated TLSA records of an MX host, e.g. `["3 1 1 0a1b…"]`; none means it has none.

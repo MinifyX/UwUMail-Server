@@ -108,6 +108,9 @@ UWUMAIL_GATEWAY_HOST=root@203.0.113.10 scripts/deploy-gateway.sh
 
 It takes the gateway that CI built from the newest successful commit on `main`
 and checks its SHA-256 sum (`UWUMAIL_GATEWAY_RUN=<run id>` picks another run).
+Only a CI run for a push to `main` of this repository is taken, and only while
+its commit is still part of `main`: CI also builds pull requests from forks,
+and their branch is often called `main` too.
 CI builds for amd64 only; for an arm64 VPS, or to try a change before pushing
 it, `UWUMAIL_GATEWAY_BUILD=local` builds it with Docker on your machine. The
 script then copies it over and runs

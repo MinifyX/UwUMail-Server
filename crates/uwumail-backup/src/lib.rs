@@ -7,6 +7,7 @@
 //! so a day of new mail changes only a few of them. Old snapshots go by the retention rules, and
 //! objects no snapshot needs anymore go with them.
 
+mod folder;
 pub mod format;
 pub mod mailbox;
 pub mod retention;
