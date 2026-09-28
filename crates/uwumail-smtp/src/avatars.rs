@@ -40,6 +40,9 @@ pub const MAX_LINKED_PHOTO_BYTES: usize = 10 * 1024 * 1024;
 const MAX_CACHED_BYTES: usize = 32 * 1024 * 1024;
 const MAX_CACHED_ENTRIES: usize = 20_000;
 const PARALLEL_LOOKUPS: usize = 8;
+/// How long a lookup waits for one of the [`PARALLEL_LOOKUPS`]; slow servers elsewhere must not
+/// hold up every sender picture on the server.
+const WAIT_FOR_A_TURN: Duration = Duration::from_secs(5);
 const ACCEPT: &str = "image/png,image/jpeg,image/webp,image/gif,image/*;q=0.8";
 
 /// A person's picture from elsewhere.
@@ -223,7 +226,7 @@ impl Avatars {
             return None;
         }
         let lookup = {
-            let _permit = self.permits.acquire().await.ok()?;
+            let _permit = tokio::time::timeout(WAIT_FOR_A_TURN, self.permits.acquire()).await.ok()?.ok()?;
             self.ask_libravatar(&domain, &hash).await
         };
         let (avatar, fresh_for) = match lookup {
@@ -267,7 +270,7 @@ impl Avatars {
             return None;
         }
         let lookup = {
-            let _permit = self.permits.acquire().await.ok()?;
+            let _permit = tokio::time::timeout(WAIT_FOR_A_TURN, self.permits.acquire()).await.ok()?.ok()?;
             self.fetch(url, MAX_LINKED_PHOTO_BYTES).await
         };
         let (avatar, fresh_for) = match lookup {
