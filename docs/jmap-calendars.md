@@ -92,6 +92,20 @@ account has an extra property naming its owner:
 
 (`null` for one's own calendars).
 
+`shareWith` of an own calendar (or one shared with all rights) is a map from
+principal id to CalendarRights, `null` when it is shared with nobody.
+Principals are the people of the server, the same ones `Principal/get` and
+`Principal/query` give (`urn:ietf:params:jmap:principals`, see
+[sharing.md](sharing.md#principals)): a principal id is `p` and the account
+number, like `p12`. As long as a client has no Principal list at hand, an
+address of the server may stand for the principal id when writing
+(`{ "leni@example.org": { "mayReadItems": true } }`), and so may the account id
+(`a12`) that clients of UwUMail 0.11 sent; answers always use the principal id.
+Set the whole map, or one person with `shareWith/p12` (`null` takes them off). The rights asked for
+are rounded up to the three levels above: `mayShare` means all, any writing
+right means read and write, any other right means read. Someone who is not on
+the server is `invalidProperties` naming `shareWith`.
+
 ### Per-user properties
 
 Everyone keeps their own settings of a calendar shared with them, as the draft
@@ -117,20 +131,6 @@ An event the owner marks `"privacy": "private"` shows others only its times
 and the like (RFC 8984, section 4.4.3), is not found by their text searches
 and cannot be changed by them, not even their own properties of it. A
 `"secret"` one is not there for them at all.
-
-`shareWith` of an own calendar (or one shared with all rights) is a map from
-principal id to CalendarRights, `null` when it is shared with nobody.
-Principals are the people of the server, the same ones `Principal/get` and
-`Principal/query` give (`urn:ietf:params:jmap:principals`, see
-[sharing.md](sharing.md#principals)): a principal id is `p` and the account
-number, like `p12`. As long as a client has no Principal list at hand, an
-address of the server may stand for the principal id when writing
-(`{ "leni@example.org": { "mayReadItems": true } }`), and so may the account id
-(`a12`) that clients of UwUMail 0.11 sent; answers always use the principal id.
-Set the whole map, or one person with `shareWith/p12` (`null` takes them off). The rights asked for
-are rounded up to the three levels above: `mayShare` means all, any writing
-right means read and write, any other right means read. Someone who is not on
-the server is `invalidProperties` naming `shareWith`.
 
 ## Availability
 
@@ -184,12 +184,16 @@ Instance ids never show up in `/changes`; only the stored event does.
 | `isSubscribed` | always `true` |
 | `isVisible` | whether the webmail and the apps show its events; kept on the server, CalDAV does not know it |
 | `isDefault` | exactly one calendar is the default |
-| `includeInAvailability` | `"all"`, `"attending"` or `"none"`: which of its events make the account busy. By default `"all"` for one's own calendars and `"none"` for subscribed ones and those shared with the account |
+| `includeInAvailability` | `"all"`, `"attending"` or `"none"`: which of its events make the account busy (see [Availability](#availability)). By default `"all"` for one's own calendars and `"none"` for subscribed ones and those shared with the account. CalDAV clients see it as `schedule-calendar-transp` (`opaque` or `transparent`) and may set it there |
 | `defaultAlertsWithTime`, `defaultAlertsWithoutTime` | the alerts of events that use the defaults, see [Default alerts](#default-alerts); `null` for none |
 | `shareWith` | who else sees it; see [Shared calendars](#shared-calendars) |
 | `timeZone` | an IANA name or `null`; stored as the CalDAV `calendar-timezone` |
 | `myRights` | everything `true` for one's own calendars; `mayDelete` is `false` for the only own calendar. A subscribed calendar ([calendar-import.md](calendar-import.md)) has `mayWriteAll`, `mayWriteOwn`, `mayUpdatePrivate` and `mayRSVP` `false`: only its feed changes its events. For shared ones see above |
 | `uwuSharedBy` | the owner of a calendar shared with the account, else `null` |
+
+For a calendar shared with the account, `name`, `color`, `sortOrder`,
+`isVisible`, `timeZone`, `includeInAvailability` and the default alerts are
+its own ([Per-user properties](#per-user-properties)).
 
 `Calendar/get` and `Calendar/changes` are standard. `Calendar/set` creates,
 changes and destroys calendars with the properties above; a property with only
@@ -230,10 +234,12 @@ new one.
 
 ### CalendarEvent/get
 
-Standard `/get` with the draft's `timeZone` argument (IANA, default
-`Etc/UTC`) for floating events. `recurrenceOverridesBefore`/`After` and
-`reduceParticipants` are ignored. `ids: null` works up to `maxObjectsInGet`
-events.
+Standard `/get` with the draft's arguments: `timeZone` (IANA, default
+`Etc/UTC`) for floating events, `recurrenceOverridesAfter` and
+`recurrenceOverridesBefore` (only overrides whose recurrence id lies in
+between), and `reduceParticipants` (only the owners and the account itself).
+An event with `hideAttendees` shows someone who is not one of its owners the
+same way. `ids: null` works up to `maxObjectsInGet` events.
 
 Without `properties` every stored property comes back except `iCalendar`; with
 `properties` only those. `id`, `calendarIds`, `isDraft`,
@@ -329,7 +335,7 @@ account's calendars. `null` at the top is the same as leaving a property out.
 The server fills in `@type`, a UUID `uid`, `sequence` 0, `created` and
 `updated` when they are missing and returns them in `created` together with
 `id`, `isDraft`, `isOrigin` and `baseEventId`. A `uid` that another event of
-the account already has is `alreadyExists`.
+the calendar's owner already has is `alreadyExists`, with its `existingId`.
 
 **update** is a JMAP PatchObject applied to the event's JSCalendar, which is
 then written back as iCalendar. `calendarIds` (whole, or
@@ -362,8 +368,8 @@ Checked before anything is stored (`invalidProperties` names the property):
   (`tooLarge`).
 - `recurrenceRule` is one rule with known parts (frequency, interval up to
   10 000, count up to 1 000 000 or until, byDay, byMonth, byMonthDay, …);
-  `recurrenceRules`, `excludedRecurrenceRules` and a top-level `recurrenceId`
-  are refused.
+  `recurrenceRules` and `excludedRecurrenceRules` are refused, and so is a
+  top-level `recurrenceId` next to a rule or overrides.
 - An override may not change what belongs to the series (`uid`,
   `recurrenceRule`, `privacy`, …); a series has at most 1000 changed or
   excluded instances.
@@ -541,5 +547,9 @@ types, and `CalendarAlert` pushes alerts (see [Alerts](#alerts)).
 
 ## Not supported
 
-- Calendars in other accounts: shared calendars are part of the account they
-  are shared with
+Nothing of the draft is left out. Where it leaves room, this server chooses
+as described above; the two choices a client notices are that calendars
+shared with the account are part of the account itself rather than of
+accounts of their owners (so `CalendarEvent/copy` copies within it), and that
+an event is in exactly one calendar (see *One calendar per event* under
+[CalendarEvent/set](#calendareventset)).

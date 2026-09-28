@@ -130,6 +130,86 @@ fn output(mut object: Map<String, Value>, properties: &Option<Vec<String>>, floa
     }
 }
 
+/// What `CalendarEvent/get` leaves out on request (draft section 5.7): overrides outside
+/// `recurrenceOverridesAfter`/`Before`, and with `reduceParticipants`, or for someone who is no
+/// owner of an event that hides its attendees, every participant but the owners and oneself.
+struct Shaping {
+    after: Option<i64>,
+    before: Option<i64>,
+    reduce: bool,
+    own: Vec<String>,
+}
+
+impl Shaping {
+    fn from(args: &Value, own: Vec<String>) -> MethodResult<Shaping> {
+        let time = |key: &str| match args.get(key) {
+            None | Some(Value::Null) => Ok(None),
+            Some(value) => value
+                .as_str()
+                .and_then(jscal::parse_utc)
+                .map(Some)
+                .ok_or_else(|| MethodError::invalid_arguments(format!("{key} must be a UTCDateTime"))),
+        };
+        Ok(Shaping {
+            after: time("recurrenceOverridesAfter")?,
+            before: time("recurrenceOverridesBefore")?,
+            reduce: args.get("reduceParticipants").and_then(Value::as_bool).unwrap_or(false),
+            own,
+        })
+    }
+
+    fn is_own(&self, participant: &Value) -> bool {
+        participant
+            .get("calendarAddress")
+            .and_then(Value::as_str)
+            .is_some_and(|address| self.own.contains(&address.to_lowercase()))
+    }
+
+    fn keeps(&self, participant: &Value) -> bool {
+        participant.get("roles").and_then(|roles| roles.get("owner")) == Some(&Value::Bool(true))
+            || self.is_own(participant)
+    }
+
+    fn apply(&self, object: &mut Map<String, Value>, floating: Tz) {
+        if self.after.is_some() || self.before.is_some() {
+            let base = object.clone();
+            if let Some(Value::Object(overrides)) = object.get_mut("recurrenceOverrides") {
+                overrides.retain(|rid, _| {
+                    let Some(local) = jscal::parse_local(rid) else { return true };
+                    let at = jscal::local_to_utc(&base, local, floating);
+                    self.after.is_none_or(|after| at >= after) && self.before.is_none_or(|before| at < before)
+                });
+            }
+        }
+        let owner = object.get("participants").and_then(Value::as_object).is_some_and(|all| {
+            all.values()
+                .any(|p| self.is_own(p) && p.get("roles").and_then(|r| r.get("owner")) == Some(&Value::Bool(true)))
+        });
+        let hidden = object.get("hideAttendees") == Some(&Value::Bool(true)) && !owner;
+        if self.reduce || hidden {
+            let reduce = |participants: &mut Value| {
+                if let Value::Object(participants) = participants {
+                    participants.retain(|_, participant| self.keeps(participant));
+                }
+            };
+            if let Some(participants) = object.get_mut("participants") {
+                reduce(participants);
+            }
+            if let Some(Value::Object(overrides)) = object.get_mut("recurrenceOverrides") {
+                for patch in overrides.values_mut().filter_map(Value::as_object_mut) {
+                    if let Some(participants) = patch.get_mut("participants") {
+                        reduce(participants);
+                    }
+                    // Single participants a patch names are left to the whole list above.
+                    patch.retain(|key, value| {
+                        !key.starts_with("participants/") || key.matches('/').count() != 1 || self.keeps(value)
+                    });
+                }
+            }
+        }
+    }
+}
+
 fn floating_zone(args: &Value) -> MethodResult<Tz> {
     match args.get("timeZone") {
         None | Some(Value::Null) => Ok(chrono_tz::UTC),
@@ -346,10 +426,12 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         }
     };
     let own = own_addresses(ctx).await?;
+    let shaping = Shaping::from(args, own.clone())?;
     let (list, not_found) = run_blocking(move || -> MethodResult<(Vec<Value>, Vec<String>)> {
         let by_id: HashMap<i64, &Loaded> = loaded.iter().map(|l| (l.record.id, l)).collect();
         let stored = |loaded: &Loaded| {
             let mut object = loaded.view();
+            shaping.apply(&mut object, floating);
             decorate(&mut object, ids::calendar_event(loaded.record.id), &loaded.record, None, &own);
             output(object, &properties, floating)
         };
@@ -369,6 +451,7 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
                 Some(EventId::Instance(n, rid)) => by_id.get(n).and_then(|loaded| {
                     // Another single instance of an object without its series.
                     if let Some(mut object) = loaded.other_instance(rid) {
+                        shaping.apply(&mut object, floating);
                         decorate(&mut object, text.clone(), &loaded.record, Some(*n), &own);
                         return Some(output(object, &properties, floating));
                     }
@@ -378,6 +461,7 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
                         return None;
                     }
                     let mut object = jscal::instance(&loaded.view(), rid)?;
+                    shaping.apply(&mut object, floating);
                     decorate(&mut object, text.clone(), &loaded.record, Some(*n), &own);
                     Some(output(object, &properties, floating))
                 }),

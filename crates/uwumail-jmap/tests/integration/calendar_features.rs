@@ -841,3 +841,43 @@ async fn the_server_fires_alerts_as_pushes_and_mails() {
     server.jmap.calendar_alerts_tick(time("2026-10-20T09:30:00")).await;
     assert!(alerts.try_recv().is_err(), "each goes off once, and the draft never");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_leaves_out_overrides_and_participants_on_request() {
+    let server = server().await;
+    let calendar = server.share_with_nyu(json!({ "mayReadItems": true })).await;
+    let mut series = with_nyu(at(&calendar, "Yoga", "2026-10-06T09:00:00", json!({})));
+    series["participants"]["gast"] =
+        json!({ "@type": "Participant", "calendarAddress": "mailto:gast@example.com", "roles": { "attendee": true } });
+    series["recurrenceRule"] = json!({ "frequency": "weekly", "count": 4 });
+    series["recurrenceOverrides"] = json!({
+        "2026-10-13T09:00:00": { "title": "Zwei" },
+        "2026-10-20T09:00:00": { "title": "Drei" },
+        "2026-10-27T09:00:00": { "excluded": true }
+    });
+    let id = server.create(MINI, series).await;
+    let get = |login: &'static str, extra: Value| {
+        let mut args = json!({ "ids": [&id], "properties": ["recurrenceOverrides", "participants"] });
+        for (key, value) in extra.as_object().unwrap() {
+            args[key] = value.clone();
+        }
+        let server = &server;
+        async move { server.call(login, "CalendarEvent/get", args).await["list"][0].clone() }
+    };
+    let window = json!({ "recurrenceOverridesAfter": "2026-10-15T00:00:00Z", "recurrenceOverridesBefore": "2026-10-25T00:00:00Z" });
+    let got = get(MINI, window).await;
+    let rids: Vec<&String> = got["recurrenceOverrides"].as_object().unwrap().keys().collect();
+    assert_eq!(rids, vec!["2026-10-20T09:00:00"], "{got}");
+    let reduced = get(NYU, json!({ "reduceParticipants": true })).await;
+    let mut kept: Vec<&str> = reduced["participants"].as_object().unwrap().keys().map(String::as_str).collect();
+    kept.sort();
+    assert_eq!(kept, vec!["mini", "nyu"], "the owner and oneself");
+    assert_eq!(get(NYU, json!({})).await["participants"].as_object().unwrap().len(), 3);
+
+    // An event that hides its attendees shows others only the owners and themselves.
+    let hidden = server.call(MINI, "CalendarEvent/set", json!({ "update": { &id: { "hideAttendees": true } } })).await;
+    assert!(hidden["updated"].get(&id).is_some(), "{hidden}");
+    assert_eq!(server.event(MINI, &id).await["hideAttendees"], true);
+    assert_eq!(get(NYU, json!({})).await["participants"].as_object().unwrap().len(), 2);
+    assert_eq!(get(MINI, json!({})).await["participants"].as_object().unwrap().len(), 3, "the owner sees all");
+}
