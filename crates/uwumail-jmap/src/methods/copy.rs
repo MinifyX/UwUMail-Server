@@ -36,7 +36,11 @@ pub async fn copy(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Outputs> {
     };
     super::check_set_size(args)?;
 
-    let from_state = ctx.jmap.store.account_modseq(from_account).await?.to_string();
+    let from_state = match &from_view {
+        Some(view) => ctx.jmap.store.shared_state(from_account, view.visible_ids()).await?,
+        None => ctx.jmap.store.account_modseq(from_account).await?,
+    }
+    .to_string();
     if let Some(expected) = args.get("ifFromInState").and_then(Value::as_str)
         && expected != from_state
     {

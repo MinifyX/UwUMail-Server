@@ -37,12 +37,14 @@ pub struct ImapMessage {
     pub keywords: Vec<String>,
 }
 
-/// The messages of a mailbox, sorted by UID, and the account's change sequence number they reflect.
+/// The messages of a mailbox, sorted by UID, and the mailbox's change sequence number they reflect.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImapMessages {
     pub uid_validity: u32,
     pub uid_next: u32,
     pub highest_modseq: u64,
+    /// The owner's last change to who sees what, for noticing a share taken back.
+    pub sharing_modseq: u64,
     pub messages: Vec<ImapMessage>,
 }
 
@@ -106,8 +108,12 @@ fn own_mailbox(conn: &Connection, account_id: i64, mailbox_id: i64) -> Result<Im
     .ok_or_else(|| StoreError::NotFound(format!("mailbox {mailbox_id}")))
 }
 
-fn account_modseq(conn: &Connection, account_id: i64) -> Result<u64> {
-    let modseq: i64 = conn.query_row("SELECT modseq FROM accounts WHERE id = ?1", [account_id], |row| row.get(0))?;
+/// A mailbox's HIGHESTMODSEQ (RFC 7162): the last change to it or to a message in it. Only its
+/// own changes move it, so someone it is shared with learns nothing of the owner's other folders
+/// (security-audit-0.16.0 PROTOCOLS-L2).
+fn mailbox_modseq(conn: &Connection, mailbox_id: i64) -> Result<u64> {
+    let modseq: i64 =
+        conn.query_row("SELECT updated_modseq FROM mailboxes WHERE id = ?1", [mailbox_id], |row| row.get(0))?;
     Ok(modseq.max(0) as u64)
 }
 
@@ -195,11 +201,28 @@ impl Store {
         .await
     }
 
+    /// A mailbox's HIGHESTMODSEQ and the owner's last change to the sharing, to notice cheaply
+    /// whether anything changed for a selected mailbox; `None` once it is gone.
+    pub async fn imap_mailbox_modseq(&self, account_id: i64, mailbox_id: i64) -> Result<Option<(u64, u64)>> {
+        self.read(move |conn| {
+            let modseqs: Option<(i64, i64)> = conn
+                .query_row(
+                    "SELECT m.updated_modseq, a.sharing_modseq FROM mailboxes m JOIN accounts a ON a.id = m.account_id
+                     WHERE m.id = ?1 AND m.account_id = ?2",
+                    params![mailbox_id, account_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            Ok(modseqs.map(|(mailbox, sharing)| (mailbox.max(0) as u64, sharing.max(0) as u64)))
+        })
+        .await
+    }
+
     /// The messages of a mailbox with their flags, for selecting it and for noticing changes.
     pub async fn imap_messages(&self, account_id: i64, mailbox_id: i64) -> Result<ImapMessages> {
         self.read(move |conn| {
             let mailbox = own_mailbox(conn, account_id, mailbox_id)?;
-            let highest_modseq = account_modseq(conn, account_id)?;
+            let highest_modseq = mailbox_modseq(conn, mailbox_id)?;
             let mut stmt = conn.prepare(
                 "SELECT em.uid, em.email_id, em.modseq,
                         (SELECT json_group_array(keyword) FROM email_keywords WHERE email_id = em.email_id)
@@ -214,10 +237,13 @@ impl Store {
                 })
             })?;
             let messages = rows.collect::<Result<_, _>>()?;
+            let sharing_modseq: i64 =
+                conn.query_row("SELECT sharing_modseq FROM accounts WHERE id = ?1", [account_id], |row| row.get(0))?;
             Ok(ImapMessages {
                 uid_validity: mailbox.uid_validity,
                 uid_next: mailbox.uid_next,
                 highest_modseq,
+                sharing_modseq: sharing_modseq.max(0) as u64,
                 messages,
             })
         })
@@ -227,7 +253,7 @@ impl Store {
     pub async fn imap_status(&self, account_id: i64, mailbox_id: i64) -> Result<ImapStatus> {
         self.read(move |conn| {
             let mailbox = own_mailbox(conn, account_id, mailbox_id)?;
-            let highest_modseq = account_modseq(conn, account_id)?;
+            let highest_modseq = mailbox_modseq(conn, mailbox_id)?;
             let (messages, unseen, deleted, size): (i64, i64, i64, i64) = conn.query_row(
                 "SELECT count(*),
                         count(*) - count(seen.email_id),

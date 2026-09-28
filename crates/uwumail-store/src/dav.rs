@@ -603,6 +603,14 @@ pub(crate) fn move_entry(
     write: &DavWrite,
     extension: &str,
 ) -> Result<String> {
+    let cleaned;
+    let write = match without_controls(&write.content) {
+        std::borrow::Cow::Borrowed(_) => write,
+        std::borrow::Cow::Owned(content) => {
+            cleaned = DavWrite { content, ..write.clone() };
+            &cleaned
+        }
+    };
     check_entries_writable(target)?;
     check_entries_writable(&collection_by_id(tx, source_id)?)?;
     let name = write.name.as_str();
@@ -920,6 +928,19 @@ impl Store {
     }
 }
 
+/// Leaves out control characters other than tab, CR and LF. iCalendar and vCard allow none
+/// (RFC 5545 section 3.1, RFC 6350 section 3.3), XML 1.0 has no way to carry them, and one written
+/// by someone a calendar is shared with, or by an attendee's answer, could stop the owner's app from
+/// syncing it at all (security-audit-0.16.0 PROTOCOLS-L5).
+fn without_controls(content: &str) -> std::borrow::Cow<'_, str> {
+    let control = |c: char| c.is_ascii_control() && !matches!(c, '\t' | '\r' | '\n');
+    if content.contains(control) {
+        std::borrow::Cow::Owned(content.chars().filter(|c| !control(*c)).collect())
+    } else {
+        std::borrow::Cow::Borrowed(content)
+    }
+}
+
 /// Stores an entry of a collection that is known to belong to the account. Returns the outcome and,
 /// when it was written, the entry's row id. Subscribed calendars refuse.
 pub(crate) fn put_entry(
@@ -941,6 +962,14 @@ pub(crate) fn put_entry_unchecked(
     write: &DavWrite,
     condition: &DavPrecondition,
 ) -> Result<(DavWriteOutcome, Option<i64>)> {
+    let cleaned;
+    let write = match without_controls(&write.content) {
+        std::borrow::Cow::Borrowed(_) => write,
+        std::borrow::Cow::Owned(content) => {
+            cleaned = DavWrite { content, ..write.clone() };
+            &cleaned
+        }
+    };
     let current: Option<(i64, String, String, Option<String>)> = tx
         .query_row(
             "SELECT id, etag, component, CASE WHEN ?3 THEN content END FROM dav_resources

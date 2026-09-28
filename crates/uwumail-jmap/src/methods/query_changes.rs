@@ -213,7 +213,8 @@ pub async fn query_changes(ctx: &mut Ctx<'_>, method: &str, args: &Value) -> Met
     super::check_filter_size(args.get("filter"))?;
     // Read before the results, like /query: what changes in between is reported again next time.
     let new_state = ctx.state().await?;
-    let changes = ctx.jmap.store.changes(ctx.account.id, kind, since, 0).await.map_err(changes_error)?;
+    // In someone else's shared account, only what the caller may hear of (docs/sharing.md).
+    let changes = ctx.kind_changes(kind, since, 0).await.map_err(changes_error)?;
     let expanded =
         method == "CalendarEvent/queryChanges" && args.get("expandRecurrences").and_then(Value::as_bool) == Some(true);
     // The instances changed events had at the query state.

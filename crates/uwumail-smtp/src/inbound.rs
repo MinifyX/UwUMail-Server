@@ -1544,7 +1544,9 @@ pub(crate) async fn receive(
         // A fetched message the provider vouched for nothing about: its signatures are still
         // worth checking, and they are all that is left to check.
         (None, Origin::Fetched { .. }) if live.smtp.verify_senders => Some(checks::verify_signatures(&ctx, &raw).await),
-        _ => None,
+        // Nothing to ask about the sender, but the From the person will see still has to be a
+        // single one that can be judged (security-audit-0.16.0 SMTP-10).
+        _ => checks::check_headers(&ctx.hostname, &raw),
     };
     if let Some(checks::Verdict { action: Action::Reject(reason), .. }) = &verdict {
         tracing::info!(%id, from = %envelope.address, %reason, "rejected by DMARC");
@@ -1856,6 +1858,8 @@ pub(crate) async fn receive(
     // Mail for a group that only takes certain senders must come from who it says, or it would be
     // enough to claim a member's address.
     let sender_verified_for_groups = verdict.as_ref().is_none_or(|verdict| verdict.sender_verified);
+    // What forwarding needs to know about the sender.
+    let proof = forward::Proof::of(verdict.as_ref());
     // What happened for each of them, for the history. The message as a whole is one decision,
     // but a sender list or someone's own filter can send it two ways at once.
     let mut noted: Vec<SpamLogRecipient> = Vec::new();
@@ -1901,7 +1905,7 @@ pub(crate) async fn receive(
             if junk {
                 tracing::info!(%id, to = %recipient.address, "not passing spam on from a forwarding address");
             } else {
-                let forwarder = forward::Forwarder { name: &recipient.address, account_id: None };
+                let forwarder = forward::Forwarder { name: &recipient.address, account_id: None, proof };
                 forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, targets).await;
             }
             note_for(&recipient.address, if junk { SpamAction::Junk } else { SpamAction::Delivered }, None);
@@ -2033,13 +2037,16 @@ pub(crate) async fn receive(
         } else {
             forward::plan(&ctx, account_id).await
         };
+        let mut forwarded = false;
         if !plan.targets.is_empty()
             && let Ok(Some(account)) = ctx.store.account_by_id(account_id).await
         {
-            let forwarder = forward::Forwarder { name: &account.login, account_id: Some(account.id) };
-            forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, &plan.targets).await;
+            let forwarder = forward::Forwarder { name: &account.login, account_id: Some(account.id), proof };
+            forwarded =
+                forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, &plan.targets).await;
         }
-        if !plan.keep_copy {
+        // Mail that went nowhere else stays, whatever the person chose to keep.
+        if !plan.keep_copy && forwarded {
             note_for(&recipient.address, SpamAction::Delivered, None);
             delivered += 1;
             inbox_accounts.push(account_id);
@@ -2060,7 +2067,7 @@ pub(crate) async fn receive(
         };
         let stored = match script {
             Some((_, script)) => {
-                rules::deliver(&ctx, account_id, script, &recipient.address, &envelope.address, &message)
+                rules::deliver(&ctx, account_id, script, &recipient.address, &envelope.address, &message, proof)
                     .await
                     .map(|filed| (filed.mailbox, filed.stored))
             }

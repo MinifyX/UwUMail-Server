@@ -128,6 +128,7 @@ const KNOWN = [
   "serviceAccount",
   "oauthClientUnknown",
   "oauthRedirectInvalid",
+  "oauthRequestInvalid",
   "oidcFailed",
   "ldapFailed",
 ];

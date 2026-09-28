@@ -49,6 +49,11 @@ and keywords of its events are everyone's own too over JMAP: the owner's stay
 in the event, and those of the others are kept apart for each of them (their
 CalDAV apps show the owner's).
 
+Entries are stored without control characters other than tab and line breaks
+(iCalendar and vCard allow no others), and CalDAV/CardDAV answers leave out
+anything XML cannot carry, whoever wrote it: an entry from someone a calendar is
+shared with, or an attendee's answer, cannot stop the owner's app from syncing.
+
 ## Invitations (scheduling)
 
 Add people to an event in your calendar app and the server invites them; they
@@ -121,8 +126,11 @@ takes into a calendar:
   calendars that count for them (their own by default; a calendar's
   `schedule-calendar-transp`, `transparent` or `opaque`, says whether it
   does), tentative times as `BUSY-TENTATIVE`. The same comes out of JMAP's
-  `Principal/getAvailability`. Others are "unknown", and so is every masked
-  address, which would otherwise tie it to its person. One
+  `Principal/getAvailability`. Both answer for people in your own domains and
+  for people who share a calendar with you, by their login, an alias or a
+  sub-address of one; never for a masked address, which must not lead to its
+  owner, nor for groups, forwarding addresses or a catch-all. Everyone else is
+  "unknown", like people elsewhere. One
   request asks about at most 100 people (each once, however often named) over
   at most 400 days, and has 10 seconds for all of them; anyone left when they
   are up is answered "5.1 service unavailable", to be asked again.

@@ -27,11 +27,15 @@ struct Principal {
     account: Option<i64>,
     /// Whether it uses calendars.
     calendars: bool,
+    /// Whether the caller may ask when it is busy: themselves, people in their own domains and
+    /// people who share a calendar with them (security-audit-0.16.0 PROTOCOLS-L4).
+    availability: bool,
 }
 
 /// Everyone the caller may see: all people and groups, and the shared mailboxes they use.
 async fn principals(ctx: &Ctx<'_>) -> MethodResult<Vec<Principal>> {
     let store = &ctx.jmap.store;
+    let visible = store.availability_visible(ctx.account.id).await?;
     let mut list: Vec<Principal> = store
         .share_people()
         .await?
@@ -43,6 +47,7 @@ async fn principals(ctx: &Ctx<'_>) -> MethodResult<Vec<Principal>> {
             email: person.login,
             account: Some(person.id),
             calendars: person.calendars,
+            availability: person.calendars && visible.contains(&person.id),
         })
         .collect();
     for group in store.groups(None).await? {
@@ -53,6 +58,7 @@ async fn principals(ctx: &Ctx<'_>) -> MethodResult<Vec<Principal>> {
             email: group.address,
             account: None,
             calendars: false,
+            availability: false,
         });
     }
     for shared in store.shared_memberships(ctx.account.id).await? {
@@ -63,6 +69,7 @@ async fn principals(ctx: &Ctx<'_>) -> MethodResult<Vec<Principal>> {
             email: shared.address,
             account: Some(shared.id),
             calendars: false,
+            availability: false,
         });
     }
     Ok(list)
@@ -88,7 +95,7 @@ fn to_json(principal: &Principal, accounts: &Map<String, Value>, me: Option<i64>
             session::CALENDARS.into(),
             json!({
                 "accountId": (principal.account == Some(me)).then(|| ids::account(me)),
-                "mayGetAvailability": person && principal.calendars,
+                "mayGetAvailability": person && principal.availability,
                 "mayShareWith": person && principal.account != Some(me),
                 "calendarAddress": format!("mailto:{}", principal.email),
             }),
@@ -258,8 +265,9 @@ pub async fn changes(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
 // ------------------------------------------------------------------------------------------------
 // Principal/getAvailability (draft-ietf-jmap-calendars, section 2.2)
 
-/// When a person of the server is busy. Everyone who uses calendars may ask about everyone else
-/// who does, as CalDAV's free-busy lookups do; the events themselves come along only from
+/// When a person of the server is busy. Everyone who uses calendars may ask about the people who
+/// do in their own domains and those who share a calendar with them, as CalDAV's free-busy lookups
+/// answer (security-audit-0.16.0 PROTOCOLS-L4); the events themselves come along only from
 /// calendars the caller may read, and never for private ones.
 pub async fn get_availability(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     if !ctx.may_use_dav {
@@ -291,7 +299,10 @@ pub async fn get_availability(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value
     let principals = principals(ctx).await?;
     let principal = principals.iter().find(|p| p.id == id).ok_or_else(|| MethodError::kind("notFound"))?;
     let account = match (principal.kind, principal.account) {
-        ("individual", Some(account)) if principal.calendars => account,
+        ("individual", Some(account)) if principal.availability => account,
+        ("individual", Some(_)) if principal.calendars => {
+            return Err(MethodError::new("forbidden", "you may not ask when this person is busy"));
+        }
         _ => return Err(MethodError::new("forbidden", "this principal has no calendars to be busy in")),
     };
     let person = ctx.jmap.store.account_by_id(account).await?.ok_or_else(|| MethodError::kind("notFound"))?;

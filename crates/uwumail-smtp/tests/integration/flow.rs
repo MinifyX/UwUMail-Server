@@ -580,6 +580,52 @@ async fn forwarded_mail_uses_srs_and_bounces_find_the_original_sender() {
     assert_eq!(bounces[0].subject, "Undelivered Mail Returned to Sender");
 }
 
+/// Sent on from here, a message passes SPF for our domain: a forged From of our own domain that
+/// DMARC did not stop (no record, or `p=none`) must not leave with our name on it
+/// (security-audit-0.16.0 SMTP-8).
+#[tokio::test(flavor = "multi_thread")]
+async fn forged_mail_from_our_own_domain_is_not_forwarded_elsewhere() {
+    let unreachable = SocketAddr::from(([127, 0, 0, 1], 9));
+    let a = start("a.test", &["mini", "leni"], &[("c.test", unreachable)]).await;
+    for name in ["a.test", "_dmarc.a.test", "client.sender.test", "sender.test", "_dmarc.sender.test"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+    let store = a.smtp.store();
+    let leni = store.account("leni@a.test").await.unwrap().unwrap();
+    let (_, token) = store.add_forward_target(leni.id, "oma@c.test", true).await.unwrap();
+    store.confirm_forward_link(&token.unwrap()).await.unwrap();
+    store.set_forward_keep_copy(leni.id, false).await.unwrap();
+
+    let send = async |mail_from: &str, from: &str, subject: &str| {
+        let mut session = RawSession::connect(a.mx).await;
+        assert!(session.command("EHLO client.sender.test").await.starts_with("250"));
+        assert!(session.command(&format!("MAIL FROM:<{mail_from}>")).await.starts_with("250"));
+        assert!(session.command("RCPT TO:<leni@a.test>").await.starts_with("250"));
+        assert!(session.command("DATA").await.starts_with("354"));
+        let reply = session.command(&format!("From: {from}\r\nSubject: {subject}\r\n\r\nBitte zahlen\r\n.")).await;
+        assert!(reply.starts_with("250"), "{reply}");
+    };
+
+    // Nothing proves the From: it stays with Leni, although she keeps no copies otherwise.
+    send("chef@a.test", "Chef <chef@a.test>", "Rechnung").await;
+    assert_eq!(a.wait_for_inbox("leni@a.test", 1).await[0].subject, "Rechnung");
+    let queued = store.queue_entries().await.unwrap();
+    assert!(!queued.iter().any(|e| e.recipients.iter().any(|r| r.address == "oma@c.test")), "{queued:?}");
+
+    // An unproven envelope sender of ours is rewritten like anybody else's.
+    send("chef@a.test", "news@sender.test", "Rabatt").await;
+    let started = Instant::now();
+    let return_path = loop {
+        let entries = store.queue_entries().await.unwrap();
+        if let Some(entry) = entries.iter().find(|e| e.recipients.iter().any(|r| r.address == "oma@c.test")) {
+            break entry.message.return_path.clone();
+        }
+        assert!(started.elapsed() < Duration::from_secs(10), "the forward was not queued");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+    assert!(return_path.starts_with("SRS0=") && return_path.ends_with("=a.test=chef@a.test"), "{return_path}");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn forwarding_addresses_pass_mail_on_without_a_mailbox() {
     let unreachable = SocketAddr::from(([127, 0, 0, 1], 9));
@@ -1425,6 +1471,24 @@ async fn fetched_mail_is_judged_here_and_the_providers_word_only_adds_points() {
     for rule in ["PROVIDER_JUNK", "PROVIDER_SPAM_FLAG", "FETCHED_NO_AUTH"] {
         assert!(raw.contains(rule), "{rule} should be in {raw}");
     }
+}
+
+/// Without a provider verdict to go on, the From the person sees still has to be a single one.
+#[tokio::test(flavor = "multi_thread")]
+async fn fetched_mail_without_a_verdict_still_gets_the_header_checks() {
+    let a = spam_test_server(SpamConfig::default(), None).await;
+    let account = a.smtp.store().account("mini@a.test").await.unwrap().unwrap();
+    let mailbox = fetched_mailbox(account.id);
+    let two_from = fetched_message(None, "From: chef@a.test\r\n");
+    let two_domains = String::from_utf8(fetched_message(None, ""))
+        .unwrap()
+        .replace("From: news@sender.test", "From: news@sender.test, chef@a.test")
+        .into_bytes();
+    for raw in [two_from, two_domains] {
+        let taken = uwumail_smtp::deliver_fetched(&a.smtp, mailbox.clone(), false, "mini@a.test".into(), raw).await;
+        assert!(matches!(taken, uwumail_smtp::Taken::Refused(ref answer) if answer.starts_with("550")), "{taken:?}");
+    }
+    assert!(a.mailbox("mini@a.test", MailboxRole::Inbox).await.is_empty());
 }
 
 /// A header nobody signed for may count against a message, never for it.

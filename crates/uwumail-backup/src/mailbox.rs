@@ -11,6 +11,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+use rusqlite::limits::Limit;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use serde::Serialize;
 use uwumail_store::{BlobHash, IngestRequest, MailboxTarget, Store, StoreError};
@@ -90,17 +91,77 @@ pub async fn fetch_database(
     Ok(manifest)
 }
 
-/// Opens a snapshot's database for reading only. The file came from the backup server; SQLite is
-/// told not to trust anything in it that could run code.
-fn open(path: &Path) -> Result<Connection, Error> {
+/// The longest single value read from a snapshot's database: names, hashes, message ids and
+/// keywords are all far shorter.
+const MAX_VALUE: i32 = 64 * 1024;
+/// How long reading a snapshot's database may take, however it is made.
+const READ_TIME: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+/// How many folders, messages and keywords per message are read of one person at most: far more
+/// than anyone has, and a bound on the memory a damaged or hostile database can make it take.
+const MAX_FOLDERS: usize = 100_000;
+const MAX_MAILS: usize = 5_000_000;
+const MAX_KEYWORDS: usize = 100;
+/// How deep a folder path is followed.
+const MAX_DEPTH: usize = 100;
+/// The tables read; each has to be a table, not a view that computes something else.
+const TABLES: &[&str] = &["accounts", "mailboxes", "emails", "email_mailboxes", "email_keywords"];
+
+/// A snapshot's database, open for reading only, and stopped when reading it takes too long.
+struct Snapshot {
+    conn: Connection,
+    /// Dropped when reading is done, which lets the watchdog go.
+    _done: std::sync::mpsc::Sender<()>,
+}
+
+impl std::ops::Deref for Snapshot {
+    type Target = Connection;
+
+    fn deref(&self) -> &Connection {
+        &self.conn
+    }
+}
+
+/// Opens a snapshot's database for reading only. The file came from the backup server and may be
+/// anything (security-audit-0.16.0 PLAT-7): SQLite is told not to trust anything in it that could
+/// run code, no value may be longer than [`MAX_VALUE`], the tables read must be tables, and after
+/// [`READ_TIME`] every query is interrupted.
+fn open(path: &Path) -> Result<Snapshot, Error> {
     let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
     let conn = Connection::open_with_flags(path, flags).map_err(|err| damaged(&err))?;
     conn.execute_batch("PRAGMA query_only = ON; PRAGMA trusted_schema = OFF;").map_err(|err| damaged(&err))?;
-    let quick: String = conn.query_row("PRAGMA quick_check", [], |row| row.get(0)).map_err(|err| damaged(&err))?;
+    conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, MAX_VALUE).map_err(|err| damaged(&err))?;
+    let interrupt = conn.get_interrupt_handle();
+    let (done, finished) = std::sync::mpsc::channel::<()>();
+    std::thread::spawn(move || {
+        if finished.recv_timeout(READ_TIME) == Err(std::sync::mpsc::RecvTimeoutError::Timeout) {
+            interrupt.interrupt();
+        }
+    });
+    let snapshot = Snapshot { conn, _done: done };
+    let quick: String = snapshot.query_row("PRAGMA quick_check", [], |row| row.get(0)).map_err(|err| damaged(&err))?;
     if quick != "ok" {
         return Err(Error::Damaged(format!("the snapshot's database is broken: {quick}")));
     }
-    Ok(conn)
+    for table in TABLES {
+        let real: bool = snapshot
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?1)",
+                [table],
+                |row| row.get(0),
+            )
+            .map_err(|err| damaged(&err))?;
+        if !real {
+            return Err(Error::Damaged(format!("the snapshot's database has no table {table}")));
+        }
+    }
+    Ok(snapshot)
+}
+
+fn too_many(what: &str) -> rusqlite::Error {
+    rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_TOOBIG),
+        Some(format!("more {what} than a restore takes")),
+    )
 }
 
 fn damaged(err: &rusqlite::Error) -> Error {
@@ -112,12 +173,17 @@ fn folders_of(conn: &Connection, account_id: i64) -> rusqlite::Result<Vec<Snapsh
     let mut stmt = conn.prepare(
         "SELECT m.id, m.parent_id, m.name, m.role,
                 (SELECT count(*) FROM email_mailboxes em WHERE em.mailbox_id = m.id)
-         FROM mailboxes m WHERE m.account_id = ?1",
+         FROM mailboxes m WHERE m.account_id = ?1 LIMIT ?2",
     )?;
     type Row = (i64, Option<i64>, String, Option<String>, i64);
     let rows: Vec<Row> = stmt
-        .query_map([account_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)))?
+        .query_map(params![account_id, MAX_FOLDERS as i64 + 1], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+        })?
         .collect::<rusqlite::Result<_>>()?;
+    if rows.len() > MAX_FOLDERS {
+        return Err(too_many("folders"));
+    }
     let by_id: HashMap<i64, (Option<i64>, String)> =
         rows.iter().map(|(id, parent, name, _, _)| (*id, (*parent, name.clone()))).collect();
     let mut folders: Vec<SnapshotFolder> = rows
@@ -126,8 +192,8 @@ fn folders_of(conn: &Connection, account_id: i64) -> rusqlite::Result<Vec<Snapsh
             let mut path = vec![name];
             let mut current = parent_id;
             // A parent chain that loops is a damaged database; it ends after as many steps as
-            // there are folders.
-            for _ in 0..by_id.len() {
+            // there are folders, and no folder is deeper than MAX_DEPTH.
+            for _ in 0..by_id.len().min(MAX_DEPTH) {
                 let Some((parent, name)) = current.and_then(|id| by_id.get(&id)) else { break };
                 path.insert(0, name.clone());
                 current = *parent;
@@ -152,14 +218,20 @@ pub async fn people(path: &Path) -> Result<Vec<SnapshotPerson>, Error> {
             let mut stmt = conn.prepare(
                 "SELECT id, login, display_name FROM accounts
                  WHERE EXISTS (SELECT 1 FROM mailboxes WHERE mailboxes.account_id = accounts.id)
-                 ORDER BY login",
+                 ORDER BY login LIMIT ?1",
             )?;
+            // Everyone with a mailbox has a folder: no more people than folders.
             let accounts: Vec<(i64, String, String)> = stmt
-                .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+                .query_map([MAX_FOLDERS as i64 + 1], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
                 .collect::<rusqlite::Result<_>>()?;
             let mut people = Vec::new();
+            let mut folders_seen = 0;
             for (id, login, name) in accounts {
                 let folders = folders_of(&conn, id)?;
+                folders_seen += folders.len();
+                if folders_seen > MAX_FOLDERS {
+                    return Err(too_many("folders"));
+                }
                 let emails =
                     conn.query_row("SELECT count(*) FROM emails WHERE account_id = ?1", [id], |row| row.get(0))?;
                 people.push(SnapshotPerson { login, name, emails, folders });
@@ -213,7 +285,9 @@ fn mails_of(
                 continue;
             }
             match index.get(&email) {
-                Some(&at) => mails[at].1.mailboxes.push(mailbox),
+                Some(&at) if mails[at].1.mailboxes.len() < MAX_FOLDERS => mails[at].1.mailboxes.push(mailbox),
+                Some(_) => return Err(too_many("folders per message")),
+                None if mails.len() >= MAX_MAILS => return Err(too_many("messages")),
                 None => {
                     index.insert(email, mails.len());
                     let mail =
@@ -222,10 +296,10 @@ fn mails_of(
                 }
             }
         }
-        let mut keywords = conn.prepare("SELECT keyword FROM email_keywords WHERE email_id = ?1")?;
+        let mut keywords = conn.prepare("SELECT keyword FROM email_keywords WHERE email_id = ?1 LIMIT ?2")?;
         for (email, mail) in &mut mails {
             mail.keywords = keywords
-                .query_map(params![*email], |row| row.get::<_, String>(0))?
+                .query_map(params![*email, MAX_KEYWORDS as i64], |row| row.get::<_, String>(0))?
                 .collect::<rusqlite::Result<Vec<_>>>()?
                 .into_iter()
                 // Marked for deletion is what brought many a message here; it comes back without.
@@ -390,4 +464,79 @@ pub fn folders_named(person: &SnapshotPerson, names: &[String]) -> Result<Vec<i6
         }
     }
     Ok(ids)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A database made by `schema`, where a snapshot's would be.
+    fn snapshot(dir: &Path, schema: &str) -> std::path::PathBuf {
+        let path = dir.join("snapshot.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(schema).unwrap();
+        path
+    }
+
+    const TABLES_SQL: &str = "CREATE TABLE accounts (id INTEGER PRIMARY KEY, login TEXT, display_name TEXT);
+        CREATE TABLE mailboxes (id INTEGER PRIMARY KEY, account_id INTEGER, parent_id INTEGER, name TEXT, role TEXT);
+        CREATE TABLE emails (id INTEGER PRIMARY KEY, account_id INTEGER, blob_hash TEXT, received_at INTEGER,
+                             message_id TEXT);
+        CREATE TABLE email_mailboxes (email_id INTEGER, mailbox_id INTEGER);
+        CREATE TABLE email_keywords (email_id INTEGER, keyword TEXT);";
+
+    #[tokio::test]
+    async fn a_hostile_snapshot_database_is_read_within_bounds() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // An ordinary one.
+        let path = snapshot(
+            dir.path(),
+            &format!(
+                "{TABLES_SQL}
+                 INSERT INTO accounts VALUES (1, 'mini@example.org', 'Mini');
+                 INSERT INTO mailboxes VALUES (1, 1, NULL, 'INBOX', 'inbox'), (2, 1, 1, 'Alt', NULL);"
+            ),
+        );
+        let found = people(&path).await.unwrap();
+        assert_eq!(found[0].folders[1].path, ["INBOX", "Alt"]);
+        std::fs::remove_file(&path).unwrap();
+
+        // A view where a table should be could compute anything, forever.
+        let path = snapshot(
+            dir.path(),
+            &TABLES_SQL.replace(
+                "CREATE TABLE accounts (id INTEGER PRIMARY KEY, login TEXT, display_name TEXT);",
+                "CREATE VIEW accounts AS WITH RECURSIVE n(id) AS (SELECT 1 UNION ALL SELECT id + 1 FROM n)
+                 SELECT id, 'x' AS login, 'x' AS display_name FROM n;",
+            ),
+        );
+        assert!(matches!(people(&path).await, Err(Error::Damaged(message)) if message.contains("no table accounts")));
+        std::fs::remove_file(&path).unwrap();
+
+        // A value far longer than any name is refused, not read into memory.
+        let path = snapshot(
+            dir.path(),
+            &format!(
+                "{TABLES_SQL}
+                 INSERT INTO accounts VALUES (1, 'mini@example.org', 'Mini');
+                 INSERT INTO mailboxes VALUES (1, 1, NULL, printf('%.*c', 1000000, 'x'), 'inbox');"
+            ),
+        );
+        assert!(matches!(people(&path).await, Err(Error::Damaged(_))));
+        std::fs::remove_file(&path).unwrap();
+
+        // A parent chain deeper than any real one is cut off.
+        let chain: String = (2..=500).map(|id| format!("({id}, 1, {}, 'f', NULL),", id - 1)).collect();
+        let path = snapshot(
+            dir.path(),
+            &format!(
+                "{TABLES_SQL}
+                 INSERT INTO accounts VALUES (1, 'mini@example.org', 'Mini');
+                 INSERT INTO mailboxes VALUES {chain} (1, 1, NULL, 'INBOX', 'inbox');"
+            ),
+        );
+        let found = people(&path).await.unwrap();
+        assert!(found[0].folders.iter().all(|folder| folder.path.len() <= MAX_DEPTH + 1));
+    }
 }

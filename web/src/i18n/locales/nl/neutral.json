@@ -536,6 +536,7 @@
       "serviceAccount": "Een dienst logt alleen in met app-wachtwoorden.",
       "oauthClientUnknown": "Deze app is niet geregistreerd op deze server.",
       "oauthRedirectInvalid": "De app wil terug naar een adres dat hij niet heeft geregistreerd.",
+      "oauthRequestInvalid": "Het aanmeldverzoek van de app is ongeldig.",
       "oidcFailed": "Het lukte niet met de inlogdienst: {{detail}}",
       "ldapFailed": "Het lukte niet met de directory: {{detail}}",
       "importRunning": "Er loopt al een verhuizing van een andere aanbieder. Wacht tot die klaar is.",
@@ -1649,7 +1650,9 @@
       "gatewayPort25Blocked": "De gateway kan andere mailservers op poort 25 niet bereiken.",
       "gatewayOutboundBlocked": "Andere mailservers zijn via de gateway niet bereikbaar ({{count}} domeinen getroffen).",
       "virusScannerAway": "De virusscanner antwoordt niet. Tot hij terug is, wordt mail ongecontroleerd afgeleverd en staat dat in de headers.",
-      "virusSignaturesOld": "De virussignaturen zijn {{since}} oud. De scanner haalt geen nieuwe meer op."
+      "virusSignaturesOld": "De virussignaturen zijn {{since}} oud. De scanner haalt geen nieuwe meer op.",
+      "maskedStranded_one": "{{domain}} heeft een gemaskeerd adres, maar niemand kan er nieuwe maken.",
+      "maskedStranded_other": "{{domain}} heeft {{count}} gemaskeerde adressen, maar niemand kan er nieuwe maken."
     },
     "hints": {
       "noDomains": "Zonder domein kan de server geen mail ontvangen.",
@@ -1675,7 +1678,8 @@
       "gatewayDown": "Mail wacht intussen in de wachtrij. Controleer of de gateway draait en of je server er UDP naartoe mag sturen.",
       "gatewayRefused": "Koppel de gateway opnieuw onder Server → Set-up.",
       "gatewayPort25Blocked": "Veel VPS-providers blokkeren uitgaande poort 25. Vraag hun support om hem te openen; tot dan helpt een relay.",
-      "gatewayOutboundBlocked": "Veel VPS-providers blokkeren uitgaande poort 25. Vraag hun support om hem te openen; tot dan helpt een relay."
+      "gatewayOutboundBlocked": "Veel VPS-providers blokkeren uitgaande poort 25. Vraag hun support om hem te openen; tot dan helpt een relay.",
+      "maskedStranded": "Sinds 0.16.0 biedt een domein waarop niemand inlogt aan niemand gemaskeerde adressen aan. Maak het op zijn pagina een domein alleen voor gemaskeerde adressen en kies het voor de domeinen waarvan de mensen het moeten gebruiken. De adressen die er zijn blijven hoe dan ook werken."
     }
   },
   "secondFactor": {
@@ -1923,7 +1927,8 @@
     "invalidTitle": "Deze app kan hier niet inloggen",
     "invalid": {
       "oauthClientUnknown": "Deze app is niet geregistreerd op deze server. Stel het account in de app opnieuw in.",
-      "oauthRedirectInvalid": "De app wil terug naar een adres dat hij niet heeft geregistreerd. Voor de veiligheid is er niets verstuurd."
+      "oauthRedirectInvalid": "De app wil terug naar een adres dat hij niet heeft geregistreerd. Voor de veiligheid is er niets verstuurd.",
+      "oauthRequestInvalid": "Het aanmeldverzoek van de app is ongeldig. De app is hier nog nooit toegelaten, dus je wordt er niet naar teruggestuurd. Stel het account in de app opnieuw in."
     },
     "toPortal": "Naar het portaal"
   },

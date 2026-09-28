@@ -23,7 +23,8 @@ ports = [25, 465, 587]
 
 [limits]
 max_connections = 1000
-max_connections_per_ip = 50
+max_connections_per_ip = 50          # one IPv4 address or IPv6 /64
+max_connections_per_ipv6_site = 100  # one IPv6 /48, however many /64s
 
 [log]
 format = "text"           # text | json

@@ -130,9 +130,8 @@ impl Watcher {
         let owner = change.account_id;
         let since = self.shared_modseqs.get(&owner).copied().unwrap_or(change.modseq - 1);
         self.shared_modseqs.insert(owner, since.max(change.modseq));
-        let kinds = self.store.changed_kinds(owner, since).await.ok()?;
         let changed =
-            type_states(&self.store, owner, &kinds, change.modseq, true, |kind| self.types.iter().any(|t| t == kind))
+            shared_type_states(&self.store, owner, self.account_id, since, |kind| self.types.iter().any(|t| t == kind))
                 .await;
         (!changed.is_empty()).then_some((owner, changed))
     }
@@ -171,6 +170,25 @@ async fn next_change(
             }
             Err(broadcast::error::RecvError::Closed) => return None,
         }
+    }
+}
+
+/// The TypeState of a change after `since` in `owner`'s account for `follower`, who has folders of
+/// it shared: only what changed in those folders, with the state the follower sees there. Empty
+/// when none of it was theirs to know (security-audit-0.16.0 PROTOCOLS-L2).
+pub(crate) async fn shared_type_states(
+    store: &Store,
+    owner: i64,
+    follower: i64,
+    since: i64,
+    wanted: impl Fn(&str) -> bool,
+) -> Map<String, Value> {
+    let Ok(visible) = crate::sharing::visible_mailboxes(store, follower, owner).await else {
+        return Map::new();
+    };
+    match store.shared_changed_kinds(owner, since, visible).await {
+        Ok((kinds, state)) => type_states(store, owner, &kinds, state, true, wanted).await,
+        Err(_) => Map::new(),
     }
 }
 

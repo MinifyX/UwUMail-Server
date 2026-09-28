@@ -122,6 +122,23 @@ async fn backup_settings_keep_their_secrets_on_the_server() {
     );
     assert!(!changed.to_string().contains("Synology-geheim"));
 
+    // Saving again keeps the password for the same server and user; another one asks for it again.
+    let target = |host: &str, user: &str| {
+        json!({
+            "enabled": true, "hour": 2, "retention": { "daily": 7, "weekly": 4, "monthly": 6 }, "encrypted": true,
+            "target": { "host": host, "port": 22, "user": user, "path": "/volume1/uwumail", "method": "password" },
+        })
+    };
+    let (status, kept) =
+        call(&app, "PUT", "/api/admin/backups", Some(target("nas.example.org", "backup")), Some(&auth)).await;
+    assert_eq!((status, kept["target"]["passwordSet"].as_bool()), (StatusCode::OK, Some(true)), "{kept}");
+    for (host, user) in [("other.example.net", "backup"), ("nas.example.org", "root")] {
+        let (status, refused) = call(&app, "PUT", "/api/admin/backups", Some(target(host, user)), Some(&auth)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{host} {user}: {refused}");
+    }
+    let (_, unchanged) = call(&app, "GET", "/api/admin/backups", None, Some(&auth)).await;
+    assert_eq!(unchanged["target"]["host"], "nas.example.org");
+
     let (status, shown) = call(&app, "POST", "/api/admin/backups/recovery-key", Some(json!({})), Some(&auth)).await;
     assert_eq!(
         (status, shown["recoveryKey"].as_str()),

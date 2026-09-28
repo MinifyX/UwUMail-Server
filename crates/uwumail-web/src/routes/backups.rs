@@ -177,6 +177,9 @@ fn target_of(web: &Web, new: TargetBody, old: Option<Target>) -> ApiResult<Targe
                 _ => None,
             };
             let same_server = old.as_ref().is_some_and(|old| old.host == host && old.port == new.port);
+            // The stored password is only ever sent to the server and user it was given for:
+            // another host would be handed it in the SSH login (security-audit-0.16.0 PLAT-8).
+            let same_login = same_server && old.as_ref().is_some_and(|old| old.user == user);
             let login = match (new.method.as_str(), old.as_ref().map(|old| &old.login)) {
                 ("key", Some(Login::Key { private_key })) => Login::Key { private_key: private_key.clone() },
                 ("key", _) => {
@@ -186,7 +189,14 @@ fn target_of(web: &Web, new: TargetBody, old: Option<Target>) -> ApiResult<Targe
                 }
                 ("password", old_login) => match (new.password.filter(|password| !password.is_empty()), old_login) {
                     (Some(password), _) => Login::Password { password },
-                    (None, Some(Login::Password { password })) => Login::Password { password: password.clone() },
+                    (None, Some(Login::Password { password })) if same_login => {
+                        Login::Password { password: password.clone() }
+                    }
+                    (None, Some(Login::Password { .. })) => {
+                        return Err(ApiError::Invalid(
+                            "the password is needed again for another server or user".into(),
+                        ));
+                    }
                     (None, _) => return Err(ApiError::Invalid("a password is needed".into())),
                 },
                 _ => return Err(ApiError::Invalid("the login method is key or password".into())),

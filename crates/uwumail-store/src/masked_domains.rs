@@ -395,6 +395,27 @@ impl Store {
         self.read(move |conn| Ok(kind_of(conn, domain_id(conn, &domain)?)?.1)).await
     }
 
+    /// Mail domains that hold masked addresses nobody can make more of: open to their own people
+    /// ('own' or 'both') while nobody's login is on them. Upgrading to 0.16.0 left a domain that only
+    /// ever carried masked addresses like this, for every user of other domains to lose it
+    /// (security-audit-0.16.0 MD-1); the health overview names them, with how many addresses each
+    /// holds, until the admin makes them masked-only and chooses them for the mail domains.
+    pub async fn stranded_masked_domains(&self) -> Result<Vec<(String, i64)>> {
+        self.read(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT d.name, count(*) FROM domains d
+                 JOIN masked_addresses x ON x.domain_id = d.id AND x.state <> 'deleted'
+                 WHERE d.kind = 'mail' AND d.masked_mode IN ('own', 'both')
+                   AND NOT EXISTS (SELECT 1 FROM accounts a
+                                   WHERE a.deleted_at IS NULL AND substr(a.login, instr(a.login, '@') + 1) = d.name)
+                 GROUP BY d.id ORDER BY d.name",
+            )?;
+            let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+            Ok(rows.collect::<rusqlite::Result<_>>()?)
+        })
+        .await
+    }
+
     /// What keeps a mail domain from becoming masked-only; empty when nothing does.
     pub async fn domain_kind_blockers(&self, domain: &str) -> Result<KindBlockers> {
         let domain = normalize_domain(domain)?;
@@ -614,6 +635,36 @@ mod tests {
             masked_domains: masked.iter().map(|name| name.to_string()).collect(),
             default_domain: default.map(str::to_owned),
         }
+    }
+
+    #[tokio::test]
+    async fn domains_nobody_can_add_masked_addresses_to_are_named() {
+        let (store, _dir) = store().await;
+        store.create_domain("example.org").await.unwrap();
+        store.create_domain("masks.example").await.unwrap();
+        let mini = person(&store, "mini@example.org").await;
+        store.set_domain_masked_policy("example.org", policy(MaskedMode::Own, &[], None)).await.unwrap();
+        let masked = store.create_masked_address(mini, NewMaskedAddress::default()).await.unwrap();
+        assert!(store.stranded_masked_domains().await.unwrap().is_empty(), "Mini's own domain");
+
+        // As 0.16.0 left a domain that only carried masked addresses of people from elsewhere.
+        store
+            .write(move |tx| {
+                tx.execute(
+                    "UPDATE masked_addresses SET domain_id = (SELECT id FROM domains WHERE name = 'masks.example')
+                     WHERE id = ?1",
+                    [masked.id],
+                )?;
+                tx.execute("UPDATE domains SET masked_mode = 'own' WHERE name = 'masks.example'", [])?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        assert_eq!(store.stranded_masked_domains().await.unwrap(), [("masks.example".to_owned(), 1)]);
+
+        // Made masked-only, as the hint says, it is no longer stranded.
+        store.set_domain_kind("masks.example", DomainKind::Masked).await.unwrap();
+        assert!(store.stranded_masked_domains().await.unwrap().is_empty());
     }
 
     #[test]

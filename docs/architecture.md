@@ -71,6 +71,9 @@ Design choices that matter later:
 - `outbound` + `client`: the delivery worker claims due recipients with a
   lease, groups them by domain, resolves MX (or a relay / static route),
   delivers with opportunistic TLS, and records the outcome per recipient.
+  Every CR or LF on its own leaves as CRLF, so no receiver can read a line
+  (or an early end of the message) that this server did not see; submitted
+  mail is signed after the same change.
 - `mta_sts` + `https`: our domains' policies, and the policies of domains we
   deliver to. Those are fetched over HTTPS with a valid certificate and cached
   until they expire; an enforced policy limits delivery to the MX hosts it lists
@@ -95,8 +98,13 @@ Design choices that matter later:
 - `forward` + `srs`: after local delivery, mail also goes to a person's confirmed
   forwarding addresses. Mail to other servers gets an SRS envelope sender on
   the person's domain (HMAC-SHA256, valid 21 days), so SPF passes there; DKIM
-  signatures stay intact. Suspicious mail (DMARC quarantine or a junk score) is never
-  forwarded, and a `Delivered-To` header stops loops. Bounces to SRS addresses
+  signatures stay intact. Our own sender address is kept only when SPF or DKIM
+  proved it; otherwise it is rewritten like anybody else's. Mail whose From did
+  not pass DMARC and belongs to the domain the forward would go out with (a
+  forgery of our own domain at `p=none` or without a record) is not sent to
+  other servers: there it would pass as ours. It stays in the mailbox, as does
+  any mail a forward reached nobody with. Suspicious mail (DMARC quarantine or a
+  junk score) is never forwarded, and a `Delivered-To` header stops loops. Bounces to SRS addresses
   are only accepted with an empty sender and go back to the original sender.
   Forwarding addresses of a domain have no mailbox and pass everything on the
   same way; when nobody else would get a junk message, it is refused instead.
@@ -263,8 +271,9 @@ only to its mail ports on public addresses.
   code once) and passkeys (WebAuthn without attestation; ES256, EdDSA, RS256,
   verified with aws-lc-rs). The first one brings ten recovery codes, stored as
   SHA-256. Password links replace the password, never the second factor.
-  Sensitive changes (second factors, app passwords) need the password again
-  unless the login or the last confirmation is younger than ten minutes.
+  Sensitive changes (second factors, app passwords, letting a new OAuth app
+  in, forwarding to another server) need the password again unless the login
+  or the last confirmation is younger than ten minutes.
 - Changes to someone's login are written to their activity list and put into
   their inbox as a short notice, so a takeover does not go unnoticed.
 - Web portal sessions: a random token in an `HttpOnly`, `SameSite=Strict`

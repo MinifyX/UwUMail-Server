@@ -176,8 +176,13 @@ container). Without the helper the portal shows `.env.vpn` and the command to
 start it. The settings, keys included, are kept in the
 server's database and never sent back to the browser. The helper takes only
 gluetun's own variables, only values without quotes or line breaks, and an
-`.ovpn` file only without the directives that start programs or read files
-(`up`, `script-security`, `plugin`, `auth-user-pass <file>`, …).
+`.ovpn` file only when every line is a directive of a plain connection (`client`,
+`remote`, `proto`, `cipher`, `verb` and about eighty more), `auth-user-pass`
+without a file, a comment, or an inline block with keys and certificates
+(`<ca>`, `<cert>`, `<key>`, `<tls-auth>`, `<tls-crypt>`, …). Anything else,
+such as `up`, `plugin` or a certificate read from a file, is refused, and so is
+anything the list does not know: providers' files work, and one that starts
+programs or reads files does not.
 
 Two kinds of proxy work:
 

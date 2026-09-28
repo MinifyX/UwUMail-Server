@@ -153,6 +153,47 @@ pub(crate) const GRANTS: &str =
      WHERE NOT EXISTS (SELECT 1 FROM shared_mailbox_members s
                        WHERE s.account_id = a.owner_id AND s.member_id = a.grantee_id))";
 
+/// Notes that who sees what in an owner's account changed at `modseq`: a folder shared or no
+/// longer, rights changed, members of a shared mailbox changed, a shared folder deleted. Changes
+/// across it cannot be calculated for those it is shared with (migration 0054).
+pub(crate) fn sharing_changed(conn: &Connection, owner_id: i64, modseq: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE accounts SET sharing_modseq = max(sharing_modseq, ?2) WHERE id = ?1",
+        params![owner_id, modseq],
+    )?;
+    Ok(())
+}
+
+/// The owner's changes after `since` that someone who sees the mailboxes in the JSON array `?2`
+/// may hear of: a change to one of those mailboxes (an email arriving, leaving, read or unread
+/// counts included), or to an email in one of them now. Everything else the owner did at other
+/// modseqs is theirs alone (security-audit-0.16.0 PROTOCOLS-L2). Parameters: `?1` owner, `?2`
+/// visible mailboxes, `?3` since.
+const RELEVANT: &str = "WITH visible(id) AS (SELECT value FROM json_each(?2)),
+     relevant(modseq) AS (
+       SELECT DISTINCT c.modseq FROM changes c
+       WHERE c.account_id = ?1 AND c.modseq > ?3
+         AND ((c.kind = 'Mailbox' AND c.object_id IN visible)
+           OR (c.kind = 'Email' AND EXISTS (SELECT 1 FROM email_mailboxes em
+                                            WHERE em.email_id = c.object_id AND em.mailbox_id IN visible))))";
+
+/// The state of an owner's mail as someone they share mailboxes with sees it: the owner's last
+/// change to one of the `visible` mailboxes or what they hold, or to the sharing, and the latter
+/// on its own.
+fn shared_state_of(conn: &Connection, owner_id: i64, visible: &str) -> Result<(i64, i64)> {
+    conn.query_row(
+        "SELECT max(coalesce((SELECT max(updated_modseq) FROM mailboxes
+                               WHERE account_id = ?1 AND id IN (SELECT value FROM json_each(?2))), 0),
+                    sharing_modseq),
+                sharing_modseq
+         FROM accounts WHERE id = ?1",
+        params![owner_id, visible],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()?
+    .ok_or_else(|| StoreError::NotFound(format!("account {owner_id}")))
+}
+
 fn owned_mailbox(conn: &Connection, owner_id: i64, mailbox_id: i64) -> Result<()> {
     conn.query_row("SELECT 1 FROM mailboxes WHERE id = ?1 AND account_id = ?2", params![mailbox_id, owner_id], |_| {
         Ok(())
@@ -204,6 +245,77 @@ fn shared_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SharedMailbox> {
 }
 
 impl Store {
+    /// The JMAP state of an owner's mail for someone who sees the `visible` mailboxes of it: it
+    /// moves only with changes they may know of (see [`RELEVANT`]).
+    pub async fn shared_state(&self, owner_id: i64, visible: Vec<i64>) -> Result<i64> {
+        let visible = serde_json::to_string(&visible).unwrap_or_default();
+        self.read(move |conn| Ok(shared_state_of(conn, owner_id, &visible)?.0)).await
+    }
+
+    /// Changes of one kind after `since` in an owner's mail, as someone who sees the `visible`
+    /// mailboxes may hear of them. [`StoreError::Invalid`] for states they never had, and across a
+    /// change to the sharing: then the client has to load the account again.
+    pub async fn shared_changes(
+        &self,
+        owner_id: i64,
+        kind: &str,
+        since: i64,
+        max_changes: usize,
+        visible: Vec<i64>,
+    ) -> Result<crate::Changes> {
+        let kind = kind.to_owned();
+        let visible = serde_json::to_string(&visible).unwrap_or_default();
+        self.read(move |conn| {
+            let (current, sharing) = shared_state_of(conn, owner_id, &visible)?;
+            if since < 0 || since > current || sharing > since {
+                return Err(StoreError::Invalid(format!("cannot calculate changes since {since}")));
+            }
+            let mut stmt = conn.prepare(&format!(
+                "{RELEVANT}
+                 SELECT modseq, object_id, change FROM changes
+                 WHERE account_id = ?1 AND kind = ?4 AND modseq IN relevant ORDER BY modseq, object_id"
+            ))?;
+            let rows = stmt
+                .query_map(params![owner_id, visible, since, kind], |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, String>(2)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(crate::objects::aggregate(&rows, current, max_changes))
+        })
+        .await
+    }
+
+    /// The kinds that changed after `since` in an owner's mail, as someone who sees the `visible`
+    /// mailboxes may hear of them, and their state now; for push.
+    pub async fn shared_changed_kinds(
+        &self,
+        owner_id: i64,
+        since: i64,
+        visible: Vec<i64>,
+    ) -> Result<(Vec<String>, i64)> {
+        let visible = serde_json::to_string(&visible).unwrap_or_default();
+        self.read(move |conn| {
+            let (current, sharing) = shared_state_of(conn, owner_id, &visible)?;
+            let mut stmt = conn.prepare(&format!(
+                "{RELEVANT}
+                 SELECT DISTINCT kind FROM changes WHERE account_id = ?1 AND modseq IN relevant"
+            ))?;
+            let mut kinds: Vec<String> = stmt
+                .query_map(params![owner_id, visible, since], |row| row.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            // Sharing changed: whatever the client has may be out of date.
+            if sharing > since {
+                for kind in ["Mailbox", "Email", "Thread"] {
+                    if !kinds.iter().any(|known| known == kind) {
+                        kinds.push(kind.to_owned());
+                    }
+                }
+            }
+            Ok((kinds, current))
+        })
+        .await
+    }
+
     /// Who a mailbox is shared with, by login.
     pub async fn mailbox_acl(&self, owner_id: i64, mailbox_id: i64) -> Result<Vec<AclEntry>> {
         self.read(move |conn| {
@@ -303,6 +415,7 @@ impl Store {
                 // watches the owner's account (the grantees too) hears of it.
                 let modseq = next_modseq(tx, owner_id)?;
                 record_change(tx, owner_id, modseq, "Mailbox", mailbox_id, "updated")?;
+                sharing_changed(tx, owner_id, modseq)?;
                 Ok(Some(modseq))
             })
             .await?;

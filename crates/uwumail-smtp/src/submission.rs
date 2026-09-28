@@ -217,7 +217,9 @@ impl Smtp {
             added.extend_from_slice(format!("Message-ID: <{}@{from_domain}>\r\n", random_id()).as_bytes());
         }
         let mut message = added.clone();
-        message.extend_from_slice(&strip_bcc(&raw));
+        // Signed as it will be sent: a lone CR or LF becomes CRLF on the way out (SMTP-9), and the
+        // signature has to hold for that.
+        message.extend_from_slice(&headers::crlf_only(&strip_bcc(&raw)));
 
         let signatures = match dkim::ensure_domain_keys(&ctx.store, &from_domain).await {
             Ok(keys) => dkim::sign(&message, &keys).unwrap_or_else(|err| {
@@ -320,7 +322,11 @@ impl Smtp {
                 None if ctx.store.is_local_domain(&domain).await.unwrap_or(false) => {
                     match ctx.store.forward_address_targets(&address).await.ok().flatten() {
                         Some(targets) => {
-                            let forwarder = forward::Forwarder { name: &address, account_id: Some(account.id) };
+                            let forwarder = forward::Forwarder {
+                                name: &address,
+                                account_id: Some(account.id),
+                                proof: forward::Proof::PROVEN,
+                            };
                             forward::send(ctx, forwarder, &address, &mail_from, &signed, &targets).await;
                             local_deliveries += 1;
                         }
@@ -403,7 +409,8 @@ impl Smtp {
         if !plan.targets.is_empty()
             && let Ok(Some(target)) = ctx.store.account_by_id(account_id).await
         {
-            let forwarder = forward::Forwarder { name: &target.login, account_id: Some(target.id) };
+            let forwarder =
+                forward::Forwarder { name: &target.login, account_id: Some(target.id), proof: forward::Proof::PROVEN };
             forward::send(ctx, forwarder, address, mail_from, signed, &plan.targets).await;
         }
         if !plan.keep_copy {

@@ -29,7 +29,7 @@ pub use identity::{Fingerprint, Identity};
 pub use proto::{
     Connect, ConnectFailure, ConnectReply, GatewayLogLine, Hello, HelloReply, Open, Refusal, Service, Welcome,
 };
-pub use quic::{client_config, peer_fingerprint, server_endpoint};
+pub use quic::{client_config, open_up, peer_fingerprint, server_endpoint};
 pub use stream::TunnelStream;
 
 #[derive(Debug, thiserror::Error)]

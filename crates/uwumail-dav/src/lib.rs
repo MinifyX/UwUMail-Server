@@ -967,8 +967,9 @@ xmlns:c=\"urn:ietf:params:xml:ns:caldav\">{responses}</c:schedule-response>\n"
     }
 
     /// When someone of this server is busy between `start` and `end`, merged; [`Busy::Unknown`]
-    /// for anyone else, and for masked addresses, which would tie them to their person
-    /// (security-audit-0.16.0 PROTOCOLS-L4). The calendars that count are those JMAP's
+    /// for anyone else, for masked addresses, which would tie them to their person, and for
+    /// people this account may not know of (security-audit-0.16.0 PROTOCOLS-L4, see
+    /// `availability::person_of`). The calendars that count are those JMAP's
     /// `includeInAvailability` names, one's own by default. `looked_up` keeps what was found per
     /// account, for addresses of the same person; the expanding stops at `deadline`.
     async fn busy(
@@ -979,7 +980,7 @@ xmlns:c=\"urn:ietf:params:xml:ns:caldav\">{responses}</c:schedule-response>\n"
         deadline: std::time::Instant,
         looked_up: &mut HashMap<i64, Busy>,
     ) -> Busy {
-        let Some(account) = uwumail_jmap::availability::person_of(self.store(), address).await else {
+        let Some(account) = uwumail_jmap::availability::person_of(self.store(), self.account.id, address).await else {
             return Busy::Unknown;
         };
         if let Some(known) = looked_up.get(&account.id) {

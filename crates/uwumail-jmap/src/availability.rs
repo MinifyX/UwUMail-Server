@@ -44,14 +44,14 @@ pub struct Busy {
 #[derive(Debug)]
 pub struct OutOfTime;
 
-/// Whether an address belongs to someone of this server whose calendars count, and who: never for
-/// a masked address, which would tie it to its person (security-audit-0.16.0 PROTOCOLS-L4).
-pub async fn person_of(store: &Store, address: &str) -> Option<Account> {
+/// Whether an address belongs to someone of this server whose calendars count and whom `viewer`
+/// may ask about, and who: only by an address of their own ([`Store::free_busy_owner`]), never a
+/// masked address, which would tie it to its person, nor a group, forwarding address or catch-all,
+/// and only in the viewer's own domains or when they share a calendar with the viewer
+/// (security-audit-0.16.0 PROTOCOLS-L4).
+pub async fn person_of(store: &Store, viewer: i64, address: &str) -> Option<Account> {
     let address = address.strip_prefix("mailto:").unwrap_or(address);
-    if store.masked_delivery(address).await.ok()?.is_some() {
-        return None;
-    }
-    let id = store.resolve_recipient(address).await.ok()??;
+    let id = store.free_busy_owner(viewer, address).await.ok()??;
     let id = store.delivery_target(id).await.ok()??;
     let account = store.account_by_id(id).await.ok()??;
     (account.protocols.caldav && account.deleted_at.is_none()).then_some(account)

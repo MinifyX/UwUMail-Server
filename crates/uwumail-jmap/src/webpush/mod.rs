@@ -23,7 +23,7 @@ use tokio::sync::{OnceCell, broadcast, watch};
 use uwumail_smtp::egress::Egress;
 use uwumail_store::{PushTarget, Store};
 
-use crate::push::{all_types, type_states};
+use crate::push::{all_types, shared_type_states, type_states};
 use crate::{Jmap, ids};
 use vapid::Vapid;
 
@@ -78,14 +78,29 @@ struct EgressTransport(Egress);
 
 impl PushTransport for EgressTransport {
     fn check_url(&self, url: &str) -> Result<(), String> {
-        uwumail_smtp::fetch::check_url(url, false).map(|_| ())
+        check_push_url(url)
     }
 
     fn post(&self, message: PushMessage) -> Pin<Box<dyn Future<Output = Result<u16, String>> + Send + '_>> {
         Box::pin(async move {
+            // Subscriptions from before the port rule was there are held to it as well.
+            check_push_url(&message.url)?;
             self.0.post(&message.url, &message.headers, message.body).await.map_err(|err| err.to_string())
         })
     }
+}
+
+/// Where the server's own pushes may go: https on its standard port 443, where every push service
+/// listens, to a host that is not in a private network; [`Egress::post`] checks every address it
+/// connects to as well. Any other port would let a subscription make the server knock on any port
+/// of any public host (security-audit-0.16.0 PROTOCOLS-L3).
+fn check_push_url(url: &str) -> Result<(), String> {
+    let parsed = uwumail_smtp::fetch::check_url(url, false)?;
+    // `port()` is empty for the scheme's own port.
+    if parsed.port().is_some() {
+        return Err("a push service is reached over https on port 443".into());
+    }
+    Ok(())
 }
 
 /// What the JMAP service keeps for Web Push. Cheap to clone.
@@ -409,11 +424,14 @@ impl WebPush {
             };
             let Ok(audience) = store.push_audience(account_id).await else { continue };
             for follower in audience {
-                let shared = follower != account_id;
                 let wanted = |kind: &str| {
                     (kind != "EmailDelivery" || delivered.contains(&follower)) && known.iter().any(|k| k == kind)
                 };
-                let changed = type_states(store, account_id, &kinds, modseq, shared, wanted).await;
+                let changed = if follower == account_id {
+                    type_states(store, account_id, &kinds, modseq, false, wanted).await
+                } else {
+                    shared_type_states(store, account_id, follower, since, wanted).await
+                };
                 if !changed.is_empty() {
                     by_follower.entry(follower).or_default().insert(ids::account(account_id), Value::Object(changed));
                 }
@@ -550,6 +568,24 @@ mod tests {
             keys: None,
             types: types.map(|types| types.into_iter().map(str::to_owned).collect()),
             verification_code: String::new(),
+        }
+    }
+
+    #[test]
+    fn pushes_go_to_https_on_port_443_only() {
+        assert!(check_push_url("https://push.example.net/a/b").is_ok());
+        assert!(check_push_url("https://push.example.net:443/a").is_ok());
+        for refused in [
+            "https://push.example.net:25/a",
+            "https://push.example.net:8443/a",
+            "http://push.example.net/a",
+            "https://127.0.0.1/a",
+            "https://[::1]/a",
+            "https://192.168.1.2/a",
+            "https://localhost/a",
+            "https://user@push.example.net/a",
+        ] {
+            assert!(check_push_url(refused).is_err(), "{refused}");
         }
     }
 

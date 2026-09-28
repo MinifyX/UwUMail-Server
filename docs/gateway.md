@@ -30,7 +30,10 @@ only ever show the gateway, never your home address.
 
 - **The server dials out.** No port forwarding on your router, and it works
   behind carrier-grade NAT or DS-Lite. The connection is QUIC with a certificate
-  on each side; each side pins the other's fingerprint.
+  on each side; each side pins the other's fingerprint. Anyone else who knocks
+  gets little: 16 handshakes at once in all, 2 at once and 20 a minute per
+  network, one stream and 256 KB in flight until it has shown to be the paired
+  server. Your server's own address never waits behind them.
 - **TLS ends at home.** The gateway passes bytes along. It never sees passwords
   or the content of TLS connections (ports 465, 993 and 443, and port 25 and 587
   after STARTTLS); the certificate and its key stay on your server. One thing
@@ -178,7 +181,10 @@ Three things keep that from happening:
 Port 25 has no jail on purpose. The gateway carries TLS it cannot read and never
 sees a login, so a jail there could only count connections — and banning a mail
 server for connecting often means losing its mail. The gateway's own per-network
-limit holds that line instead.
+limit holds that line instead: at most 1,000 connections at once, 50 from one
+IPv4 address or IPv6 /64, and 100 from one IPv6 /48 however many /64s they come
+from (`[limits]` in `gateway.toml`: `max_connections`, `max_connections_per_ip`,
+`max_connections_per_ipv6_site`).
 
 What the gateway *can* do is act on what your server sees. Your server reads the
 failed logins, and hands the addresses worth keeping out to the gateway over the

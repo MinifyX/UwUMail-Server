@@ -18,6 +18,8 @@ Nothing was run against a production server.
 
 The rule for this release: everything **Medium and above is fixed** in 0.16.0; Low and
 Informational findings are listed here and fixed where the fix came along with another one.
+0.17.0 fixed the open Low findings of the server, the gateway and the root helpers; each says how
+below.
 
 ## Summary
 
@@ -26,8 +28,8 @@ Informational findings are listed here and fixed where the fix came along with a
 | Critical | 1 | 1 | 0 |
 | High | 11 | 11 | 0 |
 | Medium | 30 | 29 + 1 partly | 0 (SMTP-3 partly, see there) |
-| Low | 23 | 3 + 1 partly | 19 |
-| Informational | 26 | 5 | 21 |
+| Low | 23 | 21 (17, and the rest of GW-4, in 0.17.0) | 2 (WEBMAIL-2, WEBMAIL-3) |
+| Informational | 26 | 6 (PLAT-13 with GW-8 in 0.17.0) | 20 |
 
 Almost every serious finding is the same kind: **one input takes the whole server down**. The server
 is built with `panic = "abort"`, so a panic anywhere — a string sliced at a byte that is not a
@@ -105,43 +107,70 @@ What changed for good, beyond the single fixes:
 ## Low (open unless noted)
 
 - **WEB-2** — anyone may register OAuth apps (30 an hour per network); two networks can keep the
-  table full so no new OAuth sign-in works. App passwords are unaffected.
+  table full so no new OAuth sign-in works. App passwords are unaffected. **Fixed in 0.17.0:** apps
+  nobody ever allowed in go after a day, and a full table forgets the oldest of them instead of
+  refusing.
 - **WEB-3** — the OAuth authorize endpoint redirects errors to the registered URI of any
-  self-registered app without a click (an open redirect for logged-in portal users).
+  self-registered app without a click (an open redirect for logged-in portal users). **Fixed in
+  0.17.0:** errors go back by themselves only to an app allowed in before or one on the device;
+  otherwise the portal shows them (RFC 9700 section 4.11.2).
 - **WEB-4** — fixed with PLAT-2.
 - **WEB-5** — granting an OAuth app and adding an external forwarding address do not ask for the
-  password again, as app passwords do.
+  password again, as app passwords do. **Fixed in 0.17.0:** both go through the same confirmation
+  as app passwords (the password unless the login is younger than ten minutes).
 - **SMTP-8** — mail from outside forging one of our own domains is forwarded without sender
-  rewriting; matters only with that domain at DMARC `p=none`.
+  rewriting; matters only with that domain at DMARC `p=none`. **Fixed in 0.17.0:** a From that did
+  not pass DMARC and aligns with the forward's domain is not sent to other servers, and an unproven
+  sender of our own domain gets SRS.
 - **SMTP-9** — outgoing mail passes a lone CR through (SMTP smuggling towards lax receivers).
+  **Fixed in 0.17.0:** every lone CR or LF leaves as CRLF; submitted mail is signed after the same
+  change.
 - **SMTP-10** — fetched mail without a readable provider verdict skips the two-`From` and header
-  checks.
+  checks. **Fixed in 0.17.0:** they run on every incoming message, whatever else can be checked.
 - **PROTOCOLS-L1** — fixed with STORE-1: a WebSocket ends with its credential.
 - **PROTOCOLS-L2** — a shared account shows the owner's private mail activity through
-  `/changes` and push states (no content).
+  `/changes` and push states (no content). **Fixed in 0.17.0:** a sharee's state, changes and
+  pushes move only with the shared mailboxes and the sharing (migration 0054); IMAP HIGHESTMODSEQ is
+  per mailbox.
 - **PROTOCOLS-L3** — push subscriptions make the server POST to any public host and port.
+  **Fixed in 0.17.0:** https on port 443 only, checked when subscribing and before each push.
 - **PROTOCOLS-L4** — any local user can read any local free/busy, masked addresses included, which
-  links a masked address to its owner for local users.
+  links a masked address to its owner for local users. **Fixed in 0.17.0**, for CalDAV free-busy
+  and the new JMAP `Principal/getAvailability` alike: only a person's own addresses count (never a
+  masked address, group, forwarding address or catch-all), only for people in the asker's domains
+  or who share a calendar with them, and only from the calendars `includeInAvailability` names.
 - **PROTOCOLS-L5** — control characters from other accounts can break an owner's CalDAV sync.
+  **Fixed in 0.17.0:** entries are stored without them, and DAV XML leaves out what XML cannot
+  carry.
 - **PLAT-7** — single-mailbox restore opens a hostile unencrypted snapshot's database without
-  limits (admin-chosen snapshot).
+  limits (admin-chosen snapshot). **Fixed in 0.17.0:** values of at most 64 KB, real tables only,
+  capped folders and messages, interrupted after ten minutes.
 - **PLAT-8** — changing the SFTP backup host keeps the stored password without asking again.
+  **Fixed in 0.17.0:** the stored password is kept only for the same host, port and user.
 - **STORE-4** — fixed: push subscriptions go when their app password or OAuth app is revoked.
 - **GW-4** — terminal escape sequences from helper reports reach root's terminal; fixed in the
-  installer, open in `deploy/gateway/hardening/helper` and `deploy/host/helper`.
+  installer, open in `deploy/gateway/hardening/helper` and `deploy/host/helper`. **Fixed in
+  0.17.0:** both helpers show only plain characters of a report, and counts only as digits.
 - **GW-5** — unauthenticated tunnel peers get the full stream budget and unlimited handshakes.
+  **Fixed in 0.17.0:** one stream and 256 KB until paired; 16 handshakes of strangers at once, 2 at
+  once and 20 a minute per network.
 - **GW-6** — twenty IPv6 /64s can take all 1,000 public connection slots at the gateway.
+  **Fixed in 0.17.0:** an IPv6 /48 may hold 100 at once (`max_connections_per_ipv6_site`).
 - **GW-8** — the OpenVPN file filter in the host helper can be bypassed (code in the gluetun
-  container only, not the host).
+  container only, not the host). **Fixed in 0.17.0:** helper and portal allow only the directives of
+  a connection and inline keys.
 - **WEBMAIL-2** — the invitation card trusts any mail naming an event's UID, including a
   `METHOD:CANCEL` the server itself would not accept from that sender.
 - **WEBMAIL-3** — W-23 (calendar links without the link check on middle click) is now reachable by
   any sender, since invitations land in the calendar by themselves.
 - **PANIC-7** — after a share is narrowed, the grantee's next IMAP command still runs with the old
-  rights once.
+  rights once. **Fixed in 0.17.0:** the rights are read again before every command on the selected
+  mailbox.
 - **MD-1** — upgrading turns a domain that was open for masked addresses into "own domain" for its
   own users; a domain that only carried masked addresses then offers them to nobody until the admin
-  makes it masked-only and assigns it (see the 0.16.0 changelog).
+  makes it masked-only and assigns it (see the 0.16.0 changelog). **In 0.17.0:** kept as the admin's
+  decision (a change by itself could override what was set on purpose since), but the health
+  overview names every such domain and links to where it is fixed.
 
 ## Informational
 
@@ -162,7 +191,7 @@ What changed for good, beyond the single fixes:
 - PLAT-10 — `write_private` briefly exposes key material and follows a planted symlink.
 - PLAT-11 — `import imap --password <value>` still takes a password on the command line.
 - PLAT-12 — admin-only S3 and folder target checks are weaker than they look.
-- PLAT-13 — the OpenVPN filter is a blocklist (see GW-8).
+- PLAT-13 — fixed with GW-8 in 0.17.0: the OpenVPN filter is an allowlist now.
 - GW-7 — the VPS can reach `/metrics` when it is protected by network only.
 - GW-9 — a check-then-read race in the host helper, harmless with today's permissions.
 - GW-10 — the gateway's downgrade check lets a pre-release of the running version through.

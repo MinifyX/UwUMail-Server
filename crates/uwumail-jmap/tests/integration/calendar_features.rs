@@ -604,6 +604,28 @@ ATTENDEE:mailto:{masked}\r\nEND:VFREEBUSY\r\nEND:VCALENDAR\r\n"
     let outbox = format!("/dav/calendars/{NYU}/outbox/");
     let answer = server.send(NYU, "POST", &outbox, &[("content-type", "text/calendar")], request).await;
     assert!(answer.body.contains("3.7;Invalid calendar user") && !answer.body.contains("FREEBUSY"), "{}", answer.body);
+
+    // Someone in another domain who shares no calendar with Nyu: not Nyu's to know.
+    server.store.create_domain("example.net").await.unwrap();
+    let kai = server
+        .store
+        .create_account(NewAccount {
+            address: "kai@example.net".into(),
+            display_name: "Kai".into(),
+            password: Some(PASSWORD.into()),
+            role: Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        })
+        .await
+        .unwrap();
+    let kai = format!("p{}", kai.id);
+    let principal = server.call(NYU, "Principal/get", json!({ "ids": [&kai] })).await;
+    let capability = &principal["list"][0]["capabilities"]["urn:ietf:params:jmap:calendars"];
+    assert_eq!(capability["mayGetAvailability"], false, "{principal}");
+    let mut kais = window.clone();
+    kais["id"] = json!(kai);
+    assert_eq!(server.call(NYU, "Principal/getAvailability", kais).await["type"], "forbidden");
 }
 
 async fn notifications(server: &Server, login: &str) -> Vec<Value> {

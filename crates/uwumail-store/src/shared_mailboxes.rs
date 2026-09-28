@@ -129,6 +129,7 @@ fn replace_members(
     }
     // Members see the mailbox's folders appear or go: its state moves on for whoever watches it.
     let modseq = crate::db::next_modseq(tx, account_id)?;
+    crate::acl::sharing_changed(tx, account_id, modseq)?;
     granted.push(account_id, modseq);
     Ok(())
 }

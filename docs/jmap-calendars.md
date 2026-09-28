@@ -144,8 +144,9 @@ addresses, never by a masked one.
 
 `Principal/getAvailability` answers when a person of the server is busy
 between `utcStart` and `utcEnd` (at most `P400D`, `tooLarge` otherwise).
-Everyone who uses calendars may ask about everyone else who does, as with
-CalDAV's free-busy lookups. What counts is what the draft says, from the
+Everyone who uses calendars may ask about the people who do in their own
+domains and those who share a calendar with them, as with CalDAV's free-busy
+lookups (`mayGetAvailability` says whom); anyone else is `forbidden`. What counts is what the draft says, from the
 person's point of view:
 
 - the calendars whose `includeInAvailability` is `"all"` or `"attending"`

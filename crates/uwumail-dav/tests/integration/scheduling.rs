@@ -242,6 +242,95 @@ ORGANIZER:mailto:{MINI}\r\n{attendees}END:VFREEBUSY\r\nEND:VCALENDAR\r\n"
     assert_eq!(answer.body.matches("<c:response>").count(), 1, "{}", answer.body);
 }
 
+/// Free-busy answers only for people the asker may know of, and never through a masked address:
+/// that would name its owner (security-audit-0.16.0 PROTOCOLS-L4).
+#[tokio::test]
+async fn free_busy_names_nobody_behind_a_masked_address_or_another_domain() {
+    use uwumail_store::{DomainMaskedPolicy, MaskedMode, NewMaskedAddress};
+    let server = server().await;
+    let own = DomainMaskedPolicy { mode: MaskedMode::Own, ..Default::default() };
+    server.store.set_domain_masked_policy("example.org", own).await.unwrap();
+    server.store.create_domain("example.net").await.unwrap();
+    let kai = server
+        .store
+        .create_account(NewAccount {
+            address: "kai@example.net".into(),
+            display_name: "Kai".into(),
+            password: Some(PASSWORD.into()),
+            role: Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        })
+        .await
+        .unwrap();
+    let leni = server.store.account(LENI).await.unwrap().unwrap();
+    let masked = server.store.create_masked_address(leni.id, NewMaskedAddress::default()).await.unwrap();
+    let ask = async |attendee: String| {
+        let request = format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//DE\r\nMETHOD:REQUEST\r\nBEGIN:VFREEBUSY\r\n\
+UID:fb-3\r\nDTSTAMP:20260917T080000Z\r\nDTSTART:20261001T000000Z\r\nDTEND:20261002T000000Z\r\n\
+ORGANIZER:mailto:{MINI}\r\nATTENDEE:mailto:{attendee}\r\nEND:VFREEBUSY\r\nEND:VCALENDAR\r\n"
+        );
+        let outbox = "/dav/calendars/mini@example.org/outbox/";
+        let answer = server.send(MINI, "POST", outbox, &[("content-type", "text/calendar")], &request).await;
+        assert_eq!(answer.status, StatusCode::OK, "{}", answer.body);
+        answer.body
+    };
+    assert!(ask(LENI.into()).await.contains("2.0;Success"), "a colleague in the same domain");
+    assert!(ask("leni+kaffee@example.org".into()).await.contains("2.0;Success"), "and her sub-addresses");
+    assert!(ask(masked.email.clone()).await.contains("3.7;Invalid calendar user"), "not behind a masked address");
+    assert!(ask("kai@example.net".into()).await.contains("3.7;Invalid calendar user"), "not in another domain");
+
+    // Kai shares a calendar with Mini: now Mini may know when he is busy.
+    let calendar = server.send("kai@example.net", "PROPFIND", "/dav/calendars/kai@example.net/", &[], "").await;
+    assert!(calendar.status.is_success(), "{}", calendar.body);
+    let personal =
+        server.store.dav_collection(kai.id, uwumail_store::DavKind::Calendar, "personal").await.unwrap().unwrap();
+    server.store.dav_share(kai.id, personal.id, MINI, ShareRights::Read).await.unwrap();
+    assert!(ask("kai@example.net".into()).await.contains("2.0;Success"));
+}
+
+/// Control characters someone the calendar is shared with writes into an entry never reach the
+/// owner: neither in the entry nor in the XML answers it travels in (security-audit-0.16.0
+/// PROTOCOLS-L5).
+#[tokio::test]
+async fn control_characters_from_a_sharee_do_not_break_the_owners_sync() {
+    let server = server().await;
+    let mini = server.store.account(MINI).await.unwrap().unwrap();
+    // The default calendar comes with the first look at the home.
+    server.send(MINI, "PROPFIND", "/dav/calendars/mini@example.org/", &[("depth", "1")], "").await;
+    let calendar =
+        server.store.dav_collection(mini.id, uwumail_store::DavKind::Calendar, "personal").await.unwrap().unwrap();
+    server.store.dav_share(mini.id, calendar.id, LENI, ShareRights::Write).await.unwrap();
+
+    let event = invitation("Kaffee\u{1}\u{b}\u{1b}[31m\tund Kuchen", "20261001T150000Z", "NEEDS-ACTION")
+        .replace("ORGANIZER;CN=Mini:mailto:mini@example.org\r\n", "")
+        .lines()
+        .filter(|line| !line.starts_with("ATTENDEE"))
+        .map(|line| format!("{line}\r\n"))
+        .collect::<String>();
+    let shared = format!("/dav/calendars/leni@example.org/shared~{}/kaffee.ics", calendar.id);
+    let written = server.send(LENI, "PUT", &shared, &[], &event).await;
+    assert_eq!(written.status, StatusCode::CREATED, "{}", written.body);
+
+    let controls = |text: &str| text.chars().any(|c| c.is_ascii_control() && !matches!(c, '\t' | '\r' | '\n'));
+    let fetched = server.send(MINI, "GET", CALENDAR, &[], "").await;
+    assert!(fetched.body.contains("SUMMARY:Kaffee[31m\tund Kuchen"), "{:?}", fetched.body);
+    assert!(!controls(&fetched.body), "{:?}", fetched.body);
+    let report = server
+        .send(
+            MINI,
+            "REPORT",
+            "/dav/calendars/mini@example.org/personal/",
+            &[("depth", "1")],
+            r#"<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><d:getetag/><c:calendar-data/></d:prop>
+<c:filter><c:comp-filter name="VCALENDAR"/></c:filter></c:calendar-query>"#,
+        )
+        .await;
+    assert!(report.body.contains("Kaffee"), "{}", report.body);
+    assert!(!controls(&report.body), "{:?}", report.body);
+}
+
 #[tokio::test]
 async fn one_change_mails_no_more_people_than_one_message_may_reach() {
     // security-audit-0.16.0 PROTOCOLS-5: every attendee got a message of their own, so the limit on

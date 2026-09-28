@@ -233,21 +233,31 @@ impl Client {
     }
 }
 
-/// Dot-stuffs a message and terminates it with `CRLF.CRLF`.
+/// Dot-stuffs a message and terminates it with `CRLF.CRLF`. A CR or LF on its own becomes CRLF
+/// first: a receiver that takes one of them for the end of a line would otherwise see a line of
+/// its own where this server saw none, and a lone `.` there ends the message early (SMTP
+/// smuggling, security-audit-0.16.0 SMTP-9). RFC 5322 allows neither on its own.
 pub fn dot_stuff(raw: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(raw.len() + 64);
     let mut line_start = true;
-    let mut previous = 0u8;
-    for &byte in raw {
-        if byte == b'\n' && previous != b'\r' {
-            out.push(b'\r');
+    let mut bytes = raw.iter().copied().peekable();
+    while let Some(byte) = bytes.next() {
+        match byte {
+            b'\r' | b'\n' => {
+                if byte == b'\r' {
+                    bytes.next_if_eq(&b'\n');
+                }
+                out.extend_from_slice(b"\r\n");
+                line_start = true;
+            }
+            _ => {
+                if line_start && byte == b'.' {
+                    out.push(b'.');
+                }
+                out.push(byte);
+                line_start = false;
+            }
         }
-        if line_start && byte == b'.' {
-            out.push(b'.');
-        }
-        out.push(byte);
-        line_start = byte == b'\n';
-        previous = byte;
     }
     if !out.ends_with(b"\r\n") {
         out.extend_from_slice(b"\r\n");
@@ -264,5 +274,18 @@ mod tests {
     fn stuffs_dots_and_terminates() {
         assert_eq!(dot_stuff(b"a\r\n.b\r\n..c"), b"a\r\n..b\r\n...c\r\n.\r\n");
         assert_eq!(dot_stuff(b".\nx\n"), b"..\r\nx\r\n.\r\n");
+    }
+
+    #[test]
+    fn a_lone_cr_or_lf_cannot_end_the_message_early() {
+        // Every way a lax receiver could read a line holding only a dot is a stuffed line here.
+        assert_eq!(dot_stuff(b"a\r.\rb"), b"a\r\n..\r\nb\r\n.\r\n");
+        assert_eq!(dot_stuff(b"a\n.\r\nb"), b"a\r\n..\r\nb\r\n.\r\n");
+        assert_eq!(dot_stuff(b"a\r\n.\rb\r"), b"a\r\n..\r\nb\r\n.\r\n");
+        let sent = dot_stuff(b"x\r.\r\nMAIL FROM:<a@example.com>\n\r");
+        let crs = sent.iter().filter(|b| **b == b'\r').count();
+        let lfs = sent.iter().filter(|b| **b == b'\n').count();
+        assert_eq!((crs, sent.windows(2).filter(|pair| pair == b"\r\n").count()), (lfs, lfs), "CRLF only");
+        assert_eq!(sent.windows(5).filter(|w| w == b"\r\n.\r\n").count(), 1, "only the real end");
     }
 }

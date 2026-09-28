@@ -70,6 +70,10 @@ that judges a sending server — its address, its reverse name, the blocklists,
 SPF — has nothing left to look at. Instead of guessing, the filter asks what it
 still can:
 
+* **The header block, always.** A message with more than one `From`, with
+  `From` addresses in more than one domain, or with a header block a malformed
+  line cut short is refused, as at the door: the person must see the one
+  `From` the checks were made against.
 * **DKIM, checked here.** A signature travels with the message, so it is worth
   exactly as much as it was before: it says who signed the message, and when it
   holds for the From domain, that is what DMARC alignment asks of DKIM.

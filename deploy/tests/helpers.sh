@@ -102,6 +102,19 @@ fail2ban-client() {
   ln -s "$canary" "$state/job-efgh.log"
   run_job efgh reboot ""
   check "gateway: a job's log is never written through a symlink" canary_intact
+
+  # The gateway can replace machine.json, and the report goes to root's terminal (GW-4).
+  rm -f -- "$report_file"
+  jq -n '{system: {name: "Debian \u001b]0;owned\u0007GNU/Linux\u009b31m 12", updates: "3\u001b[2J",
+          securityUpdates: 1, rebootRequired: false, newRelease: "\u009b2J13"}}' >"$report_file"
+  plain_report() {
+    local shown
+    shown=$(cmd_report)
+    printf '%s\n' "$shown" | grep -q 'UwUMail Gateway  .  Debian 0owned' &&
+      printf '%s\n' "$shown" | grep -q '^  0 updates wait\|Everything is up to date' &&
+      ! printf '%s' "$shown" | LC_ALL=C grep -q $'[\x01-\x08\x0b-\x1f\x7f]\|\xc2[\x80-\x9f]'
+  }
+  check "gateway: the report shows no escape sequences a crafted machine.json carries" plain_report
   exit "$failed"
 ) || failed=1
 
@@ -174,6 +187,17 @@ fail2ban-client() {
   check "host: an OpenVPN file that runs a script is refused" not_harmless $'client\n  up /tmp/x.sh'
   check "host: an OpenVPN file that loads a plugin is refused" not_harmless $'client\nplugin /x.so'
   check "host: an OpenVPN file that reads a login from a file is refused" not_harmless $'auth-user-pass /etc/shadow'
+  # Only what is known to be a connection gets through, however the rest is spelled (GW-8).
+  check "host: a quoted directive is refused" not_harmless $'client\n"up" /tmp/x.sh'
+  check "host: a directive in capitals is refused" not_harmless $'client\nUP /tmp/x.sh'
+  check "host: a directive the filter does not know is refused" not_harmless $'client\ndns-updown /tmp/x.sh'
+  check "host: a certificate read from a file is refused" not_harmless $'client\nca /etc/shadow'
+  check "host: a key read from a file is refused" not_harmless $'client\ntls-auth /etc/ta.key 1'
+  check "host: an inline block closed by another is refused" not_harmless $'<ca>\nx\n</cert>\nup /tmp/x.sh'
+  check "host: an inline block never closed is refused" not_harmless $'client\n<ca>\nx'
+  check "host: an unknown inline block is refused" not_harmless $'<script>\nx\n</script>'
+  check "host: a provider's file with CRLF, comments and inline keys passes" harmless \
+    $'# provider\r\nclient\r\ndev tun\r\nproto udp\r\nremote 203.0.113.1 1194\r\nauth-user-pass ; gluetun\r\ncipher AES-256-GCM\r\n<ca>\r\n-----BEGIN CERTIFICATE-----\r\nMIIB\r\n</ca>\r\nkey-direction 1\r\n<tls-auth>\r\nabc\r\n</tls-auth>\r\n'
 
   vpn_status() { printf '{"configured":true,"provider":"nordvpn","type":"wireguard","state":"running","health":"healthy","always":true}'; }
   refresh_vpn_status
@@ -247,6 +271,20 @@ fail2ban-client() {
   ln -s "$canary" "$bridge/job-efgh.log"
   run_job efgh reboot
   check "host: a job's log is never written through a symlink" canary_intact
+
+  # The container can replace machine.json, and the report goes to root's terminal (GW-4).
+  rm -f -- "$machine_file"
+  jq -n '{checkedAt: 1790000000, name: "Debian\u001b[2J 12\u009b31m", kind: "vps", updates: 2,
+          securityUpdates: 1, rebootRequired: false, alone: false, others: ["nginx\u0007\u001b]0;owned"],
+          image: "registry.example/uwumail-server:0.16.0", digest: "sha256:ab"}' >"$machine_file"
+  plain_host_report() {
+    local shown
+    shown=$(cmd_report)
+    printf '%s\n' "$shown" | grep -q 'system     Debian2J 1231m (vps)' &&
+      printf '%s\n' "$shown" | grep -q 'alone      no: nginx0owned' &&
+      ! printf '%s' "$shown" | LC_ALL=C grep -q $'[\x01-\x08\x0b-\x1f\x7f]\|\xc2[\x80-\x9f]'
+  }
+  check "host: the report shows no escape sequences a crafted machine.json carries" plain_host_report
   exit "$failed"
 ) || failed=1
 

@@ -536,6 +536,7 @@
       "serviceAccount": "A service signs in with app passwords only.",
       "oauthClientUnknown": "This app is not registered on this server.",
       "oauthRedirectInvalid": "The app asked to be sent somewhere it did not register.",
+      "oauthRequestInvalid": "The app's sign-in request is not valid.",
       "oidcFailed": "The login service did not work out: {{detail}}",
       "ldapFailed": "The directory did not work out: {{detail}}",
       "importRunning": "A move from another provider is running already. Wait until it is done.",
@@ -1649,7 +1650,9 @@
       "gatewayPort25Blocked": "The gateway cannot reach other mail servers on port 25.",
       "gatewayOutboundBlocked": "Other mail servers cannot be reached through the gateway ({{count}} domains affected).",
       "virusScannerAway": "The virus scanner does not answer. Until it is back, mail is delivered unchecked and says so in its headers.",
-      "virusSignaturesOld": "The virus signatures are {{since}} old. The scanner is not fetching new ones any more."
+      "virusSignaturesOld": "The virus signatures are {{since}} old. The scanner is not fetching new ones any more.",
+      "maskedStranded_one": "{{domain}} holds a masked address, but nobody can make new ones there.",
+      "maskedStranded_other": "{{domain}} holds {{count}} masked addresses, but nobody can make new ones there."
     },
     "hints": {
       "noDomains": "Without a domain the server cannot receive mail.",
@@ -1675,7 +1678,8 @@
       "gatewayDown": "Mail waits in the queue meanwhile. Check that the gateway is running and that your server may send UDP to it.",
       "gatewayRefused": "Pair the gateway again under Server → Setup.",
       "gatewayPort25Blocked": "Many VPS providers block outgoing port 25. Ask their support to open it; a relay helps until then.",
-      "gatewayOutboundBlocked": "Many VPS providers block outgoing port 25. Ask their support to open it; a relay helps until then."
+      "gatewayOutboundBlocked": "Many VPS providers block outgoing port 25. Ask their support to open it; a relay helps until then.",
+      "maskedStranded": "Since 0.16.0 a domain nobody logs in on offers masked addresses to nobody. On its page, make it masked-only and choose it for the domains whose people should use it. The addresses there keep working either way."
     }
   },
   "secondFactor": {
@@ -1923,7 +1927,8 @@
     "invalidTitle": "This app cannot sign in here",
     "invalid": {
       "oauthClientUnknown": "This app is not registered on this server. Set up the account in the app again.",
-      "oauthRedirectInvalid": "The app asked to be sent somewhere it did not register. To be safe, nothing was sent."
+      "oauthRedirectInvalid": "The app asked to be sent somewhere it did not register. To be safe, nothing was sent.",
+      "oauthRequestInvalid": "The app's sign-in request is not valid. It was never allowed in here before, so you are not sent on to it. Set up the account in the app again."
     },
     "toPortal": "To the portal"
   },

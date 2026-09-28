@@ -75,7 +75,12 @@ cannot be removed while masked addresses on it still take mail.
 
 Upgrading from 0.15: every domain that was open for masked addresses gets the
 mode `own`, all others `off`. People of other domains no longer make new ones
-there; the masked addresses they made keep working.
+there; the masked addresses they made keep working. A domain that only carried
+masked addresses (nobody's login is on it) then offers them to nobody. That is
+left for the admin to decide rather than changed by itself, but the health
+overview (*Server → Overview*) names every such domain with how many masked
+addresses it holds, and links to its page: make it masked-only there and choose
+it for the mail domains whose people should use it.
 
 ## States
 
