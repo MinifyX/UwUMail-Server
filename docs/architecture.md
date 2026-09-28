@@ -95,8 +95,13 @@ Design choices that matter later:
 - `forward` + `srs`: after local delivery, mail also goes to a person's confirmed
   forwarding addresses. Mail to other servers gets an SRS envelope sender on
   the person's domain (HMAC-SHA256, valid 21 days), so SPF passes there; DKIM
-  signatures stay intact. Suspicious mail (DMARC quarantine or a junk score) is never
-  forwarded, and a `Delivered-To` header stops loops. Bounces to SRS addresses
+  signatures stay intact. Our own sender address is kept only when SPF or DKIM
+  proved it; otherwise it is rewritten like anybody else's. Mail whose From did
+  not pass DMARC and belongs to the domain the forward would go out with (a
+  forgery of our own domain at `p=none` or without a record) is not sent to
+  other servers: there it would pass as ours. It stays in the mailbox, as does
+  any mail a forward reached nobody with. Suspicious mail (DMARC quarantine or a
+  junk score) is never forwarded, and a `Delivered-To` header stops loops. Bounces to SRS addresses
   are only accepted with an empty sender and go back to the original sender.
   Forwarding addresses of a domain have no mailbox and pass everything on the
   same way; when nobody else would get a junk message, it is refused instead.

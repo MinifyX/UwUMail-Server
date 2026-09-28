@@ -320,7 +320,11 @@ impl Smtp {
                 None if ctx.store.is_local_domain(&domain).await.unwrap_or(false) => {
                     match ctx.store.forward_address_targets(&address).await.ok().flatten() {
                         Some(targets) => {
-                            let forwarder = forward::Forwarder { name: &address, account_id: Some(account.id) };
+                            let forwarder = forward::Forwarder {
+                                name: &address,
+                                account_id: Some(account.id),
+                                proof: forward::Proof::PROVEN,
+                            };
                             forward::send(ctx, forwarder, &address, &mail_from, &signed, &targets).await;
                             local_deliveries += 1;
                         }
@@ -403,7 +407,8 @@ impl Smtp {
         if !plan.targets.is_empty()
             && let Ok(Some(target)) = ctx.store.account_by_id(account_id).await
         {
-            let forwarder = forward::Forwarder { name: &target.login, account_id: Some(target.id) };
+            let forwarder =
+                forward::Forwarder { name: &target.login, account_id: Some(target.id), proof: forward::Proof::PROVEN };
             forward::send(ctx, forwarder, address, mail_from, signed, &plan.targets).await;
         }
         if !plan.keep_copy {
