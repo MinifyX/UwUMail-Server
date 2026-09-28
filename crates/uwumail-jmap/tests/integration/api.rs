@@ -56,7 +56,8 @@ async fn server() -> Server {
         },
     )
     .unwrap();
-    Server { router: Jmap::new(smtp).router(), store, _dir: dir }
+    let jmap = Jmap::new(smtp).with_avatar_net(std::sync::Arc::new(crate::common::NoNet));
+    Server { router: jmap.router(), store, _dir: dir }
 }
 
 fn basic(login: &str, password: &str) -> String {

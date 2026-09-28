@@ -141,6 +141,7 @@ async fn print_dns(config: &Config, store: &Store, name: &str) -> anyhow::Result
     let Some(domain) = store.domain(name).await? else {
         bail!("{name} is not hosted here");
     };
+    let domain_id = domain.id;
     let domain = domain.name;
     let host = if config.hostname.is_empty() { "<hostname>" } else { config.hostname.as_str() };
     let keys = uwumail_smtp::dkim::ensure_domain_keys(store, &domain).await?;
@@ -160,6 +161,10 @@ async fn print_dns(config: &Config, store: &Store, name: &str) -> anyhow::Result
     println!("  _smtp._tls.{domain}.  TXT \"v=TLSRPTv1; rua=mailto:tls-reports@{domain}\"");
     for (_, record_name, port) in uwumail_smtp::dnscheck::service_records(&domain) {
         println!("  {record_name}.  SRV 0 1 {port} {host}.");
+    }
+    if store.public_pictures_allowed().await? && store.domain_public_pictures(domain_id).await? {
+        let record_name = uwumail_smtp::avatars::libravatar_srv_name(&domain);
+        println!("  {record_name}.  SRV 0 1 443 {host}.");
     }
     if let Some(settings) = store.mta_sts(&domain).await? {
         let policy = uwumail_smtp::mta_sts::Policy::ours(settings.mode, &settings.mx);

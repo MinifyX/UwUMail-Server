@@ -15,7 +15,7 @@ use serde_json::json;
 use uwumail_smtp::egress::EgressError;
 
 use crate::auth::ClientInfo;
-use crate::{Jmap, ids};
+use crate::{Jmap, ids, pictures};
 
 /// Bigger pictures than this are not passed on. Newsletters stay far below it.
 pub const MAX_IMAGE_BYTES: usize = 10 * 1024 * 1024;
@@ -78,10 +78,14 @@ pub async fn image(
 #[derive(Deserialize)]
 pub struct PictureQuery {
     email: String,
+    /// `logo`: only the logo of the sender's company or domain.
+    source: Option<String>,
+    /// `1`: ask nobody outside, only what is known already.
+    local: Option<String>,
 }
 
-/// The logo or website icon of a company sender, fetched and kept by the server. `404` for people, mail
-/// providers and companies without one.
+/// The picture of a sender (docs/jmap-remote.md): a person's picture when the reader has one for the
+/// address, or a company's logo or website icon. `404` when there is none.
 pub async fn picture(
     State(jmap): State<Jmap>,
     Path(account): Path<String>,
@@ -97,29 +101,58 @@ pub async fn picture(
     if account != ids::account(owner.id) {
         return problem(StatusCode::NOT_FOUND, "Unknown account.");
     }
-    if query.email.len() > 320 {
+    if query.email.len() > 320 || !query.email.contains('@') {
         return problem(StatusCode::BAD_REQUEST, "That is not an address.");
     }
-    let Some(found) = jmap.inner.pictures.get(&query.email).await else {
+    let logo_only = query.source.as_deref() == Some("logo");
+    let offline = matches!(query.local.as_deref(), Some("1" | "true"));
+    let Some(found) = pictures::resolve(&jmap.inner, owner.id, query.email.trim(), logo_only, offline).await else {
         let mut response = problem(StatusCode::NOT_FOUND, "No picture for this sender.");
-        // Asking again soon changes nothing; the server remembers for a week.
-        response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("private, max-age=86400"));
+        // A contact photo or a profile picture can come any time; a company logo is asked for once
+        // a week anyway.
+        response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("private, max-age=3600"));
         return response;
     };
-    let mut response = Response::new(Body::from(found.bytes));
+    let mut response = match found {
+        pictures::Found::Person { media_type, bytes } => {
+            let etag = pictures::etag(&bytes);
+            let unchanged = headers
+                .get(header::IF_NONE_MATCH)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.split(',').any(|tag| tag.trim() == etag || tag.trim() == "*"));
+            let mut response =
+                if unchanged { StatusCode::NOT_MODIFIED.into_response() } else { Response::new(Body::from(bytes)) };
+            let headers = response.headers_mut();
+            if !unchanged {
+                headers.insert(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_str(&media_type).unwrap_or(HeaderValue::from_static("application/octet-stream")),
+                );
+            }
+            headers.insert("x-picture-kind", HeaderValue::from_static("photo"));
+            headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, no-cache"));
+            if let Ok(etag) = HeaderValue::from_str(&etag) {
+                headers.insert(header::ETAG, etag);
+            }
+            response
+        }
+        pictures::Found::Logo { media_type, bytes, kind, domain } => {
+            let mut response = Response::new(Body::from(bytes));
+            let headers = response.headers_mut();
+            headers.insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_str(&media_type).unwrap_or(HeaderValue::from_static("application/octet-stream")),
+            );
+            headers.insert("x-picture-kind", HeaderValue::from_static(kind));
+            if let Some(domain) = domain.and_then(|domain| HeaderValue::from_str(&domain).ok()) {
+                headers.insert("x-picture-domain", domain);
+            }
+            headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, max-age=86400"));
+            response
+        }
+    };
     let headers = response.headers_mut();
-    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(found.media_type));
-    headers.insert("x-picture-kind", HeaderValue::from_static(found.kind.as_str()));
-    if let Ok(domain) = HeaderValue::from_str(&found.domain) {
-        headers.insert("x-picture-domain", domain);
-    }
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, max-age=86400"));
-    headers.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
-    headers.insert(header::CONTENT_DISPOSITION, HeaderValue::from_static("attachment"));
-    headers.insert(
-        header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static("default-src 'none'; style-src 'unsafe-inline'; sandbox"),
-    );
+    pictures::sandbox(headers);
     headers.insert("cross-origin-resource-policy", HeaderValue::from_static("same-origin"));
     response
 }

@@ -305,6 +305,12 @@ pub async fn run_check(web: &Web, domain: &str) -> ApiResult<uwumail_smtp::dnsch
     let lasting = certificate.filter(|status| !(status.automatic && status.self_signed));
     let account = lasting.as_ref().and_then(|status| status.lets_encrypt_account.clone().filter(|_| status.automatic));
     let chain = lasting.map(|status| status.chain).filter(|chain| !chain.is_empty());
+    let public_pictures = match web.store().domain(domain).await? {
+        Some(found) => {
+            web.store().public_pictures_allowed().await? && web.store().domain_public_pictures(found.id).await?
+        }
+        None => false,
+    };
     let report = checker
         .check(DomainSetup {
             domain,
@@ -315,6 +321,7 @@ pub async fn run_check(web: &Web, domain: &str) -> ApiResult<uwumail_smtp::dnsch
             mta_sts: policy.as_ref(),
             lets_encrypt_account: account.as_deref(),
             certificate: chain.as_deref(),
+            public_pictures,
         })
         .await;
     web.keep_report(report.clone());

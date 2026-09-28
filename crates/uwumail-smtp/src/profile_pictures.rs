@@ -321,6 +321,26 @@ pub fn contact_photo_type(bytes: &[u8]) -> Option<&'static str> {
     Some(media_type)
 }
 
+/// The generic silhouette Libravatar hands out for `d=mm`: a grey head and shoulders on a light
+/// ground, as a PNG of `size` × `size`.
+pub fn silhouette(size: u32) -> Vec<u8> {
+    let size = size.clamp(1, STORED_SIZE);
+    let s = size as f32;
+    let picture = RgbaImage::from_fn(size, size, |x, y| {
+        let (x, y) = (x as f32 + 0.5, y as f32 + 0.5);
+        let head = (x - s * 0.5).powi(2) + (y - s * 0.38).powi(2) <= (s * 0.19).powi(2);
+        let shoulders = (x - s * 0.5).powi(2) / (s * 0.34).powi(2) + (y - s * 0.95).powi(2) / (s * 0.36).powi(2) <= 1.0;
+        if head || shoulders { image::Rgba([160, 160, 166, 255]) } else { image::Rgba([222, 222, 226, 255]) }
+    });
+    encode_png(&DynamicImage::ImageRgba8(picture)).unwrap_or_default()
+}
+
+/// A fully transparent PNG of `size` × `size`, for Libravatar's `d=blank`.
+pub fn blank(size: u32) -> Vec<u8> {
+    let size = size.clamp(1, STORED_SIZE);
+    encode_png(&DynamicImage::ImageRgba8(RgbaImage::new(size, size))).unwrap_or_default()
+}
+
 /// A test picture of the given size in `png`, `jpeg`, `gif` or `webp`, for tests here and in the
 /// other crates.
 #[doc(hidden)]

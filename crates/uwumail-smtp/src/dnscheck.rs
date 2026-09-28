@@ -113,6 +113,9 @@ pub struct DomainSetup<'a> {
     /// (not a stand-in waiting for Let's Encrypt). With it, the domain the host name belongs to is
     /// told the TLSA record for its key (DANE, RFC 7672) and whether a published one matches.
     pub certificate: Option<&'a [Vec<u8>]>,
+    /// Whether pictures of the domain's addresses may be public: then Libravatar clients are told
+    /// where to find them (`_avatars-sec._tcp`).
+    pub public_pictures: bool,
 }
 
 /// One CAA property as published (RFC 8659).
@@ -374,6 +377,10 @@ impl DnsChecker {
         }
         for (kind, name, port) in service_records(&domain) {
             records.push(evaluate_srv(kind, &name, setup.hostname, port, lookups.srv(&name).await));
+        }
+        if setup.public_pictures {
+            let name = crate::avatars::libravatar_srv_name(&domain);
+            records.push(evaluate_srv("avatars", &name, setup.hostname, 443, lookups.srv(&name).await));
         }
         // The host name's CAA record belongs to the domain the name is in, if it is one of ours.
         let host = setup.hostname.trim_end_matches('.').to_ascii_lowercase();
@@ -955,6 +962,7 @@ mod tests {
             mta_sts: None,
             lets_encrypt_account: None,
             certificate: None,
+            public_pictures: false,
         };
         let spf = |texts: &[&str]| {
             evaluate_spf_record("example.org", &setup, Ok(texts.iter().map(|t| t.to_string()).collect()))
@@ -992,6 +1000,14 @@ mod tests {
         );
         assert_eq!(srv(vec![(0, 1, 8443, "mail.example.org".into())]).note, Some("srvElsewhere"));
         assert_eq!(srv(vec![]).status, CheckStatus::Missing);
+        // Libravatar clients find public pictures the same way (docs/profile-pictures.md).
+        let name = crate::avatars::libravatar_srv_name("example.org");
+        let avatars = evaluate_srv("avatars", &name, "mail.example.org", 443, Ok(vec![]));
+        assert_eq!(
+            (avatars.name.as_str(), avatars.expected.as_str()),
+            ("_avatars-sec._tcp.example.org", "0 1 443 mail.example.org")
+        );
+        assert!(avatars.optional);
 
         let tls = |required: bool, texts: &[&str]| {
             evaluate_tls_rpt("example.org", required, Ok(texts.iter().map(|t| t.to_string()).collect()))
@@ -1086,6 +1102,7 @@ mod tests {
                 mta_sts: None,
                 lets_encrypt_account: None,
                 certificate: None,
+                public_pictures: false,
             })
             .await;
         println!("{}", serde_json::to_string_pretty(&report).unwrap());
