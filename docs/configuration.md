@@ -396,7 +396,7 @@ code = ""              # the gateway's pairing code, used once; the pairing then
 [egress]
 proxy = ""             # "http://gluetun:8888" or "socks5://user:password@host:1080"; empty: straight out
 fallback = "block"     # block | direct: what happens while the proxy is away
-pictures = true        # remote pictures and sender logos take the proxy
+pictures = true        # remote pictures, sender logos, linked contact photos and Libravatar take the proxy
 updates = false        # the check for new versions takes it
 fetch = false          # fetching from other providers (mailboxes, calendars, contacts) takes it
 

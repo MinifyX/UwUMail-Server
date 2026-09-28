@@ -71,6 +71,10 @@ something a family, a club or a small team can run without being a mail admin:
 - **Backups and updates built in.** Nightly deduplicated, encrypted backups to
   SFTP, an S3 bucket or a folder, single mailboxes restored from the portal,
   and the portal tells you when a new version is out.
+- **Profile pictures.** A picture for everyone, services, groups and a logo
+  per domain, visible on the server or also to other servers over Libravatar
+  and the `Face:` header — and sender pictures from the reader's own contacts
+  first ([profile pictures](docs/profile-pictures.md)).
 - **Push to closed apps.** The webmail notifies with its tab closed, and the
   Android app gets new mail through UnifiedPush ([JMAP push](docs/jmap-push.md)).
 - **Everything in one panel.** Accounts, domains, queue, logs, spam and
