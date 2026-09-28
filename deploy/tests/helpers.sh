@@ -102,6 +102,19 @@ fail2ban-client() {
   ln -s "$canary" "$state/job-efgh.log"
   run_job efgh reboot ""
   check "gateway: a job's log is never written through a symlink" canary_intact
+
+  # The gateway can replace machine.json, and the report goes to root's terminal (GW-4).
+  rm -f -- "$report_file"
+  jq -n '{system: {name: "Debian \u001b]0;owned\u0007GNU/Linux\u009b31m 12", updates: "3\u001b[2J",
+          securityUpdates: 1, rebootRequired: false, newRelease: "\u009b2J13"}}' >"$report_file"
+  plain_report() {
+    local shown
+    shown=$(cmd_report)
+    printf '%s\n' "$shown" | grep -q 'UwUMail Gateway  .  Debian 0owned' &&
+      printf '%s\n' "$shown" | grep -q '^  0 updates wait\|Everything is up to date' &&
+      ! printf '%s' "$shown" | LC_ALL=C grep -q $'[\x01-\x08\x0b-\x1f\x7f]\|\xc2[\x80-\x9f]'
+  }
+  check "gateway: the report shows no escape sequences a crafted machine.json carries" plain_report
   exit "$failed"
 ) || failed=1
 
@@ -247,6 +260,20 @@ fail2ban-client() {
   ln -s "$canary" "$bridge/job-efgh.log"
   run_job efgh reboot
   check "host: a job's log is never written through a symlink" canary_intact
+
+  # The container can replace machine.json, and the report goes to root's terminal (GW-4).
+  rm -f -- "$machine_file"
+  jq -n '{checkedAt: 1790000000, name: "Debian\u001b[2J 12\u009b31m", kind: "vps", updates: 2,
+          securityUpdates: 1, rebootRequired: false, alone: false, others: ["nginx\u0007\u001b]0;owned"],
+          image: "registry.example/uwumail-server:0.16.0", digest: "sha256:ab"}' >"$machine_file"
+  plain_host_report() {
+    local shown
+    shown=$(cmd_report)
+    printf '%s\n' "$shown" | grep -q 'system     Debian2J 1231m (vps)' &&
+      printf '%s\n' "$shown" | grep -q 'alone      no: nginx0owned' &&
+      ! printf '%s' "$shown" | LC_ALL=C grep -q $'[\x01-\x08\x0b-\x1f\x7f]\|\xc2[\x80-\x9f]'
+  }
+  check "host: the report shows no escape sequences a crafted machine.json carries" plain_host_report
   exit "$failed"
 ) || failed=1
 

@@ -569,6 +569,19 @@ cmd_machine() {
   mv -fT "$temporary" "$report_file"
 }
 
+# One line of a name for a terminal: letters, digits and a few signs, nothing a terminal could take
+# for a command, at most 80 of them.
+shown() {
+  head -n 1 | LC_ALL=C tr -cd 'A-Za-z0-9 ._:/()+,@=~-' | cut -c1-80
+}
+
+# A count for a terminal: its digits, or 0.
+count() {
+  local value
+  value=$(head -n 1)
+  if [[ "$value" =~ ^[0-9]{1,6}$ ]]; then printf '%s' "$value"; else printf 0; fi
+}
+
 # helper report — the same thing for people. --motd keeps it to the few lines worth seeing on login.
 cmd_report() {
   local motd=false
@@ -576,14 +589,16 @@ cmd_report() {
   [ -f "$report_file" ] || { $motd || echo "No report yet. Run: uwumail-gateway-helper machine"; return 0; }
 
   local name updates security reboot automatic release command
-  # Strip control bytes from anything the report carries, so a crafted machine.json cannot inject
-  # terminal escape sequences into the root login banner (security-audit-0.5.2 G-4).
-  name=$(jq -r '.system.name // "Linux"' "$report_file" | tr -d '[:cntrl:]')
-  updates=$(jq -r '.system.updates // 0' "$report_file")
-  security=$(jq -r '.system.securityUpdates // 0' "$report_file")
-  reboot=$(jq -r '.system.rebootRequired // false' "$report_file")
-  automatic=$(jq -r '.system.automaticSecurity // false' "$report_file")
-  release=$(jq -r '.system.newRelease // ""' "$report_file" | tr -d '[:cntrl:]')
+  # The gateway can replace machine.json, and this prints it into the root login banner. Only what a
+  # report may say gets through: names of a few plain characters, counts of digits, true or false.
+  # Stripping control bytes alone left the C1 controls UTF-8 can spell (a lone CSI) and the counts
+  # as they were (security-audit-0.5.2 G-4, security-audit-0.16.0 GW-4).
+  name=$(jq -r '.system.name // "Linux"' "$report_file" 2>/dev/null | shown)
+  updates=$(jq -r '.system.updates // 0' "$report_file" 2>/dev/null | count)
+  security=$(jq -r '.system.securityUpdates // 0' "$report_file" 2>/dev/null | count)
+  reboot=$(jq -r '.system.rebootRequired // false' "$report_file" 2>/dev/null)
+  automatic=$(jq -r '.system.automaticSecurity // false' "$report_file" 2>/dev/null)
+  release=$(jq -r '.system.newRelease // ""' "$report_file" 2>/dev/null | shown)
   # The command to run is this script's own constant, never a string the report chose: a compromised
   # gateway must not be able to put a command in front of the admin as root-to-run (G-4).
   command="apt-get update && apt-get -y dist-upgrade"

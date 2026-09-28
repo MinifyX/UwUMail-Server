@@ -665,19 +665,27 @@ cmd_task() {
   find "$bridge" -maxdepth 1 -name 'job-*' -mtime +7 -delete 2>/dev/null
 }
 
+# What a terminal may be shown of machine.json: letters, digits, spaces, line breaks and a few signs.
+# The container can replace the file, and anything else in it -- an escape sequence, or one of the
+# C1 controls UTF-8 can spell -- would reach root's terminal as a command (security-audit-0.16.0
+# GW-4).
+shown() {
+  LC_ALL=C tr -cd 'A-Za-z0-9 \n._:/()+,@=~-'
+}
+
 cmd_report() {
   if [ ! -f "$machine_file" ]; then
     echo "nothing has been written down yet; run: $0 machine"
     return 0
   fi
-  jq -r '
+  jq -r 2>/dev/null '
     "UwUMail host, seen \(.checkedAt | todate)",
     "  system     \(.name) (\(.kind))",
     "  updates    \(.updates) waiting, \(.securityUpdates) of them security",
     "  restart    \(if .rebootRequired then "needed" else "not needed" end)",
     "  alone      \(if .alone == true then "yes" elif .alone == false then "no: " + (.others | join(", ")) else "cannot tell" end)",
     "  deployed   \(.image) \(.digest)"
-  ' "$machine_file"
+  ' "$machine_file" | shown
 }
 
 # Sourced by deploy/tests/helpers.sh, which calls the functions above on a directory of its own.
