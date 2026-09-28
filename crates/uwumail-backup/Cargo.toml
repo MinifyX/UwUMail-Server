@@ -20,7 +20,7 @@ http-body-util.workspace = true
 hyper.workspace = true
 hyper-rustls.workspace = true
 hyper-util.workspace = true
-rusqlite.workspace = true
+rusqlite = { workspace = true, features = ["limits"] }
 rustls.workspace = true
 russh = { version = "0.63", default-features = false, features = ["aws-lc-rs", "flate2"] }
 russh-sftp = "3"
