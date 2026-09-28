@@ -737,12 +737,16 @@ async fn others_changes_leave_notifications() {
     let changes = server.call(MINI, "CalendarEventNotification/changes", json!({ "sinceState": mini_state })).await;
     assert_eq!(changes["created"], json!([&mine[0]["id"]]), "{changes}");
 
-    // Mini changes it: Nyu gets the patch.
-    server.call(MINI, "CalendarEvent/set", json!({ "update": { &id: { "title": "Von Mini" } } })).await;
+    // Mini changes it: Nyu gets the patch, without Mini's own colour and alerts.
+    let alert = json!({ "a": { "@type": "Alert", "trigger": { "@type": "OffsetTrigger", "offset": "-PT15M" } } });
+    let change = json!({ "title": "Von Mini", "color": "red", "alerts": alert });
+    server.call(MINI, "CalendarEvent/set", json!({ "update": { &id: change } })).await;
     let theirs = notifications(&server, NYU).await;
     assert_eq!(theirs.len(), 1);
     assert_eq!((&theirs[0]["type"], &theirs[0]["event"]["title"]), (&json!("updated"), &json!("Von Nyu")));
     assert_eq!(theirs[0]["eventPatch"]["title"], "Von Mini", "{}", theirs[0]);
+    assert!(theirs[0]["eventPatch"].get("color").is_none(), "{}", theirs[0]);
+    assert!(theirs[0]["eventPatch"].get("alerts").is_none(), "{}", theirs[0]);
 
     // Nyu deletes it over CalDAV.
     let uid = server.event(MINI, &id).await["uid"].as_str().unwrap().to_owned();

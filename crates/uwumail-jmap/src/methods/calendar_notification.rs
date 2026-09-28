@@ -20,9 +20,12 @@ pub fn id(notification: i64) -> String {
     format!("n{notification}")
 }
 
-/// The event of a notification's iCalendar, as JSCalendar without what JMAP adds.
+/// The event of a notification's iCalendar, as JSCalendar without what JMAP adds, and without the
+/// per-user properties of the calendar's owner (alerts, colour, keywords and the like): those are
+/// the owner's own, and the others who see the calendar hear of the notification too.
 fn event_of(content: Option<&str>) -> Option<Map<String, Value>> {
-    let mut event = jscal::from_icalendar(content?)?.event().clone();
+    let parsed = jscal::from_icalendar(content?)?;
+    let mut event = jscal::per_user_view(parsed.event(), None, std::collections::BTreeSet::new);
     event.remove("iCalendar");
     if let Some(Value::Object(overrides)) = event.get_mut("recurrenceOverrides") {
         for patch in overrides.values_mut().filter_map(Value::as_object_mut) {

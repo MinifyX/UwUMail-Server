@@ -514,8 +514,10 @@ account's own changes leave none for itself. `changedBy` names who it was
 (`principalId` for people of this server, never by a masked address;
 `calendarAddress` and the message's `COMMENT` for scheduling), `event` is the
 event before the change (after it for `created`), `eventPatch` what changed at
-its top level, and `isDraft` whether it is a draft. For an event over 128 KiB
-the notification says who changed it, without `event` and `eventPatch`.
+its top level, and `isDraft` whether it is a draft. Neither carries the
+per-user properties of the event (`alerts`, `color`, `keywords` and the
+like): they are the owner's own. For an event over 128 KiB the notification
+says who changed it, without `event` and `eventPatch`.
 
 An event its owner keeps `private` or `secret` is only news to the owner.
 Nothing is noted for a calendar filled from a subscription, for imports, or
