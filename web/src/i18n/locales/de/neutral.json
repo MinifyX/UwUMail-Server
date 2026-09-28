@@ -535,6 +535,7 @@
       "serviceAccount": "Ein Dienst meldet sich nur mit App-Passwörtern an.",
       "oauthClientUnknown": "Diese App ist auf diesem Server nicht registriert.",
       "oauthRedirectInvalid": "Die App möchte an eine Adresse zurück, die sie nicht registriert hat.",
+      "oauthRequestInvalid": "Die Anmeldeanfrage der App ist ungültig.",
       "oidcFailed": "Mit dem Anmeldedienst hat es nicht geklappt: {{detail}}",
       "ldapFailed": "Mit dem Verzeichnis hat es nicht geklappt: {{detail}}",
       "importRunning": "Ein Umzug von einem anderen Anbieter läuft schon. Warte, bis er fertig ist.",
@@ -1922,7 +1923,8 @@
     "invalidTitle": "Diese App kann sich hier nicht anmelden",
     "invalid": {
       "oauthClientUnknown": "Diese App ist auf diesem Server nicht registriert. Richte das Konto in der App neu ein.",
-      "oauthRedirectInvalid": "Die App möchte an eine Adresse zurück, die sie nicht registriert hat. Zur Sicherheit wurde nichts gesendet."
+      "oauthRedirectInvalid": "Die App möchte an eine Adresse zurück, die sie nicht registriert hat. Zur Sicherheit wurde nichts gesendet.",
+      "oauthRequestInvalid": "Die Anmeldeanfrage der App ist ungültig. Sie wurde hier noch nie zugelassen, darum wirst du nicht zu ihr weitergeleitet. Richte das Konto in der App neu ein."
     },
     "toPortal": "Zum Portal"
   },

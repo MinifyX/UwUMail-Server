@@ -399,6 +399,46 @@ async fn the_code_flow_with_pkce_rotation_and_revocation() {
 }
 
 #[tokio::test]
+async fn errors_go_back_by_themselves_only_to_apps_allowed_before() {
+    let (app, _store, _dir) = setup().await;
+    let web_app = "https://app.example.net/cb";
+    let (_, client) = register(&app, json!([web_app])).await;
+    let client_id = client["client_id"].as_str().unwrap().to_owned();
+    let auth = login(&app).await;
+    let ask = |extra: Vec<(&'static str, &'static str)>| {
+        let mut extra = extra;
+        extra.push(("redirect_uri", web_app));
+        authorize_query(&client_id, &extra)
+    };
+
+    // Anyone could have registered this web address: a broken request is shown, not sent there.
+    for query in [ask(vec![("code_challenge_method", "plain")]), ask(vec![("prompt", "none")])] {
+        let (status, refused) = portal(&app, "GET", &format!("/api/oauth/authorize?{query}"), Value::Null, &auth).await;
+        assert_eq!((status, refused["code"].as_str()), (StatusCode::CONFLICT, Some("oauthRequestInvalid")), "{query}");
+        assert!(refused.get("redirect").is_none());
+    }
+    // An app on the device itself still gets its error.
+    let (_, local) = register(&app, json!([REDIRECT])).await;
+    let plain = authorize_query(local["client_id"].as_str().unwrap(), &[("code_challenge_method", "plain")]);
+    let (_, answer) = portal(&app, "GET", &format!("/api/oauth/authorize?{plain}"), Value::Null, &auth).await;
+    assert!(answer["redirect"].as_str().unwrap().contains("error=invalid_request"), "{answer}");
+
+    // Once the person allowed the web app in, it is trusted with its errors.
+    let query = ask(vec![]);
+    let decision: Value = url::form_urlencoded::parse(query.as_bytes())
+        .map(|(name, value)| (name.into_owned(), Value::String(value.into_owned())))
+        .chain([("approve".to_owned(), Value::Bool(true))])
+        .collect::<serde_json::Map<_, _>>()
+        .into();
+    let (status, _) = portal(&app, "POST", "/api/oauth/authorize", decision, &auth).await;
+    assert_eq!(status, StatusCode::OK);
+    let plain = ask(vec![("code_challenge_method", "plain")]);
+    let (_, answer) = portal(&app, "GET", &format!("/api/oauth/authorize?{plain}"), Value::Null, &auth).await;
+    let redirect = answer["redirect"].as_str().unwrap();
+    assert!(redirect.starts_with(web_app) && redirect.contains("error=invalid_request"), "{answer}");
+}
+
+#[tokio::test]
 async fn refused_codes_and_tokens_are_counted_per_network() {
     let (app, _store, _dir) = setup().await;
     let (_, client) = register(&app, json!([REDIRECT])).await;

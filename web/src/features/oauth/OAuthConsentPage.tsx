@@ -24,7 +24,7 @@ const SCOPE_ICONS: Record<KnownScope, LucideIcon> = {
 };
 
 /** The app's request itself is wrong: no use asking the person anything. */
-const REFUSED = ["oauthClientUnknown", "oauthRedirectInvalid"];
+const REFUSED = ["oauthClientUnknown", "oauthRedirectInvalid", "oauthRequestInvalid"];
 
 const refusal = (error: unknown) => (error instanceof ApiError && REFUSED.includes(error.code) ? error.code : null);
 const loggedOut = (error: unknown) => error instanceof ApiError && error.status === 401;
@@ -94,7 +94,8 @@ export function OAuthConsentPage({ session }: { session: Session }) {
   const ask = data && !("redirect" in data) ? data : null;
   const { mutate } = decide;
 
-  // The app gets its answer from the server, even an error: that is the app's business then.
+  // The app gets its answer from the server, even an error: that is the app's business then. The
+  // server sends errors only to apps it trusts with them and refuses on the page otherwise.
   useEffect(() => {
     if (redirect) window.location.assign(redirect);
   }, [redirect]);

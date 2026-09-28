@@ -535,6 +535,7 @@
       "serviceAccount": "Een dienst logt alleen in met app-wachtwoorden.",
       "oauthClientUnknown": "Deze app is niet geregistreerd op deze server.",
       "oauthRedirectInvalid": "De app wil terug naar een adres dat hij niet heeft geregistreerd.",
+      "oauthRequestInvalid": "Het aanmeldverzoek van de app is ongeldig.",
       "oidcFailed": "Het lukte niet met de inlogdienst: {{detail}}",
       "ldapFailed": "Het lukte niet met de directory: {{detail}}",
       "importRunning": "Er loopt al een verhuizing van een andere aanbieder. Wacht tot die klaar is.",
@@ -1922,7 +1923,8 @@
     "invalidTitle": "Deze app kan hier niet inloggen",
     "invalid": {
       "oauthClientUnknown": "Deze app is niet geregistreerd op deze server. Stel het account in de app opnieuw in.",
-      "oauthRedirectInvalid": "De app wil terug naar een adres dat hij niet heeft geregistreerd. Voor de veiligheid is er niets verstuurd."
+      "oauthRedirectInvalid": "De app wil terug naar een adres dat hij niet heeft geregistreerd. Voor de veiligheid is er niets verstuurd.",
+      "oauthRequestInvalid": "Het aanmeldverzoek van de app is ongeldig. De app is hier nog nooit toegelaten, dus je wordt er niet naar teruggestuurd. Stel het account in de app opnieuw in."
     },
     "toPortal": "Naar het portaal"
   },

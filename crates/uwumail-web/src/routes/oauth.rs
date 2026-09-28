@@ -224,6 +224,8 @@ struct Checked {
     redirect_uri: String,
     scopes: Vec<&'static str>,
     challenge: String,
+    /// Errors may go back to the app by themselves (see [`check`]).
+    trusted: bool,
 }
 
 /// Why a request cannot go on: shown on the page when the app cannot be trusted with the answer,
@@ -265,7 +267,15 @@ async fn check(web: &Web, account: &Account, params: &AuthorizeParams) -> ApiRes
         None => return Ok(Err(Refused::Page("oauthRedirectInvalid", "the app did not say where to go back".into()))),
     };
     let state = params.state.as_deref();
+    // Anyone can register an app with any https address, so an error only goes back by itself to
+    // an app the person allowed in before, or to one on their own device (a loopback address or
+    // an app scheme). Anything else would make this page an open redirect: the error is shown
+    // instead (RFC 9700 section 4.11.2, WEB-3).
+    let trusted = !redirect_is_web(&redirect_uri) || web.store().oauth_consented(account.id, client.id, &[]).await?;
     let refuse = |error: &str, description: &str| {
+        if !trusted {
+            return Ok(Err(Refused::Page("oauthRequestInvalid", format!("{error}: {description}"))));
+        }
         Ok(Err(Refused::App(answer(
             web,
             &redirect_uri,
@@ -300,7 +310,12 @@ async fn check(web: &Web, account: &Account, params: &AuthorizeParams) -> ApiRes
     if !oauth_scopes_usable(&scopes) {
         return refuse("invalid_scope", "none of the scopes asked for can be given");
     }
-    Ok(Ok(Checked { client, redirect_uri, scopes, challenge }))
+    Ok(Ok(Checked { client, redirect_uri, scopes, challenge, trusted }))
+}
+
+/// Whether a redirect address leaves the device: an https page anywhere on the web.
+fn redirect_is_web(uri: &str) -> bool {
+    Url::parse(uri).map_or(true, |url| url.scheme() == "https")
 }
 
 fn redirect_host(uri: &str) -> String {
@@ -329,6 +344,12 @@ pub async fn authorize_info(
             // Core section 3.1.2.6): a code only if it was allowed before, which the page then
             // asks for without showing the question.
             if params.prompt.as_deref() == Some("none") && !consented {
+                if !checked.trusted {
+                    return Err(ApiError::Rule(
+                        "oauthRequestInvalid",
+                        "consent_required: the person has not allowed this app yet".into(),
+                    ));
+                }
                 let redirect = answer(
                     &web,
                     &checked.redirect_uri,

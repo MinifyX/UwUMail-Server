@@ -122,6 +122,13 @@ The answer goes to the redirect address with `code`, `state` and `iss`, or with
 `consent_required`). An unknown `client_id` or a redirect address the app did
 not register is shown on the page and never sent anywhere.
 
+Anyone can register an app with any https address, so an error goes back by
+itself only to an app the person allowed in before, or to one on the device
+(a loopback address or an app scheme). For a web address nobody allowed yet,
+the page shows the error instead of sending the browser there (RFC 9700
+section 4.11.2); `prompt=none` without consent is shown the same way. Saying
+no always goes back to the app: that takes a click.
+
 Once a person allowed an app, it is not asked again for the same scopes: the
 page hands out the code by itself. Signing the app out under *Security*
 forgets that.

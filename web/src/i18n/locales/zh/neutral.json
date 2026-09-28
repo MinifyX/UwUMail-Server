@@ -523,6 +523,7 @@
       "serviceAccount": "服务只能使用应用专用密码登录。",
       "oauthClientUnknown": "该应用未在此服务器上注册。",
       "oauthRedirectInvalid": "该应用要求跳转到一个它未注册的地址。",
+      "oauthRequestInvalid": "该应用的登录请求无效。",
       "oidcFailed": "登录服务出现问题：{{detail}}",
       "ldapFailed": "目录出现问题：{{detail}}",
       "importRunning": "已有一个从其他服务商的迁移正在进行。请等它完成。",
@@ -1872,7 +1873,8 @@
     "invalidTitle": "该应用无法在此登录",
     "invalid": {
       "oauthClientUnknown": "该应用未在此服务器上注册。请在应用中重新设置账户。",
-      "oauthRedirectInvalid": "该应用要求跳转到一个它未注册的地址。为安全起见，未发送任何内容。"
+      "oauthRedirectInvalid": "该应用要求跳转到一个它未注册的地址。为安全起见，未发送任何内容。",
+      "oauthRequestInvalid": "该应用的登录请求无效。此应用从未在这里获得过授权，因此不会将你跳转回它。请在应用中重新设置账户。"
     },
     "toPortal": "前往门户"
   },

@@ -535,6 +535,7 @@
       "serviceAccount": "A service signs in with app passwords only.",
       "oauthClientUnknown": "This app is not registered on this server.",
       "oauthRedirectInvalid": "The app asked to be sent somewhere it did not register.",
+      "oauthRequestInvalid": "The app's sign-in request is not valid.",
       "oidcFailed": "The login service did not work out: {{detail}}",
       "ldapFailed": "The directory did not work out: {{detail}}",
       "importRunning": "A move from another provider is running already. Wait until it is done.",
@@ -1922,7 +1923,8 @@
     "invalidTitle": "This app cannot sign in here",
     "invalid": {
       "oauthClientUnknown": "This app is not registered on this server. Set up the account in the app again.",
-      "oauthRedirectInvalid": "The app asked to be sent somewhere it did not register. To be safe, nothing was sent."
+      "oauthRedirectInvalid": "The app asked to be sent somewhere it did not register. To be safe, nothing was sent.",
+      "oauthRequestInvalid": "The app's sign-in request is not valid. It was never allowed in here before, so you are not sent on to it. Set up the account in the app again."
     },
     "toPortal": "To the portal"
   },
