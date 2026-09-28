@@ -30,7 +30,10 @@ only ever show the gateway, never your home address.
 
 - **The server dials out.** No port forwarding on your router, and it works
   behind carrier-grade NAT or DS-Lite. The connection is QUIC with a certificate
-  on each side; each side pins the other's fingerprint.
+  on each side; each side pins the other's fingerprint. Anyone else who knocks
+  gets little: 16 handshakes at once in all, 2 at once and 20 a minute per
+  network, one stream and 256 KB in flight until it has shown to be the paired
+  server. Your server's own address never waits behind them.
 - **TLS ends at home.** The gateway passes bytes along. It never sees passwords
   or the content of TLS connections (ports 465, 993 and 443, and port 25 and 587
   after STARTTLS); the certificate and its key stay on your server. One thing

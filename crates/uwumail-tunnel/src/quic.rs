@@ -20,6 +20,10 @@ const KEEP_ALIVE: Duration = Duration::from_secs(10);
 const IDLE_TIMEOUT_MS: u32 = 30_000;
 /// Connections carried at once in each direction.
 const MAX_STREAMS: u32 = 4096;
+/// What the gateway lets a peer do before it has shown to be the paired server: the hello stream,
+/// and no more buffered data than a hello needs (security-audit-0.16.0 GW-5).
+const UNPAIRED_STREAMS: u32 = 1;
+const UNPAIRED_RECEIVE_WINDOW: u32 = 256 * 1024;
 
 fn provider() -> Arc<CryptoProvider> {
     Arc::new(rustls::crypto::aws_lc_rs::default_provider())
@@ -35,6 +39,27 @@ fn transport() -> Arc<TransportConfig> {
     Arc::new(transport)
 }
 
+/// The gateway's side starts small: anyone can connect, and until [`open_up`] a stranger gets one
+/// stream and a quarter of a megabyte in flight, not 4,096 streams of a megabyte each.
+fn unpaired_transport() -> Arc<TransportConfig> {
+    let mut transport = TransportConfig::default();
+    transport
+        .max_concurrent_bidi_streams(VarInt::from_u32(UNPAIRED_STREAMS))
+        .max_concurrent_uni_streams(VarInt::from_u32(0))
+        // The connection's window bounds all its streams together; a stream's own stays as it is,
+        // since it cannot be raised later.
+        .receive_window(VarInt::from_u32(UNPAIRED_RECEIVE_WINDOW))
+        .keep_alive_interval(Some(KEEP_ALIVE))
+        .max_idle_timeout(Some(VarInt::from_u32(IDLE_TIMEOUT_MS).into()));
+    Arc::new(transport)
+}
+
+/// Gives a connection the gateway accepted the full budget, once it is the paired server's.
+pub fn open_up(connection: &Connection) {
+    connection.set_max_concurrent_bi_streams(VarInt::from_u32(MAX_STREAMS));
+    connection.set_receive_window(VarInt::MAX);
+}
+
 /// The gateway's endpoint: waits for the tunnel from a server on `address` (UDP).
 pub fn server_endpoint(address: SocketAddr, identity: &Identity) -> Result<Endpoint, TunnelError> {
     let provider = provider();
@@ -46,7 +71,7 @@ pub fn server_endpoint(address: SocketAddr, identity: &Identity) -> Result<Endpo
     tls.alpn_protocols = vec![ALPN.to_vec()];
     let crypto = QuicServerConfig::try_from(tls).map_err(|err| TunnelError::Quic(err.to_string()))?;
     let mut config = ServerConfig::with_crypto(Arc::new(crypto));
-    config.transport_config(transport());
+    config.transport_config(unpaired_transport());
     // No connection migration: a home address change forces a reconnect, so the gateway learns and
     // trusts the new address instead of silently keeping the old one unbannable in every jail while
     // it now belongs to a stranger (security-audit-0.5.2 G-2).
@@ -102,6 +127,34 @@ mod tests {
             client.connect_with(config, address, CERTIFICATE_NAME).unwrap().await.map_err(|err| err.to_string())?;
         connection.close(VarInt::from_u32(0), b"done");
         Ok(accepting.await.unwrap())
+    }
+
+    #[tokio::test]
+    async fn a_stranger_gets_one_stream_until_the_gateway_opens_up() {
+        let gateway = Identity::generate().unwrap();
+        let server = Identity::generate().unwrap();
+        let endpoint = server_endpoint((Ipv4Addr::LOCALHOST, 0).into(), &gateway).unwrap();
+        let address = endpoint.local_addr().unwrap();
+        let (opened, open) = tokio::sync::oneshot::channel::<()>();
+        let accepting = tokio::spawn(async move {
+            let connection = endpoint.accept().await.unwrap().await.unwrap();
+            open.await.unwrap();
+            open_up(&connection);
+            connection.closed().await;
+        });
+
+        let client = Endpoint::client((Ipv4Addr::LOCALHOST, 0).into()).unwrap();
+        let config = client_config(&server, gateway.fingerprint()).unwrap();
+        let connection = client.connect_with(config, address, CERTIFICATE_NAME).unwrap().await.unwrap();
+        let _hello = connection.open_bi().await.unwrap();
+        // The second stream waits for credit the gateway does not give a stranger.
+        let second = tokio::time::timeout(Duration::from_millis(300), connection.open_bi()).await;
+        assert!(second.is_err(), "a second stream before pairing");
+        opened.send(()).unwrap();
+        let second = tokio::time::timeout(Duration::from_secs(10), connection.open_bi()).await;
+        assert!(second.is_ok_and(|stream| stream.is_ok()), "after it, the whole budget");
+        connection.close(VarInt::from_u32(0), b"done");
+        accepting.await.unwrap();
     }
 
     #[tokio::test]

@@ -18,7 +18,7 @@ use uwumail_tunnel::proto::{
 use uwumail_tunnel::{Fingerprint, Identity, PairingCode, Token, TunnelStream};
 
 use crate::config::GatewayConfig;
-use crate::limits::Limits;
+use crate::limits::{HandshakeSlot, Handshakes, Limits};
 use crate::logs::LogQueue;
 use crate::machine::Machine;
 use crate::state::{Pairing, State};
@@ -36,6 +36,11 @@ const REPORT_WHILE_BUSY: Duration = Duration::from_secs(3);
 /// How long the gateway gathers log lines before it sends them to the server.
 const LOG_BATCH_DELAY: Duration = Duration::from_secs(1);
 /// Refused tunnel attempts from one address before it has to wait for the window to pass.
+/// Tunnel handshakes of strangers: at once in all, at once per network, and per network and
+/// minute (security-audit-0.16.0 GW-5).
+const MAX_UNPAIRED_HANDSHAKES: usize = 16;
+const MAX_UNPAIRED_PER_NETWORK: usize = 2;
+const UNPAIRED_PER_MINUTE: u32 = 20;
 const MAX_REFUSALS: u32 = 10;
 const REFUSAL_WINDOW: Duration = Duration::from_secs(600);
 /// How long one address stays quiet in the log after it was turned away for being over its limit.
@@ -70,6 +75,7 @@ pub(crate) struct Shared {
     hostname: RwLock<String>,
     pairing_lock: tokio::sync::Mutex<()>,
     refusals: Mutex<HashMap<IpAddr, (u32, Instant)>>,
+    handshakes: Arc<Handshakes>,
     turned_away: Mutex<HashMap<IpAddr, Instant>>,
     /// The gateway's own log lines, for a server that asks for them.
     logs: Option<Arc<LogQueue>>,
@@ -157,6 +163,7 @@ pub async fn start_with_logs(
         hostname: RwLock::new(hostname),
         pairing_lock: tokio::sync::Mutex::new(()),
         refusals: Mutex::new(HashMap::new()),
+        handshakes: Handshakes::new(MAX_UNPAIRED_HANDSHAKES, MAX_UNPAIRED_PER_NETWORK, UNPAIRED_PER_MINUTE),
         turned_away: Mutex::new(HashMap::new()),
         logs,
     });
@@ -329,7 +336,20 @@ async fn accept_tunnels(shared: Arc<Shared>, endpoint: Endpoint, mut shutdown: w
         tokio::select! {
             incoming = endpoint.accept() => match incoming {
                 Some(incoming) => {
-                    tokio::spawn(handle_tunnel(shared.clone(), incoming));
+                    // The paired server's own address never waits behind strangers; everyone else
+                    // gets a few handshakes at once, and no more (GW-5).
+                    let ip = incoming.remote_address().ip().to_canonical();
+                    let slot = if shared.machine.is_trusted(ip) { None } else {
+                        match shared.handshakes.begin(ip) {
+                            Some(slot) => Some(slot),
+                            None => {
+                                tracing::debug!(client = %ip, "turned a tunnel handshake away: too many at once");
+                                incoming.refuse();
+                                continue;
+                            }
+                        }
+                    };
+                    tokio::spawn(handle_tunnel(shared.clone(), incoming, slot));
                 }
                 None => break,
             },
@@ -343,7 +363,7 @@ async fn accept_tunnels(shared: Arc<Shared>, endpoint: Endpoint, mut shutdown: w
     let _ = timeout(Duration::from_secs(2), endpoint.wait_idle()).await;
 }
 
-async fn handle_tunnel(shared: Arc<Shared>, incoming: Incoming) {
+async fn handle_tunnel(shared: Arc<Shared>, incoming: Incoming, slot: Option<HandshakeSlot>) {
     let remote = incoming.remote_address();
     let ip = remote.ip().to_canonical();
     // A handshake that fails is not held against the address it claims to come from. QUIC answers
@@ -388,6 +408,10 @@ async fn handle_tunnel(shared: Arc<Shared>, incoming: Incoming) {
 
     match shared.authorize(fingerprint, &hello).await {
         Ok(hostname) => {
+            // The paired server: its place among the strangers is free again, and it gets the whole
+            // budget of streams and data they do not (GW-5).
+            drop(slot);
+            uwumail_tunnel::open_up(&connection);
             let services = shared.shared_services(&hello);
             serve_server(shared, connection, control, fingerprint, hostname, services, (hello.control, hello.logs))
                 .await
