@@ -68,8 +68,9 @@ picture that stands for one address, as the signed-in account sees it, or
 2. **Someone on this server**: a login, alias (with or without a `+tag`),
    service, shared mailbox or group whose picture its owner lets people here
    see ([profile-pictures.md](profile-pictures.md)).
-3. **A Face** that came with mail from the address and passed DMARC for its
-   domain.
+3. **A Face** that came with mail from the address, under a DKIM signature of
+   its domain that covers the `Face` header; only for addresses of other
+   servers.
 4. **Libravatar**, for addresses of other servers whose domain publishes
    `_avatars-sec._tcp.<domain>`: `https://<target>:<port>/avatar/<sha256>?s=128&d=404`,
    through the egress. Found or not, the answer is kept a week for the whole
