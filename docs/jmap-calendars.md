@@ -148,7 +148,7 @@ Instance ids never show up in `/changes`; only the stored event does.
 | `isVisible` | whether the webmail and the apps show its events; kept on the server, CalDAV does not know it |
 | `isDefault` | exactly one calendar is the default |
 | `includeInAvailability` | `"all"`, `"attending"` or `"none"`: which of its events make the account busy. By default `"all"` for one's own calendars and `"none"` for subscribed ones and those shared with the account |
-| `defaultAlertsWithTime`, `defaultAlertsWithoutTime` | always `null` |
+| `defaultAlertsWithTime`, `defaultAlertsWithoutTime` | the alerts of events that use the defaults, see [Default alerts](#default-alerts); `null` for none |
 | `shareWith` | who else sees it; see [Shared calendars](#shared-calendars) |
 | `timeZone` | an IANA name or `null`; stored as the CalDAV `calendar-timezone` |
 | `myRights` | everything `true` for one's own calendars; `mayDelete` is `false` for the only own calendar. A subscribed calendar ([calendar-import.md](calendar-import.md)) has `mayWriteAll`, `mayWriteOwn`, `mayUpdatePrivate` and `mayRSVP` `false`: only its feed changes its events. For shared ones see above |
@@ -165,6 +165,29 @@ one possible value may be sent with that value. Also:
 - `onSuccessSetIsDefault` makes a calendar the default when everything else in
   the call worked; both calendars whose `isDefault` changed are reported in
   `created` or `updated`.
+
+## Default alerts
+
+`defaultAlertsWithTime` and `defaultAlertsWithoutTime` of a calendar are maps
+of at most 20 alerts that trigger relative to the event (`OffsetTrigger`, an
+`AbsoluteTrigger` is `invalidProperties`), with ids that are unique across
+the account's calendars. They are everyone's own, like the other per-user
+properties.
+
+An event with `useDefaultAlerts: true` gets the defaults of its calendar
+(those without time for an all-day event) in place of its own `alerts`. For
+one's own calendars the server writes them into the event as its VALARMs,
+each with the default alert's id, so phones ring them without knowing about
+defaults: whenever the event is stored over JMAP, and again in every such
+event of the calendar when its owner changes the defaults. What an alert keeps
+for itself stays: the time it was `acknowledged`, and alerts that snooze it
+(`relatedTo` it). CalDAV clients see an event's `useDefaultAlerts` as a
+`JSPROP` and keep it.
+
+CalDAV clients see and set the same defaults as the calendar's
+`default-alarm-vevent-datetime` and `default-alarm-vevent-date` properties
+(VALARMs), as Apple's calendar does; an alarm set there without an id gets a
+new one.
 
 ## CalendarEvent
 
@@ -384,8 +407,8 @@ EventSource, next to the mail types.
   are shared with
 - `CalendarEventNotification`, `CalendarEvent/copy`, `CalendarEvent/parse`
   (`urn:ietf:params:jmap:calendars:parse`)
-- Default alerts, `useDefaultAlerts` and alerts pushed by the server; alerts
-  are stored and handed to CalDAV clients, which ring them
+- Alerts pushed by the server; alerts are stored and handed to CalDAV
+  clients, which ring them
 - Drafts (`isDraft: true`), more than one calendar per event, custom time
   zones, events that are single instances without their series
 - `CalendarEvent/queryChanges` for queries with `expandRecurrences`

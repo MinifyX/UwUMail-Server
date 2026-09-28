@@ -21,6 +21,7 @@
 mod api;
 pub mod auth;
 mod blob;
+pub mod calendar_alerts;
 pub mod dates;
 mod email;
 mod error;

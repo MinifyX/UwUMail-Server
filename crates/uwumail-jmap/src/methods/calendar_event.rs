@@ -16,6 +16,7 @@ use super::calendar::{calendars, check_enabled, owns};
 use super::{
     Ctx, SetResponse, check_filter_size, check_set_size, get_ids, if_in_state, pick, query_response, request_deadline,
 };
+use crate::calendar_alerts;
 use crate::error::{MethodError, MethodResult, SetError};
 use crate::jscal::{self, Parsed};
 use crate::{MAX_OBJECTS_IN_GET, ids};
@@ -168,6 +169,16 @@ fn reduce_private(event: &mut Map<String, Value>) {
     }
 }
 
+type Alerts = Map<String, Value>;
+
+/// Default alerts as kept by the store.
+fn alerts_of(text: &Option<String>) -> Option<Alerts> {
+    match serde_json::from_str(text.as_deref()?) {
+        Ok(Value::Object(alerts)) => Some(alerts),
+        _ => None,
+    }
+}
+
 /// A stored event, read.
 struct Loaded {
     record: CalendarEventRecord,
@@ -176,6 +187,8 @@ struct Loaded {
     shared: bool,
     /// Then the account's own per-user properties of it, and when it last changed them.
     prefs: Option<(Map<String, Value>, i64)>,
+    /// And its own default alerts of the calendar, for events with and without a time.
+    defaults: (Option<Alerts>, Option<Alerts>),
 }
 
 impl Loaded {
@@ -195,6 +208,9 @@ impl Loaded {
                 view.insert("updated".into(), json!(own));
             }
         }
+        let (with_time, without_time) = (self.defaults.0.as_ref(), self.defaults.1.as_ref());
+        let defaults = calendar_alerts::for_event(&view, with_time, without_time);
+        calendar_alerts::materialize(&mut view, defaults);
         if privacy(event) == "private" {
             reduce_private(&mut view);
         }
@@ -210,6 +226,7 @@ async fn load(ctx: &Ctx<'_>, ids: Option<Vec<i64>>) -> MethodResult<Vec<Loaded>>
     }
     let me = ctx.account.id;
     let shared: Vec<i64> = records.iter().filter(|record| record.owner_id != me).map(|record| record.id).collect();
+    let calendar_prefs = if shared.is_empty() { Default::default() } else { ctx.jmap.store.calendar_prefs(me).await? };
     let mut prefs = ctx.jmap.store.calendar_event_prefs(me, shared).await?;
     run_blocking(move || {
         records
@@ -225,7 +242,13 @@ async fn load(ctx: &Ctx<'_>, ids: Option<Vec<i64>>) -> MethodResult<Vec<Loaded>>
                     Ok(Value::Object(data)) => Some((data, prefs.updated_at)),
                     _ => None,
                 });
-                Some(Loaded { record, parsed, shared, prefs })
+                let defaults = match calendar_prefs.get(&record.calendar_id) {
+                    Some(own) if shared => {
+                        (alerts_of(&own.default_alerts_with_time), alerts_of(&own.default_alerts_without_time))
+                    }
+                    _ => (None, None),
+                };
+                Some(Loaded { record, parsed, shared, prefs, defaults })
             })
             .collect()
     })
@@ -490,8 +513,18 @@ impl Writer<'_> {
             Ok(calendar) => calendar,
             Err(err) => return Ok(Err(err)),
         };
+        // An event that uses the default alerts carries them, for CalDAV clients to ring.
+        let mut event = event.clone();
+        if event.get("useDefaultAlerts") == Some(&Value::Bool(true)) {
+            let prefs = self.ctx.jmap.store.calendar_prefs(calendar.account_id).await;
+            let prefs = prefs.ok().and_then(|mut prefs| prefs.remove(&calendar_id)).unwrap_or_default();
+            let (with_time, without_time) =
+                (alerts_of(&prefs.default_alerts_with_time), alerts_of(&prefs.default_alerts_without_time));
+            let defaults = calendar_alerts::for_event(&event, with_time.as_ref(), without_time.as_ref()).cloned();
+            calendar_alerts::materialize(&mut event, defaults.as_ref());
+        }
         // Checking and converting is work in proportion to the event: off the async threads.
-        let (parsed, event, components) = (parsed.clone(), event.clone(), calendar.components.clone());
+        let (parsed, components) = (parsed.clone(), calendar.components.clone());
         let converted = run_blocking(move || convert(&parsed, &event, &components)).await;
         let (content, checked) = match converted {
             Ok(Ok(converted)) => converted,
@@ -1316,7 +1349,7 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
             if shared && privacy(parsed.event()) == "secret" {
                 continue;
             }
-            let loaded = Loaded { record, parsed, shared, prefs: None };
+            let loaded = Loaded { record, parsed, shared, prefs: None, defaults: (None, None) };
             match &expanded {
                 Some(condition) => hits.extend(evaluator.expanded_hits(condition, &loaded)?),
                 None => hits.extend(evaluator.stored_hits(&filter, &loaded)?),

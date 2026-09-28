@@ -369,17 +369,23 @@ impl Session<'_> {
     /// The account's own collections of a kind, then those shared with it.
     async fn collections(&self, kind: DavKind) -> Result<Vec<View>, StoreError> {
         let own = self.store().dav_collections(self.account.id, kind, self.dav.default_collection(kind)).await?;
-        let mut views: Vec<View> = own.into_iter().map(|c| View::own(c, self.login)).collect();
         // Someone a calendar is shared with sees their own name, colour, order and time zone.
         let mut prefs = match kind {
             DavKind::Calendar => self.store().calendar_prefs(self.account.id).await?,
             DavKind::Addressbook => Default::default(),
         };
+        let mut views: Vec<View> = own
+            .into_iter()
+            .map(|c| {
+                let own = prefs.remove(&c.id).unwrap_or_default();
+                View { prefs: own, ..View::own(c, self.login) }
+            })
+            .collect();
         for mut shared in self.store().dav_shared_with(self.account.id, kind).await? {
-            if let Some(prefs) = prefs.remove(&shared.collection.id) {
-                shared.collection.apply_prefs(&prefs);
-            }
+            let own = prefs.remove(&shared.collection.id).unwrap_or_default();
+            shared.collection.apply_prefs(&own);
             views.push(View {
+                prefs: own,
                 segment: format!("{SHARED_PREFIX}{}", shared.collection.id),
                 collection: shared.collection,
                 access: DavAccess::Shared(shared.rights),
@@ -402,7 +408,14 @@ impl Session<'_> {
         }
         // Listing first makes the default collection exist before a client asks for it by name.
         self.store().dav_collections(self.account.id, kind, self.dav.default_collection(kind)).await?;
-        Ok(self.store().dav_collection(self.account.id, kind, segment).await?.map(|c| View::own(c, self.login)))
+        let Some(collection) = self.store().dav_collection(self.account.id, kind, segment).await? else {
+            return Ok(None);
+        };
+        let prefs = match kind {
+            DavKind::Calendar => self.store().calendar_prefs(self.account.id).await?.remove(&collection.id),
+            DavKind::Addressbook => None,
+        };
+        Ok(Some(View { prefs: prefs.unwrap_or_default(), ..View::own(collection, self.login) }))
     }
 
     async fn find(&self, kind: DavKind, segment: &str) -> Result<Option<Found>, StoreError> {
@@ -527,6 +540,25 @@ impl Session<'_> {
             Err(err) => return store_failure(err),
         };
         let (mut update, names) = collection_update(&root);
+        if *kind == DavKind::Calendar {
+            // Default alarms are everyone's own, and events of the owner's that use them take
+            // them over.
+            let alarms = match default_alarms_update(&root) {
+                Ok(alarms) => alarms,
+                Err(message) => return simple(StatusCode::BAD_REQUEST, &message),
+            };
+            if !alarms.is_empty() {
+                if let Err(err) = self.store().set_calendar_prefs(self.account.id, view.collection.id, alarms).await {
+                    return store_failure(err);
+                }
+                if view.access.is_owner()
+                    && let Err(err) =
+                        uwumail_jmap::calendar_alerts::apply(self.store(), self.account.id, view.collection.id).await
+                {
+                    return store_failure(err);
+                }
+            }
+        }
         if !view.access.is_owner() && *kind == DavKind::Calendar {
             // Name, colour, order and time zone of a calendar shared with the login are its own;
             // the description is the owner's and needs all rights.
@@ -1140,6 +1172,34 @@ fn collection_update(root: &Element) -> (DavCollectionUpdate, Vec<(String, Strin
         }
     }
     (update, names)
+}
+
+/// The default alarms a PROPPATCH sets or removes, as default alerts.
+fn default_alarms_update(root: &Element) -> Result<CalendarPrefsUpdate, String> {
+    let mut prefs = CalendarPrefsUpdate::default();
+    for instruction in &root.children {
+        let removing = match (instruction.ns.as_str(), instruction.name.as_str()) {
+            (DAV, "set") => false,
+            (DAV, "remove") => true,
+            _ => continue,
+        };
+        for property in instruction.children_named(DAV, "prop").flat_map(|prop| prop.children.iter()) {
+            let with_time = match (property.ns.as_str(), property.name.as_str()) {
+                (CALDAV, "default-alarm-vevent-datetime") => true,
+                (CALDAV, "default-alarm-vevent-date") => false,
+                _ => continue,
+            };
+            let alerts =
+                if removing { None } else { uwumail_jmap::calendar_alerts::valarms_to_stored(&property.all_text())? };
+            let alerts = Some(alerts);
+            if with_time {
+                prefs.default_alerts_with_time = alerts;
+            } else {
+                prefs.default_alerts_without_time = alerts;
+            }
+        }
+    }
+    Ok(prefs)
 }
 
 fn find_components(root: &Element) -> Option<Vec<String>> {

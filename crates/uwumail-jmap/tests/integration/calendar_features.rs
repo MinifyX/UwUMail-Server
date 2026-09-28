@@ -225,3 +225,81 @@ async fn shared_calendars_and_events_keep_per_user_properties_apart() {
     assert_eq!(server.calendar(NYU, &calendar).await["name"], "Kalender");
     assert!(server.event(NYU, &id).await.get("color").is_none());
 }
+
+fn alert(offset: &str) -> Value {
+    json!({ "@type": "Alert", "trigger": { "@type": "OffsetTrigger", "offset": offset }, "action": "display" })
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn default_alerts_reach_events_and_caldav() {
+    let server = server().await;
+    let calendar = server.default_calendar(MINI).await;
+    let set = server
+        .call(
+            MINI,
+            "Calendar/set",
+            json!({ "update": { &calendar: { "defaultAlertsWithTime": { "d1": alert("-PT15M") } } } }),
+        )
+        .await;
+    assert!(set["updated"].get(&calendar).is_some(), "{set}");
+    assert_eq!(server.calendar(MINI, &calendar).await["defaultAlertsWithTime"]["d1"]["trigger"]["offset"], "-PT15M");
+
+    // An event using them carries them, for phones to ring.
+    let mut event = timed(&calendar, "Zahnarzt");
+    event["useDefaultAlerts"] = json!(true);
+    let id = server.create(MINI, event).await;
+    let got = server.event(MINI, &id).await;
+    assert_eq!(got["useDefaultAlerts"], true);
+    assert_eq!(got["alerts"]["d1"]["trigger"]["offset"], "-PT15M", "{got}");
+    let uid = got["uid"].as_str().unwrap().to_owned();
+    assert!(server.caldav_object(MINI, &uid).await.contains("TRIGGER:-PT15M"));
+
+    // New defaults reach the events that use them.
+    server
+        .call(
+            MINI,
+            "Calendar/set",
+            json!({ "update": { &calendar: { "defaultAlertsWithTime": { "d1": alert("-PT30M") } } } }),
+        )
+        .await;
+    let ics = server.caldav_object(MINI, &uid).await;
+    assert!(ics.contains("TRIGGER:-PT30M") && !ics.contains("-PT15M"), "{ics}");
+
+    // CalDAV clients see and set them as default alarms.
+    let path = "/dav/calendars/mini@example.org/personal/";
+    let body = "<?xml version=\"1.0\"?><d:propfind xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\"><d:prop><c:default-alarm-vevent-datetime/></d:prop></d:propfind>";
+    let reply = server.send(MINI, "PROPFIND", path, &[("depth", "0")], body.into()).await;
+    assert!(reply.body.contains("BEGIN:VALARM") && reply.body.contains("TRIGGER:-PT30M"), "{}", reply.body);
+    let patch = "<?xml version=\"1.0\"?><d:propertyupdate xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\"><d:set><d:prop><c:default-alarm-vevent-date>BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT12H\r\nEND:VALARM\r\n</c:default-alarm-vevent-date></d:prop></d:set></d:propertyupdate>";
+    let reply = server.send(MINI, "PROPPATCH", path, &[], patch.into()).await;
+    assert_eq!(reply.status, StatusCode::MULTI_STATUS, "{}", reply.body);
+    let without = &server.calendar(MINI, &calendar).await["defaultAlertsWithoutTime"];
+    let alerts: Vec<&Value> = without.as_object().unwrap().values().collect();
+    assert_eq!(alerts.len(), 1, "{without}");
+    assert_eq!(alerts[0]["trigger"]["offset"], "-PT12H");
+
+    // Ids are unique across one's calendars.
+    let taken = server
+        .call(
+            MINI,
+            "Calendar/set",
+            json!({ "create": { "w": { "name": "Arbeit", "defaultAlertsWithTime": { "d1": alert("-PT5M") } } } }),
+        )
+        .await;
+    assert_eq!(taken["notCreated"]["w"]["type"], "invalidProperties", "{taken}");
+
+    // Someone the calendar is shared with has their own defaults.
+    server.share_with_nyu(json!({ "mayReadItems": true })).await;
+    server
+        .call(
+            NYU,
+            "Calendar/set",
+            json!({ "update": { &calendar: { "defaultAlertsWithTime": { "n1": alert("-PT1H") } } } }),
+        )
+        .await;
+    server.call(NYU, "CalendarEvent/set", json!({ "update": { &id: { "useDefaultAlerts": true } } })).await;
+    let theirs = server.event(NYU, &id).await;
+    assert_eq!(theirs["alerts"]["n1"]["trigger"]["offset"], "-PT1H", "{theirs}");
+    assert!(theirs["alerts"].get("d1").is_none());
+    assert_eq!(server.event(MINI, &id).await["alerts"]["d1"]["trigger"]["offset"], "-PT30M");
+}

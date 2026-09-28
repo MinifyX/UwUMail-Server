@@ -445,7 +445,17 @@ fn parse_all(object: &Map<String, Value>, creating: bool) -> Result<Parsed, SetE
                 }
                 _ => bad.push("includeInAvailability"),
             },
-            "defaultAlertsWithTime" | "defaultAlertsWithoutTime" if value.is_null() => {}
+            "defaultAlertsWithTime" | "defaultAlertsWithoutTime" => match crate::calendar_alerts::check(value) {
+                Ok(alerts) => {
+                    let alerts = Some(alerts.map(|alerts| Value::Object(alerts).to_string()));
+                    if key == "defaultAlertsWithTime" {
+                        prefs.default_alerts_with_time = alerts;
+                    } else {
+                        prefs.default_alerts_without_time = alerts;
+                    }
+                }
+                Err(_) => bad.push(key.as_str()),
+            },
             _ => bad.push(key.as_str()),
         }
     }
@@ -457,6 +467,38 @@ fn parse_all(object: &Map<String, Value>, creating: bool) -> Result<Parsed, SetE
     } else {
         Err(SetError::invalid_properties(&bad, "these properties are missing, not valid or cannot be set here"))
     }
+}
+
+/// Default alert ids have to be unique in the account, across its calendars.
+fn check_alert_ids(known: &[Listed], calendar_id: Option<i64>, prefs: &CalendarPrefsUpdate) -> Result<(), SetError> {
+    let ids = |text: Option<&String>| -> Vec<String> {
+        text.and_then(|text| serde_json::from_str::<Map<String, Value>>(text).ok())
+            .map(|alerts| alerts.keys().cloned().collect())
+            .unwrap_or_default()
+    };
+    let wanted: Vec<String> = [&prefs.default_alerts_with_time, &prefs.default_alerts_without_time]
+        .into_iter()
+        .flat_map(|update| ids(update.as_ref().and_then(Option::as_ref)))
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    let others = known.iter().filter(|listed| Some(listed.collection.id) != calendar_id).flat_map(|listed| {
+        ids(listed.prefs.default_alerts_with_time.as_ref())
+            .into_iter()
+            .chain(ids(listed.prefs.default_alerts_without_time.as_ref()))
+    });
+    let taken: std::collections::HashSet<String> = others.collect();
+    if wanted.iter().any(|id| taken.contains(id) || !seen.insert(id)) {
+        return Err(SetError::invalid_properties(
+            &["defaultAlertsWithTime", "defaultAlertsWithoutTime"],
+            "default alert ids have to be unique across your calendars",
+        ));
+    }
+    Ok(())
+}
+
+/// Whether a change touches the default alerts, which events using them then take over.
+fn changes_defaults(prefs: &CalendarPrefsUpdate) -> bool {
+    prefs.default_alerts_with_time.is_some() || prefs.default_alerts_without_time.is_some()
 }
 
 /// Applies `shareWith` to a calendar: all of it (`replace`), or single principals.
@@ -522,6 +564,7 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                 let object =
                     object.as_object().ok_or_else(|| SetError::new("invalidProperties", "must be an object"))?;
                 let Parsed { update, prefs, sharing } = parse_all(object, true)?;
+                check_alert_ids(&known, None, &prefs)?;
                 let slug = random_slug();
                 let new = NewDavCollection {
                     slug,
@@ -595,7 +638,13 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                         other => SetError::from(other),
                     })?;
                 }
+                check_alert_ids(&known, Some(calendar_id), &parsed.prefs)?;
+                let defaults = changes_defaults(&parsed.prefs);
                 store.set_calendar_prefs(account_id, calendar_id, parsed.prefs).await.map_err(SetError::from)?;
+                // Events of one's own calendar that use the defaults carry them for CalDAV clients.
+                if defaults && listed.access.is_owner() {
+                    crate::calendar_alerts::apply(&store, account_id, calendar_id).await.map_err(SetError::from)?;
+                }
                 if let Some((replace, wanted)) = parsed.sharing {
                     apply_sharing(ctx, &listed.collection, replace, wanted).await?;
                 }
