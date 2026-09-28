@@ -83,16 +83,27 @@ fn prune(tx: &Connection, account_id: i64, time: i64) -> Result<()> {
         |row| row.get(0),
     )?;
     let Some(gone) = gone else { return Ok(()) };
+    // Only the contents the removed versions pointed at can have lost their last version; looking
+    // at those alone keeps the write transaction short, however many there are of other accounts.
+    let contents: Vec<i64> = tx
+        .prepare_cached(
+            "SELECT DISTINCT content_id FROM calendar_event_versions
+             WHERE account_id = ?1 AND modseq <= ?2 AND content_id IS NOT NULL",
+        )?
+        .query_map(params![account_id, gone], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
     tx.execute(
         "DELETE FROM calendar_event_versions WHERE account_id = ?1 AND modseq <= ?2",
         params![account_id, gone],
     )?;
     raise_floor(tx, account_id, gone)?;
-    tx.execute(
-        "DELETE FROM calendar_event_contents WHERE NOT EXISTS
-             (SELECT 1 FROM calendar_event_versions v WHERE v.content_id = calendar_event_contents.id)",
-        [],
+    let mut unused = tx.prepare_cached(
+        "DELETE FROM calendar_event_contents WHERE id = ?1
+             AND NOT EXISTS (SELECT 1 FROM calendar_event_versions v WHERE v.content_id = ?1)",
     )?;
+    for content in contents {
+        unused.execute([content])?;
+    }
     Ok(())
 }
 
