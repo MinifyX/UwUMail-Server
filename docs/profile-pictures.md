@@ -50,8 +50,8 @@ SHA-256 of a login address or an alias in lower case, and for groups:
   `blank`, or an `https:` address to be sent to. A plain `http:` address gets
   the silhouette.
 
-Only public pictures are answered, and only where the domain and the server
-allow them. A person without a picture of their own gets their domain's logo,
+Only public pictures are answered, only where the domain and the server
+allow them, and never for a disabled account. A person without a picture of their own gets their domain's logo,
 if it has one. Masked addresses and forwarding addresses are never in the
 table, so their hashes lead nowhere. One network (a /24, or a /48 for IPv6)
 may ask 120 times a minute.
