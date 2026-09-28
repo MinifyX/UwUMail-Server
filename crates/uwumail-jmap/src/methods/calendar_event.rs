@@ -224,6 +224,22 @@ impl Loaded {
     }
 }
 
+impl Loaded {
+    /// Another single instance of an object that holds instances without their series, as the
+    /// account sees it.
+    fn other_instance(&self, rid: &str) -> Option<Map<String, Value>> {
+        let (_, index) = self.parsed.other_instances().into_iter().find(|(other, _)| other == rid)?;
+        let mut event = self.parsed.at(index)?.event().clone();
+        if self.shared {
+            event = jscal::per_user_view(&event, None, BTreeSet::new);
+            if privacy(&event) == "private" {
+                reduce_private(&mut event);
+            }
+        }
+        Some(event)
+    }
+}
+
 async fn load(ctx: &Ctx<'_>, ids: Option<Vec<i64>>) -> MethodResult<Vec<Loaded>> {
     let all = ids.is_none();
     let records = ctx.jmap.store.calendar_events(ctx.account.id, ids).await?;
@@ -332,6 +348,11 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
             let found = match &id {
                 Some(EventId::Stored(n)) => by_id.get(n).map(|loaded| stored(loaded)),
                 Some(EventId::Instance(n, rid)) => by_id.get(n).and_then(|loaded| {
+                    // Another single instance of an object without its series.
+                    if let Some(mut object) = loaded.other_instance(rid) {
+                        decorate(&mut object, text.clone(), &loaded.record, Some(*n), &own);
+                        return Some(output(object, &properties, floating));
+                    }
                     let event = loaded.parsed.event();
                     let rids = series.entry(*n).or_insert_with(|| jscal::recurrence_ids(&loaded.record.content, event));
                     if !rids.contains(rid) {
@@ -690,7 +711,11 @@ impl Writer<'_> {
                     "isDraft" if tokens.len() == 1 && value == &Value::Bool(true) => {
                         return Err(SetError::invalid_properties(&["isDraft"], "only a new event can be a draft"));
                     }
-                    "uid" | "@type" if tokens.len() == 1 && event.get(top) == Some(value) => {}
+                    "uid" | "@type" | "recurrenceId" | "recurrenceIdTimeZone"
+                        if tokens.len() == 1 && event.get(top).unwrap_or(&Value::Null) == value => {}
+                    "recurrenceId" | "recurrenceIdTimeZone" => {
+                        return Err(SetError::invalid_properties(&[top], "cannot be changed"));
+                    }
                     "utcStart" if tokens.len() == 1 => utc_start = Some(value.clone()),
                     "utcEnd" if tokens.len() == 1 => utc_end = Some(value.clone()),
                     "id" | "baseEventId" | "isOrigin" | "isDraft" | "uid" | "@type" | "calendarIds" | "utcStart"
@@ -806,8 +831,12 @@ impl Writer<'_> {
         Ok(Some(server_set))
     }
 
-    /// Changes one instance of a series: the change becomes an override of the series.
-    async fn update_instance(&self, id: i64, rid: &str, patch: &Map<String, Value>) -> Result<(), SetError> {
+    /// Changes one instance of a series: the change becomes an override of the series. Another
+    /// single instance of an object without its series is changed as it is.
+    async fn update_instance(&self, id: i64, rid: &str, patch: &Map<String, Value>) -> Result<Value, SetError> {
+        if let Some(result) = self.update_other_instance(id, rid, patch).await {
+            return result;
+        }
         for (path, value) in patch {
             let top = path.split('/').next().unwrap_or_default();
             let allowed = match top {
@@ -850,6 +879,99 @@ impl Writer<'_> {
             Ok((Value::Object(own), new_version))
         })
         .await
+        .map(|()| Value::Null)
+    }
+
+    /// Applies a patch to another single instance of an object that holds instances without their
+    /// series; `None` when `rid` is none of them.
+    async fn update_other_instance(
+        &self,
+        id: i64,
+        rid: &str,
+        patch: &Map<String, Value>,
+    ) -> Option<Result<Value, SetError>> {
+        for _ in 0..WRITE_ATTEMPTS {
+            let loaded = match self.load_one(id).await {
+                Ok(loaded) => loaded,
+                Err(err) => return Some(Err(err)),
+            };
+            let (_, index) = loaded.parsed.other_instances().into_iter().find(|(other, _)| other == rid)?;
+            let result = async {
+                let parsed = loaded.parsed.at(index).ok_or_else(SetError::not_found)?;
+                let mut event = parsed.event().clone();
+                let mut new_version = false;
+                for (path, value) in patch {
+                    let top = path.split('/').next().unwrap_or_default();
+                    match top {
+                        "isDraft" if value == &Value::Bool(loaded.record.is_draft) || value.is_null() => {}
+                        "id"
+                        | "baseEventId"
+                        | "isOrigin"
+                        | "isDraft"
+                        | "calendarIds"
+                        | "uid"
+                        | "@type"
+                        | "recurrenceId"
+                        | "recurrenceIdTimeZone"
+                        | "utcStart"
+                        | "utcEnd" => {
+                            return Err(SetError::invalid_properties(&[top], "cannot be changed for one instance"));
+                        }
+                        _ => {
+                            jscal::apply_patch(&mut event, path, value.clone())
+                                .map_err(|message| SetError::new("invalidPatch", message))?;
+                            new_version |= !PER_USER.contains(&top);
+                        }
+                    }
+                }
+                if loaded.shared && privacy(parsed.event()) == "private" {
+                    return Err(SetError::new("forbidden", "the owner keeps this event private"));
+                }
+                // Written as it is: one's own properties are kept apart for the main instance only.
+                let instance = Loaded { parsed, shared: false, prefs: None, defaults: (None, None), ..loaded };
+                let calendar_id = instance.record.calendar_id;
+                self.commit(
+                    &instance,
+                    event,
+                    calendar_id,
+                    new_version,
+                    patch.get("sequence").and_then(Value::as_u64),
+                    false,
+                )
+                .await
+            }
+            .await;
+            match result {
+                Ok(Some(set)) => return Some(Ok(if set.is_empty() { Value::Null } else { Value::Object(set) })),
+                Ok(None) => continue,
+                Err(err) => return Some(Err(err)),
+            }
+        }
+        Some(Err(SetError::new("serverFail", "the event keeps changing; try again")))
+    }
+
+    /// Takes another single instance out of an object without its series; the object goes with
+    /// its last one. `None` when `rid` is none of them.
+    async fn destroy_other_instance(&self, id: i64, rid: &str) -> Option<Result<(), SetError>> {
+        for _ in 0..WRITE_ATTEMPTS {
+            let loaded = match self.load_one(id).await {
+                Ok(loaded) => loaded,
+                Err(err) => return Some(Err(err)),
+            };
+            let (_, index) = loaded.parsed.other_instances().into_iter().find(|(other, _)| other == rid)?;
+            let Some(rest) = loaded.parsed.at(index).and_then(|parsed| parsed.without_event()) else {
+                return Some(Err(SetError::not_found()));
+            };
+            let event = rest.event().clone();
+            let instance = Loaded { parsed: rest, shared: false, prefs: None, defaults: (None, None), ..loaded };
+            let calendar_id = instance.record.calendar_id;
+            match self.commit(&instance, event, calendar_id, true, None, false).await {
+                Ok(Some(_)) => return Some(Ok(())),
+                Ok(None) => continue,
+                Err(err) => return Some(Err(err)),
+            }
+        }
+        Some(Err(SetError::new("serverFail", "the event keeps changing; try again")))
     }
 
     /// Takes one instance out of a series (an EXDATE for CalDAV clients).
@@ -945,9 +1067,7 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                     patch.as_object().ok_or_else(|| SetError::new("invalidPatch", "the patch must be an object"))?;
                 match EventId::parse(ctx, id) {
                     Some(EventId::Stored(n)) => writer.update_stored(n, patch).await,
-                    Some(EventId::Instance(n, rid)) => {
-                        writer.update_instance(n, &rid, patch).await.map(|()| Value::Null)
-                    }
+                    Some(EventId::Instance(n, rid)) => writer.update_instance(n, &rid, patch).await,
                     None => Err(SetError::not_found()),
                 }
             }
@@ -981,7 +1101,10 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                     }
                     destroyed
                 }
-                Ok(Some(EventId::Instance(n, rid))) => writer.destroy_instance(n, &rid).await,
+                Ok(Some(EventId::Instance(n, rid))) => match writer.destroy_other_instance(n, &rid).await {
+                    Some(result) => result,
+                    None => writer.destroy_instance(n, &rid).await,
+                },
                 Ok(None) => Err(SetError::not_found()),
             };
             match result {
@@ -1259,7 +1382,7 @@ impl Evaluator {
             id,
             start,
             uid: text("uid"),
-            recurrence_id: recurrence_id.unwrap_or_default().to_owned(),
+            recurrence_id: recurrence_id.map_or_else(|| text("recurrenceId"), str::to_owned),
             created: text("created"),
             updated: text("updated"),
         }
@@ -1282,7 +1405,23 @@ impl Evaluator {
     fn expanded_hits(&self, condition: &Condition, loaded: &Loaded) -> MethodResult<Vec<Hit>> {
         let event = loaded.parsed.event();
         if !jscal::is_recurring(event) {
-            return self.stored_hits(&Some(Filter::Condition(condition.clone())), loaded);
+            let mut hits = self.stored_hits(&Some(Filter::Condition(condition.clone())), loaded)?;
+            // The other single instances of an object without its series.
+            for (rid, index) in loaded.parsed.other_instances() {
+                let Some(parsed) = loaded.parsed.at(index) else { continue };
+                let other = Loaded {
+                    parsed,
+                    shared: loaded.shared,
+                    prefs: None,
+                    defaults: (None, None),
+                    record: loaded.record.clone(),
+                };
+                for hit in self.stored_hits(&Some(Filter::Condition(condition.clone())), &other)? {
+                    let id = ids::event_instance(loaded.record.id, &rid);
+                    hits.push(Hit { id, recurrence_id: rid.clone(), ..hit });
+                }
+            }
+            return Ok(hits);
         }
         if let Some(calendar) = condition.calendar
             && calendar != Some(loaded.record.calendar_id)

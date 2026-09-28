@@ -133,6 +133,7 @@ the server is `invalidProperties` naming `shareWith`.
 | Calendar | `c12` | |
 | CalendarEvent | `v34` | a stored event, a series included |
 | An instance of a series | `v34_20261027T090000` | the event id and the instance's `recurrenceId` without `-` and `:`; only from `CalendarEvent/query` with `expandRecurrences` |
+| Another single instance | `v34_20261103T090000` | the same, for the further instances of an object that holds single instances without their series (see below) |
 | ParticipantIdentity | `u5` | one per account |
 
 Instance ids never show up in `/changes`; only the stored event does.
@@ -352,6 +353,25 @@ and the account's participant at `participationStatus: "needs-action"`. To
 answer, patch that participant's `participationStatus` (`accepted`,
 `declined`, `tentative`) with `sendSchedulingMessages: true`.
 
+**Single instances without their series.** Someone invited to some instances
+of a series only has them without the series: VEVENTs with a
+`RECURRENCE-ID` and no rule. Such an event has its `recurrenceId` (and
+`recurrenceIdTimeZone`) and no `recurrenceRule`, as the draft has it, and a
+JMAP client may create one the same way. CalDAV keeps all instances of one
+uid in one object, so when there are several, the event's id stands for the
+earliest one and the others have the ids of instances (`v34_20261103T090000`,
+with `baseEventId` naming the event): `/get` and `/set` take them, a query
+with `expandRecurrences` lists them, and destroying one takes it out of the
+object. Destroying the event itself deletes the whole object, as it is one
+for CalDAV.
+
+**One calendar per event.** `maxCalendarsPerEvent` is 1: CalDAV keeps an
+event as one object in one calendar collection, and a second copy of it in
+another calendar would be a second object with the same uid, which phones
+would show twice and which would drift apart the first time either is
+changed. So `calendarIds` names exactly one calendar; naming more is
+`invalidProperties`. Moving an event keeps its id.
+
 **Custom time zones** (RFC 8984, section 4.7.2) come from VTIMEZONEs that
 name no zone of the IANA database (calcard maps IANA names, Windows names and
 `X-LIC-LOCATION` to IANA zones by itself). Such an event has `timeZone:
@@ -425,6 +445,4 @@ EventSource, next to the mail types.
   (`urn:ietf:params:jmap:calendars:parse`)
 - Alerts pushed by the server; alerts are stored and handed to CalDAV
   clients, which ring them
-- More than one calendar per event, events that are single instances without
-  their series
 - `CalendarEvent/queryChanges` for queries with `expandRecurrences`

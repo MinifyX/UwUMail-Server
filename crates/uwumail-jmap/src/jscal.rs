@@ -77,9 +77,21 @@ impl Parsed {
         }
         fill_alert_actions(&mut event);
         materialize_overrides(&mut event);
-        let zones = timezones::write(&mut event);
+        let mut zones = timezones::write(&mut event);
         let mut group = self.group.clone();
         group["entries"][self.index] = Value::Object(event);
+        // The other single instances of an object without its series.
+        if let Some(Value::Array(entries)) = group.get_mut("entries") {
+            for (index, entry) in entries.iter_mut().enumerate() {
+                if let (true, Value::Object(other)) = (index != self.index, entry) {
+                    for zone in timezones::write(other) {
+                        if !zones.iter().any(|(id, _)| *id == zone.0) {
+                            zones.push(zone);
+                        }
+                    }
+                }
+            }
+        }
         // The custom zones are written anew below.
         if let Some(Value::Array(components)) = group.get_mut("iCalendar").and_then(|c| c.get_mut("components")) {
             components.retain(|component| {
@@ -107,6 +119,34 @@ impl Parsed {
         Ok(text)
     }
 
+    /// The recurrence ids and entries of the other instances of an object that holds single
+    /// instances without their series (someone invited to some instances only).
+    pub fn other_instances(&self) -> Vec<(String, usize)> {
+        let Some(Value::Array(entries)) = self.group.get("entries") else { return Vec::new() };
+        entries
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index != self.index)
+            .filter(|(_, entry)| entry.get("@type").and_then(Value::as_str) == Some("Event"))
+            .filter_map(|(index, entry)| Some((entry.get("recurrenceId")?.as_str()?.to_owned(), index)))
+            .collect()
+    }
+
+    /// The same object, with another of its entries as the event.
+    pub fn at(&self, index: usize) -> Option<Parsed> {
+        self.group.get("entries")?.get(index)?.as_object()?;
+        Some(Parsed { group: self.group.clone(), index })
+    }
+
+    /// The object without the event, when it holds other events.
+    pub fn without_event(&self) -> Option<Parsed> {
+        let mut group = self.group.clone();
+        let Some(Value::Array(entries)) = group.get_mut("entries") else { return None };
+        entries.remove(self.index);
+        let index = entries.iter().position(|entry| entry.get("@type").and_then(Value::as_str) == Some("Event"))?;
+        Some(Parsed { group, index })
+    }
+
     /// A new object holding just this event.
     pub fn new_event() -> Parsed {
         let mut group = Map::new();
@@ -125,13 +165,18 @@ pub fn from_icalendar(content: &str) -> Option<Parsed> {
     };
     let entries = group.get_mut("entries")?.as_array_mut()?;
     let index = entries.iter().position(|entry| entry.get("@type").and_then(Value::as_str) == Some("Event"))?;
-    let mut event = match std::mem::take(&mut entries[index]) {
-        Value::Object(event) => event,
-        _ => return None,
-    };
-    trim_overrides(&mut event);
-    timezones::read(&group, &mut event);
-    group.get_mut("entries")?[index] = Value::Object(event);
+    let events: Vec<usize> =
+        (0..entries.len()).filter(|i| entries[*i].get("@type").and_then(Value::as_str) == Some("Event")).collect();
+    let mut read = Vec::new();
+    for i in &events {
+        let Value::Object(mut event) = std::mem::take(&mut entries[*i]) else { return None };
+        trim_overrides(&mut event);
+        read.push((*i, event));
+    }
+    for (i, mut event) in read {
+        timezones::read(&group, &mut event);
+        group.get_mut("entries")?[i] = Value::Object(event);
+    }
     Some(Parsed { group, index })
 }
 
@@ -804,8 +849,14 @@ pub fn validate(event: &Map<String, Value>) -> Result<(), Invalid> {
             return Err(invalid(property, "not supported here; use recurrenceRule"));
         }
     }
+    // A single instance without its series (someone invited to it only) has no series of its own.
     if event.get("recurrenceId").is_some_and(|rid| !rid.is_null()) {
-        return Err(invalid("recurrenceId", "single instances are changed through their series"));
+        check_local(event.get("recurrenceId"), "recurrenceId")?;
+        if event.get("recurrenceRule").is_some_and(|r| !r.is_null())
+            || event.get("recurrenceOverrides").is_some_and(|o| !o.is_null())
+        {
+            return Err(invalid("recurrenceId", "a single instance has no recurrence rule or overrides of its own"));
+        }
     }
     let custom = timezones::check(event.get("timeZones")).map_err(|message| invalid("timeZones", message))?;
     match event.get("title") {

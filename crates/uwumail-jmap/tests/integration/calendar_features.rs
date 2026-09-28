@@ -421,3 +421,59 @@ async fn custom_time_zones_travel_between_caldav_and_jmap() {
     let ics = server.caldav_object(MINI, got["list"][0]["uid"].as_str().unwrap()).await;
     assert!(ics.contains("TZID:Mars") && ics.contains("TZOFFSETTO:+0300"), "{ics}");
 }
+
+const TWO_INSTANCES: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//DE\r\nBEGIN:VEVENT\r\n\
+UID:only-some@example.org\r\nDTSTAMP:20260901T080000Z\r\nRECURRENCE-ID;TZID=Europe/Berlin:20261027T090000\r\n\
+DTSTART;TZID=Europe/Berlin:20261027T100000\r\nDURATION:PT1H\r\nSUMMARY:One\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\n\
+UID:only-some@example.org\r\nDTSTAMP:20260901T080000Z\r\nRECURRENCE-ID;TZID=Europe/Berlin:20261103T090000\r\n\
+DTSTART;TZID=Europe/Berlin:20261103T090000\r\nDURATION:PT1H\r\nSUMMARY:Two\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn single_instances_without_their_series() {
+    let server = server().await;
+    let calendar = server.default_calendar(MINI).await;
+    let put =
+        server.send(MINI, "PUT", &format!("/dav/calendars/{MINI}/personal/some.ics"), &[], TWO_INSTANCES.into()).await;
+    assert_eq!(put.status, StatusCode::CREATED, "{}", put.body);
+    let found = server.call(MINI, "CalendarEvent/query", json!({ "filter": { "uid": "only-some@example.org" } })).await;
+    assert_eq!(found["ids"].as_array().unwrap().len(), 1, "{found}");
+    let id = found["ids"][0].as_str().unwrap().to_owned();
+    let first = server.event(MINI, &id).await;
+    assert_eq!((&first["title"], &first["recurrenceId"]), (&json!("One"), &json!("2026-10-27T09:00:00")), "{first}");
+    let other = format!("{id}_20261103T090000");
+    let second = server.event(MINI, &other).await;
+    assert_eq!((&second["title"], &second["baseEventId"]), (&json!("Two"), &json!(&id)), "{second}");
+    let expanded = server
+        .call(
+            MINI,
+            "CalendarEvent/query",
+            json!({ "filter": { "after": "2026-10-01T00:00:00", "before": "2026-12-01T00:00:00" }, "expandRecurrences": true }),
+        )
+        .await;
+    assert_eq!(expanded["ids"], json!([&id, &other]));
+
+    let set = server
+        .call(MINI, "CalendarEvent/set", json!({ "update": { &id: { "title": "Eins" }, &other: { "title": "Zwei" } } }))
+        .await;
+    assert!(set["updated"].get(&id).is_some() && set["updated"].get(&other).is_some(), "{set}");
+    let ics = server.caldav_object(MINI, "only-some@example.org").await;
+    assert!(ics.contains("SUMMARY:Eins") && ics.contains("SUMMARY:Zwei"), "{ics}");
+    assert_eq!(ics.matches("BEGIN:VEVENT").count(), 2, "no series appeared: {ics}");
+    assert_eq!(ics.matches("RECURRENCE-ID").count(), 2, "{ics}");
+
+    let gone = server.call(MINI, "CalendarEvent/set", json!({ "destroy": [&other] })).await;
+    assert_eq!(gone["destroyed"], json!([&other]), "{gone}");
+    let ics = server.caldav_object(MINI, "only-some@example.org").await;
+    assert_eq!(ics.matches("BEGIN:VEVENT").count(), 1, "{ics}");
+    assert_eq!(server.event(MINI, &id).await["title"], "Eins");
+
+    // A JMAP client may keep a single instance too.
+    let mut single = timed(&calendar, "Einmal");
+    single["uid"] = json!("single@example.org");
+    single["recurrenceId"] = json!("2026-10-20T09:00:00");
+    single["recurrenceIdTimeZone"] = json!("Europe/Berlin");
+    let created = server.create(MINI, single).await;
+    assert_eq!(server.event(MINI, &created).await["recurrenceId"], "2026-10-20T09:00:00");
+    let ics = server.caldav_object(MINI, "single@example.org").await;
+    assert!(ics.contains("RECURRENCE-ID;TZID=Europe/Berlin:20261020T090000"), "{ics}");
+}
