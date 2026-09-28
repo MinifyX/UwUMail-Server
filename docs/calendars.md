@@ -43,6 +43,11 @@ Where shared things show up:
 A shared calendar always shows the owner's name, colour and events. Alerts
 belong to the event and are the same for everybody.
 
+Entries are stored without control characters other than tab and line breaks
+(iCalendar and vCard allow no others), and CalDAV/CardDAV answers leave out
+anything XML cannot carry, whoever wrote it: an entry from someone a calendar is
+shared with, or an attendee's answer, cannot stop the owner's app from syncing.
+
 ## Invitations (scheduling)
 
 Add people to an event in your calendar app and the server invites them; they
