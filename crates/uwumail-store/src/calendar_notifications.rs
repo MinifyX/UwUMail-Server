@@ -17,6 +17,9 @@ use crate::{Result, Store, StoreError, now};
 pub const MAX_NOTIFICATIONS: i64 = 200;
 /// How long a notification is kept when nobody dismisses it.
 pub const KEPT_SECS: i64 = 30 * 86_400;
+/// The largest event a notification keeps, before and after; a larger one is told without it, so
+/// someone who may write a shared calendar cannot fill its owner's disk with notifications.
+pub const MAX_KEPT_EVENT_BYTES: usize = 128 * 1024;
 
 /// Who changed an event.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -155,8 +158,8 @@ pub(crate) fn entry_changed(
             author.calendar_address,
             author.comment,
             draft,
-            old,
-            new
+            old.filter(|content| content.len() <= MAX_KEPT_EVENT_BYTES),
+            new.filter(|content| content.len() <= MAX_KEPT_EVENT_BYTES)
         ],
     )?;
     let change_id = tx.last_insert_rowid();

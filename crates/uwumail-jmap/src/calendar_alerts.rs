@@ -268,6 +268,8 @@ const TICK: std::time::Duration = std::time::Duration::from_secs(20);
 const MAX_LATE_SECS: i64 = 3600;
 /// Events planned and alerts fired per turn; the rest comes in the next one.
 const BATCH: usize = 500;
+/// Alerts of one event planned for one account at a time.
+const MAX_PLANNED: usize = 20;
 
 /// The SignedDuration of an OffsetTrigger in seconds; days count 24 hours.
 fn offset_seconds(value: &str) -> Option<i64> {
@@ -350,7 +352,11 @@ pub fn next_alerts(
             consider(&mut next, Some(&rid), &instance);
         }
     }
-    next.into_values().collect()
+    // An event with a great many alerts rings for the first of them only.
+    let mut planned: Vec<uwumail_store::PlannedAlert> = next.into_values().collect();
+    planned.sort_by_key(|alert| alert.fire_at);
+    planned.truncate(MAX_PLANNED);
+    planned
 }
 
 impl crate::Jmap {

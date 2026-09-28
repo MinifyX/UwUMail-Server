@@ -126,6 +126,12 @@ impl Store {
         if update.is_empty() {
             return Ok(());
         }
+        let too_long = |text: &Option<Option<String>>, max: usize| {
+            text.as_ref().and_then(Option::as_ref).is_some_and(|t| t.len() > max)
+        };
+        if too_long(&update.name, 1024) || too_long(&update.color, 64) || too_long(&update.timezone, 64 * 1024) {
+            return Err(StoreError::Invalid("a calendar setting is too long".into()));
+        }
         for alerts in [&update.default_alerts_with_time, &update.default_alerts_without_time] {
             if alerts.as_ref().and_then(Option::as_ref).is_some_and(|a| a.len() > CALENDAR_DEFAULT_ALERTS_MAX_BYTES) {
                 return Err(StoreError::Invalid("the default alerts are too large".into()));

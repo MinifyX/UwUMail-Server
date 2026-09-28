@@ -460,9 +460,10 @@ true`): every event that changed since the query state is removed, and added
 again at its place where it matches now. With `expandRecurrences` the same
 holds for instances: those a changed event has now are removed and added
 again, and those it had at the query state are removed too. For that the
-server keeps what recurring events were before each change, for 30 days (and
-at most 2000 changes per account); a query state older than that, or from
-before 0.17, answers `cannotCalculateChanges`, and the client queries anew.
+server keeps what recurring events were before each change, for 30 days, at
+most 500 changes per account and none of an event over 128 KiB; a query state
+older than what is kept, or from before 0.17, answers `cannotCalculateChanges`,
+and the client queries anew.
 
 ### CalendarEvent/parse
 
@@ -501,7 +502,8 @@ account's own changes leave none for itself. `changedBy` names who it was
 (`principalId` for people of this server, never by a masked address;
 `calendarAddress` and the message's `COMMENT` for scheduling), `event` is the
 event before the change (after it for `created`), `eventPatch` what changed at
-its top level, and `isDraft` whether it is a draft.
+its top level, and `isDraft` whether it is a draft. For an event over 128 KiB
+the notification says who changed it, without `event` and `eventPatch`.
 
 An event its owner keeps `private` or `secret` is only news to the owner.
 Nothing is noted for a calendar filled from a subscription, for imports, or
@@ -535,7 +537,8 @@ for, and not again once `acknowledged` covers it. Drafts ring for nobody.
 - An alert with `"action": "email"` puts a short reminder mail into the
   account's inbox, in the language it chose, from `postmaster@` its domain.
 
-The server looks every 20 seconds. An alert that should have gone off more
+The server looks every 20 seconds and rings at most 20 alerts of one event
+for one account at a time, the earliest. An alert that should have gone off more
 than an hour ago, because the server was down, is dropped rather than
 delivered late.
 

@@ -16,7 +16,10 @@ use crate::{Result, Store, now};
 
 /// How long earlier versions are kept, and how many per account.
 pub const KEPT_SECS: i64 = 30 * 86_400;
-pub const MAX_VERSIONS: i64 = 2000;
+pub const MAX_VERSIONS: i64 = 500;
+/// The largest version kept. A change of a larger recurring event is not kept: queries from before
+/// it cannot be replayed, as after a version went for its age.
+pub const MAX_VERSION_BYTES: usize = 128 * 1024;
 
 /// Whether an event object recurs or holds single instances: its ids are more than its own.
 fn recurs(content: &str) -> bool {
@@ -39,6 +42,15 @@ pub(crate) fn note(
     if old.is_none() && !after.is_some_and(recurs) {
         return Ok(());
     }
+    let time = now();
+    if old.is_some_and(|content| content.len() > MAX_VERSION_BYTES) {
+        for account in audience {
+            if let Some(modseq) = log.modseq_of(*account) {
+                raise_floor(tx, *account, modseq)?;
+            }
+        }
+        return Ok(());
+    }
     let content_id: Option<i64> = match old {
         Some(content) => {
             let hash = hex::encode(Sha256::digest(content.as_bytes()));
@@ -50,7 +62,6 @@ pub(crate) fn note(
         }
         None => None,
     };
-    let time = now();
     for account in audience {
         let Some(modseq) = log.modseq_of(*account) else { continue };
         tx.execute(
@@ -76,15 +87,21 @@ fn prune(tx: &Connection, account_id: i64, time: i64) -> Result<()> {
         "DELETE FROM calendar_event_versions WHERE account_id = ?1 AND modseq <= ?2",
         params![account_id, gone],
     )?;
-    tx.execute(
-        "INSERT INTO calendar_event_versions_since (account_id, modseq) VALUES (?1, ?2)
-         ON CONFLICT (account_id) DO UPDATE SET modseq = max(modseq, excluded.modseq)",
-        params![account_id, gone],
-    )?;
+    raise_floor(tx, account_id, gone)?;
     tx.execute(
         "DELETE FROM calendar_event_contents WHERE NOT EXISTS
              (SELECT 1 FROM calendar_event_versions v WHERE v.content_id = calendar_event_contents.id)",
         [],
+    )?;
+    Ok(())
+}
+
+/// Versions of an account are complete only from `modseq` on.
+fn raise_floor(tx: &Connection, account_id: i64, modseq: i64) -> Result<()> {
+    tx.execute(
+        "INSERT INTO calendar_event_versions_since (account_id, modseq) VALUES (?1, ?2)
+         ON CONFLICT (account_id) DO UPDATE SET modseq = max(modseq, excluded.modseq)",
+        params![account_id, modseq],
     )?;
     Ok(())
 }
