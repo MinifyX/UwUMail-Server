@@ -1854,7 +1854,8 @@
       "scopeShort": {
         "mail": "Courrier",
         "smtp": "Envoi",
-        "dav": "Calendrier"
+        "dav": "Calendrier",
+        "maskedemail": "Masquées"
       },
       "expired": "Expiré",
       "lastUsed": "Dernière utilisation {{time}} via {{protocol}} depuis {{ip}}",
@@ -1953,10 +1954,12 @@
   },
   "oauth": {
     "title": "« {{name}} » souhaite accéder à votre compte",
+    "titleMasked": "« {{name}} » souhaite créer et gérer vos adresses masquées",
     "account": "Connecté en tant que",
     "nameClaim": "L'appli se présente elle-même comme « {{name}} ». N'autorisez ceci que si vous venez vous-même de lancer la connexion dans cette appli.",
     "returnsTo": "Vous retournerez ensuite à {{host}}.",
     "returnsToDevice": "Vous retournerez ensuite à l'appli sur cet appareil ({{host}}).",
+    "maskedOnly": "Elle ne peut ni lire ni envoyer votre courrier et ne voit rien d'autre de votre compte : seulement vos adresses masquées.",
     "scopesTitle": "L'appli pourra",
     "scopes": {
       "mail": {
@@ -1970,6 +1973,10 @@
       "dav": {
         "title": "Utiliser vos agendas et contacts",
         "hint": "Les lire et les modifier, via CalDAV, CardDAV et JMAP."
+      },
+      "maskedemail": {
+        "title": "Créer et gérer vos adresses masquées",
+        "hint": "En créer de nouvelles, les activer, les désactiver et les supprimer, via JMAP. Seulement là où votre administrateur autorise les adresses masquées."
       },
       "openid": {
         "title": "Savoir que c'est vous",
@@ -2341,6 +2348,8 @@
     },
     "lastMessage": "dernier message {{date}}",
     "noMessage": "aucun message",
+    "madeBy": "créée par {{name}}",
+    "madeByApp": "créée par une application de messagerie",
     "enable": "Activer",
     "disable": "Couper",
     "delete": "Supprimer",

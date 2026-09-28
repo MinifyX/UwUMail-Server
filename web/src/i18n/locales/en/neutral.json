@@ -1809,7 +1809,8 @@
       "scopeShort": {
         "mail": "Mail",
         "smtp": "Send",
-        "dav": "Calendar"
+        "dav": "Calendar",
+        "maskedemail": "Masked"
       },
       "expired": "Expired",
       "lastUsed": "Last used {{time}} via {{protocol}} from {{ip}}",
@@ -1904,10 +1905,12 @@
   },
   "oauth": {
     "title": "“{{name}}” wants to access your account",
+    "titleMasked": "“{{name}}” wants to create and manage your masked addresses",
     "account": "Logged in as",
     "nameClaim": "The app calls itself “{{name}}”. Only allow this if you just started signing in to it yourself.",
     "returnsTo": "Afterwards you go back to {{host}}.",
     "returnsToDevice": "Afterwards you go back to the app on this device ({{host}}).",
+    "maskedOnly": "It cannot read or send your mail and sees nothing else of your account: only your masked addresses.",
     "scopesTitle": "The app may",
     "scopes": {
       "mail": {
@@ -1921,6 +1924,10 @@
       "dav": {
         "title": "Use your calendars and contacts",
         "hint": "Read and change them, with CalDAV, CardDAV and JMAP."
+      },
+      "maskedemail": {
+        "title": "Create and manage your masked addresses",
+        "hint": "Make new ones, turn them on and off and delete them, with JMAP. Only where your admin allows masked addresses."
       },
       "openid": {
         "title": "Know that it is you",
@@ -2290,6 +2297,8 @@
     },
     "lastMessage": "last mail {{date}}",
     "noMessage": "no mail yet",
+    "madeBy": "made by {{name}}",
+    "madeByApp": "made by a mail app",
     "enable": "Turn on",
     "disable": "Turn off",
     "delete": "Delete",

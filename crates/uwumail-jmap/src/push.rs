@@ -59,6 +59,9 @@ pub(crate) struct Watcher {
     pending: Vec<StateChange>,
     /// Calendar alerts that go off (draft-ietf-jmap-calendars, section 6.4).
     alerts: broadcast::Receiver<CalendarAlertFired>,
+    /// For an app allowed masked addresses only: nothing but `MaskedEmail` of the own account is
+    /// pushed, whatever types it asks for.
+    masked_only: bool,
 }
 
 /// What a watcher has to push.
@@ -86,14 +89,35 @@ impl Watcher {
                 shared_modseqs.insert(owner, modseq);
             }
         }
-        Watcher { store, account_id, types, changes, last_modseq, shared_modseqs, pending: Vec::new(), alerts }
+        Watcher {
+            store,
+            account_id,
+            types,
+            changes,
+            last_modseq,
+            shared_modseqs,
+            pending: Vec::new(),
+            alerts,
+            masked_only: false,
+        }
+    }
+
+    /// Keeps this watcher to `MaskedEmail` of the own account, for an app allowed nothing else.
+    pub fn only_masked(mut self, masked_only: bool) -> Watcher {
+        self.masked_only = masked_only;
+        self
+    }
+
+    /// Whether a type that changed is pushed: asked for, and allowed to the login.
+    fn wants(&self, kind: &str) -> bool {
+        (!self.masked_only || kind == "MaskedEmail") && self.types.iter().any(|t| t == kind)
     }
 
     /// Waits for the next change of this account or of an account that shares mail with it, or a
     /// calendar alert of this account. Safe to cancel: nothing is lost when it is. `None` when
     /// the server shuts down.
     pub async fn wait(&mut self) -> Option<Pushed> {
-        let wants_alerts = self.types.iter().any(|t| t == "CalendarAlert");
+        let wants_alerts = self.wants("CalendarAlert");
         loop {
             tokio::select! {
                 change = next_change(&self.store, self.account_id, &mut self.changes, &mut self.pending, self.last_modseq) => {
@@ -114,10 +138,7 @@ impl Watcher {
     pub async fn changed(&mut self, modseq: i64) -> Option<Map<String, Value>> {
         let kinds = self.store.changed_kinds(self.account_id, self.last_modseq).await.unwrap_or_default();
         self.last_modseq = self.last_modseq.max(modseq);
-        let changed = type_states(&self.store, self.account_id, &kinds, modseq, false, |kind| {
-            self.types.iter().any(|t| t == kind)
-        })
-        .await;
+        let changed = type_states(&self.store, self.account_id, &kinds, modseq, false, |kind| self.wants(kind)).await;
         (!changed.is_empty()).then_some(changed)
     }
 
@@ -128,12 +149,13 @@ impl Watcher {
         if change.account_id == self.account_id {
             return self.changed(change.modseq).await.map(|changed| (self.account_id, changed));
         }
+        if self.masked_only {
+            return None;
+        }
         let owner = change.account_id;
         let since = self.shared_modseqs.get(&owner).copied().unwrap_or(change.modseq - 1);
         self.shared_modseqs.insert(owner, since.max(change.modseq));
-        let changed =
-            shared_type_states(&self.store, owner, self.account_id, since, |kind| self.types.iter().any(|t| t == kind))
-                .await;
+        let changed = shared_type_states(&self.store, owner, self.account_id, since, |kind| self.wants(kind)).await;
         (!changed.is_empty()).then_some((owner, changed))
     }
 }
@@ -290,7 +312,7 @@ pub async fn handle(
     headers: HeaderMap,
 ) -> Response {
     let client = client.map(|Extension(c)| c).unwrap_or_default();
-    let login = match jmap.inner.auth.login_for(&headers, client, false).await {
+    let login = match jmap.inner.auth.login_or_masked_for(&headers, client, false).await {
         Ok(login) => login,
         Err(err) => return err.into_response(),
     };
@@ -300,7 +322,7 @@ pub async fn handle(
         Some(list) => list.split(',').map(|t| t.trim().to_owned()).collect(),
     };
     let ping = query.ping.filter(|p| *p > 0).map(|p| Duration::from_secs(p.clamp(30, 3600)));
-    let watcher = Watcher::new(jmap.inner.store.clone(), account.id, types).await;
+    let watcher = Watcher::new(jmap.inner.store.clone(), account.id, types).await.only_masked(login.masked_only());
     let listener = Listener {
         jmap: jmap.clone(),
         login: login.live(),

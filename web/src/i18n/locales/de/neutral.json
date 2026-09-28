@@ -1809,7 +1809,8 @@
       "scopeShort": {
         "mail": "Mails",
         "smtp": "Senden",
-        "dav": "Kalender"
+        "dav": "Kalender",
+        "maskedemail": "Maskiert"
       },
       "expired": "Abgelaufen",
       "lastUsed": "Zuletzt {{time}} über {{protocol}} von {{ip}}",
@@ -1904,10 +1905,12 @@
   },
   "oauth": {
     "title": "„{{name}}“ möchte auf dein Konto zugreifen",
+    "titleMasked": "„{{name}}“ möchte deine maskierten Adressen anlegen und verwalten",
     "account": "Angemeldet als",
     "nameClaim": "Die App nennt sich selbst „{{name}}“. Erlaube das nur, wenn du gerade selbst die Anmeldung in dieser App begonnen hast.",
     "returnsTo": "Danach geht es zurück zu {{host}}.",
     "returnsToDevice": "Danach geht es zurück zur App auf diesem Gerät ({{host}}).",
+    "maskedOnly": "Die App kann deine Mails weder lesen noch senden und sieht sonst nichts von deinem Konto: nur deine maskierten Adressen.",
     "scopesTitle": "Die App darf",
     "scopes": {
       "mail": {
@@ -1921,6 +1924,10 @@
       "dav": {
         "title": "Deine Kalender und Kontakte nutzen",
         "hint": "Lesen und ändern, über CalDAV, CardDAV und JMAP."
+      },
+      "maskedemail": {
+        "title": "Deine maskierten Adressen anlegen und verwalten",
+        "hint": "Neue anlegen, sie ein- und ausschalten und löschen, über JMAP. Nur dort, wo dein Admin maskierte Adressen erlaubt."
       },
       "openid": {
         "title": "Wissen, dass du es bist",
@@ -2290,6 +2297,8 @@
     },
     "lastMessage": "letzte Mail {{date}}",
     "noMessage": "noch keine Mail",
+    "madeBy": "angelegt von {{name}}",
+    "madeByApp": "angelegt von einer Mail-App",
     "enable": "Einschalten",
     "disable": "Ausschalten",
     "delete": "Löschen",

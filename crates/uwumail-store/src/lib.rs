@@ -149,9 +149,9 @@ pub use migration_jobs::{
 };
 pub use mutate::{EmailUpdate, KeywordsChange, MailboxUpdate, MailboxesChange, valid_keyword};
 pub use oauth::{
-    NewOAuthCode, OAUTH_ACCESS_TOKEN_SECS, OAUTH_CODE_SECS, OAUTH_REFRESH_TOKEN_SECS, OAUTH_SCOPES, OAuthClient,
-    OAuthGrant, OAuthRefusal, OAuthTokens, is_oauth_access_token, oauth_scopes, oauth_scopes_usable, pkce_matches,
-    redirect_uri_registered, valid_pkce_challenge, valid_redirect_uri,
+    MASKED_EMAIL_SCOPE, NewOAuthCode, OAUTH_ACCESS_TOKEN_SECS, OAUTH_CODE_SECS, OAUTH_REFRESH_TOKEN_SECS, OAUTH_SCOPES,
+    OAuthClient, OAuthGrant, OAuthRefusal, OAuthTokens, is_oauth_access_token, oauth_scopes, oauth_scopes_usable,
+    pkce_matches, redirect_uri_registered, valid_pkce_challenge, valid_redirect_uri,
 };
 pub use objects::{Changes, EmailRecord};
 pub use own::{MailboxUsage, OwnAddress, OwnAddresses, RELEASED_ADDRESS_SECS, ReleasedAddress};

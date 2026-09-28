@@ -127,3 +127,4 @@ Each step ships as its own commits, container image and test deployment.
 - [x] A calmer view of the admin panel for people who only want the traffic light (docs/admin-alerts.md)
 - [x] Admin alerts, statistics, Prometheus metrics (docs/admin-alerts.md, docs/metrics.md)
 - [x] Sending TLS reports to other domains, DANE (docs/tls-reports.md)
+- [x] An OAuth scope for masked addresses only (JMAP `MaskedEmail`, nothing else of the mailbox), for UwULock Server, which makes masked addresses for its users (docs/jmap-masked-email.md)

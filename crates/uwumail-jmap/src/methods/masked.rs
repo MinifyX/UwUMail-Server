@@ -28,6 +28,25 @@ const DEFAULTS: &[&str] = &[
 /// What the masked address was made with, when a JMAP client made it.
 const CREATED_BY: &str = "JMAP";
 
+/// Who makes masked addresses in this request: `OAuth:<app name>` for an app signed in with
+/// OAuth, such as a password manager making them for its people, `JMAP` for anything else.
+async fn created_by(ctx: &Ctx<'_>) -> String {
+    let grant = ctx
+        .credential
+        .as_deref()
+        .and_then(|credential| credential.strip_prefix("oauth:"))
+        .and_then(|grant| grant.parse::<i64>().ok());
+    let Some(grant) = grant else { return CREATED_BY.into() };
+    match ctx.jmap.store.oauth_grant_client_name(grant).await {
+        Ok(Some(name)) => format!("OAuth:{name}"),
+        Ok(None) => CREATED_BY.into(),
+        Err(err) => {
+            tracing::warn!(%err, grant, "reading the name of an OAuth app failed");
+            CREATED_BY.into()
+        }
+    }
+}
+
 fn to_json(masked: &MaskedAddress) -> Map<String, Value> {
     let Value::Object(map) = json!({
         "id": ids::masked_email(masked.id),
@@ -122,6 +141,7 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let mut response = SetResponse::default();
 
     if let Some(create) = args.get("create").and_then(Value::as_object) {
+        let created_by = created_by(ctx).await;
         for (creation_id, object) in create {
             let result: Result<MaskedAddress, SetError> = async {
                 let object = object.as_object().ok_or_else(|| SetError::new("invalidProperties", "not an object"))?;
@@ -133,7 +153,7 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                     description: text(object, "description")?.unwrap_or_default().to_owned(),
                     url: text(object, "url")?.map(str::to_owned),
                     email_prefix: text(object, "emailPrefix")?.map(str::to_owned),
-                    created_by: CREATED_BY.into(),
+                    created_by: created_by.clone(),
                 };
                 store.create_masked_address(account_id, new).await.map_err(refused)
             }

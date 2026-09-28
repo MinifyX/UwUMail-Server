@@ -89,7 +89,13 @@ pub struct Ctx<'a> {
     /// with the `dav` scope, the account password or the webmail. One limited to `mail` gets
     /// neither, over JMAP as over CalDAV and CardDAV.
     pub may_use_dav: bool,
+    /// Whether that credential may do nothing but manage masked addresses: an OAuth app with the
+    /// `maskedemail` scope and without `mail`. Only [`MASKED_ONLY_METHODS`] answer it.
+    pub masked_only: bool,
 }
+
+/// What an app allowed masked addresses only may call (docs/jmap-masked-email.md).
+pub const MASKED_ONLY_METHODS: &[&str] = &["Core/echo", "MaskedEmail/get", "MaskedEmail/set", "MaskedEmail/changes"];
 
 impl<'a> Ctx<'a> {
     pub fn new(jmap: &'a Inner, account: Account, using: Vec<String>, created_ids: HashMap<String, String>) -> Ctx<'a> {
@@ -102,6 +108,7 @@ impl<'a> Ctx<'a> {
             shared: None,
             credential: None,
             may_use_dav: true,
+            masked_only: false,
         }
     }
 
@@ -181,6 +188,13 @@ impl<'a> Ctx<'a> {
 }
 
 pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Outputs> {
+    // An app allowed masked addresses only gets nothing else, in no account.
+    if ctx.masked_only && !MASKED_ONLY_METHODS.contains(&name) {
+        return Err(MethodError::new(
+            "forbidden",
+            "this app sign-in may only manage masked addresses (scope maskedemail)",
+        ));
+    }
     // Calendars and address books need a credential allowed them (the `dav` scope), whichever
     // account the call is for.
     if !ctx.may_use_dav && DAV_TYPES.contains(&name.split('/').next().unwrap_or_default()) {
@@ -189,8 +203,9 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
             "this app password or app sign-in is not allowed calendars and contacts (scope dav)",
         ));
     }
-    // A call for someone else's account shared with this one runs in that account.
-    if sharing::enter(ctx, name, &args).await? {
+    // A call for someone else's account shared with this one runs in that account. An app
+    // allowed masked addresses only does not even learn which accounts are shared.
+    if !ctx.masked_only && sharing::enter(ctx, name, &args).await? {
         let result = Box::pin(dispatch(ctx, name, args)).await;
         sharing::leave(ctx);
         return result;

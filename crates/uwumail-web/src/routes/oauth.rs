@@ -18,8 +18,8 @@ use serde_json::{Value, json};
 use url::Url;
 use uwumail_jmap::ClientInfo;
 use uwumail_store::{
-    Account, NewOAuthCode, OAuthClient, OAuthRefusal, OAuthTokens, SecurityEvent, oauth_scopes, oauth_scopes_usable,
-    redirect_uri_registered, scopes_for, valid_pkce_challenge,
+    Account, MASKED_EMAIL_SCOPE, NewOAuthCode, OAuthClient, OAuthRefusal, OAuthTokens, SecurityEvent, oauth_scopes,
+    oauth_scopes_usable, redirect_uri_registered, scopes_for, valid_pkce_challenge,
 };
 
 use super::audit;
@@ -294,8 +294,9 @@ async fn check(web: &Web, account: &Account, params: &AuthorizeParams) -> ApiRes
     if params.nonce.as_ref().is_some_and(|nonce| nonce.len() > 256) || state.is_some_and(|state| state.len() > 1024) {
         return refuse("invalid_request", "the nonce or state is too long");
     }
-    // What the app asked for, without protocols this account may not use at all.
-    let usable: Vec<&str> = scopes_for(account.protocols)
+    // What the app asked for, without protocols this account may not use at all. Masked addresses
+    // only go over JMAP.
+    let mut usable: Vec<&str> = scopes_for(account.protocols)
         .into_iter()
         .map(|scope| match scope {
             uwumail_store::AppScope::Mail => "mail",
@@ -303,10 +304,13 @@ async fn check(web: &Web, account: &Account, params: &AuthorizeParams) -> ApiRes
             uwumail_store::AppScope::Dav => "dav",
         })
         .collect();
+    if account.protocols.jmap {
+        usable.push(MASKED_EMAIL_SCOPE);
+    }
     let asked = params.scope.as_deref().filter(|scope| !scope.trim().is_empty()).unwrap_or(DEFAULT_SCOPES);
     let scopes: Vec<&'static str> = oauth_scopes(asked)
         .into_iter()
-        .filter(|scope| !matches!(*scope, "mail" | "smtp" | "dav") || usable.contains(scope))
+        .filter(|scope| !matches!(*scope, "mail" | "smtp" | "dav" | MASKED_EMAIL_SCOPE) || usable.contains(scope))
         .collect();
     if !oauth_scopes_usable(&scopes) {
         return refuse("invalid_scope", "none of the scopes asked for can be given");

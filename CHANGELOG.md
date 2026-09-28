@@ -3,6 +3,22 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## Unreleased
+
+**Masked addresses for password managers, without the mailbox** ([docs/jmap-masked-email.md](docs/jmap-masked-email.md#apps-allowed-masked-addresses-only-the-maskedemail-scope)):
+
+- A new OAuth scope, `maskedemail`, lets an app make and manage one's masked addresses and nothing
+  else. UwULock Server uses it to make masked addresses for its people, also for the official
+  Bitwarden apps. Its token opens the JMAP session (with only the MaskedEmail capability),
+  `Core/echo`, `MaskedEmail/get`, `/set` and `/changes`, and push for `MaskedEmail` changes over the
+  event stream and the WebSocket. Every other method answers `forbidden`; IMAP, SMTP, ManageSieve,
+  CalDAV/CardDAV, uploads, downloads and the picture proxy refuse the token, and shared accounts
+  stay out of sight. The masked address policy of the domain and the person holds as for anyone.
+- The consent page says plainly that such an app cannot read or send mail; *My account → Security*
+  lists it with a "Masked" pill and signs it out, as any app.
+- Masked addresses made by an app signed in with OAuth say so: `createdBy` is `OAuth:<app name>`
+  (before: `JMAP`), and *My account → Masked addresses* shows who made each one.
+
 ## 0.17.0
 
 **Profile pictures** ([docs/profile-pictures.md](docs/profile-pictures.md)):
