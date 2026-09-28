@@ -65,6 +65,7 @@ import {
   useTrashPerson,
   useUpdatePerson,
 } from "./queries";
+import { PictureCard } from "@/features/pictures/PictureCard";
 
 function Banner({
   tone,
@@ -988,6 +989,14 @@ export function PersonPage({ login, session }: { login: string; session: Session
         </Card>
 
         <Addresses person={person} editable={!deleted} />
+
+        {!deleted && person.role === "service" && (
+          <PictureCard
+            endpoint={`/api/admin/people/${encodeURIComponent(person.login)}/picture`}
+            title={t("pictures.service.title")}
+            intro={t(person.sharedMailbox ? "pictures.shared.intro" : "pictures.service.intro")}
+          />
+        )}
 
         {!deleted && person.sharedMailbox && (
           // Starts again from what the server has whenever that changes.

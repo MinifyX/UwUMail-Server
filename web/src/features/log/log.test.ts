@@ -30,6 +30,15 @@ const ACTIONS = [
   "sharedMailbox.members",
   "sharedMailbox.convert",
   "sharedMailbox.end",
+  "person.picture",
+  "person.pictureRemoved",
+  "person.pictureVisibility",
+  "group.picture",
+  "group.pictureRemoved",
+  "group.pictureVisibility",
+  "domain.logo",
+  "domain.logoRemoved",
+  "domain.publicPictures",
 ];
 
 describe("the change log", () => {

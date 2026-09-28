@@ -541,7 +541,12 @@
       "maskedOnlyDomain": "Dit domein draagt alleen gemaskeerde adressen: geen mensen, aliassen, groepen, doorstuuradressen of catch-all.",
       "notMaskedDomain": "Hier kun je alleen domeinen voor gemaskeerde adressen kiezen.",
       "maskedDefault": "Het standaarddomein moet een van de toegestane domeinen zijn.",
-      "kindChangeBlocked": "Op dit domein staat nog iets anders dan gemaskeerde adressen. Verwijder dat eerst."
+      "kindChangeBlocked": "Op dit domein staat nog iets anders dan gemaskeerde adressen. Verwijder dat eerst.",
+      "pictureType": "Dat is geen bruikbare afbeelding. PNG, JPEG, WebP en GIF zijn prima.",
+      "pictureTooLarge": "De afbeelding is te groot. Hoogstens 10 MB.",
+      "pictureTooManyPixels": "De afbeelding heeft te veel pixels. Hoogstens 8000 × 8000.",
+      "publicNotAllowed": "Openbare afbeeldingen zijn hier niet toegestaan.",
+      "picturePerson": "Mensen kiezen hun eigen foto."
     }
   },
   "people": {
@@ -876,7 +881,17 @@
       "sharedMailboxEnd": "{{actor}} heeft de gedeelde mailbox {{target}} weer een dienst gemaakt",
       "domainMaskedPolicy": "{{actor}} heeft gewijzigd waar de mensen van {{target}} gemaskeerde adressen mogen maken",
       "domainKind": "{{actor}} heeft de soort van het domein {{target}} gewijzigd",
-      "accountMaskedPolicy": "{{actor}} heeft gewijzigd waar {{target}} gemaskeerde adressen mag maken"
+      "accountMaskedPolicy": "{{actor}} heeft gewijzigd waar {{target}} gemaskeerde adressen mag maken",
+      "personPicture": "{{actor}} heeft de afbeelding van {{target}} ingesteld",
+      "personPictureRemoved": "{{actor}} heeft de afbeelding van {{target}} verwijderd",
+      "personPictureVisibility": "{{actor}} heeft gewijzigd wie de afbeelding van {{target}} ziet",
+      "groupPicture": "{{actor}} heeft de afbeelding van de groep {{target}} ingesteld",
+      "groupPictureRemoved": "{{actor}} heeft de afbeelding van de groep {{target}} verwijderd",
+      "groupPictureVisibility": "{{actor}} heeft gewijzigd wie de afbeelding van de groep {{target}} ziet",
+      "domainLogo": "{{actor}} heeft het logo van {{target}} ingesteld",
+      "domainLogoRemoved": "{{actor}} heeft het logo van {{target}} verwijderd",
+      "domainPublicPictures": "{{actor}} heeft gewijzigd of adressen van {{target}} openbare afbeeldingen mogen hebben",
+      "picturesPublic": "{{actor}} heeft gewijzigd of profielfoto's op deze server openbaar mogen zijn"
     },
     "details": {
       "adminOn": "is nu beheerder",
@@ -909,7 +924,10 @@
       "maskedMode": "gemaskeerde adressen: {{value}}",
       "maskedAsDomain": "gemaskeerde adressen: zoals het domein",
       "maskedRemovedFrom_one": "uit {{count}} instelling voor gemaskeerde adressen gehaald",
-      "maskedRemovedFrom_other": "uit {{count}} instellingen voor gemaskeerde adressen gehaald"
+      "maskedRemovedFrom_other": "uit {{count}} instellingen voor gemaskeerde adressen gehaald",
+      "pictureVisibility": "zichtbaar voor: {{value}}",
+      "publicAllowed": "openbare afbeeldingen toegestaan",
+      "publicForbidden": "openbare afbeeldingen verboden"
     },
     "entry": {
       "actor": "Wie",
@@ -1010,7 +1028,8 @@
         "submissions": "Vertelt mailapps waar ze mail met TLS kunnen verzenden (poort 465).",
         "submission": "Vertelt mailapps waar ze mail met STARTTLS kunnen verzenden (poort 587).",
         "caa": "Laat alleen Let's Encrypt certificaten uitgeven voor de naam van de server, en alleen aan het eigen account van deze server. Houdt TLS privé achter een UwUMail Gateway.",
-        "tlsa": "Vertelt verzendende servers welke sleutel het certificaat van deze server heeft, zodat ze alleen versleuteld bij hem afleveren (DANE). Vereist een met DNSSEC ondertekende zone."
+        "tlsa": "Vertelt verzendende servers welke sleutel het certificaat van deze server heeft, zodat ze alleen versleuteld bij hem afleveren (DANE). Vereist een met DNSSEC ondertekende zone.",
+        "avatars": "Laat andere mailservers de openbare profielfoto's van de adressen van dit domein vinden."
       },
       "notes": {
         "mxUpstream": "Verwijst naar de voorliggende mailserver. Dat is in orde.",
@@ -1083,7 +1102,8 @@
         "submissions": "Verzenden voor mailapps (TLS)",
         "submission": "Verzenden voor mailapps (STARTTLS)",
         "caa": "Certificaten alleen voor deze server (CAA)",
-        "tlsa": "DANE (TLSA)"
+        "tlsa": "DANE (TLSA)",
+        "avatars": "Profielfoto's (Libravatar)"
       },
       "tlsaKeyChange": "Voordat de sleutel van de server verandert (eigen certificaatbestanden, een verhuizing naar een andere server of het verwijderen van data/tls/acme/key.pem), publiceer je het record voor de nieuwe sleutel naast dit record en wacht je een dag. Anders houden servers die DANE controleren mail voor je tegen."
     },
@@ -3669,6 +3689,63 @@
       "result": "Mag gemaskeerde adressen maken op {{domains}}; nieuwe komen op {{domain}}.",
       "resultNone": "Mag geen gemaskeerde adressen maken.",
       "staleDefault": "Het eerder gekozen standaarddomein {{domain}} is niet meer toegestaan, dus geldt dat van het domein of een automatisch gekozen domein."
+    }
+  },
+  "pictures": {
+    "own": {
+      "title": "Profielfoto",
+      "intro": "Staat naast je naam als je mensen op deze server schrijft. Maak je hem openbaar, dan kunnen andere mailservers hem ook tonen."
+    },
+    "service": {
+      "title": "Afbeelding",
+      "intro": "Staat naast mail van de adressen van deze dienst."
+    },
+    "shared": {
+      "intro": "Staat naast mail uit deze gedeelde mailbox."
+    },
+    "group": {
+      "title": "Groepsafbeelding",
+      "intro": "Staat naast mail aan en van het adres van de groep."
+    },
+    "upload": "Afbeelding uploaden",
+    "replace": "Andere afbeelding kiezen",
+    "remove": "Afbeelding verwijderen",
+    "formats": "PNG, JPEG, WebP of GIF, maximaal 10 MB. De server bewaart een vierkante kopie van hoogstens 512 × 512 pixels, zonder de metadata van het bestand.",
+    "saved": "Afbeelding opgeslagen",
+    "removed": "Afbeelding verwijderd",
+    "crop": {
+      "title": "Uitsnede kiezen",
+      "intro": "Sleep de afbeelding om hem te verschuiven en zoom met de schuifregelaar. Wat binnen het kader valt, blijft bewaard.",
+      "zoom": "Zoom",
+      "save": "Deze afbeelding gebruiken"
+    },
+    "visibility": {
+      "label": "Wie hem ziet",
+      "off": "Niemand",
+      "server": "Mensen op deze server",
+      "public": "Iedereen",
+      "offHint": "De afbeelding blijft hier en wordt aan niemand behalve jou getoond.",
+      "serverHint": "Mensen op deze server zien hem naast mail van jou.",
+      "publicHint": "Ook andere mailservers kunnen hem vinden: via Libravatar, aan de hand van een hash van je adres, en in de Face-header als je die aanzet.",
+      "publicForbidden": "Een beheerder staat hier geen openbare afbeeldingen toe."
+    },
+    "face": {
+      "label": "Mijn foto met mijn mail meesturen",
+      "explain": "Voegt een kleine kopie (48 × 48 pixels) als Face-header toe aan elke mail die je vanaf je eigen adres of een alias verstuurt. Sommige mailapps tonen hem. Gemaskeerde adressen en gedeelde mailboxen krijgen hem nooit.",
+      "privacy": "Wie je mail krijgt, krijgt de foto erbij.",
+      "needsPublic": "Alleen mogelijk zolang de foto openbaar is."
+    },
+    "domain": {
+      "title": "Domeinlogo",
+      "intro": "Staat bij adressen van dit domein zonder eigen afbeelding, bijvoorbeeld het logo van een vereniging of een bedrijf.",
+      "public": "Openbare afbeeldingen toestaan",
+      "publicHint": "Mensen met adressen van dit domein mogen hun afbeelding openbaar maken, voor Libravatar en de Face-header. De DNS-controle raadt dan het Libravatar-record aan.",
+      "serverForbids": "Openbare afbeeldingen zijn onder Server → Instellingen voor de hele server verboden."
+    },
+    "server": {
+      "title": "Profielfoto's",
+      "public": "Openbare afbeeldingen toestaan",
+      "publicHint": "Mensen mogen hun afbeelding openbaar maken: andere mailservers vinden hem dan via Libravatar, en hij kan als Face-header met mail meegaan. Uitgeschakeld blijven afbeeldingen op deze server."
     }
   }
 }

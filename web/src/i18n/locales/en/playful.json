@@ -189,5 +189,11 @@
   "calendars": {
     "intro": "Share your calendars and address books with people here on the server, or bring them over from elsewhere, and nobody misses a date again (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
     "sharedEmpty": "Nobody has shared anything with you yet (・ω・)"
+  },
+  "pictures": {
+    "own": {
+      "intro": "Put a face to your name! People here see it beside your mail (=^･ω･^=)"
+    },
+    "saved": "Looking good! Picture saved (◕‿◕✿)"
   }
 }

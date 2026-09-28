@@ -1,5 +1,6 @@
 import { AppWindow, EarthLock, KeyRound, Palette, Send, SlidersHorizontal } from "lucide-react";
 import { TabbedPage } from "@/components/ui/TabbedPage";
+import { PublicPicturesCard } from "@/features/pictures/PictureCard";
 import { VpnPage } from "@/features/vpn/VpnPage";
 import { useT } from "@/i18n";
 import { BrandingPage } from "./BrandingPage";
@@ -54,6 +55,11 @@ export function AdminSettingsPage({ tab = "general" }: { tab?: AdminSettingsTab 
         <BrandingPage />
       ) : tab === "login" ? (
         <LoginSettingsPage />
+      ) : tab === "general" ? (
+        <div className="flex flex-col gap-5">
+          <SettingsPage tab={tab} />
+          <PublicPicturesCard />
+        </div>
       ) : (
         <SettingsPage tab={tab} />
       )}

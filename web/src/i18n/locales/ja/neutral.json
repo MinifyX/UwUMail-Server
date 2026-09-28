@@ -529,7 +529,12 @@
       "maskedOnlyDomain": "このドメインはマスクアドレス専用です。ユーザー、エイリアス、グループ、転送アドレス、キャッチオールは置けません。",
       "notMaskedDomain": "ここではマスクアドレス専用ドメインしか選べません。",
       "maskedDefault": "既定のドメインは許可されたドメインのどれかでなければなりません。",
-      "kindChangeBlocked": "このドメインにはマスクアドレス以外のものがまだあります。先に削除してください。"
+      "kindChangeBlocked": "このドメインにはマスクアドレス以外のものがまだあります。先に削除してください。",
+      "pictureType": "使える画像ではありません。PNG、JPEG、WebP、GIF が使えます。",
+      "pictureTooLarge": "画像が大きすぎます。最大 10 MB までです。",
+      "pictureTooManyPixels": "画像のピクセル数が多すぎます。最大 8000 × 8000 です。",
+      "publicNotAllowed": "ここでは公開画像は許可されていません。",
+      "picturePerson": "個人の画像は本人が選びます。"
     }
   },
   "people": {
@@ -859,7 +864,17 @@
       "sharedMailboxEnd": "{{actor}} が共有メールボックス {{target}} を通常のサービスに戻しました",
       "domainMaskedPolicy": "{{actor}} が {{target}} の人がマスクアドレスを作れる場所を変更しました",
       "domainKind": "{{actor}} がドメイン {{target}} の種類を変更しました",
-      "accountMaskedPolicy": "{{actor}} が {{target}} がマスクアドレスを作れる場所を変更しました"
+      "accountMaskedPolicy": "{{actor}} が {{target}} がマスクアドレスを作れる場所を変更しました",
+      "personPicture": "{{actor}} が {{target}} の画像を設定しました",
+      "personPictureRemoved": "{{actor}} が {{target}} の画像を削除しました",
+      "personPictureVisibility": "{{actor}} が {{target}} の画像の公開範囲を変更しました",
+      "groupPicture": "{{actor}} がグループ {{target}} の画像を設定しました",
+      "groupPictureRemoved": "{{actor}} がグループ {{target}} の画像を削除しました",
+      "groupPictureVisibility": "{{actor}} がグループ {{target}} の画像の公開範囲を変更しました",
+      "domainLogo": "{{actor}} が {{target}} のロゴを設定しました",
+      "domainLogoRemoved": "{{actor}} が {{target}} のロゴを削除しました",
+      "domainPublicPictures": "{{actor}} が {{target}} のアドレスの公開画像の可否を変更しました",
+      "picturesPublic": "{{actor}} がこのサーバーでのプロフィール画像の公開の可否を変更しました"
     },
     "details": {
       "adminOn": "管理者になりました",
@@ -890,7 +905,10 @@
       "kindMail": "メールドメインに変更",
       "maskedMode": "マスクアドレス：{{value}}",
       "maskedAsDomain": "マスクアドレス：ドメインと同じ",
-      "maskedRemovedFrom_other": "{{count}} 件のマスクアドレス設定から外しました"
+      "maskedRemovedFrom_other": "{{count}} 件のマスクアドレス設定から外しました",
+      "pictureVisibility": "公開範囲：{{value}}",
+      "publicAllowed": "公開画像を許可",
+      "publicForbidden": "公開画像を禁止"
     },
     "entry": {
       "actor": "誰が",
@@ -988,7 +1006,8 @@
         "submissions": "メールアプリに TLS での送信先を伝えます（ポート 465）。",
         "submission": "メールアプリに STARTTLS での送信先を伝えます（ポート 587）。",
         "caa": "サーバー名の証明書を発行できるのを Let's Encrypt のみに、しかもこのサーバー自身のアカウントのみに限定します。UwUMail Gateway の背後でも TLS を非公開に保てます。",
-        "tlsa": "このサーバーの証明書がどの鍵を持つかを送信側サーバーに伝え、暗号化された接続でのみ配送させます (DANE)。DNSSEC で署名されたゾーンが必要です。"
+        "tlsa": "このサーバーの証明書がどの鍵を持つかを送信側サーバーに伝え、暗号化された接続でのみ配送させます (DANE)。DNSSEC で署名されたゾーンが必要です。",
+        "avatars": "ほかのメールサーバーが、このドメインのアドレスの公開プロフィール画像を見つけられるようにします。"
       },
       "notes": {
         "mxUpstream": "上流のメールサーバーを指しています。問題ありません。",
@@ -1061,7 +1080,8 @@
         "submissions": "メールアプリの送信（TLS）",
         "submission": "メールアプリの送信（STARTTLS）",
         "caa": "このサーバー専用の証明書（CAA）",
-        "tlsa": "DANE (TLSA)"
+        "tlsa": "DANE (TLSA)",
+        "avatars": "プロフィール画像（Libravatar）"
       },
       "tlsaKeyChange": "サーバーの鍵が変わる前に (独自の証明書ファイル、別のサーバーへの移行、data/tls/acme/key.pem の削除など)、新しい鍵のレコードをこのレコードと並べて公開し、1日待ってください。そうしないと、DANE を確認するサーバーがあなた宛てのメールを保留します。"
     },
@@ -3593,6 +3613,63 @@
       "result": "{{domains}} にマスクアドレスを作れます。新しいものは {{domain}} に作られます。",
       "resultNone": "マスクアドレスは作れません。",
       "staleDefault": "以前に選んだ既定のドメイン {{domain}} は許可されなくなったため、ドメインの既定または自動で選ばれたものが使われます。"
+    }
+  },
+  "pictures": {
+    "own": {
+      "title": "プロフィール画像",
+      "intro": "このサーバーの人にメールを送ると、名前の横に表示されます。公開にすると、ほかのメールサーバーでも表示できます。"
+    },
+    "service": {
+      "title": "画像",
+      "intro": "このサービスのアドレスから届くメールの横に表示されます。"
+    },
+    "shared": {
+      "intro": "この共有メールボックスから届くメールの横に表示されます。"
+    },
+    "group": {
+      "title": "グループ画像",
+      "intro": "グループのアドレスとやり取りするメールの横に表示されます。"
+    },
+    "upload": "画像をアップロード",
+    "replace": "別の画像を選ぶ",
+    "remove": "画像を削除",
+    "formats": "PNG、JPEG、WebP、GIF（最大 10 MB）。サーバーはファイルのメタデータを除いた、最大 512 × 512 ピクセルの正方形のコピーを保存します。",
+    "saved": "画像を保存しました",
+    "removed": "画像を削除しました",
+    "crop": {
+      "title": "切り抜き範囲を選ぶ",
+      "intro": "画像をドラッグして動かし、スライダーで拡大します。枠の中が保存されます。",
+      "zoom": "拡大",
+      "save": "この画像を使う"
+    },
+    "visibility": {
+      "label": "公開範囲",
+      "off": "誰にも見せない",
+      "server": "このサーバーの人",
+      "public": "すべての人",
+      "offHint": "画像はここに保存され、あなた以外には表示されません。",
+      "serverHint": "このサーバーの人には、あなたからのメールの横に表示されます。",
+      "publicHint": "ほかのメールサーバーからも見つけられます：アドレスのハッシュによる Libravatar と、オンにした場合は Face ヘッダーで。",
+      "publicForbidden": "ここでは管理者が公開画像を許可していません。"
+    },
+    "face": {
+      "label": "メールに画像を添えて送る",
+      "explain": "自分のアドレスやエイリアスから送るすべてのメールに、小さなコピー（48 × 48 ピクセル）を Face ヘッダーとして付けます。表示するメールアプリもあります。マスクアドレスと共有メールボックスには付きません。",
+      "privacy": "あなたのメールを受け取った人は、画像も受け取ります。",
+      "needsPublic": "画像が公開のときだけ使えます。"
+    },
+    "domain": {
+      "title": "ドメインのロゴ",
+      "intro": "自分の画像がないこのドメインのアドレスに表示されます。たとえばクラブや会社のロゴです。",
+      "public": "公開画像を許可する",
+      "publicHint": "このドメインのアドレスを持つ人は、Libravatar と Face ヘッダーのために画像を公開にできます。DNS チェックでは Libravatar のレコードも推奨されます。",
+      "serverForbids": "サーバー → 設定 で、サーバー全体の公開画像が禁止されています。"
+    },
+    "server": {
+      "title": "プロフィール画像",
+      "public": "公開画像を許可する",
+      "publicHint": "画像を公開にできるようになります。ほかのメールサーバーは Libravatar で見つけられ、Face ヘッダーとしてメールに添えることもできます。オフにすると、画像はこのサーバーの中だけにとどまります。"
     }
   }
 }

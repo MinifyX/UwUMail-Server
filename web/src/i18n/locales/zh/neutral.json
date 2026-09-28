@@ -529,7 +529,12 @@
       "maskedOnlyDomain": "这个域名仅限隐藏地址：没有用户、别名、群组、转发地址或全收地址。",
       "notMaskedDomain": "这里只能选择仅限隐藏地址的域名。",
       "maskedDefault": "默认域名必须是允许的域名之一。",
-      "kindChangeBlocked": "这个域名上还有隐藏地址以外的内容。请先移除。"
+      "kindChangeBlocked": "这个域名上还有隐藏地址以外的内容。请先移除。",
+      "pictureType": "这不是可用的图片。支持 PNG、JPEG、WebP 和 GIF。",
+      "pictureTooLarge": "图片太大，最大 10 MB。",
+      "pictureTooManyPixels": "图片像素太多，最大 8000 × 8000。",
+      "publicNotAllowed": "此处不允许公开图片。",
+      "picturePerson": "个人头像由本人选择。"
     }
   },
   "people": {
@@ -859,7 +864,17 @@
       "sharedMailboxEnd": "{{actor}} 将共享邮箱 {{target}} 改回了普通服务",
       "domainMaskedPolicy": "{{actor}} 更改了 {{target}} 的用户可以在哪里创建隐藏地址",
       "domainKind": "{{actor}} 更改了域名 {{target}} 的类型",
-      "accountMaskedPolicy": "{{actor}} 更改了 {{target}} 可以在哪里创建隐藏地址"
+      "accountMaskedPolicy": "{{actor}} 更改了 {{target}} 可以在哪里创建隐藏地址",
+      "personPicture": "{{actor}} 设置了 {{target}} 的图片",
+      "personPictureRemoved": "{{actor}} 移除了 {{target}} 的图片",
+      "personPictureVisibility": "{{actor}} 更改了谁能看到 {{target}} 的图片",
+      "groupPicture": "{{actor}} 设置了群组 {{target}} 的图片",
+      "groupPictureRemoved": "{{actor}} 移除了群组 {{target}} 的图片",
+      "groupPictureVisibility": "{{actor}} 更改了谁能看到群组 {{target}} 的图片",
+      "domainLogo": "{{actor}} 设置了 {{target}} 的标志",
+      "domainLogoRemoved": "{{actor}} 移除了 {{target}} 的标志",
+      "domainPublicPictures": "{{actor}} 更改了 {{target}} 的地址是否可以使用公开图片",
+      "picturesPublic": "{{actor}} 更改了本服务器上的头像是否可以公开"
     },
     "details": {
       "adminOn": "现在是管理员",
@@ -890,7 +905,10 @@
       "kindMail": "现在是邮件域名",
       "maskedMode": "隐藏地址：{{value}}",
       "maskedAsDomain": "隐藏地址：跟随域名",
-      "maskedRemovedFrom_other": "已从 {{count}} 个隐藏地址设置中移除"
+      "maskedRemovedFrom_other": "已从 {{count}} 个隐藏地址设置中移除",
+      "pictureVisibility": "可见范围：{{value}}",
+      "publicAllowed": "允许公开图片",
+      "publicForbidden": "禁止公开图片"
     },
     "entry": {
       "actor": "操作者",
@@ -988,7 +1006,8 @@
         "submissions": "告诉邮件应用在哪里通过 TLS 发信（端口 465）。",
         "submission": "告诉邮件应用在哪里通过 STARTTLS 发信（端口 587）。",
         "caa": "只允许 Let's Encrypt 为服务器的名称签发证书，且只签发给此服务器自己的账户。让 TLS 在 UwUMail Gateway 之后保持私密。",
-        "tlsa": "告诉发送方服务器这台服务器的证书使用哪个密钥，让它们只通过加密连接投递 (DANE)。需要使用 DNSSEC 签名的区域。"
+        "tlsa": "告诉发送方服务器这台服务器的证书使用哪个密钥，让它们只通过加密连接投递 (DANE)。需要使用 DNSSEC 签名的区域。",
+        "avatars": "让其他邮件服务器找到此域名下地址的公开头像。"
       },
       "notes": {
         "mxUpstream": "指向上游邮件服务器。没问题。",
@@ -1061,7 +1080,8 @@
         "submissions": "邮件应用发信（TLS）",
         "submission": "邮件应用发信（STARTTLS）",
         "caa": "仅限此服务器的证书（CAA）",
-        "tlsa": "DANE (TLSA)"
+        "tlsa": "DANE (TLSA)",
+        "avatars": "头像（Libravatar）"
       },
       "tlsaKeyChange": "在服务器的密钥改变之前 (使用自己的证书文件、迁移到另一台服务器，或删除 data/tls/acme/key.pem)，请先在这条记录旁边发布新密钥的记录并等待一天。否则检查 DANE 的服务器会暂扣发给你的邮件。"
     },
@@ -3593,6 +3613,63 @@
       "result": "可以在 {{domains}} 上创建隐藏地址；新地址放在 {{domain}}。",
       "resultNone": "不能创建隐藏地址。",
       "staleDefault": "之前选择的默认域名 {{domain}} 已不再允许，因此使用域名的默认值或自动选择的域名。"
+    }
+  },
+  "pictures": {
+    "own": {
+      "title": "头像",
+      "intro": "你给本服务器上的人写信时，会显示在你的名字旁边。设为公开后，其他邮件服务器也能显示它。"
+    },
+    "service": {
+      "title": "图片",
+      "intro": "显示在此服务的地址发出的邮件旁边。"
+    },
+    "shared": {
+      "intro": "显示在此共享邮箱的邮件旁边。"
+    },
+    "group": {
+      "title": "群组图片",
+      "intro": "显示在与群组地址往来的邮件旁边。"
+    },
+    "upload": "上传图片",
+    "replace": "选择其他图片",
+    "remove": "移除图片",
+    "formats": "PNG、JPEG、WebP 或 GIF，最大 10 MB。服务器会保存一份不含文件元数据、最大 512 × 512 像素的正方形副本。",
+    "saved": "图片已保存",
+    "removed": "图片已移除",
+    "crop": {
+      "title": "选择裁剪区域",
+      "intro": "拖动图片来移动它，用滑块缩放。框内的部分会被保留。",
+      "zoom": "缩放",
+      "save": "使用这张图片"
+    },
+    "visibility": {
+      "label": "谁能看到",
+      "off": "任何人都看不到",
+      "server": "本服务器上的人",
+      "public": "所有人",
+      "offHint": "图片保存在这里，除了你之外不会显示给任何人。",
+      "serverHint": "本服务器上的人会在你的邮件旁边看到它。",
+      "publicHint": "其他邮件服务器也能找到它：通过 Libravatar（依据你地址的哈希值），以及在你开启后的 Face 邮件头中。",
+      "publicForbidden": "管理员不允许在此使用公开图片。"
+    },
+    "face": {
+      "label": "随邮件发送我的头像",
+      "explain": "在你从自己的地址或别名发出的每封邮件中，以 Face 邮件头附上一份小副本（48 × 48 像素）。部分邮件应用会显示它。隐藏地址和共享邮箱永远不会附带它。",
+      "privacy": "收到你邮件的人也会收到这张图片。",
+      "needsPublic": "仅在图片公开时可用。"
+    },
+    "domain": {
+      "title": "域名标志",
+      "intro": "用于此域名下没有自己图片的地址，例如社团或公司的标志。",
+      "public": "允许公开图片",
+      "publicHint": "拥有此域名地址的人可以将图片设为公开，用于 Libravatar 和 Face 邮件头。DNS 检查随后会推荐 Libravatar 记录。",
+      "serverForbids": "已在 服务器 → 设置 中为整个服务器禁止公开图片。"
+    },
+    "server": {
+      "title": "头像",
+      "public": "允许公开图片",
+      "publicHint": "用户可以将图片设为公开：其他邮件服务器可通过 Libravatar 找到它，它也可以作为 Face 邮件头随邮件发送。关闭后，图片只保留在本服务器上。"
     }
   }
 }

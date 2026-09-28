@@ -12,6 +12,7 @@ import { usePeople } from "@/features/people/queries";
 import { CloudflarePanel } from "@/features/setup/SetupBits";
 import { DnsStatusPill, RecordList } from "./DnsBits";
 import { ForwardsCard } from "./ForwardsCard";
+import { DomainLogoCard } from "@/features/pictures/PictureCard";
 import { GroupsCard } from "./GroupsCard";
 import { MaskedOnlyCard, MaskedOnlyPill, MaskedPolicyCard } from "./MaskedCards";
 import { MtaStsCard, ReportsCard } from "./MtaStsCards";
@@ -249,6 +250,7 @@ export function DomainPage({ name }: { name: string }) {
           ) : (
             <>
               <CatchAllCard domain={domain} />
+              <DomainLogoCard domain={domain.name} />
               <MaskedPolicyCard domain={domain} />
               <GroupsCard domain={domain} />
               <ForwardsCard domain={domain} />
