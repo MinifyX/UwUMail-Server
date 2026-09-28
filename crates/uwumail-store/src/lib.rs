@@ -15,6 +15,7 @@ mod alerts;
 mod bayes;
 mod blobs;
 mod calendar;
+mod calendar_notifications;
 mod calendar_prefs;
 mod calendar_subscriptions;
 mod contacts;
@@ -90,6 +91,10 @@ pub use bayes::{
 };
 pub use blobs::{BlobCleanupPause, BlobHash};
 pub use calendar::{CalendarEventRecord, CalendarEventWrite};
+pub use calendar_notifications::{
+    Author, CalendarNotification, EventAuthor, KEPT_SECS as CALENDAR_NOTIFICATIONS_KEPT_SECS,
+    MAX_NOTIFICATIONS as MAX_CALENDAR_NOTIFICATIONS,
+};
 pub use calendar_prefs::{
     CALENDAR_DEFAULT_ALERTS_MAX_BYTES, CALENDAR_EVENT_PREFS_MAX_BYTES, CalendarEventPrefs, CalendarPrefs,
     CalendarPrefsUpdate,

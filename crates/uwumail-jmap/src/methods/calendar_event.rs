@@ -580,6 +580,7 @@ impl Writer<'_> {
             if_etag,
             keep_schedule_tag: false,
             draft,
+            author: uwumail_store::Author::Account,
         };
         match self.ctx.jmap.store.put_calendar_event(self.ctx.account.id, write).await {
             Ok((id, _)) => Ok(Ok((id, content))),

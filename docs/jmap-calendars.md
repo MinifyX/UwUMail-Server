@@ -458,6 +458,28 @@ answers `cannotCalculateChanges`.
 
 Standard. The state is the account's change number, shared with mail.
 
+## CalendarEventNotification
+
+When someone else changes an event the account sees, it gets a
+CalendarEventNotification (id `n12`): a person it shares a calendar with, or
+who shares one with it, over JMAP or CalDAV, and scheduling that puts an
+invitation, an update, a cancellation or an answer into its calendars. The
+account's own changes leave none for itself. `changedBy` names who it was
+(`principalId` for people of this server, never by a masked address;
+`calendarAddress` and the message's `COMMENT` for scheduling), `event` is the
+event before the change (after it for `created`), `eventPatch` what changed at
+its top level, and `isDraft` whether it is a draft.
+
+An event its owner keeps `private` or `secret` is only news to the owner.
+Nothing is noted for a calendar filled from a subscription, for imports, or
+when the server writes default alerts into events. Each account keeps its
+newest 200 notifications for at most 30 days.
+
+`/get`, `/changes`, `/query` (filters `after`, `before`, `type`,
+`calendarEventIds`; sorted by `created`) and `/queryChanges` are standard.
+`/set` only destroys, which dismisses a notification; `create` and `update`
+are `forbidden`.
+
 ## ParticipantIdentity
 
 One per account: `{ "id": "u5", "name": <display name>, "calendarAddress":
@@ -466,14 +488,15 @@ every change in `/set` is `forbidden`.
 
 ## Push
 
-`Calendar`, `CalendarEvent` and `ParticipantIdentity` are push types of the
-EventSource, next to the mail types.
+`Calendar`, `CalendarEvent`, `CalendarEventNotification` and
+`ParticipantIdentity` are push types of the EventSource, next to the mail
+types.
 
 ## Not supported
 
 - Calendars in other accounts: shared calendars are part of the account they
   are shared with
-- `CalendarEventNotification`, `CalendarEvent/copy`, `CalendarEvent/parse`
+- `CalendarEvent/copy`, `CalendarEvent/parse`
   (`urn:ietf:params:jmap:calendars:parse`)
 - Alerts pushed by the server; alerts are stored and handed to CalDAV
   clients, which ring them

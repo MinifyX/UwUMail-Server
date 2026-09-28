@@ -57,6 +57,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0048_logins_and_ids.sql"),
     include_str!("migrations/0049_calendar_per_user.sql"),
     include_str!("migrations/0050_calendar_drafts.sql"),
+    include_str!("migrations/0051_calendar_notifications.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 

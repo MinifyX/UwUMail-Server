@@ -28,6 +28,7 @@ const TYPES: &[&str] = &[
     "UserSettings",
     "Calendar",
     "CalendarEvent",
+    "CalendarEventNotification",
     "ParticipantIdentity",
     "AddressBook",
     "ContactCard",

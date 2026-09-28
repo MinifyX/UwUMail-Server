@@ -3,6 +3,7 @@
 mod address_book;
 mod calendar;
 mod calendar_event;
+mod calendar_notification;
 mod contact_card;
 mod copy;
 mod email;
@@ -55,7 +56,8 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
 ];
 
 /// The data types of calendars and address books: only for credentials with the `dav` scope.
-const DAV_TYPES: &[&str] = &["Calendar", "CalendarEvent", "ParticipantIdentity", "AddressBook", "ContactCard"];
+const DAV_TYPES: &[&str] =
+    &["Calendar", "CalendarEvent", "CalendarEventNotification", "ParticipantIdentity", "AddressBook", "ContactCard"];
 
 /// The most suggestions one `AddressSuggestion/query` returns.
 pub const MAX_SUGGESTIONS: usize = suggest::MAX_LIMIT;
@@ -179,7 +181,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "VacationResponse" => VACATION,
         "SenderList" => SENDERS,
         "UserSettings" => SETTINGS,
-        "Calendar" | "CalendarEvent" | "ParticipantIdentity" => CALENDARS,
+        "Calendar" | "CalendarEvent" | "CalendarEventNotification" | "ParticipantIdentity" => CALENDARS,
         "AddressBook" | "ContactCard" => CONTACTS,
         "SieveScript" => SIEVE,
         "AddressSuggestion" => SUGGEST,
@@ -224,7 +226,8 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         | "EmailSubmission/queryChanges"
         | "SieveScript/queryChanges"
         | "ContactCard/queryChanges"
-        | "CalendarEvent/queryChanges" => single(query_changes::query_changes(ctx, name, &args).await?),
+        | "CalendarEvent/queryChanges"
+        | "CalendarEventNotification/queryChanges" => single(query_changes::query_changes(ctx, name, &args).await?),
         "Email/copy" => copy::copy(ctx, &args).await,
         "Mailbox/set" => single(mailbox::set(ctx, &args).await?),
         "Thread/get" => single(thread::get(ctx, &args).await?),
@@ -262,6 +265,13 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         }
         "CalendarEvent/set" => single(calendar_event::set(ctx, &args).await?),
         "CalendarEvent/query" => single(calendar_event::query(ctx, &args).await?),
+        "CalendarEventNotification/get" => single(calendar_notification::get(ctx, &args).await?),
+        "CalendarEventNotification/changes" => {
+            calendar::check_enabled(ctx)?;
+            single(changes(ctx, &args, "CalendarEventNotification", 'n').await?)
+        }
+        "CalendarEventNotification/set" => single(calendar_notification::set(ctx, &args).await?),
+        "CalendarEventNotification/query" => single(calendar_notification::query(ctx, &args).await?),
         "ParticipantIdentity/get" => single(calendar::identities_get(ctx, &args).await?),
         "ParticipantIdentity/changes" => {
             calendar::check_enabled(ctx)?;

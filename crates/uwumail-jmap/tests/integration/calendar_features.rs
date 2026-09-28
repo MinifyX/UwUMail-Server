@@ -602,3 +602,102 @@ ATTENDEE:mailto:{masked}\r\nEND:VFREEBUSY\r\nEND:VCALENDAR\r\n"
     let answer = server.send(NYU, "POST", &outbox, &[("content-type", "text/calendar")], request).await;
     assert!(answer.body.contains("3.7;Invalid calendar user") && !answer.body.contains("FREEBUSY"), "{}", answer.body);
 }
+
+async fn notifications(server: &Server, login: &str) -> Vec<Value> {
+    let got = server.call(login, "CalendarEventNotification/get", json!({})).await;
+    got["list"].as_array().unwrap_or_else(|| panic!("{got}")).clone()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn others_changes_leave_notifications() {
+    let server = server().await;
+    let calendar = server.share_with_nyu(json!({ "mayReadItems": true, "mayWriteAll": true })).await;
+    let mini_state = server.call(MINI, "CalendarEventNotification/get", json!({ "ids": [] })).await["state"].clone();
+
+    // Nyu adds an event to Mini's calendar: Mini hears who did what, Nyu hears nothing.
+    let id = server.create(NYU, timed(&calendar, "Von Nyu")).await;
+    let mine = notifications(&server, MINI).await;
+    assert_eq!(mine.len(), 1, "{mine:?}");
+    assert_eq!(mine[0]["type"], "created");
+    assert_eq!(mine[0]["calendarEventId"], id);
+    assert_eq!(mine[0]["event"]["title"], "Von Nyu");
+    assert_eq!(mine[0]["changedBy"]["principalId"], server.principal_id(NYU).await);
+    assert_eq!(mine[0]["changedBy"]["name"], "NYU");
+    assert_eq!(mine[0]["isDraft"], false);
+    assert!(notifications(&server, NYU).await.is_empty());
+    let changes = server.call(MINI, "CalendarEventNotification/changes", json!({ "sinceState": mini_state })).await;
+    assert_eq!(changes["created"], json!([&mine[0]["id"]]), "{changes}");
+
+    // Mini changes it: Nyu gets the patch.
+    server.call(MINI, "CalendarEvent/set", json!({ "update": { &id: { "title": "Von Mini" } } })).await;
+    let theirs = notifications(&server, NYU).await;
+    assert_eq!(theirs.len(), 1);
+    assert_eq!((&theirs[0]["type"], &theirs[0]["event"]["title"]), (&json!("updated"), &json!("Von Nyu")));
+    assert_eq!(theirs[0]["eventPatch"]["title"], "Von Mini", "{}", theirs[0]);
+
+    // Nyu deletes it over CalDAV.
+    let uid = server.event(MINI, &id).await["uid"].as_str().unwrap().to_owned();
+    let mini_id = server.store.account(MINI).await.unwrap().unwrap().id;
+    let name =
+        server.store.calendar_events(mini_id, None).await.unwrap().into_iter().find(|e| e.uid == uid).unwrap().name;
+    let path = format!("/dav/calendars/{NYU}/shared~{}/{name}", &calendar[1..]);
+    assert_eq!(server.send(NYU, "DELETE", &path, &[], String::new()).await.status, StatusCode::NO_CONTENT);
+    let mine = notifications(&server, MINI).await;
+    assert_eq!(mine.last().unwrap()["type"], "destroyed");
+    assert_eq!(mine.last().unwrap()["event"]["title"], "Von Mini");
+
+    // What Mini keeps private is nobody else's news.
+    let mut private = timed(&calendar, "Privat");
+    private["privacy"] = json!("private");
+    server.create(MINI, private).await;
+    assert_eq!(notifications(&server, NYU).await.len(), 1);
+
+    // Scheduling: the invitation and the answer are news too.
+    let invite = with_nyu(timed(&calendar, "Kaffee"));
+    let created = server
+        .call(MINI, "CalendarEvent/set", json!({ "create": { "k": invite }, "sendSchedulingMessages": true }))
+        .await;
+    assert!(created["created"]["k"]["id"].is_string(), "{created}");
+    let own_calendar = server.default_calendar(NYU).await;
+    let found = server
+        .call(NYU, "CalendarEvent/query", json!({ "filter": { "title": "Kaffee", "inCalendar": own_calendar } }))
+        .await;
+    let copy = found["ids"][0].as_str().unwrap_or_else(|| panic!("{found}")).to_owned();
+    let invitation = notifications(&server, NYU)
+        .await
+        .into_iter()
+        .find(|n| n["calendarEventId"] == copy.as_str())
+        .expect("Nyu hears of the invitation");
+    assert_eq!(invitation["type"], "created");
+    assert_eq!(invitation["changedBy"]["calendarAddress"], format!("mailto:{MINI}"));
+    assert_eq!(invitation["changedBy"]["principalId"], server.principal_id(MINI).await);
+    let participants = server.event(NYU, &copy).await["participants"].as_object().unwrap().clone();
+    let key = participants
+        .iter()
+        .find(|(_, p)| p["calendarAddress"].as_str().is_some_and(|a| a.eq_ignore_ascii_case(&format!("mailto:{NYU}"))))
+        .map(|(k, _)| k.clone())
+        .unwrap();
+    server
+        .call(
+            NYU,
+            "CalendarEvent/set",
+            json!({ "update": { &copy: { format!("participants/{key}/participationStatus"): "accepted" } }, "sendSchedulingMessages": true }),
+        )
+        .await;
+    let answer = notifications(&server, MINI).await.pop().unwrap();
+    assert_eq!((&answer["type"], &answer["changedBy"]["email"]), (&json!("updated"), &json!(NYU)), "{answer}");
+
+    // Queries and dismissing.
+    let query = server
+        .call(
+            NYU,
+            "CalendarEventNotification/query",
+            json!({ "filter": { "type": "updated" }, "sort": [{ "property": "created", "isAscending": false }] }),
+        )
+        .await;
+    assert_eq!(query["ids"].as_array().unwrap().len(), 1, "{query}");
+    let dismissed = server.call(NYU, "CalendarEventNotification/set", json!({ "destroy": [&query["ids"][0]] })).await;
+    assert_eq!(dismissed["destroyed"], json!([&query["ids"][0]]), "{dismissed}");
+    let refused = server.call(NYU, "CalendarEventNotification/set", json!({ "create": { "x": {} } })).await;
+    assert_eq!(refused["notCreated"]["x"]["type"], "forbidden");
+}

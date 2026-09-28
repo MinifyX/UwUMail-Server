@@ -19,7 +19,9 @@ use std::collections::BTreeSet;
 use serde_json::{Map, Value, json};
 use uwumail_store::{EmailFilter, EmailSortProperty, StoreError};
 
-use super::{Ctx, address_book, calendar, calendar_event, contact_card, email, mailbox, sieve, submission};
+use super::{
+    Ctx, address_book, calendar, calendar_event, calendar_notification, contact_card, email, mailbox, sieve, submission,
+};
 use crate::error::{MethodError, MethodResult};
 use crate::ids;
 
@@ -27,7 +29,12 @@ use crate::ids;
 /// /query responses say so in `canCalculateChanges`.
 pub fn can_calculate(method: &str, args: &Value) -> bool {
     match method {
-        "Email/query" | "Mailbox/query" | "EmailSubmission/query" | "SieveScript/query" | "ContactCard/query" => true,
+        "Email/query"
+        | "Mailbox/query"
+        | "EmailSubmission/query"
+        | "SieveScript/query"
+        | "ContactCard/query"
+        | "CalendarEventNotification/query" => true,
         "CalendarEvent/query" => args.get("expandRecurrences").and_then(Value::as_bool) != Some(true),
         _ => false,
     }
@@ -42,6 +49,7 @@ fn kind_of(method: &str) -> Option<(&'static str, char)> {
         "SieveScript/queryChanges" => ("SieveScript", 'r'),
         "ContactCard/queryChanges" => ("ContactCard", 'k'),
         "CalendarEvent/queryChanges" => ("CalendarEvent", 'v'),
+        "CalendarEventNotification/queryChanges" => ("CalendarEventNotification", 'n'),
         _ => return None,
     })
 }
@@ -136,6 +144,7 @@ async fn current_results(
                     calendar::check_enabled(ctx)?;
                     calendar_event::query(ctx, &query).await?
                 }
+                "CalendarEventNotification/queryChanges" => calendar_notification::query(ctx, &query).await?,
                 _ => return Err(MethodError::kind("unknownMethod")),
             };
             let ids: Vec<String> = response["ids"]

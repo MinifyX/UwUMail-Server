@@ -52,6 +52,8 @@ pub struct CalendarEventWrite {
     pub keep_schedule_tag: bool,
     /// Makes the event a draft or not; `None` keeps what it is (a new event is none).
     pub draft: Option<bool>,
+    /// Who the change is by, for the others who see the calendar.
+    pub author: crate::Author,
 }
 
 const EVENT_COLUMNS: &str = "r.id, r.collection_id, r.name, r.uid, r.etag, r.content, r.starts_at, r.ends_at, r.modified_at, c.account_id, r.draft";
@@ -205,7 +207,7 @@ impl Store {
         }
         let (result, modseq) = self
             .write(move |tx| {
-                let mut log = ChangeLog::new(account_id);
+                let mut log = ChangeLog::by(account_id, write.author.clone());
                 let target = writable_calendar(tx, account_id, write.calendar_id)?;
                 let other: Option<i64> = tx
                     .query_row(
@@ -319,7 +321,7 @@ impl Store {
     pub async fn destroy_calendar_event(&self, account_id: i64, id: i64, if_etag: Option<String>) -> Result<()> {
         let modseq = self
             .write(move |tx| {
-                let mut log = ChangeLog::new(account_id);
+                let mut log = ChangeLog::by(account_id, crate::Author::Account);
                 let (calendar_id, name): (i64, String) = tx
                     .query_row(
                         &format!(
@@ -379,6 +381,7 @@ mod tests {
             if_etag: None,
             keep_schedule_tag: false,
             draft: None,
+            author: crate::Author::Account,
         }
     }
 

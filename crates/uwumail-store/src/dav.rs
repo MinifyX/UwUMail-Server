@@ -244,6 +244,9 @@ fn info_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavResourceInfo> {
 pub(crate) struct ChangeLog {
     account_id: i64,
     modseqs: BTreeMap<i64, i64>,
+    /// Who makes the write, when those who see a calendar are to be told about its events
+    /// (calendar_notifications.rs); `None` for writes nobody is told about.
+    pub(crate) author: Option<crate::Author>,
 }
 
 /// The change numbers a write took, per account, to tell push listeners about once it is committed.
@@ -260,7 +263,16 @@ pub(crate) fn audience(conn: &Connection, collection: &DavCollection) -> Result<
 
 impl ChangeLog {
     pub(crate) fn new(account_id: i64) -> ChangeLog {
-        ChangeLog { account_id, modseqs: BTreeMap::new() }
+        ChangeLog { account_id, modseqs: BTreeMap::new(), author: None }
+    }
+
+    /// The same, telling those who see a calendar about what `author` does to its events.
+    pub(crate) fn by(account_id: i64, author: crate::Author) -> ChangeLog {
+        ChangeLog { account_id, modseqs: BTreeMap::new(), author: Some(author) }
+    }
+
+    pub(crate) fn account_id(&self) -> i64 {
+        self.account_id
     }
 
     /// A change of the account the log was made for.
@@ -366,6 +378,17 @@ impl ChangeLog {
 
     pub(crate) fn modseq(&self) -> Logged {
         Logged(self.modseqs.clone())
+    }
+}
+
+/// The change log of a write to `account_id`'s collection, by `actor_id` when a person makes it.
+fn actor_log(account_id: i64, actor_id: Option<i64>) -> ChangeLog {
+    match actor_id {
+        Some(actor) => ChangeLog::by(
+            account_id,
+            crate::Author::Someone(crate::EventAuthor { account_id: Some(actor), ..Default::default() }),
+        ),
+        None => ChangeLog::new(account_id),
     }
 }
 
@@ -570,6 +593,8 @@ pub(crate) fn move_entry(
         |row| row.get(0),
     )?;
     let new_name = if free { name.to_owned() } else { new_entry_name(tx, target.id, &write.uid, extension)? };
+    let old_content: String =
+        tx.query_row("SELECT content FROM dav_resources WHERE id = ?1", [id], |row| row.get(0))?;
     let old_change = next_change(tx, source_id)?;
     tx.execute(
         "INSERT OR REPLACE INTO dav_tombstones (collection_id, name, change) VALUES (?1, ?2, ?3)",
@@ -598,6 +623,9 @@ pub(crate) fn move_entry(
     tx.execute("DELETE FROM dav_tombstones WHERE collection_id = ?1 AND name = ?2", params![target.id, new_name])?;
     let source = collection_by_id(tx, source_id)?;
     log.moved(tx, &source, target, id, &write.component)?;
+    let before = crate::calendar_notifications::Side { component: &write.component, content: &old_content };
+    let after = crate::calendar_notifications::Side { component: &write.component, content: &write.content };
+    crate::calendar_notifications::entry_changed(tx, log, &source, Some(target), id, Some(before), Some(after))?;
     Ok(etag)
 }
 
@@ -782,6 +810,19 @@ impl Store {
         write: DavWrite,
         condition: DavPrecondition,
     ) -> Result<DavWriteOutcome> {
+        self.dav_put_by(None, account_id, collection_id, write, condition).await
+    }
+
+    /// [`Store::dav_put`] by a person, `actor_id`, whom the others who see the calendar are told
+    /// about (CalendarEventNotification).
+    pub async fn dav_put_by(
+        &self,
+        actor_id: Option<i64>,
+        account_id: i64,
+        collection_id: i64,
+        write: DavWrite,
+        condition: DavPrecondition,
+    ) -> Result<DavWriteOutcome> {
         if !valid_segment(&write.name) {
             return Err(StoreError::Invalid(format!("'{}' cannot be part of a URL", write.name)));
         }
@@ -790,7 +831,7 @@ impl Store {
         }
         let (outcome, modseq) = self
             .write(move |tx| {
-                let mut log = ChangeLog::new(account_id);
+                let mut log = actor_log(account_id, actor_id);
                 let collection = own_collection(tx, account_id, collection_id)?;
                 let (outcome, _) = put_entry(tx, &mut log, &collection, &write, &condition)?;
                 Ok((outcome, log.modseq()))
@@ -808,10 +849,22 @@ impl Store {
         name: &str,
         if_match: Option<String>,
     ) -> Result<bool> {
+        self.dav_delete_by(None, account_id, collection_id, name, if_match).await
+    }
+
+    /// [`Store::dav_delete`] by a person, as [`Store::dav_put_by`].
+    pub async fn dav_delete_by(
+        &self,
+        actor_id: Option<i64>,
+        account_id: i64,
+        collection_id: i64,
+        name: &str,
+        if_match: Option<String>,
+    ) -> Result<bool> {
         let name = name.to_owned();
         let (deleted, modseq) = self
             .write(move |tx| {
-                let mut log = ChangeLog::new(account_id);
+                let mut log = actor_log(account_id, actor_id);
                 let collection = own_collection(tx, account_id, collection_id)?;
                 let deleted = delete_entry(tx, &mut log, &collection, &name, if_match.as_deref())?;
                 Ok((deleted, log.modseq()))
@@ -859,15 +912,16 @@ pub(crate) fn put_entry_unchecked(
     write: &DavWrite,
     condition: &DavPrecondition,
 ) -> Result<(DavWriteOutcome, Option<i64>)> {
-    let current: Option<(i64, String, String)> = tx
+    let current: Option<(i64, String, String, Option<String>)> = tx
         .query_row(
-            "SELECT id, etag, component FROM dav_resources WHERE collection_id = ?1 AND name = ?2",
-            params![collection.id, write.name],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            "SELECT id, etag, component, CASE WHEN ?3 THEN content END FROM dav_resources
+             WHERE collection_id = ?1 AND name = ?2",
+            params![collection.id, write.name, collection.kind == DavKind::Calendar],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()?;
     let matches = match (&condition.if_match, &current) {
-        (Some(wanted), Some((_, etag, _))) => wanted == "*" || wanted == etag,
+        (Some(wanted), Some((_, etag, _, _))) => wanted == "*" || wanted == etag,
         (Some(_), None) => false,
         (None, _) => true,
     };
@@ -927,9 +981,15 @@ pub(crate) fn put_entry_unchecked(
         tx,
         collection,
         id,
-        current.as_ref().map(|(_, _, component)| component.as_str()),
+        current.as_ref().map(|(_, _, component, _)| component.as_str()),
         Some(&write.component),
     )?;
+    let before = current.as_ref().map(|(_, _, component, content)| crate::calendar_notifications::Side {
+        component,
+        content: content.as_deref().unwrap_or_default(),
+    });
+    let after = Some(crate::calendar_notifications::Side { component: &write.component, content: &write.content });
+    crate::calendar_notifications::entry_changed(tx, log, collection, None, id, before, after)?;
     Ok((
         if current.is_some() { DavWriteOutcome::Updated { etag } } else { DavWriteOutcome::Created { etag } },
         Some(id),
@@ -957,17 +1017,22 @@ pub(crate) fn delete_entry_unchecked(
     name: &str,
     if_match: Option<&str>,
 ) -> Result<bool> {
-    let current: Option<(i64, String, String)> = tx
+    let current: Option<(i64, String, String, Option<String>)> = tx
         .query_row(
-            "SELECT id, etag, component FROM dav_resources WHERE collection_id = ?1 AND name = ?2",
-            params![collection.id, name],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            "SELECT id, etag, component, CASE WHEN ?3 THEN content END FROM dav_resources
+             WHERE collection_id = ?1 AND name = ?2",
+            params![collection.id, name, collection.kind == DavKind::Calendar],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()?;
-    let Some((id, etag, component)) = current else { return Ok(false) };
+    let Some((id, etag, component, content)) = current else { return Ok(false) };
     if if_match.is_some_and(|wanted| wanted != "*" && wanted != etag) {
         return Ok(false);
     }
+    // Told before it goes, while its draft flag is still there.
+    let before =
+        crate::calendar_notifications::Side { component: &component, content: content.as_deref().unwrap_or_default() };
+    crate::calendar_notifications::entry_changed(tx, log, collection, None, id, Some(before), None)?;
     let change = next_change(tx, collection.id)?;
     tx.execute("DELETE FROM dav_resources WHERE id = ?1", [id])?;
     tx.execute(

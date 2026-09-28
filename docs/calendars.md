@@ -38,7 +38,9 @@ Where shared things show up:
   `shareWith` names people by the principal ids of `Principal/get` (`p12`),
   the same as for shared mail folders ([sharing.md](sharing.md)).
 - **Push:** every change to a shared calendar, whoever makes it, is pushed to
-  everyone who sees it.
+  everyone who sees it, and over JMAP the others get a notification saying
+  who changed what (`CalendarEventNotification`), as they do for invitations
+  and answers that scheduling puts into their calendars.
 
 A shared calendar shows the owner's events. Its name, colour, order and time
 zone start as the owner's, but everyone can give it their own, in the webmail

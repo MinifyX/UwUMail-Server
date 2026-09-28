@@ -249,6 +249,7 @@ pub async fn apply(store: &Store, owner: i64, calendar_id: i64) -> Result<(), St
             if_etag: Some(record.etag),
             keep_schedule_tag: true,
             draft: None,
+            author: uwumail_store::Author::Nobody,
         };
         match store.put_calendar_event(owner, write).await {
             Ok(_) | Err(StoreError::Conflict(_)) => {}

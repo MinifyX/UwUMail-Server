@@ -21,7 +21,7 @@ use mail_builder::headers::date::Date;
 use mail_builder::mime::{BodyPart, MimePart};
 use mail_parser::{MimeHeaders, PartType};
 use uwumail_store::itip::{self, Component, Role};
-use uwumail_store::{Account, CalendarEventWrite, DavKind, NewDavCollection, StoreError};
+use uwumail_store::{Account, Author, CalendarEventWrite, DavKind, EventAuthor, NewDavCollection, StoreError};
 
 use crate::config::Language;
 use crate::scheduling_texts::{self, Kind};
@@ -385,7 +385,8 @@ async fn apply(
                 return Ok(false);
             }
             let copy = itip::attendee_copy(message, current.as_ref(), &own);
-            write(ctx, account, existing.as_ref(), &copy, false).await?;
+            let by = author(ctx, message, organizer.as_deref()).await;
+            write(ctx, account, existing.as_ref(), &copy, false, by).await?;
             Ok(true)
         }
         Some("REPLY") => {
@@ -401,7 +402,8 @@ async fn apply(
             if !itip::apply_reply(&mut current, message, &from) {
                 return Ok(false);
             }
-            write(ctx, account, Some(&record), &current, true).await?;
+            let by = author(ctx, message, Some(&from)).await;
+            write(ctx, account, Some(&record), &current, true, by).await?;
             Ok(true)
         }
         Some("CANCEL") => {
@@ -416,11 +418,38 @@ async fn apply(
             if !itip::apply_cancel(&mut current, message) {
                 return Ok(false);
             }
-            write(ctx, account, Some(&record), &current, false).await?;
+            let by = author(ctx, message, organizer.as_deref()).await;
+            write(ctx, account, Some(&record), &current, false, by).await?;
             Ok(true)
         }
         _ => Ok(false),
     }
+}
+
+/// Who a scheduling message is from, for the notifications of those who see the calendar: the
+/// person behind `address` (the organizer, or the attendee who answers), with the name the message
+/// gives them and what they said with it.
+async fn author(ctx: &Context, message: &Component, address: Option<&str>) -> Author {
+    let Some(address) = address.map(str::to_lowercase) else { return Author::Nobody };
+    let name = message
+        .events()
+        .flat_map(|event| event.properties.iter())
+        .filter(|property| matches!(property.name.as_str(), "ORGANIZER" | "ATTENDEE"))
+        .find(|property| property.address().is_some_and(|a| a.eq_ignore_ascii_case(&address)))
+        .and_then(|property| property.param("CN").map(str::to_owned))
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| address.clone());
+    let comment = message.events().find_map(|event| event.value("COMMENT")).map(itip::unescape);
+    // Someone of this server, but never by a masked address.
+    let masked = ctx.store.masked_delivery(&address).await.ok().flatten().is_some();
+    let account_id = if masked { None } else { ctx.store.resolve_recipient(&address).await.ok().flatten() };
+    Author::Someone(EventAuthor {
+        account_id,
+        name,
+        email: Some(address.clone()),
+        calendar_address: Some(format!("mailto:{address}")),
+        comment,
+    })
 }
 
 /// Stores what scheduling made of an event: over the existing one, or new in the default calendar.
@@ -430,6 +459,7 @@ async fn write(
     existing: Option<&uwumail_store::CalendarEventRecord>,
     calendar: &Component,
     keep_schedule_tag: bool,
+    author: Author,
 ) -> Result<(), StoreError> {
     let content = calendar.to_ics();
     let checked = uwumail_store::ical::check_calendar(&content, &[])
@@ -451,6 +481,7 @@ async fn write(
         if_etag: existing.map(|record| record.etag.clone()),
         keep_schedule_tag,
         draft: None,
+        author,
     };
     ctx.store.put_calendar_event(account.id, write).await.map(|_| ())
 }

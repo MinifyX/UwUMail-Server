@@ -774,7 +774,8 @@ impl Session<'_> {
             starts_at: checked.starts_at,
             ends_at: checked.ends_at,
         };
-        let outcome = self.store().dav_put(view.collection.account_id, view.collection.id, write, condition).await;
+        let (owner, collection) = (view.collection.account_id, view.collection.id);
+        let outcome = self.store().dav_put_by(Some(self.account.id), owner, collection, write, condition).await;
         let (status, etag) = match outcome {
             Ok(DavWriteOutcome::Created { etag }) => (StatusCode::CREATED, etag),
             Ok(DavWriteOutcome::Updated { etag }) => (StatusCode::NO_CONTENT, etag),
@@ -851,7 +852,13 @@ impl Session<'_> {
                 let if_match = etag_header(headers, header::IF_MATCH);
                 match self
                     .store()
-                    .dav_delete(view.collection.account_id, view.collection.id, name, if_match.clone())
+                    .dav_delete_by(
+                        Some(self.account.id),
+                        view.collection.account_id,
+                        view.collection.id,
+                        name,
+                        if_match.clone(),
+                    )
                     .await
                 {
                     Ok(true) => {
