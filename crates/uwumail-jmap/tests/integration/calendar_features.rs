@@ -536,6 +536,25 @@ fn at(calendar: &str, title: &str, start: &str, extra: Value) -> Value {
     event
 }
 
+/// A long series of a large event costs availability time, not memory: instances are looked at one
+/// at a time, and only so much event text comes along with the periods.
+#[tokio::test(flavor = "multi_thread")]
+async fn availability_carries_only_so_much_event_text() {
+    let server = server().await;
+    let calendar = server.share_with_nyu(json!({ "mayReadItems": true })).await;
+    let big = json!({ "description": "x".repeat(400 * 1024), "recurrenceRule": { "frequency": "daily", "count": 60 } });
+    server.create(MINI, at(&calendar, "Lang", "2026-10-01T09:00:00", big)).await;
+    let mini = server.principal_id(MINI).await;
+    let details = json!({ "id": &mini, "utcStart": "2026-10-01T00:00:00Z", "utcEnd": "2026-12-01T00:00:00Z",
+                          "showDetails": true, "eventProperties": ["title"] });
+    let busy = server.call(NYU, "Principal/getAvailability", details).await;
+    let list = busy["list"].as_array().unwrap_or_else(|| panic!("{busy}"));
+    let with_event = list.iter().filter(|p| !p["event"].is_null()).count();
+    assert!(with_event > 0 && with_event < 60, "{with_event} of {}", list.len());
+    let hidden = list.iter().filter(|p| p["event"].is_null()).count();
+    assert!(hidden > 0, "the rest are periods without their event");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn availability_shows_when_people_are_busy_and_no_more() {
     let server = server().await;

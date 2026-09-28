@@ -1004,15 +1004,15 @@ xmlns:c=\"urn:ietf:params:xml:ns:caldav\">{responses}</c:schedule-response>\n"
             return Busy::OutOfTime;
         }
         let default = self.dav.default_collection(DavKind::Calendar);
-        let found = match uwumail_jmap::availability::busy(self.store(), &account, default, start, end, deadline).await
-        {
-            Ok(Ok(found)) => {
-                let periods: Vec<_> = found.into_iter().map(|busy| busy.period).collect();
-                Busy::Periods(uwumail_jmap::availability::merge(&periods))
-            }
-            Ok(Err(_)) => Busy::OutOfTime,
-            Err(_) => Busy::Unknown,
-        };
+        let found =
+            match uwumail_jmap::availability::busy(self.store(), &account, default, start, end, deadline, None).await {
+                Ok(Ok(found)) => {
+                    let periods: Vec<_> = found.into_iter().map(|busy| busy.period).collect();
+                    Busy::Periods(uwumail_jmap::availability::merge(&periods))
+                }
+                Ok(Err(_)) => Busy::OutOfTime,
+                Err(_) => Busy::Unknown,
+            };
         looked_up.insert(account.id, found.clone());
         found
     }

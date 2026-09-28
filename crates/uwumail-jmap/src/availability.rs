@@ -7,7 +7,8 @@
 //! with them), and in an `attending` calendar only those they accepted or may attend. Recurring
 //! events are expanded over the window. Only addresses, never masked ones, lead to a person.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 use std::time::Instant;
 
 use serde_json::{Map, Value};
@@ -18,6 +19,9 @@ use crate::jscal;
 /// The longest window availability is worked out for, as `maxAvailabilityDuration`.
 pub const MAX_DAYS: i64 = 400;
 pub const MAX_DURATION: &str = "P400D";
+/// The most event text one answer carries along with its periods, counted by the size of the
+/// stored events; past it the periods come without their events.
+const MAX_DETAIL_BYTES: usize = 8 * 1024 * 1024;
 
 /// One stretch of time someone is busy.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,12 +36,14 @@ pub struct Period {
 #[derive(Debug, Clone)]
 pub struct Busy {
     pub period: Period,
-    pub record: CalendarEventRecord,
+    /// Shared by all instances of one event.
+    pub record: Arc<CalendarEventRecord>,
     /// The instance of a recurring event, or the other single instance of an object without its
     /// series.
     pub recurrence_id: Option<String>,
-    /// The event or instance as its calendar's owner keeps it.
-    pub event: Map<String, Value>,
+    /// The event or instance as its calendar's owner keeps it: only when it was asked for, from
+    /// a calendar in `details`, is public, and within [`MAX_DETAIL_BYTES`].
+    pub event: Option<Map<String, Value>>,
 }
 
 /// The work ran out of time.
@@ -65,6 +71,10 @@ fn calendar_zone(timezone: Option<&str>) -> chrono_tz::Tz {
 }
 
 /// The events and instances that make `account` busy between `start` and `end` (UTC seconds).
+/// With `details`, the public ones of those calendars come with the event itself.
+///
+/// Instances are looked at one at a time and only those in the window are kept, so a series with
+/// thousands of instances of a large event costs time, not memory.
 pub async fn busy(
     store: &Store,
     account: &Account,
@@ -72,6 +82,7 @@ pub async fn busy(
     start: i64,
     end: i64,
     deadline: Instant,
+    details: Option<HashSet<i64>>,
 ) -> Result<Result<Vec<Busy>, OutOfTime>, StoreError> {
     // Which calendars count for the person, and how; floating times are read in their time zone.
     let mut prefs = store.calendar_prefs(account.id).await?;
@@ -121,6 +132,7 @@ pub async fn busy(
     let me_id = account.id;
     let found = tokio::task::spawn_blocking(move || {
         let mut found = Vec::new();
+        let mut detail_bytes = 0usize;
         for record in records {
             if Instant::now() > deadline {
                 return Err(OutOfTime);
@@ -128,34 +140,42 @@ pub async fn busy(
             let Some(parsed) = jscal::from_icalendar(&record.content) else { continue };
             let (attending_only, floating) = counting[&record.calendar_id];
             let status_override = (record.owner_id != me_id).then(|| own_status.get(&record.id).cloned()).flatten();
-            let mut candidates: Vec<(Option<String>, Map<String, Value>)> = Vec::new();
+            let with_details = details.as_ref().is_some_and(|calendars| calendars.contains(&record.calendar_id));
+            let record = Arc::new(record);
+            let mut consider = |recurrence_id: Option<String>, object: Map<String, Value>| {
+                let Some(status) = busy_status(&object, attending_only, status_override.as_deref(), &me) else {
+                    return;
+                };
+                let Some((from, to)) = jscal::span(&object, floating) else { return };
+                if !jscal::overlaps(from, to, Some(start), Some(end)) {
+                    return;
+                }
+                let public = object.get("privacy").and_then(Value::as_str).unwrap_or("public") == "public";
+                let event =
+                    (with_details && public && detail_bytes + record.content.len() <= MAX_DETAIL_BYTES).then(|| {
+                        detail_bytes += record.content.len();
+                        object
+                    });
+                let period = Period { start: from.max(start), end: to.min(end).max(from.max(start)), status };
+                found.push(Busy { period, record: record.clone(), recurrence_id, event });
+            };
             let event = parsed.event();
             if jscal::is_recurring(event) {
                 for rid in jscal::recurrence_ids(&record.content, event) {
                     if Instant::now() > deadline {
                         return Err(OutOfTime);
                     }
-                    let Some(instance) = jscal::instance(event, &rid) else { continue };
-                    candidates.push((Some(rid), instance));
-                }
-            } else {
-                candidates.push((None, event.clone()));
-                for (rid, index) in parsed.other_instances() {
-                    if let Some(other) = parsed.at(index) {
-                        candidates.push((Some(rid), other.event().clone()));
+                    if let Some(instance) = jscal::instance(event, &rid) {
+                        consider(Some(rid), instance);
                     }
                 }
-            }
-            for (recurrence_id, object) in candidates {
-                let Some(status) = busy_status(&object, attending_only, status_override.as_deref(), &me) else {
-                    continue;
-                };
-                let Some((from, to)) = jscal::span(&object, floating) else { continue };
-                if !jscal::overlaps(from, to, Some(start), Some(end)) {
-                    continue;
+            } else {
+                consider(None, event.clone());
+                for (rid, index) in parsed.other_instances() {
+                    if let Some(other) = parsed.at(index) {
+                        consider(Some(rid), other.event().clone());
+                    }
                 }
-                let period = Period { start: from.max(start), end: to.min(end).max(from.max(start)), status };
-                found.push(Busy { period, record: record.clone(), recurrence_id, event: object });
             }
         }
         Ok(found)

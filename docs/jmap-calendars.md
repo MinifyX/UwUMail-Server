@@ -167,8 +167,9 @@ person's point of view:
 `busyStatus` is `tentative` for tentative events and answers, else
 `confirmed`. With `showDetails`, an event comes along (as `event`, cut to
 `eventProperties`, with `accountId` the caller's) when it is in a calendar the
-caller may read and is not `private`; all other periods are merged as the
-draft asks. A lookup that runs out of the request's time answers `rateLimit`.
+caller may read and is not `private`, up to 8 MiB of stored events per answer;
+all other periods are merged as the draft asks. A lookup that runs out of the
+request's time answers `rateLimit`.
 
 ## Ids
 
