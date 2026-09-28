@@ -604,7 +604,7 @@ impl Store {
                  JOIN domains od ON od.id = own.domain_id AND od.public_pictures = 1
                  LEFT JOIN profile_pictures p ON p.account_id = acc.id
                  LEFT JOIN profile_pictures l ON l.domain_id = d.id
-                 WHERE acc.picture_visibility = 'public' AND acc.deleted_at IS NULL",
+                 WHERE acc.picture_visibility = 'public' AND acc.disabled = 0 AND acc.deleted_at IS NULL",
             )?;
             let rows = accounts.query_map([], |row| {
                 Ok((
@@ -686,6 +686,11 @@ mod tests {
             store.public_avatars().await.unwrap(),
             vec![("mini@example.org".into(), PictureOwner::Account(mini))]
         );
+        // A disabled account is not answered for until it is enabled again.
+        store.set_account_disabled("mini@example.org", true).await.unwrap();
+        assert!(store.public_avatars().await.unwrap().is_empty());
+        store.set_account_disabled("mini@example.org", false).await.unwrap();
+        assert_eq!(store.public_avatars().await.unwrap().len(), 1);
 
         // Forbidding public pictures for the domain keeps the choice but not its effect.
         let domain = store.domain("example.org").await.unwrap().unwrap().id;
