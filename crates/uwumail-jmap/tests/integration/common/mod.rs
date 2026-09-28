@@ -122,6 +122,17 @@ impl Server {
         format!("e{}", ingested.id)
     }
 
+    /// The session resource as a person sees it.
+    pub async fn session_of(&self, login: &str) -> Value {
+        let request = Request::get("/jmap/session")
+            .header(header::AUTHORIZATION, basic(login, PASSWORD))
+            .body(Body::empty())
+            .unwrap();
+        let (status, bytes) = self.request(request).await;
+        assert_eq!(status, StatusCode::OK);
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
     /// The JMAP id of a person's mailbox with this role.
     pub async fn mailbox(&self, login: &str, role: &str) -> String {
         let responses =

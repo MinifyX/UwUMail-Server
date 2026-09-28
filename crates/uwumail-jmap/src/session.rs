@@ -29,6 +29,9 @@ pub const WEBMAIL: &str = "urn:uwumail:jmap:webmail";
 /// Our own extension: a message's remote pictures, fetched by the server so the sender never sees
 /// who reads it (docs/jmap-remote.md).
 pub const REMOTE: &str = "urn:uwumail:jmap:remote";
+/// Our own extension: one-click unsubscribing (RFC 8058) sent by the server, `Email/unsubscribe`
+/// (docs/jmap-unsubscribe.md).
+pub const UNSUBSCRIBE: &str = "urn:uwumail:jmap:unsubscribe";
 /// JMAP Calendars (draft-ietf-jmap-calendars) on the CalDAV calendars; see docs/jmap-calendars.md.
 pub const CALENDARS: &str = "urn:ietf:params:jmap:calendars";
 /// Our own extension: addresses to suggest while writing, from the address books and recent mail
@@ -129,6 +132,7 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
             SIEVE: { "implementation": "UwUMail Server" },
             MASKED: {},
             WEBMAIL: {},
+            UNSUBSCRIBE: {},
             REMOTE: {
                 "imageUrl": format!("{base}/jmap/image/{{accountId}}?url={{url}}"),
                 "pictureUrl": format!("{base}/jmap/picture/{{accountId}}?email={{email}}"),
@@ -161,6 +165,7 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
                     },
                     VACATION: {},
                     MASKED: {},
+                    UNSUBSCRIBE: {},
                     SENDERS: { "maxEntries": uwumail_store::SENDER_LIST_PERSONAL_LIMIT },
                     SUGGEST: { "maxLimit": crate::methods::MAX_SUGGESTIONS },
                     SETTINGS: {
@@ -188,7 +193,8 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
             SETTINGS: account_id.clone(),
             SUGGEST: account_id.clone(),
             SIEVE: account_id.clone(),
-            MASKED: account_id.clone()
+            MASKED: account_id.clone(),
+            UNSUBSCRIBE: account_id.clone()
         },
         "username": account.login,
         "apiUrl": format!("{base}/jmap/api"),

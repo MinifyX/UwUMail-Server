@@ -34,6 +34,7 @@ const SHARED_METHODS: &[&str] = &[
     "Email/import",
     "Email/parse",
     "Email/copy",
+    "Email/unsubscribe",
     "Thread/get",
     "Thread/changes",
     "SearchSnippet/get",
@@ -299,6 +300,10 @@ pub fn add_to_session(document: &mut Value, me: &Account, accounts: &[(i64, Stri
                 PRINCIPALS_OWNER: { "accountIdForPrincipal": ids::account(*owner), "principalId": principal_id(*owner) }
             }
         });
+        // Unsubscribing for the owner takes the right to change messages, which a read-only share lacks.
+        if !read_only {
+            document["accounts"][ids::account(*owner)]["accountCapabilities"][crate::session::UNSUBSCRIBE] = json!({});
+        }
     }
 }
 
