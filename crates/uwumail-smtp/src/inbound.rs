@@ -2209,11 +2209,16 @@ pub(crate) async fn receive(
     // cancellation in the message speak for that address.
     let verified_from =
         verdict.as_ref().filter(|v| v.from_verified || v.dmarc_passed).and_then(|v| v.from_address.clone());
-    // A Face picture speaks for the From address, so it is only kept when DMARC vouches for that
-    // domain, and never from junk (docs/profile-pictures.md).
+    // A Face picture speaks for the From address, so it is only kept when a signature of the From
+    // domain covers it — DMARC alone passes on SPF, or on a signature that leaves the Face out — when
+    // it is the only one, never from junk, and never for one of our own addresses: people here
+    // choose themselves who sees their picture (docs/profile-pictures.md).
     if !junk
-        && let Some(from) = verdict.as_ref().filter(|v| v.dmarc_passed).and_then(|v| v.from_address.as_deref())
-        && let Some(value) = headers::first_value(&raw, "Face")
+        && let Some(from) =
+            verdict.as_ref().filter(|v| v.dmarc_passed && v.face_signed).and_then(|v| v.from_address.as_deref())
+        && let Some(value) = single_face(&raw)
+        && let Some((_, from_domain)) = from.rsplit_once('@')
+        && !ctx.store.is_local_domain(from_domain).await.unwrap_or(true)
     {
         match crate::profile_pictures::incoming_face(&value) {
             Some(png) => {
@@ -2279,6 +2284,21 @@ impl Session {
 fn decode_utf8(value: &str) -> Option<String> {
     BASE64.decode(value.trim()).ok().and_then(|bytes| String::from_utf8(bytes).ok())
 }
+
+/// The value of the message's `Face:` header when it has exactly one and it is small enough to be a
+/// Face at all; the size is checked before the value is copied.
+fn single_face(raw: &[u8]) -> Option<String> {
+    let (fields, _) = headers::split(raw);
+    let mut faces = fields.iter().filter(|field| field.name.eq_ignore_ascii_case("Face"));
+    let face = faces.next()?;
+    if faces.next().is_some() || face.raw.len() > MAX_FACE_HEADER_BYTES {
+        return None;
+    }
+    Some(face.value())
+}
+
+/// The longest `Face:` header read: a base64 PNG of the most a Face may take, folded.
+const MAX_FACE_HEADER_BYTES: usize = 4096;
 
 #[cfg(test)]
 mod tests {

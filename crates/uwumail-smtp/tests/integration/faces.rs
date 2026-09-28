@@ -1,6 +1,6 @@
 //! The `Face:` header (docs/profile-pictures.md): added to a person's own mail when they asked for
-//! it, signed with the rest, never on other addresses; kept from incoming mail only when DMARC
-//! vouches for the From domain.
+//! it, signed with the rest, never on other addresses; kept from incoming mail only when a signature
+//! of the From domain covers it.
 
 use lettre::AsyncTransport;
 use uwumail_smtp::profile_pictures::{face_header, prepare, sample};
@@ -70,6 +70,27 @@ async fn a_face_goes_out_signed_and_is_kept_when_dmarc_passes() {
     // b.test keeps it for pictureUrl.
     let kept = b.smtp.store().received_face("mini@a.test").await.unwrap().expect("kept");
     assert_eq!(kept.0, face);
+    // The signature names the Face, so a receiver can tell that a.test sent it.
+    let unfolded = remote.replace("\r\n\t", "").replace("\r\n ", "");
+    let signature = unfolded.lines().find(|line| line.starts_with("DKIM-Signature:")).unwrap();
+    let signed = signature.split(';').map(str::trim).find_map(|tag| tag.strip_prefix("h=")).unwrap();
+    assert!(signed.split(':').any(|name| name.trim().eq_ignore_ascii_case("Face")), "{signature}");
+    // Our own addresses keep no Face: people here choose themselves who sees their picture.
+    assert!(a.smtp.store().received_face("mini@a.test").await.unwrap().is_none());
+
+    // The same signed mail sent again with another picture in its Face is not believed.
+    let original = face_header(&face);
+    let swapped = remote.replace(original.trim_end(), face_header(&sample(48, 48, "png")).trim_end());
+    assert_ne!(swapped, remote);
+    let mut session = RawSession::connect(b.mx).await;
+    assert!(session.command("EHLO mx.a.test").await.starts_with("250"));
+    assert!(session.command("MAIL FROM:<mini@a.test>").await.starts_with("250"));
+    assert!(session.command("RCPT TO:<nyu@b.test>").await.starts_with("250"));
+    assert!(session.command("DATA").await.starts_with("354"));
+    let reply = session.command(&format!("{}\r\n.", swapped.trim_end_matches("\r\n"))).await;
+    assert!(reply.starts_with("250"), "{reply}");
+    b.wait_for_inbox("nyu@b.test", 2).await;
+    assert_eq!(b.smtp.store().received_face("mini@a.test").await.unwrap().unwrap().0, face);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -132,36 +153,24 @@ async fn only_a_persons_own_addresses_carry_a_face() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn incoming_faces_need_dmarc_and_a_small_png() {
+async fn incoming_faces_need_a_signature_over_them() {
     let a = start("a.test", &["mini"], &[]).await;
     a.smtp.dns_cache().pin_txt("sender.test", "v=spf1 ip4:127.0.0.1 -all").unwrap();
-    a.smtp.dns_cache().pin_txt("other.test", "v=spf1 ip4:127.0.0.1 -all").unwrap();
     a.smtp.dns_cache().pin_no_txt("mail.sender.test");
     a.smtp.dns_cache().pin_txt("_dmarc.sender.test", "v=DMARC1; p=none").unwrap();
-    a.smtp.dns_cache().pin_no_txt("_dmarc.other.test");
-    let send = async |from: &str, face: &str| {
-        let mut session = RawSession::connect(a.mx).await;
-        assert!(session.command("EHLO mail.sender.test").await.starts_with("250"));
-        let domain = from.rsplit_once('@').unwrap().1;
-        assert!(session.command(&format!("MAIL FROM:<{from}>")).await.starts_with("250"));
-        assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
-        assert!(session.command("DATA").await.starts_with("354"));
-        let reply =
-            session.command(&format!("From: {from}\r\nSubject: Hallo von {domain}\r\n{face}\r\n\r\nHallo\r\n.")).await;
-        assert!(reply.starts_with("250"), "{reply}");
-    };
-    let small = sample(48, 48, "png");
+    let mut session = RawSession::connect(a.mx).await;
+    assert!(session.command("EHLO mail.sender.test").await.starts_with("250"));
+    assert!(session.command("MAIL FROM:<leni@sender.test>").await.starts_with("250"));
+    assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
+    assert!(session.command("DATA").await.starts_with("354"));
+    let face = face_header(&sample(48, 48, "png"));
+    let reply = session
+        .command(&format!("From: leni@sender.test\r\nSubject: Hallo\r\n{}\r\n\r\nHallo\r\n.", face.trim_end()))
+        .await;
+    assert!(reply.starts_with("250"), "{reply}");
 
-    // SPF passes and is aligned, and the domain publishes DMARC: kept.
-    send("leni@sender.test", face_header(&small).trim_end()).await;
-    assert_eq!(a.smtp.store().received_face("leni@sender.test").await.unwrap().unwrap().0, small);
-    // Without a DMARC record nothing vouches for the From domain.
-    send("ben@other.test", face_header(&small).trim_end()).await;
-    assert!(a.smtp.store().received_face("ben@other.test").await.unwrap().is_none());
-    // Too big, or no PNG: not kept, though the mail arrives.
-    send("max@sender.test", face_header(&sample(300, 300, "png")).trim_end()).await;
-    send("jo@sender.test", face_header(&sample(48, 48, "jpeg")).trim_end()).await;
-    assert!(a.smtp.store().received_face("max@sender.test").await.unwrap().is_none());
-    assert!(a.smtp.store().received_face("jo@sender.test").await.unwrap().is_none());
-    assert_eq!(a.inbox("mini@a.test").await.len(), 4);
+    // SPF passes aligned and the domain publishes DMARC, so the mail is the sender's. But SPF says
+    // nothing about the headers: anyone could have written the Face on the way. Not kept.
+    assert_eq!(a.inbox("mini@a.test").await.len(), 1);
+    assert!(a.smtp.store().received_face("leni@sender.test").await.unwrap().is_none());
 }

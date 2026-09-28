@@ -6,7 +6,7 @@ use mail_auth::common::headers::HeaderWriter;
 use mail_auth::dmarc::Policy;
 use mail_auth::dmarc::verify::DmarcParameters;
 use mail_auth::spf::verify::SpfParameters;
-use mail_auth::{AuthenticatedMessage, AuthenticationResults, DkimResult, DmarcResult, SpfResult};
+use mail_auth::{AuthenticatedMessage, AuthenticationResults, DkimOutput, DkimResult, DmarcResult, SpfResult};
 
 use crate::Context;
 
@@ -41,6 +41,10 @@ pub struct Verdict {
     /// SPF or DKIM passed for the From domain or a domain related to it, with or without a published
     /// DMARC policy. Only then does the From address say who really sent the message.
     pub from_verified: bool,
+    /// A DKIM signature of the From domain (or one related to it) holds and covers the `Face`
+    /// header, and From names one address: only then does a Face speak for that address. DMARC
+    /// alone does not say so, as it passes on SPF or on a signature that leaves `Face` out.
+    pub face_signed: bool,
 }
 
 /// A verdict that refuses the message outright, before any SPF/DKIM/DMARC result. Used for a header
@@ -87,6 +91,7 @@ fn rejecting(hostname: &str, reason: &str) -> Verdict {
         from_domain: None,
         from_address: None,
         from_verified: false,
+        face_signed: false,
     }
 }
 
@@ -110,6 +115,7 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
             from_domain: None,
             from_address: None,
             from_verified: false,
+            face_signed: false,
         };
     };
 
@@ -168,6 +174,7 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
             output.result() == &DkimResult::Pass && output.signature().is_some_and(|signature| related(&signature.d))
         })
         || (spf.result() == SpfResult::Pass && related(mail_from_domain));
+    let face_signed = face_signed(&message, &dkim, from_address.as_deref());
 
     Verdict {
         header,
@@ -180,7 +187,21 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
         from_domain,
         from_address,
         from_verified,
+        face_signed,
     }
+}
+
+/// Whether a signature that holds for the From domain covers the `Face` header, with one From
+/// address to keep it for. See [`Verdict::face_signed`].
+fn face_signed(message: &AuthenticatedMessage<'_>, dkim: &[DkimOutput<'_>], from_address: Option<&str>) -> bool {
+    message.from.len() == 1
+        && dkim.iter().any(|output| {
+            output.result() == &DkimResult::Pass
+                && output.signature().is_some_and(|signature| {
+                    related_to_from(from_address, &signature.d)
+                        && signature.h.iter().any(|name| name.eq_ignore_ascii_case("Face"))
+                })
+        })
 }
 
 /// Whether a domain is the From domain, a parent of it or below it.
@@ -217,6 +238,7 @@ pub async fn verify_signatures(ctx: &Context, raw: &[u8]) -> Verdict {
         from_domain: None,
         from_address: None,
         from_verified: false,
+        face_signed: false,
     };
     let Some(message) = AuthenticatedMessage::parse(raw) else {
         return verdict;
@@ -242,6 +264,7 @@ pub async fn verify_signatures(ctx: &Context, raw: &[u8]) -> Verdict {
     });
     verdict.dmarc_passed = signed_by_sender;
     verdict.from_verified = signed_by_sender;
+    verdict.face_signed = face_signed(&message, &dkim, verdict.from_address.as_deref());
     verdict
 }
 
