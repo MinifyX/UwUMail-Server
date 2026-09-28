@@ -180,6 +180,27 @@ pub fn from_icalendar(content: &str) -> Option<Parsed> {
     Some(Parsed { group, index })
 }
 
+/// Every event of an iCalendar object, as `from_icalendar` reads the one it keeps: for
+/// `CalendarEvent/parse` of files that hold many. `None` when it is no iCalendar calcard reads.
+pub fn events_of(content: &str, limit: usize) -> Option<Vec<Map<String, Value>>> {
+    let calendar = ICalendar::parse(content).ok()?;
+    let Ok(Value::Object(group)) = serde_json::to_value(calendar.into_jscalendar::<String, String>()) else {
+        return None;
+    };
+    let mut events = Vec::new();
+    for entry in group.get("entries")?.as_array()?.iter().take(limit) {
+        let Value::Object(entry) = entry else { continue };
+        if entry.get("@type").and_then(Value::as_str) != Some("Event") {
+            continue;
+        }
+        let mut event = entry.clone();
+        trim_overrides(&mut event);
+        timezones::read(&group, &mut event);
+        events.push(event);
+    }
+    Some(events)
+}
+
 /// iCalendar keeps whole instances; JSCalendar only what differs from the series. Drops what an
 /// override repeats, so clients see the difference.
 fn trim_overrides(event: &mut Map<String, Value>) {

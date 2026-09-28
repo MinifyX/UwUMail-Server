@@ -17,11 +17,12 @@ use uwumail_store::{NewAccount, Role, Store};
 const PASSWORD: &str = "katzenpfote-123";
 const MINI: &str = "mini@example.org";
 const NYU: &str = "nyu@example.org";
-const USING: [&str; 4] = [
+const USING: [&str; 5] = [
     "urn:ietf:params:jmap:core",
     "urn:ietf:params:jmap:calendars",
     "urn:ietf:params:jmap:principals",
     "urn:ietf:params:jmap:principals:availability",
+    "urn:ietf:params:jmap:calendars:parse",
 ];
 
 struct Server {
@@ -700,4 +701,96 @@ async fn others_changes_leave_notifications() {
     assert_eq!(dismissed["destroyed"], json!([&query["ids"][0]]), "{dismissed}");
     let refused = server.call(NYU, "CalendarEventNotification/set", json!({ "create": { "x": {} } })).await;
     assert_eq!(refused["notCreated"]["x"]["type"], "forbidden");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ics_files_are_parsed_and_events_copied() {
+    let server = server().await;
+    let account = server.account_id(MINI).await;
+    let file = format!(
+        "{}{}",
+        CUSTOM_ZONE.trim_end_matches("END:VCALENDAR\r\n"),
+        "BEGIN:VEVENT\r\nUID:second@example.org\r\n\
+DTSTAMP:20260901T080000Z\r\nDTSTART;VALUE=DATE:20261224\r\nDTEND;VALUE=DATE:20261227\r\nSUMMARY:Urlaub\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+    );
+    let upload = |body: String| async {
+        let reply = server
+            .send(MINI, "POST", &format!("/jmap/upload/{account}/"), &[("content-type", "text/calendar")], body)
+            .await;
+        assert!(reply.status.is_success(), "{}", reply.body);
+        serde_json::from_str::<Value>(&reply.body).unwrap()["blobId"].as_str().unwrap().to_owned()
+    };
+    let ics = upload(file).await;
+    let junk = upload("no calendar here".into()).await;
+    let parsed = server
+        .call(MINI, "CalendarEvent/parse", json!({ "blobIds": [&ics, &junk, "bnothere"], "properties": ["uid", "title", "timeZone", "showWithoutTime", "calendarIds"] }))
+        .await;
+    let events = parsed["parsed"][&ics].as_array().unwrap_or_else(|| panic!("{parsed}"));
+    assert_eq!(events.len(), 2, "{parsed}");
+    let by_uid = |uid: &str| events.iter().find(|e| e["uid"] == uid).unwrap_or_else(|| panic!("{parsed}"));
+    assert_eq!(
+        by_uid("zone@example.org"),
+        &json!({ "id": null, "uid": "zone@example.org", "title": "Standup", "timeZone": "/Büro", "calendarIds": null })
+    );
+    let holiday = by_uid("second@example.org");
+    assert_eq!((&holiday["title"], &holiday["showWithoutTime"]), (&json!("Urlaub"), &json!(true)));
+    assert_eq!(parsed["notParsable"], json!([&junk]));
+    assert_eq!(parsed["notFound"], json!(["bnothere"]));
+    assert!(
+        server
+            .store
+            .calendar_events(server.store.account(MINI).await.unwrap().unwrap().id, None)
+            .await
+            .unwrap()
+            .is_empty(),
+        "nothing is stored"
+    );
+
+    // Copies within the account, where every calendar one sees is.
+    let personal = server.default_calendar(MINI).await;
+    let work = server.call(MINI, "Calendar/set", json!({ "create": { "w": { "name": "Arbeit" } } })).await["created"]["w"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut series = timed(&personal, "Yoga");
+    series["recurrenceRule"] = json!({ "frequency": "weekly", "count": 3 });
+    let id = server.create(MINI, series).await;
+    let server = &server;
+    let copy = |create: Value| {
+        let account = account.clone();
+        async move { server.call(MINI, "CalendarEvent/copy", json!({ "fromAccountId": account, "create": create })).await }
+    };
+    let same = copy(json!({ "c": { "id": &id, "calendarIds": { &work: true } } })).await;
+    assert_eq!(same["notCreated"]["c"]["type"], "alreadyExists", "{same}");
+    assert_eq!(same["notCreated"]["c"]["existingId"], id);
+    let copied = copy(json!({ "c": { "id": &id, "calendarIds": { &work: true }, "uid": "copy@example.org" } })).await;
+    let new = copied["created"]["c"]["id"].as_str().unwrap_or_else(|| panic!("{copied}")).to_owned();
+    let got = server.event(MINI, &new).await;
+    assert_eq!(
+        (&got["title"], &got["calendarIds"], &got["recurrenceRule"]["count"]),
+        (&json!("Yoga"), &json!({ &work: true }), &json!(3))
+    );
+    let instance = format!("{id}_20261027T090000");
+    let single = copy(json!({ "i": { "id": &instance, "uid": "one@example.org", "title": "Nur einmal" } })).await;
+    let one = server.event(MINI, single["created"]["i"]["id"].as_str().unwrap_or_else(|| panic!("{single}"))).await;
+    assert_eq!(
+        (&one["start"], &one["title"], one.get("recurrenceRule")),
+        (&json!("2026-10-27T09:00:00"), &json!("Nur einmal"), None)
+    );
+    let other = copy(json!({ "c": { "id": &id } })).await;
+    assert_eq!(other["notCreated"]["c"]["type"], "alreadyExists");
+    let wrong = server
+        .call(MINI, "CalendarEvent/copy", json!({ "fromAccountId": "a999999", "create": { "c": { "id": &id } } }))
+        .await;
+    assert_eq!(wrong["type"], "fromAccountNotFound");
+
+    // Moved by copying and destroying the original.
+    let responses = server
+        .api(
+            MINI,
+            json!([["CalendarEvent/copy", { "fromAccountId": &account, "create": { "m": { "id": &new, "uid": "moved@example.org" } }, "onSuccessDestroyOriginal": true }, "0"]]),
+        )
+        .await;
+    assert_eq!(responses[1][0], "CalendarEvent/set", "{responses:?}");
+    assert_eq!(responses[1][1]["destroyed"], json!([&new]));
 }

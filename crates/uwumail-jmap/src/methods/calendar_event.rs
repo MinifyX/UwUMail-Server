@@ -570,6 +570,7 @@ impl Writer<'_> {
         {
             return Ok(Err(SetError::invalid_properties(&["participants"], refused.to_string())));
         }
+        let uid = checked.uid.clone();
         let write = CalendarEventWrite {
             id,
             calendar_id,
@@ -589,6 +590,17 @@ impl Writer<'_> {
             Err(StoreError::QuotaExceeded) => Ok(Err(SetError::new("overQuota", "the calendar is full"))),
             Err(StoreError::NotFound(_)) if id.is_some() => Ok(Err(SetError::not_found())),
             Err(StoreError::NotFound(_)) => Ok(Err(SetError::invalid_properties(&["calendarIds"], "no such calendar"))),
+            // The event in the way, among those of the same calendar owner (RFC 8620, 5.3).
+            Err(StoreError::Rule { code: "alreadyExists", message }) => {
+                let events = self.ctx.jmap.store.calendar_events_between(self.ctx.account.id, None, None, None).await;
+                let existing = events.ok().and_then(|events| {
+                    events.into_iter().find(|e| e.uid == uid && e.owner_id == calendar.account_id && Some(e.id) != id)
+                });
+                Ok(Err(SetError {
+                    existing_id: existing.map(|e| ids::calendar_event(e.id)),
+                    ..SetError::new("alreadyExists", message)
+                }))
+            }
             Err(err) => Ok(Err(SetError::from(err))),
         }
     }
@@ -1550,4 +1562,203 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     });
     let ids = hits.into_iter().map(|hit| hit.id).collect();
     query_response(ctx, args, state, ids, MAX_QUERY_LIMIT)
+}
+
+// ------------------------------------------------------------------------------------------------
+// CalendarEvent/parse
+
+/// The largest iCalendar file one blob may be, and the events read from it.
+const MAX_PARSE_BYTES: usize = 4 * 1024 * 1024;
+const MAX_PARSED_EVENTS: usize = 1000;
+
+/// Turns blobs (uploads, attachments of mail) of iCalendar into CalendarEvents, without storing
+/// anything.
+pub async fn parse(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
+    check_enabled(ctx)?;
+    let blob_ids: Vec<String> = args
+        .get("blobIds")
+        .and_then(Value::as_array)
+        .ok_or_else(|| MethodError::invalid_arguments("blobIds is required"))?
+        .iter()
+        .filter_map(|v| v.as_str().map(str::to_owned))
+        .collect();
+    if blob_ids.len() > MAX_OBJECTS_IN_GET {
+        return Err(MethodError::kind("requestTooLarge"));
+    }
+    let properties = match args.get("properties") {
+        None | Some(Value::Null) => None,
+        Some(_) => Some(super::properties(args, "properties", &[])?),
+    };
+    let deadline = request_deadline(ctx);
+    let (mut parsed, mut not_parsable, mut not_found) = (Map::new(), Vec::new(), Vec::new());
+    for blob_id in blob_ids {
+        if Instant::now() > deadline {
+            return Err(out_of_time());
+        }
+        let Some(raw) = super::email::read_blob(ctx, &blob_id).await else {
+            not_found.push(blob_id);
+            continue;
+        };
+        let events = run_blocking(move || {
+            let text = String::from_utf8(raw).ok().filter(|text| text.len() <= MAX_PARSE_BYTES)?;
+            jscal::events_of(&text, MAX_PARSED_EVENTS).filter(|events| !events.is_empty())
+        })
+        .await?;
+        let Some(events) = events else {
+            not_parsable.push(blob_id);
+            continue;
+        };
+        let list: Vec<Value> = events
+            .into_iter()
+            .map(|mut event| {
+                event.remove("iCalendar");
+                // What only a stored event has.
+                for property in ["id", "baseEventId", "calendarIds", "isDraft", "isOrigin"] {
+                    event.insert(property.into(), Value::Null);
+                }
+                match &properties {
+                    Some(list) => pick(event, list),
+                    None => Value::Object(event),
+                }
+            })
+            .collect();
+        parsed.insert(blob_id, Value::Array(list));
+    }
+    let or_null = |list: Vec<String>| if list.is_empty() { Value::Null } else { json!(list) };
+    Ok(json!({
+        "accountId": ctx.account_id(),
+        "parsed": if parsed.is_empty() { Value::Null } else { Value::Object(parsed) },
+        "notParsable": or_null(not_parsable),
+        "notFound": or_null(not_found),
+    }))
+}
+
+// ------------------------------------------------------------------------------------------------
+// CalendarEvent/copy
+
+/// What only the stored event has, or only its place in the account.
+const NOT_COPIED: &[&str] = &["id", "baseEventId", "isOrigin", "utcStart", "utcEnd", "iCalendar"];
+
+/// Copies events into a calendar as new ones (RFC 8620, section 5.4). Every calendar the login
+/// sees, its own and those shared with it, is in its own account here, so events are copied
+/// within it: `fromAccountId` is the account itself. The copy keeps the uid unless the create
+/// gives another, and one that the calendar's owner already has is `alreadyExists`.
+pub async fn copy(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<super::Outputs> {
+    check_enabled(ctx)?;
+    let from = args
+        .get("fromAccountId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| MethodError::invalid_arguments("fromAccountId is required"))?;
+    if from != ctx.account_id() {
+        return Err(MethodError::kind("fromAccountNotFound"));
+    }
+    let create = match args.get("create") {
+        Some(Value::Object(create)) => create.clone(),
+        _ => return Err(MethodError::invalid_arguments("create must be an object")),
+    };
+    check_set_size(args)?;
+    let old_state = ctx.state().await?;
+    if let Some(expected) = args.get("ifFromInState").and_then(Value::as_str)
+        && expected != old_state
+    {
+        return Err(MethodError::kind("stateMismatch"));
+    }
+    if_in_state(args, &old_state)?;
+    let calendars = calendars(ctx).await?;
+    let own = own_addresses(ctx).await?;
+    let deadline = request_deadline(ctx);
+    let (mut created, mut not_created, mut copied) = (Map::new(), Map::new(), Vec::new());
+    let mut created_ids = Vec::new();
+    {
+        let writer = Writer { calendars, own, scheduling: false, deadline, ctx };
+        for (creation_id, object) in &create {
+            let result = async {
+                writer.in_time()?;
+                let object =
+                    object.as_object().ok_or_else(|| SetError::new("invalidProperties", "must be an object"))?;
+                let source = object
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| SetError::invalid_properties(&["id"], "the event to copy"))?;
+                let parsed = EventId::parse(ctx, source).ok_or_else(SetError::not_found)?;
+                let loaded = writer.load_one(parsed.base()).await?;
+                // Others do not get the whole of what the owner keeps private.
+                if loaded.shared && privacy(loaded.parsed.event()) == "private" {
+                    return Err(SetError::new("forbidden", "the owner keeps this event private"));
+                }
+                let mut event = match &parsed {
+                    EventId::Stored(_) => loaded.view(),
+                    EventId::Instance(_, rid) => {
+                        // An instance becomes an event of its own.
+                        let mut instance = match loaded.other_instance(rid) {
+                            Some(instance) => instance,
+                            None => {
+                                let (content, series) = (loaded.record.content.clone(), loaded.parsed.event().clone());
+                                let rids = run_blocking(move || jscal::recurrence_ids(&content, &series))
+                                    .await
+                                    .map_err(|_| SetError::new("serverFail", "expansion failed"))?;
+                                if !rids.contains(rid) {
+                                    return Err(SetError::not_found());
+                                }
+                                jscal::instance(&loaded.view(), rid).ok_or_else(SetError::not_found)?
+                            }
+                        };
+                        for property in
+                            ["recurrenceId", "recurrenceIdTimeZone", "recurrenceRule", "recurrenceOverrides"]
+                        {
+                            instance.remove(property);
+                        }
+                        instance
+                    }
+                };
+                for property in NOT_COPIED {
+                    event.remove(*property);
+                }
+                event.insert("calendarIds".into(), json!({ ids::calendar(loaded.record.calendar_id): true }));
+                event.insert("isDraft".into(), json!(loaded.record.is_draft));
+                for (key, value) in object.iter().filter(|(key, _)| key.as_str() != "id") {
+                    event.insert(key.clone(), value.clone());
+                }
+                let (id, mut server_set) = writer.create(&Value::Object(event)).await?;
+                server_set.insert("id".into(), json!(ids::calendar_event(id)));
+                Ok((id, server_set, source.to_owned()))
+            }
+            .await;
+            match result {
+                Ok((id, server_set, source)) => {
+                    created_ids.push((creation_id.clone(), ids::calendar_event(id)));
+                    created.insert(creation_id.clone(), Value::Object(server_set));
+                    copied.push(source);
+                }
+                Err(err) => {
+                    not_created.insert(creation_id.clone(), err.to_json());
+                }
+            }
+        }
+    }
+    ctx.created_ids.extend(created_ids);
+    let new_state = ctx.state().await?;
+    let or_null = |map: Map<String, Value>| if map.is_empty() { Value::Null } else { Value::Object(map) };
+    let mut outputs = vec![(
+        "CalendarEvent/copy".to_owned(),
+        json!({
+            "fromAccountId": from,
+            "accountId": ctx.account_id(),
+            "oldState": old_state,
+            "newState": new_state,
+            "created": or_null(created),
+            "notCreated": or_null(not_created),
+        }),
+    )];
+    if args.get("onSuccessDestroyOriginal").and_then(Value::as_bool).unwrap_or(false) && !copied.is_empty() {
+        let mut destroy = json!({ "accountId": from, "destroy": copied });
+        if let Some(expected) = args.get("destroyFromIfInState").filter(|value| !value.is_null()) {
+            destroy["ifInState"] = expected.clone();
+        }
+        match set(ctx, &destroy).await {
+            Ok(response) => outputs.push(("CalendarEvent/set".to_owned(), response)),
+            Err(err) => outputs.push(("error".to_owned(), err.to_json())),
+        }
+    }
+    Ok(outputs)
 }

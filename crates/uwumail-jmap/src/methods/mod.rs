@@ -30,8 +30,8 @@ use uwumail_store::{Account, Changes};
 use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
 use crate::session::{
-    AVAILABILITY, CALENDARS, CONTACTS, CORE, MAIL, MASKED, SENDERS, SETTINGS, SIEVE, SUBMISSION, SUGGEST, VACATION,
-    WEBMAIL, WEBPUSH_VAPID, WEBSOCKET,
+    AVAILABILITY, CALENDARS, CALENDARS_PARSE, CONTACTS, CORE, MAIL, MASKED, SENDERS, SETTINGS, SIEVE, SUBMISSION,
+    SUGGEST, VACATION, WEBMAIL, WEBPUSH_VAPID, WEBSOCKET,
 };
 use crate::sharing::{self, PRINCIPALS, SharedView};
 use crate::{Inner, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, ids};
@@ -47,6 +47,7 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     WEBMAIL,
     CALENDARS,
     AVAILABILITY,
+    CALENDARS_PARSE,
     CONTACTS,
     WEBSOCKET,
     SUGGEST,
@@ -174,6 +175,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
     }
     let capability = match name.split('/').next().unwrap_or_default() {
         "Principal" if name == "Principal/getAvailability" => AVAILABILITY,
+        "CalendarEvent" if name == "CalendarEvent/parse" => CALENDARS_PARSE,
         "Principal" => PRINCIPALS,
         "Core" | "PushSubscription" => CORE,
         "Mailbox" | "Email" | "Thread" | "SearchSnippet" => MAIL,
@@ -265,6 +267,8 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         }
         "CalendarEvent/set" => single(calendar_event::set(ctx, &args).await?),
         "CalendarEvent/query" => single(calendar_event::query(ctx, &args).await?),
+        "CalendarEvent/parse" => single(calendar_event::parse(ctx, &args).await?),
+        "CalendarEvent/copy" => calendar_event::copy(ctx, &args).await,
         "CalendarEventNotification/get" => single(calendar_notification::get(ctx, &args).await?),
         "CalendarEventNotification/changes" => {
             calendar::check_enabled(ctx)?;

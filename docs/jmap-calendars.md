@@ -27,7 +27,9 @@ object), in `primaryAccounts` and in the account's `accountCapabilities`:
 
 With it come `urn:ietf:params:jmap:principals:availability`
 (`{ "maxAvailabilityDuration": "P400D" }` in the account) for
-[`Principal/getAvailability`](#availability).
+[`Principal/getAvailability`](#availability), and
+`urn:ietf:params:jmap:calendars:parse` (`{}`) for
+[`CalendarEvent/parse`](#calendareventparse).
 
 Only accounts that may use calendars get them: when an admin switches CalDAV off
 for an account (services have it off from the start), the capability is gone
@@ -454,6 +456,29 @@ matches now. With `expandRecurrences` the instances are not objects of their
 own, so such a query says `canCalculateChanges: false` and `/queryChanges`
 answers `cannotCalculateChanges`.
 
+### CalendarEvent/parse
+
+Turns blobs of iCalendar, uploads or `.ics` attachments of mail (their part
+blob ids from `Email/get`), into CalendarEvents without storing anything, the
+same way stored events are read (custom time zones and single instances
+included). Every event of a file comes back, at most 1000 per blob, and a
+blob may have up to 4 MiB. `id`, `baseEventId`, `calendarIds`, `isDraft` and
+`isOrigin` are `null`. A blob that is no iCalendar with events is in
+`notParsable`. To keep an event, create it with `CalendarEvent/set`.
+
+### CalendarEvent/copy
+
+Standard `/copy`, with one difference: every calendar the login sees, its own
+and those shared with it, is in its own account here, so `fromAccountId` is
+the account itself (another is `fromAccountNotFound`). Each `create` names
+the event (or one of its instances, which becomes an event of its own) by
+`id` and may set any property, `calendarIds` to copy it into another
+calendar. The copy keeps the uid unless the create gives another; a uid the
+calendar's owner already has is `alreadyExists` with the `existingId`, as for
+`/set`. `onSuccessDestroyOriginal` destroys the originals in a
+`CalendarEvent/set` after it. An event its owner keeps `private` cannot be
+copied by others (`forbidden`).
+
 ### CalendarEvent/changes
 
 Standard. The state is the account's change number, shared with mail.
@@ -496,8 +521,6 @@ types.
 
 - Calendars in other accounts: shared calendars are part of the account they
   are shared with
-- `CalendarEvent/copy`, `CalendarEvent/parse`
-  (`urn:ietf:params:jmap:calendars:parse`)
 - Alerts pushed by the server; alerts are stored and handed to CalDAV
   clients, which ring them
 - `CalendarEvent/queryChanges` for queries with `expandRecurrences`
