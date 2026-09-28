@@ -247,6 +247,15 @@ async fn masked_addresses_follow_their_state() {
     assert_eq!(now.state, MaskedState::Enabled);
     assert!(now.last_message_at.is_some());
 
+    // One message to two of her masked addresses is delivered once, and both note it.
+    let second = store.create_masked_address(mini.id, NewMaskedAddress::default()).await.unwrap();
+    let reply = from_outside(&a, &[&masked.email, &second.email], "", "Zweimal").await;
+    assert!(reply.starts_with("250"), "{reply}");
+    assert_eq!(a.inbox("mini@a.test").await.len(), 2);
+    let second = store.masked_addresses(mini.id, Some(vec![second.id])).await.unwrap().remove(0);
+    assert_eq!(second.state, MaskedState::Enabled);
+    assert!(second.last_message_at.is_some());
+
     // Disabled: taken without a word, into the Trash and read.
     let disabled = MaskedUpdate { state: Some(MaskedState::Disabled), ..Default::default() };
     store.update_masked_address(mini.id, masked.id, disabled).await.unwrap();
@@ -255,7 +264,7 @@ async fn masked_addresses_follow_their_state() {
     let trash = a.mailbox("mini@a.test", MailboxRole::Trash).await;
     assert_eq!(trash[0].subject, "Angebot");
     assert!(trash[0].keywords.iter().any(|keyword| keyword == "$seen"));
-    assert_eq!(a.inbox("mini@a.test").await.len(), 1);
+    assert_eq!(a.inbox("mini@a.test").await.len(), 2);
 
     // Mini may answer as it.
     a.mailer("mini@a.test", PASSWORD, false).send(mail(&masked.email, &["leni@a.test"], "Antwort")).await.unwrap();
@@ -282,7 +291,7 @@ async fn masked_addresses_follow_their_state() {
         received_at: None,
     };
     store.ingest(request).await.unwrap();
-    assert_eq!(a.inbox("mini@a.test").await.len(), 2);
+    assert_eq!(a.inbox("mini@a.test").await.len(), 3);
 }
 
 #[tokio::test(flavor = "multi_thread")]

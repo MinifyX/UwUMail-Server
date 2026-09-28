@@ -1937,6 +1937,12 @@ pub(crate) async fn receive(
             if let Some(group) = &recipient.group {
                 groups_reached.push(group.address.clone());
             }
+            // A masked address among the others still got the message: it turns on and notes it.
+            if let Some(masked) = &recipient.masked
+                && let Err(err) = ctx.store.note_masked_message(masked.id).await
+            {
+                tracing::warn!(%id, %err, "noting mail for a masked address failed");
+            }
             continue;
         }
         seen_accounts.push(account_id);
