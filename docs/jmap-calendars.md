@@ -460,7 +460,10 @@ of `/set` with `rateLimit`, so a client sends the rest in a new request.
 true`): every event that changed since the query state is removed, and added
 again at its place where it matches now. With `expandRecurrences` the same
 holds for instances: those a changed event has now are removed and added
-again, and those it had at the query state are removed too. For that the
+again, and those it had at the query state in the query's time window are
+removed too — whatever the query's text conditions, so the old text of an
+event, private or in a calendar no longer shared, decides nothing; a secret
+event only counts for its calendar's owner. For that the
 server keeps what recurring events were before each change, for 30 days, at
 most 500 changes per account and none of an event over 128 KiB; a query state
 older than what is kept, or from before 0.17, answers `cannotCalculateChanges`,

@@ -1570,25 +1570,32 @@ impl Evaluator {
 /// The instance ids a query that expands recurrences (`args`) finds in events as they were
 /// (`old`, by event id), for /queryChanges. Their calendar is not looked at: what the client
 /// never had it ignores.
+///
+/// Only the query's time window counts, never its text conditions: earlier versions are kept for
+/// everyone who sees a calendar — private events of others, and calendars no longer shared with
+/// the account, included — so matching their text would tell what they said. Naming more removed
+/// ids than the client had is allowed (RFC 8620, section 5.6). A secret event counts only for its
+/// calendar's owner; when that cannot be told any more, the changes cannot be calculated.
 pub(super) async fn expanded_ids_of(ctx: &Ctx<'_>, args: &Value, old: Vec<(i64, String)>) -> MethodResult<Vec<String>> {
     if old.is_empty() {
         return Ok(Vec::new());
     }
     let floating = floating_zone(args)?;
-    let Some(Filter::Condition(mut condition)) =
+    let Some(Filter::Condition(condition)) =
         args.get("filter").filter(|f| !f.is_null()).map(|f| parse_filter(ctx, f, floating)).transpose()?
     else {
         return Err(MethodError::invalid_arguments("expandRecurrences needs a filter condition with after and before"));
     };
-    condition.calendar = None;
+    let condition = Condition { after: condition.after, before: condition.before, ..Default::default() };
     let deadline = (Instant::now() + QUERY_TIME_LIMIT).min(request_deadline(ctx));
     let evaluator = Evaluator { floating, deadline };
     let me = ctx.account.id;
-    run_blocking(move || -> MethodResult<Vec<String>> {
-        let mut ids = Vec::new();
+    let (mut ids, secret) = run_blocking(move || -> MethodResult<(Vec<String>, Vec<(i64, Vec<String>)>)> {
+        let (mut ids, mut secret) = (Vec::new(), Vec::new());
         for (id, content) in old {
             evaluator.check_time()?;
             let Some(parsed) = jscal::from_icalendar(&content) else { continue };
+            let is_secret = privacy(parsed.event()) == "secret";
             let record = CalendarEventRecord {
                 id,
                 calendar_id: 0,
@@ -1603,11 +1610,25 @@ pub(super) async fn expanded_ids_of(ctx: &Ctx<'_>, args: &Value, old: Vec<(i64, 
                 is_draft: false,
             };
             let loaded = Loaded { record, parsed, shared: false, prefs: None, defaults: (None, None) };
-            ids.extend(evaluator.expanded_hits(&condition, &loaded)?.into_iter().map(|hit| hit.id));
+            let hits = evaluator.expanded_hits(&condition, &loaded)?.into_iter().map(|hit| hit.id);
+            if is_secret {
+                secret.push((id, hits.collect()));
+            } else {
+                ids.extend(hits);
+            }
         }
-        Ok(ids)
+        Ok((ids, secret))
     })
-    .await?
+    .await??;
+    for (id, hits) in secret {
+        match ctx.jmap.store.calendar_events(me, Some(vec![id])).await?.pop() {
+            Some(record) if record.owner_id == me => ids.extend(hits),
+            // Someone else's secret event: the account never had its instances.
+            Some(_) => {}
+            None => return Err(MethodError::kind("cannotCalculateChanges")),
+        }
+    }
+    Ok(ids)
 }
 
 pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {

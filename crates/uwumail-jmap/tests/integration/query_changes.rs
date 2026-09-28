@@ -304,3 +304,56 @@ async fn expanded_calendar_queries_replay_instances_that_came_and_went() {
     assert_eq!(new.len(), 2 + 4 + 3 + 2, "{now}");
     assert_eq!(apply(&old, &result), new, "{result}");
 }
+
+/// What an expanding query's changes remove must not depend on the text of events as they were:
+/// earlier versions are kept for everyone who sees a calendar, private events of others and
+/// calendars no longer shared included, so a text filter on them would tell what they said.
+#[tokio::test(flavor = "multi_thread")]
+async fn expanded_query_changes_do_not_read_the_text_of_earlier_versions() {
+    let server = server().await;
+    let account = server.account_id(MINI).await;
+    let using = ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:calendars"];
+    let call = |method: &'static str, arguments: Value| {
+        let server = &server;
+        async move { server.api_using(MINI, &using, json!([[method, arguments, "0"]])).await[0][1].clone() }
+    };
+    let calendars = call("Calendar/get", json!({ "accountId": account })).await;
+    let calendar = calendars["list"][0]["id"].as_str().unwrap().to_owned();
+    let created = call(
+        "CalendarEvent/set",
+        json!({ "accountId": account, "create": { "kurs": {
+            "calendarIds": { &calendar: true }, "title": "Geheimer Kurs", "start": "2026-10-06T18:00:00",
+            "timeZone": "Europe/Berlin", "duration": "PT1H", "recurrenceRule": { "frequency": "weekly", "count": 3 }
+        } } }),
+    )
+    .await;
+    let kurs = created["created"]["kurs"]["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
+    let query = |title: &str| {
+        json!({ "accountId": account, "expandRecurrences": true,
+                "filter": { "after": "2026-10-01T00:00:00", "before": "2026-11-01T00:00:00", "title": title } })
+    };
+    let states: Vec<String> =
+        [call("CalendarEvent/query", query("Geheim")).await, call("CalendarEvent/query", query("Anderes")).await]
+            .iter()
+            .map(|response| response["queryState"].as_str().unwrap().to_owned())
+            .collect();
+    let changed = call(
+        "CalendarEvent/set",
+        json!({ "accountId": account, "update": { &kurs: { "title": "Kurs", "start": "2026-10-06T19:00:00" } } }),
+    )
+    .await;
+    assert!(changed["notUpdated"].is_null(), "{changed}");
+
+    let mut removed = Vec::new();
+    for (title, state) in ["Geheim", "Anderes"].iter().zip(&states) {
+        let mut since = query(title);
+        since["sinceQueryState"] = json!(state);
+        let result = call("CalendarEvent/queryChanges", since).await;
+        let mut list = ids(&result["removed"]);
+        list.retain(|id| id.starts_with(&format!("{kurs}_")));
+        list.sort();
+        removed.push(list);
+    }
+    assert_eq!(removed[0].len(), 3, "{removed:?}");
+    assert_eq!(removed[0], removed[1], "the old title decides nothing");
+}
