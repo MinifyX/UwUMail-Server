@@ -17,5 +17,6 @@ mod signatures;
 mod submission;
 mod suggestions;
 mod tokens;
+mod unsubscribe;
 mod web_push;
 mod websocket;

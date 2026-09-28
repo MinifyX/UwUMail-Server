@@ -6,6 +6,9 @@
 //! proxy set, they leave through it too, so the sender sees the address of a VPN rather than the server's:
 //! gluetun's HTTP proxy (OpenVPN, WireGuard, NordVPN and others), or a SOCKS5 proxy a VPN provider offers.
 //!
+//! One-click unsubscriptions (RFC 8058) take the same way as pictures: the POST tells a newsletter that
+//! someone opened the message and wants out, and from where.
+//!
 //! The admin can send two more kinds of request the same way: the check for new UwUMail versions, and
 //! fetching mail from mailboxes at other providers. Everything else — DNS, delivery, blocklists, list
 //! updates — keeps leaving directly. Names are resolved here, before the proxy sees them, so a request can't
@@ -60,7 +63,7 @@ pub struct EgressConfig {
     pub proxy: String,
     /// What happens when the proxy can't be reached or refuses the tunnel.
     pub fallback: Fallback,
-    /// Remote pictures and sender logos take the proxy. On unless switched off.
+    /// Remote pictures, sender logos and one-click unsubscriptions take the proxy. On unless switched off.
     pub pictures: bool,
     /// The check for new UwUMail versions takes the proxy.
     pub updates: bool,
@@ -452,7 +455,7 @@ pub enum EgressError {
 }
 
 type HttpClient = Client<HttpsConnector<Connector>, Empty<Bytes>>;
-/// For POSTs: https only, straight from the server.
+/// For POSTs: https only.
 type PostClient = Client<HttpsConnector<Connector>, Full<Bytes>>;
 
 /// One configuration of the way out, replaced as a whole when the admin panel changes it.
@@ -464,6 +467,8 @@ struct Setup {
     pictures: HttpClient,
     /// Through the proxy whenever there is one, to test it.
     probe: HttpClient,
+    /// One-click unsubscriptions: the way pictures go.
+    unsubscribe: PostClient,
 }
 
 struct Shared {
@@ -580,6 +585,7 @@ impl Egress {
             routes: Routes::of(&EgressConfig::default()),
             pictures: client.clone(),
             probe: client,
+            unsubscribe: post.clone(),
         };
         Egress {
             shared: Arc::new(Shared {
@@ -624,6 +630,10 @@ impl Egress {
         let setup = Setup {
             pictures: build_client(self.connector(through(routes.pictures), config.fallback), &self.shared.roots),
             probe: build_client(self.connector(proxy.clone(), config.fallback), &self.shared.roots),
+            unsubscribe: build_post_client(
+                self.connector(through(routes.pictures), config.fallback),
+                &self.shared.roots,
+            ),
             proxy,
             fallback: config.fallback,
             routes,
@@ -698,8 +708,30 @@ impl Egress {
         let request = request
             .body(Full::new(Bytes::from(body)))
             .map_err(|_| EgressError::NotAllowed("that is not a web address".into()))?;
+        self.send(&self.shared.post, request).await
+    }
+
+    /// Unsubscribes with one click (RFC 8058): POSTs `List-Unsubscribe=One-Click` as a form to a public
+    /// https address and answers the status. It leaves the way pictures do, through the proxy when they
+    /// take it and never around it while `fallback` is `block`. No cookies, no referrer, the same agent
+    /// string as a picture. A redirect is answered, not followed: RFC 8058 forbids the sender to send one,
+    /// and a POST that follows it may arrive somewhere as a GET.
+    pub async fn unsubscribe(&self, url: &str) -> Result<u16, EgressError> {
+        let url = check_url(url, false).map_err(EgressError::NotAllowed)?;
+        let request = Request::post(url.as_str())
+            .header(USER_AGENT, AGENT)
+            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(Full::new(Bytes::from_static(b"List-Unsubscribe=One-Click")))
+            .map_err(|_| EgressError::NotAllowed("that is not a web address".into()))?;
+        let client = self.setup().unsubscribe.clone();
+        self.send(&client, request).await
+    }
+
+    /// Sends a POST within [`TIMEOUT`] and answers the status; the body of the answer is not read beyond a
+    /// few kilobytes.
+    async fn send(&self, client: &PostClient, request: Request<Full<Bytes>>) -> Result<u16, EgressError> {
         let _permit = self.shared.permits.acquire().await.map_err(|_| EgressError::Unreachable)?;
-        let client = self.shared.post.clone();
+        let client = client.clone();
         tokio::time::timeout(TIMEOUT, async move {
             let response = client.request(request).await.map_err(|err| reason(&err))?;
             let status = response.status().as_u16();
@@ -1128,7 +1160,13 @@ mod tests {
 
     /// A push service over TLS that answers 201 and remembers what it got.
     async fn push_service() -> (Egress, Arc<Mutex<Vec<String>>>) {
-        let generated = rcgen::generate_simple_self_signed(vec!["push.example".into()]).unwrap();
+        tls_site(|_| "HTTP/1.1 201 Created\r\nContent-Length: 0\r\n\r\n").await
+    }
+
+    /// A website over TLS that answers each path with `answer` and remembers the requests it got, bodies
+    /// included.
+    async fn tls_site(answer: fn(&str) -> &'static str) -> (Egress, Arc<Mutex<Vec<String>>>) {
+        let generated = rcgen::generate_simple_self_signed(vec!["push.example".into(), "news.example".into()]).unwrap();
         let key = rustls_pki_types::PrivateKeyDer::Pkcs8(generated.signing_key.serialize_der().into());
         let tls = rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
             .with_safe_default_protocol_versions()
@@ -1160,13 +1198,70 @@ mod tests {
                         .unwrap_or(0);
                     let mut body = vec![0u8; length];
                     stream.read_exact(&mut body).await.unwrap();
+                    let path = head.split(' ').nth(1).unwrap_or_default().to_owned();
                     log.lock().unwrap().push(format!("{head}{}", String::from_utf8_lossy(&body)));
-                    stream.write_all(b"HTTP/1.1 201 Created\r\nContent-Length: 0\r\n\r\n").await.unwrap();
+                    stream.write_all(answer(&path).as_bytes()).await.unwrap();
                     let _ = stream.shutdown().await;
                 });
             }
         });
         (Egress::pinned_trusting(address, generated.cert.der().clone()), seen)
+    }
+
+    /// A newsletter's unsubscribe page.
+    async fn newsletter() -> (Egress, Arc<Mutex<Vec<String>>>) {
+        tls_site(|path| match path {
+            "/moved" => "HTTP/1.1 302 Found\r\nLocation: /u/abc\r\nContent-Length: 0\r\n\r\n",
+            "/broken" => "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n",
+            _ => "HTTP/1.1 200 OK\r\nSet-Cookie: seen=1\r\nContent-Length: 4\r\n\r\nbye!",
+        })
+        .await
+    }
+
+    #[tokio::test]
+    async fn one_click_unsubscribing_posts_the_form_and_nothing_about_the_reader() {
+        let (egress, seen) = newsletter().await;
+        let status = egress.unsubscribe("https://news.example/u/abc?token=secret").await.unwrap();
+        assert_eq!(status, 200);
+        let request = seen.lock().unwrap()[0].clone();
+        assert!(request.starts_with("POST /u/abc?token=secret HTTP/1.1\r\n"), "{request}");
+        let lower = request.to_ascii_lowercase();
+        assert!(lower.contains("content-type: application/x-www-form-urlencoded\r\n"), "{request}");
+        assert!(lower.contains("user-agent: mozilla/5.0\r\n"), "{request}");
+        assert!(!lower.contains("cookie") && !lower.contains("referer") && !lower.contains("uwumail"), "{request}");
+        assert!(request.ends_with("\r\n\r\nList-Unsubscribe=One-Click"), "{request}");
+
+        // RFC 8058 forbids the redirect; it is answered, not followed.
+        assert_eq!(egress.unsubscribe("https://news.example/moved").await.unwrap(), 302);
+        assert_eq!(egress.unsubscribe("https://news.example/broken").await.unwrap(), 500);
+        assert_eq!(seen.lock().unwrap().len(), 3, "one request each");
+
+        for refused in ["http://news.example/u", "https://127.0.0.1/u", "https://192.0.2.1/u", "https://localhost/u"] {
+            let err = egress.unsubscribe(refused).await.unwrap_err();
+            assert!(matches!(err, EgressError::NotAllowed(_)), "{refused}: {err:?}");
+        }
+        assert_eq!(egress.status().fetched + egress.status().failed, 0, "not counted as pictures");
+    }
+
+    #[tokio::test]
+    async fn one_click_unsubscribing_takes_the_way_pictures_take() {
+        let (egress, seen) = newsletter().await;
+        let (proxy, asked) = http_proxy().await;
+        egress.reconfigure(&EgressConfig { proxy: format!("http://{proxy}"), ..EgressConfig::default() }).unwrap();
+        assert_eq!(egress.unsubscribe("https://news.example/u/abc").await.unwrap(), 200);
+        assert_eq!(asked.lock().unwrap().len(), 1, "through the proxy");
+
+        // The proxy is away and fallback is block: nothing reaches the newsletter.
+        let gone = closed_port().await;
+        egress.reconfigure(&EgressConfig { proxy: format!("http://{gone}"), ..EgressConfig::default() }).unwrap();
+        assert_eq!(egress.unsubscribe("https://news.example/u/abc").await.unwrap_err(), EgressError::Unreachable);
+        assert_eq!(seen.lock().unwrap().len(), 1);
+
+        // Pictures leave directly, and so does this.
+        let direct = EgressConfig { proxy: format!("http://{gone}"), pictures: false, ..EgressConfig::default() };
+        egress.reconfigure(&direct).unwrap();
+        assert_eq!(egress.unsubscribe("https://news.example/u/abc").await.unwrap(), 200);
+        assert_eq!(seen.lock().unwrap().len(), 2);
     }
 
     #[tokio::test]

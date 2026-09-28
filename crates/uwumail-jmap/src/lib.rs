@@ -16,6 +16,8 @@
 //! | `GET /jmap/image/{accountId}?url=` | A message's remote picture, fetched by the server |
 //! | `GET /jmap/picture/{accountId}?email=` | The logo or website icon of a company sender |
 //!
+//! `Email/unsubscribe` has the server send a newsletter's one-click unsubscription (RFC 8058).
+//!
 //! [`Jmap::run_web_push`] pushes changes to the push subscriptions (RFC 8620, 7.2) over Web Push.
 
 mod api;
@@ -52,6 +54,7 @@ use uwumail_smtp::pictures::SenderPictures;
 use uwumail_store::Store;
 
 pub use auth::{AuthError, Authenticator, ClientInfo, Login};
+pub use methods::unsubscribe::UnsubscribeTransport;
 pub use webpush::{PushMessage, PushTiming, PushTransport};
 
 /// Tells a person that a program created an app password for their account at `/jmap/token`:
@@ -90,6 +93,10 @@ pub(crate) struct Inner {
     pub wake: tokio::sync::Notify,
     /// Push subscriptions: the VAPID key and the way out to push services.
     pub push: webpush::WebPush,
+    /// One-click unsubscriptions sent lately, for their limits.
+    pub unsubscribes: methods::unsubscribe::Unsubscribes,
+    /// Where they go instead of the egress, in tests.
+    pub unsubscribe_transport: Option<Arc<dyn UnsubscribeTransport>>,
 }
 
 impl Jmap {
@@ -116,6 +123,8 @@ impl Jmap {
                 notice: None,
                 wake: tokio::sync::Notify::new(),
                 push,
+                unsubscribes: Default::default(),
+                unsubscribe_transport: None,
             }),
         }
     }
@@ -137,6 +146,15 @@ impl Jmap {
             Arc::into_inner(self.inner).expect("the transport is set before anything else holds the JMAP service");
         let push = inner.push.clone().with_transport(transport);
         Jmap { inner: Arc::new(Inner { push, ..inner }) }
+    }
+
+    /// One-click unsubscriptions (docs/jmap-unsubscribe.md) are sent through `transport` instead of the
+    /// egress, which reaches public https addresses only. For tests with a newsletter on the same
+    /// machine; called before the router is built.
+    pub fn with_unsubscribe_transport(self, transport: Arc<dyn UnsubscribeTransport>) -> Jmap {
+        let inner =
+            Arc::into_inner(self.inner).expect("the transport is set before anything else holds the JMAP service");
+        Jmap { inner: Arc::new(Inner { unsubscribe_transport: Some(transport), ..inner }) }
     }
 
     /// Bundles pushes with other waits than the usual two seconds and five seconds between pushes:

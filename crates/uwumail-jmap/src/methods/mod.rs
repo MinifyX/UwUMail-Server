@@ -20,6 +20,7 @@ mod snippet;
 mod submission;
 mod suggest;
 mod thread;
+pub(crate) mod unsubscribe;
 mod vacation;
 
 use std::collections::HashMap;
@@ -31,7 +32,7 @@ use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
 use crate::session::{
     AVAILABILITY, CALENDARS, CALENDARS_PARSE, CONTACTS, CORE, MAIL, MASKED, SENDERS, SETTINGS, SIEVE, SUBMISSION,
-    SUGGEST, VACATION, WEBMAIL, WEBPUSH_VAPID, WEBSOCKET,
+    SUGGEST, UNSUBSCRIBE, VACATION, WEBMAIL, WEBPUSH_VAPID, WEBSOCKET,
 };
 use crate::sharing::{self, PRINCIPALS, SharedView};
 use crate::{Inner, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, ids};
@@ -54,6 +55,7 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     PRINCIPALS,
     MASKED,
     WEBPUSH_VAPID,
+    UNSUBSCRIBE,
 ];
 
 pub(crate) use calendar_event::event_for_alerts;
@@ -178,6 +180,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
     let capability = match name.split('/').next().unwrap_or_default() {
         "Principal" if name == "Principal/getAvailability" => AVAILABILITY,
         "CalendarEvent" if name == "CalendarEvent/parse" => CALENDARS_PARSE,
+        _ if name == "Email/unsubscribe" => UNSUBSCRIBE,
         "Principal" => PRINCIPALS,
         "Core" | "PushSubscription" => CORE,
         "Mailbox" | "Email" | "Thread" | "SearchSnippet" => MAIL,
@@ -242,6 +245,7 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "Email/set" => single(email::set(ctx, &args).await?),
         "Email/import" => single(email::import(ctx, &args).await?),
         "Email/parse" => single(email::parse(ctx, &args).await?),
+        "Email/unsubscribe" => single(unsubscribe::unsubscribe(ctx, &args).await?),
         "SearchSnippet/get" => single(snippet::get(ctx, &args).await?),
         "Identity/get" => single(identity::get(ctx, &args).await?),
         "Identity/changes" => single(changes(ctx, &args, "Identity", 'i').await?),

@@ -223,6 +223,20 @@ pub async fn verify_signatures(ctx: &Context, raw: &[u8]) -> Verdict {
     verdict
 }
 
+/// The headers (`h=`) of each DKIM signature on a message that holds, checked now against the keys in
+/// DNS. For a message already stored: whether a newsletter signed its `List-Unsubscribe` before the
+/// server posts to it (RFC 8058, section 4).
+pub async fn signed_headers(ctx: &Context, raw: &[u8]) -> Vec<Vec<String>> {
+    let Some(message) = AuthenticatedMessage::parse(raw) else {
+        return Vec::new();
+    };
+    let dkim = ctx.authenticator.verify_dkim(ctx.dns.params(&message)).await;
+    dkim.iter()
+        .filter(|output| output.result() == &DkimResult::Pass)
+        .filter_map(|output| output.signature().map(|signature| signature.h.clone()))
+        .collect()
+}
+
 /// An address as sender lists store it, or `None` if it is not one.
 pub fn normalized_address(address: &str) -> Option<String> {
     uwumail_store::normalize_address(address).ok().map(|(local, domain)| format!("{local}@{domain}"))

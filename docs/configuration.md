@@ -155,7 +155,8 @@ same way, each switched on by itself: the check for new UwUMail versions
 (`egress.updates`, so GitHub does not learn where the server is) and fetching
 from other providers: mail from their mailboxes, calendars people subscribed to
 and calendars and contacts moved over ([calendar-import.md](calendar-import.md))
-(`egress.fetch`; some providers refuse VPN addresses). Pictures (`egress.pictures`) take it unless switched off. DNS,
+(`egress.fetch`; some providers refuse VPN addresses). Pictures (`egress.pictures`) take it unless switched off,
+and one-click unsubscriptions ([jmap-unsubscribe.md](jmap-unsubscribe.md)) go the way pictures go. DNS,
 delivering mail, blocklists and list updates keep leaving directly. Outgoing
 mail on port 25 could not go through a VPN anyway; providers block it, and
 their addresses are on every blocklist.
@@ -396,7 +397,7 @@ code = ""              # the gateway's pairing code, used once; the pairing then
 [egress]
 proxy = ""             # "http://gluetun:8888" or "socks5://user:password@host:1080"; empty: straight out
 fallback = "block"     # block | direct: what happens while the proxy is away
-pictures = true        # remote pictures and sender logos take the proxy
+pictures = true        # remote pictures, sender logos and one-click unsubscriptions take the proxy
 updates = false        # the check for new versions takes it
 fetch = false          # fetching from other providers (mailboxes, calendars, contacts) takes it
 
