@@ -81,6 +81,8 @@ something a family, a club or a small team can run without being a mail admin:
   login through your own [OIDC or LDAP](docs/login-oidc-ldap.md), and
   [OAuth](docs/oauth.md) for mail apps.
 - **Private by default.** No telemetry. Your mail stays on your hardware.
+  Remote pictures and [one-click unsubscribes](docs/jmap-unsubscribe.md) go
+  out through the server, or a VPN, never from the reader's browser.
 
 > **Status:** early, but I run my own mail on it. Set up backups, and remember
 > there's no support. The [roadmap](docs/roadmap.md) shows what's done and what

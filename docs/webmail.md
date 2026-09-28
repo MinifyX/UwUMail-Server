@@ -64,12 +64,26 @@ environment variables win over the admin panel.
   sees the server — or the VPN in `[egress]` — and never who reads the mail.
   The page's policy allows pictures from its own origin only, so one that did
   not take that way can't load at all.
+- **Unsubscribing with one click.** Where a newsletter offers RFC 8058's
+  one-click unsubscribe, the server sends the POST (`Email/unsubscribe` under
+  `urn:uwumail:jmap:unsubscribe`, [jmap-unsubscribe.md](jmap-unsubscribe.md)).
 
-Two things the app does that the webmail leaves alone: it never asks the server
-to follow a `List-Unsubscribe` link, because that would let a mail header decide
-where this server sends requests. The webmail sends the unsubscribe mail itself
-where the newsletter offers one, and otherwise opens the sender's page in a tab.
-The one-click POST of RFC 8058 is missing as a result.
+For a long time the webmail never asked the server to follow a
+`List-Unsubscribe` link, because that lets a mail header decide where this
+server sends requests. One-click unsubscribing changes that on purpose, but
+only under rules that keep the header from choosing freely: a DKIM signature
+that still holds must cover both `List-Unsubscribe` and
+`List-Unsubscribe-Post`, each header must be there once, the link must be
+`https` to a public address (checked again after name resolution, no redirects
+followed), and the request leaves through `[egress]` like a remote picture,
+without cookies, referrer or anything about the reader. Each message is sent at
+most once in five minutes, and each login at most 30 times an hour.
+
+Where that does not hold, the server answers `cannotUnsubscribe` and sends
+nothing. The webmail then does what it always did: it sends the unsubscribe
+mail itself where the newsletter offers one, and otherwise opens the sender's
+page in a tab. When the server tried and failed (`unsubscribeFailed`), the
+webmail says so and offers the same way.
 
 ## How the webmail gets into the binary
 

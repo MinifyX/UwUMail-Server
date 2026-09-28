@@ -123,6 +123,9 @@ programs can use an app password as a bearer token, made for them at
 `/jmap/token` ([jmap-tokens.md](jmap-tokens.md)). Apps that are closed get the
 same `StateChange` as Web Push through their push subscriptions, encrypted and
 signed with the server's VAPID key ([jmap-push.md](jmap-push.md)).
+`Email/unsubscribe` sends a newsletter's one-click unsubscription (RFC 8058)
+through the same egress as remote pictures, and only for a `List-Unsubscribe`
+a DKIM signature still vouches for ([jmap-unsubscribe.md](jmap-unsubscribe.md)).
 
 ### `uwumail-imap`
 
