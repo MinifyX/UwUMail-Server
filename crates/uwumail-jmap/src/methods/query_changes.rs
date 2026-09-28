@@ -198,7 +198,7 @@ pub async fn query_changes(ctx: &mut Ctx<'_>, method: &str, args: &Value) -> Met
     super::check_filter_size(args.get("filter"))?;
     // Read before the results, like /query: what changes in between is reported again next time.
     let new_state = ctx.state().await?;
-    let changes = ctx.jmap.store.changes(ctx.account.id, kind, since, 0).await.map_err(changes_error)?;
+    let changes = ctx.kind_changes(kind, since, 0).await.map_err(changes_error)?;
     let changed: BTreeSet<String> = changes.into_iter_all().map(|id| format!("{prefix}{id}")).collect();
     let (results, extra) = current_results(ctx, method, args, &changed, since).await?;
 

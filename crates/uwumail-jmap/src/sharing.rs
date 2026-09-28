@@ -58,7 +58,12 @@ impl SharedView {
 
     /// Mailboxes shown in the account.
     pub fn visible(&self, mailbox: i64) -> bool {
-        self.rights.get(&mailbox).is_some_and(|rights| rights.contains('l') || rights.contains('r'))
+        self.rights.get(&mailbox).is_some_and(|rights| visible_rights(rights))
+    }
+
+    /// All mailboxes shown in the account, sorted.
+    pub fn visible_ids(&self) -> Vec<i64> {
+        visible_ids(&self.rights)
     }
 
     /// Mailboxes whose messages may be read.
@@ -118,6 +123,21 @@ pub async fn enter(ctx: &mut Ctx<'_>, name: &str, args: &Value) -> MethodResult<
 }
 
 /// The rights of `grantee` per mailbox of `owner` shared with them; empty when nothing is.
+fn visible_rights(rights: &str) -> bool {
+    rights.contains('l') || rights.contains('r')
+}
+
+fn visible_ids(rights: &HashMap<i64, String>) -> Vec<i64> {
+    let mut ids: Vec<i64> = rights.iter().filter(|(_, r)| visible_rights(r)).map(|(id, _)| *id).collect();
+    ids.sort_unstable();
+    ids
+}
+
+/// The mailboxes of `owner` that `grantee` sees, for push.
+pub async fn visible_mailboxes(store: &Store, grantee: i64, owner: i64) -> MethodResult<Vec<i64>> {
+    Ok(visible_ids(&shared_rights(store, grantee, owner).await?))
+}
+
 pub async fn shared_rights(store: &Store, grantee: i64, owner: i64) -> MethodResult<HashMap<i64, String>> {
     Ok(store
         .mailboxes_shared_with(grantee)
@@ -246,11 +266,12 @@ pub async fn filter_changes(
         }
         _ => HashSet::new(),
     };
-    for list in [&mut *created, &mut *updated] {
-        let (keep, gone): (Vec<i64>, Vec<i64>) = list.iter().partition(|id| seen.contains(id));
-        *list = keep;
-        destroyed.extend(gone);
-    }
+    // Something created since the client's state that it may not see is nothing to it. Something
+    // it may have seen and may not see now is gone for it.
+    created.retain(|id| seen.contains(id));
+    let (keep, gone): (Vec<i64>, Vec<i64>) = updated.iter().partition(|id| seen.contains(id));
+    *updated = keep;
+    destroyed.extend(gone);
     destroyed.sort_unstable();
     destroyed.dedup();
     Ok(())

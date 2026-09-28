@@ -23,7 +23,7 @@ use tokio::sync::{OnceCell, broadcast, watch};
 use uwumail_smtp::egress::Egress;
 use uwumail_store::{PushTarget, Store};
 
-use crate::push::{all_types, type_states};
+use crate::push::{all_types, shared_type_states, type_states};
 use crate::{Jmap, ids};
 use vapid::Vapid;
 
@@ -389,11 +389,14 @@ impl WebPush {
             };
             let Ok(audience) = store.push_audience(account_id).await else { continue };
             for follower in audience {
-                let shared = follower != account_id;
                 let wanted = |kind: &str| {
                     (kind != "EmailDelivery" || delivered.contains(&follower)) && known.iter().any(|k| k == kind)
                 };
-                let changed = type_states(store, account_id, &kinds, modseq, shared, wanted).await;
+                let changed = if follower == account_id {
+                    type_states(store, account_id, &kinds, modseq, false, wanted).await
+                } else {
+                    shared_type_states(store, account_id, follower, since, wanted).await
+                };
                 if !changed.is_empty() {
                     by_follower.entry(follower).or_default().insert(ids::account(account_id), Value::Object(changed));
                 }

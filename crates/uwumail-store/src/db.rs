@@ -55,6 +55,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0046_push_subscriptions.sql"),
     include_str!("migrations/0047_masked_domains.sql"),
     include_str!("migrations/0048_logins_and_ids.sql"),
+    include_str!("migrations/0049_shared_states.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 
@@ -171,6 +172,22 @@ pub fn record_change(
         "INSERT OR IGNORE INTO changes (account_id, modseq, kind, object_id, change) VALUES (?1, ?2, ?3, ?4, ?5)",
         params![account_id, modseq, kind, object_id, change],
     )?;
+    // A mailbox's own modseq moves with every change to it or to an email in it: it is the state
+    // of the mailbox for those it is shared with and its IMAP HIGHESTMODSEQ (migration 0049).
+    match kind {
+        "Mailbox" => {
+            conn.prepare_cached("UPDATE mailboxes SET updated_modseq = max(updated_modseq, ?1) WHERE id = ?2")?
+                .execute(params![modseq, object_id])?;
+        }
+        "Email" => {
+            conn.prepare_cached(
+                "UPDATE mailboxes SET updated_modseq = max(updated_modseq, ?1)
+                 WHERE id IN (SELECT mailbox_id FROM email_mailboxes WHERE email_id = ?2)",
+            )?
+            .execute(params![modseq, object_id])?;
+        }
+        _ => {}
+    }
     Ok(())
 }
 

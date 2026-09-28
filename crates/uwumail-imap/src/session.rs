@@ -62,6 +62,8 @@ struct Selected {
     read_only: bool,
     messages: Vec<Known>,
     highest_modseq: u64,
+    /// The owner's last change to the sharing that this selection saw.
+    sharing_modseq: u64,
 }
 
 #[derive(Clone)]
@@ -1118,6 +1120,7 @@ where
             rights,
             read_only,
             highest_modseq: state.highest_modseq,
+            sharing_modseq: state.sharing_modseq,
             messages: state
                 .messages
                 .into_iter()
@@ -1263,11 +1266,13 @@ where
         };
         let account = selected.owner;
         let pending_expunges = selected.messages.iter().any(|known| known.expunged);
-        let modseq = self.store.account_modseq(account).await.map_err(io::Error::other)?.max(0) as u64;
-        if modseq == selected.highest_modseq && !(report_expunges && pending_expunges) {
+        let mailbox_id = selected.mailbox_id;
+        // Only a change to this mailbox, or to the sharing, can change what the client sees.
+        let modseqs = self.store.imap_mailbox_modseq(account, mailbox_id).await.map_err(io::Error::other)?;
+        if modseqs == Some((selected.highest_modseq, selected.sharing_modseq)) && !(report_expunges && pending_expunges)
+        {
             return Ok(());
         }
-        let mailbox_id = selected.mailbox_id;
         let me = self.account_id();
         // Someone else's mailbox is read only while it is still shared: taking the share back
         // ends the selection like deleting the mailbox would.
@@ -1351,6 +1356,7 @@ where
             }
         }
         selected.highest_modseq = state.highest_modseq;
+        selected.sharing_modseq = state.sharing_modseq;
         self.send(&out.bytes).await
     }
 
@@ -2081,6 +2087,7 @@ mod tests {
             read_only: false,
             messages: (1..=200_000).map(known).collect(),
             highest_modseq: 1,
+            sharing_modseq: 0,
         };
         let gone: Vec<u32> = (1..=200_000).filter(|uid| uid % 2 == 0).chain([300_000]).collect();
         let started = std::time::Instant::now();

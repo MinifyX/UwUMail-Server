@@ -149,8 +149,24 @@ impl<'a> Ctx<'a> {
         self.resolve(value).and_then(|id| ids::parse(prefix, id))
     }
 
+    /// The account's state. In someone else's shared account, it moves only with changes to the
+    /// mailboxes shared with the caller and what they hold (docs/sharing.md).
     pub async fn state(&self) -> MethodResult<String> {
+        if let Some(view) = &self.shared {
+            return Ok(self.jmap.store.shared_state(self.account.id, view.visible_ids()).await?.to_string());
+        }
         Ok(self.jmap.store.account_modseq(self.account.id).await?.to_string())
+    }
+
+    /// The account's changes of one kind after `since`; in someone else's shared account, only
+    /// those the caller may hear of.
+    pub async fn kind_changes(&self, kind: &str, since: i64, max_changes: usize) -> uwumail_store::Result<Changes> {
+        match &self.shared {
+            Some(view) => {
+                self.jmap.store.shared_changes(self.account.id, kind, since, max_changes, view.visible_ids()).await
+            }
+            None => self.jmap.store.changes(self.account.id, kind, since, max_changes).await,
+        }
     }
 }
 
@@ -371,7 +387,7 @@ async fn changes(ctx: &Ctx<'_>, args: &Value, kind: &str, prefix: char) -> Metho
         },
     };
     let Changes { mut created, mut updated, mut destroyed, new_state, has_more } =
-        match ctx.jmap.store.changes(ctx.account.id, kind, since, max_changes).await {
+        match ctx.kind_changes(kind, since, max_changes).await {
             Ok(changes) => changes,
             Err(uwumail_store::StoreError::Invalid(_)) => return Err(MethodError::kind("cannotCalculateChanges")),
             Err(err) => return Err(err.into()),
