@@ -56,6 +56,8 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     WEBPUSH_VAPID,
 ];
 
+pub(crate) use calendar_event::event_for_alerts;
+
 /// The data types of calendars and address books: only for credentials with the `dav` scope.
 const DAV_TYPES: &[&str] =
     &["Calendar", "CalendarEvent", "CalendarEventNotification", "ParticipantIdentity", "AddressBook", "ContactCard"];

@@ -170,6 +170,37 @@ impl Smtp {
         within_limits(ctx, &itip::plan(old.as_ref(), new.as_ref(), &own)).await
     }
 
+    /// Puts the mail of an alert with the `email` action into the account's inbox (a service's
+    /// goes where its mail goes): `title`, `when` and `place` describe the event.
+    pub async fn send_reminder(&self, account: &Account, title: &str, when: &str, place: &str) -> Result<(), String> {
+        let ctx = &self.inner;
+        let language = language_of(ctx, account.id).await;
+        let texts = scheduling_texts::reminder(language, title, when, place);
+        let domain = account.login.rsplit_once('@').map(|(_, d)| d.to_owned()).unwrap_or_default();
+        let name =
+            if account.display_name.trim().is_empty() { account.login.as_str() } else { account.display_name.trim() };
+        let raw = MessageBuilder::new()
+            .from(format!("postmaster@{domain}"))
+            .to((name.to_owned(), account.login.clone()))
+            .subject(texts.subject)
+            .date(Date::now())
+            .message_id(format!("{}.reminder@{domain}", random_id()))
+            .header("Auto-Submitted", mail_builder::headers::text::Text::new("auto-generated"))
+            .text_body(texts.body)
+            .write_to_vec()
+            .map_err(|err| err.to_string())?;
+        let target = ctx.store.delivery_target(account.id).await.map_err(|err| err.to_string())?;
+        let Some(account_id) = target else { return Ok(()) };
+        let request = uwumail_store::IngestRequest {
+            account_id,
+            raw,
+            mailboxes: vec![uwumail_store::MailboxTarget::Role(uwumail_store::MailboxRole::Inbox)],
+            keywords: vec![],
+            received_at: None,
+        };
+        ctx.store.ingest(request).await.map(|_| ()).map_err(|err| err.to_string())
+    }
+
     /// Hands one message to one person: into their calendar when they are on this server and use
     /// calendars, by mail otherwise.
     async fn deliver(

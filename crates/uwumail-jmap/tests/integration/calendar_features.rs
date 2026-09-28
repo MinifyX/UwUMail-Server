@@ -28,6 +28,7 @@ const USING: [&str; 5] = [
 struct Server {
     router: Router,
     store: Store,
+    jmap: Jmap,
     _dir: tempfile::TempDir,
 }
 
@@ -51,7 +52,8 @@ async fn server() -> Server {
     let smtp = crate::common::smtp(&store);
     let dav = Dav::new(store.clone(), DavSettings { calendar_name: "Kalender".into(), addressbook_name: "K".into() })
         .with_scheduling(smtp.clone());
-    Server { router: Jmap::new(smtp).router().merge(dav.router()), store, _dir: dir }
+    let jmap = Jmap::new(smtp);
+    Server { router: jmap.router().merge(dav.router()), store, jmap, _dir: dir }
 }
 
 struct Reply {
@@ -793,4 +795,49 @@ DTSTAMP:20260901T080000Z\r\nDTSTART;VALUE=DATE:20261224\r\nDTEND;VALUE=DATE:2026
         .await;
     assert_eq!(responses[1][0], "CalendarEvent/set", "{responses:?}");
     assert_eq!(responses[1][1]["destroyed"], json!([&new]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_server_fires_alerts_as_pushes_and_mails() {
+    let server = server().await;
+    let calendar = server.share_with_nyu(json!({ "mayReadItems": true })).await;
+    let mut event = at(&calendar, "Zahnarzt", "2026-10-20T09:00:00", json!({}));
+    event["alerts"] = json!({
+        "a": { "@type": "Alert", "trigger": { "@type": "OffsetTrigger", "offset": "-PT15M" } },
+        "m": { "@type": "Alert", "trigger": { "@type": "OffsetTrigger", "offset": "-PT1H" }, "action": "email" }
+    });
+    let id = server.create(MINI, event).await;
+    let mut draft = at(&calendar, "Entwurf", "2026-10-20T09:00:00", json!({ "isDraft": true }));
+    draft["alerts"] = json!({ "d": { "@type": "Alert", "trigger": { "@type": "OffsetTrigger", "offset": "-PT15M" } } });
+    server.create(MINI, draft).await;
+    // Nyu has an alert of his own on Mini's event.
+    let own =
+        json!({ "alerts": { "n": { "@type": "Alert", "trigger": { "@type": "OffsetTrigger", "offset": "-PT5M" } } } });
+    server.call(NYU, "CalendarEvent/set", json!({ "update": { &id: own } })).await;
+
+    let time =
+        |text: &str| chrono::NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S").unwrap().and_utc().timestamp();
+    let mut alerts = server.store.subscribe_calendar_alerts();
+    server.jmap.calendar_alerts_tick(time("2026-10-01T00:00:00")).await;
+    assert!(alerts.try_recv().is_err(), "nothing yet");
+
+    // An hour before: the mail.
+    server.jmap.calendar_alerts_tick(time("2026-10-20T08:00:10")).await;
+    assert!(alerts.try_recv().is_err(), "a mail is no push");
+    let mini = server.store.account(MINI).await.unwrap().unwrap().id;
+    let inbox = server.store.query_emails(mini, None, Vec::new(), false).await.unwrap();
+    assert_eq!(inbox.len(), 1, "the reminder is in Mini's inbox");
+
+    // A quarter before: Mini's push; five minutes before: Nyu's own. The draft stays quiet.
+    server.jmap.calendar_alerts_tick(time("2026-10-20T08:45:10")).await;
+    let fired = alerts.try_recv().unwrap();
+    assert_eq!((fired.account_id, fired.alert_id.as_str()), (mini, "a"));
+    assert_eq!(uwumail_jmap::calendar_alerts::alert_json(&fired)["calendarEventId"], id);
+    assert!(alerts.try_recv().is_err());
+    server.jmap.calendar_alerts_tick(time("2026-10-20T08:55:10")).await;
+    let fired = alerts.try_recv().unwrap();
+    assert_eq!(fired.account_id, server.store.account(NYU).await.unwrap().unwrap().id);
+    assert_eq!(fired.alert_id, "n");
+    server.jmap.calendar_alerts_tick(time("2026-10-20T09:30:00")).await;
+    assert!(alerts.try_recv().is_err(), "each goes off once, and the draft never");
 }

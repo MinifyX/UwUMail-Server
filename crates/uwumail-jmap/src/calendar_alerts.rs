@@ -259,6 +259,207 @@ pub async fn apply(store: &Store, owner: i64, calendar_id: i64) -> Result<(), St
     Ok(())
 }
 
+// ------------------------------------------------------------------------------------------------
+// Alerts the server fires (draft-ietf-jmap-calendars, section 6.4)
+
+/// How often the worker looks for alerts to plan and to fire.
+const TICK: std::time::Duration = std::time::Duration::from_secs(20);
+/// An alert that should have gone off longer ago than this (the server was down) is dropped.
+const MAX_LATE_SECS: i64 = 3600;
+/// Events planned and alerts fired per turn; the rest comes in the next one.
+const BATCH: usize = 500;
+
+/// The SignedDuration of an OffsetTrigger in seconds; days count 24 hours.
+fn offset_seconds(value: &str) -> Option<i64> {
+    let (sign, rest) = match value.strip_prefix('-') {
+        Some(rest) => (-1, rest),
+        None => (1, value.strip_prefix('+').unwrap_or(value)),
+    };
+    let (days, seconds) = jscal::parse_duration(rest)?;
+    Some(sign * (days * 86_400 + seconds))
+}
+
+type Planned = std::collections::BTreeMap<String, uwumail_store::PlannedAlert>;
+
+/// When each alert of an event (as the account sees it) next goes off after `after`: per alert
+/// id, the first instance whose trigger lies after it and that was not acknowledged.
+pub fn next_alerts(
+    event: &Map<String, Value>,
+    content: &str,
+    floating: chrono_tz::Tz,
+    after: i64,
+) -> Vec<uwumail_store::PlannedAlert> {
+    let mut next: Planned = Default::default();
+    let consider = |next: &mut Planned, recurrence_id: Option<&str>, object: &Map<String, Value>| {
+        let Some(Value::Object(alerts)) = object.get("alerts") else { return };
+        let Some((start, end)) = jscal::span(object, floating) else { return };
+        for (id, alert) in alerts {
+            let trigger = alert.get("trigger");
+            let fire_at = match trigger.and_then(|t| t.get("@type")).and_then(Value::as_str) {
+                Some("AbsoluteTrigger") => {
+                    trigger.and_then(|t| t.get("when")).and_then(Value::as_str).and_then(jscal::parse_utc)
+                }
+                Some("UnknownTrigger") => None,
+                _ => {
+                    let offset = trigger.and_then(|t| t.get("offset")).and_then(Value::as_str).and_then(offset_seconds);
+                    let base = if trigger.and_then(|t| t.get("relativeTo")).and_then(Value::as_str) == Some("end") {
+                        end
+                    } else {
+                        start
+                    };
+                    offset.map(|offset| base + offset)
+                }
+            };
+            let Some(fire_at) = fire_at.filter(|fire_at| *fire_at > after) else { continue };
+            let acknowledged = alert.get("acknowledged").and_then(Value::as_str).and_then(jscal::parse_utc);
+            if acknowledged.is_some_and(|acknowledged| acknowledged >= fire_at) {
+                continue;
+            }
+            let action = match alert.get("action").and_then(Value::as_str) {
+                Some("email") => "email",
+                _ => "display",
+            };
+            if next.get(id).is_none_or(|planned| fire_at < planned.fire_at) {
+                next.insert(
+                    id.clone(),
+                    uwumail_store::PlannedAlert {
+                        alert_id: id.clone(),
+                        recurrence_id: recurrence_id.map(str::to_owned),
+                        fire_at,
+                        action: action.to_owned(),
+                    },
+                );
+            }
+        }
+    };
+    if !jscal::is_recurring(event) {
+        consider(&mut next, None, event);
+    } else {
+        // Instances come in order; once every alert of the series has its next time and the
+        // instances start well after the latest of them, nothing earlier can come.
+        let ids: usize = event.get("alerts").and_then(Value::as_object).map_or(0, Map::len);
+        for rid in jscal::recurrence_ids(content, event) {
+            let Some(instance) = jscal::instance(event, &rid) else { continue };
+            if next.len() >= ids
+                && let (Some(latest), Some((start, _))) =
+                    (next.values().map(|p| p.fire_at).max(), jscal::span(&instance, floating))
+                && start > latest + 400 * 86_400
+            {
+                break;
+            }
+            consider(&mut next, Some(&rid), &instance);
+        }
+    }
+    next.into_values().collect()
+}
+
+impl crate::Jmap {
+    /// Runs until `shutdown`: plans the alerts of changed events and fires those that are due, as
+    /// a CalendarAlert push or a mail.
+    pub async fn run_calendar_alerts(self, mut shutdown: tokio::sync::watch::Receiver<bool>) {
+        loop {
+            self.calendar_alerts_tick(crate::methods::unix_now()).await;
+            tokio::select! {
+                _ = tokio::time::sleep(TICK) => {}
+                _ = shutdown.changed() => return,
+            }
+        }
+    }
+
+    /// One turn of the alert worker at time `now`.
+    pub async fn calendar_alerts_tick(&self, now: i64) {
+        let store = &self.inner.store;
+        match store.calendar_alerts_to_plan(BATCH).await {
+            Ok(pairs) => {
+                for (account_id, event_id) in pairs {
+                    let planned = self.plan_alerts(account_id, event_id, now).await;
+                    if let Err(err) = store.plan_calendar_alerts(account_id, event_id, now, planned).await {
+                        tracing::warn!(%err, account_id, event_id, "planning calendar alerts failed");
+                    }
+                }
+            }
+            Err(err) => tracing::warn!(%err, "reading the calendar alerts to plan failed"),
+        }
+        let due = match store.due_calendar_alerts(now, BATCH).await {
+            Ok(due) => due,
+            Err(err) => {
+                tracing::warn!(%err, "reading due calendar alerts failed");
+                return;
+            }
+        };
+        for alert in due {
+            if now - alert.alert.fire_at <= MAX_LATE_SECS {
+                self.fire_alert(&alert).await;
+            }
+            if let Err(err) = store.calendar_alert_fired(alert).await {
+                tracing::warn!(%err, "noting a calendar alert failed");
+            }
+        }
+    }
+
+    /// The next alerts of an event for an account: none for a draft, for an account without
+    /// calendars, or for an event it does not see.
+    async fn plan_alerts(&self, account_id: i64, event_id: i64, now: i64) -> Vec<uwumail_store::PlannedAlert> {
+        let Ok(Some(account)) = self.inner.store.account_by_id(account_id).await else { return Vec::new() };
+        if !account.protocols.caldav || account.deleted_at.is_some() {
+            return Vec::new();
+        }
+        let ctx = crate::methods::Ctx::new(&self.inner, account, Vec::new(), Default::default());
+        let Ok(Some((record, event, floating))) = crate::methods::event_for_alerts(&ctx, event_id).await else {
+            return Vec::new();
+        };
+        if record.is_draft {
+            return Vec::new();
+        }
+        tokio::task::spawn_blocking(move || next_alerts(&event, &record.content, floating, now))
+            .await
+            .unwrap_or_default()
+    }
+
+    /// Pushes a CalendarAlert, or sends the mail of an `email` alert.
+    async fn fire_alert(&self, due: &uwumail_store::DueAlert) {
+        let store = &self.inner.store;
+        let Ok(Some(record)) =
+            store.calendar_events(due.account_id, Some(vec![due.event_id])).await.map(|mut r| r.pop())
+        else {
+            return;
+        };
+        if due.alert.action == "email" {
+            let Ok(Some(account)) = store.account_by_id(due.account_id).await else { return };
+            let calendar = uwumail_store::itip::Component::parse(&record.content);
+            let summary = calendar.as_ref().map(uwumail_store::itip::summary).unwrap_or_default();
+            // For an instance of a series, the instance's time.
+            let when = match &due.alert.recurrence_id {
+                Some(rid) => rid.replacen('T', " ", 1).get(..16).unwrap_or(rid).to_owned(),
+                None => summary.when.clone(),
+            };
+            if let Err(err) = self.inner.smtp.send_reminder(&account, &summary.title, &when, &summary.location).await {
+                tracing::warn!(%err, login = %account.login, "the mail of a calendar alert could not be sent");
+            }
+            return;
+        }
+        store.announce_calendar_alert(uwumail_store::CalendarAlertFired {
+            account_id: due.account_id,
+            event_id: due.event_id,
+            uid: record.uid,
+            recurrence_id: due.alert.recurrence_id.clone(),
+            alert_id: due.alert.alert_id.clone(),
+        });
+    }
+}
+
+/// The CalendarAlert object a push carries.
+pub fn alert_json(alert: &uwumail_store::CalendarAlertFired) -> Value {
+    json!({
+        "@type": "CalendarAlert",
+        "accountId": crate::ids::account(alert.account_id),
+        "calendarEventId": crate::ids::calendar_event(alert.event_id),
+        "uid": alert.uid,
+        "recurrenceId": alert.recurrence_id,
+        "alertId": alert.alert_id,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -297,6 +498,39 @@ mod tests {
         assert!(!materialize(&mut event, Some(&defaults)), "nothing more to do");
         let mut own = object(json!({ "alerts": { "mine": {} } }));
         assert!(!materialize(&mut own, Some(&defaults)), "only for events that use them");
+    }
+
+    #[test]
+    fn alerts_are_planned_for_the_next_instance() {
+        let utc = chrono_tz::UTC;
+        let event = object(json!({
+            "start": "2026-10-20T09:00:00", "timeZone": "Etc/UTC", "duration": "PT1H",
+            "recurrenceRule": { "frequency": "daily", "count": 3 },
+            "alerts": {
+                "a": { "trigger": { "offset": "-PT15M" } },
+                "b": { "trigger": { "offset": "PT0S", "relativeTo": "end" }, "action": "email",
+                       "acknowledged": "2026-10-21T10:00:00Z" },
+                "c": { "trigger": { "@type": "AbsoluteTrigger", "when": "2026-10-19T12:00:00Z" } }
+            }
+        }));
+        let content = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:a\r\nDTSTART:20261020T090000Z\r\nDURATION:PT1H\r\nRRULE:FREQ=DAILY;COUNT=3\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+        let after = jscal::parse_utc("2026-10-20T09:00:00Z").unwrap();
+        let planned = next_alerts(&event, content, utc, after);
+        let at = |id: &str| {
+            planned
+                .iter()
+                .find(|p| p.alert_id == id)
+                .map(|p| (jscal::format_utc(p.fire_at), p.recurrence_id.clone(), p.action.clone()))
+        };
+        assert_eq!(
+            at("a"),
+            Some(("2026-10-21T08:45:00Z".into(), Some("2026-10-21T09:00:00".into()), "display".into()))
+        );
+        // Acknowledged on the 21st after it went off: the next is the 22nd's.
+        assert_eq!(at("b"), Some(("2026-10-22T10:00:00Z".into(), Some("2026-10-22T09:00:00".into()), "email".into())));
+        assert_eq!(at("c"), None, "absolute and in the past");
+        let later = jscal::parse_utc("2026-10-23T00:00:00Z").unwrap();
+        assert!(next_alerts(&event, content, utc, later).is_empty(), "the series is over");
     }
 
     #[test]

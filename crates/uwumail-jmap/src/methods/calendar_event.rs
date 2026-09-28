@@ -281,6 +281,25 @@ async fn run_blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static)
     tokio::task::spawn_blocking(f).await.map_err(|_| MethodError::server_fail("the calendar work failed"))
 }
 
+/// An event as the account sees it, for the alert worker: its record, the event with the
+/// account's own alerts (default alerts in), and the time zone its floating times are in.
+pub(crate) async fn event_for_alerts(
+    ctx: &Ctx<'_>,
+    id: i64,
+) -> MethodResult<Option<(CalendarEventRecord, Map<String, Value>, Tz)>> {
+    let Some(loaded) = load(ctx, Some(vec![id])).await?.pop() else { return Ok(None) };
+    let zone = calendars(ctx)
+        .await?
+        .into_iter()
+        .find(|calendar| calendar.id == loaded.record.calendar_id)
+        .and_then(|calendar| calendar.timezone)
+        .and_then(|timezone| uwumail_store::ical::timezone_id(&timezone))
+        .and_then(|name| jscal::time_zone(&name))
+        .unwrap_or(chrono_tz::UTC);
+    let view = loaded.view();
+    Ok(Some((loaded.record, view, zone)))
+}
+
 // ------------------------------------------------------------------------------------------------
 // CalendarEvent/get
 

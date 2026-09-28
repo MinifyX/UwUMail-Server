@@ -15,6 +15,7 @@ mod alerts;
 mod bayes;
 mod blobs;
 mod calendar;
+mod calendar_alerts;
 mod calendar_notifications;
 mod calendar_prefs;
 mod calendar_subscriptions;
@@ -92,6 +93,7 @@ pub use bayes::{
 };
 pub use blobs::{BlobCleanupPause, BlobHash};
 pub use calendar::{CalendarEventRecord, CalendarEventWrite};
+pub use calendar_alerts::{CalendarAlertFired, DueAlert, PlannedAlert};
 pub use calendar_notifications::{
     Author, CalendarNotification, EventAuthor, KEPT_SECS as CALENDAR_NOTIFICATIONS_KEPT_SECS,
     MAX_NOTIFICATIONS as MAX_CALENDAR_NOTIFICATIONS,
@@ -254,6 +256,8 @@ struct Inner {
     /// Backups running; cleaning up blobs waits while one reads them.
     blob_cleanup_paused: Arc<std::sync::atomic::AtomicUsize>,
     changes: broadcast::Sender<StateChange>,
+    /// Calendar alerts that went off, for push (calendar_alerts.rs).
+    calendar_alerts: broadcast::Sender<CalendarAlertFired>,
     queue_wakeup: Notify,
     data_dir: PathBuf,
     /// What happened since the server started, for the statistics and the metrics.
@@ -277,6 +281,7 @@ impl Store {
             .map_err(|err| StoreError::Internal(err.to_string()))??;
         let blobs = blobs::BlobStore::open(data_dir.join("blobs")).await?;
         let (changes, _) = broadcast::channel(1024);
+        let (calendar_alerts, _) = broadcast::channel(256);
         Ok(Store {
             inner: Arc::new(Inner {
                 db,
@@ -284,6 +289,7 @@ impl Store {
                 blob_lock: Default::default(),
                 blob_cleanup_paused: Default::default(),
                 changes,
+                calendar_alerts,
                 queue_wakeup: Notify::new(),
                 data_dir,
                 stats: stats::Stats::default(),

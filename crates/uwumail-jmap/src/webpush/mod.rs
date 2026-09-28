@@ -44,6 +44,8 @@ impl Default for PushTiming {
 /// How long push services keep a message for a device that is away. Whatever is older is found by
 /// syncing anyway.
 const STATE_TTL_SECS: u32 = 12 * 3600;
+/// A calendar alert is of no use an hour after it went off.
+const ALERT_TTL_SECS: u32 = 3600;
 /// The verification code is only of use while the subscription is young (it goes after a day).
 const VERIFICATION_TTL_SECS: u32 = 24 * 3600;
 /// A later StateChange replaces an earlier one still waiting at the push service (RFC 8030, 5.4).
@@ -242,6 +244,18 @@ impl WebPush {
         let body = json!({ "@type": "StateChange", "changed": changed });
         let outcome =
             self.send(target, &body, if urgent { "high" } else { "normal" }, STATE_TTL_SECS, Some(TOPIC)).await;
+        self.note(target, outcome).await;
+    }
+
+    /// Sends a CalendarAlert (draft-ietf-jmap-calendars, 6.4): urgent, never replacing another
+    /// push, and kept by the push service for an hour at most.
+    async fn deliver_alert(&self, target: &PushTarget, alert: &Value) {
+        let outcome = self.send(target, alert, "high", ALERT_TTL_SECS, None).await;
+        self.note(target, outcome).await;
+    }
+
+    /// Notes how a push went.
+    async fn note(&self, target: &PushTarget, outcome: Outcome) {
         let result = match outcome {
             Outcome::Delivered => self.store.push_delivered(target.id).await,
             Outcome::Gone => self.store.push_gone(target.id).await,
@@ -307,6 +321,7 @@ impl Jmap {
         let PushTiming { debounce, min_interval } = push.timing;
         let store = self.inner.store.clone();
         let mut changes = store.subscribe_changes();
+        let mut alerts = store.subscribe_calendar_alerts();
         let mut pending = Pending::default();
         let mut held: HashMap<i64, Held> = HashMap::new();
         let mut last_sent: HashMap<i64, Instant> = HashMap::new();
@@ -333,6 +348,11 @@ impl Jmap {
                     Err(broadcast::error::RecvError::Lagged(missed)) => {
                         tracing::debug!(missed, "web push missed some changes");
                     }
+                    Err(broadcast::error::RecvError::Closed) => return,
+                },
+                alert = alerts.recv() => match alert {
+                    Ok(alert) => push.alert(&store, &alert).await,
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
                     Err(broadcast::error::RecvError::Closed) => return,
                 },
                 _ = tokio::time::sleep_until(wake.into()) => {}
@@ -442,6 +462,20 @@ impl WebPush {
             }
         }
         self.send_all(sends);
+    }
+
+    /// Pushes a calendar alert to the account's subscriptions that asked for `CalendarAlert` (or
+    /// for every type).
+    async fn alert(&self, store: &Store, alert: &uwumail_store::CalendarAlertFired) {
+        let Ok(targets) = store.push_targets(vec![alert.account_id]).await else { return };
+        let body = crate::calendar_alerts::alert_json(alert);
+        for target in targets {
+            if target.types.as_ref().is_some_and(|types| !types.iter().any(|t| t == "CalendarAlert")) {
+                continue;
+            }
+            let (push, body) = (self.clone(), body.clone());
+            tokio::spawn(async move { push.deliver_alert(&target, &body).await });
+        }
     }
 
     /// Pushes what was held back and is due now, to the subscriptions that are still there.

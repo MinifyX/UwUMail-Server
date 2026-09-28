@@ -195,6 +195,11 @@ impl Store {
                         ],
                     )?;
                 }
+                if current.default_alerts_with_time != before.default_alerts_with_time
+                    || current.default_alerts_without_time != before.default_alerts_without_time
+                {
+                    crate::calendar_alerts::mark_collection(tx, account_id, collection_id)?;
+                }
                 let mut log = ChangeLog::new(account_id);
                 log.record(tx, "Calendar", collection_id, "updated")?;
                 Ok(log.modseq())
@@ -263,6 +268,7 @@ impl Store {
                         params![id, account_id],
                     )?,
                 };
+                crate::calendar_alerts::mark(tx, &[account_id], id)?;
                 let mut log = ChangeLog::new(account_id);
                 log.record(tx, "CalendarEvent", id, "updated")?;
                 Ok(log.modseq())

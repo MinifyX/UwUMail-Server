@@ -329,8 +329,12 @@ impl ChangeLog {
             (true, false) => "destroyed",
             (false, false) => return Ok(()),
         };
-        for account_id in audience(conn, collection)? {
-            self.record_for(conn, account_id, entry_type, resource_id, change)?;
+        let accounts = audience(conn, collection)?;
+        for account_id in &accounts {
+            self.record_for(conn, *account_id, entry_type, resource_id, change)?;
+        }
+        if collection.kind == DavKind::Calendar && change != "destroyed" {
+            crate::calendar_alerts::mark(conn, &accounts, resource_id)?;
         }
         Ok(())
     }
@@ -358,6 +362,9 @@ impl ChangeLog {
         for account_id in after.iter().filter(|account| !before.contains(account)) {
             self.record_for(conn, *account_id, entry_type, resource_id, "created")?;
         }
+        let mut everyone = before;
+        everyone.extend(after);
+        crate::calendar_alerts::mark(conn, &everyone, resource_id)?;
         Ok(())
     }
 
@@ -384,6 +391,10 @@ impl ChangeLog {
             self.record_for(conn, account_id, entry_type, entry, change)?;
             if let Some(content) = content {
                 crate::calendar_versions::note(conn, self, &[account_id], entry, Some(&content), None)?;
+            }
+            // Its alerts come or go for the account.
+            if collection.kind == DavKind::Calendar {
+                crate::calendar_alerts::mark(conn, &[account_id], entry)?;
             }
         }
         self.record_for(conn, account_id, collection_type, collection.id, change)

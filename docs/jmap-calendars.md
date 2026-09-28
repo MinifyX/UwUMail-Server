@@ -513,15 +513,33 @@ One per account: `{ "id": "u5", "name": <display name>, "calendarAddress":
 "mailto:<login>", "isDefault": true }`. `/get` and `/changes` are standard;
 every change in `/set` is `forbidden`.
 
+## Alerts
+
+Besides handing alerts to CalDAV clients, which ring them, the server fires
+them itself (draft section 6): for each account that sees an event, from the
+alerts as that account sees them (its own ones in a calendar shared with it,
+default alerts included), at the time of the next instance each alert goes off
+for, and not again once `acknowledged` covers it. Drafts ring for nobody.
+
+- An alert with `"action": "display"` (or none) is pushed as a
+  `CalendarAlert` — `accountId`, `calendarEventId` (the stored event, never an
+  instance id), `uid`, `recurrenceId` and `alertId` — to the EventSource (as
+  the event `calendarAlert`), the WebSocket and Web Push subscriptions whose
+  types include `CalendarAlert` (or are `null`).
+- An alert with `"action": "email"` puts a short reminder mail into the
+  account's inbox, in the language it chose, from `postmaster@` its domain.
+
+The server looks every 20 seconds. An alert that should have gone off more
+than an hour ago, because the server was down, is dropped rather than
+delivered late.
+
 ## Push
 
 `Calendar`, `CalendarEvent`, `CalendarEventNotification` and
 `ParticipantIdentity` are push types of the EventSource, next to the mail
-types.
+types, and `CalendarAlert` pushes alerts (see [Alerts](#alerts)).
 
 ## Not supported
 
 - Calendars in other accounts: shared calendars are part of the account they
   are shared with
-- Alerts pushed by the server; alerts are stored and handed to CalDAV
-  clients, which ring them
