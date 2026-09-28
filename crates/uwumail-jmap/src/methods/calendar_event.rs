@@ -1626,7 +1626,9 @@ pub(super) async fn expanded_ids_of(ctx: &Ctx<'_>, args: &Value, old: Vec<(i64, 
     let deadline = (Instant::now() + QUERY_TIME_LIMIT).min(request_deadline(ctx));
     let evaluator = Evaluator { floating, deadline };
     let me = ctx.account.id;
-    let (mut ids, secret) = run_blocking(move || -> MethodResult<(Vec<String>, Vec<(i64, Vec<String>)>)> {
+    // The instance ids found, and apart those of secret events by event id.
+    type Found = (Vec<String>, Vec<(i64, Vec<String>)>);
+    let (mut ids, secret) = run_blocking(move || -> MethodResult<Found> {
         let (mut ids, mut secret) = (Vec::new(), Vec::new());
         for (id, content) in old {
             evaluator.check_time()?;
