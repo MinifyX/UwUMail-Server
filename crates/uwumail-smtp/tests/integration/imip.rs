@@ -182,6 +182,8 @@ async fn invitations_travel_by_mail_and_answers_come_back() {
         ends_at: checked.ends_at,
         if_etag: None,
         keep_schedule_tag: false,
+        draft: None,
+        author: uwumail_store::Author::Account,
     };
     a.smtp.store().put_calendar_event(mini.id, write).await.unwrap();
     let report = a.smtp.schedule_change(&mini, None, Some(&content)).await;

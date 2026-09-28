@@ -20,7 +20,9 @@
 
 mod api;
 pub mod auth;
+pub mod availability;
 mod blob;
+pub mod calendar_alerts;
 pub mod dates;
 mod email;
 mod error;
@@ -34,6 +36,7 @@ pub mod safe_html;
 mod scheduled;
 mod session;
 mod sharing;
+mod timezones;
 mod token;
 mod webpush;
 mod ws;

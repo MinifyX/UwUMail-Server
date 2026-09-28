@@ -3490,7 +3490,7 @@
     "rightsHint": {
       "read": "Ziet alle items, maar kan niets wijzigen.",
       "write": "Kan items toevoegen, wijzigen en verwijderen.",
-      "all": "Kan ook naam en kleur wijzigen en verder delen. Alleen jij kunt het verwijderen."
+      "all": "Kan ook de beschrijving wijzigen en verder delen. Naam en kleur kiest ieder zelf. Alleen jij kunt het verwijderen."
     },
     "share": "Delen",
     "sharedToast": "{{name}} is nu gedeeld met {{address}}",

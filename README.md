@@ -58,8 +58,10 @@ something a family, a club or a small team can run without being a mail admin:
   ([how](docs/moving.md)).
 - **Shared calendars and invitations.** Share calendars and address books with
   people on your server; invite anyone to an event and get their answers, in
-  the calendar app you already use ([how it works](docs/calendars.md)). iPhone,
-  iPad and Mac set everything up with one signed profile.
+  the calendar app you already use ([how it works](docs/calendars.md)), and see
+  when people are free. Over JMAP the whole of JMAP Calendars, down to alerts
+  the server rings itself ([details](docs/jmap-calendars.md)). iPhone, iPad
+  and Mac set everything up with one signed profile.
 - **Bring your calendars along.** Import `.ics` and `.vcf` files, subscribe to
   calendars by their iCal address (Google's secret address too), or move
   everything over from iCloud, WEB.DE, GMX, Posteo and other CalDAV/CardDAV

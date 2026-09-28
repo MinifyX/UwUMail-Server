@@ -3490,7 +3490,7 @@
     "rightsHint": {
       "read": "Sieht alle Einträge, kann aber nichts ändern.",
       "write": "Kann Einträge anlegen, ändern und löschen.",
-      "all": "Kann außerdem Name und Farbe ändern und weiter teilen. Löschen kannst nur du."
+      "all": "Kann außerdem die Beschreibung ändern und weiter teilen. Name und Farbe gibt sich jeder selbst. Löschen kannst nur du."
     },
     "share": "Teilen",
     "sharedToast": "{{name}} ist jetzt mit {{address}} geteilt",

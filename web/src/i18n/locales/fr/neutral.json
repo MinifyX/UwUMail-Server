@@ -3558,7 +3558,7 @@
     "rightsHint": {
       "read": "Voit toutes les entrées sans pouvoir rien modifier.",
       "write": "Peut ajouter, modifier et supprimer des entrées.",
-      "all": "Peut aussi changer le nom et la couleur et le partager à son tour. Vous seul pouvez le supprimer."
+      "all": "Peut aussi changer la description et le partager à son tour. Chacun choisit son propre nom et sa couleur. Vous seul pouvez le supprimer."
     },
     "share": "Partager",
     "sharedToast": "{{name}} est maintenant partagé avec {{address}}",

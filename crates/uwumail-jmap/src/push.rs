@@ -13,7 +13,7 @@ use futures_util::stream::{self, Stream};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use tokio::sync::broadcast;
-use uwumail_store::{LiveLogin, StateChange, Store};
+use uwumail_store::{CalendarAlertFired, LiveLogin, StateChange, Store};
 
 use crate::auth::ClientInfo;
 use crate::{Jmap, ids};
@@ -28,6 +28,7 @@ const TYPES: &[&str] = &[
     "UserSettings",
     "Calendar",
     "CalendarEvent",
+    "CalendarEventNotification",
     "ParticipantIdentity",
     "AddressBook",
     "ContactCard",
@@ -55,16 +56,27 @@ pub(crate) struct Watcher {
     shared_modseqs: HashMap<i64, i64>,
     /// Changes still to hand out after missing some: those of the accounts sharing with this one.
     pending: Vec<StateChange>,
+    /// Calendar alerts that go off (draft-ietf-jmap-calendars, section 6.4).
+    alerts: broadcast::Receiver<CalendarAlertFired>,
 }
 
-/// All push types, for a client that asks for everything.
+/// What a watcher has to push.
+pub(crate) enum Pushed {
+    State(StateChange),
+    /// A CalendarAlert of this account, when `CalendarAlert` is among the types asked for.
+    Alert(CalendarAlertFired),
+}
+
+/// All push types, for a client that asks for everything: the data types, `EmailDelivery` and the
+/// `CalendarAlert` pseudo-type.
 pub(crate) fn all_types() -> Vec<String> {
-    TYPES.iter().map(|t| t.to_string()).chain(["EmailDelivery".to_owned()]).collect()
+    TYPES.iter().map(|t| t.to_string()).chain(["EmailDelivery".to_owned(), "CalendarAlert".to_owned()]).collect()
 }
 
 impl Watcher {
     pub async fn new(store: Store, account_id: i64, types: Vec<String>) -> Watcher {
         let changes = store.subscribe_changes();
+        let alerts = store.subscribe_calendar_alerts();
         let last_modseq = store.account_modseq(account_id).await.unwrap_or(0);
         // Where each shared account stands now, so what comes later is measured from here.
         let mut shared_modseqs = HashMap::new();
@@ -73,35 +85,25 @@ impl Watcher {
                 shared_modseqs.insert(owner, modseq);
             }
         }
-        Watcher { store, account_id, types, changes, last_modseq, shared_modseqs, pending: Vec::new() }
+        Watcher { store, account_id, types, changes, last_modseq, shared_modseqs, pending: Vec::new(), alerts }
     }
 
-    /// Waits for the next change of this account or of an account that shares mail with it. Safe
-    /// to cancel: nothing is lost when it is. `None` when the server shuts down.
-    pub async fn wait(&mut self) -> Option<StateChange> {
-        if let Some(change) = self.pending.pop() {
-            return Some(change);
-        }
+    /// Waits for the next change of this account or of an account that shares mail with it, or a
+    /// calendar alert of this account. Safe to cancel: nothing is lost when it is. `None` when
+    /// the server shuts down.
+    pub async fn wait(&mut self) -> Option<Pushed> {
+        let wants_alerts = self.types.iter().any(|t| t == "CalendarAlert");
         loop {
-            match self.changes.recv().await {
-                Ok(change) if change.account_id == self.account_id => return Some(change),
-                Ok(change) => {
-                    let owners = self.store.sharing_owners(self.account_id).await.unwrap_or_default();
-                    if owners.contains(&change.account_id) {
-                        return Some(change);
-                    }
+            tokio::select! {
+                change = next_change(&self.store, self.account_id, &mut self.changes, &mut self.pending, self.last_modseq) => {
+                    return change.map(Pushed::State);
                 }
-                // Missed some changes: report everything as changed, in the shared accounts too.
-                Err(broadcast::error::RecvError::Lagged(_)) => {
-                    for owner in self.store.sharing_owners(self.account_id).await.unwrap_or_default() {
-                        if let Ok(modseq) = self.store.account_modseq(owner).await {
-                            self.pending.push(StateChange { account_id: owner, modseq });
-                        }
-                    }
-                    let modseq = self.store.account_modseq(self.account_id).await.unwrap_or(self.last_modseq);
-                    return Some(StateChange { account_id: self.account_id, modseq });
-                }
-                Err(broadcast::error::RecvError::Closed) => return None,
+                alert = self.alerts.recv(), if wants_alerts => match alert {
+                    Ok(alert) if alert.account_id == self.account_id => return Some(Pushed::Alert(alert)),
+                    // Someone else's, or some went by unseen: alerts are not sent again.
+                    Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => return None,
+                },
             }
         }
     }
@@ -133,6 +135,42 @@ impl Watcher {
             type_states(&self.store, owner, &kinds, change.modseq, true, |kind| self.types.iter().any(|t| t == kind))
                 .await;
         (!changed.is_empty()).then_some((owner, changed))
+    }
+}
+
+/// The next change of `account_id` or of an account that shares mail with it; see
+/// [`Watcher::wait`].
+async fn next_change(
+    store: &Store,
+    account_id: i64,
+    changes: &mut broadcast::Receiver<StateChange>,
+    pending: &mut Vec<StateChange>,
+    last_modseq: i64,
+) -> Option<StateChange> {
+    if let Some(change) = pending.pop() {
+        return Some(change);
+    }
+    loop {
+        match changes.recv().await {
+            Ok(change) if change.account_id == account_id => return Some(change),
+            Ok(change) => {
+                let owners = store.sharing_owners(account_id).await.unwrap_or_default();
+                if owners.contains(&change.account_id) {
+                    return Some(change);
+                }
+            }
+            // Missed some changes: report everything as changed, in the shared accounts too.
+            Err(broadcast::error::RecvError::Lagged(_)) => {
+                for owner in store.sharing_owners(account_id).await.unwrap_or_default() {
+                    if let Ok(modseq) = store.account_modseq(owner).await {
+                        pending.push(StateChange { account_id: owner, modseq });
+                    }
+                }
+                let modseq = store.account_modseq(account_id).await.unwrap_or(last_modseq);
+                return Some(StateChange { account_id, modseq });
+            }
+            Err(broadcast::error::RecvError::Closed) => return None,
+        }
     }
 }
 
@@ -198,7 +236,14 @@ async fn next_event(mut listener: Listener) -> Option<(Result<Event, Infallible>
             },
             None => listener.watcher.wait().await,
         };
-        let change = received?;
+        let change = match received? {
+            Pushed::State(change) => change,
+            Pushed::Alert(alert) => {
+                listener.jmap.inner.auth.still_valid(&listener.login).await?;
+                let data = crate::calendar_alerts::alert_json(&alert);
+                return Some((Ok(Event::default().event("calendarAlert").data(data.to_string())), listener));
+            }
+        };
         let Some((account_id, changed)) = listener.watcher.changed_by(&change).await else {
             continue;
         };

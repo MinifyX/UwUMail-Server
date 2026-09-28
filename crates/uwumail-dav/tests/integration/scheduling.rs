@@ -318,13 +318,29 @@ async fn shared_calendars_appear_in_the_home_of_those_they_are_shared_with() {
         server.send(LENI, "PUT", &format!("{shared_path}neu.ics"), &[], &event.replace("kaffee@", "neu@")).await;
     assert_eq!(refused.status, StatusCode::FORBIDDEN);
     assert!(refused.body.contains("need-privileges"));
-    let not_theirs = server
+    // The name is Leni's own; the description stays Mini's.
+    let renamed = server
         .send(
             LENI,
             "PROPPATCH",
             &shared_path,
             &[],
             r#"<propertyupdate xmlns="DAV:"><set><prop><displayname>X</displayname></prop></set></propertyupdate>"#,
+        )
+        .await;
+    assert_eq!(renamed.status, StatusCode::MULTI_STATUS, "{}", renamed.body);
+    let own = server.send(LENI, "PROPFIND", &shared_path, &[("depth", "0")], "").await;
+    assert!(own.body.contains("<d:displayname>X</d:displayname>"), "{}", own.body);
+    let owners =
+        server.send(MINI, "PROPFIND", "/dav/calendars/mini@example.org/personal/", &[("depth", "0")], "").await;
+    assert!(!owners.body.contains("<d:displayname>X</d:displayname>"), "{}", owners.body);
+    let not_theirs = server
+        .send(
+            LENI,
+            "PROPPATCH",
+            &shared_path,
+            &[],
+            r#"<propertyupdate xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><set><prop><C:calendar-description>X</C:calendar-description></prop></set></propertyupdate>"#,
         )
         .await;
     assert_eq!(not_theirs.status, StatusCode::FORBIDDEN);

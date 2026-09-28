@@ -117,6 +117,35 @@ pub fn scheduling(language: Language, kind: Kind, who: &str, title: &str, when: 
     Texts { subject: format!("{prefix}{subject_separator}{title}"), body }
 }
 
+/// The subject and text of the mail an alert with the `email` action sends: `title`, `when` and
+/// `place` describe the event (the last two may be empty).
+pub fn reminder(language: Language, title: &str, when: &str, place: &str) -> Texts {
+    use Language as L;
+    let (prefix, sentence, untitled, when_label, place_label) = match language {
+        L::De => ("Erinnerung", "Dieser Termin steht bald an:", "Termin", "Wann", "Wo"),
+        L::En => ("Reminder", "This event is coming up:", "Event", "When", "Where"),
+        L::Fr => ("Rappel", "Cet événement approche :", "Événement", "Quand", "Où"),
+        L::Nl => ("Herinnering", "Deze afspraak komt eraan:", "Afspraak", "Wanneer", "Waar"),
+        L::Ja => ("リマインダー", "まもなく次の予定です：", "予定", "日時", "場所"),
+        L::Zh => ("提醒", "此日程即将开始：", "日程", "时间", "地点"),
+    };
+    let title = if title.trim().is_empty() { untitled } else { title.trim() };
+    let separator = match language {
+        L::Ja | L::Zh => "：",
+        L::Fr => " : ",
+        _ => ": ",
+    };
+    let mut body = format!("{sentence}\n\n{title}\n");
+    if !when.is_empty() {
+        body.push_str(&format!("{when_label}{separator}{when}\n"));
+    }
+    if !place.is_empty() {
+        body.push_str(&format!("{place_label}{separator}{place}\n"));
+    }
+    let subject_separator = if matches!(language, L::Ja | L::Zh) { "：" } else { ": " };
+    Texts { subject: format!("{prefix}{subject_separator}{title}"), body }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,6 +168,11 @@ mod tests {
                 assert!(texts.body.contains("Mini") && texts.body.contains("2026-09-20 09:00"));
                 assert!(texts.body.contains("Café"));
             }
+        }
+        for language in Language::ALL {
+            let texts = reminder(language, "Kaffee", "2026-09-20 09:00", "Café");
+            assert!(texts.subject.contains("Kaffee") && texts.body.contains("2026-09-20 09:00"), "{language:?}");
+            assert!(texts.body.contains("Café"));
         }
         let texts = scheduling(Language::De, Kind::Invitation, "Mini", " ", "", "");
         assert_eq!(texts.subject, "Einladung: Termin");

@@ -2,6 +2,7 @@
 //! `target/` small and linking fast. Add new test files as modules here.
 
 mod api;
+mod calendar_features;
 mod calendar_sharing;
 mod calendars;
 mod common;

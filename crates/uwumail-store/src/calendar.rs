@@ -21,6 +21,8 @@ use crate::{DAV_RESOURCE_MAX_BYTES, Result, Store, StoreError};
 pub struct CalendarEventRecord {
     pub id: i64,
     pub calendar_id: i64,
+    /// The account the calendar belongs to: the account itself, or who shares it with it.
+    pub owner_id: i64,
     pub name: String,
     pub uid: String,
     pub etag: String,
@@ -28,6 +30,8 @@ pub struct CalendarEventRecord {
     pub starts_at: Option<i64>,
     pub ends_at: Option<i64>,
     pub modified_at: i64,
+    /// A draft (JMAP `isDraft`): nobody hears about it yet.
+    pub is_draft: bool,
 }
 
 /// A new or changed event, already checked the way CalDAV checks what clients store.
@@ -46,10 +50,13 @@ pub struct CalendarEventWrite {
     /// Keeps the CalDAV Schedule-Tag, as when the server only writes an attendee's answer into
     /// the organizer's copy (RFC 6638, 3.2.10).
     pub keep_schedule_tag: bool,
+    /// Makes the event a draft or not; `None` keeps what it is (a new event is none).
+    pub draft: Option<bool>,
+    /// Who the change is by, for the others who see the calendar.
+    pub author: crate::Author,
 }
 
-const EVENT_COLUMNS: &str =
-    "r.id, r.collection_id, r.name, r.uid, r.etag, r.content, r.starts_at, r.ends_at, r.modified_at";
+const EVENT_COLUMNS: &str = "r.id, r.collection_id, r.name, r.uid, r.etag, r.content, r.starts_at, r.ends_at, r.modified_at, c.account_id, r.draft";
 
 fn event_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CalendarEventRecord> {
     Ok(CalendarEventRecord {
@@ -62,6 +69,8 @@ fn event_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CalendarEventRecord> {
         starts_at: row.get(6)?,
         ends_at: row.get(7)?,
         modified_at: row.get(8)?,
+        owner_id: row.get(9)?,
+        is_draft: row.get(10)?,
     })
 }
 
@@ -198,7 +207,7 @@ impl Store {
         }
         let (result, modseq) = self
             .write(move |tx| {
-                let mut log = ChangeLog::new(account_id);
+                let mut log = ChangeLog::by(account_id, write.author.clone());
                 let target = writable_calendar(tx, account_id, write.calendar_id)?;
                 let other: Option<i64> = tx
                     .query_row(
@@ -229,13 +238,21 @@ impl Store {
                     if write.keep_schedule_tag {
                         tx.execute("UPDATE dav_resources SET schedule_tag = ?1 WHERE id = ?2", params![tag, id])?;
                     }
+                    if let Some(draft) = write.draft {
+                        tx.execute("UPDATE dav_resources SET draft = ?1 WHERE id = ?2", params![draft, id])?;
+                    }
                     Ok(())
                 };
                 let Some(id) = write.id else {
                     let name = new_entry_name(tx, target.id, &write.uid, "ics")?;
                     let condition = DavPrecondition { if_none_match_any: true, ..Default::default() };
                     return match put_entry(tx, &mut log, &target, &entry(name), &condition)? {
-                        (DavWriteOutcome::Created { etag }, Some(id)) => Ok(((id, etag), log.modseq())),
+                        (DavWriteOutcome::Created { etag }, Some(id)) => {
+                            if write.draft == Some(true) {
+                                tx.execute("UPDATE dav_resources SET draft = 1 WHERE id = ?1", [id])?;
+                            }
+                            Ok(((id, etag), log.modseq()))
+                        }
                         other => Err(StoreError::Internal(format!("a new event could not be stored: {other:?}"))),
                     };
                 };
@@ -268,6 +285,9 @@ impl Store {
                 // Into another calendar: the same entry under the same id, gone from the old
                 // calendar's point of view and new in the other one.
                 let etag = move_entry(tx, &mut log, id, source_id, &target, &entry(name), "ics")?;
+                if let Some(draft) = write.draft {
+                    tx.execute("UPDATE dav_resources SET draft = ?1 WHERE id = ?2", params![draft, id])?;
+                }
                 Ok(((id, etag), log.modseq()))
             })
             .await?;
@@ -301,7 +321,7 @@ impl Store {
     pub async fn destroy_calendar_event(&self, account_id: i64, id: i64, if_etag: Option<String>) -> Result<()> {
         let modseq = self
             .write(move |tx| {
-                let mut log = ChangeLog::new(account_id);
+                let mut log = ChangeLog::by(account_id, crate::Author::Account);
                 let (calendar_id, name): (i64, String) = tx
                     .query_row(
                         &format!(
@@ -360,6 +380,8 @@ mod tests {
             ends_at: None,
             if_etag: None,
             keep_schedule_tag: false,
+            draft: None,
+            author: crate::Author::Account,
         }
     }
 

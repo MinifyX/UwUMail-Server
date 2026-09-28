@@ -156,8 +156,9 @@ async fn calendars_are_shared_with_people_of_the_server() {
     let refused =
         server.call(NYU, "CalendarEvent/set", json!({ "create": { "n": event(&personal, "Nyus Termin") } })).await;
     assert_eq!(refused["notCreated"]["n"]["type"], "forbidden", "{refused}");
-    let renamed = server.call(NYU, "Calendar/set", json!({ "update": { &personal: { "name": "Meins" } } })).await;
-    assert_eq!(renamed["notUpdated"][&personal]["type"], "forbidden");
+    let described =
+        server.call(NYU, "Calendar/set", json!({ "update": { &personal: { "description": "Meins" } } })).await;
+    assert_eq!(described["notUpdated"][&personal]["type"], "forbidden", "the description is the owner's");
 
     // With writing allowed, Nyu's events land in Mini's calendar.
     server

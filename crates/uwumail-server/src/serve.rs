@@ -206,6 +206,8 @@ pub async fn run(
     tasks.spawn(jmap.clone().run_scheduled_sending(shutdown_rx.clone()));
     // Changes go out to the push subscriptions of browsers and phones (Web Push, docs/jmap-push.md).
     tasks.spawn(jmap.clone().run_web_push(shutdown_rx.clone()));
+    // Calendar alerts the server fires itself: a push to the apps or a mail (docs/jmap-calendars.md).
+    tasks.spawn(jmap.clone().run_calendar_alerts(shutdown_rx.clone()));
     let jmap = jmap.router().merge(dav.router());
     tasks.spawn(web.clone().run_health_checks(shutdown_rx.clone()));
     let setup_code = web.open_setup().await;

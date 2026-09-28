@@ -3490,7 +3490,7 @@
     "rightsHint": {
       "read": "Sees every entry but cannot change anything.",
       "write": "Can add, change and delete entries.",
-      "all": "Can also change the name and colour and share it further. Only you can delete it."
+      "all": "Can also change the description and share it further. Everyone picks their own name and colour. Only you can delete it."
     },
     "share": "Share",
     "sharedToast": "{{name}} is now shared with {{address}}",

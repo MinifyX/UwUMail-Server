@@ -1,7 +1,9 @@
 //! The properties of principals, homes, collections and entries, and the filters of calendar
 //! queries.
 
-use uwumail_store::{Account, DAV_RESOURCE_MAX_BYTES, DavAccess, DavCollection, DavKind, DavResourceInfo, ShareRights};
+use uwumail_store::{
+    Account, CalendarPrefs, DAV_RESOURCE_MAX_BYTES, DavAccess, DavCollection, DavKind, DavResourceInfo, ShareRights,
+};
 
 use crate::objects;
 use crate::xml::{self, APPLE, CALDAV, CALSERVER, CARDDAV, DAV, Element};
@@ -35,12 +37,21 @@ pub struct View {
     pub segment: String,
     pub owner_login: String,
     pub owner_name: String,
+    /// What the login keeps for itself about a calendar (default alarms and the like).
+    pub prefs: CalendarPrefs,
 }
 
 impl View {
     pub fn own(collection: DavCollection, login: &str) -> View {
         let segment = collection.slug.clone();
-        View { collection, access: DavAccess::Owner, segment, owner_login: login.to_owned(), owner_name: String::new() }
+        View {
+            collection,
+            access: DavAccess::Owner,
+            segment,
+            owner_login: login.to_owned(),
+            owner_name: String::new(),
+            prefs: CalendarPrefs::default(),
+        }
     }
 
     pub fn kind(&self) -> DavKind {
@@ -238,8 +249,13 @@ impl Target {
                 href(&collection_href(DavKind::Calendar, login, OUTBOX))
             }
             (CALDAV, "schedule-default-calendar-URL", Target::Inbox) => href(who.default_calendar.as_deref()?),
+            // Whether its events make the login busy: JMAP's includeInAvailability.
             (CALDAV, "schedule-calendar-transp", Target::Collection(v)) if v.kind() == DavKind::Calendar => {
-                "<c:opaque/>".into()
+                let counts = match v.prefs.include_in_availability.as_deref() {
+                    Some(include) => include != "none",
+                    None => v.access.is_owner() && !v.collection.subscribed,
+                };
+                if counts { "<c:opaque/>" } else { "<c:transparent/>" }.into()
             }
             (CALDAV, "calendar-free-busy-set", Target::Inbox) => String::new(),
             (DAV, "supported-report-set", Target::Collection(v)) => {
@@ -303,6 +319,13 @@ impl Target {
             (CALDAV, "calendar-timezone", Target::Collection(v)) if v.kind() == DavKind::Calendar => {
                 xml::escape(v.collection.timezone.as_deref()?)
             }
+            // The default alerts of JMAP Calendars, as Apple's calendar keeps them.
+            (CALDAV, "default-alarm-vevent-datetime", Target::Collection(v)) if v.kind() == DavKind::Calendar => {
+                default_alarms(v.prefs.default_alerts_with_time.as_deref())
+            }
+            (CALDAV, "default-alarm-vevent-date", Target::Collection(v)) if v.kind() == DavKind::Calendar => {
+                default_alarms(v.prefs.default_alerts_without_time.as_deref())
+            }
             (CALDAV, "supported-calendar-data", Target::Collection(v)) if v.kind() == DavKind::Calendar => {
                 "<c:calendar-data content-type=\"text/calendar\" version=\"2.0\"/>".into()
             }
@@ -333,6 +356,11 @@ impl Target {
             _ => return None,
         })
     }
+}
+
+/// Default alerts as the VALARMs of a default-alarm property; empty when there are none.
+fn default_alarms(alerts: Option<&str>) -> String {
+    xml::escape(&uwumail_jmap::calendar_alerts::stored_to_valarms(alerts))
 }
 
 /// One `<d:response>` with the found properties and the missing ones.

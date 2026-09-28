@@ -25,7 +25,13 @@ object), in `primaryAccounts` and in the account's `accountCapabilities`:
 }
 ```
 
-Only accounts that may use calendars get it: when an admin switches CalDAV off
+With it come `urn:ietf:params:jmap:principals:availability`
+(`{ "maxAvailabilityDuration": "P400D" }` in the account) for
+[`Principal/getAvailability`](#availability), and
+`urn:ietf:params:jmap:calendars:parse` (`{}`) for
+[`CalendarEvent/parse`](#calendareventparse).
+
+Only accounts that may use calendars get them: when an admin switches CalDAV off
 for an account (services have it off from the start), the capability is gone
 from its session and every calendar method answers
 `accountNotSupportedByMethod`.
@@ -72,13 +78,12 @@ in `myRights`; writing where it may not is `forbidden`.
 
 | Shared with rights | `myRights` |
 | --- | --- |
-| read | `mayReadFreeBusy`, `mayReadItems` |
-| read and write | also `mayWriteAll`, `mayWriteOwn`, `mayUpdatePrivate`, `mayRSVP` |
-| all | also `mayShare`: name, colour, description, time zone and `shareWith` may change |
+| read | `mayReadFreeBusy`, `mayReadItems`, `mayUpdatePrivate` |
+| read and write | also `mayWriteAll`, `mayWriteOwn`, `mayRSVP` |
+| all | also `mayShare`: the description and `shareWith` may change |
 
 `mayDelete` of a shared calendar is `true`: destroying it only leaves it, it
-stays its owner's. `isDefault` is always `false` for it, and its `isVisible`
-and `sortOrder` are the owner's and cannot change. A calendar shared with the
+stays its owner's. `isDefault` is always `false` for it. A calendar shared with the
 account has an extra property naming its owner:
 
 ```json
@@ -101,6 +106,62 @@ are rounded up to the three levels above: `mayShare` means all, any writing
 right means read and write, any other right means read. Someone who is not on
 the server is `invalidProperties` naming `shareWith`.
 
+### Per-user properties
+
+Everyone keeps their own settings of a calendar shared with them, as the draft
+says: `name`, `color`, `sortOrder`, `isVisible`, `timeZone`,
+`includeInAvailability` and the default alerts. Name, colour and time zone
+start as the owner's, the others at their defaults (`isVisible: true`,
+`sortOrder` 0, `includeInAvailability: "none"`). Changing them needs no rights
+beyond reading and never touches the owner's calendar: the owner's CalDAV
+clients and sync token see nothing of it. The CalDAV clients of the person it
+is shared with show their own name, colour, order and time zone too, and a
+`PROPPATCH` of these properties from them is kept as theirs.
+
+The per-user properties of events (`keywords`, `color`, `freeBusyStatus`,
+`useDefaultAlerts`, `alerts`, also in `recurrenceOverrides`) work the same
+way: in a calendar shared with the account they start empty, and what it sets
+is kept apart for it, whatever its rights; `updated` then shows the later of
+the owner's change and its own. The owner's per-user properties are part of
+the event and stay there, and only the account that changed its own hears
+about it. CalDAV clients of the person it is shared with see the event as the
+owner keeps it.
+
+An event the owner marks `"privacy": "private"` shows others only its times
+and the like (RFC 8984, section 4.4.3), is not found by their text searches
+and cannot be changed by them, not even their own properties of it. A
+`"secret"` one is not there for them at all.
+
+## Availability
+
+Every principal that is a person has a `urn:ietf:params:jmap:calendars`
+capability: its `calendarAddress` (`mailto:` and its login),
+`mayGetAvailability` (whether it uses calendars), `mayShareWith` and
+`accountId` (the caller's own account for the caller, else `null`, as the
+calendars shared with the caller are in its own account). `Principal/query`
+also takes `calendarAddress`, which finds a person by any of their
+addresses, never by a masked one.
+
+`Principal/getAvailability` answers when a person of the server is busy
+between `utcStart` and `utcEnd` (at most `P400D`, `tooLarge` otherwise).
+Everyone who uses calendars may ask about everyone else who does, as with
+CalDAV's free-busy lookups. What counts is what the draft says, from the
+person's point of view:
+
+- the calendars whose `includeInAvailability` is `"all"` or `"attending"`
+  for them: by default their own ones, not subscribed ones and not those
+  shared with them;
+- events that are not `secret`, not `cancelled` and whose `freeBusyStatus`
+  is `busy` (their own one for an event of a calendar shared with them), in
+  an `"attending"` calendar only those they accepted or may attend;
+- every instance of a series in the window.
+
+`busyStatus` is `tentative` for tentative events and answers, else
+`confirmed`. With `showDetails`, an event comes along (as `event`, cut to
+`eventProperties`, with `accountId` the caller's) when it is in a calendar the
+caller may read and is not `private`; all other periods are merged as the
+draft asks. A lookup that runs out of the request's time answers `rateLimit`.
+
 ## Ids
 
 | Object | Id | |
@@ -108,6 +169,7 @@ the server is `invalidProperties` naming `shareWith`.
 | Calendar | `c12` | |
 | CalendarEvent | `v34` | a stored event, a series included |
 | An instance of a series | `v34_20261027T090000` | the event id and the instance's `recurrenceId` without `-` and `:`; only from `CalendarEvent/query` with `expandRecurrences` |
+| Another single instance | `v34_20261103T090000` | the same, for the further instances of an object that holds single instances without their series (see below) |
 | ParticipantIdentity | `u5` | one per account |
 
 Instance ids never show up in `/changes`; only the stored event does.
@@ -122,12 +184,16 @@ Instance ids never show up in `/changes`; only the stored event does.
 | `isSubscribed` | always `true` |
 | `isVisible` | whether the webmail and the apps show its events; kept on the server, CalDAV does not know it |
 | `isDefault` | exactly one calendar is the default |
-| `includeInAvailability` | `"all"`, and `"none"` for a subscribed calendar, which never makes anyone busy |
-| `defaultAlertsWithTime`, `defaultAlertsWithoutTime` | always `null` |
+| `includeInAvailability` | `"all"`, `"attending"` or `"none"`: which of its events make the account busy (see [Availability](#availability)). By default `"all"` for one's own calendars and `"none"` for subscribed ones and those shared with the account. CalDAV clients see it as `schedule-calendar-transp` (`opaque` or `transparent`) and may set it there |
+| `defaultAlertsWithTime`, `defaultAlertsWithoutTime` | the alerts of events that use the defaults, see [Default alerts](#default-alerts); `null` for none |
 | `shareWith` | who else sees it; see [Shared calendars](#shared-calendars) |
 | `timeZone` | an IANA name or `null`; stored as the CalDAV `calendar-timezone` |
 | `myRights` | everything `true` for one's own calendars; `mayDelete` is `false` for the only own calendar. A subscribed calendar ([calendar-import.md](calendar-import.md)) has `mayWriteAll`, `mayWriteOwn`, `mayUpdatePrivate` and `mayRSVP` `false`: only its feed changes its events. For shared ones see above |
 | `uwuSharedBy` | the owner of a calendar shared with the account, else `null` |
+
+For a calendar shared with the account, `name`, `color`, `sortOrder`,
+`isVisible`, `timeZone`, `includeInAvailability` and the default alerts are
+its own ([Per-user properties](#per-user-properties)).
 
 `Calendar/get` and `Calendar/changes` are standard. `Calendar/set` creates,
 changes and destroys calendars with the properties above; a property with only
@@ -141,17 +207,42 @@ one possible value may be sent with that value. Also:
   the call worked; both calendars whose `isDefault` changed are reported in
   `created` or `updated`.
 
+## Default alerts
+
+`defaultAlertsWithTime` and `defaultAlertsWithoutTime` of a calendar are maps
+of at most 20 alerts that trigger relative to the event (`OffsetTrigger`, an
+`AbsoluteTrigger` is `invalidProperties`), with ids that are unique across
+the account's calendars. They are everyone's own, like the other per-user
+properties.
+
+An event with `useDefaultAlerts: true` gets the defaults of its calendar
+(those without time for an all-day event) in place of its own `alerts`. For
+one's own calendars the server writes them into the event as its VALARMs,
+each with the default alert's id, so phones ring them without knowing about
+defaults: whenever the event is stored over JMAP, and again in every such
+event of the calendar when its owner changes the defaults. What an alert keeps
+for itself stays: the time it was `acknowledged`, and alerts that snooze it
+(`relatedTo` it). CalDAV clients see an event's `useDefaultAlerts` as a
+`JSPROP` and keep it.
+
+CalDAV clients see and set the same defaults as the calendar's
+`default-alarm-vevent-datetime` and `default-alarm-vevent-date` properties
+(VALARMs), as Apple's calendar does; an alarm set there without an id gets a
+new one.
+
 ## CalendarEvent
 
 ### CalendarEvent/get
 
-Standard `/get` with the draft's `timeZone` argument (IANA, default
-`Etc/UTC`) for floating events. `recurrenceOverridesBefore`/`After` and
-`reduceParticipants` are ignored. `ids: null` works up to `maxObjectsInGet`
-events.
+Standard `/get` with the draft's arguments: `timeZone` (IANA, default
+`Etc/UTC`) for floating events, `recurrenceOverridesAfter` and
+`recurrenceOverridesBefore` (only overrides whose recurrence id lies in
+between), and `reduceParticipants` (only the owners and the account itself).
+An event with `hideAttendees` shows someone who is not one of its owners the
+same way. `ids: null` works up to `maxObjectsInGet` events.
 
 Without `properties` every stored property comes back except `iCalendar`; with
-`properties` only those. `id`, `calendarIds`, `isDraft` (always `false`),
+`properties` only those. `id`, `calendarIds`, `isDraft`,
 `isOrigin` and `baseEventId` are always there. `utcStart` and `utcEnd` are
 computed when asked for (not together with `recurrenceOverrides`). `isOrigin`
 is `true` unless `organizerCalendarAddress` names someone who is not one of
@@ -244,7 +335,7 @@ account's calendars. `null` at the top is the same as leaving a property out.
 The server fills in `@type`, a UUID `uid`, `sequence` 0, `created` and
 `updated` when they are missing and returns them in `created` together with
 `id`, `isDraft`, `isOrigin` and `baseEventId`. A `uid` that another event of
-the account already has is `alreadyExists`.
+the calendar's owner already has is `alreadyExists`, with its `existingId`.
 
 **update** is a JMAP PatchObject applied to the event's JSCalendar, which is
 then written back as iCalendar. `calendarIds` (whole, or
@@ -269,20 +360,20 @@ Checked before anything is stored (`invalidProperties` names the property):
 - `@type` is `Event`, `uid` is 1–255 bytes, there is no `method`.
 - `start` is a LocalDateTime; `start`, the end, `until` and every recurrence
   id lie between `minDateTime` and `maxDateTime`.
-- `timeZone` (also in overrides) is an exact IANA name; custom time zones are
-  not supported.
+- `timeZone` (also in overrides) is an exact IANA name or one of the event's
+  custom `timeZones` (at most 10, each with 1 to 20 yearly rules).
 - `duration` is a JSCalendar Duration without fractions (up to 100 years).
 - An event with `showWithoutTime` starts at `T00:00:00` and lasts whole days.
 - `title` is at most 1024 bytes; the whole event as iCalendar at most 1 MiB
   (`tooLarge`).
 - `recurrenceRule` is one rule with known parts (frequency, interval up to
   10 000, count up to 1 000 000 or until, byDay, byMonth, byMonthDay, …);
-  `recurrenceRules`, `excludedRecurrenceRules` and a top-level `recurrenceId`
-  are refused.
+  `recurrenceRules` and `excludedRecurrenceRules` are refused, and so is a
+  top-level `recurrenceId` next to a rule or overrides.
 - An override may not change what belongs to the series (`uid`,
   `recurrenceRule`, `privacy`, …); a series has at most 1000 changed or
   excluded instances.
-- `isDraft` may only be `false`.
+- `isDraft` may only be `true` when the event is created.
 
 Everything else in an event is kept as data, unknown properties included.
 
@@ -303,6 +394,41 @@ calendar with `isOrigin: false`, the organizer's `organizerCalendarAddress`
 and the account's participant at `participationStatus: "needs-action"`. To
 answer, patch that participant's `participationStatus` (`accepted`,
 `declined`, `tentative`) with `sendSchedulingMessages: true`.
+
+**Single instances without their series.** Someone invited to some instances
+of a series only has them without the series: VEVENTs with a
+`RECURRENCE-ID` and no rule. Such an event has its `recurrenceId` (and
+`recurrenceIdTimeZone`) and no `recurrenceRule`, as the draft has it, and a
+JMAP client may create one the same way. CalDAV keeps all instances of one
+uid in one object, so when there are several, the event's id stands for the
+earliest one and the others have the ids of instances (`v34_20261103T090000`,
+with `baseEventId` naming the event): `/get` and `/set` take them, a query
+with `expandRecurrences` lists them, and destroying one takes it out of the
+object. Destroying the event itself deletes the whole object, as it is one
+for CalDAV.
+
+**One calendar per event.** `maxCalendarsPerEvent` is 1: CalDAV keeps an
+event as one object in one calendar collection, and a second copy of it in
+another calendar would be a second object with the same uid, which phones
+would show twice and which would drift apart the first time either is
+changed. So `calendarIds` names exactly one calendar; naming more is
+`invalidProperties`. Moving an event keeps its id.
+
+**Custom time zones** (RFC 8984, section 4.7.2) come from VTIMEZONEs that
+name no zone of the IANA database (calcard maps IANA names, Windows names and
+`X-LIC-LOCATION` to IANA zones by itself). Such an event has `timeZone:
+"/<TZID>"` and the zone's rules in `timeZones`; `utcStart`, queries and
+expanded instances follow those rules. A client may define its own zone the
+same way, and it is written back as a VTIMEZONE that phones understand. The
+rules of a custom zone are yearly, with extra onsets (RDATE), as every
+VTIMEZONE in use has them.
+
+A new event with `isDraft: true` is a draft: it is stored and CalDAV clients
+see it like any other event, but no scheduling message goes out for it, over
+JMAP or CalDAV, whatever changes it. Setting `isDraft` to `false` makes it an
+event, and with `sendSchedulingMessages` its participants are then invited as
+for a new one. A draft stays one until then; an event never becomes a draft
+again (`invalidProperties`). Deleting a draft tells nobody either.
 
 ### CalendarEvent/query
 
@@ -329,16 +455,65 @@ What comes after is refused: `/get` with `serverUnavailable`, `/query` with
 `cannotCalculateOccurrences`, and each further object
 of `/set` with `rateLimit`, so a client sends the rest in a new request.
 
-`CalendarEvent/queryChanges` works as in RFC 8620 for queries without
-`expandRecurrences` (`canCalculateChanges: true`): every event that changed
-since the query state is removed, and added again at its place where it
-matches now. With `expandRecurrences` the instances are not objects of their
-own, so such a query says `canCalculateChanges: false` and `/queryChanges`
-answers `cannotCalculateChanges`.
+`CalendarEvent/queryChanges` works as in RFC 8620 (`canCalculateChanges:
+true`): every event that changed since the query state is removed, and added
+again at its place where it matches now. With `expandRecurrences` the same
+holds for instances: those a changed event has now are removed and added
+again, and those it had at the query state are removed too. For that the
+server keeps what recurring events were before each change, for 30 days, at
+most 500 changes per account and none of an event over 128 KiB; a query state
+older than what is kept, or from before 0.17, answers `cannotCalculateChanges`,
+and the client queries anew.
+
+### CalendarEvent/parse
+
+Turns blobs of iCalendar, uploads or `.ics` attachments of mail (their part
+blob ids from `Email/get`), into CalendarEvents without storing anything, the
+same way stored events are read (custom time zones and single instances
+included). Every event of a file comes back, at most 1000 per blob, and a
+blob may have up to 4 MiB. `id`, `baseEventId`, `calendarIds`, `isDraft` and
+`isOrigin` are `null`. A blob that is no iCalendar with events is in
+`notParsable`. To keep an event, create it with `CalendarEvent/set`.
+
+### CalendarEvent/copy
+
+Standard `/copy`, with one difference: every calendar the login sees, its own
+and those shared with it, is in its own account here, so `fromAccountId` is
+the account itself (another is `fromAccountNotFound`). Each `create` names
+the event (or one of its instances, which becomes an event of its own) by
+`id` and may set any property, `calendarIds` to copy it into another
+calendar. The copy keeps the uid unless the create gives another; a uid the
+calendar's owner already has is `alreadyExists` with the `existingId`, as for
+`/set`. `onSuccessDestroyOriginal` destroys the originals in a
+`CalendarEvent/set` after it. An event its owner keeps `private` cannot be
+copied by others (`forbidden`).
 
 ### CalendarEvent/changes
 
 Standard. The state is the account's change number, shared with mail.
+
+## CalendarEventNotification
+
+When someone else changes an event the account sees, it gets a
+CalendarEventNotification (id `n12`): a person it shares a calendar with, or
+who shares one with it, over JMAP or CalDAV, and scheduling that puts an
+invitation, an update, a cancellation or an answer into its calendars. The
+account's own changes leave none for itself. `changedBy` names who it was
+(`principalId` for people of this server, never by a masked address;
+`calendarAddress` and the message's `COMMENT` for scheduling), `event` is the
+event before the change (after it for `created`), `eventPatch` what changed at
+its top level, and `isDraft` whether it is a draft. For an event over 128 KiB
+the notification says who changed it, without `event` and `eventPatch`.
+
+An event its owner keeps `private` or `secret` is only news to the owner.
+Nothing is noted for a calendar filled from a subscription, for imports, or
+when the server writes default alerts into events. Each account keeps its
+newest 200 notifications for at most 30 days.
+
+`/get`, `/changes`, `/query` (filters `after`, `before`, `type`,
+`calendarEventIds`; sorted by `created`) and `/queryChanges` are standard.
+`/set` only destroys, which dismisses a notification; `create` and `update`
+are `forbidden`.
 
 ## ParticipantIdentity
 
@@ -346,23 +521,38 @@ One per account: `{ "id": "u5", "name": <display name>, "calendarAddress":
 "mailto:<login>", "isDefault": true }`. `/get` and `/changes` are standard;
 every change in `/set` is `forbidden`.
 
+## Alerts
+
+Besides handing alerts to CalDAV clients, which ring them, the server fires
+them itself (draft section 6): for each account that sees an event, from the
+alerts as that account sees them (its own ones in a calendar shared with it,
+default alerts included), at the time of the next instance each alert goes off
+for, and not again once `acknowledged` covers it. Drafts ring for nobody.
+
+- An alert with `"action": "display"` (or none) is pushed as a
+  `CalendarAlert` — `accountId`, `calendarEventId` (the stored event, never an
+  instance id), `uid`, `recurrenceId` and `alertId` — to the EventSource (as
+  the event `calendarAlert`), the WebSocket and Web Push subscriptions whose
+  types include `CalendarAlert` (or are `null`).
+- An alert with `"action": "email"` puts a short reminder mail into the
+  account's inbox, in the language it chose, from `postmaster@` its domain.
+
+The server looks every 20 seconds and rings at most 20 alerts of one event
+for one account at a time, the earliest. An alert that should have gone off more
+than an hour ago, because the server was down, is dropped rather than
+delivered late.
+
 ## Push
 
-`Calendar`, `CalendarEvent` and `ParticipantIdentity` are push types of the
-EventSource, next to the mail types.
+`Calendar`, `CalendarEvent`, `CalendarEventNotification` and
+`ParticipantIdentity` are push types of the EventSource, next to the mail
+types, and `CalendarAlert` pushes alerts (see [Alerts](#alerts)).
 
 ## Not supported
 
-- `Principal/getAvailability` (`urn:ietf:params:jmap:principals:availability`);
-  the principals themselves are those of shared folders, see above
-- Calendars in other accounts: shared calendars are part of the account they
-  are shared with
-- `CalendarEventNotification`, `CalendarEvent/copy`, `CalendarEvent/parse`
-  (`urn:ietf:params:jmap:calendars:parse`)
-- Default alerts, `useDefaultAlerts` and alerts pushed by the server; alerts
-  are stored and handed to CalDAV clients, which ring them
-- Drafts (`isDraft: true`), more than one calendar per event, custom time
-  zones, events that are single instances without their series
-- Per-user properties of shared calendars and events: colour, visibility and
-  alerts are the owner's
-- `CalendarEvent/queryChanges` for queries with `expandRecurrences`
+Nothing of the draft is left out. Where it leaves room, this server chooses
+as described above; the two choices a client notices are that calendars
+shared with the account are part of the account itself rather than of
+accounts of their owners (so `CalendarEvent/copy` copies within it), and that
+an event is in exactly one calendar (see *One calendar per event* under
+[CalendarEvent/set](#calendareventset)).

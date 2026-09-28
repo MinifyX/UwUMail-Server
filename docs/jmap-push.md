@@ -20,6 +20,9 @@ For apps that are open, the EventSource (`/jmap/eventsource`) and the WebSocket
 
 Only a `StateChange`: which account changed, which data types changed, and
 their new state strings. Never a sender, a subject or a single word of a mail.
+The one other push is a `CalendarAlert` for a subscription whose `types` are
+`null` or name `CalendarAlert`: which event's alert went off, by ids and uid
+(see [jmap-calendars.md](jmap-calendars.md#alerts)).
 
 ```json
 {

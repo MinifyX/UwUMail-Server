@@ -3,6 +3,7 @@
 mod address_book;
 mod calendar;
 mod calendar_event;
+mod calendar_notification;
 mod contact_card;
 mod copy;
 mod email;
@@ -29,8 +30,8 @@ use uwumail_store::{Account, Changes};
 use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
 use crate::session::{
-    CALENDARS, CONTACTS, CORE, MAIL, MASKED, SENDERS, SETTINGS, SIEVE, SUBMISSION, SUGGEST, VACATION, WEBMAIL,
-    WEBPUSH_VAPID, WEBSOCKET,
+    AVAILABILITY, CALENDARS, CALENDARS_PARSE, CONTACTS, CORE, MAIL, MASKED, SENDERS, SETTINGS, SIEVE, SUBMISSION,
+    SUGGEST, VACATION, WEBMAIL, WEBPUSH_VAPID, WEBSOCKET,
 };
 use crate::sharing::{self, PRINCIPALS, SharedView};
 use crate::{Inner, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, ids};
@@ -45,6 +46,8 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     SIEVE,
     WEBMAIL,
     CALENDARS,
+    AVAILABILITY,
+    CALENDARS_PARSE,
     CONTACTS,
     WEBSOCKET,
     SUGGEST,
@@ -53,8 +56,11 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     WEBPUSH_VAPID,
 ];
 
+pub(crate) use calendar_event::event_for_alerts;
+
 /// The data types of calendars and address books: only for credentials with the `dav` scope.
-const DAV_TYPES: &[&str] = &["Calendar", "CalendarEvent", "ParticipantIdentity", "AddressBook", "ContactCard"];
+const DAV_TYPES: &[&str] =
+    &["Calendar", "CalendarEvent", "CalendarEventNotification", "ParticipantIdentity", "AddressBook", "ContactCard"];
 
 /// The most suggestions one `AddressSuggestion/query` returns.
 pub const MAX_SUGGESTIONS: usize = suggest::MAX_LIMIT;
@@ -170,6 +176,8 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         return result;
     }
     let capability = match name.split('/').next().unwrap_or_default() {
+        "Principal" if name == "Principal/getAvailability" => AVAILABILITY,
+        "CalendarEvent" if name == "CalendarEvent/parse" => CALENDARS_PARSE,
         "Principal" => PRINCIPALS,
         "Core" | "PushSubscription" => CORE,
         "Mailbox" | "Email" | "Thread" | "SearchSnippet" => MAIL,
@@ -177,7 +185,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "VacationResponse" => VACATION,
         "SenderList" => SENDERS,
         "UserSettings" => SETTINGS,
-        "Calendar" | "CalendarEvent" | "ParticipantIdentity" => CALENDARS,
+        "Calendar" | "CalendarEvent" | "CalendarEventNotification" | "ParticipantIdentity" => CALENDARS,
         "AddressBook" | "ContactCard" => CONTACTS,
         "SieveScript" => SIEVE,
         "AddressSuggestion" => SUGGEST,
@@ -191,7 +199,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
     if name != "Core/echo" && !name.starts_with("PushSubscription/") {
         ctx.check_account(&args)?;
     }
-    let can = query_changes::can_calculate(name, &args);
+    let can = query_changes::can_calculate(name);
     let outputs = call(ctx, name, args).await?;
     // Every /query says whether its /queryChanges can answer.
     if name.ends_with("/query") {
@@ -222,7 +230,8 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         | "EmailSubmission/queryChanges"
         | "SieveScript/queryChanges"
         | "ContactCard/queryChanges"
-        | "CalendarEvent/queryChanges" => single(query_changes::query_changes(ctx, name, &args).await?),
+        | "CalendarEvent/queryChanges"
+        | "CalendarEventNotification/queryChanges" => single(query_changes::query_changes(ctx, name, &args).await?),
         "Email/copy" => copy::copy(ctx, &args).await,
         "Mailbox/set" => single(mailbox::set(ctx, &args).await?),
         "Thread/get" => single(thread::get(ctx, &args).await?),
@@ -260,6 +269,15 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         }
         "CalendarEvent/set" => single(calendar_event::set(ctx, &args).await?),
         "CalendarEvent/query" => single(calendar_event::query(ctx, &args).await?),
+        "CalendarEvent/parse" => single(calendar_event::parse(ctx, &args).await?),
+        "CalendarEvent/copy" => calendar_event::copy(ctx, &args).await,
+        "CalendarEventNotification/get" => single(calendar_notification::get(ctx, &args).await?),
+        "CalendarEventNotification/changes" => {
+            calendar::check_enabled(ctx)?;
+            single(changes(ctx, &args, "CalendarEventNotification", 'n').await?)
+        }
+        "CalendarEventNotification/set" => single(calendar_notification::set(ctx, &args).await?),
+        "CalendarEventNotification/query" => single(calendar_notification::query(ctx, &args).await?),
         "ParticipantIdentity/get" => single(calendar::identities_get(ctx, &args).await?),
         "ParticipantIdentity/changes" => {
             calendar::check_enabled(ctx)?;
@@ -289,6 +307,7 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "Principal/query" => single(principal::query(ctx, &args).await?),
         "Principal/changes" => single(principal::changes(ctx, &args).await?),
         "Principal/queryChanges" => Err(MethodError::kind("cannotCalculateChanges")),
+        "Principal/getAvailability" => single(principal::get_availability(ctx, &args).await?),
         "MaskedEmail/get" => single(masked::get(ctx, &args).await?),
         "MaskedEmail/changes" => single(changes(ctx, &args, "MaskedEmail", 'x').await?),
         "MaskedEmail/set" => single(masked::set(ctx, &args).await?),

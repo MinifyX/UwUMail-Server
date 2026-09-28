@@ -25,6 +25,8 @@ struct Principal {
     email: String,
     /// The account behind it, for people and shared mailboxes.
     account: Option<i64>,
+    /// Whether it uses calendars.
+    calendars: bool,
 }
 
 /// Everyone the caller may see: all people and groups, and the shared mailboxes they use.
@@ -40,6 +42,7 @@ async fn principals(ctx: &Ctx<'_>) -> MethodResult<Vec<Principal>> {
             name: if person.display_name.trim().is_empty() { person.login.clone() } else { person.display_name },
             email: person.login,
             account: Some(person.id),
+            calendars: person.calendars,
         })
         .collect();
     for group in store.groups(None).await? {
@@ -49,6 +52,7 @@ async fn principals(ctx: &Ctx<'_>) -> MethodResult<Vec<Principal>> {
             name: if group.name.trim().is_empty() { group.address.clone() } else { group.name },
             email: group.address,
             account: None,
+            calendars: false,
         });
     }
     for shared in store.shared_memberships(ctx.account.id).await? {
@@ -58,6 +62,7 @@ async fn principals(ctx: &Ctx<'_>) -> MethodResult<Vec<Principal>> {
             name: if shared.name.trim().is_empty() { shared.address.clone() } else { shared.name },
             email: shared.address,
             account: Some(shared.id),
+            calendars: false,
         });
     }
     Ok(list)
@@ -73,7 +78,22 @@ fn state(principals: &[Principal]) -> String {
     format!("{:016x}", hasher.finish())
 }
 
-fn to_json(principal: &Principal, accounts: &Map<String, Value>) -> Map<String, Value> {
+fn to_json(principal: &Principal, accounts: &Map<String, Value>, me: Option<i64>) -> Map<String, Value> {
+    // What calendars can do with it, for callers that use calendars (draft-ietf-jmap-calendars,
+    // section 2.1): whose availability may be asked for, whom calendars may be shared with.
+    let mut capabilities = Map::new();
+    if let Some(me) = me {
+        let person = principal.kind == "individual";
+        capabilities.insert(
+            session::CALENDARS.into(),
+            json!({
+                "accountId": (principal.account == Some(me)).then(|| ids::account(me)),
+                "mayGetAvailability": person && principal.calendars,
+                "mayShareWith": person && principal.account != Some(me),
+                "calendarAddress": format!("mailto:{}", principal.email),
+            }),
+        );
+    }
     let Value::Object(map) = json!({
         "id": principal.id,
         "type": principal.kind,
@@ -81,7 +101,7 @@ fn to_json(principal: &Principal, accounts: &Map<String, Value>) -> Map<String, 
         "description": null,
         "email": principal.email,
         "timeZone": null,
-        "capabilities": {},
+        "capabilities": capabilities,
         "accounts": if accounts.is_empty() { Value::Null } else { Value::Object(accounts.clone()) },
     }) else {
         unreachable!("json! of an object literal is an object")
@@ -111,6 +131,12 @@ fn accounts_of(principal: &Principal, me: i64, shared: &[(i64, String, bool)]) -
     accounts
 }
 
+/// The caller, when it uses calendars: then principals say what calendars can do with them.
+fn calendar_user(ctx: &Ctx<'_>) -> Option<i64> {
+    let me = ctx.shared.as_ref().map_or(&ctx.account, |view| &view.me);
+    (me.protocols.caldav && ctx.may_use_dav).then_some(me.id)
+}
+
 pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let principals = principals(ctx).await?;
     let shared = shared_accounts(&ctx.jmap.store, ctx.account.id).await;
@@ -123,14 +149,20 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
             continue;
         }
         found.insert(principal.id.clone());
-        list.push(pick(to_json(principal, &accounts_of(principal, ctx.account.id, &shared)), &properties));
+        let accounts = accounts_of(principal, ctx.account.id, &shared);
+        list.push(pick(to_json(principal, &accounts, calendar_user(ctx)), &properties));
     }
     let not_found: Vec<String> =
         wanted.map(|wanted| wanted.into_iter().filter(|id| !found.contains(id)).collect()).unwrap_or_default();
     Ok(json!({ "accountId": ctx.account_id(), "state": state(&principals), "list": list, "notFound": not_found }))
 }
 
-fn matches(principal: &Principal, filter: &Map<String, Value>, sharing: &[i64]) -> MethodResult<bool> {
+fn matches(
+    principal: &Principal,
+    filter: &Map<String, Value>,
+    sharing: &[i64],
+    addressed: Option<&Option<i64>>,
+) -> MethodResult<bool> {
     for (key, value) in filter {
         let text = || {
             value
@@ -148,6 +180,13 @@ fn matches(principal: &Principal, filter: &Map<String, Value>, sharing: &[i64]) 
             "type" => text()? == principal.kind,
             // Nobody here keeps a time zone on their principal.
             "timeZone" => false,
+            // Found by any of their addresses, never by a masked one.
+            "calendarAddress" => {
+                let wanted = text()?;
+                let wanted = wanted.strip_prefix("mailto:").unwrap_or(&wanted).to_owned();
+                principal.email.to_lowercase() == wanted
+                    || addressed.is_some_and(|account| account.is_some() && principal.account == *account)
+            }
             "accountIds" => {
                 let wanted: Vec<i64> = value
                     .as_array()
@@ -176,10 +215,19 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         Some(Value::Object(filter)) if !filter.contains_key("operator") => filter.clone(),
         Some(_) => return Err(MethodError::new("unsupportedFilter", "only simple filters are supported")),
     };
+    // The account an address of the calendarAddress condition leads to.
+    let addressed = match filter.get("calendarAddress").and_then(Value::as_str) {
+        Some(address) => {
+            let address = address.strip_prefix("mailto:").unwrap_or(address);
+            let masked = ctx.jmap.store.masked_delivery(address).await?.is_some();
+            Some(if masked { None } else { ctx.jmap.store.resolve_recipient(address).await? })
+        }
+        None => None,
+    };
     let mut ids = Vec::new();
     // Shared mailboxes are only looked up, never shared with.
     for principal in principals.iter().filter(|principal| principal.kind != "other") {
-        if matches(principal, &filter, &sharing)? {
+        if matches(principal, &filter, &sharing, addressed.as_ref())? {
             ids.push(principal.id.clone());
         }
     }
@@ -205,4 +253,113 @@ pub async fn changes(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         "updated": [],
         "destroyed": [],
     }))
+}
+
+// ------------------------------------------------------------------------------------------------
+// Principal/getAvailability (draft-ietf-jmap-calendars, section 2.2)
+
+/// When a person of the server is busy. Everyone who uses calendars may ask about everyone else
+/// who does, as CalDAV's free-busy lookups do; the events themselves come along only from
+/// calendars the caller may read, and never for private ones.
+pub async fn get_availability(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
+    if !ctx.may_use_dav {
+        return Err(MethodError::new("forbidden", "this sign-in is not allowed calendars (scope dav)"));
+    }
+    super::calendar::check_enabled(ctx)?;
+    let id = args.get("id").and_then(Value::as_str).ok_or_else(|| MethodError::invalid_arguments("id is required"))?;
+    let time = |key: &str| {
+        args.get(key)
+            .and_then(Value::as_str)
+            .and_then(crate::jscal::parse_utc)
+            .ok_or_else(|| MethodError::invalid_arguments(format!("{key} must be a UTCDateTime")))
+    };
+    let (start, end) = (time("utcStart")?, time("utcEnd")?);
+    if end <= start {
+        return Err(MethodError::invalid_arguments("utcEnd must be after utcStart"));
+    }
+    if end - start > crate::availability::MAX_DAYS * 86_400 {
+        return Err(MethodError::new(
+            "tooLarge",
+            format!("availability is worked out for at most {}", crate::availability::MAX_DURATION),
+        ));
+    }
+    let show_details = args.get("showDetails").and_then(Value::as_bool).unwrap_or(false);
+    let event_properties = match args.get("eventProperties") {
+        None | Some(Value::Null) => None,
+        Some(_) => Some(properties(args, "eventProperties", &[])?),
+    };
+    let principals = principals(ctx).await?;
+    let principal = principals.iter().find(|p| p.id == id).ok_or_else(|| MethodError::kind("notFound"))?;
+    let account = match (principal.kind, principal.account) {
+        ("individual", Some(account)) if principal.calendars => account,
+        _ => return Err(MethodError::new("forbidden", "this principal has no calendars to be busy in")),
+    };
+    let person = ctx.jmap.store.account_by_id(account).await?.ok_or_else(|| MethodError::kind("notFound"))?;
+    let name = ctx.jmap.smtp.tone().language.collection_names().0;
+    let default = uwumail_store::NewDavCollection::default_calendar(name);
+    let deadline = super::request_deadline(ctx);
+    let found = match crate::availability::busy(&ctx.jmap.store, &person, default, start, end, deadline).await? {
+        Ok(found) => found,
+        Err(crate::availability::OutOfTime) => {
+            return Err(MethodError::new("rateLimit", "working out this availability takes too long; ask for less"));
+        }
+    };
+    // The events come along from calendars the caller may read.
+    let readable: HashSet<i64> = if show_details {
+        super::calendar::calendars(ctx).await?.into_iter().map(|calendar| calendar.id).collect()
+    } else {
+        HashSet::new()
+    };
+    let me = ctx.account.id;
+    let mut list = Vec::new();
+    let mut hidden = Vec::new();
+    for busy in found {
+        let visible = show_details
+            && readable.contains(&busy.record.calendar_id)
+            && busy.event.get("privacy").and_then(Value::as_str).unwrap_or("public") == "public";
+        if !visible {
+            hidden.push(busy.period);
+            continue;
+        }
+        // Someone else's per-user properties stay theirs.
+        let mut event = if busy.record.owner_id == me {
+            busy.event
+        } else {
+            crate::jscal::per_user_view(&busy.event, None, std::collections::BTreeSet::new)
+        };
+        let event_id = match &busy.recurrence_id {
+            Some(rid) => ids::event_instance(busy.record.id, rid),
+            None => ids::calendar_event(busy.record.id),
+        };
+        event.remove("iCalendar");
+        event.insert("id".into(), json!(event_id));
+        event.insert("calendarIds".into(), json!({ ids::calendar(busy.record.calendar_id): true }));
+        event.insert("isDraft".into(), json!(busy.record.is_draft));
+        event.insert(
+            "baseEventId".into(),
+            json!(busy.recurrence_id.as_ref().map(|_| ids::calendar_event(busy.record.id))),
+        );
+        let event = match &event_properties {
+            Some(list) => pick(event, list),
+            None => Value::Object(event),
+        };
+        list.push(json!({
+            "utcStart": crate::jscal::format_utc(busy.period.start),
+            "utcEnd": crate::jscal::format_utc(busy.period.end),
+            "busyStatus": busy.period.status,
+            "event": event,
+            "accountId": ctx.account_id(),
+        }));
+    }
+    for period in crate::availability::merge(&hidden) {
+        list.push(json!({
+            "utcStart": crate::jscal::format_utc(period.start),
+            "utcEnd": crate::jscal::format_utc(period.end),
+            "busyStatus": period.status,
+            "event": null,
+            "accountId": null,
+        }));
+    }
+    list.sort_by(|a, b| a["utcStart"].as_str().cmp(&b["utcStart"].as_str()));
+    Ok(json!({ "accountId": ctx.account_id(), "list": list }))
 }

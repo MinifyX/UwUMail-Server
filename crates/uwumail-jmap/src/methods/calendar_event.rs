@@ -16,13 +16,15 @@ use super::calendar::{calendars, check_enabled, owns};
 use super::{
     Ctx, SetResponse, check_filter_size, check_set_size, get_ids, if_in_state, pick, query_response, request_deadline,
 };
+use crate::calendar_alerts;
 use crate::error::{MethodError, MethodResult, SetError};
 use crate::jscal::{self, Parsed};
 use crate::{MAX_OBJECTS_IN_GET, ids};
 
 /// Always part of an event returned by /get, whatever `properties` says.
 const ALWAYS: &[&str] = &["id", "calendarIds", "isDraft", "isOrigin", "baseEventId"];
-/// Properties whose change is the user's own business and does not count as a new version.
+/// Properties whose change does not count as a new version: the per-user ones and what only
+/// says where and whether the event is kept.
 const PER_USER: &[&str] = &[
     "calendarIds",
     "isDraft",
@@ -88,11 +90,17 @@ fn is_origin(event: &Map<String, Value>, own: &[String]) -> bool {
     }
 }
 
-fn decorate(object: &mut Map<String, Value>, id: String, calendar_id: i64, base: Option<i64>, own: &[String]) {
+fn decorate(
+    object: &mut Map<String, Value>,
+    id: String,
+    record: &CalendarEventRecord,
+    base: Option<i64>,
+    own: &[String],
+) {
     let origin = is_origin(object, own);
     object.insert("id".into(), json!(id));
-    object.insert("calendarIds".into(), json!({ ids::calendar(calendar_id): true }));
-    object.insert("isDraft".into(), json!(false));
+    object.insert("calendarIds".into(), json!({ ids::calendar(record.calendar_id): true }));
+    object.insert("isDraft".into(), json!(record.is_draft));
     object.insert("isOrigin".into(), json!(origin));
     object.insert("baseEventId".into(), json!(base.map(ids::calendar_event)));
 }
@@ -122,6 +130,86 @@ fn output(mut object: Map<String, Value>, properties: &Option<Vec<String>>, floa
     }
 }
 
+/// What `CalendarEvent/get` leaves out on request (draft section 5.7): overrides outside
+/// `recurrenceOverridesAfter`/`Before`, and with `reduceParticipants`, or for someone who is no
+/// owner of an event that hides its attendees, every participant but the owners and oneself.
+struct Shaping {
+    after: Option<i64>,
+    before: Option<i64>,
+    reduce: bool,
+    own: Vec<String>,
+}
+
+impl Shaping {
+    fn from(args: &Value, own: Vec<String>) -> MethodResult<Shaping> {
+        let time = |key: &str| match args.get(key) {
+            None | Some(Value::Null) => Ok(None),
+            Some(value) => value
+                .as_str()
+                .and_then(jscal::parse_utc)
+                .map(Some)
+                .ok_or_else(|| MethodError::invalid_arguments(format!("{key} must be a UTCDateTime"))),
+        };
+        Ok(Shaping {
+            after: time("recurrenceOverridesAfter")?,
+            before: time("recurrenceOverridesBefore")?,
+            reduce: args.get("reduceParticipants").and_then(Value::as_bool).unwrap_or(false),
+            own,
+        })
+    }
+
+    fn is_own(&self, participant: &Value) -> bool {
+        participant
+            .get("calendarAddress")
+            .and_then(Value::as_str)
+            .is_some_and(|address| self.own.contains(&address.to_lowercase()))
+    }
+
+    fn keeps(&self, participant: &Value) -> bool {
+        participant.get("roles").and_then(|roles| roles.get("owner")) == Some(&Value::Bool(true))
+            || self.is_own(participant)
+    }
+
+    fn apply(&self, object: &mut Map<String, Value>, floating: Tz) {
+        if self.after.is_some() || self.before.is_some() {
+            let base = object.clone();
+            if let Some(Value::Object(overrides)) = object.get_mut("recurrenceOverrides") {
+                overrides.retain(|rid, _| {
+                    let Some(local) = jscal::parse_local(rid) else { return true };
+                    let at = jscal::local_to_utc(&base, local, floating);
+                    self.after.is_none_or(|after| at >= after) && self.before.is_none_or(|before| at < before)
+                });
+            }
+        }
+        let owner = object.get("participants").and_then(Value::as_object).is_some_and(|all| {
+            all.values()
+                .any(|p| self.is_own(p) && p.get("roles").and_then(|r| r.get("owner")) == Some(&Value::Bool(true)))
+        });
+        let hidden = object.get("hideAttendees") == Some(&Value::Bool(true)) && !owner;
+        if self.reduce || hidden {
+            let reduce = |participants: &mut Value| {
+                if let Value::Object(participants) = participants {
+                    participants.retain(|_, participant| self.keeps(participant));
+                }
+            };
+            if let Some(participants) = object.get_mut("participants") {
+                reduce(participants);
+            }
+            if let Some(Value::Object(overrides)) = object.get_mut("recurrenceOverrides") {
+                for patch in overrides.values_mut().filter_map(Value::as_object_mut) {
+                    if let Some(participants) = patch.get_mut("participants") {
+                        reduce(participants);
+                    }
+                    // Single participants a patch names are left to the whole list above.
+                    patch.retain(|key, value| {
+                        !key.starts_with("participants/") || key.matches('/').count() != 1 || self.keeps(value)
+                    });
+                }
+            }
+        }
+    }
+}
+
 fn floating_zone(args: &Value) -> MethodResult<Tz> {
     match args.get("timeZone") {
         None | Some(Value::Null) => Ok(chrono_tz::UTC),
@@ -131,10 +219,105 @@ fn floating_zone(args: &Value) -> MethodResult<Tz> {
     }
 }
 
+/// What someone a calendar is shared with sees of an event its owner marked `private`
+/// (RFC 8984, section 4.4.3), besides what JMAP adds.
+const PRIVATE_PROPERTIES: &[&str] = &[
+    "@type",
+    "created",
+    "duration",
+    "excluded",
+    "freeBusyStatus",
+    "privacy",
+    "recurrenceId",
+    "recurrenceIdTimeZone",
+    "recurrenceOverrides",
+    "recurrenceRule",
+    "sequence",
+    "showWithoutTime",
+    "start",
+    "timeZone",
+    "timeZones",
+    "uid",
+    "updated",
+];
+
+fn privacy(event: &Map<String, Value>) -> &str {
+    event.get("privacy").and_then(Value::as_str).unwrap_or("public")
+}
+
+/// An event reduced to what others may see of a private one.
+fn reduce_private(event: &mut Map<String, Value>) {
+    event.retain(|key, _| PRIVATE_PROPERTIES.contains(&key.as_str()) || jscal::JMAP_PROPERTIES.contains(&key.as_str()));
+    if let Some(Value::Object(overrides)) = event.get_mut("recurrenceOverrides") {
+        for patch in overrides.values_mut().filter_map(Value::as_object_mut) {
+            patch.retain(|key, _| PRIVATE_PROPERTIES.contains(&key.split('/').next().unwrap_or_default()));
+        }
+    }
+}
+
+type Alerts = Map<String, Value>;
+
+/// Default alerts as kept by the store.
+fn alerts_of(text: &Option<String>) -> Option<Alerts> {
+    match serde_json::from_str(text.as_deref()?) {
+        Ok(Value::Object(alerts)) => Some(alerts),
+        _ => None,
+    }
+}
+
 /// A stored event, read.
 struct Loaded {
     record: CalendarEventRecord,
     parsed: Parsed,
+    /// The event is in a calendar someone else shares with the account.
+    shared: bool,
+    /// Then the account's own per-user properties of it, and when it last changed them.
+    prefs: Option<(Map<String, Value>, i64)>,
+    /// And its own default alerts of the calendar, for events with and without a time.
+    defaults: (Option<Alerts>, Option<Alerts>),
+}
+
+impl Loaded {
+    /// The event as the account sees it: in a calendar shared with it, with its own per-user
+    /// properties in place of the owner's, and only the times of an event the owner keeps private.
+    fn view(&self) -> Map<String, Value> {
+        let event = self.parsed.event();
+        if !self.shared {
+            return event.clone();
+        }
+        let prefs = self.prefs.as_ref().map(|(prefs, _)| prefs);
+        let mut view = jscal::per_user_view(event, prefs, || jscal::recurrence_ids(&self.record.content, event));
+        if let Some((_, changed)) = &self.prefs {
+            // The later of the owner's and one's own change.
+            let own = jscal::format_utc(*changed);
+            if view.get("updated").and_then(Value::as_str).and_then(jscal::parse_utc).is_none_or(|t| t < *changed) {
+                view.insert("updated".into(), json!(own));
+            }
+        }
+        let (with_time, without_time) = (self.defaults.0.as_ref(), self.defaults.1.as_ref());
+        let defaults = calendar_alerts::for_event(&view, with_time, without_time);
+        calendar_alerts::materialize(&mut view, defaults);
+        if privacy(event) == "private" {
+            reduce_private(&mut view);
+        }
+        view
+    }
+}
+
+impl Loaded {
+    /// Another single instance of an object that holds instances without their series, as the
+    /// account sees it.
+    fn other_instance(&self, rid: &str) -> Option<Map<String, Value>> {
+        let (_, index) = self.parsed.other_instances().into_iter().find(|(other, _)| other == rid)?;
+        let mut event = self.parsed.at(index)?.event().clone();
+        if self.shared {
+            event = jscal::per_user_view(&event, None, BTreeSet::new);
+            if privacy(&event) == "private" {
+                reduce_private(&mut event);
+            }
+        }
+        Some(event)
+    }
 }
 
 async fn load(ctx: &Ctx<'_>, ids: Option<Vec<i64>>) -> MethodResult<Vec<Loaded>> {
@@ -143,10 +326,32 @@ async fn load(ctx: &Ctx<'_>, ids: Option<Vec<i64>>) -> MethodResult<Vec<Loaded>>
     if all && records.len() > MAX_OBJECTS_IN_GET {
         return Err(MethodError::new("requestTooLarge", "too many events to fetch at once; ask for ids"));
     }
+    let me = ctx.account.id;
+    let shared: Vec<i64> = records.iter().filter(|record| record.owner_id != me).map(|record| record.id).collect();
+    let calendar_prefs = if shared.is_empty() { Default::default() } else { ctx.jmap.store.calendar_prefs(me).await? };
+    let mut prefs = ctx.jmap.store.calendar_event_prefs(me, shared).await?;
     run_blocking(move || {
         records
             .into_iter()
-            .filter_map(|record| Some(Loaded { parsed: jscal::from_icalendar(&record.content)?, record }))
+            .filter_map(|record| {
+                let parsed = jscal::from_icalendar(&record.content)?;
+                let shared = record.owner_id != me;
+                // A secret event is not there for anyone but the calendar's owner.
+                if shared && privacy(parsed.event()) == "secret" {
+                    return None;
+                }
+                let prefs = prefs.remove(&record.id).and_then(|prefs| match serde_json::from_str(&prefs.data) {
+                    Ok(Value::Object(data)) => Some((data, prefs.updated_at)),
+                    _ => None,
+                });
+                let defaults = match calendar_prefs.get(&record.calendar_id) {
+                    Some(own) if shared => {
+                        (alerts_of(&own.default_alerts_with_time), alerts_of(&own.default_alerts_without_time))
+                    }
+                    _ => (None, None),
+                };
+                Some(Loaded { record, parsed, shared, prefs, defaults })
+            })
             .collect()
     })
     .await
@@ -154,6 +359,25 @@ async fn load(ctx: &Ctx<'_>, ids: Option<Vec<i64>>) -> MethodResult<Vec<Loaded>>
 
 async fn run_blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> MethodResult<T> {
     tokio::task::spawn_blocking(f).await.map_err(|_| MethodError::server_fail("the calendar work failed"))
+}
+
+/// An event as the account sees it, for the alert worker: its record, the event with the
+/// account's own alerts (default alerts in), and the time zone its floating times are in.
+pub(crate) async fn event_for_alerts(
+    ctx: &Ctx<'_>,
+    id: i64,
+) -> MethodResult<Option<(CalendarEventRecord, Map<String, Value>, Tz)>> {
+    let Some(loaded) = load(ctx, Some(vec![id])).await?.pop() else { return Ok(None) };
+    let zone = calendars(ctx)
+        .await?
+        .into_iter()
+        .find(|calendar| calendar.id == loaded.record.calendar_id)
+        .and_then(|calendar| calendar.timezone)
+        .and_then(|timezone| uwumail_store::ical::timezone_id(&timezone))
+        .and_then(|name| jscal::time_zone(&name))
+        .unwrap_or(chrono_tz::UTC);
+    let view = loaded.view();
+    Ok(Some((loaded.record, view, zone)))
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -202,11 +426,13 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         }
     };
     let own = own_addresses(ctx).await?;
+    let shaping = Shaping::from(args, own.clone())?;
     let (list, not_found) = run_blocking(move || -> MethodResult<(Vec<Value>, Vec<String>)> {
         let by_id: HashMap<i64, &Loaded> = loaded.iter().map(|l| (l.record.id, l)).collect();
         let stored = |loaded: &Loaded| {
-            let mut object = loaded.parsed.event().clone();
-            decorate(&mut object, ids::calendar_event(loaded.record.id), loaded.record.calendar_id, None, &own);
+            let mut object = loaded.view();
+            shaping.apply(&mut object, floating);
+            decorate(&mut object, ids::calendar_event(loaded.record.id), &loaded.record, None, &own);
             output(object, &properties, floating)
         };
         let Some(wanted) = wanted else {
@@ -223,13 +449,20 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
             let found = match &id {
                 Some(EventId::Stored(n)) => by_id.get(n).map(|loaded| stored(loaded)),
                 Some(EventId::Instance(n, rid)) => by_id.get(n).and_then(|loaded| {
+                    // Another single instance of an object without its series.
+                    if let Some(mut object) = loaded.other_instance(rid) {
+                        shaping.apply(&mut object, floating);
+                        decorate(&mut object, text.clone(), &loaded.record, Some(*n), &own);
+                        return Some(output(object, &properties, floating));
+                    }
                     let event = loaded.parsed.event();
                     let rids = series.entry(*n).or_insert_with(|| jscal::recurrence_ids(&loaded.record.content, event));
                     if !rids.contains(rid) {
                         return None;
                     }
-                    let mut object = jscal::instance(event, rid)?;
-                    decorate(&mut object, text.clone(), loaded.record.calendar_id, Some(*n), &own);
+                    let mut object = jscal::instance(&loaded.view(), rid)?;
+                    shaping.apply(&mut object, floating);
+                    decorate(&mut object, text.clone(), &loaded.record, Some(*n), &own);
                     Some(output(object, &properties, floating))
                 }),
                 None => None,
@@ -308,7 +541,7 @@ fn apply_utc(
     };
     let zone = jscal::time_zone(&zone_name).unwrap_or(chrono_tz::UTC);
     if let Some(value) = utc_start {
-        let start = jscal::from_utc(parse(&value, "utcStart")?, zone)
+        let start = jscal::utc_to_local(event, parse(&value, "utcStart")?, zone)
             .ok_or_else(|| SetError::invalid_properties(&["utcStart"], "out of range"))?;
         event.insert("start".into(), json!(jscal::format_local(start)));
         set.push("start");
@@ -396,7 +629,9 @@ impl Writer<'_> {
         }
     }
 
-    /// Checks an event, turns it into iCalendar and stores it. Returns its id and what was stored.
+    /// Checks an event, turns it into iCalendar and stores it, making it a draft or not with
+    /// `draft`; `draft_after` says whether it is one afterwards. Returns its id and what was stored.
+    #[allow(clippy::too_many_arguments)]
     async fn store(
         &self,
         parsed: &Parsed,
@@ -405,13 +640,24 @@ impl Writer<'_> {
         calendar_id: i64,
         if_etag: Option<String>,
         old: Option<&str>,
+        (draft, draft_after): (Option<bool>, bool),
     ) -> Result<Result<(i64, String), SetError>, ()> {
         let calendar = match self.calendar(calendar_id) {
             Ok(calendar) => calendar,
             Err(err) => return Ok(Err(err)),
         };
+        // An event that uses the default alerts carries them, for CalDAV clients to ring.
+        let mut event = event.clone();
+        if event.get("useDefaultAlerts") == Some(&Value::Bool(true)) {
+            let prefs = self.ctx.jmap.store.calendar_prefs(calendar.account_id).await;
+            let prefs = prefs.ok().and_then(|mut prefs| prefs.remove(&calendar_id)).unwrap_or_default();
+            let (with_time, without_time) =
+                (alerts_of(&prefs.default_alerts_with_time), alerts_of(&prefs.default_alerts_without_time));
+            let defaults = calendar_alerts::for_event(&event, with_time.as_ref(), without_time.as_ref()).cloned();
+            calendar_alerts::materialize(&mut event, defaults.as_ref());
+        }
         // Checking and converting is work in proportion to the event: off the async threads.
-        let (parsed, event, components) = (parsed.clone(), event.clone(), calendar.components.clone());
+        let (parsed, components) = (parsed.clone(), calendar.components.clone());
         let converted = run_blocking(move || convert(&parsed, &event, &components)).await;
         let (content, checked) = match converted {
             Ok(Ok(converted)) => converted,
@@ -421,11 +667,13 @@ impl Writer<'_> {
         // One change may not send more scheduling messages than one mail may have recipients
         // (security-audit-0.16.0 PROTOCOLS-5); refused before anything is stored.
         if self.scheduling
+            && !draft_after
             && owns(self.ctx, calendar_id).await
             && let Err(refused) = self.ctx.jmap.smtp.check_schedule(&self.ctx.account, old, Some(&content)).await
         {
             return Ok(Err(SetError::invalid_properties(&["participants"], refused.to_string())));
         }
+        let uid = checked.uid.clone();
         let write = CalendarEventWrite {
             id,
             calendar_id,
@@ -435,6 +683,8 @@ impl Writer<'_> {
             ends_at: checked.ends_at,
             if_etag,
             keep_schedule_tag: false,
+            draft,
+            author: uwumail_store::Author::Account,
         };
         match self.ctx.jmap.store.put_calendar_event(self.ctx.account.id, write).await {
             Ok((id, _)) => Ok(Ok((id, content))),
@@ -443,6 +693,17 @@ impl Writer<'_> {
             Err(StoreError::QuotaExceeded) => Ok(Err(SetError::new("overQuota", "the calendar is full"))),
             Err(StoreError::NotFound(_)) if id.is_some() => Ok(Err(SetError::not_found())),
             Err(StoreError::NotFound(_)) => Ok(Err(SetError::invalid_properties(&["calendarIds"], "no such calendar"))),
+            // The event in the way, among those of the same calendar owner (RFC 8620, 5.3).
+            Err(StoreError::Rule { code: "alreadyExists", message }) => {
+                let events = self.ctx.jmap.store.calendar_events_between(self.ctx.account.id, None, None, None).await;
+                let existing = events.ok().and_then(|events| {
+                    events.into_iter().find(|e| e.uid == uid && e.owner_id == calendar.account_id && Some(e.id) != id)
+                });
+                Ok(Err(SetError {
+                    existing_id: existing.map(|e| ids::calendar_event(e.id)),
+                    ..SetError::new("alreadyExists", message)
+                }))
+            }
             Err(err) => Ok(Err(SetError::from(err))),
         }
     }
@@ -460,9 +721,11 @@ impl Writer<'_> {
             }
         }
         let calendar_id = calendar_of(self.ctx, &event.remove("calendarIds").unwrap_or(Value::Null), &self.calendars)?;
-        if event.remove("isDraft").is_some_and(|draft| draft != Value::Bool(false)) {
-            return Err(SetError::invalid_properties(&["isDraft"], "drafts are not supported"));
-        }
+        let draft = match event.remove("isDraft") {
+            None | Some(Value::Bool(false)) => false,
+            Some(Value::Bool(true)) => true,
+            Some(_) => return Err(SetError::invalid_properties(&["isDraft"], "must be true or false")),
+        };
         let mut server_set: Map<String, Value> = Map::new();
         let (utc_start, utc_end) = (event.remove("utcStart"), event.remove("utcEnd"));
         let (start_given, duration_given) = (event.contains_key("start"), event.contains_key("duration"));
@@ -496,14 +759,27 @@ impl Writer<'_> {
         event.insert("updated".into(), json!(now));
         server_set.insert("created".into(), created);
         server_set.insert("updated".into(), json!(now));
+        // In someone else's calendar, what is per user stays the account's own.
+        let shared = self.calendar(calendar_id)?.account_id != self.ctx.account.id;
+        let (event, prefs) = if shared { jscal::split_per_user(&event, &Map::new()) } else { (event, Map::new()) };
         let parsed = Parsed::new_event();
-        let (id, content) = match self.store(&parsed, &event, None, calendar_id, None, None).await {
+        let (id, content) = match self.store(&parsed, &event, None, calendar_id, None, None, (Some(draft), draft)).await
+        {
             Ok(result) => result?,
             Err(()) => return Err(SetError::new("serverFail", "the event could not be stored")),
         };
-        self.schedule(calendar_id, None, Some(&content)).await;
+        if !prefs.is_empty() {
+            let data = Some(Value::Object(prefs).to_string());
+            if let Err(err) = self.ctx.jmap.store.set_calendar_event_prefs(self.ctx.account.id, id, data).await {
+                tracing::warn!(%err, "one's own properties of a new event could not be kept");
+            }
+        }
+        // Nobody hears about a draft.
+        if !draft {
+            self.schedule(calendar_id, None, Some(&content)).await;
+        }
         server_set.insert("id".into(), json!(ids::calendar_event(id)));
-        server_set.insert("isDraft".into(), json!(false));
+        server_set.insert("isDraft".into(), json!(draft));
         server_set.insert("isOrigin".into(), json!(is_origin(&event, &self.own)));
         server_set.insert("baseEventId".into(), Value::Null);
         Ok((id, server_set))
@@ -517,11 +793,11 @@ impl Writer<'_> {
         }
         for _ in 0..WRITE_ATTEMPTS {
             let loaded = self.load_one(id).await?;
-            let base = loaded.parsed.event();
-            let mut event = base.clone();
+            let mut event = loaded.view();
             let mut calendars: BTreeSet<i64> = BTreeSet::from([loaded.record.calendar_id]);
             let (mut utc_start, mut utc_end) = (None, None);
             let mut new_version = false;
+            let mut publish = false;
             for (path, value) in patch {
                 let tokens = jscal::pointer_tokens(path)
                     .ok_or_else(|| SetError::new("invalidPatch", format!("{path} is not a pointer")))?;
@@ -545,8 +821,17 @@ impl Writer<'_> {
                             _ => return Err(SetError::invalid_properties(&["calendarIds"], "values must be true")),
                         }
                     }
-                    "isDraft" if tokens.len() == 1 && matches!(value, Value::Bool(false) | Value::Null) => {}
-                    "uid" | "@type" if tokens.len() == 1 && base.get(top) == Some(value) => {}
+                    // A draft may become an event, never the other way round.
+                    "isDraft" if tokens.len() == 1 && value == &Value::Bool(loaded.record.is_draft) => {}
+                    "isDraft" if tokens.len() == 1 && value == &Value::Bool(false) => publish = true,
+                    "isDraft" if tokens.len() == 1 && value == &Value::Bool(true) => {
+                        return Err(SetError::invalid_properties(&["isDraft"], "only a new event can be a draft"));
+                    }
+                    "uid" | "@type" | "recurrenceId" | "recurrenceIdTimeZone"
+                        if tokens.len() == 1 && event.get(top).unwrap_or(&Value::Null) == value => {}
+                    "recurrenceId" | "recurrenceIdTimeZone" => {
+                        return Err(SetError::invalid_properties(&[top], "cannot be changed"));
+                    }
                     "utcStart" if tokens.len() == 1 => utc_start = Some(value.clone()),
                     "utcEnd" if tokens.len() == 1 => utc_end = Some(value.clone()),
                     "id" | "baseEventId" | "isOrigin" | "isDraft" | "uid" | "@type" | "calendarIds" | "utcStart"
@@ -571,41 +856,103 @@ impl Writer<'_> {
             {
                 server_set.insert(property.into(), event[property].clone());
             }
-            let current = base.get("sequence").and_then(Value::as_u64).unwrap_or(0);
             let asked = patch.get("sequence").and_then(Value::as_u64);
-            if new_version && asked.is_none_or(|asked| asked <= current) {
-                event.insert("sequence".into(), json!(current + 1));
-                server_set.insert("sequence".into(), json!(current + 1));
-            }
-            if is_origin(&event, &self.own) {
-                let now = json!(jscal::format_utc(jscal::now()));
-                event.insert("updated".into(), now.clone());
-                server_set.insert("updated".into(), now);
-            }
-            match self
-                .store(
-                    &loaded.parsed,
-                    &event,
-                    Some(id),
-                    calendar_id,
-                    Some(loaded.record.etag.clone()),
-                    Some(&loaded.record.content),
-                )
-                .await
-            {
-                Ok(result) => {
-                    let (_, content) = result?;
-                    self.schedule(calendar_id, Some(&loaded.record.content), Some(&content)).await;
-                    return Ok(Value::Object(server_set));
-                }
-                Err(()) => continue,
+            if let Some(set) = self.commit(&loaded, event, calendar_id, new_version, asked, publish).await? {
+                server_set.extend(set);
+                return Ok(Value::Object(server_set));
             }
         }
         Err(SetError::new("serverFail", "the event keeps changing; try again"))
     }
 
-    /// Changes one instance of a series: the change becomes an override of the series.
-    async fn update_instance(&self, id: i64, rid: &str, patch: &Map<String, Value>) -> Result<(), SetError> {
+    /// Stores what a change made of an event the account sees as `event`: the owner's part as
+    /// iCalendar, with a new `sequence` for a `new_version` and `updated` where the account is the
+    /// origin; in someone else's calendar the account's own per-user properties apart. Returns
+    /// what the server set, or `None` when CalDAV changed the event meanwhile.
+    async fn commit(
+        &self,
+        loaded: &Loaded,
+        event: Map<String, Value>,
+        calendar_id: i64,
+        new_version: bool,
+        asked_sequence: Option<u64>,
+        publish: bool,
+    ) -> Result<Option<Map<String, Value>>, SetError> {
+        let owner = loaded.parsed.event();
+        let (mut stored, prefs) = if loaded.shared {
+            // Not even one's own properties of an event the owner keeps private.
+            if privacy(owner) == "private" {
+                return Err(SetError::new("forbidden", "the owner keeps this event private"));
+            }
+            let (mut stored, prefs) = jscal::split_per_user(&event, owner);
+            match owner.get("updated") {
+                Some(updated) => stored.insert("updated".into(), updated.clone()),
+                None => stored.remove("updated"),
+            };
+            (stored, Some(prefs))
+        } else {
+            (event, None)
+        };
+        let mut server_set = Map::new();
+        let owner_changed = !loaded.shared || publish || stored != *owner || calendar_id != loaded.record.calendar_id;
+        let draft_after = loaded.record.is_draft && !publish;
+        if owner_changed {
+            let current = owner.get("sequence").and_then(Value::as_u64).unwrap_or(0);
+            if new_version && asked_sequence.is_none_or(|asked| asked <= current) {
+                stored.insert("sequence".into(), json!(current + 1));
+                server_set.insert("sequence".into(), json!(current + 1));
+            }
+            if is_origin(&stored, &self.own) {
+                let now = json!(jscal::format_utc(jscal::now()));
+                stored.insert("updated".into(), now.clone());
+                server_set.insert("updated".into(), now);
+            }
+            // A draft that becomes an event is new to everyone in it.
+            let etag = Some(loaded.record.etag.clone());
+            let old = (!publish).then_some(loaded.record.content.as_str());
+            let draft = (publish.then_some(false), draft_after);
+            match self.store(&loaded.parsed, &stored, Some(loaded.record.id), calendar_id, etag, old, draft).await {
+                Ok(result) => {
+                    let (_, content) = result?;
+                    if !draft_after {
+                        self.schedule(calendar_id, old, Some(&content)).await;
+                    }
+                }
+                Err(()) => return Ok(None),
+            }
+        }
+        if publish {
+            server_set.insert("isDraft".into(), json!(false));
+        }
+        if let Some(prefs) = prefs {
+            let current = loaded.prefs.as_ref().map(|(prefs, _)| prefs.clone()).unwrap_or_default();
+            if prefs != current {
+                let data = (!prefs.is_empty()).then(|| Value::Object(prefs).to_string());
+                self.ctx
+                    .jmap
+                    .store
+                    .set_calendar_event_prefs(self.ctx.account.id, loaded.record.id, data)
+                    .await
+                    .map_err(|err| match err {
+                        StoreError::QuotaExceeded => {
+                            SetError::new("tooLarge", "your own properties of this event are too large")
+                        }
+                        other => SetError::from(other),
+                    })?;
+                if !owner_changed {
+                    server_set.insert("updated".into(), json!(jscal::format_utc(jscal::now())));
+                }
+            }
+        }
+        Ok(Some(server_set))
+    }
+
+    /// Changes one instance of a series: the change becomes an override of the series. Another
+    /// single instance of an object without its series is changed as it is.
+    async fn update_instance(&self, id: i64, rid: &str, patch: &Map<String, Value>) -> Result<Value, SetError> {
+        if let Some(result) = self.update_other_instance(id, rid, patch).await {
+            return result;
+        }
         for (path, value) in patch {
             let top = path.split('/').next().unwrap_or_default();
             let allowed = match top {
@@ -648,6 +995,99 @@ impl Writer<'_> {
             Ok((Value::Object(own), new_version))
         })
         .await
+        .map(|()| Value::Null)
+    }
+
+    /// Applies a patch to another single instance of an object that holds instances without their
+    /// series; `None` when `rid` is none of them.
+    async fn update_other_instance(
+        &self,
+        id: i64,
+        rid: &str,
+        patch: &Map<String, Value>,
+    ) -> Option<Result<Value, SetError>> {
+        for _ in 0..WRITE_ATTEMPTS {
+            let loaded = match self.load_one(id).await {
+                Ok(loaded) => loaded,
+                Err(err) => return Some(Err(err)),
+            };
+            let (_, index) = loaded.parsed.other_instances().into_iter().find(|(other, _)| other == rid)?;
+            let result = async {
+                let parsed = loaded.parsed.at(index).ok_or_else(SetError::not_found)?;
+                let mut event = parsed.event().clone();
+                let mut new_version = false;
+                for (path, value) in patch {
+                    let top = path.split('/').next().unwrap_or_default();
+                    match top {
+                        "isDraft" if value == &Value::Bool(loaded.record.is_draft) || value.is_null() => {}
+                        "id"
+                        | "baseEventId"
+                        | "isOrigin"
+                        | "isDraft"
+                        | "calendarIds"
+                        | "uid"
+                        | "@type"
+                        | "recurrenceId"
+                        | "recurrenceIdTimeZone"
+                        | "utcStart"
+                        | "utcEnd" => {
+                            return Err(SetError::invalid_properties(&[top], "cannot be changed for one instance"));
+                        }
+                        _ => {
+                            jscal::apply_patch(&mut event, path, value.clone())
+                                .map_err(|message| SetError::new("invalidPatch", message))?;
+                            new_version |= !PER_USER.contains(&top);
+                        }
+                    }
+                }
+                if loaded.shared && privacy(parsed.event()) == "private" {
+                    return Err(SetError::new("forbidden", "the owner keeps this event private"));
+                }
+                // Written as it is: one's own properties are kept apart for the main instance only.
+                let instance = Loaded { parsed, shared: false, prefs: None, defaults: (None, None), ..loaded };
+                let calendar_id = instance.record.calendar_id;
+                self.commit(
+                    &instance,
+                    event,
+                    calendar_id,
+                    new_version,
+                    patch.get("sequence").and_then(Value::as_u64),
+                    false,
+                )
+                .await
+            }
+            .await;
+            match result {
+                Ok(Some(set)) => return Some(Ok(if set.is_empty() { Value::Null } else { Value::Object(set) })),
+                Ok(None) => continue,
+                Err(err) => return Some(Err(err)),
+            }
+        }
+        Some(Err(SetError::new("serverFail", "the event keeps changing; try again")))
+    }
+
+    /// Takes another single instance out of an object without its series; the object goes with
+    /// its last one. `None` when `rid` is none of them.
+    async fn destroy_other_instance(&self, id: i64, rid: &str) -> Option<Result<(), SetError>> {
+        for _ in 0..WRITE_ATTEMPTS {
+            let loaded = match self.load_one(id).await {
+                Ok(loaded) => loaded,
+                Err(err) => return Some(Err(err)),
+            };
+            let (_, index) = loaded.parsed.other_instances().into_iter().find(|(other, _)| other == rid)?;
+            let Some(rest) = loaded.parsed.at(index).and_then(|parsed| parsed.without_event()) else {
+                return Some(Err(SetError::not_found()));
+            };
+            let event = rest.event().clone();
+            let instance = Loaded { parsed: rest, shared: false, prefs: None, defaults: (None, None), ..loaded };
+            let calendar_id = instance.record.calendar_id;
+            match self.commit(&instance, event, calendar_id, true, None, false).await {
+                Ok(Some(_)) => return Some(Ok(())),
+                Ok(None) => continue,
+                Err(err) => return Some(Err(err)),
+            }
+        }
+        Some(Err(SetError::new("serverFail", "the event keeps changing; try again")))
     }
 
     /// Takes one instance out of a series (an EXDATE for CalDAV clients).
@@ -664,39 +1104,26 @@ impl Writer<'_> {
     ) -> Result<(), SetError> {
         for _ in 0..WRITE_ATTEMPTS {
             let loaded = self.load_one(id).await?;
-            let base = loaded.parsed.event();
+            let base = loaded.view();
             let content = loaded.record.content.clone();
-            let series = base.clone();
+            let series = loaded.parsed.event().clone();
             let rids = run_blocking(move || jscal::recurrence_ids(&content, &series))
                 .await
                 .map_err(|_| SetError::new("serverFail", "expansion failed"))?;
             if !rids.contains(rid) {
                 return Err(SetError::not_found());
             }
-            let instance = jscal::instance(base, rid).ok_or_else(SetError::not_found)?;
-            let (patch, new_version) = change(base, &instance)?;
+            let instance = jscal::instance(&base, rid).ok_or_else(SetError::not_found)?;
+            let (patch, new_version) = change(&base, &instance)?;
             let mut event = base.clone();
             let overrides = event.entry("recurrenceOverrides").or_insert_with(|| json!({}));
             if !overrides.is_object() {
                 *overrides = json!({});
             }
             overrides[rid] = patch;
-            let current = base.get("sequence").and_then(Value::as_u64).unwrap_or(0);
-            if new_version {
-                event.insert("sequence".into(), json!(current + 1));
-            }
-            if is_origin(&event, &self.own) {
-                event.insert("updated".into(), json!(jscal::format_utc(jscal::now())));
-            }
-            let etag = Some(loaded.record.etag.clone());
             let calendar_id = loaded.record.calendar_id;
-            match self.store(&loaded.parsed, &event, Some(id), calendar_id, etag, Some(&loaded.record.content)).await {
-                Ok(result) => {
-                    let (_, content) = result?;
-                    self.schedule(calendar_id, Some(&loaded.record.content), Some(&content)).await;
-                    return Ok(());
-                }
-                Err(()) => continue,
+            if self.commit(&loaded, event, calendar_id, new_version, None, false).await?.is_some() {
+                return Ok(());
             }
         }
         Err(SetError::new("serverFail", "the event keeps changing; try again"))
@@ -756,9 +1183,7 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                     patch.as_object().ok_or_else(|| SetError::new("invalidPatch", "the patch must be an object"))?;
                 match EventId::parse(ctx, id) {
                     Some(EventId::Stored(n)) => writer.update_stored(n, patch).await,
-                    Some(EventId::Instance(n, rid)) => {
-                        writer.update_instance(n, &rid, patch).await.map(|()| Value::Null)
-                    }
+                    Some(EventId::Instance(n, rid)) => writer.update_instance(n, &rid, patch).await,
                     None => Err(SetError::not_found()),
                 }
             }
@@ -786,13 +1211,16 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                     let destroyed =
                         ctx.jmap.store.destroy_calendar_event(ctx.account.id, n, None).await.map_err(SetError::from);
                     if destroyed.is_ok()
-                        && let Some(old) = old
+                        && let Some(old) = old.filter(|old| !old.record.is_draft)
                     {
                         writer.schedule(old.record.calendar_id, Some(&old.record.content), None).await;
                     }
                     destroyed
                 }
-                Ok(Some(EventId::Instance(n, rid))) => writer.destroy_instance(n, &rid).await,
+                Ok(Some(EventId::Instance(n, rid))) => match writer.destroy_other_instance(n, &rid).await {
+                    Some(result) => result,
+                    None => writer.destroy_instance(n, &rid).await,
+                },
                 Ok(None) => Err(SetError::not_found()),
             };
             match result {
@@ -1039,6 +1467,16 @@ impl Evaluator {
                 return Ok(false);
             }
         }
+        // What others may not read of a private event is not searched for them either.
+        let reduced;
+        let event = if loaded.shared && privacy(event) == "private" {
+            let mut copy = event.clone();
+            reduce_private(&mut copy);
+            reduced = copy;
+            &reduced
+        } else {
+            event
+        };
         if text_matches(condition, event) {
             return Ok(true);
         }
@@ -1060,7 +1498,7 @@ impl Evaluator {
             id,
             start,
             uid: text("uid"),
-            recurrence_id: recurrence_id.unwrap_or_default().to_owned(),
+            recurrence_id: recurrence_id.map_or_else(|| text("recurrenceId"), str::to_owned),
             created: text("created"),
             updated: text("updated"),
         }
@@ -1083,7 +1521,23 @@ impl Evaluator {
     fn expanded_hits(&self, condition: &Condition, loaded: &Loaded) -> MethodResult<Vec<Hit>> {
         let event = loaded.parsed.event();
         if !jscal::is_recurring(event) {
-            return self.stored_hits(&Some(Filter::Condition(condition.clone())), loaded);
+            let mut hits = self.stored_hits(&Some(Filter::Condition(condition.clone())), loaded)?;
+            // The other single instances of an object without its series.
+            for (rid, index) in loaded.parsed.other_instances() {
+                let Some(parsed) = loaded.parsed.at(index) else { continue };
+                let other = Loaded {
+                    parsed,
+                    shared: loaded.shared,
+                    prefs: None,
+                    defaults: (None, None),
+                    record: loaded.record.clone(),
+                };
+                for hit in self.stored_hits(&Some(Filter::Condition(condition.clone())), &other)? {
+                    let id = ids::event_instance(loaded.record.id, &rid);
+                    hits.push(Hit { id, recurrence_id: rid.clone(), ..hit });
+                }
+            }
+            return Ok(hits);
         }
         if let Some(calendar) = condition.calendar
             && calendar != Some(loaded.record.calendar_id)
@@ -1101,13 +1555,59 @@ impl Evaluator {
             if !jscal::overlaps(start, end, condition.after, condition.before) {
                 continue;
             }
-            let Some(instance) = jscal::instance(event, &rid) else { continue };
+            let Some(mut instance) = jscal::instance(event, &rid) else { continue };
+            if loaded.shared && privacy(event) == "private" {
+                reduce_private(&mut instance);
+            }
             if text_matches(condition, &instance) {
                 hits.push(self.hit(ids::event_instance(loaded.record.id, &rid), &instance, Some(&rid), start));
             }
         }
         Ok(hits)
     }
+}
+
+/// The instance ids a query that expands recurrences (`args`) finds in events as they were
+/// (`old`, by event id), for /queryChanges. Their calendar is not looked at: what the client
+/// never had it ignores.
+pub(super) async fn expanded_ids_of(ctx: &Ctx<'_>, args: &Value, old: Vec<(i64, String)>) -> MethodResult<Vec<String>> {
+    if old.is_empty() {
+        return Ok(Vec::new());
+    }
+    let floating = floating_zone(args)?;
+    let Some(Filter::Condition(mut condition)) =
+        args.get("filter").filter(|f| !f.is_null()).map(|f| parse_filter(ctx, f, floating)).transpose()?
+    else {
+        return Err(MethodError::invalid_arguments("expandRecurrences needs a filter condition with after and before"));
+    };
+    condition.calendar = None;
+    let deadline = (Instant::now() + QUERY_TIME_LIMIT).min(request_deadline(ctx));
+    let evaluator = Evaluator { floating, deadline };
+    let me = ctx.account.id;
+    run_blocking(move || -> MethodResult<Vec<String>> {
+        let mut ids = Vec::new();
+        for (id, content) in old {
+            evaluator.check_time()?;
+            let Some(parsed) = jscal::from_icalendar(&content) else { continue };
+            let record = CalendarEventRecord {
+                id,
+                calendar_id: 0,
+                owner_id: me,
+                name: String::new(),
+                uid: String::new(),
+                etag: String::new(),
+                content,
+                starts_at: None,
+                ends_at: None,
+                modified_at: 0,
+                is_draft: false,
+            };
+            let loaded = Loaded { record, parsed, shared: false, prefs: None, defaults: (None, None) };
+            ids.extend(evaluator.expanded_hits(&condition, &loaded)?.into_iter().map(|hit| hit.id));
+        }
+        Ok(ids)
+    })
+    .await?
 }
 
 pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
@@ -1169,12 +1669,18 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     // A query's own limit, within what is left of the request's.
     let deadline = (Instant::now() + QUERY_TIME_LIMIT).min(request_deadline(ctx));
     let evaluator = Evaluator { floating, deadline };
+    let me = ctx.account.id;
     let mut hits = run_blocking(move || -> MethodResult<Vec<Hit>> {
         let mut hits = Vec::new();
         for record in records {
             evaluator.check_time()?;
             let Some(parsed) = jscal::from_icalendar(&record.content) else { continue };
-            let loaded = Loaded { record, parsed };
+            let shared = record.owner_id != me;
+            // A secret event is not there for anyone but the calendar's owner.
+            if shared && privacy(parsed.event()) == "secret" {
+                continue;
+            }
+            let loaded = Loaded { record, parsed, shared, prefs: None, defaults: (None, None) };
             match &expanded {
                 Some(condition) => hits.extend(evaluator.expanded_hits(condition, &loaded)?),
                 None => hits.extend(evaluator.stored_hits(&filter, &loaded)?),
@@ -1202,4 +1708,203 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     });
     let ids = hits.into_iter().map(|hit| hit.id).collect();
     query_response(ctx, args, state, ids, MAX_QUERY_LIMIT)
+}
+
+// ------------------------------------------------------------------------------------------------
+// CalendarEvent/parse
+
+/// The largest iCalendar file one blob may be, and the events read from it.
+const MAX_PARSE_BYTES: usize = 4 * 1024 * 1024;
+const MAX_PARSED_EVENTS: usize = 1000;
+
+/// Turns blobs (uploads, attachments of mail) of iCalendar into CalendarEvents, without storing
+/// anything.
+pub async fn parse(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
+    check_enabled(ctx)?;
+    let blob_ids: Vec<String> = args
+        .get("blobIds")
+        .and_then(Value::as_array)
+        .ok_or_else(|| MethodError::invalid_arguments("blobIds is required"))?
+        .iter()
+        .filter_map(|v| v.as_str().map(str::to_owned))
+        .collect();
+    if blob_ids.len() > MAX_OBJECTS_IN_GET {
+        return Err(MethodError::kind("requestTooLarge"));
+    }
+    let properties = match args.get("properties") {
+        None | Some(Value::Null) => None,
+        Some(_) => Some(super::properties(args, "properties", &[])?),
+    };
+    let deadline = request_deadline(ctx);
+    let (mut parsed, mut not_parsable, mut not_found) = (Map::new(), Vec::new(), Vec::new());
+    for blob_id in blob_ids {
+        if Instant::now() > deadline {
+            return Err(out_of_time());
+        }
+        let Some(raw) = super::email::read_blob(ctx, &blob_id).await else {
+            not_found.push(blob_id);
+            continue;
+        };
+        let events = run_blocking(move || {
+            let text = String::from_utf8(raw).ok().filter(|text| text.len() <= MAX_PARSE_BYTES)?;
+            jscal::events_of(&text, MAX_PARSED_EVENTS).filter(|events| !events.is_empty())
+        })
+        .await?;
+        let Some(events) = events else {
+            not_parsable.push(blob_id);
+            continue;
+        };
+        let list: Vec<Value> = events
+            .into_iter()
+            .map(|mut event| {
+                event.remove("iCalendar");
+                // What only a stored event has.
+                for property in ["id", "baseEventId", "calendarIds", "isDraft", "isOrigin"] {
+                    event.insert(property.into(), Value::Null);
+                }
+                match &properties {
+                    Some(list) => pick(event, list),
+                    None => Value::Object(event),
+                }
+            })
+            .collect();
+        parsed.insert(blob_id, Value::Array(list));
+    }
+    let or_null = |list: Vec<String>| if list.is_empty() { Value::Null } else { json!(list) };
+    Ok(json!({
+        "accountId": ctx.account_id(),
+        "parsed": if parsed.is_empty() { Value::Null } else { Value::Object(parsed) },
+        "notParsable": or_null(not_parsable),
+        "notFound": or_null(not_found),
+    }))
+}
+
+// ------------------------------------------------------------------------------------------------
+// CalendarEvent/copy
+
+/// What only the stored event has, or only its place in the account.
+const NOT_COPIED: &[&str] = &["id", "baseEventId", "isOrigin", "utcStart", "utcEnd", "iCalendar"];
+
+/// Copies events into a calendar as new ones (RFC 8620, section 5.4). Every calendar the login
+/// sees, its own and those shared with it, is in its own account here, so events are copied
+/// within it: `fromAccountId` is the account itself. The copy keeps the uid unless the create
+/// gives another, and one that the calendar's owner already has is `alreadyExists`.
+pub async fn copy(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<super::Outputs> {
+    check_enabled(ctx)?;
+    let from = args
+        .get("fromAccountId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| MethodError::invalid_arguments("fromAccountId is required"))?;
+    if from != ctx.account_id() {
+        return Err(MethodError::kind("fromAccountNotFound"));
+    }
+    let create = match args.get("create") {
+        Some(Value::Object(create)) => create.clone(),
+        _ => return Err(MethodError::invalid_arguments("create must be an object")),
+    };
+    check_set_size(args)?;
+    let old_state = ctx.state().await?;
+    if let Some(expected) = args.get("ifFromInState").and_then(Value::as_str)
+        && expected != old_state
+    {
+        return Err(MethodError::kind("stateMismatch"));
+    }
+    if_in_state(args, &old_state)?;
+    let calendars = calendars(ctx).await?;
+    let own = own_addresses(ctx).await?;
+    let deadline = request_deadline(ctx);
+    let (mut created, mut not_created, mut copied) = (Map::new(), Map::new(), Vec::new());
+    let mut created_ids = Vec::new();
+    {
+        let writer = Writer { calendars, own, scheduling: false, deadline, ctx };
+        for (creation_id, object) in &create {
+            let result = async {
+                writer.in_time()?;
+                let object =
+                    object.as_object().ok_or_else(|| SetError::new("invalidProperties", "must be an object"))?;
+                let source = object
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| SetError::invalid_properties(&["id"], "the event to copy"))?;
+                let parsed = EventId::parse(ctx, source).ok_or_else(SetError::not_found)?;
+                let loaded = writer.load_one(parsed.base()).await?;
+                // Others do not get the whole of what the owner keeps private.
+                if loaded.shared && privacy(loaded.parsed.event()) == "private" {
+                    return Err(SetError::new("forbidden", "the owner keeps this event private"));
+                }
+                let mut event = match &parsed {
+                    EventId::Stored(_) => loaded.view(),
+                    EventId::Instance(_, rid) => {
+                        // An instance becomes an event of its own.
+                        let mut instance = match loaded.other_instance(rid) {
+                            Some(instance) => instance,
+                            None => {
+                                let (content, series) = (loaded.record.content.clone(), loaded.parsed.event().clone());
+                                let rids = run_blocking(move || jscal::recurrence_ids(&content, &series))
+                                    .await
+                                    .map_err(|_| SetError::new("serverFail", "expansion failed"))?;
+                                if !rids.contains(rid) {
+                                    return Err(SetError::not_found());
+                                }
+                                jscal::instance(&loaded.view(), rid).ok_or_else(SetError::not_found)?
+                            }
+                        };
+                        for property in
+                            ["recurrenceId", "recurrenceIdTimeZone", "recurrenceRule", "recurrenceOverrides"]
+                        {
+                            instance.remove(property);
+                        }
+                        instance
+                    }
+                };
+                for property in NOT_COPIED {
+                    event.remove(*property);
+                }
+                event.insert("calendarIds".into(), json!({ ids::calendar(loaded.record.calendar_id): true }));
+                event.insert("isDraft".into(), json!(loaded.record.is_draft));
+                for (key, value) in object.iter().filter(|(key, _)| key.as_str() != "id") {
+                    event.insert(key.clone(), value.clone());
+                }
+                let (id, mut server_set) = writer.create(&Value::Object(event)).await?;
+                server_set.insert("id".into(), json!(ids::calendar_event(id)));
+                Ok((id, server_set, source.to_owned()))
+            }
+            .await;
+            match result {
+                Ok((id, server_set, source)) => {
+                    created_ids.push((creation_id.clone(), ids::calendar_event(id)));
+                    created.insert(creation_id.clone(), Value::Object(server_set));
+                    copied.push(source);
+                }
+                Err(err) => {
+                    not_created.insert(creation_id.clone(), err.to_json());
+                }
+            }
+        }
+    }
+    ctx.created_ids.extend(created_ids);
+    let new_state = ctx.state().await?;
+    let or_null = |map: Map<String, Value>| if map.is_empty() { Value::Null } else { Value::Object(map) };
+    let mut outputs = vec![(
+        "CalendarEvent/copy".to_owned(),
+        json!({
+            "fromAccountId": from,
+            "accountId": ctx.account_id(),
+            "oldState": old_state,
+            "newState": new_state,
+            "created": or_null(created),
+            "notCreated": or_null(not_created),
+        }),
+    )];
+    if args.get("onSuccessDestroyOriginal").and_then(Value::as_bool).unwrap_or(false) && !copied.is_empty() {
+        let mut destroy = json!({ "accountId": from, "destroy": copied });
+        if let Some(expected) = args.get("destroyFromIfInState").filter(|value| !value.is_null()) {
+            destroy["ifInState"] = expected.clone();
+        }
+        match set(ctx, &destroy).await {
+            Ok(response) => outputs.push(("CalendarEvent/set".to_owned(), response)),
+            Err(err) => outputs.push(("error".to_owned(), err.to_json())),
+        }
+    }
+    Ok(outputs)
 }
