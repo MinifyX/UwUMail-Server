@@ -175,7 +175,10 @@ app or passkey), or when switched on under *Security* in the portal, mail apps
 need an app password instead; the main password then only works in the portal.
 JMAP apps (like UwUMail) only need
 `https://mail.example.com`; they find everything else at `/.well-known/jmap`.
-IMAP is only offered with TLS on port 993, not with STARTTLS on 143.
+IMAP is only offered with TLS on port 993, not with STARTTLS on 143. An IMAP
+connection that stays a minute without a command before logging in, or 31
+minutes after, is closed, and so is one that has not logged in after three
+minutes, however busy it keeps itself.
 
 Most apps find these settings themselves:
 
@@ -189,6 +192,27 @@ Most apps find these settings themselves:
   calendars and contacts. The download link works once and for ten minutes. On
   an iPhone, install the profile in *Settings* under *Profile Downloaded*. The
   profile is not signed, so iOS shows it as unverified.
+
+### Failed logins
+
+Every way in (portal, IMAP, SMTP, ManageSieve, JMAP, CalDAV/CardDAV and the
+JMAP token endpoint) shares one count of failed logins:
+
+- **Per network** (an IPv4 address or an IPv6 /64): after 10 wrong passwords
+  or 3 logins that do not exist within 15 minutes, logins from there are
+  refused until the 15 minutes are over. Logins that are still being checked
+  count as well, so a burst of tries sent all at once cannot slip past the
+  count: at most 10 checks from one network run at the same time, fewer the
+  more have failed already.
+- **Per login**, from all networks together: after 10 wrong passwords, one try
+  every 30 seconds, and only one at a time. It is a delay, not a lockout, so
+  nobody can lock the owner out by guessing.
+- **For the whole server:** only a few password checks run at once, as many as
+  the machine has cores (at least 2, at most 8). Each check takes about 19 MiB
+  and a moment of CPU on purpose. A login that has waited 3 seconds for its
+  turn is answered with "try again later" (portal and JMAP: `429`/`503`, IMAP
+  `NO [UNAVAILABLE]`, SMTP `454`, ManageSieve `NO (TRYLATER)`); mail apps try
+  again by themselves.
 
 ## Calendars and contacts
 

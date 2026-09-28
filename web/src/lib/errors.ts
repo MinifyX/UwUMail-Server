@@ -104,6 +104,7 @@ const KNOWN = [
   "refreshPause",
   "sharedMailbox",
   "sharedMailboxNeedsMailbox",
+  "importRunning",
   "maskedDomain",
   "maskedOnlyDomain",
   "notMaskedDomain",

@@ -760,6 +760,24 @@ async fn events_stay_within_limits() {
         server.call(MINI, "CalendarEvent/set", json!({ "accountId": account, "create": { "i": invite } })).await;
     assert!(stored["created"]["i"]["id"].is_string(), "without scheduling it is just data: {stored}");
 
+    // One change mails no more people than one message may reach (security-audit-0.16.0
+    // PROTOCOLS-5): smtp.max_recipients, 100 by default.
+    let crowd: serde_json::Map<String, Value> = (0..=100)
+        .map(|n| {
+            let address = format!("mailto:gast{n}@example.net");
+            (
+                format!("p{n}"),
+                json!({ "@type": "Participant", "calendarAddress": address, "roles": { "attendee": true } }),
+            )
+        })
+        .collect();
+    let party = with(json!({ "participants": crowd }));
+    let args = json!({ "accountId": account, "create": { "p": party }, "sendSchedulingMessages": true });
+    let refused = server.call(MINI, "CalendarEvent/set", args).await;
+    assert_eq!(refused["notCreated"]["p"]["type"], "invalidProperties", "{refused}");
+    assert_eq!(refused["notCreated"]["p"]["properties"], json!(["participants"]), "{refused}");
+    assert_eq!(server.store.queue_entries().await.unwrap().len(), 1, "no more mail than before");
+
     let bad_zone = server
         .api(MINI, json!([["CalendarEvent/query", { "accountId": account, "timeZone": "Mars/Base" }, "0"]]))
         .await;

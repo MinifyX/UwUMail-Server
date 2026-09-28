@@ -525,6 +525,7 @@
       "oauthRedirectInvalid": "该应用要求跳转到一个它未注册的地址。",
       "oidcFailed": "登录服务出现问题：{{detail}}",
       "ldapFailed": "目录出现问题：{{detail}}",
+      "importRunning": "已有一个从其他服务商的迁移正在进行。请等它完成。",
       "maskedOnlyDomain": "这个域名仅限隐藏地址：没有用户、别名、群组、转发地址或全收地址。",
       "notMaskedDomain": "这里只能选择仅限隐藏地址的域名。",
       "maskedDefault": "默认域名必须是允许的域名之一。",

@@ -270,6 +270,21 @@ async fn submission_rules() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_login_guessed_at_elsewhere_waits_here_too() {
+    // security-audit-0.16.0 PROTOCOLS-8: ten wrong passwords for one login from ten networks,
+    // over any protocol, and SMTP makes the next try wait as well, without checking the password.
+    let a = start("a.test", &["mini", "ami"], &[]).await;
+    for network in 0..10 {
+        a.smtp.store().auth_limiter().record_failure(format!("198.51.100.{network}").parse().unwrap(), "mini@a.test");
+    }
+    let refused = a.mailer("mini@a.test", PASSWORD, false).send(mail("mini@a.test", &["ami@a.test"], "x")).await;
+    let refused = refused.expect_err("the login waits");
+    assert!(refused.to_string().contains("Too many failed logins"), "{refused}");
+    assert_eq!(a.counted(Stat::LoginFailedSmtp), 0, "no password was checked");
+    a.mailer("ami@a.test", PASSWORD, false).send(mail("ami@a.test", &["mini@a.test"], "x")).await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn mx_refuses_relaying_and_strips_forged_results() {
     let a = start("a.test", &["mini"], &[]).await;
     for name in ["elsewhere.test", "client.elsewhere.test", "_dmarc.elsewhere.test"] {
@@ -298,6 +313,67 @@ async fn mx_refuses_relaying_and_strips_forged_results() {
     let raw = a.raw(&inbox[0]).await;
     assert!(!raw.contains("header.d=bank.example"), "{raw}");
     assert!(raw.contains("Authentication-Results: mx.a.test"), "{raw}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn one_client_cannot_take_every_connection() {
+    // security-audit-0.16.0 SMTP-5: nothing counted connections per client.
+    let config = SmtpConfig { max_connections_per_client: 2, ..SmtpConfig::default() };
+    let a = start_with("a.test", &["mini"], &[], config).await;
+    let _first = RawSession::connect(a.mx).await;
+    let _second = RawSession::connect(a.submission).await;
+    let mut third = BufReader::new(TcpStream::connect(a.mx).await.unwrap());
+    let mut refused = String::new();
+    third.read_line(&mut refused).await.unwrap();
+    assert!(refused.starts_with("421 4.7.0"), "{refused}");
+
+    // Someone else is served.
+    let (mut client, server) = tokio::io::duplex(64 * 1024);
+    let peer = "198.51.100.7:40000".parse().unwrap();
+    tokio::spawn(uwumail_smtp::serve_stream(a.smtp.clone(), Box::new(server), peer, ListenerKind::Mx));
+    let mut greeting = [0u8; 3];
+    client.read_exact(&mut greeting).await.unwrap();
+    assert_eq!(&greeting, b"220");
+}
+
+#[tokio::test]
+async fn a_session_that_gets_nowhere_is_closed() {
+    // security-audit-0.16.0 SMTP-5: a NOOP every few minutes kept a connection slot for ever; the
+    // idle timeout is reset by every byte. The clock is the test's own.
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path()).await.unwrap();
+    let settings = SmtpSettings {
+        hostname: "mx.a.test".into(),
+        smtp: SmtpConfig::default(),
+        spam: SpamConfig { enabled: false, ..SpamConfig::default() },
+        delivery: DeliveryConfig::default(),
+        tone: ToneConfig::default(),
+        server_tls: None,
+    };
+    let smtp = Smtp::new(store, settings).unwrap();
+    tokio::time::pause();
+    let (client, server) = tokio::io::duplex(64 * 1024);
+    let peer = "198.51.100.7:40000".parse().unwrap();
+    tokio::spawn(uwumail_smtp::serve_stream(smtp, Box::new(server), peer, ListenerKind::Mx));
+    let mut client = BufReader::new(client);
+    let mut line = String::new();
+    client.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("220"), "{line}");
+    // A NOOP a little less than a minute apart, for three minutes: long before the five minutes of
+    // idling are up, the session is over.
+    for wait in [59, 59, 59, 30] {
+        client.get_mut().write_all(b"NOOP\r\n").await.unwrap();
+        line.clear();
+        client.read_line(&mut line).await.unwrap();
+        assert!(line.starts_with("250"), "{line}");
+        tokio::time::advance(Duration::from_secs(wait)).await;
+    }
+    line.clear();
+    tokio::time::timeout(Duration::from_secs(10), client.read_line(&mut line))
+        .await
+        .expect("the session was closed in time")
+        .unwrap();
+    assert!(line.starts_with("421 4.4.2"), "{line}");
 }
 
 pub(crate) struct RawSession {

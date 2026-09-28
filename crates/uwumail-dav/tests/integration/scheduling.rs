@@ -31,6 +31,10 @@ struct Reply {
 }
 
 async fn server() -> Server {
+    server_with(SmtpConfig::default()).await
+}
+
+async fn server_with(config: SmtpConfig) -> Server {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
     store.create_domain("example.org").await.unwrap();
@@ -51,7 +55,7 @@ async fn server() -> Server {
         store.clone(),
         SmtpSettings {
             hostname: "mail.example.org".into(),
-            smtp: SmtpConfig::default(),
+            smtp: config,
             spam: Default::default(),
             delivery: DeliveryConfig::default(),
             tone: ToneConfig::default(),
@@ -211,6 +215,58 @@ ORGANIZER:mailto:{MINI}\r\nATTENDEE:mailto:{LENI}\r\nATTENDEE:mailto:gast@exampl
     let leni_copy = server.copy(LENI, "kaffee@example.org").await.unwrap();
     assert_eq!(leni_copy.main_event().unwrap().value("STATUS"), Some("CANCELLED"));
     assert_eq!(server.store.queue_entries().await.unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn free_busy_looks_at_each_calendar_once() {
+    // security-audit-0.16.0 PROTOCOLS-13: the same attendee a hundred times meant a hundred full
+    // expansions of their calendar, on the async workers.
+    let server = server().await;
+    let attendees: String = (0..100)
+        .map(|n| {
+            if n % 2 == 0 {
+                format!("ATTENDEE:mailto:{LENI}\r\n")
+            } else {
+                "ATTENDEE:mailto:LENI@Example.org\r\n".into()
+            }
+        })
+        .collect();
+    let request = format!(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//DE\r\nMETHOD:REQUEST\r\nBEGIN:VFREEBUSY\r\n\
+UID:fb-2\r\nDTSTAMP:20260917T080000Z\r\nDTSTART:20261001T000000Z\r\nDTEND:20261002T000000Z\r\n\
+ORGANIZER:mailto:{MINI}\r\n{attendees}END:VFREEBUSY\r\nEND:VCALENDAR\r\n"
+    );
+    let outbox = "/dav/calendars/mini@example.org/outbox/";
+    let answer = server.send(MINI, "POST", outbox, &[("content-type", "text/calendar")], &request).await;
+    assert_eq!(answer.status, StatusCode::OK, "{}", answer.body);
+    assert_eq!(answer.body.matches("<c:response>").count(), 1, "{}", answer.body);
+}
+
+#[tokio::test]
+async fn one_change_mails_no_more_people_than_one_message_may_reach() {
+    // security-audit-0.16.0 PROTOCOLS-5: every attendee got a message of their own, so the limit on
+    // recipients per message (smtp.max_recipients) never counted them.
+    let server = server_with(SmtpConfig { max_recipients: 3, ..SmtpConfig::default() }).await;
+    let guests: String =
+        (0..=3).map(|n| format!("ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:gast{n}@example.com\r\n")).collect();
+    let event = format!(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//DE\r\nBEGIN:VEVENT\r\nUID:party@example.org\r\n\
+DTSTAMP:20260917T080000Z\r\nDTSTART:20261001T150000Z\r\nDTEND:20261001T160000Z\r\nSUMMARY:Party\r\n\
+ORGANIZER:mailto:{MINI}\r\nATTENDEE;PARTSTAT=ACCEPTED:mailto:{MINI}\r\n{guests}END:VEVENT\r\nEND:VCALENDAR\r\n"
+    );
+    let path = "/dav/calendars/mini@example.org/personal/party.ics";
+    let refused = server.send(MINI, "PUT", path, &[("content-type", "text/calendar")], &event).await;
+    assert_eq!(refused.status, StatusCode::FORBIDDEN, "{}", refused.body);
+    assert!(refused.body.contains("max-attendees-per-instance"), "{}", refused.body);
+    assert!(server.store.queue_entries().await.unwrap().is_empty(), "no mail went out");
+    assert!(server.copy(MINI, "party@example.org").await.is_none(), "nothing was stored");
+
+    // People of this server get it in their calendars, not by mail: they do not count.
+    let with_leni = event.replace("mailto:gast0@example.com", &format!("mailto:{LENI}"));
+    let stored = server.send(MINI, "PUT", path, &[("content-type", "text/calendar")], &with_leni).await;
+    assert_eq!(stored.status, StatusCode::CREATED, "{}", stored.body);
+    assert_eq!(server.store.queue_entries().await.unwrap().len(), 3);
+    assert!(server.copy(LENI, "party@example.org").await.is_some());
 }
 
 #[tokio::test]

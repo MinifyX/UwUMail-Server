@@ -151,6 +151,37 @@ async fn the_token_endpoint_trades_the_password_for_a_named_app_password() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_login_guessed_at_from_many_networks_waits_over_jmap_too() {
+    // security-audit-0.16.0 PROTOCOLS-8: JMAP (and DAV, which signs in the same way) and the token
+    // endpoint counted per network only, each on its own. Ten wrong passwords for one login from
+    // ten networks, over any protocol, and the next try waits here too.
+    let server = server().await;
+    for network in 0..10 {
+        server
+            .store
+            .auth_limiter()
+            .record_failure(format!("2001:db8:{network}::1").parse().unwrap(), "nyu@example.org");
+    }
+    let (status, _) = server.api_as(&basic("nyu@example.org", PASSWORD), &USING, json!([["Core/echo", {}, "0"]])).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    let (status, _) =
+        token_request(&server, json!({ "username": "nyu@example.org", "password": PASSWORD, "name": "x" })).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    // Other logins are not held up.
+    let (status, _) =
+        server.api_as(&basic("mini@example.org", PASSWORD), &USING, json!([["Core/echo", {}, "0"]])).await;
+    assert_eq!(status, StatusCode::OK);
+
+    // And the other way round: what fails over JMAP counts for every other protocol.
+    let (status, _) = server.api_as(&basic("ghost@example.org", "nope"), &USING, json!([])).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    for _ in 0..2 {
+        server.api_as(&basic("ghost@example.org", "nope"), &USING, json!([])).await;
+    }
+    assert!(server.store.auth_limiter().is_blocked("127.0.0.1".parse().unwrap()), "unknown logins count strictly");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn the_token_endpoint_asks_for_the_second_factor() {
     let server = server().await;
     let id = server.id("nyu@example.org").await;

@@ -771,17 +771,19 @@ impl Store {
         let Some((account, hash, required, mut app, imported, directory)) = found else {
             // The hashing happens anyway, against nothing: without it this answer would come back
             // faster than a wrong password does, and the clock alone would say which names exist.
-            let password = password.to_owned();
-            let _ = tokio::task::spawn_blocking(move || password::verify(&password, None)).await;
+            self.verify_password(password, None).await?;
             return Ok(MailAuth::Denied(MailAuthDenied::UnknownLogin));
         };
         if app.is_none() && !imported.is_empty() {
             let password = password.to_owned();
-            app = tokio::task::spawn_blocking(move || {
-                imported.into_iter().find(|(_, stored)| password::verify(&password, Some(stored))).map(|(app, _)| app)
-            })
-            .await
-            .map_err(|err| StoreError::Internal(err.to_string()))?;
+            app = self
+                .check_passwords(move || {
+                    imported
+                        .into_iter()
+                        .find(|(_, stored)| password::verify(&password, Some(stored)))
+                        .map(|(app, _)| app)
+                })
+                .await?;
         }
 
         if let Some((id, scopes, expires_at)) = app {
@@ -826,10 +828,7 @@ impl Store {
             // all, which the check below says. An unreachable directory is a temporary failure.
             self.check_external_password(&account.login, password).await?
         } else {
-            let (typed, stored) = (password.to_owned(), hash.clone());
-            tokio::task::spawn_blocking(move || password::verify(&typed, stored.as_deref()))
-                .await
-                .map_err(|err| StoreError::Internal(err.to_string()))?
+            self.verify_password(password, hash.clone()).await?
         };
         if !valid || !account.can_log_in() {
             return Ok(MailAuth::Denied(MailAuthDenied::Invalid));
@@ -964,17 +963,17 @@ impl Store {
             })
             .await?;
         let (current, new) = (current.to_owned(), new.to_owned());
-        let hash = tokio::task::spawn_blocking(move || {
-            if !password::verify(&current, stored.as_deref()) {
-                return Err(StoreError::Rule {
-                    code: "wrongPassword",
-                    message: "the current password is wrong".into(),
-                });
-            }
-            password::hash(&new)
-        })
-        .await
-        .map_err(|err| StoreError::Internal(err.to_string()))??;
+        let hash = self
+            .check_passwords(move || {
+                if !password::verify(&current, stored.as_deref()) {
+                    return Err(StoreError::Rule {
+                        code: "wrongPassword",
+                        message: "the current password is wrong".into(),
+                    });
+                }
+                password::hash(&new)
+            })
+            .await??;
         let keep = crate::web::token_hash(keep_token);
         // What this very browser session scheduled is still the person's own.
         let keep_credential = crate::push_credential_for_session(keep_token);

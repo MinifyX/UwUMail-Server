@@ -90,6 +90,19 @@ quinn = { version = "0.11", default-features = false, features = ["runtime-tokio
 rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem"] }
 # Word lists: words and Rspamd-style regular expressions, matched in linear time.
 regex = "1.13"
+# The engine under `regex`, used directly where the memory a compiled set takes has to be known.
+regex-automata = { version = "0.4", default-features = false, features = [
+    "std",
+    "syntax",
+    "meta",
+    "nfa-pikevm",
+    "nfa-backtrack",
+    "hybrid",
+    "dfa-onepass",
+    "perf-inline",
+    "perf-literal",
+    "unicode",
+] }
 # Built-in lists come packed with zstd; only unpacking is needed, in plain Rust.
 ruzstd = "0.9"
 rusqlite = { version = "0.40", features = ["bundled"] }
@@ -139,3 +152,12 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
+
+# Password hashing is slow on purpose, and unoptimised it is slower still: tests that log in
+# would spend most of their time in it, and wait for each other at the server's limit on
+# password checks running at once.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3

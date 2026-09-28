@@ -48,6 +48,12 @@ that ended, a restart of the server or a broken connection all go on where
 things stood. A provider that renumbered a folder since is copied again from
 the start, and the duplicate check keeps it from bringing anything twice.
 
+A turn has ten minutes in all, connecting and logging in included: a provider
+that takes the connection and then does not answer, or never finishes answering
+the login, pauses the move as unreachable instead of holding up everybody
+else's. Each command to the provider has five minutes to be answered (half an
+hour for a portion of messages).
+
 A move pauses, and says why, when the person has to do something:
 
 | Reason | What to do |

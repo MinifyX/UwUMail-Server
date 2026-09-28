@@ -30,8 +30,22 @@ The session's URLs follow the host and port the client used, over HTTP/1.1 and H
 Folders others share with the person are further accounts in the session (not the primary one);
 programs that only look at `primaryAccounts` do not see them ([sharing.md](sharing.md)).
 
-Limits:
+### Limits
 
+- A request to `/jmap/api` may carry up to 10 MB, an upload up to 50 MB (`maxSizeRequest` and
+  `maxSizeUpload` in the session). The server reads neither before the login was checked; without
+  one the answer is `401` at once.
+- Uploads are kept for a day, so an email can be made from them, and are not part of the mailbox
+  until then. Together, one account's uploads of the last 24 hours may take up to 1 GiB, and never
+  more than the account's storage quota when it has one. An upload beyond that is answered with
+  `413`; older uploads make room again as they reach their day. Uploading the same file again takes
+  no more room.
+- Mail methods have the bounds calendars and contacts have: `Email/parse` and `SearchSnippet/get`
+  take at most 500 ids (`maxObjectsInGet`, else `requestTooLarge`); a query filter (`Email/query`,
+  `Mailbox/query`, `SearchSnippet/get`) at most 100 operators and conditions (`unsupportedFilter`);
+  a sort at most 10 comparators (`unsupportedSort`). Parsing messages for `Email/get` and
+  `Email/parse` shares the request's 15 seconds with calendar and contact work; once they are used
+  up the call answers `serverUnavailable`, and the rest can be asked for in a new request.
 - An email made with `Email/set` may have at most 1,000 body parts, and its parts together may
   hold at most `maxSizeAttachmentsPerEmail` bytes (50 MB), counting a blob or body value as often
   as parts name it. More is answered with `tooLarge`.

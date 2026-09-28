@@ -404,6 +404,7 @@ impl Writer<'_> {
         id: Option<i64>,
         calendar_id: i64,
         if_etag: Option<String>,
+        old: Option<&str>,
     ) -> Result<Result<(i64, String), SetError>, ()> {
         let calendar = match self.calendar(calendar_id) {
             Ok(calendar) => calendar,
@@ -417,6 +418,14 @@ impl Writer<'_> {
             Ok(Err(err)) => return Ok(Err(err)),
             Err(_) => return Ok(Err(SetError::new("serverFail", "the event could not be converted"))),
         };
+        // One change may not send more scheduling messages than one mail may have recipients
+        // (security-audit-0.16.0 PROTOCOLS-5); refused before anything is stored.
+        if self.scheduling
+            && owns(self.ctx, calendar_id).await
+            && let Err(refused) = self.ctx.jmap.smtp.check_schedule(&self.ctx.account, old, Some(&content)).await
+        {
+            return Ok(Err(SetError::invalid_properties(&["participants"], refused.to_string())));
+        }
         let write = CalendarEventWrite {
             id,
             calendar_id,
@@ -488,7 +497,7 @@ impl Writer<'_> {
         server_set.insert("created".into(), created);
         server_set.insert("updated".into(), json!(now));
         let parsed = Parsed::new_event();
-        let (id, content) = match self.store(&parsed, &event, None, calendar_id, None).await {
+        let (id, content) = match self.store(&parsed, &event, None, calendar_id, None, None).await {
             Ok(result) => result?,
             Err(()) => return Err(SetError::new("serverFail", "the event could not be stored")),
         };
@@ -573,7 +582,17 @@ impl Writer<'_> {
                 event.insert("updated".into(), now.clone());
                 server_set.insert("updated".into(), now);
             }
-            match self.store(&loaded.parsed, &event, Some(id), calendar_id, Some(loaded.record.etag.clone())).await {
+            match self
+                .store(
+                    &loaded.parsed,
+                    &event,
+                    Some(id),
+                    calendar_id,
+                    Some(loaded.record.etag.clone()),
+                    Some(&loaded.record.content),
+                )
+                .await
+            {
                 Ok(result) => {
                     let (_, content) = result?;
                     self.schedule(calendar_id, Some(&loaded.record.content), Some(&content)).await;
@@ -671,7 +690,7 @@ impl Writer<'_> {
             }
             let etag = Some(loaded.record.etag.clone());
             let calendar_id = loaded.record.calendar_id;
-            match self.store(&loaded.parsed, &event, Some(id), calendar_id, etag).await {
+            match self.store(&loaded.parsed, &event, Some(id), calendar_id, etag, Some(&loaded.record.content)).await {
                 Ok(result) => {
                     let (_, content) = result?;
                     self.schedule(calendar_id, Some(&loaded.record.content), Some(&content)).await;

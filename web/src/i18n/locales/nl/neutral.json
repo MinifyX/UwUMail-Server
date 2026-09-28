@@ -537,6 +537,7 @@
       "oauthRedirectInvalid": "De app wil terug naar een adres dat hij niet heeft geregistreerd.",
       "oidcFailed": "Het lukte niet met de inlogdienst: {{detail}}",
       "ldapFailed": "Het lukte niet met de directory: {{detail}}",
+      "importRunning": "Er loopt al een verhuizing van een andere aanbieder. Wacht tot die klaar is.",
       "maskedOnlyDomain": "Dit domein draagt alleen gemaskeerde adressen: geen mensen, aliassen, groepen, doorstuuradressen of catch-all.",
       "notMaskedDomain": "Hier kun je alleen domeinen voor gemaskeerde adressen kiezen.",
       "maskedDefault": "Het standaarddomein moet een van de toegestane domeinen zijn.",

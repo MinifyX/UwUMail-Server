@@ -73,6 +73,14 @@ queue, signed with the domain's DKIM key, with a short text in the language
 the person chose for themselves (or the server's) and the event attached for
 their calendar app. Answers go back to the organizer the same way.
 
+Every attendee gets a message of their own, so one change counts against the
+same limit as one mail: at most `smtp.max_recipients` (100 by default) people
+get mail about it, and at most 1000 are told in all (people of this server get
+it in their calendars and do not count against the mail limit). A change that
+would tell more is refused before it is stored: CalDAV answers `403` with the
+`max-attendees-per-instance` precondition, JMAP `invalidProperties` on
+`participants`. For more people, invite a group address.
+
 Mail with an invitation that arrives from elsewhere is delivered as usual, and
 the event is put into the recipient's default calendar, waiting for an answer,
 so it shows in every calendar app at once. Answers and cancellations that
@@ -104,7 +112,10 @@ takes into a calendar:
   `schedule-default-calendar-URL` names the default calendar.
 - A `POST` of a `VFREEBUSY` request to the outbox answers when people of the
   server are busy (from their own calendars, not those shared with them), as
-  Apple Calendar asks when attendees are added. Others are "unknown".
+  Apple Calendar asks when attendees are added. Others are "unknown". One
+  request asks about at most 100 people (each once, however often named) over
+  at most 400 days, and has 10 seconds for all of them; anyone left when they
+  are up is answered "5.1 service unavailable", to be asked again.
 - Events have a `Schedule-Tag` (header and `schedule-tag` property). It stays
   the same when the server only writes an answer into the organizer's copy,
   so a client storing with `If-Schedule-Tag-Match` keeps the answers that came

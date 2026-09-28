@@ -21,6 +21,10 @@ use uwumail_store::{BlobHash, ImportProgress, IngestRequest, MailboxRole, Mailbo
 /// Messages fetched per request.
 const BATCH: usize = 25;
 const TIMEOUT: Duration = Duration::from_secs(120);
+/// The longest one command's whole answer may take.
+const COMMAND_LIMIT: Duration = Duration::from_secs(5 * 60);
+/// The same for a batch of messages, which may be large.
+const FETCH_LIMIT: Duration = Duration::from_secs(30 * 60);
 /// The largest literal this reads before allocating for it. A hostile or broken provider could
 /// otherwise announce something like `{9223372036854775808}` and make the allocation abort the
 /// whole server, which then crash-loops on the same account (security-audit-0.5.2 S-25). It also
@@ -33,6 +37,14 @@ const MAX_LINE: usize = 16 * 1024 * 1024;
 /// What one command's answers may add up to, lines and literals together: a full batch of the
 /// largest messages and room besides. Without it a provider could keep answering for ever.
 const MAX_ANSWER: usize = BATCH * MAX_LITERAL + 4 * MAX_LINE;
+/// What the answers to any other command may add up to, in memory: folder lists, status lines and
+/// searches, which for a folder of a million messages are a million tokens.
+const MAX_SMALL_ANSWER: usize = 16 * MAX_LINE;
+/// What one token costs in memory beyond its bytes: its place in the list (a 32-byte enum, twice
+/// over while the list grows) and an allocation of its own. Charged against the budget, which
+/// otherwise counted only the bytes on the wire: a line of `a a a …` turned 16 MiB into hundreds of
+/// megabytes of tokens (security-audit-0.16.0 PLAT-3).
+const TOKEN_COST: usize = 96;
 
 /// Where to copy from and how to log in.
 pub struct Source {
@@ -114,10 +126,18 @@ pub(crate) struct Response {
     pub(crate) text: String,
 }
 
+/// More tokens than an answer may hold.
+#[derive(Debug)]
+struct TooManyTokens;
+
 /// Splits one segment of a response line into tokens. A trailing `{n}` announces a literal.
-fn tokenize(segment: &[u8], tokens: &mut Vec<Token>) -> Option<usize> {
+/// `tokens` never grows beyond `max`.
+fn tokenize(segment: &[u8], tokens: &mut Vec<Token>, max: usize) -> Result<Option<usize>, TooManyTokens> {
     let mut i = 0;
     while i < segment.len() {
+        if tokens.len() >= max && !matches!(segment[i], b' ' | b'\r' | b'\n' | b'{') {
+            return Err(TooManyTokens);
+        }
         match segment[i] {
             b' ' | b'\r' | b'\n' => i += 1,
             b'(' => {
@@ -142,9 +162,9 @@ fn tokenize(segment: &[u8], tokens: &mut Vec<Token>) -> Option<usize> {
                 tokens.push(Token::String(value));
             }
             b'{' => {
-                let end = segment[i..].iter().position(|b| *b == b'}')? + i;
-                let digits = std::str::from_utf8(&segment[i + 1..end]).ok()?.trim_end_matches('+');
-                return digits.parse().ok();
+                let Some(end) = segment[i..].iter().position(|b| *b == b'}') else { return Ok(None) };
+                let Ok(digits) = std::str::from_utf8(&segment[i + 1..i + end]) else { return Ok(None) };
+                return Ok(digits.trim_end_matches('+').parse().ok());
             }
             _ => {
                 let start = i;
@@ -156,7 +176,7 @@ fn tokenize(segment: &[u8], tokens: &mut Vec<Token>) -> Option<usize> {
             }
         }
     }
-    None
+    Ok(None)
 }
 
 pub(crate) struct Connection {
@@ -195,12 +215,13 @@ impl Connection {
             .context("connecting timed out")?
             .with_context(|| format!("connecting to {}", source.address))?;
         let server_name = ServerName::try_from(name.clone()).map_err(|_| anyhow!("{name} is not a valid TLS name"))?;
-        let tls = tokio_rustls::TlsConnector::from(Arc::new(config))
-            .connect(server_name, tcp)
+        let handshake = tokio_rustls::TlsConnector::from(Arc::new(config)).connect(server_name, tcp);
+        let tls = tokio::time::timeout(TIMEOUT, handshake)
             .await
+            .context("the TLS handshake timed out")?
             .with_context(|| format!("TLS with {} (checked as {name})", source.address))?;
         let mut connection = Connection { stream: BufReader::new(tls), next_tag: 1 };
-        let mut budget = MAX_ANSWER;
+        let mut budget = MAX_SMALL_ANSWER;
         let greeting = read_response(&mut connection.stream, &mut budget).await?;
         if !greeting.text.starts_with("* OK") {
             bail!("the server did not greet: {}", greeting.text);
@@ -208,13 +229,24 @@ impl Connection {
         Ok(connection)
     }
 
-    /// Sends a command and returns its untagged responses once it completed.
+    /// Sends a command and returns its untagged responses once it completed. Every line has
+    /// [`TIMEOUT`] to come, and the whole answer [`COMMAND_LIMIT`] ([`FETCH_LIMIT`] for a batch of
+    /// messages): an untagged line now and then must not keep a command going for ever.
     pub(crate) async fn command(&mut self, command: &str) -> anyhow::Result<Vec<Response>> {
+        let limit = if command.starts_with("UID FETCH") { FETCH_LIMIT } else { COMMAND_LIMIT };
+        let shown = if command.starts_with("LOGIN") { "LOGIN" } else { command }.to_owned();
+        tokio::time::timeout(limit, self.command_untimed(command))
+            .await
+            .map_err(|_| anyhow!("{shown}: the server did not finish answering in time"))?
+    }
+
+    async fn command_untimed(&mut self, command: &str) -> anyhow::Result<Vec<Response>> {
         let tag = format!("u{}", self.next_tag);
         self.next_tag += 1;
         self.stream.get_mut().write_all(format!("{tag} {command}\r\n").as_bytes()).await?;
         let mut untagged = Vec::new();
-        let mut budget = MAX_ANSWER;
+        // Only fetching messages needs room for a batch of them.
+        let mut budget = if command.starts_with("UID FETCH") { MAX_ANSWER } else { MAX_SMALL_ANSWER };
         loop {
             let response = read_response(&mut self.stream, &mut budget).await?;
             if let Some(status) = response.text.strip_prefix(&format!("{tag} ")) {
@@ -229,8 +261,10 @@ impl Connection {
     }
 }
 
-/// Reads one response with its literals, taking what it reads off `budget`.
+/// Reads one response with its literals, taking what it holds of it off `budget`: the text, every
+/// token and the literals.
 async fn read_response<R: AsyncBufRead + Unpin>(stream: &mut R, budget: &mut usize) -> anyhow::Result<Response> {
+    let too_much = || anyhow!("the server sent more than this reads for one answer");
     let mut response = Response::default();
     loop {
         let mut line = Vec::new();
@@ -245,8 +279,13 @@ async fn read_response<R: AsyncBufRead + Unpin>(stream: &mut R, budget: &mut usi
         if read as u64 == limit {
             bail!("the server sent more than this reads for one answer");
         }
-        *budget -= read;
-        let literal = tokenize(&line, &mut response.tokens);
+        // The line is kept twice: as its text and as tokens, each of which costs its own place.
+        let charge = |bytes: usize| bytes.checked_mul(2);
+        *budget = charge(read).and_then(|cost| budget.checked_sub(cost)).ok_or_else(too_much)?;
+        let before = response.tokens.len();
+        let max = before + *budget / TOKEN_COST;
+        let literal = tokenize(&line, &mut response.tokens, max).map_err(|_| too_much())?;
+        *budget -= (response.tokens.len() - before) * TOKEN_COST;
         let shown = match literal {
             Some(_) => &line[..line.iter().rposition(|b| *b == b'{').unwrap_or(line.len())],
             None => &line[..],
@@ -740,7 +779,7 @@ mod tests {
 
     fn tokens(line: &str) -> Vec<Token> {
         let mut tokens = Vec::new();
-        tokenize(line.as_bytes(), &mut tokens);
+        tokenize(line.as_bytes(), &mut tokens, usize::MAX).unwrap();
         tokens
     }
 
@@ -792,7 +831,7 @@ mod tests {
                 }
             }
             let mut response = Response::default();
-            let _ = tokenize(&line, &mut response.tokens);
+            let _ = tokenize(&line, &mut response.tokens, 100_000);
             let _ = list_entry(&response.tokens);
             let _ = parse_fetch(&response);
             let _ = examined_exists(std::slice::from_ref(&response));
@@ -804,7 +843,8 @@ mod tests {
         // The provider can announce any size; read_response refuses one over MAX_LITERAL before it
         // would allocate for it (security-audit-0.5.2 S-25).
         let mut tokens = Vec::new();
-        let size = tokenize(b"* OK {9223372036854775807}\r\n", &mut tokens).expect("a literal size");
+        let size =
+            tokenize(b"* OK {9223372036854775807}\r\n", &mut tokens, usize::MAX).unwrap().expect("a literal size");
         assert!(size > MAX_LITERAL);
     }
 
@@ -817,7 +857,8 @@ mod tests {
         let response = read_response(&mut answer, &mut budget).await.unwrap();
         assert_eq!(response.text, "* 1 FETCH (UID 7 BODY[] )");
         assert!(response.tokens.contains(&Token::String(b"hello".to_vec())));
-        assert_eq!(budget, MAX_ANSWER - 37);
+        // The line twice, its eight tokens and the literal.
+        assert_eq!(budget, MAX_ANSWER - 2 * 32 - 8 * TOKEN_COST - 5);
 
         let mut endless = b"* OK ".to_vec();
         endless.resize(MAX_LINE + 10, b'x');
@@ -826,12 +867,34 @@ mod tests {
 
         let many = "* 1 EXISTS\r\n".repeat(10);
         let mut stream = many.as_bytes();
-        let mut budget = 30;
+        let mut budget = 2 * (2 * 12 + 3 * TOKEN_COST) + 10;
         assert!(read_response(&mut stream, &mut budget).await.is_ok());
         assert!(read_response(&mut stream, &mut budget).await.is_ok());
         assert!(read_response(&mut stream, &mut budget).await.is_err(), "the third passes what the answer may take");
         let mut literal = &b"* 1 FETCH (BODY[] {100}\r\n"[..];
         assert!(read_response(&mut literal, &mut 50).await.is_err(), "a literal past the budget is not read");
+    }
+
+    /// security-audit-0.16.0 PLAT-3: what an answer holds is charged, not only what came over the
+    /// wire. Lines of one-letter words are cut off long before their bytes would be.
+    #[tokio::test]
+    async fn many_small_words_are_charged_as_the_tokens_they_become() {
+        let mut line = b"* ".to_vec();
+        line.extend(b"a ".repeat(512 * 1024));
+        line.extend(b"\r\n");
+        let lines = line.repeat(64);
+        let mut stream = &lines[..];
+        let mut budget = MAX_SMALL_ANSWER;
+        let mut read = 0;
+        let error = loop {
+            match read_response(&mut stream, &mut budget).await {
+                Ok(_) => read += 1,
+                Err(err) => break err,
+            }
+        };
+        assert!(error.to_string().contains("more than this reads"), "{error}");
+        // Each line of 1 MiB is half a million tokens, about 50 MiB held.
+        assert!(read <= MAX_SMALL_ANSWER / (48 * 1024 * 1024), "{read} lines of 1 MiB were taken");
     }
 
     #[test]
@@ -840,10 +903,12 @@ mod tests {
         let literal = tokenize(
             b"* 3 FETCH (UID 17 FLAGS (\\Seen $Label1) INTERNALDATE \"17-Sep-2026 10:00:00 +0200\" BODY[] {5}\r\n",
             &mut tokens,
-        );
+            usize::MAX,
+        )
+        .unwrap();
         assert_eq!(literal, Some(5));
         tokens.push(Token::String(b"Hallo".to_vec()));
-        tokenize(b")\r\n", &mut tokens);
+        tokenize(b")\r\n", &mut tokens, usize::MAX).unwrap();
         let fetched = parse_fetch(&Response { tokens, text: String::new() }).unwrap();
         assert_eq!(fetched.uid, 17);
         assert_eq!(fetched.flags, ["\\Seen", "$Label1"]);

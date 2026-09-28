@@ -548,6 +548,7 @@
       "oauthRedirectInvalid": "L'appli demande à être renvoyée vers une adresse qu'elle n'a pas enregistrée.",
       "oidcFailed": "Le service de connexion n'a pas fonctionné : {{detail}}",
       "ldapFailed": "L'annuaire n'a pas fonctionné : {{detail}}",
+      "importRunning": "Un déménagement depuis un autre fournisseur est déjà en cours. Attendez qu'il soit terminé.",
       "maskedOnlyDomain": "Ce domaine ne porte que des adresses masquées : ni personnes, ni alias, ni groupes, ni adresses de transfert, ni catch-all.",
       "notMaskedDomain": "Seuls des domaines réservés aux adresses masquées peuvent être choisis ici.",
       "maskedDefault": "Le domaine par défaut doit faire partie des domaines autorisés.",

@@ -15,6 +15,8 @@ pub enum ApiError {
     CsrfMismatch,
     InvalidCredentials,
     TooManyAttempts,
+    /// Too many password checks at once on the whole server; the app shows its "try again later".
+    Busy,
     NotFound(String),
     Invalid(String),
     Conflict(String),
@@ -39,6 +41,11 @@ impl ApiError {
             ApiError::TooManyAttempts => {
                 (StatusCode::TOO_MANY_REQUESTS, "tooManyAttempts", "Too many failed logins, try again later.".into())
             }
+            ApiError::Busy => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "tooManyAttempts",
+                "The server is busy checking other logins, try again in a moment.".into(),
+            ),
             ApiError::NotFound(what) => (StatusCode::NOT_FOUND, "notFound", format!("Not found: {what}")),
             ApiError::Invalid(detail) => (StatusCode::UNPROCESSABLE_ENTITY, "invalid", detail.clone()),
             ApiError::Conflict(detail) => (StatusCode::CONFLICT, "conflict", detail.clone()),
@@ -72,6 +79,7 @@ impl From<StoreError> for ApiError {
             StoreError::Invalid(detail) => ApiError::Invalid(detail),
             StoreError::Conflict(what) => ApiError::Conflict(format!("already exists: {what}")),
             StoreError::Rule { code, message } => ApiError::Rule(code, message),
+            StoreError::Busy => ApiError::Busy,
             other => {
                 tracing::error!(error = %other, "web API request failed");
                 ApiError::Internal

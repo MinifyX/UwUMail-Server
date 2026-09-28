@@ -30,6 +30,7 @@ memchr.workspace = true
 psl.workspace = true
 quick-xml.workspace = true
 regex.workspace = true
+regex-automata.workspace = true
 rustls.workspace = true
 ruzstd.workspace = true
 rustls-pki-types.workspace = true
@@ -53,5 +54,7 @@ uwumail-tunnel.workspace = true
 
 lettre.workspace = true
 rcgen.workspace = true
+# The test's own clock, for time limits measured in minutes.
+tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber.workspace = true
 tempfile.workspace = true

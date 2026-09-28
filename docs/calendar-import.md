@@ -140,4 +140,4 @@ contacts along with everything else ([migrating-from-mailcow.md](migrating-from-
 | Subscribed calendars | 20 per person |
 | Fetching again | every 15 minutes at most, once a week at least |
 | Requests to other servers | 30 an hour per person (subscribing, fetching now, importing an address, moving) |
-| Moving from a provider | 5 minutes, 64 MB per calendar or address book |
+| Moving from a provider | 5 minutes, 64 MB per calendar or address book, 128 MB and 100 calendars and address books in all, one move at a time per person |

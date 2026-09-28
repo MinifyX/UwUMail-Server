@@ -537,6 +537,7 @@
       "oauthRedirectInvalid": "The app asked to be sent somewhere it did not register.",
       "oidcFailed": "The login service did not work out: {{detail}}",
       "ldapFailed": "The directory did not work out: {{detail}}",
+      "importRunning": "A move from another provider is running already. Wait until it is done.",
       "maskedOnlyDomain": "This domain carries only masked addresses: no people, aliases, groups, forwarding addresses or catch-all.",
       "notMaskedDomain": "Only domains for masked addresses can be chosen here.",
       "maskedDefault": "The default domain has to be one of the allowed domains.",

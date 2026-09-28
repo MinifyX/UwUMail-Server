@@ -537,6 +537,7 @@
       "oauthRedirectInvalid": "Die App möchte an eine Adresse zurück, die sie nicht registriert hat.",
       "oidcFailed": "Mit dem Anmeldedienst hat es nicht geklappt: {{detail}}",
       "ldapFailed": "Mit dem Verzeichnis hat es nicht geklappt: {{detail}}",
+      "importRunning": "Ein Umzug von einem anderen Anbieter läuft schon. Warte, bis er fertig ist.",
       "maskedOnlyDomain": "Diese Domain trägt nur maskierte Adressen: keine Personen, Aliasse, Gruppen, Weiterleitungsadressen oder Catch-all.",
       "notMaskedDomain": "Hier lassen sich nur Domains für maskierte Adressen wählen.",
       "maskedDefault": "Die Standard-Domain muss eine der erlaubten Domains sein.",

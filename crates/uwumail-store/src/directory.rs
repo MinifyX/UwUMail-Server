@@ -869,10 +869,7 @@ impl Store {
             let valid = self.check_external_password(&account.login, password).await.unwrap_or(false);
             return Ok((valid && account.can_log_in()).then(|| account.clone()));
         }
-        let (typed, stored) = (password.to_owned(), found.as_ref().and_then(|(_, hash, _)| hash.clone()));
-        let valid = tokio::task::spawn_blocking(move || password::verify(&typed, stored.as_deref()))
-            .await
-            .map_err(|err| StoreError::Internal(err.to_string()))?;
+        let valid = self.verify_password(password, found.as_ref().and_then(|(_, hash, _)| hash.clone())).await?;
         let Some((account, hash, _)) = found.filter(|(account, _, _)| valid && account.can_log_in()) else {
             return Ok(None);
         };

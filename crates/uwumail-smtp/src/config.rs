@@ -14,6 +14,9 @@ pub struct SmtpConfig {
     /// Idle time before a connection is closed.
     pub timeout_secs: u64,
     pub max_connections: usize,
+    /// Connections at once from one client address (an IPv4 address or an IPv6 /64), on all SMTP
+    /// ports together. Trusted relays are not limited.
+    pub max_connections_per_client: usize,
     /// Check SPF, DKIM and DMARC for mail from other servers.
     pub verify_senders: bool,
     /// Reject mail that fails DMARC for domains with `p=reject` (otherwise it goes to Junk).
@@ -35,6 +38,7 @@ impl Default for SmtpConfig {
             require_tls_for_auth: true,
             timeout_secs: 300,
             max_connections: 500,
+            max_connections_per_client: 20,
             verify_senders: true,
             enforce_dmarc_reject: true,
             reveal_client_ip: false,

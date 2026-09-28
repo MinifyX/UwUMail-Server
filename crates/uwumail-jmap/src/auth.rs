@@ -17,6 +17,7 @@ use sha2::{Digest, Sha256};
 use uwumail_store::{ALL_SCOPES, Account, AppScope, LiveLogin, MailAuth, MailAuthDenied, Store};
 
 const CACHE_LIFETIME: Duration = Duration::from_secs(300);
+/// Wrong second factors at the token endpoint, per account, before it waits out the window.
 const FAILURE_WINDOW: Duration = Duration::from_secs(15 * 60);
 const MAX_FAILURES: u32 = 10;
 
@@ -101,6 +102,8 @@ pub enum AuthError {
     Missing,
     Invalid,
     Blocked,
+    /// Too many password checks at once on the whole server.
+    Busy,
     Internal,
 }
 
@@ -110,6 +113,7 @@ impl IntoResponse for AuthError {
             AuthError::Missing => (StatusCode::UNAUTHORIZED, "Log in with your address and password."),
             AuthError::Invalid => (StatusCode::UNAUTHORIZED, "The address or password is wrong."),
             AuthError::Blocked => (StatusCode::TOO_MANY_REQUESTS, "Too many failed logins, try again later."),
+            AuthError::Busy => (StatusCode::SERVICE_UNAVAILABLE, "The server is busy, try again in a moment."),
             AuthError::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong on the server."),
         };
         let body = json!({ "type": "about:blank", "status": status.as_u16(), "detail": detail });
@@ -140,20 +144,8 @@ pub struct Authenticator {
     secret: [u8; 32],
     /// Account id, when it was cached, and the same as a Unix time to compare with password changes.
     cache: Mutex<HashMap<[u8; 32], (i64, Instant, i64)>>,
-    failures: Mutex<HashMap<IpAddr, (u32, Instant)>>,
     /// Wrong second factors at the token endpoint, per account.
     second_factor_failures: Mutex<HashMap<i64, (u32, Instant)>>,
-}
-
-fn network(ip: IpAddr) -> IpAddr {
-    match ip.to_canonical() {
-        IpAddr::V6(v6) => {
-            let mut segments = v6.segments();
-            segments[4..].fill(0);
-            IpAddr::V6(segments.into())
-        }
-        v4 => v4,
-    }
 }
 
 impl Authenticator {
@@ -174,7 +166,6 @@ impl Authenticator {
             protocol,
             secret,
             cache: Mutex::default(),
-            failures: Mutex::default(),
             second_factor_failures: Mutex::default(),
         }
     }
@@ -193,23 +184,12 @@ impl Authenticator {
         hasher.finalize().into()
     }
 
-    fn blocked(&self, ip: IpAddr) -> bool {
-        let failures = self.failures.lock().expect("auth failures poisoned");
-        failures
-            .get(&network(ip))
-            .is_some_and(|(count, since)| *count >= MAX_FAILURES && since.elapsed() < FAILURE_WINDOW)
-    }
-
-    fn record_failure(&self, ip: IpAddr) {
-        let mut failures = self.failures.lock().expect("auth failures poisoned");
-        if failures.len() > 100_000 {
-            failures.retain(|_, (_, since)| since.elapsed() < FAILURE_WINDOW);
-        }
-        let entry = failures.entry(network(ip)).or_insert((0, Instant::now()));
-        if entry.1.elapsed() >= FAILURE_WINDOW {
-            *entry = (0, Instant::now());
-        }
-        entry.0 += 1;
+    /// The failed-login counts of the whole server, shared with the portal, IMAP, ManageSieve and
+    /// SMTP. JMAP, DAV and `/jmap/token` used to keep one of their own each, per network only, so
+    /// guesses at one login from many networks were never slowed down (security-audit-0.16.0
+    /// PROTOCOLS-8).
+    fn limiter(&self) -> &Arc<uwumail_store::AuthLimiter> {
+        self.store.auth_limiter()
     }
 
     /// Who is signed in, by `Authorization` or — for the webmail — by the portal's session.
@@ -312,17 +292,20 @@ impl Authenticator {
             }
         }
 
-        if self.blocked(client.ip) {
+        let Some(attempt) = self.limiter().begin(client.ip, login) else {
             return Err(AuthError::Blocked);
-        }
+        };
         let ip = client.ip.to_string();
         // Stamp the cache from before the slow check runs, not after: a credential change that
         // lands while argon2 is verifying must invalidate the entry, not be masked for the cache
         // lifetime (security-audit-0.5.2 S-21).
         let started = Instant::now();
         let started_unix = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
-        match self.store.authenticate_mail(login, password, self.scope, self.protocol, &ip).await {
+        let checked = self.store.authenticate_mail(login, password, self.scope, self.protocol, &ip).await;
+        drop(attempt);
+        match checked {
             Ok(MailAuth::Ok { account, app_password, credential, scopes }) => {
+                self.limiter().record_success(client.ip, login);
                 // App passwords are a quick lookup; only the slow account password is worth caching.
                 if app_password.is_none() {
                     let mut cache = self.cache.lock().expect("auth cache poisoned");
@@ -334,13 +317,16 @@ impl Authenticator {
                 Ok(Login { account, credential, scopes })
             }
             Ok(MailAuth::Denied(reason)) => {
-                // A phone still using the right account password should not lock out its network.
-                if reason != MailAuthDenied::AppPasswordRequired {
-                    self.record_failure(client.ip);
+                match reason {
+                    // A phone still using the right account password should not lock out its network.
+                    MailAuthDenied::AppPasswordRequired => {}
+                    MailAuthDenied::UnknownLogin => self.limiter().record_unknown_login(client.ip),
+                    _ => self.limiter().record_failure(client.ip, login),
                 }
                 tracing::warn!(%login, ip = %client.ip, %reason, protocol = self.protocol, "failed login");
                 Err(AuthError::Invalid)
             }
+            Err(uwumail_store::StoreError::Busy) => Err(AuthError::Busy),
             Err(err) => {
                 tracing::error!(%err, protocol = self.protocol, "authentication failed internally");
                 Err(AuthError::Internal)
@@ -351,7 +337,7 @@ impl Authenticator {
     /// `Authorization: Bearer <app password or OAuth access token>`: the secret alone, without the
     /// login. Wrong tokens count against the network like wrong passwords.
     async fn bearer(&self, token: &str, client: ClientInfo) -> Result<Login, AuthError> {
-        if self.blocked(client.ip) {
+        if self.limiter().is_blocked(client.ip) {
             return Err(AuthError::Blocked);
         }
         let ip = client.ip.to_string();
@@ -363,7 +349,7 @@ impl Authenticator {
         match checked {
             Ok((MailAuth::Ok { account, credential, scopes, .. }, _)) => Ok(Login { account, credential, scopes }),
             Ok((MailAuth::Denied(reason), _)) => {
-                self.record_failure(client.ip);
+                self.limiter().record_wrong_token(client.ip);
                 tracing::warn!(ip = %client.ip, %reason, protocol = self.protocol, "failed bearer login");
                 Err(AuthError::Invalid)
             }
@@ -398,14 +384,25 @@ impl Authenticator {
         Some(account)
     }
 
-    /// Whether logins from this client's network are refused for now.
-    pub fn is_blocked(&self, client: ClientInfo) -> bool {
-        self.blocked(client.ip)
+    /// Lets one password check for `login` begin, or says no: see
+    /// [`uwumail_store::AuthLimiter::begin`].
+    pub fn begin(&self, client: ClientInfo, login: &str) -> Option<uwumail_store::Attempt> {
+        self.limiter().begin(client.ip, login)
     }
 
-    /// Counts a failed login from this client's network.
-    pub fn failed(&self, client: ClientInfo) {
-        self.record_failure(client.ip);
+    /// Counts a wrong password (or second factor) for `login` from this client's network.
+    pub fn failed(&self, client: ClientInfo, login: &str) {
+        self.limiter().record_failure(client.ip, login);
+    }
+
+    /// Counts a login that does not exist here, from this client's network.
+    pub fn unknown_login(&self, client: ClientInfo) {
+        self.limiter().record_unknown_login(client.ip);
+    }
+
+    /// Forgives `login` its own failures, once it got all the way in.
+    pub fn succeeded(&self, client: ClientInfo, login: &str) {
+        self.limiter().record_success(client.ip, login);
     }
 
     /// Whether this account's second factor is locked after too many wrong codes, from any network.

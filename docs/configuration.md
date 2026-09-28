@@ -336,6 +336,7 @@ max_recipients = 100
 require_tls_for_auth = true
 timeout_secs = 300
 max_connections = 500
+max_connections_per_client = 20  # at once from one address (IPv6: one /64); trusted_relays are not limited
 verify_senders = true         # SPF, DKIM, DMARC for incoming mail
 trusted_relays = []           # servers in front that forward mail to us, e.g. ["10.0.0.5"]
 enforce_dmarc_reject = true   # otherwise p=reject failures go to Junk
@@ -437,3 +438,11 @@ level = "info"
 # enabled = false
 # url = "ldaps://ldap.example.com"
 ```
+
+An SMTP session is closed after `smtp.timeout_secs` without a byte, and also when it gets nowhere:
+it has three minutes to log in or finish a message, and three more after each, and a message has
+ten minutes to arrive once DATA or the first BDAT chunk began. Real clients get there in seconds; a
+client that sends a NOOP now and then only to keep its connection does not keep it. One client
+address may have `smtp.max_connections_per_client` connections at once on all SMTP ports together;
+behind something that hides the clients' addresses (a proxy that makes every connection come from
+one address), raise it or list that address in `trusted_relays`.

@@ -444,9 +444,9 @@ pub fn query_response(
 }
 
 /// Counts the objects of a /set call against the limit.
-/// How long one request may spend on calendar events and contact cards in all its method calls
-/// together: without it, each of the calls in a request would get a query's limit anew, and /get
-/// and /set none (security-audit-0.7.0 S-45, 0.8.0 C-1).
+/// How long one request may spend on calendar events, contact cards and parsing mail in all its
+/// method calls together: without it, each of the calls in a request would get a query's limit
+/// anew, and /get and /set none (security-audit-0.7.0 S-45, 0.8.0 C-1, 0.16.0 PROTOCOLS-9).
 const REQUEST_TIME_LIMIT: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// When the request's time for calendar and contact work is up.
@@ -477,6 +477,24 @@ pub fn check_filter_size(filter: Option<&Value>) -> MethodResult<()> {
         )),
         _ => Ok(()),
     }
+}
+
+/// What mail methods answer once the request's time is up.
+pub const OUT_OF_TIME: &str = "this request has used up its time for reading mail; send the rest in a new request";
+
+/// The most sort comparators a query may have. Each becomes a sort key computed for every object,
+/// some with a lookup of their own; apps use one or two (security-audit-0.16.0 PROTOCOLS-9).
+const MAX_SORT_COMPARATORS: usize = 10;
+
+/// Refuses a sort with more than [`MAX_SORT_COMPARATORS`] comparators.
+pub fn check_sort_size(sort: &[Value]) -> MethodResult<()> {
+    if sort.len() > MAX_SORT_COMPARATORS {
+        return Err(MethodError::new(
+            "unsupportedSort",
+            format!("a sort may have at most {MAX_SORT_COMPARATORS} comparators"),
+        ));
+    }
+    Ok(())
 }
 
 pub fn check_set_size(args: &Value) -> MethodResult<()> {
