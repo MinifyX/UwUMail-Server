@@ -217,7 +217,9 @@ impl Smtp {
             added.extend_from_slice(format!("Message-ID: <{}@{from_domain}>\r\n", random_id()).as_bytes());
         }
         let mut message = added.clone();
-        message.extend_from_slice(&strip_bcc(&raw));
+        // Signed as it will be sent: a lone CR or LF becomes CRLF on the way out (SMTP-9), and the
+        // signature has to hold for that.
+        message.extend_from_slice(&headers::crlf_only(&strip_bcc(&raw)));
 
         let signatures = match dkim::ensure_domain_keys(&ctx.store, &from_domain).await {
             Ok(keys) => dkim::sign(&message, &keys).unwrap_or_else(|err| {

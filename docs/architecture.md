@@ -71,6 +71,9 @@ Design choices that matter later:
 - `outbound` + `client`: the delivery worker claims due recipients with a
   lease, groups them by domain, resolves MX (or a relay / static route),
   delivers with opportunistic TLS, and records the outcome per recipient.
+  Every CR or LF on its own leaves as CRLF, so no receiver can read a line
+  (or an early end of the message) that this server did not see; submitted
+  mail is signed after the same change.
 - `mta_sts` + `https`: our domains' policies, and the policies of domains we
   deliver to. Those are fetched over HTTPS with a valid certificate and cached
   until they expire; an enforced policy limits delivery to the MX hosts it lists
