@@ -15,6 +15,8 @@ use crate::{Result, Store, StoreError, now};
 pub const PUBLIC_PICTURES_SETTING: &str = "pictures.public";
 /// Face pictures kept from incoming mail; the oldest go first.
 pub const MAX_RECEIVED_FACES: i64 = 20_000;
+/// Of those, the most one sending domain keeps, so one domain cannot push out everyone else's.
+pub const MAX_RECEIVED_FACES_PER_DOMAIN: i64 = 200;
 
 /// Who sees a picture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -557,6 +559,15 @@ impl Store {
                  ON CONFLICT (email) DO UPDATE SET png = excluded.png, received_at = excluded.received_at",
                 params![email, png, now()],
             )?;
+            if let Some((_, domain)) = email.rsplit_once('@') {
+                let suffix = format!("@{domain}");
+                tx.execute(
+                    "DELETE FROM received_faces WHERE email IN (
+                         SELECT email FROM received_faces WHERE substr(email, -length(?1)) = ?1
+                         ORDER BY received_at DESC, email DESC LIMIT -1 OFFSET ?2)",
+                    params![suffix, MAX_RECEIVED_FACES_PER_DOMAIN],
+                )?;
+            }
             tx.execute(
                 "DELETE FROM received_faces WHERE email IN (
                      SELECT email FROM received_faces ORDER BY received_at, email
@@ -795,7 +806,7 @@ mod tests {
             .write(|tx| {
                 tx.execute(
                     "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1)
-                     INSERT INTO received_faces (email, png, received_at) SELECT 'f' || i || '@example.net', x'00', 0 FROM n",
+                     INSERT INTO received_faces (email, png, received_at) SELECT 'f' || i || '@d' || (i % 1000) || '.example', x'00', 0 FROM n",
                     [MAX_RECEIVED_FACES],
                 )?;
                 Ok(())
@@ -810,6 +821,27 @@ mod tests {
         assert_eq!(count, MAX_RECEIVED_FACES);
         assert!(store.received_face("new@example.net").await.unwrap().is_some());
         assert!(store.received_face("friend@example.net").await.unwrap().is_some(), "the newest stay");
+    }
+
+    #[tokio::test]
+    async fn one_domain_keeps_only_so_many_faces() {
+        let (store, _dir) = store().await;
+        store.store_received_face("friend@example.net", b"one".to_vec()).await.unwrap();
+        for n in 0..MAX_RECEIVED_FACES_PER_DOMAIN + 5 {
+            store.store_received_face(&format!("p{n}@flood.example"), b"f".to_vec()).await.unwrap();
+        }
+        let flood: i64 = store
+            .read(|conn| {
+                Ok(conn.query_row(
+                    "SELECT count(*) FROM received_faces WHERE email LIKE '%@flood.example'",
+                    [],
+                    |row| row.get(0),
+                )?)
+            })
+            .await
+            .unwrap();
+        assert_eq!(flood, MAX_RECEIVED_FACES_PER_DOMAIN);
+        assert!(store.received_face("friend@example.net").await.unwrap().is_some(), "others stay");
     }
 
     #[tokio::test]

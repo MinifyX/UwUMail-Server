@@ -91,7 +91,8 @@ written it in on the way. The message must also have one From address and one
 `Face:` header, not be junk, and not come from one of this server's own
 domains — people here choose themselves who sees their picture. The Face must
 be a small PNG (at most about 48 × 48 pixels and 2 KB). The newest Face per
-address is kept, 20,000 at most; the oldest go first.
+address is kept, 20,000 at most and 200 per sending domain; the oldest go
+first.
 
 ## Pictures of senders
 
