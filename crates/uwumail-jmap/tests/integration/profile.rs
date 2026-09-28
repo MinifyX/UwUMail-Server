@@ -210,3 +210,55 @@ async fn public_pictures_follow_the_admin_switches() {
     let fine = set(&server, "mini@example.org", json!({ "visibility": "off", "sendFace": true })).await;
     assert_eq!(fine["updated"]["singleton"], Value::Null);
 }
+
+/// Sent over JMAP, a person's mail carries their Face like mail sent over SMTP.
+#[tokio::test(flavor = "multi_thread")]
+async fn jmap_submission_carries_the_face() {
+    let server = server().await;
+    let account = server.account_id("mini@example.org").await;
+    let blob = upload(&server, "mini@example.org", sample(100, 100, "png")).await;
+    set(&server, "mini@example.org", json!({ "blobId": blob, "visibility": "public", "sendFace": true })).await;
+    let raw = "From: Mini <mini@example.org>\nTo: Nyu <nyu@example.org>\nSubject: Gesicht\n\nMiau!\n";
+    let email = server.deliver("mini@example.org", raw).await;
+    let using = [
+        "urn:ietf:params:jmap:core",
+        "urn:ietf:params:jmap:mail",
+        "urn:ietf:params:jmap:submission",
+        "urn:uwumail:jmap:settings",
+    ];
+    let responses = server
+        .api_using(
+            "mini@example.org",
+            &using,
+            json!([
+                ["UserSettings/set", { "accountId": account, "update": { "singleton": { "values/undoSendSeconds": 0 } } }, "0"],
+                ["Identity/get", { "accountId": account }, "1"]
+            ]),
+        )
+        .await;
+    let identity = args(&responses, 1, "Identity/get")["list"][0]["id"].as_str().unwrap().to_owned();
+    let responses = server
+        .api_using(
+            "mini@example.org",
+            &using,
+            json!([["EmailSubmission/set", { "accountId": account, "create": { "s": { "identityId": identity, "emailId": email } } }, "0"]]),
+        )
+        .await;
+    assert!(args(&responses, 0, "EmailSubmission/set")["created"]["s"].is_object(), "{}", responses[0]);
+
+    let nyu = server.account_id("nyu@example.org").await;
+    let responses = server
+        .api_using(
+            "nyu@example.org",
+            &using,
+            json!([
+                ["Email/query", { "accountId": nyu }, "0"],
+                ["Email/get", { "accountId": nyu, "#ids": { "resultOf": "0", "name": "Email/query", "path": "/ids" },
+                    "properties": ["subject", "header:Face:asRaw"] }, "1"]
+            ]),
+        )
+        .await;
+    let got = &args(&responses, 1, "Email/get")["list"][0];
+    assert_eq!(got["subject"], "Gesicht");
+    assert!(got["header:Face:asRaw"].as_str().is_some_and(|face| face.trim().len() > 100), "{got}");
+}

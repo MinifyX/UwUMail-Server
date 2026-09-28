@@ -2202,6 +2202,21 @@ pub(crate) async fn receive(
     // cancellation in the message speak for that address.
     let verified_from =
         verdict.as_ref().filter(|v| v.from_verified || v.dmarc_passed).and_then(|v| v.from_address.clone());
+    // A Face picture speaks for the From address, so it is only kept when DMARC vouches for that
+    // domain, and never from junk (docs/profile-pictures.md).
+    if !junk
+        && let Some(from) = verdict.as_ref().filter(|v| v.dmarc_passed).and_then(|v| v.from_address.as_deref())
+        && let Some(value) = headers::first_value(&raw, "Face")
+    {
+        match crate::profile_pictures::incoming_face(&value) {
+            Some(png) => {
+                if let Err(err) = ctx.store.store_received_face(from, png).await {
+                    tracing::warn!(%id, %err, "keeping the sender's Face failed");
+                }
+            }
+            None => tracing::debug!(%id, "the Face that came with the message is not a small PNG"),
+        }
+    }
     for account_id in inbox_accounts {
         vacation::maybe_reply(&ctx, account_id, &envelope.address, sender_verified, &message).await;
         let sender = crate::scheduling::Sender { verified_from: verified_from.as_deref(), local: false };
