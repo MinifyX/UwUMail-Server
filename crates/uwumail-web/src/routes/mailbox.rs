@@ -15,6 +15,7 @@ use crate::Web;
 use crate::error::{ApiError, ApiResult};
 use crate::health::unix_now;
 use crate::notices::{Notice, Origin, notify};
+use crate::routes::security::confirm_identity;
 use crate::session::{Admin, Session};
 
 /// Confirmation mails go to addresses a person typed in, so they must never turn into a way to
@@ -56,6 +57,9 @@ pub async fn forwarding(State(web): State<Web>, session: Session) -> ApiResult<J
 #[derive(Deserialize)]
 pub struct NewTarget {
     address: String,
+    /// Mail leaving the server needs the password again unless the login is fresh (WEB-5).
+    #[serde(default)]
+    password: Option<String>,
 }
 
 pub async fn add_target(
@@ -66,6 +70,7 @@ pub async fn add_target(
     let (local, domain) = uwumail_store::normalize_address(&new.address)?;
     let address = format!("{local}@{domain}");
     if web.store().resolve_recipient(&address).await?.is_none() {
+        confirm_identity(&web, &session, new.password.as_deref()).await?;
         check_confirmation_allowed(&web, session.account.id, &address).await?;
     }
     let allowed = web.smtp().allow_external_forwarding();

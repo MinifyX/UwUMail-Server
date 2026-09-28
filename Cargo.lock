@@ -4695,6 +4695,7 @@ dependencies = [
  "mail-builder",
  "qrcode",
  "rcgen",
+ "rusqlite",
  "rustix",
  "rustls",
  "rustls-native-certs",

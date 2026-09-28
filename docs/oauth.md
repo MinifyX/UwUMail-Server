@@ -129,8 +129,10 @@ the page shows the error instead of sending the browser there (RFC 9700
 section 4.11.2); `prompt=none` without consent is shown the same way. Saying
 no always goes back to the app: that takes a click.
 
-Once a person allowed an app, it is not asked again for the same scopes: the
-page hands out the code by itself. Signing the app out under *Security*
+Allowing an app for the first time, or for more than before, needs the
+password again when the portal login is older than ten minutes, as a new app
+password does. Once a person allowed an app, it is not asked again for the
+same scopes: the page hands out the code by itself. Signing the app out under *Security*
 forgets that.
 
 ### Scopes

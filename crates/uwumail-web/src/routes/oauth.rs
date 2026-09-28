@@ -23,6 +23,7 @@ use uwumail_store::{
 };
 
 use super::audit;
+use super::security::confirm_identity;
 use crate::Web;
 use crate::error::{ApiError, ApiResult};
 use crate::jwt::SigningKey;
@@ -376,6 +377,10 @@ pub struct Decision {
     #[serde(flatten)]
     params: AuthorizeParams,
     approve: bool,
+    /// Letting a new app in needs the password again unless the login is fresh, like a new app
+    /// password (WEB-5).
+    #[serde(default)]
+    password: Option<String>,
 }
 
 /// The person's answer: a code for the app, or a refusal. Either way the page sends the browser on.
@@ -399,6 +404,9 @@ pub async fn authorize_decide(
             state,
         );
         return Ok(Json(json!({ "redirect": redirect })));
+    }
+    if !web.store().oauth_consented(session.account.id, checked.client.id, &checked.scopes).await? {
+        confirm_identity(&web, &session, decision.password.as_deref()).await?;
     }
     let code = web
         .store()

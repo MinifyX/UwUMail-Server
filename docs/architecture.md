@@ -260,8 +260,9 @@ only to its mail ports on public addresses.
   code once) and passkeys (WebAuthn without attestation; ES256, EdDSA, RS256,
   verified with aws-lc-rs). The first one brings ten recovery codes, stored as
   SHA-256. Password links replace the password, never the second factor.
-  Sensitive changes (second factors, app passwords) need the password again
-  unless the login or the last confirmation is younger than ten minutes.
+  Sensitive changes (second factors, app passwords, letting a new OAuth app
+  in, forwarding to another server) need the password again unless the login
+  or the last confirmation is younger than ten minutes.
 - Changes to someone's login are written to their activity list and put into
   their inbox as a short notice, so a takeover does not go unnoticed.
 - Web portal sessions: a random token in an `HttpOnly`, `SameSite=Strict`

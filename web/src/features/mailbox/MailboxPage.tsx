@@ -5,6 +5,7 @@ import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
 import { Card, PageHeader } from "@/components/ui/Card";
 import { Field, TextInput, Toggle } from "@/components/ui/Field";
+import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
 import { useT } from "@/i18n";
 import { api, type ForwardingView, type VacationView } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -21,9 +22,13 @@ function ForwardingCard({ forwarding }: { forwarding: ForwardingView }) {
   const queryClient = useQueryClient();
   const [address, setAddress] = useState("");
   const saved = (data: ForwardingView) => queryClient.setQueryData(forwardingKey, data);
+  // Mail leaving the server needs the password again unless the login is fresh.
+  const { confirmed, dialog } = usePasswordConfirmation();
   const add = useMutation({
     mutationFn: (value: string) =>
-      api<ForwardingView>("/api/account/forwarding/targets", { method: "POST", body: { address: value } }),
+      confirmed((password) =>
+        api<ForwardingView>("/api/account/forwarding/targets", { method: "POST", body: { address: value, password } }),
+      ),
     onSuccess: (data, value) => {
       saved(data);
       setAddress("");
@@ -99,7 +104,7 @@ function ForwardingCard({ forwarding }: { forwarding: ForwardingView }) {
           <form className="flex flex-col gap-2 sm:flex-row sm:items-start" onSubmit={submit}>
             <Field
               label={t("mailbox.forwarding.address")}
-              error={add.isError ? errorText(add.error) : undefined}
+              error={add.isError && !(add.error instanceof Cancelled) ? errorText(add.error) : undefined}
               className="min-w-0 flex-1"
             >
               {(id) => (
@@ -128,6 +133,7 @@ function ForwardingCard({ forwarding }: { forwarding: ForwardingView }) {
           />
         )}
       </div>
+      {dialog}
     </Card>
   );
 }

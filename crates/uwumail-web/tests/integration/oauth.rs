@@ -439,6 +439,42 @@ async fn errors_go_back_by_themselves_only_to_apps_allowed_before() {
 }
 
 #[tokio::test]
+async fn letting_a_new_app_in_needs_a_fresh_login_or_the_password() {
+    let (app, _store, dir) = setup().await;
+    let (_, client) = register(&app, json!([REDIRECT])).await;
+    let client_id = client["client_id"].as_str().unwrap().to_owned();
+    let auth = login(&app).await;
+    let query = authorize_query(&client_id, &[("scope", "mail")]);
+    allow(&app, &auth, &query).await;
+
+    rusqlite::Connection::open(dir.path().join("uwumail.db"))
+        .unwrap()
+        .execute("UPDATE web_sessions SET created_at = created_at - 3600", [])
+        .unwrap();
+    // Allowed before: the page hands out the code without asking.
+    allow(&app, &auth, &query).await;
+    // More than before, from a login that is not fresh: the password first.
+    let wider = authorize_query(&client_id, &[("scope", "mail smtp")]);
+    let decision = |password: Option<&str>| -> Value {
+        let mut body: serde_json::Map<String, Value> = url::form_urlencoded::parse(wider.as_bytes())
+            .map(|(name, value)| (name.into_owned(), Value::String(value.into_owned())))
+            .collect();
+        body.insert("approve".into(), Value::Bool(true));
+        if let Some(password) = password {
+            body.insert("password".into(), Value::String(password.into()));
+        }
+        body.into()
+    };
+    let (status, refused) = portal(&app, "POST", "/api/oauth/authorize", decision(None), &auth).await;
+    assert_eq!((status, refused["code"].as_str()), (StatusCode::CONFLICT, Some("confirmPassword")));
+    let (_, refused) = portal(&app, "POST", "/api/oauth/authorize", decision(Some("falsch-falsch")), &auth).await;
+    assert_eq!(refused["code"], "wrongPassword");
+    let (status, answer) = portal(&app, "POST", "/api/oauth/authorize", decision(Some(PASSWORD)), &auth).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    assert!(answer["redirect"].as_str().unwrap().contains("code="));
+}
+
+#[tokio::test]
 async fn refused_codes_and_tokens_are_counted_per_network() {
     let (app, _store, _dir) = setup().await;
     let (_, client) = register(&app, json!([REDIRECT])).await;
