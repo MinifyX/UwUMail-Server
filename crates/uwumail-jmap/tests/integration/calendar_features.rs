@@ -526,6 +526,34 @@ async fn single_instances_without_their_series() {
     assert!(ics.contains("RECURRENCE-ID;TZID=Europe/Berlin:20261020T090000"), "{ics}");
 }
 
+/// A single instance the owner keeps secret is not there for others, even beside a public one.
+#[tokio::test(flavor = "multi_thread")]
+async fn secret_single_instances_stay_hidden_from_others() {
+    let server = server().await;
+    let rights = json!({ "mayReadItems": true, "mayWriteAll": true, "mayWriteOwn": true, "mayUpdatePrivate": true, "mayRSVP": true });
+    let calendar = server.share_with_nyu(rights).await;
+    let secret = TWO_INSTANCES.replace("SUMMARY:Two\r\n", "SUMMARY:Two\r\nCLASS:CONFIDENTIAL\r\n");
+    let path = format!("/dav/calendars/{NYU}/shared~{}/some.ics", &calendar[1..]);
+    let put = server.send(NYU, "PUT", &path, &[], secret).await;
+    assert_eq!(put.status, StatusCode::CREATED, "{}", put.body);
+    let found = server.call(MINI, "CalendarEvent/query", json!({ "filter": { "uid": "only-some@example.org" } })).await;
+    let id = found["ids"][0].as_str().unwrap_or_else(|| panic!("{found}")).to_owned();
+    let other = format!("{id}_20261103T090000");
+
+    let got = server.call(NYU, "CalendarEvent/get", json!({ "ids": [&other] })).await;
+    assert_eq!(got["notFound"], json!([&other]), "{got}");
+    let window = json!({ "filter": { "after": "2026-10-01T00:00:00", "before": "2026-12-01T00:00:00" }, "expandRecurrences": true });
+    let expanded = server.call(NYU, "CalendarEvent/query", window.clone()).await;
+    assert!(!expanded["ids"].as_array().unwrap().contains(&json!(&other)), "{expanded}");
+    let set = server
+        .call(NYU, "CalendarEvent/set", json!({ "update": { &other: { "title": "Drei" } }, "destroy": [&other] }))
+        .await;
+    assert_eq!(set["notUpdated"][&other]["type"], "notFound", "{set}");
+    assert_eq!(set["notDestroyed"][&other]["type"], "notFound", "{set}");
+    // The owner has both.
+    assert_eq!(server.call(MINI, "CalendarEvent/query", window).await["ids"], json!([&id, &other]));
+}
+
 fn at(calendar: &str, title: &str, start: &str, extra: Value) -> Value {
     let mut event = timed(calendar, title);
     event["start"] = json!(start);
