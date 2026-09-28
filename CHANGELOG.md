@@ -3,6 +3,77 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.16.0
+
+**Domains only for masked addresses** ([docs/jmap-masked-email.md](docs/jmap-masked-email.md#switching-it-on)):
+
+- A domain can be **masked-only**: chosen when adding it (*Add domain → Only masked addresses*,
+  `uwumail-server domain add --masked`), or by turning a domain into one that carries nothing but
+  masked addresses (`domain kind <domain> masked`). It has no people, aliases, groups, forwarding
+  addresses or catch-all; DKIM, DNS records, MTA-STS and reports work as for any domain, and
+  postmaster@ and abuse@ still reach the admins. Turning it back into a mail domain is always
+  possible.
+- Per domain, the admin decides where its people may make masked addresses: **off**, on **their
+  own domain**, on **masked-only domains** (which ones is chosen per domain) or **both**, and which
+  domain a new one gets when the app does not say (password managers). Each part can be set
+  differently for a single person on their page.
+- *My account → Masked addresses* offers exactly the allowed domains. Over JMAP, the MaskedEmail
+  capability of the account lists them with the default, and `MaskedEmail/set` takes an optional
+  `domain` (a UwUMail addition; Fastmail's apps are unaffected).
+- The webmail (0.11.0) has a page for masked addresses under *Settings → Masked addresses*: make,
+  copy, switch off, delete and restore them, with the domain choice.
+- A message to two masked addresses of the same person turns both on and notes it on both; before,
+  the second stayed pending and was deleted a day later.
+
+**Upgrading:** a domain that was open for masked addresses becomes "own domain" for **its own**
+people. People of other domains can no longer make new ones there; the ones they made keep working.
+A domain that only carried masked addresses (nobody's login is on it) therefore offers them to nobody
+after the upgrade: make it masked-only (*its page → Make it masked-only*) and choose it under the
+mail domains' masked address settings. `PUT /api/admin/domains/{domain}/masked-addresses` is replaced
+by `…/masked-policy` and `…/kind`.
+
+**Security** ([docs/security-audit-0.16.0.md](docs/security-audit-0.16.0.md)): a full audit of
+server and webmail, and every finding from Medium up fixed, 42 in all. Most were ways for one input
+to take the whole server down or make it use far too much memory or CPU:
+
+- A deeply nested message sent to port 25 crashed the server, and again at every retry (critical).
+  Every message now passes a cheap check of its shape before it is parsed: at most 64 levels, 5,000
+  parts and 20,000 header fields ([configuration.md](docs/configuration.md#limits-on-the-shape-of-a-message)).
+- Crashes from broken dates (IMAP APPEND before login, invitations, CalDAV), from a user-chosen IMAP
+  server's `LIST` answer, and from deep `bodyStructure`; memory bombs in `Email/set`, JMAP result
+  references, IMAP FETCH and SEARCH; quadratic loops in the spam filter and when reading a website
+  for a sender picture.
+- **Logins:** one limiter for every protocol (portal, IMAP, ManageSieve, SMTP, JMAP, DAV), counted
+  before the password is checked, and a server-wide cap on password checks running at once, which
+  answers "try again later" when it is full. Ten failures over IMAP now also hold that network off
+  the portal ([deployment.md](docs/deployment.md)).
+- **Ids are never handed out twice:** a purged account's id went to the next new account, and an
+  IMAP or WebSocket connection still open from the old one then acted on the new one. IMAP,
+  ManageSieve, the JMAP WebSocket and event stream now end with their login (password change,
+  revoked app password or OAuth app, disabled account).
+- App passwords and OAuth tokens limited to `mail` no longer reach calendars and contacts over JMAP;
+  that takes `dav`. Tokens from `/jmap/token` made before 0.16.0 are `mail`-only and see calendars
+  again once the app asks for a new one.
+- Scheduled mail is cancelled when the login that scheduled it ends or the account is disabled.
+- Turning a person into a service or shared mailbox also removes their forwarding, fetched
+  mailboxes and moves, and switches off their active Sieve script, calendar subscriptions and
+  masked addresses.
+- JMAP keywords must be IMAP atoms, so nobody can put fake IMAP answers into another person's mail
+  app; bad ones already stored are removed.
+- **Limits:** JMAP uploads count against the quota (1 GiB a day at most), mail methods have
+  per-request bounds ([jmap-clients.md](docs/jmap-clients.md#limits)); one calendar change mails
+  at most `max_recipients` outside people; SMTP allows 20 connections per client address
+  (`smtp.max_connections_per_client`; raise it if a proxy hides client addresses) with deadlines;
+  IMAP closes connections that do not log in within three minutes; word lists, calendar moves,
+  free-busy, S3 listings and the IMAP client of fetch and moving are bounded.
+- Fetch and moving connect only to the public address they checked; DANE can no longer be switched
+  off with a forged MX answer; a TLS-RPT record can name at most five report addresses.
+- Folder backups never follow symlinks on the target; the gateway no longer counts failed
+  handshakes against the paired server; its installer and `scripts/deploy-gateway.sh` were
+  hardened.
+- Webmail 0.11.0: attachment names, links and `List-Unsubscribe` addresses are checked in linear
+  time; before, a crafted mail could freeze the tab.
+
 ## 0.15.0
 
 **Turning accounts into shared mailboxes** ([docs/groups.md](docs/groups.md#turning-an-account-into-one)):
