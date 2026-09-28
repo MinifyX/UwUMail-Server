@@ -1544,7 +1544,9 @@ pub(crate) async fn receive(
         // A fetched message the provider vouched for nothing about: its signatures are still
         // worth checking, and they are all that is left to check.
         (None, Origin::Fetched { .. }) if live.smtp.verify_senders => Some(checks::verify_signatures(&ctx, &raw).await),
-        _ => None,
+        // Nothing to ask about the sender, but the From the person will see still has to be a
+        // single one that can be judged (security-audit-0.16.0 SMTP-10).
+        _ => checks::check_headers(&ctx.hostname, &raw),
     };
     if let Some(checks::Verdict { action: Action::Reject(reason), .. }) = &verdict {
         tracing::info!(%id, from = %envelope.address, %reason, "rejected by DMARC");

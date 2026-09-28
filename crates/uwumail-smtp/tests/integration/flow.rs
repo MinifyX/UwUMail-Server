@@ -1427,6 +1427,24 @@ async fn fetched_mail_is_judged_here_and_the_providers_word_only_adds_points() {
     }
 }
 
+/// Without a provider verdict to go on, the From the person sees still has to be a single one.
+#[tokio::test(flavor = "multi_thread")]
+async fn fetched_mail_without_a_verdict_still_gets_the_header_checks() {
+    let a = spam_test_server(SpamConfig::default(), None).await;
+    let account = a.smtp.store().account("mini@a.test").await.unwrap().unwrap();
+    let mailbox = fetched_mailbox(account.id);
+    let two_from = fetched_message(None, "From: chef@a.test\r\n");
+    let two_domains = String::from_utf8(fetched_message(None, ""))
+        .unwrap()
+        .replace("From: news@sender.test", "From: news@sender.test, chef@a.test")
+        .into_bytes();
+    for raw in [two_from, two_domains] {
+        let taken = uwumail_smtp::deliver_fetched(&a.smtp, mailbox.clone(), false, "mini@a.test".into(), raw).await;
+        assert!(matches!(taken, uwumail_smtp::Taken::Refused(ref answer) if answer.starts_with("550")), "{taken:?}");
+    }
+    assert!(a.mailbox("mini@a.test", MailboxRole::Inbox).await.is_empty());
+}
+
 /// A header nobody signed for may count against a message, never for it.
 #[tokio::test(flavor = "multi_thread")]
 async fn an_unsigned_verdict_in_a_fetched_message_cannot_vouch_for_it() {

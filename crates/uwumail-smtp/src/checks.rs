@@ -57,6 +57,24 @@ fn from_domains(addresses: &[String]) -> usize {
     domains.len()
 }
 
+/// One From may name several mailboxes. DMARC exempts a From whose addresses lie in more than one
+/// domain (RFC 7489 section 6.6.1), so a policy domain written next to one's own would never be
+/// judged; such a message is refused like one with two From headers (security-audit-0.8.0 T-2).
+fn from_fault(message: &AuthenticatedMessage<'_>) -> Option<&'static str> {
+    (from_domains(&message.from) > 1).then_some("a message may have From addresses in only one domain")
+}
+
+/// The checks on the header block every incoming message goes through, whatever else can or cannot
+/// be checked about it: one From, in one domain, in a header block that ends where it should. Gives
+/// the refusing verdict for a message that fails them (security-audit-0.16.0 SMTP-10).
+pub fn check_headers(hostname: &str, raw: &[u8]) -> Option<Verdict> {
+    if let Some(reason) = crate::headers::header_block_fault(raw) {
+        return Some(rejecting(hostname, reason));
+    }
+    let message = AuthenticatedMessage::parse(raw)?;
+    from_fault(&message).map(|reason| rejecting(hostname, reason))
+}
+
 fn rejecting(hostname: &str, reason: &str) -> Verdict {
     Verdict {
         header: format!("Authentication-Results: {hostname}; none\r\n"),
@@ -95,11 +113,8 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
         };
     };
 
-    // One From may name several mailboxes. DMARC exempts a From whose addresses lie in more than one
-    // domain (RFC 7489 section 6.6.1), so a policy domain written next to one's own would never be
-    // judged; such a message is refused like one with two From headers (security-audit-0.8.0 T-2).
-    if from_domains(&message.from) > 1 {
-        return rejecting(hostname, "a message may have From addresses in only one domain");
+    if let Some(reason) = from_fault(&message) {
+        return rejecting(hostname, reason);
     }
 
     let auth = &ctx.authenticator;
@@ -187,6 +202,10 @@ fn related_to_from(from_address: Option<&str>, domain: &str) -> bool {
 /// found out instead is read in [`crate::fetched`] and counts as points, not as a verdict.
 pub async fn verify_signatures(ctx: &Context, raw: &[u8]) -> Verdict {
     let hostname = ctx.hostname.as_str();
+    // The From the person sees must be the one the signatures are judged against, here as well.
+    if let Some(reason) = crate::headers::header_block_fault(raw) {
+        return rejecting(hostname, reason);
+    }
     let mut verdict = Verdict {
         header: format!("Authentication-Results: {hostname}; none\r\n"),
         action: Action::Accept,
@@ -202,6 +221,9 @@ pub async fn verify_signatures(ctx: &Context, raw: &[u8]) -> Verdict {
     let Some(message) = AuthenticatedMessage::parse(raw) else {
         return verdict;
     };
+    if let Some(reason) = from_fault(&message) {
+        return rejecting(hostname, reason);
+    }
 
     let dkim = ctx.authenticator.verify_dkim(ctx.dns.params(&message)).await;
     let header_from = message.from.first().map(String::as_str).unwrap_or_default();
