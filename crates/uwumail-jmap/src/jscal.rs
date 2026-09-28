@@ -12,6 +12,8 @@ use chrono::{DateTime, LocalResult, NaiveDateTime, TimeZone};
 use chrono_tz::Tz;
 use serde_json::{Map, Value};
 
+use crate::timezones;
+
 /// The dates the server accepts in an event, as in the session's `minDateTime`/`maxDateTime`.
 pub const MIN_DATE_TIME: &str = "1900-01-01T00:00:00Z";
 pub const MAX_DATE_TIME: &str = "2200-01-01T00:00:00Z";
@@ -37,6 +39,7 @@ pub const JMAP_PROPERTIES: &[&str] =
 /// Properties an instance does not take over from its series when an override is written out whole.
 const NOT_IN_OVERRIDES: &[&str] = &[
     "@type",
+    "timeZones",
     "uid",
     "method",
     "prodId",
@@ -74,13 +77,34 @@ impl Parsed {
         }
         fill_alert_actions(&mut event);
         materialize_overrides(&mut event);
+        let zones = timezones::write(&mut event);
         let mut group = self.group.clone();
         group["entries"][self.index] = Value::Object(event);
+        // The custom zones are written anew below.
+        if let Some(Value::Array(components)) = group.get_mut("iCalendar").and_then(|c| c.get_mut("components")) {
+            components.retain(|component| {
+                let is_zone =
+                    component.get(0).and_then(Value::as_str).is_some_and(|n| n.eq_ignore_ascii_case("vtimezone"));
+                let tzid = component.get(1).and_then(Value::as_array).into_iter().flatten().find_map(|property| {
+                    (property.get(0)?.as_str()?.eq_ignore_ascii_case("tzid")).then(|| property.get(3)?.as_str())?
+                });
+                !(is_zone && tzid.is_some_and(|tzid| zones.iter().any(|(id, _)| id == tzid)))
+            });
+        }
         let json = Value::Object(group).to_string();
         let calendar = JSCalendar::<String, String>::parse(&json).map_err(|err| format!("not JSCalendar: {err}"))?;
         let mut calendar = calendar.into_icalendar().ok_or("the event cannot be written as iCalendar")?;
         calendar.add_missing_timezones();
-        Ok(calendar.to_string())
+        let mut text = calendar.to_string();
+        if !zones.is_empty() {
+            let end = text.rfind("END:VCALENDAR").ok_or("the event cannot be written as iCalendar")?;
+            let mut definitions = String::new();
+            for (tzid, zone) in &zones {
+                definitions.push_str(&timezones::vtimezone(tzid, zone).ok_or("a custom time zone cannot be written")?);
+            }
+            text.insert_str(end, &definitions);
+        }
+        Ok(text)
     }
 
     /// A new object holding just this event.
@@ -101,9 +125,13 @@ pub fn from_icalendar(content: &str) -> Option<Parsed> {
     };
     let entries = group.get_mut("entries")?.as_array_mut()?;
     let index = entries.iter().position(|entry| entry.get("@type").and_then(Value::as_str) == Some("Event"))?;
-    if let Value::Object(event) = &mut entries[index] {
-        trim_overrides(event);
-    }
+    let mut event = match std::mem::take(&mut entries[index]) {
+        Value::Object(event) => event,
+        _ => return None,
+    };
+    trim_overrides(&mut event);
+    timezones::read(&group, &mut event);
+    group.get_mut("entries")?[index] = Value::Object(event);
     Some(Parsed { group, index })
 }
 
@@ -332,10 +360,7 @@ pub fn parse_duration(value: &str) -> Option<(i64, i64)> {
 /// When an event (or instance) starts and ends in UTC. Floating times are read in `floating`.
 pub fn span(event: &Map<String, Value>, floating: Tz) -> Option<(i64, i64)> {
     let start = parse_local(event.get("start")?.as_str()?)?;
-    let zone = match event.get("timeZone") {
-        Some(Value::String(name)) => time_zone(name).unwrap_or(chrono_tz::UTC),
-        _ => floating,
-    };
+    let to_utc = |local: NaiveDateTime| local_to_utc(event, local, floating);
     let all_day = event.get("showWithoutTime").and_then(Value::as_bool).unwrap_or(false);
     let (days, seconds) = match event.get("duration").and_then(Value::as_str).and_then(parse_duration) {
         Some(duration) => duration,
@@ -347,8 +372,42 @@ pub fn span(event: &Map<String, Value>, floating: Tz) -> Option<(i64, i64)> {
     // wall clock, hours, minutes and seconds are exact and move the instant. Across a change of
     // the clocks, `P1D` is 23 or 25 hours and `PT5H` is always five.
     let nominal_end = start.checked_add_signed(chrono::Duration::days(days))?;
-    let end = to_utc(nominal_end, zone).checked_add(seconds)?;
-    Some((to_utc(start, zone), end))
+    let end = to_utc(nominal_end).checked_add(seconds)?;
+    Some((to_utc(start), end))
+}
+
+/// The custom time zone (`timeZones`) an event's `timeZone` names, if it names one.
+fn custom_zone(event: &Map<String, Value>) -> Option<&Map<String, Value>> {
+    let key = event.get("timeZone")?.as_str()?;
+    if !key.starts_with('/') {
+        return None;
+    }
+    event.get("timeZones")?.get(key)?.as_object()
+}
+
+/// A local time of an event in its time zone (IANA or custom; `floating` when it has none) as a
+/// UTC timestamp.
+pub fn local_to_utc(event: &Map<String, Value>, local: NaiveDateTime, floating: Tz) -> i64 {
+    if let Some(zone) = custom_zone(event) {
+        return timezones::to_utc(zone, local);
+    }
+    let zone = match event.get("timeZone") {
+        Some(Value::String(name)) => time_zone(name).unwrap_or(chrono_tz::UTC),
+        _ => floating,
+    };
+    to_utc(local, zone)
+}
+
+/// A UTC timestamp as the local time of an event's time zone.
+pub fn utc_to_local(event: &Map<String, Value>, timestamp: i64, floating: Tz) -> Option<NaiveDateTime> {
+    if let Some(zone) = custom_zone(event) {
+        return timezones::from_utc(zone, timestamp);
+    }
+    let zone = match event.get("timeZone") {
+        Some(Value::String(name)) => time_zone(name).unwrap_or(chrono_tz::UTC),
+        _ => floating,
+    };
+    from_utc(timestamp, zone)
 }
 
 /// Whether `[start, end)` overlaps a query window: ends after `after` and starts before `before`.
@@ -589,11 +648,13 @@ fn check_local(value: Option<&Value>, property: &str) -> Result<Option<NaiveDate
     }
 }
 
-fn check_zone(value: Option<&Value>, property: &str) -> Result<(), Invalid> {
+fn check_zone(value: Option<&Value>, property: &str, custom: &[String]) -> Result<(), Invalid> {
     match value {
         None | Some(Value::Null) => Ok(()),
-        Some(Value::String(name)) if time_zone(name).is_some() => Ok(()),
-        Some(_) => Err(invalid(property, "must be a time zone of the IANA database, like Europe/Berlin")),
+        Some(Value::String(name)) if time_zone(name).is_some() || custom.contains(name) => Ok(()),
+        Some(_) => {
+            Err(invalid(property, "must be a time zone of the IANA database, like Europe/Berlin, or one of timeZones"))
+        }
     }
 }
 
@@ -700,6 +761,7 @@ fn is_weekday(day: &str) -> bool {
 /// Properties an override must not change (they belong to the series).
 const FORBIDDEN_IN_OVERRIDES: &[&str] = &[
     "@type",
+    "timeZones",
     "uid",
     "method",
     "prodId",
@@ -745,6 +807,7 @@ pub fn validate(event: &Map<String, Value>) -> Result<(), Invalid> {
     if event.get("recurrenceId").is_some_and(|rid| !rid.is_null()) {
         return Err(invalid("recurrenceId", "single instances are changed through their series"));
     }
+    let custom = timezones::check(event.get("timeZones")).map_err(|message| invalid("timeZones", message))?;
     match event.get("title") {
         None | Some(Value::Null) => {}
         Some(Value::String(title)) if title.len() <= MAX_TITLE_BYTES => {}
@@ -770,7 +833,7 @@ pub fn validate(event: &Map<String, Value>) -> Result<(), Invalid> {
         }
     }
     let start = check_local(event.get("start"), "start")?.ok_or_else(|| invalid("start", "an event needs a start"))?;
-    check_zone(event.get("timeZone"), "timeZone")?;
+    check_zone(event.get("timeZone"), "timeZone", &custom)?;
     let duration = check_duration(event.get("duration"), "duration")?.unwrap_or((0, 0));
     let end = start + chrono::Duration::days(duration.0) + chrono::Duration::seconds(duration.1);
     if !in_range(end.and_utc().timestamp()) {
@@ -810,7 +873,7 @@ pub fn validate(event: &Map<String, Value>) -> Result<(), Invalid> {
                         "start" => {
                             check_local(Some(value), &property)?;
                         }
-                        "timeZone" => check_zone(Some(value), &property)?,
+                        "timeZone" => check_zone(Some(value), &property, &custom)?,
                         "duration" => {
                             check_duration(Some(value), &property)?;
                         }
@@ -1026,6 +1089,50 @@ END:VCALENDAR\r\n";
         // Written again, the time zone it now carries is not added a second time.
         let twice = again.to_icalendar(again.event()).unwrap();
         assert_eq!(twice.matches("BEGIN:VTIMEZONE").count(), 1, "{twice}");
+    }
+
+    const CUSTOM: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//DE\r\nBEGIN:VTIMEZONE\r\nTZID:My Zone\r\n\
+BEGIN:STANDARD\r\nDTSTART:16011028T030000\r\nRRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=10\r\nTZOFFSETFROM:+0200\r\n\
+TZOFFSETTO:+0100\r\nEND:STANDARD\r\nBEGIN:DAYLIGHT\r\nDTSTART:16010325T020000\r\nRRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=3\r\n\
+TZOFFSETFROM:+0100\r\nTZOFFSETTO:+0200\r\nEND:DAYLIGHT\r\nEND:VTIMEZONE\r\nBEGIN:VEVENT\r\nUID:zone@example.org\r\n\
+DTSTAMP:20260901T080000Z\r\nDTSTART;TZID=My Zone:20261020T090000\r\nDURATION:PT1H\r\nSUMMARY:Yoga\r\n\
+RRULE:FREQ=WEEKLY;COUNT=4\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:zone@example.org\r\nDTSTAMP:20260901T080000Z\r\n\
+RECURRENCE-ID;TZID=My Zone:20261027T090000\r\nDTSTART;TZID=My Zone:20261027T100000\r\nDURATION:PT1H\r\n\
+SUMMARY:Yoga\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+    #[test]
+    fn custom_time_zones_round_trip() {
+        let parsed = from_icalendar(CUSTOM).unwrap();
+        let event = parsed.event();
+        assert_eq!(event["timeZone"], "/My Zone", "{event:?}");
+        assert_eq!(event["timeZones"]["/My Zone"]["tzId"], "My Zone");
+        assert_eq!(validate(event), Ok(()));
+        let utc = chrono_tz::UTC;
+        assert_eq!(span(event, utc).map(|(s, _)| format_utc(s)).unwrap(), "2026-10-20T07:00:00Z");
+        let moved = instance(event, "2026-10-27T09:00:00").unwrap();
+        assert_eq!(span(&moved, utc).map(|(s, _)| format_utc(s)).unwrap(), "2026-10-27T09:00:00Z", "winter time");
+
+        let text = parsed.to_icalendar(event).unwrap();
+        assert_eq!(text.matches("BEGIN:VTIMEZONE").count(), 1, "{text}");
+        assert!(text.contains("TZID:My Zone\r\n"), "{text}");
+        assert!(text.contains("DTSTART;TZID=\"My Zone\":20261020T090000"), "{text}");
+        assert!(text.contains("RECURRENCE-ID;TZID=\"My Zone\":20261027T090000"), "{text}");
+        assert!(!text.contains("JSPROP"), "{text}");
+        let again = from_icalendar(&text).unwrap();
+        assert_eq!(again.event()["timeZones"], event["timeZones"]);
+        assert_eq!(again.event()["recurrenceOverrides"], event["recurrenceOverrides"]);
+
+        // A zone a JMAP client defines becomes a VTIMEZONE.
+        let mut new = object(json!({
+            "@type": "Event", "uid": "new@example.org", "start": "2026-07-01T10:00:00", "duration": "PT1H",
+            "timeZone": "/Mine", "timeZones": { "/Mine": event["timeZones"]["/My Zone"].clone() }
+        }));
+        new["timeZones"]["/Mine"]["tzId"] = json!("Meine Zone");
+        assert_eq!(validate(&new), Ok(()));
+        let text = Parsed::new_event().to_icalendar(&new).unwrap();
+        assert!(text.contains("TZID:Meine Zone") && text.contains("DTSTART;TZID=\"Meine Zone\""), "{text}");
+        new["timeZone"] = json!("/Other");
+        assert_eq!(validate(&new).unwrap_err().properties, ["timeZone"]);
     }
 
     #[test]

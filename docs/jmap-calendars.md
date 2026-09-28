@@ -317,8 +317,8 @@ Checked before anything is stored (`invalidProperties` names the property):
 - `@type` is `Event`, `uid` is 1–255 bytes, there is no `method`.
 - `start` is a LocalDateTime; `start`, the end, `until` and every recurrence
   id lie between `minDateTime` and `maxDateTime`.
-- `timeZone` (also in overrides) is an exact IANA name; custom time zones are
-  not supported.
+- `timeZone` (also in overrides) is an exact IANA name or one of the event's
+  custom `timeZones` (at most 10, each with 1 to 20 yearly rules).
 - `duration` is a JSCalendar Duration without fractions (up to 100 years).
 - An event with `showWithoutTime` starts at `T00:00:00` and lasts whole days.
 - `title` is at most 1024 bytes; the whole event as iCalendar at most 1 MiB
@@ -351,6 +351,15 @@ calendar with `isOrigin: false`, the organizer's `organizerCalendarAddress`
 and the account's participant at `participationStatus: "needs-action"`. To
 answer, patch that participant's `participationStatus` (`accepted`,
 `declined`, `tentative`) with `sendSchedulingMessages: true`.
+
+**Custom time zones** (RFC 8984, section 4.7.2) come from VTIMEZONEs that
+name no zone of the IANA database (calcard maps IANA names, Windows names and
+`X-LIC-LOCATION` to IANA zones by itself). Such an event has `timeZone:
+"/<TZID>"` and the zone's rules in `timeZones`; `utcStart`, queries and
+expanded instances follow those rules. A client may define its own zone the
+same way, and it is written back as a VTIMEZONE that phones understand. The
+rules of a custom zone are yearly, with extra onsets (RDATE), as every
+VTIMEZONE in use has them.
 
 A new event with `isDraft: true` is a draft: it is stored and CalDAV clients
 see it like any other event, but no scheduling message goes out for it, over
@@ -416,6 +425,6 @@ EventSource, next to the mail types.
   (`urn:ietf:params:jmap:calendars:parse`)
 - Alerts pushed by the server; alerts are stored and handed to CalDAV
   clients, which ring them
-- More than one calendar per event, custom time zones, events that are single
-  instances without their series
+- More than one calendar per event, events that are single instances without
+  their series
 - `CalendarEvent/queryChanges` for queries with `expandRecurrences`

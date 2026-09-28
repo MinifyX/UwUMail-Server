@@ -417,7 +417,7 @@ fn apply_utc(
     };
     let zone = jscal::time_zone(&zone_name).unwrap_or(chrono_tz::UTC);
     if let Some(value) = utc_start {
-        let start = jscal::from_utc(parse(&value, "utcStart")?, zone)
+        let start = jscal::utc_to_local(event, parse(&value, "utcStart")?, zone)
             .ok_or_else(|| SetError::invalid_properties(&["utcStart"], "out of range"))?;
         event.insert("start".into(), json!(jscal::format_local(start)));
         set.push("start");

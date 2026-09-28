@@ -35,6 +35,7 @@ pub mod safe_html;
 mod scheduled;
 mod session;
 mod sharing;
+mod timezones;
 mod token;
 mod webpush;
 mod ws;

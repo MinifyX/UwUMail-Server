@@ -364,3 +364,60 @@ async fn drafts_tell_nobody_until_they_are_events() {
     let again = server.call(MINI, "CalendarEvent/set", json!({ "update": { &id: { "isDraft": true } } })).await;
     assert_eq!(again["notUpdated"][&id]["type"], "invalidProperties", "{again}");
 }
+
+const CUSTOM_ZONE: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//DE\r\nBEGIN:VTIMEZONE\r\nTZID:Büro\r\n\
+BEGIN:STANDARD\r\nDTSTART:16011028T030000\r\nRRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=10\r\nTZOFFSETFROM:+0200\r\n\
+TZOFFSETTO:+0100\r\nTZNAME:Winter\r\nEND:STANDARD\r\nBEGIN:DAYLIGHT\r\nDTSTART:16010325T020000\r\n\
+RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=3\r\nTZOFFSETFROM:+0100\r\nTZOFFSETTO:+0200\r\nTZNAME:Sommer\r\nEND:DAYLIGHT\r\n\
+END:VTIMEZONE\r\nBEGIN:VEVENT\r\nUID:zone@example.org\r\nDTSTAMP:20260901T080000Z\r\n\
+DTSTART;TZID=Büro:20261020T090000\r\nDURATION:PT1H\r\nSUMMARY:Standup\r\nRRULE:FREQ=WEEKLY;COUNT=3\r\nEND:VEVENT\r\n\
+END:VCALENDAR\r\n";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn custom_time_zones_travel_between_caldav_and_jmap() {
+    let server = server().await;
+    let calendar = server.default_calendar(MINI).await;
+    let put =
+        server.send(MINI, "PUT", &format!("/dav/calendars/{MINI}/personal/zone.ics"), &[], CUSTOM_ZONE.into()).await;
+    assert_eq!(put.status, StatusCode::CREATED, "{}", put.body);
+    let found = server.call(MINI, "CalendarEvent/query", json!({ "filter": { "uid": "zone@example.org" } })).await;
+    let id = found["ids"][0].as_str().unwrap().to_owned();
+    let got = server
+        .call(MINI, "CalendarEvent/get", json!({ "ids": [&id], "properties": ["timeZone", "timeZones", "utcStart"] }))
+        .await;
+    let event = &got["list"][0];
+    assert_eq!(event["timeZone"], "/Büro", "{event}");
+    assert_eq!(event["timeZones"]["/Büro"]["daylight"][0]["offsetTo"], "+0200");
+    assert_eq!(event["utcStart"], "2026-10-20T07:00:00Z");
+
+    // Expanded, the instance after the clocks changed is an hour later in UTC.
+    let expanded = server
+        .call(
+            MINI,
+            "CalendarEvent/query",
+            json!({ "filter": { "after": "2026-10-26T00:00:00", "before": "2026-11-01T00:00:00" }, "expandRecurrences": true }),
+        )
+        .await;
+    let instance = expanded["ids"][0].as_str().unwrap().to_owned();
+    let got = server.call(MINI, "CalendarEvent/get", json!({ "ids": [&instance], "properties": ["utcStart"] })).await;
+    assert_eq!(got["list"][0]["utcStart"], "2026-10-27T08:00:00Z", "{got}");
+
+    // Changed over JMAP, CalDAV clients still find their zone.
+    let set = server.call(MINI, "CalendarEvent/set", json!({ "update": { &id: { "title": "Daily" } } })).await;
+    assert!(set["updated"].get(&id).is_some(), "{set}");
+    let ics = server.caldav_object(MINI, "zone@example.org").await;
+    assert_eq!(ics.matches("BEGIN:VTIMEZONE").count(), 1, "{ics}");
+    assert!(ics.contains("TZID:Büro") && ics.contains("TZNAME:Sommer") && ics.contains("SUMMARY:Daily"), "{ics}");
+
+    // A JMAP client brings its own zone.
+    let mut event = timed(&calendar, "Eigene Zone");
+    event["timeZone"] = json!("/Mars");
+    event["timeZones"] = json!({ "/Mars": { "@type": "TimeZone", "tzId": "Mars",
+        "standard": [{ "@type": "TimeZoneRule", "start": "2000-01-01T00:00:00", "offsetFrom": "+0300", "offsetTo": "+0300" }] } });
+    let created = server.create(MINI, event).await;
+    let got =
+        server.call(MINI, "CalendarEvent/get", json!({ "ids": [&created], "properties": ["utcStart", "uid"] })).await;
+    assert_eq!(got["list"][0]["utcStart"], "2026-10-20T06:00:00Z", "{got}");
+    let ics = server.caldav_object(MINI, got["list"][0]["uid"].as_str().unwrap()).await;
+    assert!(ics.contains("TZID:Mars") && ics.contains("TZOFFSETTO:+0300"), "{ics}");
+}
