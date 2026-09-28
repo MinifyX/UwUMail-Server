@@ -1,4 +1,5 @@
-//! Domains: add and remove, catch-all, forwarding addresses, DNS check and DKIM key rotation.
+//! Domains: add and remove, their kind and masked address policy, catch-all, forwarding addresses,
+//! DNS check and DKIM key rotation.
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -7,7 +8,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uwumail_smtp::dnscheck::DomainSetup;
 use uwumail_smtp::mta_sts::Policy;
-use uwumail_store::{DkimKeyState, Domain};
+use uwumail_store::{DkimKeyState, Domain, DomainKind, DomainMaskedPolicy, MaskedMode};
 
 use super::audit;
 use crate::Web;
@@ -35,6 +36,7 @@ pub async fn list(State(web): State<Web>, _admin: Admin) -> ApiResult<Json<Value
                 let (people, aliases) = counts.get(&domain.name).copied().unwrap_or_default();
                 json!({
                     "name": domain.name,
+                    "kind": domain.kind,
                     "catchAll": domain.catch_all,
                     "createdAt": domain.created_at,
                     "people": people,
@@ -50,15 +52,33 @@ pub(crate) async fn detail_json(web: &Web, name: &str) -> ApiResult<Value> {
     let domain = load(web, name).await?;
     let keys = web.store().dkim_keys(&domain.name).await?;
     let (people, aliases) = web.store().domain_address_counts().await?.get(&domain.name).copied().unwrap_or_default();
+    // A mail domain has a policy for its users and may become masked-only once nothing is in the
+    // way; a masked-only domain says which policies name it, as turning it back takes it out of them.
+    let (policy, blockers, used_by) = match domain.kind {
+        DomainKind::Mail => (
+            json!(web.store().domain_masked_policy(&domain.name).await?),
+            json!(web.store().domain_kind_blockers(&domain.name).await?),
+            Value::Null,
+        ),
+        DomainKind::Masked => {
+            let (domains, accounts) = web.store().masked_domain_users(&domain.name).await?;
+            (Value::Null, Value::Null, json!({ "domains": domains, "accounts": accounts }))
+        }
+    };
     Ok(json!({
         "name": domain.name,
+        "kind": domain.kind,
         "catchAll": domain.catch_all,
         "createdAt": domain.created_at,
         "people": people,
         "aliases": aliases,
         "forwards": web.store().forward_addresses(Some(domain.name.clone())).await?,
         "groups": web.store().groups(Some(domain.name.clone())).await?,
-        "maskedAddresses": web.store().domain_masked_addresses(&domain.name).await?,
+        "maskedPolicy": policy,
+        // The masked-only domains a policy can name.
+        "maskedDomainChoices": masked_domain_names(web).await?,
+        "kindBlockers": blockers,
+        "maskedUsedBy": used_by,
         // Masked addresses people made on the domain that still take mail; they keep it in use.
         "maskedInUse": web.store().domain_masked_address_count(&domain.name).await?,
         "keys": keys.iter().map(|key| {
@@ -88,9 +108,24 @@ pub async fn detail(State(web): State<Web>, _admin: Admin, Path(name): Path<Stri
     Ok(Json(detail_json(&web, &name).await?))
 }
 
+/// The names of the masked-only domains.
+pub(crate) async fn masked_domain_names(web: &Web) -> ApiResult<Vec<String>> {
+    Ok(web
+        .store()
+        .domains()
+        .await?
+        .into_iter()
+        .filter(|domain| domain.kind == DomainKind::Masked)
+        .map(|domain| domain.name)
+        .collect())
+}
+
 #[derive(Deserialize)]
 pub struct NewDomain {
     name: String,
+    /// A mail domain unless it says otherwise.
+    #[serde(default)]
+    kind: DomainKind,
 }
 
 pub async fn create(
@@ -98,12 +133,12 @@ pub async fn create(
     Admin(session): Admin,
     Json(new): Json<NewDomain>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
-    let domain = web.store().create_domain(new.name.trim()).await?;
+    let domain = web.store().create_domain_with_kind(new.name.trim(), new.kind).await?;
     if let Err(err) = uwumail_smtp::dkim::ensure_domain_keys(web.store(), &domain.name).await {
         tracing::error!(%err, domain = %domain.name, "creating DKIM keys failed");
         return Err(ApiError::Internal);
     }
-    audit(&web, &session, "domain.create", &domain.name, json!({})).await;
+    audit(&web, &session, "domain.create", &domain.name, json!({ "kind": domain.kind })).await;
     Ok((StatusCode::CREATED, Json(detail_json(&web, &domain.name).await?)))
 }
 
@@ -117,10 +152,74 @@ pub async fn remove(State(web): State<Web>, Admin(session): Admin, Path(name): P
     if in_use > 0 {
         return Err(ApiError::Rule("domainInUse", format!("{in_use} addresses still use {}", domain.name)));
     }
+    // The policies that offered it as a masked-only domain lose it with it, as when it turns back
+    // into a mail domain.
+    let (removed_from_domains, removed_from_accounts) = web.store().masked_domain_users(&domain.name).await?;
     web.store().delete_domain(&domain.name).await?;
     web.forget_report(&domain.name);
-    audit(&web, &session, "domain.remove", &domain.name, json!({})).await;
+    let details = json!({ "removedFromDomains": removed_from_domains, "removedFromAccounts": removed_from_accounts });
+    audit(&web, &session, "domain.remove", &domain.name, details).await;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct KindBody {
+    kind: DomainKind,
+}
+
+/// Makes a mail domain masked-only (only while nothing but masked addresses is on it), or a
+/// masked-only domain a mail domain again, which takes it out of every policy that named it.
+pub async fn set_kind(
+    State(web): State<Web>,
+    Admin(session): Admin,
+    Path(name): Path<String>,
+    Json(body): Json<KindBody>,
+) -> ApiResult<Json<Value>> {
+    let domain = load(&web, &name).await?;
+    if body.kind == DomainKind::Masked {
+        let blockers = web.store().domain_kind_blockers(&domain.name).await?;
+        if !blockers.is_empty() {
+            let detail = format!("{} still has addresses or settings that are not masked addresses", domain.name);
+            return Err(ApiError::Blocked("kindChangeBlocked", detail, json!(blockers)));
+        }
+    }
+    let change = web.store().set_domain_kind(&domain.name, body.kind).await?;
+    if change.kind != domain.kind {
+        let details = json!({
+            "kind": change.kind,
+            "removedFromDomains": change.removed_from_domains,
+            "removedFromAccounts": change.removed_from_accounts,
+        });
+        audit(&web, &session, "domain.kind", &domain.name, details).await;
+    }
+    Ok(Json(detail_json(&web, &domain.name).await?))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MaskedPolicyBody {
+    mode: MaskedMode,
+    #[serde(default)]
+    masked_domains: Vec<String>,
+    default_domain: Option<String>,
+}
+
+/// Where the users of a mail domain may make masked addresses.
+pub async fn set_masked_policy(
+    State(web): State<Web>,
+    Admin(session): Admin,
+    Path(name): Path<String>,
+    Json(body): Json<MaskedPolicyBody>,
+) -> ApiResult<Json<Value>> {
+    let domain = load(&web, &name).await?;
+    let policy = DomainMaskedPolicy {
+        mode: body.mode,
+        masked_domains: body.masked_domains,
+        default_domain: body.default_domain.filter(|name| !name.trim().is_empty()),
+    };
+    let saved = web.store().set_domain_masked_policy(&domain.name, policy).await?;
+    audit(&web, &session, "domain.maskedPolicy", &domain.name, json!(saved)).await;
+    Ok(Json(detail_json(&web, &domain.name).await?))
 }
 
 #[derive(Deserialize)]

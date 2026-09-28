@@ -318,7 +318,11 @@ impl Importer<'_> {
     }
 
     async fn domain(&mut self, domain: &str) -> anyhow::Result<()> {
-        if self.store.domain(domain).await?.is_some() {
+        if let Some(existing) = self.store.domain(domain).await? {
+            // Mailboxes and aliases cannot go there, so better say it before anything is imported.
+            if existing.kind == uwumail_store::DomainKind::Masked {
+                anyhow::bail!("{domain} only carries masked addresses here; make it a mail domain first");
+            }
             return Ok(());
         }
         if !self.dry_run {

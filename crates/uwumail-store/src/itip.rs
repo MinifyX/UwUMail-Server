@@ -737,11 +737,17 @@ pub fn summary(calendar: &Component) -> Summary {
         .property("DTSTART")
         .map(|start| {
             let value = start.value.trim();
+            // Only digits are cut up: a value calcard could not read as a date is kept as text, and
+            // cutting `202é1010` at a byte inside the `é` panicked (security-audit-0.16.0
+            // PROTOCOLS-3).
+            fn digits(v: &str, len: usize) -> Option<&str> {
+                v.get(..len).filter(|d| d.bytes().all(|b| b.is_ascii_digit()))
+            }
             let date =
-                |v: &str| v.get(..8).map(|d| format!("{}-{}-{}", &d[..4], &d[4..6], &d[6..8])).unwrap_or_default();
+                |v: &str| digits(v, 8).map(|d| format!("{}-{}-{}", &d[..4], &d[4..6], &d[6..8])).unwrap_or_default();
             match value.split_once('T') {
                 None => date(value),
-                Some((day, time)) if time.len() >= 4 => {
+                Some((day, time)) if digits(time, 4).is_some() && !date(day).is_empty() => {
                     let zone = if value.ends_with('Z') {
                         "UTC".to_owned()
                     } else {
@@ -928,5 +934,24 @@ BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\nEND:VEVENT\r\n
         assert_eq!(summary.when, "2026-09-20 09:00 (Europe/Berlin)");
         assert_eq!(summary.organizer_name, "Mini");
         assert_eq!(stamp(784_887_151), "19941115T081231Z");
+    }
+
+    /// A start calcard keeps as text because it is no date: cut at fixed byte offsets, one with a
+    /// multi-byte character panicked when the reply to an outside invitation was written
+    /// (security-audit-0.16.0 PROTOCOLS-3).
+    #[test]
+    fn summaries_of_starts_that_are_no_date() {
+        for (start, when) in [
+            ("DTSTART:202\u{e9}1010", ""),
+            ("DTSTART:20260101T0\u{e9}00", "2026-01-01"),
+            ("DTSTART:2026\u{e9}10T090000Z", ""),
+            ("DTSTART:20260920T09", "2026-09-20"),
+            ("DTSTART:20260920", "2026-09-20"),
+        ] {
+            let text = INVITE.replace("DTSTART;TZID=Europe/Berlin:20260920T090000", start);
+            assert_ne!(text, INVITE, "the test invitation has its DTSTART");
+            let calendar = Component::parse(&text).unwrap();
+            assert_eq!(summary(&calendar).when, when, "{start}");
+        }
     }
 }

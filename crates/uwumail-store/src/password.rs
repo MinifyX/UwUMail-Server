@@ -1,10 +1,71 @@
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
 use argon2::Argon2;
 use argon2::password_hash::phc::PasswordHash;
 use argon2::password_hash::{PasswordHasher, PasswordVerifier};
 
 use crate::{Result, StoreError};
+
+/// How long a password check waits for its turn before the answer is "try again later".
+const GATE_WAIT: Duration = Duration::from_secs(3);
+
+/// Password hashes checked at once, for the whole server, whatever protocol asked.
+///
+/// Each check is slow and takes about 19 MiB on purpose, and it runs on the thread pool the
+/// database uses as well. Without a limit, a burst of logins, most of them from people without an
+/// account at all, put thousands of checks in flight: gigabytes of memory, and every database read
+/// of every protocol queued behind them (security-audit-0.16.0 WEB-1). A few at a time, as many as
+/// the machine has cores (two to eight), and whoever waits longer than [`GATE_WAIT`] hears "try
+/// again later" instead of waiting in an endless line.
+pub(crate) struct Gate {
+    permits: Arc<tokio::sync::Semaphore>,
+    wait: Duration,
+}
+
+impl Gate {
+    pub(crate) fn new() -> Gate {
+        let cores = std::thread::available_parallelism().map_or(2, |cores| cores.get());
+        Gate::with(cores.clamp(2, 8), GATE_WAIT)
+    }
+
+    fn with(permits: usize, wait: Duration) -> Gate {
+        Gate { permits: Arc::new(tokio::sync::Semaphore::new(permits)), wait }
+    }
+
+    /// Runs one password check (`check`) on the blocking pool once it has its turn, or answers
+    /// [`StoreError::Busy`]. The turn is held until the check itself ends, even when whoever asked
+    /// stopped waiting: a client that hangs up must not free its place while the hashing goes on.
+    pub(crate) async fn run<T: Send + 'static>(&self, check: impl FnOnce() -> T + Send + 'static) -> Result<T> {
+        let permit = tokio::time::timeout(self.wait, self.permits.clone().acquire_owned())
+            .await
+            .map_err(|_| StoreError::Busy)?
+            .map_err(|_| StoreError::Busy)?;
+        tokio::task::spawn_blocking(move || {
+            let result = check();
+            drop(permit);
+            result
+        })
+        .await
+        .map_err(|err| StoreError::Internal(err.to_string()))
+    }
+}
+
+impl crate::Store {
+    /// [`verify`], through the server's [`Gate`].
+    pub(crate) async fn verify_password(&self, password: &str, stored: Option<String>) -> Result<bool> {
+        let password = password.to_owned();
+        self.inner.hashing.run(move || verify(&password, stored.as_deref())).await
+    }
+
+    /// Runs `check`, which checks one or more password hashes, through the server's [`Gate`].
+    pub(crate) async fn check_passwords<T: Send + 'static>(
+        &self,
+        check: impl FnOnce() -> T + Send + 'static,
+    ) -> Result<T> {
+        self.inner.hashing.run(check).await
+    }
+}
 
 /// How dovecot and mailcow mark a bcrypt hash.
 const BLF_CRYPT_PREFIX: &str = "{BLF-CRYPT}";
@@ -77,6 +138,65 @@ mod tests {
             "{BLF_CRYPT_PREFIX}{}",
             bcrypt::hash_with_result("katzenpfote-123", 4).unwrap().format_for_version(bcrypt::Version::TwoY)
         )
+    }
+
+    #[tokio::test]
+    async fn the_gate_turns_away_what_it_cannot_take_in_time() {
+        let gate = Gate::with(2, Duration::from_millis(20));
+        let (started, release) = (Arc::new(std::sync::Barrier::new(3)), Arc::new(std::sync::Barrier::new(3)));
+        let running: Vec<_> = (0..2)
+            .map(|_| {
+                let (started, release) = (started.clone(), release.clone());
+                let permits = gate.permits.clone();
+                let run = Gate { permits, wait: gate.wait };
+                tokio::spawn(async move {
+                    run.run(move || {
+                        started.wait();
+                        release.wait();
+                    })
+                    .await
+                })
+            })
+            .collect();
+        tokio::task::spawn_blocking({
+            let started = started.clone();
+            move || started.wait()
+        })
+        .await
+        .unwrap();
+        // Both places are taken by checks that are running: the third is turned away, not queued.
+        assert!(matches!(gate.run(|| ()).await, Err(StoreError::Busy)));
+        tokio::task::spawn_blocking(move || release.wait()).await.unwrap();
+        for run in running {
+            run.await.unwrap().unwrap();
+        }
+        assert!(gate.run(|| true).await.unwrap(), "places come back once the checks end");
+    }
+
+    #[tokio::test]
+    async fn a_caller_that_gives_up_does_not_free_its_place_early() {
+        let gate = Gate::with(1, Duration::from_millis(20));
+        let (started, release) = (Arc::new(std::sync::Barrier::new(2)), Arc::new(std::sync::Barrier::new(2)));
+        let check = {
+            let (started, release) = (started.clone(), release.clone());
+            let run = Gate { permits: gate.permits.clone(), wait: gate.wait };
+            tokio::spawn(async move {
+                run.run(move || {
+                    started.wait();
+                    release.wait();
+                })
+                .await
+            })
+        };
+        let waited = started.clone();
+        tokio::task::spawn_blocking(move || waited.wait()).await.unwrap();
+        check.abort();
+        let _ = check.await;
+        assert!(matches!(gate.run(|| ()).await, Err(StoreError::Busy)), "the hashing still runs");
+        tokio::task::spawn_blocking(move || release.wait()).await.unwrap();
+        // The place comes back once the check itself ends.
+        let permit = tokio::time::timeout(Duration::from_secs(10), gate.permits.clone().acquire_owned()).await;
+        assert!(permit.is_ok());
     }
 
     #[test]

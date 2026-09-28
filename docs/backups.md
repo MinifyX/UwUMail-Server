@@ -75,6 +75,13 @@ travels. Each object is written in one piece, so an interrupted upload leaves
 nothing half-written behind. A bucket that answers *SlowDown* or is briefly
 unavailable is asked again a few times.
 
+The server does not take the bucket's word for everything: a listing page may
+be 8 MB, one listing at most 2 million names (128 MB of them) over 10 000
+pages, and an answer has as long as it would take at 32 KB/s for the most it
+may be. A bucket that goes past that fails the backup with "damaged" or "did
+not answer in time" instead of filling the memory or holding the backup for
+ever.
+
 Plain `http://` works only for addresses in the own network (a MinIO next to
 the server): the backups and the signed requests would otherwise cross the
 internet unencrypted. For anything on the internet, use `https://`.
@@ -91,6 +98,13 @@ from. It also has to be outside the data directory, or the backup would be
 lost together with the server. In Docker, mount it into the container, for
 example with `- /mnt/nas/uwumail:/backup` under `volumes:`, and make it writable
 for user 10001.
+
+Inside the folder the server never follows a symbolic link. Whoever else can
+write to a share could otherwise plant one that leads a backup, a clean-up of
+old snapshots or *Test connection* to the server's own mail or database. Links
+inside the folder are skipped when it is listed, and a backup that would have
+to write through one stops with an error that names it. The folder itself may
+be a link, since that is your own setting.
 
 ## From the command line
 

@@ -53,6 +53,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0044_oauth.sql"),
     include_str!("migrations/0045_stats_alerts.sql"),
     include_str!("migrations/0046_push_subscriptions.sql"),
+    include_str!("migrations/0047_masked_domains.sql"),
+    include_str!("migrations/0048_logins_and_ids.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 
@@ -141,6 +143,13 @@ pub fn delete_setting(conn: &Connection, key: &str) -> Result<bool> {
     Ok(conn.execute("DELETE FROM settings WHERE key = ?1", [key])? > 0)
 }
 
+/// The id for a new row of `accounts`, `app_passwords` or `oauth_grants`: one above the highest
+/// that table ever had. Those ids stand for a person or a credential, so they are never handed out
+/// twice, and the table refuses any other (migration 0048). Call it in the transaction that inserts.
+pub(crate) fn next_id(conn: &Connection, table: &str) -> Result<i64> {
+    Ok(conn.query_row("SELECT value + 1 FROM id_high_water WHERE name = ?1", [table], |row| row.get(0))?)
+}
+
 /// Increments and returns the account's change sequence number.
 pub fn next_modseq(conn: &Connection, account_id: i64) -> Result<i64> {
     conn.query_row("UPDATE accounts SET modseq = modseq + 1 WHERE id = ?1 RETURNING modseq", [account_id], |row| {
@@ -171,6 +180,8 @@ mod tests {
 
     /// UwUMail 0.11.0 shipped with the first 35 migrations.
     const RELEASED_0_11: usize = 35;
+    /// UwUMail 0.15.0 shipped with the first 46 migrations.
+    const RELEASED_0_15: usize = 46;
 
     fn connection() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -248,5 +259,120 @@ mod tests {
         assert_eq!(tag, "\"e1\"");
         let shares: i64 = conn.query_row("SELECT count(*) FROM mailbox_acl", [], |row| row.get(0)).unwrap();
         assert_eq!(shares, 0);
+    }
+
+    #[test]
+    fn a_domain_open_for_masked_addresses_keeps_them_for_its_own_people() {
+        let mut conn = connection();
+        for (index, sql) in MIGRATIONS[..RELEASED_0_15].iter().enumerate() {
+            conn.execute_batch(sql).unwrap();
+            conn.pragma_update(None, "user_version", (index + 1) as i64).unwrap();
+        }
+        conn.execute_batch(
+            "INSERT INTO domains (id, name, created_at, masked_addresses) VALUES (1, 'example.org', 0, 1),
+                 (2, 'example.net', 0, 0);
+             INSERT INTO accounts (id, login, created_at) VALUES (1, 'leni@example.net', 0);
+             INSERT INTO masked_addresses (account_id, local_part, domain_id, created_at)
+                 VALUES (1, 'maple.otter482', 1, 0);",
+        )
+        .unwrap();
+
+        migrate(&mut conn).unwrap();
+        assert_eq!(version(&conn), MIGRATIONS.len());
+        let domains: Vec<(String, String, String)> = conn
+            .prepare("SELECT name, kind, masked_mode FROM domains ORDER BY id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            domains,
+            vec![
+                ("example.org".to_owned(), "mail".to_owned(), "own".to_owned()),
+                ("example.net".to_owned(), "mail".to_owned(), "off".to_owned())
+            ]
+        );
+        // The old switch is gone, and the masked address Leni made there stays hers.
+        let old: i64 = conn
+            .query_row("SELECT count(*) FROM pragma_table_info('domains') WHERE name = 'masked_addresses'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(old, 0);
+        let owner: i64 = conn.query_row("SELECT account_id FROM masked_addresses", [], |row| row.get(0)).unwrap();
+        assert_eq!(owner, 1);
+        let custom: Option<String> =
+            conn.query_row("SELECT masked_mode FROM accounts WHERE id = 1", [], |row| row.get(0)).unwrap();
+        assert_eq!(custom, None);
+        assert!(table_exists(&conn, "domain_masked_domains") && table_exists(&conn, "account_masked_domains"));
+    }
+
+    #[test]
+    fn ids_in_use_or_still_named_are_not_handed_out_after_upgrading_0_15() {
+        let mut conn = connection();
+        for (index, sql) in MIGRATIONS[..RELEASED_0_15].iter().enumerate() {
+            conn.execute_batch(sql).unwrap();
+            conn.pragma_update(None, "user_version", (index + 1) as i64).unwrap();
+        }
+        // Account 7 was purged: its learned words stayed behind. App password 5 was revoked, and a
+        // push subscription made with it was still waiting for the clean-up.
+        conn.execute_batch(
+            "INSERT INTO accounts (id, login, created_at) VALUES (1, 'mini@example.org', 0), (3, 'nyu@example.org', 0);
+             INSERT INTO bayes_totals (account_id, spam, ham) VALUES (0, 1, 1), (1, 1, 1), (7, 1, 1);
+             INSERT INTO bayes_tokens (account_id, token, spam, updated_at) VALUES (7, 1, 1, 0), (1, 1, 1, 0);
+             INSERT INTO app_passwords (id, account_id, name, secret_hash, scopes, created_at)
+                 VALUES (2, 1, 'phone', x'01', 'mail', 0);
+             INSERT INTO push_subscriptions (account_id, credential, device_client_id, url, url_digest, url_shown,
+                     verification_code, expires, created_at)
+                 VALUES (1, 'app:5', 'phone', x'00', 'a', 'push.example.net', 'code', 0, 0),
+                        (1, 'app:2', 'phone', x'00', 'b', 'push.example.net', 'code', 0, 0);
+             INSERT INTO blobs (hash, size, created_at) VALUES ('ab', 1, 0);
+             INSERT INTO threads (id, account_id) VALUES (1, 1);
+             INSERT INTO emails (id, account_id, thread_id, blob_hash, size, received_at, created_modseq, updated_modseq)
+                 VALUES (1, 1, 1, 'ab', 1, 0, 0, 0);
+             INSERT INTO email_keywords (email_id, keyword) VALUES (1, '$seen'), (1, 'project-x'),
+                 (1, 'a' || char(13, 10) || '* BYE x'), (1, 'two words'), (1, 'x)'), (1, 'x]'), (1, 'x\\'),
+                 (1, 'ümlaut');",
+        )
+        .unwrap();
+        migrate(&mut conn).unwrap();
+        let high = |name: &str| -> i64 {
+            conn.query_row("SELECT value FROM id_high_water WHERE name = ?1", [name], |row| row.get(0)).unwrap()
+        };
+        assert_eq!(high("accounts"), 7);
+        assert_eq!(high("app_passwords"), 5);
+        assert_eq!(high("oauth_grants"), 0);
+        assert_eq!(next_id(&conn, "accounts").unwrap(), 8);
+        let orphans: i64 = conn
+            .query_row(
+                "SELECT (SELECT count(*) FROM bayes_totals WHERE account_id = 7)
+                      + (SELECT count(*) FROM bayes_tokens WHERE account_id = 7)",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(orphans, 0);
+        let kept: i64 = conn
+            .query_row("SELECT count(*) FROM bayes_totals WHERE account_id IN (0, 1)", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(kept, 2, "the server's and living people's learned words stay");
+        let credentials: Vec<String> = conn
+            .prepare("SELECT credential FROM push_subscriptions")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(credentials, vec!["app:2".to_owned()]);
+        // Keywords that are no IMAP atom go.
+        let keywords: Vec<String> = conn
+            .prepare("SELECT keyword FROM email_keywords ORDER BY keyword")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(keywords, vec!["$seen".to_owned(), "project-x".to_owned()]);
     }
 }

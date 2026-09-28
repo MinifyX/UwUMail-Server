@@ -222,6 +222,30 @@ portal, not in a file anyone else reads.
 or an allowed network. [metrics.md](metrics.md) lists what it serves and how to
 scrape it.
 
+## Limits on the shape of a message
+
+Besides its size (`smtp.max_message_size`), a message has to keep to a few
+limits on its structure. They are fixed, and far above what mail programs
+write:
+
+| Limit | |
+| --- | --- |
+| Nesting | 64 levels of parts inside parts (a multipart part or a forwarded message counts as one level each) |
+| Parts | 5,000 in the whole message, those of forwarded messages included |
+| Header fields | 20,000 in the whole message, those of every part included |
+
+A message that passes one of them is not read at all: over SMTP it is refused
+with `554 5.6.0`, fetched from another provider it counts as refused (and is
+cleared there like any other refused message), IMAP `APPEND` answers `NO`, and
+JMAP `Email/import` answers `invalidEmail`; moving mail over from another
+server and restoring a backup leave it out, say so in the log, and go on with
+the rest. A message made of parts whose boundary never comes, over and over, is
+refused the same way.
+
+The reason is the server itself: a message nested tens of thousands of times
+over used to take the whole server down while it was read, and millions of tiny
+header fields or parts cost gigabytes of memory.
+
 ## Accounts: people and services
 
 *Server → Accounts* holds both. A **person** signs in to the portal and may use
@@ -260,7 +284,11 @@ their second factors, passkeys, open sessions, password links and apps signed in
 with OAuth go, since none of them has anything left to sign in to, and so does
 the tie to an LDAP directory or OpenID Connect provider. So do the folders
 others shared with them and the shared mailboxes they were a member of: only
-people share with people. The way back is the same button, and afterwards the
+people share with people. What the person set up for their own mail stops too
+— forwarding, fetched mailboxes, moves from another provider, updates of
+subscribed calendars and the active mail rule — and their masked addresses are
+switched off (they stay with the account); see
+[groups.md](groups.md#turning-an-account-into-one). The way back is the same button, and afterwards the
 account needs a new password or an invitation link. How a person or a service
 becomes a shared mailbox is in [groups.md](groups.md#turning-an-account-into-one).
 
@@ -308,6 +336,7 @@ max_recipients = 100
 require_tls_for_auth = true
 timeout_secs = 300
 max_connections = 500
+max_connections_per_client = 20  # at once from one address (IPv6: one /64); trusted_relays are not limited
 verify_senders = true         # SPF, DKIM, DMARC for incoming mail
 trusted_relays = []           # servers in front that forward mail to us, e.g. ["10.0.0.5"]
 enforce_dmarc_reject = true   # otherwise p=reject failures go to Junk
@@ -409,3 +438,11 @@ level = "info"
 # enabled = false
 # url = "ldaps://ldap.example.com"
 ```
+
+An SMTP session is closed after `smtp.timeout_secs` without a byte, and also when it gets nowhere:
+it has three minutes to log in or finish a message, and three more after each, and a message has
+ten minutes to arrive once DATA or the first BDAT chunk began. Real clients get there in seconds; a
+client that sends a NOOP now and then only to keep its connection does not keep it. One client
+address may have `smtp.max_connections_per_client` connections at once on all SMTP ports together;
+behind something that hides the clients' addresses (a proxy that makes every connection come from
+one address), raise it or list that address in `trusted_relays`.

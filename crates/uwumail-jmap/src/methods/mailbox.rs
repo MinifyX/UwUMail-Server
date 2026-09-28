@@ -218,12 +218,14 @@ fn sort_mailboxes(mailboxes: &mut [Mailbox], sort: &[(bool, bool)]) {
 const MAX_MAILBOX_QUERY_LIMIT: usize = 10_000;
 
 pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
+    super::check_filter_size(args.get("filter"))?;
     let state = ctx.state().await?;
     let mut all = visible_mailboxes(ctx).await?;
     let filter = args.get("filter").filter(|f| !f.is_null()).map(|f| parse_mailbox_filter(ctx, f)).transpose()?;
     let mut sort = Vec::new();
     if let Some(list) = args.get("sort").filter(|s| !s.is_null()) {
         let list = list.as_array().ok_or_else(|| MethodError::invalid_arguments("sort must be a list"))?;
+        super::check_sort_size(list)?;
         for comparator in list {
             let ascending = comparator.get("isAscending").and_then(Value::as_bool).unwrap_or(true);
             let by_name = match comparator.get("property").and_then(Value::as_str) {

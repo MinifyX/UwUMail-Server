@@ -15,11 +15,15 @@ pub enum ApiError {
     CsrfMismatch,
     InvalidCredentials,
     TooManyAttempts,
+    /// Too many password checks at once on the whole server; the app shows its "try again later".
+    Busy,
     NotFound(String),
     Invalid(String),
     Conflict(String),
     /// A rule of the data model, with a stable code the app knows (e.g. `lastAdmin`).
     Rule(&'static str, String),
+    /// A rule, with what exactly is in the way under `blockers`.
+    Blocked(&'static str, String, serde_json::Value),
     Internal,
 }
 
@@ -37,10 +41,17 @@ impl ApiError {
             ApiError::TooManyAttempts => {
                 (StatusCode::TOO_MANY_REQUESTS, "tooManyAttempts", "Too many failed logins, try again later.".into())
             }
+            ApiError::Busy => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "tooManyAttempts",
+                "The server is busy checking other logins, try again in a moment.".into(),
+            ),
             ApiError::NotFound(what) => (StatusCode::NOT_FOUND, "notFound", format!("Not found: {what}")),
             ApiError::Invalid(detail) => (StatusCode::UNPROCESSABLE_ENTITY, "invalid", detail.clone()),
             ApiError::Conflict(detail) => (StatusCode::CONFLICT, "conflict", detail.clone()),
-            ApiError::Rule(code, detail) => (StatusCode::CONFLICT, code, detail.clone()),
+            ApiError::Rule(code, detail) | ApiError::Blocked(code, detail, _) => {
+                (StatusCode::CONFLICT, code, detail.clone())
+            }
             ApiError::Internal => {
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal", "Something went wrong on the server.".into())
             }
@@ -51,7 +62,11 @@ impl ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, code, detail) = self.parts();
-        let mut response = (status, Json(json!({ "code": code, "detail": detail }))).into_response();
+        let mut body = json!({ "code": code, "detail": detail });
+        if let ApiError::Blocked(_, _, blockers) = self {
+            body["blockers"] = blockers;
+        }
+        let mut response = (status, Json(body)).into_response();
         response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
         response
     }
@@ -64,6 +79,7 @@ impl From<StoreError> for ApiError {
             StoreError::Invalid(detail) => ApiError::Invalid(detail),
             StoreError::Conflict(what) => ApiError::Conflict(format!("already exists: {what}")),
             StoreError::Rule { code, message } => ApiError::Rule(code, message),
+            StoreError::Busy => ApiError::Busy,
             other => {
                 tracing::error!(error = %other, "web API request failed");
                 ApiError::Internal

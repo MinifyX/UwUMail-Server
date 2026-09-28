@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
   type DomainDetail,
+  type DomainKind,
+  type DomainMaskedPolicy,
   type DomainReport,
   type GroupInfo,
   type MtaStsMode,
@@ -45,7 +47,8 @@ function useDomainAction<Input>(run: (input: Input) => Promise<DomainDetail>, su
 export function useCreateDomain() {
   const changed = useDomainChanged();
   return useMutation({
-    mutationFn: (name: string) => api<DomainDetail>("/api/admin/domains", { method: "POST", body: { name } }),
+    mutationFn: (body: { name: string; kind: DomainKind }) =>
+      api<DomainDetail>("/api/admin/domains", { method: "POST", body }),
     onSuccess: (detail) => changed(detail),
   });
 }
@@ -204,15 +207,37 @@ export function useRemoveGroup(name: string, success: string) {
   );
 }
 
-export function useSetMaskedAddresses(name: string) {
+/** A change to a domain's masked addresses, which people's pages and other domains may show too. */
+function useMaskedChange<Input>(run: (input: Input) => Promise<DomainDetail>, success: string) {
   const queryClient = useQueryClient();
+  const changed = useDomainChanged();
   const errorText = useErrorText();
   return useMutation({
-    mutationFn: (on: boolean) => api<void>(`${domainPath(name)}/masked-addresses`, { method: "PUT", body: { on } }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["admin", "domains", name] });
-      void queryClient.invalidateQueries({ queryKey: ["admin", "audit"] });
+    mutationFn: run,
+    onSuccess: (detail) => {
+      changed(detail);
+      // Turning one back into a mail domain takes it out of other domains' and people's policies.
+      void queryClient.invalidateQueries({ queryKey: ["admin", "domains"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "people"] });
+      toast(success, "success");
     },
     onError: (error) => toast(errorText(error), "error"),
   });
+}
+
+/** Where the users of a mail domain may make masked addresses. */
+export function useSetMaskedPolicy(name: string, success: string) {
+  return useMaskedChange(
+    (policy: DomainMaskedPolicy) =>
+      api<DomainDetail>(`${domainPath(name)}/masked-policy`, { method: "PUT", body: policy }),
+    success,
+  );
+}
+
+/** Makes a domain masked-only, or a mail domain again. */
+export function useSetDomainKind(name: string, success: string) {
+  return useMaskedChange(
+    (kind: DomainKind) => api<DomainDetail>(`${domainPath(name)}/kind`, { method: "PUT", body: { kind } }),
+    success,
+  );
 }

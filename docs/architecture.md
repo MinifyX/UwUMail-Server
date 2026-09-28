@@ -127,11 +127,21 @@ signed with the server's VAPID key ([jmap-push.md](jmap-push.md)).
 ### `uwumail-imap`
 
 IMAP4rev1 and IMAP4rev2 on port 993 with its own parser. Flags are the email's
-keywords, the UIDs are the store's per-mailbox UIDs, and CONDSTORE/QRESYNC read
+keywords (only IMAP atoms are stored, whichever way they come, and IMAP leaves
+out anything else it might find), the UIDs are the store's per-mailbox UIDs, and CONDSTORE/QRESYNC read
 the account's change sequence number and a table of UIDs that left a mailbox.
 IDLE listens to the store's broadcast channel like JMAP push. Folders others
 share with the account ([sharing](sharing.md)) show under `Shared/<login>/`
 and are read and written in the owner's account, within the ACL's rights.
+
+A connection stays open for hours, so it does not live off its login: before
+every command (and on each change while it idles) the session checks the login
+again (`Store::live_login`). A revoked app password, a signed-out OAuth app, a
+new password, IMAP switched off, or the account disabled, moved to the trash or
+deleted ends it with `* BYE`. ManageSieve does the same, and so do the JMAP
+WebSocket and EventSource. Account ids are never handed out twice (the store
+keeps each table's highest id in `id_high_water`), so an id a connection holds
+can only ever mean the account it logged in to.
 
 ### `uwumail-dav`
 
@@ -224,6 +234,11 @@ only to its mail ports on public addresses.
 
 ## Security notes
 
+- Every message from outside passes `uwumail_store::mime_limits` before
+  anything parses it in full: at most 64 levels of nesting, 5,000 parts and
+  20,000 header fields (see [configuration.md](configuration.md#limits-on-the-shape-of-a-message)).
+  SMTP checks it at the door, `Store::ingest` for every other way in, and the
+  spam filter, JMAP and iMIP only parse through `mime_limits::parse_message`.
 - Submission requires TLS before AUTH (configurable), limits login failures
   per network (/64 for IPv6), and checks both the envelope sender and every
   From address against the account's addresses.

@@ -13,7 +13,7 @@ import { useErrorText } from "@/lib/errors";
 import { formatDateTime } from "@/lib/format";
 import { navigate } from "@/lib/router";
 import { toast } from "@/state/toasts";
-import { useCreatePerson, useDomains, type PersonCreated } from "./queries";
+import { useCreatePerson, useMailDomains, type PersonCreated } from "./queries";
 
 const GB = 1024 ** 3;
 export const QUOTA_CHOICES = [0, 1, 2, 5, 10, 25, 50].map((gigabytes) => gigabytes * GB);
@@ -101,7 +101,7 @@ function CreatePerson({
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const { t } = useT();
-  const domains = useDomains();
+  const domains = useMailDomains();
   const create = useCreatePerson();
   const errorText = useErrorText();
 

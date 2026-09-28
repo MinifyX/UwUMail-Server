@@ -142,14 +142,16 @@ pub(crate) fn normalized_url(href: &str) -> Option<String> {
 }
 
 /// Addresses written out in plain text.
+///
+/// One pass over the text: the next address is looked for from where the last one ended, and
+/// never searched for to the end of the text again. Searching separately for each way an address
+/// starts made a long text without addresses, like `www. ` over and over, take minutes
+/// (security-audit-0.16.0 SMTP-2).
 pub(crate) fn in_text(text: &str) -> Vec<Link> {
     let mut found = Vec::new();
-    let lower = text.to_ascii_lowercase();
     let mut pos = 0;
     while found.len() < 200 {
-        let next = ["https://", "http://", "www."].iter().filter_map(|start| lower[pos..].find(start)).min();
-        let Some(offset) = next else { break };
-        let start = pos + offset;
+        let Some(start) = link_start(text.as_bytes(), pos) else { break };
         let end = text[start..]
             .find(|c: char| c.is_whitespace() || "<>\"'()[]{}".contains(c))
             .map_or(text.len(), |len| start + len);
@@ -160,6 +162,18 @@ pub(crate) fn in_text(text: &str) -> Vec<Link> {
         pos = end.max(start + 1);
     }
     found
+}
+
+/// Where the next address in `text` starts, from `from` on: `https://`, `http://` or `www.`, in
+/// any case.
+fn link_start(text: &[u8], from: usize) -> Option<usize> {
+    const STARTS: [&[u8]; 3] = [b"https://", b"http://", b"www."];
+    (from..text.len()).find(|&at| {
+        matches!(text[at] | 0x20, b'h' | b'w')
+            && STARTS
+                .iter()
+                .any(|start| text[at..].get(..start.len()).is_some_and(|head| head.eq_ignore_ascii_case(start)))
+    })
 }
 
 pub(crate) fn in_anchors(anchors: &[Anchor]) -> Vec<Link> {
@@ -286,6 +300,21 @@ pub(crate) fn domains_to_look_up(links: &[Link]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A long text of `www. ` holds no address; every one of its hundreds of thousands of `www.`
+    /// used to search the whole rest of the text for `http://` and `https://` again
+    /// (security-audit-0.16.0 SMTP-2).
+    #[test]
+    fn a_long_text_is_read_in_one_pass() {
+        let text = "www. ".repeat(200_000);
+        let started = std::time::Instant::now();
+        assert!(in_text(&text).is_empty());
+        assert!(started.elapsed() < std::time::Duration::from_secs(1), "took {:?}", started.elapsed());
+
+        let text = format!("{} Hallo HTTPS://Shop.example/a und www.bank.example.", "x ".repeat(100_000));
+        let found: Vec<_> = in_text(&text).into_iter().map(|link| link.target).collect();
+        assert_eq!(found, vec![Target::Domain("shop.example".into()), Target::Domain("www.bank.example".into())]);
+    }
 
     fn domain(target: Option<Target>) -> Option<String> {
         match target? {

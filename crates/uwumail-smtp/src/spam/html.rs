@@ -1,6 +1,9 @@
 //! Just enough HTML reading for the spam rules: the links with the text a reader sees on them, and
 //! how much text is kept out of sight. HTML in mail is often broken, so this never fails; it reads
-//! what it can, and only the first part of very long HTML.
+//! what it can, and only the first part of very long HTML. Every loop moves forward through the
+//! HTML, so reading takes time in proportion to its length, whatever it holds.
+
+use std::collections::HashMap;
 
 /// HTML beyond this is not read. A trick needs to sit early enough to matter to a reader anyway.
 const MAX_HTML: usize = 2 * 1024 * 1024;
@@ -39,6 +42,9 @@ pub(crate) fn read(html: &str) -> Html {
 
     let mut out = Html::default();
     let mut stack: Vec<Open> = Vec::new();
+    // How many elements of each name are open, so a closing tag with nothing to close does not
+    // search the whole stack (security-audit-0.16.0 SMTP-2).
+    let mut open_names: HashMap<String, usize> = HashMap::new();
     let mut hidden_open = 0usize;
     let mut anchor: Option<usize> = None;
     let mut pos = 0;
@@ -74,13 +80,18 @@ pub(crate) fn read(html: &str) -> Html {
         pos += name_start + name_len + tag_len;
 
         if closing {
-            if let Some(at) = stack.iter().rposition(|open| open.name == name) {
+            if open_names.get(&name).is_some_and(|count| *count > 0)
+                && let Some(at) = stack.iter().rposition(|open| open.name == name)
+            {
                 for open in stack.drain(at..) {
                     if open.hidden {
                         hidden_open -= 1;
                     }
                     if open.name == "a" {
                         anchor = None;
+                    }
+                    if let Some(count) = open_names.get_mut(&open.name) {
+                        *count -= 1;
                     }
                 }
             }
@@ -90,8 +101,7 @@ pub(crate) fn read(html: &str) -> Html {
         if name == "script" || name == "style" {
             // Their content is not text anyone reads.
             let close = format!("</{name}");
-            let lower = html[pos..].to_ascii_lowercase();
-            pos += lower.find(&close).unwrap_or(html.len() - pos);
+            pos += find_ignoring_case(&bytes[pos..], close.as_bytes()).unwrap_or(html.len() - pos);
             continue;
         }
         if name == "a"
@@ -108,6 +118,7 @@ pub(crate) fn read(html: &str) -> Html {
         if hidden {
             hidden_open += 1;
         }
+        *open_names.entry(name.clone()).or_default() += 1;
         stack.push(Open { name, hidden });
     }
 
@@ -117,8 +128,17 @@ pub(crate) fn read(html: &str) -> Html {
     out
 }
 
+/// Where `needle` (ASCII, lower case) first appears in `haystack`, in any case, without copying
+/// the rest of the part for every `<style>` or `<script>` (security-audit-0.16.0 SMTP-2).
+fn find_ignoring_case(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    let first = *needle.first()?;
+    memchr::memchr_iter(first, haystack)
+        .find(|&at| haystack[at..].get(..needle.len()).is_some_and(|head| head.eq_ignore_ascii_case(needle)))
+}
+
 fn text(raw: &str, hidden: bool, anchor: Option<usize>, out: &mut Html) {
-    if raw.is_empty() {
+    // Text that is neither hidden nor on a link counts for nothing here.
+    if raw.is_empty() || (!hidden && anchor.is_none()) {
         return;
     }
     let decoded = decode_entities(raw);
@@ -221,7 +241,9 @@ pub(crate) fn decode_entities(raw: &str) -> String {
     while let Some(at) = rest.find('&') {
         out.push_str(&rest[..at]);
         rest = &rest[at..];
-        let decoded = rest[1..].find(';').filter(|end| *end <= 10).and_then(|end| {
+        // A reference is short: the `;` is looked for only that far, not to the end of the text for
+        // every `&` (security-audit-0.16.0 SMTP-2).
+        let decoded = rest.bytes().skip(1).take(11).position(|byte| byte == b';').and_then(|end| {
             let name = &rest[1..1 + end];
             let character = match name {
                 "amp" => Some('&'),
@@ -259,6 +281,43 @@ pub(crate) fn decode_entities(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Runs `read` on HTML built to make it slow, and checks it stays fast
+    /// (security-audit-0.16.0 SMTP-2).
+    fn quick(html: &str) -> Html {
+        let started = std::time::Instant::now();
+        let read = read(html);
+        assert!(started.elapsed() < std::time::Duration::from_secs(1), "took {:?}", started.elapsed());
+        read
+    }
+
+    #[test]
+    fn many_style_elements_are_skipped_without_copying() {
+        // Each <style> used to copy the rest of the part to find its end.
+        let html = format!("{}<a href=\"https://shop.example/\">Shop</a>", "<STYLE>p{}</Style>".repeat(100_000));
+        assert!(html.len() < MAX_HTML);
+        assert_eq!(quick(&html).anchors.len(), 1);
+        assert_eq!(quick(&"<style>".repeat(200_000)).anchors.len(), 0);
+    }
+
+    #[test]
+    fn closing_tags_without_an_open_element_are_cheap() {
+        // Each </i> used to search the whole stack of unclosed <b>.
+        let html = format!("<i>{}{}</i><p hidden>versteckt</p>", "<b>".repeat(100_000), "</u>".repeat(100_000));
+        let read = quick(&html);
+        assert_eq!(read.hidden_chars, "versteckt".len());
+    }
+
+    #[test]
+    fn ampersands_without_a_semicolon_are_cheap() {
+        // Each & used to look for a ; to the end of the text.
+        let html = format!("<a href=\"https://shop.example/?a&amp;b\">{}&amp;</a>", "&".repeat(1_000_000));
+        let read = quick(&html);
+        assert_eq!(read.anchors[0].href, "https://shop.example/?a&b");
+        assert!(read.anchors[0].text.starts_with("&&&"));
+        let hidden = quick(&format!("<div hidden>{}</div>", "&".repeat(1_000_000)));
+        assert_eq!(hidden.hidden_chars, 1_000_000);
+    }
 
     fn anchors(html: &str) -> Vec<(String, String)> {
         read(html).anchors.into_iter().map(|anchor| (anchor.href, anchor.text)).collect()

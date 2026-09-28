@@ -391,7 +391,10 @@ pub struct QueryFilter {
 pub fn utc_time(text: &str) -> Option<i64> {
     let text = text.strip_suffix('Z')?;
     let (date, time) = text.split_once('T')?;
-    if date.len() != 8 || time.len() != 6 {
+    // Digits only, before it is cut at byte offsets: a multi-byte character across one of them
+    // panicked (security-audit-0.16.0 PROTOCOLS-4), and a sign is no part of a date either.
+    let digits = |s: &str, len: usize| s.len() == len && s.bytes().all(|b| b.is_ascii_digit());
+    if !digits(date, 8) || !digits(time, 6) {
         return None;
     }
     let number = |s: &str| s.parse::<i64>().ok();
@@ -448,6 +451,9 @@ mod tests {
         assert_eq!(http_date(784_887_151), "Tue, 15 Nov 1994 08:12:31 GMT");
         assert_eq!(utc_time("19941115T081231Z"), Some(784_887_151));
         assert_eq!(utc_time("19941115T081231"), None);
+        assert_eq!(utc_time("202\u{e9}101T000000Z"), None);
+        assert_eq!(utc_time("20260101T0\u{e9}000Z"), None);
+        assert_eq!(utc_time("+0260101T000000Z"), None);
     }
 
     #[test]

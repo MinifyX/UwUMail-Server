@@ -19,7 +19,7 @@ use mail_builder::MessageBuilder;
 use mail_builder::headers::content_type::ContentType;
 use mail_builder::headers::date::Date;
 use mail_builder::mime::{BodyPart, MimePart};
-use mail_parser::{MessageParser, MimeHeaders, PartType};
+use mail_parser::{MimeHeaders, PartType};
 use uwumail_store::itip::{self, Component, Role};
 use uwumail_store::{Account, CalendarEventWrite, DavKind, NewDavCollection, StoreError};
 
@@ -30,6 +30,28 @@ use crate::{Context, Smtp, now, random_id};
 
 /// Scheduling parts larger than this are not read.
 const MAX_ITIP_BYTES: usize = 1024 * 1024;
+/// The most people one change may send scheduling messages to, in calendars here and by mail
+/// together. By mail it is fewer still: `smtp.max_recipients`, like any other message.
+pub const MAX_SCHEDULE_RECIPIENTS: usize = 1000;
+
+/// A change would send scheduling messages to more people than one message may reach.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TooManyAttendees {
+    /// How many would be told: all of them, or those who would get mail.
+    pub attendees: usize,
+    /// How many may get mail.
+    pub limit: usize,
+}
+
+impl std::fmt::Display for TooManyAttendees {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} attendees would be told of this change; at most {} may get mail, and {MAX_SCHEDULE_RECIPIENTS} be told in all",
+            self.attendees, self.limit
+        )
+    }
+}
 
 /// What became of one message to one person.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,6 +108,17 @@ impl Smtp {
         if plan.is_empty() {
             return report;
         }
+        // Each attendee gets a message of their own, so the limit on recipients per message never
+        // saw them: one event with thousands of attendees became thousands of mails from this
+        // server (security-audit-0.16.0 PROTOCOLS-5). CalDAV and JMAP refuse such a change before
+        // storing it; this holds for every other way, like deleting an event stored earlier.
+        if let Err(refused) = within_limits(ctx, &plan).await {
+            tracing::warn!(login = %account.login, %refused, "scheduling messages not sent");
+            for attendee in plan.requests.iter().chain(&plan.cancels) {
+                report.sent.push((attendee.clone(), String::new(), Delivery::Failed(refused.to_string())));
+            }
+            return report;
+        }
         let now = now();
         let Some(reference) = new.as_ref().or(old.as_ref()) else { return report };
         let language = language_of(ctx, account.id).await;
@@ -122,6 +155,21 @@ impl Smtp {
         report
     }
 
+    /// Whether the scheduling messages `account`'s change from `old` to `new` would send stay
+    /// within the limits: mail to at most `smtp.max_recipients` people, and at most
+    /// [`MAX_SCHEDULE_RECIPIENTS`] messages in all. Checked before a change is stored.
+    pub async fn check_schedule(
+        &self,
+        account: &Account,
+        old: Option<&str>,
+        new: Option<&str>,
+    ) -> Result<(), TooManyAttendees> {
+        let ctx = &self.inner;
+        let (old, new) = (old.and_then(Component::parse), new.and_then(Component::parse));
+        let own = own_addresses(ctx, account).await;
+        within_limits(ctx, &itip::plan(old.as_ref(), new.as_ref(), &own)).await
+    }
+
     /// Hands one message to one person: into their calendar when they are on this server and use
     /// calendars, by mail otherwise.
     async fn deliver(
@@ -134,15 +182,7 @@ impl Smtp {
         language: Language,
     ) -> Delivery {
         let ctx = &self.inner;
-        let local = match ctx.store.resolve_recipient(to).await {
-            Ok(Some(id)) => ctx.store.delivery_target(id).await.ok().flatten(),
-            _ => None,
-        };
-        if let Some(target) = local
-            && let Ok(Some(target)) = ctx.store.account_by_id(target).await
-            && target.protocols.caldav
-            && target.deleted_at.is_none()
-        {
+        if let Some(target) = local_calendar(ctx, to).await {
             return match apply(ctx, &target, message, Some(from), true).await {
                 Ok(true) => Delivery::Calendar,
                 Ok(false) => Delivery::Skipped,
@@ -215,6 +255,38 @@ impl Smtp {
     }
 }
 
+/// The account on this server whose calendars take messages for `address`, if any.
+async fn local_calendar(ctx: &Context, address: &str) -> Option<Account> {
+    let id = ctx.store.resolve_recipient(address).await.ok().flatten()?;
+    let target = ctx.store.delivery_target(id).await.ok().flatten()?;
+    let target = ctx.store.account_by_id(target).await.ok().flatten()?;
+    (target.protocols.caldav && target.deleted_at.is_none()).then_some(target)
+}
+
+/// See [`Smtp::check_schedule`].
+async fn within_limits(ctx: &Context, plan: &itip::Plan) -> Result<(), TooManyAttendees> {
+    let limit = ctx.live().smtp.max_recipients;
+    let mut everyone: Vec<&String> = plan.requests.iter().chain(&plan.cancels).collect();
+    everyone.sort();
+    everyone.dedup();
+    if everyone.len() > MAX_SCHEDULE_RECIPIENTS {
+        return Err(TooManyAttendees { attendees: everyone.len(), limit });
+    }
+    if everyone.len() <= limit {
+        return Ok(());
+    }
+    let mut by_mail = 0;
+    for address in everyone {
+        if local_calendar(ctx, address).await.is_none() {
+            by_mail += 1;
+        }
+    }
+    if by_mail > limit {
+        return Err(TooManyAttendees { attendees: by_mail, limit });
+    }
+    Ok(())
+}
+
 /// Where a scheduling message came from, as far as it can be trusted.
 #[derive(Debug, Clone, Copy)]
 pub struct Sender<'a> {
@@ -258,7 +330,7 @@ fn find_itip(raw: &[u8]) -> Option<String> {
     if !mentions(b"text/calendar") && !mentions(b"application/ics") {
         return None;
     }
-    let message = MessageParser::new().parse(raw)?;
+    let message = uwumail_store::mime_limits::parse_message(raw)?;
     message.parts.iter().find_map(|part| {
         let content_type = part.content_type()?;
         let full = match content_type.subtype() {

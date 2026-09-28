@@ -17,8 +17,8 @@ use tokio::sync::{Semaphore, watch};
 use tokio_rustls::TlsAcceptor;
 use uwumail_smtp::{AuthLimiter, BoxIo};
 use uwumail_store::{
-    Account, AppScope, MailAuth, MailAuthDenied, SIEVE_MAX_SCRIPT_SIZE, SIEVE_MAX_SCRIPTS, SieveError, Store,
-    validate_sieve_name,
+    Account, AppScope, LiveLogin, MailAuth, MailAuthDenied, SIEVE_MAX_SCRIPT_SIZE, SIEVE_MAX_SCRIPTS, SieveError,
+    Store, validate_sieve_name,
 };
 
 use crate::Imap;
@@ -115,6 +115,7 @@ impl ManageSieve {
                 tls,
                 encrypted: false,
                 account: None,
+                login: None,
                 auth_failures: 0,
                 unauthenticated_since: tokio::time::Instant::now(),
             };
@@ -246,6 +247,8 @@ struct Session {
     tls: Arc<rustls::ServerConfig>,
     encrypted: bool,
     account: Option<Account>,
+    /// What the account logged in with, checked again before every command.
+    login: Option<LiveLogin>,
     auth_failures: u32,
     /// Since when the connection has not been logged in: from the start, and again after
     /// UNAUTHENTICATE.
@@ -396,6 +399,12 @@ impl Session {
         let command = command.to_ascii_uppercase();
         let params = &args[1..];
         let logged_in = self.account.is_some();
+        // The connection ends with its login: a revoked app password, a new password, the account
+        // disabled, trashed or deleted, or mail apps switched off for it.
+        if logged_in && command != "LOGOUT" && !self.login_holds().await {
+            self.send(&format!("BYE {}\r\n", string("Your login is no longer valid, please log in again"))).await?;
+            return Ok(Flow::Close);
+        }
         let answer = match (command.as_str(), logged_in) {
             ("CAPABILITY", _) => format!("{}OK {}\r\n", self.capabilities(), string("Capability completed")),
             ("NOOP", _) => match params.first().and_then(Arg::text) {
@@ -411,6 +420,7 @@ impl Session {
             ("STARTTLS" | "AUTHENTICATE", true) => no(None, "Already logged in"),
             ("UNAUTHENTICATE", true) => {
                 self.account = None;
+                self.login = None;
                 self.unauthenticated_since = tokio::time::Instant::now();
                 ok("Logged out, the connection stays")
             }
@@ -544,11 +554,12 @@ impl Session {
         let peer = self.peer.to_string();
         let username = parsed.user.clone().unwrap_or_default();
         match self.sieve.store.authenticate_oauth(&parsed.token, AppScope::Mail, "managesieve", &peer).await {
-            Ok(MailAuth::Ok { account, .. })
+            Ok(MailAuth::Ok { account, credential, .. })
                 if uwumail_store::sasl_user_matches(parsed.user.as_deref(), &account.login) =>
             {
                 limiter.record_success(self.peer.ip(), &username);
                 tracing::info!(login = %account.login, peer = %self.peer, oauth = true, "managesieve login");
+                self.login = Some(LiveLogin::new(&account, credential));
                 self.account = Some(account);
                 self.send(&ok("Logged in, hi")).await?;
                 Ok(Flow::Continue)
@@ -579,15 +590,19 @@ impl Session {
 
     async fn login(&mut self, username: &str, password: &str) -> io::Result<Flow> {
         let limiter = self.sieve.limiter.clone();
-        if limiter.is_blocked(self.peer.ip()) {
+        let Some(attempt) = limiter.begin(self.peer.ip(), username) else {
             self.send(&no(Some("TRYLATER"), "Too many failed logins, try again later")).await?;
             return Ok(Flow::Continue);
-        }
+        };
         let peer = self.peer.to_string();
-        match self.sieve.store.authenticate_mail(username, password, AppScope::Mail, "managesieve", &peer).await {
-            Ok(MailAuth::Ok { account, app_password }) => {
+        let checked =
+            self.sieve.store.authenticate_mail(username, password, AppScope::Mail, "managesieve", &peer).await;
+        drop(attempt);
+        match checked {
+            Ok(MailAuth::Ok { account, app_password, credential, .. }) => {
                 limiter.record_success(self.peer.ip(), username);
                 tracing::info!(login = %account.login, peer = %self.peer, app_password = app_password.is_some(), "managesieve login");
+                self.login = Some(LiveLogin::new(&account, credential));
                 self.account = Some(account);
                 self.send(&ok("Logged in, hi")).await?;
                 Ok(Flow::Continue)
@@ -616,6 +631,25 @@ impl Session {
                 tracing::error!(%err, "managesieve authentication failed internally");
                 self.send(&no(Some("TRYLATER"), "Temporary authentication failure")).await?;
                 Ok(Flow::Continue)
+            }
+        }
+    }
+
+    /// Whether the login of this connection still holds; the account as it is now if so.
+    async fn login_holds(&mut self) -> bool {
+        let Some(login) = &self.login else { return true };
+        match self.sieve.store.live_login(login, Some("managesieve")).await {
+            Ok(Some(account)) => {
+                self.account = Some(account);
+                true
+            }
+            Ok(None) => {
+                tracing::info!(account = login.account_id, peer = %self.peer, "managesieve login no longer valid, closing");
+                false
+            }
+            Err(err) => {
+                tracing::error!(%err, "checking a managesieve login again failed");
+                false
             }
         }
     }

@@ -118,11 +118,12 @@ async fn the_token_endpoint_trades_the_password_for_a_named_app_password() {
     assert_eq!(created["expiresAt"], Value::Null);
     let token = created["token"].as_str().unwrap();
 
-    // It is an ordinary app password for mail, listed with its name.
+    // It is an ordinary app password for mail, and for calendars and contacts, which JMAP offers
+    // too; listed with its name.
     let list = server.store.app_passwords(id).await.unwrap();
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].name, "Mail client on the desk");
-    assert_eq!(list[0].scopes, vec![AppScope::Mail]);
+    assert_eq!(list[0].scopes, vec![AppScope::Dav, AppScope::Mail]);
     let (status, _) = server.api_as(&bearer(token), &USING, json!([["Core/echo", {}, "0"]])).await;
     assert_eq!(status, StatusCode::OK);
     let events = server.store.security_events(id, 10).await.unwrap();
@@ -147,6 +148,37 @@ async fn the_token_endpoint_trades_the_password_for_a_named_app_password() {
     let (status, _) =
         token_request(&server, json!({ "username": "mini@example.org", "password": PASSWORD, "name": "x" })).await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_login_guessed_at_from_many_networks_waits_over_jmap_too() {
+    // security-audit-0.16.0 PROTOCOLS-8: JMAP (and DAV, which signs in the same way) and the token
+    // endpoint counted per network only, each on its own. Ten wrong passwords for one login from
+    // ten networks, over any protocol, and the next try waits here too.
+    let server = server().await;
+    for network in 0..10 {
+        server
+            .store
+            .auth_limiter()
+            .record_failure(format!("2001:db8:{network}::1").parse().unwrap(), "nyu@example.org");
+    }
+    let (status, _) = server.api_as(&basic("nyu@example.org", PASSWORD), &USING, json!([["Core/echo", {}, "0"]])).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    let (status, _) =
+        token_request(&server, json!({ "username": "nyu@example.org", "password": PASSWORD, "name": "x" })).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    // Other logins are not held up.
+    let (status, _) =
+        server.api_as(&basic("mini@example.org", PASSWORD), &USING, json!([["Core/echo", {}, "0"]])).await;
+    assert_eq!(status, StatusCode::OK);
+
+    // And the other way round: what fails over JMAP counts for every other protocol.
+    let (status, _) = server.api_as(&basic("ghost@example.org", "nope"), &USING, json!([])).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    for _ in 0..2 {
+        server.api_as(&basic("ghost@example.org", "nope"), &USING, json!([])).await;
+    }
+    assert!(server.store.auth_limiter().is_blocked("127.0.0.1".parse().unwrap()), "unknown logins count strictly");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -229,4 +261,71 @@ async fn oauth_access_tokens_work_as_bearer_tokens() {
     server.store.revoke_oauth_grant(id, mail.grant_id).await.unwrap();
     let (status, _) = server.api_as(&bearer(&mail.access_token), &USING, calls).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+/// An app password or app limited to `mail` reads and sends mail; calendars and address books
+/// need `dav`, over JMAP as over CalDAV and CardDAV. They used to be open to any JMAP login
+/// (security audit 0.16.0 PROTOCOLS-11).
+#[tokio::test(flavor = "multi_thread")]
+async fn calendars_and_contacts_need_the_dav_scope() {
+    let server = server().await;
+    let id = server.id("mini@example.org").await;
+    let account = server.account_id("mini@example.org").await;
+    let app = |scopes: Vec<AppScope>| {
+        let store = server.store.clone();
+        async move {
+            store
+                .create_app_password(id, NewAppPassword { name: "app".into(), scopes, expires_at: None })
+                .await
+                .unwrap()
+        }
+    };
+    let mail_only = app(vec![AppScope::Mail]).await;
+    let with_dav = app(vec![AppScope::Mail, AppScope::Dav]).await;
+    let using = [
+        "urn:ietf:params:jmap:core",
+        "urn:ietf:params:jmap:mail",
+        "urn:ietf:params:jmap:calendars",
+        "urn:ietf:params:jmap:contacts",
+    ];
+    let session = |secret: String| {
+        let server = &server;
+        async move {
+            let request = Request::get("/jmap/session")
+                .header(header::AUTHORIZATION, bearer(&secret))
+                .header(header::HOST, "mail.example.org")
+                .body(Body::empty())
+                .unwrap();
+            let (status, body) = server.request(request).await;
+            assert_eq!(status, StatusCode::OK);
+            serde_json::from_slice::<Value>(&body).unwrap()
+        }
+    };
+    let calls = json!([
+        ["Calendar/get", { "accountId": account, "ids": null }, "0"],
+        ["AddressBook/get", { "accountId": account, "ids": null }, "1"],
+        ["Mailbox/get", { "accountId": account, "ids": null }, "2"]
+    ]);
+
+    let limited = session(mail_only.secret.clone()).await;
+    assert!(limited["capabilities"].get("urn:ietf:params:jmap:calendars").is_none(), "{limited}");
+    assert!(limited["capabilities"].get("urn:ietf:params:jmap:contacts").is_none(), "{limited}");
+    assert!(limited["capabilities"].get("urn:ietf:params:jmap:mail").is_some());
+    let (status, response) = server.api_as(&bearer(&mail_only.secret), &using, calls.clone()).await;
+    assert_eq!(status, StatusCode::OK);
+    let responses = response["methodResponses"].as_array().unwrap();
+    assert_eq!(responses[0][0], "error", "{}", responses[0]);
+    assert_eq!(responses[0][1]["type"], "forbidden");
+    assert_eq!(responses[1][1]["type"], "forbidden");
+    assert_eq!(responses[2][0], "Mailbox/get", "mail works");
+
+    let full = session(with_dav.secret.clone()).await;
+    assert!(full["capabilities"].get("urn:ietf:params:jmap:calendars").is_some(), "{full}");
+    let (_, response) = server.api_as(&bearer(&with_dav.secret), &using, calls.clone()).await;
+    assert_eq!(response["methodResponses"][0][0], "Calendar/get", "{response}");
+    assert_eq!(response["methodResponses"][1][0], "AddressBook/get", "{response}");
+
+    // The account password may do everything.
+    let (_, response) = server.api_as(&basic("mini@example.org", PASSWORD), &using, calls).await;
+    assert_eq!(response["methodResponses"][0][0], "Calendar/get", "{response}");
 }

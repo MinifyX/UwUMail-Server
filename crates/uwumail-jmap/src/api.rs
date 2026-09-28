@@ -3,19 +3,18 @@
 use std::collections::HashMap;
 
 use axum::Extension;
-use axum::body::Bytes;
+use axum::body::Body;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Json, Response};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
-use uwumail_store::Account;
 
-use crate::auth::ClientInfo;
+use crate::auth::{ClientInfo, Login};
 use crate::error::MethodError;
 use crate::methods::{self, Ctx};
 use crate::session::{self, CORE};
-use crate::{Jmap, MAX_CALLS_IN_REQUEST};
+use crate::{Jmap, MAX_CALLS_IN_REQUEST, MAX_REQUEST_BYTES};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,12 +63,25 @@ pub async fn handle(
     State(jmap): State<Jmap>,
     client: Option<Extension<ClientInfo>>,
     headers: HeaderMap,
-    body: Bytes,
+    body: Body,
 ) -> Response {
     let client = client.map(|Extension(c)| c).unwrap_or_default();
     let login = match jmap.inner.auth.login_for(&headers, client, true).await {
         Ok(login) => login,
         Err(err) => return err.into_response(),
+    };
+    // Read only after the login (security-audit-0.16.0 PROTOCOLS-6).
+    let Ok(body) = axum::body::to_bytes(body, MAX_REQUEST_BYTES).await else {
+        return RequestError {
+            status: StatusCode::PAYLOAD_TOO_LARGE,
+            body: json!({
+                "type": "urn:ietf:params:jmap:error:limit",
+                "limit": "maxSizeRequest",
+                "status": 413,
+                "detail": "The request is too big or was cut off."
+            }),
+        }
+        .into_response();
     };
     let value: Value = match serde_json::from_slice(&body) {
         Ok(value) => value,
@@ -78,21 +90,16 @@ pub async fn handle(
                 .into_response();
         }
     };
-    match process(&jmap, login.account, Some(login.credential), value).await {
+    match process(&jmap, login, value).await {
         Ok(response) => ([(header::CACHE_CONTROL, "no-cache, no-store")], Json(response)).into_response(),
         Err(err) => err.into_response(),
     }
 }
 
 /// Runs the method calls of one request object and returns the response object. Shared by
-/// `POST /jmap/api` and the WebSocket (RFC 8887). `credential` is what the login used, for push
-/// subscriptions; without it they cannot be used.
-pub async fn process(
-    jmap: &Jmap,
-    account: Account,
-    credential: Option<String>,
-    value: Value,
-) -> Result<Value, RequestError> {
+/// `POST /jmap/api` and the WebSocket (RFC 8887). The login's credential is what push
+/// subscriptions belong to, and its scopes say whether calendars and contacts may be used.
+pub async fn process(jmap: &Jmap, login: Login, value: Value) -> Result<Value, RequestError> {
     let request: Request = serde_json::from_value(value)
         .map_err(|err| RequestError::new(StatusCode::BAD_REQUEST, "notRequest", &err.to_string()))?;
     if let Some(unknown) = request.using.iter().find(|c| !methods::KNOWN_CAPABILITIES.contains(&c.as_str())) {
@@ -115,12 +122,15 @@ pub async fn process(
     }
 
     let echo_created_ids = request.created_ids.is_some();
-    let mut ctx = Ctx::new(&jmap.inner, account, request.using, request.created_ids.unwrap_or_default());
-    ctx.credential = credential;
+    let may_use_dav = login.may_use_dav();
+    let mut ctx = Ctx::new(&jmap.inner, login.account, request.using, request.created_ids.unwrap_or_default());
+    ctx.credential = Some(login.credential);
+    ctx.may_use_dav = may_use_dav;
     let mut responses: Vec<(String, Value, String)> = Vec::with_capacity(request.method_calls.len());
+    let mut reference_budget = MAX_REFERENCED_BYTES;
 
     for (name, arguments, call_id) in request.method_calls {
-        let outcome = match resolve_references(arguments, &responses) {
+        let outcome = match resolve_references(arguments, &responses, &mut reference_budget) {
             Ok(arguments) => methods::dispatch(&mut ctx, &name, arguments).await,
             Err(err) => Err(err),
         };
@@ -141,18 +151,39 @@ pub async fn process(
     }
     // The shared accounts are part of the session, so their changes change its state too.
     let shared = crate::sharing::shared_accounts(&jmap.inner.store, ctx.account.id).await;
-    let state = format!("{}{}", session::session_state(&ctx.account), crate::sharing::state_suffix(&shared));
+    // So does where the account may make masked addresses.
+    let masked = session::masked_state(&jmap.inner.store).await;
+    let state = format!("{}{}{masked}", session::session_state(&ctx.account), crate::sharing::state_suffix(&shared));
     response.insert("sessionState".into(), json!(state));
     Ok(Value::Object(response))
 }
 
-/// Replaces `#name` arguments with the value their result reference points at.
-fn resolve_references(arguments: Value, responses: &[(String, Value, String)]) -> Result<Value, MethodError> {
+/// What result references may copy in one request, all together, counted as JSON. A reference
+/// copies what it points at, and Core/echo hands the copy back as a response of its own; two
+/// references to the previous echo doubled the answer with every call, so a small request grew
+/// without end (security-audit-0.16.0 PANIC-2). Real references name ids, a few kilobytes.
+const MAX_REFERENCED_BYTES: usize = crate::MAX_REQUEST_BYTES;
+/// `#` arguments one method call may have; methods take one or two.
+const MAX_REFERENCES_PER_CALL: usize = 16;
+
+/// Replaces `#name` arguments with the value their result reference points at, taking what the
+/// values copy off `budget`.
+fn resolve_references(
+    arguments: Value,
+    responses: &[(String, Value, String)],
+    budget: &mut usize,
+) -> Result<Value, MethodError> {
     let Value::Object(map) = arguments else {
         return Err(MethodError::invalid_arguments("arguments must be an object"));
     };
-    if !map.keys().any(|key| key.starts_with('#')) {
+    let references = map.keys().filter(|key| key.starts_with('#')).count();
+    if references == 0 {
         return Ok(Value::Object(map));
+    }
+    if references > MAX_REFERENCES_PER_CALL {
+        return Err(MethodError::invalid_arguments(format!(
+            "a method call may have at most {MAX_REFERENCES_PER_CALL} result references"
+        )));
     }
     let mut resolved = Map::with_capacity(map.len());
     for (key, value) in &map {
@@ -177,9 +208,41 @@ fn resolve_references(arguments: Value, responses: &[(String, Value, String)]) -
         }
         let value = evaluate_pointer(response, &reference.path)
             .ok_or_else(|| MethodError::new("invalidResultReference", format!("nothing at {}", reference.path)))?;
+        *budget = budget.checked_sub(json_size(&value, *budget)).ok_or_else(|| {
+            MethodError::new(
+                "requestTooLarge",
+                format!("the result references of this request copy more than {MAX_REFERENCED_BYTES} bytes"),
+            )
+        })?;
         resolved.insert(name.to_owned(), value);
     }
     Ok(Value::Object(resolved))
+}
+
+/// About how many bytes `value` takes as JSON; the count stops soon after it passes `limit`.
+fn json_size(value: &Value, limit: usize) -> usize {
+    let mut size = 0usize;
+    let mut work = vec![value];
+    while let Some(value) = work.pop() {
+        size += match value {
+            Value::Null | Value::Bool(_) => 5,
+            Value::Number(_) => 20,
+            Value::String(text) => text.len() + 2,
+            Value::Array(items) => {
+                work.extend(items);
+                items.len() + 2
+            }
+            Value::Object(map) => {
+                size += map.keys().map(|key| key.len() + 4).sum::<usize>();
+                work.extend(map.values());
+                map.len() + 2
+            }
+        };
+        if size > limit {
+            break;
+        }
+    }
+    size
 }
 
 /// JSON Pointer with JMAP's `*` extension for arrays.
@@ -233,9 +296,43 @@ mod tests {
     fn references_are_resolved() {
         let responses = vec![("Email/query".to_string(), json!({ "ids": ["e1"] }), "0".to_string())];
         let args = json!({ "#ids": { "resultOf": "0", "name": "Email/query", "path": "/ids" }, "properties": ["id"] });
-        let resolved = resolve_references(args, &responses).unwrap();
+        let mut budget = MAX_REFERENCED_BYTES;
+        let resolved = resolve_references(args, &responses, &mut budget).unwrap();
         assert_eq!(resolved["ids"], json!(["e1"]));
+        assert!(budget < MAX_REFERENCED_BYTES);
         let wrong = json!({ "#ids": { "resultOf": "0", "name": "Mailbox/get", "path": "/ids" } });
-        assert_eq!(resolve_references(wrong, &responses).unwrap_err().kind, "invalidResultReference");
+        assert_eq!(resolve_references(wrong, &responses, &mut budget).unwrap_err().kind, "invalidResultReference");
+    }
+
+    /// Core/echo with two references to the echo before it doubles with every call: a small
+    /// request grew without end (security-audit-0.16.0 PANIC-2). The copies are counted now.
+    #[test]
+    fn references_that_double_run_out() {
+        let mut responses = vec![("Core/echo".to_string(), json!({ "a": "x".repeat(1024 * 1024) }), "0".to_string())];
+        let mut budget = MAX_REFERENCED_BYTES;
+        let mut refused = None;
+        for step in 1..8 {
+            let previous = (step - 1).to_string();
+            let args = json!({
+                "#a": { "resultOf": previous, "name": "Core/echo", "path": "/" },
+                "#b": { "resultOf": previous, "name": "Core/echo", "path": "/" },
+            });
+            match resolve_references(args, &responses, &mut budget) {
+                Ok(echoed) => responses.push(("Core/echo".into(), echoed, step.to_string())),
+                Err(err) => {
+                    refused = Some((step, err.kind));
+                    break;
+                }
+            }
+        }
+        let (step, kind) = refused.expect("the doubling is stopped");
+        assert_eq!(kind, "requestTooLarge");
+        assert!(step <= 4, "stopped at call {step}");
+
+        let many: Map<String, Value> = (0..=MAX_REFERENCES_PER_CALL)
+            .map(|n| (format!("#r{n}"), json!({ "resultOf": "0", "name": "Core/echo", "path": "/a" })))
+            .collect();
+        let err = resolve_references(Value::Object(many), &responses, &mut MAX_REFERENCED_BYTES.clone()).unwrap_err();
+        assert_eq!(err.kind, "invalidArguments");
     }
 }

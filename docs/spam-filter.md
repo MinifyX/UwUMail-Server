@@ -91,7 +91,10 @@ Mail in Junk is never forwarded to other addresses.
 The message is read once, on a thread of its own: messages up to 25 MB, the
 first 2 MB of their HTML, at most 10 link domains asked about, and zip archives
 up to 25 MB looked into without unpacking them. Each rule counts once per
-message.
+message. Reading takes time in proportion to the size of the message, whatever
+it holds, and at most one message per processor core is read at a time; the
+others wait their turn, so a burst of big messages cannot take every core from
+delivery and the mail apps.
 
 | Rule | Points | When |
 | --- | --- | --- |
@@ -369,6 +372,13 @@ Expressions run on Rust's regex engine, which takes linear time whatever the
 pattern: a list cannot slow the server down. In exchange, look-around and
 back-references are not supported, and an expression that matches an empty
 text is refused, because it would match every message.
+
+Compiled, one person's lists (own entries and subscribed lists together) may
+take 16 MiB, the whole server's and each domain's 128 MiB. Plain words take
+little; a big expression like `/\w{50}/` takes a lot. What does not fit any
+more is left out, in the order the entries were added, and the log says so. A
+change compiles only the lists of the scope it belongs to again, in the
+background: mail arriving meanwhile is judged by the lists as they were.
 
 Entries can be typed in one per line, or a whole list can be pasted, for
 example an Rspamd map. Lines starting with `#` are skipped; the portal and

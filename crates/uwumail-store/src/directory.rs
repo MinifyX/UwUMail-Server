@@ -4,6 +4,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::Serialize;
 
 use crate::address::{base_local_part, normalize_address, normalize_domain};
+use crate::masked_domains::{DomainKind, ensure_mail_domain};
 use crate::{Result, Store, StoreError, mail, now, password};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -81,6 +82,8 @@ pub struct Domain {
     /// Login of the account that receives mail for unknown addresses.
     pub catch_all: Option<String>,
     pub created_at: i64,
+    /// A mail domain, or one only for masked addresses.
+    pub kind: DomainKind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -389,7 +392,12 @@ pub(crate) fn resolve(conn: &Connection, address: &str) -> Result<Option<i64>> {
 }
 
 impl Store {
+    /// Adds a mail domain.
     pub async fn create_domain(&self, name: &str) -> Result<Domain> {
+        self.create_domain_with_kind(name, DomainKind::Mail).await
+    }
+
+    pub async fn create_domain_with_kind(&self, name: &str, kind: DomainKind) -> Result<Domain> {
         let name = normalize_domain(name)?;
         self.write(move |tx| {
             let exists: bool =
@@ -398,8 +406,11 @@ impl Store {
                 return Err(StoreError::Conflict(format!("domain {name}")));
             }
             let created_at = now();
-            tx.execute("INSERT INTO domains (name, created_at) VALUES (?1, ?2)", params![name, created_at])?;
-            Ok(Domain { id: tx.last_insert_rowid(), name, catch_all: None, created_at })
+            tx.execute(
+                "INSERT INTO domains (name, created_at, kind) VALUES (?1, ?2, ?3)",
+                params![name, created_at, kind.as_str()],
+            )?;
+            Ok(Domain { id: tx.last_insert_rowid(), name, catch_all: None, created_at, kind })
         })
         .await
     }
@@ -407,11 +418,17 @@ impl Store {
     pub async fn domains(&self) -> Result<Vec<Domain>> {
         self.read(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT d.id, d.name, a.login, d.created_at FROM domains d
+                "SELECT d.id, d.name, a.login, d.created_at, d.kind FROM domains d
                  LEFT JOIN accounts a ON a.id = d.catch_all_account_id ORDER BY d.name",
             )?;
             let rows = stmt.query_map([], |row| {
-                Ok(Domain { id: row.get(0)?, name: row.get(1)?, catch_all: row.get(2)?, created_at: row.get(3)? })
+                Ok(Domain {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    catch_all: row.get(2)?,
+                    created_at: row.get(3)?,
+                    kind: DomainKind::parse(&row.get::<_, String>(4)?).unwrap_or_default(),
+                })
             })?;
             Ok(rows.collect::<Result<_, _>>()?)
         })
@@ -423,7 +440,8 @@ impl Store {
         Ok(self.domains().await?.into_iter().find(|d| d.name == name))
     }
 
-    /// Deletes a domain. Refuses while addresses still use it.
+    /// Deletes a domain. Refuses while addresses still use it. Policies that named it as a
+    /// masked-only domain stop doing so (see [`Store::masked_domain_users`]).
     pub async fn delete_domain(&self, name: &str) -> Result<()> {
         let name = normalize_domain(name)?;
         self.write(move |tx| {
@@ -442,6 +460,7 @@ impl Store {
                 return Err(StoreError::Invalid(format!("{in_use} addresses still use {name}, remove them first")));
             }
             tx.execute("DELETE FROM domains WHERE id = ?1", [id])?;
+            crate::masked_domains::bump_version(tx)?;
             Ok(())
         })
         .await
@@ -514,6 +533,9 @@ impl Store {
         let login = login.map(login_key).transpose()?;
         self.write(move |tx| {
             let domain_id = domain_id(tx, &domain)?;
+            if login.is_some() {
+                ensure_mail_domain(tx, domain_id)?;
+            }
             let account = login.as_deref().map(|login| account_id(tx, login)).transpose()?;
             tx.execute("UPDATE domains SET catch_all_account_id = ?1 WHERE id = ?2", params![account, domain_id])?;
             Ok(())
@@ -621,6 +643,7 @@ impl Store {
         });
         self.write(move |tx| {
             let domain_id = domain_id(tx, &domain)?;
+            ensure_mail_domain(tx, domain_id)?;
             let login = format!("{local}@{domain}");
             let taken: bool = tx.query_row(
                 "SELECT EXISTS (SELECT 1 FROM accounts WHERE login = ?1)",
@@ -631,14 +654,18 @@ impl Store {
                 return Err(StoreError::Conflict(format!("address {login}")));
             }
             let created_at = now();
+            // Never an id an account had before (migration 0048): a connection, a cached login or
+            // learned spam words of a purged account must not carry over to a new one.
+            let id = crate::db::next_id(tx, "accounts")?;
             tx.execute(
                 // credentials_changed_at is set to the creation time, not left at 0: a login cached
-                // for a purged account whose row id SQLite later hands to a new account must not
-                // compare as "unchanged since" and open the new account (security-audit-0.5.2 S-22).
-                "INSERT INTO accounts (login, display_name, password_hash, role, kind, quota_bytes, created_at,
+                // for a purged account must not compare as "unchanged since" and open another
+                // account (security-audit-0.5.2 S-22). Ids are no longer reused since 0.16.0, this
+                // stays as a second guard.
+                "INSERT INTO accounts (id, login, display_name, password_hash, role, kind, quota_bytes, created_at,
                                        credentials_changed_at,
                                        smtp_enabled, imap_enabled, jmap_enabled, caldav_enabled, carddav_enabled)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?9, ?10, ?11, ?12)",
+                 VALUES (?13, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     login,
                     new.display_name.trim(),
@@ -651,10 +678,10 @@ impl Store {
                     protocols.imap,
                     protocols.jmap,
                     protocols.caldav,
-                    protocols.carddav
+                    protocols.carddav,
+                    id
                 ],
             )?;
-            let id = tx.last_insert_rowid();
             tx.execute(
                 "INSERT INTO addresses (local_part, domain_id, account_id, kind, created_at) VALUES (?1, ?2, ?3, 'primary', ?4)",
                 params![local, domain_id, id, created_at],
@@ -746,6 +773,10 @@ impl Store {
                 // Threads are only referenced by emails of the same account.
                 tx.execute("DELETE FROM emails WHERE account_id = ?1", [id])?;
                 tx.execute("DELETE FROM accounts WHERE id = ?1", [id])?;
+                // What the spam filter learned for this person has no foreign key to cascade.
+                for table in ["bayes_tokens", "bayes_totals", "bayes_learned", "bayes_queue"] {
+                    tx.execute(&format!("DELETE FROM {table} WHERE account_id = ?1"), [id])?;
+                }
                 let mut granted = crate::identity_grants::Granted::default();
                 for (member, addresses) in members {
                     for address in addresses {
@@ -781,6 +812,13 @@ impl Store {
                 "UPDATE accounts SET password_hash = ?1, credentials_changed_at = ?2 WHERE login = ?3",
                 params![hash, now(), login],
             )?;
+            let id = account_id(tx, &login)?;
+            crate::held::cancel_held(
+                tx,
+                id,
+                crate::held::HeldBy::Password { keep: None },
+                crate::held::NOT_SENT_PASSWORD,
+            )?;
             Ok(())
         })
         .await
@@ -792,6 +830,10 @@ impl Store {
             let changed = tx.execute("UPDATE accounts SET disabled = ?1 WHERE login = ?2", params![disabled, login])?;
             if changed == 0 {
                 return Err(StoreError::NotFound(format!("account {login}")));
+            }
+            if disabled {
+                let id = account_id(tx, &login)?;
+                crate::held::cancel_held(tx, id, crate::held::HeldBy::Anyone, crate::held::NOT_SENT_DISABLED)?;
             }
             Ok(())
         })
@@ -827,10 +869,7 @@ impl Store {
             let valid = self.check_external_password(&account.login, password).await.unwrap_or(false);
             return Ok((valid && account.can_log_in()).then(|| account.clone()));
         }
-        let (typed, stored) = (password.to_owned(), found.as_ref().and_then(|(_, hash, _)| hash.clone()));
-        let valid = tokio::task::spawn_blocking(move || password::verify(&typed, stored.as_deref()))
-            .await
-            .map_err(|err| StoreError::Internal(err.to_string()))?;
+        let valid = self.verify_password(password, found.as_ref().and_then(|(_, hash, _)| hash.clone())).await?;
         let Some((account, hash, _)) = found.filter(|(account, _, _)| valid && account.can_log_in()) else {
             return Ok(None);
         };
@@ -845,6 +884,7 @@ impl Store {
         let login = login_key(login)?;
         self.write(move |tx| {
             let domain_id = domain_id(tx, &domain)?;
+            ensure_mail_domain(tx, domain_id)?;
             let account_id = account_id(tx, &login)?;
             check_not_released(tx, &local, domain_id, Some(account_id))?;
             if crate::forward_addresses::address_in_use(tx, &local, domain_id)? {
@@ -945,6 +985,10 @@ impl Store {
         let domains = domains.iter().map(|name| normalize_domain(name)).collect::<Result<Vec<_>>>()?;
         self.write(move |tx| {
             let ids = domains.iter().map(|name| domain_id(tx, name)).collect::<Result<Vec<_>>>()?;
+            // Any address of a masked-only domain is someone's masked address, or one nobody may use.
+            for id in &ids {
+                ensure_mail_domain(tx, *id)?;
+            }
             tx.execute("DELETE FROM send_as_domains WHERE account_id = ?1", [account_id])?;
             for id in ids {
                 tx.execute(
@@ -973,6 +1017,59 @@ mod tests {
             quota_bytes: 0,
             protocols: None,
         }
+    }
+
+    /// Purging the newest account used to hand its row id to the next one, and with it open
+    /// connections, cached logins and learned spam words (security audit 0.16.0 STORE-1).
+    #[tokio::test]
+    async fn ids_of_purged_accounts_and_revoked_credentials_are_never_handed_out_again() {
+        let (store, _dir) = store().await;
+        store.create_domain("example.org").await.unwrap();
+        store.create_account(person("mini@example.org")).await.unwrap();
+        let nyu = store.create_account(person("nyu@example.org")).await.unwrap();
+        store
+            .write(move |tx| {
+                tx.execute("INSERT INTO bayes_totals (account_id, spam, ham) VALUES (?1, 3, 4)", [nyu.id])?;
+                tx.execute(
+                    "INSERT INTO bayes_tokens (account_id, token, spam, updated_at) VALUES (?1, 42, 3, 0)",
+                    [nyu.id],
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        store.delete_account("nyu@example.org").await.unwrap();
+        let leni = store.create_account(person("leni@example.org")).await.unwrap();
+        assert!(leni.id > nyu.id, "{} took the id of the purged {}", leni.id, nyu.id);
+        let learned: i64 = store
+            .read(move |conn| {
+                Ok(conn.query_row(
+                    "SELECT (SELECT count(*) FROM bayes_totals WHERE account_id = ?1)
+                          + (SELECT count(*) FROM bayes_tokens WHERE account_id = ?1)",
+                    [nyu.id],
+                    |row| row.get(0),
+                )?)
+            })
+            .await
+            .unwrap();
+        assert_eq!(learned, 0, "what the spam filter learned for someone goes with them");
+
+        // Not even a row written by hand, or with an id SQLite picks, gets an old id.
+        for sql in [
+            "INSERT INTO accounts (login, created_at) VALUES ('ghost@example.org', 0)",
+            "INSERT INTO accounts (id, login, created_at) VALUES (2, 'ghost@example.org', 0)",
+        ] {
+            let refused = store.write(move |tx| Ok(tx.execute(sql, [])?)).await;
+            assert!(refused.is_err(), "{sql} went through");
+        }
+
+        // App passwords are credentials by their id too (push subscriptions and connections name them).
+        let new =
+            || crate::NewAppPassword { name: "phone".into(), scopes: vec![crate::AppScope::Mail], expires_at: None };
+        let first = store.create_app_password(leni.id, new()).await.unwrap().app_password.id;
+        store.revoke_app_password(leni.id, first).await.unwrap();
+        let second = store.create_app_password(leni.id, new()).await.unwrap().app_password.id;
+        assert!(second > first);
     }
 
     #[tokio::test]

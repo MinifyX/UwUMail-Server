@@ -121,24 +121,6 @@ pub async fn remove_group(
 }
 
 #[derive(Deserialize)]
-pub struct Switch {
-    on: bool,
-}
-
-/// Opens a domain for masked addresses, or closes it for new ones.
-pub async fn set_masked_addresses(
-    State(web): State<Web>,
-    Admin(session): Admin,
-    Path(name): Path<String>,
-    Json(body): Json<Switch>,
-) -> ApiResult<StatusCode> {
-    let domain = super::domains::load(&web, &name).await?;
-    web.store().set_domain_masked_addresses(&domain.name, body.on).await?;
-    audit(&web, &session, "domain.maskedAddresses", &domain.name, json!({ "on": body.on })).await;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Member {
     login: String,

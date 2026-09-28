@@ -240,6 +240,11 @@ async fn an_iphone_finds_the_calendar_and_keeps_events_in_sync() {
     let november =
         as_mini(&app, "REPORT", calendar, &[("depth", "1")], &query("20261101T000000Z", "20261201T000000Z")).await;
     assert!(!november.body.contains("friseur.ics"), "{}", november.body);
+    // A time with a multi-byte character where a digit belongs is no time; it used to panic
+    // (security-audit-0.16.0 PROTOCOLS-4).
+    let odd =
+        as_mini(&app, "REPORT", calendar, &[("depth", "1")], &query("202\u{e9}101T000000Z", "20261201T000000Z")).await;
+    assert_eq!(odd.status, StatusCode::MULTI_STATUS, "{}", odd.body);
 }
 
 #[tokio::test]

@@ -53,6 +53,9 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     WEBPUSH_VAPID,
 ];
 
+/// The data types of calendars and address books: only for credentials with the `dav` scope.
+const DAV_TYPES: &[&str] = &["Calendar", "CalendarEvent", "ParticipantIdentity", "AddressBook", "ContactCard"];
+
 /// The most suggestions one `AddressSuggestion/query` returns.
 pub const MAX_SUGGESTIONS: usize = suggest::MAX_LIMIT;
 
@@ -72,11 +75,24 @@ pub struct Ctx<'a> {
     pub shared: Option<SharedView>,
     /// The credential the request logged in with, for push subscriptions (RFC 8620, 7.2).
     pub credential: Option<String>,
+    /// Whether that credential may reach calendars and address books: an app password or OAuth app
+    /// with the `dav` scope, the account password or the webmail. One limited to `mail` gets
+    /// neither, over JMAP as over CalDAV and CardDAV.
+    pub may_use_dav: bool,
 }
 
 impl<'a> Ctx<'a> {
     pub fn new(jmap: &'a Inner, account: Account, using: Vec<String>, created_ids: HashMap<String, String>) -> Ctx<'a> {
-        Ctx { jmap, account, using, created_ids, started: std::time::Instant::now(), shared: None, credential: None }
+        Ctx {
+            jmap,
+            account,
+            using,
+            created_ids,
+            started: std::time::Instant::now(),
+            shared: None,
+            credential: None,
+            may_use_dav: true,
+        }
     }
 
     pub fn account_id(&self) -> String {
@@ -139,6 +155,14 @@ impl<'a> Ctx<'a> {
 }
 
 pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Outputs> {
+    // Calendars and address books need a credential allowed them (the `dav` scope), whichever
+    // account the call is for.
+    if !ctx.may_use_dav && DAV_TYPES.contains(&name.split('/').next().unwrap_or_default()) {
+        return Err(MethodError::new(
+            "forbidden",
+            "this app password or app sign-in is not allowed calendars and contacts (scope dav)",
+        ));
+    }
     // A call for someone else's account shared with this one runs in that account.
     if sharing::enter(ctx, name, &args).await? {
         let result = Box::pin(dispatch(ctx, name, args)).await;
@@ -382,8 +406,7 @@ pub fn query_response(
     let mut position = match args.get("anchor").and_then(Value::as_str) {
         Some(anchor) => {
             let index = ids.iter().position(|id| id == anchor).ok_or_else(|| MethodError::kind("anchorNotFound"))?;
-            let offset = args.get("anchorOffset").and_then(Value::as_i64).unwrap_or(0);
-            (index as i64 + offset).max(0) as usize
+            anchored(index, args.get("anchorOffset").and_then(Value::as_i64).unwrap_or(0))
         }
         None => match args.get("position").and_then(Value::as_i64).unwrap_or(0) {
             p if p < 0 => total.saturating_sub(p.unsigned_abs() as usize),
@@ -421,9 +444,9 @@ pub fn query_response(
 }
 
 /// Counts the objects of a /set call against the limit.
-/// How long one request may spend on calendar events and contact cards in all its method calls
-/// together: without it, each of the calls in a request would get a query's limit anew, and /get
-/// and /set none (security-audit-0.7.0 S-45, 0.8.0 C-1).
+/// How long one request may spend on calendar events, contact cards and parsing mail in all its
+/// method calls together: without it, each of the calls in a request would get a query's limit
+/// anew, and /get and /set none (security-audit-0.7.0 S-45, 0.8.0 C-1, 0.16.0 PROTOCOLS-9).
 const REQUEST_TIME_LIMIT: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// When the request's time for calendar and contact work is up.
@@ -454,6 +477,24 @@ pub fn check_filter_size(filter: Option<&Value>) -> MethodResult<()> {
         )),
         _ => Ok(()),
     }
+}
+
+/// What mail methods answer once the request's time is up.
+pub const OUT_OF_TIME: &str = "this request has used up its time for reading mail; send the rest in a new request";
+
+/// The most sort comparators a query may have. Each becomes a sort key computed for every object,
+/// some with a lookup of their own; apps use one or two (security-audit-0.16.0 PROTOCOLS-9).
+const MAX_SORT_COMPARATORS: usize = 10;
+
+/// Refuses a sort with more than [`MAX_SORT_COMPARATORS`] comparators.
+pub fn check_sort_size(sort: &[Value]) -> MethodResult<()> {
+    if sort.len() > MAX_SORT_COMPARATORS {
+        return Err(MethodError::new(
+            "unsupportedSort",
+            format!("a sort may have at most {MAX_SORT_COMPARATORS} comparators"),
+        ));
+    }
+    Ok(())
 }
 
 pub fn check_set_size(args: &Value) -> MethodResult<()> {
@@ -494,7 +535,27 @@ impl SetResponse {
     }
 }
 
+/// Where a page starts that begins `offset` places from the anchor at `index`, never before the
+/// start. `anchorOffset` is whatever the client sends; `i64::MAX` overflowed the addition
+/// (security-audit-0.16.0 PANIC-I1).
+pub fn anchored(index: usize, offset: i64) -> usize {
+    usize::try_from((index as i64).saturating_add(offset).max(0)).unwrap_or(usize::MAX)
+}
+
 /// Seconds since the Unix epoch.
 pub fn unix_now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
+}
+
+#[cfg(test)]
+mod anchor_tests {
+    use super::anchored;
+
+    #[test]
+    fn anchor_offsets_of_any_size() {
+        assert_eq!(anchored(5, -2), 3);
+        assert_eq!(anchored(5, -20), 0);
+        assert_eq!(anchored(5, i64::MIN), 0);
+        assert_eq!(anchored(5, i64::MAX), i64::MAX as usize);
+    }
 }

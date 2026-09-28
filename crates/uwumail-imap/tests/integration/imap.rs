@@ -59,9 +59,14 @@ struct Client {
 
 impl Client {
     async fn connect(server: &Server) -> Client {
+        Client::connect_from(server, "192.0.2.7:40000").await
+    }
+
+    async fn connect_from(server: &Server, peer: &str) -> Client {
         let (client, connection) = tokio::io::duplex(4 * 1024 * 1024);
         let imap = server.imap.clone();
-        tokio::spawn(async move { imap.serve_connection(connection, "192.0.2.7:40000".parse().unwrap()).await });
+        let peer = peer.parse().unwrap();
+        tokio::spawn(async move { imap.serve_connection(connection, peer).await });
         let (reader, writer) = tokio::io::split(client);
         let mut client = Client { reader: BufReader::new(reader), writer, next_tag: 1 };
         let greeting = client.line().await;
@@ -134,6 +139,62 @@ fn find<'a>(lines: &'a [String], needle: &str) -> &'a str {
 fn number_after(text: &str, prefix: &str) -> u64 {
     let start = text.find(prefix).unwrap_or_else(|| panic!("{prefix} not in {text}")) + prefix.len();
     text[start..].chars().take_while(char::is_ascii_digit).collect::<String>().parse().unwrap()
+}
+
+#[tokio::test]
+async fn guesses_at_one_login_from_many_networks_are_spaced_out() {
+    // security-audit-0.16.0 PROTOCOLS-8: ten wrong passwords for one login, each from a network of
+    // its own, and the next try waits, even with the right password and from yet another network.
+    let server = server().await;
+    // At once, so the pause after each wrong password is waited out only once.
+    let mut guesses = tokio::task::JoinSet::new();
+    for network in 0..10 {
+        let mut client = Client::connect_from(&server, &format!("198.51.100.{network}:40000")).await;
+        guesses.spawn(async move { client.command("LOGIN mini@example.org wrong-password").await.1 });
+    }
+    while let Some(denied) = guesses.join_next().await {
+        let denied = denied.unwrap();
+        assert!(denied.contains("NO [AUTHENTICATIONFAILED]"), "{denied}");
+    }
+    let mut client = Client::connect_from(&server, "203.0.113.9:40000").await;
+    let (_, refused) = client.command(&format!("LOGIN mini@example.org \"{PASSWORD}\"")).await;
+    assert!(refused.contains("NO [UNAVAILABLE]"), "{refused}");
+
+    // The count is the server's, not IMAP's own: wrong passwords at the portal or over SMTP count
+    // here as well.
+    let store = &server.store;
+    let before = (0..10).map(|n| format!("2001:db8:{n}::1").parse().unwrap());
+    for ip in before {
+        store.auth_limiter().record_failure(ip, "nyu@example.org");
+    }
+    let (_, refused) = client.command("LOGIN nyu@example.org whatever-password").await;
+    assert!(refused.contains("NO [UNAVAILABLE]"), "{refused}");
+}
+
+#[tokio::test]
+async fn a_connection_that_does_not_log_in_is_closed_in_time() {
+    // security-audit-0.16.0 PROTOCOLS-17: a NOOP every minute, or an AUTHENTICATE challenge nobody
+    // answers, kept a connection slot before login for ever. The clock is the test's own.
+    let server = server().await;
+    tokio::time::pause();
+    let mut busy = Client::connect(&server).await;
+    // A NOOP a little less than a minute apart each, for three minutes; half a minute after the
+    // last one the three minutes are over, long before a minute without a command would be.
+    for wait in [59, 59, 59, 30] {
+        busy.send(b"n NOOP\r\n").await;
+        let answer = busy.line().await;
+        assert!(answer.starts_with("n OK"), "{answer}");
+        tokio::time::advance(Duration::from_secs(wait)).await;
+    }
+    let bye = busy.line().await;
+    assert!(bye.starts_with("* BYE"), "NOOP after NOOP kept the connection: {bye}");
+
+    let mut silent = Client::connect(&server).await;
+    silent.send(b"a AUTHENTICATE PLAIN\r\n").await;
+    assert_eq!(silent.line().await, "+");
+    tokio::time::advance(Duration::from_secs(61)).await;
+    let bye = silent.line().await;
+    assert!(bye.starts_with("* BYE"), "{bye}");
 }
 
 #[tokio::test]
@@ -215,6 +276,11 @@ async fn append_store_search_move_and_expunge() {
     assert!(find(&lines, "ESEARCH").ends_with(") UID COUNT 2 ALL 1:2"));
     let (lines, _) = client.command("SEARCH TEXT fertig").await;
     assert_eq!(find(&lines, "* SEARCH"), "* SEARCH 1");
+    let (lines, _) = client.command("SEARCH HEADER TO LENI HEADER subject ENTWURF").await;
+    assert_eq!(find(&lines, "* SEARCH"), "* SEARCH 1");
+    // More keys than any mail app sends are refused (security-audit-0.16.0 PANIC-4).
+    let (_, done) = client.command(&format!("SEARCH {}", vec!["HEADER X-A b"; 101].join(" "))).await;
+    assert!(done.contains("BAD"), "{done}");
 
     let (_, done) = client.command("CREATE Projekte/UwUMail").await;
     assert!(done.contains("OK"), "{done}");
@@ -448,4 +514,44 @@ async fn apps_sign_in_with_oauth_tokens() {
         let (_, refused) = client.until_tagged("x3").await;
         assert!(refused.contains("NO"), "{refused}");
     }
+}
+
+/// A connection stays open for hours: it has to end with its login, not outlive it. It used to go
+/// on after the app password was revoked, the account trashed, or even purged and its row id given
+/// to someone else (security audit 0.16.0 STORE-1).
+#[tokio::test]
+async fn a_connection_ends_with_its_login() {
+    let server = server().await;
+    let app = server
+        .store
+        .create_app_password(
+            server.account,
+            uwumail_store::NewAppPassword {
+                name: "phone".into(),
+                scopes: vec![uwumail_store::AppScope::Mail],
+                expires_at: None,
+            },
+        )
+        .await
+        .unwrap();
+    let mut phone = Client::connect(&server).await;
+    let (_, done) = phone.command(&format!("LOGIN mini@example.org \"{}\"", app.secret)).await;
+    assert!(done.contains("OK [CAPABILITY"), "{done}");
+    let mut laptop = Client::login(&server).await;
+    let (_, done) = phone.command("SELECT INBOX").await;
+    assert!(done.contains("OK"), "{done}");
+
+    // Revoking the app password ends the phone's connection at its next command, not the laptop's.
+    server.store.revoke_app_password(server.account, app.app_password.id).await.unwrap();
+    phone.send(b"t9 NOOP\r\n").await;
+    let bye = phone.line().await;
+    assert!(bye.starts_with("* BYE"), "{bye}");
+    let (_, done) = laptop.command("NOOP").await;
+    assert!(done.contains("OK"), "{done}");
+
+    // Moving the account to the trash ends the rest.
+    server.store.trash_account("mini@example.org").await.unwrap();
+    laptop.send(b"t9 SELECT INBOX\r\n").await;
+    let bye = laptop.line().await;
+    assert!(bye.starts_with("* BYE"), "{bye}");
 }

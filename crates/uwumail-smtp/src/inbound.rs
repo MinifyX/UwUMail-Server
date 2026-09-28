@@ -29,6 +29,12 @@ use crate::{Smtp, clamav, fetched, forward, headers, random_id, relay, reports, 
 const MAX_HOPS: usize = 50;
 const MAX_ERRORS: u32 = 10;
 const MAX_AUTH_FAILURES: u32 = 3;
+/// How long a session may go without logging in or ending a message: before the first, and after
+/// each. Enough for any real session, which gets there in seconds.
+const NO_PROGRESS_LIMIT: Duration = Duration::from_secs(3 * 60);
+/// How long one message may take to arrive once DATA or the first BDAT chunk began: 50 MB at well
+/// under 1 Mbit/s.
+const TRANSFER_LIMIT: Duration = Duration::from_secs(10 * 60);
 /// The most of a subject the spam history keeps. A longer one explains nothing more, and this is
 /// the one place where the text of someone's mail is written down at all.
 const SPAM_LOG_SUBJECT_MAX: usize = 128;
@@ -253,6 +259,11 @@ pub async fn deliver_fetched(
     to: String,
     raw: Vec<u8>,
 ) -> Taken {
+    // Refused, and so cleared at the provider: kept there, it would be offered again every run.
+    let raw = match mime_structure(raw).await {
+        Ok(raw) => raw,
+        Err(answer) => return Taken::Refused(answer.trim().to_owned()),
+    };
     let raw = headers::normalize_line_endings(&raw);
     if headers::count(&raw, "Received") > MAX_HOPS {
         return Taken::Refused("554 5.4.6 Too many hops, possible mail loop".into());
@@ -297,6 +308,29 @@ pub async fn deliver_fetched(
         Some(b'2') => Taken::Kept,
         Some(b'4') => Taken::Later(answer),
         _ => Taken::Refused(answer),
+    }
+}
+
+/// The MIME structure check of [`uwumail_store::mime_limits`], before anything else reads the
+/// message: one nested too deep takes the server down while it is parsed, and one of millions of
+/// tiny header fields or parts costs gigabytes (security-audit-0.16.0 SMTP-1, SMTP-4). Gives the
+/// message back, or the SMTP answer that refuses it.
+async fn mime_structure(raw: Vec<u8>) -> Result<Vec<u8>, String> {
+    let checked = tokio::task::spawn_blocking(move || {
+        let fault = uwumail_store::mime_limits::check(&raw).err();
+        (raw, fault)
+    })
+    .await;
+    match checked {
+        Ok((raw, None)) => Ok(raw),
+        Ok((raw, Some(fault))) => {
+            tracing::info!(%fault, size = raw.len(), "refused a message by its MIME structure");
+            Err(format!("554 5.6.0 Refused: {fault}\r\n"))
+        }
+        Err(err) => {
+            tracing::error!(%err, "checking the MIME structure failed");
+            Err("451 4.3.0 Temporary server error\r\n".into())
+        }
     }
 }
 
@@ -369,10 +403,57 @@ pub async fn serve_stream(smtp: Smtp, stream: BoxIo, peer: SocketAddr, kind: Lis
     }
 }
 
+/// One connection of a client, counted until it ends.
+struct ClientSlot {
+    clients: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<IpAddr, usize>>>,
+    key: IpAddr,
+}
+
+impl Drop for ClientSlot {
+    fn drop(&mut self) {
+        let mut clients = self.clients.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(count) = clients.get_mut(&self.key) {
+            *count -= 1;
+            if *count == 0 {
+                clients.remove(&self.key);
+            }
+        }
+    }
+}
+
+/// A place for one more connection from `peer`, or `None` when it has as many as it may have.
+/// One client could otherwise hold every connection slot of the server with a byte now and then
+/// (security-audit-0.16.0 SMTP-5). IPv6 clients count per /64; trusted relays do not count.
+fn client_slot(ctx: &crate::Context, peer: IpAddr) -> Option<Option<ClientSlot>> {
+    let live = ctx.live();
+    if live.trusted_relays.iter().any(|network| network.contains(peer)) {
+        return Some(None);
+    }
+    let key = match peer.to_canonical() {
+        IpAddr::V6(v6) => {
+            let mut segments = v6.segments();
+            segments[4..].fill(0);
+            IpAddr::V6(segments.into())
+        }
+        v4 => v4,
+    };
+    let mut clients = ctx.clients.lock().expect("smtp clients poisoned");
+    let count = clients.entry(key).or_default();
+    if *count >= live.smtp.max_connections_per_client.max(1) {
+        return None;
+    }
+    *count += 1;
+    Some(Some(ClientSlot { clients: ctx.clients.clone(), key }))
+}
+
 async fn handle(smtp: Smtp, mut socket: BoxIo, peer: SocketAddr, kind: ListenerKind) -> std::io::Result<()> {
     let ctx = &smtp.inner;
     let Ok(_permit) = ctx.connections.clone().try_acquire_owned() else {
         let _ = socket.write_all(b"421 4.3.2 Too many connections, try again later\r\n").await;
+        return Ok(());
+    };
+    let Some(_slot) = client_slot(ctx, peer.ip().to_canonical()) else {
+        let _ = socket.write_all(b"421 4.7.0 Too many connections from your address, try again later\r\n").await;
         return Ok(());
     };
     let stream = if kind == ListenerKind::SubmissionTls {
@@ -538,6 +619,8 @@ struct Session {
     message_too_big: bool,
     errors: u32,
     auth_failures: u32,
+    /// Messages that ended, taken or not: progress, for the session's deadline.
+    messages_ended: u64,
 }
 
 impl Session {
@@ -555,6 +638,7 @@ impl Session {
             message_too_big: false,
             errors: 0,
             auth_failures: 0,
+            messages_ended: 0,
         }
     }
 
@@ -580,17 +664,39 @@ impl Session {
         let max_size = self.smtp.inner.live().smtp.max_message_size;
         let mut buf = vec![0u8; 16 * 1024];
         let mut state = State::Command(RequestReceiver::default());
+        // Besides the idle timeout, which every byte resets: a session has to get somewhere. It
+        // may spend NO_PROGRESS_LIMIT before a login or a message, and after each, and a message
+        // once begun has TRANSFER_LIMIT to arrive whole. A byte now and then no longer keeps a
+        // connection for ever (security-audit-0.16.0 SMTP-5).
+        let mut deadline = tokio::time::Instant::now() + NO_PROGRESS_LIMIT;
+        let mut in_transfer = false;
 
         loop {
-            let read = match timeout(idle, self.stream().read(&mut buf)).await {
+            let now = tokio::time::Instant::now();
+            let transferring = matches!(
+                state,
+                State::Data(_) | State::DataDiscard(_) | State::Bdat(_) | State::BdatTooBig(..) | State::BdatDiscard(_)
+            );
+            if transferring && !in_transfer {
+                in_transfer = true;
+                deadline = now + TRANSFER_LIMIT;
+            }
+            let left = deadline.saturating_duration_since(now);
+            let read = match timeout(idle.min(left), self.stream().read(&mut buf)).await {
                 Ok(Ok(0)) => return Ok(()),
                 Ok(Ok(n)) => n,
                 Ok(Err(err)) => return Err(err),
+                Err(_) if left <= idle => {
+                    let _ = self.reply("421 4.4.2 Session took too long, closing connection\r\n").await;
+                    return Ok(());
+                }
                 Err(_) => {
                     let _ = self.reply("421 4.4.2 Idle for too long, closing connection\r\n").await;
                     return Ok(());
                 }
             };
+            let logged_in = self.account.is_some();
+            let messages = self.messages_ended;
             let mut bytes = buf[..read].iter();
 
             loop {
@@ -653,6 +759,7 @@ impl Session {
                         if done {
                             state = State::Command(RequestReceiver::default());
                             let message = std::mem::take(&mut self.message);
+                            self.messages_ended += 1;
                             self.finish_message(message).await?;
                         } else if self.message.len() > max_size {
                             self.message = Vec::new();
@@ -666,6 +773,7 @@ impl Session {
                         if receiver.ingest(&mut bytes) {
                             state = State::Command(RequestReceiver::default());
                             self.reset_transaction();
+                            self.messages_ended += 1;
                             self.reply("552 5.3.4 Message too big\r\n").await?;
                         } else {
                             break;
@@ -679,6 +787,7 @@ impl Session {
                                 self.reply("250 2.0.0 Chunk received\r\n").await?;
                             } else {
                                 let message = std::mem::take(&mut self.message);
+                                self.messages_ended += 1;
                                 self.finish_message(message).await?;
                             }
                         } else {
@@ -693,6 +802,7 @@ impl Session {
                                 self.reply("250 2.0.0 Chunk received\r\n").await?;
                             } else {
                                 self.reset_transaction();
+                                self.messages_ended += 1;
                                 self.reply("552 5.3.4 Message too big\r\n").await?;
                             }
                         } else {
@@ -730,6 +840,10 @@ impl Session {
                 if bytes.as_slice().is_empty() && !chunk {
                     break;
                 }
+            }
+            if self.account.is_some() != logged_in || self.messages_ended != messages {
+                in_transfer = false;
+                deadline = tokio::time::Instant::now() + NO_PROGRESS_LIMIT;
             }
         }
     }
@@ -1030,8 +1144,16 @@ impl Session {
         let smtp = self.smtp.clone();
         let ctx = &smtp.inner;
         let peer = self.peer.to_string();
-        match ctx.store.authenticate_mail(login, password, AppScope::Smtp, "smtp", &peer).await {
-            Ok(MailAuth::Ok { account, app_password }) => {
+        // The network was checked when AUTH began; the login is only known now. Checks still
+        // running count too, shared with every other protocol.
+        let Some(attempt) = ctx.auth_limiter.begin(self.peer, login) else {
+            self.reply("454 4.7.0 Too many failed logins, try again later\r\n").await?;
+            return Ok(Next::Continue);
+        };
+        let checked = ctx.store.authenticate_mail(login, password, AppScope::Smtp, "smtp", &peer).await;
+        drop(attempt);
+        match checked {
+            Ok(MailAuth::Ok { account, app_password, .. }) => {
                 ctx.auth_limiter.record_success(self.peer, login);
                 tracing::info!(login = %account.login, peer = %self.peer, app_password = app_password.is_some(), "smtp login");
                 self.account = Some(account);
@@ -1363,6 +1485,10 @@ impl Session {
         let recipients = std::mem::take(&mut self.recipients);
         let Some(envelope) = envelope else {
             return self.reply("503 5.5.1 Send MAIL first\r\n").await;
+        };
+        let raw = match mime_structure(raw).await {
+            Ok(raw) => raw,
+            Err(answer) => return self.reply(&answer).await,
         };
         if headers::count(&raw, "Received") > MAX_HOPS {
             return self.reply("554 5.4.6 Too many hops, possible mail loop\r\n").await;
@@ -1811,6 +1937,12 @@ pub(crate) async fn receive(
             if let Some(group) = &recipient.group {
                 groups_reached.push(group.address.clone());
             }
+            // A masked address among the others still got the message: it turns on and notes it.
+            if let Some(masked) = &recipient.masked
+                && let Err(err) = ctx.store.note_masked_message(masked.id).await
+            {
+                tracing::warn!(%id, %err, "noting mail for a masked address failed");
+            }
             continue;
         }
         seen_accounts.push(account_id);
@@ -2110,6 +2242,7 @@ impl Session {
             Err(SubmitError::SendingOff) => {
                 "550 5.7.1 Sending through this server is switched off for this account\r\n".into()
             }
+            Err(SubmitError::AccountLocked) => "550 5.7.1 This account is disabled or in the trash\r\n".into(),
             Err(SubmitError::TooManyRecipients) => "452 4.5.3 Too many recipients\r\n".into(),
             Err(SubmitError::TooLarge) => "552 5.3.4 The message is too large\r\n".into(),
             Err(SubmitError::Virus(name)) => format!("554 5.7.0 This message contains {name}\r\n"),

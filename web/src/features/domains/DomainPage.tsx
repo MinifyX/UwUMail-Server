@@ -13,6 +13,7 @@ import { CloudflarePanel } from "@/features/setup/SetupBits";
 import { DnsStatusPill, RecordList } from "./DnsBits";
 import { ForwardsCard } from "./ForwardsCard";
 import { GroupsCard } from "./GroupsCard";
+import { MaskedOnlyCard, MaskedOnlyPill, MaskedPolicyCard } from "./MaskedCards";
 import { MtaStsCard, ReportsCard } from "./MtaStsCards";
 import {
   useActivateKeys,
@@ -22,7 +23,6 @@ import {
   useRemoveKey,
   useRotateKeys,
   useSetCatchAll,
-  useSetMaskedAddresses,
   useSetSelfService,
 } from "./queries";
 
@@ -83,7 +83,6 @@ function CatchAllCard({ domain }: { domain: DomainDetail }) {
   const people = usePeople();
   const save = useSetCatchAll(domain.name, t("domains.toasts.catchAll"));
   const selfService = useSetSelfService(domain.name);
-  const masked = useSetMaskedAddresses(domain.name);
   const choices = (people.data ?? []).filter((person) => person.status !== "deleted");
   return (
     <Card title={t("domains.detail.catchAll")}>
@@ -110,14 +109,6 @@ function CatchAllCard({ domain }: { domain: DomainDetail }) {
           onChange={(on) => selfService.mutate(on)}
           label={t("domains.detail.selfService")}
           description={t("domains.detail.selfServiceHint")}
-        />
-      </div>
-      <div className="mt-4 border-t border-hairline pt-4">
-        <Toggle
-          checked={Boolean(domain.maskedAddresses)}
-          onChange={(on) => masked.mutate(on)}
-          label={t("groups.masked")}
-          description={t("groups.maskedHint")}
         />
       </div>
     </Card>
@@ -211,6 +202,7 @@ export function DomainPage({ name }: { name: string }) {
       (domain.groups?.length ?? 0) +
       (domain.maskedInUse ?? 0) ===
     0;
+  const maskedOnly = domain.kind === "masked";
 
   return (
     <div className="flex flex-col gap-5">
@@ -226,10 +218,19 @@ export function DomainPage({ name }: { name: string }) {
           <Globe className="size-7" aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-[22px] font-bold tracking-[-0.01em]">{domain.name}</h1>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h1 className="min-w-0 truncate text-[22px] font-bold tracking-[-0.01em]">{domain.name}</h1>
+            {maskedOnly && <MaskedOnlyPill />}
+          </div>
           <p className="text-sm text-muted">
-            {t("domains.people", { count: domain.people })}
-            {domain.aliases > 0 && ` · ${t("domains.aliases", { count: domain.aliases })}`}
+            {maskedOnly ? (
+              t("maskedDomains.only.count", { count: domain.maskedInUse ?? 0 })
+            ) : (
+              <>
+                {t("domains.people", { count: domain.people })}
+                {domain.aliases > 0 && ` · ${t("domains.aliases", { count: domain.aliases })}`}
+              </>
+            )}
           </p>
         </div>
         <DnsStatusPill status={domain.report?.status ?? null} />
@@ -243,9 +244,16 @@ export function DomainPage({ name }: { name: string }) {
           <KeysCard domain={domain} />
         </div>
         <div className="flex flex-col gap-5">
-          <CatchAllCard domain={domain} />
-          <GroupsCard domain={domain} />
-          <ForwardsCard domain={domain} />
+          {maskedOnly ? (
+            <MaskedOnlyCard domain={domain} />
+          ) : (
+            <>
+              <CatchAllCard domain={domain} />
+              <MaskedPolicyCard domain={domain} />
+              <GroupsCard domain={domain} />
+              <ForwardsCard domain={domain} />
+            </>
+          )}
           <Card title={t("domains.detail.remove")}>
             <div className="flex flex-col items-start gap-3">
               <p className="text-[13px] text-muted">{t("domains.detail.removeHint")}</p>
@@ -255,7 +263,13 @@ export function DomainPage({ name }: { name: string }) {
                 disabled={!unused}
                 busy={remove.isPending}
                 onClick={() => {
-                  if (!window.confirm(t("domains.detail.removeConfirm", { domain: domain.name }))) return;
+                  // Policies that offer it as a masked-only domain lose it, as when it turns into a mail domain.
+                  const usedBy = [...(domain.maskedUsedBy?.domains ?? []), ...(domain.maskedUsedBy?.accounts ?? [])];
+                  const text = [
+                    t("domains.detail.removeConfirm", { domain: domain.name }),
+                    usedBy.length > 0 ? t("maskedDomains.only.backConfirmUsed", { names: usedBy.join(", ") }) : "",
+                  ].join(" ");
+                  if (!window.confirm(text.trim())) return;
                   remove.mutate(undefined, {
                     onSuccess: () => {
                       toast(t("domains.toasts.removed", { domain: domain.name }), "success");

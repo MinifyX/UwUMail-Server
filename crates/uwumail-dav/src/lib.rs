@@ -18,6 +18,7 @@ pub mod objects;
 mod props;
 pub mod xml;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::Router;
@@ -49,6 +50,20 @@ const SHARED_PREFIX: &str = "shared~";
 const MAX_FREE_BUSY_SECS: i64 = 400 * 86_400;
 /// Attendees one free-busy lookup may ask about.
 const MAX_FREE_BUSY_ATTENDEES: usize = 100;
+/// How long one free-busy lookup may spend on expanding calendars, for all its attendees together;
+/// those left when it is up are answered "try later" (security-audit-0.16.0 PROTOCOLS-13).
+const FREE_BUSY_TIME_LIMIT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// What a free-busy lookup found out about one attendee.
+#[derive(Clone)]
+enum Busy {
+    /// Someone of this server, busy in these periods (merged).
+    Periods(Vec<(i64, i64)>),
+    /// Nobody whose calendars this server keeps.
+    Unknown,
+    /// The lookup's time was up before this one.
+    OutOfTime,
+}
 
 /// Names of the collections every account gets, in the server's language.
 #[derive(Debug, Clone)]
@@ -678,6 +693,17 @@ impl Session<'_> {
                 }
             }
         }
+        // One change may not send more scheduling messages than one mail may have recipients
+        // (security-audit-0.16.0 PROTOCOLS-5); refused before anything is stored.
+        if *kind == DavKind::Calendar
+            && view.access.is_owner()
+            && let Some(smtp) = &self.dav.inner.smtp
+            && let Err(refused) =
+                smtp.check_schedule(self.account, old.as_ref().map(|old| old.content.as_str()), Some(&content)).await
+        {
+            tracing::info!(login = %self.account.login, %refused, "calendar entry refused");
+            return precondition(StatusCode::FORBIDDEN, CALDAV, "max-attendees-per-instance", "");
+        }
         let write = DavWrite {
             name: name.clone(),
             content: content.clone(),
@@ -808,13 +834,24 @@ impl Session<'_> {
         if end <= start || end - start > MAX_FREE_BUSY_SECS {
             return precondition(StatusCode::FORBIDDEN, CALDAV, "valid-scheduling-message", "");
         }
-        let attendees: Vec<String> =
-            query.properties_named("ATTENDEE").filter_map(|p| p.address()).take(MAX_FREE_BUSY_ATTENDEES).collect();
+        // Each attendee once, however often and however spelled they are named.
+        let mut attendees: Vec<String> = Vec::new();
+        for address in query.properties_named("ATTENDEE").filter_map(|p| p.address()) {
+            let address = address.to_lowercase();
+            if !attendees.contains(&address) {
+                attendees.push(address);
+            }
+            if attendees.len() == MAX_FREE_BUSY_ATTENDEES {
+                break;
+            }
+        }
+        let deadline = std::time::Instant::now() + FREE_BUSY_TIME_LIMIT;
+        let mut looked_up = HashMap::new();
         let mut responses = String::new();
         for attendee in attendees {
-            let busy = self.busy(&attendee, start, end).await;
+            let busy = self.busy(&attendee, start, end, deadline, &mut looked_up).await;
             let (status, data) = match busy {
-                Some(periods) => {
+                Busy::Periods(periods) => {
                     let mut reply = Component::new("VCALENDAR");
                     reply.properties.push(itip::Property::new("VERSION", "2.0"));
                     reply.properties.push(itip::Property::new("PRODID", "-//UwUMail//Server//EN"));
@@ -838,7 +875,8 @@ impl Session<'_> {
                     reply.components.push(answer);
                     ("2.0;Success", format!("<c:calendar-data>{}</c:calendar-data>", xml::escape(&reply.to_ics())))
                 }
-                None => ("3.7;Invalid calendar user", String::new()),
+                Busy::Unknown => ("3.7;Invalid calendar user", String::new()),
+                Busy::OutOfTime => ("5.1;Service unavailable", String::new()),
             };
             responses.push_str(&format!(
                 "<c:response><c:recipient><d:href>{}</d:href></c:recipient><c:request-status>{status}</c:request-status>{data}</c:response>",
@@ -852,41 +890,79 @@ xmlns:c=\"urn:ietf:params:xml:ns:caldav\">{responses}</c:schedule-response>\n"
         (StatusCode::OK, [(header::CONTENT_TYPE, "application/xml; charset=utf-8")], body).into_response()
     }
 
-    /// When someone of this server is busy between `start` and `end`, merged; `None` for anyone
-    /// else. Only one's own calendars count, not those shared with them, nor subscribed ones: a
-    /// holiday calendar does not make anyone busy.
-    async fn busy(&self, address: &str, start: i64, end: i64) -> Option<Vec<(i64, i64)>> {
+    /// When someone of this server is busy between `start` and `end`, merged; [`Busy::Unknown`]
+    /// for anyone else. Only one's own calendars count, not those shared with them, nor subscribed
+    /// ones: a holiday calendar does not make anyone busy. `looked_up` keeps what was found per
+    /// account, for addresses of the same person; the expanding runs on the blocking pool and stops
+    /// at `deadline`.
+    async fn busy(
+        &self,
+        address: &str,
+        start: i64,
+        end: i64,
+        deadline: std::time::Instant,
+        looked_up: &mut HashMap<i64, Busy>,
+    ) -> Busy {
+        let Some(id) = self.calendar_owner(address).await else { return Busy::Unknown };
+        if let Some(known) = looked_up.get(&id) {
+            return known.clone();
+        }
+        let found = self.busy_periods(id, start, end, deadline).await;
+        looked_up.insert(id, found.clone());
+        found
+    }
+
+    /// The account whose calendars answer for `address`, when it uses calendars.
+    async fn calendar_owner(&self, address: &str) -> Option<i64> {
         let id = self.store().resolve_recipient(address).await.ok()??;
         let id = self.store().delivery_target(id).await.ok()??;
         let account = self.store().account_by_id(id).await.ok()??;
-        if !account.protocols.caldav {
-            return None;
+        account.protocols.caldav.then_some(id)
+    }
+
+    async fn busy_periods(&self, id: i64, start: i64, end: i64, deadline: std::time::Instant) -> Busy {
+        if std::time::Instant::now() > deadline {
+            return Busy::OutOfTime;
         }
-        let own: Vec<i64> = self
-            .store()
-            .dav_collections(id, DavKind::Calendar, self.dav.default_collection(DavKind::Calendar))
-            .await
-            .ok()?
-            .into_iter()
-            .filter(|c| !c.subscribed)
-            .map(|c| c.id)
-            .collect();
-        let events = self.store().calendar_events_between(id, None, Some(start), Some(end)).await.ok()?;
-        let mut periods: Vec<(i64, i64)> = events
-            .iter()
-            .filter(|event| own.contains(&event.calendar_id))
-            .flat_map(|event| uwumail_store::ical::busy_periods(&event.content, start, end))
-            .map(|(from, to)| (from.max(start), to.min(end)))
-            .collect();
-        periods.sort_unstable();
-        let mut merged: Vec<(i64, i64)> = Vec::new();
-        for (from, to) in periods {
-            match merged.last_mut() {
-                Some(last) if from <= last.1 => last.1 = last.1.max(to),
-                _ => merged.push((from, to)),
+        let Ok(collections) =
+            self.store().dav_collections(id, DavKind::Calendar, self.dav.default_collection(DavKind::Calendar)).await
+        else {
+            return Busy::Unknown;
+        };
+        let own: Vec<i64> = collections.into_iter().filter(|c| !c.subscribed).map(|c| c.id).collect();
+        let Ok(events) = self.store().calendar_events_between(id, None, Some(start), Some(end)).await else {
+            return Busy::Unknown;
+        };
+        let contents: Vec<String> =
+            events.into_iter().filter(|event| own.contains(&event.calendar_id)).map(|event| event.content).collect();
+        let expanded = tokio::task::spawn_blocking(move || {
+            let mut periods: Vec<(i64, i64)> = Vec::new();
+            for content in &contents {
+                if std::time::Instant::now() > deadline {
+                    return None;
+                }
+                periods.extend(
+                    uwumail_store::ical::busy_periods(content, start, end)
+                        .into_iter()
+                        .map(|(from, to)| (from.max(start), to.min(end))),
+                );
             }
+            periods.sort_unstable();
+            let mut merged: Vec<(i64, i64)> = Vec::new();
+            for (from, to) in periods {
+                match merged.last_mut() {
+                    Some(last) if from <= last.1 => last.1 = last.1.max(to),
+                    _ => merged.push((from, to)),
+                }
+            }
+            Some(merged)
+        })
+        .await;
+        match expanded {
+            Ok(Some(merged)) => Busy::Periods(merged),
+            Ok(None) => Busy::OutOfTime,
+            Err(_) => Busy::Unknown,
         }
-        Some(merged)
     }
 
     async fn report(&self, target: &Path, body: &Bytes) -> Response {

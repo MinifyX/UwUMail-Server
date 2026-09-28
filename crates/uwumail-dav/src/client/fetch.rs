@@ -13,15 +13,23 @@ const BATCH: usize = 50;
 const MAX_BATCH_BYTES: usize = 32 * 1024 * 1024;
 /// The most one collection may bring altogether.
 const MAX_TOTAL_BYTES: usize = 64 * 1024 * 1024;
+/// The most all collections of one move may bring together. Each is kept until all are fetched,
+/// so a provider listing many collections of 60 MiB each could fill the memory
+/// (security-audit-0.16.0 PROTOCOLS-12).
+pub const MAX_IMPORT_BYTES: usize = 128 * 1024 * 1024;
 /// Entries of one collection; a collection here holds no more.
 const MAX_ENTRIES: usize = uwumail_store::IMPORT_MAX_OBJECTS;
 
 /// The data of every entry of a remote collection, as the server has it: iCalendar objects or
-/// vCards, to be cut and checked like a file.
+/// vCards, to be cut and checked like a file. `budget` is what the whole move may still bring
+/// (start with [`MAX_IMPORT_BYTES`]); what this collection brings is taken off it, and a
+/// collection that would take more fails with [`RemoteError::TooLarge`].
 pub async fn fetch_collection(
     remote: &mut Remote<'_>,
     collection: &RemoteCollection,
+    budget: &mut usize,
 ) -> Result<Vec<String>, RemoteError> {
+    let limit = MAX_TOTAL_BYTES.min(*budget);
     let url = collection.url.as_str();
     let listed = remote.propfind(url, 1, "<d:getetag/><d:resourcetype/>").await?.ok_or(RemoteError::NotFound)?;
     let hrefs: Vec<String> = listed
@@ -79,11 +87,12 @@ xmlns:c=\"urn:ietf:params:xml:ns:caldav\" xmlns:card=\"urn:ietf:params:xml:ns:ca
         };
         for text in batch_texts {
             total += text.len();
-            if total > MAX_TOTAL_BYTES {
+            if total > limit {
                 return Err(RemoteError::TooLarge);
             }
             texts.push(text);
         }
     }
+    *budget -= total;
     Ok(texts)
 }

@@ -5,13 +5,15 @@ import { Button, IconButton } from "@/components/ui/Button";
 import { ConfirmDiscardDialog } from "@/components/ui/ConfirmDiscardDialog";
 import { Dialog } from "@/components/ui/Dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Field, TextInput } from "@/components/ui/Field";
+import { Field, Segmented, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
+import type { DomainKind } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
 import { Link, navigate } from "@/lib/router";
 import { toast } from "@/state/toasts";
 import { useDomains } from "@/features/people/queries";
 import { DnsStatusPill } from "./DnsBits";
+import { MaskedOnlyPill } from "./MaskedCards";
 import { useCreateDomain } from "./queries";
 
 export const domainUrl = (name: string) => `/admin/domains/${encodeURIComponent(name)}`;
@@ -29,8 +31,9 @@ function CreateDomain({
   const errorText = useErrorText();
   const create = useCreateDomain();
   const [name, setName] = useState("");
+  const [kind, setKind] = useState<DomainKind>("mail");
 
-  const dirty = name.trim() !== "";
+  const dirty = name.trim() !== "" || kind !== "mail";
   useEffect(() => {
     onDirtyChange(dirty);
     return () => onDirtyChange(false);
@@ -38,13 +41,16 @@ function CreateDomain({
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    create.mutate(name.trim(), {
-      onSuccess: (detail) => {
-        toast(t("domains.toasts.created", { domain: detail.name }), "success");
-        onClose();
-        navigate(domainUrl(detail.name));
+    create.mutate(
+      { name: name.trim(), kind },
+      {
+        onSuccess: (detail) => {
+          toast(t("domains.toasts.created", { domain: detail.name }), "success");
+          onClose();
+          navigate(domainUrl(detail.name));
+        },
       },
-    });
+    );
   };
 
   return (
@@ -71,6 +77,20 @@ function CreateDomain({
           />
         )}
       </Field>
+      <div className="flex flex-col gap-2">
+        <Segmented
+          label={t("maskedDomains.kind.label")}
+          value={kind}
+          onChange={setKind}
+          options={[
+            { value: "mail", label: t("maskedDomains.kind.mail") },
+            { value: "masked", label: t("maskedDomains.kind.masked") },
+          ]}
+        />
+        <p className="text-[13px] text-muted">
+          {kind === "mail" ? t("maskedDomains.kind.mailHint") : t("maskedDomains.kind.maskedHint")}
+        </p>
+      </div>
       <div className="flex justify-end gap-2">
         <Button onClick={onCancel}>{t("common.cancel")}</Button>
         <Button type="submit" variant="primary" busy={create.isPending}>
@@ -131,10 +151,11 @@ export function DomainsPage() {
                     <Globe className="size-[18px]" aria-hidden />
                   </span>
                   <span className="truncate font-semibold">{domain.name}</span>
+                  {domain.kind === "masked" && <MaskedOnlyPill />}
                 </span>
                 <span className="flex flex-wrap items-center gap-2 text-[13px] text-muted sm:ml-auto">
                   <DnsStatusPill status={domain.dns?.status ?? null} />
-                  <span>{t("domains.people", { count: domain.people })}</span>
+                  {domain.kind !== "masked" && <span>{t("domains.people", { count: domain.people })}</span>}
                   {domain.aliases > 0 && <span>· {t("domains.aliases", { count: domain.aliases })}</span>}
                 </span>
               </Link>

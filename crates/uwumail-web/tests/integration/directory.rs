@@ -120,7 +120,8 @@ async fn admins_keep_groups_of_a_domain() {
     // The domain shows it, and keeps it in use.
     let (_, domain) = call(&app, "GET", "/api/admin/domains/example.org", None, &admin).await;
     assert_eq!(domain["groups"][0]["name"], "Der Vorstand");
-    assert_eq!(domain["maskedAddresses"], false);
+    assert_eq!(domain["maskedPolicy"]["mode"], "off");
+    assert_eq!(domain["kindBlockers"]["groups"], 1);
 
     // Members see it in their addresses.
     let (_, addresses) = call(&app, "GET", "/api/account/addresses", None, &mini).await;
@@ -220,17 +221,23 @@ async fn people_make_masked_addresses_where_a_domain_allows() {
     let mini = login(&app, "mini@example.org").await;
 
     let (_, view) = call(&app, "GET", "/api/account/masked", None, &mini).await;
-    assert_eq!(view, json!({ "addresses": [], "domains": [] }));
+    assert_eq!(view, json!({ "addresses": [], "domains": [], "defaultDomain": null }));
     let new = json!({ "description": "Bäckerei", "forDomain": "https://baeckerei.example.com", "emailPrefix": "brot" });
     let (status, refused) = call(&app, "POST", "/api/account/masked", Some(new.clone()), &mini).await;
     assert_eq!((status, refused["code"].as_str()), (StatusCode::CONFLICT, Some("maskedDomain")));
 
-    let (status, _) =
-        call(&app, "PUT", "/api/admin/domains/example.org/masked-addresses", Some(json!({ "on": true })), &mini).await;
+    let own = json!({ "mode": "own", "maskedDomains": [], "defaultDomain": null });
+    let path = "/api/admin/domains/example.org/masked-policy";
+    let (status, _) = call(&app, "PUT", path, Some(own.clone()), &mini).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
-    let (status, _) =
-        call(&app, "PUT", "/api/admin/domains/example.org/masked-addresses", Some(json!({ "on": true })), &admin).await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, domain) = call(&app, "PUT", path, Some(own.clone()), &admin).await;
+    assert_eq!(status, StatusCode::OK, "{domain}");
+    assert_eq!(domain["maskedPolicy"], own);
+    let (_, view) = call(&app, "GET", "/api/account/masked", None, &mini).await;
+    assert_eq!(
+        (view["domains"].clone(), view["defaultDomain"].clone()),
+        (json!(["example.org"]), json!("example.org"))
+    );
 
     // Made by hand, it is on right away.
     let (status, created) = call(&app, "POST", "/api/account/masked", Some(new), &mini).await;
@@ -245,7 +252,7 @@ async fn people_make_masked_addresses_where_a_domain_allows() {
 
     // The domain is in use as long as it takes mail.
     let (_, domain) = call(&app, "GET", "/api/admin/domains/example.org", None, &admin).await;
-    assert_eq!((domain["maskedAddresses"].as_bool(), domain["maskedInUse"].as_i64()), (Some(true), Some(1)));
+    assert_eq!(domain["maskedInUse"].as_i64(), Some(1));
 
     let path = format!("/api/account/masked/{id}");
     let (status, changed) =
@@ -368,4 +375,133 @@ async fn admins_turn_people_and_services_into_shared_mailboxes() {
         entries,
         [("sharedMailbox.convert", "service"), ("sharedMailbox.end", ""), ("sharedMailbox.convert", "person")]
     );
+}
+
+#[tokio::test]
+async fn admins_keep_masked_only_domains_and_say_who_uses_them() {
+    let (app, store, _dir) = portal().await;
+    let admin = login(&app, "nyu@example.org").await;
+    let mini = login(&app, "mini@example.org").await;
+
+    // Added as masked-only, it says so in the list, and nobody can be put there.
+    let (status, _) =
+        call(&app, "POST", "/api/admin/domains", Some(json!({ "name": "masked.test", "kind": "masked" })), &mini).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, domain) =
+        call(&app, "POST", "/api/admin/domains", Some(json!({ "name": "Masked.test", "kind": "masked" })), &admin)
+            .await;
+    assert_eq!(status, StatusCode::CREATED, "{domain}");
+    assert_eq!((domain["kind"].as_str(), domain["maskedPolicy"].is_null()), (Some("masked"), true));
+    assert_eq!(domain["maskedUsedBy"], json!({ "domains": [], "accounts": [] }));
+    assert!(!store.dkim_keys("masked.test").await.unwrap().is_empty(), "signs like any other domain");
+    let (_, list) = call(&app, "GET", "/api/admin/domains", None, &admin).await;
+    let kinds: Vec<(&str, &str)> =
+        list.as_array().unwrap().iter().map(|d| (d["name"].as_str().unwrap(), d["kind"].as_str().unwrap())).collect();
+    assert_eq!(kinds, vec![("example.org", "mail"), ("masked.test", "masked")]);
+    let person = json!({ "address": "ami@masked.test", "name": "Ami", "password": "katzenpfote-123" });
+    let (status, refused) = call(&app, "POST", "/api/admin/people", Some(person), &admin).await;
+    assert_eq!((status, refused["code"].as_str()), (StatusCode::CONFLICT, Some("maskedOnlyDomain")), "{refused}");
+    let alias = json!({ "address": "hi@masked.test" });
+    let (status, refused) = call(&app, "POST", "/api/admin/people/mini@example.org/aliases", Some(alias), &admin).await;
+    assert_eq!((status, refused["code"].as_str()), (StatusCode::CONFLICT, Some("maskedOnlyDomain")));
+    let (status, refused) = call(
+        &app,
+        "PUT",
+        "/api/admin/domains/masked.test/catch-all",
+        Some(json!({ "login": "mini@example.org" })),
+        &admin,
+    )
+    .await;
+    assert_eq!((status, refused["code"].as_str()), (StatusCode::CONFLICT, Some("maskedOnlyDomain")));
+    let policy = json!({ "mode": "own", "maskedDomains": [] });
+    let (status, refused) =
+        call(&app, "PUT", "/api/admin/domains/masked.test/masked-policy", Some(policy), &admin).await;
+    assert_eq!((status, refused["code"].as_str()), (StatusCode::CONFLICT, Some("maskedOnlyDomain")));
+
+    // example.org lets its people use it, and by default.
+    let policy = json!({ "mode": "both", "maskedDomains": ["masked.test"], "defaultDomain": "masked.test" });
+    let (status, domain) =
+        call(&app, "PUT", "/api/admin/domains/example.org/masked-policy", Some(policy.clone()), &admin).await;
+    assert_eq!(status, StatusCode::OK, "{domain}");
+    assert_eq!(
+        (domain["maskedPolicy"].clone(), domain["maskedDomainChoices"].clone()),
+        (policy, json!(["masked.test"]))
+    );
+    let wrong = json!({ "mode": "dedicated", "maskedDomains": ["example.org"] });
+    let (status, refused) =
+        call(&app, "PUT", "/api/admin/domains/example.org/masked-policy", Some(wrong), &admin).await;
+    assert_eq!((status, refused["code"].as_str()), (StatusCode::CONFLICT, Some("notMaskedDomain")));
+    let (_, view) = call(&app, "GET", "/api/account/masked", None, &mini).await;
+    assert_eq!(view["domains"], json!(["example.org", "masked.test"]));
+    assert_eq!(view["defaultDomain"], "masked.test");
+    let (status, created) =
+        call(&app, "POST", "/api/account/masked", Some(json!({ "description": "Shop" })), &mini).await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    assert!(created["email"].as_str().unwrap().ends_with("@masked.test"));
+
+    // Leni only gets her own domain; the person page shows all three parts.
+    let (_, leni) = call(&app, "GET", "/api/admin/people/leni@example.org", None, &admin).await;
+    assert_eq!(leni["maskedPolicy"]["custom"], json!({ "mode": null, "maskedDomains": null, "defaultDomain": null }));
+    assert_eq!(leni["maskedPolicy"]["effective"]["defaultDomain"], "masked.test");
+    let custom = json!({ "mode": "own", "maskedDomains": null, "defaultDomain": null });
+    let path = "/api/admin/people/leni@example.org/masked-policy";
+    let (status, _) = call(&app, "PUT", path, Some(custom.clone()), &mini).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, saved) = call(&app, "PUT", path, Some(custom.clone()), &admin).await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["custom"], custom);
+    assert_eq!(saved["domain"]["mode"], "both");
+    assert_eq!(saved["effective"]["domains"], json!(["example.org"]));
+    assert_eq!(saved["effective"]["defaultDomain"], "example.org");
+    let refused = json!({ "mode": "own", "defaultDomain": "masked.test" });
+    let (status, body) = call(&app, "PUT", path, Some(refused), &admin).await;
+    assert_eq!((status, body["code"].as_str()), (StatusCode::CONFLICT, Some("maskedDefault")));
+
+    // A mail domain with people cannot turn masked-only, and the answer says why.
+    let (status, refused) =
+        call(&app, "PUT", "/api/admin/domains/example.org/kind", Some(json!({ "kind": "masked" })), &admin).await;
+    assert_eq!((status, refused["code"].as_str()), (StatusCode::CONFLICT, Some("kindChangeBlocked")));
+    assert_eq!(refused["blockers"]["accounts"], 3);
+    assert_eq!(refused["blockers"]["catchAll"], false);
+
+    // Back to a mail domain: out of every policy, which the log keeps.
+    let (_, domain) = call(&app, "GET", "/api/admin/domains/masked.test", None, &admin).await;
+    assert_eq!(domain["maskedUsedBy"], json!({ "domains": ["example.org"], "accounts": [] }));
+    let (status, domain) =
+        call(&app, "PUT", "/api/admin/domains/masked.test/kind", Some(json!({ "kind": "mail" })), &admin).await;
+    assert_eq!(status, StatusCode::OK, "{domain}");
+    assert_eq!((domain["kind"].as_str(), domain["maskedPolicy"]["mode"].as_str()), (Some("mail"), Some("off")));
+    let (_, org) = call(&app, "GET", "/api/admin/domains/example.org", None, &admin).await;
+    assert_eq!(org["maskedPolicy"], json!({ "mode": "both", "maskedDomains": [], "defaultDomain": null }));
+    let (_, log) = call(&app, "GET", "/api/admin/audit?limit=10", None, &admin).await;
+    let entry = log.as_array().unwrap().iter().find(|entry| entry["action"] == "domain.kind").unwrap();
+    assert_eq!(entry["details"]["removedFromDomains"], json!(["example.org"]));
+    let actions: Vec<&str> = log.as_array().unwrap().iter().map(|entry| entry["action"].as_str().unwrap()).collect();
+    assert!(actions.contains(&"domain.maskedPolicy") && actions.contains(&"account.maskedPolicy"), "{actions:?}");
+
+    // The masked address made there keeps working; masked-only again only once it is the only thing.
+    assert!(store.resolve_recipient(created["email"].as_str().unwrap()).await.unwrap().is_some());
+    let (status, domain) =
+        call(&app, "PUT", "/api/admin/domains/masked.test/kind", Some(json!({ "kind": "masked" })), &admin).await;
+    assert_eq!(status, StatusCode::OK, "{domain}");
+    assert_eq!(domain["kind"], "masked");
+
+    // Removing a masked-only domain takes it out of the policies too, and the log says which.
+    let (status, _) =
+        call(&app, "POST", "/api/admin/domains", Some(json!({ "name": "spare.test", "kind": "masked" })), &admin).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let policy = json!({ "mode": "dedicated", "maskedDomains": ["spare.test"], "defaultDomain": "spare.test" });
+    let (status, _) = call(&app, "PUT", "/api/admin/domains/example.org/masked-policy", Some(policy), &admin).await;
+    assert_eq!(status, StatusCode::OK);
+    let custom = json!({ "mode": "dedicated", "maskedDomains": ["spare.test"] });
+    let (status, _) = call(&app, "PUT", path, Some(custom), &admin).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = call(&app, "DELETE", "/api/admin/domains/spare.test", None, &admin).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, log) = call(&app, "GET", "/api/admin/audit?limit=5", None, &admin).await;
+    let entry = log.as_array().unwrap().iter().find(|entry| entry["action"] == "domain.remove").unwrap();
+    assert_eq!(entry["details"]["removedFromDomains"], json!(["example.org"]));
+    assert_eq!(entry["details"]["removedFromAccounts"], json!(["leni@example.org"]));
+    let (_, org) = call(&app, "GET", "/api/admin/domains/example.org", None, &admin).await;
+    assert_eq!(org["maskedPolicy"], json!({ "mode": "dedicated", "maskedDomains": [], "defaultDomain": null }));
 }

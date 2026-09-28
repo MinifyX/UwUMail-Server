@@ -1,6 +1,8 @@
 //! Email/get, Email/query, Email/set, Email/import and Email/parse (RFC 8621, section 4).
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::time::Instant;
 
 use serde_json::{Map, Value, json};
 use uwumail_store::{
@@ -10,10 +12,13 @@ use uwumail_store::{
 
 use crate::sharing::SharedView;
 
-use super::{Ctx, SetResponse, check_set_size, get_ids, if_in_state, properties};
+use super::{
+    Ctx, OUT_OF_TIME, SetResponse, check_filter_size, check_set_size, check_sort_size, get_ids, if_in_state,
+    properties, request_deadline,
+};
 use crate::email::{self as email_json, BlobSource, BodyValueOptions, DEFAULT_BODY_PROPERTIES, DEFAULT_PROPERTIES};
 use crate::error::{MethodError, MethodResult, SetError};
-use crate::{dates, ids};
+use crate::{MAX_OBJECTS_IN_GET, dates, ids};
 
 const MAX_QUERY_LIMIT: usize = 5000;
 
@@ -31,6 +36,8 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let numbers: Vec<i64> = requested.iter().filter_map(|id| ctx.parse_id('e', id)).collect();
     let records = visible_records(ctx, ctx.jmap.store.emails_by_ids(ctx.account.id, numbers).await?);
     let needs_raw = email_json::needs_raw(&properties);
+    let (properties, body_properties) = (Arc::new(properties), Arc::new(body_properties));
+    let deadline = request_deadline(ctx);
 
     let mut list = Vec::with_capacity(records.len());
     let mut not_found = Vec::new();
@@ -39,15 +46,24 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
             not_found.push(id);
             continue;
         };
-        let raw = if needs_raw { Some(ctx.jmap.store.blob(&record.blob).await?) } else { None };
-        list.push(email_json::to_json(
-            Some(record),
-            raw.as_deref(),
-            &record.blob,
-            &properties,
-            &body_properties,
-            options,
-        ));
+        if !needs_raw {
+            list.push(email_json::to_json(Some(record), None, &record.blob, &properties, &body_properties, options));
+            continue;
+        }
+        // Reading the message means parsing it, which is work for the blocking pool, not for the
+        // workers every protocol shares; and a request only has so much time for it in all.
+        if Instant::now() > deadline {
+            return Err(MethodError::new("serverUnavailable", OUT_OF_TIME));
+        }
+        let raw = ctx.jmap.store.blob(&record.blob).await?;
+        let (record, properties, body_properties) = (record.clone(), properties.clone(), body_properties.clone());
+        list.push(
+            tokio::task::spawn_blocking(move || {
+                email_json::to_json(Some(&record), Some(&raw), &record.blob, &properties, &body_properties, options)
+            })
+            .await
+            .map_err(|_| MethodError::kind("serverFail"))?,
+        );
     }
     Ok(json!({ "accountId": ctx.account_id(), "state": state, "list": list, "notFound": not_found }))
 }
@@ -132,6 +148,9 @@ pub(super) fn check_shared_create(
 }
 
 fn build_error(err: email_json::BuildError) -> SetError {
+    if err.too_large {
+        return SetError::new("tooLarge", err.description);
+    }
     let properties: Vec<&str> = err.properties.iter().map(String::as_str).collect();
     SetError::invalid_properties(&properties, err.description)
 }
@@ -224,6 +243,7 @@ pub(super) fn parse_sort(value: Option<&Value>) -> MethodResult<Vec<EmailSort>> 
     let Some(list) = value.and_then(Value::as_array) else {
         return Ok(Vec::new());
     };
+    check_sort_size(list)?;
     list.iter()
         .map(|comparator| {
             let ascending = comparator.get("isAscending").and_then(Value::as_bool).unwrap_or(true);
@@ -269,6 +289,8 @@ pub(super) fn scoped_filter(ctx: &Ctx<'_>, filter: Option<EmailFilter>) -> Optio
 }
 
 pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
+    // Every condition and comparator is checked against every email of the account.
+    check_filter_size(args.get("filter"))?;
     let state = ctx.state().await?;
     let filter = args.get("filter").filter(|f| !f.is_null()).map(|f| parse_filter(ctx, f)).transpose()?;
     let filter = scoped_filter(ctx, filter);
@@ -286,8 +308,7 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
                 .iter()
                 .position(|(id, _)| *id == anchor_id)
                 .ok_or_else(|| MethodError::kind("anchorNotFound"))?;
-            let offset = args.get("anchorOffset").and_then(Value::as_i64).unwrap_or(0);
-            (index as i64 + offset).max(0) as usize
+            super::anchored(index, args.get("anchorOffset").and_then(Value::as_i64).unwrap_or(0))
         }
         None => {
             let requested = args.get("position").and_then(Value::as_i64).unwrap_or(0);
@@ -317,8 +338,8 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
 struct LoadedBlobs(HashMap<String, Vec<u8>>);
 
 impl BlobSource for LoadedBlobs {
-    fn blob(&self, blob_id: &str) -> Option<Vec<u8>> {
-        self.0.get(blob_id).cloned()
+    fn blob(&self, blob_id: &str) -> Option<&[u8]> {
+        self.0.get(blob_id).map(Vec::as_slice)
     }
 }
 
@@ -381,6 +402,11 @@ pub(super) fn keywords(value: Option<&Value>) -> Result<Vec<String>, SetError> {
     match value {
         None | Some(Value::Null) => Ok(Vec::new()),
         Some(Value::Object(map)) => {
+            // RFC 8621 section 4.1.1: IMAP atom characters only. They reach IMAP clients as they
+            // are, the store refuses anything else as well.
+            if let Some(bad) = map.keys().find(|keyword| !uwumail_store::valid_keyword(&keyword.to_lowercase())) {
+                return Err(SetError::invalid_properties(&["keywords"], format!("{bad:?} is not a valid keyword")));
+            }
             Ok(map.iter().filter(|(_, v)| **v == Value::Bool(true)).map(|(k, _)| k.clone()).collect())
         }
         Some(_) => Err(SetError::invalid_properties(&["keywords"], "keywords must be an object")),
@@ -577,22 +603,38 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                 email_json::validate_create(object).map_err(build_error)?;
                 let mut blob_ids = Vec::new();
                 collect_blob_ids(&Value::Object(object.clone()), &mut blob_ids);
+                blob_ids.sort();
+                blob_ids.dedup();
+                // Each blob is loaded once, and loading stops as soon as the blobs alone are more
+                // than a message may hold (security-audit-0.16.0 PROTOCOLS-2).
                 let mut loaded = HashMap::new();
+                let mut loaded_bytes = 0usize;
                 let mut missing = Vec::new();
                 for blob_id in blob_ids {
                     match read_blob(ctx, &blob_id).await {
                         Some(bytes) => {
+                            loaded_bytes = loaded_bytes.saturating_add(bytes.len());
+                            if loaded_bytes > crate::MAX_UPLOAD_BYTES {
+                                return Err(SetError::new(
+                                    "tooLarge",
+                                    format!("the blobs are more than {} bytes", crate::MAX_UPLOAD_BYTES),
+                                ));
+                            }
                             loaded.insert(blob_id, bytes);
                         }
-                        None if !missing.contains(&blob_id) => missing.push(blob_id),
-                        None => {}
+                        None => missing.push(blob_id),
                     }
                 }
                 if !missing.is_empty() {
-                    missing.sort();
                     return Err(SetError::blob_not_found(missing));
                 }
-                let raw = email_json::build_message(object, &LoadedBlobs(loaded)).map_err(build_error)?;
+                // Building writes every part out, base64 and all: work for a blocking thread.
+                let owned = object.clone();
+                let raw = tokio::task::spawn_blocking(move || {
+                    email_json::build_message(&owned, &LoadedBlobs(loaded)).map_err(build_error)
+                })
+                .await
+                .map_err(|err| SetError::new("serverFail", err.to_string()))??;
                 ctx.jmap
                     .store
                     .ingest(IngestRequest { account_id: ctx.account.id, raw, mailboxes, keywords, received_at })
@@ -691,6 +733,11 @@ pub async fn parse(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         .iter()
         .filter_map(|v| v.as_str().map(str::to_owned))
         .collect();
+    // Each one is read and parsed: no more than a /get may ask for (security-audit-0.16.0 PROTOCOLS-9).
+    if blob_ids.len() > MAX_OBJECTS_IN_GET {
+        return Err(MethodError::kind("requestTooLarge"));
+    }
+    let deadline = request_deadline(ctx);
     let defaults: Vec<&str> = DEFAULT_PROPERTIES
         .iter()
         .copied()
@@ -707,17 +754,29 @@ pub async fn parse(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let mut parsed = Map::new();
     let mut not_parsable = Vec::new();
     let mut not_found = Vec::new();
+    let (properties, body_properties) = (Arc::new(properties), Arc::new(body_properties));
     for blob_id in blob_ids {
+        if Instant::now() > deadline {
+            return Err(MethodError::new("serverUnavailable", OUT_OF_TIME));
+        }
         let Some(raw) = read_blob(ctx, &blob_id).await else {
             not_found.push(blob_id);
             continue;
         };
-        if mail_parser::MessageParser::default().parse(&raw).is_none() {
-            not_parsable.push(blob_id);
-            continue;
+        let (properties, body_properties) = (properties.clone(), body_properties.clone());
+        let json = tokio::task::spawn_blocking(move || {
+            uwumail_store::mime_limits::parse_message(&raw)?;
+            let hash = uwumail_store::BlobHash::of(&raw);
+            Some(email_json::to_json(None, Some(&raw), &hash, &properties, &body_properties, options))
+        })
+        .await
+        .map_err(|_| MethodError::kind("serverFail"))?;
+        match json {
+            Some(json) => {
+                parsed.insert(blob_id, json);
+            }
+            None => not_parsable.push(blob_id),
         }
-        let hash = uwumail_store::BlobHash::of(&raw);
-        parsed.insert(blob_id, email_json::to_json(None, Some(&raw), &hash, &properties, &body_properties, options));
     }
     Ok(json!({
         "accountId": ctx.account_id(),

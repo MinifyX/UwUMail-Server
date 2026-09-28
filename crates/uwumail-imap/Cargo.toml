@@ -21,5 +21,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 rcgen.workspace = true
+# The test's own clock, for time limits measured in minutes.
+tokio = { workspace = true, features = ["test-util"] }
 rustls-pki-types.workspace = true
 tempfile.workspace = true

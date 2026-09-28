@@ -3,8 +3,7 @@
 
 use std::path::PathBuf;
 
-use tokio::io::AsyncReadExt;
-
+use crate::folder;
 use crate::s3::S3;
 use crate::sftp::Sftp;
 use crate::{Error, Target};
@@ -67,14 +66,9 @@ impl Storage {
     /// after reading no more than one byte past it: the backup server decides how big its files are.
     pub async fn read(&self, path: &str, limit: u64) -> Result<Option<Vec<u8>>, Error> {
         let bytes = match self {
-            Storage::Local(root) => match tokio::fs::File::open(root.join(path)).await {
-                Ok(file) => {
-                    let mut bytes = Vec::new();
-                    file.take(limit.saturating_add(1)).read_to_end(&mut bytes).await?;
-                    bytes
-                }
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-                Err(err) => return Err(err.into()),
+            Storage::Local(root) => match folder::read(root, path, limit).await? {
+                Some(bytes) => bytes,
+                None => return Ok(None),
             },
             Storage::Sftp(sftp) => match sftp.read(path, limit).await? {
                 Some(bytes) => bytes,
@@ -97,12 +91,8 @@ impl Storage {
         let (dir, _) = path.rsplit_once('/').unwrap_or(("", path));
         let temporary = format!("{path}.part");
         match self {
-            Storage::Local(root) => {
-                tokio::fs::create_dir_all(root.join(dir)).await?;
-                tokio::fs::write(root.join(&temporary), bytes).await?;
-                tokio::fs::rename(root.join(&temporary), root.join(path)).await?;
-                Ok(())
-            }
+            // Its own way to the same end, without ever following a symlink on the share.
+            Storage::Local(root) => folder::write(root, path, bytes).await,
             Storage::Sftp(sftp) => {
                 sftp.create_dirs(dir).await?;
                 sftp.write(&temporary, bytes).await?;
@@ -115,19 +105,7 @@ impl Storage {
     /// File names in a directory; empty when it does not exist. Unfinished uploads are left out.
     pub async fn list(&self, dir: &str) -> Result<Vec<String>, Error> {
         let names = match self {
-            Storage::Local(root) => {
-                let mut names = Vec::new();
-                match tokio::fs::read_dir(root.join(dir)).await {
-                    Ok(mut entries) => {
-                        while let Some(entry) = entries.next_entry().await? {
-                            names.push(entry.file_name().to_string_lossy().into_owned());
-                        }
-                    }
-                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(err) => return Err(err.into()),
-                }
-                names
-            }
+            Storage::Local(root) => folder::list(root, dir).await?,
             Storage::Sftp(sftp) => sftp.list(dir).await?,
             Storage::S3(s3) => s3.list(dir).await?,
         };
@@ -136,10 +114,7 @@ impl Storage {
 
     pub async fn remove(&self, path: &str) -> Result<(), Error> {
         match self {
-            Storage::Local(root) => match tokio::fs::remove_file(root.join(path)).await {
-                Err(err) if err.kind() != std::io::ErrorKind::NotFound => Err(err.into()),
-                _ => Ok(()),
-            },
+            Storage::Local(root) => folder::remove(root, path).await,
             Storage::Sftp(sftp) => sftp.remove(path).await,
             Storage::S3(s3) => s3.remove(path).await,
         }

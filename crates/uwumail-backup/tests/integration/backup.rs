@@ -211,3 +211,50 @@ async fn a_backup_server_cannot_turn_encryption_off_or_swap_what_it_holds() {
     assert!(repo.manifest(&second.snapshot).await.is_err());
     assert_eq!(repo.manifest(&first.snapshot).await.unwrap().name.as_deref(), Some(first.snapshot.as_str()));
 }
+
+/// A folder target is a mounted share that others may write into, and the server works there as
+/// the user that owns its own data. A symlink planted on the share must never lead a backup, a
+/// prune or a "test connection" out of the folder: not to delete live mail, not to overwrite the
+/// database (security-audit-0.16.0 PLAT-5).
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn symlinks_on_a_folder_target_never_reach_the_server_s_own_files() {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data");
+    let (store, mini) = server(&data).await;
+    deliver(&store, mini, "Eins").await;
+    let repo_dir = dir.path().join("repo");
+    let storage = || Storage::Local(repo_dir.clone());
+    let repo = Repository::open(storage(), Some(RepoKey::generate()), 0).await.unwrap();
+    uwumail_backup::backup(&store, &repo, "mail.example.org", "0.1.0", Retention::default(), 5).await.unwrap();
+
+    // A live blob, and its directory planted where the repository keeps objects with that prefix.
+    let inbox = store.mailboxes(mini).await.unwrap().into_iter().find(|m| m.role == Some(MailboxRole::Inbox)).unwrap();
+    let email = store.emails_in_mailbox(inbox.id, 1).await.unwrap().remove(0);
+    let hash = email.blob.clone();
+    let live = data.join("blobs").join(&hash[..2]).join(&hash[2..4]);
+    assert!(live.join(&hash).is_file());
+    let planted = repo_dir.join("data").join(&hash[..2]);
+    let _ = std::fs::remove_dir_all(&planted);
+    symlink(&live, &planted).unwrap();
+
+    // A file of the server's, and a name for it wherever the repository writes or removes one.
+    let victim = data.join("victim");
+    std::fs::write(&victim, b"live data").unwrap();
+    symlink(&victim, repo_dir.join("uwumail-write-test.part")).unwrap();
+    symlink(&victim, repo_dir.join("snapshots/20000101-000000")).unwrap();
+    let stray = "f".repeat(64);
+    std::fs::create_dir_all(repo_dir.join("data/ff")).unwrap();
+    symlink(&victim, repo_dir.join("data/ff").join(&stray)).unwrap();
+
+    let none = Retention { daily: 0, weekly: 0, monthly: 0 };
+    uwumail_backup::prune(&repo, none).await.unwrap();
+    storage().check_writable().await.unwrap();
+    assert!(live.join(&hash).is_file(), "the live blob is still there");
+    let blob = uwumail_store::BlobHash::parse(&hash).unwrap();
+    assert!(store.blob(&blob).await.unwrap().starts_with(b"From: nyu@example.net"));
+    assert_eq!(std::fs::read(&victim).unwrap(), b"live data", "the victim is untouched");
+    assert!(storage().read("snapshots/20000101-000000", 1 << 20).await.is_err(), "a symlink is not read");
+}

@@ -11,10 +11,13 @@ use crate::Web;
 use crate::error::{ApiError, ApiResult};
 use crate::session::Session;
 
+/// The account's masked addresses, the domains it may make new ones on, and the one preselected.
 async fn overview(web: &Web, account_id: i64) -> ApiResult<Value> {
+    let policy = web.store().effective_masked_policy(account_id).await?;
     Ok(json!({
         "addresses": web.store().masked_addresses(account_id, None).await?,
-        "domains": web.store().masked_domains().await?,
+        "domains": policy.domains,
+        "defaultDomain": policy.default_domain,
     }))
 }
 

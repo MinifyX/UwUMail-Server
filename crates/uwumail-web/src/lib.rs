@@ -75,7 +75,8 @@ pub struct Web {
 struct Inner {
     smtp: Smtp,
     settings: WebSettings,
-    limiter: AuthLimiter,
+    /// The store's, shared with every mail protocol.
+    limiter: Arc<AuthLimiter>,
     dns: Option<DnsChecker>,
     /// The latest DNS check of each domain.
     reports: Mutex<HashMap<String, DomainReport>>,
@@ -105,6 +106,8 @@ struct Inner {
     dav_transport: std::sync::OnceLock<Arc<dyn uwumail_dav::client::Transport>>,
     /// When each account last asked other providers for calendars, to keep that polite.
     remote_calls: Mutex<HashMap<i64, Vec<i64>>>,
+    /// Accounts moving calendars and contacts over from another provider right now.
+    remote_imports: Arc<Mutex<std::collections::HashSet<i64>>>,
     /// Admin alerts: the last health overview and the lock around a look.
     alerts: alerts::AlertState,
     /// Who may read `/metrics`, once the server plugged it in.
@@ -115,6 +118,18 @@ struct Inner {
     oidc_transport: std::sync::OnceLock<Arc<dyn uwumail_dav::client::Transport>>,
     /// When each network registered OAuth apps, or was refused a code or token (routes/oauth.rs).
     oauth_attempts: Mutex<HashMap<(&'static str, std::net::IpAddr), Vec<i64>>>,
+}
+
+/// A move from another provider under way, from [`Web::start_remote_import`].
+pub(crate) struct RemoteImportGuard {
+    running: Arc<Mutex<std::collections::HashSet<i64>>>,
+    account_id: i64,
+}
+
+impl Drop for RemoteImportGuard {
+    fn drop(&mut self) {
+        self.running.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).remove(&self.account_id);
+    }
 }
 
 impl Web {
@@ -128,11 +143,12 @@ impl Web {
     pub fn new(smtp: Smtp, settings: WebSettings) -> Web {
         let dns =
             DnsChecker::new().inspect_err(|err| tracing::warn!(%err, "DNS checks of domains are not available")).ok();
+        let limiter = smtp.store().auth_limiter().clone();
         Web {
             inner: Arc::new(Inner {
                 smtp,
                 settings,
-                limiter: AuthLimiter::default(),
+                limiter,
                 dns,
                 reports: Mutex::default(),
                 last_health_check: Mutex::default(),
@@ -148,6 +164,7 @@ impl Web {
                 profile_key: std::sync::OnceLock::new(),
                 dav_transport: std::sync::OnceLock::new(),
                 remote_calls: Mutex::default(),
+                remote_imports: Arc::default(),
                 alerts: alerts::AlertState::default(),
                 metrics: std::sync::OnceLock::new(),
                 external_login: std::sync::OnceLock::new(),
@@ -265,6 +282,17 @@ impl Web {
         true
     }
 
+    /// Marks a move from another provider as running for this account until the guard is dropped,
+    /// or `None` when one is running already: each holds what it fetched in memory until it is
+    /// stored (security-audit-0.16.0 PROTOCOLS-12).
+    pub(crate) fn start_remote_import(&self, account_id: i64) -> Option<RemoteImportGuard> {
+        let running = self.inner.remote_imports.clone();
+        if !running.lock().expect("remote imports poisoned").insert(account_id) {
+            return None;
+        }
+        Some(RemoteImportGuard { running, account_id })
+    }
+
     /// Serves `/metrics` to whom `gate` lets in; the server changes the gate with the settings.
     /// Only the first call counts; without one `/metrics` does not exist.
     pub fn set_metrics_gate(&self, gate: Arc<metrics::MetricsGate>) {
@@ -339,7 +367,7 @@ impl Web {
         &self.inner.login
     }
 
-    pub(crate) fn limiter(&self) -> &AuthLimiter {
+    pub(crate) fn limiter(&self) -> &Arc<AuthLimiter> {
         &self.inner.limiter
     }
 
@@ -592,7 +620,9 @@ impl Web {
                 "/api/admin/domains/{name}/groups/{local}",
                 patch(routes::groups::update_group).delete(routes::groups::remove_group),
             )
-            .route("/api/admin/domains/{name}/masked-addresses", put(routes::groups::set_masked_addresses))
+            .route("/api/admin/domains/{name}/masked-policy", put(routes::domains::set_masked_policy))
+            .route("/api/admin/domains/{name}/kind", put(routes::domains::set_kind))
+            .route("/api/admin/people/{login}/masked-policy", put(routes::people::set_masked_policy))
             .route(
                 "/api/admin/shared-mailboxes",
                 get(routes::groups::shared_mailboxes).post(routes::groups::create_shared_mailbox),

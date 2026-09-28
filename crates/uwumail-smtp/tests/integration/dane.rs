@@ -239,3 +239,33 @@ async fn without_tlsa_records_mail_goes_as_before() {
     assert_eq!(sessions[0].session.policy_type, "no-policy-found");
     assert_eq!(sessions[0].session.result_type, None);
 }
+
+/// b.test's MX records are signed and name mx.b.test, whose TLSA record matches. An attacker on the
+/// path answers the ordinary (non-validating) MX lookup with `forged`: another host, which has no
+/// TLSA records, or none at all. The mail must still go to mx.b.test under DANE, never to the forged
+/// host with opportunistic TLS (security-audit-0.16.0 SMTP-3).
+async fn forged_mx_answer(forged: &[(u16, &str)]) {
+    let (a, b) = pair(|cert| vec![dane_ee_record(cert).unwrap().to_string()]).await;
+    let dns = a.smtp.dns_cache();
+    dns.pin_unvalidated_mx("b.test", forged);
+    for host in ["mx.attacker.test", "b.test"] {
+        dns.pin_ipv4(host, &[Ipv4Addr::LOCALHOST]);
+        dns.pin_tlsa(host, &[]).unwrap();
+    }
+    send(&a, "nyu@b.test").await;
+    wait_until("the mail arrives", async || inbox(&b, "nyu@b.test").await == 1).await;
+    let sessions = a.smtp.store().tls_rpt_sessions(tls_rpt_day(now()), "b.test").await.unwrap();
+    assert_eq!(sessions.len(), 1, "{sessions:?}");
+    assert_eq!(sessions[0].session.mx_host, ["mx.b.test"]);
+    assert_eq!(sessions[0].session.policy_type, "tlsa");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_forged_mx_host_does_not_take_dane_away() {
+    forged_mx_answer(&[(10, "mx.attacker.test")]).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_forged_no_mx_answer_does_not_take_dane_away() {
+    forged_mx_answer(&[]).await;
+}

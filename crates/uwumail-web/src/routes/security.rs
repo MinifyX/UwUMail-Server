@@ -34,9 +34,9 @@ pub(crate) async fn confirm_identity(web: &Web, session: &Session, password: Opt
         return Err(ApiError::Rule("confirmPassword", "confirm this with your password".into()));
     };
     let ip = session.client.ip;
-    if web.limiter().is_blocked(ip) || web.limiter().account_throttled(&session.account.login) {
+    let Some(_attempt) = web.limiter().begin(ip, &session.account.login) else {
         return Err(ApiError::TooManyAttempts);
-    }
+    };
     match web.store().authenticate(&session.account.login, password).await? {
         Some(account) if account.id == session.account.id => {
             web.limiter().record_success(ip, &session.account.login);
@@ -133,9 +133,9 @@ pub async fn change_password(
         return Err(ApiError::Rule("samePassword", "choose a password you did not use just now".into()));
     }
     let ip = session.client.ip;
-    if web.limiter().is_blocked(ip) || web.limiter().account_throttled(&session.account.login) {
+    let Some(_attempt) = web.limiter().begin(ip, &session.account.login) else {
         return Err(ApiError::TooManyAttempts);
-    }
+    };
     match web.store().change_password(session.account.id, &change.current, &change.new, &session.token).await {
         Ok(()) => {}
         Err(StoreError::Rule { code: "wrongPassword", message }) => {

@@ -136,8 +136,10 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         store.identities(ctx.account.id).await?.into_iter().map(|i| i.email.to_lowercase()).collect();
     let mut candidates: HashMap<String, Candidate> = HashMap::new();
 
-    // The address books, whether or not the account uses CardDAV: they are its own.
-    for record in store.contact_cards(ctx.account.id, None).await? {
+    // The address books, whether or not the account uses CardDAV: they are its own. Not for an app
+    // password or app limited to mail, though: address books need the `dav` scope.
+    let cards = if ctx.may_use_dav { store.contact_cards(ctx.account.id, None).await? } else { Vec::new() };
+    for record in cards {
         let Some(card) = jscontact::from_vcard(&record.content) else { continue };
         let (name, emails) = card_addresses(&card);
         for email in emails {

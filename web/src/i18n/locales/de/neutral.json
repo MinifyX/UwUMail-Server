@@ -516,7 +516,7 @@
       "refreshPause": "Gerade erst geholt. Versuch es in einer Minute nochmal.",
       "sharedMailbox": "Das ist ein geteiltes Postfach: Es hat App-Passwörter, aber kein Passwort, und die Mitglieder nutzen es aus ihrem eigenen Konto.",
       "sharedMailboxNeedsMailbox": "Ein geteiltes Postfach behält seine Mails: IMAP oder JMAP muss an bleiben.",
-      "maskedDomain": "Auf diesem Server ist noch keine Domain für maskierte Adressen freigegeben. Frag den Admin.",
+      "maskedDomain": "Maskierte Adressen sind für dich auf dieser Domain nicht eingeschaltet. Frag die Admins.",
       "maskedLimit": "Du hast so viele maskierte Adressen, wie dieser Server erlaubt. Lösch welche, die du nicht mehr brauchst.",
       "maskedPrefix": "Ein Präfix darf nur Buchstaben a–z, Ziffern und _ haben, höchstens 64.",
       "maskedState": "Eine maskierte Adresse kann nicht wieder auf ihre erste Mail warten.",
@@ -536,7 +536,12 @@
       "oauthClientUnknown": "Diese App ist auf diesem Server nicht registriert.",
       "oauthRedirectInvalid": "Die App möchte an eine Adresse zurück, die sie nicht registriert hat.",
       "oidcFailed": "Mit dem Anmeldedienst hat es nicht geklappt: {{detail}}",
-      "ldapFailed": "Mit dem Verzeichnis hat es nicht geklappt: {{detail}}"
+      "ldapFailed": "Mit dem Verzeichnis hat es nicht geklappt: {{detail}}",
+      "importRunning": "Ein Umzug von einem anderen Anbieter läuft schon. Warte, bis er fertig ist.",
+      "maskedOnlyDomain": "Diese Domain trägt nur maskierte Adressen: keine Personen, Aliasse, Gruppen, Weiterleitungsadressen oder Catch-all.",
+      "notMaskedDomain": "Hier lassen sich nur Domains für maskierte Adressen wählen.",
+      "maskedDefault": "Die Standard-Domain muss eine der erlaubten Domains sein.",
+      "kindChangeBlocked": "Auf dieser Domain liegt noch etwas anderes als maskierte Adressen. Entferne es zuerst."
     }
   },
   "people": {
@@ -654,7 +659,7 @@
       "convertToService": "In einen Dienst umwandeln",
       "convertToServiceHint": "Für Postfächer, die einem Programm gehören.",
       "convertToServiceTitle": "{{login}} in einen Dienst umwandeln?",
-      "convertToServiceBody": "Danach ist kein Portal-Login mehr möglich. Zwei-Faktor-Anmeldung, Passkeys und offene Sitzungen werden entfernt; das bisherige Passwort lebt als unbefristetes App-Passwort weiter. Die Mails bleiben, wo sie sind.",
+      "convertToServiceBody": "Danach ist kein Portal-Login mehr möglich. Zwei-Faktor-Anmeldung, Passkeys und offene Sitzungen werden entfernt; das bisherige Passwort lebt als unbefristetes App-Passwort weiter. Die Mails bleiben, wo sie sind. Weiterleitungen, abgeholte Postfächer, Umzüge von anderen Anbietern, Kalender-Abos und die aktive Mailregel enden, und maskierte Adressen werden ausgeschaltet.",
       "convertToPerson": "In eine Person umwandeln",
       "convertToPersonHint": "Für ein Postfach, das doch jemandem gehört.",
       "convertToPersonTitle": "{{login}} in eine Person umwandeln?",
@@ -779,7 +784,7 @@
     "convert": "In ein geteiltes Postfach umwandeln",
     "convertHint": "Mehrere Leute nutzen es aus ihrem eigenen Konto. Die Mails bleiben.",
     "convertTitle": "{{login}} in ein geteiltes Postfach umwandeln?",
-    "convertBodyPerson": "Mails, Ordner und Adressen bleiben. Niemand meldet sich damit mehr im Portal oder in der Webmail an: Zwei-Faktor-Anmeldung, Passkeys und offene Sitzungen werden entfernt, und das bisherige Passwort lebt als unbefristetes App-Passwort weiter, damit Mailprogramme weiterlaufen. Ordner, die andere damit geteilt haben, und geteilte Postfächer, die es genutzt hat, fallen weg.",
+    "convertBodyPerson": "Mails, Ordner und Adressen bleiben. Niemand meldet sich damit mehr im Portal oder in der Webmail an: Zwei-Faktor-Anmeldung, Passkeys und offene Sitzungen werden entfernt, und das bisherige Passwort lebt als unbefristetes App-Passwort weiter, damit Mailprogramme weiterlaufen. Ordner, die andere damit geteilt haben, und geteilte Postfächer, die es genutzt hat, fallen weg. Weiterleitungen, abgeholte Postfächer, Umzüge von anderen Anbietern, Kalender-Abos und die aktive Mailregel enden, und maskierte Adressen werden ausgeschaltet.",
     "convertBodyService": "Mails, Ordner, Adressen und App-Passwörter bleiben. Die Mitglieder sehen alle Ordner aus ihrem eigenen Konto.",
     "end": "Zurück in einen Dienst",
     "endHint": "Die Mitglieder sehen es nicht mehr. Mails, Adressen und App-Passwörter bleiben.",
@@ -868,7 +873,10 @@
       "sharedMailboxCreate": "{{actor}} hat das geteilte Postfach {{target}} angelegt",
       "sharedMailboxMembers": "{{actor}} hat die Mitglieder des geteilten Postfachs {{target}} geändert",
       "sharedMailboxConvert": "{{actor}} hat {{target}} in ein geteiltes Postfach umgewandelt",
-      "sharedMailboxEnd": "{{actor}} hat das geteilte Postfach {{target}} wieder zu einem Dienst gemacht"
+      "sharedMailboxEnd": "{{actor}} hat das geteilte Postfach {{target}} wieder zu einem Dienst gemacht",
+      "domainMaskedPolicy": "{{actor}} hat geändert, wo die Leute von {{target}} maskierte Adressen erzeugen dürfen",
+      "domainKind": "{{actor}} hat die Art der Domain {{target}} geändert",
+      "accountMaskedPolicy": "{{actor}} hat geändert, wo {{target}} maskierte Adressen erzeugen darf"
     },
     "details": {
       "adminOn": "ist jetzt Admin",
@@ -895,7 +903,13 @@
       "switchedOn": "eingeschaltet",
       "switchedOff": "ausgeschaltet",
       "authSource": "jetzt: {{value}}",
-      "oauthApp": "App „{{value}}“"
+      "oauthApp": "App „{{value}}“",
+      "kindMasked": "nur für maskierte Adressen",
+      "kindMail": "jetzt eine Mail-Domain",
+      "maskedMode": "maskierte Adressen: {{value}}",
+      "maskedAsDomain": "maskierte Adressen: wie die Domain",
+      "maskedRemovedFrom_one": "aus {{count}} Einstellung für maskierte Adressen entfernt",
+      "maskedRemovedFrom_other": "aus {{count}} Einstellungen für maskierte Adressen entfernt"
     },
     "entry": {
       "actor": "Wer",
@@ -1200,9 +1214,7 @@
       "created": "Gruppe angelegt",
       "saved": "Gruppe gespeichert",
       "removed": "Gruppe entfernt"
-    },
-    "masked": "Maskierte Adressen",
-    "maskedHint": "Leute dürfen auf dieser Domain zufällige Adressen für Websites erzeugen (Mein Konto → Maskierte Adressen)."
+    }
   },
   "reports": {
     "title": "Berichte",
@@ -1757,7 +1769,7 @@
       "scopeSmtp": "Mails senden (SMTP)",
       "scopeSmtpHint": "Für Apps, Drucker oder Skripte, die nur senden.",
       "scopeDav": "Kalender und Kontakte",
-      "scopeDavHint": "Für Apps mit CalDAV und CardDAV, wie Kalender und Kontakte auf dem iPhone.",
+      "scopeDavHint": "Für Apps mit CalDAV und CardDAV, wie Kalender und Kontakte auf dem iPhone, und für Kalender und Kontakte in JMAP-Apps.",
       "expiry": "Gültig",
       "never": "Ohne Ablauf",
       "days_one": "{{count}} Tag",
@@ -1875,7 +1887,7 @@
     "scopes": {
       "mail": {
         "title": "Deine Mails lesen und ordnen",
-        "hint": "Mails, Ordner und Filterregeln, über IMAP, JMAP und ManageSieve."
+        "hint": "Mails, Ordner und Filterregeln, über IMAP, JMAP und ManageSieve. Über JMAP gehört auch das Senden dazu."
       },
       "smtp": {
         "title": "Mails in deinem Namen senden",
@@ -1883,7 +1895,7 @@
       },
       "dav": {
         "title": "Deine Kalender und Kontakte nutzen",
-        "hint": "Lesen und ändern, über CalDAV und CardDAV."
+        "hint": "Lesen und ändern, über CalDAV, CardDAV und JMAP."
       },
       "openid": {
         "title": "Wissen, dass du es bist",
@@ -2226,7 +2238,7 @@
     "pageTitle": "Maskierte Adressen",
     "intro": "Eine zufällige Adresse für jede Website. Bekommt eine plötzlich Spam, weißt du, wer sie weitergegeben hat, und schaltest sie ab, ohne deine echte Adresse anzufassen.",
     "new": "Neue maskierte Adresse",
-    "closed": "Maskierte Adressen sind auf diesem Server noch nicht freigegeben. Bitte den Admin, sie für eine Domain einzuschalten.",
+    "closed": "Maskierte Adressen sind für dich nicht eingeschaltet. Frag die Admins.",
     "description": "Wofür",
     "descriptionPlaceholder": "zum Beispiel Newsletter der Bäckerei",
     "site": "Website",
@@ -3583,6 +3595,80 @@
         "outlook": "Outlook.com hat kein CalDAV oder CardDAV. Exportiere dort deinen Kalender als .ics-Datei und deine Kontakte als Datei und importiere sie hier.",
         "appPassword": "Dieser Anbieter möchte ein App-Passwort, das du in seinen Einstellungen erstellst."
       }
+    }
+  },
+  "maskedDomains": {
+    "pill": "Nur maskierte Adressen",
+    "kind": {
+      "label": "Art der Domain",
+      "mail": "Mail-Domain",
+      "mailHint": "Für Personen, Aliasse, Gruppen und alles andere.",
+      "masked": "Nur maskierte Adressen",
+      "maskedHint": "Trägt maskierte Adressen und sonst nichts: keine Personen, Aliasse, Gruppen, Weiterleitungsadressen oder Catch-all. Auf einer Mail-Domain wählst du, wessen Leute sie nutzen dürfen."
+    },
+    "modes": {
+      "off": "Aus",
+      "own": "Eigene Domain",
+      "dedicated": "Domains nur für maskierte Adressen",
+      "both": "Eigene Domain und Domains nur für maskierte Adressen"
+    },
+    "policy": {
+      "title": "Maskierte Adressen",
+      "intro": "Wo die Leute von {{domain}} maskierte Adressen erzeugen dürfen: im Portal unter Mein Konto → Maskierte Adressen und in Passwortmanagern.",
+      "mode": "Maskierte Adressen",
+      "domains": "Domains nur für maskierte Adressen",
+      "domainsHint": "Welche Domains nur für maskierte Adressen sie nutzen dürfen.",
+      "noChoices": "Es gibt noch keine Domain nur für maskierte Adressen. Füge unter Domains eine mit der Art „Nur maskierte Adressen“ hinzu.",
+      "default": "Standard-Domain",
+      "defaultHint": "Wird genommen, wenn eine App keine Domain nennt, und ist im Portal vorausgewählt. Automatisch: die eigene Domain, wenn erlaubt, sonst die erste Domain nur für maskierte Adressen.",
+      "automatic": "Automatisch",
+      "existing": "Schon vorhandene maskierte Adressen funktionieren weiter, egal was hier eingestellt ist.",
+      "saved": "Gespeichert"
+    },
+    "convert": {
+      "title": "Nur maskierte Adressen",
+      "hint": "Macht {{domain}} zu einer Domain, die maskierte Adressen trägt und sonst nichts. Das geht nur, solange nichts anderes darauf liegt.",
+      "blocked": "Noch darauf:",
+      "blockers": {
+        "accounts_one": "{{count}} Konto (auch im Papierkorb)",
+        "accounts_other": "{{count}} Konten (auch im Papierkorb)",
+        "aliases_one": "{{count}} zusätzliche Adresse",
+        "aliases_other": "{{count}} zusätzliche Adressen",
+        "groups_one": "{{count}} Gruppe",
+        "groups_other": "{{count}} Gruppen",
+        "forwards_one": "{{count}} Weiterleitungsadresse",
+        "forwards_other": "{{count}} Weiterleitungsadressen",
+        "catchAll": "das Catch-all",
+        "sendAs_one": "{{count}} Person darf mit jeder ihrer Adressen senden",
+        "sendAs_other": "{{count}} Personen dürfen mit jeder ihrer Adressen senden"
+      },
+      "action": "Nur für maskierte Adressen machen",
+      "confirm": "{{domain}} zu einer Domain nur für maskierte Adressen machen? Ihre Einstellungen für maskierte Adressen fallen weg, ebenso Aliasse, die Leute sich dort selbst anlegen. Ihre maskierten Adressen funktionieren weiter.",
+      "done": "{{domain}} trägt jetzt nur noch maskierte Adressen"
+    },
+    "only": {
+      "title": "Nur maskierte Adressen",
+      "body": "Diese Domain trägt maskierte Adressen und sonst nichts: keine Personen, Aliasse, Gruppen, Weiterleitungsadressen oder Catch-all. Mail an jede andere Adresse dort wird abgelehnt. DNS, DKIM-Schlüssel, MTA-STS und Berichte funktionieren wie bei jeder Domain.",
+      "count_one": "{{count}} maskierte Adresse nimmt hier Mail an",
+      "count_other": "{{count}} maskierte Adressen nehmen hier Mail an",
+      "unused": "Noch darf hier niemand maskierte Adressen erzeugen. Wähle sie auf einer Mail-Domain unter Maskierte Adressen aus.",
+      "usedByDomains": "Angeboten den Leuten von: {{domains}}",
+      "usedByAccounts": "Über eigene Einstellungen angeboten: {{accounts}}",
+      "backHint": "Als Mail-Domain nimmt sie wieder Personen und Aliasse auf. Ihre maskierten Adressen funktionieren weiter.",
+      "back": "Zur Mail-Domain machen",
+      "backConfirm": "{{domain}} wieder zu einer Mail-Domain machen? Ihre maskierten Adressen funktionieren weiter.",
+      "backConfirmUsed": "Sie wird aus den Einstellungen für maskierte Adressen entfernt bei: {{names}}.",
+      "backDone": "{{domain}} ist wieder eine Mail-Domain"
+    },
+    "person": {
+      "title": "Maskierte Adressen",
+      "intro": "Jeder Teil richtet sich nach der Domain, außer du wählst hier etwas anderes.",
+      "asDomain": "Wie die Domain ({{value}})",
+      "custom": "Eigene Auswahl",
+      "none": "keine",
+      "result": "Darf maskierte Adressen auf {{domains}} erzeugen; neue landen auf {{domain}}.",
+      "resultNone": "Darf keine maskierten Adressen erzeugen.",
+      "staleDefault": "Die früher gewählte Standard-Domain {{domain}} ist nicht mehr erlaubt, deshalb gilt die der Domain oder eine automatische."
     }
   }
 }

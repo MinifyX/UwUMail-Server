@@ -14,8 +14,8 @@ use uwumail_gateway::config::{ListenConfig, OutboundConfig};
 use uwumail_gateway::logs::LogQueue;
 use uwumail_gateway::state::State;
 use uwumail_tunnel::{
-    ClientSettings, GatewayLogLine, Identity, Inbound, Open, PairingCode, Refusal, Service, Status, Token,
-    TunnelClient, TunnelStream,
+    ClientSettings, Fingerprint, GatewayLogLine, Hello, HelloReply, Identity, Inbound, Open, PairingCode, Refusal,
+    Service, Status, Token, TunnelClient, TunnelStream,
 };
 
 const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
@@ -102,10 +102,19 @@ impl Inbound for Echo {
 }
 
 fn start_client(code: &PairingCode, with_token: bool, stop: watch::Receiver<bool>) -> TunnelClient {
+    start_client_as(Identity::generate().unwrap(), code, with_token, stop)
+}
+
+fn start_client_as(
+    identity: Identity,
+    code: &PairingCode,
+    with_token: bool,
+    stop: watch::Receiver<bool>,
+) -> TunnelClient {
     let settings = ClientSettings {
         addresses: code.addresses.clone(),
         gateway: code.fingerprint,
-        identity: Identity::generate().unwrap(),
+        identity,
         hostname: "mail.example.com".into(),
         software: "test".into(),
         services: uwumail_tunnel::Service::FIRST.to_vec(),
@@ -404,4 +413,89 @@ async fn the_gateway_hands_its_log_to_a_server_that_asks() {
 
 async fn next_line(received: &mut tokio::sync::mpsc::UnboundedReceiver<String>) -> String {
     tokio::time::timeout(Duration::from_secs(10), received.recv()).await.expect("a log line arrives").unwrap()
+}
+
+/// One tunnel attempt by hand: a handshake as `identity` that trusts only `pin`, then a hello
+/// without a token. The gateway's answer, or `None` when there was none: the handshake failed, or
+/// the gateway hung up without a word.
+async fn attempt(gateway: SocketAddr, pin: Fingerprint, identity: &Identity) -> Option<HelloReply> {
+    let endpoint = quinn::Endpoint::client((LOCALHOST, 0).into()).unwrap();
+    let config = uwumail_tunnel::client_config(identity, pin).unwrap();
+    let connection = endpoint.connect_with(config, gateway, "uwumail-gateway").unwrap().await.ok()?;
+    let (send, recv) = connection.open_bi().await.ok()?;
+    let mut control = TunnelStream::new(send, recv);
+    let hello = Hello {
+        version: uwumail_tunnel::proto::VERSION,
+        hostname: "stranger.example.com".into(),
+        software: "test".into(),
+        token: None,
+        services: None,
+        control: true,
+        logs: false,
+    };
+    uwumail_tunnel::proto::write_message(&mut control, &hello).await.ok()?;
+    let reply = uwumail_tunnel::proto::read_message(&mut control).await.ok();
+    connection.close(0u32.into(), b"done");
+    reply
+}
+
+#[tokio::test]
+async fn failed_handshakes_do_not_lock_the_server_out() {
+    // A handshake fails on the gateway's side long before the other side proved it can receive
+    // anything at the address it claims: one forged packet each would do. However many there are,
+    // the server that then comes from the same address pairs as usual.
+    let gateway = TestGateway::start(2525).await;
+    let wrong_pin = Identity::generate().unwrap().fingerprint();
+    let stranger = Identity::generate().unwrap();
+    for _ in 0..15 {
+        assert!(attempt(gateway.running.tunnel, wrong_pin, &stranger).await.is_none());
+    }
+    let (_stop, stop_rx) = watch::channel(false);
+    let client = start_client(&gateway.code, true, stop_rx);
+    wait_for(&client, |s| matches!(s, Status::Connected { .. })).await;
+}
+
+#[tokio::test]
+async fn whoever_keeps_guessing_pairing_codes_has_to_wait() {
+    let gateway = TestGateway::start(2525).await;
+    let guesser = Identity::generate().unwrap();
+    let mut answers = Vec::new();
+    for _ in 0..12 {
+        answers.push(attempt(gateway.running.tunnel, gateway.code.fingerprint, &guesser).await);
+    }
+    assert!(
+        answers[..10].iter().all(|a| matches!(a, Some(HelloReply::Refused { reason: Refusal::NotPaired, .. }))),
+        "{answers:?}"
+    );
+    assert!(answers[10..].iter().all(Option::is_none), "{answers:?}");
+}
+
+#[tokio::test]
+async fn others_refused_from_its_address_never_lock_the_paired_server_out() {
+    let gateway = TestGateway::start(2525).await;
+    let server = Identity::generate().unwrap();
+    let (stop, stop_rx) = watch::channel(false);
+    let client = start_client_as(server.clone(), &gateway.code, true, stop_rx);
+    wait_for(&client, |s| matches!(s, Status::Connected { .. })).await;
+    stop.send(true).unwrap();
+    // Not the address its tunnel used a moment ago any more: only its certificate speaks for it.
+    std::fs::remove_file(gateway.dir.path().join("trusted")).unwrap();
+
+    // Strangers from the same address -- the neighbours behind a carrier-grade NAT -- are turned
+    // away until they have to wait.
+    let stranger = Identity::generate().unwrap();
+    let mut answers = Vec::new();
+    for _ in 0..12 {
+        answers.push(attempt(gateway.running.tunnel, gateway.code.fingerprint, &stranger).await);
+    }
+    assert!(
+        answers[..10].iter().all(|a| matches!(a, Some(HelloReply::Refused { reason: Refusal::OtherServer, .. }))),
+        "{answers:?}"
+    );
+    assert!(answers[10..].iter().all(Option::is_none), "{answers:?}");
+
+    // The paired server comes straight back all the same.
+    let (_stop, stop_rx) = watch::channel(false);
+    let back = start_client_as(server, &gateway.code, false, stop_rx);
+    wait_for(&back, |s| matches!(s, Status::Connected { .. })).await;
 }

@@ -55,6 +55,8 @@ pub enum SubmitError {
     NobodyAccepted,
     #[error("sending through this server is switched off for this account")]
     SendingOff,
+    #[error("this account is disabled or in the trash")]
+    AccountLocked,
     #[error("too many recipients")]
     TooManyRecipients,
     #[error("the message is larger than this server accepts")]
@@ -150,10 +152,17 @@ impl Smtp {
         if recipients.is_empty() {
             return Err(SubmitError::NoRecipients);
         }
+        // The account as it is now, not as it was when the session or the held message began: a
+        // disabled or trashed account sends nothing more, from any door, and neither does mail it
+        // held back for later (security audit 0.16.0 PROTOCOLS-10).
+        let current = ctx.store.account_by_id(account.id).await.map_err(SubmitError::Queue)?;
+        let Some(current) = current.filter(|current| current.can_log_in()) else {
+            return Err(SubmitError::AccountLocked);
+        };
         // The SMTP switch governs sending through this server from every door, not only ports
         // 587/465: the JMAP path (webmail and any client) calls submit directly, so it is checked
         // here (security-audit-0.5.2 S-11).
-        if !account.may_use("smtp") {
+        if !current.may_use("smtp") {
             return Err(SubmitError::SendingOff);
         }
         // The same limits the SMTP port enforces at RCPT and DATA, so a policy an admin sets holds

@@ -14,7 +14,7 @@ import { MemberPicker, memberChoices, type PickedMember } from "./MemberPicker";
 import { PersonAvatar, StorageLine } from "./PersonBits";
 import {
   useCreateSharedMailbox,
-  useDomains,
+  useMailDomains,
   useEndSharedMailbox,
   useMakeSharedMailbox,
   usePeople,
@@ -35,7 +35,7 @@ export function SharedMailboxPill() {
 function CreateSharedMailboxDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useT();
   const errorText = useErrorText();
-  const domains = useDomains();
+  const domains = useMailDomains();
   const people = usePeople();
   const create = useCreateSharedMailbox();
   const [name, setName] = useState("");

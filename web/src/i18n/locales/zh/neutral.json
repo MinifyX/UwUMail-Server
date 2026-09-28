@@ -504,7 +504,7 @@
       "refreshPause": "刚刚获取过。请一分钟后再试。",
       "sharedMailbox": "这是共享邮箱：它有应用专用密码但没有密码，成员从自己的账户使用它。",
       "sharedMailboxNeedsMailbox": "共享邮箱要保留邮件：IMAP 或 JMAP 必须保持开启。",
-      "maskedDomain": "此服务器还没有开放用于隐藏地址的域名。请联系管理员。",
+      "maskedDomain": "你在这个域名上没有开启隐藏地址。请询问管理员。",
       "maskedLimit": "你的隐藏地址已达到此服务器允许的上限。请删除一些不再需要的。",
       "maskedPrefix": "前缀只能包含字母 a–z、数字和 _，最多 64 个。",
       "maskedState": "隐藏地址不能再回到等待第一封邮件的状态。",
@@ -524,7 +524,12 @@
       "oauthClientUnknown": "该应用未在此服务器上注册。",
       "oauthRedirectInvalid": "该应用要求跳转到一个它未注册的地址。",
       "oidcFailed": "登录服务出现问题：{{detail}}",
-      "ldapFailed": "目录出现问题：{{detail}}"
+      "ldapFailed": "目录出现问题：{{detail}}",
+      "importRunning": "已有一个从其他服务商的迁移正在进行。请等它完成。",
+      "maskedOnlyDomain": "这个域名仅限隐藏地址：没有用户、别名、群组、转发地址或全收地址。",
+      "notMaskedDomain": "这里只能选择仅限隐藏地址的域名。",
+      "maskedDefault": "默认域名必须是允许的域名之一。",
+      "kindChangeBlocked": "这个域名上还有隐藏地址以外的内容。请先移除。"
     }
   },
   "people": {
@@ -640,7 +645,7 @@
       "convertToService": "转换为服务",
       "convertToServiceHint": "适用于属于某个程序的邮箱。",
       "convertToServiceTitle": "将 {{login}} 转换为服务？",
-      "convertToServiceBody": "转换后将无法登录门户。双重验证登录、通行密钥和已打开的会话都会被移除；当前的密码会保留为一个永不过期的应用专用密码。邮件保持不变。",
+      "convertToServiceBody": "转换后将无法登录门户。双重验证登录、通行密钥和已打开的会话都会被移除；当前的密码会保留为一个永不过期的应用专用密码。邮件保持不变。转发、从其他服务商收取的邮箱和迁移、日历订阅以及启用中的邮件规则都会停止，隐藏地址会被停用。",
       "convertToPerson": "转换为个人",
       "convertToPersonHint": "适用于实际上属于某个人的邮箱。",
       "convertToPersonTitle": "将 {{login}} 转换为个人？",
@@ -762,7 +767,7 @@
     "convert": "转换为共享邮箱",
     "convertHint": "多人从自己的账户使用它。邮件保持不变。",
     "convertTitle": "将 {{login}} 转换为共享邮箱？",
-    "convertBodyPerson": "邮件、文件夹和地址保持不变。之后没有人能再用它登录门户或网页邮箱：双重验证登录、通行密钥和已打开的会话都会被移除，当前的密码会保留为一个永不过期的应用专用密码，邮件应用可以继续使用。别人与它共享的文件夹以及它使用过的共享邮箱都会失去。",
+    "convertBodyPerson": "邮件、文件夹和地址保持不变。之后没有人能再用它登录门户或网页邮箱：双重验证登录、通行密钥和已打开的会话都会被移除，当前的密码会保留为一个永不过期的应用专用密码，邮件应用可以继续使用。别人与它共享的文件夹以及它使用过的共享邮箱都会失去。转发、从其他服务商收取的邮箱和迁移、日历订阅以及启用中的邮件规则都会停止，隐藏地址会被停用。",
     "convertBodyService": "邮件、文件夹、地址和应用专用密码保持不变。成员可以从自己的账户看到它的所有文件夹。",
     "end": "改回普通服务",
     "endHint": "成员将不再看到它。邮件、地址和应用专用密码保持不变。",
@@ -851,7 +856,10 @@
       "sharedMailboxCreate": "{{actor}} 创建了共享邮箱 {{target}}",
       "sharedMailboxMembers": "{{actor}} 更改了共享邮箱 {{target}} 的成员",
       "sharedMailboxConvert": "{{actor}} 将 {{target}} 转换为共享邮箱",
-      "sharedMailboxEnd": "{{actor}} 将共享邮箱 {{target}} 改回了普通服务"
+      "sharedMailboxEnd": "{{actor}} 将共享邮箱 {{target}} 改回了普通服务",
+      "domainMaskedPolicy": "{{actor}} 更改了 {{target}} 的用户可以在哪里创建隐藏地址",
+      "domainKind": "{{actor}} 更改了域名 {{target}} 的类型",
+      "accountMaskedPolicy": "{{actor}} 更改了 {{target}} 可以在哪里创建隐藏地址"
     },
     "details": {
       "adminOn": "现在是管理员",
@@ -877,7 +885,12 @@
       "switchedOn": "已开启",
       "switchedOff": "已关闭",
       "authSource": "现在：{{value}}",
-      "oauthApp": "应用“{{value}}”"
+      "oauthApp": "应用“{{value}}”",
+      "kindMasked": "仅限隐藏地址",
+      "kindMail": "现在是邮件域名",
+      "maskedMode": "隐藏地址：{{value}}",
+      "maskedAsDomain": "隐藏地址：跟随域名",
+      "maskedRemovedFrom_other": "已从 {{count}} 个隐藏地址设置中移除"
     },
     "entry": {
       "actor": "操作者",
@@ -1174,9 +1187,7 @@
       "created": "群组已创建",
       "saved": "群组已保存",
       "removed": "群组已删除"
-    },
-    "masked": "隐藏地址",
-    "maskedHint": "允许用户在此域名上为网站生成随机地址（我的账户 → 隐藏地址）。"
+    }
   },
   "reports": {
     "title": "报告",
@@ -1713,7 +1724,7 @@
       "scopeSmtp": "发送邮件（SMTP）",
       "scopeSmtpHint": "用于只发信的应用、打印机或脚本。",
       "scopeDav": "日历和通讯录",
-      "scopeDavHint": "用于使用 CalDAV 和 CardDAV 的应用，例如 iPhone 上的“日历”和“通讯录”。",
+      "scopeDavHint": "用于使用 CalDAV 和 CardDAV 的应用，例如 iPhone 上的“日历”和“通讯录”，以及 JMAP 应用中的日历和联系人。",
       "expiry": "有效期",
       "never": "永不过期",
       "days_other": "{{count}} 天",
@@ -1826,7 +1837,7 @@
     "scopes": {
       "mail": {
         "title": "读取和整理你的邮件",
-        "hint": "邮件、文件夹和过滤规则，通过 IMAP、JMAP 和 ManageSieve。"
+        "hint": "邮件、文件夹和过滤规则，通过 IMAP、JMAP 和 ManageSieve。通过 JMAP 还可以发信。"
       },
       "smtp": {
         "title": "以你的身份发送邮件",
@@ -1834,7 +1845,7 @@
       },
       "dav": {
         "title": "使用你的日历和联系人",
-        "hint": "读取和更改，通过 CalDAV 和 CardDAV。"
+        "hint": "读取和更改，通过 CalDAV、CardDAV 和 JMAP。"
       },
       "openid": {
         "title": "确认是你本人",
@@ -2175,7 +2186,7 @@
     "pageTitle": "隐藏地址",
     "intro": "为每个网站使用一个随机地址。如果某个地址开始收到垃圾邮件，你就知道是谁泄露的，并且可以在不影响真实地址的情况下关掉它。",
     "new": "新建隐藏地址",
-    "closed": "此服务器还没有开放隐藏地址。请管理员为某个域名开启。",
+    "closed": "你没有开启隐藏地址。请询问管理员。",
     "description": "用途",
     "descriptionPlaceholder": "例如面包店的通讯",
     "site": "网站",
@@ -3514,6 +3525,74 @@
         "outlook": "Outlook.com 没有 CalDAV 或 CardDAV。请在那边把日历导出为 .ics 文件、把通讯录导出为文件，然后在这里导入。",
         "appPassword": "该服务商需要在其设置中创建的应用密码。"
       }
+    }
+  },
+  "maskedDomains": {
+    "pill": "仅限隐藏地址",
+    "kind": {
+      "label": "域名类型",
+      "mail": "邮件域名",
+      "mailHint": "用于用户、别名、群组以及其他一切。",
+      "masked": "仅限隐藏地址",
+      "maskedHint": "只承载隐藏地址：没有用户、别名、群组、转发地址或全收地址。在邮件域名上选择哪些人可以使用它。"
+    },
+    "modes": {
+      "off": "关闭",
+      "own": "在自己的域名上",
+      "dedicated": "在仅限隐藏地址的域名上",
+      "both": "在自己的域名和仅限隐藏地址的域名上"
+    },
+    "policy": {
+      "title": "隐藏地址",
+      "intro": "{{domain}} 的用户可以在哪里创建隐藏地址：门户中的“我的账户 → 隐藏地址”以及密码管理器。",
+      "mode": "隐藏地址",
+      "domains": "仅限隐藏地址的域名",
+      "domainsHint": "他们可以使用哪些仅限隐藏地址的域名。",
+      "noChoices": "还没有仅限隐藏地址的域名。请在“域名”下添加一个类型为“仅限隐藏地址”的域名。",
+      "default": "默认域名",
+      "defaultHint": "应用未指定域名时使用，并在门户中预先选中。自动：允许时用自己的域名，否则用第一个仅限隐藏地址的域名。",
+      "automatic": "自动",
+      "existing": "已有的隐藏地址无论这里如何设置都会继续工作。",
+      "saved": "已保存"
+    },
+    "convert": {
+      "title": "仅限隐藏地址",
+      "hint": "把 {{domain}} 变成只承载隐藏地址的域名。只有在上面没有其他内容时才可以。",
+      "blocked": "上面还有：",
+      "blockers": {
+        "accounts_other": "{{count}} 个账户（包括回收站中的）",
+        "aliases_other": "{{count}} 个附加地址",
+        "groups_other": "{{count}} 个群组",
+        "forwards_other": "{{count}} 个转发地址",
+        "catchAll": "全收地址",
+        "sendAs_other": "{{count}} 人可以用它的任意地址发信"
+      },
+      "action": "改为仅限隐藏地址",
+      "confirm": "把 {{domain}} 改为仅限隐藏地址的域名？它的隐藏地址设置以及用户在那里自建的别名将被移除。它的隐藏地址会继续工作。",
+      "done": "{{domain}} 现在只承载隐藏地址"
+    },
+    "only": {
+      "title": "仅限隐藏地址",
+      "body": "这个域名只承载隐藏地址：没有用户、别名、群组、转发地址或全收地址。发往那里其他任何地址的邮件都会被拒收。DNS、DKIM 密钥、MTA-STS 和报告与其他域名一样工作。",
+      "count_other": "这里有 {{count}} 个隐藏地址在接收邮件",
+      "unused": "目前还没有人可以在这里创建隐藏地址。请在邮件域名的“隐藏地址”中选择它。",
+      "usedByDomains": "提供给以下域名的用户：{{domains}}",
+      "usedByAccounts": "通过个人设置提供给：{{accounts}}",
+      "backHint": "作为邮件域名，它可以再次容纳用户和别名。它的隐藏地址会继续工作。",
+      "back": "改为邮件域名",
+      "backConfirm": "把 {{domain}} 改回邮件域名？它的隐藏地址会继续工作。",
+      "backConfirmUsed": "它将从以下隐藏地址设置中移除：{{names}}。",
+      "backDone": "{{domain}} 又是邮件域名了"
+    },
+    "person": {
+      "title": "隐藏地址",
+      "intro": "除非你在这里另选，每一项都跟随域名的设置。",
+      "asDomain": "跟随域名（{{value}}）",
+      "custom": "单独选择",
+      "none": "无",
+      "result": "可以在 {{domains}} 上创建隐藏地址；新地址放在 {{domain}}。",
+      "resultNone": "不能创建隐藏地址。",
+      "staleDefault": "之前选择的默认域名 {{domain}} 已不再允许，因此使用域名的默认值或自动选择的域名。"
     }
   }
 }

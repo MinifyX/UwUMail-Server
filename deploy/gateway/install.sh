@@ -55,13 +55,16 @@ for argument in "$@"; do
   esac
 done
 
-if [ "$(id -u)" -ne 0 ]; then
-  echo "please run this as root (sudo bash install.sh ...)" >&2
-  exit 1
-fi
-if ! $check && [ -z "$binary" ]; then
-  echo "usage: sudo bash install.sh ./uwumail-gateway [--no-harden] [--check]" >&2
-  exit 2
+# deploy/tests/helpers.sh sources this file for its functions; only a real run needs root.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "please run this as root (sudo bash install.sh ...)" >&2
+    exit 1
+  fi
+  if ! $check && [ -z "$binary" ]; then
+    echo "usage: sudo bash install.sh ./uwumail-gateway [--no-harden] [--check]" >&2
+    exit 2
+  fi
 fi
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -402,6 +405,21 @@ set_up_ssh() {
 }
 
 # ── the report ────────────────────────────────────────────────────────────────────────────────
+# The addresses the gateway says the server's tunnel comes from, for the report. `trusted` lies in
+# the gateway's own directory and this runs as root, so the name may be a symlink to a file only
+# root may read, and whatever is printed here ends up in a job log the gateway can read. So it is
+# never read through a symlink, never more than a few kilobytes of it, and nothing but an address
+# comes out of it (security-audit-0.16.0 GW-2).
+trusted_for_report() {
+  local file="$state/trusted" address
+  [ -f "$file" ] && [ ! -L "$file" ] || return 0
+  head -c 4096 -- "$file" 2>/dev/null | awk '{ print $1 }' | while read -r address; do
+    if [[ "$address" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || [[ "$address" =~ ^[0-9a-fA-F:.]{2,45}$ && "$address" == *:* ]]; then
+      printf '%s\n' "$address"
+    fi
+  done | head -3 | paste -sd' '
+}
+
 report() {
   local version
   version=$(uwumail-gateway --version 2>/dev/null | awk '{ print $2 }')
@@ -414,8 +432,8 @@ report() {
   done
 
   # What the gateway sees of the server, and of the machine.
-  local trusted=""
-  [ -f "$state/trusted" ] && trusted=$(awk '{ print $1 }' "$state/trusted" | head -3 | paste -sd' ')
+  local trusted
+  trusted=$(trusted_for_report)
   if [ -n "$trusted" ]; then
     printf '  %-16s %-14s %s\n' "UwUMail server" "protected" "$trusted"
   else
@@ -481,6 +499,8 @@ look_for_company() {
 }
 
 # ── what actually runs ────────────────────────────────────────────────────────────────────────
+[ "${BASH_SOURCE[0]}" = "$0" ] || return 0
+
 if $check; then
   command -v uwumail-gateway >/dev/null 2>&1 || {
     echo "no gateway is installed here" >&2

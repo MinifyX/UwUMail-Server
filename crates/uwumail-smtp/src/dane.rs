@@ -388,26 +388,66 @@ fn cache_key(name: &str) -> Box<str> {
     format!("{}.", name.trim_end_matches('.').to_ascii_lowercase()).into_boxed_str()
 }
 
-/// Whether `domain`'s MX records validate as secure, which DANE needs before anything else.
-pub(crate) async fn mx_security(ctx: &Context, domain: &str) -> Security {
+/// What the validating resolver says about a domain's MX records.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ValidatedMx {
+    /// Signed, and the signatures hold: the MX hosts as this answer names them, the most preferred
+    /// first (`[""]` for a null MX). DANE applies to these hosts, and only to these.
+    Secure(Arc<[String]>),
+    /// Unsigned, or the validating lookup did not work: DANE does not apply, and the ordinary
+    /// answer is used.
+    Insecure,
+    /// Signed, but the signatures do not validate.
+    Bogus,
+}
+
+impl ValidatedMx {
+    pub(crate) fn security(&self) -> Security {
+        match self {
+            ValidatedMx::Secure(_) => Security::Secure,
+            ValidatedMx::Insecure => Security::Insecure,
+            ValidatedMx::Bogus => Security::Bogus,
+        }
+    }
+}
+
+/// `domain`'s MX records as the validating resolver sees them, which DANE needs before anything
+/// else. Asked whatever the ordinary resolver said, "no MX" included: RFC 7672 wants the MX hosts
+/// themselves from the validated answer, and an answer from a resolver that does not validate is
+/// what an attacker on the path forges to take DANE out of the way (security-audit-0.16.0 SMTP-3).
+pub(crate) async fn validated_mx(ctx: &Context, domain: &str) -> ValidatedMx {
     let key = cache_key(domain);
     if let Some(known) = ctx.dns.dane_mx.get(&key) {
         return known;
     }
     if !ctx.validator.works().await {
-        return Security::Insecure;
+        return ValidatedMx::Insecure;
     }
-    let (security, ttl) = match ctx.validator.lookup(domain, RecordType::MX).await {
-        Checked::Secure(_, ttl) => (Security::Secure, ttl),
-        Checked::Insecure => (Security::Insecure, MAX_TTL),
-        Checked::Bogus => (Security::Bogus, MIN_TTL),
+    let (found, ttl) = match ctx.validator.lookup(domain, RecordType::MX).await {
+        Checked::Secure(data, ttl) => {
+            let mut exchanges: Vec<(u16, String)> = data
+                .into_iter()
+                .filter_map(|data| match data {
+                    RData::MX(mx) => Some((mx.preference, mx.exchange.to_ascii().trim_end_matches('.').to_owned())),
+                    _ => None,
+                })
+                .collect();
+            exchanges.sort_by_key(|(preference, _)| *preference);
+            if exchanges.is_empty() {
+                (ValidatedMx::Insecure, ttl)
+            } else {
+                (ValidatedMx::Secure(exchanges.into_iter().map(|(_, host)| host).collect()), ttl)
+            }
+        }
+        Checked::Insecure => (ValidatedMx::Insecure, MAX_TTL),
+        Checked::Bogus => (ValidatedMx::Bogus, MIN_TTL),
         Checked::Failed(error) => {
             tracing::info!(%domain, %error, "the DNSSEC lookup of the MX records failed, delivering without DANE");
-            (Security::Insecure, FAILED_TTL)
+            (ValidatedMx::Insecure, FAILED_TTL)
         }
     };
-    ctx.dns.dane_mx.insert(key, security, valid_for(ttl));
-    security
+    ctx.dns.dane_mx.insert(key, found.clone(), valid_for(ttl));
+    found
 }
 
 /// The validated TLSA records of an MX host.

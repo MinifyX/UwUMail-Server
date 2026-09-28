@@ -35,9 +35,12 @@ mod identity_grants;
 mod imap;
 mod import;
 pub mod itip;
+mod limiter;
 mod mail;
 mod masked;
+mod masked_domains;
 mod migration_jobs;
+pub mod mime_limits;
 mod mutate;
 mod oauth;
 mod objects;
@@ -119,12 +122,16 @@ pub use groups::{GROUP_MAX_MEMBERS, Group, GroupDelivery, GroupMember, GroupUpda
 pub use held::{HeldSubmission, NewHeldSubmission};
 pub use imap::{DELETED_KEYWORD, FlagChange, ImapEmail, ImapMailbox, ImapMessage, ImapMessages, ImapStatus};
 pub use import::ImportProgress;
+pub use limiter::{Attempt, AuthLimiter, Reporter as BlockReporter};
 pub use mail::{EmailSummary, IngestRequest, IngestedEmail, Mailbox, MailboxRole, MailboxTarget, TestMessageStatus};
 pub use masked::{MASKED_PENDING_SECS, MaskedAddress, MaskedDelivery, MaskedState, MaskedUpdate, NewMaskedAddress};
+pub use masked_domains::{
+    AccountMaskedPolicy, DomainKind, DomainMaskedPolicy, EffectiveMaskedPolicy, KindBlockers, KindChange, MaskedMode,
+};
 pub use migration_jobs::{
     MAX_MIGRATION_JOBS, MigrationJob, MigrationProgress, MigrationRun, MigrationState, NewMigrationJob,
 };
-pub use mutate::{EmailUpdate, KeywordsChange, MailboxUpdate, MailboxesChange};
+pub use mutate::{EmailUpdate, KeywordsChange, MailboxUpdate, MailboxesChange, valid_keyword};
 pub use oauth::{
     NewOAuthCode, OAUTH_ACCESS_TOKEN_SECS, OAUTH_CODE_SECS, OAUTH_REFRESH_TOKEN_SECS, OAUTH_SCOPES, OAuthClient,
     OAuthGrant, OAuthRefusal, OAuthTokens, is_oauth_access_token, oauth_scopes, oauth_scopes_usable, pkce_matches,
@@ -152,8 +159,9 @@ pub use rules::{
 };
 pub use sasl::{SaslBearer, parse_oauthbearer, parse_xoauth2, sasl_bearer_error, sasl_user_matches};
 pub use security::{
-    AppPassword, AppScope, CodeCheck, CreatedAppPassword, MailAuth, MailAuthDenied, NewAppPassword, Passkey,
-    SecurityEvent, SecurityEventRecord, SecurityOverview, TotpSetup, WebSessionInfo, scopes_for,
+    ALL_SCOPES, AppPassword, AppScope, CodeCheck, CreatedAppPassword, LiveLogin, MailAuth, MailAuthDenied,
+    NewAppPassword, Passkey, SecurityEvent, SecurityEventRecord, SecurityOverview, TotpSetup, WebSessionInfo,
+    scopes_for,
 };
 pub use sender_lists::{
     ListOwner, ListScope, NewSenderListEntry, SENDER_LIST_ADMIN_LIMIT, SENDER_LIST_PERSONAL_LIMIT, SenderKind,
@@ -208,6 +216,10 @@ pub enum StoreError {
     Io(#[from] std::io::Error),
     #[error("internal error: {0}")]
     Internal(String),
+    /// Too much of something slow is running at once (password checks); the same request may
+    /// work in a moment. Protocols answer with their "try again later".
+    #[error("the server is busy, try again in a moment")]
+    Busy,
 }
 
 pub type Result<T, E = StoreError> = std::result::Result<T, E>;
@@ -237,6 +249,10 @@ struct Inner {
     stats: stats::Stats,
     /// Where passwords of directory (LDAP) accounts are checked, once the server plugged it in.
     external: std::sync::RwLock<Option<Arc<dyn ExternalPasswords>>>,
+    /// The failed-login counts every protocol checks and adds to.
+    auth_limiter: Arc<AuthLimiter>,
+    /// How many password hashes are checked at once.
+    hashing: password::Gate,
 }
 
 impl Store {
@@ -261,8 +277,16 @@ impl Store {
                 data_dir,
                 stats: stats::Stats::default(),
                 external: std::sync::RwLock::new(None),
+                auth_limiter: Arc::default(),
+                hashing: password::Gate::new(),
             }),
         })
+    }
+
+    /// The failed-login counts of the whole server. Every login path checks it before a password
+    /// check ([`AuthLimiter::begin`]) and records how the check ended.
+    pub fn auth_limiter(&self) -> &Arc<AuthLimiter> {
+        &self.inner.auth_limiter
     }
 
     pub fn data_dir(&self) -> &Path {

@@ -37,6 +37,12 @@ const ERROR_MAX: u64 = 64 * 1024;
 const ATTEMPTS: u32 = 5;
 /// Pages of a listing this follows at most, 1000 names each.
 const MAX_PAGES: usize = 10_000;
+/// Names one listing may bring, and their bytes together. Pages are read one after the other and
+/// their names kept until the last: a server that says "truncated" for ever could otherwise fill
+/// the memory at every backup (security-audit-0.16.0 PLAT-6). A repository of a few million
+/// objects lists a few ten thousand per folder.
+const MAX_LISTED_NAMES: usize = 2_000_000;
+const MAX_LISTED_BYTES: usize = 128 * 1024 * 1024;
 const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
 /// A connection to a bucket. It holds no socket of its own: every request takes one from the pool.
@@ -150,13 +156,19 @@ pub fn authorization(
 /// The text of every `<tag>…</tag>` in a piece of XML, unescaped. S3's answers are plain enough
 /// for this: no attributes on the elements read here, no CDATA, no namespaces in the way.
 pub(crate) fn xml_values(xml: &str, tag: &str) -> Vec<String> {
+    xml_raw_values(xml, tag).into_iter().map(xml_unescape).collect()
+}
+
+/// The same, as written: for elements whose own elements are read next, so that nothing is
+/// unescaped twice.
+fn xml_raw_values<'a>(xml: &'a str, tag: &str) -> Vec<&'a str> {
     let (open, close) = (format!("<{tag}>"), format!("</{tag}>"));
     let mut values = Vec::new();
     let mut rest = xml;
     while let Some(start) = rest.find(&open) {
         let after = &rest[start + open.len()..];
         let Some(end) = after.find(&close) else { break };
-        values.push(xml_unescape(&after[..end]));
+        values.push(&after[..end]);
         rest = &after[end + close.len()..];
     }
     values
@@ -168,7 +180,10 @@ fn xml_unescape(text: &str) -> String {
     while let Some(at) = rest.find('&') {
         out.push_str(&rest[..at]);
         let after = &rest[at + 1..];
-        let Some(end) = after.find(';').filter(|end| *end <= 10) else {
+        // An entity is short: the `;` is looked for in the next few bytes only, not in all the rest
+        // of the text for every `&`, which made a run of `&&&…` quadratic (security-audit-0.16.0
+        // PLAT-6).
+        let Some(end) = after.as_bytes().iter().take(11).position(|byte| *byte == b';') else {
             out.push('&');
             rest = after;
             continue;
@@ -373,6 +388,10 @@ impl S3 {
             let cap = if status.is_success() { limit } else { ERROR_MAX };
             let mut body = response.into_body();
             let mut bytes = Vec::new();
+            // Every part of the body has BODY_TIMEOUT to come, and the whole of it as long as the
+            // slowest upload would take for the most it may be: a byte now and then no longer
+            // keeps a request going for ever.
+            let whole = ANSWER_TIMEOUT.saturating_add(Duration::from_secs(cap / SLOWEST_UPLOAD));
             let read = async {
                 while let Some(frame) = tokio::time::timeout(BODY_TIMEOUT, body.frame())
                     .await
@@ -388,8 +407,10 @@ impl S3 {
                     }
                 }
                 Ok::<_, String>(())
-            }
-            .await;
+            };
+            let read = tokio::time::timeout(whole, read)
+                .await
+                .unwrap_or_else(|_| Err(format!("{} took too long to send its answer", self.authority)));
             if let Err(err) = read {
                 last = err;
                 continue;
@@ -451,11 +472,16 @@ impl S3 {
     /// What is directly inside a folder: the names of objects and of the folders below it, one
     /// level deep, like a directory listing.
     pub async fn list(&self, dir: &str) -> Result<Vec<String>, Error> {
+        self.list_within(dir, MAX_LISTED_NAMES, MAX_LISTED_BYTES).await
+    }
+
+    async fn list_within(&self, dir: &str, max_names: usize, max_bytes: usize) -> Result<Vec<String>, Error> {
         let prefix = match self.key(dir) {
             key if key.is_empty() => String::new(),
             key => format!("{key}/"),
         };
         let mut names = Vec::new();
+        let mut listed_bytes = 0;
         let mut token: Option<String> = None;
         for _ in 0..MAX_PAGES {
             let mut query = vec![("list-type", "2"), ("delimiter", "/"), ("prefix", prefix.as_str())];
@@ -472,20 +498,25 @@ impl S3 {
             let xml = String::from_utf8_lossy(&body);
             let relative =
                 |full: &str| full.strip_prefix(prefix.as_str()).map(|name| name.trim_end_matches('/').to_owned());
-            for contents in xml_values(&xml, "Contents") {
-                if let Some(name) = xml_values(&contents, "Key").first().and_then(|key| relative(key)) {
-                    names.push(name);
+            let keys = xml_raw_values(&xml, "Contents")
+                .into_iter()
+                .filter_map(|contents| xml_values(contents, "Key").into_iter().next());
+            let folders = xml_raw_values(&xml, "CommonPrefixes")
+                .into_iter()
+                .filter_map(|common| xml_values(common, "Prefix").into_iter().next());
+            for name in keys.chain(folders).filter_map(|key| relative(&key)) {
+                if name.is_empty() || name.contains('/') {
+                    continue;
                 }
-            }
-            for common in xml_values(&xml, "CommonPrefixes") {
-                if let Some(name) = xml_values(&common, "Prefix").first().and_then(|key| relative(key)) {
-                    names.push(name);
+                listed_bytes += name.len();
+                names.push(name);
+                if names.len() > max_names || listed_bytes > max_bytes {
+                    return Err(Error::Damaged(format!("{} lists more than this reads", self.authority)));
                 }
             }
             let truncated = xml_values(&xml, "IsTruncated").first().is_some_and(|value| value == "true");
             token = xml_values(&xml, "NextContinuationToken").into_iter().next().filter(|token| !token.is_empty());
             if !truncated || token.is_none() {
-                names.retain(|name| !name.is_empty() && !name.contains('/'));
                 return Ok(names);
             }
         }
@@ -588,6 +619,60 @@ mod tests {
         ] {
             assert!(matches!(S3::new(&broken), Err(Error::Config(_))), "{broken:?}");
         }
+    }
+
+    /// security-audit-0.16.0 PLAT-6: a run of `&` cost a search through all the rest of the text
+    /// each, which for a page of 8 MiB took hours.
+    #[test]
+    fn unescaping_takes_linear_time() {
+        let ampersands = "&".repeat(1024 * 1024);
+        assert_eq!(xml_unescape(&ampersands), ampersands);
+        let xml = format!("<Key>{ampersands}&amp;lt;</Key>");
+        assert_eq!(xml_values(&xml, "Key")[0].len(), ampersands.len() + 4, "unescaped once: &lt; stays");
+    }
+
+    /// security-audit-0.16.0 PLAT-6: a server whose listing never ends, with new names on every
+    /// page, is stopped once a listing holds what it may.
+    #[tokio::test]
+    async fn an_endless_listing_ends_at_its_budget() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let pages = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let served = pages.clone();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                let pages = served.clone();
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(move |_request| {
+                        let page = pages.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        let keys: String = (0..1000)
+                            .map(|n| format!("<Contents><Key>data/ab/ab{page:06}{n:04}</Key></Contents>"))
+                            .collect();
+                        let xml = format!(
+                            "<ListBucketResult><IsTruncated>true</IsTruncated>{keys}\
+                             <NextContinuationToken>t{page}</NextContinuationToken></ListBucketResult>"
+                        );
+                        async move { Ok::<_, std::convert::Infallible>(hyper::Response::new(Full::new(Bytes::from(xml)))) }
+                    });
+                    let _ = hyper::server::conn::http1::Builder::new()
+                        .serve_connection(hyper_util::rt::TokioIo::new(stream), service)
+                        .await;
+                });
+            }
+        });
+        let s3 = S3::new(&S3Target {
+            endpoint: format!("http://{address}"),
+            region: "us-east-1".into(),
+            bucket: "backups".into(),
+            prefix: String::new(),
+            access_key: "AKIDEXAMPLE".into(),
+            secret_key: "geheim".into(),
+            path_style: true,
+        })
+        .unwrap();
+        let listed = s3.list_within("data/ab", 5_000, usize::MAX).await;
+        assert!(matches!(listed, Err(Error::Damaged(_))), "{listed:?}");
+        assert_eq!(pages.load(std::sync::atomic::Ordering::SeqCst), 6, "no page after the budget was spent");
     }
 
     /// Plain http only reaches into the own network; https goes anywhere.

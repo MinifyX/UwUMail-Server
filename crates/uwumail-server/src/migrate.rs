@@ -83,6 +83,11 @@ fn source_name(job: &MigrationJob) -> String {
 
 /// Works on one move for up to `limit` and says how it ended. Never fails: whatever went wrong
 /// becomes a pause with a reason.
+///
+/// All of it, from looking up the host to logging out, has `limit` and the grace after it: before,
+/// only the copying did, and a provider that took the connection and never spoke TLS, or answered
+/// LOGIN with an untagged line now and then, held the worker, and so every other person's move,
+/// for ever (security-audit-0.16.0 PLAT-4).
 pub(crate) async fn run_job(
     store: &Store,
     job: &MigrationJob,
@@ -90,38 +95,61 @@ pub(crate) async fn run_job(
     dialer: Option<uwumail_smtp::egress::Dialer>,
     limit: Duration,
 ) -> MigrationRun {
-    if detour.is_none() {
-        // The host was checked when the move was set up; its name is checked again now, so it
-        // cannot have come to point at this machine or the local network since (as for fetched
-        // mailboxes, security-audit-0.5.2 S-10).
-        let public = tokio::net::lookup_host((job.host.as_str(), job.port))
-            .await
-            .map(|addrs| addrs.into_iter().any(|addr| uwumail_smtp::is_public(addr.ip())))
-            .unwrap_or(false);
-        if !public {
-            return paused("notPublic", format!("{} does not resolve to a public address", job.host));
-        }
+    run_job_within(store, job, detour, dialer, limit, GRACE).await
+}
+
+/// [`run_job`] with another grace than [`GRACE`].
+async fn run_job_within(
+    store: &Store,
+    job: &MigrationJob,
+    detour: Option<Detour>,
+    dialer: Option<uwumail_smtp::egress::Dialer>,
+    limit: Duration,
+    grace: Duration,
+) -> MigrationRun {
+    let deadline = tokio::time::Instant::now() + limit + grace;
+    let mut connection = match tokio::time::timeout_at(deadline, connect(store, job, detour, dialer)).await {
+        Ok(Ok(connection)) => connection,
+        Ok(Err(run)) => return run,
+        Err(_) => return paused("unreachable", format!("{} did not answer in time", job.host)),
+    };
+    let copy = copy(store, &mut connection, job, limit);
+    let run = match tokio::time::timeout_at(deadline, copy).await {
+        Ok(run) => run,
+        // A portion that never ended; the next turn starts it again.
+        Err(_) => MigrationRun::Continue,
+    };
+    let _ = tokio::time::timeout(Duration::from_secs(10), connection.command("LOGOUT")).await;
+    run
+}
+
+/// Checks the host again, connects and logs in. What went wrong comes back as the pause to make.
+async fn connect(
+    store: &Store,
+    job: &MigrationJob,
+    detour: Option<Detour>,
+    dialer: Option<uwumail_smtp::egress::Dialer>,
+) -> Result<Connection, MigrationRun> {
+    // The host was checked when the move was set up; its name is checked again now, so it cannot
+    // have come to point at this machine or the local network since (as for fetched mailboxes,
+    // security-audit-0.5.2 S-10). The connection itself is only ever made to a public address the
+    // dialer found (Source::remote).
+    if detour.is_none() && !crate::import::imap::resolves_publicly(&job.host, job.port).await {
+        return Err(paused("notPublic", format!("{} does not resolve to a public address", job.host)));
     }
     let password = match store.migration_password(job.account_id, job.id).await {
         Ok(Some(password)) => password,
-        Ok(None) => return MigrationRun::Continue,
-        Err(err) => return paused("failed", err),
+        Ok(None) => return Err(MigrationRun::Continue),
+        Err(err) => return Err(paused("failed", err)),
     };
     match store.account_by_id(job.account_id).await {
         Ok(Some(account)) if account.has_mailbox() => {}
-        Ok(_) => return paused("noMailbox", "this account has no mailbox to move into"),
-        Err(err) => return paused("failed", err),
+        Ok(_) => return Err(paused("noMailbox", "this account has no mailbox to move into")),
+        Err(err) => return Err(paused("failed", err)),
     }
     let source = match detour {
-        None => Source {
-            address: format!("{}:{}", job.host, job.port),
-            tls_name: Some(job.host.clone()),
-            roots: None,
-            master_user: None,
-            password,
-            // Through the proxy when the admin wants fetching to take it; straight otherwise.
-            dialer: dialer.filter(|dialer| dialer.proxied()),
-        },
+        // Through the proxy when the admin wants fetching to take it; straight otherwise.
+        None => Source::remote(&job.host, job.port, password, dialer),
         Some(detour) => Source {
             address: detour.address,
             tls_name: Some(detour.tls_name),
@@ -133,20 +161,12 @@ pub(crate) async fn run_job(
     };
     let mut connection = match Connection::open(&source).await {
         Ok(connection) => connection,
-        Err(err) => return paused("unreachable", format!("{err:#}")),
+        Err(err) => return Err(paused("unreachable", format!("{err:#}"))),
     };
     if let Err(err) = connection.command(&format!("LOGIN {} {}", quoted(&job.login), quoted(&source.password))).await {
-        return paused("loginRefused", format!("{err:#}"));
+        return Err(paused("loginRefused", format!("{err:#}")));
     }
-
-    let copy = copy(store, &mut connection, job, limit);
-    let run = match tokio::time::timeout(limit + GRACE, copy).await {
-        Ok(run) => run,
-        // A portion that never ended; the next turn starts it again.
-        Err(_) => MigrationRun::Continue,
-    };
-    let _ = tokio::time::timeout(Duration::from_secs(10), connection.command("LOGOUT")).await;
-    run
+    Ok(connection)
 }
 
 async fn copy(store: &Store, connection: &mut Connection, job: &MigrationJob, limit: Duration) -> MigrationRun {
@@ -359,5 +379,68 @@ mod tests {
         let job = start(&new, new_id, PASSWORD).await;
         let run = run_job(&new, &job, Some(detour), None, RUN_LIMIT).await;
         assert!(matches!(&run, MigrationRun::Paused { code, .. } if code == "quotaExceeded"), "{run:?}");
+    }
+
+    /// security-audit-0.16.0 PLAT-4: a provider that takes the connection and never speaks TLS,
+    /// or answers LOGIN with an untagged line now and then, no longer holds the worker for ever.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_provider_that_stalls_does_not_hold_the_worker() {
+        let dir = tempfile::tempdir().unwrap();
+        let (new, new_id) = store_with_person(&dir.path().join("new"), None, 0).await;
+        let job = start(&new, new_id, PASSWORD).await;
+        let limit = Duration::from_millis(300);
+
+        // Silent after the TCP handshake.
+        let silent = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = silent.local_addr().unwrap().to_string();
+        tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((socket, _)) = silent.accept().await {
+                held.push(socket);
+            }
+        });
+        let detour = Detour { address, tls_name: "imap.example.net".into(), roots: rustls::RootCertStore::empty() };
+        let run =
+            tokio::time::timeout(Duration::from_secs(10), run_job_within(&new, &job, Some(detour), None, limit, limit))
+                .await
+                .expect("the turn ended in time");
+        assert!(matches!(&run, MigrationRun::Paused { code, .. } if code == "unreachable"), "{run:?}");
+
+        // Greets over TLS, then answers LOGIN with "* OK" every few milliseconds, never with its tag.
+        let generated = rcgen::generate_simple_self_signed(vec!["imap.example.net".to_owned()]).unwrap();
+        let key = rustls_pki_types::PrivateKeyDer::Pkcs8(generated.signing_key.serialize_der().into());
+        let tls = rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(vec![generated.cert.der().clone()], key)
+            .unwrap();
+        let chatty = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = chatty.local_addr().unwrap().to_string();
+        tokio::spawn(async move {
+            use tokio::io::AsyncWriteExt;
+            let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tls));
+            while let Ok((socket, _)) = chatty.accept().await {
+                let acceptor = acceptor.clone();
+                tokio::spawn(async move {
+                    let Ok(mut stream) = acceptor.accept(socket).await else { return };
+                    let _ = stream.write_all(b"* OK hello\r\n").await;
+                    loop {
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                        if stream.write_all(b"* OK still thinking\r\n").await.is_err() {
+                            return;
+                        }
+                    }
+                });
+            }
+        });
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(generated.cert.der().clone()).unwrap();
+        let detour = Detour { address, tls_name: "imap.example.net".into(), roots };
+        let run =
+            tokio::time::timeout(Duration::from_secs(10), run_job_within(&new, &job, Some(detour), None, limit, limit))
+                .await
+                .expect("the turn ended in time");
+        assert!(matches!(&run, MigrationRun::Paused { code, .. } if code == "unreachable"), "{run:?}");
     }
 }

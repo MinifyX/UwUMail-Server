@@ -45,8 +45,8 @@ pub struct Imap {
 impl Imap {
     pub fn new(store: Store, max_append: usize) -> Imap {
         Imap {
+            limiter: store.auth_limiter().clone(),
             store,
-            limiter: Arc::new(AuthLimiter::default()),
             max_append,
             connections: Arc::new(Semaphore::new(MAX_CONNECTIONS)),
             hostname: None,

@@ -82,6 +82,11 @@ fn sent_state(headers: &HeaderMap, client: ClientInfo) -> Option<String> {
         .map(|(_, value)| value.to_owned())
 }
 
+/// Whether accounts can be made on a domain: one of ours, and not one only for masked addresses.
+async fn takes_people(web: &Web, domain: &str) -> bool {
+    matches!(web.store().domain_kind(domain).await, Ok(uwumail_store::DomainKind::Mail))
+}
+
 /// Makes the account for someone who logged in elsewhere, and says so in the change log.
 async fn create_account(
     web: &Web,
@@ -128,7 +133,7 @@ pub(crate) async fn ldap_account(web: &Web, login: &str, password: &str) -> ApiR
     let Ok(address) = uwumail_store::normalize_address(login) else { return Ok(None) };
     let address = format!("{}@{}", address.0, address.1);
     if !domain_allowed(&config.ldap.allowed_domains, &address)
-        || !web.store().is_local_domain(address.rsplit_once('@').map(|(_, d)| d).unwrap_or_default()).await?
+        || !takes_people(web, address.rsplit_once('@').map(|(_, d)| d).unwrap_or_default()).await
         || web.store().account(&address).await?.is_some()
     {
         return Ok(None);
@@ -239,7 +244,7 @@ async fn finish_oidc(
                 Some(account) => Some(account),
                 None if config.oidc.auto_create => {
                     let domain = email.rsplit_once('@').map(|(_, domain)| domain).unwrap_or_default();
-                    if !domain_allowed(&config.oidc.allowed_domains, &email) || !store.is_local_domain(domain).await? {
+                    if !domain_allowed(&config.oidc.allowed_domains, &email) || !takes_people(web, domain).await {
                         return Ok(failure("domainNotAllowed", clear));
                     }
                     Some(create_account(web, &email, &identity.name, identity.admin, "oidc", &ip).await?)

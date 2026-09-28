@@ -1,7 +1,7 @@
 //! One IMAP connection: reading commands, answering them, and telling the client about changes
 //! other connections and deliveries made.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -10,8 +10,8 @@ use base64::Engine as _;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::broadcast;
 use uwumail_store::{
-    ALL_RIGHTS, Account, AppScope, DELETED_KEYWORD, FlagChange, ImapEmail, IngestRequest, MailAuth, MailAuthDenied,
-    MailboxTarget, Store, StoreError, normalize_rights,
+    ALL_RIGHTS, Account, AppScope, DELETED_KEYWORD, FlagChange, ImapEmail, IngestRequest, LiveLogin, MailAuth,
+    MailAuthDenied, MailboxTarget, Store, StoreError, normalize_rights,
 };
 
 use crate::command::*;
@@ -25,6 +25,10 @@ const MAX_LINE: usize = 64 * 1024;
 /// Everything but APPEND: login data, mailbox names, search words.
 const MAX_COMMAND: usize = 256 * 1024;
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(60);
+/// How long a connection may stay without logging in, however busy it keeps: NOOP after NOOP, or
+/// an AUTHENTICATE challenge nobody answers, held a connection slot for ever
+/// (security-audit-0.16.0 PROTOCOLS-17, the IMAP side of 0.7.0 S-47).
+const PRE_LOGIN_LIMIT: Duration = Duration::from_secs(3 * 60);
 /// RFC 3501 asks for at least 30 minutes before logging out an idle client.
 const IDLE_CLIENT_TIMEOUT: Duration = Duration::from_secs(31 * 60);
 const IDLE_LIMIT: Duration = Duration::from_secs(29 * 60);
@@ -93,6 +97,19 @@ impl Selected {
     fn position(&self, uid: u32) -> Option<usize> {
         self.messages.binary_search_by_key(&uid, |known| known.uid).ok()
     }
+
+    /// Forgets the messages with these UIDs in one pass and returns where they were, last first:
+    /// the order EXPUNGE responses name them in. Taking them out one by one moved the rest of the
+    /// list each time, which with tens of thousands of messages took minutes
+    /// (security-audit-0.16.0 PANIC-6).
+    fn forget(&mut self, uids: &[u32]) -> Vec<usize> {
+        let gone: HashSet<u32> = uids.iter().copied().collect();
+        let mut positions: Vec<usize> =
+            self.messages.iter().enumerate().filter(|(_, known)| gone.contains(&known.uid)).map(|(at, _)| at).collect();
+        positions.reverse();
+        self.messages.retain(|known| !gone.contains(&known.uid));
+        positions
+    }
 }
 
 enum Flow {
@@ -113,6 +130,8 @@ pub struct Session<R, W> {
     reader: BufReader<R>,
     writer: W,
     account: Option<Account>,
+    /// What the account logged in with, checked again before every command.
+    login: Option<LiveLogin>,
     auth_failures: u32,
     utf8: bool,
     /// The client uses modseqs: untagged FETCH answers carry MODSEQ.
@@ -124,6 +143,8 @@ pub struct Session<R, W> {
     /// The UIDs `SEARCH RETURN (SAVE)` kept for `$` (RFC 5182).
     saved: Vec<u32>,
     changes: Option<broadcast::Receiver<uwumail_store::StateChange>>,
+    /// Since when the connection is without a login: since it opened, or since UNAUTHENTICATE.
+    unauthenticated_since: tokio::time::Instant,
 }
 
 fn no(tag: &str, code: Option<&str>, text: &str) -> String {
@@ -167,6 +188,7 @@ where
             reader: BufReader::new(reader),
             writer,
             account: None,
+            login: None,
             auth_failures: 0,
             utf8: false,
             condstore: false,
@@ -175,6 +197,28 @@ where
             selected: None,
             saved: Vec::new(),
             changes: None,
+            unauthenticated_since: tokio::time::Instant::now(),
+        }
+    }
+
+    /// How long the next command (or answer to a challenge) may take to arrive. Before logging
+    /// in, also no longer than what is left of [`PRE_LOGIN_LIMIT`].
+    fn read_limit(&self) -> Duration {
+        if self.account.is_some() {
+            return IDLE_CLIENT_TIMEOUT;
+        }
+        LOGIN_TIMEOUT.min(PRE_LOGIN_LIMIT.saturating_sub(self.unauthenticated_since.elapsed()))
+    }
+
+    /// Reads the answer to a SASL challenge under the same clock as a command. `None` when the
+    /// time is up: the connection is told so and is to be closed.
+    async fn read_answer(&mut self) -> io::Result<Option<Vec<u8>>> {
+        match tokio::time::timeout(self.read_limit(), self.read_line(MAX_LINE)).await {
+            Ok(line) => line.map(Some),
+            Err(_) => {
+                self.send(b"* BYE Autologout, you were idle for too long\r\n").await?;
+                Ok(None)
+            }
         }
     }
 
@@ -191,7 +235,7 @@ where
         self.send(greeting.as_bytes()).await?;
         self.flush().await?;
         loop {
-            let limit = if self.account.is_some() { IDLE_CLIENT_TIMEOUT } else { LOGIN_TIMEOUT };
+            let limit = self.read_limit();
             let command = match tokio::time::timeout(limit, self.read_command()).await {
                 Ok(Ok(Some(command))) => command,
                 Ok(Ok(None)) => return Ok(()),
@@ -321,6 +365,9 @@ where
             }
             _ => {}
         }
+        if authenticated && !matches!(command.body, CommandBody::Logout) && !self.login_holds().await {
+            return self.login_ended().await;
+        }
 
         let body = self.fill_saved(command.body);
         let close = matches!(body, CommandBody::Close);
@@ -387,6 +434,8 @@ where
             CommandBody::Unauthenticate => {
                 // Back to the start: nothing of the old login stays with the connection.
                 self.account = None;
+                self.login = None;
+                self.unauthenticated_since = tokio::time::Instant::now();
                 self.selected = None;
                 self.saved.clear();
                 self.changes = None;
@@ -467,6 +516,32 @@ where
         self.account.as_ref().map_or(0, |account| account.id)
     }
 
+    /// Whether the login of this connection still holds, and the account as it is now if so. A
+    /// connection stays open for hours; a revoked app password, a new password, IMAP switched off
+    /// or the account disabled, trashed or deleted has to end it, not only the next login.
+    async fn login_holds(&mut self) -> bool {
+        let Some(login) = &self.login else { return true };
+        match self.store.live_login(login, Some("imap")).await {
+            Ok(Some(account)) => {
+                self.account = Some(account);
+                true
+            }
+            Ok(None) => {
+                tracing::info!(account = login.account_id, peer = %self.peer, "imap login no longer valid, closing");
+                false
+            }
+            Err(err) => {
+                tracing::error!(%err, "checking an imap login again failed");
+                false
+            }
+        }
+    }
+
+    async fn login_ended(&mut self) -> io::Result<Flow> {
+        self.send(b"* BYE Your login is no longer valid, please log in again\r\n").await?;
+        Ok(Flow::Logout)
+    }
+
     /// The account's own mailboxes, then those others share with it under `Shared/`.
     async fn named(&mut self) -> Result<Vec<Named>, StoreError> {
         let me = self.account_id();
@@ -539,12 +614,15 @@ where
     // ---- logging in ----
 
     async fn login(&mut self, tag: &str, username: &str, password: &str) -> io::Result<Flow> {
-        if self.imap.limiter.is_blocked(self.peer.ip()) {
+        // The network's and the login's counts, shared with every other protocol; a check that is
+        // still running counts as well, so a burst of logins cannot all get past them.
+        let Some(attempt) = self.imap.limiter.begin(self.peer.ip(), username) else {
             self.send(no(tag, Some("UNAVAILABLE"), "Too many failed logins, try again later").as_bytes()).await?;
             return Ok(Flow::Continue);
-        }
+        };
         let peer = self.peer.to_string();
         let checked = self.store.authenticate_mail(username, password, AppScope::Mail, "imap", &peer).await;
+        drop(attempt);
         self.finish_login(tag, username, checked, None).await
     }
 
@@ -558,10 +636,11 @@ where
         challenge: Option<String>,
     ) -> io::Result<Flow> {
         match checked {
-            Ok(MailAuth::Ok { account, app_password }) => {
+            Ok(MailAuth::Ok { account, app_password, credential, .. }) => {
                 self.imap.limiter.record_success(self.peer.ip(), username);
                 tracing::info!(login = %account.login, peer = %self.peer, app_password = app_password.is_some(), oauth = challenge.is_some(), "imap login");
                 self.changes = Some(self.store.subscribe_changes());
+                self.login = Some(LiveLogin::new(&account, credential));
                 self.account = Some(account);
                 let capabilities = capabilities_after_login(self.imap.max_append);
                 self.send(format!("{tag} OK [CAPABILITY {capabilities}] Logged in, hi\r\n").as_bytes()).await?;
@@ -582,7 +661,9 @@ where
                     self.send(format!("+ {encoded}\r\n").as_bytes()).await?;
                     self.flush().await?;
                     // Whatever comes back (RFC 7628 wants a single ^A) only ends the exchange.
-                    let _ = self.read_line(MAX_LINE).await?;
+                    if self.read_answer().await?.is_none() {
+                        return Ok(Flow::Logout);
+                    }
                 }
                 let text = match reason {
                     MailAuthDenied::AppPasswordRequired => "This account needs an app password for mail apps",
@@ -616,7 +697,9 @@ where
             None => {
                 self.send(b"+ \r\n").await?;
                 self.flush().await?;
-                let line = self.read_line(MAX_LINE).await?;
+                let Some(line) = self.read_answer().await? else {
+                    return Ok(Flow::Logout);
+                };
                 match parser::parse_continuation(&line) {
                     Some(response) => response.to_owned(),
                     None => {
@@ -980,7 +1063,8 @@ where
         let mut keywords: Vec<String> = state.messages.iter().flat_map(|m| m.keywords.iter().cloned()).collect();
         keywords.sort();
         keywords.dedup();
-        let custom: Vec<String> = keywords.into_iter().filter(|k| !is_system_keyword(k)).collect();
+        let custom: Vec<String> =
+            keywords.into_iter().filter(|k| !is_system_keyword(k) && uwumail_store::valid_keyword(k)).collect();
         let first_unseen = state.messages.iter().position(|m| !m.keywords.iter().any(|k| k == "$seen"));
 
         let mut out = Out::new(self.utf8);
@@ -1293,6 +1377,9 @@ where
             };
             match event {
                 IdleEvent::Change => {
+                    if !self.login_holds().await {
+                        break self.login_ended().await;
+                    }
                     self.refresh(true).await?;
                     self.flush().await?;
                 }
@@ -1349,15 +1436,12 @@ where
         let qresync = self.qresync;
         let selected = self.selected.as_mut().expect("selected");
         let mut out = Out::new(false);
+        let positions = selected.forget(uids);
         if qresync {
             out.raw(&format!("* VANISHED {}\r\n", response::sequence_set(uids)));
-            selected.messages.retain(|known| !uids.contains(&known.uid));
         } else {
-            let mut positions: Vec<usize> = uids.iter().filter_map(|uid| selected.position(*uid)).collect();
-            positions.sort_unstable();
-            for index in positions.into_iter().rev() {
+            for index in positions {
                 out.raw(&format!("* {} EXPUNGE\r\n", index + 1));
-                selected.messages.remove(index);
             }
         }
         self.send(&out.bytes).await
@@ -1382,17 +1466,25 @@ where
         };
         let emails = self.store.imap_emails(account, mailbox_id, uids).await?;
         let prepared = search::prepare(&self.store, account, &criteria, &emails).await?;
-        let mut found = Vec::new();
-        let mut found_uids = Vec::new();
-        let mut highest = 0;
-        for email in &emails {
-            let msn = positions[&email.uid];
-            if search::matches(&criteria, &search::Target { msn, email }, &scope, &prepared) {
-                found.push(if uid { email.uid } else { msn });
-                found_uids.push(email.uid);
-                highest = highest.max(email.modseq);
+        // Every key against every message of the mailbox: work for a blocking thread, not for the
+        // thread every other session shares (security-audit-0.16.0 PANIC-4).
+        let checked = criteria.clone();
+        let (mut found, mut found_uids, highest) = tokio::task::spawn_blocking(move || {
+            let mut found = Vec::new();
+            let mut found_uids = Vec::new();
+            let mut highest = 0;
+            for email in &emails {
+                let msn = positions[&email.uid];
+                if search::matches(&checked, &search::Target { msn, email }, &scope, &prepared) {
+                    found.push(if uid { email.uid } else { msn });
+                    found_uids.push(email.uid);
+                    highest = highest.max(email.modseq);
+                }
             }
-        }
+            (found, found_uids, highest)
+        })
+        .await
+        .map_err(|err| StoreError::Internal(err.to_string()))?;
         found.sort_unstable();
         found_uids.sort_unstable();
         let with_modseq = search::uses_modseq(&criteria);
@@ -1660,6 +1752,12 @@ where
                         out.raw(&format!("BINARY.SIZE{} {size}", &response::binary_label(part)["BINARY".len()..]));
                     }
                 }
+                // Sent as it grows, also within one message: every item can be a whole message
+                // (security-audit-0.16.0 PROTOCOLS-15).
+                if out.bytes.len() > 256 * 1024 {
+                    self.send(&out.bytes).await.map_err(io_error)?;
+                    out.bytes.clear();
+                }
             }
             if condstore && !modseq_sent && flags_sent {
                 out.raw(&format!(" MODSEQ ({})", email.modseq));
@@ -1739,6 +1837,7 @@ where
         };
         let uids: Vec<u32> = targets.iter().map(|(_, uid)| *uid).collect();
         let skipped = self.store.imap_store_flags(account, mailbox_id, uids.clone(), change, unchanged_since).await?;
+        let skipped_set: HashSet<u32> = skipped.iter().copied().collect();
         let emails = self.store.imap_emails(account, mailbox_id, uids).await?;
         let by_uid: HashMap<u32, &ImapEmail> = emails.iter().map(|email| (email.uid, email)).collect();
 
@@ -1751,7 +1850,7 @@ where
             let changed = known.keywords != email.keywords || known.modseq != email.modseq;
             known.keywords = email.keywords.clone();
             known.modseq = email.modseq;
-            if skipped.contains(&message_uid) || (silent && !(condstore && changed)) {
+            if skipped_set.contains(&message_uid) || (silent && !(condstore && changed)) {
                 continue;
             }
             out.raw(&format!("* {} FETCH (", index + 1));
@@ -1964,4 +2063,32 @@ fn status_items(items: &[StatusItem], status: &uwumail_store::ImapStatus) -> Str
 
 fn now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Half of a big mailbox expunged at once: taking the messages out one by one moved the rest
+    /// of the list every time (security-audit-0.16.0 PANIC-6).
+    #[test]
+    fn a_big_expunge_is_forgotten_in_one_pass() {
+        let known = |uid: u32| Known { uid, modseq: 1, keywords: Vec::new(), expunged: false };
+        let mut selected = Selected {
+            mailbox_id: 1,
+            owner: 1,
+            rights: String::new(),
+            read_only: false,
+            messages: (1..=200_000).map(known).collect(),
+            highest_modseq: 1,
+        };
+        let gone: Vec<u32> = (1..=200_000).filter(|uid| uid % 2 == 0).chain([300_000]).collect();
+        let started = std::time::Instant::now();
+        let positions = selected.forget(&gone);
+        assert!(started.elapsed() < Duration::from_secs(1), "took {:?}", started.elapsed());
+        assert_eq!(positions.len(), 100_000);
+        assert_eq!(positions[..2], [199_999, 199_997], "last first, as EXPUNGE names them");
+        assert_eq!(selected.messages.len(), 100_000);
+        assert!(selected.messages.iter().all(|known| known.uid % 2 == 1));
+    }
 }

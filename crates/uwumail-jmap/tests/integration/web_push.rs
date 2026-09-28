@@ -456,13 +456,14 @@ async fn subscriptions_belong_to_the_login_that_made_them_and_end_with_it() {
         setup.call_as(&as_tablet, json!([["PushSubscription/set", { "destroy": [from_phone.clone()] }, "0"]])).await;
     assert_eq!(responses[0][1]["notDestroyed"][&from_phone]["type"], "notFound");
 
-    // The phone's app password is removed: its subscription gets nothing more and is dropped.
+    // The phone's app password is removed: its subscription gets nothing more and is dropped at
+    // once, not at the next clean-up.
     setup.server.store.revoke_app_password(mini, phone.app_password.id).await.unwrap();
     setup.server.deliver(MINI, &mail("After")).await;
     let mut names = vec![setup.next().await.name, setup.next().await.name];
     names.sort();
     assert_eq!(names, vec!["password", "tablet"]);
-    assert_eq!(setup.server.store.purge_push_subscriptions().await.unwrap(), 1);
+    assert_eq!(setup.server.store.purge_push_subscriptions().await.unwrap(), 0);
     assert_eq!(setup.listed(&as_tablet).await, vec![from_tablet]);
     assert_eq!(setup.listed(&as_password).await, vec![from_password]);
     // (A new password ends what the old one made: see the store's tests.)
@@ -624,7 +625,8 @@ async fn mail_to_a_disabled_masked_address_is_no_delivery() {
     const MASKED: [&str; 2] = [CORE, "https://www.fastmail.com/dev/maskedemail"];
     let mut setup = setup().await;
     let account = setup.server.account_id(MINI).await;
-    setup.server.store.set_domain_masked_addresses("example.org", true).await.unwrap();
+    let own = uwumail_store::DomainMaskedPolicy { mode: uwumail_store::MaskedMode::Own, ..Default::default() };
+    setup.server.store.set_domain_masked_policy("example.org", own).await.unwrap();
     let responses = setup
         .server
         .api_using(

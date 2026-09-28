@@ -136,6 +136,9 @@ impl Store {
         }
         self.write(move |tx| {
             forget_old_releases(tx)?;
+            if let Some(id) = tx.query_row("SELECT id FROM domains WHERE name = ?1", [&domain], |row| row.get(0)).optional()? {
+                crate::masked_domains::ensure_mail_domain(tx, id)?;
+            }
             let allowed: bool = tx
                 .query_row("SELECT self_service_aliases FROM domains WHERE name = ?1", [&domain], |row| row.get(0))
                 .optional()?
@@ -213,6 +216,9 @@ impl Store {
     pub async fn set_domain_self_service(&self, domain: &str, on: bool) -> Result<()> {
         let (_, domain) = normalize_address(&format!("x@{domain}"))?;
         self.write(move |tx| {
+            if on {
+                crate::masked_domains::ensure_mail_domain(tx, crate::directory::domain_id(tx, &domain)?)?;
+            }
             let changed =
                 tx.execute("UPDATE domains SET self_service_aliases = ?1 WHERE name = ?2", params![on, domain])?;
             if changed == 0 {

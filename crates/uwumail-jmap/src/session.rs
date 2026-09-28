@@ -84,7 +84,28 @@ pub fn session_state(account: &Account) -> String {
     format!("{}-{}{calendars}{contacts}", account.id, account.login.len() + account.display_name.len())
 }
 
-pub fn document(account: &Account, base: &str) -> Value {
+/// What the account's MaskedEmail capability says (a UwUMail addition to Fastmail's extension):
+/// the domains it may make masked addresses on and the one a new one goes to without `domain`.
+pub async fn masked_capability(store: &uwumail_store::Store, account_id: i64) -> Value {
+    let policy = match store.effective_masked_policy(account_id).await {
+        Ok(policy) => policy,
+        Err(err) => {
+            tracing::warn!(%err, account_id, "reading the masked address policy failed");
+            Default::default()
+        }
+    };
+    json!({ "domains": policy.domains, "defaultDomain": policy.default_domain })
+}
+
+/// The part of the session state that changes with the masked address policies, so clients fetch
+/// the capability again. One counter for all of them: a change anywhere makes every client look.
+pub async fn masked_state(store: &uwumail_store::Store) -> String {
+    format!("-x{}", store.masked_policy_version().await.unwrap_or(0))
+}
+
+/// The session document. `may_use_dav` is whether the login's credential may reach calendars and
+/// address books (see [`crate::auth::Login::scopes`]); without it they are left out.
+pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
     let account_id = ids::account(account.id);
     let mut document = json!({
         "capabilities": {
@@ -177,7 +198,7 @@ pub fn document(account: &Account, base: &str) -> Value {
         "state": session_state(account)
     });
     // Calendars are there when the account may use them, as over CalDAV.
-    if account.protocols.caldav {
+    if account.protocols.caldav && may_use_dav {
         document["capabilities"][CALENDARS] = json!({});
         document["accounts"][&account_id]["accountCapabilities"][CALENDARS] = json!({
             "maxCalendarsPerEvent": 1,
@@ -190,7 +211,7 @@ pub fn document(account: &Account, base: &str) -> Value {
         document["primaryAccounts"][CALENDARS] = json!(account_id);
     }
     // Address books too, as over CardDAV.
-    if account.protocols.carddav {
+    if account.protocols.carddav && may_use_dav {
         document["capabilities"][CONTACTS] = json!({});
         document["accounts"][&account_id]["accountCapabilities"][CONTACTS] = json!({
             "maxAddressBooksPerCard": 1,
@@ -203,19 +224,25 @@ pub fn document(account: &Account, base: &str) -> Value {
 
 pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInfo>>, headers: HeaderMap) -> Response {
     let client = client.map(|Extension(c)| c).unwrap_or_default();
-    match jmap.inner.auth.account_for(&headers, client, false).await {
-        Ok(account) => {
+    match jmap.inner.auth.login_for(&headers, client, false).await {
+        Ok(login) => {
             let base = base_url(&headers, client);
-            let mut document = document(&account, &base);
+            let may_use_dav = login.may_use_dav();
+            let account = login.account;
+            let mut document = document(&account, &base, may_use_dav);
             // Folders others share with this account, as accounts of their own (docs/sharing.md).
             let shared = crate::sharing::shared_accounts(&jmap.inner.store, account.id).await;
             crate::sharing::add_to_session(&mut document, &account, &shared);
+            document["accounts"][ids::account(account.id)]["accountCapabilities"][MASKED] =
+                masked_capability(&jmap.inner.store, account.id).await;
+            let masked_state = masked_state(&jmap.inner.store).await;
             // The key a browser binds its push subscription to. It never changes, so the session
             // state need not say anything about it.
             if let Some(vapid) = jmap.inner.push.vapid().await {
                 document["capabilities"][WEBPUSH_VAPID] = json!({ "applicationServerKey": vapid.public_key() });
             }
-            document["state"] = json!(format!("{}{}", session_state(&account), crate::sharing::state_suffix(&shared)));
+            document["state"] =
+                json!(format!("{}{}{masked_state}", session_state(&account), crate::sharing::state_suffix(&shared)));
             ([(header::CACHE_CONTROL, "no-cache, no-store")], Json(document)).into_response()
         }
         Err(err) => err.into_response(),

@@ -261,20 +261,22 @@ fn is_local(domain: &str, local: &HashSet<String>) -> bool {
     local.iter().any(|ours| domain == *ours || domain.ends_with(&format!(".{ours}")))
 }
 
-/// The addresses in a `mailto:` of the `rua` list: without parameters, and only ones that look like one.
-fn mail_addresses(uri: &str) -> Vec<String> {
+/// The one address in a `mailto:` of the `rua` list, without parameters, when it looks like one.
+///
+/// RFC 8460 lists report URIs, one address each. A `mailto:` that names several -- which the record
+/// can smuggle in encoded (`=2C` is a comma once mail-auth decoded it) -- is refused whole, and so is
+/// any other encoding left in the address: otherwise one TXT record could have this server mail its
+/// report to thousands of strangers every day (security-audit-0.16.0 SMTP-6). With at most
+/// [`MAX_DESTINATIONS`] URIs, a report never goes to more places than that.
+fn mail_address(uri: &str) -> Option<String> {
     let uri = uri.trim().trim_start_matches("mailto:");
-    let uri = uri.split('?').next().unwrap_or_default();
-    uri.split(',')
-        .map(|address| address.trim().replace("%40", "@"))
-        .filter(|address| {
-            address.len() <= 254
-                && address.split('@').count() == 2
-                && !address.starts_with('@')
-                && !address.ends_with('@')
-                && !address.contains(|c: char| c.is_whitespace() || c.is_control() || "<>\"(),;:\\[]".contains(c))
-        })
-        .collect()
+    let address = uri.split('?').next().unwrap_or_default().trim().replace("%40", "@");
+    let fine = address.len() <= 254
+        && address.split('@').count() == 2
+        && !address.starts_with('@')
+        && !address.ends_with('@')
+        && !address.contains(|c: char| c.is_whitespace() || c.is_control() || "<>\"(),;:\\[]%".contains(c));
+    fine.then_some(address)
 }
 
 async fn report(ctx: &Context, egress: &Egress, item: &TlsRptDue, local: &HashSet<String>) -> TlsRptOutcome {
@@ -329,14 +331,13 @@ async fn report(ctx: &Context, egress: &Egress, item: &TlsRptDue, local: &HashSe
     for destination in &destinations {
         match destination {
             ReportUri::Mail(uri) => {
-                for address in mail_addresses(uri) {
-                    let target = address.rsplit_once('@').map(|(_, domain)| domain).unwrap_or_default();
-                    if is_local(target, local) || recipients.contains(&address) {
-                        continue;
-                    }
-                    shown.push(format!("mailto:{address}"));
-                    recipients.push(address);
+                let Some(address) = mail_address(uri) else { continue };
+                let target = address.rsplit_once('@').map(|(_, domain)| domain).unwrap_or_default();
+                if is_local(target, local) || recipients.contains(&address) {
+                    continue;
                 }
+                shown.push(format!("mailto:{address}"));
+                recipients.push(address);
             }
             ReportUri::Http(url) => {
                 shown.push(url.clone());
@@ -742,13 +743,11 @@ mod tests {
 
     #[test]
     fn report_addresses_and_our_own_domains() {
-        assert_eq!(mail_addresses("mailto:tls@example.com"), ["tls@example.com"]);
-        assert_eq!(
-            mail_addresses("mailto:a@example.com,b%40example.net?subject=x"),
-            ["a@example.com", "b@example.net"]
-        );
-        assert!(mail_addresses("mailto:not an address").is_empty());
-        assert!(mail_addresses("mailto:a@b@example.com").is_empty());
+        assert_eq!(mail_address("mailto:tls@example.com").as_deref(), Some("tls@example.com"));
+        assert_eq!(mail_address("mailto:tls%40example.net?subject=x").as_deref(), Some("tls@example.net"));
+        assert_eq!(mail_address("mailto:not an address"), None);
+        assert_eq!(mail_address("mailto:a@b@example.com"), None);
+        assert_eq!(mail_address("mailto:a%2Cb@example.com"), None, "no other encoding");
 
         let local: HashSet<String> = ["example.org".to_owned()].into();
         assert!(is_local("Example.org.", &local));
@@ -758,6 +757,28 @@ mod tests {
         assert_eq!(host_domain("mail.example.net", &local), None);
         assert_eq!(report_sender("mail.example.org", &["example.org".into()]), "noreply-tls-reports@example.org");
         assert_eq!(report_sender("Mail.Example.net.", &["example.org".into()]), "noreply-tls-reports@mail.example.net");
+    }
+
+    /// One TXT record must not make this server mail its report to a crowd: a `mailto:` holds one
+    /// address, and one hiding a list behind `=2C` is refused whole.
+    #[test]
+    fn a_report_address_list_in_one_mailto_is_refused() {
+        use mail_auth::common::parse::TxtRecordParser as _;
+
+        let record =
+            TlsRpt::parse(b"v=TLSRPTv1; rua=mailto:a@x.example=2Cb@x.example=2Cc@x.example,mailto:tls@example.com")
+                .unwrap();
+        assert!(matches!(&record.rua[0], ReportUri::Mail(uri) if uri.contains(',')), "=2C arrives as a comma");
+        let addresses: Vec<String> = record
+            .rua
+            .iter()
+            .filter_map(|uri| match uri {
+                ReportUri::Mail(uri) => mail_address(uri),
+                ReportUri::Http(_) => None,
+            })
+            .collect();
+        assert_eq!(addresses, ["tls@example.com"]);
+        assert!(record.rua.len() <= MAX_DESTINATIONS);
     }
 
     #[test]

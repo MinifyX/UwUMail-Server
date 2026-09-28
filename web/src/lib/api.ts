@@ -220,6 +220,8 @@ export interface Person {
   aliasLimit?: number;
   /** Domains the person may send as with any address; only in the detail view. */
   sendAsDomains?: string[];
+  /** Where the person may make masked addresses; only in the detail view. */
+  maskedPolicy?: PersonMaskedPolicy;
   /** Only for a service, which cannot open its own security page. */
   appPasswordList?: AppPasswordInfo[];
   /** A mailbox several people use; stored as a service nobody signs in to. */
@@ -282,8 +284,59 @@ export interface PasswordLinkInfo {
 export type CheckStatus = "ok" | "warning" | "missing" | "wrong" | "error";
 export type DkimKeyState = "active" | "pending" | "retired";
 
+/** A mail domain, or one that carries masked addresses and nothing else. */
+export type DomainKind = "mail" | "masked";
+
+/** Where the users of a mail domain may make masked addresses. */
+export type MaskedMode = "off" | "own" | "dedicated" | "both";
+
+/** The masked address policy of a mail domain. */
+export interface DomainMaskedPolicy {
+  mode: MaskedMode;
+  /** Masked-only domains its users may use. */
+  maskedDomains: string[];
+  /** Where a new one goes when none is named; null picks one by itself. */
+  defaultDomain: string | null;
+}
+
+/** What an admin set for one account; null parts go by the domain. */
+export interface AccountMaskedPolicy {
+  mode: MaskedMode | null;
+  maskedDomains: string[] | null;
+  defaultDomain: string | null;
+}
+
+/** What holds for an account in the end. */
+export interface EffectiveMaskedPolicy {
+  mode: MaskedMode;
+  maskedDomains: string[];
+  /** Where the account may make masked addresses; empty means nowhere. */
+  domains: string[];
+  defaultDomain: string | null;
+}
+
+export interface PersonMaskedPolicy {
+  custom: AccountMaskedPolicy;
+  /** The policy of the person's domain; null when it has none. */
+  domain: DomainMaskedPolicy | null;
+  effective: EffectiveMaskedPolicy;
+  /** The masked-only domains a policy can name. */
+  choices: string[];
+}
+
+/** What keeps a mail domain from becoming masked-only. */
+export interface KindBlockers {
+  accounts: number;
+  aliases: number;
+  groups: number;
+  forwards: number;
+  catchAll: boolean;
+  sendAs: number;
+}
+
 export interface DomainSummary {
   name: string;
+  kind: DomainKind;
   catchAll: string | null;
   createdAt: number;
   people: number;
@@ -353,8 +406,14 @@ export interface ForwardAddress {
 
 export interface DomainDetail extends Omit<DomainSummary, "dns"> {
   selfServiceAliases?: boolean;
-  /** Whether people may make masked addresses on this domain. */
-  maskedAddresses?: boolean;
+  /** Where the users of a mail domain may make masked addresses; null for a masked-only domain. */
+  maskedPolicy: DomainMaskedPolicy | null;
+  /** The masked-only domains a policy can name. */
+  maskedDomainChoices: string[];
+  /** What keeps a mail domain from becoming masked-only; null for a masked-only domain. */
+  kindBlockers: KindBlockers | null;
+  /** The policies that name a masked-only domain; null for a mail domain. */
+  maskedUsedBy: { domains: string[]; accounts: string[] } | null;
   /** Masked addresses people made on this domain that still take mail; they keep it in use. */
   maskedInUse?: number;
   forwards: ForwardAddress[];
@@ -1433,8 +1492,10 @@ export interface MaskedAddress {
 
 export interface MaskedAddressesView {
   addresses: MaskedAddress[];
-  /** Domains open for masked addresses; empty means none can be made. */
+  /** Domains one may make masked addresses on; empty means none can be made. */
   domains: string[];
+  /** The one preselected; null when there are none. */
+  defaultDomain: string | null;
 }
 
 /** What someone shared with others may do: see, see and change, or everything but deleting. */

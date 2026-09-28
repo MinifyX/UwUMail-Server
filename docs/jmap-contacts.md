@@ -26,6 +26,14 @@ for an account (services have it off from the start), the capability is gone
 from its session and every contacts method answers
 `accountNotSupportedByMethod`.
 
+The login has to be allowed address books too. An app password or an OAuth app
+limited to `mail` reads and sends mail, but address books need the `dav` use,
+over JMAP just as over CardDAV: for such a login the capability is left out of
+the session, contacts methods answer `forbidden`, and address suggestions
+([jmap-suggest.md](jmap-suggest.md)) come from recent mail only. The account
+password, the webmail and tokens from `/jmap/token`
+([jmap-tokens.md](jmap-tokens.md)) may use them.
+
 ## One store for CardDAV and JMAP
 
 There is no second copy. An AddressBook is a CardDAV address book, a
