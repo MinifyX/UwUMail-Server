@@ -543,7 +543,12 @@
       "maskedOnlyDomain": "Diese Domain trägt nur maskierte Adressen: keine Personen, Aliasse, Gruppen, Weiterleitungsadressen oder Catch-all.",
       "notMaskedDomain": "Hier lassen sich nur Domains für maskierte Adressen wählen.",
       "maskedDefault": "Die Standard-Domain muss eine der erlaubten Domains sein.",
-      "kindChangeBlocked": "Auf dieser Domain liegt noch etwas anderes als maskierte Adressen. Entferne es zuerst."
+      "kindChangeBlocked": "Auf dieser Domain liegt noch etwas anderes als maskierte Adressen. Entferne es zuerst.",
+      "pictureType": "Das ist kein Bild, das sich verwenden lässt. PNG, JPEG, WebP und GIF gehen.",
+      "pictureTooLarge": "Das Bild ist zu groß. Es darf höchstens 10 MB haben.",
+      "pictureTooManyPixels": "Das Bild hat zu viele Pixel. Höchstens 8000 × 8000.",
+      "publicNotAllowed": "Öffentliche Bilder sind hier nicht erlaubt.",
+      "picturePerson": "Ihr Bild wählen Leute selbst."
     }
   },
   "people": {
@@ -878,7 +883,17 @@
       "sharedMailboxEnd": "{{actor}} hat das geteilte Postfach {{target}} wieder zu einem Dienst gemacht",
       "domainMaskedPolicy": "{{actor}} hat geändert, wo die Leute von {{target}} maskierte Adressen erzeugen dürfen",
       "domainKind": "{{actor}} hat die Art der Domain {{target}} geändert",
-      "accountMaskedPolicy": "{{actor}} hat geändert, wo {{target}} maskierte Adressen erzeugen darf"
+      "accountMaskedPolicy": "{{actor}} hat geändert, wo {{target}} maskierte Adressen erzeugen darf",
+      "personPicture": "{{actor}} hat das Bild von {{target}} gesetzt",
+      "personPictureRemoved": "{{actor}} hat das Bild von {{target}} entfernt",
+      "personPictureVisibility": "{{actor}} hat geändert, wer das Bild von {{target}} sieht",
+      "groupPicture": "{{actor}} hat das Bild der Gruppe {{target}} gesetzt",
+      "groupPictureRemoved": "{{actor}} hat das Bild der Gruppe {{target}} entfernt",
+      "groupPictureVisibility": "{{actor}} hat geändert, wer das Bild der Gruppe {{target}} sieht",
+      "domainLogo": "{{actor}} hat das Logo von {{target}} gesetzt",
+      "domainLogoRemoved": "{{actor}} hat das Logo von {{target}} entfernt",
+      "domainPublicPictures": "{{actor}} hat geändert, ob Adressen von {{target}} öffentliche Bilder haben dürfen",
+      "picturesPublic": "{{actor}} hat geändert, ob Profilbilder auf diesem Server öffentlich sein dürfen"
     },
     "details": {
       "adminOn": "ist jetzt Admin",
@@ -911,7 +926,10 @@
       "maskedMode": "maskierte Adressen: {{value}}",
       "maskedAsDomain": "maskierte Adressen: wie die Domain",
       "maskedRemovedFrom_one": "aus {{count}} Einstellung für maskierte Adressen entfernt",
-      "maskedRemovedFrom_other": "aus {{count}} Einstellungen für maskierte Adressen entfernt"
+      "maskedRemovedFrom_other": "aus {{count}} Einstellungen für maskierte Adressen entfernt",
+      "pictureVisibility": "sichtbar für: {{value}}",
+      "publicAllowed": "öffentliche Bilder erlaubt",
+      "publicForbidden": "öffentliche Bilder verboten"
     },
     "entry": {
       "actor": "Wer",
@@ -1012,7 +1030,8 @@
         "submissions": "Sagt Mail-Apps, wo sie Mails verschlüsselt verschicken (Port 465).",
         "submission": "Sagt Mail-Apps, wo sie Mails mit STARTTLS verschicken (Port 587).",
         "caa": "Erlaubt Zertifikate für den Namen des Servers nur von Let's Encrypt und nur für das eigene Konto dieses Servers. Hält TLS hinter einem UwUMail Gateway privat.",
-        "tlsa": "Sagt sendenden Servern, welchen Schlüssel das Zertifikat dieses Servers hat, damit sie nur verschlüsselt an ihn zustellen (DANE). Braucht eine mit DNSSEC signierte Zone."
+        "tlsa": "Sagt sendenden Servern, welchen Schlüssel das Zertifikat dieses Servers hat, damit sie nur verschlüsselt an ihn zustellen (DANE). Braucht eine mit DNSSEC signierte Zone.",
+        "avatars": "Damit finden andere Mail-Server die öffentlichen Profilbilder der Adressen dieser Domain."
       },
       "notes": {
         "mxUpstream": "Zeigt auf den vorgeschalteten Mailserver. Das passt so.",
@@ -1085,7 +1104,8 @@
         "submissions": "Versand für Mail-Apps (TLS)",
         "submission": "Versand für Mail-Apps (STARTTLS)",
         "caa": "Zertifikate nur für diesen Server (CAA)",
-        "tlsa": "DANE (TLSA)"
+        "tlsa": "DANE (TLSA)",
+        "avatars": "Profilbilder (Libravatar)"
       },
       "tlsaKeyChange": "Bevor sich der Schlüssel des Servers ändert (eigene Zertifikatsdateien, Umzug auf einen anderen Server oder data/tls/acme/key.pem gelöscht), veröffentliche den Eintrag für den neuen Schlüssel neben diesem und warte einen Tag. Sonst halten Server, die DANE prüfen, Post für dich zurück."
     },
@@ -3675,6 +3695,63 @@
       "result": "Darf maskierte Adressen auf {{domains}} erzeugen; neue landen auf {{domain}}.",
       "resultNone": "Darf keine maskierten Adressen erzeugen.",
       "staleDefault": "Die früher gewählte Standard-Domain {{domain}} ist nicht mehr erlaubt, deshalb gilt die der Domain oder eine automatische."
+    }
+  },
+  "pictures": {
+    "own": {
+      "title": "Profilbild",
+      "intro": "Erscheint neben deinem Namen, wenn du Leuten auf diesem Server schreibst. Machst du es öffentlich, können auch andere Mail-Server es zeigen."
+    },
+    "service": {
+      "title": "Bild",
+      "intro": "Erscheint neben Mails von den Adressen dieses Dienstes."
+    },
+    "shared": {
+      "intro": "Erscheint neben Mails aus diesem geteilten Postfach."
+    },
+    "group": {
+      "title": "Gruppenbild",
+      "intro": "Erscheint neben Mails an und von der Adresse der Gruppe."
+    },
+    "upload": "Bild hochladen",
+    "replace": "Anderes Bild wählen",
+    "remove": "Bild entfernen",
+    "formats": "PNG, JPEG, WebP oder GIF, höchstens 10 MB. Der Server behält eine quadratische Kopie von höchstens 512 × 512 Pixeln, ohne die Metadaten der Datei.",
+    "saved": "Bild gespeichert",
+    "removed": "Bild entfernt",
+    "crop": {
+      "title": "Ausschnitt wählen",
+      "intro": "Zieh das Bild, um es zu verschieben, und zoome mit dem Regler. Was im Rahmen ist, wird behalten.",
+      "zoom": "Zoom",
+      "save": "Dieses Bild nehmen"
+    },
+    "visibility": {
+      "label": "Wer es sieht",
+      "off": "Niemand",
+      "server": "Leute auf diesem Server",
+      "public": "Alle",
+      "offHint": "Das Bild bleibt hier und wird niemandem außer dir gezeigt.",
+      "serverHint": "Leute auf diesem Server sehen es neben Mails von dir.",
+      "publicHint": "Auch andere Mail-Server können es finden: über Libravatar, anhand eines Hashes deiner Adresse, und im Face-Header, wenn du den einschaltest.",
+      "publicForbidden": "Ein Admin erlaubt hier keine öffentlichen Bilder."
+    },
+    "face": {
+      "label": "Mein Bild mit meinen Mails senden",
+      "explain": "Hängt jeder Mail, die du von deiner eigenen Adresse oder einem Alias sendest, eine kleine Kopie (48 × 48 Pixel) als Face-Header an. Manche Mail-Apps zeigen sie. Maskierte Adressen und geteilte Postfächer bekommen sie nie.",
+      "privacy": "Wer deine Mail bekommt, bekommt das Bild mit.",
+      "needsPublic": "Geht nur, solange das Bild öffentlich ist."
+    },
+    "domain": {
+      "title": "Domain-Logo",
+      "intro": "Erscheint bei Adressen dieser Domain, die kein eigenes Bild haben, etwa das Logo eines Vereins oder einer Firma.",
+      "public": "Öffentliche Bilder erlauben",
+      "publicHint": "Leute mit Adressen dieser Domain dürfen ihr Bild öffentlich machen, für Libravatar und den Face-Header. Die DNS-Prüfung empfiehlt dann den Libravatar-Eintrag.",
+      "serverForbids": "Öffentliche Bilder sind unter Server → Einstellungen für den ganzen Server verboten."
+    },
+    "server": {
+      "title": "Profilbilder",
+      "public": "Öffentliche Bilder erlauben",
+      "publicHint": "Leute dürfen ihr Bild öffentlich machen: Andere Mail-Server finden es dann über Libravatar, und es kann als Face-Header mit Mails mitgehen. Ausgeschaltet bleiben Bilder auf diesem Server."
     }
   }
 }

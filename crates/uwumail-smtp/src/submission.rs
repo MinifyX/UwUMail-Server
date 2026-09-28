@@ -5,7 +5,7 @@ use mail_parser::MessageParser;
 use uwumail_store::{Account, IngestRequest, MailboxRole, MailboxTarget, MaskedState, NewQueueRecipient, StoreError};
 
 use crate::dsn::{self, FailedRecipient};
-use crate::{Smtp, clamav, dkim, forward, headers, random_id, vacation};
+use crate::{Smtp, clamav, dkim, forward, headers, profile_pictures, random_id, vacation};
 
 pub struct Submission {
     pub account: Account,
@@ -208,8 +208,16 @@ impl Smtp {
         let ctx = &self.inner;
         let from_domain = from[0].rsplit_once('@').map(|(_, d)| d.to_ascii_lowercase()).unwrap_or_default();
         let id = random_id();
+        let raw = headers::strip_faces(&raw);
 
         let mut added = String::new().into_bytes();
+        // The person's picture, when they asked for it and send from their own address; signed
+        // with the rest (docs/profile-pictures.md).
+        match ctx.store.sender_face(account.id, &from[0]).await {
+            Ok(Some(face)) => added.extend_from_slice(profile_pictures::face_header(&face).as_bytes()),
+            Ok(None) => {}
+            Err(err) => tracing::warn!(%id, %err, "reading the sender's Face failed"),
+        }
         if headers::first_value(&raw, "Date").is_none() {
             added.extend_from_slice(format!("Date: {}\r\n", Date::now().to_rfc822()).as_bytes());
         }

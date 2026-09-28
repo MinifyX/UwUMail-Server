@@ -58,6 +58,9 @@ hickory-resolver = { version = "0.26", default-features = false, features = [
 hyper = "1"
 # Link hosts in spam checks: turning punycode back into the letters a reader sees.
 idna = "1"
+# Profile pictures: what people upload (PNG, JPEG, WebP, a GIF's first frame) is decoded within limits
+# and written anew, without anything else the file carried.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
 # HTTPS requests to DNS provider APIs (Cloudflare).
 hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "tls12", "aws-lc-rs"] }
 http-body-util = "0.1"
@@ -80,6 +83,8 @@ memchr = "2"
 md-5 = "0.11"
 # The public suffix list, so a sender picture is asked of `shop.example` and never of `news.mail.shop.example`.
 psl = "2"
+# The small PNG of the `Face:` header, written with a palette of as few colours as it takes to fit.
+png = "0.18"
 # QR codes for setting up authenticator apps, as plain modules the portal draws itself.
 qrcode = { version = "0.14", default-features = false }
 # WebDAV request bodies; the same version mail-auth uses.
@@ -160,4 +165,18 @@ debug = false
 opt-level = 3
 
 [profile.dev.package.blake2]
+opt-level = 3
+
+# Scaling and re-encoding profile pictures is all arithmetic over pixels; unoptimised, a test that
+# uploads one picture waits seconds for it.
+[profile.dev.package.image]
+opt-level = 3
+
+[profile.dev.package.zune-jpeg]
+opt-level = 3
+
+[profile.dev.package.png]
+opt-level = 3
+
+[profile.dev.package.fdeflate]
 opt-level = 3

@@ -653,6 +653,7 @@ pub(crate) fn move_entry(
         ],
     )?;
     tx.execute("DELETE FROM dav_tombstones WHERE collection_id = ?1 AND name = ?2", params![target.id, new_name])?;
+    crate::contact_photos::index_card(tx, id, target, &write.content)?;
     let source = collection_by_id(tx, source_id)?;
     log.moved(tx, &source, target, id, &write.component)?;
     let before = crate::calendar_notifications::Side { component: &write.component, content: &old_content };
@@ -1035,6 +1036,7 @@ pub(crate) fn put_entry_unchecked(
         "DELETE FROM dav_tombstones WHERE collection_id = ?1 AND name = ?2",
         params![collection.id, write.name],
     )?;
+    crate::contact_photos::index_card(tx, id, collection, &write.content)?;
     log.entry(
         tx,
         collection,

@@ -98,6 +98,7 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Delayed sending, signatures and address suggestions on the server, so the webmail stops doing without them
 - [x] Remote pictures and sender pictures fetched by the server, optionally through a VPN, so senders never see who reads their mail (docs/jmap-remote.md)
 - [x] One-click unsubscribe (RFC 8058) sent by the server, only for DKIM-signed headers and the same way out as pictures (docs/jmap-unsubscribe.md)
+- [x] Profile pictures and domain logos, visible on the server or public over Libravatar and the Face header; sender pictures per address from contacts, people here, Faces and Libravatar (docs/profile-pictures.md)
 - [x] Fetched mailboxes: mail from another provider's IMAP mailbox, emptied into someone's own and judged here like any other, with rules of its own for what a fetched message can still be asked (docs/fetch.md)
 - [x] Sending as a fetched address, over the provider's own outgoing server
 - [x] Calendars and contacts from elsewhere: `.ics`/`.vcf` files (portal and `uwumail-server import ics|vcf`), subscribed calendars fetched again regularly and read-only everywhere, and moving everything over from another CalDAV/CardDAV provider (iCloud, WEB.DE, GMX, Posteo, mailbox.org, …) with an app password (docs/calendar-import.md)

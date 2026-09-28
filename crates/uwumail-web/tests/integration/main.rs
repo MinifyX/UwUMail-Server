@@ -20,6 +20,7 @@ mod moving;
 mod oauth;
 mod oidc;
 mod people;
+mod pictures;
 mod security;
 mod settings;
 mod setup;

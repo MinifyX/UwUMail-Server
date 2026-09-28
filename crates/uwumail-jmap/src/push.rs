@@ -34,6 +34,7 @@ const TYPES: &[&str] = &[
     "ContactCard",
     "SieveScript",
     "MaskedEmail",
+    "ProfilePicture",
 ];
 
 #[derive(Deserialize)]
@@ -212,10 +213,12 @@ pub(crate) async fn type_states(
         if (shared && !SHARED_TYPES.contains(&kind.as_str())) || !wanted(kind) {
             continue;
         }
-        // UserSettings has a state of its own (it does not move with mail), so the client can
-        // tell whether it already has it.
+        // UserSettings and ProfilePicture have a state of their own (they do not move with mail),
+        // so the client can tell whether it already has it.
         let state = if kind == "UserSettings" {
             store.user_settings_state(account_id).await.unwrap_or_else(|_| modseq.to_string())
+        } else if kind == "ProfilePicture" {
+            store.profile_settings(account_id).await.map_or_else(|_| modseq.to_string(), |s| s.state.to_string())
         } else {
             modseq.to_string()
         };

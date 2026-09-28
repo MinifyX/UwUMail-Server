@@ -6,6 +6,7 @@
 //! - [`dkim`] creates and uses the signing keys of hosted domains.
 
 pub mod autoconfig;
+pub mod avatars;
 mod checks;
 pub mod clamav;
 mod client;
@@ -27,6 +28,7 @@ pub mod mta_sts;
 mod outbound;
 pub mod palette;
 pub mod pictures;
+pub mod profile_pictures;
 pub mod reachability;
 mod relay;
 mod reports;

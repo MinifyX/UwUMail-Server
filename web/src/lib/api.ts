@@ -358,7 +358,8 @@ export type RecordKind =
   | "submissions"
   | "submission"
   | "caa"
-  | "tlsa";
+  | "tlsa"
+  | "avatars";
 
 export interface RecordCheck {
   kind: RecordKind;
@@ -1828,4 +1829,32 @@ export interface CloudflareResult {
   /** "requoted" means the value was right and only its quoting was put in order. */
   outcome: "created" | "updated" | "requoted" | "skipped" | "failed";
   error: string | null;
+}
+
+/** Who sees a profile picture: nobody, people of this server, or everyone (docs/profile-pictures.md). */
+export type PictureVisibility = "off" | "server" | "public";
+
+/** A stored picture; `url` changes whenever the picture does. */
+export interface PictureFile {
+  url: string;
+  type: string;
+  size: number;
+  updatedAt: number;
+}
+
+/** One's own picture, or that of a service, shared mailbox or group. */
+export interface PictureState {
+  picture: PictureFile | null;
+  visibility: PictureVisibility;
+  /** Only for one's own account: the Face header on outgoing mail. */
+  sendFace?: boolean;
+  /** Whether the server and the domain allow public pictures. */
+  mayBePublic: boolean;
+}
+
+/** A domain's logo and whether its addresses may have public pictures. */
+export interface DomainLogoState {
+  picture: PictureFile | null;
+  publicPictures: boolean;
+  serverAllowsPublic: boolean;
 }

@@ -6,6 +6,7 @@ import { LoadError, Loading } from "@/components/StatusViews";
 import { useT } from "@/i18n";
 import { api, type Profile, type Session } from "@/lib/api";
 import { formatBytes, formatDate } from "@/lib/format";
+import { PictureCard } from "@/features/pictures/PictureCard";
 import { AppleProfile } from "./AppleProfile";
 
 function StorageBar({ used, quota }: { used: number; quota: number }) {
@@ -100,6 +101,14 @@ export function AccountHome({ session }: { session: Session }) {
             </p>
           </div>
         </Card>
+
+        <PictureCard
+          endpoint="/api/account/picture"
+          title={t("pictures.own.title")}
+          intro={t("pictures.own.intro")}
+          face
+          className="md:col-span-2"
+        />
 
         <Card title={t("account.apps.title")} className="md:col-span-2">
           <KeyValue label={t("account.apps.server")} value={hostname} copy={hostname} />

@@ -554,7 +554,12 @@
       "maskedOnlyDomain": "Ce domaine ne porte que des adresses masquées : ni personnes, ni alias, ni groupes, ni adresses de transfert, ni catch-all.",
       "notMaskedDomain": "Seuls des domaines réservés aux adresses masquées peuvent être choisis ici.",
       "maskedDefault": "Le domaine par défaut doit faire partie des domaines autorisés.",
-      "kindChangeBlocked": "Ce domaine porte encore autre chose que des adresses masquées. Retirez-le d’abord."
+      "kindChangeBlocked": "Ce domaine porte encore autre chose que des adresses masquées. Retirez-le d’abord.",
+      "pictureType": "Ce n'est pas une image utilisable. PNG, JPEG, WebP et GIF conviennent.",
+      "pictureTooLarge": "L'image est trop grande. 10 Mo au maximum.",
+      "pictureTooManyPixels": "L'image a trop de pixels. 8000 × 8000 au maximum.",
+      "publicNotAllowed": "Les images publiques ne sont pas autorisées ici.",
+      "picturePerson": "Les personnes choisissent elles-mêmes leur photo."
     }
   },
   "people": {
@@ -894,7 +899,17 @@
       "sharedMailboxEnd": "{{actor}} a refait de la boîte partagée {{target}} un simple service",
       "domainMaskedPolicy": "{{actor}} a modifié où les personnes de {{target}} peuvent créer des adresses masquées",
       "domainKind": "{{actor}} a modifié le type du domaine {{target}}",
-      "accountMaskedPolicy": "{{actor}} a modifié où {{target}} peut créer des adresses masquées"
+      "accountMaskedPolicy": "{{actor}} a modifié où {{target}} peut créer des adresses masquées",
+      "personPicture": "{{actor}} a défini l'image de {{target}}",
+      "personPictureRemoved": "{{actor}} a supprimé l'image de {{target}}",
+      "personPictureVisibility": "{{actor}} a modifié qui voit l'image de {{target}}",
+      "groupPicture": "{{actor}} a défini l'image du groupe {{target}}",
+      "groupPictureRemoved": "{{actor}} a supprimé l'image du groupe {{target}}",
+      "groupPictureVisibility": "{{actor}} a modifié qui voit l'image du groupe {{target}}",
+      "domainLogo": "{{actor}} a défini le logo de {{target}}",
+      "domainLogoRemoved": "{{actor}} a supprimé le logo de {{target}}",
+      "domainPublicPictures": "{{actor}} a modifié si les adresses de {{target}} peuvent avoir des images publiques",
+      "picturesPublic": "{{actor}} a modifié si les photos de profil peuvent être publiques sur ce serveur"
     },
     "details": {
       "adminOn": "est maintenant admin",
@@ -929,7 +944,10 @@
       "maskedAsDomain": "adresses masquées : comme le domaine",
       "maskedRemovedFrom_one": "retiré de {{count}} réglage d’adresses masquées",
       "maskedRemovedFrom_many": "retiré de {{count}} réglages d’adresses masquées",
-      "maskedRemovedFrom_other": "retiré de {{count}} réglages d’adresses masquées"
+      "maskedRemovedFrom_other": "retiré de {{count}} réglages d’adresses masquées",
+      "pictureVisibility": "visible par : {{value}}",
+      "publicAllowed": "images publiques autorisées",
+      "publicForbidden": "images publiques interdites"
     },
     "entry": {
       "actor": "Qui",
@@ -1033,7 +1051,8 @@
         "submissions": "Indique aux applis de messagerie où envoyer le courrier avec TLS (port 465).",
         "submission": "Indique aux applis de messagerie où envoyer le courrier avec STARTTLS (port 587).",
         "caa": "Seul Let's Encrypt peut délivrer des certificats pour le nom du serveur, et uniquement au compte propre de ce serveur. Garde TLS privé derrière une UwUMail Gateway.",
-        "tlsa": "Indique aux serveurs expéditeurs quelle clé porte le certificat de ce serveur, pour qu'ils ne lui livrent le courrier que de façon chiffrée (DANE). Nécessite une zone signée avec DNSSEC."
+        "tlsa": "Indique aux serveurs expéditeurs quelle clé porte le certificat de ce serveur, pour qu'ils ne lui livrent le courrier que de façon chiffrée (DANE). Nécessite une zone signée avec DNSSEC.",
+        "avatars": "Permet aux autres serveurs de messagerie de trouver les photos de profil publiques des adresses de ce domaine."
       },
       "notes": {
         "mxUpstream": "Pointe vers le serveur de messagerie en amont. C'est correct.",
@@ -1106,7 +1125,8 @@
         "submissions": "Envoi pour les applis de messagerie (TLS)",
         "submission": "Envoi pour les applis de messagerie (STARTTLS)",
         "caa": "Certificats uniquement pour ce serveur (CAA)",
-        "tlsa": "DANE (TLSA)"
+        "tlsa": "DANE (TLSA)",
+        "avatars": "Photos de profil (Libravatar)"
       },
       "tlsaKeyChange": "Avant que la clé du serveur change (vos propres fichiers de certificat, un déménagement vers un autre serveur ou la suppression de data/tls/acme/key.pem), publiez l'enregistrement de la nouvelle clé à côté de celui-ci et attendez un jour. Sinon, les serveurs qui vérifient DANE retiennent le courrier qui vous est destiné."
     },
@@ -3750,6 +3770,63 @@
       "result": "Peut créer des adresses masquées sur {{domains}} ; les nouvelles vont sur {{domain}}.",
       "resultNone": "Ne peut pas créer d’adresses masquées.",
       "staleDefault": "Le domaine par défaut choisi auparavant, {{domain}}, n’est plus autorisé : celui du domaine ou un choix automatique s’applique."
+    }
+  },
+  "pictures": {
+    "own": {
+      "title": "Photo de profil",
+      "intro": "Affichée à côté de votre nom quand vous écrivez à des personnes de ce serveur. Rendue publique, d'autres serveurs de messagerie peuvent aussi l'afficher."
+    },
+    "service": {
+      "title": "Image",
+      "intro": "Affichée à côté des messages envoyés depuis les adresses de ce service."
+    },
+    "shared": {
+      "intro": "Affichée à côté des messages de cette boîte partagée."
+    },
+    "group": {
+      "title": "Image du groupe",
+      "intro": "Affichée à côté des messages envoyés à l'adresse du groupe ou depuis celle-ci."
+    },
+    "upload": "Téléverser une image",
+    "replace": "Choisir une autre image",
+    "remove": "Supprimer l'image",
+    "formats": "PNG, JPEG, WebP ou GIF, 10 Mo au maximum. Le serveur garde une copie carrée de 512 × 512 pixels au plus, sans les métadonnées du fichier.",
+    "saved": "Image enregistrée",
+    "removed": "Image supprimée",
+    "crop": {
+      "title": "Choisir le cadrage",
+      "intro": "Faites glisser l'image pour la déplacer et zoomez avec le curseur. Ce qui est dans le cadre est conservé.",
+      "zoom": "Zoom",
+      "save": "Utiliser cette image"
+    },
+    "visibility": {
+      "label": "Qui la voit",
+      "off": "Personne",
+      "server": "Les personnes de ce serveur",
+      "public": "Tout le monde",
+      "offHint": "L'image reste ici et n'est montrée à personne d'autre que vous.",
+      "serverHint": "Les personnes de ce serveur la voient à côté de vos messages.",
+      "publicHint": "D'autres serveurs de messagerie peuvent aussi la trouver : via Libravatar, grâce à une empreinte de votre adresse, et dans l'en-tête Face si vous l'activez.",
+      "publicForbidden": "Un administrateur n'autorise pas les images publiques ici."
+    },
+    "face": {
+      "label": "Envoyer ma photo avec mes messages",
+      "explain": "Ajoute une petite copie (48 × 48 pixels) en en-tête Face à chaque message envoyé depuis votre propre adresse ou un alias. Certaines applis de messagerie l'affichent. Les adresses masquées et les boîtes partagées ne la reçoivent jamais.",
+      "privacy": "Toute personne qui reçoit vos messages reçoit aussi la photo.",
+      "needsPublic": "Possible seulement tant que la photo est publique."
+    },
+    "domain": {
+      "title": "Logo du domaine",
+      "intro": "Affiché pour les adresses de ce domaine qui n'ont pas d'image à elles, par exemple le logo d'une association ou d'une entreprise.",
+      "public": "Autoriser les images publiques",
+      "publicHint": "Les personnes ayant une adresse de ce domaine peuvent rendre leur image publique, pour Libravatar et l'en-tête Face. La vérification DNS recommande alors l'enregistrement Libravatar.",
+      "serverForbids": "Les images publiques sont interdites pour tout le serveur sous Serveur → Paramètres."
+    },
+    "server": {
+      "title": "Photos de profil",
+      "public": "Autoriser les images publiques",
+      "publicHint": "Les personnes peuvent rendre leur image publique : d'autres serveurs de messagerie la trouvent alors via Libravatar, et elle peut accompagner les messages en en-tête Face. Désactivé, les images restent sur ce serveur."
     }
   }
 }

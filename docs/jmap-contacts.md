@@ -213,8 +213,11 @@ What JMAP Contacts adds was reviewed with the same questions as JMAP Calendars
   size limit, so JMAP cannot store a card a phone would choke on or that CardDAV
   would have refused.
 - **Pictures.** A `data:` URI has to carry the media type its kind needs; an
-  HTML or script "photo" is refused. Remote picture URIs are stored as data
-  and never fetched by the server; clients decide whether to load them.
+  HTML or script "photo" is refused. A photo that is only an `https:` link is
+  stored as it is. The webmail never loads such a link itself: it shows the
+  photo through the server's `imageUrl` proxy, and `pictureUrl` fetches it the
+  same way (public-address guards, egress, size limit), so the site behind the
+  link never sees who looks at the card ([jmap-remote.md](jmap-remote.md)).
 - **Work per request.** `/get` with `ids: null` is bounded by
   `maxObjectsInGet`, `/set` by `maxObjectsInSet`, a query by five seconds of
   reading cards, and one card by 1 MiB. Parsing and conversion run off the

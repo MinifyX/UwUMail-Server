@@ -482,6 +482,43 @@ impl Web {
                 patch(routes::calendar_import::update_subscription).delete(routes::calendar_import::unsubscribe),
             )
             .route("/api/account/calendar-subscriptions/{id}/refresh", post(routes::calendar_import::refresh))
+            .route(
+                "/api/account/picture",
+                get(routes::pictures::own)
+                    .put(routes::pictures::upload_own)
+                    .patch(routes::pictures::change_own)
+                    .delete(routes::pictures::remove_own)
+                    .layer(axum::extract::DefaultBodyLimit::max(routes::pictures::MAX_PICTURE_BYTES)),
+            )
+            .route("/api/account/picture/file", get(routes::pictures::own_file))
+            .route(
+                "/api/admin/people/{login}/picture",
+                get(routes::pictures::service_picture)
+                    .put(routes::pictures::upload_service)
+                    .patch(routes::pictures::change_service)
+                    .delete(routes::pictures::remove_service)
+                    .layer(axum::extract::DefaultBodyLimit::max(routes::pictures::MAX_PICTURE_BYTES)),
+            )
+            .route("/api/admin/people/{login}/picture/file", get(routes::pictures::service_file_get))
+            .route(
+                "/api/admin/domains/{name}/groups/{local}/picture",
+                get(routes::pictures::group_picture)
+                    .put(routes::pictures::upload_group)
+                    .patch(routes::pictures::change_group)
+                    .delete(routes::pictures::remove_group)
+                    .layer(axum::extract::DefaultBodyLimit::max(routes::pictures::MAX_PICTURE_BYTES)),
+            )
+            .route("/api/admin/domains/{name}/groups/{local}/picture/file", get(routes::pictures::group_file))
+            .route(
+                "/api/admin/domains/{name}/logo",
+                get(routes::pictures::domain_logo)
+                    .put(routes::pictures::upload_domain_logo)
+                    .delete(routes::pictures::remove_domain_logo)
+                    .layer(axum::extract::DefaultBodyLimit::max(routes::pictures::MAX_PICTURE_BYTES)),
+            )
+            .route("/api/admin/domains/{name}/logo/file", get(routes::pictures::domain_logo_file))
+            .route("/api/admin/domains/{name}/public-pictures", put(routes::pictures::set_domain_public))
+            .route("/api/admin/pictures", get(routes::pictures::server).put(routes::pictures::set_server))
             .route("/api/account/addresses", get(routes::own::addresses))
             .route("/api/account/aliases", post(routes::own::create_alias))
             .route("/api/account/aliases/{address}", delete(routes::own::delete_alias))
