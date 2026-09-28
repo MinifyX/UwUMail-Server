@@ -599,15 +599,16 @@ fn times(event: &Component) -> Vec<String> {
 
 /// What an attendee keeps of an organizer's REQUEST: the organizer's object, with the attendee's
 /// own alarms and, while the time stays the same, their own answer from their current copy.
-/// `own` are the attendee's addresses.
+/// `own` are the attendee's addresses. The organizer's alarms never come along: the server rings
+/// alarms itself, by mail too, and those of a stranger's invitation are no one's to set.
 pub fn attendee_copy(request: &Component, current: Option<&Component>, own: &[String]) -> Component {
     let mut copy = request.clone();
     copy.remove("METHOD");
     for event in copy.events_mut() {
         let rid = event.recurrence_id();
         let mine = current.and_then(|current| current.event_for(&rid));
+        event.components.retain(|c| c.name != "VALARM");
         if let Some(mine) = mine {
-            event.components.retain(|c| c.name != "VALARM");
             event.components.extend(mine.components.iter().filter(|c| c.name == "VALARM").cloned());
             if times(mine) == times(event) {
                 let answers: Vec<(String, String)> = mine
@@ -872,6 +873,10 @@ BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\nEND:VEVENT\r\n
         assert_eq!(role(&calendar, &leni), Role::Attendee("leni@example.org".into()));
         let mut copy = attendee_copy(&request(&calendar, 0), None, &leni);
         assert_eq!(method(&copy), None);
+        // An organizer elsewhere may send alarms along; the server would ring them for Leni, so a
+        // new copy has none of them.
+        let foreign = attendee_copy(&calendar, None, &leni);
+        assert!(foreign.components[0].components.iter().all(|c| c.name != "VALARM"), "{}", foreign.to_ics());
         assert!(plan(None, Some(&copy), &leni).is_empty(), "a new invitation is not an answer yet");
 
         let before = copy.clone();
