@@ -109,6 +109,9 @@ COPY, MOVE, EXPUNGE, CREATE, DELETE, RENAME and IDLE, each within the rights:
 - CREATE inside a shared folder needs `k`, DELETE and RENAME need `x`. A shared
   folder stays with its owner: RENAME moves it only within what they shared.
 - IDLE in a shared folder hears of the owner's new mail.
+- The rights are read again before every command on the open folder: a share
+  narrowed counts from the next command, and one taken back ends the session
+  with `BYE` (CLOSE and UNSELECT just close it, without expunging).
 
 Managing shares:
 

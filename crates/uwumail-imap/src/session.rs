@@ -370,6 +370,13 @@ where
         if authenticated && !matches!(command.body, CommandBody::Logout) && !self.login_holds().await {
             return self.login_ended().await;
         }
+        // Someone else's mailbox is used with the rights it has now, not those it had when it was
+        // selected: a share narrowed in between counts from the very next command
+        // (security-audit-0.16.0 PANIC-7).
+        if needs_selection {
+            let closing = matches!(command.body, CommandBody::Close | CommandBody::Unselect);
+            self.recheck_rights(!closing).await?;
+        }
 
         let body = self.fill_saved(command.body);
         let close = matches!(body, CommandBody::Close);
@@ -1254,6 +1261,43 @@ where
         out.raw("* MYRIGHTS ").mailbox(&found.path).raw(" ").string(found.rights.as_bytes()).raw("\r\n");
         self.send(&out.bytes).await.map_err(io_error)?;
         Ok(format!("{tag} OK Myrights completed\r\n"))
+    }
+
+    /// Reads the rights on a selected mailbox someone else shares again. Once it may no longer be
+    /// read, ends the session like `refresh` does, or with `end_if_gone` false (closing it)
+    /// leaves it with no rights at all.
+    async fn recheck_rights(&mut self, end_if_gone: bool) -> io::Result<()> {
+        let me = self.account_id();
+        let Some((owner, mailbox_id)) = self.selected.as_ref().map(|selected| (selected.owner, selected.mailbox_id))
+        else {
+            return Ok(());
+        };
+        if owner == me {
+            return Ok(());
+        }
+        let shared = self.store.shared_mailbox(me, mailbox_id).await.map_err(io::Error::other)?;
+        match shared.map(|shared| shared.rights).filter(|rights| rights.contains('r')) {
+            Some(rights) => {
+                let selected = self.selected.as_mut().expect("checked above");
+                if !rights.chars().any(|right| "stwe".contains(right)) {
+                    selected.read_only = true;
+                }
+                selected.rights = rights;
+                Ok(())
+            }
+            None if !end_if_gone => {
+                let selected = self.selected.as_mut().expect("checked above");
+                selected.rights.clear();
+                selected.read_only = true;
+                Ok(())
+            }
+            None => {
+                self.selected = None;
+                self.send(b"* BYE The selected mailbox is no longer shared with you\r\n").await?;
+                self.flush().await?;
+                Err(io::Error::new(io::ErrorKind::UnexpectedEof, "mailbox no longer shared"))
+            }
+        }
     }
 
     // ---- changes ----

@@ -332,6 +332,27 @@ async fn a_shared_subfolder_shows_under_its_owners_path() {
     assert_eq!(leni.line().await, "* BYE The selected mailbox is no longer shared with you");
 }
 
+/// A share narrowed while the folder is open counts from the very next command, not only after it.
+#[tokio::test]
+async fn narrowed_rights_count_from_the_next_command() {
+    let server = server().await;
+    let inbox = inbox(&server.store, server.mini).await;
+    deliver(&server.store, server.mini, "eins").await;
+    server.store.set_mailbox_acl(server.mini, inbox, "leni@example.org", "lrswte").await.unwrap();
+    let mut leni = Client::login(&server, "leni@example.org").await;
+    leni.expect(&format!("SELECT {SHARED_INBOX}"), "OK [READ-WRITE]").await;
+
+    server.store.set_mailbox_acl(server.mini, inbox, "leni@example.org", "lr").await.unwrap();
+    leni.expect("STORE 1 +FLAGS (\\Deleted)", "NO").await;
+    leni.expect("EXPUNGE", "NO").await;
+    let flags = server.store.imap_messages(server.mini, inbox).await.unwrap().messages[0].keywords.clone();
+    assert!(!flags.iter().any(|flag| flag == "$deleted"), "{flags:?}");
+
+    server.store.set_mailbox_acl(server.mini, inbox, "leni@example.org", "").await.unwrap();
+    leni.send(b"f FETCH 1 (FLAGS)\r\n").await;
+    assert_eq!(leni.line().await, "* BYE The selected mailbox is no longer shared with you");
+}
+
 /// A shared mailbox (docs/groups.md): every folder of it shows for its members, new ones too, with
 /// every right; mail filed there stays in its own quota; nobody logs in as it.
 #[tokio::test]
