@@ -64,6 +64,8 @@ pub use fetch::is_public;
 pub use fetched::Mailbox as FetchedMailbox;
 /// The value of one header of a raw message, for callers that fetch mail and hand it in here.
 pub use headers::first_value as header_value;
+/// Every value of one header of a raw message, in order.
+pub use headers::values as header_values;
 pub use inbound::{ListenerKind, Taken, deliver_fetched, serve, serve_stream};
 pub use outbound::run_queue;
 pub use relay::IpNetwork;
@@ -312,6 +314,12 @@ impl Smtp {
 
     pub fn hostname(&self) -> &str {
         &self.inner.hostname
+    }
+
+    /// Verifies the DKIM signatures of a message again and answers the headers (`h=`) each one that
+    /// holds covers. See [`checks::signed_headers`].
+    pub async fn dkim_signed_headers(&self, raw: &[u8]) -> Vec<Vec<String>> {
+        checks::signed_headers(&self.inner, raw).await
     }
 
     /// DNS answers used for SPF, DKIM, DMARC and MX lookups. Tests pre-fill it.
