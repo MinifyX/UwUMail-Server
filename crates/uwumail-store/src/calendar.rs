@@ -21,6 +21,8 @@ use crate::{DAV_RESOURCE_MAX_BYTES, Result, Store, StoreError};
 pub struct CalendarEventRecord {
     pub id: i64,
     pub calendar_id: i64,
+    /// The account the calendar belongs to: the account itself, or who shares it with it.
+    pub owner_id: i64,
     pub name: String,
     pub uid: String,
     pub etag: String,
@@ -49,7 +51,7 @@ pub struct CalendarEventWrite {
 }
 
 const EVENT_COLUMNS: &str =
-    "r.id, r.collection_id, r.name, r.uid, r.etag, r.content, r.starts_at, r.ends_at, r.modified_at";
+    "r.id, r.collection_id, r.name, r.uid, r.etag, r.content, r.starts_at, r.ends_at, r.modified_at, c.account_id";
 
 fn event_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CalendarEventRecord> {
     Ok(CalendarEventRecord {
@@ -62,6 +64,7 @@ fn event_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CalendarEventRecord> {
         starts_at: row.get(6)?,
         ends_at: row.get(7)?,
         modified_at: row.get(8)?,
+        owner_id: row.get(9)?,
     })
 }
 

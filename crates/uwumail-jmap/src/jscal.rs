@@ -459,6 +459,109 @@ fn without_override(event: &Map<String, Value>, rid: &str) -> Map<String, Value>
 }
 
 // ------------------------------------------------------------------------------------------------
+// Per-user properties (draft-ietf-jmap-calendars, section 5.4)
+
+/// The properties of an event each person has for themselves in a shared calendar, also per
+/// instance. The owner's are part of the event; everyone else's are kept apart.
+pub const PER_USER: &[&str] = &["keywords", "color", "freeBusyStatus", "useDefaultAlerts", "alerts"];
+
+fn strip_per_user(event: &mut Map<String, Value>) {
+    for key in PER_USER {
+        event.remove(*key);
+    }
+    if let Some(Value::Object(overrides)) = event.get_mut("recurrenceOverrides") {
+        for patch in overrides.values_mut().filter_map(Value::as_object_mut) {
+            patch.retain(|key, _| !PER_USER.contains(&key.split('/').next().unwrap_or_default()));
+        }
+    }
+}
+
+fn per_user_of(object: &Map<String, Value>) -> Map<String, Value> {
+    object
+        .iter()
+        .filter(|(key, _)| PER_USER.contains(&key.split('/').next().unwrap_or_default()))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
+}
+
+/// The event as someone it is shared with sees it: the owner's per-user properties replaced by
+/// `prefs`, their own. `instances` says which recurrence ids the series has, so that their own
+/// properties of an instance that is gone stay away.
+pub fn per_user_view(
+    event: &Map<String, Value>,
+    prefs: Option<&Map<String, Value>>,
+    instances: impl FnOnce() -> BTreeSet<String>,
+) -> Map<String, Value> {
+    let mut view = event.clone();
+    strip_per_user(&mut view);
+    let Some(prefs) = prefs else { return view };
+    for key in PER_USER {
+        if let Some(value) = prefs.get(*key) {
+            view.insert((*key).to_owned(), value.clone());
+        }
+    }
+    if let Some(Value::Object(own)) = prefs.get("recurrenceOverrides")
+        && !own.is_empty()
+    {
+        let instances = instances();
+        let overrides = view.entry("recurrenceOverrides").or_insert_with(|| Value::Object(Map::new()));
+        if let Value::Object(overrides) = overrides {
+            for (rid, patch) in own {
+                let (Value::Object(patch), true) = (patch, instances.contains(rid)) else { continue };
+                if let Value::Object(target) = overrides.entry(rid.clone()).or_insert_with(|| Value::Object(Map::new()))
+                {
+                    target.extend(patch.iter().map(|(k, v)| (k.clone(), v.clone())));
+                }
+            }
+        }
+    }
+    view
+}
+
+/// Splits what someone an event is shared with made of it into the owner's event and their own
+/// per-user properties: what they did to the owner's per-user properties goes to theirs, the
+/// owner's stay as they were.
+pub fn split_per_user(
+    view: &Map<String, Value>,
+    owner: &Map<String, Value>,
+) -> (Map<String, Value>, Map<String, Value>) {
+    let mut prefs = per_user_of(view);
+    let mut own_overrides = Map::new();
+    let mut event = view.clone();
+    strip_per_user(&mut event);
+    for (key, value) in per_user_of(owner) {
+        event.insert(key, value);
+    }
+    let owner_overrides = owner.get("recurrenceOverrides").and_then(Value::as_object);
+    if let Some(Value::Object(overrides)) = view.get("recurrenceOverrides") {
+        for (rid, patch) in overrides {
+            let Value::Object(patch) = patch else { continue };
+            let mine = per_user_of(patch);
+            if !mine.is_empty() {
+                own_overrides.insert(rid.clone(), Value::Object(mine));
+            }
+        }
+    }
+    if let Some(Value::Object(overrides)) = event.get_mut("recurrenceOverrides") {
+        overrides.retain(|rid, patch| {
+            let owners = owner_overrides.and_then(|o| o.get(rid)).and_then(Value::as_object);
+            if let (Value::Object(patch), Some(owners)) = (&mut *patch, owners) {
+                patch.extend(per_user_of(owners));
+            }
+            // An instance that only had one's own properties is not the owner's.
+            owners.is_some() || patch.as_object().is_none_or(|p| !p.is_empty())
+        });
+        if overrides.is_empty() && owner_overrides.is_none() {
+            event.remove("recurrenceOverrides");
+        }
+    }
+    if !own_overrides.is_empty() {
+        prefs.insert("recurrenceOverrides".into(), Value::Object(own_overrides));
+    }
+    (event, prefs)
+}
+
+// ------------------------------------------------------------------------------------------------
 // Rules for stored events
 
 /// Why an event cannot be stored: the properties at fault and a description.
@@ -973,6 +1076,40 @@ END:VCALENDAR\r\n";
             ["recurrenceOverrides/2026-10-27T09:00:00"]
         );
         assert_eq!(bad(json!({ "uid": "" })), ["uid"]);
+    }
+
+    #[test]
+    fn per_user_properties_stay_apart() {
+        let owner = object(json!({
+            "title": "Yoga", "color": "red", "alerts": { "a": { "trigger": { "offset": "-PT5M" } } },
+            "recurrenceOverrides": { "2026-10-27T09:00:00": { "title": "Park", "keywords": { "owner": true } } }
+        }));
+        let instances = || BTreeSet::from(["2026-10-27T09:00:00".to_owned(), "2026-11-03T09:00:00".to_owned()]);
+        let prefs = object(json!({
+            "color": "blue",
+            "recurrenceOverrides": { "2026-11-03T09:00:00": { "alerts": {} }, "2030-01-01T00:00:00": { "color": "x" } }
+        }));
+        let view = per_user_view(&owner, Some(&prefs), instances);
+        assert_eq!(
+            Value::Object(view.clone()),
+            json!({
+                "title": "Yoga", "color": "blue",
+                "recurrenceOverrides": { "2026-10-27T09:00:00": { "title": "Park" }, "2026-11-03T09:00:00": { "alerts": {} } }
+            })
+        );
+        let mut changed = view.clone();
+        changed.insert("title".into(), json!("Yoga!"));
+        changed.insert("keywords".into(), json!({ "mine": true }));
+        let (event, mine) = split_per_user(&changed, &owner);
+        let mut expected = owner.clone();
+        expected.insert("title".into(), json!("Yoga!"));
+        assert_eq!(event, expected, "the owner's per-user properties stay");
+        assert_eq!(
+            Value::Object(mine),
+            json!({ "color": "blue", "keywords": { "mine": true }, "recurrenceOverrides": { "2026-11-03T09:00:00": { "alerts": {} } } })
+        );
+        let (event, _) = split_per_user(&view, &owner);
+        assert_eq!(event, owner, "nothing of the owner's changed");
     }
 
     #[test]

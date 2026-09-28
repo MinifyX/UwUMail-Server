@@ -15,6 +15,7 @@ mod alerts;
 mod bayes;
 mod blobs;
 mod calendar;
+mod calendar_prefs;
 mod calendar_subscriptions;
 mod contacts;
 mod dav;
@@ -89,6 +90,10 @@ pub use bayes::{
 };
 pub use blobs::{BlobCleanupPause, BlobHash};
 pub use calendar::{CalendarEventRecord, CalendarEventWrite};
+pub use calendar_prefs::{
+    CALENDAR_DEFAULT_ALERTS_MAX_BYTES, CALENDAR_EVENT_PREFS_MAX_BYTES, CalendarEventPrefs, CalendarPrefs,
+    CalendarPrefsUpdate,
+};
 pub use calendar_subscriptions::{
     CalendarSubscription, CalendarSubscriptionUpdate, DEFAULT_SUBSCRIPTION_INTERVAL_SECS, MAX_CALENDAR_SUBSCRIPTIONS,
     MAX_SUBSCRIPTION_INTERVAL_SECS, MIN_SUBSCRIPTION_INTERVAL_SECS, NewCalendarSubscription,

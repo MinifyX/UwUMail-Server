@@ -31,8 +31,8 @@ use uwumail_jmap::{Authenticator, ClientInfo};
 use uwumail_smtp::Smtp;
 use uwumail_store::itip::{self, Component};
 use uwumail_store::{
-    Account, AppScope, DavAccess, DavCollectionUpdate, DavKind, DavPrecondition, DavWrite, DavWriteOutcome,
-    NewDavCollection, Store, StoreError,
+    Account, AppScope, CalendarPrefsUpdate, DavAccess, DavCollectionUpdate, DavKind, DavPrecondition, DavWrite,
+    DavWriteOutcome, NewDavCollection, Store, StoreError,
 };
 
 use crate::props::{Requested, Target, View, Who};
@@ -370,7 +370,15 @@ impl Session<'_> {
     async fn collections(&self, kind: DavKind) -> Result<Vec<View>, StoreError> {
         let own = self.store().dav_collections(self.account.id, kind, self.dav.default_collection(kind)).await?;
         let mut views: Vec<View> = own.into_iter().map(|c| View::own(c, self.login)).collect();
-        for shared in self.store().dav_shared_with(self.account.id, kind).await? {
+        // Someone a calendar is shared with sees their own name, colour, order and time zone.
+        let mut prefs = match kind {
+            DavKind::Calendar => self.store().calendar_prefs(self.account.id).await?,
+            DavKind::Addressbook => Default::default(),
+        };
+        for mut shared in self.store().dav_shared_with(self.account.id, kind).await? {
+            if let Some(prefs) = prefs.remove(&shared.collection.id) {
+                shared.collection.apply_prefs(&prefs);
+            }
             views.push(View {
                 segment: format!("{SHARED_PREFIX}{}", shared.collection.id),
                 collection: shared.collection,
@@ -518,12 +526,29 @@ impl Session<'_> {
             Ok(None) => return simple(StatusCode::NOT_FOUND, "Not found"),
             Err(err) => return store_failure(err),
         };
-        if !view.access.may_admin() {
+        let (mut update, names) = collection_update(&root);
+        if !view.access.is_owner() && *kind == DavKind::Calendar {
+            // Name, colour, order and time zone of a calendar shared with the login are its own;
+            // the description is the owner's and needs all rights.
+            let prefs = CalendarPrefsUpdate {
+                name: update.display_name.take().map(|name| Some(name).filter(|n| !n.is_empty())),
+                color: update.color.take(),
+                sort_order: update.sort_order.take().map(Some),
+                timezone: update.timezone.take(),
+                ..Default::default()
+            };
+            if update.description.is_some() && !view.access.may_admin() {
+                return not_allowed("<d:write-properties/>");
+            }
+            if let Err(err) = self.store().set_calendar_prefs(self.account.id, view.collection.id, prefs).await {
+                return store_failure(err);
+            }
+        } else if !view.access.may_admin() {
             return not_allowed("<d:write-properties/>");
         }
-        let (update, names) = collection_update(&root);
-        if let Err(err) =
-            self.store().dav_update_collection(view.collection.account_id, view.collection.id, update).await
+        if (update.description.is_some() || view.access.is_owner() || *kind != DavKind::Calendar)
+            && let Err(err) =
+                self.store().dav_update_collection(view.collection.account_id, view.collection.id, update).await
         {
             return store_failure(err);
         }

@@ -72,13 +72,12 @@ in `myRights`; writing where it may not is `forbidden`.
 
 | Shared with rights | `myRights` |
 | --- | --- |
-| read | `mayReadFreeBusy`, `mayReadItems` |
-| read and write | also `mayWriteAll`, `mayWriteOwn`, `mayUpdatePrivate`, `mayRSVP` |
-| all | also `mayShare`: name, colour, description, time zone and `shareWith` may change |
+| read | `mayReadFreeBusy`, `mayReadItems`, `mayUpdatePrivate` |
+| read and write | also `mayWriteAll`, `mayWriteOwn`, `mayRSVP` |
+| all | also `mayShare`: the description and `shareWith` may change |
 
 `mayDelete` of a shared calendar is `true`: destroying it only leaves it, it
-stays its owner's. `isDefault` is always `false` for it, and its `isVisible`
-and `sortOrder` are the owner's and cannot change. A calendar shared with the
+stays its owner's. `isDefault` is always `false` for it. A calendar shared with the
 account has an extra property naming its owner:
 
 ```json
@@ -86,6 +85,32 @@ account has an extra property naming its owner:
 ```
 
 (`null` for one's own calendars).
+
+### Per-user properties
+
+Everyone keeps their own settings of a calendar shared with them, as the draft
+says: `name`, `color`, `sortOrder`, `isVisible`, `timeZone`,
+`includeInAvailability` and the default alerts. Name, colour and time zone
+start as the owner's, the others at their defaults (`isVisible: true`,
+`sortOrder` 0, `includeInAvailability: "none"`). Changing them needs no rights
+beyond reading and never touches the owner's calendar: the owner's CalDAV
+clients and sync token see nothing of it. The CalDAV clients of the person it
+is shared with show their own name, colour, order and time zone too, and a
+`PROPPATCH` of these properties from them is kept as theirs.
+
+The per-user properties of events (`keywords`, `color`, `freeBusyStatus`,
+`useDefaultAlerts`, `alerts`, also in `recurrenceOverrides`) work the same
+way: in a calendar shared with the account they start empty, and what it sets
+is kept apart for it, whatever its rights; `updated` then shows the later of
+the owner's change and its own. The owner's per-user properties are part of
+the event and stay there, and only the account that changed its own hears
+about it. CalDAV clients of the person it is shared with see the event as the
+owner keeps it.
+
+An event the owner marks `"privacy": "private"` shows others only its times
+and the like (RFC 8984, section 4.4.3), is not found by their text searches
+and cannot be changed by them, not even their own properties of it. A
+`"secret"` one is not there for them at all.
 
 `shareWith` of an own calendar (or one shared with all rights) is a map from
 principal id to CalendarRights, `null` when it is shared with nobody.
@@ -122,7 +147,7 @@ Instance ids never show up in `/changes`; only the stored event does.
 | `isSubscribed` | always `true` |
 | `isVisible` | whether the webmail and the apps show its events; kept on the server, CalDAV does not know it |
 | `isDefault` | exactly one calendar is the default |
-| `includeInAvailability` | `"all"`, and `"none"` for a subscribed calendar, which never makes anyone busy |
+| `includeInAvailability` | `"all"`, `"attending"` or `"none"`: which of its events make the account busy. By default `"all"` for one's own calendars and `"none"` for subscribed ones and those shared with the account |
 | `defaultAlertsWithTime`, `defaultAlertsWithoutTime` | always `null` |
 | `shareWith` | who else sees it; see [Shared calendars](#shared-calendars) |
 | `timeZone` | an IANA name or `null`; stored as the CalDAV `calendar-timezone` |
@@ -363,6 +388,4 @@ EventSource, next to the mail types.
   are stored and handed to CalDAV clients, which ring them
 - Drafts (`isDraft: true`), more than one calendar per event, custom time
   zones, events that are single instances without their series
-- Per-user properties of shared calendars and events: colour, visibility and
-  alerts are the owner's
 - `CalendarEvent/queryChanges` for queries with `expandRecurrences`

@@ -22,7 +22,8 @@ use crate::{MAX_OBJECTS_IN_GET, ids};
 
 /// Always part of an event returned by /get, whatever `properties` says.
 const ALWAYS: &[&str] = &["id", "calendarIds", "isDraft", "isOrigin", "baseEventId"];
-/// Properties whose change is the user's own business and does not count as a new version.
+/// Properties whose change does not count as a new version: the per-user ones and what only
+/// says where and whether the event is kept.
 const PER_USER: &[&str] = &[
     "calendarIds",
     "isDraft",
@@ -131,10 +132,74 @@ fn floating_zone(args: &Value) -> MethodResult<Tz> {
     }
 }
 
+/// What someone a calendar is shared with sees of an event its owner marked `private`
+/// (RFC 8984, section 4.4.3), besides what JMAP adds.
+const PRIVATE_PROPERTIES: &[&str] = &[
+    "@type",
+    "created",
+    "duration",
+    "excluded",
+    "freeBusyStatus",
+    "privacy",
+    "recurrenceId",
+    "recurrenceIdTimeZone",
+    "recurrenceOverrides",
+    "recurrenceRule",
+    "sequence",
+    "showWithoutTime",
+    "start",
+    "timeZone",
+    "timeZones",
+    "uid",
+    "updated",
+];
+
+fn privacy(event: &Map<String, Value>) -> &str {
+    event.get("privacy").and_then(Value::as_str).unwrap_or("public")
+}
+
+/// An event reduced to what others may see of a private one.
+fn reduce_private(event: &mut Map<String, Value>) {
+    event.retain(|key, _| PRIVATE_PROPERTIES.contains(&key.as_str()) || jscal::JMAP_PROPERTIES.contains(&key.as_str()));
+    if let Some(Value::Object(overrides)) = event.get_mut("recurrenceOverrides") {
+        for patch in overrides.values_mut().filter_map(Value::as_object_mut) {
+            patch.retain(|key, _| PRIVATE_PROPERTIES.contains(&key.split('/').next().unwrap_or_default()));
+        }
+    }
+}
+
 /// A stored event, read.
 struct Loaded {
     record: CalendarEventRecord,
     parsed: Parsed,
+    /// The event is in a calendar someone else shares with the account.
+    shared: bool,
+    /// Then the account's own per-user properties of it, and when it last changed them.
+    prefs: Option<(Map<String, Value>, i64)>,
+}
+
+impl Loaded {
+    /// The event as the account sees it: in a calendar shared with it, with its own per-user
+    /// properties in place of the owner's, and only the times of an event the owner keeps private.
+    fn view(&self) -> Map<String, Value> {
+        let event = self.parsed.event();
+        if !self.shared {
+            return event.clone();
+        }
+        let prefs = self.prefs.as_ref().map(|(prefs, _)| prefs);
+        let mut view = jscal::per_user_view(event, prefs, || jscal::recurrence_ids(&self.record.content, event));
+        if let Some((_, changed)) = &self.prefs {
+            // The later of the owner's and one's own change.
+            let own = jscal::format_utc(*changed);
+            if view.get("updated").and_then(Value::as_str).and_then(jscal::parse_utc).is_none_or(|t| t < *changed) {
+                view.insert("updated".into(), json!(own));
+            }
+        }
+        if privacy(event) == "private" {
+            reduce_private(&mut view);
+        }
+        view
+    }
 }
 
 async fn load(ctx: &Ctx<'_>, ids: Option<Vec<i64>>) -> MethodResult<Vec<Loaded>> {
@@ -143,10 +208,25 @@ async fn load(ctx: &Ctx<'_>, ids: Option<Vec<i64>>) -> MethodResult<Vec<Loaded>>
     if all && records.len() > MAX_OBJECTS_IN_GET {
         return Err(MethodError::new("requestTooLarge", "too many events to fetch at once; ask for ids"));
     }
+    let me = ctx.account.id;
+    let shared: Vec<i64> = records.iter().filter(|record| record.owner_id != me).map(|record| record.id).collect();
+    let mut prefs = ctx.jmap.store.calendar_event_prefs(me, shared).await?;
     run_blocking(move || {
         records
             .into_iter()
-            .filter_map(|record| Some(Loaded { parsed: jscal::from_icalendar(&record.content)?, record }))
+            .filter_map(|record| {
+                let parsed = jscal::from_icalendar(&record.content)?;
+                let shared = record.owner_id != me;
+                // A secret event is not there for anyone but the calendar's owner.
+                if shared && privacy(parsed.event()) == "secret" {
+                    return None;
+                }
+                let prefs = prefs.remove(&record.id).and_then(|prefs| match serde_json::from_str(&prefs.data) {
+                    Ok(Value::Object(data)) => Some((data, prefs.updated_at)),
+                    _ => None,
+                });
+                Some(Loaded { record, parsed, shared, prefs })
+            })
             .collect()
     })
     .await
@@ -205,7 +285,7 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let (list, not_found) = run_blocking(move || -> MethodResult<(Vec<Value>, Vec<String>)> {
         let by_id: HashMap<i64, &Loaded> = loaded.iter().map(|l| (l.record.id, l)).collect();
         let stored = |loaded: &Loaded| {
-            let mut object = loaded.parsed.event().clone();
+            let mut object = loaded.view();
             decorate(&mut object, ids::calendar_event(loaded.record.id), loaded.record.calendar_id, None, &own);
             output(object, &properties, floating)
         };
@@ -228,7 +308,7 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
                     if !rids.contains(rid) {
                         return None;
                     }
-                    let mut object = jscal::instance(event, rid)?;
+                    let mut object = jscal::instance(&loaded.view(), rid)?;
                     decorate(&mut object, text.clone(), loaded.record.calendar_id, Some(*n), &own);
                     Some(output(object, &properties, floating))
                 }),
@@ -496,11 +576,20 @@ impl Writer<'_> {
         event.insert("updated".into(), json!(now));
         server_set.insert("created".into(), created);
         server_set.insert("updated".into(), json!(now));
+        // In someone else's calendar, what is per user stays the account's own.
+        let shared = self.calendar(calendar_id)?.account_id != self.ctx.account.id;
+        let (event, prefs) = if shared { jscal::split_per_user(&event, &Map::new()) } else { (event, Map::new()) };
         let parsed = Parsed::new_event();
         let (id, content) = match self.store(&parsed, &event, None, calendar_id, None, None).await {
             Ok(result) => result?,
             Err(()) => return Err(SetError::new("serverFail", "the event could not be stored")),
         };
+        if !prefs.is_empty() {
+            let data = Some(Value::Object(prefs).to_string());
+            if let Err(err) = self.ctx.jmap.store.set_calendar_event_prefs(self.ctx.account.id, id, data).await {
+                tracing::warn!(%err, "one's own properties of a new event could not be kept");
+            }
+        }
         self.schedule(calendar_id, None, Some(&content)).await;
         server_set.insert("id".into(), json!(ids::calendar_event(id)));
         server_set.insert("isDraft".into(), json!(false));
@@ -517,8 +606,7 @@ impl Writer<'_> {
         }
         for _ in 0..WRITE_ATTEMPTS {
             let loaded = self.load_one(id).await?;
-            let base = loaded.parsed.event();
-            let mut event = base.clone();
+            let mut event = loaded.view();
             let mut calendars: BTreeSet<i64> = BTreeSet::from([loaded.record.calendar_id]);
             let (mut utc_start, mut utc_end) = (None, None);
             let mut new_version = false;
@@ -546,7 +634,7 @@ impl Writer<'_> {
                         }
                     }
                     "isDraft" if tokens.len() == 1 && matches!(value, Value::Bool(false) | Value::Null) => {}
-                    "uid" | "@type" if tokens.len() == 1 && base.get(top) == Some(value) => {}
+                    "uid" | "@type" if tokens.len() == 1 && event.get(top) == Some(value) => {}
                     "utcStart" if tokens.len() == 1 => utc_start = Some(value.clone()),
                     "utcEnd" if tokens.len() == 1 => utc_end = Some(value.clone()),
                     "id" | "baseEventId" | "isOrigin" | "isDraft" | "uid" | "@type" | "calendarIds" | "utcStart"
@@ -571,37 +659,85 @@ impl Writer<'_> {
             {
                 server_set.insert(property.into(), event[property].clone());
             }
-            let current = base.get("sequence").and_then(Value::as_u64).unwrap_or(0);
             let asked = patch.get("sequence").and_then(Value::as_u64);
-            if new_version && asked.is_none_or(|asked| asked <= current) {
-                event.insert("sequence".into(), json!(current + 1));
-                server_set.insert("sequence".into(), json!(current + 1));
-            }
-            if is_origin(&event, &self.own) {
-                let now = json!(jscal::format_utc(jscal::now()));
-                event.insert("updated".into(), now.clone());
-                server_set.insert("updated".into(), now);
-            }
-            match self
-                .store(
-                    &loaded.parsed,
-                    &event,
-                    Some(id),
-                    calendar_id,
-                    Some(loaded.record.etag.clone()),
-                    Some(&loaded.record.content),
-                )
-                .await
-            {
-                Ok(result) => {
-                    let (_, content) = result?;
-                    self.schedule(calendar_id, Some(&loaded.record.content), Some(&content)).await;
-                    return Ok(Value::Object(server_set));
-                }
-                Err(()) => continue,
+            if let Some(set) = self.commit(&loaded, event, calendar_id, new_version, asked).await? {
+                server_set.extend(set);
+                return Ok(Value::Object(server_set));
             }
         }
         Err(SetError::new("serverFail", "the event keeps changing; try again"))
+    }
+
+    /// Stores what a change made of an event the account sees as `event`: the owner's part as
+    /// iCalendar, with a new `sequence` for a `new_version` and `updated` where the account is the
+    /// origin; in someone else's calendar the account's own per-user properties apart. Returns
+    /// what the server set, or `None` when CalDAV changed the event meanwhile.
+    async fn commit(
+        &self,
+        loaded: &Loaded,
+        event: Map<String, Value>,
+        calendar_id: i64,
+        new_version: bool,
+        asked_sequence: Option<u64>,
+    ) -> Result<Option<Map<String, Value>>, SetError> {
+        let owner = loaded.parsed.event();
+        let (mut stored, prefs) = if loaded.shared {
+            // Not even one's own properties of an event the owner keeps private.
+            if privacy(owner) == "private" {
+                return Err(SetError::new("forbidden", "the owner keeps this event private"));
+            }
+            let (mut stored, prefs) = jscal::split_per_user(&event, owner);
+            match owner.get("updated") {
+                Some(updated) => stored.insert("updated".into(), updated.clone()),
+                None => stored.remove("updated"),
+            };
+            (stored, Some(prefs))
+        } else {
+            (event, None)
+        };
+        let mut server_set = Map::new();
+        let owner_changed = !loaded.shared || stored != *owner || calendar_id != loaded.record.calendar_id;
+        if owner_changed {
+            let current = owner.get("sequence").and_then(Value::as_u64).unwrap_or(0);
+            if new_version && asked_sequence.is_none_or(|asked| asked <= current) {
+                stored.insert("sequence".into(), json!(current + 1));
+                server_set.insert("sequence".into(), json!(current + 1));
+            }
+            if is_origin(&stored, &self.own) {
+                let now = json!(jscal::format_utc(jscal::now()));
+                stored.insert("updated".into(), now.clone());
+                server_set.insert("updated".into(), now);
+            }
+            let (etag, old) = (Some(loaded.record.etag.clone()), Some(loaded.record.content.as_str()));
+            match self.store(&loaded.parsed, &stored, Some(loaded.record.id), calendar_id, etag, old).await {
+                Ok(result) => {
+                    let (_, content) = result?;
+                    self.schedule(calendar_id, Some(&loaded.record.content), Some(&content)).await;
+                }
+                Err(()) => return Ok(None),
+            }
+        }
+        if let Some(prefs) = prefs {
+            let current = loaded.prefs.as_ref().map(|(prefs, _)| prefs.clone()).unwrap_or_default();
+            if prefs != current {
+                let data = (!prefs.is_empty()).then(|| Value::Object(prefs).to_string());
+                self.ctx
+                    .jmap
+                    .store
+                    .set_calendar_event_prefs(self.ctx.account.id, loaded.record.id, data)
+                    .await
+                    .map_err(|err| match err {
+                        StoreError::QuotaExceeded => {
+                            SetError::new("tooLarge", "your own properties of this event are too large")
+                        }
+                        other => SetError::from(other),
+                    })?;
+                if !owner_changed {
+                    server_set.insert("updated".into(), json!(jscal::format_utc(jscal::now())));
+                }
+            }
+        }
+        Ok(Some(server_set))
     }
 
     /// Changes one instance of a series: the change becomes an override of the series.
@@ -664,39 +800,26 @@ impl Writer<'_> {
     ) -> Result<(), SetError> {
         for _ in 0..WRITE_ATTEMPTS {
             let loaded = self.load_one(id).await?;
-            let base = loaded.parsed.event();
+            let base = loaded.view();
             let content = loaded.record.content.clone();
-            let series = base.clone();
+            let series = loaded.parsed.event().clone();
             let rids = run_blocking(move || jscal::recurrence_ids(&content, &series))
                 .await
                 .map_err(|_| SetError::new("serverFail", "expansion failed"))?;
             if !rids.contains(rid) {
                 return Err(SetError::not_found());
             }
-            let instance = jscal::instance(base, rid).ok_or_else(SetError::not_found)?;
-            let (patch, new_version) = change(base, &instance)?;
+            let instance = jscal::instance(&base, rid).ok_or_else(SetError::not_found)?;
+            let (patch, new_version) = change(&base, &instance)?;
             let mut event = base.clone();
             let overrides = event.entry("recurrenceOverrides").or_insert_with(|| json!({}));
             if !overrides.is_object() {
                 *overrides = json!({});
             }
             overrides[rid] = patch;
-            let current = base.get("sequence").and_then(Value::as_u64).unwrap_or(0);
-            if new_version {
-                event.insert("sequence".into(), json!(current + 1));
-            }
-            if is_origin(&event, &self.own) {
-                event.insert("updated".into(), json!(jscal::format_utc(jscal::now())));
-            }
-            let etag = Some(loaded.record.etag.clone());
             let calendar_id = loaded.record.calendar_id;
-            match self.store(&loaded.parsed, &event, Some(id), calendar_id, etag, Some(&loaded.record.content)).await {
-                Ok(result) => {
-                    let (_, content) = result?;
-                    self.schedule(calendar_id, Some(&loaded.record.content), Some(&content)).await;
-                    return Ok(());
-                }
-                Err(()) => continue,
+            if self.commit(&loaded, event, calendar_id, new_version, None).await?.is_some() {
+                return Ok(());
             }
         }
         Err(SetError::new("serverFail", "the event keeps changing; try again"))
@@ -1039,6 +1162,16 @@ impl Evaluator {
                 return Ok(false);
             }
         }
+        // What others may not read of a private event is not searched for them either.
+        let reduced;
+        let event = if loaded.shared && privacy(event) == "private" {
+            let mut copy = event.clone();
+            reduce_private(&mut copy);
+            reduced = copy;
+            &reduced
+        } else {
+            event
+        };
         if text_matches(condition, event) {
             return Ok(true);
         }
@@ -1101,7 +1234,10 @@ impl Evaluator {
             if !jscal::overlaps(start, end, condition.after, condition.before) {
                 continue;
             }
-            let Some(instance) = jscal::instance(event, &rid) else { continue };
+            let Some(mut instance) = jscal::instance(event, &rid) else { continue };
+            if loaded.shared && privacy(event) == "private" {
+                reduce_private(&mut instance);
+            }
             if text_matches(condition, &instance) {
                 hits.push(self.hit(ids::event_instance(loaded.record.id, &rid), &instance, Some(&rid), start));
             }
@@ -1169,12 +1305,18 @@ pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     // A query's own limit, within what is left of the request's.
     let deadline = (Instant::now() + QUERY_TIME_LIMIT).min(request_deadline(ctx));
     let evaluator = Evaluator { floating, deadline };
+    let me = ctx.account.id;
     let mut hits = run_blocking(move || -> MethodResult<Vec<Hit>> {
         let mut hits = Vec::new();
         for record in records {
             evaluator.check_time()?;
             let Some(parsed) = jscal::from_icalendar(&record.content) else { continue };
-            let loaded = Loaded { record, parsed };
+            let shared = record.owner_id != me;
+            // A secret event is not there for anyone but the calendar's owner.
+            if shared && privacy(parsed.event()) == "secret" {
+                continue;
+            }
+            let loaded = Loaded { record, parsed, shared, prefs: None };
             match &expanded {
                 Some(condition) => hits.extend(evaluator.expanded_hits(condition, &loaded)?),
                 None => hits.extend(evaluator.stored_hits(&filter, &loaded)?),

@@ -20,7 +20,7 @@ and one of three levels:
 | --- | --- |
 | Read | see every entry |
 | Read and write | also add, change and delete entries |
-| Everything | also rename it, change its colour and description, and share it with others (never with more rights than they have, and never take the owner's away) |
+| Everything | also change its description and share it with others (never with more rights than they have, and never take the owner's away) |
 
 Deleting a calendar stays its owner's. Whoever something is shared with can
 leave it again at any time, in the portal, by deleting it in their calendar
@@ -40,8 +40,12 @@ Where shared things show up:
 - **Push:** every change to a shared calendar, whoever makes it, is pushed to
   everyone who sees it.
 
-A shared calendar always shows the owner's name, colour and events. Alerts
-belong to the event and are the same for everybody.
+A shared calendar shows the owner's events. Its name, colour, order and time
+zone start as the owner's, but everyone can give it their own, in the webmail
+or their calendar app, without changing it for anybody else. Alerts, colours
+and keywords of its events are everyone's own too over JMAP: the owner's stay
+in the event, and those of the others are kept apart for each of them (their
+CalDAV apps show the owner's).
 
 ## Invitations (scheduling)
 
