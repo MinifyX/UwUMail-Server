@@ -192,7 +192,13 @@ impl Provider {
         if asked.len() >= LIBRAVATAR_NETWORKS {
             asked.retain(|_, (since, _)| now.duration_since(*since) < Duration::from_secs(60));
         }
-        let entry = asked.entry(network(ip)).or_insert((now, 0));
+        // Still full: networks not yet known share one count, so the map stays bounded however
+        // many networks ask at once.
+        let mut key = network(ip);
+        if asked.len() >= LIBRAVATAR_NETWORKS && !asked.contains_key(&key) {
+            key = IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED);
+        }
+        let entry = asked.entry(key).or_insert((now, 0));
         if now.duration_since(entry.0) >= Duration::from_secs(60) {
             *entry = (now, 0);
         }

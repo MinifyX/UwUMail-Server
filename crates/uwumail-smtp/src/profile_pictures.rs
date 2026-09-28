@@ -101,10 +101,11 @@ fn has_transparency(picture: &DynamicImage) -> bool {
     picture.color().has_alpha() && picture.to_rgba8().pixels().any(|pixel| pixel.0[3] < 255)
 }
 
-/// Pictures decoded at once, for the whole server: each may take a few hundred MB while it is read.
-static DECODING: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+/// Pictures decoded at once, for the whole server: one may take a few hundred MB while it is read,
+/// and uploads are rare enough to wait for each other.
+static DECODING: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 
-/// [`prepare`] on the blocking pool, at most two at a time.
+/// [`prepare`] on the blocking pool, one at a time.
 pub async fn prepare_upload(bytes: Vec<u8>) -> Result<Prepared, PictureError> {
     if bytes.len() > MAX_UPLOAD_BYTES {
         return Err(PictureError::TooLarge);
