@@ -29,8 +29,8 @@ use uwumail_store::{Account, Changes};
 use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
 use crate::session::{
-    CALENDARS, CONTACTS, CORE, MAIL, MASKED, SENDERS, SETTINGS, SIEVE, SUBMISSION, SUGGEST, VACATION, WEBMAIL,
-    WEBPUSH_VAPID, WEBSOCKET,
+    AVAILABILITY, CALENDARS, CONTACTS, CORE, MAIL, MASKED, SENDERS, SETTINGS, SIEVE, SUBMISSION, SUGGEST, VACATION,
+    WEBMAIL, WEBPUSH_VAPID, WEBSOCKET,
 };
 use crate::sharing::{self, PRINCIPALS, SharedView};
 use crate::{Inner, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, ids};
@@ -45,6 +45,7 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     SIEVE,
     WEBMAIL,
     CALENDARS,
+    AVAILABILITY,
     CONTACTS,
     WEBSOCKET,
     SUGGEST,
@@ -170,6 +171,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         return result;
     }
     let capability = match name.split('/').next().unwrap_or_default() {
+        "Principal" if name == "Principal/getAvailability" => AVAILABILITY,
         "Principal" => PRINCIPALS,
         "Core" | "PushSubscription" => CORE,
         "Mailbox" | "Email" | "Thread" | "SearchSnippet" => MAIL,
@@ -289,6 +291,7 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "Principal/query" => single(principal::query(ctx, &args).await?),
         "Principal/changes" => single(principal::changes(ctx, &args).await?),
         "Principal/queryChanges" => Err(MethodError::kind("cannotCalculateChanges")),
+        "Principal/getAvailability" => single(principal::get_availability(ctx, &args).await?),
         "MaskedEmail/get" => single(masked::get(ctx, &args).await?),
         "MaskedEmail/changes" => single(changes(ctx, &args, "MaskedEmail", 'x').await?),
         "MaskedEmail/set" => single(masked::set(ctx, &args).await?),

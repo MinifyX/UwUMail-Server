@@ -249,8 +249,13 @@ impl Target {
                 href(&collection_href(DavKind::Calendar, login, OUTBOX))
             }
             (CALDAV, "schedule-default-calendar-URL", Target::Inbox) => href(who.default_calendar.as_deref()?),
+            // Whether its events make the login busy: JMAP's includeInAvailability.
             (CALDAV, "schedule-calendar-transp", Target::Collection(v)) if v.kind() == DavKind::Calendar => {
-                "<c:opaque/>".into()
+                let counts = match v.prefs.include_in_availability.as_deref() {
+                    Some(include) => include != "none",
+                    None => v.access.is_owner() && !v.collection.subscribed,
+                };
+                if counts { "<c:opaque/>" } else { "<c:transparent/>" }.into()
             }
             (CALDAV, "calendar-free-busy-set", Target::Inbox) => String::new(),
             (DAV, "supported-report-set", Target::Collection(v)) => {

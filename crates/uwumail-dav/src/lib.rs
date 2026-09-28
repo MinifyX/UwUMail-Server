@@ -58,7 +58,7 @@ const FREE_BUSY_TIME_LIMIT: std::time::Duration = std::time::Duration::from_secs
 #[derive(Clone)]
 enum Busy {
     /// Someone of this server, busy in these periods (merged).
-    Periods(Vec<(i64, i64)>),
+    Periods(Vec<uwumail_jmap::availability::Period>),
     /// Nobody whose calendars this server keeps.
     Unknown,
     /// The lookup's time was up before this one.
@@ -541,17 +541,19 @@ impl Session<'_> {
         };
         let (mut update, names) = collection_update(&root);
         if *kind == DavKind::Calendar {
-            // Default alarms are everyone's own, and events of the owner's that use them take
-            // them over.
-            let alarms = match default_alarms_update(&root) {
-                Ok(alarms) => alarms,
+            // Default alarms and being busy are everyone's own; events of the owner's that use the
+            // defaults take them over.
+            let own = match own_settings_update(&root) {
+                Ok(own) => own,
                 Err(message) => return simple(StatusCode::BAD_REQUEST, &message),
             };
-            if !alarms.is_empty() {
-                if let Err(err) = self.store().set_calendar_prefs(self.account.id, view.collection.id, alarms).await {
+            let defaults = own.default_alerts_with_time.is_some() || own.default_alerts_without_time.is_some();
+            if !own.is_empty() {
+                if let Err(err) = self.store().set_calendar_prefs(self.account.id, view.collection.id, own).await {
                     return store_failure(err);
                 }
                 if view.access.is_owner()
+                    && defaults
                     && let Err(err) =
                         uwumail_jmap::calendar_alerts::apply(self.store(), self.account.id, view.collection.id).await
                 {
@@ -929,11 +931,15 @@ impl Session<'_> {
                     answer.properties.push(itip::Property::new("DTSTAMP", itip::stamp(now())));
                     answer.properties.push(itip::Property::new("DTSTART", itip::stamp(start)));
                     answer.properties.push(itip::Property::new("DTEND", itip::stamp(end)));
-                    for (from, to) in periods {
-                        answer.properties.push(itip::Property::new(
+                    for period in periods {
+                        let mut busy = itip::Property::new(
                             "FREEBUSY",
-                            format!("{}/{}", itip::stamp(from), itip::stamp(to)),
-                        ));
+                            format!("{}/{}", itip::stamp(period.start), itip::stamp(period.end)),
+                        );
+                        if period.status == "tentative" {
+                            busy.set_param("FBTYPE", "BUSY-TENTATIVE");
+                        }
+                        answer.properties.push(busy);
                     }
                     reply.components.push(answer);
                     ("2.0;Success", format!("<c:calendar-data>{}</c:calendar-data>", xml::escape(&reply.to_ics())))
@@ -954,10 +960,10 @@ xmlns:c=\"urn:ietf:params:xml:ns:caldav\">{responses}</c:schedule-response>\n"
     }
 
     /// When someone of this server is busy between `start` and `end`, merged; [`Busy::Unknown`]
-    /// for anyone else. Only one's own calendars count, not those shared with them, nor subscribed
-    /// ones: a holiday calendar does not make anyone busy. `looked_up` keeps what was found per
-    /// account, for addresses of the same person; the expanding runs on the blocking pool and stops
-    /// at `deadline`.
+    /// for anyone else, and for masked addresses, which would tie them to their person
+    /// (security-audit-0.16.0 PROTOCOLS-L4). The calendars that count are those JMAP's
+    /// `includeInAvailability` names, one's own by default. `looked_up` keeps what was found per
+    /// account, for addresses of the same person; the expanding stops at `deadline`.
     async fn busy(
         &self,
         address: &str,
@@ -966,66 +972,27 @@ xmlns:c=\"urn:ietf:params:xml:ns:caldav\">{responses}</c:schedule-response>\n"
         deadline: std::time::Instant,
         looked_up: &mut HashMap<i64, Busy>,
     ) -> Busy {
-        let Some(id) = self.calendar_owner(address).await else { return Busy::Unknown };
-        if let Some(known) = looked_up.get(&id) {
+        let Some(account) = uwumail_jmap::availability::person_of(self.store(), address).await else {
+            return Busy::Unknown;
+        };
+        if let Some(known) = looked_up.get(&account.id) {
             return known.clone();
         }
-        let found = self.busy_periods(id, start, end, deadline).await;
-        looked_up.insert(id, found.clone());
-        found
-    }
-
-    /// The account whose calendars answer for `address`, when it uses calendars.
-    async fn calendar_owner(&self, address: &str) -> Option<i64> {
-        let id = self.store().resolve_recipient(address).await.ok()??;
-        let id = self.store().delivery_target(id).await.ok()??;
-        let account = self.store().account_by_id(id).await.ok()??;
-        account.protocols.caldav.then_some(id)
-    }
-
-    async fn busy_periods(&self, id: i64, start: i64, end: i64, deadline: std::time::Instant) -> Busy {
         if std::time::Instant::now() > deadline {
             return Busy::OutOfTime;
         }
-        let Ok(collections) =
-            self.store().dav_collections(id, DavKind::Calendar, self.dav.default_collection(DavKind::Calendar)).await
-        else {
-            return Busy::Unknown;
-        };
-        let own: Vec<i64> = collections.into_iter().filter(|c| !c.subscribed).map(|c| c.id).collect();
-        let Ok(events) = self.store().calendar_events_between(id, None, Some(start), Some(end)).await else {
-            return Busy::Unknown;
-        };
-        let contents: Vec<String> =
-            events.into_iter().filter(|event| own.contains(&event.calendar_id)).map(|event| event.content).collect();
-        let expanded = tokio::task::spawn_blocking(move || {
-            let mut periods: Vec<(i64, i64)> = Vec::new();
-            for content in &contents {
-                if std::time::Instant::now() > deadline {
-                    return None;
-                }
-                periods.extend(
-                    uwumail_store::ical::busy_periods(content, start, end)
-                        .into_iter()
-                        .map(|(from, to)| (from.max(start), to.min(end))),
-                );
+        let default = self.dav.default_collection(DavKind::Calendar);
+        let found = match uwumail_jmap::availability::busy(self.store(), &account, default, start, end, deadline).await
+        {
+            Ok(Ok(found)) => {
+                let periods: Vec<_> = found.into_iter().map(|busy| busy.period).collect();
+                Busy::Periods(uwumail_jmap::availability::merge(&periods))
             }
-            periods.sort_unstable();
-            let mut merged: Vec<(i64, i64)> = Vec::new();
-            for (from, to) in periods {
-                match merged.last_mut() {
-                    Some(last) if from <= last.1 => last.1 = last.1.max(to),
-                    _ => merged.push((from, to)),
-                }
-            }
-            Some(merged)
-        })
-        .await;
-        match expanded {
-            Ok(Some(merged)) => Busy::Periods(merged),
-            Ok(None) => Busy::OutOfTime,
+            Ok(Err(_)) => Busy::OutOfTime,
             Err(_) => Busy::Unknown,
-        }
+        };
+        looked_up.insert(account.id, found.clone());
+        found
     }
 
     async fn report(&self, target: &Path, body: &Bytes) -> Response {
@@ -1180,8 +1147,9 @@ fn collection_update(root: &Element) -> (DavCollectionUpdate, Vec<(String, Strin
     (update, names)
 }
 
-/// The default alarms a PROPPATCH sets or removes, as default alerts.
-fn default_alarms_update(root: &Element) -> Result<CalendarPrefsUpdate, String> {
+/// What a PROPPATCH sets for the login itself: default alarms, as default alerts, and whether
+/// the calendar makes it busy (`schedule-calendar-transp`, as `includeInAvailability`).
+fn own_settings_update(root: &Element) -> Result<CalendarPrefsUpdate, String> {
     let mut prefs = CalendarPrefsUpdate::default();
     for instruction in &root.children {
         let removing = match (instruction.ns.as_str(), instruction.name.as_str()) {
@@ -1193,6 +1161,18 @@ fn default_alarms_update(root: &Element) -> Result<CalendarPrefsUpdate, String> 
             let with_time = match (property.ns.as_str(), property.name.as_str()) {
                 (CALDAV, "default-alarm-vevent-datetime") => true,
                 (CALDAV, "default-alarm-vevent-date") => false,
+                (CALDAV, "schedule-calendar-transp") => {
+                    let transparent = property.child(CALDAV, "transparent").is_some();
+                    let include = if removing {
+                        None
+                    } else if transparent {
+                        Some("none")
+                    } else {
+                        Some("all")
+                    };
+                    prefs.include_in_availability = Some(include.map(str::to_owned));
+                    continue;
+                }
                 _ => continue,
             };
             let alerts =

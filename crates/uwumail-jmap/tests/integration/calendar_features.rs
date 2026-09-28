@@ -17,8 +17,12 @@ use uwumail_store::{NewAccount, Role, Store};
 const PASSWORD: &str = "katzenpfote-123";
 const MINI: &str = "mini@example.org";
 const NYU: &str = "nyu@example.org";
-const USING: [&str; 3] =
-    ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:calendars", "urn:ietf:params:jmap:principals"];
+const USING: [&str; 4] = [
+    "urn:ietf:params:jmap:core",
+    "urn:ietf:params:jmap:calendars",
+    "urn:ietf:params:jmap:principals",
+    "urn:ietf:params:jmap:principals:availability",
+];
 
 struct Server {
     router: Router,
@@ -96,6 +100,10 @@ impl Server {
 
     async fn account_id(&self, login: &str) -> String {
         format!("a{}", self.store.account(login).await.unwrap().unwrap().id)
+    }
+
+    async fn principal_id(&self, login: &str) -> String {
+        format!("p{}", self.store.account(login).await.unwrap().unwrap().id)
     }
 
     async fn calendar(&self, login: &str, id: &str) -> Value {
@@ -476,4 +484,121 @@ async fn single_instances_without_their_series() {
     assert_eq!(server.event(MINI, &created).await["recurrenceId"], "2026-10-20T09:00:00");
     let ics = server.caldav_object(MINI, "single@example.org").await;
     assert!(ics.contains("RECURRENCE-ID;TZID=Europe/Berlin:20261020T090000"), "{ics}");
+}
+
+fn at(calendar: &str, title: &str, start: &str, extra: Value) -> Value {
+    let mut event = timed(calendar, title);
+    event["start"] = json!(start);
+    event["timeZone"] = json!("Etc/UTC");
+    for (key, value) in extra.as_object().unwrap() {
+        event[key] = value.clone();
+    }
+    event
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn availability_shows_when_people_are_busy_and_no_more() {
+    let server = server().await;
+    let calendar = server.default_calendar(MINI).await;
+    for (title, start, extra) in [
+        ("A", "2026-10-20T09:00:00", json!({})),
+        ("A2", "2026-10-20T09:30:00", json!({})),
+        ("B", "2026-10-20T11:00:00", json!({ "status": "tentative" })),
+        ("Frei", "2026-10-20T13:00:00", json!({ "freeBusyStatus": "free" })),
+        ("Privat", "2026-10-20T15:00:00", json!({ "privacy": "private" })),
+        ("Geheim", "2026-10-20T17:00:00", json!({ "privacy": "secret" })),
+        ("Abgesagt", "2026-10-20T19:00:00", json!({ "status": "cancelled" })),
+        ("Serie", "2026-10-19T07:00:00", json!({ "recurrenceRule": { "frequency": "daily", "count": 3 } })),
+    ] {
+        server.create(MINI, at(&calendar, title, start, extra)).await;
+    }
+    let mini = server.principal_id(MINI).await;
+    let principal = server.call(NYU, "Principal/get", json!({ "ids": [&mini] })).await;
+    let capability = &principal["list"][0]["capabilities"]["urn:ietf:params:jmap:calendars"];
+    assert_eq!(capability["mayGetAvailability"], true, "{principal}");
+    assert_eq!(capability["calendarAddress"], format!("mailto:{MINI}"));
+    assert_eq!(capability["accountId"], Value::Null);
+
+    let window = json!({ "id": &mini, "utcStart": "2026-10-20T00:00:00Z", "utcEnd": "2026-10-21T00:00:00Z" });
+    let busy = server.call(NYU, "Principal/getAvailability", window.clone()).await;
+    let periods: Vec<(String, String, String)> = busy["list"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{busy}"))
+        .iter()
+        .map(|p| {
+            assert_eq!(p["event"], Value::Null);
+            (
+                p["utcStart"].as_str().unwrap().into(),
+                p["utcEnd"].as_str().unwrap().into(),
+                p["busyStatus"].as_str().unwrap().into(),
+            )
+        })
+        .collect();
+    let period =
+        |a: &str, b: &str, s: &str| (format!("2026-10-20T{a}:00Z"), format!("2026-10-20T{b}:00Z"), s.to_owned());
+    assert_eq!(
+        periods,
+        vec![
+            period("07:00", "08:00", "confirmed"),
+            period("09:00", "10:30", "confirmed"),
+            period("11:00", "12:00", "tentative"),
+            period("15:00", "16:00", "confirmed"),
+        ]
+    );
+
+    // With the calendar shared, the events come along, but not a private one.
+    server.share_with_nyu(json!({ "mayReadItems": true })).await;
+    let mut details = window.clone();
+    details["showDetails"] = json!(true);
+    details["eventProperties"] = json!(["title"]);
+    let busy = server.call(NYU, "Principal/getAvailability", details).await;
+    let titles: Vec<Value> = busy["list"].as_array().unwrap().iter().map(|p| p["event"]["title"].clone()).collect();
+    assert_eq!(titles, vec![json!("Serie"), json!("A"), json!("A2"), json!("B"), Value::Null], "{busy}");
+    assert_eq!(busy["list"][0]["accountId"], server.account_id(NYU).await);
+
+    // Mini's calendar can stop making her busy; Nyu's copy of it can start making him busy.
+    server.call(MINI, "Calendar/set", json!({ "update": { &calendar: { "includeInAvailability": "none" } } })).await;
+    assert_eq!(server.call(NYU, "Principal/getAvailability", window.clone()).await["list"], json!([]));
+    server.call(NYU, "Calendar/set", json!({ "update": { &calendar: { "includeInAvailability": "all" } } })).await;
+    let mut nyus = window.clone();
+    nyus["id"] = json!(server.principal_id(NYU).await);
+    assert_eq!(server.call(MINI, "Principal/getAvailability", nyus).await["list"].as_array().unwrap().len(), 4);
+
+    let mut long = window.clone();
+    long["utcEnd"] = json!("2028-01-01T00:00:00Z");
+    assert_eq!(server.call(NYU, "Principal/getAvailability", long).await["type"], "tooLarge");
+    let mut nobody = window.clone();
+    nobody["id"] = json!("p999999");
+    assert_eq!(server.call(NYU, "Principal/getAvailability", nobody).await["type"], "notFound");
+
+    // A masked address leads to nobody, neither here nor over CalDAV (security-audit-0.16.0
+    // PROTOCOLS-L4).
+    let policy = uwumail_store::DomainMaskedPolicy { mode: uwumail_store::MaskedMode::Own, ..Default::default() };
+    server.store.set_domain_masked_policy("example.org", policy).await.unwrap();
+    let mini_id = server.store.account(MINI).await.unwrap().unwrap().id;
+    let new = uwumail_store::NewMaskedAddress {
+        domain: None,
+        state: Some(uwumail_store::MaskedState::Enabled),
+        for_domain: String::new(),
+        description: "Shop".into(),
+        url: None,
+        email_prefix: None,
+        created_by: "test".into(),
+    };
+    let masked = server.store.create_masked_address(mini_id, new).await.unwrap().email;
+    let found = server
+        .call(NYU, "Principal/query", json!({ "filter": { "calendarAddress": format!("mailto:{masked}") } }))
+        .await;
+    assert_eq!(found["ids"], json!([]), "{found}");
+    let found =
+        server.call(NYU, "Principal/query", json!({ "filter": { "calendarAddress": format!("mailto:{MINI}") } })).await;
+    assert_eq!(found["ids"], json!([&mini]));
+    let request = format!(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//DE\r\nMETHOD:REQUEST\r\nBEGIN:VFREEBUSY\r\nUID:fb\r\n\
+DTSTAMP:20260917T080000Z\r\nDTSTART:20261020T000000Z\r\nDTEND:20261021T000000Z\r\nORGANIZER:mailto:{NYU}\r\n\
+ATTENDEE:mailto:{masked}\r\nEND:VFREEBUSY\r\nEND:VCALENDAR\r\n"
+    );
+    let outbox = format!("/dav/calendars/{NYU}/outbox/");
+    let answer = server.send(NYU, "POST", &outbox, &[("content-type", "text/calendar")], request).await;
+    assert!(answer.body.contains("3.7;Invalid calendar user") && !answer.body.contains("FREEBUSY"), "{}", answer.body);
 }

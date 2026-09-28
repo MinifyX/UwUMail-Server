@@ -31,6 +31,8 @@ pub const WEBMAIL: &str = "urn:uwumail:jmap:webmail";
 pub const REMOTE: &str = "urn:uwumail:jmap:remote";
 /// JMAP Calendars (draft-ietf-jmap-calendars) on the CalDAV calendars; see docs/jmap-calendars.md.
 pub const CALENDARS: &str = "urn:ietf:params:jmap:calendars";
+/// When people are busy, `Principal/getAvailability` (draft-ietf-jmap-calendars, section 2.2).
+pub const AVAILABILITY: &str = "urn:ietf:params:jmap:principals:availability";
 /// Our own extension: addresses to suggest while writing, from the address books and recent mail
 /// (docs/jmap-suggest.md).
 pub const SUGGEST: &str = "urn:uwumail:jmap:suggest";
@@ -209,6 +211,10 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
             "mayCreateCalendar": true
         });
         document["primaryAccounts"][CALENDARS] = json!(account_id);
+        document["capabilities"][AVAILABILITY] = json!({});
+        document["accounts"][&account_id]["accountCapabilities"][AVAILABILITY] =
+            json!({ "maxAvailabilityDuration": crate::availability::MAX_DURATION });
+        document["primaryAccounts"][AVAILABILITY] = json!(account_id);
     }
     // Address books too, as over CardDAV.
     if account.protocols.carddav && may_use_dav {

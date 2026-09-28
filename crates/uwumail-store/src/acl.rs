@@ -131,6 +131,8 @@ pub struct SharePerson {
     pub id: i64,
     pub login: String,
     pub display_name: String,
+    /// Whether they use calendars (CalDAV is on for them).
+    pub calendars: bool,
 }
 
 /// Accounts that take part in sharing: people, not services, and not in the trash. A shared
@@ -375,10 +377,15 @@ impl Store {
     pub async fn share_people(&self) -> Result<Vec<SharePerson>> {
         self.read(move |conn| {
             let mut stmt = conn.prepare(&format!(
-                "SELECT id, login, display_name FROM accounts WHERE {ACTIVE_PERSON} ORDER BY login"
+                "SELECT id, login, display_name, caldav_enabled FROM accounts WHERE {ACTIVE_PERSON} ORDER BY login"
             ))?;
             let rows = stmt.query_map([], |row| {
-                Ok(SharePerson { id: row.get(0)?, login: row.get(1)?, display_name: row.get(2)? })
+                Ok(SharePerson {
+                    id: row.get(0)?,
+                    login: row.get(1)?,
+                    display_name: row.get(2)?,
+                    calendars: row.get(3)?,
+                })
             })?;
             Ok(rows.collect::<Result<_, _>>()?)
         })

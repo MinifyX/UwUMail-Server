@@ -20,6 +20,7 @@
 
 mod api;
 pub mod auth;
+pub mod availability;
 mod blob;
 pub mod calendar_alerts;
 pub mod dates;

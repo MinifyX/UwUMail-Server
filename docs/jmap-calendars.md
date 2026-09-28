@@ -25,7 +25,11 @@ object), in `primaryAccounts` and in the account's `accountCapabilities`:
 }
 ```
 
-Only accounts that may use calendars get it: when an admin switches CalDAV off
+With it come `urn:ietf:params:jmap:principals:availability`
+(`{ "maxAvailabilityDuration": "P400D" }` in the account) for
+[`Principal/getAvailability`](#availability).
+
+Only accounts that may use calendars get them: when an admin switches CalDAV off
 for an account (services have it off from the start), the capability is gone
 from its session and every calendar method answers
 `accountNotSupportedByMethod`.
@@ -125,6 +129,36 @@ Set the whole map, or one person with `shareWith/p12` (`null` takes them off). T
 are rounded up to the three levels above: `mayShare` means all, any writing
 right means read and write, any other right means read. Someone who is not on
 the server is `invalidProperties` naming `shareWith`.
+
+## Availability
+
+Every principal that is a person has a `urn:ietf:params:jmap:calendars`
+capability: its `calendarAddress` (`mailto:` and its login),
+`mayGetAvailability` (whether it uses calendars), `mayShareWith` and
+`accountId` (the caller's own account for the caller, else `null`, as the
+calendars shared with the caller are in its own account). `Principal/query`
+also takes `calendarAddress`, which finds a person by any of their
+addresses, never by a masked one.
+
+`Principal/getAvailability` answers when a person of the server is busy
+between `utcStart` and `utcEnd` (at most `P400D`, `tooLarge` otherwise).
+Everyone who uses calendars may ask about everyone else who does, as with
+CalDAV's free-busy lookups. What counts is what the draft says, from the
+person's point of view:
+
+- the calendars whose `includeInAvailability` is `"all"` or `"attending"`
+  for them: by default their own ones, not subscribed ones and not those
+  shared with them;
+- events that are not `secret`, not `cancelled` and whose `freeBusyStatus`
+  is `busy` (their own one for an event of a calendar shared with them), in
+  an `"attending"` calendar only those they accepted or may attend;
+- every instance of a series in the window.
+
+`busyStatus` is `tentative` for tentative events and answers, else
+`confirmed`. With `showDetails`, an event comes along (as `event`, cut to
+`eventProperties`, with `accountId` the caller's) when it is in a calendar the
+caller may read and is not `private`; all other periods are merged as the
+draft asks. A lookup that runs out of the request's time answers `rateLimit`.
 
 ## Ids
 
@@ -437,8 +471,6 @@ EventSource, next to the mail types.
 
 ## Not supported
 
-- `Principal/getAvailability` (`urn:ietf:params:jmap:principals:availability`);
-  the principals themselves are those of shared folders, see above
 - Calendars in other accounts: shared calendars are part of the account they
   are shared with
 - `CalendarEventNotification`, `CalendarEvent/copy`, `CalendarEvent/parse`

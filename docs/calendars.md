@@ -115,8 +115,12 @@ takes into a calendar:
   because invitations go straight into the calendars; its
   `schedule-default-calendar-URL` names the default calendar.
 - A `POST` of a `VFREEBUSY` request to the outbox answers when people of the
-  server are busy (from their own calendars, not those shared with them), as
-  Apple Calendar asks when attendees are added. Others are "unknown". One
+  server are busy, as Apple Calendar asks when attendees are added: from the
+  calendars that count for them (their own by default; a calendar's
+  `schedule-calendar-transp`, `transparent` or `opaque`, says whether it
+  does), tentative times as `BUSY-TENTATIVE`. The same comes out of JMAP's
+  `Principal/getAvailability`. Others are "unknown", and so is every masked
+  address, which would otherwise tie it to its person. One
   request asks about at most 100 people (each once, however often named) over
   at most 400 days, and has 10 seconds for all of them; anyone left when they
   are up is answered "5.1 service unavailable", to be asked again.
