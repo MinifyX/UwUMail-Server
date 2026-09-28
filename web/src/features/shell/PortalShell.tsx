@@ -4,6 +4,7 @@ import {
   EyeOff,
   CalendarDays,
   ChevronsUpDown,
+  CircleFadingArrowUp,
   Download,
   Ellipsis,
   Forward,
@@ -182,7 +183,7 @@ export function PortalShell({ session, children }: { session: Session; children:
       to: "/admin",
       label: t("nav.overview"),
       icon: LayoutDashboard,
-      also: ["/admin/stats", "/admin/mail-flow", "/admin/backups", "/admin/updates"],
+      also: ["/admin/stats", "/admin/mail-flow", "/admin/backups"],
     },
     {
       to: "/admin/people",
@@ -193,6 +194,7 @@ export function PortalShell({ session, children }: { session: Session; children:
     { to: "/admin/queue", label: t("nav.queue"), icon: Send },
     { to: "/admin/spam", label: t("nav.spamFilter"), icon: ShieldBan },
     { to: "/admin/settings", label: t("nav.settings"), icon: Settings },
+    { to: "/admin/updates", label: t("nav.updates"), icon: CircleFadingArrowUp },
     { to: "/admin/logs", label: t("nav.logs"), icon: ScrollText },
   ];
   useEffect(() => {

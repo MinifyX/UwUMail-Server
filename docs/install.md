@@ -748,7 +748,7 @@ address and its port. Two that come up often:
 
 ## Keeping it up to date
 
-*Server → Overview → Updates* in the portal shows when a new version is out and what
+*Server → Updates* in the portal shows when a new version is out and what
 changed. The update itself happens on the machine:
 
 ```bash
@@ -802,7 +802,7 @@ cd /opt/uwumail && sudo docker compose up -d
 
 What the container may ask the helper for is a verb from a fixed list: install
 the system's updates, restart the machine, bring UwUMail or the helper itself to
-the newest release (*Server → Overview → Updates*, *Server → Overview*), and start, stop or
+the newest release (*Server → Updates*, *Server → Overview*), and start, stop or
 remove the VPN for pictures (*Server → Settings → VPN & proxy*, see
 [configuration.md](configuration.md#remote-pictures-through-a-vpn)). Never a
 command, never a path, never an address, and never a version: an update always

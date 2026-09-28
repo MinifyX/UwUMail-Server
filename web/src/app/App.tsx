@@ -10,6 +10,7 @@ import { MovingPage } from "@/features/moving/MovingPage";
 import { AddressesPage } from "@/features/addresses/AddressesPage";
 import { MaskedPage } from "@/features/masked/MaskedPage";
 import { SERVER_PATHS, ServerPage, type ServerTab } from "@/features/admin/ServerPage";
+import { UpdatesPage } from "@/features/updates/UpdatesPage";
 import { DomainPage } from "@/features/domains/DomainPage";
 import { ForwardConfirmPage } from "@/features/mailbox/ForwardConfirmPage";
 import { MailboxPage } from "@/features/mailbox/MailboxPage";
@@ -92,6 +93,7 @@ function page(path: string, session: Session): ReactNode {
   const domain = matchPath("/admin/domains/:name", path);
   if (domain?.name) return <DomainPage key={domain.name} name={domain.name} />;
   if (matchPath("/admin/queue", path)) return <QueuePage />;
+  if (matchPath("/admin/updates", path)) return <UpdatesPage />;
   if (matchPath("/admin/spam", path)) return <AdminSpamPage />;
   const spamTab = matchPath("/admin/spam/:tab", path)?.tab;
   if (spamTab && SPAM_TABS.includes(spamTab as SpamTab)) return <AdminSpamPage tab={spamTab as SpamTab} />;
