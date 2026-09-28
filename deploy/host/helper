@@ -334,10 +334,60 @@ take_vpn_request() {
   rm -f -- "$vpn_request"
 }
 
-# Whether an OpenVPN file is only a connection: nothing that runs a program, loads a plugin, or
-# reads or writes a file of its own choosing.
+# The directives an OpenVPN file of a VPN provider may have: the connection and its encryption.
+# Anything else is refused, since it may run a program, load a plugin, or read or write a file of
+# its own choosing, and a list of what to refuse always misses one (security-audit-0.16.0 GW-8).
+# Keys and certificates come inline, in the blocks below. The portal allows exactly the same
+# (crates/uwumail-web/src/vpn.rs).
+ovpn_directives="
+client dev dev-type proto remote remote-random remote-random-hostname resolv-retry nobind
+persist-key persist-tun float port rport lport connect-retry connect-retry-max connect-timeout
+server-poll-timeout explicit-exit-notify pull tls-client remote-cert-tls remote-cert-ku remote-cert-eku
+verify-x509-name ns-cert-type key-direction cipher data-ciphers data-ciphers-fallback ncp-ciphers
+ncp-disable auth auth-nocache auth-retry tls-version-min tls-version-max tls-cipher tls-ciphersuites
+tls-groups ecdh-curve tls-timeout hand-window reneg-sec reneg-bytes reneg-pkts replay-window comp-lzo
+compress allow-compression verb mute mute-replay-warnings ping ping-restart ping-exit keepalive inactive
+tun-mtu tun-mtu-extra link-mtu mssfix fragment sndbuf rcvbuf txqueuelen fast-io redirect-gateway route
+route-ipv6 route-delay route-metric route-nopull topology ifconfig-nowarn tun-ipv6 block-ipv6
+push-peer-info disable-dco ping-timer-rem block-outside-dns
+"
+ovpn_blocks="ca cert key tls-auth tls-crypt tls-crypt-v2 extra-certs crl-verify secret pkcs12"
+
+# Whether an OpenVPN file is only a connection: every line one of the directives above,
+# auth-user-pass without a file, an inline block, or a comment.
 ovpn_is_harmless() {
-  ! grep -Eiq '^[[:space:]]*-{0,2}((up|down|route-up|route-pre-down|ipchange|client-connect|client-disconnect|learn-address|auth-user-pass-verify|tls-verify|script-security|plugin|management[a-z-]*|log|log-append|status|writepid|cd|chroot|daemon|config|askpass|tmp-dir|iproute|tls-crypt-v2-verify|tls-export-cert|setenv|setenv-safe|pull-filter|dhcp-option)([[:space:]]|$)|auth-user-pass[[:space:]]+[^[:space:]#;])'
+  local line name block="" known blocks
+  known=" $(printf '%s' "$ovpn_directives" | tr '\n' ' ') "
+  blocks=" $ovpn_blocks "
+  local skip='^[[:space:]]*([#;].*)?$'
+  local opening='^[[:space:]]*<([a-z0-9-]+)>[[:space:]]*$'
+  local closing='^[[:space:]]*</([^>]*)>[[:space:]]*$'
+  local directive='^[[:space:]]*([a-z0-9-]+)([[:space:]]|$)'
+  local ask='^[[:space:]]*auth-user-pass[[:space:]]*([#;].*)?$'
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    if [ -n "$block" ]; then
+      if [[ "$line" =~ $closing ]]; then
+        [ "${BASH_REMATCH[1]}" = "$block" ] || return 1
+        block=""
+      fi
+      continue
+    fi
+    [[ "$line" =~ $skip ]] && continue
+    if [[ "$line" =~ $opening ]]; then
+      [[ "$blocks" == *" ${BASH_REMATCH[1]} "* ]] || return 1
+      block="${BASH_REMATCH[1]}"
+      continue
+    fi
+    [[ "$line" =~ $directive ]] || return 1
+    name="${BASH_REMATCH[1]}"
+    if [ "$name" = auth-user-pass ]; then
+      [[ "$line" =~ $ask ]] || return 1
+      continue
+    fi
+    [[ "$known" == *" $name "* ]] || return 1
+  done
+  [ -z "$block" ]
 }
 
 # Turns the request into .env.vpn lines on standard output, or says what is wrong and fails.

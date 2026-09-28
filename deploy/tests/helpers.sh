@@ -187,6 +187,17 @@ fail2ban-client() {
   check "host: an OpenVPN file that runs a script is refused" not_harmless $'client\n  up /tmp/x.sh'
   check "host: an OpenVPN file that loads a plugin is refused" not_harmless $'client\nplugin /x.so'
   check "host: an OpenVPN file that reads a login from a file is refused" not_harmless $'auth-user-pass /etc/shadow'
+  # Only what is known to be a connection gets through, however the rest is spelled (GW-8).
+  check "host: a quoted directive is refused" not_harmless $'client\n"up" /tmp/x.sh'
+  check "host: a directive in capitals is refused" not_harmless $'client\nUP /tmp/x.sh'
+  check "host: a directive the filter does not know is refused" not_harmless $'client\ndns-updown /tmp/x.sh'
+  check "host: a certificate read from a file is refused" not_harmless $'client\nca /etc/shadow'
+  check "host: a key read from a file is refused" not_harmless $'client\ntls-auth /etc/ta.key 1'
+  check "host: an inline block closed by another is refused" not_harmless $'<ca>\nx\n</cert>\nup /tmp/x.sh'
+  check "host: an inline block never closed is refused" not_harmless $'client\n<ca>\nx'
+  check "host: an unknown inline block is refused" not_harmless $'<script>\nx\n</script>'
+  check "host: a provider's file with CRLF, comments and inline keys passes" harmless \
+    $'# provider\r\nclient\r\ndev tun\r\nproto udp\r\nremote 203.0.113.1 1194\r\nauth-user-pass ; gluetun\r\ncipher AES-256-GCM\r\n<ca>\r\n-----BEGIN CERTIFICATE-----\r\nMIIB\r\n</ca>\r\nkey-direction 1\r\n<tls-auth>\r\nabc\r\n</tls-auth>\r\n'
 
   vpn_status() { printf '{"configured":true,"provider":"nordvpn","type":"wireguard","state":"running","health":"healthy","always":true}'; }
   refresh_vpn_status
