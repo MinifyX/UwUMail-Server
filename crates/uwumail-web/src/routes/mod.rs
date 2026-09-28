@@ -22,6 +22,7 @@ pub mod moving;
 pub mod oauth;
 pub mod own;
 pub mod people;
+pub mod pictures;
 pub mod queue;
 pub mod reports;
 pub mod rules;
