@@ -36,6 +36,7 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Vacation auto-replies when mail arrives (once per sender per week, never to lists or machines)
 - [x] Settings the webmail and the apps keep in sync, shared with the portal's preferences (JMAP `UserSettings`, see jmap-settings.md)
 - [x] JMAP Calendars on the CalDAV calendars: `Calendar`, `CalendarEvent` (query with expanded recurrences) and `ParticipantIdentity`, changes going both ways between JMAP and CalDAV (see jmap-calendars.md)
+- [x] The whole JMAP Calendars draft: `Principal/getAvailability`, `CalendarEventNotification`, `CalendarEvent/copy|parse`, default and per-user alerts fired by the server, drafts, custom time zones, single instances, per-user properties of shared calendars, query changes of expanded queries
 - [x] JMAP Contacts on the CardDAV address books: `AddressBook`, `ContactCard` (query by name, email, phone and more), changes going both ways between JMAP and CardDAV (see jmap-contacts.md)
 - [x] App passwords and Bearer tokens
 - [x] WebSocket push, delayed sending (undo window), `Email/copy`, query changes
