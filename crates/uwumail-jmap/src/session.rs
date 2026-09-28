@@ -40,6 +40,8 @@ pub const WEBSOCKET: &str = "urn:ietf:params:jmap:websocket";
 pub const CONTACTS: &str = "urn:ietf:params:jmap:contacts";
 /// Fastmail's masked email extension: random addresses per website (docs/jmap-masked-email.md).
 pub const MASKED: &str = "https://www.fastmail.com/dev/maskedemail";
+/// Our own extension: the account's profile picture and who sees it (docs/profile-pictures.md).
+pub const PROFILE: &str = "urn:uwumail:jmap:profile";
 /// The server's VAPID key for Web Push subscriptions (RFC 9749); see docs/jmap-push.md.
 pub const WEBPUSH_VAPID: &str = "urn:ietf:params:jmap:webpush-vapid";
 
@@ -235,14 +237,24 @@ pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInf
             crate::sharing::add_to_session(&mut document, &account, &shared);
             document["accounts"][ids::account(account.id)]["accountCapabilities"][MASKED] =
                 masked_capability(&jmap.inner.store, account.id).await;
+            // The picture: the same in both places, as the session belongs to one account.
+            let profile = crate::methods::profile::capability(&jmap.inner.store, account.id).await;
+            let may_be_public = profile["mayBePublic"].as_bool().unwrap_or(false);
+            document["capabilities"][PROFILE] = profile.clone();
+            document["accounts"][ids::account(account.id)]["accountCapabilities"][PROFILE] = profile;
+            document["primaryAccounts"][PROFILE] = json!(ids::account(account.id));
             let masked_state = masked_state(&jmap.inner.store).await;
             // The key a browser binds its push subscription to. It never changes, so the session
             // state need not say anything about it.
             if let Some(vapid) = jmap.inner.push.vapid().await {
                 document["capabilities"][WEBPUSH_VAPID] = json!({ "applicationServerKey": vapid.public_key() });
             }
-            document["state"] =
-                json!(format!("{}{}{masked_state}", session_state(&account), crate::sharing::state_suffix(&shared)));
+            let picture_state = if may_be_public { "-p1" } else { "-p0" };
+            document["state"] = json!(format!(
+                "{}{}{masked_state}{picture_state}",
+                session_state(&account),
+                crate::sharing::state_suffix(&shared)
+            ));
             ([(header::CACHE_CONTROL, "no-cache, no-store")], Json(document)).into_response()
         }
         Err(err) => err.into_response(),

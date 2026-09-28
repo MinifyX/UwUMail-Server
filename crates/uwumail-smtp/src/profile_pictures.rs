@@ -101,6 +101,18 @@ fn has_transparency(picture: &DynamicImage) -> bool {
     picture.color().has_alpha() && picture.to_rgba8().pixels().any(|pixel| pixel.0[3] < 255)
 }
 
+/// Pictures decoded at once, for the whole server: each may take a few hundred MB while it is read.
+static DECODING: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+
+/// [`prepare`] on the blocking pool, at most two at a time.
+pub async fn prepare_upload(bytes: Vec<u8>) -> Result<Prepared, PictureError> {
+    if bytes.len() > MAX_UPLOAD_BYTES {
+        return Err(PictureError::TooLarge);
+    }
+    let _permit = DECODING.acquire().await.map_err(|_| PictureError::Broken)?;
+    tokio::task::spawn_blocking(move || prepare(&bytes)).await.map_err(|_| PictureError::Broken)?
+}
+
 /// Turns an upload into the picture that is stored: decoded, the centre square cut out, scaled to
 /// at most [`STORED_SIZE`] and written anew — JPEG, or PNG when it has see-through parts. CPU-bound:
 /// callers run it on the blocking pool.
@@ -309,9 +321,16 @@ pub fn contact_photo_type(bytes: &[u8]) -> Option<&'static str> {
     Some(media_type)
 }
 
-/// A one-colour test picture of the given size and format, for tests here and in other crates.
+/// A test picture of the given size in `png`, `jpeg`, `gif` or `webp`, for tests here and in the
+/// other crates.
 #[doc(hidden)]
-pub fn sample(width: u32, height: u32, format: ImageFormat) -> Vec<u8> {
+pub fn sample(width: u32, height: u32, format: &str) -> Vec<u8> {
+    let format = match format {
+        "jpeg" => ImageFormat::Jpeg,
+        "gif" => ImageFormat::Gif,
+        "webp" => ImageFormat::WebP,
+        _ => ImageFormat::Png,
+    };
     let picture = RgbaImage::from_fn(width, height, |x, y| {
         image::Rgba([(x * 255 / width.max(1)) as u8, (y * 255 / height.max(1)) as u8, 160, 255])
     });
@@ -328,16 +347,16 @@ mod tests {
 
     #[test]
     fn uploads_become_squares_of_at_most_512() {
-        let prepared = prepare(&sample(900, 600, ImageFormat::Png)).unwrap();
+        let prepared = prepare(&sample(900, 600, "png")).unwrap();
         assert_eq!(prepared.media_type, "image/jpeg", "no transparency, so JPEG");
         let stored = image::load_from_memory(&prepared.bytes).unwrap();
         assert_eq!((stored.width(), stored.height()), (512, 512));
 
-        let small = prepare(&sample(100, 140, ImageFormat::Jpeg)).unwrap();
+        let small = prepare(&sample(100, 140, "jpeg")).unwrap();
         let stored = image::load_from_memory(&small.bytes).unwrap();
         assert_eq!((stored.width(), stored.height()), (100, 100), "never scaled up");
 
-        for format in [ImageFormat::Gif, ImageFormat::WebP] {
+        for format in ["gif", "webp"] {
             assert!(prepare(&sample(64, 64, format)).is_ok(), "{format:?}");
         }
     }
@@ -381,7 +400,7 @@ mod tests {
 
     #[test]
     fn metadata_does_not_survive() {
-        let mut jpeg = sample(64, 64, ImageFormat::Jpeg);
+        let mut jpeg = sample(64, 64, "jpeg");
         // An APP1 (Exif) segment right after the start marker.
         let exif = b"\xff\xe1\x00\x16Exif\0\0secret-camera-x";
         jpeg.splice(2..2, exif.iter().copied());
@@ -396,9 +415,7 @@ mod tests {
             let n = (x.wrapping_mul(2_654_435_761) ^ y.wrapping_mul(40_503)) as u8;
             image::Rgba([n, n.wrapping_mul(7), n.wrapping_mul(13), 255])
         });
-        for picture in
-            [DynamicImage::ImageRgba8(noisy), image::load_from_memory(&sample(300, 300, ImageFormat::Png)).unwrap()]
-        {
+        for picture in [DynamicImage::ImageRgba8(noisy), image::load_from_memory(&sample(300, 300, "png")).unwrap()] {
             let face = face_png(&picture);
             assert!(face.len() <= MAX_FACE_BYTES, "{} bytes", face.len());
             let decoded = image::load_from_memory(&face).unwrap();
@@ -414,15 +431,15 @@ mod tests {
     fn incoming_faces_are_checked() {
         assert!(incoming_face("not base64 at all!").is_none());
         use base64::Engine;
-        let big = base64::engine::general_purpose::STANDARD.encode(sample(200, 200, ImageFormat::Png));
+        let big = base64::engine::general_purpose::STANDARD.encode(sample(200, 200, "png"));
         assert!(incoming_face(&big).is_none(), "too many pixels or bytes");
-        let jpeg = base64::engine::general_purpose::STANDARD.encode(sample(48, 48, ImageFormat::Jpeg));
+        let jpeg = base64::engine::general_purpose::STANDARD.encode(sample(48, 48, "jpeg"));
         assert!(incoming_face(&jpeg).is_none(), "only PNG");
     }
 
     #[test]
     fn stored_pictures_are_scaled_for_libravatar() {
-        let prepared = prepare(&sample(600, 600, ImageFormat::Png)).unwrap();
+        let prepared = prepare(&sample(600, 600, "png")).unwrap();
         let (small, media_type) = scaled(&prepared.bytes, 80).unwrap();
         assert_eq!(media_type, "image/jpeg");
         assert_eq!(image::load_from_memory(&small).unwrap().width(), 80);

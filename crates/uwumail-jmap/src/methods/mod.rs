@@ -10,6 +10,7 @@ mod identity;
 mod mailbox;
 mod masked;
 mod principal;
+pub mod profile;
 mod push_subscription;
 mod query_changes;
 mod senders;
@@ -29,7 +30,7 @@ use uwumail_store::{Account, Changes};
 use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
 use crate::session::{
-    CALENDARS, CONTACTS, CORE, MAIL, MASKED, SENDERS, SETTINGS, SIEVE, SUBMISSION, SUGGEST, VACATION, WEBMAIL,
+    CALENDARS, CONTACTS, CORE, MAIL, MASKED, PROFILE, SENDERS, SETTINGS, SIEVE, SUBMISSION, SUGGEST, VACATION, WEBMAIL,
     WEBPUSH_VAPID, WEBSOCKET,
 };
 use crate::sharing::{self, PRINCIPALS, SharedView};
@@ -51,6 +52,7 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     PRINCIPALS,
     MASKED,
     WEBPUSH_VAPID,
+    PROFILE,
 ];
 
 /// The data types of calendars and address books: only for credentials with the `dav` scope.
@@ -182,6 +184,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "SieveScript" => SIEVE,
         "AddressSuggestion" => SUGGEST,
         "MaskedEmail" => MASKED,
+        "ProfilePicture" => PROFILE,
         _ => return Err(MethodError::kind("unknownMethod")),
     };
     if !requires(capability, &ctx.using) {
@@ -292,6 +295,8 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "MaskedEmail/get" => single(masked::get(ctx, &args).await?),
         "MaskedEmail/changes" => single(changes(ctx, &args, "MaskedEmail", 'x').await?),
         "MaskedEmail/set" => single(masked::set(ctx, &args).await?),
+        "ProfilePicture/get" => single(profile::get(ctx, &args).await?),
+        "ProfilePicture/set" => single(profile::set(ctx, &args).await?),
         _ => Err(MethodError::kind("unknownMethod")),
     }
 }

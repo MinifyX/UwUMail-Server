@@ -9,6 +9,7 @@ mod conformance;
 mod contacts;
 mod limits;
 mod masked_email;
+mod profile;
 mod query_changes;
 mod sharing;
 mod sieve;
