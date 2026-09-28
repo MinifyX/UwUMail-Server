@@ -25,6 +25,9 @@ const EMAIL_WINDOW: Duration = Duration::from_secs(5 * 60);
 /// Unsubscriptions one login may send in [`ACCOUNT_WINDOW`], in its own and in shared accounts.
 const ACCOUNT_BUDGET: usize = 30;
 const ACCOUNT_WINDOW: Duration = Duration::from_secs(3600);
+/// Signature checks one login may start in [`ACCOUNT_WINDOW`], whether or not they lead anywhere:
+/// each one reads and hashes a whole message and asks DNS.
+const CHECK_BUDGET: usize = 120;
 /// Emails remembered before the ones out of their window are swept out.
 const MAX_REMEMBERED: usize = 10_000;
 /// Longer links are not followed; real ones are a few hundred characters.
@@ -53,6 +56,20 @@ struct Seen {
     emails: HashMap<(i64, i64), (Instant, Outcome)>,
     /// Login → when it sent its latest unsubscriptions.
     logins: HashMap<i64, VecDeque<Instant>>,
+    /// Login → when it had signatures checked lately.
+    checks: HashMap<i64, VecDeque<Instant>>,
+}
+
+/// Counts one more use in a sliding window; false when `budget` is used up.
+fn spend(times: &mut VecDeque<Instant>, now: Instant, budget: usize) -> bool {
+    while times.front().is_some_and(|at| now.duration_since(*at) >= ACCOUNT_WINDOW) {
+        times.pop_front();
+    }
+    if times.len() >= budget {
+        return false;
+    }
+    times.push_back(now);
+    true
 }
 
 /// What was sent lately, for the limits. Kept in memory: a restart forgets it, which costs at most one
@@ -70,6 +87,16 @@ enum Turn {
 }
 
 impl Unsubscribes {
+    /// Whether a login may have one more message's signatures checked this hour.
+    fn may_check(&self, login: i64) -> bool {
+        let mut seen = self.seen.lock().unwrap_or_else(|e| e.into_inner());
+        let now = Instant::now();
+        if seen.checks.len() >= MAX_REMEMBERED {
+            seen.checks.retain(|_, times| times.back().is_some_and(|at| now.duration_since(*at) < ACCOUNT_WINDOW));
+        }
+        spend(seen.checks.entry(login).or_default(), now, CHECK_BUDGET)
+    }
+
     fn begin(&self, owner: i64, email: i64, login: i64) -> Turn {
         let mut seen = self.seen.lock().unwrap_or_else(|e| e.into_inner());
         let now = Instant::now();
@@ -89,14 +116,9 @@ impl Unsubscribes {
                 )),
             };
         }
-        let times = seen.logins.entry(login).or_default();
-        while times.front().is_some_and(|at| now.duration_since(*at) >= ACCOUNT_WINDOW) {
-            times.pop_front();
-        }
-        if times.len() >= ACCOUNT_BUDGET {
+        if !spend(seen.logins.entry(login).or_default(), now, ACCOUNT_BUDGET) {
             return Turn::Wait(format!("at most {ACCOUNT_BUDGET} unsubscriptions an hour; please wait a little"));
         }
-        times.push_back(now);
         seen.emails.insert((owner, email), (now, Outcome::Sending));
         Turn::Go
     }
@@ -135,6 +157,13 @@ pub async fn unsubscribe(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     {
         return Err(MethodError::new("forbidden", "you may only read this message, not unsubscribe for its owner"));
     }
+    let owner = ctx.account.id;
+    let login = ctx.shared.as_ref().map_or(owner, |view| view.me.id);
+    if !ctx.jmap.unsubscribes.may_check(login) {
+        return Err(failed(format!(
+            "at most {CHECK_BUDGET} messages checked for unsubscribing an hour; please wait a little"
+        )));
+    }
     let raw = store.blob(&record.blob).await?;
     let link = one_click_link(&raw).map_err(cannot)?;
     let signed = tokio::time::timeout(DKIM_TIMEOUT, ctx.jmap.smtp.dkim_signed_headers(&raw)).await.unwrap_or_default();
@@ -142,8 +171,6 @@ pub async fn unsubscribe(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         return Err(cannot("no valid DKIM signature covers List-Unsubscribe and List-Unsubscribe-Post"));
     }
 
-    let owner = ctx.account.id;
-    let login = ctx.shared.as_ref().map_or(owner, |view| view.me.id);
     let response = json!({ "accountId": ctx.account_id(), "emailId": requested });
     match ctx.jmap.unsubscribes.begin(owner, id, login) {
         Turn::Go => {}
@@ -292,5 +319,15 @@ mod tests {
         }
         assert!(matches!(limits.begin(1, 999, 1), Turn::Wait(_)), "the hour's budget is used up");
         assert!(matches!(limits.begin(2, 999, 2), Turn::Go), "someone else's is not");
+    }
+
+    #[test]
+    fn signature_checks_have_a_budget_per_login() {
+        let limits = Unsubscribes::default();
+        for _ in 0..CHECK_BUDGET {
+            assert!(limits.may_check(1));
+        }
+        assert!(!limits.may_check(1), "a login cannot have messages hashed without end");
+        assert!(limits.may_check(2));
     }
 }
