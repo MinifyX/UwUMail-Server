@@ -116,9 +116,11 @@ Asking for `url` or `keys` is `forbidden`.
 
 ### Rules
 
-- The address has to be `https://` and reach a public address, checked when it
-  is subscribed and again when it is resolved, the same way as remote pictures;
-  redirects are not followed.
+- The address has to be `https://` on the standard port 443 and reach a public
+  address, checked when it is subscribed and again when it is resolved, the
+  same way as remote pictures; redirects are not followed. Every push service
+  listens on 443, and no other port is allowed, so a subscription cannot make
+  the server knock on other ports of other hosts.
 - At most 50 subscriptions per account, and 30 new ones per account and hour.
 - A subscription belongs to the login that made it and is only listed for that
   login: the webmail's session cookie, an app password (as a bearer token or in
@@ -192,8 +194,9 @@ app an address like any Web Push service, and the app subscribes it the same
 way. Distributors that offer Web Push (with `keys`) get encrypted pushes; for
 those without, the subscription is created without `keys` and the server sends
 the plain JSON above, which still names nothing but types and states. The
-address still has to be `https://`; a distributor on a local network address
-can't be reached, since the server only pushes to public addresses.
+address still has to be `https://` on port 443; a distributor on a local
+network address or another port can't be reached, since the server only pushes
+to public addresses on 443.
 
 ## Storage
 
