@@ -16,6 +16,7 @@ mod bayes;
 mod blobs;
 mod calendar;
 mod calendar_subscriptions;
+mod contact_photos;
 mod contacts;
 mod dav;
 mod dav_import;
@@ -47,6 +48,7 @@ mod objects;
 mod own;
 mod parse;
 mod password;
+mod profile_pictures;
 mod push;
 mod query;
 mod queue;
@@ -94,6 +96,7 @@ pub use calendar_subscriptions::{
     MAX_SUBSCRIPTION_INTERVAL_SECS, MIN_SUBSCRIPTION_INTERVAL_SECS, NewCalendarSubscription,
     SUBSCRIPTION_REFRESH_PAUSE_SECS, SubscriptionRun, shown_url,
 };
+pub use contact_photos::{ContactPhoto, contact_photo};
 pub use contacts::{ContactCardRecord, ContactCardWrite};
 pub use dav::{
     DAV_COLLECTIONS_PER_ACCOUNT, DAV_RESOURCE_MAX_BYTES, DAV_RESOURCES_PER_COLLECTION, DavChanges, DavCollection,
@@ -141,6 +144,10 @@ pub use objects::{Changes, EmailRecord};
 pub use own::{MailboxUsage, OwnAddress, OwnAddresses, RELEASED_ADDRESS_SECS, ReleasedAddress};
 /// Checks a password hash from another server (bcrypt or Argon2) and returns how it would be stored.
 pub use password::import_hash as normalize_imported_password_hash;
+pub use profile_pictures::{
+    AddressPicture, GroupPicture, MAX_RECEIVED_FACES, NewPicture, PUBLIC_PICTURES_SETTING, PictureMeta, PictureOwner,
+    PictureVisibility, ProfileSettings, ProfileUpdate, StoredPicture,
+};
 pub use push::{
     MAX_PUSH_SUBSCRIPTIONS, NewPushSubscription, PUSH_CREDENTIAL_PASSWORD, PUSH_MAX_FAILURES, PUSH_MAX_VERIFY_ATTEMPTS,
     PUSH_SUBSCRIPTION_MAX_SECS, PushKeys, PushSubscription, PushSubscriptionUpdate, PushTarget,
