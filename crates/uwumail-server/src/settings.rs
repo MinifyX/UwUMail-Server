@@ -45,6 +45,7 @@ pub fn view_settings(path: Option<&std::path::Path>, overlay: &Value) -> Result<
         "reports": config.reports,
         "metrics": config.metrics,
         "auth": config.auth,
+        "fetch": config.fetch,
     });
     Ok(SETTINGS
         .iter()
@@ -82,6 +83,7 @@ impl SettingsBackend for ServerSettings {
         self.egress.reconfigure(&config.egress)?;
         self.metrics.configure(&config.metrics)?;
         self.external.configure(config.auth);
+        self.smtp.provider_oauth().configure(config.fetch.oauth);
         tracing::info!("settings from the admin panel are in effect");
         Ok(())
     }

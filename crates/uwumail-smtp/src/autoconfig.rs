@@ -101,6 +101,8 @@ pub enum Source {
     Database,
     /// `imap.<domain>` and the usual ports.
     Guessed,
+    /// The provider's own servers for a sign-in at Microsoft or Google.
+    SignIn,
 }
 
 /// Everything needed to set a mailbox up, from one source.
@@ -325,6 +327,9 @@ pub enum Probe {
     WrongPassword,
     /// Nothing answered, or not in a way this program understands.
     NoAnswer(String),
+    /// The provider takes no passwords any more ("Basic authentication is disabled"): only signing
+    /// in with OAuth opens this mailbox.
+    PasswordsRefused,
 }
 
 /// The one address of a host this server may connect to. Only public ones: a mailbox nobody has
@@ -379,14 +384,36 @@ async fn imap_line<R: AsyncBufRead + Unpin>(reader: &mut R, host: &str) -> Resul
     Ok(Some(String::from_utf8_lossy(&line).into_owned()))
 }
 
-/// Reads the answers to `a1 LOGIN` up to its tagged one: whether it said OK.
-async fn login_answer<R: AsyncBufRead + Unpin>(reader: &mut R, host: &str) -> Result<bool, String> {
+/// What a server answered to a login.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LoginAnswer {
+    Accepted,
+    /// It said no, in these words.
+    Refused(String),
+}
+
+/// Reads the answers to `a1 LOGIN` (or `a1 AUTHENTICATE`) up to its tagged one. A continuation --
+/// XOAUTH2's error challenge -- is answered with an empty line, after which the server says no.
+async fn login_answer<R: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
+    reader: &mut BufReader<R>,
+    host: &str,
+) -> Result<LoginAnswer, String> {
+    let mut continued = false;
     for _ in 0..MAX_IMAP_LINES {
         let Some(line) = imap_line(reader, host).await? else {
             return Err(format!("{host} broke the connection off during the login"));
         };
         if let Some(rest) = line.strip_prefix("a1 ") {
-            return Ok(rest.starts_with("OK"));
+            let rest = rest.trim_end();
+            return Ok(if rest.starts_with("OK") {
+                LoginAnswer::Accepted
+            } else {
+                LoginAnswer::Refused(rest.to_owned())
+            });
+        }
+        if line.starts_with('+') && !continued {
+            continued = true;
+            reader.get_mut().write_all(b"\r\n").await.map_err(|err| err.to_string())?;
         }
     }
     Err(format!("{host} kept talking instead of answering the login"))
@@ -397,20 +424,38 @@ fn quoted(value: &str) -> String {
     format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-/// Logs in once and says nothing else. `Ok(false)` is a server that answered and said no.
-async fn imap_login(ctx: &Context, host: &str, port: u16, user: &str, password: &str) -> Result<bool, String> {
+/// How to log in: with a password, or with an OAuth access token as SASL XOAUTH2.
+#[derive(Clone, Copy)]
+enum Credential<'a> {
+    Password(&'a str),
+    Bearer(&'a str),
+}
+
+/// Logs in once and says nothing else.
+async fn imap_login(
+    ctx: &Context,
+    host: &str,
+    port: u16,
+    user: &str,
+    credential: Credential<'_>,
+) -> Result<LoginAnswer, String> {
     let mut stream = imap_stream(ctx, host, port).await?;
-    let command = format!("a1 LOGIN {} {}\r\n", quoted(user), quoted(password));
+    let command = match credential {
+        Credential::Password(password) => format!("a1 LOGIN {} {}\r\n", quoted(user), quoted(password)),
+        Credential::Bearer(token) => {
+            format!("a1 AUTHENTICATE XOAUTH2 {}\r\n", crate::provider_oauth::xoauth2(user, token))
+        }
+    };
     stream.get_mut().write_all(command.as_bytes()).await.map_err(|err| err.to_string())?;
-    let accepted = login_answer(&mut stream, host).await?;
+    let answer = login_answer(&mut stream, host).await?;
     let _ = stream.get_mut().write_all(b"a2 LOGOUT\r\n").await;
-    Ok(accepted)
+    Ok(answer)
 }
 
 /// Logs in to the provider's outgoing server exactly the way the queue will later: the same
 /// client, the same handshake, the same `AUTH PLAIN`. Encrypted before the password goes out, and
 /// with a certificate that is valid for the name -- a relay, not an MX.
-async fn smtp_login(ctx: &Context, server: &Server, user: &str, password: &str) -> Result<bool, String> {
+async fn smtp_login(ctx: &Context, server: &Server, user: &str, credential: Credential<'_>) -> Result<bool, String> {
     let string = |err: std::io::Error| err.to_string();
     let addr = public_address(&server.host, server.port).await?;
     let mut client = crate::client::Client::connect(ctx, addr, PROBE_TIMEOUT, PROBE_TIMEOUT).await.map_err(string)?;
@@ -439,7 +484,11 @@ async fn smtp_login(ctx: &Context, server: &Server, user: &str, password: &str) 
             return Err(format!("{} refused our greeting after STARTTLS: {reply}", server.host));
         }
     }
-    let reply = client.auth_plain(user, password).await.map_err(string)?;
+    let reply = match credential {
+        Credential::Password(password) => client.auth_plain(user, password).await,
+        Credential::Bearer(token) => client.auth_xoauth2(user, token).await,
+    }
+    .map_err(string)?;
     let accepted = reply.is_positive();
     client.quit().await;
     Ok(accepted)
@@ -456,16 +505,31 @@ async fn try_settings(ctx: &Context, settings: &Settings, address: &str, passwor
     }
     let mut last = String::new();
     for login in logins {
-        match imap_login(ctx, &settings.imap.host, settings.imap.port, &login.of(address), password).await {
-            Ok(true) => {
+        match imap_login(
+            ctx,
+            &settings.imap.host,
+            settings.imap.port,
+            &login.of(address),
+            Credential::Password(password),
+        )
+        .await
+        {
+            // Microsoft takes no passwords at this mailbox at all. Not a wrong one: nothing else is
+            // tried, and the person hears that signing in with Microsoft is the way.
+            Ok(LoginAnswer::Refused(text)) if crate::provider_oauth::is_basic_auth_disabled(&text) => {
+                return Probe::PasswordsRefused;
+            }
+            Ok(LoginAnswer::Accepted) => {
                 let mut settled = settings.clone();
                 settled.imap.login = login;
                 return Probe::Worked(settled);
             }
             // The server is there and the password is wrong: asking it again with another spelling
             // is what fills a provider's lockout counter.
-            Ok(false) if login == Login::LocalPart || local == address => return Probe::WrongPassword,
-            Ok(false) => continue,
+            Ok(LoginAnswer::Refused(_)) if login == Login::LocalPart || local == address => {
+                return Probe::WrongPassword;
+            }
+            Ok(LoginAnswer::Refused(_)) => continue,
             Err(err) => last = err,
         }
     }
@@ -481,7 +545,7 @@ async fn settle_sending(ctx: &Context, settled: &mut Settings, address: &str, pa
     };
     for login in [smtp.login, Login::WholeAddress, Login::LocalPart] {
         let user = login.of(address);
-        if matches!(smtp_login(ctx, &smtp, &user, password).await, Ok(true)) {
+        if matches!(smtp_login(ctx, &smtp, &user, Credential::Password(password)).await, Ok(true)) {
             settled.smtp.as_mut().expect("the outgoing server is there").login = login;
             return;
         }
@@ -513,6 +577,7 @@ pub async fn discover(
                 return Ok(settled);
             }
             Ok(Probe::WrongPassword) => return Err("wrongPassword".to_owned()),
+            Ok(Probe::PasswordsRefused) => return Err("passwordsRefused".to_owned()),
             Ok(Probe::NoAnswer(err)) => last = err,
             Err(_) => last = "the provider did not answer in time".to_owned(),
         }
@@ -521,18 +586,98 @@ pub async fn discover(
     Err("notFound".to_owned())
 }
 
+/// Proves a sign-in at Microsoft or Google by logging in with its access token, as SASL XOAUTH2, to
+/// the provider's own servers, and its outgoing server the same way. The incoming server has to take
+/// it -- that is what makes the mailbox this person's; an outgoing server that does not is left out,
+/// as with a password. Errors are codes for the portal.
+pub async fn prove_sign_in(
+    smtp: &Smtp,
+    servers: &crate::provider_oauth::ProviderServers,
+    address: &str,
+    token: &str,
+) -> Result<Settings, String> {
+    let ctx = &smtp.inner;
+    let login = tokio::time::timeout(
+        PROBE_TIMEOUT,
+        imap_login(ctx, &servers.imap_host, servers.imap_port, address, Credential::Bearer(token)),
+    )
+    .await;
+    match login {
+        Ok(Ok(LoginAnswer::Accepted)) => {}
+        Ok(Ok(LoginAnswer::Refused(text))) => {
+            // Usually a sign-in with another account than the address that was typed.
+            tracing::info!(%address, answer = %text, "the provider refused a fresh sign-in");
+            return Err("signInRefused".into());
+        }
+        Ok(Err(err)) => {
+            tracing::warn!(%address, %err, "the provider's server could not be reached to prove a sign-in");
+            return Err("providerUnreachable".into());
+        }
+        Err(_) => return Err("providerUnreachable".into()),
+    }
+    let sending = Server {
+        host: servers.smtp_host.clone(),
+        port: servers.smtp_port,
+        security: if servers.smtp_tls { Security::Tls } else { Security::Starttls },
+        login: Login::WholeAddress,
+    };
+    let sends = matches!(
+        tokio::time::timeout(PROBE_TIMEOUT, smtp_login(ctx, &sending, address, Credential::Bearer(token))).await,
+        Ok(Ok(true))
+    );
+    Ok(Settings {
+        imap: Server {
+            host: servers.imap_host.clone(),
+            port: servers.imap_port,
+            security: Security::Tls,
+            login: Login::WholeAddress,
+        },
+        smtp: sends.then_some(sending),
+        source: Source::SignIn,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A connection whose server has already said `bytes`, and hears whatever is written to it.
+    async fn answering(bytes: &[u8]) -> BufReader<tokio::io::DuplexStream> {
+        let (mut server, client) = tokio::io::duplex(bytes.len() + 1024);
+        server.write_all(bytes).await.unwrap();
+        // Kept open, so what the client writes has somewhere to go.
+        tokio::spawn(async move {
+            let mut sink = Vec::new();
+            let _ = server.read_to_end(&mut sink).await;
+        });
+        BufReader::new(client)
+    }
 
     /// security-audit-0.8.0 W-3: a server that sends a line without an end, or keeps talking instead
     /// of answering the login, is given up on at a limit; a real answer reads as before.
     #[tokio::test]
     async fn an_endless_imap_answer_is_given_up_on() {
-        let mut answer = &b"* CAPABILITY IMAP4rev1\r\na1 OK LOGIN completed\r\n"[..];
-        assert_eq!(login_answer(&mut answer, "imap.example.com").await, Ok(true));
-        let mut answer = &b"a1 NO [AUTHENTICATIONFAILED] wrong\r\n"[..];
-        assert_eq!(login_answer(&mut answer, "imap.example.com").await, Ok(false));
+        assert_eq!(
+            login_answer(
+                &mut answering(b"* CAPABILITY IMAP4rev1\r\na1 OK LOGIN completed\r\n").await,
+                "imap.example.com"
+            )
+            .await,
+            Ok(LoginAnswer::Accepted)
+        );
+        assert_eq!(
+            login_answer(&mut answering(b"a1 NO [AUTHENTICATIONFAILED] wrong\r\n").await, "imap.example.com").await,
+            Ok(LoginAnswer::Refused("NO [AUTHENTICATIONFAILED] wrong".into()))
+        );
+        // XOAUTH2's error challenge is answered, and the refusal after it read.
+        assert_eq!(
+            login_answer(
+                &mut answering(b"+ eyJzdGF0dXMiOiI0MDEifQ==\r\na1 NO AUTHENTICATE failed.\r\n").await,
+                "x.example"
+            )
+            .await,
+            Ok(LoginAnswer::Refused("NO AUTHENTICATE failed.".into()))
+        );
 
         let mut endless = b"* OK ".to_vec();
         endless.resize(1024 * 1024, b'x');
@@ -540,7 +685,7 @@ mod tests {
         assert!(error.contains("longer"), "{error}");
 
         let chatter = "* OK still here\r\n".repeat(MAX_IMAP_LINES + 1) + "a1 OK\r\n";
-        let error = login_answer(&mut chatter.as_bytes(), "imap.example.com").await.unwrap_err();
+        let error = login_answer(&mut answering(chatter.as_bytes()).await, "imap.example.com").await.unwrap_err();
         assert!(error.contains("kept talking"), "{error}");
     }
 

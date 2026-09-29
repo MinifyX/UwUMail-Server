@@ -101,6 +101,7 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Profile pictures and domain logos, visible on the server or public over Libravatar and the Face header; sender pictures per address from contacts, people here, Faces and Libravatar (docs/profile-pictures.md)
 - [x] Fetched mailboxes: mail from another provider's IMAP mailbox, emptied into someone's own and judged here like any other, with rules of its own for what a fetched message can still be asked (docs/fetch.md)
 - [x] Sending as a fetched address, over the provider's own outgoing server
+- [x] Fetched mailboxes at Microsoft (Outlook.com, Hotmail, Microsoft 365) and Google sign in there with OAuth 2 and SASL XOAUTH2 instead of a password: device code for Microsoft with a shipped client ID, authorization code with PKCE and the admin's own client for Google (docs/fetch.md, "Microsoft and Google")
 - [x] Calendars and contacts from elsewhere: `.ics`/`.vcf` files (portal and `uwumail-server import ics|vcf`), subscribed calendars fetched again regularly and read-only everywhere, and moving everything over from another CalDAV/CardDAV provider (iCloud, WEB.DE, GMX, Posteo, mailbox.org, …) with an app password (docs/calendar-import.md)
 
 ## UwUMail Gateway ✅ in progress

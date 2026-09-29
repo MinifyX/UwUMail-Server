@@ -536,7 +536,11 @@
       "pictureTooLarge": "画像が大きすぎます。最大 10 MB までです。",
       "pictureTooManyPixels": "画像のピクセル数が多すぎます。最大 8000 × 8000 です。",
       "publicNotAllowed": "ここでは公開画像は許可されていません。",
-      "picturePerson": "個人の画像は本人が選びます。"
+      "picturePerson": "個人の画像は本人が選びます。",
+      "passwordsRefused": "Microsoft はこのメールボックスのパスワードを受け付けなくなりました –「Microsoft でサインイン」を使ってください。",
+      "oauthNotConfigured": "このサーバーではこのプロバイダーでのサインインが設定されていません。",
+      "oauthClientRejected": "プロバイダーがこのサーバーのアプリ登録を拒否しました。管理者がクライアント ID を確認する必要があります。",
+      "signInExpired": "サインインの期限が切れたか、別のメールボックス用でした。再度サインインしてください。"
     }
   },
   "people": {
@@ -1832,7 +1836,9 @@
       "oauthGranted": "アプリ「{{name}}」が OAuth でログイン（{{scopes}}）",
       "oauthRevoked": "アプリ「{{name}}」をログアウト",
       "oauthTokenReused": "アプリ「{{name}}」の古いトークンが再び使われたため、アプリをログアウトしました",
-      "oidcLinked": "{{issuer}} のログインと連携"
+      "oidcLinked": "{{issuer}} のログインと連携",
+      "fetchSignInExpired": "取り込みアカウント {{address}} の {{provider}} でのサインインが期限切れになりました",
+      "fetchPasswordRefused": "Microsoft が取り込みアカウント {{address}} のパスワードを拒否しました"
     },
     "loginMethods": {
       "password": "パスワード",
@@ -2040,7 +2046,53 @@
       "title": "知っておきたいこと",
       "spam": "取り込んだメールは、ここで改めて判定されます。プロバイダーがスパムと判断したことはヒントとして扱われ、それだけでは決まりません。",
       "first": "メールボックスにある既存のメールは、希望した場合にのみ取り込まれます。追加時に「既存のメールも取り込む」を選ぶか、後でその行の時計ボタンを押してください。今日届いた大量の新着メールとしてではなく、プロバイダーでの日付のまま取り込まれます。",
-      "password": "パスワードは入力されるだけで、二度と取り出されることはありません。サーバーはプロバイダーへのログインにそれを使い、封印して保管します。"
+      "password": "パスワードは入力されるだけで、二度と取り出されることはありません。サーバーはプロバイダーへのログインにそれを使い、封印して保管します。",
+      "signIn": "Microsoft と Google：このサーバーにパスワードを渡す代わりに、そちらで直接サインインしてください。サーバーは封印されたトークンだけを保持し、自動で更新し、プロバイダーがサインインを終了したときはお知らせします。"
+    },
+    "signIn": {
+      "button": "{{provider}} でサインイン",
+      "switch": "{{provider}} サインインに切り替える",
+      "renew": "{{provider}} で再度サインイン",
+      "again": "もう一度試す",
+      "detected": "{{provider}} のメールボックスです。{{provider}} で直接サインインしてください。このサーバーはパスワードを必要としません。",
+      "switchIntro": "このメールボックスはパスワードの代わりに {{provider}} で直接サインインできます。プロバイダーがパスワードを無効にしても動き続けます。",
+      "signedInWith": "パスワードなしで {{provider}} にサインインします。",
+      "expired": "サインインの期限切れ – 再度サインインしてください",
+      "passwordRefused": "Microsoft はここでのパスワードを受け付けなくなりました –「Microsoft でサインイン」を使ってください",
+      "notReady": "このサーバーでは {{provider}} でのサインインが設定されていません。アプリパスワードを使うか、管理者に設定を依頼してください。",
+      "usePassword": "代わりにパスワードを使う",
+      "useSignIn": "やはり {{provider}} でサインイン",
+      "passwordInstead": "ここにパスワードを入れると、このメールボックスはサインインからパスワードでのログインに戻ります。",
+      "deviceSteps": "Microsoft のページを開き、このコードを入力して、このメールボックスのアカウントでサインインしてください。このウィンドウはその後自動で続行します。",
+      "copyCode": "コードをコピー",
+      "openPage": "{{page}} を開く",
+      "waiting": "{{provider}} でのサインインを待っています …",
+      "saving": "サインインしました。メールボックスを確認して保存しています …",
+      "done": "サインインしました：{{address}} は今後 {{provider}} でサインインします。",
+      "finishing": "サインインを完了しています",
+      "proving": "確認のため、サーバーがメールボックスに一度サインインしています …",
+      "errors": {
+        "declined": "サインインはキャンセルされました。",
+        "expired": "サインインに時間がかかりすぎたか、すでに使われています。やり直してください。",
+        "failed": "サインインできませんでした。もう一度お試しください。",
+        "noRefreshToken": "プロバイダーは継続的なアクセスを許可しませんでした。Google の場合、Google アカウントのセキュリティ設定でこのサーバーのアクセスを削除してから、再度サインインしてください。",
+        "oauthClientRejected": "プロバイダーがこのサーバーのアプリ登録を拒否しました。管理者がクライアント ID を確認する必要があります。",
+        "oauthNotConfigured": "このサーバーではこのプロバイダーでのサインインが設定されていません。",
+        "providerUnreachable": "プロバイダーのサインインに接続できませんでした。後でもう一度お試しください。",
+        "signInRefused": "プロバイダーはこのサインインでメールボックスを開きませんでした。上のアドレスとは別のアカウントでサインインしませんでしたか？",
+        "busy": "同時に行われているサインインが多すぎます。少ししてからもう一度お試しください。"
+      }
+    },
+    "admin": {
+      "title": "取り込みアカウント：Microsoft と Google",
+      "intro": "Microsoft（Outlook.com、Hotmail、Microsoft 365）と Google の取り込みアカウントは、パスワードの代わりにそちらでサインインします。Microsoft は設定不要です。Google には独自の OAuth クライアントが必要です。",
+      "microsoftClientId": "独自の Microsoft クライアント ID",
+      "microsoftClientIdHint": "空欄の場合は UwUMail に同梱のクライアントを使います。独自の Entra アプリでは「パブリック クライアント フロー」を許可してください。",
+      "googleClientId": "Google クライアント ID",
+      "googleClientSecret": "Google クライアント シークレット",
+      "googleHint": "Google Cloud の「ウェブ アプリケーション」クライアント（本番環境に公開）で、次のリダイレクト URI を設定します：",
+      "redirectUri": "Google 用リダイレクト URI",
+      "docs": "Microsoft と Google の設定"
     }
   },
   "moving": {

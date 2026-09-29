@@ -38,6 +38,15 @@ pub struct Config {
     /// Logging in to the portal at an OpenID Connect provider or with an LDAP directory's password
     /// (docs/login-oidc-ldap.md).
     pub auth: uwumail_web::AuthConfig,
+    /// Fetched mailboxes: the clients for signing in at Microsoft and Google (docs/fetch.md).
+    pub fetch: FetchConfig,
+}
+
+/// `[fetch]` in the configuration.
+#[derive(Debug, Clone, Default, Deserialize, serde::Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FetchConfig {
+    pub oauth: uwumail_smtp::provider_oauth::FetchOAuthConfig,
 }
 
 impl Default for Config {
@@ -59,6 +68,7 @@ impl Default for Config {
             reports: uwumail_smtp::ReportsConfig::default(),
             metrics: uwumail_web::MetricsConfig::default(),
             auth: uwumail_web::AuthConfig::default(),
+            fetch: FetchConfig::default(),
         }
     }
 }

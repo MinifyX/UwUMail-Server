@@ -9,7 +9,9 @@ in the backups — instead of in a second place nobody looks at.
 Everyone sets their own up in the portal under *Mein Konto → Abrufkonten*, with
 the address and the password for it. What the provider calls its servers, which
 ports it listens on and how it spells the login is worked out by the server
-itself, see [Finding the provider](#finding-the-provider).
+itself, see [Finding the provider](#finding-the-provider). Mailboxes at
+Microsoft and Google sign in there instead of handing this server a password,
+see [Microsoft and Google](#microsoft-and-google).
 
 ## Finding the provider
 
@@ -48,6 +50,141 @@ Mozilla's database, which learns the domain of the address being set up. Both go
 through the same door as the subscribed word lists — HTTPS with a valid
 certificate, public addresses only — and so do the logins, so an address nobody
 has proven yet cannot point this server at its own network.
+
+## Microsoft and Google
+
+Microsoft has switched plain passwords off for IMAP and SMTP at Outlook.com,
+Hotmail and most Microsoft 365 tenants. A login is answered
+`NO Basic authentication is disabled.`, app password or not, and nothing but
+OAuth opens the mailbox any more. Google still takes app passwords, but only
+with two-step verification switched on. So for both the dialog offers
+**signing in there** first — *Mit Microsoft anmelden*, *Mit Google anmelden* —
+and keeps the password as the way round for whoever wants it.
+
+| Provider | Recognised by |
+| --- | --- |
+| Microsoft, personal accounts | `outlook.*`, `hotmail.*`, `live.*`, `msn.com`, `windowslive.com`, `passport.com` |
+| Microsoft 365 | the domain's mail servers under `*.mail.protection.outlook.com` |
+| Google | `gmail.com`, `googlemail.com`, and domains whose mail servers are Google's (Workspace) |
+
+The domains are known at once; the mail servers are one DNS lookup, made by the
+server once the address is typed. Microsoft's autodiscover is not asked.
+
+After the sign-in the server **logs in for real** with what it got, over
+SASL XOAUTH2, before anything is stored — as with a password. A sign-in with
+another account than the address that was typed fails there. What the grant
+opens is fixed per provider:
+
+| | Incoming | Outgoing |
+| --- | --- | --- |
+| Outlook.com, Hotmail | `outlook.office365.com:993`, TLS | `smtp-mail.outlook.com:587`, STARTTLS |
+| Microsoft 365 | `outlook.office365.com:993`, TLS | `smtp.office365.com:587`, STARTTLS |
+| Google | `imap.gmail.com:993`, TLS | `smtp.gmail.com:465`, TLS |
+
+### Microsoft works out of the box
+
+Microsoft is signed in at with the device code flow (RFC 8628). The dialog shows
+a short code in large letters, a button to copy it and the link to
+[microsoft.com/devicelogin](https://microsoft.com/devicelogin); the person types
+the code there and signs in with the mailbox's account. Meanwhile the server asks
+Microsoft whether it is done — never more often than Microsoft asked to be
+asked, and less often after a `slow_down` — and the page asks the server. Nothing
+has to come back to this server's address, which may not even be reachable from
+the internet.
+
+UwUMail ships with the client ID of MinifyX's own Entra app
+(`f4b09124-76e0-44a5-b675-2b35a898f0d7`), a public client without a secret for
+personal accounts and every organisation, so there is nothing to set up. The
+tenant is `consumers` for the personal domains above and `common` for everyone
+else; the scopes are `https://outlook.office.com/IMAP.AccessAsUser.All`,
+`https://outlook.office.com/SMTP.Send` and `offline_access`. A Microsoft 365
+tenant whose admin allows no third-party apps asks for the admin's consent
+first; that admin can grant it, or you register your own app.
+
+**Your own Entra app**, if you would rather not rely on MinifyX's:
+
+1. In the [Microsoft Entra admin center](https://entra.microsoft.com), *App
+   registrations → New registration*. Supported account types: *Accounts in any
+   organizational directory and personal Microsoft accounts*. No redirect URI.
+2. *Authentication → Advanced settings → Allow public client flows*: **Yes**.
+   The device code flow needs it; there is no secret.
+3. *API permissions → Add a permission → Microsoft Graph → Delegated*:
+   `IMAP.AccessAsUser.All`, `SMTP.Send`, `offline_access`, `email`, `openid`.
+4. Copy the *Application (client) ID* into *Server → Einstellungen → Anmeldung →
+   Abrufkonten: Microsoft und Google* (`fetch.oauth.microsoft_client_id`).
+
+A grant belongs to the client it was made with: after changing the client ID,
+mailboxes that signed in before have to sign in once more.
+
+### Google needs your own client
+
+Google has no device flow that covers mail, so it is the authorization code flow
+with PKCE, and that needs a *Web application* client with a secret — one per
+server, which only its admin can make:
+
+1. In the [Google Cloud console](https://console.cloud.google.com), a project
+   of its own.
+2. *Google Auth Platform* (formerly the OAuth consent screen): audience
+   **External**, an app name and a support address. Under *Data access*, add
+   the scope `https://mail.google.com/`. Under *Audience*, **publish the app**
+   to production: while it is *Testing*, Google ends every sign-in after seven
+   days.
+3. *Clients → Create client → Web application*, with this authorised redirect
+   URI (the admin page shows it to copy):
+   `https://<the server's public name>/api/account/fetch/oauth/callback`.
+4. Client ID and secret into the same settings page
+   (`fetch.oauth.google_client_id`, `fetch.oauth.google_client_secret`). The
+   secret is sealed like the other secrets of the settings and never shown again.
+
+`https://mail.google.com/` is one of Google's restricted scopes. Without Google's
+verification — a paid security assessment, meant for products, not for a
+server at home — people see *Google hasn't verified this app* and go on under
+*Advanced*, and the app can be used by **at most 100 Google accounts** over its
+lifetime. For a household or a club that is plenty.
+
+The browser goes to Google and comes back to the redirect URI. The way back
+carries no session (the session cookie is `SameSite=Strict`), so the sign-in is
+tied to the browser that set off by a cookie of its own
+(`__Host-uwumail-fetch-oauth`, ten minutes, `SameSite=Lax`), its `state` works
+once, and what comes back is picked up only by the person whose session
+started it. Google is asked with `access_type=offline` and `prompt=consent`, so
+it hands out a refresh token every time.
+
+### The tokens
+
+What a sign-in leaves is a refresh token, sealed like a password (see
+[The password](#the-password)), and short-lived access tokens made from it.
+An access token is renewed five minutes before it runs out, one renewal at a
+time per mailbox, and where the provider hands out a new refresh token with it
+(Microsoft does), the new one is kept. Every request to the providers'
+sign-in services leaves the way fetching does — through the proxy when
+`egress.fetch` takes it, with the configured fallback — as HTTPS with a valid
+certificate to public addresses only.
+
+* **The provider ends the grant** (revoked, the password changed, a Google app
+  still in *Testing*): the mailbox stops fetching and sending, its row says
+  *Anmeldung abgelaufen – erneut anmelden* with a button for it, and its owner
+  gets a notice in the inbox and in the security activity — once, not on every
+  run. The provider is not asked again until somebody signs in anew.
+* **The provider is down**: the next attempt waits a minute, then twice as
+  long after every failure in a row, up to six hours.
+* **Answering from the address** logs in to the provider's outgoing server with
+  the access token. Without one the message waits in the queue; it never leaves
+  another way, which the provider's DMARC policy would refuse.
+
+### Mailboxes that still use a password
+
+Microsoft's `Basic authentication is disabled` is told apart from a wrong
+password: nothing counts towards a lockout and the search for other servers
+stops. A new mailbox's dialog switches to *Mit Microsoft anmelden* by itself. An
+existing one stops being asked on every run (*Jetzt abrufen* still tries), its
+owner hears once that it has to be switched, and its row says *Microsoft lässt
+keine Anmeldung mit Passwort mehr zu – bitte „Mit Microsoft anmelden“
+verwenden* with *Auf Microsoft-Anmeldung umstellen*. Mailboxes at Microsoft and
+Google that still work with a password are offered the same switch under
+*Bearbeiten*. Switching keeps everything else — what was fetched, where the
+folders stand, answering from the address — and forgets the password; typing a
+password again later switches back.
 
 ## What happens to fetched mail
 
@@ -246,6 +383,9 @@ hashed — the server has to send it to log in. It is sealed with AES-256-GCM
 under a key of this server and never comes back out: no page and no endpoint
 shows it, and an update that leaves it out keeps the stored one.
 
+A sign-in at Microsoft or Google keeps no password at all: its refresh and
+access tokens are sealed the same way instead.
+
 The key sits in the same database. That keeps the password out of an extract,
 a log line or a glance at the table; it is not a defence against somebody who
 holds the whole database. Treat a fetch account's password the way you would
@@ -264,6 +404,7 @@ own.
 | How long a run may take | 5 minutes |
 | A message waiting to be taken | stepped over after 24 hours |
 | Message names remembered | 30 days |
+| Sign-ins on their way | 3 per person; Microsoft's code is good for 15 minutes, Google's way back for 10 |
 
 ## What is not there yet
 
@@ -271,3 +412,5 @@ own.
   what every provider worth using offers on port 993.
 * **IDLE.** A run happens on its interval; the provider is not asked to keep a
   connection open and announce new mail.
+* **Signing in at other providers.** Only Microsoft and Google; Yahoo and AOL
+  still take app passwords.

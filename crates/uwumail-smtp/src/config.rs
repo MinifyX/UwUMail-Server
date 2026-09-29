@@ -231,6 +231,10 @@ pub struct RelayConfig {
     pub security: RelaySecurity,
     pub username: Option<String>,
     pub password: Option<String>,
+    /// The password is an OAuth access token, sent as SASL XOAUTH2: a fetched address at Microsoft
+    /// or Google. Never in a config file.
+    #[serde(skip)]
+    pub oauth: bool,
 }
 
 impl RelayConfig {

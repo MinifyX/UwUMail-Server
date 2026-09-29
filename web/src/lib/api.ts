@@ -1429,7 +1429,43 @@ export interface FetchAccountInfo {
   totalFetched: number;
   /** When the mail that was already there was asked for, while it is still being brought over. */
   backlogAt: number | null;
+  /** A password, or a sign-in at Microsoft or Google (OAuth, sent as XOAUTH2). */
+  auth: FetchAuth;
+  /** The provider ended the sign-in: nothing is fetched or sent until the person signs in again. */
+  loginExpired: boolean;
+  /** Microsoft takes no password for this mailbox any more ("Basic authentication is disabled"). */
+  passwordRefused: boolean;
+  /** Where a mailbox that logs in with a password could sign in instead; null when nowhere. */
+  signIn?: SignInProvider | null;
 }
+
+export type SignInProvider = "microsoft" | "google";
+export type FetchAuth = "password" | SignInProvider;
+
+/** What Microsoft's device authorization handed out, for the person to type at Microsoft's page. */
+export interface DeviceSignIn {
+  flowId: string;
+  userCode: string;
+  verificationUri: string;
+  expiresIn: number;
+  interval: number;
+}
+
+/** A started sign-in: a code to type (Microsoft) or a page to go to (Google). */
+export type StartedSignIn =
+  { provider: "microsoft"; device: DeviceSignIn } | { provider: "google"; flowId: string; url: string };
+
+/** How a sign-in is doing. `ready` has been proven with a real login and can be saved. */
+export type SignInStatus =
+  | { status: "pending"; retryIn: number }
+  | { status: "failed"; error: string }
+  | {
+      status: "ready";
+      provider: SignInProvider;
+      address: string;
+      switchId: number | null;
+      settings: DiscoveredSettings | null;
+    };
 
 /** One server of a provider, as the server worked it out and then proved by logging in. */
 export interface DiscoveredServer {
@@ -1445,11 +1481,13 @@ export interface DiscoveredSettings {
   imap: DiscoveredServer;
   /** Missing when the provider has no outgoing server, or when it refused this login. */
   smtp: DiscoveredServer | null;
-  source: "domain" | "provider" | "database" | "guessed";
+  source: "domain" | "provider" | "database" | "guessed" | "signIn";
 }
 
 export interface FetchView {
   accounts: FetchAccountInfo[];
+  /** Which providers this server can sign in at, and Google's way back for the admin's client. */
+  signIn?: { microsoft: boolean; google: boolean; redirectUri: string };
   max: number;
   defaultPort: number;
   defaultIntervalSecs: number;

@@ -559,7 +559,11 @@
       "pictureTooLarge": "L'image est trop grande. 10 Mo au maximum.",
       "pictureTooManyPixels": "L'image a trop de pixels. 8000 × 8000 au maximum.",
       "publicNotAllowed": "Les images publiques ne sont pas autorisées ici.",
-      "picturePerson": "Les personnes choisissent elles-mêmes leur photo."
+      "picturePerson": "Les personnes choisissent elles-mêmes leur photo.",
+      "passwordsRefused": "Microsoft n'accepte plus de mot de passe pour cette boîte – utilisez « Se connecter avec Microsoft ».",
+      "oauthNotConfigured": "La connexion chez ce fournisseur n'est pas configurée sur ce serveur.",
+      "oauthClientRejected": "Le fournisseur a refusé l'enregistrement d'application de ce serveur. L'admin doit vérifier l'ID client.",
+      "signInExpired": "La connexion a expiré ou concernait une autre boîte. Reconnectez-vous."
     }
   },
   "people": {
@@ -1932,7 +1936,9 @@
       "oauthGranted": "Appli « {{name}} » connectée avec OAuth ({{scopes}})",
       "oauthRevoked": "Appli « {{name}} » déconnectée",
       "oauthTokenReused": "Un ancien jeton de l'appli « {{name}} » a servi une deuxième fois : l'appli a été déconnectée",
-      "oidcLinked": "Associé à la connexion chez {{issuer}}"
+      "oidcLinked": "Associé à la connexion chez {{issuer}}",
+      "fetchSignInExpired": "La connexion chez {{provider}} pour la boîte relevée {{address}} a expiré",
+      "fetchPasswordRefused": "Microsoft a refusé le mot de passe de la boîte relevée {{address}}"
     },
     "loginMethods": {
       "password": "mot de passe",
@@ -2142,7 +2148,53 @@
       "title": "Bon à savoir",
       "spam": "Le courrier relevé est réévalué ici. Ce que le fournisseur considérait comme du spam compte comme indice et ne décide pas à lui seul.",
       "first": "Ce qui est déjà dans la boîte mail n'arrive que si vous le voulez : avec « Récupérer le courrier déjà présent » lors de l'ajout, ou plus tard avec le bouton horloge sur sa ligne. Il arrive avec la date du fournisseur, pas comme une pile de nouveaux messages datés d'aujourd'hui.",
-      "password": "Le mot de passe ne fait qu'entrer et ne ressort jamais. Le serveur en a besoin pour se connecter chez le fournisseur et le garde scellé."
+      "password": "Le mot de passe ne fait qu'entrer et ne ressort jamais. Le serveur en a besoin pour se connecter chez le fournisseur et le garde scellé.",
+      "signIn": "Microsoft et Google : connectez-vous directement chez eux au lieu de confier un mot de passe à ce serveur. Il ne garde qu'un jeton scellé, le renouvelle lui-même et vous prévient si le fournisseur y met fin."
+    },
+    "signIn": {
+      "button": "Se connecter avec {{provider}}",
+      "switch": "Passer à la connexion {{provider}}",
+      "renew": "Se reconnecter chez {{provider}}",
+      "again": "Réessayer",
+      "detected": "Une boîte chez {{provider}} : connectez-vous directement chez {{provider}}. Ce serveur n'a alors pas besoin de mot de passe.",
+      "switchIntro": "Cette boîte peut se connecter directement chez {{provider}} au lieu d'utiliser un mot de passe – et continue de fonctionner quand le fournisseur désactive les mots de passe.",
+      "signedInWith": "Se connecte chez {{provider}}, sans mot de passe.",
+      "expired": "Connexion expirée – reconnectez-vous",
+      "passwordRefused": "Microsoft n'accepte plus de mot de passe ici – utilisez « Se connecter avec Microsoft »",
+      "notReady": "La connexion chez {{provider}} n'est pas configurée sur ce serveur. Utilisez un mot de passe d'application ou demandez à l'admin de la configurer.",
+      "usePassword": "Utiliser plutôt un mot de passe",
+      "useSignIn": "Se connecter avec {{provider}} finalement",
+      "passwordInstead": "Un mot de passe ici fait repasser la boîte de la connexion au mot de passe.",
+      "deviceSteps": "Ouvrez la page de Microsoft, saisissez ce code et connectez-vous avec le compte de cette boîte. Cette fenêtre continue ensuite toute seule.",
+      "copyCode": "Copier le code",
+      "openPage": "Ouvrir {{page}}",
+      "waiting": "En attente de la connexion chez {{provider}} …",
+      "saving": "Connecté. Vérification de la boîte et enregistrement …",
+      "done": "Connecté : {{address}} se connecte désormais chez {{provider}}.",
+      "finishing": "Finalisation de la connexion",
+      "proving": "Le serveur se connecte une fois à la boîte pour la vérifier …",
+      "errors": {
+        "declined": "La connexion a été annulée.",
+        "expired": "La connexion a pris trop de temps ou a déjà servi. Recommencez.",
+        "failed": "La connexion n'a pas abouti. Réessayez.",
+        "noRefreshToken": "Le fournisseur n'a pas accordé d'accès durable. Chez Google, retirez l'accès de ce serveur dans les paramètres de sécurité de votre compte, puis reconnectez-vous.",
+        "oauthClientRejected": "Le fournisseur a refusé l'enregistrement d'application de ce serveur. L'admin doit vérifier l'ID client.",
+        "oauthNotConfigured": "La connexion chez ce fournisseur n'est pas configurée sur ce serveur.",
+        "providerUnreachable": "La connexion du fournisseur est injoignable. Réessayez plus tard.",
+        "signInRefused": "Le fournisseur n'a pas ouvert la boîte avec cette connexion. Vous êtes-vous connecté avec un autre compte que l'adresse ci-dessus ?",
+        "busy": "Trop de connexions en même temps. Réessayez dans un instant."
+      }
+    },
+    "admin": {
+      "title": "Boîtes relevées : Microsoft et Google",
+      "intro": "Les boîtes relevées chez Microsoft (Outlook.com, Hotmail, Microsoft 365) et Google s'y connectent au lieu d'utiliser un mot de passe. Microsoft fonctionne sans configuration ; Google demande votre propre client OAuth.",
+      "microsoftClientId": "Propre ID client Microsoft",
+      "microsoftClientIdHint": "Vide utilise le client fourni avec UwUMail. Votre propre app Entra doit autoriser les « public client flows ».",
+      "googleClientId": "ID client Google",
+      "googleClientSecret": "Secret client Google",
+      "googleHint": "Un client « Application Web » dans Google Cloud, publié en production, avec cette URI de redirection :",
+      "redirectUri": "URI de redirection pour Google",
+      "docs": "Configurer Microsoft et Google"
     }
   },
   "moving": {

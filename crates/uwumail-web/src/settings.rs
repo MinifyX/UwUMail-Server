@@ -143,6 +143,10 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("auth.ldap.admin_group_dn", SettingKind::Text),
     spec("auth.ldap.auto_create", SettingKind::Bool),
     spec("auth.ldap.allowed_domains", SettingKind::List),
+    // Signing in at Microsoft and Google for fetched mailboxes (docs/fetch.md).
+    spec("fetch.oauth.microsoft_client_id", SettingKind::Text),
+    spec("fetch.oauth.google_client_id", SettingKind::Text),
+    spec("fetch.oauth.google_client_secret", SettingKind::Secret),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

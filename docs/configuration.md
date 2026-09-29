@@ -82,7 +82,10 @@ commands work through `docker compose run --rm uwumail …`.
 
 The relay password is stored in the database like the rest (the portal never
 shows it again). If you would rather keep it out of the database, set
-`UWUMAIL_DELIVERY__RELAY__PASSWORD` in the environment.
+`UWUMAIL_DELIVERY__RELAY__PASSWORD` in the environment. The same goes for the
+Google client secret of fetched mailboxes (`fetch.oauth.google_client_secret`,
+*Einstellungen → Anmeldung*, see [fetch.md](fetch.md#microsoft-and-google)):
+`UWUMAIL_FETCH__OAUTH__GOOGLE_CLIENT_SECRET`.
 
 ## Sending the log to Grafana Loki
 
@@ -443,6 +446,13 @@ level = "info"
 # [auth.ldap]
 # enabled = false
 # url = "ldaps://ldap.example.com"
+
+# Fetched mailboxes signing in at Microsoft and Google, see docs/fetch.md.
+# Microsoft works without anything here; Google needs a client of your own.
+# [fetch.oauth]
+# microsoft_client_id = ""     # empty: the client UwUMail ships with
+# google_client_id = "1234-abc.apps.googleusercontent.com"
+# google_client_secret = "..."
 ```
 
 An SMTP session is closed after `smtp.timeout_secs` without a byte, and also when it gets nowhere:

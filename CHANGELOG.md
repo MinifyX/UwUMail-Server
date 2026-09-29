@@ -3,6 +3,36 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.18.0
+
+**Fetched mailboxes at Microsoft and Google sign in there** ([docs/fetch.md](docs/fetch.md#microsoft-and-google)):
+
+- Microsoft has switched passwords off for IMAP and SMTP at Outlook.com, Hotmail and most Microsoft
+  365 tenants (`NO Basic authentication is disabled.`). Fetched mailboxes there now sign in with
+  OAuth 2 and log in with SASL XOAUTH2, for fetching and for answering from the address.
+- *Mein Konto → Abrufkonten* recognises Microsoft and Google addresses (their own domains, and
+  Microsoft 365 and Google Workspace by the domain's mail servers) and offers *Mit Microsoft
+  anmelden* / *Mit Google anmelden* first, a password as the fallback. The sign-in is proven with a
+  real login before it is saved.
+- **Microsoft** works out of the box: the device code flow with the client ID UwUMail ships with —
+  a big code, a copy button and the link to microsoft.com/devicelogin; the server asks Microsoft at
+  its interval. Admins can set their own Entra app under *Einstellungen → Anmeldung*
+  (`fetch.oauth.microsoft_client_id`).
+- **Google** uses the authorization code flow with PKCE and the admin's own *Web application*
+  client (`fetch.oauth.google_client_id`, `fetch.oauth.google_client_secret`), with the way back
+  (`/api/account/fetch/oauth/callback`) tied to the browser that set off.
+- Refresh and access tokens are sealed like provider passwords, renewed before they run out, a
+  rotated refresh token is kept, and a provider that is down is asked again with a growing wait. A
+  grant the provider ended stops the mailbox, shows *Anmeldung abgelaufen – erneut anmelden* and
+  sends its owner a notice once. All requests to the providers go through the egress, with the
+  proxy and its fallback when fetching takes it.
+- Microsoft's "Basic authentication is disabled" is its own error, not a wrong password: runs stop
+  asking, the owner is told once, and the row offers *Auf Microsoft-Anmeldung umstellen*. Mailboxes
+  that still log in with a password at Microsoft or Google can switch under *Bearbeiten*.
+- New endpoints under `/api/account/fetch`: `provider`, `oauth/start`, `oauth/flows/{flow}`,
+  `oauth/callback`; creating and editing a fetched mailbox take `oauthFlow`. Migration
+  `0056_fetch_oauth.sql`.
+
 ## 0.17.1
 
 **Masked addresses for UwULock Server, without the mailbox**
