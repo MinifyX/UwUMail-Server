@@ -102,6 +102,7 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Fetched mailboxes: mail from another provider's IMAP mailbox, emptied into someone's own and judged here like any other, with rules of its own for what a fetched message can still be asked (docs/fetch.md)
 - [x] Sending as a fetched address, over the provider's own outgoing server
 - [x] Calendars and contacts from elsewhere: `.ics`/`.vcf` files (portal and `uwumail-server import ics|vcf`), subscribed calendars fetched again regularly and read-only everywhere, and moving everything over from another CalDAV/CardDAV provider (iCloud, WEB.DE, GMX, Posteo, mailbox.org, …) with an app password (docs/calendar-import.md)
+- [x] AI assistant on the server: writing and rewriting, summaries, a second opinion on spam, dates for the calendar and opt-in auto-labels, with the admin's providers or people's own (OpenAI, Anthropic, Gemini, Mistral, OpenRouter, Ollama, any OpenAI-compatible server; ChatGPT sign-in experimental), quotas and sealed keys (docs/llm.md, docs/jmap-assist.md)
 
 ## UwUMail Gateway ✅ in progress
 

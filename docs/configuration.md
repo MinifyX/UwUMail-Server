@@ -155,7 +155,9 @@ same way, each switched on by itself: the check for new UwUMail versions
 (`egress.updates`, so GitHub does not learn where the server is) and fetching
 from other providers: mail from their mailboxes, calendars people subscribed to
 and calendars and contacts moved over ([calendar-import.md](calendar-import.md))
-(`egress.fetch`; some providers refuse VPN addresses). Pictures (`egress.pictures`) take it unless switched off,
+(`egress.fetch`; some providers refuse VPN addresses), and the AI assistant's requests to OpenAI, Anthropic and
+the other providers on the internet (`egress.assist`, see [llm.md](llm.md); providers in the local network
+are always reached directly). Pictures (`egress.pictures`) take it unless switched off,
 and one-click unsubscriptions ([jmap-unsubscribe.md](jmap-unsubscribe.md)) go the way pictures go. DNS,
 delivering mail, blocklists and list updates keep leaving directly. Outgoing
 mail on port 25 could not go through a VPN anyway; providers block it, and
@@ -211,10 +213,12 @@ fallback = "block"
 pictures = true
 updates = false
 fetch = false
+assist = false
 ```
 
 As environment variables: `UWUMAIL_EGRESS__PROXY`, `UWUMAIL_EGRESS__FALLBACK`,
-`UWUMAIL_EGRESS__PICTURES`, `UWUMAIL_EGRESS__UPDATES` and `UWUMAIL_EGRESS__FETCH`.
+`UWUMAIL_EGRESS__PICTURES`, `UWUMAIL_EGRESS__UPDATES`, `UWUMAIL_EGRESS__FETCH` and
+`UWUMAIL_EGRESS__ASSIST`.
 What the config file or a non-empty variable sets is locked in the portal; the
 empty `UWUMAIL_EGRESS_PROXY=` and `UWUMAIL_EGRESS_FALLBACK=` that `compose.yaml`
 passes on leave them to the portal. A proxy login belongs in `.env` or the
@@ -405,6 +409,7 @@ fallback = "block"     # block | direct: what happens while the proxy is away
 pictures = true        # remote pictures, sender logos, linked contact photos, Libravatar and one-click unsubscriptions take the proxy
 updates = false        # the check for new versions takes it
 fetch = false          # fetching from other providers (mailboxes, calendars, contacts) takes it
+assist = false         # the AI assistant's requests to providers on the internet take it (docs/llm.md)
 
 # Daily TLS reports (RFC 8460) to the domains mail went to, see docs/tls-reports.md.
 [reports]

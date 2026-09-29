@@ -134,6 +134,12 @@ signed with the server's VAPID key ([jmap-push.md](jmap-push.md)).
 `Email/unsubscribe` sends a newsletter's one-click unsubscription (RFC 8058)
 through the same egress as remote pictures, and only for a `List-Unsubscribe`
 a DKIM signature still vouches for ([jmap-unsubscribe.md](jmap-unsubscribe.md)).
+The AI assistant (`urn:uwumail:jmap:assist`) lives in its own crate,
+`uwumail-assist`: providers and the admin's policy, the two API shapes (Chat
+Completions and Anthropic Messages, streamed or not), prompts that treat the
+mail as data, checked answers, quotas, and the label queue that inbound delivery
+fills and a background worker empties ([llm.md](llm.md),
+[jmap-assist.md](jmap-assist.md)).
 
 ### `uwumail-imap`
 
