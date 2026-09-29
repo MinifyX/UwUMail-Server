@@ -244,14 +244,6 @@ pub enum Taken {
     Nowhere(String),
 }
 
-/// Hands a message fetched from another provider's mailbox to the same pipeline that mail from
-/// other servers goes through: the same checks, the same filter, the same lists, the same
-/// forwarding, the same history.
-///
-/// The envelope is rebuilt from what is left of it. The sender comes from the `Return-Path` the
-/// provider wrote, which is the address a bounce would have gone to; without one the message
-/// counts as coming from nobody, like a bounce does. The recipient is the mailbox here that the
-/// fetched mailbox belongs to, whatever address the message itself names.
 /// Queues delivered mail for the AI assistant's labels (docs/llm.md) when the person switched them on.
 /// A failure is only logged: labels are a nicety, the mail is delivered either way.
 async fn queue_for_labels(ctx: &crate::Context, account_id: i64, email_ids: &[i64]) {
@@ -270,6 +262,14 @@ async fn queue_for_labels(ctx: &crate::Context, account_id: i64, email_ids: &[i6
     }
 }
 
+/// Hands a message fetched from another provider's mailbox to the same pipeline that mail from
+/// other servers goes through: the same checks, the same filter, the same lists, the same
+/// forwarding, the same history.
+///
+/// The envelope is rebuilt from what is left of it. The sender comes from the `Return-Path` the
+/// provider wrote, which is the address a bounce would have gone to; without one the message
+/// counts as coming from nobody, like a bounce does. The recipient is the mailbox here that the
+/// fetched mailbox belongs to, whatever address the message itself names.
 pub async fn deliver_fetched(
     smtp: &Smtp,
     mailbox: fetched::Mailbox,
