@@ -144,7 +144,7 @@ impl Web {
         let dns =
             DnsChecker::new().inspect_err(|err| tracing::warn!(%err, "DNS checks of domains are not available")).ok();
         let limiter = smtp.store().auth_limiter().clone();
-        Web {
+        let web = Web {
             inner: Arc::new(Inner {
                 smtp,
                 settings,
@@ -171,7 +171,36 @@ impl Web {
                 oidc_transport: std::sync::OnceLock::new(),
                 oauth_attempts: Mutex::default(),
             }),
-        }
+        };
+        // A fetched mailbox whose sign-in ended, or whose provider stopped taking its password, is
+        // found out by the fetch run or a delivery; the person hears of it like of a login change.
+        let weak = Arc::downgrade(&web.inner);
+        web.inner.smtp.provider_oauth().on_notice(move |notice| {
+            let Some(inner) = weak.upgrade() else { return };
+            let web = Web { inner };
+            tokio::spawn(async move { web.notify_fetch(notice).await });
+        });
+        web
+    }
+
+    /// Tells the person about one of their fetched mailboxes, by mail and in the activity list.
+    pub async fn notify_fetch(&self, notice: uwumail_smtp::provider_oauth::FetchNotice) {
+        use uwumail_smtp::provider_oauth::FetchNoticeKind;
+        let account = match self.store().account_by_id(notice.account_id).await {
+            Ok(Some(account)) => account,
+            Ok(None) => return,
+            Err(err) => {
+                tracing::warn!(%err, "finding the owner of a fetched mailbox failed");
+                return;
+            }
+        };
+        let kind = match notice.kind {
+            FetchNoticeKind::LoginExpired(provider) => {
+                notices::Notice::FetchSignInExpired { address: notice.address, provider: provider.name().to_owned() }
+            }
+            FetchNoticeKind::PasswordRefused => notices::Notice::FetchPasswordRefused { address: notice.address },
+        };
+        notices::notify(self, &account, kind, notices::Origin { actor: "", ip: "" }).await;
     }
 
     /// Whether this build contains the web app. Without it the server shows a simple landing page.
@@ -458,6 +487,10 @@ impl Web {
             .route("/api/account/vacation", get(routes::mailbox::vacation).put(routes::mailbox::set_vacation))
             .route("/api/account/fetch", get(routes::fetch::list).post(routes::fetch::create))
             .route("/api/account/fetch/discover", post(routes::fetch::discover))
+            .route("/api/account/fetch/provider", post(routes::fetch::detect))
+            .route("/api/account/fetch/oauth/start", post(routes::fetch::start_sign_in))
+            .route("/api/account/fetch/oauth/callback", get(routes::fetch::oauth_callback))
+            .route("/api/account/fetch/oauth/flows/{flow}", get(routes::fetch::sign_in_status))
             .route("/api/account/fetch/{id}", patch(routes::fetch::update).delete(routes::fetch::delete))
             .route("/api/account/fetch/{id}/run", post(routes::fetch::fetch_now))
             .route("/api/account/fetch/{id}/existing", post(routes::fetch::take_existing))

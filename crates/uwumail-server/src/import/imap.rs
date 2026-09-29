@@ -240,10 +240,23 @@ impl Connection {
             .map_err(|_| anyhow!("{shown}: the server did not finish answering in time"))?
     }
 
+    /// Logs in with an OAuth access token as SASL XOAUTH2 (Microsoft, Google), the token in the
+    /// command itself (SASL-IR). A refused token comes with a challenge first, which is answered with
+    /// an empty line; the refusal after it is the error. The token never shows in an error.
+    pub(crate) async fn authenticate_xoauth2(&mut self, user: &str, token: &str) -> anyhow::Result<()> {
+        let command = format!("AUTHENTICATE XOAUTH2 {}", uwumail_smtp::provider_oauth::xoauth2(user, token));
+        tokio::time::timeout(COMMAND_LIMIT, self.command_untimed(&command))
+            .await
+            .map_err(|_| anyhow!("AUTHENTICATE: the server did not finish answering in time"))??;
+        Ok(())
+    }
+
     async fn command_untimed(&mut self, command: &str) -> anyhow::Result<Vec<Response>> {
         let tag = format!("u{}", self.next_tag);
         self.next_tag += 1;
         self.stream.get_mut().write_all(format!("{tag} {command}\r\n").as_bytes()).await?;
+        let authenticating = command.starts_with("AUTHENTICATE");
+        let mut challenged = false;
         let mut untagged = Vec::new();
         // Only fetching messages needs room for a batch of them.
         let mut budget = if command.starts_with("UID FETCH") { MAX_ANSWER } else { MAX_SMALL_ANSWER };
@@ -253,8 +266,23 @@ impl Connection {
                 if status.starts_with("OK") {
                     return Ok(untagged);
                 }
-                let shown = if command.starts_with("LOGIN") { "LOGIN" } else { command };
+                let shown = if command.starts_with("LOGIN") {
+                    "LOGIN"
+                } else if authenticating {
+                    "AUTHENTICATE"
+                } else {
+                    command
+                };
                 bail!("{shown}: {status}");
+            }
+            // XOAUTH2's error challenge: an empty answer, and the server says no.
+            if authenticating && response.text.starts_with('+') {
+                if challenged {
+                    bail!("AUTHENTICATE: the server kept asking");
+                }
+                challenged = true;
+                self.stream.get_mut().write_all(b"\r\n").await?;
+                continue;
             }
             untagged.push(response);
         }

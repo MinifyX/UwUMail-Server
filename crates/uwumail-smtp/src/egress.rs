@@ -711,6 +711,46 @@ impl Egress {
         self.send(&self.shared.post, request).await
     }
 
+    /// POSTs a form to a public https address the way requests for `purpose` leave -- through the proxy
+    /// when they take it, with the configured fallback -- and answers the status and the body, read up to
+    /// `max_bytes`. For the token endpoints of OAuth providers (docs/fetch.md). Redirects are answered, not
+    /// followed: a token endpoint never sends one, and a form with a secret in it does not go on to
+    /// wherever a redirect points.
+    pub async fn post_form(
+        &self,
+        purpose: Purpose,
+        url: &str,
+        form: String,
+        max_bytes: usize,
+    ) -> Result<(u16, Bytes), EgressError> {
+        let url = check_url(url, false).map_err(EgressError::NotAllowed)?;
+        let request = Request::post(url.as_str())
+            .header(USER_AGENT, AGENT)
+            .header(ACCEPT, "application/json")
+            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(Full::new(Bytes::from(form)))
+            .map_err(|_| EgressError::NotAllowed("that is not a web address".into()))?;
+        // Made for each request from the way out as it is now, so a proxy the admin changes a moment
+        // ago is already the one taken.
+        let client = build_post_client(self.dialer(purpose).connector, &self.shared.roots);
+        let _permit = self.shared.permits.acquire().await.map_err(|_| EgressError::Unreachable)?;
+        let result = tokio::time::timeout(TIMEOUT, async move {
+            let response = client.request(request).await.map_err(|err| reason(&err))?;
+            let status = response.status().as_u16();
+            let body = Limited::new(response.into_body(), max_bytes)
+                .collect()
+                .await
+                .map_err(|_| EgressError::TooLarge)?
+                .to_bytes();
+            Ok((status, body))
+        })
+        .await
+        .map_err(|_| EgressError::Timeout)?;
+        let counter = if result.is_ok() { &self.shared.stats.fetched } else { &self.shared.stats.failed };
+        counter.fetch_add(1, Ordering::Relaxed);
+        result
+    }
+
     /// Unsubscribes with one click (RFC 8058): POSTs `List-Unsubscribe=One-Click` as a form to a public
     /// https address and answers the status. It leaves the way pictures do, through the proxy when they
     /// take it and never around it while `fallback` is `block`. No cookies, no referrer, the same agent

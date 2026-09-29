@@ -26,7 +26,7 @@
 
 use std::time::Duration;
 
-use anyhow::{Context as _, anyhow, bail};
+use anyhow::{anyhow, bail};
 use tokio::sync::watch;
 use uwumail_smtp::{FetchedMailbox, Smtp, Taken};
 use uwumail_store::{
@@ -171,10 +171,21 @@ async fn run_once(
     if detour.is_none() && !crate::import::imap::resolves_publicly(&account.host, account.port).await {
         bail!("{} does not resolve to a public address", account.host);
     }
-    let password = store
-        .fetch_password(account.account_id, account.id)
-        .await?
-        .ok_or_else(|| anyhow!("the password for {} is gone", account.address))?;
+    // A mailbox that signs in at Microsoft or Google logs in with an access token instead of a
+    // password; one that has run out is renewed first, and a grant that ended stops the run here.
+    let token = match uwumail_smtp::provider_oauth::Provider::of_auth(account.auth) {
+        Some(_) => Some(
+            smtp.provider_oauth().access_token(store, account.account_id, account.id, &account.address).await?,
+        ),
+        None => None,
+    };
+    let password = match token {
+        Some(_) => String::new(),
+        None => store
+            .fetch_password(account.account_id, account.id)
+            .await?
+            .ok_or_else(|| anyhow!("the password for {} is gone", account.address))?,
+    };
     let to = store
         .account_by_id(account.account_id)
         .await?
@@ -194,10 +205,39 @@ async fn run_once(
         },
     };
     let mut connection = Connection::open(&source).await?;
-    connection
-        .command(&format!("LOGIN {} {}", quoted(&account.username), quoted(&source.password)))
-        .await
-        .context("the provider did not accept the user name and password")?;
+    match &token {
+        Some(token) => {
+            if let Err(err) = connection.authenticate_xoauth2(&account.username, token).await {
+                // Refused although it had time left (revoked a moment ago, say): forgotten, so the
+                // next run makes a new one -- and learns then whether the grant still holds.
+                let _ = store.forget_fetch_access_token(account.id).await;
+                return Err(err.context("the provider did not accept the sign-in"));
+            }
+        }
+        None => {
+            let login = connection
+                .command(&format!("LOGIN {} {}", quoted(&account.username), quoted(&source.password)))
+                .await;
+            if let Err(err) = login {
+                // Microsoft takes no passwords here at all any more. Not a wrong password: runs stop
+                // asking, and the person hears once that signing in with Microsoft is the way.
+                if uwumail_smtp::provider_oauth::is_basic_auth_disabled(&format!("{err:#}")) {
+                    if store.note_fetch_password_refused(account.id).await.unwrap_or(false) {
+                        smtp.provider_oauth().notify(uwumail_smtp::provider_oauth::FetchNotice {
+                            account_id: account.account_id,
+                            address: account.address.clone(),
+                            kind: uwumail_smtp::provider_oauth::FetchNoticeKind::PasswordRefused,
+                        });
+                    }
+                    bail!(
+                        "Microsoft no longer accepts passwords for this mailbox (\"Basic authentication is disabled\"): \
+                         switch it to signing in with Microsoft"
+                    );
+                }
+                return Err(err.context("the provider did not accept the user name and password"));
+            }
+        }
+    }
 
     // The inbox always; the provider's junk folder when it was asked for, because this server wants
     // to judge that mail itself rather than take the provider's word for it.

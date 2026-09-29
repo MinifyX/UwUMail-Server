@@ -215,6 +215,18 @@ impl Client {
         self.send(&format!("AUTH PLAIN {}\r\n", BASE64.encode(token))).await
     }
 
+    /// Logs in with an OAuth access token (SASL XOAUTH2), the way Microsoft and Google take one. A
+    /// refused token is answered with a 334 carrying the reason; the empty line after it gets the final
+    /// no.
+    pub async fn auth_xoauth2(&mut self, username: &str, token: &str) -> std::io::Result<Reply> {
+        let reply =
+            self.send(&format!("AUTH XOAUTH2 {}\r\n", crate::provider_oauth::xoauth2(username, token))).await?;
+        if reply.code == 334 {
+            return self.send("\r\n").await;
+        }
+        Ok(reply)
+    }
+
     /// Sends the message body after a 354 and returns the final reply.
     pub async fn data(&mut self, raw: &[u8], data_timeout: Duration) -> std::io::Result<Reply> {
         let body = dot_stuff(raw);

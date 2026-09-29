@@ -120,6 +120,10 @@ pub async fn run(
     if egress.proxied() {
         tracing::info!(fallback = ?config.egress.fallback, "requests that tell about readers leave through the egress proxy");
     }
+    // Signing in at Microsoft and Google for fetched mailboxes: the token endpoints are asked the way
+    // fetching leaves, through the proxy when fetching takes it (docs/fetch.md).
+    smtp.provider_oauth().configure(config.fetch.oauth.clone());
+    smtp.provider_oauth().set_transport(Arc::new(uwumail_smtp::provider_oauth::EgressTransport(egress.clone())));
     // Mailboxes at other providers, emptied into the mailboxes here that asked for them.
     tasks.spawn(crate::fetch::run_fetchers(store.clone(), smtp.clone(), egress.clone(), shutdown_rx.clone()));
     tasks.spawn(crate::migrate::run_migrations(store.clone(), egress.clone(), shutdown_rx.clone()));
