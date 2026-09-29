@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  byDayAndPerson,
+  byDay,
+  byFeature,
   byPerson,
   changeKind,
   draftOf,
@@ -290,11 +291,17 @@ describe("usage", () => {
     expect(usageSum(rows)).toEqual({ requests: 10, inputTokens: 1000, outputTokens: 100 });
   });
 
-  it("groups per day and person, newest and busiest first", () => {
-    expect(byDayAndPerson(rows).map((group) => [group.day, group.login, group.requests])).toEqual([
-      ["2026-09-29", "leni@uwu.example", 4],
-      ["2026-09-29", "mini@uwu.example", 4],
-      ["2026-09-28", "leni@uwu.example", 2],
+  it("groups per day, newest first", () => {
+    expect(byDay(rows).map((group) => [group.day, group.requests, group.inputTokens])).toEqual([
+      ["2026-09-29", 8, 800],
+      ["2026-09-28", 2, 200],
+    ]);
+  });
+
+  it("groups per feature in the usual order", () => {
+    expect(byFeature(rows).map((group) => [group.feature, group.requests])).toEqual([
+      ["compose", 7],
+      ["summarize", 3],
     ]);
   });
 

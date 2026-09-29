@@ -3830,7 +3830,11 @@
       "total": "Total",
       "noLimit": "{{used}}, no limit",
       "ofLimit": "{{used}} of {{limit}}",
-      "utc": "Days are UTC days; daily limits start over at midnight UTC."
+      "utc": "Days are UTC days; daily limits start over at midnight UTC.",
+      "allEntries_one": "All entries ({{count}})",
+      "allEntries_other": "All entries ({{count}})",
+      "perFeature": "Per feature",
+      "perDay": "Per day"
     },
     "provider": {
       "model": "Model {{model}}",
@@ -3887,7 +3891,7 @@
       "perPerson": "Per person",
       "perDay": "Per day",
       "allPeople": "Everyone",
-      "allEntries": "All entries"
+      "perDayOf": "Per day for {{person}}"
     },
     "choices": {
       "title": "Which provider for what",

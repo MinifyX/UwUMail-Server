@@ -3830,7 +3830,11 @@
       "total": "Summe",
       "noLimit": "{{used}}, ohne Limit",
       "ofLimit": "{{used}} von {{limit}}",
-      "utc": "Tage sind UTC-Tage; die Tageslimits fangen um Mitternacht UTC neu an."
+      "utc": "Tage sind UTC-Tage; die Tageslimits fangen um Mitternacht UTC neu an.",
+      "allEntries_one": "Alle Einträge ({{count}})",
+      "allEntries_other": "Alle Einträge ({{count}})",
+      "perFeature": "Pro Funktion",
+      "perDay": "Pro Tag"
     },
     "provider": {
       "model": "Modell {{model}}",
@@ -3887,7 +3891,7 @@
       "perPerson": "Pro Person",
       "perDay": "Pro Tag",
       "allPeople": "Alle",
-      "allEntries": "Alle Einträge"
+      "perDayOf": "Pro Tag für {{person}}"
     },
     "choices": {
       "title": "Welcher Anbieter wofür",

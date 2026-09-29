@@ -3830,7 +3830,11 @@
       "total": "Totaal",
       "noLimit": "{{used}}, geen limiet",
       "ofLimit": "{{used}} van {{limit}}",
-      "utc": "Dagen zijn UTC-dagen; daglimieten beginnen om middernacht UTC opnieuw."
+      "utc": "Dagen zijn UTC-dagen; daglimieten beginnen om middernacht UTC opnieuw.",
+      "allEntries_one": "Alle regels ({{count}})",
+      "allEntries_other": "Alle regels ({{count}})",
+      "perFeature": "Per functie",
+      "perDay": "Per dag"
     },
     "provider": {
       "model": "Model {{model}}",
@@ -3887,7 +3891,7 @@
       "perPerson": "Per persoon",
       "perDay": "Per dag",
       "allPeople": "Iedereen",
-      "allEntries": "Alle regels"
+      "perDayOf": "Per dag voor {{person}}"
     },
     "choices": {
       "title": "Welke provider waarvoor",

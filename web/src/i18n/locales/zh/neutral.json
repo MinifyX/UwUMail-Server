@@ -3751,7 +3751,10 @@
       "total": "合计",
       "noLimit": "{{used}}，无上限",
       "ofLimit": "{{used}} / {{limit}}",
-      "utc": "日期按 UTC 计算；每日上限在 UTC 午夜重置。"
+      "utc": "日期按 UTC 计算；每日上限在 UTC 午夜重置。",
+      "allEntries_other": "全部记录（{{count}} 条）",
+      "perFeature": "按功能",
+      "perDay": "按日期"
     },
     "provider": {
       "model": "模型 {{model}}",
@@ -3807,7 +3810,7 @@
       "perPerson": "按用户",
       "perDay": "按日期",
       "allPeople": "所有人",
-      "allEntries": "全部记录"
+      "perDayOf": "{{person}} 的每日用量"
     },
     "choices": {
       "title": "哪个功能用哪个服务商",

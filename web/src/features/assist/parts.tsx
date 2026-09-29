@@ -4,7 +4,7 @@ import { useId, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Select, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { formatNumber } from "@/lib/format";
-import { normalizeChip, share, type Quota } from "./model";
+import { formatDay, normalizeChip, share, type Quota, type UsageRow, type UsageSum } from "./model";
 
 /** Marks something that may stop working any day. */
 export function ExperimentalBadge() {
@@ -269,5 +269,173 @@ export function UsageMeter({ used, limit, label }: { used: number; limit: number
         </div>
       )}
     </div>
+  );
+}
+
+/** Requests, tokens in and tokens out as table cells, with a bar for the requests when `max` is given. */
+export function SumCells({ sum, max }: { sum: UsageSum; max?: number }) {
+  const { i18n } = useT();
+  const number = (value: number) => formatNumber(value, i18n.language);
+  return (
+    <>
+      <td className="px-2 py-1.5 text-right tabular-nums">
+        <span className="flex items-center justify-end gap-2">
+          {max !== undefined && max > 0 && (
+            <span className="hidden h-1.5 w-16 overflow-hidden rounded-full bg-canvas sm:block" aria-hidden>
+              <span
+                className="block h-full rounded-full bg-pink"
+                style={{ width: `${Math.max(2, (sum.requests / max) * 100)}%` }}
+              />
+            </span>
+          )}
+          {number(sum.requests)}
+        </span>
+      </td>
+      <td className="px-2 py-1.5 text-right tabular-nums">{number(sum.inputTokens)}</td>
+      <td className="py-1.5 pl-2 text-right tabular-nums">{number(sum.outputTokens)}</td>
+    </>
+  );
+}
+
+export function SumHeads() {
+  const { t } = useT();
+  return (
+    <>
+      <th scope="col" className="px-2 py-1.5 text-right font-semibold">
+        {t("assist.usage.requests")}
+      </th>
+      <th scope="col" className="px-2 py-1.5 text-right font-semibold whitespace-nowrap">
+        {t("assist.usage.inputTokens")}
+      </th>
+      <th scope="col" className="py-1.5 pl-2 text-right font-semibold whitespace-nowrap">
+        {t("assist.usage.outputTokens")}
+      </th>
+    </>
+  );
+}
+
+/** The three sums as tiles. */
+export function UsageTotals({ sum }: { sum: UsageSum }) {
+  const { t, i18n } = useT();
+  return (
+    <dl className="grid grid-cols-3 gap-2 sm:gap-3">
+      {(
+        [
+          ["requests", sum.requests],
+          ["inputTokens", sum.inputTokens],
+          ["outputTokens", sum.outputTokens],
+        ] as const
+      ).map(([key, value]) => (
+        <div key={key} className="min-w-0 rounded-control bg-canvas px-3 py-2">
+          <dt className="truncate text-[12px] text-muted">{t(`assist.usage.${key}`)}</dt>
+          <dd className="text-sm font-bold tabular-nums sm:text-lg">{formatNumber(value, i18n.language)}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** A table of sums with a label column: per day, per feature or per person. */
+export function SumTable<Row extends UsageSum>({
+  caption,
+  head,
+  rows,
+  rowKey,
+  label,
+  total,
+}: {
+  caption: string;
+  head: string;
+  rows: Row[];
+  rowKey: (row: Row) => string;
+  label: (row: Row) => ReactNode;
+  /** A last line with the sum of everything. */
+  total?: UsageSum;
+}) {
+  const { t } = useT();
+  const max = Math.max(0, ...rows.map((row) => row.requests));
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[440px] text-[13px]">
+        <caption className="sr-only">{caption}</caption>
+        <thead>
+          <tr className="border-b border-hairline text-left text-muted">
+            <th scope="col" className="py-1.5 pr-3 font-semibold">
+              {head}
+            </th>
+            <SumHeads />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={rowKey(row)} className="border-b border-hairline last:border-b-0">
+              <th scope="row" className="py-1.5 pr-3 text-left font-semibold break-all">
+                {label(row)}
+              </th>
+              <SumCells sum={row} max={max} />
+            </tr>
+          ))}
+        </tbody>
+        {total && (
+          <tfoot>
+            <tr className="border-t border-line font-bold">
+              <th scope="row" className="py-1.5 pr-3 text-left">
+                {t("assist.usage.total")}
+              </th>
+              <SumCells sum={total} />
+            </tr>
+          </tfoot>
+        )}
+      </table>
+    </div>
+  );
+}
+
+/** Every row as it came, folded away: day, (person,) provider, feature and the sums. */
+export function EntriesTable({ rows, showPerson }: { rows: UsageRow[]; showPerson: boolean }) {
+  const { t, i18n } = useT();
+  return (
+    <details className="rounded-control border border-hairline p-3">
+      <summary className="cursor-pointer text-[13px] font-semibold">
+        {t("assist.usage.allEntries", { count: rows.length })}
+      </summary>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full min-w-[640px] text-[13px]">
+          <caption className="sr-only">{t("assist.usage.caption")}</caption>
+          <thead>
+            <tr className="border-b border-hairline text-left text-muted">
+              <th scope="col" className="py-1.5 pr-3 font-semibold">
+                {t("assist.usage.day")}
+              </th>
+              {showPerson && (
+                <th scope="col" className="px-2 py-1.5 font-semibold">
+                  {t("assist.usage.person")}
+                </th>
+              )}
+              <th scope="col" className="px-2 py-1.5 font-semibold">
+                {t("assist.usage.provider")}
+              </th>
+              <th scope="col" className="px-2 py-1.5 font-semibold">
+                {t("assist.usage.feature")}
+              </th>
+              <SumHeads />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={index} className="border-b border-hairline last:border-b-0">
+                <th scope="row" className="py-1.5 pr-3 text-left font-semibold whitespace-nowrap">
+                  {formatDay(row.day, i18n.language)}
+                </th>
+                {showPerson && <td className="px-2 py-1.5 break-all">{row.login}</td>}
+                <td className="px-2 py-1.5">{row.providerName}</td>
+                <td className="px-2 py-1.5">{t(`assist.features.${row.feature}`)}</td>
+                <SumCells sum={row} />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
   );
 }

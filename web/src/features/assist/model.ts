@@ -476,21 +476,25 @@ export function usageSum(rows: UsageRow[]): UsageSum {
   );
 }
 
-/** Rows added up per day and person, newest day first, the busiest person first within a day. */
-export function byDayAndPerson(rows: UsageRow[]): ({ day: string; login: string } & UsageSum)[] {
-  const groups = new Map<string, { day: string; login: string } & UsageSum>();
+/** Rows added up per day, newest day first. */
+export function byDay(rows: UsageRow[]): ({ day: string } & UsageSum)[] {
+  const groups = new Map<string, { day: string } & UsageSum>();
   for (const row of rows) {
-    const login = row.login ?? "";
-    const key = `${row.day}\n${login}`;
-    const group = groups.get(key) ?? { day: row.day, login, requests: 0, inputTokens: 0, outputTokens: 0 };
+    const group = groups.get(row.day) ?? { day: row.day, requests: 0, inputTokens: 0, outputTokens: 0 };
     group.requests += row.requests;
     group.inputTokens += row.inputTokens;
     group.outputTokens += row.outputTokens;
-    groups.set(key, group);
+    groups.set(row.day, group);
   }
-  return [...groups.values()].sort(
-    (a, b) => b.day.localeCompare(a.day) || b.requests - a.requests || a.login.localeCompare(b.login),
-  );
+  return [...groups.values()].sort((a, b) => b.day.localeCompare(a.day));
+}
+
+/** Rows added up per feature, in the order the features are always listed; unused ones are left out. */
+export function byFeature(rows: UsageRow[]): ({ feature: Feature } & UsageSum)[] {
+  return FEATURES.flatMap((feature) => {
+    const own = rows.filter((row) => row.feature === feature);
+    return own.length > 0 ? [{ feature, ...usageSum(own) }] : [];
+  });
 }
 
 /** Rows added up per person over the whole range, the busiest first. */

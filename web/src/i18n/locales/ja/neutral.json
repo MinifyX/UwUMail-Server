@@ -3751,7 +3751,10 @@
       "total": "合計",
       "noLimit": "{{used}}（上限なし）",
       "ofLimit": "{{used}} / {{limit}}",
-      "utc": "日付は UTC 基準です。1 日の上限は UTC の午前 0 時にリセットされます。"
+      "utc": "日付は UTC 基準です。1 日の上限は UTC の午前 0 時にリセットされます。",
+      "allEntries_other": "すべての記録（{{count}} 件）",
+      "perFeature": "機能別",
+      "perDay": "日別"
     },
     "provider": {
       "model": "モデル {{model}}",
@@ -3807,7 +3810,7 @@
       "perPerson": "ユーザー別",
       "perDay": "日別",
       "allPeople": "全員",
-      "allEntries": "すべての記録"
+      "perDayOf": "{{person}} の日別"
     },
     "choices": {
       "title": "どの機能にどのプロバイダーを使うか",

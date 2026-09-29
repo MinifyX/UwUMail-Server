@@ -9,11 +9,12 @@ import { Field, Select, Toggle } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { api } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
-import { formatNumber } from "@/lib/format";
 import { toast } from "@/state/toasts";
 import {
   ACCOUNT_ASSIST,
   FEATURES,
+  byDay,
+  byFeature,
   formatDay,
   usageSum,
   type AccountAssistView,
@@ -23,7 +24,17 @@ import {
   type Choice,
   type Feature,
 } from "./model";
-import { ModelPicker, ExperimentalBadge, Notice, QuotaText, Tag, UsageMeter } from "./parts";
+import {
+  EntriesTable,
+  ExperimentalBadge,
+  ModelPicker,
+  Notice,
+  QuotaText,
+  SumTable,
+  Tag,
+  UsageMeter,
+  UsageTotals,
+} from "./parts";
 import { ProviderDialog } from "./ProviderDialog";
 
 const assistKey = ["account", "assist"] as const;
@@ -430,18 +441,16 @@ function BackgroundCard({ view, webmail }: { view: AccountAssistView; webmail: b
   );
 }
 
-/** What was asked of which provider in the last 30 days. */
+/** What was asked of which provider today and in the last 30 days. */
 function UsageCard() {
   const { t, i18n } = useT();
   const usage = useQuery({
     queryKey: usageKey,
     queryFn: () => api<AccountUsageView>(`${ACCOUNT_ASSIST}/usage?days=30`),
   });
-  const number = (value: number) => formatNumber(value, i18n.language);
   if (usage.isPending) return <Loading />;
   if (usage.isError) return <LoadError error={usage.error} onRetry={() => void usage.refetch()} />;
   const rows = usage.data.days;
-  const sum = usageSum(rows);
   const today = usage.data.today;
 
   return (
@@ -465,62 +474,35 @@ function UsageCard() {
             </ul>
           )}
         </div>
-        <div className="flex flex-col gap-2 border-t border-hairline pt-4">
+        <div className="flex flex-col gap-3 border-t border-hairline pt-4">
           <p className="text-[13px] font-semibold text-muted">{t("assist.usage.last30")}</p>
           {rows.length === 0 ? (
             <p className="text-[13px] text-muted">{t("assist.usage.empty")}</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[520px] text-[13px]">
-                <caption className="sr-only">{t("assist.usage.caption")}</caption>
-                <thead>
-                  <tr className="border-b border-hairline text-left text-muted">
-                    <th scope="col" className="py-1.5 pr-3 font-semibold">
-                      {t("assist.usage.day")}
-                    </th>
-                    <th scope="col" className="px-2 py-1.5 font-semibold">
-                      {t("assist.usage.provider")}
-                    </th>
-                    <th scope="col" className="px-2 py-1.5 font-semibold">
-                      {t("assist.usage.feature")}
-                    </th>
-                    <th scope="col" className="px-2 py-1.5 text-right font-semibold">
-                      {t("assist.usage.requests")}
-                    </th>
-                    <th scope="col" className="px-2 py-1.5 text-right font-semibold">
-                      {t("assist.usage.inputTokens")}
-                    </th>
-                    <th scope="col" className="py-1.5 pl-2 text-right font-semibold">
-                      {t("assist.usage.outputTokens")}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row, index) => (
-                    <tr key={index} className="border-b border-hairline">
-                      <th scope="row" className="py-1.5 pr-3 text-left font-semibold whitespace-nowrap">
-                        {formatDay(row.day, i18n.language)}
-                      </th>
-                      <td className="px-2 py-1.5">{row.providerName}</td>
-                      <td className="px-2 py-1.5">{t(`assist.features.${row.feature}`)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{number(row.requests)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{number(row.inputTokens)}</td>
-                      <td className="py-1.5 pl-2 text-right tabular-nums">{number(row.outputTokens)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="font-bold">
-                    <th scope="row" colSpan={3} className="py-1.5 pr-3 text-left">
-                      {t("assist.usage.total")}
-                    </th>
-                    <td className="px-2 py-1.5 text-right tabular-nums">{number(sum.requests)}</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">{number(sum.inputTokens)}</td>
-                    <td className="py-1.5 pl-2 text-right tabular-nums">{number(sum.outputTokens)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+            <>
+              <UsageTotals sum={usageSum(rows)} />
+              <SumTable
+                caption={t("assist.usage.perFeature")}
+                head={t("assist.usage.feature")}
+                rows={byFeature(rows)}
+                rowKey={(entry) => entry.feature}
+                label={(entry) => t(`assist.features.${entry.feature}`)}
+              />
+              <details className="rounded-control border border-hairline p-3">
+                <summary className="cursor-pointer text-[13px] font-semibold">{t("assist.usage.perDay")}</summary>
+                <div className="mt-3">
+                  <SumTable
+                    caption={t("assist.usage.perDay")}
+                    head={t("assist.usage.day")}
+                    rows={byDay(rows)}
+                    rowKey={(entry) => entry.day}
+                    label={(entry) => <span className="whitespace-nowrap">{formatDay(entry.day, i18n.language)}</span>}
+                    total={usageSum(rows)}
+                  />
+                </div>
+              </details>
+              <EntriesTable rows={rows} showPerson={false} />
+            </>
           )}
           <p className="text-[12px] text-muted">{t("assist.usage.utc")}</p>
         </div>

@@ -3907,7 +3907,12 @@
       "total": "Total",
       "noLimit": "{{used}}, sans limite",
       "ofLimit": "{{used}} sur {{limit}}",
-      "utc": "Les jours sont des jours UTC ; les limites quotidiennes repartent à zéro à minuit UTC."
+      "utc": "Les jours sont des jours UTC ; les limites quotidiennes repartent à zéro à minuit UTC.",
+      "allEntries_one": "Toutes les entrées ({{count}})",
+      "allEntries_many": "Toutes les entrées ({{count}})",
+      "allEntries_other": "Toutes les entrées ({{count}})",
+      "perFeature": "Par fonction",
+      "perDay": "Par jour"
     },
     "provider": {
       "model": "Modèle {{model}}",
@@ -3965,7 +3970,7 @@
       "perPerson": "Par personne",
       "perDay": "Par jour",
       "allPeople": "Tout le monde",
-      "allEntries": "Toutes les entrées"
+      "perDayOf": "Par jour pour {{person}}"
     },
     "choices": {
       "title": "Quel fournisseur pour quoi",
