@@ -100,7 +100,12 @@ pub fn to_vcard(card: &Map<String, Value>) -> Result<String, String> {
             !entry.get(0).and_then(Value::as_str).is_some_and(|name| name.eq_ignore_ascii_case(REMINDER_PROPERTY))
         });
         for reminder in reminders {
-            properties.push(serde_json::json!([REMINDER_PROPERTY.to_ascii_lowercase(), {}, "unknown", reminder.format()]));
+            properties.push(serde_json::json!([
+                REMINDER_PROPERTY.to_ascii_lowercase(),
+                {},
+                "unknown",
+                reminder.format()
+            ]));
         }
     }
     let json = Value::Object(card).to_string();
@@ -317,7 +322,10 @@ item1.X-ABADR:de\r\nBDAY:1990-05-17\r\nNOTE:mag Thunfisch\r\nX-APPLE-SPECIAL:ble
         let content = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Max\r\nUID:m\r\nBDAY:--0412\r\n\
 X-UWUMAIL-REMINDER:1 09:00\r\nX-UWUMAIL-REMINDER:0 9:00\r\nX-UWUMAIL-REMINDER:kaputt\r\nEND:VCARD\r\n";
         let card = from_vcard(content).unwrap();
-        assert_eq!(card["uwuReminders"], json!([{ "daysBefore": 0, "time": "09:00" }, { "daysBefore": 1, "time": "09:00" }]));
+        assert_eq!(
+            card["uwuReminders"],
+            json!([{ "daysBefore": 0, "time": "09:00" }, { "daysBefore": 1, "time": "09:00" }])
+        );
         assert!(!card["vCard"].to_string().to_ascii_lowercase().contains("reminder"), "one place only");
         let mut changed = card.clone();
         changed.insert("uwuReminders".into(), json!([{ "daysBefore": 7, "time": "18:30" }]));
@@ -333,8 +341,12 @@ X-UWUMAIL-REMINDER:1 09:00\r\nX-UWUMAIL-REMINDER:0 9:00\r\nX-UWUMAIL-REMINDER:ka
         let fresh = object(json!({ "@type": "Card", "uid": "n", "name": { "full": "Nyu" },
             "uwuReminders": [{ "daysBefore": 0, "time": "09:00" }] }));
         assert!(to_vcard(&fresh).unwrap().contains("X-UWUMAIL-REMINDER:0 09:00"));
-        for bad in [json!([{ "daysBefore": 29, "time": "09:00" }]), json!([{ "daysBefore": 1, "time": "9:00" }]),
-            json!("1 09:00"), json!([{}, {}, {}, {}, {}, {}])] {
+        for bad in [
+            json!([{ "daysBefore": 29, "time": "09:00" }]),
+            json!([{ "daysBefore": 1, "time": "9:00" }]),
+            json!("1 09:00"),
+            json!([{}, {}, {}, {}, {}, {}]),
+        ] {
             let card = object(json!({ "@type": "Card", "uid": "x", "uwuReminders": bad }));
             assert_eq!(validate(&card).unwrap_err().properties, vec!["uwuReminders"]);
         }

@@ -117,7 +117,8 @@ impl PartialDate {
     /// `None` for a day that does not exist, like 31 April or 29 February 2023.
     pub fn new(year: Option<i32>, month: u32, day: u32) -> Option<PartialDate> {
         let year = year.filter(|year| (1..=9999).contains(year));
-        (1..=12).contains(&month)
+        (1..=12)
+            .contains(&month)
             .then_some(())
             .filter(|_| day >= 1 && day <= days_in_month(year, month))
             .map(|_| PartialDate { year, month, day })
@@ -325,7 +326,8 @@ pub fn card_dates(content: &str) -> Option<CardDates> {
     }
     let lines = raw_lines(content);
     let is_group = lines.iter().any(|line| {
-        (line.name == "KIND" || line.name == "X-ADDRESSBOOKSERVER-KIND") && line.value.trim().eq_ignore_ascii_case("group")
+        (line.name == "KIND" || line.name == "X-ADDRESSBOOKSERVER-KIND")
+            && line.value.trim().eq_ignore_ascii_case("group")
     });
     if is_group {
         return None;
@@ -358,7 +360,8 @@ pub fn card_dates(content: &str) -> Option<CardDates> {
             "X-ABDATE" => {
                 let label = line.group.as_deref().and_then(|group| {
                     lines.iter().find(|other| {
-                        other.name == "X-ABLABEL" && other.group.as_deref().is_some_and(|g| g.eq_ignore_ascii_case(group))
+                        other.name == "X-ABLABEL"
+                            && other.group.as_deref().is_some_and(|g| g.eq_ignore_ascii_case(group))
                     })
                 });
                 let (kind, label) =
@@ -386,8 +389,11 @@ pub fn card_dates(content: &str) -> Option<CardDates> {
 }
 
 fn reminders_of(lines: &[RawLine]) -> Vec<Reminder> {
-    let mut reminders: Vec<Reminder> =
-        lines.iter().filter(|line| line.name == REMINDER_PROPERTY).filter_map(|line| Reminder::parse(&line.value)).collect();
+    let mut reminders: Vec<Reminder> = lines
+        .iter()
+        .filter(|line| line.name == REMINDER_PROPERTY)
+        .filter_map(|line| Reminder::parse(&line.value))
+        .collect();
     reminders.sort_unstable();
     reminders.dedup();
     reminders.truncate(MAX_REMINDERS);
@@ -471,6 +477,11 @@ fn escape(text: &str) -> String {
         }
     }
     out
+}
+
+/// iCalendar and vCard TEXT unescaped.
+pub(crate) fn unescape_text(text: &str) -> String {
+    unescape(text)
 }
 
 fn unescape(text: &str) -> String {
@@ -615,7 +626,13 @@ fn next_day(year: i32, month: u32, day: u32) -> (i32, u32, u32) {
     }
 }
 
-fn derived_event(card_id: i64, suffix: &str, event: &BirthdayEvent, date: PartialDate, reminders: &[Reminder]) -> Derived {
+fn derived_event(
+    card_id: i64,
+    suffix: &str,
+    event: &BirthdayEvent,
+    date: PartialDate,
+    reminders: &[Reminder],
+) -> Derived {
     let uid = format!("uwumail-birthday-{card_id}-{suffix}");
     let start_year = date.year.map_or(YEARLESS_START_YEAR, |year| year.clamp(FIRST_START_YEAR, LAST_START_YEAR));
     let (month, day) = date.in_year(start_year);
@@ -630,11 +647,7 @@ fn derived_event(card_id: i64, suffix: &str, event: &BirthdayEvent, date: Partia
     vevent.properties.push(start);
     vevent.properties.push(end);
     // 29 February falls on the last day of February: the 28th in the other years.
-    let rule = if date.month == 2 && date.day == 29 {
-        "FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1"
-    } else {
-        "FREQ=YEARLY"
-    };
+    let rule = if date.month == 2 && date.day == 29 { "FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1" } else { "FREQ=YEARLY" };
     let mut push = |name: &str, value: String| vevent.properties.push(Property::new(name, value));
     push("RRULE", rule.into());
     let title = event.title();
@@ -742,9 +755,8 @@ fn calendar_of(conn: &Connection, account_id: i64) -> Result<Option<(DavCollecti
 
 /// The language the person chose, or the server's.
 fn language_of(conn: &Connection, account_id: i64) -> Result<BirthdayLanguage> {
-    let preferences: Option<String> = conn
-        .query_row("SELECT preferences FROM accounts WHERE id = ?1", [account_id], |row| row.get(0))
-        .optional()?;
+    let preferences: Option<String> =
+        conn.query_row("SELECT preferences FROM accounts WHERE id = ?1", [account_id], |row| row.get(0)).optional()?;
     let chosen = preferences
         .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
         .and_then(|value| value.get("language").and_then(|v| v.as_str()).map(str::to_owned))
@@ -800,8 +812,9 @@ fn sync_card(
     let prefix = format!("bday-{card_id}-");
     // Every name that starts with the prefix sorts between it and the prefix with '.' for '-'.
     let upper = format!("bday-{card_id}.");
-    let mut stmt =
-        tx.prepare_cached("SELECT name, content FROM dav_resources WHERE collection_id = ?1 AND name >= ?2 AND name < ?3")?;
+    let mut stmt = tx.prepare_cached(
+        "SELECT name, content FROM dav_resources WHERE collection_id = ?1 AND name >= ?2 AND name < ?3",
+    )?;
     let existing: Vec<(String, String)> = stmt
         .query_map(params![calendar.id, prefix, upper], |row| Ok((row.get(0)?, row.get(1)?)))?
         .collect::<rusqlite::Result<_>>()?;
@@ -1096,7 +1109,10 @@ BDAY:1996-04-12\r\nANNIVERSARY:20210612\r\nX-UWUMAIL-REMINDER:1 09:00\r\nX-UWUMA
                 CardDate { kind: DateKind::Wedding, label: None, date: PartialDate::new(Some(2021), 6, 12).unwrap() },
             ]
         );
-        assert_eq!(dates.reminders, vec![Reminder { days_before: 0, minute: 510 }, Reminder { days_before: 1, minute: 540 }]);
+        assert_eq!(
+            dates.reminders,
+            vec![Reminder { days_before: 0, minute: 510 }, Reminder { days_before: 1, minute: 540 }]
+        );
 
         let apple = "BEGIN:VCARD\r\nVERSION:3.0\r\nN:Katze;Nyu;;;\r\nFN:Nyu Katze\r\n\
 BDAY;X-APPLE-OMIT-YEAR=1604:1604-03-15\r\nitem1.X-ABDATE;type=pref:2010-06-01\r\n\
@@ -1113,7 +1129,8 @@ UID:nyu\r\nEND:VCARD\r\n";
         assert!(card_dates(none).is_none());
         let nameless = "BEGIN:VCARD\r\nVERSION:3.0\r\nBDAY:--0101\r\nUID:x\r\nEND:VCARD\r\n";
         assert!(card_dates(nameless).is_none());
-        let org = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:\r\nORG:Katzen GmbH;\r\nANNIVERSARY:2001-01-01\r\nUID:o\r\nEND:VCARD\r\n";
+        let org =
+            "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:\r\nORG:Katzen GmbH;\r\nANNIVERSARY:2001-01-01\r\nUID:o\r\nEND:VCARD\r\n";
         assert_eq!(card_dates(org).unwrap().name, "Katzen GmbH");
     }
 
@@ -1239,7 +1256,10 @@ UID:nyu\r\nEND:VCARD\r\n";
             let mini = account(&store, "mini@example.org").await;
             let contacts = store.dav_collections(mini, DavKind::Addressbook, book()).await.unwrap()[0].clone();
             // Nothing without a date.
-            store.dav_put(mini, contacts.id, put("leni", vcard("leni", "Leni", "")), DavPrecondition::default()).await.unwrap();
+            store
+                .dav_put(mini, contacts.id, put("leni", vcard("leni", "Leni", "")), DavPrecondition::default())
+                .await
+                .unwrap();
             assert!(store.birthday_calendar(mini).await.unwrap().is_none());
 
             let start = store.account_modseq(mini).await.unwrap();
@@ -1274,11 +1294,8 @@ UID:nyu\r\nEND:VCARD\r\n";
 
             // A new date and a reminder change the event; a wedding comes along.
             let after = store.account_modseq(mini).await.unwrap();
-            let changed = vcard(
-                "max",
-                "Max Müller",
-                "BDAY:--04-13\r\nANNIVERSARY:2021-06-12\r\nX-UWUMAIL-REMINDER:1 09:00\r\n",
-            );
+            let changed =
+                vcard("max", "Max Müller", "BDAY:--04-13\r\nANNIVERSARY:2021-06-12\r\nX-UWUMAIL-REMINDER:1 09:00\r\n");
             let written = ContactCardWrite {
                 id: Some(card.id),
                 address_book_id: contacts.id,
@@ -1357,7 +1374,12 @@ UID:nyu\r\nEND:VCARD\r\n";
 
             // An address book that goes takes its cards' events along.
             store
-                .dav_put(mini, family.id, put("opa", vcard("opa", "Opa", "BDAY:1938-05-05\r\n")), DavPrecondition::default())
+                .dav_put(
+                    mini,
+                    family.id,
+                    put("opa", vcard("opa", "Opa", "BDAY:1938-05-05\r\n")),
+                    DavPrecondition::default(),
+                )
                 .await
                 .unwrap();
             assert_eq!(events(&store, mini).await.len(), 3);
@@ -1392,7 +1414,12 @@ UID:nyu\r\nEND:VCARD\r\n";
             let mini = account(&store, "mini@example.org").await;
             let contacts = store.dav_collections(mini, DavKind::Addressbook, book()).await.unwrap()[0].clone();
             store
-                .dav_put(mini, contacts.id, put("max", vcard("max", "Max", "BDAY:2000-01-01\r\n")), DavPrecondition::default())
+                .dav_put(
+                    mini,
+                    contacts.id,
+                    put("max", vcard("max", "Max", "BDAY:2000-01-01\r\n")),
+                    DavPrecondition::default(),
+                )
                 .await
                 .unwrap();
             // As if the card had been there before migration 0056.

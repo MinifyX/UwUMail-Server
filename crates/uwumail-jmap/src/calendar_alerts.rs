@@ -347,7 +347,7 @@ pub fn next_alerts(
         return Vec::new();
     }
     let mut next: Planned = Default::default();
-    let consider =|next: &mut Planned, recurrence_id: Option<&str>, object: &Map<String, Value>| {
+    let consider = |next: &mut Planned, recurrence_id: Option<&str>, object: &Map<String, Value>| {
         let Some(Value::Object(alerts)) = object.get("alerts") else { return };
         let Some((start, end)) = jscal::span(object, floating) else { return };
         for (id, alert) in alerts {
