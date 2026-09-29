@@ -11,6 +11,7 @@ mod calendars;
 mod directory;
 mod domains;
 mod egress;
+mod fetch_oauth;
 mod gateway;
 mod health;
 mod ldap;
