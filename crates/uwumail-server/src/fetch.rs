@@ -174,9 +174,9 @@ async fn run_once(
     // A mailbox that signs in at Microsoft or Google logs in with an access token instead of a
     // password; one that has run out is renewed first, and a grant that ended stops the run here.
     let token = match uwumail_smtp::provider_oauth::Provider::of_auth(account.auth) {
-        Some(_) => Some(
-            smtp.provider_oauth().access_token(store, account.account_id, account.id, &account.address).await?,
-        ),
+        Some(_) => {
+            Some(smtp.provider_oauth().access_token(store, account.account_id, account.id, &account.address).await?)
+        }
         None => None,
     };
     let password = match token {
@@ -215,9 +215,8 @@ async fn run_once(
             }
         }
         None => {
-            let login = connection
-                .command(&format!("LOGIN {} {}", quoted(&account.username), quoted(&source.password)))
-                .await;
+            let login =
+                connection.command(&format!("LOGIN {} {}", quoted(&account.username), quoted(&source.password))).await;
             if let Err(err) = login {
                 // Microsoft takes no passwords here at all any more. Not a wrong password: runs stop
                 // asking, and the person hears once that signing in with Microsoft is the way.
@@ -1046,7 +1045,8 @@ mod tests {
             })
             .await
             .unwrap();
-        let tokens = rig.provider.redeem_oauth_code(&code, client.id, "http://127.0.0.1/cb", verifier).await.unwrap().unwrap();
+        let tokens =
+            rig.provider.redeem_oauth_code(&code, client.id, "http://127.0.0.1/cb", verifier).await.unwrap().unwrap();
         let grant = uwumail_store::FetchGrant {
             provider: uwumail_store::FetchAuth::Microsoft,
             tokens: uwumail_store::FetchTokens {
@@ -1089,12 +1089,20 @@ mod tests {
         let heard = listen(&rig.smtp);
         let account = rig.ours.fetch_account(rig.our_id, rig.fetch_id).await.unwrap().unwrap();
         assert_eq!(account.auth, uwumail_store::FetchAuth::Microsoft);
-        assert_eq!(rig.ours.fetch_password(rig.our_id, rig.fetch_id).await.unwrap().as_deref(), Some(""), "no password kept");
+        assert_eq!(
+            rig.ours.fetch_password(rig.our_id, rig.fetch_id).await.unwrap().as_deref(),
+            Some(""),
+            "no password kept"
+        );
 
         assert_eq!(rig.run().await, 0, "the first run only writes down where the folders stand");
         at_provider(&rig.provider, rig.provider_id, MailboxTarget::Role(MailboxRole::Inbox), "Token").await;
         assert_eq!(rig.run().await, 1, "logged in with the token");
-        assert_eq!(transport.asked.load(std::sync::atomic::Ordering::SeqCst), 0, "a token with time left is used as it is");
+        assert_eq!(
+            transport.asked.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "a token with time left is used as it is"
+        );
 
         // Run out: renewed first, and the rotated refresh token kept.
         let before = rig.ours.fetch_oauth(rig.our_id, rig.fetch_id).await.unwrap().unwrap();
@@ -1150,12 +1158,14 @@ mod tests {
                 tokio::spawn(async move {
                     let Ok(tls) = acceptor.accept(tcp).await else { return };
                     let mut stream = tokio::io::BufReader::new(tls);
-                    let _ = stream.get_mut().write_all(b"* OK The Microsoft Exchange IMAP4 service is ready.\r\n").await;
+                    let _ =
+                        stream.get_mut().write_all(b"* OK The Microsoft Exchange IMAP4 service is ready.\r\n").await;
                     let mut line = String::new();
                     while stream.read_line(&mut line).await.unwrap_or(0) > 0 {
                         let tag = line.split(' ').next().unwrap_or("*").to_owned();
                         let answer = if line.contains(" LOGIN ") {
-                            format!("{tag} NO LOGIN failed.\r\n").replace("LOGIN failed.", "Basic authentication is disabled.")
+                            format!("{tag} NO LOGIN failed.\r\n")
+                                .replace("LOGIN failed.", "Basic authentication is disabled.")
                         } else {
                             format!("{tag} OK done\r\n")
                         };
@@ -1197,7 +1207,10 @@ mod tests {
             }
         };
         let error = format!("{:#}", run().await);
-        assert!(error.contains("Basic authentication is disabled") && error.contains("signing in with Microsoft"), "{error}");
+        assert!(
+            error.contains("Basic authentication is disabled") && error.contains("signing in with Microsoft"),
+            "{error}"
+        );
         assert!(!error.contains("user name and password"), "not told as a wrong password: {error}");
         ours.note_fetch_run(fetched.id, 0, Some(error)).await.unwrap();
         let account = ours.fetch_account(our_id, fetched.id).await.unwrap().unwrap();

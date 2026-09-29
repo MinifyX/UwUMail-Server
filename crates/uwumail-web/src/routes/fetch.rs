@@ -203,7 +203,9 @@ fn take_sign_in(web: &Web, session: &Session, flow: &str, address: &str, switch_
     Ok(granted)
 }
 
-fn sending_of_settings(settings: &uwumail_smtp::autoconfig::Settings) -> (Option<String>, Option<u16>, Option<SendSecurity>) {
+fn sending_of_settings(
+    settings: &uwumail_smtp::autoconfig::Settings,
+) -> (Option<String>, Option<u16>, Option<SendSecurity>) {
     match &settings.smtp {
         Some(server) => (
             Some(server.host.clone()),
@@ -474,7 +476,9 @@ pub async fn start_sign_in(
     }
     let oauth = web.smtp().provider_oauth();
     let refused = |code: String| match code.as_str() {
-        "oauthNotConfigured" => ApiError::Rule("oauthNotConfigured", "this server has no client for the provider".into()),
+        "oauthNotConfigured" => {
+            ApiError::Rule("oauthNotConfigured", "this server has no client for the provider".into())
+        }
         "oauthClientRejected" => {
             ApiError::Rule("oauthClientRejected", "the provider refused this server's client ID".into())
         }
@@ -484,12 +488,16 @@ pub async fn start_sign_in(
     match start.provider {
         Provider::Microsoft => {
             let consumer = matches!(provider_of_domain(&domain), Some((Provider::Microsoft, true)));
-            let started = oauth.start_microsoft(session.account.id, &address, consumer, start.switch_id).await.map_err(refused)?;
+            let started = oauth
+                .start_microsoft(session.account.id, &address, consumer, start.switch_id)
+                .await
+                .map_err(refused)?;
             Ok(Json(json!({ "provider": "microsoft", "device": started })).into_response())
         }
         Provider::Google => {
-            let started =
-                oauth.start_google(session.account.id, &address, start.switch_id, &redirect_uri(&web)).map_err(refused)?;
+            let started = oauth
+                .start_google(session.account.id, &address, start.switch_id, &redirect_uri(&web))
+                .map_err(refused)?;
             let mut response =
                 Json(json!({ "provider": "google", "flowId": started.flow_id, "url": started.url })).into_response();
             response.headers_mut().append(header::SET_COOKIE, binding_cookie(client, &started.binding, 600));
@@ -525,14 +533,20 @@ pub async fn oauth_callback(
     };
     let binding = sent_binding(&headers, client);
     match web.smtp().provider_oauth().finish_google(&state, &code, &binding).await {
-        Ok(flow) => back(format!("oauth={}", url::form_urlencoded::byte_serialize(flow.as_bytes()).collect::<String>())),
+        Ok(flow) => {
+            back(format!("oauth={}", url::form_urlencoded::byte_serialize(flow.as_bytes()).collect::<String>()))
+        }
         Err(code) => back(format!("oauthError={code}")),
     }
 }
 
 /// How a sign-in is doing. Once the provider handed out tokens, they are proven here with a real
 /// login to its servers, the way a password is, before anything can be saved.
-pub async fn sign_in_status(State(web): State<Web>, session: Session, Path(flow): Path<String>) -> ApiResult<Json<Value>> {
+pub async fn sign_in_status(
+    State(web): State<Web>,
+    session: Session,
+    Path(flow): Path<String>,
+) -> ApiResult<Json<Value>> {
     let oauth = web.smtp().provider_oauth();
     let ready = |granted: &Granted| {
         json!({

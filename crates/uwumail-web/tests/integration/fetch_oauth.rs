@@ -226,7 +226,10 @@ async fn microsoft_and_google_are_offered_and_the_device_code_is_handed_out() {
     assert_eq!(started["device"]["userCode"], "KX7PQ4M");
     assert_eq!(started["device"]["verificationUri"], "https://microsoft.com/devicelogin");
     let (url, form) = provider.seen.lock().unwrap()[0].clone();
-    assert_eq!(url, "https://login.test/consumers/oauth2/v2.0/devicecode", "Outlook.com and Hotmail are personal accounts");
+    assert_eq!(
+        url, "https://login.test/consumers/oauth2/v2.0/devicecode",
+        "Outlook.com and Hotmail are personal accounts"
+    );
     assert_eq!(form["client_id"], uwumail_smtp::provider_oauth::MICROSOFT_DEFAULT_CLIENT_ID);
     // Microsoft asked for five seconds between questions; the portal hears "not yet" meanwhile.
     let flow = started["device"]["flowId"].as_str().unwrap();
@@ -268,7 +271,8 @@ async fn a_google_sign_in_is_tied_to_the_browser_and_saved_once() {
     let (_, page, _) =
         call(&portal.app, "GET", &back, None, None, Some("__Host-uwumail-fetch-oauth=someone-else")).await;
     assert!(page.as_str().unwrap().contains("oauthError=expired"), "{page}");
-    let (_, page, _) = call(&portal.app, "GET", "/api/account/fetch/oauth/callback?error=access_denied", None, None, None).await;
+    let (_, page, _) =
+        call(&portal.app, "GET", "/api/account/fetch/oauth/callback?error=access_denied", None, None, None).await;
     assert!(page.as_str().unwrap().contains("oauthError=declined"), "{page}");
     assert!(provider.seen.lock().unwrap().is_empty(), "Google is not asked for somebody else's code");
 
@@ -300,7 +304,8 @@ async fn a_google_sign_in_is_tied_to_the_browser_and_saved_once() {
     let id = created["id"].as_i64().unwrap();
     let kept = portal.store.fetch_oauth(portal.person, id).await.unwrap().unwrap();
     assert_eq!((kept.refresh_token.as_deref(), kept.access_token.as_deref()), (Some("rt-google"), Some("at-google")));
-    let (status, again, _) = call(&portal.app, "POST", "/api/account/fetch", Some(body), Some(&portal.auth), None).await;
+    let (status, again, _) =
+        call(&portal.app, "POST", "/api/account/fetch", Some(body), Some(&portal.auth), None).await;
     assert_eq!((status, again["code"].as_str()), (StatusCode::CONFLICT, Some("signInExpired")), "only once: {again}");
 }
 
@@ -361,7 +366,11 @@ async fn a_mailbox_with_a_password_switches_to_signing_in() {
     assert_eq!(status, StatusCode::OK, "{switched}");
     assert_eq!(switched["auth"], "google");
     assert_eq!(switched["smtpHost"], "smtp.gmail.com");
-    assert_eq!(portal.store.fetch_password(portal.person, fetched.id).await.unwrap().as_deref(), Some(""), "the password is forgotten");
+    assert_eq!(
+        portal.store.fetch_password(portal.person, fetched.id).await.unwrap().as_deref(),
+        Some(""),
+        "the password is forgotten"
+    );
     let (_, view, _) = call(&portal.app, "GET", "/api/account/fetch", None, Some(&portal.auth), None).await;
     assert_eq!(view["accounts"][0]["signIn"], Value::Null);
 

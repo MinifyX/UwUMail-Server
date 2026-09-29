@@ -219,8 +219,7 @@ impl Client {
     /// refused token is answered with a 334 carrying the reason; the empty line after it gets the final
     /// no.
     pub async fn auth_xoauth2(&mut self, username: &str, token: &str) -> std::io::Result<Reply> {
-        let reply =
-            self.send(&format!("AUTH XOAUTH2 {}\r\n", crate::provider_oauth::xoauth2(username, token))).await?;
+        let reply = self.send(&format!("AUTH XOAUTH2 {}\r\n", crate::provider_oauth::xoauth2(username, token))).await?;
         if reply.code == 334 {
             return self.send("\r\n").await;
         }
@@ -292,7 +291,11 @@ mod tests {
         let server = tokio::spawn(async move {
             let mut theirs = BufReader::new(theirs);
             let mut heard = Vec::new();
-            for reply in ["235 2.7.0 Accepted\r\n", "334 eyJzdGF0dXMiOiI0MDEifQ==\r\n", "535 5.7.3 Authentication unsuccessful\r\n"] {
+            for reply in [
+                "235 2.7.0 Accepted\r\n",
+                "334 eyJzdGF0dXMiOiI0MDEifQ==\r\n",
+                "535 5.7.3 Authentication unsuccessful\r\n",
+            ] {
                 let mut line = String::new();
                 theirs.read_line(&mut line).await.unwrap();
                 heard.push(line);
@@ -300,12 +303,19 @@ mod tests {
             }
             heard
         });
-        let mut client =
-            Client { stream: Stream::Plain(Box::new(ours)), pending: Vec::new(), command_timeout: Duration::from_secs(5), local_ip: None };
+        let mut client = Client {
+            stream: Stream::Plain(Box::new(ours)),
+            pending: Vec::new(),
+            command_timeout: Duration::from_secs(5),
+            local_ip: None,
+        };
         assert_eq!(client.auth_xoauth2("mini@outlook.com", "good").await.unwrap().code, 235);
         assert_eq!(client.auth_xoauth2("mini@outlook.com", "bad").await.unwrap().code, 535);
         let heard = server.await.unwrap();
-        assert_eq!(heard[0], format!("AUTH XOAUTH2 {}\r\n", crate::provider_oauth::xoauth2("mini@outlook.com", "good")));
+        assert_eq!(
+            heard[0],
+            format!("AUTH XOAUTH2 {}\r\n", crate::provider_oauth::xoauth2("mini@outlook.com", "good"))
+        );
         assert!(heard[1].starts_with("AUTH XOAUTH2 "));
         assert_eq!(heard[2], "\r\n", "the error challenge is answered with an empty line");
     }

@@ -128,8 +128,8 @@ pub use extras::{
 pub use feeds::FeedState;
 pub use fetch::{
     AfterFetch, DEFAULT_FETCH_INTERVAL_SECS, FETCH_HOLD_LIMIT_SECS, FETCH_SEEN_SECS, FetchAccount, FetchAccountUpdate,
-    FetchAuth, FetchFolder, FetchOAuth, FetchSecurity, FetchSender, MAX_FETCH_ACCOUNTS, MAX_FETCH_INTERVAL_SECS, MIN_FETCH_INTERVAL_SECS,
-    FetchGrant, FetchTokens, NewFetchAccount, SendSecurity, is_public_ip,
+    FetchAuth, FetchFolder, FetchGrant, FetchOAuth, FetchSecurity, FetchSender, FetchTokens, MAX_FETCH_ACCOUNTS,
+    MAX_FETCH_INTERVAL_SECS, MIN_FETCH_INTERVAL_SECS, NewFetchAccount, SendSecurity, is_public_ip,
 };
 pub use forward_addresses::{FORWARD_ADDRESS_MAX_TARGETS, ForwardAddress};
 pub use forwarding::{ActiveForwarding, FORWARD_LINK_LIFETIME_SECS, ForwardTarget, Forwarding, MAX_FORWARD_TARGETS};

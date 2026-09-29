@@ -405,7 +405,11 @@ async fn login_answer<R: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
         };
         if let Some(rest) = line.strip_prefix("a1 ") {
             let rest = rest.trim_end();
-            return Ok(if rest.starts_with("OK") { LoginAnswer::Accepted } else { LoginAnswer::Refused(rest.to_owned()) });
+            return Ok(if rest.starts_with("OK") {
+                LoginAnswer::Accepted
+            } else {
+                LoginAnswer::Refused(rest.to_owned())
+            });
         }
         if line.starts_with('+') && !continued {
             continued = true;
@@ -438,7 +442,9 @@ async fn imap_login(
     let mut stream = imap_stream(ctx, host, port).await?;
     let command = match credential {
         Credential::Password(password) => format!("a1 LOGIN {} {}\r\n", quoted(user), quoted(password)),
-        Credential::Bearer(token) => format!("a1 AUTHENTICATE XOAUTH2 {}\r\n", crate::provider_oauth::xoauth2(user, token)),
+        Credential::Bearer(token) => {
+            format!("a1 AUTHENTICATE XOAUTH2 {}\r\n", crate::provider_oauth::xoauth2(user, token))
+        }
     };
     stream.get_mut().write_all(command.as_bytes()).await.map_err(|err| err.to_string())?;
     let answer = login_answer(&mut stream, host).await?;
@@ -499,8 +505,14 @@ async fn try_settings(ctx: &Context, settings: &Settings, address: &str, passwor
     }
     let mut last = String::new();
     for login in logins {
-        match imap_login(ctx, &settings.imap.host, settings.imap.port, &login.of(address), Credential::Password(password))
-            .await
+        match imap_login(
+            ctx,
+            &settings.imap.host,
+            settings.imap.port,
+            &login.of(address),
+            Credential::Password(password),
+        )
+        .await
         {
             // Microsoft takes no passwords at this mailbox at all. Not a wrong one: nothing else is
             // tried, and the person hears that signing in with Microsoft is the way.
@@ -514,7 +526,9 @@ async fn try_settings(ctx: &Context, settings: &Settings, address: &str, passwor
             }
             // The server is there and the password is wrong: asking it again with another spelling
             // is what fills a provider's lockout counter.
-            Ok(LoginAnswer::Refused(_)) if login == Login::LocalPart || local == address => return Probe::WrongPassword,
+            Ok(LoginAnswer::Refused(_)) if login == Login::LocalPart || local == address => {
+                return Probe::WrongPassword;
+            }
             Ok(LoginAnswer::Refused(_)) => continue,
             Err(err) => last = err,
         }
@@ -644,8 +658,11 @@ mod tests {
     #[tokio::test]
     async fn an_endless_imap_answer_is_given_up_on() {
         assert_eq!(
-            login_answer(&mut answering(b"* CAPABILITY IMAP4rev1\r\na1 OK LOGIN completed\r\n").await, "imap.example.com")
-                .await,
+            login_answer(
+                &mut answering(b"* CAPABILITY IMAP4rev1\r\na1 OK LOGIN completed\r\n").await,
+                "imap.example.com"
+            )
+            .await,
             Ok(LoginAnswer::Accepted)
         );
         assert_eq!(
@@ -654,8 +671,11 @@ mod tests {
         );
         // XOAUTH2's error challenge is answered, and the refusal after it read.
         assert_eq!(
-            login_answer(&mut answering(b"+ eyJzdGF0dXMiOiI0MDEifQ==\r\na1 NO AUTHENTICATE failed.\r\n").await, "x.example")
-                .await,
+            login_answer(
+                &mut answering(b"+ eyJzdGF0dXMiOiI0MDEifQ==\r\na1 NO AUTHENTICATE failed.\r\n").await,
+                "x.example"
+            )
+            .await,
             Ok(LoginAnswer::Refused("NO AUTHENTICATE failed.".into()))
         );
 

@@ -501,7 +501,7 @@ pub async fn notify(web: &Web, account: &Account, notice: Notice, origin: Origin
             Language::Zh => format!("{name}，你好："),
         };
         let body = format!("{greeting}\n\n{sentence}\n\nhttps://{hostname}/account/fetch\n\n{brand} · {hostname}\n");
-        deliver_notice(web, account, &brand, name, subject, body, now).await;
+        deliver_notice(web, account, brand, name, subject, body, now).await;
         return;
     }
     let body = match language {

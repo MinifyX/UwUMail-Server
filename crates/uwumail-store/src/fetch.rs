@@ -924,9 +924,10 @@ impl Store {
     /// next login makes a new one.
     pub async fn forget_fetch_access_token(&self, id: i64) -> Result<()> {
         self.write(move |tx| {
-            tx.execute("UPDATE fetch_accounts SET oauth_access = NULL, oauth_expires_at = NULL WHERE id = ?1", params![
-                id
-            ])?;
+            tx.execute(
+                "UPDATE fetch_accounts SET oauth_access = NULL, oauth_expires_at = NULL WHERE id = ?1",
+                params![id],
+            )?;
             Ok(())
         })
         .await

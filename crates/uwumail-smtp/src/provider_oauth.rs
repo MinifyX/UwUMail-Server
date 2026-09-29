@@ -205,7 +205,9 @@ pub fn provider_of_domain(domain: &str) -> Option<(Provider, bool)> {
     let (name, suffix) = domain.split_once('.')?;
     let suffix_ok = !suffix.is_empty()
         && suffix.split('.').count() <= 2
-        && suffix.split('.').all(|label| (2..=3).contains(&label.len()) && label.chars().all(|c| c.is_ascii_lowercase()));
+        && suffix
+            .split('.')
+            .all(|label| (2..=3).contains(&label.len()) && label.chars().all(|c| c.is_ascii_lowercase()));
     (matches!(name, "hotmail" | "live" | "outlook") && suffix_ok).then_some((Provider::Microsoft, true))
 }
 
@@ -254,7 +256,9 @@ impl std::fmt::Display for TokenError {
             TokenError::Expired(provider) => {
                 write!(f, "the sign-in at {} has expired or was revoked; sign in again", provider.name())
             }
-            TokenError::Waiting(_) => f.write_str("the provider's sign-in service failed a moment ago; trying again later"),
+            TokenError::Waiting(_) => {
+                f.write_str("the provider's sign-in service failed a moment ago; trying again later")
+            }
             TokenError::NotConfigured(provider) => {
                 write!(f, "this server has no client for signing in at {} (fetch.oauth)", provider.name())
             }
@@ -434,7 +438,11 @@ fn tenant_for(address: &str) -> &'static str {
 
 /// A token endpoint's answer, read.
 enum Answer {
-    Tokens { access: String, refresh: Option<String>, expires_in: i64 },
+    Tokens {
+        access: String,
+        refresh: Option<String>,
+        expires_in: i64,
+    },
     /// The OAuth error code, like `invalid_grant` or `authorization_pending`.
     Error(String),
 }
@@ -502,7 +510,9 @@ impl ProviderOAuth {
         let hook = self.inner.notices.read().unwrap_or_else(|e| e.into_inner()).clone();
         match hook {
             Some(hook) => hook(notice),
-            None => tracing::info!(address = %notice.address, kind = ?notice.kind, "nobody to tell about a fetched mailbox"),
+            None => {
+                tracing::info!(address = %notice.address, kind = ?notice.kind, "nobody to tell about a fetched mailbox")
+            }
         }
     }
 
@@ -705,11 +715,9 @@ impl ProviderOAuth {
                     ("code_verifier", &verifier),
                 ]);
                 match self.post(&self.endpoints().google_token, body).await {
-                    Ok(Answer::Tokens { access, refresh: Some(refresh), expires_in }) => Ok(FetchTokens {
-                        access_token: access,
-                        expires_at: now() + expires_in,
-                        refresh_token: refresh,
-                    }),
+                    Ok(Answer::Tokens { access, refresh: Some(refresh), expires_in }) => {
+                        Ok(FetchTokens { access_token: access, expires_at: now() + expires_in, refresh_token: refresh })
+                    }
                     Ok(Answer::Tokens { refresh: None, .. }) => Err("noRefreshToken".to_owned()),
                     Ok(Answer::Error(error)) => {
                         tracing::warn!(%error, "Google refused to trade in a sign-in");
@@ -746,7 +754,9 @@ impl ProviderOAuth {
             };
             match &flow.stage {
                 Stage::Failed(code) => return FlowPoll::Failed(code.clone()),
-                Stage::Proven(tokens, settings) => return FlowPoll::Proven(flow.granted(tokens, Some(settings.clone()))),
+                Stage::Proven(tokens, settings) => {
+                    return FlowPoll::Proven(flow.granted(tokens, Some(settings.clone())));
+                }
                 Stage::Proving(_) => return FlowPoll::Pending(1),
                 Stage::Granted(tokens) => {
                     let granted = flow.granted(tokens, None);
@@ -787,7 +797,8 @@ impl ProviderOAuth {
         };
         match answer {
             Ok(Answer::Tokens { access, refresh: Some(refresh), expires_in }) => {
-                let tokens = FetchTokens { access_token: access, expires_at: now() + expires_in, refresh_token: refresh };
+                let tokens =
+                    FetchTokens { access_token: access, expires_at: now() + expires_in, refresh_token: refresh };
                 let granted = flow.granted(&tokens, None);
                 flow.stage = Stage::Proving(tokens);
                 flow.expires = Instant::now() + SETTLED_LIFETIME;
@@ -987,7 +998,8 @@ mod tests {
 
     #[test]
     fn microsoft_and_google_are_known_by_their_domains() {
-        for domain in ["outlook.com", "hotmail.com", "hotmail.de", "hotmail.co.uk", "live.de", "msn.com", "OUTLOOK.DE."] {
+        for domain in ["outlook.com", "hotmail.com", "hotmail.de", "hotmail.co.uk", "live.de", "msn.com", "OUTLOOK.DE."]
+        {
             assert_eq!(provider_of_domain(domain), Some((Provider::Microsoft, true)), "{domain}");
         }
         for domain in ["gmail.com", "googlemail.com"] {
@@ -1019,7 +1031,10 @@ mod tests {
         assert!(is_basic_auth_disabled("LOGIN: NO Basic authentication is disabled."));
         assert!(is_basic_auth_disabled("a1 NO BASIC AUTHENTICATION IS DISABLED"));
         assert!(!is_basic_auth_disabled("a1 NO [AUTHENTICATIONFAILED] Invalid credentials"));
-        assert_eq!(xoauth2("mini@example.com", "t0k3n"), STANDARD.encode("user=mini@example.com\x01auth=Bearer t0k3n\x01\x01"));
+        assert_eq!(
+            xoauth2("mini@example.com", "t0k3n"),
+            STANDARD.encode("user=mini@example.com\x01auth=Bearer t0k3n\x01\x01")
+        );
     }
 
     type Answerer = Box<dyn Fn(&str, &HashMap<String, String>) -> Result<(u16, Value), String> + Send + Sync>;
@@ -1032,11 +1047,16 @@ mod tests {
     }
 
     impl FakeProvider {
-        fn new(answer: impl Fn(&str, &HashMap<String, String>) -> Result<(u16, Value), String> + Send + Sync + 'static) -> Arc<Self> {
+        fn new(
+            answer: impl Fn(&str, &HashMap<String, String>) -> Result<(u16, Value), String> + Send + Sync + 'static,
+        ) -> Arc<Self> {
             Arc::new(FakeProvider { seen: Mutex::default(), answer: Mutex::new(Box::new(answer)) })
         }
 
-        fn answer(&self, answer: impl Fn(&str, &HashMap<String, String>) -> Result<(u16, Value), String> + Send + Sync + 'static) {
+        fn answer(
+            &self,
+            answer: impl Fn(&str, &HashMap<String, String>) -> Result<(u16, Value), String> + Send + Sync + 'static,
+        ) {
             *self.answer.lock().unwrap() = Box::new(answer);
         }
 
@@ -1085,10 +1105,13 @@ mod tests {
     async fn microsofts_device_flow_waits_as_asked_and_hands_out_the_sign_in_once() {
         let fake = FakeProvider::new(|url, _| {
             assert!(url.ends_with("/consumers/oauth2/v2.0/devicecode"), "{url}");
-            Ok((200, serde_json::json!({
-                "device_code": "dc-1", "user_code": "KX7PQ4M", "verification_uri": "https://microsoft.com/devicelogin",
-                "expires_in": 900, "interval": 5
-            })))
+            Ok((
+                200,
+                serde_json::json!({
+                    "device_code": "dc-1", "user_code": "KX7PQ4M", "verification_uri": "https://microsoft.com/devicelogin",
+                    "expires_in": 900, "interval": 5
+                }),
+            ))
         });
         let oauth = oauth_with(&fake);
         let started = oauth.start_microsoft(7, "mini@hotmail.de", true, None).await.unwrap();
@@ -1200,7 +1223,8 @@ mod tests {
         let form = &fake.seen()[0].1;
         assert_eq!((form["grant_type"].as_str(), form["code"].as_str()), ("authorization_code", "code-1"));
         assert_eq!((form["client_secret"].as_str(), form["redirect_uri"].as_str()), ("g-secret", redirect));
-        let verified = URL_SAFE_NO_PAD.encode(digest::digest(&digest::SHA256, form["code_verifier"].as_bytes()).as_ref());
+        let verified =
+            URL_SAFE_NO_PAD.encode(digest::digest(&digest::SHA256, form["code_verifier"].as_bytes()).as_ref());
         assert_eq!(verified, challenge, "PKCE: the verifier belongs to the challenge");
         assert_eq!(oauth.finish_google(&state, "code-1", &started.binding).await, Err("expired".into()), "once");
 
@@ -1211,7 +1235,12 @@ mod tests {
         assert_eq!(oauth.poll(3, &flow).await, FlowPoll::Failed("signInRefused".into()));
     }
 
-    async fn store_with_grant(dir: &std::path::Path, address: &str, provider: FetchAuth, expires_in: i64) -> (Store, i64, i64) {
+    async fn store_with_grant(
+        dir: &std::path::Path,
+        address: &str,
+        provider: FetchAuth,
+        expires_in: i64,
+    ) -> (Store, i64, i64) {
         let store = Store::open(dir).await.unwrap();
         store.create_domain("example.org").await.unwrap();
         let account = store
@@ -1320,12 +1349,18 @@ mod tests {
             google_client_secret: "gsecret".into(),
             ..Default::default()
         });
-        assert_eq!(oauth.access_token(&store, account, id, "mini@gmail.com").await, Err(TokenError::Expired(Provider::Google)));
+        assert_eq!(
+            oauth.access_token(&store, account, id, "mini@gmail.com").await,
+            Err(TokenError::Expired(Provider::Google))
+        );
         assert_eq!(fake.seen()[0].1["client_secret"], "gsecret");
         let fetched = store.fetch_account(account, id).await.unwrap().unwrap();
         assert!(fetched.login_expired, "the mailbox says so");
         assert!(!store.fetch_accounts_due().await.unwrap().iter().any(|due| due.id == id), "and runs leave it be");
-        assert_eq!(oauth.access_token(&store, account, id, "mini@gmail.com").await, Err(TokenError::Expired(Provider::Google)));
+        assert_eq!(
+            oauth.access_token(&store, account, id, "mini@gmail.com").await,
+            Err(TokenError::Expired(Provider::Google))
+        );
         assert_eq!(fake.seen().len(), 1, "Google is not asked again");
         assert_eq!(
             *heard.lock().unwrap(),
@@ -1340,10 +1375,18 @@ mod tests {
         // A new sign-in starts it afresh.
         let grant = uwumail_store::FetchGrant {
             provider: FetchAuth::Google,
-            tokens: FetchTokens { access_token: "at-new".into(), expires_at: now() + 3600, refresh_token: "rt-new".into() },
+            tokens: FetchTokens {
+                access_token: "at-new".into(),
+                expires_at: now() + 3600,
+                refresh_token: "rt-new".into(),
+            },
         };
         store
-            .update_fetch_account(account, id, uwumail_store::FetchAccountUpdate { oauth: Some(grant), ..Default::default() })
+            .update_fetch_account(
+                account,
+                id,
+                uwumail_store::FetchAccountUpdate { oauth: Some(grant), ..Default::default() },
+            )
             .await
             .unwrap();
         assert!(!store.fetch_account(account, id).await.unwrap().unwrap().login_expired);
