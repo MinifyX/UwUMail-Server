@@ -183,7 +183,9 @@ async fn cards_fill_a_read_only_birthdays_calendar() {
     let set = server
         .call("Calendar/set", json!({ "update": { &calendar_id: { "color": "#00aa00", "isVisible": false } } }))
         .await;
-    assert!(set["updated"][&calendar_id].is_null() || set["updated"][&calendar_id].is_object(), "{set}");
+    assert!(set["updated"].as_object().is_some_and(|u| u.contains_key(&calendar_id)), "{set}");
+    let hidden = server.birthdays_calendar().await;
+    assert_eq!((hidden["color"].as_str(), hidden["isVisible"].as_bool()), (Some("#00aa00"), Some(false)));
     let slug = "/dav/calendars/mini@example.org/birthdays/party.ics";
     let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//t//EN\r\nBEGIN:VEVENT\r\nUID:party\r\nDTSTAMP:20260101T000000Z\r\n\
 DTSTART;VALUE=DATE:20261020\r\nSUMMARY:Party\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
@@ -194,7 +196,7 @@ DTSTART;VALUE=DATE:20261020\r\nSUMMARY:Party\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
     let before = server.call("CalendarEvent/get", json!({ "ids": [] })).await["state"].clone();
     let update = json!({ "update": { &card_id: { "anniversaries/b/date": { "@type": "PartialDate", "month": 4, "day": 13 } } } });
     let set = server.call("ContactCard/set", update).await;
-    assert!(set["updated"][&card_id].is_object() || set["updated"][&card_id].is_null(), "{set}");
+    assert!(set["updated"].as_object().is_some_and(|u| u.contains_key(&card_id)), "{set}");
     let changes = server.call("CalendarEvent/changes", json!({ "sinceState": before })).await;
     assert_eq!(changes["updated"].as_array().unwrap().len(), 1, "{changes}");
     let got = server.call("CalendarEvent/get", json!({ "ids": [birthday_id] })).await;
