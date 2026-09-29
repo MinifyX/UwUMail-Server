@@ -128,6 +128,14 @@ account's mail and no panic on text from outside.
   as private as the IPv4 address in them, one ChatGPT renewal at a time, no key hint of the admin's
   key for people, headers escaped in prompts.
 
+**Fixed**, found in a test of the update on a real stack:
+
+- Birthdays written as `--10-15` (by Google, and by the birthday import into vCard 3.0 cards) or as
+  `1996-10-03` in a vCard 4.0 card came over JMAP without their day, so the webmail showed them
+  wrong, and saving such a contact there took it out of the birthdays calendar.
+- An AI provider the admin sets up at a local name with a dot (`http://ollama.lan:11434`) was
+  refused for its plain `http://`; the connection already takes that only into the local network.
+
 **Webmail 0.18.0** (its version now follows the server's): appointments found in mail text,
 HTML and pictures (bar above the mail, underlined dates, prefilled event editor; the AI only on a
 click or when *refine with AI* is on), pictures that hold their final size with a progress bar,
