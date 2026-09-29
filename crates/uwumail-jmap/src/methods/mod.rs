@@ -1,6 +1,7 @@
 //! Method implementations and the helpers they share.
 
 mod address_book;
+pub mod assist;
 mod calendar;
 mod calendar_event;
 mod calendar_notification;
@@ -32,7 +33,7 @@ use uwumail_store::{Account, Changes};
 use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
 use crate::session::{
-    AVAILABILITY, CALENDARS, CALENDARS_PARSE, CONTACTS, CORE, MAIL, MASKED, PROFILE, SENDERS, SETTINGS, SIEVE,
+    ASSIST, AVAILABILITY, CALENDARS, CALENDARS_PARSE, CONTACTS, CORE, MAIL, MASKED, PROFILE, SENDERS, SETTINGS, SIEVE,
     SUBMISSION, SUGGEST, UNSUBSCRIBE, VACATION, WEBMAIL, WEBPUSH_VAPID, WEBSOCKET,
 };
 use crate::sharing::{self, PRINCIPALS, SharedView};
@@ -58,6 +59,7 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     WEBPUSH_VAPID,
     UNSUBSCRIBE,
     PROFILE,
+    ASSIST,
 ];
 
 pub(crate) use calendar_event::event_for_alerts;
@@ -212,6 +214,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "AddressSuggestion" => SUGGEST,
         "MaskedEmail" => MASKED,
         "ProfilePicture" => PROFILE,
+        "Assist" | "AssistProvider" | "AssistSettings" | "AssistLabel" => ASSIST,
         _ => return Err(MethodError::kind("unknownMethod")),
     };
     if !requires(capability, &ctx.using) {
@@ -336,6 +339,23 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "MaskedEmail/set" => single(masked::set(ctx, &args).await?),
         "ProfilePicture/get" => single(profile::get(ctx, &args).await?),
         "ProfilePicture/set" => single(profile::set(ctx, &args).await?),
+        "AssistProvider/get" => single(assist::provider_get(ctx, &args).await?),
+        "AssistProvider/set" => single(assist::provider_set(ctx, &args).await?),
+        "AssistProvider/models" => single(assist::provider_models(ctx, &args).await?),
+        "AssistProvider/chatgptLogin" => single(assist::chatgpt_login(ctx, &args).await?),
+        "AssistProvider/chatgptPoll" => single(assist::chatgpt_poll(ctx, &args).await?),
+        "AssistSettings/get" => single(assist::settings_get(ctx, &args).await?),
+        "AssistSettings/set" => single(assist::settings_set(ctx, &args).await?),
+        "Assist/compose" => single(assist::compose(ctx, &args).await?),
+        "Assist/summarize" => single(assist::summarize(ctx, &args).await?),
+        "Assist/spamCheck" => single(assist::spam_check(ctx, &args).await?),
+        "Assist/extractEvents" => single(assist::extract_events(ctx, &args).await?),
+        "Assist/usage" => single(assist::usage(ctx, &args).await?),
+        "AssistLabel/get" => single(assist::label_get(ctx, &args).await?),
+        "AssistLabel/set" => single(assist::label_set(ctx, &args).await?),
+        "AssistLabel/log" => single(assist::label_log(ctx, &args).await?),
+        "AssistLabel/undo" => single(assist::label_undo(ctx, &args).await?),
+        "AssistLabel/apply" => single(assist::label_apply(ctx, &args).await?),
         _ => Err(MethodError::kind("unknownMethod")),
     }
 }

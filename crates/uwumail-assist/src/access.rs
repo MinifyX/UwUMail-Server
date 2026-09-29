@@ -415,6 +415,14 @@ fn build_write(
         }
         Some(key) => SecretChange::Set(key.to_owned(), key_hint(key)),
     };
+    let has_key = match &secret {
+        SecretChange::Set(..) => true,
+        SecretChange::Remove => false,
+        SecretChange::Keep => before.is_some_and(|b| b.has_secret),
+    };
+    if info.key == Key::Required && !has_key {
+        return Err(AssistError::invalid("badProviderKey", "apiKey", "this kind of provider needs a key"));
+    }
     let features = match &input.features {
         Some(features) => check_features(features)?,
         None => before.map(|b| b.features.clone()).unwrap_or_else(|| FEATURES.iter().map(|f| f.to_string()).collect()),
@@ -456,6 +464,9 @@ fn build_write(
         }
         _ => Vec::new(),
     };
+    if access != "everyone" && access_list.is_empty() {
+        return Err(AssistError::invalid("badAccess", "access", "name at least one domain or person"));
+    }
     if access_list.len() > ASSIST_MAX_ACCESS_ENTRIES {
         return Err(AssistError::invalid("badAccess", "access", "too many domains or people"));
     }

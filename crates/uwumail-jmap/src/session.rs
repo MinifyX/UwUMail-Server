@@ -49,6 +49,8 @@ pub const CONTACTS: &str = "urn:ietf:params:jmap:contacts";
 pub const MASKED: &str = "https://www.fastmail.com/dev/maskedemail";
 /// Our own extension: the account's profile picture and who sees it (docs/profile-pictures.md).
 pub const PROFILE: &str = "urn:uwumail:jmap:profile";
+/// Our own extension: the AI assistant, whose models are asked by the server (docs/jmap-assist.md).
+pub const ASSIST: &str = "urn:uwumail:jmap:assist";
 /// The server's VAPID key for Web Push subscriptions (RFC 9749); see docs/jmap-push.md.
 pub const WEBPUSH_VAPID: &str = "urn:ietf:params:jmap:webpush-vapid";
 
@@ -267,8 +269,9 @@ pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInf
                 document["capabilities"][WEBPUSH_VAPID] = json!({ "applicationServerKey": vapid.public_key() });
             }
             let picture_state = if may_be_public { "-p1" } else { "-p0" };
+            let assist_state = add_assist(&jmap, &mut document, &account, &base).await;
             document["state"] = json!(format!(
-                "{}{}{masked_state}{picture_state}",
+                "{}{}{masked_state}{picture_state}{assist_state}",
                 session_state(&account),
                 crate::sharing::state_suffix(&shared)
             ));
@@ -276,6 +279,34 @@ pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInf
         }
         Err(err) => err.into_response(),
     }
+}
+
+/// The AI assistant's capability, for the person's own account only, when the server has the
+/// assistant. Answers the part of the session state that moves when it changes.
+async fn add_assist(jmap: &Jmap, document: &mut Value, account: &Account, base: &str) -> String {
+    let Some(assist) = &jmap.inner.assist else { return String::new() };
+    let capability = match assist.capability(account).await {
+        Ok(capability) => capability,
+        Err(err) => {
+            tracing::warn!(%err, "reading the AI assistant's capability failed");
+            return String::new();
+        }
+    };
+    let account_id = ids::account(account.id);
+    document["capabilities"][ASSIST] = json!({ "streamUrl": format!("{base}/jmap/assist/stream") });
+    document["accounts"][&account_id]["accountCapabilities"][ASSIST] = json!(capability);
+    document["primaryAccounts"][ASSIST] = json!(account_id);
+    let features = &capability.features;
+    let bits = [
+        features.compose,
+        features.summarize,
+        features.spam_check,
+        features.extract_events,
+        features.auto_labels,
+        capability.may_add_providers,
+        capability.may_use_private_addresses,
+    ];
+    format!("-ai{}", bits.iter().map(|on| if *on { '1' } else { '0' }).collect::<String>())
 }
 
 #[cfg(test)]

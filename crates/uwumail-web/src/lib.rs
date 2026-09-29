@@ -99,6 +99,8 @@ struct Inner {
     backups: std::sync::OnceLock<uwumail_backup::Backups>,
     /// The way out for a message's remote pictures, once the server plugged it in.
     egress: std::sync::OnceLock<uwumail_smtp::egress::Egress>,
+    /// The AI assistant (docs/llm.md), when the server has one.
+    assist: std::sync::OnceLock<uwumail_assist::Assist>,
     /// The certificate and key Apple configuration profiles are signed with, once plugged in.
     profile_key: std::sync::OnceLock<profile_signing::ProfileKeySource>,
     /// How calendars and contacts are fetched from other providers, when not over the egress
@@ -161,6 +163,7 @@ impl Web {
                 host: std::sync::OnceLock::new(),
                 backups: std::sync::OnceLock::new(),
                 egress: std::sync::OnceLock::new(),
+                assist: std::sync::OnceLock::new(),
                 profile_key: std::sync::OnceLock::new(),
                 dav_transport: std::sync::OnceLock::new(),
                 remote_calls: Mutex::default(),
@@ -243,6 +246,15 @@ impl Web {
 
     pub(crate) fn profile_key(&self) -> Option<&profile_signing::ProfileKeySource> {
         self.inner.profile_key.get()
+    }
+
+    /// Lets the portal set up the AI assistant. Only the first call counts.
+    pub fn set_assist(&self, assist: uwumail_assist::Assist) {
+        let _ = self.inner.assist.set(assist);
+    }
+
+    pub(crate) fn assist(&self) -> Option<&uwumail_assist::Assist> {
+        self.inner.assist.get()
     }
 
     pub(crate) fn egress(&self) -> Option<&uwumail_smtp::egress::Egress> {
@@ -456,6 +468,26 @@ impl Web {
             .route("/api/account/forwarding/targets/{id}", delete(routes::mailbox::remove_target))
             .route("/api/account/forwarding/keep-copy", put(routes::mailbox::set_keep_copy))
             .route("/api/account/vacation", get(routes::mailbox::vacation).put(routes::mailbox::set_vacation))
+            .route("/api/account/assist", get(routes::assist::account_view))
+            .route("/api/account/assist/providers", post(routes::assist::create_own_provider))
+            .route(
+                "/api/account/assist/providers/{id}",
+                patch(routes::assist::update_own_provider).delete(routes::assist::delete_own_provider),
+            )
+            .route("/api/account/assist/providers/{id}/models", post(routes::assist::own_models))
+            .route("/api/account/assist/providers/{id}/chatgpt/login", post(routes::assist::chatgpt_login))
+            .route("/api/account/assist/providers/{id}/chatgpt/poll", post(routes::assist::chatgpt_poll))
+            .route("/api/account/assist/settings", put(routes::assist::set_settings))
+            .route("/api/account/assist/usage", get(routes::assist::account_usage))
+            .route("/api/admin/assist", get(routes::assist::admin_view))
+            .route("/api/admin/assist/policy", put(routes::assist::set_policy))
+            .route("/api/admin/assist/providers", post(routes::assist::create_provider))
+            .route(
+                "/api/admin/assist/providers/{id}",
+                patch(routes::assist::update_provider).delete(routes::assist::delete_provider),
+            )
+            .route("/api/admin/assist/providers/{id}/models", post(routes::assist::admin_models))
+            .route("/api/admin/assist/usage", get(routes::assist::admin_usage))
             .route("/api/account/fetch", get(routes::fetch::list).post(routes::fetch::create))
             .route("/api/account/fetch/discover", post(routes::fetch::discover))
             .route("/api/account/fetch/{id}", patch(routes::fetch::update).delete(routes::fetch::delete))
