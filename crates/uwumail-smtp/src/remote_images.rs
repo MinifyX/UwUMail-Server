@@ -734,7 +734,9 @@ mod tests {
 
     fn limits() -> PictureLimits {
         PictureLimits {
-            answer: Duration::from_millis(250),
+            // Long enough for a busy machine to answer the pictures that are there, short enough for the
+            // dead ones to end soon.
+            answer: Duration::from_secs(1),
             stall: Duration::from_secs(5),
             total: Duration::from_secs(10),
         }
@@ -800,7 +802,7 @@ mod tests {
         let site = site().await;
         let images = images(&site, None, 0);
         // Someone's newsletter full of dead tracking pixels.
-        let dead: Vec<_> = (0..20)
+        let dead: Vec<_> = (0..2 * PER_PERSON)
             .map(|n| {
                 let images = images.clone();
                 tokio::spawn(async move { images.get(1, &format!("http://tracker{n}.example/dead.gif")).await })
@@ -809,10 +811,9 @@ mod tests {
         while site.running.load(Ordering::SeqCst) < PER_PERSON {
             tokio::task::yield_now().await;
         }
-        let started = tokio::time::Instant::now();
         let picture = images.get(2, "http://pictures.example/wide.png").await.unwrap();
         assert_eq!(picture.size, Some(Dimensions { width: 300, height: 100 }));
-        assert!(started.elapsed() < Duration::from_millis(300), "{:?}", started.elapsed());
+        assert!(!dead.iter().any(|dead| dead.is_finished()), "came while the dead ones were still waiting");
         assert!(site.running.load(Ordering::SeqCst) <= PER_PERSON, "one person runs a few at a time");
         for dead in dead {
             assert_eq!(dead.await.unwrap().unwrap_err(), PictureError::Egress(EgressError::Timeout));

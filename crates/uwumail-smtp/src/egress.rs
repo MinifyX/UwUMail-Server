@@ -929,16 +929,11 @@ impl Egress {
         }
     }
 
-    /// Every name leads to `pinned`, and connecting gives up within a second: for tests elsewhere in this
-    /// crate.
+    /// Every name leads to `pinned`: for tests elsewhere in this crate. Connecting keeps the real limits,
+    /// so a busy machine does not fail a test that expects the connection.
     #[cfg(test)]
     pub(crate) fn pinned_to(pinned: SocketAddr) -> Egress {
-        let quick = Duration::from_secs(1);
-        let egress = Egress::build(
-            rustls::RootCertStore::empty(),
-            ConnectTimeouts { usual: quick, pictures: quick },
-            Some(pinned),
-        );
+        let egress = Egress::empty(rustls::RootCertStore::empty(), Some(pinned));
         egress.reconfigure(&EgressConfig::default()).expect("no proxy to get wrong");
         egress
     }
@@ -1845,7 +1840,11 @@ mod tests {
         assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
     }
 
-    fn quick_egress(proxy: &str, fallback: Fallback, pinned: SocketAddr) -> Egress {
+    /// Gives up connecting after 300 ms: only for tests that expect a failure either way, where the limit
+    /// keeps a hanging proxy or a slow resolver short. The others connect with the real limits and fail
+    /// by refused ports and refused tunnels, which come at once, so a busy machine can not turn a slow
+    /// connect into a failure they do not expect.
+    fn hasty_egress(proxy: &str, fallback: Fallback, pinned: SocketAddr) -> Egress {
         let quick = Duration::from_millis(300);
         let egress = Egress::build(
             rustls::RootCertStore::empty(),
@@ -1889,7 +1888,7 @@ mod tests {
     async fn a_proxy_that_is_gone_is_tried_once_and_then_rests() {
         let (server, seen) = pictures().await;
         let gone = closed_port().await;
-        let blocking = quick_egress(&format!("http://{gone}"), Fallback::Block, server);
+        let blocking = egress(&format!("http://{gone}"), Fallback::Block, server);
         let url = "http://pictures.example/pixel.gif";
         assert_eq!(blocking.get(url, "image/*", 1024).await.unwrap_err(), EgressError::Unreachable);
         let status = blocking.status();
@@ -1901,7 +1900,7 @@ mod tests {
         assert_eq!(blocking.status().proxy_failures, 1, "not tried again while it rests");
         assert!(seen.lock().unwrap().is_empty(), "and nothing went around it");
 
-        let direct = quick_egress(&format!("http://{gone}"), Fallback::Direct, server);
+        let direct = egress(&format!("http://{gone}"), Fallback::Direct, server);
         for _ in 0..4 {
             assert_eq!(&direct.get(url, "image/*", 1024).await.unwrap().body[..], b"GIF89a");
         }
@@ -1912,7 +1911,7 @@ mod tests {
     #[tokio::test]
     async fn a_proxy_whose_name_does_not_resolve_fails_at_once() {
         let (server, _) = pictures().await;
-        let egress = quick_egress("http://proxy.invalid:8888", Fallback::Block, server);
+        let egress = hasty_egress("http://proxy.invalid:8888", Fallback::Block, server);
         let started = tokio::time::Instant::now();
         for _ in 0..10 {
             assert!(egress.get("http://pictures.example/pixel.gif", "image/*", 1024).await.is_err());
@@ -1925,7 +1924,7 @@ mod tests {
     async fn a_refused_tunnel_is_only_the_address_s_fault_until_many_hosts_fail() {
         let (server, _) = pictures().await;
         let (proxy, asked) = broken_proxy(Some("HTTP/1.1 503 Service Unavailable\r\n\r\n")).await;
-        let egress = quick_egress(&format!("http://{proxy}"), Fallback::Block, server);
+        let egress = egress(&format!("http://{proxy}"), Fallback::Block, server);
         // One dead tracking host, asked again and again, never takes the proxy out of use.
         for _ in 0..12 {
             assert!(egress.get("http://tracker.example/pixel.gif", "image/*", 1024).await.is_err());
@@ -1946,7 +1945,7 @@ mod tests {
     async fn a_proxy_that_hangs_costs_a_message_picture_its_connect_limit_only() {
         let (server, _) = pictures().await;
         let (proxy, _) = broken_proxy(None).await;
-        let egress = quick_egress(&format!("http://{proxy}"), Fallback::Block, server);
+        let egress = hasty_egress(&format!("http://{proxy}"), Fallback::Block, server);
         let started = tokio::time::Instant::now();
         let failed = egress
             .get_message_picture(
@@ -1996,7 +1995,7 @@ mod tests {
         let (server, _) = pictures().await;
         // The first tunnel and every one after the ninth come through; the eight between are refused.
         let (proxy, asked) = scripted_proxy(|n| n == 0 || n >= 9).await;
-        let egress = quick_egress(&format!("http://{proxy}"), Fallback::Block, server);
+        let egress = egress(&format!("http://{proxy}"), Fallback::Block, server);
         assert!(egress.get("http://good.example/pixel.gif", "image/*", 1024).await.is_ok());
         for host in ["a", "b", "c", "d", "e", "f", "g", "h"] {
             assert!(egress.get(&format!("http://{host}.example/pixel.gif"), "image/*", 1024).await.is_err());
@@ -2061,19 +2060,18 @@ mod tests {
     async fn a_message_picture_shows_what_came_so_far_and_gives_up_when_it_stalls() {
         let go = Arc::new(tokio::sync::Notify::new());
         let server = slow_picture(go.clone()).await;
-        let egress = quick_egress("", Fallback::Block, server);
+        let slow = egress("", Fallback::Block, server);
         let seen = Arc::new(Mutex::new(Vec::new()));
         let log = seen.clone();
         let fetch = tokio::spawn(async move {
-            egress
-                .get_message_picture(
-                    "http://pictures.example/slow.png",
-                    "image/*",
-                    1024,
-                    PictureLimits::default(),
-                    &mut |so_far: &[u8]| log.lock().unwrap().push(so_far.len()),
-                )
-                .await
+            slow.get_message_picture(
+                "http://pictures.example/slow.png",
+                "image/*",
+                1024,
+                PictureLimits::default(),
+                &mut |so_far: &[u8]| log.lock().unwrap().push(so_far.len()),
+            )
+            .await
         });
         while seen.lock().unwrap().is_empty() {
             tokio::task::yield_now().await;
@@ -2083,7 +2081,7 @@ mod tests {
         let fetched = fetch.await.unwrap().unwrap();
         assert_eq!(fetched.body.len(), 64);
 
-        let stalled = quick_egress("", Fallback::Block, slow_picture(Arc::default()).await);
+        let stalled = egress("", Fallback::Block, slow_picture(Arc::default()).await);
         let limits = PictureLimits { stall: Duration::from_millis(200), ..PictureLimits::default() };
         let result =
             stalled.get_message_picture("http://pictures.example/slow.png", "image/*", 1024, limits, &mut |_| {}).await;
