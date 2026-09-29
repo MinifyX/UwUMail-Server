@@ -21,7 +21,14 @@ import { Card, CopyButton } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, Segmented, Select, TextInput } from "@/components/ui/Field";
 import { updateCommand } from "@/features/admin/host";
-import { ChoiceField, LockedHint, NumberField, Section, ToggleField, type Form } from "@/features/settings/SettingsPage";
+import {
+  ChoiceField,
+  LockedHint,
+  NumberField,
+  Section,
+  ToggleField,
+  type Form,
+} from "@/features/settings/SettingsPage";
 import { useT } from "@/i18n";
 import {
   api,
