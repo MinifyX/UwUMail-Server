@@ -19,6 +19,7 @@ import {
   Palette,
   Server,
   ShieldBan,
+  Sparkles,
   ShieldCheck,
   Truck,
   UserRound,
@@ -240,6 +241,7 @@ export function PortalShell({ session, children }: { session: Session; children:
             { to: "/account/fetch", label: t("nav.fetch"), icon: Download },
             { to: "/account/moving", label: t("nav.moving"), icon: Truck },
             { to: "/account/spam", label: t("nav.spamFilter"), icon: MailWarning },
+            { to: "/account/assist", label: t("nav.assist"), icon: Sparkles },
             { to: "/account/security", label: t("nav.security"), icon: ShieldCheck },
           ]}
         />

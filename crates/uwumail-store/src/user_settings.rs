@@ -189,7 +189,9 @@ pub fn validate_setting(key: &str, value: &Value) -> Result<(), SettingProblem> 
         "theme" => return one_of(key, value, &["system", "light", "dark"]),
         "tone" => return one_of(key, value, &["playful", "neutral"]),
         "language" => return one_of(key, value, &["system", "de", "en", "fr", "nl", "ja", "zh"]),
-        "conversations" | "senderPictures" | "linkConfirm" | "darkImages" => return boolean(key, value),
+        "conversations" | "senderPictures" | "linkConfirm" | "darkImages" | "assist.refineEvents" => {
+            return boolean(key, value);
+        }
         "remoteImages" => return one_of(key, value, &["ask", "always"]),
         "mailAppearance" => return one_of(key, value, &["auto", "light", "dark"]),
         "undoSendSeconds" => {

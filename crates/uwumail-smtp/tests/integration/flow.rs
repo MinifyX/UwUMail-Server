@@ -1510,6 +1510,36 @@ async fn an_unsigned_verdict_in_a_fetched_message_cannot_vouch_for_it() {
     assert!(raw.contains("FETCHED_NO_AUTH"), "a stranger's pass vouches for nothing: {raw}");
 }
 
+/// With auto-labels switched on (and labels to choose from), delivered mail waits in the assistant's
+/// queue; Junk does not, and nothing waits for someone who did not switch them on.
+#[tokio::test(flavor = "multi_thread")]
+async fn delivered_mail_is_queued_for_labels_but_junk_is_not() {
+    let a = spam_test_server(SpamConfig::default(), None).await;
+    let store = a.smtp.store();
+    let account = store.account("mini@a.test").await.unwrap().unwrap();
+    let mailbox = fetched_mailbox(account.id);
+    let take = async |from_junk, raw: Vec<u8>| {
+        uwumail_smtp::deliver_fetched(&a.smtp, mailbox.clone(), from_junk, "mini@a.test".into(), raw).await
+    };
+    let vouched = "mx.freemail.example; spf=pass smtp.mailfrom=news@sender.test; dkim=pass; dmarc=pass";
+    assert_eq!(take(false, fetched_message(Some(vouched), "")).await, uwumail_smtp::Taken::Kept);
+    assert!(store.due_label_jobs(10).await.unwrap().is_empty(), "not switched on");
+
+    store.set_assist_prefs(account.id, Default::default(), true).await.unwrap();
+    store.create_assist_label(account.id, "Newsletter".into(), "Werbung und Newsletter".into(), None).await.unwrap();
+    let flagged = String::from_utf8(fetched_message(None, "X-Spam-Flag: YES\r\n")).unwrap().replace("<one@", "<two@");
+    assert_eq!(take(true, flagged.into_bytes()).await, uwumail_smtp::Taken::Kept);
+    assert_eq!(a.mailbox("mini@a.test", MailboxRole::Junk).await.len(), 1);
+    assert!(store.due_label_jobs(10).await.unwrap().is_empty(), "Junk gets no labels");
+
+    let third = String::from_utf8(fetched_message(Some(vouched), "")).unwrap().replace("<one@", "<three@");
+    assert_eq!(take(false, third.into_bytes()).await, uwumail_smtp::Taken::Kept);
+    let inbox = a.wait_for_inbox("mini@a.test", 2).await;
+    let jobs = store.due_label_jobs(10).await.unwrap();
+    assert_eq!(jobs.len(), 1);
+    assert!(inbox.iter().any(|email| email.id == jobs[0].email_id));
+}
+
 /// A trap address takes mail like a real one, teaches the filter and delivers nowhere.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_spam_trap_learns_from_what_it_catches_and_keeps_nothing() {

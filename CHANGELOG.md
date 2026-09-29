@@ -85,6 +85,32 @@ now carries Tesseract with German and English (about 40 MB more); without it the
   card write (`Birthdays/scan`, `Birthdays/import`).
 - The alert worker no longer expands never-ending series that have no alert at all.
 
+**AI assistant** ([docs/llm.md](docs/llm.md), [docs/jmap-assist.md](docs/jmap-assist.md)):
+
+- Providers set up by the admin under *Server → Settings → AI assistant*: OpenAI, Anthropic Claude
+  (API keys only; Claude subscriptions cannot be used by other programs), Google Gemini, Mistral,
+  OpenRouter, Ollama and any OpenAI-compatible server, each for everyone, some domains or some
+  people, for some or all features, with daily limits per person in requests and tokens. Models are
+  listed from the provider, with cheap defaults.
+- People may bring their own providers when the admin allows it (off by default), in the local
+  network only when allowed too. **Experimental:** signing in with a ChatGPT subscription the way
+  the Codex CLI does, marked as such and not an API OpenAI offers.
+- Features, all asked from the server: writing and rewriting in the composer (presets, own
+  instructions, reply context, streamed preview), summaries of a mail or a conversation, "Auf Spam
+  prüfen" with the server's own signals next to the model's verdict, `Assist/extractEvents` for dates
+  with participants matched to the mail and the address book (`assist.refineEvents`, off by
+  default), and opt-in **auto-labels**: the person's own labels as keywords, put on in a background
+  queue after the spam filter, never on Junk, each with its reason and one-click undo.
+- Mail is treated as data: no tools, answers of a fixed shape checked by the server, quoted history
+  left out, sizes capped, nothing done without a click except the person's own labels.
+- Keys and tokens sealed at rest and never shown again; every request from the server with timeouts
+  and size limits; people's providers can't reach the server itself or, unless allowed, the local
+  network; `egress.assist` sends the requests through the VPN. Usage per person and day for the
+  admin and the person.
+- New JMAP extension `urn:uwumail:jmap:assist` (`AssistProvider`, `AssistSettings`, `Assist/*`,
+  `AssistLabel`) with streaming as server-sent events at `/jmap/assist/stream`. Migration
+  `0058_assist.sql`.
+
 ## 0.17.1
 
 **Masked addresses for UwULock Server, without the mailbox**

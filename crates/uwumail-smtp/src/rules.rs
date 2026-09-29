@@ -30,6 +30,8 @@ pub(crate) struct Filed {
     /// For the history: `inbox` when a copy is in the inbox, `rules` when only in folders the
     /// script chose, nothing when it was discarded or only redirected.
     pub mailbox: Option<&'static str>,
+    /// The stored copies, for the AI assistant's labels.
+    pub email_ids: Vec<i64>,
 }
 
 /// The account's folders with their paths, the inbox first.
@@ -331,6 +333,7 @@ pub(crate) async fn deliver(
     }
 
     let mut stored = false;
+    let mut email_ids = Vec::new();
     for (keywords, mailboxes) in groups {
         let mailboxes = if mailboxes.is_empty() {
             vec![MailboxTarget::Role(MailboxRole::Inbox)]
@@ -339,7 +342,10 @@ pub(crate) async fn deliver(
         };
         let request = IngestRequest { account_id, raw: message.to_vec(), mailboxes, keywords, received_at: None };
         match ctx.store.ingest(request).await {
-            Ok(_) => stored = true,
+            Ok(email) => {
+                stored = true;
+                email_ids.push(email.id);
+            }
             // The first copy decides what the sender hears; a later one failing is only logged.
             Err(err) if !stored => return Err(err),
             Err(err) => {
@@ -352,7 +358,7 @@ pub(crate) async fn deliver(
         (true, true) => Some("inbox"),
         (true, false) => Some("rules"),
     };
-    Ok(Filed { stored, mailbox })
+    Ok(Filed { stored, mailbox, email_ids })
 }
 
 #[cfg(test)]

@@ -197,5 +197,20 @@
       "intro": "Montrez votre visage ! Les personnes d'ici le voient à côté de vos messages (=^･ω･^=)"
     },
     "saved": "Très réussi ! Image enregistrée (◕‿◕✿)"
+  },
+  "assist": {
+    "intro": "Je t'aide avec tes messages : écrire, peaufiner, résumer, flairer le spam et trouver les rendez-vous. Le dernier mot reste toujours à toi (｡･ω･｡)",
+    "usage": {
+      "todayEmpty": "Personne ne m'a rien demandé aujourd'hui. Je suis en pleine forme (˘ᵕ˘)"
+    },
+    "choices": {
+      "saved": "C'est noté ! Je leur demanderai désormais (◕‿◕✿)"
+    },
+    "chatgpt": {
+      "connected": "Connecté à ChatGPT (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧"
+    },
+    "account": {
+      "noneAskAdmin": "Rien à utiliser pour l'instant. Demande gentiment un fournisseur à ton admin (・ω・)"
+    }
   }
 }

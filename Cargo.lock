@@ -4528,6 +4528,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "uwumail-assist"
+version = "0.17.1"
+dependencies = [
+ "axum",
+ "base64 0.23.1",
+ "bytes",
+ "chrono",
+ "chrono-tz",
+ "futures-util",
+ "getrandom 0.4.3",
+ "hex",
+ "http-body-util",
+ "hyper",
+ "mail-parser",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "url",
+ "uwumail-smtp",
+ "uwumail-store",
+]
+
+[[package]]
 name = "uwumail-backup"
 version = "0.17.1"
 dependencies = [
@@ -4627,6 +4654,7 @@ dependencies = [
  "aws-lc-rs",
  "axum",
  "base64 0.23.1",
+ "bytes",
  "calcard",
  "chrono",
  "chrono-tz",
@@ -4644,6 +4672,7 @@ dependencies = [
  "tokio-tungstenite",
  "tower",
  "tracing",
+ "uwumail-assist",
  "uwumail-dav",
  "uwumail-smtp",
  "uwumail-store",
@@ -4675,6 +4704,7 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
+ "uwumail-assist",
  "uwumail-backup",
  "uwumail-dav",
  "uwumail-gateway",
@@ -4815,6 +4845,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uwumail-assist",
  "uwumail-backup",
  "uwumail-dav",
  "uwumail-jmap",

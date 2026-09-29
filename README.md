@@ -77,6 +77,11 @@ something a family, a club or a small team can run without being a mail admin:
   per domain, visible on the server or also to other servers over Libravatar
   and the `Face:` header — and sender pictures from the reader's own contacts
   first ([profile pictures](docs/profile-pictures.md)).
+- **An AI assistant, if you want one.** Drafts, summaries, a second opinion on
+  spam, dates for the calendar and your own labels on new mail — with the
+  providers you set up (OpenAI, Claude, Gemini, Mistral, OpenRouter, or Ollama
+  in your own network), asked by the server, never on without a click except
+  the labels you switched on ([AI assistant](docs/llm.md)).
 - **Push to closed apps.** The webmail notifies with its tab closed, and the
   Android app gets new mail through UnifiedPush ([JMAP push](docs/jmap-push.md)).
 - **Everything in one panel.** Accounts, domains, queue, logs, spam and

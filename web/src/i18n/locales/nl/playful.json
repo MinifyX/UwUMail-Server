@@ -195,5 +195,20 @@
       "intro": "Laat je gezicht zien! Mensen hier zien het naast je mail (=^･ω･^=)"
     },
     "saved": "Staat je goed! Afbeelding opgeslagen (◕‿◕✿)"
+  },
+  "assist": {
+    "intro": "Ik help je met je mail: schrijven, oppoetsen, samenvatten, spam opsnuffelen en afspraken vinden. Het laatste woord heb jij altijd (｡･ω･｡)",
+    "usage": {
+      "todayEmpty": "Vandaag heeft nog niemand iets gevraagd. Ik ben uitgerust (˘ᵕ˘)"
+    },
+    "choices": {
+      "saved": "Genoteerd! Voortaan vraag ik het hun (◕‿◕✿)"
+    },
+    "chatgpt": {
+      "connected": "Aangemeld bij ChatGPT (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧"
+    },
+    "account": {
+      "noneAskAdmin": "Nog niets te gebruiken. Vraag je beheerder lief om een provider (・ω・)"
+    }
   }
 }

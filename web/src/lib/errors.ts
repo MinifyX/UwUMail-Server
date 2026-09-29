@@ -140,6 +140,23 @@ const KNOWN = [
   "oauthNotConfigured",
   "oauthClientRejected",
   "signInExpired",
+  "assistNotAllowed",
+  "badProviderKind",
+  "badProviderUrl",
+  "privateAddress",
+  "plainHttpPublic",
+  "badProviderName",
+  "tooManyProviders",
+  "providerFailed",
+  "badFeature",
+  "badQuota",
+  "badModel",
+  "badProviderKey",
+  "badAccess",
+  "badProvider",
+  "chatgptNotStarted",
+  "overQuota",
+  "assistUnavailable",
 ];
 
 /** Turns an API error into a sentence for the person in front of the screen. */

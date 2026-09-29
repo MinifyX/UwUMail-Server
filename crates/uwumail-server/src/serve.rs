@@ -149,9 +149,14 @@ pub async fn run(
     // One switch for the whole server, shared by everything that has to honour it: the page
     // under /mail, JMAP's session login, and the admin panel that flips it.
     let webmail = Arc::new(std::sync::atomic::AtomicBool::new(config.http.webmail));
+    // The AI assistant (docs/llm.md): every request to a model leaves from here, through the egress.
+    // Labels for delivered mail are put on in the background.
+    let assist = uwumail_assist::Assist::new(store.clone(), egress.clone(), &config.hostname);
+    tasks.spawn(assist.clone().run_label_worker(shutdown_rx.clone()));
     let jmap = uwumail_jmap::Jmap::with_webmail(smtp.clone(), webmail.clone())
         .with_egress(egress.clone())
-        .with_ocr(config.ocr.clone());
+        .with_ocr(config.ocr.clone())
+        .with_assist(assist.clone());
     // The log to Grafana Loki, when the config or the admin panel asks for it; the admin panel
     // switches it on, over and off while the server runs.
     let loki = uwumail_web::Loki::new();
@@ -200,6 +205,7 @@ pub async fn run(
         },
     );
     web.set_egress(egress);
+    web.set_assist(assist);
     web.set_metrics_gate(metrics);
     web.set_external_login(external);
     {

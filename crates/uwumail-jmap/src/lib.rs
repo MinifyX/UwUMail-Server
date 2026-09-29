@@ -12,6 +12,7 @@
 //! | `GET /jmap/download/{accountId}/{blobId}/{name}` | Blob download |
 //! | `GET /jmap/eventsource` | Push |
 //! | `GET /jmap/ws` | Requests and push over a WebSocket (RFC 8887) |
+//! | `POST /jmap/assist/stream` | `Assist/compose` and `Assist/summarize` as server-sent events |
 //! | `POST /jmap/token` | A new app password for a program, to send as a bearer token |
 //! | `GET /jmap/image/{accountId}?url=` | A message's remote picture, fetched by the server |
 //! | `POST /jmap/image/{accountId}/sizes` | The sizes of a message's remote pictures, as they become known |
@@ -24,6 +25,7 @@
 //! [`Jmap::run_web_push`] pushes changes to the push subscriptions (RFC 8620, 7.2) over Web Push.
 
 mod api;
+mod assist_stream;
 pub mod auth;
 pub mod availability;
 mod blob;
@@ -114,6 +116,8 @@ pub(crate) struct Inner {
     pub unsubscribe_transport: Option<Arc<dyn UnsubscribeTransport>>,
     /// Reminder mails of calendar alerts sent lately, for their limits.
     pub reminders: calendar_alerts::ReminderLimits,
+    /// The AI assistant (docs/jmap-assist.md), when the server has one.
+    pub assist: Option<uwumail_assist::Assist>,
 }
 
 /// Where remote pictures (`images`) and what OCR read in pictures (`ocr`) are kept: `cache/…` in the
@@ -157,6 +161,7 @@ impl Jmap {
                 unsubscribes: Default::default(),
                 unsubscribe_transport: None,
                 reminders: Default::default(),
+                assist: None,
             }),
         }
     }
@@ -223,6 +228,13 @@ impl Jmap {
         Jmap { inner: Arc::new(Inner { notice: Some(notice), ..inner }) }
     }
 
+    /// Offers the AI assistant (`urn:uwumail:jmap:assist`). Called before the router is built.
+    pub fn with_assist(self, assist: uwumail_assist::Assist) -> Jmap {
+        let inner =
+            Arc::into_inner(self.inner).expect("the assistant is set before anything else holds the JMAP service");
+        Jmap { inner: Arc::new(Inner { assist: Some(assist), ..inner }) }
+    }
+
     /// The API and uploads read their bodies themselves, after the login and up to
     /// [`MAX_REQUEST_BYTES`] and [`MAX_UPLOAD_BYTES`].
     pub fn router(&self) -> Router {
@@ -238,6 +250,7 @@ impl Jmap {
             .route("/jmap/eventsource/", get(push::handle))
             // `any`: HTTP/1.1 upgrades with GET, HTTP/2 WebSockets (RFC 8441) with CONNECT.
             .route("/jmap/ws", any(ws::handle))
+            .route("/jmap/assist/stream", post(assist_stream::handle))
             .route("/jmap/token", post(token::handle).layer(DefaultBodyLimit::max(16 * 1024)))
             .route("/jmap/image/{account}", get(remote::image))
             .route("/jmap/image/{account}/sizes", post(remote::sizes).layer(DefaultBodyLimit::max(1024 * 1024)))

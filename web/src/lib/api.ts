@@ -1019,7 +1019,7 @@ export interface EgressView {
   /** In unix seconds. */
   lastProxyFailure: { at: number; error: string } | null;
   /** Which kinds of request take the proxy while one is set. */
-  routes?: { pictures: boolean; updates: boolean; fetch: boolean };
+  routes?: { pictures: boolean; updates: boolean; fetch: boolean; assist: boolean };
 }
 
 export type VpnKind = "wireguard" | "openvpn";

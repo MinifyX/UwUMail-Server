@@ -244,6 +244,24 @@ pub enum Taken {
     Nowhere(String),
 }
 
+/// Queues delivered mail for the AI assistant's labels (docs/llm.md) when the person switched them on.
+/// A failure is only logged: labels are a nicety, the mail is delivered either way.
+async fn queue_for_labels(ctx: &crate::Context, account_id: i64, email_ids: &[i64]) {
+    match ctx.store.wants_auto_labels(account_id).await {
+        Ok(true) => {}
+        Ok(false) => return,
+        Err(err) => {
+            tracing::warn!(account = account_id, %err, "checking for auto-labels failed");
+            return;
+        }
+    }
+    for email_id in email_ids {
+        if let Err(err) = ctx.store.enqueue_auto_label(account_id, *email_id).await {
+            tracing::warn!(account = account_id, %err, "queueing a mail for its labels failed");
+        }
+    }
+}
+
 /// Hands a message fetched from another provider's mailbox to the same pipeline that mail from
 /// other servers goes through: the same checks, the same filter, the same lists, the same
 /// forwarding, the same history.
@@ -2069,17 +2087,25 @@ pub(crate) async fn receive(
             Some((_, script)) => {
                 rules::deliver(&ctx, account_id, script, &recipient.address, &envelope.address, &message, proof)
                     .await
-                    .map(|filed| (filed.mailbox, filed.stored))
+                    .map(|filed| (filed.mailbox, filed.stored, filed.email_ids))
             }
             None => {
                 let mailboxes = vec![MailboxTarget::Role(if junk { MailboxRole::Junk } else { MailboxRole::Inbox })];
                 let request =
                     IngestRequest { account_id, raw: message.clone(), mailboxes, keywords: vec![], received_at: None };
-                ctx.store.ingest(request).await.map(|_| (Some(if junk { "junk" } else { "inbox" }), true))
+                ctx.store
+                    .ingest(request)
+                    .await
+                    .map(|email| (Some(if junk { "junk" } else { "inbox" }), true, vec![email.id]))
             }
         };
         match stored {
-            Ok((mailbox, kept)) => {
+            Ok((mailbox, kept, email_ids)) => {
+                // The person's own labels, put on in the background by the AI assistant when they asked
+                // for it. Never for Junk, and never in the way of the delivery.
+                if !junk && kept {
+                    queue_for_labels(&ctx, account_id, &email_ids).await;
+                }
                 note_for(&recipient.address, if junk { SpamAction::Junk } else { SpamAction::Delivered }, mailbox);
                 delivered += 1;
                 // A message the rules discarded gets no vacation reply either.

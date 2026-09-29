@@ -74,6 +74,9 @@ pub struct EgressConfig {
     pub fetch: bool,
     /// The most the cache of remote pictures in messages keeps on disk, in megabytes; 0 keeps none.
     pub image_cache_mb: u64,
+    /// Requests to AI providers on the internet take the proxy (docs/llm.md). Off unless switched on:
+    /// the provider knows who the key belongs to anyway. Providers in the local network never do.
+    pub assist: bool,
 }
 
 impl Default for EgressConfig {
@@ -85,6 +88,7 @@ impl Default for EgressConfig {
             updates: false,
             fetch: false,
             image_cache_mb: 1024,
+            assist: false,
         }
     }
 }
@@ -96,6 +100,45 @@ pub enum Purpose {
     Pictures,
     Updates,
     Fetch,
+    Assist,
+}
+
+/// Which addresses a request may reach. Everything but the AI assistant reaches public addresses only.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Reach {
+    /// Public addresses only.
+    #[default]
+    Public,
+    /// Public addresses and the local network: private IPv4 (RFC 1918), shared address space (RFC 6598,
+    /// e.g. Tailscale) and IPv6 unique local addresses. Never the machine itself, link-local addresses
+    /// (cloud metadata services) or anything unroutable. For a provider a person set up while the admin
+    /// allows it.
+    Lan,
+    /// Anywhere, the machine itself included: for a provider the admin set up.
+    Any,
+}
+
+impl Reach {
+    /// Whether `ip` may be connected to.
+    pub fn allows(self, ip: IpAddr) -> bool {
+        match self {
+            Reach::Public => is_public(ip),
+            Reach::Lan => is_public(ip) || is_local_network(ip),
+            Reach::Any => !ip.is_unspecified() && !ip.is_multicast(),
+        }
+    }
+}
+
+/// An address of the local network, as [`Reach::Lan`] means it.
+pub fn is_local_network(ip: IpAddr) -> bool {
+    match ip.to_canonical() {
+        IpAddr::V4(v4) => {
+            let [a, b, ..] = v4.octets();
+            v4.is_private() || (a == 100 && (b & 0xc0) == 64)
+        }
+        IpAddr::V6(v6) => (v6.segments()[0] & 0xfe00) == 0xfc00,
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
@@ -447,11 +490,12 @@ pub struct Routes {
     pub pictures: bool,
     pub updates: bool,
     pub fetch: bool,
+    pub assist: bool,
 }
 
 impl Routes {
     fn of(config: &EgressConfig) -> Routes {
-        Routes { pictures: config.pictures, updates: config.updates, fetch: config.fetch }
+        Routes { pictures: config.pictures, updates: config.updates, fetch: config.fetch, assist: config.assist }
     }
 
     fn takes(&self, purpose: Purpose) -> bool {
@@ -459,6 +503,7 @@ impl Routes {
             Purpose::Pictures => self.pictures,
             Purpose::Updates => self.updates,
             Purpose::Fetch => self.fetch,
+            Purpose::Assist => self.assist,
         }
     }
 }
@@ -467,6 +512,9 @@ impl Routes {
 struct Connector {
     proxy: Option<Arc<Proxy>>,
     fallback: Fallback,
+    /// Which addresses it connects to. Plain `http://` is only allowed to addresses that are not public
+    /// when this is more than [`Reach::Public`]: a key must not cross the internet unencrypted.
+    reach: Reach,
     stats: Arc<Stats>,
     /// For each address, and for each step with the proxy.
     connect_timeout: Duration,
@@ -492,7 +540,10 @@ impl Connector {
             Ok(ip) => vec![SocketAddr::new(ip, port)],
             Err(_) => tokio::net::lookup_host((host, port)).await?.collect(),
         };
-        let public = candidates(found, self.proxy.is_some());
+        let mut public = candidates(found, self.proxy.is_some(), self.reach);
+        if self.reach != Reach::Public && uri.scheme_str() == Some("http") {
+            public.retain(|address| !is_public(address.ip()));
+        }
         if public.is_empty() {
             return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "not a public address"));
         }
@@ -506,6 +557,14 @@ impl Connector {
         let Some(proxy) = &self.proxy else {
             return self.direct(&targets).await;
         };
+        // A proxy (a VPN) cannot reach into the local network; such addresses are only ever allowed on
+        // purpose (a reach beyond public, for the AI assistant's providers), and are reached directly.
+        if self.reach != Reach::Public {
+            let local: Vec<SocketAddr> = targets.iter().copied().filter(|target| !is_public(target.ip())).collect();
+            if !local.is_empty() {
+                return self.direct(&local).await;
+            }
+        }
         if !self.ignores_breaker && !self.breaker.admits() {
             tracing::debug!("the egress proxy is resting after it failed");
             return self.without_proxy(&targets, None).await;
@@ -576,8 +635,8 @@ impl Connector {
 /// The public addresses of a name, in the order they are tried. Through a proxy, IPv4 comes first: a VPN
 /// container usually has no IPv6 route, and gluetun's kill switch drops such a tunnel silently, so every
 /// IPv6 address the system put first would wait out [`CONNECT_TIMEOUT`] and the picture never came.
-fn candidates(found: Vec<SocketAddr>, proxied: bool) -> Vec<SocketAddr> {
-    let mut public: Vec<SocketAddr> = found.into_iter().filter(|address| is_public(address.ip())).collect();
+fn candidates(found: Vec<SocketAddr>, proxied: bool, reach: Reach) -> Vec<SocketAddr> {
+    let mut public: Vec<SocketAddr> = found.into_iter().filter(|address| reach.allows(address.ip())).collect();
     if proxied {
         public.sort_by_key(SocketAddr::is_ipv6);
     }
@@ -601,6 +660,24 @@ impl tower::Service<Uri> for Connector {
             let _ = stream.set_nodelay(true);
             Ok(TokioIo::new(stream))
         })
+    }
+}
+
+/// What [`Egress::assist_client`] hands out.
+#[derive(Clone)]
+pub struct AssistClient {
+    client: PostClient,
+}
+
+impl AssistClient {
+    /// Sends `request` and answers the response with its body still to be read, so the caller can read
+    /// it as it streams in and stop at its own limits. Connecting counts against no timeout but the
+    /// connection's own; the caller bounds the whole.
+    pub async fn send(
+        &self,
+        request: Request<Full<Bytes>>,
+    ) -> Result<hyper::Response<hyper::body::Incoming>, EgressError> {
+        self.client.request(request).await.map_err(|err| reason(&err))
     }
 }
 
@@ -773,6 +850,7 @@ impl Egress {
         let direct = Connector {
             proxy: None,
             fallback: Fallback::Block,
+            reach: Reach::Public,
             stats: stats.clone(),
             connect_timeout: timeouts.usual,
             breaker: breaker.clone(),
@@ -836,6 +914,7 @@ impl Egress {
         Connector {
             proxy,
             fallback,
+            reach: Reach::Public,
             stats: self.shared.stats.clone(),
             connect_timeout: self.shared.timeouts.usual,
             breaker: breaker.clone(),
@@ -901,6 +980,28 @@ impl Egress {
     /// anyway, like the TLS reports it posts. Still only to public addresses.
     pub fn direct_dialer(&self) -> Dialer {
         Dialer { connector: self.connector(None, Fallback::Block, &Arc::default()) }
+    }
+
+    /// An HTTP client for AI providers (docs/llm.md): https to public addresses, through the proxy when
+    /// `[egress] assist` says so, and with `reach` beyond that also into the local network or anywhere
+    /// (plain http then only to addresses that are not public). Names are resolved and checked on every
+    /// connection, so a name that later points elsewhere does not get around `reach`. Redirects are the
+    /// caller's to refuse.
+    pub fn assist_client(&self, reach: Reach) -> AssistClient {
+        let setup = self.setup();
+        let proxy = setup.proxy.clone().filter(|_| setup.routes.assist);
+        let mut connector = self.connector(proxy, setup.fallback, &setup.breaker);
+        connector.reach = reach;
+        let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+        let tls = rustls::ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .expect("the default TLS versions")
+            .with_root_certificates(self.shared.roots.clone())
+            .with_no_client_auth();
+        let builder = hyper_rustls::HttpsConnectorBuilder::new().with_tls_config(tls);
+        let https = if reach == Reach::Public { builder.https_only() } else { builder.https_or_http() };
+        let client = Client::builder(TokioExecutor::new()).build(https.enable_http1().wrap_connector(connector));
+        AssistClient { client }
     }
 
     /// The certificate authorities requests through this egress trust.
@@ -1237,6 +1338,25 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn reach_says_where_the_assistant_may_connect() {
+        let ip = |text: &str| text.parse::<IpAddr>().unwrap();
+        for public in ["8.8.8.8", "2a00:1450::1"] {
+            assert!(Reach::Public.allows(ip(public)) && Reach::Lan.allows(ip(public)) && Reach::Any.allows(ip(public)));
+        }
+        for lan in ["192.168.1.20", "10.0.0.5", "172.16.3.4", "100.64.1.1", "fd12:3456::1"] {
+            assert!(!Reach::Public.allows(ip(lan)), "{lan}");
+            assert!(Reach::Lan.allows(ip(lan)), "{lan}");
+            assert!(Reach::Any.allows(ip(lan)), "{lan}");
+        }
+        // The machine itself and cloud metadata stay out of reach of what people set up.
+        for inside in ["127.0.0.1", "::1", "169.254.169.254", "fe80::1", "0.0.0.0", "::ffff:127.0.0.1"] {
+            assert!(!Reach::Lan.allows(ip(inside)), "{inside}");
+        }
+        assert!(Reach::Any.allows(ip("127.0.0.1")) && Reach::Any.allows(ip("::1")));
+        assert!(!Reach::Any.allows(ip("0.0.0.0")) && !Reach::Any.allows(ip("224.0.0.1")));
+    }
+
     fn egress(proxy: &str, fallback: Fallback, pinned: SocketAddr) -> Egress {
         let egress = Egress::empty(rustls::RootCertStore::empty(), Some(pinned));
         egress.reconfigure(&EgressConfig { proxy: proxy.into(), fallback, ..EgressConfig::default() }).unwrap();
@@ -1387,15 +1507,15 @@ mod tests {
             address("93.184.215.15:443"),
         ];
         assert_eq!(
-            candidates(found.clone(), true),
+            candidates(found.clone(), true, Reach::Public),
             [address("93.184.215.14:443"), address("93.184.215.15:443"), address("[2600:9000:1::1]:443")],
             "the VPN reaches IPv4; IPv6 only once that failed"
         );
         assert_eq!(
-            candidates(found, false),
+            candidates(found, false, Reach::Public),
             [address("[2600:9000:1::1]:443"), address("[2600:9000:2::1]:443"), address("[2600:9000:3::1]:443")]
         );
-        assert!(candidates(vec![address("10.0.0.1:443")], true).is_empty(), "never into the network");
+        assert!(candidates(vec![address("10.0.0.1:443")], true, Reach::Public).is_empty(), "never into the network");
     }
 
     #[tokio::test]
@@ -1518,7 +1638,7 @@ mod tests {
             ..EgressConfig::default()
         };
         egress.reconfigure(&config).unwrap();
-        assert_eq!(egress.status().routes, Routes { pictures: false, updates: false, fetch: true });
+        assert_eq!(egress.status().routes, Routes { pictures: false, updates: false, fetch: true, assist: false });
         egress.get("http://pictures.example/pixel.gif", "image/*", 1024).await.unwrap();
         assert!(asked.lock().unwrap().is_empty(), "pictures leave directly now");
         assert!(!egress.dialer(Purpose::Updates).proxied());

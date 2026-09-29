@@ -1,5 +1,6 @@
-import { AppWindow, EarthLock, KeyRound, Palette, Send, SlidersHorizontal } from "lucide-react";
+import { AppWindow, EarthLock, KeyRound, Palette, Send, SlidersHorizontal, Sparkles } from "lucide-react";
 import { TabbedPage } from "@/components/ui/TabbedPage";
+import { AdminAssistPage } from "@/features/assist/AdminAssistPage";
 import { PublicPicturesCard } from "@/features/pictures/PictureCard";
 import { VpnPage } from "@/features/vpn/VpnPage";
 import { useT } from "@/i18n";
@@ -8,13 +9,14 @@ import { LoginSettingsPage } from "./LoginSettingsPage";
 import { SettingsPage, type SettingsTab } from "./SettingsPage";
 
 /** Server → Settings: everything that holds for the whole server, VPN & proxy included. */
-export type AdminSettingsTab = SettingsTab | "login" | "branding" | "vpn";
+export type AdminSettingsTab = SettingsTab | "login" | "branding" | "assist" | "vpn";
 export const SETTINGS_PATHS: Record<AdminSettingsTab, string> = {
   general: "/admin/settings",
   mail: "/admin/settings/mail",
   apps: "/admin/settings/apps",
   login: "/admin/settings/login",
   branding: "/admin/settings/branding",
+  assist: "/admin/settings/assist",
   vpn: "/admin/settings/vpn",
 };
 const ICONS = {
@@ -23,6 +25,7 @@ const ICONS = {
   apps: AppWindow,
   login: KeyRound,
   branding: Palette,
+  assist: Sparkles,
   vpn: EarthLock,
 };
 const INTROS: Record<AdminSettingsTab, string> = {
@@ -31,6 +34,7 @@ const INTROS: Record<AdminSettingsTab, string> = {
   apps: "settings.appsIntro",
   login: "externalLogin.intro",
   branding: "branding.intro",
+  assist: "assist.admin.intro",
   vpn: "vpn.intro",
 };
 
@@ -51,6 +55,8 @@ export function AdminSettingsPage({ tab = "general" }: { tab?: AdminSettingsTab 
     >
       {tab === "vpn" ? (
         <VpnPage />
+      ) : tab === "assist" ? (
+        <AdminAssistPage />
       ) : tab === "branding" ? (
         <BrandingPage />
       ) : tab === "login" ? (

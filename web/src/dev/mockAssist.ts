@@ -1,0 +1,773 @@
+/**
+ * The AI assistant for the pretend server: two server providers, one of the person's own, a month
+ * of usage, and a ChatGPT login that is confirmed after a few polls. A key that contains "wrong"
+ * fails the model test, as does a provider with "unreachable" in its name; a login is confirmed on
+ * the third poll unless the provider's name contains "denied".
+ */
+
+import {
+  FEATURES,
+  type AccountAssistView,
+  type AdminProvider,
+  type AssistPolicy,
+  type AssistProvider,
+  type AssistSettings,
+  type Choice,
+  type Effective,
+  type Feature,
+  type KindInfo,
+  type ProviderKind,
+  type TodayUsage,
+  type UsageRow,
+} from "@/features/assist/model";
+
+type Handler = (body: unknown, params: string[], search: URLSearchParams) => [number, unknown];
+
+const problem = (status: number, code: string, detail = code): [number, unknown] => [status, { code, detail }];
+const now = () => Math.floor(Date.now() / 1000);
+
+/** The one logged in on the pretend server. */
+const ME = "lorin@uwu.example";
+
+const KINDS: KindInfo[] = [
+  {
+    kind: "openai",
+    name: "OpenAI",
+    defaultBaseUrl: "https://api.openai.com/v1",
+    baseUrl: "fixed",
+    key: "required",
+    model: "gpt-5-mini",
+    fastModel: "gpt-5-nano",
+    keyUrl: "https://platform.openai.com/api-keys",
+    experimental: false,
+    personalOnly: false,
+  },
+  {
+    kind: "anthropic",
+    name: "Anthropic",
+    defaultBaseUrl: "https://api.anthropic.com/v1",
+    baseUrl: "fixed",
+    key: "required",
+    model: "claude-sonnet-4-5",
+    fastModel: "claude-haiku-4-5",
+    keyUrl: "https://console.anthropic.com/settings/keys",
+    experimental: false,
+    personalOnly: false,
+  },
+  {
+    kind: "gemini",
+    name: "Google Gemini",
+    defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    baseUrl: "fixed",
+    key: "required",
+    model: "gemini-2.5-flash",
+    fastModel: "gemini-2.5-flash-lite",
+    keyUrl: "https://aistudio.google.com/apikey",
+    experimental: false,
+    personalOnly: false,
+  },
+  {
+    kind: "mistral",
+    name: "Mistral",
+    defaultBaseUrl: "https://api.mistral.ai/v1",
+    baseUrl: "fixed",
+    key: "required",
+    model: "mistral-medium-latest",
+    fastModel: "mistral-small-latest",
+    keyUrl: "https://console.mistral.ai/api-keys",
+    experimental: false,
+    personalOnly: false,
+  },
+  {
+    kind: "openrouter",
+    name: "OpenRouter",
+    defaultBaseUrl: "https://openrouter.ai/api/v1",
+    baseUrl: "optional",
+    key: "required",
+    model: "openai/gpt-5-mini",
+    fastModel: "google/gemini-2.5-flash-lite",
+    keyUrl: "https://openrouter.ai/settings/keys",
+    experimental: false,
+    personalOnly: false,
+  },
+  {
+    kind: "ollama",
+    name: "Ollama",
+    defaultBaseUrl: "http://localhost:11434",
+    baseUrl: "required",
+    key: "none",
+    model: null,
+    fastModel: null,
+    keyUrl: null,
+    experimental: false,
+    personalOnly: false,
+  },
+  {
+    kind: "openaiCompatible",
+    name: "OpenAI-compatible",
+    defaultBaseUrl: null,
+    baseUrl: "required",
+    key: "optional",
+    model: null,
+    fastModel: null,
+    keyUrl: null,
+    experimental: false,
+    personalOnly: false,
+  },
+  {
+    kind: "chatgpt",
+    name: "ChatGPT (subscription)",
+    defaultBaseUrl: null,
+    baseUrl: "fixed",
+    key: "login",
+    model: "gpt-5",
+    fastModel: "gpt-5-mini",
+    keyUrl: null,
+    experimental: true,
+    personalOnly: true,
+  },
+];
+
+const MODELS: Record<ProviderKind, string[]> = {
+  openai: ["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-4.1", "gpt-4.1-mini"],
+  anthropic: ["claude-opus-4-1", "claude-sonnet-4-5", "claude-haiku-4-5"],
+  gemini: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
+  mistral: ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest"],
+  openrouter: ["anthropic/claude-sonnet-4.5", "google/gemini-2.5-flash-lite", "openai/gpt-5-mini"],
+  ollama: ["gemma3:12b", "llama3.2:3b", "llama3.3:70b", "qwen3:14b"],
+  openaiCompatible: ["qwen3-32b", "mistral-small-3.2"],
+  chatgpt: ["gpt-5", "gpt-5-codex", "gpt-5-mini"],
+};
+
+const kindOf = (kind: string) => KINDS.find((candidate) => candidate.kind === kind);
+
+let policy: AssistPolicy = {
+  features: { compose: true, summarize: true, spamCheck: true, extractEvents: true, autoLabels: true },
+  allowPersonal: true,
+  allowPersonalPrivate: false,
+};
+
+/** Keys are kept only to answer `hasKey` and `keyHint`, as the real server does. */
+const keys = new Map<number, string>();
+
+const serverProviders: AdminProvider[] = [
+  {
+    id: 1,
+    name: "Ollama im Keller",
+    kind: "ollama",
+    baseUrl: "http://192.0.2.10:11434",
+    hasKey: false,
+    keyHint: null,
+    model: "llama3.3:70b",
+    fastModel: "llama3.2:3b",
+    enabled: true,
+    access: "everyone",
+    domains: [],
+    people: [],
+    features: [...FEATURES],
+    requestsPerDay: null,
+    tokensPerDay: null,
+    createdAt: now() - 40 * 86_400,
+  },
+  {
+    id: 2,
+    name: "OpenAI (Team)",
+    kind: "openai",
+    baseUrl: null,
+    hasKey: true,
+    keyHint: "…a1b2",
+    model: "gpt-5-mini",
+    fastModel: "gpt-5-nano",
+    enabled: true,
+    access: "domains",
+    domains: ["uwu.example"],
+    people: [],
+    features: ["compose", "summarize", "extractEvents"],
+    requestsPerDay: 200,
+    tokensPerDay: 400_000,
+    createdAt: now() - 12 * 86_400,
+  },
+];
+keys.set(2, "sk-mock-a1b2");
+
+interface OwnProvider {
+  id: number;
+  name: string;
+  kind: ProviderKind;
+  baseUrl: string | null;
+  model: string | null;
+  fastModel: string | null;
+  connected: boolean;
+  /** Polls of a ChatGPT login so far; null while none runs. */
+  polls: number | null;
+  expiresAt: number;
+}
+
+const ownProviders: OwnProvider[] = [
+  {
+    id: 11,
+    name: "Mein Mistral",
+    kind: "mistral",
+    baseUrl: null,
+    model: "mistral-medium-latest",
+    fastModel: null,
+    connected: true,
+    polls: null,
+    expiresAt: 0,
+  },
+];
+keys.set(11, "mock-mistral-9f3c");
+let nextId = 20;
+
+const emptyChoices = (): Record<Feature, Choice | null> => ({
+  compose: null,
+  summarize: null,
+  spamCheck: null,
+  extractEvents: null,
+  autoLabels: null,
+});
+
+const settings: Omit<AssistSettings, "effective"> = {
+  default: { providerId: 1, model: null },
+  features: { ...emptyChoices(), compose: { providerId: 11, model: null } },
+  autoLabels: false,
+  refineEvents: false,
+};
+
+const LABELS = 3;
+
+const hint = (id: number) => {
+  const key = keys.get(id);
+  return key ? `…${key.slice(-4)}` : null;
+};
+
+/** Whether the pretend person may use a server provider: they are on uwu.example. */
+function mayUse(provider: AdminProvider): boolean {
+  if (!provider.enabled) return false;
+  if (provider.access === "domains") return provider.domains.includes(ME.split("@")[1]!);
+  if (provider.access === "people") return provider.people.includes(ME);
+  return true;
+}
+
+function allowedFeatures(features: Feature[]): Feature[] {
+  return features.filter((feature) => policy.features[feature]);
+}
+
+function accountProviders(): AssistProvider[] {
+  const server = serverProviders.filter(mayUse).map((provider): AssistProvider => ({
+    id: provider.id,
+    name: provider.name,
+    kind: provider.kind,
+    scope: "server",
+    baseUrl: null,
+    hasKey: provider.hasKey,
+    keyHint: null,
+    model: provider.model ?? kindOf(provider.kind)?.model ?? null,
+    fastModel: provider.fastModel ?? kindOf(provider.kind)?.fastModel ?? null,
+    features: allowedFeatures(provider.features),
+    quota:
+      provider.requestsPerDay === null && provider.tokensPerDay === null
+        ? null
+        : { requestsPerDay: provider.requestsPerDay, tokensPerDay: provider.tokensPerDay },
+    experimental: false,
+    connected: true,
+  }));
+  const own = policy.allowPersonal
+    ? ownProviders.map((provider): AssistProvider => {
+        const kind = kindOf(provider.kind);
+        return {
+          id: provider.id,
+          name: provider.name,
+          kind: provider.kind,
+          scope: "personal",
+          baseUrl: provider.baseUrl,
+          hasKey: keys.has(provider.id),
+          keyHint: hint(provider.id),
+          model: provider.model,
+          fastModel: provider.fastModel,
+          features: allowedFeatures([...FEATURES]),
+          quota: null,
+          experimental: kind?.experimental ?? false,
+          connected:
+            kind?.key === "login" ? provider.connected : kind?.key === "required" ? keys.has(provider.id) : true,
+        };
+      })
+    : [];
+  return [...server, ...own];
+}
+
+function effectiveSettings(): AssistSettings {
+  const providers = accountProviders();
+  const effective = Object.fromEntries(
+    FEATURES.map((feature) => {
+      const usable = providers.filter((provider) => provider.connected && provider.features.includes(feature));
+      const pick = (choice: Choice | null) => (choice ? usable.find((p) => p.id === choice.providerId) : undefined);
+      const choice = [settings.features[feature], settings.default].find((candidate) => pick(candidate));
+      const provider =
+        pick(choice ?? null) ??
+        usable.find((candidate) => candidate.scope === "server") ??
+        usable.find((candidate) => candidate.scope === "personal");
+      if (!provider) return [feature, null];
+      const model =
+        choice?.model ??
+        (feature === "compose" ? provider.model : (provider.fastModel ?? provider.model)) ??
+        "(default)";
+      const value: Effective = {
+        providerId: provider.id,
+        providerName: provider.name,
+        model,
+        scope: provider.scope,
+      };
+      return [feature, value];
+    }),
+  ) as Record<Feature, Effective | null>;
+  return { ...settings, effective };
+}
+
+// A month of usage: most on the Ollama, some on the team key, a little on the own Mistral.
+const PEOPLE = [ME, "leni@uwu.example", "mini@uwu.example", "ami@verein.example"];
+const usage: UsageRow[] = [];
+{
+  let seed = 7;
+  const random = () => {
+    seed = (seed * 16807) % 2147483647;
+    return seed / 2147483647;
+  };
+  for (let back = 0; back < 30; back++) {
+    const day = new Date(Date.now() - back * 86_400_000).toISOString().slice(0, 10);
+    for (const login of PEOPLE) {
+      for (const feature of FEATURES) {
+        if (random() < 0.45) continue;
+        const providerId = login === ME && feature === "compose" ? 11 : random() < 0.7 ? 1 : 2;
+        if (providerId === 2 && login === "ami@verein.example") continue;
+        const requests = Math.max(1, Math.round(random() * (feature === "autoLabels" ? 30 : 8)));
+        usage.push({
+          day,
+          login,
+          providerId,
+          providerName: providerId === 11 ? "Mein Mistral" : providerId === 1 ? "Ollama im Keller" : "OpenAI (Team)",
+          feature,
+          requests,
+          inputTokens: requests * Math.round(800 + random() * 2400),
+          outputTokens: requests * Math.round(60 + random() * 400),
+        });
+      }
+    }
+  }
+}
+
+function today(): TodayUsage[] {
+  const day = new Date().toISOString().slice(0, 10);
+  return accountProviders().flatMap((provider) => {
+    const rows = usage.filter((row) => row.day === day && row.login === ME && row.providerId === provider.id);
+    if (rows.length === 0 && !provider.quota) return [];
+    return [
+      {
+        providerId: provider.id,
+        providerName: provider.name,
+        requests: rows.reduce((sum, row) => sum + row.requests, 0),
+        tokens: rows.reduce((sum, row) => sum + row.inputTokens + row.outputTokens, 0),
+        requestsPerDay: provider.quota?.requestsPerDay ?? null,
+        tokensPerDay: provider.quota?.tokensPerDay ?? null,
+      },
+    ];
+  });
+}
+
+function accountView(): AccountAssistView {
+  const providers = accountProviders();
+  const features = Object.fromEntries(
+    FEATURES.map((feature) => [
+      feature,
+      policy.features[feature] &&
+        providers.some((provider) => provider.connected && provider.features.includes(feature)),
+    ]),
+  ) as Record<Feature, boolean>;
+  return {
+    features,
+    mayAddProviders: policy.allowPersonal,
+    mayUsePrivateAddresses: policy.allowPersonal && policy.allowPersonalPrivate,
+    maxProviders: 10,
+    providers,
+    settings: effectiveSettings(),
+    today: today(),
+    kinds: KINDS,
+    labels: LABELS,
+  };
+}
+
+/** What the server checks about an address; `privateOk` for the admin or when the policy allows it. */
+function urlError(raw: unknown, privateOk: boolean): [number, unknown] | null {
+  if (raw === undefined || raw === null || raw === "") return null;
+  let url: URL;
+  try {
+    url = new URL(String(raw));
+  } catch {
+    return problem(409, "badProviderUrl");
+  }
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
+    return problem(409, "badProviderUrl");
+  }
+  const host = url.hostname;
+  const local =
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    /^(10|127)\./.test(host) ||
+    /^192\.(168|0\.2)\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+    host.startsWith("[fd") ||
+    host === "[::1]";
+  if (local && !privateOk) return problem(409, "privateAddress");
+  if (!local && url.protocol === "http:") return problem(409, "plainHttpPublic");
+  return null;
+}
+
+interface ProviderInput {
+  name?: string;
+  kind?: string;
+  baseUrl?: string | null;
+  apiKey?: string;
+  model?: string | null;
+  fastModel?: string | null;
+  enabled?: boolean;
+  access?: AdminProvider["access"];
+  domains?: string[];
+  people?: string[];
+  features?: string[];
+  requestsPerDay?: number | null;
+  tokensPerDay?: number | null;
+}
+
+function inputError(input: ProviderInput, privateOk: boolean): [number, unknown] | null {
+  if (input.name !== undefined && (input.name.trim() === "" || input.name.length > 60)) {
+    return problem(409, "badProviderName");
+  }
+  if (input.features?.some((feature) => !(FEATURES as readonly string[]).includes(feature))) {
+    return problem(409, "badFeature");
+  }
+  if (
+    (input.access === "domains" && (input.domains ?? []).length === 0) ||
+    (input.access === "people" && (input.people ?? []).length === 0)
+  ) {
+    return problem(409, "badAccess");
+  }
+  for (const limit of [input.requestsPerDay, input.tokensPerDay]) {
+    if (limit !== undefined && limit !== null && (!Number.isInteger(limit) || limit < 1)) {
+      return problem(409, "badQuota");
+    }
+  }
+  return urlError(input.baseUrl, privateOk);
+}
+
+function storeKey(id: number, apiKey: string | undefined) {
+  if (apiKey === undefined) return;
+  if (apiKey === "") keys.delete(id);
+  else keys.set(id, apiKey);
+}
+
+function modelsOf(kind: ProviderKind, id: number, name: string, model: string | null, fastModel: string | null) {
+  const info = kindOf(kind);
+  if (info?.key === "required" && !keys.has(id)) return problem(409, "providerFailed", "No key is stored.");
+  if ((keys.get(id) ?? "").includes("wrong")) {
+    return problem(409, "providerFailed", "The provider refused the key (HTTP 401).");
+  }
+  if (name.toLowerCase().includes("unreachable")) {
+    return problem(409, "providerFailed", "No answer within 20 seconds.");
+  }
+  return [
+    200,
+    {
+      models: MODELS[kind].map((model) => ({ id: model, name: model })),
+      model: model ?? info?.model ?? MODELS[kind][0] ?? null,
+      fastModel: fastModel ?? info?.fastModel ?? null,
+    },
+  ] as [number, unknown];
+}
+
+const adminView = () => ({
+  policy,
+  providers: serverProviders.map((provider) => ({
+    ...provider,
+    hasKey: keys.has(provider.id),
+    keyHint: hint(provider.id),
+  })),
+  kinds: KINDS,
+});
+
+const adminProvider = (id: number) => {
+  const provider = serverProviders.find((candidate) => candidate.id === id);
+  return provider ? { ...provider, hasKey: keys.has(id), keyHint: hint(id) } : undefined;
+};
+
+const accountProvider = (id: number) => accountProviders().find((provider) => provider.id === id);
+
+export const assistMockRoutes: [string, RegExp, Handler][] = [
+  // The admin's side.
+  ["GET", /^\/api\/admin\/assist$/, () => [200, adminView()]],
+  [
+    "PUT",
+    /^\/api\/admin\/assist\/policy$/,
+    (body) => {
+      const next = body as AssistPolicy;
+      policy = {
+        features: { ...policy.features, ...next.features },
+        allowPersonal: Boolean(next.allowPersonal),
+        allowPersonalPrivate: Boolean(next.allowPersonal && next.allowPersonalPrivate),
+      };
+      return [200, policy];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/assist\/providers$/,
+    (body) => {
+      const input = body as ProviderInput;
+      const kind = kindOf(input.kind ?? "");
+      if (!kind || kind.personalOnly) return problem(409, "badProviderKind");
+      const failed = inputError({ ...input, name: input.name ?? "" }, true);
+      if (failed) return failed;
+      if (kind.key === "required" && !input.apiKey) return problem(409, "badProviderKey");
+      const id = nextId++;
+      storeKey(id, input.apiKey);
+      serverProviders.push({
+        id,
+        name: input.name!.trim(),
+        kind: kind.kind,
+        baseUrl: kind.baseUrl === "fixed" ? null : (input.baseUrl ?? kind.defaultBaseUrl),
+        hasKey: keys.has(id),
+        keyHint: hint(id),
+        model: input.model ?? null,
+        fastModel: input.fastModel ?? null,
+        enabled: input.enabled ?? true,
+        access: input.access ?? "everyone",
+        domains: input.domains ?? [],
+        people: input.people ?? [],
+        features: (input.features as Feature[] | undefined) ?? [...FEATURES],
+        requestsPerDay: input.requestsPerDay ?? null,
+        tokensPerDay: input.tokensPerDay ?? null,
+        createdAt: now(),
+      });
+      return [201, adminProvider(id)];
+    },
+  ],
+  [
+    "PATCH",
+    /^\/api\/admin\/assist\/providers\/(\d+)$/,
+    (body, [id]) => {
+      const provider = serverProviders.find((candidate) => candidate.id === Number(id));
+      if (!provider) return problem(404, "notFound");
+      const input = body as ProviderInput;
+      const failed = inputError(input, true);
+      if (failed) return failed;
+      storeKey(provider.id, input.apiKey);
+      // The kind stays what it was created as, and the key never goes into the provider itself.
+      const rest = { ...input, name: input.name?.trim() ?? provider.name } as Partial<ProviderInput>;
+      delete rest.apiKey;
+      delete rest.kind;
+      Object.assign(provider, rest);
+      return [200, adminProvider(provider.id)];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/admin\/assist\/providers\/(\d+)$/,
+    (_body, [id]) => {
+      const at = serverProviders.findIndex((candidate) => candidate.id === Number(id));
+      if (at < 0) return problem(404, "notFound");
+      serverProviders.splice(at, 1);
+      keys.delete(Number(id));
+      return [204, null];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/admin\/assist\/providers\/(\d+)\/models$/,
+    (_body, [id]) => {
+      const provider = serverProviders.find((candidate) => candidate.id === Number(id));
+      if (!provider) return problem(404, "notFound");
+      return modelsOf(provider.kind, provider.id, provider.name, provider.model, provider.fastModel);
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/admin\/assist\/usage$/,
+    (_body, _params, search) => {
+      const days = Number(search.get("days") ?? 30);
+      const since = new Date(Date.now() - (days - 1) * 86_400_000).toISOString().slice(0, 10);
+      const names = new Map<number, string>([
+        ...serverProviders.map((provider) => [provider.id, provider.name] as const),
+        ...ownProviders.map((provider) => [provider.id, provider.name] as const),
+      ]);
+      return [
+        200,
+        {
+          days: usage
+            .filter((row) => row.day >= since)
+            .map((row) => ({ ...row, providerName: names.get(row.providerId) ?? "(deleted)" })),
+        },
+      ];
+    },
+  ],
+
+  // The person's side.
+  ["GET", /^\/api\/account\/assist$/, () => [200, accountView()]],
+  [
+    "POST",
+    /^\/api\/account\/assist\/providers$/,
+    (body) => {
+      if (!policy.allowPersonal) return problem(403, "assistNotAllowed");
+      if (ownProviders.length >= 10) return problem(409, "tooManyProviders");
+      const input = body as ProviderInput;
+      const kind = kindOf(input.kind ?? "");
+      if (!kind) return problem(409, "badProviderKind");
+      const failed = inputError({ ...input, name: input.name ?? "" }, policy.allowPersonalPrivate);
+      if (failed) return failed;
+      if (kind.key === "required" && !input.apiKey) return problem(409, "badProviderKey");
+      const id = nextId++;
+      storeKey(id, input.apiKey);
+      ownProviders.push({
+        id,
+        name: input.name!.trim(),
+        kind: kind.kind,
+        baseUrl: kind.baseUrl === "fixed" ? null : (input.baseUrl ?? kind.defaultBaseUrl),
+        model: input.model ?? null,
+        fastModel: input.fastModel ?? null,
+        connected: false,
+        polls: null,
+        expiresAt: 0,
+      });
+      return [201, accountProvider(id)];
+    },
+  ],
+  [
+    "PATCH",
+    /^\/api\/account\/assist\/providers\/(\d+)$/,
+    (body, [id]) => {
+      const provider = ownProviders.find((candidate) => candidate.id === Number(id));
+      if (!provider)
+        return serverProviders.some((p) => p.id === Number(id))
+          ? problem(403, "assistNotAllowed")
+          : problem(404, "notFound");
+      const input = body as ProviderInput;
+      const failed = inputError(input, policy.allowPersonalPrivate);
+      if (failed) return failed;
+      storeKey(provider.id, input.apiKey);
+      if (input.name !== undefined) provider.name = input.name.trim();
+      if (input.baseUrl !== undefined) provider.baseUrl = input.baseUrl;
+      if (input.model !== undefined) provider.model = input.model;
+      if (input.fastModel !== undefined) provider.fastModel = input.fastModel;
+      return [200, accountProvider(provider.id)];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/account\/assist\/providers\/(\d+)$/,
+    (_body, [id]) => {
+      const at = ownProviders.findIndex((candidate) => candidate.id === Number(id));
+      if (at < 0) return problem(404, "notFound");
+      ownProviders.splice(at, 1);
+      keys.delete(Number(id));
+      // A choice that named it is dropped, as the server does.
+      if (settings.default?.providerId === Number(id)) settings.default = null;
+      for (const feature of FEATURES) {
+        if (settings.features[feature]?.providerId === Number(id)) settings.features[feature] = null;
+      }
+      return [204, null];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/account\/assist\/providers\/(\d+)\/models$/,
+    (_body, [id]) => {
+      const provider = accountProvider(Number(id));
+      if (!provider) return problem(404, "notFound");
+      const own = ownProviders.find((candidate) => candidate.id === provider.id);
+      if (own?.kind === "chatgpt" && !own.connected) {
+        return problem(409, "providerFailed", "Not signed in with ChatGPT yet.");
+      }
+      return modelsOf(provider.kind, provider.id, provider.name, provider.model, provider.fastModel);
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/account\/assist\/providers\/(\d+)\/chatgpt\/login$/,
+    (_body, [id]) => {
+      const provider = ownProviders.find((candidate) => candidate.id === Number(id));
+      if (!provider) return problem(404, "notFound");
+      if (provider.kind !== "chatgpt") return problem(409, "badProviderKind");
+      provider.polls = 0;
+      provider.expiresAt = now() + 15 * 60;
+      const letters = "BCDFGHJKLMNPQRSTVWXZ";
+      const pick = () => letters[Math.floor(Math.random() * letters.length)];
+      const code = `${Array.from({ length: 4 }, pick).join("")}-${Array.from({ length: 4 }, pick).join("")}`;
+      return [
+        200,
+        {
+          userCode: code,
+          // The real one is OpenAI's page; the pretend one must not send anybody anywhere real.
+          verificationUri: "https://auth.example.com/codex/device",
+          interval: 2,
+          expiresAt: provider.expiresAt,
+        },
+      ];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/account\/assist\/providers\/(\d+)\/chatgpt\/poll$/,
+    (_body, [id]) => {
+      const provider = ownProviders.find((candidate) => candidate.id === Number(id));
+      if (!provider) return problem(404, "notFound");
+      if (provider.polls === null) return problem(409, "chatgptNotStarted");
+      if (now() >= provider.expiresAt) {
+        provider.polls = null;
+        return [200, { status: "expired" }];
+      }
+      provider.polls += 1;
+      if (provider.polls < 3) return [200, { status: "pending" }];
+      provider.polls = null;
+      if (provider.name.toLowerCase().includes("denied")) {
+        return [200, { status: "failed", description: "The sign-in was declined at OpenAI." }];
+      }
+      provider.connected = true;
+      return [200, { status: "connected" }];
+    },
+  ],
+  [
+    "PUT",
+    /^\/api\/account\/assist\/settings$/,
+    (body) => {
+      const input = body as Partial<Omit<AssistSettings, "effective">>;
+      const providers = accountProviders();
+      const known = (choice: Choice | null | undefined) =>
+        !choice || providers.some((provider) => provider.id === choice.providerId);
+      if (!known(input.default) || !Object.values(input.features ?? {}).every(known)) {
+        return problem(409, "badProvider", "That provider cannot be used.");
+      }
+      if (input.default !== undefined) settings.default = input.default;
+      if (input.features) {
+        for (const feature of FEATURES) {
+          if (feature in input.features) settings.features[feature] = input.features[feature] ?? null;
+        }
+      }
+      if (input.autoLabels !== undefined) settings.autoLabels = input.autoLabels;
+      if (input.refineEvents !== undefined) settings.refineEvents = input.refineEvents;
+      return [200, effectiveSettings()];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/account\/assist\/usage$/,
+    (_body, _params, search) => {
+      const days = Number(search.get("days") ?? 30);
+      const since = new Date(Date.now() - (days - 1) * 86_400_000).toISOString().slice(0, 10);
+      return [
+        200,
+        {
+          days: usage.filter((row) => row.login === ME && row.day >= since).map(({ login: _login, ...row }) => row),
+          today: today(),
+        },
+      ];
+    },
+  ],
+];

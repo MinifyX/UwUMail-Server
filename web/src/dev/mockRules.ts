@@ -388,7 +388,7 @@ export function egressView(): EgressView {
     proxyFailures: 3,
     fallbacks: 0,
     lastProxyFailure: { at: now - 5 * 3600, error: "the proxy did not answer in time" },
-    routes: { pictures: true, updates: true, fetch: false },
+    routes: { pictures: true, updates: true, fetch: false, assist: false },
   };
 }
 

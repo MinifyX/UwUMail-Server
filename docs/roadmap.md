@@ -106,6 +106,7 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Fetched mailboxes at Microsoft (Outlook.com, Hotmail, Microsoft 365) and Google sign in there with OAuth 2 and SASL XOAUTH2 instead of a password: device code for Microsoft with a shipped client ID, authorization code with PKCE and the admin's own client for Google (docs/fetch.md, "Microsoft and Google")
 - [x] Birthdays calendar made from the contacts' birthdays and anniversaries, read-only over CalDAV and JMAP, with the age per year, reminders per contact, and birthday events of other calendars moved into the contacts (`urn:uwumail:jmap:birthdays`, docs/birthdays.md)
 - [x] Calendars and contacts from elsewhere: `.ics`/`.vcf` files (portal and `uwumail-server import ics|vcf`), subscribed calendars fetched again regularly and read-only everywhere, and moving everything over from another CalDAV/CardDAV provider (iCloud, WEB.DE, GMX, Posteo, mailbox.org, …) with an app password (docs/calendar-import.md)
+- [x] AI assistant on the server: writing and rewriting, summaries, a second opinion on spam, dates for the calendar and opt-in auto-labels, with the admin's providers or people's own (OpenAI, Anthropic, Gemini, Mistral, OpenRouter, Ollama, any OpenAI-compatible server; ChatGPT sign-in experimental), quotas and sealed keys (docs/llm.md, docs/jmap-assist.md)
 
 ## UwUMail Gateway ✅ in progress
 
