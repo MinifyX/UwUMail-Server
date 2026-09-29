@@ -3,15 +3,17 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
-## Unreleased
+## 0.17.1
 
-**Masked addresses for password managers, without the mailbox** ([docs/jmap-masked-email.md](docs/jmap-masked-email.md#apps-allowed-masked-addresses-only-the-maskedemail-scope)):
+**Masked addresses for UwULock Server, without the mailbox**
+([docs/jmap-masked-email.md](docs/jmap-masked-email.md#apps-allowed-masked-addresses-only-the-maskedemail-scope)).
+UwULock Server makes masked addresses for its people, also for the official Bitwarden apps, and
+should not be able to read their mail for that. The new OAuth scope `maskedemail` allows exactly
+this and nothing else:
 
-- A new OAuth scope, `maskedemail`, lets an app make and manage one's masked addresses and nothing
-  else. UwULock Server uses it to make masked addresses for its people, also for the official
-  Bitwarden apps. Its token opens the JMAP session (with only the MaskedEmail capability),
-  `Core/echo`, `MaskedEmail/get`, `/set` and `/changes`, and push for `MaskedEmail` changes over the
-  event stream and the WebSocket. Every other method answers `forbidden`; IMAP, SMTP, ManageSieve,
+- Its token opens the JMAP session with only the MaskedEmail capability, `Core/echo`,
+  `MaskedEmail/get`, `/set` and `/changes`, and push for `MaskedEmail` changes over the event stream
+  and the WebSocket. Every other method answers `forbidden`; IMAP, SMTP, ManageSieve,
   CalDAV/CardDAV, uploads, downloads and the picture proxy refuse the token, and shared accounts
   stay out of sight. The masked address policy of the domain and the person holds as for anyone.
 - The consent page says plainly that such an app cannot read or send mail; *My account → Security*
