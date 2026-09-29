@@ -1039,7 +1039,7 @@ impl Store {
                 Err(err) => tracing::warn!(%err, account, "making a birthdays calendar failed"),
             }
         }
-        self.write(|tx| Ok(crate::db::delete_setting(tx, BACKFILL_MARKER)?)).await?;
+        self.write(|tx| crate::db::delete_setting(tx, BACKFILL_MARKER)).await?;
         if made > 0 {
             tracing::info!(accounts = made, "made the birthdays calendars of existing contacts");
         }

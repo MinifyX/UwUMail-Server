@@ -49,6 +49,9 @@ pub const CONTACTS: &str = "urn:ietf:params:jmap:contacts";
 pub const MASKED: &str = "https://www.fastmail.com/dev/maskedemail";
 /// Our own extension: the account's profile picture and who sees it (docs/profile-pictures.md).
 pub const PROFILE: &str = "urn:uwumail:jmap:profile";
+/// Our own extension: moving birthdays from calendars into the contacts, whose birthdays calendar
+/// then shows them (`Birthdays/scan`, `Birthdays/import`, docs/birthdays.md).
+pub const BIRTHDAYS: &str = "urn:uwumail:jmap:birthdays";
 /// The server's VAPID key for Web Push subscriptions (RFC 9749); see docs/jmap-push.md.
 pub const WEBPUSH_VAPID: &str = "urn:ietf:params:jmap:webpush-vapid";
 
@@ -237,6 +240,15 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
             "mayCreateAddressBook": true
         });
         document["primaryAccounts"][CONTACTS] = json!(account_id);
+    }
+    // Birthdays go from calendars into address books: both are needed.
+    if account.protocols.caldav && account.protocols.carddav && may_use_dav {
+        document["capabilities"][BIRTHDAYS] = json!({});
+        document["accounts"][&account_id]["accountCapabilities"][BIRTHDAYS] = json!({
+            "maxImport": crate::methods::MAX_BIRTHDAY_IMPORT,
+            "maxCandidates": uwumail_store::birthday_import::MAX_CANDIDATES
+        });
+        document["primaryAccounts"][BIRTHDAYS] = json!(account_id);
     }
     document
 }
