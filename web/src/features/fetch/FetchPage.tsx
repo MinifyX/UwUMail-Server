@@ -294,6 +294,8 @@ function MailboxForm({
 
   const change = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((old) => ({ ...old, [key]: value }));
+    // Another address is another provider: what Microsoft said about the last one is forgotten.
+    if (key === "address") setPasswordsRefused(false);
     onDirtyChange(true);
   };
 
