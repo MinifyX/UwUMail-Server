@@ -128,6 +128,13 @@ account's mail and no panic on text from outside.
   as private as the IPv4 address in them, one ChatGPT renewal at a time, no key hint of the admin's
   key for people, headers escaped in prompts.
 
+**Webmail 0.18.0** (its version now follows the server's): appointments found in mail text,
+HTML and pictures (bar above the mail, underlined dates, prefilled event editor; the AI only on a
+click or when *refine with AI* is on), pictures that hold their final size with a progress bar,
+the birthdays calendar with ages, anniversaries, reminders and moving birthday events into
+contacts, and the AI assistant in the composer, the reader and the settings. Its security review:
+W-39 to W-47 in the webmail's docs/security-audit-0.18.0.md.
+
 ## 0.17.1
 
 **Masked addresses for UwULock Server, without the mailbox**
