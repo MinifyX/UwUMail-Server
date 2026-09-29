@@ -32,6 +32,9 @@ pub const REMOTE: &str = "urn:uwumail:jmap:remote";
 /// Our own extension: one-click unsubscribing (RFC 8058) sent by the server, `Email/unsubscribe`
 /// (docs/jmap-unsubscribe.md).
 pub const UNSUBSCRIBE: &str = "urn:uwumail:jmap:unsubscribe";
+/// Our own extension: the text in a message's pictures, read with OCR, `Email/imageText`
+/// (docs/jmap-image-text.md).
+pub const IMAGETEXT: &str = "urn:uwumail:jmap:imagetext";
 /// JMAP Calendars (draft-ietf-jmap-calendars) on the CalDAV calendars; see docs/jmap-calendars.md.
 pub const CALENDARS: &str = "urn:ietf:params:jmap:calendars";
 /// When people are busy, `Principal/getAvailability` (draft-ietf-jmap-calendars, section 2.2).
@@ -141,6 +144,7 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
             UNSUBSCRIBE: {},
             REMOTE: {
                 "imageUrl": format!("{base}/jmap/image/{{accountId}}?url={{url}}"),
+                "imageSizesUrl": format!("{base}/jmap/image/{{accountId}}/sizes"),
                 "pictureUrl": format!("{base}/jmap/picture/{{accountId}}?email={{email}}"),
                 "maxSizeImage": crate::remote::MAX_IMAGE_BYTES
             }
@@ -200,7 +204,8 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
             SUGGEST: account_id.clone(),
             SIEVE: account_id.clone(),
             MASKED: account_id.clone(),
-            UNSUBSCRIBE: account_id.clone()
+            UNSUBSCRIBE: account_id.clone(),
+            IMAGETEXT: account_id.clone()
         },
         "username": account.login,
         "apiUrl": format!("{base}/jmap/api"),
@@ -287,6 +292,13 @@ pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInf
             document["capabilities"][PROFILE] = profile.clone();
             document["accounts"][ids::account(account.id)]["accountCapabilities"][PROFILE] = profile;
             document["primaryAccounts"][PROFILE] = json!(ids::account(account.id));
+            // Whether text in pictures can be read here: the capability is there either way.
+            let image_text = crate::methods::image_text::capability(&jmap.inner.ocr).await;
+            document["capabilities"][IMAGETEXT] = image_text.clone();
+            document["accounts"][ids::account(account.id)]["accountCapabilities"][IMAGETEXT] = image_text.clone();
+            for (owner, _, _) in &shared {
+                document["accounts"][ids::account(*owner)]["accountCapabilities"][IMAGETEXT] = image_text.clone();
+            }
             let masked_state = masked_state(&jmap.inner.store).await;
             // The key a browser binds its push subscription to. It never changes, so the session
             // state need not say anything about it.

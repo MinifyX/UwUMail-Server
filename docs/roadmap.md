@@ -97,6 +97,8 @@ Each step ships as its own commits, container image and test deployment.
 - [x] UwUMail webmail (its own repository, built from the app's interface) served at `/mail`, switchable for the server and per account (docs/webmail.md)
 - [x] Delayed sending, signatures and address suggestions on the server, so the webmail stops doing without them
 - [x] Remote pictures and sender pictures fetched by the server, optionally through a VPN, so senders never see who reads their mail (docs/jmap-remote.md)
+- [x] Remote pictures cached for everyone on the server, fair per person, quick to give up on dead hosts, with their sizes told before they load (docs/jmap-remote.md)
+- [x] Text in pictures read with OCR (Tesseract), `Email/imageText` (docs/jmap-image-text.md)
 - [x] One-click unsubscribe (RFC 8058) sent by the server, only for DKIM-signed headers and the same way out as pictures (docs/jmap-unsubscribe.md)
 - [x] Profile pictures and domain logos, visible on the server or public over Libravatar and the Face header; sender pictures per address from contacts, people here, Faces and Libravatar (docs/profile-pictures.md)
 - [x] Fetched mailboxes: mail from another provider's IMAP mailbox, emptied into someone's own and judged here like any other, with rules of its own for what a fetched message can still be asked (docs/fetch.md)

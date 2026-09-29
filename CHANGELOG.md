@@ -33,6 +33,39 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   `oauth/callback`; creating and editing a fetched mailbox take `oauthFlow`. Migration
   `0056_fetch_oauth.sql`.
 
+**Remote pictures without the wait** ([docs/jmap-remote.md](docs/jmap-remote.md)):
+
+- Webmail: a mail's text shows at once when its pictures may load. Every picture waits in its place
+  with a shimmer, sized by the server before it arrives, so nothing jumps; a thin bar counts them in
+  ("Bilder werden geladen 12/30"). Pictures that can't be had end as a quiet box of their size,
+  tracking pixels as nothing. Before, one dead tracking host kept the mail hidden for up to 20 s in
+  the automatic dark mode.
+- Pictures in messages are fetched once for the whole server and kept on disk for up to 7 days,
+  shared by everyone who reads the same message (`cache/images`, left out of backups). New admin
+  setting `egress.image_cache_mb` (default 1024, *VPN & proxy* in the portal; 0 turns it off); the
+  least recently used pictures go first. Readers asking for a picture already on its way wait for the
+  same request.
+- A dead host costs a picture 4–6 seconds instead of 20 (4 s to connect, 6 s to the answer, 5 s
+  without a byte, 20 s in all), and each person has their own share (8 at a time, 64 for everyone)
+  instead of one queue of 32 for all requests of the server. Pictures speak HTTP/2 to their hosts
+  and keep the connection, so one tunnel through the proxy serves a whole newsletter.
+- New `imageSizesUrl` (`POST /jmap/image/{accountId}/sizes`): the sizes of a message's pictures,
+  streamed as NDJSON as soon as their first bytes show them, so the reader holds each picture's
+  place before it arrives. Pictures are answered with `X-Image-Width`/`X-Image-Height`.
+- Picture types are checked against their bytes; an SVG passes only as an SVG.
+- **Egress proxy circuit breaker:** a proxy whose name does not resolve, that is not there, turns the
+  login down or refuses tunnels to many hosts in a row rests for 30 s. Requests meanwhile go straight
+  or stay away as `egress.fallback` says, without waiting for it, and the log says so once instead of
+  once per picture.
+
+**Text in pictures** ([docs/jmap-image-text.md](docs/jmap-image-text.md)): new JMAP extension
+`urn:uwumail:jmap:imagetext` with `Email/imageText`, which reads the text in a message's embedded
+pictures, picture attachments and (only when asked, through the cache and egress) remote pictures
+with Tesseract (`deu+eng`), at most 20 per message, two at once on the server, 20 s each, results
+kept by the picture's hash. New `[ocr]` section (`enabled`, `command`, `languages`). The Docker image
+now carries Tesseract with German and English (about 40 MB more); without it the capability says
+`unavailable`.
+
 ## 0.17.1
 
 **Masked addresses for UwULock Server, without the mailbox**

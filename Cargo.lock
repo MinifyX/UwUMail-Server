@@ -4633,6 +4633,7 @@ dependencies = [
  "futures-util",
  "getrandom 0.4.3",
  "hex",
+ "image",
  "mail-builder",
  "mail-parser",
  "serde",

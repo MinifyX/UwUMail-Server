@@ -62,7 +62,7 @@ idna = "1"
 # and written anew, without anything else the file carried.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
 # HTTPS requests to DNS provider APIs (Cloudflare).
-hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "tls12", "aws-lc-rs"] }
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "http2", "tls12", "aws-lc-rs"] }
 http-body-util = "0.1"
 bytes = "1"
 # iCalendar and vCard for CalDAV and CardDAV: checking what clients store and when events happen.

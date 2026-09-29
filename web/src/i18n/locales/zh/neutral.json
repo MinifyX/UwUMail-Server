@@ -3423,6 +3423,8 @@
       "fetchHint": "这样 Gmail、GMX 等看到的是 VPN，而不是你的服务器。有些服务商会屏蔽 VPN 地址，届时收取会失败。",
       "fetchShort": "邮箱收取",
       "fallbackHint": "VPN 或代理无法连接时会怎样。",
+      "imageCache": "邮件图片缓存 (MB)",
+      "imageCacheHint": "邮件中的图片只为所有人获取一次，并在服务器上最多保留 7 天；缓存满时，最久未使用的先被删除。0 表示关闭。",
       "proxy": "使用自己的代理代替 VPN",
       "proxyHint": "http://host:port 或 socks5://user:password@host:1080。留空则不做任何更改。",
       "proxyCurrent": "当前：{{proxy}}。新地址会替换它。",

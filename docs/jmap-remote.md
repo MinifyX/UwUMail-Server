@@ -17,6 +17,7 @@ it may show it, and never loads one from the sender directly.
 ```json
 "urn:uwumail:jmap:remote": {
   "imageUrl": "https://mail.example.com/jmap/image/{accountId}?url={url}",
+  "imageSizesUrl": "https://mail.example.com/jmap/image/{accountId}/sizes",
   "pictureUrl": "https://mail.example.com/jmap/picture/{accountId}?email={email}",
   "maxSizeImage": 10485760
 }
@@ -35,23 +36,109 @@ request: `Authorization`, or the webmail's session cookie.
 
 | Answer | When |
 | --- | --- |
-| `200` | The picture. `Content-Type` is the type it was sent with when that is an `image/*` type, otherwise what its first bytes say (PNG, JPEG, GIF, WebP, ICO, BMP). |
+| `200` | The picture. `Content-Type` is what its first bytes show for PNG, JPEG, GIF, WebP, AVIF, ICO and BMP, whatever it was sent as; `image/svg+xml` only for markup that is an SVG and was sent as one (or as XML, or without a type); another `image/*` type as sent, unless the bytes are markup. Anything else is not passed on. `X-Image-Width` and `X-Image-Height` give its size in pixels where it is known. |
 | `400` | Not an `http`/`https` address, longer than 4096 characters, with a login in it, or leading to an address that is not on the open internet — also after a redirect. |
 | `401` / `404` | Not logged in, or not one's own account. |
+| `429` | The reader has 400 pictures waiting already. |
 | `502` | The sender's server did not answer, answered with an error or with something that is not a picture, the picture is bigger than `maxSizeImage`, or the egress proxy is away and `fallback` is `block`. |
-| `504` | No answer within 20 seconds. |
+| `504` | No answer in time (below). |
 
 Up to four redirects are followed. The request to the sender carries no
 cookies, no referrer and the agent string `Mozilla/5.0`, nothing that points at
 the reader or at this server's software.
 
 A picture comes with `Cache-Control: private, max-age=86400`, so opening the
-message again does not ask the sender again. It also comes with
+message again does not even ask the server. It also comes with
 `Content-Disposition: attachment` and a sandboxing `Content-Security-Policy`:
 an `<img>` ignores both, while someone who opens the address itself gets a
 download instead of a page that could run on the server's origin.
 
-The server fetches at most 32 pictures at a time, for all accounts together.
+### Patience
+
+A newsletter's tracking pixel on a host that is gone must not hold up the rest
+of the message, so remote pictures give up much sooner than other requests of
+the server:
+
+| Step | Limit |
+| --- | --- |
+| Connecting, per address (through the proxy: reaching it and the tunnel) | 4 s |
+| From the start to the answer's headers, redirects included | 6 s |
+| Pause between two pieces of the picture | 5 s |
+| Everything, for a big picture on a slow line that keeps coming | 20 s |
+
+A picture that could not be fetched is not asked for again for a minute when
+its host did not answer or could not be reached (that may be the proxy's fault
+for a moment), and for ten minutes when it is not there or no picture.
+
+### Fair shares
+
+Each person has 8 pictures on their way at a time and up to 400 waiting; all
+people together have 64 on their way. One reader's newsletter with a hundred
+pictures therefore neither floods the server nor makes anyone else wait, and
+pictures take none of the 32 places the server's other requests (sender logos,
+push, one-click unsubscribing) share.
+
+The connection to a picture's host is kept for a minute and speaks HTTP/2
+where the host does, so the pictures of a message from one host share one
+connection, and one tunnel through the proxy.
+
+### Cache
+
+A picture is fetched once for the whole server and kept on disk, in
+`cache/images` of the data directory, which backups leave out:
+
+- An entry is found by the SHA-256 of the picture's address alone and holds the
+  picture, its checked type and its size, nothing about who asked for it.
+  Addresses that carry a recipient's tracking token are different addresses,
+  so only pictures that really are the same for everyone are shared.
+- Only pictures are kept: what passed the type check above, never an error.
+- An entry is fetched again after 7 days at the latest.
+- The cache keeps within `egress.image_cache_mb` (1024 by default; admin panel
+  → VPN & proxy): once it is full, the entries asked for least lately go first,
+  until 90 % of it are used. `0` keeps nothing; one picture never takes more
+  than a quarter of it.
+
+Readers who ask for a picture that is already on its way wait for that same
+request (single flight): a newsletter to five hundred people, opened at the
+same moment, reaches its sender once.
+
+Someone on the server who knows a picture's exact address could tell from how
+fast it comes whether someone else here loaded it lately. Tracking addresses
+are different per recipient, so this tells nothing about a person.
+
+## Sizes before the pictures
+
+The reader lays a message out before its pictures arrive; for that it needs
+their sizes. `POST` on the filled-in `imageSizesUrl`, with the same login as
+every other JMAP request (the webmail sends its CSRF token too), and a body of
+at most 200 addresses:
+
+```json
+{ "urls": ["https://cdn.example.com/hero.jpg", "https://tracking.example.net/open.gif"] }
+```
+
+The answer is `application/x-ndjson`: one line of JSON per address, each as
+soon as it is known, in the order they come; the last line ends the answer.
+
+```json
+{"url":"https://cdn.example.com/hero.jpg","width":1200,"height":600}
+{"url":"https://tracking.example.net/open.gif","failed":true}
+```
+
+`width` and `height` are `null` when the picture came but its size can't be
+read here (AVIF, some SVGs). A size is read from the first bytes of PNG, JPEG,
+GIF and WebP (as they arrive, up to 512 KB) and from an SVG's `width`/`height`
+or `viewBox`. Asking fetches the pictures into the cache, and goes on after the
+size is told, so each picture itself is there right after. `400` for more than
+200 addresses or a body that is not like the above; the addresses count against
+the person's share like pictures.
+
+## HTTP/2 to the browser
+
+The server speaks HTTP/2 wherever it terminates TLS itself (ALPN `h2`), so a
+browser asks for all pictures of a message over one connection instead of six
+at a time. Behind a reverse proxy it is the proxy's part: Caddy and nginx speak
+HTTP/2 to browsers by default. Nothing needs to be switched on.
 
 ## Sender pictures
 
