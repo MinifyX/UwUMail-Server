@@ -155,6 +155,8 @@ impl Live {
     fn new(smtp: SmtpConfig, spam: SpamConfig, delivery: DeliveryConfig, tone: ToneConfig) -> Result<Live, SmtpError> {
         let trusted_relays = relay::parse_networks(&smtp.trusted_relays)
             .map_err(|err| SmtpError::Config(format!("smtp.trusted_relays: {err}")))?;
+        // The birthdays calendar of people who left the language to the server follows it.
+        uwumail_store::birthdays::set_server_language(tone.language.code());
         Ok(Live { smtp, spam, delivery, tone, trusted_relays })
     }
 }

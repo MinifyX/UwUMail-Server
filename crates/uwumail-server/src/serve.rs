@@ -126,6 +126,13 @@ pub async fn run(
     // Subscribed calendars, fetched again when their turn comes, the same way out as fetched mail.
     tasks.spawn(uwumail_dav::client::run_subscriptions(store.clone(), egress.clone(), shutdown_rx.clone()));
     let tls_report_egress = egress.clone();
+    // Birthdays calendars for the contacts people had before there were any (docs/birthdays.md).
+    let backfill_store = store.clone();
+    tokio::spawn(async move {
+        if let Err(err) = backfill_store.backfill_birthday_calendars().await {
+            tracing::warn!(%err, "making the birthdays calendars of existing contacts failed");
+        }
+    });
 
     // Calendars and contacts (CalDAV, CardDAV) live next to JMAP on the same HTTPS port.
     let names = config.tone.language.collection_names();

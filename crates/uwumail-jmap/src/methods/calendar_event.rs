@@ -103,6 +103,31 @@ fn decorate(
     object.insert("isDraft".into(), json!(record.is_draft));
     object.insert("isOrigin".into(), json!(origin));
     object.insert("baseEventId".into(), json!(base.map(ids::calendar_event)));
+    decorate_birthday(object, &record.content);
+}
+
+/// An event of the birthdays calendar says whose date it is (`uwuBirthday`, docs/birthdays.md),
+/// and an instance of one has the age of its year in its title: "Max Muster (30)".
+fn decorate_birthday(object: &mut Map<String, Value>, content: &str) {
+    let Some(event) = uwumail_store::birthdays::birthday_event(content) else { return };
+    let year = object
+        .get("recurrenceId")
+        .and_then(Value::as_str)
+        .and_then(|rid| rid.get(..4))
+        .and_then(|year| year.parse::<i32>().ok());
+    if let Some(year) = year {
+        object.insert("title".into(), json!(event.title_in(year)));
+    }
+    object.insert(
+        "uwuBirthday".into(),
+        json!({
+            "contactId": ids::contact_card(event.card_id),
+            "kind": event.kind.as_str(),
+            "label": event.label,
+            "name": event.name,
+            "year": event.year,
+        }),
+    );
 }
 
 /// The requested properties of an event; `None` asks for all stored ones.
