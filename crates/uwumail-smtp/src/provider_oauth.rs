@@ -24,13 +24,15 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use aws_lc_rs::{constant_time, digest};
 use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+// Tokio's clock, so the waits a sign-in keeps to can be run through in tests.
+use tokio::time::Instant;
 use uwumail_store::{FetchAuth, FetchTokens, Store};
 
 use crate::egress::{Egress, Purpose};
@@ -1018,5 +1020,348 @@ mod tests {
         assert!(is_basic_auth_disabled("a1 NO BASIC AUTHENTICATION IS DISABLED"));
         assert!(!is_basic_auth_disabled("a1 NO [AUTHENTICATIONFAILED] Invalid credentials"));
         assert_eq!(xoauth2("mini@example.com", "t0k3n"), STANDARD.encode("user=mini@example.com\x01auth=Bearer t0k3n\x01\x01"));
+    }
+
+    type Answerer = Box<dyn Fn(&str, &HashMap<String, String>) -> Result<(u16, Value), String> + Send + Sync>;
+
+    /// The providers' token endpoints, answered by the test: every request is written down, the
+    /// form read back into its fields.
+    struct FakeProvider {
+        seen: Mutex<Vec<(String, HashMap<String, String>)>>,
+        answer: Mutex<Answerer>,
+    }
+
+    impl FakeProvider {
+        fn new(answer: impl Fn(&str, &HashMap<String, String>) -> Result<(u16, Value), String> + Send + Sync + 'static) -> Arc<Self> {
+            Arc::new(FakeProvider { seen: Mutex::default(), answer: Mutex::new(Box::new(answer)) })
+        }
+
+        fn answer(&self, answer: impl Fn(&str, &HashMap<String, String>) -> Result<(u16, Value), String> + Send + Sync + 'static) {
+            *self.answer.lock().unwrap() = Box::new(answer);
+        }
+
+        fn seen(&self) -> Vec<(String, HashMap<String, String>)> {
+            self.seen.lock().unwrap().clone()
+        }
+    }
+
+    impl TokenTransport for FakeProvider {
+        fn post_form(&self, url: &str, form: String) -> BoxFuture<'_, Result<(u16, Vec<u8>), String>> {
+            let fields: HashMap<String, String> = url::form_urlencoded::parse(form.as_bytes()).into_owned().collect();
+            let answer = (self.answer.lock().unwrap())(url, &fields);
+            self.seen.lock().unwrap().push((url.to_owned(), fields));
+            Box::pin(async move { answer.map(|(status, body)| (status, body.to_string().into_bytes())) })
+        }
+    }
+
+    fn oauth_with(fake: &Arc<FakeProvider>) -> ProviderOAuth {
+        let oauth = ProviderOAuth::new(fake.clone());
+        oauth.set_endpoints(Endpoints {
+            microsoft: "https://login.test".into(),
+            google_authorize: "https://accounts.test/auth".into(),
+            google_token: "https://oauth.test/token".into(),
+        });
+        oauth
+    }
+
+    fn proof() -> crate::autoconfig::Settings {
+        let server = |host: &str, port| crate::autoconfig::Server {
+            host: host.into(),
+            port,
+            security: crate::autoconfig::Security::Tls,
+            login: crate::autoconfig::Login::WholeAddress,
+        };
+        crate::autoconfig::Settings {
+            imap: server("outlook.office365.com", 993),
+            smtp: None,
+            source: crate::autoconfig::Source::SignIn,
+        }
+    }
+
+    /// RFC 8628 as Microsoft speaks it: the code, then waiting as long as Microsoft asks -- longer
+    /// after a "slow_down" -- however often the portal looks, then tokens that are proven once and
+    /// saved once, by the person who started it.
+    #[tokio::test(start_paused = true)]
+    async fn microsofts_device_flow_waits_as_asked_and_hands_out_the_sign_in_once() {
+        let fake = FakeProvider::new(|url, _| {
+            assert!(url.ends_with("/consumers/oauth2/v2.0/devicecode"), "{url}");
+            Ok((200, serde_json::json!({
+                "device_code": "dc-1", "user_code": "KX7PQ4M", "verification_uri": "https://microsoft.com/devicelogin",
+                "expires_in": 900, "interval": 5
+            })))
+        });
+        let oauth = oauth_with(&fake);
+        let started = oauth.start_microsoft(7, "mini@hotmail.de", true, None).await.unwrap();
+        assert_eq!((started.user_code.as_str(), started.interval), ("KX7PQ4M", 5));
+        let form = &fake.seen()[0].1;
+        assert_eq!(form["client_id"], MICROSOFT_DEFAULT_CLIENT_ID);
+        assert!(form["scope"].contains("IMAP.AccessAsUser.All") && form["scope"].contains("offline_access"));
+
+        // Asked at once: not yet, and Microsoft is not asked either.
+        assert_eq!(oauth.poll(7, &started.flow_id).await, FlowPoll::Pending(5));
+        assert_eq!(fake.seen().len(), 1);
+        // Somebody else's sign-in is none of their business.
+        assert_eq!(oauth.poll(8, &started.flow_id).await, FlowPoll::Failed("expired".into()));
+
+        fake.answer(|_, _| Ok((400, serde_json::json!({ "error": "authorization_pending" }))));
+        tokio::time::advance(Duration::from_secs(5)).await;
+        assert_eq!(oauth.poll(7, &started.flow_id).await, FlowPoll::Pending(5));
+        fake.answer(|_, _| Ok((400, serde_json::json!({ "error": "slow_down" }))));
+        tokio::time::advance(Duration::from_secs(5)).await;
+        assert_eq!(oauth.poll(7, &started.flow_id).await, FlowPoll::Pending(10), "five seconds more from now on");
+        tokio::time::advance(Duration::from_secs(5)).await;
+        assert!(matches!(oauth.poll(7, &started.flow_id).await, FlowPoll::Pending(_)));
+        assert_eq!(fake.seen().len(), 3, "not asked again before the longer interval");
+
+        fake.answer(|url, form| {
+            assert!(url.ends_with("/consumers/oauth2/v2.0/token"), "{url}");
+            assert_eq!(form["grant_type"], "urn:ietf:params:oauth:grant-type:device_code");
+            assert_eq!(form["device_code"], "dc-1");
+            Ok((200, serde_json::json!({ "access_token": "at-1", "refresh_token": "rt-1", "expires_in": 3600 })))
+        });
+        tokio::time::advance(Duration::from_secs(5)).await;
+        let FlowPoll::Prove(granted) = oauth.poll(7, &started.flow_id).await else { panic!("no tokens") };
+        assert_eq!((granted.tokens.access_token.as_str(), granted.tokens.refresh_token.as_str()), ("at-1", "rt-1"));
+        assert!(granted.consumer);
+        // Proven once: whoever asks while the login runs waits.
+        assert_eq!(oauth.poll(7, &started.flow_id).await, FlowPoll::Pending(1));
+        assert!(oauth.take(7, &started.flow_id).is_none(), "not before it is proven");
+        oauth.settle(7, &started.flow_id, Ok(proof()));
+        assert!(matches!(oauth.poll(7, &started.flow_id).await, FlowPoll::Proven(_)));
+        assert!(oauth.take(8, &started.flow_id).is_none());
+        let taken = oauth.take(7, &started.flow_id).expect("the proven sign-in");
+        assert_eq!(taken.address, "mini@hotmail.de");
+        assert!(oauth.take(7, &started.flow_id).is_none(), "only once");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_declined_or_failed_device_sign_in_says_why() {
+        let fake = FakeProvider::new(|_, _| {
+            Ok((200, serde_json::json!({ "device_code": "dc", "user_code": "C", "expires_in": 900, "interval": 1 })))
+        });
+        let oauth = oauth_with(&fake);
+        // Microsoft 365 (found by the domain's mail servers) goes to the tenant for everyone.
+        let declined = oauth.start_microsoft(1, "mini@example.com", false, None).await.unwrap();
+        assert!(fake.seen()[0].0.contains("/common/"), "{}", fake.seen()[0].0);
+        fake.answer(|_, _| Ok((400, serde_json::json!({ "error": "authorization_declined" }))));
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_eq!(oauth.poll(1, &declined.flow_id).await, FlowPoll::Failed("declined".into()));
+
+        fake.answer(|_, _| Ok((200, serde_json::json!({ "device_code": "dc", "user_code": "C", "interval": 1 }))));
+        let unreachable = oauth.start_microsoft(1, "mini@example.com", false, None).await.unwrap();
+        fake.answer(|_, _| Err("connection refused".into()));
+        for _ in 0..MAX_POLL_ERRORS - 1 {
+            tokio::time::advance(Duration::from_secs(1)).await;
+            assert!(matches!(oauth.poll(1, &unreachable.flow_id).await, FlowPoll::Pending(_)));
+        }
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_eq!(oauth.poll(1, &unreachable.flow_id).await, FlowPoll::Failed("providerUnreachable".into()));
+
+        // An admin's own client ID wins over the one that is shipped.
+        oauth.configure(FetchOAuthConfig { microsoft_client_id: "own-client".into(), ..Default::default() });
+        fake.answer(|_, _| Ok((400, serde_json::json!({ "error": "unauthorized_client" }))));
+        assert_eq!(oauth.start_microsoft(1, "mini@example.com", false, None).await, Err("oauthClientRejected".into()));
+        assert_eq!(fake.seen().last().unwrap().1["client_id"], "own-client");
+    }
+
+    /// Google's way round: PKCE, the admin's client with its secret, offline access with consent,
+    /// and the way back only for the browser that set off -- once.
+    #[tokio::test]
+    async fn googles_code_flow_is_bound_to_the_browser_that_started_it() {
+        let fake = FakeProvider::new(|_, _| Err("not yet".into()));
+        let oauth = oauth_with(&fake);
+        let redirect = "https://mail.example.org/api/account/fetch/oauth/callback";
+        assert_eq!(oauth.start_google(3, "mini@gmail.com", None, redirect).unwrap_err(), "oauthNotConfigured");
+        oauth.configure(FetchOAuthConfig {
+            google_client_id: "gid.apps.googleusercontent.com".into(),
+            google_client_secret: "g-secret".into(),
+            ..Default::default()
+        });
+        let started = oauth.start_google(3, "mini@gmail.com", Some(12), redirect).unwrap();
+        let url = url::Url::parse(&started.url).unwrap();
+        let query: HashMap<String, String> = url.query_pairs().into_owned().collect();
+        assert_eq!(url.as_str().split('?').next(), Some("https://accounts.test/auth"));
+        assert_eq!(query["scope"], "https://mail.google.com/");
+        assert_eq!((query["access_type"].as_str(), query["prompt"].as_str()), ("offline", "consent"));
+        assert_eq!((query["redirect_uri"].as_str(), query["code_challenge_method"].as_str()), (redirect, "S256"));
+        let (state, challenge) = (query["state"].clone(), query["code_challenge"].clone());
+
+        // Another browser, or no cookie: nothing happens, and the state stays good for the right one.
+        assert_eq!(oauth.finish_google(&state, "code-1", "someone-else").await, Err("expired".into()));
+        assert_eq!(oauth.finish_google(&state, "code-1", "").await, Err("expired".into()));
+        assert!(fake.seen().is_empty(), "Google is not even asked");
+
+        fake.answer(|url, _| {
+            assert_eq!(url, "https://oauth.test/token");
+            Ok((200, serde_json::json!({ "access_token": "g-at", "refresh_token": "g-rt", "expires_in": 3599 })))
+        });
+        let flow = oauth.finish_google(&state, "code-1", &started.binding).await.unwrap();
+        assert_eq!(flow, started.flow_id);
+        let form = &fake.seen()[0].1;
+        assert_eq!((form["grant_type"].as_str(), form["code"].as_str()), ("authorization_code", "code-1"));
+        assert_eq!((form["client_secret"].as_str(), form["redirect_uri"].as_str()), ("g-secret", redirect));
+        let verified = URL_SAFE_NO_PAD.encode(digest::digest(&digest::SHA256, form["code_verifier"].as_bytes()).as_ref());
+        assert_eq!(verified, challenge, "PKCE: the verifier belongs to the challenge");
+        assert_eq!(oauth.finish_google(&state, "code-1", &started.binding).await, Err("expired".into()), "once");
+
+        let FlowPoll::Prove(granted) = oauth.poll(3, &flow).await else { panic!("no tokens") };
+        assert_eq!((granted.provider, granted.switch_id), (Provider::Google, Some(12)));
+        assert_eq!(granted.tokens.refresh_token, "g-rt");
+        oauth.settle(3, &flow, Err("signInRefused".into()));
+        assert_eq!(oauth.poll(3, &flow).await, FlowPoll::Failed("signInRefused".into()));
+    }
+
+    async fn store_with_grant(dir: &std::path::Path, address: &str, provider: FetchAuth, expires_in: i64) -> (Store, i64, i64) {
+        let store = Store::open(dir).await.unwrap();
+        store.create_domain("example.org").await.unwrap();
+        let account = store
+            .create_account(uwumail_store::NewAccount {
+                address: "mini@example.org".into(),
+                display_name: String::new(),
+                password: None,
+                role: uwumail_store::Role::User,
+                quota_bytes: 0,
+                protocols: None,
+            })
+            .await
+            .unwrap()
+            .id;
+        let fetched = store
+            .create_fetch_account_with(
+                uwumail_store::NewFetchAccount {
+                    account_id: account,
+                    address: address.into(),
+                    host: "outlook.office365.com".into(),
+                    port: 993,
+                    security: uwumail_store::FetchSecurity::Tls,
+                    username: address.into(),
+                    password: String::new(),
+                    after_fetch: uwumail_store::AfterFetch::MarkRead,
+                    fetch_junk: true,
+                    interval_secs: uwumail_store::DEFAULT_FETCH_INTERVAL_SECS,
+                    auth_serv_id: String::new(),
+                },
+                Some(uwumail_store::FetchGrant {
+                    provider,
+                    tokens: FetchTokens {
+                        access_token: "at-0".into(),
+                        expires_at: now() + expires_in,
+                        refresh_token: "rt-0".into(),
+                    },
+                }),
+            )
+            .await
+            .unwrap();
+        (store, account, fetched.id)
+    }
+
+    /// The token kept while it has time left; a new one a little before it runs out, and the new
+    /// refresh token of a provider that rotates them kept -- the old one when none came.
+    #[tokio::test]
+    async fn access_tokens_are_renewed_before_they_run_out_and_rotated_refresh_tokens_are_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, account, id) = store_with_grant(dir.path(), "mini@outlook.com", FetchAuth::Microsoft, 3600).await;
+        let fake = FakeProvider::new(|_, _| Err("must not be asked".into()));
+        let oauth = oauth_with(&fake);
+        assert_eq!(oauth.access_token(&store, account, id, "mini@outlook.com").await.unwrap(), "at-0");
+        assert!(fake.seen().is_empty());
+
+        // Two minutes left: renewed.
+        store.store_fetch_tokens(id, "at-0".into(), now() + 120, None).await.unwrap();
+        fake.answer(|url, form| {
+            assert!(url.ends_with("/consumers/oauth2/v2.0/token"), "{url}");
+            assert_eq!((form["grant_type"].as_str(), form["refresh_token"].as_str()), ("refresh_token", "rt-0"));
+            Ok((200, serde_json::json!({ "access_token": "at-1", "refresh_token": "rt-1", "expires_in": 3600 })))
+        });
+        assert_eq!(oauth.access_token(&store, account, id, "mini@outlook.com").await.unwrap(), "at-1");
+        let kept = store.fetch_oauth(account, id).await.unwrap().unwrap();
+        assert_eq!((kept.access_token.as_deref(), kept.refresh_token.as_deref()), (Some("at-1"), Some("rt-1")));
+        assert!(kept.expires_at.unwrap() > now() + 3000);
+        assert_eq!(fake.seen().len(), 1);
+        // Asked again at once: the new one, not another renewal.
+        assert_eq!(oauth.access_token(&store, account, id, "mini@outlook.com").await.unwrap(), "at-1");
+        assert_eq!(fake.seen().len(), 1);
+
+        // No new refresh token this time: the last one stays.
+        store.store_fetch_tokens(id, "at-1".into(), now(), None).await.unwrap();
+        fake.answer(|_, form| {
+            assert_eq!(form["refresh_token"], "rt-1");
+            Ok((200, serde_json::json!({ "access_token": "at-2", "expires_in": 3600 })))
+        });
+        assert_eq!(oauth.access_token(&store, account, id, "mini@outlook.com").await.unwrap(), "at-2");
+        assert_eq!(store.fetch_oauth(account, id).await.unwrap().unwrap().refresh_token.as_deref(), Some("rt-1"));
+
+        // Sealed at rest: neither token is in the database as it is.
+        let mut raw = std::fs::read(dir.path().join("uwumail.db")).unwrap();
+        raw.extend(std::fs::read(dir.path().join("uwumail.db-wal")).unwrap_or_default());
+        assert!(!raw.windows(4).any(|w| w == b"rt-1"), "the refresh token is sealed");
+    }
+
+    /// A grant the provider ended: the mailbox says so, the person hears it once, and the provider
+    /// is not asked again until they sign in anew. A provider that is down is asked later, not on
+    /// every run.
+    #[tokio::test]
+    async fn an_ended_grant_waits_for_a_new_sign_in_and_a_provider_that_is_down_is_given_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, account, id) = store_with_grant(dir.path(), "mini@gmail.com", FetchAuth::Google, 0).await;
+        let fake = FakeProvider::new(|_, _| Ok((400, serde_json::json!({ "error": "invalid_grant" }))));
+        let oauth = oauth_with(&fake);
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        let ear = heard.clone();
+        oauth.on_notice(move |notice| ear.lock().unwrap().push(notice));
+
+        // Without a client for Google there is nothing to renew with.
+        assert_eq!(
+            oauth.access_token(&store, account, id, "mini@gmail.com").await,
+            Err(TokenError::NotConfigured(Provider::Google))
+        );
+        oauth.configure(FetchOAuthConfig {
+            google_client_id: "gid".into(),
+            google_client_secret: "gsecret".into(),
+            ..Default::default()
+        });
+        assert_eq!(oauth.access_token(&store, account, id, "mini@gmail.com").await, Err(TokenError::Expired(Provider::Google)));
+        assert_eq!(fake.seen()[0].1["client_secret"], "gsecret");
+        let fetched = store.fetch_account(account, id).await.unwrap().unwrap();
+        assert!(fetched.login_expired, "the mailbox says so");
+        assert!(!store.fetch_accounts_due().await.unwrap().iter().any(|due| due.id == id), "and runs leave it be");
+        assert_eq!(oauth.access_token(&store, account, id, "mini@gmail.com").await, Err(TokenError::Expired(Provider::Google)));
+        assert_eq!(fake.seen().len(), 1, "Google is not asked again");
+        assert_eq!(
+            *heard.lock().unwrap(),
+            [FetchNotice {
+                account_id: account,
+                address: "mini@gmail.com".into(),
+                kind: FetchNoticeKind::LoginExpired(Provider::Google)
+            }],
+            "told once"
+        );
+
+        // A new sign-in starts it afresh.
+        let grant = uwumail_store::FetchGrant {
+            provider: FetchAuth::Google,
+            tokens: FetchTokens { access_token: "at-new".into(), expires_at: now() + 3600, refresh_token: "rt-new".into() },
+        };
+        store
+            .update_fetch_account(account, id, uwumail_store::FetchAccountUpdate { oauth: Some(grant), ..Default::default() })
+            .await
+            .unwrap();
+        assert!(!store.fetch_account(account, id).await.unwrap().unwrap().login_expired);
+        assert_eq!(oauth.access_token(&store, account, id, "mini@gmail.com").await.unwrap(), "at-new");
+
+        // Down: a wait, and no second request before it is over.
+        store.store_fetch_tokens(id, "at-new".into(), now(), None).await.unwrap();
+        fake.answer(|_, _| Err("connection refused".into()));
+        let Err(TokenError::Failed(reason)) = oauth.access_token(&store, account, id, "mini@gmail.com").await else {
+            panic!("a failure")
+        };
+        assert!(reason.contains("trying again in 1 minutes"), "{reason}");
+        assert!(matches!(
+            oauth.access_token(&store, account, id, "mini@gmail.com").await,
+            Err(TokenError::Waiting(at)) if at > now()
+        ));
+        assert_eq!(fake.seen().len(), 2);
+        assert_eq!(store.fetch_oauth(account, id).await.unwrap().unwrap().failures, 1);
+        assert_eq!(heard.lock().unwrap().len(), 1, "being down is not an ended sign-in");
     }
 }
