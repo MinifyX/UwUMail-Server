@@ -548,7 +548,11 @@
       "pictureTooLarge": "De afbeelding is te groot. Hoogstens 10 MB.",
       "pictureTooManyPixels": "De afbeelding heeft te veel pixels. Hoogstens 8000 × 8000.",
       "publicNotAllowed": "Openbare afbeeldingen zijn hier niet toegestaan.",
-      "picturePerson": "Mensen kiezen hun eigen foto."
+      "picturePerson": "Mensen kiezen hun eigen foto.",
+      "passwordsRefused": "Microsoft accepteert voor deze mailbox geen wachtwoord meer – gebruik ‘Aanmelden met Microsoft’.",
+      "oauthNotConfigured": "Aanmelden bij deze provider is op deze server niet ingesteld.",
+      "oauthClientRejected": "De provider weigerde de app-registratie van deze server. De admin moet de client-ID controleren.",
+      "signInExpired": "De aanmelding is verlopen of was voor een andere mailbox. Meld je opnieuw aan."
     }
   },
   "people": {
@@ -1882,7 +1886,9 @@
       "oauthGranted": "App ‘{{name}}’ ingelogd met OAuth ({{scopes}})",
       "oauthRevoked": "App ‘{{name}}’ uitgelogd",
       "oauthTokenReused": "Een oud token van de app ‘{{name}}’ kwam een tweede keer terug: de app is uitgelogd",
-      "oidcLinked": "Gekoppeld aan de login bij {{issuer}}"
+      "oidcLinked": "Gekoppeld aan de login bij {{issuer}}",
+      "fetchSignInExpired": "De aanmelding bij {{provider}} voor de opgehaalde mailbox {{address}} is verlopen",
+      "fetchPasswordRefused": "Microsoft weigerde het wachtwoord van de opgehaalde mailbox {{address}}"
     },
     "loginMethods": {
       "password": "wachtwoord",
@@ -2085,7 +2091,53 @@
       "title": "Goed om te weten",
       "spam": "Opgehaalde mail wordt hier opnieuw beoordeeld. Wat de provider voor spam hield, telt als hint en beslist niet in zijn eentje.",
       "first": "Wat al in de mailbox staat, komt alleen als jij dat wilt: met ‘Bestaande mail meenemen’ bij het toevoegen, of later met de klokknop in de rij ervan. Het komt met de datum van de provider, niet als een berg nieuwe mail van vandaag.",
-      "password": "Het wachtwoord gaat er alleen in en komt er nooit meer uit. De server heeft het nodig om bij de provider in te loggen en bewaart het verzegeld."
+      "password": "Het wachtwoord gaat er alleen in en komt er nooit meer uit. De server heeft het nodig om bij de provider in te loggen en bewaart het verzegeld.",
+      "signIn": "Microsoft en Google: meld je daar direct aan in plaats van deze server een wachtwoord te geven. Hij bewaart alleen een verzegeld token, vernieuwt het zelf en laat het je weten als de provider de aanmelding beëindigt."
+    },
+    "signIn": {
+      "button": "Aanmelden met {{provider}}",
+      "switch": "Overstappen op aanmelden met {{provider}}",
+      "renew": "Opnieuw aanmelden bij {{provider}}",
+      "again": "Opnieuw proberen",
+      "detected": "Een mailbox bij {{provider}}: meld je direct aan bij {{provider}}. Deze server heeft dan geen wachtwoord nodig.",
+      "switchIntro": "Deze mailbox kan zich direct bij {{provider}} aanmelden in plaats van met een wachtwoord – en blijft werken als de provider wachtwoorden uitschakelt.",
+      "signedInWith": "Meldt zich aan bij {{provider}}, zonder wachtwoord.",
+      "expired": "Aanmelding verlopen – meld je opnieuw aan",
+      "passwordRefused": "Microsoft accepteert hier geen wachtwoord meer – gebruik ‘Aanmelden met Microsoft’",
+      "notReady": "Aanmelden bij {{provider}} is op deze server niet ingesteld. Gebruik een app-wachtwoord of vraag de admin het in te stellen.",
+      "usePassword": "Toch een wachtwoord gebruiken",
+      "useSignIn": "Toch aanmelden met {{provider}}",
+      "passwordInstead": "Een wachtwoord hier zet de mailbox terug van de aanmelding naar inloggen met wachtwoord.",
+      "deviceSteps": "Open de pagina van Microsoft, voer deze code in en meld je aan met het account van deze mailbox. Dit venster gaat daarna vanzelf verder.",
+      "copyCode": "Code kopiëren",
+      "openPage": "{{page}} openen",
+      "waiting": "Wachten op de aanmelding bij {{provider}} …",
+      "saving": "Aangemeld. Mailbox wordt gecontroleerd en opgeslagen …",
+      "done": "Aangemeld: {{address}} meldt zich nu aan bij {{provider}}.",
+      "finishing": "Aanmelding wordt afgerond",
+      "proving": "De server meldt zich één keer aan bij de mailbox om die te controleren …",
+      "errors": {
+        "declined": "De aanmelding is afgebroken.",
+        "expired": "De aanmelding duurde te lang of is al gebruikt. Begin opnieuw.",
+        "failed": "De aanmelding is niet gelukt. Probeer het opnieuw.",
+        "noRefreshToken": "De provider gaf geen blijvende toegang. Verwijder bij Google de toegang van deze server in de beveiligingsinstellingen van je Google-account en meld je daarna opnieuw aan.",
+        "oauthClientRejected": "De provider weigerde de app-registratie van deze server. De admin moet de client-ID controleren.",
+        "oauthNotConfigured": "Aanmelden bij deze provider is op deze server niet ingesteld.",
+        "providerUnreachable": "De aanmelding van de provider was niet bereikbaar. Probeer het later opnieuw.",
+        "signInRefused": "De provider opende de mailbox niet met deze aanmelding. Heb je je aangemeld met een ander account dan het adres hierboven?",
+        "busy": "Te veel aanmeldingen tegelijk. Probeer het zo opnieuw."
+      }
+    },
+    "admin": {
+      "title": "Opgehaalde mailboxen: Microsoft en Google",
+      "intro": "Opgehaalde mailboxen bij Microsoft (Outlook.com, Hotmail, Microsoft 365) en Google melden zich daar aan in plaats van een wachtwoord te gebruiken. Microsoft werkt zonder instellen; Google heeft je eigen OAuth-client nodig.",
+      "microsoftClientId": "Eigen Microsoft-client-ID",
+      "microsoftClientIdHint": "Leeg gebruikt de client die met UwUMail meekomt. Een eigen Entra-app moet ‘public client flows’ toestaan.",
+      "googleClientId": "Google-client-ID",
+      "googleClientSecret": "Google-clientgeheim",
+      "googleHint": "Een client van het type ‘Webapplicatie’ in Google Cloud, gepubliceerd naar productie, met deze omleidings-URI:",
+      "redirectUri": "Omleidings-URI voor Google",
+      "docs": "Microsoft en Google instellen"
     }
   },
   "moving": {

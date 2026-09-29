@@ -548,7 +548,11 @@
       "pictureTooLarge": "The picture is too big. It may be 10 MB at most.",
       "pictureTooManyPixels": "The picture has too many pixels. 8000 × 8000 at most.",
       "publicNotAllowed": "Public pictures are not allowed here.",
-      "picturePerson": "People choose their own picture."
+      "picturePerson": "People choose their own picture.",
+      "passwordsRefused": "Microsoft no longer accepts a password for this mailbox – please use “Sign in with Microsoft”.",
+      "oauthNotConfigured": "Signing in at this provider is not set up on this server.",
+      "oauthClientRejected": "The provider refused this server's app registration. The admin has to check the client ID.",
+      "signInExpired": "The sign-in expired or was meant for another mailbox. Sign in again."
     }
   },
   "people": {
@@ -1882,7 +1886,9 @@
       "oauthGranted": "App “{{name}}” signed in with OAuth ({{scopes}})",
       "oauthRevoked": "App “{{name}}” signed out",
       "oauthTokenReused": "An old token of the app “{{name}}” came back a second time: the app was signed out",
-      "oidcLinked": "Linked with the login at {{issuer}}"
+      "oidcLinked": "Linked with the login at {{issuer}}",
+      "fetchSignInExpired": "The sign-in at {{provider}} for the fetched mailbox {{address}} expired",
+      "fetchPasswordRefused": "Microsoft refused the password of the fetched mailbox {{address}}"
     },
     "loginMethods": {
       "password": "password",
@@ -2085,7 +2091,53 @@
       "title": "Worth knowing",
       "spam": "Fetched mail is judged again here. What the provider thought was spam counts as a hint and does not decide on its own.",
       "first": "What is already in the mailbox only comes when you want it to: with “Bring over the mail already there” when adding it, or later with the clock button in its row. It comes with the provider's date, not as a heap of new mail from today.",
-      "password": "The password only goes in and never comes out again. The server needs it to sign in at the provider and keeps it sealed."
+      "password": "The password only goes in and never comes out again. The server needs it to sign in at the provider and keeps it sealed.",
+      "signIn": "Microsoft and Google: sign in there directly instead of handing this server a password. It keeps only a sealed token, renews it by itself and tells you when the provider ends it."
+    },
+    "signIn": {
+      "button": "Sign in with {{provider}}",
+      "switch": "Switch to signing in with {{provider}}",
+      "renew": "Sign in with {{provider}} again",
+      "again": "Try again",
+      "detected": "A {{provider}} mailbox: sign in at {{provider}} directly. This server then needs no password for it.",
+      "switchIntro": "This mailbox can sign in at {{provider}} directly instead of with a password — and keeps working once the provider switches passwords off.",
+      "signedInWith": "Signs in at {{provider}}, without a password.",
+      "expired": "Sign-in expired – sign in again",
+      "passwordRefused": "Microsoft no longer accepts a password here – please use “Sign in with Microsoft”",
+      "notReady": "Signing in at {{provider}} is not set up on this server. Use an app password, or ask the admin to set it up.",
+      "usePassword": "Use a password instead",
+      "useSignIn": "Sign in with {{provider}} after all",
+      "passwordInstead": "A password here switches the mailbox back from the sign-in to logging in with a password.",
+      "deviceSteps": "Open Microsoft's page, enter this code and sign in with the account of this mailbox. This window carries on by itself.",
+      "copyCode": "Copy code",
+      "openPage": "Open {{page}}",
+      "waiting": "Waiting for the sign-in at {{provider}} …",
+      "saving": "Signed in. Checking the mailbox and saving …",
+      "done": "Signed in: {{address}} now logs in at {{provider}}.",
+      "finishing": "Finishing the sign-in",
+      "proving": "Signing in to the mailbox once to check it works …",
+      "errors": {
+        "declined": "The sign-in was cancelled.",
+        "expired": "The sign-in took too long or was already used. Start it again.",
+        "failed": "The sign-in did not work. Try again.",
+        "noRefreshToken": "The provider handed out no lasting access. At Google, remove this server's access in your Google account's security settings, then sign in again.",
+        "oauthClientRejected": "The provider refused this server's app registration. The admin has to check the client ID.",
+        "oauthNotConfigured": "Signing in at this provider is not set up on this server.",
+        "providerUnreachable": "The provider's sign-in could not be reached. Try again later.",
+        "signInRefused": "The provider did not open the mailbox with this sign-in. Did you sign in with another account than the address above?",
+        "busy": "Too many sign-ins at once. Try again in a moment."
+      }
+    },
+    "admin": {
+      "title": "Fetched mailboxes: Microsoft and Google",
+      "intro": "Fetched mailboxes at Microsoft (Outlook.com, Hotmail, Microsoft 365) and Google sign in there instead of using a password. Microsoft works out of the box; Google needs your own OAuth client.",
+      "microsoftClientId": "Own Microsoft client ID",
+      "microsoftClientIdHint": "Empty uses the client UwUMail ships with. Your own Entra app needs public client flows allowed.",
+      "googleClientId": "Google client ID",
+      "googleClientSecret": "Google client secret",
+      "googleHint": "A “Web application” client in Google Cloud, published to production, with this redirect URI:",
+      "redirectUri": "Redirect URI for Google",
+      "docs": "Setting up Microsoft and Google"
     }
   },
   "moving": {

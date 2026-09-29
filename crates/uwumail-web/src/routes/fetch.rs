@@ -167,11 +167,15 @@ pub async fn discover(
 #[serde(rename_all = "camelCase")]
 pub struct NewMailbox {
     address: String,
+    /// Empty with a sign-in, whose servers are the provider's own.
+    #[serde(default)]
     host: String,
     port: Option<u16>,
     security: Option<String>,
     /// Usually the address itself; some providers want something else.
     username: Option<String>,
+    /// Empty with a sign-in.
+    #[serde(default)]
     password: String,
     after_fetch: Option<String>,
     fetch_junk: Option<bool>,

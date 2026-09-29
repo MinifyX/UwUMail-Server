@@ -548,7 +548,11 @@
       "pictureTooLarge": "Das Bild ist zu groß. Es darf höchstens 10 MB haben.",
       "pictureTooManyPixels": "Das Bild hat zu viele Pixel. Höchstens 8000 × 8000.",
       "publicNotAllowed": "Öffentliche Bilder sind hier nicht erlaubt.",
-      "picturePerson": "Ihr Bild wählen Leute selbst."
+      "picturePerson": "Ihr Bild wählen Leute selbst.",
+      "passwordsRefused": "Microsoft lässt für dieses Postfach keine Anmeldung mit Passwort mehr zu – bitte „Mit Microsoft anmelden“ verwenden.",
+      "oauthNotConfigured": "Die Anmeldung bei diesem Anbieter ist auf diesem Server nicht eingerichtet.",
+      "oauthClientRejected": "Der Anbieter hat die App-Registrierung dieses Servers abgelehnt. Der Admin muss die Client-ID prüfen.",
+      "signInExpired": "Die Anmeldung ist abgelaufen oder war für ein anderes Postfach. Melde dich erneut an."
     }
   },
   "people": {
@@ -1882,7 +1886,9 @@
       "oauthGranted": "App „{{name}}“ mit OAuth angemeldet ({{scopes}})",
       "oauthRevoked": "App „{{name}}“ abgemeldet",
       "oauthTokenReused": "Ein altes Token der App „{{name}}“ kam ein zweites Mal: die App wurde abgemeldet",
-      "oidcLinked": "Mit der Anmeldung bei {{issuer}} verknüpft"
+      "oidcLinked": "Mit der Anmeldung bei {{issuer}} verknüpft",
+      "fetchSignInExpired": "Die Anmeldung bei {{provider}} für das Abrufkonto {{address}} ist abgelaufen",
+      "fetchPasswordRefused": "Microsoft hat das Passwort des Abrufkontos {{address}} abgelehnt"
     },
     "loginMethods": {
       "password": "Passwort",
@@ -2085,7 +2091,53 @@
       "title": "Gut zu wissen",
       "spam": "Geholte Mail wird hier neu bewertet. Was der Anbieter für Spam hielt, zählt als Hinweis und entscheidet nicht allein.",
       "first": "Was schon im Postfach liegt, kommt nur, wenn du es willst: beim Hinzufügen mit „Vorhandene Mails übernehmen“, oder später mit dem Uhr-Knopf in der Zeile. Es kommt mit dem Datum vom Anbieter, nicht als Stapel neuer Mail von heute.",
-      "password": "Das Passwort geht hier nur hinein und kommt nie wieder heraus. Der Server braucht es, um sich beim Anbieter anzumelden, und verwahrt es verschlüsselt."
+      "password": "Das Passwort geht hier nur hinein und kommt nie wieder heraus. Der Server braucht es, um sich beim Anbieter anzumelden, und verwahrt es verschlüsselt.",
+      "signIn": "Microsoft und Google: melde dich dort direkt an, statt diesem Server ein Passwort zu geben. Er behält nur ein versiegeltes Token, erneuert es selbst und sagt dir Bescheid, wenn der Anbieter die Anmeldung beendet."
+    },
+    "signIn": {
+      "button": "Mit {{provider}} anmelden",
+      "switch": "Auf {{provider}}-Anmeldung umstellen",
+      "renew": "Erneut bei {{provider}} anmelden",
+      "again": "Nochmal versuchen",
+      "detected": "Ein Postfach bei {{provider}}: melde dich direkt bei {{provider}} an. Ein Passwort braucht dieser Server dann nicht.",
+      "switchIntro": "Dieses Postfach kann sich direkt bei {{provider}} anmelden statt mit Passwort – und läuft weiter, wenn der Anbieter Passwörter abschaltet.",
+      "signedInWith": "Meldet sich bei {{provider}} an, ohne Passwort.",
+      "expired": "Anmeldung abgelaufen – erneut anmelden",
+      "passwordRefused": "Microsoft lässt keine Anmeldung mit Passwort mehr zu – bitte „Mit Microsoft anmelden“ verwenden",
+      "notReady": "Die Anmeldung bei {{provider}} ist auf diesem Server nicht eingerichtet. Nutze ein App-Passwort oder bitte den Admin, sie einzurichten.",
+      "usePassword": "Stattdessen ein Passwort verwenden",
+      "useSignIn": "Doch mit {{provider}} anmelden",
+      "passwordInstead": "Ein Passwort hier stellt das Postfach von der Anmeldung zurück auf die Anmeldung mit Passwort um.",
+      "deviceSteps": "Öffne die Seite von Microsoft, gib diesen Code ein und melde dich mit dem Konto dieses Postfachs an. Dieses Fenster macht danach von selbst weiter.",
+      "copyCode": "Code kopieren",
+      "openPage": "{{page}} öffnen",
+      "waiting": "Warte auf die Anmeldung bei {{provider}} …",
+      "saving": "Angemeldet. Postfach wird geprüft und gespeichert …",
+      "done": "Angemeldet: {{address}} meldet sich jetzt bei {{provider}} an.",
+      "finishing": "Anmeldung wird abgeschlossen",
+      "proving": "Der Server meldet sich einmal am Postfach an, um es zu prüfen …",
+      "errors": {
+        "declined": "Die Anmeldung wurde abgebrochen.",
+        "expired": "Die Anmeldung hat zu lange gedauert oder wurde schon verwendet. Starte sie neu.",
+        "failed": "Die Anmeldung hat nicht geklappt. Versuch es nochmal.",
+        "noRefreshToken": "Der Anbieter hat keinen dauerhaften Zugriff erteilt. Entferne bei Google den Zugriff dieses Servers in den Sicherheitseinstellungen deines Google-Kontos und melde dich dann erneut an.",
+        "oauthClientRejected": "Der Anbieter hat die App-Registrierung dieses Servers abgelehnt. Der Admin muss die Client-ID prüfen.",
+        "oauthNotConfigured": "Die Anmeldung bei diesem Anbieter ist auf diesem Server nicht eingerichtet.",
+        "providerUnreachable": "Die Anmeldung des Anbieters war nicht erreichbar. Versuch es später nochmal.",
+        "signInRefused": "Der Anbieter hat das Postfach mit dieser Anmeldung nicht geöffnet. Hast du dich mit einem anderen Konto als der Adresse oben angemeldet?",
+        "busy": "Gerade laufen zu viele Anmeldungen. Versuch es gleich nochmal."
+      }
+    },
+    "admin": {
+      "title": "Abrufkonten: Microsoft und Google",
+      "intro": "Abrufkonten bei Microsoft (Outlook.com, Hotmail, Microsoft 365) und Google melden sich dort an, statt ein Passwort zu benutzen. Microsoft funktioniert ohne Einrichtung; für Google brauchst du einen eigenen OAuth-Client.",
+      "microsoftClientId": "Eigene Microsoft-Client-ID",
+      "microsoftClientIdHint": "Leer nimmt den Client, der mit UwUMail kommt. Eine eigene Entra-App braucht erlaubte „Public client flows“.",
+      "googleClientId": "Google-Client-ID",
+      "googleClientSecret": "Google-Clientschlüssel",
+      "googleHint": "Ein Client vom Typ „Webanwendung“ in Google Cloud, in Produktion veröffentlicht, mit dieser Weiterleitungs-URI:",
+      "redirectUri": "Weiterleitungs-URI für Google",
+      "docs": "Microsoft und Google einrichten"
     }
   },
   "moving": {

@@ -536,7 +536,11 @@
       "pictureTooLarge": "图片太大，最大 10 MB。",
       "pictureTooManyPixels": "图片像素太多，最大 8000 × 8000。",
       "publicNotAllowed": "此处不允许公开图片。",
-      "picturePerson": "个人头像由本人选择。"
+      "picturePerson": "个人头像由本人选择。",
+      "passwordsRefused": "Microsoft 不再接受这个邮箱的密码——请使用“使用 Microsoft 登录”。",
+      "oauthNotConfigured": "本服务器尚未设置该服务商的登录。",
+      "oauthClientRejected": "服务商拒绝了本服务器的应用注册。管理员需要检查客户端 ID。",
+      "signInExpired": "登录已过期或属于另一个邮箱。请重新登录。"
     }
   },
   "people": {
@@ -1831,7 +1835,9 @@
       "oauthGranted": "应用“{{name}}”通过 OAuth 登录（{{scopes}}）",
       "oauthRevoked": "应用“{{name}}”已退出登录",
       "oauthTokenReused": "应用“{{name}}”的旧令牌被再次使用，该应用已退出登录",
-      "oidcLinked": "已关联 {{issuer}} 的登录"
+      "oidcLinked": "已关联 {{issuer}} 的登录",
+      "fetchSignInExpired": "收取邮箱 {{address}} 在 {{provider}} 的登录已过期",
+      "fetchPasswordRefused": "Microsoft 拒绝了收取邮箱 {{address}} 的密码"
     },
     "loginMethods": {
       "password": "密码",
@@ -2033,7 +2039,53 @@
       "title": "须知",
       "spam": "收取的邮件会在这里重新判断。服务商认定的垃圾邮件只作为参考，不会单独决定结果。",
       "first": "邮箱中已有的邮件只有在你需要时才会迁移：添加时勾选“迁移已有的邮件”，或之后点击该行中的时钟按钮。它们会保留服务商处的日期，而不是变成一堆今天的新邮件。",
-      "password": "密码只进不出。服务器需要它来登录服务商，并会将其加密保存。"
+      "password": "密码只进不出。服务器需要它来登录服务商，并会将其加密保存。",
+      "signIn": "Microsoft 和 Google：请直接在那里登录，而不是把密码交给本服务器。服务器只保存一个加密封存的令牌，会自动续期，并在服务商终止登录时通知你。"
+    },
+    "signIn": {
+      "button": "使用 {{provider}} 登录",
+      "switch": "切换为 {{provider}} 登录",
+      "renew": "重新登录 {{provider}}",
+      "again": "重试",
+      "detected": "这是 {{provider}} 的邮箱：请直接在 {{provider}} 登录。这样本服务器就不需要密码。",
+      "switchIntro": "这个邮箱可以直接在 {{provider}} 登录而不用密码——即使服务商关闭了密码登录也能继续工作。",
+      "signedInWith": "在 {{provider}} 登录，无需密码。",
+      "expired": "登录已过期——请重新登录",
+      "passwordRefused": "Microsoft 已不再接受这里的密码——请使用“使用 Microsoft 登录”",
+      "notReady": "本服务器尚未设置 {{provider}} 登录。请使用应用专用密码，或请管理员进行设置。",
+      "usePassword": "改用密码",
+      "useSignIn": "还是使用 {{provider}} 登录",
+      "passwordInstead": "在这里填写密码会让这个邮箱从登录方式改回密码登录。",
+      "deviceSteps": "打开 Microsoft 的页面，输入这个代码，并用这个邮箱的账户登录。之后这个窗口会自动继续。",
+      "copyCode": "复制代码",
+      "openPage": "打开 {{page}}",
+      "waiting": "正在等待 {{provider}} 登录 …",
+      "saving": "已登录。正在检查邮箱并保存 …",
+      "done": "已登录：{{address}} 今后将通过 {{provider}} 登录。",
+      "finishing": "正在完成登录",
+      "proving": "服务器正在登录邮箱一次以进行检查 …",
+      "errors": {
+        "declined": "登录已取消。",
+        "expired": "登录耗时过长或已被使用。请重新开始。",
+        "failed": "登录未成功。请重试。",
+        "noRefreshToken": "服务商没有授予持久访问权限。如果是 Google，请先在 Google 账户的安全设置中移除本服务器的访问权限，然后重新登录。",
+        "oauthClientRejected": "服务商拒绝了本服务器的应用注册。管理员需要检查客户端 ID。",
+        "oauthNotConfigured": "本服务器尚未设置该服务商的登录。",
+        "providerUnreachable": "无法连接服务商的登录服务。请稍后重试。",
+        "signInRefused": "服务商没有用这次登录打开邮箱。你是否用了与上面地址不同的账户登录？",
+        "busy": "同时进行的登录太多。请稍后重试。"
+      }
+    },
+    "admin": {
+      "title": "收取邮箱：Microsoft 和 Google",
+      "intro": "Microsoft（Outlook.com、Hotmail、Microsoft 365）和 Google 的收取邮箱会在那里登录，而不是使用密码。Microsoft 无需设置即可使用；Google 需要你自己的 OAuth 客户端。",
+      "microsoftClientId": "自己的 Microsoft 客户端 ID",
+      "microsoftClientIdHint": "留空则使用 UwUMail 自带的客户端。自己的 Entra 应用需要允许“公共客户端流”。",
+      "googleClientId": "Google 客户端 ID",
+      "googleClientSecret": "Google 客户端密钥",
+      "googleHint": "Google Cloud 中类型为“Web 应用”的客户端，已发布到正式环境，并使用这个重定向 URI：",
+      "redirectUri": "Google 的重定向 URI",
+      "docs": "设置 Microsoft 和 Google"
     }
   },
   "moving": {

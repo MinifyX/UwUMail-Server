@@ -138,6 +138,8 @@ const KNOWN_EVENTS = [
   "oauthRevoked",
   "oauthTokenReused",
   "oidcLinked",
+  "fetchSignInExpired",
+  "fetchPasswordRefused",
 ];
 
 const LOGIN_METHODS = ["password", "totp", "recoveryCode", "passkey", "oidc"];
@@ -163,6 +165,7 @@ export function useEventText() {
       address: typeof details.address === "string" ? details.address : "",
       scopes,
       issuer: typeof details.issuer === "string" ? details.issuer : "",
+      provider: typeof details.provider === "string" ? details.provider : "",
     });
   };
 }
