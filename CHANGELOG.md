@@ -7,6 +7,11 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 **Remote pictures without the wait** ([docs/jmap-remote.md](docs/jmap-remote.md)):
 
+- Webmail: a mail's text shows at once when its pictures may load. Every picture waits in its place
+  with a shimmer, sized by the server before it arrives, so nothing jumps; a thin bar counts them in
+  ("Bilder werden geladen 12/30"). Pictures that can't be had end as a quiet box of their size,
+  tracking pixels as nothing. Before, one dead tracking host kept the mail hidden for up to 20 s in
+  the automatic dark mode.
 - Pictures in messages are fetched once for the whole server and kept on disk for up to 7 days,
   shared by everyone who reads the same message (`cache/images`, left out of backups). New admin
   setting `egress.image_cache_mb` (default 1024, *VPN & proxy* in the portal; 0 turns it off); the
