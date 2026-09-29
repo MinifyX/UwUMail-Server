@@ -200,20 +200,29 @@ async fn lookup(host: &str, port: u16) -> Vec<SocketAddr> {
 /// Mail from a fetched address leaves through that provider's own outgoing server, whoever it is
 /// addressed to. Sent from here it would carry our name on the envelope and theirs in the From
 /// header, and their DMARC policy would take it apart at the recipient.
-async fn sender_route(ctx: &Context, account_id: Option<i64>, return_path: &str) -> Option<Target> {
+async fn sender_route(ctx: &Context, account_id: Option<i64>, return_path: &str) -> Result<Option<Target>, Outcome> {
     // The route hangs on the sending account, not on the envelope address alone: mail with no
     // account (bounces, system mail) never takes a fetched sender's server.
-    let account_id = account_id?;
+    let Some(account_id) = account_id else { return Ok(None) };
     if return_path.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let sender = match ctx.store.fetch_sender(account_id, return_path).await {
-        Ok(sender) => sender?,
+    let mut sender = match ctx.store.fetch_sender(account_id, return_path).await {
+        Ok(Some(sender)) => sender,
+        Ok(None) => return Ok(None),
         Err(err) => {
             tracing::warn!(%err, "looking up the outgoing server of a fetched address failed");
-            return None;
+            return Ok(None);
         }
     };
+    // A mailbox that signs in at Microsoft or Google sends with an access token. Without one the
+    // message waits: going out any other way would be the very thing the provider's DMARC refuses.
+    if sender.auth.is_oauth() {
+        match ctx.provider_oauth.access_token(&ctx.store, sender.account_id, sender.fetch_id, &sender.address).await {
+            Ok(token) => sender.password = token,
+            Err(err) => return Err(Outcome::Deferred(format!("sending as {}: {err}", sender.address))),
+        }
+    }
     let relay = RelayConfig {
         host: sender.host,
         port: sender.port,
@@ -223,6 +232,7 @@ async fn sender_route(ctx: &Context, account_id: Option<i64>, return_path: &str)
         },
         username: Some(sender.username),
         password: Some(sender.password),
+        oauth: sender.auth.is_oauth(),
     };
     // Only public addresses: a fetched account's outgoing server must not point the delivery worker
     // at this host or the local network, even when a public-looking name resolves there
@@ -232,7 +242,7 @@ async fn sender_route(ctx: &Context, account_id: Option<i64>, return_path: &str)
     if addrs.is_empty() {
         tracing::warn!(host = %relay.host, "the outgoing server of a fetched address is not a public host");
     }
-    Some(Target::elsewhere(relay.host.clone(), addrs, Via::Relay(relay)))
+    Ok(Some(Target::elsewhere(relay.host.clone(), addrs, Via::Relay(relay))))
 }
 
 async fn resolve_targets(
@@ -252,7 +262,7 @@ async fn resolve_targets(
     }
     // Before the server's own smarthost: whose account it comes from, together with the address,
     // decides where it may leave.
-    if let Some(target) = sender_route(ctx, account_id, return_path).await {
+    if let Some(target) = sender_route(ctx, account_id, return_path).await? {
         return Ok(vec![target]);
     }
     if let Some(relay) = &live.delivery.relay {
@@ -506,7 +516,12 @@ async fn session(
     if let Some(relay) = relay
         && let (Some(username), Some(password)) = (&relay.username, &relay.password)
     {
-        let reply = client.auth_plain(username, password).await.map_err(io)?;
+        let reply = if relay.oauth {
+            client.auth_xoauth2(username, password).await
+        } else {
+            client.auth_plain(username, password).await
+        }
+        .map_err(io)?;
         if !reply.is_positive() {
             client.quit().await;
             let error = format!("the relay refused our login: {reply}");

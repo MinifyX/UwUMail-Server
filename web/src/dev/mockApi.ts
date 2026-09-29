@@ -106,6 +106,7 @@ import type {
   PictureVisibility,
 } from "@/lib/api";
 import { guessSenderKind } from "@/features/spam/senders";
+import { assistMockRoutes } from "./mockAssist";
 import { ruleRoutes } from "./mockRules";
 
 const now = Math.floor(Date.now() / 1000);
@@ -922,6 +923,8 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "egress.pictures": { value: true, source: "default" },
   "egress.updates": { value: true, source: "database" },
   "egress.fetch": { value: false, source: "default" },
+  "egress.image_cache_mb": { value: 1024, source: "default" },
+  "egress.assist": { value: false, source: "default" },
   "reports.send_tls_reports": { value: true, source: "default" },
   "log.loki.enabled": { value: false, source: "default" },
   "log.loki.privacy_consent": { value: false, source: "default" },
@@ -959,6 +962,9 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "auth.ldap.admin_group_dn": { value: null, source: "default" },
   "auth.ldap.auto_create": { value: false, source: "default" },
   "auth.ldap.allowed_domains": { value: [], source: "default" },
+  "fetch.oauth.microsoft_client_id": { value: null, source: "default" },
+  "fetch.oauth.google_client_id": { value: "1234567890-mock.apps.googleusercontent.com", source: "database" },
+  "fetch.oauth.google_client_secret": { value: null, source: "database", set: true },
 };
 
 const settingsView = () => ({
@@ -1324,6 +1330,10 @@ const mockFetchAccounts: FetchAccountInfo[] = [
     lastFetched: 2,
     totalFetched: 431,
     backlogAt: null,
+    auth: "password",
+    loginExpired: false,
+    passwordRefused: false,
+    signIn: null,
   },
   {
     id: 2,
@@ -1349,8 +1359,91 @@ const mockFetchAccounts: FetchAccountInfo[] = [
     lastFetched: 0,
     totalFetched: 1204,
     backlogAt: null,
+    auth: "password",
+    loginExpired: false,
+    passwordRefused: false,
+    signIn: null,
+  },
+  // Microsoft stopped taking its password: the row offers the switch to signing in.
+  {
+    id: 3,
+    accountId: 1,
+    address: "lorin@hotmail.de",
+    host: "outlook.office365.com",
+    port: 993,
+    security: "tls",
+    username: "lorin@hotmail.de",
+    afterFetch: "markRead",
+    fetchJunk: true,
+    intervalSecs: 900,
+    enabled: true,
+    authServId: "",
+    smtpHost: "smtp-mail.outlook.com",
+    smtpPort: 587,
+    smtpSecurity: "starttls",
+    sendEnabled: false,
+    createdAt: now - 40 * 86_400,
+    lastRunAt: now - 600,
+    lastOkAt: now - 9 * 86_400,
+    lastError: 'Microsoft no longer accepts passwords for this mailbox ("Basic authentication is disabled")',
+    lastFetched: 0,
+    totalFetched: 88,
+    backlogAt: null,
+    auth: "password",
+    loginExpired: false,
+    passwordRefused: true,
+    signIn: "microsoft",
+  },
+  // Signed in at Google, and Google ended it: the row asks for a new sign-in.
+  {
+    id: 4,
+    accountId: 1,
+    address: "lorin.mock@gmail.com",
+    host: "imap.gmail.com",
+    port: 993,
+    security: "tls",
+    username: "lorin.mock@gmail.com",
+    afterFetch: "markRead",
+    fetchJunk: true,
+    intervalSecs: 300,
+    enabled: true,
+    authServId: "",
+    smtpHost: "smtp.gmail.com",
+    smtpPort: 465,
+    smtpSecurity: "tls",
+    sendEnabled: true,
+    createdAt: now - 20 * 86_400,
+    lastRunAt: now - 300,
+    lastOkAt: now - 2 * 86_400,
+    lastError: "the sign-in at Google has expired or was revoked; sign in again",
+    lastFetched: 0,
+    totalFetched: 57,
+    backlogAt: null,
+    auth: "google",
+    loginExpired: true,
+    passwordRefused: false,
+    signIn: null,
   },
 ];
+
+/**
+ * Sign-ins at Microsoft and Google on their way. The mock says "pending" a few times and then
+ * "ready", so the device code and the waiting can be seen without a provider.
+ */
+const mockSignIns = new Map<
+  string,
+  { provider: "microsoft" | "google"; address: string; switchId: number | null; polls: number }
+>();
+
+/** The mock's idea of who runs a domain's mail, as the server's would say. */
+function mockProviderOf(address: string): "microsoft" | "google" | null {
+  const domain = address.split("@")[1]?.toLowerCase() ?? "";
+  if (/^(hotmail|live|outlook)\.[a-z]{2,3}(\.[a-z]{2,3})?$/.test(domain) || domain === "msn.com") return "microsoft";
+  if (domain === "gmail.com" || domain === "googlemail.com") return "google";
+  // A domain whose mail servers are Microsoft 365's, found by MX on the real server.
+  if (domain === "firma.example") return "microsoft";
+  return null;
+}
 
 /** Moves from other providers: one finished a while ago and one on its way, which the mock walks forward. */
 const mockMoves: MoveJob[] = [
@@ -1417,6 +1510,7 @@ function stepMoves(): MovingView {
 
 const mockFetchView = (): FetchView => ({
   accounts: mockFetchAccounts,
+  signIn: { microsoft: true, google: true, redirectUri: "https://mail.example.org/api/account/fetch/oauth/callback" },
   max: 10,
   defaultPort: 993,
   defaultIntervalSecs: 300,
@@ -2483,6 +2577,7 @@ const routes: [string, RegExp, Handler][] = [
   // First, so they win over the older routes for the same addresses.
   ...ruleRoutes,
   ...pictureMockRoutes,
+  ...assistMockRoutes,
   ["GET", /^\/api\/admin\/alerts$/, () => [200, alertsView()]],
   [
     "POST",
@@ -3293,6 +3388,84 @@ const routes: [string, RegExp, Handler][] = [
   ],
   ["GET", /^\/api\/account\/fetch$/, () => [200, mockFetchView()]],
   [
+    "POST",
+    /^\/api\/account\/fetch\/provider$/,
+    (body) => {
+      const provider = mockProviderOf(((body as { address?: string }).address ?? "").trim());
+      return [200, { provider, ready: provider !== null }];
+    },
+  ],
+  [
+    "POST",
+    /^\/api\/account\/fetch\/oauth\/start$/,
+    (body) => {
+      const input = body as { address?: string; provider?: "microsoft" | "google"; switchId?: number };
+      const address = (input.address ?? "").trim().toLowerCase();
+      if (!address.includes("@")) return problem(409, "senderInvalid");
+      const flowId = `mockflow${Math.random().toString(36).slice(2, 12)}`;
+      const provider = input.provider === "google" ? "google" : "microsoft";
+      mockSignIns.set(flowId, { provider, address, switchId: input.switchId ?? null, polls: 0 });
+      if (provider === "google") {
+        // Google would come back to the callback, which sends the browser here.
+        return [200, { provider, flowId, url: `/account/fetch?oauth=${flowId}` }];
+      }
+      return [
+        200,
+        {
+          provider,
+          device: {
+            flowId,
+            userCode: "KX7-PQ4M",
+            verificationUri: "https://microsoft.com/devicelogin",
+            expiresIn: 900,
+            interval: 2,
+          },
+        },
+      ];
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/account\/fetch\/oauth\/flows\/([\w-]+)$/,
+    (_body, match) => {
+      const id = match[0] ?? "";
+      // Google's way round reloads the page, and the mock with it: a mock flow comes back as a new
+      // Google mailbox then.
+      if (!mockSignIns.has(id) && id.startsWith("mockflow")) {
+        mockSignIns.set(id, { provider: "google", address: "neu.mock@gmail.com", switchId: null, polls: 2 });
+      }
+      const flow = mockSignIns.get(id);
+      if (!flow) return [200, { status: "failed", error: "expired" }];
+      flow.polls += 1;
+      if (flow.polls < 4) return [200, { status: "pending", retryIn: 2 }];
+      const microsoft = flow.provider === "microsoft";
+      return [
+        200,
+        {
+          status: "ready",
+          provider: flow.provider,
+          address: flow.address,
+          switchId: flow.switchId,
+          settings: {
+            imap: {
+              host: microsoft ? "outlook.office365.com" : "imap.gmail.com",
+              port: 993,
+              security: "tls",
+              login: "wholeAddress",
+            },
+            smtp: {
+              host: microsoft ? "smtp-mail.outlook.com" : "smtp.gmail.com",
+              port: microsoft ? 587 : 465,
+              security: microsoft ? "starttls" : "tls",
+              login: "wholeAddress",
+            },
+            source: "signIn",
+          },
+        },
+      ];
+    },
+  ],
+  [
     // The real one asks DNS, the provider and Mozilla and then logs in; here two addresses stand
     // for the three ways it can go, so the page can be worked on without a provider.
     "POST",
@@ -3303,6 +3476,8 @@ const routes: [string, RegExp, Handler][] = [
       const domain = address.split("@")[1] ?? "";
       if (!domain.includes(".")) return problem(409, "senderInvalid");
       if (!input.password) return problem(409, "wrongPassword");
+      // Microsoft's "Basic authentication is disabled": the dialog switches to signing in.
+      if (mockProviderOf(address) === "microsoft") return problem(409, "passwordsRefused");
       // Whatever nobody publishes anything for: the dialog opens its fields.
       if (domain.endsWith("nowhere.example")) return problem(409, "providerNotFound");
       const localPart = ["icloud.com", "me.com", "web.de"].includes(domain);
@@ -3330,14 +3505,22 @@ const routes: [string, RegExp, Handler][] = [
     "POST",
     /^\/api\/account\/fetch$/,
     (body) => {
-      const input = body as Partial<FetchAccountInfo> & { password?: string; takeExisting?: boolean };
+      const input = body as Partial<FetchAccountInfo> & {
+        password?: string;
+        takeExisting?: boolean;
+        oauthFlow?: string;
+      };
       const address = (input.address ?? "").trim().toLowerCase();
       if (mockFetchAccounts.some((account) => account.address === address)) return problem(409, "conflict");
+      const signIn = input.oauthFlow ? mockSignIns.get(input.oauthFlow) : undefined;
+      if (input.oauthFlow && (!signIn || signIn.address !== address)) return problem(409, "signInExpired");
+      if (input.oauthFlow) mockSignIns.delete(input.oauthFlow);
+      const microsoft = signIn?.provider === "microsoft";
       const account: FetchAccountInfo = {
         id: mockFetchAccounts.length + 1,
         accountId: 1,
         address,
-        host: input.host ?? "",
+        host: signIn ? (microsoft ? "outlook.office365.com" : "imap.gmail.com") : (input.host ?? ""),
         port: input.port ?? 993,
         security: "tls",
         username: input.username ?? address,
@@ -3357,7 +3540,16 @@ const routes: [string, RegExp, Handler][] = [
         lastFetched: 0,
         totalFetched: 0,
         backlogAt: input.takeExisting ? Math.floor(Date.now() / 1000) : null,
+        auth: signIn ? signIn.provider : "password",
+        loginExpired: false,
+        passwordRefused: false,
+        signIn: signIn ? null : mockProviderOf(address),
       };
+      if (signIn) {
+        account.smtpHost = microsoft ? "smtp-mail.outlook.com" : "smtp.gmail.com";
+        account.smtpPort = microsoft ? 587 : 465;
+        account.smtpSecurity = microsoft ? "starttls" : "tls";
+      }
       mockFetchAccounts.push(account);
       return [201, account];
     },
@@ -3380,7 +3572,24 @@ const routes: [string, RegExp, Handler][] = [
     (body, match) => {
       const account = mockFetchAccounts.find((entry) => entry.id === Number(match[0]));
       if (!account) return problem(404, "notFound");
-      const changes = body as Partial<FetchAccountInfo>;
+      const changes = body as Partial<FetchAccountInfo> & { oauthFlow?: string; password?: string };
+      if (changes.oauthFlow) {
+        const signIn = mockSignIns.get(changes.oauthFlow);
+        if (!signIn || signIn.switchId !== account.id) return problem(409, "signInExpired");
+        mockSignIns.delete(changes.oauthFlow);
+        Object.assign(account, {
+          auth: signIn.provider,
+          loginExpired: false,
+          passwordRefused: false,
+          signIn: null,
+          lastError: "",
+        });
+        return [200, account];
+      }
+      if (changes.password) {
+        Object.assign(account, { auth: "password", loginExpired: false, passwordRefused: false });
+        delete changes.password;
+      }
       // The server refuses both of these, and a mock that is friendlier than the server hides
       // exactly the mistakes this page is written to avoid.
       if (changes.sendEnabled) {

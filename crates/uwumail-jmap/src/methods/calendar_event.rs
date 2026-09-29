@@ -5,7 +5,7 @@
 //! calcard makes of the stored object. Instances of a series that a query expands get ids of their
 //! own (`v12_20261027T090000`), which /get and /set understand.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use chrono_tz::Tz;
@@ -96,6 +96,7 @@ fn decorate(
     record: &CalendarEventRecord,
     base: Option<i64>,
     own: &[String],
+    birthdays: &HashSet<i64>,
 ) {
     let origin = is_origin(object, own);
     object.insert("id".into(), json!(id));
@@ -103,6 +104,35 @@ fn decorate(
     object.insert("isDraft".into(), json!(record.is_draft));
     object.insert("isOrigin".into(), json!(origin));
     object.insert("baseEventId".into(), json!(base.map(ids::calendar_event)));
+    // Only the birthdays calendar's own entries: the marker can be written into any event, by an
+    // invitation from outside too (BDAY-3 of the 0.18.0 audit).
+    if birthdays.contains(&record.calendar_id) {
+        decorate_birthday(object, &record.content);
+    }
+}
+
+/// An event of the birthdays calendar says whose date it is (`uwuBirthday`, docs/birthdays.md),
+/// and an instance of one has the age of its year in its title: "Max Muster (30)".
+fn decorate_birthday(object: &mut Map<String, Value>, content: &str) {
+    let Some(event) = uwumail_store::birthdays::birthday_event(content) else { return };
+    let year = object
+        .get("recurrenceId")
+        .and_then(Value::as_str)
+        .and_then(|rid| rid.get(..4))
+        .and_then(|year| year.parse::<i32>().ok());
+    if let Some(year) = year {
+        object.insert("title".into(), json!(event.title_in(year)));
+    }
+    object.insert(
+        "uwuBirthday".into(),
+        json!({
+            "contactId": ids::contact_card(event.card_id),
+            "kind": event.kind.as_str(),
+            "label": event.label,
+            "name": event.name,
+            "year": event.year,
+        }),
+    );
 }
 
 /// The requested properties of an event; `None` asks for all stored ones.
@@ -431,13 +461,19 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         }
     };
     let own = own_addresses(ctx).await?;
+    let mut birthdays = HashSet::new();
+    for owner in loaded.iter().map(|loaded| loaded.record.owner_id).collect::<BTreeSet<i64>>() {
+        if let Some(calendar) = ctx.jmap.store.birthday_calendar(owner).await? {
+            birthdays.insert(calendar.id);
+        }
+    }
     let shaping = Shaping::from(args, own.clone())?;
     let (list, not_found) = run_blocking(move || -> MethodResult<(Vec<Value>, Vec<String>)> {
         let by_id: HashMap<i64, &Loaded> = loaded.iter().map(|l| (l.record.id, l)).collect();
         let stored = |loaded: &Loaded| {
             let mut object = loaded.view();
             shaping.apply(&mut object, floating);
-            decorate(&mut object, ids::calendar_event(loaded.record.id), &loaded.record, None, &own);
+            decorate(&mut object, ids::calendar_event(loaded.record.id), &loaded.record, None, &own, &birthdays);
             output(object, &properties, floating)
         };
         let Some(wanted) = wanted else {
@@ -458,7 +494,7 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
                     match loaded.other_instance(rid) {
                         Some(Some(mut object)) => {
                             shaping.apply(&mut object, floating);
-                            decorate(&mut object, text.clone(), &loaded.record, Some(*n), &own);
+                            decorate(&mut object, text.clone(), &loaded.record, Some(*n), &own, &birthdays);
                             return Some(output(object, &properties, floating));
                         }
                         Some(None) => return None,
@@ -471,7 +507,7 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
                     }
                     let mut object = jscal::instance(&loaded.view(), rid)?;
                     shaping.apply(&mut object, floating);
-                    decorate(&mut object, text.clone(), &loaded.record, Some(*n), &own);
+                    decorate(&mut object, text.clone(), &loaded.record, Some(*n), &own, &birthdays);
                     Some(output(object, &properties, floating))
                 }),
                 None => None,

@@ -221,7 +221,7 @@ fn random_suffix() -> String {
     hex::encode(bytes)
 }
 
-/// The data directory's files besides the database, the blobs and our own scratch space.
+/// The data directory's files besides the database, the blobs, caches and our own scratch space.
 fn other_files(data_dir: &Path) -> Vec<(String, PathBuf)> {
     let mut found = Vec::new();
     let mut pending = vec![(String::new(), data_dir.to_path_buf())];
@@ -230,7 +230,10 @@ fn other_files(data_dir: &Path) -> Vec<(String, PathBuf)> {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
             let relative = if prefix.is_empty() { name.clone() } else { format!("{prefix}/{name}") };
-            if prefix.is_empty() && (name == "blobs" || name == TEMP_DIR || name.starts_with("uwumail.db")) {
+            // `cache`: remote pictures and the like, fetched again when needed.
+            if prefix.is_empty()
+                && (name == "blobs" || name == "cache" || name == TEMP_DIR || name.starts_with("uwumail.db"))
+            {
                 continue;
             }
             let Ok(kind) = entry.file_type() else { continue };

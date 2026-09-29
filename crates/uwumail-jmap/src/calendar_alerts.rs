@@ -337,6 +337,15 @@ pub fn next_alerts(
     floating: chrono_tz::Tz,
     after: i64,
 ) -> Vec<uwumail_store::PlannedAlert> {
+    // Without an alert anywhere, a never-ending series (a birthday) is not expanded for nothing.
+    let has_alerts = |object: &Map<String, Value>| object.keys().any(|key| key.split('/').next() == Some("alerts"));
+    let overridden = event
+        .get("recurrenceOverrides")
+        .and_then(Value::as_object)
+        .is_some_and(|overrides| overrides.values().filter_map(Value::as_object).any(has_alerts));
+    if !has_alerts(event) && !overridden {
+        return Vec::new();
+    }
     let mut next: Planned = Default::default();
     let consider = |next: &mut Planned, recurrence_id: Option<&str>, object: &Map<String, Value>| {
         let Some(Value::Object(alerts)) = object.get("alerts") else { return };

@@ -46,6 +46,15 @@ pub enum Notice {
     OAuthTokenReused {
         name: String,
     },
+    /// Microsoft or Google ended the sign-in of a fetched mailbox (docs/fetch.md).
+    FetchSignInExpired {
+        address: String,
+        provider: String,
+    },
+    /// Microsoft takes no password for a fetched mailbox any more: it has to sign in instead.
+    FetchPasswordRefused {
+        address: String,
+    },
 }
 
 impl Notice {
@@ -67,6 +76,8 @@ impl Notice {
             Notice::SecondFactorLocked => "secondFactorLocked",
             Notice::OAuthGranted { .. } => "oauthGranted",
             Notice::OAuthTokenReused { .. } => "oauthTokenReused",
+            Notice::FetchSignInExpired { .. } => "fetchSignInExpired",
+            Notice::FetchPasswordRefused { .. } => "fetchPasswordRefused",
         }
     }
 
@@ -80,6 +91,10 @@ impl Notice {
             }
             Notice::OAuthGranted { name, scopes } => serde_json::json!({ "name": name, "scopes": scopes }),
             Notice::RecoveryCodeUsed { left } => serde_json::json!({ "left": left }),
+            Notice::FetchSignInExpired { address, provider } => {
+                serde_json::json!({ "address": address, "provider": provider })
+            }
+            Notice::FetchPasswordRefused { address } => serde_json::json!({ "address": address }),
             Notice::ForwardingAdded { address } => serde_json::json!({ "address": address }),
             _ => Value::Object(Default::default()),
         }
@@ -142,6 +157,8 @@ impl Notice {
                     "Anmeldung vorübergehend gesperrt",
                     format!("bei der Anmeldung in dein Konto {login} wurde zu oft ein falscher zweiter Faktor eingegeben, nach dem richtigen Passwort. Die Anmeldung ist deshalb für 15 Minuten gesperrt."),
                 ),
+                Notice::FetchSignInExpired { address, provider } => ("Anmeldung für ein Abrufkonto abgelaufen", format!("die Anmeldung bei {provider} für dein Abrufkonto {address} ist abgelaufen oder wurde widerrufen. Bis du dich neu anmeldest, wird dort keine Mail abgeholt und nichts von dieser Adresse gesendet. Melde dich unter Mein Konto → Abrufkonten erneut an.")),
+                Notice::FetchPasswordRefused { address } => ("Abrufkonto braucht die Microsoft-Anmeldung", format!("Microsoft lässt für dein Abrufkonto {address} keine Anmeldung mit Passwort mehr zu, auch nicht mit einem App-Passwort. Stell es unter Mein Konto → Abrufkonten auf „Mit Microsoft anmelden“ um.")),
             },
             Language::En => match self {
                 Notice::PasswordChanged => {
@@ -194,6 +211,8 @@ impl Notice {
                     "Logging in paused",
                     format!("a wrong second factor was entered too often while logging in to your account {login}, after the right password. Logging in is paused for 15 minutes."),
                 ),
+                Notice::FetchSignInExpired { address, provider } => ("Sign-in of a fetched mailbox expired", format!("the sign-in at {provider} for your fetched mailbox {address} expired or was revoked. Until you sign in again, no mail is fetched from it and nothing is sent from that address. Sign in again under My account → Fetched mailboxes.")),
+                Notice::FetchPasswordRefused { address } => ("Fetched mailbox needs the Microsoft sign-in", format!("Microsoft no longer accepts a password for your fetched mailbox {address}, not even an app password. Switch it to “Sign in with Microsoft” under My account → Fetched mailboxes.")),
             },
             Language::Fr => match self {
                 Notice::PasswordChanged => {
@@ -252,6 +271,8 @@ impl Notice {
                     "Connexion temporairement bloquée",
                     format!("un second facteur erroné a été saisi trop souvent lors de la connexion à votre compte {login}, après le bon mot de passe. La connexion est donc bloquée pendant 15 minutes."),
                 ),
+                Notice::FetchSignInExpired { address, provider } => ("Connexion d'une boîte relevée expirée", format!("la connexion chez {provider} pour votre boîte relevée {address} a expiré ou a été révoquée. Tant que vous ne vous reconnectez pas, aucun message n'y est relevé et rien n'est envoyé depuis cette adresse. Reconnectez-vous sous Mon compte → Boîtes relevées.")),
+                Notice::FetchPasswordRefused { address } => ("La boîte relevée demande la connexion Microsoft", format!("Microsoft n'accepte plus de mot de passe pour votre boîte relevée {address}, pas même un mot de passe d'application. Passez-la à « Se connecter avec Microsoft » sous Mon compte → Boîtes relevées.")),
             },
             Language::Nl => match self {
                 Notice::PasswordChanged => {
@@ -307,6 +328,8 @@ impl Notice {
                     "Inloggen tijdelijk geblokkeerd",
                     format!("bij het inloggen op je account {login} is na het juiste wachtwoord te vaak een verkeerde tweede factor ingevoerd. Inloggen is daarom 15 minuten geblokkeerd."),
                 ),
+                Notice::FetchSignInExpired { address, provider } => ("Aanmelding van een opgehaalde mailbox verlopen", format!("de aanmelding bij {provider} voor je opgehaalde mailbox {address} is verlopen of ingetrokken. Tot je je opnieuw aanmeldt, wordt daar geen mail opgehaald en niets vanaf dat adres verstuurd. Meld je opnieuw aan onder Mijn account → Opgehaalde mailboxen.")),
+                Notice::FetchPasswordRefused { address } => ("Opgehaalde mailbox heeft de Microsoft-aanmelding nodig", format!("Microsoft accepteert geen wachtwoord meer voor je opgehaalde mailbox {address}, ook geen app-wachtwoord. Zet hem om naar ‘Aanmelden met Microsoft’ onder Mijn account → Opgehaalde mailboxen.")),
             },
             Language::Ja => match self {
                 Notice::PasswordChanged => {
@@ -363,6 +386,8 @@ impl Notice {
                     "ログインが一時的にロックされました",
                     format!("アカウント {login} へのログインで、正しいパスワードの後に誤った2段階目の認証が何度も入力されました。そのため、ログインは15分間ロックされています。"),
                 ),
+                Notice::FetchSignInExpired { address, provider } => ("取り込みアカウントのサインインが期限切れです", format!("取り込みアカウント {address} の {provider} でのサインインが期限切れになったか、取り消されました。サインインし直すまで、メールは取り込まれず、このアドレスからは送信されません。「マイアカウント」→「取り込みアカウント」でサインインし直してください。")),
+                Notice::FetchPasswordRefused { address } => ("取り込みアカウントに Microsoft サインインが必要です", format!("Microsoft は取り込みアカウント {address} のパスワードでのログインを受け付けなくなりました（アプリパスワードも同様です）。「マイアカウント」→「取り込みアカウント」で「Microsoft でサインイン」に切り替えてください。")),
             },
             Language::Zh => match self {
                 Notice::PasswordChanged => {
@@ -415,6 +440,8 @@ impl Notice {
                     "登录已暂时锁定",
                     format!("登录你的账户 {login} 时，在输入正确密码后，第二步验证多次输入错误。因此登录已被锁定 15 分钟。"),
                 ),
+                Notice::FetchSignInExpired { address, provider } => ("收取邮箱的登录已过期", format!("你的收取邮箱 {address} 在 {provider} 的登录已过期或被撤销。在你重新登录之前，不会从那里收取邮件，也不会从这个地址发送邮件。请在“我的账户”→“收取邮箱”中重新登录。")),
+                Notice::FetchPasswordRefused { address } => ("收取邮箱需要使用 Microsoft 登录", format!("Microsoft 不再接受你的收取邮箱 {address} 使用密码登录，应用专用密码也不行。请在“我的账户”→“收取邮箱”中将其切换为“使用 Microsoft 登录”。")),
             },
         }
     }
@@ -463,6 +490,20 @@ pub async fn notify(web: &Web, account: &Account, notice: Notice, origin: Origin
         if account.display_name.trim().is_empty() { account.login.as_str() } else { account.display_name.trim() };
     let ip_line = if origin.ip.is_empty() { String::new() } else { format!("\nIP: {}", origin.ip) };
     let now = crate::health::unix_now();
+    // About a mailbox elsewhere, not about this login: nothing to check or change here, only where to
+    // put it right.
+    if matches!(notice, Notice::FetchSignInExpired { .. } | Notice::FetchPasswordRefused { .. }) {
+        let greeting = match language {
+            Language::De | Language::Nl => format!("Hallo {name},"),
+            Language::En => format!("Hi {name},"),
+            Language::Fr => format!("Bonjour {name},"),
+            Language::Ja => format!("{name} さん"),
+            Language::Zh => format!("{name}，你好："),
+        };
+        let body = format!("{greeting}\n\n{sentence}\n\nhttps://{hostname}/account/fetch\n\n{brand} · {hostname}\n");
+        deliver_notice(web, account, brand, name, subject, body, now).await;
+        return;
+    }
     let body = match language {
         Language::De => format!(
             "Hallo {name},\n\n{sentence}\n\nZeitpunkt: {}{ip_line}\n\n\
@@ -519,6 +560,12 @@ pub async fn notify(web: &Web, account: &Account, notice: Notice, origin: Origin
             when(now)
         ),
     };
+    deliver_notice(web, account, brand, name, subject, body, now).await;
+}
+
+/// Puts a notice into the person's inbox (or where their mail goes).
+async fn deliver_notice(web: &Web, account: &Account, brand: &str, name: &str, subject: &str, body: String, now: i64) {
+    let hostname = &web.settings().hostname;
     let domain = account.login.rsplit_once('@').map(|(_, domain)| domain).unwrap_or(hostname);
     let message = MessageBuilder::new()
         .from((brand.to_owned(), format!("postmaster@{domain}")))

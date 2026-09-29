@@ -134,6 +134,17 @@ signed with the server's VAPID key ([jmap-push.md](jmap-push.md)).
 `Email/unsubscribe` sends a newsletter's one-click unsubscription (RFC 8058)
 through the same egress as remote pictures, and only for a `List-Unsubscribe`
 a DKIM signature still vouches for ([jmap-unsubscribe.md](jmap-unsubscribe.md)).
+Remote pictures come through `/jmap/image`, fetched once for the whole server
+into a shared disk cache (`uwumail-smtp` `remote_images`: single flight, fair
+shares per person, sizes told from the first bytes) ([jmap-remote.md](jmap-remote.md)).
+`Email/imageText` reads the text in a message's pictures with Tesseract, run as
+a program of its own ([jmap-image-text.md](jmap-image-text.md)).
+The AI assistant (`urn:uwumail:jmap:assist`) lives in its own crate,
+`uwumail-assist`: providers and the admin's policy, the two API shapes (Chat
+Completions and Anthropic Messages, streamed or not), prompts that treat the
+mail as data, checked answers, quotas, and the label queue that inbound delivery
+fills and a background worker empties ([llm.md](llm.md),
+[jmap-assist.md](jmap-assist.md)).
 
 ### `uwumail-imap`
 

@@ -215,6 +215,17 @@ impl Client {
         self.send(&format!("AUTH PLAIN {}\r\n", BASE64.encode(token))).await
     }
 
+    /// Logs in with an OAuth access token (SASL XOAUTH2), the way Microsoft and Google take one. A
+    /// refused token is answered with a 334 carrying the reason; the empty line after it gets the final
+    /// no.
+    pub async fn auth_xoauth2(&mut self, username: &str, token: &str) -> std::io::Result<Reply> {
+        let reply = self.send(&format!("AUTH XOAUTH2 {}\r\n", crate::provider_oauth::xoauth2(username, token))).await?;
+        if reply.code == 334 {
+            return self.send("\r\n").await;
+        }
+        Ok(reply)
+    }
+
     /// Sends the message body after a 354 and returns the final reply.
     pub async fn data(&mut self, raw: &[u8], data_timeout: Duration) -> std::io::Result<Reply> {
         let body = dot_stuff(raw);
@@ -268,7 +279,46 @@ pub fn dot_stuff(raw: &[u8]) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
     use super::*;
+
+    /// XOAUTH2 as Microsoft and Google answer it: 235 for a good token; for a bad one a 334 with the
+    /// reason, the empty line the client owes it, and then the no.
+    #[tokio::test]
+    async fn xoauth2_logs_in_and_answers_the_error_challenge() {
+        let (ours, theirs) = tokio::io::duplex(4096);
+        let server = tokio::spawn(async move {
+            let mut theirs = BufReader::new(theirs);
+            let mut heard = Vec::new();
+            for reply in [
+                "235 2.7.0 Accepted\r\n",
+                "334 eyJzdGF0dXMiOiI0MDEifQ==\r\n",
+                "535 5.7.3 Authentication unsuccessful\r\n",
+            ] {
+                let mut line = String::new();
+                theirs.read_line(&mut line).await.unwrap();
+                heard.push(line);
+                theirs.get_mut().write_all(reply.as_bytes()).await.unwrap();
+            }
+            heard
+        });
+        let mut client = Client {
+            stream: Stream::Plain(Box::new(ours)),
+            pending: Vec::new(),
+            command_timeout: Duration::from_secs(5),
+            local_ip: None,
+        };
+        assert_eq!(client.auth_xoauth2("mini@outlook.com", "good").await.unwrap().code, 235);
+        assert_eq!(client.auth_xoauth2("mini@outlook.com", "bad").await.unwrap().code, 535);
+        let heard = server.await.unwrap();
+        assert_eq!(
+            heard[0],
+            format!("AUTH XOAUTH2 {}\r\n", crate::provider_oauth::xoauth2("mini@outlook.com", "good"))
+        );
+        assert!(heard[1].starts_with("AUTH XOAUTH2 "));
+        assert_eq!(heard[2], "\r\n", "the error challenge is answered with an empty line");
+    }
 
     #[test]
     fn stuffs_dots_and_terminates() {

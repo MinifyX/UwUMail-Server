@@ -32,6 +32,9 @@ pub const REMOTE: &str = "urn:uwumail:jmap:remote";
 /// Our own extension: one-click unsubscribing (RFC 8058) sent by the server, `Email/unsubscribe`
 /// (docs/jmap-unsubscribe.md).
 pub const UNSUBSCRIBE: &str = "urn:uwumail:jmap:unsubscribe";
+/// Our own extension: the text in a message's pictures, read with OCR, `Email/imageText`
+/// (docs/jmap-image-text.md).
+pub const IMAGETEXT: &str = "urn:uwumail:jmap:imagetext";
 /// JMAP Calendars (draft-ietf-jmap-calendars) on the CalDAV calendars; see docs/jmap-calendars.md.
 pub const CALENDARS: &str = "urn:ietf:params:jmap:calendars";
 /// When people are busy, `Principal/getAvailability` (draft-ietf-jmap-calendars, section 2.2).
@@ -49,6 +52,11 @@ pub const CONTACTS: &str = "urn:ietf:params:jmap:contacts";
 pub const MASKED: &str = "https://www.fastmail.com/dev/maskedemail";
 /// Our own extension: the account's profile picture and who sees it (docs/profile-pictures.md).
 pub const PROFILE: &str = "urn:uwumail:jmap:profile";
+/// Our own extension: moving birthdays from calendars into the contacts, whose birthdays calendar
+/// then shows them (`Birthdays/scan`, `Birthdays/import`, docs/birthdays.md).
+pub const BIRTHDAYS: &str = "urn:uwumail:jmap:birthdays";
+/// Our own extension: the AI assistant, whose models are asked by the server (docs/jmap-assist.md).
+pub const ASSIST: &str = "urn:uwumail:jmap:assist";
 /// The server's VAPID key for Web Push subscriptions (RFC 9749); see docs/jmap-push.md.
 pub const WEBPUSH_VAPID: &str = "urn:ietf:params:jmap:webpush-vapid";
 
@@ -141,6 +149,7 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
             UNSUBSCRIBE: {},
             REMOTE: {
                 "imageUrl": format!("{base}/jmap/image/{{accountId}}?url={{url}}"),
+                "imageSizesUrl": format!("{base}/jmap/image/{{accountId}}/sizes"),
                 "pictureUrl": format!("{base}/jmap/picture/{{accountId}}?email={{email}}"),
                 "maxSizeImage": crate::remote::MAX_IMAGE_BYTES
             }
@@ -200,7 +209,8 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
             SUGGEST: account_id.clone(),
             SIEVE: account_id.clone(),
             MASKED: account_id.clone(),
-            UNSUBSCRIBE: account_id.clone()
+            UNSUBSCRIBE: account_id.clone(),
+            IMAGETEXT: account_id.clone()
         },
         "username": account.login,
         "apiUrl": format!("{base}/jmap/api"),
@@ -237,6 +247,15 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
             "mayCreateAddressBook": true
         });
         document["primaryAccounts"][CONTACTS] = json!(account_id);
+    }
+    // Birthdays go from calendars into address books: both are needed.
+    if account.protocols.caldav && account.protocols.carddav && may_use_dav {
+        document["capabilities"][BIRTHDAYS] = json!({});
+        document["accounts"][&account_id]["accountCapabilities"][BIRTHDAYS] = json!({
+            "maxImport": crate::methods::MAX_BIRTHDAY_IMPORT,
+            "maxCandidates": uwumail_store::birthday_import::MAX_CANDIDATES
+        });
+        document["primaryAccounts"][BIRTHDAYS] = json!(account_id);
     }
     document
 }
@@ -287,6 +306,13 @@ pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInf
             document["capabilities"][PROFILE] = profile.clone();
             document["accounts"][ids::account(account.id)]["accountCapabilities"][PROFILE] = profile;
             document["primaryAccounts"][PROFILE] = json!(ids::account(account.id));
+            // Whether text in pictures can be read here: the capability is there either way.
+            let image_text = crate::methods::image_text::capability(&jmap.inner.ocr).await;
+            document["capabilities"][IMAGETEXT] = image_text.clone();
+            document["accounts"][ids::account(account.id)]["accountCapabilities"][IMAGETEXT] = image_text.clone();
+            for (owner, _, _) in &shared {
+                document["accounts"][ids::account(*owner)]["accountCapabilities"][IMAGETEXT] = image_text.clone();
+            }
             let masked_state = masked_state(&jmap.inner.store).await;
             // The key a browser binds its push subscription to. It never changes, so the session
             // state need not say anything about it.
@@ -294,8 +320,9 @@ pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInf
                 document["capabilities"][WEBPUSH_VAPID] = json!({ "applicationServerKey": vapid.public_key() });
             }
             let picture_state = if may_be_public { "-p1" } else { "-p0" };
+            let assist_state = add_assist(&jmap, &mut document, &account, &base).await;
             document["state"] = json!(format!(
-                "{}{}{masked_state}{picture_state}",
+                "{}{}{masked_state}{picture_state}{assist_state}",
                 session_state(&account),
                 crate::sharing::state_suffix(&shared)
             ));
@@ -303,6 +330,34 @@ pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInf
         }
         Err(err) => err.into_response(),
     }
+}
+
+/// The AI assistant's capability, for the person's own account only, when the server has the
+/// assistant. Answers the part of the session state that moves when it changes.
+async fn add_assist(jmap: &Jmap, document: &mut Value, account: &Account, base: &str) -> String {
+    let Some(assist) = &jmap.inner.assist else { return String::new() };
+    let capability = match assist.capability(account).await {
+        Ok(capability) => capability,
+        Err(err) => {
+            tracing::warn!(%err, "reading the AI assistant's capability failed");
+            return String::new();
+        }
+    };
+    let account_id = ids::account(account.id);
+    document["capabilities"][ASSIST] = json!({ "streamUrl": format!("{base}/jmap/assist/stream") });
+    document["accounts"][&account_id]["accountCapabilities"][ASSIST] = json!(capability);
+    document["primaryAccounts"][ASSIST] = json!(account_id);
+    let features = &capability.features;
+    let bits = [
+        features.compose,
+        features.summarize,
+        features.spam_check,
+        features.extract_events,
+        features.auto_labels,
+        capability.may_add_providers,
+        capability.may_use_private_addresses,
+    ];
+    format!("-ai{}", bits.iter().map(|on| if *on { '1' } else { '0' }).collect::<String>())
 }
 
 #[cfg(test)]

@@ -47,6 +47,11 @@ pub fn smtp(store: &Store) -> Smtp {
 }
 
 pub async fn server() -> Server {
+    server_with(|jmap| jmap).await
+}
+
+/// The same with the JMAP service changed by `configure` before its router is built.
+pub async fn server_with(configure: impl FnOnce(Jmap) -> Jmap) -> Server {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
     store.create_domain("example.org").await.unwrap();
@@ -63,7 +68,7 @@ pub async fn server() -> Server {
             .await
             .unwrap();
     }
-    let jmap = Jmap::new(smtp(&store)).with_avatar_net(std::sync::Arc::new(NoNet));
+    let jmap = configure(Jmap::new(smtp(&store)).with_avatar_net(std::sync::Arc::new(NoNet)));
     Server { router: jmap.router(), jmap, store, dir }
 }
 

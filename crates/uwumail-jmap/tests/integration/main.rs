@@ -2,18 +2,22 @@
 //! `target/` small and linking fast. Add new test files as modules here.
 
 mod api;
+mod assist;
+mod birthdays;
 mod calendar_features;
 mod calendar_sharing;
 mod calendars;
 mod common;
 mod conformance;
 mod contacts;
+mod image_text;
 mod limits;
 mod masked_email;
 mod masked_scope;
 mod pictures;
 mod profile;
 mod query_changes;
+mod remote_images;
 mod sharing;
 mod sieve;
 mod signatures;

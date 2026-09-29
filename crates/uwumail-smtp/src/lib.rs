@@ -29,8 +29,10 @@ mod outbound;
 pub mod palette;
 pub mod pictures;
 pub mod profile_pictures;
+pub mod provider_oauth;
 pub mod reachability;
 mod relay;
+pub mod remote_images;
 mod reports;
 mod rules;
 pub mod scheduling;
@@ -140,6 +142,8 @@ pub(crate) struct Context {
     connector: RwLock<Option<Arc<dyn Connector>>>,
     /// Name, colour and mascot the server shows; changed in place from the admin panel.
     brand: RwLock<Arc<BrandConfig>>,
+    /// Signing in at Microsoft and Google for fetched mailboxes, and their tokens.
+    pub(crate) provider_oauth: provider_oauth::ProviderOAuth,
 }
 
 /// The settings in effect right now. Take a snapshot per connection or delivery.
@@ -155,6 +159,8 @@ impl Live {
     fn new(smtp: SmtpConfig, spam: SpamConfig, delivery: DeliveryConfig, tone: ToneConfig) -> Result<Live, SmtpError> {
         let trusted_relays = relay::parse_networks(&smtp.trusted_relays)
             .map_err(|err| SmtpError::Config(format!("smtp.trusted_relays: {err}")))?;
+        // The birthdays calendar of people who left the language to the server follows it.
+        uwumail_store::birthdays::set_server_language(tone.language.code());
         Ok(Live { smtp, spam, delivery, tone, trusted_relays })
     }
 }
@@ -235,6 +241,7 @@ impl Smtp {
                 stats: health::DeliveryStats::default(),
                 connector: RwLock::new(None),
                 brand: RwLock::new(Arc::new(BrandConfig::default())),
+                provider_oauth: provider_oauth::ProviderOAuth::default(),
             }),
         })
     }
@@ -272,6 +279,26 @@ impl Smtp {
 
     pub fn store(&self) -> &Store {
         &self.inner.store
+    }
+
+    /// Signing in at Microsoft and Google for fetched mailboxes (docs/fetch.md).
+    pub fn provider_oauth(&self) -> &provider_oauth::ProviderOAuth {
+        &self.inner.provider_oauth
+    }
+
+    /// The mail servers a domain names, for telling who runs its mail. Empty when it names none or
+    /// the lookup failed.
+    pub async fn mx_hosts(&self, domain: &str) -> Vec<String> {
+        match self.inner.authenticator.mx_lookup(domain, Some(&self.inner.dns.mx)).await {
+            Ok(records) => records
+                .rrset
+                .iter()
+                .flat_map(|mx| mx.exchanges.iter())
+                .map(|host| host.trim_end_matches('.').to_ascii_lowercase())
+                .take(16)
+                .collect(),
+            Err(_) => Vec::new(),
+        }
     }
 
     /// The virus scanner's settings as they are right now.

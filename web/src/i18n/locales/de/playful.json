@@ -195,5 +195,20 @@
       "intro": "Zeig dich! Leute hier sehen dein Bild neben deinen Mails (=^･ω･^=)"
     },
     "saved": "Schick! Bild gespeichert (◕‿◕✿)"
+  },
+  "assist": {
+    "intro": "Ich helfe dir mit deinen Mails: schreiben, aufräumen, zusammenfassen, Spam erschnüffeln und Termine finden. Das letzte Wort hast immer du (｡･ω･｡)",
+    "usage": {
+      "todayEmpty": "Heute hat mich noch niemand gefragt. Ich bin ausgeruht (˘ᵕ˘)"
+    },
+    "choices": {
+      "saved": "Alles klar! Ab jetzt frag ich die (◕‿◕✿)"
+    },
+    "chatgpt": {
+      "connected": "Mit ChatGPT angemeldet (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧"
+    },
+    "account": {
+      "noneAskAdmin": "Hier gibt's noch nichts. Frag deinen Admin lieb nach einem Anbieter (・ω・)"
+    }
   }
 }

@@ -1,6 +1,8 @@
 //! Method implementations and the helpers they share.
 
 mod address_book;
+pub mod assist;
+mod birthdays;
 mod calendar;
 mod calendar_event;
 mod calendar_notification;
@@ -8,6 +10,7 @@ mod contact_card;
 mod copy;
 mod email;
 mod identity;
+pub(crate) mod image_text;
 mod mailbox;
 mod masked;
 mod principal;
@@ -32,8 +35,8 @@ use uwumail_store::{Account, Changes};
 use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
 use crate::session::{
-    AVAILABILITY, CALENDARS, CALENDARS_PARSE, CONTACTS, CORE, MAIL, MASKED, PROFILE, SENDERS, SETTINGS, SIEVE,
-    SUBMISSION, SUGGEST, UNSUBSCRIBE, VACATION, WEBMAIL, WEBPUSH_VAPID, WEBSOCKET,
+    ASSIST, AVAILABILITY, BIRTHDAYS, CALENDARS, CALENDARS_PARSE, CONTACTS, CORE, IMAGETEXT, MAIL, MASKED, PROFILE,
+    SENDERS, SETTINGS, SIEVE, SUBMISSION, SUGGEST, UNSUBSCRIBE, VACATION, WEBMAIL, WEBPUSH_VAPID, WEBSOCKET,
 };
 use crate::sharing::{self, PRINCIPALS, SharedView};
 use crate::{Inner, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, ids};
@@ -58,16 +61,28 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     WEBPUSH_VAPID,
     UNSUBSCRIBE,
     PROFILE,
+    IMAGETEXT,
+    BIRTHDAYS,
+    ASSIST,
 ];
 
 pub(crate) use calendar_event::event_for_alerts;
 
 /// The data types of calendars and address books: only for credentials with the `dav` scope.
-const DAV_TYPES: &[&str] =
-    &["Calendar", "CalendarEvent", "CalendarEventNotification", "ParticipantIdentity", "AddressBook", "ContactCard"];
+const DAV_TYPES: &[&str] = &[
+    "Calendar",
+    "CalendarEvent",
+    "CalendarEventNotification",
+    "ParticipantIdentity",
+    "AddressBook",
+    "ContactCard",
+    "Birthdays",
+];
 
 /// The most suggestions one `AddressSuggestion/query` returns.
 pub const MAX_SUGGESTIONS: usize = suggest::MAX_LIMIT;
+/// The most birthdays one `Birthdays/import` moves.
+pub const MAX_BIRTHDAY_IMPORT: usize = birthdays::MAX_IMPORT;
 
 /// One or more `(method name, arguments)` responses for a call.
 pub type Outputs = Vec<(String, Value)>;
@@ -214,6 +229,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "Principal" if name == "Principal/getAvailability" => AVAILABILITY,
         "CalendarEvent" if name == "CalendarEvent/parse" => CALENDARS_PARSE,
         _ if name == "Email/unsubscribe" => UNSUBSCRIBE,
+        _ if name == "Email/imageText" => IMAGETEXT,
         "Principal" => PRINCIPALS,
         "Core" | "PushSubscription" => CORE,
         "Mailbox" | "Email" | "Thread" | "SearchSnippet" => MAIL,
@@ -227,6 +243,8 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "AddressSuggestion" => SUGGEST,
         "MaskedEmail" => MASKED,
         "ProfilePicture" => PROFILE,
+        "Birthdays" => BIRTHDAYS,
+        "Assist" | "AssistProvider" | "AssistSettings" | "AssistLabel" => ASSIST,
         _ => return Err(MethodError::kind("unknownMethod")),
     };
     if !requires(capability, &ctx.using) {
@@ -280,6 +298,7 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "Email/import" => single(email::import(ctx, &args).await?),
         "Email/parse" => single(email::parse(ctx, &args).await?),
         "Email/unsubscribe" => single(unsubscribe::unsubscribe(ctx, &args).await?),
+        "Email/imageText" => single(image_text::image_text(ctx, &args).await?),
         "SearchSnippet/get" => single(snippet::get(ctx, &args).await?),
         "Identity/get" => single(identity::get(ctx, &args).await?),
         "Identity/changes" => single(changes(ctx, &args, "Identity", 'i').await?),
@@ -294,6 +313,8 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "SenderList/set" => single(senders::set(ctx, &args).await?),
         "UserSettings/get" => single(settings::get(ctx, &args).await?),
         "UserSettings/set" => single(settings::set(ctx, &args).await?),
+        "Birthdays/scan" => single(birthdays::scan(ctx, &args).await?),
+        "Birthdays/import" => single(birthdays::import(ctx, &args).await?),
         "Calendar/get" => single(calendar::get(ctx, &args).await?),
         "Calendar/changes" => {
             calendar::check_enabled(ctx)?;
@@ -351,6 +372,23 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "MaskedEmail/set" => single(masked::set(ctx, &args).await?),
         "ProfilePicture/get" => single(profile::get(ctx, &args).await?),
         "ProfilePicture/set" => single(profile::set(ctx, &args).await?),
+        "AssistProvider/get" => single(assist::provider_get(ctx, &args).await?),
+        "AssistProvider/set" => single(assist::provider_set(ctx, &args).await?),
+        "AssistProvider/models" => single(assist::provider_models(ctx, &args).await?),
+        "AssistProvider/chatgptLogin" => single(assist::chatgpt_login(ctx, &args).await?),
+        "AssistProvider/chatgptPoll" => single(assist::chatgpt_poll(ctx, &args).await?),
+        "AssistSettings/get" => single(assist::settings_get(ctx, &args).await?),
+        "AssistSettings/set" => single(assist::settings_set(ctx, &args).await?),
+        "Assist/compose" => single(assist::compose(ctx, &args).await?),
+        "Assist/summarize" => single(assist::summarize(ctx, &args).await?),
+        "Assist/spamCheck" => single(assist::spam_check(ctx, &args).await?),
+        "Assist/extractEvents" => single(assist::extract_events(ctx, &args).await?),
+        "Assist/usage" => single(assist::usage(ctx, &args).await?),
+        "AssistLabel/get" => single(assist::label_get(ctx, &args).await?),
+        "AssistLabel/set" => single(assist::label_set(ctx, &args).await?),
+        "AssistLabel/log" => single(assist::label_log(ctx, &args).await?),
+        "AssistLabel/undo" => single(assist::label_undo(ctx, &args).await?),
+        "AssistLabel/apply" => single(assist::label_apply(ctx, &args).await?),
         _ => Err(MethodError::kind("unknownMethod")),
     }
 }

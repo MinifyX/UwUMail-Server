@@ -30,6 +30,8 @@ pub struct Config {
     pub gateway: GatewayConfig,
     /// How a message's remote pictures leave the server: straight, or through a VPN's proxy.
     pub egress: EgressConfig,
+    /// Reading the text in pictures with Tesseract (docs/jmap-image-text.md).
+    pub ocr: uwumail_jmap::ocr::OcrConfig,
     pub log: LogConfig,
     /// What the server reports to other domains: daily TLS reports (RFC 8460).
     pub reports: uwumail_smtp::ReportsConfig,
@@ -38,6 +40,15 @@ pub struct Config {
     /// Logging in to the portal at an OpenID Connect provider or with an LDAP directory's password
     /// (docs/login-oidc-ldap.md).
     pub auth: uwumail_web::AuthConfig,
+    /// Fetched mailboxes: the clients for signing in at Microsoft and Google (docs/fetch.md).
+    pub fetch: FetchConfig,
+}
+
+/// `[fetch]` in the configuration.
+#[derive(Debug, Clone, Default, Deserialize, serde::Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FetchConfig {
+    pub oauth: uwumail_smtp::provider_oauth::FetchOAuthConfig,
 }
 
 impl Default for Config {
@@ -55,10 +66,12 @@ impl Default for Config {
             brand: uwumail_smtp::BrandConfig::default(),
             gateway: GatewayConfig::default(),
             egress: EgressConfig::default(),
+            ocr: uwumail_jmap::ocr::OcrConfig::default(),
             log: LogConfig::default(),
             reports: uwumail_smtp::ReportsConfig::default(),
             metrics: uwumail_web::MetricsConfig::default(),
             auth: uwumail_web::AuthConfig::default(),
+            fetch: FetchConfig::default(),
         }
     }
 }

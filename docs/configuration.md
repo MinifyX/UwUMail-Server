@@ -82,7 +82,10 @@ commands work through `docker compose run --rm uwumail …`.
 
 The relay password is stored in the database like the rest (the portal never
 shows it again). If you would rather keep it out of the database, set
-`UWUMAIL_DELIVERY__RELAY__PASSWORD` in the environment.
+`UWUMAIL_DELIVERY__RELAY__PASSWORD` in the environment. The same goes for the
+Google client secret of fetched mailboxes (`fetch.oauth.google_client_secret`,
+*Einstellungen → Anmeldung*, see [fetch.md](fetch.md#microsoft-and-google)):
+`UWUMAIL_FETCH__OAUTH__GOOGLE_CLIENT_SECRET`.
 
 ## Sending the log to Grafana Loki
 
@@ -155,7 +158,9 @@ same way, each switched on by itself: the check for new UwUMail versions
 (`egress.updates`, so GitHub does not learn where the server is) and fetching
 from other providers: mail from their mailboxes, calendars people subscribed to
 and calendars and contacts moved over ([calendar-import.md](calendar-import.md))
-(`egress.fetch`; some providers refuse VPN addresses). Pictures (`egress.pictures`) take it unless switched off,
+(`egress.fetch`; some providers refuse VPN addresses), and the AI assistant's requests to OpenAI, Anthropic and
+the other providers on the internet (`egress.assist`, see [llm.md](llm.md); providers in the local network
+are always reached directly). Pictures (`egress.pictures`) take it unless switched off,
 and one-click unsubscriptions ([jmap-unsubscribe.md](jmap-unsubscribe.md)) go the way pictures go. DNS,
 delivering mail, blocklists and list updates keep leaving directly. Outgoing
 mail on port 25 could not go through a VPN anyway; providers block it, and
@@ -204,6 +209,21 @@ refuses the tunnel: `block` (the default) waits until it is back (no pictures,
 no update check, no fetching), `direct` goes out from the server as if no proxy
 were set, and the other side sees the server for that time.
 
+When the proxy fails as a whole (its name does not resolve, nothing listens,
+it turns the login down, or it refuses tunnels to many different hosts in a
+row, as gluetun does while its VPN is down), it rests for 30 seconds: requests
+meanwhile go straight or stay away as `fallback` says, without waiting for the
+proxy first, and the log says so once instead of once per picture. Then one
+request tries it again. A tunnel refused for one dead host alone never counts.
+*Test the way out* in the portal always tries the proxy.
+
+The server keeps the remote pictures it fetched for up to 7 days, shared by
+everyone who reads the same message, in `cache/images` of the data directory
+(left out of backups). `egress.image_cache_mb` (default 1024) is the most it
+may take on disk; when it is full the pictures asked for least lately go first,
+and `0` keeps nothing. How long a picture may take and how many each person
+fetches at a time is in [jmap-remote.md](jmap-remote.md#patience).
+
 ```toml
 [egress]
 proxy = "http://gluetun:8888"
@@ -211,14 +231,39 @@ fallback = "block"
 pictures = true
 updates = false
 fetch = false
+image_cache_mb = 1024
+assist = false
 ```
 
 As environment variables: `UWUMAIL_EGRESS__PROXY`, `UWUMAIL_EGRESS__FALLBACK`,
-`UWUMAIL_EGRESS__PICTURES`, `UWUMAIL_EGRESS__UPDATES` and `UWUMAIL_EGRESS__FETCH`.
+`UWUMAIL_EGRESS__PICTURES`, `UWUMAIL_EGRESS__UPDATES`, `UWUMAIL_EGRESS__FETCH`,
+`UWUMAIL_EGRESS__IMAGE_CACHE_MB` and `UWUMAIL_EGRESS__ASSIST`.
 What the config file or a non-empty variable sets is locked in the portal; the
 empty `UWUMAIL_EGRESS_PROXY=` and `UWUMAIL_EGRESS_FALLBACK=` that `compose.yaml`
 passes on leave them to the portal. A proxy login belongs in `.env` or the
 portal, not in a file anyone else reads.
+
+## Text in pictures (OCR)
+
+The server can read the text in a message's pictures, so the webmail finds a
+date on a poster or an invitation that is only a picture
+([jmap-image-text.md](jmap-image-text.md)). It runs
+[Tesseract](https://github.com/tesseract-ocr/tesseract) for that, a program of
+its own, one picture at a time and at most two at once, each for at most 20
+seconds. The Docker image brings it along with German and English; installed
+another way, install `tesseract-ocr`, `tesseract-ocr-deu` and
+`tesseract-ocr-eng` (Debian and Ubuntu). Without it nothing breaks: the server
+says OCR is unavailable and the webmail does without.
+
+```toml
+[ocr]
+enabled = true
+command = "tesseract"
+languages = "deu+eng"
+```
+
+As environment variables: `UWUMAIL_OCR__ENABLED`, `UWUMAIL_OCR__COMMAND` and
+`UWUMAIL_OCR__LANGUAGES`.
 
 ## Prometheus metrics
 
@@ -405,6 +450,14 @@ fallback = "block"     # block | direct: what happens while the proxy is away
 pictures = true        # remote pictures, sender logos, linked contact photos, Libravatar and one-click unsubscriptions take the proxy
 updates = false        # the check for new versions takes it
 fetch = false          # fetching from other providers (mailboxes, calendars, contacts) takes it
+image_cache_mb = 1024  # the shared cache of remote pictures on disk, in MB; 0 keeps none
+assist = false         # the AI assistant's requests to providers on the internet take it (docs/llm.md)
+
+# Reading the text in pictures with Tesseract (Email/imageText), see docs/jmap-image-text.md.
+[ocr]
+enabled = true         # does nothing while Tesseract is missing; the Docker image has it
+command = "tesseract"  # a name looked up in PATH, or a path
+languages = "deu+eng"  # Tesseract's languages; their data has to be installed
 
 # Daily TLS reports (RFC 8460) to the domains mail went to, see docs/tls-reports.md.
 [reports]
@@ -443,6 +496,13 @@ level = "info"
 # [auth.ldap]
 # enabled = false
 # url = "ldaps://ldap.example.com"
+
+# Fetched mailboxes signing in at Microsoft and Google, see docs/fetch.md.
+# Microsoft works without anything here; Google needs a client of your own.
+# [fetch.oauth]
+# microsoft_client_id = ""     # empty: the client UwUMail ships with
+# google_client_id = "1234-abc.apps.googleusercontent.com"
+# google_client_secret = "..."
 ```
 
 An SMTP session is closed after `smtp.timeout_secs` without a byte, and also when it gets nowhere:

@@ -14,6 +14,13 @@ import { LockedHint, Section, TextField, ToggleField, type Form } from "./Settin
 
 const DOCS = "https://github.com/MinifyX/UwUMail-Server/blob/main/docs/login-oidc-ldap.md";
 const OAUTH_DOCS = "https://github.com/MinifyX/UwUMail-Server/blob/main/docs/oauth.md";
+const FETCH_DOCS = "https://github.com/MinifyX/UwUMail-Server/blob/main/docs/fetch.md#microsoft-and-google";
+
+export const FETCH_OAUTH_SETTING_KEYS = [
+  "fetch.oauth.microsoft_client_id",
+  "fetch.oauth.google_client_id",
+  "fetch.oauth.google_client_secret",
+];
 
 export const OIDC_SETTING_KEYS = [
   "auth.oidc.enabled",
@@ -317,6 +324,40 @@ function LdapFields({ form }: { form: Form }) {
   );
 }
 
+/** Fetched mailboxes signing in at Microsoft and Google (docs/fetch.md, "Microsoft and Google"). */
+function FetchOAuthFields({ form }: { form: Form }) {
+  const { t } = useT();
+  const info = useInfo();
+  const redirectUri = `https://${info.data?.hostname ?? window.location.hostname}/api/account/fetch/oauth/callback`;
+  return (
+    <>
+      <TextField
+        form={form}
+        settingKey="fetch.oauth.microsoft_client_id"
+        label={t("fetch.admin.microsoftClientId")}
+        hint={t("fetch.admin.microsoftClientIdHint")}
+        placeholder="f4b09124-76e0-44a5-b675-2b35a898f0d7"
+      />
+      <p className="text-[13px] text-muted">{t("fetch.admin.googleHint")}</p>
+      <div className="flex flex-col gap-1 rounded-control bg-canvas px-3 py-2.5">
+        <span className="text-[12px] font-semibold text-muted">{t("fetch.admin.redirectUri")}</span>
+        <span className="flex items-center justify-between gap-2">
+          <code className="min-w-0 font-mono text-[13px] break-all select-all">{redirectUri}</code>
+          <CopyButton value={redirectUri} />
+        </span>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <TextField form={form} settingKey="fetch.oauth.google_client_id" label={t("fetch.admin.googleClientId")} />
+        <SecretField
+          form={form}
+          settingKey="fetch.oauth.google_client_secret"
+          label={t("fetch.admin.googleClientSecret")}
+        />
+      </div>
+    </>
+  );
+}
+
 function DocsLink({ href, label }: { href: string; label: string }) {
   return (
     <a
@@ -351,6 +392,7 @@ export function LoginSettingsPage() {
       <div className="flex flex-wrap gap-x-5 gap-y-2">
         <DocsLink href={DOCS} label={t("externalLogin.docs")} />
         <DocsLink href={OAUTH_DOCS} label={t("externalLogin.oauthDocs")} />
+        <DocsLink href={FETCH_DOCS} label={t("fetch.admin.docs")} />
       </div>
       <div className="grid items-start gap-5 lg:grid-cols-2">
         <Section
@@ -368,6 +410,14 @@ export function LoginSettingsPage() {
           keys={LDAP_SETTING_KEYS}
         >
           {(form) => <LdapFields form={form} />}
+        </Section>
+        <Section
+          title={t("fetch.admin.title")}
+          intro={t("fetch.admin.intro")}
+          view={view}
+          keys={FETCH_OAUTH_SETTING_KEYS}
+        >
+          {(form) => <FetchOAuthFields form={form} />}
         </Section>
       </div>
     </div>

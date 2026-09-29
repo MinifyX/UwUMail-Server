@@ -35,6 +35,7 @@ const SHARED_METHODS: &[&str] = &[
     "Email/parse",
     "Email/copy",
     "Email/unsubscribe",
+    "Email/imageText",
     "Thread/get",
     "Thread/changes",
     "SearchSnippet/get",

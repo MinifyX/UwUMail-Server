@@ -125,6 +125,11 @@ Without `properties` every property comes back except `vCard`; with
 }
 ```
 
+A card with birthday reminders has `uwuReminders`, a list of
+`{daysBefore, time}` kept as `X-UWUMAIL-REMINDER` lines in the vCard; its
+birthdays and anniversaries fill the birthdays calendar
+([birthdays.md](birthdays.md)).
+
 ### ContactCard/set
 
 Standard `/set` with `ifInState`.

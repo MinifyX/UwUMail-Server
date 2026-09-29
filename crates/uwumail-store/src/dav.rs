@@ -15,7 +15,11 @@ use crate::db::{next_modseq, record_change};
 use crate::{Result, Store, StoreError, now};
 
 /// Entries per collection, and bytes per entry. Calendars of real people stay far below both.
+#[cfg(not(test))]
 pub const DAV_RESOURCES_PER_COLLECTION: i64 = 50_000;
+/// The store's own tests fill a collection up without writing 50 000 entries.
+#[cfg(test)]
+pub const DAV_RESOURCES_PER_COLLECTION: i64 = 300;
 pub const DAV_RESOURCE_MAX_BYTES: usize = 1024 * 1024;
 pub const DAV_COLLECTIONS_PER_ACCOUNT: i64 = 100;
 
@@ -71,6 +75,16 @@ pub struct DavCollection {
     /// Filled from a subscribed feed (migration 0039): only the feed writes its entries, CalDAV
     /// and JMAP read them.
     pub subscribed: bool,
+    /// The birthdays calendar (migration 0056): filled from the owner's address books alone.
+    pub birthdays: bool,
+}
+
+impl DavCollection {
+    /// Whether something else fills its entries, a feed or the address books: CalDAV and JMAP
+    /// only read them.
+    pub fn filled(&self) -> bool {
+        self.subscribed || self.birthdays
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -183,10 +197,17 @@ pub fn dav_etag(content: &str) -> String {
 }
 
 /// The number of columns [`COLLECTION_COLUMNS`] reads, for queries that select more behind them.
-pub(crate) const COLLECTION_COLUMN_COUNT: usize = 15;
+pub(crate) const COLLECTION_COLUMN_COUNT: usize = 16;
 
-/// Refuses writes into a subscribed calendar: its entries are the feed's.
+/// Refuses writes into a subscribed calendar, whose entries are the feed's, and into the birthdays
+/// calendar, whose entries are the address books'.
 pub(crate) fn check_entries_writable(collection: &DavCollection) -> Result<()> {
+    if collection.birthdays {
+        return Err(StoreError::Rule {
+            code: "readOnly",
+            message: "the birthdays calendar is made from your contacts; change a birthday in the contact".into(),
+        });
+    }
     if collection.subscribed {
         return Err(StoreError::Rule {
             code: "readOnly",
@@ -199,7 +220,8 @@ pub(crate) fn check_entries_writable(collection: &DavCollection) -> Result<()> {
 pub(crate) const COLLECTION_COLUMNS: &str = "c.id, c.account_id, c.kind, c.slug, c.display_name, c.description, c.color, \
      c.sort_order, c.components, c.timezone, c.change, (SELECT count(*) FROM dav_resources r WHERE r.collection_id = c.id), \
      c.is_visible, c.is_default, \
-     EXISTS (SELECT 1 FROM calendar_subscriptions s WHERE s.collection_id = c.id)";
+     EXISTS (SELECT 1 FROM calendar_subscriptions s WHERE s.collection_id = c.id), \
+     EXISTS (SELECT 1 FROM birthday_calendars b WHERE b.collection_id = c.id)";
 
 pub(crate) fn collection_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavCollection> {
     Ok(DavCollection {
@@ -218,6 +240,7 @@ pub(crate) fn collection_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DavCol
         is_visible: row.get(12)?,
         is_default: row.get(13)?,
         subscribed: row.get(14)?,
+        birthdays: row.get(15)?,
     })
 }
 
@@ -524,6 +547,7 @@ pub(crate) fn ensure_default(tx: &Transaction<'_>, log: &mut ChangeLog, account_
         .query_row(
             "SELECT id FROM dav_collections c WHERE account_id = ?1 AND kind = ?2
                  AND NOT EXISTS (SELECT 1 FROM calendar_subscriptions s WHERE s.collection_id = c.id)
+                 AND NOT EXISTS (SELECT 1 FROM birthday_calendars b WHERE b.collection_id = c.id)
              ORDER BY sort_order, id LIMIT 1",
             params![account_id, kind.as_str()],
             |row| row.get(0),
@@ -558,6 +582,7 @@ pub(crate) fn set_default(tx: &Transaction<'_>, log: &mut ChangeLog, collection:
 
 /// Deletes a collection with everything in it, telling JMAP which collection and entries went away.
 pub(crate) fn delete_collection(tx: &Transaction<'_>, log: &mut ChangeLog, collection: &DavCollection) -> Result<()> {
+    crate::birthdays::drop_address_book(tx, log, collection)?;
     for account_id in audience(tx, collection)? {
         log.whole_collection(tx, account_id, collection, "destroyed")?;
     }
@@ -656,6 +681,11 @@ pub(crate) fn move_entry(
     crate::contact_photos::index_card(tx, id, target, &write.content)?;
     let source = collection_by_id(tx, source_id)?;
     log.moved(tx, &source, target, id, &write.component)?;
+    // Into an address book of someone else, the card's dates go into their birthdays calendar.
+    if source.account_id != target.account_id {
+        crate::birthdays::index_card(tx, log, &source, id, None)?;
+    }
+    crate::birthdays::index_card(tx, log, target, id, Some(&write.content))?;
     let before = crate::calendar_notifications::Side { component: &write.component, content: &old_content };
     let after = crate::calendar_notifications::Side { component: &write.component, content: &write.content };
     crate::calendar_notifications::entry_changed(tx, log, &source, Some(target), id, Some(before), Some(after))?;
@@ -710,13 +740,18 @@ impl Store {
         let (list, modseq) = self
             .write(move |tx| {
                 let mut log = ChangeLog::new(account_id);
+                // The birthdays calendar is no calendar of one's own: the first one is still made.
                 let exists: bool = tx.query_row(
-                    "SELECT EXISTS (SELECT 1 FROM dav_collections WHERE account_id = ?1 AND kind = ?2)",
+                    "SELECT EXISTS (SELECT 1 FROM dav_collections c WHERE account_id = ?1 AND kind = ?2
+                         AND NOT EXISTS (SELECT 1 FROM birthday_calendars b WHERE b.collection_id = c.id))",
                     params![account_id, kind.as_str()],
                     |row| row.get(0),
                 )?;
                 if !exists {
                     insert_collection(tx, &mut log, account_id, kind, &default)?;
+                }
+                if kind == DavKind::Calendar {
+                    crate::birthdays::follow_language(tx, &mut log, account_id)?;
                 }
                 let mut stmt = tx.prepare(&format!(
                     "SELECT {COLLECTION_COLUMNS} FROM dav_collections c WHERE c.account_id = ?1 AND c.kind = ?2
@@ -788,6 +823,7 @@ impl Store {
             .write(move |tx| {
                 let mut log = ChangeLog::new(account_id);
                 let collection = own_collection(tx, account_id, collection_id)?;
+                crate::birthdays::check_deletable(&collection)?;
                 delete_collection(tx, &mut log, &collection)?;
                 Ok(log.modseq())
             })
@@ -1037,6 +1073,7 @@ pub(crate) fn put_entry_unchecked(
         params![collection.id, write.name],
     )?;
     crate::contact_photos::index_card(tx, id, collection, &write.content)?;
+    crate::birthdays::index_card(tx, log, collection, id, Some(&write.content))?;
     log.entry(
         tx,
         collection,
@@ -1106,6 +1143,7 @@ pub(crate) fn delete_entry_unchecked(
         params![collection.id, name, change],
     )?;
     log.entry(tx, collection, id, Some(&component), None)?;
+    crate::birthdays::index_card(tx, log, collection, id, None)?;
     if collection.kind == DavKind::Calendar && component == "VEVENT" {
         crate::calendar_versions::note(tx, log, &audience(tx, collection)?, id, content.as_deref(), None)?;
     }

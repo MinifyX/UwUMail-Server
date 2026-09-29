@@ -7,13 +7,15 @@ use uwumail_store::StoreError;
 pub struct MethodError {
     pub kind: &'static str,
     pub description: Option<String>,
+    /// More properties of the error object, like `retryAfter` of the AI assistant's `providerFailed`.
+    pub extra: Map<String, Value>,
 }
 
 pub type MethodResult<T> = Result<T, MethodError>;
 
 impl MethodError {
     pub fn new(kind: &'static str, description: impl Into<String>) -> MethodError {
-        MethodError { kind, description: Some(description.into()) }
+        MethodError { kind, description: Some(description.into()), extra: Map::new() }
     }
 
     pub fn invalid_arguments(description: impl Into<String>) -> MethodError {
@@ -25,7 +27,7 @@ impl MethodError {
     }
 
     pub fn kind(kind: &'static str) -> MethodError {
-        MethodError { kind, description: None }
+        MethodError { kind, description: None, extra: Map::new() }
     }
 
     pub fn to_json(&self) -> Value {
@@ -33,6 +35,9 @@ impl MethodError {
         object.insert("type".into(), json!(self.kind));
         if let Some(description) = &self.description {
             object.insert("description".into(), json!(description));
+        }
+        for (key, value) in &self.extra {
+            object.insert(key.clone(), value.clone());
         }
         Value::Object(object)
     }

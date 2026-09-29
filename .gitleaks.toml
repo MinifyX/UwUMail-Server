@@ -17,6 +17,10 @@ regexes = [
   '''^ein-langes-passwort-123$''',
   '''^0123456789abcdef0123$''',
   '''^scrape-me-gently-0123456789$''',
+  # The API key of the fake AI provider in the assistant's tests.
+  '''^sk-test-abcdefgh1234$''',
+  # A made-up sign-in flow id in the portal's tests.
+  '''^Abc_def-12345678$''',
   # The OAUTHBEARER example token of RFC 7628, section 4.1.
   '''^vF9dft4qmTc2Nvb3RlckBhbHRhdmlzdGEuY29tCg==$''',
   # Not a secret: the letters the portal draws metrics tokens from.

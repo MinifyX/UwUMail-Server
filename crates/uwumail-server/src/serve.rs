@@ -120,12 +120,23 @@ pub async fn run(
     if egress.proxied() {
         tracing::info!(fallback = ?config.egress.fallback, "requests that tell about readers leave through the egress proxy");
     }
+    // Signing in at Microsoft and Google for fetched mailboxes: the token endpoints are asked the way
+    // fetching leaves, through the proxy when fetching takes it (docs/fetch.md).
+    smtp.provider_oauth().configure(config.fetch.oauth.clone());
+    smtp.provider_oauth().set_transport(Arc::new(uwumail_smtp::provider_oauth::EgressTransport(egress.clone())));
     // Mailboxes at other providers, emptied into the mailboxes here that asked for them.
     tasks.spawn(crate::fetch::run_fetchers(store.clone(), smtp.clone(), egress.clone(), shutdown_rx.clone()));
     tasks.spawn(crate::migrate::run_migrations(store.clone(), egress.clone(), shutdown_rx.clone()));
     // Subscribed calendars, fetched again when their turn comes, the same way out as fetched mail.
     tasks.spawn(uwumail_dav::client::run_subscriptions(store.clone(), egress.clone(), shutdown_rx.clone()));
     let tls_report_egress = egress.clone();
+    // Birthdays calendars for the contacts people had before there were any (docs/birthdays.md).
+    let backfill_store = store.clone();
+    tokio::spawn(async move {
+        if let Err(err) = backfill_store.backfill_birthday_calendars().await {
+            tracing::warn!(%err, "making the birthdays calendars of existing contacts failed");
+        }
+    });
 
     // Calendars and contacts (CalDAV, CardDAV) live next to JMAP on the same HTTPS port.
     let names = config.tone.language.collection_names();
@@ -138,7 +149,17 @@ pub async fn run(
     // One switch for the whole server, shared by everything that has to honour it: the page
     // under /mail, JMAP's session login, and the admin panel that flips it.
     let webmail = Arc::new(std::sync::atomic::AtomicBool::new(config.http.webmail));
-    let jmap = uwumail_jmap::Jmap::with_webmail(smtp.clone(), webmail.clone()).with_egress(egress.clone());
+    // The AI assistant (docs/llm.md): every request to a model leaves from here, through the egress.
+    // Labels for delivered mail are put on in the background.
+    // `Assist/extractEvents` with `includeImages` reads the pictures' text with the same OCR as
+    // `Email/imageText`.
+    let jmap = uwumail_jmap::Jmap::with_webmail(smtp.clone(), webmail.clone())
+        .with_egress(egress.clone())
+        .with_ocr(config.ocr.clone());
+    let assist = uwumail_assist::Assist::new(store.clone(), egress.clone(), &config.hostname)
+        .with_image_text(jmap.image_text_reader());
+    tasks.spawn(assist.clone().run_label_worker(shutdown_rx.clone()));
+    let jmap = jmap.with_assist(assist.clone());
     // The log to Grafana Loki, when the config or the admin panel asks for it; the admin panel
     // switches it on, over and off while the server runs.
     let loki = uwumail_web::Loki::new();
@@ -187,6 +208,7 @@ pub async fn run(
         },
     );
     web.set_egress(egress);
+    web.set_assist(assist);
     web.set_metrics_gate(metrics);
     web.set_external_login(external);
     {

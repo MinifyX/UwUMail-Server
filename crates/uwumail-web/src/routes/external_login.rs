@@ -44,7 +44,7 @@ fn escape_html(text: &str) -> String {
 /// A page that moves on to `target` by itself. Not an HTTP redirect: coming back from the provider
 /// is a navigation from another site, and a `SameSite=Strict` cookie set on it is only sent with
 /// the next request once this page (on our own site) asks for it.
-fn onward(target: &str, cookies: Vec<HeaderValue>) -> Response {
+pub(super) fn onward(target: &str, cookies: Vec<HeaderValue>) -> Response {
     let target = escape_html(target);
     let body = format!(
         "<!doctype html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"0;url={target}\">\

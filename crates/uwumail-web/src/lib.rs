@@ -99,13 +99,15 @@ struct Inner {
     backups: std::sync::OnceLock<uwumail_backup::Backups>,
     /// The way out for a message's remote pictures, once the server plugged it in.
     egress: std::sync::OnceLock<uwumail_smtp::egress::Egress>,
+    /// The AI assistant (docs/llm.md), when the server has one.
+    assist: std::sync::OnceLock<uwumail_assist::Assist>,
     /// The certificate and key Apple configuration profiles are signed with, once plugged in.
     profile_key: std::sync::OnceLock<profile_signing::ProfileKeySource>,
     /// How calendars and contacts are fetched from other providers, when not over the egress
     /// (tests hand in a server of their own).
     dav_transport: std::sync::OnceLock<Arc<dyn uwumail_dav::client::Transport>>,
     /// When each account last asked other providers for calendars, to keep that polite.
-    remote_calls: Mutex<HashMap<i64, Vec<i64>>>,
+    remote_calls: Mutex<HashMap<(i64, &'static str), Vec<i64>>>,
     /// Accounts moving calendars and contacts over from another provider right now.
     remote_imports: Arc<Mutex<std::collections::HashSet<i64>>>,
     /// Admin alerts: the last health overview and the lock around a look.
@@ -144,7 +146,7 @@ impl Web {
         let dns =
             DnsChecker::new().inspect_err(|err| tracing::warn!(%err, "DNS checks of domains are not available")).ok();
         let limiter = smtp.store().auth_limiter().clone();
-        Web {
+        let web = Web {
             inner: Arc::new(Inner {
                 smtp,
                 settings,
@@ -161,6 +163,7 @@ impl Web {
                 host: std::sync::OnceLock::new(),
                 backups: std::sync::OnceLock::new(),
                 egress: std::sync::OnceLock::new(),
+                assist: std::sync::OnceLock::new(),
                 profile_key: std::sync::OnceLock::new(),
                 dav_transport: std::sync::OnceLock::new(),
                 remote_calls: Mutex::default(),
@@ -171,7 +174,36 @@ impl Web {
                 oidc_transport: std::sync::OnceLock::new(),
                 oauth_attempts: Mutex::default(),
             }),
-        }
+        };
+        // A fetched mailbox whose sign-in ended, or whose provider stopped taking its password, is
+        // found out by the fetch run or a delivery; the person hears of it like of a login change.
+        let weak = Arc::downgrade(&web.inner);
+        web.inner.smtp.provider_oauth().on_notice(move |notice| {
+            let Some(inner) = weak.upgrade() else { return };
+            let web = Web { inner };
+            tokio::spawn(async move { web.notify_fetch(notice).await });
+        });
+        web
+    }
+
+    /// Tells the person about one of their fetched mailboxes, by mail and in the activity list.
+    pub async fn notify_fetch(&self, notice: uwumail_smtp::provider_oauth::FetchNotice) {
+        use uwumail_smtp::provider_oauth::FetchNoticeKind;
+        let account = match self.store().account_by_id(notice.account_id).await {
+            Ok(Some(account)) => account,
+            Ok(None) => return,
+            Err(err) => {
+                tracing::warn!(%err, "finding the owner of a fetched mailbox failed");
+                return;
+            }
+        };
+        let kind = match notice.kind {
+            FetchNoticeKind::LoginExpired(provider) => {
+                notices::Notice::FetchSignInExpired { address: notice.address, provider: provider.name().to_owned() }
+            }
+            FetchNoticeKind::PasswordRefused => notices::Notice::FetchPasswordRefused { address: notice.address },
+        };
+        notices::notify(self, &account, kind, notices::Origin { actor: "", ip: "" }).await;
     }
 
     /// Whether this build contains the web app. Without it the server shows a simple landing page.
@@ -245,6 +277,15 @@ impl Web {
         self.inner.profile_key.get()
     }
 
+    /// Lets the portal set up the AI assistant. Only the first call counts.
+    pub fn set_assist(&self, assist: uwumail_assist::Assist) {
+        let _ = self.inner.assist.set(assist);
+    }
+
+    pub(crate) fn assist(&self) -> Option<&uwumail_assist::Assist> {
+        self.inner.assist.get()
+    }
+
     pub(crate) fn egress(&self) -> Option<&uwumail_smtp::egress::Egress> {
         self.inner.egress.get()
     }
@@ -270,10 +311,16 @@ impl Web {
 
     /// Counts one request of an account to another provider; `false` past `per_hour` of them.
     pub(crate) fn allow_remote_call(&self, account_id: i64, per_hour: usize) -> bool {
+        self.allow_call(account_id, "remote", per_hour)
+    }
+
+    /// Counts one call of an account of the kind `kind`; `false` past `per_hour` of them. Each kind
+    /// has a budget of its own.
+    pub(crate) fn allow_call(&self, account_id: i64, kind: &'static str, per_hour: usize) -> bool {
         let now = health::unix_now();
         let mut calls = self.inner.remote_calls.lock().expect("remote calls poisoned");
         calls.retain(|_, times| times.last().is_some_and(|last| now - last < 3600));
-        let times = calls.entry(account_id).or_default();
+        let times = calls.entry((account_id, kind)).or_default();
         times.retain(|at| now - at < 3600);
         if times.len() >= per_hour {
             return false;
@@ -456,8 +503,32 @@ impl Web {
             .route("/api/account/forwarding/targets/{id}", delete(routes::mailbox::remove_target))
             .route("/api/account/forwarding/keep-copy", put(routes::mailbox::set_keep_copy))
             .route("/api/account/vacation", get(routes::mailbox::vacation).put(routes::mailbox::set_vacation))
+            .route("/api/account/assist", get(routes::assist::account_view))
+            .route("/api/account/assist/providers", post(routes::assist::create_own_provider))
+            .route(
+                "/api/account/assist/providers/{id}",
+                patch(routes::assist::update_own_provider).delete(routes::assist::delete_own_provider),
+            )
+            .route("/api/account/assist/providers/{id}/models", post(routes::assist::own_models))
+            .route("/api/account/assist/providers/{id}/chatgpt/login", post(routes::assist::chatgpt_login))
+            .route("/api/account/assist/providers/{id}/chatgpt/poll", post(routes::assist::chatgpt_poll))
+            .route("/api/account/assist/settings", put(routes::assist::set_settings))
+            .route("/api/account/assist/usage", get(routes::assist::account_usage))
+            .route("/api/admin/assist", get(routes::assist::admin_view))
+            .route("/api/admin/assist/policy", put(routes::assist::set_policy))
+            .route("/api/admin/assist/providers", post(routes::assist::create_provider))
+            .route(
+                "/api/admin/assist/providers/{id}",
+                patch(routes::assist::update_provider).delete(routes::assist::delete_provider),
+            )
+            .route("/api/admin/assist/providers/{id}/models", post(routes::assist::admin_models))
+            .route("/api/admin/assist/usage", get(routes::assist::admin_usage))
             .route("/api/account/fetch", get(routes::fetch::list).post(routes::fetch::create))
             .route("/api/account/fetch/discover", post(routes::fetch::discover))
+            .route("/api/account/fetch/provider", post(routes::fetch::detect))
+            .route("/api/account/fetch/oauth/start", post(routes::fetch::start_sign_in))
+            .route("/api/account/fetch/oauth/callback", get(routes::fetch::oauth_callback))
+            .route("/api/account/fetch/oauth/flows/{flow}", get(routes::fetch::sign_in_status))
             .route("/api/account/fetch/{id}", patch(routes::fetch::update).delete(routes::fetch::delete))
             .route("/api/account/fetch/{id}/run", post(routes::fetch::fetch_now))
             .route("/api/account/fetch/{id}/existing", post(routes::fetch::take_existing))

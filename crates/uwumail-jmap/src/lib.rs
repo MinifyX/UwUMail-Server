@@ -12,16 +12,20 @@
 //! | `GET /jmap/download/{accountId}/{blobId}/{name}` | Blob download |
 //! | `GET /jmap/eventsource` | Push |
 //! | `GET /jmap/ws` | Requests and push over a WebSocket (RFC 8887) |
+//! | `POST /jmap/assist/stream` | `Assist/compose` and `Assist/summarize` as server-sent events |
 //! | `POST /jmap/token` | A new app password for a program, to send as a bearer token |
 //! | `GET /jmap/image/{accountId}?url=` | A message's remote picture, fetched by the server |
+//! | `POST /jmap/image/{accountId}/sizes` | The sizes of a message's remote pictures, as they become known |
 //! | `GET /jmap/picture/{accountId}?email=` | The picture of a sender: a person's, or a company's logo |
 //! | `GET /avatar/{hash}` | Libravatar: the public pictures of this server's addresses |
 //!
 //! `Email/unsubscribe` has the server send a newsletter's one-click unsubscription (RFC 8058).
+//! `Email/imageText` reads the text in a message's pictures with OCR (docs/jmap-image-text.md).
 //!
 //! [`Jmap::run_web_push`] pushes changes to the push subscriptions (RFC 8620, 7.2) over Web Push.
 
 mod api;
+mod assist_stream;
 pub mod auth;
 pub mod availability;
 mod blob;
@@ -33,6 +37,7 @@ mod ids;
 mod jscal;
 mod jscontact;
 mod methods;
+pub mod ocr;
 mod pictures;
 mod push;
 mod remote;
@@ -54,6 +59,7 @@ use uwumail_smtp::Smtp;
 use uwumail_smtp::avatars::{AvatarNet, Avatars, LiveNet};
 use uwumail_smtp::egress::Egress;
 use uwumail_smtp::pictures::SenderPictures;
+use uwumail_smtp::remote_images::RemoteImages;
 use uwumail_store::Store;
 
 pub use auth::{AuthError, Authenticator, ClientInfo, Login};
@@ -88,6 +94,10 @@ pub(crate) struct Inner {
     pub auth: auth::Authenticator,
     /// The way out for a message's remote pictures.
     pub egress: Egress,
+    /// A message's remote pictures, fetched once for everyone and kept a while.
+    pub remote_images: RemoteImages,
+    /// Reads the text in a message's pictures (`Email/imageText`).
+    pub ocr: Arc<ocr::Ocr>,
     /// Logos and website icons of company senders, fetched the same way.
     pub pictures: Arc<SenderPictures>,
     /// Pictures of people from elsewhere: linked contact photos and Libravatar.
@@ -106,6 +116,15 @@ pub(crate) struct Inner {
     pub unsubscribe_transport: Option<Arc<dyn UnsubscribeTransport>>,
     /// Reminder mails of calendar alerts sent lately, for their limits.
     pub reminders: calendar_alerts::ReminderLimits,
+    /// The AI assistant (docs/jmap-assist.md), when the server has one.
+    pub assist: Option<uwumail_assist::Assist>,
+}
+
+/// Where remote pictures (`images`) and what OCR read in pictures (`ocr`) are kept: `cache/…` in the
+/// data directory, which backups leave out.
+fn cache_dir(store: &Store, name: &str) -> Option<std::path::PathBuf> {
+    let data = store.data_dir();
+    (!data.as_os_str().is_empty()).then(|| data.join("cache").join(name))
 }
 
 impl Jmap {
@@ -123,6 +142,8 @@ impl Jmap {
         let pictures = Arc::new(SenderPictures::new(egress.clone()));
         let avatars = Arc::new(Avatars::new(Arc::new(LiveNet::new(egress.clone()))));
         let push = webpush::WebPush::new(store.clone(), egress.clone(), smtp.hostname());
+        let remote_images = RemoteImages::new(egress.clone(), cache_dir(&store, "images"));
+        let ocr = Arc::new(ocr::Ocr::new(ocr::OcrConfig::default(), cache_dir(&store, "ocr")));
         Jmap {
             inner: Arc::new(Inner {
                 auth,
@@ -130,6 +151,8 @@ impl Jmap {
                 store,
                 smtp,
                 egress,
+                remote_images,
+                ocr,
                 pictures,
                 avatars,
                 notice: None,
@@ -138,6 +161,7 @@ impl Jmap {
                 unsubscribes: Default::default(),
                 unsubscribe_transport: None,
                 reminders: Default::default(),
+                assist: None,
             }),
         }
     }
@@ -149,7 +173,16 @@ impl Jmap {
         let pictures = Arc::new(SenderPictures::new(egress.clone()));
         let avatars = Arc::new(Avatars::new(Arc::new(LiveNet::new(egress.clone()))));
         let push = inner.push.clone().with_egress(egress.clone());
-        Jmap { inner: Arc::new(Inner { egress, pictures, avatars, push, ..inner }) }
+        let remote_images = RemoteImages::new(egress.clone(), cache_dir(&inner.store, "images"));
+        Jmap { inner: Arc::new(Inner { egress, remote_images, pictures, avatars, push, ..inner }) }
+    }
+
+    /// Reads text in pictures as `config` says (the `[ocr]` section, docs/jmap-image-text.md). Called
+    /// before the router is built.
+    pub fn with_ocr(self, config: ocr::OcrConfig) -> Jmap {
+        let inner = Arc::into_inner(self.inner).expect("OCR is set up before anything else holds the JMAP service");
+        let ocr = Arc::new(ocr::Ocr::new(config, cache_dir(&inner.store, "ocr")));
+        Jmap { inner: Arc::new(Inner { ocr, ..inner }) }
     }
 
     /// Pictures of people from elsewhere (linked contact photos, Libravatar) come through `net`
@@ -195,6 +228,23 @@ impl Jmap {
         Jmap { inner: Arc::new(Inner { notice: Some(notice), ..inner }) }
     }
 
+    /// Reads the text in a message's own pictures with this service's OCR, for the AI assistant
+    /// (`Assist::with_image_text`, docs/llm.md): what `Email/imageText` reads without `remote`.
+    pub fn image_text_reader(&self) -> uwumail_assist::ImageText {
+        let (ocr, store) = (self.inner.ocr.clone(), self.inner.store.clone());
+        Arc::new(move |account_id, email_id| {
+            let (ocr, store) = (ocr.clone(), store.clone());
+            Box::pin(async move { methods::image_text::texts_for_assist(&ocr, &store, account_id, email_id).await })
+        })
+    }
+
+    /// Offers the AI assistant (`urn:uwumail:jmap:assist`). Called before the router is built.
+    pub fn with_assist(self, assist: uwumail_assist::Assist) -> Jmap {
+        let inner =
+            Arc::into_inner(self.inner).expect("the assistant is set before anything else holds the JMAP service");
+        Jmap { inner: Arc::new(Inner { assist: Some(assist), ..inner }) }
+    }
+
     /// The API and uploads read their bodies themselves, after the login and up to
     /// [`MAX_REQUEST_BYTES`] and [`MAX_UPLOAD_BYTES`].
     pub fn router(&self) -> Router {
@@ -210,8 +260,10 @@ impl Jmap {
             .route("/jmap/eventsource/", get(push::handle))
             // `any`: HTTP/1.1 upgrades with GET, HTTP/2 WebSockets (RFC 8441) with CONNECT.
             .route("/jmap/ws", any(ws::handle))
+            .route("/jmap/assist/stream", post(assist_stream::handle))
             .route("/jmap/token", post(token::handle).layer(DefaultBodyLimit::max(16 * 1024)))
             .route("/jmap/image/{account}", get(remote::image))
+            .route("/jmap/image/{account}/sizes", post(remote::sizes).layer(DefaultBodyLimit::max(1024 * 1024)))
             .route("/jmap/picture/{account}", get(remote::picture))
             .route("/avatar/{hash}", get(pictures::libravatar))
             .with_state(self.clone())

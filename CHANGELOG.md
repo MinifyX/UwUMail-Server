@@ -3,6 +3,146 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.18.0
+
+**Fetched mailboxes at Microsoft and Google sign in there** ([docs/fetch.md](docs/fetch.md#microsoft-and-google)):
+
+- Microsoft has switched passwords off for IMAP and SMTP at Outlook.com, Hotmail and most Microsoft
+  365 tenants (`NO Basic authentication is disabled.`). Fetched mailboxes there now sign in with
+  OAuth 2 and log in with SASL XOAUTH2, for fetching and for answering from the address.
+- *Mein Konto → Abrufkonten* recognises Microsoft and Google addresses (their own domains, and
+  Microsoft 365 and Google Workspace by the domain's mail servers) and offers *Mit Microsoft
+  anmelden* / *Mit Google anmelden* first, a password as the fallback. The sign-in is proven with a
+  real login before it is saved.
+- **Microsoft** works out of the box: the device code flow with the client ID UwUMail ships with —
+  a big code, a copy button and the link to microsoft.com/devicelogin; the server asks Microsoft at
+  its interval. Admins can set their own Entra app under *Einstellungen → Anmeldung*
+  (`fetch.oauth.microsoft_client_id`).
+- **Google** uses the authorization code flow with PKCE and the admin's own *Web application*
+  client (`fetch.oauth.google_client_id`, `fetch.oauth.google_client_secret`), with the way back
+  (`/api/account/fetch/oauth/callback`) tied to the browser that set off.
+- Refresh and access tokens are sealed like provider passwords, renewed before they run out, a
+  rotated refresh token is kept, and a provider that is down is asked again with a growing wait. A
+  grant the provider ended stops the mailbox, shows *Anmeldung abgelaufen – erneut anmelden* and
+  sends its owner a notice once. All requests to the providers go through the egress, with the
+  proxy and its fallback when fetching takes it.
+- Microsoft's "Basic authentication is disabled" is its own error, not a wrong password: runs stop
+  asking, the owner is told once, and the row offers *Auf Microsoft-Anmeldung umstellen*. Mailboxes
+  that still log in with a password at Microsoft or Google can switch under *Bearbeiten*.
+- New endpoints under `/api/account/fetch`: `provider`, `oauth/start`, `oauth/flows/{flow}`,
+  `oauth/callback`; creating and editing a fetched mailbox take `oauthFlow`. Migration
+  `0056_fetch_oauth.sql`.
+
+**Remote pictures without the wait** ([docs/jmap-remote.md](docs/jmap-remote.md)):
+
+- Webmail: a mail's text shows at once when its pictures may load. Every picture waits in its place
+  with a shimmer, sized by the server before it arrives, so nothing jumps; a thin bar counts them in
+  ("Bilder werden geladen 12/30"). Pictures that can't be had end as a quiet box of their size,
+  tracking pixels as nothing. Before, one dead tracking host kept the mail hidden for up to 20 s in
+  the automatic dark mode.
+- Pictures in messages are fetched once for the whole server and kept on disk for up to 7 days,
+  shared by everyone who reads the same message (`cache/images`, left out of backups). New admin
+  setting `egress.image_cache_mb` (default 1024, *VPN & proxy* in the portal; 0 turns it off); the
+  least recently used pictures go first. Readers asking for a picture already on its way wait for the
+  same request.
+- A dead host costs a picture 4–6 seconds instead of 20 (4 s to connect, 6 s to the answer, 5 s
+  without a byte, 20 s in all), and each person has their own share (8 at a time, 64 for everyone)
+  instead of one queue of 32 for all requests of the server. Pictures speak HTTP/2 to their hosts
+  and keep the connection, so one tunnel through the proxy serves a whole newsletter.
+- New `imageSizesUrl` (`POST /jmap/image/{accountId}/sizes`): the sizes of a message's pictures,
+  streamed as NDJSON as soon as their first bytes show them, so the reader holds each picture's
+  place before it arrives. Pictures are answered with `X-Image-Width`/`X-Image-Height`.
+- Picture types are checked against their bytes; an SVG passes only as an SVG.
+- **Egress proxy circuit breaker:** a proxy whose name does not resolve, that is not there, turns the
+  login down or refuses tunnels to many hosts in a row rests for 30 s. Requests meanwhile go straight
+  or stay away as `egress.fallback` says, without waiting for it, and the log says so once instead of
+  once per picture.
+
+**Text in pictures** ([docs/jmap-image-text.md](docs/jmap-image-text.md)): new JMAP extension
+`urn:uwumail:jmap:imagetext` with `Email/imageText`, which reads the text in a message's embedded
+pictures, picture attachments and (only when asked, through the cache and egress) remote pictures
+with Tesseract (`deu+eng`), at most 20 per message, two at once on the server, 20 s each, results
+kept by the picture's hash. New `[ocr]` section (`enabled`, `command`, `languages`). The Docker image
+now carries Tesseract with German and English (about 40 MB more); without it the capability says
+`unavailable`.
+
+**Birthdays** ([docs/birthdays.md](docs/birthdays.md)):
+
+- A **birthdays calendar** per account ("Geburtstage"/"Birthdays" in the person's language), made
+  from the birthdays and anniversaries of their own address books, year-less dates and Apple's
+  labelled dates included. It is read-only over CalDAV and JMAP, follows every card change in the
+  same transaction (ETags, CTags, sync tokens and JMAP states move with it), can be hidden and
+  coloured, and never counts as busy. Existing contacts get theirs when the server starts.
+- CalDAV sees one yearly all-day event per date titled "Max Muster (*1996)"; JMAP names each year's
+  instance with the age ("Max Muster (30)", "Hochzeitstag von Max Muster (5 Jahre)") and adds
+  `uwuBirthday` (contact, kind, year). 29 February falls on 28 February in other years.
+- **Reminders per contact** (off by default): `uwuReminders` on `ContactCard`, stored as
+  `X-UWUMAIL-REMINDER` lines that phones keep, fired as alarms by phones and by the server's alert
+  worker.
+- **Moving birthdays out of other calendars:** the JMAP extension `urn:uwumail:jmap:birthdays`
+  finds yearly birthday events (German and English titles, 🎂, Google/KDE markers), matches them to
+  contacts by name (umlauts either way) and moves them, deleting the event only together with the
+  card write (`Birthdays/scan`, `Birthdays/import`).
+- The alert worker no longer expands never-ending series that have no alert at all.
+
+**AI assistant** ([docs/llm.md](docs/llm.md), [docs/jmap-assist.md](docs/jmap-assist.md)):
+
+- Providers set up by the admin under *Server → Settings → AI assistant*: OpenAI, Anthropic Claude
+  (API keys only; Claude subscriptions cannot be used by other programs), Google Gemini, Mistral,
+  OpenRouter, Ollama and any OpenAI-compatible server, each for everyone, some domains or some
+  people, for some or all features, with daily limits per person in requests and tokens. Models are
+  listed from the provider, with cheap defaults.
+- People may bring their own providers when the admin allows it (off by default), in the local
+  network only when allowed too. **Experimental:** signing in with a ChatGPT subscription the way
+  the Codex CLI does, marked as such and not an API OpenAI offers.
+- Features, all asked from the server: writing and rewriting in the composer (presets, own
+  instructions, reply context, streamed preview), summaries of a mail or a conversation, "Auf Spam
+  prüfen" with the server's own signals next to the model's verdict, `Assist/extractEvents` for dates
+  with participants matched to the mail and the address book (`assist.refineEvents`, off by
+  default), and opt-in **auto-labels**: the person's own labels as keywords, put on in a background
+  queue after the spam filter, never on Junk, each with its reason and one-click undo.
+- Mail is treated as data: no tools, answers of a fixed shape checked by the server, quoted history
+  left out, sizes capped, nothing done without a click except the person's own labels.
+- Keys and tokens sealed at rest and never shown again; every request from the server with timeouts
+  and size limits; people's providers can't reach the server itself or, unless allowed, the local
+  network; `egress.assist` sends the requests through the VPN. Usage per person and day for the
+  admin and the person.
+- New JMAP extension `urn:uwumail:jmap:assist` (`AssistProvider`, `AssistSettings`, `Assist/*`,
+  `AssistLabel`) with streaming as server-sent events at `/jmap/assist/stream`. Migration
+  `0058_assist.sql`.
+
+**Security** ([docs/security-audit-0.18.0.md](docs/security-audit-0.18.0.md)): a review of everything
+new found one high and eight medium issues, all fixed before release, nothing that reaches another
+account's mail and no panic on text from outside.
+
+- A full birthdays calendar no longer breaks calendar listings (and holds the database writer) after
+  a language change; `Birthdays/scan` reads bounded entries one at a time; `uwuBirthday` only in the
+  birthdays calendar.
+- A fetched mailbox signed in at Microsoft or Google keeps its provider's servers, so its access
+  token goes nowhere else; sign-in starts are limited per person.
+- Dead hosts someone asks for no longer make the egress proxy rest for everyone.
+- AI requests are counted before they are made (streams that are left and requests side by side
+  included), and before any mail or picture is read for them; the providers' event streams are read
+  in linear time; one person's label queue or slow provider holds up nobody else.
+- Smaller fixes: OCR within its deadline and memory, unique cache temp files, NAT64/6to4 addresses
+  as private as the IPv4 address in them, one ChatGPT renewal at a time, no key hint of the admin's
+  key for people, headers escaped in prompts.
+
+**Fixed**, found in a test of the update on a real stack:
+
+- Birthdays written as `--10-15` (by Google, and by the birthday import into vCard 3.0 cards) or as
+  `1996-10-03` in a vCard 4.0 card came over JMAP without their day, so the webmail showed them
+  wrong, and saving such a contact there took it out of the birthdays calendar.
+- An AI provider the admin sets up at a local name with a dot (`http://ollama.lan:11434`) was
+  refused for its plain `http://`; the connection already takes that only into the local network.
+
+**Webmail 0.18.0** (its version now follows the server's): appointments found in mail text,
+HTML and pictures (bar above the mail, underlined dates, prefilled event editor; the AI only on a
+click or when *refine with AI* is on), pictures that hold their final size with a progress bar,
+the birthdays calendar with ages, anniversaries, reminders and moving birthday events into
+contacts, and the AI assistant in the composer, the reader and the settings. Its security review:
+W-39 to W-47 in the webmail's docs/security-audit-0.18.0.md.
+
 ## 0.17.1
 
 **Masked addresses for UwULock Server, without the mailbox**

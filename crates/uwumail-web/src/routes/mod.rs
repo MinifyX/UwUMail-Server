@@ -2,6 +2,7 @@ pub mod account;
 pub mod admin;
 pub mod alerts;
 pub mod apps;
+pub mod assist;
 pub mod auth;
 pub mod backups;
 pub mod branding;

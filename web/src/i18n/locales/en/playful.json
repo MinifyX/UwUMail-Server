@@ -195,5 +195,20 @@
       "intro": "Put a face to your name! People here see it beside your mail (=^･ω･^=)"
     },
     "saved": "Looking good! Picture saved (◕‿◕✿)"
+  },
+  "assist": {
+    "intro": "I can help with your mail: write, tidy up, sum up, sniff out spam and find appointments. You always have the last word (｡･ω･｡)",
+    "usage": {
+      "todayEmpty": "Nothing asked today yet. I'm rested (˘ᵕ˘)"
+    },
+    "choices": {
+      "saved": "Got it! I'll ask them from now on (◕‿◕✿)"
+    },
+    "chatgpt": {
+      "connected": "Signed in with ChatGPT (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧"
+    },
+    "account": {
+      "noneAskAdmin": "Nothing to use yet. Ask your admin nicely for a provider (・ω・)"
+    }
   }
 }

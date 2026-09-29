@@ -113,6 +113,9 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("egress.pictures", SettingKind::Bool),
     spec("egress.updates", SettingKind::Bool),
     spec("egress.fetch", SettingKind::Bool),
+    // The shared cache of remote pictures in messages, in megabytes; 0 keeps none (docs/jmap-remote.md).
+    spec("egress.image_cache_mb", SettingKind::Integer { min: 0, max: 102_400 }),
+    spec("egress.assist", SettingKind::Bool),
     // Daily TLS reports (RFC 8460) to the domains mail went to, when they ask for them.
     spec("reports.send_tls_reports", SettingKind::Bool),
     // Prometheus metrics under /metrics (docs/metrics.md).
@@ -143,6 +146,10 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("auth.ldap.admin_group_dn", SettingKind::Text),
     spec("auth.ldap.auto_create", SettingKind::Bool),
     spec("auth.ldap.allowed_domains", SettingKind::List),
+    // Signing in at Microsoft and Google for fetched mailboxes (docs/fetch.md).
+    spec("fetch.oauth.microsoft_client_id", SettingKind::Text),
+    spec("fetch.oauth.google_client_id", SettingKind::Text),
+    spec("fetch.oauth.google_client_secret", SettingKind::Secret),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

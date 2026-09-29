@@ -26,7 +26,7 @@
 
 use std::time::Duration;
 
-use anyhow::{Context as _, anyhow, bail};
+use anyhow::{anyhow, bail};
 use tokio::sync::watch;
 use uwumail_smtp::{FetchedMailbox, Smtp, Taken};
 use uwumail_store::{
@@ -171,10 +171,21 @@ async fn run_once(
     if detour.is_none() && !crate::import::imap::resolves_publicly(&account.host, account.port).await {
         bail!("{} does not resolve to a public address", account.host);
     }
-    let password = store
-        .fetch_password(account.account_id, account.id)
-        .await?
-        .ok_or_else(|| anyhow!("the password for {} is gone", account.address))?;
+    // A mailbox that signs in at Microsoft or Google logs in with an access token instead of a
+    // password; one that has run out is renewed first, and a grant that ended stops the run here.
+    let token = match uwumail_smtp::provider_oauth::Provider::of_auth(account.auth) {
+        Some(_) => {
+            Some(smtp.provider_oauth().access_token(store, account.account_id, account.id, &account.address).await?)
+        }
+        None => None,
+    };
+    let password = match token {
+        Some(_) => String::new(),
+        None => store
+            .fetch_password(account.account_id, account.id)
+            .await?
+            .ok_or_else(|| anyhow!("the password for {} is gone", account.address))?,
+    };
     let to = store
         .account_by_id(account.account_id)
         .await?
@@ -194,10 +205,38 @@ async fn run_once(
         },
     };
     let mut connection = Connection::open(&source).await?;
-    connection
-        .command(&format!("LOGIN {} {}", quoted(&account.username), quoted(&source.password)))
-        .await
-        .context("the provider did not accept the user name and password")?;
+    match &token {
+        Some(token) => {
+            if let Err(err) = connection.authenticate_xoauth2(&account.username, token).await {
+                // Refused although it had time left (revoked a moment ago, say): forgotten, so the
+                // next run makes a new one -- and learns then whether the grant still holds.
+                let _ = store.forget_fetch_access_token(account.id).await;
+                return Err(err.context("the provider did not accept the sign-in"));
+            }
+        }
+        None => {
+            let login =
+                connection.command(&format!("LOGIN {} {}", quoted(&account.username), quoted(&source.password))).await;
+            if let Err(err) = login {
+                // Microsoft takes no passwords here at all any more. Not a wrong password: runs stop
+                // asking, and the person hears once that signing in with Microsoft is the way.
+                if uwumail_smtp::provider_oauth::is_basic_auth_disabled(&format!("{err:#}")) {
+                    if store.note_fetch_password_refused(account.id).await.unwrap_or(false) {
+                        smtp.provider_oauth().notify(uwumail_smtp::provider_oauth::FetchNotice {
+                            account_id: account.account_id,
+                            address: account.address.clone(),
+                            kind: uwumail_smtp::provider_oauth::FetchNoticeKind::PasswordRefused,
+                        });
+                    }
+                    bail!(
+                        "Microsoft no longer accepts passwords for this mailbox (\"Basic authentication is disabled\"): \
+                         switch it to signing in with Microsoft"
+                    );
+                }
+                return Err(err.context("the provider did not accept the user name and password"));
+            }
+        }
+    }
 
     // The inbox always; the provider's junk folder when it was asked for, because this server wants
     // to judge that mail itself rather than take the provider's word for it.
@@ -948,6 +987,254 @@ mod tests {
         assert_eq!(rig.at_provider().await, 0);
         let done = rig.ours.fetch_account(rig.our_id, rig.fetch_id).await.unwrap().unwrap();
         assert_eq!(done.backlog_at, None);
+    }
+
+    /// The provider's own OAuth, standing in for Microsoft's: its token endpoint renews with the
+    /// provider store's refresh tokens (which rotate, as Microsoft's do) and says `invalid_grant`
+    /// for one that is no good any more.
+    struct ProviderTokens {
+        store: Store,
+        client_id: i64,
+        asked: std::sync::atomic::AtomicUsize,
+    }
+
+    impl uwumail_smtp::provider_oauth::TokenTransport for ProviderTokens {
+        fn post_form(
+            &self,
+            _url: &str,
+            form: String,
+        ) -> uwumail_smtp::provider_oauth::BoxFuture<'_, Result<(u16, Vec<u8>), String>> {
+            self.asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Box::pin(async move {
+                // The fields read here need no decoding: a grant type and a token of letters.
+                let fields: std::collections::HashMap<&str, &str> =
+                    form.split('&').filter_map(|pair| pair.split_once('=')).collect();
+                assert_eq!(fields["grant_type"], "refresh_token");
+                let answer = match self.store.refresh_oauth(fields["refresh_token"], self.client_id).await.unwrap() {
+                    Ok(tokens) => (
+                        200,
+                        serde_json::json!({
+                            "access_token": tokens.access_token,
+                            "refresh_token": tokens.refresh_token,
+                            "expires_in": tokens.expires_in,
+                        }),
+                    ),
+                    Err(_) => (400, serde_json::json!({ "error": "invalid_grant" })),
+                };
+                Ok((answer.0, answer.1.to_string().into_bytes()))
+            })
+        }
+    }
+
+    /// Signs the rig's fetched mailbox in at "Microsoft": an OAuth grant of the provider's person,
+    /// handed out the way the portal hands one to an app. Answers the grant's id and the transport.
+    async fn sign_in(rig: &Rig) -> (i64, Arc<ProviderTokens>) {
+        let (verifier, challenge) =
+            ("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
+        let client = rig.provider.register_oauth_client("UwUMail", vec!["http://127.0.0.1/cb".into()]).await.unwrap();
+        let code = rig
+            .provider
+            .create_oauth_code(uwumail_store::NewOAuthCode {
+                client_id: client.id,
+                account_id: rig.provider_id,
+                redirect_uri: "http://127.0.0.1/cb".into(),
+                scopes: vec!["mail", "smtp"],
+                code_challenge: challenge.into(),
+                nonce: None,
+                auth_time: 0,
+            })
+            .await
+            .unwrap();
+        let tokens =
+            rig.provider.redeem_oauth_code(&code, client.id, "http://127.0.0.1/cb", verifier).await.unwrap().unwrap();
+        let grant = uwumail_store::FetchGrant {
+            provider: uwumail_store::FetchAuth::Microsoft,
+            tokens: uwumail_store::FetchTokens {
+                access_token: tokens.access_token,
+                expires_at: now() + tokens.expires_in,
+                refresh_token: tokens.refresh_token,
+            },
+        };
+        rig.ours
+            .update_fetch_account(
+                rig.our_id,
+                rig.fetch_id,
+                uwumail_store::FetchAccountUpdate { oauth: Some(grant), ..Default::default() },
+            )
+            .await
+            .unwrap();
+        let transport =
+            Arc::new(ProviderTokens { store: rig.provider.clone(), client_id: client.id, asked: Default::default() });
+        rig.smtp.provider_oauth().set_transport(transport.clone());
+        (tokens.grant_id, transport)
+    }
+
+    /// What the rig's person was told about their fetched mailboxes.
+    fn listen(smtp: &Smtp) -> Arc<std::sync::Mutex<Vec<uwumail_smtp::provider_oauth::FetchNoticeKind>>> {
+        let heard = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let ear = heard.clone();
+        smtp.provider_oauth().on_notice(move |notice| ear.lock().unwrap().push(notice.kind));
+        heard
+    }
+
+    /// A mailbox signed in at Microsoft fetches with SASL XOAUTH2, renews its access token once it
+    /// runs out and keeps the refresh token the provider rotated. When the provider ends the grant,
+    /// the token it refuses is forgotten, the renewal learns the grant is over, and the person is
+    /// told once.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_mailbox_signed_in_at_microsoft_fetches_with_xoauth2_until_the_grant_ends() {
+        use uwumail_smtp::provider_oauth::{FetchNoticeKind, Provider};
+        let rig = Rig::new(AfterFetch::MarkRead).await;
+        let (grant_id, transport) = sign_in(&rig).await;
+        let heard = listen(&rig.smtp);
+        let account = rig.ours.fetch_account(rig.our_id, rig.fetch_id).await.unwrap().unwrap();
+        assert_eq!(account.auth, uwumail_store::FetchAuth::Microsoft);
+        assert_eq!(
+            rig.ours.fetch_password(rig.our_id, rig.fetch_id).await.unwrap().as_deref(),
+            Some(""),
+            "no password kept"
+        );
+
+        assert_eq!(rig.run().await, 0, "the first run only writes down where the folders stand");
+        at_provider(&rig.provider, rig.provider_id, MailboxTarget::Role(MailboxRole::Inbox), "Token").await;
+        assert_eq!(rig.run().await, 1, "logged in with the token");
+        assert_eq!(
+            transport.asked.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "a token with time left is used as it is"
+        );
+
+        // Run out: renewed first, and the rotated refresh token kept.
+        let before = rig.ours.fetch_oauth(rig.our_id, rig.fetch_id).await.unwrap().unwrap();
+        rig.ours.store_fetch_tokens(rig.fetch_id, before.access_token.clone().unwrap(), now() - 1, None).await.unwrap();
+        at_provider(&rig.provider, rig.provider_id, MailboxTarget::Role(MailboxRole::Inbox), "Erneuert").await;
+        assert_eq!(rig.run().await, 1, "with a new token");
+        assert_eq!(transport.asked.load(std::sync::atomic::Ordering::SeqCst), 1);
+        let after = rig.ours.fetch_oauth(rig.our_id, rig.fetch_id).await.unwrap().unwrap();
+        assert_ne!(after.refresh_token, before.refresh_token, "the rotated refresh token is the one kept");
+        assert_ne!(after.access_token, before.access_token);
+
+        // The person signs the app out at the provider.
+        rig.provider.revoke_oauth_grant(rig.provider_id, grant_id).await.unwrap();
+        let account = rig.ours.fetch_account(rig.our_id, rig.fetch_id).await.unwrap().unwrap();
+        let refused = run_once(&rig.ours, &rig.smtp, account, Some(rig.detour.clone()), None).await.unwrap_err();
+        assert!(format!("{refused:#}").contains("did not accept the sign-in"), "{refused:#}");
+        assert!(format!("{refused:#}").contains("AUTHENTICATE"), "{refused:#}");
+        assert!(!format!("{refused:#}").contains(after.access_token.as_deref().unwrap()), "the token is never shown");
+        assert_eq!(rig.ours.fetch_oauth(rig.our_id, rig.fetch_id).await.unwrap().unwrap().access_token, None);
+        let account = rig.ours.fetch_account(rig.our_id, rig.fetch_id).await.unwrap().unwrap();
+        let ended = run_once(&rig.ours, &rig.smtp, account, Some(rig.detour.clone()), None).await.unwrap_err();
+        assert!(format!("{ended:#}").contains("expired or was revoked"), "{ended:#}");
+        let account = rig.ours.fetch_account(rig.our_id, rig.fetch_id).await.unwrap().unwrap();
+        assert!(account.login_expired, "the mailbox says the sign-in ended");
+        assert!(!rig.ours.fetch_accounts_due().await.unwrap().iter().any(|due| due.id == rig.fetch_id));
+        let again = run_once(&rig.ours, &rig.smtp, account, Some(rig.detour.clone()), None).await;
+        assert!(again.is_err());
+        assert_eq!(*heard.lock().unwrap(), [FetchNoticeKind::LoginExpired(Provider::Microsoft)], "told once");
+    }
+
+    /// Microsoft's "Basic authentication is disabled" is not a wrong password: its own error, runs
+    /// stop asking until somebody asks by hand, the person hears once that signing in is the way,
+    /// and signing in ends it.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn microsofts_refusal_of_passwords_is_its_own_error_and_told_once() {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+        use uwumail_smtp::provider_oauth::FetchNoticeKind;
+        let generated = rcgen::generate_simple_self_signed(vec!["imap.freemail.example".to_owned()]).unwrap();
+        let key = rustls_pki_types::PrivateKeyDer::Pkcs8(generated.signing_key.serialize_der().into());
+        let tls = rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(vec![generated.cert.der().clone()], key)
+            .unwrap();
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tls));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        // Outlook as it answers a password now.
+        tokio::spawn(async move {
+            while let Ok((tcp, _)) = listener.accept().await {
+                let acceptor = acceptor.clone();
+                tokio::spawn(async move {
+                    let Ok(tls) = acceptor.accept(tcp).await else { return };
+                    let mut stream = tokio::io::BufReader::new(tls);
+                    let _ =
+                        stream.get_mut().write_all(b"* OK The Microsoft Exchange IMAP4 service is ready.\r\n").await;
+                    let mut line = String::new();
+                    while stream.read_line(&mut line).await.unwrap_or(0) > 0 {
+                        let tag = line.split(' ').next().unwrap_or("*").to_owned();
+                        let answer = if line.contains(" LOGIN ") {
+                            format!("{tag} NO LOGIN failed.\r\n")
+                                .replace("LOGIN failed.", "Basic authentication is disabled.")
+                        } else {
+                            format!("{tag} OK done\r\n")
+                        };
+                        let _ = stream.get_mut().write_all(answer.as_bytes()).await;
+                        line.clear();
+                    }
+                });
+            }
+        });
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(generated.cert.der().clone()).unwrap();
+        let detour = Detour { address: format!("127.0.0.1:{port}"), tls_name: "imap.freemail.example".into(), roots };
+
+        let dir = tempfile::tempdir().unwrap();
+        let (ours, our_id) = store_with_person(dir.path(), None).await;
+        let smtp = our_smtp(ours.clone());
+        let heard = listen(&smtp);
+        let fetched = ours
+            .create_fetch_account(NewFetchAccount {
+                account_id: our_id,
+                address: "mini@hotmail.example".into(),
+                host: "imap.freemail.example".into(),
+                port: 993,
+                security: FetchSecurity::Tls,
+                username: "mini@hotmail.example".into(),
+                password: PASSWORD.into(),
+                after_fetch: AfterFetch::MarkRead,
+                fetch_junk: false,
+                interval_secs: uwumail_store::DEFAULT_FETCH_INTERVAL_SECS,
+                auth_serv_id: String::new(),
+            })
+            .await
+            .unwrap();
+        let run = || {
+            let (store, smtp, detour) = (ours.clone(), smtp.clone(), detour.clone());
+            async move {
+                let account = store.fetch_account(our_id, fetched.id).await.unwrap().unwrap();
+                run_once(&store, &smtp, account, Some(detour), None).await.unwrap_err()
+            }
+        };
+        let error = format!("{:#}", run().await);
+        assert!(
+            error.contains("Basic authentication is disabled") && error.contains("signing in with Microsoft"),
+            "{error}"
+        );
+        assert!(!error.contains("user name and password"), "not told as a wrong password: {error}");
+        ours.note_fetch_run(fetched.id, 0, Some(error)).await.unwrap();
+        let account = ours.fetch_account(our_id, fetched.id).await.unwrap().unwrap();
+        assert!(account.password_refused);
+        assert!(!ours.fetch_accounts_due().await.unwrap().iter().any(|due| due.id == fetched.id), "runs stop asking");
+        run().await;
+        assert_eq!(*heard.lock().unwrap(), [FetchNoticeKind::PasswordRefused], "told once");
+
+        // Asked for by hand, it is tried again.
+        ours.fetch_account_due_now(our_id, fetched.id).await.unwrap();
+        assert!(ours.fetch_accounts_due().await.unwrap().iter().any(|due| due.id == fetched.id));
+        // Signing in with Microsoft ends it.
+        let grant = uwumail_store::FetchGrant {
+            provider: uwumail_store::FetchAuth::Microsoft,
+            tokens: uwumail_store::FetchTokens {
+                access_token: "at".into(),
+                expires_at: now() + 3600,
+                refresh_token: "rt".into(),
+            },
+        };
+        let update = uwumail_store::FetchAccountUpdate { oauth: Some(grant), ..Default::default() };
+        let switched = ours.update_fetch_account(our_id, fetched.id, update).await.unwrap();
+        assert!(!switched.password_refused);
+        assert_eq!(switched.auth, uwumail_store::FetchAuth::Microsoft);
     }
 
     #[tokio::test(flavor = "multi_thread")]

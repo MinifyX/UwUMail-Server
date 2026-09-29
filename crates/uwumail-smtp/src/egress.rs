@@ -43,6 +43,9 @@ use crate::fetch::{check_url, is_public};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const TIMEOUT: Duration = Duration::from_secs(20);
+/// Connecting for a remote picture in a message, per address: a tracking pixel on a dead host must not
+/// keep the rest of a message waiting (docs/jmap-remote.md). Through a proxy this covers the tunnel too.
+const PICTURE_CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
 const MAX_REDIRECTS: usize = 4;
 /// Fetches at the same time, for everyone together: a newsletter with fifty pictures must not turn the
 /// server into a flood.
@@ -69,11 +72,24 @@ pub struct EgressConfig {
     pub updates: bool,
     /// Fetching mail from mailboxes at other providers takes the proxy.
     pub fetch: bool,
+    /// The most the cache of remote pictures in messages keeps on disk, in megabytes; 0 keeps none.
+    pub image_cache_mb: u64,
+    /// Requests to AI providers on the internet take the proxy (docs/llm.md). Off unless switched on:
+    /// the provider knows who the key belongs to anyway. Providers in the local network never do.
+    pub assist: bool,
 }
 
 impl Default for EgressConfig {
     fn default() -> Self {
-        EgressConfig { proxy: String::new(), fallback: Fallback::Block, pictures: true, updates: false, fetch: false }
+        EgressConfig {
+            proxy: String::new(),
+            fallback: Fallback::Block,
+            pictures: true,
+            updates: false,
+            fetch: false,
+            image_cache_mb: 1024,
+            assist: false,
+        }
     }
 }
 
@@ -84,6 +100,45 @@ pub enum Purpose {
     Pictures,
     Updates,
     Fetch,
+    Assist,
+}
+
+/// Which addresses a request may reach. Everything but the AI assistant reaches public addresses only.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Reach {
+    /// Public addresses only.
+    #[default]
+    Public,
+    /// Public addresses and the local network: private IPv4 (RFC 1918), shared address space (RFC 6598,
+    /// e.g. Tailscale) and IPv6 unique local addresses. Never the machine itself, link-local addresses
+    /// (cloud metadata services) or anything unroutable. For a provider a person set up while the admin
+    /// allows it.
+    Lan,
+    /// Anywhere, the machine itself included: for a provider the admin set up.
+    Any,
+}
+
+impl Reach {
+    /// Whether `ip` may be connected to.
+    pub fn allows(self, ip: IpAddr) -> bool {
+        match self {
+            Reach::Public => is_public(ip),
+            Reach::Lan => is_public(ip) || is_local_network(ip),
+            Reach::Any => !ip.is_unspecified() && !ip.is_multicast(),
+        }
+    }
+}
+
+/// An address of the local network, as [`Reach::Lan`] means it.
+pub fn is_local_network(ip: IpAddr) -> bool {
+    match ip.to_canonical() {
+        IpAddr::V4(v4) => {
+            let [a, b, ..] = v4.octets();
+            v4.is_private() || (a == 100 && (b & 0xc0) == 64)
+        }
+        IpAddr::V6(v6) => (v6.segments()[0] & 0xfe00) == 0xfc00,
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
@@ -153,17 +208,22 @@ impl Proxy {
         }
     }
 
-    /// A connection to `target` through the proxy.
-    async fn open(&self, target: SocketAddr) -> std::io::Result<TcpStream> {
+    /// A connection to `target` through the proxy, or why not: the proxy itself could not be reached
+    /// (its name, its port, its login), or it could not open this one tunnel.
+    async fn open(&self, target: SocketAddr, limit: Duration) -> Result<TcpStream, (std::io::Error, Fault)> {
         let address = match self {
             Proxy::Http { address, .. } | Proxy::Socks5 { address, .. } => address,
         };
-        let mut stream = timed(TcpStream::connect(address.as_str())).await?;
-        match self {
-            Proxy::Http { auth, .. } => timed(http_connect(&mut stream, target, auth.as_deref())).await?,
-            Proxy::Socks5 { auth, .. } => timed(socks5_connect(&mut stream, target, auth.as_ref())).await?,
+        let mut stream = timed(limit, TcpStream::connect(address.as_str())).await.map_err(|err| (err, Fault::Proxy))?;
+        let tunnel = match self {
+            Proxy::Http { auth, .. } => timed(limit, http_connect(&mut stream, target, auth.as_deref())).await,
+            Proxy::Socks5 { auth, .. } => timed(limit, socks5_connect(&mut stream, target, auth.as_ref())).await,
+        };
+        match tunnel {
+            Ok(()) => Ok(stream),
+            Err(err) if err.get_ref().is_some_and(|inner| inner.is::<LoginRefused>()) => Err((err, Fault::Proxy)),
+            Err(err) => Err((err, Fault::Tunnel)),
         }
-        Ok(stream)
     }
 }
 
@@ -185,14 +245,148 @@ fn percent_decode(part: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-async fn timed<T>(step: impl Future<Output = std::io::Result<T>>) -> std::io::Result<T> {
-    tokio::time::timeout(CONNECT_TIMEOUT, step)
+async fn timed<T>(limit: Duration, step: impl Future<Output = std::io::Result<T>>) -> std::io::Result<T> {
+    tokio::time::timeout(limit, step)
         .await
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "the proxy did not answer in time"))?
 }
 
 fn refused(what: impl Into<String>) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::ConnectionRefused, what.into())
+}
+
+/// The proxy wants another login: nothing goes through it until the admin changes it.
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+struct LoginRefused(&'static str);
+
+fn login_refused(what: &'static str) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::ConnectionRefused, LoginRefused(what))
+}
+
+/// Whose fault it was that no connection came through the proxy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Fault {
+    /// The proxy itself: its name does not resolve, nothing listens, or it wants another login.
+    Proxy,
+    /// Only this tunnel: the proxy answered but could not reach the address, which may simply be down.
+    Tunnel,
+}
+
+/// After the proxy failed, requests leave without trying it (or stay away, with `fallback = "block"`)
+/// for this long; then one request tries it again.
+const PROXY_REST: Duration = Duration::from_secs(30);
+/// Tunnels that fail in a row, with nothing coming through in between, before the proxy is taken for
+/// broken although it answers: a VPN whose tunnel is down lets its proxy refuse every address.
+const FAILED_TUNNELS: u32 = 8;
+/// ... and the different hosts they were for, so a few dead tracking hosts alone never trip it.
+const FAILED_TUNNEL_HOSTS: usize = 3;
+/// A request that tries the proxy again and never reports back (it was dropped) is not waited for longer.
+const TRIAL_PATIENCE: Duration = Duration::from_secs(20);
+
+/// Remembers that the proxy is down, so each picture of a message does not wait for it on its own and
+/// the log says so once instead of once per picture (a circuit breaker). Shared by every request of one
+/// configuration.
+#[derive(Default)]
+struct Breaker {
+    state: Mutex<BreakerState>,
+}
+
+#[derive(Default)]
+struct BreakerState {
+    /// Resting until then; none while the proxy is in use.
+    resting_until: Option<tokio::time::Instant>,
+    /// Since when one request tries the proxy again after its rest.
+    trial_since: Option<tokio::time::Instant>,
+    /// Tunnels that failed since the last one that came through, and the hosts they were for.
+    failed_tunnels: u32,
+    failed_hosts: Vec<String>,
+    /// The last address a tunnel reached: asked again before refused tunnels count as the proxy's
+    /// fault, so dead hosts someone asks for do not take the proxy out of use for everyone.
+    last_good: Option<SocketAddr>,
+}
+
+/// What [`Breaker::admits`] says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Admission {
+    /// The proxy is in use.
+    Yes,
+    /// The proxy rested and this request tries it again; its outcome alone decides.
+    Trial,
+    /// The proxy rests.
+    No,
+}
+
+impl Breaker {
+    /// Whether a request may try the proxy now.
+    fn admits(&self) -> Admission {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let now = tokio::time::Instant::now();
+        match state.resting_until {
+            None => Admission::Yes,
+            Some(until) if now < until => Admission::No,
+            Some(_) => {
+                if state.trial_since.is_some_and(|since| now.duration_since(since) < TRIAL_PATIENCE) {
+                    return Admission::No;
+                }
+                state.trial_since = Some(now);
+                Admission::Trial
+            }
+        }
+    }
+
+    /// A tunnel came through to `target`. Answers whether the proxy had been resting.
+    fn succeeded(&self, target: SocketAddr) -> bool {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        state.failed_tunnels = 0;
+        state.failed_hosts.clear();
+        state.trial_since = None;
+        state.last_good = Some(target);
+        state.resting_until.take().is_some()
+    }
+
+    /// Where to look whether the proxy still reaches anything, when a refused tunnel for `host` would
+    /// make it rest: the last address it reached.
+    fn check_before_rest(&self, fault: Fault, host: &str, trial: bool) -> Option<SocketAddr> {
+        if fault != Fault::Tunnel {
+            return None;
+        }
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let hosts = state.failed_hosts.len() + usize::from(!state.failed_hosts.iter().any(|seen| seen == host));
+        let trips = trial || (state.failed_tunnels + 1 >= FAILED_TUNNELS && hosts >= FAILED_TUNNEL_HOSTS);
+        if trips { state.last_good } else { None }
+    }
+
+    /// Nothing came through for `host`. `trial`: this was the request that tried the proxy after its
+    /// rest; the failures of others that were still under way do not end the rest's trial. Answers
+    /// whether the proxy starts resting because of this (and was not resting before), which is logged
+    /// once.
+    fn failed(&self, fault: Fault, host: &str, trial: bool) -> bool {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let was_resting = state.resting_until.is_some();
+        let trial = trial && state.trial_since.take().is_some();
+        let broken = match fault {
+            Fault::Proxy => true,
+            Fault::Tunnel => {
+                state.failed_tunnels += 1;
+                if !state.failed_hosts.iter().any(|seen| seen == host) && state.failed_hosts.len() < 16 {
+                    state.failed_hosts.push(host.to_owned());
+                }
+                trial || (state.failed_tunnels >= FAILED_TUNNELS && state.failed_hosts.len() >= FAILED_TUNNEL_HOSTS)
+            }
+        };
+        if broken {
+            state.resting_until = Some(tokio::time::Instant::now() + PROXY_REST);
+            state.failed_tunnels = 0;
+            state.failed_hosts.clear();
+        }
+        broken && !was_resting
+    }
+
+    fn resting(&self) -> bool {
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        state.resting_until.is_some_and(|until| tokio::time::Instant::now() < until)
+    }
 }
 
 async fn http_connect(stream: &mut TcpStream, target: SocketAddr, auth: Option<&str>) -> std::io::Result<()> {
@@ -217,6 +411,9 @@ async fn http_connect(stream: &mut TcpStream, target: SocketAddr, auth: Option<&
     let status = answer.split(|&b| b == b' ').nth(1).unwrap_or_default();
     if status != b"200" {
         let line = String::from_utf8_lossy(answer.split(|&b| b == b'\r').next().unwrap_or_default()).into_owned();
+        if status == b"407" {
+            return Err(login_refused("the proxy turned the login down (407)"));
+        }
         return Err(refused(format!("the proxy refused the tunnel: {line}")));
     }
     Ok(())
@@ -233,7 +430,7 @@ async fn socks5_connect(
     let mut chosen = [0u8; 2];
     stream.read_exact(&mut chosen).await?;
     if chosen != [0x05, method] {
-        return Err(refused("the SOCKS5 proxy wants a different login"));
+        return Err(login_refused("the SOCKS5 proxy wants a different login"));
     }
     if let Some((user, password)) = auth {
         let mut login = vec![0x01, user.len() as u8];
@@ -244,7 +441,7 @@ async fn socks5_connect(
         let mut verdict = [0u8; 2];
         stream.read_exact(&mut verdict).await?;
         if verdict[1] != 0x00 {
-            return Err(refused("the SOCKS5 proxy turned the login down"));
+            return Err(login_refused("the SOCKS5 proxy turned the login down"));
         }
     }
     let mut request = vec![0x05, 0x01, 0x00];
@@ -310,6 +507,8 @@ pub struct EgressStatus {
     pub proxy_failures: u64,
     pub fallbacks: u64,
     pub last_proxy_failure: Option<ProxyFailure>,
+    /// The proxy failed a moment ago and is not tried for a few seconds.
+    pub proxy_resting: bool,
     /// Which kinds of request take the proxy while one is set.
     pub routes: Routes,
 }
@@ -320,11 +519,12 @@ pub struct Routes {
     pub pictures: bool,
     pub updates: bool,
     pub fetch: bool,
+    pub assist: bool,
 }
 
 impl Routes {
     fn of(config: &EgressConfig) -> Routes {
-        Routes { pictures: config.pictures, updates: config.updates, fetch: config.fetch }
+        Routes { pictures: config.pictures, updates: config.updates, fetch: config.fetch, assist: config.assist }
     }
 
     fn takes(&self, purpose: Purpose) -> bool {
@@ -332,6 +532,7 @@ impl Routes {
             Purpose::Pictures => self.pictures,
             Purpose::Updates => self.updates,
             Purpose::Fetch => self.fetch,
+            Purpose::Assist => self.assist,
         }
     }
 }
@@ -340,7 +541,16 @@ impl Routes {
 struct Connector {
     proxy: Option<Arc<Proxy>>,
     fallback: Fallback,
+    /// Which addresses it connects to. Plain `http://` is only allowed to addresses that are not public
+    /// when this is more than [`Reach::Public`]: a key must not cross the internet unencrypted.
+    reach: Reach,
     stats: Arc<Stats>,
+    /// For each address, and for each step with the proxy.
+    connect_timeout: Duration,
+    /// Whether the proxy is down; shared by every connector of one configuration.
+    breaker: Arc<Breaker>,
+    /// Tries the proxy even while it rests: the admin panel's test of the way out.
+    ignores_breaker: bool,
     /// Every name leads here, in tests: the pictures then come from a server on this machine.
     #[cfg(test)]
     pinned: Option<SocketAddr>,
@@ -359,39 +569,118 @@ impl Connector {
             Ok(ip) => vec![SocketAddr::new(ip, port)],
             Err(_) => tokio::net::lookup_host((host, port)).await?.collect(),
         };
-        let public = candidates(found, self.proxy.is_some());
+        let mut public = candidates(found, self.proxy.is_some(), self.reach);
+        if self.reach != Reach::Public && uri.scheme_str() == Some("http") {
+            public.retain(|address| !is_public(address.ip()));
+        }
         if public.is_empty() {
             return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "not a public address"));
         }
         Ok(public)
     }
 
-    async fn connect(&self, target: SocketAddr) -> std::io::Result<TcpStream> {
+    /// A connection to one of the addresses of `uri`: through the proxy when there is one and it is not
+    /// resting, otherwise straight or not at all, as `fallback` says.
+    async fn open(&self, uri: &Uri) -> std::io::Result<TcpStream> {
+        let targets = self.addresses(uri).await?;
         let Some(proxy) = &self.proxy else {
-            return timed(TcpStream::connect(target)).await;
+            return self.direct(&targets).await;
         };
-        let err = match proxy.open(target).await {
-            Ok(stream) => return Ok(stream),
-            Err(err) => err,
-        };
-        self.stats.proxy_failures.fetch_add(1, Ordering::Relaxed);
-        *self.stats.last_proxy_failure.lock().unwrap_or_else(|e| e.into_inner()) =
-            Some(ProxyFailure { at: crate::now(), error: err.to_string() });
-        if self.fallback == Fallback::Direct {
-            tracing::warn!(%err, "the egress proxy failed, fetching directly as configured");
-            self.stats.fallbacks.fetch_add(1, Ordering::Relaxed);
-            return timed(TcpStream::connect(target)).await;
+        // A proxy (a VPN) cannot reach into the local network; such addresses are only ever allowed on
+        // purpose (a reach beyond public, for the AI assistant's providers), and are reached directly.
+        if self.reach != Reach::Public {
+            let local: Vec<SocketAddr> = targets.iter().copied().filter(|target| !is_public(target.ip())).collect();
+            if !local.is_empty() {
+                return self.direct(&local).await;
+            }
         }
-        tracing::warn!(%err, "the egress proxy failed, the picture stays away");
-        Err(err)
+        let admission = if self.ignores_breaker { Admission::Yes } else { self.breaker.admits() };
+        if admission == Admission::No {
+            tracing::debug!("the egress proxy is resting after it failed");
+            return self.without_proxy(&targets, None).await;
+        }
+        let trial = admission == Admission::Trial;
+        let mut last = None;
+        let mut fault = Fault::Tunnel;
+        for target in &targets {
+            match proxy.open(*target, self.connect_timeout).await {
+                Ok(stream) => {
+                    if self.breaker.succeeded(*target) {
+                        tracing::info!("the egress proxy works again");
+                    }
+                    return Ok(stream);
+                }
+                Err((err, kind)) => {
+                    self.stats.proxy_failures.fetch_add(1, Ordering::Relaxed);
+                    *self.stats.last_proxy_failure.lock().unwrap_or_else(|e| e.into_inner()) =
+                        Some(ProxyFailure { at: crate::now(), error: err.to_string() });
+                    last = Some(err);
+                    fault = kind;
+                    if kind == Fault::Proxy {
+                        // Every other address would go the same way.
+                        break;
+                    }
+                }
+            }
+        }
+        let err = last.unwrap_or_else(|| refused("no address to connect to"));
+        let host = uri.host().unwrap_or_default();
+        // Refused tunnels are the proxy's fault only when it reaches nothing any more: the last address
+        // it reached is asked first (EGRESS-1 of the 0.18.0 audit).
+        if let Some(good) = self.breaker.check_before_rest(fault, host, trial)
+            && let Ok(check) = proxy.open(good, self.connect_timeout).await
+        {
+            drop(check);
+            if self.breaker.succeeded(good) {
+                tracing::info!("the egress proxy works again");
+            }
+            tracing::debug!(%err, "no tunnel to this host, but the egress proxy reaches others");
+            return self.without_proxy(&targets, Some(err)).await;
+        }
+        if self.breaker.failed(fault, host, trial) {
+            let rest = PROXY_REST.as_secs();
+            match self.fallback {
+                Fallback::Direct => tracing::warn!(
+                    %err,
+                    "the egress proxy failed; requests leave directly for the next {rest} s, as configured"
+                ),
+                Fallback::Block => tracing::warn!(
+                    %err,
+                    "the egress proxy failed; pictures and other requests that take it stay away for the next {rest} s"
+                ),
+            }
+        } else {
+            tracing::debug!(%err, ?fault, "no tunnel through the egress proxy");
+        }
+        self.without_proxy(&targets, Some(err)).await
+    }
+
+    /// What happens without the proxy: straight from the server when the admin allowed it.
+    async fn without_proxy(&self, targets: &[SocketAddr], err: Option<std::io::Error>) -> std::io::Result<TcpStream> {
+        if self.fallback == Fallback::Direct {
+            self.stats.fallbacks.fetch_add(1, Ordering::Relaxed);
+            return self.direct(targets).await;
+        }
+        Err(err.unwrap_or_else(|| refused("the egress proxy failed a moment ago; nothing leaves without it")))
+    }
+
+    async fn direct(&self, targets: &[SocketAddr]) -> std::io::Result<TcpStream> {
+        let mut last = None;
+        for target in targets {
+            match timed(self.connect_timeout, TcpStream::connect(*target)).await {
+                Ok(stream) => return Ok(stream),
+                Err(err) => last = Some(err),
+            }
+        }
+        Err(last.unwrap_or_else(|| refused("no address to connect to")))
     }
 }
 
 /// The public addresses of a name, in the order they are tried. Through a proxy, IPv4 comes first: a VPN
 /// container usually has no IPv6 route, and gluetun's kill switch drops such a tunnel silently, so every
 /// IPv6 address the system put first would wait out [`CONNECT_TIMEOUT`] and the picture never came.
-fn candidates(found: Vec<SocketAddr>, proxied: bool) -> Vec<SocketAddr> {
-    let mut public: Vec<SocketAddr> = found.into_iter().filter(|address| is_public(address.ip())).collect();
+fn candidates(found: Vec<SocketAddr>, proxied: bool, reach: Reach) -> Vec<SocketAddr> {
+    let mut public: Vec<SocketAddr> = found.into_iter().filter(|address| reach.allows(address.ip())).collect();
     if proxied {
         public.sort_by_key(SocketAddr::is_ipv6);
     }
@@ -411,18 +700,28 @@ impl tower::Service<Uri> for Connector {
     fn call(&mut self, uri: Uri) -> Self::Future {
         let connector = self.clone();
         Box::pin(async move {
-            let mut last = None;
-            for target in connector.addresses(&uri).await? {
-                match connector.connect(target).await {
-                    Ok(stream) => {
-                        let _ = stream.set_nodelay(true);
-                        return Ok(TokioIo::new(stream));
-                    }
-                    Err(err) => last = Some(err),
-                }
-            }
-            Err(last.unwrap_or_else(|| refused("no address to connect to")))
+            let stream = connector.open(&uri).await?;
+            let _ = stream.set_nodelay(true);
+            Ok(TokioIo::new(stream))
         })
+    }
+}
+
+/// What [`Egress::assist_client`] hands out.
+#[derive(Clone)]
+pub struct AssistClient {
+    client: PostClient,
+}
+
+impl AssistClient {
+    /// Sends `request` and answers the response with its body still to be read, so the caller can read
+    /// it as it streams in and stop at its own limits. Connecting counts against no timeout but the
+    /// connection's own; the caller bounds the whole.
+    pub async fn send(
+        &self,
+        request: Request<Full<Bytes>>,
+    ) -> Result<hyper::Response<hyper::body::Incoming>, EgressError> {
+        self.client.request(request).await.map_err(|err| reason(&err))
     }
 }
 
@@ -436,7 +735,7 @@ pub struct Fetched {
     pub url: Url,
 }
 
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 pub enum EgressError {
     #[error("{0}")]
     NotAllowed(String),
@@ -465,10 +764,23 @@ struct Setup {
     routes: Routes,
     /// For pictures: through the proxy when they take it.
     pictures: HttpClient,
+    /// The same for the remote pictures in messages, which give up on a host much sooner.
+    message_pictures: HttpClient,
     /// Through the proxy whenever there is one, to test it.
     probe: HttpClient,
     /// One-click unsubscriptions: the way pictures go.
     unsubscribe: PostClient,
+    /// Whether the proxy is down, for every request of this configuration.
+    breaker: Arc<Breaker>,
+    /// The most the cache of remote pictures may hold on disk, in bytes; 0 keeps nothing.
+    image_cache_bytes: u64,
+}
+
+/// How long connecting may take; shorter in tests.
+#[derive(Debug, Clone, Copy)]
+struct ConnectTimeouts {
+    usual: Duration,
+    pictures: Duration,
 }
 
 struct Shared {
@@ -478,6 +790,7 @@ struct Shared {
     permits: Semaphore,
     stats: Arc<Stats>,
     roots: rustls::RootCertStore,
+    timeouts: ConnectTimeouts,
     #[cfg(test)]
     pinned: Option<SocketAddr>,
 }
@@ -503,14 +816,7 @@ impl Dialer {
             format!("tcp://{}:{port}", if host.contains(':') { format!("[{host}]") } else { host.to_owned() })
                 .parse()
                 .map_err(|_| refused("not a host name"))?;
-        let mut last = None;
-        for target in self.connector.addresses(&uri).await? {
-            match self.connector.connect(target).await {
-                Ok(stream) => return Ok(stream),
-                Err(err) => last = Some(err),
-            }
-        }
-        Err(last.unwrap_or_else(|| refused("no address to connect to")))
+        self.connector.open(&uri).await
     }
 
     /// Whether this leaves through a proxy.
@@ -569,11 +875,30 @@ impl Egress {
     }
 
     fn empty(roots: rustls::RootCertStore, #[cfg(test)] pinned: Option<SocketAddr>) -> Egress {
+        let timeouts = ConnectTimeouts { usual: CONNECT_TIMEOUT, pictures: PICTURE_CONNECT_TIMEOUT };
+        Egress::build(
+            roots,
+            timeouts,
+            #[cfg(test)]
+            pinned,
+        )
+    }
+
+    fn build(
+        roots: rustls::RootCertStore,
+        timeouts: ConnectTimeouts,
+        #[cfg(test)] pinned: Option<SocketAddr>,
+    ) -> Egress {
         let stats: Arc<Stats> = Arc::default();
+        let breaker: Arc<Breaker> = Arc::default();
         let direct = Connector {
             proxy: None,
             fallback: Fallback::Block,
+            reach: Reach::Public,
             stats: stats.clone(),
+            connect_timeout: timeouts.usual,
+            breaker: breaker.clone(),
+            ignores_breaker: false,
             #[cfg(test)]
             pinned,
         };
@@ -584,8 +909,11 @@ impl Egress {
             fallback: Fallback::Block,
             routes: Routes::of(&EgressConfig::default()),
             pictures: client.clone(),
+            message_pictures: client.clone(),
             probe: client,
             unsubscribe: post.clone(),
+            breaker,
+            image_cache_bytes: EgressConfig::default().image_cache_mb * 1024 * 1024,
         };
         Egress {
             shared: Arc::new(Shared {
@@ -594,10 +922,20 @@ impl Egress {
                 permits: Semaphore::new(MAX_CONCURRENT),
                 stats,
                 roots,
+                timeouts,
                 #[cfg(test)]
                 pinned,
             }),
         }
+    }
+
+    /// Every name leads to `pinned`: for tests elsewhere in this crate. Connecting keeps the real limits,
+    /// so a busy machine does not fail a test that expects the connection.
+    #[cfg(test)]
+    pub(crate) fn pinned_to(pinned: SocketAddr) -> Egress {
+        let egress = Egress::empty(rustls::RootCertStore::empty(), Some(pinned));
+        egress.reconfigure(&EgressConfig::default()).expect("no proxy to get wrong");
+        egress
     }
 
     /// Every name leads to `pinned`, whose certificate is trusted: websites for tests elsewhere in this crate.
@@ -611,11 +949,15 @@ impl Egress {
         Egress::empty(roots, Some(pinned))
     }
 
-    fn connector(&self, proxy: Option<Arc<Proxy>>, fallback: Fallback) -> Connector {
+    fn connector(&self, proxy: Option<Arc<Proxy>>, fallback: Fallback, breaker: &Arc<Breaker>) -> Connector {
         Connector {
             proxy,
             fallback,
+            reach: Reach::Public,
             stats: self.shared.stats.clone(),
+            connect_timeout: self.shared.timeouts.usual,
+            breaker: breaker.clone(),
+            ignores_breaker: false,
             #[cfg(test)]
             pinned: self.shared.pinned,
         }
@@ -626,17 +968,26 @@ impl Egress {
     pub fn reconfigure(&self, config: &EgressConfig) -> Result<(), String> {
         let proxy = Proxy::parse(&config.proxy)?.map(Arc::new);
         let routes = Routes::of(config);
+        let breaker: Arc<Breaker> = Arc::default();
         let through = |takes: bool| if takes { proxy.clone() } else { None };
+        let pictures = self.connector(through(routes.pictures), config.fallback, &breaker);
         let setup = Setup {
-            pictures: build_client(self.connector(through(routes.pictures), config.fallback), &self.shared.roots),
-            probe: build_client(self.connector(proxy.clone(), config.fallback), &self.shared.roots),
-            unsubscribe: build_post_client(
-                self.connector(through(routes.pictures), config.fallback),
+            pictures: build_client(pictures.clone(), &self.shared.roots),
+            message_pictures: build_message_picture_client(
+                Connector { connect_timeout: self.shared.timeouts.pictures, ..pictures.clone() },
                 &self.shared.roots,
             ),
+            // The admin's test tries the proxy even while it rests.
+            probe: build_client(
+                Connector { ignores_breaker: true, ..self.connector(proxy.clone(), config.fallback, &breaker) },
+                &self.shared.roots,
+            ),
+            unsubscribe: build_post_client(pictures, &self.shared.roots),
             proxy,
             fallback: config.fallback,
             routes,
+            breaker,
+            image_cache_bytes: config.image_cache_mb.saturating_mul(1024 * 1024),
         };
         *self.shared.setup.write().unwrap_or_else(|e| e.into_inner()) = Arc::new(setup);
         Ok(())
@@ -644,6 +995,11 @@ impl Egress {
 
     fn setup(&self) -> Arc<Setup> {
         self.shared.setup.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// The most the cache of remote pictures may hold on disk, in bytes (`egress.image_cache_mb`).
+    pub fn image_cache_limit(&self) -> u64 {
+        self.setup().image_cache_bytes
     }
 
     /// Whether requests leave through a proxy.
@@ -656,13 +1012,35 @@ impl Egress {
     pub fn dialer(&self, purpose: Purpose) -> Dialer {
         let setup = self.setup();
         let proxy = setup.proxy.clone().filter(|_| setup.routes.takes(purpose));
-        Dialer { connector: self.connector(proxy, setup.fallback) }
+        Dialer { connector: self.connector(proxy, setup.fallback, &setup.breaker) }
     }
 
     /// Straight from the server, whatever the proxy says: for requests between servers that name this one
     /// anyway, like the TLS reports it posts. Still only to public addresses.
     pub fn direct_dialer(&self) -> Dialer {
-        Dialer { connector: self.connector(None, Fallback::Block) }
+        Dialer { connector: self.connector(None, Fallback::Block, &Arc::default()) }
+    }
+
+    /// An HTTP client for AI providers (docs/llm.md): https to public addresses, through the proxy when
+    /// `[egress] assist` says so, and with `reach` beyond that also into the local network or anywhere
+    /// (plain http then only to addresses that are not public). Names are resolved and checked on every
+    /// connection, so a name that later points elsewhere does not get around `reach`. Redirects are the
+    /// caller's to refuse.
+    pub fn assist_client(&self, reach: Reach) -> AssistClient {
+        let setup = self.setup();
+        let proxy = setup.proxy.clone().filter(|_| setup.routes.assist);
+        let mut connector = self.connector(proxy, setup.fallback, &setup.breaker);
+        connector.reach = reach;
+        let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+        let tls = rustls::ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .expect("the default TLS versions")
+            .with_root_certificates(self.shared.roots.clone())
+            .with_no_client_auth();
+        let builder = hyper_rustls::HttpsConnectorBuilder::new().with_tls_config(tls);
+        let https = if reach == Reach::Public { builder.https_only() } else { builder.https_or_http() };
+        let client = Client::builder(TokioExecutor::new()).build(https.enable_http1().wrap_connector(connector));
+        AssistClient { client }
     }
 
     /// The certificate authorities requests through this egress trust.
@@ -681,6 +1059,7 @@ impl Egress {
             proxy_failures: stats.proxy_failures.load(Ordering::Relaxed),
             fallbacks: stats.fallbacks.load(Ordering::Relaxed),
             last_proxy_failure: stats.last_proxy_failure.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            proxy_resting: setup.breaker.resting(),
             routes: setup.routes,
         }
     }
@@ -709,6 +1088,46 @@ impl Egress {
             .body(Full::new(Bytes::from(body)))
             .map_err(|_| EgressError::NotAllowed("that is not a web address".into()))?;
         self.send(&self.shared.post, request).await
+    }
+
+    /// POSTs a form to a public https address the way requests for `purpose` leave -- through the proxy
+    /// when they take it, with the configured fallback -- and answers the status and the body, read up to
+    /// `max_bytes`. For the token endpoints of OAuth providers (docs/fetch.md). Redirects are answered, not
+    /// followed: a token endpoint never sends one, and a form with a secret in it does not go on to
+    /// wherever a redirect points.
+    pub async fn post_form(
+        &self,
+        purpose: Purpose,
+        url: &str,
+        form: String,
+        max_bytes: usize,
+    ) -> Result<(u16, Bytes), EgressError> {
+        let url = check_url(url, false).map_err(EgressError::NotAllowed)?;
+        let request = Request::post(url.as_str())
+            .header(USER_AGENT, AGENT)
+            .header(ACCEPT, "application/json")
+            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(Full::new(Bytes::from(form)))
+            .map_err(|_| EgressError::NotAllowed("that is not a web address".into()))?;
+        // Made for each request from the way out as it is now, so a proxy the admin changes a moment
+        // ago is already the one taken.
+        let client = build_post_client(self.dialer(purpose).connector, &self.shared.roots);
+        let _permit = self.shared.permits.acquire().await.map_err(|_| EgressError::Unreachable)?;
+        let result = tokio::time::timeout(TIMEOUT, async move {
+            let response = client.request(request).await.map_err(|err| reason(&err))?;
+            let status = response.status().as_u16();
+            let body = Limited::new(response.into_body(), max_bytes)
+                .collect()
+                .await
+                .map_err(|_| EgressError::TooLarge)?
+                .to_bytes();
+            Ok((status, body))
+        })
+        .await
+        .map_err(|_| EgressError::Timeout)?;
+        let counter = if result.is_ok() { &self.shared.stats.fetched } else { &self.shared.stats.failed };
+        counter.fetch_add(1, Ordering::Relaxed);
+        result
     }
 
     /// Unsubscribes with one click (RFC 8058): POSTs `List-Unsubscribe=One-Click` as a form to a public
@@ -763,8 +1182,61 @@ impl Egress {
         max_bytes: usize,
     ) -> Result<Fetched, EgressError> {
         let _permit = self.shared.permits.acquire().await.map_err(|_| EgressError::Unreachable)?;
-        tokio::time::timeout(TIMEOUT, follow(client, url, accept, max_bytes)).await.map_err(|_| EgressError::Timeout)?
+        let patience = Patience { answer: TIMEOUT, stall: None };
+        tokio::time::timeout(TIMEOUT, follow(client, url, accept, max_bytes, patience, &mut |_| {}))
+            .await
+            .map_err(|_| EgressError::Timeout)?
     }
+
+    /// GETs a remote picture of a message like [`Egress::get`], but within `limits`, which give up on a
+    /// dead host within seconds, and without waiting for the permits every other request shares: the
+    /// caller keeps these fair itself (`remote_images`). `progress` sees everything that came so far
+    /// after each piece of the body, so a picture's size can be told before all of it is there.
+    pub async fn get_message_picture(
+        &self,
+        url: &str,
+        accept: &str,
+        max_bytes: usize,
+        limits: PictureLimits,
+        progress: &mut (dyn FnMut(&[u8]) + Send),
+    ) -> Result<Fetched, EgressError> {
+        let client = self.setup().message_pictures.clone();
+        let patience = Patience { answer: limits.answer, stall: Some(limits.stall) };
+        let result = tokio::time::timeout(limits.total, follow(&client, url, accept, max_bytes, patience, progress))
+            .await
+            .map_err(|_| EgressError::Timeout)
+            .and_then(|result| result);
+        let counter = if result.is_ok() { &self.shared.stats.fetched } else { &self.shared.stats.failed };
+        counter.fetch_add(1, Ordering::Relaxed);
+        result
+    }
+}
+
+/// How long a remote picture in a message may take (docs/jmap-remote.md). Connecting is limited to
+/// four seconds per address as well.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PictureLimits {
+    /// From the first connection to the answer's headers, redirects included.
+    pub answer: Duration,
+    /// The longest pause between two pieces of the body.
+    pub stall: Duration,
+    /// Everything together; a big picture on a slow line still makes it as long as bytes keep coming.
+    pub total: Duration,
+}
+
+impl Default for PictureLimits {
+    fn default() -> Self {
+        PictureLimits { answer: Duration::from_secs(6), stall: Duration::from_secs(5), total: Duration::from_secs(20) }
+    }
+}
+
+/// Limits of one GET besides its size.
+#[derive(Debug, Clone, Copy)]
+struct Patience {
+    /// Until the headers of the last answer.
+    answer: Duration,
+    /// Between two pieces of the body.
+    stall: Option<Duration>,
 }
 
 fn build_client(connector: Connector, roots: &rustls::RootCertStore) -> HttpClient {
@@ -782,6 +1254,23 @@ fn build_client(connector: Connector, roots: &rustls::RootCertStore) -> HttpClie
     Client::builder(TokioExecutor::new()).build(https)
 }
 
+/// Like [`build_client`], but speaks HTTP/2 where the other side does, so all pictures of a message from
+/// one host share a connection (and a single tunnel through the proxy).
+fn build_message_picture_client(connector: Connector, roots: &rustls::RootCertStore) -> HttpClient {
+    let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+    let tls = rustls::ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .expect("the default TLS versions")
+        .with_root_certificates(roots.clone())
+        .with_no_client_auth();
+    let https = hyper_rustls::HttpsConnectorBuilder::new()
+        .with_tls_config(tls)
+        .https_or_http()
+        .enable_all_versions()
+        .wrap_connector(connector);
+    Client::builder(TokioExecutor::new()).pool_idle_timeout(Duration::from_secs(60)).build(https)
+}
+
 fn build_post_client(connector: Connector, roots: &rustls::RootCertStore) -> PostClient {
     let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
     let tls = rustls::ClientConfig::builder_with_provider(provider)
@@ -797,7 +1286,15 @@ fn build_post_client(connector: Connector, roots: &rustls::RootCertStore) -> Pos
     Client::builder(TokioExecutor::new()).build(https)
 }
 
-async fn follow(client: &HttpClient, url: &str, accept: &str, max_bytes: usize) -> Result<Fetched, EgressError> {
+async fn follow(
+    client: &HttpClient,
+    url: &str,
+    accept: &str,
+    max_bytes: usize,
+    patience: Patience,
+    progress: &mut (dyn FnMut(&[u8]) + Send),
+) -> Result<Fetched, EgressError> {
+    let answer_by = tokio::time::Instant::now() + patience.answer;
     let mut current = check_url(url, true).map_err(EgressError::NotAllowed)?;
     for _ in 0..=MAX_REDIRECTS {
         let request = Request::get(current.as_str())
@@ -805,7 +1302,10 @@ async fn follow(client: &HttpClient, url: &str, accept: &str, max_bytes: usize) 
             .header(ACCEPT, accept)
             .body(Empty::new())
             .map_err(|_| EgressError::NotAllowed("that is not a web address".into()))?;
-        let response = client.request(request).await.map_err(|err| reason(&err))?;
+        let response = tokio::time::timeout_at(answer_by, client.request(request))
+            .await
+            .map_err(|_| EgressError::Timeout)?
+            .map_err(|err| reason(&err))?;
         let status = response.status();
         if status.is_redirection() && status != StatusCode::NOT_MODIFIED {
             let location = response
@@ -827,18 +1327,31 @@ async fn follow(client: &HttpClient, url: &str, accept: &str, max_bytes: usize) 
             .and_then(|value| value.split(';').next())
             .map(|value| value.trim().to_ascii_lowercase())
             .unwrap_or_default();
-        let body = Limited::new(response.into_body(), max_bytes)
-            .collect()
-            .await
-            .map_err(|err| {
-                if err.is::<http_body_util::LengthLimitError>() {
-                    EgressError::TooLarge
-                } else {
-                    EgressError::Unreachable
-                }
-            })?
-            .to_bytes();
-        return Ok(Fetched { media_type, body, url: current });
+        let announced = response
+            .headers()
+            .get(hyper::header::CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok());
+        if announced.is_some_and(|length| length > max_bytes as u64) {
+            return Err(EgressError::TooLarge);
+        }
+        let mut body = response.into_body();
+        let mut collected = Vec::with_capacity(announced.map_or(0, |length| length as usize));
+        loop {
+            let next = match patience.stall {
+                Some(stall) => tokio::time::timeout(stall, body.frame()).await.map_err(|_| EgressError::Timeout)?,
+                None => body.frame().await,
+            };
+            let Some(frame) = next else { break };
+            let frame = frame.map_err(|_| EgressError::Unreachable)?;
+            let Ok(data) = frame.into_data() else { continue };
+            if collected.len() + data.len() > max_bytes {
+                return Err(EgressError::TooLarge);
+            }
+            collected.extend_from_slice(&data);
+            progress(&collected);
+        }
+        return Ok(Fetched { media_type, body: Bytes::from(collected), url: current });
     }
     Err(EgressError::Redirects)
 }
@@ -863,6 +1376,25 @@ mod tests {
     use tokio::net::TcpListener;
 
     use super::*;
+
+    #[test]
+    fn reach_says_where_the_assistant_may_connect() {
+        let ip = |text: &str| text.parse::<IpAddr>().unwrap();
+        for public in ["8.8.8.8", "2a00:1450::1"] {
+            assert!(Reach::Public.allows(ip(public)) && Reach::Lan.allows(ip(public)) && Reach::Any.allows(ip(public)));
+        }
+        for lan in ["192.168.1.20", "10.0.0.5", "172.16.3.4", "100.64.1.1", "fd12:3456::1"] {
+            assert!(!Reach::Public.allows(ip(lan)), "{lan}");
+            assert!(Reach::Lan.allows(ip(lan)), "{lan}");
+            assert!(Reach::Any.allows(ip(lan)), "{lan}");
+        }
+        // The machine itself and cloud metadata stay out of reach of what people set up.
+        for inside in ["127.0.0.1", "::1", "169.254.169.254", "fe80::1", "0.0.0.0", "::ffff:127.0.0.1"] {
+            assert!(!Reach::Lan.allows(ip(inside)), "{inside}");
+        }
+        assert!(Reach::Any.allows(ip("127.0.0.1")) && Reach::Any.allows(ip("::1")));
+        assert!(!Reach::Any.allows(ip("0.0.0.0")) && !Reach::Any.allows(ip("224.0.0.1")));
+    }
 
     fn egress(proxy: &str, fallback: Fallback, pinned: SocketAddr) -> Egress {
         let egress = Egress::empty(rustls::RootCertStore::empty(), Some(pinned));
@@ -1014,15 +1546,15 @@ mod tests {
             address("93.184.215.15:443"),
         ];
         assert_eq!(
-            candidates(found.clone(), true),
+            candidates(found.clone(), true, Reach::Public),
             [address("93.184.215.14:443"), address("93.184.215.15:443"), address("[2600:9000:1::1]:443")],
             "the VPN reaches IPv4; IPv6 only once that failed"
         );
         assert_eq!(
-            candidates(found, false),
+            candidates(found, false, Reach::Public),
             [address("[2600:9000:1::1]:443"), address("[2600:9000:2::1]:443"), address("[2600:9000:3::1]:443")]
         );
-        assert!(candidates(vec![address("10.0.0.1:443")], true).is_empty(), "never into the network");
+        assert!(candidates(vec![address("10.0.0.1:443")], true, Reach::Public).is_empty(), "never into the network");
     }
 
     #[tokio::test]
@@ -1132,6 +1664,26 @@ mod tests {
         assert!(copy.proxied(), "a configuration that does not parse changes nothing");
     }
 
+    /// The AI assistant's providers in the local network are reached directly, even with `egress.assist`
+    /// on and the proxy resting: a VPN could not reach them anyway.
+    #[tokio::test]
+    async fn local_ai_providers_are_reached_past_the_proxy() {
+        let (server, _) = pictures().await;
+        let (proxy, asked) = http_proxy().await;
+        let egress = egress("", Fallback::Block, server);
+        let config = EgressConfig { proxy: format!("http://{proxy}"), assist: true, ..EgressConfig::default() };
+        egress.reconfigure(&config).unwrap();
+        let request = || Request::get("http://ollama.test/pixel.gif").body(Full::new(Bytes::new())).unwrap();
+        let response = egress.assist_client(Reach::Lan).send(request()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(asked.lock().unwrap().is_empty(), "the proxy was not asked");
+        // Pictures still take it.
+        egress.get("http://pictures.example/pixel.gif", "image/*", 1024).await.unwrap();
+        assert_eq!(asked.lock().unwrap().len(), 1);
+        // For the internet it stays https only.
+        assert!(egress.assist_client(Reach::Public).send(request()).await.is_err());
+    }
+
     #[tokio::test]
     async fn each_kind_of_request_takes_the_proxy_only_when_told() {
         let (server, _) = pictures().await;
@@ -1145,7 +1697,7 @@ mod tests {
             ..EgressConfig::default()
         };
         egress.reconfigure(&config).unwrap();
-        assert_eq!(egress.status().routes, Routes { pictures: false, updates: false, fetch: true });
+        assert_eq!(egress.status().routes, Routes { pictures: false, updates: false, fetch: true, assist: false });
         egress.get("http://pictures.example/pixel.gif", "image/*", 1024).await.unwrap();
         assert!(asked.lock().unwrap().is_empty(), "pictures leave directly now");
         assert!(!egress.dialer(Purpose::Updates).proxied());
@@ -1286,5 +1838,253 @@ mod tests {
         let egress = Egress::direct();
         let err = egress.dialer(Purpose::Fetch).connect("127.0.0.1", 993).await.unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+    }
+
+    /// Gives up connecting after 300 ms: only for tests that expect a failure either way, where the limit
+    /// keeps a hanging proxy or a slow resolver short. The others connect with the real limits and fail
+    /// by refused ports and refused tunnels, which come at once, so a busy machine can not turn a slow
+    /// connect into a failure they do not expect.
+    fn hasty_egress(proxy: &str, fallback: Fallback, pinned: SocketAddr) -> Egress {
+        let quick = Duration::from_millis(300);
+        let egress = Egress::build(
+            rustls::RootCertStore::empty(),
+            ConnectTimeouts { usual: quick, pictures: quick },
+            Some(pinned),
+        );
+        egress.reconfigure(&EgressConfig { proxy: proxy.into(), fallback, ..EgressConfig::default() }).unwrap();
+        egress
+    }
+
+    /// A CONNECT proxy that answers every tunnel with `answer`, or never answers at all; counts the tunnels
+    /// it was asked for.
+    async fn broken_proxy(answer: Option<&'static str>) -> (SocketAddr, Arc<AtomicU64>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let asked = Arc::new(AtomicU64::new(0));
+        let count = asked.clone();
+        tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let count = count.clone();
+                tokio::spawn(async move {
+                    read_head(&mut stream).await;
+                    count.fetch_add(1, Ordering::Relaxed);
+                    match answer {
+                        Some(answer) => {
+                            let _ = stream.write_all(answer.as_bytes()).await;
+                        }
+                        // Holds the connection open without a word, like a VPN container whose tunnel hangs.
+                        None => {
+                            let _ = stream.read(&mut [0u8; 1]).await;
+                        }
+                    }
+                });
+            }
+        });
+        (address, asked)
+    }
+
+    #[tokio::test]
+    async fn a_proxy_that_is_gone_is_tried_once_and_then_rests() {
+        let (server, seen) = pictures().await;
+        let gone = closed_port().await;
+        let blocking = egress(&format!("http://{gone}"), Fallback::Block, server);
+        let url = "http://pictures.example/pixel.gif";
+        assert_eq!(blocking.get(url, "image/*", 1024).await.unwrap_err(), EgressError::Unreachable);
+        let status = blocking.status();
+        assert!(status.proxy_resting, "the proxy rests after it failed");
+        assert_eq!(status.proxy_failures, 1);
+        for _ in 0..5 {
+            assert_eq!(blocking.get(url, "image/*", 1024).await.unwrap_err(), EgressError::Unreachable);
+        }
+        assert_eq!(blocking.status().proxy_failures, 1, "not tried again while it rests");
+        assert!(seen.lock().unwrap().is_empty(), "and nothing went around it");
+
+        let direct = egress(&format!("http://{gone}"), Fallback::Direct, server);
+        for _ in 0..4 {
+            assert_eq!(&direct.get(url, "image/*", 1024).await.unwrap().body[..], b"GIF89a");
+        }
+        let status = direct.status();
+        assert_eq!((status.proxy_failures, status.fallbacks), (1, 4), "tried once, then straight away");
+    }
+
+    #[tokio::test]
+    async fn a_proxy_whose_name_does_not_resolve_fails_at_once() {
+        let (server, _) = pictures().await;
+        let egress = hasty_egress("http://proxy.invalid:8888", Fallback::Block, server);
+        let started = tokio::time::Instant::now();
+        for _ in 0..10 {
+            assert!(egress.get("http://pictures.example/pixel.gif", "image/*", 1024).await.is_err());
+        }
+        assert_eq!(egress.status().proxy_failures, 1, "the name is looked up once, not for every picture");
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[tokio::test]
+    async fn a_refused_tunnel_is_only_the_address_s_fault_until_many_hosts_fail() {
+        let (server, _) = pictures().await;
+        let (proxy, asked) = broken_proxy(Some("HTTP/1.1 503 Service Unavailable\r\n\r\n")).await;
+        let egress = egress(&format!("http://{proxy}"), Fallback::Block, server);
+        // One dead tracking host, asked again and again, never takes the proxy out of use.
+        for _ in 0..12 {
+            assert!(egress.get("http://tracker.example/pixel.gif", "image/*", 1024).await.is_err());
+        }
+        assert!(!egress.status().proxy_resting);
+        assert_eq!(asked.load(Ordering::Relaxed), 12);
+        // Every host refused, one after the other: the VPN behind the proxy is down.
+        for host in ["a", "b", "c", "d", "e", "f", "g", "h"] {
+            assert!(egress.get(&format!("http://{host}.example/pixel.gif"), "image/*", 1024).await.is_err());
+        }
+        assert!(egress.status().proxy_resting);
+        let before = asked.load(Ordering::Relaxed);
+        assert!(egress.get("http://i.example/pixel.gif", "image/*", 1024).await.is_err());
+        assert_eq!(asked.load(Ordering::Relaxed), before, "not asked while it rests");
+    }
+
+    #[tokio::test]
+    async fn a_proxy_that_hangs_costs_a_message_picture_its_connect_limit_only() {
+        let (server, _) = pictures().await;
+        let (proxy, _) = broken_proxy(None).await;
+        let egress = hasty_egress(&format!("http://{proxy}"), Fallback::Block, server);
+        let started = tokio::time::Instant::now();
+        let failed = egress
+            .get_message_picture(
+                "http://pictures.example/pixel.gif",
+                "image/*",
+                1024,
+                PictureLimits::default(),
+                &mut |_| {},
+            )
+            .await;
+        assert!(failed.is_err());
+        assert!(started.elapsed() < Duration::from_secs(3), "{:?}", started.elapsed());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_proxy_is_tried_again_after_its_rest() {
+        let breaker = Breaker::default();
+        let good: SocketAddr = "192.0.2.1:443".parse().unwrap();
+        assert_eq!(breaker.admits(), Admission::Yes);
+        assert!(breaker.failed(Fault::Proxy, "a.example", false), "the first failure is logged");
+        assert!(breaker.admits() == Admission::No && breaker.resting());
+        tokio::time::advance(PROXY_REST + Duration::from_secs(1)).await;
+        assert_eq!(breaker.admits(), Admission::Trial, "one request tries it again");
+        assert_eq!(breaker.admits(), Admission::No, "the others wait for that one");
+        // A request that was still under way before the rest does not decide the trial (EGRESS-1).
+        assert!(!breaker.failed(Fault::Tunnel, "old.example", false));
+        assert_eq!(breaker.admits(), Admission::No, "the trial is still going");
+        assert!(!breaker.failed(Fault::Tunnel, "b.example", true), "a failed trial rests again, without a new warning");
+        assert_eq!(breaker.admits(), Admission::No);
+        tokio::time::advance(PROXY_REST + Duration::from_secs(1)).await;
+        assert_eq!(breaker.admits(), Admission::Trial);
+        assert!(breaker.succeeded(good), "it works again");
+        assert!(breaker.admits() == Admission::Yes && breaker.admits() == Admission::Yes, "everyone takes it again");
+        tokio::time::advance(PROXY_REST).await;
+        assert!(breaker.failed(Fault::Proxy, "a.example", false));
+        tokio::time::advance(PROXY_REST + Duration::from_secs(1)).await;
+        assert_eq!(breaker.admits(), Admission::Trial);
+        tokio::time::advance(TRIAL_PATIENCE + Duration::from_secs(1)).await;
+        assert_eq!(breaker.admits(), Admission::Trial, "a trial that never reported back is not waited for forever");
+    }
+
+    /// EGRESS-1 of the 0.18.0 audit: refused tunnels to many hosts rest the proxy only when it does not
+    /// reach the last address it reached either, so someone asking for dead hosts does not take the
+    /// proxy out of use for everyone.
+    #[tokio::test]
+    async fn dead_hosts_do_not_rest_a_proxy_that_reaches_others() {
+        let (server, _) = pictures().await;
+        // The first tunnel and every one after the ninth come through; the eight between are refused.
+        let (proxy, asked) = scripted_proxy(|n| n == 0 || n >= 9).await;
+        let egress = egress(&format!("http://{proxy}"), Fallback::Block, server);
+        assert!(egress.get("http://good.example/pixel.gif", "image/*", 1024).await.is_ok());
+        for host in ["a", "b", "c", "d", "e", "f", "g", "h"] {
+            assert!(egress.get(&format!("http://{host}.example/pixel.gif"), "image/*", 1024).await.is_err());
+        }
+        assert_eq!(asked.load(Ordering::Relaxed), 10, "the last address was asked once more");
+        assert!(!egress.status().proxy_resting);
+        let again = egress.get("http://good.example/pixel.gif", "image/*", 1024).await;
+        assert!(again.is_ok(), "{again:?} {}", asked.load(Ordering::Relaxed));
+    }
+
+    /// A CONNECT proxy that lets the `n`th tunnel through when `open(n)` says so and refuses it with a
+    /// 503 otherwise; counts the tunnels it was asked for.
+    async fn scripted_proxy(open: fn(u64) -> bool) -> (SocketAddr, Arc<AtomicU64>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let asked = Arc::new(AtomicU64::new(0));
+        let count = asked.clone();
+        tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let count = count.clone();
+                tokio::spawn(async move {
+                    let head = read_head(&mut stream).await;
+                    let n = count.fetch_add(1, Ordering::Relaxed);
+                    if !open(n) {
+                        let _ = stream.write_all(b"HTTP/1.1 503 Service Unavailable\r\n\r\n").await;
+                        return;
+                    }
+                    let target = head.split(' ').nth(1).unwrap().to_owned();
+                    let mut upstream = TcpStream::connect(target).await.unwrap();
+                    stream.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n").await.unwrap();
+                    let _ = tokio::io::copy_bidirectional(&mut stream, &mut upstream).await;
+                });
+            }
+        });
+        (address, asked)
+    }
+
+    /// Answers `/slow.png` with the start of a PNG, and the rest once `go` is told, or never.
+    async fn slow_picture(go: Arc<tokio::sync::Notify>) -> SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let go = go.clone();
+                tokio::spawn(async move {
+                    read_head(&mut stream).await;
+                    let _ = stream
+                        .write_all(b"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: 64\r\n\r\n")
+                        .await;
+                    let _ = stream.write_all(&[7u8; 32]).await;
+                    go.notified().await;
+                    let _ = stream.write_all(&[8u8; 32]).await;
+                });
+            }
+        });
+        address
+    }
+
+    #[tokio::test]
+    async fn a_message_picture_shows_what_came_so_far_and_gives_up_when_it_stalls() {
+        let go = Arc::new(tokio::sync::Notify::new());
+        let server = slow_picture(go.clone()).await;
+        let slow = egress("", Fallback::Block, server);
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let log = seen.clone();
+        let fetch = tokio::spawn(async move {
+            slow.get_message_picture(
+                "http://pictures.example/slow.png",
+                "image/*",
+                1024,
+                PictureLimits::default(),
+                &mut |so_far: &[u8]| log.lock().unwrap().push(so_far.len()),
+            )
+            .await
+        });
+        while seen.lock().unwrap().is_empty() {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(seen.lock().unwrap()[..], [32], "the first half is seen before the rest is there");
+        go.notify_one();
+        let fetched = fetch.await.unwrap().unwrap();
+        assert_eq!(fetched.body.len(), 64);
+
+        let stalled = egress("", Fallback::Block, slow_picture(Arc::default()).await);
+        let limits = PictureLimits { stall: Duration::from_millis(200), ..PictureLimits::default() };
+        let result =
+            stalled.get_message_picture("http://pictures.example/slow.png", "image/*", 1024, limits, &mut |_| {}).await;
+        assert_eq!(result.unwrap_err(), EgressError::Timeout);
     }
 }
