@@ -8,6 +8,7 @@ mod calendars;
 mod common;
 mod conformance;
 mod contacts;
+mod image_text;
 mod limits;
 mod masked_email;
 mod pictures;

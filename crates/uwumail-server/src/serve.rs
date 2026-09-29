@@ -138,7 +138,9 @@ pub async fn run(
     // One switch for the whole server, shared by everything that has to honour it: the page
     // under /mail, JMAP's session login, and the admin panel that flips it.
     let webmail = Arc::new(std::sync::atomic::AtomicBool::new(config.http.webmail));
-    let jmap = uwumail_jmap::Jmap::with_webmail(smtp.clone(), webmail.clone()).with_egress(egress.clone());
+    let jmap = uwumail_jmap::Jmap::with_webmail(smtp.clone(), webmail.clone())
+        .with_egress(egress.clone())
+        .with_ocr(config.ocr.clone());
     // The log to Grafana Loki, when the config or the admin panel asks for it; the admin panel
     // switches it on, over and off while the server runs.
     let loki = uwumail_web::Loki::new();

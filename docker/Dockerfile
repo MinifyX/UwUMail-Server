@@ -50,6 +50,25 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release --locked -p uwumail-server \
  && cp target/release/uwumail-server /usr/local/bin/uwumail-server
 
+# Tesseract for reading text in pictures (docs/jmap-image-text.md), with German and English: the
+# program, the libraries it needs that distroless lacks, and its language data, gathered under
+# /ocr at their real paths (not through the /lib symlink, which a COPY would replace). glibc,
+# libstdc++ and libgcc stay the runtime's own. Adds about 40 MB to the image
+# (the orientation data, 11 MB, is left out: nothing here asks Tesseract to turn pictures).
+FROM debian:trixie-slim AS ocr
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-deu tesseract-ocr-eng \
+ && rm -rf /var/lib/apt/lists/* \
+ && mkdir -p /ocr/usr/bin /ocr/usr/share/tesseract-ocr \
+ && cp /usr/bin/tesseract /ocr/usr/bin/ \
+ && cp -r /usr/share/tesseract-ocr/5 /ocr/usr/share/tesseract-ocr/ \
+ && rm /ocr/usr/share/tesseract-ocr/5/tessdata/osd.traineddata \
+ && ldd /usr/bin/tesseract | awk '$2 == "=>" && $3 ~ /^\// { print $3 }' | while read -r lib; do \
+      case "$(basename "$lib")" in libc.so*|libm.so*|ld-linux*|libgcc_s.so*|libstdc++.so*) continue ;; esac; \
+      dir="/ocr$(readlink -f "$(dirname "$lib")")"; mkdir -p "$dir"; cp -L "$lib" "$dir/"; \
+    done \
+ && /ocr/usr/bin/tesseract --list-langs
+
 # Prepare the binary on Debian, which still has the tools distroless does not: set the file
 # capability that lets the unprivileged user bind the low mail and web ports, and create /data
 # owned by the runtime user.
@@ -70,6 +89,7 @@ RUN chmod 755 /usr/local/bin/uwumail-server \
 FROM gcr.io/distroless/cc-debian13@sha256:4594d59540d1948417f6ca2829ddd9294493a7c68b7528f4dd459de7f203a750
 COPY --from=prep /usr/local/bin/uwumail-server /usr/local/bin/uwumail-server
 COPY --from=prep --chown=10001:10001 /data /data
+COPY --from=ocr /ocr/ /
 USER 10001:10001
 # The data directory is the one writable place, also for HOME, so nothing needs to write to the
 # read-only root file system.

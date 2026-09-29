@@ -8,6 +8,7 @@ mod contact_card;
 mod copy;
 mod email;
 mod identity;
+pub(crate) mod image_text;
 mod mailbox;
 mod masked;
 mod principal;
@@ -32,8 +33,8 @@ use uwumail_store::{Account, Changes};
 use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
 use crate::session::{
-    AVAILABILITY, CALENDARS, CALENDARS_PARSE, CONTACTS, CORE, MAIL, MASKED, PROFILE, SENDERS, SETTINGS, SIEVE,
-    SUBMISSION, SUGGEST, UNSUBSCRIBE, VACATION, WEBMAIL, WEBPUSH_VAPID, WEBSOCKET,
+    AVAILABILITY, CALENDARS, CALENDARS_PARSE, CONTACTS, CORE, IMAGETEXT, MAIL, MASKED, PROFILE, SENDERS, SETTINGS,
+    SIEVE, SUBMISSION, SUGGEST, UNSUBSCRIBE, VACATION, WEBMAIL, WEBPUSH_VAPID, WEBSOCKET,
 };
 use crate::sharing::{self, PRINCIPALS, SharedView};
 use crate::{Inner, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, ids};
@@ -58,6 +59,7 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     WEBPUSH_VAPID,
     UNSUBSCRIBE,
     PROFILE,
+    IMAGETEXT,
 ];
 
 pub(crate) use calendar_event::event_for_alerts;
@@ -199,6 +201,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "Principal" if name == "Principal/getAvailability" => AVAILABILITY,
         "CalendarEvent" if name == "CalendarEvent/parse" => CALENDARS_PARSE,
         _ if name == "Email/unsubscribe" => UNSUBSCRIBE,
+        _ if name == "Email/imageText" => IMAGETEXT,
         "Principal" => PRINCIPALS,
         "Core" | "PushSubscription" => CORE,
         "Mailbox" | "Email" | "Thread" | "SearchSnippet" => MAIL,
@@ -265,6 +268,7 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "Email/import" => single(email::import(ctx, &args).await?),
         "Email/parse" => single(email::parse(ctx, &args).await?),
         "Email/unsubscribe" => single(unsubscribe::unsubscribe(ctx, &args).await?),
+        "Email/imageText" => single(image_text::image_text(ctx, &args).await?),
         "SearchSnippet/get" => single(snippet::get(ctx, &args).await?),
         "Identity/get" => single(identity::get(ctx, &args).await?),
         "Identity/changes" => single(changes(ctx, &args, "Identity", 'i').await?),

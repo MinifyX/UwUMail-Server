@@ -30,6 +30,8 @@ pub struct Config {
     pub gateway: GatewayConfig,
     /// How a message's remote pictures leave the server: straight, or through a VPN's proxy.
     pub egress: EgressConfig,
+    /// Reading the text in pictures with Tesseract (docs/jmap-image-text.md).
+    pub ocr: uwumail_jmap::ocr::OcrConfig,
     pub log: LogConfig,
     /// What the server reports to other domains: daily TLS reports (RFC 8460).
     pub reports: uwumail_smtp::ReportsConfig,
@@ -55,6 +57,7 @@ impl Default for Config {
             brand: uwumail_smtp::BrandConfig::default(),
             gateway: GatewayConfig::default(),
             egress: EgressConfig::default(),
+            ocr: uwumail_jmap::ocr::OcrConfig::default(),
             log: LogConfig::default(),
             reports: uwumail_smtp::ReportsConfig::default(),
             metrics: uwumail_web::MetricsConfig::default(),

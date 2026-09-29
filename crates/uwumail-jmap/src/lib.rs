@@ -19,6 +19,7 @@
 //! | `GET /avatar/{hash}` | Libravatar: the public pictures of this server's addresses |
 //!
 //! `Email/unsubscribe` has the server send a newsletter's one-click unsubscription (RFC 8058).
+//! `Email/imageText` reads the text in a message's pictures with OCR (docs/jmap-image-text.md).
 //!
 //! [`Jmap::run_web_push`] pushes changes to the push subscriptions (RFC 8620, 7.2) over Web Push.
 
@@ -34,6 +35,7 @@ mod ids;
 mod jscal;
 mod jscontact;
 mod methods;
+pub mod ocr;
 mod pictures;
 mod push;
 mod remote;
@@ -92,6 +94,8 @@ pub(crate) struct Inner {
     pub egress: Egress,
     /// A message's remote pictures, fetched once for everyone and kept a while.
     pub remote_images: RemoteImages,
+    /// Reads the text in a message's pictures (`Email/imageText`).
+    pub ocr: Arc<ocr::Ocr>,
     /// Logos and website icons of company senders, fetched the same way.
     pub pictures: Arc<SenderPictures>,
     /// Pictures of people from elsewhere: linked contact photos and Libravatar.
@@ -135,6 +139,7 @@ impl Jmap {
         let avatars = Arc::new(Avatars::new(Arc::new(LiveNet::new(egress.clone()))));
         let push = webpush::WebPush::new(store.clone(), egress.clone(), smtp.hostname());
         let remote_images = RemoteImages::new(egress.clone(), cache_dir(&store, "images"));
+        let ocr = Arc::new(ocr::Ocr::new(ocr::OcrConfig::default(), cache_dir(&store, "ocr")));
         Jmap {
             inner: Arc::new(Inner {
                 auth,
@@ -143,6 +148,7 @@ impl Jmap {
                 smtp,
                 egress,
                 remote_images,
+                ocr,
                 pictures,
                 avatars,
                 notice: None,
@@ -164,6 +170,14 @@ impl Jmap {
         let push = inner.push.clone().with_egress(egress.clone());
         let remote_images = RemoteImages::new(egress.clone(), cache_dir(&inner.store, "images"));
         Jmap { inner: Arc::new(Inner { egress, remote_images, pictures, avatars, push, ..inner }) }
+    }
+
+    /// Reads text in pictures as `config` says (the `[ocr]` section, docs/jmap-image-text.md). Called
+    /// before the router is built.
+    pub fn with_ocr(self, config: ocr::OcrConfig) -> Jmap {
+        let inner = Arc::into_inner(self.inner).expect("OCR is set up before anything else holds the JMAP service");
+        let ocr = Arc::new(ocr::Ocr::new(config, cache_dir(&inner.store, "ocr")));
+        Jmap { inner: Arc::new(Inner { ocr, ..inner }) }
     }
 
     /// Pictures of people from elsewhere (linked contact photos, Libravatar) come through `net`
