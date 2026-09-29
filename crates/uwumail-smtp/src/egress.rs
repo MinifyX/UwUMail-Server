@@ -1625,6 +1625,26 @@ mod tests {
         assert!(copy.proxied(), "a configuration that does not parse changes nothing");
     }
 
+    /// The AI assistant's providers in the local network are reached directly, even with `egress.assist`
+    /// on and the proxy resting: a VPN could not reach them anyway.
+    #[tokio::test]
+    async fn local_ai_providers_are_reached_past_the_proxy() {
+        let (server, _) = pictures().await;
+        let (proxy, asked) = http_proxy().await;
+        let egress = egress("", Fallback::Block, server);
+        let config = EgressConfig { proxy: format!("http://{proxy}"), assist: true, ..EgressConfig::default() };
+        egress.reconfigure(&config).unwrap();
+        let request = || Request::get("http://ollama.test/pixel.gif").body(Full::new(Bytes::new())).unwrap();
+        let response = egress.assist_client(Reach::Lan).send(request()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(asked.lock().unwrap().is_empty(), "the proxy was not asked");
+        // Pictures still take it.
+        egress.get("http://pictures.example/pixel.gif", "image/*", 1024).await.unwrap();
+        assert_eq!(asked.lock().unwrap().len(), 1);
+        // For the internet it stays https only.
+        assert!(egress.assist_client(Reach::Public).send(request()).await.is_err());
+    }
+
     #[tokio::test]
     async fn each_kind_of_request_takes_the_proxy_only_when_told() {
         let (server, _) = pictures().await;

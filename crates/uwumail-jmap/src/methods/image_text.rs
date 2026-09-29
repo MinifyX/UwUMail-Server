@@ -109,6 +109,35 @@ pub async fn image_text(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     Ok(response)
 }
 
+/// The text in a message's own pictures (embedded ones and picture attachments, never remote ones),
+/// for the AI assistant's `Assist/extractEvents` with `includeImages` (docs/llm.md). `None` when
+/// nothing can be read here (no Tesseract, no such message); pictures without text are left out.
+/// The caller has checked that the message is the person's.
+pub(crate) async fn texts_for_assist(
+    ocr: &Arc<crate::ocr::Ocr>,
+    store: &uwumail_store::Store,
+    account_id: i64,
+    email_id: i64,
+) -> Option<Vec<String>> {
+    if !ocr.available().await {
+        return None;
+    }
+    let record = store.emails_by_ids(account_id, vec![email_id]).await.ok()?.into_iter().next()?;
+    let raw = store.blob(&record.blob).await.ok()?;
+    let (sources, _) = pictures_of(&raw, &record.blob, false);
+    let deadline = tokio::time::Instant::now() + DEADLINE;
+    let texts: Vec<Option<String>> = futures_util::stream::iter(sources)
+        .map(|source| async move {
+            let Source::Part { bytes, .. } = source else { return None };
+            let read = tokio::time::timeout_at(deadline, ocr.read(&bytes)).await.ok()?.ok()?;
+            Some(read.text).filter(|text| !text.trim().is_empty())
+        })
+        .buffered(PARALLEL)
+        .collect()
+        .await;
+    Some(texts.into_iter().flatten().collect())
+}
+
 /// A message's first [`MAX_IMAGES`] pictures in the order they come: embedded ones and attachments,
 /// then the remote ones of its HTML when `remote`; and how many more there are.
 fn pictures_of(raw: &[u8], blob: &uwumail_store::BlobHash, remote: bool) -> (Vec<Source>, usize) {

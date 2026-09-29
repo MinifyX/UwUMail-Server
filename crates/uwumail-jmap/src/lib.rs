@@ -228,6 +228,16 @@ impl Jmap {
         Jmap { inner: Arc::new(Inner { notice: Some(notice), ..inner }) }
     }
 
+    /// Reads the text in a message's own pictures with this service's OCR, for the AI assistant
+    /// (`Assist::with_image_text`, docs/llm.md): what `Email/imageText` reads without `remote`.
+    pub fn image_text_reader(&self) -> uwumail_assist::ImageText {
+        let (ocr, store) = (self.inner.ocr.clone(), self.inner.store.clone());
+        Arc::new(move |account_id, email_id| {
+            let (ocr, store) = (ocr.clone(), store.clone());
+            Box::pin(async move { methods::image_text::texts_for_assist(&ocr, &store, account_id, email_id).await })
+        })
+    }
+
     /// Offers the AI assistant (`urn:uwumail:jmap:assist`). Called before the router is built.
     pub fn with_assist(self, assist: uwumail_assist::Assist) -> Jmap {
         let inner =

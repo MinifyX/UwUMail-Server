@@ -129,3 +129,23 @@ async fn without_tesseract_the_server_says_so() {
     let plain = crate::common::server().await;
     assert!(plain.session_of("mini@example.org").await["capabilities"][IMAGETEXT].is_object());
 }
+
+/// The AI assistant's `includeImages` reads the same text, from the message's own pictures only.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_assistant_reads_the_same_text() {
+    let tools = tempfile::tempdir().unwrap();
+    let config = fake_tesseract(tools.path());
+    let server = server_with(|jmap| jmap.with_ocr(config)).await;
+    let email = server.deliver("mini@example.org", &message()).await;
+    let email: i64 = email.trim_start_matches('e').parse().unwrap();
+    let account = server.id("mini@example.org").await;
+    let read = server.jmap.image_text_reader();
+    assert_eq!(read(account, email).await.unwrap(), ["Premiere am Freitag", "Premiere am Freitag"]);
+    assert_eq!(read(server.id("nyu@example.org").await, email).await, None, "not someone else's message");
+
+    let missing = OcrConfig { command: "/nonexistent/tesseract".into(), ..OcrConfig::default() };
+    let server = server_with(|jmap| jmap.with_ocr(missing)).await;
+    let email = server.deliver("mini@example.org", &message()).await;
+    let email: i64 = email.trim_start_matches('e').parse().unwrap();
+    assert_eq!(server.jmap.image_text_reader()(server.id("mini@example.org").await, email).await, None);
+}

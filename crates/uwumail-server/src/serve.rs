@@ -151,12 +151,15 @@ pub async fn run(
     let webmail = Arc::new(std::sync::atomic::AtomicBool::new(config.http.webmail));
     // The AI assistant (docs/llm.md): every request to a model leaves from here, through the egress.
     // Labels for delivered mail are put on in the background.
-    let assist = uwumail_assist::Assist::new(store.clone(), egress.clone(), &config.hostname);
-    tasks.spawn(assist.clone().run_label_worker(shutdown_rx.clone()));
+    // `Assist/extractEvents` with `includeImages` reads the pictures' text with the same OCR as
+    // `Email/imageText`.
     let jmap = uwumail_jmap::Jmap::with_webmail(smtp.clone(), webmail.clone())
         .with_egress(egress.clone())
-        .with_ocr(config.ocr.clone())
-        .with_assist(assist.clone());
+        .with_ocr(config.ocr.clone());
+    let assist = uwumail_assist::Assist::new(store.clone(), egress.clone(), &config.hostname)
+        .with_image_text(jmap.image_text_reader());
+    tasks.spawn(assist.clone().run_label_worker(shutdown_rx.clone()));
+    let jmap = jmap.with_assist(assist.clone());
     // The log to Grafana Loki, when the config or the admin panel asks for it; the admin panel
     // switches it on, over and off while the server runs.
     let loki = uwumail_web::Loki::new();
