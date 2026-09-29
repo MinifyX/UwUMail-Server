@@ -3,6 +3,92 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.17.0
+
+**Profile pictures** ([docs/profile-pictures.md](docs/profile-pictures.md)):
+
+- Everyone can set a picture of themselves under *My account* (and in the webmail's settings);
+  admins set them for services, shared mailboxes and groups, and one logo per domain stands in for
+  every address of the domain without a picture of its own. Pictures are cut square, scaled to at
+  most 512 × 512 and stored anew without the file's metadata.
+- Who sees it is chosen per person: nobody, people on this server (the default) or everyone. An admin
+  can forbid "everyone" for the whole server or per domain.
+- "Everyone" means other mail servers and apps: the server is a **Libravatar** provider at
+  `/avatar/<hash>` (the DNS check recommends the `_avatars-sec._tcp` record), and a person can have
+  a small copy sent along in every mail's **`Face:` header** (off by default). Masked addresses never
+  get or reveal a picture.
+- **Sender pictures per address:** `pictureUrl` answers with the reader's own contact photo first,
+  then the person's picture (someone on this server, a `Face` from mail a DKIM signature of the From
+  domain covers, or Libravatar where the domain publishes it — never Gravatar), then the domain logo
+  and company logos as before. New JMAP extension `urn:uwumail:jmap:profile`
+  (`ProfilePicture/get` and `/set`); `pictureUrl` takes `source=logo` and `local=1`.
+- Contact photos that are only a link are fetched by the server through the egress, never by the
+  browser.
+
+**One-click unsubscribe** ([docs/jmap-unsubscribe.md](docs/jmap-unsubscribe.md)): `Email/unsubscribe`
+sends a newsletter's RFC 8058 one-click POST from the server, only when a valid DKIM signature covers
+`List-Unsubscribe` and `List-Unsubscribe-Post`, only to public https addresses, through `[egress]`
+like remote pictures, without cookies, referrer or redirects; at most once per message every five
+minutes and 30 an hour per login.
+
+**JMAP Calendars complete** ([docs/jmap-calendars.md](docs/jmap-calendars.md)):
+`Principal/getAvailability`, `CalendarEventNotification`, `CalendarEvent/copy` and `/parse`,
+`queryChanges` for queries that expand recurrences, drafts, custom time zones, invitations to single
+instances, default alerts (also as CalDAV default alarms), alerts rung by the server (a
+`CalendarAlert` push or a reminder mail), and per-person properties of shared calendars and events:
+name, colour, order, visibility, availability and alerts stay each person's own and never touch the
+owner's data.
+
+**Webmail 0.12.0:** pictures in the contact editor (choose, drop, paste, camera, company logo, crop
+to a circle), sender pictures per address everywhere a person appears, *Settings → Profile picture*,
+one-click unsubscribe through the server.
+
+**Portal:** *Updates* is its own entry in the server menu instead of a tab of the overview.
+
+**Security** ([docs/security-audit-0.16.0.md](docs/security-audit-0.16.0.md),
+[docs/security-audit-0.17.0.md](docs/security-audit-0.17.0.md)): every open Low finding of the 0.16.0
+audit is fixed, and a review of everything new found and fixed one critical and three high issues
+before release.
+
+- OAuth: self-registered apps nobody allowed are forgotten after a day and can no longer fill the app
+  table; errors only go back automatically to apps allowed before or on the device (no open
+  redirect); allowing a new OAuth app or forwarding to another server asks for the password again.
+- Mail forging one of our own domains that DMARC did not stop is no longer forwarded to other
+  servers; unproven own-domain senders get SRS. Outgoing mail carries no lone CR or LF (SMTP
+  smuggling). The two-`From` and header checks run on every incoming message, fetched mail included.
+- Shared folders no longer show the owner's activity elsewhere in JMAP states, change lists, push or
+  IMAP `HIGHESTMODSEQ` (now per folder); a narrowed share applies from the next IMAP command.
+- Push subscriptions only reach https on port 443. Free/busy answers only for a person's own
+  addresses (never masked ones) and only to people of the same domains or who share a calendar.
+  Control characters from other accounts can no longer break CalDAV/CardDAV sync.
+- Single-mailbox restore reads a snapshot within strict limits; changing the SFTP backup host or
+  user asks for the password again.
+- Gateway: one IPv6 /48 holds at most 100 connections (`max_connections_per_ipv6_site`); unpaired
+  tunnel peers get one stream, 256 KB and a few handshakes. The root helpers print no terminal escape
+  sequences, and the OpenVPN file filter is an allowlist.
+- New code: a time zone rule or contact photo value with multi-byte characters, or an out-of-range
+  day, could stop the server (fixed before release); invitations from elsewhere no longer bring the
+  organizer's alarms along, and reminder mails are limited; our DKIM signatures cover `Face`;
+  private events show only their times to people they are shared with, also over CalDAV, and those
+  people can't change or delete them.
+- Webmail 0.12.0: invitations, cancellations and answers in a mail only count from the organizer or
+  an invited participant (WEBMAIL-2); links in events always go through the link check (WEBMAIL-3).
+- The health overview names domains that nobody can make masked addresses on since the 0.16.0
+  upgrade (MD-1).
+
+**Upgrading:** migrations 0049–0055 run on the first start (calendar per-person data, drafts,
+notifications, event versions, alerts, per-folder change counters, profile pictures) and index
+existing contact photos once. Worth knowing:
+
+- People a calendar is shared with keep their own name and colour for it now; renaming it for
+  everyone is the owner's.
+- Invitations from elsewhere lose the organizer's alarms; set your own or use default alerts.
+- JMAP apps of people with shared folders reload those accounts once
+  (`cannotCalculateChanges`).
+- Push subscriptions to other ports than 443 stop receiving pushes.
+- To let other servers find public pictures, add the `_avatars-sec._tcp` SRV record the DNS check
+  suggests.
+
 ## 0.16.0
 
 **Domains only for masked addresses** ([docs/jmap-masked-email.md](docs/jmap-masked-email.md#switching-it-on)):
