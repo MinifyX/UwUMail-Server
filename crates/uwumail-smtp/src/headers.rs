@@ -144,6 +144,30 @@ fn claims_to_be(value: &str, hostname: &str) -> bool {
         .is_some_and(|authserv| authserv.eq_ignore_ascii_case(hostname))
 }
 
+/// Turns every CR or LF on its own into CRLF, the only line ending RFC 5322 allows.
+pub fn crlf_only(raw: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(raw.len() + raw.len() / 50);
+    let mut bytes = raw.iter().copied().peekable();
+    while let Some(byte) = bytes.next() {
+        match byte {
+            b'\r' | b'\n' => {
+                if byte == b'\r' {
+                    bytes.next_if_eq(&b'\n');
+                }
+                out.extend_from_slice(b"\r\n");
+            }
+            _ => out.push(byte),
+        }
+    }
+    out
+}
+
+/// Removes `Face:` headers. The server writes the one mail from its people carries, so a masked or
+/// shared address can never pass on a picture a mail app added (docs/profile-pictures.md).
+pub fn strip_faces(raw: &[u8]) -> Vec<u8> {
+    without(raw, |h| h.name.eq_ignore_ascii_case("Face"))
+}
+
 /// Converts bare LF line endings to CRLF.
 pub fn normalize_line_endings(raw: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(raw.len() + raw.len() / 50);
@@ -226,5 +250,6 @@ Authentication-Results: mx.example.org; spf=pass\r\nSubject: Hi\r\n\r\nbody\r\n"
     #[test]
     fn normalizes_line_endings() {
         assert_eq!(normalize_line_endings(b"a\nb\r\nc\n"), b"a\r\nb\r\nc\r\n");
+        assert_eq!(crlf_only(b"a\nb\r\nc\rd\r"), b"a\r\nb\r\nc\r\nd\r\n");
     }
 }

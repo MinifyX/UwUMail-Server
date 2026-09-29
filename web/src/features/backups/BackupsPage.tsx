@@ -114,6 +114,9 @@ function SettingsCard({ view, onRecoveryKey }: { view: BackupsView; onRecoveryKe
   const [path, setPath] = useState(sftp?.path ?? "uwumail-backup");
   const [method, setMethod] = useState<"key" | "password">(sftp?.method ?? "key");
   const [password, setPassword] = useState("");
+  // The stored password only ever goes to the server it was given for.
+  const passwordKept =
+    !!sftp?.passwordSet && host.trim() === sftp.host && Number(port) === sftp.port && user.trim() === sftp.user;
   const [endpoint, setEndpoint] = useState(s3?.endpoint ?? "");
   const [region, setRegion] = useState(s3?.region ?? "");
   const [bucket, setBucket] = useState(s3?.bucket ?? "");
@@ -310,14 +313,14 @@ function SettingsCard({ view, onRecoveryKey }: { view: BackupsView; onRecoveryKe
             ) : (
               <Field
                 label={t("backups.target.password")}
-                hint={sftp?.passwordSet ? t("backups.target.passwordKept") : undefined}
+                hint={passwordKept ? t("backups.target.passwordKept") : undefined}
               >
                 {(id) => (
                   <TextInput
                     id={id}
                     type="password"
                     autoComplete="new-password"
-                    required={!sftp?.passwordSet}
+                    required={!passwordKept}
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                   />

@@ -119,8 +119,17 @@ pub async fn download(
         ids::BlobRef::Whole(hash) => store.sieve_script_blob(owner.id, hash).await.ok().flatten(),
         ids::BlobRef::Part(..) => None,
     };
+    // So does the profile picture: it lives with the account (docs/profile-pictures.md).
+    let picture = match &reference {
+        ids::BlobRef::Whole(hash) if script.is_none() => {
+            crate::methods::profile::own_picture_blob(store, owner.id, hash.as_str()).await
+        }
+        _ => None,
+    };
     let (bytes, detected) = if let Some(script) = script {
         (script.into_bytes(), "application/sieve".to_owned())
+    } else if let Some((bytes, media_type)) = picture {
+        (bytes, media_type)
     } else {
         if !store.blob_accessible(owner.id, reference.hash()).await.unwrap_or(false) {
             return problem(StatusCode::NOT_FOUND, "Unknown blob.");

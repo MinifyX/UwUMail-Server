@@ -1544,7 +1544,9 @@ pub(crate) async fn receive(
         // A fetched message the provider vouched for nothing about: its signatures are still
         // worth checking, and they are all that is left to check.
         (None, Origin::Fetched { .. }) if live.smtp.verify_senders => Some(checks::verify_signatures(&ctx, &raw).await),
-        _ => None,
+        // Nothing to ask about the sender, but the From the person will see still has to be a
+        // single one that can be judged (security-audit-0.16.0 SMTP-10).
+        _ => checks::check_headers(&ctx.hostname, &raw),
     };
     if let Some(checks::Verdict { action: Action::Reject(reason), .. }) = &verdict {
         tracing::info!(%id, from = %envelope.address, %reason, "rejected by DMARC");
@@ -1856,6 +1858,8 @@ pub(crate) async fn receive(
     // Mail for a group that only takes certain senders must come from who it says, or it would be
     // enough to claim a member's address.
     let sender_verified_for_groups = verdict.as_ref().is_none_or(|verdict| verdict.sender_verified);
+    // What forwarding needs to know about the sender.
+    let proof = forward::Proof::of(verdict.as_ref());
     // What happened for each of them, for the history. The message as a whole is one decision,
     // but a sender list or someone's own filter can send it two ways at once.
     let mut noted: Vec<SpamLogRecipient> = Vec::new();
@@ -1901,7 +1905,7 @@ pub(crate) async fn receive(
             if junk {
                 tracing::info!(%id, to = %recipient.address, "not passing spam on from a forwarding address");
             } else {
-                let forwarder = forward::Forwarder { name: &recipient.address, account_id: None };
+                let forwarder = forward::Forwarder { name: &recipient.address, account_id: None, proof };
                 forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, targets).await;
             }
             note_for(&recipient.address, if junk { SpamAction::Junk } else { SpamAction::Delivered }, None);
@@ -2033,13 +2037,16 @@ pub(crate) async fn receive(
         } else {
             forward::plan(&ctx, account_id).await
         };
+        let mut forwarded = false;
         if !plan.targets.is_empty()
             && let Ok(Some(account)) = ctx.store.account_by_id(account_id).await
         {
-            let forwarder = forward::Forwarder { name: &account.login, account_id: Some(account.id) };
-            forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, &plan.targets).await;
+            let forwarder = forward::Forwarder { name: &account.login, account_id: Some(account.id), proof };
+            forwarded =
+                forward::send(&ctx, forwarder, &recipient.address, &envelope.address, &message, &plan.targets).await;
         }
-        if !plan.keep_copy {
+        // Mail that went nowhere else stays, whatever the person chose to keep.
+        if !plan.keep_copy && forwarded {
             note_for(&recipient.address, SpamAction::Delivered, None);
             delivered += 1;
             inbox_accounts.push(account_id);
@@ -2060,7 +2067,7 @@ pub(crate) async fn receive(
         };
         let stored = match script {
             Some((_, script)) => {
-                rules::deliver(&ctx, account_id, script, &recipient.address, &envelope.address, &message)
+                rules::deliver(&ctx, account_id, script, &recipient.address, &envelope.address, &message, proof)
                     .await
                     .map(|filed| (filed.mailbox, filed.stored))
             }
@@ -2202,6 +2209,26 @@ pub(crate) async fn receive(
     // cancellation in the message speak for that address.
     let verified_from =
         verdict.as_ref().filter(|v| v.from_verified || v.dmarc_passed).and_then(|v| v.from_address.clone());
+    // A Face picture speaks for the From address, so it is only kept when a signature of the From
+    // domain covers it — DMARC alone passes on SPF, or on a signature that leaves the Face out — when
+    // it is the only one, never from junk, and never for one of our own addresses: people here
+    // choose themselves who sees their picture (docs/profile-pictures.md).
+    if !junk
+        && let Some(from) =
+            verdict.as_ref().filter(|v| v.dmarc_passed && v.face_signed).and_then(|v| v.from_address.as_deref())
+        && let Some(value) = single_face(&raw)
+        && let Some((_, from_domain)) = from.rsplit_once('@')
+        && !ctx.store.is_local_domain(from_domain).await.unwrap_or(true)
+    {
+        match crate::profile_pictures::incoming_face(&value) {
+            Some(png) => {
+                if let Err(err) = ctx.store.store_received_face(from, png).await {
+                    tracing::warn!(%id, %err, "keeping the sender's Face failed");
+                }
+            }
+            None => tracing::debug!(%id, "the Face that came with the message is not a small PNG"),
+        }
+    }
     for account_id in inbox_accounts {
         vacation::maybe_reply(&ctx, account_id, &envelope.address, sender_verified, &message).await;
         let sender = crate::scheduling::Sender { verified_from: verified_from.as_deref(), local: false };
@@ -2257,6 +2284,21 @@ impl Session {
 fn decode_utf8(value: &str) -> Option<String> {
     BASE64.decode(value.trim()).ok().and_then(|bytes| String::from_utf8(bytes).ok())
 }
+
+/// The value of the message's `Face:` header when it has exactly one and it is small enough to be a
+/// Face at all; the size is checked before the value is copied.
+fn single_face(raw: &[u8]) -> Option<String> {
+    let (fields, _) = headers::split(raw);
+    let mut faces = fields.iter().filter(|field| field.name.eq_ignore_ascii_case("Face"));
+    let face = faces.next()?;
+    if faces.next().is_some() || face.raw.len() > MAX_FACE_HEADER_BYTES {
+        return None;
+    }
+    Some(face.value())
+}
+
+/// The longest `Face:` header read: a base64 PNG of the most a Face may take, folded.
+const MAX_FACE_HEADER_BYTES: usize = 4096;
 
 #[cfg(test)]
 mod tests {

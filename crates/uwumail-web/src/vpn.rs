@@ -327,49 +327,134 @@ fn is_wireguard_key(key: &str) -> bool {
         && key[..43].chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/')
 }
 
-/// The first line of an .ovpn file that does more than connect: runs a program, loads a plugin, or reads or
-/// writes a file of its own choosing. The helper refuses the same.
+/// The directives an .ovpn file of a VPN provider may have: the connection and its encryption.
+/// Anything else is refused, since it may run a program, load a plugin, or read or write a file of its
+/// own choosing, and a list of what to refuse always misses one (security-audit-0.16.0 GW-8). Keys and
+/// certificates come inline, in the [`OVPN_BLOCKS`]. The helper on the host allows exactly the same.
+const OVPN_DIRECTIVES: &[&str] = &[
+    "client",
+    "dev",
+    "dev-type",
+    "proto",
+    "remote",
+    "remote-random",
+    "remote-random-hostname",
+    "resolv-retry",
+    "nobind",
+    "persist-key",
+    "persist-tun",
+    "float",
+    "port",
+    "rport",
+    "lport",
+    "connect-retry",
+    "connect-retry-max",
+    "connect-timeout",
+    "server-poll-timeout",
+    "explicit-exit-notify",
+    "pull",
+    "tls-client",
+    "remote-cert-tls",
+    "remote-cert-ku",
+    "remote-cert-eku",
+    "verify-x509-name",
+    "ns-cert-type",
+    "key-direction",
+    "cipher",
+    "data-ciphers",
+    "data-ciphers-fallback",
+    "ncp-ciphers",
+    "ncp-disable",
+    "auth",
+    "auth-nocache",
+    "auth-retry",
+    "tls-version-min",
+    "tls-version-max",
+    "tls-cipher",
+    "tls-ciphersuites",
+    "tls-groups",
+    "ecdh-curve",
+    "tls-timeout",
+    "hand-window",
+    "reneg-sec",
+    "reneg-bytes",
+    "reneg-pkts",
+    "replay-window",
+    "comp-lzo",
+    "compress",
+    "allow-compression",
+    "verb",
+    "mute",
+    "mute-replay-warnings",
+    "ping",
+    "ping-restart",
+    "ping-exit",
+    "keepalive",
+    "inactive",
+    "tun-mtu",
+    "tun-mtu-extra",
+    "link-mtu",
+    "mssfix",
+    "fragment",
+    "sndbuf",
+    "rcvbuf",
+    "txqueuelen",
+    "fast-io",
+    "redirect-gateway",
+    "route",
+    "route-ipv6",
+    "route-delay",
+    "route-metric",
+    "route-nopull",
+    "topology",
+    "ifconfig-nowarn",
+    "tun-ipv6",
+    "block-ipv6",
+    "push-peer-info",
+    "disable-dco",
+    "ping-timer-rem",
+    "block-outside-dns",
+];
+
+/// What may come inline, between `<ca>` and `</ca>` and the like.
+const OVPN_BLOCKS: &[&str] =
+    &["ca", "cert", "key", "tls-auth", "tls-crypt", "tls-crypt-v2", "extra-certs", "crl-verify", "secret", "pkcs12"];
+
+/// The first line of an .ovpn file that does more than connect, or `None` when every line is one of
+/// the [`OVPN_DIRECTIVES`], `auth-user-pass` without a file, an inline block, or a comment.
 pub fn ovpn_refused_line(text: &str) -> Option<String> {
-    const REFUSED: &[&str] = &[
-        "up",
-        "down",
-        "route-up",
-        "route-pre-down",
-        "ipchange",
-        "client-connect",
-        "client-disconnect",
-        "learn-address",
-        "auth-user-pass-verify",
-        "tls-verify",
-        "script-security",
-        "plugin",
-        "log",
-        "log-append",
-        "status",
-        "writepid",
-        "cd",
-        "chroot",
-        "daemon",
-        "config",
-        "askpass",
-        "tmp-dir",
-        "iproute",
-        "tls-crypt-v2-verify",
-        "tls-export-cert",
-        "setenv",
-        "setenv-safe",
-        "pull-filter",
-        "dhcp-option",
-    ];
-    text.lines().find_map(|line| {
+    let mut block: Option<&str> = None;
+    for line in text.lines() {
+        let line = line.trim();
+        if let Some(open) = block {
+            if let Some(tag) = line.strip_prefix("</").and_then(|rest| rest.strip_suffix('>')) {
+                if tag != open {
+                    return Some(line.to_owned());
+                }
+                block = None;
+            }
+            continue;
+        }
+        if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+            continue;
+        }
+        if let Some(tag) = line.strip_prefix('<').and_then(|rest| rest.strip_suffix('>')) {
+            if !OVPN_BLOCKS.contains(&tag) {
+                return Some(line.to_owned());
+            }
+            block = Some(tag);
+            continue;
+        }
         let mut words = line.split_whitespace();
-        let directive = words.next()?.trim_start_matches('-').to_ascii_lowercase();
-        let refused = REFUSED.contains(&directive.as_str())
-            || directive.starts_with("management")
+        let directive = words.next().unwrap_or_default();
+        let allowed = OVPN_DIRECTIVES.contains(&directive)
             || (directive == "auth-user-pass"
-                && words.next().is_some_and(|word| !word.starts_with('#') && !word.starts_with(';')));
-        refused.then(|| line.trim().to_owned())
-    })
+                && words.next().is_none_or(|word| word.starts_with('#') || word.starts_with(';')));
+        if !allowed {
+            return Some(line.to_owned());
+        }
+    }
+    block.map(|tag| format!("<{tag}> is never closed"))
 }
 
 #[cfg(test)]
@@ -450,6 +535,27 @@ mod tests {
         assert!(ovpn_refused_line("--plugin /x.so").is_some());
         assert!(ovpn_refused_line("auth-user-pass /etc/shadow").is_some());
         assert!(ovpn_refused_line("management 0.0.0.0 7505").is_some());
+        // Only what is known to be a connection gets through, however the rest is spelled.
+        for refused in [
+            "\"up\" /bin/sh",
+            "UP /bin/sh",
+            "dns-updown /bin/sh",
+            "ca /etc/shadow",
+            "tls-auth /etc/uwumail/ta.key 1",
+            "http-proxy 203.0.113.9 8080 /etc/shadow",
+            "ignore-unknown-option up",
+            "<ca>\nMIIB\n</cert>",
+            "<ca>\nMIIB",
+            "<script>\n</script>",
+        ] {
+            assert!(ovpn_refused_line(refused).is_some(), "{refused}");
+        }
+        let provider = "# NordVPN\r\nclient\r\ndev tun\r\nproto udp\r\nremote 203.0.113.1 1194\r\nresolv-retry infinite\r\n\
+            remote-random\r\nnobind\r\ntun-mtu 1500\r\nmssfix 1450\r\npersist-key\r\npersist-tun\r\nping 15\r\n\
+            ping-restart 0\r\nremote-cert-tls server\r\nauth-user-pass ; asked by gluetun\r\ncipher AES-256-CBC\r\n\
+            auth SHA512\r\ncomp-lzo no\r\nverb 3\r\n<ca>\r\n-----BEGIN CERTIFICATE-----\r\nMIIB\r\n\
+            -----END CERTIFICATE-----\r\n</ca>\r\nkey-direction 1\r\n<tls-auth>\r\nabc\r\n</tls-auth>\r\n";
+        assert_eq!(ovpn_refused_line(provider), None);
         let custom = VpnConfig {
             provider: "custom".into(),
             kind: VpnKind::Openvpn,

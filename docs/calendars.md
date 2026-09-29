@@ -20,7 +20,7 @@ and one of three levels:
 | --- | --- |
 | Read | see every entry |
 | Read and write | also add, change and delete entries |
-| Everything | also rename it, change its colour and description, and share it with others (never with more rights than they have, and never take the owner's away) |
+| Everything | also change its description and share it with others (never with more rights than they have, and never take the owner's away) |
 
 Deleting a calendar stays its owner's. Whoever something is shared with can
 leave it again at any time, in the portal, by deleting it in their calendar
@@ -38,10 +38,21 @@ Where shared things show up:
   `shareWith` names people by the principal ids of `Principal/get` (`p12`),
   the same as for shared mail folders ([sharing.md](sharing.md)).
 - **Push:** every change to a shared calendar, whoever makes it, is pushed to
-  everyone who sees it.
+  everyone who sees it, and over JMAP the others get a notification saying
+  who changed what (`CalendarEventNotification`), as they do for invitations
+  and answers that scheduling puts into their calendars.
 
-A shared calendar always shows the owner's name, colour and events. Alerts
-belong to the event and are the same for everybody.
+A shared calendar shows the owner's events. Its name, colour, order and time
+zone start as the owner's, but everyone can give it their own, in the webmail
+or their calendar app, without changing it for anybody else. Alerts, colours
+and keywords of its events are everyone's own too over JMAP: the owner's stay
+in the event, and those of the others are kept apart for each of them (their
+CalDAV apps show the owner's).
+
+Entries are stored without control characters other than tab and line breaks
+(iCalendar and vCard allow no others), and CalDAV/CardDAV answers leave out
+anything XML cannot carry, whoever wrote it: an entry from someone a calendar is
+shared with, or an attendee's answer, cannot stop the owner's app from syncing.
 
 ## Invitations (scheduling)
 
@@ -94,7 +105,9 @@ takes into a calendar:
 - An invitation is only taken for the recipient's own addresses, never for an
   organizer of this server (those invite directly, never by mail from
   outside), and not from mail that ended up in Junk. An update of an event
-  someone already has is only taken from its organizer.
+  someone already has is only taken from its organizer. The organizer's alarms
+  are left out: the recipient's own stay, and the server would otherwise ring
+  a stranger's alarms, by mail too.
 - An answer only counts when the address it came from is the attendee's and SPF
   or DKIM vouch for that address (DMARC-aligned), and only for that attendee.
 - A cancellation only counts when it comes from the event's organizer, vouched
@@ -111,8 +124,15 @@ takes into a calendar:
   because invitations go straight into the calendars; its
   `schedule-default-calendar-URL` names the default calendar.
 - A `POST` of a `VFREEBUSY` request to the outbox answers when people of the
-  server are busy (from their own calendars, not those shared with them), as
-  Apple Calendar asks when attendees are added. Others are "unknown". One
+  server are busy, as Apple Calendar asks when attendees are added: from the
+  calendars that count for them (their own by default; a calendar's
+  `schedule-calendar-transp`, `transparent` or `opaque`, says whether it
+  does), tentative times as `BUSY-TENTATIVE`. The same comes out of JMAP's
+  `Principal/getAvailability`. Both answer for people in your own domains and
+  for people who share a calendar with you, by their login, an alias or a
+  sub-address of one; never for a masked address, which must not lead to its
+  owner, nor for groups, forwarding addresses or a catch-all. Everyone else is
+  "unknown", like people elsewhere. One
   request asks about at most 100 people (each once, however often named) over
   at most 400 days, and has 10 seconds for all of them; anyone left when they
   are up is answered "5.1 service unavailable", to be asked again.

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Download, ExternalLink, RefreshCw, RotateCw } from "lucide-react";
 import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
-import { Card, CopyButton } from "@/components/ui/Card";
+import { Card, CopyButton, PageHeader } from "@/components/ui/Card";
 import { HostCard } from "@/features/admin/HostCard";
 import { Field, Segmented, Toggle } from "@/components/ui/Field";
 import { helperCan, helperOutdated, JobBox, jobBusy, updateCommand, useAskHost, useHost } from "@/features/admin/host";
@@ -234,18 +234,25 @@ function CheckCard({ view }: { view: UpdatesView }) {
   );
 }
 
+/** Server → Updates: its own page, no longer a tab of the overview. */
 export function UpdatesPage() {
+  const { t } = useT();
   const query = useUpdates();
-
-  if (query.isPending) return <Loading />;
-  if (query.isError) return <LoadError error={query.error} onRetry={() => void query.refetch()} />;
-  const view = query.data;
 
   return (
     <div className="flex flex-col gap-5">
-      <VersionCard view={view} />
-      <CheckCard view={view} />
-      <HostCard />
+      <PageHeader title={t("nav.updates")} intro={t("updates.intro")} />
+      {query.isPending ? (
+        <Loading />
+      ) : query.isError ? (
+        <LoadError error={query.error} onRetry={() => void query.refetch()} />
+      ) : (
+        <>
+          <VersionCard view={query.data} />
+          <CheckCard view={query.data} />
+          <HostCard />
+        </>
+      )}
     </div>
   );
 }

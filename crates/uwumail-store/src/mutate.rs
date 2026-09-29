@@ -458,6 +458,16 @@ impl Store {
                         record_change(tx, account_id, modseq, "Email", email, "updated")?;
                     }
                 }
+                // A folder others saw is gone for them too.
+                let shared: bool = tx.query_row(
+                    "SELECT EXISTS (SELECT 1 FROM mailbox_acl WHERE mailbox_id = ?1)
+                         OR EXISTS (SELECT 1 FROM shared_mailbox_members WHERE account_id = ?2)",
+                    params![id, account_id],
+                    |row| row.get(0),
+                )?;
+                if shared {
+                    crate::acl::sharing_changed(tx, account_id, modseq)?;
+                }
                 tx.execute("DELETE FROM mailboxes WHERE id = ?1", [id])?;
                 record_change(tx, account_id, modseq, "Mailbox", id, "destroyed")?;
                 Ok(modseq)

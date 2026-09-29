@@ -406,6 +406,14 @@ impl SenderPictures {
         picture
     }
 
+    /// What is already known for an address, without asking anybody: for readers who switched
+    /// sender pictures off.
+    pub fn cached(&self, email: &str) -> Option<SenderPicture> {
+        let domain = picture_domain(email)?;
+        let cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        cache.entries.get(&domain).and_then(|cached| cached.picture.clone())
+    }
+
     async fn get_locked(&self, domain: String) -> Option<SenderPicture> {
         let stale = {
             let cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());

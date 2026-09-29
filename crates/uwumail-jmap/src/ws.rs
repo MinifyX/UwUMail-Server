@@ -15,7 +15,7 @@ use serde_json::{Map, Value, json};
 
 use crate::api::{self, RequestError};
 use crate::auth::{AuthError, CSRF_HEADER, ClientInfo, Login};
-use crate::push::{Watcher, all_types};
+use crate::push::{Pushed, Watcher, all_types};
 use crate::{Jmap, MAX_REQUEST_BYTES, ids};
 
 /// The subprotocol a JMAP client asks for (RFC 8887, section 4.2).
@@ -196,8 +196,20 @@ async fn serve(jmap: Jmap, login: Login, mut socket: WebSocket) {
                     return;
                 }
             }
-            change = watcher.wait(), if push => {
-                let Some(change) = change else { return };
+            pushed = watcher.wait(), if push => {
+                let change = match pushed {
+                    Some(Pushed::State(change)) => change,
+                    Some(Pushed::Alert(alert)) => {
+                        if jmap.inner.auth.still_valid(&live).await.is_none() {
+                            return close(socket).await;
+                        }
+                        if !send(&mut socket, crate::calendar_alerts::alert_json(&alert)).await {
+                            return;
+                        }
+                        continue;
+                    }
+                    None => return,
+                };
                 if let Some((changed_account, changed)) = watcher.changed_by(&change).await {
                     // Nothing is pushed any more to a login that ended.
                     if jmap.inner.auth.still_valid(&live).await.is_none() {

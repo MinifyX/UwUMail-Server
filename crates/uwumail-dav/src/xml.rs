@@ -160,6 +160,9 @@ pub fn escape(text: &str) -> String {
             '<' => out.push_str("&lt;"),
             '>' => out.push_str("&gt;"),
             '"' => out.push_str("&quot;"),
+            // XML 1.0 cannot carry these at all, not even escaped: one in a name or an entry someone
+            // else wrote would make the whole answer unreadable (security-audit-0.16.0 PROTOCOLS-L5).
+            '\u{0}'..='\u{8}' | '\u{b}' | '\u{c}' | '\u{e}'..='\u{1f}' | '\u{fffe}' | '\u{ffff}' => {}
             _ => out.push(c),
         }
     }
@@ -202,6 +205,11 @@ pub const MULTISTATUS_END: &str = "</d:multistatus>\n";
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn escaping_leaves_out_what_xml_cannot_carry() {
+        assert_eq!(escape("a<b>&\"c\u{1}\u{b}\u{1b}d\te\r\nf\u{fffe}"), "a&lt;b&gt;&amp;&quot;cd\te\r\nf");
+    }
 
     #[test]
     fn namespaces_resolve_whatever_the_prefix() {

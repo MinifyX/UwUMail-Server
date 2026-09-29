@@ -33,6 +33,41 @@ pub(crate) struct Forwarder<'a> {
     /// The person's login or the forwarding address, for the log and the SRS domain.
     pub name: &'a str,
     pub account_id: Option<i64>,
+    /// What is known about who sent the message.
+    pub proof: Proof<'a>,
+}
+
+/// What the checks at the door proved about who sent a message. Mail submitted here, and mail
+/// nothing could be checked about (sender checks switched off), counts as proven.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Proof<'a> {
+    /// SPF or DKIM passed for the envelope sender.
+    pub envelope: bool,
+    /// The From domain, when DMARC did not pass for it.
+    pub unproven_from: Option<&'a str>,
+}
+
+impl<'a> Proof<'a> {
+    pub const PROVEN: Proof<'static> = Proof { envelope: true, unproven_from: None };
+
+    pub fn of(verdict: Option<&'a crate::checks::Verdict>) -> Self {
+        match verdict {
+            Some(verdict) => Proof {
+                envelope: verdict.sender_verified,
+                unproven_from: if verdict.dmarc_passed { None } else { verdict.from_domain.as_deref() },
+            },
+            None => Proof::PROVEN,
+        }
+    }
+}
+
+/// Whether two domains count as one for DMARC's relaxed alignment: the same registrable domain.
+fn aligned(a: &str, b: &str) -> bool {
+    let organizational = |domain: &str| {
+        let domain = domain.trim_end_matches('.').to_ascii_lowercase();
+        psl::domain_str(&domain).map(str::to_owned).unwrap_or(domain)
+    };
+    organizational(a) == organizational(b)
 }
 
 /// Sends a received message on. `recipient` is the address it arrived for; it goes into a
@@ -93,9 +128,25 @@ pub(crate) async fn send(
 
     if !remote.is_empty() {
         let our_domain = forwarder.name.rsplit_once('@').map(|(_, domain)| domain).unwrap_or(&ctx.hostname);
-        let sender_domain = envelope_from.rsplit_once('@').map(|(_, domain)| domain).unwrap_or_default();
-        let return_path = if envelope_from.is_empty() || ctx.store.is_local_domain(sender_domain).await.unwrap_or(false)
+        // Sent on from here, the message passes SPF for the return path's domain. A From that did
+        // not pass DMARC and lines up with that domain would pass it at the next server: a forgery
+        // of our own domain made good by forwarding it (security-audit-0.16.0 SMTP-8). It stays
+        // here instead.
+        if let Some(from) = forwarder.proof.unproven_from
+            && aligned(from, our_domain)
         {
+            tracing::warn!(
+                forwarder = %forwarder.name,
+                %from,
+                "not forwarding to other servers: the From did not pass DMARC and would look sent by us"
+            );
+            return reached;
+        }
+        let sender_domain = envelope_from.rsplit_once('@').map(|(_, domain)| domain).unwrap_or_default();
+        // Our own sender keeps its address only when the checks proved it; otherwise it is
+        // rewritten like anybody else's.
+        let own_sender = forwarder.proof.envelope && ctx.store.is_local_domain(sender_domain).await.unwrap_or(false);
+        let return_path = if envelope_from.is_empty() || own_sender {
             envelope_from.to_owned()
         } else {
             match srs::secret(&ctx.store).await {

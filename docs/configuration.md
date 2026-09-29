@@ -155,7 +155,8 @@ same way, each switched on by itself: the check for new UwUMail versions
 (`egress.updates`, so GitHub does not learn where the server is) and fetching
 from other providers: mail from their mailboxes, calendars people subscribed to
 and calendars and contacts moved over ([calendar-import.md](calendar-import.md))
-(`egress.fetch`; some providers refuse VPN addresses). Pictures (`egress.pictures`) take it unless switched off. DNS,
+(`egress.fetch`; some providers refuse VPN addresses). Pictures (`egress.pictures`) take it unless switched off,
+and one-click unsubscriptions ([jmap-unsubscribe.md](jmap-unsubscribe.md)) go the way pictures go. DNS,
 delivering mail, blocklists and list updates keep leaving directly. Outgoing
 mail on port 25 could not go through a VPN anyway; providers block it, and
 their addresses are on every blocklist.
@@ -175,8 +176,13 @@ container). Without the helper the portal shows `.env.vpn` and the command to
 start it. The settings, keys included, are kept in the
 server's database and never sent back to the browser. The helper takes only
 gluetun's own variables, only values without quotes or line breaks, and an
-`.ovpn` file only without the directives that start programs or read files
-(`up`, `script-security`, `plugin`, `auth-user-pass <file>`, …).
+`.ovpn` file only when every line is a directive of a plain connection (`client`,
+`remote`, `proto`, `cipher`, `verb` and about eighty more), `auth-user-pass`
+without a file, a comment, or an inline block with keys and certificates
+(`<ca>`, `<cert>`, `<key>`, `<tls-auth>`, `<tls-crypt>`, …). Anything else,
+such as `up`, `plugin` or a certificate read from a file, is refused, and so is
+anything the list does not know: providers' files work, and one that starts
+programs or reads files does not.
 
 Two kinds of proxy work:
 
@@ -396,7 +402,7 @@ code = ""              # the gateway's pairing code, used once; the pairing then
 [egress]
 proxy = ""             # "http://gluetun:8888" or "socks5://user:password@host:1080"; empty: straight out
 fallback = "block"     # block | direct: what happens while the proxy is away
-pictures = true        # remote pictures and sender logos take the proxy
+pictures = true        # remote pictures, sender logos, linked contact photos, Libravatar and one-click unsubscriptions take the proxy
 updates = false        # the check for new versions takes it
 fetch = false          # fetching from other providers (mailboxes, calendars, contacts) takes it
 

@@ -58,8 +58,10 @@ something a family, a club or a small team can run without being a mail admin:
   ([how](docs/moving.md)).
 - **Shared calendars and invitations.** Share calendars and address books with
   people on your server; invite anyone to an event and get their answers, in
-  the calendar app you already use ([how it works](docs/calendars.md)). iPhone,
-  iPad and Mac set everything up with one signed profile.
+  the calendar app you already use ([how it works](docs/calendars.md)), and see
+  when people are free. Over JMAP the whole of JMAP Calendars, down to alerts
+  the server rings itself ([details](docs/jmap-calendars.md)). iPhone, iPad
+  and Mac set everything up with one signed profile.
 - **Bring your calendars along.** Import `.ics` and `.vcf` files, subscribe to
   calendars by their iCal address (Google's secret address too), or move
   everything over from iCloud, WEB.DE, GMX, Posteo and other CalDAV/CardDAV
@@ -71,6 +73,10 @@ something a family, a club or a small team can run without being a mail admin:
 - **Backups and updates built in.** Nightly deduplicated, encrypted backups to
   SFTP, an S3 bucket or a folder, single mailboxes restored from the portal,
   and the portal tells you when a new version is out.
+- **Profile pictures.** A picture for everyone, services, groups and a logo
+  per domain, visible on the server or also to other servers over Libravatar
+  and the `Face:` header — and sender pictures from the reader's own contacts
+  first ([profile pictures](docs/profile-pictures.md)).
 - **Push to closed apps.** The webmail notifies with its tab closed, and the
   Android app gets new mail through UnifiedPush ([JMAP push](docs/jmap-push.md)).
 - **Everything in one panel.** Accounts, domains, queue, logs, spam and
@@ -81,6 +87,8 @@ something a family, a club or a small team can run without being a mail admin:
   login through your own [OIDC or LDAP](docs/login-oidc-ldap.md), and
   [OAuth](docs/oauth.md) for mail apps.
 - **Private by default.** No telemetry. Your mail stays on your hardware.
+  Remote pictures and [one-click unsubscribes](docs/jmap-unsubscribe.md) go
+  out through the server, or a VPN, never from the reader's browser.
 
 > **Status:** early, but I run my own mail on it. Set up backups, and remember
 > there's no support. The [roadmap](docs/roadmap.md) shows what's done and what

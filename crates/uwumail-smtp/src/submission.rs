@@ -5,7 +5,7 @@ use mail_parser::MessageParser;
 use uwumail_store::{Account, IngestRequest, MailboxRole, MailboxTarget, MaskedState, NewQueueRecipient, StoreError};
 
 use crate::dsn::{self, FailedRecipient};
-use crate::{Smtp, clamav, dkim, forward, headers, random_id, vacation};
+use crate::{Smtp, clamav, dkim, forward, headers, profile_pictures, random_id, vacation};
 
 pub struct Submission {
     pub account: Account,
@@ -208,8 +208,16 @@ impl Smtp {
         let ctx = &self.inner;
         let from_domain = from[0].rsplit_once('@').map(|(_, d)| d.to_ascii_lowercase()).unwrap_or_default();
         let id = random_id();
+        let raw = headers::strip_faces(&raw);
 
         let mut added = String::new().into_bytes();
+        // The person's picture, when they asked for it and send from their own address; signed
+        // with the rest (docs/profile-pictures.md).
+        match ctx.store.sender_face(account.id, &from[0]).await {
+            Ok(Some(face)) => added.extend_from_slice(profile_pictures::face_header(&face).as_bytes()),
+            Ok(None) => {}
+            Err(err) => tracing::warn!(%id, %err, "reading the sender's Face failed"),
+        }
         if headers::first_value(&raw, "Date").is_none() {
             added.extend_from_slice(format!("Date: {}\r\n", Date::now().to_rfc822()).as_bytes());
         }
@@ -217,7 +225,9 @@ impl Smtp {
             added.extend_from_slice(format!("Message-ID: <{}@{from_domain}>\r\n", random_id()).as_bytes());
         }
         let mut message = added.clone();
-        message.extend_from_slice(&strip_bcc(&raw));
+        // Signed as it will be sent: a lone CR or LF becomes CRLF on the way out (SMTP-9), and the
+        // signature has to hold for that.
+        message.extend_from_slice(&headers::crlf_only(&strip_bcc(&raw)));
 
         let signatures = match dkim::ensure_domain_keys(&ctx.store, &from_domain).await {
             Ok(keys) => dkim::sign(&message, &keys).unwrap_or_else(|err| {
@@ -320,7 +330,11 @@ impl Smtp {
                 None if ctx.store.is_local_domain(&domain).await.unwrap_or(false) => {
                     match ctx.store.forward_address_targets(&address).await.ok().flatten() {
                         Some(targets) => {
-                            let forwarder = forward::Forwarder { name: &address, account_id: Some(account.id) };
+                            let forwarder = forward::Forwarder {
+                                name: &address,
+                                account_id: Some(account.id),
+                                proof: forward::Proof::PROVEN,
+                            };
                             forward::send(ctx, forwarder, &address, &mail_from, &signed, &targets).await;
                             local_deliveries += 1;
                         }
@@ -403,7 +417,8 @@ impl Smtp {
         if !plan.targets.is_empty()
             && let Ok(Some(target)) = ctx.store.account_by_id(account_id).await
         {
-            let forwarder = forward::Forwarder { name: &target.login, account_id: Some(target.id) };
+            let forwarder =
+                forward::Forwarder { name: &target.login, account_id: Some(target.id), proof: forward::Proof::PROVEN };
             forward::send(ctx, forwarder, address, mail_from, signed, &plan.targets).await;
         }
         if !plan.keep_copy {

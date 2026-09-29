@@ -102,6 +102,8 @@ import type {
   WordImport,
   WordSource,
   WordsView,
+  PictureFile,
+  PictureVisibility,
 } from "@/lib/api";
 import { guessSenderKind } from "@/features/spam/senders";
 import { ruleRoutes } from "./mockRules";
@@ -2363,9 +2365,124 @@ function oauthRequest(params: Record<string, string | undefined>): [number, unkn
   return [200, answer];
 }
 
+/** Profile pictures and logos by the address they are managed at; uploads stay in this tab. */
+const mockPictures = new Map<
+  string,
+  { picture: PictureFile | null; visibility: PictureVisibility; sendFace: boolean }
+>();
+let mockPictureUpload: string | null = null;
+let mockPublicPictures = true;
+const mockDomainPublic = new Map<string, boolean>();
+
+function pictureView(path: string, own: boolean) {
+  const state = mockPictures.get(path) ?? { picture: null, visibility: "server" as PictureVisibility, sendFace: false };
+  const mayBePublic = mockPublicPictures;
+  return {
+    picture: state.picture,
+    visibility: state.visibility === "public" && !mayBePublic ? "server" : state.visibility,
+    ...(own ? { sendFace: state.sendFace } : {}),
+    mayBePublic,
+  };
+}
+
+function pictureRoutes(pattern: RegExp, own: boolean, face: boolean): [string, RegExp, Handler][] {
+  const path = (params: string[]) => params.join("/");
+  const current = (params: string[]) =>
+    mockPictures.get(path(params)) ?? { picture: null, visibility: "server" as PictureVisibility, sendFace: false };
+  return [
+    ["GET", pattern, (_, params) => [200, pictureView(path(params), own)]],
+    [
+      "PUT",
+      pattern,
+      (_, params) => {
+        const url = mockPictureUpload ?? "";
+        mockPictures.set(path(params), {
+          ...current(params),
+          picture: { url, type: "image/png", size: 40_000, updatedAt: Math.floor(Date.now() / 1000) },
+        });
+        return [200, pictureView(path(params), own)];
+      },
+    ],
+    [
+      "DELETE",
+      pattern,
+      (_, params) => {
+        mockPictures.set(path(params), { ...current(params), picture: null });
+        return [200, pictureView(path(params), own)];
+      },
+    ],
+    [
+      "PATCH",
+      pattern,
+      (body, params) => {
+        const change = body as { visibility?: PictureVisibility; sendFace?: boolean };
+        if (change.visibility === "public" && !mockPublicPictures) return problem(409, "publicNotAllowed");
+        if (change.sendFace !== undefined && !face) return problem(422, "invalid");
+        mockPictures.set(path(params), { ...current(params), ...change });
+        return [200, pictureView(path(params), own)];
+      },
+    ],
+  ];
+}
+
+function domainLogoView(domain: string) {
+  return {
+    picture: mockPictures.get(`logo/${domain}`)?.picture ?? null,
+    publicPictures: mockDomainPublic.get(domain) ?? true,
+    serverAllowsPublic: mockPublicPictures,
+  };
+}
+
+const pictureMockRoutes: [string, RegExp, Handler][] = [
+  ...pictureRoutes(/^\/api\/account\/(picture)$/, true, true),
+  ...pictureRoutes(/^\/api\/admin\/people\/([^/]+)\/picture$/, false, false),
+  ...pictureRoutes(/^\/api\/admin\/domains\/([^/]+)\/groups\/([^/]+)\/picture$/, false, false),
+  ["GET", /^\/api\/admin\/domains\/([^/]+)\/logo$/, (_, [domain]) => [200, domainLogoView(domain!)]],
+  [
+    "PUT",
+    /^\/api\/admin\/domains\/([^/]+)\/logo$/,
+    (_, [domain]) => {
+      const picture = { url: mockPictureUpload ?? "", type: "image/png", size: 30_000, updatedAt: now };
+      mockPictures.set(`logo/${domain}`, { picture, visibility: "server", sendFace: false });
+      log("domain.logo", domain!, {});
+      return [200, domainLogoView(domain!)];
+    },
+  ],
+  [
+    "DELETE",
+    /^\/api\/admin\/domains\/([^/]+)\/logo$/,
+    (_, [domain]) => {
+      mockPictures.delete(`logo/${domain}`);
+      log("domain.logoRemoved", domain!, {});
+      return [200, domainLogoView(domain!)];
+    },
+  ],
+  [
+    "PUT",
+    /^\/api\/admin\/domains\/([^/]+)\/public-pictures$/,
+    (body, [domain]) => {
+      const allowed = (body as { allowed: boolean }).allowed;
+      mockDomainPublic.set(domain!, allowed);
+      log("domain.publicPictures", domain!, { allowed });
+      return [200, domainLogoView(domain!)];
+    },
+  ],
+  ["GET", /^\/api\/admin\/pictures$/, () => [200, { publicAllowed: mockPublicPictures }]],
+  [
+    "PUT",
+    /^\/api\/admin\/pictures$/,
+    (body) => {
+      mockPublicPictures = (body as { allowed: boolean }).allowed;
+      log("pictures.public", "", { allowed: mockPublicPictures });
+      return [200, { publicAllowed: mockPublicPictures }];
+    },
+  ],
+];
+
 const routes: [string, RegExp, Handler][] = [
   // First, so they win over the older routes for the same addresses.
   ...ruleRoutes,
+  ...pictureMockRoutes,
   ["GET", /^\/api\/admin\/alerts$/, () => [200, alertsView()]],
   [
     "POST",
@@ -4931,6 +5048,9 @@ window.fetch = async (input, init) => {
   // An uploaded logo stays in this tab as an object URL.
   if (init?.body instanceof Blob && url.pathname === "/api/admin/branding/logo") {
     mockLogo = URL.createObjectURL(init.body);
+  }
+  if (init?.body instanceof Blob && /\/(picture|logo)$/.test(url.pathname)) {
+    mockPictureUpload = URL.createObjectURL(init.body);
   }
   await new Promise((resolve) => setTimeout(resolve, 250));
   let result: [number, unknown] = problem(404, "notFound");

@@ -10,7 +10,8 @@ use std::collections::BTreeMap;
 
 use serde_json::{Map, Value, json};
 use uwumail_store::{
-    DavAccess, DavCollection, DavCollectionUpdate, DavKind, DavShare, NewDavCollection, ShareRights, StoreError,
+    CalendarPrefs, CalendarPrefsUpdate, DavAccess, DavCollection, DavCollectionUpdate, DavKind, DavShare,
+    NewDavCollection, ShareRights, StoreError,
 };
 
 use super::{Ctx, SetResponse, check_set_size, get_ids, if_in_state, pick, properties};
@@ -40,12 +41,37 @@ const DEFAULTS: &[&str] = &[
 const MAX_NAME_BYTES: usize = 255;
 const MAX_DESCRIPTION_BYTES: usize = 10_000;
 
-/// A calendar as the account sees it.
+/// A calendar as the account sees it: for one shared with it, with its own name, colour, order,
+/// visibility and time zone in place of the owner's.
 pub struct Listed {
     pub collection: DavCollection,
     pub access: DavAccess,
     /// For a calendar shared with the account: its owner's address and name.
     pub owner: Option<(String, String)>,
+    /// What the account keeps for itself about the calendar.
+    pub prefs: CalendarPrefs,
+}
+
+impl Listed {
+    /// Which of its events make the account busy: `all`, `attending` or `none`. Its own calendars
+    /// count by default, those shared with it and subscribed ones do not.
+    pub fn include_in_availability(&self) -> &str {
+        match self.prefs.include_in_availability.as_deref() {
+            Some(value) => value,
+            None if self.access.is_owner() && !self.collection.subscribed => "all",
+            None => "none",
+        }
+    }
+
+    /// The default alerts for events with (`true`) or without a time, as an Alert map.
+    pub fn default_alerts(&self, with_time: bool) -> Option<Map<String, Value>> {
+        let text =
+            if with_time { &self.prefs.default_alerts_with_time } else { &self.prefs.default_alerts_without_time };
+        match serde_json::from_str(text.as_deref()?) {
+            Ok(Value::Object(alerts)) => Some(alerts),
+            _ => None,
+        }
+    }
 }
 
 /// The account's calendars, the default one made the first time like CalDAV does, then those
@@ -58,13 +84,23 @@ pub async fn listed(ctx: &Ctx<'_>) -> MethodResult<Vec<Listed>> {
         .store
         .dav_collections(ctx.account.id, DavKind::Calendar, NewDavCollection::default_calendar(name))
         .await?;
-    let mut list: Vec<Listed> =
-        own.into_iter().map(|collection| Listed { collection, access: DavAccess::Owner, owner: None }).collect();
+    let mut prefs = ctx.jmap.store.calendar_prefs(ctx.account.id).await?;
+    let mut list: Vec<Listed> = own
+        .into_iter()
+        .map(|collection| {
+            let prefs = prefs.remove(&collection.id).unwrap_or_default();
+            Listed { collection, access: DavAccess::Owner, owner: None, prefs }
+        })
+        .collect();
     for shared in ctx.jmap.store.dav_shared_with(ctx.account.id, DavKind::Calendar).await? {
+        let mut collection = shared.collection;
+        let prefs = prefs.remove(&collection.id).unwrap_or_default();
+        collection.apply_prefs(&prefs);
         list.push(Listed {
-            collection: shared.collection,
+            collection,
             access: DavAccess::Shared(shared.rights),
             owner: Some((shared.owner_login, shared.owner_name)),
+            prefs,
         });
     }
     Ok(list.into_iter().filter(|listed| holds_events(&listed.collection)).collect())
@@ -116,7 +152,8 @@ fn stored_color(css: &str) -> Option<String> {
     Some(format!("#{}FF", full.to_ascii_uppercase()))
 }
 
-/// The CalendarRights object of a level of sharing.
+/// The CalendarRights object of a level of sharing. Everyone may change their own per-user
+/// properties, which never reach the owner's data.
 fn share_rights(rights: ShareRights) -> Value {
     let write = rights >= ShareRights::Write;
     json!({
@@ -124,7 +161,7 @@ fn share_rights(rights: ShareRights) -> Value {
         "mayReadItems": true,
         "mayWriteAll": write,
         "mayWriteOwn": write,
-        "mayUpdatePrivate": write,
+        "mayUpdatePrivate": true,
         "mayRSVP": write,
         "mayShare": rights == ShareRights::All,
         "mayDelete": false
@@ -172,7 +209,7 @@ pub(super) fn level_of(rights: &Value) -> Result<Option<ShareRights>, ()> {
     }
     Ok(if flag("mayShare") {
         Some(ShareRights::All)
-    } else if ["mayWriteAll", "mayWriteOwn", "mayUpdatePrivate", "mayRSVP", "mayWrite"].iter().any(|f| flag(f)) {
+    } else if ["mayWriteAll", "mayWriteOwn", "mayRSVP", "mayWrite"].iter().any(|f| flag(f)) {
         Some(ShareRights::Write)
     } else if flag("mayReadItems") || flag("mayReadFreeBusy") || flag("mayRead") {
         Some(ShareRights::Read)
@@ -202,9 +239,9 @@ fn to_json(listed: &Listed, only_one: bool, shares: &[DavShare]) -> Map<String, 
         "isSubscribed": true,
         "isVisible": calendar.is_visible,
         "isDefault": owner && calendar.is_default,
-        "includeInAvailability": if calendar.subscribed { "none" } else { "all" },
-        "defaultAlertsWithTime": null,
-        "defaultAlertsWithoutTime": null,
+        "includeInAvailability": listed.include_in_availability(),
+        "defaultAlertsWithTime": listed.default_alerts(true),
+        "defaultAlertsWithoutTime": listed.default_alerts(false),
         "timeZone": calendar.timezone.as_deref().and_then(uwumail_store::ical::timezone_id),
         "shareWith": if listed.access.may_admin() { share_with(shares) } else { Value::Null },
         "myRights": read_only_if(rights(listed.access, !(owner && only_one)), calendar.subscribed),
@@ -311,16 +348,46 @@ pub(super) fn parse_share_with(key: &str, value: &Value, sharing: &mut Option<(b
 /// The properties of a create or update, checked. `creating` insists on a name.
 #[cfg(test)]
 fn parse_properties(object: &Map<String, Value>, creating: bool) -> Result<DavCollectionUpdate, SetError> {
-    parse_all(object, creating).map(|(update, _)| update)
+    parse_all(object, creating).map(|parsed| parsed.update)
 }
 
-/// [`parse_properties`] with the sharing asked for: whether it replaces all shares, and the
-/// principals with their new rights.
-fn parse_all(
-    object: &Map<String, Value>,
-    creating: bool,
-) -> Result<(DavCollectionUpdate, Option<(bool, Sharing)>), SetError> {
+/// What a create or update asks for.
+struct Parsed {
+    /// The calendar's own properties (the owner's, or with [`Parsed::own_only`] one's own).
+    update: DavCollectionUpdate,
+    /// What is always kept per person.
+    prefs: CalendarPrefsUpdate,
+    /// Whether it replaces all shares, and the principals with their new rights.
+    sharing: Option<(bool, Sharing)>,
+}
+
+impl Parsed {
+    /// For a calendar shared with the account: name, colour, order, visibility and time zone are
+    /// its own, the description stays the owner's.
+    fn own_only(&mut self) {
+        let update = std::mem::take(&mut self.update);
+        self.update.description = update.description;
+        self.prefs.name = update.display_name.map(Some);
+        self.prefs.color = update.color;
+        self.prefs.sort_order = update.sort_order.map(Some);
+        self.prefs.is_visible = update.is_visible.map(Some);
+        self.prefs.timezone = update.timezone;
+    }
+}
+
+fn is_empty(update: &DavCollectionUpdate) -> bool {
+    update.display_name.is_none()
+        && update.description.is_none()
+        && update.color.is_none()
+        && update.sort_order.is_none()
+        && update.timezone.is_none()
+        && update.is_visible.is_none()
+}
+
+/// The properties of a create or update, checked. `creating` insists on a name.
+fn parse_all(object: &Map<String, Value>, creating: bool) -> Result<Parsed, SetError> {
     let mut update = DavCollectionUpdate::default();
+    let mut prefs = CalendarPrefsUpdate::default();
     let mut sharing: Option<(bool, Sharing)> = None;
     let mut bad: Vec<&str> = Vec::new();
     for (key, value) in object {
@@ -372,9 +439,23 @@ fn parse_all(
             },
             // What this server has only one answer to may be sent with that answer.
             "isSubscribed" if value == &Value::Bool(true) => {}
-            // "none" is what subscribed calendars say; sending it back changes nothing.
-            "includeInAvailability" if matches!(value.as_str(), Some("all" | "none")) => {}
-            "defaultAlertsWithTime" | "defaultAlertsWithoutTime" if value.is_null() => {}
+            "includeInAvailability" => match value.as_str() {
+                Some(which @ ("all" | "attending" | "none")) => {
+                    prefs.include_in_availability = Some(Some(which.to_owned()))
+                }
+                _ => bad.push("includeInAvailability"),
+            },
+            "defaultAlertsWithTime" | "defaultAlertsWithoutTime" => match crate::calendar_alerts::check(value) {
+                Ok(alerts) => {
+                    let alerts = Some(alerts.map(|alerts| Value::Object(alerts).to_string()));
+                    if key == "defaultAlertsWithTime" {
+                        prefs.default_alerts_with_time = alerts;
+                    } else {
+                        prefs.default_alerts_without_time = alerts;
+                    }
+                }
+                Err(_) => bad.push(key.as_str()),
+            },
             _ => bad.push(key.as_str()),
         }
     }
@@ -382,10 +463,42 @@ fn parse_all(
         bad.push("name");
     }
     if bad.is_empty() {
-        Ok((update, sharing))
+        Ok(Parsed { update, prefs, sharing })
     } else {
         Err(SetError::invalid_properties(&bad, "these properties are missing, not valid or cannot be set here"))
     }
+}
+
+/// Default alert ids have to be unique in the account, across its calendars.
+fn check_alert_ids(known: &[Listed], calendar_id: Option<i64>, prefs: &CalendarPrefsUpdate) -> Result<(), SetError> {
+    let ids = |text: Option<&String>| -> Vec<String> {
+        text.and_then(|text| serde_json::from_str::<Map<String, Value>>(text).ok())
+            .map(|alerts| alerts.keys().cloned().collect())
+            .unwrap_or_default()
+    };
+    let wanted: Vec<String> = [&prefs.default_alerts_with_time, &prefs.default_alerts_without_time]
+        .into_iter()
+        .flat_map(|update| ids(update.as_ref().and_then(Option::as_ref)))
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    let others = known.iter().filter(|listed| Some(listed.collection.id) != calendar_id).flat_map(|listed| {
+        ids(listed.prefs.default_alerts_with_time.as_ref())
+            .into_iter()
+            .chain(ids(listed.prefs.default_alerts_without_time.as_ref()))
+    });
+    let taken: std::collections::HashSet<String> = others.collect();
+    if wanted.iter().any(|id| taken.contains(id) || !seen.insert(id)) {
+        return Err(SetError::invalid_properties(
+            &["defaultAlertsWithTime", "defaultAlertsWithoutTime"],
+            "default alert ids have to be unique across your calendars",
+        ));
+    }
+    Ok(())
+}
+
+/// Whether a change touches the default alerts, which events using them then take over.
+fn changes_defaults(prefs: &CalendarPrefsUpdate) -> bool {
+    prefs.default_alerts_with_time.is_some() || prefs.default_alerts_without_time.is_some()
 }
 
 /// Applies `shareWith` to a calendar: all of it (`replace`), or single principals.
@@ -450,7 +563,8 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
             let result: Result<DavCollection, SetError> = async {
                 let object =
                     object.as_object().ok_or_else(|| SetError::new("invalidProperties", "must be an object"))?;
-                let (update, sharing) = parse_all(object, true)?;
+                let Parsed { update, prefs, sharing } = parse_all(object, true)?;
+                check_alert_ids(&known, None, &prefs)?;
                 let slug = random_slug();
                 let new = NewDavCollection {
                     slug,
@@ -463,9 +577,15 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                     StoreError::Rule { code: "davCollectionsFull", message } => SetError::new("overQuota", message),
                     other => SetError::from(other),
                 })?;
-                if let Some((replace, wanted)) = sharing
-                    && let Err(err) = apply_sharing(ctx, &calendar, replace, wanted).await
-                {
+                let shared = match sharing {
+                    Some((replace, wanted)) => apply_sharing(ctx, &calendar, replace, wanted).await,
+                    None => Ok(()),
+                };
+                let kept = match shared {
+                    Ok(()) => store.set_calendar_prefs(account_id, calendar.id, prefs).await.map_err(SetError::from),
+                    Err(err) => Err(err),
+                };
+                if let Err(err) = kept {
                     // All or nothing: the calendar goes again.
                     let _ = store.destroy_calendar(account_id, calendar.id, true).await;
                     return Err(err);
@@ -478,7 +598,8 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                     let id = ids::calendar(calendar.id);
                     ctx.created_ids.insert(creation_id.clone(), id.clone());
                     // What the client did not send: the id, what the server set, the defaults.
-                    let listed = Listed { collection: calendar, access: DavAccess::Owner, owner: None };
+                    let prefs = store.calendar_prefs(account_id).await?.remove(&calendar.id).unwrap_or_default();
+                    let listed = Listed { collection: calendar, access: DavAccess::Owner, owner: None, prefs };
                     let mut created = to_json(&listed, false, &[]);
                     for key in object.as_object().into_iter().flat_map(Map::keys) {
                         created.remove(key);
@@ -501,25 +622,30 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
                 let listed = known.iter().find(|l| l.collection.id == calendar_id).ok_or_else(SetError::not_found)?;
                 let patch =
                     patch.as_object().ok_or_else(|| SetError::new("invalidPatch", "the patch must be an object"))?;
-                let (changes, sharing) = parse_all(patch, false)?;
-                let shared_patch = patch.keys().any(|k| k == "shareWith" || k.starts_with("shareWith/"));
-                let other_patch = patch.keys().any(|k| k != "shareWith" && !k.starts_with("shareWith/"));
+                let mut parsed = parse_all(patch, false)?;
                 if !listed.access.is_owner() {
-                    // Someone else's calendar: its name and colour with all rights, never the
-                    // owner's own settings like visibility and order.
-                    let per_owner = changes.is_visible.is_some() || changes.sort_order.is_some();
-                    if (other_patch || shared_patch) && !listed.access.may_admin() || per_owner {
+                    // Someone else's calendar: name, colour and the like are one's own; its
+                    // description and who else sees it only change with all rights.
+                    parsed.own_only();
+                    if (!is_empty(&parsed.update) || parsed.sharing.is_some()) && !listed.access.may_admin() {
                         return Err(SetError::new("forbidden", "this calendar is someone else's"));
                     }
                 }
-                if other_patch {
+                if !is_empty(&parsed.update) {
                     let owner = listed.collection.account_id;
-                    store.dav_update_collection(owner, calendar_id, changes).await.map_err(|err| match err {
+                    store.dav_update_collection(owner, calendar_id, parsed.update).await.map_err(|err| match err {
                         StoreError::NotFound(_) => SetError::not_found(),
                         other => SetError::from(other),
                     })?;
                 }
-                if let Some((replace, wanted)) = sharing {
+                check_alert_ids(&known, Some(calendar_id), &parsed.prefs)?;
+                let defaults = changes_defaults(&parsed.prefs);
+                store.set_calendar_prefs(account_id, calendar_id, parsed.prefs).await.map_err(SetError::from)?;
+                // Events of one's own calendar that use the defaults carry them for CalDAV clients.
+                if defaults && listed.access.is_owner() {
+                    crate::calendar_alerts::apply(&store, account_id, calendar_id).await.map_err(SetError::from)?;
+                }
+                if let Some((replace, wanted)) = parsed.sharing {
                     apply_sharing(ctx, &listed.collection, replace, wanted).await?;
                 }
                 Ok(())

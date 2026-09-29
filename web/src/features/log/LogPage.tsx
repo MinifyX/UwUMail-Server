@@ -80,7 +80,19 @@ const KNOWN_ACTIONS = new Set([
   "sharedMailboxMembers",
   "sharedMailboxConvert",
   "sharedMailboxEnd",
+  "personPicture",
+  "personPictureRemoved",
+  "personPictureVisibility",
+  "groupPicture",
+  "groupPictureRemoved",
+  "groupPictureVisibility",
+  "domainLogo",
+  "domainLogoRemoved",
+  "domainPublicPictures",
+  "picturesPublic",
 ]);
+
+const PICTURE_VISIBILITIES = ["off", "server", "public"];
 
 const AUTH_SOURCES = ["local", "ldap", "oidc"];
 
@@ -133,6 +145,12 @@ export function detailText(record: AuditRecord, t: TFunction, language: string):
     parts.push(t("log.details.authSource", { value: t(`people.authSource.${details.source}`) }));
   }
   if (details.invited === true) parts.push(t("log.details.invited"));
+  if (typeof details.visibility === "string" && PICTURE_VISIBILITIES.includes(details.visibility)) {
+    parts.push(t("log.details.pictureVisibility", { value: t(`pictures.visibility.${details.visibility}`) }));
+  }
+  if (typeof details.allowed === "boolean") {
+    parts.push(t(details.allowed ? "log.details.publicAllowed" : "log.details.publicForbidden"));
+  }
   // A new mail domain is nothing to mention; a new masked-only one and every change of kind are.
   if (
     details.kind === "masked"

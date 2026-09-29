@@ -29,8 +29,15 @@ pub const WEBMAIL: &str = "urn:uwumail:jmap:webmail";
 /// Our own extension: a message's remote pictures, fetched by the server so the sender never sees
 /// who reads it (docs/jmap-remote.md).
 pub const REMOTE: &str = "urn:uwumail:jmap:remote";
+/// Our own extension: one-click unsubscribing (RFC 8058) sent by the server, `Email/unsubscribe`
+/// (docs/jmap-unsubscribe.md).
+pub const UNSUBSCRIBE: &str = "urn:uwumail:jmap:unsubscribe";
 /// JMAP Calendars (draft-ietf-jmap-calendars) on the CalDAV calendars; see docs/jmap-calendars.md.
 pub const CALENDARS: &str = "urn:ietf:params:jmap:calendars";
+/// When people are busy, `Principal/getAvailability` (draft-ietf-jmap-calendars, section 2.2).
+pub const AVAILABILITY: &str = "urn:ietf:params:jmap:principals:availability";
+/// Turning iCalendar files into events, `CalendarEvent/parse` (draft-ietf-jmap-calendars, 5.13).
+pub const CALENDARS_PARSE: &str = "urn:ietf:params:jmap:calendars:parse";
 /// Our own extension: addresses to suggest while writing, from the address books and recent mail
 /// (docs/jmap-suggest.md).
 pub const SUGGEST: &str = "urn:uwumail:jmap:suggest";
@@ -40,6 +47,8 @@ pub const WEBSOCKET: &str = "urn:ietf:params:jmap:websocket";
 pub const CONTACTS: &str = "urn:ietf:params:jmap:contacts";
 /// Fastmail's masked email extension: random addresses per website (docs/jmap-masked-email.md).
 pub const MASKED: &str = "https://www.fastmail.com/dev/maskedemail";
+/// Our own extension: the account's profile picture and who sees it (docs/profile-pictures.md).
+pub const PROFILE: &str = "urn:uwumail:jmap:profile";
 /// The server's VAPID key for Web Push subscriptions (RFC 9749); see docs/jmap-push.md.
 pub const WEBPUSH_VAPID: &str = "urn:ietf:params:jmap:webpush-vapid";
 
@@ -129,6 +138,7 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
             SIEVE: { "implementation": "UwUMail Server" },
             MASKED: {},
             WEBMAIL: {},
+            UNSUBSCRIBE: {},
             REMOTE: {
                 "imageUrl": format!("{base}/jmap/image/{{accountId}}?url={{url}}"),
                 "pictureUrl": format!("{base}/jmap/picture/{{accountId}}?email={{email}}"),
@@ -161,6 +171,7 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
                     },
                     VACATION: {},
                     MASKED: {},
+                    UNSUBSCRIBE: {},
                     SENDERS: { "maxEntries": uwumail_store::SENDER_LIST_PERSONAL_LIMIT },
                     SUGGEST: { "maxLimit": crate::methods::MAX_SUGGESTIONS },
                     SETTINGS: {
@@ -188,7 +199,8 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
             SETTINGS: account_id.clone(),
             SUGGEST: account_id.clone(),
             SIEVE: account_id.clone(),
-            MASKED: account_id.clone()
+            MASKED: account_id.clone(),
+            UNSUBSCRIBE: account_id.clone()
         },
         "username": account.login,
         "apiUrl": format!("{base}/jmap/api"),
@@ -209,6 +221,13 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
             "mayCreateCalendar": true
         });
         document["primaryAccounts"][CALENDARS] = json!(account_id);
+        document["capabilities"][AVAILABILITY] = json!({});
+        document["accounts"][&account_id]["accountCapabilities"][AVAILABILITY] =
+            json!({ "maxAvailabilityDuration": crate::availability::MAX_DURATION });
+        document["primaryAccounts"][AVAILABILITY] = json!(account_id);
+        document["capabilities"][CALENDARS_PARSE] = json!({});
+        document["accounts"][&account_id]["accountCapabilities"][CALENDARS_PARSE] = json!({});
+        document["primaryAccounts"][CALENDARS_PARSE] = json!(account_id);
     }
     // Address books too, as over CardDAV.
     if account.protocols.carddav && may_use_dav {
@@ -235,14 +254,24 @@ pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInf
             crate::sharing::add_to_session(&mut document, &account, &shared);
             document["accounts"][ids::account(account.id)]["accountCapabilities"][MASKED] =
                 masked_capability(&jmap.inner.store, account.id).await;
+            // The picture: the same in both places, as the session belongs to one account.
+            let profile = crate::methods::profile::capability(&jmap.inner.store, account.id).await;
+            let may_be_public = profile["mayBePublic"].as_bool().unwrap_or(false);
+            document["capabilities"][PROFILE] = profile.clone();
+            document["accounts"][ids::account(account.id)]["accountCapabilities"][PROFILE] = profile;
+            document["primaryAccounts"][PROFILE] = json!(ids::account(account.id));
             let masked_state = masked_state(&jmap.inner.store).await;
             // The key a browser binds its push subscription to. It never changes, so the session
             // state need not say anything about it.
             if let Some(vapid) = jmap.inner.push.vapid().await {
                 document["capabilities"][WEBPUSH_VAPID] = json!({ "applicationServerKey": vapid.public_key() });
             }
-            document["state"] =
-                json!(format!("{}{}{masked_state}", session_state(&account), crate::sharing::state_suffix(&shared)));
+            let picture_state = if may_be_public { "-p1" } else { "-p0" };
+            document["state"] = json!(format!(
+                "{}{}{masked_state}{picture_state}",
+                session_state(&account),
+                crate::sharing::state_suffix(&shared)
+            ));
             ([(header::CACHE_CONTROL, "no-cache, no-store")], Json(document)).into_response()
         }
         Err(err) => err.into_response(),

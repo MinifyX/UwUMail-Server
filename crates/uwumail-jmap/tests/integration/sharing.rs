@@ -484,6 +484,87 @@ async fn query_changes_in_a_shared_account_stay_within_the_shared_folders() {
     assert_eq!(refused[0][1]["type"], "accountNotSupportedByMethod");
 }
 
+/// What the owner does in folders nobody else sees moves no state, push or change list of the
+/// people they share other folders with (security-audit-0.16.0 PROTOCOLS-L2).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_shared_account_tells_nothing_of_the_owners_other_folders() {
+    let server = server().await;
+    let mini_account = format!("a{}", server.mini);
+    let inbox = server.mailbox(server.mini, MailboxRole::Inbox).await;
+    server
+        .call(
+            MINI,
+            "Mailbox/set",
+            json!({ "accountId": mini_account, "update": {
+                format!("m{inbox}"): { format!("shareWith/p{}", server.nyu): "read" } } }),
+        )
+        .await;
+    let shared = server.deliver(server.mini, MailboxRole::Inbox, "geteilt").await;
+    let state = |response: &Value| response["state"].as_str().unwrap().to_owned();
+    let get = json!({ "accountId": mini_account, "ids": [] });
+    let before = state(&server.call(NYU, "Email/get", get.clone()).await);
+    assert_eq!(before, state(&server.call(NYU, "Mailbox/get", get.clone()).await));
+    let owner_before = server.store.account_modseq(server.mini).await.unwrap();
+    let imap_before = server.store.imap_status(server.mini, inbox).await.unwrap().highest_modseq;
+
+    // Mail in a folder of Mini's own, read, flagged and moved about there, and a new folder.
+    let private = server.deliver(server.mini, MailboxRole::Archive, "privat").await;
+    let seen = uwumail_store::EmailUpdate {
+        id: private,
+        keywords: uwumail_store::KeywordsChange::Replace(vec!["$seen".into(), "$flagged".into()]),
+        ..Default::default()
+    };
+    server.store.update_emails(server.mini, vec![seen]).await.unwrap();
+    server.store.create_mailbox(server.mini, "Steuer", None, None, 0, true).await.unwrap();
+    assert!(server.store.account_modseq(server.mini).await.unwrap() > owner_before);
+
+    assert_eq!(state(&server.call(NYU, "Email/get", get.clone()).await), before, "the state did not move");
+    for kind in ["Email", "Mailbox", "Thread"] {
+        let changes = server
+            .call(NYU, &format!("{kind}/changes"), json!({ "accountId": mini_account, "sinceState": before }))
+            .await;
+        assert_eq!(changes["newState"], json!(before), "{changes}");
+        for list in ["created", "updated", "destroyed"] {
+            assert_eq!(changes[list], json!([]), "{kind} {list}: {changes}");
+        }
+    }
+    let since: i64 = before.parse().unwrap();
+    let inbox_only = vec![inbox];
+    let (kinds, _) = server.store.shared_changed_kinds(server.mini, since, inbox_only.clone()).await.unwrap();
+    assert!(kinds.is_empty(), "nothing to push: {kinds:?}");
+    assert_eq!(server.store.imap_status(server.mini, inbox).await.unwrap().highest_modseq, imap_before);
+
+    // Mail in the shared folder is theirs to know, and reading it there too.
+    let fresh = server.deliver(server.mini, MailboxRole::Inbox, "neu").await;
+    let read = uwumail_store::EmailUpdate {
+        id: shared,
+        keywords: uwumail_store::KeywordsChange::Replace(vec!["$seen".into()]),
+        ..Default::default()
+    };
+    server.store.update_emails(server.mini, vec![read]).await.unwrap();
+    let (kinds, _) = server.store.shared_changed_kinds(server.mini, since, inbox_only).await.unwrap();
+    assert!(kinds.iter().any(|kind| kind == "Email"), "{kinds:?}");
+    let changes = server.call(NYU, "Email/changes", json!({ "accountId": mini_account, "sinceState": before })).await;
+    assert_eq!(changes["created"], json!([format!("e{fresh}")]), "{changes}");
+    assert_eq!(changes["updated"], json!([format!("e{shared}")]), "{changes}");
+    assert_eq!(changes["destroyed"], json!([]), "{changes}");
+    let after = changes["newState"].as_str().unwrap().to_owned();
+    assert_ne!(after, before);
+    assert!(server.store.imap_status(server.mini, inbox).await.unwrap().highest_modseq > imap_before);
+
+    // Once the sharing changes, what the client has may be out of date: it loads again.
+    server
+        .call(
+            MINI,
+            "Mailbox/set",
+            json!({ "accountId": mini_account, "update": {
+                format!("m{inbox}"): { format!("shareWith/p{}", server.nyu): "write" } } }),
+        )
+        .await;
+    let refused = server.call(NYU, "Email/changes", json!({ "accountId": mini_account, "sinceState": after })).await;
+    assert_eq!(refused["type"], "cannotCalculateChanges", "{refused}");
+}
+
 /// A shared mailbox is an account every member has, with all its folders, new ones too; it is a
 /// principal members can look up, but nobody to share with. Groups are principals of their own.
 #[tokio::test(flavor = "multi_thread")]

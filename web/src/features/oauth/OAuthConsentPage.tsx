@@ -7,6 +7,7 @@ import { LoadError, Loading } from "@/components/StatusViews";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { LogoSymbol, Wordmark } from "@/components/ui/Logo";
+import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
 import { useT } from "@/i18n";
 import { api, ApiError, setCsrfToken, type OAuthRequest, type Session } from "@/lib/api";
 import { useErrorText } from "@/lib/errors";
@@ -24,7 +25,7 @@ const SCOPE_ICONS: Record<KnownScope, LucideIcon> = {
 };
 
 /** The app's request itself is wrong: no use asking the person anything. */
-const REFUSED = ["oauthClientUnknown", "oauthRedirectInvalid"];
+const REFUSED = ["oauthClientUnknown", "oauthRedirectInvalid", "oauthRequestInvalid"];
 
 const refusal = (error: unknown) => (error instanceof ApiError && REFUSED.includes(error.code) ? error.code : null);
 const loggedOut = (error: unknown) => error instanceof ApiError && error.status === 401;
@@ -74,9 +75,16 @@ export function OAuthConsentPage({ session }: { session: Session }) {
     retry: false,
     staleTime: Infinity,
   });
+  // Letting a new app in needs the password again unless the login is fresh.
+  const { confirmed, dialog } = usePasswordConfirmation();
   const decide = useMutation({
     mutationFn: (approve: boolean) =>
-      api<{ redirect: string }>("/api/oauth/authorize", { method: "POST", body: decisionBody(search, approve) }),
+      confirmed((password) =>
+        api<{ redirect: string }>("/api/oauth/authorize", {
+          method: "POST",
+          body: { ...decisionBody(search, approve), ...(password ? { password } : {}) },
+        }),
+      ),
     onSuccess: (answer) => window.location.assign(answer.redirect),
   });
   const switchAccount = useMutation({
@@ -94,7 +102,8 @@ export function OAuthConsentPage({ session }: { session: Session }) {
   const ask = data && !("redirect" in data) ? data : null;
   const { mutate } = decide;
 
-  // The app gets its answer from the server, even an error: that is the app's business then.
+  // The app gets its answer from the server, even an error: that is the app's business then. The
+  // server sends errors only to apps it trusts with them and refuses on the page otherwise.
   useEffect(() => {
     if (redirect) window.location.assign(redirect);
   }, [redirect]);
@@ -183,7 +192,7 @@ export function OAuthConsentPage({ session }: { session: Session }) {
         )}
 
         <p className="mt-4 text-[13px] text-faint">{t("oauth.revokeHint")}</p>
-        {decide.isError && !expired && (
+        {decide.isError && !expired && !(decide.error instanceof Cancelled) && (
           <p role="alert" className="mt-3 text-center text-[13px] text-danger">
             {errorText(decide.error)}
           </p>
@@ -220,6 +229,7 @@ export function OAuthConsentPage({ session }: { session: Session }) {
           </button>
         </p>
       </div>
+      {dialog}
     </Frame>
   );
 }

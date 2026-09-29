@@ -3,6 +3,7 @@
 mod address_book;
 mod calendar;
 mod calendar_event;
+mod calendar_notification;
 mod contact_card;
 mod copy;
 mod email;
@@ -10,6 +11,7 @@ mod identity;
 mod mailbox;
 mod masked;
 mod principal;
+pub mod profile;
 mod push_subscription;
 mod query_changes;
 mod senders;
@@ -19,6 +21,7 @@ mod snippet;
 mod submission;
 mod suggest;
 mod thread;
+pub(crate) mod unsubscribe;
 mod vacation;
 
 use std::collections::HashMap;
@@ -29,8 +32,8 @@ use uwumail_store::{Account, Changes};
 use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
 use crate::session::{
-    CALENDARS, CONTACTS, CORE, MAIL, MASKED, SENDERS, SETTINGS, SIEVE, SUBMISSION, SUGGEST, VACATION, WEBMAIL,
-    WEBPUSH_VAPID, WEBSOCKET,
+    AVAILABILITY, CALENDARS, CALENDARS_PARSE, CONTACTS, CORE, MAIL, MASKED, PROFILE, SENDERS, SETTINGS, SIEVE,
+    SUBMISSION, SUGGEST, UNSUBSCRIBE, VACATION, WEBMAIL, WEBPUSH_VAPID, WEBSOCKET,
 };
 use crate::sharing::{self, PRINCIPALS, SharedView};
 use crate::{Inner, MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, ids};
@@ -45,16 +48,23 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     SIEVE,
     WEBMAIL,
     CALENDARS,
+    AVAILABILITY,
+    CALENDARS_PARSE,
     CONTACTS,
     WEBSOCKET,
     SUGGEST,
     PRINCIPALS,
     MASKED,
     WEBPUSH_VAPID,
+    UNSUBSCRIBE,
+    PROFILE,
 ];
 
+pub(crate) use calendar_event::event_for_alerts;
+
 /// The data types of calendars and address books: only for credentials with the `dav` scope.
-const DAV_TYPES: &[&str] = &["Calendar", "CalendarEvent", "ParticipantIdentity", "AddressBook", "ContactCard"];
+const DAV_TYPES: &[&str] =
+    &["Calendar", "CalendarEvent", "CalendarEventNotification", "ParticipantIdentity", "AddressBook", "ContactCard"];
 
 /// The most suggestions one `AddressSuggestion/query` returns.
 pub const MAX_SUGGESTIONS: usize = suggest::MAX_LIMIT;
@@ -149,8 +159,24 @@ impl<'a> Ctx<'a> {
         self.resolve(value).and_then(|id| ids::parse(prefix, id))
     }
 
+    /// The account's state. In someone else's shared account, it moves only with changes to the
+    /// mailboxes shared with the caller and what they hold (docs/sharing.md).
     pub async fn state(&self) -> MethodResult<String> {
+        if let Some(view) = &self.shared {
+            return Ok(self.jmap.store.shared_state(self.account.id, view.visible_ids()).await?.to_string());
+        }
         Ok(self.jmap.store.account_modseq(self.account.id).await?.to_string())
+    }
+
+    /// The account's changes of one kind after `since`; in someone else's shared account, only
+    /// those the caller may hear of.
+    pub async fn kind_changes(&self, kind: &str, since: i64, max_changes: usize) -> uwumail_store::Result<Changes> {
+        match &self.shared {
+            Some(view) => {
+                self.jmap.store.shared_changes(self.account.id, kind, since, max_changes, view.visible_ids()).await
+            }
+            None => self.jmap.store.changes(self.account.id, kind, since, max_changes).await,
+        }
     }
 }
 
@@ -170,6 +196,9 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         return result;
     }
     let capability = match name.split('/').next().unwrap_or_default() {
+        "Principal" if name == "Principal/getAvailability" => AVAILABILITY,
+        "CalendarEvent" if name == "CalendarEvent/parse" => CALENDARS_PARSE,
+        _ if name == "Email/unsubscribe" => UNSUBSCRIBE,
         "Principal" => PRINCIPALS,
         "Core" | "PushSubscription" => CORE,
         "Mailbox" | "Email" | "Thread" | "SearchSnippet" => MAIL,
@@ -177,11 +206,12 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "VacationResponse" => VACATION,
         "SenderList" => SENDERS,
         "UserSettings" => SETTINGS,
-        "Calendar" | "CalendarEvent" | "ParticipantIdentity" => CALENDARS,
+        "Calendar" | "CalendarEvent" | "CalendarEventNotification" | "ParticipantIdentity" => CALENDARS,
         "AddressBook" | "ContactCard" => CONTACTS,
         "SieveScript" => SIEVE,
         "AddressSuggestion" => SUGGEST,
         "MaskedEmail" => MASKED,
+        "ProfilePicture" => PROFILE,
         _ => return Err(MethodError::kind("unknownMethod")),
     };
     if !requires(capability, &ctx.using) {
@@ -191,7 +221,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
     if name != "Core/echo" && !name.starts_with("PushSubscription/") {
         ctx.check_account(&args)?;
     }
-    let can = query_changes::can_calculate(name, &args);
+    let can = query_changes::can_calculate(name);
     let outputs = call(ctx, name, args).await?;
     // Every /query says whether its /queryChanges can answer.
     if name.ends_with("/query") {
@@ -222,7 +252,8 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         | "EmailSubmission/queryChanges"
         | "SieveScript/queryChanges"
         | "ContactCard/queryChanges"
-        | "CalendarEvent/queryChanges" => single(query_changes::query_changes(ctx, name, &args).await?),
+        | "CalendarEvent/queryChanges"
+        | "CalendarEventNotification/queryChanges" => single(query_changes::query_changes(ctx, name, &args).await?),
         "Email/copy" => copy::copy(ctx, &args).await,
         "Mailbox/set" => single(mailbox::set(ctx, &args).await?),
         "Thread/get" => single(thread::get(ctx, &args).await?),
@@ -233,6 +264,7 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "Email/set" => single(email::set(ctx, &args).await?),
         "Email/import" => single(email::import(ctx, &args).await?),
         "Email/parse" => single(email::parse(ctx, &args).await?),
+        "Email/unsubscribe" => single(unsubscribe::unsubscribe(ctx, &args).await?),
         "SearchSnippet/get" => single(snippet::get(ctx, &args).await?),
         "Identity/get" => single(identity::get(ctx, &args).await?),
         "Identity/changes" => single(changes(ctx, &args, "Identity", 'i').await?),
@@ -260,6 +292,15 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         }
         "CalendarEvent/set" => single(calendar_event::set(ctx, &args).await?),
         "CalendarEvent/query" => single(calendar_event::query(ctx, &args).await?),
+        "CalendarEvent/parse" => single(calendar_event::parse(ctx, &args).await?),
+        "CalendarEvent/copy" => calendar_event::copy(ctx, &args).await,
+        "CalendarEventNotification/get" => single(calendar_notification::get(ctx, &args).await?),
+        "CalendarEventNotification/changes" => {
+            calendar::check_enabled(ctx)?;
+            single(changes(ctx, &args, "CalendarEventNotification", 'n').await?)
+        }
+        "CalendarEventNotification/set" => single(calendar_notification::set(ctx, &args).await?),
+        "CalendarEventNotification/query" => single(calendar_notification::query(ctx, &args).await?),
         "ParticipantIdentity/get" => single(calendar::identities_get(ctx, &args).await?),
         "ParticipantIdentity/changes" => {
             calendar::check_enabled(ctx)?;
@@ -289,9 +330,12 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "Principal/query" => single(principal::query(ctx, &args).await?),
         "Principal/changes" => single(principal::changes(ctx, &args).await?),
         "Principal/queryChanges" => Err(MethodError::kind("cannotCalculateChanges")),
+        "Principal/getAvailability" => single(principal::get_availability(ctx, &args).await?),
         "MaskedEmail/get" => single(masked::get(ctx, &args).await?),
         "MaskedEmail/changes" => single(changes(ctx, &args, "MaskedEmail", 'x').await?),
         "MaskedEmail/set" => single(masked::set(ctx, &args).await?),
+        "ProfilePicture/get" => single(profile::get(ctx, &args).await?),
+        "ProfilePicture/set" => single(profile::set(ctx, &args).await?),
         _ => Err(MethodError::kind("unknownMethod")),
     }
 }
@@ -371,7 +415,7 @@ async fn changes(ctx: &Ctx<'_>, args: &Value, kind: &str, prefix: char) -> Metho
         },
     };
     let Changes { mut created, mut updated, mut destroyed, new_state, has_more } =
-        match ctx.jmap.store.changes(ctx.account.id, kind, since, max_changes).await {
+        match ctx.kind_changes(kind, since, max_changes).await {
             Ok(changes) => changes,
             Err(uwumail_store::StoreError::Invalid(_)) => return Err(MethodError::kind("cannotCalculateChanges")),
             Err(err) => return Err(err.into()),

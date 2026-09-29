@@ -109,6 +109,9 @@ COPY, MOVE, EXPUNGE, CREATE, DELETE, RENAME and IDLE, each within the rights:
 - CREATE inside a shared folder needs `k`, DELETE and RENAME need `x`. A shared
   folder stays with its owner: RENAME moves it only within what they shared.
 - IDLE in a shared folder hears of the owner's new mail.
+- The rights are read again before every command on the open folder: a share
+  narrowed counts from the next command, and one taken back ends the session
+  with `BYE` (CLOSE and UNSELECT just close it, without expunging).
 
 Managing shares:
 
@@ -166,8 +169,14 @@ folders:
   `maySubmit` = false, plus `mayAdmin` = `a`).
 - Email/query and Email/get see only mail in a shared mailbox you may read;
   `mailboxIds` lists only shared mailboxes. `*/changes` report what went out of
-  sight as destroyed, and `*/queryChanges` as removed; they may name ids of
-  mail that changed in the owner's other folders, never anything more.
+  sight as destroyed, and `*/queryChanges` as removed.
+- The state of a shared account moves only with changes to the folders shared
+  with you and the mail in them, and with changes to the sharing. What the
+  owner does in their other folders moves no state, sends no push and shows up
+  in no change list. After the sharing changed (a folder shared or no longer,
+  other rights, a shared folder deleted), `*/changes` from an older state
+  answer `cannotCalculateChanges` and the app loads the account again. Over
+  IMAP, `HIGHESTMODSEQ` is per mailbox for the same reason.
 - Email/set checks every keyword and mailbox change against the rights
   (`forbidden` otherwise). Replacing `mailboxIds` never takes a message out of
   the owner's unshared mailboxes. Destroying an email needs `t`+`e` on every
@@ -183,8 +192,9 @@ folders:
 - Uploads to `/jmap/upload/{shared account}` are kept as yours and may be used
   by Email/import and Email/set there; `/jmap/download/{shared account}/…`
   serves the messages of the shared mailboxes you may read.
-- Push (EventSource) sends changes of a shared account under its account id,
-  for `Mailbox`, `Email`, `Thread` and `EmailDelivery`.
+- Push (EventSource, WebSocket, Web Push) sends changes of a shared account
+  under its account id, for `Mailbox`, `Email`, `Thread` and `EmailDelivery`,
+  only when something in a folder shared with you changed.
 - Other methods (identities, submission, vacation, settings, calendars, …)
   answer `accountNotSupportedByMethod` for a shared account: sending always
   happens from your own account. Remote pictures use your own account id.

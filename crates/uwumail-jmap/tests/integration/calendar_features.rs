@@ -1,0 +1,993 @@
+//! The parts of JMAP Calendars beyond events and sharing: per-user properties of shared calendars,
+//! default alerts, drafts, custom time zones, single instances, availability, notifications,
+//! copying and parsing events, and query changes of expanded queries — each next to CalDAV on the
+//! same store.
+
+use axum::Router;
+use axum::body::{Body, to_bytes};
+use axum::http::{Request, StatusCode, header};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
+use serde_json::{Value, json};
+use tower::ServiceExt;
+use uwumail_dav::{Dav, DavSettings};
+use uwumail_jmap::{ClientInfo, Jmap};
+use uwumail_store::{NewAccount, Role, Store};
+
+const PASSWORD: &str = "katzenpfote-123";
+const MINI: &str = "mini@example.org";
+const NYU: &str = "nyu@example.org";
+const USING: [&str; 5] = [
+    "urn:ietf:params:jmap:core",
+    "urn:ietf:params:jmap:calendars",
+    "urn:ietf:params:jmap:principals",
+    "urn:ietf:params:jmap:principals:availability",
+    "urn:ietf:params:jmap:calendars:parse",
+];
+
+struct Server {
+    router: Router,
+    store: Store,
+    jmap: Jmap,
+    _dir: tempfile::TempDir,
+}
+
+async fn server() -> Server {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path()).await.unwrap();
+    store.create_domain("example.org").await.unwrap();
+    for user in ["mini", "nyu"] {
+        store
+            .create_account(NewAccount {
+                address: format!("{user}@example.org"),
+                display_name: user.to_uppercase(),
+                password: Some(PASSWORD.into()),
+                role: Role::User,
+                quota_bytes: 0,
+                protocols: None,
+            })
+            .await
+            .unwrap();
+    }
+    let smtp = crate::common::smtp(&store);
+    let dav = Dav::new(store.clone(), DavSettings { calendar_name: "Kalender".into(), addressbook_name: "K".into() })
+        .with_scheduling(smtp.clone());
+    let jmap = Jmap::new(smtp);
+    Server { router: jmap.router().merge(dav.router()), store, jmap, _dir: dir }
+}
+
+struct Reply {
+    status: StatusCode,
+    body: String,
+}
+
+impl Server {
+    async fn send(&self, login: &str, method: &str, uri: &str, headers: &[(&str, &str)], body: String) -> Reply {
+        let mut request = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header(header::AUTHORIZATION, format!("Basic {}", BASE64.encode(format!("{login}:{PASSWORD}"))))
+            .header(header::HOST, "mail.example.org");
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        let mut request = request.body(Body::from(body)).unwrap();
+        request.extensions_mut().insert(ClientInfo { https: true, ..ClientInfo::default() });
+        let response = self.router.clone().oneshot(request).await.unwrap();
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), 64 * 1024 * 1024).await.unwrap();
+        Reply { status, body: String::from_utf8_lossy(&bytes).into_owned() }
+    }
+
+    /// Method calls in one request, each with the login's account filled in.
+    async fn api(&self, login: &str, calls: Value) -> Vec<Value> {
+        let account = self.account_id(login).await;
+        let mut calls = calls.as_array().unwrap().clone();
+        for call in &mut calls {
+            if call[1].get("accountId").is_none() {
+                call[1]["accountId"] = json!(account);
+            }
+        }
+        let body = json!({ "using": USING, "methodCalls": calls }).to_string();
+        let reply = self.send(login, "POST", "/jmap/api", &[("content-type", "application/json")], body).await;
+        assert_eq!(reply.status, StatusCode::OK, "{}", reply.body);
+        let response: Value = serde_json::from_str(&reply.body).unwrap();
+        response["methodResponses"].as_array().unwrap().clone()
+    }
+
+    /// One call; its response arguments, or the error.
+    async fn call(&self, login: &str, method: &str, arguments: Value) -> Value {
+        let responses = self.api(login, json!([[method, arguments, "0"]])).await;
+        responses[0][1].clone()
+    }
+
+    async fn account_id(&self, login: &str) -> String {
+        format!("a{}", self.store.account(login).await.unwrap().unwrap().id)
+    }
+
+    async fn principal_id(&self, login: &str) -> String {
+        format!("p{}", self.store.account(login).await.unwrap().unwrap().id)
+    }
+
+    async fn calendar(&self, login: &str, id: &str) -> Value {
+        self.call(login, "Calendar/get", json!({ "ids": [id] })).await["list"][0].clone()
+    }
+
+    async fn default_calendar(&self, login: &str) -> String {
+        let list = self.call(login, "Calendar/get", json!({})).await["list"].as_array().unwrap().clone();
+        list.iter().find(|c| c["isDefault"] == true).unwrap()["id"].as_str().unwrap().to_owned()
+    }
+
+    async fn create(&self, login: &str, event: Value) -> String {
+        let set = self.call(login, "CalendarEvent/set", json!({ "create": { "e": event } })).await;
+        set["created"]["e"]["id"].as_str().unwrap_or_else(|| panic!("not created: {set}")).to_owned()
+    }
+
+    async fn event(&self, login: &str, id: &str) -> Value {
+        self.call(login, "CalendarEvent/get", json!({ "ids": [id] })).await["list"][0].clone()
+    }
+
+    async fn state(&self, login: &str) -> String {
+        self.call(login, "CalendarEvent/get", json!({ "ids": [] })).await["state"].as_str().unwrap().to_owned()
+    }
+
+    /// Shares Mini's default calendar with Nyu.
+    async fn share_with_nyu(&self, rights: Value) -> String {
+        let calendar = self.default_calendar(MINI).await;
+        let shared =
+            self.call(MINI, "Calendar/set", json!({ "update": { &calendar: { "shareWith": { NYU: rights } } } })).await;
+        assert!(shared["updated"].get(&calendar).is_some(), "{shared}");
+        calendar
+    }
+
+    /// The CalDAV object of an event, found by its uid.
+    async fn caldav_object(&self, login: &str, uid: &str) -> String {
+        let account = self.store.account(login).await.unwrap().unwrap().id;
+        let event = self.store.calendar_events(account, None).await.unwrap();
+        event.into_iter().find(|e| e.uid == uid).map(|e| e.content).unwrap_or_default()
+    }
+}
+
+fn timed(calendar: &str, title: &str) -> Value {
+    json!({
+        "calendarIds": { calendar: true },
+        "title": title,
+        "start": "2026-10-20T09:00:00",
+        "timeZone": "Europe/Berlin",
+        "duration": "PT1H"
+    })
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn shared_calendars_and_events_keep_per_user_properties_apart() {
+    let server = server().await;
+    let calendar = server.share_with_nyu(json!({ "mayReadItems": true })).await;
+    let owners = server.calendar(MINI, &calendar).await;
+
+    // Nyu's own name, colour, order, visibility and availability, which Mini never sees.
+    let own = json!({ "name": "Minis", "color": "#00ff00", "sortOrder": 3, "isVisible": false, "includeInAvailability": "all" });
+    let set = server.call(NYU, "Calendar/set", json!({ "update": { &calendar: own } })).await;
+    assert!(set["updated"].get(&calendar).is_some(), "{set}");
+    let theirs = server.calendar(NYU, &calendar).await;
+    assert_eq!(
+        (
+            &theirs["name"],
+            &theirs["color"],
+            &theirs["sortOrder"],
+            &theirs["isVisible"],
+            &theirs["includeInAvailability"]
+        ),
+        (&json!("Minis"), &json!("#00ff00"), &json!(3), &json!(false), &json!("all"))
+    );
+    assert_eq!(server.calendar(MINI, &calendar).await, owners, "the owner's calendar is the same");
+    let shared = format!("/dav/calendars/{NYU}/shared~{}/", &calendar[1..]);
+    let body = "<?xml version=\"1.0\"?><d:propfind xmlns:d=\"DAV:\"><d:prop><d:displayname/></d:prop></d:propfind>";
+    let reply = server.send(NYU, "PROPFIND", &shared, &[("depth", "0")], body.into()).await;
+    assert!(reply.body.contains("Minis"), "Nyu's CalDAV clients see Nyu's name: {}", reply.body);
+
+    // Per-user properties of an event: Mini's stay in the event, Nyu's apart.
+    let mut event = timed(&calendar, "Yoga");
+    event["color"] = json!("red");
+    event["keywords"] = json!({ "sport": true });
+    event["alerts"] = json!({ "a": { "@type": "Alert", "trigger": { "@type": "OffsetTrigger", "offset": "-PT15M" } } });
+    let id = server.create(MINI, event).await;
+    let seen = server.event(NYU, &id).await;
+    assert_eq!((seen.get("color"), seen.get("alerts"), seen.get("keywords")), (None, None, None), "{seen}");
+    let mini_state = server.state(MINI).await;
+    let patch = json!({ "color": "blue", "keywords": { "mine": true }, "alerts": { "n": { "@type": "Alert", "trigger": { "@type": "OffsetTrigger", "offset": "-PT1H" } } } });
+    let set = server.call(NYU, "CalendarEvent/set", json!({ "update": { &id: patch } })).await;
+    assert!(set["updated"].get(&id).is_some(), "a reader changes their own properties: {set}");
+    let seen = server.event(NYU, &id).await;
+    assert_eq!((&seen["color"], &seen["keywords"]), (&json!("blue"), &json!({ "mine": true })));
+    assert_eq!(seen["alerts"]["n"]["trigger"]["offset"], "-PT1H");
+    let owners = server.event(MINI, &id).await;
+    assert_eq!((&owners["color"], &owners["keywords"]), (&json!("red"), &json!({ "sport": true })));
+    assert_eq!(owners["alerts"]["a"]["trigger"]["offset"], "-PT15M");
+    assert_eq!(server.state(MINI).await, mini_state, "Mini hears nothing of it");
+    let ics = server.caldav_object(MINI, owners["uid"].as_str().unwrap()).await;
+    assert!(ics.contains("COLOR:red") && !ics.contains("blue"), "{ics}");
+
+    // Everything else stays the owner's to change.
+    let refused = server.call(NYU, "CalendarEvent/set", json!({ "update": { &id: { "title": "Nyus Yoga" } } })).await;
+    assert_eq!(refused["notUpdated"][&id]["type"], "forbidden", "{refused}");
+
+    // Private events show only their times to others, and cannot be changed by them; secret ones
+    // are not there for them.
+    let mut private = timed(&calendar, "Arzt");
+    private["privacy"] = json!("private");
+    private["description"] = json!("Befund");
+    let private = server.create(MINI, private).await;
+    let seen = server.event(NYU, &private).await;
+    assert_eq!((seen.get("title"), seen.get("description")), (None, None), "{seen}");
+    assert_eq!(seen["start"], "2026-10-20T09:00:00");
+    let refused = server.call(NYU, "CalendarEvent/set", json!({ "update": { &private: { "color": "blue" } } })).await;
+    assert_eq!(refused["notUpdated"][&private]["type"], "forbidden", "{refused}");
+    let found = server.call(NYU, "CalendarEvent/query", json!({ "filter": { "text": "Befund" } })).await;
+    assert_eq!(found["ids"], json!([]));
+    let mut secret = timed(&calendar, "Geheim");
+    secret["privacy"] = json!("secret");
+    let secret = server.create(MINI, secret).await;
+    let got = server.call(NYU, "CalendarEvent/get", json!({ "ids": [&secret] })).await;
+    assert_eq!(got["notFound"], json!([&secret]));
+
+    // Leaving the calendar forgets what Nyu kept.
+    server.call(NYU, "Calendar/set", json!({ "destroy": [&calendar] })).await;
+    server.share_with_nyu(json!({ "mayReadItems": true })).await;
+    assert_eq!(server.calendar(NYU, &calendar).await["name"], "Kalender");
+    assert!(server.event(NYU, &id).await.get("color").is_none());
+}
+
+/// What the owner keeps private shows only its times over CalDAV too, and stays the owner's to
+/// change and delete, even for someone who may write into the calendar.
+#[tokio::test(flavor = "multi_thread")]
+async fn private_events_stay_private_over_caldav_and_to_writers() {
+    let server = server().await;
+    let rights = json!({ "mayReadItems": true, "mayWriteAll": true, "mayWriteOwn": true, "mayUpdatePrivate": true, "mayRSVP": true });
+    let calendar = server.share_with_nyu(rights).await;
+    let mut private = timed(&calendar, "Arzt");
+    private["privacy"] = json!("private");
+    private["description"] = json!("Befund");
+    let id = server.create(MINI, private).await;
+    let uid = server.event(MINI, &id).await["uid"].as_str().unwrap().to_owned();
+    let account = server.store.account(MINI).await.unwrap().unwrap().id;
+    let events = server.store.calendar_events(account, None).await.unwrap();
+    let name = events.into_iter().find(|e| e.uid == uid).unwrap().name;
+    let shared = format!("/dav/calendars/{NYU}/shared~{}/", &calendar[1..]);
+
+    let query = "<?xml version=\"1.0\"?><c:calendar-query xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">\
+                 <d:prop><c:calendar-data/></d:prop><c:filter><c:comp-filter name=\"VCALENDAR\"/></c:filter></c:calendar-query>";
+    let report = server.send(NYU, "REPORT", &shared, &[("depth", "1")], query.into()).await;
+    assert!(report.body.contains("DTSTART"), "{}", report.body);
+    assert!(!report.body.contains("Befund") && !report.body.contains("Arzt"), "{}", report.body);
+    let got = server.send(NYU, "GET", &format!("{shared}{name}"), &[], String::new()).await;
+    assert_eq!(got.status, StatusCode::OK);
+    assert!(got.body.contains("DTSTART") && !got.body.contains("Befund") && !got.body.contains("Arzt"), "{}", got.body);
+
+    let put = server.send(NYU, "PUT", &format!("{shared}{name}"), &[("content-type", "text/calendar")], got.body).await;
+    assert_eq!(put.status, StatusCode::FORBIDDEN, "storing the times would overwrite the rest");
+    let delete = server.send(NYU, "DELETE", &format!("{shared}{name}"), &[], String::new()).await;
+    assert_eq!(delete.status, StatusCode::FORBIDDEN);
+    let refused = server.call(NYU, "CalendarEvent/set", json!({ "destroy": [&id] })).await;
+    assert_eq!(refused["notDestroyed"][&id]["type"], "forbidden", "{refused}");
+
+    let owners = server.caldav_object(MINI, &uid).await;
+    assert!(owners.contains("Befund"), "the owner keeps it all: {owners}");
+}
+
+fn alert(offset: &str) -> Value {
+    json!({ "@type": "Alert", "trigger": { "@type": "OffsetTrigger", "offset": offset }, "action": "display" })
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn default_alerts_reach_events_and_caldav() {
+    let server = server().await;
+    let calendar = server.default_calendar(MINI).await;
+    let set = server
+        .call(
+            MINI,
+            "Calendar/set",
+            json!({ "update": { &calendar: { "defaultAlertsWithTime": { "d1": alert("-PT15M") } } } }),
+        )
+        .await;
+    assert!(set["updated"].get(&calendar).is_some(), "{set}");
+    assert_eq!(server.calendar(MINI, &calendar).await["defaultAlertsWithTime"]["d1"]["trigger"]["offset"], "-PT15M");
+
+    // An event using them carries them, for phones to ring.
+    let mut event = timed(&calendar, "Zahnarzt");
+    event["useDefaultAlerts"] = json!(true);
+    let id = server.create(MINI, event).await;
+    let got = server.event(MINI, &id).await;
+    assert_eq!(got["useDefaultAlerts"], true);
+    assert_eq!(got["alerts"]["d1"]["trigger"]["offset"], "-PT15M", "{got}");
+    let uid = got["uid"].as_str().unwrap().to_owned();
+    assert!(server.caldav_object(MINI, &uid).await.contains("TRIGGER:-PT15M"));
+
+    // New defaults reach the events that use them.
+    server
+        .call(
+            MINI,
+            "Calendar/set",
+            json!({ "update": { &calendar: { "defaultAlertsWithTime": { "d1": alert("-PT30M") } } } }),
+        )
+        .await;
+    let ics = server.caldav_object(MINI, &uid).await;
+    assert!(ics.contains("TRIGGER:-PT30M") && !ics.contains("-PT15M"), "{ics}");
+
+    // CalDAV clients see and set them as default alarms.
+    let path = "/dav/calendars/mini@example.org/personal/";
+    let body = "<?xml version=\"1.0\"?><d:propfind xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\"><d:prop><c:default-alarm-vevent-datetime/></d:prop></d:propfind>";
+    let reply = server.send(MINI, "PROPFIND", path, &[("depth", "0")], body.into()).await;
+    assert!(reply.body.contains("BEGIN:VALARM") && reply.body.contains("TRIGGER:-PT30M"), "{}", reply.body);
+    let patch = "<?xml version=\"1.0\"?><d:propertyupdate xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\"><d:set><d:prop><c:default-alarm-vevent-date>BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT12H\r\nEND:VALARM\r\n</c:default-alarm-vevent-date></d:prop></d:set></d:propertyupdate>";
+    let reply = server.send(MINI, "PROPPATCH", path, &[], patch.into()).await;
+    assert_eq!(reply.status, StatusCode::MULTI_STATUS, "{}", reply.body);
+    let without = &server.calendar(MINI, &calendar).await["defaultAlertsWithoutTime"];
+    let alerts: Vec<&Value> = without.as_object().unwrap().values().collect();
+    assert_eq!(alerts.len(), 1, "{without}");
+    assert_eq!(alerts[0]["trigger"]["offset"], "-PT12H");
+
+    // Ids are unique across one's calendars.
+    let taken = server
+        .call(
+            MINI,
+            "Calendar/set",
+            json!({ "create": { "w": { "name": "Arbeit", "defaultAlertsWithTime": { "d1": alert("-PT5M") } } } }),
+        )
+        .await;
+    assert_eq!(taken["notCreated"]["w"]["type"], "invalidProperties", "{taken}");
+
+    // Someone the calendar is shared with has their own defaults.
+    server.share_with_nyu(json!({ "mayReadItems": true })).await;
+    server
+        .call(
+            NYU,
+            "Calendar/set",
+            json!({ "update": { &calendar: { "defaultAlertsWithTime": { "n1": alert("-PT1H") } } } }),
+        )
+        .await;
+    server.call(NYU, "CalendarEvent/set", json!({ "update": { &id: { "useDefaultAlerts": true } } })).await;
+    let theirs = server.event(NYU, &id).await;
+    assert_eq!(theirs["alerts"]["n1"]["trigger"]["offset"], "-PT1H", "{theirs}");
+    assert!(theirs["alerts"].get("d1").is_none());
+    assert_eq!(server.event(MINI, &id).await["alerts"]["d1"]["trigger"]["offset"], "-PT30M");
+}
+
+fn with_nyu(mut event: Value) -> Value {
+    event["participants"] = json!({
+        "mini": { "@type": "Participant", "calendarAddress": format!("mailto:{MINI}"), "roles": { "owner": true, "attendee": true }, "participationStatus": "accepted" },
+        "nyu": { "@type": "Participant", "calendarAddress": format!("mailto:{NYU}"), "roles": { "attendee": true }, "participationStatus": "needs-action", "expectReply": true }
+    });
+    event
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn drafts_tell_nobody_until_they_are_events() {
+    let server = server().await;
+    let calendar = server.default_calendar(MINI).await;
+    let mut draft = with_nyu(timed(&calendar, "Planung"));
+    draft["isDraft"] = json!(true);
+    let created = server
+        .call(MINI, "CalendarEvent/set", json!({ "create": { "d": draft }, "sendSchedulingMessages": true }))
+        .await;
+    assert_eq!(created["created"]["d"]["isDraft"], true, "{created}");
+    let id = created["created"]["d"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(server.event(MINI, &id).await["isDraft"], true);
+    let invited =
+        || async { server.call(NYU, "CalendarEvent/query", json!({ "filter": { "title": "Planung" } })).await };
+    assert_eq!(invited().await["ids"], json!([]), "Nyu hears nothing of a draft");
+
+    // CalDAV clients see it as an event; what they store sends nothing either.
+    let uid = server.event(MINI, &id).await["uid"].as_str().unwrap().to_owned();
+    let ics = server.caldav_object(MINI, &uid).await;
+    assert!(ics.contains("SUMMARY:Planung"));
+    let name = server.store.calendar_events(server.store.account(MINI).await.unwrap().unwrap().id, None).await.unwrap()
+        [0]
+    .name
+    .clone();
+    let changed = ics.replace("SUMMARY:Planung", "SUMMARY:Planung 2");
+    let put = server
+        .send(
+            MINI,
+            "PUT",
+            &format!("/dav/calendars/{MINI}/personal/{name}"),
+            &[("content-type", "text/calendar")],
+            changed,
+        )
+        .await;
+    assert!(put.status.is_success(), "{}", put.body);
+    assert_eq!(invited().await["ids"], json!([]));
+    assert_eq!(server.event(MINI, &id).await["isDraft"], true, "still a draft");
+
+    let back = server.call(MINI, "CalendarEvent/set", json!({ "update": { &id: { "isDraft": true } } })).await;
+    assert!(back["updated"].get(&id).is_some(), "a draft stays one: {back}");
+    let published = server
+        .call(
+            MINI,
+            "CalendarEvent/set",
+            json!({ "update": { &id: { "isDraft": false } }, "sendSchedulingMessages": true }),
+        )
+        .await;
+    assert_eq!(published["updated"][&id]["isDraft"], false, "{published}");
+    assert_eq!(invited().await["ids"].as_array().unwrap().len(), 1, "now Nyu is invited");
+    let again = server.call(MINI, "CalendarEvent/set", json!({ "update": { &id: { "isDraft": true } } })).await;
+    assert_eq!(again["notUpdated"][&id]["type"], "invalidProperties", "{again}");
+}
+
+const CUSTOM_ZONE: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//DE\r\nBEGIN:VTIMEZONE\r\nTZID:Büro\r\n\
+BEGIN:STANDARD\r\nDTSTART:16011028T030000\r\nRRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=10\r\nTZOFFSETFROM:+0200\r\n\
+TZOFFSETTO:+0100\r\nTZNAME:Winter\r\nEND:STANDARD\r\nBEGIN:DAYLIGHT\r\nDTSTART:16010325T020000\r\n\
+RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=3\r\nTZOFFSETFROM:+0100\r\nTZOFFSETTO:+0200\r\nTZNAME:Sommer\r\nEND:DAYLIGHT\r\n\
+END:VTIMEZONE\r\nBEGIN:VEVENT\r\nUID:zone@example.org\r\nDTSTAMP:20260901T080000Z\r\n\
+DTSTART;TZID=Büro:20261020T090000\r\nDURATION:PT1H\r\nSUMMARY:Standup\r\nRRULE:FREQ=WEEKLY;COUNT=3\r\nEND:VEVENT\r\n\
+END:VCALENDAR\r\n";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn custom_time_zones_travel_between_caldav_and_jmap() {
+    let server = server().await;
+    let calendar = server.default_calendar(MINI).await;
+    let put =
+        server.send(MINI, "PUT", &format!("/dav/calendars/{MINI}/personal/zone.ics"), &[], CUSTOM_ZONE.into()).await;
+    assert_eq!(put.status, StatusCode::CREATED, "{}", put.body);
+    let found = server.call(MINI, "CalendarEvent/query", json!({ "filter": { "uid": "zone@example.org" } })).await;
+    let id = found["ids"][0].as_str().unwrap().to_owned();
+    let got = server
+        .call(MINI, "CalendarEvent/get", json!({ "ids": [&id], "properties": ["timeZone", "timeZones", "utcStart"] }))
+        .await;
+    let event = &got["list"][0];
+    assert_eq!(event["timeZone"], "/Büro", "{event}");
+    assert_eq!(event["timeZones"]["/Büro"]["daylight"][0]["offsetTo"], "+0200");
+    assert_eq!(event["utcStart"], "2026-10-20T07:00:00Z");
+
+    // Expanded, the instance after the clocks changed is an hour later in UTC.
+    let expanded = server
+        .call(
+            MINI,
+            "CalendarEvent/query",
+            json!({ "filter": { "after": "2026-10-26T00:00:00", "before": "2026-11-01T00:00:00" }, "expandRecurrences": true }),
+        )
+        .await;
+    let instance = expanded["ids"][0].as_str().unwrap().to_owned();
+    let got = server.call(MINI, "CalendarEvent/get", json!({ "ids": [&instance], "properties": ["utcStart"] })).await;
+    assert_eq!(got["list"][0]["utcStart"], "2026-10-27T08:00:00Z", "{got}");
+
+    // Changed over JMAP, CalDAV clients still find their zone.
+    let set = server.call(MINI, "CalendarEvent/set", json!({ "update": { &id: { "title": "Daily" } } })).await;
+    assert!(set["updated"].get(&id).is_some(), "{set}");
+    let ics = server.caldav_object(MINI, "zone@example.org").await;
+    assert_eq!(ics.matches("BEGIN:VTIMEZONE").count(), 1, "{ics}");
+    assert!(ics.contains("TZID:Büro") && ics.contains("TZNAME:Sommer") && ics.contains("SUMMARY:Daily"), "{ics}");
+
+    // A JMAP client brings its own zone.
+    let mut event = timed(&calendar, "Eigene Zone");
+    event["timeZone"] = json!("/Mars");
+    event["timeZones"] = json!({ "/Mars": { "@type": "TimeZone", "tzId": "Mars",
+        "standard": [{ "@type": "TimeZoneRule", "start": "2000-01-01T00:00:00", "offsetFrom": "+0300", "offsetTo": "+0300" }] } });
+    let created = server.create(MINI, event).await;
+    let got =
+        server.call(MINI, "CalendarEvent/get", json!({ "ids": [&created], "properties": ["utcStart", "uid"] })).await;
+    assert_eq!(got["list"][0]["utcStart"], "2026-10-20T06:00:00Z", "{got}");
+    let ics = server.caldav_object(MINI, got["list"][0]["uid"].as_str().unwrap()).await;
+    assert!(ics.contains("TZID:Mars") && ics.contains("TZOFFSETTO:+0300"), "{ics}");
+}
+
+const TWO_INSTANCES: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//DE\r\nBEGIN:VEVENT\r\n\
+UID:only-some@example.org\r\nDTSTAMP:20260901T080000Z\r\nRECURRENCE-ID;TZID=Europe/Berlin:20261027T090000\r\n\
+DTSTART;TZID=Europe/Berlin:20261027T100000\r\nDURATION:PT1H\r\nSUMMARY:One\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\n\
+UID:only-some@example.org\r\nDTSTAMP:20260901T080000Z\r\nRECURRENCE-ID;TZID=Europe/Berlin:20261103T090000\r\n\
+DTSTART;TZID=Europe/Berlin:20261103T090000\r\nDURATION:PT1H\r\nSUMMARY:Two\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn single_instances_without_their_series() {
+    let server = server().await;
+    let calendar = server.default_calendar(MINI).await;
+    let put =
+        server.send(MINI, "PUT", &format!("/dav/calendars/{MINI}/personal/some.ics"), &[], TWO_INSTANCES.into()).await;
+    assert_eq!(put.status, StatusCode::CREATED, "{}", put.body);
+    let found = server.call(MINI, "CalendarEvent/query", json!({ "filter": { "uid": "only-some@example.org" } })).await;
+    assert_eq!(found["ids"].as_array().unwrap().len(), 1, "{found}");
+    let id = found["ids"][0].as_str().unwrap().to_owned();
+    let first = server.event(MINI, &id).await;
+    assert_eq!((&first["title"], &first["recurrenceId"]), (&json!("One"), &json!("2026-10-27T09:00:00")), "{first}");
+    let other = format!("{id}_20261103T090000");
+    let second = server.event(MINI, &other).await;
+    assert_eq!((&second["title"], &second["baseEventId"]), (&json!("Two"), &json!(&id)), "{second}");
+    let expanded = server
+        .call(
+            MINI,
+            "CalendarEvent/query",
+            json!({ "filter": { "after": "2026-10-01T00:00:00", "before": "2026-12-01T00:00:00" }, "expandRecurrences": true }),
+        )
+        .await;
+    assert_eq!(expanded["ids"], json!([&id, &other]));
+
+    let set = server
+        .call(MINI, "CalendarEvent/set", json!({ "update": { &id: { "title": "Eins" }, &other: { "title": "Zwei" } } }))
+        .await;
+    assert!(set["updated"].get(&id).is_some() && set["updated"].get(&other).is_some(), "{set}");
+    let ics = server.caldav_object(MINI, "only-some@example.org").await;
+    assert!(ics.contains("SUMMARY:Eins") && ics.contains("SUMMARY:Zwei"), "{ics}");
+    assert_eq!(ics.matches("BEGIN:VEVENT").count(), 2, "no series appeared: {ics}");
+    assert_eq!(ics.matches("RECURRENCE-ID").count(), 2, "{ics}");
+
+    let gone = server.call(MINI, "CalendarEvent/set", json!({ "destroy": [&other] })).await;
+    assert_eq!(gone["destroyed"], json!([&other]), "{gone}");
+    let ics = server.caldav_object(MINI, "only-some@example.org").await;
+    assert_eq!(ics.matches("BEGIN:VEVENT").count(), 1, "{ics}");
+    assert_eq!(server.event(MINI, &id).await["title"], "Eins");
+
+    // A JMAP client may keep a single instance too.
+    let mut single = timed(&calendar, "Einmal");
+    single["uid"] = json!("single@example.org");
+    single["recurrenceId"] = json!("2026-10-20T09:00:00");
+    single["recurrenceIdTimeZone"] = json!("Europe/Berlin");
+    let created = server.create(MINI, single).await;
+    assert_eq!(server.event(MINI, &created).await["recurrenceId"], "2026-10-20T09:00:00");
+    let ics = server.caldav_object(MINI, "single@example.org").await;
+    assert!(ics.contains("RECURRENCE-ID;TZID=Europe/Berlin:20261020T090000"), "{ics}");
+}
+
+/// A single instance the owner keeps secret is not there for others, even beside a public one.
+#[tokio::test(flavor = "multi_thread")]
+async fn secret_single_instances_stay_hidden_from_others() {
+    let server = server().await;
+    let rights = json!({ "mayReadItems": true, "mayWriteAll": true, "mayWriteOwn": true, "mayUpdatePrivate": true, "mayRSVP": true });
+    let calendar = server.share_with_nyu(rights).await;
+    let secret = TWO_INSTANCES.replace("SUMMARY:Two\r\n", "SUMMARY:Two\r\nCLASS:CONFIDENTIAL\r\n");
+    let path = format!("/dav/calendars/{NYU}/shared~{}/some.ics", &calendar[1..]);
+    let put = server.send(NYU, "PUT", &path, &[], secret).await;
+    assert_eq!(put.status, StatusCode::CREATED, "{}", put.body);
+    let found = server.call(MINI, "CalendarEvent/query", json!({ "filter": { "uid": "only-some@example.org" } })).await;
+    let id = found["ids"][0].as_str().unwrap_or_else(|| panic!("{found}")).to_owned();
+    let other = format!("{id}_20261103T090000");
+
+    let got = server.call(NYU, "CalendarEvent/get", json!({ "ids": [&other] })).await;
+    assert_eq!(got["notFound"], json!([&other]), "{got}");
+    let window = json!({ "filter": { "after": "2026-10-01T00:00:00", "before": "2026-12-01T00:00:00" }, "expandRecurrences": true });
+    let expanded = server.call(NYU, "CalendarEvent/query", window.clone()).await;
+    assert!(!expanded["ids"].as_array().unwrap().contains(&json!(&other)), "{expanded}");
+    let set = server
+        .call(NYU, "CalendarEvent/set", json!({ "update": { &other: { "title": "Drei" } }, "destroy": [&other] }))
+        .await;
+    assert_eq!(set["notUpdated"][&other]["type"], "notFound", "{set}");
+    assert_eq!(set["notDestroyed"][&other]["type"], "notFound", "{set}");
+    // The owner has both.
+    assert_eq!(server.call(MINI, "CalendarEvent/query", window).await["ids"], json!([&id, &other]));
+}
+
+fn at(calendar: &str, title: &str, start: &str, extra: Value) -> Value {
+    let mut event = timed(calendar, title);
+    event["start"] = json!(start);
+    event["timeZone"] = json!("Etc/UTC");
+    for (key, value) in extra.as_object().unwrap() {
+        event[key] = value.clone();
+    }
+    event
+}
+
+/// A long series of a large event costs availability time, not memory: instances are looked at one
+/// at a time, and only so much event text comes along with the periods.
+#[tokio::test(flavor = "multi_thread")]
+async fn availability_carries_only_so_much_event_text() {
+    let server = server().await;
+    let calendar = server.share_with_nyu(json!({ "mayReadItems": true })).await;
+    let big = json!({ "description": "x".repeat(400 * 1024), "recurrenceRule": { "frequency": "daily", "count": 60 } });
+    server.create(MINI, at(&calendar, "Lang", "2026-10-01T09:00:00", big)).await;
+    let mini = server.principal_id(MINI).await;
+    let details = json!({ "id": &mini, "utcStart": "2026-10-01T00:00:00Z", "utcEnd": "2026-12-01T00:00:00Z",
+                          "showDetails": true, "eventProperties": ["title"] });
+    let busy = server.call(NYU, "Principal/getAvailability", details).await;
+    let list = busy["list"].as_array().unwrap_or_else(|| panic!("{busy}"));
+    let with_event = list.iter().filter(|p| !p["event"].is_null()).count();
+    assert!(with_event > 0 && with_event < 60, "{with_event} of {}", list.len());
+    let hidden = list.iter().filter(|p| p["event"].is_null()).count();
+    assert!(hidden > 0, "the rest are periods without their event");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn availability_shows_when_people_are_busy_and_no_more() {
+    let server = server().await;
+    let calendar = server.default_calendar(MINI).await;
+    for (title, start, extra) in [
+        ("A", "2026-10-20T09:00:00", json!({})),
+        ("A2", "2026-10-20T09:30:00", json!({})),
+        ("B", "2026-10-20T11:00:00", json!({ "status": "tentative" })),
+        ("Frei", "2026-10-20T13:00:00", json!({ "freeBusyStatus": "free" })),
+        ("Privat", "2026-10-20T15:00:00", json!({ "privacy": "private" })),
+        ("Geheim", "2026-10-20T17:00:00", json!({ "privacy": "secret" })),
+        ("Abgesagt", "2026-10-20T19:00:00", json!({ "status": "cancelled" })),
+        ("Serie", "2026-10-19T07:00:00", json!({ "recurrenceRule": { "frequency": "daily", "count": 3 } })),
+    ] {
+        server.create(MINI, at(&calendar, title, start, extra)).await;
+    }
+    let mini = server.principal_id(MINI).await;
+    let principal = server.call(NYU, "Principal/get", json!({ "ids": [&mini] })).await;
+    let capability = &principal["list"][0]["capabilities"]["urn:ietf:params:jmap:calendars"];
+    assert_eq!(capability["mayGetAvailability"], true, "{principal}");
+    assert_eq!(capability["calendarAddress"], format!("mailto:{MINI}"));
+    assert_eq!(capability["accountId"], Value::Null);
+
+    let window = json!({ "id": &mini, "utcStart": "2026-10-20T00:00:00Z", "utcEnd": "2026-10-21T00:00:00Z" });
+    let busy = server.call(NYU, "Principal/getAvailability", window.clone()).await;
+    let periods: Vec<(String, String, String)> = busy["list"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{busy}"))
+        .iter()
+        .map(|p| {
+            assert_eq!(p["event"], Value::Null);
+            (
+                p["utcStart"].as_str().unwrap().into(),
+                p["utcEnd"].as_str().unwrap().into(),
+                p["busyStatus"].as_str().unwrap().into(),
+            )
+        })
+        .collect();
+    let period =
+        |a: &str, b: &str, s: &str| (format!("2026-10-20T{a}:00Z"), format!("2026-10-20T{b}:00Z"), s.to_owned());
+    assert_eq!(
+        periods,
+        vec![
+            period("07:00", "08:00", "confirmed"),
+            period("09:00", "10:30", "confirmed"),
+            period("11:00", "12:00", "tentative"),
+            period("15:00", "16:00", "confirmed"),
+        ]
+    );
+
+    // With the calendar shared, the events come along, but not a private one.
+    server.share_with_nyu(json!({ "mayReadItems": true })).await;
+    let mut details = window.clone();
+    details["showDetails"] = json!(true);
+    details["eventProperties"] = json!(["title"]);
+    let busy = server.call(NYU, "Principal/getAvailability", details).await;
+    let titles: Vec<Value> = busy["list"].as_array().unwrap().iter().map(|p| p["event"]["title"].clone()).collect();
+    assert_eq!(titles, vec![json!("Serie"), json!("A"), json!("A2"), json!("B"), Value::Null], "{busy}");
+    assert_eq!(busy["list"][0]["accountId"], server.account_id(NYU).await);
+
+    // Mini's calendar can stop making her busy; Nyu's copy of it can start making him busy.
+    server.call(MINI, "Calendar/set", json!({ "update": { &calendar: { "includeInAvailability": "none" } } })).await;
+    assert_eq!(server.call(NYU, "Principal/getAvailability", window.clone()).await["list"], json!([]));
+    server.call(NYU, "Calendar/set", json!({ "update": { &calendar: { "includeInAvailability": "all" } } })).await;
+    let mut nyus = window.clone();
+    nyus["id"] = json!(server.principal_id(NYU).await);
+    assert_eq!(server.call(MINI, "Principal/getAvailability", nyus).await["list"].as_array().unwrap().len(), 4);
+
+    let mut long = window.clone();
+    long["utcEnd"] = json!("2028-01-01T00:00:00Z");
+    assert_eq!(server.call(NYU, "Principal/getAvailability", long).await["type"], "tooLarge");
+    let mut nobody = window.clone();
+    nobody["id"] = json!("p999999");
+    assert_eq!(server.call(NYU, "Principal/getAvailability", nobody).await["type"], "notFound");
+
+    // A masked address leads to nobody, neither here nor over CalDAV (security-audit-0.16.0
+    // PROTOCOLS-L4).
+    let policy = uwumail_store::DomainMaskedPolicy { mode: uwumail_store::MaskedMode::Own, ..Default::default() };
+    server.store.set_domain_masked_policy("example.org", policy).await.unwrap();
+    let mini_id = server.store.account(MINI).await.unwrap().unwrap().id;
+    let new = uwumail_store::NewMaskedAddress {
+        domain: None,
+        state: Some(uwumail_store::MaskedState::Enabled),
+        for_domain: String::new(),
+        description: "Shop".into(),
+        url: None,
+        email_prefix: None,
+        created_by: "test".into(),
+    };
+    let masked = server.store.create_masked_address(mini_id, new).await.unwrap().email;
+    let found = server
+        .call(NYU, "Principal/query", json!({ "filter": { "calendarAddress": format!("mailto:{masked}") } }))
+        .await;
+    assert_eq!(found["ids"], json!([]), "{found}");
+    let found =
+        server.call(NYU, "Principal/query", json!({ "filter": { "calendarAddress": format!("mailto:{MINI}") } })).await;
+    assert_eq!(found["ids"], json!([&mini]));
+    let request = format!(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//DE\r\nMETHOD:REQUEST\r\nBEGIN:VFREEBUSY\r\nUID:fb\r\n\
+DTSTAMP:20260917T080000Z\r\nDTSTART:20261020T000000Z\r\nDTEND:20261021T000000Z\r\nORGANIZER:mailto:{NYU}\r\n\
+ATTENDEE:mailto:{masked}\r\nEND:VFREEBUSY\r\nEND:VCALENDAR\r\n"
+    );
+    let outbox = format!("/dav/calendars/{NYU}/outbox/");
+    let answer = server.send(NYU, "POST", &outbox, &[("content-type", "text/calendar")], request).await;
+    assert!(answer.body.contains("3.7;Invalid calendar user") && !answer.body.contains("FREEBUSY"), "{}", answer.body);
+
+    // Someone in another domain who shares no calendar with Nyu: not Nyu's to know.
+    server.store.create_domain("example.net").await.unwrap();
+    let kai = server
+        .store
+        .create_account(NewAccount {
+            address: "kai@example.net".into(),
+            display_name: "Kai".into(),
+            password: Some(PASSWORD.into()),
+            role: Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        })
+        .await
+        .unwrap();
+    let kai = format!("p{}", kai.id);
+    let principal = server.call(NYU, "Principal/get", json!({ "ids": [&kai] })).await;
+    let capability = &principal["list"][0]["capabilities"]["urn:ietf:params:jmap:calendars"];
+    assert_eq!(capability["mayGetAvailability"], false, "{principal}");
+    let mut kais = window.clone();
+    kais["id"] = json!(kai);
+    assert_eq!(server.call(NYU, "Principal/getAvailability", kais).await["type"], "forbidden");
+}
+
+async fn notifications(server: &Server, login: &str) -> Vec<Value> {
+    let got = server.call(login, "CalendarEventNotification/get", json!({})).await;
+    got["list"].as_array().unwrap_or_else(|| panic!("{got}")).clone()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn others_changes_leave_notifications() {
+    let server = server().await;
+    let calendar = server.share_with_nyu(json!({ "mayReadItems": true, "mayWriteAll": true })).await;
+    let mini_state = server.call(MINI, "CalendarEventNotification/get", json!({ "ids": [] })).await["state"].clone();
+
+    // Nyu adds an event to Mini's calendar: Mini hears who did what, Nyu hears nothing.
+    let id = server.create(NYU, timed(&calendar, "Von Nyu")).await;
+    let mine = notifications(&server, MINI).await;
+    assert_eq!(mine.len(), 1, "{mine:?}");
+    assert_eq!(mine[0]["type"], "created");
+    assert_eq!(mine[0]["calendarEventId"], id);
+    assert_eq!(mine[0]["event"]["title"], "Von Nyu");
+    assert_eq!(mine[0]["changedBy"]["principalId"], server.principal_id(NYU).await);
+    assert_eq!(mine[0]["changedBy"]["name"], "NYU");
+    assert_eq!(mine[0]["isDraft"], false);
+    assert!(notifications(&server, NYU).await.is_empty());
+    let changes = server.call(MINI, "CalendarEventNotification/changes", json!({ "sinceState": mini_state })).await;
+    assert_eq!(changes["created"], json!([&mine[0]["id"]]), "{changes}");
+
+    // Mini changes it: Nyu gets the patch, without Mini's own colour and alerts.
+    let alert = json!({ "a": { "@type": "Alert", "trigger": { "@type": "OffsetTrigger", "offset": "-PT15M" } } });
+    let change = json!({ "title": "Von Mini", "color": "red", "alerts": alert });
+    server.call(MINI, "CalendarEvent/set", json!({ "update": { &id: change } })).await;
+    let theirs = notifications(&server, NYU).await;
+    assert_eq!(theirs.len(), 1);
+    assert_eq!((&theirs[0]["type"], &theirs[0]["event"]["title"]), (&json!("updated"), &json!("Von Nyu")));
+    assert_eq!(theirs[0]["eventPatch"]["title"], "Von Mini", "{}", theirs[0]);
+    assert!(theirs[0]["eventPatch"].get("color").is_none(), "{}", theirs[0]);
+    assert!(theirs[0]["eventPatch"].get("alerts").is_none(), "{}", theirs[0]);
+
+    // Nyu deletes it over CalDAV.
+    let uid = server.event(MINI, &id).await["uid"].as_str().unwrap().to_owned();
+    let mini_id = server.store.account(MINI).await.unwrap().unwrap().id;
+    let name =
+        server.store.calendar_events(mini_id, None).await.unwrap().into_iter().find(|e| e.uid == uid).unwrap().name;
+    let path = format!("/dav/calendars/{NYU}/shared~{}/{name}", &calendar[1..]);
+    assert_eq!(server.send(NYU, "DELETE", &path, &[], String::new()).await.status, StatusCode::NO_CONTENT);
+    let mine = notifications(&server, MINI).await;
+    assert_eq!(mine.last().unwrap()["type"], "destroyed");
+    assert_eq!(mine.last().unwrap()["event"]["title"], "Von Mini");
+
+    // What Mini keeps private is nobody else's news.
+    let mut private = timed(&calendar, "Privat");
+    private["privacy"] = json!("private");
+    server.create(MINI, private).await;
+    assert_eq!(notifications(&server, NYU).await.len(), 1);
+
+    // Scheduling: the invitation and the answer are news too.
+    let invite = with_nyu(timed(&calendar, "Kaffee"));
+    let created = server
+        .call(MINI, "CalendarEvent/set", json!({ "create": { "k": invite }, "sendSchedulingMessages": true }))
+        .await;
+    assert!(created["created"]["k"]["id"].is_string(), "{created}");
+    let own_calendar = server.default_calendar(NYU).await;
+    let found = server
+        .call(NYU, "CalendarEvent/query", json!({ "filter": { "title": "Kaffee", "inCalendar": own_calendar } }))
+        .await;
+    let copy = found["ids"][0].as_str().unwrap_or_else(|| panic!("{found}")).to_owned();
+    let invitation = notifications(&server, NYU)
+        .await
+        .into_iter()
+        .find(|n| n["calendarEventId"] == copy.as_str())
+        .expect("Nyu hears of the invitation");
+    assert_eq!(invitation["type"], "created");
+    assert_eq!(invitation["changedBy"]["calendarAddress"], format!("mailto:{MINI}"));
+    assert_eq!(invitation["changedBy"]["principalId"], server.principal_id(MINI).await);
+    let participants = server.event(NYU, &copy).await["participants"].as_object().unwrap().clone();
+    let key = participants
+        .iter()
+        .find(|(_, p)| p["calendarAddress"].as_str().is_some_and(|a| a.eq_ignore_ascii_case(&format!("mailto:{NYU}"))))
+        .map(|(k, _)| k.clone())
+        .unwrap();
+    server
+        .call(
+            NYU,
+            "CalendarEvent/set",
+            json!({ "update": { &copy: { format!("participants/{key}/participationStatus"): "accepted" } }, "sendSchedulingMessages": true }),
+        )
+        .await;
+    let answer = notifications(&server, MINI).await.pop().unwrap();
+    assert_eq!((&answer["type"], &answer["changedBy"]["email"]), (&json!("updated"), &json!(NYU)), "{answer}");
+
+    // Queries and dismissing.
+    let query = server
+        .call(
+            NYU,
+            "CalendarEventNotification/query",
+            json!({ "filter": { "type": "updated" }, "sort": [{ "property": "created", "isAscending": false }] }),
+        )
+        .await;
+    assert_eq!(query["ids"].as_array().unwrap().len(), 1, "{query}");
+    let dismissed = server.call(NYU, "CalendarEventNotification/set", json!({ "destroy": [&query["ids"][0]] })).await;
+    assert_eq!(dismissed["destroyed"], json!([&query["ids"][0]]), "{dismissed}");
+    let refused = server.call(NYU, "CalendarEventNotification/set", json!({ "create": { "x": {} } })).await;
+    assert_eq!(refused["notCreated"]["x"]["type"], "forbidden");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ics_files_are_parsed_and_events_copied() {
+    let server = server().await;
+    let account = server.account_id(MINI).await;
+    let file = format!(
+        "{}{}",
+        CUSTOM_ZONE.trim_end_matches("END:VCALENDAR\r\n"),
+        "BEGIN:VEVENT\r\nUID:second@example.org\r\n\
+DTSTAMP:20260901T080000Z\r\nDTSTART;VALUE=DATE:20261224\r\nDTEND;VALUE=DATE:20261227\r\nSUMMARY:Urlaub\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+    );
+    let upload = |body: String| async {
+        let reply = server
+            .send(MINI, "POST", &format!("/jmap/upload/{account}/"), &[("content-type", "text/calendar")], body)
+            .await;
+        assert!(reply.status.is_success(), "{}", reply.body);
+        serde_json::from_str::<Value>(&reply.body).unwrap()["blobId"].as_str().unwrap().to_owned()
+    };
+    let ics = upload(file).await;
+    let junk = upload("no calendar here".into()).await;
+    let parsed = server
+        .call(MINI, "CalendarEvent/parse", json!({ "blobIds": [&ics, &junk, "bnothere"], "properties": ["uid", "title", "timeZone", "showWithoutTime", "calendarIds"] }))
+        .await;
+    let events = parsed["parsed"][&ics].as_array().unwrap_or_else(|| panic!("{parsed}"));
+    assert_eq!(events.len(), 2, "{parsed}");
+    let by_uid = |uid: &str| events.iter().find(|e| e["uid"] == uid).unwrap_or_else(|| panic!("{parsed}"));
+    assert_eq!(
+        by_uid("zone@example.org"),
+        &json!({ "id": null, "uid": "zone@example.org", "title": "Standup", "timeZone": "/Büro", "calendarIds": null })
+    );
+    let holiday = by_uid("second@example.org");
+    assert_eq!((&holiday["title"], &holiday["showWithoutTime"]), (&json!("Urlaub"), &json!(true)));
+    assert_eq!(parsed["notParsable"], json!([&junk]));
+    assert_eq!(parsed["notFound"], json!(["bnothere"]));
+    assert!(
+        server
+            .store
+            .calendar_events(server.store.account(MINI).await.unwrap().unwrap().id, None)
+            .await
+            .unwrap()
+            .is_empty(),
+        "nothing is stored"
+    );
+
+    // Copies within the account, where every calendar one sees is.
+    let personal = server.default_calendar(MINI).await;
+    let work = server.call(MINI, "Calendar/set", json!({ "create": { "w": { "name": "Arbeit" } } })).await["created"]["w"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut series = timed(&personal, "Yoga");
+    series["recurrenceRule"] = json!({ "frequency": "weekly", "count": 3 });
+    let id = server.create(MINI, series).await;
+    let server = &server;
+    let copy = |create: Value| {
+        let account = account.clone();
+        async move { server.call(MINI, "CalendarEvent/copy", json!({ "fromAccountId": account, "create": create })).await }
+    };
+    let same = copy(json!({ "c": { "id": &id, "calendarIds": { &work: true } } })).await;
+    assert_eq!(same["notCreated"]["c"]["type"], "alreadyExists", "{same}");
+    assert_eq!(same["notCreated"]["c"]["existingId"], id);
+    let copied = copy(json!({ "c": { "id": &id, "calendarIds": { &work: true }, "uid": "copy@example.org" } })).await;
+    let new = copied["created"]["c"]["id"].as_str().unwrap_or_else(|| panic!("{copied}")).to_owned();
+    let got = server.event(MINI, &new).await;
+    assert_eq!(
+        (&got["title"], &got["calendarIds"], &got["recurrenceRule"]["count"]),
+        (&json!("Yoga"), &json!({ &work: true }), &json!(3))
+    );
+    let instance = format!("{id}_20261027T090000");
+    let single = copy(json!({ "i": { "id": &instance, "uid": "one@example.org", "title": "Nur einmal" } })).await;
+    let one = server.event(MINI, single["created"]["i"]["id"].as_str().unwrap_or_else(|| panic!("{single}"))).await;
+    assert_eq!(
+        (&one["start"], &one["title"], one.get("recurrenceRule")),
+        (&json!("2026-10-27T09:00:00"), &json!("Nur einmal"), None)
+    );
+    let other = copy(json!({ "c": { "id": &id } })).await;
+    assert_eq!(other["notCreated"]["c"]["type"], "alreadyExists");
+    let wrong = server
+        .call(MINI, "CalendarEvent/copy", json!({ "fromAccountId": "a999999", "create": { "c": { "id": &id } } }))
+        .await;
+    assert_eq!(wrong["type"], "fromAccountNotFound");
+
+    // Moved by copying and destroying the original.
+    let responses = server
+        .api(
+            MINI,
+            json!([["CalendarEvent/copy", { "fromAccountId": &account, "create": { "m": { "id": &new, "uid": "moved@example.org" } }, "onSuccessDestroyOriginal": true }, "0"]]),
+        )
+        .await;
+    assert_eq!(responses[1][0], "CalendarEvent/set", "{responses:?}");
+    assert_eq!(responses[1][1]["destroyed"], json!([&new]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_server_fires_alerts_as_pushes_and_mails() {
+    let server = server().await;
+    let calendar = server.share_with_nyu(json!({ "mayReadItems": true })).await;
+    let mut event = at(&calendar, "Zahnarzt", "2026-10-20T09:00:00", json!({}));
+    event["alerts"] = json!({
+        "a": { "@type": "Alert", "trigger": { "@type": "OffsetTrigger", "offset": "-PT15M" } },
+        "m": { "@type": "Alert", "trigger": { "@type": "OffsetTrigger", "offset": "-PT1H" }, "action": "email" }
+    });
+    let id = server.create(MINI, event).await;
+    let mut draft = at(&calendar, "Entwurf", "2026-10-20T09:00:00", json!({ "isDraft": true }));
+    draft["alerts"] = json!({ "d": { "@type": "Alert", "trigger": { "@type": "OffsetTrigger", "offset": "-PT15M" } } });
+    server.create(MINI, draft).await;
+    // Nyu has an alert of his own on Mini's event.
+    let own =
+        json!({ "alerts": { "n": { "@type": "Alert", "trigger": { "@type": "OffsetTrigger", "offset": "-PT5M" } } } });
+    server.call(NYU, "CalendarEvent/set", json!({ "update": { &id: own } })).await;
+
+    let time =
+        |text: &str| chrono::NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S").unwrap().and_utc().timestamp();
+    let mut alerts = server.store.subscribe_calendar_alerts();
+    server.jmap.calendar_alerts_tick(time("2026-10-01T00:00:00")).await;
+    assert!(alerts.try_recv().is_err(), "nothing yet");
+
+    // An hour before: the mail.
+    server.jmap.calendar_alerts_tick(time("2026-10-20T08:00:10")).await;
+    assert!(alerts.try_recv().is_err(), "a mail is no push");
+    let mini = server.store.account(MINI).await.unwrap().unwrap().id;
+    let inbox = server.store.query_emails(mini, None, Vec::new(), false).await.unwrap();
+    assert_eq!(inbox.len(), 1, "the reminder is in Mini's inbox");
+
+    // A quarter before: Mini's push; five minutes before: Nyu's own. The draft stays quiet.
+    server.jmap.calendar_alerts_tick(time("2026-10-20T08:45:10")).await;
+    let fired = alerts.try_recv().unwrap();
+    assert_eq!((fired.account_id, fired.alert_id.as_str()), (mini, "a"));
+    assert_eq!(uwumail_jmap::calendar_alerts::alert_json(&fired)["calendarEventId"], id);
+    assert!(alerts.try_recv().is_err());
+    server.jmap.calendar_alerts_tick(time("2026-10-20T08:55:10")).await;
+    let fired = alerts.try_recv().unwrap();
+    assert_eq!(fired.account_id, server.store.account(NYU).await.unwrap().unwrap().id);
+    assert_eq!(fired.alert_id, "n");
+    server.jmap.calendar_alerts_tick(time("2026-10-20T09:30:00")).await;
+    assert!(alerts.try_recv().is_err(), "each goes off once, and the draft never");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_leaves_out_overrides_and_participants_on_request() {
+    let server = server().await;
+    let calendar = server.share_with_nyu(json!({ "mayReadItems": true })).await;
+    let mut series = with_nyu(at(&calendar, "Yoga", "2026-10-06T09:00:00", json!({})));
+    series["participants"]["gast"] =
+        json!({ "@type": "Participant", "calendarAddress": "mailto:gast@example.com", "roles": { "attendee": true } });
+    series["recurrenceRule"] = json!({ "frequency": "weekly", "count": 4 });
+    series["recurrenceOverrides"] = json!({
+        "2026-10-13T09:00:00": { "title": "Zwei" },
+        "2026-10-20T09:00:00": { "title": "Drei" },
+        "2026-10-27T09:00:00": { "excluded": true }
+    });
+    let id = server.create(MINI, series).await;
+    let get = |login: &'static str, extra: Value| {
+        let mut args = json!({ "ids": [&id], "properties": ["recurrenceOverrides", "participants"] });
+        for (key, value) in extra.as_object().unwrap() {
+            args[key] = value.clone();
+        }
+        let server = &server;
+        async move { server.call(login, "CalendarEvent/get", args).await["list"][0].clone() }
+    };
+    let window = json!({ "recurrenceOverridesAfter": "2026-10-15T00:00:00Z", "recurrenceOverridesBefore": "2026-10-25T00:00:00Z" });
+    let got = get(MINI, window).await;
+    let rids: Vec<&String> = got["recurrenceOverrides"].as_object().unwrap().keys().collect();
+    assert_eq!(rids, vec!["2026-10-20T09:00:00"], "{got}");
+    let reduced = get(NYU, json!({ "reduceParticipants": true })).await;
+    let mut kept: Vec<&str> = reduced["participants"].as_object().unwrap().keys().map(String::as_str).collect();
+    kept.sort();
+    assert_eq!(kept, vec!["mini", "nyu"], "the owner and oneself");
+    assert_eq!(get(NYU, json!({})).await["participants"].as_object().unwrap().len(), 3);
+
+    // An event that hides its attendees shows others only the owners and themselves.
+    let hidden = server.call(MINI, "CalendarEvent/set", json!({ "update": { &id: { "hideAttendees": true } } })).await;
+    assert!(hidden["updated"].get(&id).is_some(), "{hidden}");
+    assert_eq!(server.event(MINI, &id).await["hideAttendees"], true);
+    assert_eq!(get(NYU, json!({})).await["participants"].as_object().unwrap().len(), 2);
+    assert_eq!(get(MINI, json!({})).await["participants"].as_object().unwrap().len(), 3, "the owner sees all");
+}

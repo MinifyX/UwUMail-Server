@@ -467,13 +467,8 @@ async fn recurring_events_expand_and_change_one_instance_at_a_time() {
         .api(MINI, json!([["CalendarEvent/query", { "accountId": account, "expandRecurrences": true, "filter": { "after": "2026-01-01T00:00:00" } }, "0"]]))
         .await;
     assert_eq!(open[0][1]["type"], "invalidArguments");
-    let cannot = server
-        .api(MINI, json!([["CalendarEvent/queryChanges", { "accountId": account, "sinceQueryState": "1",
-                "expandRecurrences": true, "filter": { "after": "2026-10-01T00:00:00", "before": "2026-12-01T00:00:00" } }, "0"]]))
-        .await;
-    assert_eq!(cannot[0][1]["type"], "cannotCalculateChanges", "expanded instances are not objects of their own");
     let expanded = server.call(MINI, "CalendarEvent/query", expand).await;
-    assert_eq!(expanded["canCalculateChanges"], false);
+    assert_eq!(expanded["canCalculateChanges"], true, "see query_changes.rs");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -731,7 +726,7 @@ async fn events_stay_within_limits() {
         ("method", with(json!({ "method": "request" })), "invalidProperties"),
         ("big", with(json!({ "description": "Katzen ".repeat(200_000) })), "tooLarge"),
         ("rule", with(json!({ "recurrenceRule": { "frequency": "daily", "interval": 0 } })), "invalidProperties"),
-        ("draft", with(json!({ "isDraft": true })), "invalidProperties"),
+        ("draft", with(json!({ "isDraft": "yes" })), "invalidProperties"),
         ("two", with(json!({ "calendarIds": { &calendar: true, "c999999": true } })), "invalidProperties"),
         ("none", with(json!({ "calendarIds": {} })), "invalidProperties"),
     ];

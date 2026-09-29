@@ -236,3 +236,124 @@ async fn calendar_event_query_changes_replay_to_the_new_results() {
     assert_eq!(result["total"], 3);
     assert_eq!(result["newQueryState"], now["queryState"]);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn expanded_calendar_queries_replay_instances_that_came_and_went() {
+    let server = server().await;
+    let account = server.account_id(MINI).await;
+    let using = ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:calendars"];
+    let call = |method: &'static str, arguments: Value| {
+        let server = &server;
+        async move { server.api_using(MINI, &using, json!([[method, arguments, "0"]])).await[0][1].clone() }
+    };
+    let calendars = call("Calendar/get", json!({ "accountId": account })).await;
+    let calendar = calendars["list"][0]["id"].as_str().unwrap().to_owned();
+    let event = |title: &str, start: &str, rule: Value| {
+        json!({ "calendarIds": { &calendar: true }, "title": title, "start": start, "timeZone": "Europe/Berlin",
+                "duration": "PT1H", "recurrenceRule": rule })
+    };
+    let weekly = |count: u64| json!({ "frequency": "weekly", "count": count });
+    let created = call(
+        "CalendarEvent/set",
+        json!({ "accountId": account, "create": {
+            "yoga": event("Yoga", "2026-10-05T09:00:00", weekly(5)),
+            "kurs": event("Kurs", "2026-10-06T18:00:00", weekly(4)),
+            "arzt": event("Arzt", "2026-10-07T10:00:00", Value::Null),
+            "kino": event("Kino", "2026-10-08T20:00:00", Value::Null),
+            "chor": event("Chor", "2026-10-09T19:00:00", weekly(3))
+        } }),
+    )
+    .await;
+    let id = |key: &str| created["created"][key]["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
+    let arguments = json!({
+        "accountId": account,
+        "filter": { "after": "2026-10-01T00:00:00", "before": "2026-11-01T00:00:00" },
+        "expandRecurrences": true,
+        "sort": [{ "property": "start", "isAscending": true }],
+    });
+    let response = call("CalendarEvent/query", arguments.clone()).await;
+    assert_eq!(response["canCalculateChanges"], true);
+    let old = ids(&response["ids"]);
+    assert_eq!(old.len(), 4 + 4 + 1 + 1 + 3, "{response}");
+    let state = response["queryState"].as_str().unwrap().to_owned();
+
+    // Yoga loses instances, Kurs moves an hour, Arzt starts to repeat, Kino goes, Chor is
+    // destroyed, and a new series comes.
+    let changed = call(
+        "CalendarEvent/set",
+        json!({ "accountId": account,
+            "update": {
+                id("yoga"): { "recurrenceRule": weekly(2) },
+                id("kurs"): { "start": "2026-10-06T19:00:00" },
+                id("arzt"): { "recurrenceRule": weekly(3) },
+                format!("{}_20261009T190000", id("chor")): { "title": "Chorprobe" }
+            },
+            "create": { "neu": event("Neu", "2026-10-02T08:00:00", weekly(2)) },
+            "destroy": [id("kino")] }),
+    )
+    .await;
+    assert!(changed["notUpdated"].is_null() && changed["notCreated"].is_null(), "{changed}");
+    let gone = call("CalendarEvent/set", json!({ "accountId": account, "destroy": [id("chor")] })).await;
+    assert_eq!(gone["destroyed"], json!([id("chor")]));
+
+    let mut since = arguments.clone();
+    since["sinceQueryState"] = json!(state);
+    let result = call("CalendarEvent/queryChanges", since).await;
+    let now = call("CalendarEvent/query", arguments.clone()).await;
+    let new = ids(&now["ids"]);
+    assert_eq!(new.len(), 2 + 4 + 3 + 2, "{now}");
+    assert_eq!(apply(&old, &result), new, "{result}");
+}
+
+/// What an expanding query's changes remove must not depend on the text of events as they were:
+/// earlier versions are kept for everyone who sees a calendar, private events of others and
+/// calendars no longer shared included, so a text filter on them would tell what they said.
+#[tokio::test(flavor = "multi_thread")]
+async fn expanded_query_changes_do_not_read_the_text_of_earlier_versions() {
+    let server = server().await;
+    let account = server.account_id(MINI).await;
+    let using = ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:calendars"];
+    let call = |method: &'static str, arguments: Value| {
+        let server = &server;
+        async move { server.api_using(MINI, &using, json!([[method, arguments, "0"]])).await[0][1].clone() }
+    };
+    let calendars = call("Calendar/get", json!({ "accountId": account })).await;
+    let calendar = calendars["list"][0]["id"].as_str().unwrap().to_owned();
+    let created = call(
+        "CalendarEvent/set",
+        json!({ "accountId": account, "create": { "kurs": {
+            "calendarIds": { &calendar: true }, "title": "Geheimer Kurs", "start": "2026-10-06T18:00:00",
+            "timeZone": "Europe/Berlin", "duration": "PT1H", "recurrenceRule": { "frequency": "weekly", "count": 3 }
+        } } }),
+    )
+    .await;
+    let kurs = created["created"]["kurs"]["id"].as_str().unwrap_or_else(|| panic!("{created}")).to_owned();
+    let query = |title: &str| {
+        json!({ "accountId": account, "expandRecurrences": true,
+                "filter": { "after": "2026-10-01T00:00:00", "before": "2026-11-01T00:00:00", "title": title } })
+    };
+    let states: Vec<String> =
+        [call("CalendarEvent/query", query("Geheim")).await, call("CalendarEvent/query", query("Anderes")).await]
+            .iter()
+            .map(|response| response["queryState"].as_str().unwrap().to_owned())
+            .collect();
+    let changed = call(
+        "CalendarEvent/set",
+        json!({ "accountId": account, "update": { &kurs: { "title": "Kurs", "start": "2026-10-06T19:00:00" } } }),
+    )
+    .await;
+    assert!(changed["notUpdated"].is_null(), "{changed}");
+
+    let mut removed = Vec::new();
+    for (title, state) in ["Geheim", "Anderes"].iter().zip(&states) {
+        let mut since = query(title);
+        since["sinceQueryState"] = json!(state);
+        let result = call("CalendarEvent/queryChanges", since).await;
+        let mut list = ids(&result["removed"]);
+        list.retain(|id| id.starts_with(&format!("{kurs}_")));
+        list.sort();
+        removed.push(list);
+    }
+    assert_eq!(removed[0].len(), 3, "{removed:?}");
+    assert_eq!(removed[0], removed[1], "the old title decides nothing");
+}

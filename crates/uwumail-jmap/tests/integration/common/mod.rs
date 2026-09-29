@@ -11,6 +11,8 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 use uwumail_jmap::Jmap;
+use uwumail_smtp::avatars::{AvatarNet, BoxFuture, SrvRecords};
+use uwumail_smtp::egress::EgressError;
 use uwumail_smtp::{DeliveryConfig, Smtp, SmtpConfig, SmtpSettings, ToneConfig};
 use uwumail_store::{IngestRequest, MailboxRole, MailboxTarget, NewAccount, Role, Store};
 
@@ -61,8 +63,21 @@ pub async fn server() -> Server {
             .await
             .unwrap();
     }
-    let jmap = Jmap::new(smtp(&store));
+    let jmap = Jmap::new(smtp(&store)).with_avatar_net(std::sync::Arc::new(NoNet));
     Server { router: jmap.router(), jmap, store, dir }
+}
+
+/// The internet people's pictures come from, where nothing answers: no test asks the real one.
+pub struct NoNet;
+
+impl AvatarNet for NoNet {
+    fn get<'a>(&'a self, _url: &'a str, _max: usize) -> BoxFuture<'a, Result<(String, Vec<u8>), EgressError>> {
+        Box::pin(async { Err(EgressError::Status(404)) })
+    }
+
+    fn srv<'a>(&'a self, _name: &'a str) -> BoxFuture<'a, Result<SrvRecords, ()>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
 }
 
 pub fn basic(login: &str, password: &str) -> String {
@@ -120,6 +135,17 @@ impl Server {
             .await
             .unwrap();
         format!("e{}", ingested.id)
+    }
+
+    /// The session resource as a person sees it.
+    pub async fn session_of(&self, login: &str) -> Value {
+        let request = Request::get("/jmap/session")
+            .header(header::AUTHORIZATION, basic(login, PASSWORD))
+            .body(Body::empty())
+            .unwrap();
+        let (status, bytes) = self.request(request).await;
+        assert_eq!(status, StatusCode::OK);
+        serde_json::from_slice(&bytes).unwrap()
     }
 
     /// The JMAP id of a person's mailbox with this role.

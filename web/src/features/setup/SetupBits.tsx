@@ -296,7 +296,19 @@ export function TestMailPanel({ login, explain }: { login: string; explain: bool
 }
 
 /** Kinds of records that can be replaced when they hold another value. */
-const KINDS = ["mx", "spf", "dmarc", "dkim", "tlsrpt", "mtasts", "jmap", "imaps", "submissions", "submission"] as const;
+const KINDS = [
+  "mx",
+  "spf",
+  "dmarc",
+  "dkim",
+  "tlsrpt",
+  "mtasts",
+  "jmap",
+  "imaps",
+  "submissions",
+  "submission",
+  "avatars",
+] as const;
 
 /** Rewriting these can cut off other senders or another mail server, so they get a warning. */
 const DELICATE = ["mx", "spf"];

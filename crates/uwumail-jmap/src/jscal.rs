@@ -12,6 +12,8 @@ use chrono::{DateTime, LocalResult, NaiveDateTime, TimeZone};
 use chrono_tz::Tz;
 use serde_json::{Map, Value};
 
+use crate::timezones;
+
 /// The dates the server accepts in an event, as in the session's `minDateTime`/`maxDateTime`.
 pub const MIN_DATE_TIME: &str = "1900-01-01T00:00:00Z";
 pub const MAX_DATE_TIME: &str = "2200-01-01T00:00:00Z";
@@ -37,6 +39,7 @@ pub const JMAP_PROPERTIES: &[&str] =
 /// Properties an instance does not take over from its series when an override is written out whole.
 const NOT_IN_OVERRIDES: &[&str] = &[
     "@type",
+    "timeZones",
     "uid",
     "method",
     "prodId",
@@ -74,13 +77,74 @@ impl Parsed {
         }
         fill_alert_actions(&mut event);
         materialize_overrides(&mut event);
+        let mut zones = timezones::write(&mut event);
         let mut group = self.group.clone();
         group["entries"][self.index] = Value::Object(event);
+        // The other single instances of an object without its series.
+        if let Some(Value::Array(entries)) = group.get_mut("entries") {
+            for (index, entry) in entries.iter_mut().enumerate() {
+                if let (true, Value::Object(other)) = (index != self.index, entry) {
+                    for zone in timezones::write(other) {
+                        if !zones.iter().any(|(id, _)| *id == zone.0) {
+                            zones.push(zone);
+                        }
+                    }
+                }
+            }
+        }
+        // The custom zones are written anew below.
+        if let Some(Value::Array(components)) = group.get_mut("iCalendar").and_then(|c| c.get_mut("components")) {
+            components.retain(|component| {
+                let is_zone =
+                    component.get(0).and_then(Value::as_str).is_some_and(|n| n.eq_ignore_ascii_case("vtimezone"));
+                let tzid = component.get(1).and_then(Value::as_array).into_iter().flatten().find_map(|property| {
+                    (property.get(0)?.as_str()?.eq_ignore_ascii_case("tzid")).then(|| property.get(3)?.as_str())?
+                });
+                !(is_zone && tzid.is_some_and(|tzid| zones.iter().any(|(id, _)| id == tzid)))
+            });
+        }
         let json = Value::Object(group).to_string();
         let calendar = JSCalendar::<String, String>::parse(&json).map_err(|err| format!("not JSCalendar: {err}"))?;
         let mut calendar = calendar.into_icalendar().ok_or("the event cannot be written as iCalendar")?;
         calendar.add_missing_timezones();
-        Ok(calendar.to_string())
+        let mut text = calendar.to_string();
+        if !zones.is_empty() {
+            let end = text.rfind("END:VCALENDAR").ok_or("the event cannot be written as iCalendar")?;
+            let mut definitions = String::new();
+            for (tzid, zone) in &zones {
+                definitions.push_str(&timezones::vtimezone(tzid, zone).ok_or("a custom time zone cannot be written")?);
+            }
+            text.insert_str(end, &definitions);
+        }
+        Ok(text)
+    }
+
+    /// The recurrence ids and entries of the other instances of an object that holds single
+    /// instances without their series (someone invited to some instances only).
+    pub fn other_instances(&self) -> Vec<(String, usize)> {
+        let Some(Value::Array(entries)) = self.group.get("entries") else { return Vec::new() };
+        entries
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index != self.index)
+            .filter(|(_, entry)| entry.get("@type").and_then(Value::as_str) == Some("Event"))
+            .filter_map(|(index, entry)| Some((entry.get("recurrenceId")?.as_str()?.to_owned(), index)))
+            .collect()
+    }
+
+    /// The same object, with another of its entries as the event.
+    pub fn at(&self, index: usize) -> Option<Parsed> {
+        self.group.get("entries")?.get(index)?.as_object()?;
+        Some(Parsed { group: self.group.clone(), index })
+    }
+
+    /// The object without the event, when it holds other events.
+    pub fn without_event(&self) -> Option<Parsed> {
+        let mut group = self.group.clone();
+        let Some(Value::Array(entries)) = group.get_mut("entries") else { return None };
+        entries.remove(self.index);
+        let index = entries.iter().position(|entry| entry.get("@type").and_then(Value::as_str) == Some("Event"))?;
+        Some(Parsed { group, index })
     }
 
     /// A new object holding just this event.
@@ -101,10 +165,40 @@ pub fn from_icalendar(content: &str) -> Option<Parsed> {
     };
     let entries = group.get_mut("entries")?.as_array_mut()?;
     let index = entries.iter().position(|entry| entry.get("@type").and_then(Value::as_str) == Some("Event"))?;
-    if let Value::Object(event) = &mut entries[index] {
-        trim_overrides(event);
+    let events: Vec<usize> =
+        (0..entries.len()).filter(|i| entries[*i].get("@type").and_then(Value::as_str) == Some("Event")).collect();
+    let mut read = Vec::new();
+    for i in &events {
+        let Value::Object(mut event) = std::mem::take(&mut entries[*i]) else { return None };
+        trim_overrides(&mut event);
+        read.push((*i, event));
+    }
+    for (i, mut event) in read {
+        timezones::read(&group, &mut event);
+        group.get_mut("entries")?[i] = Value::Object(event);
     }
     Some(Parsed { group, index })
+}
+
+/// Every event of an iCalendar object, as `from_icalendar` reads the one it keeps: for
+/// `CalendarEvent/parse` of files that hold many. `None` when it is no iCalendar calcard reads.
+pub fn events_of(content: &str, limit: usize) -> Option<Vec<Map<String, Value>>> {
+    let calendar = ICalendar::parse(content).ok()?;
+    let Ok(Value::Object(group)) = serde_json::to_value(calendar.into_jscalendar::<String, String>()) else {
+        return None;
+    };
+    let mut events = Vec::new();
+    for entry in group.get("entries")?.as_array()?.iter().take(limit) {
+        let Value::Object(entry) = entry else { continue };
+        if entry.get("@type").and_then(Value::as_str) != Some("Event") {
+            continue;
+        }
+        let mut event = entry.clone();
+        trim_overrides(&mut event);
+        timezones::read(&group, &mut event);
+        events.push(event);
+    }
+    Some(events)
 }
 
 /// iCalendar keeps whole instances; JSCalendar only what differs from the series. Drops what an
@@ -332,10 +426,7 @@ pub fn parse_duration(value: &str) -> Option<(i64, i64)> {
 /// When an event (or instance) starts and ends in UTC. Floating times are read in `floating`.
 pub fn span(event: &Map<String, Value>, floating: Tz) -> Option<(i64, i64)> {
     let start = parse_local(event.get("start")?.as_str()?)?;
-    let zone = match event.get("timeZone") {
-        Some(Value::String(name)) => time_zone(name).unwrap_or(chrono_tz::UTC),
-        _ => floating,
-    };
+    let to_utc = |local: NaiveDateTime| local_to_utc(event, local, floating);
     let all_day = event.get("showWithoutTime").and_then(Value::as_bool).unwrap_or(false);
     let (days, seconds) = match event.get("duration").and_then(Value::as_str).and_then(parse_duration) {
         Some(duration) => duration,
@@ -347,8 +438,42 @@ pub fn span(event: &Map<String, Value>, floating: Tz) -> Option<(i64, i64)> {
     // wall clock, hours, minutes and seconds are exact and move the instant. Across a change of
     // the clocks, `P1D` is 23 or 25 hours and `PT5H` is always five.
     let nominal_end = start.checked_add_signed(chrono::Duration::days(days))?;
-    let end = to_utc(nominal_end, zone).checked_add(seconds)?;
-    Some((to_utc(start, zone), end))
+    let end = to_utc(nominal_end).checked_add(seconds)?;
+    Some((to_utc(start), end))
+}
+
+/// The custom time zone (`timeZones`) an event's `timeZone` names, if it names one.
+fn custom_zone(event: &Map<String, Value>) -> Option<&Map<String, Value>> {
+    let key = event.get("timeZone")?.as_str()?;
+    if !key.starts_with('/') {
+        return None;
+    }
+    event.get("timeZones")?.get(key)?.as_object()
+}
+
+/// A local time of an event in its time zone (IANA or custom; `floating` when it has none) as a
+/// UTC timestamp.
+pub fn local_to_utc(event: &Map<String, Value>, local: NaiveDateTime, floating: Tz) -> i64 {
+    if let Some(zone) = custom_zone(event) {
+        return timezones::to_utc(zone, local);
+    }
+    let zone = match event.get("timeZone") {
+        Some(Value::String(name)) => time_zone(name).unwrap_or(chrono_tz::UTC),
+        _ => floating,
+    };
+    to_utc(local, zone)
+}
+
+/// A UTC timestamp as the local time of an event's time zone.
+pub fn utc_to_local(event: &Map<String, Value>, timestamp: i64, floating: Tz) -> Option<NaiveDateTime> {
+    if let Some(zone) = custom_zone(event) {
+        return timezones::from_utc(zone, timestamp);
+    }
+    let zone = match event.get("timeZone") {
+        Some(Value::String(name)) => time_zone(name).unwrap_or(chrono_tz::UTC),
+        _ => floating,
+    };
+    from_utc(timestamp, zone)
 }
 
 /// Whether `[start, end)` overlaps a query window: ends after `after` and starts before `before`.
@@ -459,6 +584,109 @@ fn without_override(event: &Map<String, Value>, rid: &str) -> Map<String, Value>
 }
 
 // ------------------------------------------------------------------------------------------------
+// Per-user properties (draft-ietf-jmap-calendars, section 5.4)
+
+/// The properties of an event each person has for themselves in a shared calendar, also per
+/// instance. The owner's are part of the event; everyone else's are kept apart.
+pub const PER_USER: &[&str] = &["keywords", "color", "freeBusyStatus", "useDefaultAlerts", "alerts"];
+
+fn strip_per_user(event: &mut Map<String, Value>) {
+    for key in PER_USER {
+        event.remove(*key);
+    }
+    if let Some(Value::Object(overrides)) = event.get_mut("recurrenceOverrides") {
+        for patch in overrides.values_mut().filter_map(Value::as_object_mut) {
+            patch.retain(|key, _| !PER_USER.contains(&key.split('/').next().unwrap_or_default()));
+        }
+    }
+}
+
+fn per_user_of(object: &Map<String, Value>) -> Map<String, Value> {
+    object
+        .iter()
+        .filter(|(key, _)| PER_USER.contains(&key.split('/').next().unwrap_or_default()))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
+}
+
+/// The event as someone it is shared with sees it: the owner's per-user properties replaced by
+/// `prefs`, their own. `instances` says which recurrence ids the series has, so that their own
+/// properties of an instance that is gone stay away.
+pub fn per_user_view(
+    event: &Map<String, Value>,
+    prefs: Option<&Map<String, Value>>,
+    instances: impl FnOnce() -> BTreeSet<String>,
+) -> Map<String, Value> {
+    let mut view = event.clone();
+    strip_per_user(&mut view);
+    let Some(prefs) = prefs else { return view };
+    for key in PER_USER {
+        if let Some(value) = prefs.get(*key) {
+            view.insert((*key).to_owned(), value.clone());
+        }
+    }
+    if let Some(Value::Object(own)) = prefs.get("recurrenceOverrides")
+        && !own.is_empty()
+    {
+        let instances = instances();
+        let overrides = view.entry("recurrenceOverrides").or_insert_with(|| Value::Object(Map::new()));
+        if let Value::Object(overrides) = overrides {
+            for (rid, patch) in own {
+                let (Value::Object(patch), true) = (patch, instances.contains(rid)) else { continue };
+                if let Value::Object(target) = overrides.entry(rid.clone()).or_insert_with(|| Value::Object(Map::new()))
+                {
+                    target.extend(patch.iter().map(|(k, v)| (k.clone(), v.clone())));
+                }
+            }
+        }
+    }
+    view
+}
+
+/// Splits what someone an event is shared with made of it into the owner's event and their own
+/// per-user properties: what they did to the owner's per-user properties goes to theirs, the
+/// owner's stay as they were.
+pub fn split_per_user(
+    view: &Map<String, Value>,
+    owner: &Map<String, Value>,
+) -> (Map<String, Value>, Map<String, Value>) {
+    let mut prefs = per_user_of(view);
+    let mut own_overrides = Map::new();
+    let mut event = view.clone();
+    strip_per_user(&mut event);
+    for (key, value) in per_user_of(owner) {
+        event.insert(key, value);
+    }
+    let owner_overrides = owner.get("recurrenceOverrides").and_then(Value::as_object);
+    if let Some(Value::Object(overrides)) = view.get("recurrenceOverrides") {
+        for (rid, patch) in overrides {
+            let Value::Object(patch) = patch else { continue };
+            let mine = per_user_of(patch);
+            if !mine.is_empty() {
+                own_overrides.insert(rid.clone(), Value::Object(mine));
+            }
+        }
+    }
+    if let Some(Value::Object(overrides)) = event.get_mut("recurrenceOverrides") {
+        overrides.retain(|rid, patch| {
+            let owners = owner_overrides.and_then(|o| o.get(rid)).and_then(Value::as_object);
+            if let (Value::Object(patch), Some(owners)) = (&mut *patch, owners) {
+                patch.extend(per_user_of(owners));
+            }
+            // An instance that only had one's own properties is not the owner's.
+            owners.is_some() || patch.as_object().is_none_or(|p| !p.is_empty())
+        });
+        if overrides.is_empty() && owner_overrides.is_none() {
+            event.remove("recurrenceOverrides");
+        }
+    }
+    if !own_overrides.is_empty() {
+        prefs.insert("recurrenceOverrides".into(), Value::Object(own_overrides));
+    }
+    (event, prefs)
+}
+
+// ------------------------------------------------------------------------------------------------
 // Rules for stored events
 
 /// Why an event cannot be stored: the properties at fault and a description.
@@ -486,11 +714,13 @@ fn check_local(value: Option<&Value>, property: &str) -> Result<Option<NaiveDate
     }
 }
 
-fn check_zone(value: Option<&Value>, property: &str) -> Result<(), Invalid> {
+fn check_zone(value: Option<&Value>, property: &str, custom: &[String]) -> Result<(), Invalid> {
     match value {
         None | Some(Value::Null) => Ok(()),
-        Some(Value::String(name)) if time_zone(name).is_some() => Ok(()),
-        Some(_) => Err(invalid(property, "must be a time zone of the IANA database, like Europe/Berlin")),
+        Some(Value::String(name)) if time_zone(name).is_some() || custom.contains(name) => Ok(()),
+        Some(_) => {
+            Err(invalid(property, "must be a time zone of the IANA database, like Europe/Berlin, or one of timeZones"))
+        }
     }
 }
 
@@ -597,6 +827,7 @@ fn is_weekday(day: &str) -> bool {
 /// Properties an override must not change (they belong to the series).
 const FORBIDDEN_IN_OVERRIDES: &[&str] = &[
     "@type",
+    "timeZones",
     "uid",
     "method",
     "prodId",
@@ -639,9 +870,16 @@ pub fn validate(event: &Map<String, Value>) -> Result<(), Invalid> {
             return Err(invalid(property, "not supported here; use recurrenceRule"));
         }
     }
+    // A single instance without its series (someone invited to it only) has no series of its own.
     if event.get("recurrenceId").is_some_and(|rid| !rid.is_null()) {
-        return Err(invalid("recurrenceId", "single instances are changed through their series"));
+        check_local(event.get("recurrenceId"), "recurrenceId")?;
+        if event.get("recurrenceRule").is_some_and(|r| !r.is_null())
+            || event.get("recurrenceOverrides").is_some_and(|o| !o.is_null())
+        {
+            return Err(invalid("recurrenceId", "a single instance has no recurrence rule or overrides of its own"));
+        }
     }
+    let custom = timezones::check(event.get("timeZones")).map_err(|message| invalid("timeZones", message))?;
     match event.get("title") {
         None | Some(Value::Null) => {}
         Some(Value::String(title)) if title.len() <= MAX_TITLE_BYTES => {}
@@ -667,7 +905,7 @@ pub fn validate(event: &Map<String, Value>) -> Result<(), Invalid> {
         }
     }
     let start = check_local(event.get("start"), "start")?.ok_or_else(|| invalid("start", "an event needs a start"))?;
-    check_zone(event.get("timeZone"), "timeZone")?;
+    check_zone(event.get("timeZone"), "timeZone", &custom)?;
     let duration = check_duration(event.get("duration"), "duration")?.unwrap_or((0, 0));
     let end = start + chrono::Duration::days(duration.0) + chrono::Duration::seconds(duration.1);
     if !in_range(end.and_utc().timestamp()) {
@@ -707,7 +945,7 @@ pub fn validate(event: &Map<String, Value>) -> Result<(), Invalid> {
                         "start" => {
                             check_local(Some(value), &property)?;
                         }
-                        "timeZone" => check_zone(Some(value), &property)?,
+                        "timeZone" => check_zone(Some(value), &property, &custom)?,
                         "duration" => {
                             check_duration(Some(value), &property)?;
                         }
@@ -925,6 +1163,50 @@ END:VCALENDAR\r\n";
         assert_eq!(twice.matches("BEGIN:VTIMEZONE").count(), 1, "{twice}");
     }
 
+    const CUSTOM: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//DE\r\nBEGIN:VTIMEZONE\r\nTZID:My Zone\r\n\
+BEGIN:STANDARD\r\nDTSTART:16011028T030000\r\nRRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=10\r\nTZOFFSETFROM:+0200\r\n\
+TZOFFSETTO:+0100\r\nEND:STANDARD\r\nBEGIN:DAYLIGHT\r\nDTSTART:16010325T020000\r\nRRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=3\r\n\
+TZOFFSETFROM:+0100\r\nTZOFFSETTO:+0200\r\nEND:DAYLIGHT\r\nEND:VTIMEZONE\r\nBEGIN:VEVENT\r\nUID:zone@example.org\r\n\
+DTSTAMP:20260901T080000Z\r\nDTSTART;TZID=My Zone:20261020T090000\r\nDURATION:PT1H\r\nSUMMARY:Yoga\r\n\
+RRULE:FREQ=WEEKLY;COUNT=4\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:zone@example.org\r\nDTSTAMP:20260901T080000Z\r\n\
+RECURRENCE-ID;TZID=My Zone:20261027T090000\r\nDTSTART;TZID=My Zone:20261027T100000\r\nDURATION:PT1H\r\n\
+SUMMARY:Yoga\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+    #[test]
+    fn custom_time_zones_round_trip() {
+        let parsed = from_icalendar(CUSTOM).unwrap();
+        let event = parsed.event();
+        assert_eq!(event["timeZone"], "/My Zone", "{event:?}");
+        assert_eq!(event["timeZones"]["/My Zone"]["tzId"], "My Zone");
+        assert_eq!(validate(event), Ok(()));
+        let utc = chrono_tz::UTC;
+        assert_eq!(span(event, utc).map(|(s, _)| format_utc(s)).unwrap(), "2026-10-20T07:00:00Z");
+        let moved = instance(event, "2026-10-27T09:00:00").unwrap();
+        assert_eq!(span(&moved, utc).map(|(s, _)| format_utc(s)).unwrap(), "2026-10-27T09:00:00Z", "winter time");
+
+        let text = parsed.to_icalendar(event).unwrap();
+        assert_eq!(text.matches("BEGIN:VTIMEZONE").count(), 1, "{text}");
+        assert!(text.contains("TZID:My Zone\r\n"), "{text}");
+        assert!(text.contains("DTSTART;TZID=\"My Zone\":20261020T090000"), "{text}");
+        assert!(text.contains("RECURRENCE-ID;TZID=\"My Zone\":20261027T090000"), "{text}");
+        assert!(!text.contains("JSPROP"), "{text}");
+        let again = from_icalendar(&text).unwrap();
+        assert_eq!(again.event()["timeZones"], event["timeZones"]);
+        assert_eq!(again.event()["recurrenceOverrides"], event["recurrenceOverrides"]);
+
+        // A zone a JMAP client defines becomes a VTIMEZONE.
+        let mut new = object(json!({
+            "@type": "Event", "uid": "new@example.org", "start": "2026-07-01T10:00:00", "duration": "PT1H",
+            "timeZone": "/Mine", "timeZones": { "/Mine": event["timeZones"]["/My Zone"].clone() }
+        }));
+        new["timeZones"]["/Mine"]["tzId"] = json!("Meine Zone");
+        assert_eq!(validate(&new), Ok(()));
+        let text = Parsed::new_event().to_icalendar(&new).unwrap();
+        assert!(text.contains("TZID:Meine Zone") && text.contains("DTSTART;TZID=\"Meine Zone\""), "{text}");
+        new["timeZone"] = json!("/Other");
+        assert_eq!(validate(&new).unwrap_err().properties, ["timeZone"]);
+    }
+
     #[test]
     fn overrides_record_only_what_changed() {
         let parsed = from_icalendar(SERIES).unwrap();
@@ -973,6 +1255,40 @@ END:VCALENDAR\r\n";
             ["recurrenceOverrides/2026-10-27T09:00:00"]
         );
         assert_eq!(bad(json!({ "uid": "" })), ["uid"]);
+    }
+
+    #[test]
+    fn per_user_properties_stay_apart() {
+        let owner = object(json!({
+            "title": "Yoga", "color": "red", "alerts": { "a": { "trigger": { "offset": "-PT5M" } } },
+            "recurrenceOverrides": { "2026-10-27T09:00:00": { "title": "Park", "keywords": { "owner": true } } }
+        }));
+        let instances = || BTreeSet::from(["2026-10-27T09:00:00".to_owned(), "2026-11-03T09:00:00".to_owned()]);
+        let prefs = object(json!({
+            "color": "blue",
+            "recurrenceOverrides": { "2026-11-03T09:00:00": { "alerts": {} }, "2030-01-01T00:00:00": { "color": "x" } }
+        }));
+        let view = per_user_view(&owner, Some(&prefs), instances);
+        assert_eq!(
+            Value::Object(view.clone()),
+            json!({
+                "title": "Yoga", "color": "blue",
+                "recurrenceOverrides": { "2026-10-27T09:00:00": { "title": "Park" }, "2026-11-03T09:00:00": { "alerts": {} } }
+            })
+        );
+        let mut changed = view.clone();
+        changed.insert("title".into(), json!("Yoga!"));
+        changed.insert("keywords".into(), json!({ "mine": true }));
+        let (event, mine) = split_per_user(&changed, &owner);
+        let mut expected = owner.clone();
+        expected.insert("title".into(), json!("Yoga!"));
+        assert_eq!(event, expected, "the owner's per-user properties stay");
+        assert_eq!(
+            Value::Object(mine),
+            json!({ "color": "blue", "keywords": { "mine": true }, "recurrenceOverrides": { "2026-11-03T09:00:00": { "alerts": {} } } })
+        );
+        let (event, _) = split_per_user(&view, &owner);
+        assert_eq!(event, owner, "nothing of the owner's changed");
     }
 
     #[test]

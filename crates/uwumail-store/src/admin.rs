@@ -148,6 +148,7 @@ pub(crate) fn leave_sharing(tx: &Connection, account_id: i64, granted: &mut Gran
     for (owner, mailbox) in owners {
         let modseq = crate::db::next_modseq(tx, owner)?;
         crate::db::record_change(tx, owner, modseq, "Mailbox", mailbox, "updated")?;
+        crate::acl::sharing_changed(tx, owner, modseq)?;
         granted.push(owner, modseq);
     }
     let shared: Vec<i64> = tx
@@ -161,6 +162,7 @@ pub(crate) fn leave_sharing(tx: &Connection, account_id: i64, granted: &mut Gran
     }
     for mailbox in shared {
         let modseq = crate::db::next_modseq(tx, mailbox)?;
+        crate::acl::sharing_changed(tx, mailbox, modseq)?;
         granted.push(mailbox, modseq);
     }
     Ok(())

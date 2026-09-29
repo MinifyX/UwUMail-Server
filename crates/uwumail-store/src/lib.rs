@@ -15,7 +15,12 @@ mod alerts;
 mod bayes;
 mod blobs;
 mod calendar;
+mod calendar_alerts;
+mod calendar_notifications;
+mod calendar_prefs;
 mod calendar_subscriptions;
+mod calendar_versions;
+mod contact_photos;
 mod contacts;
 mod dav;
 mod dav_import;
@@ -47,6 +52,7 @@ mod objects;
 mod own;
 mod parse;
 mod password;
+mod profile_pictures;
 mod push;
 mod query;
 mod queue;
@@ -89,11 +95,21 @@ pub use bayes::{
 };
 pub use blobs::{BlobCleanupPause, BlobHash};
 pub use calendar::{CalendarEventRecord, CalendarEventWrite};
+pub use calendar_alerts::{CalendarAlertFired, DueAlert, PlannedAlert};
+pub use calendar_notifications::{
+    Author, CalendarNotification, EventAuthor, KEPT_SECS as CALENDAR_NOTIFICATIONS_KEPT_SECS,
+    MAX_NOTIFICATIONS as MAX_CALENDAR_NOTIFICATIONS,
+};
+pub use calendar_prefs::{
+    CALENDAR_DEFAULT_ALERTS_MAX_BYTES, CALENDAR_EVENT_PREFS_MAX_BYTES, CalendarEventPrefs, CalendarPrefs,
+    CalendarPrefsUpdate,
+};
 pub use calendar_subscriptions::{
     CalendarSubscription, CalendarSubscriptionUpdate, DEFAULT_SUBSCRIPTION_INTERVAL_SECS, MAX_CALENDAR_SUBSCRIPTIONS,
     MAX_SUBSCRIPTION_INTERVAL_SECS, MIN_SUBSCRIPTION_INTERVAL_SECS, NewCalendarSubscription,
     SUBSCRIPTION_REFRESH_PAUSE_SECS, SubscriptionRun, shown_url,
 };
+pub use contact_photos::{ContactPhoto, contact_photo};
 pub use contacts::{ContactCardRecord, ContactCardWrite};
 pub use dav::{
     DAV_COLLECTIONS_PER_ACCOUNT, DAV_RESOURCE_MAX_BYTES, DAV_RESOURCES_PER_COLLECTION, DavChanges, DavCollection,
@@ -141,6 +157,10 @@ pub use objects::{Changes, EmailRecord};
 pub use own::{MailboxUsage, OwnAddress, OwnAddresses, RELEASED_ADDRESS_SECS, ReleasedAddress};
 /// Checks a password hash from another server (bcrypt or Argon2) and returns how it would be stored.
 pub use password::import_hash as normalize_imported_password_hash;
+pub use profile_pictures::{
+    AddressPicture, GroupPicture, MAX_RECEIVED_FACES, NewPicture, PUBLIC_PICTURES_SETTING, PictureMeta, PictureOwner,
+    PictureVisibility, ProfileSettings, ProfileUpdate, StoredPicture,
+};
 pub use push::{
     MAX_PUSH_SUBSCRIPTIONS, NewPushSubscription, PUSH_CREDENTIAL_PASSWORD, PUSH_MAX_FAILURES, PUSH_MAX_VERIFY_ATTEMPTS,
     PUSH_SUBSCRIPTION_MAX_SECS, PushKeys, PushSubscription, PushSubscriptionUpdate, PushTarget,
@@ -243,6 +263,8 @@ struct Inner {
     /// Backups running; cleaning up blobs waits while one reads them.
     blob_cleanup_paused: Arc<std::sync::atomic::AtomicUsize>,
     changes: broadcast::Sender<StateChange>,
+    /// Calendar alerts that went off, for push (calendar_alerts.rs).
+    calendar_alerts: broadcast::Sender<CalendarAlertFired>,
     queue_wakeup: Notify,
     data_dir: PathBuf,
     /// What happened since the server started, for the statistics and the metrics.
@@ -266,6 +288,7 @@ impl Store {
             .map_err(|err| StoreError::Internal(err.to_string()))??;
         let blobs = blobs::BlobStore::open(data_dir.join("blobs")).await?;
         let (changes, _) = broadcast::channel(1024);
+        let (calendar_alerts, _) = broadcast::channel(256);
         Ok(Store {
             inner: Arc::new(Inner {
                 db,
@@ -273,6 +296,7 @@ impl Store {
                 blob_lock: Default::default(),
                 blob_cleanup_paused: Default::default(),
                 changes,
+                calendar_alerts,
                 queue_wakeup: Notify::new(),
                 data_dir,
                 stats: stats::Stats::default(),

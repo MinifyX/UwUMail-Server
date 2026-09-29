@@ -191,5 +191,11 @@
   "calendars": {
     "intro": "Partage tes agendas et carnets d'adresses avec les gens de ce serveur ou ramène-les d'ailleurs, et plus personne ne rate un rendez-vous (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
     "sharedEmpty": "Personne n'a encore rien partagé avec toi (・ω・)"
+  },
+  "pictures": {
+    "own": {
+      "intro": "Montrez votre visage ! Les personnes d'ici le voient à côté de vos messages (=^･ω･^=)"
+    },
+    "saved": "Très réussi ! Image enregistrée (◕‿◕✿)"
   }
 }

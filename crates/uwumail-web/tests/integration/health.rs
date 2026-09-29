@@ -55,6 +55,21 @@ async fn health_lists_every_area_with_findings() {
         .await
         .unwrap();
 
+    // A domain that only carried masked addresses of people from elsewhere, as 0.16.0 left it (MD-1).
+    store.create_domain("masks.example").await.unwrap();
+    let own = uwumail_store::DomainMaskedPolicy { mode: uwumail_store::MaskedMode::Own, ..Default::default() };
+    store.set_domain_masked_policy("example.org", own).await.unwrap();
+    let masked = store.create_masked_address(mini.id, uwumail_store::NewMaskedAddress::default()).await.unwrap();
+    rusqlite::Connection::open(dir.path().join("uwumail.db"))
+        .unwrap()
+        .execute_batch(&format!(
+            "UPDATE masked_addresses SET domain_id = (SELECT id FROM domains WHERE name = 'masks.example')
+             WHERE id = {};
+             UPDATE domains SET masked_mode = 'own' WHERE name = 'masks.example';",
+            masked.id
+        ))
+        .unwrap();
+
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
     let smtp = Smtp::new(
         store.clone(),
@@ -116,8 +131,10 @@ async fn health_lists_every_area_with_findings() {
     let health: Value = serde_json::from_slice(&bytes).unwrap();
 
     let area = |name: &str| health["areas"].as_array().unwrap().iter().find(|a| a["area"] == name).unwrap().clone();
-    assert_eq!(codes(&area("dns")), ["dnsPending"]);
-    assert_eq!(area("dns")["level"], "unknown");
+    assert_eq!(codes(&area("dns")), ["maskedStranded", "dnsPending"]);
+    assert_eq!(area("dns")["findings"][0]["link"], "/admin/domains/masks.example");
+    assert_eq!(area("dns")["findings"][0]["params"], json!({ "domain": "masks.example", "count": 1 }));
+    assert_eq!(area("dns")["level"], "warning");
     assert_eq!(codes(&area("certificate")), ["certExpiresSoon"], "Let's Encrypt should have renewed by now");
     assert_eq!(area("certificate")["level"], "warning");
     assert_eq!(codes(&area("delivery")), ["deliveryNotChecked"]);

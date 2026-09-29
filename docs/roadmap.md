@@ -36,6 +36,7 @@ Each step ships as its own commits, container image and test deployment.
 - [x] Vacation auto-replies when mail arrives (once per sender per week, never to lists or machines)
 - [x] Settings the webmail and the apps keep in sync, shared with the portal's preferences (JMAP `UserSettings`, see jmap-settings.md)
 - [x] JMAP Calendars on the CalDAV calendars: `Calendar`, `CalendarEvent` (query with expanded recurrences) and `ParticipantIdentity`, changes going both ways between JMAP and CalDAV (see jmap-calendars.md)
+- [x] The whole JMAP Calendars draft: `Principal/getAvailability`, `CalendarEventNotification`, `CalendarEvent/copy|parse`, default and per-user alerts fired by the server, drafts, custom time zones, single instances, per-user properties of shared calendars, query changes of expanded queries
 - [x] JMAP Contacts on the CardDAV address books: `AddressBook`, `ContactCard` (query by name, email, phone and more), changes going both ways between JMAP and CardDAV (see jmap-contacts.md)
 - [x] App passwords and Bearer tokens
 - [x] WebSocket push, delayed sending (undo window), `Email/copy`, query changes
@@ -96,6 +97,8 @@ Each step ships as its own commits, container image and test deployment.
 - [x] UwUMail webmail (its own repository, built from the app's interface) served at `/mail`, switchable for the server and per account (docs/webmail.md)
 - [x] Delayed sending, signatures and address suggestions on the server, so the webmail stops doing without them
 - [x] Remote pictures and sender pictures fetched by the server, optionally through a VPN, so senders never see who reads their mail (docs/jmap-remote.md)
+- [x] One-click unsubscribe (RFC 8058) sent by the server, only for DKIM-signed headers and the same way out as pictures (docs/jmap-unsubscribe.md)
+- [x] Profile pictures and domain logos, visible on the server or public over Libravatar and the Face header; sender pictures per address from contacts, people here, Faces and Libravatar (docs/profile-pictures.md)
 - [x] Fetched mailboxes: mail from another provider's IMAP mailbox, emptied into someone's own and judged here like any other, with rules of its own for what a fetched message can still be asked (docs/fetch.md)
 - [x] Sending as a fetched address, over the provider's own outgoing server
 - [x] Calendars and contacts from elsewhere: `.ics`/`.vcf` files (portal and `uwumail-server import ics|vcf`), subscribed calendars fetched again regularly and read-only everywhere, and moving everything over from another CalDAV/CardDAV provider (iCloud, WEB.DE, GMX, Posteo, mailbox.org, …) with an app password (docs/calendar-import.md)

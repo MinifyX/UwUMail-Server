@@ -52,6 +52,9 @@ catches damage, but whoever controls the backup server can change both.
 - **SSH key** (recommended): the server makes its own key. Put the line the
   portal shows into `~/.ssh/authorized_keys` of the backup user.
 - **Password**: for systems like Synology DSM that offer only that for SFTP.
+  Left empty when saving, the stored password is kept, but only for the same
+  host, port and user: for any other it has to be typed again, so it is never
+  handed to a server it was not meant for.
 
 The first *Test connection* shows the backup server's host key and remembers
 it. If the key changes later, backups stop until I confirm the new one, as
@@ -123,7 +126,10 @@ takes one person's mail out of a snapshot while the server keeps running:
 1. **Open** a snapshot. Only its database is fetched, into a scratch folder in
    the data directory, and read without ever being opened as the server's own
    (it would be migrated otherwise). The page then lists everybody in it who had
-   a mailbox.
+   a mailbox. The database is read as something that may be anything: read-only,
+   nothing in it may run code, its tables have to be tables, no single value
+   may be longer than 64 KB, one person may have at most 100,000 folders and
+   5 million messages, and reading it stops after ten minutes.
 2. Pick the **person**, and **all folders or some**. *Into the mailbox of* puts
    the mail into another account, for someone whose address changed since.
 3. **Restore.** Each message is taken from this server's own mail store when it

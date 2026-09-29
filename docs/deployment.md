@@ -428,7 +428,7 @@ outside; that reply also proves that incoming mail reaches the server.
 | `0.1.0` | exactly this version |
 
 With the machine's helper (the installer sets it up; see
-[install.md](install.md)) *Server → Overview → Updates* has a button for it: after the
+[install.md](install.md)) *Server → Updates* has a button for it: after the
 password, the helper fetches `update.sh` from the newest release, checks its
 `sha256` and runs it here, and the page follows its output while the server is
 replaced. From the button it asks nothing: it does not offer the virus scanner
@@ -444,7 +444,7 @@ A server set up before 0.4.0 fetches the script once first:
 
 Database migrations run automatically on start. Once a day the server asks
 GitHub what is newer on its channel (for `edge`: which commits came since) and
-shows it under *Server → Overview → Updates* with the changes. The check can be switched
+shows it under *Server → Updates* with the changes. The check can be switched
 off there. Nothing installs itself: the update happens when somebody presses
 the button or runs the script.
 

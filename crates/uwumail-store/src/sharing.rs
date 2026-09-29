@@ -307,6 +307,7 @@ impl Store {
                 if removed == 0 {
                     return Err(StoreError::NotFound(format!("share of collection {collection_id}")));
                 }
+                crate::calendar_prefs::forget(tx, grantee, collection_id)?;
                 let mut log = ChangeLog::new(actor_id);
                 log.whole_collection(tx, grantee, &collection, "destroyed")?;
                 log.record_for(tx, collection.account_id, collection.kind.jmap_types().0, collection.id, "updated")?;

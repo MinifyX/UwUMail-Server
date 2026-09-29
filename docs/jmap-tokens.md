@@ -149,6 +149,8 @@ Messages are JSON text frames, handled in the order they arrive:
 
 The data types are those of the EventSource: `Mailbox`, `Email`,
 `EmailDelivery`, `Thread`, `Identity`, `EmailSubmission`, `VacationResponse`,
-`UserSettings`, `Calendar`, `CalendarEvent`, `ParticipantIdentity`,
-`AddressBook`, `ContactCard`, `SieveScript`. A single message may be as large as
+`UserSettings`, `Calendar`, `CalendarEvent`, `CalendarEventNotification`,
+`ParticipantIdentity`, `AddressBook`, `ContactCard`, `SieveScript`, and
+`CalendarAlert`, which pushes `{"@type": "CalendarAlert", …}` when an alert
+goes off ([jmap-calendars.md](jmap-calendars.md#alerts)). A single message may be as large as
 `maxSizeRequest` (10 MB).

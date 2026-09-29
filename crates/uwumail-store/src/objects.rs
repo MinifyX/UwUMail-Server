@@ -167,48 +167,54 @@ impl Store {
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
 
-            let mut objects: BTreeMap<i64, Seen> = BTreeMap::new();
-            let mut new_state = current;
-            let mut has_more = false;
-            let mut index = 0;
-            while index < rows.len() {
-                let modseq = rows[index].0;
-                let group_end = rows[index..].iter().position(|r| r.0 != modseq).map_or(rows.len(), |p| index + p);
-                let group = &rows[index..group_end];
-                let new_objects = group.iter().filter(|r| !objects.contains_key(&r.1)).count();
-                if max_changes > 0 && !objects.is_empty() && objects.len() + new_objects > max_changes {
-                    new_state = rows[index - 1].0;
-                    has_more = true;
-                    break;
-                }
-                for (_, object, change) in group {
-                    let next = match (objects.get(object).copied(), change.as_str()) {
-                        (None, "created") => Seen::Created,
-                        (None, "updated") => Seen::Updated,
-                        (None, _) => Seen::Destroyed,
-                        (Some(Seen::Created), "destroyed") => Seen::CreatedThenDestroyed,
-                        (Some(Seen::Created), _) => Seen::Created,
-                        (Some(Seen::Updated), "destroyed") => Seen::Destroyed,
-                        (Some(seen), _) => seen,
-                    };
-                    objects.insert(*object, next);
-                }
-                index = group_end;
-            }
-
-            let mut changes = Changes { new_state, has_more, ..Changes::default() };
-            for (object, seen) in objects {
-                match seen {
-                    Seen::Created => changes.created.push(object),
-                    Seen::Updated => changes.updated.push(object),
-                    Seen::Destroyed => changes.destroyed.push(object),
-                    Seen::CreatedThenDestroyed => {}
-                }
-            }
-            Ok(changes)
+            Ok(aggregate(&rows, current, max_changes))
         })
         .await
     }
+}
+
+/// Folds change log rows (modseq, object, change), in modseq order, into what changed per
+/// object. With `max_changes`, stops before the modseq that would pass it, and says so.
+pub(crate) fn aggregate(rows: &[(i64, i64, String)], current: i64, max_changes: usize) -> Changes {
+    let mut objects: BTreeMap<i64, Seen> = BTreeMap::new();
+    let mut new_state = current;
+    let mut has_more = false;
+    let mut index = 0;
+    while index < rows.len() {
+        let modseq = rows[index].0;
+        let group_end = rows[index..].iter().position(|r| r.0 != modseq).map_or(rows.len(), |p| index + p);
+        let group = &rows[index..group_end];
+        let new_objects = group.iter().filter(|r| !objects.contains_key(&r.1)).count();
+        if max_changes > 0 && !objects.is_empty() && objects.len() + new_objects > max_changes {
+            new_state = rows[index - 1].0;
+            has_more = true;
+            break;
+        }
+        for (_, object, change) in group {
+            let next = match (objects.get(object).copied(), change.as_str()) {
+                (None, "created") => Seen::Created,
+                (None, "updated") => Seen::Updated,
+                (None, _) => Seen::Destroyed,
+                (Some(Seen::Created), "destroyed") => Seen::CreatedThenDestroyed,
+                (Some(Seen::Created), _) => Seen::Created,
+                (Some(Seen::Updated), "destroyed") => Seen::Destroyed,
+                (Some(seen), _) => seen,
+            };
+            objects.insert(*object, next);
+        }
+        index = group_end;
+    }
+
+    let mut changes = Changes { new_state, has_more, ..Changes::default() };
+    for (object, seen) in objects {
+        match seen {
+            Seen::Created => changes.created.push(object),
+            Seen::Updated => changes.updated.push(object),
+            Seen::Destroyed => changes.destroyed.push(object),
+            Seen::CreatedThenDestroyed => {}
+        }
+    }
+    changes
 }
 
 #[cfg(test)]

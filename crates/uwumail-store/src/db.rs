@@ -55,6 +55,13 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0046_push_subscriptions.sql"),
     include_str!("migrations/0047_masked_domains.sql"),
     include_str!("migrations/0048_logins_and_ids.sql"),
+    include_str!("migrations/0049_calendar_per_user.sql"),
+    include_str!("migrations/0050_calendar_drafts.sql"),
+    include_str!("migrations/0051_calendar_notifications.sql"),
+    include_str!("migrations/0052_calendar_event_versions.sql"),
+    include_str!("migrations/0053_calendar_alerts.sql"),
+    include_str!("migrations/0054_shared_states.sql"),
+    include_str!("migrations/0055_profile_pictures.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 
@@ -74,6 +81,7 @@ impl Database {
              PRAGMA foreign_keys = ON;",
         )?;
         migrate(&mut writer)?;
+        crate::contact_photos::backfill(&mut writer)?;
         Ok(Database { path: path.to_path_buf(), writer: Mutex::new(writer), readers: Mutex::new(Vec::new()) })
     }
 
@@ -171,6 +179,22 @@ pub fn record_change(
         "INSERT OR IGNORE INTO changes (account_id, modseq, kind, object_id, change) VALUES (?1, ?2, ?3, ?4, ?5)",
         params![account_id, modseq, kind, object_id, change],
     )?;
+    // A mailbox's own modseq moves with every change to it or to an email in it: it is the state
+    // of the mailbox for those it is shared with and its IMAP HIGHESTMODSEQ (migration 0054).
+    match kind {
+        "Mailbox" => {
+            conn.prepare_cached("UPDATE mailboxes SET updated_modseq = max(updated_modseq, ?1) WHERE id = ?2")?
+                .execute(params![modseq, object_id])?;
+        }
+        "Email" => {
+            conn.prepare_cached(
+                "UPDATE mailboxes SET updated_modseq = max(updated_modseq, ?1)
+                 WHERE id IN (SELECT mailbox_id FROM email_mailboxes WHERE email_id = ?2)",
+            )?
+            .execute(params![modseq, object_id])?;
+        }
+        _ => {}
+    }
     Ok(())
 }
 
@@ -374,5 +398,35 @@ mod tests {
             .collect::<std::result::Result<_, _>>()
             .unwrap();
         assert_eq!(keywords, vec!["$seen".to_owned(), "project-x".to_owned()]);
+    }
+
+    /// Cards with a photo from before 0055 are found by their addresses once the server started.
+    #[test]
+    fn existing_contact_photos_are_indexed_after_the_upgrade() {
+        const RELEASED_0_16: usize = 48;
+        let mut conn = connection();
+        for (index, sql) in MIGRATIONS[..RELEASED_0_16].iter().enumerate() {
+            conn.execute_batch(sql).unwrap();
+            conn.pragma_update(None, "user_version", (index + 1) as i64).unwrap();
+        }
+        conn.execute_batch(
+            "INSERT INTO accounts (id, login, created_at) VALUES (1, 'mini@example.org', 0);
+             INSERT INTO dav_collections (id, account_id, kind, slug, created_at) VALUES (1, 1, 'addressbook', 'contacts', 0);
+             INSERT INTO dav_resources (collection_id, name, uid, etag, content, component, size, modified_at, change)
+                 VALUES (1, 'a.vcf', 'a', '\"e1\"', 'BEGIN:VCARD\r\nVERSION:4.0\r\nUID:a\r\nFN:Ami\r\nEMAIL:Ami@Example.org\r\nPHOTO:data:image/png;base64,iVBORw0KGgo=\r\nEND:VCARD\r\n', 'VCARD', 10, 0, 1),
+                        (1, 'b.vcf', 'b', '\"e2\"', 'BEGIN:VCARD\r\nVERSION:4.0\r\nUID:b\r\nFN:Nyu\r\nEMAIL:nyu@example.org\r\nEND:VCARD\r\n', 'VCARD', 10, 0, 2);",
+        )
+        .unwrap();
+        migrate(&mut conn).unwrap();
+        crate::contact_photos::backfill(&mut conn).unwrap();
+        let indexed: Vec<(String, i64)> = conn
+            .prepare("SELECT email, account_id FROM contact_photos")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(indexed, vec![("ami@example.org".to_owned(), 1)]);
+        assert!(get_setting(&conn, "contact_photos.backfill").unwrap().is_none(), "only once");
     }
 }

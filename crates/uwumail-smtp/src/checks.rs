@@ -6,7 +6,7 @@ use mail_auth::common::headers::HeaderWriter;
 use mail_auth::dmarc::Policy;
 use mail_auth::dmarc::verify::DmarcParameters;
 use mail_auth::spf::verify::SpfParameters;
-use mail_auth::{AuthenticatedMessage, AuthenticationResults, DkimResult, DmarcResult, SpfResult};
+use mail_auth::{AuthenticatedMessage, AuthenticationResults, DkimOutput, DkimResult, DmarcResult, SpfResult};
 
 use crate::Context;
 
@@ -41,6 +41,10 @@ pub struct Verdict {
     /// SPF or DKIM passed for the From domain or a domain related to it, with or without a published
     /// DMARC policy. Only then does the From address say who really sent the message.
     pub from_verified: bool,
+    /// A DKIM signature of the From domain (or one related to it) holds and covers the `Face`
+    /// header, and From names one address: only then does a Face speak for that address. DMARC
+    /// alone does not say so, as it passes on SPF or on a signature that leaves `Face` out.
+    pub face_signed: bool,
 }
 
 /// A verdict that refuses the message outright, before any SPF/DKIM/DMARC result. Used for a header
@@ -57,6 +61,24 @@ fn from_domains(addresses: &[String]) -> usize {
     domains.len()
 }
 
+/// One From may name several mailboxes. DMARC exempts a From whose addresses lie in more than one
+/// domain (RFC 7489 section 6.6.1), so a policy domain written next to one's own would never be
+/// judged; such a message is refused like one with two From headers (security-audit-0.8.0 T-2).
+fn from_fault(message: &AuthenticatedMessage<'_>) -> Option<&'static str> {
+    (from_domains(&message.from) > 1).then_some("a message may have From addresses in only one domain")
+}
+
+/// The checks on the header block every incoming message goes through, whatever else can or cannot
+/// be checked about it: one From, in one domain, in a header block that ends where it should. Gives
+/// the refusing verdict for a message that fails them (security-audit-0.16.0 SMTP-10).
+pub fn check_headers(hostname: &str, raw: &[u8]) -> Option<Verdict> {
+    if let Some(reason) = crate::headers::header_block_fault(raw) {
+        return Some(rejecting(hostname, reason));
+    }
+    let message = AuthenticatedMessage::parse(raw)?;
+    from_fault(&message).map(|reason| rejecting(hostname, reason))
+}
+
 fn rejecting(hostname: &str, reason: &str) -> Verdict {
     Verdict {
         header: format!("Authentication-Results: {hostname}; none\r\n"),
@@ -69,6 +91,7 @@ fn rejecting(hostname: &str, reason: &str) -> Verdict {
         from_domain: None,
         from_address: None,
         from_verified: false,
+        face_signed: false,
     }
 }
 
@@ -92,14 +115,12 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
             from_domain: None,
             from_address: None,
             from_verified: false,
+            face_signed: false,
         };
     };
 
-    // One From may name several mailboxes. DMARC exempts a From whose addresses lie in more than one
-    // domain (RFC 7489 section 6.6.1), so a policy domain written next to one's own would never be
-    // judged; such a message is refused like one with two From headers (security-audit-0.8.0 T-2).
-    if from_domains(&message.from) > 1 {
-        return rejecting(hostname, "a message may have From addresses in only one domain");
+    if let Some(reason) = from_fault(&message) {
+        return rejecting(hostname, reason);
     }
 
     let auth = &ctx.authenticator;
@@ -153,6 +174,7 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
             output.result() == &DkimResult::Pass && output.signature().is_some_and(|signature| related(&signature.d))
         })
         || (spf.result() == SpfResult::Pass && related(mail_from_domain));
+    let face_signed = face_signed(&message, &dkim, from_address.as_deref());
 
     Verdict {
         header,
@@ -165,7 +187,21 @@ pub async fn verify(ctx: &Context, ip: IpAddr, helo: &str, mail_from: &str, raw:
         from_domain,
         from_address,
         from_verified,
+        face_signed,
     }
+}
+
+/// Whether a signature that holds for the From domain covers the `Face` header, with one From
+/// address to keep it for. See [`Verdict::face_signed`].
+fn face_signed(message: &AuthenticatedMessage<'_>, dkim: &[DkimOutput<'_>], from_address: Option<&str>) -> bool {
+    message.from.len() == 1
+        && dkim.iter().any(|output| {
+            output.result() == &DkimResult::Pass
+                && output.signature().is_some_and(|signature| {
+                    related_to_from(from_address, &signature.d)
+                        && signature.h.iter().any(|name| name.eq_ignore_ascii_case("Face"))
+                })
+        })
 }
 
 /// Whether a domain is the From domain, a parent of it or below it.
@@ -187,6 +223,10 @@ fn related_to_from(from_address: Option<&str>, domain: &str) -> bool {
 /// found out instead is read in [`crate::fetched`] and counts as points, not as a verdict.
 pub async fn verify_signatures(ctx: &Context, raw: &[u8]) -> Verdict {
     let hostname = ctx.hostname.as_str();
+    // The From the person sees must be the one the signatures are judged against, here as well.
+    if let Some(reason) = crate::headers::header_block_fault(raw) {
+        return rejecting(hostname, reason);
+    }
     let mut verdict = Verdict {
         header: format!("Authentication-Results: {hostname}; none\r\n"),
         action: Action::Accept,
@@ -198,10 +238,14 @@ pub async fn verify_signatures(ctx: &Context, raw: &[u8]) -> Verdict {
         from_domain: None,
         from_address: None,
         from_verified: false,
+        face_signed: false,
     };
     let Some(message) = AuthenticatedMessage::parse(raw) else {
         return verdict;
     };
+    if let Some(reason) = from_fault(&message) {
+        return rejecting(hostname, reason);
+    }
 
     let dkim = ctx.authenticator.verify_dkim(ctx.dns.params(&message)).await;
     let header_from = message.from.first().map(String::as_str).unwrap_or_default();
@@ -220,7 +264,22 @@ pub async fn verify_signatures(ctx: &Context, raw: &[u8]) -> Verdict {
     });
     verdict.dmarc_passed = signed_by_sender;
     verdict.from_verified = signed_by_sender;
+    verdict.face_signed = face_signed(&message, &dkim, verdict.from_address.as_deref());
     verdict
+}
+
+/// The headers (`h=`) of each DKIM signature on a message that holds, checked now against the keys in
+/// DNS. For a message already stored: whether a newsletter signed its `List-Unsubscribe` before the
+/// server posts to it (RFC 8058, section 4).
+pub async fn signed_headers(ctx: &Context, raw: &[u8]) -> Vec<Vec<String>> {
+    let Some(message) = AuthenticatedMessage::parse(raw) else {
+        return Vec::new();
+    };
+    let dkim = ctx.authenticator.verify_dkim(ctx.dns.params(&message)).await;
+    dkim.iter()
+        .filter(|output| output.result() == &DkimResult::Pass)
+        .filter_map(|output| output.signature().map(|signature| signature.h.clone()))
+        .collect()
 }
 
 /// An address as sender lists store it, or `None` if it is not one.

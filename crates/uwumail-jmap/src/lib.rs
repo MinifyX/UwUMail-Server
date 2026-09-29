@@ -14,13 +14,18 @@
 //! | `GET /jmap/ws` | Requests and push over a WebSocket (RFC 8887) |
 //! | `POST /jmap/token` | A new app password for a program, to send as a bearer token |
 //! | `GET /jmap/image/{accountId}?url=` | A message's remote picture, fetched by the server |
-//! | `GET /jmap/picture/{accountId}?email=` | The logo or website icon of a company sender |
+//! | `GET /jmap/picture/{accountId}?email=` | The picture of a sender: a person's, or a company's logo |
+//! | `GET /avatar/{hash}` | Libravatar: the public pictures of this server's addresses |
+//!
+//! `Email/unsubscribe` has the server send a newsletter's one-click unsubscription (RFC 8058).
 //!
 //! [`Jmap::run_web_push`] pushes changes to the push subscriptions (RFC 8620, 7.2) over Web Push.
 
 mod api;
 pub mod auth;
+pub mod availability;
 mod blob;
+pub mod calendar_alerts;
 pub mod dates;
 mod email;
 mod error;
@@ -28,12 +33,14 @@ mod ids;
 mod jscal;
 mod jscontact;
 mod methods;
+mod pictures;
 mod push;
 mod remote;
 pub mod safe_html;
 mod scheduled;
 mod session;
 mod sharing;
+mod timezones;
 mod token;
 mod webpush;
 mod ws;
@@ -44,11 +51,13 @@ use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::routing::{any, get, post};
 use uwumail_smtp::Smtp;
+use uwumail_smtp::avatars::{AvatarNet, Avatars, LiveNet};
 use uwumail_smtp::egress::Egress;
 use uwumail_smtp::pictures::SenderPictures;
 use uwumail_store::Store;
 
 pub use auth::{AuthError, Authenticator, ClientInfo, Login};
+pub use methods::unsubscribe::UnsubscribeTransport;
 pub use webpush::{PushMessage, PushTiming, PushTransport};
 
 /// Tells a person that a program created an app password for their account at `/jmap/token`:
@@ -81,12 +90,22 @@ pub(crate) struct Inner {
     pub egress: Egress,
     /// Logos and website icons of company senders, fetched the same way.
     pub pictures: Arc<SenderPictures>,
+    /// Pictures of people from elsewhere: linked contact photos and Libravatar.
+    pub avatars: Arc<Avatars>,
+    /// The addresses this server answers Libravatar for, by their hashes.
+    pub libravatar: pictures::Provider,
     /// How a person hears of an app password created at `/jmap/token`.
     pub notice: Option<AppPasswordNotice>,
     /// Wakes the sender of held submissions when one was added.
     pub wake: tokio::sync::Notify,
     /// Push subscriptions: the VAPID key and the way out to push services.
     pub push: webpush::WebPush,
+    /// One-click unsubscriptions sent lately, for their limits.
+    pub unsubscribes: methods::unsubscribe::Unsubscribes,
+    /// Where they go instead of the egress, in tests.
+    pub unsubscribe_transport: Option<Arc<dyn UnsubscribeTransport>>,
+    /// Reminder mails of calendar alerts sent lately, for their limits.
+    pub reminders: calendar_alerts::ReminderLimits,
 }
 
 impl Jmap {
@@ -102,17 +121,23 @@ impl Jmap {
         auth.watch_webmail(webmail);
         let egress = Egress::direct();
         let pictures = Arc::new(SenderPictures::new(egress.clone()));
+        let avatars = Arc::new(Avatars::new(Arc::new(LiveNet::new(egress.clone()))));
         let push = webpush::WebPush::new(store.clone(), egress.clone(), smtp.hostname());
         Jmap {
             inner: Arc::new(Inner {
                 auth,
+                libravatar: pictures::Provider::new(store.clone()),
                 store,
                 smtp,
                 egress,
                 pictures,
+                avatars,
                 notice: None,
                 wake: tokio::sync::Notify::new(),
                 push,
+                unsubscribes: Default::default(),
+                unsubscribe_transport: None,
+                reminders: Default::default(),
             }),
         }
     }
@@ -122,8 +147,18 @@ impl Jmap {
     pub fn with_egress(self, egress: Egress) -> Jmap {
         let inner = Arc::into_inner(self.inner).expect("the egress is set before anything else holds the JMAP service");
         let pictures = Arc::new(SenderPictures::new(egress.clone()));
+        let avatars = Arc::new(Avatars::new(Arc::new(LiveNet::new(egress.clone()))));
         let push = inner.push.clone().with_egress(egress.clone());
-        Jmap { inner: Arc::new(Inner { egress, pictures, push, ..inner }) }
+        Jmap { inner: Arc::new(Inner { egress, pictures, avatars, push, ..inner }) }
+    }
+
+    /// Pictures of people from elsewhere (linked contact photos, Libravatar) come through `net`
+    /// instead of the egress and DNS: for tests. Called after [`Jmap::with_egress`] and before the
+    /// router is built.
+    pub fn with_avatar_net(self, net: Arc<dyn AvatarNet>) -> Jmap {
+        let inner =
+            Arc::into_inner(self.inner).expect("the network is set before anything else holds the JMAP service");
+        Jmap { inner: Arc::new(Inner { avatars: Arc::new(Avatars::new(net)), ..inner }) }
     }
 
     /// Push messages (docs/jmap-push.md) leave through `transport` instead of the egress, which
@@ -134,6 +169,15 @@ impl Jmap {
             Arc::into_inner(self.inner).expect("the transport is set before anything else holds the JMAP service");
         let push = inner.push.clone().with_transport(transport);
         Jmap { inner: Arc::new(Inner { push, ..inner }) }
+    }
+
+    /// One-click unsubscriptions (docs/jmap-unsubscribe.md) are sent through `transport` instead of the
+    /// egress, which reaches public https addresses only. For tests with a newsletter on the same
+    /// machine; called before the router is built.
+    pub fn with_unsubscribe_transport(self, transport: Arc<dyn UnsubscribeTransport>) -> Jmap {
+        let inner =
+            Arc::into_inner(self.inner).expect("the transport is set before anything else holds the JMAP service");
+        Jmap { inner: Arc::new(Inner { unsubscribe_transport: Some(transport), ..inner }) }
     }
 
     /// Bundles pushes with other waits than the usual two seconds and five seconds between pushes:
@@ -169,6 +213,7 @@ impl Jmap {
             .route("/jmap/token", post(token::handle).layer(DefaultBodyLimit::max(16 * 1024)))
             .route("/jmap/image/{account}", get(remote::image))
             .route("/jmap/picture/{account}", get(remote::picture))
+            .route("/avatar/{hash}", get(pictures::libravatar))
             .with_state(self.clone())
     }
 }

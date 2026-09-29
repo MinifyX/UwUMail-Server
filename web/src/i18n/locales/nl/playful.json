@@ -189,5 +189,11 @@
   "calendars": {
     "intro": "Deel je agenda's en adresboeken met mensen hier op de server of haal ze van elders, dan mist niemand meer een afspraak (ﾉ◕ヮ◕)ﾉ*:･ﾟ✧",
     "sharedEmpty": "Nog niemand heeft iets met je gedeeld (・ω・)"
+  },
+  "pictures": {
+    "own": {
+      "intro": "Laat je gezicht zien! Mensen hier zien het naast je mail (=^･ω･^=)"
+    },
+    "saved": "Staat je goed! Afbeelding opgeslagen (◕‿◕✿)"
   }
 }

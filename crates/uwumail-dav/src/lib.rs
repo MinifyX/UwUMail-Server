@@ -31,8 +31,8 @@ use uwumail_jmap::{Authenticator, ClientInfo};
 use uwumail_smtp::Smtp;
 use uwumail_store::itip::{self, Component};
 use uwumail_store::{
-    Account, AppScope, DavAccess, DavCollectionUpdate, DavKind, DavPrecondition, DavWrite, DavWriteOutcome,
-    NewDavCollection, Store, StoreError,
+    Account, AppScope, CalendarPrefsUpdate, DavAccess, DavCollectionUpdate, DavKind, DavPrecondition, DavWrite,
+    DavWriteOutcome, NewDavCollection, Store, StoreError,
 };
 
 use crate::props::{Requested, Target, View, Who};
@@ -58,7 +58,7 @@ const FREE_BUSY_TIME_LIMIT: std::time::Duration = std::time::Duration::from_secs
 #[derive(Clone)]
 enum Busy {
     /// Someone of this server, busy in these periods (merged).
-    Periods(Vec<(i64, i64)>),
+    Periods(Vec<uwumail_jmap::availability::Period>),
     /// Nobody whose calendars this server keeps.
     Unknown,
     /// The lookup's time was up before this one.
@@ -369,9 +369,23 @@ impl Session<'_> {
     /// The account's own collections of a kind, then those shared with it.
     async fn collections(&self, kind: DavKind) -> Result<Vec<View>, StoreError> {
         let own = self.store().dav_collections(self.account.id, kind, self.dav.default_collection(kind)).await?;
-        let mut views: Vec<View> = own.into_iter().map(|c| View::own(c, self.login)).collect();
-        for shared in self.store().dav_shared_with(self.account.id, kind).await? {
+        // Someone a calendar is shared with sees their own name, colour, order and time zone.
+        let mut prefs = match kind {
+            DavKind::Calendar => self.store().calendar_prefs(self.account.id).await?,
+            DavKind::Addressbook => Default::default(),
+        };
+        let mut views: Vec<View> = own
+            .into_iter()
+            .map(|c| {
+                let own = prefs.remove(&c.id).unwrap_or_default();
+                View { prefs: own, ..View::own(c, self.login) }
+            })
+            .collect();
+        for mut shared in self.store().dav_shared_with(self.account.id, kind).await? {
+            let own = prefs.remove(&shared.collection.id).unwrap_or_default();
+            shared.collection.apply_prefs(&own);
             views.push(View {
+                prefs: own,
                 segment: format!("{SHARED_PREFIX}{}", shared.collection.id),
                 collection: shared.collection,
                 access: DavAccess::Shared(shared.rights),
@@ -394,7 +408,14 @@ impl Session<'_> {
         }
         // Listing first makes the default collection exist before a client asks for it by name.
         self.store().dav_collections(self.account.id, kind, self.dav.default_collection(kind)).await?;
-        Ok(self.store().dav_collection(self.account.id, kind, segment).await?.map(|c| View::own(c, self.login)))
+        let Some(collection) = self.store().dav_collection(self.account.id, kind, segment).await? else {
+            return Ok(None);
+        };
+        let prefs = match kind {
+            DavKind::Calendar => self.store().calendar_prefs(self.account.id).await?.remove(&collection.id),
+            DavKind::Addressbook => None,
+        };
+        Ok(Some(View { prefs: prefs.unwrap_or_default(), ..View::own(collection, self.login) }))
     }
 
     async fn find(&self, kind: DavKind, segment: &str) -> Result<Option<Found>, StoreError> {
@@ -518,12 +539,50 @@ impl Session<'_> {
             Ok(None) => return simple(StatusCode::NOT_FOUND, "Not found"),
             Err(err) => return store_failure(err),
         };
-        if !view.access.may_admin() {
+        let (mut update, names) = collection_update(&root);
+        if *kind == DavKind::Calendar {
+            // Default alarms and being busy are everyone's own; events of the owner's that use the
+            // defaults take them over.
+            let own = match own_settings_update(&root) {
+                Ok(own) => own,
+                Err(message) => return simple(StatusCode::BAD_REQUEST, &message),
+            };
+            let defaults = own.default_alerts_with_time.is_some() || own.default_alerts_without_time.is_some();
+            if !own.is_empty() {
+                if let Err(err) = self.store().set_calendar_prefs(self.account.id, view.collection.id, own).await {
+                    return store_failure(err);
+                }
+                if view.access.is_owner()
+                    && defaults
+                    && let Err(err) =
+                        uwumail_jmap::calendar_alerts::apply(self.store(), self.account.id, view.collection.id).await
+                {
+                    return store_failure(err);
+                }
+            }
+        }
+        if !view.access.is_owner() && *kind == DavKind::Calendar {
+            // Name, colour, order and time zone of a calendar shared with the login are its own;
+            // the description is the owner's and needs all rights.
+            let prefs = CalendarPrefsUpdate {
+                name: update.display_name.take().map(|name| Some(name).filter(|n| !n.is_empty())),
+                color: update.color.take(),
+                sort_order: update.sort_order.take().map(Some),
+                timezone: update.timezone.take(),
+                ..Default::default()
+            };
+            if update.description.is_some() && !view.access.may_admin() {
+                return not_allowed("<d:write-properties/>");
+            }
+            if let Err(err) = self.store().set_calendar_prefs(self.account.id, view.collection.id, prefs).await {
+                return store_failure(err);
+            }
+        } else if !view.access.may_admin() {
             return not_allowed("<d:write-properties/>");
         }
-        let (update, names) = collection_update(&root);
-        if let Err(err) =
-            self.store().dav_update_collection(view.collection.account_id, view.collection.id, update).await
+        if (update.description.is_some() || view.access.is_owner() || *kind != DavKind::Calendar)
+            && let Err(err) =
+                self.store().dav_update_collection(view.collection.account_id, view.collection.id, update).await
         {
             return store_failure(err);
         }
@@ -605,8 +664,14 @@ impl Session<'_> {
             Err(err) => return store_failure(err),
         };
         let content_type = props::content_type(*kind, &resource.info.component);
+        // Someone the calendar is shared with sees only the times of what its owner keeps private.
+        let content = if *kind == DavKind::Calendar && !view.access.is_owner() {
+            itip::for_others(&resource.content).into_owned()
+        } else {
+            resource.content
+        };
         let mut response =
-            if head { StatusCode::OK.into_response() } else { (StatusCode::OK, resource.content).into_response() };
+            if head { StatusCode::OK.into_response() } else { (StatusCode::OK, content).into_response() };
         let headers = response.headers_mut();
         headers.insert(header::CONTENT_TYPE, HeaderValue::from_str(&content_type).expect("a plain content type"));
         if let Ok(etag) = HeaderValue::from_str(&resource.info.etag) {
@@ -669,6 +734,11 @@ impl Session<'_> {
         } else {
             None
         };
+        // An entry its owner keeps private is only the owner's to change: others never saw more
+        // than its times, and storing that would overwrite the rest.
+        if !view.access.is_owner() && old.as_ref().is_some_and(|old| itip::has_private(&old.content)) {
+            return not_allowed("<d:write-content/>");
+        }
         let mut condition = DavPrecondition {
             if_match: etag_header(headers, header::IF_MATCH),
             if_none_match_any: etag_header(headers, header::IF_NONE_MATCH).is_some_and(|value| value == "*"),
@@ -695,8 +765,11 @@ impl Session<'_> {
         }
         // One change may not send more scheduling messages than one mail may have recipients
         // (security-audit-0.16.0 PROTOCOLS-5); refused before anything is stored.
+        // Nobody hears about a draft of JMAP Calendars, whoever changes it.
+        let draft = old.as_ref().is_some_and(|old| old.info.draft);
         if *kind == DavKind::Calendar
             && view.access.is_owner()
+            && !draft
             && let Some(smtp) = &self.dav.inner.smtp
             && let Err(refused) =
                 smtp.check_schedule(self.account, old.as_ref().map(|old| old.content.as_str()), Some(&content)).await
@@ -712,7 +785,8 @@ impl Session<'_> {
             starts_at: checked.starts_at,
             ends_at: checked.ends_at,
         };
-        let outcome = self.store().dav_put(view.collection.account_id, view.collection.id, write, condition).await;
+        let (owner, collection) = (view.collection.account_id, view.collection.id);
+        let outcome = self.store().dav_put_by(Some(self.account.id), owner, collection, write, condition).await;
         let (status, etag) = match outcome {
             Ok(DavWriteOutcome::Created { etag }) => (StatusCode::CREATED, etag),
             Ok(DavWriteOutcome::Updated { etag }) => (StatusCode::NO_CONTENT, etag),
@@ -740,7 +814,9 @@ impl Session<'_> {
             }
             Err(err) => return store_failure(err),
         };
-        self.schedule(&view, old.as_ref().map(|old| old.content.as_str()), Some(&content)).await;
+        if !draft {
+            self.schedule(&view, old.as_ref().map(|old| old.content.as_str()), Some(&content)).await;
+        }
         let mut response = status.into_response();
         // What was stored is not what the client sent when answers were merged in: without an
         // ETag it reads the entry again.
@@ -783,10 +859,20 @@ impl Session<'_> {
                     return not_allowed("<d:unbind/>");
                 }
                 let old = if *kind == DavKind::Calendar { self.entry(&view, name).await.ok().flatten() } else { None };
+                if !view.access.is_owner() && old.as_ref().is_some_and(|old| itip::has_private(&old.content)) {
+                    return not_allowed("<d:unbind/>");
+                }
+                let old = old.filter(|old| !old.info.draft);
                 let if_match = etag_header(headers, header::IF_MATCH);
                 match self
                     .store()
-                    .dav_delete(view.collection.account_id, view.collection.id, name, if_match.clone())
+                    .dav_delete_by(
+                        Some(self.account.id),
+                        view.collection.account_id,
+                        view.collection.id,
+                        name,
+                        if_match.clone(),
+                    )
                     .await
                 {
                     Ok(true) => {
@@ -866,11 +952,15 @@ impl Session<'_> {
                     answer.properties.push(itip::Property::new("DTSTAMP", itip::stamp(now())));
                     answer.properties.push(itip::Property::new("DTSTART", itip::stamp(start)));
                     answer.properties.push(itip::Property::new("DTEND", itip::stamp(end)));
-                    for (from, to) in periods {
-                        answer.properties.push(itip::Property::new(
+                    for period in periods {
+                        let mut busy = itip::Property::new(
                             "FREEBUSY",
-                            format!("{}/{}", itip::stamp(from), itip::stamp(to)),
-                        ));
+                            format!("{}/{}", itip::stamp(period.start), itip::stamp(period.end)),
+                        );
+                        if period.status == "tentative" {
+                            busy.set_param("FBTYPE", "BUSY-TENTATIVE");
+                        }
+                        answer.properties.push(busy);
                     }
                     reply.components.push(answer);
                     ("2.0;Success", format!("<c:calendar-data>{}</c:calendar-data>", xml::escape(&reply.to_ics())))
@@ -891,10 +981,11 @@ xmlns:c=\"urn:ietf:params:xml:ns:caldav\">{responses}</c:schedule-response>\n"
     }
 
     /// When someone of this server is busy between `start` and `end`, merged; [`Busy::Unknown`]
-    /// for anyone else. Only one's own calendars count, not those shared with them, nor subscribed
-    /// ones: a holiday calendar does not make anyone busy. `looked_up` keeps what was found per
-    /// account, for addresses of the same person; the expanding runs on the blocking pool and stops
-    /// at `deadline`.
+    /// for anyone else, for masked addresses, which would tie them to their person, and for
+    /// people this account may not know of (security-audit-0.16.0 PROTOCOLS-L4, see
+    /// `availability::person_of`). The calendars that count are those JMAP's
+    /// `includeInAvailability` names, one's own by default. `looked_up` keeps what was found per
+    /// account, for addresses of the same person; the expanding stops at `deadline`.
     async fn busy(
         &self,
         address: &str,
@@ -903,66 +994,27 @@ xmlns:c=\"urn:ietf:params:xml:ns:caldav\">{responses}</c:schedule-response>\n"
         deadline: std::time::Instant,
         looked_up: &mut HashMap<i64, Busy>,
     ) -> Busy {
-        let Some(id) = self.calendar_owner(address).await else { return Busy::Unknown };
-        if let Some(known) = looked_up.get(&id) {
+        let Some(account) = uwumail_jmap::availability::person_of(self.store(), self.account.id, address).await else {
+            return Busy::Unknown;
+        };
+        if let Some(known) = looked_up.get(&account.id) {
             return known.clone();
         }
-        let found = self.busy_periods(id, start, end, deadline).await;
-        looked_up.insert(id, found.clone());
-        found
-    }
-
-    /// The account whose calendars answer for `address`, when it uses calendars.
-    async fn calendar_owner(&self, address: &str) -> Option<i64> {
-        let id = self.store().resolve_recipient(address).await.ok()??;
-        let id = self.store().delivery_target(id).await.ok()??;
-        let account = self.store().account_by_id(id).await.ok()??;
-        account.protocols.caldav.then_some(id)
-    }
-
-    async fn busy_periods(&self, id: i64, start: i64, end: i64, deadline: std::time::Instant) -> Busy {
         if std::time::Instant::now() > deadline {
             return Busy::OutOfTime;
         }
-        let Ok(collections) =
-            self.store().dav_collections(id, DavKind::Calendar, self.dav.default_collection(DavKind::Calendar)).await
-        else {
-            return Busy::Unknown;
-        };
-        let own: Vec<i64> = collections.into_iter().filter(|c| !c.subscribed).map(|c| c.id).collect();
-        let Ok(events) = self.store().calendar_events_between(id, None, Some(start), Some(end)).await else {
-            return Busy::Unknown;
-        };
-        let contents: Vec<String> =
-            events.into_iter().filter(|event| own.contains(&event.calendar_id)).map(|event| event.content).collect();
-        let expanded = tokio::task::spawn_blocking(move || {
-            let mut periods: Vec<(i64, i64)> = Vec::new();
-            for content in &contents {
-                if std::time::Instant::now() > deadline {
-                    return None;
+        let default = self.dav.default_collection(DavKind::Calendar);
+        let found =
+            match uwumail_jmap::availability::busy(self.store(), &account, default, start, end, deadline, None).await {
+                Ok(Ok(found)) => {
+                    let periods: Vec<_> = found.into_iter().map(|busy| busy.period).collect();
+                    Busy::Periods(uwumail_jmap::availability::merge(&periods))
                 }
-                periods.extend(
-                    uwumail_store::ical::busy_periods(content, start, end)
-                        .into_iter()
-                        .map(|(from, to)| (from.max(start), to.min(end))),
-                );
-            }
-            periods.sort_unstable();
-            let mut merged: Vec<(i64, i64)> = Vec::new();
-            for (from, to) in periods {
-                match merged.last_mut() {
-                    Some(last) if from <= last.1 => last.1 = last.1.max(to),
-                    _ => merged.push((from, to)),
-                }
-            }
-            Some(merged)
-        })
-        .await;
-        match expanded {
-            Ok(Some(merged)) => Busy::Periods(merged),
-            Ok(None) => Busy::OutOfTime,
-            Err(_) => Busy::Unknown,
-        }
+                Ok(Err(_)) => Busy::OutOfTime,
+                Err(_) => Busy::Unknown,
+            };
+        looked_up.insert(account.id, found.clone());
+        found
     }
 
     async fn report(&self, target: &Path, body: &Bytes) -> Response {
@@ -1115,6 +1167,47 @@ fn collection_update(root: &Element) -> (DavCollectionUpdate, Vec<(String, Strin
         }
     }
     (update, names)
+}
+
+/// What a PROPPATCH sets for the login itself: default alarms, as default alerts, and whether
+/// the calendar makes it busy (`schedule-calendar-transp`, as `includeInAvailability`).
+fn own_settings_update(root: &Element) -> Result<CalendarPrefsUpdate, String> {
+    let mut prefs = CalendarPrefsUpdate::default();
+    for instruction in &root.children {
+        let removing = match (instruction.ns.as_str(), instruction.name.as_str()) {
+            (DAV, "set") => false,
+            (DAV, "remove") => true,
+            _ => continue,
+        };
+        for property in instruction.children_named(DAV, "prop").flat_map(|prop| prop.children.iter()) {
+            let with_time = match (property.ns.as_str(), property.name.as_str()) {
+                (CALDAV, "default-alarm-vevent-datetime") => true,
+                (CALDAV, "default-alarm-vevent-date") => false,
+                (CALDAV, "schedule-calendar-transp") => {
+                    let transparent = property.child(CALDAV, "transparent").is_some();
+                    let include = if removing {
+                        None
+                    } else if transparent {
+                        Some("none")
+                    } else {
+                        Some("all")
+                    };
+                    prefs.include_in_availability = Some(include.map(str::to_owned));
+                    continue;
+                }
+                _ => continue,
+            };
+            let alerts =
+                if removing { None } else { uwumail_jmap::calendar_alerts::valarms_to_stored(&property.all_text())? };
+            let alerts = Some(alerts);
+            if with_time {
+                prefs.default_alerts_with_time = alerts;
+            } else {
+                prefs.default_alerts_without_time = alerts;
+            }
+        }
+    }
+    Ok(prefs)
 }
 
 fn find_components(root: &Element) -> Option<Vec<String>> {

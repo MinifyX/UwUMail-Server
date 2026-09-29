@@ -148,6 +148,20 @@ async fn forwarding_needs_confirmation_elsewhere_and_away_messages_need_text() {
         call(&app, "POST", "/api/account/forwarding/targets", target("sixth@elsewhere.example"), Some(&auth)).await;
     assert_eq!(error["code"], "forwardingThrottled", "five confirmations an hour per person");
 
+    // Once the login is older than a few minutes, sending mail off the server needs the password.
+    rusqlite::Connection::open(dir.path().join("uwumail.db"))
+        .unwrap()
+        .execute("UPDATE web_sessions SET created_at = created_at - 3600", [])
+        .unwrap();
+    let (status, error) =
+        call(&app, "POST", "/api/account/forwarding/targets", target("later@elsewhere.example"), Some(&auth)).await;
+    assert_eq!((status, error["code"].as_str()), (StatusCode::CONFLICT, Some("confirmPassword")));
+    let wrong = Some(json!({ "address": "later@elsewhere.example", "password": "falsch-falsch" }));
+    let (_, error) = call(&app, "POST", "/api/account/forwarding/targets", wrong, Some(&auth)).await;
+    assert_eq!(error["code"], "wrongPassword");
+    let (_, list) = call(&app, "GET", "/api/account/forwarding", None, Some(&auth)).await;
+    assert!(list["targets"].as_array().unwrap().iter().all(|t| t["address"] != "later@elsewhere.example"));
+
     let (_, forwarding) =
         call(&app, "PUT", "/api/account/forwarding/keep-copy", Some(json!({ "keep": false })), Some(&auth)).await;
     assert_eq!(forwarding["keepCopy"], false);

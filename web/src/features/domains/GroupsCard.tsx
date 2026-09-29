@@ -8,6 +8,7 @@ import { useT } from "@/i18n";
 import type { DomainDetail, GroupInfo, WhoMaySend } from "@/lib/api";
 import { MemberPicker, memberChoices, type PickedMember } from "@/features/people/MemberPicker";
 import { usePeople } from "@/features/people/queries";
+import { PictureCard } from "@/features/pictures/PictureCard";
 import { useCreateGroup, useRemoveGroup, useUpdateGroup } from "./queries";
 
 const WHO: WhoMaySend[] = ["anyone", "members", "domain"];
@@ -110,6 +111,16 @@ function GroupDialog({
           </Button>
         </div>
       </form>
+      {group && (
+        <div className="border-t border-hairline px-6 pt-4 pb-6">
+          <PictureCard
+            bare
+            endpoint={`/api/admin/domains/${encodeURIComponent(domain.name)}/groups/${encodeURIComponent(localOf(group.address))}/picture`}
+            title={t("pictures.group.title")}
+            intro={t("pictures.group.intro")}
+          />
+        </div>
+      )}
     </Dialog>
   );
 }

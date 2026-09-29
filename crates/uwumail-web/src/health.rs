@@ -164,6 +164,13 @@ async fn dns_area(web: &Web) -> ApiResult<Area> {
         let params = json!({ "domain": domain.name, "status": report.status });
         findings.push(Finding::new("dnsDomain", level, params).link(format!("/admin/domains/{}", domain.name)));
     }
+    // Upgrading to 0.16.0 left domains that only carried masked addresses offering them to nobody
+    // (security-audit-0.16.0 MD-1). Nothing is lost, but nobody can make new ones there until the
+    // admin makes such a domain masked-only and chooses it for the mail domains.
+    for (domain, count) in web.store().stranded_masked_domains().await? {
+        let params = json!({ "domain": domain, "count": count });
+        findings.push(Finding::new("maskedStranded", Level::Warning, params).link(format!("/admin/domains/{domain}")));
+    }
     if pending > 0 {
         let code = if web.dns().is_some() { "dnsPending" } else { "dnsUnavailable" };
         findings.push(Finding::new(code, Level::Unknown, json!({ "count": pending })));
