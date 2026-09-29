@@ -374,6 +374,23 @@ async fn a_mailbox_with_a_password_switches_to_signing_in() {
     let (_, view, _) = call(&portal.app, "GET", "/api/account/fetch", None, Some(&portal.auth), None).await;
     assert_eq!(view["accounts"][0]["signIn"], Value::Null);
 
+    // The grant's token goes to Google's servers only: they cannot be changed without a new
+    // sign-in or a password (OAUTH-01 of the 0.18.0 audit).
+    for change in [json!({ "host": "imap.example.net" }), json!({ "smtpHost": "smtp.example.net" })] {
+        let (status, refused, _) = call(
+            &portal.app,
+            "PATCH",
+            &format!("/api/account/fetch/{}", fetched.id),
+            Some(change),
+            Some(&portal.auth),
+            None,
+        )
+        .await;
+        assert!(status.is_client_error(), "{status} {refused}");
+    }
+    let kept = portal.store.fetch_account(portal.person, fetched.id).await.unwrap().unwrap();
+    assert_eq!((kept.host.as_str(), kept.smtp_host.as_str()), ("imap.gmail.com", "smtp.gmail.com"));
+
     // A password again switches it back.
     let (_, back, _) = call(
         &portal.app,
@@ -386,4 +403,25 @@ async fn a_mailbox_with_a_password_switches_to_signing_in() {
     .await;
     assert_eq!(back["auth"], "password");
     assert_eq!(portal.store.fetch_oauth(portal.person, fetched.id).await.unwrap().unwrap().refresh_token, None);
+}
+
+/// OAUTH-02 of the 0.18.0 audit: every start asks Microsoft for a code under the shared client id,
+/// so a person may only start so many in an hour.
+#[tokio::test]
+async fn starting_sign_ins_is_limited_per_person() {
+    let portal = portal().await;
+    let provider = Arc::new(Provider::default());
+    let oauth = portal.smtp.provider_oauth();
+    oauth.set_transport(provider.clone());
+    let body = json!({ "address": "mini@hotmail.de", "provider": "microsoft" });
+    for _ in 0..20 {
+        let (status, started, _) =
+            call(&portal.app, "POST", "/api/account/fetch/oauth/start", Some(body.clone()), Some(&portal.auth), None)
+                .await;
+        assert_eq!(status, StatusCode::OK, "{started}");
+    }
+    let (status, _, _) =
+        call(&portal.app, "POST", "/api/account/fetch/oauth/start", Some(body), Some(&portal.auth), None).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(provider.seen.lock().unwrap().len(), 20, "the refused start does not reach Microsoft");
 }

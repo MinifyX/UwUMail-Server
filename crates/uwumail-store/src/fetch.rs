@@ -468,17 +468,30 @@ fn check_grant(grant: &FetchGrant) -> Result<()> {
 }
 
 /// Puts a grant on a row, sealed, and starts it afresh: not expired, no failures behind it.
-fn set_grant(tx: &Connection, id: i64, grant: &FetchGrant) -> Result<()> {
+fn set_grant(tx: &Connection, account_id: i64, id: i64, grant: &FetchGrant) -> Result<()> {
     let refresh = seal(tx, &grant.tokens.refresh_token)?;
     let access = seal(tx, &grant.tokens.access_token)?;
     tx.execute(
         "UPDATE fetch_accounts
          SET auth = ?2, oauth_refresh = ?3, oauth_access = ?4, oauth_expires_at = ?5, oauth_expired = 0,
              oauth_retry_at = NULL, oauth_failures = 0, password_refused = 0, last_run_at = NULL
-         WHERE id = ?1",
-        params![id, grant.provider.as_str(), refresh, access, grant.tokens.expires_at],
+         WHERE id = ?1 AND account_id = ?6",
+        params![id, grant.provider.as_str(), refresh, access, grant.tokens.expires_at, account_id],
     )?;
     Ok(())
+}
+
+/// The user name a provider is asked for: trimmed, not empty, and without control characters, which
+/// would end the line of a `LOGIN` or add fields to a SASL XOAUTH2 string.
+fn check_username(username: &str) -> Result<String> {
+    let username = username.trim();
+    if username.is_empty() {
+        return Err(StoreError::Invalid("the provider needs a user name".into()));
+    }
+    if username.chars().any(char::is_control) {
+        return Err(StoreError::Invalid("the user name has a control character".into()));
+    }
+    Ok(username.to_owned())
 }
 
 impl Store {
@@ -584,10 +597,7 @@ impl Store {
         }
         let host = check_host(&new.host)?;
         let interval = check_interval(new.interval_secs)?;
-        let username = new.username.trim().to_owned();
-        if username.is_empty() {
-            return Err(StoreError::Invalid("the provider needs a user name".into()));
-        }
+        let username = check_username(&new.username)?;
         if let Some(grant) = &grant {
             check_grant(grant)?;
         } else if new.password.is_empty() {
@@ -634,7 +644,7 @@ impl Store {
             )?;
             let id = tx.last_insert_rowid();
             if let Some(grant) = &grant {
-                set_grant(tx, id, grant)?;
+                set_grant(tx, new.account_id, id, grant)?;
             }
             Ok(tx.query_row(&format!("SELECT {COLUMNS} FROM fetch_accounts WHERE id = ?1"), params![id], from_row)?)
         })
@@ -653,13 +663,47 @@ impl Store {
         let smtp_host = update.smtp_host.as_deref().map(check_host).transpose()?;
         let interval = update.interval_secs.map(check_interval).transpose()?;
         self.write(move |tx| {
-            let exists: bool = tx.query_row(
-                "SELECT EXISTS (SELECT 1 FROM fetch_accounts WHERE id = ?1 AND account_id = ?2)",
-                params![id, account_id],
-                |row| row.get(0),
-            )?;
-            if !exists {
+            type Current = (String, String, i64, String, String, String, i64, String);
+            let current: Option<Current> = tx
+                .query_row(
+                    "SELECT auth, host, port, security, username, smtp_host, smtp_port, smtp_security
+                     FROM fetch_accounts WHERE id = ?1 AND account_id = ?2",
+                    params![id, account_id],
+                    |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                            row.get(5)?,
+                            row.get(6)?,
+                            row.get(7)?,
+                        ))
+                    },
+                )
+                .optional()?;
+            let Some((auth, now_host, now_port, now_security, now_user, now_smtp, now_smtp_port, now_smtp_security)) =
+                current
+            else {
                 return Err(StoreError::NotFound(format!("fetched mailbox {id}")));
+            };
+            // A grant opens the provider's own servers only: its access token goes nowhere else. So a
+            // mailbox signed in at Microsoft or Google keeps the servers and the user name its sign-in
+            // set, unless the same change signs in anew or goes back to a password (OAUTH-01 of the
+            // 0.18.0 audit). Sending the same values again, as a form does, is no change.
+            let moves_servers = host.as_ref().is_some_and(|host| *host != now_host)
+                || update.port.is_some_and(|port| i64::from(port) != now_port)
+                || update.security.is_some_and(|security| security.as_str() != now_security)
+                || update.username.as_ref().is_some_and(|user| user.trim() != now_user)
+                || smtp_host.as_ref().is_some_and(|host| *host != now_smtp)
+                || update.smtp_port.is_some_and(|port| i64::from(port) != now_smtp_port)
+                || update.smtp_security.is_some_and(|security| security.as_str() != now_smtp_security);
+            if auth != "password" && moves_servers && update.oauth.is_none() && update.password.is_none() {
+                return Err(StoreError::Invalid(
+                    "a mailbox signed in at its provider keeps that provider's servers; sign in again or use a password to change them"
+                        .into(),
+                ));
             }
             // Every statement below asks for both, so a wrong owner changes nothing even if the
             // check above were ever removed.
@@ -680,15 +724,11 @@ impl Store {
                 set("security", &security.as_str())?;
             }
             if let Some(username) = &update.username {
-                let username = username.trim();
-                if username.is_empty() {
-                    return Err(StoreError::Invalid("the provider needs a user name".into()));
-                }
-                set("username", &username)?;
+                set("username", &check_username(username)?)?;
             }
             if let Some(grant) = &update.oauth {
                 check_grant(grant)?;
-                set_grant(tx, id, grant)?;
+                set_grant(tx, account_id, id, grant)?;
                 let sealed = seal(tx, "")?;
                 set("password", &sealed)?;
             } else if let Some(password) = &update.password {
@@ -1168,6 +1208,80 @@ mod tests {
             interval_secs: DEFAULT_FETCH_INTERVAL_SECS,
             auth_serv_id: String::new(),
         }
+    }
+
+    fn grant(provider: FetchAuth) -> FetchGrant {
+        FetchGrant {
+            provider,
+            tokens: FetchTokens {
+                access_token: "access".into(),
+                expires_at: now() + 3600,
+                refresh_token: "refresh".into(),
+            },
+        }
+    }
+
+    /// OAUTH-01 of the 0.18.0 audit: the access token of a grant goes to the provider's servers
+    /// only, so a signed-in mailbox cannot be pointed at other ones.
+    #[tokio::test]
+    async fn a_signed_in_mailbox_keeps_its_providers_servers() {
+        let (store, _dir, account_id) = store_with_person().await;
+        let mut new = new_account(account_id);
+        new.host = "outlook.office365.com".into();
+        let fetched = store.create_fetch_account_with(new, Some(grant(FetchAuth::Microsoft))).await.unwrap();
+        let moves = [
+            FetchAccountUpdate { host: Some("imap.example.net".into()), ..Default::default() },
+            FetchAccountUpdate { port: Some(143), ..Default::default() },
+            FetchAccountUpdate { username: Some("someone@example.net".into()), ..Default::default() },
+            FetchAccountUpdate { smtp_host: Some("smtp.example.net".into()), ..Default::default() },
+            FetchAccountUpdate { smtp_port: Some(25), ..Default::default() },
+        ];
+        for update in moves {
+            let refused = store.update_fetch_account(account_id, fetched.id, update.clone()).await;
+            assert!(matches!(refused, Err(StoreError::Invalid(_))), "{update:?}");
+        }
+        let kept = store.fetch_account(account_id, fetched.id).await.unwrap().unwrap();
+        assert_eq!(kept.host, "outlook.office365.com");
+        assert_eq!(kept.username, "mini@example.com");
+        // Other settings still change, the same servers may be sent again, and the servers change
+        // together with a new grant or a password.
+        let update = FetchAccountUpdate {
+            interval_secs: Some(600),
+            host: Some("Outlook.Office365.com".into()),
+            port: Some(993),
+            username: Some("mini@example.com".into()),
+            ..Default::default()
+        };
+        store.update_fetch_account(account_id, fetched.id, update).await.unwrap();
+        let update = FetchAccountUpdate {
+            host: Some("imap.gmail.com".into()),
+            oauth: Some(grant(FetchAuth::Google)),
+            ..Default::default()
+        };
+        store.update_fetch_account(account_id, fetched.id, update).await.unwrap();
+        let update = FetchAccountUpdate {
+            host: Some("imap.example.net".into()),
+            password: Some("app-password".into()),
+            ..Default::default()
+        };
+        let moved = store.update_fetch_account(account_id, fetched.id, update).await.unwrap();
+        assert_eq!(moved.host, "imap.example.net");
+        // With a password, the servers are the person's to choose.
+        let update = FetchAccountUpdate { host: Some("imap.example.org".into()), ..Default::default() };
+        store.update_fetch_account(account_id, fetched.id, update).await.unwrap();
+    }
+
+    /// OAUTH-06: a control character in the user name would end a LOGIN line or add SASL fields.
+    #[tokio::test]
+    async fn a_user_name_has_no_control_characters() {
+        let (store, _dir, account_id) = store_with_person().await;
+        let mut new = new_account(account_id);
+        new.username = "mini\u{1}auth=x@example.com".into();
+        assert!(matches!(store.create_fetch_account(new).await, Err(StoreError::Invalid(_))));
+        let fetched = store.create_fetch_account(new_account(account_id)).await.unwrap();
+        let update = FetchAccountUpdate { username: Some("mini\r\n@example.com".into()), ..Default::default() };
+        let refused = store.update_fetch_account(account_id, fetched.id, update).await;
+        assert!(matches!(refused, Err(StoreError::Invalid(_))));
     }
 
     #[tokio::test]

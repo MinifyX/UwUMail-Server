@@ -582,6 +582,15 @@ impl ProviderOAuth {
         switch_id: Option<i64>,
     ) -> Result<DeviceStart, String> {
         let client_id = self.microsoft_client_id().ok_or("oauthNotConfigured")?;
+        // Room for the flow first, so a full table does not cost Microsoft a request.
+        {
+            let mut flows = self.inner.flows.lock().unwrap_or_else(|e| e.into_inner());
+            let now = Instant::now();
+            flows.retain(|_, flow| flow.expires > now);
+            if flows.len() >= MAX_FLOWS && !flows.values().any(|flow| flow.owner == owner) {
+                return Err("busy".into());
+            }
+        }
         let tenant = if consumer { "consumers" } else { tenant_for(address) };
         let url = format!("{}/{tenant}/oauth2/v2.0/devicecode", self.endpoints().microsoft.trim_end_matches('/'));
         let (status, body) = self

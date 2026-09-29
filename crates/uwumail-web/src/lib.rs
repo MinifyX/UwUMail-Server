@@ -107,7 +107,7 @@ struct Inner {
     /// (tests hand in a server of their own).
     dav_transport: std::sync::OnceLock<Arc<dyn uwumail_dav::client::Transport>>,
     /// When each account last asked other providers for calendars, to keep that polite.
-    remote_calls: Mutex<HashMap<i64, Vec<i64>>>,
+    remote_calls: Mutex<HashMap<(i64, &'static str), Vec<i64>>>,
     /// Accounts moving calendars and contacts over from another provider right now.
     remote_imports: Arc<Mutex<std::collections::HashSet<i64>>>,
     /// Admin alerts: the last health overview and the lock around a look.
@@ -311,10 +311,16 @@ impl Web {
 
     /// Counts one request of an account to another provider; `false` past `per_hour` of them.
     pub(crate) fn allow_remote_call(&self, account_id: i64, per_hour: usize) -> bool {
+        self.allow_call(account_id, "remote", per_hour)
+    }
+
+    /// Counts one call of an account of the kind `kind`; `false` past `per_hour` of them. Each kind
+    /// has a budget of its own.
+    pub(crate) fn allow_call(&self, account_id: i64, kind: &'static str, per_hour: usize) -> bool {
         let now = health::unix_now();
         let mut calls = self.inner.remote_calls.lock().expect("remote calls poisoned");
         calls.retain(|_, times| times.last().is_some_and(|last| now - last < 3600));
-        let times = calls.entry(account_id).or_default();
+        let times = calls.entry((account_id, kind)).or_default();
         times.retain(|at| now - at < 3600);
         if times.len() >= per_hour {
             return false;

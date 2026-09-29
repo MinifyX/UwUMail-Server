@@ -227,6 +227,7 @@ pub async fn create(
     if let Some(flow) = new.oauth_flow.as_deref() {
         let granted = take_sign_in(&web, &session, flow, &new.address, None)?;
         let settings = granted.settings.clone().ok_or(ApiError::Internal)?;
+        let grant = FetchGrant { provider: granted.provider.auth(), tokens: granted.tokens };
         let created = web
             .store()
             .create_fetch_account_with(
@@ -243,14 +244,16 @@ pub async fn create(
                     interval_secs: new.interval_secs.unwrap_or(uwumail_store::DEFAULT_FETCH_INTERVAL_SECS),
                     auth_serv_id: new.auth_serv_id.unwrap_or_default(),
                 },
-                Some(FetchGrant { provider: granted.provider.auth(), tokens: granted.tokens }),
+                Some(grant.clone()),
             )
             .await?;
         // The outgoing server the sign-in proved is kept right away; answering from the address
         // still waits for one successful fetch, as with a password.
         let (smtp_host, smtp_port, smtp_security) = sending_of_settings(&settings);
         if smtp_host.is_some() {
-            let update = FetchAccountUpdate { smtp_host, smtp_port, smtp_security, ..Default::default() };
+            // With the grant again: the servers of a signed-in mailbox only change together with one.
+            let update =
+                FetchAccountUpdate { smtp_host, smtp_port, smtp_security, oauth: Some(grant), ..Default::default() };
             web.store().update_fetch_account(session.account.id, created.id, update).await?;
         }
         if new.take_existing == Some(true) {
@@ -389,13 +392,22 @@ pub async fn fetch_now(State(web): State<Web>, session: Session, Path(id): Path<
     Ok(StatusCode::ACCEPTED)
 }
 
+/// Sign-ins a person may start in an hour (OAUTH-02 of the 0.18.0 audit).
+const SIGN_INS_PER_HOUR: usize = 20;
+/// Provider looks a person may ask for in an hour.
+const DETECTS_PER_HOUR: usize = 300;
+
 #[derive(Deserialize)]
 pub struct Detect {
     address: String,
 }
 
 /// Whether an address is at Microsoft or Google, for the dialog to offer signing in there first.
-pub async fn detect(State(web): State<Web>, _session: Session, Json(detect): Json<Detect>) -> ApiResult<Json<Value>> {
+pub async fn detect(State(web): State<Web>, session: Session, Json(detect): Json<Detect>) -> ApiResult<Json<Value>> {
+    // Each look asks DNS for the domain's MX: plenty for typing addresses, not a lookup service.
+    if !web.allow_call(session.account.id, "fetch-detect", DETECTS_PER_HOUR) {
+        return Err(ApiError::TooManyAttempts);
+    }
     let found = provider_of(&web, &detect.address).await;
     let oauth = web.smtp().provider_oauth();
     Ok(Json(json!({
@@ -444,6 +456,11 @@ pub async fn start_sign_in(
     Json(start): Json<StartSignIn>,
 ) -> ApiResult<Response> {
     let client = client.map(|Extension(c)| c).unwrap_or_default();
+    // Every start asks the provider for a code under the client id all installations share; a
+    // person has no need for many of them, and the provider should not learn to throttle it.
+    if !web.allow_call(session.account.id, "fetch-sign-in", SIGN_INS_PER_HOUR) {
+        return Err(ApiError::TooManyAttempts);
+    }
     let address = start.address.trim().to_lowercase();
     let (_, domain) = uwumail_store::normalize_address(&address)
         .map_err(|_| ApiError::Rule("senderInvalid", format!("'{address}' is not an address")))?;
