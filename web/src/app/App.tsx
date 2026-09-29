@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Toaster } from "@/components/ui/Toaster";
 import { AccountHome } from "@/features/account/AccountHome";
+import { AccountAssistPage } from "@/features/assist/AccountAssistPage";
 import { CalendarsPage } from "@/features/calendars/CalendarsPage";
 import { FetchPage } from "@/features/fetch/FetchPage";
 import { MovingPage } from "@/features/moving/MovingPage";
@@ -77,6 +78,7 @@ function page(path: string, session: Session): ReactNode {
   if (path === "/account/addresses") return <AddressesPage />;
   if (path === "/account/masked") return <MaskedPage />;
   if (path === "/account/calendars") return <CalendarsPage />;
+  if (path === "/account/assist") return <AccountAssistPage webmail={session.webmail} />;
   if (path === "/account/spam") return <AccountSpamPage />;
   if (path === "/account/spam/lists") return <AccountSpamPage tab="lists" />;
   if (path === "/account/spam/learning") return <AccountSpamPage tab="learning" />;

@@ -106,6 +106,7 @@ import type {
   PictureVisibility,
 } from "@/lib/api";
 import { guessSenderKind } from "@/features/spam/senders";
+import { assistMockRoutes } from "./mockAssist";
 import { ruleRoutes } from "./mockRules";
 
 const now = Math.floor(Date.now() / 1000);
@@ -922,6 +923,7 @@ const settings: Record<string, { value: unknown; source: "default" | "database" 
   "egress.pictures": { value: true, source: "default" },
   "egress.updates": { value: true, source: "database" },
   "egress.fetch": { value: false, source: "default" },
+  "egress.assist": { value: false, source: "default" },
   "reports.send_tls_reports": { value: true, source: "default" },
   "log.loki.enabled": { value: false, source: "default" },
   "log.loki.privacy_consent": { value: false, source: "default" },
@@ -2483,6 +2485,7 @@ const routes: [string, RegExp, Handler][] = [
   // First, so they win over the older routes for the same addresses.
   ...ruleRoutes,
   ...pictureMockRoutes,
+  ...assistMockRoutes,
   ["GET", /^\/api\/admin\/alerts$/, () => [200, alertsView()]],
   [
     "POST",
