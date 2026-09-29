@@ -301,41 +301,70 @@ struct BreakerState {
     /// Tunnels that failed since the last one that came through, and the hosts they were for.
     failed_tunnels: u32,
     failed_hosts: Vec<String>,
+    /// The last address a tunnel reached: asked again before refused tunnels count as the proxy's
+    /// fault, so dead hosts someone asks for do not take the proxy out of use for everyone.
+    last_good: Option<SocketAddr>,
+}
+
+/// What [`Breaker::admits`] says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Admission {
+    /// The proxy is in use.
+    Yes,
+    /// The proxy rested and this request tries it again; its outcome alone decides.
+    Trial,
+    /// The proxy rests.
+    No,
 }
 
 impl Breaker {
     /// Whether a request may try the proxy now.
-    fn admits(&self) -> bool {
+    fn admits(&self) -> Admission {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let now = tokio::time::Instant::now();
         match state.resting_until {
-            None => true,
-            Some(until) if now < until => false,
+            None => Admission::Yes,
+            Some(until) if now < until => Admission::No,
             Some(_) => {
                 if state.trial_since.is_some_and(|since| now.duration_since(since) < TRIAL_PATIENCE) {
-                    return false;
+                    return Admission::No;
                 }
                 state.trial_since = Some(now);
-                true
+                Admission::Trial
             }
         }
     }
 
-    /// A tunnel came through. Answers whether the proxy had been resting.
-    fn succeeded(&self) -> bool {
+    /// A tunnel came through to `target`. Answers whether the proxy had been resting.
+    fn succeeded(&self, target: SocketAddr) -> bool {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         state.failed_tunnels = 0;
         state.failed_hosts.clear();
         state.trial_since = None;
+        state.last_good = Some(target);
         state.resting_until.take().is_some()
     }
 
-    /// Nothing came through for `host`. Answers whether the proxy starts resting because of this (and
-    /// was not resting before), which is logged once.
-    fn failed(&self, fault: Fault, host: &str) -> bool {
+    /// Where to look whether the proxy still reaches anything, when a refused tunnel for `host` would
+    /// make it rest: the last address it reached.
+    fn check_before_rest(&self, fault: Fault, host: &str, trial: bool) -> Option<SocketAddr> {
+        if fault != Fault::Tunnel {
+            return None;
+        }
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let hosts = state.failed_hosts.len() + usize::from(!state.failed_hosts.iter().any(|seen| seen == host));
+        let trips = trial || (state.failed_tunnels + 1 >= FAILED_TUNNELS && hosts >= FAILED_TUNNEL_HOSTS);
+        if trips { state.last_good } else { None }
+    }
+
+    /// Nothing came through for `host`. `trial`: this was the request that tried the proxy after its
+    /// rest; the failures of others that were still under way do not end the rest's trial. Answers
+    /// whether the proxy starts resting because of this (and was not resting before), which is logged
+    /// once.
+    fn failed(&self, fault: Fault, host: &str, trial: bool) -> bool {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let was_resting = state.resting_until.is_some();
-        let trial = state.trial_since.take().is_some();
+        let trial = trial && state.trial_since.take().is_some();
         let broken = match fault {
             Fault::Proxy => true,
             Fault::Tunnel => {
@@ -565,16 +594,18 @@ impl Connector {
                 return self.direct(&local).await;
             }
         }
-        if !self.ignores_breaker && !self.breaker.admits() {
+        let admission = if self.ignores_breaker { Admission::Yes } else { self.breaker.admits() };
+        if admission == Admission::No {
             tracing::debug!("the egress proxy is resting after it failed");
             return self.without_proxy(&targets, None).await;
         }
+        let trial = admission == Admission::Trial;
         let mut last = None;
         let mut fault = Fault::Tunnel;
         for target in &targets {
             match proxy.open(*target, self.connect_timeout).await {
                 Ok(stream) => {
-                    if self.breaker.succeeded() {
+                    if self.breaker.succeeded(*target) {
                         tracing::info!("the egress proxy works again");
                     }
                     return Ok(stream);
@@ -593,7 +624,20 @@ impl Connector {
             }
         }
         let err = last.unwrap_or_else(|| refused("no address to connect to"));
-        if self.breaker.failed(fault, uri.host().unwrap_or_default()) {
+        let host = uri.host().unwrap_or_default();
+        // Refused tunnels are the proxy's fault only when it reaches nothing any more: the last address
+        // it reached is asked first (EGRESS-1 of the 0.18.0 audit).
+        if let Some(good) = self.breaker.check_before_rest(fault, host, trial)
+            && let Ok(check) = proxy.open(good, self.connect_timeout).await
+        {
+            drop(check);
+            if self.breaker.succeeded(good) {
+                tracing::info!("the egress proxy works again");
+            }
+            tracing::debug!(%err, "no tunnel to this host, but the egress proxy reaches others");
+            return self.without_proxy(&targets, Some(err)).await;
+        }
+        if self.breaker.failed(fault, host, trial) {
             let rest = PROXY_REST.as_secs();
             match self.fallback {
                 Fallback::Direct => tracing::warn!(
@@ -1920,24 +1964,75 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn the_proxy_is_tried_again_after_its_rest() {
         let breaker = Breaker::default();
-        assert!(breaker.admits());
-        assert!(breaker.failed(Fault::Proxy, "a.example"), "the first failure is logged");
-        assert!(!breaker.admits() && breaker.resting());
+        let good: SocketAddr = "192.0.2.1:443".parse().unwrap();
+        assert_eq!(breaker.admits(), Admission::Yes);
+        assert!(breaker.failed(Fault::Proxy, "a.example", false), "the first failure is logged");
+        assert!(breaker.admits() == Admission::No && breaker.resting());
         tokio::time::advance(PROXY_REST + Duration::from_secs(1)).await;
-        assert!(breaker.admits(), "one request tries it again");
-        assert!(!breaker.admits(), "the others wait for that one");
-        assert!(!breaker.failed(Fault::Tunnel, "b.example"), "a failed trial rests again, without a new warning");
-        assert!(!breaker.admits());
+        assert_eq!(breaker.admits(), Admission::Trial, "one request tries it again");
+        assert_eq!(breaker.admits(), Admission::No, "the others wait for that one");
+        // A request that was still under way before the rest does not decide the trial (EGRESS-1).
+        assert!(!breaker.failed(Fault::Tunnel, "old.example", false));
+        assert_eq!(breaker.admits(), Admission::No, "the trial is still going");
+        assert!(!breaker.failed(Fault::Tunnel, "b.example", true), "a failed trial rests again, without a new warning");
+        assert_eq!(breaker.admits(), Admission::No);
         tokio::time::advance(PROXY_REST + Duration::from_secs(1)).await;
-        assert!(breaker.admits());
-        assert!(breaker.succeeded(), "it works again");
-        assert!(breaker.admits() && breaker.admits(), "everyone takes it again");
+        assert_eq!(breaker.admits(), Admission::Trial);
+        assert!(breaker.succeeded(good), "it works again");
+        assert!(breaker.admits() == Admission::Yes && breaker.admits() == Admission::Yes, "everyone takes it again");
         tokio::time::advance(PROXY_REST).await;
-        assert!(breaker.failed(Fault::Proxy, "a.example"));
+        assert!(breaker.failed(Fault::Proxy, "a.example", false));
         tokio::time::advance(PROXY_REST + Duration::from_secs(1)).await;
-        assert!(breaker.admits());
+        assert_eq!(breaker.admits(), Admission::Trial);
         tokio::time::advance(TRIAL_PATIENCE + Duration::from_secs(1)).await;
-        assert!(breaker.admits(), "a trial that never reported back is not waited for forever");
+        assert_eq!(breaker.admits(), Admission::Trial, "a trial that never reported back is not waited for forever");
+    }
+
+    /// EGRESS-1 of the 0.18.0 audit: refused tunnels to many hosts rest the proxy only when it does not
+    /// reach the last address it reached either, so someone asking for dead hosts does not take the
+    /// proxy out of use for everyone.
+    #[tokio::test]
+    async fn dead_hosts_do_not_rest_a_proxy_that_reaches_others() {
+        let (server, _) = pictures().await;
+        // The first tunnel and every one after the ninth come through; the eight between are refused.
+        let (proxy, asked) = scripted_proxy(|n| n == 0 || n >= 9).await;
+        let egress = quick_egress(&format!("http://{proxy}"), Fallback::Block, server);
+        assert!(egress.get("http://good.example/pixel.gif", "image/*", 1024).await.is_ok());
+        for host in ["a", "b", "c", "d", "e", "f", "g", "h"] {
+            assert!(egress.get(&format!("http://{host}.example/pixel.gif"), "image/*", 1024).await.is_err());
+        }
+        assert_eq!(asked.load(Ordering::Relaxed), 10, "the last address was asked once more");
+        assert!(!egress.status().proxy_resting);
+        let again = egress.get("http://good.example/pixel.gif", "image/*", 1024).await;
+        assert!(again.is_ok(), "{again:?} {}", asked.load(Ordering::Relaxed));
+    }
+
+    /// A CONNECT proxy that lets the `n`th tunnel through when `open(n)` says so and refuses it with a
+    /// 503 otherwise; counts the tunnels it was asked for.
+    async fn scripted_proxy(open: fn(u64) -> bool) -> (SocketAddr, Arc<AtomicU64>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let asked = Arc::new(AtomicU64::new(0));
+        let count = asked.clone();
+        tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let count = count.clone();
+                tokio::spawn(async move {
+                    let head = read_head(&mut stream).await;
+                    let n = count.fetch_add(1, Ordering::Relaxed);
+                    if !open(n) {
+                        let _ = stream.write_all(b"HTTP/1.1 503 Service Unavailable\r\n\r\n").await;
+                        return;
+                    }
+                    let target = head.split(' ').nth(1).unwrap().to_owned();
+                    let mut upstream = TcpStream::connect(target).await.unwrap();
+                    stream.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n").await.unwrap();
+                    let _ = tokio::io::copy_bidirectional(&mut stream, &mut upstream).await;
+                });
+            }
+        });
+        (address, asked)
     }
 
     /// Answers `/slow.png` with the start of a PNG, and the rest once `go` is told, or never.
