@@ -111,6 +111,23 @@ now carries Tesseract with German and English (about 40 MB more); without it the
   `AssistLabel`) with streaming as server-sent events at `/jmap/assist/stream`. Migration
   `0058_assist.sql`.
 
+**Security** ([docs/security-audit-0.18.0.md](docs/security-audit-0.18.0.md)): a review of everything
+new found one high and eight medium issues, all fixed before release, nothing that reaches another
+account's mail and no panic on text from outside.
+
+- A full birthdays calendar no longer breaks calendar listings (and holds the database writer) after
+  a language change; `Birthdays/scan` reads bounded entries one at a time; `uwuBirthday` only in the
+  birthdays calendar.
+- A fetched mailbox signed in at Microsoft or Google keeps its provider's servers, so its access
+  token goes nowhere else; sign-in starts are limited per person.
+- Dead hosts someone asks for no longer make the egress proxy rest for everyone.
+- AI requests are counted before they are made (streams that are left and requests side by side
+  included), and before any mail or picture is read for them; the providers' event streams are read
+  in linear time; one person's label queue or slow provider holds up nobody else.
+- Smaller fixes: OCR within its deadline and memory, unique cache temp files, NAT64/6to4 addresses
+  as private as the IPv4 address in them, one ChatGPT renewal at a time, no key hint of the admin's
+  key for people, headers escaped in prompts.
+
 ## 0.17.1
 
 **Masked addresses for UwULock Server, without the mailbox**

@@ -39,7 +39,10 @@ per feature what will be used.
 3. **What for**: each provider can be limited to some features.
 4. **Daily limits** per person: requests and/or tokens a day (UTC). Without a
    limit a person can use it as much as they like; the admin sees the counts
-   under *Usage* either way.
+   under *Usage* either way. A request counts when it starts, before the
+   provider is asked, and before any mail is read for it; its tokens are added
+   when it ends, estimated from what was sent and received when it failed or
+   the reader left a streamed answer.
 5. **The policy** for the whole server:
    - which features exist at all (switched off here, a feature is gone for
      everyone, including own providers);
@@ -248,7 +251,9 @@ reason. Delivery never waits for it. A busy provider (HTTP 429, a timeout) is
 tried again after one and after five minutes; after three tries, a wrong key
 or a day in the queue the mail is left without labels. Mail that was moved to
 Junk or the Trash meanwhile is skipped. Each mail counts against the daily
-limit like any other request.
+limit like any other request. The worker takes one mail per person at a time,
+four people side by side, and gives each mail 45 seconds before it tries
+again later; at most 200 mails of one person wait, more keep no labels.
 
 ## Spam check
 
