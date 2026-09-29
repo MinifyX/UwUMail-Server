@@ -516,7 +516,7 @@ pub struct BirthdayEvent {
 impl BirthdayEvent {
     /// How many years it is in `year`: the age on a birthday. `None` without a year, or before it.
     pub fn years_in(&self, year: i32) -> Option<i32> {
-        self.year.map(|born| year - born).filter(|years| *years >= 0)
+        self.year.and_then(|born| year.checked_sub(born)).filter(|years| *years >= 0)
     }
 
     /// The title CalDAV sees, the same every year.
@@ -595,7 +595,11 @@ pub fn birthday_event(content: &str) -> Option<BirthdayEvent> {
         kind: DateKind::parse(property.param("X-KIND")?)?,
         label: event.value(LABEL_PROPERTY).map(|label| clean(&unescape(label))).filter(|label| !label.is_empty()),
         name: clean(&unescape(&property.value)),
-        year: property.param("X-YEAR").and_then(|year| year.trim().parse().ok()),
+        // Any calendar entry can carry the marker: a year is only taken where one makes sense.
+        year: property
+            .param("X-YEAR")
+            .and_then(|year| year.trim().parse().ok())
+            .filter(|year| (1..=9999).contains(year)),
         language: BirthdayLanguage::from_code(property.param("X-LANGUAGE").unwrap_or("de")),
     })
 }
@@ -939,20 +943,29 @@ fn rebuild(
     let mut stmt = tx.prepare("SELECT name FROM dav_resources WHERE collection_id = ?1")?;
     let names: Vec<String> = stmt.query_map([calendar.id], |row| row.get(0))?.collect::<rusqlite::Result<_>>()?;
     drop(stmt);
-    let mut wanted_cards: Vec<i64> = Vec::new();
-    for (card, dates) in &cards {
-        wanted_cards.push(*card);
-        sync_card(tx, log, &calendar, *card, derived_events(*card, dates, language))?;
-    }
-    // Events of cards that are gone, or have no date any more.
+    let wanted_cards: std::collections::HashSet<i64> = cards.iter().map(|(card, _)| *card).collect();
+    // Events of cards that are gone, or have no date any more, go first: they make room.
+    let mut gone = std::collections::HashSet::new();
     for name in names {
         let card = name.strip_prefix("bday-").and_then(|rest| rest.split('-').next()).and_then(|id| id.parse().ok());
         match card {
             Some(card) if wanted_cards.contains(&card) => {}
-            Some(card) => sync_card(tx, log, &calendar, card, Vec::new())?,
+            Some(card) => {
+                if gone.insert(card) {
+                    sync_card(tx, log, &calendar, card, Vec::new())?;
+                }
+            }
             None => {
                 delete_entry_unchecked(tx, log, &calendar, &name, None)?;
             }
+        }
+    }
+    for (card, dates) in &cards {
+        match sync_card(tx, log, &calendar, *card, derived_events(*card, dates, language)) {
+            // A full calendar (50 000 entries) leaves the card's dates out, as `index_card` does:
+            // failing here would undo the whole rebuild, and the next listing would start it again.
+            Err(StoreError::QuotaExceeded) => {}
+            other => other?,
         }
     }
     Ok(Some(calendar))
@@ -1406,6 +1419,30 @@ UID:nyu\r\nEND:VCARD\r\n";
                 .unwrap();
             assert_eq!(events(&store, leni).await.len(), 1);
             assert_eq!(events(&store, mini).await.len(), 2);
+        }
+
+        /// BDAY-1 of the 0.18.0 audit: a full birthdays calendar did not stop a rebuild from
+        /// failing, and a failed rebuild was started again by every calendar listing.
+        #[tokio::test]
+        async fn a_full_calendar_does_not_break_the_listing() {
+            let (store, _dir) = store().await;
+            let mini = account(&store, "mini@example.org").await;
+            let contacts = store.dav_collections(mini, DavKind::Addressbook, book()).await.unwrap()[0].clone();
+            // Two dates on each of 200 cards: more than a calendar holds (300 in the store's tests).
+            for n in 0..200 {
+                let uid = format!("c{n}");
+                let card = vcard(&uid, &format!("Card {n}"), "BDAY:2000-01-01\r\nANNIVERSARY:2020-06-01\r\n");
+                store.dav_put(mini, contacts.id, put(&uid, card), DavPrecondition::default()).await.unwrap();
+            }
+            assert_eq!(events(&store, mini).await.len() as i64, crate::dav::DAV_RESOURCES_PER_COLLECTION);
+
+            let mut english = serde_json::Map::new();
+            english.insert("language".into(), serde_json::json!("en"));
+            store.update_preferences(mini, english).await.unwrap();
+            let listed =
+                store.dav_collections(mini, DavKind::Calendar, NewDavCollection::default_calendar("Kalender")).await;
+            let birthdays = listed.expect("the listing works").into_iter().find(|c| c.birthdays).unwrap();
+            assert_eq!(birthdays.display_name, "Birthdays", "the new language stuck");
         }
 
         #[tokio::test]

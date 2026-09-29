@@ -25,6 +25,12 @@ pub const MAX_CANDIDATES: usize = 1_000;
 pub const MAX_OPTIONS: usize = 10;
 /// The longest name a title gives, in characters.
 const MAX_NAME_CHARS: usize = 200;
+/// Larger events and cards are not read by a scan: a birthday entry is a few hundred bytes, and a
+/// scan should not hold thousands of entries of up to a MiB each (BDAY-2 of the 0.18.0 audit).
+const MAX_SCANNED_BYTES: i64 = 64 * 1024;
+/// Cards a scan compares the events with, and names it keeps of each card.
+const MAX_SCANNED_CARDS: usize = 20_000;
+const MAX_NAMES_PER_CARD: usize = 12;
 /// Titles longer than this are no birthday entries.
 const MAX_TITLE_CHARS: usize = 300;
 
@@ -293,7 +299,7 @@ fn known_card(card_id: i64, address_book_id: i64, content: &str) -> Option<Known
     for entry in &card.entries {
         if entry.name == VCardProperty::N {
             let (surname, given) = (text(entry.values.first()), text(entry.values.get(1)));
-            if !surname.is_empty() && !given.is_empty() {
+            if !surname.is_empty() && !given.is_empty() && names.len() + 2 <= MAX_NAMES_PER_CARD {
                 names.push(NameKeys::of(&format!("{given} {surname}")));
                 names.push(NameKeys::of(&format!("{surname} {given}")));
             }
@@ -301,7 +307,7 @@ fn known_card(card_id: i64, address_book_id: i64, content: &str) -> Option<Known
         if entry.name == VCardProperty::Nickname {
             for value in &entry.values {
                 let nick = text(Some(value));
-                if !nick.trim().is_empty() {
+                if !nick.trim().is_empty() && names.len() < MAX_NAMES_PER_CARD {
                     names.push(NameKeys::of(&nick));
                 }
             }
@@ -393,10 +399,12 @@ fn candidate_state(found: &FoundBirthday, choices: &[&KnownCard]) -> MatchState 
 fn writable_cards(conn: &Connection, account_id: i64) -> Result<Vec<KnownCard>> {
     let mut stmt = conn.prepare(&format!(
         "SELECT r.id, r.collection_id, r.content FROM dav_resources r JOIN dav_collections c ON c.id = r.collection_id
-         WHERE {VISIBLE} AND c.kind = 'addressbook' AND r.component = 'VCARD'"
+         WHERE {VISIBLE} AND c.kind = 'addressbook' AND r.component = 'VCARD' AND r.size <= ?2
+         ORDER BY r.id"
     ))?;
-    let rows = stmt
-        .query_map([account_id], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, String>(2)?)))?;
+    let rows = stmt.query_map(params![account_id, MAX_SCANNED_BYTES], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, String>(2)?))
+    })?;
     let mut cards = Vec::new();
     let mut writable: std::collections::HashMap<i64, bool> = Default::default();
     for row in rows {
@@ -414,6 +422,9 @@ fn writable_cards(conn: &Connection, account_id: i64) -> Result<Vec<KnownCard>> 
         }
         if let Some(card) = known_card(id, book, &content) {
             cards.push(card);
+            if cards.len() >= MAX_SCANNED_CARDS {
+                break;
+            }
         }
     }
     Ok(cards)
@@ -669,17 +680,22 @@ impl Store {
                 "SELECT r.id, r.collection_id, r.content FROM dav_resources r JOIN dav_collections c ON c.id = r.collection_id
                  WHERE {VISIBLE} AND c.kind = 'calendar' AND r.component = 'VEVENT'
                    AND NOT EXISTS (SELECT 1 FROM birthday_calendars b WHERE b.collection_id = c.id)
+                   AND r.size <= ?3
                    AND (r.content LIKE '%YEARLY%' OR r.content LIKE '%BIRTHDAY%' OR r.content LIKE '%GEBURTSTAG%')
                  ORDER BY r.id LIMIT ?2"
             ))?;
-            let rows: Vec<(i64, i64, String)> = stmt
-                .query_map(params![account_id, MAX_SCANNED_EVENTS as i64 + 1], |row| {
-                    Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-                })?
-                .collect::<rusqlite::Result<_>>()?;
-            let mut truncated = rows.len() > MAX_SCANNED_EVENTS;
+            // One entry at a time, not all of them in memory at once.
+            let rows = stmt.query_map(params![account_id, MAX_SCANNED_EVENTS as i64 + 1, MAX_SCANNED_BYTES], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, String>(2)?))
+            })?;
+            let mut truncated = false;
             let mut found: Vec<(i64, i64, String, FoundBirthday)> = Vec::new();
-            for (id, calendar, content) in rows.into_iter().take(MAX_SCANNED_EVENTS) {
+            for (seen, row) in rows.enumerate() {
+                if seen >= MAX_SCANNED_EVENTS {
+                    truncated = true;
+                    break;
+                }
+                let (id, calendar, content) = row?;
                 if let Some(birthday) = birthday_in_event(&content) {
                     let title = Component::parse(&content)
                         .and_then(|c| c.main_event().and_then(|e| e.value("SUMMARY")).map(crate::birthdays::unescape_text))
@@ -821,6 +837,17 @@ SUMMARY:Geburtstag Max\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
         known_card(id, 1, content).unwrap()
     }
 
+    /// BDAY-2 of the 0.18.0 audit: a card keeps a bounded number of names for the matching.
+    #[test]
+    fn a_card_has_a_bounded_number_of_names() {
+        let nicknames: Vec<String> = (0..500).map(|n| format!("Nick{n}")).collect();
+        let content = format!(
+            "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Max\r\nN:Muster;Max;;;\r\nNICKNAME:{}\r\nUID:1\r\nEND:VCARD\r\n",
+            nicknames.join(",")
+        );
+        assert_eq!(card(1, &content).names.len(), MAX_NAMES_PER_CARD);
+    }
+
     #[test]
     fn contacts_match_by_name() {
         let cards = vec![
@@ -933,6 +960,11 @@ DTSTAMP:20260101T000000Z\r\nDTSTART;VALUE=DATE:{start}\r\nRRULE:FREQ=YEARLY\r\nS
                 let put = write(&format!("{uid}.ics"), uid, "VEVENT", event(uid, summary, start));
                 store.dav_put(mini, calendar.id, put, DavPrecondition::default()).await.unwrap();
             }
+            // An entry far larger than a birthday is not read by a scan (BDAY-2 of the 0.18.0 audit).
+            let big = event("e5", "Geburtstag von Max Mueller", "20100412")
+                .replace("END:VEVENT", &format!("DESCRIPTION:{}\r\nEND:VEVENT", "x".repeat(70_000)));
+            let put = write("e5.ics", "e5", "VEVENT", big);
+            store.dav_put(mini, calendar.id, put, DavPrecondition::default()).await.unwrap();
             let (found, truncated) = store.scan_birthday_events(mini).await.unwrap();
             assert!(!truncated);
             assert_eq!(found.len(), 3, "{found:?}");

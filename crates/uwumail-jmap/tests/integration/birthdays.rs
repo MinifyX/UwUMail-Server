@@ -297,3 +297,35 @@ async fn birthdays_move_out_of_other_calendars() {
     );
     assert!(server.call("Birthdays/scan", json!({})).await["candidates"].as_array().unwrap().is_empty());
 }
+
+/// BDAY-3 and BDAY-7 of the 0.18.0 audit: the birthday marker counts only in the birthdays
+/// calendar, and `deleteEvent` is a boolean.
+#[tokio::test(flavor = "multi_thread")]
+async fn only_the_birthdays_calendar_has_birthdays() {
+    let server = server().await;
+    server.calendars().await;
+    let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//t//EN\r\nBEGIN:VEVENT\r\nUID:fake\r\nDTSTAMP:20260101T000000Z\r\n\
+DTSTART;VALUE=DATE:20261020\r\nRRULE:FREQ=YEARLY\r\nSUMMARY:Geburtstag von Max\r\n\
+X-UWUMAIL-BIRTHDAY;X-CARD=1;X-KIND=birth;X-YEAR=-2147483648:Max\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+    let slug = "/dav/calendars/mini@example.org/personal/fake.ics";
+    let (status, body) = server.send("PUT", slug, &[("content-type", "text/calendar")], ics.into()).await;
+    assert!(status.is_success(), "{status} {body}");
+    let events = server.call("CalendarEvent/get", json!({})).await;
+    let fake = &events["list"][0];
+    assert_eq!(fake["title"], "Geburtstag von Max", "{events}");
+    assert!(fake["uwuBirthday"].is_null(), "{fake}");
+
+    let personal = server.calendars().await.into_iter().find(|c| c["isDefault"] == true).unwrap();
+    let yearly = json!({ "calendarIds": { personal["id"].as_str().unwrap(): true }, "title": "Geburtstag von Leni",
+        "start": "2010-02-28T00:00:00", "duration": "P1D", "showWithoutTime": true,
+        "recurrenceRule": { "@type": "RecurrenceRule", "frequency": "yearly" } });
+    let set = server.call("CalendarEvent/set", json!({ "create": { "leni": yearly } })).await;
+    let leni = set["created"]["leni"]["id"].as_str().unwrap_or_else(|| panic!("{set}")).to_owned();
+    let imported = server
+        .call(
+            "Birthdays/import",
+            json!({ "entries": { &leni: { "newContact": { "name": "Leni" }, "deleteEvent": "no" } } }),
+        )
+        .await;
+    assert_eq!(imported["notImported"][&leni]["type"], "invalidProperties", "{imported}");
+}

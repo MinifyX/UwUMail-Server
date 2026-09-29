@@ -15,7 +15,11 @@ use crate::db::{next_modseq, record_change};
 use crate::{Result, Store, StoreError, now};
 
 /// Entries per collection, and bytes per entry. Calendars of real people stay far below both.
+#[cfg(not(test))]
 pub const DAV_RESOURCES_PER_COLLECTION: i64 = 50_000;
+/// The store's own tests fill a collection up without writing 50 000 entries.
+#[cfg(test)]
+pub const DAV_RESOURCES_PER_COLLECTION: i64 = 300;
 pub const DAV_RESOURCE_MAX_BYTES: usize = 1024 * 1024;
 pub const DAV_COLLECTIONS_PER_ACCOUNT: i64 = 100;
 

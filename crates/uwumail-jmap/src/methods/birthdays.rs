@@ -117,7 +117,11 @@ pub async fn import(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
             let entry = entry.as_object().ok_or_else(|| SetError::new("invalidArguments", "an entry is an object"))?;
             let event_id = ctx.parse_id('v', event).ok_or_else(SetError::not_found)?;
             let target = target_of(ctx, entry)?;
-            let delete_event = entry.get("deleteEvent").and_then(Value::as_bool).unwrap_or(true);
+            let delete_event = match entry.get("deleteEvent") {
+                None | Some(Value::Null) => true,
+                Some(Value::Bool(delete)) => *delete,
+                Some(_) => return Err(SetError::invalid_properties(&["deleteEvent"], "must be true or false")),
+            };
             match ctx.jmap.store.move_birthday(ctx.account.id, event_id, target, delete_event).await {
                 Ok(moved) => Ok(json!({
                     "contactId": ids::contact_card(moved.card_id),
