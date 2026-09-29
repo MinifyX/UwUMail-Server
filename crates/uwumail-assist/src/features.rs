@@ -835,7 +835,7 @@ fn participants(named: &[Value], context: &EventContext<'_>) -> Vec<Participant>
             let wanted = normalized(text);
             let exact: Vec<&(String, String)> =
                 context.people.iter().filter(|(name, _)| !name.is_empty() && normalized(name) == wanted).collect();
-            let found = match exact.first() {
+            match exact.first() {
                 Some(first) if exact.iter().all(|p| p.1 == first.1) => Some((*first).clone()),
                 _ => {
                     // "Leni" for "Leni Beispiel", when only one person is meant.
@@ -851,8 +851,7 @@ fn participants(named: &[Value], context: &EventContext<'_>) -> Vec<Participant>
                         _ => None,
                     }
                 }
-            };
-            found
+            }
         };
         let Some((name, email)) = found else { continue };
         if context.mine.contains(&email) || out.iter().any(|p| p.email == email) {

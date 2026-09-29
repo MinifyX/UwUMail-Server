@@ -93,7 +93,7 @@ pub const KINDS: &[KindInfo] = &[
         kind: "anthropic",
         name: "Anthropic Claude",
         default_base_url: Some("https://api.anthropic.com/v1"),
-        base_url: BaseUrl::Fixed,
+        base_url: BaseUrl::Optional,
         key: Key::Required,
         model: Some("claude-sonnet-5"),
         fast_model: Some("claude-haiku-4-5"),

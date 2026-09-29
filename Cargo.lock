@@ -4531,15 +4531,18 @@ dependencies = [
 name = "uwumail-assist"
 version = "0.17.0"
 dependencies = [
+ "axum",
  "base64 0.23.1",
  "bytes",
  "chrono",
  "chrono-tz",
+ "futures-util",
  "getrandom 0.4.3",
  "hex",
  "http-body-util",
  "hyper",
  "mail-parser",
+ "rusqlite",
  "serde",
  "serde_json",
  "tempfile",

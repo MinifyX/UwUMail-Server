@@ -28,4 +28,7 @@ tracing.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+axum.workspace = true
+futures-util.workspace = true
+rusqlite.workspace = true
 tempfile.workspace = true
