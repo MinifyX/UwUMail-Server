@@ -113,6 +113,8 @@ pub const SETTINGS: &[SettingSpec] = &[
     spec("egress.pictures", SettingKind::Bool),
     spec("egress.updates", SettingKind::Bool),
     spec("egress.fetch", SettingKind::Bool),
+    // The shared cache of remote pictures in messages, in megabytes; 0 keeps none (docs/jmap-remote.md).
+    spec("egress.image_cache_mb", SettingKind::Integer { min: 0, max: 102_400 }),
     // Daily TLS reports (RFC 8460) to the domains mail went to, when they ask for them.
     spec("reports.send_tls_reports", SettingKind::Bool),
     // Prometheus metrics under /metrics (docs/metrics.md).

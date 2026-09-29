@@ -31,6 +31,7 @@ pub mod pictures;
 pub mod profile_pictures;
 pub mod reachability;
 mod relay;
+pub mod remote_images;
 mod reports;
 mod rules;
 pub mod scheduling;

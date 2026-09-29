@@ -614,7 +614,7 @@ pub struct Fetched {
     pub url: Url,
 }
 
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 pub enum EgressError {
     #[error("{0}")]
     NotAllowed(String),
@@ -805,6 +805,20 @@ impl Egress {
                 pinned,
             }),
         }
+    }
+
+    /// Every name leads to `pinned`, and connecting gives up within a second: for tests elsewhere in this
+    /// crate.
+    #[cfg(test)]
+    pub(crate) fn pinned_to(pinned: SocketAddr) -> Egress {
+        let quick = Duration::from_secs(1);
+        let egress = Egress::build(
+            rustls::RootCertStore::empty(),
+            ConnectTimeouts { usual: quick, pictures: quick },
+            Some(pinned),
+        );
+        egress.reconfigure(&EgressConfig::default()).expect("no proxy to get wrong");
+        egress
     }
 
     /// Every name leads to `pinned`, whose certificate is trusted: websites for tests elsewhere in this crate.
@@ -1032,7 +1046,7 @@ pub struct PictureLimits {
 
 impl Default for PictureLimits {
     fn default() -> Self {
-        PictureLimits { answer: Duration::from_secs(6), stall: Duration::from_secs(5), total: Duration::from_secs(30) }
+        PictureLimits { answer: Duration::from_secs(6), stall: Duration::from_secs(5), total: Duration::from_secs(20) }
     }
 }
 

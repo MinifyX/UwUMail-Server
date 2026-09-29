@@ -3433,6 +3433,8 @@
       "fetchHint": "Gmail, GMX und Co. sehen dann den VPN statt deines Servers. Manche Anbieter sperren VPN-Adressen, dann schlägt das Abholen fehl.",
       "fetchShort": "Postfach-Abruf",
       "fallbackHint": "Was passiert, solange der VPN oder Proxy nicht erreichbar ist.",
+      "imageCache": "Zwischenspeicher für Bilder in Nachrichten (MB)",
+      "imageCacheHint": "Bilder aus Mails werden einmal für alle geholt und bis zu 7 Tage auf dem Server behalten; ist er voll, fallen die am längsten nicht gebrauchten heraus. 0 schaltet ihn ab.",
       "proxy": "Eigener Proxy statt VPN",
       "proxyHint": "http://host:port oder socks5://user:passwort@host:1080. Leer lassen, um nichts zu ändern.",
       "proxyCurrent": "Gerade: {{proxy}}. Eine neue Adresse ersetzt ihn.",

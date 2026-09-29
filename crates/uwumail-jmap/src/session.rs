@@ -141,6 +141,7 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
             UNSUBSCRIBE: {},
             REMOTE: {
                 "imageUrl": format!("{base}/jmap/image/{{accountId}}?url={{url}}"),
+                "imageSizesUrl": format!("{base}/jmap/image/{{accountId}}/sizes"),
                 "pictureUrl": format!("{base}/jmap/picture/{{accountId}}?email={{email}}"),
                 "maxSizeImage": crate::remote::MAX_IMAGE_BYTES
             }

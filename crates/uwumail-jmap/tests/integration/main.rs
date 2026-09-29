@@ -13,6 +13,7 @@ mod masked_email;
 mod pictures;
 mod profile;
 mod query_changes;
+mod remote_images;
 mod sharing;
 mod sieve;
 mod signatures;

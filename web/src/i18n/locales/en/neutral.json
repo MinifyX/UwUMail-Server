@@ -3433,6 +3433,8 @@
       "fetchHint": "Gmail, GMX and the like then see the VPN instead of your server. Some providers block VPN addresses; fetching then fails.",
       "fetchShort": "Mailbox fetching",
       "fallbackHint": "What happens while the VPN or proxy cannot be reached.",
+      "imageCache": "Cache for pictures in messages (MB)",
+      "imageCacheHint": "Pictures in mails are fetched once for everyone and kept on the server for up to 7 days; when it is full, the ones unused the longest go first. 0 turns it off.",
       "proxy": "Own proxy instead of the VPN",
       "proxyHint": "http://host:port or socks5://user:password@host:1080. Leave empty to change nothing.",
       "proxyCurrent": "Right now: {{proxy}}. A new address replaces it.",

@@ -3433,6 +3433,8 @@
       "fetchHint": "Gmail, GMX en dergelijke zien dan de VPN in plaats van je server. Sommige providers blokkeren VPN-adressen; ophalen mislukt dan.",
       "fetchShort": "Mailboxen ophalen",
       "fallbackHint": "Wat er gebeurt terwijl de VPN of proxy niet bereikbaar is.",
+      "imageCache": "Cache voor afbeeldingen in berichten (MB)",
+      "imageCacheHint": "Afbeeldingen in mails worden één keer voor iedereen opgehaald en tot 7 dagen op de server bewaard; is hij vol, dan gaan de langst ongebruikte eerst weg. 0 zet hem uit.",
       "proxy": "Eigen proxy in plaats van de VPN",
       "proxyHint": "http://host:port of socks5://user:password@host:1080. Laat leeg om niets te veranderen.",
       "proxyCurrent": "Op dit moment: {{proxy}}. Een nieuw adres vervangt het.",

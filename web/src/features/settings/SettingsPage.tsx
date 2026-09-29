@@ -179,7 +179,7 @@ export function ToggleField({
   );
 }
 
-function NumberField({
+export function NumberField({
   form,
   settingKey,
   label,

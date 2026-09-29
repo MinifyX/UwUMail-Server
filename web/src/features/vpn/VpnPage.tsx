@@ -21,7 +21,7 @@ import { Card, CopyButton } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, Segmented, Select, TextInput } from "@/components/ui/Field";
 import { updateCommand } from "@/features/admin/host";
-import { ChoiceField, LockedHint, Section, ToggleField, type Form } from "@/features/settings/SettingsPage";
+import { ChoiceField, LockedHint, NumberField, Section, ToggleField, type Form } from "@/features/settings/SettingsPage";
 import { useT } from "@/i18n";
 import {
   api,
@@ -799,6 +799,12 @@ function RoutesFields({ form, vpn }: { form: Form; vpn: VpnView }) {
           { value: "direct", label: t("settings.egress.fallbackOptions.direct") },
         ]}
       />
+      <NumberField
+        form={form}
+        settingKey="egress.image_cache_mb"
+        label={t("vpn.routes.imageCache")}
+        hint={t("vpn.routes.imageCacheHint")}
+      />
       <Field
         label={t("vpn.routes.proxy")}
         hint={
@@ -870,7 +876,14 @@ export function VpnPage() {
         title={t("vpn.routes.title")}
         intro={t("vpn.routes.intro")}
         view={settings.data}
-        keys={["egress.pictures", "egress.updates", "egress.fetch", "egress.fallback", "egress.proxy"]}
+        keys={[
+          "egress.pictures",
+          "egress.updates",
+          "egress.fetch",
+          "egress.fallback",
+          "egress.image_cache_mb",
+          "egress.proxy",
+        ]}
         onSaved={() => {
           void queryClient.invalidateQueries({ queryKey: vpnKey });
           void queryClient.invalidateQueries({ queryKey: egressKey });

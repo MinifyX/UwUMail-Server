@@ -3502,6 +3502,8 @@
       "fetchHint": "Gmail, GMX et consorts voient alors le VPN au lieu de votre serveur. Certains fournisseurs bloquent les adresses VPN ; le relevé échoue alors.",
       "fetchShort": "Relevé de boîtes mail",
       "fallbackHint": "Ce qui se passe tant que le VPN ou le proxy est injoignable.",
+      "imageCache": "Cache des images des messages (Mo)",
+      "imageCacheHint": "Les images des e-mails sont récupérées une seule fois pour tout le monde et gardées sur le serveur jusqu'à 7 jours ; quand il est plein, celles inutilisées depuis le plus longtemps partent en premier. 0 le désactive.",
       "proxy": "Propre proxy au lieu du VPN",
       "proxyHint": "http://host:port ou socks5://user:password@host:1080. Laissez vide pour ne rien changer.",
       "proxyCurrent": "Actuellement : {{proxy}}. Une nouvelle adresse le remplace.",
