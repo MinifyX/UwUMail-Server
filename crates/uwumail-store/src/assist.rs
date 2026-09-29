@@ -1090,7 +1090,8 @@ mod tests {
     #[test]
     fn days_are_utc_dates() {
         assert_eq!(utc_day(0), "1970-01-01");
-        assert_eq!(utc_day(1_790_640_000), "2026-09-28");
+        assert_eq!(utc_day(1_790_553_600), "2026-09-28");
+        assert_eq!(utc_day(1_790_639_999), "2026-09-28");
         assert_eq!(utc_day(951_782_400), "2000-02-29");
         assert_eq!(utc_day(-1), "1969-12-31");
     }

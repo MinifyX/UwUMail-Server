@@ -425,8 +425,8 @@ impl Connector {
 
     async fn connect(&self, target: SocketAddr) -> std::io::Result<TcpStream> {
         // A proxy (a VPN) cannot reach into the local network; such addresses are only ever allowed on
-        // purpose, and are reached directly.
-        let Some(proxy) = self.proxy.as_ref().filter(|_| is_public(target.ip())) else {
+        // purpose (a reach beyond public), and are reached directly.
+        let Some(proxy) = self.proxy.as_ref().filter(|_| self.reach == Reach::Public || is_public(target.ip())) else {
             return timed(TcpStream::connect(target)).await;
         };
         let err = match proxy.open(target).await {
