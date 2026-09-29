@@ -516,3 +516,83 @@ async fn apps_signed_in_with_oauth_end_when_the_mailbox_becomes_a_service() {
     let (status, _) = portal(&app, "GET", &format!("/api/oauth/authorize?{query}"), Value::Null, &auth).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
+
+/// A password manager's server (UwULock Server) connects the way docs/jmap-masked-email.md tells
+/// it to: it registers with its https callback, asks for `maskedemail` alone with PKCE and
+/// `prompt=consent`, trades the code in, keeps rotating the refresh token, and signs itself out.
+#[tokio::test]
+async fn a_password_manager_connects_for_masked_addresses_only() {
+    const LOCK_CALLBACK: &str = "https://lock.example.com/uwu/v1/masked/callback";
+    let (app, store, _dir) = setup().await;
+    let (_, metadata) = get(&app, "/.well-known/oauth-authorization-server").await;
+    assert!(metadata["scopes_supported"].as_array().unwrap().contains(&json!("maskedemail")), "{metadata}");
+    assert_eq!(metadata["revocation_endpoint"], "https://mail.example.org/oauth/revoke");
+
+    let body = json!({ "client_name": "UwULock (lock.example.com)", "redirect_uris": [LOCK_CALLBACK] });
+    let (status, client) = send(&app, request("POST", "/oauth/register", "application/json", body.to_string())).await;
+    assert_eq!(status, StatusCode::CREATED, "{client}");
+    let client_id = client["client_id"].as_str().unwrap().to_owned();
+    let auth = login(&app).await;
+    let query = url::form_urlencoded::Serializer::new(String::new())
+        .extend_pairs([
+            ("response_type", "code"),
+            ("client_id", &client_id),
+            ("redirect_uri", LOCK_CALLBACK),
+            ("scope", "maskedemail"),
+            ("state", "lock-state"),
+            ("code_challenge", CHALLENGE),
+            ("code_challenge_method", "S256"),
+            ("prompt", "consent"),
+        ])
+        .finish();
+    let (status, page) = portal(&app, "GET", &format!("/api/oauth/authorize?{query}"), Value::Null, &auth).await;
+    assert_eq!(status, StatusCode::OK, "{page}");
+    assert_eq!(page["scopes"], json!(["maskedemail"]));
+    assert_eq!(page["client"]["redirectHost"], "lock.example.com");
+
+    let mut decision: serde_json::Map<String, Value> = url::form_urlencoded::parse(query.as_bytes())
+        .map(|(name, value)| (name.into_owned(), Value::String(value.into_owned())))
+        .collect();
+    decision.insert("approve".into(), json!(true));
+    let (_, answer) = portal(&app, "POST", "/api/oauth/authorize", Value::Object(decision), &auth).await;
+    let redirect = Url::parse(answer["redirect"].as_str().unwrap()).unwrap();
+    assert_eq!(redirect.as_str().split('?').next(), Some(LOCK_CALLBACK));
+    let pairs: std::collections::HashMap<String, String> = redirect.query_pairs().into_owned().collect();
+    assert_eq!((pairs["state"].as_str(), pairs["iss"].as_str()), ("lock-state", "https://mail.example.org"));
+
+    let (status, tokens) = redeem(&app, &client_id, &pairs["code"], VERIFIER, LOCK_CALLBACK).await;
+    assert_eq!(status, StatusCode::OK, "{tokens}");
+    assert_eq!(tokens["scope"], "maskedemail");
+    assert!(tokens.get("id_token").is_none());
+    // Nothing of OpenID Connect comes with it.
+    let access = tokens["access_token"].as_str().unwrap().to_owned();
+    assert_eq!(bearer(&app, "/oauth/userinfo", &access).await.0, StatusCode::UNAUTHORIZED);
+
+    // Every refresh hands out a new refresh token with the same scope.
+    let mut refresh = tokens["refresh_token"].as_str().unwrap().to_owned();
+    for _ in 0..2 {
+        let (status, next) = form(
+            &app,
+            "/oauth/token",
+            &[("grant_type", "refresh_token"), ("client_id", &client_id), ("refresh_token", &refresh)],
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{next}");
+        assert_eq!(next["scope"], "maskedemail");
+        assert_ne!(next["refresh_token"].as_str().unwrap(), refresh);
+        refresh = next["refresh_token"].as_str().unwrap().to_owned();
+    }
+
+    // The person sees it under Security with its scope, and can sign it out there.
+    let (_, security) = portal(&app, "GET", "/api/account/security", Value::Null, &auth).await;
+    let grants = security["oauthGrants"].as_array().unwrap();
+    assert_eq!(grants.len(), 1, "{security}");
+    assert_eq!(grants[0]["clientName"], "UwULock (lock.example.com)");
+    assert_eq!(grants[0]["scopes"], json!(["maskedemail"]));
+
+    // The app signs itself out with its refresh token (RFC 7009).
+    let (status, _) = form(&app, "/oauth/revoke", &[("client_id", &client_id), ("token", &refresh)]).await;
+    assert_eq!(status, StatusCode::OK);
+    let account = store.account("mini@example.org").await.unwrap().unwrap();
+    assert!(store.oauth_grants(account.id).await.unwrap().is_empty());
+}

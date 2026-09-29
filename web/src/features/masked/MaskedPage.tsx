@@ -129,6 +129,13 @@ type Filter = "active" | "deleted";
 
 function AddressList({ addresses }: { addresses: MaskedAddress[] }) {
   const { t, i18n } = useT();
+  /** Who made an address when it was not the person here: an app signed in with OAuth, or over JMAP. */
+  const madeBy = (createdBy: string) =>
+    createdBy.startsWith("OAuth:")
+      ? t("masked.madeBy", { name: createdBy.slice("OAuth:".length) })
+      : createdBy === "JMAP"
+        ? t("masked.madeByApp")
+        : null;
   const errorText = useErrorText();
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<Filter>("active");
@@ -164,6 +171,7 @@ function AddressList({ addresses }: { addresses: MaskedAddress[] }) {
           <ul className="flex flex-col">
             {shown.map((address) => {
               const busy = change.isPending && change.variables?.id === address.id;
+              const made = madeBy(address.createdBy);
               return (
                 <li
                   key={address.id}
@@ -180,6 +188,12 @@ function AddressList({ addresses }: { addresses: MaskedAddress[] }) {
                       {address.lastMessageAt
                         ? t("masked.lastMessage", { date: formatDate(address.lastMessageAt, i18n.language) })
                         : t("masked.noMessage")}
+                      {made && (
+                        <>
+                          {" · "}
+                          {made}
+                        </>
+                      )}
                     </span>
                   </span>
                   <CopyButton value={address.email} />

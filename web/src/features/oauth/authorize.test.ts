@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decisionBody, knownScopes } from "./authorize";
+import { decisionBody, knownScopes, masksOnly } from "./authorize";
 
 describe("decisionBody", () => {
   it("passes every parameter of the request on as it came", () => {
@@ -28,5 +28,16 @@ describe("decisionBody", () => {
 describe("knownScopes", () => {
   it("keeps the ones it can explain, in a fixed order", () => {
     expect(knownScopes(["openid", "smtp", "something", "mail"])).toEqual(["mail", "smtp", "openid"]);
+    expect(knownScopes(["openid", "maskedemail"])).toEqual(["maskedemail", "openid"]);
+  });
+});
+
+describe("masksOnly", () => {
+  it("is true only when nothing of the mailbox comes along", () => {
+    expect(masksOnly(["maskedemail"])).toBe(true);
+    expect(masksOnly(["openid", "maskedemail"])).toBe(true);
+    expect(masksOnly(["mail", "maskedemail"])).toBe(false);
+    expect(masksOnly(["smtp", "maskedemail"])).toBe(false);
+    expect(masksOnly(["openid"])).toBe(false);
   });
 });

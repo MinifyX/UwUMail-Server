@@ -66,7 +66,7 @@ pub async fn handle(
     body: Body,
 ) -> Response {
     let client = client.map(|Extension(c)| c).unwrap_or_default();
-    let login = match jmap.inner.auth.login_for(&headers, client, true).await {
+    let login = match jmap.inner.auth.login_or_masked_for(&headers, client, true).await {
         Ok(login) => login,
         Err(err) => return err.into_response(),
     };
@@ -123,9 +123,11 @@ pub async fn process(jmap: &Jmap, login: Login, value: Value) -> Result<Value, R
 
     let echo_created_ids = request.created_ids.is_some();
     let may_use_dav = login.may_use_dav();
+    let masked_only = login.masked_only();
     let mut ctx = Ctx::new(&jmap.inner, login.account, request.using, request.created_ids.unwrap_or_default());
     ctx.credential = Some(login.credential);
     ctx.may_use_dav = may_use_dav;
+    ctx.masked_only = masked_only;
     let mut responses: Vec<(String, Value, String)> = Vec::with_capacity(request.method_calls.len());
     let mut reference_budget = MAX_REFERENCED_BYTES;
 
@@ -149,8 +151,10 @@ pub async fn process(jmap: &Jmap, login: Login, value: Value) -> Result<Value, R
     if echo_created_ids {
         response.insert("createdIds".into(), json!(ctx.created_ids));
     }
-    // The shared accounts are part of the session, so their changes change its state too.
-    let shared = crate::sharing::shared_accounts(&jmap.inner.store, ctx.account.id).await;
+    // The shared accounts are part of the session, so their changes change its state too; an app
+    // allowed masked addresses only sees none of them.
+    let shared =
+        if masked_only { Vec::new() } else { crate::sharing::shared_accounts(&jmap.inner.store, ctx.account.id).await };
     // So does where the account may make masked addresses.
     let masked = session::masked_state(&jmap.inner.store).await;
     let state = format!("{}{}{masked}", session::session_state(&ctx.account), crate::sharing::state_suffix(&shared));

@@ -161,7 +161,7 @@ response's `sessionState`) changes, so clients fetch the session again.
 | `description` | `String` | a short note; `""` when not given |
 | `lastMessageAt` | `UTCDate\|null` | server-set: when the latest message arrived |
 | `createdAt` | `UTCDate` | immutable, server-set |
-| `createdBy` | `String` | immutable, server-set: `JMAP` or `Portal` |
+| `createdBy` | `String` | immutable, server-set: `Portal`, `OAuth:<app name>` for an app signed in with OAuth (the name it registered with), `JMAP` for any other JMAP client |
 | `url` | `String\|null` | a link back to where it is used, for example a password manager's entry |
 | `emailPrefix` | `String\|null` | create-only; put in front of the random part |
 
@@ -222,6 +222,63 @@ ones mail causes: a pending address turning on and `lastMessageAt`.
 
 Masked addresses belong to one's own account; in a shared account the methods
 answer `accountNotSupportedByMethod`.
+
+## Apps allowed masked addresses only: the `maskedemail` scope
+
+A password manager that makes masked addresses for its people, such as
+UwULock Server, should not be able to read their mail. It signs in with OAuth
+([oauth.md](oauth.md)) and asks for the scope `maskedemail` alone. The consent
+page then says "*app* wants to create and manage your masked addresses" and
+that it cannot read or send mail.
+
+A token whose scopes include `maskedemail` but not `mail` is accepted only on:
+
+| Where | What it gets |
+| --- | --- |
+| `GET /.well-known/jmap`, `GET /jmap/session` | the session with only the capabilities `urn:ietf:params:jmap:core` and `https://www.fastmail.com/dev/maskedemail`, the own account with only the latter in `accountCapabilities` (with `domains` and `defaultDomain`), and `primaryAccounts` only for it; no shared accounts |
+| `POST /jmap/api` | `Core/echo`, `MaskedEmail/get`, `MaskedEmail/set`, `MaskedEmail/changes`; any other method is the method error `forbidden`, and other accounts are `accountNotFound` |
+| `GET /jmap/eventsource` | `MaskedEmail` changes of the own account, whatever `types` asks for |
+| `/jmap/ws` | requests as over `/jmap/api`, and push of `MaskedEmail` changes only |
+
+Everything else refuses it like a wrong token: IMAP, SMTP submission,
+ManageSieve, CalDAV and CardDAV, JMAP upload and download, the picture proxy,
+`/oauth/userinfo` (without `openid`) and the portal. `mail` keeps including
+everything, masked addresses too.
+
+The masked address policy holds exactly as for the person themselves: the
+capability lists the domains they may use, and `MaskedEmail/set` refuses
+others with `forbidden`, as it does when an admin turns masked addresses off
+for them. What such an app makes has `createdBy: "OAuth:<app name>"`, which
+the portal shows next to the address.
+
+Connecting, step by step (the endpoints come from
+`/.well-known/oauth-authorization-server`):
+
+1. Register once per server (RFC 7591): `POST /oauth/register` with
+   `{ "client_name": "UwULock (lock.example.com)", "redirect_uris": ["https://lock.example.com/uwu/v1/masked/callback"] }`.
+   Keep the `client_id`. Every app is a public client: there is no secret,
+   PKCE protects the code. An app that never signed anyone in is forgotten
+   after 7 days; on `invalid_client` register again.
+2. Send the person to `/oauth/authorize?response_type=code&client_id=…&redirect_uri=…&scope=maskedemail&state=…&code_challenge=…&code_challenge_method=S256&prompt=consent`.
+   The answer comes back to the redirect address with `code`, `state` and
+   `iss` (RFC 9207), or with `error`.
+3. `POST /oauth/token` (form-encoded) with `grant_type=authorization_code`,
+   `code`, `redirect_uri`, `client_id` and `code_verifier`. The answer has
+   `scope: "maskedemail"`, an access token for an hour and a refresh token for
+   90 days.
+4. Read `/jmap/session` with `Authorization: Bearer <access token>`: the
+   account id is `primaryAccounts["https://www.fastmail.com/dev/maskedemail"]`.
+5. Refresh with `grant_type=refresh_token`, `refresh_token` and `client_id`.
+   Each refresh hands out a new refresh token, again for 90 days, so a
+   connection used at least every 90 days never ends. Keep the new one before
+   using the new access token: an old refresh token that comes back ends the
+   whole sign-in (it was copied), and the answer is `invalid_grant`.
+6. To disconnect, `POST /oauth/revoke` with the refresh token as `token` and
+   `client_id`.
+
+The person sees the app under *My account → Security → Apps signed in with
+OAuth* with a "Masked" pill, and can sign it out there; its tokens stop
+working at once.
 
 ## Portal API
 

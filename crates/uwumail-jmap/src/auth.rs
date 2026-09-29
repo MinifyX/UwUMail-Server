@@ -91,6 +91,13 @@ impl Login {
         self.scopes.contains(&AppScope::Dav)
     }
 
+    /// Whether this login may do nothing but manage masked addresses: an app signed in with OAuth
+    /// and the `maskedemail` scope, without `mail` (docs/jmap-masked-email.md). Every JMAP login
+    /// that may read mail has `mail`; one without it is kept to `MaskedEmail`.
+    pub fn masked_only(&self) -> bool {
+        !self.scopes.contains(&AppScope::Mail)
+    }
+
     /// The login as a connection that stays open keeps it, to check it again later.
     pub fn live(&self) -> LiveLogin {
         LiveLogin::new(&self.account, self.credential.clone())
@@ -209,6 +216,28 @@ impl Authenticator {
 
     /// The same, and which credential it was: push subscriptions belong to that (RFC 8620, 7.2).
     pub async fn login_for(&self, headers: &HeaderMap, client: ClientInfo, changes: bool) -> Result<Login, AuthError> {
+        self.login_within(headers, client, changes, false).await
+    }
+
+    /// [`Authenticator::login_for`] that also lets in apps allowed masked addresses only (OAuth
+    /// scope `maskedemail`), for the few endpoints that keep them to that: the session, the API,
+    /// the event stream and the WebSocket. Such a login says so with [`Login::masked_only`].
+    pub async fn login_or_masked_for(
+        &self,
+        headers: &HeaderMap,
+        client: ClientInfo,
+        changes: bool,
+    ) -> Result<Login, AuthError> {
+        self.login_within(headers, client, changes, true).await
+    }
+
+    async fn login_within(
+        &self,
+        headers: &HeaderMap,
+        client: ClientInfo,
+        changes: bool,
+        or_masked: bool,
+    ) -> Result<Login, AuthError> {
         if headers.get(header::AUTHORIZATION).is_none() {
             let account = self.session_account(headers, client.https, changes).await?;
             // session_account only answers with a cookie there.
@@ -219,7 +248,7 @@ impl Authenticator {
                 scopes: ALL_SCOPES.to_vec(),
             });
         }
-        self.login(headers, client).await
+        self.login(headers, client, or_masked).await
     }
 
     /// The portal's session as a JMAP login: only for people whose webmail is switched on.
@@ -253,14 +282,14 @@ impl Authenticator {
     }
 
     pub async fn account(&self, headers: &HeaderMap, client: ClientInfo) -> Result<Account, AuthError> {
-        self.login(headers, client).await.map(|login| login.account)
+        self.login(headers, client, false).await.map(|login| login.account)
     }
 
-    async fn login(&self, headers: &HeaderMap, client: ClientInfo) -> Result<Login, AuthError> {
+    async fn login(&self, headers: &HeaderMap, client: ClientInfo, or_masked: bool) -> Result<Login, AuthError> {
         let value = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()).ok_or(AuthError::Missing)?;
         let (scheme, credentials) = value.split_once(' ').ok_or(AuthError::Invalid)?;
         if scheme.eq_ignore_ascii_case("bearer") {
-            return self.bearer(credentials.trim(), client).await;
+            return self.bearer(credentials.trim(), client, or_masked).await;
         }
         if !scheme.eq_ignore_ascii_case("basic") {
             return Err(AuthError::Invalid);
@@ -335,14 +364,19 @@ impl Authenticator {
     }
 
     /// `Authorization: Bearer <app password or OAuth access token>`: the secret alone, without the
-    /// login. Wrong tokens count against the network like wrong passwords.
-    async fn bearer(&self, token: &str, client: ClientInfo) -> Result<Login, AuthError> {
+    /// login. Wrong tokens count against the network like wrong passwords. `or_masked` lets in
+    /// OAuth apps allowed masked addresses only; app passwords never have that scope.
+    async fn bearer(&self, token: &str, client: ClientInfo, or_masked: bool) -> Result<Login, AuthError> {
         if self.limiter().is_blocked(client.ip) {
             return Err(AuthError::Blocked);
         }
         let ip = client.ip.to_string();
         let checked = if uwumail_store::is_oauth_access_token(token) {
-            self.store.authenticate_oauth_grant(token, self.scope, self.protocol, &ip).await
+            if or_masked {
+                self.store.authenticate_oauth_grant_or_masked(token, self.scope, self.protocol, &ip).await
+            } else {
+                self.store.authenticate_oauth_grant(token, self.scope, self.protocol, &ip).await
+            }
         } else {
             self.store.authenticate_bearer(token, self.scope, self.protocol, &ip).await.map(|auth| (auth, None))
         };

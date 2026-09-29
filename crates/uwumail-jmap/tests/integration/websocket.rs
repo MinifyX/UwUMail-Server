@@ -13,14 +13,14 @@ use tokio_tungstenite::tungstenite::http::HeaderValue;
 
 type Socket = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-async fn listen(router: axum::Router) -> String {
+pub(crate) async fn listen(router: axum::Router) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
     format!("ws://{address}/jmap/ws")
 }
 
-async fn connect(url: &str, authorization: Option<&str>, protocol: Option<&str>) -> Result<Socket, String> {
+pub(crate) async fn connect(url: &str, authorization: Option<&str>, protocol: Option<&str>) -> Result<Socket, String> {
     let mut request = url.into_client_request().unwrap();
     if let Some(authorization) = authorization {
         request.headers_mut().insert("authorization", HeaderValue::from_str(authorization).unwrap());
@@ -37,11 +37,11 @@ async fn connect(url: &str, authorization: Option<&str>, protocol: Option<&str>)
     }
 }
 
-async fn send(socket: &mut Socket, value: Value) {
+pub(crate) async fn send(socket: &mut Socket, value: Value) {
     socket.send(Message::Text(value.to_string().into())).await.unwrap();
 }
 
-async fn receive(socket: &mut Socket) -> Value {
+pub(crate) async fn receive(socket: &mut Socket) -> Value {
     loop {
         let message = tokio::time::timeout(Duration::from_secs(10), socket.next()).await.unwrap().unwrap().unwrap();
         if let Message::Text(text) = message {

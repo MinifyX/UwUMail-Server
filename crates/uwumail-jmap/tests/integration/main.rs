@@ -10,6 +10,7 @@ mod conformance;
 mod contacts;
 mod limits;
 mod masked_email;
+mod masked_scope;
 mod pictures;
 mod profile;
 mod query_changes;

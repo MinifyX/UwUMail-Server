@@ -11,7 +11,7 @@ import { toast } from "@/state/toasts";
 import { useSecurityAction } from "./queries";
 
 /** The scopes worth a pill; who someone is (openid, profile, email) goes without saying. */
-const SHOWN_SCOPES = ["mail", "smtp", "dav"];
+const SHOWN_SCOPES = ["mail", "smtp", "dav", "maskedemail"];
 
 /** One app signed in with OAuth, in the look of an app password. */
 export function OAuthGrantRow({ grant, onRevoke }: { grant: OAuthGrantInfo; onRevoke: () => void }) {

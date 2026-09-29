@@ -58,7 +58,9 @@ pub async fn handle(
             .into_response();
     }
     let login = if headers.contains_key(header::AUTHORIZATION) {
-        jmap.inner.auth.login_for(&headers, client, true).await
+        // An app allowed masked addresses only may use the socket for them: the API and push
+        // keep it to MaskedEmail.
+        jmap.inner.auth.login_or_masked_for(&headers, client, true).await
     } else if !same_origin(&headers) {
         Err(AuthError::Missing)
     } else {
@@ -106,7 +108,7 @@ async fn serve(jmap: Jmap, login: Login, mut socket: WebSocket) {
     let account_id = login.account.id;
     let live = login.live();
     let store = jmap.inner.store.clone();
-    let mut watcher = Watcher::new(store.clone(), account_id, all_types()).await;
+    let mut watcher = Watcher::new(store.clone(), account_id, all_types()).await.only_masked(login.masked_only());
     let mut push = false;
     loop {
         tokio::select! {

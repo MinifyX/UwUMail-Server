@@ -40,7 +40,13 @@ const CODE_PREFIX: &str = "uwu_ac_";
 
 /// The scopes this server knows, in the order they are shown. Everything else an app asks for is
 /// left out of what it gets.
-pub const OAUTH_SCOPES: &[&str] = &["openid", "email", "profile", "offline_access", "mail", "smtp", "dav"];
+pub const OAUTH_SCOPES: &[&str] =
+    &["openid", "email", "profile", "offline_access", "mail", "smtp", "dav", MASKED_EMAIL_SCOPE];
+
+/// Masked addresses and nothing else of the mailbox: JMAP's session, `Core/echo` and the
+/// `MaskedEmail` methods, with push for their changes (docs/jmap-masked-email.md). For a password
+/// manager that makes addresses for its people, such as UwULock Server. `mail` includes it.
+pub const MASKED_EMAIL_SCOPE: &str = "maskedemail";
 
 /// What an app asks for, cut down to the scopes this server knows, without repeats, in the order of
 /// [`OAUTH_SCOPES`]. A few other names mail apps use for the same things count as well.
@@ -65,7 +71,7 @@ pub fn oauth_scopes(requested: &str) -> Vec<&'static str> {
 
 /// Whether a set of scopes lets an app do anything at all: a protocol, or signing in (`openid`).
 pub fn oauth_scopes_usable(scopes: &[&str]) -> bool {
-    scopes.iter().any(|scope| matches!(*scope, "mail" | "smtp" | "dav" | "openid"))
+    scopes.iter().any(|scope| matches!(*scope, "mail" | "smtp" | "dav" | "openid" | MASKED_EMAIL_SCOPE))
 }
 
 fn scope_list(scopes: &[&str]) -> String {
@@ -647,6 +653,30 @@ impl Store {
         protocol: &str,
         ip: &str,
     ) -> Result<(MailAuth, Option<i64>)> {
+        self.authenticate_oauth_within(token, scope, false, protocol, ip).await
+    }
+
+    /// [`Store::authenticate_oauth_grant`] for JMAP, which also lets in apps allowed nothing but
+    /// masked addresses (the `maskedemail` scope). Their [`MailAuth::Ok`] carries none of the
+    /// [`AppScope`]s, not `mail` either: the caller has to keep them to `MaskedEmail`.
+    pub async fn authenticate_oauth_grant_or_masked(
+        &self,
+        token: &str,
+        scope: AppScope,
+        protocol: &str,
+        ip: &str,
+    ) -> Result<(MailAuth, Option<i64>)> {
+        self.authenticate_oauth_within(token, scope, true, protocol, ip).await
+    }
+
+    async fn authenticate_oauth_within(
+        &self,
+        token: &str,
+        scope: AppScope,
+        or_masked: bool,
+        protocol: &str,
+        ip: &str,
+    ) -> Result<(MailAuth, Option<i64>)> {
         let denied =
             |reason: MailAuthDenied| -> Result<(MailAuth, Option<i64>)> { Ok((MailAuth::Denied(reason), None)) };
         if !is_oauth_access_token(token) {
@@ -693,7 +723,8 @@ impl Store {
         if !account.may_use(protocol) {
             return denied(MailAuthDenied::ProtocolOff);
         }
-        if !scopes.split_whitespace().any(|given| given == scope.as_str()) {
+        if !scopes.split_whitespace().any(|given| given == scope.as_str() || (or_masked && given == MASKED_EMAIL_SCOPE))
+        {
             return denied(MailAuthDenied::WrongScope);
         }
         let (protocol, ip) = (protocol.to_owned(), ip.to_owned());
@@ -710,6 +741,20 @@ impl Store {
         let credential = crate::push_credential_for_oauth_grant(grant_id);
         let scopes = AppScope::parse_list(&scopes);
         Ok((MailAuth::Ok { account, app_password: None, credential, scopes }, Some(grant_id)))
+    }
+
+    /// The name of the app a grant belongs to, as it registered itself.
+    pub async fn oauth_grant_client_name(&self, grant_id: i64) -> Result<Option<String>> {
+        self.read(move |conn| {
+            Ok(conn
+                .query_row(
+                    "SELECT c.name FROM oauth_grants g JOIN oauth_clients c ON c.id = g.client_id WHERE g.id = ?1",
+                    [grant_id],
+                    |row| row.get(0),
+                )
+                .optional()?)
+        })
+        .await
     }
 
     /// The apps signed in to an account with OAuth, newest first.
@@ -974,6 +1019,8 @@ mod tests {
         assert_eq!(oauth_scopes("imap submission caldav bogus mail"), vec!["mail", "smtp", "dav"]);
         assert!(oauth_scopes("bogus").is_empty());
         assert!(!oauth_scopes_usable(&oauth_scopes("email profile")));
+        assert_eq!(oauth_scopes("maskedemail openid"), vec!["openid", "maskedemail"]);
+        assert!(oauth_scopes_usable(&oauth_scopes("maskedemail")));
         // RFC 7636 appendix B.
         assert!(pkce_matches(
             "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
@@ -1232,5 +1279,64 @@ mod tests {
         // Signing the app out ends what it subscribed to.
         store.revoke_oauth_grant(leni.id, grant).await.unwrap();
         assert!(store.push_targets(vec![leni.id]).await.unwrap().is_empty());
+    }
+
+    /// A grant for masked addresses only opens nothing but JMAP, and there only when the caller
+    /// asks for it (docs/jmap-masked-email.md); `mail` stays a scope of its own.
+    #[tokio::test]
+    async fn a_masked_only_grant_opens_nothing_else() {
+        let (store, _dir) = crate::test_support::store().await;
+        store.create_domain("example.org").await.unwrap();
+        let leni = store
+            .create_account(NewAccount {
+                address: "leni@example.org".into(),
+                display_name: "Leni".into(),
+                password: Some("Seifenblase-Wanderweg-17".into()),
+                role: Role::User,
+                quota_bytes: 0,
+                protocols: None,
+            })
+            .await
+            .unwrap();
+        let client = store
+            .register_oauth_client("UwULock (lock.example.com)", vec!["https://lock.example.com/cb".into()])
+            .await
+            .unwrap();
+        let verifier = "a".repeat(43);
+        let code = store
+            .create_oauth_code(NewOAuthCode {
+                client_id: client.id,
+                account_id: leni.id,
+                redirect_uri: "https://lock.example.com/cb".into(),
+                scopes: vec![MASKED_EMAIL_SCOPE],
+                code_challenge: challenge(&verifier),
+                nonce: None,
+                auth_time: now(),
+            })
+            .await
+            .unwrap();
+        let tokens =
+            store.redeem_oauth_code(&code, client.id, "https://lock.example.com/cb", &verifier).await.unwrap().unwrap();
+        assert_eq!(tokens.scopes, vec!["maskedemail"]);
+        for (scope, protocol) in [(AppScope::Mail, "imap"), (AppScope::Mail, "jmap"), (AppScope::Smtp, "smtp")] {
+            let auth = store.authenticate_oauth(&tokens.access_token, scope, protocol, "").await.unwrap();
+            assert!(matches!(auth, MailAuth::Denied(MailAuthDenied::WrongScope)), "{protocol}: {auth:?}");
+        }
+        let (auth, grant) =
+            store.authenticate_oauth_grant_or_masked(&tokens.access_token, AppScope::Mail, "jmap", "").await.unwrap();
+        let MailAuth::Ok { scopes, .. } = auth else { panic!("{auth:?}") };
+        assert!(scopes.is_empty(), "no mail, no sending, no calendars: {scopes:?}");
+        let grant = grant.unwrap();
+        assert_eq!(store.oauth_grant_client_name(grant).await.unwrap().as_deref(), Some("UwULock (lock.example.com)"));
+        assert_eq!(store.oauth_grant_client_name(grant + 1).await.unwrap(), None);
+
+        // Refreshing keeps the scope, and the old refresh token coming back ends the grant.
+        let next = store.refresh_oauth(&tokens.refresh_token, client.id).await.unwrap().unwrap();
+        assert_eq!(next.scopes, vec!["maskedemail"]);
+        let reused = store.refresh_oauth(&tokens.refresh_token, client.id).await.unwrap();
+        assert!(matches!(reused, Err(OAuthRefusal::Reused { .. })), "{reused:?}");
+        let (auth, _) =
+            store.authenticate_oauth_grant_or_masked(&next.access_token, AppScope::Mail, "jmap", "").await.unwrap();
+        assert!(matches!(auth, MailAuth::Denied(MailAuthDenied::Invalid)), "{auth:?}");
     }
 }

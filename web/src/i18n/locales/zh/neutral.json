@@ -1762,7 +1762,8 @@
       "scopeShort": {
         "mail": "邮件",
         "smtp": "发信",
-        "dav": "日历"
+        "dav": "日历",
+        "maskedemail": "隐藏"
       },
       "expired": "已过期",
       "lastUsed": "上次使用：{{time}}，通过 {{protocol}}，来自 {{ip}}",
@@ -1853,10 +1854,12 @@
   },
   "oauth": {
     "title": "“{{name}}”想要访问你的账户",
+    "titleMasked": "“{{name}}”想要创建和管理你的隐藏地址",
     "account": "当前登录账户：",
     "nameClaim": "“{{name}}”是应用的自称。只有在你刚刚亲自在该应用中开始登录时才允许。",
     "returnsTo": "之后将返回 {{host}}。",
     "returnsToDevice": "之后将返回此设备上的应用（{{host}}）。",
+    "maskedOnly": "它不能读取或发送你的邮件，也看不到你账户的其他内容：只有你的隐藏地址。",
     "scopesTitle": "该应用将可以",
     "scopes": {
       "mail": {
@@ -1870,6 +1873,10 @@
       "dav": {
         "title": "使用你的日历和联系人",
         "hint": "读取和更改，通过 CalDAV、CardDAV 和 JMAP。"
+      },
+      "maskedemail": {
+        "title": "创建和管理你的隐藏地址",
+        "hint": "新建、开启、关闭和删除隐藏地址，通过 JMAP。仅限管理员允许使用隐藏地址的地方。"
       },
       "openid": {
         "title": "确认是你本人",
@@ -2237,6 +2244,8 @@
     },
     "lastMessage": "最后一封邮件 {{date}}",
     "noMessage": "还没有邮件",
+    "madeBy": "由 {{name}} 创建",
+    "madeByApp": "由邮件应用创建",
     "enable": "开启",
     "disable": "关闭",
     "delete": "删除",

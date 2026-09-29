@@ -10,10 +10,27 @@ export function decisionBody(search: string, approve: boolean): Record<string, s
 }
 
 /** Scopes the page explains, in the order it lists them; anything else is left out. */
-export const KNOWN_SCOPES = ["mail", "smtp", "dav", "openid", "profile", "email", "offline_access"] as const;
+export const KNOWN_SCOPES = [
+  "mail",
+  "smtp",
+  "dav",
+  "maskedemail",
+  "openid",
+  "profile",
+  "email",
+  "offline_access",
+] as const;
 
 export type KnownScope = (typeof KNOWN_SCOPES)[number];
 
 export function knownScopes(scopes: string[]): KnownScope[] {
   return KNOWN_SCOPES.filter((scope) => scopes.includes(scope));
+}
+
+/**
+ * Whether an app asks for masked addresses and nothing else of the mailbox (the `maskedemail`
+ * scope, as UwULock Server does): the page then says so plainly.
+ */
+export function masksOnly(scopes: string[]): boolean {
+  return scopes.includes("maskedemail") && !scopes.some((scope) => ["mail", "smtp", "dav"].includes(scope));
 }

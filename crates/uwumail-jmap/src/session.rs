@@ -241,9 +241,36 @@ pub fn document(account: &Account, base: &str, may_use_dav: bool) -> Value {
     document
 }
 
+/// Cuts a session document down to what an app allowed masked addresses only may use: the core
+/// capability and MaskedEmail, the account with only MaskedEmail, and it as the primary account
+/// for that alone. Kept by name, so whatever the document gains later stays out.
+fn keep_masked_only(document: &mut Value, account_id: &str) {
+    let keep = |object: &mut Value, names: &[&str]| {
+        if let Some(map) = object.as_object_mut() {
+            map.retain(|name, _| names.contains(&name.as_str()));
+        }
+    };
+    keep(&mut document["capabilities"], &[CORE, MASKED]);
+    keep(&mut document["accounts"], &[account_id]);
+    keep(&mut document["accounts"][account_id]["accountCapabilities"], &[MASKED]);
+    keep(&mut document["primaryAccounts"], &[MASKED]);
+}
+
 pub async fn handle(State(jmap): State<Jmap>, client: Option<Extension<ClientInfo>>, headers: HeaderMap) -> Response {
     let client = client.map(|Extension(c)| c).unwrap_or_default();
-    match jmap.inner.auth.login_for(&headers, client, false).await {
+    match jmap.inner.auth.login_or_masked_for(&headers, client, false).await {
+        Ok(login) if login.masked_only() => {
+            let base = base_url(&headers, client);
+            let account = login.account;
+            let account_id = ids::account(account.id);
+            let mut document = document(&account, &base, false);
+            keep_masked_only(&mut document, &account_id);
+            document["accounts"][&account_id]["accountCapabilities"][MASKED] =
+                masked_capability(&jmap.inner.store, account.id).await;
+            let masked_state = masked_state(&jmap.inner.store).await;
+            document["state"] = json!(format!("{}{masked_state}", session_state(&account)));
+            ([(header::CACHE_CONTROL, "no-cache, no-store")], Json(document)).into_response()
+        }
         Ok(login) => {
             let base = base_url(&headers, client);
             let may_use_dav = login.may_use_dav();

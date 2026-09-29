@@ -142,6 +142,7 @@ forgets that.
 | `mail` | IMAP, JMAP and ManageSieve (mail and mail rules); over JMAP this includes sending |
 | `smtp` | Sending through submission (ports 587 and 465) |
 | `dav` | Calendars and contacts (CalDAV, CardDAV, and over JMAP) |
+| `maskedemail` | Masked addresses only, over JMAP; nothing else of the mailbox ([jmap-masked-email.md](jmap-masked-email.md#apps-allowed-masked-addresses-only-the-maskedemail-scope)) |
 | `openid` | An ID token, and `/oauth/userinfo` |
 | `email` | The address in the ID token and userinfo |
 | `profile` | The name in the ID token and userinfo |
@@ -150,8 +151,9 @@ forgets that.
 `imap`, `jmap`, `sieve` and `managesieve` count as `mail`, `submission` as
 `smtp`, `caldav` and `carddav` as `dav`. Unknown scopes are left out.
 Protocols the admin switched off for the account (*Protocols* on the
-account's page) are left out as well, and a request that ends up with none of
-`mail`, `smtp`, `dav` or `openid` is `invalid_scope`.
+account's page) are left out as well (`maskedemail` goes with JMAP), and a
+request that ends up with none of `mail`, `smtp`, `dav`, `maskedemail` or
+`openid` is `invalid_scope`. `mail` includes everything `maskedemail` opens.
 
 ## Tokens: `POST /oauth/token`
 
@@ -214,6 +216,10 @@ SHA-256 hashes, like app passwords.
 | SMTP submission (587 after STARTTLS, 465) | `AUTH OAUTHBEARER` or `AUTH XOAUTH2` |
 | ManageSieve (4190, after STARTTLS) | `AUTHENTICATE "OAUTHBEARER"` or `"XOAUTH2"` |
 | JMAP, CalDAV, CardDAV | `Authorization: Bearer <access token>` |
+
+A token with `maskedemail` but without `mail` works only on JMAP's session,
+API, event stream and WebSocket, and there only for masked addresses; see
+[jmap-masked-email.md](jmap-masked-email.md#apps-allowed-masked-addresses-only-the-maskedemail-scope).
 
 The mechanisms are listed in `CAPABILITY`, `EHLO` and the ManageSieve
 capabilities. OAUTHBEARER (RFC 7628) looks like
