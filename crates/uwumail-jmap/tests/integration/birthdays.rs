@@ -162,6 +162,21 @@ async fn cards_fill_a_read_only_birthdays_calendar() {
     let titles: Vec<&str> = got["list"].as_array().unwrap().iter().map(|e| e["title"].as_str().unwrap()).collect();
     assert_eq!(titles, vec!["Max Müller (30)", "Hochzeitstag von Max Müller (5 Jahre)"]);
 
+    // All day means the day itself, whatever time zone the calendar has.
+    let set =
+        server.call("Calendar/set", json!({ "update": { &calendar_id: { "timeZone": "Pacific/Kiritimati" } } })).await;
+    assert!(set["updated"].as_object().is_some_and(|u| u.contains_key(&calendar_id)), "{set}");
+    let got = server
+        .call("CalendarEvent/get", json!({ "ids": &ids, "properties": ["start", "timeZone", "showWithoutTime"] }))
+        .await;
+    let days: Vec<(&str, bool, bool)> = got["list"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| (e["start"].as_str().unwrap(), e["timeZone"].is_null(), e["showWithoutTime"] == true))
+        .collect();
+    assert_eq!(days, vec![("2026-04-12T00:00:00", true, true), ("2026-06-12T00:00:00", true, true)]);
+
     // Nothing writes into it but the cards.
     let birthday_id = birthday["id"].as_str().unwrap();
     let set = server
