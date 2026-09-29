@@ -358,7 +358,9 @@ pub(crate) fn check_base_url(url: &str, reach: Reach) -> Result<String> {
                 "the address points into the local network, which is not allowed here",
             ));
         }
-    } else if parsed.scheme() == "http" {
+    } else if parsed.scheme() == "http" && !matches!(parsed.host(), Some(Host::Domain(_))) {
+        // A public address as such. A name like ollama.lan or gpu.home.arpa is left to the connection, which
+        // takes plain http only to the addresses of the local network it resolves to.
         return Err(AssistError::invalid(
             "plainHttpPublic",
             "baseUrl",
@@ -1245,7 +1247,10 @@ mod tests {
             _ => "ok",
         };
         assert_eq!(code("http://api.example.com/v1", Reach::Public), "plainHttpPublic");
-        assert_eq!(code("http://api.example.com:11434", Reach::Any), "plainHttpPublic");
+        // A name of the local network with a dot: the connection decides, by the addresses it resolves to.
+        assert_eq!(code("http://ollama.lan:11434", Reach::Any), "ok");
+        assert_eq!(code("http://gpu.home.arpa:11434/v1", Reach::Lan), "ok");
+        assert_eq!(code("http://ollama.lan:11434", Reach::Public), "plainHttpPublic");
         assert_eq!(code("http://192.0.2.10:11434", Reach::Any), "ok");
         assert_eq!(code("http://192.168.1.5:11434", Reach::Public), "privateAddress");
         assert_eq!(code("http://192.168.1.5:11434", Reach::Lan), "ok");
