@@ -70,7 +70,8 @@ pub async fn image_text(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let results: Vec<Option<Value>> = futures_util::stream::iter(sources)
         .map(|source| {
             let (ocr, images) = (ocr.clone(), images.clone());
-            async move {
+            // The deadline holds for fetching a remote picture too (OCR-1 of the 0.18.0 audit).
+            let work = async move {
                 let (source, bytes) = match source {
                     Source::Part { source, bytes } => (source, bytes),
                     Source::Remote(url) => {
@@ -78,7 +79,7 @@ pub async fn image_text(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
                         (url, picture.bytes.to_vec())
                     }
                 };
-                let read = tokio::time::timeout_at(deadline, ocr.read(&bytes)).await.ok()?;
+                let read = ocr.read(&bytes).await;
                 match read {
                     Ok(read) if read.text.trim().is_empty() => Some(Value::Null),
                     Ok(read) => Some(json!({
@@ -89,7 +90,8 @@ pub async fn image_text(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
                     })),
                     Err(Skip::Unsuitable | Skip::Failed) => None,
                 }
-            }
+            };
+            async move { tokio::time::timeout_at(deadline, work).await.ok().flatten() }
         })
         .buffered(PARALLEL)
         .collect()

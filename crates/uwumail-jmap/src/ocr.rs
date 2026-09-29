@@ -211,7 +211,9 @@ impl Ocr {
         let Some(dir) = path.parent().map(PathBuf::from) else { return };
         let _ = tokio::task::spawn_blocking(move || {
             std::fs::create_dir_all(&dir)?;
-            let partial = path.with_extension(format!("part{}", std::process::id()));
+            let mut nonce = [0u8; 8];
+            getrandom::fill(&mut nonce).map_err(|_| std::io::Error::other("the system RNG failed"))?;
+            let partial = path.with_extension(format!("part-{}", hex::encode(nonce)));
             std::fs::write(&partial, bytes)?;
             std::fs::rename(&partial, &path)?;
             trim(&dir);
@@ -253,14 +255,18 @@ fn prepare(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     if width < MIN_SIDE || height < MIN_SIDE || u64::from(width) * u64::from(height) > MAX_PIXELS {
         return None;
     }
-    let picture = reader()?.decode().ok()?;
-    let picture = if width.max(height) > MAX_SIDE {
-        picture.resize(MAX_SIDE, MAX_SIDE, image::imageops::FilterType::Triangle)
+    // Grey first, then shrunk by whole pixels: a filter's floating-point copy of a large picture
+    // took more memory than the decoded picture itself (OCR-3 of the 0.18.0 audit).
+    let grey = reader()?.decode().ok()?.into_luma8();
+    let grey = if width.max(height) > MAX_SIDE {
+        let scale = f64::from(MAX_SIDE) / f64::from(width.max(height));
+        let side = |length: u32| ((f64::from(length) * scale).round() as u32).clamp(1, MAX_SIDE);
+        image::imageops::thumbnail(&grey, side(width), side(height))
     } else {
-        picture
+        grey
     };
     let mut png = Vec::new();
-    picture.into_luma8().write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png).ok()?;
+    grey.write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png).ok()?;
     Some((png, width, height))
 }
 

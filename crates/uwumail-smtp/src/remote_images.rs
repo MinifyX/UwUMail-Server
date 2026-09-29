@@ -466,7 +466,10 @@ fn entry_bytes(picture: &Picture, now: i64) -> Vec<u8> {
 fn write_entry(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let dir = path.parent().ok_or_else(|| std::io::Error::other("no directory"))?;
     std::fs::create_dir_all(dir)?;
-    let partial = path.with_extension(format!("part{}", std::process::id()));
+    // A name of its own for each write: two writers of one picture never share a half-written file.
+    let mut nonce = [0u8; 8];
+    getrandom::fill(&mut nonce).map_err(|_| std::io::Error::other("the system RNG failed"))?;
+    let partial = path.with_extension(format!("part-{}", hex::encode(nonce)));
     std::fs::write(&partial, bytes)?;
     std::fs::rename(&partial, path).inspect_err(|_| {
         let _ = std::fs::remove_file(&partial);
@@ -500,6 +503,9 @@ fn read_entry(path: &Path, whole: bool) -> Option<Result<Picture, Stale>> {
 }
 
 /// What the cache directory holds: sizes, and the time each was stored for want of anything better.
+/// A half-written file older than this is a leftover.
+const LEFTOVER_AGE: Duration = Duration::from_secs(600);
+
 fn scan(dir: &Path) -> Vec<(Key, Entry)> {
     let mut found = Vec::new();
     let Ok(shards) = std::fs::read_dir(dir) else { return found };
@@ -509,8 +515,15 @@ fn scan(dir: &Path) -> Vec<(Key, Entry)> {
             let name = file.file_name();
             let Some(key) = name.to_str().and_then(|name| hex::decode(name).ok()).and_then(|key| key.try_into().ok())
             else {
-                // Half-written leftovers of a crash; not what this server is writing right now.
-                if !name.to_string_lossy().ends_with(&format!(".part{}", std::process::id())) {
+                // Half-written leftovers of a crash, not what is being written right now: the process
+                // id says nothing in a container, where it is always the same (IMG-3 of the 0.18.0 audit).
+                let old = file
+                    .metadata()
+                    .and_then(|meta| meta.modified())
+                    .ok()
+                    .and_then(|at| at.elapsed().ok())
+                    .is_none_or(|age| age > LEFTOVER_AGE);
+                if old {
                     let _ = std::fs::remove_file(file.path());
                 }
                 continue;
@@ -804,6 +817,25 @@ mod tests {
         for dead in dead {
             assert_eq!(dead.await.unwrap().unwrap_err(), PictureError::Egress(EgressError::Timeout));
         }
+    }
+
+    /// IMG-3 of the 0.18.0 audit: half-written files of a crash go at the next start, whatever the
+    /// process id; one being written right now stays.
+    #[test]
+    fn leftovers_of_a_crash_are_removed() {
+        let dir = tempfile::tempdir().unwrap();
+        let shard = dir.path().join("ab");
+        std::fs::create_dir_all(&shard).unwrap();
+        let old = shard.join("ab12.part1");
+        std::fs::write(&old, b"half").unwrap();
+        let file = std::fs::File::options().write(true).open(&old).unwrap();
+        file.set_modified(std::time::SystemTime::now() - Duration::from_secs(3600)).unwrap();
+        drop(file);
+        let writing = shard.join("ab34.part-0011223344556677");
+        std::fs::write(&writing, b"half").unwrap();
+        assert!(scan(dir.path()).is_empty());
+        assert!(!old.exists(), "the leftover went");
+        assert!(writing.exists(), "the write under way stays");
     }
 
     #[tokio::test]
