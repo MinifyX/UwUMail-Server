@@ -12,6 +12,7 @@ mod acl;
 mod address;
 mod admin;
 mod alerts;
+mod assist;
 mod bayes;
 mod blobs;
 mod calendar;
@@ -88,6 +89,12 @@ pub use admin::{
 pub use alerts::{
     ALERT_HISTORY_SECS, ALERT_REMINDER_SECS, ALERT_RESOLVE_AFTER_SECS, Alert, AlertEvent, AlertLevel, AlertNotice,
     AlertObservation, CertificateOrders,
+};
+pub use assist::{
+    ASSIST_FEATURES, ASSIST_LABEL_DESCRIPTION_MAX_CHARS, ASSIST_LABEL_NAME_MAX_CHARS, ASSIST_MAX_ACCESS_ENTRIES,
+    ASSIST_MAX_LABELS, ASSIST_MAX_PERSONAL_PROVIDERS, ASSIST_MAX_SERVER_PROVIDERS, AssistFeatures, AssistLabel,
+    AssistPolicy, AssistPrefs, AssistProviderRecord, AssistProviderWrite, LabelJob, LabelLogEntry, SecretChange,
+    SenderHistory, UsageRow, label_keyword, utc_day,
 };
 pub use bayes::{
     BAYES_FOLDER_LIMIT, BAYES_LEARNED_SECS, BAYES_MIN_LEARNED, BAYES_RARE_TOKEN_SECS, BAYES_WANTED_AFTER_SECS,
@@ -266,6 +273,8 @@ struct Inner {
     /// Calendar alerts that went off, for push (calendar_alerts.rs).
     calendar_alerts: broadcast::Sender<CalendarAlertFired>,
     queue_wakeup: Notify,
+    /// Wakes the AI assistant's label worker when delivered mail was queued for it.
+    assist_wakeup: Notify,
     data_dir: PathBuf,
     /// What happened since the server started, for the statistics and the metrics.
     stats: stats::Stats,
@@ -298,6 +307,7 @@ impl Store {
                 changes,
                 calendar_alerts,
                 queue_wakeup: Notify::new(),
+                assist_wakeup: Notify::new(),
                 data_dir,
                 stats: stats::Stats::default(),
                 external: std::sync::RwLock::new(None),
