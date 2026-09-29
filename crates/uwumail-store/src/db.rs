@@ -63,6 +63,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0054_shared_states.sql"),
     include_str!("migrations/0055_profile_pictures.sql"),
     include_str!("migrations/0056_fetch_oauth.sql"),
+    include_str!("migrations/0057_birthdays.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 

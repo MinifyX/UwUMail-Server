@@ -1,6 +1,7 @@
 //! Method implementations and the helpers they share.
 
 mod address_book;
+mod birthdays;
 mod calendar;
 mod calendar_event;
 mod calendar_notification;
@@ -33,7 +34,7 @@ use uwumail_store::{Account, Changes};
 use crate::api::requires;
 use crate::error::{MethodError, MethodResult};
 use crate::session::{
-    AVAILABILITY, CALENDARS, CALENDARS_PARSE, CONTACTS, CORE, IMAGETEXT, MAIL, MASKED, PROFILE, SENDERS, SETTINGS,
+    AVAILABILITY, BIRTHDAYS, CALENDARS, CALENDARS_PARSE, CONTACTS, CORE, IMAGETEXT, MAIL, MASKED, PROFILE, SENDERS, SETTINGS,
     SIEVE, SUBMISSION, SUGGEST, UNSUBSCRIBE, VACATION, WEBMAIL, WEBPUSH_VAPID, WEBSOCKET,
 };
 use crate::sharing::{self, PRINCIPALS, SharedView};
@@ -60,16 +61,26 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
     UNSUBSCRIBE,
     PROFILE,
     IMAGETEXT,
+    BIRTHDAYS,
 ];
 
 pub(crate) use calendar_event::event_for_alerts;
 
 /// The data types of calendars and address books: only for credentials with the `dav` scope.
-const DAV_TYPES: &[&str] =
-    &["Calendar", "CalendarEvent", "CalendarEventNotification", "ParticipantIdentity", "AddressBook", "ContactCard"];
+const DAV_TYPES: &[&str] = &[
+    "Calendar",
+    "CalendarEvent",
+    "CalendarEventNotification",
+    "ParticipantIdentity",
+    "AddressBook",
+    "ContactCard",
+    "Birthdays",
+];
 
 /// The most suggestions one `AddressSuggestion/query` returns.
 pub const MAX_SUGGESTIONS: usize = suggest::MAX_LIMIT;
+/// The most birthdays one `Birthdays/import` moves.
+pub const MAX_BIRTHDAY_IMPORT: usize = birthdays::MAX_IMPORT;
 
 /// One or more `(method name, arguments)` responses for a call.
 pub type Outputs = Vec<(String, Value)>;
@@ -230,6 +241,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResul
         "AddressSuggestion" => SUGGEST,
         "MaskedEmail" => MASKED,
         "ProfilePicture" => PROFILE,
+        "Birthdays" => BIRTHDAYS,
         _ => return Err(MethodError::kind("unknownMethod")),
     };
     if !requires(capability, &ctx.using) {
@@ -298,6 +310,8 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "SenderList/set" => single(senders::set(ctx, &args).await?),
         "UserSettings/get" => single(settings::get(ctx, &args).await?),
         "UserSettings/set" => single(settings::set(ctx, &args).await?),
+        "Birthdays/scan" => single(birthdays::scan(ctx, &args).await?),
+        "Birthdays/import" => single(birthdays::import(ctx, &args).await?),
         "Calendar/get" => single(calendar::get(ctx, &args).await?),
         "Calendar/changes" => {
             calendar::check_enabled(ctx)?;

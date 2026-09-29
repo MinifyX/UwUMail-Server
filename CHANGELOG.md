@@ -66,6 +66,25 @@ kept by the picture's hash. New `[ocr]` section (`enabled`, `command`, `language
 now carries Tesseract with German and English (about 40 MB more); without it the capability says
 `unavailable`.
 
+**Birthdays** ([docs/birthdays.md](docs/birthdays.md)):
+
+- A **birthdays calendar** per account ("Geburtstage"/"Birthdays" in the person's language), made
+  from the birthdays and anniversaries of their own address books, year-less dates and Apple's
+  labelled dates included. It is read-only over CalDAV and JMAP, follows every card change in the
+  same transaction (ETags, CTags, sync tokens and JMAP states move with it), can be hidden and
+  coloured, and never counts as busy. Existing contacts get theirs when the server starts.
+- CalDAV sees one yearly all-day event per date titled "Max Muster (*1996)"; JMAP names each year's
+  instance with the age ("Max Muster (30)", "Hochzeitstag von Max Muster (5 Jahre)") and adds
+  `uwuBirthday` (contact, kind, year). 29 February falls on 28 February in other years.
+- **Reminders per contact** (off by default): `uwuReminders` on `ContactCard`, stored as
+  `X-UWUMAIL-REMINDER` lines that phones keep, fired as alarms by phones and by the server's alert
+  worker.
+- **Moving birthdays out of other calendars:** the JMAP extension `urn:uwumail:jmap:birthdays`
+  finds yearly birthday events (German and English titles, 🎂, Google/KDE markers), matches them to
+  contacts by name (umlauts either way) and moves them, deleting the event only together with the
+  card write (`Birthdays/scan`, `Birthdays/import`).
+- The alert worker no longer expands never-ending series that have no alert at all.
+
 ## 0.17.1
 
 **Masked addresses for UwULock Server, without the mailbox**

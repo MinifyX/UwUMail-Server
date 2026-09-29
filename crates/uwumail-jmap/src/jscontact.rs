@@ -9,9 +9,13 @@
 use calcard::jscontact::JSContact;
 use calcard::vcard::{VCard, VCardVersion};
 use serde_json::{Map, Value};
+use uwumail_store::birthdays::{MAX_REMINDER_DAYS, MAX_REMINDERS, REMINDER_PROPERTY, Reminder};
 
 /// Properties JMAP adds to a card; they never go into the vCard.
 pub const JMAP_PROPERTIES: &[&str] = &["id", "addressBookIds"];
+/// The card's birthday reminders (docs/birthdays.md): `[{daysBefore, time}]` in JMAP,
+/// `X-UWUMAIL-REMINDER:1 09:00` lines in the vCard, which CardDAV clients keep as they are.
+pub const REMINDERS: &str = "uwuReminders";
 /// Longest uid, in bytes, as for events.
 const MAX_UID_BYTES: usize = 255;
 /// Media types a photo, logo or sound given as a `data:` URI may have.
@@ -21,9 +25,62 @@ const MEDIA_TYPES: &[(&str, &str)] = &[("photo", "image/"), ("logo", "image/"), 
 pub fn from_vcard(content: &str) -> Option<Map<String, Value>> {
     let card = VCard::parse(content).ok()?;
     match serde_json::to_value(card.into_jscontact::<String, String>()) {
-        Ok(Value::Object(object)) => Some(object),
+        Ok(Value::Object(mut object)) => {
+            take_reminders(&mut object);
+            Some(object)
+        }
         _ => None,
     }
+}
+
+/// The `X-UWUMAIL-REMINDER` lines calcard kept in `vCard/properties`, as `uwuReminders`.
+fn take_reminders(object: &mut Map<String, Value>) {
+    let Some(Value::Array(properties)) = object.get_mut("vCard").and_then(|v| v.get_mut("properties")) else {
+        return;
+    };
+    let is_reminder = |entry: &Value| {
+        entry.get(0).and_then(Value::as_str).is_some_and(|name| name.eq_ignore_ascii_case(REMINDER_PROPERTY))
+    };
+    let mut reminders: Vec<Reminder> = properties
+        .iter()
+        .filter(|entry| is_reminder(entry))
+        .filter_map(|entry| entry.get(3).and_then(Value::as_str).and_then(Reminder::parse))
+        .collect();
+    properties.retain(|entry| !is_reminder(entry));
+    reminders.sort_unstable();
+    reminders.dedup();
+    reminders.truncate(MAX_REMINDERS);
+    if !reminders.is_empty() {
+        let list: Vec<Value> = reminders
+            .iter()
+            .map(|reminder| serde_json::json!({ "daysBefore": reminder.days_before, "time": reminder.time() }))
+            .collect();
+        object.insert(REMINDERS.into(), Value::Array(list));
+    }
+}
+
+/// `uwuReminders` read, or why not.
+fn reminders_of(value: &Value) -> Result<Vec<Reminder>, String> {
+    let error = || {
+        format!(
+            "uwuReminders is a list of at most {MAX_REMINDERS} {{daysBefore: 0 to {MAX_REMINDER_DAYS}, time: \"HH:MM\"}}"
+        )
+    };
+    let list = match value {
+        Value::Null => return Ok(Vec::new()),
+        Value::Array(list) if list.len() <= MAX_REMINDERS => list,
+        _ => return Err(error()),
+    };
+    let mut reminders = Vec::new();
+    for item in list {
+        let days = item.get("daysBefore").and_then(Value::as_u64).filter(|d| *d <= u64::from(MAX_REMINDER_DAYS));
+        let time = item.get("time").and_then(Value::as_str).filter(|t| t.len() == 5);
+        let (Some(days), Some(time)) = (days, time) else { return Err(error()) };
+        reminders.push(Reminder::parse(&format!("{days} {time}")).ok_or_else(error)?);
+    }
+    reminders.sort_unstable();
+    reminders.dedup();
+    Ok(reminders)
 }
 
 /// A card as vCard text, in the version it came in; a new card as vCard 3.0, which every
@@ -32,6 +89,24 @@ pub fn to_vcard(card: &Map<String, Value>) -> Result<String, String> {
     let mut card = card.clone();
     for property in JMAP_PROPERTIES {
         card.remove(*property);
+    }
+    let reminders = reminders_of(&card.remove(REMINDERS).unwrap_or(Value::Null))?;
+    if !reminders.is_empty() {
+        let vcard = card.entry("vCard").or_insert_with(|| serde_json::json!({}));
+        let Value::Object(vcard) = vcard else { return Err("vCard must be an object".into()) };
+        let properties = vcard.entry("properties").or_insert_with(|| Value::Array(Vec::new()));
+        let Value::Array(properties) = properties else { return Err("vCard/properties must be a list".into()) };
+        properties.retain(|entry| {
+            !entry.get(0).and_then(Value::as_str).is_some_and(|name| name.eq_ignore_ascii_case(REMINDER_PROPERTY))
+        });
+        for reminder in reminders {
+            properties.push(serde_json::json!([
+                REMINDER_PROPERTY.to_ascii_lowercase(),
+                {},
+                "unknown",
+                reminder.format()
+            ]));
+        }
     }
     let json = Value::Object(card).to_string();
     let contact = JSContact::<String, String>::parse(&json).map_err(|err| format!("not JSContact: {err}"))?;
@@ -59,6 +134,9 @@ fn invalid(property: &str, description: impl Into<String>) -> Invalid {
 pub fn validate(card: &Map<String, Value>) -> Result<(), Invalid> {
     if card.get("@type").and_then(Value::as_str) != Some("Card") {
         return Err(invalid("@type", "a card has the @type Card"));
+    }
+    if let Some(value) = card.get(REMINDERS) {
+        reminders_of(value).map_err(|message| invalid(REMINDERS, message))?;
     }
     match card.get("uid").and_then(Value::as_str) {
         Some(uid) if !uid.is_empty() && uid.len() <= MAX_UID_BYTES && !uid.chars().any(char::is_control) => {}
@@ -237,6 +315,41 @@ item1.X-ABADR:de\r\nBDAY:1990-05-17\r\nNOTE:mag Thunfisch\r\nX-APPLE-SPECIAL:ble
         let again = from_vcard(&written).unwrap();
         assert_eq!(again["emails"], card["emails"]);
         assert_eq!(again["addresses"]["k1"]["components"], card["addresses"]["k1"]["components"]);
+    }
+
+    #[test]
+    fn birthday_reminders_are_their_own_property() {
+        let content = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Max\r\nUID:m\r\nBDAY:--0412\r\n\
+X-UWUMAIL-REMINDER:1 09:00\r\nX-UWUMAIL-REMINDER:0 9:00\r\nX-UWUMAIL-REMINDER:kaputt\r\nEND:VCARD\r\n";
+        let card = from_vcard(content).unwrap();
+        assert_eq!(
+            card["uwuReminders"],
+            json!([{ "daysBefore": 0, "time": "09:00" }, { "daysBefore": 1, "time": "09:00" }])
+        );
+        assert!(!card["vCard"].to_string().to_ascii_lowercase().contains("reminder"), "one place only");
+        let mut changed = card.clone();
+        changed.insert("uwuReminders".into(), json!([{ "daysBefore": 7, "time": "18:30" }]));
+        let written = to_vcard(&changed).unwrap();
+        assert!(written.contains("X-UWUMAIL-REMINDER:7 18:30\r\n"), "{written}");
+        assert!(!written.contains("1 09:00"), "{written}");
+        assert!(written.contains("BDAY:--0412") || written.contains("BDAY;"), "{written}");
+        // Without the property the vCard keeps none.
+        let mut none = card.clone();
+        none.remove("uwuReminders");
+        assert!(!to_vcard(&none).unwrap().contains("X-UWUMAIL-REMINDER"));
+        // A new card without a vCard property gets them too.
+        let fresh = object(json!({ "@type": "Card", "uid": "n", "name": { "full": "Nyu" },
+            "uwuReminders": [{ "daysBefore": 0, "time": "09:00" }] }));
+        assert!(to_vcard(&fresh).unwrap().contains("X-UWUMAIL-REMINDER:0 09:00"));
+        for bad in [
+            json!([{ "daysBefore": 29, "time": "09:00" }]),
+            json!([{ "daysBefore": 1, "time": "9:00" }]),
+            json!("1 09:00"),
+            json!([{}, {}, {}, {}, {}, {}]),
+        ] {
+            let card = object(json!({ "@type": "Card", "uid": "x", "uwuReminders": bad }));
+            assert_eq!(validate(&card).unwrap_err().properties, vec!["uwuReminders"]);
+        }
     }
 
     #[test]

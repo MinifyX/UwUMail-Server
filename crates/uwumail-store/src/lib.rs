@@ -13,6 +13,8 @@ mod address;
 mod admin;
 mod alerts;
 mod bayes;
+pub mod birthday_import;
+pub mod birthdays;
 mod blobs;
 mod calendar;
 mod calendar_alerts;
