@@ -4,6 +4,8 @@
 //! Nothing here follows a redirect, and nothing of the answer is trusted beyond being text: the
 //! callers check JSON answers against what they asked for.
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -24,6 +26,8 @@ pub const TOTAL_TIMEOUT: Duration = Duration::from_secs(180);
 pub const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 /// The most text an answer may bring.
 const MAX_TEXT_CHARS: usize = 60_000;
+/// The longest line of an event stream: far more than any event of an answer needs.
+pub const MAX_LINE_BYTES: usize = 256 * 1024;
 const AGENT: &str = "UwUMail";
 
 /// What to ask.
@@ -48,6 +52,8 @@ pub struct Target {
     /// The ChatGPT account, for the Codex backend.
     pub account_id: Option<String>,
     pub client: AssistClient,
+    /// Counts the characters of the answer as they arrive, for a request that ends early.
+    pub received: Arc<AtomicUsize>,
 }
 
 /// A finished answer.
@@ -97,8 +103,14 @@ impl ProviderError {
     }
 }
 
-fn estimate(chars: usize) -> i64 {
+/// Tokens of `chars` characters, roughly.
+pub(crate) fn estimate(chars: usize) -> i64 {
     (chars as i64 + 3) / 4
+}
+
+/// Tokens of a prompt, roughly.
+pub(crate) fn estimate_prompt(prompt: &Prompt) -> i64 {
+    estimate(prompt.system.chars().count() + prompt.user.chars().count())
 }
 
 /// Asks `target`. With `deltas`, the text is streamed and sent there piece by piece as it comes; a
@@ -119,7 +131,7 @@ pub async fn complete(
     };
     let mut completion = tokio::time::timeout(TOTAL_TIMEOUT, work).await.map_err(|_| ProviderError::Timeout)??;
     if completion.input_tokens == 0 && completion.output_tokens == 0 {
-        completion.input_tokens = estimate(prompt.system.chars().count() + prompt.user.chars().count());
+        completion.input_tokens = estimate_prompt(prompt);
         completion.output_tokens = estimate(completion.text.chars().count());
         completion.estimated = true;
     }
@@ -162,13 +174,15 @@ async fn ask(
     let body = response.into_body();
     if stream {
         let mut reader = SseReader::new(body);
+        let collector = Collector { text: String::new(), deltas, received: &target.received };
         match target.shape {
-            Shape::Chat => stream_chat(&mut reader, deltas).await,
-            Shape::Anthropic => stream_anthropic(&mut reader, deltas).await,
-            Shape::Codex => stream_codex(&mut reader, deltas).await,
+            Shape::Chat => stream_chat(&mut reader, collector).await,
+            Shape::Anthropic => stream_anthropic(&mut reader, collector).await,
+            Shape::Codex => stream_codex(&mut reader, collector).await,
         }
     } else {
         let body = read_all(body, MAX_RESPONSE_BYTES).await?;
+        target.received.fetch_add(body.len(), Ordering::Relaxed);
         let value: Value = serde_json::from_slice(&body).map_err(|_| ProviderError::Garbled("not JSON".into()))?;
         match target.shape {
             Shape::Chat => parse_chat(&value),
@@ -388,6 +402,7 @@ fn cap(text: &str) -> String {
 struct Collector<'a> {
     text: String,
     deltas: Option<&'a mpsc::Sender<String>>,
+    received: &'a AtomicUsize,
 }
 
 impl Collector<'_> {
@@ -399,6 +414,7 @@ impl Collector<'_> {
             return Err(ProviderError::TooLarge);
         }
         self.text.push_str(piece);
+        self.received.fetch_add(piece.chars().count(), Ordering::Relaxed);
         if let Some(deltas) = self.deltas {
             // Nobody listens any more: stop asking the provider.
             deltas.send(piece.to_owned()).await.map_err(|_| ProviderError::Unreachable)?;
@@ -407,11 +423,7 @@ impl Collector<'_> {
     }
 }
 
-async fn stream_chat(
-    reader: &mut SseReader,
-    deltas: Option<&mpsc::Sender<String>>,
-) -> Result<Completion, ProviderError> {
-    let mut collector = Collector { text: String::new(), deltas };
+async fn stream_chat(reader: &mut SseReader, mut collector: Collector<'_>) -> Result<Completion, ProviderError> {
     let (mut input_tokens, mut output_tokens) = (0, 0);
     let mut finish = None;
     while let Some((_, data)) = reader.next().await? {
@@ -441,11 +453,7 @@ async fn stream_chat(
     Ok(Completion { text: cap(&collector.text), input_tokens, output_tokens, estimated: false })
 }
 
-async fn stream_anthropic(
-    reader: &mut SseReader,
-    deltas: Option<&mpsc::Sender<String>>,
-) -> Result<Completion, ProviderError> {
-    let mut collector = Collector { text: String::new(), deltas };
+async fn stream_anthropic(reader: &mut SseReader, mut collector: Collector<'_>) -> Result<Completion, ProviderError> {
     let (mut input_tokens, mut output_tokens) = (0, 0);
     let mut stop = None;
     while let Some((event, data)) = reader.next().await? {
@@ -493,11 +501,7 @@ async fn stream_anthropic(
     Ok(Completion { text: cap(&collector.text), input_tokens, output_tokens, estimated: false })
 }
 
-async fn stream_codex(
-    reader: &mut SseReader,
-    deltas: Option<&mpsc::Sender<String>>,
-) -> Result<Completion, ProviderError> {
-    let mut collector = Collector { text: String::new(), deltas };
+async fn stream_codex(reader: &mut SseReader, mut collector: Collector<'_>) -> Result<Completion, ProviderError> {
     let (mut input_tokens, mut output_tokens) = (0, 0);
     while let Some((event, data)) = reader.next().await? {
         let Ok(value) = serde_json::from_str::<Value>(&data) else { continue };
@@ -571,22 +575,42 @@ impl SseReader {
 #[derive(Default)]
 pub struct SseParser {
     buffer: Vec<u8>,
+    /// The start of `buffer` up to here holds no line break: a chunk only looks at what is new.
+    scanned: usize,
     event: String,
     data: Vec<String>,
     ready: std::collections::VecDeque<(String, String)>,
+    /// Bytes looked at for line breaks, for the test that this stays linear.
+    #[cfg(test)]
+    looked_at: usize,
 }
 
 impl SseParser {
     pub fn feed(&mut self, bytes: &[u8]) -> Result<(), ProviderError> {
         self.buffer.extend_from_slice(bytes);
-        while let Some(end) = self.buffer.iter().position(|&b| b == b'\n') {
-            let line: Vec<u8> = self.buffer.drain(..=end).collect();
-            let line = String::from_utf8_lossy(&line);
-            let line = line.trim_end_matches(['\n', '\r']);
-            self.line(line);
+        let mut start = 0;
+        let mut from = self.scanned;
+        while let Some(found) = self.buffer[from..].iter().position(|&b| b == b'\n') {
+            #[cfg(test)]
+            {
+                self.looked_at += found + 1;
+            }
+            let end = from + found;
+            let line = String::from_utf8_lossy(&self.buffer[start..end]).into_owned();
+            self.line(line.trim_end_matches('\r'));
+            start = end + 1;
+            from = start;
         }
-        // One line longer than a whole answer may be is not an event stream.
-        if self.buffer.len() > MAX_RESPONSE_BYTES {
+        #[cfg(test)]
+        {
+            self.looked_at += self.buffer.len() - from;
+        }
+        if start > 0 {
+            self.buffer.drain(..start);
+        }
+        self.scanned = self.buffer.len();
+        // One line longer than any event needs is not an event stream.
+        if self.buffer.len() > MAX_LINE_BYTES {
             return Err(ProviderError::TooLarge);
         }
         Ok(())
@@ -622,6 +646,7 @@ impl SseParser {
     /// What is left when the stream ended without a last blank line.
     pub fn finish(&mut self) -> Option<(String, String)> {
         if !self.buffer.is_empty() {
+            self.scanned = 0;
             let rest = String::from_utf8_lossy(&std::mem::take(&mut self.buffer)).into_owned();
             self.line(rest.trim_end_matches('\r'));
         }
@@ -667,6 +692,31 @@ mod tests {
         assert_eq!(parser.next_event(), Some((String::new(), "Grü".into())));
         parser.feed(b"data: last").unwrap();
         assert_eq!(parser.finish(), Some((String::new(), "last".into())));
+    }
+
+    #[test]
+    fn a_long_line_is_read_once_and_has_a_limit() {
+        let mut parser = SseParser::default();
+        let piece = [b'x'; 100];
+        let mut fed = 0;
+        while fed + piece.len() <= MAX_LINE_BYTES {
+            parser.feed(&piece).unwrap();
+            fed += piece.len();
+        }
+        // Every byte was looked at once, not again with every chunk.
+        assert_eq!(parser.looked_at, fed);
+        parser.feed(b"\n\n").unwrap();
+        assert_eq!(parser.next_event(), None, "no data field, no event");
+        assert_eq!(parser.looked_at, fed + 2);
+
+        let mut parser = SseParser::default();
+        parser.feed(b"data: ").unwrap();
+        assert_eq!(parser.feed(&vec![b'x'; MAX_LINE_BYTES]), Err(ProviderError::TooLarge));
+        // Many events in one chunk are all read.
+        let mut parser = SseParser::default();
+        parser.feed(b"data: a\n\ndata: b\n\ndata: c\n\n").unwrap();
+        let events: Vec<_> = std::iter::from_fn(|| parser.next_event()).map(|(_, data)| data).collect();
+        assert_eq!(events, ["a", "b", "c"]);
     }
 
     #[test]

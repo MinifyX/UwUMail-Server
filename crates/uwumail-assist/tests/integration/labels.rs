@@ -156,3 +156,26 @@ async fn deleting_a_label_takes_it_off_every_mail() {
     assert!(rig.store.assist_labels(rig.mia.id).await.unwrap().iter().all(|label| label.id == travel));
     assert!(rig.assist.delete_label(&rig.mia, bills).await.is_err());
 }
+
+/// AI-04 of the 0.18.0 audit: one person's queue is bounded, and a batch takes one job per person,
+/// so a full queue or a slow provider of one person holds up nobody else.
+#[tokio::test]
+async fn one_persons_queue_holds_up_nobody_else() {
+    let (rig, _, _) = labelled_rig().await;
+    let leni = crate::common::account(&rig.store, "leni@example.org").await;
+    rig.store.create_assist_label(leni.id, "Arbeit".into(), "Alles von der Arbeit".into(), None).await.unwrap();
+    let patch = SettingsPatch { auto_labels: Some(true), ..SettingsPatch::default() };
+    rig.assist.set_settings(&leni, patch).await.unwrap();
+    let mut queued = 0;
+    for email in 1..=250 {
+        if rig.store.enqueue_auto_label(rig.mia.id, email).await.unwrap() {
+            queued += 1;
+        }
+    }
+    assert_eq!(queued, 200, "at most 200 waiting per person");
+    assert!(rig.store.enqueue_auto_label(leni.id, 1).await.unwrap(), "someone else still gets in");
+    let due = rig.store.due_label_jobs(20).await.unwrap();
+    let mut accounts: Vec<i64> = due.iter().map(|job| job.account_id).collect();
+    accounts.sort();
+    assert_eq!(accounts, [rig.mia.id, leni.id]);
+}

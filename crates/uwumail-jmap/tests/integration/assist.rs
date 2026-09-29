@@ -114,7 +114,8 @@ async fn settings_labels_and_a_summary() {
         .await;
     let provider = args(&responses, 0, "AssistProvider/get")["list"][0].clone();
     assert_eq!(provider["name"], "Hausmodell");
-    assert_eq!(provider["keyHint"], "…0000");
+    // The end of the admin's key is not the person's to see (AI-07 of the 0.18.0 audit).
+    assert_eq!(provider["keyHint"], Value::Null, "{provider}");
     assert!(provider.get("apiKey").is_none());
     // `#p` is no id, so the patch is refused as a whole.
     assert!(args(&responses, 1, "AssistSettings/set")["notUpdated"]["singleton"].is_object());

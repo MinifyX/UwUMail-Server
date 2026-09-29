@@ -4,6 +4,8 @@
 
 use std::collections::BTreeMap;
 use std::net::IpAddr;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use http_body_util::BodyExt;
 use hyper::Request;
@@ -15,13 +17,13 @@ use url::{Host, Url};
 use uwumail_smtp::egress::{Reach, is_local_network};
 use uwumail_store::{
     ASSIST_MAX_ACCESS_ENTRIES, ASSIST_MAX_LABELS, ASSIST_MAX_PERSONAL_PROVIDERS, Account, AssistFeatures, AssistPolicy,
-    AssistProviderRecord, AssistProviderWrite, SecretChange, StoreError, normalize_domain,
+    AssistProviderRecord, AssistProviderWrite, SecretChange, Store, StoreError, normalize_domain,
 };
 
 use crate::chatgpt::{self, Poll, Tokens};
 use crate::kinds::{self, BaseUrl, Key, KindInfo, Shape};
 use crate::llm::{self, Completion, Prompt, ProviderError, Target};
-use crate::{Assist, AssistError, FEATURES, MAX_INSTRUCTION_CHARS, MAX_TEXT_CHARS, Result, now};
+use crate::{Assist, AssistError, FEATURES, MAX_INSTRUCTION_CHARS, MAX_TEXT_CHARS, Result, Running, now};
 
 const NAME_MAX_CHARS: usize = 60;
 const MODEL_MAX_CHARS: usize = 200;
@@ -101,7 +103,7 @@ pub struct AdminProviderView {
 }
 
 /// A new or changed provider, as the portal and JMAP send it.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderInput {
     pub name: Option<String>,
@@ -123,6 +125,23 @@ pub struct ProviderInput {
     pub requests_per_day: Option<Option<i64>>,
     #[serde(default, deserialize_with = "nullable")]
     pub tokens_per_day: Option<Option<i64>>,
+}
+
+/// Everything but the key, which never goes into a log line.
+impl std::fmt::Debug for ProviderInput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProviderInput")
+            .field("name", &self.name)
+            .field("kind", &self.kind)
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
+            .field("model", &self.model)
+            .field("fast_model", &self.fast_model)
+            .field("enabled", &self.enabled)
+            .field("access", &self.access)
+            .field("features", &self.features)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -215,7 +234,8 @@ impl Available {
             scope: self.scope(),
             base_url: if self.server { None } else { record.base_url.clone() },
             has_key: record.has_secret && self.info.key != Key::Login,
-            key_hint: if self.info.key == Key::Login { None } else { record.key_hint.clone() },
+            // The end of the admin's key is the admin's to see (AI-07 of the 0.18.0 audit).
+            key_hint: if self.info.key == Key::Login || self.server { None } else { record.key_hint.clone() },
             model: record.model.clone(),
             fast_model: record.fast_model.clone(),
             features: self.features.clone(),
@@ -925,7 +945,18 @@ impl Assist {
     /// `pending`, `connected`, `expired` or `failed` with why.
     pub async fn chatgpt_poll(&self, account: &Account, id: i64) -> Result<(&'static str, Option<String>)> {
         let record = self.own_provider(account, id).await?;
-        let code = self.inner.logins.lock().unwrap_or_else(|e| e.into_inner()).get(&id).cloned();
+        let code = {
+            let mut logins = self.inner.logins.lock().unwrap_or_else(|e| e.into_inner());
+            match logins.get_mut(&id) {
+                // Asked again before OpenAI's interval: answered here (AI-06 of the 0.18.0 audit).
+                Some(code) if code.expires_at > now() && code.next_poll > now() => return Ok(("pending", None)),
+                Some(code) => {
+                    code.next_poll = now() + code.interval.max(1) as i64;
+                    Some(code.clone())
+                }
+                None => None,
+            }
+        };
         let Some(code) = code else {
             if record.has_secret {
                 return Ok(("connected", None));
@@ -975,15 +1006,11 @@ impl Assist {
         Ok(out)
     }
 
-    /// Asks the model for `feature` on behalf of `account`, within the policy and the quota, and
-    /// counts it.
-    pub(crate) async fn run(
-        &self,
-        account: &Account,
-        feature: &str,
-        prompt: &Prompt,
-        deltas: Option<&mpsc::Sender<String>>,
-    ) -> Result<(Completion, Effective)> {
+    /// Takes a request for `feature` on behalf of `account`: checks the policy, picks the provider
+    /// and model, takes a place among the running requests and counts the request against the day's
+    /// limits, all before a feature reads any mail. Dropping the ticket gives the place back; the
+    /// request stays counted.
+    pub(crate) async fn prepare(&self, account: &Account, feature: &str) -> Result<Ticket<'_>> {
         let store = self.store();
         let policy = store.assist_policy().await?;
         if !policy.features.get(feature) {
@@ -993,37 +1020,62 @@ impl Assist {
         let prefs = store.assist_prefs(account.id).await?;
         let (provider, model) = Self::effective(&available, &prefs.choices, feature)
             .ok_or_else(|| AssistError::Unavailable(format!("no AI provider can be used for {feature}")))?;
+        let running = self.begin(account.id)?;
         let record = &provider.record;
-        if provider.server && (record.requests_per_day.is_some() || record.tokens_per_day.is_some()) {
-            let (requests, tokens) = store.assist_used_today(account.id, record.id).await?;
-            if let Some(limit) = record.requests_per_day
-                && requests >= limit
-            {
-                return Err(AssistError::OverQuota(format!(
-                    "the {limit} requests a day to {} are used up; the count starts again at midnight UTC",
-                    record.name
-                )));
-            }
-            if let Some(limit) = record.tokens_per_day
-                && tokens >= limit
-            {
-                return Err(AssistError::OverQuota(format!(
-                    "the {limit} tokens a day for {} are used up; the count starts again at midnight UTC",
-                    record.name
-                )));
-            }
-        }
-        let _running = self.begin(account.id)?;
-        let target = self.target(&provider, &policy, model.clone()).await?;
-        let result = llm::complete(&target, prompt, deltas).await;
-        let (input, output) = match &result {
-            Ok(completion) => (completion.input_tokens, completion.output_tokens),
-            Err(_) => (0, 0),
+        let (requests_per_day, tokens_per_day) =
+            if provider.server { (record.requests_per_day, record.tokens_per_day) } else { (None, None) };
+        let day =
+            match store.reserve_assist_usage(account.id, record.id, feature, requests_per_day, tokens_per_day).await {
+                Ok(day) => day,
+                Err(StoreError::Rule { code: "overQuota", message }) => {
+                    let (limit, what) = if message == "requests" {
+                        (requests_per_day.unwrap_or_default(), "requests a day to")
+                    } else {
+                        (tokens_per_day.unwrap_or_default(), "tokens a day for")
+                    };
+                    return Err(AssistError::OverQuota(format!(
+                        "the {limit} {what} {} are used up; the count starts again at midnight UTC",
+                        record.name
+                    )));
+                }
+                Err(err) => return Err(err.into()),
+            };
+        let charge = Charge {
+            store: store.clone(),
+            account_id: account.id,
+            provider_id: record.id,
+            feature: feature.to_owned(),
+            day,
+            input: 0,
+            received: Arc::default(),
+            settled: false,
         };
-        if let Err(err) = store.record_assist_usage(account.id, record.id, feature, input, output).await {
-            tracing::warn!(%err, "counting an AI request failed");
+        Ok(Ticket { provider, model, policy, _running: running, charge })
+    }
+
+    /// Asks the model with a ticket from [`Assist::prepare`] and counts the tokens: what the provider
+    /// reports, or an estimate of what was sent and received when it fails or the caller goes away.
+    pub(crate) async fn send(
+        &self,
+        ticket: Ticket<'_>,
+        prompt: &Prompt,
+        deltas: Option<&mpsc::Sender<String>>,
+    ) -> Result<(Completion, Effective)> {
+        let Ticket { provider, model, policy, _running, mut charge } = ticket;
+        let mut target = self.target(&provider, &policy, model.clone()).await?;
+        target.received = charge.received.clone();
+        let input = llm::estimate_prompt(prompt);
+        charge.add_input(input).await;
+        let result = llm::complete(&target, prompt, deltas).await;
+        match &result {
+            Ok(completion) => charge.settle(completion.input_tokens, completion.output_tokens).await,
+            Err(_) => {
+                let output = llm::estimate(charge.received.load(Ordering::Relaxed));
+                charge.settle(input, output).await
+            }
         }
         let completion = result.map_err(provider_failed)?;
+        let record = &provider.record;
         let effective =
             Effective { provider_id: record.id, provider_name: record.name.clone(), model, scope: provider.scope() };
         Ok((completion, effective))
@@ -1039,29 +1091,122 @@ impl Assist {
             let tokens: Tokens = secret
                 .and_then(|json| serde_json::from_str(&json).ok())
                 .ok_or_else(|| AssistError::Unavailable("sign in with ChatGPT first".into()))?;
-            let tokens = if chatgpt::needs_refresh(&tokens, now()) {
-                let chatgpt_client = self.chatgpt_client().await?;
-                let fresh =
-                    chatgpt::refresh(&chatgpt_client, &self.inner.chatgpt, &tokens, now()).await.map_err(|why| {
-                        AssistError::ProviderFailed {
+            let (tokens, guard) = if chatgpt::needs_refresh(&tokens, now()) {
+                let guard = self.inner.renewing.lock().await;
+                // Another request may have renewed it meanwhile.
+                let again: Option<Tokens> = self
+                    .store()
+                    .assist_provider_secret(record.id)
+                    .await?
+                    .and_then(|json| serde_json::from_str(&json).ok());
+                (again.unwrap_or(tokens), Some(guard))
+            } else {
+                (tokens, None)
+            };
+            let tokens = if guard.is_some() && chatgpt::needs_refresh(&tokens, now()) {
+                {
+                    let chatgpt_client = self.chatgpt_client().await?;
+                    let fresh = chatgpt::refresh(&chatgpt_client, &self.inner.chatgpt, &tokens, now()).await.map_err(
+                        |why| AssistError::ProviderFailed {
                             description: format!("the ChatGPT sign-in could not be renewed ({why}); sign in again"),
                             retry_after: None,
                             transient: false,
-                        }
-                    })?;
-                let json = serde_json::to_string(&fresh).map_err(|err| StoreError::Internal(err.to_string()))?;
-                self.store().set_assist_provider_secret(record.id, SecretChange::Set(json, None)).await?;
-                fresh
+                        },
+                    )?;
+                    let json = serde_json::to_string(&fresh).map_err(|err| StoreError::Internal(err.to_string()))?;
+                    self.store().set_assist_provider_secret(record.id, SecretChange::Set(json, None)).await?;
+                    fresh
+                }
             } else {
                 tokens
             };
+            drop(guard);
             (self.inner.chatgpt.backend.clone(), Some(tokens.access_token), tokens.account_id)
         } else {
             let base = kinds::endpoint(info, record.base_url.as_deref())
                 .ok_or_else(|| AssistError::Unavailable("the provider has no address".into()))?;
             (base, secret, None)
         };
-        Ok(Target { shape: info.shape, flavor: info.flavor, base_url, key, model, account_id, client })
+        Ok(Target {
+            shape: info.shape,
+            flavor: info.flavor,
+            base_url,
+            key,
+            model,
+            account_id,
+            client,
+            received: Arc::default(),
+        })
+    }
+}
+
+/// A request that may be made; see [`Assist::prepare`].
+pub(crate) struct Ticket<'a> {
+    provider: Available,
+    model: String,
+    policy: AssistPolicy,
+    _running: Running<'a>,
+    charge: Charge,
+}
+
+/// The tokens of one counted request, until they are settled. Dropped unsettled (the caller went
+/// away while the model was answering), it still counts what came back so far.
+struct Charge {
+    store: Store,
+    account_id: i64,
+    provider_id: i64,
+    feature: String,
+    day: String,
+    /// Input tokens counted so far.
+    input: i64,
+    /// Characters of the answer received so far.
+    received: Arc<AtomicUsize>,
+    settled: bool,
+}
+
+impl Charge {
+    async fn add(&self, input: i64, output: i64) -> bool {
+        let result = self
+            .store
+            .add_assist_tokens(self.account_id, self.provider_id, self.day.clone(), &self.feature, input, output)
+            .await;
+        if let Err(err) = &result {
+            tracing::warn!(%err, "counting an AI request's tokens failed");
+        }
+        result.is_ok()
+    }
+
+    /// Counts the prompt's estimated tokens before it is sent.
+    async fn add_input(&mut self, input: i64) {
+        if self.add(input, 0).await {
+            self.input += input;
+        }
+    }
+
+    /// Replaces the estimate with what the request used.
+    async fn settle(mut self, input: i64, output: i64) {
+        self.settled = true;
+        self.add(input - self.input, output).await;
+    }
+}
+
+impl Drop for Charge {
+    fn drop(&mut self) {
+        if self.settled {
+            return;
+        }
+        let output = llm::estimate(self.received.load(Ordering::Relaxed));
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else { return };
+        if output == 0 {
+            return;
+        }
+        let (store, account_id, provider_id) = (self.store.clone(), self.account_id, self.provider_id);
+        let (day, feature) = (std::mem::take(&mut self.day), std::mem::take(&mut self.feature));
+        runtime.spawn(async move {
+            if let Err(err) = store.add_assist_tokens(account_id, provider_id, day, &feature, 0, output).await {
+                tracing::warn!(%err, "counting an AI request's tokens failed");
+            }
+        });
     }
 }
 

@@ -67,7 +67,10 @@ async fn keys_are_sealed_at_rest_and_never_shown() {
     let admin = rig.assist.admin_providers().await.unwrap();
     assert_eq!(admin[0].key_hint.as_deref(), Some("…1234"));
     assert!(admin[0].has_key);
-    let shown = serde_json::to_string(&(admin, rig.assist.providers(&rig.mia).await.unwrap())).unwrap();
+    let persons = rig.assist.providers(&rig.mia).await.unwrap();
+    let server = persons.iter().find(|provider| provider.id == id).unwrap();
+    assert_eq!(server.key_hint, None, "the end of the admin's key is the admin's (AI-07)");
+    let shown = serde_json::to_string(&(admin, persons)).unwrap();
     assert!(!shown.contains(KEY) && !shown.contains("sk-own"), "{shown}");
 
     // Nowhere in the database files, not even in the write-ahead log.
@@ -231,4 +234,42 @@ async fn choices_pick_the_provider_and_model() {
     // Nobody chooses someone else's provider.
     let patch: SettingsPatch = serde_json::from_value(json!({ "default": { "providerId": 999 } })).unwrap();
     assert!(rig.assist.set_settings(&rig.mia, patch).await.is_err());
+}
+
+/// AI-01 of the 0.18.0 audit: checking and counting a request are one step, so requests side by
+/// side cannot share the last one left of a day.
+#[tokio::test]
+async fn requests_side_by_side_do_not_share_the_last_one() {
+    let rig = rig().await;
+    rig.server_provider("openaiCompatible", json!({ "requestsPerDay": 1 })).await;
+    let (a, b, c) = tokio::join!(
+        rig.assist.compose(&rig.mia, write(), None),
+        rig.assist.compose(&rig.mia, write(), None),
+        rig.assist.compose(&rig.mia, write(), None),
+    );
+    let ok = [a, b, c].into_iter().filter(Result::is_ok).count();
+    assert_eq!(ok, 1);
+    assert_eq!(rig.fake.seen().len(), 1);
+}
+
+/// AI-01: a streamed answer whose listener goes away is counted all the same.
+#[tokio::test]
+async fn a_stream_that_is_left_is_still_counted() {
+    let rig = rig().await;
+    rig.server_provider("openaiCompatible", json!({ "tokensPerDay": 1_000_000 })).await;
+    let long: Vec<String> = (0..200).map(|n| format!("Satz {n} eines langen Entwurfs. ")).collect();
+    let pieces: Vec<&str> = long.iter().map(String::as_str).collect();
+    rig.fake.push(Reply::Stream(crate::common::chat_stream(&pieces), 64));
+    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+    let work = rig.assist.compose(&rig.mia, write(), Some(&tx));
+    let listener = async {
+        // The first piece, then the reader goes away.
+        rx.recv().await;
+        drop(rx);
+    };
+    let (result, ()) = tokio::join!(work, listener);
+    assert!(result.is_err(), "nobody listened to the end");
+    let today = rig.assist.today(&rig.mia).await.unwrap();
+    assert_eq!(today[0].requests, 1);
+    assert!(today[0].tokens > 0, "{:?}", today[0].tokens);
 }

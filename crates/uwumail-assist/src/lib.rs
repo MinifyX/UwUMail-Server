@@ -97,6 +97,9 @@ struct Inner {
     hostname: String,
     /// ChatGPT device logins that were started, by provider.
     logins: Mutex<HashMap<i64, chatgpt::DeviceCode>>,
+    /// Held while a ChatGPT sign-in is renewed: its refresh token works once, so requests side by
+    /// side must not each renew it (AI-05 of the 0.18.0 audit).
+    renewing: tokio::sync::Mutex<()>,
     chatgpt: chatgpt::Endpoints,
     /// For tests: providers set up by people may reach anything, like the admin's.
     reach_anything: bool,
@@ -114,6 +117,7 @@ impl Assist {
                 egress,
                 hostname: hostname.to_ascii_lowercase(),
                 logins: Mutex::new(HashMap::new()),
+                renewing: tokio::sync::Mutex::new(()),
                 chatgpt: chatgpt::Endpoints::default(),
                 reach_anything: false,
                 permits: Semaphore::new(MAX_CONCURRENT),

@@ -27,6 +27,9 @@ pub const ASSIST_LABEL_DESCRIPTION_MAX_CHARS: usize = 300;
 pub const ASSIST_MAX_ACCESS_ENTRIES: usize = 500;
 /// Emails with a label that destroying the label takes it off, at most.
 const MAX_UNLABEL: usize = 20_000;
+/// Delivered emails one person may have waiting for labels; more are not queued (they keep no
+/// label), so one busy mailbox can't fill the queue for everyone.
+const ASSIST_MAX_QUEUED_PER_ACCOUNT: i64 = 200;
 
 const POLICY_KEY: &str = "assist.policy";
 const VERSION_KEY: &str = "assist.version";
@@ -120,12 +123,23 @@ pub struct AssistProviderRecord {
 }
 
 /// What happens to the secret with a write.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum SecretChange {
     Keep,
     Remove,
     /// The secret, and the hint to show for it.
     Set(String, Option<String>),
+}
+
+/// Never shows the secret, only the hint.
+impl std::fmt::Debug for SecretChange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SecretChange::Keep => f.write_str("Keep"),
+            SecretChange::Remove => f.write_str("Remove"),
+            SecretChange::Set(_, hint) => f.debug_tuple("Set").field(&"<redacted>").field(hint).finish(),
+        }
+    }
 }
 
 /// A new or changed provider; every field is written.
@@ -705,8 +719,9 @@ impl Store {
                      SELECT ?1, ?2, ?3, ?3
                      WHERE EXISTS (SELECT 1 FROM assist_prefs WHERE account_id = ?1 AND auto_labels = 1)
                        AND EXISTS (SELECT 1 FROM assist_labels WHERE account_id = ?1)
+                       AND (SELECT COUNT(*) FROM assist_label_queue WHERE account_id = ?1) < ?4
                      ON CONFLICT (account_id, email_id) DO NOTHING",
-                    params![account_id, email_id, now],
+                    params![account_id, email_id, now, ASSIST_MAX_QUEUED_PER_ACCOUNT],
                 )? == 1)
             })
             .await?;
@@ -733,12 +748,16 @@ impl Store {
         &self.inner.assist_wakeup
     }
 
-    /// Jobs that are due, oldest first.
+    /// Jobs that are due, oldest first, at most one per person: one person's full queue never
+    /// holds up everyone else's labels.
     pub async fn due_label_jobs(&self, limit: usize) -> Result<Vec<LabelJob>> {
         self.read(move |conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, account_id, email_id, queued_at, attempts FROM assist_label_queue
-                 WHERE next_at <= ?1 ORDER BY next_at, id LIMIT ?2",
+                "SELECT id, account_id, email_id, queued_at, attempts FROM (
+                     SELECT id, account_id, email_id, queued_at, attempts, next_at,
+                            ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY next_at, id) AS nth
+                     FROM assist_label_queue WHERE next_at <= ?1)
+                 WHERE nth = 1 ORDER BY next_at, id LIMIT ?2",
             )?;
             let rows = stmt.query_map(params![now(), limit as i64], |row| {
                 Ok(LabelJob {
@@ -865,11 +884,52 @@ impl Store {
         .await
     }
 
-    /// Counts one request and its tokens for today.
-    pub async fn record_assist_usage(
+    /// Counts a request before it is made, within the daily limits (`None`: no limit): checking and
+    /// counting are one write, so requests running side by side can't share the last one left.
+    /// Answers the day it was counted on, for [`Store::add_assist_tokens`]; a limit that is used up
+    /// is `Rule { code: "overQuota" }` with `requests` or `tokens` as the message.
+    pub async fn reserve_assist_usage(
         &self,
         account_id: i64,
         provider_id: i64,
+        feature: &str,
+        requests_per_day: Option<i64>,
+        tokens_per_day: Option<i64>,
+    ) -> Result<String> {
+        let feature = feature.to_owned();
+        self.write(move |tx| {
+            let day = utc_day(now());
+            if requests_per_day.is_some() || tokens_per_day.is_some() {
+                let (requests, tokens): (i64, i64) = tx.query_row(
+                    "SELECT COALESCE(SUM(requests), 0), COALESCE(SUM(input_tokens + output_tokens), 0)
+                     FROM assist_usage WHERE account_id = ?1 AND provider_id = ?2 AND day = ?3",
+                    params![account_id, provider_id, day],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )?;
+                if requests_per_day.is_some_and(|limit| requests >= limit) {
+                    return Err(StoreError::Rule { code: "overQuota", message: "requests".into() });
+                }
+                if tokens_per_day.is_some_and(|limit| tokens >= limit) {
+                    return Err(StoreError::Rule { code: "overQuota", message: "tokens".into() });
+                }
+            }
+            tx.execute(
+                "INSERT INTO assist_usage (account_id, provider_id, day, feature, requests) VALUES (?1, ?2, ?3, ?4, 1)
+                 ON CONFLICT (account_id, provider_id, day, feature) DO UPDATE SET requests = requests + 1",
+                params![account_id, provider_id, day, feature],
+            )?;
+            Ok(day)
+        })
+        .await
+    }
+
+    /// Adds tokens to a request counted with [`Store::reserve_assist_usage`] on `day`. Negative
+    /// numbers take back part of an estimate; a count never goes below zero.
+    pub async fn add_assist_tokens(
+        &self,
+        account_id: i64,
+        provider_id: i64,
+        day: String,
         feature: &str,
         input_tokens: i64,
         output_tokens: i64,
@@ -877,11 +937,11 @@ impl Store {
         let feature = feature.to_owned();
         self.write(move |tx| {
             tx.execute(
-                "INSERT INTO assist_usage (account_id, provider_id, day, feature, requests, input_tokens, output_tokens)
-                 VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6)
+                "INSERT INTO assist_usage (account_id, provider_id, day, feature, input_tokens, output_tokens)
+                 VALUES (?1, ?2, ?3, ?4, MAX(?5, 0), MAX(?6, 0))
                  ON CONFLICT (account_id, provider_id, day, feature) DO UPDATE SET
-                    requests = requests + 1, input_tokens = input_tokens + ?5, output_tokens = output_tokens + ?6",
-                params![account_id, provider_id, utc_day(now()), feature, input_tokens.max(0), output_tokens.max(0)],
+                    input_tokens = MAX(input_tokens + ?5, 0), output_tokens = MAX(output_tokens + ?6, 0)",
+                params![account_id, provider_id, day, feature, input_tokens, output_tokens],
             )?;
             Ok(())
         })

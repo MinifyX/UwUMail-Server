@@ -84,3 +84,24 @@ async fn a_reply_is_written_with_the_mail_it_answers() {
     };
     assert!(rig.assist.compose(&leni, args, None).await.is_err());
 }
+
+/// AI-02 of the 0.18.0 audit: the policy and the day's limits are checked before a mail or its
+/// pictures are read.
+#[tokio::test]
+async fn nothing_is_read_for_a_request_that_may_not_be_made() {
+    let rig = rig().await;
+    let reads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = reads.clone();
+    let pictures: ImageText = Arc::new(move |_, _| {
+        counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async { Some(vec![]) })
+    });
+    let assist =
+        Assist::for_tests(rig.store.clone(), "mx.example.org", chatgpt::Endpoints::default()).with_image_text(pictures);
+    rig.server_provider("openaiCompatible", json!({ "requestsPerDay": 0 })).await;
+    let email = rig.deliver(&rig.mia, INVOICE).await;
+    let refused = assist.extract_events(&rig.mia, EventsArgs { email_id: email, include_images: true }).await;
+    assert!(matches!(refused, Err(uwumail_assist::AssistError::OverQuota(_))), "{refused:?}");
+    assert_eq!(reads.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert!(rig.fake.seen().is_empty());
+}

@@ -44,22 +44,42 @@ impl Default for Endpoints {
 }
 
 /// A device login that was started and not yet confirmed.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DeviceCode {
     pub device_auth_id: String,
     pub user_code: String,
     pub interval: u64,
     pub expires_at: i64,
+    /// OpenAI is not asked again before this (Unix seconds): its interval holds whoever polls.
+    pub next_poll: i64,
 }
 
 /// The tokens of a ChatGPT login, stored sealed as the provider's secret.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Tokens {
     pub access_token: String,
     pub refresh_token: String,
     pub account_id: Option<String>,
     /// Unix seconds.
     pub expires_at: i64,
+}
+
+/// Never the tokens themselves.
+impl std::fmt::Debug for Tokens {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Tokens").field("expires_at", &self.expires_at).finish_non_exhaustive()
+    }
+}
+
+/// Never the device login's id, which fetches the tokens.
+impl std::fmt::Debug for DeviceCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DeviceCode")
+            .field("user_code", &self.user_code)
+            .field("interval", &self.interval)
+            .field("expires_at", &self.expires_at)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -117,7 +137,7 @@ pub async fn start(client: &AssistClient, endpoints: &Endpoints, now: i64) -> Re
         .and_then(|interval| interval.as_u64().or_else(|| interval.as_str().and_then(|s| s.trim().parse().ok())))
         .unwrap_or(5)
         .clamp(2, 30);
-    Ok(DeviceCode { device_auth_id, user_code, interval, expires_at: now + LOGIN_SECS })
+    Ok(DeviceCode { device_auth_id, user_code, interval, expires_at: now + LOGIN_SECS, next_poll: now })
 }
 
 /// The page where the person enters the code.

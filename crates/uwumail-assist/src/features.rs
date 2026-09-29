@@ -11,7 +11,7 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 use uwumail_store::{Account, AssistLabel, EmailRecord, KeywordsChange, MailboxRole, SenderHistory, StoreError};
 
-use crate::access::Effective;
+use crate::access::{Effective, Ticket};
 use crate::llm::{self, Completion, Prompt};
 use crate::mail::{MAX_MAIL_CHARS, MailText};
 use crate::prompts::{self, ComposeRequest, SUBJECT_MARK};
@@ -278,33 +278,35 @@ async fn relay(mut from: mpsc::Receiver<String>, to: &mpsc::Sender<StreamEvent>,
 }
 
 impl Assist {
-    /// Reads one of the account's mails for a prompt.
-    async fn mail(&self, account: &Account, email_id: i64, max_chars: usize) -> Result<(EmailRecord, MailText)> {
-        let record = match self.store().email(account.id, email_id).await {
-            Ok(record) => record,
-            Err(StoreError::NotFound(_)) => return Err(AssistError::NotFound(format!("email {email_id}"))),
-            Err(err) => return Err(err.into()),
-        };
+    /// One of the account's mails, without reading it: cheap, done before a request is taken.
+    async fn record(&self, account: &Account, email_id: i64) -> Result<EmailRecord> {
+        match self.store().email(account.id, email_id).await {
+            Ok(record) => Ok(record),
+            Err(StoreError::NotFound(_)) => Err(AssistError::NotFound(format!("email {email_id}"))),
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    /// Reads a mail for a prompt: only after [`Assist::prepare`] said the request may be made.
+    async fn text(&self, record: &EmailRecord, max_chars: usize) -> Result<MailText> {
         let raw = self.store().blob(&record.blob).await?;
-        let text = MailText::read(&record, &raw, max_chars);
-        Ok((record, text))
+        Ok(MailText::read(record, &raw, max_chars))
     }
 
     /// Asks the model, streaming when `events` listens.
     async fn ask(
         &self,
-        account: &Account,
-        feature: &str,
+        ticket: Ticket<'_>,
         prompt: &Prompt,
         events: Option<&mpsc::Sender<StreamEvent>>,
         want_subject: bool,
     ) -> Result<(Completion, Effective)> {
         let Some(events) = events else {
-            return self.run(account, feature, prompt, None).await;
+            return self.send(ticket, prompt, None).await;
         };
         let (tx, rx) = mpsc::channel::<String>(64);
         let work = async move {
-            let result = self.run(account, feature, prompt, Some(&tx)).await;
+            let result = self.send(ticket, prompt, Some(&tx)).await;
             drop(tx);
             result
         };
@@ -356,7 +358,12 @@ impl Assist {
             other => return Err(invalid("mode", format!("{other:?} is not a mode"))),
         }
         let reply_to = match args.reply_to_email_id {
-            Some(id) => Some(self.mail(account, id, 8000).await?.1),
+            Some(id) => Some(self.record(account, id).await?),
+            None => None,
+        };
+        let ticket = self.prepare(account, "compose").await?;
+        let reply_to = match reply_to {
+            Some(record) => Some(self.text(&record, 8000).await?),
             None => None,
         };
         let sender = if account.display_name.trim().is_empty() {
@@ -379,7 +386,7 @@ impl Assist {
             sender: &sender,
             today: &today,
         });
-        let (completion, effective) = self.ask(account, "compose", &prompt, events, want_subject).await?;
+        let (completion, effective) = self.ask(ticket, &prompt, events, want_subject).await?;
         let (subject, text) =
             if want_subject { split_subject(&completion.text) } else { (None, completion.text.trim().to_owned()) };
         if text.is_empty() {
@@ -414,14 +421,18 @@ impl Assist {
             _ => return Err(invalid("emailId", "give either emailId or threadId")),
         };
         let per_mail = (MAX_MAIL_CHARS / ids.len()).max(2000);
-        let mut mails = Vec::new();
+        let mut records = Vec::new();
         for id in ids {
-            mails.push(self.mail(account, id, per_mail).await?);
+            records.push(self.record(account, id).await?);
         }
-        mails.sort_by_key(|(record, _)| (record.sent_at.unwrap_or(record.received_at), record.id));
-        let texts: Vec<MailText> = mails.into_iter().map(|(_, text)| text).collect();
+        records.sort_by_key(|record| (record.sent_at.unwrap_or(record.received_at), record.id));
+        let ticket = self.prepare(account, "summarize").await?;
+        let mut texts: Vec<MailText> = Vec::new();
+        for record in &records {
+            texts.push(self.text(record, per_mail).await?);
+        }
         let prompt = prompts::summarize(&texts, args.language.as_deref());
-        let (completion, effective) = self.ask(account, "summarize", &prompt, events, false).await?;
+        let (completion, effective) = self.ask(ticket, &prompt, events, false).await?;
         let summary = completion.text.trim().to_owned();
         if summary.is_empty() {
             return Err(AssistError::ProviderFailed {
@@ -462,10 +473,12 @@ impl Assist {
 
     /// `Assist/spamCheck`.
     pub async fn spam_check(&self, account: &Account, args: SpamArgs) -> Result<SpamResult> {
-        let (record, mail) = self.mail(account, args.email_id, MAX_MAIL_CHARS).await?;
+        let record = self.record(account, args.email_id).await?;
+        let ticket = self.prepare(account, "spamCheck").await?;
+        let mail = self.text(&record, MAX_MAIL_CHARS).await?;
         let signals = self.spam_signals(account, &record, &mail).await?;
         let prompt = prompts::spam_check(&mail, &findings(&signals), args.language.as_deref());
-        let (completion, effective) = self.run(account, "spamCheck", &prompt, None).await?;
+        let (completion, effective) = self.send(ticket, &prompt, None).await?;
         let (verdict, confidence, reasons) =
             parse_spam(&completion.text).ok_or_else(|| AssistError::ProviderFailed {
                 description: "the model's answer was not a verdict".into(),
@@ -477,14 +490,16 @@ impl Assist {
 
     /// `Assist/extractEvents`.
     pub async fn extract_events(&self, account: &Account, args: EventsArgs) -> Result<EventsResult> {
-        let (record, mail) = self.mail(account, args.email_id, MAX_MAIL_CHARS).await?;
+        let record = self.record(account, args.email_id).await?;
+        let ticket = self.prepare(account, "extractEvents").await?;
+        let mail = self.text(&record, MAX_MAIL_CHARS).await?;
         let image_text = match (&self.inner.image_text, args.include_images) {
             (Some(read), true) => read(account.id, record.id).await.unwrap_or_default(),
             _ => Vec::new(),
         };
         let image_text: Vec<String> = image_text.iter().take(20).map(|text| clean(text, 4000)).collect();
         let prompt = prompts::extract_events(&mail, &image_text);
-        let (completion, effective) = self.run(account, "extractEvents", &prompt, None).await?;
+        let (completion, effective) = self.send(ticket, &prompt, None).await?;
         let answer = llm::json_answer(&completion.text).ok_or_else(|| AssistError::ProviderFailed {
             description: "the model's answer was not a list of events".into(),
             retry_after: None,
@@ -522,10 +537,12 @@ impl Assist {
         if labels.is_empty() {
             return Ok(Vec::new());
         }
-        let (record, mail) = self.mail(account, email_id, LABEL_MAIL_CHARS).await?;
+        let record = self.record(account, email_id).await?;
+        let ticket = self.prepare(account, "autoLabels").await?;
+        let mail = self.text(&record, LABEL_MAIL_CHARS).await?;
         let list: Vec<(String, String)> = labels.iter().map(|l| (l.name.clone(), l.description.clone())).collect();
         let prompt = prompts::labels(&mail, &list);
-        let (completion, effective) = self.run(account, "autoLabels", &prompt, None).await?;
+        let (completion, effective) = self.send(ticket, &prompt, None).await?;
         let answer = llm::json_answer(&completion.text).ok_or_else(|| AssistError::ProviderFailed {
             description: "the model's answer was not a list of labels".into(),
             retry_after: None,

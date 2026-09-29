@@ -6,6 +6,7 @@
 
 use std::time::Duration;
 
+use futures_util::StreamExt;
 use tokio::sync::watch;
 use uwumail_store::{LabelJob, MailboxRole, StoreError};
 
@@ -23,6 +24,11 @@ const BATCH: usize = 20;
 const USAGE_DAYS: i64 = 400;
 /// Looks again at least this often, for jobs that became due.
 const IDLE: Duration = Duration::from_secs(300);
+/// Jobs worked on side by side; a batch holds at most one job per person, so one person's slow
+/// provider holds up nobody else's labels (AI-04 of the 0.18.0 audit).
+const AT_ONCE: usize = 4;
+/// The longest one job may take; it is tried again later, like a busy provider.
+const JOB_TIMEOUT: Duration = Duration::from_secs(45);
 
 /// What became of one job.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,6 +37,22 @@ pub enum JobOutcome {
     Skipped,
     Retry,
     Dropped,
+}
+
+/// What kind of failure it was, for the log: never the provider's own words, which may repeat
+/// parts of the mail.
+fn kind(err: &AssistError) -> &'static str {
+    match err {
+        AssistError::Unavailable(_) => "unavailable",
+        AssistError::OverQuota(_) => "over quota",
+        AssistError::ProviderFailed { transient: true, .. } => "provider failed for now",
+        AssistError::ProviderFailed { .. } => "provider failed",
+        AssistError::NotFound(_) => "not found",
+        AssistError::Forbidden(_) => "forbidden",
+        AssistError::Invalid { .. } => "invalid",
+        AssistError::Busy => "busy",
+        AssistError::Store(_) => "store",
+    }
 }
 
 fn transient(err: &AssistError) -> bool {
@@ -89,8 +111,16 @@ impl Assist {
             }
         };
         let any = !jobs.is_empty();
-        for job in jobs {
-            let outcome = self.work_job(&job).await;
+        let work = |job: LabelJob| async move {
+            let outcome = match tokio::time::timeout(JOB_TIMEOUT, self.work_job(&job)).await {
+                Ok(outcome) => outcome,
+                Err(_) if job.attempts + 1 < MAX_ATTEMPTS => JobOutcome::Retry,
+                Err(_) => JobOutcome::Dropped,
+            };
+            (job, outcome)
+        };
+        let mut running = futures_util::stream::iter(jobs.into_iter().map(work)).buffer_unordered(AT_ONCE);
+        while let Some((job, outcome)) = running.next().await {
             let result = match outcome {
                 JobOutcome::Retry => {
                     let wait = RETRY_SECS.get(job.attempts as usize).copied().unwrap_or(300);
@@ -137,11 +167,11 @@ impl Assist {
         match self.label_email(&account, job.email_id).await {
             Ok(picks) => JobOutcome::Labeled(picks.len()),
             Err(err) if transient(&err) && job.attempts + 1 < MAX_ATTEMPTS => {
-                tracing::info!(account = account.id, %err, "labels for a mail have to wait");
+                tracing::info!(account = account.id, error = kind(&err), "labels for a mail have to wait");
                 JobOutcome::Retry
             }
             Err(err) => {
-                tracing::info!(account = account.id, %err, "no labels for a mail");
+                tracing::info!(account = account.id, error = kind(&err), "no labels for a mail");
                 JobOutcome::Dropped
             }
         }
