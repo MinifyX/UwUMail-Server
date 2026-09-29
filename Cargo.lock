@@ -4528,6 +4528,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "uwumail-assist"
+version = "0.17.0"
+dependencies = [
+ "base64 0.23.1",
+ "bytes",
+ "chrono",
+ "chrono-tz",
+ "getrandom 0.4.3",
+ "hex",
+ "http-body-util",
+ "hyper",
+ "mail-parser",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "url",
+ "uwumail-smtp",
+ "uwumail-store",
+]
+
+[[package]]
 name = "uwumail-backup"
 version = "0.17.0"
 dependencies = [

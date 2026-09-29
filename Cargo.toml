@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/uwumail-store",
+    "crates/uwumail-assist",
     "crates/uwumail-smtp",
     "crates/uwumail-imap",
     "crates/uwumail-dav",
@@ -21,6 +22,7 @@ repository = "https://github.com/MinifyX/UwUMail-Server"
 rust-version = "1.89"
 
 [workspace.dependencies]
+uwumail-assist = { path = "crates/uwumail-assist" }
 uwumail-backup = { path = "crates/uwumail-backup" }
 uwumail-dav = { path = "crates/uwumail-dav" }
 uwumail-gateway = { path = "crates/uwumail-gateway" }
