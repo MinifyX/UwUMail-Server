@@ -348,7 +348,13 @@ impl Target {
                 xml::escape(info.schedule_tag.as_deref()?)
             }
             (CALDAV, "calendar-data", Target::Resource(v, _, Some(content))) if v.kind() == DavKind::Calendar => {
-                xml::escape(content)
+                // Someone the calendar is shared with sees only the times of what its owner keeps
+                // private.
+                if v.access.is_owner() {
+                    xml::escape(content)
+                } else {
+                    xml::escape(&uwumail_store::itip::for_others(content))
+                }
             }
             (CARDDAV, "address-data", Target::Resource(v, _, Some(content))) if v.kind() == DavKind::Addressbook => {
                 xml::escape(content)

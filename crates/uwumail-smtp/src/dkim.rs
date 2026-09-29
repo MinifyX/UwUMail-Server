@@ -50,6 +50,9 @@ const SIGNED_HEADERS: &[&str] = &[
     "Content-Transfer-Encoding",
     "List-Unsubscribe",
     "List-Unsubscribe-Post",
+    // The picture speaks for the From address; a receiver keeps it only when it is signed.
+    "Face",
+    "Face",
 ];
 
 pub struct GeneratedKey {

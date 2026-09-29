@@ -50,8 +50,8 @@ SHA-256 of a login address or an alias in lower case, and for groups:
   `blank`, or an `https:` address to be sent to. A plain `http:` address gets
   the silhouette.
 
-Only public pictures are answered, and only where the domain and the server
-allow them. A person without a picture of their own gets their domain's logo,
+Only public pictures are answered, only where the domain and the server
+allow them, and never for a disabled account. A person without a picture of their own gets their domain's logo,
 if it has one. Masked addresses and forwarding addresses are never in the
 table, so their hashes lead nowhere. One network (a /24, or a /48 for IPv6)
 may ask 120 times a minute.
@@ -78,14 +78,21 @@ their own address or an alias carries a 48 × 48 copy of their picture as a
 colours as it takes to stay under 725 bytes. Some mail apps show it. The switch
 only works while the picture is public, and only for people — never for a
 service, a shared mailbox, a group, a masked address or any other address
-someone may send as. The header is added before the DKIM signature, so it
-arrives signed with the rest. A `Face:` header the mail app wrote itself is
-removed, whoever sends: the server decides which picture goes out.
+someone may send as. The header is added before the DKIM signature and named
+in it (`h=`, twice, so nobody can add a second one on the way), so it arrives
+signed with the rest. A `Face:` header the mail app wrote itself is removed,
+whoever sends: the server decides which picture goes out.
 
-Incoming, the server keeps the Face of a message for its From address when
-DMARC passed for the From domain and the message is not junk, and only when it
-is a small PNG (at most about 48 × 48 pixels and 2 KB). The newest Face per
-address is kept, 20,000 at most; the oldest go first.
+Incoming, the server keeps the Face of a message for its From address only
+when a DKIM signature of the From domain holds and covers the `Face` header.
+DMARC alone is not enough: it passes on SPF, which says nothing about the
+headers, and on a signature that leaves the Face out, so anyone could have
+written it in on the way. The message must also have one From address and one
+`Face:` header, not be junk, and not come from one of this server's own
+domains — people here choose themselves who sees their picture. The Face must
+be a small PNG (at most about 48 × 48 pixels and 2 KB). The newest Face per
+address is kept, 20,000 at most and 200 per sending domain; the oldest go
+first.
 
 ## Pictures of senders
 

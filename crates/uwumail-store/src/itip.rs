@@ -599,15 +599,16 @@ fn times(event: &Component) -> Vec<String> {
 
 /// What an attendee keeps of an organizer's REQUEST: the organizer's object, with the attendee's
 /// own alarms and, while the time stays the same, their own answer from their current copy.
-/// `own` are the attendee's addresses.
+/// `own` are the attendee's addresses. The organizer's alarms never come along: the server rings
+/// alarms itself, by mail too, and those of a stranger's invitation are no one's to set.
 pub fn attendee_copy(request: &Component, current: Option<&Component>, own: &[String]) -> Component {
     let mut copy = request.clone();
     copy.remove("METHOD");
     for event in copy.events_mut() {
         let rid = event.recurrence_id();
         let mine = current.and_then(|current| current.event_for(&rid));
+        event.components.retain(|c| c.name != "VALARM");
         if let Some(mine) = mine {
-            event.components.retain(|c| c.name != "VALARM");
             event.components.extend(mine.components.iter().filter(|c| c.name == "VALARM").cloned());
             if times(mine) == times(event) {
                 let answers: Vec<(String, String)> = mine
@@ -627,6 +628,60 @@ pub fn attendee_copy(request: &Component, current: Option<&Component>, own: &[St
         clean_scheduling_params(event);
     }
     copy
+}
+
+/// Whether a component is kept from others: a CLASS other than PUBLIC (RFC 5545, 3.8.1.3). An
+/// unknown class counts as PRIVATE, as calcard and JMAP read it.
+fn kept_from_others(component: &Component) -> bool {
+    component.value("CLASS").is_some_and(|class| !class.trim().eq_ignore_ascii_case("PUBLIC"))
+}
+
+/// What others see of an entry its owner keeps private or confidential: its times and what
+/// identifies it (RFC 8984, section 4.4.3), no alarms.
+const SEEN_OF_PRIVATE: &[&str] = &[
+    "UID",
+    "DTSTAMP",
+    "DTSTART",
+    "DTEND",
+    "DURATION",
+    "DUE",
+    "RRULE",
+    "RDATE",
+    "EXDATE",
+    "RECURRENCE-ID",
+    "SEQUENCE",
+    "CLASS",
+    "TRANSP",
+    "CREATED",
+    "LAST-MODIFIED",
+];
+
+/// An empty calendar object: what others get of one that cannot be read to be reduced.
+const NOTHING: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//UwUMail//Server//EN\r\nEND:VCALENDAR\r\n";
+
+/// Whether a calendar object holds an entry its owner keeps from others (`CLASS` other than
+/// `PUBLIC`). One that cannot be read counts as such when it names a class anywhere.
+pub fn has_private(content: &str) -> bool {
+    match Component::parse(content) {
+        Some(calendar) => calendar.components.iter().any(kept_from_others),
+        None => content.replace("\r\n ", "").replace("\r\n\t", "").to_ascii_uppercase().contains("CLASS"),
+    }
+}
+
+/// A calendar object as someone other than its owner sees it over CalDAV: entries the owner keeps
+/// private or confidential reduced to their times. Borrowed as it is when nothing is private.
+pub fn for_others(content: &str) -> std::borrow::Cow<'_, str> {
+    if !has_private(content) {
+        return std::borrow::Cow::Borrowed(content);
+    }
+    let Some(mut calendar) = Component::parse(content) else {
+        return std::borrow::Cow::Borrowed(NOTHING);
+    };
+    for component in calendar.components.iter_mut().filter(|c| kept_from_others(c)) {
+        component.properties.retain(|p| SEEN_OF_PRIVATE.iter().any(|name| p.name.eq_ignore_ascii_case(name)));
+        component.components.clear();
+    }
+    std::borrow::Cow::Owned(calendar.to_ics())
 }
 
 /// Carries the attendees' answers from the stored copy into what an organizer's client stores with
@@ -872,6 +927,10 @@ BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\nEND:VEVENT\r\n
         assert_eq!(role(&calendar, &leni), Role::Attendee("leni@example.org".into()));
         let mut copy = attendee_copy(&request(&calendar, 0), None, &leni);
         assert_eq!(method(&copy), None);
+        // An organizer elsewhere may send alarms along; the server would ring them for Leni, so a
+        // new copy has none of them.
+        let foreign = attendee_copy(&calendar, None, &leni);
+        assert!(foreign.components[0].components.iter().all(|c| c.name != "VALARM"), "{}", foreign.to_ics());
         assert!(plan(None, Some(&copy), &leni).is_empty(), "a new invitation is not an answer yet");
 
         let before = copy.clone();
@@ -906,6 +965,27 @@ BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\nEND:VEVENT\r\n
         assert_eq!(declined.reply_as.as_deref(), Some("leni@example.org"));
         let sent = reply(&copy, "leni@example.org", Some("DECLINED"), 0);
         assert!(sent.to_ics().contains("PARTSTAT=DECLINED"));
+    }
+
+    #[test]
+    fn others_see_only_the_times_of_private_entries() {
+        assert!(!has_private(INVITE));
+        assert!(matches!(for_others(INVITE), std::borrow::Cow::Borrowed(_)));
+        for class in ["PRIVATE", "CONFIDENTIAL", "X-ONLY-ME"] {
+            // Folded and with a parameter: read as iCalendar, not searched as text.
+            let private = INVITE.replace("SEQUENCE:0\r\n", &format!("SEQUENCE:0\r\nCL\r\n\tASS;X-A=b:{class}\r\n"));
+            assert!(has_private(&private), "{class}");
+            let seen = for_others(&private);
+            let event = Component::parse(&seen).unwrap().components.remove(0);
+            assert_eq!(event.value("UID"), Some("kaffee@example.org"));
+            assert!(event.value("DTSTART").is_some());
+            assert!(event.value("SUMMARY").is_none() && event.value("ORGANIZER").is_none(), "{seen}");
+            assert!(event.components.is_empty(), "no alarms: {seen}");
+        }
+        let public = INVITE.replace("SEQUENCE:0\r\n", "SEQUENCE:0\r\nCLASS:public\r\n");
+        assert!(!has_private(&public));
+        assert!(has_private("BEGIN:VCALENDAR\r\nCLASS:PRIVATE"), "unreadable, but it names a class");
+        assert_eq!(for_others("BEGIN:VCALENDAR\r\nCLASS:PRIVATE"), NOTHING);
     }
 
     #[test]

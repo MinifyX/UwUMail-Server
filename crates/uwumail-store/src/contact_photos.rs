@@ -35,12 +35,13 @@ fn photo_of(value: &VCardValue) -> Option<ContactPhoto> {
         VCardValue::Binary(data) if !data.data.is_empty() => Some(ContactPhoto::Inline(data.data.clone())),
         VCardValue::Text(text) => {
             let text = text.trim();
-            if text.len() > 5 && text[..5].eq_ignore_ascii_case("data:") {
+            // By bytes, not by string slices: a value may have a character of several bytes anywhere.
+            if text.len() > 5 && text.as_bytes()[..5].eq_ignore_ascii_case(b"data:") {
                 return Data::try_parse(text.as_bytes())
                     .filter(|data| !data.data.is_empty())
                     .map(|data| ContactPhoto::Inline(data.data));
             }
-            (text.len() <= MAX_PHOTO_URL && text.len() > 8 && text[..8].eq_ignore_ascii_case("https://"))
+            (text.len() <= MAX_PHOTO_URL && text.len() > 8 && text.as_bytes()[..8].eq_ignore_ascii_case(b"https://"))
                 .then(|| ContactPhoto::Remote(text.to_owned()))
         }
         _ => None,
@@ -199,5 +200,18 @@ mod tests {
         assert!(photo_emails(plain_http).is_empty(), "never fetched, so not indexed");
         let without = "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:e\r\nFN:Y\r\nEMAIL:y@example.org\r\nEND:VCARD\r\n";
         assert!(photo_emails(without).is_empty());
+    }
+
+    /// A photo value with a character of more than one byte where a scheme would end is not a photo;
+    /// it must not stop the server either (it runs with every write of a card).
+    #[test]
+    fn photo_values_are_read_by_character() {
+        for value in ["data\u{e9}xyz", "https:/\u{e9}x.example", "\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}"] {
+            let card = format!(
+                "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:f\r\nFN:Z\r\nEMAIL:z@example.org\r\nPHOTO:{value}\r\nEND:VCARD\r\n"
+            );
+            assert!(photo_emails(&card).is_empty(), "{value}");
+            assert_eq!(contact_photo(&card), None, "{value}");
+        }
     }
 }

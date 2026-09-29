@@ -306,17 +306,22 @@ impl Loaded {
 
 impl Loaded {
     /// Another single instance of an object that holds instances without their series, as the
-    /// account sees it.
-    fn other_instance(&self, rid: &str) -> Option<Map<String, Value>> {
+    /// account sees it: `None` when `rid` is none of them, `Some(None)` when it is one the owner
+    /// keeps secret from others.
+    fn other_instance(&self, rid: &str) -> Option<Option<Map<String, Value>>> {
         let (_, index) = self.parsed.other_instances().into_iter().find(|(other, _)| other == rid)?;
-        let mut event = self.parsed.at(index)?.event().clone();
+        let Some(parsed) = self.parsed.at(index) else { return Some(None) };
+        let mut event = parsed.event().clone();
         if self.shared {
+            if privacy(&event) == "secret" {
+                return Some(None);
+            }
             event = jscal::per_user_view(&event, None, BTreeSet::new);
             if privacy(&event) == "private" {
                 reduce_private(&mut event);
             }
         }
-        Some(event)
+        Some(Some(event))
     }
 }
 
@@ -450,10 +455,14 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
                 Some(EventId::Stored(n)) => by_id.get(n).map(|loaded| stored(loaded)),
                 Some(EventId::Instance(n, rid)) => by_id.get(n).and_then(|loaded| {
                     // Another single instance of an object without its series.
-                    if let Some(mut object) = loaded.other_instance(rid) {
-                        shaping.apply(&mut object, floating);
-                        decorate(&mut object, text.clone(), &loaded.record, Some(*n), &own);
-                        return Some(output(object, &properties, floating));
+                    match loaded.other_instance(rid) {
+                        Some(Some(mut object)) => {
+                            shaping.apply(&mut object, floating);
+                            decorate(&mut object, text.clone(), &loaded.record, Some(*n), &own);
+                            return Some(output(object, &properties, floating));
+                        }
+                        Some(None) => return None,
+                        None => {}
                     }
                     let event = loaded.parsed.event();
                     let rids = series.entry(*n).or_insert_with(|| jscal::recurrence_ids(&loaded.record.content, event));
@@ -1040,8 +1049,12 @@ impl Writer<'_> {
                         }
                     }
                 }
-                if loaded.shared && privacy(parsed.event()) == "private" {
-                    return Err(SetError::new("forbidden", "the owner keeps this event private"));
+                match privacy(parsed.event()) {
+                    "secret" if loaded.shared => return Err(SetError::not_found()),
+                    "private" if loaded.shared => {
+                        return Err(SetError::new("forbidden", "the owner keeps this event private"));
+                    }
+                    _ => {}
                 }
                 // Written as it is: one's own properties are kept apart for the main instance only.
                 let instance = Loaded { parsed, shared: false, prefs: None, defaults: (None, None), ..loaded };
@@ -1075,6 +1088,16 @@ impl Writer<'_> {
                 Err(err) => return Some(Err(err)),
             };
             let (_, index) = loaded.parsed.other_instances().into_iter().find(|(other, _)| other == rid)?;
+            // What the owner keeps private or secret is theirs to delete.
+            if loaded.shared
+                && let Some(parsed) = loaded.parsed.at(index)
+                && privacy(parsed.event()) != "public"
+            {
+                return Some(Err(match privacy(parsed.event()) {
+                    "secret" => SetError::not_found(),
+                    _ => SetError::new("forbidden", "the owner keeps this event private"),
+                }));
+            }
             let Some(rest) = loaded.parsed.at(index).and_then(|parsed| parsed.without_event()) else {
                 return Some(Err(SetError::not_found()));
             };
@@ -1206,17 +1229,26 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
             let parsed = writer.in_time().map(|()| EventId::parse(ctx, id));
             let result = match parsed {
                 Err(err) => Err(err),
-                Ok(Some(EventId::Stored(n))) => {
-                    let old = if scheduling { writer.load_one(n).await.ok() } else { None };
-                    let destroyed =
-                        ctx.jmap.store.destroy_calendar_event(ctx.account.id, n, None).await.map_err(SetError::from);
-                    if destroyed.is_ok()
-                        && let Some(old) = old.filter(|old| !old.record.is_draft)
-                    {
-                        writer.schedule(old.record.calendar_id, Some(&old.record.content), None).await;
+                Ok(Some(EventId::Stored(n))) => match writer.load_one(n).await {
+                    Err(err) => Err(err),
+                    // What the owner keeps private is theirs to delete, as it is theirs to change; a
+                    // secret one is not there for others at all (load_one does not find it).
+                    Ok(old) if old.shared && privacy(old.parsed.event()) != "public" => {
+                        Err(SetError::new("forbidden", "the owner keeps this event private"))
                     }
-                    destroyed
-                }
+                    Ok(old) => {
+                        let destroyed = ctx
+                            .jmap
+                            .store
+                            .destroy_calendar_event(ctx.account.id, n, None)
+                            .await
+                            .map_err(SetError::from);
+                        if destroyed.is_ok() && scheduling && !old.record.is_draft {
+                            writer.schedule(old.record.calendar_id, Some(&old.record.content), None).await;
+                        }
+                        destroyed
+                    }
+                },
                 Ok(Some(EventId::Instance(n, rid))) => match writer.destroy_other_instance(n, &rid).await {
                     Some(result) => result,
                     None => writer.destroy_instance(n, &rid).await,
@@ -1525,6 +1557,10 @@ impl Evaluator {
             // The other single instances of an object without its series.
             for (rid, index) in loaded.parsed.other_instances() {
                 let Some(parsed) = loaded.parsed.at(index) else { continue };
+                // A secret one is not there for others.
+                if loaded.shared && privacy(parsed.event()) == "secret" {
+                    continue;
+                }
                 let other = Loaded {
                     parsed,
                     shared: loaded.shared,
@@ -1570,25 +1606,34 @@ impl Evaluator {
 /// The instance ids a query that expands recurrences (`args`) finds in events as they were
 /// (`old`, by event id), for /queryChanges. Their calendar is not looked at: what the client
 /// never had it ignores.
+///
+/// Only the query's time window counts, never its text conditions: earlier versions are kept for
+/// everyone who sees a calendar — private events of others, and calendars no longer shared with
+/// the account, included — so matching their text would tell what they said. Naming more removed
+/// ids than the client had is allowed (RFC 8620, section 5.6). A secret event counts only for its
+/// calendar's owner; when that cannot be told any more, the changes cannot be calculated.
 pub(super) async fn expanded_ids_of(ctx: &Ctx<'_>, args: &Value, old: Vec<(i64, String)>) -> MethodResult<Vec<String>> {
     if old.is_empty() {
         return Ok(Vec::new());
     }
     let floating = floating_zone(args)?;
-    let Some(Filter::Condition(mut condition)) =
+    let Some(Filter::Condition(condition)) =
         args.get("filter").filter(|f| !f.is_null()).map(|f| parse_filter(ctx, f, floating)).transpose()?
     else {
         return Err(MethodError::invalid_arguments("expandRecurrences needs a filter condition with after and before"));
     };
-    condition.calendar = None;
+    let condition = Condition { after: condition.after, before: condition.before, ..Default::default() };
     let deadline = (Instant::now() + QUERY_TIME_LIMIT).min(request_deadline(ctx));
     let evaluator = Evaluator { floating, deadline };
     let me = ctx.account.id;
-    run_blocking(move || -> MethodResult<Vec<String>> {
-        let mut ids = Vec::new();
+    // The instance ids found, and apart those of secret events by event id.
+    type Found = (Vec<String>, Vec<(i64, Vec<String>)>);
+    let (mut ids, secret) = run_blocking(move || -> MethodResult<Found> {
+        let (mut ids, mut secret) = (Vec::new(), Vec::new());
         for (id, content) in old {
             evaluator.check_time()?;
             let Some(parsed) = jscal::from_icalendar(&content) else { continue };
+            let is_secret = privacy(parsed.event()) == "secret";
             let record = CalendarEventRecord {
                 id,
                 calendar_id: 0,
@@ -1603,11 +1648,25 @@ pub(super) async fn expanded_ids_of(ctx: &Ctx<'_>, args: &Value, old: Vec<(i64, 
                 is_draft: false,
             };
             let loaded = Loaded { record, parsed, shared: false, prefs: None, defaults: (None, None) };
-            ids.extend(evaluator.expanded_hits(&condition, &loaded)?.into_iter().map(|hit| hit.id));
+            let hits = evaluator.expanded_hits(&condition, &loaded)?.into_iter().map(|hit| hit.id);
+            if is_secret {
+                secret.push((id, hits.collect()));
+            } else {
+                ids.extend(hits);
+            }
         }
-        Ok(ids)
+        Ok((ids, secret))
     })
-    .await?
+    .await??;
+    for (id, hits) in secret {
+        match ctx.jmap.store.calendar_events(me, Some(vec![id])).await?.pop() {
+            Some(record) if record.owner_id == me => ids.extend(hits),
+            // Someone else's secret event: the account never had its instances.
+            Some(_) => {}
+            None => return Err(MethodError::kind("cannotCalculateChanges")),
+        }
+    }
+    Ok(ids)
 }
 
 pub async fn query(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
@@ -1837,7 +1896,8 @@ pub async fn copy(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<super::Output
                     EventId::Instance(_, rid) => {
                         // An instance becomes an event of its own.
                         let mut instance = match loaded.other_instance(rid) {
-                            Some(instance) => instance,
+                            Some(Some(instance)) => instance,
+                            Some(None) => return Err(SetError::not_found()),
                             None => {
                                 let (content, series) = (loaded.record.content.clone(), loaded.parsed.event().clone());
                                 let rids = run_blocking(move || jscal::recurrence_ids(&content, &series))

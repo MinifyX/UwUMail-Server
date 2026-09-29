@@ -252,6 +252,10 @@ async fn people_here_logos_and_masked_addresses() {
     let found = pictures.picture(nyu, "mini@example.org", "").await;
     assert_eq!((kind(&found), found.body == logo), ("logo", true));
     assert_eq!(pictures.picture(nyu, "nobody@example.org", "").await.body, logo);
+    // A Face kept from mail of one of our own addresses does not outlast its owner's choice.
+    store.store_received_face("mini@example.org", sample(48, 48, "png")).await.unwrap();
+    let found = pictures.picture(nyu, "mini@example.org", "").await;
+    assert_eq!((kind(&found), found.body == logo), ("logo", true));
 
     // A masked address shows nothing of whose it is: no picture, no logo, no Face, no lookup.
     store

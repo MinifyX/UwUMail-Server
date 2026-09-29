@@ -664,8 +664,14 @@ impl Session<'_> {
             Err(err) => return store_failure(err),
         };
         let content_type = props::content_type(*kind, &resource.info.component);
+        // Someone the calendar is shared with sees only the times of what its owner keeps private.
+        let content = if *kind == DavKind::Calendar && !view.access.is_owner() {
+            itip::for_others(&resource.content).into_owned()
+        } else {
+            resource.content
+        };
         let mut response =
-            if head { StatusCode::OK.into_response() } else { (StatusCode::OK, resource.content).into_response() };
+            if head { StatusCode::OK.into_response() } else { (StatusCode::OK, content).into_response() };
         let headers = response.headers_mut();
         headers.insert(header::CONTENT_TYPE, HeaderValue::from_str(&content_type).expect("a plain content type"));
         if let Ok(etag) = HeaderValue::from_str(&resource.info.etag) {
@@ -728,6 +734,11 @@ impl Session<'_> {
         } else {
             None
         };
+        // An entry its owner keeps private is only the owner's to change: others never saw more
+        // than its times, and storing that would overwrite the rest.
+        if !view.access.is_owner() && old.as_ref().is_some_and(|old| itip::has_private(&old.content)) {
+            return not_allowed("<d:write-content/>");
+        }
         let mut condition = DavPrecondition {
             if_match: etag_header(headers, header::IF_MATCH),
             if_none_match_any: etag_header(headers, header::IF_NONE_MATCH).is_some_and(|value| value == "*"),
@@ -848,6 +859,9 @@ impl Session<'_> {
                     return not_allowed("<d:unbind/>");
                 }
                 let old = if *kind == DavKind::Calendar { self.entry(&view, name).await.ok().flatten() } else { None };
+                if !view.access.is_owner() && old.as_ref().is_some_and(|old| itip::has_private(&old.content)) {
+                    return not_allowed("<d:unbind/>");
+                }
                 let old = old.filter(|old| !old.info.draft);
                 let if_match = etag_header(headers, header::IF_MATCH);
                 match self
@@ -990,15 +1004,15 @@ xmlns:c=\"urn:ietf:params:xml:ns:caldav\">{responses}</c:schedule-response>\n"
             return Busy::OutOfTime;
         }
         let default = self.dav.default_collection(DavKind::Calendar);
-        let found = match uwumail_jmap::availability::busy(self.store(), &account, default, start, end, deadline).await
-        {
-            Ok(Ok(found)) => {
-                let periods: Vec<_> = found.into_iter().map(|busy| busy.period).collect();
-                Busy::Periods(uwumail_jmap::availability::merge(&periods))
-            }
-            Ok(Err(_)) => Busy::OutOfTime,
-            Err(_) => Busy::Unknown,
-        };
+        let found =
+            match uwumail_jmap::availability::busy(self.store(), &account, default, start, end, deadline, None).await {
+                Ok(Ok(found)) => {
+                    let periods: Vec<_> = found.into_iter().map(|busy| busy.period).collect();
+                    Busy::Periods(uwumail_jmap::availability::merge(&periods))
+                }
+                Ok(Err(_)) => Busy::OutOfTime,
+                Err(_) => Busy::Unknown,
+            };
         looked_up.insert(account.id, found.clone());
         found
     }

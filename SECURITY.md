@@ -26,6 +26,9 @@ Security sweeps are done with Claude, and written down in full:
   whole stack, including the desktop client, and everything built since.
 - [docs/security-audit-0.16.0.md](docs/security-audit-0.16.0.md) — server and
   webmail once more, everything up to 0.16.0; every finding from Medium up fixed.
+- [docs/security-audit-0.17.0.md](docs/security-audit-0.17.0.md) — what 0.17.0
+  added: pictures, Libravatar and the Face header, one-click unsubscribe, and
+  the new parts of JMAP Calendars; every finding from Medium up fixed.
 - [docs/security-audit-0.3.0.md](docs/security-audit-0.3.0.md) — what 0.3.0
   added: the virus scanner and the DNS records at Cloudflare.
 - [docs/security-audit-0.4.0.md](docs/security-audit-0.4.0.md) — what 0.4.0

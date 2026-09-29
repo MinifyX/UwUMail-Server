@@ -309,34 +309,33 @@ pub async fn get_availability(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value
     let name = ctx.jmap.smtp.tone().language.collection_names().0;
     let default = uwumail_store::NewDavCollection::default_calendar(name);
     let deadline = super::request_deadline(ctx);
-    let found = match crate::availability::busy(&ctx.jmap.store, &person, default, start, end, deadline).await? {
+    // The events come along from calendars the caller may read, when they are public.
+    let readable: Option<HashSet<i64>> = if show_details {
+        Some(super::calendar::calendars(ctx).await?.into_iter().map(|calendar| calendar.id).collect())
+    } else {
+        None
+    };
+    let found = match crate::availability::busy(&ctx.jmap.store, &person, default, start, end, deadline, readable)
+        .await?
+    {
         Ok(found) => found,
         Err(crate::availability::OutOfTime) => {
             return Err(MethodError::new("rateLimit", "working out this availability takes too long; ask for less"));
         }
     };
-    // The events come along from calendars the caller may read.
-    let readable: HashSet<i64> = if show_details {
-        super::calendar::calendars(ctx).await?.into_iter().map(|calendar| calendar.id).collect()
-    } else {
-        HashSet::new()
-    };
     let me = ctx.account.id;
     let mut list = Vec::new();
     let mut hidden = Vec::new();
     for busy in found {
-        let visible = show_details
-            && readable.contains(&busy.record.calendar_id)
-            && busy.event.get("privacy").and_then(Value::as_str).unwrap_or("public") == "public";
-        if !visible {
+        let Some(event) = busy.event else {
             hidden.push(busy.period);
             continue;
-        }
+        };
         // Someone else's per-user properties stay theirs.
         let mut event = if busy.record.owner_id == me {
-            busy.event
+            event
         } else {
-            crate::jscal::per_user_view(&busy.event, None, std::collections::BTreeSet::new)
+            crate::jscal::per_user_view(&event, None, std::collections::BTreeSet::new)
         };
         let event_id = match &busy.recurrence_id {
             Some(rid) => ids::event_instance(busy.record.id, rid),

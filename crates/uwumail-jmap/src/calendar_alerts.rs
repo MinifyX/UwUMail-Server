@@ -270,6 +270,52 @@ const MAX_LATE_SECS: i64 = 3600;
 const BATCH: usize = 500;
 /// Alerts of one event planned for one account at a time.
 const MAX_PLANNED: usize = 20;
+/// Reminder mails one account gets a day, whatever its events say.
+const MAX_REMINDER_MAILS: usize = 100;
+/// Between two reminder mails of the same event, at least this long.
+const REMINDER_GAP_SECS: i64 = 4 * 60;
+/// Accounts and events remembered for the limits before old ones are swept out.
+const MAX_REMEMBERED: usize = 10_000;
+
+/// The limits on reminder mails: a series that repeats every minute with twenty alerts, written by
+/// someone who may write into a shared calendar, must not fill the owner's inbox. Kept in memory.
+#[derive(Default)]
+pub(crate) struct ReminderLimits {
+    seen: std::sync::Mutex<Reminders>,
+}
+
+#[derive(Default)]
+struct Reminders {
+    /// Account → when its latest reminder mails went out.
+    accounts: std::collections::HashMap<i64, std::collections::VecDeque<i64>>,
+    /// (account, event) → when its latest reminder mail went out.
+    events: std::collections::HashMap<(i64, i64), i64>,
+}
+
+impl ReminderLimits {
+    /// Whether one more reminder mail of `event_id` may go to `account_id` at `now`; counts it.
+    pub(crate) fn allow(&self, account_id: i64, event_id: i64, now: i64) -> bool {
+        const DAY: i64 = 86_400;
+        let mut seen = self.seen.lock().unwrap_or_else(|e| e.into_inner());
+        if seen.events.len() >= MAX_REMEMBERED || seen.accounts.len() >= MAX_REMEMBERED {
+            seen.events.retain(|_, at| now - *at < REMINDER_GAP_SECS);
+            seen.accounts.retain(|_, times| times.back().is_some_and(|at| now - *at < DAY));
+        }
+        if seen.events.get(&(account_id, event_id)).is_some_and(|at| now - *at < REMINDER_GAP_SECS) {
+            return false;
+        }
+        let times = seen.accounts.entry(account_id).or_default();
+        while times.front().is_some_and(|at| now - *at >= DAY) {
+            times.pop_front();
+        }
+        if times.len() >= MAX_REMINDER_MAILS {
+            return false;
+        }
+        times.push_back(now);
+        seen.events.insert((account_id, event_id), now);
+        true
+    }
+}
 
 /// The SignedDuration of an OffsetTrigger in seconds; days count 24 hours.
 fn offset_seconds(value: &str) -> Option<i64> {
@@ -395,7 +441,7 @@ impl crate::Jmap {
         };
         for alert in due {
             if now - alert.alert.fire_at <= MAX_LATE_SECS {
-                self.fire_alert(&alert).await;
+                self.fire_alert(&alert, now).await;
             }
             if let Err(err) = store.calendar_alert_fired(alert).await {
                 tracing::warn!(%err, "noting a calendar alert failed");
@@ -423,7 +469,7 @@ impl crate::Jmap {
     }
 
     /// Pushes a CalendarAlert, or sends the mail of an `email` alert.
-    async fn fire_alert(&self, due: &uwumail_store::DueAlert) {
+    async fn fire_alert(&self, due: &uwumail_store::DueAlert, now: i64) {
         let store = &self.inner.store;
         let Ok(Some(record)) =
             store.calendar_events(due.account_id, Some(vec![due.event_id])).await.map(|mut r| r.pop())
@@ -431,6 +477,14 @@ impl crate::Jmap {
             return;
         };
         if due.alert.action == "email" {
+            if !self.inner.reminders.allow(due.account_id, due.event_id, now) {
+                tracing::info!(
+                    account_id = due.account_id,
+                    event_id = due.event_id,
+                    "a reminder mail was left out: too many lately"
+                );
+                return;
+            }
             let Ok(Some(account)) = store.account_by_id(due.account_id).await else { return };
             let calendar = uwumail_store::itip::Component::parse(&record.content);
             let summary = calendar.as_ref().map(uwumail_store::itip::summary).unwrap_or_default();
@@ -469,6 +523,21 @@ pub fn alert_json(alert: &uwumail_store::CalendarAlertFired) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reminder_mails_are_limited_per_event_and_account() {
+        let limits = ReminderLimits::default();
+        let start = 1_800_000_000;
+        assert!(limits.allow(1, 10, start));
+        assert!(!limits.allow(1, 10, start + 20), "an alert of the same event a tick later");
+        assert!(limits.allow(1, 10, start + REMINDER_GAP_SECS));
+        assert!(limits.allow(2, 10, start + 20), "someone else's is not");
+        for event in 11..(11 + MAX_REMINDER_MAILS as i64 - 2) {
+            assert!(limits.allow(1, event, start + 60));
+        }
+        assert!(!limits.allow(1, 999, start + 60), "the day's mails are used up");
+        assert!(limits.allow(1, 999, start + 86_400 + 1), "and come back a day later");
+    }
 
     fn object(value: Value) -> Map<String, Value> {
         value.as_object().unwrap().clone()

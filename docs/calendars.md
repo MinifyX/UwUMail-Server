@@ -105,7 +105,9 @@ takes into a calendar:
 - An invitation is only taken for the recipient's own addresses, never for an
   organizer of this server (those invite directly, never by mail from
   outside), and not from mail that ended up in Junk. An update of an event
-  someone already has is only taken from its organizer.
+  someone already has is only taken from its organizer. The organizer's alarms
+  are left out: the recipient's own stay, and the server would otherwise ring
+  a stranger's alarms, by mail too.
 - An answer only counts when the address it came from is the attendee's and SPF
   or DKIM vouch for that address (DMARC-aligned), and only for that attendee.
 - A cancellation only counts when it comes from the event's organizer, vouched

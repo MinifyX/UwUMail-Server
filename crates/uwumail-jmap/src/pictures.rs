@@ -75,8 +75,12 @@ pub(crate) async fn resolve(
         other => other,
     };
     if !logo_only {
-        // c. The newest Face from mail that passed DMARC for its From domain.
-        if let Some((png, _)) = store.received_face(email).await.ok().flatten() {
+        // c. The newest Face from mail that passed DMARC for its From domain. Not for our own
+        //    addresses: whether people here see their picture is step b's to decide, and a Face
+        //    kept from their mail must not outlast turning it off.
+        if local == AddressPicture::NotLocal
+            && let Some((png, _)) = store.received_face(email).await.ok().flatten()
+        {
             return Some(Found::Person { media_type: "image/png".into(), bytes: png });
         }
         // d. Libravatar, only where the sender's domain publishes it and never for our own domains.

@@ -96,7 +96,9 @@ reads at most 16 KB of the answer, which it throws away.
 - Each email is sent at most once in five minutes, whatever came of it. After
   a failure the client can offer the fallback right away.
 - Each login may send 30 unsubscriptions an hour, in its own and in shared
-  accounts together.
+  accounts together, and have 120 messages checked for one (the DKIM check
+  reads and hashes the whole message), whether or not they turn out to offer
+  it.
 - The server sends at most 32 such requests and pictures at a time, for all
   accounts together.
 

@@ -41,8 +41,43 @@ fn is_offset(value: &str) -> bool {
     (digits.len() == 4 || digits.len() == 6) && digits.bytes().all(|b| b.is_ascii_digit())
 }
 
-/// An RRULE of a time zone rule as a RecurrenceRule; `None` when it is not a yearly one.
+/// The weekdays of `byDay`.
+const WEEKDAYS: [&str; 7] = ["mo", "tu", "we", "th", "fr", "sa", "su"];
+
+/// Whether the parts of a yearly time zone rule are ones a year can have: months 1 to 12, days of
+/// the month ±1 to ±31, weekdays by their two letters and at most the fifth or fifth last of a
+/// month. Everything else is refused before it gets near the date arithmetic or back into
+/// iCalendar text.
+fn rule_values_ok(rule: &Map<String, Value>) -> bool {
+    let within =
+        |value: &Value, low: i64, high: i64| value.as_i64().is_some_and(|n| n != 0 && (low..=high).contains(&n));
+    let list = |key: &str, max: usize, ok: &dyn Fn(&Value) -> bool| {
+        rule.get(key).is_none_or(|values| {
+            values.as_array().is_some_and(|values| !values.is_empty() && values.len() <= max && values.iter().all(ok))
+        })
+    };
+    rule.get("interval").is_none_or(|n| n.as_u64().is_some_and(|n| (1..=1000).contains(&n)))
+        && rule.get("count").is_none_or(|n| n.as_u64().is_some())
+        && rule.get("until").is_none_or(|until| until.as_str().and_then(parse_local).is_some())
+        && list("byMonth", 12, &|month| {
+            month.as_str().and_then(|m| m.parse::<i64>().ok()).is_some_and(|m| (1..=12).contains(&m))
+        })
+        && list("byMonthDay", 31, &|day| within(day, -31, 31))
+        && list("byDay", 7, &|day| {
+            day.as_object().is_some_and(|day| {
+                day.get("day").and_then(Value::as_str).is_some_and(|name| WEEKDAYS.contains(&name))
+                    && day.get("nthOfPeriod").is_none_or(|nth| within(nth, -5, 5))
+                    && day.keys().all(|key| matches!(key.as_str(), "@type" | "day" | "nthOfPeriod"))
+            })
+        })
+}
+
+/// An RRULE of a time zone rule as a RecurrenceRule; `None` when it is not a yearly one. The text
+/// may be anything: calcard keeps what it could not read as it came.
 fn rrule(value: &str) -> Option<Value> {
+    if !value.is_ascii() {
+        return None;
+    }
     let mut rule = Map::new();
     rule.insert("@type".into(), json!("RecurrenceRule"));
     for part in value.split(';') {
@@ -73,7 +108,8 @@ fn rrule(value: &str) -> Option<Value> {
             "BYDAY" => {
                 let mut days = Vec::new();
                 for day in value.split(',') {
-                    let (nth, weekday) = day.split_at(day.len().checked_sub(2)?);
+                    // ASCII (checked above), so every byte is a character.
+                    let (nth, weekday) = day.split_at_checked(day.len().checked_sub(2)?)?;
                     let mut nday = json!({ "@type": "NDay", "day": weekday.to_ascii_lowercase() });
                     if !nth.is_empty() {
                         nday["nthOfPeriod"] = json!(nth.parse::<i64>().ok()?);
@@ -86,7 +122,7 @@ fn rrule(value: &str) -> Option<Value> {
             _ => return None,
         }
     }
-    rule.contains_key("frequency").then_some(Value::Object(rule))
+    (rule.contains_key("frequency") && rule_values_ok(&rule)).then_some(Value::Object(rule))
 }
 
 /// A VTIMEZONE as a TimeZone object, when its rules are ones this server works with.
@@ -134,6 +170,11 @@ fn time_zone_of(component: &Value) -> Option<(String, Value)> {
                 "rdate" => {
                     for date in value.split(',') {
                         onsets.insert(ical_local(date)?, json!({}));
+                        // The limits of a zone written over JMAP hold for one read from iCalendar
+                        // too: each conversion of a time walks all of it.
+                        if onsets.len() > MAX_ONSETS {
+                            return None;
+                        }
                     }
                 }
                 "tzname" => {
@@ -154,6 +195,9 @@ fn time_zone_of(component: &Value) -> Option<(String, Value)> {
         }
         if !comments.is_empty() {
             rule.insert("comments".into(), Value::Array(comments));
+        }
+        if list.len() >= MAX_RULES {
+            return None;
         }
         list.push(Value::Object(rule));
     }
@@ -177,6 +221,9 @@ fn custom_zones(group: &Map<String, Value>) -> Map<String, Value> {
             && tzid.parse::<calcard::common::timezone::Tz>().is_err()
         {
             zones.insert(tzid, zone);
+            if zones.len() >= MAX_ZONES {
+                break;
+            }
         }
     }
     zones
@@ -454,6 +501,7 @@ fn check_rule(rule: &Value) -> Result<(), ()> {
                                     )
                                 })
                             })
+                            && rule.as_object().is_some_and(rule_values_ok)
                             && rrule_text(rule.as_object().expect("checked")).is_some()
                     })
             }),
@@ -520,10 +568,10 @@ fn onset_in(year: i32, rule: &Map<String, Value>, start: NaiveDateTime) -> Optio
             *days.get(days.len().checked_sub(nth.unsigned_abs() as usize)?)?
         }
     } else if let Some(day) = rule.get("byMonthDay").and_then(|d| d.get(0)).and_then(Value::as_i64) {
-        if day > 0 {
-            NaiveDate::from_ymd_opt(year, month, day as u32)?
-        } else {
-            last - chrono::Duration::days(-day - 1)
+        match day {
+            1..=31 => NaiveDate::from_ymd_opt(year, month, day as u32)?,
+            -31..=-1 => last.checked_sub_days(chrono::Days::new((-day - 1) as u64))?,
+            _ => return None,
         }
     } else {
         NaiveDate::from_ymd_opt(year, month, start.day())?
@@ -627,5 +675,39 @@ mod tests {
         assert!(check(Some(&json!({ "My Zone": berlin_like() }))).is_err());
         let text = vtimezone("My Zone", &berlin_like()).unwrap();
         assert!(text.contains("RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU\r\n"), "{text}");
+    }
+
+    /// A rule calcard could not read reaches here as text, from anyone who sends an invitation:
+    /// characters of several bytes where a weekday ends, or numbers far outside any month, are no
+    /// rule — and never a panic.
+    #[test]
+    fn odd_rules_are_refused_without_a_panic() {
+        for value in [
+            "FREQ=YEARLY;BYDAY=\u{20ac}X",
+            "FREQ=YEARLY;BYDAY=1\u{e9}a",
+            "FREQ=YEARLY;BYMONTHDAY=-9223372036854775808",
+            "FREQ=YEARLY;BYMONTHDAY=-99999999999",
+            "FREQ=YEARLY;BYMONTH=13",
+            "FREQ=YEARLY;BYDAY=9SU",
+            "FREQ=YEARLY;BYDAY=XX",
+        ] {
+            assert_eq!(rrule(value), None, "{value}");
+        }
+        assert!(rrule("FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU").is_some());
+        let start = parse_local("2020-01-01T00:00:00").unwrap();
+        for day in [i64::MIN, -99_999_999_999, 0, 32] {
+            let rule = json!({ "frequency": "yearly", "byMonthDay": [day] });
+            assert_eq!(onset_in(2026, rule.as_object().unwrap(), start), None, "{day}");
+        }
+        for (key, value) in [
+            ("byMonthDay", json!([-99_999_999_999i64])),
+            ("byMonth", json!(["1\r\nX-INJECTED:1"])),
+            ("byDay", json!([{ "@type": "NDay", "day": "su\r\nX-INJECTED:1" }])),
+            ("byDay", json!([{ "@type": "NDay", "day": "su", "nthOfPeriod": 400 }])),
+        ] {
+            let mut zone = berlin_like();
+            zone["standard"][0]["recurrenceRules"][0][key] = value;
+            assert!(check(Some(&json!({ "/My Zone": zone }))).is_err(), "{key}");
+        }
     }
 }

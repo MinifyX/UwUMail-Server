@@ -237,6 +237,43 @@ async fn shared_calendars_and_events_keep_per_user_properties_apart() {
     assert!(server.event(NYU, &id).await.get("color").is_none());
 }
 
+/// What the owner keeps private shows only its times over CalDAV too, and stays the owner's to
+/// change and delete, even for someone who may write into the calendar.
+#[tokio::test(flavor = "multi_thread")]
+async fn private_events_stay_private_over_caldav_and_to_writers() {
+    let server = server().await;
+    let rights = json!({ "mayReadItems": true, "mayWriteAll": true, "mayWriteOwn": true, "mayUpdatePrivate": true, "mayRSVP": true });
+    let calendar = server.share_with_nyu(rights).await;
+    let mut private = timed(&calendar, "Arzt");
+    private["privacy"] = json!("private");
+    private["description"] = json!("Befund");
+    let id = server.create(MINI, private).await;
+    let uid = server.event(MINI, &id).await["uid"].as_str().unwrap().to_owned();
+    let account = server.store.account(MINI).await.unwrap().unwrap().id;
+    let events = server.store.calendar_events(account, None).await.unwrap();
+    let name = events.into_iter().find(|e| e.uid == uid).unwrap().name;
+    let shared = format!("/dav/calendars/{NYU}/shared~{}/", &calendar[1..]);
+
+    let query = "<?xml version=\"1.0\"?><c:calendar-query xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">\
+                 <d:prop><c:calendar-data/></d:prop><c:filter><c:comp-filter name=\"VCALENDAR\"/></c:filter></c:calendar-query>";
+    let report = server.send(NYU, "REPORT", &shared, &[("depth", "1")], query.into()).await;
+    assert!(report.body.contains("DTSTART"), "{}", report.body);
+    assert!(!report.body.contains("Befund") && !report.body.contains("Arzt"), "{}", report.body);
+    let got = server.send(NYU, "GET", &format!("{shared}{name}"), &[], String::new()).await;
+    assert_eq!(got.status, StatusCode::OK);
+    assert!(got.body.contains("DTSTART") && !got.body.contains("Befund") && !got.body.contains("Arzt"), "{}", got.body);
+
+    let put = server.send(NYU, "PUT", &format!("{shared}{name}"), &[("content-type", "text/calendar")], got.body).await;
+    assert_eq!(put.status, StatusCode::FORBIDDEN, "storing the times would overwrite the rest");
+    let delete = server.send(NYU, "DELETE", &format!("{shared}{name}"), &[], String::new()).await;
+    assert_eq!(delete.status, StatusCode::FORBIDDEN);
+    let refused = server.call(NYU, "CalendarEvent/set", json!({ "destroy": [&id] })).await;
+    assert_eq!(refused["notDestroyed"][&id]["type"], "forbidden", "{refused}");
+
+    let owners = server.caldav_object(MINI, &uid).await;
+    assert!(owners.contains("Befund"), "the owner keeps it all: {owners}");
+}
+
 fn alert(offset: &str) -> Value {
     json!({ "@type": "Alert", "trigger": { "@type": "OffsetTrigger", "offset": offset }, "action": "display" })
 }
@@ -489,6 +526,34 @@ async fn single_instances_without_their_series() {
     assert!(ics.contains("RECURRENCE-ID;TZID=Europe/Berlin:20261020T090000"), "{ics}");
 }
 
+/// A single instance the owner keeps secret is not there for others, even beside a public one.
+#[tokio::test(flavor = "multi_thread")]
+async fn secret_single_instances_stay_hidden_from_others() {
+    let server = server().await;
+    let rights = json!({ "mayReadItems": true, "mayWriteAll": true, "mayWriteOwn": true, "mayUpdatePrivate": true, "mayRSVP": true });
+    let calendar = server.share_with_nyu(rights).await;
+    let secret = TWO_INSTANCES.replace("SUMMARY:Two\r\n", "SUMMARY:Two\r\nCLASS:CONFIDENTIAL\r\n");
+    let path = format!("/dav/calendars/{NYU}/shared~{}/some.ics", &calendar[1..]);
+    let put = server.send(NYU, "PUT", &path, &[], secret).await;
+    assert_eq!(put.status, StatusCode::CREATED, "{}", put.body);
+    let found = server.call(MINI, "CalendarEvent/query", json!({ "filter": { "uid": "only-some@example.org" } })).await;
+    let id = found["ids"][0].as_str().unwrap_or_else(|| panic!("{found}")).to_owned();
+    let other = format!("{id}_20261103T090000");
+
+    let got = server.call(NYU, "CalendarEvent/get", json!({ "ids": [&other] })).await;
+    assert_eq!(got["notFound"], json!([&other]), "{got}");
+    let window = json!({ "filter": { "after": "2026-10-01T00:00:00", "before": "2026-12-01T00:00:00" }, "expandRecurrences": true });
+    let expanded = server.call(NYU, "CalendarEvent/query", window.clone()).await;
+    assert!(!expanded["ids"].as_array().unwrap().contains(&json!(&other)), "{expanded}");
+    let set = server
+        .call(NYU, "CalendarEvent/set", json!({ "update": { &other: { "title": "Drei" } }, "destroy": [&other] }))
+        .await;
+    assert_eq!(set["notUpdated"][&other]["type"], "notFound", "{set}");
+    assert_eq!(set["notDestroyed"][&other]["type"], "notFound", "{set}");
+    // The owner has both.
+    assert_eq!(server.call(MINI, "CalendarEvent/query", window).await["ids"], json!([&id, &other]));
+}
+
 fn at(calendar: &str, title: &str, start: &str, extra: Value) -> Value {
     let mut event = timed(calendar, title);
     event["start"] = json!(start);
@@ -497,6 +562,25 @@ fn at(calendar: &str, title: &str, start: &str, extra: Value) -> Value {
         event[key] = value.clone();
     }
     event
+}
+
+/// A long series of a large event costs availability time, not memory: instances are looked at one
+/// at a time, and only so much event text comes along with the periods.
+#[tokio::test(flavor = "multi_thread")]
+async fn availability_carries_only_so_much_event_text() {
+    let server = server().await;
+    let calendar = server.share_with_nyu(json!({ "mayReadItems": true })).await;
+    let big = json!({ "description": "x".repeat(400 * 1024), "recurrenceRule": { "frequency": "daily", "count": 60 } });
+    server.create(MINI, at(&calendar, "Lang", "2026-10-01T09:00:00", big)).await;
+    let mini = server.principal_id(MINI).await;
+    let details = json!({ "id": &mini, "utcStart": "2026-10-01T00:00:00Z", "utcEnd": "2026-12-01T00:00:00Z",
+                          "showDetails": true, "eventProperties": ["title"] });
+    let busy = server.call(NYU, "Principal/getAvailability", details).await;
+    let list = busy["list"].as_array().unwrap_or_else(|| panic!("{busy}"));
+    let with_event = list.iter().filter(|p| !p["event"].is_null()).count();
+    assert!(with_event > 0 && with_event < 60, "{with_event} of {}", list.len());
+    let hidden = list.iter().filter(|p| p["event"].is_null()).count();
+    assert!(hidden > 0, "the rest are periods without their event");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -653,12 +737,16 @@ async fn others_changes_leave_notifications() {
     let changes = server.call(MINI, "CalendarEventNotification/changes", json!({ "sinceState": mini_state })).await;
     assert_eq!(changes["created"], json!([&mine[0]["id"]]), "{changes}");
 
-    // Mini changes it: Nyu gets the patch.
-    server.call(MINI, "CalendarEvent/set", json!({ "update": { &id: { "title": "Von Mini" } } })).await;
+    // Mini changes it: Nyu gets the patch, without Mini's own colour and alerts.
+    let alert = json!({ "a": { "@type": "Alert", "trigger": { "@type": "OffsetTrigger", "offset": "-PT15M" } } });
+    let change = json!({ "title": "Von Mini", "color": "red", "alerts": alert });
+    server.call(MINI, "CalendarEvent/set", json!({ "update": { &id: change } })).await;
     let theirs = notifications(&server, NYU).await;
     assert_eq!(theirs.len(), 1);
     assert_eq!((&theirs[0]["type"], &theirs[0]["event"]["title"]), (&json!("updated"), &json!("Von Nyu")));
     assert_eq!(theirs[0]["eventPatch"]["title"], "Von Mini", "{}", theirs[0]);
+    assert!(theirs[0]["eventPatch"].get("color").is_none(), "{}", theirs[0]);
+    assert!(theirs[0]["eventPatch"].get("alerts").is_none(), "{}", theirs[0]);
 
     // Nyu deletes it over CalDAV.
     let uid = server.event(MINI, &id).await["uid"].as_str().unwrap().to_owned();
