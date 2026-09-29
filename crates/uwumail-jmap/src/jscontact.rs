@@ -6,6 +6,8 @@
 //! back into the vCard when the card is written, so a change over JMAP loses nothing a phone put
 //! there.
 
+use std::borrow::Cow;
+
 use calcard::jscontact::JSContact;
 use calcard::vcard::{VCard, VCardVersion};
 use serde_json::{Map, Value};
@@ -23,7 +25,7 @@ const MEDIA_TYPES: &[(&str, &str)] = &[("photo", "image/"), ("logo", "image/"), 
 
 /// Reads a stored vCard. `None` when calcard cannot read it.
 pub fn from_vcard(content: &str) -> Option<Map<String, Value>> {
-    let card = VCard::parse(content).ok()?;
+    let card = VCard::parse(basic_dates(content).as_ref()).ok()?;
     match serde_json::to_value(card.into_jscontact::<String, String>()) {
         Ok(Value::Object(mut object)) => {
             take_reminders(&mut object);
@@ -31,6 +33,63 @@ pub fn from_vcard(content: &str) -> Option<Map<String, Value>> {
         }
         _ => None,
     }
+}
+
+/// The card with its dates (`BDAY`, `ANNIVERSARY`, `DEATHDATE`) in the basic format, `19961003` and
+/// `--1015`: calcard reads `--10-15` as October without a day in every version, and `1996-10-03` so in
+/// vCard 4.0, although Google and our own birthday import write the first and many apps the second.
+/// Everything else of the card stays as it is.
+fn basic_dates(content: &str) -> Cow<'_, str> {
+    let mut out: Option<String> = None;
+    let mut offset = 0;
+    for line in content.split_inclusive('\n') {
+        if let Some(fixed) = basic_date_line(line) {
+            // Lines end after a '\n', so `offset` is on a char boundary.
+            out.get_or_insert_with(|| String::with_capacity(content.len()) + &content[..offset]).push_str(&fixed);
+        } else if let Some(out) = out.as_mut() {
+            out.push_str(line);
+        }
+        offset += line.len();
+    }
+    out.map_or(Cow::Borrowed(content), Cow::Owned)
+}
+
+/// A date line in the basic format, or `None` when it has nothing to change.
+fn basic_date_line(line: &str) -> Option<String> {
+    let colon = line.find(':')?;
+    let (head, value) = (&line[..colon], &line[colon + 1..]);
+    let name = head.split(';').next().unwrap_or_default();
+    let name = name.rsplit('.').next().unwrap_or_default();
+    if !["BDAY", "ANNIVERSARY", "DEATHDATE"].iter().any(|n| name.eq_ignore_ascii_case(n)) {
+        return None;
+    }
+    let bytes = value.as_bytes();
+    let digits = |range: std::ops::Range<usize>| bytes.get(range).is_some_and(|b| b.iter().all(u8::is_ascii_digit));
+    let ends = |at: usize| matches!(bytes.get(at), None | Some(b'\r' | b'\n' | b'T' | b't'));
+    // `YYYY-MM-DD` and `--MM-DD`; the dashes to drop are ASCII, so the cuts are on char boundaries.
+    let cut: &[usize] = if digits(0..4)
+        && bytes.get(4) == Some(&b'-')
+        && digits(5..7)
+        && bytes.get(7) == Some(&b'-')
+        && digits(8..10)
+        && ends(10)
+    {
+        &[4, 7]
+    } else if value.starts_with("--") && digits(2..4) && bytes.get(4) == Some(&b'-') && digits(5..7) && ends(7) {
+        &[4]
+    } else {
+        return None;
+    };
+    let mut fixed = String::with_capacity(line.len());
+    fixed.push_str(head);
+    fixed.push(':');
+    let mut from = 0;
+    for &at in cut {
+        fixed.push_str(&value[from..at]);
+        from = at + 1;
+    }
+    fixed.push_str(&value[from..]);
+    Some(fixed)
 }
 
 /// The `X-UWUMAIL-REMINDER` lines calcard kept in `vCard/properties`, as `uwuReminders`.
@@ -315,6 +374,38 @@ item1.X-ABADR:de\r\nBDAY:1990-05-17\r\nNOTE:mag Thunfisch\r\nX-APPLE-SPECIAL:ble
         let again = from_vcard(&written).unwrap();
         assert_eq!(again["emails"], card["emails"]);
         assert_eq!(again["addresses"]["k1"]["components"], card["addresses"]["k1"]["components"]);
+    }
+
+    /// Found in the 0.18.0 smoke test: a birthday imported into a vCard 3.0 card (`--10-15`) came back over
+    /// JMAP as October without a day, and so did `1996-10-03` in a vCard 4.0 card.
+    #[test]
+    fn dates_in_the_extended_format_keep_their_day() {
+        let birthday = |version: &str, line: &str| {
+            let content = format!("BEGIN:VCARD\r\nVERSION:{version}\r\nFN:Tom\r\nUID:t\r\n{line}\r\nEND:VCARD\r\n");
+            let card = from_vcard(&content).unwrap();
+            let mut date = card["anniversaries"].as_object().unwrap().values().next().unwrap()["date"].clone();
+            date.as_object_mut().unwrap().remove("@type");
+            date
+        };
+        for version in ["3.0", "4.0"] {
+            assert_eq!(birthday(version, "BDAY:--10-15"), json!({ "month": 10, "day": 15 }), "{version}");
+            assert_eq!(birthday(version, "BDAY:--1015"), json!({ "month": 10, "day": 15 }), "{version}");
+            assert_eq!(birthday(version, "BDAY:1996-10-03"), json!({ "year": 1996, "month": 10, "day": 3 }));
+            assert_eq!(
+                birthday(version, "item1.BDAY;PROP-ID=b:1996-10-03"),
+                json!({ "year": 1996, "month": 10, "day": 3 })
+            );
+            assert_eq!(birthday(version, "ANNIVERSARY:2021-06-12"), json!({ "year": 2021, "month": 6, "day": 12 }));
+        }
+        // Other lines, and dates that are something else, stay as written.
+        let content =
+            "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Zoë\r\nNOTE:am 1996-10-03\r\nBDAY;VALUE=text:circa 1800\r\nEND:VCARD\r\n";
+        assert!(matches!(basic_dates(content), Cow::Borrowed(_)));
+        let content = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Zoë\r\nBDAY:--10-15\r\nNOTE:1996-10-03\r\nEND:VCARD\r\n";
+        assert_eq!(
+            basic_dates(content),
+            "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Zoë\r\nBDAY:--1015\r\nNOTE:1996-10-03\r\nEND:VCARD\r\n"
+        );
     }
 
     #[test]

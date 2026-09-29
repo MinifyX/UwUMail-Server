@@ -280,7 +280,12 @@ async fn birthdays_move_out_of_other_calendars() {
     assert_eq!(gone["notFound"].as_array().unwrap().len(), 2, "{gone}");
     let card = server.call("ContactCard/get", json!({ "ids": [&card] })).await;
     let dates = card["list"][0]["anniversaries"].to_string();
-    assert!(dates.contains("1950") && dates.contains("birth"), "{card}");
+    assert!(dates.contains(r#""day":28,"month":2,"year":1950"#) && dates.contains("birth"), "{card}");
+    // The new card is a vCard 3.0 with `--02-29`, which keeps its day over JMAP too.
+    let leni_card = imported["imported"][&leni]["contactId"].as_str().unwrap().to_owned();
+    let card = server.call("ContactCard/get", json!({ "ids": [&leni_card] })).await;
+    let dates = card["list"][0]["anniversaries"].to_string();
+    assert!(dates.contains(r#""day":29,"month":2}"#), "{card}");
     // The birthdays calendar has both now, Leni on the last day of February.
     let events = server.call("CalendarEvent/get", json!({})).await;
     let titles: Vec<String> = events["list"]
