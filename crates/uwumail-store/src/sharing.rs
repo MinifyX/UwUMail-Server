@@ -72,9 +72,9 @@ impl DavAccess {
 
 impl DavCollection {
     /// Whether `access` lets one add, change and delete entries of this collection: never for a
-    /// subscribed calendar, whose entries are its feed's.
+    /// subscribed calendar, whose entries are its feed's, or the birthdays calendar.
     pub fn entries_writable(&self, access: DavAccess) -> bool {
-        access.may_write() && !self.subscribed
+        access.may_write() && !self.filled()
     }
 }
 
@@ -134,7 +134,7 @@ pub(crate) fn access(
 /// A collection `account_id` may write entries into, or why not.
 pub(crate) fn writable(conn: &Connection, account_id: i64, collection_id: i64) -> Result<DavCollection> {
     match access(conn, account_id, collection_id)? {
-        Some((collection, _)) if collection.subscribed => {
+        Some((collection, _)) if collection.filled() => {
             crate::dav::check_entries_writable(&collection)?;
             Ok(collection)
         }

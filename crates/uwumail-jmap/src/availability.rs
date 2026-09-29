@@ -90,7 +90,7 @@ pub async fn busy(
     let own = store.dav_collections(account.id, DavKind::Calendar, default_calendar).await?;
     for calendar in own {
         let prefs = prefs.remove(&calendar.id).unwrap_or_default();
-        let default = if calendar.subscribed { "none" } else { "all" };
+        let default = if calendar.filled() { "none" } else { "all" };
         let include = prefs.include_in_availability.as_deref().unwrap_or(default);
         if include != "none" {
             counting.insert(calendar.id, (include == "attending", calendar_zone(calendar.timezone.as_deref())));

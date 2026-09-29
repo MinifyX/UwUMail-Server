@@ -4747,6 +4747,7 @@ dependencies = [
  "aws-lc-rs",
  "bcrypt",
  "calcard",
+ "chrono",
  "data-encoding",
  "getrandom 0.4.3",
  "hex",

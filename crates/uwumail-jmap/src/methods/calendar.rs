@@ -35,6 +35,7 @@ const DEFAULTS: &[&str] = &[
     "shareWith",
     "myRights",
     "uwuSharedBy",
+    "uwuBirthdays",
 ];
 
 /// The longest calendar name, in bytes, as the draft allows.
@@ -58,7 +59,7 @@ impl Listed {
     pub fn include_in_availability(&self) -> &str {
         match self.prefs.include_in_availability.as_deref() {
             Some(value) => value,
-            None if self.access.is_owner() && !self.collection.subscribed => "all",
+            None if self.access.is_owner() && !self.collection.filled() => "all",
             None => "none",
         }
     }
@@ -190,9 +191,10 @@ fn rights(access: DavAccess, may_delete: bool) -> Value {
     }
 }
 
-/// Rights without writing entries, for a subscribed calendar: its feed fills it.
-fn read_only_if(mut rights: Value, subscribed: bool) -> Value {
-    if subscribed {
+/// Rights without writing entries, for a subscribed calendar (its feed fills it) and the birthdays
+/// calendar (the address books fill it).
+fn read_only_if(mut rights: Value, filled: bool) -> Value {
+    if filled {
         for flag in ["mayWriteAll", "mayWriteOwn", "mayUpdatePrivate", "mayRSVP"] {
             rights[flag] = json!(false);
         }
@@ -244,10 +246,14 @@ fn to_json(listed: &Listed, only_one: bool, shares: &[DavShare]) -> Map<String, 
         "defaultAlertsWithoutTime": listed.default_alerts(false),
         "timeZone": calendar.timezone.as_deref().and_then(uwumail_store::ical::timezone_id),
         "shareWith": if listed.access.may_admin() { share_with(shares) } else { Value::Null },
-        "myRights": read_only_if(rights(listed.access, !(owner && only_one)), calendar.subscribed),
+        "myRights": read_only_if(
+            rights(listed.access, !(owner && (only_one || calendar.birthdays))),
+            calendar.filled()
+        ),
         "uwuSharedBy": listed.owner.as_ref().map(|(address, name)| {
             json!({ "email": address, "name": name, "principalId": principal_id(calendar.account_id) })
         }),
+        "uwuBirthdays": calendar.birthdays,
     }) else {
         unreachable!("json! of an object literal is an object")
     };
@@ -273,7 +279,8 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let list = listed(ctx).await?;
     let state = ctx.state().await?;
     let properties = properties(args, "properties", DEFAULTS)?;
-    let only_one = list.iter().filter(|l| l.access.is_owner()).count() <= 1;
+    // The birthdays calendar is not one of one's own that could stay alone.
+    let only_one = list.iter().filter(|l| l.access.is_owner() && !l.collection.birthdays).count() <= 1;
     let shares = shares_of(ctx, &list).await?;
     let json_of = |listed: &Listed| {
         let shares = shares.get(&listed.collection.id).map(Vec::as_slice).unwrap_or_default();
@@ -439,6 +446,8 @@ fn parse_all(object: &Map<String, Value>, creating: bool) -> Result<Parsed, SetE
             },
             // What this server has only one answer to may be sent with that answer.
             "isSubscribed" if value == &Value::Bool(true) => {}
+            // A new calendar is never the birthdays calendar; there is one, made by the server.
+            "uwuBirthdays" if creating && value == &Value::Bool(false) => {}
             "includeInAvailability" => match value.as_str() {
                 Some(which @ ("all" | "attending" | "none")) => {
                     prefs.include_in_availability = Some(Some(which.to_owned()))
@@ -693,7 +702,7 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
         let before: Vec<DavCollection> =
             listed(ctx).await?.into_iter().filter(|l| l.access.is_owner()).map(|l| l.collection).collect();
         if let Some(calendar_id) =
-            ctx.parse_id('c', wanted).filter(|n| before.iter().any(|c| c.id == *n && !c.is_default))
+            ctx.parse_id('c', wanted).filter(|n| before.iter().any(|c| c.id == *n && !c.is_default && !c.filled()))
         {
             store.set_default_calendar(account_id, calendar_id).await?;
             for calendar in before.iter().filter(|c| c.is_default || c.id == calendar_id) {

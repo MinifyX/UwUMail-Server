@@ -137,8 +137,9 @@ const WRITE: &[&str] = &["<d:write-content/>", "<d:bind/>", "<d:unbind/>"];
 const ADMIN: &[&str] = &["<d:all/>", "<d:write/>", "<d:write-properties/>"];
 
 /// What the account may do with a collection and its entries, as WebDAV privileges. Clients
-/// show a calendar shared for reading as read-only by this. A subscribed calendar keeps its name
-/// and colour editable, but its entries are the feed's.
+/// show a calendar shared for reading as read-only by this. A subscribed calendar and the birthdays
+/// calendar keep their name and colour editable, but their entries are the feed's or the address
+/// books'.
 fn privileges_of(access: DavAccess, subscribed: bool) -> String {
     let mut names: Vec<&str> = READ.to_vec();
     if access.may_write() && !subscribed {
@@ -221,7 +222,7 @@ impl Target {
             (DAV, "owner", Target::Home(_) | Target::Inbox | Target::Outbox) => href(&principal_href(login)),
             (DAV, "owner", Target::Collection(v) | Target::Resource(v, ..)) => href(&principal_href(&v.owner_login)),
             (DAV, "current-user-privilege-set", Target::Collection(v) | Target::Resource(v, ..)) => {
-                privileges_of(v.access, v.collection.subscribed)
+                privileges_of(v.access, v.collection.filled())
             }
             (DAV, "current-user-privilege-set", Target::Inbox) => {
                 privileges(&["<d:read/>", "<d:unbind/>", "<c:schedule-deliver/>", "<c:schedule-deliver-invite/>"])
@@ -253,7 +254,7 @@ impl Target {
             (CALDAV, "schedule-calendar-transp", Target::Collection(v)) if v.kind() == DavKind::Calendar => {
                 let counts = match v.prefs.include_in_availability.as_deref() {
                     Some(include) => include != "none",
-                    None => v.access.is_owner() && !v.collection.subscribed,
+                    None => v.access.is_owner() && !v.collection.filled(),
                 };
                 if counts { "<c:opaque/>" } else { "<c:transparent/>" }.into()
             }

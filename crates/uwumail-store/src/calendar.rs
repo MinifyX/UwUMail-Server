@@ -13,7 +13,9 @@ use crate::dav::{
 use crate::sharing::{VISIBLE, writable};
 
 /// The SQL condition for a subscribed calendar `c`: one whose entries only its feed writes.
-pub(crate) const SUBSCRIBED: &str = "EXISTS (SELECT 1 FROM calendar_subscriptions s WHERE s.collection_id = c.id)";
+/// The birthdays calendar counts as one: its entries are the address books'.
+pub(crate) const SUBSCRIBED: &str = "(EXISTS (SELECT 1 FROM calendar_subscriptions s WHERE s.collection_id = c.id)
+     OR EXISTS (SELECT 1 FROM birthday_calendars b WHERE b.collection_id = c.id))";
 use crate::{DAV_RESOURCE_MAX_BYTES, Result, Store, StoreError};
 
 /// An event as JMAP sees it: a VEVENT entry of one of the account's calendars.
@@ -172,8 +174,10 @@ impl Store {
             .write(move |tx| {
                 let mut log = ChangeLog::new(account_id);
                 let calendar = own_calendar(tx, account_id, calendar_id)?;
+                crate::birthdays::check_deletable(&calendar)?;
                 let count: i64 = tx.query_row(
-                    "SELECT count(*) FROM dav_collections WHERE account_id = ?1 AND kind = 'calendar'",
+                    "SELECT count(*) FROM dav_collections c WHERE account_id = ?1 AND kind = 'calendar'
+                         AND NOT EXISTS (SELECT 1 FROM birthday_calendars b WHERE b.collection_id = c.id)",
                     [account_id],
                     |row| row.get(0),
                 )?;
