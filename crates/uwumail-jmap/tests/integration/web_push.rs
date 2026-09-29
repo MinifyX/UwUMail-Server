@@ -576,12 +576,17 @@ async fn people_a_folder_is_shared_with_hear_of_new_mail_in_it() {
     setup.server.store.set_mailbox_acl_for(mini, inbox, nyu, "lr").await.unwrap();
     setup.subscribe(NYU, "nyu", None, json!(["EmailDelivery", "Email"])).await;
 
+    // The changes may come in one push or several; together they name both types.
     setup.server.deliver(MINI, &mail("For both of us")).await;
-    let pushed = setup.next_for("nyu").await;
-    let change: Value = serde_json::from_slice(&pushed.body).unwrap();
-    let shared = &change["changed"][format!("a{mini}")];
-    assert!(shared["EmailDelivery"].is_string() && shared["Email"].is_string(), "{change}");
-    assert!(change["changed"].get(format!("a{nyu}")).is_none(), "nothing changed in nyu's own: {change}");
+    let (mut delivery, mut email) = (false, false);
+    while !(delivery && email) {
+        let pushed = setup.next_for("nyu").await;
+        let change: Value = serde_json::from_slice(&pushed.body).unwrap();
+        assert!(change["changed"].get(format!("a{nyu}")).is_none(), "nothing changed in nyu's own: {change}");
+        let shared = &change["changed"][format!("a{mini}")];
+        delivery |= shared["EmailDelivery"].is_string();
+        email |= shared["Email"].is_string();
+    }
 }
 
 #[tokio::test]
