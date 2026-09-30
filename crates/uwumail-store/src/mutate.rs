@@ -168,6 +168,11 @@ pub(crate) fn update_one(tx: &Transaction<'_>, batch: &mut Batch, update: &Email
     if let Some(bad) = new_keywords.iter().find(|k| !valid_keyword(k)) {
         return Err(rule("invalidProperties", format!("'{bad}' is not a valid keyword")));
     }
+    // Only more is refused: an email that has too many from before may still lose some.
+    if new_keywords.len() > crate::MAX_KEYWORDS_PER_EMAIL && new_keywords.len() > old_keywords.len() {
+        let limit = crate::MAX_KEYWORDS_PER_EMAIL;
+        return Err(rule("invalidProperties", format!("an email may have at most {limit} keywords")));
+    }
 
     let old_mailboxes = email_mailboxes(tx, update.id)?;
     let new_mailboxes: BTreeSet<i64> = match &update.mailboxes {
