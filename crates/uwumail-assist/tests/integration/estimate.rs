@@ -137,6 +137,41 @@ async fn estimates_are_checked_like_the_calls() {
 }
 
 #[tokio::test]
+async fn no_mail_is_read_for_an_estimate_that_could_not_be_sent() {
+    let rig = rig().await;
+    let email = rig.deliver(&rig.mia, INVOICE).await;
+    let unknown = email + 1000;
+    // Without a provider, an estimate of any feature is unavailable before the mail is looked up:
+    // a mail that does not exist gives the same answer as one that does.
+    let calls = || {
+        vec![
+            EstimateArgs::Summarize(SummarizeArgs { email_id: Some(unknown), ..Default::default() }),
+            EstimateArgs::SpamCheck(SpamArgs { email_id: unknown, language: None, ..Default::default() }),
+            EstimateArgs::ExtractEvents(EventsArgs { email_id: unknown, ..Default::default() }),
+            EstimateArgs::Suggest(SuggestArgs { email_id: unknown, ..Default::default() }),
+            EstimateArgs::Compose(ComposeArgs {
+                mode: "write".into(),
+                instruction: Some("Bedanke dich".into()),
+                reply_to_email_id: Some(unknown),
+                ..Default::default()
+            }),
+        ]
+    };
+    for args in calls() {
+        let refused = rig.assist.estimate(&rig.mia, args.clone()).await;
+        assert!(matches!(refused, Err(AssistError::Unavailable(_))), "{args:?}: {refused:?}");
+    }
+    // Nor with the feature switched off.
+    rig.server_provider("openaiCompatible", json!({})).await;
+    rig.policy(|policy| policy.features.set("summarize", false)).await;
+    let refused = rig.assist.estimate(&rig.mia, calls().remove(0)).await;
+    assert!(matches!(refused, Err(AssistError::Unavailable(_))), "{refused:?}");
+    rig.policy(|policy| policy.features.set("summarize", true)).await;
+    let missing = rig.assist.estimate(&rig.mia, calls().remove(0)).await;
+    assert!(matches!(missing, Err(AssistError::NotFound(_))), "{missing:?}");
+}
+
+#[tokio::test]
 async fn pictures_are_not_read_for_an_estimate() {
     let rig = rig().await;
     let asked: Arc<Mutex<Vec<PictureRead>>> = Arc::default();

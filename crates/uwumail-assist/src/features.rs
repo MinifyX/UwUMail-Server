@@ -981,22 +981,23 @@ impl Assist {
         let _estimating = self.begin_estimate(account.id)?;
         let feature = args.feature();
         let foreign = args.foreign();
-        let (prompt, typical, pictures, (provider, model, _)) = match &args {
+        // Whether the feature is on and which provider would answer comes first: without them
+        // nothing would be sent, so no mail is read for the estimate either.
+        let (provider, model, _) = self.resolve_for(account, feature, foreign).await?;
+        let (prompt, typical, pictures) = match &args {
             EstimateArgs::Compose(args) => {
                 check_compose(args)?;
                 let reply_to = match args.reply_to_email_id {
                     Some(id) => Some(self.record(account, id).await?),
                     None => None,
                 };
-                let chosen = self.resolve_for(account, feature, foreign).await?;
                 let (prompt, _) = self.compose_prompt(account, args, reply_to.as_ref()).await?;
-                (prompt, typical_compose(args), Vec::new(), chosen)
+                (prompt, typical_compose(args), Vec::new())
             }
             EstimateArgs::Summarize(args) => {
                 let records = self.summary_records(account, args).await?;
-                let chosen = self.resolve_for(account, feature, foreign).await?;
                 let prompt = self.summary_prompt(&records, &args.foreign_mails, args.language.as_deref()).await?;
-                (prompt, typical_summary(records.len() + args.foreign_mails.len()), Vec::new(), chosen)
+                (prompt, typical_summary(records.len() + args.foreign_mails.len()), Vec::new())
             }
             EstimateArgs::SpamCheck(args) => {
                 let prompt = if let Some(foreign) = one_foreign(&args.foreign_mails)? {
@@ -1005,8 +1006,7 @@ impl Assist {
                     let record = self.record(account, args.email_id).await?;
                     self.spam_prompt(account, &record, args.language.as_deref()).await?.0
                 };
-                let chosen = self.resolve_for(account, feature, foreign).await?;
-                (prompt, TYPICAL_SPAM_TOKENS, Vec::new(), chosen)
+                (prompt, TYPICAL_SPAM_TOKENS, Vec::new())
             }
             EstimateArgs::ExtractEvents(args) => {
                 let (mail, image_text) = if let Some(foreign) = one_foreign(&args.foreign_mails)? {
@@ -1024,14 +1024,12 @@ impl Assist {
                     };
                     (mail, image_text)
                 };
-                let chosen = self.resolve_for(account, feature, foreign).await?;
-                (prompts::extract_events(&mail, &image_text), TYPICAL_EVENTS_TOKENS, image_text, chosen)
+                (prompts::extract_events(&mail, &image_text), TYPICAL_EVENTS_TOKENS, image_text)
             }
             EstimateArgs::Suggest(args) => {
                 let request = self.suggest_request(account, args).await?;
-                let chosen = self.resolve_for(account, feature, foreign).await?;
                 let typical = typical_suggest(request.labels.len(), request.room);
-                (request.prompt(args.language.as_deref()), typical, Vec::new(), chosen)
+                (request.prompt(args.language.as_deref()), typical, Vec::new())
             }
         };
         let (requests_left_today, tokens_left_today) = self.left_today(account, &provider).await?;
