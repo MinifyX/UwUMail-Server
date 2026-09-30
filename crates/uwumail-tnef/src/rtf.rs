@@ -212,25 +212,46 @@ impl Out {
         self.pending.push(byte);
     }
 
+    /// Bytes written so far.
+    fn used(&self) -> usize {
+        self.text.len() + self.html.len() + self.para.len()
+    }
+
+    /// Whether `n` more bytes fit; when not, the output is full.
+    fn fits(&mut self, n: usize) -> bool {
+        if self.full || self.used() + n > self.max {
+            self.full = true;
+            return false;
+        }
+        true
+    }
+
     fn write(&mut self, text: &str, format: Format) {
         if self.full {
             return;
         }
-        let mut room = self.max.saturating_sub(self.text.len() + self.html.len() + self.para.len());
-        if self.mode == Mode::Rtf {
-            // The text goes into the HTML as well.
-            room /= 2;
-        }
-        let text = if text.len() > room {
-            self.full = true;
-            let mut cut = room;
+        let room = self.max.saturating_sub(self.used());
+        let fit = if self.mode == Mode::Rtf {
+            // The text goes into the HTML as well, escaped, where one character may take six
+            // bytes: what fits is counted by character.
+            let mut cost = 0;
+            text.char_indices()
+                .find(|(_, c)| {
+                    cost += c.len_utf8() + escaped_len(*c);
+                    cost > room
+                })
+                .map_or(text.len(), |(i, _)| i)
+        } else {
+            let mut cut = text.len().min(room);
             while !text.is_char_boundary(cut) {
                 cut -= 1;
             }
-            &text[..cut]
-        } else {
-            text
+            cut
         };
+        if fit < text.len() {
+            self.full = true;
+        }
+        let text = &text[..fit];
         self.text.push_str(text);
         if self.mode == Mode::Rtf {
             self.set_format(format);
@@ -272,7 +293,8 @@ impl Out {
             Mode::Html => self.write_raw("\r\n"),
             Mode::Text => self.write_raw("\n"),
             Mode::Rtf => {
-                if self.full {
+                // Paragraphs cost little input and much output, so they count like text.
+                if !self.fits(PARAGRAPH_COST) {
                     return;
                 }
                 self.text.push('\n');
@@ -299,6 +321,9 @@ impl Out {
     fn line(&mut self) {
         match self.mode {
             Mode::Rtf => {
+                if !self.fits(PARAGRAPH_COST) {
+                    return;
+                }
                 self.text.push('\n');
                 self.close_format();
                 self.para.push_str("<br>");
@@ -308,20 +333,22 @@ impl Out {
     }
 
     fn write_raw(&mut self, text: &str) {
-        if self.text.len() + text.len() > self.max {
-            self.full = true;
-            return;
+        if self.fits(text.len()) {
+            self.text.push_str(text);
         }
-        self.text.push_str(text);
     }
 
     fn start_link(&mut self, url: &str) {
         if self.mode != Mode::Rtf || self.in_link {
             return;
         }
+        let url = escape(url);
+        if !self.fits(url.len() + PARAGRAPH_COST) {
+            return;
+        }
         self.close_format();
         self.para.push_str("<a href=\"");
-        self.para.push_str(&escape(url));
+        self.para.push_str(&url);
         self.para.push_str("\">");
         self.in_link = true;
     }
@@ -332,6 +359,20 @@ impl Out {
             self.para.push_str("</a>");
             self.in_link = false;
         }
+    }
+}
+
+/// The most a paragraph or line break adds: the break, closing format and link tags, and the
+/// `<div>` around it.
+const PARAGRAPH_COST: usize = 40;
+
+/// Bytes a character takes in HTML, as [`escape`] writes it.
+fn escaped_len(c: char) -> usize {
+    match c {
+        '"' => 6,
+        '&' | '\'' => 5,
+        '<' | '>' => 4,
+        _ => c.len_utf8(),
     }
 }
 
@@ -351,6 +392,11 @@ fn hyperlink(instruction: &str) -> Option<String> {
 
 /// Reads an RTF document; its output is at most about `max` bytes.
 pub fn convert(rtf: &[u8], max: usize) -> Content {
+    convert_bounded(rtf, max).0
+}
+
+/// [`convert`], and whether all of the document fit into `max`.
+pub fn convert_bounded(rtf: &[u8], max: usize) -> (Content, bool) {
     let head = &rtf[..rtf.len().min(4096)];
     let has = |needle: &[u8]| head.windows(needle.len()).any(|w| w == needle);
     let mode = if has(b"\\fromhtml") {
@@ -593,7 +639,8 @@ pub fn convert(rtf: &[u8], max: usize) -> Content {
         }
     }
     out.flush(group.format);
-    match mode {
+    let whole = !out.full;
+    let content = match mode {
         Mode::Html => Content::Html(out.text),
         Mode::Text => Content::Text(out.text),
         Mode::Rtf => {
@@ -607,7 +654,8 @@ pub fn convert(rtf: &[u8], max: usize) -> Content {
             }
             Content::Rtf { text: out.text.trim_end().to_owned(), html: out.html }
         }
-    }
+    };
+    (content, whole)
 }
 
 fn text_byte(out: &mut Out, group: &Group, visible: bool, byte: u8) {
@@ -836,5 +884,25 @@ mod tests {
         // Surrogate pairs by \u, and stray halves.
         let Content::Rtf { text, .. } = convert(br"{\rtf1 \u-10179?\u-8704?\u-10179?x}", 100) else { panic!() };
         assert_eq!(text, "\u{1F600}\u{FFFD}x");
+    }
+
+    #[test]
+    fn breaks_links_and_escapes_count_against_the_limit() {
+        // Each costs a few bytes of input and many of output.
+        let cases: [&[u8]; 5] = [
+            b"\\par ",
+            b"\\line ",
+            b"\\\n",
+            b"\"",
+            b"{\\field{\\*\\fldinst HYPERLINK \"https://example.com/\"}{\\fldrslt }}",
+        ];
+        for unit in cases {
+            let rtf = [b"{\\rtf1 ".as_slice(), &unit.repeat(20_000)].concat();
+            let (Content::Rtf { text, html }, whole) = convert_bounded(&rtf, 1000) else { panic!() };
+            assert!(!whole, "{}", String::from_utf8_lossy(unit));
+            assert!(text.len() + html.len() <= 1100, "{}: {}", String::from_utf8_lossy(unit), text.len() + html.len());
+        }
+        let (_, whole) = convert_bounded(br"{\rtf1 small\par}", 1000);
+        assert!(whole);
     }
 }

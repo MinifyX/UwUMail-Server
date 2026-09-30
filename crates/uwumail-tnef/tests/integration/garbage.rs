@@ -1,7 +1,11 @@
 //! Untrusted input: random bytes and damaged streams never make the decoder panic, and it stays
 //! fast on them.
 
-use uwumail_tnef::{IcsOptions, decode, rtf, safelinks};
+use std::time::{Duration, Instant};
+
+use uwumail_tnef::builder::{Props, Tnef};
+use uwumail_tnef::mapi::{self, IID_IMESSAGE};
+use uwumail_tnef::{IcsOptions, Message, decode, html_to_text, rtf, safelinks};
 
 use crate::fixtures;
 
@@ -137,4 +141,131 @@ fn random_links() {
         let _ = safelinks::unwrap_in_text(&text);
         let _ = safelinks::unwrap(&text);
     }
+}
+
+#[test]
+fn html_text_stays_linear() {
+    // Every `<style>` and every `&` once looked through all the rest of the document.
+    let styles = "<style></style>x".repeat(60_000);
+    let text = uwumail_tnef::html_to_text(&styles);
+    assert_eq!(text.len(), 60_000);
+    let ampersands = "&".repeat(1 << 20);
+    assert_eq!(uwumail_tnef::html_to_text(&ampersands).len(), 1 << 20);
+    let mut rng = Rng(0x5eed_1234_abcd_0005);
+    let base = "<p>A&amp;B &#x263A;</p><STYLE>p{}</STYLE><!-- c --><br>ä &bogus; <scrIpt>x</script";
+    for _ in 0..3_000 {
+        let data = mutate(&mut rng, base.as_bytes());
+        let _ = uwumail_tnef::html_to_text(&String::from_utf8_lossy(&data));
+    }
+}
+
+/// Generous: linear work on a few megabytes takes milliseconds, quadratic work minutes.
+const FAST: Duration = Duration::from_secs(10);
+
+#[test]
+fn html_bodies_stay_linear() {
+    // A stream whose only body is PR_HTML: its text is made of the HTML while decoding.
+    let styles = "<style></style><STYLE></Style>".repeat((2 << 20) / 30);
+    let ampersands = "&".repeat(2 << 20);
+    for html in [&styles, &ampersands] {
+        let mut t = Tnef::new();
+        t.message_props(&Props::new().binary(mapi::PR_HTML, html.as_bytes()));
+        let data = t.build();
+        let start = Instant::now();
+        let message = decode(&data).unwrap();
+        assert!(start.elapsed() < FAST, "{:?}", start.elapsed());
+        assert!(message.complete);
+        assert_eq!(message.body.text.is_some(), html.starts_with('&'));
+        assert!(html_to_text(html).len() <= html.len());
+    }
+}
+
+/// Compressed RTF of `head` and then `unit` `times` over, each 17 bytes a reference to the unit
+/// before: a few bytes that unpack to megabytes, as well as LZFu allows.
+fn packed_repeat(head: &[u8], unit: &[u8], times: usize) -> Vec<u8> {
+    const PREBUF_LEN: usize = 207;
+    let literal = [head, unit].concat();
+    let raw_size = head.len() + unit.len() * times;
+    let mut body = Vec::new();
+    let mut tokens: Vec<Option<u16>> = literal.iter().map(|_| None).collect();
+    let mut written = literal.len();
+    while written < raw_size {
+        let len = (raw_size - written).min(17);
+        let offset = (PREBUF_LEN + written - unit.len()) % 4096;
+        tokens.push(Some(((offset << 4) | (len - 2)) as u16));
+        written += len;
+    }
+    // The end: a reference to where the next byte would go.
+    tokens.push(Some((((PREBUF_LEN + written) % 4096) << 4) as u16));
+    let mut literals = literal.iter();
+    for chunk in tokens.chunks(8) {
+        let mut control = 0u8;
+        let mut bytes = Vec::new();
+        for (bit, token) in chunk.iter().enumerate() {
+            match token {
+                Some(reference) => {
+                    control |= 1 << bit;
+                    bytes.extend(reference.to_be_bytes());
+                }
+                None => bytes.push(*literals.next().unwrap()),
+            }
+        }
+        body.push(control);
+        body.extend(bytes);
+    }
+    let mut out = Vec::new();
+    out.extend(((body.len() + 12) as u32).to_le_bytes());
+    out.extend((raw_size as u32).to_le_bytes());
+    out.extend(0x7546_5A4Cu32.to_le_bytes());
+    out.extend(0u32.to_le_bytes());
+    out.extend(body);
+    out
+}
+
+/// A message with a body of 2 MiB of paragraphs, in RTF of a quarter of that, and `inner`
+/// attached `copies` times.
+fn heavy(inner: Option<&[u8]>, copies: usize) -> Vec<u8> {
+    let rtf = packed_repeat(b"{\\rtf1 ", b"\\par ", (2 << 20) / 5);
+    let mut t = Tnef::new();
+    t.message_class("IPM.Note");
+    t.message_props(&Props::new().binary(mapi::PR_RTF_COMPRESSED, &rtf));
+    if let Some(inner) = inner {
+        for _ in 0..copies {
+            t.attachment(
+                "Weitergeleitet",
+                &[],
+                &Props::new().long(mapi::PR_ATTACH_METHOD, 5).object(mapi::PR_ATTACH_DATA, &IID_IMESSAGE, inner),
+            );
+        }
+    }
+    t.build()
+}
+
+/// Bytes a decoded message holds as output, attached messages included.
+fn output(message: &Message) -> usize {
+    let body = &message.body;
+    let own = body.text.as_ref().map_or(0, String::len)
+        + body.html.as_ref().map_or(0, String::len)
+        + body.rtf.as_ref().map_or(0, Vec::len);
+    own + message.attachments.iter().map(|a| a.data.len() + a.embedded.as_deref().map_or(0, output)).sum::<usize>()
+}
+
+#[test]
+fn nested_messages_share_one_output_budget() {
+    let inner = heavy(None, 0);
+    let middle = heavy(Some(&inner), 4);
+    let outer = heavy(Some(&middle), 4);
+    assert!(outer.len() < 8 << 20, "{}", outer.len());
+    let rtf = rtf::decompress(&packed_repeat(b"{\\rtf1 ", b"\\par ", (2 << 20) / 5), 4 << 20).unwrap();
+    assert_eq!(rtf.len(), 7 + (2 << 20) / 5 * 5, "the packed RTF unpacks as meant");
+
+    let start = Instant::now();
+    let message = decode(&outer).unwrap();
+    assert!(start.elapsed() < FAST, "{:?}", start.elapsed());
+    // Twenty-one bodies of megabytes each; together they get what one stream of this size may
+    // make (16 MiB), give or take a few closing tags.
+    let made = output(&message);
+    assert!(made <= (16 << 20) + (64 << 10), "{made}");
+    assert!(message.body.rtf.is_some(), "what fits is kept");
+    assert!(!message.complete, "what did not fit is reported");
 }

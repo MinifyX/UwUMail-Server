@@ -553,7 +553,9 @@ fn fold(line: &str, out: &mut String) {
 }
 
 fn address_line(name: &str, person: &Person, params: &[&str]) -> Option<String> {
-    let email = person.email.as_deref()?;
+    // Addresses from `IcsOptions` come from the surrounding mail's headers, not through the
+    // decoder's own check: a line break or a quote in one would start a property of its own.
+    let email = crate::internet_address(person.email.as_deref()?)?;
     let mut line = name.to_owned();
     if let Some(cn) = person.name.as_deref().filter(|n| !n.trim().is_empty()) {
         line.push_str(";CN=");
@@ -564,7 +566,7 @@ fn address_line(name: &str, person: &Person, params: &[&str]) -> Option<String> 
         line.push_str(p);
     }
     line.push_str(":mailto:");
-    line.push_str(email);
+    line.push_str(&email);
     Some(line)
 }
 
@@ -634,7 +636,7 @@ impl Meeting {
         if let Some(description) = &self.description {
             lines.push(format!("DESCRIPTION:{}", text(description)));
         }
-        let with_email = |p: &&Person| p.email.is_some();
+        let with_email = |p: &&Person| p.email.as_deref().and_then(crate::internet_address).is_some();
         match self.kind {
             MeetingKind::Reply(partstat) => {
                 let organizer = self.organizer.as_ref().filter(with_email).or(options.to.first())?;
@@ -649,7 +651,7 @@ impl Meeting {
                     lines.extend(address_line("ORGANIZER", organizer, &[]));
                 }
                 let mut attendees: Vec<Attendee> =
-                    self.attendees.iter().filter(|a| a.person.email.is_some()).cloned().collect();
+                    self.attendees.iter().filter(|a| with_email(&&a.person)).cloned().collect();
                 if attendees.is_empty() {
                     let people = options.to.iter().map(|p| (p, RecipientKind::To));
                     let people = people.chain(options.cc.iter().map(|p| (p, RecipientKind::Cc)));
