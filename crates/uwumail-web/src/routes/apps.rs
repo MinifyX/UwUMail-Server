@@ -1,6 +1,7 @@
 //! Setting up mail apps without typing server names: Thunderbird-style autoconfig, Outlook's
 //! Autodiscover and configuration profiles for iPhone, iPad and Mac.
 
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use axum::Json;
@@ -26,10 +27,16 @@ pub const SUBMISSION_PORT: u16 = 587;
 /// A profile waits this long for its download; it holds a password.
 const PROFILE_LIFETIME: Duration = Duration::from_secs(10 * 60);
 const MAX_PENDING_PROFILES: usize = 1000;
+/// Profiles one person may have waiting at once: a phone, a tablet and a Mac.
+const MAX_PENDING_PER_ACCOUNT: usize = 3;
+/// Profiles one person may make in an hour, each with a new app password.
+const PROFILES_PER_HOUR: usize = 10;
 const MAX_AUTODISCOVER_BODY: usize = 16 * 1024;
 
 #[derive(Clone)]
 pub struct PendingProfile {
+    /// Whose it is, to count what one person has waiting.
+    pub account_id: i64,
     pub file: Vec<u8>,
     pub filename: String,
     pub created: Instant,
@@ -353,6 +360,14 @@ pub async fn create_apple_profile(
     if device.is_empty() || device.chars().count() > 60 {
         return Err(ApiError::Invalid("the device name is empty or too long".into()));
     }
+    // The place for the profile is taken before the app password is made: a full store used to
+    // leave a new password behind with no profile, and the person with a link that never worked.
+    let token = random_token();
+    web.reserve_profile(&token, session.account.id)?;
+    if !web.allow_call(session.account.id, "apple-profile", PROFILES_PER_HOUR) {
+        web.drop_profile(&token);
+        return Err(ApiError::TooManyAttempts);
+    }
     let created = web
         .store()
         .create_app_password(
@@ -363,7 +378,14 @@ pub async fn create_apple_profile(
                 expires_at: None,
             },
         )
-        .await?;
+        .await;
+    let created = match created {
+        Ok(created) => created,
+        Err(err) => {
+            web.drop_profile(&token);
+            return Err(err.into());
+        }
+    };
     let (actor, ip) = origin(&session);
     let notice = Notice::AppPasswordCreated { name: created.app_password.name.clone() };
     notify(&web, &session.account, notice, Origin { actor: &actor, ip: &ip }).await;
@@ -372,10 +394,10 @@ pub async fn create_apple_profile(
     let brand = web.smtp().brand();
     let file =
         apple_profile(&web.settings().hostname, &account.login, &account.display_name, &created.secret, brand.name());
-    let token = random_token();
     web.keep_profile(
-        token.clone(),
+        &token,
         PendingProfile {
+            account_id: account.id,
             // Signed with the server's certificate when it has a real one, so the device shows
             // the profile as verified.
             file: crate::profile_signing::sign_profile(web.profile_key(), file.into_bytes()),
@@ -395,7 +417,8 @@ pub async fn create_apple_profile(
 /// burning on the first request. `inline` rather than `attachment` lets Safari on iPhone, iPad and
 /// Mac open it as a profile instead of filing it away as a download.
 pub async fn download_apple_profile(State(web): State<Web>, Path(token): Path<String>) -> Response {
-    let Some(profile) = web.profile(&token) else {
+    // A place still being filled has no file yet; its link was not handed out anyway.
+    let Some(profile) = web.profile(&token).filter(|profile| !profile.file.is_empty()) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let disposition = format!("inline; filename=\"{}\"", profile.filename);
@@ -410,13 +433,33 @@ pub async fn download_apple_profile(State(web): State<Web>, Path(token): Path<St
 }
 
 impl Web {
-    fn keep_profile(&self, token: String, profile: PendingProfile) {
+    /// Holds a place for a profile under `token`, or says why there is none: the server has too
+    /// many waiting ([`ApiError::Busy`]), or this person has ([`ApiError::TooManyAttempts`]).
+    fn reserve_profile(&self, token: &str, account_id: i64) -> ApiResult<()> {
         let mut pending = self.inner.apple_profiles.lock().expect("profiles poisoned");
-        pending.retain(|_, profile| profile.created.elapsed() < PROFILE_LIFETIME);
-        if pending.len() >= MAX_PENDING_PROFILES {
-            return;
+        reserve(&mut pending, token, account_id)
+    }
+
+    /// Fills the place held under `token`. The link is only handed out afterwards, so nobody can
+    /// ask for it while it is still empty.
+    fn keep_profile(&self, token: &str, profile: PendingProfile) {
+        let mut pending = self.inner.apple_profiles.lock().expect("profiles poisoned");
+        pending.insert(token.to_owned(), profile);
+    }
+
+    /// Gives a held place back when making the profile failed.
+    fn drop_profile(&self, token: &str) {
+        self.inner.apple_profiles.lock().expect("profiles poisoned").remove(token);
+    }
+
+    /// Fills the server's store of waiting profiles with `count` empty ones of other people, from
+    /// `first_account_id` on, so tests can see what happens when it is full.
+    #[doc(hidden)]
+    pub fn fill_apple_profiles(&self, first_account_id: i64, count: usize) {
+        let mut pending = self.inner.apple_profiles.lock().expect("profiles poisoned");
+        for account_id in (first_account_id..).take(count) {
+            let _ = reserve(&mut pending, &random_token(), account_id);
         }
-        pending.insert(token, profile);
     }
 
     /// The profile behind a link, as often as the device asks for it, until its time is up.
@@ -425,6 +468,20 @@ impl Web {
         pending.retain(|_, profile| profile.created.elapsed() < PROFILE_LIFETIME);
         pending.get(token).cloned()
     }
+}
+
+/// Holds an empty place under `token`, counting only profiles still within their ten minutes.
+fn reserve(pending: &mut HashMap<String, PendingProfile>, token: &str, account_id: i64) -> ApiResult<()> {
+    pending.retain(|_, profile| profile.created.elapsed() < PROFILE_LIFETIME);
+    if pending.len() >= MAX_PENDING_PROFILES {
+        return Err(ApiError::Busy);
+    }
+    if pending.values().filter(|profile| profile.account_id == account_id).count() >= MAX_PENDING_PER_ACCOUNT {
+        return Err(ApiError::TooManyAttempts);
+    }
+    let place = PendingProfile { account_id, file: Vec::new(), filename: String::new(), created: Instant::now() };
+    pending.insert(token.to_owned(), place);
+    Ok(())
 }
 
 #[cfg(test)]

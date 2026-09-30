@@ -44,6 +44,11 @@ fn json_request(method: &str, path: &str, body: Value, auth: Option<&(String, St
 }
 
 async fn setup() -> (Router, Store, tempfile::TempDir) {
+    let (web, store, dir) = setup_web().await;
+    (web.router(), store, dir)
+}
+
+async fn setup_web() -> (Web, Store, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
     store.create_domain("example.org").await.unwrap();
@@ -78,7 +83,7 @@ async fn setup() -> (Router, Store, tempfile::TempDir) {
             webmail: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
         },
     );
-    (web.router(), store, dir)
+    (web, store, dir)
 }
 
 #[tokio::test]
@@ -170,4 +175,50 @@ async fn apple_profiles_carry_a_new_app_password_and_open_as_a_profile() {
     assert_eq!(again.text, download.text);
     let unknown = send(&app, Request::builder().uri("/api/apple-profiles/nothing").body(Body::empty()).unwrap()).await;
     assert_eq!(unknown.status, StatusCode::NOT_FOUND);
+}
+
+async fn log_in(app: &Router) -> (String, String) {
+    let login = send(
+        app,
+        json_request("POST", "/api/auth/login", json!({ "login": "mini@example.org", "password": PASSWORD }), None),
+    )
+    .await;
+    assert_eq!(login.status, StatusCode::OK, "{}", login.text);
+    let csrf = serde_json::from_str::<Value>(&login.text).unwrap()["csrfToken"].as_str().unwrap().to_owned();
+    (login.cookie.unwrap(), csrf)
+}
+
+#[tokio::test]
+async fn a_full_profile_store_makes_no_app_password() {
+    let (web, store, _dir) = setup_web().await;
+    let app = web.router();
+    let auth = log_in(&app).await;
+    let mini = store.account("mini@example.org").await.unwrap().unwrap();
+
+    // The server holds at most a thousand profiles; others' profiles fill it here.
+    web.fill_apple_profiles(mini.id + 1000, 1000);
+    let refused =
+        send(&app, json_request("POST", "/api/account/apple-profiles", json!({ "device": "iPhone" }), Some(&auth)))
+            .await;
+    assert_eq!(refused.status, StatusCode::TOO_MANY_REQUESTS, "{}", refused.text);
+    assert!(store.app_passwords(mini.id).await.unwrap().is_empty(), "no password without its profile");
+}
+
+#[tokio::test]
+async fn one_person_has_only_a_few_profiles_waiting() {
+    let (app, store, _dir) = setup().await;
+    let auth = log_in(&app).await;
+    let mini = store.account("mini@example.org").await.unwrap().unwrap();
+    for device in ["iPhone", "iPad", "Mac"] {
+        let created =
+            send(&app, json_request("POST", "/api/account/apple-profiles", json!({ "device": device }), Some(&auth)))
+                .await;
+        assert_eq!(created.status, StatusCode::CREATED, "{}", created.text);
+    }
+    let refused =
+        send(&app, json_request("POST", "/api/account/apple-profiles", json!({ "device": "Watch" }), Some(&auth)))
+            .await;
+    assert_eq!(refused.status, StatusCode::TOO_MANY_REQUESTS, "{}", refused.text);
+    assert_eq!(serde_json::from_str::<Value>(&refused.text).unwrap()["code"], "tooManyAttempts");
+    assert_eq!(store.app_passwords(mini.id).await.unwrap().len(), 3, "the fourth made no app password");
 }
