@@ -80,8 +80,9 @@ It matches when
 
 1. an attachment's name ends in `.pdf` and contains an invoice stem → `{ "attachment": name }`, or
 2. the subject contains an invoice stem, and there is a PDF attachment (name ending in `.pdf` or
-   type `application/pdf`) or the text has an amount and an amount word → `{ "word": the stem as
-   written in the subject, "amount": the first amount as written, or null }`.
+   type `application/pdf`) or the text has an amount and an amount word → `{ "word": the word of
+   the subject that holds the stem, as written, "amount": the first amount of the text as written,
+   or null }`.
 
 ### Appointment (`appointment`)
 
@@ -125,7 +126,11 @@ It matches when
 1. a tracking number that names its carrier is there → `{ "carrier", "tracking" }`, or
 2. a carrier is named, a shipping word is in the subject or text, and a run of 10 to 20 digits
    stands alone as a word → `{ "carrier": the first carrier named, "tracking": the digits }`, or
-3. a carrier is named and a shipping word is in the subject → `{ "carrier", "tracking": null }`.
+3. a carrier is named, a shipping word is in the subject and there is no `List-Unsubscribe`
+   header (a shop's newsletter about free shipping names both too) → `{ "carrier", "tracking":
+   null }`.
+
+"The first carrier named" goes in this order: DHL, DPD, Hermes, GLS, UPS, Amazon.
 
 ## Learned senders
 
@@ -182,7 +187,7 @@ probability = 1 / (1 + e^(−logit))
 ```
 
 The label goes on when `probability ≥ 0.99` and at least 3 of the summed tokens have `w(t) > 0`:
-`{ "probability": rounded to 3 places, "examples": |P| }`.
+`{ "probability": cut to 3 decimals, "examples": |P| }`.
 
 ## Reasons
 
@@ -191,7 +196,7 @@ and `params` (apps translate the code themselves):
 
 | `code` | `reason` |
 | --- | --- |
-| `rule` | `Matches the label's rules: subject contains "Rechnung"` (conditions joined with `, `, `and`/`or` by `match`) |
+| `rule` | `Matches the label's rules: subject contains "Rechnung"` (the matched conditions joined with `and` or `or`, by `match`) |
 | `sender` | `leni@example.org got this label by hand 3 times` |
 | `invoice` | `Looks like an invoice: PDF attachment "Rechnung_4711.pdf"` / `Looks like an invoice: "Rechnung" in the subject, 49,90 €` |
 | `appointment` | `Looks like an appointment: a calendar invitation` / `Looks like an appointment: "Termin" on 06.10.2026 at 09:30` |

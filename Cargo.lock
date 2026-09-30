@@ -4681,6 +4681,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "uwumail-labels"
+version = "0.20.0"
+dependencies = [
+ "mail-parser",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "uwumail-server"
 version = "0.20.0"
 dependencies = [
