@@ -64,6 +64,46 @@ reach, it does not reach either. Note that a confirmed external target receives 
 forwarding anyway, so a rule for "only these messages to my other address" works for addresses on
 this server today; a rules-only confirmation for addresses elsewhere is still to come.
 
+### Labels
+
+A [label](jmap-assist.md#labels) is a keyword, so a rule works with it through `imap4flags`, with
+the label's `keyword` (never its name, which can change):
+
+- **Set label**: `addflag "<keyword>";` before the rule's `fileinto`/`keep` (or `:flags` on them).
+  Flags a script sets apply to every `fileinto` and `keep` after them, and to the implicit keep;
+  a rule editor that writes `addflag` puts it first in the rule's block. The keyword is on the
+  stored mail like any other flag; a label set this way is not logged, and the AI labels only the
+  labels not set yet.
+
+  ```sieve
+  require ["fileinto", "imap4flags"];
+  if address :domain :is "from" "stadtwerke.example" {
+      addflag "rechnungen";
+      fileinto "Rechnungen";
+  }
+  ```
+
+- **Has label**: labels come on in two places before and during the script: the ones the
+  server sets without a model (the label's rules, detector, learned senders and classifier) are
+  put on **before** the script runs, and ones the script itself set earlier. The script sees the
+  first kind as a header of the message, `X-UwUMail-Label: <keyword>`, one per label, and the
+  second kind with `hasflag`. A rule for "has label" therefore tests both:
+
+  ```sieve
+  require ["fileinto", "imap4flags"];
+  if anyof (header :is "X-UwUMail-Label" "newsletter", hasflag "newsletter") {
+      fileinto "Newsletter";
+  }
+  ```
+
+  `X-UwUMail-Label` exists only in the copy of the message the script reads: headers of that name
+  that came with the message are removed from it first, so a sender can't fake a label, and the
+  stored message is unchanged. Labels the AI puts on come later, in the background: no rule sees
+  them.
+
+A script that runs `removeflag` or `setflag` without a label's keyword does not take off the
+labels set before it: those go onto every stored copy.
+
 ## When the script runs
 
 At final delivery, for every account the message is for — mail from other servers and mail
