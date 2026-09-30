@@ -3,7 +3,7 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
-## Unreleased
+## 0.21.0
 
 **Labels** ([docs/labels.md](docs/labels.md), [docs/jmap-assist.md](docs/jmap-assist.md#labels)):
 
@@ -50,6 +50,12 @@ existing providers; the switch decides).
   the keys in that order (they had them sorted, `fits` first) and one verdict per label, so a small
   model no longer stops after the first label or proposes new labels before judging the old ones.
 
+
+**Webmail 0.21.0** (bundled): sidebar, list and reader can be resized by dragging (per device,
+double-click resets) and the reader fills its pane; labels get their own sidebar section with unread
+counts, filter chips, grouping, `label:` search, a picker on `L`, drag and drop and their own
+settings section; "Label again" in the AI menu; rules can set and test labels. Uploads (attachments,
+rules, profile pictures) work again with every account id.
 
 **Security**: a review of the whole server before this release found three high, eight medium and
 about twenty low issues, all fixed. None reaches another account's mail.

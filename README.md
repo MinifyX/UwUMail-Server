@@ -60,6 +60,9 @@ The long version of every point is in [docs/features.md](docs/features.md):
   opened with attachments and meetings, Safe Links shown as the real address,
   [blocks by Microsoft](docs/microsoft.md) spotted and explained, and a
   [BIMI logo](docs/bimi.md) per domain for Gmail, Apple Mail and Yahoo.
+- **Labels that sort themselves.** Your own [labels](docs/labels.md), put on
+  new mail by conditions, built-in detectors, senders and a classifier that
+  learns from you, no AI needed; an AI can judge the rest.
 - **Spam filter and, if you want, [ClamAV](docs/antivirus.md).** The filter
   learns, keeps sender and word lists and fetches known-bad lists by itself.
 - **Backups and updates built in.** Nightly deduplicated, encrypted
@@ -180,6 +183,7 @@ All the details: [docs/llm.md](docs/llm.md); for app developers:
 | `crates/uwumail-dav` | CalDAV and CardDAV |
 | `crates/uwumail-backup` | Deduplicated, encrypted backups over SFTP |
 | `crates/uwumail-web` | The web portal: JSON API and the embedded admin and account app |
+| `crates/uwumail-labels` | Labels without AI: conditions, detectors, learned senders, classifier |
 | `crates/uwumail-tnef` | Decoder for Outlook's winmail.dat (TNEF): attachments, bodies, meetings |
 | `crates/uwumail-store` | SQLite + file storage: domains, accounts, mailboxes, messages, queue |
 | `crates/uwumail-tunnel` | The QUIC tunnel between a server and its UwUMail Gateway |
