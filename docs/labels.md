@@ -140,9 +140,10 @@ address the label **by hand** (JMAP `Email/set`, IMAP `STORE`). Taking the label
 address by hand (also with `AssistLabel/undo`) forgets the address for the label (the count is
 gone). From a count of **2** on, new mail from the address gets the label: `{ "address", "count" }`
 — but only when the `From` address says who really sent it: at delivery the server takes it when
-SPF, DKIM or DMARC vouch for the address (or the mail comes from this server), since anyone can
-write a known address into `From` and so get a label, and whatever Sieve rule sorts by it, onto
-their mail. Apps that cannot tell keep `from_trusted` on.
+SPF, DKIM or DMARC vouch for the address, since anyone can write a known address into `From` and
+so get a label, and whatever Sieve rule sorts by it, onto their mail. With the sender checks
+switched off (`smtp.verify_senders = false`) nothing vouches for any address, so no learned sender
+puts a label on then. Apps that cannot tell keep `from_trusted` on.
 
 Only labels with `learnSenders` on count senders. At most 5,000 addresses are kept per label; a new
 one beyond takes the place of the least counted. Addresses over 320 characters are not learned.

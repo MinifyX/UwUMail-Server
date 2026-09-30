@@ -62,7 +62,8 @@ about twenty low issues, all fixed. None reaches another account's mail.
   `dav` scope.
 - IMAP and ManageSieve limit connections per client address (50 and 20) and take only small
   literals before login.
-- Labels: learned senders count only when SPF, DKIM or DMARC vouch for the From address; nothing is
+- Labels: learned senders count only when SPF, DKIM or DMARC vouch for the From address (never with
+  the sender checks switched off); nothing is
   learned while labels without a model are off, or from someone a folder is shared with (a shared
   mailbox's members excepted); the learning queue is bounded per account; label counts read only
   the account's own mail; `X-UwUMail-Label` headers a sender wrote are removed from the stored mail

@@ -64,8 +64,6 @@ impl Parsed {
 /// 0.21.0 LABELS-L3).
 #[derive(Debug, Clone)]
 pub(crate) enum SenderTrust {
-    /// Sent by someone who logged in here, or made by the server itself.
-    Local,
     /// SPF or DKIM vouch for this From address (normalized, lower case).
     Verified(String),
     /// Nothing vouches for the From address.
@@ -75,7 +73,6 @@ pub(crate) enum SenderTrust {
 impl SenderTrust {
     fn vouches_for(&self, from: &str) -> bool {
         match self {
-            SenderTrust::Local => true,
             SenderTrust::Verified(address) => address.eq_ignore_ascii_case(from),
             SenderTrust::Unverified => false,
         }

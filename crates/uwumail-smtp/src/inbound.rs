@@ -1884,15 +1884,14 @@ pub(crate) async fn receive(
     // What forwarding needs to know about the sender.
     let proof = forward::Proof::of(verdict.as_ref());
     // Labels without a model: the message is read once for all recipients, and learned senders
-    // count only for a From address something vouches for.
+    // count only for a From address something vouches for. Without a verdict (sender checks
+    // switched off, or a relay whose Received header can't be read) nothing does.
     let label_mail = labels::Parsed::default();
-    let label_sender = match verdict.as_ref() {
-        None => labels::SenderTrust::Local,
-        Some(v) => match v.from_address.clone().filter(|_| v.from_verified || v.dmarc_passed) {
+    let label_sender =
+        match verdict.as_ref().and_then(|v| v.from_address.clone().filter(|_| v.from_verified || v.dmarc_passed)) {
             Some(address) => labels::SenderTrust::Verified(address),
             None => labels::SenderTrust::Unverified,
-        },
-    };
+        };
     // What happened for each of them, for the history. The message as a whole is one decision,
     // but a sender list or someone's own filter can send it two ways at once.
     let mut noted: Vec<SpamLogRecipient> = Vec::new();

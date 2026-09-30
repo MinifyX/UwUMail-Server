@@ -1739,6 +1739,37 @@ if anyof (header :is "X-UwUMail-Label" "newsletter", hasflag "newsletter") {
     assert_eq!(store.label_log(mini, None, 10).await.unwrap().len(), 1);
 }
 
+/// With the sender checks switched off nothing vouches for a From address, so a sender whose mail
+/// was labeled by hand twice does not get the label onto mail that merely claims their address
+/// (docs/labels.md, "Learned senders"; security audit 0.21.0 LABELS-L3).
+#[tokio::test(flavor = "multi_thread")]
+async fn learned_senders_need_a_vouched_from_even_without_sender_checks() {
+    let config = SmtpConfig { verify_senders: false, ..SmtpConfig::default() };
+    let a = start_with("a.test", &["mini"], &[], config).await;
+    let store = a.smtp.store();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap().id;
+    let label = store.create_assist_label(mini, "Privat".into(), String::new(), None).await.unwrap();
+    for subject in ["Eins", "Zwei"] {
+        assert!(deliver_to(&a, "mini@a.test", subject).await.starts_with("250"));
+    }
+    let delivered = a.wait_for_inbox("mini@a.test", 2).await;
+    let updates = delivered
+        .iter()
+        .map(|email| EmailUpdate {
+            id: email.id,
+            keywords: KeywordsChange::Patch(vec![(label.keyword.clone(), true)]),
+            ..EmailUpdate::default()
+        })
+        .collect();
+    assert!(store.update_emails(mini, updates).await.unwrap().iter().all(Result::is_ok));
+
+    assert!(deliver_to(&a, "mini@a.test", "Drei").await.starts_with("250"));
+    let inbox = a.wait_for_inbox("mini@a.test", 3).await;
+    let third = inbox.iter().find(|email| email.subject == "Drei").unwrap();
+    assert!(third.keywords.is_empty(), "{:?}", third.keywords);
+    assert!(store.label_log(mini, None, 10).await.unwrap().is_empty());
+}
+
 /// A label header hidden behind a bare CR, which one reader takes for the end of a line and another
 /// not, never reaches the script as a label (security audit 0.21.0 LABELS-I1). And a subject of one
 /// very long word full of detector stems is decided on in time (LABELS-H1).
