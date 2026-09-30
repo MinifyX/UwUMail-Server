@@ -47,6 +47,39 @@ existing providers; the switch decides).
   ("not financial transactions"), and the label was set anyway. Now it judges every label with a
   reason first and then `fits` true or false; only labels that fit are set.
 
+
+**Security**: a review of the whole server before this release found three high, eight medium and
+about twenty low issues, all fixed. None reaches another account's mail.
+
+- One incoming mail with a very long subject could keep a worker busy for minutes while labels
+  without a model were decided; a winmail.dat with crafted HTML or deeply nested messages could do
+  the same, or take a lot of memory. Both are linear and bounded now, and run off the server's
+  async workers.
+- `Email/get` and `Email/parse` do each thing once per email (repeated properties and ids no longer
+  multiply the work) and share a 50 MB budget for body values; `Email/import` takes at most 500
+  emails; at most 32 push connections per account, 100 streams per HTTP/2 connection; at most 100
+  keywords per email. Push and Web Push leave calendars and contacts out for apps without the
+  `dav` scope.
+- IMAP and ManageSieve limit connections per client address (50 and 20) and take only small
+  literals before login.
+- Labels: learned senders count only when SPF, DKIM or DMARC vouch for the From address; nothing is
+  learned while labels without a model are off, or from someone a folder is shared with (a shared
+  mailbox's members excepted); the learning queue is bounded per account; label counts read only
+  the account's own mail; `X-UwUMail-Label` headers a sender wrote are removed from the stored mail
+  too; a label named like a junk or system mark gets the keyword `label-<name>`. Migration
+  `0066_label_limits.sql`.
+- A person's own AI providers and keys go when their account becomes a shared mailbox or service.
+- No delivery to MX hosts on private addresses (`delivery.allow_private_mx` for LAN-only setups);
+  MTA-STS policies only from public addresses; only Microsoft's own servers raise Microsoft block
+  issues; token counts a provider reports are capped.
+- Portal: a stored LDAP, OIDC, relay or Loki secret is not sent to a changed address without being
+  entered again; VPN files with the private key need the password; signing out clears the
+  browser's site data; downloads never come back as script or HTML.
+- Container: no file capability any more, `no-new-privileges` on; release files and the image carry
+  build provenance, which `install.sh` and `update.sh` check when `gh` is logged in. A kept
+  (hand-edited) `compose.yaml` should swap `cap_add: NET_BIND_SERVICE` for the new `sysctls` and
+  `security_opt` lines ([docs/deployment.md](docs/deployment.md)).
+
 ## 0.20.0
 
 **Mail from Outlook and Exchange** ([docs/winmail-dat.md](docs/winmail-dat.md)):
