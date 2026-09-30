@@ -206,6 +206,39 @@ assist = false
 As an environment variable `UWUMAIL_EGRESS__ASSIST`; in the portal under
 *Server → Settings → VPN & proxy*.
 
+## Costs
+
+The server knows what most models cost and shows it: on the AI buttons with
+the token estimate, in a person's usage and in the admin's statistics.
+
+- **Price lists**, fetched once a day through the egress like the requests to
+  providers (`egress.assist`), kept in the database; a list that can't be
+  fetched keeps its last good copy:
+  - [LiteLLM's price list](https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json)
+    (`input_cost_per_token`, `output_cost_per_token`, US dollars) for most
+    providers; a model is found with or without a provider prefix
+    (`mistral/…`) and a date at its end (`-2025-08-07`, `-20251001`, `-latest`);
+  - OpenRouter's own prices from its `/api/v1/models`, while someone uses an
+    OpenRouter provider;
+  - the [ECB's euro reference rates](https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml)
+    to show costs in euros, yen, yuan and the other currencies it lists.
+- **Free**: Ollama and a ChatGPT subscription cost nothing per request.
+- **Set by hand**: the admin (for server providers) and a person (for their
+  own) can set a price in US dollars per million tokens, in and out. It comes
+  before the lists; a price set for one direction takes the other from the
+  lists. Needed for models the lists don't know (an OpenAI-compatible server,
+  a new model).
+- **Who sees it**: a person always sees what their own providers cost. What a
+  server provider costs they see only when the admin switched on *Show costs
+  to users* for it (off by default). The admin always sees all costs.
+- **Currency**: by the language of the portal, webmail or app: Japanese in yen,
+  Chinese in yuan, all others in euros; in English a person may choose US
+  dollars instead (the user setting `assist.currency`).
+- **What is kept**: every request's cost is kept with the usage, in US
+  dollars at the price of the moment; costs before 0.19.0 are not known.
+  Estimates are that: the token count is approximate and providers count with
+  their own tokenizers.
+
 ## Keys
 
 - Keys (and ChatGPT's tokens) are sealed with the server's key before they are

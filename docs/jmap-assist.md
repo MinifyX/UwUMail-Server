@@ -97,6 +97,14 @@ added with their own key.
 | `quota` | `Object\|null` | server providers with a daily limit: `{ "requestsPerDay": Number\|null, "tokensPerDay": Number\|null }` per person |
 | `experimental` | `Boolean` | `true` for `chatgpt` |
 | `connected` | `Boolean` | `chatgpt`: signed in; others: `true` when a key is stored or none is needed |
+| `inputPricePerMillion` | `Number\|null` | US dollars per million tokens sent, set by hand; `null`: automatic, from the price lists ([llm.md](llm.md#costs)) |
+| `outputPricePerMillion` | `Number\|null` | the same for the tokens of the answer |
+| `price` | `Object\|null` | read-only: what the default model (`model`) costs, `{ "inputPerMillion": Number, "outputPerMillion": Number, "source": "auto"\|"manual"\|"free" }` in US dollars; `null` when not known |
+
+For a server provider whose costs the admin does not show to people,
+`inputPricePerMillion`, `outputPricePerMillion` and `price` are `null`, and
+so are the costs of `Assist/estimate` and `Assist/usage` for it. A person's own
+providers always show them.
 
 ### AssistProvider/get
 
@@ -109,7 +117,8 @@ server's that are allowed for them (in the admin's order) and their own. The
 Standard `/set` for the person's **own** providers (`create`, `update`,
 `destroy`); server providers answer `forbidden`. Creating needs
 `mayAddProviders`. Properties that may be set: `name`, `kind` (create only),
-`baseUrl`, `apiKey`, `model`, `fastModel`.
+`baseUrl`, `apiKey`, `model`, `fastModel`, `inputPricePerMillion`,
+`outputPricePerMillion` (0 to 100,000, or `null` for automatic).
 
 `SetError` types: `forbidden` (the admin does not allow own providers, or it is
 a server provider), `overQuota` (more than `maxProviders`), `invalidProperties`
@@ -409,6 +418,7 @@ use up any of the day's limits.
 | `accountId` | `Id` | |
 | `method` | `String` | `Assist/compose`, `Assist/summarize`, `Assist/spamCheck` or `Assist/extractEvents` |
 | `arguments` | `Object` | exactly what that method would get; its `accountId` may be left out |
+| `currency` | `String` | ISO 4217 code of `cost`, default `EUR` |
 
 ```json
 ["Assist/estimate", {
@@ -427,7 +437,8 @@ use up any of the day's limits.
   "totalTokens": 1430,
   "providerId": "q1", "providerName": "Mistral", "model": "mistral-small-latest",
   "tokensLeftToday": 48000,
-  "requestsLeftToday": null
+  "requestsLeftToday": null,
+  "cost": { "amount": 0.00021, "currency": "EUR", "usd": 0.000245 }
 }, "0"]
 ```
 
@@ -443,6 +454,12 @@ use up any of the day's limits.
   conversation, at most 600; `spamCheck` 150; `extractEvents` 250. Never more
   than the call allows the model.
 - `totalTokens` is the sum.
+- `cost` is what these tokens cost at the model's price (see `price` of
+  `AssistProvider`), in `currency` by the ECB's reference rates of the day,
+  and in US dollars (`usd`), the currency of the price lists. `null` when the
+  price is not known, when there is no rate for `currency`, or when the admin
+  does not show this server provider's costs. A free provider (Ollama, a
+  ChatGPT subscription) answers `0`.
 - `tokensLeftToday` and `requestsLeftToday` are what is left of the person's
   daily limits of that provider, `0` when used up (the call itself would then
   answer `overQuota`); `null` when that limit does not exist, and always for
@@ -461,25 +478,30 @@ use up any of the day's limits.
 
 ## Assist/usage
 
-`{ accountId, days }` (1 to 90, default 30) answers what this person used:
+`{ accountId, days, currency }` (1 to 90, default 30; `currency` as in
+`Assist/estimate`, default `EUR`) answers what this person used:
 
 ```json
 ["Assist/usage", {
   "accountId": "a1",
   "days": [
     { "day": "2026-09-29", "providerId": "q1", "providerName": "Mistral", "feature": "summarize",
-      "requests": 4, "inputTokens": 5210, "outputTokens": 380 }
+      "requests": 4, "inputTokens": 5210, "outputTokens": 380,
+      "cost": { "amount": 0.00061, "currency": "EUR", "usd": 0.00071 } }
   ],
   "today": [
     { "providerId": "q1", "providerName": "Mistral", "requests": 9, "tokens": 12020,
-      "requestsPerDay": 200, "tokensPerDay": null }
+      "requestsPerDay": 200, "tokensPerDay": null, "cost": null }
   ]
 }, "0"]
 ```
 
 Days are UTC. Tokens are what the provider reported; where a provider reports
 none (some OpenAI-compatible servers while streaming), the server estimates
-about four characters per token.
+about four characters per token. `cost` is kept with each request, in US
+dollars at the price of the time, and shown in `currency` at today's rate;
+`null` where the price was not known (and for everything before 0.19.0), and
+for server providers whose costs the admin does not show.
 
 ## Streaming
 
