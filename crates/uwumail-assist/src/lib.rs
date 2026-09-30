@@ -132,8 +132,9 @@ struct Inner {
     egress: Egress,
     /// This server's name: its own `Authentication-Results` carry it.
     hostname: String,
-    /// ChatGPT device logins that were started, by provider.
-    logins: Mutex<HashMap<i64, chatgpt::DeviceCode>>,
+    /// ChatGPT device logins that were started, by owner and provider: a provider id taken again by
+    /// someone else after the account changed hands never finds the old login (security audit 0.21.0).
+    logins: Mutex<HashMap<(i64, i64), chatgpt::DeviceCode>>,
     /// Held while a ChatGPT sign-in is renewed: its refresh token works once, so requests side by
     /// side must not each renew it (AI-05 of the 0.18.0 audit).
     renewing: tokio::sync::Mutex<()>,

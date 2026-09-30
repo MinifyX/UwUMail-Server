@@ -888,13 +888,14 @@ impl Assist {
         }
         let (write, secret) = build_write(Some(&before), &input, false, reach)?;
         self.store().update_assist_provider(id, write, secret).await?;
-        self.inner.logins.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+        self.inner.logins.lock().unwrap_or_else(|e| e.into_inner()).remove(&(account.id, id));
         self.personal_view(account, id).await
     }
 
     pub async fn delete_personal_provider(&self, account: &Account, id: i64) -> Result<()> {
         self.own_provider(account, id).await?;
         self.store().delete_assist_provider(id).await?;
+        self.inner.logins.lock().unwrap_or_else(|e| e.into_inner()).remove(&(account.id, id));
         self.forget_choices(account.id, id).await
     }
 
@@ -1063,7 +1064,7 @@ impl Assist {
             .map_err(|description| AssistError::ProviderFailed { description, retry_after: None, transient: false })?;
         let answer =
             (code.user_code.clone(), chatgpt::verification_uri(&self.inner.chatgpt), code.interval, code.expires_at);
-        self.inner.logins.lock().unwrap_or_else(|e| e.into_inner()).insert(id, code);
+        self.inner.logins.lock().unwrap_or_else(|e| e.into_inner()).insert((account.id, id), code);
         Ok(answer)
     }
 
@@ -1072,7 +1073,7 @@ impl Assist {
         let record = self.own_provider(account, id).await?;
         let code = {
             let mut logins = self.inner.logins.lock().unwrap_or_else(|e| e.into_inner());
-            match logins.get_mut(&id) {
+            match logins.get_mut(&(account.id, id)) {
                 // Asked again before OpenAI's interval: answered here (AI-06 of the 0.18.0 audit).
                 Some(code) if code.expires_at > now() && code.next_poll > now() => return Ok(("pending", None)),
                 Some(code) => {
@@ -1089,20 +1090,20 @@ impl Assist {
             return Err(AssistError::invalid("chatgptNotStarted", "providerId", "no sign-in was started"));
         };
         if code.expires_at <= now() {
-            self.inner.logins.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+            self.inner.logins.lock().unwrap_or_else(|e| e.into_inner()).remove(&(account.id, id));
             return Ok(("expired", None));
         }
         let client = self.chatgpt_client().await?;
         match chatgpt::poll(&client, &self.inner.chatgpt, &code, now()).await {
             Poll::Pending => Ok(("pending", None)),
             Poll::Connected(tokens) => {
-                self.inner.logins.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+                self.inner.logins.lock().unwrap_or_else(|e| e.into_inner()).remove(&(account.id, id));
                 let json = serde_json::to_string(&tokens).map_err(|err| StoreError::Internal(err.to_string()))?;
                 self.store().set_assist_provider_secret(id, SecretChange::Set(json, None)).await?;
                 Ok(("connected", None))
             }
             Poll::Failed(why) => {
-                self.inner.logins.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+                self.inner.logins.lock().unwrap_or_else(|e| e.into_inner()).remove(&(account.id, id));
                 Ok(("failed", Some(why)))
             }
         }

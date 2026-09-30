@@ -104,10 +104,12 @@ pub(crate) fn become_service(tx: &Connection, account: &Account, granted: &mut G
 /// - fetched mailboxes and moves from another provider go, with the passwords for them;
 /// - subscribed calendars stop updating (the calendars stay);
 /// - the active Sieve script is switched off;
-/// - masked addresses are switched off: they stay the account's and can be switched on again.
+/// - masked addresses are switched off: they stay the account's and can be switched on again;
+/// - the person's own AI providers go, and the model stops labelling (security audit 0.21.0).
 ///
 /// Send-as domains stay: an admin gives those to the account, not the person.
 fn stop_personal_mail_setup(tx: &Connection, account_id: i64, granted: &mut Granted) -> Result<()> {
+    crate::assist::stop_personal_assist(tx, account_id)?;
     tx.execute("DELETE FROM forward_targets WHERE account_id = ?1", [account_id])?;
     tx.execute("UPDATE accounts SET forward_keep_copy = 1 WHERE id = ?1", [account_id])?;
     tx.execute("DELETE FROM fetch_accounts WHERE account_id = ?1", [account_id])?;

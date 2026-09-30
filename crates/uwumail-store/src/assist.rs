@@ -511,17 +511,36 @@ fn load_provider(conn: &Connection, id: i64) -> Result<Option<AssistProviderReco
         .optional()?)
 }
 
-fn bump_version(tx: &Transaction<'_>) -> Result<()> {
+fn bump_version(tx: &Connection) -> Result<()> {
     let version: i64 = get_setting(tx, VERSION_KEY)?.and_then(|v| v.parse().ok()).unwrap_or(0);
     set_setting(tx, VERSION_KEY, &(version + 1).to_string())
 }
 
-fn bump_prefs(tx: &Transaction<'_>, account_id: i64) -> Result<()> {
+fn bump_prefs(tx: &Connection, account_id: i64) -> Result<()> {
     tx.execute(
         "INSERT INTO assist_prefs (account_id, modseq) VALUES (?1, 1)
          ON CONFLICT (account_id) DO UPDATE SET modseq = modseq + 1",
         [account_id],
     )?;
+    Ok(())
+}
+
+/// The person's own AI setup ends when the account stops being theirs (it becomes a service or a
+/// shared mailbox): their own providers go with the keys and sign-ins in them, the model no longer
+/// labels incoming mail, and mail waiting for it is dropped. Otherwise the mailbox's mail went on to
+/// the former person's own provider. The labels and what they learned stay: they are the mailbox's,
+/// and labels without a model send nothing anywhere.
+pub(crate) fn stop_personal_assist(tx: &Connection, account_id: i64) -> Result<()> {
+    let providers = tx.execute("DELETE FROM assist_providers WHERE account_id = ?1", [account_id])?;
+    tx.execute("DELETE FROM assist_label_queue WHERE account_id = ?1", [account_id])?;
+    let prefs = tx.execute(
+        "UPDATE assist_prefs SET choices = '{}', auto_labels = 0 WHERE account_id = ?1 AND (choices <> '{}' OR auto_labels)",
+        [account_id],
+    )?;
+    if prefs > 0 || providers > 0 {
+        bump_prefs(tx, account_id)?;
+        bump_version(tx)?;
+    }
     Ok(())
 }
 
