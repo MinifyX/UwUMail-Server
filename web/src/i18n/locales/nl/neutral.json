@@ -929,7 +929,13 @@
       "domainLogo": "{{actor}} heeft het logo van {{target}} ingesteld",
       "domainLogoRemoved": "{{actor}} heeft het logo van {{target}} verwijderd",
       "domainPublicPictures": "{{actor}} heeft gewijzigd of adressen van {{target}} openbare afbeeldingen mogen hebben",
-      "picturesPublic": "{{actor}} heeft gewijzigd of profielfoto's op deze server openbaar mogen zijn"
+      "picturesPublic": "{{actor}} heeft gewijzigd of profielfoto's op deze server openbaar mogen zijn",
+      "domainBimi": "{{actor}} heeft BIMI voor {{target}} gewijzigd",
+      "domainBimiLogo": "{{actor}} heeft een BIMI-logo voor {{target}} geüpload",
+      "domainBimiLogoRemoved": "{{actor}} heeft het BIMI-logo van {{target}} verwijderd",
+      "domainBimiCertificate": "{{actor}} heeft een BIMI-certificaat voor {{target}} toegevoegd",
+      "domainBimiCertificateRemoved": "{{actor}} heeft het BIMI-certificaat van {{target}} verwijderd",
+      "microsoftResolve": "{{actor}} heeft de weigering van {{target}} door Microsoft als opgelost gemarkeerd"
     },
     "details": {
       "adminOn": "is nu beheerder",
@@ -965,7 +971,8 @@
       "maskedRemovedFrom_other": "uit {{count}} instellingen voor gemaskeerde adressen gehaald",
       "pictureVisibility": "zichtbaar voor: {{value}}",
       "publicAllowed": "openbare afbeeldingen toegestaan",
-      "publicForbidden": "openbare afbeeldingen verboden"
+      "publicForbidden": "openbare afbeeldingen verboden",
+      "microsoftCode": "code {{value}}"
     },
     "entry": {
       "actor": "Wie",

@@ -912,7 +912,13 @@
       "domainLogo": "{{actor}} 设置了 {{target}} 的标志",
       "domainLogoRemoved": "{{actor}} 移除了 {{target}} 的标志",
       "domainPublicPictures": "{{actor}} 更改了 {{target}} 的地址是否可以使用公开图片",
-      "picturesPublic": "{{actor}} 更改了本服务器上的头像是否可以公开"
+      "picturesPublic": "{{actor}} 更改了本服务器上的头像是否可以公开",
+      "domainBimi": "{{actor}} 更改了 {{target}} 的 BIMI",
+      "domainBimiLogo": "{{actor}} 为 {{target}} 上传了 BIMI 徽标",
+      "domainBimiLogoRemoved": "{{actor}} 移除了 {{target}} 的 BIMI 徽标",
+      "domainBimiCertificate": "{{actor}} 为 {{target}} 添加了 BIMI 证书",
+      "domainBimiCertificateRemoved": "{{actor}} 移除了 {{target}} 的 BIMI 证书",
+      "microsoftResolve": "{{actor}} 将 Microsoft 对 {{target}} 的拒收标记为已解决"
     },
     "details": {
       "adminOn": "现在是管理员",
@@ -946,7 +952,8 @@
       "maskedRemovedFrom_other": "已从 {{count}} 个隐藏地址设置中移除",
       "pictureVisibility": "可见范围：{{value}}",
       "publicAllowed": "允许公开图片",
-      "publicForbidden": "禁止公开图片"
+      "publicForbidden": "禁止公开图片",
+      "microsoftCode": "代码 {{value}}"
     },
     "entry": {
       "actor": "操作者",

@@ -90,7 +90,15 @@ const KNOWN_ACTIONS = new Set([
   "domainLogoRemoved",
   "domainPublicPictures",
   "picturesPublic",
+  "domainBimi",
+  "domainBimiLogo",
+  "domainBimiLogoRemoved",
+  "domainBimiCertificate",
+  "domainBimiCertificateRemoved",
+  "microsoftResolve",
 ]);
+
+const BIMI_CERTIFICATE_KINDS = ["vmc", "cmc", "unknown"];
 
 const PICTURE_VISIBILITIES = ["off", "server", "public"];
 
@@ -139,6 +147,25 @@ export function detailText(record: AuditRecord, t: TFunction, language: string):
     parts.push(t("log.details.oauthApp", { value: details.name }));
   } else if (typeof details.name === "string") {
     parts.push(t("log.details.name", { value: details.name }));
+  }
+  if (record.action === "domain.bimi") {
+    if (typeof details.enabled === "boolean") {
+      parts.push(t(details.enabled ? "log.details.switchedOn" : "log.details.switchedOff"));
+    }
+    if (typeof details.title === "string") parts.push(t("log.details.name", { value: details.title }));
+  }
+  if (record.action === "domain.bimiLogo" && typeof details.bytes === "number") {
+    parts.push(formatBytes(details.bytes, language));
+  }
+  if (
+    record.action === "domain.bimiCertificate" &&
+    typeof details.kind === "string" &&
+    BIMI_CERTIFICATE_KINDS.includes(details.kind)
+  ) {
+    parts.push(t(`bimi.certificate.kinds.${details.kind}`));
+  }
+  if (record.action === "microsoft.resolve" && typeof details.code === "string") {
+    parts.push(t("log.details.microsoftCode", { value: details.code }));
   }
   if (typeof details.on === "boolean") parts.push(t(details.on ? "log.details.switchedOn" : "log.details.switchedOff"));
   if (typeof details.source === "string" && AUTH_SOURCES.includes(details.source)) {

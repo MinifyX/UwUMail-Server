@@ -929,7 +929,13 @@
       "domainLogo": "{{actor}} hat das Logo von {{target}} gesetzt",
       "domainLogoRemoved": "{{actor}} hat das Logo von {{target}} entfernt",
       "domainPublicPictures": "{{actor}} hat geändert, ob Adressen von {{target}} öffentliche Bilder haben dürfen",
-      "picturesPublic": "{{actor}} hat geändert, ob Profilbilder auf diesem Server öffentlich sein dürfen"
+      "picturesPublic": "{{actor}} hat geändert, ob Profilbilder auf diesem Server öffentlich sein dürfen",
+      "domainBimi": "{{actor}} hat BIMI für {{target}} geändert",
+      "domainBimiLogo": "{{actor}} hat ein BIMI-Logo für {{target}} hochgeladen",
+      "domainBimiLogoRemoved": "{{actor}} hat das BIMI-Logo von {{target}} entfernt",
+      "domainBimiCertificate": "{{actor}} hat ein BIMI-Zertifikat für {{target}} hinterlegt",
+      "domainBimiCertificateRemoved": "{{actor}} hat das BIMI-Zertifikat von {{target}} entfernt",
+      "microsoftResolve": "{{actor}} hat die Ablehnung von {{target}} durch Microsoft als behoben markiert"
     },
     "details": {
       "adminOn": "ist jetzt Admin",
@@ -965,7 +971,8 @@
       "maskedRemovedFrom_other": "aus {{count}} Einstellungen für maskierte Adressen entfernt",
       "pictureVisibility": "sichtbar für: {{value}}",
       "publicAllowed": "öffentliche Bilder erlaubt",
-      "publicForbidden": "öffentliche Bilder verboten"
+      "publicForbidden": "öffentliche Bilder verboten",
+      "microsoftCode": "Code {{value}}"
     },
     "entry": {
       "actor": "Wer",

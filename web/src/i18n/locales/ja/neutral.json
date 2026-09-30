@@ -912,7 +912,13 @@
       "domainLogo": "{{actor}} が {{target}} のロゴを設定しました",
       "domainLogoRemoved": "{{actor}} が {{target}} のロゴを削除しました",
       "domainPublicPictures": "{{actor}} が {{target}} のアドレスの公開画像の可否を変更しました",
-      "picturesPublic": "{{actor}} がこのサーバーでのプロフィール画像の公開の可否を変更しました"
+      "picturesPublic": "{{actor}} がこのサーバーでのプロフィール画像の公開の可否を変更しました",
+      "domainBimi": "{{actor}} が {{target}} の BIMI を変更しました",
+      "domainBimiLogo": "{{actor}} が {{target}} の BIMI ロゴをアップロードしました",
+      "domainBimiLogoRemoved": "{{actor}} が {{target}} の BIMI ロゴを削除しました",
+      "domainBimiCertificate": "{{actor}} が {{target}} の BIMI 証明書を追加しました",
+      "domainBimiCertificateRemoved": "{{actor}} が {{target}} の BIMI 証明書を削除しました",
+      "microsoftResolve": "{{actor}} が {{target}} に対する Microsoft の拒否を解決済みにしました"
     },
     "details": {
       "adminOn": "管理者になりました",
@@ -946,7 +952,8 @@
       "maskedRemovedFrom_other": "{{count}} 件のマスクアドレス設定から外しました",
       "pictureVisibility": "公開範囲：{{value}}",
       "publicAllowed": "公開画像を許可",
-      "publicForbidden": "公開画像を禁止"
+      "publicForbidden": "公開画像を禁止",
+      "microsoftCode": "コード {{value}}"
     },
     "entry": {
       "actor": "誰が",
