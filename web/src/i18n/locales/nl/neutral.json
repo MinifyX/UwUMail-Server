@@ -435,6 +435,7 @@
       "dnsUnavailable": "De server kan op dit moment geen DNS opvragen.",
       "settingLocked": "Deze instelling staat in het configuratiebestand en kan hier niet worden gewijzigd.",
       "settingsInvalid": "Zo kan de server niet werken: {{detail}}",
+      "secretNeededAgain": "Dit wachtwoord of token hoort bij het oude adres. Voer het opnieuw in voor het nieuwe.",
       "codeInvalid": "De code is onjuist of is al gebruikt.",
       "loginExpired": "Het inloggen duurde te lang. Log opnieuw in.",
       "confirmPassword": "Bevestig dit met je wachtwoord.",

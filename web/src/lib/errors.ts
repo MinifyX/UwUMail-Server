@@ -29,6 +29,7 @@ const KNOWN = [
   "dnsUnavailable",
   "settingLocked",
   "settingsInvalid",
+  "secretNeededAgain",
   "codeInvalid",
   "loginExpired",
   "confirmPassword",

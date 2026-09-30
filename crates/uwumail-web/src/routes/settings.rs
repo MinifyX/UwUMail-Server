@@ -9,7 +9,9 @@ use super::audit;
 use crate::Web;
 use crate::error::{ApiError, ApiResult};
 use crate::session::Admin;
-use crate::settings::{SETTINGS, SettingKind, SettingSource, SettingsBackend, check_value, set_path, spec_for, tidy};
+use crate::settings::{
+    SETTINGS, SettingKind, SettingSource, SettingValue, SettingsBackend, check_value, set_path, spec_for, tidy,
+};
 
 pub use crate::settings::OVERLAY_KEY;
 
@@ -51,6 +53,46 @@ pub struct Changes {
     changes: Map<String, Value>,
 }
 
+/// Secrets that only ever go to one server, with the settings that say which server and login.
+const SECRETS_FOR_A_SERVER: &[(&[&str], &[&str])] = &[
+    (&["auth.ldap.bind_password"], &["auth.ldap.url"]),
+    (&["auth.oidc.client_secret"], &["auth.oidc.issuer"]),
+    (&["delivery.relay.password"], &["delivery.relay.host", "delivery.relay.port", "delivery.relay.username"]),
+    (&["log.loki.password", "log.loki.token"], &["log.loki.url"]),
+];
+
+/// Refuses to point a stored secret at another server unless the same changes bring it again.
+/// Otherwise the next test button, or simply saving, would hand the directory password, the relay
+/// password or the Loki token to whatever the new address names -- the same as the SFTP backup
+/// password (security-audit-0.16.0 PLAT-8). Saving the same address again keeps the secret, and so
+/// does emptying it: then the secret goes nowhere.
+fn check_secrets_follow(current: &[SettingValue], changes: &Map<String, Value>) -> ApiResult<()> {
+    let now = |key: &str| current.iter().find(|setting| setting.key == key);
+    let same = |old: &Value, new: &Value| match (old, new) {
+        (Value::String(old), Value::String(new)) => old.trim() == new.trim(),
+        _ => old == new,
+    };
+    for (secrets, places) in SECRETS_FOR_A_SERVER {
+        let moved = places.iter().find(|place| {
+            changes.get(**place).is_some_and(|new| {
+                let emptied = new.is_null() || new.as_str().is_some_and(|text| text.trim().is_empty());
+                !emptied && !now(place).is_some_and(|old| same(&old.value, new))
+            })
+        });
+        let Some(place) = moved else { continue };
+        for secret in *secrets {
+            let stored = now(secret).is_some_and(|setting| setting.set);
+            if stored && !changes.contains_key(*secret) {
+                return Err(ApiError::Rule(
+                    "secretNeededAgain",
+                    format!("{secret} has to be entered again when {place} changes"),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Puts `changes` into `overlay` the way the admin panel may: known settings, valid values, none the
 /// config file holds. Returns what goes into the change log, passwords hidden.
 pub(crate) fn merge_changes(
@@ -59,6 +101,7 @@ pub(crate) fn merge_changes(
     changes: &Map<String, Value>,
 ) -> ApiResult<Map<String, Value>> {
     let current = backend.view(overlay).map_err(|_| ApiError::Internal)?;
+    check_secrets_follow(&current, changes)?;
     let mut details = Map::new();
     for (key, value) in changes {
         let Some(spec) = spec_for(key) else {

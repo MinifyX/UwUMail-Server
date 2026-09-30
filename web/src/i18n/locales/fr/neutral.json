@@ -446,6 +446,7 @@
       "dnsUnavailable": "Le serveur ne peut pas interroger le DNS pour le moment.",
       "settingLocked": "Ce paramètre est défini dans le fichier de configuration et ne peut pas être modifié ici.",
       "settingsInvalid": "Le serveur ne peut pas fonctionner ainsi : {{detail}}",
+      "secretNeededAgain": "Ce mot de passe ou ce jeton appartient à l'ancienne adresse. Saisissez-le à nouveau pour la nouvelle.",
       "codeInvalid": "Le code est incorrect ou a déjà été utilisé.",
       "loginExpired": "La connexion a pris trop de temps. Veuillez vous reconnecter.",
       "confirmPassword": "Veuillez confirmer avec votre mot de passe.",

@@ -423,6 +423,7 @@
       "dnsUnavailable": "服务器当前无法查询 DNS。",
       "settingLocked": "此设置写在配置文件中，无法在这里更改。",
       "settingsInvalid": "服务器无法以此方式运行：{{detail}}",
+      "secretNeededAgain": "此密码或令牌属于旧地址。请为新地址重新输入。",
       "codeInvalid": "验证码错误或已被使用过。",
       "loginExpired": "登录耗时过长，请重新登录。",
       "confirmPassword": "请输入你的密码以确认。",

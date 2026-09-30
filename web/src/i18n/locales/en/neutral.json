@@ -435,6 +435,7 @@
       "dnsUnavailable": "The server cannot look up DNS right now.",
       "settingLocked": "This setting is in the config file and cannot be changed here.",
       "settingsInvalid": "The server cannot work like this: {{detail}}",
+      "secretNeededAgain": "This password or token belongs to the old address. Please enter it again for the new one.",
       "codeInvalid": "The code is wrong or was used before.",
       "loginExpired": "The login took too long. Please log in again.",
       "confirmPassword": "Please confirm this with your password.",
