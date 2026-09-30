@@ -33,6 +33,10 @@ const MAX_LIST_BYTES: usize = 32 * 1024 * 1024;
 const FETCH_TIMEOUT: Duration = Duration::from_secs(60);
 /// The highest price per million tokens that may be set by hand, in US dollars.
 pub const MAX_PRICE_PER_MILLION: f64 = 100_000.0;
+/// Rough euro rates of the currencies the apps show costs in, for as long as the server never got
+/// the ECB's (no way out to the internet yet): a price set by hand still shows in euros, yen or
+/// yuan instead of not at all. Replaced by the real rates with the first list that arrives.
+const FALLBACK_RATES: [(&str, f64); 3] = [("USD", 1.17), ("JPY", 170.0), ("CNY", 8.3)];
 
 /// Where the lists come from; other addresses in tests.
 #[derive(Debug, Clone)]
@@ -228,12 +232,19 @@ impl Prices {
         Some(Price { input_per_million, output_per_million, source: PriceSource::Auto })
     }
 
-    /// `usd` in `currency` by the euro reference rates; `None` when there is no rate for it.
+    /// `usd` in `currency` by the euro reference rates (rough ones before the first list came, see
+    /// [`FALLBACK_RATES`]); `None` when there is no rate for it.
     pub fn convert(&self, usd: f64, currency: &str) -> Option<Cost> {
         let amount = if currency == "USD" {
             usd
         } else {
-            let per_euro = |code: &str| if code == "EUR" { Some(1.0) } else { self.table.rates.get(code).copied() };
+            let per_euro = |code: &str| match code {
+                "EUR" => Some(1.0),
+                _ if self.table.rates.is_empty() => {
+                    FALLBACK_RATES.iter().find(|(known, _)| *known == code).map(|(_, rate)| *rate)
+                }
+                _ => self.table.rates.get(code).copied(),
+            };
             let usd_rate = per_euro("USD").filter(|rate| *rate > 0.0)?;
             usd / usd_rate * per_euro(currency)?
         };
@@ -401,7 +412,11 @@ impl Assist {
                 }
             }
         }
-        table.fetched_at = now();
+        // Only a complete fetch counts as one: a server that could not reach the lists tries again
+        // soon after a restart too, and the portal does not claim lists it never got.
+        if complete {
+            table.fetched_at = now();
+        }
         self.set_prices(table).await?;
         Ok(complete)
     }
@@ -497,7 +512,18 @@ mod tests {
         assert!((prices.convert(2.5, "CNY").unwrap().amount - 16.0).abs() < 1e-9);
         assert_eq!(prices.convert(2.0, "USD").unwrap().amount, 2.0);
         assert_eq!(prices.convert(2.0, "XXX"), None);
-        assert_eq!(Prices::default().convert(2.0, "EUR"), None, "no rates yet");
         assert_eq!(Prices::default().convert(2.0, "USD").unwrap().amount, 2.0);
+    }
+
+    #[test]
+    fn before_the_first_rates_came_rough_ones_stand_in() {
+        let none = Prices::default();
+        let euro = none.convert(1.17, "EUR").unwrap();
+        assert!((euro.amount - 1.0).abs() < 1e-9 && euro.usd == 1.17, "{euro:?}");
+        assert!(none.convert(1.17, "JPY").unwrap().amount > 100.0);
+        assert!(none.convert(1.17, "CNY").unwrap().amount > 5.0);
+        assert_eq!(none.convert(1.0, "GBP"), None, "only the currencies the apps show");
+        let real = Prices::new(table());
+        assert!((real.convert(1.25, "EUR").unwrap().amount - 1.0).abs() < 1e-9, "the real rates win");
     }
 }

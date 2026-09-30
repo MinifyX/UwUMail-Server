@@ -221,7 +221,10 @@ the token estimate, in a person's usage and in the admin's statistics.
   - OpenRouter's own prices from its `/api/v1/models`, while someone uses an
     OpenRouter provider;
   - the [ECB's euro reference rates](https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml)
-    to show costs in euros, yen, yuan and the other currencies it lists.
+    to show costs in euros, yen, yuan and the other currencies it lists. Until
+    the server got them once (no way out to the internet yet), rough built-in
+    rates for US dollars, yen and yuan stand in, so a price set by hand shows
+    in euros all the same.
 - **Free**: Ollama and a ChatGPT subscription cost nothing per request.
 - **Set by hand**: the admin (for server providers) and a person (for their
   own) can set a price in US dollars per million tokens, in and out. It comes

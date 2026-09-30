@@ -455,7 +455,8 @@ use up any of the day's limits.
   than the call allows the model.
 - `totalTokens` is the sum.
 - `cost` is what these tokens cost at the model's price (see `price` of
-  `AssistProvider`), in `currency` by the ECB's reference rates of the day,
+  `AssistProvider`), in `currency` by the ECB's reference rates of the day
+  (rough built-in rates for `USD`, `JPY` and `CNY` until the server got them once),
   and in US dollars (`usd`), the currency of the price lists. `null` when the
   price is not known, when there is no rate for `currency`, or when the admin
   does not show this server provider's costs. A free provider (Ollama, a

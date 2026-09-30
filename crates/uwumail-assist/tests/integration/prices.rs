@@ -63,9 +63,16 @@ async fn price_lists_are_fetched_kept_and_kept_when_a_fetch_fails() {
     let lists = lists().await;
     let assist = Assist::for_tests(rig.store.clone(), "mx.example.org", chatgpt::Endpoints::default())
         .with_price_sources(lists.sources.clone());
+    lists.down.store(true, Ordering::SeqCst);
+    assert!(!assist.refresh_prices().await.unwrap(), "nothing came");
+    assert_eq!(assist.prices().await.table.fetched_at, 0, "a failed fetch is no fetch");
+    lists.down.store(false, Ordering::SeqCst);
+    lists.hits.lock().unwrap().clear();
+
     assert!(assist.refresh_prices().await.unwrap());
     assert_eq!(*lists.hits.lock().unwrap(), ["litellm", "ecb"], "OpenRouter only once someone uses it");
     let prices = assist.prices().await;
+    assert!(prices.table.fetched_at > 0);
     assert_eq!(prices.table.models.len(), 2);
     assert_eq!(prices.table.rates_day.as_deref(), Some("2026-09-29"));
 
@@ -79,6 +86,7 @@ async fn price_lists_are_fetched_kept_and_kept_when_a_fetch_fails() {
     let kept = assist.prices().await;
     assert_eq!((kept.table.models.len(), kept.table.rates.len()), (2, 2), "the last good copy stays");
     assert!(kept.table.openrouter.is_empty());
+    assert_eq!(kept.table.fetched_at, prices.table.fetched_at, "still the time of the last good fetch");
 
     lists.down.store(false, Ordering::SeqCst);
     assert!(assist.refresh_prices().await.unwrap());
