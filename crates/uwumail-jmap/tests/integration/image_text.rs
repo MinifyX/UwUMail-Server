@@ -143,7 +143,7 @@ async fn the_assistant_reads_the_same_text() {
     let read = server.jmap.image_text_reader();
     // `Assist/estimate` only looks at what was read before, and reads nothing itself.
     let known = read(account, email, PictureRead::KnownOnly).await.unwrap();
-    assert_eq!((known.texts.len(), known.unread), (0, 2));
+    assert_eq!((known.texts.len(), known.unread), (0, 3), "three pictures, never read");
     let texts = read(account, email, PictureRead::Read).await.unwrap().texts;
     assert_eq!(texts, ["Premiere am Freitag", "Premiere am Freitag"]);
     let known = read(account, email, PictureRead::KnownOnly).await.unwrap();

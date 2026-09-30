@@ -29,6 +29,7 @@ async fn fake_provider() -> (String, Arc<Mutex<Vec<Value>>>) {
             async move {
                 let body: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
                 let stream = body["stream"] == true;
+                let events = body["response_format"]["json_schema"]["name"] == "calendar_events";
                 seen.lock().unwrap().push(body);
                 if stream {
                     let mut out = String::new();
@@ -41,6 +42,17 @@ async fn fake_provider() -> (String, Arc<Mutex<Vec<Value>>>) {
                     let mut response = Response::new(Body::from(out));
                     response.headers_mut().insert(header::CONTENT_TYPE, "text/event-stream".parse().unwrap());
                     response
+                } else if events {
+                    let events = json!({ "events": [{
+                        "title": "Grillen", "start": "2026-10-03T18:00:00", "end": null, "allDay": false,
+                        "timeZone": null, "location": null, "description": null, "url": null,
+                        "participants": [], "confidence": 0.8, "quote": "Kommst du Samstag?"
+                    }] });
+                    axum::Json(json!({
+                        "choices": [{ "index": 0, "message": { "role": "assistant", "content": events.to_string() } }],
+                        "usage": { "prompt_tokens": 100, "completion_tokens": 10 }
+                    }))
+                    .into_response()
                 } else {
                     axum::Json(json!({
                         "choices": [{ "index": 0, "message": { "role": "assistant", "content": "Eine kurze Einladung." } }],
@@ -212,4 +224,95 @@ async fn compose_streams_as_server_sent_events() {
     let body = json!({ "using": USING, "method": "Assist/spamCheck", "arguments": { "accountId": account } });
     let (status, _) = server.request(stream(basic(login, PASSWORD), body)).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn estimates_ask_no_one_and_events_need_no_refinement_setting() {
+    let (server, seen) = assisted().await;
+    let login = "mini@example.org";
+    let account = server.account_id(login).await;
+    let email = server
+        .deliver(login, "From: Nyu <nyu@example.org>\nTo: mini@example.org\nSubject: Grillen\n\nKommst du Samstag?\n")
+        .await;
+    let estimate = |method: &str, arguments: Value| {
+        json!(["Assist/estimate", {
+        "accountId": account, "method": method, "arguments": arguments
+    }, "est"])
+    };
+    let responses = server
+        .api_using(
+            login,
+            &USING,
+            json!([
+                estimate("Assist/summarize", json!({ "emailId": email })),
+                estimate(
+                    "Assist/extractEvents",
+                    json!({ "accountId": account, "emailId": email, "includeImages": true })
+                ),
+                estimate(
+                    "Assist/compose",
+                    json!({ "mode": "write", "instruction": "Sag Nyu zu", "replyToEmailId": email })
+                ),
+                estimate("Assist/spamCheck", json!({ "emailId": email })),
+            ]),
+        )
+        .await;
+    for (index, method) in
+        ["Assist/summarize", "Assist/extractEvents", "Assist/compose", "Assist/spamCheck"].iter().enumerate()
+    {
+        let answer = args(&responses, index, "Assist/estimate");
+        assert_eq!(answer["accountId"], account);
+        assert_eq!(answer["method"], *method);
+        let (input, output) = (answer["inputTokens"].as_i64().unwrap(), answer["outputTokens"].as_i64().unwrap());
+        assert!(input > 50 && output > 0, "{answer}");
+        assert_eq!(answer["totalTokens"].as_i64().unwrap(), input + output);
+        assert_eq!(answer["providerName"], "Hausmodell");
+        assert!(answer["providerId"].as_str().unwrap().starts_with('q'));
+        let model = if *method == "Assist/compose" { "big-model" } else { "small-model" };
+        assert_eq!(answer["model"], model);
+        assert_eq!(answer["tokensLeftToday"], Value::Null, "no limits: {answer}");
+        assert_eq!(answer["requestsLeftToday"], Value::Null);
+    }
+    assert!(seen.lock().unwrap().is_empty(), "an estimate asks no provider");
+    let responses = server.api_using(login, &USING, json!([["Assist/usage", { "accountId": account }, "u"]])).await;
+    assert_eq!(args(&responses, 0, "Assist/usage")["today"][0]["requests"], 0, "and counts nothing");
+
+    let responses = server
+        .api_using(
+            login,
+            &USING,
+            json!([
+                estimate("Assist/usage", json!({})),
+                estimate("Assist/summarize", json!({ "accountId": "a999", "emailId": email })),
+                estimate("Assist/spamCheck", json!({ "emailId": "e999999" })),
+                estimate("Assist/compose", json!({ "mode": "write" })),
+            ]),
+        )
+        .await;
+    let error = |index: usize| responses[index][1]["type"].as_str().unwrap().to_owned();
+    assert_eq!(responses[0][0], "error");
+    assert_eq!(
+        [error(0), error(1), error(2), error(3)],
+        ["invalidArguments", "invalidArguments", "notFound", "invalidArguments"]
+    );
+
+    // The "find appointment" button asks even when the person did not switch on asking by itself.
+    let using = [USING[0], USING[1], ASSIST, "urn:uwumail:jmap:settings"];
+    let responses = server
+        .api_using(
+            login,
+            &using,
+            json!([
+                ["UserSettings/set", { "accountId": account, "update": { "singleton": {
+                    "values/assist.refineEvents": false
+                } } }, "s"],
+                ["Assist/extractEvents", { "accountId": account, "emailId": email }, "ev"],
+            ]),
+        )
+        .await;
+    assert!(args(&responses, 0, "UserSettings/set")["updated"].is_object(), "{responses:?}");
+    let found = args(&responses, 1, "Assist/extractEvents");
+    assert_eq!(found["events"][0]["title"], "Grillen", "{found}");
+    assert_eq!(found["events"][0]["start"], "2026-10-03T18:00:00");
+    assert_eq!(seen.lock().unwrap().len(), 1);
 }
