@@ -6,9 +6,7 @@ fn well_formed(value: &str) -> Option<String> {
     let value = value.trim().to_ascii_lowercase();
     let (kind, sub) = value.split_once('/')?;
     let token = |s: &str| {
-        !s.is_empty()
-            && s.len() <= 64
-            && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"!#$&^_.+-".contains(&b))
+        !s.is_empty() && s.len() <= 64 && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"!#$&^_.+-".contains(&b))
     };
     (token(kind) && token(sub)).then_some(value)
 }
@@ -88,10 +86,7 @@ pub fn guess(recorded: Option<&str>, name: Option<&str>, data: &[u8]) -> String 
     if let Some(kind) = recorded.and_then(well_formed).filter(|k| k != "application/octet-stream") {
         return kind;
     }
-    name.and_then(by_ending)
-        .or_else(|| by_content(data))
-        .unwrap_or("application/octet-stream")
-        .to_owned()
+    name.and_then(by_ending).or_else(|| by_content(data)).unwrap_or("application/octet-stream").to_owned()
 }
 
 /// A file name made harmless: no directories, no control characters, not too long.

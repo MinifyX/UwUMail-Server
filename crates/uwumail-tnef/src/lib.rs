@@ -37,7 +37,7 @@ mod time;
 pub mod builder;
 
 pub use html::{escape as escape_html, to_text as html_to_text};
-pub use mapi::{Properties, PropId, Property, Value};
+pub use mapi::{PropId, Properties, Property, Value};
 pub use meeting::{Attendee, IcsOptions, Meeting, MeetingKind, PartStat, Recurrence, TimeZone};
 
 use mapi::*;
@@ -344,17 +344,16 @@ fn decode_stream(data: &[u8], limits: &Limits, budget: &mut Budget, depth: usize
     )
     .or_else(|| person(props, PR_SENDER_NAME, PR_SENDER_ADDRTYPE, PR_SENDER_EMAIL_ADDRESS, PR_SENDER_SMTP_ADDRESS));
     message.body = body(props, legacy_body, message.code_page, limits);
-    message.attachments = raw_attachments
-        .into_iter()
-        .filter_map(|raw| attachment(raw, limits, budget, depth))
-        .collect();
+    message.attachments =
+        raw_attachments.into_iter().filter_map(|raw| attachment(raw, limits, budget, depth)).collect();
     message
 }
 
 /// A DTR (seven 16-bit fields: year, month, day, hour, minute, second, weekday) as Unix seconds.
 fn dtr(value: &[u8]) -> Option<i64> {
     let mut r = Reader::new(value);
-    let (y, mo, d, h, mi, s) = (r.u16().ok()?, r.u16().ok()?, r.u16().ok()?, r.u16().ok()?, r.u16().ok()?, r.u16().ok()?);
+    let (y, mo, d, h, mi, s) =
+        (r.u16().ok()?, r.u16().ok()?, r.u16().ok()?, r.u16().ok()?, r.u16().ok()?, r.u16().ok()?);
     if !(1..=12).contains(&mo) || !(1..=31).contains(&d) || h > 23 || mi > 59 || s > 60 || y < 1601 {
         return None;
     }
@@ -408,11 +407,7 @@ fn body(props: &Properties, legacy: Option<String>, code_page: u32, limits: &Lim
             .map(|cp| codepage::encoding(cp as u32))
             .or_else(|| html::meta_charset(bytes).and_then(|label| codepage::from_label(&label)))
             .unwrap_or_else(|| {
-                if std::str::from_utf8(bytes).is_ok() {
-                    encoding_rs::UTF_8
-                } else {
-                    codepage::encoding(code_page)
-                }
+                if std::str::from_utf8(bytes).is_ok() { encoding_rs::UTF_8 } else { codepage::encoding(code_page) }
             });
         let html = encoding.decode_without_bom_handling(bytes).0;
         body.html = Some(html.trim_end_matches('\0').to_owned());

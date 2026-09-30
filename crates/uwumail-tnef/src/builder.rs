@@ -247,15 +247,13 @@ fn rule_time(out: &mut Vec<u8>, month: u16, week: u16, weekday: u16, hour: u16) 
     }
 }
 
+/// When a zone switches: month, week (5 = last), weekday (0 = Sunday), hour.
+pub type Switch = (u16, u16, u16, u16);
+
 /// A TZDEFINITION with one rule, as `PidLidAppointmentTimeZoneDefinitionStartDisplay` holds it.
 /// Biases in minutes (UTC = local + bias); `switches` are (month, week, weekday, hour) of the
 /// change to standard and to daylight time.
-pub fn time_zone_definition(
-    name: &str,
-    bias: i32,
-    daylight_bias: i32,
-    switches: Option<((u16, u16, u16, u16), (u16, u16, u16, u16))>,
-) -> Vec<u8> {
+pub fn time_zone_definition(name: &str, bias: i32, daylight_bias: i32, switches: Option<(Switch, Switch)>) -> Vec<u8> {
     let key: Vec<u8> = name.encode_utf16().flat_map(u16::to_le_bytes).collect();
     let mut out = vec![0x02, 0x01];
     out.extend(((6 + key.len()) as u16).to_le_bytes());

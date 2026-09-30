@@ -36,7 +36,7 @@ pub fn encoding(code_page: u32) -> &'static Encoding {
         28599 => b"windows-1254",
         28603 => b"iso-8859-13",
         28605 => b"iso-8859-15",
-        50220 | 50221 | 50222 => b"iso-2022-jp",
+        50220..=50222 => b"iso-2022-jp",
         51932 => b"euc-jp",
         51936 => b"gbk",
         51949 => b"euc-kr",
@@ -59,7 +59,7 @@ pub fn from_label(label: &str) -> Option<&'static Encoding> {
 
 /// UTF-16LE (PT_UNICODE) as text, without its terminating NULs.
 pub fn utf16le(bytes: &[u8]) -> String {
-    let units: Vec<u16> = bytes.chunks_exact(2).map(|pair| u16::from_le_bytes([pair[0], pair[1]])).collect();
+    let units: Vec<u16> = bytes.as_chunks::<2>().0.iter().map(|pair| u16::from_le_bytes(*pair)).collect();
     let text = String::from_utf16_lossy(&units);
     text.trim_end_matches('\0').to_owned()
 }

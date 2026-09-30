@@ -177,12 +177,8 @@ impl TimeZone {
             self.standard = None;
             self.daylight = None;
         }
-        let name: String = self
-            .name
-            .chars()
-            .map(|c| if c.is_control() || "\";:,".contains(c) { ' ' } else { c })
-            .take(100)
-            .collect();
+        let name: String =
+            self.name.chars().map(|c| if c.is_control() || "\";:,".contains(c) { ' ' } else { c }).take(100).collect();
         self.name = name.split_whitespace().collect::<Vec<_>>().join(" ");
         if self.name.is_empty() {
             self.name = "Windows".to_owned();
@@ -340,12 +336,8 @@ impl Recurrence {
             2 => return None,
             _ => None,
         };
-        let deleted_local = deleted
-            .iter()
-            .filter(|d| !modified.contains(d))
-            .take(1000)
-            .map(|d| minutes_1601(*d))
-            .collect();
+        let deleted_local =
+            deleted.iter().filter(|d| !modified.contains(d)).take(1000).map(|d| minutes_1601(*d)).collect();
         Some(Recurrence {
             frequency,
             interval: interval.clamp(1, 1000),
@@ -440,22 +432,15 @@ impl Message {
             .or_else(|| p.named(&PSETID_MEETING, 0x0023).and_then(Value::as_bytes));
         let (uid, instance) = goid.and_then(uid_of).unzip();
         let recurrence_id = if instance == Some(true) { time(appt(0x8228)) } else { None };
-        let text = |v: Option<&Value>| {
-            v.and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)
-        };
-        let time_zone = appt(0x825E)
-            .and_then(Value::as_bytes)
-            .and_then(TimeZone::definition)
-            .or_else(|| {
-                let name = text(appt(0x8234)).unwrap_or_default();
-                appt(0x8233).and_then(Value::as_bytes).and_then(|d| TimeZone::from_struct(d, &name))
-            });
+        let text =
+            |v: Option<&Value>| v.and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned);
+        let time_zone = appt(0x825E).and_then(Value::as_bytes).and_then(TimeZone::definition).or_else(|| {
+            let name = text(appt(0x8234)).unwrap_or_default();
+            appt(0x8233).and_then(Value::as_bytes).and_then(|d| TimeZone::from_struct(d, &name))
+        });
         let recurring = appt(0x8223).and_then(Value::as_bool).unwrap_or(false) || recurrence_id.is_none();
-        let recurrence = if recurring {
-            appt(0x8216).and_then(Value::as_bytes).and_then(Recurrence::parse)
-        } else {
-            None
-        };
+        let recurrence =
+            if recurring { appt(0x8216).and_then(Value::as_bytes).and_then(Recurrence::parse) } else { None };
         let (organizer, attendees) = match kind {
             MeetingKind::Reply(_) => (
                 None,
@@ -466,10 +451,7 @@ impl Message {
             ),
             _ => (
                 self.sender.clone(),
-                self.recipients
-                    .iter()
-                    .map(|r| Attendee { person: r.person.clone(), kind: r.kind })
-                    .collect(),
+                self.recipients.iter().map(|r| Attendee { person: r.person.clone(), kind: r.kind }).collect(),
             ),
         };
         let description = match kind {
@@ -656,12 +638,8 @@ impl Meeting {
         match self.kind {
             MeetingKind::Reply(partstat) => {
                 let organizer = self.organizer.as_ref().filter(with_email).or(options.to.first())?;
-                let attendee = self
-                    .attendees
-                    .first()
-                    .map(|a| &a.person)
-                    .filter(with_email)
-                    .or(options.from.as_ref())?;
+                let attendee =
+                    self.attendees.first().map(|a| &a.person).filter(with_email).or(options.from.as_ref())?;
                 lines.extend(address_line("ORGANIZER", organizer, &[]));
                 lines.extend(address_line("ATTENDEE", attendee, &[&format!("PARTSTAT={}", partstat.ical())]));
             }

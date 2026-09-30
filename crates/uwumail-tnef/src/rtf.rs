@@ -125,7 +125,15 @@ struct Group {
 
 impl Default for Group {
     fn default() -> Self {
-        Group { skip: false, htmltag: false, htmlrtf: false, fldinst: false, link: false, uc: 1, format: Format::default() }
+        Group {
+            skip: false,
+            htmltag: false,
+            htmlrtf: false,
+            fldinst: false,
+            link: false,
+            uc: 1,
+            format: Format::default(),
+        }
     }
 }
 
@@ -498,17 +506,13 @@ pub fn convert(rtf: &[u8], max: usize) -> Content {
                             let n = param.unwrap_or(0).max(0) as usize;
                             i = i.saturating_add(n).min(rtf.len());
                         }
-                        "par" | "sect" | "page" | "row" => {
-                            if visible(&group) {
-                                out.flush(group.format);
-                                out.paragraph();
-                            }
+                        "par" | "sect" | "page" | "row" if visible(&group) => {
+                            out.flush(group.format);
+                            out.paragraph();
                         }
-                        "line" => {
-                            if visible(&group) {
-                                out.flush(group.format);
-                                out.line();
-                            }
+                        "line" if visible(&group) => {
+                            out.flush(group.format);
+                            out.line();
                         }
                         "tab" | "cell" => emit_char(&mut out, &group, visible(&group), "\t"),
                         "emdash" => emit_char(&mut out, &group, visible(&group), "\u{2014}"),
@@ -569,11 +573,9 @@ pub fn convert(rtf: &[u8], max: usize) -> Content {
                         }
                         b'~' => emit_char(&mut out, &group, visible(&group), "\u{00A0}"),
                         b'_' => emit_char(&mut out, &group, visible(&group), "\u{2011}"),
-                        b'\r' | b'\n' => {
-                            if visible(&group) {
-                                out.flush(group.format);
-                                out.paragraph();
-                            }
+                        b'\r' | b'\n' if visible(&group) => {
+                            out.flush(group.format);
+                            out.paragraph();
                         }
                         _ => {}
                     }
@@ -747,9 +749,9 @@ mod tests {
     #[test]
     fn the_specification_example() {
         let packed: [u8; 0x2D] = [
-            0x2d, 0x00, 0x00, 0x00, 0x2b, 0x00, 0x00, 0x00, 0x4c, 0x5a, 0x46, 0x75, 0xf1, 0xc5, 0xc7, 0xa7, 0x03,
-            0x00, 0x0a, 0x00, 0x72, 0x63, 0x70, 0x67, 0x31, 0x32, 0x35, 0x42, 0x32, 0x0a, 0xf3, 0x20, 0x68, 0x65,
-            0x6c, 0x09, 0x00, 0x20, 0x62, 0x77, 0x05, 0xb0, 0x6c, 0x64, 0x7d,
+            0x2d, 0x00, 0x00, 0x00, 0x2b, 0x00, 0x00, 0x00, 0x4c, 0x5a, 0x46, 0x75, 0xf1, 0xc5, 0xc7, 0xa7, 0x03, 0x00,
+            0x0a, 0x00, 0x72, 0x63, 0x70, 0x67, 0x31, 0x32, 0x35, 0x42, 0x32, 0x0a, 0xf3, 0x20, 0x68, 0x65, 0x6c, 0x09,
+            0x00, 0x20, 0x62, 0x77, 0x05, 0xb0, 0x6c, 0x64, 0x7d,
         ];
         let mut packed = packed.to_vec();
         packed.extend([0x0a, 0x80, 0x0f, 0xa0]);

@@ -133,7 +133,8 @@ mod tests {
         assert_eq!(unwrap(wrapped).as_deref(), Some("https://example.com/a?b=1&c=2"));
         let plain = "https://safelinks.protection.outlook.com/?url=http%3A%2F%2Fexample.org";
         assert_eq!(unwrap(plain).as_deref(), Some("http://example.org"));
-        let path = "https://eur01.safelinks.protection.outlook.com/ap/w-59584e83/?url=https%3A%2F%2Fexample.net%2F&data=1";
+        let path =
+            "https://eur01.safelinks.protection.outlook.com/ap/w-59584e83/?url=https%3A%2F%2Fexample.net%2F&data=1";
         assert_eq!(unwrap(path).as_deref(), Some("https://example.net/"));
         let twice = format!(
             "https://eur02.safelinks.protection.outlook.com/?URL={}&data=1",
@@ -149,6 +150,9 @@ mod tests {
         let text = format!("Siehe <{wrapped}> und https://example.org/x.");
         assert_eq!(unwrap_in_text(&text), "Siehe <https://example.com/a?b=1&c=2> und https://example.org/x.");
         assert!(matches!(unwrap_in_text("no links"), std::borrow::Cow::Borrowed(_)));
-        assert_eq!(unwrap_in_text("ä https://nam12.safelinks.protection.outlook.com"), "ä https://nam12.safelinks.protection.outlook.com");
+        assert_eq!(
+            unwrap_in_text("ä https://nam12.safelinks.protection.outlook.com"),
+            "ä https://nam12.safelinks.protection.outlook.com"
+        );
     }
 }

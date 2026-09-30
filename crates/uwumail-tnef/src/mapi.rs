@@ -128,11 +128,7 @@ impl Properties {
     }
 
     pub fn named(&self, guid: &Guid, id: u32) -> Option<&Value> {
-        self.0
-            .iter()
-            .rev()
-            .find(|p| matches!(&p.id, PropId::Id(g, i) if g == guid && *i == id))
-            .map(|p| &p.value)
+        self.0.iter().rev().find(|p| matches!(&p.id, PropId::Id(g, i) if g == guid && *i == id)).map(|p| &p.value)
     }
 
     pub fn str(&self, tag: u16) -> Option<&str> {
