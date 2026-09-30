@@ -333,6 +333,10 @@ pictures and attached images ([`Email/imageText`](jmap-image-text.md), when the
 server can read pictures) is added to the mail's text. Remote pictures are not
 read here. Pictures are never sent to the model itself.
 
+The call does not depend on the person's `assist.refineEvents`: that setting
+only decides whether the webmail calls it by itself when a mail opens. A
+"find appointment" button calls it directly with the setting off.
+
 ## Labels
 
 Labels are the person's own words for kinds of mail ("Rechnungen: invoices,
@@ -390,6 +394,70 @@ entry undone. Response `{ accountId, undone: [ids], notFound: [ids] }`.
 arrived before auto-labels were on or while it was off. It needs the
 `autoLabels` feature, not the setting. Response `{ accountId, labeled: {
 emailId: [labelId] }, notFound: [ids] }`.
+
+## Assist/estimate
+
+What one of the calls above would take, for a hint like "≈ 1,200 tokens ·
+48,000 left today" on a button. The server builds the same prompt the call
+would build (the same checks of the arguments, the same cutting of the mail
+to size, the same mails of a conversation, the same provider and model), but
+asks no provider and counts nothing: an estimate is not a request and does not
+use up any of the day's limits.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `accountId` | `Id` | |
+| `method` | `String` | `Assist/compose`, `Assist/summarize`, `Assist/spamCheck` or `Assist/extractEvents` |
+| `arguments` | `Object` | exactly what that method would get; its `accountId` may be left out |
+
+```json
+["Assist/estimate", {
+  "accountId": "a1",
+  "method": "Assist/summarize",
+  "arguments": { "threadId": "t7" }
+}, "0"]
+```
+
+```json
+["Assist/estimate", {
+  "accountId": "a1",
+  "method": "Assist/summarize",
+  "inputTokens": 1180,
+  "outputTokens": 250,
+  "totalTokens": 1430,
+  "providerId": "q1", "providerName": "Mistral", "model": "mistral-small-latest",
+  "tokensLeftToday": 48000,
+  "requestsLeftToday": null
+}, "0"]
+```
+
+- `inputTokens` is the prompt (instructions, the mail's text and, for spam
+  check and events, the JSON shape of the answer), counted the way the server
+  counts a request before it is sent: about four characters to a token, a
+  token for each Chinese, Japanese or Korean character. Providers count with
+  their own tokenizers, so the real number differs a little.
+- `outputTokens` is a **typical** answer, not the most the model may write
+  (which is far more than it usually does): `compose` 400 for `write`, for
+  `rewrite` and `adjust` about the draft's length (a quarter more, at least
+  100); `summarize` 150 for one mail, 50 more per further mail of a
+  conversation, at most 600; `spamCheck` 150; `extractEvents` 250. Never more
+  than the call allows the model.
+- `totalTokens` is the sum.
+- `tokensLeftToday` and `requestsLeftToday` are what is left of the person's
+  daily limits of that provider, `0` when used up (the call itself would then
+  answer `overQuota`); `null` when that limit does not exist, and always for
+  the person's own providers.
+- With `includeImages`, pictures are **not** read for an estimate: the text of
+  pictures that were read before (by `Email/imageText` or an earlier call) is
+  taken from the server's cache, each picture never read counts as about 100
+  tokens.
+- Errors are those of the call: `assistUnavailable` when the feature is off or
+  no provider can be used, `notFound`, `invalidArguments` for arguments the
+  call would refuse, and `invalidArguments` for another `method`. At most four
+  estimates run at once per person; more answer `providerFailed` with
+  `retryAfter`. An estimate reads the mail but nothing else is slow: it is
+  meant to be asked when a pointer rests on a button, and a client keeps the
+  answer until the mail or the draft changes.
 
 ## Assist/usage
 

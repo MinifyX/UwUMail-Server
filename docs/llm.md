@@ -17,7 +17,7 @@ for admins and for people setting it up for themselves.
 | Write and rewrite | Composer: "Schreiben lassen", the presets (more formal, more casual, shorter, friendlier, clearer, spelling, translate) and "Anpassen…" with an own instruction | a click; the draft only changes when the person inserts or replaces |
 | Summaries | Reader: one mail or the whole conversation | a click |
 | Spam check | Reader: "Auf Spam prüfen" | a click; shows the model's verdict next to what the server itself knows, and offers "Spam" / "Kein Spam" |
-| Dates for the calendar | Reader, with the dates the server finds itself | a click, or on opening a mail when the person switched on `assist.refineEvents` (off by default) |
+| Dates for the calendar | Reader, with the dates the server finds itself | a click ("find appointment", whatever the setting), or on opening a mail when the person switched on `assist.refineEvents` (off by default) |
 | Auto-labels | New mail in the inbox | on delivery, only for people who switched it on |
 
 The features started by a click are available as soon as a provider is: the
@@ -42,7 +42,9 @@ per feature what will be used.
    under *Usage* either way. A request counts when it starts, before the
    provider is asked, and before any mail is read for it; its tokens are added
    when it ends, estimated from what was sent and received when it failed or
-   the reader left a streamed answer.
+   the reader left a streamed answer. `Assist/estimate` (the token hint on
+   the AI buttons) counts nothing and asks no provider; it shows what is left
+   of these limits.
 5. **The policy** for the whole server:
    - which features exist at all (switched off here, a feature is gone for
      everyone, including own providers);
