@@ -367,10 +367,10 @@ impl Store {
             FlagChange::Remove(flags) => KeywordsChange::Patch(flags.into_iter().map(|flag| (flag, false)).collect()),
             FlagChange::Replace(flags) => KeywordsChange::Replace(flags),
         };
-        let (skipped, modseq) = self
+        let (skipped, modseq, learned) = self
             .write(move |tx| {
                 own_mailbox(tx, account_id, mailbox_id)?;
-                let mut batch = Batch { account_id, modseq: None };
+                let mut batch = Batch::new(account_id);
                 let mut skipped = Vec::new();
                 for (uid, (email_id, modseq)) in emails_by_uid(tx, mailbox_id, &uids)? {
                     if unchanged_since.is_some_and(|since| modseq > since) {
@@ -380,10 +380,13 @@ impl Store {
                     let update = EmailUpdate { id: email_id, keywords: keywords.clone(), ..Default::default() };
                     update_one(tx, &mut batch, &update)?;
                 }
-                Ok((skipped, batch.modseq))
+                Ok((skipped, batch.modseq, batch.learned))
             })
             .await?;
         finish(self, account_id, modseq);
+        if learned {
+            self.labels_learned();
+        }
         Ok(skipped)
     }
 
@@ -401,7 +404,7 @@ impl Store {
             .write(move |tx| {
                 own_mailbox(tx, account_id, source)?;
                 own_mailbox(tx, account_id, target)?;
-                let mut batch = Batch { account_id, modseq: None };
+                let mut batch = Batch::new(account_id);
                 let pairs = copy_in(tx, &mut batch, source, &uids, target, remove_source)?;
                 Ok((pairs, batch.modseq))
             })
@@ -449,7 +452,7 @@ impl Store {
                     })?
                     .collect::<Result<Vec<_>, _>>()?;
                 drop(stmt);
-                let mut batch = Batch { account_id, modseq: None };
+                let mut batch = Batch::new(account_id);
                 let mut removed = Vec::new();
                 for (uid, email_id, memberships) in flagged {
                     if uids.as_ref().is_some_and(|uids| !uids.contains(&uid)) {

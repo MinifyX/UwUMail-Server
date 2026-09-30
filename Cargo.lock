@@ -4807,6 +4807,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "uwumail-labels",
  "uwumail-tnef",
 ]
 

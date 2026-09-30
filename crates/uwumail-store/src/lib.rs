@@ -44,6 +44,7 @@ mod identity_grants;
 mod imap;
 mod import;
 pub mod itip;
+mod labels;
 mod limiter;
 mod mail;
 mod masked;
@@ -96,11 +97,11 @@ pub use alerts::{
     AlertObservation, CertificateOrders,
 };
 pub use assist::{
-    ASSIST_CALIBRATION_SAMPLES, ASSIST_FEATURES, ASSIST_LABEL_DESCRIPTION_MAX_CHARS, ASSIST_LABEL_NAME_MAX_CHARS,
-    ASSIST_MAX_ACCESS_ENTRIES, ASSIST_MAX_LABELS, ASSIST_MAX_PERSONAL_PROVIDERS, ASSIST_MAX_SERVER_PROVIDERS,
-    AssistFeatures, AssistLabel, AssistPolicy, AssistPrefs, AssistProviderRecord, AssistProviderWrite,
-    CalibrationSample, LabelJob, LabelLogEntry, SecretChange, SenderHistory, TokenCount, UsageRow, UsedToday,
-    label_keyword, utc_day,
+    ASSIST_CALIBRATION_SAMPLES, ASSIST_FEATURES, ASSIST_FOREIGN_MAIL, ASSIST_LABEL_DESCRIPTION_MAX_CHARS,
+    ASSIST_LABEL_NAME_MAX_CHARS, ASSIST_MAX_ACCESS_ENTRIES, ASSIST_MAX_LABELS, ASSIST_MAX_PERSONAL_PROVIDERS,
+    ASSIST_MAX_SERVER_PROVIDERS, AssistFeatures, AssistLabel, AssistLabelWrite, AssistPolicy, AssistPrefs,
+    AssistProviderRecord, AssistProviderWrite, CalibrationSample, LabelCounts, LabelJob, LabelLogEntry, LabelLogWrite,
+    SecretChange, SenderHistory, TokenCount, UsageRow, UsedToday, label_keyword, utc_day,
 };
 pub use bayes::{
     BAYES_FOLDER_LIMIT, BAYES_LEARNED_SECS, BAYES_MIN_LEARNED, BAYES_RARE_TOKEN_SECS, BAYES_WANTED_AFTER_SECS,
@@ -152,6 +153,7 @@ pub use groups::{GROUP_MAX_MEMBERS, Group, GroupDelivery, GroupMember, GroupUpda
 pub use held::{HeldSubmission, NewHeldSubmission};
 pub use imap::{DELETED_KEYWORD, FlagChange, ImapEmail, ImapMailbox, ImapMessage, ImapMessages, ImapStatus};
 pub use import::ImportProgress;
+pub use labels::{LabelSetup, LabelTraining};
 pub use limiter::{Attempt, AuthLimiter, Reporter as BlockReporter};
 pub use mail::{EmailSummary, IngestRequest, IngestedEmail, Mailbox, MailboxRole, MailboxTarget, TestMessageStatus};
 pub use masked::{MASKED_PENDING_SECS, MaskedAddress, MaskedDelivery, MaskedState, MaskedUpdate, NewMaskedAddress};
