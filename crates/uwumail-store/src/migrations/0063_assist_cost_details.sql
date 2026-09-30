@@ -9,3 +9,5 @@ ALTER TABLE assist_usage ADD COLUMN reasoning_tokens INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE assist_usage ADD COLUMN cached_tokens INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE assist_usage ADD COLUMN calls INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE assist_providers ADD COLUMN request_price REAL;
+-- Every request before this version was one call.
+UPDATE assist_usage SET calls = requests;
