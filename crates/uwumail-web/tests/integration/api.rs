@@ -161,8 +161,41 @@ async fn login_session_and_logout() {
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert!(response.headers()[header::SET_COOKIE].to_str().unwrap().contains("Max-Age=0"));
+    // The webmail's local data, its push worker and cached attachments go with the login.
+    assert_eq!(response.headers()["clear-site-data"], "\"cache\", \"storage\"");
     let (status, _, body) = call(&app, Call { cookie: Some(&cookie), ..Call::get("/api/session") }).await;
     assert_eq!((status, body), (StatusCode::OK, Value::Null));
+}
+
+#[tokio::test]
+async fn ending_the_own_session_clears_the_browser_like_a_logout() {
+    let (app, _dir) = setup().await;
+    let (cookie, csrf) = login(&app, "leni@example.org").await;
+    let (other_cookie, _) = login(&app, "leni@example.org").await;
+    let (_, _, security) = call(&app, Call { cookie: Some(&cookie), ..Call::get("/api/account/security") }).await;
+    let id_of = |current: bool| {
+        security["sessions"].as_array().unwrap().iter().find(|s| s["current"] == current).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let (own, other) = (id_of(true), id_of(false));
+
+    // Ending another browser's login leaves this one's data alone.
+    let path = format!("/api/account/sessions/{other}");
+    let (status, response, _) =
+        call(&app, Call { cookie: Some(&cookie), csrf: Some(&csrf), ..Call::send("DELETE", &path, json!({})) }).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(response.headers().get("clear-site-data").is_none());
+    let (_, _, body) = call(&app, Call { cookie: Some(&other_cookie), ..Call::get("/api/session") }).await;
+    assert_eq!(body, Value::Null);
+
+    let path = format!("/api/account/sessions/{own}");
+    let (status, response, _) =
+        call(&app, Call { cookie: Some(&cookie), csrf: Some(&csrf), ..Call::send("DELETE", &path, json!({})) }).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(response.headers()["clear-site-data"], "\"cache\", \"storage\"");
+    assert!(response.headers()[header::SET_COOKIE].to_str().unwrap().contains("Max-Age=0"));
 }
 
 #[tokio::test]

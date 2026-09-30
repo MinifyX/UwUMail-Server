@@ -334,7 +334,21 @@ pub async fn logout(State(web): State<Web>, parts: Parts) -> ApiResult<Response>
             Err(err) => return Err(err),
         }
     }
+    Ok(signed_out(client))
+}
+
+/// What the browser has kept for a login once it ends: the webmail's local settings, trusted senders,
+/// draft and push registration (local storage, IndexedDB, the service worker), and attachments and
+/// images from the HTTP cache, which are cached privately for up to a year and would otherwise be
+/// there for the next person at a shared computer. The portal only loses its language and theme,
+/// which come back from the server at the next login.
+const CLEAR_SITE_DATA: HeaderValue = HeaderValue::from_static("\"cache\", \"storage\"");
+
+/// The answer that ends a login in this browser: the cookie goes, and everything kept with it.
+pub(crate) fn signed_out(client: ClientInfo) -> Response {
     let mut response = StatusCode::NO_CONTENT.into_response();
-    response.headers_mut().insert(header::SET_COOKIE, session::clear_cookie(client));
-    Ok(response)
+    let headers = response.headers_mut();
+    headers.insert(header::SET_COOKIE, session::clear_cookie(client));
+    headers.insert(header::HeaderName::from_static("clear-site-data"), CLEAR_SITE_DATA);
+    response
 }
