@@ -663,9 +663,9 @@ impl Store {
                 // account (security-audit-0.5.2 S-22). Ids are no longer reused since 0.16.0, this
                 // stays as a second guard.
                 "INSERT INTO accounts (id, login, display_name, password_hash, role, kind, quota_bytes, created_at,
-                                       credentials_changed_at,
+                                       credentials_changed_at, password_changed_at,
                                        smtp_enabled, imap_enabled, jmap_enabled, caldav_enabled, carddav_enabled)
-                 VALUES (?13, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?9, ?10, ?11, ?12)",
+                 VALUES (?13, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     login,
                     new.display_name.trim(),
@@ -809,7 +809,7 @@ impl Store {
                 });
             }
             tx.execute(
-                "UPDATE accounts SET password_hash = ?1, credentials_changed_at = ?2 WHERE login = ?3",
+                "UPDATE accounts SET password_hash = ?1, credentials_changed_at = ?2, password_changed_at = ?2 WHERE login = ?3",
                 params![hash, now(), login],
             )?;
             let id = account_id(tx, &login)?;

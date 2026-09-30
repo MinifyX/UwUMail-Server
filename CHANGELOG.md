@@ -43,6 +43,11 @@ works — with *Darstellung → Nyu-Animationen* (An / Reduziert / Aus).
 - The synced setting `mail.detectEvents` (date detection on or off) was rejected since 0.18.0, so
   the choice never followed the account. The server now accepts it, and `nyu.animations` and
   `assist.currency` too.
+- Revoking an app password also ended the push subscriptions and open IMAP/SMTP connections that
+  apps had made with the account password, once they were older than that second (it moved the
+  same stamp a new password moves). A new password, second factor or the app-password rule still
+  ends them; an app password going away no longer does. Migration `0060_password_changed.sql`.
+  This was also why a web push test failed now and then in CI.
 
 ## 0.18.0
 

@@ -114,7 +114,7 @@ pub const PUSH_CREDENTIAL_PASSWORD: &str = "password";
 /// Whether the login behind a subscription `p` (joined with its account `a`) still holds: the
 /// account may log in, and the session, app password or password is the one it was made with.
 pub(crate) const STILL_VALID: &str = "a.disabled = 0 AND a.deleted_at IS NULL AND CASE
-    WHEN p.credential = 'password' THEN a.credentials_changed_at <= p.created_at
+    WHEN p.credential = 'password' THEN a.password_changed_at <= p.created_at
     WHEN p.credential LIKE 'app:%' THEN EXISTS (SELECT 1 FROM app_passwords ap
         WHERE ap.id = CAST(substr(p.credential, 5) AS INTEGER) AND ap.account_id = p.account_id
           AND (ap.expires_at IS NULL OR ap.expires_at > ?1))
@@ -682,6 +682,18 @@ mod tests {
         verify(store.clone(), PUSH_CREDENTIAL_PASSWORD, "https://push.example.net/password").await;
         assert_eq!(store.push_targets(vec![mini]).await.unwrap().len(), 3);
 
+        // The password's subscription is older than this second: revoking an app password must not
+        // end it all the same (it did while both went by credentials_changed_at).
+        store
+            .write(move |tx| {
+                tx.execute("UPDATE accounts SET password_changed_at = password_changed_at - 10 WHERE id = ?1", [mini])?;
+                Ok(tx.execute(
+                    "UPDATE push_subscriptions SET created_at = created_at - 5 WHERE credential = 'password'",
+                    [],
+                )?)
+            })
+            .await
+            .unwrap();
         store.delete_web_session(&session.token).await.unwrap();
         store.revoke_app_password(mini, app.app_password.id).await.unwrap();
         // Revoking the app password ends its subscriptions right away, not at the next clean-up.
@@ -693,7 +705,7 @@ mod tests {
         store
             .write(move |tx| {
                 Ok(tx.execute(
-                    "UPDATE accounts SET credentials_changed_at = ?1 WHERE id = ?2",
+                    "UPDATE accounts SET credentials_changed_at = ?1, password_changed_at = ?1 WHERE id = ?2",
                     params![now() + 5, mini],
                 )?)
             })

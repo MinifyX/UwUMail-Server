@@ -87,7 +87,10 @@ pub(crate) fn become_service(tx: &Connection, account: &Account, granted: &mut G
         "DELETE FROM push_subscriptions WHERE account_id = ?1 AND (credential LIKE 'session:%' OR credential LIKE 'oauth:%')",
         [account.id],
     )?;
-    tx.execute("UPDATE accounts SET credentials_changed_at = ?1 WHERE id = ?2", params![now(), account.id])?;
+    tx.execute(
+        "UPDATE accounts SET credentials_changed_at = ?1, password_changed_at = ?1 WHERE id = ?2",
+        params![now(), account.id],
+    )?;
     stop_personal_mail_setup(tx, account.id, granted)?;
     leave_sharing(tx, account.id, granted)
 }
@@ -530,7 +533,7 @@ impl Store {
                 return Err(StoreError::NotFound("password link".into()));
             }
             tx.execute(
-                "UPDATE accounts SET password_hash = ?1, credentials_changed_at = ?2 WHERE id = ?3",
+                "UPDATE accounts SET password_hash = ?1, credentials_changed_at = ?2, password_changed_at = ?2 WHERE id = ?3",
                 params![hash, now(), link.account.id],
             )?;
             crate::held::cancel_held(

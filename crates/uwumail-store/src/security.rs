@@ -347,7 +347,18 @@ fn has_second_factor(conn: &Connection, account_id: i64) -> rusqlite::Result<boo
     )
 }
 
+/// A new password, second factor or app password rule: cached logins and what the password made
+/// (push subscriptions, connections) end.
 fn credentials_changed(conn: &Connection, account_id: i64) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE accounts SET credentials_changed_at = ?1, password_changed_at = ?1 WHERE id = ?2",
+        params![now(), account_id],
+    )?;
+    Ok(())
+}
+
+/// An app password went away: cached logins end, but not what the password itself made.
+fn app_password_gone(conn: &Connection, account_id: i64) -> rusqlite::Result<()> {
     conn.execute("UPDATE accounts SET credentials_changed_at = ?1 WHERE id = ?2", params![now(), account_id])?;
     Ok(())
 }
@@ -655,7 +666,7 @@ impl Store {
                 crate::held::HeldBy::Credential(&credential),
                 crate::held::NOT_SENT_REVOKED,
             )?;
-            credentials_changed(tx, account_id)?;
+            app_password_gone(tx, account_id)?;
             Ok(found)
         })
         .await
@@ -1493,14 +1504,25 @@ mod tests {
         assert!(holds(by_password.clone(), Some("imap")).await);
         assert!(holds(by_app.clone(), Some("imap")).await);
 
-        // The app password revoked: its connections end, the password's go on.
+        // The app password revoked: its connections end, the password's go on, also those from
+        // before this second. (The account is dated a moment earlier so such a login can exist.)
+        store
+            .write(move |tx| {
+                Ok(tx.execute(
+                    "UPDATE accounts SET password_changed_at = password_changed_at - 5 WHERE id = ?1",
+                    [mini.id],
+                )?)
+            })
+            .await
+            .unwrap();
         store.revoke_app_password(mini.id, created.app_password.id).await.unwrap();
         assert!(!holds(by_app.clone(), None).await);
+        assert!(holds(LiveLogin { at: by_password.at - 1, ..by_password.clone() }, Some("imap")).await);
         // A new password (dated a moment later: within the same second it still counts).
         store
             .write(move |tx| {
                 Ok(tx.execute(
-                    "UPDATE accounts SET credentials_changed_at = ?1 WHERE id = ?2",
+                    "UPDATE accounts SET credentials_changed_at = ?1, password_changed_at = ?1 WHERE id = ?2",
                     params![now() + 5, mini.id],
                 )?)
             })
