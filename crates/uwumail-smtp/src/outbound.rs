@@ -192,7 +192,7 @@ impl Target {
 /// issue for the admins, and mail Microsoft accepted counts towards ending them.
 struct MicrosoftWatch<'a> {
     ctx: &'a Context,
-    /// The session is with a Microsoft mail server, by its host name or its greeting.
+    /// The session is with a Microsoft mail server, by the host name we connected to.
     microsoft: bool,
     /// The address mail leaves from, when it is one the internet sees.
     local_ip: Option<IpAddr>,
@@ -216,22 +216,23 @@ impl<'a> MicrosoftWatch<'a> {
         }
     }
 
-    /// Microsoft greets with its host name, also behind a static route to an address.
-    fn greeting(&mut self, greeting: &Reply) {
-        if !self.noted && microsoft::is_microsoft_greeting(&greeting.text) {
-            self.microsoft = true;
-        }
-    }
-
     async fn refused(&mut self, reply: &Reply) {
-        if self.noted || reply.is_positive() {
+        // Only a session with a Microsoft host becomes an issue. The greeting and the reply text
+        // are whatever the other side chooses to say: any mail server could greet as
+        // "….protection.outlook.com" and answer S3150 to raise a false alarm for the admins.
+        if self.noted || !self.microsoft || reply.is_positive() {
             return;
         }
         let text = reply.to_string();
-        let Some(refusal) = microsoft::classify(&text, self.microsoft) else { return };
+        let Some(refusal) = microsoft::classify(&text, true) else { return };
         self.noted = true;
-        self.microsoft = true;
-        let ip = refusal.ip.or(self.local_ip).map(|ip| ip.to_string()).unwrap_or_default();
+        let ours = match refusal.ip {
+            Some(said) if Some(said) != self.local_ip => {
+                lookup(&self.ctx.hostname, 25).await.into_iter().map(|addr| addr.ip()).collect()
+            }
+            _ => Vec::new(),
+        };
+        let ip = refusal_ip(refusal.ip, self.local_ip, &ours).map(|ip| ip.to_string()).unwrap_or_default();
         let scope = refusal.group.scope();
         let subject = match scope {
             microsoft::IssueScope::Ip => ip.clone(),
@@ -268,6 +269,14 @@ impl<'a> MicrosoftWatch<'a> {
             tracing::error!(%err, "recording a delivery to Microsoft failed");
         }
     }
+}
+
+/// The address a refusal is about: the one Microsoft names, but only when it is one of ours (the
+/// address this session left from, or one our host name points to), else the address the session
+/// left from. Behind NAT only the reply knows the public address, but an address that is not ours
+/// would make an issue about somebody else's.
+fn refusal_ip(said: Option<IpAddr>, local_ip: Option<IpAddr>, ours: &[IpAddr]) -> Option<IpAddr> {
+    said.filter(|ip| Some(*ip) == local_ip || ours.contains(ip)).or(local_ip)
 }
 
 async fn lookup(host: &str, port: u16) -> Vec<SocketAddr> {
@@ -410,6 +419,7 @@ async fn resolve_targets(
 
     // With validated MX records, the TLSA records of their hosts come before MTA-STS.
     let mut targets = Vec::new();
+    let (mut looked_up, mut private) = (0, 0);
     for host in hosts.into_iter().take(MAX_HOSTS) {
         match auth
             .ip_lookup(
@@ -422,7 +432,21 @@ async fn resolve_targets(
             .await
         {
             Ok(ips) => {
-                let addrs = ips.into_iter().map(|ip| SocketAddr::new(ip, live.delivery.mx_port)).collect();
+                looked_up += 1;
+                let found = !ips.is_empty();
+                // Whoever controls a domain's DNS could otherwise point its MX at this host or the
+                // local network and have the delivery worker talk to services there. A mail
+                // server that really lives there gets a route (or `delivery.allow_private_mx`).
+                let addrs: Vec<SocketAddr> = ips
+                    .into_iter()
+                    .filter(|ip| live.delivery.allow_private_mx || crate::fetch::is_public(*ip))
+                    .map(|ip| SocketAddr::new(ip, live.delivery.mx_port))
+                    .collect();
+                if found && addrs.is_empty() {
+                    private += 1;
+                    tracing::warn!(%domain, %host, "an MX host has no public address, skipping it");
+                    continue;
+                }
                 let dane = match mx_security {
                     Security::Secure => Dane::of(dane::host_tlsa(ctx, &host).await),
                     _ => Dane::Off,
@@ -443,6 +467,12 @@ async fn resolve_targets(
             }
             Err(err) => tracing::debug!(%host, %err, "address lookup failed"),
         }
+    }
+    // Only when every host pointed inside: a host whose lookup failed may still come back.
+    if targets.is_empty() && private > 0 && private == looked_up {
+        return Err(Outcome::Failed(format!(
+            "550 5.4.4 The mail servers of {domain} point to private addresses, not to the internet"
+        )));
     }
     Ok(targets)
 }
@@ -519,7 +549,6 @@ async fn session(
 
     let mut microsoft_watch = MicrosoftWatch::new(ctx, target, client.local_ip(), &message.return_path);
     let greeting = client.read_reply().await.map_err(io)?;
-    microsoft_watch.greeting(&greeting);
     if greeting.code != 220 {
         microsoft_watch.refused(&greeting).await;
         return Err(format!("greeting: {greeting}"));
@@ -705,5 +734,19 @@ mod tests {
         assert_eq!(retry_delay(1), 300);
         assert_eq!(retry_delay(4), 3600);
         assert_eq!(retry_delay(40), 21_600);
+    }
+
+    #[test]
+    fn a_refusal_names_only_our_own_addresses() {
+        let local: IpAddr = "203.0.113.5".parse().unwrap();
+        let ours: IpAddr = "198.51.100.7".parse().unwrap();
+        let foreign: IpAddr = "192.0.2.9".parse().unwrap();
+        // Someone else's address in the reply: the address the session left from.
+        assert_eq!(refusal_ip(Some(foreign), Some(local), &[ours]), Some(local));
+        assert_eq!(refusal_ip(Some(foreign), None, &[ours]), None);
+        // Ours, by the session or by the host name (behind NAT).
+        assert_eq!(refusal_ip(Some(local), Some(local), &[]), Some(local));
+        assert_eq!(refusal_ip(Some(ours), None, &[ours]), Some(ours));
+        assert_eq!(refusal_ip(None, Some(local), &[]), Some(local));
     }
 }

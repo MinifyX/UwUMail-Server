@@ -477,6 +477,57 @@ mod tests {
         assert_eq!(states, "deleted disabled", "masked addresses stay the mailbox's, switched off");
     }
 
+    /// The person's own AI provider went on getting the mailbox's mail for labels after it became
+    /// a shared mailbox (security audit 0.21.0 STORE-M1).
+    #[tokio::test]
+    async fn a_persons_own_ai_setup_ends_when_it_becomes_a_shared_mailbox() {
+        let (store, _dir) = store().await;
+        store.create_domain("example.org").await.unwrap();
+        person(&store, "mini@example.org").await;
+        let leaver = person(&store, "leaver@example.org").await;
+        store
+            .write(move |tx| {
+                tx.execute(
+                    "INSERT INTO assist_providers (account_id, name, kind, secret, created_at, updated_at)
+                     VALUES (?1, 'Mine', 'openai', x'00', 0, 0), (NULL, 'Server', 'openai', x'00', 0, 0)",
+                    [leaver],
+                )?;
+                tx.execute(
+                    "INSERT INTO assist_prefs (account_id, choices, auto_labels, modseq)
+                     VALUES (?1, '{\"default\":{\"providerId\":1}}', 1, 3)",
+                    [leaver],
+                )?;
+                tx.execute(
+                    "INSERT INTO assist_label_queue (account_id, email_id, queued_at, next_at) VALUES (?1, 1, 0, 0)",
+                    [leaver],
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let before = store.assist_prefs(leaver).await.unwrap();
+
+        store.make_shared_mailbox("leaver@example.org", vec![("mini@example.org".into(), true)]).await.unwrap();
+
+        let left = store
+            .read(move |conn| {
+                let count = |sql: &str| conn.query_row(sql, [leaver], |row| row.get::<_, i64>(0));
+                Ok((
+                    count("SELECT count(*) FROM assist_providers WHERE account_id = ?1")?,
+                    count("SELECT count(*) FROM assist_providers WHERE account_id IS NULL AND ?1 > 0")?,
+                    count("SELECT count(*) FROM assist_label_queue WHERE account_id = ?1")?,
+                ))
+            })
+            .await
+            .unwrap();
+        // Own providers, the server's provider, mail waiting for the model.
+        assert_eq!(left, (0, 1, 0));
+        let prefs = store.assist_prefs(leaver).await.unwrap();
+        assert!(!prefs.auto_labels && prefs.choices.is_empty(), "{prefs:?}");
+        assert!(prefs.non_ai_labels, "labels without a model send nothing anywhere and stay");
+        assert!(prefs.modseq > before.modseq, "apps hear of it");
+    }
+
     #[tokio::test]
     async fn members_reach_every_folder_of_a_shared_mailbox() {
         let (store, _dir) = store().await;

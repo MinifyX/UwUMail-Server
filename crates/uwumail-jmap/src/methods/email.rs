@@ -6,8 +6,8 @@ use std::time::Instant;
 
 use serde_json::{Map, Value, json};
 use uwumail_store::{
-    EmailFilter, EmailRecord, EmailSort, EmailSortProperty, EmailUpdate, IngestRequest, KeywordsChange, MailboxTarget,
-    MailboxesChange, StoreError,
+    EmailFilter, EmailRecord, EmailSort, EmailSortProperty, EmailUpdate, IngestRequest, KeywordsChange,
+    MAX_KEYWORDS_PER_EMAIL, MailboxTarget, MailboxesChange, StoreError,
 };
 
 use crate::sharing::SharedView;
@@ -18,7 +18,7 @@ use super::{
 };
 use crate::email::{self as email_json, BlobSource, BodyValueOptions, DEFAULT_BODY_PROPERTIES, DEFAULT_PROPERTIES};
 use crate::error::{MethodError, MethodResult, SetError};
-use crate::{MAX_OBJECTS_IN_GET, dates, ids};
+use crate::{MAX_OBJECTS_IN_GET, MAX_OBJECTS_IN_SET, dates, ids};
 
 const MAX_QUERY_LIMIT: usize = 5000;
 
@@ -27,12 +27,7 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let requested = get_ids(args)?.ok_or_else(|| MethodError::new("requestTooLarge", "ask for specific email ids"))?;
     let properties = properties(args, "properties", DEFAULT_PROPERTIES)?;
     let body_properties = super::properties(args, "bodyProperties", DEFAULT_BODY_PROPERTIES)?;
-    let options = BodyValueOptions {
-        text: args.get("fetchTextBodyValues").and_then(Value::as_bool).unwrap_or(false),
-        html: args.get("fetchHTMLBodyValues").and_then(Value::as_bool).unwrap_or(false),
-        all: args.get("fetchAllBodyValues").and_then(Value::as_bool).unwrap_or(false),
-        max_bytes: max_body_value_bytes(args)?,
-    };
+    let mut options = body_value_options(args)?;
     let numbers: Vec<i64> = requested.iter().filter_map(|id| ctx.parse_id('e', id)).collect();
     let records = visible_records(ctx, ctx.jmap.store.emails_by_ids(ctx.account.id, numbers).await?);
     let needs_raw = email_json::needs_raw(&properties);
@@ -57,13 +52,13 @@ pub async fn get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         }
         let raw = ctx.jmap.store.blob(&record.blob).await?;
         let (record, properties, body_properties) = (record.clone(), properties.clone(), body_properties.clone());
-        list.push(
-            tokio::task::spawn_blocking(move || {
-                email_json::to_json(Some(&record), Some(&raw), &record.blob, &properties, &body_properties, options)
-            })
-            .await
-            .map_err(|_| MethodError::kind("serverFail"))?,
-        );
+        let json = tokio::task::spawn_blocking(move || {
+            email_json::to_json(Some(&record), Some(&raw), &record.blob, &properties, &body_properties, options)
+        })
+        .await
+        .map_err(|_| MethodError::kind("serverFail"))?;
+        options.budget -= email_json::body_value_bytes(&json);
+        list.push(json);
     }
     Ok(json!({ "accountId": ctx.account_id(), "state": state, "list": list, "notFound": not_found }))
 }
@@ -153,6 +148,17 @@ fn build_error(err: email_json::BuildError) -> SetError {
     }
     let properties: Vec<&str> = err.properties.iter().map(String::as_str).collect();
     SetError::invalid_properties(&properties, err.description)
+}
+
+/// Which body values the call asks for, with the whole response's budget for them.
+fn body_value_options(args: &Value) -> MethodResult<BodyValueOptions> {
+    Ok(BodyValueOptions {
+        text: args.get("fetchTextBodyValues").and_then(Value::as_bool).unwrap_or(false),
+        html: args.get("fetchHTMLBodyValues").and_then(Value::as_bool).unwrap_or(false),
+        all: args.get("fetchAllBodyValues").and_then(Value::as_bool).unwrap_or(false),
+        max_bytes: max_body_value_bytes(args)?,
+        budget: email_json::MAX_BODY_VALUE_BYTES_PER_RESPONSE,
+    })
 }
 
 /// `maxBodyValueBytes`: an UnsignedInt, 0 (or none) for no limit.
@@ -401,6 +407,7 @@ pub(super) fn mailbox_ids(ctx: &Ctx<'_>, value: Option<&Value>) -> Result<Vec<Ma
 pub(super) fn keywords(value: Option<&Value>) -> Result<Vec<String>, SetError> {
     match value {
         None | Some(Value::Null) => Ok(Vec::new()),
+        Some(Value::Object(map)) if map.len() > MAX_KEYWORDS_PER_EMAIL => Err(too_many_keywords()),
         Some(Value::Object(map)) => {
             // RFC 8621 section 4.1.1: IMAP atom characters only. They reach IMAP clients as they
             // are, the store refuses anything else as well.
@@ -411,6 +418,10 @@ pub(super) fn keywords(value: Option<&Value>) -> Result<Vec<String>, SetError> {
         }
         Some(_) => Err(SetError::invalid_properties(&["keywords"], "keywords must be an object")),
     }
+}
+
+fn too_many_keywords() -> SetError {
+    SetError::invalid_properties(&["keywords"], format!("an email may have at most {MAX_KEYWORDS_PER_EMAIL} keywords"))
 }
 
 pub(super) fn received_at(value: Option<&Value>) -> Result<Option<i64>, SetError> {
@@ -460,6 +471,10 @@ fn patch_to_update(ctx: &Ctx<'_>, id: i64, patch: &Map<String, Value>) -> Result
         }
     }
     if !keyword_patch.is_empty() {
+        // The store counts what the email ends up with; this keeps one patch from being more.
+        if keyword_patch.len() > MAX_KEYWORDS_PER_EMAIL {
+            return Err(too_many_keywords());
+        }
         if update.keywords != KeywordsChange::Keep {
             return Err(SetError::new("invalidPatch", "keywords and keywords/... cannot be combined"));
         }
@@ -517,7 +532,11 @@ pub async fn apply_updates(ctx: &Ctx<'_>, update: &Map<String, Value>, response:
         }
         (updates, update_ids) = (allowed, allowed_ids);
     }
-    let results = ctx.jmap.store.update_emails(ctx.account.id, updates).await?;
+    let results = if ctx.shared.is_some() {
+        ctx.jmap.store.update_emails_in_share(ctx.account.id, updates).await?
+    } else {
+        ctx.jmap.store.update_emails(ctx.account.id, updates).await?
+    };
     for (id, result) in update_ids.into_iter().zip(results) {
         match result {
             Ok(()) => {
@@ -668,16 +687,25 @@ pub async fn set(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
 }
 
 pub async fn import(ctx: &mut Ctx<'_>, args: &Value) -> MethodResult<Value> {
-    let old_state = ctx.state().await?;
-    if_in_state(args, &old_state)?;
     let emails = args
         .get("emails")
         .and_then(Value::as_object)
         .ok_or_else(|| MethodError::invalid_arguments("emails is required"))?;
+    // Each one reads a blob and stores a message: no more than a /set may create.
+    if emails.len() > MAX_OBJECTS_IN_SET {
+        return Err(MethodError::kind("requestTooLarge"));
+    }
+    let old_state = ctx.state().await?;
+    if_in_state(args, &old_state)?;
+    let deadline = request_deadline(ctx);
     let mut created = Map::new();
     let mut not_created = Map::new();
     for (creation_id, object) in emails {
         let result: Result<uwumail_store::IngestedEmail, SetError> = async {
+            // What is imported stays; what did not fit into the request's time is for a new one.
+            if Instant::now() > deadline {
+                return Err(SetError::new("rateLimit", OUT_OF_TIME));
+            }
             let missing: Vec<&str> = ["blobId", "mailboxIds"]
                 .into_iter()
                 .filter(|key| object.get(*key).is_none_or(Value::is_null))
@@ -737,6 +765,9 @@ pub async fn parse(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     if blob_ids.len() > MAX_OBJECTS_IN_GET {
         return Err(MethodError::kind("requestTooLarge"));
     }
+    // And each only once, however often it is named.
+    let mut seen = HashSet::new();
+    let blob_ids: Vec<String> = blob_ids.into_iter().filter(|id| seen.insert(id.clone())).collect();
     let deadline = request_deadline(ctx);
     let defaults: Vec<&str> = DEFAULT_PROPERTIES
         .iter()
@@ -745,12 +776,7 @@ pub async fn parse(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         .collect();
     let properties = properties(args, "properties", &defaults)?.into_iter().filter(|p| p != "id").collect::<Vec<_>>();
     let body_properties = super::properties(args, "bodyProperties", DEFAULT_BODY_PROPERTIES)?;
-    let options = BodyValueOptions {
-        text: args.get("fetchTextBodyValues").and_then(Value::as_bool).unwrap_or(false),
-        html: args.get("fetchHTMLBodyValues").and_then(Value::as_bool).unwrap_or(false),
-        all: args.get("fetchAllBodyValues").and_then(Value::as_bool).unwrap_or(false),
-        max_bytes: max_body_value_bytes(args)?,
-    };
+    let mut options = body_value_options(args)?;
     let mut parsed = Map::new();
     let mut not_parsable = Vec::new();
     let mut not_found = Vec::new();
@@ -773,6 +799,7 @@ pub async fn parse(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         .map_err(|_| MethodError::kind("serverFail"))?;
         match json {
             Some(json) => {
+                options.budget -= email_json::body_value_bytes(&json);
                 parsed.insert(blob_id, json);
             }
             None => not_parsable.push(blob_id),

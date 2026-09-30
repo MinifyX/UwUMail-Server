@@ -46,13 +46,25 @@ pub struct AssistPolicy {
     pub allow_personal: bool,
     /// Such providers may point into the local network.
     pub allow_personal_private: bool,
+    /// The assistant may be used for mail of people's other accounts, which the UwUMail app sends
+    /// along (docs/jmap-assist.md, "Foreign mail"). Off by default.
+    #[serde(default)]
+    pub foreign_mail: bool,
 }
 
 impl Default for AssistPolicy {
     fn default() -> Self {
-        AssistPolicy { features: AssistFeatures::all(true), allow_personal: false, allow_personal_private: false }
+        AssistPolicy {
+            features: AssistFeatures::all(true),
+            allow_personal: false,
+            allow_personal_private: false,
+            foreign_mail: false,
+        }
     }
 }
+
+/// The feature a server provider's `features` name when it may serve foreign mail.
+pub const ASSIST_FOREIGN_MAIL: &str = "foreignMail";
 
 /// One switch per feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -194,13 +206,22 @@ impl AssistProviderWrite {
 }
 
 /// A person's choices.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AssistPrefs {
     /// `{"default": {"providerId": 3, "model": null}, "compose": {...}, ...}`, checked by the caller.
     pub choices: serde_json::Map<String, Value>,
+    /// The model judges the labels of incoming mail.
     pub auto_labels: bool,
+    /// Labels are put on incoming mail without a model (docs/labels.md); on by default.
+    pub non_ai_labels: bool,
     /// Changes with every write to the person's assist objects: providers, choices, labels.
     pub modseq: i64,
+}
+
+impl Default for AssistPrefs {
+    fn default() -> Self {
+        AssistPrefs { choices: serde_json::Map::new(), auto_labels: false, non_ai_labels: true, modseq: 0 }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -212,6 +233,62 @@ pub struct AssistLabel {
     pub keyword: String,
     pub color: Option<String>,
     pub created_at: i64,
+    /// `{"match", "conditions"}` as the caller checked it (`uwumail_labels::Rules`), or `None`.
+    pub rules: Option<Value>,
+    /// `invoice`, `appointment`, `newsletter` or `shipping`.
+    pub detector: Option<String>,
+    pub learn_senders: bool,
+    pub classifier: bool,
+}
+
+/// What is written of a label; the caller checked `rules` and `detector`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssistLabelWrite {
+    pub name: String,
+    pub description: String,
+    pub color: Option<String>,
+    pub rules: Option<Value>,
+    pub detector: Option<String>,
+    pub learn_senders: bool,
+    pub classifier: bool,
+}
+
+impl AssistLabelWrite {
+    /// A label with only a name, a description and a color; learning on, no rules, no detector.
+    pub fn simple(name: String, description: String, color: Option<String>) -> AssistLabelWrite {
+        AssistLabelWrite {
+            name,
+            description,
+            color,
+            rules: None,
+            detector: None,
+            learn_senders: true,
+            classifier: true,
+        }
+    }
+
+    pub fn of(label: &AssistLabel) -> AssistLabelWrite {
+        AssistLabelWrite {
+            name: label.name.clone(),
+            description: label.description.clone(),
+            color: label.color.clone(),
+            rules: label.rules.clone(),
+            detector: label.detector.clone(),
+            learn_senders: label.learn_senders,
+            classifier: label.classifier,
+        }
+    }
+}
+
+/// How many emails carry a label, and how many of them are unread; mail only in Junk or the Trash
+/// does not count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LabelCounts {
+    pub total: i64,
+    pub unread: i64,
+    /// Examples the classifier learned with the label.
+    pub examples: i64,
 }
 
 /// A delivered email waiting for its labels.
@@ -232,12 +309,31 @@ pub struct LabelLogEntry {
     pub label_id: i64,
     pub name: String,
     pub keyword: String,
+    /// `ai`, `rule`, `sender`, `detector` or `classifier`.
+    pub source: String,
     pub reason: String,
+    /// What the reason says, for clients to put in their words, and its details (JSON).
+    pub code: String,
+    pub params: Value,
+    /// Empty when not the model's.
     pub provider: String,
     pub model: String,
     pub created_at: i64,
     /// Taken off with undo, or the keyword is no longer on the email.
     pub undone: bool,
+}
+
+/// A new log entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LabelLogWrite {
+    pub email_id: i64,
+    pub label_id: i64,
+    pub source: String,
+    pub code: String,
+    pub params: Value,
+    pub reason: String,
+    pub provider: String,
+    pub model: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -280,6 +376,17 @@ pub struct TokenCount {
     /// US dollars, when the price is known.
     pub cost_usd: Option<f64>,
 }
+
+/// Tokens of each kind one [`Store::add_assist_tokens`] adds or takes back at most. The numbers
+/// come from the provider; a garbled or hostile count must neither overflow the sums (SQLite turns
+/// an overflowing integer into a REAL, which no longer reads as one) nor wipe a day's limit.
+const MAX_TOKENS_PER_ADD: i64 = 10_000_000;
+/// US dollars one [`Store::add_assist_tokens`] adds or takes back at most.
+const MAX_COST_PER_ADD: f64 = 1000.0;
+/// A usage column counts no higher, so sums over many rows stay far from overflowing.
+const MAX_USAGE_COUNT: i64 = 1_000_000_000_000;
+/// Nor does a day's cost.
+const MAX_USAGE_COST: f64 = 1_000_000_000.0;
 
 /// One request as the provider reported it, next to what the server expected, for
 /// `Assist/estimate` to learn from.
@@ -338,7 +445,33 @@ pub fn utc_day(secs: i64) -> String {
 
 /// The keyword for a label named `name`: lower-case ASCII letters, digits and dashes, umlauts
 /// written out. Empty when nothing of the name is left.
+/// Keywords other mail programs and servers read as more than a word (Thunderbird's and some
+/// servers' junk marks without `$`, and the names of system flags without their `\` or `$`): a
+/// label named like one gets `label-<keyword>` instead, so labelling a mail never marks it junk,
+/// read or deleted anywhere (security audit 0.21.0; the same list as the UwUMail app's).
+const RESERVED_KEYWORDS: [&str; 14] = [
+    "junk",
+    "nonjunk",
+    "notjunk",
+    "phishing",
+    "seen",
+    "answered",
+    "flagged",
+    "deleted",
+    "draft",
+    "recent",
+    "forwarded",
+    "mdnsent",
+    "submitpending",
+    "submitted",
+];
+
 pub fn label_keyword(name: &str) -> String {
+    let keyword = keyword_of_name(name);
+    if RESERVED_KEYWORDS.contains(&keyword.as_str()) { format!("label-{keyword}") } else { keyword }
+}
+
+fn keyword_of_name(name: &str) -> String {
     let mut out = String::new();
     for c in name.chars().flat_map(char::to_lowercase) {
         let piece: &str = match c {
@@ -415,12 +548,12 @@ fn load_provider(conn: &Connection, id: i64) -> Result<Option<AssistProviderReco
         .optional()?)
 }
 
-fn bump_version(tx: &Transaction<'_>) -> Result<()> {
+fn bump_version(tx: &Connection) -> Result<()> {
     let version: i64 = get_setting(tx, VERSION_KEY)?.and_then(|v| v.parse().ok()).unwrap_or(0);
     set_setting(tx, VERSION_KEY, &(version + 1).to_string())
 }
 
-fn bump_prefs(tx: &Transaction<'_>, account_id: i64) -> Result<()> {
+fn bump_prefs(tx: &Connection, account_id: i64) -> Result<()> {
     tx.execute(
         "INSERT INTO assist_prefs (account_id, modseq) VALUES (?1, 1)
          ON CONFLICT (account_id) DO UPDATE SET modseq = modseq + 1",
@@ -429,7 +562,30 @@ fn bump_prefs(tx: &Transaction<'_>, account_id: i64) -> Result<()> {
     Ok(())
 }
 
-fn label_row(row: &Row<'_>) -> rusqlite::Result<AssistLabel> {
+/// The person's own AI setup ends when the account stops being theirs (it becomes a service or a
+/// shared mailbox): their own providers go with the keys and sign-ins in them, the model no longer
+/// labels incoming mail, and mail waiting for it is dropped. Otherwise the mailbox's mail went on to
+/// the former person's own provider. The labels and what they learned stay: they are the mailbox's,
+/// and labels without a model send nothing anywhere.
+pub(crate) fn stop_personal_assist(tx: &Connection, account_id: i64) -> Result<()> {
+    let providers = tx.execute("DELETE FROM assist_providers WHERE account_id = ?1", [account_id])?;
+    tx.execute("DELETE FROM assist_label_queue WHERE account_id = ?1", [account_id])?;
+    let prefs = tx.execute(
+        "UPDATE assist_prefs SET choices = '{}', auto_labels = 0 WHERE account_id = ?1 AND (choices <> '{}' OR auto_labels)",
+        [account_id],
+    )?;
+    if prefs > 0 || providers > 0 {
+        bump_prefs(tx, account_id)?;
+        bump_version(tx)?;
+    }
+    Ok(())
+}
+
+pub(crate) const LABEL_COLUMNS: &str =
+    "id, name, description, keyword, color, created_at, rules, detector, learn_senders, classifier";
+
+pub(crate) fn label_row(row: &Row<'_>) -> rusqlite::Result<AssistLabel> {
+    let rules: Option<String> = row.get(6)?;
     Ok(AssistLabel {
         id: row.get(0)?,
         name: row.get(1)?,
@@ -437,7 +593,22 @@ fn label_row(row: &Row<'_>) -> rusqlite::Result<AssistLabel> {
         keyword: row.get(3)?,
         color: row.get(4)?,
         created_at: row.get(5)?,
+        rules: rules.and_then(|text| serde_json::from_str(&text).ok()),
+        detector: row.get(7)?,
+        learn_senders: row.get(8)?,
+        classifier: row.get(9)?,
     })
+}
+
+fn load_label(conn: &Connection, id: i64) -> Result<AssistLabel> {
+    Ok(conn.query_row(&format!("SELECT {LABEL_COLUMNS} FROM assist_labels WHERE id = ?1"), [id], label_row)?)
+}
+
+/// Records a change of a label for push and the label state (`AssistLabel` is a push type).
+fn label_changed(tx: &Transaction<'_>, account_id: i64, label_id: i64, change: &str) -> Result<i64> {
+    let modseq = crate::db::next_modseq(tx, account_id)?;
+    crate::db::record_change(tx, account_id, modseq, "AssistLabel", label_id, change)?;
+    Ok(modseq)
 }
 
 fn check_label(name: &str, description: &str, color: Option<&str>) -> Result<()> {
@@ -630,15 +801,25 @@ impl Store {
         self.read(move |conn| {
             let found = conn
                 .query_row(
-                    "SELECT choices, auto_labels, modseq FROM assist_prefs WHERE account_id = ?1",
+                    "SELECT choices, auto_labels, modseq, non_ai_labels FROM assist_prefs WHERE account_id = ?1",
                     [account_id],
-                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?, row.get::<_, i64>(2)?)),
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, bool>(1)?,
+                            row.get::<_, i64>(2)?,
+                            row.get::<_, bool>(3)?,
+                        ))
+                    },
                 )
                 .optional()?;
             Ok(match found {
-                Some((choices, auto_labels, modseq)) => {
-                    AssistPrefs { choices: serde_json::from_str(&choices).unwrap_or_default(), auto_labels, modseq }
-                }
+                Some((choices, auto_labels, modseq, non_ai_labels)) => AssistPrefs {
+                    choices: serde_json::from_str(&choices).unwrap_or_default(),
+                    auto_labels,
+                    non_ai_labels,
+                    modseq,
+                },
                 None => AssistPrefs::default(),
             })
         })
@@ -667,19 +848,30 @@ impl Store {
         .await
     }
 
+    /// Switches labels without a model on or off for a person.
+    pub async fn set_non_ai_labels(&self, account_id: i64, on: bool) -> Result<i64> {
+        self.write(move |tx| {
+            tx.execute(
+                "INSERT INTO assist_prefs (account_id, non_ai_labels, modseq) VALUES (?1, ?2, 1)
+                 ON CONFLICT (account_id) DO UPDATE SET non_ai_labels = ?2, modseq = modseq + 1",
+                params![account_id, on],
+            )?;
+            Ok(tx.query_row("SELECT modseq FROM assist_prefs WHERE account_id = ?1", [account_id], |row| row.get(0))?)
+        })
+        .await
+    }
+
     pub async fn assist_labels(&self, account_id: i64) -> Result<Vec<AssistLabel>> {
         self.read(move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT id, name, description, keyword, color, created_at FROM assist_labels
-                 WHERE account_id = ?1 ORDER BY id",
-            )?;
+            let mut stmt =
+                conn.prepare(&format!("SELECT {LABEL_COLUMNS} FROM assist_labels WHERE account_id = ?1 ORDER BY id"))?;
             let rows = stmt.query_map([account_id], label_row)?;
             Ok(rows.collect::<Result<_, _>>()?)
         })
         .await
     }
 
-    /// Adds a label; its keyword is made from the name and never changes afterwards.
+    /// Adds a label with only a name, a description and a color.
     pub async fn create_assist_label(
         &self,
         account_id: i64,
@@ -687,54 +879,61 @@ impl Store {
         description: String,
         color: Option<String>,
     ) -> Result<AssistLabel> {
-        check_label(&name, &description, color.as_deref())?;
-        self.write(move |tx| {
-            let count: i64 =
-                tx.query_row("SELECT COUNT(*) FROM assist_labels WHERE account_id = ?1", [account_id], |row| {
-                    row.get(0)
-                })?;
-            if count as usize >= ASSIST_MAX_LABELS {
-                return Err(StoreError::Rule {
-                    code: "overQuota",
-                    message: format!("at most {ASSIST_MAX_LABELS} labels"),
-                });
-            }
-            if name_taken(tx, account_id, &name, 0)? {
-                return Err(StoreError::Rule {
-                    code: "invalidProperties",
-                    message: format!("there is a label called {} already", name.trim()),
-                });
-            }
-            let base = label_keyword(&name);
-            let taken = |keyword: &str| -> Result<bool> {
-                Ok(tx.query_row(
-                    "SELECT EXISTS (SELECT 1 FROM assist_labels WHERE account_id = ?1 AND keyword = ?2)",
-                    params![account_id, keyword],
-                    |row| row.get(0),
-                )?)
-            };
-            let mut keyword = if base.is_empty() { "label-1".to_owned() } else { base.clone() };
-            let mut n = 1;
-            while taken(&keyword)? || keyword.starts_with('$') {
-                n += 1;
-                keyword = if base.is_empty() { format!("label-{n}") } else { format!("{base}-{n}") };
-            }
-            tx.execute(
-                "INSERT INTO assist_labels (account_id, name, description, keyword, color, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![account_id, name.trim(), description.trim(), keyword, color, now()],
-            )?;
-            let id = tx.last_insert_rowid();
-            bump_prefs(tx, account_id)?;
-            Ok(tx.query_row(
-                "SELECT id, name, description, keyword, color, created_at FROM assist_labels WHERE id = ?1",
-                [id],
-                label_row,
-            )?)
-        })
-        .await
+        self.create_assist_label_with(account_id, AssistLabelWrite::simple(name, description, color)).await
     }
 
+    /// Adds a label; its keyword is made from the name and never changes afterwards.
+    pub async fn create_assist_label_with(&self, account_id: i64, write: AssistLabelWrite) -> Result<AssistLabel> {
+        check_label(&write.name, &write.description, write.color.as_deref())?;
+        let (label, modseq) = self
+            .write(move |tx| {
+                let count: i64 =
+                    tx.query_row("SELECT COUNT(*) FROM assist_labels WHERE account_id = ?1", [account_id], |row| {
+                        row.get(0)
+                    })?;
+                if count as usize >= ASSIST_MAX_LABELS {
+                    return Err(StoreError::Rule {
+                        code: "overQuota",
+                        message: format!("at most {ASSIST_MAX_LABELS} labels"),
+                    });
+                }
+                if name_taken(tx, account_id, &write.name, 0)? {
+                    return Err(StoreError::Rule {
+                        code: "invalidProperties",
+                        message: format!("there is a label called {} already", write.name.trim()),
+                    });
+                }
+                let base = label_keyword(&write.name);
+                let taken = |keyword: &str| -> Result<bool> {
+                    Ok(tx.query_row(
+                        "SELECT EXISTS (SELECT 1 FROM assist_labels WHERE account_id = ?1 AND keyword = ?2)",
+                        params![account_id, keyword],
+                        |row| row.get(0),
+                    )?)
+                };
+                let mut keyword = if base.is_empty() { "label-1".to_owned() } else { base.clone() };
+                let mut n = 1;
+                while taken(&keyword)? || keyword.starts_with('$') {
+                    n += 1;
+                    keyword = if base.is_empty() { format!("label-{n}") } else { format!("{base}-{n}") };
+                }
+                tx.execute(
+                    "INSERT INTO assist_labels (account_id, name, description, keyword, color, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![account_id, write.name.trim(), write.description.trim(), keyword, write.color, now()],
+                )?;
+                let id = tx.last_insert_rowid();
+                write_label_extras(tx, id, &write)?;
+                bump_prefs(tx, account_id)?;
+                let modseq = label_changed(tx, account_id, id, "created")?;
+                Ok((load_label(tx, id)?, modseq))
+            })
+            .await?;
+        self.notify_change(account_id, modseq);
+        Ok(label)
+    }
+
+    /// Changes a label's name, description and color; the rest stays.
     pub async fn update_assist_label(
         &self,
         account_id: i64,
@@ -743,34 +942,51 @@ impl Store {
         description: String,
         color: Option<String>,
     ) -> Result<AssistLabel> {
-        check_label(&name, &description, color.as_deref())?;
-        self.write(move |tx| {
-            let exists: bool = tx.query_row(
-                "SELECT EXISTS (SELECT 1 FROM assist_labels WHERE id = ?1 AND account_id = ?2)",
-                params![id, account_id],
-                |row| row.get(0),
-            )?;
-            if !exists {
-                return Err(StoreError::NotFound(format!("label {id}")));
-            }
-            if name_taken(tx, account_id, &name, id)? {
-                return Err(StoreError::Rule {
-                    code: "invalidProperties",
-                    message: format!("there is a label called {} already", name.trim()),
-                });
-            }
-            tx.execute(
-                "UPDATE assist_labels SET name = ?2, description = ?3, color = ?4 WHERE id = ?1",
-                params![id, name.trim(), description.trim(), color],
-            )?;
-            bump_prefs(tx, account_id)?;
-            Ok(tx.query_row(
-                "SELECT id, name, description, keyword, color, created_at FROM assist_labels WHERE id = ?1",
-                [id],
-                label_row,
-            )?)
-        })
-        .await
+        let before = self
+            .assist_labels(account_id)
+            .await?
+            .into_iter()
+            .find(|label| label.id == id)
+            .ok_or_else(|| StoreError::NotFound(format!("label {id}")))?;
+        let write = AssistLabelWrite { name, description, color, ..AssistLabelWrite::of(&before) };
+        self.update_assist_label_with(account_id, id, write).await
+    }
+
+    pub async fn update_assist_label_with(
+        &self,
+        account_id: i64,
+        id: i64,
+        write: AssistLabelWrite,
+    ) -> Result<AssistLabel> {
+        check_label(&write.name, &write.description, write.color.as_deref())?;
+        let (label, modseq) = self
+            .write(move |tx| {
+                let exists: bool = tx.query_row(
+                    "SELECT EXISTS (SELECT 1 FROM assist_labels WHERE id = ?1 AND account_id = ?2)",
+                    params![id, account_id],
+                    |row| row.get(0),
+                )?;
+                if !exists {
+                    return Err(StoreError::NotFound(format!("label {id}")));
+                }
+                if name_taken(tx, account_id, &write.name, id)? {
+                    return Err(StoreError::Rule {
+                        code: "invalidProperties",
+                        message: format!("there is a label called {} already", write.name.trim()),
+                    });
+                }
+                tx.execute(
+                    "UPDATE assist_labels SET name = ?2, description = ?3, color = ?4 WHERE id = ?1",
+                    params![id, write.name.trim(), write.description.trim(), write.color],
+                )?;
+                write_label_extras(tx, id, &write)?;
+                bump_prefs(tx, account_id)?;
+                let modseq = label_changed(tx, account_id, id, "updated")?;
+                Ok((load_label(tx, id)?, modseq))
+            })
+            .await?;
+        self.notify_change(account_id, modseq);
+        Ok(label)
     }
 
     /// Removes a label and answers its keyword and the emails that carry it, for the caller to take
@@ -796,10 +1012,16 @@ impl Store {
                 .collect::<Result<_, _>>()?;
             drop(stmt);
             tx.execute("DELETE FROM assist_labels WHERE id = ?1", [id])?;
+            tx.execute("DELETE FROM label_training WHERE label_id = ?1", [id])?;
             bump_prefs(tx, account_id)?;
-            Ok((keyword, emails))
+            let modseq = label_changed(tx, account_id, id, "destroyed")?;
+            Ok((keyword, emails, modseq))
         })
         .await
+        .map(|(keyword, emails, modseq)| {
+            self.notify_change(account_id, modseq);
+            (keyword, emails)
+        })
     }
 
     /// Queues a delivered email for its labels when the person switched auto-labels on and has
@@ -901,20 +1123,53 @@ impl Store {
         provider: String,
         model: String,
     ) -> Result<i64> {
+        let entry = LabelLogWrite {
+            email_id,
+            label_id,
+            source: "ai".into(),
+            code: "ai".into(),
+            params: Value::Object(serde_json::Map::new()),
+            reason,
+            provider,
+            model,
+        };
+        Ok(self.add_label_log_entries(account_id, vec![entry]).await?.pop().unwrap_or_default())
+    }
+
+    /// Notes labels that were put on emails, by whom and why; answers the entries' ids.
+    pub async fn add_label_log_entries(&self, account_id: i64, entries: Vec<LabelLogWrite>) -> Result<Vec<i64>> {
+        if entries.is_empty() {
+            return Ok(Vec::new());
+        }
         self.write(move |tx| {
-            tx.execute(
-                "INSERT INTO assist_label_log (account_id, email_id, label_id, reason, provider, model, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                params![account_id, email_id, label_id, reason, provider, model, now()],
-            )?;
-            let id = tx.last_insert_rowid();
+            let mut ids = Vec::new();
+            for entry in &entries {
+                tx.execute(
+                    "INSERT INTO assist_label_log (account_id, email_id, label_id, reason, provider, model, created_at,
+                        source, code, params)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    params![
+                        account_id,
+                        entry.email_id,
+                        entry.label_id,
+                        entry.reason,
+                        entry.provider,
+                        entry.model,
+                        now(),
+                        entry.source,
+                        entry.code,
+                        entry.params.to_string()
+                    ],
+                )?;
+                ids.push(tx.last_insert_rowid());
+            }
             // Old entries go; a person does not look back further than this.
             tx.execute(
                 "DELETE FROM assist_label_log WHERE account_id = ?1 AND id NOT IN
                  (SELECT id FROM assist_label_log WHERE account_id = ?1 ORDER BY id DESC LIMIT 5000)",
                 [account_id],
             )?;
-            Ok(id)
+            Ok(ids)
         })
         .await
     }
@@ -931,7 +1186,8 @@ impl Store {
             let mut stmt = conn.prepare(
                 "SELECT g.id, g.email_id, g.label_id, l.name, l.keyword, g.reason, g.provider, g.model, g.created_at,
                         g.undone_at IS NOT NULL OR NOT EXISTS
-                            (SELECT 1 FROM email_keywords k WHERE k.email_id = g.email_id AND k.keyword = l.keyword)
+                            (SELECT 1 FROM email_keywords k WHERE k.email_id = g.email_id AND k.keyword = l.keyword),
+                        g.source, g.code, g.params
                  FROM assist_label_log g JOIN assist_labels l ON l.id = g.label_id
                  WHERE g.account_id = ?1 AND (?2 IS NULL OR g.email_id IN (SELECT value FROM json_each(?2)))
                  ORDER BY g.id DESC LIMIT ?3",
@@ -948,6 +1204,9 @@ impl Store {
                     model: row.get(7)?,
                     created_at: row.get(8)?,
                     undone: row.get(9)?,
+                    source: row.get(10)?,
+                    code: row.get(11)?,
+                    params: serde_json::from_str(&row.get::<_, String>(12)?).unwrap_or_default(),
                 })
             })?;
             Ok(rows.collect::<Result<_, _>>()?)
@@ -995,7 +1254,7 @@ impl Store {
             let day = utc_day(now());
             if requests_per_day.is_some() || tokens_per_day.is_some() {
                 let (requests, tokens): (i64, i64) = tx.query_row(
-                    "SELECT COALESCE(SUM(requests), 0), COALESCE(SUM(input_tokens + output_tokens + reasoning_tokens), 0)
+                    "SELECT COALESCE(SUM(requests), 0), CAST(TOTAL(input_tokens + output_tokens + reasoning_tokens) AS INTEGER)
                      FROM assist_usage WHERE account_id = ?1 AND provider_id = ?2 AND day = ?3",
                     params![account_id, provider_id, day],
                     |row| Ok((row.get(0)?, row.get(1)?)),
@@ -1029,28 +1288,36 @@ impl Store {
         count: TokenCount,
     ) -> Result<()> {
         let feature = feature.to_owned();
-        let cost_usd = count.cost_usd.filter(|cost| cost.is_finite());
+        let tokens = |n: i64| n.clamp(-MAX_TOKENS_PER_ADD, MAX_TOKENS_PER_ADD);
+        let cost_usd =
+            count.cost_usd.filter(|cost| cost.is_finite()).map(|cost| cost.clamp(-MAX_COST_PER_ADD, MAX_COST_PER_ADD));
         self.write(move |tx| {
+            // Each column stays between 0 and its cap; the cap also brings back a column an older
+            // overflow left as a REAL.
             tx.execute(
                 "INSERT INTO assist_usage (account_id, provider_id, day, feature, input_tokens, output_tokens, cost_usd,
                     reasoning_tokens, cached_tokens, calls)
                  VALUES (?1, ?2, ?3, ?4, MAX(?5, 0), MAX(?6, 0), MAX(?7, 0), MAX(?8, 0), MAX(?9, 0), MAX(?10, 0))
                  ON CONFLICT (account_id, provider_id, day, feature) DO UPDATE SET
-                    input_tokens = MAX(input_tokens + ?5, 0), output_tokens = MAX(output_tokens + ?6, 0),
-                    cost_usd = CASE WHEN ?7 IS NULL THEN cost_usd ELSE MAX(COALESCE(cost_usd, 0) + ?7, 0) END,
-                    reasoning_tokens = MAX(reasoning_tokens + ?8, 0), cached_tokens = MAX(cached_tokens + ?9, 0),
-                    calls = MAX(calls + ?10, 0)",
+                    input_tokens = MIN(MAX(input_tokens + ?5, 0), ?11),
+                    output_tokens = MIN(MAX(output_tokens + ?6, 0), ?11),
+                    cost_usd = CASE WHEN ?7 IS NULL THEN cost_usd ELSE MIN(MAX(COALESCE(cost_usd, 0) + ?7, 0), ?12) END,
+                    reasoning_tokens = MIN(MAX(reasoning_tokens + ?8, 0), ?11),
+                    cached_tokens = MIN(MAX(cached_tokens + ?9, 0), ?11),
+                    calls = MIN(MAX(calls + ?10, 0), ?11)",
                 params![
                     account_id,
                     provider_id,
                     day,
                     feature,
-                    count.input,
-                    count.output,
+                    tokens(count.input),
+                    tokens(count.output),
                     cost_usd,
-                    count.reasoning,
-                    count.cached,
-                    count.calls
+                    tokens(count.reasoning),
+                    tokens(count.cached),
+                    tokens(count.calls),
+                    MAX_USAGE_COUNT,
+                    MAX_USAGE_COST
                 ],
             )?;
             Ok(())
@@ -1131,7 +1398,7 @@ impl Store {
     pub async fn assist_used_today(&self, account_id: i64, provider_id: i64) -> Result<UsedToday> {
         self.read(move |conn| {
             Ok(conn.query_row(
-                "SELECT COALESCE(SUM(requests), 0), COALESCE(SUM(input_tokens + output_tokens + reasoning_tokens), 0), SUM(cost_usd)
+                "SELECT COALESCE(SUM(requests), 0), CAST(TOTAL(input_tokens + output_tokens + reasoning_tokens) AS INTEGER), SUM(cost_usd)
                  FROM assist_usage WHERE account_id = ?1 AND provider_id = ?2 AND day = ?3",
                 params![account_id, provider_id, utc_day(now())],
                 |row| Ok(UsedToday { requests: row.get(0)?, tokens: row.get(1)?, cost_usd: row.get(2)? }),
@@ -1143,14 +1410,23 @@ impl Store {
     /// Usage from `since_day` on, of one person or of everyone; newest day first.
     pub async fn assist_usage(&self, account_id: Option<i64>, since_day: String) -> Result<Vec<UsageRow>> {
         self.read(move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT u.day, u.account_id, a.login, u.provider_id, p.name, u.feature, u.requests, u.input_tokens,
-                        u.output_tokens, u.cost_usd, u.reasoning_tokens, u.cached_tokens, u.calls
+            // Counts read as integers within their cap whatever an older overflow left in them, so
+            // one bad row can't break the whole page.
+            let count = |column: &str| format!("MIN(MAX(CAST(u.{column} AS INTEGER), 0), {MAX_USAGE_COUNT})");
+            let mut stmt = conn.prepare(&format!(
+                "SELECT u.day, u.account_id, a.login, u.provider_id, p.name, u.feature, {}, {}, {},
+                        MIN(MAX(CAST(u.cost_usd AS REAL), 0), {MAX_USAGE_COST:?}), {}, {}, {}
                  FROM assist_usage u JOIN accounts a ON a.id = u.account_id
                  LEFT JOIN assist_providers p ON p.id = u.provider_id
                  WHERE u.day >= ?1 AND (?2 IS NULL OR u.account_id = ?2)
                  ORDER BY u.day DESC, a.login, u.provider_id, u.feature LIMIT 20000",
-            )?;
+                count("requests"),
+                count("input_tokens"),
+                count("output_tokens"),
+                count("reasoning_tokens"),
+                count("cached_tokens"),
+                count("calls"),
+            ))?;
             let rows = stmt.query_map(params![since_day, account_id], |row| {
                 Ok(UsageRow {
                     day: row.get(0)?,
@@ -1173,11 +1449,13 @@ impl Store {
         .await
     }
 
-    /// Forgets usage older than `before_day` and label jobs queued before `queued_before`.
+    /// Forgets usage older than `before_day`, and label jobs and hand-labelings still to learn
+    /// queued before `queued_before`.
     pub async fn prune_assist(&self, before_day: String, queued_before: i64) -> Result<usize> {
         self.write(move |tx| {
             let mut removed = tx.execute("DELETE FROM assist_usage WHERE day < ?1", [before_day])?;
             removed += tx.execute("DELETE FROM assist_label_queue WHERE queued_at < ?1", [queued_before])?;
+            removed += tx.execute("DELETE FROM label_training WHERE queued_at < ?1", [queued_before])?;
             Ok(removed)
         })
         .await
@@ -1283,6 +1561,15 @@ fn card_addresses(content: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// The columns of a label besides name, description and color.
+fn write_label_extras(tx: &Transaction<'_>, id: i64, write: &AssistLabelWrite) -> Result<()> {
+    tx.execute(
+        "UPDATE assist_labels SET rules = ?2, detector = ?3, learn_senders = ?4, classifier = ?5 WHERE id = ?1",
+        params![id, write.rules.as_ref().map(Value::to_string), write.detector, write.learn_senders, write.classifier],
+    )?;
+    Ok(())
+}
+
 fn write_provider(tx: &Transaction<'_>, id: i64, write: &AssistProviderWrite, secret: &SecretChange) -> Result<()> {
     let list = |items: &Vec<String>| serde_json::to_string(items).unwrap_or_else(|_| "[]".into());
     tx.execute(
@@ -1350,7 +1637,67 @@ mod tests {
         assert_eq!(label_keyword("Persönlich"), "persoenlich");
         assert_eq!(label_keyword("  Größe!! "), "groesse");
         assert_eq!(label_keyword("旅行"), "");
+        assert_eq!(label_keyword("Junk"), "label-junk", "no mark other programs act on");
+        assert_eq!(label_keyword("Non Junk"), "non-junk");
+        assert_eq!(label_keyword("NonJunk"), "label-nonjunk");
+        assert_eq!(label_keyword("Seen"), "label-seen");
         assert!(label_keyword(&"sehr-lang ".repeat(20)).len() <= 40);
         assert!(crate::mutate::valid_keyword(&label_keyword("Reisen (privat)")));
+    }
+
+    #[tokio::test]
+    async fn huge_token_counts_are_capped_and_usage_stays_readable() {
+        let (store, _dir) = crate::test_support::store().await;
+        store.create_domain("example.org").await.unwrap();
+        let account = store
+            .create_account(crate::NewAccount {
+                address: "nyu@example.org".into(),
+                display_name: "Nyu".into(),
+                password: None,
+                role: crate::Role::User,
+                quota_bytes: 0,
+                protocols: None,
+            })
+            .await
+            .unwrap()
+            .id;
+        let day = store.reserve_assist_usage(account, 1, "summarize", None, None).await.unwrap();
+        let max = TokenCount {
+            input: i64::MAX,
+            output: i64::MAX,
+            reasoning: i64::MAX,
+            cached: i64::MAX,
+            calls: i64::MAX,
+            cost_usd: Some(f64::MAX),
+        };
+        store.add_assist_tokens(account, 1, day.clone(), "summarize", max).await.unwrap();
+        store.add_assist_tokens(account, 1, day.clone(), "summarize", max).await.unwrap();
+        let rows = store.assist_usage(None, day.clone()).await.unwrap();
+        assert_eq!((rows[0].input_tokens, rows[0].calls), (2 * MAX_TOKENS_PER_ADD, 2 * MAX_TOKENS_PER_ADD));
+        assert_eq!(rows[0].cost_usd, Some(2.0 * MAX_COST_PER_ADD));
+
+        // A huge take-back only takes back one request's worth, never the whole day.
+        let back = TokenCount { input: i64::MIN, cost_usd: Some(f64::MIN), ..TokenCount::default() };
+        store.add_assist_tokens(account, 1, day.clone(), "summarize", back).await.unwrap();
+        let rows = store.assist_usage(None, day.clone()).await.unwrap();
+        assert_eq!((rows[0].input_tokens, rows[0].cost_usd), (MAX_TOKENS_PER_ADD, Some(MAX_COST_PER_ADD)));
+
+        // A row an older overflow turned into REALs still reads, and the next count repairs it.
+        store
+            .write(|tx| {
+                tx.execute("UPDATE assist_usage SET input_tokens = 1e300, output_tokens = 9.3e18", [])?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let rows = store.assist_usage(None, day.clone()).await.unwrap();
+        assert_eq!((rows[0].input_tokens, rows[0].output_tokens), (MAX_USAGE_COUNT, MAX_USAGE_COUNT));
+        assert!(store.assist_used_today(account, 1).await.unwrap().tokens > 0);
+        // The limit check reads it too: used up, not a broken column.
+        let limited = store.reserve_assist_usage(account, 1, "summarize", None, Some(i64::MAX)).await;
+        assert!(matches!(limited, Err(StoreError::Rule { code: "overQuota", .. })), "{limited:?}");
+        store.add_assist_tokens(account, 1, day.clone(), "summarize", TokenCount::default()).await.unwrap();
+        let rows = store.assist_usage(None, day).await.unwrap();
+        assert_eq!(rows[0].input_tokens, MAX_USAGE_COUNT);
     }
 }

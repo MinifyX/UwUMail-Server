@@ -105,8 +105,15 @@ impl Reported {
     }
 }
 
+/// Tokens of one kind a single request can report at most. The numbers come from the provider;
+/// the largest context windows are a few million tokens, and a garbled or hostile count must not
+/// overflow the sums built from it.
+const MAX_REPORTED_TOKENS: i64 = 10_000_000;
+/// US dollars a single request can report at most, for the same reason.
+const MAX_REPORTED_COST_USD: f64 = 1000.0;
+
 fn int(value: &Value, pointer: &str) -> i64 {
-    value.pointer(pointer).and_then(Value::as_i64).unwrap_or(0).max(0)
+    value.pointer(pointer).and_then(Value::as_i64).unwrap_or(0).clamp(0, MAX_REPORTED_TOKENS)
 }
 
 /// The `usage` of Chat Completions, in its variants: OpenAI counts thinking inside
@@ -135,7 +142,11 @@ pub fn chat_usage(usage: &Value) -> Reported {
         0 => int(usage, "/prompt_cache_hit_tokens"),
         cached => cached,
     };
-    let cost_usd = usage.get("cost").and_then(Value::as_f64).filter(|cost| cost.is_finite() && *cost >= 0.0);
+    let cost_usd = usage
+        .get("cost")
+        .and_then(Value::as_f64)
+        .filter(|cost| cost.is_finite() && *cost >= 0.0)
+        .map(|cost| cost.min(MAX_REPORTED_COST_USD));
     Reported {
         input: prompt,
         output,
@@ -314,7 +325,7 @@ async fn ask(
         request = request.header(name, value);
     }
     let request = request
-        .body(Full::new(Bytes::from(body.to_string())))
+        .body(Full::new(Bytes::from(ordered_json(&body))))
         .map_err(|_| ProviderError::NotAllowed("the provider's address is not usable".into()))?;
     let response = tokio::time::timeout(IDLE_TIMEOUT, target.client.send(request))
         .await
@@ -376,6 +387,68 @@ fn auth_headers(target: &Target) -> Vec<(&'static str, String)> {
         }
     }
     headers
+}
+
+/// The request as JSON text, with every schema's `properties` in the order of its `required` list.
+///
+/// A provider that holds the model to a schema (OpenAI, llama.cpp, Ollama …) makes it write the
+/// keys in the order the schema lists them, and `serde_json` keeps an object's keys sorted. So
+/// `{"fits", "name", "reason"}` would make the model decide before it gives its reason, and propose
+/// `newLabels` before it judged the labels. The schemas list `required` in the order meant.
+fn ordered_json(value: &Value) -> String {
+    let mut out = String::new();
+    write_ordered(value, &mut out);
+    out
+}
+
+fn write_ordered(value: &Value, out: &mut String) {
+    match value {
+        Value::Array(items) => {
+            out.push('[');
+            for (index, item) in items.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                write_ordered(item, out);
+            }
+            out.push(']');
+        }
+        Value::Object(map) => {
+            let order: Vec<&str> = match (map.get("properties"), map.get("required")) {
+                (Some(Value::Object(_)), Some(Value::Array(required))) => {
+                    required.iter().filter_map(Value::as_str).collect()
+                }
+                _ => Vec::new(),
+            };
+            out.push('{');
+            for (index, (key, item)) in map.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                out.push_str(&Value::String(key.clone()).to_string());
+                out.push(':');
+                match item {
+                    Value::Object(properties) if key == "properties" && !order.is_empty() => {
+                        let mut keys: Vec<&String> = properties.keys().collect();
+                        keys.sort_by_key(|name| order.iter().position(|first| first == name).unwrap_or(usize::MAX));
+                        out.push('{');
+                        for (index, name) in keys.into_iter().enumerate() {
+                            if index > 0 {
+                                out.push(',');
+                            }
+                            out.push_str(&Value::String(name.clone()).to_string());
+                            out.push(':');
+                            write_ordered(&properties[name.as_str()], out);
+                        }
+                        out.push('}');
+                    }
+                    _ => write_ordered(item, out),
+                }
+            }
+            out.push('}');
+        }
+        scalar => out.push_str(&scalar.to_string()),
+    }
 }
 
 fn request_body(target: &Target, prompt: &Prompt, stream: bool, with_schema: bool) -> (String, Value) {
@@ -640,7 +713,7 @@ async fn stream_anthropic(reader: &mut SseReader, mut collector: Collector<'_>) 
                             (again.input, again.cached, again.cache_write);
                     }
                     if let Some(tokens) = u.get("output_tokens").and_then(Value::as_i64) {
-                        reported.output = tokens.max(0);
+                        reported.output = tokens.clamp(0, MAX_REPORTED_TOKENS);
                     }
                 }
             }
@@ -840,6 +913,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn schemas_go_out_in_the_order_of_their_required_list() {
+        let schema = crate::prompts::suggest_schema(&["Rechnungen".into()], 2);
+        let body = serde_json::json!({ "model": "m", "response_format": { "json_schema": { "schema": schema } } });
+        let text = ordered_json(&body);
+        let at = |key: &str| text.find(&format!("\"{key}\":")).unwrap();
+        assert!(at("verdicts") < at("newLabels"), "{text}");
+        assert!(at("name") < at("reason") && at("reason") < at("fits"), "{text}");
+        assert_eq!(schema["properties"]["verdicts"]["minItems"], 1);
+        assert_eq!(schema["properties"]["verdicts"]["maxItems"], 1);
+        // The same JSON, only in another order.
+        assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), body);
+        let plain = serde_json::json!({ "b": [1, "x\"y", null, { "a": true }], "a": 1.5 });
+        assert_eq!(ordered_json(&plain), plain.to_string());
+    }
+
+    #[test]
     fn tokens_are_counted_by_script() {
         assert_eq!(estimate_texts(["Hallo Nyu!"]), 3);
         assert_eq!(estimate_texts(["東京で会議", "ab"]), 6, "a token per character, and one for the rest");
@@ -963,6 +1052,28 @@ mod tests {
         let message =
             json!({ "content": [{ "type": "text", "text": "Hi" }], "stop_reason": "end_turn", "usage": anthropic });
         assert_eq!(parse_anthropic(&message).unwrap().input_tokens, 1320, "the cache counts as input");
+    }
+
+    #[test]
+    fn huge_reported_usage_is_capped() {
+        let max = i64::MAX;
+        let chat = json!({ "prompt_tokens": max, "completion_tokens": max, "total_tokens": max,
+            "prompt_tokens_details": { "cached_tokens": max, "cache_write_tokens": max },
+            "completion_tokens_details": { "reasoning_tokens": max }, "cost": 1e308 });
+        let r = chat_usage(&chat);
+        let cap = MAX_REPORTED_TOKENS;
+        assert_eq!((r.input, r.output, r.reasoning, r.cached, r.cache_write), (cap, 0, cap, cap, cap));
+        assert_eq!(r.cost_usd, Some(MAX_REPORTED_COST_USD));
+        // Thinking only in a huge total_tokens.
+        let r = chat_usage(&json!({ "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": max }));
+        assert_eq!((r.output, r.reasoning), (1, cap - 2));
+        let anthropic = json!({ "input_tokens": max, "cache_read_input_tokens": max,
+            "cache_creation_input_tokens": max, "output_tokens": max });
+        let r = anthropic_usage(&anthropic);
+        assert_eq!((r.input, r.output, r.cached, r.cache_write), (3 * cap, cap, cap, cap));
+        let r = responses_usage(&json!({ "input_tokens": max, "output_tokens": max }));
+        assert_eq!((r.input, r.output), (cap, cap));
+        assert_eq!(chat_usage(&json!({ "prompt_tokens": -5, "cost": -1.0 })), Reported::default());
     }
 
     #[test]

@@ -162,6 +162,12 @@ pub fn crlf_only(raw: &[u8]) -> Vec<u8> {
     out
 }
 
+/// Removes `X-UwUMail-Label:` headers, so a sender can't fake a label a Sieve script tests
+/// (docs/sieve.md, "Labels").
+pub fn strip_label_headers(raw: &[u8]) -> Vec<u8> {
+    without(raw, |h| h.name.eq_ignore_ascii_case(crate::labels::LABEL_HEADER))
+}
+
 /// Removes `Face:` headers. The server writes the one mail from its people carries, so a masked or
 /// shared address can never pass on a picture a mail app added (docs/profile-pictures.md).
 pub fn strip_faces(raw: &[u8]) -> Vec<u8> {

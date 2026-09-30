@@ -47,8 +47,8 @@ pub fn to_text(html: &str) -> String {
         rest = &after[gt + 1..];
         if !tag.starts_with('/') && matches!(name.as_str(), "style" | "script" | "head" | "title") {
             let close = format!("</{name}");
-            let lower = rest.to_ascii_lowercase();
-            match lower.find(&close) {
+            // Searched without lower-casing the rest: that copied all of it once per tag.
+            match find_ignore_case(rest, &close) {
                 Some(end) => {
                     let skip = rest[end..].find('>').map_or(rest.len(), |g| end + g + 1);
                     rest = &rest[skip..];
@@ -88,12 +88,22 @@ pub fn to_text(html: &str) -> String {
     text.trim_end().to_owned()
 }
 
+/// Where `needle` (ASCII, lower case) first occurs in `haystack`, ignoring ASCII case.
+fn find_ignore_case(haystack: &str, needle: &str) -> Option<usize> {
+    let (hay, needle) = (haystack.as_bytes(), needle.as_bytes());
+    let first = *needle.first()?;
+    (0..hay.len().checked_sub(needle.len())? + 1)
+        .find(|&at| hay[at].to_ascii_lowercase() == first && hay[at..at + needle.len()].eq_ignore_ascii_case(needle))
+}
+
 fn push_text(out: &mut String, raw: &str) {
     let mut rest = raw;
     while let Some(amp) = rest.find('&') {
         push_spaces(out, &rest[..amp]);
         let after = &rest[amp + 1..];
-        let end = after.find(';').filter(|e| *e <= 10);
+        // Only the next few bytes: an entity is short, and looking further for every `&` made
+        // text of many of them take quadratic time.
+        let end = after.bytes().take(11).position(|b| b == b';');
         let decoded = end.and_then(|e| entity(&after[..e]));
         match (end, decoded) {
             (Some(e), Some(c)) => {

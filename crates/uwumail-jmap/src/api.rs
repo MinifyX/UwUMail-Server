@@ -210,15 +210,16 @@ fn resolve_references(
                 format!("{} answered {response_name}, not {}", reference.result_of, reference.name),
             ));
         }
-        let value = evaluate_pointer(response, &reference.path)
+        let found = find_pointer(response, &reference.path)
             .ok_or_else(|| MethodError::new("invalidResultReference", format!("nothing at {}", reference.path)))?;
-        *budget = budget.checked_sub(json_size(&value, *budget)).ok_or_else(|| {
+        // Counted before it is copied: the copy is what the budget is for.
+        *budget = budget.checked_sub(found.size(*budget)).ok_or_else(|| {
             MethodError::new(
                 "requestTooLarge",
                 format!("the result references of this request copy more than {MAX_REFERENCED_BYTES} bytes"),
             )
         })?;
-        resolved.insert(name.to_owned(), value);
+        resolved.insert(name.to_owned(), found.to_value());
     }
     Ok(Value::Object(resolved))
 }
@@ -249,33 +250,73 @@ fn json_size(value: &Value, limit: usize) -> usize {
     size
 }
 
+/// What a result reference points at, still in the response it points into.
+enum Found<'a> {
+    One(&'a Value),
+    /// What a `*` collected: an array of these.
+    Many(Vec<&'a Value>),
+}
+
+impl Found<'_> {
+    /// About how many bytes it takes as JSON, as [`json_size`] counts.
+    fn size(&self, limit: usize) -> usize {
+        match self {
+            Found::One(value) => json_size(value, limit),
+            Found::Many(items) => {
+                let mut size = items.len() + 2;
+                for item in items {
+                    if size > limit {
+                        break;
+                    }
+                    size += json_size(item, limit - size);
+                }
+                size
+            }
+        }
+    }
+
+    fn to_value(&self) -> Value {
+        match self {
+            Found::One(value) => (*value).clone(),
+            Found::Many(items) => Value::Array(items.iter().map(|item| (*item).clone()).collect()),
+        }
+    }
+}
+
 /// JSON Pointer with JMAP's `*` extension for arrays.
+#[cfg(test)]
 fn evaluate_pointer(value: &Value, path: &str) -> Option<Value> {
+    find_pointer(value, path).map(|found| found.to_value())
+}
+
+/// The same without copying anything.
+fn find_pointer<'a>(value: &'a Value, path: &str) -> Option<Found<'a>> {
     if path.is_empty() || path == "/" {
-        return Some(value.clone());
+        return Some(Found::One(value));
     }
     let tokens: Vec<String> =
         path.strip_prefix('/')?.split('/').map(|t| t.replace("~1", "/").replace("~0", "~")).collect();
-    evaluate_tokens(value, &tokens)
+    find_tokens(value, &tokens)
 }
 
-fn evaluate_tokens(value: &Value, tokens: &[String]) -> Option<Value> {
+fn find_tokens<'a>(value: &'a Value, tokens: &[String]) -> Option<Found<'a>> {
     let Some((token, rest)) = tokens.split_first() else {
-        return Some(value.clone());
+        return Some(Found::One(value));
     };
     match value {
         Value::Array(items) if token == "*" => {
             let mut out = Vec::new();
             for item in items {
-                match evaluate_tokens(item, rest)? {
-                    Value::Array(inner) => out.extend(inner),
-                    other => out.push(other),
+                match find_tokens(item, rest)? {
+                    Found::One(Value::Array(inner)) => out.extend(inner),
+                    Found::One(other) => out.push(other),
+                    Found::Many(inner) => out.extend(inner),
                 }
             }
-            Some(Value::Array(out))
+            Some(Found::Many(out))
         }
-        Value::Array(items) => evaluate_tokens(items.get(token.parse::<usize>().ok()?)?, rest),
-        Value::Object(map) => evaluate_tokens(map.get(token)?, rest),
+        Value::Array(items) => find_tokens(items.get(token.parse::<usize>().ok()?)?, rest),
+        Value::Object(map) => find_tokens(map.get(token)?, rest),
         _ => None,
     }
 }

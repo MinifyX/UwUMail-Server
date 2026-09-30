@@ -4529,7 +4529,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-assist"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -4550,6 +4550,7 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+ "uwumail-labels",
  "uwumail-smtp",
  "uwumail-store",
  "uwumail-tnef",
@@ -4557,7 +4558,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-backup"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "aws-lc-rs",
  "bytes",
@@ -4588,7 +4589,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-dav"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -4614,7 +4615,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-gateway"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -4631,7 +4632,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-imap"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "base64 0.23.1",
  "mail-parser",
@@ -4649,7 +4650,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-jmap"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "ammonia",
  "aws-lc-rs",
@@ -4675,14 +4676,24 @@ dependencies = [
  "tracing",
  "uwumail-assist",
  "uwumail-dav",
+ "uwumail-labels",
  "uwumail-smtp",
  "uwumail-store",
  "uwumail-tnef",
 ]
 
 [[package]]
+name = "uwumail-labels"
+version = "0.21.0"
+dependencies = [
+ "mail-parser",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "uwumail-server"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -4722,7 +4733,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-smtp"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
@@ -4766,6 +4777,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uwumail-gateway",
+ "uwumail-labels",
  "uwumail-store",
  "uwumail-tnef",
  "uwumail-tunnel",
@@ -4776,7 +4788,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-store"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "argon2",
  "aws-lc-rs",
@@ -4798,12 +4810,13 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "uwumail-labels",
  "uwumail-tnef",
 ]
 
 [[package]]
 name = "uwumail-tnef"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "encoding_rs",
  "uwumail-tnef",
@@ -4811,7 +4824,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-tunnel"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "aws-lc-rs",
  "data-encoding",
@@ -4831,7 +4844,7 @@ dependencies = [
 
 [[package]]
 name = "uwumail-web"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "aws-lc-rs",
  "axum",

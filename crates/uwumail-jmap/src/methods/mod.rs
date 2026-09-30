@@ -69,7 +69,7 @@ pub const KNOWN_CAPABILITIES: &[&str] = &[
 pub(crate) use calendar_event::event_for_alerts;
 
 /// The data types of calendars and address books: only for credentials with the `dav` scope.
-const DAV_TYPES: &[&str] = &[
+pub(crate) const DAV_TYPES: &[&str] = &[
     "Calendar",
     "CalendarEvent",
     "CalendarEventNotification",
@@ -390,6 +390,7 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "AssistLabel/log" => single(assist::label_log(ctx, &args).await?),
         "AssistLabel/undo" => single(assist::label_undo(ctx, &args).await?),
         "AssistLabel/apply" => single(assist::label_apply(ctx, &args).await?),
+        "AssistLabel/suggest" => single(assist::label_suggest(ctx, &args).await?),
         _ => Err(MethodError::kind("unknownMethod")),
     }
 }
@@ -410,24 +411,41 @@ pub fn get_ids(args: &Value) -> MethodResult<Option<Vec<String>>> {
                         .ok_or_else(|| MethodError::invalid_arguments("ids must be strings"))
                 })
                 .collect::<MethodResult<Vec<_>>>()
-                .map(Some)
+                .map(|ids| Some(dedup(ids)))
         }
         Some(_) => Err(MethodError::invalid_arguments("ids must be an array or null")),
     }
 }
 
-/// The requested `properties`, or the defaults. `id` is always included.
+/// The most `properties` (or `bodyProperties`, ...) one call may name. Every property is work for
+/// every object: a request naming `uwuSafeHtml` a thousand times cleaned each message's HTML a
+/// thousand times. Clients name a few dozen; the longest lists, all of an object, stay below this.
+pub const MAX_PROPERTIES: usize = 100;
+
+/// `list` in its order, without repeats: what was asked for twice is done once.
+fn dedup(list: Vec<String>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::with_capacity(list.len());
+    list.into_iter().filter(|item| seen.insert(item.clone())).collect()
+}
+
+/// The requested `properties`, or the defaults, each once and at most [`MAX_PROPERTIES`]. `id` is
+/// always included.
 pub fn properties(args: &Value, key: &str, defaults: &[&str]) -> MethodResult<Vec<String>> {
     let mut list: Vec<String> = match args.get(key) {
         None | Some(Value::Null) => defaults.iter().map(|p| p.to_string()).collect(),
-        Some(Value::Array(items)) => items
-            .iter()
-            .map(|p| {
-                p.as_str()
-                    .map(str::to_owned)
-                    .ok_or_else(|| MethodError::invalid_arguments(format!("{key} must be strings")))
-            })
-            .collect::<MethodResult<_>>()?,
+        Some(Value::Array(items)) if items.len() > MAX_PROPERTIES => {
+            return Err(MethodError::invalid_arguments(format!("{key} may name at most {MAX_PROPERTIES} properties")));
+        }
+        Some(Value::Array(items)) => dedup(
+            items
+                .iter()
+                .map(|p| {
+                    p.as_str()
+                        .map(str::to_owned)
+                        .ok_or_else(|| MethodError::invalid_arguments(format!("{key} must be strings")))
+                })
+                .collect::<MethodResult<_>>()?,
+        ),
         Some(_) => return Err(MethodError::invalid_arguments(format!("{key} must be an array"))),
     };
     if key == "properties" && !list.iter().any(|p| p == "id") {

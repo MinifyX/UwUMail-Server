@@ -44,9 +44,18 @@ pub struct MailboxUpdate {
 pub(crate) struct Batch {
     pub(crate) account_id: i64,
     pub(crate) modseq: Option<i64>,
+    /// The person makes these changes (JMAP, IMAP): label keywords they put on or take off teach
+    /// the labels (docs/labels.md). The server's own changes teach nothing.
+    pub(crate) by_hand: bool,
+    /// Something was queued for the labels to learn.
+    pub(crate) learned: bool,
 }
 
 impl Batch {
+    pub(crate) fn new(account_id: i64) -> Batch {
+        Batch { account_id, modseq: None, by_hand: true, learned: false }
+    }
+
     pub(crate) fn modseq(&mut self, tx: &Transaction<'_>) -> Result<i64> {
         if let Some(modseq) = self.modseq {
             return Ok(modseq);
@@ -159,6 +168,11 @@ pub(crate) fn update_one(tx: &Transaction<'_>, batch: &mut Batch, update: &Email
     if let Some(bad) = new_keywords.iter().find(|k| !valid_keyword(k)) {
         return Err(rule("invalidProperties", format!("'{bad}' is not a valid keyword")));
     }
+    // Only more is refused: an email that has too many from before may still lose some.
+    if new_keywords.len() > crate::MAX_KEYWORDS_PER_EMAIL && new_keywords.len() > old_keywords.len() {
+        let limit = crate::MAX_KEYWORDS_PER_EMAIL;
+        return Err(rule("invalidProperties", format!("an email may have at most {limit} keywords")));
+    }
 
     let old_mailboxes = email_mailboxes(tx, update.id)?;
     let new_mailboxes: BTreeSet<i64> = match &update.mailboxes {
@@ -206,6 +220,11 @@ pub(crate) fn update_one(tx: &Transaction<'_>, batch: &mut Batch, update: &Email
     tx.execute("UPDATE email_mailboxes SET modseq = ?1 WHERE email_id = ?2", params![modseq, update.id])?;
     tx.execute("UPDATE emails SET updated_modseq = ?1 WHERE id = ?2", params![modseq, update.id])?;
     record_change(tx, account_id, modseq, "Email", update.id, "updated")?;
+
+    // Labels put on or taken off by hand teach sender learning and the classifier.
+    if batch.by_hand && old_keywords != new_keywords {
+        batch.learned |= crate::labels::learn_by_hand(tx, account_id, update.id, &old_keywords, &new_keywords)?;
+    }
 
     // "Spam" and "Not spam" from a person teach the filter about the sender.
     if let Some(junk) = junk_signal(tx, account_id, (&old_keywords, &new_keywords), (&old_mailboxes, &new_mailboxes))? {
@@ -303,17 +322,44 @@ fn map_unique(err: rusqlite::Error) -> StoreError {
 }
 
 impl Store {
-    /// Applies updates in one transaction. Returns one result per update, in order.
+    /// Applies updates the person makes in one transaction. Returns one result per update, in
+    /// order.
     pub async fn update_emails(&self, account_id: i64, updates: Vec<EmailUpdate>) -> Result<Vec<Result<()>>> {
-        let (results, modseq) = self
+        self.apply_updates(account_id, updates, true).await
+    }
+
+    /// Applies updates someone makes in an account shared with them. Their labeling teaches the
+    /// owner's labels nothing, unless the account is a shared mailbox, whose labels are its
+    /// members' (security audit 0.21.0 LABELS-M1).
+    pub async fn update_emails_in_share(&self, account_id: i64, updates: Vec<EmailUpdate>) -> Result<Vec<Result<()>>> {
+        let teaches = self.read(move |conn| Ok(crate::labels::teaches_in_share(conn, account_id)?)).await?;
+        self.apply_updates(account_id, updates, teaches).await
+    }
+
+    /// Applies updates the server makes by itself (labels it puts on or takes off), which teach the
+    /// labels nothing.
+    pub async fn update_emails_by_server(&self, account_id: i64, updates: Vec<EmailUpdate>) -> Result<Vec<Result<()>>> {
+        self.apply_updates(account_id, updates, false).await
+    }
+
+    async fn apply_updates(
+        &self,
+        account_id: i64,
+        updates: Vec<EmailUpdate>,
+        by_hand: bool,
+    ) -> Result<Vec<Result<()>>> {
+        let (results, modseq, learned) = self
             .write(move |tx| {
-                let mut batch = Batch { account_id, modseq: None };
+                let mut batch = Batch { by_hand, ..Batch::new(account_id) };
                 let results = updates.iter().map(|update| update_one(tx, &mut batch, update)).collect::<Vec<_>>();
-                Ok((results, batch.modseq))
+                Ok((results, batch.modseq, batch.learned))
             })
             .await?;
         if let Some(modseq) = modseq {
             self.notify_change(account_id, modseq);
+        }
+        if learned {
+            self.labels_learned();
         }
         Ok(results)
     }
@@ -321,7 +367,7 @@ impl Store {
     pub async fn destroy_emails(&self, account_id: i64, ids: Vec<i64>) -> Result<Vec<Result<()>>> {
         let (results, modseq) = self
             .write(move |tx| {
-                let mut batch = Batch { account_id, modseq: None };
+                let mut batch = Batch::new(account_id);
                 let results = ids.iter().map(|id| destroy_one(tx, &mut batch, *id)).collect::<Vec<_>>();
                 Ok((results, batch.modseq))
             })
@@ -444,7 +490,7 @@ impl Store {
                 if !emails.is_empty() && !remove_emails {
                     return Err(rule("mailboxHasEmail", "the mailbox still has emails"));
                 }
-                let mut batch = Batch { account_id, modseq: None };
+                let mut batch = Batch::new(account_id);
                 let modseq = batch.modseq(tx)?;
                 for (email, memberships) in emails {
                     if memberships <= 1 {

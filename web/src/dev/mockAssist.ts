@@ -7,6 +7,7 @@
 
 import {
   FEATURES,
+  FOREIGN_MAIL,
   type AccountAssistView,
   type AdminProvider,
   type AssistPolicy,
@@ -17,6 +18,8 @@ import {
   type Effective,
   type Feature,
   type KindInfo,
+  type LabelSummary,
+  type ProviderFeature,
   type Price,
   type ProviderKind,
   type TodayUsage,
@@ -233,6 +236,7 @@ let policy: AssistPolicy = {
   features: { compose: true, summarize: true, spamCheck: true, extractEvents: true, autoLabels: true },
   allowPersonal: true,
   allowPersonalPrivate: false,
+  foreignMail: false,
 };
 
 /** Keys are kept only to answer `hasKey` and `keyHint`, as the real server does. */
@@ -335,11 +339,50 @@ const settings: Omit<AssistSettings, "effective"> = {
   default: { providerId: 1, model: null },
   features: { ...emptyChoices(), compose: { providerId: 11, model: null } },
   autoLabels: false,
+  nonAiLabels: true,
   refineEvents: false,
   currency: null,
 };
 
-const LABELS = 3;
+const LABEL_LIST: LabelSummary[] = [
+  {
+    id: 1,
+    name: "Rechnungen",
+    color: "#30a46c",
+    detector: "invoice",
+    hasRules: true,
+    learnSenders: true,
+    classifier: true,
+    totalEmails: 48,
+    unreadEmails: 2,
+    examples: 21,
+  },
+  {
+    id: 2,
+    name: "Reisen",
+    color: "#0090ff",
+    detector: null,
+    hasRules: false,
+    learnSenders: true,
+    classifier: true,
+    totalEmails: 9,
+    unreadEmails: 0,
+    examples: 6,
+  },
+  {
+    id: 3,
+    name: "Verein",
+    color: null,
+    detector: null,
+    hasRules: false,
+    learnSenders: false,
+    classifier: false,
+    totalEmails: 3,
+    unreadEmails: 1,
+    examples: 0,
+  },
+];
+const LABELS = LABEL_LIST.length;
 
 const hint = (id: number) => {
   const key = keys.get(id);
@@ -354,8 +397,10 @@ function mayUse(provider: AdminProvider): boolean {
   return true;
 }
 
-function allowedFeatures(features: Feature[]): Feature[] {
-  return features.filter((feature) => policy.features[feature]);
+function allowedFeatures(features: ProviderFeature[]): ProviderFeature[] {
+  return features.filter((feature) =>
+    feature === FOREIGN_MAIL ? Boolean(policy.foreignMail) : policy.features[feature],
+  );
 }
 
 function adminPrice(provider: AdminProvider): Price | null {
@@ -410,7 +455,7 @@ function accountProviders(): AssistProvider[] {
           keyHint: hint(provider.id),
           model: provider.model,
           fastModel: provider.fastModel,
-          features: allowedFeatures([...FEATURES]),
+          features: allowedFeatures([...FEATURES, FOREIGN_MAIL]),
           quota: null,
           experimental: kind?.experimental ?? false,
           connected:
@@ -539,6 +584,7 @@ function accountView(): AccountAssistView {
   ) as Record<Feature, boolean>;
   return {
     features,
+    foreignMail: Boolean(policy.foreignMail) && Object.values(features).some(Boolean),
     mayAddProviders: policy.allowPersonal,
     mayUsePrivateAddresses: policy.allowPersonal && policy.allowPersonalPrivate,
     maxProviders: 10,
@@ -547,6 +593,7 @@ function accountView(): AccountAssistView {
     today: today(),
     kinds: KINDS,
     labels: LABELS,
+    labelList: LABEL_LIST,
   };
 }
 
@@ -682,6 +729,7 @@ export const assistMockRoutes: [string, RegExp, Handler][] = [
         features: { ...policy.features, ...next.features },
         allowPersonal: Boolean(next.allowPersonal),
         allowPersonalPrivate: Boolean(next.allowPersonal && next.allowPersonalPrivate),
+        foreignMail: Boolean(next.foreignMail),
       };
       return [200, policy];
     },
@@ -711,7 +759,7 @@ export const assistMockRoutes: [string, RegExp, Handler][] = [
         access: input.access ?? "everyone",
         domains: input.domains ?? [],
         people: input.people ?? [],
-        features: (input.features as Feature[] | undefined) ?? [...FEATURES],
+        features: (input.features as ProviderFeature[] | undefined) ?? [...FEATURES, FOREIGN_MAIL],
         requestsPerDay: input.requestsPerDay ?? null,
         tokensPerDay: input.tokensPerDay ?? null,
         inputPricePerMillion: input.inputPricePerMillion ?? null,
@@ -935,6 +983,7 @@ export const assistMockRoutes: [string, RegExp, Handler][] = [
         }
       }
       if (input.autoLabels !== undefined) settings.autoLabels = input.autoLabels;
+      if (input.nonAiLabels !== undefined) settings.nonAiLabels = input.nonAiLabels;
       if (input.refineEvents !== undefined) settings.refineEvents = input.refineEvents;
       if (input.currency !== undefined) {
         if (input.currency !== null && input.currency !== "EUR" && input.currency !== "USD") {

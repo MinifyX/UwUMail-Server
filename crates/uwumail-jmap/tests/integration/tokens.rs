@@ -329,3 +329,80 @@ async fn calendars_and_contacts_need_the_dav_scope() {
     let (_, response) = server.api_as(&basic("mini@example.org", PASSWORD), &using, calls).await;
     assert_eq!(response["methodResponses"][0][0], "Calendar/get", "{response}");
 }
+
+/// Push keeps to what the credential may reach: an app password for mail hears of mail, not of
+/// calendars, which its methods do not answer either.
+#[tokio::test(flavor = "multi_thread")]
+async fn push_to_a_mail_only_app_password_leaves_calendars_out() {
+    use tower::ServiceExt;
+
+    let server = server().await;
+    let id = server.id("mini@example.org").await;
+    let account = server.account_id("mini@example.org").await;
+    let app = NewAppPassword { name: "Mail".into(), scopes: vec![AppScope::Mail], expires_at: None };
+    let created = server.store.create_app_password(id, app).await.unwrap();
+    let request = Request::get("/jmap/eventsource/?types=*&closeafter=state&ping=0")
+        .header(header::AUTHORIZATION, bearer(&created.secret))
+        .body(Body::empty())
+        .unwrap();
+    let response = server.router.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let stream = tokio::spawn(async move {
+        String::from_utf8(axum::body::to_bytes(response.into_body(), 1 << 20).await.unwrap().to_vec()).unwrap()
+    });
+
+    // A calendar made with the account password first: nothing is told of it. Then mail arrives.
+    let calendars = ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:calendars"];
+    let calls = json!([["Calendar/set", { "accountId": account, "create": { "c": { "name": "Arbeit" } } }, "0"]]);
+    let responses = server.api_using("mini@example.org", &calendars, calls).await;
+    assert!(responses[0][1]["created"]["c"].is_object(), "{}", responses[0]);
+    server.deliver("mini@example.org", "From: a@example.net\nSubject: Hallo\n\nhallo\n").await;
+
+    let event = tokio::time::timeout(std::time::Duration::from_secs(10), stream).await.unwrap().unwrap();
+    let data = event.lines().find_map(|line| line.strip_prefix("data:")).unwrap();
+    let data: Value = serde_json::from_str(data.trim()).unwrap();
+    let changed = data["changed"][&account].as_object().unwrap();
+    assert!(changed.contains_key("Email"), "{event}");
+    assert!(!changed.keys().any(|kind| kind.starts_with("Calendar")), "{event}");
+}
+
+/// A download never comes as something the browser runs on the portal's origin, whatever type
+/// is asked for: a script, a style sheet, HTML or SVG come as bytes, sandboxed and not embeddable
+/// from other sites. Plain types stay as asked.
+#[tokio::test(flavor = "multi_thread")]
+async fn downloads_never_come_as_scripts_or_pages() {
+    let server = server().await;
+    let account = server.account_id("mini@example.org").await;
+    let authorization = basic("mini@example.org", PASSWORD);
+    let upload = Request::post(format!("/jmap/upload/{account}/"))
+        .header(header::AUTHORIZATION, &authorization)
+        .header(header::CONTENT_TYPE, "text/javascript")
+        .body(Body::from("alert(1)"))
+        .unwrap();
+    let (status, body) = server.request(upload).await;
+    assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+    let blob: Value = serde_json::from_slice(&body).unwrap();
+    let blob = blob["blobId"].as_str().unwrap();
+    for (accept, served) in [
+        ("", "application/octet-stream"),
+        ("?accept=text/javascript", "application/octet-stream"),
+        ("?accept=application/x-javascript;%20charset=utf-8", "application/octet-stream"),
+        ("?accept=text/html", "application/octet-stream"),
+        ("?accept=image/svg%2Bxml", "application/octet-stream"),
+        ("?accept=text/css", "application/octet-stream"),
+        ("?accept=text/plain", "text/plain"),
+        ("?accept=image/png", "image/png"),
+    ] {
+        let request = Request::get(format!("/jmap/download/{account}/{blob}/x.js{accept}"))
+            .header(header::AUTHORIZATION, &authorization)
+            .body(Body::empty())
+            .unwrap();
+        let response = tower::ServiceExt::oneshot(server.router.clone(), request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{accept}");
+        let headers = response.headers();
+        assert_eq!(headers[header::CONTENT_TYPE], served, "{accept}");
+        assert_eq!(headers[header::CONTENT_SECURITY_POLICY], "default-src 'none'; sandbox", "{accept}");
+        assert_eq!(headers["cross-origin-resource-policy"], "same-origin", "{accept}");
+        assert_eq!(headers["x-content-type-options"], "nosniff", "{accept}");
+    }
+}

@@ -196,8 +196,36 @@ async fn the_vpn_is_stored_shown_without_its_key_and_started_by_the_helper() {
     assert_eq!(view["proxy"]["current"], Value::Null, "straight again while the VPN is off");
     assert_eq!(host.asked.lock().unwrap().last().unwrap(), "vpn-stop");
 
-    let (status, files) = call(&app, "POST", "/api/admin/vpn/files", None, &auth).await;
-    assert_eq!(status, StatusCode::OK);
+    let (status, files) = call(&app, "POST", "/api/admin/vpn/files", Some(json!({})), &auth).await;
+    assert_eq!(status, StatusCode::OK, "a fresh login needs no password again");
+    assert!(files["envFile"].as_str().unwrap().contains(&format!("WIREGUARD_PRIVATE_KEY='{KEY}'")));
+}
+
+#[tokio::test]
+async fn the_files_with_the_key_need_the_password_on_an_older_login() {
+    let (app, _host, dir) = portal(&["vpn-apply", "vpn-stop"]).await;
+    let auth = login(&app).await;
+    let nord =
+        json!({ "provider": "nordvpn", "kind": "wireguard", "countries": "Switzerland", "wireguardPrivateKey": KEY });
+    let (status, view) = call(&app, "PUT", "/api/admin/vpn", Some(nord), &auth).await;
+    assert_eq!(status, StatusCode::OK, "{view}");
+
+    // A login left open for an hour does not hand out the private key by itself.
+    rusqlite::Connection::open(dir.path().join("uwumail.db"))
+        .unwrap()
+        .execute("UPDATE web_sessions SET created_at = created_at - 3600", [])
+        .unwrap();
+    let (status, body) = call(&app, "POST", "/api/admin/vpn/files", Some(json!({})), &auth).await;
+    assert_eq!((status, body["code"].as_str()), (StatusCode::CONFLICT, Some("confirmPassword")));
+    assert!(!body.to_string().contains(KEY));
+    let wrong = Some(json!({ "password": "falsch-falsch" }));
+    let (_, body) = call(&app, "POST", "/api/admin/vpn/files", wrong, &auth).await;
+    assert_eq!(body["code"], "wrongPassword");
+    assert!(!body.to_string().contains(KEY));
+
+    let right = Some(json!({ "password": "katzenpfote-123" }));
+    let (status, files) = call(&app, "POST", "/api/admin/vpn/files", right, &auth).await;
+    assert_eq!(status, StatusCode::OK, "{files}");
     assert!(files["envFile"].as_str().unwrap().contains(&format!("WIREGUARD_PRIVATE_KEY='{KEY}'")));
 }
 

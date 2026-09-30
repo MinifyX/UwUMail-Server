@@ -12,6 +12,7 @@ import { useErrorText } from "@/lib/errors";
 import { toast } from "@/state/toasts";
 import {
   ACCOUNT_ASSIST,
+  CLASSIFIER_MIN_EXAMPLES,
   FEATURES,
   byDay,
   byFeature,
@@ -26,6 +27,7 @@ import {
   type AssistSettings,
   type Choice,
   type Feature,
+  type LabelSummary,
 } from "./model";
 import {
   EntriesTable,
@@ -389,6 +391,43 @@ function ChoicesCard({ view }: { view: AccountAssistView }) {
   );
 }
 
+/** The person's labels with their mail and what puts them on by itself. */
+function LabelList({ labels }: { labels: LabelSummary[] }) {
+  const { t } = useT();
+  const how = (label: LabelSummary): string => {
+    const parts: string[] = [];
+    if (label.hasRules) parts.push(t("assist.labels.rules"));
+    if (label.detector) parts.push(t(`assist.labels.detectors.${label.detector}`));
+    if (label.learnSenders) parts.push(t("assist.labels.senders"));
+    if (label.classifier) {
+      parts.push(
+        label.examples >= CLASSIFIER_MIN_EXAMPLES
+          ? t("assist.labels.classifierReady", { n: label.examples })
+          : t("assist.labels.classifierLearning", { n: label.examples, min: CLASSIFIER_MIN_EXAMPLES }),
+      );
+    }
+    return parts.join(" · ");
+  };
+  return (
+    <ul className="flex flex-col divide-y divide-hairline rounded-lg border border-hairline text-[13px]">
+      {labels.map((label) => (
+        <li key={label.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
+          <span
+            className="size-2.5 shrink-0 rounded-full bg-muted"
+            style={label.color ? { backgroundColor: label.color } : undefined}
+            aria-hidden
+          />
+          <span className="min-w-0 flex-1 truncate font-semibold">{label.name}</span>
+          <span className="text-muted tabular-nums">
+            {t("assist.labels.counts", { total: label.totalEmails, unread: label.unreadEmails })}
+          </span>
+          <span className="basis-full pl-5 text-[12px] text-muted">{how(label) || t("assist.labels.byHandOnly")}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** Labels on incoming mail, and appointments looked for when a mail is opened. */
 function BackgroundCard({ view, webmail }: { view: AccountAssistView; webmail: boolean }) {
   const { t } = useT();
@@ -396,7 +435,7 @@ function BackgroundCard({ view, webmail }: { view: AccountAssistView; webmail: b
   const queryClient = useQueryClient();
   const settings = view.settings;
   const save = useMutation({
-    mutationFn: (body: Partial<Pick<AssistSettings, "autoLabels" | "refineEvents">>) =>
+    mutationFn: (body: Partial<Pick<AssistSettings, "autoLabels" | "nonAiLabels" | "refineEvents">>) =>
       api<AssistSettings>(`${ACCOUNT_ASSIST}/settings`, { method: "PUT", body }),
     onSuccess: (next) => {
       queryClient.setQueryData<AccountAssistView>(assistKey, (old) => (old ? { ...old, settings: next } : old));
@@ -406,11 +445,19 @@ function BackgroundCard({ view, webmail }: { view: AccountAssistView; webmail: b
   });
   const pending = save.isPending ? save.variables : undefined;
   const autoLabels = pending?.autoLabels ?? settings.autoLabels;
+  const nonAiLabels = pending?.nonAiLabels ?? settings.nonAiLabels ?? true;
   const refineEvents = pending?.refineEvents ?? settings.refineEvents;
 
   return (
     <Card title={t("assist.background.title")}>
       <div className="flex flex-col gap-4">
+        <Toggle
+          checked={nonAiLabels}
+          onChange={(value) => save.mutate({ nonAiLabels: value })}
+          label={t("assist.background.nonAiLabels")}
+          description={t("assist.background.nonAiLabelsHint")}
+        />
+        {view.labelList && view.labelList.length > 0 && <LabelList labels={view.labelList} />}
         <Toggle
           checked={autoLabels}
           disabled={!view.features.autoLabels && !settings.autoLabels}
@@ -436,6 +483,7 @@ function BackgroundCard({ view, webmail }: { view: AccountAssistView; webmail: b
             </a>
           )}
         </div>
+        {view.foreignMail && <p className="text-[13px] text-muted">{t("assist.background.foreignMail")}</p>}
         <div className="border-t border-hairline pt-4">
           <Toggle
             checked={refineEvents}

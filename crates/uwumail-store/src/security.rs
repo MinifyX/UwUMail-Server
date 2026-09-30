@@ -135,11 +135,18 @@ pub struct NewAppPassword {
     pub expires_at: Option<i64>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CreatedAppPassword {
     pub app_password: AppPassword,
     /// Shown once, in groups of four: "abcd-efgh-jkmn-pqrs".
     pub secret: String,
+}
+
+impl std::fmt::Debug for CreatedAppPassword {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The secret never into a log line.
+        f.debug_struct("CreatedAppPassword").field("app_password", &self.app_password).finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -244,12 +251,19 @@ impl SecurityOverview {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TotpSetup {
     /// Base32, for typing into the app.
     pub secret: String,
     /// `otpauth://` link for the QR code.
     pub uri: String,
+}
+
+impl std::fmt::Debug for TotpSetup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Both carry the secret, the link as its secret= parameter.
+        f.debug_struct("TotpSetup").finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1425,6 +1439,8 @@ mod tests {
             )
             .await
             .unwrap();
+        let shown = format!("{created:?}");
+        assert!(shown.contains("Sender") && !shown.contains(&created.secret), "{shown}");
         let secret = created.secret.replace(' ', "");
 
         // Sending is what this one is for.
@@ -1670,6 +1686,8 @@ mod tests {
         // An authenticator app makes the main password useless for mail apps.
         let setup = store.begin_totp(leni.id, "UwUMail", "leni@example.org").await.unwrap();
         assert!(setup.uri.starts_with("otpauth://totp/UwUMail:leni%40example.org?secret="));
+        let shown = format!("{setup:?}");
+        assert!(!shown.contains(&setup.secret) && !shown.contains("otpauth"), "{shown}");
         assert!(store.confirm_totp(leni.id, "abcdef").await.is_err());
         let secret = BASE32_NOPAD.decode(setup.secret.as_bytes()).unwrap();
         let code = format!("{:06}", totp_code(&secret, now() / TOTP_PERIOD));

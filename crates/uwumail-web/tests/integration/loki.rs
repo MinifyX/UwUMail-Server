@@ -204,3 +204,31 @@ async fn switching_on_needs_the_privacy_consent() {
     let (_, log) = call(&app, "GET", "/api/admin/audit", None, &auth).await;
     assert_eq!(log[0]["details"]["log.loki.privacy_consent"], true, "who agreed is in the change log");
 }
+
+#[tokio::test]
+async fn a_saved_token_is_only_sent_to_the_saved_address() {
+    let dir = tempfile::tempdir().unwrap();
+    let (app, auth, _store) = portal(dir.path()).await;
+    let (url, got) = one_push().await;
+    let saved = json!({ "changes": { "log.loki.url": url, "log.loki.token": "t0ken" } });
+    let (status, body) = call(&app, "PATCH", "/api/admin/settings", Some(saved), &auth).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // A test line to another address would carry the saved token there.
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/admin/logs/loki/test",
+        Some(json!({ "changes": { "log.loki.url": "http://192.0.2.20:3100" } })),
+        &auth,
+    )
+    .await;
+    assert_eq!((status, body["code"].as_str()), (StatusCode::CONFLICT, Some("secretNeededAgain")), "{body}");
+
+    // The saved address still gets it.
+    let (status, body) =
+        call(&app, "POST", "/api/admin/logs/loki/test", Some(json!({ "changes": { "log.loki.url": url } })), &auth)
+            .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(got.await.unwrap().to_ascii_lowercase().contains("authorization: bearer t0ken"));
+}

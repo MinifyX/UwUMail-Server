@@ -13,10 +13,11 @@ members = [
     "crates/uwumail-gateway",
     "crates/uwumail-backup",
     "crates/uwumail-tnef",
+    "crates/uwumail-labels",
 ]
 
 [workspace.package]
-version = "0.20.0"
+version = "0.21.0"
 edition = "2024"
 license = "AGPL-3.0-only"
 repository = "https://github.com/MinifyX/UwUMail-Server"
@@ -29,6 +30,7 @@ uwumail-dav = { path = "crates/uwumail-dav" }
 uwumail-gateway = { path = "crates/uwumail-gateway" }
 uwumail-imap = { path = "crates/uwumail-imap" }
 uwumail-jmap = { path = "crates/uwumail-jmap" }
+uwumail-labels = { path = "crates/uwumail-labels" }
 uwumail-smtp = { path = "crates/uwumail-smtp" }
 uwumail-store = { path = "crates/uwumail-store" }
 uwumail-tnef = { path = "crates/uwumail-tnef" }

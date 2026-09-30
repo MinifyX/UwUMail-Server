@@ -310,4 +310,6 @@ only to its mail ports on public addresses.
   Over the server's own HTTPS with a trusted certificate, responses carry
   `Strict-Transport-Security: max-age=31536000` (not with a self-signed one).
 - Private keys and the ACME account are written with mode 0600; the container
-  runs as an unprivileged user with only `CAP_NET_BIND_SERVICE`.
+  runs as an unprivileged user without any capability and with
+  `no-new-privileges`; the low ports are opened by the
+  `net.ipv4.ip_unprivileged_port_start` sysctl of its own network namespace.

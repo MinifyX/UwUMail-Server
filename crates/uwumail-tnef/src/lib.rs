@@ -64,6 +64,9 @@ pub struct Limits {
     pub max_attachments: usize,
     /// Bytes of body: unpacked RTF, and each text or HTML made of it.
     pub max_body: usize,
+    /// Bytes the stream may make in all, attached messages included: bodies, attachment data,
+    /// and the attached streams being read. Twice the stream, at least `max_body`, at most this.
+    pub max_output: usize,
     /// How deep attached messages are decoded.
     pub max_depth: usize,
 }
@@ -76,6 +79,7 @@ impl Default for Limits {
             max_properties: 200_000,
             max_attachments: 1_000,
             max_body: 16 << 20,
+            max_output: 64 << 20,
             max_depth: 4,
         }
     }
@@ -162,6 +166,7 @@ pub struct Attachment {
     pub hidden: bool,
     /// An attached message (`ATTACH_EMBEDDED_MSG`), decoded.
     pub embedded: Option<Box<Message>>,
+    /// Its MAPI properties, but for `PR_ATTACH_DATA`: that is `data` or `embedded`.
     pub properties: Properties,
 }
 
@@ -203,13 +208,49 @@ pub fn decode_with(data: &[u8], limits: &Limits) -> Result<Message, Error> {
     if !is_tnef(data) {
         return Err(Error::NotTnef);
     }
-    let mut budget = Budget { attributes: limits.max_attributes, properties: limits.max_properties };
-    Ok(decode_stream(data, limits, &mut budget, 0))
+    let mut budget = Budget {
+        attributes: limits.max_attributes,
+        properties: limits.max_properties,
+        output: data.len().saturating_mul(2).max(limits.max_body).min(limits.max_output),
+        exhausted: false,
+    };
+    let mut message = decode_stream(data, limits, &mut budget, 0);
+    message.complete &= !budget.exhausted;
+    Ok(message)
 }
 
+/// What is left for the whole stream, shared by the messages attached in it: each has its own
+/// [`Limits::max_body`], but a few kilobytes of nested, well-packed RTF must not add up to
+/// gigabytes.
 struct Budget {
     attributes: usize,
     properties: usize,
+    /// Bytes of output.
+    output: usize,
+    /// Something was left out because `output` ran out.
+    exhausted: bool,
+}
+
+impl Budget {
+    /// How much one more piece of output may take, at most `max`.
+    fn room(&self, max: usize) -> usize {
+        self.output.min(max)
+    }
+
+    /// Takes `n` bytes when they fit.
+    fn take(&mut self, n: usize) -> bool {
+        if n > self.output {
+            self.exhausted = true;
+            return false;
+        }
+        self.output -= n;
+        true
+    }
+
+    /// Counts `n` bytes already made within [`Budget::room`] (give or take a few closing tags).
+    fn spend(&mut self, n: usize) {
+        self.output = self.output.saturating_sub(n);
+    }
 }
 
 // TNEF attribute ids (MS-OXTNEF 2.1.3.2): the id and, in the high word, the type.
@@ -231,10 +272,11 @@ const ATT_OEM_CODEPAGE: u32 = 0x0006_9007;
 const LEVEL_MESSAGE: u8 = 1;
 const LEVEL_ATTACHMENT: u8 = 2;
 
+/// An attachment as read, its data still in the stream: copied only once it is kept.
 #[derive(Default)]
-struct RawAttachment {
+struct RawAttachment<'a> {
     title: Option<String>,
-    data: Option<Vec<u8>>,
+    data: Option<&'a [u8]>,
     props: Properties,
 }
 
@@ -315,7 +357,7 @@ fn decode_stream(data: &[u8], limits: &Limits, budget: &mut Budget, depth: usize
                             current.title = Some(codepage::string8(cp, value));
                         }
                     }
-                    ATT_ATTACH_DATA => current.data = Some(value.to_vec()),
+                    ATT_ATTACH_DATA => current.data = Some(value),
                     ATT_ATTACHMENT => {
                         let (props, complete) = mapi::parse_block(value, cp, &mut budget.properties);
                         current.props.0.extend(props.0);
@@ -343,9 +385,15 @@ fn decode_stream(data: &[u8], limits: &Limits, budget: &mut Budget, depth: usize
         PR_SENT_REPRESENTING_SMTP_ADDRESS,
     )
     .or_else(|| person(props, PR_SENDER_NAME, PR_SENDER_ADDRTYPE, PR_SENDER_EMAIL_ADDRESS, PR_SENDER_SMTP_ADDRESS));
-    message.body = body(props, legacy_body, message.code_page, limits);
+    let (body, complete) = body(props, legacy_body, message.code_page, limits, budget);
+    message.body = body;
+    message.complete &= complete;
+    let exhausted = budget.exhausted;
     message.attachments =
         raw_attachments.into_iter().filter_map(|raw| attachment(raw, limits, budget, depth)).collect();
+    if budget.exhausted && !exhausted {
+        message.complete = false;
+    }
     message
 }
 
@@ -393,13 +441,26 @@ fn recipient(row: &Properties) -> Option<Recipient> {
     Some(Recipient { person, kind })
 }
 
-fn body(props: &Properties, legacy: Option<String>, code_page: u32, limits: &Limits) -> Body {
+/// The body, and whether all of it fit.
+fn body(
+    props: &Properties,
+    legacy: Option<String>,
+    code_page: u32,
+    limits: &Limits,
+    budget: &mut Budget,
+) -> (Body, bool) {
+    let mut complete = true;
     let mut body = Body {
         text: props.str(PR_BODY).map(str::to_owned).or(legacy).filter(|t| !t.trim().is_empty()),
         ..Body::default()
     };
     if let Some(bytes) = props.tag(PR_HTML).and_then(Value::as_bytes).filter(|b| !b.is_empty()) {
-        let bytes = &bytes[..bytes.len().min(limits.max_body)];
+        let room = budget.room(limits.max_body);
+        if bytes.len() > room {
+            complete = false;
+            budget.exhausted |= room < limits.max_body;
+        }
+        let bytes = &bytes[..bytes.len().min(room)];
         let encoding = props
             .tag(PR_INTERNET_CPID)
             .and_then(Value::as_i64)
@@ -410,13 +471,34 @@ fn body(props: &Properties, legacy: Option<String>, code_page: u32, limits: &Lim
                 if std::str::from_utf8(bytes).is_ok() { encoding_rs::UTF_8 } else { codepage::encoding(code_page) }
             });
         let html = encoding.decode_without_bom_handling(bytes).0;
-        body.html = Some(html.trim_end_matches('\0').to_owned());
+        // A code page can make a byte three: what does not fit is cut.
+        let mut html = html.trim_end_matches('\0').to_owned();
+        if html.len() > room {
+            complete = false;
+            html.truncate(floor_char_boundary(&html, room));
+        }
+        budget.spend(html.len());
+        body.html = Some(html);
         body.html_source = Some(HtmlSource::Html);
     }
-    if let Some(packed) = props.tag(PR_RTF_COMPRESSED).and_then(Value::as_bytes)
-        && let Ok(rtf) = rtf::decompress(packed, limits.max_body)
-    {
-        match rtf::convert(&rtf, limits.max_body) {
+    let rtf = props
+        .tag(PR_RTF_COMPRESSED)
+        .and_then(Value::as_bytes)
+        .map(|packed| rtf::decompress(packed, budget.room(limits.max_body)));
+    if let Some(Err(rtf::RtfError::TooLarge)) = rtf {
+        complete = false;
+        budget.exhausted |= budget.output < limits.max_body;
+    }
+    if let Some(Ok(rtf)) = rtf {
+        budget.spend(rtf.len());
+        let (content, whole) = rtf::convert_bounded(&rtf, budget.room(limits.max_body));
+        complete &= whole;
+        budget.exhausted |= !whole && budget.output < limits.max_body;
+        budget.spend(match &content {
+            rtf::Content::Html(text) | rtf::Content::Text(text) => text.len(),
+            rtf::Content::Rtf { text, html } => text.len() + html.len(),
+        });
+        match content {
             rtf::Content::Html(html) => {
                 if body.html.is_none() && !html.trim().is_empty() {
                     body.html = Some(html);
@@ -443,13 +525,29 @@ fn body(props: &Properties, legacy: Option<String>, code_page: u32, limits: &Lim
     if body.text.is_none()
         && let Some(html) = &body.html
     {
-        body.text = Some(html::to_text(html)).filter(|t| !t.is_empty());
+        // The text is never longer than the HTML it is made of.
+        if budget.take(html.len()) {
+            let text = html::to_text(html);
+            budget.output += html.len() - text.len().min(html.len());
+            body.text = Some(text).filter(|t| !t.is_empty());
+        } else {
+            complete = false;
+        }
     }
-    body
+    (body, complete)
 }
 
-fn attachment(raw: RawAttachment, limits: &Limits, budget: &mut Budget, depth: usize) -> Option<Attachment> {
-    let props = raw.props;
+/// The largest index up to `max` that starts a character of `text`.
+fn floor_char_boundary(text: &str, max: usize) -> usize {
+    let mut cut = max.min(text.len());
+    while !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    cut
+}
+
+fn attachment(raw: RawAttachment<'_>, limits: &Limits, budget: &mut Budget, depth: usize) -> Option<Attachment> {
+    let mut props = raw.props;
     let name = props
         .str(PR_ATTACH_LONG_FILENAME)
         .or_else(|| props.str(PR_ATTACH_FILENAME))
@@ -458,23 +556,37 @@ fn attachment(raw: RawAttachment, limits: &Limits, budget: &mut Budget, depth: u
         .or(raw.title)
         .and_then(|n| mime::clean_name(&n));
     let method = props.tag(PR_ATTACH_METHOD).and_then(Value::as_i64);
+    // The attached bytes leave the properties, so that they are kept once: as the data, or as
+    // the message decoded of them.
+    let attached = props.0.iter().rposition(|p| p.id == PropId::Tag(PR_ATTACH_DATA)).map(|i| props.0.remove(i).value);
+    props.0.retain(|p| p.id != PropId::Tag(PR_ATTACH_DATA));
     let mut embedded = None;
-    let mut data = raw.data.unwrap_or_default();
-    match props.tag(PR_ATTACH_DATA) {
-        Some(Value::Object(iid, bytes)) if *iid == IID_IMESSAGE => {
-            if is_tnef(bytes) && depth < limits.max_depth {
-                embedded = Some(Box::new(decode_stream(bytes, limits, budget, depth + 1)));
-            }
-            if data.is_empty() {
-                data = bytes.clone();
+    let mut spare = None;
+    match attached {
+        Some(Value::Object(iid, bytes)) if iid == IID_IMESSAGE && is_tnef(&bytes) && depth < limits.max_depth => {
+            embedded = embed(&bytes, limits, budget, depth);
+            if embedded.is_none() {
+                spare = Some(bytes);
             }
         }
-        Some(Value::Binary(bytes)) | Some(Value::Object(_, bytes)) if data.is_empty() => data = bytes.clone(),
+        Some(Value::Binary(bytes) | Value::Object(_, bytes)) => spare = Some(bytes),
         _ => {}
     }
-    if embedded.is_none() && method == Some(5) && is_tnef(&data) && depth < limits.max_depth {
-        embedded = Some(Box::new(decode_stream(&data, limits, budget, depth + 1)));
+    let raw_data = raw.data.filter(|d| !d.is_empty());
+    let source = raw_data.or(spare.as_deref()).unwrap_or_default();
+    if embedded.is_none() && method == Some(5) && is_tnef(source) && depth < limits.max_depth {
+        embedded = embed(source, limits, budget, depth);
     }
+    let data = if embedded.is_some() {
+        Vec::new()
+    } else if budget.take(source.len()) {
+        match raw_data {
+            Some(d) => d.to_vec(),
+            None => spare.unwrap_or_default(),
+        }
+    } else {
+        Vec::new()
+    };
     if data.is_empty() && embedded.is_none() {
         return None;
     }
@@ -493,7 +605,7 @@ fn attachment(raw: RawAttachment, limits: &Limits, budget: &mut Budget, depth: u
     Some(Attachment {
         name,
         mime_type,
-        data: if embedded.is_some() { Vec::new() } else { data },
+        data,
         content_id,
         content_location: props.str(PR_ATTACH_CONTENT_LOCATION).map(str::to_owned),
         inline,
@@ -501,6 +613,17 @@ fn attachment(raw: RawAttachment, limits: &Limits, budget: &mut Budget, depth: u
         embedded,
         properties: props,
     })
+}
+
+/// The message in an attached stream. The stream is held while it is read, so it counts against
+/// the budget until then.
+fn embed(bytes: &[u8], limits: &Limits, budget: &mut Budget, depth: usize) -> Option<Box<Message>> {
+    if !budget.take(bytes.len()) {
+        return None;
+    }
+    let message = decode_stream(bytes, limits, budget, depth + 1);
+    budget.output += bytes.len();
+    Some(Box::new(message))
 }
 
 #[cfg(test)]

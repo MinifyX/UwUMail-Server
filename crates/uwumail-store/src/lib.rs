@@ -44,6 +44,7 @@ mod identity_grants;
 mod imap;
 mod import;
 pub mod itip;
+mod labels;
 mod limiter;
 mod mail;
 mod masked;
@@ -58,6 +59,7 @@ mod own;
 mod parse;
 mod password;
 mod profile_pictures;
+mod public_ip;
 mod push;
 mod query;
 mod queue;
@@ -96,11 +98,11 @@ pub use alerts::{
     AlertObservation, CertificateOrders,
 };
 pub use assist::{
-    ASSIST_CALIBRATION_SAMPLES, ASSIST_FEATURES, ASSIST_LABEL_DESCRIPTION_MAX_CHARS, ASSIST_LABEL_NAME_MAX_CHARS,
-    ASSIST_MAX_ACCESS_ENTRIES, ASSIST_MAX_LABELS, ASSIST_MAX_PERSONAL_PROVIDERS, ASSIST_MAX_SERVER_PROVIDERS,
-    AssistFeatures, AssistLabel, AssistPolicy, AssistPrefs, AssistProviderRecord, AssistProviderWrite,
-    CalibrationSample, LabelJob, LabelLogEntry, SecretChange, SenderHistory, TokenCount, UsageRow, UsedToday,
-    label_keyword, utc_day,
+    ASSIST_CALIBRATION_SAMPLES, ASSIST_FEATURES, ASSIST_FOREIGN_MAIL, ASSIST_LABEL_DESCRIPTION_MAX_CHARS,
+    ASSIST_LABEL_NAME_MAX_CHARS, ASSIST_MAX_ACCESS_ENTRIES, ASSIST_MAX_LABELS, ASSIST_MAX_PERSONAL_PROVIDERS,
+    ASSIST_MAX_SERVER_PROVIDERS, AssistFeatures, AssistLabel, AssistLabelWrite, AssistPolicy, AssistPrefs,
+    AssistProviderRecord, AssistProviderWrite, CalibrationSample, LabelCounts, LabelJob, LabelLogEntry, LabelLogWrite,
+    SecretChange, SenderHistory, TokenCount, UsageRow, UsedToday, label_keyword, utc_day,
 };
 pub use bayes::{
     BAYES_FOLDER_LIMIT, BAYES_LEARNED_SECS, BAYES_MIN_LEARNED, BAYES_RARE_TOKEN_SECS, BAYES_WANTED_AFTER_SECS,
@@ -143,7 +145,7 @@ pub use feeds::FeedState;
 pub use fetch::{
     AfterFetch, DEFAULT_FETCH_INTERVAL_SECS, FETCH_HOLD_LIMIT_SECS, FETCH_SEEN_SECS, FetchAccount, FetchAccountUpdate,
     FetchAuth, FetchFolder, FetchGrant, FetchOAuth, FetchSecurity, FetchSender, FetchTokens, MAX_FETCH_ACCOUNTS,
-    MAX_FETCH_INTERVAL_SECS, MIN_FETCH_INTERVAL_SECS, NewFetchAccount, SendSecurity, is_public_ip,
+    MAX_FETCH_INTERVAL_SECS, MIN_FETCH_INTERVAL_SECS, NewFetchAccount, SendSecurity,
 };
 pub use forward_addresses::{FORWARD_ADDRESS_MAX_TARGETS, ForwardAddress};
 pub use forwarding::{ActiveForwarding, FORWARD_LINK_LIFETIME_SECS, ForwardTarget, Forwarding, MAX_FORWARD_TARGETS};
@@ -152,8 +154,12 @@ pub use groups::{GROUP_MAX_MEMBERS, Group, GroupDelivery, GroupMember, GroupUpda
 pub use held::{HeldSubmission, NewHeldSubmission};
 pub use imap::{DELETED_KEYWORD, FlagChange, ImapEmail, ImapMailbox, ImapMessage, ImapMessages, ImapStatus};
 pub use import::ImportProgress;
+pub use labels::{LabelSetup, LabelTraining};
 pub use limiter::{Attempt, AuthLimiter, Reporter as BlockReporter};
-pub use mail::{EmailSummary, IngestRequest, IngestedEmail, Mailbox, MailboxRole, MailboxTarget, TestMessageStatus};
+pub use mail::{
+    EmailSummary, IngestRequest, IngestedEmail, MAX_KEYWORDS_PER_EMAIL, Mailbox, MailboxRole, MailboxTarget,
+    TestMessageStatus,
+};
 pub use masked::{MASKED_PENDING_SECS, MaskedAddress, MaskedDelivery, MaskedState, MaskedUpdate, NewMaskedAddress};
 pub use masked_domains::{
     AccountMaskedPolicy, DomainKind, DomainMaskedPolicy, EffectiveMaskedPolicy, KindBlockers, KindChange, MaskedMode,
@@ -176,6 +182,7 @@ pub use profile_pictures::{
     AddressPicture, GroupPicture, MAX_RECEIVED_FACES, NewPicture, PUBLIC_PICTURES_SETTING, PictureMeta, PictureOwner,
     PictureVisibility, ProfileSettings, ProfileUpdate, StoredPicture,
 };
+pub use public_ip::is_public_ip;
 pub use push::{
     MAX_PUSH_SUBSCRIPTIONS, NewPushSubscription, PUSH_CREDENTIAL_PASSWORD, PUSH_MAX_FAILURES, PUSH_MAX_VERIFY_ATTEMPTS,
     PUSH_SUBSCRIPTION_MAX_SECS, PushKeys, PushSubscription, PushSubscriptionUpdate, PushTarget,
@@ -283,6 +290,8 @@ struct Inner {
     queue_wakeup: Notify,
     /// Wakes the AI assistant's label worker when delivered mail was queued for it.
     assist_wakeup: Notify,
+    /// The labels' counts per account, as of the account's last change (labels.rs).
+    label_counts: Arc<labels::LabelCountCache>,
     data_dir: PathBuf,
     /// What happened since the server started, for the statistics and the metrics.
     stats: stats::Stats,
@@ -292,6 +301,8 @@ struct Inner {
     auth_limiter: Arc<AuthLimiter>,
     /// How many password hashes are checked at once.
     hashing: password::Gate,
+    /// Moves on after every committed write that changed who shares mail with whom.
+    sharing_generation: std::sync::atomic::AtomicU64,
 }
 
 impl Store {
@@ -316,11 +327,13 @@ impl Store {
                 calendar_alerts,
                 queue_wakeup: Notify::new(),
                 assist_wakeup: Notify::new(),
+                label_counts: Arc::default(),
                 data_dir,
                 stats: stats::Stats::default(),
                 external: std::sync::RwLock::new(None),
                 auth_limiter: Arc::default(),
                 hashing: password::Gate::new(),
+                sharing_generation: Default::default(),
             }),
         })
     }
@@ -333,6 +346,14 @@ impl Store {
 
     pub fn data_dir(&self) -> &Path {
         &self.inner.data_dir
+    }
+
+    /// Moves on whenever who shares mail with whom changed (a folder shared or no longer, members of
+    /// a shared mailbox, ...), after the change is committed and before it is announced. What
+    /// [`Store::sharing_owners`] says holds while this stays the same, so push need not ask again
+    /// for every change on the server.
+    pub fn sharing_generation(&self) -> u64 {
+        self.inner.sharing_generation.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Subscribes to account state changes (new mail, flag changes, ...).
@@ -378,9 +399,16 @@ impl Store {
         F: FnOnce(&rusqlite::Transaction<'_>) -> Result<T> + Send + 'static,
     {
         let inner = self.inner.clone();
-        tokio::task::spawn_blocking(move || inner.db.write(f))
-            .await
-            .map_err(|err| StoreError::Internal(err.to_string()))?
+        tokio::task::spawn_blocking(move || {
+            let result = inner.db.write(f);
+            // Only once the write is over: whoever sees the new generation reads the new shares.
+            if acl::take_sharing_touched() {
+                inner.sharing_generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+            result
+        })
+        .await
+        .map_err(|err| StoreError::Internal(err.to_string()))?
     }
 
     fn notify_change(&self, account_id: i64, modseq: i64) {

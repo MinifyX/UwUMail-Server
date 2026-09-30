@@ -1,5 +1,7 @@
 //! A small HTTPS client for what other domains publish on the web, like MTA-STS policies.
-//! Certificates must be valid, redirects are not followed, and bodies are capped.
+//! Certificates must be valid, redirects are not followed, bodies are capped, and only public
+//! addresses are reached: the names asked for come from other people's DNS, which may point them at
+//! this host or the local network.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -13,9 +15,11 @@ use hyper_util::client::legacy::Client;
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::rt::TokioExecutor;
 
+use crate::fetch::{PublicResolver, is_public};
+
 #[derive(Clone)]
 enum Inner {
-    Direct(Client<HttpsConnector<HttpConnector>, Empty<Bytes>>),
+    Direct(Client<HttpsConnector<HttpConnector<PublicResolver>>, Empty<Bytes>>),
     /// Through the egress, for requests the admin wants to leave through the VPN.
     Egress(Client<HttpsConnector<crate::egress::DialerConnector>, Empty<Bytes>>),
 }
@@ -43,11 +47,14 @@ pub struct Fetched {
 
 impl Https {
     pub fn new() -> Https {
+        let mut http = HttpConnector::new_with_resolver(PublicResolver);
+        // The TLS layer around it insists on https; this one only has to let it through.
+        http.enforce_http(false);
         let connector = hyper_rustls::HttpsConnectorBuilder::new()
             .with_tls_config(tls_config())
             .https_only()
             .enable_http1()
-            .build();
+            .wrap_connector(http);
         Https { client: Inner::Direct(Client::builder(TokioExecutor::new()).build(connector)) }
     }
 
@@ -62,7 +69,13 @@ impl Https {
 
     /// GETs `url`. Anything but 200 is an error, and so is a body over `max_bytes`.
     pub async fn get(&self, url: &str, max_bytes: usize, timeout: Duration) -> Result<Fetched, String> {
-        let request = Request::get(url)
+        // An address in the link is never looked up, so the resolver cannot refuse it.
+        let uri: hyper::Uri = url.parse().map_err(|_| format!("{url} is not a web address"))?;
+        let host = uri.host().unwrap_or_default().trim_start_matches('[').trim_end_matches(']');
+        if host.parse::<std::net::IpAddr>().is_ok_and(|ip| !is_public(ip)) {
+            return Err("not a public address".to_owned());
+        }
+        let request = Request::get(uri)
             .header("User-Agent", concat!("UwUMail/", env!("CARGO_PKG_VERSION")))
             .body(Empty::new())
             .map_err(|err| err.to_string())?;

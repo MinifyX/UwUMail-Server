@@ -15,6 +15,8 @@ import { toast } from "@/state/toasts";
 import {
   ADMIN_ASSIST,
   FEATURES,
+  FOREIGN_MAIL,
+  listedFeatures,
   byDay,
   byFeature,
   byPerson,
@@ -86,6 +88,14 @@ function PolicyCard({ policy }: { policy: AssistPolicy }) {
             </Notice>
           )}
         </div>
+        <div className="flex flex-col gap-4 border-t border-hairline pt-4">
+          <Toggle
+            checked={shown.foreignMail ?? false}
+            onChange={(value) => setDraft({ ...shown, foreignMail: value })}
+            label={t("assist.admin.foreignMail")}
+            description={t("assist.admin.foreignMailHint")}
+          />
+        </div>
       </div>
       <div className="mt-4 flex items-center justify-end gap-2 border-t border-hairline pt-4">
         {draft && (
@@ -99,6 +109,16 @@ function PolicyCard({ policy }: { policy: AssistPolicy }) {
       </div>
     </Card>
   );
+}
+
+/** What a provider may be used for, in its summary line. */
+function featuresText(provider: AdminProvider, t: ReturnType<typeof useT>["t"]): string {
+  const listed = listedFeatures(provider.features);
+  const features =
+    listed === "all"
+      ? t("assist.admin.allFeatures")
+      : listed.map((feature) => t(`assist.features.${feature}`)).join(", ");
+  return provider.features.includes(FOREIGN_MAIL) ? `${features} · ${t("assist.admin.foreignMail")}` : features;
 }
 
 /** Who may use a provider, in a few words. */
@@ -188,10 +208,7 @@ function ProvidersCard({ view }: { view: AdminAssistView }) {
                       <span className="block truncate font-mono text-[12px] text-muted">{provider.baseUrl}</span>
                     )}
                     <span className="block text-[12px] text-muted">
-                      {accessText(provider, t)} ·{" "}
-                      {provider.features.length === FEATURES.length
-                        ? t("assist.admin.allFeatures")
-                        : provider.features.map((feature) => t(`assist.features.${feature}`)).join(", ")}
+                      {accessText(provider, t)} · {featuresText(provider, t)}
                     </span>
                     <span className="block text-[12px] text-muted">
                       <QuotaText

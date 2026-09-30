@@ -435,6 +435,7 @@
       "dnsUnavailable": "De server kan op dit moment geen DNS opvragen.",
       "settingLocked": "Deze instelling staat in het configuratiebestand en kan hier niet worden gewijzigd.",
       "settingsInvalid": "Zo kan de server niet werken: {{detail}}",
+      "secretNeededAgain": "Dit wachtwoord of token hoort bij het oude adres. Voer het opnieuw in voor het nieuwe.",
       "codeInvalid": "De code is onjuist of is al gebruikt.",
       "loginExpired": "Het inloggen duurde te lang. Log opnieuw in.",
       "confirmPassword": "Bevestig dit met je wachtwoord.",
@@ -3996,7 +3997,9 @@
       "costShown": "Kosten zichtbaar",
       "priceLists_one": "Prijzen bijgewerkt {{date}}, {{count}} model bekend.",
       "priceLists_other": "Prijzen bijgewerkt {{date}}, {{count}} modellen bekend.",
-      "priceListsNone": "De prijzen zijn nog niet opgehaald."
+      "priceListsNone": "De prijzen zijn nog niet opgehaald.",
+      "foreignMail": "AI voor mail uit andere accounts",
+      "foreignMailHint": "Mensen mogen de assistent in de UwUMail-app gebruiken voor de mail van hun andere accounts (Exchange, Gmail, IMAP). De app stuurt dan de tekst van die mail hierheen; alleen het gebruik wordt bewaard. Alleen providers die het toestaan worden gebruikt."
     },
     "choices": {
       "title": "Welke provider waarvoor",
@@ -4023,7 +4026,10 @@
       "labels_other": "Je hebt {{count}} labels. Wijzig ze in de webmail.",
       "openWebmail": "Webmail openen",
       "refineEvents": "Naar afspraken zoeken als een mail opengaat",
-      "refineEventsHint": "De webmail vraagt het model dan bij elke mail die je opent, niet alleen als je erom vraagt. Dat kost meer van je daglimiet."
+      "refineEventsHint": "De webmail vraagt het model dan bij elke mail die je opent, niet alleen als je erom vraagt. Dat kost meer van je daglimiet.",
+      "nonAiLabels": "Labels zonder AI",
+      "nonAiLabelsHint": "Nieuwe mail krijgt je labels via hun voorwaarden, ingebouwde herkenners (facturen, afspraken, nieuwsbrieven, verzending), afzenders die je twee keer met de hand hebt gelabeld en wat elk label van je heeft geleerd. Geen AI-provider nodig.",
+      "foreignMail": "In de UwUMail-app werkt de assistent ook voor de mail van je andere accounts."
     },
     "privacy": {
       "title": "Wat de server verlaat",
@@ -4114,7 +4120,9 @@
       "priceAutomatic": "Uit de prijslijsten",
       "showCost": "Kosten tonen aan wie het gebruikt",
       "showCostHint": "Zij zien dan wat hun verzoeken kosten. Jij ziet het altijd.",
-      "requestPrice": "Per verzoek, Amerikaanse dollar"
+      "requestPrice": "Per verzoek, Amerikaanse dollar",
+      "foreignMail": "Mail uit andere accounts",
+      "foreignMailHint": "Mag gebruikt worden voor de mail van andere accounts van mensen als \"AI voor mail uit andere accounts\" aan staat."
     },
     "chatgpt": {
       "title": "ChatGPT-aanmelding",
@@ -4139,6 +4147,20 @@
       "perRequest": "{{price}} per verzoek",
       "tier": "boven {{tokens}} tokens: {{input}} in, {{output}} uit",
       "thinks": "denkt na voor het antwoord"
+    },
+    "labels": {
+      "rules": "voorwaarden",
+      "senders": "leert afzenders",
+      "classifierReady": "geleerd van {{n}} mails",
+      "classifierLearning": "leert: {{n}} van {{min}} mails",
+      "counts": "{{total}} mails, {{unread}} ongelezen",
+      "byHandOnly": "alleen met de hand",
+      "detectors": {
+        "invoice": "facturen",
+        "appointment": "afspraken",
+        "newsletter": "nieuwsbrieven",
+        "shipping": "verzending"
+      }
     }
   },
   "microsoft": {

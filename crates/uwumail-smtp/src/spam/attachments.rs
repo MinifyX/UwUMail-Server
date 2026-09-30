@@ -82,8 +82,10 @@ const PROGRAMS: &[&str] = &[
 const MACROS: &[&str] =
     &["docm", "dotm", "xlsm", "xltm", "xlam", "xll", "pptm", "potm", "ppam", "sldm", "one", "iqy", "slk"];
 
-/// Web pages as attachments, a favourite way to bring a fake login page past link checks.
-const WEB_PAGES: &[&str] = &["html", "htm", "xhtml", "shtml", "mht", "mhtml"];
+/// Web pages as attachments, a favourite way to bring a fake login page past link checks. XHTML
+/// and XSLT render (and script) like one in a browser; plain xml is left out, since e-invoices
+/// (XRechnung, ZUGFeRD) come as .xml every day.
+const WEB_PAGES: &[&str] = &["html", "htm", "xhtml", "xht", "xsl", "xslt", "shtml", "mht", "mhtml"];
 
 /// Endings a disguised program pretends to have.
 const HARMLESS_LOOKING: &[&str] = &[
@@ -176,10 +178,17 @@ pub(crate) fn judge(message: &Message<'_>) -> Vec<Hit> {
     // What winmail.dat carries is as much an attachment as the rest.
     if message.attachments().any(|part| uwumail_store::tnef::stream(part).is_some()) {
         for decoded in uwumail_store::tnef::decode(message) {
-            for attachment in &decoded.message.attachments {
-                let Some(name) = &attachment.name else { continue };
-                let zipped = ending(name).as_deref() == Some("zip") || attachment.mime_type.contains("zip");
-                judge_one(&mut hits, name, zipped, &attachment.data);
+            // And so is what the messages attached in it carry (as `Decoded::names` walks them).
+            let mut work = vec![&decoded.message];
+            while let Some(inner) = work.pop() {
+                for attachment in &inner.attachments {
+                    if let Some(embedded) = &attachment.embedded {
+                        work.push(embedded);
+                    }
+                    let Some(name) = &attachment.name else { continue };
+                    let zipped = ending(name).as_deref() == Some("zip") || attachment.mime_type.contains("zip");
+                    judge_one(&mut hits, name, zipped, &attachment.data);
+                }
             }
         }
     }
@@ -243,6 +252,10 @@ mod tests {
             ("login.html", b"<form>"),
         ]);
         assert_eq!(rules(&raw), ["EXECUTABLE_ATTACHMENT", "MACRO_ATTACHMENT", "HTML_ATTACHMENT"]);
+        for name in ["login.xht", "rechnung.xsl", "rechnung.XSLT"] {
+            assert_eq!(rules(&message_with(&[(name, b"<x/>")])), ["HTML_ATTACHMENT"], "{name}");
+        }
+        assert!(rules(&message_with(&[("xrechnung.xml", b"<x/>")])).is_empty(), "e-invoices are no web pages");
         assert!(rules(&message_with(&[("rechnung.pdf", b"%PDF"), ("foto.jpg", b"jpg")])).is_empty());
     }
 
@@ -252,6 +265,28 @@ mod tests {
         let mut tnef = Tnef::new();
         tnef.attachment("setup.exe", b"MZ", &Props::new());
         let raw = mime_with_winmail("From: a@example.com\r\n", Some("Anbei."), &tnef.build());
+        assert_eq!(rules(&raw), ["EXECUTABLE_ATTACHMENT"]);
+    }
+
+    #[test]
+    fn what_messages_attached_in_winmail_dat_carry_counts() {
+        use uwumail_tnef::builder::{Props, Tnef, mime_with_winmail};
+        use uwumail_tnef::mapi::{self, IID_IMESSAGE};
+        let mut inner = Tnef::new();
+        inner.attachment("setup.exe", b"MZ", &Props::new());
+        let mut middle = Tnef::new();
+        middle.attachment(
+            "Weitergeleitet",
+            &[],
+            &Props::new().long(mapi::PR_ATTACH_METHOD, 5).object(mapi::PR_ATTACH_DATA, &IID_IMESSAGE, &inner.build()),
+        );
+        let mut outer = Tnef::new();
+        outer.attachment(
+            "Weitergeleitet",
+            &[],
+            &Props::new().long(mapi::PR_ATTACH_METHOD, 5).object(mapi::PR_ATTACH_DATA, &IID_IMESSAGE, &middle.build()),
+        );
+        let raw = mime_with_winmail("From: a@example.com\r\n", Some("Anbei."), &outer.build());
         assert_eq!(rules(&raw), ["EXECUTABLE_ATTACHMENT"]);
     }
 

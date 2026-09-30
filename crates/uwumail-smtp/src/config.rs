@@ -204,6 +204,10 @@ pub struct DeliveryConfig {
     pub relay: Option<RelayConfig>,
     /// Fixed `host:port` per recipient domain, checked before the relay and DNS.
     pub routes: HashMap<String, String>,
+    /// Deliver to MX hosts on loopback or private networks as well. Off, those addresses are
+    /// skipped: anyone's DNS could point there. For mail servers that only exist inside a private
+    /// network, and for tests; a route for the domain is the narrower way.
+    pub allow_private_mx: bool,
 }
 
 impl Default for DeliveryConfig {
@@ -217,11 +221,12 @@ impl Default for DeliveryConfig {
             require_tls: false,
             relay: None,
             routes: HashMap::new(),
+            allow_private_mx: false,
         }
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RelayConfig {
     pub host: String,
@@ -235,6 +240,19 @@ pub struct RelayConfig {
     /// or Google. Never in a config file.
     #[serde(skip)]
     pub oauth: bool,
+}
+
+impl std::fmt::Debug for RelayConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The password (or access token) never into a log line.
+        f.debug_struct("RelayConfig")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("security", &self.security)
+            .field("username", &self.username)
+            .field("oauth", &self.oauth)
+            .finish_non_exhaustive()
+    }
 }
 
 impl RelayConfig {
@@ -421,4 +439,24 @@ pub struct ToneConfig {
     pub language: Language,
     pub internal: InternalTone,
     pub external: ExternalTone,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relay_debug_leaves_the_password_out() {
+        let relay = RelayConfig {
+            host: "relay.example.net".into(),
+            port: 587,
+            security: RelaySecurity::Starttls,
+            username: Some("uwumail".into()),
+            password: Some("hunter2-plaintext".into()),
+            oauth: false,
+        };
+        let shown = format!("{relay:?}");
+        assert!(shown.contains("relay.example.net"), "{shown}");
+        assert!(!shown.contains("hunter2-plaintext"), "{shown}");
+    }
 }

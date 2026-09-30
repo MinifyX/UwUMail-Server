@@ -189,3 +189,117 @@ async fn settings_are_checked_locked_stored_and_logged() {
     assert_eq!(log[1]["details"]["delivery.relay.password"], "•••");
     assert!(!log.to_string().contains("geheim"), "the change log never contains passwords");
 }
+
+/// A portal with the fake settings server and a logged-in admin.
+async fn admin_portal(dir: &std::path::Path) -> (Router, (String, String), Store) {
+    let store = Store::open(dir).await.unwrap();
+    store.create_domain("example.org").await.unwrap();
+    store
+        .create_account(NewAccount {
+            address: "nyu@example.org".into(),
+            display_name: "Nyu".into(),
+            password: Some("katzenpfote-123".into()),
+            role: Role::Admin,
+            quota_bytes: 0,
+            protocols: None,
+        })
+        .await
+        .unwrap();
+    let smtp_settings = SmtpSettings {
+        hostname: "mail.example.org".into(),
+        smtp: Default::default(),
+        spam: Default::default(),
+        delivery: Default::default(),
+        tone: Default::default(),
+        server_tls: None,
+    };
+    let web = Web::new(
+        Smtp::new(store.clone(), smtp_settings).unwrap(),
+        WebSettings {
+            hostname: "mail.example.org".into(),
+            started: Instant::now(),
+            logs: None,
+            loki: None,
+            config: Some(Arc::new(FakeServer::default())),
+            certificate: None,
+            webmail: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
+        },
+    );
+    let app = web.router();
+    let mut login = Request::builder()
+        .method("POST")
+        .uri("/api/auth/login")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json!({ "login": "nyu@example.org", "password": "katzenpfote-123" }).to_string()))
+        .unwrap();
+    login.extensions_mut().insert(ClientInfo { https: true, ..ClientInfo::default() });
+    let response = app.clone().oneshot(login).await.unwrap();
+    let cookie = response.headers()[header::SET_COOKIE].to_str().unwrap().split(';').next().unwrap().to_owned();
+    let bytes = axum::body::to_bytes(response.into_body(), 1 << 20).await.unwrap();
+    let csrf = serde_json::from_slice::<Value>(&bytes).unwrap()["csrfToken"].as_str().unwrap().to_owned();
+    (app, (cookie, csrf), store)
+}
+
+#[tokio::test]
+async fn a_stored_secret_does_not_follow_its_server_elsewhere() {
+    let dir = tempfile::tempdir().unwrap();
+    let (app, auth, store) = admin_portal(dir.path()).await;
+    let change = |changes: Value| Some(json!({ "changes": changes }));
+    let stored_relay_password = || async {
+        let overlay = uwumail_web::settings::load_overlay(&store).await.unwrap();
+        overlay["delivery"]["relay"]["password"].as_str().map(str::to_owned)
+    };
+
+    let relay = json!({
+        "delivery.relay.host": "relay.example.net",
+        "delivery.relay.port": 587,
+        "delivery.relay.username": "nyu",
+        "delivery.relay.password": "geheim-und-lang",
+    });
+    let (status, body) = call(&app, "PATCH", "/api/admin/settings", change(relay), &auth).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // Another host, port or user without the password again: the stored one would go there.
+    for moved in [
+        json!({ "delivery.relay.host": "relay.example.com" }),
+        json!({ "delivery.relay.port": 2525 }),
+        json!({ "delivery.relay.username": "someone-else" }),
+    ] {
+        let (status, body) = call(&app, "PATCH", "/api/admin/settings", change(moved.clone()), &auth).await;
+        assert_eq!((status, body["code"].as_str()), (StatusCode::CONFLICT, Some("secretNeededAgain")), "{moved}");
+    }
+    let overlay = uwumail_web::settings::load_overlay(&store).await.unwrap();
+    assert_eq!(overlay["delivery"]["relay"]["host"], "relay.example.net", "nothing was saved");
+
+    // The same host again keeps the password; a new host comes with its own.
+    let same = json!({ "delivery.relay.host": " relay.example.net ", "tone.external": "light" });
+    let (status, body) = call(&app, "PATCH", "/api/admin/settings", change(same), &auth).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(stored_relay_password().await.as_deref(), Some("geheim-und-lang"));
+    let moved = json!({ "delivery.relay.host": "relay.example.com", "delivery.relay.password": "neu-und-lang" });
+    let (status, body) = call(&app, "PATCH", "/api/admin/settings", change(moved), &auth).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(stored_relay_password().await.as_deref(), Some("neu-und-lang"));
+
+    // The directory's service password neither goes to another directory through the test button.
+    let ldap = json!({ "auth.ldap.url": "ldaps://ldap.example.net", "auth.ldap.bind_password": "verzeichnis-geheim" });
+    let (status, body) = call(&app, "PATCH", "/api/admin/settings", change(ldap), &auth).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let elsewhere = change(json!({ "auth.ldap.url": "ldaps://192.0.2.10" }));
+    let (status, body) = call(&app, "POST", "/api/admin/auth/ldap/test", elsewhere.clone(), &auth).await;
+    assert_eq!((status, body["code"].as_str()), (StatusCode::CONFLICT, Some("secretNeededAgain")), "{body}");
+    let (status, body) = call(&app, "PATCH", "/api/admin/settings", elsewhere, &auth).await;
+    assert_eq!((status, body["code"].as_str()), (StatusCode::CONFLICT, Some("secretNeededAgain")), "{body}");
+    // Nor the provider's client secret to another issuer.
+    let oidc = json!({ "auth.oidc.issuer": "https://id.example.net", "auth.oidc.client_secret": "anbieter-geheim" });
+    let (status, body) = call(&app, "PATCH", "/api/admin/settings", change(oidc), &auth).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let elsewhere = change(json!({ "auth.oidc.issuer": "https://id.example.com" }));
+    let (status, body) = call(&app, "POST", "/api/admin/auth/oidc/test", elsewhere, &auth).await;
+    assert_eq!((status, body["code"].as_str()), (StatusCode::CONFLICT, Some("secretNeededAgain")), "{body}");
+
+    // Emptying the address sends the secret nowhere, so it needs nothing.
+    let (status, body) =
+        call(&app, "PATCH", "/api/admin/settings", change(json!({ "auth.ldap.url": null })), &auth).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+}

@@ -327,11 +327,17 @@ pub struct Sender<'a> {
     pub local: bool,
 }
 
-/// Reads the scheduling message of a mail that reached `account_id`, if it has one, and applies it
-/// to their calendars. The mail itself is delivered as usual either way.
-pub(crate) async fn incoming(ctx: &Context, account_id: i64, raw: &[u8], sender: Sender<'_>) {
-    let Some(message) = find_itip(raw) else { return };
-    let Some(calendar) = Component::parse(&message) else { return };
+/// The scheduling message of a mail, if it has one: looked for on a blocking thread, since it
+/// may parse all of the mail and decode a winmail.dat in it. Once per mail, for all recipients.
+pub(crate) async fn find(raw: &[u8]) -> Option<String> {
+    let raw = raw.to_vec();
+    tokio::task::spawn_blocking(move || find_itip(&raw)).await.ok().flatten()
+}
+
+/// Applies the scheduling message of a mail (from [`find`]) that reached `account_id` to their
+/// calendars. The mail itself is delivered as usual either way.
+pub(crate) async fn incoming(ctx: &Context, account_id: i64, message: &str, sender: Sender<'_>) {
+    let Some(calendar) = Component::parse(message) else { return };
     let Ok(Some(account)) = ctx.store.account_by_id(account_id).await else { return };
     if !account.protocols.caldav || account.deleted_at.is_some() {
         return;
@@ -558,8 +564,8 @@ Content-Type: text/calendar; method=REPLY; charset=utf-8\r\n\r\nBEGIN:VCALENDAR\
         assert!(find_itip(b"From: a@example.com\r\n\r\nno calendar here\r\n").is_none());
     }
 
-    #[test]
-    fn a_meeting_in_winmail_dat_is_found() {
+    /// A mail with a cancellation packed into winmail.dat.
+    fn winmail_meeting() -> Vec<u8> {
         use uwumail_tnef::builder::{Props, Tnef, global_object_id, mime_with_winmail};
         use uwumail_tnef::mapi::{self, PSETID_APPOINTMENT, PSETID_MEETING};
         let mut tnef = Tnef::new();
@@ -570,8 +576,21 @@ Content-Type: text/calendar; method=REPLY; charset=utf-8\r\n\r\nBEGIN:VCALENDAR\
                 .named_time(&PSETID_APPOINTMENT, 0x820D, 1_793_091_600)
                 .named_binary(&PSETID_MEETING, 0x0003, &global_object_id("x@example.com", None)),
         );
-        let mail = mime_with_winmail("From: gast@example.com\r\nTo: mini@example.org\r\n", None, &tnef.build());
-        let ics = find_itip(&mail).unwrap();
+        mime_with_winmail("From: gast@example.com\r\nTo: mini@example.org\r\n", None, &tnef.build())
+    }
+
+    #[test]
+    fn a_meeting_in_winmail_dat_is_found() {
+        let ics = find_itip(&winmail_meeting()).unwrap();
         assert!(ics.contains("METHOD:CANCEL") && ics.contains("mailto:mini@example.org"), "{ics}");
+    }
+
+    /// Decoding winmail.dat is CPU work: it is handed to a blocking thread, which works even when
+    /// the runtime has one thread only.
+    #[tokio::test(flavor = "current_thread")]
+    async fn found_on_a_blocking_thread() {
+        let ics = find(&winmail_meeting()).await.unwrap();
+        assert!(ics.contains("METHOD:CANCEL"), "{ics}");
+        assert!(find(b"From: a@example.com\r\n\r\nno calendar here\r\n").await.is_none());
     }
 }

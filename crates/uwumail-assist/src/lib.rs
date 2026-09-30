@@ -10,6 +10,7 @@
 mod access;
 pub mod chatgpt;
 mod features;
+pub mod foreign;
 pub mod kinds;
 pub mod llm;
 pub mod mail;
@@ -30,10 +31,11 @@ pub use access::{
 };
 pub use features::{
     AuthenticationSignals, Calibration, ComposeArgs, ComposeResult, Estimate, EstimateArgs, EstimateCall, EstimateCost,
-    EstimatePlan, EventsArgs, EventsResult, ExtractedEvent, LabelPick, MIN_CALIBRATION_SAMPLES, Participant,
-    SenderSignals, SpamArgs, SpamResult, SpamSignals, StreamEvent, SummarizeArgs, SummaryResult, Usage, plan_estimate,
-    thinks,
+    EstimatePlan, EventsArgs, EventsResult, ExtractedEvent, LabelPick, LabelVerdict, MIN_CALIBRATION_SAMPLES, NewLabel,
+    Participant, SenderSignals, SpamArgs, SpamResult, SpamSignals, StreamEvent, SuggestArgs, SuggestResult,
+    SummarizeArgs, SummaryResult, Usage, plan_estimate, thinks,
 };
+pub use foreign::{ForeignLabel, ForeignMail, foreign_labels, foreign_mails};
 pub use kinds::{KINDS, KindInfo};
 pub use prices::{
     Cost, CostParts, Metered, Price, PriceSource, PriceSources, PriceTable, PriceTier, Prices, Rates, Tier,
@@ -130,8 +132,9 @@ struct Inner {
     egress: Egress,
     /// This server's name: its own `Authentication-Results` carry it.
     hostname: String,
-    /// ChatGPT device logins that were started, by provider.
-    logins: Mutex<HashMap<i64, chatgpt::DeviceCode>>,
+    /// ChatGPT device logins that were started, by owner and provider: a provider id taken again by
+    /// someone else after the account changed hands never finds the old login (security audit 0.21.0).
+    logins: Mutex<HashMap<(i64, i64), chatgpt::DeviceCode>>,
     /// Held while a ChatGPT sign-in is renewed: its refresh token works once, so requests side by
     /// side must not each renew it (AI-05 of the 0.18.0 audit).
     renewing: tokio::sync::Mutex<()>,

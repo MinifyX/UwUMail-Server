@@ -198,6 +198,10 @@ fn addresses_json(addresses: &[EmailAddress]) -> String {
     serde_json::to_string(addresses).unwrap_or_else(|_| "[]".into())
 }
 
+/// The most keywords (flags and labels) one email may have. Each is a row, pushed and listed with
+/// the email to every client; mail has a handful.
+pub const MAX_KEYWORDS_PER_EMAIL: usize = 100;
+
 impl Store {
     /// Stores a message in a mailbox of an account: blob, metadata, thread, search
     /// index and change log. Fails with [`StoreError::QuotaExceeded`] when the account is full.
@@ -213,6 +217,12 @@ impl Store {
                 message: format!("{bad:?} is not a valid keyword"),
             });
         }
+        // JMAP refuses more keywords than an email may have, as changing them does; what else stores
+        // mail (IMAP APPEND, a Sieve script's flags on delivery) keeps the first ones rather than
+        // lose the message.
+        let mut seen = std::collections::HashSet::new();
+        let keywords: Vec<String> =
+            keywords.into_iter().filter(|keyword| seen.insert(keyword.clone())).take(MAX_KEYWORDS_PER_EMAIL).collect();
         let size = raw.len() as i64;
 
         let quota_ok = self

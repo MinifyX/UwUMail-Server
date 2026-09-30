@@ -309,6 +309,10 @@ const HEADER_TIMEOUT: Duration = Duration::from_secs(20);
 /// An HTTP/2 connection is pinged this often, and closed when a ping goes unanswered this long.
 const H2_KEEP_ALIVE: Duration = Duration::from_secs(60);
 const H2_KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(20);
+/// Requests one HTTP/2 connection may have running at once. hyper allows 200; each event stream
+/// holds one for as long as it is open. A browser queues what goes beyond, and RFC 9113 (6.5.2)
+/// asks for no fewer than 100.
+const H2_MAX_CONCURRENT_STREAMS: u32 = 100;
 const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// What the HTTP connections hold, in all and per network.
@@ -497,7 +501,8 @@ pub async fn serve_connection<S>(
         .http2()
         .timer(TokioTimer::new())
         .keep_alive_interval(H2_KEEP_ALIVE)
-        .keep_alive_timeout(H2_KEEP_ALIVE_TIMEOUT);
+        .keep_alive_timeout(H2_KEEP_ALIVE_TIMEOUT)
+        .max_concurrent_streams(H2_MAX_CONCURRENT_STREAMS);
     match acceptor {
         Some(acceptor) => {
             let Ok(Ok(stream)) = tokio::time::timeout(TLS_HANDSHAKE_TIMEOUT, acceptor.accept(stream)).await else {

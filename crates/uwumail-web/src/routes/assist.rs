@@ -191,9 +191,29 @@ pub async fn account_view(State(web): State<Web>, session: Session) -> ApiResult
     let providers = assist.providers(account).await.map_err(api_error)?;
     let settings = assist.settings(account).await.map_err(api_error)?;
     let today = assist.today(account).await.map_err(api_error)?;
-    let labels = web.store().assist_labels(account.id).await?.len();
+    let labels = web.store().assist_labels(account.id).await?;
+    let counts = web.store().label_counts(account.id).await?;
+    let label_list: Vec<Value> = labels
+        .iter()
+        .map(|label| {
+            let count = counts.get(&label.id).copied().unwrap_or_default();
+            json!({
+                "id": label.id,
+                "name": label.name,
+                "color": label.color,
+                "detector": label.detector,
+                "hasRules": label.rules.is_some(),
+                "learnSenders": label.learn_senders,
+                "classifier": label.classifier,
+                "totalEmails": count.total,
+                "unreadEmails": count.unread,
+                "examples": count.examples,
+            })
+        })
+        .collect();
     Ok(Json(json!({
         "features": capability.features,
+        "foreignMail": capability.foreign_mail,
         "mayAddProviders": capability.may_add_providers,
         "mayUsePrivateAddresses": capability.may_use_private_addresses,
         "maxProviders": capability.max_providers,
@@ -201,7 +221,8 @@ pub async fn account_view(State(web): State<Web>, session: Session) -> ApiResult
         "settings": settings,
         "today": today,
         "kinds": KINDS,
-        "labels": labels,
+        "labels": labels.len(),
+        "labelList": label_list,
     })))
 }
 

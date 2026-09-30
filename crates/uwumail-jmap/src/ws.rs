@@ -15,7 +15,7 @@ use serde_json::{Map, Value, json};
 
 use crate::api::{self, RequestError};
 use crate::auth::{AuthError, CSRF_HEADER, ClientInfo, Login};
-use crate::push::{Pushed, Watcher, all_types};
+use crate::push::{Pushed, Slot, Watcher, all_types, too_many_connections};
 use crate::{Jmap, MAX_REQUEST_BYTES, ids};
 
 /// The subprotocol a JMAP client asks for (RFC 8887, section 4.2).
@@ -76,10 +76,14 @@ pub async fn handle(
         Ok(login) => login,
         Err(err) => return err.into_response(),
     };
+    // A WebSocket watches for push even before it is asked to: it counts as a push connection.
+    let Some(slot) = jmap.inner.push_connections.open(login.account.id) else {
+        return too_many_connections();
+    };
     upgrade
         .protocols([SUBPROTOCOL])
         .max_message_size(MAX_REQUEST_BYTES)
-        .on_upgrade(move |socket| serve(jmap, login, socket))
+        .on_upgrade(move |socket| serve(jmap, login, socket, slot))
 }
 
 fn request_error(request_id: Option<&Value>, error: RequestError) -> Value {
@@ -104,11 +108,12 @@ async fn send(socket: &mut WebSocket, value: Value) -> bool {
     socket.send(Message::Text(value.to_string().into())).await.is_ok()
 }
 
-async fn serve(jmap: Jmap, login: Login, mut socket: WebSocket) {
+/// Serves one connection, holding its `_slot` among the account's push connections until it ends.
+async fn serve(jmap: Jmap, login: Login, mut socket: WebSocket, _slot: Slot) {
     let account_id = login.account.id;
     let live = login.live();
     let store = jmap.inner.store.clone();
-    let mut watcher = Watcher::new(store.clone(), account_id, all_types()).await.only_masked(login.masked_only());
+    let mut watcher = Watcher::new(store.clone(), account_id, all_types()).await.allowed_to(&login);
     let mut push = false;
     loop {
         tokio::select! {

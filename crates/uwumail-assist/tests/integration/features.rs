@@ -34,7 +34,10 @@ async fn events_are_checked_against_the_mail_and_its_pictures() {
         event("Kaputt", "irgendwann", "Bitte zahlen Sie", json!([]))
     ] });
     rig.fake.push(Reply::Json(200, chat(&answer.to_string()), vec![]));
-    let result = assist.extract_events(&rig.mia, EventsArgs { email_id: email, include_images: true }).await.unwrap();
+    let result = assist
+        .extract_events(&rig.mia, EventsArgs { email_id: email, include_images: true, ..Default::default() })
+        .await
+        .unwrap();
     let titles: Vec<&str> = result.events.iter().map(|e| e.title.as_str()).collect();
     assert_eq!(titles, ["Abholung", "Kino"]);
     let pickup = &result.events[0];
@@ -51,7 +54,10 @@ async fn events_are_checked_against_the_mail_and_its_pictures() {
 
     // Without includeImages, the pictures are not read.
     rig.fake.push(Reply::Json(200, chat(&answer.to_string()), vec![]));
-    let result = assist.extract_events(&rig.mia, EventsArgs { email_id: email, include_images: false }).await.unwrap();
+    let result = assist
+        .extract_events(&rig.mia, EventsArgs { email_id: email, include_images: false, ..Default::default() })
+        .await
+        .unwrap();
     assert_eq!(result.events.len(), 1);
     assert!(!rig.fake.seen()[1].body["messages"][1]["content"].as_str().unwrap().contains("KINO"));
 }
@@ -101,7 +107,9 @@ async fn nothing_is_read_for_a_request_that_may_not_be_made() {
         Assist::for_tests(rig.store.clone(), "mx.example.org", chatgpt::Endpoints::default()).with_image_text(pictures);
     rig.server_provider("openaiCompatible", json!({ "requestsPerDay": 0 })).await;
     let email = rig.deliver(&rig.mia, INVOICE).await;
-    let refused = assist.extract_events(&rig.mia, EventsArgs { email_id: email, include_images: true }).await;
+    let refused = assist
+        .extract_events(&rig.mia, EventsArgs { email_id: email, include_images: true, ..Default::default() })
+        .await;
     assert!(matches!(refused, Err(uwumail_assist::AssistError::OverQuota(_))), "{refused:?}");
     assert_eq!(reads.load(std::sync::atomic::Ordering::SeqCst), 0);
     assert!(rig.fake.seen().is_empty());

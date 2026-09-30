@@ -118,6 +118,22 @@ fn a_cancellation_takes_attendees_from_the_mail() {
 }
 
 #[test]
+fn addresses_from_the_mail_cannot_add_lines() {
+    let tnef = fixtures::simple("IPM.Schedule.Meeting.Canceled", fixtures::organizer_props("Abgesagt"));
+    let options = IcsOptions {
+        now: 0,
+        to: vec![
+            person("Nyu", "nyu@example.com\r\nATTENDEE:mailto:extra@example.com"),
+            person("Ami", "ami@example.com"),
+        ],
+        ..Default::default()
+    };
+    let lines = ical(&tnef, &options);
+    has(&lines, "ATTENDEE;CN=\"Ami\";ROLE=REQ-PARTICIPANT:mailto:ami@example.com");
+    assert!(!lines.iter().any(|l| l.contains("extra@") || l.contains("nyu@")), "{}", lines.join("\n"));
+}
+
+#[test]
 fn all_day_and_single_instances() {
     // Midnight in Berlin is 23:00 UTC the day before in winter.
     let midnight = START - 10 * 3600;

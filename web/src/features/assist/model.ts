@@ -6,6 +6,19 @@
 
 export const FEATURES = ["compose", "summarize", "spamCheck", "extractEvents", "autoLabels"] as const;
 export type Feature = (typeof FEATURES)[number];
+/** What a provider's `features` name when it may serve mail of the person's other accounts. */
+export const FOREIGN_MAIL = "foreignMail" as const;
+/** What a provider may be used for: the features, and mail of other accounts. */
+export type ProviderFeature = Feature | typeof FOREIGN_MAIL;
+
+/**
+ * The features a provider's summary names: `"all"` when it has every one, otherwise those it has, in
+ * their usual order. Mail of other accounts is a switch of its own, not one of them.
+ */
+export function listedFeatures(features: readonly ProviderFeature[]): "all" | Feature[] {
+  const listed = FEATURES.filter((feature) => features.includes(feature));
+  return listed.length === FEATURES.length ? "all" : listed;
+}
 
 export type ProviderKind =
   "openai" | "anthropic" | "gemini" | "mistral" | "openrouter" | "ollama" | "openaiCompatible" | "chatgpt";
@@ -95,6 +108,8 @@ export interface AssistPolicy {
   features: Record<Feature, boolean>;
   allowPersonal: boolean;
   allowPersonalPrivate: boolean;
+  /** "AI for mail from other accounts" (docs/jmap-assist.md, "Foreign mail"); off by default. */
+  foreignMail?: boolean;
 }
 
 export interface AdminProvider {
@@ -110,7 +125,7 @@ export interface AdminProvider {
   access: Access;
   domains: string[];
   people: string[];
-  features: Feature[];
+  features: ProviderFeature[];
   requestsPerDay: number | null;
   tokensPerDay: number | null;
   /** US dollars per million tokens set by hand; null: from the price lists. */
@@ -148,7 +163,7 @@ export interface AssistProvider {
   keyHint: string | null;
   model: string | null;
   fastModel: string | null;
-  features: Feature[];
+  features: ProviderFeature[];
   quota: Quota | null;
   experimental: boolean;
   /** ChatGPT: signed in. Others: a key is stored or none is needed. */
@@ -164,6 +179,8 @@ export interface AssistSettings {
   default: Choice | null;
   features: Record<Feature, Choice | null>;
   autoLabels: boolean;
+  /** Labels put on by their rules, detector, learned senders and classifier, without a model. */
+  nonAiLabels?: boolean;
   refineEvents: boolean;
   /** The synced user setting `assist.currency`, for someone reading in English. */
   currency?: "EUR" | "USD" | null;
@@ -181,8 +198,28 @@ export interface TodayUsage {
   cost?: Cost | null;
 }
 
+/** One of the person's labels, as the account page lists it. */
+export interface LabelSummary {
+  id: number;
+  name: string;
+  color: string | null;
+  detector: string | null;
+  hasRules: boolean;
+  learnSenders: boolean;
+  classifier: boolean;
+  totalEmails: number;
+  unreadEmails: number;
+  /** Mails the classifier learned with the label; it acts from 15 on. */
+  examples: number;
+}
+
+/** Examples a label's classifier needs before it puts the label on by itself (docs/labels.md). */
+export const CLASSIFIER_MIN_EXAMPLES = 15;
+
 export interface AccountAssistView {
   features: Record<Feature, boolean>;
+  /** The assistant may be used for mail of the person's other accounts in the UwUMail app. */
+  foreignMail?: boolean;
   mayAddProviders: boolean;
   mayUsePrivateAddresses: boolean;
   maxProviders: number;
@@ -191,6 +228,7 @@ export interface AccountAssistView {
   today: TodayUsage[];
   kinds: KindInfo[];
   labels: number;
+  labelList?: LabelSummary[];
 }
 
 export interface UsageRow {
@@ -341,7 +379,7 @@ export interface ProviderDraft {
   access: Access;
   domains: string[];
   people: string[];
-  features: Feature[];
+  features: ProviderFeature[];
   requestsPerDay: string;
   tokensPerDay: string;
   /** US dollars per million tokens; empty: from the price lists. */
@@ -381,7 +419,7 @@ export function emptyDraft(kind: KindInfo | undefined): ProviderDraft {
     access: "everyone",
     domains: [],
     people: [],
-    features: [...FEATURES],
+    features: [...FEATURES, FOREIGN_MAIL],
     requestsPerDay: "",
     tokensPerDay: "",
     inputPrice: "",
@@ -487,7 +525,7 @@ export function validateDraft(
   if (context.admin) {
     if (draft.access === "domains" && draft.domains.length === 0) errors.access = "domainsRequired";
     if (draft.access === "people" && draft.people.length === 0) errors.access = "peopleRequired";
-    if (draft.features.length === 0) errors.features = "featuresRequired";
+    if (!draft.features.some((feature) => feature !== FOREIGN_MAIL)) errors.features = "featuresRequired";
     if (parseLimit(draft.requestsPerDay) === "invalid") errors.requestsPerDay = "limitInvalid";
     if (parseLimit(draft.tokensPerDay) === "invalid") errors.tokensPerDay = "limitInvalid";
   }
@@ -532,7 +570,7 @@ export function providerBody(
       domains: draft.access === "domains" ? draft.domains : [],
       people: draft.access === "people" ? draft.people : [],
       // In the order the features are always listed, whatever order they were ticked in.
-      features: FEATURES.filter((feature) => draft.features.includes(feature)),
+      features: [...FEATURES, FOREIGN_MAIL].filter((feature) => draft.features.includes(feature)),
       requestsPerDay: requests === "invalid" ? null : requests,
       tokensPerDay: tokens === "invalid" ? null : tokens,
     });

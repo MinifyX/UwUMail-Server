@@ -11,6 +11,7 @@ rust-version.workspace = true
 uwumail-assist.workspace = true
 uwumail-smtp.workspace = true
 uwumail-store.workspace = true
+uwumail-labels.workspace = true
 
 ammonia.workspace = true
 # Web Push: message encryption (RFC 8291) and the server's VAPID signature (RFC 8292).

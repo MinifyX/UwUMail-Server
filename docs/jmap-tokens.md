@@ -153,4 +153,10 @@ The data types are those of the EventSource: `Mailbox`, `Email`,
 `ParticipantIdentity`, `AddressBook`, `ContactCard`, `SieveScript`, and
 `CalendarAlert`, which pushes `{"@type": "CalendarAlert", …}` when an alert
 goes off ([jmap-calendars.md](jmap-calendars.md#alerts)). A single message may be as large as
-`maxSizeRequest` (10 MB).
+`maxSizeRequest` (10 MB). A credential without `dav` hears nothing of calendars and address books
+(`Calendar`, `CalendarEvent`, `CalendarEventNotification`, `ParticipantIdentity`, `AddressBook`,
+`ContactCard`, `CalendarAlert`), over the WebSocket as over the EventSource, as their methods do not
+answer it either.
+
+An account may have at most 32 EventSource streams and WebSockets open together; one more is
+answered with `429` and `{"type": "urn:ietf:params:jmap:error:limit", "limit": "maxPushConnections"}`.

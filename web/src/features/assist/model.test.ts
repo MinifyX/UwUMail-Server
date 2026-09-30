@@ -7,12 +7,15 @@ import {
   currencyFor,
   draftOf,
   emptyDraft,
+  FEATURES,
+  FOREIGN_MAIL,
   formatCost,
   loginReducer,
   normalizeChip,
   parseLimit,
   parsePrice,
   hasThinking,
+  listedFeatures,
   MAX_PRICE_PER_REQUEST,
   pollSeconds,
   providerBody,
@@ -138,6 +141,24 @@ describe("the provider form", () => {
       requestsPerDay: "limitInvalid",
     });
     expect(validateDraft({ ...draft, access: "people" }, OLLAMA, { hasKey: false, admin: false })).toEqual({});
+  });
+
+  it("counts mail of other accounts as no feature of its own", () => {
+    const draft = emptyDraft(OLLAMA);
+    expect(draft.features).toContain(FOREIGN_MAIL);
+    const foreignOnly = { ...draft, features: [FOREIGN_MAIL] };
+    expect(validateDraft(foreignOnly, OLLAMA, { hasKey: false, admin: true })).toEqual({
+      features: "featuresRequired",
+    });
+    const picked = { ...draft, features: [FOREIGN_MAIL, "summarize" as const] };
+    expect(providerBody(picked, OLLAMA, { create: true, admin: true }).features).toEqual(["summarize", FOREIGN_MAIL]);
+  });
+
+  it("summarizes a provider's features without the switch for other accounts", () => {
+    // A provider migrated to 0.21 has every feature plus foreignMail: still "all features".
+    expect(listedFeatures([...FEATURES, FOREIGN_MAIL])).toBe("all");
+    expect(listedFeatures([...FEATURES])).toBe("all");
+    expect(listedFeatures([FOREIGN_MAIL, "autoLabels", "summarize"])).toEqual(["summarize", "autoLabels"]);
   });
 
   it("finds logins in addresses", () => {

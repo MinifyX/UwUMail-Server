@@ -104,10 +104,12 @@ pub(crate) fn become_service(tx: &Connection, account: &Account, granted: &mut G
 /// - fetched mailboxes and moves from another provider go, with the passwords for them;
 /// - subscribed calendars stop updating (the calendars stay);
 /// - the active Sieve script is switched off;
-/// - masked addresses are switched off: they stay the account's and can be switched on again.
+/// - masked addresses are switched off: they stay the account's and can be switched on again;
+/// - the person's own AI providers go, and the model stops labelling (security audit 0.21.0).
 ///
 /// Send-as domains stay: an admin gives those to the account, not the person.
 fn stop_personal_mail_setup(tx: &Connection, account_id: i64, granted: &mut Granted) -> Result<()> {
+    crate::assist::stop_personal_assist(tx, account_id)?;
     tx.execute("DELETE FROM forward_targets WHERE account_id = ?1", [account_id])?;
     tx.execute("UPDATE accounts SET forward_keep_copy = 1 WHERE id = ?1", [account_id])?;
     tx.execute("DELETE FROM fetch_accounts WHERE account_id = ?1", [account_id])?;
@@ -406,6 +408,8 @@ impl Store {
             keep_an_admin(tx, &account, false)?;
             let at = now();
             tx.execute("UPDATE accounts SET deleted_at = ?1 WHERE id = ?2", params![at, account.id])?;
+            // Folders a person in the trash shared are no longer shared, and are again on restore.
+            crate::acl::note_sharing_changed();
             tx.execute("DELETE FROM web_sessions WHERE account_id = ?1", [account.id])?;
             crate::held::cancel_held(tx, account.id, HeldBy::Anyone, crate::held::NOT_SENT_DISABLED)?;
             tx.execute("DELETE FROM password_links WHERE account_id = ?1", [account.id])?;
@@ -428,6 +432,7 @@ impl Store {
             let domain = login.rsplit_once('@').map(|(_, domain)| domain).unwrap_or_default();
             crate::masked_domains::ensure_mail_domain(tx, crate::directory::domain_id(tx, domain)?)?;
             tx.execute("UPDATE accounts SET deleted_at = NULL WHERE id = ?1", [account.id])?;
+            crate::acl::note_sharing_changed();
             account.deleted_at = None;
             Ok(account)
         })

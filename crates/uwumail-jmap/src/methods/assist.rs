@@ -7,10 +7,12 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value, json};
 use tokio::sync::mpsc;
 use uwumail_assist::{
-    Assist, AssistError, Choice, ComposeArgs, Effective, EstimateArgs, EstimateCost, EventsArgs, ProviderInput,
-    ProviderView, SettingsPatch, SettingsView, SpamArgs, StreamEvent, SummarizeArgs, TodayUsage, Usage,
+    Assist, AssistError, Choice, ComposeArgs, Effective, EstimateArgs, EstimateCost, EventsArgs, ForeignMail,
+    ProviderInput, ProviderView, SettingsPatch, SettingsView, SpamArgs, StreamEvent, SuggestArgs, SummarizeArgs,
+    TodayUsage, Usage,
 };
-use uwumail_store::{Account, AssistLabel, StoreError};
+use uwumail_labels::{Detector, Rules};
+use uwumail_store::{Account, AssistLabel, AssistLabelWrite, LabelCounts, StoreError};
 
 use super::{Ctx, SetResponse, get_ids, if_in_state};
 use crate::error::{MethodError, MethodResult, SetError};
@@ -206,17 +208,25 @@ fn settings_json(view: &SettingsView) -> Value {
         "default": choice_json(&view.default),
         "features": features,
         "autoLabels": view.auto_labels,
+        "nonAiLabels": view.non_ai_labels,
         "effective": effective,
     })
 }
 
-fn label_json(label: &AssistLabel) -> Value {
+fn label_json(label: &AssistLabel, counts: LabelCounts) -> Value {
     json!({
         "id": label_id(label.id),
         "name": label.name,
         "description": label.description,
         "keyword": label.keyword,
         "color": label.color,
+        "rules": label.rules,
+        "detector": label.detector,
+        "learnSenders": label.learn_senders,
+        "classifier": label.classifier,
+        "totalEmails": counts.total,
+        "unreadEmails": counts.unread,
+        "examples": counts.examples,
     })
 }
 
@@ -458,6 +468,12 @@ fn settings_patch(ctx: &Ctx<'_>, patch: &Map<String, Value>) -> Result<SettingsP
                         .ok_or_else(|| SetError::invalid_properties(&["autoLabels"], "autoLabels is true or false"))?,
                 )
             }
+            "nonAiLabels" => {
+                out.non_ai_labels =
+                    Some(value.as_bool().ok_or_else(|| {
+                        SetError::invalid_properties(&["nonAiLabels"], "nonAiLabels is true or false")
+                    })?)
+            }
             "features" => {
                 let object = value
                     .as_object()
@@ -532,8 +548,26 @@ pub async fn settings_set(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     Ok(response.finish(ctx.account_id(), old_state, new_state))
 }
 
+/// `foreignMails`, `count` of them, when given: then `instead` (the mail ids the call takes
+/// otherwise) must not be.
+fn foreign_arg(
+    args: &Value,
+    count: std::ops::RangeInclusive<usize>,
+    instead: &[&str],
+) -> MethodResult<Vec<ForeignMail>> {
+    let value = match args.get("foreignMails") {
+        None | Some(Value::Null) => return Ok(Vec::new()),
+        Some(value) => value,
+    };
+    if let Some(key) = instead.iter().find(|key| args.get(**key).is_some_and(|v| !v.is_null())) {
+        return Err(MethodError::invalid_arguments(format!("give either {key} or foreignMails")));
+    }
+    uwumail_assist::foreign_mails(value, count).map_err(method_error)
+}
+
 fn compose_args(ctx: &Ctx<'_>, args: &Value) -> MethodResult<ComposeArgs> {
     let text = |key: &str| arg_str(args, key).map(|value| value.map(str::to_owned));
+    let foreign_mails = foreign_arg(args, 1..=1, &["replyToEmailId"])?;
     Ok(ComposeArgs {
         mode: text("mode")?.ok_or_else(|| MethodError::invalid_arguments("mode is required"))?,
         instruction: text("instruction")?,
@@ -544,14 +578,17 @@ fn compose_args(ctx: &Ctx<'_>, args: &Value) -> MethodResult<ComposeArgs> {
         reply_to_email_id: arg_id(ctx, args, "replyToEmailId", 'e')?,
         want_subject: args.get("wantSubject").and_then(Value::as_bool).unwrap_or(false),
         language: text("language")?,
+        foreign_mails,
     })
 }
 
 fn summarize_args(ctx: &Ctx<'_>, args: &Value) -> MethodResult<SummarizeArgs> {
+    let foreign_mails = foreign_arg(args, 1..=uwumail_assist::foreign::MAX_FOREIGN_MAILS, &["emailId", "threadId"])?;
     Ok(SummarizeArgs {
         email_id: arg_id(ctx, args, "emailId", 'e')?,
         thread_id: arg_id(ctx, args, "threadId", 't')?,
         language: arg_str(args, "language")?.map(str::to_owned),
+        foreign_mails,
     })
 }
 
@@ -614,26 +651,56 @@ pub fn stream_call(ctx: &Ctx<'_>, method: &str, args: &Value) -> MethodResult<St
     }
 }
 
+/// The `emailId` of a call about one mail, or its one foreign mail (then the id is 0).
+fn one_mail(ctx: &Ctx<'_>, args: &Value) -> MethodResult<(i64, Vec<ForeignMail>)> {
+    let foreign_mails = foreign_arg(args, 1..=1, &["emailId"])?;
+    let email_id = if foreign_mails.is_empty() { required_id(ctx, args, "emailId", 'e')? } else { 0 };
+    Ok((email_id, foreign_mails))
+}
+
+/// `emailId` of an answer: `null` for a foreign mail.
+fn answered_email(email_id: i64, foreign: bool) -> Value {
+    if foreign { Value::Null } else { json!(ids::email(email_id)) }
+}
+
 fn spam_args(ctx: &Ctx<'_>, args: &Value) -> MethodResult<SpamArgs> {
-    let email_id = required_id(ctx, args, "emailId", 'e')?;
+    let (email_id, foreign_mails) = one_mail(ctx, args)?;
     let language = arg_str(args, "language")?.map(str::to_owned);
-    Ok(SpamArgs { email_id, language })
+    Ok(SpamArgs { email_id, language, foreign_mails })
 }
 
 fn events_args(ctx: &Ctx<'_>, args: &Value) -> MethodResult<EventsArgs> {
-    let email_id = required_id(ctx, args, "emailId", 'e')?;
+    let (email_id, foreign_mails) = one_mail(ctx, args)?;
     let include_images = args.get("includeImages").and_then(Value::as_bool).unwrap_or(false);
-    Ok(EventsArgs { email_id, include_images })
+    Ok(EventsArgs { email_id, include_images, foreign_mails })
+}
+
+fn suggest_args(ctx: &Ctx<'_>, args: &Value) -> MethodResult<SuggestArgs> {
+    let (email_id, foreign_mails) = one_mail(ctx, args)?;
+    let foreign_labels = match args.get("foreignLabels") {
+        None | Some(Value::Null) => Vec::new(),
+        Some(_) if foreign_mails.is_empty() => {
+            return Err(MethodError::invalid_arguments("foreignLabels go with foreignMails"));
+        }
+        Some(value) => uwumail_assist::foreign_labels(value).map_err(method_error)?,
+    };
+    let suggest_new = match args.get("suggestNew") {
+        None | Some(Value::Null) => true,
+        Some(Value::Bool(on)) => *on,
+        Some(_) => return Err(MethodError::invalid_arguments("suggestNew is true or false")),
+    };
+    let language = arg_str(args, "language")?.map(str::to_owned);
+    Ok(SuggestArgs { email_id, suggest_new, language, foreign_mails, foreign_labels })
 }
 
 pub async fn spam_check(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let assist = assist(ctx)?;
     let args = spam_args(ctx, args)?;
-    let email_id = args.email_id;
+    let email_id = answered_email(args.email_id, !args.foreign_mails.is_empty());
     let result = assist.spam_check(&ctx.account, args).await.map_err(method_error)?;
     let mut out = Map::new();
     out.insert("accountId".into(), json!(ctx.account_id()));
-    out.insert("emailId".into(), json!(ids::email(email_id)));
+    out.insert("emailId".into(), email_id);
     out.insert("verdict".into(), json!(result.verdict));
     out.insert("confidence".into(), json!(result.confidence));
     out.insert("reasons".into(), json!(result.reasons));
@@ -646,11 +713,11 @@ pub async fn spam_check(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
 pub async fn extract_events(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let assist = assist(ctx)?;
     let args = events_args(ctx, args)?;
-    let email_id = args.email_id;
+    let email_id = answered_email(args.email_id, !args.foreign_mails.is_empty());
     let result = assist.extract_events(&ctx.account, args).await.map_err(method_error)?;
     let mut out = Map::new();
     out.insert("accountId".into(), json!(ctx.account_id()));
-    out.insert("emailId".into(), json!(ids::email(email_id)));
+    out.insert("emailId".into(), email_id);
     out.insert("events".into(), json!(result.events));
     Ok(with_source(out, &result.effective, &result.usage))
 }
@@ -676,10 +743,11 @@ pub async fn estimate(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         "Assist/summarize" => EstimateArgs::Summarize(summarize_args(ctx, &arguments)?),
         "Assist/spamCheck" => EstimateArgs::SpamCheck(spam_args(ctx, &arguments)?),
         "Assist/extractEvents" => EstimateArgs::ExtractEvents(events_args(ctx, &arguments)?),
+        "AssistLabel/suggest" => EstimateArgs::Suggest(suggest_args(ctx, &arguments)?),
         other => {
             return Err(MethodError::invalid_arguments(format!(
-                "{other} can't be estimated; method is Assist/compose, Assist/summarize, Assist/spamCheck or \
-Assist/extractEvents"
+                "{other} can't be estimated; method is Assist/compose, Assist/summarize, Assist/spamCheck, \
+Assist/extractEvents or AssistLabel/suggest"
             )));
         }
     };
@@ -738,20 +806,35 @@ pub async fn usage(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     Ok(json!({ "accountId": ctx.account_id(), "days": days, "today": today }))
 }
 
+async fn label_state(ctx: &Ctx<'_>) -> MethodResult<String> {
+    Ok(ctx.jmap.store.assist_label_state(ctx.account.id).await?)
+}
+
 pub async fn label_get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     assist(ctx)?;
-    let state = state(ctx).await?;
+    let state = label_state(ctx).await?;
     let labels = ctx.jmap.store.assist_labels(ctx.account.id).await?;
-    let all = labels.iter().map(|label| (label_id(label.id), label_json(label))).collect();
+    let counts = ctx.jmap.store.label_counts(ctx.account.id).await?;
+    let all = labels
+        .iter()
+        .map(|label| (label_id(label.id), label_json(label, counts.get(&label.id).copied().unwrap_or_default())))
+        .collect();
     get_answer(ctx, args, state, all)
 }
 
-/// Name, description and color of a label, on top of `before`.
-fn label_fields(patch: &Value, before: Option<&AssistLabel>) -> Result<(String, String, Option<String>), SetError> {
+fn boolean(value: &Value, property: &str) -> Result<bool, SetError> {
+    value.as_bool().ok_or_else(|| SetError::invalid_properties(&[property], format!("{property} is true or false")))
+}
+
+/// A label as written, from `patch` on top of `before` (with its `counts`, which may be sent back
+/// unchanged).
+fn label_fields(patch: &Value, before: Option<(&AssistLabel, LabelCounts)>) -> Result<AssistLabelWrite, SetError> {
     let object = patch.as_object().ok_or_else(|| SetError::new("invalidPatch", "a label is an object"))?;
-    let mut name = before.map(|b| b.name.clone());
-    let mut description = before.map(|b| b.description.clone()).unwrap_or_default();
-    let mut color = before.and_then(|b| b.color.clone());
+    let mut name = before.map(|(b, _)| b.name.clone());
+    let mut write = match before {
+        Some((before, _)) => AssistLabelWrite::of(before),
+        None => AssistLabelWrite::simple(String::new(), String::new(), None),
+    };
     for (key, value) in object {
         match key.as_str() {
             "name" => {
@@ -763,28 +846,50 @@ fn label_fields(patch: &Value, before: Option<&AssistLabel>) -> Result<(String, 
                 )
             }
             "description" => {
-                description = match value {
+                write.description = match value {
                     Value::Null => String::new(),
                     Value::String(text) => text.clone(),
                     _ => return Err(SetError::invalid_properties(&["description"], "description is a string")),
                 }
             }
             "color" => {
-                color = match value {
+                write.color = match value {
                     Value::Null => None,
                     Value::String(text) => Some(text.to_ascii_lowercase()),
                     _ => return Err(SetError::invalid_properties(&["color"], "color is #rrggbb or null")),
                 }
             }
+            "rules" => {
+                write.rules = Rules::check(value)
+                    .map_err(|why| SetError::invalid_properties(&["rules"], why))?
+                    .map(|rules| rules.to_json())
+            }
+            "detector" => {
+                write.detector = match value {
+                    Value::Null => None,
+                    Value::String(name) if Detector::parse(name).is_some() => Some(name.clone()),
+                    _ => {
+                        return Err(SetError::invalid_properties(
+                            &["detector"],
+                            "detector is invoice, appointment, newsletter, shipping or null",
+                        ));
+                    }
+                }
+            }
+            "learnSenders" => write.learn_senders = boolean(value, "learnSenders")?,
+            "classifier" => write.classifier = boolean(value, "classifier")?,
             "id" if before.is_some() => {}
-            "keyword" if before.is_some_and(|b| value.as_str() == Some(b.keyword.as_str())) => {}
+            "keyword" if before.is_some_and(|(b, _)| value.as_str() == Some(b.keyword.as_str())) => {}
+            "totalEmails" if before.is_some_and(|(_, c)| value.as_i64() == Some(c.total)) => {}
+            "unreadEmails" if before.is_some_and(|(_, c)| value.as_i64() == Some(c.unread)) => {}
+            "examples" if before.is_some_and(|(_, c)| value.as_i64() == Some(c.examples)) => {}
             other => {
                 return Err(SetError::invalid_properties(&[other], format!("{other} can't be set")));
             }
         }
     }
-    let name = name.ok_or_else(|| SetError::invalid_properties(&["name"], "a label needs a name"))?;
-    Ok((name, description, color))
+    write.name = name.ok_or_else(|| SetError::invalid_properties(&["name"], "a label needs a name"))?;
+    Ok(write)
 }
 
 fn label_store_error(err: StoreError) -> SetError {
@@ -798,7 +903,7 @@ fn label_store_error(err: StoreError) -> SetError {
 
 pub async fn label_set(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let assist = assist(ctx)?;
-    let old_state = state(ctx).await?;
+    let old_state = label_state(ctx).await?;
     if_in_state(args, &old_state)?;
     let store = &ctx.jmap.store;
     let account = &ctx.account;
@@ -806,9 +911,7 @@ pub async fn label_set(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     if let Some(create) = args.get("create").and_then(Value::as_object) {
         for (creation_id, object) in create {
             let result = match label_fields(object, None) {
-                Ok((name, description, color)) => {
-                    store.create_assist_label(account.id, name, description, color).await.map_err(label_store_error)
-                }
+                Ok(write) => store.create_assist_label_with(account.id, write).await.map_err(label_store_error),
                 Err(err) => Err(err),
             };
             match result {
@@ -825,17 +928,21 @@ pub async fn label_set(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     }
     if let Some(update) = args.get("update").and_then(Value::as_object) {
         let labels = store.assist_labels(account.id).await?;
+        let counts = store.label_counts(account.id).await?;
         for (id, patch) in update {
             let before = ctx.parse_id('g', id).and_then(|id| labels.iter().find(|label| label.id == id));
             let result = match before {
                 None => Err(SetError::not_found()),
-                Some(before) => match label_fields(patch, Some(before)) {
-                    Ok((name, description, color)) => store
-                        .update_assist_label(account.id, before.id, name, description, color)
-                        .await
-                        .map_err(label_store_error),
-                    Err(err) => Err(err),
-                },
+                Some(before) => {
+                    let count = counts.get(&before.id).copied().unwrap_or_default();
+                    match label_fields(patch, Some((before, count))) {
+                        Ok(write) => store
+                            .update_assist_label_with(account.id, before.id, write)
+                            .await
+                            .map_err(label_store_error),
+                        Err(err) => Err(err),
+                    }
+                }
             };
             match result {
                 Ok(_) => {
@@ -861,7 +968,7 @@ pub async fn label_set(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
             }
         }
     }
-    let new_state = state(ctx).await?;
+    let new_state = label_state(ctx).await?;
     Ok(response.finish(ctx.account_id(), old_state, new_state))
 }
 
@@ -907,9 +1014,12 @@ pub async fn label_log(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
                 "labelId": label_id(entry.label_id),
                 "name": entry.name,
                 "keyword": entry.keyword,
+                "source": entry.source,
                 "reason": entry.reason,
-                "providerName": entry.provider,
-                "model": entry.model,
+                "code": entry.code,
+                "params": entry.params,
+                "providerName": Some(&entry.provider).filter(|name| !name.is_empty()),
+                "model": Some(&entry.model).filter(|model| !model.is_empty()),
                 "createdAt": dates::format(entry.created_at),
                 "undone": entry.undone,
             })
@@ -949,4 +1059,31 @@ pub async fn label_apply(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
         }
     }
     Ok(json!({ "accountId": ctx.account_id(), "labeled": labeled, "notFound": not_found }))
+}
+
+/// `AssistLabel/suggest`: what the model says of every label for one mail; changes nothing.
+pub async fn label_suggest(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
+    let assist = assist(ctx)?;
+    let args = suggest_args(ctx, args)?;
+    let email_id = answered_email(args.email_id, !args.foreign_mails.is_empty());
+    let result = assist.suggest_labels(&ctx.account, args).await.map_err(method_error)?;
+    let verdicts: Vec<Value> = result
+        .verdicts
+        .iter()
+        .map(|verdict| {
+            json!({
+                "labelId": verdict.label_id.map(label_id),
+                "name": verdict.name,
+                "reason": verdict.reason,
+                "fits": verdict.fits,
+                "isSet": verdict.is_set,
+            })
+        })
+        .collect();
+    let mut out = Map::new();
+    out.insert("accountId".into(), json!(ctx.account_id()));
+    out.insert("emailId".into(), email_id);
+    out.insert("verdicts".into(), json!(verdicts));
+    out.insert("newLabels".into(), json!(result.new_labels));
+    Ok(with_source(out, &result.effective, &result.usage))
 }

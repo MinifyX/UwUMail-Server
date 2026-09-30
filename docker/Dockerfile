@@ -69,23 +69,18 @@ RUN apt-get update \
     done \
  && /ocr/usr/bin/tesseract --list-langs
 
-# Prepare the binary on Debian, which still has the tools distroless does not: set the file
-# capability that lets the unprivileged user bind the low mail and web ports, and create /data
-# owned by the runtime user.
+# Prepare the binary on Debian, which still has the tools distroless does not: make it executable
+# and create /data owned by the runtime user. The binary carries no file capability: the compose
+# files open the low ports to every user of the container's network instead, so the container
+# can drop every capability and run with no-new-privileges (which refuses file capabilities).
 FROM debian:trixie-slim AS prep
-RUN apt-get update \
- && apt-get install -y --no-install-recommends libcap2-bin \
- && rm -rf /var/lib/apt/lists/*
 COPY --from=build /usr/local/bin/uwumail-server /usr/local/bin/uwumail-server
 RUN chmod 755 /usr/local/bin/uwumail-server \
- && setcap cap_net_bind_service=+ep /usr/local/bin/uwumail-server \
  && install -d -o 10001 -g 10001 /data
 
 # The runtime is distroless: glibc, ca-certificates and tzdata, but no shell and no package
 # manager, so a break-in has almost nothing to build on. Pinned by digest; cc-debian13 is trixie,
-# so its glibc matches the binary. The file capability survives the plain COPY (a --chown would
-# clear it) and lets the unprivileged user bind the low ports; the compose files keep only
-# NET_BIND_SERVICE for it and drop every other capability.
+# so its glibc matches the binary.
 FROM gcr.io/distroless/cc-debian13@sha256:4594d59540d1948417f6ca2829ddd9294493a7c68b7528f4dd459de7f203a750
 COPY --from=prep /usr/local/bin/uwumail-server /usr/local/bin/uwumail-server
 COPY --from=prep --chown=10001:10001 /data /data

@@ -4,6 +4,7 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uwumail_store::{AppScope, NewAppPassword, SecurityEvent, Store, StoreError};
@@ -269,10 +270,14 @@ pub async fn revoke_app_password(
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn end_session(State(web): State<Web>, session: Session, Path(id): Path<String>) -> ApiResult<StatusCode> {
+pub async fn end_session(State(web): State<Web>, session: Session, Path(id): Path<String>) -> ApiResult<Response> {
     web.store().end_web_session(session.account.id, &id).await?;
     event(&web, &session, "sessionEnded", json!({})).await;
-    Ok(StatusCode::NO_CONTENT)
+    // Ending the login in use is a logout, and leaves as little behind in this browser as one.
+    if id.eq_ignore_ascii_case(&Store::web_session_id(&session.token)) {
+        return Ok(super::auth::signed_out(session.client));
+    }
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 pub async fn end_other_sessions(State(web): State<Web>, session: Session) -> ApiResult<Json<Value>> {

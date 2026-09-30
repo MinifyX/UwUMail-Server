@@ -488,7 +488,9 @@ impl WebPush {
         let Ok(targets) = store.push_targets(vec![alert.account_id]).await else { return };
         let body = crate::calendar_alerts::alert_json(alert);
         for target in targets {
-            if target.types.as_ref().is_some_and(|types| !types.iter().any(|t| t == "CalendarAlert")) {
+            if !target.may_use_dav
+                || target.types.as_ref().is_some_and(|types| !types.iter().any(|t| t == "CalendarAlert"))
+            {
                 continue;
             }
             let (push, body) = (self.clone(), body.clone());
@@ -523,19 +525,21 @@ impl WebPush {
     }
 }
 
-/// The part of a StateChange a subscription asked for with its `types`.
+/// The part of a StateChange a subscription asked for with its `types`, and its login may know
+/// of: calendars and address books only with the `dav` scope.
 fn wanted_by(target: &PushTarget, changed: &Map<String, Value>) -> Map<String, Value> {
-    let Some(types) = &target.types else {
+    if target.types.is_none() && target.may_use_dav {
         return changed.clone();
+    }
+    let wanted = |kind: &str| {
+        target.types.as_ref().is_none_or(|types| types.iter().any(|t| t == kind))
+            && (target.may_use_dav || !crate::methods::DAV_TYPES.contains(&kind))
     };
     let mut out = Map::new();
     for (account, states) in changed {
         let Some(states) = states.as_object() else { continue };
-        let kept: Map<String, Value> = states
-            .iter()
-            .filter(|(kind, _)| types.iter().any(|t| t == *kind))
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let kept: Map<String, Value> =
+            states.iter().filter(|(kind, _)| wanted(kind)).map(|(k, v)| (k.clone(), v.clone())).collect();
         if !kept.is_empty() {
             out.insert(account.clone(), Value::Object(kept));
         }
@@ -568,6 +572,7 @@ mod tests {
             keys: None,
             types: types.map(|types| types.into_iter().map(str::to_owned).collect()),
             verification_code: String::new(),
+            may_use_dav: true,
         }
     }
 
@@ -598,6 +603,21 @@ mod tests {
         let only_mail = wanted_by(&target(Some(vec!["Email"])), &changed);
         assert_eq!(Value::Object(only_mail), json!({ "a1": { "Email": "5" } }));
         assert!(wanted_by(&target(Some(vec!["CalendarEvent"])), &changed).is_empty());
+    }
+
+    /// A subscription made with an app password or OAuth app without `dav` hears nothing of
+    /// calendars and address books, whatever types it asked for.
+    #[test]
+    fn subscriptions_without_dav_get_no_calendars() {
+        let Value::Object(changed) = json!({ "a1": { "Email": "5", "CalendarEvent": "5", "ContactCard": "5" } }) else {
+            unreachable!()
+        };
+        let mail_only = |types| PushTarget { may_use_dav: false, ..target(types) };
+        assert_eq!(Value::Object(wanted_by(&mail_only(None), &changed)), json!({ "a1": { "Email": "5" } }));
+        let asked = mail_only(Some(vec!["CalendarEvent", "Email"]));
+        assert_eq!(Value::Object(wanted_by(&asked, &changed)), json!({ "a1": { "Email": "5" } }));
+        assert!(wanted_by(&mail_only(Some(vec!["ContactCard"])), &changed).is_empty());
+        assert_eq!(wanted_by(&target(None), &changed), changed);
     }
 
     #[test]

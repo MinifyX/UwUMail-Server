@@ -3,6 +3,93 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.21.0
+
+**Labels** ([docs/labels.md](docs/labels.md), [docs/jmap-assist.md](docs/jmap-assist.md#labels)):
+
+- **Labels work without AI.** Creating, editing and filtering labels needs no AI provider any more,
+  and new mail gets labels by itself without one, during delivery and before the person's Sieve
+  rules: by a label's own **conditions** (sender, subject, text, attachment; up to 10, all or any),
+  by built-in **detectors** for invoices, appointments, newsletters and shipping notices (German and
+  English, made to rather miss one than label wrongly), by **senders** the person gave the label by
+  hand twice, and by each label's **classifier**, which learns from the person's own labeling and
+  acts once it has 15 examples and is at least 99 % sure. On by default; *Labels without AI* in
+  the assistant's settings switches it off. The method is documented step by step, so the UwUMail
+  app labels the mail of its other accounts the same way.
+- **Labels learn from you.** Putting a label on or taking it off by hand (webmail, any JMAP app, or
+  an IMAP app's keywords) teaches senders and the classifier; taking one off forgets the sender.
+  What the server or the AI does teaches nothing. *Undo* in the label log counts as taking it off.
+- **The log says why.** Every label put on by itself is logged with where it came from (`rule`,
+  `detector`, `sender`, `classifier` or `ai`) and a reason code with details, so apps can explain it
+  in their own words.
+- **The AI only judges what is left.** It gets only the labels not on the mail yet and never takes
+  one off.
+- **"Label again"** (`AssistLabel/suggest`): the model judges every label for one mail, a reason
+  first, and proposes up to two new labels when none fits. It changes nothing by itself; the token
+  estimate on the button knows it too.
+- **Counts and push.** Labels carry their number of mails and unread mails (mail only in Junk or
+  the Trash does not count) and how many examples the classifier has; they change with the mail and
+  are pushed like folders.
+- **Sieve rules** can set a label (`addflag "<keyword>"`) and test for one: labels put on before the
+  script show up as `X-UwUMail-Label` headers only the script sees; such headers a sender wrote are
+  removed ([docs/sieve.md](docs/sieve.md#labels)).
+- Migration `0065_labels.sql`.
+
+**AI for mail from other accounts** ([docs/jmap-assist.md](docs/jmap-assist.md#foreign-mail)): a new
+policy switch, off by default, lets people use the assistant in the UwUMail app for the mail of
+their other accounts (Exchange, Gmail, IMAP): summaries, spam check, dates, replies and labels. The
+app sends that mail's text along; the server keeps nothing of it but the usage, which counts against
+the same daily limits. Each server provider has an option *Mail from other accounts* (on for
+existing providers; the switch decides).
+
+- **Auto-labels no longer put labels on mail they do not fit.** The model had to name a label
+  before saying why, so small models listed every label and then explained that it did not fit
+  ("not financial transactions"), and the label was set anyway. Now it judges every label with a
+  reason first and then `fits` true or false; only labels that fit are set.
+  Providers that hold the model to the answer's shape (OpenAI, llama.cpp, Ollama …) now also get
+  the keys in that order (they had them sorted, `fits` first) and one verdict per label, so a small
+  model no longer stops after the first label or proposes new labels before judging the old ones.
+
+
+**Webmail 0.21.0** (bundled): sidebar, list and reader can be resized by dragging (per device,
+double-click resets) and the reader fills its pane; labels get their own sidebar section with unread
+counts, filter chips, grouping, `label:` search, a picker on `L`, drag and drop and their own
+settings section; "Label again" in the AI menu; rules can set and test labels. Uploads (attachments,
+rules, profile pictures) work again with every account id.
+
+**Security**: a review of the whole server before this release found three high, eight medium and
+about twenty low issues, all fixed. None reaches another account's mail.
+
+- One incoming mail with a very long subject could keep a worker busy for minutes while labels
+  without a model were decided; a winmail.dat with crafted HTML or deeply nested messages could do
+  the same, or take a lot of memory. Both are linear and bounded now, and run off the server's
+  async workers.
+- `Email/get` and `Email/parse` do each thing once per email (repeated properties and ids no longer
+  multiply the work) and share a 50 MB budget for body values; `Email/import` takes at most 500
+  emails; at most 32 push connections per account, 100 streams per HTTP/2 connection; at most 100
+  keywords per email. Push and Web Push leave calendars and contacts out for apps without the
+  `dav` scope.
+- IMAP and ManageSieve limit connections per client address (50 and 20) and take only small
+  literals before login.
+- Labels: learned senders count only when SPF, DKIM or DMARC vouch for the From address (never with
+  the sender checks switched off); nothing is
+  learned while labels without a model are off, or from someone a folder is shared with (a shared
+  mailbox's members excepted); the learning queue is bounded per account; label counts read only
+  the account's own mail; `X-UwUMail-Label` headers a sender wrote are removed from the stored mail
+  too; a label named like a junk or system mark gets the keyword `label-<name>`. Migration
+  `0066_label_limits.sql`.
+- A person's own AI providers and keys go when their account becomes a shared mailbox or service.
+- No delivery to MX hosts on private addresses (`delivery.allow_private_mx` for LAN-only setups);
+  MTA-STS policies only from public addresses; only Microsoft's own servers raise Microsoft block
+  issues; token counts a provider reports are capped.
+- Portal: a stored LDAP, OIDC, relay or Loki secret is not sent to a changed address without being
+  entered again; VPN files with the private key need the password; signing out clears the
+  browser's site data; downloads never come back as script or HTML.
+- Container: no file capability any more, `no-new-privileges` on; release files and the image carry
+  build provenance, which `install.sh` and `update.sh` check when `gh` is logged in. A kept
+  (hand-edited) `compose.yaml` should swap `cap_add: NET_BIND_SERVICE` for the new `sysctls` and
+  `security_opt` lines ([docs/deployment.md](docs/deployment.md)).
+
 ## 0.20.0
 
 **Mail from Outlook and Exchange** ([docs/winmail-dat.md](docs/winmail-dat.md)):

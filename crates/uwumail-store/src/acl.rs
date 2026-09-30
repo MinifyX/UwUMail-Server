@@ -161,7 +161,25 @@ pub(crate) fn sharing_changed(conn: &Connection, owner_id: i64, modseq: i64) -> 
         "UPDATE accounts SET sharing_modseq = max(sharing_modseq, ?2) WHERE id = ?1",
         params![owner_id, modseq],
     )?;
+    note_sharing_changed();
     Ok(())
+}
+
+/// Notes that the write running on this thread changes whose shares count, without an owner's
+/// state to move: an owner put in the trash or taken out of it.
+pub(crate) fn note_sharing_changed() {
+    SHARING_TOUCHED.set(true);
+}
+
+thread_local! {
+    /// Whether the write running on this thread changed who shares with whom; the store moves
+    /// [`Store::sharing_generation`] on once it is committed.
+    static SHARING_TOUCHED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether the write that just ended on this thread changed sharing, and forgets it.
+pub(crate) fn take_sharing_touched() -> bool {
+    SHARING_TOUCHED.replace(false)
 }
 
 /// The owner's changes after `since` that someone who sees the mailboxes in the JSON array `?2`

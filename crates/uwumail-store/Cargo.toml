@@ -27,6 +27,8 @@ sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+# What labels without a model learn (src/labels.rs).
+uwumail-labels.workspace = true
 # winmail.dat in stored mail (src/tnef.rs).
 uwumail-tnef.workspace = true
 

@@ -19,12 +19,20 @@ for admins and for people setting it up for themselves.
 | Spam check | Reader: "Auf Spam prüfen" | a click; shows the model's verdict next to what the server itself knows, and offers "Spam" / "Kein Spam" |
 | Dates for the calendar | Reader, with the dates the server finds itself | a click ("find appointment", whatever the setting), or on opening a mail when the person switched on `assist.refineEvents` (off by default) |
 | Auto-labels | New mail in the inbox | on delivery, only for people who switched it on |
+| Label again | Reader: the model judges every label for one mail and proposes new ones when none fits (`AssistLabel/suggest`) | a click |
+| Mail of other accounts | The UwUMail app, for its Exchange, Gmail and IMAP accounts | only when the admin allows it ([below](#mail-of-other-accounts)) |
 
 The features started by a click are available as soon as a provider is: the
 person does not have to switch them on. Auto-labels are **opt-in** per person.
 
 Every answer says which provider and model gave it, and the settings show
 per feature what will be used.
+
+**Labels themselves need no AI.** A person's labels, their rules, the built-in
+detectors (invoices, appointments, newsletters, shipping), learned senders and
+each label's classifier work on every server with the assistant, also without
+any provider ([labels.md](labels.md), [jmap-assist.md](jmap-assist.md#labels));
+only the model's part of auto-labels and "Label again" need one.
 
 ## Setting it up (admin)
 
@@ -51,7 +59,9 @@ per feature what will be used.
    - whether people may add **providers of their own** with their own keys
      (off by default), and
    - whether those may point **into the local network** (an Ollama at home;
-     off by default, see [Addresses](#addresses-and-ssrf)).
+     off by default, see [Addresses](#addresses-and-ssrf));
+   - **AI for mail from other accounts** (off by default, see
+     [below](#mail-of-other-accounts)).
 
 Changes are in the change log, without the key.
 
@@ -299,16 +309,36 @@ a starter set: *Rechnungen*, *Newsletter*, *Bestellungen & Versand*, *Reisen*,
 *Termine*, *Persönlich* (in the person's language). A label is a JMAP keyword
 (`rechnungen`, …), so IMAP apps see it as a tag.
 
-When mail is delivered, after the spam filter and the person's rules, and it
-is not in Junk, it is put in a queue. A background worker asks the provider
-chosen for `autoLabels` which labels fit, puts those on, and logs each with the
-reason. Delivery never waits for it. A busy provider (HTTP 429, a timeout) is
+Before the model, labels are put on without one, during delivery and before
+the person's rules (with *Labels without AI* on, the default; see
+[labels.md](labels.md)). When mail is delivered, after the spam filter and the
+person's rules, and it is not in Junk, it is put in a queue. A background
+worker asks the provider chosen for `autoLabels` which of the labels **not yet
+on the mail** fit (a reason for each first, then yes or no), puts those on, and
+logs each with the reason. The model never takes a label off, and what it puts
+on teaches the labels' learning nothing. Delivery never waits for it. A busy provider (HTTP 429, a timeout) is
 tried again after one and after five minutes; after three tries, a wrong key
 or a day in the queue the mail is left without labels. Mail that was moved to
 Junk or the Trash meanwhile is skipped. Each mail counts against the daily
 limit like any other request. The worker takes one mail per person at a time,
 four people side by side, and gives each mail 45 seconds before it tries
 again later; at most 200 mails of one person wait, more keep no labels.
+
+## Mail of other accounts
+
+The UwUMail app can also manage a person's accounts elsewhere (Exchange,
+Gmail, any IMAP). With the policy switch *AI for mail from other accounts* on,
+the app may send the content of such a mail along to summarize it, check it
+for spam, find its dates, answer it or judge its labels
+([jmap-assist.md](jmap-assist.md#foreign-mail)). The server has none of this
+mail and keeps none of it: only the usage is counted, against the same daily
+limits. Each server provider has its own option *Mail from other accounts*
+(on for new providers, and for the providers there were before 0.21, since
+the policy switch decides); the person's own providers may be used for it
+whenever the switch is on. The mail goes to the model exactly like the
+person's own mail, as data between tags, cut to the same size; for the spam
+check the model is told that the authentication results come from the other
+account's provider, and the server knows no history of the sender.
 
 ## Spam check
 

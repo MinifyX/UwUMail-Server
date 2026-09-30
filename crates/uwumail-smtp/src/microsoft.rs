@@ -26,13 +26,6 @@ pub fn is_microsoft_host(host: &str) -> bool {
     MICROSOFT_HOSTS.iter().any(|suffix| host == *suffix || host.ends_with(&format!(".{suffix}")))
 }
 
-/// Whether a greeting comes from one of Microsoft's mail servers: they name themselves first
-/// ("AM4PEPF00027A62.mail.protection.outlook.com Microsoft ESMTP MAIL Service ready"). Exchange
-/// servers of other organisations say "Microsoft ESMTP" too, but not with such a name.
-pub fn is_microsoft_greeting(text: &str) -> bool {
-    text.split_whitespace().next().is_some_and(is_microsoft_host)
-}
-
 /// How bad it is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -249,10 +242,6 @@ mod tests {
         assert!(is_microsoft_host("example-org.mail.protection.office365.us"));
         assert!(!is_microsoft_host("mx.example.org"));
         assert!(!is_microsoft_host("notoutlook.com"));
-        assert!(is_microsoft_greeting(
-            "AM4PEPF00027A62.mail.protection.outlook.com Microsoft ESMTP MAIL Service ready"
-        ));
-        assert!(!is_microsoft_greeting("exchange.example.org Microsoft ESMTP MAIL Service ready"));
     }
 
     #[test]

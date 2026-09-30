@@ -1675,6 +1675,157 @@ if header :contains "subject" "Nirgends" { fileinto "Gibt es nicht"; }
     assert_eq!(a.inbox("leni@a.test").await.len(), 2);
 }
 
+/// Labels without a model go on at delivery, before the Sieve script, which sees them as headers;
+/// such a header the sender wrote counts for nothing (docs/sieve.md, "Labels").
+#[tokio::test(flavor = "multi_thread")]
+async fn labels_without_a_model_come_before_the_sieve_script() {
+    let a = start("a.test", &["mini"], &[]).await;
+    for name in ["sender.test", "client.sender.test", "_dmarc.sender.test"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+    let store = a.smtp.store();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap().id;
+    let rules = serde_json::json!({ "conditions": [{ "field": "from", "value": "sender.test" }] });
+    let news = uwumail_store::AssistLabelWrite {
+        rules: Some(rules),
+        ..uwumail_store::AssistLabelWrite::simple("Newsletter".into(), String::new(), None)
+    };
+    let news = store.create_assist_label_with(mini, news).await.unwrap();
+    store.create_assist_label(mini, "Fake".into(), String::new(), None).await.unwrap();
+    let script = br#"require ["fileinto", "imap4flags", "mailbox"];
+if header :is "X-UwUMail-Label" "fake" { fileinto :create "Faked"; stop; }
+if anyof (header :is "X-UwUMail-Label" "newsletter", hasflag "newsletter") {
+    setflag "\\Flagged";
+    fileinto :create "Newsletter";
+}
+"#;
+    uwumail_smtp::sieve::validate(script).unwrap();
+    let created = store.create_sieve_script(mini, Some("UwUMail"), script).await.unwrap();
+    store.activate_sieve_script(mini, Some(created.id)).await.unwrap();
+
+    let send = async |subject: &str| {
+        let mut session = RawSession::connect(a.mx).await;
+        assert!(session.command("EHLO client.sender.test").await.starts_with("250"));
+        assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+        assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
+        assert!(session.command("DATA").await.starts_with("354"));
+        let data = format!(
+            "X-UwUMail-Label: fake\r\nFrom: news@sender.test\r\nTo: mini@a.test\r\nSubject: {subject}\r\n\r\nAngebot\r\n."
+        );
+        assert!(session.command(&data).await.starts_with("250"));
+    };
+    send("Neu im Herbst").await;
+    let filed = folder(&a, "mini@a.test", &["Newsletter"]).await.expect("filed by its label");
+    assert_eq!(filed.len(), 1);
+    // The script's setflag does not take off the label set before it.
+    let mut keywords = filed[0].keywords.clone();
+    keywords.sort();
+    assert_eq!(keywords, ["$flagged", "newsletter"]);
+    assert!(folder(&a, "mini@a.test", &["Faked"]).await.is_none(), "the sender's own header is no label");
+    let raw = a.raw(&filed[0]).await;
+    // Neither the sender's header nor the ones the script saw are kept (security audit 0.21.0
+    // LABELS-I1).
+    assert!(!raw.contains("X-UwUMail-Label"), "{raw}");
+    let log = store.label_log(mini, None, 10).await.unwrap();
+    assert_eq!(log.len(), 1);
+    assert_eq!((log[0].label_id, log[0].source.as_str(), log[0].code.as_str()), (news.id, "rule", "rule"));
+    assert_eq!(log[0].params["conditions"][0]["value"], "sender.test");
+    assert!(log[0].provider.is_empty());
+
+    // Switched off, nothing is put on without a model.
+    store.set_non_ai_labels(mini, false).await.unwrap();
+    send("Noch mehr").await;
+    assert_eq!(a.wait_for_inbox("mini@a.test", 1).await[0].keywords, Vec::<String>::new());
+    assert_eq!(store.label_log(mini, None, 10).await.unwrap().len(), 1);
+}
+
+/// With the sender checks switched off nothing vouches for a From address, so a sender whose mail
+/// was labeled by hand twice does not get the label onto mail that merely claims their address
+/// (docs/labels.md, "Learned senders"; security audit 0.21.0 LABELS-L3).
+#[tokio::test(flavor = "multi_thread")]
+async fn learned_senders_need_a_vouched_from_even_without_sender_checks() {
+    let config = SmtpConfig { verify_senders: false, ..SmtpConfig::default() };
+    let a = start_with("a.test", &["mini"], &[], config).await;
+    let store = a.smtp.store();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap().id;
+    let label = store.create_assist_label(mini, "Privat".into(), String::new(), None).await.unwrap();
+    for subject in ["Eins", "Zwei"] {
+        assert!(deliver_to(&a, "mini@a.test", subject).await.starts_with("250"));
+    }
+    let delivered = a.wait_for_inbox("mini@a.test", 2).await;
+    let updates = delivered
+        .iter()
+        .map(|email| EmailUpdate {
+            id: email.id,
+            keywords: KeywordsChange::Patch(vec![(label.keyword.clone(), true)]),
+            ..EmailUpdate::default()
+        })
+        .collect();
+    assert!(store.update_emails(mini, updates).await.unwrap().iter().all(Result::is_ok));
+
+    assert!(deliver_to(&a, "mini@a.test", "Drei").await.starts_with("250"));
+    let inbox = a.wait_for_inbox("mini@a.test", 3).await;
+    let third = inbox.iter().find(|email| email.subject == "Drei").unwrap();
+    assert!(third.keywords.is_empty(), "{:?}", third.keywords);
+    assert!(store.label_log(mini, None, 10).await.unwrap().is_empty());
+}
+
+/// A label header hidden behind a bare CR, which one reader takes for the end of a line and another
+/// not, never reaches the script as a label (security audit 0.21.0 LABELS-I1). And a subject of one
+/// very long word full of detector stems is decided on in time (LABELS-H1).
+#[tokio::test(flavor = "multi_thread")]
+async fn label_headers_behind_a_bare_cr_and_long_subjects_change_nothing() {
+    let a = start("a.test", &["mini"], &[]).await;
+    for name in ["sender.test", "client.sender.test", "_dmarc.sender.test"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+    let store = a.smtp.store();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap().id;
+    store.create_assist_label(mini, "Fake".into(), String::new(), None).await.unwrap();
+    for (name, detector) in [("Termine", "appointment"), ("Rundbriefe", "newsletter")] {
+        let label = uwumail_store::AssistLabelWrite {
+            detector: Some(detector.into()),
+            ..uwumail_store::AssistLabelWrite::simple(name.into(), String::new(), None)
+        };
+        store.create_assist_label_with(mini, label).await.unwrap();
+    }
+    let script = br#"require ["fileinto", "mailbox"];
+if header :is "X-UwUMail-Label" "fake" { fileinto :create "Faked"; stop; }
+"#;
+    let created = store.create_sieve_script(mini, Some("UwUMail"), script).await.unwrap();
+    store.activate_sieve_script(mini, Some(created.id)).await.unwrap();
+
+    let send = async |data: String| {
+        let mut session = RawSession::connect(a.mx).await;
+        assert!(session.command("EHLO client.sender.test").await.starts_with("250"));
+        assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+        assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
+        assert!(session.command("DATA").await.starts_with("354"));
+        let started = std::time::Instant::now();
+        let answer = session.command(&data).await;
+        (answer, started.elapsed())
+    };
+    let (answer, _) = send(
+        "From: news@sender.test\r\nTo: mini@a.test\r\nX-Note: a\rX-UwUMail-Label: fake\r\nSubject: Hallo\r\n\r\nText\r\n."
+            .to_owned(),
+    )
+    .await;
+    if answer.starts_with("250") {
+        a.wait_for_inbox("mini@a.test", 1).await;
+    }
+    assert!(folder(&a, "mini@a.test", &["Faked"]).await.is_none(), "{answer}");
+
+    // One word of about 200 000 characters, in encoded words that join without a space.
+    let chunk = "=?utf-8?q?Liefertermin?=";
+    let subject = vec![chunk; 16_000].join("\r\n ");
+    let (answer, took) = send(format!(
+        "From: news@sender.test\r\nTo: mini@a.test\r\nList-Unsubscribe: <mailto:off@sender.test>\r\nSubject: {subject}\r\n\r\nText\r\n."
+    ))
+    .await;
+    assert!(answer.starts_with("250"), "{answer}");
+    assert!(took < std::time::Duration::from_secs(10), "{took:?}");
+}
+
 /// security-audit-0.7.0 S-44: a redirect without `:copy` that reached nobody -- here because the
 /// message was already passed on from this address once -- used to take the message with it.
 #[tokio::test(flavor = "multi_thread")]

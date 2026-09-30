@@ -423,6 +423,7 @@
       "dnsUnavailable": "現在サーバーは DNS を参照できません。",
       "settingLocked": "この設定は設定ファイルで指定されているため、ここでは変更できません。",
       "settingsInvalid": "この設定ではサーバーが動作できません：{{detail}}",
+      "secretNeededAgain": "このパスワードまたはトークンは以前のアドレス用です。新しいアドレス用にもう一度入力してください。",
       "codeInvalid": "コードが間違っているか、すでに使用されています。",
       "loginExpired": "ログインに時間がかかりすぎました。もう一度ログインしてください。",
       "confirmPassword": "パスワードで確認してください。",
@@ -3914,7 +3915,9 @@
       "perDayOf": "{{person}} の日別",
       "costShown": "コスト表示中",
       "priceLists_other": "料金を {{date}} に更新、{{count}} 件のモデルを把握しています。",
-      "priceListsNone": "料金はまだ取得されていません。"
+      "priceListsNone": "料金はまだ取得されていません。",
+      "foreignMail": "他のアカウントのメールに AI を使う",
+      "foreignMailHint": "UwUMail アプリで、他のアカウント(Exchange、Gmail、IMAP)のメールにもアシスタントを使えるようにします。アプリがそのメールの本文をここへ送りますが、保存されるのは使用量だけです。許可したプロバイダーだけが使われます。"
     },
     "choices": {
       "title": "どの機能にどのプロバイダーを使うか",
@@ -3940,7 +3943,10 @@
       "labels_other": "ラベルが {{count}} 個あります。Web メールで変更できます。",
       "openWebmail": "Web メールを開く",
       "refineEvents": "メールを開いたときに予定を探す",
-      "refineEventsHint": "Web メールは、頼んだときだけでなく、開いたすべてのメールについてモデルに問い合わせます。その分 1 日の上限を多く使います。"
+      "refineEventsHint": "Web メールは、頼んだときだけでなく、開いたすべてのメールについてモデルに問い合わせます。その分 1 日の上限を多く使います。",
+      "nonAiLabels": "AI を使わないラベル",
+      "nonAiLabelsHint": "新しいメールには、ラベルの条件、組み込みの検出(請求書、予定、ニュースレター、配送)、手動で 2 回ラベルを付けた差出人、各ラベルが学んだ内容によってラベルが付きます。AI プロバイダーは不要です。",
+      "foreignMail": "UwUMail アプリでは、他のアカウントのメールにもアシスタントが使えます。"
     },
     "privacy": {
       "title": "サーバーの外に出るもの",
@@ -4030,7 +4036,9 @@
       "priceAutomatic": "料金表から",
       "showCost": "利用者にコストを表示する",
       "showCostHint": "利用者は自分のリクエストのコストを確認できます。管理者には常に表示されます。",
-      "requestPrice": "1 リクエストあたり(米ドル)"
+      "requestPrice": "1 リクエストあたり(米ドル)",
+      "foreignMail": "他のアカウントのメール",
+      "foreignMailHint": "「他のアカウントのメールに AI を使う」がオンのとき、利用者の他のアカウントのメールに使えます。"
     },
     "chatgpt": {
       "title": "ChatGPT サインイン",
@@ -4055,6 +4063,20 @@
       "perRequest": "1 リクエストあたり {{price}}",
       "tier": "{{tokens}} トークン超: 入力 {{input}}、出力 {{output}}",
       "thinks": "回答前に思考する"
+    },
+    "labels": {
+      "rules": "条件",
+      "senders": "差出人を学習",
+      "classifierReady": "{{n}} 通から学習済み",
+      "classifierLearning": "学習中: {{min}} 通中 {{n}} 通",
+      "counts": "{{total}} 通、未読 {{unread}} 通",
+      "byHandOnly": "手動のみ",
+      "detectors": {
+        "invoice": "請求書",
+        "appointment": "予定",
+        "newsletter": "ニュースレター",
+        "shipping": "配送"
+      }
     }
   },
   "microsoft": {

@@ -24,7 +24,7 @@ use crate::dsn::{self, FailedRecipient};
 use crate::sender_lists::{self, Decision};
 use crate::stream::{BoxIo, Stream};
 use crate::submission::{Submission, SubmissionRecipient, SubmitError};
-use crate::{Smtp, clamav, fetched, forward, headers, random_id, relay, reports, rules, spam, srs, vacation};
+use crate::{Smtp, clamav, fetched, forward, headers, labels, random_id, relay, reports, rules, spam, srs, vacation};
 
 const MAX_HOPS: usize = 50;
 const MAX_ERRORS: u32 = 10;
@@ -1761,6 +1761,11 @@ pub(crate) async fn receive(
 
     // Our verdict replaces whatever the message brought along.
     let raw = if score.is_some() { headers::strip_spam_verdicts(&raw) } else { raw };
+    // Label headers are the server's to write, for Sieve only; one a sender wrote is not kept in
+    // the stored message either, so nothing that reads it later takes it for a label (security
+    // audit 0.21.0 LABELS-I1). After the checks, which may cover it with a signature.
+    let raw =
+        if headers::values(&raw, labels::LABEL_HEADER).is_empty() { raw } else { headers::strip_label_headers(&raw) };
     let raw = match checked {
         clamav::Checked::Off => raw,
         _ => headers::strip_virus_verdicts(&raw),
@@ -1878,6 +1883,15 @@ pub(crate) async fn receive(
     let sender_verified_for_groups = verdict.as_ref().is_none_or(|verdict| verdict.sender_verified);
     // What forwarding needs to know about the sender.
     let proof = forward::Proof::of(verdict.as_ref());
+    // Labels without a model: the message is read once for all recipients, and learned senders
+    // count only for a From address something vouches for. Without a verdict (sender checks
+    // switched off, or a relay whose Received header can't be read) nothing does.
+    let label_mail = labels::Parsed::default();
+    let label_sender =
+        match verdict.as_ref().and_then(|v| v.from_address.clone().filter(|_| v.from_verified || v.dmarc_passed)) {
+            Some(address) => labels::SenderTrust::Verified(address),
+            None => labels::SenderTrust::Unverified,
+        };
     // What happened for each of them, for the history. The message as a whole is one decision,
     // but a sender list or someone's own filter can send it two ways at once.
     let mut noted: Vec<SpamLogRecipient> = Vec::new();
@@ -2083,16 +2097,30 @@ pub(crate) async fn receive(
                 None
             })
         };
+        // The person's labels that need no model, before their rules (docs/labels.md). Never for Junk.
+        let labeled = if junk {
+            labels::Labeled::default()
+        } else {
+            labels::decide(&ctx, account_id, &message, &label_mail, &label_sender).await
+        };
         let stored = match script {
-            Some((_, script)) => {
-                rules::deliver(&ctx, account_id, script, &recipient.address, &envelope.address, &message, proof)
-                    .await
-                    .map(|filed| (filed.mailbox, filed.stored, filed.email_ids))
-            }
+            Some((_, script)) => rules::deliver(
+                &ctx,
+                account_id,
+                script,
+                &recipient.address,
+                &envelope.address,
+                &message,
+                &labeled,
+                proof,
+            )
+            .await
+            .map(|filed| (filed.mailbox, filed.stored, filed.email_ids)),
             None => {
                 let mailboxes = vec![MailboxTarget::Role(if junk { MailboxRole::Junk } else { MailboxRole::Inbox })];
+                let keywords = labeled.keywords();
                 let request =
-                    IngestRequest { account_id, raw: message.clone(), mailboxes, keywords: vec![], received_at: None };
+                    IngestRequest { account_id, raw: message.clone(), mailboxes, keywords, received_at: None };
                 ctx.store
                     .ingest(request)
                     .await
@@ -2104,6 +2132,7 @@ pub(crate) async fn receive(
                 // The person's own labels, put on in the background by the AI assistant when they asked
                 // for it. Never for Junk, and never in the way of the delivery.
                 if !junk && kept {
+                    labels::log(&ctx, account_id, &email_ids, &labeled).await;
                     queue_for_labels(&ctx, account_id, &email_ids).await;
                 }
                 note_for(&recipient.address, if junk { SpamAction::Junk } else { SpamAction::Delivered }, mailbox);
@@ -2255,10 +2284,13 @@ pub(crate) async fn receive(
             None => tracing::debug!(%id, "the Face that came with the message is not a small PNG"),
         }
     }
+    let itip = if inbox_accounts.is_empty() { None } else { crate::scheduling::find(&message).await };
     for account_id in inbox_accounts {
         vacation::maybe_reply(&ctx, account_id, &envelope.address, sender_verified, &message).await;
-        let sender = crate::scheduling::Sender { verified_from: verified_from.as_deref(), local: false };
-        crate::scheduling::incoming(&ctx, account_id, &message, sender).await;
+        if let Some(itip) = &itip {
+            let sender = crate::scheduling::Sender { verified_from: verified_from.as_deref(), local: false };
+            crate::scheduling::incoming(&ctx, account_id, itip, sender).await;
+        }
     }
     if !failed.is_empty() && sender_verified {
         dsn::bounce(&ctx, &envelope.address, &message, &failed).await;

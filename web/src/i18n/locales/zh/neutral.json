@@ -423,6 +423,7 @@
       "dnsUnavailable": "服务器当前无法查询 DNS。",
       "settingLocked": "此设置写在配置文件中，无法在这里更改。",
       "settingsInvalid": "服务器无法以此方式运行：{{detail}}",
+      "secretNeededAgain": "此密码或令牌属于旧地址。请为新地址重新输入。",
       "codeInvalid": "验证码错误或已被使用过。",
       "loginExpired": "登录耗时过长，请重新登录。",
       "confirmPassword": "请输入你的密码以确认。",
@@ -3914,7 +3915,9 @@
       "perDayOf": "{{person}} 的每日用量",
       "costShown": "显示费用",
       "priceLists_other": "价格已于 {{date}} 更新,已知 {{count}} 个模型。",
-      "priceListsNone": "尚未获取价格。"
+      "priceListsNone": "尚未获取价格。",
+      "foreignMail": "为其他账户的邮件使用 AI",
+      "foreignMailHint": "允许用户在 UwUMail 应用中为其其他账户(Exchange、Gmail、IMAP)的邮件使用助手。应用会把该邮件的文本发送到这里;除用量外不保存任何内容。只使用允许此项的提供商。"
     },
     "choices": {
       "title": "哪个功能用哪个服务商",
@@ -3940,7 +3943,10 @@
       "labels_other": "你有 {{count}} 个标签。可以在网页邮箱中修改。",
       "openWebmail": "打开网页邮箱",
       "refineEvents": "打开邮件时查找约会",
-      "refineEventsHint": "网页邮箱会对你打开的每封邮件询问模型，而不只是在你要求时。这会占用更多每日额度。"
+      "refineEventsHint": "网页邮箱会对你打开的每封邮件询问模型，而不只是在你要求时。这会占用更多每日额度。",
+      "nonAiLabels": "不用 AI 的标签",
+      "nonAiLabelsHint": "新邮件会按标签的条件、内置识别(发票、预约、新闻通讯、快递)、你手动标记过两次的发件人以及每个标签从你这里学到的内容获得标签。无需 AI 提供商。",
+      "foreignMail": "在 UwUMail 应用中,助手也可用于你其他账户的邮件。"
     },
     "privacy": {
       "title": "哪些内容会离开服务器",
@@ -4030,7 +4036,9 @@
       "priceAutomatic": "来自价格表",
       "showCost": "向使用者显示费用",
       "showCostHint": "他们将看到自己请求的费用。你始终可以看到。",
-      "requestPrice": "每次请求,美元"
+      "requestPrice": "每次请求,美元",
+      "foreignMail": "其他账户的邮件",
+      "foreignMailHint": "开启“为其他账户的邮件使用 AI”后,可用于用户其他账户的邮件。"
     },
     "chatgpt": {
       "title": "ChatGPT 登录",
@@ -4055,6 +4063,20 @@
       "perRequest": "每次请求 {{price}}",
       "tier": "超过 {{tokens}} token:输入 {{input}},输出 {{output}}",
       "thinks": "回答前会思考"
+    },
+    "labels": {
+      "rules": "条件",
+      "senders": "学习发件人",
+      "classifierReady": "已从 {{n}} 封邮件学习",
+      "classifierLearning": "学习中:{{n}} / {{min}} 封邮件",
+      "counts": "{{total}} 封邮件,{{unread}} 封未读",
+      "byHandOnly": "仅手动",
+      "detectors": {
+        "invoice": "发票",
+        "appointment": "预约",
+        "newsletter": "新闻通讯",
+        "shipping": "快递"
+      }
     }
   },
   "microsoft": {

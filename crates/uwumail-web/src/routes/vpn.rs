@@ -6,9 +6,11 @@
 
 use axum::Json;
 use axum::extract::State;
+use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use super::audit;
+use super::security::confirm_identity;
 use super::settings::{change_settings, setting_source};
 use crate::Web;
 use crate::error::{ApiError, ApiResult};
@@ -171,8 +173,20 @@ pub async fn remove(State(web): State<Web>, Admin(session): Admin) -> ApiResult<
     Ok(Json(view(&web).await?))
 }
 
+#[derive(Deserialize)]
+pub struct Confirmation {
+    password: Option<String>,
+}
+
 /// The files to put onto the machine by hand, keys included, for a server without the helper.
-pub async fn files(State(web): State<Web>, Admin(session): Admin) -> ApiResult<Json<Value>> {
+/// They hold the VPN's private key or password, so a login left open is not enough to read them:
+/// like the backups' recovery key, they need the password again.
+pub async fn files(
+    State(web): State<Web>,
+    Admin(session): Admin,
+    Json(body): Json<Confirmation>,
+) -> ApiResult<Json<Value>> {
+    confirm_identity(&web, &session, body.password.as_deref()).await?;
     let config = load(&web).await?;
     config.check().map_err(|message| ApiError::Rule("vpnInvalid", message))?;
     audit(&web, &session, "vpn.files", &config.provider, json!({})).await;

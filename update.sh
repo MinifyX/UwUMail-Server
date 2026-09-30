@@ -103,7 +103,38 @@ fetch() {
   fi
 }
 
-# A release file and the checksum next to it; nothing is used unless the two agree.
+# Provenance: CI signs every release file and image with the workflow run that built it
+# (GitHub's attestations). Where gh is installed and logged in, what we take has to carry that
+# signature from this repository, next to the checksum; a file somebody put into a release by
+# hand has none and stops us. Without gh this is skipped with a notice and the checksums stand
+# alone. Releases before 0.21.0 were never signed, so a pinned older version is not checked.
+provenance=""
+provenance_on() {
+  if [ -z "$provenance" ]; then
+    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+      provenance=yes
+    else
+      provenance=no
+      step "gh is not here or not logged in, so signatures are not checked (the checksums are)"
+    fi
+  fi
+  [ "$provenance" = yes ]
+}
+signed_version() {
+  case "${1:-}" in
+    [0-9]*) [ "$(printf '%s\n' 0.21.0 "$1" | sort -V | head -1)" = 0.21.0 ] ;;
+    *) return 0 ;;
+  esac
+}
+# A file or an image (oci://...@sha256:...) built by this repository's CI.
+verify_provenance() {
+  provenance_on || return 0
+  gh attestation verify "$1" --repo "$repo" >/dev/null 2>&1
+}
+
+# A release file and the checksum next to it; nothing is used unless the two agree. Files of the
+# newest release are also checked for their signature; an older release's compose.yaml is only
+# ever compared against, never installed, so it needs no signature (and may predate them).
 fetch_checked() {
   local name="$1" target="$2" base="${3:-$releases/latest/download}" sums want have
   fetch "$base/$name" "$target" || return 1
@@ -112,7 +143,12 @@ fetch_checked() {
   want=$(cut -d' ' -f1 <"$sums")
   have=$(sha256sum "$target" | cut -d' ' -f1)
   rm -f "$sums"
-  [ -n "$want" ] && [ "$want" = "$have" ]
+  [ -n "$want" ] && [ "$want" = "$have" ] || return 1
+  [ "$base" = "$releases/latest/download" ] || return 0
+  verify_provenance "$target" || {
+    warn "$name is not signed by the UwUMail-Server release workflow"
+    return 1
+  }
 }
 
 # Whether there is a terminal to ask on: after an exec there may be none, whatever /dev/tty
@@ -363,6 +399,14 @@ fi
 
 step "fetching the images"
 docker compose pull --quiet || die "the images could not be fetched; nothing was changed"
+image_tag=$(env_value UWUMAIL_VERSION || printf '')
+image_tag=${image_tag:-latest}
+if signed_version "$image_tag" && [ "$image_tag" != rollback ]; then
+  image_ref=$(docker image inspect --format '{{index .RepoDigests 0}}' "$image:$image_tag" 2>/dev/null)
+  if [ -n "$image_ref" ] && ! verify_provenance "oci://$image_ref"; then
+    die "the image $image_ref is not signed by the UwUMail-Server workflow; nothing was changed"
+  fi
+fi
 
 step "starting the new version"
 docker compose up -d || die "the new version did not start. What it says: cd $dir && docker compose logs"

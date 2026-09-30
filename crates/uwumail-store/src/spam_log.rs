@@ -211,13 +211,16 @@ impl Store {
                 values.push(Box::new(f64::from(score)));
                 sql.push_str(&format!(" AND l.score >= ?{}", values.len()));
             }
-            if let Some(search) = filter.search.as_ref().map(|text| format!("%{}%", text.trim().to_lowercase()))
-                && search.len() > 2
+            if let Some(search) = filter.search.as_ref().map(|text| text.trim().to_lowercase())
+                && !search.is_empty()
             {
-                values.push(Box::new(search));
+                // A % or _ in the search is meant as itself, not as a wildcard.
+                let like = format!("%{}%", search.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
+                values.push(Box::new(like));
                 let at = values.len();
                 sql.push_str(&format!(
-                    " AND (lower(l.envelope_from) LIKE ?{at} OR lower(l.header_from) LIKE ?{at} OR l.client_ip LIKE ?{at})"
+                    " AND (lower(l.envelope_from) LIKE ?{at} ESCAPE '\\' OR lower(l.header_from) LIKE ?{at} ESCAPE '\\'
+                       OR l.client_ip LIKE ?{at} ESCAPE '\\')"
                 ));
             }
             values.push(Box::new(limit));
@@ -429,6 +432,23 @@ mod tests {
         assert_eq!(store.prune_spam_log(3600).await.unwrap(), 0, "nothing is old yet");
         assert_eq!(store.prune_spam_log(-1).await.unwrap(), 3, "a cut-off in the future takes everything");
         assert_eq!(store.spam_log(SpamLogFilter { limit: 50, ..Default::default() }).await.unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn the_search_takes_percent_and_underscore_literally() {
+        let (store, _dir) = store().await;
+        store.add_spam_log(entry("a1", SpamAction::Junk, "boese@spammer.example", 6.0)).await.unwrap();
+        store.add_spam_log(entry("a2", SpamAction::Junk, "100%_off@shop.example", 6.0)).await.unwrap();
+        let search = |text: &str| {
+            let filter = SpamLogFilter { search: Some(text.into()), limit: 50, ..Default::default() };
+            let store = store.clone();
+            async move { store.spam_log(filter).await.unwrap().into_iter().map(|e| e.smtp_id).collect::<Vec<_>>() }
+        };
+        assert_eq!(search("%").await, vec!["a2"], "only the address with a % in it");
+        assert_eq!(search("%_off").await, vec!["a2"]);
+        assert!(search("sp_mmer").await.is_empty(), "_ is not any one character");
+        assert!(search("boese%example").await.is_empty(), "% is not any run of characters");
+        assert_eq!(search("spammer").await, vec!["a1"]);
     }
 
     /// A fetched message as the filter writes it down: always a FETCHED rule, and a PROVIDER_JUNK

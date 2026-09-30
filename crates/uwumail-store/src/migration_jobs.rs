@@ -89,7 +89,7 @@ pub struct MigrationProgress {
     pub bytes_done: i64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct NewMigrationJob {
     pub account_id: i64,
     pub address: String,
@@ -97,6 +97,19 @@ pub struct NewMigrationJob {
     pub port: u16,
     pub login: String,
     pub password: String,
+}
+
+impl std::fmt::Debug for NewMigrationJob {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The password never into a log line.
+        f.debug_struct("NewMigrationJob")
+            .field("account_id", &self.account_id)
+            .field("address", &self.address)
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("login", &self.login)
+            .finish_non_exhaustive()
+    }
 }
 
 /// How a run of the worker ended.
@@ -423,6 +436,21 @@ impl Store {
 mod tests {
     use super::*;
     use crate::{NewAccount, Role};
+
+    #[test]
+    fn debug_leaves_the_password_out() {
+        let job = NewMigrationJob {
+            account_id: 1,
+            address: "leni@example.org".into(),
+            host: "imap.example.net".into(),
+            port: 993,
+            login: "leni".into(),
+            password: "hunter2-plaintext".into(),
+        };
+        let shown = format!("{job:?}");
+        assert!(shown.contains("imap.example.net"), "{shown}");
+        assert!(!shown.contains("hunter2-plaintext"), "{shown}");
+    }
 
     async fn person(store: &Store, address: &str) -> i64 {
         let new = NewAccount {

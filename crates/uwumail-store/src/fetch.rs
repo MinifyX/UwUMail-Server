@@ -173,7 +173,7 @@ impl std::fmt::Debug for FetchOAuth {
 }
 
 /// Where a fetched address sends its mail, and with which login.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct FetchSender {
     pub account_id: i64,
     /// The fetched mailbox, whose OAuth grant logs in when `auth` is not a password.
@@ -186,6 +186,22 @@ pub struct FetchSender {
     /// Empty for a mailbox that logs in with OAuth.
     pub password: String,
     pub auth: FetchAuth,
+}
+
+impl std::fmt::Debug for FetchSender {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The password never into a log line.
+        f.debug_struct("FetchSender")
+            .field("account_id", &self.account_id)
+            .field("fetch_id", &self.fetch_id)
+            .field("address", &self.address)
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("security", &self.security)
+            .field("username", &self.username)
+            .field("auth", &self.auth)
+            .finish_non_exhaustive()
+    }
 }
 
 /// What happens to a message at the provider once this server has it.
@@ -251,7 +267,7 @@ pub struct FetchAccount {
     pub password_refused: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct NewFetchAccount {
     pub account_id: i64,
     pub address: String,
@@ -266,7 +282,25 @@ pub struct NewFetchAccount {
     pub auth_serv_id: String,
 }
 
-#[derive(Debug, Clone, Default)]
+impl std::fmt::Debug for NewFetchAccount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The password never into a log line.
+        f.debug_struct("NewFetchAccount")
+            .field("account_id", &self.account_id)
+            .field("address", &self.address)
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("security", &self.security)
+            .field("username", &self.username)
+            .field("after_fetch", &self.after_fetch)
+            .field("fetch_junk", &self.fetch_junk)
+            .field("interval_secs", &self.interval_secs)
+            .field("auth_serv_id", &self.auth_serv_id)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Default)]
 pub struct FetchAccountUpdate {
     pub host: Option<String>,
     pub port: Option<u16>,
@@ -285,6 +319,28 @@ pub struct FetchAccountUpdate {
     /// Switches the mailbox to logging in with this grant, and forgets the password. A new password
     /// on a mailbox that logs in with OAuth switches it back.
     pub oauth: Option<FetchGrant>,
+}
+
+impl std::fmt::Debug for FetchAccountUpdate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The password never into a log line.
+        f.debug_struct("FetchAccountUpdate")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("security", &self.security)
+            .field("username", &self.username)
+            .field("after_fetch", &self.after_fetch)
+            .field("fetch_junk", &self.fetch_junk)
+            .field("interval_secs", &self.interval_secs)
+            .field("enabled", &self.enabled)
+            .field("auth_serv_id", &self.auth_serv_id)
+            .field("smtp_host", &self.smtp_host)
+            .field("smtp_port", &self.smtp_port)
+            .field("smtp_security", &self.smtp_security)
+            .field("send_enabled", &self.send_enabled)
+            .field("oauth", &self.oauth)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Where one folder of a fetch account stands.
@@ -413,34 +469,6 @@ fn check_interval(secs: i64) -> Result<i64> {
     Ok(secs)
 }
 
-/// Whether an IP address is on the open internet, not this machine, the local network or a reserved
-/// range. A fetched mailbox and its outgoing server live somewhere else, so a private or loopback
-/// address would only point the worker at this host or the LAN (security-audit-0.5.2 S-10).
-pub fn is_public_ip(ip: std::net::IpAddr) -> bool {
-    match ip.to_canonical() {
-        std::net::IpAddr::V4(v4) => {
-            let [a, b, ..] = v4.octets();
-            !(v4.is_unspecified()
-                || v4.is_loopback()
-                || v4.is_private()
-                || v4.is_link_local()
-                || v4.is_broadcast()
-                || v4.is_multicast()
-                || a == 0
-                || a >= 240
-                || (a == 100 && (b & 0xc0) == 64))
-        }
-        std::net::IpAddr::V6(v6) => {
-            let first = v6.segments()[0];
-            !(v6.is_unspecified()
-                || v6.is_loopback()
-                || v6.is_multicast()
-                || (first & 0xfe00) == 0xfc00
-                || (first & 0xffc0) == 0xfe80)
-        }
-    }
-}
-
 pub(crate) fn check_host(host: &str) -> Result<String> {
     let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
     if host.is_empty() || !host.contains('.') || host.contains(char::is_whitespace) {
@@ -449,7 +477,7 @@ pub(crate) fn check_host(host: &str) -> Result<String> {
     // An IP literal must be public. A name is re-checked when the connection is made, so it cannot
     // resolve to a private address either.
     if let Ok(ip) = host.parse::<std::net::IpAddr>()
-        && !is_public_ip(ip)
+        && !crate::is_public_ip(ip)
     {
         return Err(StoreError::Invalid(format!("'{host}' is not a public address")));
     }
@@ -1176,6 +1204,39 @@ impl Store {
 mod tests {
     use super::*;
     use crate::{NewAccount, Role};
+
+    #[test]
+    fn debug_leaves_the_passwords_out() {
+        let new = NewFetchAccount {
+            account_id: 1,
+            address: "leni@example.net".into(),
+            host: "imap.example.net".into(),
+            port: 993,
+            security: FetchSecurity::Tls,
+            username: "leni".into(),
+            password: "hunter2-plaintext".into(),
+            after_fetch: AfterFetch::MarkRead,
+            fetch_junk: false,
+            interval_secs: 300,
+            auth_serv_id: "mail.example.org".into(),
+        };
+        let update = FetchAccountUpdate { password: Some("hunter2-plaintext".into()), ..Default::default() };
+        let sender = FetchSender {
+            account_id: 1,
+            fetch_id: 2,
+            address: "leni@example.net".into(),
+            host: "smtp.example.net".into(),
+            port: 465,
+            security: SendSecurity::Tls,
+            username: "leni".into(),
+            password: "hunter2-plaintext".into(),
+            auth: FetchAuth::Password,
+        };
+        for shown in [format!("{new:?}"), format!("{update:?}"), format!("{sender:?}")] {
+            assert!(!shown.contains("hunter2-plaintext"), "{shown}");
+        }
+        assert!(format!("{new:?}").contains("imap.example.net"));
+    }
 
     /// A store with one person in it, who is about to have mail fetched for them.
     async fn store_with_person() -> (Store, tempfile::TempDir, i64) {

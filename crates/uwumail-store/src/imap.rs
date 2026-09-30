@@ -362,15 +362,30 @@ impl Store {
         change: FlagChange,
         unchanged_since: Option<u64>,
     ) -> Result<Vec<u32>> {
+        self.imap_store_flags_by(account_id, account_id, mailbox_id, uids, change, unchanged_since).await
+    }
+
+    /// [`Store::imap_store_flags`] by `login`, who may be someone the mailbox is shared with: then
+    /// their labeling teaches the owner's labels nothing (see [`Store::update_emails_in_share`]).
+    pub async fn imap_store_flags_by(
+        &self,
+        login: i64,
+        account_id: i64,
+        mailbox_id: i64,
+        uids: Vec<u32>,
+        change: FlagChange,
+        unchanged_since: Option<u64>,
+    ) -> Result<Vec<u32>> {
         let keywords = match change {
             FlagChange::Add(flags) => KeywordsChange::Patch(flags.into_iter().map(|flag| (flag, true)).collect()),
             FlagChange::Remove(flags) => KeywordsChange::Patch(flags.into_iter().map(|flag| (flag, false)).collect()),
             FlagChange::Replace(flags) => KeywordsChange::Replace(flags),
         };
-        let (skipped, modseq) = self
+        let (skipped, modseq, learned) = self
             .write(move |tx| {
                 own_mailbox(tx, account_id, mailbox_id)?;
-                let mut batch = Batch { account_id, modseq: None };
+                let by_hand = login == account_id || crate::labels::teaches_in_share(tx, account_id)?;
+                let mut batch = Batch { by_hand, ..Batch::new(account_id) };
                 let mut skipped = Vec::new();
                 for (uid, (email_id, modseq)) in emails_by_uid(tx, mailbox_id, &uids)? {
                     if unchanged_since.is_some_and(|since| modseq > since) {
@@ -380,10 +395,13 @@ impl Store {
                     let update = EmailUpdate { id: email_id, keywords: keywords.clone(), ..Default::default() };
                     update_one(tx, &mut batch, &update)?;
                 }
-                Ok((skipped, batch.modseq))
+                Ok((skipped, batch.modseq, batch.learned))
             })
             .await?;
         finish(self, account_id, modseq);
+        if learned {
+            self.labels_learned();
+        }
         Ok(skipped)
     }
 
@@ -401,7 +419,7 @@ impl Store {
             .write(move |tx| {
                 own_mailbox(tx, account_id, source)?;
                 own_mailbox(tx, account_id, target)?;
-                let mut batch = Batch { account_id, modseq: None };
+                let mut batch = Batch::new(account_id);
                 let pairs = copy_in(tx, &mut batch, source, &uids, target, remove_source)?;
                 Ok((pairs, batch.modseq))
             })
@@ -449,7 +467,7 @@ impl Store {
                     })?
                     .collect::<Result<Vec<_>, _>>()?;
                 drop(stmt);
-                let mut batch = Batch { account_id, modseq: None };
+                let mut batch = Batch::new(account_id);
                 let mut removed = Vec::new();
                 for (uid, email_id, memberships) in flagged {
                     if uids.as_ref().is_some_and(|uids| !uids.contains(&uid)) {

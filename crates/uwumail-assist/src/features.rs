@@ -14,6 +14,7 @@ use uwumail_store::{
 };
 
 use crate::access::{Effective, Ticket};
+use crate::foreign::{ForeignLabel, ForeignMail, MAX_FOREIGN_MAILS};
 use crate::kinds::Shape;
 use crate::llm::{self, Completion, Prompt};
 use crate::mail::{MAX_MAIL_CHARS, MailText};
@@ -46,7 +47,16 @@ const TYPICAL_SUMMARY_TOKENS_PER_MAIL: i64 = 50;
 const TYPICAL_SUMMARY_MAX_TOKENS: i64 = 600;
 const TYPICAL_SPAM_TOKENS: i64 = 150;
 const TYPICAL_EVENTS_TOKENS: i64 = 250;
-const TYPICAL_LABEL_TOKENS: i64 = 80;
+const TYPICAL_LABEL_TOKENS_PER_LABEL: i64 = 40;
+/// … and what proposing new labels adds.
+const TYPICAL_NEW_LABEL_TOKENS: i64 = 120;
+/// New labels `AssistLabel/suggest` proposes, at most.
+const MAX_NEW_LABELS: usize = 2;
+const MAX_LABEL_NAME_CHARS: usize = 40;
+const MAX_LABEL_DESCRIPTION_CHARS: usize = 300;
+/// Colors for a proposed label whose own color is no `#rrggbb`.
+const LABEL_COLORS: [&str; 8] =
+    ["#e5484d", "#f76b15", "#ffc53d", "#30a46c", "#12a594", "#0090ff", "#8e4ec6", "#d6409f"];
 /// Typical thinking, in tokens, of a model that thinks before it answers (at its default effort),
 /// until its own requests tell better.
 const TYPICAL_REASONING_WRITE: i64 = 700;
@@ -99,6 +109,8 @@ pub struct ComposeArgs {
     pub reply_to_email_id: Option<i64>,
     pub want_subject: bool,
     pub language: Option<String>,
+    /// The mail answered, of another account, instead of `reply_to_email_id`: exactly one.
+    pub foreign_mails: Vec<ForeignMail>,
 }
 
 #[derive(Debug, Clone)]
@@ -114,6 +126,8 @@ pub struct SummarizeArgs {
     pub email_id: Option<i64>,
     pub thread_id: Option<i64>,
     pub language: Option<String>,
+    /// Mails of another account instead of the ids, oldest first.
+    pub foreign_mails: Vec<ForeignMail>,
 }
 
 #[derive(Debug, Clone)]
@@ -125,11 +139,15 @@ pub struct SummaryResult {
 
 #[derive(Debug, Clone, Default)]
 pub struct SpamArgs {
+    /// Not looked at with `foreign_mails`.
     pub email_id: i64,
     pub language: Option<String>,
+    /// A mail of another account instead of `email_id`: exactly one.
+    pub foreign_mails: Vec<ForeignMail>,
 }
 
-/// SPF, DKIM and DMARC as this server's `Authentication-Results` recorded them.
+/// SPF, DKIM and DMARC as this server's `Authentication-Results` recorded them (for a foreign
+/// mail: the topmost ones, of the other provider).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthenticationSignals {
@@ -160,7 +178,8 @@ pub struct SpamSignals {
     pub spam_threshold: Option<f64>,
     pub tests: Vec<String>,
     pub in_junk: bool,
-    pub sender: SenderSignals,
+    /// `None` for a mail of another account: the server knows nothing of its history.
+    pub sender: Option<SenderSignals>,
 }
 
 #[derive(Debug, Clone)]
@@ -175,8 +194,11 @@ pub struct SpamResult {
 
 #[derive(Debug, Clone, Default)]
 pub struct EventsArgs {
+    /// Not looked at with `foreign_mails`.
     pub email_id: i64,
     pub include_images: bool,
+    /// A mail of another account instead of `email_id`: exactly one.
+    pub foreign_mails: Vec<ForeignMail>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -210,6 +232,57 @@ pub struct EventsResult {
     pub usage: Usage,
 }
 
+#[derive(Debug, Clone)]
+pub struct SuggestArgs {
+    /// Not looked at with `foreign_mails`.
+    pub email_id: i64,
+    pub suggest_new: bool,
+    pub language: Option<String>,
+    /// A mail of another account instead of `email_id`: exactly one, judged by `foreign_labels`.
+    pub foreign_mails: Vec<ForeignMail>,
+    pub foreign_labels: Vec<ForeignLabel>,
+}
+
+impl Default for SuggestArgs {
+    fn default() -> Self {
+        SuggestArgs {
+            email_id: 0,
+            suggest_new: true,
+            language: None,
+            foreign_mails: Vec::new(),
+            foreign_labels: Vec::new(),
+        }
+    }
+}
+
+/// What the model says of one label.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LabelVerdict {
+    /// `None` for a label of another account.
+    pub label_id: Option<i64>,
+    pub name: String,
+    pub reason: String,
+    pub fits: bool,
+    pub is_set: bool,
+}
+
+/// A label the model proposes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct NewLabel {
+    pub name: String,
+    pub description: String,
+    pub color: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SuggestResult {
+    pub verdicts: Vec<LabelVerdict>,
+    pub new_labels: Vec<NewLabel>,
+    pub effective: Effective,
+    pub usage: Usage,
+}
+
 /// The arguments of one of the calls `Assist/estimate` estimates.
 #[derive(Debug, Clone)]
 pub enum EstimateArgs {
@@ -217,6 +290,7 @@ pub enum EstimateArgs {
     Summarize(SummarizeArgs),
     SpamCheck(SpamArgs),
     ExtractEvents(EventsArgs),
+    Suggest(SuggestArgs),
 }
 
 impl EstimateArgs {
@@ -226,7 +300,20 @@ impl EstimateArgs {
             EstimateArgs::Summarize(_) => "summarize",
             EstimateArgs::SpamCheck(_) => "spamCheck",
             EstimateArgs::ExtractEvents(_) => "extractEvents",
+            EstimateArgs::Suggest(_) => "autoLabels",
         }
+    }
+
+    /// Whether the call is about mail of another account.
+    fn foreign(&self) -> bool {
+        !match self {
+            EstimateArgs::Compose(args) => &args.foreign_mails,
+            EstimateArgs::Summarize(args) => &args.foreign_mails,
+            EstimateArgs::SpamCheck(args) => &args.foreign_mails,
+            EstimateArgs::ExtractEvents(args) => &args.foreign_mails,
+            EstimateArgs::Suggest(args) => &args.foreign_mails,
+        }
+        .is_empty()
     }
 }
 
@@ -625,7 +712,8 @@ impl Assist {
             Some(id) => Some(self.record(account, id).await?),
             None => None,
         };
-        let ticket = self.prepare(account, "compose").await?.expecting(typical_compose(&args));
+        let foreign = !args.foreign_mails.is_empty();
+        let ticket = self.prepare_for(account, "compose", foreign).await?.expecting(typical_compose(&args));
         let (prompt, want_subject) = self.compose_prompt(account, &args, reply_to.as_ref()).await?;
         let (completion, effective) = self.ask(ticket, &prompt, events, want_subject).await?;
         let (subject, text) =
@@ -650,9 +738,10 @@ impl Assist {
     ) -> Result<(Prompt, bool)> {
         let instruction = args.instruction.as_deref().map(str::trim).filter(|s| !s.is_empty());
         let text = args.text.as_deref().filter(|s| !s.trim().is_empty());
-        let reply_to = match reply_to {
-            Some(record) => Some(self.text(record, 8000).await?),
-            None => None,
+        let reply_to = match (reply_to, args.foreign_mails.first()) {
+            (Some(record), _) => Some(self.text(record, 8000).await?),
+            (None, Some(foreign)) => Some(foreign.mail_text(8000)),
+            (None, None) => None,
         };
         let sender = if account.display_name.trim().is_empty() {
             account.login.clone()
@@ -685,8 +774,10 @@ impl Assist {
         events: Option<&mpsc::Sender<StreamEvent>>,
     ) -> Result<SummaryResult> {
         let records = self.summary_records(account, &args).await?;
-        let ticket = self.prepare(account, "summarize").await?.expecting(typical_summary(records.len()));
-        let prompt = self.summary_prompt(&records, args.language.as_deref()).await?;
+        let foreign = !args.foreign_mails.is_empty();
+        let mails = records.len() + args.foreign_mails.len();
+        let ticket = self.prepare_for(account, "summarize", foreign).await?.expecting(typical_summary(mails));
+        let prompt = self.summary_prompt(&records, &args.foreign_mails, args.language.as_deref()).await?;
         let (completion, effective) = self.ask(ticket, &prompt, events, false).await?;
         let summary = completion.text.trim().to_owned();
         if summary.is_empty() {
@@ -701,6 +792,15 @@ impl Assist {
 
     /// The mails a summary is about, oldest first, without reading them.
     async fn summary_records(&self, account: &Account, args: &SummarizeArgs) -> Result<Vec<EmailRecord>> {
+        if !args.foreign_mails.is_empty() {
+            if args.email_id.is_some() || args.thread_id.is_some() {
+                return Err(invalid("foreignMails", "give either foreignMails or emailId/threadId"));
+            }
+            if args.foreign_mails.len() > MAX_FOREIGN_MAILS {
+                return Err(invalid("foreignMails", format!("at most {MAX_FOREIGN_MAILS} foreign mails")));
+            }
+            return Ok(Vec::new());
+        }
         let ids = match (args.email_id, args.thread_id) {
             (Some(email), None) => vec![email],
             (None, Some(thread)) => {
@@ -724,18 +824,24 @@ impl Assist {
     }
 
     /// The prompt of `Assist/summarize`: each mail cut to its share.
-    async fn summary_prompt(&self, records: &[EmailRecord], language: Option<&str>) -> Result<Prompt> {
-        let per_mail = (MAX_MAIL_CHARS / records.len().max(1)).max(2000);
+    async fn summary_prompt(
+        &self,
+        records: &[EmailRecord],
+        foreign: &[ForeignMail],
+        language: Option<&str>,
+    ) -> Result<Prompt> {
+        let per_mail = (MAX_MAIL_CHARS / (records.len() + foreign.len()).max(1)).max(2000);
         let mut texts: Vec<MailText> = Vec::new();
         for record in records {
             texts.push(self.text(record, per_mail).await?);
         }
+        texts.extend(foreign.iter().map(|mail| mail.mail_text(per_mail)));
         Ok(prompts::summarize(&texts, language))
     }
 
     /// What the server knows about a mail by itself.
     async fn spam_signals(&self, account: &Account, record: &EmailRecord, mail: &MailText) -> Result<SpamSignals> {
-        let authentication = authentication(&mail.headers, self.hostname(), &record.from);
+        let authentication = authentication(&mail.headers, Some(self.hostname()), &record.from);
         let (spam_score, spam_threshold, tests) = spam_status(&mail.headers);
         let mailboxes = self.store().mailboxes(account.id).await?;
         let in_junk = mailboxes
@@ -757,14 +863,26 @@ impl Assist {
                 .iter()
                 .any(|(_, email)| *email == address);
         }
-        Ok(SpamSignals { authentication, spam_score, spam_threshold, tests, in_junk, sender })
+        Ok(SpamSignals { authentication, spam_score, spam_threshold, tests, in_junk, sender: Some(sender) })
+    }
+
+    /// What the headers of a mail of another account say: its provider's findings.
+    fn foreign_spam_signals(mail: &ForeignMail) -> SpamSignals {
+        let authentication = authentication(&mail.headers, None, &mail.from);
+        let (spam_score, spam_threshold, tests) = spam_status(&mail.headers);
+        SpamSignals { authentication, spam_score, spam_threshold, tests, in_junk: mail.in_junk, sender: None }
     }
 
     /// `Assist/spamCheck`.
     pub async fn spam_check(&self, account: &Account, args: SpamArgs) -> Result<SpamResult> {
-        let record = self.record(account, args.email_id).await?;
-        let ticket = self.prepare(account, "spamCheck").await?.expecting(TYPICAL_SPAM_TOKENS);
-        let (prompt, signals) = self.spam_prompt(account, &record, args.language.as_deref()).await?;
+        let (ticket, (prompt, signals)) = if let Some(foreign) = one_foreign(&args.foreign_mails)? {
+            let ticket = self.prepare_for(account, "spamCheck", true).await?.expecting(TYPICAL_SPAM_TOKENS);
+            (ticket, foreign_spam_prompt(foreign, args.language.as_deref()))
+        } else {
+            let record = self.record(account, args.email_id).await?;
+            let ticket = self.prepare(account, "spamCheck").await?.expecting(TYPICAL_SPAM_TOKENS);
+            (ticket, self.spam_prompt(account, &record, args.language.as_deref()).await?)
+        };
         let (completion, effective) = self.send(ticket, &prompt, None).await?;
         let (verdict, confidence, reasons) =
             parse_spam(&completion.text).ok_or_else(|| AssistError::ProviderFailed {
@@ -805,13 +923,22 @@ impl Assist {
 
     /// `Assist/extractEvents`.
     pub async fn extract_events(&self, account: &Account, args: EventsArgs) -> Result<EventsResult> {
-        let record = self.record(account, args.email_id).await?;
-        let ticket = self.prepare(account, "extractEvents").await?.expecting(TYPICAL_EVENTS_TOKENS);
-        let mail = self.text(&record, MAX_MAIL_CHARS).await?;
-        let image_text = if args.include_images {
-            self.picture_texts(account, &record, PictureRead::Read).await
+        let (ticket, mail, image_text) = if let Some(foreign) = one_foreign(&args.foreign_mails)? {
+            if args.include_images {
+                return Err(invalid("includeImages", "pictures of a foreign mail can't be read"));
+            }
+            let ticket = self.prepare_for(account, "extractEvents", true).await?.expecting(TYPICAL_EVENTS_TOKENS);
+            (ticket, foreign.mail_text(MAX_MAIL_CHARS), Vec::new())
         } else {
-            Vec::new()
+            let record = self.record(account, args.email_id).await?;
+            let ticket = self.prepare(account, "extractEvents").await?.expecting(TYPICAL_EVENTS_TOKENS);
+            let mail = self.text(&record, MAX_MAIL_CHARS).await?;
+            let image_text = if args.include_images {
+                self.picture_texts(account, &record, PictureRead::Read).await
+            } else {
+                Vec::new()
+            };
+            (ticket, mail, image_text)
         };
         let prompt = prompts::extract_events(&mail, &image_text);
         let (completion, effective) = self.send(ticket, &prompt, None).await?;
@@ -821,7 +948,7 @@ impl Assist {
             transient: false,
         })?;
         let mut people: Vec<(String, String)> = Vec::new();
-        for address in record.from.iter().chain(&record.to).chain(&record.cc).take(100) {
+        for address in mail.from.iter().chain(&mail.to).chain(&mail.cc).take(100) {
             people.push((address.name.clone().unwrap_or_default(), address.email.trim().to_lowercase()));
         }
         people.extend(self.store().contact_addresses(account.id, MAX_CONTACTS).await?);
@@ -853,39 +980,56 @@ impl Assist {
     pub async fn estimate(&self, account: &Account, args: EstimateArgs) -> Result<Estimate> {
         let _estimating = self.begin_estimate(account.id)?;
         let feature = args.feature();
-        let (prompt, typical, pictures, (provider, model, _)) = match &args {
+        let foreign = args.foreign();
+        // Whether the feature is on and which provider would answer comes first: without them
+        // nothing would be sent, so no mail is read for the estimate either.
+        let (provider, model, _) = self.resolve_for(account, feature, foreign).await?;
+        let (prompt, typical, pictures) = match &args {
             EstimateArgs::Compose(args) => {
                 check_compose(args)?;
                 let reply_to = match args.reply_to_email_id {
                     Some(id) => Some(self.record(account, id).await?),
                     None => None,
                 };
-                let chosen = self.resolve(account, feature).await?;
                 let (prompt, _) = self.compose_prompt(account, args, reply_to.as_ref()).await?;
-                (prompt, typical_compose(args), Vec::new(), chosen)
+                (prompt, typical_compose(args), Vec::new())
             }
             EstimateArgs::Summarize(args) => {
                 let records = self.summary_records(account, args).await?;
-                let chosen = self.resolve(account, feature).await?;
-                let prompt = self.summary_prompt(&records, args.language.as_deref()).await?;
-                (prompt, typical_summary(records.len()), Vec::new(), chosen)
+                let prompt = self.summary_prompt(&records, &args.foreign_mails, args.language.as_deref()).await?;
+                (prompt, typical_summary(records.len() + args.foreign_mails.len()), Vec::new())
             }
             EstimateArgs::SpamCheck(args) => {
-                let record = self.record(account, args.email_id).await?;
-                let chosen = self.resolve(account, feature).await?;
-                let (prompt, _) = self.spam_prompt(account, &record, args.language.as_deref()).await?;
-                (prompt, TYPICAL_SPAM_TOKENS, Vec::new(), chosen)
+                let prompt = if let Some(foreign) = one_foreign(&args.foreign_mails)? {
+                    foreign_spam_prompt(foreign, args.language.as_deref()).0
+                } else {
+                    let record = self.record(account, args.email_id).await?;
+                    self.spam_prompt(account, &record, args.language.as_deref()).await?.0
+                };
+                (prompt, TYPICAL_SPAM_TOKENS, Vec::new())
             }
             EstimateArgs::ExtractEvents(args) => {
-                let record = self.record(account, args.email_id).await?;
-                let chosen = self.resolve(account, feature).await?;
-                let mail = self.text(&record, MAX_MAIL_CHARS).await?;
-                let image_text = if args.include_images {
-                    self.picture_texts(account, &record, PictureRead::KnownOnly).await
+                let (mail, image_text) = if let Some(foreign) = one_foreign(&args.foreign_mails)? {
+                    if args.include_images {
+                        return Err(invalid("includeImages", "pictures of a foreign mail can't be read"));
+                    }
+                    (foreign.mail_text(MAX_MAIL_CHARS), Vec::new())
                 } else {
-                    Vec::new()
+                    let record = self.record(account, args.email_id).await?;
+                    let mail = self.text(&record, MAX_MAIL_CHARS).await?;
+                    let image_text = if args.include_images {
+                        self.picture_texts(account, &record, PictureRead::KnownOnly).await
+                    } else {
+                        Vec::new()
+                    };
+                    (mail, image_text)
                 };
-                (prompts::extract_events(&mail, &image_text), TYPICAL_EVENTS_TOKENS, image_text, chosen)
+                (prompts::extract_events(&mail, &image_text), TYPICAL_EVENTS_TOKENS, image_text)
+            }
+            EstimateArgs::Suggest(args) => {
+                let request = self.suggest_request(account, args).await?;
+                let typical = typical_suggest(request.labels.len(), request.room);
+                (request.prompt(args.language.as_deref()), typical, Vec::new())
             }
         };
         let (requests_left_today, tokens_left_today) = self.left_today(account, &provider).await?;
@@ -921,15 +1065,17 @@ impl Assist {
         })
     }
 
-    /// Asks which of the person's labels fit one of their mails and puts them on. Labels already on
-    /// the mail are left alone and not logged again.
+    /// Asks which of the person's labels fit one of their mails and puts them on. Only the labels not
+    /// on the mail yet are asked about; the model never takes one off.
     pub async fn label_email(&self, account: &Account, email_id: i64) -> Result<Vec<LabelPick>> {
-        let labels = self.store().assist_labels(account.id).await?;
+        let record = self.record(account, email_id).await?;
+        let mut labels = self.store().assist_labels(account.id).await?;
+        labels.retain(|label| !record.keywords.contains(&label.keyword));
         if labels.is_empty() {
             return Ok(Vec::new());
         }
-        let record = self.record(account, email_id).await?;
-        let ticket = self.prepare(account, "autoLabels").await?.expecting(TYPICAL_LABEL_TOKENS);
+        let ticket =
+            self.prepare(account, "autoLabels").await?.expecting(TYPICAL_LABEL_TOKENS_PER_LABEL * labels.len() as i64);
         let mail = self.text(&record, LABEL_MAIL_CHARS).await?;
         let list: Vec<(String, String)> = labels.iter().map(|l| (l.name.clone(), l.description.clone())).collect();
         let prompt = prompts::labels(&mail, &list);
@@ -948,7 +1094,7 @@ impl Assist {
         }
         let change = KeywordsChange::Patch(picks.iter().map(|pick| (pick.label.keyword.clone(), true)).collect());
         let update = uwumail_store::EmailUpdate { id: email_id, keywords: change, ..Default::default() };
-        if let Some(Err(err)) = self.store().update_emails(account.id, vec![update]).await?.pop() {
+        if let Some(Err(err)) = self.store().update_emails_by_server(account.id, vec![update]).await?.pop() {
             return Err(err.into());
         }
         for pick in &picks {
@@ -966,8 +1112,15 @@ impl Assist {
         Ok(picks)
     }
 
-    /// Takes one label's keyword off emails, in batches.
-    pub(crate) async fn remove_keyword(&self, account_id: i64, keyword: &str, emails: &[i64]) -> Result<()> {
+    /// Takes one label's keyword off emails, in batches: as the person (`by_hand`, which teaches the
+    /// label's learning) or as the server.
+    pub(crate) async fn remove_keyword(
+        &self,
+        account_id: i64,
+        keyword: &str,
+        emails: &[i64],
+        by_hand: bool,
+    ) -> Result<()> {
         for chunk in emails.chunks(500) {
             let updates = chunk
                 .iter()
@@ -977,7 +1130,11 @@ impl Assist {
                     ..Default::default()
                 })
                 .collect();
-            self.store().update_emails(account_id, updates).await?;
+            if by_hand {
+                self.store().update_emails(account_id, updates).await?;
+            } else {
+                self.store().update_emails_by_server(account_id, updates).await?;
+            }
         }
         Ok(())
     }
@@ -989,16 +1146,89 @@ impl Assist {
             Err(StoreError::NotFound(_)) => return Err(AssistError::NotFound(format!("label {label_id}"))),
             Err(err) => return Err(err.into()),
         };
-        self.remove_keyword(account.id, &keyword, &emails).await
+        self.remove_keyword(account.id, &keyword, &emails, false).await
     }
 
-    /// Takes a label the model set off its email again. `false` when there is no such entry.
+    /// Takes a label that was put on by itself off its email again, as the person would. `false`
+    /// when there is no such entry.
     pub async fn undo_label(&self, account: &Account, log_id: i64) -> Result<bool> {
         let Some((email_id, keyword)) = self.store().undo_label_log(account.id, log_id).await? else {
             return Ok(false);
         };
-        self.remove_keyword(account.id, &keyword, &[email_id]).await?;
+        self.remove_keyword(account.id, &keyword, &[email_id], true).await?;
         Ok(true)
+    }
+
+    /// What `AssistLabel/suggest` asks about, without reading the mail but a foreign one.
+    async fn suggest_request(&self, account: &Account, args: &SuggestArgs) -> Result<SuggestRequest> {
+        if let Some(foreign) = one_foreign(&args.foreign_mails)? {
+            let labels = args
+                .foreign_labels
+                .iter()
+                .map(|label| SuggestLabel {
+                    id: None,
+                    name: label.name.clone(),
+                    description: label.description.clone(),
+                    is_set: label.is_set,
+                })
+                .collect();
+            let room = if args.suggest_new { MAX_NEW_LABELS } else { 0 };
+            return Ok(SuggestRequest { labels, room, mail: foreign.mail_text(LABEL_MAIL_CHARS) });
+        }
+        if !args.foreign_labels.is_empty() {
+            return Err(invalid("foreignLabels", "foreignLabels go with foreignMails"));
+        }
+        let record = self.record(account, args.email_id).await?;
+        let labels: Vec<SuggestLabel> = self
+            .store()
+            .assist_labels(account.id)
+            .await?
+            .into_iter()
+            .map(|label| SuggestLabel {
+                id: Some(label.id),
+                is_set: record.keywords.contains(&label.keyword),
+                name: label.name,
+                description: label.description,
+            })
+            .collect();
+        let room = if args.suggest_new {
+            MAX_NEW_LABELS.min(uwumail_store::ASSIST_MAX_LABELS.saturating_sub(labels.len()))
+        } else {
+            0
+        };
+        let mail = self.text(&record, LABEL_MAIL_CHARS).await?;
+        Ok(SuggestRequest { labels, room, mail })
+    }
+
+    /// `AssistLabel/suggest`: what the model says of every label for one mail, and new labels when
+    /// none fits. Changes nothing.
+    pub async fn suggest_labels(&self, account: &Account, args: SuggestArgs) -> Result<SuggestResult> {
+        let foreign = !args.foreign_mails.is_empty();
+        if foreign {
+            one_foreign(&args.foreign_mails)?;
+        } else {
+            if !args.foreign_labels.is_empty() {
+                return Err(invalid("foreignLabels", "foreignLabels go with foreignMails"));
+            }
+            self.record(account, args.email_id).await?;
+        }
+        let ticket = self.prepare_for(account, "autoLabels", foreign).await?;
+        let request = self.suggest_request(account, &args).await?;
+        let ticket = ticket.expecting(typical_suggest(request.labels.len(), request.room));
+        let prompt = request.prompt(args.language.as_deref());
+        let (completion, effective) = self.send(ticket, &prompt, None).await?;
+        let answer = llm::json_answer(&completion.text).ok_or_else(|| AssistError::ProviderFailed {
+            description: "the model's answer was not a list of labels".into(),
+            retry_after: None,
+            transient: false,
+        })?;
+        let verdicts = parse_verdicts(&answer, &request.labels);
+        let new_labels = if verdicts.iter().any(|verdict| verdict.fits) {
+            Vec::new()
+        } else {
+            parse_new_labels(&answer, &request.labels, request.room)
+        };
+        Ok(SuggestResult { verdicts, new_labels, effective, usage: Usage::of(&completion) })
     }
 
     /// `Assist/usage`: the person's rows (with the costs they may see) since `days` days ago (today included), and today.
@@ -1029,6 +1259,110 @@ fn typical_compose(args: &ComposeArgs) -> i64 {
         Some(text) => (llm::estimate_texts([text]) * 5 / 4).max(100),
         None => TYPICAL_WRITE_TOKENS,
     }
+}
+
+/// A typical answer of `AssistLabel/suggest`.
+fn typical_suggest(labels: usize, room: usize) -> i64 {
+    let new = if room > 0 { TYPICAL_NEW_LABEL_TOKENS } else { 0 };
+    TYPICAL_LABEL_TOKENS_PER_LABEL * labels as i64 + new
+}
+
+/// The one foreign mail of a call that takes one, if the call is about a foreign mail.
+fn one_foreign(mails: &[ForeignMail]) -> Result<Option<&ForeignMail>> {
+    match mails {
+        [] => Ok(None),
+        [mail] => Ok(Some(mail)),
+        _ => Err(invalid("foreignMails", "this call takes exactly 1 foreign mail")),
+    }
+}
+
+/// The prompt of `Assist/spamCheck` for a mail of another account, with its provider's findings.
+fn foreign_spam_prompt(mail: &ForeignMail, language: Option<&str>) -> (Prompt, SpamSignals) {
+    let signals = Assist::foreign_spam_signals(mail);
+    let prompt = prompts::spam_check(&mail.mail_text(MAX_MAIL_CHARS), &findings(&signals), language);
+    (prompt, signals)
+}
+
+/// A label `AssistLabel/suggest` asks about: one of the person's, or of another account.
+struct SuggestLabel {
+    id: Option<i64>,
+    name: String,
+    description: String,
+    is_set: bool,
+}
+
+struct SuggestRequest {
+    labels: Vec<SuggestLabel>,
+    /// New labels that may be proposed.
+    room: usize,
+    mail: MailText,
+}
+
+impl SuggestRequest {
+    fn prompt(&self, language: Option<&str>) -> Prompt {
+        let list: Vec<(String, String)> =
+            self.labels.iter().map(|label| (label.name.clone(), label.description.clone())).collect();
+        prompts::suggest(&self.mail, &list, self.room, language)
+    }
+}
+
+/// The model's verdicts, in the order of the labels; a label it did not answer for is left out, a
+/// name that is no label is dropped, each label counts by its first verdict.
+fn parse_verdicts(answer: &Value, labels: &[SuggestLabel]) -> Vec<LabelVerdict> {
+    let mut found: Vec<Option<LabelVerdict>> = labels.iter().map(|_| None).collect();
+    for entry in answer.get("verdicts").and_then(Value::as_array).into_iter().flatten().take(100) {
+        let Some(name) = entry.get("name").and_then(Value::as_str) else { continue };
+        let Some(fits) = entry.get("fits").and_then(Value::as_bool) else { continue };
+        let name = name.trim().to_lowercase();
+        let Some(index) = labels.iter().position(|label| label.name.trim().to_lowercase() == name) else {
+            continue;
+        };
+        if found[index].is_some() {
+            continue;
+        }
+        let label = &labels[index];
+        found[index] = Some(LabelVerdict {
+            label_id: label.id,
+            name: label.name.clone(),
+            reason: optional_text(entry.get("reason"), MAX_REASON_CHARS).unwrap_or_default(),
+            fits,
+            is_set: label.is_set,
+        });
+    }
+    found.into_iter().flatten().collect()
+}
+
+/// The proposed labels that hold: a name of 1 to 40 characters that is no label's yet, a
+/// description of at most 300; a color that is no `#rrggbb` is replaced.
+fn parse_new_labels(answer: &Value, labels: &[SuggestLabel], room: usize) -> Vec<NewLabel> {
+    let mut taken: HashSet<String> = labels.iter().map(|label| label.name.trim().to_lowercase()).collect();
+    let mut out = Vec::new();
+    for entry in answer.get("newLabels").and_then(Value::as_array).into_iter().flatten().take(10) {
+        if out.len() >= room {
+            break;
+        }
+        let text = |field: &str| entry.get(field).and_then(Value::as_str).map(|t| t.replace('\n', " "));
+        let name = text("name").map(|name| clean(&name, usize::MAX)).unwrap_or_default();
+        let description = text("description").map(|d| clean(&d, usize::MAX)).unwrap_or_default();
+        if name.is_empty() || chars(&name) > MAX_LABEL_NAME_CHARS || chars(&description) > MAX_LABEL_DESCRIPTION_CHARS {
+            continue;
+        }
+        if !taken.insert(name.to_lowercase()) {
+            continue;
+        }
+        let color = text("color")
+            .map(|color| color.trim().to_ascii_lowercase())
+            .filter(|color| {
+                color.len() == 7 && color.starts_with('#') && color[1..].chars().all(|c| c.is_ascii_hexdigit())
+            })
+            .unwrap_or_else(|| {
+                let at = name.chars().map(|c| c as usize).sum::<usize>() % LABEL_COLORS.len();
+                LABEL_COLORS[at].to_owned()
+            });
+        let reason = optional_text(entry.get("reason"), MAX_REASON_CHARS).unwrap_or_default();
+        out.push(NewLabel { name, description, color, reason });
+    }
+    out
 }
 
 /// A typical summary of `mails` mails.
@@ -1092,10 +1426,11 @@ fn utc_date(secs: i64) -> String {
         .unwrap_or_default()
 }
 
-/// SPF, DKIM and DMARC from the topmost `Authentication-Results` this server wrote.
+/// SPF, DKIM and DMARC from the topmost `Authentication-Results` this server (`hostname`) wrote, or
+/// the topmost of any server without one (for mail of another account).
 pub fn authentication(
     headers: &[(String, String)],
-    hostname: &str,
+    hostname: Option<&str>,
     from: &[uwumail_store::EmailAddress],
 ) -> AuthenticationSignals {
     let from_domain = from
@@ -1106,7 +1441,9 @@ pub fn authentication(
     let mut signals = AuthenticationSignals { from_domain, ..AuthenticationSignals::default() };
     let ours = headers.iter().find(|(name, value)| {
         name.eq_ignore_ascii_case("Authentication-Results")
-            && value.split(';').next().is_some_and(|id| id.trim().eq_ignore_ascii_case(hostname))
+            && hostname.is_none_or(|hostname| {
+                value.split(';').next().is_some_and(|id| id.trim().eq_ignore_ascii_case(hostname))
+            })
     });
     let Some((_, value)) = ours else { return signals };
     let mut dkim: Vec<String> = Vec::new();
@@ -1158,13 +1495,20 @@ pub fn spam_status(headers: &[(String, String)]) -> (Option<f64>, Option<f64>, V
 fn findings(signals: &SpamSignals) -> String {
     let auth = &signals.authentication;
     let or_none = |value: &Option<String>| value.clone().unwrap_or_else(|| "not checked".into());
-    let mut out = format!(
+    let mut out = String::new();
+    if signals.sender.is_none() {
+        out.push_str(
+            "- The mail is from another account of the reader: these checks are what that account's mail \
+provider wrote into the mail, not checks of this server.\n",
+        );
+    }
+    out.push_str(&format!(
         "- SPF: {}\n- DKIM: {}\n- DMARC: {}\n- Domain of the From address: {}\n",
         or_none(&auth.spf),
         or_none(&auth.dkim),
         or_none(&auth.dmarc),
         auth.from_domain.clone().unwrap_or_else(|| "none".into())
-    );
+    ));
     match (signals.spam_score, signals.spam_threshold) {
         (Some(score), Some(threshold)) => {
             out.push_str(&format!("- Spam filter: {score:.1} points, Junk from {threshold:.1}\n"));
@@ -1176,15 +1520,17 @@ fn findings(signals: &SpamSignals) -> String {
         out.push_str(&format!("- Spam filter rules that counted: {}\n", signals.tests.join(", ")));
     }
     out.push_str(&format!("- In the Junk folder now: {}\n", if signals.in_junk { "yes" } else { "no" }));
-    let sender = &signals.sender;
-    out.push_str(&format!(
-        "- Earlier mails from this address: {} ({} of them in Junk); mails the reader sent to it: {}; in the reader's \
-address book: {}",
-        sender.earlier_messages,
-        sender.earlier_in_junk,
-        sender.written_to,
-        if sender.in_contacts { "yes" } else { "no" }
-    ));
+    match &signals.sender {
+        Some(sender) => out.push_str(&format!(
+            "- Earlier mails from this address: {} ({} of them in Junk); mails the reader sent to it: {}; in the \
+reader's address book: {}",
+            sender.earlier_messages,
+            sender.earlier_in_junk,
+            sender.written_to,
+            if sender.in_contacts { "yes" } else { "no" }
+        )),
+        None => out.push_str("- Earlier mails from this address: not known"),
+    }
     out
 }
 
@@ -1207,16 +1553,19 @@ pub fn parse_spam(text: &str) -> Option<(String, f64, Vec<String>)> {
     Some((verdict, confidence.clamp(0.0, 1.0), reasons))
 }
 
-/// Which of the person's labels the model chose, with its reasons. Names that are not labels are
-/// dropped, each label counts once.
+/// Which of the person's labels the model chose, with its reasons. The model judges every label and
+/// says `"fits": false` for the ones that do not fit; those are dropped, like names that are not
+/// labels. An entry without `fits` counts as chosen. Each label counts once, by its first entry.
 pub fn parse_labels(answer: &Value, labels: &[AssistLabel]) -> Vec<LabelPick> {
     let mut picks: Vec<LabelPick> = Vec::new();
+    let mut seen = HashSet::new();
     for entry in answer.get("labels").and_then(Value::as_array).into_iter().flatten().take(50) {
-        let (name, reason) = match entry {
-            Value::String(name) => (name.as_str(), ""),
+        let (name, reason, fits) = match entry {
+            Value::String(name) => (name.as_str(), "", true),
             Value::Object(object) => (
                 object.get("name").and_then(Value::as_str).unwrap_or_default(),
                 object.get("reason").and_then(Value::as_str).unwrap_or_default(),
+                object.get("fits").and_then(Value::as_bool).unwrap_or(true),
             ),
             _ => continue,
         };
@@ -1224,7 +1573,7 @@ pub fn parse_labels(answer: &Value, labels: &[AssistLabel]) -> Vec<LabelPick> {
         let Some(label) = labels.iter().find(|label| label.name.trim().to_lowercase() == name.to_lowercase()) else {
             continue;
         };
-        if picks.iter().any(|pick| pick.label.id == label.id) {
+        if !seen.insert(label.id) || !fits {
             continue;
         }
         picks.push(LabelPick { label: label.clone(), reason: clean(&reason.replace('\n', " "), MAX_REASON_CHARS) });
@@ -1474,12 +1823,19 @@ mod tests {
             ("X-Spam-Status".to_owned(), "Yes, score=6.0 required=5.0 tests=SPF_FAIL,SPAMHAUS_ZEN".to_owned()),
         ];
         let from = [uwumail_store::EmailAddress { name: None, email: "service@Bank.example".into() }];
-        let auth = authentication(&headers, "MX.example.org", &from);
+        let auth = authentication(&headers, Some("MX.example.org"), &from);
         assert_eq!(auth.spf.as_deref(), Some("fail"));
         assert_eq!(auth.dkim.as_deref(), Some("pass"));
         assert_eq!(auth.dmarc.as_deref(), Some("fail"));
         assert_eq!(auth.from_domain.as_deref(), Some("bank.example"));
-        assert_eq!(authentication(&headers[1..], "mx.example.org", &from).spf, None, "a stranger's claim");
+        assert_eq!(authentication(&headers[1..], Some("mx.example.org"), &from).spf, None, "a stranger's claim");
+        // For a foreign mail, the topmost of any server: its own provider's.
+        assert_eq!(authentication(&headers[1..], None, &from).spf.as_deref(), Some("pass"));
+        let foreign = ForeignMail { headers: headers[1..].to_vec(), in_junk: true, ..ForeignMail::default() };
+        let signals = Assist::foreign_spam_signals(&foreign);
+        assert!(signals.in_junk && signals.sender.is_none());
+        assert_eq!(signals.spam_score, Some(6.0));
+        assert!(findings(&signals).contains("another account"), "{}", findings(&signals));
         assert_eq!(spam_status(&headers), (Some(6.0), Some(5.0), vec!["SPF_FAIL".into(), "SPAMHAUS_ZEN".into()]));
         let none = [("X-Spam-Status".to_owned(), "No, score=0.0 required=5.0 tests=none".to_owned())];
         assert_eq!(spam_status(&none), (Some(0.0), Some(5.0), vec![]));
@@ -1502,7 +1858,49 @@ mod tests {
             keyword: uwumail_store::label_keyword(name),
             color: None,
             created_at: 0,
+            rules: None,
+            detector: None,
+            learn_senders: true,
+            classifier: true,
         }
+    }
+
+    fn suggest_label(id: Option<i64>, name: &str, is_set: bool) -> SuggestLabel {
+        SuggestLabel { id, name: name.into(), description: String::new(), is_set }
+    }
+
+    #[test]
+    fn verdicts_follow_the_labels_and_proposals_are_checked() {
+        let labels = [suggest_label(Some(1), "Rechnungen", false), suggest_label(Some(2), "Reisen", true)];
+        let answer = json!({
+            "verdicts": [
+                { "name": "reisen", "reason": "Keine Reise.", "fits": false },
+                { "name": "Rechnungen", "reason": "Eine Rechnung\nder Stadtwerke.", "fits": true },
+                { "name": "Rechnungen", "reason": "again", "fits": false },
+                { "name": "Spam", "reason": "x", "fits": true },
+                { "name": "Reisen", "reason": "no fits" }
+            ],
+            "newLabels": [{ "name": "Strom", "description": "", "color": "#FFAA00", "reason": "x" }]
+        });
+        let verdicts = parse_verdicts(&answer, &labels);
+        let summary: Vec<(Option<i64>, bool, bool)> = verdicts.iter().map(|v| (v.label_id, v.fits, v.is_set)).collect();
+        assert_eq!(summary, [(Some(1), true, false), (Some(2), false, true)]);
+        assert_eq!(verdicts[0].reason, "Eine Rechnung der Stadtwerke.");
+
+        let proposals = json!({ "newLabels": [
+            { "name": "  Strom & Gas ", "description": "Abschläge und Jahresrechnungen", "color": "#FFAA00", "reason": "Neu" },
+            { "name": "strom & gas", "description": "", "color": "#000000", "reason": "doppelt" },
+            { "name": "reisen", "description": "", "color": "#000000", "reason": "gibt es schon" },
+            { "name": "x".repeat(41), "description": "", "color": "#000000", "reason": "zu lang" },
+            { "name": "Verein", "description": "d".repeat(301), "color": "#000000", "reason": "zu lang" },
+            { "name": "Garten", "description": "", "color": "grün", "reason": "Farbe falsch" },
+            { "name": "Dritter", "description": "", "color": "#123456", "reason": "zu viele" }
+        ]});
+        let new = parse_new_labels(&proposals, &labels, 2);
+        assert_eq!(new.iter().map(|l| l.name.as_str()).collect::<Vec<_>>(), ["Strom & Gas", "Garten"]);
+        assert_eq!(new[0].color, "#ffaa00");
+        assert!(LABEL_COLORS.contains(&new[1].color.as_str()));
+        assert!(parse_new_labels(&proposals, &labels, 0).is_empty());
     }
 
     #[test]
@@ -1517,6 +1915,19 @@ mod tests {
         let picks = parse_labels(&answer, &labels);
         assert_eq!(picks.iter().map(|p| p.label.id).collect::<Vec<_>>(), [1, 2]);
         assert_eq!(picks[0].reason, "Eine Rechnung");
+    }
+
+    #[test]
+    fn labels_judged_not_to_fit_are_dropped() {
+        let labels = [label(1, "Rechnungen"), label(2, "Termine"), label(3, "Sicherheit")];
+        let answer = json!({ "labels": [
+            { "name": "Rechnungen", "reason": "Keine Rechnung, sondern ein Sicherheitshinweis.", "fits": false },
+            { "name": "Rechnungen", "reason": "again", "fits": true },
+            { "name": "Termine", "reason": "Kein Termin.", "fits": false },
+            { "name": "Sicherheit", "reason": "Eine neue App hat Zugriff aufs Konto.", "fits": true }
+        ]});
+        let picks = parse_labels(&answer, &labels);
+        assert_eq!(picks.iter().map(|p| p.label.id).collect::<Vec<_>>(), [3]);
     }
 
     #[test]

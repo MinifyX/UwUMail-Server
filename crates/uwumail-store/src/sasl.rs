@@ -3,10 +3,17 @@
 //! here; IMAP, SMTP and ManageSieve each put them on their own wire.
 
 /// What an app sent: the login it names, if any, and the token.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct SaslBearer {
     pub user: Option<String>,
     pub token: String,
+}
+
+impl std::fmt::Debug for SaslBearer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The token never into a log line.
+        f.debug_struct("SaslBearer").field("user", &self.user).finish_non_exhaustive()
+    }
 }
 
 /// The token of an `auth=Bearer <token>` value.
@@ -89,6 +96,14 @@ pub fn sasl_bearer_error(xoauth2: bool, scope: &str, hostname: Option<&str>) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debug_leaves_the_token_out() {
+        let bearer = SaslBearer { user: Some("leni@example.org".into()), token: "secret-access-token".into() };
+        let shown = format!("{bearer:?}");
+        assert!(shown.contains("leni@example.org"), "{shown}");
+        assert!(!shown.contains("secret-access-token"), "{shown}");
+    }
 
     #[test]
     fn reads_what_apps_send() {

@@ -13,6 +13,7 @@ import { toast } from "@/state/toasts";
 import { ChatgptLogin } from "./ChatgptLogin";
 import {
   FEATURES,
+  FOREIGN_MAIL,
   changeKind,
   draftOf,
   emptyDraft,
@@ -515,6 +516,17 @@ function AdminFields({
             </label>
           ))}
         </div>
+        <Toggle
+          checked={draft.features.includes(FOREIGN_MAIL)}
+          onChange={(value) =>
+            change(
+              "features",
+              value ? [...draft.features, FOREIGN_MAIL] : draft.features.filter((other) => other !== FOREIGN_MAIL),
+            )
+          }
+          label={t("assist.form.foreignMail")}
+          description={t("assist.form.foreignMailHint")}
+        />
         {errorOf("features") && (
           <p role="alert" className="text-[13px] text-danger">
             {errorOf("features")}

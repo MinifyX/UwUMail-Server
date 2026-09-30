@@ -431,6 +431,34 @@ async fn before_a_login_a_literal_may_not_be_bigger_than_a_command() {
     assert!(ready.starts_with("+ "), "a member was refused their own message: {ready}");
 }
 
+/// Before a login only literals as big as a user name or a password are taken, and those still
+/// work. A stranger announcing 64 KiB is refused: synchronizing, with BAD before any data is asked
+/// for; non-synchronizing (the bytes are on their way already), with BYE.
+#[tokio::test]
+async fn before_a_login_only_small_literals_are_taken() {
+    let server = server().await;
+    let mut client = Client::connect(&server).await;
+    client.send(b"t1 LOGIN {65536}\r\n").await;
+    let answer = client.line().await;
+    assert!(answer.starts_with("t1 BAD"), "{answer}");
+
+    // A password sent as a literal, as some apps do, logs in as ever.
+    client.send(b"t2 LOGIN mini@example.org {15}\r\n").await;
+    let ready = client.line().await;
+    assert!(ready.starts_with("+ "), "{ready}");
+    client.send(format!("{PASSWORD}\r\n").as_bytes()).await;
+    let (_, done) = client.until_tagged("t2").await;
+    assert!(done.contains("OK"), "{done}");
+
+    let mut stranger = Client::connect(&server).await;
+    stranger.send(b"t1 LOGIN {65536+}\r\n").await;
+    let bye = stranger.line().await;
+    assert!(bye.starts_with("* BYE"), "{bye}");
+    let mut rest = Vec::new();
+    stranger.reader.read_to_end(&mut rest).await.unwrap();
+    assert!(rest.is_empty(), "the connection ends: {}", String::from_utf8_lossy(&rest));
+}
+
 /// An OAuth access token for `account`, as an app gets it through the portal (docs/oauth.md).
 pub(crate) async fn oauth_token(store: &Store, account: i64, scopes: Vec<&'static str>) -> String {
     // RFC 7636 appendix B.
@@ -554,4 +582,30 @@ async fn a_connection_ends_with_its_login() {
     laptop.send(b"t9 SELECT INBOX\r\n").await;
     let bye = laptop.line().await;
     assert!(bye.starts_with("* BYE"), "{bye}");
+}
+
+/// A label's keyword set or cleared with STORE is the person labeling by hand: the labels learn from
+/// it (docs/jmap-assist.md, "Learning from the person").
+#[tokio::test]
+async fn labels_learn_from_store() {
+    let server = server().await;
+    let label =
+        server.store.create_assist_label(server.account, "Rechnungen".into(), String::new(), None).await.unwrap();
+    deliver(&server.store, server.account, "Rechnung eins").await;
+    let mut client = Client::login(&server).await;
+    assert!(client.command("SELECT INBOX").await.1.contains("OK"));
+    assert!(client.command("STORE 1 +FLAGS (rechnungen $Forwarded)").await.1.contains("OK"));
+    assert!(client.command("STORE 1 -FLAGS ($Forwarded)").await.1.contains("OK"));
+    let training = server.store.label_training().await.unwrap();
+    assert_eq!(training.iter().map(|t| (t.label_id, t.positive)).collect::<Vec<_>>(), [(label.id, true)]);
+    let knowledge =
+        server.store.label_knowledge(server.account, "nyu@example.net".into(), vec![], vec![]).await.unwrap();
+    assert_eq!(knowledge.senders.get(&label.id), Some(&1));
+
+    assert!(client.command("STORE 1 FLAGS (\\Seen)").await.1.contains("OK"));
+    let training = server.store.label_training().await.unwrap();
+    assert_eq!(training.last().map(|t| (t.label_id, t.positive)), Some((label.id, false)));
+    let knowledge =
+        server.store.label_knowledge(server.account, "nyu@example.net".into(), vec![], vec![]).await.unwrap();
+    assert!(knowledge.senders.is_empty());
 }

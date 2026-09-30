@@ -107,7 +107,7 @@ pub async fn download(
         };
         let (bytes, detected) = match reference {
             ids::BlobRef::Whole(_) => (bytes, "message/rfc822".to_owned()),
-            ref part => match email::blob_content(&bytes, part) {
+            part => match part_of(bytes, part).await {
                 Some(part) => part,
                 None => return problem(StatusCode::NOT_FOUND, "Unknown blob."),
             },
@@ -142,7 +142,7 @@ pub async fn download(
                 let uploaded = store.upload_media_type(owner.id, hash).await.ok().flatten();
                 (bytes, uploaded.unwrap_or_else(|| "message/rfc822".into()))
             }
-            ref part => match email::blob_content(&bytes, part) {
+            part => match part_of(bytes, part).await {
                 Some(part) => part,
                 None => return problem(StatusCode::NOT_FOUND, "Unknown blob."),
             },
@@ -150,6 +150,12 @@ pub async fn download(
     };
     let content_type = query.accept.filter(|t| t.contains('/')).unwrap_or(detected);
     blob_response(bytes, content_type, &name)
+}
+
+/// A part of a stored message, a winmail.dat's included: parsing the message and decoding the
+/// winmail.dat is CPU work, done on a blocking thread so that it holds up no other request.
+async fn part_of(bytes: Vec<u8>, reference: ids::BlobRef) -> Option<(Vec<u8>, String)> {
+    tokio::task::spawn_blocking(move || email::blob_content(&bytes, &reference)).await.ok().flatten()
 }
 
 /// The readable mailboxes of a shared account (`a<owner>`) for `me`, when it is one.
@@ -163,9 +169,22 @@ async fn shared_owner(jmap: &Jmap, me: i64, account: &str) -> Option<Vec<i64>> {
     Some(mine.into_iter().filter(|m| m.rights.contains('r')).map(|m| m.mailbox.id).collect())
 }
 
+/// Types a browser runs, or shows as a page, when the portal's own origin serves them: a script
+/// (which `<script src>` loads whatever the Content-Disposition says, past the webmail's
+/// `script-src 'self'`), a style sheet, HTML, SVG and other XML.
+fn is_active_type(content_type: &str) -> bool {
+    let essence = content_type.split(';').next().unwrap_or_default().trim().to_ascii_lowercase();
+    ["javascript", "ecmascript", "jscript", "livescript", "html", "xml", "xsl", "css", "wasm"]
+        .iter()
+        .any(|active| essence.contains(active))
+}
+
 fn blob_response(bytes: Vec<u8>, content_type: String, name: &str) -> Response {
     let mut response = Response::new(Body::from(bytes));
     let headers = response.headers_mut();
+    // The caller picks the type (`accept`) and the sender picks a part's: neither may make the
+    // blob something the browser runs. Programs get the bytes all the same.
+    let content_type = if is_active_type(&content_type) { "application/octet-stream".into() } else { content_type };
     headers.insert(
         header::CONTENT_TYPE,
         HeaderValue::from_str(&content_type).unwrap_or(HeaderValue::from_static("application/octet-stream")),
@@ -178,5 +197,8 @@ fn blob_response(bytes: Vec<u8>, content_type: String, name: &str) -> Response {
     headers.insert(header::CONTENT_DISPOSITION, disposition);
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, immutable, max-age=31536000"));
     headers.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
+    // Nothing in it runs if it is opened after all, and other sites cannot embed it.
+    headers.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static("default-src 'none'; sandbox"));
+    headers.insert("cross-origin-resource-policy", HeaderValue::from_static("same-origin"));
     response
 }

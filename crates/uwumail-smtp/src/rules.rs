@@ -13,7 +13,7 @@ use std::time::Duration;
 use uwumail_store::{ImapMailbox, IngestRequest, MailboxRole, MailboxTarget, StoreError, normalize_address};
 
 use crate::sieve::{self, Envelope, Folder, Plan, Target};
-use crate::{Context, forward};
+use crate::{Context, forward, labels};
 
 /// How long a run may take before the message is simply kept. The engine's own limits stop a script
 /// long before this; this is for a machine that is very busy.
@@ -262,7 +262,10 @@ async fn redirect_target(ctx: &Context, account_id: i64, address: &str) -> Optio
 }
 
 /// Files `message` for one person the way their active script says. `recipient` is the address it
-/// arrived for. Errors are from storing it and mean the same as without a script.
+/// arrived for; `labeled` are the labels put on before the script, which it sees as headers and
+/// which go onto every stored copy. Errors are from storing it and mean the same as without a
+/// script.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn deliver(
     ctx: &Context,
     account_id: i64,
@@ -270,11 +273,13 @@ pub(crate) async fn deliver(
     recipient: &str,
     envelope_from: &str,
     message: &[u8],
+    labeled: &labels::Labeled,
     proof: forward::Proof<'_>,
 ) -> Result<Filed, StoreError> {
     let mut folders = folders(&ctx.store.imap_mailboxes(account_id).await?);
     let envelope = Envelope { from: envelope_from, to: recipient };
-    let plan = plan(script, message, envelope, &folders, account_id).await;
+    let plan = plan(script, &labels::for_sieve(message, labeled), envelope, &folders, account_id).await;
+    let label_keywords = labeled.keywords();
 
     // Redirects first: one that is not allowed must not lose the message.
     let mut redirected = false;
@@ -325,11 +330,18 @@ pub(crate) async fn deliver(
             continue;
         }
         placed.push(mailbox);
-        groups.entry(filing.keywords.clone()).or_default().push(mailbox);
+        let mut keywords = filing.keywords.clone();
+        for keyword in &label_keywords {
+            if !keywords.contains(keyword) {
+                keywords.push(keyword.clone());
+            }
+        }
+        keywords.sort();
+        groups.entry(keywords).or_default().push(mailbox);
     }
     if groups.is_empty() && !filings.is_empty() {
         // An account without folders at all: let the store find its inbox.
-        groups.insert(Vec::new(), Vec::new());
+        groups.insert(label_keywords.clone(), Vec::new());
     }
 
     let mut stored = false;

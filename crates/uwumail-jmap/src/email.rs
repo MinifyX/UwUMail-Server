@@ -51,13 +51,43 @@ pub const DEFAULT_PROPERTIES: &[&str] = &[
 pub const DEFAULT_BODY_PROPERTIES: &[&str] =
     &["partId", "blobId", "size", "name", "type", "charset", "disposition", "cid", "language", "location"];
 
+/// What the body values of one `Email/get` or `Email/parse` response may hold together. With
+/// `fetchAllBodyValues` and no `maxBodyValueBytes`, 500 large messages were answered in full,
+/// gigabytes held at once; past this, values come truncated (`isTruncated`). One large message
+/// still comes whole.
+pub const MAX_BODY_VALUE_BYTES_PER_RESPONSE: usize = 50 * 1024 * 1024;
+
 /// Which body parts get their text in `bodyValues`.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct BodyValueOptions {
     pub text: bool,
     pub html: bool,
     pub all: bool,
+    /// `maxBodyValueBytes`: 0 for no limit.
     pub max_bytes: usize,
+    /// What the body values of this email may hold together: what is left of
+    /// [`MAX_BODY_VALUE_BYTES_PER_RESPONSE`] for the response.
+    pub budget: usize,
+}
+
+impl Default for BodyValueOptions {
+    fn default() -> Self {
+        BodyValueOptions {
+            text: false,
+            html: false,
+            all: false,
+            max_bytes: 0,
+            budget: MAX_BODY_VALUE_BYTES_PER_RESPONSE,
+        }
+    }
+}
+
+/// The bytes the body values of an email's JSON hold, to take them off the response's budget.
+pub fn body_value_bytes(email: &Value) -> usize {
+    email
+        .get("bodyValues")
+        .and_then(Value::as_object)
+        .map_or(0, |values| values.values().filter_map(|v| v.get("value").and_then(Value::as_str)).map(str::len).sum())
 }
 
 /// Properties that need the raw message.
@@ -516,8 +546,9 @@ fn body_part(
     Value::Object(object)
 }
 
+/// `text` cut to at most `max` bytes, at a character boundary, and whether it was cut.
 fn truncate(text: &str, max: usize) -> (String, bool) {
-    if max == 0 || text.len() <= max {
+    if text.len() <= max {
         return (text.to_owned(), false);
     }
     let mut cut = max;
@@ -529,6 +560,7 @@ fn truncate(text: &str, max: usize) -> (String, bool) {
 
 fn body_values(message: &Message<'_>, tnef: &[Decoded], bodies: &Bodies, options: BodyValueOptions) -> Value {
     let mut values = Map::new();
+    let mut left = options.budget;
     let mut add = |part: PartRef| {
         let (id, text, problem) = match part {
             PartRef::Mime(index) => {
@@ -553,7 +585,9 @@ fn body_values(message: &Message<'_>, tnef: &[Decoded], bodies: &Bodies, options
         };
         // The value has LF line endings, not the CRLF of the message (RFC 8621, 4.1.4).
         let text = text.replace("\r\n", "\n");
-        let (value, truncated) = truncate(&text, options.max_bytes);
+        let max = if options.max_bytes == 0 { left } else { options.max_bytes.min(left) };
+        let (value, truncated) = truncate(&text, max);
+        left -= value.len();
         values.insert(id, json!({ "value": value, "isEncodingProblem": problem, "isTruncated": truncated }));
     };
     if options.all {
@@ -594,6 +628,13 @@ pub fn to_json(
     let bodies = parsed.as_ref().map(|m| bodies(m, &tnef));
     let headers =
         parsed.as_ref().and_then(|m| m.parts.first().map(|root| raw_headers(&m.raw_message, root))).unwrap_or_default();
+    // Cleaned once, for `uwuSafeHtml` and `uwuHasRemoteContent` alike.
+    let safe_html = std::cell::OnceCell::new();
+    let safe_html = || {
+        safe_html
+            .get_or_init(|| parsed.as_ref().zip(bodies.as_ref()).and_then(|(m, b)| safe_html_of(m, &tnef, b)))
+            .as_deref()
+    };
     let mut object = Map::new();
     for property in properties {
         let value = match (property.as_str(), record, parsed.as_ref()) {
@@ -662,15 +703,10 @@ pub fn to_json(
                 let Some(bodies) = &bodies else { continue };
                 body_values(m, &tnef, bodies, options)
             }
-            ("uwuSafeHtml", _, Some(m)) => {
-                bodies.as_ref().and_then(|b| safe_html_of(m, &tnef, b)).map_or(Value::Null, Value::String)
+            ("uwuSafeHtml", _, Some(_)) => safe_html().map_or(Value::Null, |clean| json!(clean)),
+            ("uwuHasRemoteContent", _, Some(_)) => {
+                json!(safe_html().is_some_and(crate::safe_html::has_remote_content))
             }
-            ("uwuHasRemoteContent", _, Some(m)) => json!(
-                bodies
-                    .as_ref()
-                    .and_then(|b| safe_html_of(m, &tnef, b))
-                    .is_some_and(|clean| crate::safe_html::has_remote_content(&clean))
-            ),
             (other, _, Some(_)) if other.starts_with("header:") => {
                 header_property(other, &headers).unwrap_or(Value::Null)
             }
@@ -1406,6 +1442,35 @@ Content-Transfer-Encoding: base64\r\n\r\nJVBERg==\r\n--b--\r\n";
         assert!(json["bodyValues"][text_id]["value"].as_str().unwrap().starts_with("Hallo Mini"));
         assert_eq!(json["bodyStructure"]["type"], "multipart/mixed");
         assert_eq!(json["bodyStructure"]["subParts"].as_array().unwrap().len(), 2);
+    }
+
+    /// All body values of a response share one budget: past it they come truncated, even without
+    /// `maxBodyValueBytes`, and `body_value_bytes` counts what they took.
+    #[test]
+    fn body_values_stop_at_the_budget() {
+        let raw =
+            b"From: nyu@example.org\r\nSubject: long\r\nContent-Type: text/html\r\n\r\n<p>0123456789abcdef</p>\r\n";
+        let hash = BlobHash::of(raw);
+        let properties = vec!["bodyValues".to_owned(), "uwuSafeHtml".to_owned(), "uwuHasRemoteContent".to_owned()];
+        let value = |options: BodyValueOptions| {
+            let json = to_json(None, Some(raw), &hash, &properties, &[], options);
+            let (_, value) = json["bodyValues"].as_object().unwrap().iter().next().unwrap();
+            (value.clone(), body_value_bytes(&json), json)
+        };
+        let all = BodyValueOptions { all: true, ..Default::default() };
+        let (whole, bytes, json) = value(all);
+        assert_eq!(whole["isTruncated"], false);
+        assert_eq!(bytes, whole["value"].as_str().unwrap().len());
+        assert!(json["uwuSafeHtml"].as_str().unwrap().contains("0123456789abcdef"), "{json}");
+        assert_eq!(json["uwuHasRemoteContent"], false);
+        let (cut, bytes, _) = value(BodyValueOptions { budget: 5, ..all });
+        assert_eq!((cut["value"].as_str().unwrap(), cut["isTruncated"].as_bool()), ("<p>01", Some(true)));
+        assert_eq!(bytes, 5);
+        let (cut, _, _) = value(BodyValueOptions { budget: 5, max_bytes: 3, ..all });
+        assert_eq!(cut["value"], "<p>");
+        let (empty, bytes, _) = value(BodyValueOptions { budget: 0, ..all });
+        assert_eq!((empty["value"].as_str().unwrap(), empty["isTruncated"].as_bool()), ("", Some(true)));
+        assert_eq!(bytes, 0);
     }
 
     #[test]

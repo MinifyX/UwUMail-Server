@@ -6,7 +6,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 
 use bytes::Bytes;
-use http_body_util::{BodyExt, Full};
+use http_body_util::{BodyExt, Full, Limited};
 use hyper::{Method, Request};
 use hyper_rustls::HttpsConnector;
 use hyper_util::client::legacy::Client;
@@ -17,6 +17,8 @@ use serde_json::{Value, json};
 use uwumail_smtp::dnscheck::{CheckStatus, DomainReport};
 
 pub const API: &str = "https://api.cloudflare.com/client/v4";
+/// The most of one answer that is read: Cloudflare sends a few kilobytes, and nothing is held beyond this.
+const MAX_ANSWER: usize = 1024 * 1024;
 
 /// The most bytes one string inside a TXT record may hold (RFC 1035 §3.3.14).
 const TXT_STRING_LIMIT: usize = 255;
@@ -232,12 +234,21 @@ impl Cloudflare {
             .header("Content-Type", "application/json")
             .body(Full::new(Bytes::from(body.map(|b| b.to_string()).unwrap_or_default())))
             .map_err(|err| err.to_string())?;
-        let response = tokio::time::timeout(std::time::Duration::from_secs(20), self.client.request(request))
+        let answer = async {
+            let response =
+                self.client.request(request).await.map_err(|err| format!("Cloudflare cannot be reached: {err}"))?;
+            let status = response.status();
+            // The body falls under the same deadline as the headers: a slow trickle holds nothing up.
+            let bytes = Limited::new(response.into_body(), MAX_ANSWER)
+                .collect()
+                .await
+                .map_err(|_| format!("Cloudflare answered {status} with too much or too little"))?
+                .to_bytes();
+            Ok::<_, String>((status, bytes))
+        };
+        let (status, bytes) = tokio::time::timeout(std::time::Duration::from_secs(20), answer)
             .await
-            .map_err(|_| "Cloudflare did not answer in time".to_owned())?
-            .map_err(|err| format!("Cloudflare cannot be reached: {err}"))?;
-        let status = response.status();
-        let bytes = response.into_body().collect().await.map_err(|err| err.to_string())?.to_bytes();
+            .map_err(|_| "Cloudflare did not answer in time".to_owned())??;
         let value: Value = serde_json::from_slice(&bytes).map_err(|_| format!("Cloudflare answered {status}"))?;
         if value["success"].as_bool() != Some(true) {
             let messages: Vec<String> = value["errors"]

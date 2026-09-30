@@ -24,54 +24,15 @@ use url::{Host, Url};
 const TIMEOUT: Duration = Duration::from_secs(60);
 const ZSTD_MAGIC: [u8; 4] = [0x28, 0xb5, 0x2f, 0xfd];
 
-/// Whether an address is on the open internet: not this machine, not the local network, not reserved.
+/// Whether an address is on the open internet: not this machine, not the local network, not
+/// reserved. The store's answer, so every protocol draws the line in the same place.
 pub fn is_public(ip: IpAddr) -> bool {
-    match ip.to_canonical() {
-        IpAddr::V4(v4) => {
-            let [a, b, c, _] = v4.octets();
-            !(v4.is_unspecified()
-                || v4.is_loopback()
-                || v4.is_private()
-                || v4.is_link_local()
-                || v4.is_broadcast()
-                || v4.is_multicast()
-                || a == 0
-                || a >= 240
-                || (a == 100 && (b & 0xc0) == 64)
-                || (a == 198 && (b & 0xfe) == 18)
-                || (a == 192 && b == 0 && (c == 0 || c == 2))
-                || (a == 198 && b == 51 && c == 100)
-                || (a == 203 && b == 0 && c == 113))
-        }
-        IpAddr::V6(v6) => {
-            let segments = v6.segments();
-            let first = segments[0];
-            let octets = v6.octets();
-            let embedded = |at: usize| IpAddr::from([octets[at], octets[at + 1], octets[at + 2], octets[at + 3]]);
-            // Addresses that carry an IPv4 address reach it where NAT64 or 6to4 routes them: they are
-            // as public as that address (EGRESS-3 of the 0.18.0 audit).
-            if segments[..6] == [0x64, 0xff9b, 0, 0, 0, 0] || segments[..6] == [0, 0, 0, 0, 0, 0] && !v6.is_loopback() {
-                return !v6.is_unspecified() && is_public(embedded(12));
-            }
-            if first == 0x2002 {
-                return is_public(embedded(2));
-            }
-            !(v6.is_unspecified()
-                // Local NAT64 (RFC 8215) and Teredo, whose IPv4 address is hidden.
-                || (first == 0x64 && segments[1] == 0xff9b && segments[2] == 1)
-                || (first == 0x2001 && segments[1] == 0)
-                || v6.is_loopback()
-                || v6.is_multicast()
-                || (first & 0xfe00) == 0xfc00
-                || (first & 0xffc0) == 0xfe80
-                || (first == 0x2001 && v6.segments()[1] == 0x0db8))
-        }
-    }
+    uwumail_store::is_public_ip(ip)
 }
 
 /// Resolves names like the system does, but keeps only public addresses.
 #[derive(Clone)]
-struct PublicResolver;
+pub(crate) struct PublicResolver;
 
 impl tower::Service<Name> for PublicResolver {
     type Response = std::vec::IntoIter<SocketAddr>;
