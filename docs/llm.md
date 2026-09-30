@@ -215,11 +215,19 @@ the token estimate, in a person's usage and in the admin's statistics.
   providers (`egress.assist`), kept in the database; a list that can't be
   fetched keeps its last good copy:
   - [LiteLLM's price list](https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json)
-    (`input_cost_per_token`, `output_cost_per_token`, US dollars) for most
-    providers; a model is found with or without a provider prefix
-    (`mistral/…`) and a date at its end (`-2025-08-07`, `-20251001`, `-latest`);
-  - OpenRouter's own prices from its `/api/v1/models`, while someone uses an
-    OpenRouter provider;
+    for most providers, US dollars: `input_cost_per_token`,
+    `output_cost_per_token`, `output_cost_per_reasoning_token`,
+    `cache_read_input_token_cost`, `cache_creation_input_token_cost`,
+    `input_cost_per_image`, `input_cost_per_request` (or `_per_query`),
+    `search_context_cost_per_query`, the higher prices of large prompts
+    (`*_above_128k_tokens`, `*_above_200k_tokens`), and `supports_reasoning` and
+    `max_output_tokens` about the model; a model is found with or without a
+    provider prefix (`mistral/…`) and a date at its end (`-2025-08-07`,
+    `-20251001`, `-latest`);
+  - OpenRouter's own prices from its `/api/v1/models` (`prompt`, `completion`,
+    `request`, `image`, `internal_reasoning`, `input_cache_read`,
+    `input_cache_write`, `web_search`), while someone uses an OpenRouter
+    provider;
   - the [ECB's euro reference rates](https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml)
     to show costs in euros, yen, yuan and the other currencies it lists. Until
     the server got them once (no way out to the internet yet), rough built-in
@@ -227,10 +235,11 @@ the token estimate, in a person's usage and in the admin's statistics.
     in euros all the same.
 - **Free**: Ollama and a ChatGPT subscription cost nothing per request.
 - **Set by hand**: the admin (for server providers) and a person (for their
-  own) can set a price in US dollars per million tokens, in and out. It comes
-  before the lists; a price set for one direction takes the other from the
-  lists. Needed for models the lists don't know (an OpenAI-compatible server,
-  a new model).
+  own) can set a price in US dollars per million tokens, in and out, and per
+  request. It comes before the lists; what is not set comes from the lists.
+  Thinking then costs what the answer costs, the cache what the prompt costs,
+  and the lists' higher prices for large prompts no longer apply. Needed for
+  models the lists don't know (an OpenAI-compatible server, a new model).
 - **Who sees it**: a person always sees what their own providers cost. What a
   server provider costs they see only when the admin switched on *Show costs
   to users* for it (off by default). The admin always sees all costs.
@@ -238,9 +247,17 @@ the token estimate, in a person's usage and in the admin's statistics.
   Chinese in yuan, all others in euros; in English a person may choose US
   dollars instead (the user setting `assist.currency`).
 - **What is kept**: every request's cost is kept with the usage, in US
-  dollars at the price of the moment; costs before 0.19.0 are not known.
-  Estimates are that: the token count is approximate and providers count with
-  their own tokenizers.
+  dollars at the price of the moment; costs before 0.19.0 are not known. It is
+  what the provider reported: the prompt (the part read from the provider's
+  cache at the cache price), the answer, the model's thinking, the per-request
+  fee, and the higher price of a large prompt; OpenRouter's own `usage.cost`
+  where it gives one.
+- **Estimates** (`Assist/estimate`, [jmap-assist.md](jmap-assist.md#assistestimate))
+  count every call a request makes, the API's framing, a typical answer and
+  the typical thinking of models that think, with a worst case. They learn
+  from the last 50 real requests per provider, model and feature (tokens only,
+  no content). They stay estimates: providers count with their own
+  tokenizers.
 
 ## Keys
 
