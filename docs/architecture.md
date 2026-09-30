@@ -40,6 +40,15 @@ Design choices that matter later:
 - **Threads by message id.** Every referenced message id is mapped to a thread,
   so replies that arrive before their parent still join the conversation.
 
+### `uwumail-tnef`
+
+A decoder for Outlook's winmail.dat (`application/ms-tnef`): attachments, the body (compressed
+RTF, the HTML wrapped in it) and meetings as iCalendar, plus unwrapping of Microsoft Safe Links.
+It depends on no other crate of the workspace, so the UwUMail client uses the same code. Stored
+mail is never changed: `uwumail-store` `tnef` decodes the part whenever the search index, the
+calendar, the spam check, the assistant or JMAP need what is inside
+([winmail-dat.md](winmail-dat.md)).
+
 ### `uwumail-smtp`
 
 - `inbound`: one session type for MX and submission. Uses `smtp-proto` for
