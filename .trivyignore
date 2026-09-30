@@ -1,0 +1,9 @@
+# Findings the image scan in CI (.github/workflows/ci.yml) accepts for now. Every entry says why and
+# ends on its own: `exp:` makes Trivy report it again from that day on.
+
+# OpenSSL in the distroless base image (libssl3t64 3.5.7-1~deb13u2): Debian has the fix
+# (deb13u3), the newest gcr.io/distroless/cc-debian13 does not carry it yet. UwUMail uses rustls,
+# not OpenSSL, and neither QUIC nor DTLS is used by anything in the image. Bump the base image digest
+# in docker/Dockerfile once distroless ships the fix, then drop these lines.
+CVE-2026-75804 exp:2026-10-31
+CVE-2026-84782 exp:2026-10-31
