@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value, json};
 use tokio::sync::mpsc;
 use uwumail_assist::{
-    Assist, AssistError, Choice, ComposeArgs, Effective, EventsArgs, ProviderInput, ProviderView, SettingsPatch,
-    SettingsView, SpamArgs, StreamEvent, SummarizeArgs, TodayUsage, Usage,
+    Assist, AssistError, Choice, ComposeArgs, Effective, EstimateArgs, EventsArgs, ProviderInput, ProviderView,
+    SettingsPatch, SettingsView, SpamArgs, StreamEvent, SummarizeArgs, TodayUsage, Usage,
 };
 use uwumail_store::{Account, AssistLabel, StoreError};
 
@@ -124,7 +124,24 @@ pub fn provider_json(view: &ProviderView) -> Value {
         "quota": view.quota,
         "experimental": view.experimental,
         "connected": view.connected,
+        "inputPricePerMillion": view.input_price_per_million,
+        "outputPricePerMillion": view.output_price_per_million,
+        "price": view.price,
     })
+}
+
+/// `currency` of `Assist/estimate` and `Assist/usage`: ISO 4217, EUR when not given.
+fn currency(args: &Value) -> MethodResult<String> {
+    match arg_str(args, "currency")? {
+        None => Ok("EUR".to_owned()),
+        Some(code) if uwumail_assist::prices::is_currency(code) => Ok(code.to_owned()),
+        Some(_) => Err(MethodError::invalid_arguments("currency is an ISO 4217 code like EUR")),
+    }
+}
+
+/// `{ amount, currency, usd }` of a cost in US dollars, or null.
+fn cost_json(prices: &uwumail_assist::Prices, usd: Option<f64>, currency: &str) -> Value {
+    json!(usd.and_then(|usd| prices.convert(usd, currency)))
 }
 
 fn choice_json(choice: &Option<Choice>) -> Value {
@@ -172,7 +189,7 @@ fn label_json(label: &AssistLabel) -> Value {
     })
 }
 
-fn today_json(today: &[TodayUsage]) -> Value {
+fn today_json(today: &[TodayUsage], prices: &uwumail_assist::Prices, currency: &str) -> Value {
     Value::Array(
         today
             .iter()
@@ -184,6 +201,7 @@ fn today_json(today: &[TodayUsage]) -> Value {
                     "tokens": row.tokens,
                     "requestsPerDay": row.requests_per_day,
                     "tokensPerDay": row.tokens_per_day,
+                    "cost": cost_json(prices, row.cost_usd, currency),
                 })
             })
             .collect(),
@@ -225,11 +243,13 @@ pub async fn provider_get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
 fn provider_input(patch: &Value, create: bool) -> Result<ProviderInput, SetError> {
     let object = patch.as_object().ok_or_else(|| SetError::new("invalidPatch", "a provider is an object"))?;
     for key in object.keys() {
-        let allowed = matches!(key.as_str(), "name" | "baseUrl" | "apiKey" | "model" | "fastModel")
-            || (create && key == "kind")
+        let allowed = matches!(
+            key.as_str(),
+            "name" | "baseUrl" | "apiKey" | "model" | "fastModel" | "inputPricePerMillion" | "outputPricePerMillion"
+        ) || (create && key == "kind")
             || matches!(
                 key.as_str(),
-                "id" | "scope" | "hasKey" | "keyHint" | "features" | "quota" | "experimental" | "connected"
+                "id" | "scope" | "hasKey" | "keyHint" | "features" | "quota" | "experimental" | "connected" | "price"
             ) && !create;
         if !allowed {
             return Err(SetError::invalid_properties(&[key.as_str()], format!("{key} can't be set")));
@@ -237,7 +257,19 @@ fn provider_input(patch: &Value, create: bool) -> Result<ProviderInput, SetError
     }
     let settable: Map<String, Value> = object
         .iter()
-        .filter(|(key, _)| matches!(key.as_str(), "name" | "kind" | "baseUrl" | "apiKey" | "model" | "fastModel"))
+        .filter(|(key, _)| {
+            matches!(
+                key.as_str(),
+                "name"
+                    | "kind"
+                    | "baseUrl"
+                    | "apiKey"
+                    | "model"
+                    | "fastModel"
+                    | "inputPricePerMillion"
+                    | "outputPricePerMillion"
+            )
+        })
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
     serde_json::from_value(Value::Object(settable))
@@ -277,8 +309,9 @@ pub async fn provider_set(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
             };
             match result {
                 Ok(view) => {
-                    let changed =
-                        json!({ "hasKey": view.has_key, "keyHint": view.key_hint, "connected": view.connected });
+                    let changed = json!({
+                        "hasKey": view.has_key, "keyHint": view.key_hint, "connected": view.connected, "price": view.price
+                    });
                     response.updated.insert(id.clone(), changed);
                 }
                 Err(err) => {
@@ -542,11 +575,23 @@ pub fn stream_call(ctx: &Ctx<'_>, method: &str, args: &Value) -> MethodResult<St
     }
 }
 
-pub async fn spam_check(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
-    let assist = assist(ctx)?;
+fn spam_args(ctx: &Ctx<'_>, args: &Value) -> MethodResult<SpamArgs> {
     let email_id = required_id(ctx, args, "emailId", 'e')?;
     let language = arg_str(args, "language")?.map(str::to_owned);
-    let result = assist.spam_check(&ctx.account, SpamArgs { email_id, language }).await.map_err(method_error)?;
+    Ok(SpamArgs { email_id, language })
+}
+
+fn events_args(ctx: &Ctx<'_>, args: &Value) -> MethodResult<EventsArgs> {
+    let email_id = required_id(ctx, args, "emailId", 'e')?;
+    let include_images = args.get("includeImages").and_then(Value::as_bool).unwrap_or(false);
+    Ok(EventsArgs { email_id, include_images })
+}
+
+pub async fn spam_check(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
+    let assist = assist(ctx)?;
+    let args = spam_args(ctx, args)?;
+    let email_id = args.email_id;
+    let result = assist.spam_check(&ctx.account, args).await.map_err(method_error)?;
     let mut out = Map::new();
     out.insert("accountId".into(), json!(ctx.account_id()));
     out.insert("emailId".into(), json!(ids::email(email_id)));
@@ -557,17 +602,62 @@ pub async fn spam_check(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     Ok(with_source(out, &result.effective, &result.usage))
 }
 
+/// `Assist/extractEvents`. Also when the person's `assist.refineEvents` is off: that setting is about
+/// asking on its own when a mail is opened, not about asking when the person clicks.
 pub async fn extract_events(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let assist = assist(ctx)?;
-    let email_id = required_id(ctx, args, "emailId", 'e')?;
-    let include_images = args.get("includeImages").and_then(Value::as_bool).unwrap_or(false);
-    let result =
-        assist.extract_events(&ctx.account, EventsArgs { email_id, include_images }).await.map_err(method_error)?;
+    let args = events_args(ctx, args)?;
+    let email_id = args.email_id;
+    let result = assist.extract_events(&ctx.account, args).await.map_err(method_error)?;
     let mut out = Map::new();
     out.insert("accountId".into(), json!(ctx.account_id()));
     out.insert("emailId".into(), json!(ids::email(email_id)));
     out.insert("events".into(), json!(result.events));
     Ok(with_source(out, &result.effective, &result.usage))
+}
+
+/// `Assist/estimate`: what one of the other calls would take, without making it.
+pub async fn estimate(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
+    let assist = assist(ctx)?;
+    let currency = currency(args)?;
+    let method = arg_str(args, "method")?.ok_or_else(|| MethodError::invalid_arguments("method is required"))?;
+    let arguments = match args.get("arguments") {
+        None | Some(Value::Null) => Value::Object(Map::new()),
+        Some(Value::Object(object)) => {
+            // The arguments as the call would get them; an accountId in them is this one or wrong.
+            if object.get("accountId").is_some_and(|id| id.as_str() != Some(ctx.account_id().as_str())) {
+                return Err(MethodError::invalid_arguments("arguments/accountId is not this account"));
+            }
+            Value::Object(object.clone())
+        }
+        Some(_) => return Err(MethodError::invalid_arguments("arguments is an object")),
+    };
+    let call = match method {
+        "Assist/compose" => EstimateArgs::Compose(compose_args(ctx, &arguments)?),
+        "Assist/summarize" => EstimateArgs::Summarize(summarize_args(ctx, &arguments)?),
+        "Assist/spamCheck" => EstimateArgs::SpamCheck(spam_args(ctx, &arguments)?),
+        "Assist/extractEvents" => EstimateArgs::ExtractEvents(events_args(ctx, &arguments)?),
+        other => {
+            return Err(MethodError::invalid_arguments(format!(
+                "{other} can't be estimated; method is Assist/compose, Assist/summarize, Assist/spamCheck or \
+Assist/extractEvents"
+            )));
+        }
+    };
+    let estimate = assist.estimate(&ctx.account, call).await.map_err(method_error)?;
+    Ok(json!({
+        "accountId": ctx.account_id(),
+        "method": method,
+        "inputTokens": estimate.input_tokens,
+        "outputTokens": estimate.output_tokens,
+        "totalTokens": estimate.input_tokens + estimate.output_tokens,
+        "providerId": provider_id(estimate.effective.provider_id),
+        "providerName": estimate.effective.provider_name,
+        "model": estimate.effective.model,
+        "tokensLeftToday": estimate.tokens_left_today,
+        "requestsLeftToday": estimate.requests_left_today,
+        "cost": cost_json(&*assist.prices().await, estimate.cost_usd, &currency),
+    }))
 }
 
 pub async fn usage(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
@@ -579,7 +669,9 @@ pub async fn usage(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
             .filter(|days| (1..=90).contains(days))
             .ok_or_else(|| MethodError::invalid_arguments("days is 1 to 90"))? as u32,
     };
+    let currency = currency(args)?;
     let (rows, today) = assist.usage(&ctx.account, days).await.map_err(method_error)?;
+    let prices = assist.prices().await;
     let days: Vec<Value> = rows
         .iter()
         .map(|row| {
@@ -591,10 +683,12 @@ pub async fn usage(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
                 "requests": row.requests,
                 "inputTokens": row.input_tokens,
                 "outputTokens": row.output_tokens,
+                "cost": cost_json(&prices, row.cost_usd, &currency),
             })
         })
         .collect();
-    Ok(json!({ "accountId": ctx.account_id(), "days": days, "today": today_json(&today) }))
+    let today = today_json(&today, &prices, &currency);
+    Ok(json!({ "accountId": ctx.account_id(), "days": days, "today": today }))
 }
 
 pub async fn label_get(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {

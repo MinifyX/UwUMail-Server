@@ -570,7 +570,9 @@
       "badProvider": "That provider cannot be used for this.",
       "chatgptNotStarted": "Start the ChatGPT login first.",
       "overQuota": "The daily limit is used up: {{detail}}",
-      "assistUnavailable": "That is not available right now."
+      "assistUnavailable": "That is not available right now.",
+      "badPrice": "A price must be a number from 0 to 100,000.",
+      "badCurrency": "This currency is not supported."
     }
   },
   "people": {
@@ -3897,7 +3899,13 @@
       "allEntries_one": "All entries ({{count}})",
       "allEntries_other": "All entries ({{count}})",
       "perFeature": "Per feature",
-      "perDay": "Per day"
+      "perDay": "Per day",
+      "cost": "Cost",
+      "costToday": "{{cost}} today",
+      "costNote": "Costs are estimates from public price lists and may differ from the provider's bill.",
+      "currency": "Currency",
+      "currencyEur": "Euro (€)",
+      "currencyUsd": "US dollar ($)"
     },
     "provider": {
       "model": "Model {{model}}",
@@ -3954,7 +3962,11 @@
       "perPerson": "Per person",
       "perDay": "Per day",
       "allPeople": "Everyone",
-      "perDayOf": "Per day for {{person}}"
+      "perDayOf": "Per day for {{person}}",
+      "costShown": "Costs shown",
+      "priceLists_one": "Prices updated {{date}}, {{count}} model known.",
+      "priceLists_other": "Prices updated {{date}}, {{count}} models known.",
+      "priceListsNone": "Prices have not been fetched yet."
     },
     "choices": {
       "title": "Which provider for what",
@@ -4059,8 +4071,18 @@
         "domainsRequired": "Add at least one domain.",
         "peopleRequired": "Add at least one person.",
         "featuresRequired": "Pick at least one feature.",
-        "limitInvalid": "A whole number above zero, or empty."
-      }
+        "limitInvalid": "A whole number above zero, or empty.",
+        "priceInvalid": "Enter a price of 0 or more, like 0.25."
+      },
+      "price": "Price",
+      "priceIntro": "US dollars per million tokens, for showing costs. Empty takes the price from public price lists.",
+      "priceNow": "Now:",
+      "priceUnknown": "No price found for this model yet.",
+      "inputPrice": "Input, per million tokens",
+      "outputPrice": "Output, per million tokens",
+      "priceAutomatic": "From the price lists",
+      "showCost": "Show costs to the people using it",
+      "showCostHint": "They then see what their requests cost. You always see it."
     },
     "chatgpt": {
       "title": "ChatGPT login",
@@ -4075,6 +4097,12 @@
       "expired": "The code ran out. Start again.",
       "failed": "Signing in did not work: {{detail}}",
       "failedPlain": "Signing in did not work."
+    },
+    "price": {
+      "free": "Free",
+      "perMillion": "{{input}} in, {{output}} out per million tokens",
+      "manual": "set by hand",
+      "unknown": "Price unknown"
     }
   }
 }

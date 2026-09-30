@@ -4,6 +4,7 @@
 mod admin_alerts;
 mod api;
 mod apps;
+mod assist_costs;
 mod backups;
 mod branding;
 mod calendar_import;

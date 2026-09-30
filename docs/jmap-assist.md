@@ -97,6 +97,14 @@ added with their own key.
 | `quota` | `Object\|null` | server providers with a daily limit: `{ "requestsPerDay": Number\|null, "tokensPerDay": Number\|null }` per person |
 | `experimental` | `Boolean` | `true` for `chatgpt` |
 | `connected` | `Boolean` | `chatgpt`: signed in; others: `true` when a key is stored or none is needed |
+| `inputPricePerMillion` | `Number\|null` | US dollars per million tokens sent, set by hand; `null`: automatic, from the price lists ([llm.md](llm.md#costs)) |
+| `outputPricePerMillion` | `Number\|null` | the same for the tokens of the answer |
+| `price` | `Object\|null` | read-only: what the default model (`model`) costs, `{ "inputPerMillion": Number, "outputPerMillion": Number, "source": "auto"\|"manual"\|"free" }` in US dollars; `null` when not known |
+
+For a server provider whose costs the admin does not show to people,
+`inputPricePerMillion`, `outputPricePerMillion` and `price` are `null`, and
+so are the costs of `Assist/estimate` and `Assist/usage` for it. A person's own
+providers always show them.
 
 ### AssistProvider/get
 
@@ -109,7 +117,8 @@ server's that are allowed for them (in the admin's order) and their own. The
 Standard `/set` for the person's **own** providers (`create`, `update`,
 `destroy`); server providers answer `forbidden`. Creating needs
 `mayAddProviders`. Properties that may be set: `name`, `kind` (create only),
-`baseUrl`, `apiKey`, `model`, `fastModel`.
+`baseUrl`, `apiKey`, `model`, `fastModel`, `inputPricePerMillion`,
+`outputPricePerMillion` (0 to 100,000, or `null` for automatic).
 
 `SetError` types: `forbidden` (the admin does not allow own providers, or it is
 a server provider), `overQuota` (more than `maxProviders`), `invalidProperties`
@@ -333,6 +342,10 @@ pictures and attached images ([`Email/imageText`](jmap-image-text.md), when the
 server can read pictures) is added to the mail's text. Remote pictures are not
 read here. Pictures are never sent to the model itself.
 
+The call does not depend on the person's `assist.refineEvents`: that setting
+only decides whether the webmail calls it by itself when a mail opens. A
+"find appointment" button calls it directly with the setting off.
+
 ## Labels
 
 Labels are the person's own words for kinds of mail ("Rechnungen: invoices,
@@ -391,27 +404,105 @@ arrived before auto-labels were on or while it was off. It needs the
 `autoLabels` feature, not the setting. Response `{ accountId, labeled: {
 emailId: [labelId] }, notFound: [ids] }`.
 
+## Assist/estimate
+
+What one of the calls above would take, for a hint like "≈ 1,200 tokens ·
+48,000 left today" on a button. The server builds the same prompt the call
+would build (the same checks of the arguments, the same cutting of the mail
+to size, the same mails of a conversation, the same provider and model), but
+asks no provider and counts nothing: an estimate is not a request and does not
+use up any of the day's limits.
+
+| Argument | Type | |
+| --- | --- | --- |
+| `accountId` | `Id` | |
+| `method` | `String` | `Assist/compose`, `Assist/summarize`, `Assist/spamCheck` or `Assist/extractEvents` |
+| `arguments` | `Object` | exactly what that method would get; its `accountId` may be left out |
+| `currency` | `String` | ISO 4217 code of `cost`, default `EUR` |
+
+```json
+["Assist/estimate", {
+  "accountId": "a1",
+  "method": "Assist/summarize",
+  "arguments": { "threadId": "t7" }
+}, "0"]
+```
+
+```json
+["Assist/estimate", {
+  "accountId": "a1",
+  "method": "Assist/summarize",
+  "inputTokens": 1180,
+  "outputTokens": 250,
+  "totalTokens": 1430,
+  "providerId": "q1", "providerName": "Mistral", "model": "mistral-small-latest",
+  "tokensLeftToday": 48000,
+  "requestsLeftToday": null,
+  "cost": { "amount": 0.00021, "currency": "EUR", "usd": 0.000245 }
+}, "0"]
+```
+
+- `inputTokens` is the prompt (instructions, the mail's text and, for spam
+  check and events, the JSON shape of the answer), counted the way the server
+  counts a request before it is sent: about four characters to a token, a
+  token for each Chinese, Japanese or Korean character. Providers count with
+  their own tokenizers, so the real number differs a little.
+- `outputTokens` is a **typical** answer, not the most the model may write
+  (which is far more than it usually does): `compose` 400 for `write`, for
+  `rewrite` and `adjust` about the draft's length (a quarter more, at least
+  100); `summarize` 150 for one mail, 50 more per further mail of a
+  conversation, at most 600; `spamCheck` 150; `extractEvents` 250. Never more
+  than the call allows the model.
+- `totalTokens` is the sum.
+- `cost` is what these tokens cost at the model's price (see `price` of
+  `AssistProvider`), in `currency` by the ECB's reference rates of the day
+  (rough built-in rates for `USD`, `JPY` and `CNY` until the server got them once),
+  and in US dollars (`usd`), the currency of the price lists. `null` when the
+  price is not known, when there is no rate for `currency`, or when the admin
+  does not show this server provider's costs. A free provider (Ollama, a
+  ChatGPT subscription) answers `0`.
+- `tokensLeftToday` and `requestsLeftToday` are what is left of the person's
+  daily limits of that provider, `0` when used up (the call itself would then
+  answer `overQuota`); `null` when that limit does not exist, and always for
+  the person's own providers.
+- With `includeImages`, pictures are **not** read for an estimate: the text of
+  pictures that were read before (by `Email/imageText` or an earlier call) is
+  taken from the server's cache, each picture never read counts as about 100
+  tokens.
+- Errors are those of the call: `assistUnavailable` when the feature is off or
+  no provider can be used, `notFound`, `invalidArguments` for arguments the
+  call would refuse, and `invalidArguments` for another `method`. At most four
+  estimates run at once per person; more answer `providerFailed` with
+  `retryAfter`. An estimate reads the mail but nothing else is slow: it is
+  meant to be asked when a pointer rests on a button, and a client keeps the
+  answer until the mail or the draft changes.
+
 ## Assist/usage
 
-`{ accountId, days }` (1 to 90, default 30) answers what this person used:
+`{ accountId, days, currency }` (1 to 90, default 30; `currency` as in
+`Assist/estimate`, default `EUR`) answers what this person used:
 
 ```json
 ["Assist/usage", {
   "accountId": "a1",
   "days": [
     { "day": "2026-09-29", "providerId": "q1", "providerName": "Mistral", "feature": "summarize",
-      "requests": 4, "inputTokens": 5210, "outputTokens": 380 }
+      "requests": 4, "inputTokens": 5210, "outputTokens": 380,
+      "cost": { "amount": 0.00061, "currency": "EUR", "usd": 0.00071 } }
   ],
   "today": [
     { "providerId": "q1", "providerName": "Mistral", "requests": 9, "tokens": 12020,
-      "requestsPerDay": 200, "tokensPerDay": null }
+      "requestsPerDay": 200, "tokensPerDay": null, "cost": null }
   ]
 }, "0"]
 ```
 
 Days are UTC. Tokens are what the provider reported; where a provider reports
 none (some OpenAI-compatible servers while streaming), the server estimates
-about four characters per token.
+about four characters per token. `cost` is kept with each request, in US
+dollars at the price of the time, and shown in `currency` at today's rate;
+`null` where the price was not known (and for everything before 0.19.0), and
+for server providers whose costs the admin does not show.
 
 ## Streaming
 

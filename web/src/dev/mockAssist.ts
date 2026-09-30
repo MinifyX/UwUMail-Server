@@ -13,9 +13,11 @@ import {
   type AssistProvider,
   type AssistSettings,
   type Choice,
+  type Cost,
   type Effective,
   type Feature,
   type KindInfo,
+  type Price,
   type ProviderKind,
   type TodayUsage,
   type UsageRow,
@@ -141,6 +143,47 @@ const MODELS: Record<ProviderKind, string[]> = {
 
 const kindOf = (kind: string) => KINDS.find((candidate) => candidate.kind === kind);
 
+// What models cost, as the price lists would say: US dollars per million tokens in and out.
+const LIST_PRICES: Record<string, [number, number]> = {
+  "gpt-5": [1.25, 10],
+  "gpt-5-mini": [0.25, 2],
+  "gpt-5-nano": [0.05, 0.4],
+  "mistral-medium-latest": [0.4, 2],
+  "mistral-small-latest": [0.1, 0.3],
+  "claude-haiku-4-5": [1, 5],
+  "gemini-2.5-flash-lite": [0.1, 0.4],
+};
+/** Units per euro, like the ECB's reference rates. */
+const RATES: Record<string, number> = { EUR: 1, USD: 1.17, JPY: 172, CNY: 8.35 };
+
+function priceOf(
+  kind: ProviderKind,
+  model: string | null | undefined,
+  inputPrice: number | null | undefined,
+  outputPrice: number | null | undefined,
+): Price | null {
+  const listed = model ? LIST_PRICES[model.replace(/^[^/]+\//, "")] : undefined;
+  if (inputPrice != null || outputPrice != null) {
+    return {
+      inputPerMillion: inputPrice ?? listed?.[0] ?? 0,
+      outputPerMillion: outputPrice ?? listed?.[1] ?? 0,
+      source: "manual",
+    };
+  }
+  if (kind === "ollama" || kind === "chatgpt") return { inputPerMillion: 0, outputPerMillion: 0, source: "free" };
+  return listed ? { inputPerMillion: listed[0], outputPerMillion: listed[1], source: "auto" } : null;
+}
+
+/** US dollars in `currency`, as the server answers `cost`. */
+function costIn(usd: number | null | undefined, currency: string): Cost | null {
+  if (usd == null) return null;
+  const rate = RATES[currency];
+  if (rate === undefined) return null;
+  return { amount: currency === "USD" ? usd : (usd / RATES.USD!) * rate, currency, usd };
+}
+
+const currencyOf = (search: URLSearchParams) => search.get("currency") ?? "EUR";
+
 let policy: AssistPolicy = {
   features: { compose: true, summarize: true, spamCheck: true, extractEvents: true, autoLabels: true },
   allowPersonal: true,
@@ -167,6 +210,10 @@ const serverProviders: AdminProvider[] = [
     features: [...FEATURES],
     requestsPerDay: null,
     tokensPerDay: null,
+    inputPricePerMillion: null,
+    outputPricePerMillion: null,
+    showCostToUsers: true,
+    price: null,
     createdAt: now() - 40 * 86_400,
   },
   {
@@ -185,6 +232,10 @@ const serverProviders: AdminProvider[] = [
     features: ["compose", "summarize", "extractEvents"],
     requestsPerDay: 200,
     tokensPerDay: 400_000,
+    inputPricePerMillion: null,
+    outputPricePerMillion: null,
+    showCostToUsers: false,
+    price: null,
     createdAt: now() - 12 * 86_400,
   },
 ];
@@ -201,6 +252,8 @@ interface OwnProvider {
   /** Polls of a ChatGPT login so far; null while none runs. */
   polls: number | null;
   expiresAt: number;
+  inputPrice: number | null;
+  outputPrice: number | null;
 }
 
 const ownProviders: OwnProvider[] = [
@@ -214,6 +267,8 @@ const ownProviders: OwnProvider[] = [
     connected: true,
     polls: null,
     expiresAt: 0,
+    inputPrice: null,
+    outputPrice: null,
   },
 ];
 keys.set(11, "mock-mistral-9f3c");
@@ -232,6 +287,7 @@ const settings: Omit<AssistSettings, "effective"> = {
   features: { ...emptyChoices(), compose: { providerId: 11, model: null } },
   autoLabels: false,
   refineEvents: false,
+  currency: null,
 };
 
 const LABELS = 3;
@@ -253,6 +309,21 @@ function allowedFeatures(features: Feature[]): Feature[] {
   return features.filter((feature) => policy.features[feature]);
 }
 
+function adminPrice(provider: AdminProvider): Price | null {
+  return priceOf(
+    provider.kind,
+    provider.model ?? kindOf(provider.kind)?.model,
+    provider.inputPricePerMillion,
+    provider.outputPricePerMillion,
+  );
+}
+
+/** Whether the pretend person sees what a provider costs: their own always, the server's when shown. */
+function costShown(providerId: number): boolean {
+  if (ownProviders.some((provider) => provider.id === providerId)) return true;
+  return serverProviders.some((provider) => provider.id === providerId && provider.showCostToUsers);
+}
+
 function accountProviders(): AssistProvider[] {
   const server = serverProviders.filter(mayUse).map((provider): AssistProvider => ({
     id: provider.id,
@@ -271,6 +342,9 @@ function accountProviders(): AssistProvider[] {
         : { requestsPerDay: provider.requestsPerDay, tokensPerDay: provider.tokensPerDay },
     experimental: false,
     connected: true,
+    inputPricePerMillion: provider.showCostToUsers ? provider.inputPricePerMillion : null,
+    outputPricePerMillion: provider.showCostToUsers ? provider.outputPricePerMillion : null,
+    price: provider.showCostToUsers ? adminPrice(provider) : null,
   }));
   const own = policy.allowPersonal
     ? ownProviders.map((provider): AssistProvider => {
@@ -290,6 +364,9 @@ function accountProviders(): AssistProvider[] {
           experimental: kind?.experimental ?? false,
           connected:
             kind?.key === "login" ? provider.connected : kind?.key === "required" ? keys.has(provider.id) : true,
+          inputPricePerMillion: provider.inputPrice,
+          outputPricePerMillion: provider.outputPrice,
+          price: priceOf(provider.kind, provider.model ?? kind?.model, provider.inputPrice, provider.outputPrice),
         };
       })
     : [];
@@ -326,7 +403,7 @@ function effectiveSettings(): AssistSettings {
 
 // A month of usage: most on the Ollama, some on the team key, a little on the own Mistral.
 const PEOPLE = [ME, "leni@uwu.example", "mini@uwu.example", "ami@verein.example"];
-const usage: UsageRow[] = [];
+const usage: (UsageRow & { costUsd: number | null })[] = [];
 {
   let seed = 7;
   const random = () => {
@@ -341,6 +418,11 @@ const usage: UsageRow[] = [];
         const providerId = login === ME && feature === "compose" ? 11 : random() < 0.7 ? 1 : 2;
         if (providerId === 2 && login === "ami@verein.example") continue;
         const requests = Math.max(1, Math.round(random() * (feature === "autoLabels" ? 30 : 8)));
+        const inputTokens = requests * Math.round(800 + random() * 2400);
+        const outputTokens = requests * Math.round(60 + random() * 400);
+        // The Ollama is free, the team key costs what gpt-5-nano costs, the own Mistral mistral-medium;
+        // the first days are from before costs were kept.
+        const perMillion = providerId === 1 ? [0, 0] : providerId === 2 ? [0.05, 0.4] : [0.4, 2];
         usage.push({
           day,
           login,
@@ -348,15 +430,16 @@ const usage: UsageRow[] = [];
           providerName: providerId === 11 ? "Mein Mistral" : providerId === 1 ? "Ollama im Keller" : "OpenAI (Team)",
           feature,
           requests,
-          inputTokens: requests * Math.round(800 + random() * 2400),
-          outputTokens: requests * Math.round(60 + random() * 400),
+          inputTokens,
+          outputTokens,
+          costUsd: back > 24 ? null : (inputTokens * perMillion[0]! + outputTokens * perMillion[1]!) / 1e6,
         });
       }
     }
   }
 }
 
-function today(): TodayUsage[] {
+function today(currency = "EUR"): TodayUsage[] {
   const day = new Date().toISOString().slice(0, 10);
   return accountProviders().flatMap((provider) => {
     const rows = usage.filter((row) => row.day === day && row.login === ME && row.providerId === provider.id);
@@ -369,6 +452,12 @@ function today(): TodayUsage[] {
         tokens: rows.reduce((sum, row) => sum + row.inputTokens + row.outputTokens, 0),
         requestsPerDay: provider.quota?.requestsPerDay ?? null,
         tokensPerDay: provider.quota?.tokensPerDay ?? null,
+        cost: costShown(provider.id)
+          ? costIn(
+              rows.reduce((sum, row) => sum + (row.costUsd ?? 0), 0),
+              currency,
+            )
+          : null,
       },
     ];
   });
@@ -436,6 +525,9 @@ interface ProviderInput {
   features?: string[];
   requestsPerDay?: number | null;
   tokensPerDay?: number | null;
+  inputPricePerMillion?: number | null;
+  outputPricePerMillion?: number | null;
+  showCostToUsers?: boolean;
 }
 
 function inputError(input: ProviderInput, privateOk: boolean): [number, unknown] | null {
@@ -454,6 +546,11 @@ function inputError(input: ProviderInput, privateOk: boolean): [number, unknown]
   for (const limit of [input.requestsPerDay, input.tokensPerDay]) {
     if (limit !== undefined && limit !== null && (!Number.isInteger(limit) || limit < 1)) {
       return problem(409, "badQuota");
+    }
+  }
+  for (const price of [input.inputPricePerMillion, input.outputPricePerMillion]) {
+    if (price !== undefined && price !== null && !(price >= 0 && price <= 100_000)) {
+      return problem(409, "badPrice");
     }
   }
   return urlError(input.baseUrl, privateOk);
@@ -490,13 +587,15 @@ const adminView = () => ({
     ...provider,
     hasKey: keys.has(provider.id),
     keyHint: hint(provider.id),
+    price: adminPrice(provider),
   })),
   kinds: KINDS,
+  priceLists: { fetchedAt: now() - 3 * 3600, models: 1874, openrouterModels: 0, ratesDay: null },
 });
 
 const adminProvider = (id: number) => {
   const provider = serverProviders.find((candidate) => candidate.id === id);
-  return provider ? { ...provider, hasKey: keys.has(id), keyHint: hint(id) } : undefined;
+  return provider ? { ...provider, hasKey: keys.has(id), keyHint: hint(id), price: adminPrice(provider) } : undefined;
 };
 
 const accountProvider = (id: number) => accountProviders().find((provider) => provider.id === id);
@@ -545,6 +644,10 @@ export const assistMockRoutes: [string, RegExp, Handler][] = [
         features: (input.features as Feature[] | undefined) ?? [...FEATURES],
         requestsPerDay: input.requestsPerDay ?? null,
         tokensPerDay: input.tokensPerDay ?? null,
+        inputPricePerMillion: input.inputPricePerMillion ?? null,
+        outputPricePerMillion: input.outputPricePerMillion ?? null,
+        showCostToUsers: input.showCostToUsers ?? false,
+        price: null,
         createdAt: now(),
       });
       return [201, adminProvider(id)];
@@ -603,7 +706,11 @@ export const assistMockRoutes: [string, RegExp, Handler][] = [
         {
           days: usage
             .filter((row) => row.day >= since)
-            .map((row) => ({ ...row, providerName: names.get(row.providerId) ?? "(deleted)" })),
+            .map(({ costUsd, ...row }) => ({
+              ...row,
+              providerName: names.get(row.providerId) ?? "(deleted)",
+              cost: costIn(costUsd, currencyOf(search)),
+            })),
         },
       ];
     },
@@ -635,6 +742,8 @@ export const assistMockRoutes: [string, RegExp, Handler][] = [
         connected: false,
         polls: null,
         expiresAt: 0,
+        inputPrice: input.inputPricePerMillion ?? null,
+        outputPrice: input.outputPricePerMillion ?? null,
       });
       return [201, accountProvider(id)];
     },
@@ -656,6 +765,8 @@ export const assistMockRoutes: [string, RegExp, Handler][] = [
       if (input.baseUrl !== undefined) provider.baseUrl = input.baseUrl;
       if (input.model !== undefined) provider.model = input.model;
       if (input.fastModel !== undefined) provider.fastModel = input.fastModel;
+      if (input.inputPricePerMillion !== undefined) provider.inputPrice = input.inputPricePerMillion;
+      if (input.outputPricePerMillion !== undefined) provider.outputPrice = input.outputPricePerMillion;
       return [200, accountProvider(provider.id)];
     },
   ],
@@ -752,6 +863,12 @@ export const assistMockRoutes: [string, RegExp, Handler][] = [
       }
       if (input.autoLabels !== undefined) settings.autoLabels = input.autoLabels;
       if (input.refineEvents !== undefined) settings.refineEvents = input.refineEvents;
+      if (input.currency !== undefined) {
+        if (input.currency !== null && input.currency !== "EUR" && input.currency !== "USD") {
+          return problem(409, "badCurrency");
+        }
+        settings.currency = input.currency;
+      }
       return [200, effectiveSettings()];
     },
   ],
@@ -764,8 +881,13 @@ export const assistMockRoutes: [string, RegExp, Handler][] = [
       return [
         200,
         {
-          days: usage.filter((row) => row.login === ME && row.day >= since).map(({ login: _login, ...row }) => row),
-          today: today(),
+          days: usage
+            .filter((row) => row.login === ME && row.day >= since)
+            .map(({ login: _login, costUsd, ...row }) => ({
+              ...row,
+              cost: costShown(row.providerId) ? costIn(costUsd, currencyOf(search)) : null,
+            })),
+          today: today(currencyOf(search)),
         },
       ];
     },

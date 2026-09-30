@@ -23,6 +23,7 @@ use uwumail_store::{
 use crate::chatgpt::{self, Poll, Tokens};
 use crate::kinds::{self, BaseUrl, Key, KindInfo, Shape};
 use crate::llm::{self, Completion, Prompt, ProviderError, Target};
+use crate::prices::{MAX_PRICE_PER_MILLION, Price, Prices};
 use crate::{Assist, AssistError, FEATURES, MAX_INSTRUCTION_CHARS, MAX_TEXT_CHARS, Result, Running, now};
 
 const NAME_MAX_CHARS: usize = 60;
@@ -78,6 +79,12 @@ pub struct ProviderView {
     pub quota: Option<Quota>,
     pub experimental: bool,
     pub connected: bool,
+    /// US dollars per million tokens set by hand; `None`: automatic. Not shown for a server
+    /// provider whose costs the admin keeps to themselves.
+    pub input_price_per_million: Option<f64>,
+    pub output_price_per_million: Option<f64>,
+    /// What the default model costs, when known and shown.
+    pub price: Option<Price>,
 }
 
 /// A server provider as the admin sees it.
@@ -99,6 +106,11 @@ pub struct AdminProviderView {
     pub features: Vec<String>,
     pub requests_per_day: Option<i64>,
     pub tokens_per_day: Option<i64>,
+    pub input_price_per_million: Option<f64>,
+    pub output_price_per_million: Option<f64>,
+    pub show_cost_to_users: bool,
+    /// What the default model costs, when known.
+    pub price: Option<Price>,
     pub created_at: i64,
 }
 
@@ -125,6 +137,13 @@ pub struct ProviderInput {
     pub requests_per_day: Option<Option<i64>>,
     #[serde(default, deserialize_with = "nullable")]
     pub tokens_per_day: Option<Option<i64>>,
+    /// US dollars per million tokens; `null`: from the price lists.
+    #[serde(default, deserialize_with = "nullable")]
+    pub input_price_per_million: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub output_price_per_million: Option<Option<f64>>,
+    /// Server providers only.
+    pub show_cost_to_users: Option<bool>,
 }
 
 /// Everything but the key, which never goes into a log line.
@@ -168,6 +187,8 @@ pub struct SettingsView {
     pub features: BTreeMap<String, Option<Choice>>,
     pub auto_labels: bool,
     pub refine_events: bool,
+    /// The user setting `assist.currency`: `EUR` or `USD` for someone reading in English.
+    pub currency: Option<String>,
     pub effective: BTreeMap<String, Option<Effective>>,
     /// The JMAP state of the person's assist objects.
     #[serde(skip)]
@@ -183,6 +204,9 @@ pub struct SettingsPatch {
     pub features: Option<BTreeMap<String, Option<Choice>>>,
     pub auto_labels: Option<bool>,
     pub refine_events: Option<bool>,
+    /// `null` takes the setting away.
+    #[serde(default, deserialize_with = "nullable")]
+    pub currency: Option<Option<String>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -194,6 +218,8 @@ pub struct TodayUsage {
     pub tokens: i64,
     pub requests_per_day: Option<i64>,
     pub tokens_per_day: Option<i64>,
+    /// US dollars today; `None` when unknown or not shown to the person.
+    pub cost_usd: Option<f64>,
 }
 
 /// A provider a person may use, with what for.
@@ -211,6 +237,17 @@ impl Available {
         if self.server { "server" } else { "personal" }
     }
 
+    /// Whether the person sees what this provider costs: always their own, the server's when the
+    /// admin says so.
+    pub(crate) fn shows_cost(&self) -> bool {
+        !self.server || self.record.show_cost
+    }
+
+    /// The model used when nothing else is chosen.
+    fn default_model(&self) -> Option<String> {
+        self.record.model.clone().or_else(|| self.info.model.map(str::to_owned))
+    }
+
     /// The model for `feature`: the chosen one, the provider's, or the kind's suggestion.
     fn model_for(&self, feature: &str, chosen: Option<&str>) -> Option<String> {
         let chosen = chosen.map(str::trim).filter(|m| !m.is_empty()).map(str::to_owned);
@@ -223,8 +260,13 @@ impl Available {
         chosen.or(provider).or_else(|| preset.map(str::to_owned))
     }
 
-    fn view(&self) -> ProviderView {
+    pub(crate) fn effective(&self, model: String) -> Effective {
+        Effective { provider_id: self.record.id, provider_name: self.record.name.clone(), model, scope: self.scope() }
+    }
+
+    fn view(&self, prices: &Prices) -> ProviderView {
         let record = &self.record;
+        let shown = self.shows_cost();
         let quota = (self.server && (record.requests_per_day.is_some() || record.tokens_per_day.is_some()))
             .then_some(Quota { requests_per_day: record.requests_per_day, tokens_per_day: record.tokens_per_day });
         ProviderView {
@@ -242,11 +284,14 @@ impl Available {
             quota,
             experimental: self.info.experimental,
             connected: self.usable,
+            input_price_per_million: record.input_price.filter(|_| shown),
+            output_price_per_million: record.output_price.filter(|_| shown),
+            price: self.default_model().and_then(|model| prices.price(record, self.info, &model)).filter(|_| shown),
         }
     }
 }
 
-fn admin_view(record: &AssistProviderRecord) -> AdminProviderView {
+fn admin_view(record: &AssistProviderRecord, prices: &Prices) -> AdminProviderView {
     let (domains, people) = match record.access.as_str() {
         "domains" => (record.access_list.clone(), Vec::new()),
         "people" => (Vec::new(), record.access_list.clone()),
@@ -268,6 +313,13 @@ fn admin_view(record: &AssistProviderRecord) -> AdminProviderView {
         features: record.features.clone(),
         requests_per_day: record.requests_per_day,
         tokens_per_day: record.tokens_per_day,
+        input_price_per_million: record.input_price,
+        output_price_per_million: record.output_price,
+        show_cost_to_users: record.show_cost,
+        price: kinds::kind(&record.kind).and_then(|info| {
+            let model = record.model.clone().or_else(|| info.model.map(str::to_owned))?;
+            prices.price(record, info, &model)
+        }),
         created_at: record.created_at,
     }
 }
@@ -502,6 +554,18 @@ fn build_write(
             other => Ok(other),
         }
     };
+    let price = |value: &Option<Option<f64>>, before: Option<f64>, property: &'static str| -> Result<Option<f64>> {
+        let value = match value {
+            Some(value) => *value,
+            None => before,
+        };
+        match value {
+            Some(n) if !n.is_finite() || !(0.0..=MAX_PRICE_PER_MILLION).contains(&n) => {
+                Err(AssistError::invalid("badPrice", property, "a price is 0 to 100,000 US dollars per million tokens"))
+            }
+            other => Ok(other),
+        }
+    };
     let write = AssistProviderWrite {
         name,
         kind: kind_name,
@@ -514,6 +578,13 @@ fn build_write(
         features,
         requests_per_day: quota(&input.requests_per_day, before.and_then(|b| b.requests_per_day), "requestsPerDay")?,
         tokens_per_day: quota(&input.tokens_per_day, before.and_then(|b| b.tokens_per_day), "tokensPerDay")?,
+        input_price: price(&input.input_price_per_million, before.and_then(|b| b.input_price), "inputPricePerMillion")?,
+        output_price: price(
+            &input.output_price_per_million,
+            before.and_then(|b| b.output_price),
+            "outputPricePerMillion",
+        )?,
+        show_cost: server && input.show_cost_to_users.or(before.map(|b| b.show_cost)).unwrap_or(false),
     };
     Ok((write, secret))
 }
@@ -602,7 +673,8 @@ impl Assist {
 
     pub async fn providers(&self, account: &Account) -> Result<Vec<ProviderView>> {
         let policy = self.store().assist_policy().await?;
-        Ok(self.available(account, &policy).await?.iter().map(Available::view).collect())
+        let prices = self.prices().await;
+        Ok(self.available(account, &policy).await?.iter().map(|a| a.view(&prices)).collect())
     }
 
     /// The JMAP state of the person's assist objects: moves with their own changes and with the
@@ -618,13 +690,9 @@ impl Assist {
         let policy = store.assist_policy().await?;
         let available = self.available(account, &policy).await?;
         let prefs = store.assist_prefs(account.id).await?;
-        let refine_events = store
-            .user_settings(account.id)
-            .await?
-            .values
-            .get("assist.refineEvents")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
+        let values = store.user_settings(account.id).await?.values;
+        let refine_events = values.get("assist.refineEvents").and_then(Value::as_bool).unwrap_or(false);
+        let currency = values.get("assist.currency").and_then(Value::as_str).map(str::to_owned);
         let chosen = |key: &str| -> Option<Choice> { serde_json::from_value(prefs.choices.get(key)?.clone()).ok() };
         let mut features = BTreeMap::new();
         let mut effective = BTreeMap::new();
@@ -648,6 +716,7 @@ impl Assist {
             features,
             auto_labels: prefs.auto_labels,
             refine_events,
+            currency,
             effective,
             state: format!("{}-{}", store.assist_version().await?, prefs.modseq),
         })
@@ -712,14 +781,18 @@ impl Assist {
         if patch.default.is_some() || patch.features.is_some() || patch.auto_labels.is_some() {
             store.set_assist_prefs(account.id, choices, auto_labels).await?;
         }
+        let mut values = Vec::new();
         if let Some(refine) = patch.refine_events {
-            store
-                .update_user_settings(
-                    account.id,
-                    uwumail_store::SettingsChange::Patch(vec![("assist.refineEvents".into(), Some(json!(refine)))]),
-                    None,
-                )
-                .await?;
+            values.push(("assist.refineEvents".to_owned(), Some(json!(refine))));
+        }
+        if let Some(currency) = &patch.currency {
+            if currency.as_deref().is_some_and(|c| !matches!(c, "EUR" | "USD")) {
+                return Err(AssistError::invalid("badCurrency", "currency", "the currency is EUR or USD"));
+            }
+            values.push(("assist.currency".to_owned(), currency.as_ref().map(|c| json!(c))));
+        }
+        if !values.is_empty() {
+            store.update_user_settings(account.id, uwumail_store::SettingsChange::Patch(values), None).await?;
         }
         self.settings(account).await
     }
@@ -791,22 +864,24 @@ impl Assist {
 
     async fn personal_view(&self, account: &Account, id: i64) -> Result<ProviderView> {
         let policy = self.store().assist_policy().await?;
+        let prices = self.prices().await;
         self.available(account, &policy)
             .await?
             .iter()
             .find(|a| a.record.id == id)
-            .map(Available::view)
+            .map(|a| a.view(&prices))
             .ok_or_else(|| AssistError::NotFound(format!("provider {id}")))
     }
 
     pub async fn admin_providers(&self) -> Result<Vec<AdminProviderView>> {
-        Ok(self.store().assist_providers(None).await?.iter().map(admin_view).collect())
+        let prices = self.prices().await;
+        Ok(self.store().assist_providers(None).await?.iter().map(|record| admin_view(record, &prices)).collect())
     }
 
     pub async fn create_server_provider(&self, input: ProviderInput) -> Result<AdminProviderView> {
         let (write, secret) = build_write(None, &input, true, Reach::Any)?;
         let record = self.store().create_assist_provider(None, write, secret).await.map_err(too_many)?;
-        Ok(admin_view(&record))
+        Ok(admin_view(&record, &*self.prices().await))
     }
 
     pub async fn update_server_provider(&self, id: i64, input: ProviderInput) -> Result<AdminProviderView> {
@@ -815,7 +890,8 @@ impl Assist {
             _ => return Err(AssistError::NotFound(format!("provider {id}"))),
         };
         let (write, secret) = build_write(Some(&before), &input, true, Reach::Any)?;
-        Ok(admin_view(&self.store().update_assist_provider(id, write, secret).await?))
+        let record = self.store().update_assist_provider(id, write, secret).await?;
+        Ok(admin_view(&record, &*self.prices().await))
     }
 
     pub async fn delete_server_provider(&self, id: i64) -> Result<()> {
@@ -995,12 +1071,13 @@ impl Assist {
         let policy = self.store().assist_policy().await?;
         let mut out = Vec::new();
         for available in self.available(account, &policy).await? {
-            let (requests, tokens) = self.store().assist_used_today(account.id, available.record.id).await?;
+            let used = self.store().assist_used_today(account.id, available.record.id).await?;
             out.push(TodayUsage {
                 provider_id: available.record.id,
                 provider_name: available.record.name.clone(),
-                requests,
-                tokens,
+                requests: used.requests,
+                tokens: used.tokens,
+                cost_usd: used.cost_usd.filter(|_| available.shows_cost()),
                 requests_per_day: available.server.then_some(available.record.requests_per_day).flatten(),
                 tokens_per_day: available.server.then_some(available.record.tokens_per_day).flatten(),
             });
@@ -1014,14 +1091,7 @@ impl Assist {
     /// request stays counted.
     pub(crate) async fn prepare(&self, account: &Account, feature: &str) -> Result<Ticket<'_>> {
         let store = self.store();
-        let policy = store.assist_policy().await?;
-        if !policy.features.get(feature) {
-            return Err(AssistError::Unavailable(format!("{feature} is switched off on this server")));
-        }
-        let available = self.available(account, &policy).await?;
-        let prefs = store.assist_prefs(account.id).await?;
-        let (provider, model) = Self::effective(&available, &prefs.choices, feature)
-            .ok_or_else(|| AssistError::Unavailable(format!("no AI provider can be used for {feature}")))?;
+        let (provider, model, policy) = self.resolve(account, feature).await?;
         let running = self.begin(account.id)?;
         let record = &provider.record;
         let (requests_per_day, tokens_per_day) =
@@ -1042,7 +1112,9 @@ impl Assist {
                 }
                 Err(err) => return Err(err.into()),
             };
+        let price = self.price_of(record, provider.info, &model).await;
         let charge = Charge {
+            price,
             store: store.clone(),
             account_id: account.id,
             provider_id: record.id,
@@ -1053,6 +1125,37 @@ impl Assist {
             settled: false,
         };
         Ok(Ticket { provider, model, policy, _running: running, charge })
+    }
+
+    /// The provider and model `feature` would use for `account`, as [`Assist::prepare`] picks them,
+    /// without taking or counting a request.
+    pub(crate) async fn resolve(&self, account: &Account, feature: &str) -> Result<(Available, String, AssistPolicy)> {
+        let store = self.store();
+        let policy = store.assist_policy().await?;
+        if !policy.features.get(feature) {
+            return Err(AssistError::Unavailable(format!("{feature} is switched off on this server")));
+        }
+        let available = self.available(account, &policy).await?;
+        let prefs = store.assist_prefs(account.id).await?;
+        let (provider, model) = Self::effective(&available, &prefs.choices, feature)
+            .ok_or_else(|| AssistError::Unavailable(format!("no AI provider can be used for {feature}")))?;
+        Ok((provider, model, policy))
+    }
+
+    /// Requests and tokens `account` has left today with `provider`, each `None` without a limit
+    /// (the person's own providers have none).
+    pub(crate) async fn left_today(
+        &self,
+        account: &Account,
+        provider: &Available,
+    ) -> Result<(Option<i64>, Option<i64>)> {
+        let record = &provider.record;
+        if !provider.server || (record.requests_per_day.is_none() && record.tokens_per_day.is_none()) {
+            return Ok((None, None));
+        }
+        let used = self.store().assist_used_today(account.id, record.id).await?;
+        let left = |limit: Option<i64>, used: i64| limit.map(|limit| (limit - used).max(0));
+        Ok((left(record.requests_per_day, used.requests), left(record.tokens_per_day, used.tokens)))
     }
 
     /// Asks the model with a ticket from [`Assist::prepare`] and counts the tokens: what the provider
@@ -1077,10 +1180,7 @@ impl Assist {
             }
         }
         let completion = result.map_err(provider_failed)?;
-        let record = &provider.record;
-        let effective =
-            Effective { provider_id: record.id, provider_name: record.name.clone(), model, scope: provider.scope() };
-        Ok((completion, effective))
+        Ok((completion, provider.effective(model)))
     }
 
     async fn target(&self, provider: &Available, policy: &AssistPolicy, model: String) -> Result<Target> {
@@ -1154,6 +1254,8 @@ pub(crate) struct Ticket<'a> {
 /// The tokens of one counted request, until they are settled. Dropped unsettled (the caller went
 /// away while the model was answering), it still counts what came back so far.
 struct Charge {
+    /// What the model costs, when known: the tokens' cost is kept with them.
+    price: Option<Price>,
     store: Store,
     account_id: i64,
     provider_id: i64,
@@ -1170,12 +1272,26 @@ impl Charge {
     async fn add(&self, input: i64, output: i64) -> bool {
         let result = self
             .store
-            .add_assist_tokens(self.account_id, self.provider_id, self.day.clone(), &self.feature, input, output)
+            .add_assist_tokens(
+                self.account_id,
+                self.provider_id,
+                self.day.clone(),
+                &self.feature,
+                input,
+                output,
+                self.cost(input, output),
+            )
             .await;
         if let Err(err) = &result {
             tracing::warn!(%err, "counting an AI request's tokens failed");
         }
         result.is_ok()
+    }
+
+    /// US dollars for so many tokens (fewer, when negative), when the price is known.
+    fn cost(&self, input: i64, output: i64) -> Option<f64> {
+        let price = self.price?;
+        Some((input as f64 * price.input_per_million + output as f64 * price.output_per_million) / 1_000_000.0)
     }
 
     /// Counts the prompt's estimated tokens before it is sent.
@@ -1203,9 +1319,10 @@ impl Drop for Charge {
             return;
         }
         let (store, account_id, provider_id) = (self.store.clone(), self.account_id, self.provider_id);
+        let cost = self.cost(0, output);
         let (day, feature) = (std::mem::take(&mut self.day), std::mem::take(&mut self.feature));
         runtime.spawn(async move {
-            if let Err(err) = store.add_assist_tokens(account_id, provider_id, day, &feature, 0, output).await {
+            if let Err(err) = store.add_assist_tokens(account_id, provider_id, day, &feature, 0, output, cost).await {
                 tracing::warn!(%err, "counting an AI request's tokens failed");
             }
         });

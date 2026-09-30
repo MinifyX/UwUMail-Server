@@ -232,9 +232,11 @@ impl Jmap {
     /// (`Assist::with_image_text`, docs/llm.md): what `Email/imageText` reads without `remote`.
     pub fn image_text_reader(&self) -> uwumail_assist::ImageText {
         let (ocr, store) = (self.inner.ocr.clone(), self.inner.store.clone());
-        Arc::new(move |account_id, email_id| {
+        Arc::new(move |account_id, email_id, how| {
             let (ocr, store) = (ocr.clone(), store.clone());
-            Box::pin(async move { methods::image_text::texts_for_assist(&ocr, &store, account_id, email_id).await })
+            Box::pin(
+                async move { methods::image_text::texts_for_assist(&ocr, &store, account_id, email_id, how).await },
+            )
         })
     }
 

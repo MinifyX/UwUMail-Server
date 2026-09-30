@@ -4,7 +4,17 @@ import { useId, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Select, TextInput } from "@/components/ui/Field";
 import { useT } from "@/i18n";
 import { formatNumber } from "@/lib/format";
-import { formatDay, normalizeChip, share, type Quota, type UsageRow, type UsageSum } from "./model";
+import {
+  formatCost,
+  formatDay,
+  normalizeChip,
+  rowSum,
+  share,
+  type Price,
+  type Quota,
+  type UsageRow,
+  type UsageSum,
+} from "./model";
 
 /** Marks something that may stop working any day. */
 export function ExperimentalBadge() {
@@ -245,6 +255,22 @@ export function QuotaText({ quota }: { quota: Quota | null }) {
   return <>{parts.length > 0 ? parts.join(" · ") : t("assist.quota.none")}</>;
 }
 
+/** A price in US dollars per million tokens: "$0.25 / $2.00 per million tokens (in / out)", or free. */
+export function PriceText({ price }: { price: Price }) {
+  const { t, i18n } = useT();
+  if (price.source === "free") return <>{t("assist.price.free")}</>;
+  const dollars = (value: number) =>
+    new Intl.NumberFormat(i18n.language, { style: "currency", currency: "USD", maximumSignificantDigits: 4 }).format(
+      value,
+    );
+  return (
+    <>
+      {t("assist.price.perMillion", { input: dollars(price.inputPerMillion), output: dollars(price.outputPerMillion) })}
+      {price.source === "manual" && ` (${t("assist.price.manual")})`}
+    </>
+  );
+}
+
 /** How much of today's limit is used: a thin bar that warns as it fills. */
 export function UsageMeter({ used, limit, label }: { used: number; limit: number | null; label: string }) {
   const { t, i18n } = useT();
@@ -272,8 +298,16 @@ export function UsageMeter({ used, limit, label }: { used: number; limit: number
   );
 }
 
-/** Requests, tokens in and tokens out as table cells, with a bar for the requests when `max` is given. */
-export function SumCells({ sum, max }: { sum: UsageSum; max?: number }) {
+/** A cost cell's text: the amount, or a dash where it is not known. */
+function costText(amount: number | null, currency: string, language: string): string {
+  return amount === null ? "–" : formatCost(amount, currency, language);
+}
+
+/**
+ * Requests, tokens in and tokens out as table cells, with a bar for the requests when `max` is
+ * given, and the cost when a `currency` is.
+ */
+export function SumCells({ sum, max, currency }: { sum: UsageSum; max?: number; currency?: string }) {
   const { i18n } = useT();
   const number = (value: number) => formatNumber(value, i18n.language);
   return (
@@ -293,11 +327,16 @@ export function SumCells({ sum, max }: { sum: UsageSum; max?: number }) {
       </td>
       <td className="px-2 py-1.5 text-right tabular-nums">{number(sum.inputTokens)}</td>
       <td className="py-1.5 pl-2 text-right tabular-nums">{number(sum.outputTokens)}</td>
+      {currency && (
+        <td className="py-1.5 pl-2 text-right whitespace-nowrap tabular-nums">
+          {costText(sum.amount, currency, i18n.language)}
+        </td>
+      )}
     </>
   );
 }
 
-export function SumHeads() {
+export function SumHeads({ cost = false }: { cost?: boolean }) {
   const { t } = useT();
   return (
     <>
@@ -310,25 +349,30 @@ export function SumHeads() {
       <th scope="col" className="py-1.5 pl-2 text-right font-semibold whitespace-nowrap">
         {t("assist.usage.outputTokens")}
       </th>
+      {cost && (
+        <th scope="col" className="py-1.5 pl-2 text-right font-semibold whitespace-nowrap">
+          {t("assist.usage.cost")}
+        </th>
+      )}
     </>
   );
 }
 
-/** The three sums as tiles. */
-export function UsageTotals({ sum }: { sum: UsageSum }) {
+/** The sums as tiles; the cost as a fourth when a `currency` is given. */
+export function UsageTotals({ sum, currency }: { sum: UsageSum; currency?: string }) {
   const { t, i18n } = useT();
+  const tiles: [string, string][] = [
+    ["requests", formatNumber(sum.requests, i18n.language)],
+    ["inputTokens", formatNumber(sum.inputTokens, i18n.language)],
+    ["outputTokens", formatNumber(sum.outputTokens, i18n.language)],
+  ];
+  if (currency) tiles.push(["cost", costText(sum.amount, currency, i18n.language)]);
   return (
-    <dl className="grid grid-cols-3 gap-2 sm:gap-3">
-      {(
-        [
-          ["requests", sum.requests],
-          ["inputTokens", sum.inputTokens],
-          ["outputTokens", sum.outputTokens],
-        ] as const
-      ).map(([key, value]) => (
+    <dl className={clsx("grid gap-2 sm:gap-3", currency ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3")}>
+      {tiles.map(([key, value]) => (
         <div key={key} className="min-w-0 rounded-control bg-canvas px-3 py-2">
           <dt className="truncate text-[12px] text-muted">{t(`assist.usage.${key}`)}</dt>
-          <dd className="text-sm font-bold tabular-nums sm:text-lg">{formatNumber(value, i18n.language)}</dd>
+          <dd className="text-sm font-bold tabular-nums sm:text-lg">{value}</dd>
         </div>
       ))}
     </dl>
@@ -343,6 +387,7 @@ export function SumTable<Row extends UsageSum>({
   rowKey,
   label,
   total,
+  currency,
 }: {
   caption: string;
   head: string;
@@ -351,6 +396,8 @@ export function SumTable<Row extends UsageSum>({
   label: (row: Row) => ReactNode;
   /** A last line with the sum of everything. */
   total?: UsageSum;
+  /** Shows the costs, in this currency. */
+  currency?: string;
 }) {
   const { t } = useT();
   const max = Math.max(0, ...rows.map((row) => row.requests));
@@ -363,7 +410,7 @@ export function SumTable<Row extends UsageSum>({
             <th scope="col" className="py-1.5 pr-3 font-semibold">
               {head}
             </th>
-            <SumHeads />
+            <SumHeads cost={currency !== undefined} />
           </tr>
         </thead>
         <tbody>
@@ -372,7 +419,7 @@ export function SumTable<Row extends UsageSum>({
               <th scope="row" className="py-1.5 pr-3 text-left font-semibold break-all">
                 {label(row)}
               </th>
-              <SumCells sum={row} max={max} />
+              <SumCells sum={row} max={max} currency={currency} />
             </tr>
           ))}
         </tbody>
@@ -382,7 +429,7 @@ export function SumTable<Row extends UsageSum>({
               <th scope="row" className="py-1.5 pr-3 text-left">
                 {t("assist.usage.total")}
               </th>
-              <SumCells sum={total} />
+              <SumCells sum={total} currency={currency} />
             </tr>
           </tfoot>
         )}
@@ -392,7 +439,15 @@ export function SumTable<Row extends UsageSum>({
 }
 
 /** Every row as it came, folded away: day, (person,) provider, feature and the sums. */
-export function EntriesTable({ rows, showPerson }: { rows: UsageRow[]; showPerson: boolean }) {
+export function EntriesTable({
+  rows,
+  showPerson,
+  currency,
+}: {
+  rows: UsageRow[];
+  showPerson: boolean;
+  currency?: string;
+}) {
   const { t, i18n } = useT();
   return (
     <details className="rounded-control border border-hairline p-3">
@@ -418,7 +473,7 @@ export function EntriesTable({ rows, showPerson }: { rows: UsageRow[]; showPerso
               <th scope="col" className="px-2 py-1.5 font-semibold">
                 {t("assist.usage.feature")}
               </th>
-              <SumHeads />
+              <SumHeads cost={currency !== undefined} />
             </tr>
           </thead>
           <tbody>
@@ -430,7 +485,7 @@ export function EntriesTable({ rows, showPerson }: { rows: UsageRow[]; showPerso
                 {showPerson && <td className="px-2 py-1.5 break-all">{row.login}</td>}
                 <td className="px-2 py-1.5">{row.providerName}</td>
                 <td className="px-2 py-1.5">{t(`assist.features.${row.feature}`)}</td>
-                <SumCells sum={row} />
+                <SumCells sum={rowSum(row)} currency={currency} />
               </tr>
             ))}
           </tbody>

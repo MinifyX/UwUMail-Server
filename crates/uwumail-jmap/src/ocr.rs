@@ -122,23 +122,38 @@ impl Ocr {
             .await
     }
 
+    fn hash(&self, bytes: &[u8]) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(self.config.languages.as_bytes());
+        hasher.update([0]);
+        hasher.update(bytes);
+        hex::encode(hasher.finalize())
+    }
+
+    /// What was read in a picture before, without running Tesseract: `None` when it never was (or
+    /// nothing is kept).
+    pub async fn known(&self, bytes: &[u8]) -> Option<Result<Read, Skip>> {
+        if bytes.len() > MAX_BYTES {
+            return Some(Err(Skip::Unsuitable));
+        }
+        self.known_as(&self.hash(bytes)).await
+    }
+
+    async fn known_as(&self, hash: &str) -> Option<Result<Read, Skip>> {
+        Some(match self.cached(hash).await? {
+            Cached::Read(read) => Ok(read),
+            Cached::Skipped => Err(Skip::Unsuitable),
+        })
+    }
+
     /// The text in a picture, or why it was not read.
     pub async fn read(&self, bytes: &[u8]) -> Result<Read, Skip> {
         if bytes.len() > MAX_BYTES {
             return Err(Skip::Unsuitable);
         }
-        let hash = {
-            let mut hasher = Sha256::new();
-            hasher.update(self.config.languages.as_bytes());
-            hasher.update([0]);
-            hasher.update(bytes);
-            hex::encode(hasher.finalize())
-        };
-        if let Some(cached) = self.cached(&hash).await {
-            return match cached {
-                Cached::Read(read) => Ok(read),
-                Cached::Skipped => Err(Skip::Unsuitable),
-            };
+        let hash = self.hash(bytes);
+        if let Some(known) = self.known_as(&hash).await {
+            return known;
         }
         // Decoding a big picture takes memory as well: it waits for its turn like Tesseract.
         let _turn = self.running.acquire().await.map_err(|_| Skip::Failed)?;

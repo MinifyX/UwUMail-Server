@@ -27,7 +27,7 @@ import {
   type ModelsAnswer,
   type ProviderDraft,
 } from "./model";
-import { ChipInput, ExperimentalBadge, ModelPicker, Notice } from "./parts";
+import { ChipInput, ExperimentalBadge, ModelPicker, Notice, PriceText } from "./parts";
 
 type AnyProvider = AssistProvider | AdminProvider;
 
@@ -335,6 +335,8 @@ function ProviderForm({
         </p>
       </div>
 
+      <PriceFields draft={draft} change={change} errorOf={errorOf} admin={admin} stored={current} />
+
       {admin && (
         <AdminFields
           draft={draft}
@@ -360,6 +362,63 @@ function ProviderForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+/** What the provider costs: automatic from the price lists, or set by hand; for the admin, who sees it. */
+function PriceFields({
+  draft,
+  change,
+  errorOf,
+  admin,
+  stored,
+}: {
+  draft: ProviderDraft;
+  change: <K extends keyof ProviderDraft>(key: K, value: ProviderDraft[K]) => void;
+  errorOf: (field: keyof DraftErrors) => string | undefined;
+  admin: boolean;
+  stored: AnyProvider | undefined;
+}) {
+  const { t } = useT();
+  const price = stored?.price ?? null;
+  return (
+    <div className="flex flex-col gap-2 border-t border-hairline pt-4">
+      <p className="text-[13px] font-semibold text-muted">{t("assist.form.price")}</p>
+      <p className="-mt-1 text-[12px] text-muted">
+        {t("assist.form.priceIntro")}{" "}
+        {price ? (
+          <>
+            {t("assist.form.priceNow")} <PriceText price={price} />
+          </>
+        ) : (
+          stored && t("assist.form.priceUnknown")
+        )}
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {(["inputPrice", "outputPrice"] as const).map((field) => (
+          <Field key={field} label={t(`assist.form.${field}`)} error={errorOf(field)}>
+            {(id) => (
+              <TextInput
+                id={id}
+                inputMode="decimal"
+                autoComplete="off"
+                placeholder={t("assist.form.priceAutomatic")}
+                value={draft[field]}
+                onChange={(event) => change(field, event.target.value)}
+              />
+            )}
+          </Field>
+        ))}
+      </div>
+      {admin && (
+        <Toggle
+          checked={draft.showCostToUsers}
+          onChange={(value) => change("showCostToUsers", value)}
+          label={t("assist.form.showCost")}
+          description={t("assist.form.showCostHint")}
+        />
+      )}
+    </div>
   );
 }
 

@@ -558,7 +558,9 @@
       "badProvider": "该服务商不能用于此功能。",
       "chatgptNotStarted": "请先开始 ChatGPT 登录。",
       "overQuota": "已达到每日上限：{{detail}}",
-      "assistUnavailable": "目前不可用。"
+      "assistUnavailable": "目前不可用。",
+      "badPrice": "价格必须是 0 到 100,000 之间的数字。",
+      "badCurrency": "不支持此货币。"
     }
   },
   "people": {
@@ -3817,7 +3819,13 @@
       "utc": "日期按 UTC 计算；每日上限在 UTC 午夜重置。",
       "allEntries_other": "全部记录（{{count}} 条）",
       "perFeature": "按功能",
-      "perDay": "按日期"
+      "perDay": "按日期",
+      "cost": "费用",
+      "costToday": "今天 {{cost}}",
+      "costNote": "费用是根据公开价格表估算的,可能与服务商的账单不同。",
+      "currency": "货币",
+      "currencyEur": "欧元 (€)",
+      "currencyUsd": "美元 ($)"
     },
     "provider": {
       "model": "模型 {{model}}",
@@ -3873,7 +3881,10 @@
       "perPerson": "按用户",
       "perDay": "按日期",
       "allPeople": "所有人",
-      "perDayOf": "{{person}} 的每日用量"
+      "perDayOf": "{{person}} 的每日用量",
+      "costShown": "显示费用",
+      "priceLists_other": "价格已于 {{date}} 更新,已知 {{count}} 个模型。",
+      "priceListsNone": "尚未获取价格。"
     },
     "choices": {
       "title": "哪个功能用哪个服务商",
@@ -3976,8 +3987,18 @@
         "domainsRequired": "请至少添加一个域名。",
         "peopleRequired": "请至少添加一个用户。",
         "featuresRequired": "请至少选择一个功能。",
-        "limitInvalid": "请输入大于零的整数，或留空。"
-      }
+        "limitInvalid": "请输入大于零的整数，或留空。",
+        "priceInvalid": "请输入 0 或更大的价格,例如 0.25。"
+      },
+      "price": "价格",
+      "priceIntro": "每百万 token 的美元价格,用于显示费用。留空则使用公开价格表中的价格。",
+      "priceNow": "当前:",
+      "priceUnknown": "尚未找到此模型的价格。",
+      "inputPrice": "输入,每百万 token",
+      "outputPrice": "输出,每百万 token",
+      "priceAutomatic": "来自价格表",
+      "showCost": "向使用者显示费用",
+      "showCostHint": "他们将看到自己请求的费用。你始终可以看到。"
     },
     "chatgpt": {
       "title": "ChatGPT 登录",
@@ -3992,6 +4013,12 @@
       "expired": "代码已过期。请重新开始。",
       "failed": "登录失败：{{detail}}",
       "failedPlain": "登录失败。"
+    },
+    "price": {
+      "free": "免费",
+      "perMillion": "每百万 token 输入 {{input}},输出 {{output}}",
+      "manual": "手动设置",
+      "unknown": "价格未知"
     }
   }
 }

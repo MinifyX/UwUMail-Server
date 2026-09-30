@@ -108,9 +108,43 @@ pub(crate) fn estimate(chars: usize) -> i64 {
     (chars as i64 + 3) / 4
 }
 
-/// Tokens of a prompt, roughly.
-pub(crate) fn estimate_prompt(prompt: &Prompt) -> i64 {
-    estimate(prompt.system.chars().count() + prompt.user.chars().count())
+/// Chinese, Japanese and Korean script: about a token per character, where other text takes about
+/// four characters to a token.
+fn is_wide(c: char) -> bool {
+    matches!(c as u32,
+        0x1100..=0x11FF         // Hangul Jamo
+        | 0x2E80..=0x2FDF       // CJK radicals
+        | 0x3040..=0x30FF       // Hiragana, Katakana
+        | 0x3100..=0x312F       // Bopomofo
+        | 0x3130..=0x318F       // Hangul compatibility Jamo
+        | 0x31F0..=0x31FF       // Katakana extensions
+        | 0x3400..=0x4DBF       // CJK extension A
+        | 0x4E00..=0x9FFF       // CJK unified ideographs
+        | 0xAC00..=0xD7AF       // Hangul syllables
+        | 0xF900..=0xFAFF       // CJK compatibility ideographs
+        | 0xFF66..=0xFF9F       // half-width Katakana
+        | 0x20000..=0x3134F // CJK extensions B to G
+    )
+}
+
+/// Tokens of some texts together, roughly: four characters to a token, a token for each character
+/// of Chinese, Japanese or Korean. The same count for what is charged before a request is made and
+/// for `Assist/estimate`.
+pub fn estimate_texts<'a>(texts: impl IntoIterator<Item = &'a str>) -> i64 {
+    let (mut wide, mut other) = (0usize, 0usize);
+    for text in texts {
+        for c in text.chars() {
+            if is_wide(c) { wide += 1 } else { other += 1 }
+        }
+    }
+    wide as i64 + estimate(other)
+}
+
+/// Tokens of a prompt, roughly: its instructions, the text and the answer's JSON shape, which goes
+/// along as well.
+pub fn estimate_prompt(prompt: &Prompt) -> i64 {
+    let schema = prompt.schema.as_ref().map(|(_, schema)| schema.to_string()).unwrap_or_default();
+    estimate_texts([prompt.system.as_str(), prompt.user.as_str(), schema.as_str()])
 }
 
 /// Asks `target`. With `deltas`, the text is streamed and sent there piece by piece as it comes; a
@@ -132,7 +166,7 @@ pub async fn complete(
     let mut completion = tokio::time::timeout(TOTAL_TIMEOUT, work).await.map_err(|_| ProviderError::Timeout)??;
     if completion.input_tokens == 0 && completion.output_tokens == 0 {
         completion.input_tokens = estimate_prompt(prompt);
-        completion.output_tokens = estimate(completion.text.chars().count());
+        completion.output_tokens = estimate_texts([completion.text.as_str()]);
         completion.estimated = true;
     }
     Ok(completion)
@@ -675,6 +709,17 @@ pub fn json_answer(text: &str) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tokens_are_counted_by_script() {
+        assert_eq!(estimate_texts(["Hallo Nyu!"]), 3);
+        assert_eq!(estimate_texts(["東京で会議", "ab"]), 6, "a token per character, and one for the rest");
+        assert_eq!(estimate_texts(["회의 내일"]), 5);
+        let prompt = Prompt { system: "abcd".into(), user: "efgh".into(), schema: None, max_tokens: 10 };
+        assert_eq!(estimate_prompt(&prompt), 2);
+        let with_schema = Prompt { schema: Some(("x", serde_json::json!({ "type": "object" }))), ..prompt };
+        assert_eq!(estimate_prompt(&with_schema), 7);
+    }
 
     #[test]
     fn events_are_split_on_blank_lines_and_across_chunks() {

@@ -120,13 +120,26 @@ pub(crate) async fn texts_for_assist(
     store: &uwumail_store::Store,
     account_id: i64,
     email_id: i64,
-) -> Option<Vec<String>> {
+    how: uwumail_assist::PictureRead,
+) -> Option<uwumail_assist::PictureTexts> {
     if !ocr.available().await {
         return None;
     }
     let record = store.emails_by_ids(account_id, vec![email_id]).await.ok()?.into_iter().next()?;
     let raw = store.blob(&record.blob).await.ok()?;
     let (sources, _) = pictures_of(&raw, &record.blob, false);
+    if how == uwumail_assist::PictureRead::KnownOnly {
+        let mut found = uwumail_assist::PictureTexts::default();
+        for source in sources {
+            let Source::Part { bytes, .. } = source else { continue };
+            match ocr.known(&bytes).await {
+                None => found.unread += 1,
+                Some(Ok(read)) if !read.text.trim().is_empty() => found.texts.push(read.text),
+                Some(_) => {}
+            }
+        }
+        return Some(found);
+    }
     let deadline = tokio::time::Instant::now() + DEADLINE;
     let texts: Vec<Option<String>> = futures_util::stream::iter(sources)
         .map(|source| async move {
@@ -137,7 +150,7 @@ pub(crate) async fn texts_for_assist(
         .buffered(PARALLEL)
         .collect()
         .await;
-    Some(texts.into_iter().flatten().collect())
+    Some(uwumail_assist::PictureTexts::read(texts.into_iter().flatten().collect()))
 }
 
 /// A message's first [`MAX_IMAGES`] pictures in the order they come: embedded ones and attachments,

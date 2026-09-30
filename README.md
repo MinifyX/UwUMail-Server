@@ -6,7 +6,11 @@
 
 <p align="center">
   The mail server I build for myself, because every self-hosted one annoyed me. (=^･ω･^=)<br/>
-  JMAP · SMTP · IMAP · CalDAV/CardDAV · one Docker container
+  JMAP · SMTP · IMAP · CalDAV/CardDAV · webmail · one Docker container
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/portal-overview.png" width="860" alt="The admin portal's server overview with its checks" />
 </p>
 
 ---
@@ -33,71 +37,49 @@ building my own, the way I want it. The app half lives in
 
 UwUMail Server is a self-hosted mail server written in Rust. It is the home
 base for the UwUMail apps and works with other mail apps too. I want it to be
-something a family, a club or a small team can run without being a mail admin:
+something a family, a club or a small team can run without being a mail admin.
+The long version of every point is in [docs/features.md](docs/features.md):
 
-- **One container.** Mail server, spam filter and admin panel in a single
-  image for amd64 and arm64 (yes, a Raspberry Pi is enough); web mail is meant
-  to join them.
-- **Guided setup.** A setup assistant walks you through admin account, domain,
-  DNS records and sending, checks everything live and ends with a test mail.
-- **Delivers from home.** Blocked port 25 or no fixed IP? An optional
-  [UwUMail Gateway](docs/gateway.md) on a small VPS tunnels mail and web to
-  your server at home and sends from its own address.
-- **Mail, calendars, contacts.** JMAP, IMAP and SMTP for mail apps, CalDAV and
-  CardDAV for calendars and contacts, and the same calendars and address books
-  as JMAP Calendars and JMAP Contacts for the webmail and the apps; [Sieve mail rules](docs/sieve.md) over JMAP and
-  ManageSieve. IMAP speaks IMAP4rev2 as well as IMAP4rev1.
-- **Shared folders, groups and shared mailboxes.** Share a folder with people
-  on your server — to read, to read and write, or everything — from My account,
-  over JMAP or with IMAP ACLs; it shows in their mail app and webmail. Groups
-  like `info@` reach several people, shared mailboxes like `support@` are used
-  by a team, and masked addresses keep your real one away from websites. See
-  [sharing](docs/sharing.md) and [groups](docs/groups.md).
-- **Moving in made easy.** Give the old address and its password under My
-  account → Moving, and the server copies every folder over in the background
-  ([how](docs/moving.md)).
-- **Shared calendars and invitations.** Share calendars and address books with
-  people on your server; invite anyone to an event and get their answers, in
-  the calendar app you already use ([how it works](docs/calendars.md)), and see
-  when people are free. Over JMAP the whole of JMAP Calendars, down to alerts
-  the server rings itself ([details](docs/jmap-calendars.md)). iPhone, iPad
-  and Mac set everything up with one signed profile.
-- **Bring your calendars along.** Import `.ics` and `.vcf` files, subscribe to
-  calendars by their iCal address (Google's secret address too), or move
-  everything over from iCloud, WEB.DE, GMX, Posteo and other CalDAV/CardDAV
-  providers in one go ([how](docs/calendar-import.md)).
-- **Spam filter and, if you want, a virus scanner.** The filter learns, keeps
-  sender and word lists and fetches known-bad lists by itself; an optional
-  [ClamAV beside the server](docs/antivirus.md) turns infected mail away before
-  it is taken.
-- **Backups and updates built in.** Nightly deduplicated, encrypted backups to
-  SFTP, an S3 bucket or a folder, single mailboxes restored from the portal,
-  and the portal tells you when a new version is out.
-- **Profile pictures.** A picture for everyone, services, groups and a logo
-  per domain, visible on the server or also to other servers over Libravatar
-  and the `Face:` header — and sender pictures from the reader's own contacts
-  first ([profile pictures](docs/profile-pictures.md)).
-- **An AI assistant, if you want one.** Drafts, summaries, a second opinion on
-  spam, dates for the calendar and your own labels on new mail — with the
-  providers you set up (OpenAI, Claude, Gemini, Mistral, OpenRouter, or Ollama
-  in your own network), asked by the server, never on without a click except
-  the labels you switched on ([AI assistant](docs/llm.md)).
-- **Push to closed apps.** The webmail notifies with its tab closed, and the
-  Android app gets new mail through UnifiedPush ([JMAP push](docs/jmap-push.md)).
-- **Everything in one panel.** Accounts, domains, queue, logs, spam and
-  settings, in German, English, French, Dutch, Japanese or Chinese, in a playful
-  or a plain tone — and with [your own name, logo and colour](docs/branding.md)
-  instead of UwUMail's if you like. A calm view with just the traffic light,
-  alert mails, statistics and [Prometheus metrics](docs/metrics.md) for admins;
-  login through your own [OIDC or LDAP](docs/login-oidc-ldap.md), and
+- **One container.** Mail server, spam filter, admin portal and
+  [webmail](docs/webmail.md) in a single image for amd64 and arm64 (yes, a
+  Raspberry Pi is enough).
+- **Guided setup.** An assistant walks you through admin account, domain, DNS
+  and sending, checks everything live and ends with a test mail.
+- **Delivers from home.** Blocked port 25 or no fixed IP? The optional
+  [UwUMail Gateway](docs/gateway.md) on a small VPS tunnels mail and web home.
+- **Mail, calendars, contacts.** JMAP, IMAP and SMTP, CalDAV and CardDAV, JMAP
+  Calendars and Contacts, [Sieve rules](docs/sieve.md); invitations, free/busy
+  and a [birthdays calendar](docs/birthdays.md) with ages.
+- **Sharing.** Shared folders, calendars and address books,
+  [groups and shared mailboxes](docs/groups.md) like `info@` and `support@`, and
+  [masked addresses](docs/jmap-masked-email.md), also on domains of their own.
+- **Moving in made easy.** [Copy an old mailbox](docs/moving.md) over, keep
+  [fetching](docs/fetch.md) from Gmail or Outlook (signed in with Google or
+  Microsoft), and [import calendars](docs/calendar-import.md) from iCloud & co.
+- **Spam filter and, if you want, [ClamAV](docs/antivirus.md).** The filter
+  learns, keeps sender and word lists and fetches known-bad lists by itself.
+- **Backups and updates built in.** Nightly deduplicated, encrypted
+  [backups](docs/backups.md) to SFTP, S3 or a folder; single mailboxes restored
+  from the portal.
+- **Pictures, privately.** [Profile pictures](docs/profile-pictures.md) and
+  logos, remote pictures fetched and cached by the server (or through a VPN),
+  and [the text in pictures](docs/jmap-image-text.md) read for dates.
+- **An AI assistant, if you want one**, with the providers, limits and costs you
+  set ([below](#ai-assistant)).
+- **Everything in one panel**, in six languages, playful or plain, with
+  [your own branding](docs/branding.md), alerts, statistics,
+  [metrics](docs/metrics.md), [OIDC or LDAP](docs/login-oidc-ldap.md) login and
   [OAuth](docs/oauth.md) for mail apps.
 - **Private by default.** No telemetry. Your mail stays on your hardware.
-  Remote pictures and [one-click unsubscribes](docs/jmap-unsubscribe.md) go
-  out through the server, or a VPN, never from the reader's browser.
 
 > **Status:** early, but I run my own mail on it. Set up backups, and remember
 > there's no support. The [roadmap](docs/roadmap.md) shows what's done and what
 > I'd like to do next.
+
+| | |
+| --- | --- |
+| <img src="docs/screenshots/webmail-mail.png" alt="The webmail with an opened mail and an invitation" /> | <img src="docs/screenshots/webmail-ai.png" alt="A summary on its way in the webmail, and a date found on a poster" /> |
+| The webmail under `/mail`. | A summary on its way; the date came from the poster's text. |
 
 ## Install
 
@@ -119,7 +101,7 @@ so it runs without questions too:
 sudo bash install.sh --hostname mail.example.com --email me@example.org --yes
 ```
 
-The next version, later on:
+The next version, later on (or *Update now* under *Server → Updates*):
 
 ```bash
 cd /opt/uwumail && sudo bash update.sh
@@ -129,6 +111,59 @@ The whole way with DNS, the gateway, mail apps and backups is in
 **[docs/install.md](docs/install.md)**.
 
 Coming from mailcow? [docs/migrating-from-mailcow.md](docs/migrating-from-mailcow.md).
+
+## AI assistant
+
+Drafts and rewrites, summaries of a mail or a conversation, a second opinion on
+spam, appointments for the calendar, and your own labels on new mail — in the
+webmail and the UwUMail apps. Nothing is on until you set up a provider, every
+request goes out from the server (never from a browser or an app), and nothing
+happens without a click except the labels people switch on for themselves.
+
+<p align="center">
+  <img src="docs/screenshots/portal-ai.png" width="760" alt="Server providers with prices, and the usage per person with costs" />
+</p>
+
+**Setting it up** in the portal under *Server → Settings → AI assistant*:
+
+1. **Add a provider:** pick its kind, paste the key, *Load models*. Each has a
+   model for writing and a cheaper, faster one for everything else.
+2. **Who and what:** everyone, some domains or some people; all features or
+   some.
+3. **Daily limits** per person, in requests and/or tokens.
+4. **Costs:** prices come from public lists (LiteLLM, OpenRouter) and can be set
+   by hand; *Show costs to the people using it* decides per provider whether
+   people see them (you always do, in the usage statistics too).
+5. **The policy:** which features exist at all, whether people may add their own
+   providers with their own keys, and whether those may be in the local network.
+
+| Kind | Notes |
+| --- | --- |
+| OpenAI, Mistral, OpenRouter | API key |
+| Anthropic Claude | API key only; Claude subscriptions can't be used by other programs |
+| Google Gemini | AI Studio key; use a project with billing for mail |
+| Ollama | on your network, no key, free |
+| OpenAI-compatible | LM Studio, vLLM, llama.cpp, LiteLLM, a company gateway |
+| ChatGPT subscription | experimental, only as a person's own provider |
+
+**Local models:** an Ollama or LM Studio on your network is a server provider
+like any other (`http://192.0.2.10:11434`; from the container, not
+`localhost`). People's own providers reach the local network only when you
+allow it. The UwUMail app also finds an Ollama or LM Studio on the person's own
+computer by itself, for mailboxes that aren't on a UwUMail server.
+
+**Before a click**, every AI button shows the estimate: "≈ 1,200 tokens ·
+≈ €0.02 · 48,000 left today" (`Assist/estimate`, counted without asking the
+model and against nothing).
+
+**Privacy:** only the text a feature needs goes to the provider — no
+attachments, no pictures, quoted history left out. Mail is treated as data: the
+model gets no tools and its answers are checked. Keys are sealed at rest and
+never shown again, and `egress.assist` can send the requests through the VPN.
+For mail that must not leave the house, use a local model.
+
+All the details: [docs/llm.md](docs/llm.md); for app developers:
+[docs/jmap-assist.md](docs/jmap-assist.md).
 
 ## Project layout
 
@@ -148,7 +183,7 @@ Coming from mailcow? [docs/migrating-from-mailcow.md](docs/migrating-from-mailco
 | `install.sh`, `update.sh` | Setting the server up on a machine, and bringing it to the next version |
 | `web/` | The portal's React app |
 | `docker/` | Container images |
-| `docs/` | Vision, architecture, configuration and deployment guides |
+| `docs/` | Features, vision, architecture, configuration and deployment guides |
 
 ## Development
 
@@ -163,7 +198,9 @@ bash dev/seed.sh && node dev/smoke.mjs
 More in [docs/development.md](docs/development.md). Running it for real:
 [docs/install.md](docs/install.md), [docs/deployment.md](docs/deployment.md),
 [docs/configuration.md](docs/configuration.md), [docs/spam-filter.md](docs/spam-filter.md)
-and [docs/antivirus.md](docs/antivirus.md).
+and [docs/antivirus.md](docs/antivirus.md). The screenshots in
+`docs/screenshots/` come from the portal's `pnpm dev:mock` and the webmail's
+demo mode.
 
 ## License
 

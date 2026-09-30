@@ -901,7 +901,7 @@ impl Store {
         self.write(move |tx| {
             let clear_password = source == "ldap";
             let changed = tx.execute(
-                "UPDATE accounts SET auth_source = ?1, credentials_changed_at = ?2,
+                "UPDATE accounts SET auth_source = ?1, credentials_changed_at = ?2, password_changed_at = ?2,
                                      password_hash = CASE WHEN ?3 THEN NULL ELSE password_hash END
                  WHERE login = ?4 AND kind <> 'service'",
                 params![source, now(), clear_password, login],

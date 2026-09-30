@@ -570,7 +570,9 @@
       "badProvider": "Die provider kan hiervoor niet worden gebruikt.",
       "chatgptNotStarted": "Start eerst de ChatGPT-aanmelding.",
       "overQuota": "De daglimiet is op: {{detail}}",
-      "assistUnavailable": "Dat is nu niet beschikbaar."
+      "assistUnavailable": "Dat is nu niet beschikbaar.",
+      "badPrice": "Een prijs moet een getal van 0 tot 100.000 zijn.",
+      "badCurrency": "Deze valuta wordt niet ondersteund."
     }
   },
   "people": {
@@ -3897,7 +3899,13 @@
       "allEntries_one": "Alle regels ({{count}})",
       "allEntries_other": "Alle regels ({{count}})",
       "perFeature": "Per functie",
-      "perDay": "Per dag"
+      "perDay": "Per dag",
+      "cost": "Kosten",
+      "costToday": "Vandaag {{cost}}",
+      "costNote": "Kosten zijn schattingen uit openbare prijslijsten en kunnen afwijken van de rekening van de aanbieder.",
+      "currency": "Valuta",
+      "currencyEur": "Euro (€)",
+      "currencyUsd": "Amerikaanse dollar ($)"
     },
     "provider": {
       "model": "Model {{model}}",
@@ -3954,7 +3962,11 @@
       "perPerson": "Per persoon",
       "perDay": "Per dag",
       "allPeople": "Iedereen",
-      "perDayOf": "Per dag voor {{person}}"
+      "perDayOf": "Per dag voor {{person}}",
+      "costShown": "Kosten zichtbaar",
+      "priceLists_one": "Prijzen bijgewerkt {{date}}, {{count}} model bekend.",
+      "priceLists_other": "Prijzen bijgewerkt {{date}}, {{count}} modellen bekend.",
+      "priceListsNone": "De prijzen zijn nog niet opgehaald."
     },
     "choices": {
       "title": "Welke provider waarvoor",
@@ -4059,8 +4071,18 @@
         "domainsRequired": "Voeg minstens één domein toe.",
         "peopleRequired": "Voeg minstens één persoon toe.",
         "featuresRequired": "Kies minstens één functie.",
-        "limitInvalid": "Een heel getal boven nul, of leeg."
-      }
+        "limitInvalid": "Een heel getal boven nul, of leeg.",
+        "priceInvalid": "Vul een prijs van 0 of meer in, zoals 0,25."
+      },
+      "price": "Prijs",
+      "priceIntro": "Amerikaanse dollar per miljoen tokens, om kosten te tonen. Leeg neemt de prijs uit openbare prijslijsten.",
+      "priceNow": "Nu:",
+      "priceUnknown": "Voor dit model is nog geen prijs bekend.",
+      "inputPrice": "Invoer, per miljoen tokens",
+      "outputPrice": "Uitvoer, per miljoen tokens",
+      "priceAutomatic": "Uit de prijslijsten",
+      "showCost": "Kosten tonen aan wie het gebruikt",
+      "showCostHint": "Zij zien dan wat hun verzoeken kosten. Jij ziet het altijd."
     },
     "chatgpt": {
       "title": "ChatGPT-aanmelding",
@@ -4075,6 +4097,12 @@
       "expired": "De code is verlopen. Begin opnieuw.",
       "failed": "Aanmelden is niet gelukt: {{detail}}",
       "failedPlain": "Aanmelden is niet gelukt."
+    },
+    "price": {
+      "free": "Gratis",
+      "perMillion": "{{input}} invoer, {{output}} uitvoer per miljoen tokens",
+      "manual": "met de hand ingesteld",
+      "unknown": "Prijs onbekend"
     }
   }
 }

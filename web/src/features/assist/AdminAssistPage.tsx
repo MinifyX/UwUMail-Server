@@ -9,6 +9,7 @@ import { Field, Select, Toggle } from "@/components/ui/Field";
 import { useDomains, usePeople } from "@/features/people/queries";
 import { useT } from "@/i18n";
 import { api } from "@/lib/api";
+import { formatDateTime } from "@/lib/format";
 import { useErrorText } from "@/lib/errors";
 import { toast } from "@/state/toasts";
 import {
@@ -17,14 +18,18 @@ import {
   byDay,
   byFeature,
   byPerson,
+  currencyFor,
   formatDay,
+  hasCosts,
   usageSum,
+  ACCOUNT_ASSIST,
+  type AccountAssistView,
   type AdminAssistView,
   type AdminProvider,
   type AdminUsageView,
   type AssistPolicy,
 } from "./model";
-import { EntriesTable, Notice, QuotaText, SumTable, Tag, UsageTotals } from "./parts";
+import { EntriesTable, Notice, PriceText, QuotaText, SumTable, Tag, UsageTotals } from "./parts";
 import { ProviderDialog } from "./ProviderDialog";
 
 const adminKey = ["admin", "assist"] as const;
@@ -108,7 +113,7 @@ function accessText(provider: AdminProvider, t: ReturnType<typeof useT>["t"]): s
 }
 
 function ProvidersCard({ view }: { view: AdminAssistView }) {
-  const { t } = useT();
+  const { t, i18n } = useT();
   const errorText = useErrorText();
   const queryClient = useQueryClient();
   const domains = useDomains();
@@ -166,6 +171,7 @@ function ProvidersCard({ view }: { view: AdminAssistView }) {
                     <span className="flex flex-wrap items-center gap-1.5">
                       <span className="truncate text-sm font-semibold">{provider.name}</span>
                       {!provider.enabled && <Tag tone="muted">{t("assist.admin.off")}</Tag>}
+                      {provider.showCostToUsers && <Tag>{t("assist.admin.costShown")}</Tag>}
                     </span>
                     <span className="block text-[12px] text-muted">
                       {[
@@ -195,6 +201,9 @@ function ProvidersCard({ view }: { view: AdminAssistView }) {
                         provider.keyHint &&
                         ` · ${t("assist.provider.key", { hint: provider.keyHint })}`}
                     </span>
+                    <span className="block text-[12px] text-muted">
+                      {provider.price ? <PriceText price={provider.price} /> : t("assist.price.unknown")}
+                    </span>
                   </span>
                   <div className="flex items-center gap-1.5">
                     <IconButton
@@ -220,6 +229,16 @@ function ProvidersCard({ view }: { view: AdminAssistView }) {
             })}
           </ul>
         )}
+        {view.priceLists && (
+          <p className="text-[12px] text-muted">
+            {view.priceLists.fetchedAt
+              ? t("assist.admin.priceLists", {
+                  date: formatDateTime(view.priceLists.fetchedAt, i18n.language),
+                  count: view.priceLists.models,
+                })
+              : t("assist.admin.priceListsNone")}
+          </p>
+        )}
         <div className="flex justify-end">
           <Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>
             {t("assist.admin.addProvider")}
@@ -237,13 +256,21 @@ function ProvidersCard({ view }: { view: AdminAssistView }) {
   );
 }
 
-/** Requests and tokens per person and per day over the last 30 days. */
+/** Requests, tokens and costs per person and per day over the last 30 days. */
 function UsageCard() {
   const { t, i18n } = useT();
   const [person, setPerson] = useState("");
+  // In English the admin's own choice of euros or US dollars counts, as everywhere else.
+  const english = i18n.language.toLowerCase().startsWith("en");
+  const own = useQuery({
+    queryKey: ["account", "assist"],
+    queryFn: () => api<AccountAssistView>(ACCOUNT_ASSIST),
+    enabled: english,
+  });
+  const currency = currencyFor(i18n.language, own.data?.settings.currency);
   const usage = useQuery({
-    queryKey: adminUsageKey,
-    queryFn: () => api<AdminUsageView>(`${ADMIN_ASSIST}/usage?days=30`),
+    queryKey: [...adminUsageKey, currency],
+    queryFn: () => api<AdminUsageView>(`${ADMIN_ASSIST}/usage?days=30&currency=${currency}`),
     refetchInterval: 60_000,
   });
   if (usage.isPending) return <Loading />;
@@ -251,6 +278,7 @@ function UsageCard() {
   const all = usage.data.days;
   const people = byPerson(all);
   const rows = person ? all.filter((row) => row.login === person) : all;
+  const costs = hasCosts(all) ? currency : undefined;
 
   return (
     <Card title={t("assist.admin.usageTitle")}>
@@ -259,7 +287,7 @@ function UsageCard() {
         <p className="text-[13px] text-muted">{t("assist.usage.empty")}</p>
       ) : (
         <div className="flex flex-col gap-5">
-          <UsageTotals sum={usageSum(all)} />
+          <UsageTotals sum={usageSum(all)} currency={costs} />
           <div className="flex flex-col gap-2">
             <p className="text-[13px] font-semibold text-muted">{t("assist.admin.perPerson")}</p>
             <SumTable
@@ -267,6 +295,7 @@ function UsageCard() {
               head={t("assist.usage.person")}
               rows={people}
               rowKey={(entry) => entry.login}
+              currency={costs}
               label={(entry) => (
                 <button
                   type="button"
@@ -303,6 +332,7 @@ function UsageCard() {
               rowKey={(entry) => entry.day}
               label={(entry) => <span className="whitespace-nowrap">{formatDay(entry.day, i18n.language)}</span>}
               total={usageSum(rows)}
+              currency={costs}
             />
             <SumTable
               caption={t("assist.usage.perFeature")}
@@ -310,12 +340,14 @@ function UsageCard() {
               rows={byFeature(rows)}
               rowKey={(entry) => entry.feature}
               label={(entry) => t(`assist.features.${entry.feature}`)}
+              currency={costs}
             />
-            <EntriesTable rows={rows} showPerson={!person} />
+            <EntriesTable rows={rows} showPerson={!person} currency={costs} />
           </div>
         </div>
       )}
       <p className="mt-3 text-[12px] text-muted">{t("assist.usage.utc")}</p>
+      {costs && <p className="mt-1 text-[12px] text-muted">{t("assist.usage.costNote")}</p>}
     </Card>
   );
 }

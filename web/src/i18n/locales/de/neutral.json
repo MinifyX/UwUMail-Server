@@ -570,7 +570,9 @@
       "badProvider": "Dieser Anbieter lässt sich dafür nicht nutzen.",
       "chatgptNotStarted": "Starte zuerst die ChatGPT-Anmeldung.",
       "overQuota": "Das Tageslimit ist aufgebraucht: {{detail}}",
-      "assistUnavailable": "Das ist gerade nicht verfügbar."
+      "assistUnavailable": "Das ist gerade nicht verfügbar.",
+      "badPrice": "Ein Preis muss eine Zahl von 0 bis 100.000 sein.",
+      "badCurrency": "Diese Währung wird nicht unterstützt."
     }
   },
   "people": {
@@ -3897,7 +3899,13 @@
       "allEntries_one": "Alle Einträge ({{count}})",
       "allEntries_other": "Alle Einträge ({{count}})",
       "perFeature": "Pro Funktion",
-      "perDay": "Pro Tag"
+      "perDay": "Pro Tag",
+      "cost": "Kosten",
+      "costToday": "Heute {{cost}}",
+      "costNote": "Kosten sind Schätzungen aus öffentlichen Preislisten und können von der Rechnung des Anbieters abweichen.",
+      "currency": "Währung",
+      "currencyEur": "Euro (€)",
+      "currencyUsd": "US-Dollar ($)"
     },
     "provider": {
       "model": "Modell {{model}}",
@@ -3954,7 +3962,11 @@
       "perPerson": "Pro Person",
       "perDay": "Pro Tag",
       "allPeople": "Alle",
-      "perDayOf": "Pro Tag für {{person}}"
+      "perDayOf": "Pro Tag für {{person}}",
+      "costShown": "Kosten sichtbar",
+      "priceLists_one": "Preise aktualisiert {{date}}, {{count}} Modell bekannt.",
+      "priceLists_other": "Preise aktualisiert {{date}}, {{count}} Modelle bekannt.",
+      "priceListsNone": "Die Preise wurden noch nicht abgerufen."
     },
     "choices": {
       "title": "Welcher Anbieter wofür",
@@ -4059,8 +4071,18 @@
         "domainsRequired": "Füge mindestens eine Domain hinzu.",
         "peopleRequired": "Füge mindestens eine Person hinzu.",
         "featuresRequired": "Wähle mindestens eine Funktion.",
-        "limitInvalid": "Eine ganze Zahl über null, oder leer."
-      }
+        "limitInvalid": "Eine ganze Zahl über null, oder leer.",
+        "priceInvalid": "Gib einen Preis ab 0 ein, zum Beispiel 0,25."
+      },
+      "price": "Preis",
+      "priceIntro": "US-Dollar pro Million Tokens, um Kosten anzuzeigen. Leer übernimmt den Preis aus öffentlichen Preislisten.",
+      "priceNow": "Aktuell:",
+      "priceUnknown": "Für dieses Modell ist noch kein Preis bekannt.",
+      "inputPrice": "Eingabe, pro Million Tokens",
+      "outputPrice": "Ausgabe, pro Million Tokens",
+      "priceAutomatic": "Aus den Preislisten",
+      "showCost": "Kosten den Nutzenden zeigen",
+      "showCostHint": "Sie sehen dann, was ihre Anfragen kosten. Du siehst es immer."
     },
     "chatgpt": {
       "title": "ChatGPT-Anmeldung",
@@ -4075,6 +4097,12 @@
       "expired": "Der Code ist abgelaufen. Fang noch mal an.",
       "failed": "Die Anmeldung hat nicht geklappt: {{detail}}",
       "failedPlain": "Die Anmeldung hat nicht geklappt."
+    },
+    "price": {
+      "free": "Kostenlos",
+      "perMillion": "{{input}} Eingabe, {{output}} Ausgabe pro Million Tokens",
+      "manual": "von Hand gesetzt",
+      "unknown": "Preis unbekannt"
     }
   }
 }
