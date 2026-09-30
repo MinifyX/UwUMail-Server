@@ -3,6 +3,47 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.19.0
+
+**What an AI request costs, before you click** ([docs/jmap-assist.md](docs/jmap-assist.md#assistestimate), [docs/llm.md](docs/llm.md)):
+
+- New JMAP method `Assist/estimate` (`{ accountId, method, arguments }`) answers what
+  `Assist/compose`, `Assist/summarize`, `Assist/spamCheck` or `Assist/extractEvents` would take:
+  `inputTokens`, `outputTokens`, `totalTokens`, provider and model, and `tokensLeftToday` /
+  `requestsLeftToday`. The server builds the exact prompt the real call would send, but never asks
+  the provider and never counts against the daily limits. Tokens are counted at about four
+  characters each (one per Chinese, Japanese or Korean character), now including the answer's JSON
+  schema; output is a typical answer size per method. Pictures are only looked up in the OCR
+  cache, never read for an estimate. At most four estimates run at once per person.
+- Webmail: hovering (or long-pressing) any AI action shows "≈ 1.200 Tokens · ≈ 0,02 € · 48.000
+  heute übrig".
+- **Costs**: prices come from the LiteLLM price list, OpenRouter's model list (once an OpenRouter
+  provider exists) and the ECB's daily exchange rates, fetched once a day through the egress; the
+  last good copy is kept when a fetch fails. Admins and people with their own keys can set a
+  model's price by hand (`inputPricePerMillion`, `outputPricePerMillion`, USD); Ollama is free.
+  `Assist/estimate` and `Assist/usage` take `currency` and answer `cost: { amount, currency, usd }`.
+  Currency follows the language (Japanese yen, Chinese yuan, euros otherwise; English readers may
+  pick US dollars, synced as `assist.currency`).
+- People always see the costs of their own providers; for server-wide providers the admin decides
+  per provider (*Kosten anzeigen*, `showCostToUsers`, off by default). The portal shows prices on
+  the provider lists, cost columns in the usage statistics and when prices were last fetched.
+  Every request stores its cost in USD at the time; usage from before 0.19.0 has none. Migration
+  `0059_assist_costs.sql`.
+
+**Find appointments on a click**: `Assist/extractEvents` works whatever `assist.refineEvents` says;
+the webmail's new *Termin suchen* uses it.
+
+**Webmail 0.19.0** (bundled): token and cost estimates on AI buttons, *Termin suchen*, and Nyu
+reacting to what you do — waving sent mail goodbye, closing the box on archive, a party hat on a
+contact's birthday, hearts for mail from contacts, a nightcap late at night, thinking while the AI
+works — with *Darstellung → Nyu-Animationen* (An / Reduziert / Aus).
+
+**Fixes**
+
+- The synced setting `mail.detectEvents` (date detection on or off) was rejected since 0.18.0, so
+  the choice never followed the account. The server now accepts it, and `nyu.animations` and
+  `assist.currency` too.
+
 ## 0.18.0
 
 **Fetched mailboxes at Microsoft and Google sign in there** ([docs/fetch.md](docs/fetch.md#microsoft-and-google)):
