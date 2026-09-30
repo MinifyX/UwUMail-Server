@@ -244,3 +244,34 @@ async fn a_refused_answer_shape_counts_as_an_extra_call() {
     assert_eq!((retry.purpose, retry.weight, retry.output_tokens), ("retry", 1.0, 0));
     assert_eq!(estimate.input_tokens, estimate.calls[0].input_tokens * 2);
 }
+
+#[tokio::test]
+async fn only_the_last_requests_are_kept_to_learn_from() {
+    let rig = rig().await;
+    let provider = rig.server_provider("openaiCompatible", json!({})).await;
+    let other = rig.server_provider("openaiCompatible", json!({ "name": "Other" })).await;
+    for n in 0..60 {
+        let sample = uwumail_store::CalibrationSample {
+            estimated_input: 100,
+            estimated_output: 10,
+            input_tokens: n,
+            output_tokens: 1,
+            reasoning_tokens: 0,
+            calls: 1,
+        };
+        rig.store.add_assist_calibration(provider, "m", "summarize", sample).await.unwrap();
+        rig.store.add_assist_calibration(other, "m", "summarize", sample).await.unwrap();
+    }
+    let kept = rig.store.assist_calibration(provider, "m", "summarize").await.unwrap();
+    assert_eq!(kept.len(), uwumail_store::ASSIST_CALIBRATION_SAMPLES);
+    assert_eq!((kept[0].input_tokens, kept[49].input_tokens), (59, 10), "newest first, the oldest gone");
+    assert!(rig.store.assist_calibration(provider, "m", "compose").await.unwrap().is_empty(), "per feature");
+    // Median of 10..=59 over 100, and the answer's ratio held to at least a half.
+    let learned = uwumail_assist::Calibration::of(&kept);
+    assert_eq!(learned.input_ratio, Some(0.5), "34.5 of 100 is held to a half");
+    assert_eq!((learned.output_ratio, learned.reasoning, learned.retry_rate), (Some(0.5), Some(0), Some(0.0)));
+
+    rig.assist.delete_server_provider(provider).await.unwrap();
+    assert!(rig.store.assist_calibration(provider, "m", "summarize").await.unwrap().is_empty(), "gone with it");
+    assert_eq!(rig.store.assist_calibration(other, "m", "summarize").await.unwrap().len(), 50);
+}

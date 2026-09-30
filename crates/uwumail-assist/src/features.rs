@@ -1554,4 +1554,67 @@ mod tests {
         assert!(events[1].all_day && events[1].time_zone.is_none() && events[1].url.is_none());
         assert_eq!(events[1].confidence, 0.5);
     }
+
+    #[test]
+    fn models_that_think_are_known_by_the_lists_or_their_name() {
+        for model in ["o3-mini", "gpt-5-mini", "openai/gpt-5", "gemini-2.5-flash", "deepseek-r1:14b", "qwen3:32b"] {
+            assert!(thinks(Shape::Chat, None, model), "{model}");
+        }
+        for model in ["gpt-4o-mini", "gpt-5-chat-latest", "gemini-2.5-flash-lite", "mistral-small-latest", "llama3.1"] {
+            assert!(!thinks(Shape::Chat, None, model), "{model}");
+        }
+        assert!(!thinks(Shape::Anthropic, None, "claude-sonnet-4-5"), "only when asked, which never happens");
+        let mut listed = Price::free();
+        listed.supports_reasoning = true;
+        assert!(thinks(Shape::Chat, Some(&listed), "house-model"));
+    }
+
+    #[test]
+    fn an_estimate_prices_pictures_retries_and_the_worst_case() {
+        let prompt = Prompt {
+            system: "s".repeat(400),
+            user: "u".repeat(3600),
+            schema: Some(("x", serde_json::json!({ "type": "object" }))),
+            max_tokens: 2000,
+        };
+        let mut price = Price::free();
+        price.input_per_million = 1.0;
+        price.output_per_million = 4.0;
+        price.reasoning_per_million = 4.0;
+        price.per_request = 0.001;
+        price.max_output_tokens = Some(1500);
+        let plan = EstimatePlan {
+            prompt: &prompt,
+            shape: Shape::Chat,
+            typical: 250,
+            reasoning: Some(900),
+            image_count: 2,
+            image_tokens: 200,
+            price: Some(&price),
+            show_cost: true,
+        };
+        let calibration = Calibration { retry_rate: Some(0.2), ..Calibration::default() };
+        let (calls, cost) = plan_estimate(&plan, &calibration);
+        let input = llm::estimate_request(&prompt, Shape::Chat);
+        assert_eq!(calls.len(), 2);
+        assert_eq!((calls[0].input_tokens, calls[0].output_tokens, calls[0].reasoning_tokens), (input, 250, 900));
+        assert_eq!((calls[1].purpose, calls[1].weight, calls[1].input_tokens), ("retry", 0.2, input));
+        let cost = cost.unwrap();
+        let near = |a: f64, b: f64| (a - b).abs() < 1e-12;
+        assert!(near(cost.parts.images, 200.0 / 1e6), "{cost:?}");
+        assert!(near(cost.parts.input, (input - 200) as f64 / 1e6));
+        assert!(near(cost.parts.output, 1e-3) && near(cost.parts.reasoning, 3.6e-3));
+        assert!(near(cost.parts.requests, 0.001));
+        assert!(near(cost.parts.other, 0.2 * (input as f64 / 1e6 + 0.001)), "the retry by its rate");
+        assert!(near(cost.usd, cost.parts.total()));
+        // At worst: the model's 1500 tokens (less than the call's 2000), and a retry.
+        assert!(near(cost.max_usd, input as f64 / 1e6 + 1500.0 * 4.0 / 1e6 + 0.001 + input as f64 / 1e6 + 0.001));
+
+        // Thinking never pushes past what the call allows; hidden costs are no costs.
+        let tight = Prompt { max_tokens: 600, ..prompt.clone() };
+        let hidden = EstimatePlan { prompt: &tight, show_cost: false, ..plan };
+        let (calls, cost) = plan_estimate(&hidden, &Calibration::default());
+        assert_eq!((calls.len(), calls[0].output_tokens, calls[0].reasoning_tokens), (1, 250, 350));
+        assert!(cost.is_none());
+    }
 }
