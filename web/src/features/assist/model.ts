@@ -48,6 +48,29 @@ export interface ModelsAnswer {
 
 export type Access = "everyone" | "domains" | "people";
 
+/** What a model costs, in US dollars per million tokens. */
+export interface Price {
+  inputPerMillion: number;
+  outputPerMillion: number;
+  /** From the price lists, set by hand, or nothing per request (Ollama, a subscription). */
+  source: "auto" | "manual" | "free";
+}
+
+/** A cost in the currency asked for, and in US dollars. */
+export interface Cost {
+  amount: number;
+  currency: string;
+  usd: number;
+}
+
+/** How fresh the server's price lists are. */
+export interface PriceLists {
+  fetchedAt: number | null;
+  models: number;
+  openrouterModels: number;
+  ratesDay: string | null;
+}
+
 export interface AssistPolicy {
   features: Record<Feature, boolean>;
   allowPersonal: boolean;
@@ -70,6 +93,13 @@ export interface AdminProvider {
   features: Feature[];
   requestsPerDay: number | null;
   tokensPerDay: number | null;
+  /** US dollars per million tokens set by hand; null: from the price lists. */
+  inputPricePerMillion: number | null;
+  outputPricePerMillion: number | null;
+  /** Whether the people using it see what it costs. */
+  showCostToUsers: boolean;
+  /** What the default model costs, when known. */
+  price: Price | null;
   createdAt: number;
 }
 
@@ -77,6 +107,7 @@ export interface AdminAssistView {
   policy: AssistPolicy;
   providers: AdminProvider[];
   kinds: KindInfo[];
+  priceLists?: PriceLists;
 }
 
 export interface Quota {
@@ -100,6 +131,10 @@ export interface AssistProvider {
   experimental: boolean;
   /** ChatGPT: signed in. Others: a key is stored or none is needed. */
   connected: boolean;
+  /** Null for a server provider whose costs the admin keeps to themselves. */
+  inputPricePerMillion?: number | null;
+  outputPricePerMillion?: number | null;
+  price?: Price | null;
 }
 
 export interface AssistSettings {
@@ -107,6 +142,8 @@ export interface AssistSettings {
   features: Record<Feature, Choice | null>;
   autoLabels: boolean;
   refineEvents: boolean;
+  /** The synced user setting `assist.currency`, for someone reading in English. */
+  currency?: "EUR" | "USD" | null;
   effective: Record<Feature, Effective | null>;
 }
 
@@ -117,6 +154,8 @@ export interface TodayUsage {
   tokens: number;
   requestsPerDay: number | null;
   tokensPerDay: number | null;
+  /** Only in the usage view: today's cost, when known and shown. */
+  cost?: Cost | null;
 }
 
 export interface AccountAssistView {
@@ -141,6 +180,8 @@ export interface UsageRow {
   requests: number;
   inputTokens: number;
   outputTokens: number;
+  /** Null when the price was not known or is not shown. */
+  cost?: Cost | null;
 }
 
 export interface AccountUsageView {
@@ -203,6 +244,50 @@ export function share(used: number, limit: number | null): number | null {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Costs
+
+export type Currency = "EUR" | "USD" | "JPY" | "CNY";
+
+/**
+ * The currency costs are shown in, by the language: yen in Japanese, yuan in Chinese, euros for
+ * everyone else, and in English US dollars instead when the person chose them.
+ */
+export function currencyFor(language: string, chosen?: string | null): Currency {
+  const base = language.toLowerCase().split("-")[0];
+  if (base === "ja") return "JPY";
+  if (base === "zh") return "CNY";
+  if (base === "en" && chosen === "USD") return "USD";
+  return "EUR";
+}
+
+/**
+ * An amount of money as the language writes it. Small amounts keep two significant digits
+ * ("0.0023 €") and very small ones say so ("< 0.0001 €"), so a cheap request never reads as free.
+ */
+export function formatCost(amount: number, currency: string, language: string): string {
+  const format = (value: number, options: Intl.NumberFormatOptions) =>
+    new Intl.NumberFormat(language, { style: "currency", currency, ...options }).format(value);
+  const unit = currency === "JPY" ? 1 : 0.01;
+  if (amount === 0) return format(0, { maximumFractionDigits: 0 });
+  if (amount >= unit) return format(amount, {});
+  const floor = unit / 100;
+  if (amount < floor) return `< ${format(floor, { maximumSignificantDigits: 1 })}`;
+  return format(amount, { maximumSignificantDigits: 2 });
+}
+
+/** A price per million tokens as typed: empty is automatic, otherwise 0 to 100,000 (comma or dot). */
+export function parsePrice(text: string): number | null | "invalid" {
+  const trimmed = text.trim();
+  if (trimmed === "") return null;
+  if (!/^\d+(?:[.,]\d+)?$/.test(trimmed)) return "invalid";
+  const value = Number(trimmed.replace(",", "."));
+  if (!Number.isFinite(value) || value < 0 || value > 100_000) return "invalid";
+  return value;
+}
+
+export const priceText = (value: number | null | undefined): string => (value == null ? "" : String(value));
+
+// ---------------------------------------------------------------------------------------------
 // The provider form
 
 export interface ProviderDraft {
@@ -223,9 +308,23 @@ export interface ProviderDraft {
   features: Feature[];
   requestsPerDay: string;
   tokensPerDay: string;
+  /** US dollars per million tokens; empty: from the price lists. */
+  inputPrice: string;
+  outputPrice: string;
+  /** Only for the admin's providers. */
+  showCostToUsers: boolean;
 }
 
-export type DraftField = "name" | "baseUrl" | "apiKey" | "access" | "features" | "requestsPerDay" | "tokensPerDay";
+export type DraftField =
+  | "name"
+  | "baseUrl"
+  | "apiKey"
+  | "access"
+  | "features"
+  | "requestsPerDay"
+  | "tokensPerDay"
+  | "inputPrice"
+  | "outputPrice";
 
 /** What is wrong with a field, as the last part of its text key under `assist.form.errors`. */
 export type DraftErrors = Partial<Record<DraftField, string>>;
@@ -246,6 +345,9 @@ export function emptyDraft(kind: KindInfo | undefined): ProviderDraft {
     features: [...FEATURES],
     requestsPerDay: "",
     tokensPerDay: "",
+    inputPrice: "",
+    outputPrice: "",
+    showCostToUsers: false,
   };
 }
 
@@ -267,6 +369,9 @@ export function draftOf(provider: AssistProvider | AdminProvider): ProviderDraft
     features: admin?.features ?? provider.features,
     requestsPerDay: limitText(admin?.requestsPerDay ?? null),
     tokensPerDay: limitText(admin?.tokensPerDay ?? null),
+    inputPrice: priceText(provider.inputPricePerMillion),
+    outputPrice: priceText(provider.outputPricePerMillion),
+    showCostToUsers: admin?.showCostToUsers ?? false,
   };
 }
 
@@ -334,6 +439,9 @@ export function validateDraft(
     if (!willHaveKey) errors.apiKey = "keyRequired";
   }
 
+  if (parsePrice(draft.inputPrice) === "invalid") errors.inputPrice = "priceInvalid";
+  if (parsePrice(draft.outputPrice) === "invalid") errors.outputPrice = "priceInvalid";
+
   if (context.admin) {
     if (draft.access === "domains" && draft.domains.length === 0) errors.access = "domainsRequired";
     if (draft.access === "people" && draft.people.length === 0) errors.access = "peopleRequired";
@@ -366,7 +474,12 @@ export function providerBody(
   }
   body.model = draft.model.trim() || null;
   body.fastModel = draft.fastModel.trim() || null;
+  const inputPrice = parsePrice(draft.inputPrice);
+  const outputPrice = parsePrice(draft.outputPrice);
+  body.inputPricePerMillion = inputPrice === "invalid" ? null : inputPrice;
+  body.outputPricePerMillion = outputPrice === "invalid" ? null : outputPrice;
   if (context.admin) {
+    body.showCostToUsers = draft.showCostToUsers;
     const requests = parseLimit(draft.requestsPerDay);
     const tokens = parseLimit(draft.tokensPerDay);
     Object.assign(body, {
@@ -463,28 +576,44 @@ export interface UsageSum {
   requests: number;
   inputTokens: number;
   outputTokens: number;
+  /** What the rows with a known cost cost together; null when none has one. */
+  amount: number | null;
+}
+
+const EMPTY: UsageSum = { requests: 0, inputTokens: 0, outputTokens: 0, amount: null };
+
+/** One row as a sum. */
+export function rowSum(row: UsageRow): UsageSum {
+  return {
+    requests: row.requests,
+    inputTokens: row.inputTokens,
+    outputTokens: row.outputTokens,
+    amount: row.cost?.amount ?? null,
+  };
+}
+
+function add(sum: UsageSum, row: UsageRow): UsageSum {
+  const amount = row.cost?.amount;
+  return {
+    requests: sum.requests + row.requests,
+    inputTokens: sum.inputTokens + row.inputTokens,
+    outputTokens: sum.outputTokens + row.outputTokens,
+    amount: amount == null ? sum.amount : (sum.amount ?? 0) + amount,
+  };
 }
 
 export function usageSum(rows: UsageRow[]): UsageSum {
-  return rows.reduce(
-    (sum, row) => ({
-      requests: sum.requests + row.requests,
-      inputTokens: sum.inputTokens + row.inputTokens,
-      outputTokens: sum.outputTokens + row.outputTokens,
-    }),
-    { requests: 0, inputTokens: 0, outputTokens: 0 },
-  );
+  return rows.reduce(add, EMPTY);
 }
+
+/** Whether any row has a cost: then the tables show a cost column. */
+export const hasCosts = (rows: UsageRow[]): boolean => rows.some((row) => row.cost != null);
 
 /** Rows added up per day, newest day first. */
 export function byDay(rows: UsageRow[]): ({ day: string } & UsageSum)[] {
   const groups = new Map<string, { day: string } & UsageSum>();
   for (const row of rows) {
-    const group = groups.get(row.day) ?? { day: row.day, requests: 0, inputTokens: 0, outputTokens: 0 };
-    group.requests += row.requests;
-    group.inputTokens += row.inputTokens;
-    group.outputTokens += row.outputTokens;
-    groups.set(row.day, group);
+    groups.set(row.day, { day: row.day, ...add(groups.get(row.day) ?? EMPTY, row) });
   }
   return [...groups.values()].sort((a, b) => b.day.localeCompare(a.day));
 }
@@ -502,11 +631,7 @@ export function byPerson(rows: UsageRow[]): ({ login: string } & UsageSum)[] {
   const groups = new Map<string, { login: string } & UsageSum>();
   for (const row of rows) {
     const login = row.login ?? "";
-    const group = groups.get(login) ?? { login, requests: 0, inputTokens: 0, outputTokens: 0 };
-    group.requests += row.requests;
-    group.inputTokens += row.inputTokens;
-    group.outputTokens += row.outputTokens;
-    groups.set(login, group);
+    groups.set(login, { login, ...add(groups.get(login) ?? EMPTY, row) });
   }
   return [...groups.values()].sort(
     (a, b) =>

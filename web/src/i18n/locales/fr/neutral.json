@@ -581,7 +581,9 @@
       "badProvider": "Ce fournisseur ne peut pas être utilisé pour cela.",
       "chatgptNotStarted": "Lancez d'abord la connexion ChatGPT.",
       "overQuota": "La limite quotidienne est atteinte : {{detail}}",
-      "assistUnavailable": "Ce n'est pas disponible pour le moment."
+      "assistUnavailable": "Ce n'est pas disponible pour le moment.",
+      "badPrice": "Un prix doit être un nombre entre 0 et 100 000.",
+      "badCurrency": "Cette devise n'est pas prise en charge."
     }
   },
   "people": {
@@ -3975,7 +3977,13 @@
       "allEntries_many": "Toutes les entrées ({{count}})",
       "allEntries_other": "Toutes les entrées ({{count}})",
       "perFeature": "Par fonction",
-      "perDay": "Par jour"
+      "perDay": "Par jour",
+      "cost": "Coût",
+      "costToday": "{{cost}} aujourd'hui",
+      "costNote": "Les coûts sont des estimations tirées de listes de prix publiques et peuvent différer de la facture du fournisseur.",
+      "currency": "Devise",
+      "currencyEur": "Euro (€)",
+      "currencyUsd": "Dollar US ($)"
     },
     "provider": {
       "model": "Modèle {{model}}",
@@ -4033,7 +4041,12 @@
       "perPerson": "Par personne",
       "perDay": "Par jour",
       "allPeople": "Tout le monde",
-      "perDayOf": "Par jour pour {{person}}"
+      "perDayOf": "Par jour pour {{person}}",
+      "costShown": "Coûts visibles",
+      "priceLists_one": "Prix mis à jour le {{date}}, {{count}} modèle connu.",
+      "priceLists_many": "Prix mis à jour le {{date}}, {{count}} modèles connus.",
+      "priceLists_other": "Prix mis à jour le {{date}}, {{count}} modèles connus.",
+      "priceListsNone": "Les prix n'ont pas encore été récupérés."
     },
     "choices": {
       "title": "Quel fournisseur pour quoi",
@@ -4140,8 +4153,18 @@
         "domainsRequired": "Ajoutez au moins un domaine.",
         "peopleRequired": "Ajoutez au moins une personne.",
         "featuresRequired": "Choisissez au moins une fonction.",
-        "limitInvalid": "Un nombre entier supérieur à zéro, ou vide."
-      }
+        "limitInvalid": "Un nombre entier supérieur à zéro, ou vide.",
+        "priceInvalid": "Saisissez un prix de 0 ou plus, par exemple 0,25."
+      },
+      "price": "Prix",
+      "priceIntro": "En dollars US par million de tokens, pour afficher les coûts. Vide : le prix vient des listes de prix publiques.",
+      "priceNow": "Actuellement :",
+      "priceUnknown": "Aucun prix connu pour ce modèle pour l'instant.",
+      "inputPrice": "Entrée, par million de tokens",
+      "outputPrice": "Sortie, par million de tokens",
+      "priceAutomatic": "Selon les listes de prix",
+      "showCost": "Montrer les coûts aux personnes qui l'utilisent",
+      "showCostHint": "Elles voient alors ce que coûtent leurs requêtes. Vous le voyez toujours."
     },
     "chatgpt": {
       "title": "Connexion ChatGPT",
@@ -4156,6 +4179,12 @@
       "expired": "Le code a expiré. Recommencez.",
       "failed": "La connexion a échoué : {{detail}}",
       "failedPlain": "La connexion a échoué."
+    },
+    "price": {
+      "free": "Gratuit",
+      "perMillion": "{{input}} en entrée, {{output}} en sortie par million de tokens",
+      "manual": "fixé à la main",
+      "unknown": "Prix inconnu"
     }
   }
 }

@@ -4,11 +4,14 @@ import {
   byFeature,
   byPerson,
   changeKind,
+  currencyFor,
   draftOf,
   emptyDraft,
+  formatCost,
   loginReducer,
   normalizeChip,
   parseLimit,
+  parsePrice,
   pollSeconds,
   providerBody,
   share,
@@ -159,7 +162,10 @@ describe("the provider form", () => {
       baseUrl: "https://llm.example.net/v1",
       model: "qwen3",
       fastModel: null,
+      inputPricePerMillion: null,
+      outputPricePerMillion: null,
     });
+    expect(providerBody({ ...draft, inputPrice: "0,15" }, COMPATIBLE, context).inputPricePerMillion).toBe(0.15);
     expect(providerBody({ ...draft, removeKey: true }, COMPATIBLE, context).apiKey).toBe("");
     expect(providerBody({ ...draft, apiKey: " sk-new " }, COMPATIBLE, context).apiKey).toBe("sk-new");
     // Clearing the address of an existing provider says so.
@@ -168,7 +174,14 @@ describe("the provider form", () => {
 
   it("sends kind only on create and nothing a kind does not use", () => {
     const body = providerBody({ ...emptyDraft(CHATGPT), apiKey: "stray" }, CHATGPT, { create: true, admin: false });
-    expect(body).toEqual({ name: "ChatGPT", kind: "chatgpt", model: null, fastModel: null });
+    expect(body).toEqual({
+      name: "ChatGPT",
+      kind: "chatgpt",
+      model: null,
+      fastModel: null,
+      inputPricePerMillion: null,
+      outputPricePerMillion: null,
+    });
   });
 
   it("builds the admin's fields", () => {
@@ -188,10 +201,15 @@ describe("the provider form", () => {
       features: ["summarize", "compose"],
       requestsPerDay: 200,
       tokensPerDay: null,
+      inputPricePerMillion: 0.5,
+      outputPricePerMillion: null,
+      showCostToUsers: true,
+      price: null,
       createdAt: 0,
     };
     const draft = { ...draftOf(admin), tokensPerDay: "1M" };
     expect(draft.requestsPerDay).toBe("200");
+    expect([draft.inputPrice, draft.outputPrice, draft.showCostToUsers]).toEqual(["0.5", "", true]);
     expect(providerBody(draft, OLLAMA, { create: false, admin: true })).toMatchObject({
       access: "people",
       domains: [],
@@ -199,6 +217,12 @@ describe("the provider form", () => {
       features: ["compose", "summarize"],
       requestsPerDay: 200,
       tokensPerDay: 1_000_000,
+      inputPricePerMillion: 0.5,
+      outputPricePerMillion: null,
+      showCostToUsers: true,
+    });
+    expect(validateDraft({ ...draft, outputPrice: "-1" }, OLLAMA, { hasKey: false, admin: true })).toEqual({
+      outputPrice: "priceInvalid",
     });
   });
 
@@ -288,7 +312,13 @@ describe("usage", () => {
   ];
 
   it("adds up everything", () => {
-    expect(usageSum(rows)).toEqual({ requests: 10, inputTokens: 1000, outputTokens: 100 });
+    expect(usageSum(rows)).toEqual({ requests: 10, inputTokens: 1000, outputTokens: 100, amount: null });
+    const priced = rows.map((entry, index) => ({
+      ...entry,
+      cost: index === 0 ? null : { amount: 0.25, currency: "EUR", usd: 0.3 },
+    }));
+    expect(usageSum(priced).amount).toBe(0.75);
+    expect(byDay(priced).map((group) => group.amount)).toEqual([0.75, null]);
   });
 
   it("groups per day, newest first", () => {
@@ -310,5 +340,33 @@ describe("usage", () => {
       ["leni@uwu.example", 6],
       ["mini@uwu.example", 4],
     ]);
+  });
+});
+
+describe("costs", () => {
+  it("picks the currency by the language", () => {
+    expect(currencyFor("ja")).toBe("JPY");
+    expect(currencyFor("zh-CN")).toBe("CNY");
+    expect(currencyFor("de", "USD")).toBe("EUR");
+    expect(currencyFor("en")).toBe("EUR");
+    expect(currencyFor("en-US", "USD")).toBe("USD");
+  });
+
+  it("writes small amounts with enough digits", () => {
+    expect(formatCost(1.5, "EUR", "en")).toBe("€1.50");
+    expect(formatCost(0.0023, "EUR", "en")).toBe("€0.0023");
+    expect(formatCost(0.0000004, "USD", "en")).toBe("< $0.0001");
+    expect(formatCost(0, "EUR", "en")).toBe("€0");
+    expect(formatCost(0.5, "JPY", "en")).toBe("¥0.5");
+    expect(formatCost(12, "JPY", "en")).toBe("¥12");
+  });
+
+  it("reads prices per million tokens", () => {
+    expect(parsePrice("")).toBeNull();
+    expect(parsePrice("0,15")).toBe(0.15);
+    expect(parsePrice("2.5")).toBe(2.5);
+    expect(parsePrice("-1")).toBe("invalid");
+    expect(parsePrice("1e3")).toBe("invalid");
+    expect(parsePrice("100001")).toBe("invalid");
   });
 });

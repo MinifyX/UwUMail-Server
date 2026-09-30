@@ -15,7 +15,10 @@ import {
   FEATURES,
   byDay,
   byFeature,
+  currencyFor,
+  formatCost,
   formatDay,
+  hasCosts,
   usageSum,
   type AccountAssistView,
   type AccountUsageView,
@@ -29,6 +32,7 @@ import {
   ExperimentalBadge,
   ModelPicker,
   Notice,
+  PriceText,
   QuotaText,
   SumTable,
   Tag,
@@ -132,6 +136,11 @@ function ProviderRow({
           {!own && (
             <span className="block text-[12px] text-muted">
               <QuotaText quota={provider.quota} />
+            </span>
+          )}
+          {provider.price && (
+            <span className="block text-[12px] text-muted">
+              <PriceText price={provider.price} />
             </span>
           )}
           {!provider.connected && (
@@ -441,21 +450,52 @@ function BackgroundCard({ view, webmail }: { view: AccountAssistView; webmail: b
   );
 }
 
-/** What was asked of which provider today and in the last 30 days. */
-function UsageCard() {
+/** In English, euros or US dollars for the costs: the synced user setting `assist.currency`. */
+function CurrencyChoice({ view }: { view: AccountAssistView }) {
+  const { t } = useT();
+  const errorText = useErrorText();
+  const queryClient = useQueryClient();
+  const save = useMutation({
+    mutationFn: (currency: "EUR" | "USD") =>
+      api<AssistSettings>(`${ACCOUNT_ASSIST}/settings`, { method: "PUT", body: { currency } }),
+    onSuccess: (next) => {
+      queryClient.setQueryData<AccountAssistView>(assistKey, (old) => (old ? { ...old, settings: next } : old));
+      void queryClient.invalidateQueries({ queryKey: usageKey });
+    },
+    onError: (failure) => toast(errorText(failure), "error"),
+  });
+  const value = save.isPending ? save.variables : view.settings.currency === "USD" ? "USD" : "EUR";
+  return (
+    <Field label={t("assist.usage.currency")} className="w-full sm:w-56">
+      {(id) => (
+        <Select id={id} value={value} onChange={(event) => save.mutate(event.target.value as "EUR" | "USD")}>
+          <option value="EUR">{t("assist.usage.currencyEur")}</option>
+          <option value="USD">{t("assist.usage.currencyUsd")}</option>
+        </Select>
+      )}
+    </Field>
+  );
+}
+
+/** What was asked of which provider today and in the last 30 days, and what it cost. */
+function UsageCard({ view }: { view: AccountAssistView }) {
   const { t, i18n } = useT();
+  const currency = currencyFor(i18n.language, view.settings.currency);
   const usage = useQuery({
-    queryKey: usageKey,
-    queryFn: () => api<AccountUsageView>(`${ACCOUNT_ASSIST}/usage?days=30`),
+    queryKey: [...usageKey, currency],
+    queryFn: () => api<AccountUsageView>(`${ACCOUNT_ASSIST}/usage?days=30&currency=${currency}`),
   });
   if (usage.isPending) return <Loading />;
   if (usage.isError) return <LoadError error={usage.error} onRetry={() => void usage.refetch()} />;
   const rows = usage.data.days;
   const today = usage.data.today;
+  const costs = hasCosts(rows) || today.some((entry) => entry.cost != null) ? currency : undefined;
+  const english = i18n.language.toLowerCase().startsWith("en");
 
   return (
     <Card title={t("assist.usage.title")}>
       <div className="flex flex-col gap-4">
+        {english && <CurrencyChoice view={view} />}
         <div className="flex flex-col gap-2">
           <p className="text-[13px] font-semibold text-muted">{t("assist.usage.today")}</p>
           {today.length === 0 ? (
@@ -464,7 +504,16 @@ function UsageCard() {
             <ul className="flex flex-col gap-3">
               {today.map((entry) => (
                 <li key={entry.providerId} className="flex flex-col gap-1.5">
-                  <span className="text-sm font-semibold">{entry.providerName}</span>
+                  <span className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="text-sm font-semibold">{entry.providerName}</span>
+                    {entry.cost && (
+                      <span className="text-[13px] text-muted tabular-nums">
+                        {t("assist.usage.costToday", {
+                          cost: formatCost(entry.cost.amount, entry.cost.currency, i18n.language),
+                        })}
+                      </span>
+                    )}
+                  </span>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <UsageMeter used={entry.requests} limit={entry.requestsPerDay} label={t("assist.usage.requests")} />
                     <UsageMeter used={entry.tokens} limit={entry.tokensPerDay} label={t("assist.usage.tokens")} />
@@ -480,13 +529,14 @@ function UsageCard() {
             <p className="text-[13px] text-muted">{t("assist.usage.empty")}</p>
           ) : (
             <>
-              <UsageTotals sum={usageSum(rows)} />
+              <UsageTotals sum={usageSum(rows)} currency={costs} />
               <SumTable
                 caption={t("assist.usage.perFeature")}
                 head={t("assist.usage.feature")}
                 rows={byFeature(rows)}
                 rowKey={(entry) => entry.feature}
                 label={(entry) => t(`assist.features.${entry.feature}`)}
+                currency={costs}
               />
               <details className="rounded-control border border-hairline p-3">
                 <summary className="cursor-pointer text-[13px] font-semibold">{t("assist.usage.perDay")}</summary>
@@ -498,13 +548,15 @@ function UsageCard() {
                     rowKey={(entry) => entry.day}
                     label={(entry) => <span className="whitespace-nowrap">{formatDay(entry.day, i18n.language)}</span>}
                     total={usageSum(rows)}
+                    currency={costs}
                   />
                 </div>
               </details>
-              <EntriesTable rows={rows} showPerson={false} />
+              <EntriesTable rows={rows} showPerson={false} currency={costs} />
             </>
           )}
           <p className="text-[12px] text-muted">{t("assist.usage.utc")}</p>
+          {costs && <p className="text-[12px] text-muted">{t("assist.usage.costNote")}</p>}
         </div>
       </div>
     </Card>
@@ -543,7 +595,7 @@ export function AccountAssistPage({ webmail = false }: { webmail?: boolean }) {
       <ProvidersCard view={view.data} />
       <ChoicesCard view={view.data} />
       <BackgroundCard view={view.data} webmail={webmail} />
-      <UsageCard />
+      <UsageCard view={view.data} />
     </div>
   );
 }

@@ -558,7 +558,9 @@
       "badProvider": "そのプロバイダーはこれには使えません。",
       "chatgptNotStarted": "先に ChatGPT のサインインを開始してください。",
       "overQuota": "1 日の上限に達しました: {{detail}}",
-      "assistUnavailable": "現在は利用できません。"
+      "assistUnavailable": "現在は利用できません。",
+      "badPrice": "料金は 0 から 100,000 までの数値にしてください。",
+      "badCurrency": "この通貨には対応していません。"
     }
   },
   "people": {
@@ -3817,7 +3819,13 @@
       "utc": "日付は UTC 基準です。1 日の上限は UTC の午前 0 時にリセットされます。",
       "allEntries_other": "すべての記録（{{count}} 件）",
       "perFeature": "機能別",
-      "perDay": "日別"
+      "perDay": "日別",
+      "cost": "コスト",
+      "costToday": "今日 {{cost}}",
+      "costNote": "コストは公開料金表に基づく概算で、プロバイダーの請求額とは異なる場合があります。",
+      "currency": "通貨",
+      "currencyEur": "ユーロ (€)",
+      "currencyUsd": "米ドル ($)"
     },
     "provider": {
       "model": "モデル {{model}}",
@@ -3873,7 +3881,10 @@
       "perPerson": "ユーザー別",
       "perDay": "日別",
       "allPeople": "全員",
-      "perDayOf": "{{person}} の日別"
+      "perDayOf": "{{person}} の日別",
+      "costShown": "コスト表示中",
+      "priceLists_other": "料金を {{date}} に更新、{{count}} 件のモデルを把握しています。",
+      "priceListsNone": "料金はまだ取得されていません。"
     },
     "choices": {
       "title": "どの機能にどのプロバイダーを使うか",
@@ -3976,8 +3987,18 @@
         "domainsRequired": "ドメインを 1 つ以上追加してください。",
         "peopleRequired": "ユーザーを 1 人以上追加してください。",
         "featuresRequired": "機能を 1 つ以上選んでください。",
-        "limitInvalid": "0 より大きい整数を入力するか、空欄にしてください。"
-      }
+        "limitInvalid": "0 より大きい整数を入力するか、空欄にしてください。",
+        "priceInvalid": "0 以上の料金を入力してください(例: 0.25)。"
+      },
+      "price": "料金",
+      "priceIntro": "100 万トークンあたりの米ドル価格で、コストの表示に使います。空欄なら公開されている料金表の価格を使います。",
+      "priceNow": "現在:",
+      "priceUnknown": "このモデルの料金はまだ見つかっていません。",
+      "inputPrice": "入力(100 万トークンあたり)",
+      "outputPrice": "出力(100 万トークンあたり)",
+      "priceAutomatic": "料金表から",
+      "showCost": "利用者にコストを表示する",
+      "showCostHint": "利用者は自分のリクエストのコストを確認できます。管理者には常に表示されます。"
     },
     "chatgpt": {
       "title": "ChatGPT サインイン",
@@ -3992,6 +4013,12 @@
       "expired": "コードの有効期限が切れました。やり直してください。",
       "failed": "サインインできませんでした: {{detail}}",
       "failedPlain": "サインインできませんでした。"
+    },
+    "price": {
+      "free": "無料",
+      "perMillion": "100 万トークンあたり 入力 {{input}}、出力 {{output}}",
+      "manual": "手動設定",
+      "unknown": "料金不明"
     }
   }
 }
