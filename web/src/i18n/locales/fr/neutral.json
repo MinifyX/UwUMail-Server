@@ -4076,7 +4076,9 @@
       "priceLists_one": "Prix mis à jour le {{date}}, {{count}} modèle connu.",
       "priceLists_many": "Prix mis à jour le {{date}}, {{count}} modèles connus.",
       "priceLists_other": "Prix mis à jour le {{date}}, {{count}} modèles connus.",
-      "priceListsNone": "Les prix n'ont pas encore été récupérés."
+      "priceListsNone": "Les prix n'ont pas encore été récupérés.",
+      "foreignMail": "IA pour le courrier d'autres comptes",
+      "foreignMailHint": "Les utilisateurs peuvent se servir de l'assistant dans l'app UwUMail pour le courrier de leurs autres comptes (Exchange, Gmail, IMAP). L'app envoie alors le texte de ce courrier ici ; seul l'usage en est conservé. Seuls les fournisseurs qui l'autorisent sont utilisés."
     },
     "choices": {
       "title": "Quel fournisseur pour quoi",
@@ -4104,7 +4106,10 @@
       "labels_other": "Vous avez {{count}} étiquettes. Modifiez-les dans le webmail.",
       "openWebmail": "Ouvrir le webmail",
       "refineEvents": "Chercher des rendez-vous à l'ouverture d'un message",
-      "refineEventsHint": "Le webmail interroge alors le modèle pour chaque message ouvert, pas seulement à votre demande. Cela consomme davantage de votre limite quotidienne."
+      "refineEventsHint": "Le webmail interroge alors le modèle pour chaque message ouvert, pas seulement à votre demande. Cela consomme davantage de votre limite quotidienne.",
+      "nonAiLabels": "Étiquettes sans IA",
+      "nonAiLabelsHint": "Le nouveau courrier reçoit vos étiquettes selon leurs conditions, des détecteurs intégrés (factures, rendez-vous, newsletters, livraisons), les expéditeurs que vous avez étiquetés deux fois à la main et ce que chaque étiquette a appris de vous. Aucun fournisseur d'IA nécessaire.",
+      "foreignMail": "Dans l'app UwUMail, l'assistant fonctionne aussi pour le courrier de vos autres comptes."
     },
     "privacy": {
       "title": "Ce qui quitte le serveur",
@@ -4196,7 +4201,9 @@
       "priceAutomatic": "Selon les listes de prix",
       "showCost": "Montrer les coûts aux personnes qui l'utilisent",
       "showCostHint": "Elles voient alors ce que coûtent leurs requêtes. Vous le voyez toujours.",
-      "requestPrice": "Par requête, en dollars US"
+      "requestPrice": "Par requête, en dollars US",
+      "foreignMail": "Courrier d'autres comptes",
+      "foreignMailHint": "Peut servir pour le courrier des autres comptes des utilisateurs quand « IA pour le courrier d'autres comptes » est activé."
     },
     "chatgpt": {
       "title": "Connexion ChatGPT",
@@ -4221,6 +4228,20 @@
       "perRequest": "{{price}} par requête",
       "tier": "au-delà de {{tokens}} tokens : {{input}} en entrée, {{output}} en sortie",
       "thinks": "réfléchit avant de répondre"
+    },
+    "labels": {
+      "rules": "conditions",
+      "senders": "apprend les expéditeurs",
+      "classifierReady": "appris de {{n}} messages",
+      "classifierLearning": "apprentissage : {{n}} sur {{min}} messages",
+      "counts": "{{total}} messages, {{unread}} non lus",
+      "byHandOnly": "seulement à la main",
+      "detectors": {
+        "invoice": "factures",
+        "appointment": "rendez-vous",
+        "newsletter": "newsletters",
+        "shipping": "livraisons"
+      }
     }
   },
   "microsoft": {

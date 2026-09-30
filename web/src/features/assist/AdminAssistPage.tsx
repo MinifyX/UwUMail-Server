@@ -86,6 +86,14 @@ function PolicyCard({ policy }: { policy: AssistPolicy }) {
             </Notice>
           )}
         </div>
+        <div className="flex flex-col gap-4 border-t border-hairline pt-4">
+          <Toggle
+            checked={shown.foreignMail ?? false}
+            onChange={(value) => setDraft({ ...shown, foreignMail: value })}
+            label={t("assist.admin.foreignMail")}
+            description={t("assist.admin.foreignMailHint")}
+          />
+        </div>
       </div>
       <div className="mt-4 flex items-center justify-end gap-2 border-t border-hairline pt-4">
         {draft && (

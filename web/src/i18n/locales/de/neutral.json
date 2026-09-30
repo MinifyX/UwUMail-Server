@@ -3996,7 +3996,9 @@
       "costShown": "Kosten sichtbar",
       "priceLists_one": "Preise aktualisiert {{date}}, {{count}} Modell bekannt.",
       "priceLists_other": "Preise aktualisiert {{date}}, {{count}} Modelle bekannt.",
-      "priceListsNone": "Die Preise wurden noch nicht abgerufen."
+      "priceListsNone": "Die Preise wurden noch nicht abgerufen.",
+      "foreignMail": "KI für Mail aus anderen Konten",
+      "foreignMailHint": "Nutzer dürfen den Assistenten in der UwUMail-App für die Mail ihrer anderen Konten (Exchange, Gmail, IMAP) verwenden. Die App schickt dazu den Text dieser Mail hierher; gespeichert wird davon nur die Nutzung. Es werden nur Anbieter verwendet, die das erlauben."
     },
     "choices": {
       "title": "Welcher Anbieter wofür",
@@ -4023,7 +4025,10 @@
       "labels_other": "Du hast {{count}} Labels. Ändern kannst du sie im Webmail.",
       "openWebmail": "Webmail öffnen",
       "refineEvents": "Beim Öffnen einer Mail nach Terminen suchen",
-      "refineEventsHint": "Das Webmail fragt das Modell dann zu jeder Mail, die du öffnest, nicht nur auf Nachfrage. Das braucht mehr von deinem Tageslimit."
+      "refineEventsHint": "Das Webmail fragt das Modell dann zu jeder Mail, die du öffnest, nicht nur auf Nachfrage. Das braucht mehr von deinem Tageslimit.",
+      "nonAiLabels": "Labels ohne KI",
+      "nonAiLabelsHint": "Neue Mail bekommt deine Labels über ihre Bedingungen, eingebaute Erkenner (Rechnungen, Termine, Newsletter, Versand), Absender, die du zweimal von Hand gelabelt hast, und das, was jedes Label von dir gelernt hat. Ganz ohne KI-Anbieter.",
+      "foreignMail": "In der UwUMail-App hilft der Assistent auch bei der Mail deiner anderen Konten."
     },
     "privacy": {
       "title": "Was den Server verlässt",
@@ -4114,7 +4119,9 @@
       "priceAutomatic": "Aus den Preislisten",
       "showCost": "Kosten den Nutzenden zeigen",
       "showCostHint": "Sie sehen dann, was ihre Anfragen kosten. Du siehst es immer.",
-      "requestPrice": "Pro Anfrage, US-Dollar"
+      "requestPrice": "Pro Anfrage, US-Dollar",
+      "foreignMail": "Mail aus anderen Konten",
+      "foreignMailHint": "Darf für die Mail anderer Konten der Nutzer verwendet werden, wenn „KI für Mail aus anderen Konten“ an ist."
     },
     "chatgpt": {
       "title": "ChatGPT-Anmeldung",
@@ -4139,6 +4146,20 @@
       "perRequest": "{{price}} pro Anfrage",
       "tier": "über {{tokens}} Tokens: {{input}} rein, {{output}} raus",
       "thinks": "denkt vor der Antwort"
+    },
+    "labels": {
+      "rules": "Bedingungen",
+      "senders": "lernt Absender",
+      "classifierReady": "aus {{n}} Mails gelernt",
+      "classifierLearning": "lernt: {{n}} von {{min}} Mails",
+      "counts": "{{total}} Mails, {{unread}} ungelesen",
+      "byHandOnly": "nur von Hand",
+      "detectors": {
+        "invoice": "Rechnungen",
+        "appointment": "Termine",
+        "newsletter": "Newsletter",
+        "shipping": "Versand"
+      }
     }
   },
   "microsoft": {

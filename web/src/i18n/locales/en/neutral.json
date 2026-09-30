@@ -3996,7 +3996,9 @@
       "costShown": "Costs shown",
       "priceLists_one": "Prices updated {{date}}, {{count}} model known.",
       "priceLists_other": "Prices updated {{date}}, {{count}} models known.",
-      "priceListsNone": "Prices have not been fetched yet."
+      "priceListsNone": "Prices have not been fetched yet.",
+      "foreignMail": "AI for mail from other accounts",
+      "foreignMailHint": "People may use the assistant in the UwUMail app for the mail of their other accounts (Exchange, Gmail, IMAP). The app then sends that mail's text here; nothing of it is kept but the usage. Only providers that allow it are used."
     },
     "choices": {
       "title": "Which provider for what",
@@ -4023,7 +4025,10 @@
       "labels_other": "You have {{count}} labels. Change them in the webmail.",
       "openWebmail": "Open webmail",
       "refineEvents": "Look for appointments when a mail opens",
-      "refineEventsHint": "The webmail then asks the model about every mail you open, not only when you ask. That uses more of your daily limit."
+      "refineEventsHint": "The webmail then asks the model about every mail you open, not only when you ask. That uses more of your daily limit.",
+      "nonAiLabels": "Labels without AI",
+      "nonAiLabelsHint": "New mail gets your labels by their conditions, by built-in detectors (invoices, appointments, newsletters, shipping), by senders you labeled by hand twice and by what each label learned from you. No AI provider needed.",
+      "foreignMail": "In the UwUMail app, the assistant also works for the mail of your other accounts."
     },
     "privacy": {
       "title": "What leaves the server",
@@ -4114,7 +4119,9 @@
       "priceAutomatic": "From the price lists",
       "showCost": "Show costs to the people using it",
       "showCostHint": "They then see what their requests cost. You always see it.",
-      "requestPrice": "Per request, US dollars"
+      "requestPrice": "Per request, US dollars",
+      "foreignMail": "Mail from other accounts",
+      "foreignMailHint": "May be used for the mail of people's other accounts when \"AI for mail from other accounts\" is on."
     },
     "chatgpt": {
       "title": "ChatGPT login",
@@ -4139,6 +4146,20 @@
       "perRequest": "{{price}} per request",
       "tier": "above {{tokens}} tokens: {{input}} in, {{output}} out",
       "thinks": "thinks before answering"
+    },
+    "labels": {
+      "rules": "conditions",
+      "senders": "learns senders",
+      "classifierReady": "learned from {{n}} mails",
+      "classifierLearning": "learning: {{n}} of {{min}} mails",
+      "counts": "{{total}} mails, {{unread}} unread",
+      "byHandOnly": "only by hand",
+      "detectors": {
+        "invoice": "invoices",
+        "appointment": "appointments",
+        "newsletter": "newsletters",
+        "shipping": "shipping"
+      }
     }
   },
   "microsoft": {

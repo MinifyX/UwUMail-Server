@@ -7,6 +7,7 @@ import {
   currencyFor,
   draftOf,
   emptyDraft,
+  FOREIGN_MAIL,
   formatCost,
   loginReducer,
   normalizeChip,
@@ -138,6 +139,17 @@ describe("the provider form", () => {
       requestsPerDay: "limitInvalid",
     });
     expect(validateDraft({ ...draft, access: "people" }, OLLAMA, { hasKey: false, admin: false })).toEqual({});
+  });
+
+  it("counts mail of other accounts as no feature of its own", () => {
+    const draft = emptyDraft(OLLAMA);
+    expect(draft.features).toContain(FOREIGN_MAIL);
+    const foreignOnly = { ...draft, features: [FOREIGN_MAIL] };
+    expect(validateDraft(foreignOnly, OLLAMA, { hasKey: false, admin: true })).toEqual({
+      features: "featuresRequired",
+    });
+    const picked = { ...draft, features: [FOREIGN_MAIL, "summarize" as const] };
+    expect(providerBody(picked, OLLAMA, { create: true, admin: true }).features).toEqual(["summarize", FOREIGN_MAIL]);
   });
 
   it("finds logins in addresses", () => {
