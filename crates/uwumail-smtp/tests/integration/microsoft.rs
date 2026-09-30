@@ -11,11 +11,11 @@ use tokio::net::TcpListener;
 
 use crate::flow::{PASSWORD, mail, start};
 
-const BLOCKED: &str = "550 5.7.1 Unfortunately, messages from [203.0.113.5] weren't sent. Please contact your \
+const BLOCKED: &str = "550 5.7.1 Unfortunately, messages from [192.0.2.9] weren't sent. Please contact your \
                        Internet service provider since part of their network is on our block list (S3150). \
                        [AM0PR01MB1234.eurprd01.prod.exchangelabs.com]";
 
-/// A mail server that greets like Exchange Online and refuses every recipient while `refuse` is set.
+/// A mail server that greets like Exchange Online (but is not one of its hosts) and refuses every recipient while `refuse` is set.
 async fn fake_outlook(refuse: Arc<AtomicBool>) -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
@@ -59,7 +59,9 @@ async fn fake_outlook(refuse: Arc<AtomicBool>) -> SocketAddr {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_microsoft_block_becomes_an_issue_and_the_bounce_explains_it() {
+async fn a_server_that_only_greets_like_microsoft_raises_no_issue_but_the_bounce_explains_it() {
+    // The route goes to 127.0.0.1, not to a Microsoft host: the greeting and the S3150 are only
+    // what the other side says, and any mail server could say them to raise a false alarm.
     let refuse = Arc::new(AtomicBool::new(true));
     let outlook = fake_outlook(refuse.clone()).await;
     let a = start("a.test", &["mini"], &[("outlook.test", outlook)]).await;
@@ -70,22 +72,6 @@ async fn a_microsoft_block_becomes_an_issue_and_the_bounce_explains_it() {
     let raw = a.raw(&inbox[0]).await;
     assert!(raw.contains("S3150"), "the reply is quoted: {raw}");
     assert!(raw.contains("Microsoft (Outlook, Hotmail, Microsoft 365) blockiert gerade Mail"), "{raw}");
-
-    let issues = store.open_microsoft_issues().await.unwrap();
-    assert_eq!(issues.len(), 1);
-    let issue = &issues[0];
-    assert_eq!((issue.scope.as_str(), issue.subject.as_str()), ("ip", "203.0.113.5"));
-    assert_eq!((issue.group.as_str(), issue.code.as_str(), issue.domain.as_str()), ("blockList", "S3150", "a.test"));
-
-    // Microsoft takes mail again. Behind NAT the server does not know the address Microsoft saw,
-    // so any mail that went through counts; a day after the last refusal the issue is over.
-    refuse.store(false, Ordering::SeqCst);
-    a.mailer("mini@a.test", PASSWORD, false).send(mail("mini@a.test", &["ami@outlook.test"], "Nochmal")).await.unwrap();
-    let started = std::time::Instant::now();
-    let later = issue.last_seen + uwumail_store::MICROSOFT_RESOLVE_AFTER_SECS;
-    while store.resolve_microsoft_issues(later).await.unwrap() == 0 {
-        assert!(started.elapsed() < std::time::Duration::from_secs(20), "the delivery was never recorded");
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    }
+    // The bounce is written after the refusal would have been recorded.
     assert!(store.open_microsoft_issues().await.unwrap().is_empty());
 }
