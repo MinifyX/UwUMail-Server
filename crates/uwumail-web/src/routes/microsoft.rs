@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use uwumail_smtp::bimi::dmarc_fit;
 use uwumail_smtp::dnscheck::{CheckStatus, DomainReport, RecordCheck};
 use uwumail_smtp::health::Route;
-use uwumail_smtp::microsoft::DELIST_URL;
+use uwumail_smtp::microsoft::{DELIST_URL, IssueGroup};
 use uwumail_store::DkimKeyState;
 
 use super::audit;
@@ -22,7 +22,19 @@ const ADDRESSES_FRESH_SECS: i64 = 3600;
 async fn issues_json(web: &Web) -> ApiResult<Value> {
     let now = unix_now();
     web.store().resolve_microsoft_issues(now).await?;
-    let issues = web.store().microsoft_issues(now).await?;
+    let issues: Vec<Value> = web
+        .store()
+        .microsoft_issues(now)
+        .await?
+        .into_iter()
+        .map(|issue| {
+            // What the portal sorts and words the issue by: blocked, throttled or authentication.
+            let kind = IssueGroup::parse(&issue.group).map(|group| group.kind().as_str());
+            let mut value = json!(issue);
+            value["kind"] = json!(kind);
+            value
+        })
+        .collect();
     Ok(json!({ "issues": issues, "delistUrl": DELIST_URL }))
 }
 

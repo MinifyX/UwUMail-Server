@@ -186,6 +186,8 @@ async fn microsoft_refusals_show_up_are_mailed_once_and_can_be_closed() {
         (issue["code"].as_str(), issue["subject"].as_str(), issue["count"].as_i64()),
         (Some("S3150"), Some("203.0.113.5"), Some(2))
     );
+    // The portal's banner and list go by the kind.
+    assert_eq!((issue["group"].as_str(), issue["kind"].as_str()), (Some("blockList"), Some("blocked")));
     assert_eq!(issue["resolvedAt"], Value::Null);
 
     // The overview names it, with the address and where to fix it.
