@@ -8,3 +8,9 @@ web/dist
 docs
 *.md
 !crates/**/*.md
+# Secrets and local state never go into a build context: the .env files (with their examples,
+# which no build reads), a VPN provider's files, and local tool settings.
+.env
+.env.*
+vpn/
+.claude/
