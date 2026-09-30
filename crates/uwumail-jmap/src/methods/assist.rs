@@ -579,7 +579,6 @@ fn compose_args(ctx: &Ctx<'_>, args: &Value) -> MethodResult<ComposeArgs> {
         want_subject: args.get("wantSubject").and_then(Value::as_bool).unwrap_or(false),
         language: text("language")?,
         foreign_mails,
-        ..Default::default()
     })
 }
 
@@ -590,7 +589,6 @@ fn summarize_args(ctx: &Ctx<'_>, args: &Value) -> MethodResult<SummarizeArgs> {
         thread_id: arg_id(ctx, args, "threadId", 't')?,
         language: arg_str(args, "language")?.map(str::to_owned),
         foreign_mails,
-        ..Default::default()
     })
 }
 
@@ -668,13 +666,13 @@ fn answered_email(email_id: i64, foreign: bool) -> Value {
 fn spam_args(ctx: &Ctx<'_>, args: &Value) -> MethodResult<SpamArgs> {
     let (email_id, foreign_mails) = one_mail(ctx, args)?;
     let language = arg_str(args, "language")?.map(str::to_owned);
-    Ok(SpamArgs { email_id, language, foreign_mails, ..Default::default() })
+    Ok(SpamArgs { email_id, language, foreign_mails })
 }
 
 fn events_args(ctx: &Ctx<'_>, args: &Value) -> MethodResult<EventsArgs> {
     let (email_id, foreign_mails) = one_mail(ctx, args)?;
     let include_images = args.get("includeImages").and_then(Value::as_bool).unwrap_or(false);
-    Ok(EventsArgs { email_id, include_images, foreign_mails, ..Default::default() })
+    Ok(EventsArgs { email_id, include_images, foreign_mails })
 }
 
 fn suggest_args(ctx: &Ctx<'_>, args: &Value) -> MethodResult<SuggestArgs> {
