@@ -13,11 +13,18 @@ use crate::{Account, Result, Store, StoreError, now, random_bytes};
 const TOUCH_INTERVAL_SECS: i64 = 300;
 
 /// A freshly created session. `token` goes into the cookie and is never stored.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct NewWebSession {
     pub token: String,
     pub csrf_token: String,
     pub expires_at: i64,
+}
+
+impl std::fmt::Debug for NewWebSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Neither token into a log line.
+        f.debug_struct("NewWebSession").field("expires_at", &self.expires_at).finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -228,6 +235,15 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+
+    #[test]
+    fn debug_leaves_the_tokens_out() {
+        let session =
+            super::NewWebSession { token: "cookie-token".into(), csrf_token: "csrf-token".into(), expires_at: 42 };
+        let shown = format!("{session:?}");
+        assert!(shown.contains("42"), "{shown}");
+        assert!(!shown.contains("cookie-token") && !shown.contains("csrf-token"), "{shown}");
+    }
 
     use crate::test_support::store;
     use crate::{NewAccount, Role};

@@ -238,7 +238,7 @@ pub struct NewOAuthCode {
 }
 
 /// Tokens handed to an app, with what an ID token needs to say.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OAuthTokens {
     pub access_token: String,
     pub refresh_token: String,
@@ -251,6 +251,22 @@ pub struct OAuthTokens {
     pub nonce: Option<String>,
     pub auth_time: i64,
     pub client_name: String,
+}
+
+impl std::fmt::Debug for OAuthTokens {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The tokens never into a log line.
+        f.debug_struct("OAuthTokens")
+            .field("expires_in", &self.expires_in)
+            .field("scopes", &self.scopes)
+            .field("account", &self.account)
+            .field("grant_id", &self.grant_id)
+            .field("new_grant", &self.new_grant)
+            .field("nonce", &self.nonce)
+            .field("auth_time", &self.auth_time)
+            .field("client_name", &self.client_name)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Why a code or refresh token was not traded in. The names are OAuth's error codes.
@@ -1076,6 +1092,8 @@ mod tests {
         let tokens = store.redeem_oauth_code(&code, client.id, "http://127.0.0.1:4000/", &verifier).await;
         let tokens = tokens.unwrap().unwrap();
         assert!(tokens.new_grant);
+        let shown = format!("{tokens:?}");
+        assert!(!shown.contains(&tokens.access_token) && !shown.contains(&tokens.refresh_token), "{shown}");
         assert_eq!(tokens.nonce.as_deref(), Some("n-0S6_WzA2Mj"));
         let auth = store.authenticate_oauth(&tokens.access_token, AppScope::Mail, "imap", "192.0.2.4").await.unwrap();
         assert!(matches!(auth, MailAuth::Ok { ref account, .. } if account.id == leni.id), "{auth:?}");

@@ -221,7 +221,7 @@ impl Default for DeliveryConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RelayConfig {
     pub host: String,
@@ -235,6 +235,19 @@ pub struct RelayConfig {
     /// or Google. Never in a config file.
     #[serde(skip)]
     pub oauth: bool,
+}
+
+impl std::fmt::Debug for RelayConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The password (or access token) never into a log line.
+        f.debug_struct("RelayConfig")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("security", &self.security)
+            .field("username", &self.username)
+            .field("oauth", &self.oauth)
+            .finish_non_exhaustive()
+    }
 }
 
 impl RelayConfig {
@@ -421,4 +434,24 @@ pub struct ToneConfig {
     pub language: Language,
     pub internal: InternalTone,
     pub external: ExternalTone,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relay_debug_leaves_the_password_out() {
+        let relay = RelayConfig {
+            host: "relay.example.net".into(),
+            port: 587,
+            security: RelaySecurity::Starttls,
+            username: Some("uwumail".into()),
+            password: Some("hunter2-plaintext".into()),
+            oauth: false,
+        };
+        let shown = format!("{relay:?}");
+        assert!(shown.contains("relay.example.net"), "{shown}");
+        assert!(!shown.contains("hunter2-plaintext"), "{shown}");
+    }
 }

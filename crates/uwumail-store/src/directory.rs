@@ -238,7 +238,7 @@ impl Account {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct NewAccount {
     pub address: String,
     pub display_name: String,
@@ -249,6 +249,19 @@ pub struct NewAccount {
     pub quota_bytes: i64,
     /// Left out means all of them for a person, and [`Protocols::for_service`] for a service.
     pub protocols: Option<Protocols>,
+}
+
+impl std::fmt::Debug for NewAccount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The password never into a log line.
+        f.debug_struct("NewAccount")
+            .field("address", &self.address)
+            .field("display_name", &self.display_name)
+            .field("role", &self.role)
+            .field("quota_bytes", &self.quota_bytes)
+            .field("protocols", &self.protocols)
+            .finish_non_exhaustive()
+    }
 }
 
 pub(crate) const ACCOUNT_COLUMNS: &str = "id, login, display_name, role, quota_bytes, used_bytes, disabled, \
@@ -1067,6 +1080,21 @@ impl Store {
 mod tests {
     use super::*;
     use crate::test_support::store;
+
+    #[test]
+    fn debug_leaves_the_password_out() {
+        let new = NewAccount {
+            address: "leni@example.org".into(),
+            display_name: "Leni".into(),
+            password: Some("hunter2-plaintext".into()),
+            role: Role::User,
+            quota_bytes: 0,
+            protocols: None,
+        };
+        let shown = format!("{new:?}");
+        assert!(shown.contains("leni@example.org"), "{shown}");
+        assert!(!shown.contains("hunter2-plaintext"), "{shown}");
+    }
 
     fn person(address: &str) -> NewAccount {
         NewAccount {
