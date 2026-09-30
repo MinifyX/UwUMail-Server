@@ -187,6 +187,8 @@ pub struct SettingsView {
     pub features: BTreeMap<String, Option<Choice>>,
     pub auto_labels: bool,
     pub refine_events: bool,
+    /// The user setting `assist.currency`: `EUR` or `USD` for someone reading in English.
+    pub currency: Option<String>,
     pub effective: BTreeMap<String, Option<Effective>>,
     /// The JMAP state of the person's assist objects.
     #[serde(skip)]
@@ -202,6 +204,9 @@ pub struct SettingsPatch {
     pub features: Option<BTreeMap<String, Option<Choice>>>,
     pub auto_labels: Option<bool>,
     pub refine_events: Option<bool>,
+    /// `null` takes the setting away.
+    #[serde(default, deserialize_with = "nullable")]
+    pub currency: Option<Option<String>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -685,13 +690,9 @@ impl Assist {
         let policy = store.assist_policy().await?;
         let available = self.available(account, &policy).await?;
         let prefs = store.assist_prefs(account.id).await?;
-        let refine_events = store
-            .user_settings(account.id)
-            .await?
-            .values
-            .get("assist.refineEvents")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
+        let values = store.user_settings(account.id).await?.values;
+        let refine_events = values.get("assist.refineEvents").and_then(Value::as_bool).unwrap_or(false);
+        let currency = values.get("assist.currency").and_then(Value::as_str).map(str::to_owned);
         let chosen = |key: &str| -> Option<Choice> { serde_json::from_value(prefs.choices.get(key)?.clone()).ok() };
         let mut features = BTreeMap::new();
         let mut effective = BTreeMap::new();
@@ -715,6 +716,7 @@ impl Assist {
             features,
             auto_labels: prefs.auto_labels,
             refine_events,
+            currency,
             effective,
             state: format!("{}-{}", store.assist_version().await?, prefs.modseq),
         })
@@ -779,14 +781,18 @@ impl Assist {
         if patch.default.is_some() || patch.features.is_some() || patch.auto_labels.is_some() {
             store.set_assist_prefs(account.id, choices, auto_labels).await?;
         }
+        let mut values = Vec::new();
         if let Some(refine) = patch.refine_events {
-            store
-                .update_user_settings(
-                    account.id,
-                    uwumail_store::SettingsChange::Patch(vec![("assist.refineEvents".into(), Some(json!(refine)))]),
-                    None,
-                )
-                .await?;
+            values.push(("assist.refineEvents".to_owned(), Some(json!(refine))));
+        }
+        if let Some(currency) = &patch.currency {
+            if currency.as_deref().is_some_and(|c| !matches!(c, "EUR" | "USD")) {
+                return Err(AssistError::invalid("badCurrency", "currency", "the currency is EUR or USD"));
+            }
+            values.push(("assist.currency".to_owned(), currency.as_ref().map(|c| json!(c))));
+        }
+        if !values.is_empty() {
+            store.update_user_settings(account.id, uwumail_store::SettingsChange::Patch(values), None).await?;
         }
         self.settings(account).await
     }

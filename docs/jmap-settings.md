@@ -133,6 +133,7 @@ is handed to the others.
 | `linkConfirm` | `true` or `false`: ask before opening links from mails |
 | `darkImages` | `true` or `false`: recolor light images when a mail is darkened |
 | `assist.refineEvents` | `true` or `false`: ask the AI assistant for a mail's events by itself when it opens ([jmap-assist.md](jmap-assist.md)) |
+| `nyu.animations` | `"on"`, `"reduced"` or `"off"`: Nyu's little animations in the webmail and the app. Not set: on, or reduced when the system asks for less motion |
 | `assist.currency` | `"EUR"` or `"USD"`: the currency of AI costs for someone reading in English; other languages have their own (Japanese yen, Chinese yuan, euros for the rest) and ignore it. Not set: euros |
 | `trustedSenders:<entry>` | `true`; `<entry>` is a lower-case address `a@b.c` or `@domain`, at most 254 characters |
 | `senderAppearance:<address>` | `"light"` or `"dark"`; `<address>` is a lower-case address, at most 254 characters |

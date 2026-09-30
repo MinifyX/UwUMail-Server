@@ -154,6 +154,19 @@ async fn prices_and_costs_in_the_portal() {
     let (_, mine) = call(&app, "GET", "/api/account/assist", None, &person).await;
     assert_eq!(mine["providers"][0]["price"]["source"], "manual");
 
+    // Someone reading in English may take US dollars; it is the synced user setting assist.currency.
+    let (status, settings) =
+        call(&app, "PUT", "/api/account/assist/settings", Some(json!({ "currency": "USD" })), &person).await;
+    assert_eq!((status, &settings["currency"]), (StatusCode::OK, &json!("USD")), "{settings}");
+    let values = store.user_settings(account).await.unwrap().values;
+    assert_eq!(values.get("assist.currency"), Some(&json!("USD")));
+    let (status, _) =
+        call(&app, "PUT", "/api/account/assist/settings", Some(json!({ "currency": "JPY" })), &person).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (_, settings) =
+        call(&app, "PUT", "/api/account/assist/settings", Some(json!({ "currency": null })), &person).await;
+    assert_eq!(settings["currency"], Value::Null);
+
     let bad = json!({ "outputPricePerMillion": 1e9 });
     let (status, _) = call(&app, "PATCH", &format!("/api/admin/assist/providers/{id}"), Some(bad), &admin).await;
     assert_eq!(status, StatusCode::CONFLICT);

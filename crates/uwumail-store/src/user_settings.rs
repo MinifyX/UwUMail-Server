@@ -194,6 +194,7 @@ pub fn validate_setting(key: &str, value: &Value) -> Result<(), SettingProblem> 
         }
         "remoteImages" => return one_of(key, value, &["ask", "always"]),
         "assist.currency" => return one_of(key, value, &["EUR", "USD"]),
+        "nyu.animations" => return one_of(key, value, &["on", "reduced", "off"]),
         "mailAppearance" => return one_of(key, value, &["auto", "light", "dark"]),
         "undoSendSeconds" => {
             return match value.as_u64() {
@@ -483,6 +484,7 @@ mod tests {
             ("darkImages", json!(false), json!("on")),
             ("assist.currency", json!("USD"), json!("usd")),
             ("assist.currency", json!("EUR"), json!("JPY")),
+            ("nyu.animations", json!("reduced"), json!("some")),
         ] {
             assert_eq!(check(key, good), Ok(()), "{key}");
             assert!(matches!(check(key, bad), Err(SettingProblem::Invalid(_))), "{key}");
