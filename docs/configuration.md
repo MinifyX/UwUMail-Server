@@ -426,6 +426,7 @@ connect_timeout_secs = 30
 command_timeout_secs = 300
 mx_port = 25
 require_tls = false
+allow_private_mx = false      # MX hosts on loopback or private networks are skipped; prefer a route
 
 # Send everything through another server, e.g. a VPS or a sending service.
 # [delivery.relay]

@@ -25,6 +25,17 @@ struct Server {
 /// A server for `domain` with the user `user`, whose MX is `mx.<domain>` with a new self-signed
 /// certificate (offered for STARTTLS when `starttls`), delivering to other servers' MX at `mx_port`.
 async fn server(domain: &str, user: &str, mx_port: u16, starttls: bool) -> (Server, CertificateDer<'static>) {
+    server_with(domain, user, mx_port, starttls, true).await
+}
+
+/// [`server`], delivering to MX hosts on private addresses only when `private_mx`.
+async fn server_with(
+    domain: &str,
+    user: &str,
+    mx_port: u16,
+    starttls: bool,
+    private_mx: bool,
+) -> (Server, CertificateDer<'static>) {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).await.unwrap();
     store.create_domain(domain).await.unwrap();
@@ -56,7 +67,8 @@ async fn server(domain: &str, user: &str, mx_port: u16, starttls: bool) -> (Serv
             hostname: hostname.clone(),
             smtp: SmtpConfig::default(),
             spam: SpamConfig { enabled: false, ..SpamConfig::default() },
-            delivery: DeliveryConfig { mx_port, ..DeliveryConfig::default() },
+            // The other server's MX is on this machine, like nothing on the internet would be.
+            delivery: DeliveryConfig { mx_port, allow_private_mx: private_mx, ..DeliveryConfig::default() },
             tone: ToneConfig::default(),
             server_tls: starttls.then(|| Arc::new(tls)),
         },
@@ -268,4 +280,31 @@ async fn a_forged_mx_host_does_not_take_dane_away() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_forged_no_mx_answer_does_not_take_dane_away() {
     forged_mx_answer(&[]).await;
+}
+
+/// Whoever controls a domain's DNS could point its MX at this host or the local network and have
+/// the delivery worker talk to what listens there. Without `delivery.allow_private_mx` such a host
+/// is not used, and a domain with nothing else fails for good instead of being retried for days.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_mx_on_a_private_address_is_not_used() {
+    let (b, _) = server("b.test", "nyu", 0, true).await;
+    let (a, _) = server_with("a.test", "mini", b.mx.port(), true, false).await;
+    a.smtp.dns_cache().pin_mx("b.test", &[(10, "mx.b.test")]);
+    a.smtp.dns_cache().pin_ipv4("mx.b.test", &[Ipv4Addr::LOCALHOST]);
+    send(&a, "nyu@b.test").await;
+    let store = a.smtp.store().clone();
+    wait_until("the mail bounces", async || {
+        let account = store.account("mini@a.test").await.unwrap().unwrap();
+        let inbox = store.mailboxes(account.id).await.unwrap().into_iter().find(|m| m.role == Some(MailboxRole::Inbox));
+        !store.emails_in_mailbox(inbox.unwrap().id, 10).await.unwrap().is_empty()
+    })
+    .await;
+    let account = store.account("mini@a.test").await.unwrap().unwrap();
+    let own =
+        store.mailboxes(account.id).await.unwrap().into_iter().find(|m| m.role == Some(MailboxRole::Inbox)).unwrap();
+    let bounce = &store.emails_in_mailbox(own.id, 10).await.unwrap()[0];
+    let raw =
+        String::from_utf8(store.blob(&uwumail_store::BlobHash::parse(&bounce.blob).unwrap()).await.unwrap()).unwrap();
+    assert!(raw.contains("private addresses"), "{raw}");
+    assert_eq!(inbox(&b, "nyu@b.test").await, 0, "nothing was delivered to 127.0.0.1");
 }

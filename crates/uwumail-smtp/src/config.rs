@@ -204,6 +204,10 @@ pub struct DeliveryConfig {
     pub relay: Option<RelayConfig>,
     /// Fixed `host:port` per recipient domain, checked before the relay and DNS.
     pub routes: HashMap<String, String>,
+    /// Deliver to MX hosts on loopback or private networks as well. Off, those addresses are
+    /// skipped: anyone's DNS could point there. For mail servers that only exist inside a private
+    /// network, and for tests; a route for the domain is the narrower way.
+    pub allow_private_mx: bool,
 }
 
 impl Default for DeliveryConfig {
@@ -217,6 +221,7 @@ impl Default for DeliveryConfig {
             require_tls: false,
             relay: None,
             routes: HashMap::new(),
+            allow_private_mx: false,
         }
     }
 }

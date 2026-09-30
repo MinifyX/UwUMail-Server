@@ -419,6 +419,7 @@ async fn resolve_targets(
 
     // With validated MX records, the TLSA records of their hosts come before MTA-STS.
     let mut targets = Vec::new();
+    let (mut looked_up, mut private) = (0, 0);
     for host in hosts.into_iter().take(MAX_HOSTS) {
         match auth
             .ip_lookup(
@@ -431,7 +432,21 @@ async fn resolve_targets(
             .await
         {
             Ok(ips) => {
-                let addrs = ips.into_iter().map(|ip| SocketAddr::new(ip, live.delivery.mx_port)).collect();
+                looked_up += 1;
+                let found = !ips.is_empty();
+                // Whoever controls a domain's DNS could otherwise point its MX at this host or the
+                // local network and have the delivery worker talk to services there. A mail
+                // server that really lives there gets a route (or `delivery.allow_private_mx`).
+                let addrs: Vec<SocketAddr> = ips
+                    .into_iter()
+                    .filter(|ip| live.delivery.allow_private_mx || crate::fetch::is_public(*ip))
+                    .map(|ip| SocketAddr::new(ip, live.delivery.mx_port))
+                    .collect();
+                if found && addrs.is_empty() {
+                    private += 1;
+                    tracing::warn!(%domain, %host, "an MX host has no public address, skipping it");
+                    continue;
+                }
                 let dane = match mx_security {
                     Security::Secure => Dane::of(dane::host_tlsa(ctx, &host).await),
                     _ => Dane::Off,
@@ -452,6 +467,12 @@ async fn resolve_targets(
             }
             Err(err) => tracing::debug!(%host, %err, "address lookup failed"),
         }
+    }
+    // Only when every host pointed inside: a host whose lookup failed may still come back.
+    if targets.is_empty() && private > 0 && private == looked_up {
+        return Err(Outcome::Failed(format!(
+            "550 5.4.4 The mail servers of {domain} point to private addresses, not to the internet"
+        )));
     }
     Ok(targets)
 }
