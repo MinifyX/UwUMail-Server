@@ -7,6 +7,7 @@ use std::os::unix::fs::PermissionsExt;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::{Value, json};
+use uwumail_assist::PictureRead;
 use uwumail_jmap::ocr::OcrConfig;
 
 use crate::common::{USING, server_with};
@@ -140,12 +141,20 @@ async fn the_assistant_reads_the_same_text() {
     let email: i64 = email.trim_start_matches('e').parse().unwrap();
     let account = server.id("mini@example.org").await;
     let read = server.jmap.image_text_reader();
-    assert_eq!(read(account, email).await.unwrap(), ["Premiere am Freitag", "Premiere am Freitag"]);
-    assert_eq!(read(server.id("nyu@example.org").await, email).await, None, "not someone else's message");
+    // `Assist/estimate` only looks at what was read before, and reads nothing itself.
+    let known = read(account, email, PictureRead::KnownOnly).await.unwrap();
+    assert_eq!((known.texts.len(), known.unread), (0, 2));
+    let texts = read(account, email, PictureRead::Read).await.unwrap().texts;
+    assert_eq!(texts, ["Premiere am Freitag", "Premiere am Freitag"]);
+    let known = read(account, email, PictureRead::KnownOnly).await.unwrap();
+    assert_eq!((known.texts, known.unread), (texts, 0));
+    let stranger = server.id("nyu@example.org").await;
+    assert_eq!(read(stranger, email, PictureRead::Read).await, None, "not someone else's message");
 
     let missing = OcrConfig { command: "/nonexistent/tesseract".into(), ..OcrConfig::default() };
     let server = server_with(|jmap| jmap.with_ocr(missing)).await;
     let email = server.deliver("mini@example.org", &message()).await;
     let email: i64 = email.trim_start_matches('e').parse().unwrap();
-    assert_eq!(server.jmap.image_text_reader()(server.id("mini@example.org").await, email).await, None);
+    let account = server.id("mini@example.org").await;
+    assert_eq!(server.jmap.image_text_reader()(account, email, PictureRead::Read).await, None);
 }

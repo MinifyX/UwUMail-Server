@@ -15,7 +15,7 @@ use crate::access::{Effective, Ticket};
 use crate::llm::{self, Completion, Prompt};
 use crate::mail::{MAX_MAIL_CHARS, MailText};
 use crate::prompts::{self, ComposeRequest, SUBJECT_MARK};
-use crate::{Assist, AssistError, MAX_INSTRUCTION_CHARS, MAX_TEXT_CHARS, Result, now};
+use crate::{Assist, AssistError, MAX_INSTRUCTION_CHARS, MAX_TEXT_CHARS, PictureRead, Result, now};
 
 /// Mails of a conversation that are summarized, the latest ones.
 pub const MAX_THREAD_MAILS: usize = 20;
@@ -28,6 +28,20 @@ const MAX_REASON_CHARS: usize = 300;
 const LABEL_MAIL_CHARS: usize = 4000;
 /// Address book entries looked at to match people.
 const MAX_CONTACTS: usize = 5000;
+/// Texts of pictures that go along with a mail, and how long each may be.
+const MAX_PICTURE_TEXTS: usize = 20;
+const MAX_PICTURE_CHARS: usize = 4000;
+/// What `Assist/estimate` counts for a picture that was never read: a short poster or ticket.
+const UNREAD_PICTURE_CHARS: usize = 400;
+/// Typical answers, in tokens, for `Assist/estimate` (docs/jmap-assist.md): a mail written from an
+/// instruction, a summary of one mail (and what each further mail of a conversation adds), a spam
+/// verdict with its reasons, and a mail's events.
+const TYPICAL_WRITE_TOKENS: i64 = 400;
+const TYPICAL_SUMMARY_TOKENS: i64 = 150;
+const TYPICAL_SUMMARY_TOKENS_PER_MAIL: i64 = 50;
+const TYPICAL_SUMMARY_MAX_TOKENS: i64 = 600;
+const TYPICAL_SPAM_TOKENS: i64 = 150;
+const TYPICAL_EVENTS_TOKENS: i64 = 250;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -171,6 +185,39 @@ pub struct EventsResult {
     pub events: Vec<ExtractedEvent>,
     pub effective: Effective,
     pub usage: Usage,
+}
+
+/// The arguments of one of the calls `Assist/estimate` estimates.
+#[derive(Debug, Clone)]
+pub enum EstimateArgs {
+    Compose(ComposeArgs),
+    Summarize(SummarizeArgs),
+    SpamCheck(SpamArgs),
+    ExtractEvents(EventsArgs),
+}
+
+impl EstimateArgs {
+    fn feature(&self) -> &'static str {
+        match self {
+            EstimateArgs::Compose(_) => "compose",
+            EstimateArgs::Summarize(_) => "summarize",
+            EstimateArgs::SpamCheck(_) => "spamCheck",
+            EstimateArgs::ExtractEvents(_) => "extractEvents",
+        }
+    }
+}
+
+/// What a call would take, without making it.
+#[derive(Debug, Clone)]
+pub struct Estimate {
+    /// The prompt the call would send, estimated like the tokens counted before a request.
+    pub input_tokens: i64,
+    /// A typical answer, at most what the call allows the model.
+    pub output_tokens: i64,
+    pub effective: Effective,
+    /// What is left of the day's limits of that provider; `None` without a limit.
+    pub requests_left_today: Option<i64>,
+    pub tokens_left_today: Option<i64>,
 }
 
 /// A label the model put on a mail, and why.
@@ -321,49 +368,38 @@ impl Assist {
         args: ComposeArgs,
         events: Option<&mpsc::Sender<StreamEvent>>,
     ) -> Result<ComposeResult> {
-        let instruction = args.instruction.as_deref().map(str::trim).filter(|s| !s.is_empty());
-        let text = args.text.as_deref().filter(|s| !s.trim().is_empty());
-        if instruction.is_some_and(|i| chars(i) > MAX_INSTRUCTION_CHARS) {
-            return Err(invalid(
-                "instruction",
-                format!("an instruction has at most {MAX_INSTRUCTION_CHARS} characters"),
-            ));
-        }
-        if text.is_some_and(|t| chars(t) > MAX_TEXT_CHARS) {
-            return Err(invalid("text", format!("the text has at most {MAX_TEXT_CHARS} characters")));
-        }
-        if args.subject.as_deref().is_some_and(|s| chars(s) > 998) {
-            return Err(invalid("subject", "the subject is too long"));
-        }
-        if args.target_language.as_deref().is_some_and(|l| chars(l) > 60) {
-            return Err(invalid("targetLanguage", "the language is too long"));
-        }
-        match args.mode.as_str() {
-            "write" if instruction.is_none() => return Err(invalid("instruction", "write needs an instruction")),
-            "write" => {}
-            "rewrite" => {
-                if text.is_none() {
-                    return Err(invalid("text", "rewrite needs the text"));
-                }
-                let preset = args.preset.as_deref().unwrap_or("");
-                if prompts::preset_instruction(preset, None).is_none() {
-                    return Err(invalid("preset", format!("{preset:?} is not a preset")));
-                }
-            }
-            "adjust" => {
-                if text.is_none() || instruction.is_none() {
-                    return Err(invalid("instruction", "adjust needs the text and an instruction"));
-                }
-            }
-            other => return Err(invalid("mode", format!("{other:?} is not a mode"))),
-        }
+        check_compose(&args)?;
         let reply_to = match args.reply_to_email_id {
             Some(id) => Some(self.record(account, id).await?),
             None => None,
         };
         let ticket = self.prepare(account, "compose").await?;
+        let (prompt, want_subject) = self.compose_prompt(account, &args, reply_to.as_ref()).await?;
+        let (completion, effective) = self.ask(ticket, &prompt, events, want_subject).await?;
+        let (subject, text) =
+            if want_subject { split_subject(&completion.text) } else { (None, completion.text.trim().to_owned()) };
+        if text.is_empty() {
+            return Err(AssistError::ProviderFailed {
+                description: "the model gave an empty answer".into(),
+                retry_after: None,
+                transient: false,
+            });
+        }
+        Ok(ComposeResult { text, subject, effective, usage: Usage::of(&completion) })
+    }
+
+    /// The prompt of `Assist/compose`, and whether it asks for a subject. Reads the mail replied to:
+    /// only once the request may be made.
+    async fn compose_prompt(
+        &self,
+        account: &Account,
+        args: &ComposeArgs,
+        reply_to: Option<&EmailRecord>,
+    ) -> Result<(Prompt, bool)> {
+        let instruction = args.instruction.as_deref().map(str::trim).filter(|s| !s.is_empty());
+        let text = args.text.as_deref().filter(|s| !s.trim().is_empty());
         let reply_to = match reply_to {
-            Some(record) => Some(self.text(&record, 8000).await?),
+            Some(record) => Some(self.text(record, 8000).await?),
             None => None,
         };
         let sender = if account.display_name.trim().is_empty() {
@@ -386,17 +422,7 @@ impl Assist {
             sender: &sender,
             today: &today,
         });
-        let (completion, effective) = self.ask(ticket, &prompt, events, want_subject).await?;
-        let (subject, text) =
-            if want_subject { split_subject(&completion.text) } else { (None, completion.text.trim().to_owned()) };
-        if text.is_empty() {
-            return Err(AssistError::ProviderFailed {
-                description: "the model gave an empty answer".into(),
-                retry_after: None,
-                transient: false,
-            });
-        }
-        Ok(ComposeResult { text, subject, effective, usage: Usage::of(&completion) })
+        Ok((prompt, want_subject))
     }
 
     /// `Assist/summarize`.
@@ -406,6 +432,23 @@ impl Assist {
         args: SummarizeArgs,
         events: Option<&mpsc::Sender<StreamEvent>>,
     ) -> Result<SummaryResult> {
+        let records = self.summary_records(account, &args).await?;
+        let ticket = self.prepare(account, "summarize").await?;
+        let prompt = self.summary_prompt(&records, args.language.as_deref()).await?;
+        let (completion, effective) = self.ask(ticket, &prompt, events, false).await?;
+        let summary = completion.text.trim().to_owned();
+        if summary.is_empty() {
+            return Err(AssistError::ProviderFailed {
+                description: "the model gave an empty answer".into(),
+                retry_after: None,
+                transient: false,
+            });
+        }
+        Ok(SummaryResult { summary, effective, usage: Usage::of(&completion) })
+    }
+
+    /// The mails a summary is about, oldest first, without reading them.
+    async fn summary_records(&self, account: &Account, args: &SummarizeArgs) -> Result<Vec<EmailRecord>> {
         let ids = match (args.email_id, args.thread_id) {
             (Some(email), None) => vec![email],
             (None, Some(thread)) => {
@@ -420,28 +463,22 @@ impl Assist {
             }
             _ => return Err(invalid("emailId", "give either emailId or threadId")),
         };
-        let per_mail = (MAX_MAIL_CHARS / ids.len()).max(2000);
         let mut records = Vec::new();
         for id in ids {
             records.push(self.record(account, id).await?);
         }
         records.sort_by_key(|record| (record.sent_at.unwrap_or(record.received_at), record.id));
-        let ticket = self.prepare(account, "summarize").await?;
+        Ok(records)
+    }
+
+    /// The prompt of `Assist/summarize`: each mail cut to its share.
+    async fn summary_prompt(&self, records: &[EmailRecord], language: Option<&str>) -> Result<Prompt> {
+        let per_mail = (MAX_MAIL_CHARS / records.len().max(1)).max(2000);
         let mut texts: Vec<MailText> = Vec::new();
-        for record in &records {
+        for record in records {
             texts.push(self.text(record, per_mail).await?);
         }
-        let prompt = prompts::summarize(&texts, args.language.as_deref());
-        let (completion, effective) = self.ask(ticket, &prompt, events, false).await?;
-        let summary = completion.text.trim().to_owned();
-        if summary.is_empty() {
-            return Err(AssistError::ProviderFailed {
-                description: "the model gave an empty answer".into(),
-                retry_after: None,
-                transient: false,
-            });
-        }
-        Ok(SummaryResult { summary, effective, usage: Usage::of(&completion) })
+        Ok(prompts::summarize(&texts, language))
     }
 
     /// What the server knows about a mail by itself.
@@ -475,9 +512,7 @@ impl Assist {
     pub async fn spam_check(&self, account: &Account, args: SpamArgs) -> Result<SpamResult> {
         let record = self.record(account, args.email_id).await?;
         let ticket = self.prepare(account, "spamCheck").await?;
-        let mail = self.text(&record, MAX_MAIL_CHARS).await?;
-        let signals = self.spam_signals(account, &record, &mail).await?;
-        let prompt = prompts::spam_check(&mail, &findings(&signals), args.language.as_deref());
+        let (prompt, signals) = self.spam_prompt(account, &record, args.language.as_deref()).await?;
         let (completion, effective) = self.send(ticket, &prompt, None).await?;
         let (verdict, confidence, reasons) =
             parse_spam(&completion.text).ok_or_else(|| AssistError::ProviderFailed {
@@ -488,16 +523,44 @@ impl Assist {
         Ok(SpamResult { verdict, confidence, reasons, signals, effective, usage: Usage::of(&completion) })
     }
 
+    /// The prompt of `Assist/spamCheck`, with the facts it gives the model.
+    async fn spam_prompt(
+        &self,
+        account: &Account,
+        record: &EmailRecord,
+        language: Option<&str>,
+    ) -> Result<(Prompt, SpamSignals)> {
+        let mail = self.text(record, MAX_MAIL_CHARS).await?;
+        let signals = self.spam_signals(account, record, &mail).await?;
+        let prompt = prompts::spam_check(&mail, &findings(&signals), language);
+        Ok((prompt, signals))
+    }
+
+    /// The text of a mail's pictures for a prompt. With [`PictureRead::KnownOnly`], a picture that
+    /// was never read stands in with [`UNREAD_PICTURE_CHARS`] characters.
+    async fn picture_texts(&self, account: &Account, record: &EmailRecord, how: PictureRead) -> Vec<String> {
+        let Some(read) = &self.inner.image_text else { return Vec::new() };
+        let found = read(account.id, record.id, how).await.unwrap_or_default();
+        let unread = if how == PictureRead::KnownOnly { found.unread } else { 0 };
+        found
+            .texts
+            .iter()
+            .map(|text| clean(text, MAX_PICTURE_CHARS))
+            .chain(std::iter::repeat_n("x".repeat(UNREAD_PICTURE_CHARS), unread))
+            .take(MAX_PICTURE_TEXTS)
+            .collect()
+    }
+
     /// `Assist/extractEvents`.
     pub async fn extract_events(&self, account: &Account, args: EventsArgs) -> Result<EventsResult> {
         let record = self.record(account, args.email_id).await?;
         let ticket = self.prepare(account, "extractEvents").await?;
         let mail = self.text(&record, MAX_MAIL_CHARS).await?;
-        let image_text = match (&self.inner.image_text, args.include_images) {
-            (Some(read), true) => read(account.id, record.id).await.unwrap_or_default(),
-            _ => Vec::new(),
+        let image_text = if args.include_images {
+            self.picture_texts(account, &record, PictureRead::Read).await
+        } else {
+            Vec::new()
         };
-        let image_text: Vec<String> = image_text.iter().take(20).map(|text| clean(text, 4000)).collect();
         let prompt = prompts::extract_events(&mail, &image_text);
         let (completion, effective) = self.send(ticket, &prompt, None).await?;
         let answer = llm::json_answer(&completion.text).ok_or_else(|| AssistError::ProviderFailed {
@@ -528,6 +591,65 @@ impl Assist {
         let context = EventContext { source: &source, links: &mail.links, people: &people, mine: &mine };
         let events = parse_events(&answer, &context);
         Ok(EventsResult { events, effective, usage: Usage::of(&completion) })
+    }
+
+    /// `Assist/estimate`: builds the prompt the call would send, from the same arguments, checks and
+    /// provider choice, but sends nothing and counts nothing against the day's limits. Pictures are
+    /// not read for it: their text is taken when it was read before, and estimated when not.
+    pub async fn estimate(&self, account: &Account, args: EstimateArgs) -> Result<Estimate> {
+        let _estimating = self.begin_estimate(account.id)?;
+        let feature = args.feature();
+        let (prompt, typical, (provider, model, _)) = match &args {
+            EstimateArgs::Compose(args) => {
+                check_compose(args)?;
+                let reply_to = match args.reply_to_email_id {
+                    Some(id) => Some(self.record(account, id).await?),
+                    None => None,
+                };
+                let chosen = self.resolve(account, feature).await?;
+                let (prompt, _) = self.compose_prompt(account, args, reply_to.as_ref()).await?;
+                let typical = match args.text.as_deref().filter(|_| args.mode != "write") {
+                    // A rewrite is about as long as the draft.
+                    Some(text) => (llm::estimate_texts([text]) * 5 / 4).max(100),
+                    None => TYPICAL_WRITE_TOKENS,
+                };
+                (prompt, typical, chosen)
+            }
+            EstimateArgs::Summarize(args) => {
+                let records = self.summary_records(account, args).await?;
+                let chosen = self.resolve(account, feature).await?;
+                let prompt = self.summary_prompt(&records, args.language.as_deref()).await?;
+                let more = records.len().saturating_sub(1) as i64;
+                let typical =
+                    (TYPICAL_SUMMARY_TOKENS + more * TYPICAL_SUMMARY_TOKENS_PER_MAIL).min(TYPICAL_SUMMARY_MAX_TOKENS);
+                (prompt, typical, chosen)
+            }
+            EstimateArgs::SpamCheck(args) => {
+                let record = self.record(account, args.email_id).await?;
+                let chosen = self.resolve(account, feature).await?;
+                let (prompt, _) = self.spam_prompt(account, &record, args.language.as_deref()).await?;
+                (prompt, TYPICAL_SPAM_TOKENS, chosen)
+            }
+            EstimateArgs::ExtractEvents(args) => {
+                let record = self.record(account, args.email_id).await?;
+                let chosen = self.resolve(account, feature).await?;
+                let mail = self.text(&record, MAX_MAIL_CHARS).await?;
+                let image_text = if args.include_images {
+                    self.picture_texts(account, &record, PictureRead::KnownOnly).await
+                } else {
+                    Vec::new()
+                };
+                (prompts::extract_events(&mail, &image_text), TYPICAL_EVENTS_TOKENS, chosen)
+            }
+        };
+        let (requests_left_today, tokens_left_today) = self.left_today(account, &provider).await?;
+        Ok(Estimate {
+            input_tokens: llm::estimate_prompt(&prompt),
+            output_tokens: typical.min(i64::from(prompt.max_tokens)),
+            effective: provider.effective(model),
+            requests_left_today,
+            tokens_left_today,
+        })
     }
 
     /// Asks which of the person's labels fit one of their mails and puts them on. Labels already on
@@ -620,6 +742,44 @@ impl Assist {
         let rows = self.store().assist_usage(Some(account.id), since).await?;
         Ok((rows, self.today(account).await?))
     }
+}
+
+/// The checks of `Assist/compose` that need nothing but its arguments.
+fn check_compose(args: &ComposeArgs) -> Result<()> {
+    let instruction = args.instruction.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let text = args.text.as_deref().filter(|s| !s.trim().is_empty());
+    if instruction.is_some_and(|i| chars(i) > MAX_INSTRUCTION_CHARS) {
+        return Err(invalid("instruction", format!("an instruction has at most {MAX_INSTRUCTION_CHARS} characters")));
+    }
+    if text.is_some_and(|t| chars(t) > MAX_TEXT_CHARS) {
+        return Err(invalid("text", format!("the text has at most {MAX_TEXT_CHARS} characters")));
+    }
+    if args.subject.as_deref().is_some_and(|s| chars(s) > 998) {
+        return Err(invalid("subject", "the subject is too long"));
+    }
+    if args.target_language.as_deref().is_some_and(|l| chars(l) > 60) {
+        return Err(invalid("targetLanguage", "the language is too long"));
+    }
+    match args.mode.as_str() {
+        "write" if instruction.is_none() => return Err(invalid("instruction", "write needs an instruction")),
+        "write" => {}
+        "rewrite" => {
+            if text.is_none() {
+                return Err(invalid("text", "rewrite needs the text"));
+            }
+            let preset = args.preset.as_deref().unwrap_or("");
+            if prompts::preset_instruction(preset, None).is_none() {
+                return Err(invalid("preset", format!("{preset:?} is not a preset")));
+            }
+        }
+        "adjust" => {
+            if text.is_none() || instruction.is_none() {
+                return Err(invalid("instruction", "adjust needs the text and an instruction"));
+            }
+        }
+        other => return Err(invalid("mode", format!("{other:?} is not a mode"))),
+    }
+    Ok(())
 }
 
 fn utc_date(secs: i64) -> String {

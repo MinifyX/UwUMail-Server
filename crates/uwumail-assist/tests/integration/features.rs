@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use serde_json::json;
-use uwumail_assist::{Assist, ComposeArgs, EventsArgs, ImageText, chatgpt};
+use uwumail_assist::{Assist, ComposeArgs, EventsArgs, ImageText, PictureTexts, chatgpt};
 
 use crate::common::{INVOICE, Reply, chat, rig};
 
@@ -19,8 +19,9 @@ fn event(title: &str, start: &str, quote: &str, participants: serde_json::Value)
 #[tokio::test]
 async fn events_are_checked_against_the_mail_and_its_pictures() {
     let rig = rig().await;
-    let pictures: ImageText =
-        Arc::new(|_, _| Box::pin(async { Some(vec!["KINO Saal 3 · 10.10.2026 · 20:00".into()]) }));
+    let pictures: ImageText = Arc::new(|_, _, _| {
+        Box::pin(async { Some(PictureTexts::read(vec!["KINO Saal 3 · 10.10.2026 · 20:00".into()])) })
+    });
     let assist =
         Assist::for_tests(rig.store.clone(), "mx.example.org", chatgpt::Endpoints::default()).with_image_text(pictures);
     rig.server_provider("openaiCompatible", json!({})).await;
@@ -92,9 +93,9 @@ async fn nothing_is_read_for_a_request_that_may_not_be_made() {
     let rig = rig().await;
     let reads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let counted = reads.clone();
-    let pictures: ImageText = Arc::new(move |_, _| {
+    let pictures: ImageText = Arc::new(move |_, _, _| {
         counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        Box::pin(async { Some(vec![]) })
+        Box::pin(async { Some(PictureTexts::default()) })
     });
     let assist =
         Assist::for_tests(rig.store.clone(), "mx.example.org", chatgpt::Endpoints::default()).with_image_text(pictures);

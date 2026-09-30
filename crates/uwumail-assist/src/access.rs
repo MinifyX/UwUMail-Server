@@ -223,6 +223,10 @@ impl Available {
         chosen.or(provider).or_else(|| preset.map(str::to_owned))
     }
 
+    pub(crate) fn effective(&self, model: String) -> Effective {
+        Effective { provider_id: self.record.id, provider_name: self.record.name.clone(), model, scope: self.scope() }
+    }
+
     fn view(&self) -> ProviderView {
         let record = &self.record;
         let quota = (self.server && (record.requests_per_day.is_some() || record.tokens_per_day.is_some()))
@@ -1014,14 +1018,7 @@ impl Assist {
     /// request stays counted.
     pub(crate) async fn prepare(&self, account: &Account, feature: &str) -> Result<Ticket<'_>> {
         let store = self.store();
-        let policy = store.assist_policy().await?;
-        if !policy.features.get(feature) {
-            return Err(AssistError::Unavailable(format!("{feature} is switched off on this server")));
-        }
-        let available = self.available(account, &policy).await?;
-        let prefs = store.assist_prefs(account.id).await?;
-        let (provider, model) = Self::effective(&available, &prefs.choices, feature)
-            .ok_or_else(|| AssistError::Unavailable(format!("no AI provider can be used for {feature}")))?;
+        let (provider, model, policy) = self.resolve(account, feature).await?;
         let running = self.begin(account.id)?;
         let record = &provider.record;
         let (requests_per_day, tokens_per_day) =
@@ -1055,6 +1052,37 @@ impl Assist {
         Ok(Ticket { provider, model, policy, _running: running, charge })
     }
 
+    /// The provider and model `feature` would use for `account`, as [`Assist::prepare`] picks them,
+    /// without taking or counting a request.
+    pub(crate) async fn resolve(&self, account: &Account, feature: &str) -> Result<(Available, String, AssistPolicy)> {
+        let store = self.store();
+        let policy = store.assist_policy().await?;
+        if !policy.features.get(feature) {
+            return Err(AssistError::Unavailable(format!("{feature} is switched off on this server")));
+        }
+        let available = self.available(account, &policy).await?;
+        let prefs = store.assist_prefs(account.id).await?;
+        let (provider, model) = Self::effective(&available, &prefs.choices, feature)
+            .ok_or_else(|| AssistError::Unavailable(format!("no AI provider can be used for {feature}")))?;
+        Ok((provider, model, policy))
+    }
+
+    /// Requests and tokens `account` has left today with `provider`, each `None` without a limit
+    /// (the person's own providers have none).
+    pub(crate) async fn left_today(
+        &self,
+        account: &Account,
+        provider: &Available,
+    ) -> Result<(Option<i64>, Option<i64>)> {
+        let record = &provider.record;
+        if !provider.server || (record.requests_per_day.is_none() && record.tokens_per_day.is_none()) {
+            return Ok((None, None));
+        }
+        let (requests, tokens) = self.store().assist_used_today(account.id, record.id).await?;
+        let left = |limit: Option<i64>, used: i64| limit.map(|limit| (limit - used).max(0));
+        Ok((left(record.requests_per_day, requests), left(record.tokens_per_day, tokens)))
+    }
+
     /// Asks the model with a ticket from [`Assist::prepare`] and counts the tokens: what the provider
     /// reports, or an estimate of what was sent and received when it fails or the caller goes away.
     pub(crate) async fn send(
@@ -1077,10 +1105,7 @@ impl Assist {
             }
         }
         let completion = result.map_err(provider_failed)?;
-        let record = &provider.record;
-        let effective =
-            Effective { provider_id: record.id, provider_name: record.name.clone(), model, scope: provider.scope() };
-        Ok((completion, effective))
+        Ok((completion, provider.effective(model)))
     }
 
     async fn target(&self, provider: &Available, policy: &AssistPolicy, model: String) -> Result<Target> {

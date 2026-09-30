@@ -383,6 +383,7 @@ async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> MethodResult<Output
         "Assist/summarize" => single(assist::summarize(ctx, &args).await?),
         "Assist/spamCheck" => single(assist::spam_check(ctx, &args).await?),
         "Assist/extractEvents" => single(assist::extract_events(ctx, &args).await?),
+        "Assist/estimate" => single(assist::estimate(ctx, &args).await?),
         "Assist/usage" => single(assist::usage(ctx, &args).await?),
         "AssistLabel/get" => single(assist::label_get(ctx, &args).await?),
         "AssistLabel/set" => single(assist::label_set(ctx, &args).await?),

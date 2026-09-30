@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value, json};
 use tokio::sync::mpsc;
 use uwumail_assist::{
-    Assist, AssistError, Choice, ComposeArgs, Effective, EventsArgs, ProviderInput, ProviderView, SettingsPatch,
-    SettingsView, SpamArgs, StreamEvent, SummarizeArgs, TodayUsage, Usage,
+    Assist, AssistError, Choice, ComposeArgs, Effective, EstimateArgs, EventsArgs, ProviderInput, ProviderView,
+    SettingsPatch, SettingsView, SpamArgs, StreamEvent, SummarizeArgs, TodayUsage, Usage,
 };
 use uwumail_store::{Account, AssistLabel, StoreError};
 
@@ -542,11 +542,23 @@ pub fn stream_call(ctx: &Ctx<'_>, method: &str, args: &Value) -> MethodResult<St
     }
 }
 
-pub async fn spam_check(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
-    let assist = assist(ctx)?;
+fn spam_args(ctx: &Ctx<'_>, args: &Value) -> MethodResult<SpamArgs> {
     let email_id = required_id(ctx, args, "emailId", 'e')?;
     let language = arg_str(args, "language")?.map(str::to_owned);
-    let result = assist.spam_check(&ctx.account, SpamArgs { email_id, language }).await.map_err(method_error)?;
+    Ok(SpamArgs { email_id, language })
+}
+
+fn events_args(ctx: &Ctx<'_>, args: &Value) -> MethodResult<EventsArgs> {
+    let email_id = required_id(ctx, args, "emailId", 'e')?;
+    let include_images = args.get("includeImages").and_then(Value::as_bool).unwrap_or(false);
+    Ok(EventsArgs { email_id, include_images })
+}
+
+pub async fn spam_check(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
+    let assist = assist(ctx)?;
+    let args = spam_args(ctx, args)?;
+    let email_id = args.email_id;
+    let result = assist.spam_check(&ctx.account, args).await.map_err(method_error)?;
     let mut out = Map::new();
     out.insert("accountId".into(), json!(ctx.account_id()));
     out.insert("emailId".into(), json!(ids::email(email_id)));
@@ -557,17 +569,60 @@ pub async fn spam_check(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     Ok(with_source(out, &result.effective, &result.usage))
 }
 
+/// `Assist/extractEvents`. Also when the person's `assist.refineEvents` is off: that setting is about
+/// asking on its own when a mail is opened, not about asking when the person clicks.
 pub async fn extract_events(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
     let assist = assist(ctx)?;
-    let email_id = required_id(ctx, args, "emailId", 'e')?;
-    let include_images = args.get("includeImages").and_then(Value::as_bool).unwrap_or(false);
-    let result =
-        assist.extract_events(&ctx.account, EventsArgs { email_id, include_images }).await.map_err(method_error)?;
+    let args = events_args(ctx, args)?;
+    let email_id = args.email_id;
+    let result = assist.extract_events(&ctx.account, args).await.map_err(method_error)?;
     let mut out = Map::new();
     out.insert("accountId".into(), json!(ctx.account_id()));
     out.insert("emailId".into(), json!(ids::email(email_id)));
     out.insert("events".into(), json!(result.events));
     Ok(with_source(out, &result.effective, &result.usage))
+}
+
+/// `Assist/estimate`: what one of the other calls would take, without making it.
+pub async fn estimate(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
+    let assist = assist(ctx)?;
+    let method = arg_str(args, "method")?.ok_or_else(|| MethodError::invalid_arguments("method is required"))?;
+    let arguments = match args.get("arguments") {
+        None | Some(Value::Null) => Value::Object(Map::new()),
+        Some(Value::Object(object)) => {
+            // The arguments as the call would get them; an accountId in them is this one or wrong.
+            if object.get("accountId").is_some_and(|id| id.as_str() != Some(ctx.account_id().as_str())) {
+                return Err(MethodError::invalid_arguments("arguments/accountId is not this account"));
+            }
+            Value::Object(object.clone())
+        }
+        Some(_) => return Err(MethodError::invalid_arguments("arguments is an object")),
+    };
+    let call = match method {
+        "Assist/compose" => EstimateArgs::Compose(compose_args(ctx, &arguments)?),
+        "Assist/summarize" => EstimateArgs::Summarize(summarize_args(ctx, &arguments)?),
+        "Assist/spamCheck" => EstimateArgs::SpamCheck(spam_args(ctx, &arguments)?),
+        "Assist/extractEvents" => EstimateArgs::ExtractEvents(events_args(ctx, &arguments)?),
+        other => {
+            return Err(MethodError::invalid_arguments(format!(
+                "{other} can't be estimated; method is Assist/compose, Assist/summarize, Assist/spamCheck or \
+Assist/extractEvents"
+            )));
+        }
+    };
+    let estimate = assist.estimate(&ctx.account, call).await.map_err(method_error)?;
+    Ok(json!({
+        "accountId": ctx.account_id(),
+        "method": method,
+        "inputTokens": estimate.input_tokens,
+        "outputTokens": estimate.output_tokens,
+        "totalTokens": estimate.input_tokens + estimate.output_tokens,
+        "providerId": provider_id(estimate.effective.provider_id),
+        "providerName": estimate.effective.provider_name,
+        "model": estimate.effective.model,
+        "tokensLeftToday": estimate.tokens_left_today,
+        "requestsLeftToday": estimate.requests_left_today,
+    }))
 }
 
 pub async fn usage(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
