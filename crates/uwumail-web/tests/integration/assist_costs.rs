@@ -57,7 +57,10 @@ async fn portal() -> (Router, Store, i64, tempfile::TempDir) {
     );
     let assist = Assist::for_tests(store.clone(), "mail.example.org", chatgpt::Endpoints::default());
     let rates = BTreeMap::from([("USD".to_owned(), 1.25), ("JPY".to_owned(), 160.0)]);
-    let models = BTreeMap::from([("gpt-5-mini".to_owned(), (0.00000025, 0.000002))]);
+    let mut rates_of_mini = uwumail_assist::Rates::plain(0.00000025, 0.000002);
+    rates_of_mini.reasoning_model = true;
+    rates_of_mini.max_output_tokens = Some(128_000);
+    let models = BTreeMap::from([("gpt-5-mini".to_owned(), rates_of_mini)]);
     let table = PriceTable {
         fetched_at: 1_790_000_000,
         models,
@@ -117,7 +120,10 @@ async fn prices_and_costs_in_the_portal() {
     let (status, created) = call(&app, "POST", "/api/admin/assist/providers", Some(body), &admin).await;
     assert_eq!(status, StatusCode::CREATED, "{created}");
     assert_eq!(created["showCostToUsers"], false);
-    assert_eq!(created["price"], json!({ "inputPerMillion": 0.25, "outputPerMillion": 2.0, "source": "auto" }));
+    let price = &created["price"];
+    assert_eq!((&price["inputPerMillion"], &price["outputPerMillion"]), (&json!(0.25), &json!(2.0)), "{price}");
+    assert_eq!((&price["reasoningPerMillion"], &price["supportsReasoning"]), (&json!(2.0), &json!(true)));
+    assert_eq!(price["source"], "auto");
     let id = created["id"].as_i64().unwrap();
 
     let (_, view) = call(&app, "GET", "/api/admin/assist", None, &admin).await;
@@ -126,10 +132,18 @@ async fn prices_and_costs_in_the_portal() {
 
     // What mini used today: 1,000,000 tokens in and 100,000 out, 0.45 US dollars.
     let day = store.reserve_assist_usage(account, id, "summarize", None, None).await.unwrap();
-    store.add_assist_tokens(account, id, day, "summarize", 1_000_000, 100_000, Some(0.45)).await.unwrap();
+    let count = uwumail_store::TokenCount {
+        input: 1_000_000,
+        output: 100_000,
+        calls: 1,
+        cost_usd: Some(0.45),
+        ..Default::default()
+    };
+    store.add_assist_tokens(account, id, day, "summarize", count).await.unwrap();
 
     let (status, usage) = call(&app, "GET", "/api/admin/assist/usage?days=1&currency=JPY", None, &admin).await;
     assert_eq!(status, StatusCode::OK, "{usage}");
+    assert_eq!((&usage["days"][0]["reasoningTokens"], &usage["days"][0]["calls"]), (&json!(0), &json!(1)));
     let cost = &usage["days"][0]["cost"];
     assert_eq!((cost["currency"].as_str(), cost["usd"].as_f64()), (Some("JPY"), Some(0.45)));
     assert!((cost["amount"].as_f64().unwrap() - 57.6).abs() < 1e-9, "{cost}");
@@ -145,7 +159,21 @@ async fn prices_and_costs_in_the_portal() {
     let body = json!({ "showCostToUsers": true, "inputPricePerMillion": 1.0 });
     let (status, updated) = call(&app, "PATCH", &format!("/api/admin/assist/providers/{id}"), Some(body), &admin).await;
     assert_eq!(status, StatusCode::OK, "{updated}");
-    assert_eq!(updated["price"], json!({ "inputPerMillion": 1.0, "outputPerMillion": 2.0, "source": "manual" }));
+    assert_eq!(
+        updated["price"],
+        json!({
+            "inputPerMillion": 1.0, "outputPerMillion": 2.0, "reasoningPerMillion": 2.0,
+            "cacheReadPerMillion": 1.0, "cacheWritePerMillion": 1.0, "perRequest": 0.0, "perImage": 0.0,
+            "webSearchPerQuery": 0.0, "tiers": [], "supportsReasoning": true, "maxOutputTokens": 128000,
+            "source": "manual"
+        })
+    );
+    let body = json!({ "pricePerRequest": 0.002 });
+    let (_, updated) = call(&app, "PATCH", &format!("/api/admin/assist/providers/{id}"), Some(body), &admin).await;
+    assert_eq!((&updated["pricePerRequest"], &updated["price"]["perRequest"]), (&json!(0.002), &json!(0.002)));
+    let body = json!({ "pricePerRequest": 1000 });
+    let (status, _) = call(&app, "PATCH", &format!("/api/admin/assist/providers/{id}"), Some(body), &admin).await;
+    assert_eq!(status, StatusCode::CONFLICT, "at most 100 US dollars a request");
     let (_, usage) = call(&app, "GET", "/api/account/assist/usage?days=1", None, &person).await;
     let cost = &usage["days"][0]["cost"];
     assert_eq!(cost["currency"], "EUR");

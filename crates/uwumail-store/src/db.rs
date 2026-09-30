@@ -69,6 +69,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0060_password_changed.sql"),
     include_str!("migrations/0061_microsoft_issues.sql"),
     include_str!("migrations/0062_bimi.sql"),
+    include_str!("migrations/0063_assist_cost_details.sql"),
+    include_str!("migrations/0064_assist_calibration.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 

@@ -3934,7 +3934,8 @@
       "costNote": "Kosten zijn schattingen uit openbare prijslijsten en kunnen afwijken van de rekening van de aanbieder.",
       "currency": "Valuta",
       "currencyEur": "Euro (€)",
-      "currencyUsd": "Amerikaanse dollar ($)"
+      "currencyUsd": "Amerikaanse dollar ($)",
+      "reasoningTokens": "Denktokens"
     },
     "provider": {
       "model": "Model {{model}}",
@@ -4101,7 +4102,8 @@
         "peopleRequired": "Voeg minstens één persoon toe.",
         "featuresRequired": "Kies minstens één functie.",
         "limitInvalid": "Een heel getal boven nul, of leeg.",
-        "priceInvalid": "Vul een prijs van 0 of meer in, zoals 0,25."
+        "priceInvalid": "Vul een prijs van 0 of meer in, zoals 0,25.",
+        "requestPriceInvalid": "Vul een prijs van 0 tot 100 in, zoals 0,005."
       },
       "price": "Prijs",
       "priceIntro": "Amerikaanse dollar per miljoen tokens, om kosten te tonen. Leeg neemt de prijs uit openbare prijslijsten.",
@@ -4111,7 +4113,8 @@
       "outputPrice": "Uitvoer, per miljoen tokens",
       "priceAutomatic": "Uit de prijslijsten",
       "showCost": "Kosten tonen aan wie het gebruikt",
-      "showCostHint": "Zij zien dan wat hun verzoeken kosten. Jij ziet het altijd."
+      "showCostHint": "Zij zien dan wat hun verzoeken kosten. Jij ziet het altijd.",
+      "requestPrice": "Per verzoek, Amerikaanse dollar"
     },
     "chatgpt": {
       "title": "ChatGPT-aanmelding",
@@ -4131,7 +4134,11 @@
       "free": "Gratis",
       "perMillion": "{{input}} invoer, {{output}} uitvoer per miljoen tokens",
       "manual": "met de hand ingesteld",
-      "unknown": "Prijs onbekend"
+      "unknown": "Prijs onbekend",
+      "reasoning": "denken {{price}}",
+      "perRequest": "{{price}} per verzoek",
+      "tier": "boven {{tokens}} tokens: {{input}} in, {{output}} uit",
+      "thinks": "denkt na voor het antwoord"
     }
   },
   "microsoft": {

@@ -153,6 +153,46 @@ const LIST_PRICES: Record<string, [number, number]> = {
   "claude-haiku-4-5": [1, 5],
   "gemini-2.5-flash-lite": [0.1, 0.4],
 };
+/** The rest of the price sheet where the lists know more: thinking, the cache, fees, tiers. */
+const LIST_EXTRAS: Record<string, Partial<Price>> = {
+  "gpt-5": { supportsReasoning: true, maxOutputTokens: 128_000, cacheReadPerMillion: 0.125 },
+  "gpt-5-mini": { supportsReasoning: true, maxOutputTokens: 128_000, cacheReadPerMillion: 0.025 },
+  "gpt-5-nano": { supportsReasoning: true, maxOutputTokens: 128_000, cacheReadPerMillion: 0.005 },
+  "claude-haiku-4-5": { maxOutputTokens: 64_000, cacheReadPerMillion: 0.1, cacheWritePerMillion: 1.25 },
+  "gemini-2.5-flash-lite": {
+    supportsReasoning: true,
+    maxOutputTokens: 65_535,
+    perImage: 0.0001,
+    tiers: [
+      {
+        aboveTokens: 200_000,
+        inputPerMillion: 0.2,
+        outputPerMillion: 0.8,
+        reasoningPerMillion: 0.8,
+        cacheReadPerMillion: 0.05,
+      },
+    ],
+  },
+};
+/** A whole price sheet from a price in and out, and what the lists know beyond. */
+function sheet(input: number, output: number, source: Price["source"], extras: Partial<Price> = {}): Price {
+  return {
+    inputPerMillion: input,
+    outputPerMillion: output,
+    reasoningPerMillion: output,
+    cacheReadPerMillion: input,
+    cacheWritePerMillion: input,
+    perRequest: 0,
+    perImage: 0,
+    webSearchPerQuery: 0,
+    tiers: [],
+    supportsReasoning: false,
+    maxOutputTokens: null,
+    ...extras,
+    source,
+  };
+}
+
 /** Units per euro, like the ECB's reference rates. */
 const RATES: Record<string, number> = { EUR: 1, USD: 1.17, JPY: 172, CNY: 8.35 };
 
@@ -161,17 +201,22 @@ function priceOf(
   model: string | null | undefined,
   inputPrice: number | null | undefined,
   outputPrice: number | null | undefined,
+  requestPrice?: number | null,
 ): Price | null {
-  const listed = model ? LIST_PRICES[model.replace(/^[^/]+\//, "")] : undefined;
-  if (inputPrice != null || outputPrice != null) {
-    return {
-      inputPerMillion: inputPrice ?? listed?.[0] ?? 0,
-      outputPerMillion: outputPrice ?? listed?.[1] ?? 0,
-      source: "manual",
-    };
+  const name = model?.replace(/^[^/]+\//, "") ?? "";
+  const listed = LIST_PRICES[name];
+  const extras = LIST_EXTRAS[name] ?? {};
+  const facts = { supportsReasoning: extras.supportsReasoning, maxOutputTokens: extras.maxOutputTokens };
+  if (inputPrice != null || outputPrice != null || requestPrice != null) {
+    // By hand: thinking as the answer, the cache as the prompt, no tiers; the model's facts stay.
+    return sheet(inputPrice ?? listed?.[0] ?? 0, outputPrice ?? listed?.[1] ?? 0, "manual", {
+      ...facts,
+      perRequest: requestPrice ?? extras.perRequest ?? 0,
+      perImage: extras.perImage ?? 0,
+    });
   }
-  if (kind === "ollama" || kind === "chatgpt") return { inputPerMillion: 0, outputPerMillion: 0, source: "free" };
-  return listed ? { inputPerMillion: listed[0], outputPerMillion: listed[1], source: "auto" } : null;
+  if (kind === "ollama" || kind === "chatgpt") return sheet(0, 0, "free", facts);
+  return listed ? sheet(listed[0], listed[1], "auto", extras) : null;
 }
 
 /** US dollars in `currency`, as the server answers `cost`. */
@@ -212,6 +257,7 @@ const serverProviders: AdminProvider[] = [
     tokensPerDay: null,
     inputPricePerMillion: null,
     outputPricePerMillion: null,
+    pricePerRequest: null,
     showCostToUsers: true,
     price: null,
     createdAt: now() - 40 * 86_400,
@@ -234,6 +280,7 @@ const serverProviders: AdminProvider[] = [
     tokensPerDay: 400_000,
     inputPricePerMillion: null,
     outputPricePerMillion: null,
+    pricePerRequest: null,
     showCostToUsers: false,
     price: null,
     createdAt: now() - 12 * 86_400,
@@ -254,6 +301,7 @@ interface OwnProvider {
   expiresAt: number;
   inputPrice: number | null;
   outputPrice: number | null;
+  requestPrice: number | null;
 }
 
 const ownProviders: OwnProvider[] = [
@@ -269,6 +317,7 @@ const ownProviders: OwnProvider[] = [
     expiresAt: 0,
     inputPrice: null,
     outputPrice: null,
+    requestPrice: null,
   },
 ];
 keys.set(11, "mock-mistral-9f3c");
@@ -315,6 +364,7 @@ function adminPrice(provider: AdminProvider): Price | null {
     provider.model ?? kindOf(provider.kind)?.model,
     provider.inputPricePerMillion,
     provider.outputPricePerMillion,
+    provider.pricePerRequest,
   );
 }
 
@@ -344,6 +394,7 @@ function accountProviders(): AssistProvider[] {
     connected: true,
     inputPricePerMillion: provider.showCostToUsers ? provider.inputPricePerMillion : null,
     outputPricePerMillion: provider.showCostToUsers ? provider.outputPricePerMillion : null,
+    pricePerRequest: provider.showCostToUsers ? (provider.pricePerRequest ?? null) : null,
     price: provider.showCostToUsers ? adminPrice(provider) : null,
   }));
   const own = policy.allowPersonal
@@ -366,7 +417,14 @@ function accountProviders(): AssistProvider[] {
             kind?.key === "login" ? provider.connected : kind?.key === "required" ? keys.has(provider.id) : true,
           inputPricePerMillion: provider.inputPrice,
           outputPricePerMillion: provider.outputPrice,
-          price: priceOf(provider.kind, provider.model ?? kind?.model, provider.inputPrice, provider.outputPrice),
+          pricePerRequest: provider.requestPrice,
+          price: priceOf(
+            provider.kind,
+            provider.model ?? kind?.model,
+            provider.inputPrice,
+            provider.outputPrice,
+            provider.requestPrice,
+          ),
         };
       })
     : [];
@@ -420,6 +478,9 @@ const usage: (UsageRow & { costUsd: number | null })[] = [];
         const requests = Math.max(1, Math.round(random() * (feature === "autoLabels" ? 30 : 8)));
         const inputTokens = requests * Math.round(800 + random() * 2400);
         const outputTokens = requests * Math.round(60 + random() * 400);
+        // gpt-5-nano on the team key thinks first; the first days are from before thinking was kept.
+        const reasoningTokens = providerId === 2 && back <= 24 ? requests * Math.round(200 + random() * 900) : 0;
+        const cachedTokens = providerId === 2 ? Math.round(inputTokens * random() * 0.3) : 0;
         // The Ollama is free, the team key costs what gpt-5-nano costs, the own Mistral mistral-medium;
         // the first days are from before costs were kept.
         const perMillion = providerId === 1 ? [0, 0] : providerId === 2 ? [0.05, 0.4] : [0.4, 2];
@@ -432,7 +493,11 @@ const usage: (UsageRow & { costUsd: number | null })[] = [];
           requests,
           inputTokens,
           outputTokens,
-          costUsd: back > 24 ? null : (inputTokens * perMillion[0]! + outputTokens * perMillion[1]!) / 1e6,
+          reasoningTokens,
+          cachedTokens,
+          calls: requests,
+          costUsd:
+            back > 24 ? null : (inputTokens * perMillion[0]! + (outputTokens + reasoningTokens) * perMillion[1]!) / 1e6,
         });
       }
     }
@@ -449,7 +514,7 @@ function today(currency = "EUR"): TodayUsage[] {
         providerId: provider.id,
         providerName: provider.name,
         requests: rows.reduce((sum, row) => sum + row.requests, 0),
-        tokens: rows.reduce((sum, row) => sum + row.inputTokens + row.outputTokens, 0),
+        tokens: rows.reduce((sum, row) => sum + row.inputTokens + row.outputTokens + (row.reasoningTokens ?? 0), 0),
         requestsPerDay: provider.quota?.requestsPerDay ?? null,
         tokensPerDay: provider.quota?.tokensPerDay ?? null,
         cost: costShown(provider.id)
@@ -527,6 +592,7 @@ interface ProviderInput {
   tokensPerDay?: number | null;
   inputPricePerMillion?: number | null;
   outputPricePerMillion?: number | null;
+  pricePerRequest?: number | null;
   showCostToUsers?: boolean;
 }
 
@@ -552,6 +618,10 @@ function inputError(input: ProviderInput, privateOk: boolean): [number, unknown]
     if (price !== undefined && price !== null && !(price >= 0 && price <= 100_000)) {
       return problem(409, "badPrice");
     }
+  }
+  const perRequest = input.pricePerRequest;
+  if (perRequest !== undefined && perRequest !== null && !(perRequest >= 0 && perRequest <= 100)) {
+    return problem(409, "badPrice");
   }
   return urlError(input.baseUrl, privateOk);
 }
@@ -646,6 +716,7 @@ export const assistMockRoutes: [string, RegExp, Handler][] = [
         tokensPerDay: input.tokensPerDay ?? null,
         inputPricePerMillion: input.inputPricePerMillion ?? null,
         outputPricePerMillion: input.outputPricePerMillion ?? null,
+        pricePerRequest: input.pricePerRequest ?? null,
         showCostToUsers: input.showCostToUsers ?? false,
         price: null,
         createdAt: now(),
@@ -744,6 +815,7 @@ export const assistMockRoutes: [string, RegExp, Handler][] = [
         expiresAt: 0,
         inputPrice: input.inputPricePerMillion ?? null,
         outputPrice: input.outputPricePerMillion ?? null,
+        requestPrice: input.pricePerRequest ?? null,
       });
       return [201, accountProvider(id)];
     },
@@ -767,6 +839,7 @@ export const assistMockRoutes: [string, RegExp, Handler][] = [
       if (input.fastModel !== undefined) provider.fastModel = input.fastModel;
       if (input.inputPricePerMillion !== undefined) provider.inputPrice = input.inputPricePerMillion;
       if (input.outputPricePerMillion !== undefined) provider.outputPrice = input.outputPricePerMillion;
+      if (input.pricePerRequest !== undefined) provider.requestPrice = input.pricePerRequest;
       return [200, accountProvider(provider.id)];
     },
   ],

@@ -29,12 +29,15 @@ pub use access::{
     TodayUsage,
 };
 pub use features::{
-    AuthenticationSignals, ComposeArgs, ComposeResult, Estimate, EstimateArgs, EventsArgs, EventsResult,
-    ExtractedEvent, LabelPick, Participant, SenderSignals, SpamArgs, SpamResult, SpamSignals, StreamEvent,
-    SummarizeArgs, SummaryResult, Usage,
+    AuthenticationSignals, Calibration, ComposeArgs, ComposeResult, Estimate, EstimateArgs, EstimateCall, EstimateCost,
+    EstimatePlan, EventsArgs, EventsResult, ExtractedEvent, LabelPick, MIN_CALIBRATION_SAMPLES, Participant,
+    SenderSignals, SpamArgs, SpamResult, SpamSignals, StreamEvent, SummarizeArgs, SummaryResult, Usage, plan_estimate,
+    thinks,
 };
 pub use kinds::{KINDS, KindInfo};
-pub use prices::{Cost, Price, PriceSource, PriceSources, PriceTable, Prices};
+pub use prices::{
+    Cost, CostParts, Metered, Price, PriceSource, PriceSources, PriceTable, PriceTier, Prices, Rates, Tier,
+};
 
 /// Longest instruction a person may give.
 pub const MAX_INSTRUCTION_CHARS: usize = 2000;

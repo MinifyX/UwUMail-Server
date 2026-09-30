@@ -3934,7 +3934,8 @@
       "costNote": "Costs are estimates from public price lists and may differ from the provider's bill.",
       "currency": "Currency",
       "currencyEur": "Euro (€)",
-      "currencyUsd": "US dollar ($)"
+      "currencyUsd": "US dollar ($)",
+      "reasoningTokens": "Thinking tokens"
     },
     "provider": {
       "model": "Model {{model}}",
@@ -4101,7 +4102,8 @@
         "peopleRequired": "Add at least one person.",
         "featuresRequired": "Pick at least one feature.",
         "limitInvalid": "A whole number above zero, or empty.",
-        "priceInvalid": "Enter a price of 0 or more, like 0.25."
+        "priceInvalid": "Enter a price of 0 or more, like 0.25.",
+        "requestPriceInvalid": "Enter a price from 0 to 100, like 0.005."
       },
       "price": "Price",
       "priceIntro": "US dollars per million tokens, for showing costs. Empty takes the price from public price lists.",
@@ -4111,7 +4113,8 @@
       "outputPrice": "Output, per million tokens",
       "priceAutomatic": "From the price lists",
       "showCost": "Show costs to the people using it",
-      "showCostHint": "They then see what their requests cost. You always see it."
+      "showCostHint": "They then see what their requests cost. You always see it.",
+      "requestPrice": "Per request, US dollars"
     },
     "chatgpt": {
       "title": "ChatGPT login",
@@ -4131,7 +4134,11 @@
       "free": "Free",
       "perMillion": "{{input}} in, {{output}} out per million tokens",
       "manual": "set by hand",
-      "unknown": "Price unknown"
+      "unknown": "Price unknown",
+      "reasoning": "thinking {{price}}",
+      "perRequest": "{{price}} per request",
+      "tier": "above {{tokens}} tokens: {{input}} in, {{output}} out",
+      "thinks": "thinks before answering"
     }
   },
   "microsoft": {
