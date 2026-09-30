@@ -4,6 +4,7 @@ use mail_parser::{Address, HeaderValue, Message, MessageParser, MimeHeaders};
 
 use crate::address::EmailAddress;
 use crate::mime_limits::{self, MimeFault};
+use crate::tnef;
 
 const PREVIEW_CHARS: usize = 256;
 const MAX_INDEXED_BODY_BYTES: usize = 512 * 1024;
@@ -50,6 +51,20 @@ pub fn read(raw: &[u8]) -> Result<EmailMeta, MimeFault> {
         .collect::<Vec<_>>()
         .join(" ");
 
+    // winmail.dat: its text and file names count as the mail's own (see `tnef`).
+    let tnef = if tnef::mentioned(raw) { tnef::decode(&message) } else { Vec::new() };
+    let mut preview = preview(&message);
+    if preview.is_empty()
+        && let Some(text) = tnef.iter().find_map(|d| d.message.body.text.as_deref())
+    {
+        preview = collapse(text);
+    }
+    let own_attachments = message.attachments().filter(|part| tnef::stream(part).is_none()).count();
+    let tnef_parts = message.attachments().filter(|part| tnef::stream(part).is_some()).count();
+    let has_attachment = own_attachments > 0
+        || tnef_parts > tnef.len()
+        || tnef.iter().any(|d| d.message.attachments.iter().any(|a| !a.inline));
+
     Ok(EmailMeta {
         message_id: message.message_id().map(clean_id).filter(|id| !id.is_empty()),
         in_reply_to: id_list(message.in_reply_to()),
@@ -58,9 +73,9 @@ pub fn read(raw: &[u8]) -> Result<EmailMeta, MimeFault> {
         sender: addresses(message.sender()),
         reply_to: addresses(message.reply_to()),
         sent_at: message.date().map(|d| d.to_timestamp()),
-        preview: preview(&message),
-        has_attachment: message.attachment_count() > 0,
-        search_body: search_body(&message),
+        preview,
+        has_attachment,
+        search_body: search_body(&message, &tnef),
         search_addresses,
         from,
         to,
@@ -101,26 +116,46 @@ fn clean_id(id: &str) -> String {
 
 fn preview(message: &Message<'_>) -> String {
     let text = message.body_preview(PREVIEW_CHARS * 2).unwrap_or_default();
-    let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    collapse(&text)
+}
+
+/// Whitespace collapsed, Safe Links unwrapped, cut to [`PREVIEW_CHARS`].
+fn collapse(text: &str) -> String {
+    let start: String = text.chars().take(PREVIEW_CHARS * 4).collect();
+    let unwrapped = tnef::decoder::safelinks::unwrap_in_text(&start);
+    let collapsed = unwrapped.split_whitespace().collect::<Vec<_>>().join(" ");
     collapsed.chars().take(PREVIEW_CHARS).collect()
 }
 
-fn search_body(message: &Message<'_>) -> String {
+fn search_body(message: &Message<'_>, tnef: &[tnef::Decoded]) -> String {
     let mut body = String::new();
     for index in 0..message.text_body_count() {
         if let Some(text) = message.body_text(index) {
-            body.push_str(&text);
+            body.push_str(&tnef::decoder::safelinks::unwrap_in_text(&text));
             body.push('\n');
         }
         if body.len() > MAX_INDEXED_BODY_BYTES {
             break;
         }
     }
+    for decoded in tnef {
+        if body.len() > MAX_INDEXED_BODY_BYTES {
+            break;
+        }
+        if let Some(text) = &decoded.message.body.text {
+            body.push_str(&tnef::decoder::safelinks::unwrap_in_text(text));
+            body.push('\n');
+        }
+    }
     for attachment in message.attachments() {
-        if let Some(name) = attachment.attachment_name() {
+        if let Some(name) = attachment.attachment_name().filter(|_| tnef::stream(attachment).is_none()) {
             body.push_str(name);
             body.push('\n');
         }
+    }
+    for name in tnef.iter().flat_map(tnef::Decoded::names) {
+        body.push_str(&name);
+        body.push('\n');
     }
     if body.len() > MAX_INDEXED_BODY_BYTES {
         let mut cut = MAX_INDEXED_BODY_BYTES;
@@ -180,6 +215,40 @@ mod tests {
             .join()
             .expect("parsing must not panic");
         assert_eq!(meta.unwrap_err(), MimeFault::TooDeep);
+    }
+
+    #[test]
+    fn winmail_dat_counts_as_the_mail() {
+        use uwumail_tnef::builder::{Props, Tnef, compressed_rtf};
+        use uwumail_tnef::mapi;
+        let rtf = br"{\rtf1\ansi\fromhtml1 {\*\htmltag64 <p>}Die Kisten stehen bereit, siehe https://nam12.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.org%2Fkisten&data=1{\*\htmltag72 </p>}}";
+        let mut tnef = Tnef::new();
+        tnef.message_class("IPM.Note");
+        tnef.message_props(&Props::new().binary(mapi::PR_RTF_COMPRESSED, &compressed_rtf(rtf)));
+        tnef.attachment(
+            "PACKLI~1.XLS",
+            b"cells",
+            &Props::new().unicode(mapi::PR_ATTACH_LONG_FILENAME, "Packliste Küche.xlsx"),
+        );
+        let raw = uwumail_tnef::builder::mime_with_winmail(
+            "From: Mini <mini@example.com>\r\nTo: nyu@example.com\r\nSubject: Umzug\r\n",
+            Some(""),
+            &tnef.build(),
+        );
+        let meta = read(&raw).unwrap();
+        assert_eq!(meta.preview, "Die Kisten stehen bereit, siehe https://example.org/kisten");
+        assert!(meta.has_attachment);
+        assert!(meta.search_body.contains("Packliste Küche.xlsx"), "{}", meta.search_body);
+        assert!(meta.search_body.contains("https://example.org/kisten"));
+        assert!(!meta.search_body.contains("winmail.dat"));
+
+        // Only a body in the TNEF: no attachment.
+        let mut tnef = Tnef::new();
+        tnef.message_props(&Props::new().unicode(mapi::PR_BODY, "Nur Text"));
+        let raw = uwumail_tnef::builder::mime_with_winmail("Subject: x\r\n", None, &tnef.build());
+        let meta = read(&raw).unwrap();
+        assert!(!meta.has_attachment);
+        assert_eq!(meta.preview, "Nur Text");
     }
 
     #[test]

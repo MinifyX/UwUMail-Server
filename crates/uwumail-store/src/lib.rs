@@ -72,6 +72,7 @@ mod spam_log;
 mod stats;
 mod suggestions;
 mod tls_rpt;
+pub mod tnef;
 mod user_settings;
 mod web;
 mod word_lists;

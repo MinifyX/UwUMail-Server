@@ -345,3 +345,42 @@ pub fn recurrence(p: &Pattern) -> Vec<u8> {
     out.extend(0u32.to_le_bytes());
     out
 }
+
+fn base64(data: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for (n, chunk) in data.chunks(3).enumerate() {
+        if n > 0 && n % 19 == 0 {
+            out.push_str("\r\n");
+        }
+        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let v = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(char::from(ALPHABET[(v >> (18 - 6 * i) & 0x3F) as usize]));
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+/// A MIME mail the way Outlook sends TNEF: `headers` (From, To, Subject, … each ending in CRLF),
+/// a `text/plain` part when `text` is given, and the TNEF stream as `winmail.dat`.
+pub fn mime_with_winmail(headers: &str, text: Option<&str>, tnef: &[u8]) -> Vec<u8> {
+    let mut mail = String::from(headers);
+    mail.push_str("MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"tnef-boundary\"\r\n\r\n");
+    if let Some(text) = text {
+        mail.push_str("--tnef-boundary\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n");
+        mail.push_str(text);
+        mail.push_str("\r\n");
+    }
+    mail.push_str(
+        "--tnef-boundary\r\nContent-Type: application/ms-tnef; name=\"winmail.dat\"\r\n\
+         Content-Transfer-Encoding: base64\r\nContent-Disposition: attachment; filename=\"winmail.dat\"\r\n\r\n",
+    );
+    mail.push_str(&base64(tnef));
+    mail.push_str("\r\n--tnef-boundary--\r\n");
+    mail.into_bytes()
+}

@@ -4794,6 +4794,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "uwumail-tnef",
 ]
 
 [[package]]
