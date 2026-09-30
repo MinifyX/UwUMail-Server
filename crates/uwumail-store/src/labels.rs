@@ -45,8 +45,17 @@ fn from_address(conn: &Connection, email_id: i64) -> Result<String> {
         .to_lowercase())
 }
 
+/// Hand-labelings of one account waiting to be learned, at most: more are not queued until the
+/// worker caught up (security audit 0.21.0 LABELS-M1).
+pub const MAX_TRAINING_PER_ACCOUNT: i64 = 500;
+/// Senders learned per label, at most; beyond, the least counted gives way.
+pub const MAX_SENDERS_PER_LABEL: i64 = 5_000;
+/// Longer From addresses are not learned (RFC 5321 allows 256 characters for a path).
+const MAX_SENDER_CHARS: usize = 320;
+
 /// A person changed an email's keywords by hand: for every label keyword put on or taken off, the
-/// sender is counted or forgotten for the label, and the change is queued for the classifier.
+/// sender is counted or forgotten for the label (when it learns senders), and the change is queued
+/// for the classifier (when it has one). Nothing is learned while labels without a model are off.
 /// Answers whether anything was queued. Runs inside the transaction of the change.
 pub(crate) fn learn_by_hand(
     tx: &Transaction<'_>,
@@ -67,36 +76,93 @@ pub(crate) fn learn_by_hand(
     let keywords = serde_json::to_string(&changed.iter().map(|(keyword, _)| keyword).collect::<Vec<_>>())
         .unwrap_or_else(|_| "[]".into());
     let mut stmt = tx.prepare_cached(
-        "SELECT id, keyword FROM assist_labels WHERE account_id = ?1 AND keyword IN (SELECT value FROM json_each(?2))",
+        "SELECT id, keyword, learn_senders, classifier FROM assist_labels
+         WHERE account_id = ?1 AND keyword IN (SELECT value FROM json_each(?2))
+           AND NOT EXISTS (SELECT 1 FROM assist_prefs p WHERE p.account_id = ?1 AND p.non_ai_labels = 0)",
     )?;
-    let labels: Vec<(i64, String)> = stmt
-        .query_map(params![account_id, keywords], |row| Ok((row.get(0)?, row.get(1)?)))?
+    let labels: Vec<(i64, String, bool, bool)> = stmt
+        .query_map(params![account_id, keywords], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))?
         .collect::<Result<_, _>>()?;
     drop(stmt);
     if labels.is_empty() {
         return Ok(false);
     }
     let from = from_address(tx, email_id)?;
+    let from = if from.chars().count() > MAX_SENDER_CHARS { String::new() } else { from };
     let now = now();
-    for (label_id, keyword) in labels {
+    let mut queued = false;
+    for (label_id, keyword, learn_senders, classifier) in labels {
         let positive = changed.iter().any(|(changed, on)| **changed == keyword && *on);
-        if !from.is_empty() {
+        if learn_senders && !from.is_empty() {
             if positive {
-                tx.execute(
-                    "INSERT INTO label_senders (account_id, label_id, address, count) VALUES (?1, ?2, ?3, 1)
-                     ON CONFLICT (label_id, address) DO UPDATE SET count = count + 1",
-                    params![account_id, label_id, from],
-                )?;
+                learn_sender(tx, account_id, label_id, &from)?;
             } else {
                 tx.execute("DELETE FROM label_senders WHERE label_id = ?1 AND address = ?2", params![label_id, from])?;
             }
         }
-        tx.execute(
-            "INSERT INTO label_training (account_id, email_id, label_id, positive, queued_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        if !classifier {
+            continue;
+        }
+        // Once per email and label: the last change wins. A full queue takes new ones again once
+        // the worker caught up.
+        let updated = tx.execute(
+            "UPDATE label_training SET positive = ?4, queued_at = ?5
+             WHERE account_id = ?1 AND email_id = ?2 AND label_id = ?3",
             params![account_id, email_id, label_id, positive, now],
         )?;
+        if updated == 0 {
+            let waiting: i64 =
+                tx.query_row("SELECT COUNT(*) FROM label_training WHERE account_id = ?1", [account_id], |row| {
+                    row.get(0)
+                })?;
+            if waiting >= MAX_TRAINING_PER_ACCOUNT {
+                continue;
+            }
+            tx.execute(
+                "INSERT INTO label_training (account_id, email_id, label_id, positive, queued_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![account_id, email_id, label_id, positive, now],
+            )?;
+        }
+        queued = true;
     }
-    Ok(true)
+    Ok(queued)
+}
+
+/// Whether labeling by hand by someone an account is shared with teaches its labels: only in a
+/// shared mailbox, whose labels belong to all its members. Elsewhere the owner's labels learn from
+/// the owner alone.
+pub(crate) fn teaches_in_share(conn: &Connection, account_id: i64) -> rusqlite::Result<bool> {
+    Ok(conn
+        .query_row("SELECT shared_mailbox FROM accounts WHERE id = ?1", [account_id], |row| row.get(0))
+        .optional()?
+        .unwrap_or(false))
+}
+
+/// Counts one more hand-labeling of `from` for a label; a new sender beyond
+/// [`MAX_SENDERS_PER_LABEL`] takes the place of the least counted one.
+fn learn_sender(tx: &Transaction<'_>, account_id: i64, label_id: i64, from: &str) -> Result<()> {
+    let known = tx.execute(
+        "UPDATE label_senders SET count = count + 1 WHERE label_id = ?1 AND address = ?2",
+        params![label_id, from],
+    )?;
+    if known > 0 {
+        return Ok(());
+    }
+    let senders: i64 =
+        tx.query_row("SELECT COUNT(*) FROM label_senders WHERE label_id = ?1", [label_id], |row| row.get(0))?;
+    if senders >= MAX_SENDERS_PER_LABEL {
+        tx.execute(
+            "DELETE FROM label_senders WHERE label_id = ?1 AND address IN (
+                 SELECT address FROM label_senders WHERE label_id = ?1 ORDER BY count, address LIMIT ?2)",
+            params![label_id, senders - MAX_SENDERS_PER_LABEL + 1],
+        )?;
+    }
+    tx.execute(
+        "INSERT INTO label_senders (account_id, label_id, address, count) VALUES (?1, ?2, ?3, 1)",
+        params![account_id, label_id, from],
+    )?;
+    Ok(())
 }
 
 /// Adds `delta` to the counts of `tokens` for the account (`label` `None`) or a label.
@@ -110,7 +176,15 @@ fn count_tokens(tx: &Transaction<'_>, account_id: i64, label: Option<i64>, token
             for token in tokens {
                 stmt.execute(params![account_id, token, delta])?;
             }
-            tx.execute("DELETE FROM label_tokens WHERE account_id = ?1 AND examples <= 0", [account_id])?;
+            // Only the tokens just counted down can have reached zero: no walk over all of them.
+            if delta < 0 {
+                let mut stmt = tx.prepare_cached(
+                    "DELETE FROM label_tokens WHERE account_id = ?1 AND token = ?2 AND examples <= 0",
+                )?;
+                for token in tokens {
+                    stmt.execute(params![account_id, token])?;
+                }
+            }
         }
         Some(label_id) => {
             let mut stmt = tx.prepare_cached(
@@ -120,7 +194,14 @@ fn count_tokens(tx: &Transaction<'_>, account_id: i64, label: Option<i64>, token
             for token in tokens {
                 stmt.execute(params![label_id, token, delta])?;
             }
-            tx.execute("DELETE FROM label_positive_tokens WHERE label_id = ?1 AND examples <= 0", [label_id])?;
+            if delta < 0 {
+                let mut stmt = tx.prepare_cached(
+                    "DELETE FROM label_positive_tokens WHERE label_id = ?1 AND token = ?2 AND examples <= 0",
+                )?;
+                for token in tokens {
+                    stmt.execute(params![label_id, token])?;
+                }
+            }
         }
     }
     Ok(())
@@ -173,6 +254,40 @@ fn forget_oldest(tx: &Transaction<'_>, account_id: i64) -> Result<()> {
         tx.execute("DELETE FROM label_examples WHERE id = ?1", [id])?;
     }
     Ok(())
+}
+
+/// Accounts whose label counts are kept at once; more empty the cache.
+const MAX_CACHED_COUNTS: usize = 10_000;
+
+/// Label counts cached per account, with the account's modseq they were read at.
+pub(crate) type LabelCountCache = std::sync::Mutex<HashMap<i64, (i64, HashMap<i64, LabelCounts>)>>;
+
+/// The counts of an account's labels (`?1`), see [`count_labels`]. `+k.keyword` keeps the keyword
+/// index (across all accounts) out: the account's folders lead, and each of their mails is looked
+/// up by its own keywords.
+const COUNT_SQL: &str =
+        "WITH labels AS (SELECT id, keyword FROM assist_labels WHERE account_id = ?1),
+         shown AS (
+             SELECT DISTINCT k.keyword, em.email_id
+             FROM mailboxes m
+             JOIN email_mailboxes em ON em.mailbox_id = m.id
+             JOIN email_keywords k ON k.email_id = em.email_id AND +k.keyword IN (SELECT keyword FROM labels)
+             WHERE m.account_id = ?1 AND (m.role IS NULL OR m.role NOT IN ('junk', 'trash'))),
+         counted AS (
+             SELECT s.keyword, COUNT(*) AS total,
+                    SUM(NOT EXISTS (SELECT 1 FROM email_keywords x WHERE x.email_id = s.email_id AND x.keyword = '$seen'))
+                        AS unread
+             FROM shown s GROUP BY s.keyword)
+         SELECT l.id, COALESCE(c.total, 0), COALESCE(c.unread, 0),
+                (SELECT COUNT(*) FROM label_example_labels x WHERE x.label_id = l.id)
+         FROM labels l LEFT JOIN counted c ON c.keyword = l.keyword";
+
+fn count_labels(conn: &Connection, account_id: i64) -> Result<HashMap<i64, LabelCounts>> {
+    let mut stmt = conn.prepare_cached(COUNT_SQL)?;
+    let rows = stmt.query_map([account_id], |row| {
+        Ok((row.get(0)?, LabelCounts { total: row.get(1)?, unread: row.get(2)?, examples: row.get(3)? }))
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
 }
 
 impl Store {
@@ -274,11 +389,14 @@ impl Store {
         .await
     }
 
-    /// Hand-labelings waiting to be learned, oldest first.
+    /// Hand-labelings waiting to be learned, oldest first, taking turns between accounts: one
+    /// account's many changes hold up nobody else's (security audit 0.21.0 LABELS-M1).
     pub async fn label_training(&self) -> Result<Vec<LabelTraining>> {
         self.read(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT id, account_id, email_id, label_id, positive FROM label_training ORDER BY id LIMIT ?1",
+                "SELECT id, account_id, email_id, label_id, positive FROM (
+                     SELECT *, ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY id) AS turn FROM label_training)
+                 ORDER BY turn, id LIMIT ?1",
             )?;
             let rows = stmt.query_map([TRAINING_BATCH as i64], |row| {
                 Ok(LabelTraining {
@@ -294,9 +412,11 @@ impl Store {
         .await
     }
 
-    pub async fn finish_label_training(&self, id: i64) -> Result<()> {
+    /// Done with a hand-labeling learned as `positive`. Changed again in the meantime, it stays to
+    /// be learned the other way.
+    pub async fn finish_label_training(&self, id: i64, positive: bool) -> Result<()> {
         self.write(move |tx| {
-            tx.execute("DELETE FROM label_training WHERE id = ?1", [id])?;
+            tx.execute("DELETE FROM label_training WHERE id = ?1 AND positive = ?2", params![id, positive])?;
             Ok(())
         })
         .await
@@ -403,29 +523,30 @@ impl Store {
 
     /// Per label: its mail (not only in Junk or the Trash), how much of it is unread, and the
     /// classifier's examples with it.
+    ///
+    /// Read from the account's own folders, never through the keyword across all accounts: a label
+    /// named like a keyword others use a lot (or someone else's mail with it) costs this account
+    /// nothing (security audit 0.21.0 LABELS-M2). Kept until the account's next change, since every
+    /// change pushes the labels' state and each app asks again.
     pub async fn label_counts(&self, account_id: i64) -> Result<HashMap<i64, LabelCounts>> {
+        let cache = self.inner.label_counts.clone();
         self.read(move |conn| {
-            let mut stmt = conn.prepare(
-                "WITH shown AS (
-                     SELECT k.keyword, e.id,
-                            NOT EXISTS (SELECT 1 FROM email_keywords s WHERE s.email_id = e.id AND s.keyword = '$seen')
-                                AS unread
-                     FROM assist_labels l
-                     JOIN email_keywords k ON k.keyword = l.keyword
-                     JOIN emails e ON e.id = k.email_id AND e.account_id = l.account_id
-                     WHERE l.account_id = ?1
-                       AND EXISTS (SELECT 1 FROM email_mailboxes em JOIN mailboxes m ON m.id = em.mailbox_id
-                                   WHERE em.email_id = e.id AND (m.role IS NULL OR m.role NOT IN ('junk', 'trash'))))
-                 SELECT l.id,
-                        (SELECT COUNT(*) FROM shown WHERE shown.keyword = l.keyword),
-                        (SELECT COUNT(*) FROM shown WHERE shown.keyword = l.keyword AND shown.unread),
-                        (SELECT COUNT(*) FROM label_example_labels x WHERE x.label_id = l.id)
-                 FROM assist_labels l WHERE l.account_id = ?1",
-            )?;
-            let rows = stmt.query_map([account_id], |row| {
-                Ok((row.get(0)?, LabelCounts { total: row.get(1)?, unread: row.get(2)?, examples: row.get(3)? }))
-            })?;
-            Ok(rows.collect::<Result<_, _>>()?)
+            let modseq: i64 = conn
+                .query_row("SELECT modseq FROM accounts WHERE id = ?1", [account_id], |row| row.get(0))
+                .optional()?
+                .unwrap_or(0);
+            if let Some((seen, counts)) = cache.lock().unwrap_or_else(|e| e.into_inner()).get(&account_id)
+                && *seen == modseq
+            {
+                return Ok(counts.clone());
+            }
+            let counts = count_labels(conn, account_id)?;
+            let mut cache = cache.lock().unwrap_or_else(|e| e.into_inner());
+            if cache.len() >= MAX_CACHED_COUNTS {
+                cache.clear();
+            }
+            cache.insert(account_id, (modseq, counts.clone()));
+            Ok(counts)
         })
         .await
     }
@@ -458,5 +579,28 @@ impl Store {
             )?)
         })
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::store;
+
+    /// The counts start from the account's own folders, never from the keyword index that holds
+    /// every account's mail (security audit 0.21.0 LABELS-M2).
+    #[tokio::test]
+    async fn label_counts_read_only_the_accounts_own_mail() {
+        let (store, _dir) = store().await;
+        let plan: Vec<String> = store
+            .read(|conn| {
+                let mut stmt = conn.prepare(&format!("EXPLAIN QUERY PLAN {COUNT_SQL}"))?;
+                let rows = stmt.query_map([1], |row| row.get::<_, String>(3))?;
+                Ok(rows.collect::<Result<_, _>>()?)
+            })
+            .await
+            .unwrap();
+        assert!(!plan.iter().any(|step| step.contains("email_keywords_keyword")), "{plan:#?}");
+        assert!(plan.iter().any(|step| step.contains("SCAN m") || step.contains("SEARCH m")), "{plan:#?}");
     }
 }

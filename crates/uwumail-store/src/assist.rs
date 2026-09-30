@@ -445,7 +445,33 @@ pub fn utc_day(secs: i64) -> String {
 
 /// The keyword for a label named `name`: lower-case ASCII letters, digits and dashes, umlauts
 /// written out. Empty when nothing of the name is left.
+/// Keywords other mail programs and servers read as more than a word (Thunderbird's and some
+/// servers' junk marks without `$`, and the names of system flags without their `\` or `$`): a
+/// label named like one gets `label-<keyword>` instead, so labelling a mail never marks it junk,
+/// read or deleted anywhere (security audit 0.21.0; the same list as the UwUMail app's).
+const RESERVED_KEYWORDS: [&str; 14] = [
+    "junk",
+    "nonjunk",
+    "notjunk",
+    "phishing",
+    "seen",
+    "answered",
+    "flagged",
+    "deleted",
+    "draft",
+    "recent",
+    "forwarded",
+    "mdnsent",
+    "submitpending",
+    "submitted",
+];
+
 pub fn label_keyword(name: &str) -> String {
+    let keyword = keyword_of_name(name);
+    if RESERVED_KEYWORDS.contains(&keyword.as_str()) { format!("label-{keyword}") } else { keyword }
+}
+
+fn keyword_of_name(name: &str) -> String {
     let mut out = String::new();
     for c in name.chars().flat_map(char::to_lowercase) {
         let piece: &str = match c {
@@ -1423,11 +1449,13 @@ impl Store {
         .await
     }
 
-    /// Forgets usage older than `before_day` and label jobs queued before `queued_before`.
+    /// Forgets usage older than `before_day`, and label jobs and hand-labelings still to learn
+    /// queued before `queued_before`.
     pub async fn prune_assist(&self, before_day: String, queued_before: i64) -> Result<usize> {
         self.write(move |tx| {
             let mut removed = tx.execute("DELETE FROM assist_usage WHERE day < ?1", [before_day])?;
             removed += tx.execute("DELETE FROM assist_label_queue WHERE queued_at < ?1", [queued_before])?;
+            removed += tx.execute("DELETE FROM label_training WHERE queued_at < ?1", [queued_before])?;
             Ok(removed)
         })
         .await
@@ -1609,6 +1637,10 @@ mod tests {
         assert_eq!(label_keyword("Persönlich"), "persoenlich");
         assert_eq!(label_keyword("  Größe!! "), "groesse");
         assert_eq!(label_keyword("旅行"), "");
+        assert_eq!(label_keyword("Junk"), "label-junk", "no mark other programs act on");
+        assert_eq!(label_keyword("Non Junk"), "non-junk");
+        assert_eq!(label_keyword("NonJunk"), "label-nonjunk");
+        assert_eq!(label_keyword("Seen"), "label-seen");
         assert!(label_keyword(&"sehr-lang ".repeat(20)).len() <= 40);
         assert!(crate::mutate::valid_keyword(&label_keyword("Reisen (privat)")));
     }

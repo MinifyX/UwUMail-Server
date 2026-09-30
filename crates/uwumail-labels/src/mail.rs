@@ -3,6 +3,14 @@
 /// Characters of the text that are looked at, at most.
 pub const MAX_TEXT_CHARS: usize = 100_000;
 
+/// Characters of the subject, the From address, a header value and an attachment name that are
+/// looked at, at most: a line of mail is at most 998 characters, and a longer one written on
+/// purpose must not cost more than the text does (security audit 0.21.0 LABELS-H1).
+pub const MAX_FIELD_CHARS: usize = 1_000;
+
+/// Attachments that are looked at, at most.
+pub const MAX_ATTACHMENTS: usize = 100;
+
 /// The headers the detectors read; others are not kept.
 pub const HEADERS: [&str; 5] = ["list-unsubscribe", "list-unsubscribe-post", "list-id", "list-post", "precedence"];
 
@@ -18,6 +26,10 @@ pub struct Attachment {
 pub struct Mail {
     /// The first From address, lower case.
     pub from: String,
+    /// Whether the From address says who really sent the mail; only then do learned senders give
+    /// it a label. [`Mail::new`] assumes so; a caller that knows better (the server checks SPF,
+    /// DKIM and DMARC at delivery) sets it to `false` when nothing vouches for the address.
+    pub from_trusted: bool,
     pub subject: String,
     /// The text body, or the HTML body turned into text, at most [`MAX_TEXT_CHARS`].
     pub text: String,
@@ -29,9 +41,18 @@ pub struct Mail {
     pub headers: Vec<(String, String)>,
 }
 
+/// `text` up to its first `max` characters.
+fn cut(text: &str, max: usize) -> String {
+    match text.char_indices().nth(max) {
+        Some((end, _)) => text[..end].to_owned(),
+        None => text.to_owned(),
+    }
+}
+
 impl Mail {
-    /// A mail from its parts; the text is cut to [`MAX_TEXT_CHARS`], headers not in [`HEADERS`]
-    /// are left out, and `calendar` also holds for an `.ics` attachment.
+    /// A mail from its parts; the text is cut to [`MAX_TEXT_CHARS`], the subject, From, header
+    /// values and attachment names to [`MAX_FIELD_CHARS`], headers not in [`HEADERS`] are left out,
+    /// and `calendar` also holds for an `.ics` attachment.
     pub fn new(
         from: &str,
         subject: &str,
@@ -40,10 +61,15 @@ impl Mail {
         calendar: bool,
         headers: Vec<(String, String)>,
     ) -> Mail {
-        let text = match text.char_indices().nth(MAX_TEXT_CHARS) {
-            Some((cut, _)) => text[..cut].to_owned(),
-            None => text.to_owned(),
-        };
+        let text = cut(text, MAX_TEXT_CHARS);
+        let attachments: Vec<Attachment> = attachments
+            .into_iter()
+            .take(MAX_ATTACHMENTS)
+            .map(|a| Attachment {
+                name: cut(&a.name, MAX_FIELD_CHARS),
+                content_type: cut(&a.content_type, MAX_FIELD_CHARS),
+            })
+            .collect();
         let calendar = calendar
             || attachments.iter().any(|a| {
                 a.name.to_lowercase().ends_with(".ics")
@@ -53,10 +79,12 @@ impl Mail {
             .into_iter()
             .map(|(name, value)| (name.to_ascii_lowercase(), value))
             .filter(|(name, _)| HEADERS.contains(&name.as_str()))
+            .map(|(name, value)| (name, cut(&value, MAX_FIELD_CHARS)))
             .collect();
         Mail {
-            from: from.trim().to_lowercase(),
-            subject: subject.to_owned(),
+            from: cut(from.trim(), MAX_FIELD_CHARS).to_lowercase(),
+            from_trusted: true,
+            subject: cut(subject, MAX_FIELD_CHARS),
             text,
             has_attachment: !attachments.is_empty(),
             attachments,
@@ -95,7 +123,7 @@ impl Mail {
         };
         let attachments = message
             .attachments()
-            .take(100)
+            .take(MAX_ATTACHMENTS)
             .map(|part| Attachment {
                 name: part.attachment_name().unwrap_or_default().to_owned(),
                 content_type: content_type(part),

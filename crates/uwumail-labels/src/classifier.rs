@@ -112,7 +112,9 @@ impl Model {
                 continue;
             }
             let Some(&(p, n)) = self.counts.get(token) else { continue };
-            if p + n < MIN_TOKEN_EXAMPLES {
+            // Counts come from a store: a damaged one must neither overflow nor turn into NaN.
+            let (p, n) = (p.max(0), n.max(0));
+            if p.saturating_add(n) < MIN_TOKEN_EXAMPLES {
                 continue;
             }
             let weight = ((p as f64 + 1.0) / (pos + 2.0)).ln() - ((n as f64 + 1.0) / (neg + 2.0)).ln();

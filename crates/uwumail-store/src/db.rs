@@ -72,6 +72,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0063_assist_cost_details.sql"),
     include_str!("migrations/0064_assist_calibration.sql"),
     include_str!("migrations/0065_labels.sql"),
+    include_str!("migrations/0066_label_limits.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 

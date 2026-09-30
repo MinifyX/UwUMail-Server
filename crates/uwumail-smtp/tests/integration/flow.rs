@@ -1723,7 +1723,9 @@ if anyof (header :is "X-UwUMail-Label" "newsletter", hasflag "newsletter") {
     assert_eq!(keywords, ["$flagged", "newsletter"]);
     assert!(folder(&a, "mini@a.test", &["Faked"]).await.is_none(), "the sender's own header is no label");
     let raw = a.raw(&filed[0]).await;
-    assert!(raw.contains("X-UwUMail-Label: fake") && !raw.contains("X-UwUMail-Label: newsletter"), "{raw}");
+    // Neither the sender's header nor the ones the script saw are kept (security audit 0.21.0
+    // LABELS-I1).
+    assert!(!raw.contains("X-UwUMail-Label"), "{raw}");
     let log = store.label_log(mini, None, 10).await.unwrap();
     assert_eq!(log.len(), 1);
     assert_eq!((log[0].label_id, log[0].source.as_str(), log[0].code.as_str()), (news.id, "rule", "rule"));
@@ -1735,6 +1737,62 @@ if anyof (header :is "X-UwUMail-Label" "newsletter", hasflag "newsletter") {
     send("Noch mehr").await;
     assert_eq!(a.wait_for_inbox("mini@a.test", 1).await[0].keywords, Vec::<String>::new());
     assert_eq!(store.label_log(mini, None, 10).await.unwrap().len(), 1);
+}
+
+/// A label header hidden behind a bare CR, which one reader takes for the end of a line and another
+/// not, never reaches the script as a label (security audit 0.21.0 LABELS-I1). And a subject of one
+/// very long word full of detector stems is decided on in time (LABELS-H1).
+#[tokio::test(flavor = "multi_thread")]
+async fn label_headers_behind_a_bare_cr_and_long_subjects_change_nothing() {
+    let a = start("a.test", &["mini"], &[]).await;
+    for name in ["sender.test", "client.sender.test", "_dmarc.sender.test"] {
+        a.smtp.dns_cache().pin_no_txt(name);
+    }
+    let store = a.smtp.store();
+    let mini = store.account("mini@a.test").await.unwrap().unwrap().id;
+    store.create_assist_label(mini, "Fake".into(), String::new(), None).await.unwrap();
+    for (name, detector) in [("Termine", "appointment"), ("Rundbriefe", "newsletter")] {
+        let label = uwumail_store::AssistLabelWrite {
+            detector: Some(detector.into()),
+            ..uwumail_store::AssistLabelWrite::simple(name.into(), String::new(), None)
+        };
+        store.create_assist_label_with(mini, label).await.unwrap();
+    }
+    let script = br#"require ["fileinto", "mailbox"];
+if header :is "X-UwUMail-Label" "fake" { fileinto :create "Faked"; stop; }
+"#;
+    let created = store.create_sieve_script(mini, Some("UwUMail"), script).await.unwrap();
+    store.activate_sieve_script(mini, Some(created.id)).await.unwrap();
+
+    let send = async |data: String| {
+        let mut session = RawSession::connect(a.mx).await;
+        assert!(session.command("EHLO client.sender.test").await.starts_with("250"));
+        assert!(session.command("MAIL FROM:<news@sender.test>").await.starts_with("250"));
+        assert!(session.command("RCPT TO:<mini@a.test>").await.starts_with("250"));
+        assert!(session.command("DATA").await.starts_with("354"));
+        let started = std::time::Instant::now();
+        let answer = session.command(&data).await;
+        (answer, started.elapsed())
+    };
+    let (answer, _) = send(
+        "From: news@sender.test\r\nTo: mini@a.test\r\nX-Note: a\rX-UwUMail-Label: fake\r\nSubject: Hallo\r\n\r\nText\r\n."
+            .to_owned(),
+    )
+    .await;
+    if answer.starts_with("250") {
+        a.wait_for_inbox("mini@a.test", 1).await;
+    }
+    assert!(folder(&a, "mini@a.test", &["Faked"]).await.is_none(), "{answer}");
+
+    // One word of about 200 000 characters, in encoded words that join without a space.
+    let chunk = "=?utf-8?q?Liefertermin?=";
+    let subject = vec![chunk; 16_000].join("\r\n ");
+    let (answer, took) = send(format!(
+        "From: news@sender.test\r\nTo: mini@a.test\r\nList-Unsubscribe: <mailto:off@sender.test>\r\nSubject: {subject}\r\n\r\nText\r\n."
+    ))
+    .await;
+    assert!(answer.starts_with("250"), "{answer}");
+    assert!(took < std::time::Duration::from_secs(10), "{took:?}");
 }
 
 /// security-audit-0.7.0 S-44: a redirect without `:copy` that reached nobody -- here because the

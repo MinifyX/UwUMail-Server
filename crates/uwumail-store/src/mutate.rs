@@ -328,6 +328,14 @@ impl Store {
         self.apply_updates(account_id, updates, true).await
     }
 
+    /// Applies updates someone makes in an account shared with them. Their labeling teaches the
+    /// owner's labels nothing, unless the account is a shared mailbox, whose labels are its
+    /// members' (security audit 0.21.0 LABELS-M1).
+    pub async fn update_emails_in_share(&self, account_id: i64, updates: Vec<EmailUpdate>) -> Result<Vec<Result<()>>> {
+        let teaches = self.read(move |conn| Ok(crate::labels::teaches_in_share(conn, account_id)?)).await?;
+        self.apply_updates(account_id, updates, teaches).await
+    }
+
     /// Applies updates the server makes by itself (labels it puts on or takes off), which teach the
     /// labels nothing.
     pub async fn update_emails_by_server(&self, account_id: i64, updates: Vec<EmailUpdate>) -> Result<Vec<Result<()>>> {

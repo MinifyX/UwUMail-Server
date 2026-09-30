@@ -290,6 +290,8 @@ struct Inner {
     queue_wakeup: Notify,
     /// Wakes the AI assistant's label worker when delivered mail was queued for it.
     assist_wakeup: Notify,
+    /// The labels' counts per account, as of the account's last change (labels.rs).
+    label_counts: Arc<labels::LabelCountCache>,
     data_dir: PathBuf,
     /// What happened since the server started, for the statistics and the metrics.
     stats: stats::Stats,
@@ -325,6 +327,7 @@ impl Store {
                 calendar_alerts,
                 queue_wakeup: Notify::new(),
                 assist_wakeup: Notify::new(),
+                label_counts: Arc::default(),
                 data_dir,
                 stats: stats::Stats::default(),
                 external: std::sync::RwLock::new(None),

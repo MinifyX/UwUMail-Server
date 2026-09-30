@@ -223,3 +223,66 @@ async fn the_classifier_acts_once_it_learned_enough_from_the_hand() {
     assert!(verdict.probability >= 0.99 && verdict.examples == 15, "{verdict:?}");
     assert!(classify(&rig, label.id, &other(99)).await.is_none());
 }
+
+/// Security audit 0.21.0 LABELS-M1 and LABELS-L1: putting a label on and off again queues one
+/// hand-labeling per email and label, the last change winning; a label learns only what its
+/// switches say, and nothing while labels without a model are off; one account's full queue stops
+/// at its limit and holds up nobody else; labeling in a folder shared with someone teaches the
+/// owner's labels nothing.
+#[tokio::test]
+async fn learning_is_bounded_and_follows_the_switches() {
+    let (rig, bills, travel) = labelled_rig().await;
+    let first = rig.deliver(&rig.mia, &mail(1, "billing@shop.example")).await;
+    for on in [true, false, true, false, true] {
+        rig.store.update_emails(rig.mia.id, vec![keyword(first, "rechnungen", on)]).await.unwrap();
+    }
+    let jobs = rig.store.label_training().await.unwrap();
+    assert_eq!(jobs.len(), 1);
+    assert!(jobs[0].positive && jobs[0].label_id == bills, "the last change wins");
+
+    let quiet = uwumail_store::AssistLabelWrite {
+        learn_senders: false,
+        classifier: false,
+        ..uwumail_store::AssistLabelWrite::simple("Reisen".into(), "Flüge, Bahn, Hotels".into(), None)
+    };
+    rig.store.update_assist_label_with(rig.mia.id, travel, quiet).await.unwrap();
+    rig.store.update_emails(rig.mia.id, vec![keyword(first, "reisen", true)]).await.unwrap();
+    assert_eq!(count(&rig, "SELECT COUNT(*) FROM label_training"), 1, "no classifier, nothing queued");
+    assert_eq!(count(&rig, &format!("SELECT COUNT(*) FROM label_senders WHERE label_id = {travel}")), 0);
+
+    rig.store.set_non_ai_labels(rig.mia.id, false).await.unwrap();
+    let second = rig.deliver(&rig.mia, &mail(2, "billing@shop.example")).await;
+    rig.store.update_emails(rig.mia.id, vec![keyword(second, "rechnungen", true)]).await.unwrap();
+    assert_eq!(count(&rig, "SELECT COUNT(*) FROM label_training"), 1, "switched off, nothing learned");
+    assert_eq!(knowledge(&rig).await.senders.get(&bills), Some(&1));
+    rig.store.set_non_ai_labels(rig.mia.id, true).await.unwrap();
+
+    // In a share, the owner's labels learn nothing from whoever it is shared with.
+    let third = rig.deliver(&rig.mia, &mail(3, "billing@shop.example")).await;
+    rig.store.update_emails_in_share(rig.mia.id, vec![keyword(third, "rechnungen", true)]).await.unwrap();
+    assert_eq!(count(&rig, "SELECT COUNT(*) FROM label_training"), 1);
+    assert_eq!(knowledge(&rig).await.senders.get(&bills), Some(&1));
+
+    // A full queue takes no more of this account; another account's job is in the next batch.
+    let leni = crate::common::account(&rig.store, "leni@example.org").await;
+    {
+        let db = rusqlite::Connection::open(rig.dir.path().join("uwumail.db")).unwrap();
+        for email in 1000..1600 {
+            db.execute(
+                "INSERT INTO label_training (account_id, email_id, label_id, positive, queued_at) VALUES (?1, ?2, ?3, 1, 0)",
+                rusqlite::params![rig.mia.id, email, bills],
+            )
+            .unwrap();
+        }
+        db.execute(
+            "INSERT INTO label_training (account_id, email_id, label_id, positive, queued_at) VALUES (?1, 1, 1, 1, 0)",
+            [leni.id],
+        )
+        .unwrap();
+    }
+    rig.store.update_emails(rig.mia.id, vec![keyword(third, "rechnungen", true)]).await.unwrap();
+    let mia = rig.mia.id;
+    assert_eq!(count(&rig, &format!("SELECT COUNT(*) FROM label_training WHERE account_id = {mia}")), 601);
+    let batch = rig.store.label_training().await.unwrap();
+    assert!(batch.iter().any(|job| job.account_id == leni.id), "accounts take turns");
+}

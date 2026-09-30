@@ -6,6 +6,7 @@
 //! It is cheap and it never stands in the way of the mail: after [`TIMEOUT`], or on any error, the
 //! message is simply stored without these labels.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use uwumail_labels::{Decision, Detector, Label, Mail, Rules};
@@ -34,10 +35,63 @@ impl Labeled {
     }
 }
 
+/// The message as the deciding reads it, parsed once for all recipients of a delivery.
+#[derive(Default)]
+pub(crate) struct Parsed(tokio::sync::OnceCell<Arc<(Mail, Vec<i64>)>>);
+
+impl Parsed {
+    async fn get(&self, message: &[u8]) -> Result<Arc<(Mail, Vec<i64>)>, uwumail_store::StoreError> {
+        self.0
+            .get_or_try_init(|| async {
+                let raw = message[..message.len().min(MAX_PARSE_BYTES)].to_vec();
+                tokio::task::spawn_blocking(move || {
+                    let mail = Mail::parse(&raw);
+                    let tokens: Vec<i64> =
+                        uwumail_labels::tokens(&mail).iter().map(|token| uwumail_labels::token_hash(token)).collect();
+                    Arc::new((mail, tokens))
+                })
+                .await
+                .map_err(|err| uwumail_store::StoreError::Internal(err.to_string()))
+            })
+            .await
+            .cloned()
+    }
+}
+
+/// Whether the From address of a message says who sent it, for learned senders: a sender's label
+/// goes only on mail that really comes from that sender, or anyone could get a label (and whatever
+/// Sieve rule sorts by it) onto their mail by writing a known address into From (security audit
+/// 0.21.0 LABELS-L3).
+#[derive(Debug, Clone)]
+pub(crate) enum SenderTrust {
+    /// Sent by someone who logged in here, or made by the server itself.
+    Local,
+    /// SPF or DKIM vouch for this From address (normalized, lower case).
+    Verified(String),
+    /// Nothing vouches for the From address.
+    Unverified,
+}
+
+impl SenderTrust {
+    fn vouches_for(&self, from: &str) -> bool {
+        match self {
+            SenderTrust::Local => true,
+            SenderTrust::Verified(address) => address.eq_ignore_ascii_case(from),
+            SenderTrust::Unverified => false,
+        }
+    }
+}
+
 /// The labels for a message delivered to `account_id`; none when the person switched them off, has
 /// none, sent it themselves, or when deciding takes too long or fails.
-pub(crate) async fn decide(ctx: &Context, account_id: i64, message: &[u8]) -> Labeled {
-    match tokio::time::timeout(TIMEOUT, decide_now(ctx, account_id, message)).await {
+pub(crate) async fn decide(
+    ctx: &Context,
+    account_id: i64,
+    message: &[u8],
+    parsed: &Parsed,
+    sender: &SenderTrust,
+) -> Labeled {
+    match tokio::time::timeout(TIMEOUT, decide_now(ctx, account_id, message, parsed, sender)).await {
         Ok(Ok(labeled)) => labeled,
         Ok(Err(err)) => {
             tracing::warn!(account = account_id, %err, "labels without a model failed, storing the message without them");
@@ -53,45 +107,54 @@ pub(crate) async fn decide(ctx: &Context, account_id: i64, message: &[u8]) -> La
     }
 }
 
-async fn decide_now(ctx: &Context, account_id: i64, message: &[u8]) -> Result<Labeled, uwumail_store::StoreError> {
+async fn decide_now(
+    ctx: &Context,
+    account_id: i64,
+    message: &[u8],
+    parsed: &Parsed,
+    sender: &SenderTrust,
+) -> Result<Labeled, uwumail_store::StoreError> {
     let setup = ctx.store.label_setup(account_id).await?;
     if setup.labels.is_empty() {
         return Ok(Labeled::default());
     }
-    let raw = message[..message.len().min(MAX_PARSE_BYTES)].to_vec();
-    let (mail, tokens) = tokio::task::spawn_blocking(move || {
-        let mail = Mail::parse(&raw);
-        let tokens: Vec<i64> =
-            uwumail_labels::tokens(&mail).iter().map(|token| uwumail_labels::token_hash(token)).collect();
-        (mail, tokens)
-    })
-    .await
-    .map_err(|err| uwumail_store::StoreError::Internal(err.to_string()))?;
+    let parsed = parsed.get(message).await?;
+    let (mail, tokens) = &*parsed;
     if !mail.from.is_empty() && ctx.store.account_owns_address(account_id, &mail.from).await? {
         return Ok(Labeled::default());
     }
     let classifiers = setup.labels.iter().filter(|label| label.classifier).map(|label| label.id).collect();
     let knowledge = ctx.store.label_knowledge(account_id, mail.from.clone(), tokens.clone(), classifiers).await?;
-    // Rules were checked when they were written; one that no longer reads is left out.
-    let rules: Vec<Option<Rules>> = setup
-        .labels
-        .iter()
-        .map(|label| label.rules.as_ref().and_then(|rules| Rules::check(rules).ok().flatten()))
-        .collect();
-    let labels: Vec<Label<'_>> = setup
-        .labels
-        .iter()
-        .zip(&rules)
-        .map(|(label, rules)| Label {
-            id: label.id,
-            keyword: &label.keyword,
-            rules: rules.as_ref(),
-            detector: label.detector.as_deref().and_then(Detector::parse),
-            learn_senders: label.learn_senders,
-            classifier: label.classifier,
-        })
-        .collect();
-    Ok(Labeled { decisions: uwumail_labels::decide(&labels, &mail, &[], &knowledge, &tokens) })
+    let from_trusted = sender.vouches_for(&mail.from);
+    // Deciding is plain computing: on the blocking pool, so the timeout above always ends the wait
+    // and no worker of the server is held by one message.
+    tokio::task::spawn_blocking(move || {
+        let (mail, tokens) = &*parsed;
+        let mut mail = mail.clone();
+        mail.from_trusted = from_trusted;
+        // Rules were checked when they were written; one that no longer reads is left out.
+        let rules: Vec<Option<Rules>> = setup
+            .labels
+            .iter()
+            .map(|label| label.rules.as_ref().and_then(|rules| Rules::check(rules).ok().flatten()))
+            .collect();
+        let labels: Vec<Label<'_>> = setup
+            .labels
+            .iter()
+            .zip(&rules)
+            .map(|(label, rules)| Label {
+                id: label.id,
+                keyword: &label.keyword,
+                rules: rules.as_ref(),
+                detector: label.detector.as_deref().and_then(Detector::parse),
+                learn_senders: label.learn_senders,
+                classifier: label.classifier,
+            })
+            .collect();
+        Labeled { decisions: uwumail_labels::decide(&labels, &mail, &[], &knowledge, tokens) }
+    })
+    .await
+    .map_err(|err| uwumail_store::StoreError::Internal(err.to_string()))
 }
 
 /// The copy of `message` a Sieve script reads: without `X-UwUMail-Label` headers of its own, with

@@ -257,17 +257,12 @@ fn appointment(view: &View<'_>) -> Option<Finding> {
             reason: "Looks like an appointment: a calendar invitation".into(),
         });
     }
+    // The stems are single words, so a stem is always inside one word of the subject: one pass over
+    // the words, never back and forth around each find (that was quadratic in a long word, security
+    // audit 0.21.0 LABELS-H1).
     let stem = APPOINTMENT_STEMS.iter().find(|stem| {
-        let mut from = 0;
-        while let Some(found) = view.subject[from..].find(**stem) {
-            let at = from + found;
-            let word = crate::text::word_at(&view.subject, at);
-            if !NOT_APPOINTMENTS.iter().any(|not| word.contains(not)) {
-                return true;
-            }
-            from = at + stem.len();
-        }
-        false
+        words(&view.subject)
+            .any(|(_, word)| word.contains(**stem) && !NOT_APPOINTMENTS.iter().any(|not| word.contains(not)))
     })?;
     let both = format!("{} {}", view.subject, view.text);
     let date = date(&both)?;

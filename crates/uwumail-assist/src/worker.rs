@@ -119,7 +119,7 @@ impl Assist {
             if let Err(err) = self.learn_label(job).await {
                 tracing::warn!(%err, account = job.account_id, "learning a label failed");
             }
-            if let Err(err) = self.store().finish_label_training(job.id).await {
+            if let Err(err) = self.store().finish_label_training(job.id, job.positive).await {
                 tracing::warn!(%err, "updating what labels learn failed");
                 return false;
             }
@@ -139,8 +139,14 @@ impl Assist {
             Err(err) => return Err(err),
         };
         let raw = self.store().blob(&record.blob).await?;
-        let mail = uwumail_labels::Mail::parse(&raw[..raw.len().min(MAX_PARSE_BYTES)]);
-        Ok(Some(uwumail_labels::tokens(&mail).iter().map(|token| uwumail_labels::token_hash(token)).collect()))
+        // Reading a message is plain computing: on the blocking pool, not on a worker of the server.
+        let tokens = tokio::task::spawn_blocking(move || {
+            let mail = uwumail_labels::Mail::parse(&raw[..raw.len().min(MAX_PARSE_BYTES)]);
+            uwumail_labels::tokens(&mail).iter().map(|token| uwumail_labels::token_hash(token)).collect()
+        })
+        .await
+        .map_err(|err| StoreError::Internal(err.to_string()))?;
+        Ok(Some(tokens))
     }
 
     /// Learns one hand-labeling: the email as an example with or without the label and, for a new

@@ -1761,6 +1761,11 @@ pub(crate) async fn receive(
 
     // Our verdict replaces whatever the message brought along.
     let raw = if score.is_some() { headers::strip_spam_verdicts(&raw) } else { raw };
+    // Label headers are the server's to write, for Sieve only; one a sender wrote is not kept in
+    // the stored message either, so nothing that reads it later takes it for a label (security
+    // audit 0.21.0 LABELS-I1). After the checks, which may cover it with a signature.
+    let raw =
+        if headers::values(&raw, labels::LABEL_HEADER).is_empty() { raw } else { headers::strip_label_headers(&raw) };
     let raw = match checked {
         clamav::Checked::Off => raw,
         _ => headers::strip_virus_verdicts(&raw),
@@ -1878,6 +1883,16 @@ pub(crate) async fn receive(
     let sender_verified_for_groups = verdict.as_ref().is_none_or(|verdict| verdict.sender_verified);
     // What forwarding needs to know about the sender.
     let proof = forward::Proof::of(verdict.as_ref());
+    // Labels without a model: the message is read once for all recipients, and learned senders
+    // count only for a From address something vouches for.
+    let label_mail = labels::Parsed::default();
+    let label_sender = match verdict.as_ref() {
+        None => labels::SenderTrust::Local,
+        Some(v) => match v.from_address.clone().filter(|_| v.from_verified || v.dmarc_passed) {
+            Some(address) => labels::SenderTrust::Verified(address),
+            None => labels::SenderTrust::Unverified,
+        },
+    };
     // What happened for each of them, for the history. The message as a whole is one decision,
     // but a sender list or someone's own filter can send it two ways at once.
     let mut noted: Vec<SpamLogRecipient> = Vec::new();
@@ -2084,7 +2099,11 @@ pub(crate) async fn receive(
             })
         };
         // The person's labels that need no model, before their rules (docs/labels.md). Never for Junk.
-        let labeled = if junk { labels::Labeled::default() } else { labels::decide(&ctx, account_id, &message).await };
+        let labeled = if junk {
+            labels::Labeled::default()
+        } else {
+            labels::decide(&ctx, account_id, &message, &label_mail, &label_sender).await
+        };
         let stored = match script {
             Some((_, script)) => rules::deliver(
                 &ctx,

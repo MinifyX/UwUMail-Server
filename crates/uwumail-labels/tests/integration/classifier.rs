@@ -90,3 +90,17 @@ fn it_waits_for_examples_and_then_is_sure_only_of_similar_mail() {
     let off = [Label { classifier: false, ..labels[0] }];
     assert!(decide(&off, &club(99), &[], &knowledge, &hashes(&club(99))).is_empty());
 }
+
+/// Counts from a damaged store (near the largest number, or below zero) neither overflow nor make
+/// the verdict NaN (client review C-D-4).
+#[test]
+fn damaged_counts_are_no_trouble() {
+    let token = token_hash("vereinsheim");
+    let mut model = Model { positives: 20, negatives: 20, counts: HashMap::new() };
+    model.counts.insert(token, (i64::MAX, i64::MAX));
+    let (probability, _) = model.probability(&[token]).unwrap();
+    assert!(probability.is_finite());
+    model.counts.insert(token, (-5, i64::MIN));
+    let (probability, _) = model.probability(&[token]).unwrap();
+    assert!(probability.is_finite());
+}

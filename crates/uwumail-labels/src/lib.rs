@@ -22,7 +22,7 @@ pub use classifier::{
     Model, THRESHOLD, TOKEN_TEXT_CHARS, TOP_TOKENS, Verdict, token_hash, tokens,
 };
 pub use detect::{Detector, Finding, amount, date, detect, time};
-pub use mail::{Attachment, HEADERS, MAX_TEXT_CHARS, Mail};
+pub use mail::{Attachment, HEADERS, MAX_ATTACHMENTS, MAX_FIELD_CHARS, MAX_TEXT_CHARS, Mail};
 pub use rules::{Condition, Field, MAX_CONDITIONS, MAX_VALUE_CHARS, Match, Rules};
 
 /// Hand-labelings of one sender after which their new mail gets the label.
@@ -122,6 +122,7 @@ pub fn decide(
             && let Some(&count) = knowledge.senders.get(&label.id)
             && count >= SENDER_MIN_COUNT
             && !mail.from.is_empty()
+            && mail.from_trusted
         {
             out.push(decision(
                 Source::Sender,

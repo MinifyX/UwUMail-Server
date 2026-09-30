@@ -90,6 +90,12 @@ fn the_first_source_that_matches_wins_once_per_label() {
     assert_eq!(decisions[2].params, json!({ "address": "rechnung@mail.stadtwerke.example", "count": 2 }));
     assert_eq!(decisions[2].reason, "rechnung@mail.stadtwerke.example got this label by hand 2 times");
 
+    // A From address nothing vouches for gets no learned sender's label (security audit 0.21.0
+    // LABELS-L3): anyone can write a known address there.
+    let mut forged = mail.clone();
+    forged.from_trusted = false;
+    assert!(decide(&labels[2..3], &forged, &[], &knowledge, &[]).is_empty());
+
     // One hand-labeling is not enough to learn a sender.
     knowledge.senders.insert(3, 1);
     assert!(decide(&labels[2..3], &mail, &[], &knowledge, &[]).is_empty());

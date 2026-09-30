@@ -201,3 +201,22 @@ fn shipments() {
     );
     assert_eq!(finds(Detector::Shipping, &promo), None);
 }
+
+/// A subject of one very long word full of stems took time growing with its square, on a worker
+/// of the delivery (security audit 0.21.0 LABELS-H1). Now it is looked at in one pass, and only
+/// its first characters at all.
+#[test]
+fn a_long_subject_costs_no_more_than_its_length() {
+    let word = "Liefertermin".repeat(85_000);
+    let headers = vec![("List-Unsubscribe".to_owned(), "<mailto:off@example.com>".to_owned())];
+    let mail = uwumail_labels::Mail::new("news@example.com", &word, "", Vec::new(), false, headers.clone());
+    assert_eq!(mail.subject.chars().count(), uwumail_labels::MAX_FIELD_CHARS);
+    assert_eq!(mail.headers[0].1, "<mailto:off@example.com>");
+
+    // The detectors themselves stay linear, even for a subject nobody cut.
+    let uncut = uwumail_labels::Mail { subject: word, ..mail };
+    let started = std::time::Instant::now();
+    assert!(detect(Detector::Appointment, &uncut).is_none());
+    assert!(detect(Detector::Newsletter, &uncut).is_none());
+    assert!(started.elapsed() < std::time::Duration::from_secs(5), "{:?}", started.elapsed());
+}
