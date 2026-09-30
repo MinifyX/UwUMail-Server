@@ -189,7 +189,12 @@ pub fn validate_setting(key: &str, value: &Value) -> Result<(), SettingProblem> 
         "theme" => return one_of(key, value, &["system", "light", "dark"]),
         "tone" => return one_of(key, value, &["playful", "neutral"]),
         "language" => return one_of(key, value, &["system", "de", "en", "fr", "nl", "ja", "zh"]),
-        "conversations" | "senderPictures" | "linkConfirm" | "darkImages" | "assist.refineEvents" => {
+        "conversations"
+        | "senderPictures"
+        | "linkConfirm"
+        | "darkImages"
+        | "assist.refineEvents"
+        | "mail.detectEvents" => {
             return boolean(key, value);
         }
         "remoteImages" => return one_of(key, value, &["ask", "always"]),
@@ -485,6 +490,8 @@ mod tests {
             ("assist.currency", json!("USD"), json!("usd")),
             ("assist.currency", json!("EUR"), json!("JPY")),
             ("nyu.animations", json!("reduced"), json!("some")),
+            ("mail.detectEvents", json!(false), json!("yes")),
+            ("assist.refineEvents", json!(true), json!(1)),
         ] {
             assert_eq!(check(key, good), Ok(()), "{key}");
             assert!(matches!(check(key, bad), Err(SettingProblem::Invalid(_))), "{key}");

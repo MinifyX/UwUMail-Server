@@ -132,6 +132,7 @@ is handed to the others.
 | `undoSendSeconds` | `0`, `5`, `10`, `20` or `30`: how long a submission waits before it goes; the server applies it ([jmap-sending.md](jmap-sending.md)), 10 when not set |
 | `linkConfirm` | `true` or `false`: ask before opening links from mails |
 | `darkImages` | `true` or `false`: recolor light images when a mail is darkened |
+| `mail.detectEvents` | `true` or `false`: find dates in mails on the device, without AI (the date bar) |
 | `assist.refineEvents` | `true` or `false`: ask the AI assistant for a mail's events by itself when it opens ([jmap-assist.md](jmap-assist.md)) |
 | `nyu.animations` | `"on"`, `"reduced"` or `"off"`: Nyu's little animations in the webmail and the app. Not set: on, or reduced when the system asks for less motion |
 | `assist.currency` | `"EUR"` or `"USD"`: the currency of AI costs for someone reading in English; other languages have their own (Japanese yen, Chinese yuan, euros for the rest) and ignore it. Not set: euros |
