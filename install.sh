@@ -105,6 +105,36 @@ fetch() {
   fi
 }
 
+# Provenance: CI signs every release file and image with the workflow run that built it
+# (GitHub's attestations). Where gh is installed and logged in, what we fetch has to carry that
+# signature from this repository, next to the checksum; a file somebody put into a release by
+# hand has none and stops us. Without gh this is skipped with a notice and the checksums stand
+# alone. Releases before 0.21.0 were never signed, so a pinned older version is not checked.
+provenance=""
+provenance_on() {
+  if [ -z "$provenance" ]; then
+    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+      provenance=yes
+    else
+      provenance=no
+      step "gh is not here or not logged in, so signatures are not checked (the checksums are)"
+    fi
+  fi
+  [ "$provenance" = yes ]
+}
+signed_version() {
+  case "${1:-}" in
+    [0-9]*) [ "$(printf '%s\n' 0.21.0 "$1" | sort -V | head -1)" = 0.21.0 ] ;;
+    *) return 0 ;;
+  esac
+}
+# A file or an image (oci://...@sha256:...) built by this repository's CI.
+verify_provenance() {
+  signed_version "$version" || return 0
+  provenance_on || return 0
+  gh attestation verify "$1" --repo "$repo" >/dev/null 2>&1
+}
+
 # Downloads a release file and the checksum next to it, and only keeps it when they agree.
 fetch_checked() {
   local name="$1" target="$2" base sums want have
@@ -119,7 +149,11 @@ fetch_checked() {
   have=$(sha256sum "$target" | cut -d' ' -f1)
   rm -f "$sums"
   # A file whose checksum does not match is not a file we install.
-  [ -n "$want" ] && [ "$want" = "$have" ]
+  [ -n "$want" ] && [ "$want" = "$have" ] || return 1
+  verify_provenance "$target" || {
+    warn "$name is not signed by the UwUMail-Server release workflow"
+    return 1
+  }
 }
 
 # Next to a checkout the files are right here; otherwise they come from the newest release,
@@ -400,6 +434,11 @@ cd "$dir" || die "cannot go into $dir"
 
 step "fetching the images (this takes a moment)"
 docker compose pull --quiet || die "the images could not be fetched"
+image_ref=$(docker image inspect --format '{{index .RepoDigests 0}}' \
+  "ghcr.io/minifyx/uwumail-server:$version" 2>/dev/null)
+if [ -n "$image_ref" ] && ! verify_provenance "oci://$image_ref"; then
+  die "the image $image_ref is not signed by the UwUMail-Server workflow; nothing was started"
+fi
 
 if $antivirus; then
   # Settings live in the database, and a running server reads them at its next start, so this is

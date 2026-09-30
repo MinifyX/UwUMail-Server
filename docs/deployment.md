@@ -491,6 +491,18 @@ What `update.sh` does, in order:
 7. Where the machine's helper is installed, brings it to the newest release as
    well.
 
+From 0.21.0 on, CI signs every release file and image with the workflow run
+that built it ([build provenance](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations)).
+Where `gh` is installed and logged in for root, `install.sh` and `update.sh`
+check that signature with `gh attestation verify --repo MinifyX/UwUMail-Server`
+on top of the checksum, and stop when it is missing. Without `gh` they say so
+and go on with the checksums alone. By hand:
+
+```bash
+gh attestation verify compose.yaml --repo MinifyX/UwUMail-Server
+gh attestation verify oci://ghcr.io/minifyx/uwumail-server:latest --repo MinifyX/UwUMail-Server
+```
+
 Two things worth knowing about that way back:
 
 - It pins the exact version in `.env`. A server that followed `latest` follows
