@@ -207,6 +207,64 @@ pub fn mime_has_html(message: &Message<'_>) -> bool {
 mod tests {
     use super::*;
 
+    /// A weekly meeting in a Windows time zone, as the calendar checks and expands it.
+    #[test]
+    fn a_meeting_is_a_calendar_object_the_store_takes() {
+        use uwumail_tnef::builder::{self, Pattern, Props, Tnef};
+        use uwumail_tnef::mapi::{self, PSETID_APPOINTMENT, PSETID_MEETING};
+        let start = 1_793_091_600; // 2026-10-27 09:00 UTC, 10:00 in Berlin
+        let recurrence = builder::recurrence(&Pattern {
+            frequency: 0x200B,
+            pattern_type: 1,
+            period: 1,
+            specific: vec![0b100],
+            end_type: 0x2022,
+            occurrences: 3,
+            first_weekday: 1,
+            deleted: vec![],
+            modified: vec![],
+            start_date: builder::minutes_1601(2026, 10, 27),
+            end_date: builder::minutes_1601(2026, 11, 10),
+            start_offset: 600,
+            end_offset: 660,
+        });
+        let mut tnef = Tnef::new();
+        tnef.message_class("IPM.Schedule.Meeting.Request");
+        tnef.message_props(
+            &Props::new()
+                .unicode(mapi::PR_SUBJECT, "Serie")
+                .unicode(mapi::PR_SENT_REPRESENTING_SMTP_ADDRESS, "gast@example.com")
+                .named_time(&PSETID_APPOINTMENT, 0x820D, start)
+                .named_time(&PSETID_APPOINTMENT, 0x820E, start + 3600)
+                .named_bool(&PSETID_APPOINTMENT, 0x8223, true)
+                .named_binary(&PSETID_APPOINTMENT, 0x8216, &recurrence)
+                .named_binary(
+                    &PSETID_APPOINTMENT,
+                    0x825E,
+                    &builder::time_zone_definition(
+                        "W. Europe Standard Time",
+                        -60,
+                        -60,
+                        Some(((10, 5, 0, 3), (3, 5, 0, 2))),
+                    ),
+                )
+                .named_binary(&PSETID_MEETING, 0x0003, &builder::global_object_id("serie@example.com", None)),
+        );
+        let raw = builder::mime_with_winmail("From: gast@example.com\r\nTo: mini@example.org\r\n", None, &tnef.build());
+        let message = mail_parser::MessageParser::default().parse(&raw).unwrap();
+        let decoded = decode(&message);
+        let ics = decoded[0].calendar.as_deref().unwrap();
+        let checked = crate::ical::check_calendar(ics, &[]).unwrap();
+        assert_eq!(checked.uid, "serie@example.com");
+        assert_eq!(checked.starts_at, Some(start));
+        // Three Tuesdays, the last on 10 November, in winter time.
+        assert_eq!(checked.ends_at, Some(start + 14 * 86_400 + 3600));
+        let component = crate::itip::Component::parse(ics).unwrap();
+        assert_eq!(crate::itip::method(&component).as_deref(), Some("REQUEST"));
+        assert_eq!(crate::itip::organizer(&component).as_deref(), Some("gast@example.com"));
+        assert!(crate::itip::attendees(&component).iter().any(|a| a.address == "mini@example.org"));
+    }
+
     #[test]
     fn part_ids() {
         for sub in [Sub::Text, Sub::Html, Sub::Calendar, Sub::Attachment(12)] {
