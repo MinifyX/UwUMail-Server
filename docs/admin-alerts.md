@@ -33,6 +33,7 @@ show:
 | Kind | When |
 | --- | --- |
 | Health areas | A finding of the overview turns yellow or red: DNS records missing or wrong, TLS failures reported by other servers, our own mail failing DMARC, a certificate that expires soon or does not match, mail stuck in the queue, many bounces, the relay or port 25 unreachable, the gateway away, the virus scanner away or out of date, disk space running low, mailboxes nearly full, admins without a second factor |
+| Microsoft | Microsoft refuses mail from a sending address or domain (red) or throttles it (yellow); see [microsoft.md](microsoft.md) |
 | Backup | The last backup failed (red), or the last successful one is more than two days old (yellow) |
 | Certificate | Renewing the Let's Encrypt certificate has been failing for more than a day (yellow); single failures are common and heal on their own |
 | Update | A new version is out (information only, never mailed) |

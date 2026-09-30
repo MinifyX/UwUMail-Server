@@ -67,6 +67,10 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0058_assist.sql"),
     include_str!("migrations/0059_assist_costs.sql"),
     include_str!("migrations/0060_password_changed.sql"),
+    include_str!("migrations/0061_microsoft_issues.sql"),
+    include_str!("migrations/0062_bimi.sql"),
+    include_str!("migrations/0063_assist_cost_details.sql"),
+    include_str!("migrations/0064_assist_calibration.sql"),
 ];
 const MAX_IDLE_READERS: usize = 8;
 
@@ -433,5 +437,28 @@ mod tests {
             .unwrap();
         assert_eq!(indexed, vec![("ami@example.org".to_owned(), 1)]);
         assert!(get_setting(&conn, "contact_photos.backfill").unwrap().is_none(), "only once");
+    }
+
+    #[test]
+    fn ai_usage_of_0_19_counts_one_call_per_request() {
+        const RELEASED_0_19: usize = 60;
+        let mut conn = connection();
+        for (index, sql) in MIGRATIONS[..RELEASED_0_19].iter().enumerate() {
+            conn.execute_batch(sql).unwrap();
+            conn.pragma_update(None, "user_version", (index + 1) as i64).unwrap();
+        }
+        conn.execute_batch(
+            "INSERT INTO accounts (id, login, created_at) VALUES (1, 'mini@example.org', 0);
+             INSERT INTO assist_usage (account_id, provider_id, day, feature, requests, input_tokens, output_tokens)
+                 VALUES (1, 1, '2026-09-29', 'compose', 3, 1200, 900);",
+        )
+        .unwrap();
+        migrate(&mut conn).unwrap();
+        let row: (i64, i64, i64) = conn
+            .query_row("SELECT calls, reasoning_tokens, cached_tokens FROM assist_usage", [], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .unwrap();
+        assert_eq!(row, (3, 0, 0));
     }
 }

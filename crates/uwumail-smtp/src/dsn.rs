@@ -7,6 +7,8 @@ use mail_builder::headers::text::Text;
 use mail_builder::mime::MimePart;
 use uwumail_store::{IngestRequest, MailboxRole, MailboxTarget, NewQueueRecipient};
 
+use crate::config::Language;
+use crate::microsoft::IssueKind;
 use crate::{Context, headers, random_id, texts};
 
 #[derive(Debug, Clone)]
@@ -31,12 +33,24 @@ pub async fn bounce(ctx: &Context, return_path: &str, original: &[u8], failed: &
     };
     let return_path = unwrapped.as_deref().unwrap_or(return_path);
     // A bounce for a mailbox-less service goes where its mail goes, or out over the queue.
-    let local_account = match ctx.store.resolve_recipient(return_path).await.ok().flatten() {
+    let sender_account = ctx.store.resolve_recipient(return_path).await.ok().flatten();
+    let local_account = match sender_account {
         Some(account_id) => ctx.store.delivery_target(account_id).await.ok().flatten(),
         None => None,
     };
-    let texts = texts::bounce(ctx.tone(), local_account.is_some(), ctx.brand().name());
-    let raw = match build(ctx, &texts, return_path, original, failed) {
+    // Our own people read it in the language they chose.
+    let mut tone = ctx.tone();
+    if let Some(account_id) = sender_account {
+        let preferences = ctx.store.preferences(account_id).await.unwrap_or_default();
+        tone.language = Language::preferred(preferences.get("language").and_then(|v| v.as_str()), tone.language);
+    }
+    let mut texts = texts::bounce(tone, local_account.is_some(), ctx.brand().name());
+    // A typo is not why Microsoft refused: don't send the person looking for one.
+    if only_microsoft(failed) {
+        texts.outro = texts::outro_without_typo_hint(tone, local_account.is_some());
+    }
+    let note = microsoft_kind(failed).map(|kind| texts::microsoft_note(tone.language, local_account.is_some(), kind));
+    let raw = match build(ctx, &texts, note, return_path, original, failed) {
         Ok(raw) => raw,
         Err(err) => {
             tracing::error!(%err, "could not build a bounce message");
@@ -66,9 +80,30 @@ pub async fn bounce(ctx: &Context, return_path: &str, original: &[u8], failed: &
     }
 }
 
+/// Whether Microsoft refused or held back any of the recipients, and how: a block counts before
+/// a domain that fails its checks, which counts before throttling.
+fn microsoft_kind(failed: &[FailedRecipient]) -> Option<IssueKind> {
+    let rank = |kind: &IssueKind| match kind {
+        IssueKind::Blocked => 2,
+        IssueKind::Authentication => 1,
+        IssueKind::Throttled => 0,
+    };
+    failed
+        .iter()
+        .filter_map(|recipient| crate::microsoft::classify(&recipient.error, false))
+        .map(|refusal| refusal.group.kind())
+        .max_by_key(rank)
+}
+
+/// Whether every recipient failed because Microsoft refused or held back the mail.
+fn only_microsoft(failed: &[FailedRecipient]) -> bool {
+    failed.iter().all(|recipient| crate::microsoft::classify(&recipient.error, false).is_some())
+}
+
 fn build(
     ctx: &Context,
     texts: &texts::BounceTexts,
+    note: Option<&str>,
     return_path: &str,
     original: &[u8],
     failed: &[FailedRecipient],
@@ -78,6 +113,10 @@ fn build(
     let mut text = format!("{}\r\n\r\n", texts.intro);
     for recipient in failed {
         text.push_str(&format!("  {}\r\n    {}\r\n\r\n", recipient.address, single_line(&recipient.error)));
+    }
+    if let Some(note) = note {
+        text.push_str(note);
+        text.push_str("\r\n\r\n");
     }
     text.push_str(texts.outro);
     text.push_str("\r\n");
@@ -134,6 +173,47 @@ pub fn status_code(error: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn microsoft_refusals_are_told_apart_from_other_bounces() {
+        let failed = |error: &str| FailedRecipient { address: "ami@example.com".into(), error: error.into() };
+        assert_eq!(microsoft_kind(&[failed("550 5.1.1 unknown user")]), None);
+        let throttled = failed(
+            "example-com.mail.protection.outlook.com [192.0.2.1]: 451 4.7.650 The mail server [203.0.113.5] has been \
+             temporarily rate limited due to IP reputation.",
+        );
+        let blocked = failed("550 5.7.1 Unfortunately, messages from [203.0.113.5] weren't sent (S3150).");
+        assert_eq!(microsoft_kind(std::slice::from_ref(&throttled)), Some(IssueKind::Throttled));
+        assert_eq!(microsoft_kind(&[throttled, blocked]), Some(IssueKind::Blocked));
+        // Every language has its words.
+        for language in Language::ALL {
+            for local in [true, false] {
+                assert!(texts::microsoft_note(language, local, IssueKind::Blocked).contains("Microsoft"));
+            }
+        }
+    }
+
+    #[test]
+    fn no_typo_hint_when_only_microsoft_refused() {
+        use crate::config::{ExternalTone, InternalTone, ToneConfig};
+        let failed = |error: &str| FailedRecipient { address: "ami@example.com".into(), error: error.into() };
+        let blocked = failed("550 5.7.1 Unfortunately, messages from [192.0.2.1] weren't sent. (S3150)");
+        assert!(only_microsoft(std::slice::from_ref(&blocked)));
+        assert!(!only_microsoft(&[blocked, failed("550 5.1.1 unknown user")]));
+        for language in Language::ALL {
+            for local in [true, false] {
+                for internal in [InternalTone::Playful, InternalTone::Neutral] {
+                    for external in [ExternalTone::Neutral, ExternalTone::Light] {
+                        let tone = ToneConfig { language, internal, external };
+                        let outro = texts::outro_without_typo_hint(tone, local);
+                        for word in ["Tippfehler", "typo", "frappe", "typefout", "打ち間違い", "拼写"] {
+                            assert!(!outro.contains(word), "{language:?} {local}: {outro}");
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn extracts_status_codes() {

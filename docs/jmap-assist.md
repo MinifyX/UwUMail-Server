@@ -98,11 +98,38 @@ added with their own key.
 | `experimental` | `Boolean` | `true` for `chatgpt` |
 | `connected` | `Boolean` | `chatgpt`: signed in; others: `true` when a key is stored or none is needed |
 | `inputPricePerMillion` | `Number\|null` | US dollars per million tokens sent, set by hand; `null`: automatic, from the price lists ([llm.md](llm.md#costs)) |
-| `outputPricePerMillion` | `Number\|null` | the same for the tokens of the answer |
-| `price` | `Object\|null` | read-only: what the default model (`model`) costs, `{ "inputPerMillion": Number, "outputPerMillion": Number, "source": "auto"\|"manual"\|"free" }` in US dollars; `null` when not known |
+| `outputPricePerMillion` | `Number\|null` | the same for the tokens of the answer (and the model's thinking) |
+| `pricePerRequest` | `Number\|null` | US dollars per request on top of the tokens, set by hand; `null`: automatic |
+| `price` | `Object\|null` | read-only: what the default model (`model`) costs in US dollars, the whole price sheet (below); `null` when not known |
+
+`price`:
+
+```json
+{ "inputPerMillion": 0.25, "outputPerMillion": 2.0, "reasoningPerMillion": 2.0,
+  "cacheReadPerMillion": 0.025, "cacheWritePerMillion": 0.25,
+  "perRequest": 0, "perImage": 0, "webSearchPerQuery": 0,
+  "tiers": [{ "aboveTokens": 200000, "inputPerMillion": 0.5, "outputPerMillion": 4.0,
+              "reasoningPerMillion": 4.0, "cacheReadPerMillion": 0.05 }],
+  "supportsReasoning": true, "maxOutputTokens": 128000, "source": "auto" }
+```
+
+- `reasoningPerMillion`: thinking tokens; the answer's price where the lists
+  name none (and always with a price set by hand).
+- `cacheReadPerMillion`, `cacheWritePerMillion`: prompt tokens the provider read
+  from or wrote to its cache; the prompt's price where the lists name none.
+- `perRequest`, `perImage`, `webSearchPerQuery`: US dollars per request, per
+  picture sent to the model and per web search; `0` where none.
+- `tiers`: higher prices once a request's prompt is larger than `aboveTokens`
+  (LiteLLM's `*_above_128k_tokens`); the whole request is charged at them.
+  Empty with a price set by hand.
+- `supportsReasoning`, `maxOutputTokens`: what the lists say about the model:
+  it thinks before it answers, and the most it writes at once (thinking
+  included); `false`/`null` when they don't say.
+- `source`: `auto` (the lists), `manual` (a price set by hand; what is not set
+  comes from the lists), `free` (Ollama, a ChatGPT subscription: all `0`).
 
 For a server provider whose costs the admin does not show to people,
-`inputPricePerMillion`, `outputPricePerMillion` and `price` are `null`, and
+`inputPricePerMillion`, `outputPricePerMillion`, `pricePerRequest` and `price` are `null`, and
 so are the costs of `Assist/estimate` and `Assist/usage` for it. A person's own
 providers always show them.
 
@@ -118,7 +145,8 @@ Standard `/set` for the person's **own** providers (`create`, `update`,
 `destroy`); server providers answer `forbidden`. Creating needs
 `mayAddProviders`. Properties that may be set: `name`, `kind` (create only),
 `baseUrl`, `apiKey`, `model`, `fastModel`, `inputPricePerMillion`,
-`outputPricePerMillion` (0 to 100,000, or `null` for automatic).
+`outputPricePerMillion` (0 to 100,000, or `null` for automatic) and
+`pricePerRequest` (0 to 100, or `null`).
 
 `SetError` types: `forbidden` (the admin does not allow own providers, or it is
 a server provider), `overQuota` (more than `maxProviders`), `invalidProperties`
@@ -220,7 +248,10 @@ as a preview; nothing is put into the draft until the person accepts it.
 | `language` | `String\|null` | the person's UI language as a hint (`de`); the model otherwise answers in the language of the instruction or the mail |
 
 Response: `{ accountId, text, subject, providerId, providerName, model, usage }`
-with `subject` a proposal or `null`, and `usage` `{ inputTokens, outputTokens }`.
+with `subject` a proposal or `null`, and `usage` `{ inputTokens, outputTokens,
+reasoningTokens }` as the provider reported them (`reasoningTokens`: what the
+model spent thinking, not part of `outputTokens`; Anthropic counts thinking in
+`outputTokens`).
 
 ## Assist/summarize
 
@@ -271,7 +302,7 @@ usual "Spam" / "Not spam" actions.
     }
   },
   "providerId": "q1", "providerName": "Mistral", "model": "mistral-small-latest",
-  "usage": { "inputTokens": 1830, "outputTokens": 96 }
+  "usage": { "inputTokens": 1830, "outputTokens": 96, "reasoningTokens": 0 }
 }, "0"]
 ```
 
@@ -317,7 +348,7 @@ calendar".
     "quote": "Ihr Termin am Dienstag, 6. Oktober um 9:30 Uhr"
   }],
   "providerId": "q1", "providerName": "Mistral", "model": "mistral-small-latest",
-  "usage": { "inputTokens": 1210, "outputTokens": 140 }
+  "usage": { "inputTokens": 1210, "outputTokens": 140, "reasoningTokens": 0 }
 }, "0"]
 ```
 
@@ -432,35 +463,102 @@ use up any of the day's limits.
 ["Assist/estimate", {
   "accountId": "a1",
   "method": "Assist/summarize",
-  "inputTokens": 1180,
+  "inputTokens": 1189,
   "outputTokens": 250,
-  "totalTokens": 1430,
-  "providerId": "q1", "providerName": "Mistral", "model": "mistral-small-latest",
+  "reasoningTokens": 500,
+  "totalTokens": 1939,
+  "imageCount": 0,
+  "imageTokens": 0,
+  "calls": [
+    { "purpose": "main", "inputTokens": 1189, "outputTokens": 250, "reasoningTokens": 500,
+      "images": 0, "weight": 1 }
+  ],
+  "calibrated": false,
+  "providerId": "q1", "providerName": "OpenAI", "model": "gpt-5-mini",
   "tokensLeftToday": 48000,
   "requestsLeftToday": null,
-  "cost": { "amount": 0.00021, "currency": "EUR", "usd": 0.000245 }
+  "cost": {
+    "amount": 0.00148, "currency": "EUR", "usd": 0.00173,
+    "max": { "amount": 0.00710, "usd": 0.00830 },
+    "parts": { "input": 0.00025, "output": 0.00043, "reasoning": 0.00085,
+               "images": 0, "requests": 0, "other": 0 }
+  }
 }, "0"]
 ```
 
-- `inputTokens` is the prompt (instructions, the mail's text and, for spam
-  check and events, the JSON shape of the answer), counted the way the server
-  counts a request before it is sent: about four characters to a token, a
-  token for each Chinese, Japanese or Korean character. Providers count with
-  their own tokenizers, so the real number differs a little.
+Everything one request can take is counted: every call to the model it makes,
+the prompt with what the API adds around it, the answer and the model's
+thinking.
+
+- `calls` are the calls to the model the request makes or may make, each with
+  its tokens and a `weight`, how likely it is:
+  - `main`, weight 1: the request itself.
+  - `retry`: a provider that refuses the answer's JSON shape (HTTP 400; spam
+    check and events only) is asked once more without it. Listed only when
+    that happened in this provider's and model's last requests for the
+    feature, with the share of them it happened in as `weight`, and with the
+    prompt's tokens (the big providers don't bill a refused request, some
+    servers do; counted to be on the safe side).
+
+  Nothing else calls a model: the text in pictures is read by the server
+  itself (Tesseract, [jmap-image-text.md](jmap-image-text.md)), a
+  conversation is summarized in one call with each mail cut to its share, and
+  there are no second passes. `images` (pictures sent to the model as
+  pictures) is therefore always `0`.
+- `inputTokens`, `outputTokens` and `reasoningTokens` are the sums over
+  `calls`, each by its `weight`; `totalTokens` is the sum of the three.
+- `inputTokens` of a call is the prompt (instructions, the mail's text, the
+  text of pictures with `includeImages` and, for spam check and events, the
+  JSON shape of the answer), counted the way the server counts a request before
+  it is sent: about four characters to a token, a token for each Chinese,
+  Japanese or Korean character; plus what the API adds (the roles and markers
+  of its messages, about 10 tokens, and 12 more for a JSON shape).
 - `outputTokens` is a **typical** answer, not the most the model may write
   (which is far more than it usually does): `compose` 400 for `write`, for
   `rewrite` and `adjust` about the draft's length (a quarter more, at least
   100); `summarize` 150 for one mail, 50 more per further mail of a
   conversation, at most 600; `spamCheck` 150; `extractEvents` 250. Never more
-  than the call allows the model.
-- `totalTokens` is the sum.
-- `cost` is what these tokens cost at the model's price (see `price` of
+  than the call allows the model (nor the model's own `maxOutputTokens`).
+- `reasoningTokens` is typical thinking of a model that thinks before it
+  answers: by the price lists' `supportsReasoning` or, where they don't know
+  the model, by its name (`o3`, `gpt-5…`, `gemini-2.5-…`, `deepseek-r1`,
+  `qwen3`, …). `compose` 700, `summarize` 500, `spamCheck` 500,
+  `extractEvents` 900; `0` for a model that does not think and for Anthropic's
+  models (they think only when asked to, which the server does not do). Thinking
+  and answer together stay within what the call allows the model.
+- `calibrated`: `true` once there are at least 5 real requests of this
+  provider's model for the feature. The server keeps, for the last 50 of them,
+  what it expected (prompt and typical answer) and what the provider reported,
+  and from then on takes the prompt times the median of real to expected
+  prompt tokens, the typical answer times the median of real to typical answer
+  (each ratio held to 0.5 to 3), the median of the real thinking, and the share
+  of requests asked twice for `retry`. Requests whose tokens the provider did
+  not report are not counted.
+- `imageCount` is the number of pictures whose text goes along with
+  `includeImages` (read before, or about 100 tokens for one never read), and
+  `imageTokens` the tokens of that text, part of `inputTokens`.
+- `cost` is what all this costs at the model's price (see `price` of
   `AssistProvider`), in `currency` by the ECB's reference rates of the day
-  (rough built-in rates for `USD`, `JPY` and `CNY` until the server got them once),
-  and in US dollars (`usd`), the currency of the price lists. `null` when the
-  price is not known, when there is no rate for `currency`, or when the admin
-  does not show this server provider's costs. A free provider (Ollama, a
-  ChatGPT subscription) answers `0`.
+  (rough built-in rates for `USD`, `JPY` and `CNY` until the server got them
+  once), and in US dollars (`usd`), the currency of the price lists:
+  - thinking at `reasoningPerMillion`, a request's `perRequest` fee for each
+    call, the higher price of a tier when the prompt is above it; the prompt at
+    the full price (only Anthropic's explicit cache is predictable, and the
+    server does not use it; what a provider did read from its cache lowers the
+    real cost afterwards, see `Assist/usage`);
+  - `max` (`amount` in `currency`, `usd`) is the worst case: the prompt at
+    least as the heuristic counts it, the whole answer allowance
+    (`maxOutputTokens` of the model or of the call, whichever is lower) spent
+    at the dearer of answer and thinking, and for spam check and events one
+    retry;
+  - `parts` splits `amount`, in `currency`: `input` (the prompt without the
+    pictures' text), `output`, `reasoning`, `images` (the pictures' text),
+    `requests` (per-request fees), `other` (the extra calls of `calls`). They
+    add up to `amount`.
+
+  `cost` is `null` when the price is not known, when there is no rate for
+  `currency`, or when the admin does not show this server provider's costs. A
+  free provider (Ollama, a ChatGPT subscription) answers `0`.
 - `tokensLeftToday` and `requestsLeftToday` are what is left of the person's
   daily limits of that provider, `0` when used up (the call itself would then
   answer `overQuota`); `null` when that limit does not exist, and always for
@@ -487,7 +585,8 @@ use up any of the day's limits.
   "accountId": "a1",
   "days": [
     { "day": "2026-09-29", "providerId": "q1", "providerName": "Mistral", "feature": "summarize",
-      "requests": 4, "inputTokens": 5210, "outputTokens": 380,
+      "requests": 4, "inputTokens": 5210, "outputTokens": 380, "reasoningTokens": 1600,
+      "cachedTokens": 1024, "calls": 4,
       "cost": { "amount": 0.00061, "currency": "EUR", "usd": 0.00071 } }
   ],
   "today": [
@@ -499,8 +598,19 @@ use up any of the day's limits.
 
 Days are UTC. Tokens are what the provider reported; where a provider reports
 none (some OpenAI-compatible servers while streaming), the server estimates
-about four characters per token. `cost` is kept with each request, in US
-dollars at the price of the time, and shown in `currency` at today's rate;
+about four characters per token. `outputTokens` is the answer's text,
+`reasoningTokens` what the model spent thinking on top of it (OpenAI's
+`completion_tokens_details.reasoning_tokens`, Gemini's thoughts, the Responses
+API's `output_tokens_details.reasoning_tokens`; Anthropic counts thinking in
+`outputTokens`), `cachedTokens` the part of `inputTokens` the provider read
+from its cache, `calls` the calls to the model (a request asked again after
+its JSON shape was refused counts two). `tokens` of `today` is input, output
+and thinking together, like the daily limit counts them. `cost` is kept with
+each request, in US dollars at the price of the time: what OpenRouter says it
+charged (`usage.cost`) when it says so, otherwise the reported tokens at the
+model's price, cached prompt tokens at `cacheReadPerMillion`, thinking at
+`reasoningPerMillion`, the tier the prompt reached, and the per-request fee.
+It is shown in `currency` at today's rate;
 `null` where the price was not known (and for everything before 0.19.0), and
 for server providers whose costs the admin does not show.
 

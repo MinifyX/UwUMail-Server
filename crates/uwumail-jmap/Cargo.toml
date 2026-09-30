@@ -38,6 +38,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 uwumail-dav.workspace = true
+uwumail-tnef = { workspace = true, features = ["builder"] }
 tempfile.workspace = true
 tower.workspace = true
 tokio-tungstenite.workspace = true

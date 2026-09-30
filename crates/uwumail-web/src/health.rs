@@ -319,6 +319,8 @@ async fn delivery_area(web: &Web, now: i64) -> ApiResult<Area> {
         findings.push(Finding::new("queueStuck", level, params).link("/admin/queue"));
     }
 
+    findings.extend(microsoft_findings(web, now).await?);
+
     // A few bounces are normal (typos); many mean other servers refuse our mail.
     let finished = summary.delivered + summary.failed;
     if summary.failed >= 3 && summary.failed * 4 >= finished {
@@ -326,6 +328,32 @@ async fn delivery_area(web: &Web, now: i64) -> ApiResult<Area> {
         findings.push(Finding::new("manyBounces", Level::Warning, params));
     }
     Ok(Area::new("delivery", findings))
+}
+
+/// Microsoft refusing or throttling mail from this server (docs/microsoft.md): one finding per
+/// address or domain and kind of trouble, with the code seen last.
+async fn microsoft_findings(web: &Web, now: i64) -> ApiResult<Vec<Finding>> {
+    web.store().resolve_microsoft_issues(now).await?;
+    let mut findings: Vec<Finding> = Vec::new();
+    // Newest first, so the first of a kind per address is the one to show.
+    for issue in web.store().open_microsoft_issues().await? {
+        let (code, level) = match uwumail_smtp::microsoft::IssueGroup::parse(&issue.group).map(|group| group.kind()) {
+            Some(uwumail_smtp::microsoft::IssueKind::Throttled) => ("microsoftThrottled", Level::Warning),
+            Some(uwumail_smtp::microsoft::IssueKind::Authentication) => ("microsoftAuth", Level::Problem),
+            _ => ("microsoftBlocked", Level::Problem),
+        };
+        let subject_key = if issue.scope == "domain" { "domain" } else { "ip" };
+        if findings.iter().any(|finding| {
+            finding.code == code
+                && finding.params.get(subject_key).and_then(Value::as_str) == Some(issue.subject.as_str())
+        }) {
+            continue;
+        }
+        let mut params = json!({ "code": issue.code, "count": issue.count, "lastSeen": issue.last_seen });
+        params[subject_key] = json!(issue.subject);
+        findings.push(Finding::new(code, level, params).link("/admin/microsoft"));
+    }
+    Ok(findings)
 }
 
 /// How old the scanner's signatures may be before that is worth saying. ClamAV publishes several
@@ -467,7 +495,7 @@ impl Web {
         self.mark_health_checked();
     }
 
-    async fn check_all_domains(&self) {
+    pub(crate) async fn check_all_domains(&self) {
         let domains = match self.store().domains().await {
             Ok(domains) => domains,
             Err(err) => {

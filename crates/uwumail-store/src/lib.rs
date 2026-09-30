@@ -14,6 +14,7 @@ mod admin;
 mod alerts;
 mod assist;
 mod bayes;
+mod bimi;
 pub mod birthday_import;
 pub mod birthdays;
 mod blobs;
@@ -47,6 +48,7 @@ mod limiter;
 mod mail;
 mod masked;
 mod masked_domains;
+mod microsoft;
 mod migration_jobs;
 pub mod mime_limits;
 mod mutate;
@@ -72,6 +74,7 @@ mod spam_log;
 mod stats;
 mod suggestions;
 mod tls_rpt;
+pub mod tnef;
 mod user_settings;
 mod web;
 mod word_lists;
@@ -93,15 +96,17 @@ pub use alerts::{
     AlertObservation, CertificateOrders,
 };
 pub use assist::{
-    ASSIST_FEATURES, ASSIST_LABEL_DESCRIPTION_MAX_CHARS, ASSIST_LABEL_NAME_MAX_CHARS, ASSIST_MAX_ACCESS_ENTRIES,
-    ASSIST_MAX_LABELS, ASSIST_MAX_PERSONAL_PROVIDERS, ASSIST_MAX_SERVER_PROVIDERS, AssistFeatures, AssistLabel,
-    AssistPolicy, AssistPrefs, AssistProviderRecord, AssistProviderWrite, LabelJob, LabelLogEntry, SecretChange,
-    SenderHistory, UsageRow, UsedToday, label_keyword, utc_day,
+    ASSIST_CALIBRATION_SAMPLES, ASSIST_FEATURES, ASSIST_LABEL_DESCRIPTION_MAX_CHARS, ASSIST_LABEL_NAME_MAX_CHARS,
+    ASSIST_MAX_ACCESS_ENTRIES, ASSIST_MAX_LABELS, ASSIST_MAX_PERSONAL_PROVIDERS, ASSIST_MAX_SERVER_PROVIDERS,
+    AssistFeatures, AssistLabel, AssistPolicy, AssistPrefs, AssistProviderRecord, AssistProviderWrite,
+    CalibrationSample, LabelJob, LabelLogEntry, SecretChange, SenderHistory, TokenCount, UsageRow, UsedToday,
+    label_keyword, utc_day,
 };
 pub use bayes::{
     BAYES_FOLDER_LIMIT, BAYES_LEARNED_SECS, BAYES_MIN_LEARNED, BAYES_RARE_TOKEN_SECS, BAYES_WANTED_AFTER_SECS,
     BayesJob, BayesTotals,
 };
+pub use bimi::{BimiUpdate, DomainBimi};
 pub use blobs::{BlobCleanupPause, BlobHash};
 pub use calendar::{CalendarEventRecord, CalendarEventWrite};
 pub use calendar_alerts::{CalendarAlertFired, DueAlert, PlannedAlert};
@@ -153,6 +158,7 @@ pub use masked::{MASKED_PENDING_SECS, MaskedAddress, MaskedDelivery, MaskedState
 pub use masked_domains::{
     AccountMaskedPolicy, DomainKind, DomainMaskedPolicy, EffectiveMaskedPolicy, KindBlockers, KindChange, MaskedMode,
 };
+pub use microsoft::{MICROSOFT_RESOLVE_AFTER_SECS, MicrosoftIssue, MicrosoftRefusal};
 pub use migration_jobs::{
     MAX_MIGRATION_JOBS, MigrationJob, MigrationProgress, MigrationRun, MigrationState, NewMigrationJob,
 };

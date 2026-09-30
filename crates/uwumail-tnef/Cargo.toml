@@ -1,0 +1,24 @@
+[package]
+name = "uwumail-tnef"
+description = "Decoder for Microsoft TNEF (application/ms-tnef, winmail.dat): attachments, bodies, meetings"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# Self-contained on purpose: the UwUMail client copies this crate as it is, so it depends on no
+# other uwumail crate and on nothing but encoding_rs (text in Windows code pages).
+[dependencies]
+encoding_rs.workspace = true
+
+[features]
+# A small TNEF writer, for tests of programs that read winmail.dat (and this crate's own tests).
+builder = []
+
+[dev-dependencies]
+uwumail-tnef = { path = ".", features = ["builder"] }
+
+[[test]]
+name = "integration"
+path = "tests/integration/main.rs"

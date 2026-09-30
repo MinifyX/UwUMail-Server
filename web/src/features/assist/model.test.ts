@@ -12,6 +12,8 @@ import {
   normalizeChip,
   parseLimit,
   parsePrice,
+  hasThinking,
+  MAX_PRICE_PER_REQUEST,
   pollSeconds,
   providerBody,
   share,
@@ -116,6 +118,10 @@ describe("the provider form", () => {
     });
     // An optional address may stay empty: the kind's own is used.
     expect(validateDraft(emptyDraft(OPENROUTER), OPENROUTER, { hasKey: true, admin: false })).toEqual({});
+    const fee = (requestPrice: string) =>
+      validateDraft({ ...emptyDraft(OPENROUTER), requestPrice }, OPENROUTER, { hasKey: true, admin: false });
+    expect(fee("0.01")).toEqual({});
+    expect(fee("250")).toEqual({ requestPrice: "requestPriceInvalid" });
   });
 
   it("checks what only the admin sets", () => {
@@ -164,8 +170,10 @@ describe("the provider form", () => {
       fastModel: null,
       inputPricePerMillion: null,
       outputPricePerMillion: null,
+      pricePerRequest: null,
     });
     expect(providerBody({ ...draft, inputPrice: "0,15" }, COMPATIBLE, context).inputPricePerMillion).toBe(0.15);
+    expect(providerBody({ ...draft, requestPrice: "0,005" }, COMPATIBLE, context).pricePerRequest).toBe(0.005);
     expect(providerBody({ ...draft, removeKey: true }, COMPATIBLE, context).apiKey).toBe("");
     expect(providerBody({ ...draft, apiKey: " sk-new " }, COMPATIBLE, context).apiKey).toBe("sk-new");
     // Clearing the address of an existing provider says so.
@@ -181,6 +189,7 @@ describe("the provider form", () => {
       fastModel: null,
       inputPricePerMillion: null,
       outputPricePerMillion: null,
+      pricePerRequest: null,
     });
   });
 
@@ -312,7 +321,17 @@ describe("usage", () => {
   ];
 
   it("adds up everything", () => {
-    expect(usageSum(rows)).toEqual({ requests: 10, inputTokens: 1000, outputTokens: 100, amount: null });
+    expect(usageSum(rows)).toEqual({
+      requests: 10,
+      inputTokens: 1000,
+      outputTokens: 100,
+      reasoningTokens: 0,
+      amount: null,
+    });
+    expect(hasThinking(rows)).toBe(false);
+    const thought = rows.map((entry, index) => (index === 2 ? { ...entry, reasoningTokens: 640 } : entry));
+    expect(usageSum(thought).reasoningTokens).toBe(640);
+    expect(hasThinking(thought)).toBe(true);
     const priced = rows.map((entry, index) => ({
       ...entry,
       cost: index === 0 ? null : { amount: 0.25, currency: "EUR", usd: 0.3 },
@@ -368,5 +387,7 @@ describe("costs", () => {
     expect(parsePrice("-1")).toBe("invalid");
     expect(parsePrice("1e3")).toBe("invalid");
     expect(parsePrice("100001")).toBe("invalid");
+    expect(parsePrice("0.005", MAX_PRICE_PER_REQUEST)).toBe(0.005);
+    expect(parsePrice("101", MAX_PRICE_PER_REQUEST)).toBe("invalid");
   });
 });

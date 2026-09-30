@@ -1,6 +1,7 @@
 //! JMAP ids: a type letter plus the database id, and blob ids built from content hashes.
 
 use uwumail_store::BlobHash;
+use uwumail_store::tnef;
 
 pub fn account(id: i64) -> String {
     format!("a{id}")
@@ -110,18 +111,25 @@ pub fn part_blob(hash: &BlobHash, part: usize) -> String {
     format!("p{hash}_{part}")
 }
 
+/// A part made of a winmail.dat part (`uwumail_store::tnef`): `p<sha256>_<part>.<sub>`.
+pub fn tnef_blob(hash: &BlobHash, part: usize, sub: tnef::Sub) -> String {
+    format!("p{hash}_{}", tnef::part_id(part, sub))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BlobRef {
     /// A whole stored blob (a message or an upload).
     Whole(BlobHash),
     /// One MIME part of a stored message, decoded.
     Part(BlobHash, usize),
+    /// A part made of a winmail.dat part of a stored message.
+    Tnef(BlobHash, usize, tnef::Sub),
 }
 
 impl BlobRef {
     pub fn hash(&self) -> &BlobHash {
         match self {
-            BlobRef::Whole(hash) | BlobRef::Part(hash, _) => hash,
+            BlobRef::Whole(hash) | BlobRef::Part(hash, _) | BlobRef::Tnef(hash, ..) => hash,
         }
     }
 }
@@ -132,7 +140,11 @@ pub fn parse_blob(value: &str) -> Option<BlobRef> {
     }
     let rest = value.strip_prefix('p')?;
     let (hash, part) = rest.split_once('_')?;
-    Some(BlobRef::Part(BlobHash::parse(hash).ok()?, part.parse().ok()?))
+    let hash = BlobHash::parse(hash).ok()?;
+    if let Some((index, sub)) = tnef::parse_part_id(part) {
+        return Some(BlobRef::Tnef(hash, index, sub));
+    }
+    Some(BlobRef::Part(hash, part.parse().ok()?))
 }
 
 #[cfg(test)]
@@ -147,8 +159,17 @@ mod tests {
         assert_eq!(parse('m', "m"), None);
         let hash = BlobHash::of(b"hello");
         assert_eq!(parse_blob(&blob(&hash)), Some(BlobRef::Whole(hash.clone())));
-        assert_eq!(parse_blob(&part_blob(&hash, 3)), Some(BlobRef::Part(hash, 3)));
+        assert_eq!(parse_blob(&part_blob(&hash, 3)), Some(BlobRef::Part(hash.clone(), 3)));
         assert_eq!(parse_blob("bnothex"), None);
+        assert_eq!(
+            parse_blob(&tnef_blob(&hash, 4, tnef::Sub::Calendar)),
+            Some(BlobRef::Tnef(hash.clone(), 4, tnef::Sub::Calendar))
+        );
+        assert_eq!(
+            parse_blob(&tnef_blob(&hash, 4, tnef::Sub::Attachment(2))),
+            Some(BlobRef::Tnef(hash.clone(), 4, tnef::Sub::Attachment(2)))
+        );
+        assert_eq!(parse_blob(&format!("p{hash}_4.x")), None);
         assert_eq!(
             parse_event_instance(&event_instance(7, "2026-10-27T09:00:00")),
             Some((7, "2026-10-27T09:00:00".into()))

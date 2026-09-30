@@ -68,6 +68,9 @@ fn usage_rows(rows: &[UsageRow], with_login: bool, prices: &Prices, currency: &s
                 "requests": row.requests,
                 "inputTokens": row.input_tokens,
                 "outputTokens": row.output_tokens,
+                "reasoningTokens": row.reasoning_tokens,
+                "cachedTokens": row.cached_tokens,
+                "calls": row.calls,
                 "cost": row.cost_usd.and_then(|usd| prices.convert(usd, currency)),
             });
             if with_login {
@@ -96,6 +99,7 @@ fn logged(input: &ProviderInput) -> Value {
         "tokensPerDay": input.tokens_per_day,
         "inputPricePerMillion": input.input_price_per_million,
         "outputPricePerMillion": input.output_price_per_million,
+        "pricePerRequest": input.price_per_request,
         "showCostToUsers": input.show_cost_to_users,
     })
 }

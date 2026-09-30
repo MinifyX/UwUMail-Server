@@ -52,6 +52,15 @@ export function useFindingText() {
         values.free = formatBytes(num("freeBytes"), language);
         values.total = formatBytes(num("totalBytes"), language);
         break;
+      case "microsoftBlocked":
+      case "microsoftThrottled":
+      case "microsoftAuth":
+        // One text for IP and domain issues: whichever of the two is there stands in for the other.
+        values.ip = p.ip ?? p.domain ?? "";
+        values.domain = p.domain ?? p.ip ?? "";
+        // The count is for the Microsoft page; here it would pick a plural form.
+        delete values.count;
+        break;
     }
     return t(`health.findings.${finding.code}`, values);
   };

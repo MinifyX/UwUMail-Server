@@ -374,7 +374,7 @@ pub async fn read_blob(ctx: &Ctx<'_>, blob_id: &str) -> Option<Vec<u8>> {
     let bytes = ctx.jmap.store.blob(reference.hash()).await.ok()?;
     match reference {
         ids::BlobRef::Whole(_) => Some(bytes),
-        ids::BlobRef::Part(_, index) => email_json::part_content(&bytes, index).map(|(content, _)| content),
+        part => email_json::blob_content(&bytes, &part).map(|(content, _)| content),
     }
 }
 

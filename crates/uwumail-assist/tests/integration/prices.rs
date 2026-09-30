@@ -91,7 +91,7 @@ async fn price_lists_are_fetched_kept_and_kept_when_a_fetch_fails() {
     lists.down.store(false, Ordering::SeqCst);
     assert!(assist.refresh_prices().await.unwrap());
     let providers = assist.admin_providers().await.unwrap();
-    let price = providers[0].price.unwrap();
+    let price = providers[0].price.clone().unwrap();
     assert!(close(price.input_per_million, 1.0) && close(price.output_per_million, 4.0), "{price:?}");
     assert_eq!(price.source, PriceSource::Auto);
 }
@@ -109,12 +109,12 @@ async fn costs_are_kept_with_the_usage_and_shown_as_the_admin_decides() {
     // The admin sees the price; the person does not, until the admin says so.
     let admin = assist.admin_providers().await.unwrap();
     assert!(!admin[0].show_cost_to_users);
-    let price = admin[0].price.unwrap();
+    let price = admin[0].price.clone().unwrap();
     assert!(close(price.input_per_million, 2.0) && close(price.output_per_million, 10.0), "big-model: {price:?}");
     assert_eq!(assist.providers(&rig.mia).await.unwrap()[0].price, None);
     let summarize = || EstimateArgs::Summarize(SummarizeArgs { email_id: Some(email), ..Default::default() });
     let hidden = assist.estimate(&rig.mia, summarize()).await.unwrap();
-    assert_eq!(hidden.cost_usd, None);
+    assert_eq!(hidden.cost, None);
 
     // The fake answers 120 tokens in, 30 out, with small-model (found without its date).
     rig.fake.push(Reply::Json(200, chat("Eine Rechnung."), vec![]));
@@ -132,9 +132,9 @@ async fn costs_are_kept_with_the_usage_and_shown_as_the_admin_decides() {
     assert_eq!((rows[0].cost_usd, today[0].cost_usd), (Some(stored), Some(stored)));
     let shown = assist.estimate(&rig.mia, summarize()).await.unwrap();
     let expected = (shown.input_tokens as f64 * 0.1 + shown.output_tokens as f64 * 0.4) / 1e6;
-    assert!(close(shown.cost_usd.unwrap(), expected));
+    assert!(close(shown.cost.unwrap().usd, expected));
     let prices = assist.prices().await;
-    let euro = prices.convert(shown.cost_usd.unwrap(), "EUR").unwrap();
+    let euro = prices.convert(shown.cost.unwrap().usd, "EUR").unwrap();
     assert!(close(euro.amount, expected / 1.25) && euro.currency == "EUR");
 
     // A price set by hand comes first; a bad one is refused.
@@ -143,7 +143,7 @@ async fn costs_are_kept_with_the_usage_and_shown_as_the_admin_decides() {
     let view = assist.update_server_provider(server, manual).await.unwrap();
     assert_eq!(view.price.unwrap().source, PriceSource::Manual);
     let manual = assist.estimate(&rig.mia, summarize()).await.unwrap();
-    assert!(close(manual.cost_usd.unwrap(), (manual.input_tokens as f64 + manual.output_tokens as f64 * 2.0) / 1e6));
+    assert!(close(manual.cost.unwrap().usd, (manual.input_tokens as f64 + manual.output_tokens as f64 * 2.0) / 1e6));
     let bad: ProviderInput = serde_json::from_value(json!({ "inputPricePerMillion": -1.0 })).unwrap();
     assert!(assist.update_server_provider(server, bad).await.is_err());
 }
@@ -171,10 +171,64 @@ async fn own_providers_always_show_their_cost_and_ollama_is_free() {
     let args = ComposeArgs { mode: "write".into(), instruction: Some("Sag zu".into()), ..Default::default() };
     let estimate = assist.estimate(&rig.mia, EstimateArgs::Compose(args)).await.unwrap();
     let expected = (estimate.input_tokens as f64 * 2.0 + estimate.output_tokens as f64 * 10.0) / 1e6;
-    assert!(close(estimate.cost_usd.unwrap(), expected));
+    assert!(close(estimate.cost.unwrap().usd, expected));
     assert!(estimate.requests_left_today.is_none());
 
     let ollama = assist.create_personal_provider(&rig.mia, own("ollama")).await.unwrap();
     let price = ollama.price.unwrap();
     assert_eq!((price.source, price.input_per_million, price.output_per_million), (PriceSource::Free, 0.0, 0.0));
+}
+
+#[tokio::test]
+async fn an_estimate_prices_every_part_and_the_worst_case() {
+    let rig = rig().await;
+    let mut rates = uwumail_assist::Rates::plain(1e-6, 4e-6);
+    rates.per_request = 0.001;
+    rates.reasoning = Some(8e-6);
+    rates.reasoning_model = true;
+    rates.max_output_tokens = Some(3000);
+    let mut table = uwumail_assist::PriceTable::default();
+    table.models.insert("small-model".into(), rates);
+    rig.assist.set_prices(table).await.unwrap();
+    rig.policy(|policy| policy.allow_personal = true).await;
+    let own: ProviderInput = serde_json::from_value(json!({
+        "name": "Own", "kind": "openaiCompatible", "baseUrl": rig.fake.base(), "apiKey": "sk-test-abcdefgh1234",
+        "model": "big-model", "fastModel": "small-model"
+    }))
+    .unwrap();
+    rig.assist.create_personal_provider(&rig.mia, own).await.unwrap();
+    let email = rig.deliver(&rig.mia, INVOICE).await;
+    let summarize = || SummarizeArgs { email_id: Some(email), ..Default::default() };
+    let estimate = rig.assist.estimate(&rig.mia, EstimateArgs::Summarize(summarize())).await.unwrap();
+    assert_eq!(estimate.reasoning_tokens, 500, "the list says it thinks");
+    let cost = estimate.cost.unwrap();
+    let parts = cost.parts;
+    assert!(close(parts.input, estimate.input_tokens as f64 * 1e-6));
+    assert!(close(parts.output, estimate.output_tokens as f64 * 4e-6));
+    assert!(close(parts.reasoning, 500.0 * 8e-6));
+    assert!(close(parts.requests, 0.001) && parts.images == 0.0 && parts.other == 0.0);
+    assert!(close(cost.usd, parts.input + parts.output + parts.reasoning + parts.requests));
+    // At worst the model's 3000 tokens (fewer than the call allows) all go to the dearer thinking.
+    assert!(close(cost.max_usd, estimate.input_tokens as f64 * 1e-6 + 3000.0 * 8e-6 + 0.001), "{cost:?}");
+
+    // The real request: the per-request fee and the thinking are part of the cost; OpenRouter's
+    // own figure, when it gives one, is taken as it is.
+    let answer = json!({
+        "choices": [{ "index": 0, "message": { "role": "assistant", "content": "Kurz." }, "finish_reason": "stop" }],
+        "usage": { "prompt_tokens": 1000, "completion_tokens": 300, "completion_tokens_details": { "reasoning_tokens": 200 },
+                   "prompt_tokens_details": { "cached_tokens": 400 } }
+    });
+    rig.fake.push(Reply::Json(200, answer.clone(), vec![]));
+    rig.assist.summarize(&rig.mia, summarize(), None).await.unwrap();
+    let (rows, _) = rig.assist.usage(&rig.mia, 1).await.unwrap();
+    let expected = 1000.0 * 1e-6 + 100.0 * 4e-6 + 200.0 * 8e-6 + 0.001;
+    assert!(close(rows[0].cost_usd.unwrap(), expected), "{:?}", rows[0]);
+    assert_eq!((rows[0].output_tokens, rows[0].reasoning_tokens, rows[0].cached_tokens), (100, 200, 400));
+
+    let mut charged = answer;
+    charged["usage"]["cost"] = json!(0.5);
+    rig.fake.push(Reply::Json(200, charged, vec![]));
+    rig.assist.summarize(&rig.mia, summarize(), None).await.unwrap();
+    let (rows, _) = rig.assist.usage(&rig.mia, 1).await.unwrap();
+    assert!(close(rows[0].cost_usd.unwrap(), expected + 0.5), "{:?}", rows[0]);
 }

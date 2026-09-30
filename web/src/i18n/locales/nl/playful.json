@@ -210,5 +210,13 @@
     "account": {
       "noneAskAdmin": "Nog niets te gebruiken. Vraag je beheerder lief om een provider (・ω・)"
     }
+  },
+  "microsoft": {
+    "issues": {
+      "none": "Microsoft neemt braaf mail van deze server aan (=^･ω･^=)"
+    }
+  },
+  "bimi": {
+    "enabledToast": "BIMI staat aan, je logo is klaar voor zijn grote entree (ﾉ◕ヮ◕)ﾉ"
   }
 }

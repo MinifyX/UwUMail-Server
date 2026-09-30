@@ -70,6 +70,11 @@ pub(crate) fn finding(language: Language, code: &str) -> &'static str {
             "adminsWithoutSecondFactor" => "Ein Admin meldet sich ohne zweiten Faktor an.",
             "backupFailed" => "Das letzte Backup ist fehlgeschlagen.",
             "backupOld" => "Das letzte erfolgreiche Backup ist älter als zwei Tage.",
+            "microsoftBlocked" => "Microsoft (Outlook, Hotmail) lehnt Mail von {ip} ab ({code}).",
+            "microsoftThrottled" => "Microsoft (Outlook, Hotmail) drosselt Mail von {ip} ({code}).",
+            "microsoftAuth" => {
+                "Microsoft lehnt Mail von {domain} ab, weil SPF, DKIM oder DMARC nicht reichen ({code})."
+            }
             _ => "Etwas am Server braucht deine Aufmerksamkeit.",
         },
         Language::En => match code {
@@ -103,6 +108,11 @@ pub(crate) fn finding(language: Language, code: &str) -> &'static str {
             "adminsWithoutSecondFactor" => "An admin logs in without a second factor.",
             "backupFailed" => "The last backup failed.",
             "backupOld" => "The last successful backup is more than two days old.",
+            "microsoftBlocked" => "Microsoft (Outlook, Hotmail) refuses mail from {ip} ({code}).",
+            "microsoftThrottled" => "Microsoft (Outlook, Hotmail) throttles mail from {ip} ({code}).",
+            "microsoftAuth" => {
+                "Microsoft refuses mail from {domain} because SPF, DKIM or DMARC are not good enough ({code})."
+            }
             _ => "Something about the server needs your attention.",
         },
         Language::Fr => match code {
@@ -136,6 +146,11 @@ pub(crate) fn finding(language: Language, code: &str) -> &'static str {
             "adminsWithoutSecondFactor" => "Un admin se connecte sans second facteur.",
             "backupFailed" => "La dernière sauvegarde a échoué.",
             "backupOld" => "La dernière sauvegarde réussie date de plus de deux jours.",
+            "microsoftBlocked" => "Microsoft (Outlook, Hotmail) refuse le courrier de {ip} ({code}).",
+            "microsoftThrottled" => "Microsoft (Outlook, Hotmail) limite le courrier de {ip} ({code}).",
+            "microsoftAuth" => {
+                "Microsoft refuse le courrier de {domain}, car SPF, DKIM ou DMARC ne suffisent pas ({code})."
+            }
             _ => "Quelque chose sur le serveur demande votre attention.",
         },
         Language::Nl => match code {
@@ -169,6 +184,9 @@ pub(crate) fn finding(language: Language, code: &str) -> &'static str {
             "adminsWithoutSecondFactor" => "Een admin logt in zonder tweede factor.",
             "backupFailed" => "De laatste back-up is mislukt.",
             "backupOld" => "De laatste geslaagde back-up is meer dan twee dagen oud.",
+            "microsoftBlocked" => "Microsoft (Outlook, Hotmail) weigert mail van {ip} ({code}).",
+            "microsoftThrottled" => "Microsoft (Outlook, Hotmail) remt mail van {ip} af ({code}).",
+            "microsoftAuth" => "Microsoft weigert mail van {domain}, omdat SPF, DKIM of DMARC niet voldoen ({code}).",
             _ => "Er is iets met de server dat je aandacht nodig heeft.",
         },
         Language::Ja => match code {
@@ -202,6 +220,11 @@ pub(crate) fn finding(language: Language, code: &str) -> &'static str {
             "adminsWithoutSecondFactor" => "2段階認証なしでログインしている管理者がいます。",
             "backupFailed" => "前回のバックアップが失敗しました。",
             "backupOld" => "最後に成功したバックアップから2日以上経っています。",
+            "microsoftBlocked" => "Microsoft（Outlook、Hotmail）が {ip} からのメールを拒否しています（{code}）。",
+            "microsoftThrottled" => "Microsoft（Outlook、Hotmail）が {ip} からのメールを制限しています（{code}）。",
+            "microsoftAuth" => {
+                "SPF、DKIM または DMARC が不十分なため、Microsoft が {domain} からのメールを拒否しています（{code}）。"
+            }
             _ => "サーバーについて確認が必要なことがあります。",
         },
         Language::Zh => match code {
@@ -235,6 +258,9 @@ pub(crate) fn finding(language: Language, code: &str) -> &'static str {
             "adminsWithoutSecondFactor" => "有管理员登录时没有使用第二重验证。",
             "backupFailed" => "上一次备份失败了。",
             "backupOld" => "最近一次成功的备份已超过两天。",
+            "microsoftBlocked" => "Microsoft（Outlook、Hotmail）拒收来自 {ip} 的邮件（{code}）。",
+            "microsoftThrottled" => "Microsoft（Outlook、Hotmail）正在限制来自 {ip} 的邮件（{code}）。",
+            "microsoftAuth" => "由于 SPF、DKIM 或 DMARC 不符合要求，Microsoft 拒收来自 {domain} 的邮件（{code}）。",
             _ => "服务器有需要你注意的地方。",
         },
     }
@@ -400,6 +426,9 @@ mod tests {
     use super::*;
 
     const CODES: &[&str] = &[
+        "microsoftBlocked",
+        "microsoftThrottled",
+        "microsoftAuth",
         "noDomains",
         "tlsFailures",
         "dmarcOwnFailures",
@@ -439,7 +468,11 @@ mod tests {
             for code in CODES {
                 let text = finding(language, code);
                 assert_ne!(text, fallback, "{code} in {language:?}");
-                assert_eq!(text.contains("{domain}"), ["tlsFailures", "dmarcOwnFailures", "dnsDomain"].contains(code));
+                assert_eq!(
+                    text.contains("{domain}"),
+                    ["tlsFailures", "dmarcOwnFailures", "dnsDomain", "microsoftAuth"].contains(code)
+                );
+                assert_eq!(text.contains("{ip}"), ["microsoftBlocked", "microsoftThrottled"].contains(code));
             }
         }
     }

@@ -56,6 +56,10 @@ The long version of every point is in [docs/features.md](docs/features.md):
 - **Moving in made easy.** [Copy an old mailbox](docs/moving.md) over, keep
   [fetching](docs/fetch.md) from Gmail or Outlook (signed in with Google or
   Microsoft), and [import calendars](docs/calendar-import.md) from iCloud & co.
+- **Gets along with Microsoft.** Outlook's [winmail.dat](docs/winmail-dat.md)
+  opened with attachments and meetings, Safe Links shown as the real address,
+  [blocks by Microsoft](docs/microsoft.md) spotted and explained, and a
+  [BIMI logo](docs/bimi.md) per domain for Gmail, Apple Mail and Yahoo.
 - **Spam filter and, if you want, [ClamAV](docs/antivirus.md).** The filter
   learns, keeps sender and word lists and fetches known-bad lists by itself.
 - **Backups and updates built in.** Nightly deduplicated, encrypted
@@ -176,6 +180,7 @@ All the details: [docs/llm.md](docs/llm.md); for app developers:
 | `crates/uwumail-dav` | CalDAV and CardDAV |
 | `crates/uwumail-backup` | Deduplicated, encrypted backups over SFTP |
 | `crates/uwumail-web` | The web portal: JSON API and the embedded admin and account app |
+| `crates/uwumail-tnef` | Decoder for Outlook's winmail.dat (TNEF): attachments, bodies, meetings |
 | `crates/uwumail-store` | SQLite + file storage: domains, accounts, mailboxes, messages, queue |
 | `crates/uwumail-tunnel` | The QUIC tunnel between a server and its UwUMail Gateway |
 | `crates/uwumail-gateway` | The UwUMail Gateway program for a VPS |

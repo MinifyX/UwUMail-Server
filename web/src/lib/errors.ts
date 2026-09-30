@@ -157,6 +157,17 @@ const KNOWN = [
   "chatgptNotStarted",
   "overQuota",
   "assistUnavailable",
+  "bimiNotSvg",
+  "bimiSvgTooLarge",
+  "bimiSvgUnsupported",
+  "bimiSvgExternal",
+  "bimiSvgRaster",
+  "bimiSvgNoSize",
+  "bimiNoSvg",
+  "bimiTitle",
+  "bimiBackground",
+  "bimiCertificateInvalid",
+  "bimiCertificateNotBimi",
 ];
 
 /** Turns an API error into a sentence for the person in front of the screen. */

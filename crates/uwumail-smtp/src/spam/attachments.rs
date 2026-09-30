@@ -169,23 +169,37 @@ pub(crate) fn judge(message: &Message<'_>) -> Vec<Hit> {
     let mut hits = Vec::new();
     for part in message.attachments() {
         let Some(name) = part.attachment_name() else { continue };
-        let kind = kind(name);
-        match kind {
-            Kind::Program => once(&mut hits, "EXECUTABLE_ATTACHMENT", 3.0, shown(name)),
-            Kind::Macro => once(&mut hits, "MACRO_ATTACHMENT", 2.0, shown(name)),
-            Kind::WebPage => once(&mut hits, "HTML_ATTACHMENT", 1.5, shown(name)),
-            Kind::Other => {}
-        }
-        if matches!(kind, Kind::Program | Kind::Macro) && is_disguised(name) {
-            once(&mut hits, "DISGUISED_ATTACHMENT", 2.0, shown(name));
-        }
         let zipped = ending(name).as_deref() == Some("zip")
             || part.content_type().is_some_and(|ct| ct.subtype().is_some_and(|sub| sub.contains("zip")));
-        if zipped && let Some(inside) = program_in_zip(part.contents()) {
-            once(&mut hits, "ARCHIVE_WITH_PROGRAM", 3.0, format!("{}: {inside}", shown(name)));
+        judge_one(&mut hits, name, zipped, part.contents());
+    }
+    // What winmail.dat carries is as much an attachment as the rest.
+    if message.attachments().any(|part| uwumail_store::tnef::stream(part).is_some()) {
+        for decoded in uwumail_store::tnef::decode(message) {
+            for attachment in &decoded.message.attachments {
+                let Some(name) = &attachment.name else { continue };
+                let zipped = ending(name).as_deref() == Some("zip") || attachment.mime_type.contains("zip");
+                judge_one(&mut hits, name, zipped, &attachment.data);
+            }
         }
     }
     hits
+}
+
+fn judge_one(hits: &mut Vec<Hit>, name: &str, zipped: bool, contents: &[u8]) {
+    let kind = kind(name);
+    match kind {
+        Kind::Program => once(hits, "EXECUTABLE_ATTACHMENT", 3.0, shown(name)),
+        Kind::Macro => once(hits, "MACRO_ATTACHMENT", 2.0, shown(name)),
+        Kind::WebPage => once(hits, "HTML_ATTACHMENT", 1.5, shown(name)),
+        Kind::Other => {}
+    }
+    if matches!(kind, Kind::Program | Kind::Macro) && is_disguised(name) {
+        once(hits, "DISGUISED_ATTACHMENT", 2.0, shown(name));
+    }
+    if zipped && let Some(inside) = program_in_zip(contents) {
+        once(hits, "ARCHIVE_WITH_PROGRAM", 3.0, format!("{}: {inside}", shown(name)));
+    }
 }
 
 #[cfg(test)]
@@ -230,6 +244,15 @@ mod tests {
         ]);
         assert_eq!(rules(&raw), ["EXECUTABLE_ATTACHMENT", "MACRO_ATTACHMENT", "HTML_ATTACHMENT"]);
         assert!(rules(&message_with(&[("rechnung.pdf", b"%PDF"), ("foto.jpg", b"jpg")])).is_empty());
+    }
+
+    #[test]
+    fn what_winmail_dat_carries_counts() {
+        use uwumail_tnef::builder::{Props, Tnef, mime_with_winmail};
+        let mut tnef = Tnef::new();
+        tnef.attachment("setup.exe", b"MZ", &Props::new());
+        let raw = mime_with_winmail("From: a@example.com\r\n", Some("Anbei."), &tnef.build());
+        assert_eq!(rules(&raw), ["EXECUTABLE_ATTACHMENT"]);
     }
 
     #[test]

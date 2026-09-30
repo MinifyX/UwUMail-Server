@@ -48,10 +48,30 @@ export interface ModelsAnswer {
 
 export type Access = "everyone" | "domains" | "people";
 
-/** What a model costs, in US dollars per million tokens. */
+/** A higher price once a request's prompt is larger than `aboveTokens`, per million tokens. */
+export interface PriceTier {
+  aboveTokens: number;
+  inputPerMillion: number;
+  outputPerMillion: number;
+  reasoningPerMillion: number;
+  cacheReadPerMillion: number;
+}
+
+/** What a model costs, in US dollars per million tokens (and per request, picture, search). */
 export interface Price {
   inputPerMillion: number;
   outputPerMillion: number;
+  /** The rest of the price sheet, from servers since 0.20.0. */
+  reasoningPerMillion?: number;
+  cacheReadPerMillion?: number;
+  cacheWritePerMillion?: number;
+  perRequest?: number;
+  perImage?: number;
+  webSearchPerQuery?: number;
+  tiers?: PriceTier[];
+  /** The model thinks before it answers, by the price lists. */
+  supportsReasoning?: boolean;
+  maxOutputTokens?: number | null;
   /** From the price lists, set by hand, or nothing per request (Ollama, a subscription). */
   source: "auto" | "manual" | "free";
 }
@@ -96,6 +116,8 @@ export interface AdminProvider {
   /** US dollars per million tokens set by hand; null: from the price lists. */
   inputPricePerMillion: number | null;
   outputPricePerMillion: number | null;
+  /** US dollars per request set by hand; null (or missing on older servers): from the price lists. */
+  pricePerRequest?: number | null;
   /** Whether the people using it see what it costs. */
   showCostToUsers: boolean;
   /** What the default model costs, when known. */
@@ -134,6 +156,7 @@ export interface AssistProvider {
   /** Null for a server provider whose costs the admin keeps to themselves. */
   inputPricePerMillion?: number | null;
   outputPricePerMillion?: number | null;
+  pricePerRequest?: number | null;
   price?: Price | null;
 }
 
@@ -179,7 +202,14 @@ export interface UsageRow {
   feature: Feature;
   requests: number;
   inputTokens: number;
+  /** The answer's text, without thinking. */
   outputTokens: number;
+  /** What the model spent thinking; missing from servers before 0.20.0. */
+  reasoningTokens?: number;
+  /** Of the input, read from the provider's cache. */
+  cachedTokens?: number;
+  /** Calls to the model. */
+  calls?: number;
   /** Null when the price was not known or is not shown. */
   cost?: Cost | null;
 }
@@ -275,15 +305,21 @@ export function formatCost(amount: number, currency: string, language: string): 
   return format(amount, { maximumSignificantDigits: 2 });
 }
 
-/** A price per million tokens as typed: empty is automatic, otherwise 0 to 100,000 (comma or dot). */
-export function parsePrice(text: string): number | null | "invalid" {
+/**
+ * A price as typed: empty is automatic, otherwise 0 to `max` (comma or dot); per million tokens
+ * up to 100,000, per request up to 100 US dollars.
+ */
+export function parsePrice(text: string, max = 100_000): number | null | "invalid" {
   const trimmed = text.trim();
   if (trimmed === "") return null;
   if (!/^\d+(?:[.,]\d+)?$/.test(trimmed)) return "invalid";
   const value = Number(trimmed.replace(",", "."));
-  if (!Number.isFinite(value) || value < 0 || value > 100_000) return "invalid";
+  if (!Number.isFinite(value) || value < 0 || value > max) return "invalid";
   return value;
 }
+
+/** The most a request may cost by hand, in US dollars. */
+export const MAX_PRICE_PER_REQUEST = 100;
 
 export const priceText = (value: number | null | undefined): string => (value == null ? "" : String(value));
 
@@ -311,6 +347,8 @@ export interface ProviderDraft {
   /** US dollars per million tokens; empty: from the price lists. */
   inputPrice: string;
   outputPrice: string;
+  /** US dollars per request; empty: from the price lists. */
+  requestPrice: string;
   /** Only for the admin's providers. */
   showCostToUsers: boolean;
 }
@@ -324,7 +362,8 @@ export type DraftField =
   | "requestsPerDay"
   | "tokensPerDay"
   | "inputPrice"
-  | "outputPrice";
+  | "outputPrice"
+  | "requestPrice";
 
 /** What is wrong with a field, as the last part of its text key under `assist.form.errors`. */
 export type DraftErrors = Partial<Record<DraftField, string>>;
@@ -347,6 +386,7 @@ export function emptyDraft(kind: KindInfo | undefined): ProviderDraft {
     tokensPerDay: "",
     inputPrice: "",
     outputPrice: "",
+    requestPrice: "",
     showCostToUsers: false,
   };
 }
@@ -371,6 +411,7 @@ export function draftOf(provider: AssistProvider | AdminProvider): ProviderDraft
     tokensPerDay: limitText(admin?.tokensPerDay ?? null),
     inputPrice: priceText(provider.inputPricePerMillion),
     outputPrice: priceText(provider.outputPricePerMillion),
+    requestPrice: priceText(provider.pricePerRequest),
     showCostToUsers: admin?.showCostToUsers ?? false,
   };
 }
@@ -441,6 +482,7 @@ export function validateDraft(
 
   if (parsePrice(draft.inputPrice) === "invalid") errors.inputPrice = "priceInvalid";
   if (parsePrice(draft.outputPrice) === "invalid") errors.outputPrice = "priceInvalid";
+  if (parsePrice(draft.requestPrice, MAX_PRICE_PER_REQUEST) === "invalid") errors.requestPrice = "requestPriceInvalid";
 
   if (context.admin) {
     if (draft.access === "domains" && draft.domains.length === 0) errors.access = "domainsRequired";
@@ -478,6 +520,8 @@ export function providerBody(
   const outputPrice = parsePrice(draft.outputPrice);
   body.inputPricePerMillion = inputPrice === "invalid" ? null : inputPrice;
   body.outputPricePerMillion = outputPrice === "invalid" ? null : outputPrice;
+  const requestPrice = parsePrice(draft.requestPrice, MAX_PRICE_PER_REQUEST);
+  body.pricePerRequest = requestPrice === "invalid" ? null : requestPrice;
   if (context.admin) {
     body.showCostToUsers = draft.showCostToUsers;
     const requests = parseLimit(draft.requestsPerDay);
@@ -576,11 +620,12 @@ export interface UsageSum {
   requests: number;
   inputTokens: number;
   outputTokens: number;
+  reasoningTokens: number;
   /** What the rows with a known cost cost together; null when none has one. */
   amount: number | null;
 }
 
-const EMPTY: UsageSum = { requests: 0, inputTokens: 0, outputTokens: 0, amount: null };
+const EMPTY: UsageSum = { requests: 0, inputTokens: 0, outputTokens: 0, reasoningTokens: 0, amount: null };
 
 /** One row as a sum. */
 export function rowSum(row: UsageRow): UsageSum {
@@ -588,6 +633,7 @@ export function rowSum(row: UsageRow): UsageSum {
     requests: row.requests,
     inputTokens: row.inputTokens,
     outputTokens: row.outputTokens,
+    reasoningTokens: row.reasoningTokens ?? 0,
     amount: row.cost?.amount ?? null,
   };
 }
@@ -598,6 +644,7 @@ function add(sum: UsageSum, row: UsageRow): UsageSum {
     requests: sum.requests + row.requests,
     inputTokens: sum.inputTokens + row.inputTokens,
     outputTokens: sum.outputTokens + row.outputTokens,
+    reasoningTokens: sum.reasoningTokens + (row.reasoningTokens ?? 0),
     amount: amount == null ? sum.amount : (sum.amount ?? 0) + amount,
   };
 }
@@ -605,6 +652,10 @@ function add(sum: UsageSum, row: UsageRow): UsageSum {
 export function usageSum(rows: UsageRow[]): UsageSum {
   return rows.reduce(add, EMPTY);
 }
+
+/** Whether any row has thinking tokens: then the tables show a column for them. */
+export const hasThinking = (rows: { reasoningTokens?: number }[]): boolean =>
+  rows.some((row) => (row.reasoningTokens ?? 0) > 0);
 
 /** Whether any row has a cost: then the tables show a cost column. */
 export const hasCosts = (rows: UsageRow[]): boolean => rows.some((row) => row.cost != null);

@@ -7,6 +7,7 @@
 
 pub mod autoconfig;
 pub mod avatars;
+pub mod bimi;
 mod checks;
 pub mod clamav;
 mod client;
@@ -24,6 +25,7 @@ mod headers;
 pub mod health;
 pub mod https;
 mod inbound;
+pub mod microsoft;
 pub mod mta_sts;
 mod outbound;
 pub mod palette;
@@ -391,6 +393,11 @@ impl Smtp {
     /// The relay outgoing mail leaves through, if one is configured.
     pub fn relay_host(&self) -> Option<String> {
         self.inner.live().delivery.relay.as_ref().map(|relay| relay.host.clone())
+    }
+
+    /// Whether outgoing mail leaves through a relay that is not asked for TLS.
+    pub fn relay_without_tls(&self) -> bool {
+        self.inner.live().delivery.relay.as_ref().is_some_and(|relay| relay.security == RelaySecurity::None)
     }
 
     /// Whether another mail server receives mail first and hands it to us.
