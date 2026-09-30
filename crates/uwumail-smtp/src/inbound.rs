@@ -2285,10 +2285,13 @@ pub(crate) async fn receive(
             None => tracing::debug!(%id, "the Face that came with the message is not a small PNG"),
         }
     }
+    let itip = if inbox_accounts.is_empty() { None } else { crate::scheduling::find(&message).await };
     for account_id in inbox_accounts {
         vacation::maybe_reply(&ctx, account_id, &envelope.address, sender_verified, &message).await;
-        let sender = crate::scheduling::Sender { verified_from: verified_from.as_deref(), local: false };
-        crate::scheduling::incoming(&ctx, account_id, &message, sender).await;
+        if let Some(itip) = &itip {
+            let sender = crate::scheduling::Sender { verified_from: verified_from.as_deref(), local: false };
+            crate::scheduling::incoming(&ctx, account_id, itip, sender).await;
+        }
     }
     if !failed.is_empty() && sender_verified {
         dsn::bounce(&ctx, &envelope.address, &message, &failed).await;

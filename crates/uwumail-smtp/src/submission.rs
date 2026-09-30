@@ -436,8 +436,10 @@ impl Smtp {
         vacation::maybe_reply(ctx, account_id, mail_from, true, signed).await;
         // Calendar apps that send invitations themselves reach people here too; the From address
         // was checked to be the sender's own.
-        let sender = crate::scheduling::Sender { verified_from: Some(author), local: true };
-        crate::scheduling::incoming(ctx, account_id, signed, sender).await;
+        if let Some(itip) = crate::scheduling::find(signed).await {
+            let sender = crate::scheduling::Sender { verified_from: Some(author), local: true };
+            crate::scheduling::incoming(ctx, account_id, &itip, sender).await;
+        }
         Ok(())
     }
 }
