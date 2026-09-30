@@ -132,6 +132,8 @@ is handed to the others.
 | `undoSendSeconds` | `0`, `5`, `10`, `20` or `30`: how long a submission waits before it goes; the server applies it ([jmap-sending.md](jmap-sending.md)), 10 when not set |
 | `linkConfirm` | `true` or `false`: ask before opening links from mails |
 | `darkImages` | `true` or `false`: recolor light images when a mail is darkened |
+| `assist.refineEvents` | `true` or `false`: ask the AI assistant for a mail's events by itself when it opens ([jmap-assist.md](jmap-assist.md)) |
+| `assist.currency` | `"EUR"` or `"USD"`: the currency of AI costs for someone reading in English; other languages have their own (Japanese yen, Chinese yuan, euros for the rest) and ignore it. Not set: euros |
 | `trustedSenders:<entry>` | `true`; `<entry>` is a lower-case address `a@b.c` or `@domain`, at most 254 characters |
 | `senderAppearance:<address>` | `"light"` or `"dark"`; `<address>` is a lower-case address, at most 254 characters |
 | `linkDomains:<domain>` | `true`; `<domain>` is a lower-case ASCII host name (IDNs in punycode), at most 253 characters |

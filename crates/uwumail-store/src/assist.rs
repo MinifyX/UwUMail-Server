@@ -33,6 +33,8 @@ const ASSIST_MAX_QUEUED_PER_ACCOUNT: i64 = 200;
 
 const POLICY_KEY: &str = "assist.policy";
 const VERSION_KEY: &str = "assist.version";
+/// The price lists and exchange rates the assistant fetched last, as it keeps them (JSON).
+const PRICES_KEY: &str = "assist.prices";
 
 /// What the admin decided for the whole server.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -98,7 +100,7 @@ impl AssistFeatures {
 }
 
 /// A provider as stored, without its secret.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssistProviderRecord {
     pub id: i64,
@@ -118,6 +120,11 @@ pub struct AssistProviderRecord {
     pub features: Vec<String>,
     pub requests_per_day: Option<i64>,
     pub tokens_per_day: Option<i64>,
+    /// US dollars per million tokens in and out, when set by hand; `None`: from the price lists.
+    pub input_price: Option<f64>,
+    pub output_price: Option<f64>,
+    /// Whether the people using a server provider see what it costs.
+    pub show_cost: bool,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -143,7 +150,7 @@ impl std::fmt::Debug for SecretChange {
 }
 
 /// A new or changed provider; every field is written.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AssistProviderWrite {
     pub name: String,
     pub kind: String,
@@ -156,6 +163,9 @@ pub struct AssistProviderWrite {
     pub features: Vec<String>,
     pub requests_per_day: Option<i64>,
     pub tokens_per_day: Option<i64>,
+    pub input_price: Option<f64>,
+    pub output_price: Option<f64>,
+    pub show_cost: bool,
 }
 
 impl AssistProviderWrite {
@@ -172,6 +182,9 @@ impl AssistProviderWrite {
             features: record.features.clone(),
             requests_per_day: record.requests_per_day,
             tokens_per_day: record.tokens_per_day,
+            input_price: record.input_price,
+            output_price: record.output_price,
+            show_cost: record.show_cost,
         }
     }
 }
@@ -223,7 +236,7 @@ pub struct LabelLogEntry {
     pub undone: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageRow {
     pub day: String,
@@ -236,6 +249,18 @@ pub struct UsageRow {
     pub requests: i64,
     pub input_tokens: i64,
     pub output_tokens: i64,
+    /// US dollars, at the prices of the time; `None` where they were not known.
+    pub cost_usd: Option<f64>,
+}
+
+/// What a person used today with one provider.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct UsedToday {
+    pub requests: i64,
+    /// In and out.
+    pub tokens: i64,
+    /// US dollars; `None` when no price was known.
+    pub cost_usd: Option<f64>,
 }
 
 /// This account's history with an address, for the spam check.
@@ -308,7 +333,8 @@ pub fn label_keyword(name: &str) -> String {
 }
 
 const PROVIDER_COLUMNS: &str = "id, account_id, name, kind, base_url, secret IS NOT NULL, key_hint, model, fast_model,
-     enabled, access, access_list, features, requests_per_day, tokens_per_day, created_at, updated_at";
+     enabled, access, access_list, features, requests_per_day, tokens_per_day, created_at, updated_at, input_price,
+     output_price, show_cost";
 
 fn provider_row(row: &Row<'_>) -> rusqlite::Result<AssistProviderRecord> {
     let list = |index: usize| -> rusqlite::Result<Vec<String>> {
@@ -333,6 +359,9 @@ fn provider_row(row: &Row<'_>) -> rusqlite::Result<AssistProviderRecord> {
         tokens_per_day: row.get(14)?,
         created_at: row.get(15)?,
         updated_at: row.get(16)?,
+        input_price: row.get(17)?,
+        output_price: row.get(18)?,
+        show_cost: row.get(19)?,
     })
 }
 
@@ -416,6 +445,15 @@ impl Store {
         .await
     }
 
+    /// The price lists and exchange rates kept last, as the assistant wrote them.
+    pub async fn assist_prices(&self) -> Result<Option<String>> {
+        self.read(|conn| get_setting(conn, PRICES_KEY)).await
+    }
+
+    pub async fn set_assist_prices(&self, prices: String) -> Result<()> {
+        self.write(move |tx| set_setting(tx, PRICES_KEY, &prices)).await
+    }
+
     /// Counts up with every change to the policy or to a server provider, for session states.
     pub async fn assist_version(&self) -> Result<i64> {
         self.read(|conn| Ok(get_setting(conn, VERSION_KEY)?.and_then(|v| v.parse().ok()).unwrap_or(0))).await
@@ -429,6 +467,17 @@ impl Store {
             ))?;
             let rows = stmt.query_map([owner], provider_row)?;
             Ok(rows.collect::<Result<_, _>>()?)
+        })
+        .await
+    }
+
+    /// How many providers of `kind` there are, the server's and everyone's own.
+    pub async fn assist_providers_of_kind(&self, kind: &str) -> Result<usize> {
+        let kind = kind.to_owned();
+        self.read(move |conn| {
+            let count: i64 =
+                conn.query_row("SELECT COUNT(*) FROM assist_providers WHERE kind = ?1", [kind], |row| row.get(0))?;
+            Ok(count as usize)
         })
         .await
     }
@@ -923,8 +972,10 @@ impl Store {
         .await
     }
 
-    /// Adds tokens to a request counted with [`Store::reserve_assist_usage`] on `day`. Negative
-    /// numbers take back part of an estimate; a count never goes below zero.
+    /// Adds tokens, and what they cost in US dollars when that is known, to a request counted with
+    /// [`Store::reserve_assist_usage`] on `day`. Negative numbers take back part of an estimate; a
+    /// count never goes below zero.
+    #[allow(clippy::too_many_arguments)]
     pub async fn add_assist_tokens(
         &self,
         account_id: i64,
@@ -933,15 +984,18 @@ impl Store {
         feature: &str,
         input_tokens: i64,
         output_tokens: i64,
+        cost_usd: Option<f64>,
     ) -> Result<()> {
         let feature = feature.to_owned();
+        let cost_usd = cost_usd.filter(|cost| cost.is_finite());
         self.write(move |tx| {
             tx.execute(
-                "INSERT INTO assist_usage (account_id, provider_id, day, feature, input_tokens, output_tokens)
-                 VALUES (?1, ?2, ?3, ?4, MAX(?5, 0), MAX(?6, 0))
+                "INSERT INTO assist_usage (account_id, provider_id, day, feature, input_tokens, output_tokens, cost_usd)
+                 VALUES (?1, ?2, ?3, ?4, MAX(?5, 0), MAX(?6, 0), MAX(?7, 0))
                  ON CONFLICT (account_id, provider_id, day, feature) DO UPDATE SET
-                    input_tokens = MAX(input_tokens + ?5, 0), output_tokens = MAX(output_tokens + ?6, 0)",
-                params![account_id, provider_id, day, feature, input_tokens, output_tokens],
+                    input_tokens = MAX(input_tokens + ?5, 0), output_tokens = MAX(output_tokens + ?6, 0),
+                    cost_usd = CASE WHEN ?7 IS NULL THEN cost_usd ELSE MAX(COALESCE(cost_usd, 0) + ?7, 0) END",
+                params![account_id, provider_id, day, feature, input_tokens, output_tokens, cost_usd],
             )?;
             Ok(())
         })
@@ -949,13 +1003,13 @@ impl Store {
     }
 
     /// Requests and tokens (in and out) a person used today with one provider.
-    pub async fn assist_used_today(&self, account_id: i64, provider_id: i64) -> Result<(i64, i64)> {
+    pub async fn assist_used_today(&self, account_id: i64, provider_id: i64) -> Result<UsedToday> {
         self.read(move |conn| {
             Ok(conn.query_row(
-                "SELECT COALESCE(SUM(requests), 0), COALESCE(SUM(input_tokens + output_tokens), 0) FROM assist_usage
-                 WHERE account_id = ?1 AND provider_id = ?2 AND day = ?3",
+                "SELECT COALESCE(SUM(requests), 0), COALESCE(SUM(input_tokens + output_tokens), 0), SUM(cost_usd)
+                 FROM assist_usage WHERE account_id = ?1 AND provider_id = ?2 AND day = ?3",
                 params![account_id, provider_id, utc_day(now())],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok(UsedToday { requests: row.get(0)?, tokens: row.get(1)?, cost_usd: row.get(2)? }),
             )?)
         })
         .await
@@ -966,7 +1020,7 @@ impl Store {
         self.read(move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT u.day, u.account_id, a.login, u.provider_id, p.name, u.feature, u.requests, u.input_tokens,
-                        u.output_tokens
+                        u.output_tokens, u.cost_usd
                  FROM assist_usage u JOIN accounts a ON a.id = u.account_id
                  LEFT JOIN assist_providers p ON p.id = u.provider_id
                  WHERE u.day >= ?1 AND (?2 IS NULL OR u.account_id = ?2)
@@ -983,6 +1037,7 @@ impl Store {
                     requests: row.get(6)?,
                     input_tokens: row.get(7)?,
                     output_tokens: row.get(8)?,
+                    cost_usd: row.get(9)?,
                 })
             })?;
             Ok(rows.collect::<Result<_, _>>()?)
@@ -1105,7 +1160,7 @@ fn write_provider(tx: &Transaction<'_>, id: i64, write: &AssistProviderWrite, se
     tx.execute(
         "UPDATE assist_providers SET name = ?2, kind = ?3, base_url = ?4, model = ?5, fast_model = ?6, enabled = ?7,
             access = ?8, access_list = ?9, features = ?10, requests_per_day = ?11, tokens_per_day = ?12,
-            updated_at = ?13
+            updated_at = ?13, input_price = ?14, output_price = ?15, show_cost = ?16
          WHERE id = ?1",
         params![
             id,
@@ -1120,7 +1175,10 @@ fn write_provider(tx: &Transaction<'_>, id: i64, write: &AssistProviderWrite, se
             list(&write.features),
             write.requests_per_day,
             write.tokens_per_day,
-            now()
+            now(),
+            write.input_price,
+            write.output_price,
+            write.show_cost
         ],
     )?;
     write_secret(tx, id, secret)

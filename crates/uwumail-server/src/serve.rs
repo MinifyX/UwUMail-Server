@@ -159,6 +159,9 @@ pub async fn run(
     let assist = uwumail_assist::Assist::new(store.clone(), egress.clone(), &config.hostname)
         .with_image_text(jmap.image_text_reader());
     tasks.spawn(assist.clone().run_label_worker(shutdown_rx.clone()));
+    // What models cost: LiteLLM's and OpenRouter's price lists and the ECB's exchange rates, once a
+    // day through the egress (docs/llm.md, "Costs").
+    tasks.spawn(assist.clone().run_price_updater(shutdown_rx.clone()));
     let jmap = jmap.with_assist(assist.clone());
     // The log to Grafana Loki, when the config or the admin panel asks for it; the admin panel
     // switches it on, over and off while the server runs.

@@ -218,6 +218,9 @@ pub struct Estimate {
     /// What is left of the day's limits of that provider; `None` without a limit.
     pub requests_left_today: Option<i64>,
     pub tokens_left_today: Option<i64>,
+    /// What the tokens would cost in US dollars; `None` when the price is not known or the admin
+    /// does not show this provider's costs.
+    pub cost_usd: Option<f64>,
 }
 
 /// A label the model put on a mail, and why.
@@ -643,9 +646,17 @@ impl Assist {
             }
         };
         let (requests_left_today, tokens_left_today) = self.left_today(account, &provider).await?;
+        let input_tokens = llm::estimate_prompt(&prompt);
+        let output_tokens = typical.min(i64::from(prompt.max_tokens));
+        let cost_usd = match provider.shows_cost() {
+            true => self.price_of(&provider.record, provider.info, &model).await,
+            false => None,
+        }
+        .map(|price| price.cost(input_tokens, output_tokens));
         Ok(Estimate {
-            input_tokens: llm::estimate_prompt(&prompt),
-            output_tokens: typical.min(i64::from(prompt.max_tokens)),
+            input_tokens,
+            output_tokens,
+            cost_usd,
             effective: provider.effective(model),
             requests_left_today,
             tokens_left_today,
@@ -732,14 +743,24 @@ impl Assist {
         Ok(true)
     }
 
-    /// `Assist/usage`: the person's rows since `days` days ago (today included), and today.
+    /// `Assist/usage`: the person's rows (with the costs they may see) since `days` days ago (today included), and today.
     pub async fn usage(
         &self,
         account: &Account,
         days: u32,
     ) -> Result<(Vec<uwumail_store::UsageRow>, Vec<crate::TodayUsage>)> {
         let since = uwumail_store::utc_day(now() - i64::from(days.clamp(1, 400) - 1) * 86_400);
-        let rows = self.store().assist_usage(Some(account.id), since).await?;
+        let mut rows = self.store().assist_usage(Some(account.id), since).await?;
+        // Costs only of the providers whose costs the person sees; a provider that is gone keeps
+        // them to itself.
+        let policy = self.store().assist_policy().await?;
+        let shown: HashSet<i64> =
+            self.available(account, &policy).await?.iter().filter(|a| a.shows_cost()).map(|a| a.record.id).collect();
+        for row in &mut rows {
+            if !shown.contains(&row.provider_id) {
+                row.cost_usd = None;
+            }
+        }
         Ok((rows, self.today(account).await?))
     }
 }

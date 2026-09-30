@@ -13,6 +13,7 @@ mod features;
 pub mod kinds;
 pub mod llm;
 pub mod mail;
+pub mod prices;
 pub mod prompts;
 mod worker;
 
@@ -33,6 +34,7 @@ pub use features::{
     SummarizeArgs, SummaryResult, Usage,
 };
 pub use kinds::{KINDS, KindInfo};
+pub use prices::{Cost, Price, PriceSource, PriceSources, PriceTable, Prices};
 
 /// Longest instruction a person may give.
 pub const MAX_INSTRUCTION_CHARS: usize = 2000;
@@ -139,6 +141,9 @@ struct Inner {
     estimating: Mutex<HashMap<i64, usize>>,
     /// The text in a mail's pictures, for `Assist/extractEvents` with `includeImages`.
     image_text: Option<ImageText>,
+    /// What models cost, once loaded from the database.
+    prices: std::sync::RwLock<Option<Arc<prices::Prices>>>,
+    price_sources: prices::PriceSources,
 }
 
 impl Assist {
@@ -156,6 +161,8 @@ impl Assist {
                 running: Mutex::new(HashMap::new()),
                 estimating: Mutex::new(HashMap::new()),
                 image_text: None,
+                prices: std::sync::RwLock::new(None),
+                price_sources: prices::PriceSources::default(),
             }),
         }
     }
@@ -165,6 +172,12 @@ impl Assist {
         let assist = Assist::new(store, Egress::direct(), hostname);
         let inner = Arc::into_inner(assist.inner).expect("not shared yet");
         Assist { inner: Arc::new(Inner { chatgpt, reach_anything: true, ..inner }) }
+    }
+
+    /// Fetches the price lists from `sources`: for tests.
+    pub fn with_price_sources(self, sources: prices::PriceSources) -> Assist {
+        let inner = Arc::into_inner(self.inner).expect("set before anything else holds the assistant");
+        Assist { inner: Arc::new(Inner { price_sources: sources, ..inner }) }
     }
 
     /// Reads the text in pictures with `read`. Called before anything else holds the assistant.

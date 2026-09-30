@@ -316,3 +316,76 @@ async fn estimates_ask_no_one_and_events_need_no_refinement_setting() {
     assert_eq!(found["events"][0]["start"], "2026-10-03T18:00:00");
     assert_eq!(seen.lock().unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn estimates_and_usage_carry_costs_in_the_currency_asked_for() {
+    let plain = server().await;
+    let (base, _) = fake_provider().await;
+    let assist = with_assist(&plain.store).await;
+    let models = std::collections::BTreeMap::from([("small-model".to_owned(), (0.000001, 0.000004))]);
+    let rates = std::collections::BTreeMap::from([("USD".to_owned(), 1.25), ("JPY".to_owned(), 160.0)]);
+    let table = uwumail_assist::PriceTable { models, rates, ..Default::default() };
+    assist.set_prices(table).await.unwrap();
+    let input: ProviderInput = serde_json::from_value(json!({
+        "name": "Hausmodell", "kind": "openaiCompatible", "baseUrl": base, "apiKey": "sk-test-0000",
+        "model": "big-model", "fastModel": "small-model", "showCostToUsers": true
+    }))
+    .unwrap();
+    assist.create_server_provider(input).await.unwrap();
+    let jmap = Jmap::new(smtp(&plain.store)).with_avatar_net(Arc::new(NoNet)).with_assist(assist);
+    let server = Server { router: jmap.router(), jmap, store: plain.store, dir: plain.dir };
+    let login = "mini@example.org";
+    let account = server.account_id(login).await;
+    let email = server
+        .deliver(login, "From: Nyu <nyu@example.org>\nTo: mini@example.org\nSubject: Grillen\n\nKommst du Samstag?\n")
+        .await;
+
+    let responses = server
+        .api_using(
+            login,
+            &USING,
+            json!([
+                ["Assist/estimate", { "accountId": account, "method": "Assist/summarize",
+                    "arguments": { "emailId": email } }, "e"],
+                ["Assist/estimate", { "accountId": account, "method": "Assist/summarize", "currency": "JPY",
+                    "arguments": { "emailId": email } }, "j"],
+                ["Assist/estimate", { "accountId": account, "method": "Assist/compose",
+                    "arguments": { "mode": "write", "instruction": "Sag zu" } }, "c"],
+                ["Assist/estimate", { "accountId": account, "method": "Assist/summarize", "currency": "euro",
+                    "arguments": { "emailId": email } }, "x"],
+                ["AssistProvider/get", { "accountId": account }, "p"],
+            ]),
+        )
+        .await;
+    let euro = args(&responses, 0, "Assist/estimate");
+    let cost = &euro["cost"];
+    let usd = (euro["inputTokens"].as_f64().unwrap() + 4.0 * euro["outputTokens"].as_f64().unwrap()) / 1e6;
+    assert_eq!(cost["currency"], "EUR", "{euro}");
+    assert!((cost["usd"].as_f64().unwrap() - usd).abs() < 1e-12);
+    assert!((cost["amount"].as_f64().unwrap() - usd / 1.25).abs() < 1e-12);
+    let yen = &args(&responses, 1, "Assist/estimate")["cost"];
+    assert!((yen["amount"].as_f64().unwrap() - usd / 1.25 * 160.0).abs() < 1e-9, "{yen}");
+    assert_eq!(args(&responses, 2, "Assist/estimate")["cost"], Value::Null, "big-model has no known price");
+    assert_eq!(responses[3][1]["type"], "invalidArguments");
+    let provider = &args(&responses, 4, "AssistProvider/get")["list"][0];
+    assert_eq!(provider["price"], Value::Null, "the default model's price is not known: {provider}");
+    assert_eq!(provider["inputPricePerMillion"], Value::Null);
+
+    let responses = server
+        .api_using(
+            login,
+            &USING,
+            json!([
+                ["Assist/summarize", { "accountId": account, "emailId": email }, "s"],
+                ["Assist/usage", { "accountId": account, "currency": "USD" }, "u"],
+            ]),
+        )
+        .await;
+    let usage = args(&responses, 1, "Assist/usage");
+    // The fake reports 100 tokens in and 10 out.
+    let spent = (100.0 + 4.0 * 10.0) / 1e6;
+    for entry in [&usage["days"][0], &usage["today"][0]] {
+        assert_eq!(entry["cost"]["currency"], "USD", "{usage}");
+        assert!((entry["cost"]["amount"].as_f64().unwrap() - spent).abs() < 1e-12, "{usage}");
+    }
+}
