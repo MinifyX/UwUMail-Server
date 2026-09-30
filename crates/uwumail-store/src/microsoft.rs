@@ -16,6 +16,10 @@ const SHOWN_RESOLVED_SECS: i64 = 30 * 24 * 3600;
 const KEPT_RESOLVED_SECS: i64 = 90 * 24 * 3600;
 /// Microsoft's answers are short; anything longer is cut.
 const MAX_REPLY_CHARS: usize = 1000;
+/// Open issues kept at most. A real server has a handful of sending addresses and domains; past
+/// this, new refusals only count up the issues already open, so a flood of odd answers cannot
+/// fill the table or the admins' alerts.
+const MAX_OPEN_MICROSOFT_ISSUES: i64 = 32;
 
 /// One refusal as the delivery worker saw it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,6 +111,11 @@ impl Store {
                 ],
             )?;
             if changed > 0 {
+                return Ok(false);
+            }
+            let open: i64 =
+                tx.query_row("SELECT COUNT(*) FROM microsoft_issues WHERE resolved_at IS NULL", [], |row| row.get(0))?;
+            if open >= MAX_OPEN_MICROSOFT_ISSUES {
                 return Ok(false);
             }
             tx.execute(
@@ -247,6 +256,19 @@ mod tests {
         assert_eq!((first.count, first.first_seen, first.last_seen), (2, T0, T0 + 60));
         // Newest refusal first.
         assert_eq!(issues[0].subject, "198.51.100.7");
+    }
+
+    #[tokio::test]
+    async fn open_issues_are_capped() {
+        let (store, _dir) = crate::test_support::store().await;
+        for n in 0..MAX_OPEN_MICROSOFT_ISSUES + 5 {
+            store.record_microsoft_refusal(refusal(&format!("S{}", 3000 + n), "203.0.113.5"), T0 + n).await.unwrap();
+        }
+        assert_eq!(store.open_microsoft_issues().await.unwrap().len() as i64, MAX_OPEN_MICROSOFT_ISSUES);
+        // Issues already open still count up.
+        assert!(!store.record_microsoft_refusal(refusal("S3000", "203.0.113.5"), T0 + 500).await.unwrap());
+        let issues = store.open_microsoft_issues().await.unwrap();
+        assert_eq!(issues.iter().find(|issue| issue.code == "S3000").unwrap().count, 2);
     }
 
     #[tokio::test]
