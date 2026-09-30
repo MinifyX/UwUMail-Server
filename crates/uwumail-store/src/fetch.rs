@@ -469,34 +469,6 @@ fn check_interval(secs: i64) -> Result<i64> {
     Ok(secs)
 }
 
-/// Whether an IP address is on the open internet, not this machine, the local network or a reserved
-/// range. A fetched mailbox and its outgoing server live somewhere else, so a private or loopback
-/// address would only point the worker at this host or the LAN (security-audit-0.5.2 S-10).
-pub fn is_public_ip(ip: std::net::IpAddr) -> bool {
-    match ip.to_canonical() {
-        std::net::IpAddr::V4(v4) => {
-            let [a, b, ..] = v4.octets();
-            !(v4.is_unspecified()
-                || v4.is_loopback()
-                || v4.is_private()
-                || v4.is_link_local()
-                || v4.is_broadcast()
-                || v4.is_multicast()
-                || a == 0
-                || a >= 240
-                || (a == 100 && (b & 0xc0) == 64))
-        }
-        std::net::IpAddr::V6(v6) => {
-            let first = v6.segments()[0];
-            !(v6.is_unspecified()
-                || v6.is_loopback()
-                || v6.is_multicast()
-                || (first & 0xfe00) == 0xfc00
-                || (first & 0xffc0) == 0xfe80)
-        }
-    }
-}
-
 pub(crate) fn check_host(host: &str) -> Result<String> {
     let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
     if host.is_empty() || !host.contains('.') || host.contains(char::is_whitespace) {
@@ -505,7 +477,7 @@ pub(crate) fn check_host(host: &str) -> Result<String> {
     // An IP literal must be public. A name is re-checked when the connection is made, so it cannot
     // resolve to a private address either.
     if let Ok(ip) = host.parse::<std::net::IpAddr>()
-        && !is_public_ip(ip)
+        && !crate::is_public_ip(ip)
     {
         return Err(StoreError::Invalid(format!("'{host}' is not a public address")));
     }
