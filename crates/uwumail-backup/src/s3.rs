@@ -299,7 +299,7 @@ impl S3 {
         if addresses.is_empty() {
             return Err(Error::Storage(format!("{} could not be looked up", self.host)));
         }
-        if addresses.into_iter().any(uwumail_store::is_public_ip) {
+        if !addresses.into_iter().all(in_own_network) {
             return Err(Error::Config(format!(
                 "{} is on the internet; use https:// for it (http:// only works in the own network)",
                 self.host
@@ -524,6 +524,22 @@ impl S3 {
     }
 }
 
+/// Whether an address is inside the own network: this machine, a private network or the
+/// shared address space of a VPN such as Tailscale. Not merely "not public": an address that only
+/// is not public (reserved, documentation, Teredo) is no place backups may go to unencrypted.
+fn in_own_network(ip: std::net::IpAddr) -> bool {
+    match ip.to_canonical() {
+        std::net::IpAddr::V4(v4) => {
+            let [a, b, ..] = v4.octets();
+            v4.is_loopback() || v4.is_private() || v4.is_link_local() || (a == 100 && (b & 0xc0) == 64)
+        }
+        std::net::IpAddr::V6(v6) => {
+            let first = v6.segments()[0];
+            v6.is_loopback() || (first & 0xfe00) == 0xfc00 || (first & 0xffc0) == 0xfe80
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -690,8 +706,11 @@ mod tests {
         for local in ["http://127.0.0.1:9000", "http://192.168.1.20:9000", "http://[::1]:9000"] {
             S3::new(&target(local)).unwrap().check_route().await.unwrap();
         }
-        let public = S3::new(&target("http://192.0.2.10:9000")).unwrap();
-        assert!(matches!(public.check_route().await, Err(Error::Config(_))));
+        // Not in the own network either: not public, but not a place for backups in the clear.
+        for elsewhere in ["http://192.0.2.10:9000", "http://[2001:db8::1]:9000", "http://[2001:0:4136:e378::1]:9000"] {
+            let s3 = S3::new(&target(elsewhere)).unwrap();
+            assert!(matches!(s3.check_route().await, Err(Error::Config(_))), "{elsewhere}");
+        }
         S3::new(&target("https://192.0.2.10")).unwrap().check_route().await.unwrap();
     }
 }

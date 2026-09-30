@@ -59,6 +59,7 @@ mod own;
 mod parse;
 mod password;
 mod profile_pictures;
+mod public_ip;
 mod push;
 mod query;
 mod queue;
@@ -144,7 +145,7 @@ pub use feeds::FeedState;
 pub use fetch::{
     AfterFetch, DEFAULT_FETCH_INTERVAL_SECS, FETCH_HOLD_LIMIT_SECS, FETCH_SEEN_SECS, FetchAccount, FetchAccountUpdate,
     FetchAuth, FetchFolder, FetchGrant, FetchOAuth, FetchSecurity, FetchSender, FetchTokens, MAX_FETCH_ACCOUNTS,
-    MAX_FETCH_INTERVAL_SECS, MIN_FETCH_INTERVAL_SECS, NewFetchAccount, SendSecurity, is_public_ip,
+    MAX_FETCH_INTERVAL_SECS, MIN_FETCH_INTERVAL_SECS, NewFetchAccount, SendSecurity,
 };
 pub use forward_addresses::{FORWARD_ADDRESS_MAX_TARGETS, ForwardAddress};
 pub use forwarding::{ActiveForwarding, FORWARD_LINK_LIFETIME_SECS, ForwardTarget, Forwarding, MAX_FORWARD_TARGETS};
@@ -181,6 +182,7 @@ pub use profile_pictures::{
     AddressPicture, GroupPicture, MAX_RECEIVED_FACES, NewPicture, PUBLIC_PICTURES_SETTING, PictureMeta, PictureOwner,
     PictureVisibility, ProfileSettings, ProfileUpdate, StoredPicture,
 };
+pub use public_ip::is_public_ip;
 pub use push::{
     MAX_PUSH_SUBSCRIPTIONS, NewPushSubscription, PUSH_CREDENTIAL_PASSWORD, PUSH_MAX_FAILURES, PUSH_MAX_VERIFY_ATTEMPTS,
     PUSH_SUBSCRIPTION_MAX_SECS, PushKeys, PushSubscription, PushSubscriptionUpdate, PushTarget,
