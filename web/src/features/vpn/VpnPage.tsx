@@ -21,6 +21,7 @@ import { Card, CopyButton } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, Segmented, Select, TextInput } from "@/components/ui/Field";
 import { updateCommand } from "@/features/admin/host";
+import { Cancelled, usePasswordConfirmation } from "@/features/security/ConfirmPassword";
 import {
   ChoiceField,
   LockedHint,
@@ -252,6 +253,7 @@ function draftOf(config: VpnConfig): Draft {
 function VpnCard({ view }: { view: VpnView }) {
   const { t, i18n } = useT();
   const errorText = useErrorText();
+  const { confirmed, dialog } = usePasswordConfirmation();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<Draft>(() => draftOf(view.config));
   const [advanced, setAdvanced] = useState(Boolean(view.config.regions || view.config.hostnames));
@@ -323,10 +325,13 @@ function VpnCard({ view }: { view: VpnView }) {
   const showFiles = useMutation({
     mutationFn: async () => {
       if (dirty) await api<VpnView>("/api/admin/vpn", { method: "PUT", body: draft });
-      return api<VpnFiles>("/api/admin/vpn/files", { method: "POST" });
+      // The files hold the VPN's private key: an older login confirms with the password first.
+      return confirmed((password) => api<VpnFiles>("/api/admin/vpn/files", { method: "POST", body: { password } }));
     },
     onSuccess: setFiles,
-    onError: (error) => toast(errorText(error), "error"),
+    onError: (error) => {
+      if (!(error instanceof Cancelled)) toast(errorText(error), "error");
+    },
   });
   const useGluetun = useMutation({
     mutationFn: () => api<VpnView>("/api/admin/vpn/use-gluetun", { method: "POST" }),
@@ -765,6 +770,7 @@ function VpnCard({ view }: { view: VpnView }) {
           </div>
         )}
       </Dialog>
+      {dialog}
     </Card>
   );
 }
