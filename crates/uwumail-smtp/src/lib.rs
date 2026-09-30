@@ -7,6 +7,7 @@
 
 pub mod autoconfig;
 pub mod avatars;
+pub mod bimi;
 mod checks;
 pub mod clamav;
 mod client;

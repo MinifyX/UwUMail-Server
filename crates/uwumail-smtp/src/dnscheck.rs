@@ -116,6 +116,8 @@ pub struct DomainSetup<'a> {
     /// Whether pictures of the domain's addresses may be public: then Libravatar clients are told
     /// where to find them (`_avatars-sec._tcp`).
     pub public_pictures: bool,
+    /// The `default._bimi` record the domain should publish, while BIMI is on for it.
+    pub bimi: Option<&'a str>,
 }
 
 /// One CAA property as published (RFC 8659).
@@ -381,6 +383,10 @@ impl DnsChecker {
         if setup.public_pictures {
             let name = crate::avatars::libravatar_srv_name(&domain);
             records.push(evaluate_srv("avatars", &name, setup.hostname, 443, lookups.srv(&name).await));
+        }
+        if let Some(expected) = setup.bimi {
+            let name = crate::bimi::record_name(&domain);
+            records.push(evaluate_bimi(&name, expected, lookups.txt(&name).await));
         }
         // The host name's CAA record belongs to the domain the name is in, if it is one of ours.
         let host = setup.hostname.trim_end_matches('.').to_ascii_lowercase();
@@ -772,6 +778,39 @@ pub fn evaluate_tlsa(
     Some(record)
 }
 
+/// The BIMI record (docs/bimi.md), while BIMI is on for the domain: it has to name the logo (and
+/// the certificate, when there is one) this server serves. Optional: mail works without it.
+pub fn evaluate_bimi(name: &str, expected: &str, answer: Answer<String>) -> RecordCheck {
+    let mut record = check("bimi", name, "TXT", expected.to_owned());
+    record.optional = true;
+    let texts = match answer {
+        Ok(texts) => texts,
+        Err(error) => return failed(record, &error),
+    };
+    let found: Vec<String> =
+        texts.into_iter().filter(|text| text.trim().to_ascii_uppercase().starts_with("V=BIMI1")).collect();
+    record.found = found.clone();
+    match found.as_slice() {
+        [] => record.status = CheckStatus::Missing,
+        [published] => {
+            let wanted = crate::bimi::record_tags(expected);
+            let tags = crate::bimi::record_tags(published);
+            let tag = |tags: &std::collections::HashMap<String, String>, key: &str| {
+                tags.get(key).map(|value| value.trim().to_owned()).filter(|value| !value.is_empty())
+            };
+            if tag(&tags, "l") != tag(&wanted, "l") || tag(&tags, "a") != tag(&wanted, "a") {
+                record.status = CheckStatus::Wrong;
+                record.note = Some("bimiElsewhere");
+            }
+        }
+        _ => {
+            record.status = CheckStatus::Wrong;
+            record.note = Some("bimiMultiple");
+        }
+    }
+    record
+}
+
 /// Where other servers send reports about TLS connections to us. Required once MTA-STS is on.
 pub fn evaluate_tls_rpt(domain: &str, required: bool, answer: Answer<String>) -> RecordCheck {
     let address = format!("{TLS_REPORT_ADDRESS}@{domain}");
@@ -951,6 +990,25 @@ mod tests {
     }
 
     #[test]
+    fn bimi_records_have_to_name_our_logo() {
+        let expected = "v=BIMI1; l=https://mail.example.org/bimi/example.org.svg";
+        let name = "default._bimi.example.org";
+        let bimi = |texts: &[&str]| evaluate_bimi(name, expected, Ok(texts.iter().map(|t| t.to_string()).collect()));
+        let missing = bimi(&["something else"]);
+        assert_eq!((missing.status, missing.optional, missing.kind), (CheckStatus::Missing, true, "bimi"));
+        assert_eq!(bimi(&["v=BIMI1; l=https://mail.example.org/bimi/example.org.svg"]).status, CheckStatus::Ok);
+        // Written differently, same meaning.
+        let spaced = bimi(&["v=BIMI1;l=https://mail.example.org/bimi/example.org.svg;a="]);
+        assert_eq!(spaced.status, CheckStatus::Ok);
+        let elsewhere = bimi(&["v=BIMI1; l=https://logo.example/other.svg"]);
+        assert_eq!((elsewhere.status, elsewhere.note), (CheckStatus::Wrong, Some("bimiElsewhere")));
+        let certificate = bimi(&[&format!("{expected}; a=https://mail.example.org/bimi/example.org.pem")]);
+        assert_eq!(certificate.note, Some("bimiElsewhere"));
+        assert_eq!(bimi(&[expected, expected]).note, Some("bimiMultiple"));
+        assert_eq!(evaluate_bimi(name, expected, Err("timeout".into())).status, CheckStatus::Error);
+    }
+
+    #[test]
     fn spf_record_shape() {
         let keys = [];
         let setup = DomainSetup {
@@ -963,6 +1021,7 @@ mod tests {
             lets_encrypt_account: None,
             certificate: None,
             public_pictures: false,
+            bimi: None,
         };
         let spf = |texts: &[&str]| {
             evaluate_spf_record("example.org", &setup, Ok(texts.iter().map(|t| t.to_string()).collect()))
@@ -1103,6 +1162,7 @@ mod tests {
                 lets_encrypt_account: None,
                 certificate: None,
                 public_pictures: false,
+                bimi: None,
             })
             .await;
         println!("{}", serde_json::to_string_pretty(&report).unwrap());

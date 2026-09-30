@@ -124,6 +124,17 @@ pub(crate) async fn self_call(ctx: &Context, ip: IpAddr, port: u16, hostname: &s
 }
 
 impl Smtp {
+    /// The addresses other servers see mail come from, with their reverse names: the host name's,
+    /// or the relay's when mail leaves through one. No blocklists and no calls.
+    pub async fn sending_addresses(&self, dns: &DnsChecker) -> Vec<AddressReport> {
+        let host = self.relay_host().unwrap_or_else(|| self.inner.hostname.clone());
+        let mut reports = Vec::new();
+        for ip in dns.host_addresses(&host).await {
+            reports.push(address_report(dns, ip, &host, false).await);
+        }
+        reports
+    }
+
     /// Looks at the server from the outside: addresses, reverse names, optionally blocklists,
     /// whether mail can leave, and whether port 25 answers on the public addresses.
     pub async fn check_server(&self, dns: &DnsChecker, blocklists: bool) -> ServerCheck {
