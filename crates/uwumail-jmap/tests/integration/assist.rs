@@ -322,7 +322,9 @@ async fn estimates_and_usage_carry_costs_in_the_currency_asked_for() {
     let plain = server().await;
     let (base, _) = fake_provider().await;
     let assist = with_assist(&plain.store).await;
-    let models = std::collections::BTreeMap::from([("small-model".to_owned(), (0.000001, 0.000004))]);
+    let mut small = uwumail_assist::Rates::plain(0.000001, 0.000004);
+    small.per_request = 0.0005;
+    let models = std::collections::BTreeMap::from([("small-model".to_owned(), small)]);
     let rates = std::collections::BTreeMap::from([("USD".to_owned(), 1.25), ("JPY".to_owned(), 160.0)]);
     let table = uwumail_assist::PriceTable { models, rates, ..Default::default() };
     assist.set_prices(table).await.unwrap();
@@ -359,10 +361,32 @@ async fn estimates_and_usage_carry_costs_in_the_currency_asked_for() {
         .await;
     let euro = args(&responses, 0, "Assist/estimate");
     let cost = &euro["cost"];
-    let usd = (euro["inputTokens"].as_f64().unwrap() + 4.0 * euro["outputTokens"].as_f64().unwrap()) / 1e6;
+    let usd = (euro["inputTokens"].as_f64().unwrap() + 4.0 * euro["outputTokens"].as_f64().unwrap()) / 1e6 + 0.0005;
     assert_eq!(cost["currency"], "EUR", "{euro}");
     assert!((cost["usd"].as_f64().unwrap() - usd).abs() < 1e-12);
     assert!((cost["amount"].as_f64().unwrap() - usd / 1.25).abs() < 1e-12);
+    // The whole shape: every call, thinking, pictures, the worst case and the parts in euros.
+    assert_eq!(euro["reasoningTokens"], 0);
+    assert_eq!(euro["imageCount"], 0);
+    assert_eq!(euro["calibrated"], false);
+    assert_eq!(euro["totalTokens"], euro["inputTokens"].as_i64().unwrap() + euro["outputTokens"].as_i64().unwrap());
+    let calls = euro["calls"].as_array().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0]["purpose"], "main");
+    assert_eq!(calls[0]["weight"], 1.0);
+    assert_eq!(calls[0]["inputTokens"], euro["inputTokens"]);
+    for key in ["outputTokens", "reasoningTokens", "images"] {
+        assert!(calls[0][key].is_i64(), "{key}: {euro}");
+    }
+    let parts = &cost["parts"];
+    let sum: f64 = ["input", "output", "reasoning", "images", "requests", "other"]
+        .iter()
+        .map(|key| parts[key].as_f64().unwrap())
+        .sum();
+    assert!((sum - cost["amount"].as_f64().unwrap()).abs() < 1e-12, "{parts}");
+    assert!((parts["requests"].as_f64().unwrap() - 0.0005 / 1.25).abs() < 1e-12);
+    assert!(cost["max"]["usd"].as_f64().unwrap() > cost["usd"].as_f64().unwrap());
+    assert!((cost["max"]["amount"].as_f64().unwrap() - cost["max"]["usd"].as_f64().unwrap() / 1.25).abs() < 1e-12);
     let yen = &args(&responses, 1, "Assist/estimate")["cost"];
     assert!((yen["amount"].as_f64().unwrap() - usd / 1.25 * 160.0).abs() < 1e-9, "{yen}");
     assert_eq!(args(&responses, 2, "Assist/estimate")["cost"], Value::Null, "big-model has no known price");
@@ -382,10 +406,14 @@ async fn estimates_and_usage_carry_costs_in_the_currency_asked_for() {
         )
         .await;
     let usage = args(&responses, 1, "Assist/usage");
-    // The fake reports 100 tokens in and 10 out.
-    let spent = (100.0 + 4.0 * 10.0) / 1e6;
+    // The fake reports 100 tokens in and 10 out; the request's fee comes on top.
+    let spent = (100.0 + 4.0 * 10.0) / 1e6 + 0.0005;
     for entry in [&usage["days"][0], &usage["today"][0]] {
         assert_eq!(entry["cost"]["currency"], "USD", "{usage}");
         assert!((entry["cost"]["amount"].as_f64().unwrap() - spent).abs() < 1e-12, "{usage}");
     }
+    let day = &usage["days"][0];
+    assert_eq!((day["reasoningTokens"].as_i64(), day["calls"].as_i64()), (Some(0), Some(1)), "{usage}");
+    let summary = args(&responses, 0, "Assist/summarize");
+    assert_eq!(summary["usage"]["reasoningTokens"], 0, "{summary}");
 }

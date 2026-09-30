@@ -123,6 +123,8 @@ pub struct AssistProviderRecord {
     /// US dollars per million tokens in and out, when set by hand; `None`: from the price lists.
     pub input_price: Option<f64>,
     pub output_price: Option<f64>,
+    /// US dollars per request, when set by hand; `None`: from the price lists.
+    pub request_price: Option<f64>,
     /// Whether the people using a server provider see what it costs.
     pub show_cost: bool,
     pub created_at: i64,
@@ -165,6 +167,7 @@ pub struct AssistProviderWrite {
     pub tokens_per_day: Option<i64>,
     pub input_price: Option<f64>,
     pub output_price: Option<f64>,
+    pub request_price: Option<f64>,
     pub show_cost: bool,
 }
 
@@ -184,6 +187,7 @@ impl AssistProviderWrite {
             tokens_per_day: record.tokens_per_day,
             input_price: record.input_price,
             output_price: record.output_price,
+            request_price: record.request_price,
             show_cost: record.show_cost,
         }
     }
@@ -248,16 +252,55 @@ pub struct UsageRow {
     pub feature: String,
     pub requests: i64,
     pub input_tokens: i64,
+    /// The answer's text, without what the model spent thinking.
     pub output_tokens: i64,
+    /// Thinking (reasoning) tokens, on top of `output_tokens`.
+    pub reasoning_tokens: i64,
+    /// The part of `input_tokens` read from the provider's cache.
+    pub cached_tokens: i64,
+    /// Calls to the model the requests took.
+    pub calls: i64,
     /// US dollars, at the prices of the time; `None` where they were not known.
     pub cost_usd: Option<f64>,
 }
+
+/// Tokens (and their cost) added to a counted request by [`Store::add_assist_tokens`]. Negative
+/// numbers take back part of an estimate.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct TokenCount {
+    pub input: i64,
+    /// The answer's text.
+    pub output: i64,
+    /// Thinking, on top of `output`.
+    pub reasoning: i64,
+    /// The part of `input` read from the provider's cache.
+    pub cached: i64,
+    /// Calls to the model.
+    pub calls: i64,
+    /// US dollars, when the price is known.
+    pub cost_usd: Option<f64>,
+}
+
+/// One request as the provider reported it, next to what the server expected, for
+/// `Assist/estimate` to learn from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CalibrationSample {
+    pub estimated_input: i64,
+    pub estimated_output: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub reasoning_tokens: i64,
+    pub calls: i64,
+}
+
+/// Samples kept per provider, model and feature.
+pub const ASSIST_CALIBRATION_SAMPLES: usize = 50;
 
 /// What a person used today with one provider.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct UsedToday {
     pub requests: i64,
-    /// In and out.
+    /// In, out and thinking.
     pub tokens: i64,
     /// US dollars; `None` when no price was known.
     pub cost_usd: Option<f64>,
@@ -334,7 +377,7 @@ pub fn label_keyword(name: &str) -> String {
 
 const PROVIDER_COLUMNS: &str = "id, account_id, name, kind, base_url, secret IS NOT NULL, key_hint, model, fast_model,
      enabled, access, access_list, features, requests_per_day, tokens_per_day, created_at, updated_at, input_price,
-     output_price, show_cost";
+     output_price, show_cost, request_price";
 
 fn provider_row(row: &Row<'_>) -> rusqlite::Result<AssistProviderRecord> {
     let list = |index: usize| -> rusqlite::Result<Vec<String>> {
@@ -362,6 +405,7 @@ fn provider_row(row: &Row<'_>) -> rusqlite::Result<AssistProviderRecord> {
         input_price: row.get(17)?,
         output_price: row.get(18)?,
         show_cost: row.get(19)?,
+        request_price: row.get(20)?,
     })
 }
 
@@ -572,6 +616,7 @@ impl Store {
                 return Err(StoreError::NotFound(format!("provider {id}")));
             };
             tx.execute("DELETE FROM assist_providers WHERE id = ?1", [id])?;
+            tx.execute("DELETE FROM assist_calibration WHERE provider_id = ?1", [id])?;
             match before.account_id {
                 Some(account) => bump_prefs(tx, account)?,
                 None => bump_version(tx)?,
@@ -950,7 +995,7 @@ impl Store {
             let day = utc_day(now());
             if requests_per_day.is_some() || tokens_per_day.is_some() {
                 let (requests, tokens): (i64, i64) = tx.query_row(
-                    "SELECT COALESCE(SUM(requests), 0), COALESCE(SUM(input_tokens + output_tokens), 0)
+                    "SELECT COALESCE(SUM(requests), 0), COALESCE(SUM(input_tokens + output_tokens + reasoning_tokens), 0)
                      FROM assist_usage WHERE account_id = ?1 AND provider_id = ?2 AND day = ?3",
                     params![account_id, provider_id, day],
                     |row| Ok((row.get(0)?, row.get(1)?)),
@@ -975,38 +1020,118 @@ impl Store {
     /// Adds tokens, and what they cost in US dollars when that is known, to a request counted with
     /// [`Store::reserve_assist_usage`] on `day`. Negative numbers take back part of an estimate; a
     /// count never goes below zero.
-    #[allow(clippy::too_many_arguments)]
     pub async fn add_assist_tokens(
         &self,
         account_id: i64,
         provider_id: i64,
         day: String,
         feature: &str,
-        input_tokens: i64,
-        output_tokens: i64,
-        cost_usd: Option<f64>,
+        count: TokenCount,
     ) -> Result<()> {
         let feature = feature.to_owned();
-        let cost_usd = cost_usd.filter(|cost| cost.is_finite());
+        let cost_usd = count.cost_usd.filter(|cost| cost.is_finite());
         self.write(move |tx| {
             tx.execute(
-                "INSERT INTO assist_usage (account_id, provider_id, day, feature, input_tokens, output_tokens, cost_usd)
-                 VALUES (?1, ?2, ?3, ?4, MAX(?5, 0), MAX(?6, 0), MAX(?7, 0))
+                "INSERT INTO assist_usage (account_id, provider_id, day, feature, input_tokens, output_tokens, cost_usd,
+                    reasoning_tokens, cached_tokens, calls)
+                 VALUES (?1, ?2, ?3, ?4, MAX(?5, 0), MAX(?6, 0), MAX(?7, 0), MAX(?8, 0), MAX(?9, 0), MAX(?10, 0))
                  ON CONFLICT (account_id, provider_id, day, feature) DO UPDATE SET
                     input_tokens = MAX(input_tokens + ?5, 0), output_tokens = MAX(output_tokens + ?6, 0),
-                    cost_usd = CASE WHEN ?7 IS NULL THEN cost_usd ELSE MAX(COALESCE(cost_usd, 0) + ?7, 0) END",
-                params![account_id, provider_id, day, feature, input_tokens, output_tokens, cost_usd],
+                    cost_usd = CASE WHEN ?7 IS NULL THEN cost_usd ELSE MAX(COALESCE(cost_usd, 0) + ?7, 0) END,
+                    reasoning_tokens = MAX(reasoning_tokens + ?8, 0), cached_tokens = MAX(cached_tokens + ?9, 0),
+                    calls = MAX(calls + ?10, 0)",
+                params![
+                    account_id,
+                    provider_id,
+                    day,
+                    feature,
+                    count.input,
+                    count.output,
+                    cost_usd,
+                    count.reasoning,
+                    count.cached,
+                    count.calls
+                ],
             )?;
             Ok(())
         })
         .await
     }
 
-    /// Requests and tokens (in and out) a person used today with one provider.
+    /// Keeps what one request really took next to what was expected, and forgets the oldest beyond
+    /// [`ASSIST_CALIBRATION_SAMPLES`] of that provider, model and feature.
+    pub async fn add_assist_calibration(
+        &self,
+        provider_id: i64,
+        model: &str,
+        feature: &str,
+        sample: CalibrationSample,
+    ) -> Result<()> {
+        let (model, feature) = (model.to_owned(), feature.to_owned());
+        self.write(move |tx| {
+            tx.execute(
+                "INSERT INTO assist_calibration (provider_id, model, feature, estimated_input, estimated_output,
+                    input_tokens, output_tokens, reasoning_tokens, calls, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![
+                    provider_id,
+                    model,
+                    feature,
+                    sample.estimated_input,
+                    sample.estimated_output,
+                    sample.input_tokens,
+                    sample.output_tokens,
+                    sample.reasoning_tokens,
+                    sample.calls,
+                    now()
+                ],
+            )?;
+            tx.execute(
+                "DELETE FROM assist_calibration WHERE provider_id = ?1 AND model = ?2 AND feature = ?3 AND id NOT IN (
+                    SELECT id FROM assist_calibration WHERE provider_id = ?1 AND model = ?2 AND feature = ?3
+                    ORDER BY id DESC LIMIT ?4)",
+                params![provider_id, model, feature, ASSIST_CALIBRATION_SAMPLES as i64],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// The last requests of a provider's model for a feature, newest first.
+    pub async fn assist_calibration(
+        &self,
+        provider_id: i64,
+        model: &str,
+        feature: &str,
+    ) -> Result<Vec<CalibrationSample>> {
+        let (model, feature) = (model.to_owned(), feature.to_owned());
+        self.read(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT estimated_input, estimated_output, input_tokens, output_tokens, reasoning_tokens, calls
+                 FROM assist_calibration WHERE provider_id = ?1 AND model = ?2 AND feature = ?3
+                 ORDER BY id DESC LIMIT ?4",
+            )?;
+            let rows =
+                stmt.query_map(params![provider_id, model, feature, ASSIST_CALIBRATION_SAMPLES as i64], |row| {
+                    Ok(CalibrationSample {
+                        estimated_input: row.get(0)?,
+                        estimated_output: row.get(1)?,
+                        input_tokens: row.get(2)?,
+                        output_tokens: row.get(3)?,
+                        reasoning_tokens: row.get(4)?,
+                        calls: row.get(5)?,
+                    })
+                })?;
+            Ok(rows.collect::<Result<_, _>>()?)
+        })
+        .await
+    }
+
+    /// Requests and tokens (in, out and thinking) a person used today with one provider.
     pub async fn assist_used_today(&self, account_id: i64, provider_id: i64) -> Result<UsedToday> {
         self.read(move |conn| {
             Ok(conn.query_row(
-                "SELECT COALESCE(SUM(requests), 0), COALESCE(SUM(input_tokens + output_tokens), 0), SUM(cost_usd)
+                "SELECT COALESCE(SUM(requests), 0), COALESCE(SUM(input_tokens + output_tokens + reasoning_tokens), 0), SUM(cost_usd)
                  FROM assist_usage WHERE account_id = ?1 AND provider_id = ?2 AND day = ?3",
                 params![account_id, provider_id, utc_day(now())],
                 |row| Ok(UsedToday { requests: row.get(0)?, tokens: row.get(1)?, cost_usd: row.get(2)? }),
@@ -1020,7 +1145,7 @@ impl Store {
         self.read(move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT u.day, u.account_id, a.login, u.provider_id, p.name, u.feature, u.requests, u.input_tokens,
-                        u.output_tokens, u.cost_usd
+                        u.output_tokens, u.cost_usd, u.reasoning_tokens, u.cached_tokens, u.calls
                  FROM assist_usage u JOIN accounts a ON a.id = u.account_id
                  LEFT JOIN assist_providers p ON p.id = u.provider_id
                  WHERE u.day >= ?1 AND (?2 IS NULL OR u.account_id = ?2)
@@ -1038,6 +1163,9 @@ impl Store {
                     input_tokens: row.get(7)?,
                     output_tokens: row.get(8)?,
                     cost_usd: row.get(9)?,
+                    reasoning_tokens: row.get(10)?,
+                    cached_tokens: row.get(11)?,
+                    calls: row.get(12)?,
                 })
             })?;
             Ok(rows.collect::<Result<_, _>>()?)
@@ -1160,7 +1288,7 @@ fn write_provider(tx: &Transaction<'_>, id: i64, write: &AssistProviderWrite, se
     tx.execute(
         "UPDATE assist_providers SET name = ?2, kind = ?3, base_url = ?4, model = ?5, fast_model = ?6, enabled = ?7,
             access = ?8, access_list = ?9, features = ?10, requests_per_day = ?11, tokens_per_day = ?12,
-            updated_at = ?13, input_price = ?14, output_price = ?15, show_cost = ?16
+            updated_at = ?13, input_price = ?14, output_price = ?15, show_cost = ?16, request_price = ?17
          WHERE id = ?1",
         params![
             id,
@@ -1178,7 +1306,8 @@ fn write_provider(tx: &Transaction<'_>, id: i64, write: &AssistProviderWrite, se
             now(),
             write.input_price,
             write.output_price,
-            write.show_cost
+            write.show_cost,
+            write.request_price
         ],
     )?;
     write_secret(tx, id, secret)

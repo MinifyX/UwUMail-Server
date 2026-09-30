@@ -9,11 +9,15 @@ use chrono::{NaiveDate, NaiveDateTime, TimeDelta};
 use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::mpsc;
-use uwumail_store::{Account, AssistLabel, EmailRecord, KeywordsChange, MailboxRole, SenderHistory, StoreError};
+use uwumail_store::{
+    Account, AssistLabel, CalibrationSample, EmailRecord, KeywordsChange, MailboxRole, SenderHistory, StoreError,
+};
 
 use crate::access::{Effective, Ticket};
+use crate::kinds::Shape;
 use crate::llm::{self, Completion, Prompt};
 use crate::mail::{MAX_MAIL_CHARS, MailText};
+use crate::prices::{CostParts, Metered, Price};
 use crate::prompts::{self, ComposeRequest, SUBJECT_MARK};
 use crate::{Assist, AssistError, MAX_INSTRUCTION_CHARS, MAX_TEXT_CHARS, PictureRead, Result, now};
 
@@ -42,17 +46,36 @@ const TYPICAL_SUMMARY_TOKENS_PER_MAIL: i64 = 50;
 const TYPICAL_SUMMARY_MAX_TOKENS: i64 = 600;
 const TYPICAL_SPAM_TOKENS: i64 = 150;
 const TYPICAL_EVENTS_TOKENS: i64 = 250;
+const TYPICAL_LABEL_TOKENS: i64 = 80;
+/// Typical thinking, in tokens, of a model that thinks before it answers (at its default effort),
+/// until its own requests tell better.
+const TYPICAL_REASONING_WRITE: i64 = 700;
+const TYPICAL_REASONING_SUMMARY: i64 = 500;
+const TYPICAL_REASONING_SPAM: i64 = 500;
+const TYPICAL_REASONING_EVENTS: i64 = 900;
+const TYPICAL_REASONING_LABELS: i64 = 300;
+/// Requests of the same provider, model and feature an estimate learns from, at least.
+pub const MIN_CALIBRATION_SAMPLES: usize = 5;
+/// How far what was learned may move an estimate.
+const MIN_RATIO: f64 = 0.5;
+const MAX_RATIO: f64 = 3.0;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Usage {
     pub input_tokens: i64,
     pub output_tokens: i64,
+    /// Thinking, on top of `output_tokens`.
+    pub reasoning_tokens: i64,
 }
 
 impl Usage {
     fn of(completion: &Completion) -> Usage {
-        Usage { input_tokens: completion.input_tokens, output_tokens: completion.output_tokens }
+        Usage {
+            input_tokens: completion.input_tokens,
+            output_tokens: completion.output_tokens,
+            reasoning_tokens: completion.reasoning_tokens,
+        }
     }
 }
 
@@ -207,20 +230,246 @@ impl EstimateArgs {
     }
 }
 
+/// One call to the model a request makes, or may make.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EstimateCall {
+    /// `main`: the request itself; `retry`: asked again without the answer's JSON shape after the
+    /// provider refused it.
+    pub purpose: &'static str,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub reasoning_tokens: i64,
+    /// Pictures sent to the model as pictures (never: the server reads their text itself).
+    pub images: i64,
+    /// How likely the call is: 1 for the request itself, the rate seen so far for a retry.
+    pub weight: f64,
+}
+
+/// What an estimate costs, in US dollars.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EstimateCost {
+    /// The expected cost: every call by its weight.
+    pub usd: f64,
+    /// The worst case: every answer as long as the model may write, every extra call made.
+    pub max_usd: f64,
+    pub parts: CostParts,
+}
+
 /// What a call would take, without making it.
 #[derive(Debug, Clone)]
 pub struct Estimate {
-    /// The prompt the call would send, estimated like the tokens counted before a request.
+    /// Everything the calls would send, each call by its weight: the prompt with the API's frame,
+    /// the text of pictures included.
     pub input_tokens: i64,
     /// A typical answer, at most what the call allows the model.
     pub output_tokens: i64,
+    /// Typical thinking of a model that thinks first, on top of `output_tokens`.
+    pub reasoning_tokens: i64,
+    /// Pictures whose text goes along, and its tokens (part of `input_tokens`).
+    pub image_count: i64,
+    pub image_tokens: i64,
+    pub calls: Vec<EstimateCall>,
+    /// Learned from this provider's and model's last requests for the feature.
+    pub calibrated: bool,
     pub effective: Effective,
     /// What is left of the day's limits of that provider; `None` without a limit.
     pub requests_left_today: Option<i64>,
     pub tokens_left_today: Option<i64>,
-    /// What the tokens would cost in US dollars; `None` when the price is not known or the admin
-    /// does not show this provider's costs.
-    pub cost_usd: Option<f64>,
+    /// What it would cost; `None` when the price is not known or the admin does not show this
+    /// provider's costs.
+    pub cost: Option<EstimateCost>,
+}
+
+impl Estimate {
+    /// In, out and thinking, of every call by its weight.
+    pub fn total_tokens(&self) -> i64 {
+        self.input_tokens + self.output_tokens + self.reasoning_tokens
+    }
+}
+
+/// What a provider's last requests of a model for a feature taught.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Calibration {
+    /// Median of real to estimated prompt tokens.
+    pub input_ratio: Option<f64>,
+    /// Median of real to typical answer tokens.
+    pub output_ratio: Option<f64>,
+    /// Median thinking tokens.
+    pub reasoning: Option<i64>,
+    /// Share of requests that had to be asked again.
+    pub retry_rate: Option<f64>,
+}
+
+fn median(mut values: Vec<f64>) -> Option<f64> {
+    values.retain(|v| v.is_finite());
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_by(f64::total_cmp);
+    let middle = values.len() / 2;
+    Some(if values.len().is_multiple_of(2) { (values[middle - 1] + values[middle]) / 2.0 } else { values[middle] })
+}
+
+impl Calibration {
+    /// Learns from `samples` once there are [`MIN_CALIBRATION_SAMPLES`] of them.
+    pub fn of(samples: &[CalibrationSample]) -> Calibration {
+        if samples.len() < MIN_CALIBRATION_SAMPLES {
+            return Calibration::default();
+        }
+        let ratio = |pairs: Vec<(i64, i64)>| -> Option<f64> {
+            let ratios: Vec<f64> = pairs
+                .into_iter()
+                .filter(|(expected, _)| *expected > 0)
+                .map(|(e, real)| real as f64 / e as f64)
+                .collect();
+            if ratios.len() < MIN_CALIBRATION_SAMPLES {
+                return None;
+            }
+            median(ratios).map(|r| r.clamp(MIN_RATIO, MAX_RATIO))
+        };
+        Calibration {
+            input_ratio: ratio(samples.iter().map(|s| (s.estimated_input, s.input_tokens)).collect()),
+            output_ratio: ratio(samples.iter().map(|s| (s.estimated_output, s.output_tokens)).collect()),
+            reasoning: median(samples.iter().map(|s| s.reasoning_tokens as f64).collect()).map(|m| m.round() as i64),
+            retry_rate: Some(samples.iter().filter(|s| s.calls > 1).count() as f64 / samples.len() as f64),
+        }
+    }
+}
+
+/// Whether a model thinks before it answers without being asked to: by the price lists, or by its
+/// name where they don't know it. Anthropic's models think only when asked, which the server never
+/// does.
+pub fn thinks(shape: Shape, price: Option<&Price>, model: &str) -> bool {
+    if shape == Shape::Anthropic {
+        return false;
+    }
+    if price.is_some_and(|price| price.supports_reasoning) {
+        return true;
+    }
+    let model = model.trim().to_lowercase();
+    let name = model.rsplit('/').next().unwrap_or(&model);
+    let starts = |prefix: &str| name.starts_with(prefix);
+    (["o1", "o3", "o4"].iter().any(|p| starts(p)) && !name.contains("audio"))
+        || (starts("gpt-5") && !name.contains("chat"))
+        || starts("gpt-oss")
+        || (starts("gemini-2.5") && !name.contains("lite"))
+        || starts("gemini-3")
+        || [
+            "deepseek-r1",
+            "deepseek-reasoner",
+            "qwq",
+            "qwen3",
+            "magistral",
+            "thinking",
+            "grok-4",
+            "grok-3-mini",
+            "codex",
+        ]
+        .iter()
+        .any(|part| name.contains(part))
+}
+
+/// What goes into an estimate besides the prompt itself.
+#[derive(Debug, Clone)]
+pub struct EstimatePlan<'a> {
+    pub prompt: &'a Prompt,
+    pub shape: Shape,
+    /// A typical answer by the feature's heuristic.
+    pub typical: i64,
+    /// Typical thinking when the model thinks, `None` when it does not.
+    pub reasoning: Option<i64>,
+    /// Pictures whose text goes along, and its tokens (part of the prompt).
+    pub image_count: i64,
+    pub image_tokens: i64,
+    /// What the model costs, and what the lists say about it.
+    pub price: Option<&'a Price>,
+    /// Whether the person sees the cost.
+    pub show_cost: bool,
+}
+
+/// The calls, tokens and cost of a request, with what the provider's last requests taught.
+pub fn plan_estimate(plan: &EstimatePlan<'_>, calibration: &Calibration) -> (Vec<EstimateCall>, Option<EstimateCost>) {
+    let heuristic_input = llm::estimate_request(plan.prompt, plan.shape);
+    let input_ratio = calibration.input_ratio.unwrap_or(1.0);
+    let input = (heuristic_input as f64 * input_ratio).round() as i64;
+    let budget = i64::from(plan.prompt.max_tokens)
+        .min(plan.price.and_then(|price| price.max_output_tokens).unwrap_or(i64::MAX))
+        .max(1);
+    let output = ((plan.typical as f64 * calibration.output_ratio.unwrap_or(1.0)).round() as i64).clamp(1, budget);
+    // A median of real thinking wins over the guess, also when it is none.
+    let reasoning = match (calibration.reasoning, plan.reasoning) {
+        (Some(learned), _) => learned,
+        (None, Some(typical)) => typical,
+        (None, None) => 0,
+    }
+    .clamp(0, budget - output);
+    let mut calls = vec![EstimateCall {
+        purpose: "main",
+        input_tokens: input,
+        output_tokens: output,
+        reasoning_tokens: reasoning,
+        images: 0,
+        weight: 1.0,
+    }];
+    let retry_rate = calibration.retry_rate.unwrap_or(0.0);
+    if plan.prompt.schema.is_some() && retry_rate > 0.0 {
+        // The first request, refused for its JSON shape, is asked again: its prompt counts once
+        // more (big providers don't bill a refused request, some servers do).
+        calls.push(EstimateCall {
+            purpose: "retry",
+            input_tokens: input,
+            output_tokens: 0,
+            reasoning_tokens: 0,
+            images: 0,
+            weight: retry_rate,
+        });
+    }
+    let cost = plan.price.filter(|_| plan.show_cost).map(|price| {
+        let main = Metered {
+            input: input as f64,
+            output: output as f64,
+            reasoning: reasoning as f64,
+            requests: 1.0,
+            prompt: input,
+            ..Metered::default()
+        };
+        let mut parts = price.cost_of(&main);
+        // The pictures' text is part of the prompt: its share shows on its own.
+        let image_tokens = plan.image_tokens as f64 * input_ratio;
+        let images = (image_tokens * price.level(input).0 / 1e6).min(parts.input);
+        parts.input -= images;
+        parts.images += images;
+        let refused = Metered { input: input as f64, requests: 1.0, prompt: input, ..Metered::default() };
+        for call in calls.iter().filter(|call| call.purpose != "main") {
+            parts.other += price.cost_of(&refused).total() * call.weight;
+        }
+        // The worst case: the whole answer budget spent at the dearer of answer and thinking, the
+        // prompt at least as the heuristic counts it, and a retry.
+        let (_, out_rate, reasoning_rate, _) = price.level(input.max(heuristic_input));
+        let thinking_dearer = (reasoning > 0 || plan.reasoning.is_some()) && reasoning_rate > out_rate;
+        let worst_answer = if thinking_dearer {
+            Metered { reasoning: budget as f64, ..Metered::default() }
+        } else {
+            Metered { output: budget as f64, ..Metered::default() }
+        };
+        let worst_input = input.max(heuristic_input);
+        let worst = Metered { input: worst_input as f64, requests: 1.0, prompt: worst_input, ..worst_answer };
+        let mut max_usd = price.cost_of(&worst).total();
+        if plan.prompt.schema.is_some() {
+            max_usd += price
+                .cost_of(&Metered {
+                    input: worst_input as f64,
+                    requests: 1.0,
+                    prompt: worst_input,
+                    ..Metered::default()
+                })
+                .total();
+        }
+        let usd = parts.total();
+        EstimateCost { usd, max_usd: max_usd.max(usd), parts }
+    });
+    (calls, cost)
 }
 
 /// A label the model put on a mail, and why.
@@ -376,7 +625,7 @@ impl Assist {
             Some(id) => Some(self.record(account, id).await?),
             None => None,
         };
-        let ticket = self.prepare(account, "compose").await?;
+        let ticket = self.prepare(account, "compose").await?.expecting(typical_compose(&args));
         let (prompt, want_subject) = self.compose_prompt(account, &args, reply_to.as_ref()).await?;
         let (completion, effective) = self.ask(ticket, &prompt, events, want_subject).await?;
         let (subject, text) =
@@ -436,7 +685,7 @@ impl Assist {
         events: Option<&mpsc::Sender<StreamEvent>>,
     ) -> Result<SummaryResult> {
         let records = self.summary_records(account, &args).await?;
-        let ticket = self.prepare(account, "summarize").await?;
+        let ticket = self.prepare(account, "summarize").await?.expecting(typical_summary(records.len()));
         let prompt = self.summary_prompt(&records, args.language.as_deref()).await?;
         let (completion, effective) = self.ask(ticket, &prompt, events, false).await?;
         let summary = completion.text.trim().to_owned();
@@ -514,7 +763,7 @@ impl Assist {
     /// `Assist/spamCheck`.
     pub async fn spam_check(&self, account: &Account, args: SpamArgs) -> Result<SpamResult> {
         let record = self.record(account, args.email_id).await?;
-        let ticket = self.prepare(account, "spamCheck").await?;
+        let ticket = self.prepare(account, "spamCheck").await?.expecting(TYPICAL_SPAM_TOKENS);
         let (prompt, signals) = self.spam_prompt(account, &record, args.language.as_deref()).await?;
         let (completion, effective) = self.send(ticket, &prompt, None).await?;
         let (verdict, confidence, reasons) =
@@ -557,7 +806,7 @@ impl Assist {
     /// `Assist/extractEvents`.
     pub async fn extract_events(&self, account: &Account, args: EventsArgs) -> Result<EventsResult> {
         let record = self.record(account, args.email_id).await?;
-        let ticket = self.prepare(account, "extractEvents").await?;
+        let ticket = self.prepare(account, "extractEvents").await?.expecting(TYPICAL_EVENTS_TOKENS);
         let mail = self.text(&record, MAX_MAIL_CHARS).await?;
         let image_text = if args.include_images {
             self.picture_texts(account, &record, PictureRead::Read).await
@@ -598,11 +847,13 @@ impl Assist {
 
     /// `Assist/estimate`: builds the prompt the call would send, from the same arguments, checks and
     /// provider choice, but sends nothing and counts nothing against the day's limits. Pictures are
-    /// not read for it: their text is taken when it was read before, and estimated when not.
+    /// not read for it: their text is taken when it was read before, and estimated when not. Every
+    /// call the request makes is counted (see [`plan_estimate`]), with what this provider's model
+    /// took for the feature lately.
     pub async fn estimate(&self, account: &Account, args: EstimateArgs) -> Result<Estimate> {
         let _estimating = self.begin_estimate(account.id)?;
         let feature = args.feature();
-        let (prompt, typical, (provider, model, _)) = match &args {
+        let (prompt, typical, pictures, (provider, model, _)) = match &args {
             EstimateArgs::Compose(args) => {
                 check_compose(args)?;
                 let reply_to = match args.reply_to_email_id {
@@ -611,27 +862,19 @@ impl Assist {
                 };
                 let chosen = self.resolve(account, feature).await?;
                 let (prompt, _) = self.compose_prompt(account, args, reply_to.as_ref()).await?;
-                let typical = match args.text.as_deref().filter(|_| args.mode != "write") {
-                    // A rewrite is about as long as the draft.
-                    Some(text) => (llm::estimate_texts([text]) * 5 / 4).max(100),
-                    None => TYPICAL_WRITE_TOKENS,
-                };
-                (prompt, typical, chosen)
+                (prompt, typical_compose(args), Vec::new(), chosen)
             }
             EstimateArgs::Summarize(args) => {
                 let records = self.summary_records(account, args).await?;
                 let chosen = self.resolve(account, feature).await?;
                 let prompt = self.summary_prompt(&records, args.language.as_deref()).await?;
-                let more = records.len().saturating_sub(1) as i64;
-                let typical =
-                    (TYPICAL_SUMMARY_TOKENS + more * TYPICAL_SUMMARY_TOKENS_PER_MAIL).min(TYPICAL_SUMMARY_MAX_TOKENS);
-                (prompt, typical, chosen)
+                (prompt, typical_summary(records.len()), Vec::new(), chosen)
             }
             EstimateArgs::SpamCheck(args) => {
                 let record = self.record(account, args.email_id).await?;
                 let chosen = self.resolve(account, feature).await?;
                 let (prompt, _) = self.spam_prompt(account, &record, args.language.as_deref()).await?;
-                (prompt, TYPICAL_SPAM_TOKENS, chosen)
+                (prompt, TYPICAL_SPAM_TOKENS, Vec::new(), chosen)
             }
             EstimateArgs::ExtractEvents(args) => {
                 let record = self.record(account, args.email_id).await?;
@@ -642,21 +885,36 @@ impl Assist {
                 } else {
                     Vec::new()
                 };
-                (prompts::extract_events(&mail, &image_text), TYPICAL_EVENTS_TOKENS, chosen)
+                (prompts::extract_events(&mail, &image_text), TYPICAL_EVENTS_TOKENS, image_text, chosen)
             }
         };
         let (requests_left_today, tokens_left_today) = self.left_today(account, &provider).await?;
-        let input_tokens = llm::estimate_prompt(&prompt);
-        let output_tokens = typical.min(i64::from(prompt.max_tokens));
-        let cost_usd = match provider.shows_cost() {
-            true => self.price_of(&provider.record, provider.info, &model).await,
-            false => None,
-        }
-        .map(|price| price.cost(input_tokens, output_tokens));
+        let price = self.price_of(&provider.record, provider.info, &model).await;
+        let samples = self.store().assist_calibration(provider.record.id, &model, feature).await?;
+        let calibration = Calibration::of(&samples);
+        let plan = EstimatePlan {
+            prompt: &prompt,
+            shape: provider.info.shape,
+            typical,
+            reasoning: thinks(provider.info.shape, price.as_ref(), &model).then(|| typical_reasoning(feature)),
+            image_count: pictures.len() as i64,
+            image_tokens: llm::estimate_texts(pictures.iter().map(String::as_str)),
+            price: price.as_ref(),
+            show_cost: provider.shows_cost(),
+        };
+        let (calls, cost) = plan_estimate(&plan, &calibration);
+        let weighted = |tokens: fn(&EstimateCall) -> i64| -> i64 {
+            calls.iter().map(|call| tokens(call) as f64 * call.weight).sum::<f64>().round() as i64
+        };
         Ok(Estimate {
-            input_tokens,
-            output_tokens,
-            cost_usd,
+            input_tokens: weighted(|call| call.input_tokens),
+            output_tokens: weighted(|call| call.output_tokens),
+            reasoning_tokens: weighted(|call| call.reasoning_tokens),
+            image_count: plan.image_count,
+            image_tokens: plan.image_tokens,
+            calibrated: calibration.input_ratio.is_some(),
+            calls,
+            cost,
             effective: provider.effective(model),
             requests_left_today,
             tokens_left_today,
@@ -671,7 +929,7 @@ impl Assist {
             return Ok(Vec::new());
         }
         let record = self.record(account, email_id).await?;
-        let ticket = self.prepare(account, "autoLabels").await?;
+        let ticket = self.prepare(account, "autoLabels").await?.expecting(TYPICAL_LABEL_TOKENS);
         let mail = self.text(&record, LABEL_MAIL_CHARS).await?;
         let list: Vec<(String, String)> = labels.iter().map(|l| (l.name.clone(), l.description.clone())).collect();
         let prompt = prompts::labels(&mail, &list);
@@ -762,6 +1020,31 @@ impl Assist {
             }
         }
         Ok((rows, self.today(account).await?))
+    }
+}
+
+/// A typical answer of `Assist/compose`: a rewrite is about as long as the draft.
+fn typical_compose(args: &ComposeArgs) -> i64 {
+    match args.text.as_deref().filter(|_| args.mode != "write") {
+        Some(text) => (llm::estimate_texts([text]) * 5 / 4).max(100),
+        None => TYPICAL_WRITE_TOKENS,
+    }
+}
+
+/// A typical summary of `mails` mails.
+fn typical_summary(mails: usize) -> i64 {
+    let more = mails.saturating_sub(1) as i64;
+    (TYPICAL_SUMMARY_TOKENS + more * TYPICAL_SUMMARY_TOKENS_PER_MAIL).min(TYPICAL_SUMMARY_MAX_TOKENS)
+}
+
+/// Typical thinking for `feature` of a model that thinks.
+fn typical_reasoning(feature: &str) -> i64 {
+    match feature {
+        "compose" => TYPICAL_REASONING_WRITE,
+        "summarize" => TYPICAL_REASONING_SUMMARY,
+        "spamCheck" => TYPICAL_REASONING_SPAM,
+        "extractEvents" => TYPICAL_REASONING_EVENTS,
+        _ => TYPICAL_REASONING_LABELS,
     }
 }
 

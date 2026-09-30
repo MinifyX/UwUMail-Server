@@ -17,13 +17,14 @@ use url::{Host, Url};
 use uwumail_smtp::egress::{Reach, is_local_network};
 use uwumail_store::{
     ASSIST_MAX_ACCESS_ENTRIES, ASSIST_MAX_LABELS, ASSIST_MAX_PERSONAL_PROVIDERS, Account, AssistFeatures, AssistPolicy,
-    AssistProviderRecord, AssistProviderWrite, SecretChange, Store, StoreError, normalize_domain,
+    AssistProviderRecord, AssistProviderWrite, CalibrationSample, SecretChange, Store, StoreError, TokenCount,
+    normalize_domain,
 };
 
 use crate::chatgpt::{self, Poll, Tokens};
 use crate::kinds::{self, BaseUrl, Key, KindInfo, Shape};
 use crate::llm::{self, Completion, Prompt, ProviderError, Target};
-use crate::prices::{MAX_PRICE_PER_MILLION, Price, Prices};
+use crate::prices::{MAX_PRICE_PER_MILLION, MAX_PRICE_PER_REQUEST, Metered, Price, Prices};
 use crate::{Assist, AssistError, FEATURES, MAX_INSTRUCTION_CHARS, MAX_TEXT_CHARS, Result, Running, now};
 
 const NAME_MAX_CHARS: usize = 60;
@@ -83,6 +84,8 @@ pub struct ProviderView {
     /// provider whose costs the admin keeps to themselves.
     pub input_price_per_million: Option<f64>,
     pub output_price_per_million: Option<f64>,
+    /// US dollars per request set by hand; `None`: automatic.
+    pub price_per_request: Option<f64>,
     /// What the default model costs, when known and shown.
     pub price: Option<Price>,
 }
@@ -108,6 +111,7 @@ pub struct AdminProviderView {
     pub tokens_per_day: Option<i64>,
     pub input_price_per_million: Option<f64>,
     pub output_price_per_million: Option<f64>,
+    pub price_per_request: Option<f64>,
     pub show_cost_to_users: bool,
     /// What the default model costs, when known.
     pub price: Option<Price>,
@@ -142,6 +146,9 @@ pub struct ProviderInput {
     pub input_price_per_million: Option<Option<f64>>,
     #[serde(default, deserialize_with = "nullable")]
     pub output_price_per_million: Option<Option<f64>>,
+    /// US dollars per request; `null`: from the price lists.
+    #[serde(default, deserialize_with = "nullable")]
+    pub price_per_request: Option<Option<f64>>,
     /// Server providers only.
     pub show_cost_to_users: Option<bool>,
 }
@@ -286,6 +293,7 @@ impl Available {
             connected: self.usable,
             input_price_per_million: record.input_price.filter(|_| shown),
             output_price_per_million: record.output_price.filter(|_| shown),
+            price_per_request: record.request_price.filter(|_| shown),
             price: self.default_model().and_then(|model| prices.price(record, self.info, &model)).filter(|_| shown),
         }
     }
@@ -315,6 +323,7 @@ fn admin_view(record: &AssistProviderRecord, prices: &Prices) -> AdminProviderVi
         tokens_per_day: record.tokens_per_day,
         input_price_per_million: record.input_price,
         output_price_per_million: record.output_price,
+        price_per_request: record.request_price,
         show_cost_to_users: record.show_cost,
         price: kinds::kind(&record.kind).and_then(|info| {
             let model = record.model.clone().or_else(|| info.model.map(str::to_owned))?;
@@ -584,6 +593,18 @@ fn build_write(
             before.and_then(|b| b.output_price),
             "outputPricePerMillion",
         )?,
+        request_price: match &input.price_per_request {
+            Some(value) => *value,
+            None => before.and_then(|b| b.request_price),
+        }
+        .map(|n| {
+            if n.is_finite() && (0.0..=MAX_PRICE_PER_REQUEST).contains(&n) {
+                Ok(n)
+            } else {
+                Err(AssistError::invalid("badPrice", "pricePerRequest", "a price per request is 0 to 100 US dollars"))
+            }
+        })
+        .transpose()?,
         show_cost: server && input.show_cost_to_users.or(before.map(|b| b.show_cost)).unwrap_or(false),
     };
     Ok((write, secret))
@@ -1121,10 +1142,11 @@ impl Assist {
             feature: feature.to_owned(),
             day,
             input: 0,
+            cost: 0.0,
             received: Arc::default(),
             settled: false,
         };
-        Ok(Ticket { provider, model, policy, _running: running, charge })
+        Ok(Ticket { provider, model, policy, _running: running, charge, expected_output: 0 })
     }
 
     /// The provider and model `feature` would use for `account`, as [`Assist::prepare`] picks them,
@@ -1166,17 +1188,36 @@ impl Assist {
         prompt: &Prompt,
         deltas: Option<&mpsc::Sender<String>>,
     ) -> Result<(Completion, Effective)> {
-        let Ticket { provider, model, policy, _running, mut charge } = ticket;
+        let Ticket { provider, model, policy, _running, mut charge, expected_output } = ticket;
         let mut target = self.target(&provider, &policy, model.clone()).await?;
         target.received = charge.received.clone();
-        let input = llm::estimate_prompt(prompt);
+        let input = llm::estimate_request(prompt, target.shape);
         charge.add_input(input).await;
         let result = llm::complete(&target, prompt, deltas).await;
         match &result {
-            Ok(completion) => charge.settle(completion.input_tokens, completion.output_tokens).await,
+            Ok(completion) => {
+                if !completion.estimated {
+                    let sample = CalibrationSample {
+                        estimated_input: input,
+                        estimated_output: expected_output,
+                        input_tokens: completion.input_tokens,
+                        output_tokens: completion.output_tokens,
+                        reasoning_tokens: completion.reasoning_tokens,
+                        calls: completion.calls,
+                    };
+                    if let Err(err) =
+                        self.store().add_assist_calibration(provider.record.id, &model, &charge.feature, sample).await
+                    {
+                        tracing::warn!(%err, "keeping what an AI request took failed");
+                    }
+                }
+                charge.settle(completion).await
+            }
             Err(_) => {
                 let output = llm::estimate(charge.received.load(Ordering::Relaxed));
-                charge.settle(input, output).await
+                let guess =
+                    Completion { input_tokens: input, output_tokens: output, calls: 1, ..Completion::default() };
+                charge.settle(&guess).await
             }
         }
         let completion = result.map_err(provider_failed)?;
@@ -1249,6 +1290,15 @@ pub(crate) struct Ticket<'a> {
     policy: AssistPolicy,
     _running: Running<'a>,
     charge: Charge,
+    /// The typical answer the feature expects, in tokens, kept next to what came to learn from.
+    expected_output: i64,
+}
+
+impl Ticket<'_> {
+    /// Says how long an answer the feature expects (see [`Ticket::expected_output`]).
+    pub(crate) fn expecting(self, expected_output: i64) -> Self {
+        Ticket { expected_output, ..self }
+    }
 }
 
 /// The tokens of one counted request, until they are settled. Dropped unsettled (the caller went
@@ -1261,26 +1311,19 @@ struct Charge {
     provider_id: i64,
     feature: String,
     day: String,
-    /// Input tokens counted so far.
+    /// Input tokens counted so far, and what they cost.
     input: i64,
+    cost: f64,
     /// Characters of the answer received so far.
     received: Arc<AtomicUsize>,
     settled: bool,
 }
 
 impl Charge {
-    async fn add(&self, input: i64, output: i64) -> bool {
+    async fn add(&self, count: TokenCount) -> bool {
         let result = self
             .store
-            .add_assist_tokens(
-                self.account_id,
-                self.provider_id,
-                self.day.clone(),
-                &self.feature,
-                input,
-                output,
-                self.cost(input, output),
-            )
+            .add_assist_tokens(self.account_id, self.provider_id, self.day.clone(), &self.feature, count)
             .await;
         if let Err(err) = &result {
             tracing::warn!(%err, "counting an AI request's tokens failed");
@@ -1288,23 +1331,45 @@ impl Charge {
         result.is_ok()
     }
 
-    /// US dollars for so many tokens (fewer, when negative), when the price is known.
-    fn cost(&self, input: i64, output: i64) -> Option<f64> {
-        let price = self.price?;
-        Some((input as f64 * price.input_per_million + output as f64 * price.output_per_million) / 1_000_000.0)
+    /// US dollars for what was metered, when the price is known.
+    fn cost(&self, metered: &Metered) -> Option<f64> {
+        Some(self.price.as_ref()?.cost_of(metered).total())
     }
 
     /// Counts the prompt's estimated tokens before it is sent.
     async fn add_input(&mut self, input: i64) {
-        if self.add(input, 0).await {
+        let cost = self.cost(&Metered { input: input as f64, prompt: input, ..Metered::default() });
+        let count = TokenCount { input, cost_usd: cost, ..TokenCount::default() };
+        if self.add(count).await {
             self.input += input;
+            self.cost += cost.unwrap_or(0.0);
         }
     }
 
-    /// Replaces the estimate with what the request used.
-    async fn settle(mut self, input: i64, output: i64) {
+    /// Replaces the estimate with what the request used: the provider's own cost when it tells it
+    /// (OpenRouter), otherwise the price of everything it reported, a per-request fee included.
+    async fn settle(mut self, used: &Completion) {
         self.settled = true;
-        self.add(input - self.input, output).await;
+        let metered = Metered {
+            input: used.input_tokens as f64,
+            cache_read: used.cached_tokens as f64,
+            cache_write: used.cache_write_tokens as f64,
+            output: used.output_tokens as f64,
+            reasoning: used.reasoning_tokens as f64,
+            requests: 1.0,
+            prompt: used.input_tokens,
+            ..Metered::default()
+        };
+        let cost = used.cost_usd.or_else(|| self.cost(&metered));
+        let count = TokenCount {
+            input: used.input_tokens - self.input,
+            output: used.output_tokens,
+            reasoning: used.reasoning_tokens,
+            cached: used.cached_tokens,
+            calls: used.calls.max(1),
+            cost_usd: cost.map(|cost| cost - self.cost),
+        };
+        self.add(count).await;
     }
 }
 
@@ -1319,10 +1384,11 @@ impl Drop for Charge {
             return;
         }
         let (store, account_id, provider_id) = (self.store.clone(), self.account_id, self.provider_id);
-        let cost = self.cost(0, output);
+        let cost = self.cost(&Metered { output: output as f64, prompt: self.input, ..Metered::default() });
+        let count = TokenCount { output, calls: 1, cost_usd: cost, ..TokenCount::default() };
         let (day, feature) = (std::mem::take(&mut self.day), std::mem::take(&mut self.feature));
         runtime.spawn(async move {
-            if let Err(err) = store.add_assist_tokens(account_id, provider_id, day, &feature, 0, output, cost).await {
+            if let Err(err) = store.add_assist_tokens(account_id, provider_id, day, &feature, count).await {
                 tracing::warn!(%err, "counting an AI request's tokens failed");
             }
         });

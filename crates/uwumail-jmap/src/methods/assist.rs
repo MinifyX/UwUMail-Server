@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value, json};
 use tokio::sync::mpsc;
 use uwumail_assist::{
-    Assist, AssistError, Choice, ComposeArgs, Effective, EstimateArgs, EventsArgs, ProviderInput, ProviderView,
-    SettingsPatch, SettingsView, SpamArgs, StreamEvent, SummarizeArgs, TodayUsage, Usage,
+    Assist, AssistError, Choice, ComposeArgs, Effective, EstimateArgs, EstimateCost, EventsArgs, ProviderInput,
+    ProviderView, SettingsPatch, SettingsView, SpamArgs, StreamEvent, SummarizeArgs, TodayUsage, Usage,
 };
 use uwumail_store::{Account, AssistLabel, StoreError};
 
@@ -97,7 +97,11 @@ fn required_id(ctx: &Ctx<'_>, args: &Value, key: &str, prefix: char) -> MethodRe
 }
 
 fn usage_json(usage: &Usage) -> Value {
-    json!({ "inputTokens": usage.input_tokens, "outputTokens": usage.output_tokens })
+    json!({
+        "inputTokens": usage.input_tokens,
+        "outputTokens": usage.output_tokens,
+        "reasoningTokens": usage.reasoning_tokens,
+    })
 }
 
 /// `providerId`, `providerName`, `model` and `usage` of every feature's answer.
@@ -126,6 +130,7 @@ pub fn provider_json(view: &ProviderView) -> Value {
         "connected": view.connected,
         "inputPricePerMillion": view.input_price_per_million,
         "outputPricePerMillion": view.output_price_per_million,
+        "pricePerRequest": view.price_per_request,
         "price": view.price,
     })
 }
@@ -142,6 +147,32 @@ fn currency(args: &Value) -> MethodResult<String> {
 /// `{ amount, currency, usd }` of a cost in US dollars, or null.
 fn cost_json(prices: &uwumail_assist::Prices, usd: Option<f64>, currency: &str) -> Value {
     json!(usd.and_then(|usd| prices.convert(usd, currency)))
+}
+
+/// The `cost` of `Assist/estimate`: `{ amount, currency, usd, max: { amount, usd }, parts: { input,
+/// output, reasoning, images, requests, other } }`, the parts in `currency`; null without a rate.
+fn estimate_cost_json(prices: &uwumail_assist::Prices, cost: Option<&EstimateCost>, currency: &str) -> Value {
+    let Some(cost) = cost else { return Value::Null };
+    let (Some(total), Some(max), Some(unit)) =
+        (prices.convert(cost.usd, currency), prices.convert(cost.max_usd, currency), prices.convert(1.0, currency))
+    else {
+        return Value::Null;
+    };
+    let parts = cost.parts.scaled(unit.amount);
+    json!({
+        "amount": total.amount,
+        "currency": total.currency,
+        "usd": total.usd,
+        "max": { "amount": max.amount, "usd": max.usd },
+        "parts": {
+            "input": parts.input,
+            "output": parts.output,
+            "reasoning": parts.reasoning,
+            "images": parts.images,
+            "requests": parts.requests,
+            "other": parts.other,
+        },
+    })
 }
 
 fn choice_json(choice: &Option<Choice>) -> Value {
@@ -245,7 +276,14 @@ fn provider_input(patch: &Value, create: bool) -> Result<ProviderInput, SetError
     for key in object.keys() {
         let allowed = matches!(
             key.as_str(),
-            "name" | "baseUrl" | "apiKey" | "model" | "fastModel" | "inputPricePerMillion" | "outputPricePerMillion"
+            "name"
+                | "baseUrl"
+                | "apiKey"
+                | "model"
+                | "fastModel"
+                | "inputPricePerMillion"
+                | "outputPricePerMillion"
+                | "pricePerRequest"
         ) || (create && key == "kind")
             || matches!(
                 key.as_str(),
@@ -268,6 +306,7 @@ fn provider_input(patch: &Value, create: bool) -> Result<ProviderInput, SetError
                     | "fastModel"
                     | "inputPricePerMillion"
                     | "outputPricePerMillion"
+                    | "pricePerRequest"
             )
         })
         .map(|(key, value)| (key.clone(), value.clone()))
@@ -650,13 +689,18 @@ Assist/extractEvents"
         "method": method,
         "inputTokens": estimate.input_tokens,
         "outputTokens": estimate.output_tokens,
-        "totalTokens": estimate.input_tokens + estimate.output_tokens,
+        "reasoningTokens": estimate.reasoning_tokens,
+        "totalTokens": estimate.total_tokens(),
+        "imageCount": estimate.image_count,
+        "imageTokens": estimate.image_tokens,
+        "calls": estimate.calls,
+        "calibrated": estimate.calibrated,
         "providerId": provider_id(estimate.effective.provider_id),
         "providerName": estimate.effective.provider_name,
         "model": estimate.effective.model,
         "tokensLeftToday": estimate.tokens_left_today,
         "requestsLeftToday": estimate.requests_left_today,
-        "cost": cost_json(&*assist.prices().await, estimate.cost_usd, &currency),
+        "cost": estimate_cost_json(&*assist.prices().await, estimate.cost.as_ref(), &currency),
     }))
 }
 
@@ -683,6 +727,9 @@ pub async fn usage(ctx: &Ctx<'_>, args: &Value) -> MethodResult<Value> {
                 "requests": row.requests,
                 "inputTokens": row.input_tokens,
                 "outputTokens": row.output_tokens,
+                "reasoningTokens": row.reasoning_tokens,
+                "cachedTokens": row.cached_tokens,
+                "calls": row.calls,
                 "cost": cost_json(&prices, row.cost_usd, &currency),
             })
         })

@@ -57,13 +57,121 @@ pub struct Target {
 }
 
 /// A finished answer.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Completion {
     pub text: String,
+    /// The whole prompt, the part read from the provider's cache included.
     pub input_tokens: i64,
+    /// The answer's text, without thinking.
     pub output_tokens: i64,
+    /// What the model spent thinking, on top of `output_tokens` (where the provider tells it apart;
+    /// Anthropic counts thinking in `output_tokens`).
+    pub reasoning_tokens: i64,
+    /// Of `input_tokens`, read from the provider's cache, and written to it.
+    pub cached_tokens: i64,
+    pub cache_write_tokens: i64,
+    /// What the provider says the request cost in US dollars (OpenRouter's `usage.cost`).
+    pub cost_usd: Option<f64>,
+    /// Requests made to the provider: 2 when it refused the answer's JSON shape and was asked again.
+    pub calls: i64,
     /// The provider said nothing about tokens; they are estimated.
     pub estimated: bool,
+}
+
+/// Tokens as a provider reported them, in the terms of [`Completion`].
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Reported {
+    pub input: i64,
+    pub output: i64,
+    pub reasoning: i64,
+    pub cached: i64,
+    pub cache_write: i64,
+    pub cost_usd: Option<f64>,
+}
+
+impl Reported {
+    fn into_completion(self, text: String) -> Completion {
+        Completion {
+            text,
+            input_tokens: self.input,
+            output_tokens: self.output,
+            reasoning_tokens: self.reasoning,
+            cached_tokens: self.cached,
+            cache_write_tokens: self.cache_write,
+            cost_usd: self.cost_usd,
+            calls: 1,
+            estimated: false,
+        }
+    }
+}
+
+fn int(value: &Value, pointer: &str) -> i64 {
+    value.pointer(pointer).and_then(Value::as_i64).unwrap_or(0).max(0)
+}
+
+/// The `usage` of Chat Completions, in its variants: OpenAI counts thinking inside
+/// `completion_tokens` (`completion_tokens_details.reasoning_tokens`); Gemini's OpenAI-compatible
+/// API leaves it out of `completion_tokens` but in `total_tokens`; Gemini's own `usageMetadata`
+/// names it `thoughtsTokenCount`. Cached prompt tokens are `prompt_tokens_details.cached_tokens`
+/// (DeepSeek: `prompt_cache_hit_tokens`), OpenRouter adds what it charged as `cost`.
+pub fn chat_usage(usage: &Value) -> Reported {
+    if usage.get("promptTokenCount").is_some() || usage.get("candidatesTokenCount").is_some() {
+        return Reported {
+            input: int(usage, "/promptTokenCount"),
+            output: int(usage, "/candidatesTokenCount"),
+            reasoning: int(usage, "/thoughtsTokenCount"),
+            cached: int(usage, "/cachedContentTokenCount"),
+            ..Reported::default()
+        };
+    }
+    let prompt = int(usage, "/prompt_tokens");
+    let completion = int(usage, "/completion_tokens");
+    let total = int(usage, "/total_tokens");
+    let inside = int(usage, "/completion_tokens_details/reasoning_tokens");
+    let outside = if total > 0 { total - prompt - completion } else { 0 };
+    let (output, reasoning) =
+        if outside > 0 { (completion, outside) } else { (completion - inside.min(completion), inside.min(completion)) };
+    let cached = match int(usage, "/prompt_tokens_details/cached_tokens") {
+        0 => int(usage, "/prompt_cache_hit_tokens"),
+        cached => cached,
+    };
+    let cost_usd = usage.get("cost").and_then(Value::as_f64).filter(|cost| cost.is_finite() && *cost >= 0.0);
+    Reported {
+        input: prompt,
+        output,
+        reasoning,
+        cached: cached.min(prompt),
+        cache_write: int(usage, "/prompt_tokens_details/cache_write_tokens"),
+        cost_usd,
+    }
+}
+
+/// The `usage` of Anthropic's Messages: `input_tokens` leaves out what was read from and written
+/// to the cache; thinking is part of `output_tokens`.
+pub fn anthropic_usage(usage: &Value) -> Reported {
+    let cached = int(usage, "/cache_read_input_tokens");
+    let cache_write = int(usage, "/cache_creation_input_tokens");
+    Reported {
+        input: int(usage, "/input_tokens") + cached + cache_write,
+        output: int(usage, "/output_tokens"),
+        cached,
+        cache_write,
+        ..Reported::default()
+    }
+}
+
+/// The `usage` of the Responses API (ChatGPT's Codex backend): thinking is inside `output_tokens`.
+pub fn responses_usage(usage: &Value) -> Reported {
+    let output = int(usage, "/output_tokens");
+    let reasoning = int(usage, "/output_tokens_details/reasoning_tokens").min(output);
+    let input = int(usage, "/input_tokens");
+    Reported {
+        input,
+        output: output - reasoning,
+        reasoning,
+        cached: int(usage, "/input_tokens_details/cached_tokens").min(input),
+        ..Reported::default()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -147,6 +255,23 @@ pub fn estimate_prompt(prompt: &Prompt) -> i64 {
     estimate_texts([prompt.system.as_str(), prompt.user.as_str(), schema.as_str()])
 }
 
+/// Tokens an API adds to a prompt beyond its text: the roles and markers around each message and
+/// the answer's JSON shape wrapped for the model. Small, but part of every request.
+pub fn framing_tokens(shape: Shape, has_schema: bool) -> i64 {
+    let messages = match shape {
+        // Three a message (system, user) and three to start the answer.
+        Shape::Chat => 9,
+        Shape::Anthropic => 8,
+        Shape::Codex => 12,
+    };
+    messages + if has_schema { 12 } else { 0 }
+}
+
+/// Tokens of a whole request to an API of `shape`: [`estimate_prompt`] and [`framing_tokens`].
+pub fn estimate_request(prompt: &Prompt, shape: Shape) -> i64 {
+    estimate_prompt(prompt) + framing_tokens(shape, prompt.schema.is_some())
+}
+
 /// Asks `target`. With `deltas`, the text is streamed and sent there piece by piece as it comes; a
 /// receiver that went away ends the request. A JSON schema the provider does not understand (an
 /// HTTP 400) is tried once more without, relying on the prompt.
@@ -158,14 +283,14 @@ pub async fn complete(
     let work = async {
         match ask(target, prompt, deltas, true).await {
             Err(ProviderError::Status { status: 400, .. }) if prompt.schema.is_some() => {
-                ask(target, prompt, deltas, false).await
+                ask(target, prompt, deltas, false).await.map(|completion| Completion { calls: 2, ..completion })
             }
             other => other,
         }
     };
     let mut completion = tokio::time::timeout(TOTAL_TIMEOUT, work).await.map_err(|_| ProviderError::Timeout)??;
-    if completion.input_tokens == 0 && completion.output_tokens == 0 {
-        completion.input_tokens = estimate_prompt(prompt);
+    if completion.input_tokens == 0 && completion.output_tokens == 0 && completion.reasoning_tokens == 0 {
+        completion.input_tokens = estimate_request(prompt, target.shape);
         completion.output_tokens = estimate_texts([completion.text.as_str()]);
         completion.estimated = true;
     }
@@ -380,11 +505,6 @@ async fn read_all(body: hyper::body::Incoming, max: usize) -> Result<Vec<u8>, Pr
     }
 }
 
-fn usage(value: &Value, input: &str, output: &str) -> (i64, i64) {
-    let number = |key: &str| value.get(key).and_then(Value::as_i64).unwrap_or(0);
-    (number(input), number(output))
-}
-
 fn parse_chat(value: &Value) -> Result<Completion, ProviderError> {
     let choice = value.pointer("/choices/0").ok_or_else(|| ProviderError::Garbled("no choices".into()))?;
     let text = choice.pointer("/message/content").and_then(Value::as_str).unwrap_or_default();
@@ -397,9 +517,13 @@ fn parse_chat(value: &Value) -> Result<Completion, ProviderError> {
     if text.is_empty() && choice.get("finish_reason").and_then(Value::as_str) == Some("length") {
         return Err(ProviderError::CutOff);
     }
-    let (input_tokens, output_tokens) =
-        value.get("usage").map(|u| usage(u, "prompt_tokens", "completion_tokens")).unwrap_or_default();
-    Ok(Completion { text: cap(text), input_tokens, output_tokens, estimated: false })
+    let reported = value
+        .get("usage")
+        .filter(|u| u.is_object())
+        .or_else(|| value.get("usageMetadata"))
+        .map(chat_usage)
+        .unwrap_or_default();
+    Ok(reported.into_completion(cap(text)))
 }
 
 fn parse_anthropic(value: &Value) -> Result<Completion, ProviderError> {
@@ -420,9 +544,8 @@ fn parse_anthropic(value: &Value) -> Result<Completion, ProviderError> {
     if text.is_empty() && value.get("stop_reason").and_then(Value::as_str) == Some("max_tokens") {
         return Err(ProviderError::CutOff);
     }
-    let (input_tokens, output_tokens) =
-        value.get("usage").map(|u| usage(u, "input_tokens", "output_tokens")).unwrap_or_default();
-    Ok(Completion { text: cap(&text), input_tokens, output_tokens, estimated: false })
+    let reported = value.get("usage").map(anthropic_usage).unwrap_or_default();
+    Ok(reported.into_completion(cap(&text)))
 }
 
 fn cap(text: &str) -> String {
@@ -458,7 +581,7 @@ impl Collector<'_> {
 }
 
 async fn stream_chat(reader: &mut SseReader, mut collector: Collector<'_>) -> Result<Completion, ProviderError> {
-    let (mut input_tokens, mut output_tokens) = (0, 0);
+    let mut reported = Reported::default();
     let mut finish = None;
     while let Some((_, data)) = reader.next().await? {
         if data.trim() == "[DONE]" {
@@ -475,8 +598,8 @@ async fn stream_chat(reader: &mut SseReader, mut collector: Collector<'_>) -> Re
         if let Some(reason) = value.pointer("/choices/0/finish_reason").and_then(Value::as_str) {
             finish = Some(reason.to_owned());
         }
-        if let Some(u) = value.get("usage").filter(|u| u.is_object()) {
-            (input_tokens, output_tokens) = usage(u, "prompt_tokens", "completion_tokens");
+        if let Some(u) = value.get("usage").filter(|u| u.is_object()).or_else(|| value.get("usageMetadata")) {
+            reported = chat_usage(u);
         }
     }
     match finish.as_deref() {
@@ -484,20 +607,18 @@ async fn stream_chat(reader: &mut SseReader, mut collector: Collector<'_>) -> Re
         Some("length") if collector.text.is_empty() => return Err(ProviderError::CutOff),
         _ => {}
     }
-    Ok(Completion { text: cap(&collector.text), input_tokens, output_tokens, estimated: false })
+    Ok(reported.into_completion(cap(&collector.text)))
 }
 
 async fn stream_anthropic(reader: &mut SseReader, mut collector: Collector<'_>) -> Result<Completion, ProviderError> {
-    let (mut input_tokens, mut output_tokens) = (0, 0);
+    let mut reported = Reported::default();
     let mut stop = None;
     while let Some((event, data)) = reader.next().await? {
         let Ok(value) = serde_json::from_str::<Value>(&data) else { continue };
         match value.get("type").and_then(Value::as_str).unwrap_or(event.as_str()) {
             "message_start" => {
                 if let Some(u) = value.pointer("/message/usage") {
-                    input_tokens = u.get("input_tokens").and_then(Value::as_i64).unwrap_or(0)
-                        + u.get("cache_read_input_tokens").and_then(Value::as_i64).unwrap_or(0)
-                        + u.get("cache_creation_input_tokens").and_then(Value::as_i64).unwrap_or(0);
+                    reported = Reported { output: 0, ..anthropic_usage(u) };
                 }
             }
             "content_block_delta" => {
@@ -511,8 +632,16 @@ async fn stream_anthropic(reader: &mut SseReader, mut collector: Collector<'_>) 
                 if let Some(reason) = value.pointer("/delta/stop_reason").and_then(Value::as_str) {
                     stop = Some(reason.to_owned());
                 }
-                if let Some(tokens) = value.pointer("/usage/output_tokens").and_then(Value::as_i64) {
-                    output_tokens = tokens;
+                if let Some(u) = value.get("usage") {
+                    // The final counts; newer versions repeat the prompt's here as well.
+                    if u.get("input_tokens").and_then(Value::as_i64).is_some() {
+                        let again = anthropic_usage(u);
+                        (reported.input, reported.cached, reported.cache_write) =
+                            (again.input, again.cached, again.cache_write);
+                    }
+                    if let Some(tokens) = u.get("output_tokens").and_then(Value::as_i64) {
+                        reported.output = tokens.max(0);
+                    }
                 }
             }
             "error" => {
@@ -532,11 +661,11 @@ async fn stream_anthropic(reader: &mut SseReader, mut collector: Collector<'_>) 
         Some("max_tokens") if collector.text.is_empty() => return Err(ProviderError::CutOff),
         _ => {}
     }
-    Ok(Completion { text: cap(&collector.text), input_tokens, output_tokens, estimated: false })
+    Ok(reported.into_completion(cap(&collector.text)))
 }
 
 async fn stream_codex(reader: &mut SseReader, mut collector: Collector<'_>) -> Result<Completion, ProviderError> {
-    let (mut input_tokens, mut output_tokens) = (0, 0);
+    let mut reported = Reported::default();
     while let Some((event, data)) = reader.next().await? {
         let Ok(value) = serde_json::from_str::<Value>(&data) else { continue };
         match value.get("type").and_then(Value::as_str).unwrap_or(event.as_str()) {
@@ -547,7 +676,7 @@ async fn stream_codex(reader: &mut SseReader, mut collector: Collector<'_>) -> R
             }
             "response.completed" | "response.incomplete" => {
                 if let Some(u) = value.pointer("/response/usage") {
-                    (input_tokens, output_tokens) = usage(u, "input_tokens", "output_tokens");
+                    reported = responses_usage(u);
                 }
                 break;
             }
@@ -563,7 +692,7 @@ async fn stream_codex(reader: &mut SseReader, mut collector: Collector<'_>) -> R
             _ => {}
         }
     }
-    Ok(Completion { text: cap(&collector.text), input_tokens, output_tokens, estimated: false })
+    Ok(reported.into_completion(cap(&collector.text)))
 }
 
 /// Reads server-sent events off a body, event by event, within the limits.
@@ -784,5 +913,63 @@ mod tests {
         );
         assert_eq!(shorten("a\nb", 10), "a b");
         assert_eq!(shorten("äöüäöü", 3), "äöü…");
+    }
+
+    #[test]
+    fn usage_is_read_per_kind_with_thinking_and_the_cache() {
+        // OpenAI: thinking inside completion_tokens, a cached prompt.
+        let openai = json!({ "prompt_tokens": 1200, "completion_tokens": 900, "total_tokens": 2100,
+            "prompt_tokens_details": { "cached_tokens": 1024 },
+            "completion_tokens_details": { "reasoning_tokens": 640 } });
+        let r = chat_usage(&openai);
+        assert_eq!((r.input, r.output, r.reasoning, r.cached, r.cost_usd), (1200, 260, 640, 1024, None));
+        // Gemini's OpenAI-compatible API: thinking only in total_tokens.
+        let gemini = json!({ "prompt_tokens": 500, "completion_tokens": 120, "total_tokens": 1020 });
+        let r = chat_usage(&gemini);
+        assert_eq!((r.input, r.output, r.reasoning), (500, 120, 400));
+        // Gemini's own usageMetadata.
+        let native = json!({ "promptTokenCount": 300, "candidatesTokenCount": 50, "thoughtsTokenCount": 700,
+            "cachedContentTokenCount": 100, "totalTokenCount": 1050 });
+        let r = chat_usage(&native);
+        assert_eq!((r.input, r.output, r.reasoning, r.cached), (300, 50, 700, 100));
+        // OpenRouter: what it charged, and cache writes.
+        let openrouter = json!({ "prompt_tokens": 800, "completion_tokens": 200, "total_tokens": 1000, "cost": 0.00042,
+            "prompt_tokens_details": { "cached_tokens": 0, "cache_write_tokens": 600 },
+            "completion_tokens_details": { "reasoning_tokens": 150 } });
+        let r = chat_usage(&openrouter);
+        assert_eq!((r.output, r.reasoning, r.cache_write, r.cost_usd), (50, 150, 600, Some(0.00042)));
+        // DeepSeek's cache hits; a plain server without details.
+        assert_eq!(
+            chat_usage(&json!({ "prompt_tokens": 90, "completion_tokens": 10, "prompt_cache_hit_tokens": 64 })).cached,
+            64
+        );
+        let plain = chat_usage(&json!({ "prompt_tokens": 90, "completion_tokens": 10 }));
+        assert_eq!((plain.input, plain.output, plain.reasoning), (90, 10, 0));
+        // Anthropic: the cache outside input_tokens, thinking inside output_tokens.
+        let anthropic = json!({ "input_tokens": 20, "cache_read_input_tokens": 1000, "cache_creation_input_tokens": 300,
+            "output_tokens": 500 });
+        let r = anthropic_usage(&anthropic);
+        assert_eq!((r.input, r.output, r.reasoning, r.cached, r.cache_write), (1320, 500, 0, 1000, 300));
+        // The Responses API (ChatGPT).
+        let codex = json!({ "input_tokens": 400, "input_tokens_details": { "cached_tokens": 128 },
+            "output_tokens": 300, "output_tokens_details": { "reasoning_tokens": 256 } });
+        let r = responses_usage(&codex);
+        assert_eq!((r.input, r.output, r.reasoning, r.cached), (400, 44, 256, 128));
+        // Answers as a whole.
+        let answer =
+            json!({ "choices": [{ "message": { "content": "Hi" }, "finish_reason": "stop" }], "usage": openai });
+        let completion = parse_chat(&answer).unwrap();
+        assert_eq!((completion.output_tokens, completion.reasoning_tokens, completion.calls), (260, 640, 1));
+        let message =
+            json!({ "content": [{ "type": "text", "text": "Hi" }], "stop_reason": "end_turn", "usage": anthropic });
+        assert_eq!(parse_anthropic(&message).unwrap().input_tokens, 1320, "the cache counts as input");
+    }
+
+    #[test]
+    fn a_request_is_its_text_and_the_frame_around_it() {
+        let prompt = Prompt { system: "abcd".into(), user: "efgh".into(), schema: None, max_tokens: 10 };
+        assert_eq!(estimate_request(&prompt, Shape::Chat), 2 + 9);
+        let with_schema = Prompt { schema: Some(("x", json!({ "type": "object" }))), ..prompt };
+        assert_eq!(estimate_request(&with_schema, Shape::Anthropic), 7 + 8 + 12);
     }
 }

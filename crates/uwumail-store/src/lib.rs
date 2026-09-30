@@ -93,10 +93,11 @@ pub use alerts::{
     AlertObservation, CertificateOrders,
 };
 pub use assist::{
-    ASSIST_FEATURES, ASSIST_LABEL_DESCRIPTION_MAX_CHARS, ASSIST_LABEL_NAME_MAX_CHARS, ASSIST_MAX_ACCESS_ENTRIES,
-    ASSIST_MAX_LABELS, ASSIST_MAX_PERSONAL_PROVIDERS, ASSIST_MAX_SERVER_PROVIDERS, AssistFeatures, AssistLabel,
-    AssistPolicy, AssistPrefs, AssistProviderRecord, AssistProviderWrite, LabelJob, LabelLogEntry, SecretChange,
-    SenderHistory, UsageRow, UsedToday, label_keyword, utc_day,
+    ASSIST_CALIBRATION_SAMPLES, ASSIST_FEATURES, ASSIST_LABEL_DESCRIPTION_MAX_CHARS, ASSIST_LABEL_NAME_MAX_CHARS,
+    ASSIST_MAX_ACCESS_ENTRIES, ASSIST_MAX_LABELS, ASSIST_MAX_PERSONAL_PROVIDERS, ASSIST_MAX_SERVER_PROVIDERS,
+    AssistFeatures, AssistLabel, AssistPolicy, AssistPrefs, AssistProviderRecord, AssistProviderWrite,
+    CalibrationSample, LabelJob, LabelLogEntry, SecretChange, SenderHistory, TokenCount, UsageRow, UsedToday,
+    label_keyword, utc_day,
 };
 pub use bayes::{
     BAYES_FOLDER_LIMIT, BAYES_LEARNED_SECS, BAYES_MIN_LEARNED, BAYES_RARE_TOKEN_SECS, BAYES_WANTED_AFTER_SECS,

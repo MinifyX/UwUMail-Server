@@ -4,7 +4,8 @@
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
-use uwumail_assist::llm::estimate_texts;
+use uwumail_assist::kinds::Shape;
+use uwumail_assist::llm::{estimate_texts, framing_tokens};
 use uwumail_assist::{
     Assist, AssistError, ComposeArgs, EstimateArgs, EventsArgs, ImageText, PictureRead, PictureTexts, SpamArgs,
     SummarizeArgs, chatgpt,
@@ -12,14 +13,15 @@ use uwumail_assist::{
 
 use crate::common::{INVOICE, Reply, chat, rig};
 
-/// The input tokens of the request the fake provider got, counted like the estimate.
+/// The input tokens of the request the fake provider got, counted like the estimate: the texts and
+/// the frame of Chat Completions around them.
 fn sent_tokens(body: &Value) -> i64 {
     let schema = body.pointer("/response_format/json_schema/schema").map(Value::to_string).unwrap_or_default();
     estimate_texts([
         body["messages"][0]["content"].as_str().unwrap(),
         body["messages"][1]["content"].as_str().unwrap(),
         schema.as_str(),
-    ])
+    ]) + framing_tokens(Shape::Chat, !schema.is_empty())
 }
 
 #[tokio::test]
@@ -70,6 +72,10 @@ async fn an_estimate_is_the_prompt_the_call_sends_and_costs_nothing() {
         let body = rig.fake.seen()[index].body.clone();
         assert_eq!(estimate.input_tokens, sent_tokens(&body), "call {index}: {body}");
         assert!(estimate.output_tokens <= body["max_tokens"].as_i64().unwrap());
+        assert_eq!((estimate.reasoning_tokens, estimate.calibrated), (0, false), "small-model does not think");
+        assert_eq!(estimate.calls.len(), 1);
+        assert_eq!((estimate.calls[0].purpose, estimate.calls[0].weight), ("main", 1.0));
+        assert_eq!(estimate.total_tokens(), estimate.input_tokens + estimate.output_tokens);
     }
     let (_, today) = assist.usage(&rig.mia, 1).await.unwrap();
     assert_eq!(today[0].requests, 4, "the four calls, not the estimates");
@@ -148,4 +154,93 @@ async fn pictures_are_not_read_for_an_estimate() {
     rig.fake.push(Reply::Json(200, chat(r#"{"events": []}"#), vec![]));
     assist.extract_events(&rig.mia, EventsArgs { email_id: email, include_images: true }).await.unwrap();
     assert_eq!(*asked.lock().unwrap(), [PictureRead::KnownOnly, PictureRead::Read]);
+}
+
+fn summarize(email: i64) -> SummarizeArgs {
+    SummarizeArgs { email_id: Some(email), ..Default::default() }
+}
+
+#[tokio::test]
+async fn estimates_learn_from_the_last_requests() {
+    let rig = rig().await;
+    rig.server_provider("openaiCompatible", json!({})).await;
+    let email = rig.deliver(&rig.mia, INVOICE).await;
+    let assist = &rig.assist;
+    let before = assist.estimate(&rig.mia, EstimateArgs::Summarize(summarize(email))).await.unwrap();
+    assert!(!before.calibrated);
+    // The provider counts twice the prompt the server expects, a third of the typical answer, and
+    // some thinking.
+    let answer = json!({
+        "choices": [{ "index": 0, "message": { "role": "assistant", "content": "Eine Rechnung." }, "finish_reason": "stop" }],
+        "usage": { "prompt_tokens": before.input_tokens * 2, "completion_tokens": 50 + 90, "total_tokens": before.input_tokens * 2 + 140,
+                   "completion_tokens_details": { "reasoning_tokens": 90 } }
+    });
+    for round in 0..uwumail_assist::MIN_CALIBRATION_SAMPLES {
+        let estimate = assist.estimate(&rig.mia, EstimateArgs::Summarize(summarize(email))).await.unwrap();
+        assert!(!estimate.calibrated, "not yet after {round}");
+        rig.fake.push(Reply::Json(200, answer.clone(), vec![]));
+        assist.summarize(&rig.mia, summarize(email), None).await.unwrap();
+    }
+    let after = assist.estimate(&rig.mia, EstimateArgs::Summarize(summarize(email))).await.unwrap();
+    assert!(after.calibrated);
+    assert_eq!(after.input_tokens, before.input_tokens * 2);
+    assert_eq!(after.output_tokens, 75, "50 of 150 typical is a third, but never less than half");
+    assert_eq!(after.reasoning_tokens, 90, "thinking as the model did lately");
+    assert_eq!(after.total_tokens(), after.input_tokens + 75 + 90);
+
+    // The usage keeps the thinking apart, and counts it against the day's tokens.
+    let (rows, today) = assist.usage(&rig.mia, 1).await.unwrap();
+    let row = &rows[0];
+    let reported = (before.input_tokens * 2 * 5, 50 * 5, 90 * 5);
+    assert_eq!((row.input_tokens, row.output_tokens, row.reasoning_tokens), reported);
+    assert_eq!((row.requests, row.calls), (5, 5));
+    assert_eq!(today[0].tokens, reported.0 + reported.1 + reported.2);
+
+    // Another model learns on its own.
+    let other = SummarizeArgs { email_id: Some(email), ..Default::default() };
+    let settings = uwumail_assist::SettingsPatch {
+        features: Some(
+            [(
+                "summarize".to_owned(),
+                Some(uwumail_assist::Choice { provider_id: row.provider_id, model: Some("other-model".into()) }),
+            )]
+            .into(),
+        ),
+        ..Default::default()
+    };
+    assist.set_settings(&rig.mia, settings).await.unwrap();
+    assert!(!assist.estimate(&rig.mia, EstimateArgs::Summarize(other)).await.unwrap().calibrated);
+}
+
+#[tokio::test]
+async fn a_model_that_thinks_is_estimated_with_its_thinking() {
+    let rig = rig().await;
+    rig.server_provider("openaiCompatible", json!({ "fastModel": "gpt-5-mini" })).await;
+    let email = rig.deliver(&rig.mia, INVOICE).await;
+    let estimate = rig.assist.estimate(&rig.mia, EstimateArgs::Summarize(summarize(email))).await.unwrap();
+    assert_eq!(estimate.effective.model, "gpt-5-mini");
+    assert_eq!(estimate.reasoning_tokens, 500, "the typical thinking of a summary");
+    assert_eq!(estimate.calls[0].reasoning_tokens, 500);
+    assert_eq!(estimate.total_tokens(), estimate.input_tokens + estimate.output_tokens + 500);
+}
+
+#[tokio::test]
+async fn a_refused_answer_shape_counts_as_an_extra_call() {
+    let rig = rig().await;
+    rig.server_provider("openaiCompatible", json!({})).await;
+    let email = rig.deliver(&rig.mia, INVOICE).await;
+    let spam = || SpamArgs { email_id: email, language: None };
+    let verdict = chat(r#"{"verdict": "legitimate", "confidence": 0.9, "reasons": ["bekannt"]}"#);
+    for _ in 0..uwumail_assist::MIN_CALIBRATION_SAMPLES {
+        rig.fake.push(Reply::Json(400, json!({ "error": { "message": "response_format is not supported" } }), vec![]));
+        rig.fake.push(Reply::Json(200, verdict.clone(), vec![]));
+        rig.assist.spam_check(&rig.mia, spam()).await.unwrap();
+    }
+    let (rows, _) = rig.assist.usage(&rig.mia, 1).await.unwrap();
+    assert_eq!((rows[0].requests, rows[0].calls), (5, 10), "each asked twice");
+    let estimate = rig.assist.estimate(&rig.mia, EstimateArgs::SpamCheck(spam())).await.unwrap();
+    assert_eq!(estimate.calls.len(), 2);
+    let retry = &estimate.calls[1];
+    assert_eq!((retry.purpose, retry.weight, retry.output_tokens), ("retry", 1.0, 0));
+    assert_eq!(estimate.input_tokens, estimate.calls[0].input_tokens * 2);
 }
