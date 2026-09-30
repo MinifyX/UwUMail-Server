@@ -195,6 +195,40 @@ pub fn bounce(tone: ToneConfig, recipient_is_local: bool, brand: &str) -> Bounce
     BounceTexts { sender_name: sender(tone.language, who, brand), subject, intro, outro }
 }
 
+/// The closing line of a bounce where every recipient failed for a reason the address can't fix
+/// (Microsoft blocking or throttling the server): the usual one without the hint to look for a typo.
+pub fn outro_without_typo_hint(tone: ToneConfig, recipient_is_local: bool) -> &'static str {
+    use {ExternalTone as E, InternalTone as I, Language as L};
+    match (tone.language, recipient_is_local, tone.internal, tone.external) {
+        (L::De, true, I::Playful, _) => "Die Kopfzeilen deiner Mail hab ich dir unten angehängt. ♡",
+        (L::De, true, I::Neutral, _) => "Die Kopfzeilen der ursprünglichen Mail stehen im Anhang.",
+        (L::De, false, _, E::Neutral) => "Die Kopfzeilen der ursprünglichen Nachricht finden Sie im Anhang.",
+        (L::De, false, _, E::Light) => "Die Kopfzeilen der ursprünglichen Nachricht hängen an. Viele Grüße ✉",
+        (L::En, true, I::Playful, _) => "I attached the headers of your mail below. ♡",
+        (L::En, true, I::Neutral, _) => "The headers of the original mail are attached.",
+        (L::En, false, _, E::Neutral) => "The headers of the original message are attached.",
+        (L::En, false, _, E::Light) => "The headers of the original message are attached. Best wishes ✉",
+        (L::Fr, true, I::Playful, _) => "Je t'ai joint les en-têtes de ton message ci-dessous. ♡",
+        (L::Fr, true, I::Neutral, _) => "Les en-têtes du message d'origine sont joints.",
+        (L::Fr, false, _, E::Neutral) => "Les en-têtes du message d'origine sont joints.",
+        (L::Fr, false, _, E::Light) => "Les en-têtes du message d'origine sont joints. Bien cordialement ✉",
+        (L::Nl, true, I::Playful, _) => "De kopregels van je mail heb ik hieronder bijgevoegd. ♡",
+        (L::Nl, true, I::Neutral, _) => "De kopregels van de oorspronkelijke mail zijn bijgevoegd.",
+        (L::Nl, false, _, E::Neutral) => "De kopregels van het oorspronkelijke bericht zijn bijgevoegd.",
+        (L::Nl, false, _, E::Light) => {
+            "De kopregels van het oorspronkelijke bericht zijn bijgevoegd. Met vriendelijke groet ✉"
+        }
+        (L::Ja, true, I::Playful, _) => "元のメールのヘッダーを下に添付しました。♡",
+        (L::Ja, true, I::Neutral, _) => "元のメールのヘッダーを添付しています。",
+        (L::Ja, false, _, E::Neutral) => "元のメッセージのヘッダーを添付しています。",
+        (L::Ja, false, _, E::Light) => "元のメッセージのヘッダーを添付しています。よろしくお願いいたします ✉",
+        (L::Zh, true, I::Playful, _) => "原邮件的邮件头我附在下面了。♡",
+        (L::Zh, true, I::Neutral, _) => "原邮件的邮件头已附上。",
+        (L::Zh, false, _, E::Neutral) => "原邮件的邮件头已附上。",
+        (L::Zh, false, _, E::Light) => "原邮件的邮件头已附上。祝好 ✉",
+    }
+}
+
 /// A paragraph for bounces of mail Microsoft (Outlook, Hotmail, Microsoft 365) refused or held
 /// back for too long: it is not the sender's fault, and the admins know (docs/microsoft.md).
 /// `local` is mail from our own people, who are addressed like everywhere else in their mail.

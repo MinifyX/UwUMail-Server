@@ -44,7 +44,11 @@ pub async fn bounce(ctx: &Context, return_path: &str, original: &[u8], failed: &
         let preferences = ctx.store.preferences(account_id).await.unwrap_or_default();
         tone.language = Language::preferred(preferences.get("language").and_then(|v| v.as_str()), tone.language);
     }
-    let texts = texts::bounce(tone, local_account.is_some(), ctx.brand().name());
+    let mut texts = texts::bounce(tone, local_account.is_some(), ctx.brand().name());
+    // A typo is not why Microsoft refused: don't send the person looking for one.
+    if only_microsoft(failed) {
+        texts.outro = texts::outro_without_typo_hint(tone, local_account.is_some());
+    }
     let note = microsoft_kind(failed).map(|kind| texts::microsoft_note(tone.language, local_account.is_some(), kind));
     let raw = match build(ctx, &texts, note, return_path, original, failed) {
         Ok(raw) => raw,
@@ -89,6 +93,11 @@ fn microsoft_kind(failed: &[FailedRecipient]) -> Option<IssueKind> {
         .filter_map(|recipient| crate::microsoft::classify(&recipient.error, false))
         .map(|refusal| refusal.group.kind())
         .max_by_key(rank)
+}
+
+/// Whether every recipient failed because Microsoft refused or held back the mail.
+fn only_microsoft(failed: &[FailedRecipient]) -> bool {
+    failed.iter().all(|recipient| crate::microsoft::classify(&recipient.error, false).is_some())
 }
 
 fn build(
@@ -180,6 +189,28 @@ mod tests {
         for language in Language::ALL {
             for local in [true, false] {
                 assert!(texts::microsoft_note(language, local, IssueKind::Blocked).contains("Microsoft"));
+            }
+        }
+    }
+
+    #[test]
+    fn no_typo_hint_when_only_microsoft_refused() {
+        use crate::config::{ExternalTone, InternalTone, ToneConfig};
+        let failed = |error: &str| FailedRecipient { address: "ami@example.com".into(), error: error.into() };
+        let blocked = failed("550 5.7.1 Unfortunately, messages from [192.0.2.1] weren't sent. (S3150)");
+        assert!(only_microsoft(std::slice::from_ref(&blocked)));
+        assert!(!only_microsoft(&[blocked, failed("550 5.1.1 unknown user")]));
+        for language in Language::ALL {
+            for local in [true, false] {
+                for internal in [InternalTone::Playful, InternalTone::Neutral] {
+                    for external in [ExternalTone::Neutral, ExternalTone::Light] {
+                        let tone = ToneConfig { language, internal, external };
+                        let outro = texts::outro_without_typo_hint(tone, local);
+                        for word in ["Tippfehler", "typo", "frappe", "typefout", "打ち間違い", "拼写"] {
+                            assert!(!outro.contains(word), "{language:?} {local}: {outro}");
+                        }
+                    }
+                }
             }
         }
     }
