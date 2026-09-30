@@ -163,9 +163,10 @@ recent mail per labeling:
 - a label taken off by hand: the mail is an example **without** it;
 - each time a label is put on by hand, one more mail is learned as an example without any label:
   of the 200 newest mails in the inbox from the last 60 days that carry no label and are not
-  examples yet, the one at position `mail id mod 200` (or the last, when there are fewer). This
-  is what ordinary mail looks like; without it a person with a single label would never have
-  examples without it;
+  examples yet (newest first, counted from 0), the one at position `id mod n`, where `id` is the
+  server's number of the mail just labeled and `n` how many there are (at most 200). This is what
+  ordinary mail looks like; without it a person with a single label would never have examples
+  without it. Such a mail that is later labeled by hand simply becomes an example with the label;
 - at most 3,000 examples per person; beyond that the oldest are forgotten.
 
 For label L, the examples split into `P` (with L) and `N` (all other examples). For every token the

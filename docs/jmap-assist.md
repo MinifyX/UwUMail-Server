@@ -427,7 +427,7 @@ stay `AssistLabel/*`, as since 0.18.
 | `detector` | `String\|null` | a built-in detector that puts the label on new mail: `invoice`, `appointment`, `newsletter` or `shipping`; `null` for none (default) |
 | `learnSenders` | `Boolean` | a sender whose mail the person gave this label by hand twice gets it on new mail (default `true`) |
 | `classifier` | `Boolean` | the label's classifier may put it on new mail once it has learned enough (default `true`) |
-| `totalEmails` | `Number` | server-set: emails of the account with the keyword, in any folder |
+| `totalEmails` | `Number` | server-set: emails of the account with the keyword, in any folder but those only in Junk or the Trash (the same as `Email/query` with `hasKeyword` and `inMailboxOtherThan` Junk and Trash) |
 | `unreadEmails` | `Number` | server-set: of those, the ones without `$seen` |
 | `examples` | `Number` | server-set: mails the classifier learned as having the label (given it by hand); it acts from 15 on |
 

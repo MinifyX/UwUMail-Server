@@ -5,6 +5,43 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ## Unreleased
 
+**Labels** ([docs/labels.md](docs/labels.md), [docs/jmap-assist.md](docs/jmap-assist.md#labels)):
+
+- **Labels work without AI.** Creating, editing and filtering labels needs no AI provider any more,
+  and new mail gets labels by itself without one, during delivery and before the person's Sieve
+  rules: by a label's own **conditions** (sender, subject, text, attachment; up to 10, all or any),
+  by built-in **detectors** for invoices, appointments, newsletters and shipping notices (German and
+  English, made to rather miss one than label wrongly), by **senders** the person gave the label by
+  hand twice, and by each label's **classifier**, which learns from the person's own labeling and
+  acts once it has 15 examples and is at least 99 % sure. On by default; *Labels without AI* in
+  the assistant's settings switches it off. The method is documented step by step, so the UwUMail
+  app labels the mail of its other accounts the same way.
+- **Labels learn from you.** Putting a label on or taking it off by hand (webmail, any JMAP app, or
+  an IMAP app's keywords) teaches senders and the classifier; taking one off forgets the sender.
+  What the server or the AI does teaches nothing. *Undo* in the label log counts as taking it off.
+- **The log says why.** Every label put on by itself is logged with where it came from (`rule`,
+  `detector`, `sender`, `classifier` or `ai`) and a reason code with details, so apps can explain it
+  in their own words.
+- **The AI only judges what is left.** It gets only the labels not on the mail yet and never takes
+  one off.
+- **"Label again"** (`AssistLabel/suggest`): the model judges every label for one mail, a reason
+  first, and proposes up to two new labels when none fits. It changes nothing by itself; the token
+  estimate on the button knows it too.
+- **Counts and push.** Labels carry their number of mails and unread mails (mail only in Junk or
+  the Trash does not count) and how many examples the classifier has; they change with the mail and
+  are pushed like folders.
+- **Sieve rules** can set a label (`addflag "<keyword>"`) and test for one: labels put on before the
+  script show up as `X-UwUMail-Label` headers only the script sees; such headers a sender wrote are
+  removed ([docs/sieve.md](docs/sieve.md#labels)).
+- Migration `0065_labels.sql`.
+
+**AI for mail from other accounts** ([docs/jmap-assist.md](docs/jmap-assist.md#foreign-mail)): a new
+policy switch, off by default, lets people use the assistant in the UwUMail app for the mail of
+their other accounts (Exchange, Gmail, IMAP): summaries, spam check, dates, replies and labels. The
+app sends that mail's text along; the server keeps nothing of it but the usage, which counts against
+the same daily limits. Each server provider has an option *Mail from other accounts* (on for
+existing providers; the switch decides).
+
 - **Auto-labels no longer put labels on mail they do not fit.** The model had to name a label
   before saying why, so small models listed every label and then explained that it did not fit
   ("not financial transactions"), and the label was set anyway. Now it judges every label with a
